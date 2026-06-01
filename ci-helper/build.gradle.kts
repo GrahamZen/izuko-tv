@@ -56,7 +56,8 @@ fun ReleaseUploadTask.configureReleaseUploadInputs() {
 
 tasks.register("uploadAndroidApk", UploadAndroidApksTask::class) {
     configureReleaseUploadInputs()
-    apkDirectory.set(project(":app:android").layout.buildDirectory.dir("outputs/apk/default/release"))
+    // fork: 发布的是 formFactor=tv 变体 (上游只有 distribution 一个维度, 目录为 outputs/apk/default/release)
+    apkDirectory.set(project(":app:android").layout.buildDirectory.dir("outputs/apk/defaultTv/release"))
 }
 
 val uploadAndroidApkGithubQr = tasks.register("uploadAndroidApkGithubQr", UploadReleaseAssetTask::class) {

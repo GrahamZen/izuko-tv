@@ -1,0 +1,176 @@
+# Fork-specific: 按需构建 Android 7.1 (API 25) 兼容包, 产物只作为 workflow artifact.
+#
+# 刻意不创建 Release / prerelease: UpdateChecker 拉的是 /releases 全量列表, 且 BETA/ALPHA/RC
+# 通道会把 prerelease 一并算进候选 —— 发 prerelease 会把兼容包推给所有开了 alpha 通道的用户.
+#
+# 触发方式:
+#   git tag legacy-<随便什么> && git push origin legacy-<随便什么>
+#   或者在 Actions 页面手动 Run workflow (workflow_dispatch)
+#
+# 注意 tag 前缀必须是 legacy-, 用 v* 会触发 fork-release.yml 走真正的发版流程.
+name: 'Fork Legacy Build (Android 7.1)'
+on:
+  push:
+    tags:
+    - 'legacy-*'
+  workflow_dispatch:
+permissions:
+  contents: 'read'
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref_name }}'
+  cancel-in-progress: true
+jobs:
+  build_legacy_android:
+    name: 'Android Legacy Build (Ubuntu 24.04)'
+    runs-on:
+    - 'ubuntu-24.04'
+    steps:
+      - id: 'step-0'
+        uses: 'actions/checkout@v4'
+        with:
+          submodules: 'recursive'
+      - id: 'step-1'
+        name: 'Free space for Ubuntu'
+        uses: 'jlumbroso/free-disk-space@v1.3.1'
+        with:
+          android: 'false'
+          large-packages: 'false'
+          tool-cache: 'false'
+      - id: 'step-2'
+        name: 'Enable Swap'
+        run: |-
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+      - id: 'step-3'
+        continue-on-error: true
+        run: 'rm local.properties'
+      - id: 'step-4'
+        continue-on-error: true
+        run: |-
+          echo "ani.android.abis=all" >> local.properties
+          echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
+          echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
+          echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
+          echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
+          echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
+      - id: 'step-5'
+        continue-on-error: true
+        run: |-
+          echo "ani.enable.firebase=false" >> local.properties
+      # 与 fork-release.yml 的同名步骤一致: runner 镜像不带 compileSdk 用的那个 platform,
+      # 缺了它 checkDefaultTvReleaseAarMetadata 直接失败. 版本号跟 gradle.properties 的
+      # android.compile.sdk 对应, 改那个也要改这里 (API 37 起包 id 带 minor version: android-37.0).
+      # 顺带把 build-tools 也装上, 末尾校验 minSdk 用的 aapt2 就从这里来.
+      - id: 'setup-android-sdk'
+        name: 'Setup Android SDK'
+        uses: 'android-actions/setup-android@v3'
+        with:
+          accept-android-sdk-licenses: 'true'
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+      - id: 'step-6'
+        name: 'Get JBR (Linux)'
+        env:
+          RUNNER_TOOL_CACHE: '${{ runner.tool_cache }}'
+          JBR_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.5-linux-x64-b750.29.tar.gz'
+          JBR_CHECKSUM_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.5-linux-x64-b750.29.tar.gz.checksum'
+        shell: 'bash'
+        run: 'python .github/workflows/download_jbr.py'
+      - id: 'step-7'
+        name: 'Setup JBR 21 for Ubuntu'
+        uses: 'gmitch215/setup-java@6d2c5e1f82f180ae79f799f0ed6e3e5efb4e664d'
+        with:
+          java-version: '21'
+          distribution: 'jdkfile'
+          jdkFile: '${{ steps.step-6.outputs.jbrLocation }}'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+      - id: 'step-8'
+        name: 'Dump Local Properties'
+        run: 'echo "jvm.toolchain.version=21" >> local.properties'
+      - id: 'step-9'
+        run: 'chmod -R 777 .'
+      - id: 'step-10'
+        name: 'Setup Gradle'
+        uses: 'gradle/actions/setup-gradle@v3'
+        with:
+          cache-disabled: 'true'
+      - id: 'step-11'
+        name: 'Prepare signing key'
+        continue-on-error: true
+        uses: 'timheuer/base64-to-file@v1.1'
+        with:
+          fileName: 'android_signing_key'
+          fileDir: './'
+          encodedString: '${{ secrets.SIGNING_RELEASE_STOREFILE }}'
+      - id: 'step-12'
+        name: 'Generate Mock google-services.json'
+        run: |
+          echo '{"project_info":{"project_number":"0","project_id":"mock-project","storage_bucket":"mock-bucket"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000000","android_client_info":{"package_name":"me.him188.ani"}},"api_key":[{"current_key":"mock_key"}]},{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000001","android_client_info":{"package_name":"me.him188.ani.tv"}},"api_key":[{"current_key":"mock_key"}]}]}' > ./app/android/google-services.json
+      - id: 'step-13'
+        name: 'Build Android Legacy (API 25) Release APKs'
+        env:
+          signing_release_storeFileFromRoot: '${{ steps.step-11.outputs.filePath }}'
+          signing_release_storePassword: '${{ secrets.SIGNING_RELEASE_STOREPASSWORD }}'
+          signing_release_keyAlias: '${{ secrets.SIGNING_RELEASE_KEYALIAS }}'
+          signing_release_keyPassword: '${{ secrets.SIGNING_RELEASE_KEYPASSWORD }}'
+        timeout-minutes: 180
+        run: './gradlew assembleDefaultTvRelease "-Pani.android.legacy=true" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      # 先重命名+上传, 校验放最后: 校验用的是外部工具 (aapt), 它自己出问题不该把产物弄丢.
+      - id: 'step-14'
+        name: 'Rename APKs'
+        run: |
+          set -euo pipefail
+          out='app/android/build/outputs/apk/defaultTv/release'
+          mkdir -p legacy-apks
+          for abi in arm64-v8a armeabi-v7a x86_64 universal; do
+            cp "$out/android-default-tv-$abi-release.apk" "legacy-apks/ani-legacy-android7.1-$abi.apk"
+          done
+          ls -la legacy-apks
+      - id: 'step-15'
+        name: 'Upload Legacy APKs'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: 'ani-legacy-android7.1-apks'
+          path: 'legacy-apks/*.apk'
+          retention-days: '90'
+          overwrite: 'true'
+      # 只有"确实读出了 minSdk 且不是 25"才失败; 找不到工具/工具报错只警告, 免得因为
+      # 校验手段本身的问题让整个 run 变红、产物白丢.
+      - id: 'step-16'
+        name: 'Verify minSdk is 25'
+        run: |
+          # GitHub 默认用 `bash -e` 起脚本, 必须显式 set +e —— 否则下面任何一条 grep 没匹配到
+          # 都会直接把脚本带走, 连诊断信息都打不出来 (上一版就栽在这).
+          set +e
+          apk='legacy-apks/ani-legacy-android7.1-universal.apk'
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}  ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
+          aapt=''
+          if [ -n "$sdk" ]; then
+            aapt="$(ls "$sdk"/build-tools/*/aapt2 2>/dev/null | tail -1)"
+            [ -n "$aapt" ] || aapt="$(ls "$sdk"/build-tools/*/aapt 2>/dev/null | tail -1)"
+          fi
+          if [ -z "$aapt" ]; then
+            echo "::warning::找不到 aapt/aapt2, 跳过 minSdk 校验 (产物已上传)"
+            exit 0
+          fi
+          echo "using: $aapt"
+          if ! badging="$("$aapt" dump badging "$apk" 2>&1)"; then
+            echo "::warning::aapt 执行失败, 跳过 minSdk 校验 (产物已上传)"
+            printf '%s\n' "$badging" | head -5
+            exit 0
+          fi
+          # aapt2 打的是 minSdkVersion:'25', aapt(v1) 打的是 sdkVersion:'25', 两种都认.
+          min="$(printf '%s\n' "$badging" | grep -oE "^(min)?[sS]dkVersion:'[0-9]+'" | head -1 | grep -oE '[0-9]+')"
+          if [ -z "$min" ]; then
+            echo "::warning::没能从 badging 里解析出 minSdk, 跳过校验 (产物已上传)"
+            printf '%s\n' "$badging" | head -5
+            exit 0
+          fi
+          echo "minSdk = $min"
+          if [ "$min" != "25" ]; then
+            echo "::error::期望 minSdk 25, 实际 $min —— -Pani.android.legacy 没有生效, 别发这个包"
+            exit 1
+          fi

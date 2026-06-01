@@ -10,8 +10,10 @@
 package me.him188.ani.android
 
 import android.content.Intent
+import android.os.Build
 import android.os.Environment
 import android.widget.Toast
+import androidx.annotation.ChecksSdkIntAtLeast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,11 +30,12 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
-import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.toHeader
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
@@ -51,6 +54,7 @@ import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
+import me.him188.ani.app.domain.torrent.LocalAnitorrentEngineFactory
 import me.him188.ani.app.domain.torrent.RemoteAnitorrentEngineFactory
 import me.him188.ani.app.domain.torrent.TorrentManager
 import me.him188.ani.app.domain.torrent.service.AniTorrentService
@@ -95,6 +99,20 @@ import java.io.File
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
+/**
+ * BT 引擎是否跑在 `:torrent_service` 独立进程里.
+ *
+ * 独立进程方案依赖 API 27 的 [android.os.SharedMemory] (AIDL 里传 piece 状态与 torrent 元数据)
+ * 与 API 26 的 `Context.startForegroundService`, 两者在更低版本上都不存在.
+ * 因此 27 以下退回到进程内引擎 ([LocalAnitorrentEngineFactory], 桌面端一直用的那条路):
+ * 功能一致, 代价是应用进程被杀时下载不再保活.
+ *
+ * 27 及以上走的仍是原来的远程引擎, 行为与本改动之前完全一致.
+ */
+@get:ChecksSdkIntAtLeast(api = Build.VERSION_CODES.O_MR1)
+val supportsTorrentServiceProcess: Boolean
+    get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
+
 fun getAndroidModules(
     serviceConnectionManager: TorrentServiceConnectionManager,
     coroutineScope: CoroutineScope,
@@ -107,7 +125,9 @@ fun getAndroidModules(
     single<ImageCaptchaRecognizer> { AndroidOnnxImageCaptchaRecognizer() }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
 
-    single<TorrentEngineAccess> { serviceConnectionManager }
+    single<TorrentEngineAccess> {
+        if (supportsTorrentServiceProcess) serviceConnectionManager else AlwaysUseTorrentEngineAccess
+    }
     single<TorrentServiceConnection<IRemoteAniTorrentEngine>> { serviceConnectionManager.connection }
 
     single<MediaSaveDirProvider> {
@@ -159,7 +179,11 @@ fun getAndroidModules(
             get(),
             get(),
             baseSaveDir = { Path(saveDir).inSystem },
-            RemoteAnitorrentEngineFactory(get(), get(), get<ProxyProvider>().proxy),
+            if (supportsTorrentServiceProcess) {
+                RemoteAnitorrentEngineFactory(get(), get(), get<ProxyProvider>().proxy)
+            } else {
+                LocalAnitorrentEngineFactory
+            },
         )
     }
 
@@ -264,10 +288,13 @@ fun getAndroidModules(
             override fun exitApp(context: ContextMP, status: Int): Nothing {
                 runBlocking(Dispatchers.Main.immediate) {
                     (context.findActivity() as? AniComponentActivity)?.finishAffinity()
-                    context.startService(
-                        Intent(context, AniTorrentService.actualServiceClass)
-                            .apply { putExtra("stopService", true) },
-                    )
+                    if (supportsTorrentServiceProcess) {
+                        // 27 以下 BT 引擎在应用进程内, 没有独立服务要停
+                        context.startService(
+                            Intent(context, AniTorrentService.actualServiceClass)
+                                .apply { putExtra("stopService", true) },
+                        )
+                    }
                     exitProcess(status)
                 }
             }

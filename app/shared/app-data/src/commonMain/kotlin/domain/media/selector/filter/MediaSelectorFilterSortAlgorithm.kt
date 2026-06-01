@@ -218,7 +218,8 @@ class MediaSelectorFilterSortAlgorithm {
                 // 简化数据源结果的季度名称，例如从 "Re：从零开始的休息时间 第2季" 变成 "Re：从零开始的休息时间 2"
                 // 条目名称可能是上述后者简化的形式, 但数据源的结果是前者完整版的形式
                 // 额外判断一次简化的名称可以正确地排除掉类似这种情况的其他季度的资源.
-                val mediaSubjectNameSeasonSimplified = mediaSubjectName.replace(SEASON_TAILING, $$"${season}")
+                // 替换串用序号: 按名字引用 ${season} 要 Android 8.0 起才认 (7.1 兼容包)
+                val mediaSubjectNameSeasonSimplified = mediaSubjectName.replace(SEASON_TAILING, "\$1")
                 context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf?.forEach { name ->
                     if (MediaListFilters.specialEquals(mediaSubjectName, name) ||
                         MediaListFilters.specialEquals(mediaSubjectNameSeasonSimplified, name)

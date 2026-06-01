@@ -13,6 +13,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.core.graphics.drawable.toBitmap
 import androidx.tvprovider.media.tv.Channel
 import androidx.tvprovider.media.tv.ChannelLogoUtils
@@ -73,6 +74,9 @@ object TvHomeChannels {
      */
     suspend fun keepUpdated(context: Context, koin: Koin) {
         if (!isTvDevice(context)) return
+        // 系统主屏频道 (PreviewPrograms / WatchNextPrograms) 是 Android TV Oreo (API 26) 才有的,
+        // 更低版本上 TvProvider 没有这些 URI, 直接跳过而不是让下面的 runCatching 吞一堆异常.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
         if (trendingUpdatedThisProcess.compareAndSet(false, true)) {
             runCatching { updateTrendingChannel(context, koin) }
