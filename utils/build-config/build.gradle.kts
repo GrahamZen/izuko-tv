@@ -22,7 +22,7 @@ android {
     namespace = "$idGroup.buildconfig"
     defaultConfig {
         compileSdk = getIntProperty("android.compile.sdk")
-        minSdk = getIntProperty("android.min.sdk")
+        minSdk = androidMinSdk
     }
 
     buildTypes {
