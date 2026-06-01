@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.text.selection.SelectionContainer
+import me.him188.ani.app.ui.foundation.AniSelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Hd
 import androidx.compose.material.icons.rounded.ArrowOutward
@@ -261,7 +261,7 @@ fun MediaDetailsLazyGrid(
         item(span = { GridItemSpan(maxLineSpan) }) {
             ListItem(
                 headlineContent = {
-                    SelectionContainer {
+                    AniSelectionContainer {
                         Text(
                             details.originalTitle,
                             style = MaterialTheme.typography.headlineSmall,
@@ -277,7 +277,7 @@ fun MediaDetailsLazyGrid(
                 leadingContent = { Icon(Icons.Rounded.Layers, contentDescription = null) },
                 supportingContent = {
                     val range = details.episodeRange
-                    SelectionContainer {
+                    AniSelectionContainer {
                         Text(
                             when {
                                 range == null -> unknownText
@@ -300,7 +300,7 @@ fun MediaDetailsLazyGrid(
                             MediaSourceKind.BitTorrent -> "BT"
                             MediaSourceKind.LocalCache -> stringResource(Lang.cache_details_source_local)
                         }
-                        SelectionContainer {
+                        AniSelectionContainer {
                             Text("[$kind] ${details.sourceInfo?.displayName ?: unknownText}")
                         }
                     },
@@ -323,7 +323,7 @@ fun MediaDetailsLazyGrid(
             ListItem(
                 headlineContent = { Text(stringResource(Lang.cache_details_subtitle_group)) },
                 leadingContent = { Icon(Icons.Rounded.Subtitles, contentDescription = null) },
-                supportingContent = { SelectionContainer { Text(details.properties.alliance) } },
+                supportingContent = { AniSelectionContainer { Text(details.properties.alliance) } },
                 trailingContent = { copyContent { details.properties.alliance } },
             )
         }
@@ -332,7 +332,7 @@ fun MediaDetailsLazyGrid(
                 headlineContent = { Text(stringResource(Lang.cache_details_subtitle_language)) },
                 leadingContent = { Icon(Icons.Rounded.Subtitles, contentDescription = null) },
                 supportingContent = {
-                    SelectionContainer {
+                    AniSelectionContainer {
                         Text(
                             remember(details, mediaDetailsStrings) {
                                 MediaDetailsRenderer.renderSubtitleLanguages(
@@ -350,14 +350,14 @@ fun MediaDetailsLazyGrid(
             ListItem(
                 headlineContent = { Text(stringResource(Lang.cache_details_publish_time)) },
                 leadingContent = { Icon(Icons.Rounded.Event, contentDescription = null) },
-                supportingContent = { SelectionContainer { Text(formatDateTime(details.publishedTimeMillis)) } },
+                supportingContent = { AniSelectionContainer { Text(formatDateTime(details.publishedTimeMillis)) } },
             )
         }
         item {
             ListItem(
                 headlineContent = { Text(stringResource(Lang.cache_details_resolution)) },
                 leadingContent = { Icon(Icons.Outlined.Hd, contentDescription = null) },
-                supportingContent = { SelectionContainer { Text(details.properties.resolution) } },
+                supportingContent = { AniSelectionContainer { Text(details.properties.resolution) } },
             )
         }
         item {
@@ -365,7 +365,7 @@ fun MediaDetailsLazyGrid(
                 headlineContent = { Text(stringResource(Lang.cache_details_file_size)) },
                 leadingContent = { Icon(Icons.Rounded.Description, contentDescription = null) },
                 supportingContent = {
-                    SelectionContainer {
+                    AniSelectionContainer {
                         if (details.fileSize == FileSize.Unspecified) {
                             Text(unknownText)
                         } else {
@@ -380,7 +380,7 @@ fun MediaDetailsLazyGrid(
                 headlineContent = { Text(stringResource(Lang.cache_details_original_link)) },
                 leadingContent = placeholderLeadingContent,
                 supportingContent = {
-                    SelectionContainer {
+                    AniSelectionContainer {
                         Text(details.contentOriginalUri, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 },
@@ -393,7 +393,7 @@ fun MediaDetailsLazyGrid(
                     headlineContent = { Text(stringResource(Lang.cache_details_file_type)) },
                     leadingContent = placeholderLeadingContent,
                     supportingContent = {
-                        SelectionContainer {
+                        AniSelectionContainer {
                             Text(
                                 when (details.fileType) {
                                     ResourceLocation.LocalFile.FileType.MPTS -> "MPTS"
@@ -413,7 +413,7 @@ fun MediaDetailsLazyGrid(
                     headlineContent = { Text(stringResource(Lang.cache_details_original_download_link)) },
                     leadingContent = { Icon(Icons.Rounded.VideoFile, contentDescription = null) },
                     supportingContent = {
-                        SelectionContainer {
+                        AniSelectionContainer {
                             Text(details.contentDownloadUri, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     },
@@ -427,7 +427,7 @@ fun MediaDetailsLazyGrid(
                     headlineContent = { Text(stringResource(Lang.cache_details_local_cache_path)) },
                     leadingContent = { Icon(Icons.Rounded.VideoFile, contentDescription = null) },
                     supportingContent = {
-                        SelectionContainer {
+                        AniSelectionContainer {
                             Text(details.localCacheFilePath.toString(), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     },
@@ -463,7 +463,7 @@ fun MediaDetailsLazyGrid(
             item {
                 ListItem(
                     headlineContent = {
-                        SelectionContainer {
+                        AniSelectionContainer {
                             Text(
                                 buildString {
                                     append(stringResource(Lang.cache_details_external_subtitle, index + 1))
@@ -476,7 +476,7 @@ fun MediaDetailsLazyGrid(
                         }
                     },
                     leadingContent = { Icon(Icons.Rounded.FilePresent, contentDescription = null) },
-                    supportingContent = { SelectionContainer { Text(subtitle.uri) } },
+                    supportingContent = { AniSelectionContainer { Text(subtitle.uri) } },
                     trailingContent = { browseContent(subtitle.uri) },
                 )
             }

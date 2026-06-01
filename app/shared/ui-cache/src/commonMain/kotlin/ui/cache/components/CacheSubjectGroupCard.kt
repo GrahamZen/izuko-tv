@@ -10,7 +10,6 @@
 package me.him188.ani.app.ui.cache.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import me.him188.ani.app.ui.foundation.aniCombinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
@@ -77,7 +77,9 @@ fun CacheSubjectGroupCard(
         modifier
             .fillMaxWidth()
             .clip(shape)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            // 遥控器上的长按要走 aniCombinedClickable (D-pad 确认键的长按不会触发
+            // combinedClickable 的 onLongClick), 否则电视上进不了多选模式
+            .aniCombinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
         color = containerColor,
     ) {

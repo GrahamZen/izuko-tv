@@ -11,6 +11,8 @@ package me.him188.ani.app.domain.mediasource.web.captcha
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
@@ -18,8 +20,28 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.Dispatchers
@@ -110,15 +132,217 @@ class WebViewCaptchaBrowser private constructor(
     }
 
     @Composable
-    override fun View(modifier: Modifier) {
-        AndroidView(
-            factory = {
-                webView.also { view ->
-                    (view.parent as? ViewGroup)?.removeView(view)
+    override fun View(
+        modifier: Modifier,
+        onExitRequest: (() -> Unit)?,
+        onConfirmRequest: (() -> Unit)?,
+        tvInputMode: TvWebInputMode,
+    ) {
+        // 这里不读 LocalAniUiBehavior.focusDrivenNavigation: 对话框宿主挂在 AniApp 的 overlay
+        // 槽位, 不在 AniAppContent 内容树里, 拿不到那个 CompositionLocal; 直接问系统 UiModeManager.
+        val context = LocalContext.current
+        val isTv = remember(context) {
+            val uiModeManager = context.getSystemService(android.content.Context.UI_MODE_SERVICE)
+                    as android.app.UiModeManager
+            uiModeManager.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        }
+        // TV 遥控器虚拟光标: WebView 自身无法用方向键操作验证码, 用光标 + 注入触摸事件代替.
+        var cursorX by remember { mutableFloatStateOf(-1f) }
+        var cursorY by remember { mutableFloatStateOf(-1f) }
+        // 视口尺寸: 光标撞到边缘要改成滚页面, 没有它就只能把光标顶在边上干瞪眼
+        var viewWidth by remember { mutableFloatStateOf(0f) }
+        var viewHeight by remember { mutableFloatStateOf(0f) }
+        val density = LocalDensity.current
+        Box(
+            modifier
+                .onSizeChanged { size ->
+                    viewWidth = size.width.toFloat()
+                    viewHeight = size.height.toFloat()
+                    // 首次布局把光标放到视图中央 (仅 TV)
+                    if (isTv && cursorX < 0f && size.width > 0) {
+                        cursorX = size.width / 2f
+                        cursorY = size.height / 2f
+                    }
                 }
-            },
-            modifier = modifier,
-        )
+                .then(
+                    if (isTv) {
+                        val cursorKey: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { keyEvent ->
+                            tvCursorKeyEvent(
+                                keyEvent = keyEvent,
+                                cursorX = cursorX,
+                                cursorY = cursorY,
+                                onCursorMove = { x, y ->
+                                    cursorX = x
+                                    cursorY = y
+                                },
+                                viewHeight = viewHeight,
+                                viewWidth = viewWidth,
+                                density = density,
+                                onExitRequest = onExitRequest,
+                                onConfirmRequest = onConfirmRequest,
+                            )
+                        }
+                        // **返回键必须在 tunnel 阶段截**: WebView 会拿它做浏览历史后退, 而系统
+                        // 返回又分发不到 Dialog, 不截就退不出这个页面.
+                        Modifier
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.key == Key.Back && keyEvent.type == KeyEventType.KeyUp) {
+                                    onExitRequest?.invoke()
+                                    true
+                                } else if (tvInputMode == TvWebInputMode.Cursor) {
+                                    // 验证码那类页面没有可聚焦元素, 光标独占方向键
+                                    cursorKey(keyEvent)
+                                } else {
+                                    false // 先让 WebView 做焦点遍历
+                                }
+                            }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            AndroidView(
+                factory = {
+                    webView.also { view ->
+                        (view.parent as? ViewGroup)?.removeView(view)
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    autoFocusOnLoad = tvInputMode == TvWebInputMode.NativeFocus
+                    if (tvInputMode == TvWebInputMode.NativeFocus) {
+                        // 网页要能拿到焦点才谈得上方向键遍历与输入法
+                        view.isFocusable = true
+                        view.isFocusableInTouchMode = true
+                        view.requestFocus()
+                    }
+                },
+            )
+            // 只有光标这一档才画: 焦点遍历档下方向键全被 WebView 吃掉, 光标推不动
+            if (isTv && cursorX >= 0f && tvInputMode == TvWebInputMode.Cursor) {
+                TvCursorCanvas(cursorX, cursorY)
+            }
+        }
+    }
+
+    /**
+     * 处理 TV 遥控器按键 (Compose tunnel 阶段, 在内嵌 WebView 收到按键之前; 返回 true 即消费).
+     *
+     * 返回键: WebView 会抢去做浏览历史后退, 系统返回分发不到 Dialog, 在此拦截转 [onExitRequest].
+     * 方向键: 移动光标 (长按连发加速). 确认键: 首按在光标处注入一次触摸点击;
+     * 按住 ~500ms (首个连发) 转 [onConfirmRequest] (手动确认已解决).
+     */
+    private fun tvCursorKeyEvent(
+        keyEvent: androidx.compose.ui.input.key.KeyEvent,
+        cursorX: Float,
+        cursorY: Float,
+        onCursorMove: (x: Float, y: Float) -> Unit,
+        viewHeight: Float,
+        viewWidth: Float,
+        density: Density,
+        onExitRequest: (() -> Unit)?,
+        onConfirmRequest: (() -> Unit)?,
+    ): Boolean {
+        if (keyEvent.key == Key.Back && keyEvent.type == KeyEventType.KeyUp) {
+            onExitRequest?.invoke()
+            return true
+        }
+        if (keyEvent.type != KeyEventType.KeyDown) return false
+
+        val repeatCount = (keyEvent.nativeKeyEvent as? android.view.KeyEvent)?.repeatCount ?: 0
+        val baseStep = with(density) { 20.dp.toPx() }
+        val step = baseStep * (1f + repeatCount / 12f).coerceAtMost(5f)
+        // 光标到边缘 (留一点余量) 就改成滚页面: 折叠线以下的按钮就是这么够不着的
+        val edge = with(density) { 48.dp.toPx() }
+        // 滚页面的步长与光标步长分开: 按光标那 20dp 滚, 一页要按几十下
+        val scrollStep = with(density) { 96.dp.toPx() } * (1f + repeatCount / 6f).coerceAtMost(4f)
+        return when (keyEvent.key) {
+            Key.DirectionUp -> {
+                if (cursorY - step < edge) scrollPage(0f, -scrollStep)
+                onCursorMove(cursorX, (cursorY - step).coerceAtLeast(0f))
+                true
+            }
+
+            Key.DirectionDown -> {
+                if (viewHeight > 0f && cursorY + step > viewHeight - edge) {
+                    scrollPage(0f, scrollStep)
+                    onCursorMove(cursorX, (viewHeight - edge).coerceAtLeast(0f))
+                } else {
+                    onCursorMove(cursorX, cursorY + step)
+                }
+                true
+            }
+
+            Key.DirectionLeft -> {
+                if (cursorX - step < edge) scrollPage(-scrollStep, 0f)
+                onCursorMove((cursorX - step).coerceAtLeast(0f), cursorY)
+                true
+            }
+
+            Key.DirectionRight -> {
+                if (viewWidth > 0f && cursorX + step > viewWidth - edge) {
+                    scrollPage(scrollStep, 0f)
+                    onCursorMove((viewWidth - edge).coerceAtLeast(0f), cursorY)
+                } else {
+                    onCursorMove(cursorX + step, cursorY)
+                }
+                true
+            }
+
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                when (repeatCount) {
+                    // 首按: 在光标处注入一次触摸点击
+                    0 -> {
+                        // 先让 WebView 拿到焦点, 否则点中输入框也唤不起输入法.
+                        // **已经有焦点就别再要一次**: requestFocus 会让 WebView 把当前聚焦的
+                        // DOM 元素滚回视野, 而我们刚把页面滚到别处 —— 表现同样是"一点击就跳回去"
+                        webView.isFocusableInTouchMode = true
+                        if (!webView.hasFocus()) webView.requestFocus()
+                        val downTime = SystemClock.uptimeMillis()
+                        val down = MotionEvent.obtain(
+                            downTime, downTime, MotionEvent.ACTION_DOWN, cursorX, cursorY, 0,
+                        )
+                        val up = MotionEvent.obtain(
+                            downTime, downTime + 50L, MotionEvent.ACTION_UP, cursorX, cursorY, 0,
+                        )
+                        webView.dispatchTouchEvent(down)
+                        webView.dispatchTouchEvent(up)
+                        down.recycle()
+                        up.recycle()
+                    }
+                    // 按住 ~500ms (首个连发): 手动确认已解决
+                    1 -> onConfirmRequest?.invoke()
+                    // 后续连发: 已确认, 不再动作
+                }
+                true
+            }
+
+            else -> false
+        }
+    }
+
+    /**
+     * 当前是不是焦点遍历档 (由 [View] 每次组合时写入). `onPageFinished` 在 WebViewClient 里,
+     * 拿不到 Compose 的参数, 只能这么传.
+     */
+    @Volatile
+    private var autoFocusOnLoad: Boolean = false
+
+    /**
+     * 滚页面. **JS 优先, 滚不动才回落原生**.
+     *
+     * - `window.scrollBy` / 内层容器的 `scrollBy` 才是页面真正的滚动, 稳定;
+     * - `WebView.scrollBy` 滚的是 WebView 这个 **View 自己**的偏移量. 页面内容装不满
+     *   WebView 时它本没有滚动范围, 强行滚出来的偏移是"假"的 —— **一有触摸事件 WebView
+     *   就把它归位**, 视觉上是页面弹回去 (2026-09-06 用户实测: 光标能滚, 但一点击页面就跳回来).
+     *   所以只在 JS 确实滚不动时才用它 (个别页面把滚动交给了原生层).
+     *
+     * 两个都发一次是不行的: 都生效时页面滚两倍, 然后被上面那条归位打回来.
+     */
+    private fun scrollPage(dx: Float, dy: Float) {
+        webView.evaluateJavascript(scrollScript(dx.toInt(), dy.toInt())) { scrolled ->
+            if (scrolled?.trim('"') != "1") webView.scrollBy(dx.toInt(), dy.toInt())
+        }
     }
 
     override fun close() {
@@ -137,6 +361,8 @@ class WebViewCaptchaBrowser private constructor(
 
             override fun onPageFinished(view: WebView, url: String?) {
                 _isLoading.value = false
+                // 只在焦点遍历那一档自动聚焦: 光标档下它没用, 反而会在登录页直接把输入法顶出来
+                if (autoFocusOnLoad) view.evaluateJavascript(AUTO_FOCUS_SCRIPT, null)
                 val finalUrl = view.url?.takeIf { it.isNotEmpty() } ?: return
                 view.evaluateJavascript(OUTER_HTML_SCRIPT) { rawHtml ->
                     _pageLoads.tryEmit(
@@ -172,6 +398,17 @@ class WebViewCaptchaBrowser private constructor(
         }
     }
 
+    /** TV 虚拟光标圆点 (白底黑描边, 叠在 WebView 之上). */
+    @Composable
+    private fun TvCursorCanvas(cursorX: Float, cursorY: Float) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val radius = 9.dp.toPx()
+            val center = Offset(cursorX, cursorY)
+            drawCircle(color = Color.White, radius = radius, center = center)
+            drawCircle(color = Color.Black, radius = radius, center = center, style = Stroke(width = 2.5f))
+        }
+    }
+
     private fun decodeJavascriptString(rawHtml: String?): String {
         val value = rawHtml ?: return ""
         return runCatching {
@@ -180,8 +417,77 @@ class WebViewCaptchaBrowser private constructor(
     }
 
     companion object {
+        /**
+         * 从视口中心那个元素往上找**最近的可滚祖先**并滚它; 找不到就滚文档.
+         *
+         * **返回 "1" 表示真的滚动了** (前后比 scrollTop/scrollLeft), 调用方据此决定要不要
+         * 回落到原生滚动, 见 [scrollPage].
+         */
+        private fun scrollScript(dx: Int, dy: Int): String = """
+            (function () {
+              try {
+                var dx = $dx, dy = $dy;
+                function tryScroll(el) {
+                  var beforeY = el.scrollTop, beforeX = el.scrollLeft;
+                  el.scrollBy(dx, dy);
+                  return el.scrollTop !== beforeY || el.scrollLeft !== beforeX;
+                }
+                var el = document.elementFromPoint(
+                  Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
+                while (el && el !== document.body && el !== document.documentElement) {
+                  var s = window.getComputedStyle(el);
+                  var scrollableY = (s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+                    el.scrollHeight > el.clientHeight;
+                  var scrollableX = (s.overflowX === 'auto' || s.overflowX === 'scroll') &&
+                    el.scrollWidth > el.clientWidth;
+                  if (scrollableY || scrollableX) return tryScroll(el) ? '1' : '0';
+                  el = el.parentElement;
+                }
+                var doc = document.scrollingElement || document.documentElement;
+                var beforeY = doc.scrollTop, beforeX = doc.scrollLeft;
+                window.scrollBy(dx, dy);
+                return (doc.scrollTop !== beforeY || doc.scrollLeft !== beforeX) ? '1' : '0';
+              } catch (e) {
+                return '0';
+              }
+            })()
+            """
+
         private const val OUTER_HTML_SCRIPT =
             "(function(){var d=document.documentElement; return d ? d.outerHTML : '';})()"
+
+        /**
+         * 页面加载完把焦点放到**第一个可见的可操作元素**上, 并滚到可见.
+         *
+         * 电视上 `WebView.requestFocus()` 只是让这个 *View* 拿到焦点, DOM 里仍然什么都没聚焦,
+         * 于是方向键第一下不知道从哪儿开始 —— 表现就是"焦点吸不到页面上的按钮"
+         * (2026-09-06 真机实测: 只有一个按钮的确认页、失败页的"返回上一页" 都够不着).
+         *
+         * 按 DOM 顺序取第一个, 三种页面正好各得其所: 只有一个按钮的确认页 -> 焦点落在它身上;
+         * 登录页第一个是邮箱输入框 -> 焦点落在那里并弹输入法; 失败页第一个是"返回上一页"链接.
+         *
+         * 只认标准可聚焦元素, **不给别的元素硬塞 tabindex** —— 那会把一堆装饰性节点也拉进
+         * 遍历序列, 反而更难走. 够不着的元素交给虚拟光标 (见 [TvWebInputMode.NativeFocus]).
+         */
+        private const val AUTO_FOCUS_SCRIPT = """
+            (function () {
+              try {
+                var sel = 'a[href], button, input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+                var nodes = document.querySelectorAll(sel);
+                for (var i = 0; i < nodes.length; i++) {
+                  var el = nodes[i];
+                  var rect = el.getBoundingClientRect();
+                  if (rect.width <= 0 || rect.height <= 0) continue;
+                  var style = window.getComputedStyle(el);
+                  if (style.visibility === 'hidden' || style.display === 'none') continue;
+                  el.focus();
+                  if (el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+                  return;
+                }
+              } catch (e) {
+              }
+            })()
+            """
 
         @SuppressLint("SetJavaScriptEnabled")
         internal suspend fun create(context: Context): WebViewCaptchaBrowser =

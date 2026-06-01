@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.episode.list
 import androidx.compose.runtime.Immutable
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.platform.annotations.TestOnly
 import kotlin.random.Random
@@ -32,6 +33,14 @@ data class EpisodeListItem(
      * 是否已经开播了
      */
     val isBroadcast: Boolean,
+    /**
+     * 剧集简介 (Bangumi), 可能为空.
+     */
+    val desc: String = "",
+    /**
+     * 播出日期, 可能为 [PackedDate.Invalid].
+     */
+    val airDate: PackedDate = PackedDate.Invalid,
 ) {
     val isDoneOrDropped: Boolean =
         collectionType == UnifiedCollectionType.DONE || collectionType == UnifiedCollectionType.DROPPED
@@ -55,6 +64,8 @@ data class EpisodeListItem(
 //                cacheStatus = cacheStatus,
 //                airTime = collection.episodeInfo.airDate.toLocalDateOrNull()?,
                 isBroadcast = isBroadcast,
+                desc = collection.episodeInfo.desc,
+                airDate = collection.episodeInfo.airDate,
             )
         }
     }
