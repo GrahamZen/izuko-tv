@@ -1,0 +1,223 @@
+# Fork-specific Android-only release workflow.
+# This file is intentionally separate from release.yml (which is kept in sync with upstream)
+# so that upstream changes to release.yml don't conflict with fork customizations.
+
+name: 'Fork Release (Android)'
+on:
+  push:
+    tags:
+    - 'v*'
+permissions:
+  actions: 'write'
+  contents: 'write'
+jobs:
+  create-release:
+    name: 'Create Release'
+    runs-on: 'ubuntu-latest'
+    if: github.repository != 'open-ani/animeko'
+    outputs:
+      uploadUrl: '${{ steps.step-4.outputs.upload_url }}'
+      id: '${{ steps.step-4.outputs.id }}'
+    steps:
+      - id: 'step-0'
+        uses: 'actions/checkout@v4'
+      - id: 'step-1'
+        name: 'Get Tag'
+        uses: 'dawidd6/action-get-tag@v1'
+      - id: 'step-2'
+        uses: 'bhowell2/github-substring-action@v1.0.0'
+        with:
+          value: '${{ steps.step-1.outputs.tag }}'
+          index_of_str: 'v'
+          default_return_value: '${{ steps.step-1.outputs.tag }}'
+      - id: 'step-3'
+        name: 'Generate Release Notes'
+        run: |-
+          FILE_PATH="ci-helper/release-template.md"
+          file_content=$(cat "$FILE_PATH")
+          modified_content="$file_content"
+          modified_content="${modified_content//\$GIT_TAG/${{ steps.step-1.outputs.tag }}}"
+          modified_content="${modified_content//\$TAG_VERSION/${{ steps.step-2.outputs.substring }}}"
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$modified_content" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      - id: 'step-4'
+        name: 'Create Release'
+        uses: 'softprops/action-gh-release@v1'
+        with:
+          body: '${{ steps.step-3.outputs.result }}'
+          name: '${{ steps.step-2.outputs.substring }}'
+          tag_name: '${{ steps.step-1.outputs.tag }}'
+          draft: 'true'
+          prerelease: '${{ contains(steps.step-1.outputs.tag, ''-'') }}'
+          generate_release_notes: 'true'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+  release_android:
+    name: 'Android Release (Ubuntu 24.04)'
+    runs-on:
+    - 'ubuntu-24.04'
+    needs:
+    - 'create-release'
+    steps:
+      - id: 'step-0'
+        uses: 'actions/checkout@v4'
+        with:
+          submodules: 'recursive'
+      - id: 'step-1'
+        name: 'Get Tag'
+        uses: 'dawidd6/action-get-tag@v1'
+      - id: 'step-2'
+        uses: 'bhowell2/github-substring-action@v1.0.0'
+        with:
+          value: '${{ steps.step-1.outputs.tag }}'
+          index_of_str: 'v'
+          default_return_value: '${{ steps.step-1.outputs.tag }}'
+      - id: 'step-3'
+        name: 'Free space for Ubuntu'
+        uses: 'jlumbroso/free-disk-space@v1.3.1'
+        with:
+          android: 'false'
+          large-packages: 'false'
+          tool-cache: 'false'
+      - id: 'step-4'
+        name: 'Enable Swap'
+        run: |-
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+      - id: 'step-5'
+        continue-on-error: true
+        run: 'rm local.properties'
+      - id: 'step-6'
+        continue-on-error: true
+        run: |-
+          echo "ani.android.abis=all" >> local.properties
+          echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
+          echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
+          echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
+          echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
+          echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
+      - id: 'step-7'
+        continue-on-error: true
+        run: |-
+          echo "ani.enable.firebase=false" >> local.properties
+      # 与上游 build.yml / release.yml 的 'Setup Android SDK' 一致: runner 镜像不带
+      # compileSdk 用的那个 platform, 缺了它 checkDefaultTvReleaseAarMetadata 直接失败.
+      # 版本号跟 gradle.properties 的 android.compile.sdk 对应, 改那个也要改这里.
+      # 注意 API 37 起 platform 包 id 带 minor version (android-37.0), 写 android-37 会
+      # 报 Failed to find package.
+      #
+      # id 故意不用 step-N: 后面的步骤靠 steps.step-8.outputs.jbrLocation 串着,
+      # 插在中间重排编号会牵动那条引用.
+      - id: 'setup-android-sdk'
+        name: 'Setup Android SDK'
+        uses: 'android-actions/setup-android@v3'
+        with:
+          accept-android-sdk-licenses: 'true'
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+      - id: 'step-8'
+        name: 'Get JBR (Linux)'
+        env:
+          RUNNER_TOOL_CACHE: '${{ runner.tool_cache }}'
+          JBR_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.5-linux-x64-b750.29.tar.gz'
+          JBR_CHECKSUM_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.5-linux-x64-b750.29.tar.gz.checksum'
+        shell: 'bash'
+        run: 'python .github/workflows/download_jbr.py'
+      - id: 'step-9'
+        name: 'Setup JBR 21 for Ubuntu'
+        uses: 'gmitch215/setup-java@6d2c5e1f82f180ae79f799f0ed6e3e5efb4e664d'
+        with:
+          java-version: '21'
+          distribution: 'jdkfile'
+          jdkFile: '${{ steps.step-8.outputs.jbrLocation }}'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+      - id: 'step-10'
+        name: 'Dump Local Properties'
+        run: 'echo "jvm.toolchain.version=21" >> local.properties'
+      - id: 'step-11'
+        run: 'chmod -R 777 .'
+      - id: 'step-12'
+        name: 'Setup Gradle'
+        uses: 'gradle/actions/setup-gradle@v3'
+        with:
+          cache-disabled: 'true'
+      - id: 'step-13'
+        name: 'Clean and download dependencies'
+        timeout-minutes: 180
+        run: './gradlew --scan "--stacktrace" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      - id: 'step-14'
+        name: 'Update Release Version Name'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GITHUB_REPOSITORY: '${{ secrets.GITHUB_REPOSITORY }}'
+          CI_RELEASE_ID: '${{ needs.create-release.outputs.id }}'
+          CI_TAG: '${{ steps.step-1.outputs.tag }}'
+        timeout-minutes: 180
+        run: './gradlew updateReleaseVersionNameFromGit "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      - id: 'step-15'
+        name: 'Prepare signing key'
+        continue-on-error: true
+        uses: 'timheuer/base64-to-file@v1.1'
+        with:
+          fileName: 'android_signing_key'
+          fileDir: './'
+          encodedString: '${{ secrets.SIGNING_RELEASE_STOREFILE }}'
+      - id: 'step-16'
+        name: 'Generate Mock google-services.json'
+        run: |
+          echo '{"project_info":{"project_number":"0","project_id":"mock-project","storage_bucket":"mock-bucket"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000000","android_client_info":{"package_name":"me.him188.ani"}},"api_key":[{"current_key":"mock_key"}]},{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000001","android_client_info":{"package_name":"me.him188.ani.tv"}},"api_key":[{"current_key":"mock_key"}]}]}' > ./app/android/google-services.json
+      - id: 'step-17'
+        name: 'Build Android Release APKs'
+        env:
+          signing_release_storeFileFromRoot: '${{ steps.step-15.outputs.filePath }}'
+          signing_release_storePassword: '${{ secrets.SIGNING_RELEASE_STOREPASSWORD }}'
+          signing_release_keyAlias: '${{ secrets.SIGNING_RELEASE_KEYALIAS }}'
+          signing_release_keyPassword: '${{ secrets.SIGNING_RELEASE_KEYPASSWORD }}'
+        timeout-minutes: 180
+        run: './gradlew assembleDefaultTvRelease "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      - id: 'step-18'
+        name: 'Upload Android Release APK arm64-v8a'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: 'ani-android-arm64-v8a-release'
+          path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-arm64-v8a-release.apk'
+          overwrite: 'true'
+      - id: 'step-19'
+        name: 'Upload Android Release APK x86_64'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: 'ani-android-x86_64-release'
+          path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-x86_64-release.apk'
+          overwrite: 'true'
+      - id: 'step-20'
+        name: 'Upload Android Release APK armeabi-v7a'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: 'ani-android-armeabi-v7a-release'
+          path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-armeabi-v7a-release.apk'
+          overwrite: 'true'
+      - id: 'step-21'
+        name: 'Upload Android Release APK universal'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: 'ani-android-universal-release'
+          path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-universal-release.apk'
+          overwrite: 'true'
+      - id: 'step-22'
+        name: 'Upload Android APK for Release'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GITHUB_REPOSITORY: '${{ secrets.GITHUB_REPOSITORY }}'
+          CI_RELEASE_ID: '${{ needs.create-release.outputs.id }}'
+          CI_TAG: '${{ steps.step-1.outputs.tag }}'
+          UPLOAD_TO_S3: 'false'
+          AWS_ACCESS_KEY_ID: '${{ secrets.AWS_ACCESS_KEY_ID }}'
+          AWS_SECRET_ACCESS_KEY: '${{ secrets.AWS_SECRET_ACCESS_KEY }}'
+          AWS_BASEURL: '${{ secrets.AWS_BASEURL }}'
+          AWS_REGION: '${{ secrets.AWS_REGION }}'
+          AWS_BUCKET: '${{ secrets.AWS_BUCKET }}'
+        timeout-minutes: 180
+        run: './gradlew :ci-helper:uploadAndroidApk "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
