@@ -36,8 +36,12 @@ android {
     namespace = "me.him188.ani.android"
     compileSdk = getIntProperty("android.compile.sdk")
     defaultConfig {
-        applicationId = "me.him188.ani"
-        minSdk = getIntProperty("android.min.sdk")
+        // 加后缀就能出一个**与正式包共存**的包 (`-Pani.android.appIdSuffix=perfbase`):
+        // A/B 对比时两个包各装各的、各 AOT 一次, 不用来回覆盖安装 (每轮省五到八分钟);
+        // 数据也各自独立, 想要"全新安装"的冷启动场景直接 pm clear 那个包, 不碰正式包的登录与设置.
+        // 默认空 = 正式包不受影响.
+        applicationId = "me.him188.ani" + (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
+        minSdk = androidMinSdk
         targetSdk = getIntProperty("android.compile.sdk")
         versionCode = getIntProperty("android.version.code")
         versionName = project.version.toString()
@@ -108,8 +112,6 @@ android {
     productFlavors {
         create("default") {
             dimension = "distribution"
-            // The phone BT service uses SharedMemory (API 27); TV does not register that service.
-            minSdk = maxOf(27, getIntProperty("android.min.sdk"))
         }
         /*
          * 形态维度: 手机/平板 与 Android TV 出两个独立 APK.
@@ -136,6 +138,11 @@ android {
         compose = true
         buildConfig = true
     }
+    compileOptions {
+        // 只在兼容包上开: minSdk 低于 26 时系统里没有 java.time (kotlinx-datetime 等在用), 需要 D8 回填.
+        // 这是模块级设置, 开了就是所有用户一起换成回填实现, 所以正式包坚决不开. 见 buildLegacyAndroidApp.
+        isCoreLibraryDesugaringEnabled = buildLegacyAndroidApp
+    }
 }
 
 dependencies {
@@ -157,6 +164,11 @@ dependencies {
 
     implementation(libs.ktor.client.core)
     implementation(libs.mediamp.ffmpeg)
+
+    // 必须与 isCoreLibraryDesugaringEnabled 同进同退: 只挂依赖不开开关, AGP 会直接报错.
+    if (buildLegacyAndroidApp) {
+        coreLibraryDesugaring(libs.android.desugar.jdk.libs)
+    }
 }
 
 idea {
