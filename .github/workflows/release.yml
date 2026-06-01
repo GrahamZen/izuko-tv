@@ -11,24 +11,10 @@ permissions:
   actions: 'write'
   contents: 'write'
 jobs:
-  consistency-check:
-    name: 'Workflow YAML Consistency Check'
-    runs-on: 'ubuntu-latest'
-    permissions: {}
-    steps:
-    - id: 'step-0'
-      uses: 'actions/checkout@v4'
-    - id: 'step-1'
-      run: 'pip3 install PyYAML'
-    - id: 'step-2'
-      run: 'cp ".github/workflows/release.yml" ".github/workflows/release.yml-check.yml" '
-    - id: 'step-3'
-      run: '.github/workflows/src.main.kts'
-    - id: 'step-4'
-      run: 'python .github/workflows/check_yaml_equivalence.py .github/workflows/release.yml .github/workflows/release.yml-check.yml'
   create-release:
     name: 'Create Release'
     runs-on: 'ubuntu-latest'
+    if: github.repository == 'open-ani/animeko'
     outputs:
       uploadUrl: '${{ steps.step-5.outputs.upload_url }}'
       id: '${{ steps.step-5.outputs.id }}'

@@ -10,10 +10,13 @@
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
@@ -240,6 +243,14 @@ abstract class ReleaseUploadTask : DefaultTask() {
         }
     }
 
+    /**
+     * 上传单个 release 资产.
+     *
+     * 同名资产已存在 (HTTP 422) 时**先删掉再重传**, 不能跳过: 同一个 tag 重跑时
+     * `softprops/action-gh-release` 会按 tag 复用上一轮留下的 release 对象, 连它的资产一起留着.
+     * 跳过就等于把上一轮构建的二进制当作本次产物发出去 —— 更新说明写着已修复, 包里其实没修,
+     * 而且日志只有一行 "already exists", 极难发现.
+     */
     private suspend fun uploadFileToGitHub(
         client: HttpClient,
         repository: String,
@@ -249,7 +260,7 @@ abstract class ReleaseUploadTask : DefaultTask() {
         fileName: String,
         contentType: ContentType,
     ): Boolean {
-        return try {
+        suspend fun upload() {
             client.post("https://uploads.github.com/repos/$repository/releases/$releaseId/assets") {
                 header("Authorization", "Bearer $token")
                 header("Accept", "application/vnd.github+json")
@@ -267,14 +278,47 @@ abstract class ReleaseUploadTask : DefaultTask() {
                     },
                 )
             }
-            true
+        }
+
+        try {
+            upload()
         } catch (e: ClientRequestException) {
-            if (e.response.status.value == 422) {
-                logger.lifecycle("Asset already exists: $fileName")
-                false
-            } else {
-                throw e
-            }
+            if (e.response.status.value != 422) throw e
+            logger.lifecycle("Asset already exists, replacing with this build's file: $fileName")
+            deleteReleaseAsset(client, repository, releaseId, token, fileName)
+            upload() // 删完还失败就让构建挂掉, 不能静默留下旧文件
+        }
+        return true
+    }
+
+    /**
+     * 按名字删掉 release 上已存在的资产.
+     *
+     * buildSrc 没有 JSON 解析依赖, 用正则取 id: 资产对象里 `url` 字段 (路径含 assets/<id>)
+     * 排在 `name` 之前, 惰性匹配拿到的就是同一个对象的 name (`uploader.id` 之类的嵌套字段在 name 之后).
+     */
+    private suspend fun deleteReleaseAsset(
+        client: HttpClient,
+        repository: String,
+        releaseId: String,
+        token: String,
+        fileName: String,
+    ) {
+        val listed = client.get("https://api.github.com/repos/$repository/releases/$releaseId/assets") {
+            header("Authorization", "Bearer $token")
+            header("Accept", "application/vnd.github+json")
+            parameter("per_page", 100)
+        }.bodyAsText()
+        val assetId = Regex(""""url"\s*:\s*"[^"]*/releases/assets/(\d+)"[\s\S]*?"name"\s*:\s*"([^"]+)"""")
+            .findAll(listed)
+            .firstOrNull { it.groupValues[2] == fileName }
+            ?.groupValues?.get(1)
+            ?: throw GradleException(
+                "Asset '$fileName' was reported as already existing but is not in release $releaseId",
+            )
+        client.delete("https://api.github.com/repos/$repository/releases/assets/$assetId") {
+            header("Authorization", "Bearer $token")
+            header("Accept", "application/vnd.github+json")
         }
     }
 
@@ -373,6 +417,9 @@ abstract class UploadAndroidApksTask : ReleaseUploadTask() {
         apkFiles.forEach { file ->
             val arch = file.name
                 .removePrefix("android-default-")
+                // fork: formFactor flavor 让 APK 文件名多出 "tv-" 段, 剥掉它以保持 release 资产名
+                // (ani-<版本>-universal.apk 等) 与历史版本一致 —— release-template.md 里的下载链接依赖它
+                .removePrefix("tv-")
                 .removeSuffix("-release.apk")
                 .takeIf { it != file.name }
                 ?: throw GradleException("Cannot infer Android architecture from file name '${file.name}'")
