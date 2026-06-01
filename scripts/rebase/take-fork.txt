@@ -1,0 +1,52 @@
+# 跟进上游 (rebase) 时, 这些文件冲突了就整份取 fork 的版本 (rebase 里是 --theirs, 即正在重放的 fork 提交那一侧).
+#
+# 只收 fork **整体重写**过的文件: 上游原文只剩一两成, 上游对它的改动针对的是我们已经换掉的那套实现, 合进来也没用.
+# 取 fork 版之后, 上游新代码里引用旧实现的地方编译会报错 —— 那一步照常手工处理, 这里只省掉文本冲突.
+# 每轮 rebase 后在 range-diff 里核对一遍; 发现上游在这些文件里修了我们也需要的东西, 从清单里拿掉这一项.
+#
+# 一行一个路径 (相对仓库根); # 开头是注释.
+
+# 登录换成直连 Bangumi OAuth (上游原文保留约 14%): 上游在这里做的是 Ani 账号 / GitHub 等第三方登录
+app/shared/app-data/src/commonMain/kotlin/domain/session/auth/OAuthClient.kt
+
+# 账号设置页换成 Bangumi 账号 (上游原文保留约 16%): 上游在这里做的是 Ani 账号的邮箱换绑、GitHub 绑定
+app/shared/ui-settings/src/commonMain/kotlin/ui/settings/account/ProfileGroup.kt
+
+# ---- 2026-10-04 按 dryrun 的冲突清单扩的, 每条都核过「上游对它的改动来自哪些提交」 ----
+
+# 账号体系: 上游这三条动它们都是 Ani 账号的事 (GitHub 登录 64c93f5668 / 邮箱换绑 522d06ae6a / 注销账号 cd0ad5ca8d),
+# fork 已整套换成 Bangumi 账号
+app/shared/ui-settings/src/commonMain/kotlin/ui/settings/account/ProfileViewModel.kt
+app/shared/app-data/src/commonMain/kotlin/data/repository/user/UserRepository.kt
+app/shared/ui-onboarding/src/commonMain/kotlin/ui/login/EmailLoginScreenLayout.kt
+
+# 收藏数据层换成直连 (fork 重写 86%): 上游动它是为了自家 TV flavor (64b111a62d) 与
+# 「列表封面用服务端下发的缩略图」(446e34ed5c) —— 后者直连没有服务端
+app/shared/app-data/src/commonMain/kotlin/data/repository/subject/SubjectCollectionRepository.kt
+
+# 推荐整条自己写的 (fork 重写 100%, 3100+ 行): 上游只动了 3 行 (「显示原名」09d482dec9)
+app/shared/app-data/src/commonMain/kotlin/data/network/RecommendationRepository.kt
+
+# 主题设置页按「只发 TV 包」清过 (fork 重写 71%): 上游动它是为了自家 TV flavor
+app/shared/ui-settings/src/commonMain/kotlin/ui/settings/tabs/theme/ThemePreferences.kt
+
+# BBCode 渲染 (fork 重写 60%): 上游动它是为了自家 TV flavor
+app/shared/ui-foundation/src/commonMain/kotlin/ui/richtext/BBCode.kt
+
+# BT 服务跨进程代理 (fork 重写 181%, 见 project-cache-delete-forensics): 上游动它是 OP/ED 预缓存 (2d62dfe12b),
+# 走的是我们已经换掉的那套句柄
+app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/proxy/TorrentFileHandleProxy.kt
+
+# 直连重新生成的 bangumi 模型 (spec 换过, 上游这一轮没动它们, 冲突来自生成目录整体换形)
+datasource/bangumi/src/commonMain/gen/me/him188/ani/datasources/bangumi/models/BangumiSubjectBookCategory.kt
+datasource/bangumi/src/commonMain/gen/me/him188/ani/datasources/bangumi/models/BangumiSubjectGameCategory.kt
+
+# 刻意**没有**收进来的 (查过, 整取会出事):
+#   - schemas/.../25.json 26.json: 两边各自把迁移链推到不同版本, 要写一个新迁移合并上游两步,
+#     见 project-upstream-rebase-hazards「数据库: 两边各自把 22 推到了 24」;
+#   - FindMatchingEpisodeOrNullTest.kt / SelectorMediaSourceEngineSelectMediaTest.kt: 上游动它们的是
+#     08e9411bfa, 那正是 fork 自己的 PR #3345 被上游合并 —— 这两个文件要取**上游**版, 同时 drop fork 的那条提交;
+#   - PlayerSkipOpEdState.kt: 上游的 OP/ED 预缓存 (2d62dfe12b) 正好改在这个文件里, 整取会把那个功能丢掉;
+#   - CommonKoinModule.kt / LibassExoPlayerMediampPlayer.kt / AniAppContent.kt / AppSettingsTab.kt /
+#     MediaProgressFramePreview.kt / VideoEnhancementController.android.kt 等 11 个: 上游有价值的修复
+#     (看过状态 outbox、黑屏修复、HLS 去广告、log-copy 闪退) 也改了它们, 必须人手合。

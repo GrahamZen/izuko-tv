@@ -20,6 +20,7 @@ import me.him188.ani.app.domain.mediasource.jsonapi.JsonApiTemplate.Escaping
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
+import me.him188.ani.datasources.api.util.namedGroup
 import me.him188.ani.utils.jsonpath.JsonPath
 import me.him188.ani.utils.jsonpath.compileOrNull
 import me.him188.ani.utils.jsonpath.resolveOrNull
@@ -312,7 +313,7 @@ internal class JsonApiEpisodeParser private constructor(
         val regex = matchSortFromName ?: return EpisodeSort(rawName)
         val match = regex.find(rawName) ?: return null
         val raw = try {
-            match.groups["ep"]?.value
+            match.namedGroup(regex, "ep")?.value
         } catch (_: IllegalArgumentException) {
             null
         } ?: match.value
