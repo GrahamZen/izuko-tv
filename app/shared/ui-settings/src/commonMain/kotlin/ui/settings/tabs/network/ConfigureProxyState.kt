@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.settings.tabs.network
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.graphics.Color
@@ -80,6 +81,8 @@ enum class ProxyTestCaseEnums {
     ANI,
     BANGUMI,
     BANGUMI_NEXT,
+    TMDB,
+    TMDB_IMAGE,
 }
 
 @Immutable
@@ -105,7 +108,23 @@ sealed class ProxyTestCase(
         icon = Icons.Default.BangumiNext,
         color = BangumiNextIconColor,
     )
+
+    data object TmdbApi : ProxyTestCase(
+        name = ProxyTestCaseEnums.TMDB,
+        icon = Icons.Default.Movie,
+        color = TmdbIconColor,
+    )
+
+    /** 图片 CDN 与接口分开: 两个域名在墙内各自独立被墙, 见 ServiceConnectionTesters.ID_TMDB_IMAGE. */
+    data object TmdbImage : ProxyTestCase(
+        name = ProxyTestCaseEnums.TMDB_IMAGE,
+        icon = Icons.Default.Movie,
+        color = TmdbIconColor,
+    )
 }
+
+/** TMDB 品牌色. */
+private val TmdbIconColor = Color(0x01, 0xB4, 0xE4)
 
 // region transform between ui ProxyUIConfig and data ProxySettings
 

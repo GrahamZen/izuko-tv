@@ -64,6 +64,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -113,6 +118,8 @@ import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
 import me.him188.ani.app.ui.lang.cache_management_delete_cache_confirmation
 import me.him188.ani.app.ui.lang.cache_management_delete_cache_title
+import me.him188.ani.app.ui.lang.cache_management_delete_summary
+import me.him188.ani.app.ui.lang.cache_management_delete_summary_item
 import me.him188.ani.app.ui.lang.cache_management_enter_selection_mode
 import me.him188.ani.app.ui.lang.cache_management_exit_selection
 import me.him188.ani.app.ui.lang.cache_management_invalid_cache_info
@@ -172,6 +179,7 @@ fun CacheManagementScreen(
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
 ) {
     val state by vm.stateFlow.collectAsStateWithLifecycle()
+    ForcedDarkTheme {
     CacheManagementScreen(
         state,
         selfInfo,
@@ -199,6 +207,7 @@ fun CacheManagementScreen(
             }
         },
     )
+    }
 }
 
 
@@ -217,12 +226,40 @@ fun CacheManagementScreen(
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
     detailPaneContent: (@Composable PaneScope.(group: CacheGroupState?, selectionState: CacheSelectionState) -> Unit)? = null,
 ) {
-    val appBarColors = AniThemeDefaults.topAppBarColors()
+    // appBarColors 派生出顶栏 / 总体统计块 / 筛选 stickyHeader 三处底色, 默认的
+    // surfaceContainerLowest 在浅色下是压在外壳背景上的白色矩形. 沉浸式外壳下统一改成外壳
+    // 背景色 (视觉上无边界); 不用透明 —— stickyHeader 需要不透明底盖住滚到其下的列表项.
+    val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
+    val immersiveShell = LocalAniUiBehavior.current.immersiveShell
+    val appBarColors = if (immersiveShell) {
+        val shellBackground = AniThemeDefaults.shellBackgroundColor
+        AniThemeDefaults.topAppBarColors().copy(
+            containerColor = shellBackground,
+            scrolledContainerColor = shellBackground,
+        )
+    } else {
+        AniThemeDefaults.topAppBarColors()
+    }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     val listState = rememberLazyListState()
     val cacheFilterState = rememberCacheFilterAndSortState()
     val selectionState = rememberCacheSelectionState()
+
+    // TV: 删除某条目时, 聚焦的是该条目行, 行被移出列表 -> 焦点丢失. 删除后把焦点落到 top bar
+    // 右上角按钮 (它始终存在). 用 pending 标志 + 等 entries 真正更新后再请求, 避免在列表更新前
+    // 请求 (那时行还在).
+    val topBarActionFocusRequester = remember { FocusRequester() }
+    var pendingTopBarFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(state.entries) {
+        if (pendingTopBarFocus) {
+            pendingTopBarFocus = false
+            if (focusDriven) {
+                withFrameNanos { }
+                runCatching { topBarActionFocusRequester.requestFocus() }
+            }
+        }
+    }
 
     val navigator = rememberListDetailPaneScaffoldNavigator<String>()
 
@@ -287,6 +324,7 @@ fun CacheManagementScreen(
     if (deleteSelectedCacheDialog) {
         DeleteActionDialog(
             onDismiss = { deleteSelectedCacheDialog = false },
+            summary = rememberCacheDeleteSummary(selectedEntries),
             onConfirm = {
                 selectionEntries.filter { it.cacheId in selectionState.selectedIds }
                     .forEach { onDelete(it) }
@@ -327,6 +365,7 @@ fun CacheManagementScreen(
                 scrollBehavior = scrollBehavior,
                 detailPaneTitle = if (isSinglePaneDetailVisible) currentViewingGroup?.subjectName else null,
                 onNavigateBackFromDetail = { tasker.launch { navigator.navigateBack() } },
+                actionFocusRequester = topBarActionFocusRequester,
             )
         },
         bottomBar = {
@@ -346,7 +385,8 @@ fun CacheManagementScreen(
                 )
             }
         },
-        containerColor = AniThemeDefaults.pageContentBackgroundColor,
+        // 沉浸式外壳: 透明, 透出外壳统一的全屏背景 (见 MainScreen); 其它平台维持原页面背景色
+        containerColor = if (immersiveShell) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { paddingValues ->
         val layoutDirection = LocalLayoutDirection.current
@@ -419,7 +459,12 @@ fun CacheManagementScreen(
                             onPlay = onPlay,
                             onResume = onResume,
                             onPause = onPause,
-                            onDelete = onDelete,
+                            // TV: 单条删除后该行被移除会丢焦点, 标记一下, 待 entries 更新后把
+                            // 焦点落到 top bar.
+                            onDelete = { entry ->
+                                onDelete(entry)
+                                pendingTopBarFocus = true
+                            },
                             onViewDetail = onViewDetail,
                             modifier = Modifier.fillMaxSize(),
                             singlePane = isSinglePane,
@@ -649,7 +694,27 @@ private fun CacheManagementTopBar(
     // 单栏布局显示详情栏时, 顶栏变为 "返回 + 条目名" (与条目缓存页一致); 多选模式优先.
     detailPaneTitle: String? = null,
     onNavigateBackFromDetail: () -> Unit = {},
+    /** TV: 绑到右上角 action 按钮的 FocusRequester. 由上层 hoist, 既用于切换选择模式后夺回焦点,
+     *  也用于删除条目后把焦点落到这里 (top bar 始终存在). */
+    actionFocusRequester: FocusRequester = remember { FocusRequester() },
 ) {
+    // TV: 切换选择模式会把整个 TopAppBar 换成另一套按钮 (if/else 两个不同的 AniTopAppBar), 原来
+    // 聚焦的右上角按钮被销毁 -> 焦点丢失. FocusRequester hoist 在上层 (不随 if/else 重建), 绑到
+    // 两个分支右上角的 action 按钮上; 模式切换后请求焦点回该按钮, 焦点就不会丢.
+    // 跳过首次组合, 避免进页面就抢焦点.
+    val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
+    var selectionModeSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(selectionMode) {
+        if (!focusDriven) return@LaunchedEffect
+        if (!selectionModeSeen) {
+            selectionModeSeen = true
+            return@LaunchedEffect
+        }
+        withFrameNanos { } // 等新分支布局完成再请求
+        runCatching { actionFocusRequester.requestFocus() }
+    }
+    val actionFocusModifier = if (focusDriven) Modifier.focusRequester(actionFocusRequester) else Modifier
+
     if (!selectionMode && detailPaneTitle != null) {
         AniTopAppBar(
             title = { AniTopAppBarDefaults.Title(detailPaneTitle) },
@@ -674,6 +739,7 @@ private fun CacheManagementTopBar(
                 IconButton(
                     onClick = onToggleSelectAll,
                     enabled = hasEntries,
+                    modifier = actionFocusModifier,
                 ) {
                     Icon(
                         if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
@@ -695,19 +761,25 @@ private fun CacheManagementTopBar(
                 IconButton(
                     onClick = onEnterSelection,
                     enabled = hasEntries,
+                    modifier = actionFocusModifier,
                 ) {
                     Icon(Icons.Default.Checklist, enterSelectionModeText)
                 }
             },
-            avatar = selfInfo?.let {
-                { recommendedSize ->
-                    SelfAvatar(
-                        state = it,
-                        onClick = onClickLogin,
-                        size = recommendedSize,
-                    )
-                }
-            } ?: { },
+            // TV: 头像由主页左侧边栏统一承载, 顶栏不再重复
+            avatar = if (focusDriven) {
+                { }
+            } else {
+                selfInfo?.let {
+                    { recommendedSize ->
+                        SelfAvatar(
+                            state = it,
+                            onClick = onClickLogin,
+                            size = recommendedSize,
+                        )
+                    }
+                } ?: { }
+            },
             colors = appBarColors,
             windowInsets = windowInsets,
             scrollBehavior = scrollBehavior,
@@ -748,12 +820,20 @@ object CacheManagementTestTags {
 internal fun DeleteActionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    summary: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(stringResource(Lang.cache_management_delete_cache_title)) },
-        text = { Text(stringResource(Lang.cache_management_delete_cache_confirmation)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Lang.cache_management_delete_cache_confirmation))
+                if (summary != null) {
+                    Text(summary, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
@@ -880,3 +960,26 @@ private fun PreviewCacheManagementScreen() {
         )
     }
 }
+
+/**
+ * 批量删除前那句明细: `将删除 10 项缓存` + 按作品分行的 `作品名（7 项）`.
+ *
+ * 按作品分行而不是一行列完: 电视上一行放不下几个中文剧名, 而"跨了几部作品"恰恰是这句话要传达的
+ * 关键信息 —— 用户以为只在删眼前这一部时, 多出来的那几行就是刹车. 超过 [MAX_TITLES] 部只列前几部
+ * 加省略号 (真到那个量级, "跨了很多部"这个事实已经传达到了).
+ */
+@Composable
+internal fun rememberCacheDeleteSummary(entries: List<CacheEpisodeState>): String? {
+    if (entries.isEmpty()) return null
+    val header = stringResource(Lang.cache_management_delete_summary, entries.size)
+    val byTitle = entries.groupBy { it.subjectName }
+    // 逐条取资源 (stringResource 只能在组合里调), 所以先在组合里把每一行拼好
+    val lines = byTitle.entries.take(MAX_DELETE_SUMMARY_TITLES).map { (title, list) ->
+        stringResource(Lang.cache_management_delete_summary_item, title, list.size)
+    }
+    val more = if (byTitle.size > MAX_DELETE_SUMMARY_TITLES) "\n…" else ""
+    return header + "\n" + lines.joinToString("\n") + more
+}
+
+/** 删除明细里最多列几部作品, 见 [rememberCacheDeleteSummary]. */
+private const val MAX_DELETE_SUMMARY_TITLES = 4

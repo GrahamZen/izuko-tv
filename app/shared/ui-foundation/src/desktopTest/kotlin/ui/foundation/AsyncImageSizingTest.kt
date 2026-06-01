@@ -106,7 +106,9 @@ class AsyncImageSizingTest {
                 }
 
                 assertTrue(successfulLoads.get() > initialSuccessfulLoads)
-                assertEquals(0L, sketch.memoryCache.size)
+                // fork 保留内存缓存 (上游禁用), 所以这里反过来断言"解码结果确实留下了".
+                // 上面那条断言仍然钉住了关键行为: 布局变大时按更大尺寸重新加载, 不是把小图升采样.
+                assertTrue(sketch.memoryCache.size > 0L)
             }
         } finally {
             sketch.shutdown()
