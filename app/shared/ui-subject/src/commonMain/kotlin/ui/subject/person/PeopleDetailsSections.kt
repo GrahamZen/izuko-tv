@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -60,9 +59,13 @@ import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.ImageViewer
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
+import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
+import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
+import me.him188.ani.app.ui.foundation.tv.tvFocusableCard
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.richtext.RichTextDefaults
 import me.him188.ani.app.ui.lang.Lang
@@ -89,6 +92,7 @@ import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RAT
 import me.him188.ani.app.ui.subject.details.components.SubjectCommentColumn
 import me.him188.ani.app.ui.subject.details.components.SubjectDetailsDefaults
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
+import me.him188.ani.app.ui.subject.details.sections.CommentsGridDialog
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.toPlainText
 import org.jetbrains.compose.resources.stringResource
@@ -306,11 +310,10 @@ internal fun PeopleSubjectCard(
     modifier: Modifier = Modifier,
     width: Dp = 96.dp,
 ) {
+    // 描边、内缩与"关掉涟漪焦点层"都只为遥控器示焦服务, 必须一起跟着形态走 —— 见 tvFocusableCard
+    val textInset = tvCardTextInset()
     Column(
-        modifier
-            .width(width)
-            .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick),
+        modifier.width(width).tvFocusableCard(onClick),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO).clip(MaterialTheme.shapes.small)) {
@@ -318,6 +321,7 @@ internal fun PeopleSubjectCard(
         }
         Text(
             subject.displayName,
+            Modifier.padding(horizontal = textInset),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -326,6 +330,7 @@ internal fun PeopleSubjectCard(
         if (caption != null) {
             Text(
                 caption,
+                Modifier.padding(horizontal = textInset),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -352,11 +357,10 @@ internal fun PeoplePortraitCard(
     width: Dp = PersonCastCardWidth,
     circleCrop: Boolean = false,
 ) {
+    // 描边与文字内缩一起跟着形态走, 同 [PeopleSubjectCard]
+    val textInset = tvCardTextInset()
     Column(
-        modifier
-            .width(width)
-            .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick),
+        modifier.width(width).tvFocusableCard(onClick),
         horizontalAlignment = if (circleCrop) Alignment.CenterHorizontally else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -381,6 +385,7 @@ internal fun PeoplePortraitCard(
         }
         Text(
             name,
+            Modifier.padding(horizontal = textInset),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -389,6 +394,7 @@ internal fun PeoplePortraitCard(
         if (caption != null) {
             Text(
                 caption,
+                Modifier.padding(horizontal = textInset),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -398,7 +404,12 @@ internal fun PeoplePortraitCard(
     }
 }
 
-/** 通用横滑条区块: 标题 (+可选 查看全部) + LazyRow 内容. */
+/**
+ * 通用横滑条区块: 标题 (+可选 查看全部) + 横滑内容.
+ *
+ * TV 上是锚位条 (聚焦卡停在行首, 入场不横跳), 见 [TvAnchoredStrip]; 手机形态不变.
+ * [itemContent] 的第二个参数必须挂到卡片的可聚焦节点上.
+ */
 @Composable
 internal fun <T : Any> PeopleStripSection(
     title: String,
@@ -406,7 +417,7 @@ internal fun <T : Any> PeopleStripSection(
     modifier: Modifier = Modifier,
     onViewAll: (() -> Unit)? = null,
     itemSpacing: Dp = 12.dp,
-    itemContent: @Composable (T) -> Unit,
+    itemContent: @Composable (T, Modifier) -> Unit,
 ) {
     if (items.itemCount == 0) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -415,11 +426,9 @@ internal fun <T : Any> PeopleStripSection(
         } else {
             SectionHeader(title)
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(itemSpacing)) {
-            items(items.itemCount) { i ->
-                val item = items[i] ?: return@items
-                itemContent(item)
-            }
+        TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
+            val item = items[i] ?: return@TvAnchoredStrip
+            itemContent(item, itemModifier)
         }
     }
 }
@@ -510,6 +519,8 @@ private fun PersonCommentPreviewItem(
  *
  * 编辑器 ([EditCommentSheet]) 挂在本 sheet 的内容里 (而不是页面级): 它是 Popup, 必须与本 sheet 处于同一窗口才能盖在上面.
  * 举报弹层则由页面级的 [PeopleCommentsHost] 承载.
+ *
+ * TV 上改为大号居中弹窗 (可导航的纯文本评论卡片网格, 确认键展开全文, 返回键关闭).
  */
 @Composable
 internal fun PersonCommentsSheet(
@@ -517,6 +528,21 @@ internal fun PersonCommentsSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 遥控器形态: 底部 sheet 够不着, 改成大号居中弹窗 (纯文本卡片网格, 确认键展开全文).
+    // 那条路没有编辑器/举报入口 —— 电视上不写评论.
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        val commentState = comments.commentState
+        val gridComments = commentState.list.collectAsLazyPagingItemsWithLifecycle()
+        CommentsGridDialog(
+            title = commentState.count?.takeIf { it > 0 }?.let {
+                stringResource(Lang.person_details_comments) + " · " + remember(it) { groupThousands(it) }
+            } ?: stringResource(Lang.person_details_comments),
+            comments = gridComments,
+            onDismissRequest = onDismissRequest,
+            showRating = false,
+        )
+        return
+    }
     val imageViewer = rememberImageViewerHandler()
     ModalBottomSheet(
         onDismissRequest,

@@ -56,15 +56,19 @@ class AniImageLoaderConfigurationTest {
         )
 
         try {
-            assertEquals(0L, sketch.memoryCache.maxSize)
-            assertEquals(0L, sketch.memoryCache.size)
-            assertEquals(100L * 1024L * 1024L, sketch.downloadCache.maxSize)
+            // fork 保留内存缓存 (上游禁用): 电视上遥控器来回走会反复重解码同一张全屏图.
+            // 仍然是有界的 —— sketch 默认 LRU 按可用堆的比例封顶.
+            assertTrue(sketch.memoryCache.maxSize > 0L)
+            assertEquals(0L, sketch.memoryCache.size) // 刚建好, 还没装东西
+            // fork 把下载缓存从上游的 100 MiB 提到 300 MiB (电视上还要缓存 backdrop 与分集剧照)
+            assertEquals(300L * 1024L * 1024L, sketch.downloadCache.maxSize)
             assertEquals(cacheDirectory.resolve("download"), sketch.downloadCache.directory)
             assertEquals(cacheDirectory.resolve("result"), sketch.resultCache.directory)
 
             val options = requireNotNull(sketch.globalImageOptions)
             assertEquals(CachePolicy.ENABLED, options.downloadCachePolicy)
-            assertEquals(CachePolicy.DISABLED, options.memoryCachePolicy)
+            assertEquals(CachePolicy.ENABLED, options.memoryCachePolicy) // fork 与上游不同, 见上
+
             assertEquals(CachePolicy.DISABLED, options.resultCachePolicy)
             assertIs<CrossfadeTransition.Factory>(options.transitionFactory)
 

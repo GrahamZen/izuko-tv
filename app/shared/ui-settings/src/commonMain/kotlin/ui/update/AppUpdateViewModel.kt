@@ -306,6 +306,16 @@ class NewVersion(
             .filterNot { it.isBlank() }
             .map { it.removePrefix("- ").removePrefix("* ") }
     }.take(4).toList()
+
+    /**
+     * 完整更新内容, 给详情弹窗用 (气泡上只放得下 [majorChanges] 那前几条).
+     *
+     * 落后多个版本时逐版列出, 每段前面加上版本号 —— 不然几十条堆在一起看不出哪条属于哪版.
+     */
+    val detailedChanges: String = changelogs.joinToString("\n\n") { changelog ->
+        if (changelogs.size > 1) "### ${changelog.version}\n${changelog.detailedChanges}"
+        else changelog.detailedChanges
+    }
 }
 
 @Immutable
@@ -314,14 +324,45 @@ class Changelog(
     val publishedAt: String,
     changes: String
 ) {
-    val changes = changes.lineSequence()
-        .filterNot {
-            it.startsWith("**Full Changelog**: ", ignoreCase = true)
-                    || it.startsWith("Full Changelog:", ignoreCase = true)
-        }
-        .joinToString("\n")
-        .trim()
+    /**
+     * 完整正文, **保留**小节标题 (`### 修复` 等) —— 详情弹窗按标题分段显示, 几十条更新才读得下去.
+     */
+    val detailedChanges: String = cleanReleaseBody(changes, keepSectionHeadings = true)
+
+    /** 条目正文, 不含小节标题 —— 更新气泡上只列前几条, 标题混在里面反而看不出哪条是更新内容. */
+    val changes: String = cleanReleaseBody(changes, keepSectionHeadings = false)
 }
+
+/**
+ * 把 GitHub release body 洗成可直接显示的正文.
+ *
+ * 两个调用方 ([Changelog.changes] 与 [Changelog.detailedChanges]) 只差"要不要留小节标题"一项,
+ * 其余四步 (截取、去 Full Changelog、去引用块、折叠空行) 完全相同 —— 原本是两条各自写死的管线,
+ * 结果去引用块那步只加进了其中一条, 另一条上线后才补.
+ *
+ * @param keepSectionHeadings true 保留 `### 修复` 这类小节标题; false 连标题一起丢掉只留条目.
+ */
+private fun cleanReleaseBody(body: String, keepSectionHeadings: Boolean): String = body
+    // 本 fork 的 release body 前半是下载链接表 (见 ci-helper/release-template.md),
+    // 真正的更新内容从 "## 本次更新" 标题开始; 没有该标题 (上游格式) 则原样使用
+    .substringAfter("## 本次更新", body)
+    .lineSequence()
+    .filterNot {
+        it.startsWith("**Full Changelog**: ", ignoreCase = true)
+                || it.startsWith("Full Changelog:", ignoreCase = true)
+    }
+    // 引用块只从**气泡**那份里丢: 气泡是逐行纯文本, 那一段带 markdown 链接
+    // (`> 遥控器使用说明, 见 [README](...)`) 显示出来就是一串方括号和网址.
+    // 详情弹窗那份留着 —— 它现在按 markdown 渲染 (见 NewVersionDetailsDialog), 引用块与链接
+    // 都画得出来, 而那一段恰恰是最该让人看到的说明
+    .filterNot { line ->
+        val trimmed = line.trimStart()
+        !keepSectionHeadings && (trimmed.startsWith(">") || trimmed.startsWith("#"))
+    }
+    .joinToString("\n")
+    // 删掉整行后留下的连续空行折叠成一个空行
+    .replace(Regex("\n{3,}"), "\n\n")
+    .trim()
 
 @TestOnly
 val TestNewVersion

@@ -53,13 +53,17 @@ import androidx.compose.material3.adaptive.navigation.ThreePaneScaffoldNavigator
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -85,6 +89,7 @@ import me.him188.ani.app.ui.adaptive.AdaptiveSearchBar
 import me.him188.ani.app.ui.adaptive.AniListDetailPaneScaffold
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.PaneScope
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.interaction.onEnterKeyEvent
@@ -93,7 +98,9 @@ import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.paneVerticalPadding
 import me.him188.ani.app.ui.foundation.layout.plus
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.foundation.preview.PreviewSizeClasses
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
@@ -117,6 +124,17 @@ fun SearchPage(
     contentWindowInsets: WindowInsets = AniWindowInsets.forPageContent(),
     navigationIcon: @Composable () -> Unit = {},
 ) {
+    // 沉浸式变体 (与沉浸式探索页共用同一开关, 关闭则回退下方默认布局)
+    val pageVariant = LocalSearchPageVariant.current
+    if (pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration) {
+        pageVariant.Page(
+            state = state,
+            onIntent = onIntent,
+            suggestionsPager = suggestionsPager,
+            modifier = modifier,
+        )
+        return
+    }
     val searchText = stringResource(Lang.exploration_search)
     val keywordText = stringResource(Lang.settings_mediasource_test_keyword)
     val backToTopText = stringResource(Lang.exploration_search_back_to_top)
@@ -126,11 +144,35 @@ fun SearchPage(
     var isSearchBarExpanded by rememberSaveable { mutableStateOf(false) }
     var layoutKind by rememberSaveable { mutableStateOf(SearchResultLayoutKind.COVER) }
     var editingQuery by rememberSaveable(state.query.keywords) { mutableStateOf(state.query.keywords) }
+    val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
+    val gridFocusRequester = remember { FocusRequester() }
+
+    // 焦点导航: 点击结果直接导航到全屏详情页 (不用左右两栏 —— 右侧详情栏难以聚焦交互);
+    // 从详情页返回时把焦点还给刚才点击的格子.
+    // tick 只在**重新回到栈顶**且有待恢复项时增加, 避免点击后离开页面前的重组把恢复状态消耗掉.
+    // 原先读的是页面 ON_RESUME, Nav3 下前进导航根本不发这个事件 (2026-08-22 改,
+    // 见 LocalPageIsForeground 的文档).
+    var focusRestoreIndex by rememberSaveable { mutableIntStateOf(-1) }
+    var focusRestoreTick by remember { mutableIntStateOf(0) }
+    if (focusDriven) {
+        OnReturnToForeground("search") {
+            if (focusRestoreIndex >= 0) focusRestoreTick++
+        }
+        // 进入页面时的初始焦点 (原先由左上角返回按钮提供, 该按钮在 TV 上已移除):
+        // 有结果时聚焦结果格子. 无结果或请求失败时不动作, 由 AniAppContent 的导航级
+        // 焦点兜底把焦点交给页面第一个可聚焦元素 (即搜索框).
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            if (focusRestoreIndex < 0) {
+                runCatching { gridFocusRequester.requestFocus() }
+            }
+        }
+    }
 
     LaunchedEffect(state.hasSelectedItem) {
         if (state.hasSelectedItem) {
             isSearchBarExpanded = false
-            focusManager.clearFocus(force = true)
+            if (!focusDriven) focusManager.clearFocus(force = true)
         }
     }
 
@@ -142,7 +184,8 @@ fun SearchPage(
 
     SearchPageListDetailScaffold(
         navigator = navigator,
-        hasSelectedItem = state.hasSelectedItem,
+        // 焦点导航不使用左右两栏: 结果格子占满全宽, 点击直接导航到全屏详情页.
+        hasSelectedItem = !focusDriven && state.hasSelectedItem,
         searchBar = {
             SearchPageSearchBar(
                 state = state,
@@ -151,10 +194,18 @@ fun SearchPage(
                 editingQuery = editingQuery,
                 onEditingQueryChange = { editingQuery = it },
                 expanded = isSearchBarExpanded,
-                onExpandedChange = { isSearchBarExpanded = it },
+                onExpandedChange = { expanded ->
+                    isSearchBarExpanded = expanded
+                    if (!expanded && focusDriven) {
+                        coroutineScope.launch {
+                            runCatching { gridFocusRequester.requestFocus() }
+                        }
+                    }
+                },
                 modifier = Modifier.padding(bottom = 16.dp),
                 placeholder = { Text(keywordText) },
                 windowInsets = contentWindowInsets.only(WindowInsetsSides.Horizontal),
+                focusDriven = focusDriven,
             )
         },
         searchResultColumn = {
@@ -179,7 +230,8 @@ fun SearchPage(
                     selectedItemIndex = { state.selectedItemIndex },
                     onSelect = { index ->
                         val item = items[index] ?: return@SearchResultColumn
-                        if (listDetailLayoutParameters.preferSinglePane) {
+                        if (focusDriven || listDetailLayoutParameters.preferSinglePane) {
+                            if (focusDriven) focusRestoreIndex = index
                             isSearchBarExpanded = false
                             onIntent(
                                 SearchPageIntent.OpenSubjectDetails(
@@ -213,6 +265,20 @@ fun SearchPage(
                             if (shouldAnimateScroll) {
                                 gridState.animateScrollToItem(index)
                             }
+                        }
+                    },
+                    onFocusItem = { index ->
+                        val item = items[index] ?: return@SearchResultColumn
+                        // 焦点导航没有右侧详情栏, 焦点移动不需要更新选中项 (也避免每次焦点移动都加载详情).
+                        if (!focusDriven && !listDetailLayoutParameters.preferSinglePane) {
+                            // Only update the selection (detail pane content); do NOT call
+                            // navigator.navigateTo here, which would trigger a layout change.
+                            onIntent(
+                                SearchPageIntent.SelectResult(
+                                    index = index,
+                                    item = item,
+                                ),
+                            )
                         }
                     },
                     onPlay = {
@@ -250,6 +316,10 @@ fun SearchPage(
                             )
                         }
                     },
+                    modifier = if (focusDriven) Modifier.focusRequester(gridFocusRequester) else Modifier,
+                    focusRestoreIndex = focusRestoreIndex,
+                    focusRestoreTick = focusRestoreTick,
+                    onFocusRestored = { focusRestoreIndex = -1 },
                     highlightSelected = !isSinglePane,
                     state = gridState,
                     layoutParams = SearchResultColumnLayoutParams.layoutParameters(
@@ -317,6 +387,7 @@ private fun SearchPageSearchBar(
     inputFieldModifier: Modifier = Modifier,
     windowInsets: WindowInsets = AniWindowInsets.forSearchBar(),
     placeholder: @Composable (() -> Unit)? = null,
+    focusDriven: Boolean = false,
 ) {
     var debouncedEditingQuery by remember { mutableStateOf(editingQuery) }
 
@@ -349,9 +420,15 @@ private fun SearchPageSearchBar(
                 onExpandedChange = onExpandedChange,
                 modifier = inputFieldModifier
                     .fillMaxWidth()
-                    .onFocusChanged { focusState ->
-                        if (!focusState.isFocused && expanded) {
-                            onExpandedChange(false)
+                    .run {
+                        // On TV focus moves from the input to the suggestion list via D-pad;
+                        // the input loses isFocused but the search bar should stay expanded.
+                        // On non-TV, losing focus (e.g. clicking elsewhere) should collapse it.
+                        if (focusDriven) this
+                        else onFocusChanged { focusState ->
+                            if (!focusState.isFocused && expanded) {
+                                onExpandedChange(false)
+                            }
                         }
                     }
                     .onEnterKeyEvent {

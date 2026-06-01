@@ -9,7 +9,20 @@
 
 package me.him188.ani.app.ui.cache.subject
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -38,15 +51,18 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
 import me.him188.ani.app.tools.toProgress
 import me.him188.ani.app.ui.cache.CacheManagementTestTags
 import me.him188.ani.app.ui.cache.components.CacheEpisodePaused
-import me.him188.ani.app.ui.cache.components.CacheEpisodeState
 import me.him188.ani.app.ui.cache.components.CacheSelectionToolbarTestTags
 import me.him188.ani.app.ui.cache.components.createTestCacheEpisode
+import me.him188.ani.app.ui.foundation.AniUiBehavior
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_management_episode_label
 import me.him188.ani.app.ui.lang.cache_management_selected_count
 import me.him188.ani.app.ui.lang.cache_management_select_all_action
+import me.him188.ani.app.ui.lang.cache_management_more_actions
+import me.him188.ani.app.ui.lang.cache_subject_cache
 import me.him188.ani.app.ui.lang.cache_subject_pause_all
 import me.him188.ani.app.ui.mediafetch.createTestMediaSourceInfoProvider
 import me.him188.ani.datasources.api.EpisodeSort
@@ -180,6 +196,72 @@ class SubjectCachePageTest {
             assertEquals(cachedEpisodes.map { it.cacheId }.toSet(), deletedIds)
         }
         onNodeWithText(runBlocking { getString(Lang.cache_management_selected_count, 3) }).assertDoesNotExist()
+    }
+
+    /**
+     * 遥控器上下遍历必须能停在**已缓存 / 下载中**的那一行上.
+     *
+     * 上游 d6dd9f245 重做缓存页之后, 一集有没有缓存决定它是哪一种行: 未缓存 -> [EpisodeNotCachedRow]
+     * (可聚焦的只有行尾那颗下载 IconButton); 已缓存 -> [CacheEpisodeRow] (整行是 clickable Surface,
+     * 里面又套着播放/更多两颗 IconButton). 后者这种"可聚焦容器里再套可聚焦子节点"的结构会被 Compose
+     * 的二维焦点搜索整行跳过 —— 真机 (Shield, 2026-08-23) 上按上下键从它的上一行直接跳到下一行,
+     * 那一行的播放/更多按钮永远拿不到焦点, 于是"按下载之后焦点就没了, 而且再也回不去".
+     *
+     * 宽度钉成 500dp 让网格只有一列, 否则 [androidx.compose.foundation.lazy.grid.GridCells.Adaptive]
+     * 会把相邻两集排到同一行, 下键就不是"到下一集"了.
+     */
+    @Test
+    fun `dpad down can stop on a cached row instead of skipping it`() = runAniComposeUiTest {
+        val scope = CoroutineScope(Dispatchers.Main)
+        lateinit var focusManager: FocusManager
+
+        setContent {
+            ProvideCompositionLocalsForPreview {
+                CompositionLocalProvider(
+                    LocalAniUiBehavior provides AniUiBehavior(focusDrivenNavigation = true),
+                ) {
+                focusManager = LocalFocusManager.current
+                SubjectCachePage(
+                    title = "葬送的芙莉莲",
+                    cacheListState = FakeEpisodeCacheListState(
+                        listOf(
+                            createEpisodeState(1, "未缓存的第一集", scope),
+                            createEpisodeState(16, "下载中的剧集", scope),
+                            createEpisodeState(3, "未缓存的第三集", scope),
+                        ),
+                    ),
+                    cachedEpisodes = listOf(inProgress),
+                    mediaSourceInfoProvider = createTestMediaSourceInfoProvider(),
+                    mediaSelectorSettingsProvider = { flowOf(MediaSelectorSettings.Default) },
+                    onPlay = {},
+                    onResume = {},
+                    onPause = {},
+                    onDelete = {},
+                    onViewDetail = {},
+                    onPauseAll = {},
+                    onResumeAll = {},
+                    modifier = Modifier.width(500.dp),
+                )
+                }
+            }
+        }
+
+        val cacheDesc = runBlocking { getString(Lang.cache_subject_cache) }
+        // 第一集与第三集未缓存, 各一颗下载按钮; 中间那集是已缓存行, 没有下载按钮
+        onAllNodesWithContentDescription(cacheDesc).assertCountEquals(2)
+
+        onAllNodesWithContentDescription(cacheDesc)[0].requestFocus()
+        waitForIdle()
+        onAllNodesWithContentDescription(cacheDesc)[0].assertIsFocused()
+
+        runOnIdle { focusManager.moveFocus(FocusDirection.Down) }
+        waitForIdle()
+
+        // 落到第三集的下载按钮上 = 中间整行被跳过了
+        onAllNodesWithContentDescription(cacheDesc)[1].assertIsNotFocused()
+        // 必须真的停在中间那一行的"更多"上 (TV 上一行只留这一个焦点落点), 而不是谁都没拿到
+        onNodeWithContentDescription(runBlocking { getString(Lang.cache_management_more_actions) })
+            .assertIsFocused()
     }
 
     private fun episodeLabel(sort: Int, title: String): String =

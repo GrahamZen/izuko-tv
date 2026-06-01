@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -56,6 +57,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.comment.CommentReportTargetType
 import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
+import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.parseMpvOptions
@@ -153,6 +155,7 @@ import me.him188.ani.app.ui.subject.episode.details.DanmakuListState
 import me.him188.ani.app.ui.subject.episode.details.DanmakuListStateProducer
 import me.him188.ani.app.ui.subject.episode.details.EpisodeCarouselState
 import me.him188.ani.app.ui.subject.episode.details.EpisodeDetailsState
+import me.him188.ani.app.ui.subject.episode.list.EpisodeListUiState
 import me.him188.ani.app.ui.subject.episode.statistics.DanmakuStatistics
 import me.him188.ani.app.ui.subject.episode.statistics.VideoStatistics
 import me.him188.ani.app.ui.subject.episode.statistics.VideoStatisticsCollector
@@ -198,6 +201,7 @@ import org.openani.mediamp.MediampPlayerFactory
 import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.chapters
 import org.openani.mediamp.metadata.Chapter
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -315,6 +319,33 @@ class EpisodeViewModel(
         settingsRepository.playerKernelConfig.flow,
         backgroundScope.coroutineContext,
     )
+
+    /**
+     * 上次**应用切后台**时是不是"正在播放而被自动暂停"的 —— 回到前台要不要自动恢复的依据.
+     * 只由 `AutoPauseEffect` (见 EpisodePage) 读写.
+     *
+     * 放在 VM 上而不是组合里: 保留会话的形态下 (见 `AniUiBehavior.retainPlaybackSession`)
+     * 退出播放页会销毁组合但本 VM 还活着, 存在组合里的话再进来必然是初值, 用户自己按的暂停
+     * 会被误恢复成播放. 初值 `true` 与原先那个 `rememberSaveable` 一致 (首次进页面也会尝试
+     * 恢复一次, 此时播放器还没有内容, 是空操作).
+     *
+     * **与 [autoPausedOffPage] 是两个维度, 必须分开记账** (2026-08-22): 那条管"播放页不在前台"
+     * (导航去了更深的页面, 或退出了播放页), 由 `RetainedPlaybackSessionHolder` 按导航状态维护.
+     * 共用一个字段的话两边会互相清账 —— 离开播放页那一下是 holder 先按下暂停, 本页随后收到的
+     * ON_STOP 看到的已经是"没在播", 按本条的语义它就该把标志清成 false, 顺手把 holder 记下的
+     * "回来要恢复"一起抹掉; 表现就是"从人物/条目全屏页返回后播放器停着不动".
+     *
+     * 只在按键/生命周期回调里读写, 不在组合里读, 因此是普通 var.
+     */
+    var autoPausedOnBackground: Boolean = true
+
+    /**
+     * 播放页离开前台 (导航去了别的页面, 或退出了播放页) 那一刻是不是"正在播放而被自动暂停"的
+     * —— 回到播放页要不要自动恢复的依据. 只由 `RetainedPlaybackSessionHolder` 读写 (第 2 条).
+     *
+     * 初值 `false`: 首次进页面没有"上一次的自动暂停"要还回去, 起播由流水线自己负责.
+     */
+    var autoPausedOffPage: Boolean = false
 
     /** `null` 表示本次播放尚未调整过倍速, 此时跟随配置. */
     private val playbackSpeedOverride = MutableStateFlow<Float?>(null)
@@ -506,6 +537,27 @@ class EpisodeViewModel(
             subjectDetailsStateLoader = SubjectDetailsStateLoader(subjectDetailsStateFactory, backgroundScope),
         )
     }
+
+    /**
+     * 分集列表 (TV 播放器的选集条用). `null` 表示还没到.
+     *
+     * 与详情页那份 [EpisodeListUiState] 用的是同一个算法, 区别只在数据来源: 这里走播放器自己的
+     * 数据路径 (播放会话的 info bundle), 那是起播的必经之路 —— 没有它连播哪一集都不知道,
+     * 因此它必然比 [EpisodeDetailsState.subjectDetailsStateLoader] 那套完整详情状态先到.
+     *
+     * 选集条原先直接读详情状态里的分集列表, 于是"能不能选集"被绑在了整套详情状态的组装上;
+     * 而那套东西在起播这一刻要跟种子引擎/解码器抢 CPU, 实测首次 Ok 的耗时波动在 88ms ~ 2.7 秒
+     * (与条目是否新鲜无关, 纯粹是 Dispatchers.Default 排队), 表现为按下键后选集条迟迟不出来.
+     * 详情状态仍然负责 TMDB 剧照/时长/简介那些增量信息 —— 它们没到只是卡片暂时无图, 不该
+     * 反过来卡住整条选集条的可用性.
+     *
+     * 不带详情页那份 minuteTicker: 少数"播放期间正好有新集开播"的情况下 `isBroadcast` 会偏旧,
+     * 代价只是那一张卡的未开播标记, 不值得为它每分钟重算一遍整个列表.
+     */
+    @OptIn(UnsafeEpisodeSessionApi::class)
+    val episodeListUiStateFlow: StateFlow<EpisodeListUiState?> = subjectCollectionFlow
+        .map { EpisodeListUiState.from(it, Clock.System.now()) }
+        .stateIn(backgroundScope, SharingStarted.Eagerly, null)
 
     /**
      * 剧集列表分页分组
@@ -846,6 +898,10 @@ class EpisodeViewModel(
         },
         videoLength = player.mediaProperties.mapNotNull { it?.durationMillis?.milliseconds }
             .produceState(0.milliseconds),
+        mode = settingsRepository.videoScaffoldConfig.flow
+            .map { it.effectiveSkipOpEdMode }
+            .distinctUntilChanged()
+            .produceState(SkipOpEdMode.AUTO),
     )
 
     private val matchingDanmakuProviderId = MutableStateFlow<DanmakuProviderId?>(null)
@@ -1122,11 +1178,11 @@ class EpisodeViewModel(
         // 跳过 OP 和 ED
         launchInBackground {
             settingsRepository.videoScaffoldConfig.flow
-                .map { it.autoSkipOpEd }
+                .map { it.effectiveSkipOpEdMode }
                 .distinctUntilChanged()
                 .debounce(1000)
-                .collectLatest { enabled ->
-                    if (!enabled) return@collectLatest
+                .collectLatest { mode ->
+                    if (mode == SkipOpEdMode.OFF) return@collectLatest
 
                     // 根据当前倍速调整采样间隔, 使其在媒体时间线上对应一秒.
                     val positionSamples = player.features[PlaybackSpeed]?.let { playbackSpeed ->
@@ -1147,8 +1203,15 @@ class EpisodeViewModel(
                         episodeIdFlow,
                         episodeCollectionsFlow,
                     ) { pos, id, collections ->
-                        // 不止一集并且当前是第一集时不跳过
-                        if (collections.size > 1 && collections.getOrNull(0)?.episodeId == id) return@combine
+                        // 不止一集并且当前是第一集时不跳过.
+                        // 只挡会自己动的那两档: 手动档不会自己动, 头一集把"跳过"按钮亮出来没有坏处.
+                        // 「自动+保留按钮」档在头一集是整档让路 (连按钮也不给), 与纯自动档一致 ——
+                        // 头一集的 OP 多半是第一次看, 本来就不该由我们插手.
+                        if (mode != SkipOpEdMode.MANUAL &&
+                            collections.size > 1 && collections.getOrNull(0)?.episodeId == id
+                        ) {
+                            return@combine
+                        }
                         if (!playbackAutomationGate.suppressed.value) playerSkipOpEdState.update(pos)
                     }.collect()
                 }
