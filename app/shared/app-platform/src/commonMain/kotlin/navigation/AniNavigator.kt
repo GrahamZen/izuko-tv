@@ -57,6 +57,10 @@ interface AniNavigator {
 
     /**
      * 入栈一个页面.
+     *
+     * **与栈顶完全相同的路由会被忽略**: 连按两下确定不该叠出两层一模一样的页面, 而 Navigation 3
+     * 里这尤其糟 —— 页面状态与 ViewModel 是按路由对象存的, 两条相同的路由共用同一份, 叠出来的
+     * 第二层既不是新页面, 又要多按一次返回才能退出去.
      */
     fun navigate(route: NavRoutes)
 
@@ -154,7 +158,7 @@ interface AniNavigator {
     }
 
     fun navigateSettings(tab: SettingsTab? = null) {
-        navigate(NavRoutes.Settings(tab))
+        navigateSingleInstance(NavRoutes.Settings(tab))
     }
 
     fun navigateSubjectSearch(search: NavRoutes.SubjectSearch = NavRoutes.SubjectSearch()) {
@@ -173,11 +177,11 @@ interface AniNavigator {
     }
 
     fun navigateTorrentPeerSettings() {
-        navigate(NavRoutes.TorrentPeerSettings)
+        navigateSingleInstance(NavRoutes.TorrentPeerSettings)
     }
 
     fun navigateCaches() {
-        navigate(NavRoutes.Caches)
+        navigateSingleInstance(NavRoutes.Caches)
     }
 
     fun navigateCacheDetails(cacheId: String) {
@@ -185,11 +189,11 @@ interface AniNavigator {
     }
 
     fun navigateSchedule() {
-        navigate(NavRoutes.Schedule)
+        navigateSingleInstance(NavRoutes.Schedule)
     }
 
     fun navigatePlaybackHistory() {
-        navigate(NavRoutes.PlaybackHistory)
+        navigateSingleInstance(NavRoutes.PlaybackHistory)
     }
 
     /**
@@ -198,6 +202,26 @@ interface AniNavigator {
     fun navigateBangumiMerge() {
         navigate(NavRoutes.BangumiMerge)
     }
+}
+
+/**
+ * **工具页的导航**: 栈里已经有同一个页面时, 先把它 (以及它之上的页面) 弹掉再压新的, 于是这类
+ * 页面在栈里**永远只有一份**.
+ *
+ * 用在"整个应用里概念上只有一个"的页面上 —— 设置、缓存管理、播放历史、时间表这些. 它们往往能从
+ * 很多地方跳进来 (动作面板在任何页面都唤得出来, 头像簇、侧边栏同理), 不去重就会一层层叠上去,
+ * 返回要按很多次才出得来 (用户 2026-08-19 实测: 在设置页反复用面板的「代理设置」).
+ * `navigate` 那条"与栈顶相同则忽略"拦不住它们: 每次跳的参数可能不同 (设置的 tab), 路由就不相等.
+ *
+ * **条目详情/人物/搜索结果这类内容页不适用**: 甲 → 相关条目 → 乙 → 相关条目 → 甲 是正常的浏览
+ * 路径, 去重会把用户预期能一路退回去的历史吃掉.
+ *
+ * 判据是**路由的类型**而不是相等: 设置页跳不同 tab 时两个路由并不相等, 但它们是同一个页面.
+ */
+private fun AniNavigator.navigateSingleInstance(route: NavRoutes) {
+    backStack.lastOrNull { it::class == route::class }
+        ?.let { popBackStack(it, inclusive = true) }
+    navigate(route)
 }
 
 fun AniNavigator(): AniNavigator = AniNavigatorImpl()
@@ -220,7 +244,10 @@ private class AniNavigatorImpl : AniNavigator {
     override suspend fun awaitBackStack(): List<NavRoutes> = _backStack.filterNotNull().first()
 
     override fun navigate(route: NavRoutes) {
-        currentBackStack.add(route)
+        val stack = currentBackStack
+        // 见接口文档: 与栈顶一模一样的路由不入栈
+        if (stack.lastOrNull() == route) return
+        stack.add(route)
     }
 
     override fun popBackStack() {
@@ -256,6 +283,9 @@ private class AniNavigatorImpl : AniNavigator {
         val stack = currentBackStack
         val firstMain = stack.indexOfFirst { it is NavRoutes.Main }
         if (firstMain != -1) {
+            // 弹回不会重建主页, 路由参数 initialPage 不会重新生效 —— 要切的 tab 走这条通路
+            // 告诉主页 (见 MainPageRequest 的文档: Nav3 的栈里没有可挂东西的 entry)
+            MainPageRequest.pending = mainSceneInitialPage
             stack.popTo(firstMain + 1)
             return
         }
