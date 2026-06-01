@@ -95,7 +95,8 @@
                 android:enabled="true"
                 android:exported="false"
                 android:foregroundServiceType="dataSync"
-                android:process=":torrent_service" />
+                android:process=":torrent_service"
+                tools:targetApi="27" />
 
         <!-- No android:process: the PikPak engine runs in the app process and this service exists
              to keep that process running. -->

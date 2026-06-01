@@ -109,4 +109,51 @@ class PickInstallableApksTest {
         val renamed = listOf(asset("ani-6.0.1.apk"))
         assertEquals(renamed.names(), renamed.pickInstallableApks(listOf("arm64-v8a")).names())
     }
+
+    // 带 Android 7.1 兼容包的 release, 仍按 GitHub 的文件名序: 注意 legacy-universal 排在 universal 前面
+    private val releaseWithLegacy = listOf(
+        asset("ani-6.0.6-arm64-v8a.apk"),
+        asset("ani-6.0.6-armeabi-v7a.apk"),
+        asset("ani-6.0.6-legacy-arm64-v8a.apk"),
+        asset("ani-6.0.6-legacy-armeabi-v7a.apk"),
+        asset("ani-6.0.6-legacy-universal.apk"),
+        asset("ani-6.0.6-universal.apk"),
+        asset("ani-6.0.6-x86_64.apk"),
+    )
+
+    @Test
+    fun `legacy device only gets legacy packages`() {
+        // Android 7.1: 正式包 minSdk 27 装不上 (INSTALL_FAILED_OLDER_SDK), 必须挑 -legacy- 那族
+        assertEquals(
+            listOf("ani-6.0.6-legacy-arm64-v8a.apk", "ani-6.0.6-legacy-universal.apk"),
+            releaseWithLegacy.pickInstallableApks(listOf("arm64-v8a", "armeabi-v7a", "armeabi"), legacy = true).names(),
+        )
+    }
+
+    @Test
+    fun `normal device never gets legacy packages`() {
+        assertEquals(
+            listOf("ani-6.0.6-arm64-v8a.apk", "ani-6.0.6-universal.apk"),
+            releaseWithLegacy.pickInstallableApks(listOf("arm64-v8a", "armeabi-v7a", "armeabi")).names(),
+        )
+    }
+
+    @Test
+    fun `normal device universal fallback skips legacy-universal`() {
+        // 只靠 universal 兜底的设备 (纯 x86): 文件名序里 legacy-universal 在 universal 前面,
+        // 不按标记切开就会把兼容包 (回填实现) 发给正常设备
+        assertEquals(
+            listOf("ani-6.0.6-universal.apk"),
+            releaseWithLegacy.pickInstallableApks(listOf("x86")).names(),
+        )
+    }
+
+    @Test
+    fun `legacy device gets nothing from a release without legacy packages`() {
+        // 兼容包之前的 release: 正式包装不上, 退回去只会换来安装失败, 交空列表让调用方不提示
+        assertEquals(
+            emptyList(),
+            releaseAssets.pickInstallableApks(listOf("arm64-v8a", "armeabi-v7a", "armeabi"), legacy = true).names(),
+        )
+    }
 }

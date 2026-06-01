@@ -27,40 +27,27 @@ ani.dandanplay.app.secret=aaaaaaaaaaaaaaa
 
 在 IDE 上也可以选择 `Build -> Build Bundle(s) / APK(s) -> Build APK(s)` 来构建 APK。
 
-### Android TV
+### Baseline profile
 
-TV 文件放在对应共享模块的 `src/androidTv/kotlin` 与 `src/androidTvTest/kotlin`，
-由独立的 `ani.kmp-compose` 子模块分别作为 `androidMain` / `androidHostTest` 编译。
-功能子模块位于 `ui-xxx/tv`，主壳子模块位于 `app/shared/shared-tv`。
-例如 `:app:shared:ui-episode-tv` 依赖原 KMP 模块 `:app:shared:ui-episode`，
-编译后者目录下的 TV 文件；原 KMP 模块不编译 TV 文件。
+`app/android/src/main/baseline-prof.txt` 列出我们自己代码里需要提前编译（AOT）的类，打包时与 Compose 等库自带的规则
+一起合并进 APK（`assets/dexopt/baseline.prof`）。侧载安装的应用装完是未编译状态（`adb shell dumpsys package dexopt`
+里是 `verify`），解释执行比编译后慢 3~5 倍；应用第一次启动时 `profileinstaller` 把这些规则交给系统，系统下一次后台编译
+（设备空闲时的 bg-dexopt）就会编译整套启动、浏览和播放的代码，而不只是用户恰好用过的那部分。
 
-应用通过 `tvImplementation(projects.app.shared.tv)` 引入 TV 主壳及各功能子模块。
-手机不引入 TV 代码与 `tv-material`，TV 仍能复用共享 Android 代码。
-两个应用 flavor 始终可用，无需构建开关，通过任务名选择 APK：
+规则按包和类写通配，日常改代码不需要重新生成。页面结构大改之后可以在真机上重新录制一次：
 
-```shell
-./gradlew :app:android:assembleDefaultDebug
-./gradlew :app:android:assembleTvDebug
-# 同一次调用构建两个 APK
-./gradlew :app:android:assembleDefaultDebug :app:android:assembleTvDebug
-```
+1. 在测试机上装 release 包，执行 `adb shell cmd package compile -m verify -f <包名>` 回到未编译状态。
+   ART 只在解释执行时记录用到的方法，所以一定要先回到 `verify`。
+2. 冷启动，把首页、详情页、新番时间表、搜索、播放页（包括换源）都走一遍。
+3. 执行 `adb shell cmd package dump-profiles <包名>`，再 `adb pull /data/misc/profman/<包名>-primary.prof.txt`。
+4. 执行 `uv run python scripts/baseline-profile/gen-rules.py <导出的记录> <测试机上装的那个 APK>`，脚本直接改写
+   `baseline-prof.txt`。
 
-Release 分别使用 `assembleDefaultRelease` 与 `assembleTvRelease`，也可以在同一次调用中构建。
-`assembleDebug` 和 `assembleRelease` 会构建两种 flavor。
+生成规则时，一个包里用到过的字节码超过三成就整包收录，否则只收录用到过的类（连同内部类）；类名以 `Tv` 开头的 TV
+界面全部收录。打包时通配规则先按混淆前的类名展开，R8 生成的合成类（`me.him188.ani.r8`）由 R8 按规则里的原方法自动带上。
 
-在 IDE 的 Build Variants 中选择 `defaultDebug` 或 `tvDebug` 即可切换手机和 TV 应用。
-
-TV 单元测试由四个子模块的 `testAndroidHostTest` 运行：
-
-```shell
-./gradlew :app:shared:tv:testAndroidHostTest \
-  :app:shared:ui-foundation-tv:testAndroidHostTest \
-  :app:shared:ui-episode-tv:testAndroidHostTest \
-  :app:shared:ui-subject-tv:testAndroidHostTest
-```
-
-父 KMP 模块的 `testAndroidHostTest` 继续测试共享代码，不包含 TV 测试。
+验证：装包后冷启动一次（logcat 有 `ProfileInstaller: Installing profile`），`adb shell cmd package dump-profiles <包名>`
+导出的记录里应当已经有没打开过的页面的类；`adb shell cmd package compile -m speed-profile -f <包名>` 可以模拟系统的后台编译。
 
 ## 打包 iOS APP
 

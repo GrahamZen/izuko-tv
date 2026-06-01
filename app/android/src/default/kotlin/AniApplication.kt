@@ -66,7 +66,6 @@ import org.openani.mediamp.ffmpeg.FFmpegKit
 import java.io.File
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
-import java.nio.file.Paths
 import kotlin.uuid.ExperimentalUuidApi
 
 
@@ -140,7 +139,7 @@ class AniApplication : Application() {
 
         scope.launch(Dispatchers.IO_) {
             runCatching {
-                JvmLogHelper.deleteOldLogs(Paths.get(logsDir))
+                JvmLogHelper.deleteOldLogs(File(logsDir))
             }.onFailure {
                 Log.e("AniApplication", "Failed to delete old logs", it)
             }
@@ -201,7 +200,10 @@ class AniApplication : Application() {
             anitorrentMediaIds,
         ) { entities, ids -> entities.filter { it.mediaId in ids } }
         mediaCacheBaseSaveDir.value = File(koin.get<MediaSaveDirProvider>().saveDir)
-        connectionManager.launchCheckLoop()
+        // 27 以下 BT 引擎跑在应用进程内, 没有独立进程服务可连, 不启动这个循环 (否则它会去起服务).
+        if (supportsTorrentServiceProcess) {
+            connectionManager.launchCheckLoop()
+        }
 
         // The BT service above runs in :torrent_service and does nothing for this process, so PikPak
         // caches get their own foreground service here.
@@ -270,6 +272,8 @@ class AniApplication : Application() {
      * 全是上游代码), 值得另开一条给上游.
      */
     private fun startAniTorrentService(): ComponentName? {
+        // 只在 supportsTorrentServiceProcess 为 true 时才会被调用 (见 launchCheckLoop 处), 这里只是兜底.
+        if (!supportsTorrentServiceProcess) return null
         val intent = buildAniTorrentServiceIntent()
         // STARTED = 至少有一个 Activity 可见, 正是后台启动限制放行的那个状态
         if (ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
@@ -296,6 +300,8 @@ class AniApplication : Application() {
     }
 
     private fun stopService() {
+        // 27 以下压根没启动过这个服务
+        if (!supportsTorrentServiceProcess) return
         startService(
             Intent(this, AniTorrentService.actualServiceClass)
                 .apply { putExtra(AniTorrentService.INTENT_STOP_EXTRA, true) },
