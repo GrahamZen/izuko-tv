@@ -253,7 +253,8 @@ class MediaSelectorFilterSortAlgorithm {
                 // 条目名称可能是上述后者简化的形式, 但数据源的结果是前者完整版的形式
                 // 额外判断一次简化的名称可以正确地排除掉类似这种情况的其他季度的资源.
                 if (seriesSubjectNames.names.isNotEmpty()) {
-                    val mediaSubjectNameSeasonSimplified = mediaSubjectName.replace(SEASON_TAILING, $$"${season}")
+                    // 替换串用序号: 按名字引用 ${season} 要 Android 8.0 起才认 (7.1 兼容包)
+                    val mediaSubjectNameSeasonSimplified = mediaSubjectName.replace(SEASON_TAILING, "\$1")
                     val seriesName = seriesSubjectNames.firstEqualOrNull(
                         normalizedMediaSubjectName,
                         MediaListFilters.normalizeForCompare(mediaSubjectNameSeasonSimplified),
