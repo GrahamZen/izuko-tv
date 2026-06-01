@@ -16,7 +16,7 @@ android {
     namespace = "me.him188.ani.app.data.aidl"
     defaultConfig {
         compileSdk = getIntProperty("android.compile.sdk")
-        minSdk = getIntProperty("android.min.sdk")
+        minSdk = androidMinSdk
     }
     buildFeatures {
         aidl = true

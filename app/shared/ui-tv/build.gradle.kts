@@ -45,7 +45,7 @@ kotlin {
     android {
         namespace = "me.him188.ani.app.tv"
         compileSdk = getIntProperty("android.compile.sdk")
-        minSdk = getIntProperty("android.min.sdk")
+        minSdk = androidMinSdk
         androidResources.enable = true
 
         // 同 ani.kmp-library: :utils:build-config 按分发渠道分了 default / tv 两个变体, 库模块一律取 default
@@ -63,7 +63,7 @@ kotlin {
             sourceSetTreeName = KotlinSourceSetTree.test.name
         }.configure {
             targetSdk {
-                release(getIntProperty("android.min.sdk"))
+                release(androidMinSdk)
             }
             instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
             instrumentationRunnerArguments["runnerBuilder"] = "de.mannodermaus.junit5.AndroidJUnit5Builder"

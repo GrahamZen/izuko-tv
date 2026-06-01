@@ -24,5 +24,5 @@ internal actual fun currentPlatformImpl(): Platform {
         "x86_64" -> Arch.X86_64
         else -> Arch.ARMV8A
     }
-    return Platform.Android(arch, isTv, supportedAbis = abis)
+    return Platform.Android(arch, isTv, supportedAbis = abis, sdkInt = Build.VERSION.SDK_INT)
 }

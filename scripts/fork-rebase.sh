@@ -6,9 +6,20 @@
 # 把 main 挪到正确位置, 不必"先 rebase main, 再记住旧 main 的 SHA 去 --onto" (那一步记错
 # 一次就得从备份重来).
 #
-#   ./scripts/fork-rebase.sh preflight          # 探这次会在哪打架, 不动任何东西
-#   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放
+#   ./scripts/fork-rebase.sh preflight          # 探这次会在哪打架 + 算要解多少次, 不动任何东西
+#   ./scripts/fork-rebase.sh dryrun             # 在内存里整栈重放一遍, 报告自动规则处理完还剩多少要人手 (不动任何东西)
+#   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放; 停下来时先自动处理机械冲突
+#   ./scripts/fork-rebase.sh continue           # 手工解完一处后: 再自动处理 + 继续, 直到下一处要人手的冲突
 #   ./scripts/fork-rebase.sh verify             # 逐条对照重放前后, 看哪条被上游改了
+#
+# 自动规则 (只处理结果唯一的冲突, 其余照旧停下来给人):
+#   - 目录改名 (如上游把 src/main 挪到 src/default): merge.directoryRenames=true, 跟着挪;
+#   - strings.xml: 按 key 三方合并 (scripts/rebase/merge-android-strings.py), 行挨着改不再算冲突;
+#   - fork 删掉的文件被上游改了: 保持删除;
+#   - scripts/rebase/take-fork.txt 里 fork 整体重写过的文件: 整份取 fork 版;
+#   - .kt 里每个冲突块都只是「两侧各自新增」或「两侧只动了 import」: 取并集 (scripts/rebase/union_resolve.py,
+#     需要 diff3 风格的冲突标记, 重放时带 merge.conflictStyle=diff3).
+# 驱动与属性装在本地 (.git/config 与 .git/info/attributes), 不改仓库文件; 用到它们的子命令都会先装一遍.
 #
 # fork 内部 (feat/* 追 main, 不涉及上游):
 #
@@ -28,6 +39,8 @@
 #
 # 环境变量: UPSTREAM (默认 upstream/main), TIP (默认当前分支)
 set -euo pipefail
+# git status --porcelain / diff --name-only 给的是相对仓库根的路径, 脚本里的相对路径也都按仓库根写
+cd "$(git rev-parse --show-toplevel)"
 
 UPSTREAM="${UPSTREAM:-upstream/main}"
 TIP="${TIP:-$(git rev-parse --abbrev-ref HEAD)}"
@@ -41,6 +54,70 @@ NOTE_FILE=".git/fork-rebase-$STAMP.env"
 
 hr() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+# 规则文件 (take-fork 清单、并集与 strings.xml 合并的两个脚本) 都是 fork 自己加的, 重放到加它们的那条提交之前
+# 工作树里还没有 —— 按工作树里的相对路径读, 前几十条重放时 take-fork / 并集规则会跳过, strings.xml 的合并驱动
+# 直接失败退化成冲突。所以一律从被重放的 fork 栈顶取一份放进 .git 里用 (栈顶那份也正是最新的规则);
+# 合并驱动由 git 在各 worktree 里调起, 用绝对路径.
+RULES_DIR="$(git rev-parse --path-format=absolute --git-common-dir)/fork-rebase-rules"
+refresh_rules() {
+    local src f rd
+    rd=$(git rev-parse --git-path rebase-merge)
+    if [ -f "$rd/orig-head" ]; then src=$(cat "$rd/orig-head"); else src=HEAD; fi
+    mkdir -p "$RULES_DIR"
+    for f in take-fork.txt union_resolve.py merge-android-strings.py; do
+        git show "$src:scripts/rebase/$f" > "$RULES_DIR/$f" 2>/dev/null || rm -f "$RULES_DIR/$f"
+    done
+}
+
+# 自动规则里需要本地配置的部分: strings.xml 的合并驱动 + 属性; rerere
+install_rules() {
+    refresh_rules
+    git config merge.android-strings.name "Android strings.xml 按 key 三方合并"
+    git config merge.android-strings.driver "uv run --no-project python \"$RULES_DIR/merge-android-strings.py\" %O %A %B %P"
+    local attrs; attrs="$(git rev-parse --git-common-dir)/info/attributes"
+    local rule='**/res/values*/strings.xml merge=android-strings'
+    mkdir -p "$(dirname "$attrs")"
+    grep -qsxF -- "$rule" "$attrs" || echo "$rule" >> "$attrs"
+    git config rerere.enabled true
+    git config rerere.autoUpdate true   # 认得出的冲突自动解并入暂存区
+}
+
+rebase_in_progress() {
+    [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]
+}
+
+# **别再加「用整树合并的结果解冲突」这条规则** (2026-10-01 加过, 10-04 量完删了):
+# 想法是「重放到第 k 条时正确的树 ≡ merge(上游, fork@k)」, 用 git merge-tree 整个算出来, 当前冲突的文件
+# 只要在整树合并里不冲突就直接取。实测对这个 fork **一处都省不下**: dryrun 报的 135 处要人手的冲突, 逐个去查
+# merge-tree(上游, fork@k) 对同一文件的结果, **135 处全都同样冲突**。原因是整树合并把 fork 的全部改动塞到
+# 一侧, 同一文件上改动的 hunk 更多, 只会更容易冲突, 不会更宽容。
+# 而且它是个陷阱: fork@k 里仍然含有被 drop 的提交, 这条规则会把 drop 掉的内容带回来。
+
+# 按自动规则处理当前停下来的冲突; 处理不了的原样留着
+auto_resolve() {
+    local p
+    # UD = deleted by them: rebase 里 them 是正在重放的 fork 提交 —— fork 删了、上游改了, 保持删除
+    git status --porcelain=v1 | awk '$1 == "UD" { sub(/^UD /, ""); print }' | while IFS= read -r p; do
+        git rm -q -- "$p" >/dev/null && echo "  自动: fork 删掉的保持删除  $p"
+    done
+    # fork 整体重写过的文件: 整份取 fork 版 (rebase 里 fork 那一侧是 --theirs); 清单取自栈顶, 见 refresh_rules
+    if [ -f "$RULES_DIR/take-fork.txt" ]; then
+    git diff --name-only --diff-filter=U | while IFS= read -r p; do
+        if grep -v '^[[:space:]]*#' "$RULES_DIR/take-fork.txt" | grep -qxF -- "$p"; then
+            git checkout -q --theirs -- "$p" && git add -- "$p" && echo "  自动: 整份取 fork 版      $p"
+        fi
+    done
+    fi
+    # 两侧只是各自新增 / 只动了 import: 取并集 (解不开的原样留着)
+    # 只处理 UU (两侧都改了); AA (两侧都新建了同名文件) 拼起来会重复定义, 留给人
+    [ -f "$RULES_DIR/union_resolve.py" ] || return 0
+    git status --porcelain=v1 -- '*.kt' | awk '$1 == "UU" { sub(/^UU /, ""); print }' | while IFS= read -r p; do
+        if uv run --no-project python "$RULES_DIR/union_resolve.py" "$p"; then
+            git add -- "$p" && echo "  自动: 两侧各自新增, 取并集 $p"
+        fi
+    done
+}
 
 require_clean() {
     [ -z "$(git status --porcelain --untracked-files=no)" ] || die "工作区不干净, 先提交或 stash"
@@ -97,6 +174,31 @@ cmd_preflight() {
             grep -oE 'version = [0-9]+' | head -1 || echo "?"
     done
 
+    hr "这趟要解多少次冲突"
+    local taxfile tax cells free c n total
+    taxfile=$(mktemp)
+    comm -12 <(git diff --name-only "$mb" "$TIP" | sort)              <(git diff --name-only "$mb" "$UPSTREAM" | sort) > "$taxfile"
+    tax=$(wc -l < "$taxfile" | tr -d ' ')
+    cells=0; free=0; total=0
+    for c in $(git rev-list "$mb".."$TIP"); do
+        total=$((total + 1))
+        n=$(git show --name-only --format= "$c" | sed '/^$/d' | sort -u |
+            comm -12 - "$taxfile" | wc -l | tr -d ' ')
+        cells=$((cells + n))
+        if [ "$n" -eq 0 ]; then free=$((free + 1)); fi
+    done
+    rm -f "$taxfile"
+
+    echo "  两边都改的文件            $tax 个"
+    echo "  「提交 x 税文件」格子     $cells  (逐条重放最坏要碰这么多次)"
+    echo "  ↑ 这是上限, 不是实数: 真实冲突数跑 dryrun 看 (2026-10-04 实测 496 格里只有 210 处真冲突)"
+    echo "  碰不到税文件的提交        $free / $total 条 (重放必然零冲突)"
+
+    hr "上游已经有等价补丁的 fork 提交 (重放时会自动空掉)"
+    git cherry "$UPSTREAM" "$TIP" 2>/dev/null | grep '^-' | sed 's/^- /  /' |
+        while read -r c; do git log -1 --format='  %h %s' "$c"; done || true
+    git cherry "$UPSTREAM" "$TIP" 2>/dev/null | grep -q '^-' || echo "  (无)"
+
     hr "范围内的分支 ref (rebase 会把它们一起挪走)"
     branches_in_range "$mb" | sed 's/^/  /' || true
     echo "  ↑ 有的话先转成 tag: git tag <名字> <分支> && git branch -D <分支>"
@@ -119,14 +221,56 @@ $stray
     { echo "OLD_MB=$mb"; echo "OLD_TIP=$TAG_TIP"; echo "OLD_MAIN=$TAG_MAIN"; } > "$NOTE_FILE"
     echo "备份: $TAG_TIP / $TAG_MAIN  (记在 $NOTE_FILE)"
 
-    git config rerere.enabled true
-    git config rerere.autoUpdate true   # 认得出的冲突自动解并入暂存区
+    install_rules
 
     hr "一趟重放 $(git rev-list --count "$mb".."$TIP") 条到 $UPSTREAM"
-    echo "冲突时: 解完 git add, 然后 git rebase --continue; 放弃用 git rebase --abort"
-    git rebase --update-refs --onto "$UPSTREAM" "$mb" "$TIP"
+    echo "停在要人手的冲突时: 解完 git add, 然后 ./scripts/fork-rebase.sh continue; 放弃用 git rebase --abort"
+    if git -c merge.directoryRenames=true -c merge.conflictStyle=diff3 rebase --update-refs --onto "$UPSTREAM" "$mb" "$TIP"; then
+        hr "完成; 接着跑 verify"
+    else
+        rebase_in_progress || die "rebase 没有开始, 看上面 git 的报错"
+        cmd_continue
+    fi
+}
 
-    hr "完成; 接着跑 verify"
+# 自动处理 + 继续, 直到重放完或遇到要人手的冲突
+cmd_continue() {
+    rebase_in_progress || die "当前没有进行中的 rebase"
+    install_rules
+    local last=""
+    while rebase_in_progress; do
+        auto_resolve
+        local left; left=$(git diff --name-only --diff-filter=U)
+        if [ -n "$left" ]; then
+            local stopped; stopped=$(cat "$(git rev-parse --git-path rebase-merge)/stopped-sha" 2>/dev/null || echo HEAD)
+            hr "要人手的冲突 ($(git log -1 --format='%h %s' "$stopped"))"
+            echo "$left" | sed 's/^/  /'
+            echo "解完 git add, 然后再跑 ./scripts/fork-rebase.sh continue"
+            return 1
+        fi
+        # todo 里插的 exec 失败时也停在这里且没有冲突, 直接 continue 会把它跳过去
+        local lastcmd; lastcmd=$(grep -v '^#' "$(git rev-parse --git-path rebase-merge)/done" 2>/dev/null | tail -1)
+        case "$lastcmd" in
+            exec\ *|x\ *)
+                die "todo 里的 exec 没跑通: ${lastcmd#* }
+  手工补上它要做的事 (或确认不需要), 再跑一次 git rebase --continue, 之后接着用本脚本" ;;
+        esac
+        local here; here=$(git rev-parse HEAD)
+        # 连着两次原地不动 (不是冲突、是别的原因停下) 就交给人, 免得死循环
+        if [ "$here" = "$last" ]; then
+            git status --short | head -20
+            die "rebase 停在 $(git log -1 --format='%h %s' HEAD) 之后且没有可自动处理的冲突, 看上面的状态手工处理"
+        fi
+        last=$here
+        GIT_EDITOR=true git -c merge.directoryRenames=true -c merge.conflictStyle=diff3 rebase --continue || true
+    done
+    hr "重放完成; 接着跑 verify"
+}
+
+cmd_dryrun() {
+    install_rules
+    git fetch upstream --quiet
+    uv run --no-project python scripts/rebase/dryrun.py --onto "$UPSTREAM" --tip "$TIP"
 }
 
 cmd_verify() {
@@ -282,11 +426,14 @@ EOF
 }
 
 case "${1:-}" in
+    install)      install_rules; echo "已装好自动规则 (strings.xml 合并驱动 / 属性 / rerere)" ;;
     preflight)    cmd_preflight ;;
+    dryrun)       cmd_dryrun ;;
     run)          cmd_run ;;
+    continue)     cmd_continue ;;
     verify)       cmd_verify ;;
     stack-preflight) cmd_stack_preflight ;;
     stack)           cmd_stack ;;
     stack-verify)    cmd_stack_verify ;;
-    *) die "用法: $0 {preflight|run|verify|stack-preflight|stack|stack-verify}" ;;
+    *) die "用法: $0 {install|preflight|dryrun|run|continue|verify|stack-preflight|stack|stack-verify}" ;;
 esac
