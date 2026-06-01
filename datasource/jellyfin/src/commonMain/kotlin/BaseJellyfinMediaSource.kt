@@ -467,14 +467,18 @@ abstract class BaseJellyfinMediaSource(
         return mediaStreams
             .filter { it.Type == "Subtitle" && it.IsTextSubtitleStream && it.IsExternal && it.Codec != null }
             .map { stream ->
+                val codec = stream.Codec!!.lowercase()
+
                 Subtitle(
-                    uri = getSubtitleUri(itemId, stream.Index, stream.Codec!!),
+                    uri = getSubtitleUri(itemId, stream.Index, codec),
                     language = stream.Language,
-                    mimeType = when (stream.Codec.lowercase()) {
-                        "ass" -> "text/x-ass"
+                    mimeType = when (codec) {
+                        "ass", "ssa" -> "text/x-ssa" 
+                        "srt" -> "application/x-subrip"
+                        "vtt" -> "text/vtt"
                         else -> "application/octet-stream"
                     },
-                    label = stream.Title,
+                    label = stream.Title ?: stream.Language ?: "Unknown",
                 )
             }
     }
