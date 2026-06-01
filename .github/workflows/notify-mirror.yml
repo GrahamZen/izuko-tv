@@ -1,0 +1,41 @@
+name: Notify mirror
+
+# 发布 Release 后, 通知 animeko-tv-releases 立即镜像, 取代其每天 cron 轮询.
+# 触发点选 release:published: 本仓库的 Release 由 fork-release.yml 创建为 draft,
+# 你手动点 Publish 的那一刻才该镜像, 正好对齐 (assets 也已上传完毕).
+# 跨仓库鉴权用 GitHub App (App id 存 vars, 私钥存 secrets), 运行时现签短效 token.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:            # 也可手动触发一次, 便于测试
+
+permissions: {}                 # 本 job 不需要对本仓库的任何权限
+
+env:
+  TARGET_REPO: GrahamZen/animeko-tv-releases
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint installation token for target repo
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.MIRROR_APP_ID }}
+          private-key: ${{ secrets.MIRROR_APP_PRIVATE_KEY }}
+          owner: GrahamZen
+          repositories: animeko-tv-releases
+
+      - name: Trigger mirror workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching mirror for tag: ${TAG:-<manual>}"
+          gh api "repos/${TARGET_REPO}/dispatches" \
+            -f event_type=mirror-release \
+            -f "client_payload[tag]=${TAG:-}"
+          echo "已通知 ${TARGET_REPO} 开始镜像."

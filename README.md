@@ -2,11 +2,16 @@
 
 ![Animeko](https://socialify.git.ci/open-ani/animeko/image?description=1&descriptionEditable=%E9%9B%86%E6%89%BE%E7%95%AA%E3%80%81%E8%BF%BD%E7%95%AA%E3%80%81%E7%9C%8B%E7%95%AA%E7%9A%84%E4%B8%80%E7%AB%99%E5%BC%8F%E5%BC%B9%E5%B9%95%E8%BF%BD%E7%95%AA%E5%B9%B3%E5%8F%B0&font=Jost&logo=https%3A%2F%2Fraw.githubusercontent.com%2Fopen-ani%2Fanimeko%2Frefs%2Fheads%2Fmain%2F.github%2Fassets%2Flogo.png&name=1&owner=1&pattern=Plus&theme=Light)
 
-| 正式版                                                                                                                                                                          | 测试版                                                                                                                                                                                     | 讨论群                                                                                                                                                                                                                                                                                                                                                                                                           |
-|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [![Stable](https://img.shields.io/github/release/open-ani/ani.svg?maxAge=3600&label=Stable&labelColor=06599d&color=043b69)](https://github.com/open-ani/ani/releases/latest) | [![Beta](https://img.shields.io/github/v/release/open-ani/ani.svg?maxAge=3600&label=Beta&labelColor=2c2c47&color=1c1c39&include_prereleases)](https://github.com/open-ani/ani/releases) | [![Group](https://img.shields.io/badge/Telegram-2CA5E0?style=flat-squeare&logo=telegram&logoColor=white)](https://t.me/openani) |
+**📺 Android TV 适配版 (Fork)**
+
+| 本仓库发布                                                                                                                                                                                                            | 原项目                                                                                                                                                                          |
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [![Release](https://img.shields.io/github/v/release/GrahamZen/animeko.svg?maxAge=3600&label=Download&labelColor=06599d&color=043b69&include_prereleases)](https://github.com/GrahamZen/animeko/releases/latest) | [![Upstream](https://img.shields.io/badge/open--ani%2Fanimeko-181717?logo=github&logoColor=white)](https://github.com/open-ani/animeko) |
 
 </div>
+
+> [!NOTE]
+> 这是 [open-ani/animeko](https://github.com/open-ani/animeko) 的**第三方 Fork**，在原版功能之上增加了 **Android TV / Google TV 遥控器适配**，可在电视盒子（如 NVIDIA Shield）上用遥控器操作并在电视主屏幕显示图标。其余功能与上游保持一致，并跟随上游版本更新。下方"主要功能"为上游通用介绍，TV 相关说明请见 [📺 Android TV 版说明](#-android-tv-版说明)。
 
 [dmhy]: http://www.dmhy.org/
 
@@ -40,70 +45,64 @@ https://github.com/user-attachments/assets/e63636c9-30b7-411c-aa6b-e5b78b900726
 
 ## 主要功能
 
-### 浏览来自 [Bangumi][Bangumi] 的番剧信息以及社区评价
+功能与上游一致：浏览 [Bangumi][Bangumi] 番剧信息与社区评价、新番时间表与标签搜索、云同步追番进度、聚合视频与弹幕数据源、离线缓存、多平台精美界面等。完整的功能介绍与应用截图请见[上游仓库 open-ani/animeko](https://github.com/open-ani/animeko#主要功能)。
 
-| <img src=".readme/images/features/subject-details.png" alt="" width="200"/> | <img src=".readme/images/features/subject-rating.png" alt="" width="200"/> | 
-|:---------------------------------------------------------------------------:|:--------------------------------------------------------------------------:|
+## 📺 Android TV 版说明
 
-### 丰富的检索方式：新番时间表、标签搜索
+本 Fork 在上游基础上完成了 Android TV 遥控器适配，并让应用图标显示在电视主屏幕（LEANBACK 启动器）上。安装后在更新 release 之后会在主页提醒，在设置里可以直接更新。
 
 除遥控器焦点适配外，大部分页面针对电视大屏**专门重新设计**（欢迎提 issue 或邮件反馈）。其中探索页、详情页与新番时间表可以在设置 → 主题里单独切回上游原布局（低端机可关）：
 
-| <img src=".readme/images/features/anime-schedule.png" alt="" width="200"/> | <img src=".readme/images/features/search-by-tag.png" alt="" width="200"/> | 
-|:--------------------------------------------------------------------------:|:-------------------------------------------------------------------------:|
+### 探索页
+| <img src=".readme/images/features/tv-home.png" alt="TV 主页 - 热门动画介绍轮播" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-### 云同步追番进度
+| <img src=".readme/images/features/tv-home2.png" alt="TV 主页 - 推荐" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-- 省心的追番进度管理，看完视频自动更新进度
-- 打开 APP 立即继续观看，无需回想上次看到了哪
+| <img src=".readme/images/features/tv-home3.png" alt="TV 主页 - 继续观看" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-| <img src=".readme/images/features/subject-collection.png" alt="" width="200"/> | <img src=".readme/images/features/home.png" alt="" width="200"/> | 
-|:------------------------------------------------------------------------------:|:----------------------------------------------------------------:|
+### 追番页
 
-### 聚合数据源
+| <img src=".readme/images/features/tv-collection.png" alt="TV 主页 - 追番" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-- [聚合视频数据源](https://github.com/creamycake-anime/ani-subs)，全自动选择
-  > 还支持 BitTorrent、Jellyfin、Emby、以及自定义源
-- 聚合全网弹幕源（[弹弹play][ddplay]），以及 Animeko 自己的[弹幕服务](https://danmaku-cn.myani.org/swagger/index.html)
+### 搜索页
 
-| <img src=".readme/images/features/mediaselector-simple.png" alt="" width="200"/> | <img src=".readme/images/features/mediaselector-detailed.png" alt="" width="200"/> |
-|:--------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-search.png" alt="TV 主页 - 搜索" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-| <img src=".readme/images/features/episode.png" alt="" width="200"/> | <img src=".readme/images/features/episode-scrolled.png" alt="" width="200"/> |
-|:-------------------------------------------------------------------:|:----------------------------------------------------------------------------:|
+### 详情页
 
-### 离线缓存
+| <img src=".readme/images/features/subject-details1.png" alt="TV 动画详情页" width="600"/> |
+|:--------------------------------------------------------------------------------------:|
 
-- 所有数据源都能缓存
+| <img src=".readme/images/features/subject-details2.png" alt="TV 动画详情页 - 选集轮播" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-| <img src=".readme/images/features/cache-episode.png" alt="" width="200"/> | <img src=".readme/images/features/cache-list.png" alt="" width="200"/> |
-|:-------------------------------------------------------------------------:|:----------------------------------------------------------------------:|
+| <img src=".readme/images/features/subject-details3.png" alt="TV 动画详情页 - 作品信息" width="600"/> |
+|:---------------------------------------------------------------------------------------------------:|
 
-### 精美界面
+### 播放器
 
-| <img src=".readme/images/features/player-fullscreen.png" alt="" width="600"/> |
-|:-----------------------------------------------------------------------------:|
 
-- 适配平板和大屏设备
+https://github.com/user-attachments/assets/7f9fe051-a904-4157-a317-b13284390fec
 
-| <img src=".readme/images/features/pc-home.png" alt="" width="600"/> |
-|:-------------------------------------------------------------------:|
 
-| <img src=".readme/images/features/pc-search.png" alt="" width="600"/> |
-|:---------------------------------------------------------------------:|
+### 系统级功能
 
-| <img src=".readme/images/features/pc-search-detail.png" alt="" width="600"/> |
-|:----------------------------------------------------------------------------:|
+- **主屏预览频道**：电视主屏幕显示"热门动画"频道和"继续观看"行，点击卡片直达详情页（首次启动时按系统提示允许添加频道）。
 
-### 更多个性设置
+| <img src=".readme/images/features/tv_preview_channels.png" alt="TV 主屏预览频道" width="600"/> |
+|:----------------------------------------------------------------------------------------------:|
 
-| <img src=".readme/images/features/danmaku-settings.png" alt="" width="600"/> |
-|:----------------------------------------------------------------------------:|
+- **屏保**：轮播在看与热门动画的横版剧照，按确定键直达该动画详情页，左右键切换（需在系统设置 → 屏保中选择 Animeko）。
 
-| <img src=".readme/images/features/theme-settings.png" alt="" width="200"/> | <img src=".readme/images/features/media-preferences.png" alt="" width="200"/> |
-|:--------------------------------------------------------------------------:|:-----------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv_screen_saver.png" alt="TV 屏保" width="600"/> |
+|:------------------------------------------------------------------------------------:|
 
-## 📺 Android TV
+### 下载
 
 | 平台          | 下载                                                                                        |
 |-------------|-------------------------------------------------------------------------------------------|
@@ -156,7 +155,9 @@ https://github.com/user-attachments/assets/e63636c9-30b7-411c-aa6b-e5b78b900726
 
 - 在 Android 10 及以下系统中可能无法正确请求焦点，从而无法使用遥控器功能（见上方系统版本要求）。
 
-## 下载
+## 下载（其他平台）
+
+> 以下为上游通用平台说明。本 Fork 主要针对 Android / 电视分发，其他平台请直接使用[上游 Animeko](https://github.com/open-ani/animeko)。
 
 Animeko 支持所有主流平台：Android、iOS、Windows、macOS、Linux。
 
