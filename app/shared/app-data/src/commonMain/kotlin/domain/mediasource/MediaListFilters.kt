@@ -33,7 +33,7 @@ object MediaListFilters {
      * 要求包含条目名称. 支持模糊匹配.
      */
     val ContainsSubjectName = BasicMediaListFilter { media ->
-        val originalTitle = removeSpecials(media.subjectName, removeWhitespace = true, replaceNumbers = true)
+        val originalTitle = removeSpecials(media.subjectName.toSimplifiedChinese(), removeWhitespace = true, replaceNumbers = true)
         subjectNamesWithoutSpecial.any { subjectName ->
             fun exactlyContains() = originalTitle
                 .contains(subjectName, ignoreCase = true)
