@@ -826,7 +826,16 @@ fun AniSubjectCollection.toEntity(
         imageLarge = staticSubjectImageLargeUrl(id.toInt()),
         totalEpisodes = episodes.size,
         airDate = PackedDate.parseFromDate(airDate),
-        aliases = aliases,
+        aliases = buildList {
+            addAll(aliases)
+            // Also extract "别名" entries from infobox — the server's aliases field may be
+            // incomplete and miss Traditional Chinese / English / other-language names.
+            infobox?.fields
+                ?.filter { it.key == "别名" }
+                ?.flatMap { item -> item.propertyValues.map { it.v } }
+                ?.filter { it.isNotBlank() && !aliases.contains(it) }
+                ?.let { addAll(it) }
+        },
         tags = tags.map { it.toTag() },
         collectionStats = favorite.toSubjectCollectionStats(),
         ratingInfo = RatingInfo(
