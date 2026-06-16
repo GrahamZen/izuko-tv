@@ -34,7 +34,11 @@ object MediaListFilters {
      */
     val ContainsSubjectName = BasicMediaListFilter { media ->
         subjectNamesWithoutSpecial.any { subjectName ->
-            val originalTitle = removeSpecials(media.subjectName, removeWhitespace = true, replaceNumbers = true)
+            val originalTitle = removeSpecials(
+                media.subjectName.toSimplifiedChinese(),
+                removeWhitespace = true,
+                replaceNumbers = true,
+            )
             fun exactlyContains() = originalTitle
                 .contains(subjectName, ignoreCase = true)
 
