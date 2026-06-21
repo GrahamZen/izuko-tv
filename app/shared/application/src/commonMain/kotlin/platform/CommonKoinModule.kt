@@ -48,6 +48,7 @@ import me.him188.ani.app.data.network.WatchTogetherApiService
 import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.MIGRATION_19_20
+import me.him188.ani.app.data.persistent.database.MIGRATION_21_22
 import me.him188.ani.app.data.persistent.database.createDatabaseBuilder
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.data.repository.episode.BangumiCommentRepository
@@ -472,7 +473,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                     addAll(1..15) // 16 is destructive
                 }.toIntArray(),
             )
-            .addMigrations(MIGRATION_19_20)
+            .addMigrations(MIGRATION_19_20, MIGRATION_21_22)
             .setDriver(BundledSQLiteDriver())
             .setQueryCoroutineContext(Dispatchers.IO_)
             .build()
