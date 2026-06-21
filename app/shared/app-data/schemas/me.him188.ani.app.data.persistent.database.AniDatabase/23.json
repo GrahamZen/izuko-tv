@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 22,
-    "identityHash": "72ca4f848629b9bc6e35e355feb93398",
+    "version": 23,
+    "identityHash": "2674d46b2b0c9878d40aac8e6b5e525c",
     "entities": [
       {
         "tableName": "search_history",
@@ -1054,14 +1054,19 @@
         ]
       },
       {
-        "tableName": "web_search_subject",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaSourceId` TEXT NOT NULL, `subjectName` TEXT NOT NULL, `internalId` TEXT NOT NULL, `name` TEXT NOT NULL, `fullUrl` TEXT NOT NULL, `partialUrl` TEXT NOT NULL)",
+        "tableName": "web_search_session_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `requesterSubjectId` INTEGER, `mediaSourceId` TEXT NOT NULL, `subjectName` TEXT NOT NULL, `subjectPageName` TEXT NOT NULL, `subjectInternalId` TEXT NOT NULL, `subjectUrl` TEXT NOT NULL, `subjectPartialUrl` TEXT NOT NULL, `channel` TEXT NOT NULL, `episodeName` TEXT NOT NULL, `episodeSortOrEp` TEXT, `playUrl` TEXT NOT NULL, `cachedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "requesterSubjectId",
+            "columnName": "requesterSubjectId",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "mediaSourceId",
@@ -1076,67 +1081,38 @@
             "notNull": true
           },
           {
-            "fieldPath": "internalId",
-            "columnName": "internalId",
+            "fieldPath": "subjectPageName",
+            "columnName": "subjectPageName",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "name",
-            "columnName": "name",
+            "fieldPath": "subjectInternalId",
+            "columnName": "subjectInternalId",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "fullUrl",
-            "columnName": "fullUrl",
+            "fieldPath": "subjectUrl",
+            "columnName": "subjectUrl",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "partialUrl",
-            "columnName": "partialUrl",
+            "fieldPath": "subjectPartialUrl",
+            "columnName": "subjectPartialUrl",
             "affinity": "TEXT",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": true,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_web_search_subject_mediaSourceId_subjectName",
-            "unique": true,
-            "columnNames": [
-              "mediaSourceId",
-              "subjectName"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_subject_mediaSourceId_subjectName` ON `${TABLE_NAME}` (`mediaSourceId`, `subjectName`)"
-          }
-        ]
-      },
-      {
-        "tableName": "web_search_episode",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `channel` TEXT, `name` TEXT NOT NULL, `episodeSortOrEp` TEXT, `playUrl` TEXT NOT NULL, `parentId` INTEGER NOT NULL, FOREIGN KEY(`parentId`) REFERENCES `web_search_subject`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
             "notNull": true
           },
           {
             "fieldPath": "channel",
             "columnName": "channel",
-            "affinity": "TEXT"
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "name",
-            "columnName": "name",
+            "fieldPath": "episodeName",
+            "columnName": "episodeName",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -1152,8 +1128,14 @@
             "notNull": true
           },
           {
-            "fieldPath": "parentId",
-            "columnName": "parentId",
+            "fieldPath": "cachedAt",
+            "columnName": "cachedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -1166,37 +1148,29 @@
         },
         "indices": [
           {
-            "name": "index_web_search_episode_parentId",
-            "unique": false,
-            "columnNames": [
-              "parentId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_web_search_episode_parentId` ON `${TABLE_NAME}` (`parentId`)"
-          },
-          {
-            "name": "index_web_search_episode_channel_name_parentId",
+            "name": "index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName_subjectUrl_channel_episodeName",
             "unique": true,
             "columnNames": [
+              "requesterSubjectId",
+              "mediaSourceId",
+              "subjectName",
+              "subjectUrl",
               "channel",
-              "name",
-              "parentId"
+              "episodeName"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_episode_channel_name_parentId` ON `${TABLE_NAME}` (`channel`, `name`, `parentId`)"
-          }
-        ],
-        "foreignKeys": [
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName_subjectUrl_channel_episodeName` ON `${TABLE_NAME}` (`requesterSubjectId`, `mediaSourceId`, `subjectName`, `subjectUrl`, `channel`, `episodeName`)"
+          },
           {
-            "table": "web_search_subject",
-            "onDelete": "CASCADE",
-            "onUpdate": "NO ACTION",
-            "columns": [
-              "parentId"
+            "name": "index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName",
+            "unique": false,
+            "columnNames": [
+              "requesterSubjectId",
+              "mediaSourceId",
+              "subjectName"
             ],
-            "referencedColumns": [
-              "id"
-            ]
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName` ON `${TABLE_NAME}` (`requesterSubjectId`, `mediaSourceId`, `subjectName`)"
           }
         ]
       },
@@ -1764,7 +1738,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '72ca4f848629b9bc6e35e355feb93398')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2674d46b2b0c9878d40aac8e6b5e525c')"
     ]
   }
 }

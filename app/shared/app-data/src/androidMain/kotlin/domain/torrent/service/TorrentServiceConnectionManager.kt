@@ -38,8 +38,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.persistent.database.dao.TorrentCacheFileWithDir
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoDao
-import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.UnsafeTorrentEngineAccessApi
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
@@ -167,7 +167,7 @@ class TorrentServiceConnectionManager(
         scope.launch {
             combine(
                 torrentCacheInfoDao.flatMapLatest {
-                    it?.getAll()?.map(::allTorrentMediaCacheCompleted) ?: emptyFlow()
+                    it?.getAllFilesWithDir()?.map(::allTorrentMediaCacheCompleted) ?: emptyFlow()
                 },
                 requestQueue.map { it.isNotEmpty() },
                 isServiceConnected,
@@ -205,13 +205,14 @@ class TorrentServiceConnectionManager(
     /**
      * Check if all torrent media cache is completed. If not, the service will be kept alive.
      */
-    private fun allTorrentMediaCacheCompleted(list: List<TorrentCacheInfoEntity>): Boolean {
+    private fun allTorrentMediaCacheCompleted(list: List<TorrentCacheFileWithDir>): Boolean {
         val baseSaveDir = mediaCacheBaseSaveDirFlow.value ?: return true
         list.forEach { entity ->
             if (!entity.completed) return false
+            val relativeDir = entity.relativeDir ?: return false
             val pathInTorrent = entity.pathInTorrent.takeIf { it.isNotEmpty() } ?: return false
 
-            val file = File(baseSaveDir, entity.relativeDir).resolve(pathInTorrent)
+            val file = File(baseSaveDir, relativeDir).resolve(pathInTorrent)
             if (!file.exists() || file.isDirectory()) {
                 return false
             }

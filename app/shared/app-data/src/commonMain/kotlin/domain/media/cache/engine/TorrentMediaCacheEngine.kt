@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
 import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.Path
+import me.him188.ani.app.data.persistent.database.dao.TorrentCacheFileEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoDao
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.LocalFileMediaCache
@@ -265,7 +266,11 @@ class TorrentMediaCacheEngine(
                     logger.info { "Torrent cache does not exist, ignoring: $file" }
                 }
             }
-            dao.deleteByMediaId(origin.mediaId)
+            // 只删本集的文件行; 当该种子已无任何集引用时, 再删种子级数据.
+            dao.deleteFile(origin.mediaId, metadata.subjectId, metadata.episodeId)
+            if (dao.countFilesByMediaId(origin.mediaId) == 0) {
+                dao.deleteByMediaId(origin.mediaId)
+            }
         }
 
         /**
@@ -290,17 +295,22 @@ class TorrentMediaCacheEngine(
                     val currentShareRatio = sessionStats.uploadedBytes /
                             entryFileStats.downloadedBytes.coerceAtLeast(1).toFloat()
 
-                    val entity = dao.get(origin.mediaId)
-                        ?: error("No entity with id ${origin.mediaId} exists while subscribing cache.")
+                    // 按集读取/创建文件行 (mediaId+subjectId+episodeId), 并记录该集对应的文件.
+                    // 不能再用 mediaId 单键, 否则全集种子多集会互相覆盖 pathInTorrent.
+                    val baseFileEntity = (dao.getFile(origin.mediaId, metadata.subjectId, metadata.episodeId)
+                        ?: TorrentCacheFileEntity(
+                            mediaId = origin.mediaId,
+                            subjectId = metadata.subjectId,
+                            episodeId = metadata.episodeId,
+                        )).copy(pathInTorrent = fileEntry.pathInTorrent)
 
-                    val finished = entity.completed || // metadata 已记录 true 表示已完成
+                    val finished = baseFileEntity.completed || // 已记录 true 表示已完成
                             (entryFileStats.isDownloadFinished && currentShareRatio >= currentShareRatioLimit) // 统计判断达到条件也是完成
 
                     // 无论如何都先更新一次数据
-                    dao.upsert(
-                        entity.copy(
+                    dao.upsertFile(
+                        baseFileEntity.copy(
                             completed = finished,
-                            pathInTorrent = fileEntry.pathInTorrent,
                             downloadSize = entryFileStats.downloadedBytes,
                             uploadSize = sessionStats.uploadedBytes,
                         ),
@@ -351,8 +361,8 @@ class TorrentMediaCacheEngine(
                                 // 如果距离上次上传活动大于 10 分钟, 直接更新 metadata
                             }
 
-                            dao.upsert(
-                                entity.copy(
+                            dao.upsertFile(
+                                baseFileEntity.copy(
                                     completed = true,
                                     downloadSize = fileStats.downloadedBytes,
                                     uploadSize = sessionStats.uploadedBytes,
@@ -383,7 +393,7 @@ class TorrentMediaCacheEngine(
 
     override val stats: Flow<MediaStats> = engineAccess.isServiceConnected
         .flatMapLatest { useEngine ->
-            val finishedMediaStats = dao.getAll().map { saveList ->
+            val finishedMediaStats = dao.getAllFiles().map { saveList ->
                 var totalFinishedDownloaded = 0L.bytes
                 var totalFinishedUploaded = 0L.bytes
 
@@ -435,7 +445,7 @@ class TorrentMediaCacheEngine(
         if (!supports(origin)) throw UnsupportedOperationException("Media is not supported by this engine $this: ${origin.download}")
         val data = dao.get(origin.mediaId)?.torrentData ?: return null
 
-        val localFile = origin.resolveCompletedFromDataStore()
+        val localFile = origin.resolveCompletedFromDataStore(metadata)
         if (localFile != null) {
             return LocalFileMediaCache(origin, metadata, localFile) {
                 @OptIn(DelicateCoroutinesApi::class)
@@ -548,6 +558,16 @@ class TorrentMediaCacheEngine(
                     },
                 ),
             )
+            // 按集占位行 (pathInTorrent/completed 由 subscribeStats 填充). 必须按集, 否则多集共用种子会串台.
+            if (dao.getFile(origin.mediaId, metadata.subjectId, metadata.episodeId) == null) {
+                dao.upsertFile(
+                    TorrentCacheFileEntity(
+                        mediaId = origin.mediaId,
+                        subjectId = metadata.subjectId,
+                        episodeId = metadata.episodeId,
+                    ),
+                )
+            }
 
             return TorrentMediaCache(
                 origin = origin,
@@ -587,13 +607,15 @@ class TorrentMediaCacheEngine(
         torrentEngine.close()
     }
 
-    private suspend fun Media.resolveCompletedFromDataStore(): SystemPath? {
-        val entity = dao.get(mediaId) ?: return null
+    private suspend fun Media.resolveCompletedFromDataStore(metadata: MediaCacheMetadata): SystemPath? {
+        // relativeDir 是种子级 (mediaId); completed/pathInTorrent 是按集 (mediaId+subjectId+episodeId).
+        val info = dao.get(mediaId) ?: return null
+        val fileEntity = dao.getFile(mediaId, metadata.subjectId, metadata.episodeId) ?: return null
 
-        if (!entity.completed) return null
-        val pathInTorrent = entity.pathInTorrent.takeIf { it.isNotEmpty() } ?: return null
+        if (!fileEntity.completed) return null
+        val pathInTorrent = fileEntity.pathInTorrent.takeIf { it.isNotEmpty() } ?: return null
 
-        val file = Path(baseSaveDirProvider.saveDir, entity.relativeDir).resolve(pathInTorrent).inSystem
+        val file = Path(baseSaveDirProvider.saveDir, info.relativeDir).resolve(pathInTorrent).inSystem
         if (!file.exists() || file.isDirectory()) {
             return null
         }
