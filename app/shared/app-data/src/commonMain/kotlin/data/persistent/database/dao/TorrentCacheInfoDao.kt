@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2025 OpenAni and contributors.
+ * Copyright (C) 2024-2026 OpenAni and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
@@ -24,9 +24,12 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.platform.annotations.TestOnly
 
 /**
- * 存储 BitTorrent 引擎缓存的媒体的信息.
- * 
- * 种子文件的最终目录应该是 [MediaSaveDirProvider.saveDir] + [relativeDir] + [pathInTorrent]
+ * **种子级**信息. 一个种子 ([mediaId]) 一行, 即使该种子被多个剧集共用也只存一份.
+ *
+ * 单文件相关的信息 (选中的文件、是否完成、已下载/上传大小) 见 [TorrentCacheFileEntity],
+ * 因为同一个种子被多集共用时, 每集对应种子内不同的文件, 必须按集分别存储, 否则会互相覆盖.
+ *
+ * 种子文件的最终目录是 [MediaSaveDirProvider.saveDir] + [relativeDir] + [TorrentCacheFileEntity.pathInTorrent].
  */
 @Entity(
     tableName = "torrent_cache",
@@ -44,26 +47,8 @@ data class TorrentCacheInfoEntity(
     val torrentData: ByteArray,
     /**
      * 种子的缓存目录, 相对于 [MediaSaveDirProvider.saveDir] 的相对路径.
-     *
-     * 注意, 一个 MediaCache 可能只对应该种子资源的其中一个文件.
      */
     val relativeDir: String,
-    /**
-     * torrent 是否已经完成, 意味着已经下载完并达到分享率
-     */
-    val completed: Boolean = false,
-    /**
-     * @see TorrentFileEntry.pathInTorrent
-     */
-    val pathInTorrent: String = "",
-    /**
-     * 该种子已下载的大小, 字节
-     */
-    val downloadSize: Long = 0,
-    /**
-     * 该种子已上传的大小, 字节
-     */
-    val uploadSize: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -71,31 +56,77 @@ data class TorrentCacheInfoEntity(
 
         other as TorrentCacheInfoEntity
 
-        if (completed != other.completed) return false
-        if (downloadSize != other.downloadSize) return false
-        if (uploadSize != other.uploadSize) return false
         if (mediaId != other.mediaId) return false
         if (!torrentData.contentEquals(other.torrentData)) return false
         if (relativeDir != other.relativeDir) return false
-        if (pathInTorrent != other.pathInTorrent) return false
 
         return true
     }
 
     override fun hashCode(): Int {
-        var result = completed.hashCode()
-        result = 31 * result + downloadSize.hashCode()
-        result = 31 * result + uploadSize.hashCode()
-        result = 31 * result + mediaId.hashCode()
+        var result = mediaId.hashCode()
         result = 31 * result + torrentData.contentHashCode()
         result = 31 * result + relativeDir.hashCode()
-        result = 31 * result + pathInTorrent.hashCode()
         return result
     }
 }
 
+/**
+ * **按集 (按文件)** 的缓存信息. 主键为 ([mediaId], [subjectId], [episodeId]).
+ *
+ * 同一个种子 ([mediaId]) 被多集共用时, 每集在种子内对应不同的视频文件 ([pathInTorrent]),
+ * 完成状态 ([completed]) 与下载/上传量也各自独立, 因此必须按集分别一行.
+ */
+@Entity(
+    tableName = "torrent_cache_file",
+    primaryKeys = ["mediaId", "subjectId", "episodeId"],
+)
+data class TorrentCacheFileEntity(
+    /**
+     * 媒体 ID, 对应 [TorrentCacheInfoEntity.mediaId]
+     */
+    val mediaId: String,
+    /**
+     * 条目 ID, 对应 [me.him188.ani.datasources.api.MediaCacheMetadata.subjectId]
+     */
+    val subjectId: String,
+    /**
+     * 剧集 ID, 对应 [me.him188.ani.datasources.api.MediaCacheMetadata.episodeId]
+     */
+    val episodeId: String,
+    /**
+     * 该集在种子内对应的文件.
+     * @see TorrentFileEntry.pathInTorrent
+     */
+    val pathInTorrent: String = "",
+    /**
+     * 该集对应的文件是否已经下载完并达到分享率.
+     */
+    val completed: Boolean = false,
+    /**
+     * 该集对应文件已下载的大小, 字节.
+     */
+    val downloadSize: Long = 0,
+    /**
+     * 已上传的大小, 字节.
+     */
+    val uploadSize: Long = 0,
+)
+
+/**
+ * 用于跨表读取: 按集的完成状态 + 种子目录, 给 "是否所有缓存都已完成" 之类的判断使用.
+ */
+data class TorrentCacheFileWithDir(
+    val mediaId: String,
+    val pathInTorrent: String,
+    val completed: Boolean,
+    val relativeDir: String?,
+)
+
 @Dao
 interface TorrentCacheInfoDao {
+    // region 种子级 (torrent_cache)
+
     @Query("""SELECT * FROM torrent_cache""")
     fun getAll(): Flow<List<TorrentCacheInfoEntity>>
 
@@ -110,12 +141,50 @@ interface TorrentCacheInfoDao {
 
     @Query("""DELETE FROM torrent_cache WHERE mediaId = :mediaId""")
     suspend fun deleteByMediaId(mediaId: String)
+
+    // endregion
+
+    // region 按集 (torrent_cache_file)
+
+    @Query("""SELECT * FROM torrent_cache_file""")
+    fun getAllFiles(): Flow<List<TorrentCacheFileEntity>>
+
+    @Query(
+        """SELECT * FROM torrent_cache_file
+            WHERE mediaId = :mediaId AND subjectId = :subjectId AND episodeId = :episodeId LIMIT 1""",
+    )
+    suspend fun getFile(mediaId: String, subjectId: String, episodeId: String): TorrentCacheFileEntity?
+
+    @Upsert
+    suspend fun upsertFile(item: TorrentCacheFileEntity)
+
+    @Query(
+        """DELETE FROM torrent_cache_file
+            WHERE mediaId = :mediaId AND subjectId = :subjectId AND episodeId = :episodeId""",
+    )
+    suspend fun deleteFile(mediaId: String, subjectId: String, episodeId: String)
+
+    @Query("""SELECT COUNT(*) FROM torrent_cache_file WHERE mediaId = :mediaId""")
+    suspend fun countFilesByMediaId(mediaId: String): Int
+
+    /**
+     * 按集的完成状态 + 对应种子的 relativeDir (LEFT JOIN). 供 "是否全部完成" 判断使用.
+     */
+    @Query(
+        """SELECT f.mediaId AS mediaId, f.pathInTorrent AS pathInTorrent, f.completed AS completed,
+                t.relativeDir AS relativeDir
+            FROM torrent_cache_file f LEFT JOIN torrent_cache t ON f.mediaId = t.mediaId""",
+    )
+    fun getAllFilesWithDir(): Flow<List<TorrentCacheFileWithDir>>
+
+    // endregion
 }
 
 @TestOnly
 fun createMemoryTorrentCacheInfoDao(): TorrentCacheInfoDao {
     return object : TorrentCacheInfoDao {
         private val store = MemoryDataStore(listOf<TorrentCacheInfoEntity>())
+        private val fileStore = MemoryDataStore(listOf<TorrentCacheFileEntity>())
 
         override fun getAll(): Flow<List<TorrentCacheInfoEntity>> {
             return store.data
@@ -143,6 +212,58 @@ fun createMemoryTorrentCacheInfoDao(): TorrentCacheInfoDao {
         override suspend fun deleteByMediaId(mediaId: String) {
             store.updateData {
                 it.filter { e -> e.mediaId != mediaId }
+            }
+        }
+
+        override fun getAllFiles(): Flow<List<TorrentCacheFileEntity>> {
+            return fileStore.data
+        }
+
+        override suspend fun getFile(
+            mediaId: String,
+            subjectId: String,
+            episodeId: String
+        ): TorrentCacheFileEntity? {
+            return fileStore.data.firstOrNull()?.find {
+                it.mediaId == mediaId && it.subjectId == subjectId && it.episodeId == episodeId
+            }
+        }
+
+        override suspend fun upsertFile(item: TorrentCacheFileEntity) {
+            fileStore.updateData {
+                val existing = it.indexOfFirst { e ->
+                    e.mediaId == item.mediaId && e.subjectId == item.subjectId && e.episodeId == item.episodeId
+                }
+                if (existing >= 0) {
+                    it.toMutableList().apply { this[existing] = item }
+                } else {
+                    it + item
+                }
+            }
+        }
+
+        override suspend fun deleteFile(mediaId: String, subjectId: String, episodeId: String) {
+            fileStore.updateData {
+                it.filterNot { e ->
+                    e.mediaId == mediaId && e.subjectId == subjectId && e.episodeId == episodeId
+                }
+            }
+        }
+
+        override suspend fun countFilesByMediaId(mediaId: String): Int {
+            return fileStore.data.firstOrNull()?.count { it.mediaId == mediaId } ?: 0
+        }
+
+        override fun getAllFilesWithDir(): Flow<List<TorrentCacheFileWithDir>> {
+            return kotlinx.coroutines.flow.combine(fileStore.data, store.data) { files, infos ->
+                files.map { f ->
+                    TorrentCacheFileWithDir(
+                        mediaId = f.mediaId,
+                        pathInTorrent = f.pathInTorrent,
+                        completed = f.completed,
+                        relativeDir = infos.find { it.mediaId == f.mediaId }?.relativeDir,
+                    )
+                }
             }
         }
     }

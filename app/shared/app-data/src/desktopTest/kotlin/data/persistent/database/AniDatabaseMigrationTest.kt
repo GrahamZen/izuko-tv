@@ -27,7 +27,10 @@ import kotlin.test.assertTrue
  * AniDatabase 迁移测试 (infra#10, P0#18).
  *
  * 生产迁移链 (CommonKoinModule): 1..15 destructive, 16 起走
- * AutoMigration 16→17→18→19, 手动 [MIGRATION_19_20], AutoMigration 20→21→22.
+ * AutoMigration 16→17→18→19, 手动 [MIGRATION_19_20], AutoMigration 20→21,
+ * **手动 [MIGRATION_21_22]** (fork 的按集拆分 torrent 缓存), AutoMigration 22→23 (上游的 web
+ * 搜索缓存换表). 21→22 这一步 fork 与上游内容不同, 见 [MIGRATION_21_22] 与 `Migration_22_23`
+ * 的说明 —— 所以它**不是** AutoMigration, 测试必须像生产那样把它传进去.
  *
  * [MigrationTestHelper] 从 `schemas/<db fqn>/<version>.json` 建旧版本库,
  * runMigrationsAndValidate 会把迁移后的实际 schema 与目标版本 json 逐表逐列校验.
@@ -108,16 +111,50 @@ class AniDatabaseMigrationTest {
     }
 
     @Test
-    fun `MIG-05 v21到v22的AutoMigration删除旧web搜索缓存表并新建session缓存表`() {
+    fun `MIG-05 v21到v22走fork手写迁移把torrent缓存按集拆表`() {
         val helper = createHelper()
         helper.createDatabase(21).use { connection ->
+            connection.execSQL(
+                """
+                INSERT INTO `torrent_cache`
+                    (`mediaId`, `torrentData`, `relativeDir`, `completed`, `pathInTorrent`, `downloadSize`, `uploadSize`)
+                VALUES ('m1', X'00', 'dir1', 1, 'a.mkv', 10, 20)
+                """.trimIndent(),
+            )
+        }
+        // 这一步在 fork 里是手写迁移而不是 AutoMigration (上游那条挪去了 22→23), 与生产一致地传进去
+        helper.runMigrationsAndValidate(22, listOf(MIGRATION_21_22)).use { connection ->
+            val tables = connection.tableNames()
+            assertContains(tables, "torrent_cache")
+            assertContains(tables, "torrent_cache_file")
+            // PINNED: MIG-05 种子级数据留着 (已下载的文件还能复用), 按集字段留空靠下次播放自愈
+            connection.prepare("SELECT `mediaId`, `relativeDir` FROM `torrent_cache`").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("m1", statement.getText(0))
+                assertEquals("dir1", statement.getText(1))
+                assertFalse(statement.step())
+            }
+            connection.prepare("SELECT COUNT(*) FROM `torrent_cache_file`").use { statement ->
+                assertTrue(statement.step())
+                assertEquals(0, statement.getInt(0))
+            }
+            // 上游删旧 web 缓存表那一步在 fork 里排在 22→23, 此时还在
+            assertContains(tables, "web_search_subject")
+            assertContains(tables, "web_search_episode")
+        }
+    }
+
+    @Test
+    fun `MIG-06 v22到v23的AutoMigration删除旧web搜索缓存表并新建session缓存表`() {
+        val helper = createHelper()
+        helper.createDatabase(22).use { connection ->
             val tables = connection.tableNames()
             assertContains(tables, "web_search_subject")
             assertContains(tables, "web_search_episode")
         }
-        helper.runMigrationsAndValidate(22, emptyList()).use { connection ->
+        helper.runMigrationsAndValidate(23, emptyList()).use { connection ->
             val tables = connection.tableNames()
-            // PINNED: MIG-05 旧的两张表被 @DeleteTable 删除, 其中的数据 (会话级缓存) 全部丢弃
+            // PINNED: MIG-06 旧的两张表被 @DeleteTable 删除, 其中的数据 (会话级缓存) 全部丢弃
             assertFalse(tables.contains("web_search_subject"))
             assertFalse(tables.contains("web_search_episode"))
             assertContains(tables, "web_search_session_cache")
