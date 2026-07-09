@@ -100,6 +100,10 @@ class TorrentMediaResolver(
             setOf(
                 Regex("""\[SP[0-9]*\]"""),
                 Regex("""\[OVA[0-9]*\]"""),
+                // SxxExx 命名中的 S00 表示特典 (specials), 例如 "S00E04".
+                // 这类文件在种子中常排在正片前面, 且集数容易与正片相同 (如与 "S03E04" 同为 04), 需要降权,
+                // 否则缓存正片时会错误选中特典文件.
+                Regex("""S00E[0-9]+""", RegexOption.IGNORE_CASE),
                 // SP 和 OVA 要放到前面, 因为用户可能就是要看这个
                 Regex("""PV[0-9]*"""),
                 Regex("""NCOP[0-9]*"""),
