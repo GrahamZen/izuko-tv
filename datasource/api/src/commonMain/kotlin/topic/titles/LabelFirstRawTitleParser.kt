@@ -254,6 +254,13 @@ class LabelFirstRawTitleParser : RawTitleParser() {
 
             seasonEpisodePattern.matchEntire(original)?.let { result ->
                 // TODO: consider season
+                // SxxExx 命名中 S00 表示特典 (specials), 例如 "S00E04" 是系列的第 4 个特典.
+                // 不能把它解析为正片第 4 集, 否则会在选择种子内文件时与正片 (如 "S03E04") 混淆.
+                if (result.groupValues[1].toIntOrNull() == 0) {
+                    val number = result.groupValues[2].toIntOrNull()
+                        ?: return EpisodeRange.single(EpisodeSort(result.groupValues[2]))
+                    return EpisodeRange.single(EpisodeSort(number, EpisodeType.SP))
+                }
                 return EpisodeRange.single(EpisodeSort(result.groupValues[2]))
             }
 
