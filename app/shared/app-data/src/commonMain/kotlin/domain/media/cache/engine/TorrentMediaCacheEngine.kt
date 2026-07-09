@@ -511,7 +511,8 @@ class TorrentMediaCacheEngine(
                         """.trimIndent()
                 }
             } else {
-                logger.info { "$mediaSourceId: Selected file to download: $selectedFile" }
+                // 打印文件路径而不是对象 (Android 上是 AIDL 代理, toString 无意义), 便于核对选中的是不是目标剧集.
+                logger.info { "$mediaSourceId: Selected file to download: ${selectedFile.pathInTorrent}" }
             }
 
             val handle = selectedFile?.createHandle()
