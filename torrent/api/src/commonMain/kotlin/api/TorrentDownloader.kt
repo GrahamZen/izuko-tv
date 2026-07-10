@@ -12,6 +12,11 @@ package me.him188.ani.app.torrent.api
 import kotlinx.coroutines.flow.Flow
 import me.him188.ani.app.torrent.api.files.EncodedTorrentInfo
 import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.absolutePath
+import me.him188.ani.utils.io.delete
+import me.him188.ani.utils.io.deleteRecursively
+import me.him188.ani.utils.io.exists
+import me.him188.ani.utils.io.resolve
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -92,6 +97,50 @@ class FetchTorrentTimeoutException(
     override val message: String? = "Magnet fetch timeout",
     override val cause: Throwable? = null
 ) : Exception()
+
+/**
+ * 种子保存目录内记录 piece 完成状态的文件名. 下次打开同一个种子时会被加载, 用于跳过校验.
+ */
+const val TORRENT_FAST_RESUME_FILENAME = "fastresume"
+
+/**
+ * 回收一个种子保存目录: **先失效 fastresume, 再删数据文件**.
+ *
+ * 顺序是正确性要求, 不是风格问题. 递归删除不是原子的, 中途可能因文件被占用等原因失败, 于是有三种
+ * 可能的残留状态:
+ * - fastresume 已删 + 数据残缺: 安全. 下次打开这个种子会全量 recheck, 残缺部分重新下载.
+ * - fastresume 与数据都完好: 安全. 相当于没删.
+ * - **fastresume 完好 + 数据残缺: 会坏**. 新会话信任陈旧的 piece 位图, 秒判"已完成", 把被删的
+ *   文件按稀疏文件重建后交给播放器 —— 真机上表现为"重新缓存立刻完成但播放失败". 先删 fastresume
+ *   就是为了让这个状态不可能出现.
+ *
+ * 因此 fastresume 删不掉时**一个数据文件都不能碰**, 整个目录留给下一次清扫重试.
+ *
+ * @param onWarn 记录失败原因; 删除失败不抛出 —— 文件被占用属于可容忍情况, 留着即可.
+ * @return 是否已经开始删除数据文件 (即 fastresume 已经失效). `false` 表示本次完全没有动这个目录.
+ */
+fun SystemPath.reclaimTorrentSaveDir(onWarn: (message: String, cause: Throwable?) -> Unit): Boolean {
+    val fastResumeFile = resolve(TORRENT_FAST_RESUME_FILENAME)
+    try {
+        if (fastResumeFile.exists()) {
+            fastResumeFile.delete()
+        }
+    } catch (e: Exception) {
+        onWarn(
+            "Failed to delete fast resume file ${fastResumeFile.absolutePath}, " +
+                    "skipping deletion of torrent data to avoid stale piece state",
+            e,
+        )
+        return false
+    }
+
+    try {
+        deleteRecursively()
+    } catch (e: Exception) {
+        onWarn("Failed to delete torrent save directory $absolutePath", e)
+    }
+    return true
+}
 
 /**
  * 用于下载 `https://xxx.torrent`
