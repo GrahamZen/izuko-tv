@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media.cache.storage
 import androidx.datastore.core.DataStore
 import kotlinx.collections.immutable.minus
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.plus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -31,6 +32,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.media.cache.LocalFileMediaCache
 import me.him188.ani.app.domain.media.cache.MediaCache
+import me.him188.ani.app.domain.media.cache.MediaCacheKey
+import me.him188.ani.app.domain.media.cache.mediaCacheKey
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.MediaStats
 import me.him188.ani.app.domain.media.cache.engine.sum
@@ -60,12 +63,17 @@ abstract class AbstractDataStoreMediaCacheStorage(
         .map { list ->
             list.filter { it.engine == engine.engineKey }
                 .sortedBy { it.origin.mediaId } // consistent stable order
+                .distinctBy { MediaCacheKey(it.origin.mediaId, it.metadata) }
         }
 
     /**
-     * 已经恢复的 [LocalFileMediaCache], 不会重复恢复.
+     * 已经恢复的 [LocalFileMediaCache] 的稳定键, 不会重复恢复.
+     *
+     * 必须按完整的集键而不是 mediaId 记账: 合集种子的多集共享同一个 mediaId, 按 mediaId 记会把
+     * 第一集恢复完成后才轮到检查的其余各集当成"已恢复"跳过 —— 并发上限 8 时, 10 集合集会稳定
+     * 丢失第 10 集起的条目.
      */
-    protected val restoredLocalFileMediaCacheIds = MutableStateFlow(persistentListOf<String>())
+    private val restoredLocalFileMediaCacheKeys = MutableStateFlow(persistentSetOf<MediaCacheKey>())
 
     open suspend fun refreshCache(): List<MediaCache> {
         val allRecovered = MutableStateFlow(persistentListOf<MediaCache>())
@@ -75,17 +83,25 @@ abstract class AbstractDataStoreMediaCacheStorage(
 
         supervisorScope {
             metadataFlowSnapshot.forEach { (origin, metadata, _) ->
-                if (origin.mediaId in restoredLocalFileMediaCacheIds.value) return@forEach
+                if (MediaCacheKey(origin.mediaId, metadata) in restoredLocalFileMediaCacheKeys.value) {
+                    return@forEach
+                }
 
                 semaphore.acquire()
                 @OptIn(DelicateCoroutinesApi::class)
                 launch(start = CoroutineStart.ATOMIC) {
                     try {
-                        restoreFile(origin, metadata) {
-                            if (it is LocalFileMediaCache) {
-                                restoredLocalFileMediaCacheIds.update { plus(it.origin.mediaId) }
+                        restoreFile(origin, metadata) { restored ->
+                            if (restored is LocalFileMediaCache) {
+                                restoredLocalFileMediaCacheKeys.update { plus(restored.mediaCacheKey) }
                             }
-                            allRecovered.update { plus(it) }
+                            allRecovered.update { plus(restored) }
+                            // 增量发布: 恢复未完成的 torrent 缓存需要等 torrent 服务连接, 可能长时间挂起.
+                            // 若等全部恢复完才发布 listFlow, 任一挂起项会把整批 (包括已完成的缓存) 都扣住不显示.
+                            // 这里让恢复完的条目 (尤其是走本地文件快路径的已完成缓存) 立即可见.
+                            listFlow.update {
+                                filterNot { it.mediaCacheKey == restored.mediaCacheKey } + restored
+                            }
                         }
                     } finally {
                         semaphore.release()
@@ -94,10 +110,17 @@ abstract class AbstractDataStoreMediaCacheStorage(
             }
         }
 
-        // 新 restore 的加上 list 中已经有的 LocalFileMediaCache
+        // 新 restore 的加上 list 中已经有的 LocalFileMediaCache.
+        // 只补**往轮**恢复、本轮被跳过的那些 —— 本轮恢复的已经在 allRecovered 里,
+        // 再加一遍会让每个已完成缓存在 listFlow 里出现两份: 删除时 minus 只移除一份,
+        // 剩下的副本 state 恒为 COMPLETED, 表现为"删了还显示有缓存/要按两次删除".
         listFlow.update {
-            allRecovered.value +
-                    listFlow.value.filter { it.origin.mediaId in restoredLocalFileMediaCacheIds.value }
+            val recovered = allRecovered.value
+            val recoveredKeys = recovered.mapTo(HashSet()) { it.mediaCacheKey }
+            recovered + listFlow.value.filter { cache ->
+                cache.mediaCacheKey in restoredLocalFileMediaCacheKeys.value &&
+                        cache.mediaCacheKey !in recoveredKeys
+            }
         }
         return allRecovered.value
     }
@@ -183,16 +206,27 @@ abstract class AbstractDataStoreMediaCacheStorage(
     }
 
     override suspend fun deleteFirst(predicate: (MediaCache) -> Boolean): Boolean {
-        val cache = listFlow.value.firstOrNull(predicate) ?: return false
+        val cache = removeFirstFromListAndStore(predicate) ?: return false
+        cache.closeAndDeleteFiles()
+        return true
+    }
+
+    /**
+     * 从 [listFlow] 与持久层移除第一个满足 [predicate] 的缓存, 返回被移除的缓存 (没有匹配则返回 `null`).
+     *
+     * 子类可在持锁状态下调用本方法以与 [refreshCache] 互斥, 同时把可能长时间挂起的文件删除
+     * ([MediaCache.closeAndDeleteFiles], 例如需要等待 torrent 服务连接) 留在锁外执行.
+     */
+    protected suspend fun removeFirstFromListAndStore(predicate: (MediaCache) -> Boolean): MediaCache? {
+        val cache = listFlow.value.firstOrNull(predicate) ?: return null
         listFlow.update { minus(cache) }
-        restoredLocalFileMediaCacheIds.update { minus(cache.origin.mediaId) }
+        restoredLocalFileMediaCacheKeys.update { minus(cache.mediaCacheKey) }
         withContext(Dispatchers.IO_) {
             datastore.updateData { list ->
                 list.filterNot { isSameMediaAndEpisode(cache, it) }
             }
         }
-        cache.closeAndDeleteFiles()
-        return true
+        return cache
     }
 
     override fun close() {
@@ -203,9 +237,7 @@ abstract class AbstractDataStoreMediaCacheStorage(
         cache: MediaCache,
         media: Media,
         metadata: MediaCacheMetadata = cache.metadata
-    ) = cache.origin.mediaId == media.mediaId &&
-            metadata.subjectId == cache.metadata.subjectId &&
-            metadata.episodeId == cache.metadata.episodeId
+    ) = cache.mediaCacheKey == MediaCacheKey(media.mediaId, metadata)
 
     protected fun isSameMediaAndEpisode(cache: MediaCache, save: MediaCacheSave): Boolean =
         isSameMediaAndEpisode(cache, save.origin, save.metadata)

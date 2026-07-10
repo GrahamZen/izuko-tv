@@ -50,6 +50,7 @@ import me.him188.ani.app.torrent.api.pieces.last
 import me.him188.ani.app.torrent.api.pieces.maxBy
 import me.him188.ani.app.torrent.api.pieces.minBy
 import me.him188.ani.app.torrent.api.pieces.sumOf
+import me.him188.ani.app.torrent.api.reclaimTorrentSaveDir
 import me.him188.ani.app.torrent.io.DEFAULT_BUFFER_PER_DIRECTION
 import me.him188.ani.app.torrent.io.RawTorrentInputConstructorParameter
 import me.him188.ani.app.torrent.io.TorrentInput
@@ -58,7 +59,6 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.update
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
-import me.him188.ani.utils.io.deleteRecursively
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -552,8 +552,25 @@ class AnitorrentDownloadSession(
 
     fun deleteEntireTorrentIfNotInUse() {
         if (openFiles.value.isEmpty() && closed) {
-            saveDirectory.deleteRecursively()
+            // 删除失败不能抛出去: 文件被占用等原因删不掉属于可容忍情况, 留着即可, 下次启动
+            // deleteUnusedCaches 会兜底清理. 抛出去则会顺着 (现已同步的) binder 代理传给调用方,
+            // 把整个删除流程中断在半途.
+            // 必须走 reclaimTorrentSaveDir: 它保证"先失效 fastresume 再删数据", 否则递归删除半途
+            // 失败会留下"陈旧 fastresume + 残缺数据", 重新缓存时秒判完成并交出稀疏坏文件.
+            val started = saveDirectory.reclaimTorrentSaveDir { message, cause ->
+                logger.warn(cause) { "[$handleId] $message" }
+            }
+            if (!started) return
             onDelete(this)
+        } else {
+            // 会话仍被占用 (如同种子的磁力流播持有句柄) 时跳过删除, 目录保留并延迟到下次启动的
+            // deleteUnusedCaches 清扫回收. 单集文件从不被单删, 此时磁盘与 piece 状态是一致的,
+            // 保留是安全的; 绝不能从活会话脚下直接删目录 (会话会重建文件/fastresume, 重缓存又会
+            // 复用其内存 piece 状态得到稀疏坏文件). 打 warn 是为了让"以为删了实际没删"可取证.
+            logger.warn {
+                "[$handleId] Skip deleting torrent save directory, still in use: " +
+                        "openFiles=${openFiles.value.size}, closed=$closed, dir=${saveDirectory.absolutePath}"
+            }
         }
     }
 

@@ -12,6 +12,8 @@ package me.him188.ani.app.domain.media.cache
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
@@ -46,7 +48,12 @@ class LocalFileMediaCache(
     val file: SystemPath,
     uploadedSize: FileSize = 0.bytes,
     private val backedMediaSourceId: String = MediaCacheManager.LOCAL_FS_MEDIA_SOURCE_ID,
-    private val onCloseAndDeleteFiles: LocalFileMediaCache.(SystemPath) -> Unit = { file.deleteRecursively() },
+    /**
+     * 删除的快速逻辑阶段, 见 [MediaCache.deletePersistedRows]. 保证在 [onCloseAndDeleteFiles]
+     * 之前恰好执行一次.
+     */
+    private val onDeletePersistedRows: (suspend () -> Unit)? = null,
+    private val onCloseAndDeleteFiles: suspend LocalFileMediaCache.(SystemPath) -> Unit = { file.deleteRecursively() },
 ) : MediaCache {
     override val state: Flow<MediaCacheState> = MutableStateFlow(MediaCacheState.COMPLETED)
     override val canPlay: Flow<Boolean> = MutableStateFlow(true)
@@ -70,6 +77,7 @@ class LocalFileMediaCache(
 
     private val _isDeleted = MutableStateFlow(false)
     override val isDeleted: StateFlow<Boolean> = _isDeleted
+    private val deletionLock = Mutex()
 
     override suspend fun getCachedMedia(): CachedMedia {
         return CachedMedia(origin, backedMediaSourceId, ResourceLocation.LocalFile(file.absolutePath))
@@ -87,7 +95,24 @@ class LocalFileMediaCache(
 
     }
 
-    override suspend fun closeAndDeleteFiles() {
+    private var rowsDeleted = false
+
+    override suspend fun deletePersistedRows() = deletionLock.withLock {
+        ensureRowsDeletedLocked()
+    }
+
+    private suspend fun ensureRowsDeletedLocked() {
+        if (rowsDeleted) return
+        // 置位必须在回调成功返回之后: 提前置位会让失败后的重试直接短路,
+        // 而下游 (如 torrent 引擎的物理清理) 仍以为阶段 1 已完成.
+        onDeletePersistedRows?.invoke()
+        rowsDeleted = true
+    }
+
+    override suspend fun closeAndDeleteFiles() = deletionLock.withLock {
+        if (_isDeleted.value) return@withLock
+        ensureRowsDeletedLocked()
+        // 同理, 阶段 1 成功后才算已删除, 否则重试会被 isDeleted 短路.
         _isDeleted.value = true
         onCloseAndDeleteFiles(file)
     }
