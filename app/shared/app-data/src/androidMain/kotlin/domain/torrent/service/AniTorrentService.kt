@@ -13,6 +13,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
@@ -111,6 +112,13 @@ sealed class AniTorrentService : LifecycleService() {
                 ),
             )
             logger.info { "anitorrent is initialized." }
+        }
+
+        // 仅 debug 构建: 在 127.0.0.1 上开诊断端口, adb forward 后可随时查看 BT 实时状态 (速度/进度/peers).
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            scope.launch {
+                TorrentDiagnosticsServer(anitorrent.await().getDownloader()).start()
+            }
         }
 
         scope.launch {
