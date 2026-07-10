@@ -222,6 +222,15 @@ interface MediaCache {
     val isDeleted: StateFlow<Boolean>
 
     /**
+     * 删除的快速逻辑阶段: 移除本缓存在持久层的引用行. 不依赖外部服务, 必须能立即完成. 幂等.
+     *
+     * [closeAndDeleteFiles] 内部也会先执行本阶段; 单独提供是让 storage 在向调用方返回前
+     * 同步完成逻辑删除 —— 慢速物理清理 (可能需要等待外部服务冷启动) 一旦被进程退出或
+     * scope 取消截断, 残留的引用行会与已删除的 storage 记录永久失联.
+     */
+    suspend fun deletePersistedRows() {}
+
+    /**
      * 尝试删除此 [MediaCache] 所涉及的文件.
      *
      * 注意! 你很可能需要使用 [MediaCacheManager.deleteCache]. 因为单独 [MediaCache.closeAndDeleteFiles] 并不会从 storage 中删除.
@@ -243,6 +252,25 @@ interface MediaCache {
         }
     }
 }
+
+/**
+ * 缓存条目的内部稳定身份. 与面向日志/UI 的 [MediaCache.cacheId] 不同, 本类型不经过哈希或字符串拼接,
+ * 可安全用于恢复去重、并发所有权和任务索引.
+ */
+internal data class MediaCacheKey(
+    val mediaId: String,
+    val subjectId: String,
+    val episodeId: String,
+) {
+    constructor(mediaId: String, metadata: MediaCacheMetadata) : this(
+        mediaId = mediaId,
+        subjectId = metadata.subjectId,
+        episodeId = metadata.episodeId,
+    )
+}
+
+internal val MediaCache.mediaCacheKey: MediaCacheKey
+    get() = MediaCacheKey(origin.mediaId, metadata)
 
 suspend inline fun MediaCache.isFinished(): Boolean = state.first() == MediaCacheState.COMPLETED
 

@@ -10,7 +10,9 @@
 package me.him188.ani.app.domain.media.cache.storage
 
 import androidx.datastore.core.DataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -44,13 +46,19 @@ class HttpMediaCacheStorage(
     private val lock = Mutex()
 
     override suspend fun restorePersistedCaches() {
-        val allRecovered = refreshCache()
-        httpEngine.deleteUnusedCaches(allRecovered)
+        lock.withLock {
+            val allRecovered = refreshCacheLocked()
+            // 启动清扫必须和 cache/delete 共用同一临界区. allRecovered 是冻结快照,
+            // 锁外清扫会把快照之后新建的缓存当作垃圾删除.
+            httpEngine.deleteUnusedCaches(allRecovered)
+        }
     }
+
+    private suspend fun refreshCacheLocked(): List<MediaCache> = super.refreshCache()
 
     override suspend fun refreshCache(): List<MediaCache> {
         return lock.withLock {
-            super.refreshCache()
+            refreshCacheLocked()
         }
     }
 
@@ -112,9 +120,21 @@ class HttpMediaCacheStorage(
     }
 
     override suspend fun deleteFirst(predicate: (MediaCache) -> Boolean): Boolean {
-        return lock.withLock {
-            super.deleteFirst(predicate)
+        // 整个“持锁 + 逻辑删除 + 物理删除”都归 storage scope 所有. 调用方取消 await 只会
+        // 放弃等待, 不会释放 lock 后任由旧清理与相同 downloadId 的新缓存并发 (ABA 误删).
+        val deletion = scope.async {
+            try {
+                lock.withLock {
+                    super@HttpMediaCacheStorage.deleteFirst(predicate)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.error(e) { "Failed to delete HTTP media cache" }
+                throw e
+            }
         }
+        return deletion.await()
     }
 }
 

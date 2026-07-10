@@ -68,4 +68,22 @@ class TorrentCacheInfoDaoTest {
         assertEquals("[09].mp4", dao.getFile(mediaId, "100", "9")?.pathInTorrent)
         assertEquals(1, dao.countFilesByMediaId(mediaId))
     }
+
+    @Test
+    fun `directory references span media ids`() = runTest {
+        val dao = createMemoryTorrentCacheInfoDao()
+        dao.upsert(TorrentCacheInfoEntity("media-a", byteArrayOf(1), "shared-dir"))
+        dao.upsert(TorrentCacheInfoEntity("media-b", byteArrayOf(1), "shared-dir"))
+        dao.upsert(TorrentCacheInfoEntity("media-c", byteArrayOf(1), "other-dir"))
+        dao.upsertFile(TorrentCacheFileEntity("media-a", "100", "1", pathInTorrent = "01.mp4"))
+        dao.upsertFile(TorrentCacheFileEntity("media-b", "100", "2"))
+        dao.upsertFile(TorrentCacheFileEntity("media-c", "100", "3", pathInTorrent = "01.mp4"))
+
+        assertEquals(2, dao.countFilesByRelativeDir("shared-dir"))
+
+        dao.deleteFile("media-a", "100", "1")
+        dao.deleteFile("media-b", "100", "2")
+
+        assertEquals(0, dao.countFilesByRelativeDir("shared-dir"))
+    }
 }
