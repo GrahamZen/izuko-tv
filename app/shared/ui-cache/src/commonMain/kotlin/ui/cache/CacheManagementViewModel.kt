@@ -37,6 +37,7 @@ import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
 import me.him188.ani.utils.coroutines.sampleWithInitial
+import me.him188.ani.utils.logging.info
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.time.Duration.Companion.seconds
@@ -134,6 +135,12 @@ class CacheManagementViewModel : AbstractViewModel(), KoinComponent {
     }
 
     fun deleteCache(cache: CacheEpisodeState) {
+        // 删除是不可逆的, 且批量删除是一条一条发下来的 —— 出了"怎么把别的番也删了"这种事,
+        // 事后只能从这行日志还原用户到底点了删几条、删的是哪几条 (存储层只会打"某个缓存被删了")
+        logger.info {
+            "Delete cache requested: subject=${cache.subjectId} ep=${cache.episodeId} " +
+                    "sort=${cache.sort} cacheId=${cache.cacheId}"
+        }
         backgroundScope.launch {
             deleteCacheByCacheIdUseCase(cache.subjectId, cache.episodeId, cache.cacheId)
         }
