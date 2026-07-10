@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Izuko TV 新增的文案. 上游原有的文案 (包括这边改过措辞的) 留在同目录的 strings.xml:
+  两边各改各的文件, 跟进上游时不会在同一个文件里撞. 新增文案加在这里, 按功能分组.
+-->
+<resources>
+    <string name="cache_management_delete_summary">將刪除 %1$d 項快取：</string>
+    <string name="cache_management_delete_summary_item">%1$s（%2$d 項）</string>
+</resources>
