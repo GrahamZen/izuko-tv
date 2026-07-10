@@ -51,6 +51,7 @@ abstract class AbstractTorrentMediaCacheEngineTest {
 
     @TempDir
     protected lateinit var dir: File
+    protected val testRootDir: File get() = dir
     protected val torrentInfoDatabase = createMemoryTorrentCacheInfoDao()
 
     /**
