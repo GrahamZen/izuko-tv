@@ -971,6 +971,8 @@
     <string name="cache_management_enter_selection_mode">进入选择模式</string>
     <string name="cache_management_delete_cache_title">删除缓存</string>
     <string name="cache_management_delete_cache_confirmation">删除后不可恢复，确认删除吗？</string>
+    <string name="cache_management_delete_summary">将删除 %1$d 项缓存：</string>
+    <string name="cache_management_delete_summary_item">%1$s（%2$d 项）</string>
     <string name="cache_management_finished_count">%1$d/%2$d 已完成</string>
     <string name="cache_management_downloading_count">%1$d 个下载中</string>
     <string name="cache_subject_pause_all">全部暂停</string>
