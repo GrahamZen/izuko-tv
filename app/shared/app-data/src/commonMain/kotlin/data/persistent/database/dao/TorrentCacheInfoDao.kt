@@ -168,6 +168,18 @@ interface TorrentCacheInfoDao {
     suspend fun countFilesByMediaId(mediaId: String): Int
 
     /**
+     * 该种子目录 (跨 mediaId) 还被多少集引用. 同一个种子被两个数据源收录时 mediaId 不同但
+     * [TorrentCacheInfoEntity.relativeDir] 相同, "能否删除整个种子目录"必须按目录计数,
+     * 只数自己的 mediaId 会误判"无人引用"而删掉另一个数据源那些集的文件.
+     */
+    @Query(
+        """SELECT COUNT(*) FROM torrent_cache_file f
+            JOIN torrent_cache t ON f.mediaId = t.mediaId
+            WHERE t.relativeDir = :relativeDir""",
+    )
+    suspend fun countFilesByRelativeDir(relativeDir: String): Int
+
+    /**
      * 按集的完成状态 + 对应种子的 relativeDir (LEFT JOIN). 供 "是否全部完成" 判断使用.
      */
     @Query(
@@ -252,6 +264,13 @@ fun createMemoryTorrentCacheInfoDao(): TorrentCacheInfoDao {
 
         override suspend fun countFilesByMediaId(mediaId: String): Int {
             return fileStore.data.firstOrNull()?.count { it.mediaId == mediaId } ?: 0
+        }
+
+        override suspend fun countFilesByRelativeDir(relativeDir: String): Int {
+            val mediaIds = store.data.firstOrNull()
+                ?.filter { it.relativeDir == relativeDir }?.map { it.mediaId }?.toSet()
+                ?: return 0
+            return fileStore.data.firstOrNull()?.count { it.mediaId in mediaIds } ?: 0
         }
 
         override fun getAllFilesWithDir(): Flow<List<TorrentCacheFileWithDir>> {
