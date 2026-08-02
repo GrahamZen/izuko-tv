@@ -62,7 +62,7 @@ fun List<WebSearchEpisodeInfo>.findMatchingEpisodeOrNull(
     episodeName: String?,
 ): WebSearchEpisodeInfo? {
     firstOrNull { info ->
-        info.matchingEpisodeSort(episodeSort, episodeEp)
+        matchingEpisodeSortOf(info, episodeSort, episodeEp, episodeName)
             ?.let { EpisodeRange.single(it).contains(episodeSort) } == true
     }?.let { return it }
     if (episodeSort !is EpisodeSort.Normal && !episodeName.isNullOrBlank()) {
@@ -70,7 +70,7 @@ fun List<WebSearchEpisodeInfo>.findMatchingEpisodeOrNull(
     }
     if (episodeEp != null) {
         firstOrNull { info ->
-            info.matchingEpisodeSort(episodeSort, episodeEp)
+            matchingEpisodeSortOf(info, episodeSort, episodeEp, episodeName)
                 ?.let { EpisodeRange.single(it).contains(episodeEp) } == true
         }?.let { return it }
     }

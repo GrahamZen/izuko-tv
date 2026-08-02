@@ -225,8 +225,10 @@ abstract class SelectorMediaSourceEngine {
         subjectName: String,
     ): SelectMediaResult {
         val parser = LabelFirstRawTitleParser()
-        val originalMediaList = episodes.mapNotNull { info ->
-            val episodeSort = info.matchingEpisodeSort(query.episodeSort, query.episodeEp) ?: return@mapNotNull null
+        val episodeList = episodes.toList()
+        val originalMediaList = episodeList.mapNotNull { info ->
+            val episodeSort = episodeList.matchingEpisodeSortOf(info, query.episodeSort, query.episodeEp, query.episodeName)
+                ?: return@mapNotNull null
             createMedia(info, episodeSort, config, mediaSourceId, subjectName, parser)
         }.toList()
 
