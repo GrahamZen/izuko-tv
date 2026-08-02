@@ -57,4 +57,77 @@ class FindMatchingEpisodeOrNullTest {
         val episodes = listOf(episode("线路1", 1), episode("线路1", 2))
         assertNull(episodes.findMatchingEpisodeOrNull(EpisodeSort(99), null, null))
     }
+
+    /**
+     * 站点把集号写成剧集名: hanime1.me 的条目页并列了两部单集作品, 每条的"集号"就是作品名.
+     * 见 https://github.com/open-ani/animeko/pull/3345
+     */
+    @Test
+    fun `findMatchingEpisodeOrNull matches by name when sort is the episode title`() {
+        val episodes = listOf(titleAsSort(TONARI), titleAsSort(YOGORETA))
+        // 两部作品在 Bangumi 侧都是单集, sort 都是 01, 只有剧集名不同
+        assertEquals(episodes[1], episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), YOGORETA))
+        assertEquals(episodes[0], episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), TONARI))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull does not match another work on the same page`() {
+        val episodes = listOf(titleAsSort(TONARI), titleAsSort(YOGORETA))
+        assertNull(episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), "毫不相干的作品"))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull keeps a parsed sort even if the name matches`() {
+        // 站点给了集号就以它为准: 页面第 3 集不能因为名字里有剧集名就当成第 1 集
+        val episodes = listOf(WebSearchEpisodeInfo("线路1", "第03集 $TONARI", EpisodeSort(3), MOVIE_URL))
+        assertNull(episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), TONARI))
+        assertEquals(episodes[0], episodes.findMatchingEpisodeOrNull(EpisodeSort(3), EpisodeSort(3), TONARI))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull without episode name falls back to sorts only`() {
+        val episodes = listOf(titleAsSort(TONARI), episode("线路1", 1))
+        assertEquals(episodes[1], episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), null))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull matches a whole work label as first episode`() {
+        val episodes = listOf(
+            WebSearchEpisodeInfo("线路1", "HD高清国语版", EpisodeSort("HD高清国语版"), MOVIE_URL),
+            WebSearchEpisodeInfo("线路1", "HD高清原声版", EpisodeSort("HD高清原声版"), MOVIE_URL),
+        )
+        assertEquals(episodes[0], episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), null))
+        assertNull(episodes.findMatchingEpisodeOrNull(EpisodeSort(5), EpisodeSort(5), null))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull matches the only episode on the page`() {
+        // xfdm 的剧场版条目页只有一条「剧场版」
+        val episodes = listOf(WebSearchEpisodeInfo("旧番主线①", "剧场版", EpisodeSort("剧场版"), MOVIE_URL))
+        assertEquals(episodes[0], episodes.findMatchingEpisodeOrNull(EpisodeSort(1), EpisodeSort(1), null))
+        assertNull(episodes.findMatchingEpisodeOrNull(EpisodeSort(5), EpisodeSort(5), null))
+    }
+
+    @Test
+    fun `findMatchingEpisodeOrNull keeps a match that already worked`() {
+        // 站点把集号写成了与请求完全相同的怪字符串: 本来就能按相等匹配上, 替换判据不能把它弄丢.
+        // (整页只有一条, 否则会走"只有一条"那条判据)
+        val weird = EpisodeSort("剧场版")
+        val episodes = listOf(WebSearchEpisodeInfo("线路1", "剧场版", weird, MOVIE_URL))
+        assertEquals(episodes[0], episodes.findMatchingEpisodeOrNull(weird, null, null))
+    }
+
+    private companion object {
+        private const val TONARI = "住在隔壁的她"
+        private const val YOGORETA = "被玷污的她"
+        private const val MOVIE_URL = "https://example.com/movie"
+
+        /** 站点把作品名写在集号位置: `epName` 与 `sort` 都是作品名 */
+        private fun titleAsSort(title: String) = WebSearchEpisodeInfo(
+            channel = "あんてきぬすっ",
+            name = title,
+            episodeSortOrEp = EpisodeSort(title),
+            playUrl = "https://example.com/$title",
+        )
+    }
 }
