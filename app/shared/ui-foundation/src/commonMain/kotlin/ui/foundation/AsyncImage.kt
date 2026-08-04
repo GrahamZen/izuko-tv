@@ -533,6 +533,8 @@ internal fun createDefaultSketch(
     addComponents {
         add(ScopedHttpClientHttpUriFetcherFactory(ScopedHttpClientHttpStack(client)))
         supportSvg()
+        // componentLoaderEnabled(false) 关掉了自动注册, 动图要手动来 (Bangumi 表情包有动图)
+        addAniAnimatedDecoders()
         // 只观察不改结果: 把每次解码的"清晰度"量成数字打进日志 (见 AniImageSharpness.kt)
         addRequestInterceptor(AniImageSharpnessInterceptor)
     }
