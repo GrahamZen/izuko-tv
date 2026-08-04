@@ -36,6 +36,9 @@ kotlin {
         api(libs.zoomimage.compose.sketch4.core)
         implementation(libs.filekit.dialogs)
         implementation(libs.filekit.dialogs.compose)
+        // 动图解码器 (GIF): Bangumi 的表情包有不少是动图. 上游的 createDefaultSketch 关掉了
+        // componentLoaderEnabled, 所以还要手动注册 (见 addAniAnimatedDecoders)
+        implementation(libs.sketch.animated.gif)
 
         implementation(libs.compose.components.resources)
         api(libs.compose.lifecycle.viewmodel.compose)
