@@ -199,6 +199,7 @@ logback-android = { module = "com.github.tony19:logback-android", version = "3.0
 sketch-compose-core = { module = "io.github.panpf.sketch4:sketch-compose-core", version.ref = "sketch" }
 sketch-http-core = { module = "io.github.panpf.sketch4:sketch-http-core", version.ref = "sketch" }
 sketch-svg = { module = "io.github.panpf.sketch4:sketch-svg", version.ref = "sketch" }
+sketch-animated-gif = { module = "io.github.panpf.sketch4:sketch-animated-gif", version.ref = "sketch" }
 # ZoomImage (与 Sketch 同作者): 手势缩放/滚轮缩放/键盘缩放/大图分块加载
 # https://github.com/panpf/zoomimage
 zoomimage-compose-sketch4-core = { module = "io.github.panpf.zoomimage:zoomimage-compose-sketch4-core", version.ref = "zoomimage" }
