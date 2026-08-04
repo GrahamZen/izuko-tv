@@ -196,11 +196,15 @@ fun TvPortraitCard(
                     // 快速滑过的并发洪峰会让个别请求失败并卡在 Error, 卡片永久剩纯色底
                     // (见 rememberAsyncImageRetryState)
                     val retry = rememberAsyncImageRetryState(imageUrl)
+                    // 窄带宽上一张封面要六七秒, 比导航节奏慢得多; 卡片被丢弃时若还没下完,
+                    // 交给后台跑完写进磁盘缓存, 免得回来又从头下 (见 rememberImageCompletionGrace)
+                    val loaded = rememberImageCompletionGrace(imageUrl)
                     AsyncImage(
                         if (retry.suppressed) null else imageUrl,
                         contentDescription = contentDescription,
                         Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
+                        onSuccess = { loaded.value = true },
                         onError = { retry.onError() },
                         downsampleLongEdgePx = if (obscureImage) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
                     )
