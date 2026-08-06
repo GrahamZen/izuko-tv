@@ -226,6 +226,8 @@ fun EpisodeDetails(
      * 入口按钮 (onClickManualSelect / onClickSwitchSource) 打开容器前调用一次; 宿主在这里锁存模式.
      */
     onBeforeOpenMediaSelector: () -> Unit = {},
+    /** 选中一个数据源后是否顺手关掉选择器, 见 `VideoScaffoldConfig.hideSelectorOnSelect`. */
+    hideSelectorOnSelect: Boolean = false,
 ) {
     var showSubjectDetails by rememberSaveable {
         mutableStateOf(false)
@@ -537,6 +539,8 @@ fun EpisodeDetails(
         val sourceResults = mediaSourceResultListPresentation()
         val showBt = sourceResults.btSources.isNotEmpty()
         val closeSelector = { showMediaSelector = false }
+        // 选中一个资源之后: 按设置决定要不要顺手关掉 (默认不关, 换的源不行可以当场再点一个)
+        val closeAfterSelect = { if (hideSelectorOnSelect) closeSelector() }
         val closeSelectorText = stringResource(Lang.subject_episode_close_selector)
         // 侧边栏占满窗口高度. 窗口太矮 (手机横屏) 时手动查找与 BT 改开窗口级对话框, 规则与播放器侧边栏相同.
         // 关掉对话框回到侧边栏并把模式置回自动匹配, 否则侧边栏立刻又变回对话框; 选中播放后全部关闭.
@@ -549,7 +553,7 @@ fun EpisodeDetails(
                     compact,
                     onModeChange = onMediaSelectorModeChange,
                     onClose = backToSheet,
-                    onPlayed = closeSelector,
+                    onPlayed = closeAfterSelect,
                     mediaSelectorState = mediaSelectorState,
                     sourceResults = sourceResults,
                     watching = watchingEpisode,
@@ -604,7 +608,7 @@ fun EpisodeDetails(
                                 mediaSelectorState,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
-                                    closeSelector()
+                                    closeAfterSelect()
                                 },
                                 onRestartSource = onRestartSource,
                                 onRequestManualSearch = { onMediaSelectorModeChange(MediaSelectorMode.MANUAL) },
@@ -617,7 +621,7 @@ fun EpisodeDetails(
                         MediaSelectorMode.MANUAL -> ManualBrowsePage(
                             manualBrowseState,
                             watchingEpisode,
-                            onPlayed = closeSelector,
+                            onPlayed = closeAfterSelect,
                             topBar = topBar,
                             modifier = Modifier.fillMaxSize(),
                             closeButton = closeButton,
@@ -634,7 +638,7 @@ fun EpisodeDetails(
                                 onFetchRequestChange,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
-                                    closeSelector()
+                                    closeAfterSelect()
                                 },
                                 onRestartSource = onRestartSource,
                                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -674,7 +678,7 @@ fun EpisodeDetails(
                             mediaSelectorState,
                             onClickItem = {
                                 mediaSelectorState.select(it)
-                                closeSelector()
+                                closeAfterSelect()
                             },
                             onRestartSource = onRestartSource,
                             onRequestManualSearch = { onMediaSelectorModeChange(MediaSelectorMode.MANUAL) },
@@ -686,7 +690,7 @@ fun EpisodeDetails(
                     MediaSelectorMode.MANUAL -> ManualBrowsePage(
                         manualBrowseState,
                         watchingEpisode,
-                        onPlayed = closeSelector,
+                        onPlayed = closeAfterSelect,
                         topBar = topBar,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -702,7 +706,7 @@ fun EpisodeDetails(
                             onFetchRequestChange,
                             onClickItem = {
                                 mediaSelectorState.select(it)
-                                closeSelector()
+                                closeAfterSelect()
                             },
                             onRestartSource = onRestartSource,
                             modifier = Modifier.fillMaxWidth().weight(1f),
