@@ -700,6 +700,7 @@ private fun EpisodeScreenSidebar(
                                 page.loadError?.let { vm.retryLoad(it) }
                             },
                             danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
+                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                             onBeforeOpenMediaSelector = {
                                 if (vm.mediaSelectorMode == null && !page.isLoading) {
                                     vm.mediaSelectorMode = page.initialMediaSelectorMode
@@ -860,6 +861,7 @@ private fun EpisodeScreenPhoneDetails(
                             vm.mediaSelectorMode = page.initialMediaSelectorMode
                         }
                     },
+                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                 )
             }
         },
@@ -1299,6 +1301,7 @@ private fun EpisodeVideo(
                                 fetchRequest = page.fetchRequest,
                                 onFetchRequestChange = { vm.updateFetchRequest(it) },
                                 manualBrowseState = vm.manualBrowseState,
+                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                             )
                         }
                     },
