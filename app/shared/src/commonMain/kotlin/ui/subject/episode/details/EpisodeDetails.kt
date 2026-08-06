@@ -232,6 +232,8 @@ fun EpisodeDetails(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
     danmakuListState: DanmakuListState? = null,
+    /** 选中一个数据源后是否顺手关掉选择器, 见 `VideoScaffoldConfig.hideSelectorOnSelect`. */
+    hideSelectorOnSelect: Boolean = false,
 ) {
     var showSubjectDetails by rememberSaveable {
         mutableStateOf(false)
@@ -423,7 +425,9 @@ fun EpisodeDetails(
                                 stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
-                                    showMediaSelector = false
+                                    if (hideSelectorOnSelect) {
+                                        showMediaSelector = false
+                                    }
                                 },
                                 scrollable = true,
                             )
@@ -458,7 +462,9 @@ fun EpisodeDetails(
                             stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                             onClickItem = {
                                 mediaSelectorState.select(it)
-                                showMediaSelector = false
+                                if (hideSelectorOnSelect) {
+                                    showMediaSelector = false
+                                }
                             },
                             scrollable = sheetState.targetValue == SheetValue.Expanded,
                         )
