@@ -109,7 +109,11 @@ internal fun TvPlayerSideSheets(
                         modifier = Modifier.fillMaxSize(),
                         onClickItem = {
                             page.mediaSelectorState.select(it)
-                            goBack()
+                            // 选完关不关由设置决定 (「选择数据源后自动关闭」). 关掉时留在面板上,
+                            // 换的源不行可以当场换下一个, 不必再唤一次面板
+                            if (vm.videoScaffoldConfig.hideSelectorOnSelect) {
+                                goBack()
+                            }
                         },
                         singleLineFilter = true,
                     )
