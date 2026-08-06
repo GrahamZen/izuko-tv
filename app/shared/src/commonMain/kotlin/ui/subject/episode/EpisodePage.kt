@@ -626,6 +626,7 @@ private fun EpisodeScreenTabletVeryWide(
                                         page.loadError?.let { vm.retryLoad(it) }
                                     },
                                     danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
+                                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                                 )
                             }
                         }
@@ -796,6 +797,7 @@ private fun EpisodeScreenContentPhone(
                     },
                     modifier = Modifier.fillMaxSize(),
                     danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
+                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                 )
             }
         },
@@ -1180,6 +1182,7 @@ private fun EpisodeVideo(
                             onDismissRequest = { goBack() },
                             onRefresh = { vm.refreshFetch() },
                             onRestartSource = { vm.restartSource(it) },
+                            hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                         )
                     }
                 },
