@@ -75,6 +75,8 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
     fetchRequest: MediaFetchRequest? = null,
     onFetchRequestChange: (MediaFetchRequest) -> Unit = {},
     manualBrowseState: ManualBrowseState? = null,
+    /** 选中一个数据源后是否顺手关掉本面板, 见 `VideoScaffoldConfig.hideSelectorOnSelect`. */
+    hideOnSelect: Boolean = false,
 ) {
     val selectMediaSourceText = stringResource(Lang.subject_episode_select_media_source)
     val closeSelectorText = stringResource(Lang.subject_episode_close_selector)
@@ -135,7 +137,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 onFetchRequestChange,
                 onClickItem = {
                     mediaSelectorState.select(it)
-                    onDismissRequest()
+                    if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,
                 modifier = modifier.fillMaxSize().navigationBarsPadding(),
@@ -145,7 +147,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 mediaSelectorState,
                 onClickItem = {
                     mediaSelectorState.select(it)
-                    onDismissRequest()
+                    if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,
                 onRequestManualSearch = { onModeChange(MediaSelectorMode.MANUAL) },
