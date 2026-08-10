@@ -37,7 +37,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -68,11 +67,10 @@ import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelationsDao
 import me.him188.ani.app.data.persistent.database.dao.deleteAll
-import me.him188.ani.app.data.persistent.database.dao.filterMostRecentUpdated
+import me.him188.ani.app.data.persistent.database.dao.filterMostRecentUpdatedWithEpisodes
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
-import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.repository.shouldRetry
 import me.him188.ani.app.domain.search.SubjectType
@@ -96,7 +94,6 @@ import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
-import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -258,7 +255,6 @@ class SubjectCollectionRepositoryImpl(
     private val subjectService: SubjectService,
     private val subjectCollectionDao: SubjectCollectionDao,
     private val subjectRelationsDao: SubjectRelationsDao,
-    private val episodeCollectionRepository: EpisodeCollectionRepository,
     private val animeScheduleRepository: AnimeScheduleRepository,
     private val episodeService: EpisodeService,
     private val episodeCollectionDao: EpisodeCollectionDao,
@@ -362,32 +358,50 @@ class SubjectCollectionRepositoryImpl(
         return subject
     }
 
+    /**
+     * 整条链只有**一条** Room flow: 条目与其剧集在同一次查询里取出 (`@Relation`), 数据库一变就整体重算.
+     *
+     * 曾经的实现是先查条目列表, 再为每个条目订阅一条 [subjectCollectionFlow] 拿剧集. 那条 flow 带条件网络
+     * 请求 (缓存过期就 `getSubjectCollection`), 于是改一次收藏就会让几十条 flow 重建并发请求, 其中任意一条
+     * 失败就会顺着 `combine` 抛穿上层, 把收集协程一起打死 —— 表现为探索页"继续观看"永久停在旧快照, 只能
+     * 重启应用. 这里的数据新鲜度由调用方先行的 [updateRecentlyUpdatedSubjectCollections] 保证, 本就不需要
+     * 逐条再拉一遍.
+     */
     override fun mostRecentlyUpdatedSubjectCollectionsFlow(
         limit: Int,
         types: List<UnifiedCollectionType>?, // null for all
-    ): Flow<List<SubjectCollectionInfo>> = subjectCollectionDao.filterMostRecentUpdated(types, limit)
-        .restartOnNewLogin(sessionManager)
-        .combine(nsfwModeSettingsFlow) { list, nsfwModeSettings ->
-            list to nsfwModeSettings
+    ): Flow<List<SubjectCollectionInfo>> = combine(
+        subjectCollectionDao.filterMostRecentUpdatedWithEpisodes(types, limit)
+            .restartOnNewLogin(sessionManager),
+        nsfwModeSettingsFlow,
+        getEpisodeTypeFiltersUseCase(),
+    ) { list, nsfwModeSettings, epTypes ->
+        val currentDate = getCurrentDate()
+        list.map { (entity, episodesOfAnyType) ->
+            entity.toSubjectCollectionInfo(
+                episodes = episodesOfAnyType
+                    .asSequence()
+                    .filter { it.episodeType in epTypes }
+                    // @Relation 不保证顺序, 而 SubjectCollectionInfo.episodes 约定按 sort 升序 (进度计算依赖它).
+                    // 等价于 DAO 里其余查询的 `ORDER BY sortNumber ASC, sort ASC`:
+                    // - 次级键不能省: sortNumber 是 EpisodeSort.number, 拿不到序号时一律是 Float.MAX_VALUE
+                    //   (见 EpisodeCollectionEntity 的 defaultValue), 特殊剧集全挤在同一个值上;
+                    // - 次级键用 sort.toString() 而不是 EpisodeSort 自身: sort 列存的就是 toString()
+                    //   (EpisodeSortConverter), 字符串比较与 SQLite 一致; 而 EpisodeSort.compareTo 的 Special
+                    //   分支不满足反对称性 (a<b 却 b==a), 剧集一多会撞上 TimSort 的 contract 检查而抛异常.
+                    .sortedWith(compareBy({ it.sortNumber }, { it.sort.toString() }))
+                    .map { it.toEpisodeCollectionInfo() }
+                    .toList(),
+                currentDate = currentDate,
+                nsfwModeSettings = nsfwModeSettings,
+            )
         }
-        .flatMapLatest { (list, nsfwModeSettings) ->
-            if (list.isEmpty()) {
-                return@flatMapLatest flowOfEmptyList()
-            }
-            combine(
-                list.map { entity ->
-                    episodeCollectionRepository.subjectEpisodeCollectionInfosFlow(entity.subjectId).map { episodes ->
-                        entity.toSubjectCollectionInfo(
-                            episodes = episodes,
-                            currentDate = getCurrentDate(),
-                            nsfwModeSettings = nsfwModeSettings,
-                        )
-                    }
-                },
-            ) {
-                it.toList()
-            }
-        }
+    }
+        // Room 的 flow 只要表被 invalidate 就重发, 而 entity 的 lastFetched 每次刷新都会变、却又不进
+        // SubjectCollectionInfo —— 于是"刷新了但数据没变"(每小时的批量刷新、进详情页/播放器时的单条
+        // 刷新、追番页 mediator 每批写库) 会让下游白跑一整轮: 重建 PagingData、LazyPagingItems 换掉整个
+        // snapshot list、"继续观看"整行重组. 深比较 64 个条目比那一轮便宜一到两个数量级.
+        .distinctUntilChanged()
         .flowOn(defaultDispatcher)
 
     override fun subjectCollectionsPager(
