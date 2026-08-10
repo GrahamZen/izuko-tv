@@ -140,7 +140,6 @@ fun KoinApplication.repositoryModules(
 //            subjectCharacterRelationDao = database.subjectCharacterRelation(),
 //            subjectPersonRelationDao = database.subjectPersonRelation(),
             subjectRelationsDao = database.subjectRelations(),
-            episodeCollectionRepository = get(),
             animeScheduleRepository = get(),
             episodeService = get(),
             episodeCollectionDao = database.episodeCollection(),
@@ -154,7 +153,6 @@ fun KoinApplication.repositoryModules(
         FollowedSubjectsRepository(
             subjectCollectionRepository = get(),
             animeScheduleRepository = get(),
-            episodeCollectionRepository = get(),
             settingsRepository = get(),
             sessionManager = get(),
         )

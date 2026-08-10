@@ -20,12 +20,11 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
-import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.restartOnNewLogin
-import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.utils.coroutines.retryWithBackoffDelay
 import me.him188.ani.utils.logging.error
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -38,7 +37,6 @@ import kotlin.time.Duration.Companion.hours
 class FollowedSubjectsRepository(
     private val subjectCollectionRepository: SubjectCollectionRepository,
     private val animeScheduleRepository: AnimeScheduleRepository,
-    private val episodeCollectionRepository: EpisodeCollectionRepository,
 //    private val subjectProgressRepository: EpisodeProgressRepository,
 //    private val subjectCollectionDao: SubjectCollectionDao,
     private val sessionManager: SessionStateProvider,
@@ -59,13 +57,15 @@ class FollowedSubjectsRepository(
             }
         }
 
-        val now = PackedDate.now()
-
         // 对于最近看过的一些条目
         return ticker.flatMapLatest {
             try {
+                // 与下面查本地的 limit 对齐: 这一个批量请求是本栏目唯一的刷新来源, 少拉的那部分条目
+                // (以前靠逐条 subjectCollectionFlow 顺带刷新) 就会一直看不到新播出的剧集 —— 表现为它不会
+                // 被 sorter 的 hasNewEpisodeToPlay 顶到行首、hero 仍写着"已看完". 服务端 limit 无上限
+                // (追番页 pager 的 initialLoadSize 已是 120), 拉满比多发几十个单条请求便宜得多.
                 subjectCollectionRepository.updateRecentlyUpdatedSubjectCollections(
-                    30, // should be enough
+                    FOLLOWED_SUBJECTS_LIMIT,
                     UnifiedCollectionType.DOING,
                 ) // refresh
             } catch (e: CancellationException) {
@@ -83,59 +83,49 @@ class FollowedSubjectsRepository(
             // 先查询完成 (插入数据库) 再返回 flow 去查数据库. 前端会展示 placeholder 所以延迟没问题.
 
             subjectCollectionRepository.mostRecentlyUpdatedSubjectCollectionsFlow(
-                limit = 64,
+                limit = FOLLOWED_SUBJECTS_LIMIT,
                 types = listOf(
                     UnifiedCollectionType.DOING,
                 ),
-            ).flatMapLatest { subjectCollectionInfoList ->
-                // 对于每个条目, 获取其最新的集数信息
-                if (subjectCollectionInfoList.isEmpty()) { // `combine(emptyList)` does not emit
-                    return@flatMapLatest flowOf(emptyList())
-                }
-                getFollowedSubjectInfoFlows(subjectCollectionInfoList, now)
-            }.map { followedSubjectInfoList ->
-                followedSubjectInfoList
+            ).combine(nsfwModeSettingsFlow) { subjectCollectionInfoList, nsfwMode ->
+                toFollowedSubjectInfos(subjectCollectionInfoList, nsfwMode)
                     .toMutableList()
                     .apply {
                         sortWith(sorter)
                     }
-            }.catch {
-                throw RepositoryException.wrapOrThrowCancellation(it)
             }
+                // 内层任意一次失败都不能杀掉整条链: 它上面挂着探索页"继续观看"的 cachedIn 收集协程, 一旦
+                // 协程死掉这一栏就永久停在旧快照 (改收藏、看完新一集都不再反映), 只能重启应用恢复.
+                .retryWithBackoffDelay { e, _ ->
+                    if (e is CancellationException) throw e
+                    logger.error(e) { "Failed to collect followed subjects, retrying. 这只会导致探索页的继续观看栏目短暂显示旧结果." }
+                    true
+                }
         }.flowOn(defaultDispatcher)
     }
 
-    private fun getFollowedSubjectInfoFlows(
+    /**
+     * [subjectCollectionInfoList] 里已经带着各自的剧集列表 ([SubjectCollectionInfo.episodes]), 直接算即可.
+     * 不要再为每个条目去订阅一遍剧集 flow —— 那既是重复查询, 又会把整条链变成 N 条 flow 的 `combine`
+     * (任意一条卡住或抛异常都会拖垮整栏, 见 [SubjectCollectionRepository.mostRecentlyUpdatedSubjectCollectionsFlow]).
+     */
+    private fun toFollowedSubjectInfos(
         subjectCollectionInfoList: List<SubjectCollectionInfo>,
-        now: PackedDate,
-    ): Flow<List<FollowedSubjectInfo>> = combine(
-        subjectCollectionInfoList.map { info ->
-            episodeCollectionRepository.subjectEpisodeCollectionInfosFlow(info.subjectId)
-        },
-    ) { array ->
-        array.toList()
-    }.combine(nsfwModeSettingsFlow) { epInfoLists, nsfwMode ->
-        subjectCollectionInfoList.asSequence().zip(epInfoLists.asSequence()) { subjectCollectionInfo, episodes ->
-            // 计算每个条目的播放进度
-            FollowedSubjectInfo(
-                subjectCollectionInfo,
-                SubjectAiringInfo.computeFromEpisodeList(
-                    episodes.map { it.episodeInfo },
-                    subjectCollectionInfo.subjectInfo.airDate,
-                    subjectCollectionInfo.recurrence,
-                ),
-                SubjectProgressInfo.compute(
-                    subjectCollectionInfo.subjectInfo,
-                    episodes,
-                    now,
-                    subjectCollectionInfo.recurrence,
-                ),
-                nsfwMode =
-                    if (subjectCollectionInfo.subjectInfo.nsfw) nsfwMode
-                    else NsfwMode.DISPLAY,
-            )
-        }.toList()
-    }.flowOn(defaultDispatcher)
+        nsfwMode: NsfwMode,
+    ): List<FollowedSubjectInfo> = subjectCollectionInfoList.map { subjectCollectionInfo ->
+        FollowedSubjectInfo(
+            subjectCollectionInfo,
+            // 这两个在 SubjectCollectionInfo 里已经按**同样的参数**算好了 (见
+            // SubjectCollectionRepository 的 toSubjectCollectionInfo: airDate 同一列、recurrence 同源、
+            // episodes 同一份, 只差两次相隔几毫秒的 PackedDate.now()). 直接复用, 不要再算一遍 ——
+            // 每次都要遍历并排序该条目的全部剧集, 64 部就是 128 遍.
+            subjectCollectionInfo.airingInfo,
+            subjectCollectionInfo.progressInfo,
+            nsfwMode =
+                if (subjectCollectionInfo.subjectInfo.nsfw) nsfwMode
+                else NsfwMode.DISPLAY,
+        )
+    }
 
     fun followedSubjectsPager(
         updatePeriod: Duration = 1.hours,
@@ -149,6 +139,12 @@ class FollowedSubjectsRepository(
         }.flowOn(defaultDispatcher)
 
     private companion object {
+        /**
+         * "继续观看"栏目的条目数上限. 服务器刷新与本地查询共用, 两者必须一致 —— 只刷新前 N 条却显示前 M 条
+         * (N < M) 的话, 中间那段永远拿不到新播出的剧集.
+         */
+        private const val FOLLOWED_SUBJECTS_LIMIT = 64
+
         private val NotLoading = LoadStates(
             refresh = LoadState.NotLoading(true),
             prepend = LoadState.NotLoading(true),
