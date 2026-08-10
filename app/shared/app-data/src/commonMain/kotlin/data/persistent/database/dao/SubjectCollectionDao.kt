@@ -190,8 +190,8 @@ interface SubjectCollectionDao {
 
     @Query(
         """
-    SELECT * FROM subject_collection 
-    WHERE collectionType IS NOT NULL 
+    SELECT * FROM subject_collection
+    WHERE collectionType IS NOT NULL
     ORDER BY lastUpdated DESC
     LIMIT :limit
     OFFSET :offset
@@ -201,6 +201,48 @@ interface SubjectCollectionDao {
         limit: Int,
         offset: Int = 0,
     ): Flow<List<SubjectCollectionEntity>>
+
+    /**
+     * 同 [filterMostRecentUpdated], 但一次查询就把每个条目的剧集一起取出.
+     *
+     * 调用方**不要**改回"先查条目列表, 再为每个条目单独订阅一条剧集 flow"的写法: 那会变成 N 条 flow 的
+     * `combine`, 其中任意一条不发射整个列表就卡住, 任意一条抛异常整条链就死 (探索页"继续观看"栏因此
+     * 永久冻结过, 只能重启应用恢复).
+     */
+    @Query(
+        """
+    SELECT * FROM subject_collection
+    WHERE collectionType IS NOT NULL
+    AND (collectionType IN (:collectionTypes))
+    ORDER BY lastUpdated DESC
+    LIMIT :limit
+    OFFSET :offset
+    """,
+    )
+    @Transaction
+    fun filterMostRecentUpdatedWithEpisodes(
+        collectionTypes: List<UnifiedCollectionType>,
+        limit: Int,
+        offset: Int = 0,
+    ): Flow<List<SubjectCollectionAndEpisodes>>
+
+    /**
+     * @see filterMostRecentUpdatedWithEpisodes
+     */
+    @Query(
+        """
+    SELECT * FROM subject_collection
+    WHERE collectionType IS NOT NULL
+    ORDER BY lastUpdated DESC
+    LIMIT :limit
+    OFFSET :offset
+    """,
+    )
+    @Transaction
+    fun mostRecentUpdatedWithEpisodes(
+        limit: Int,
+        offset: Int = 0,
+    ): Flow<List<SubjectCollectionAndEpisodes>>
 
     /**
      * Retrieves a paginated list of `SubjectCollectionEntity` items, optionally filtered by type.
@@ -326,3 +368,17 @@ fun SubjectCollectionDao.filterMostRecentUpdated(
     collectionType: UnifiedCollectionType? = null,
     limit: Int,
 ): Flow<List<SubjectCollectionEntity>> = filterMostRecentUpdated(listOfNotNull(collectionType), limit)
+
+/**
+ * @param collectionTypes `null` 表示不限类型
+ * @see SubjectCollectionDao.filterMostRecentUpdatedWithEpisodes
+ */
+fun SubjectCollectionDao.filterMostRecentUpdatedWithEpisodes(
+    collectionTypes: List<UnifiedCollectionType>?,
+    limit: Int,
+    offset: Int = 0,
+): Flow<List<SubjectCollectionAndEpisodes>> = if (collectionTypes == null) {
+    mostRecentUpdatedWithEpisodes(limit, offset)
+} else {
+    filterMostRecentUpdatedWithEpisodes(collectionTypes, limit, offset)
+}
