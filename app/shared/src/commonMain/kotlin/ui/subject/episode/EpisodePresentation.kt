@@ -17,6 +17,7 @@ import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownCompleted
+import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownOnAir
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 
 /**
@@ -44,9 +45,17 @@ data class EpisodePresentation(
     val sort: String,
     val collectionType: UnifiedCollectionType,
     /**
-     * 是否已经确定开播了
+     * 是否已经确定开播了. 注意这是**保守**判定: 拿不到播出日期时为 `false`, 所以它的否定是"不确定播没播",
+     * 而**不是**"确定没播". 想表达后者请用 [isKnownNotYetAired].
      */
     val isKnownBroadcast: Boolean,
+    /**
+     * 是否确定还未播出. 同样是保守判定: 拿不到播出日期时为 `false`.
+     *
+     * 用来拦"跳到还没播的下一集"这类操作 —— 不能拿 `!isKnownBroadcast` 代替: SP / OVA 在 Bangumi 上
+     * 常常没有播出日期, 那样会把它们一律当成没开播 (表现为下一集是 SP 时播放器不显示"下一集"按钮).
+     */
+    val isKnownNotYetAired: Boolean,
     val isPlaceholder: Boolean = false,
 ) {
     companion object {
@@ -58,6 +67,7 @@ data class EpisodePresentation(
             sort = "placeholder",
             collectionType = UnifiedCollectionType.WISH,
             isKnownBroadcast = false,
+            isKnownNotYetAired = false,
             isPlaceholder = true,
         )
     }
@@ -72,4 +82,5 @@ fun EpisodeCollectionInfo.toPresentation(
     sort = episodeInfo.sort.toString(),
     collectionType = collectionType,
     isKnownBroadcast = episodeInfo.isKnownCompleted(recurrence),
+    isKnownNotYetAired = episodeInfo.isKnownOnAir(recurrence),
 )
