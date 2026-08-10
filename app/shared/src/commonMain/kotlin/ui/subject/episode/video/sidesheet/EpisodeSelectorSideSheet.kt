@@ -105,7 +105,10 @@ class EpisodeSelectorState(
     val hasNextEpisode by derivedStateOf {
         val currentIndex = currentIndex
         currentIndex != -1 && currentIndex < items.lastIndex
-                && items[currentIndex + 1].isKnownBroadcast // 仅限下一集开播了
+                // 只挡"确定还没播出"的下一集. 不能写成 !isKnownBroadcast —— 那是"一定已播出"的否定,
+                // 即"不确定播没播", 而 SP / OVA 常常没有播出日期, 会被一律当成没开播, 于是下一集是 SP 时
+                // 播放器的"下一集"按钮直接消失
+                && !items[currentIndex + 1].isKnownNotYetAired
     }
 
     val hasPrevEpisode by derivedStateOf {
@@ -227,6 +230,7 @@ fun rememberTestEpisodeSelectorState() = remember {
                     sort = "01",
                     collectionType = UnifiedCollectionType.WISH,
                     isKnownBroadcast = true,
+                    isKnownNotYetAired = false,
                     isPlaceholder = true,
                 ),
                 EpisodePresentation(
@@ -236,6 +240,7 @@ fun rememberTestEpisodeSelectorState() = remember {
                     sort = "02",
                     collectionType = UnifiedCollectionType.WISH,
                     isKnownBroadcast = true,
+                    isKnownNotYetAired = false,
                     isPlaceholder = true,
                 ),
                 EpisodePresentation(
@@ -245,6 +250,7 @@ fun rememberTestEpisodeSelectorState() = remember {
                     sort = "03",
                     collectionType = UnifiedCollectionType.WISH,
                     isKnownBroadcast = false,
+                    isKnownNotYetAired = true, // 这条模拟的就是"还没播出"
                     isPlaceholder = true,
                 ),
             ),
