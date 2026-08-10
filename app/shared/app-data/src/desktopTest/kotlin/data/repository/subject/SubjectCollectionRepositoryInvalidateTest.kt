@@ -234,7 +234,6 @@ class SubjectCollectionRepositoryInvalidateTest {
                 subjectService = service,
                 subjectCollectionDao = database.subjectCollection(),
                 subjectRelationsDao = database.subjectRelations(),
-                episodeCollectionRepository = episodeCollectionRepository,
                 animeScheduleRepository = animeScheduleRepository,
                 episodeService = episodeService,
                 episodeCollectionDao = database.episodeCollection(),
