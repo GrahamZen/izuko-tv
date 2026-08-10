@@ -85,7 +85,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.danmaku.SetDanmakuEnabledUseCase
-import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownCompleted
+import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownOnAir
 import me.him188.ani.app.domain.episode.EpisodeDanmakuLoader
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
@@ -521,13 +521,15 @@ open class EpisodeViewModel(
 
     @OptIn(UnsafeEpisodeSessionApi::class)
     suspend fun computeAutoPlayNextEpisodeId(currentEpisodeId: Int): Int? {
-        val list = episodeCollectionsFlow.first()
         val subject = subjectCollectionFlow.first()
-        val currentIndex = list.indexOfFirst { it.episodeId == currentEpisodeId }
-        if (currentIndex == -1) return null
-        val nextEpisode = list.getOrNull(currentIndex + 1) ?: return null
+        // 只在同类型剧集间接续: 正片接下一集正片, SP01 接 SP02 (见 findNeighborEpisode)
+        val nextEpisode = episodeCollectionsFlow.first()
+            .findNeighborEpisode(currentEpisodeId, offset = 1) ?: return null
 
-        return if (!nextEpisode.episodeInfo.isKnownCompleted(subject.recurrence)) null else nextEpisode.episodeId
+        // 只拦"确定还没播出"的下一集. 不能写成 !isKnownCompleted —— 那是"一定已播出"的
+        // 否定即"不确定播没播", 而 SP / OVA 常常没有播出日期, 会被一律当成没开播, 于是
+        // 下一集是 SP 时既不自动连播、播放器也不显示"下一集"按钮
+        return if (nextEpisode.episodeInfo.isKnownOnAir(subject.recurrence)) null else nextEpisode.episodeId
     }
 
     @UnsafeEpisodeSessionApi
