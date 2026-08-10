@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.koin.core.Koin
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.PlayerState
@@ -122,11 +123,26 @@ class SwitchMediaOnPlayerErrorExtension(
                 videoLoadingStateFlow, // 解析链接出错 (未匹配到链接)
                 playerStateFlow, // 解析成功, 但播放器出错 (无法链接到链接, 例如链接错误)
             ) { videoLoadingState, playerState ->
-                videoLoadingState is VideoLoadingState.Failed || playerState.mediaStatus is MediaStatus.Error
-            }.distinctUntilChanged()
-                .collectLatest { isError ->
-                    if (isError) {
-                        handleError(bundle.mediaFetchSession, bundle.mediaSelector)
+                // 带上原因: 只打一句 "Player errored" 的话, 用户导出的日志里分不出是没解析到文件
+                // 还是播放器解码失败, 也拿不到 ExoPlayer 的错误码 (issue #12).
+                val mediaStatus = playerState.mediaStatus
+                when {
+                    videoLoadingState is VideoLoadingState.Failed -> PlayerLoadError(
+                        videoLoadingState.toString(),
+                        (videoLoadingState as? VideoLoadingState.UnknownError)?.cause,
+                    )
+
+                    mediaStatus is MediaStatus.Error -> PlayerLoadError(
+                        "code=${mediaStatus.error.code}",
+                        mediaStatus.error,
+                    )
+
+                    else -> null
+                }
+            }.distinctUntilChangedBy { it != null }
+                .collectLatest { error ->
+                    if (error != null) {
+                        handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
                     } // else: cancel selection
                 }
         }
@@ -138,6 +154,14 @@ class SwitchMediaOnPlayerErrorExtension(
         }
     }
 }
+
+/**
+ * 播放失败的原因, 只用于日志.
+ */
+internal class PlayerLoadError(
+    val description: String,
+    val cause: Throwable?,
+)
 
 internal class PlayerLoadErrorHandler(
     private val getPreferKind: suspend () -> MediaSourceKind?,
@@ -160,9 +184,15 @@ internal class PlayerLoadErrorHandler(
     suspend fun handleError(
         session: MediaFetchSession,
         mediaSelector: MediaSelector,
+        error: PlayerLoadError? = null,
     ) {
         // 播放出错了
-        logger.info { "Player errored, automatically switching to next media" }
+        val reason = error?.description ?: "unknown"
+        if (error?.cause != null) {
+            logger.warn(error.cause) { "Player errored ($reason), automatically switching to next media" }
+        } else {
+            logger.info { "Player errored ($reason), automatically switching to next media" }
+        }
 
         // 将当前播放的 mediaId 加入黑名单
         val failedMedia = mediaSelector.selected.value
