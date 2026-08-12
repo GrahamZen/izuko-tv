@@ -62,6 +62,7 @@ import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
+import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionAndEpisodes
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
@@ -377,25 +378,7 @@ class SubjectCollectionRepositoryImpl(
         getEpisodeTypeFiltersUseCase(),
     ) { list, nsfwModeSettings, epTypes ->
         val currentDate = getCurrentDate()
-        list.map { (entity, episodesOfAnyType) ->
-            entity.toSubjectCollectionInfo(
-                episodes = episodesOfAnyType
-                    .asSequence()
-                    .filter { it.episodeType in epTypes }
-                    // @Relation 不保证顺序, 而 SubjectCollectionInfo.episodes 约定按 sort 升序 (进度计算依赖它).
-                    // 等价于 DAO 里其余查询的 `ORDER BY sortNumber ASC, sort ASC`:
-                    // - 次级键不能省: sortNumber 是 EpisodeSort.number, 拿不到序号时一律是 Float.MAX_VALUE
-                    //   (见 EpisodeCollectionEntity 的 defaultValue), 特殊剧集全挤在同一个值上;
-                    // - 次级键用 sort.toString() 而不是 EpisodeSort 自身: sort 列存的就是 toString()
-                    //   (EpisodeSortConverter), 字符串比较与 SQLite 一致; 而 EpisodeSort.compareTo 的 Special
-                    //   分支不满足反对称性 (a<b 却 b==a), 剧集一多会撞上 TimSort 的 contract 检查而抛异常.
-                    .sortedWith(compareBy({ it.sortNumber }, { it.sort.toString() }))
-                    .map { it.toEpisodeCollectionInfo() }
-                    .toList(),
-                currentDate = currentDate,
-                nsfwModeSettings = nsfwModeSettings,
-            )
-        }
+        list.map { it.toSubjectCollectionInfo(epTypes, currentDate, nsfwModeSettings) }
     }
         // Room 的 flow 只要表被 invalidate 就重发, 而 entity 的 lastFetched 每次刷新都会变、却又不进
         // SubjectCollectionInfo —— 于是"刷新了但数据没变"(每小时的批量刷新、进详情页/播放器时的单条
@@ -422,20 +405,7 @@ class SubjectCollectionRepositoryImpl(
                     )
                 },
             ).flow.map { data ->
-                data.map { (entity, episodesOfAnyType) ->
-                    val date = getCurrentDate()
-                    entity.toSubjectCollectionInfo(
-                        episodes = episodesOfAnyType
-                            .asSequence()
-                            .let { sequence ->
-                                sequence.filter { it.episodeType in epTypes }
-                            }
-                            .map { it.toEpisodeCollectionInfo() }
-                            .toList(),
-                        currentDate = date,
-                        nsfwModeSettings = nsfwModeSettings,
-                    )
-                }
+                data.map { it.toSubjectCollectionInfo(epTypes, getCurrentDate(), nsfwModeSettings) }
             }
         }.flowOn(defaultDispatcher)
 
@@ -769,6 +739,39 @@ private fun SubjectCollectionEntity.toSubjectCollectionInfo(
         relations = relations ?: SubjectRelations.Empty,
     )
 }
+
+/**
+ * `@Relation` 一次取出的"条目 + 其全部剧集"到 [SubjectCollectionInfo] 的**唯一**映射,
+ * 追番页 pager 与探索页"继续观看"共用.
+ *
+ * 两处必须共用, 否则下面的排序只在其中一处生效 —— 曾经就是如此, 追番页那条路吐出的是数据库原始顺序.
+ */
+private fun SubjectCollectionAndEpisodes.toSubjectCollectionInfo(
+    epTypes: List<EpisodeType>,
+    currentDate: PackedDate,
+    nsfwModeSettings: NsfwMode,
+): SubjectCollectionInfo = collection.toSubjectCollectionInfo(
+    episodes = episodesOfAnyType
+        .asSequence()
+        .filter { it.episodeType in epTypes }
+        // @Relation 生成的子查询没有 ORDER BY, SQLite 按 (subjectId, episodeId) 索引吐回,
+        // 而 SubjectCollectionInfo.episodes 约定按 sort 升序. 条目后补一集 (episodeId 更大但 sort 靠前,
+        // 常见于补录的 SP/前置话) 时两者就会分叉, 吃这个顺序的下游全部算错:
+        // SubjectAiringInfo.computeFromEpisodeList 的 firstSort/latestSort (卡片"全 X 话/更新至 X 话")、
+        // TmdbEpisodeStills.matchToEpisodes 按 index±1 取锚点的三明治插值 (hero 剧照错位).
+        // (SubjectProgressInfo.compute 自己会再排一次, 不在此列.)
+        // 等价于 DAO 里其余查询的 `ORDER BY sortNumber ASC, sort ASC`:
+        // - 次级键不能省: sortNumber 是 EpisodeSort.number, 拿不到序号时一律是 Float.MAX_VALUE
+        //   (见 EpisodeCollectionEntity 的 defaultValue), 特殊剧集全挤在同一个值上;
+        // - 次级键用 sort.toString() 而不是 EpisodeSort 自身: sort 列存的就是 toString()
+        //   (EpisodeSortConverter), 字符串比较与 SQLite 一致; 而 EpisodeSort.compareTo 的 Special
+        //   分支不满足反对称性 (a<b 却 b==a), 剧集一多会撞上 TimSort 的 contract 检查而抛异常.
+        .sortedWith(compareBy({ it.sortNumber }, { it.sort.toString() }))
+        .map { it.toEpisodeCollectionInfo() }
+        .toList(),
+    currentDate = currentDate,
+    nsfwModeSettings = nsfwModeSettings,
+)
 
 
 data class LoadInfo(
