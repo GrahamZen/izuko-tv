@@ -36,6 +36,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
+import me.him188.ani.app.ui.foundation.focus.tvContainDirectionalKeys
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
@@ -150,6 +151,9 @@ fun BoxScope.UpdateNotifier(
     // 只锁"有更新"这张卡 (与上面返回键同理): 下载中那张要挂几分钟, 锁住等于扣着整个应用不放.
     // 20 秒无操作自动消失仍然有效, 是这个模态的兜底时限; 届时焦点由 NavHost 的兜底监视
     // (见 AniAppContent 的 navHostModifier) 送回页面, 不会丢在根上.
+    // 光挡 Compose 的焦点搜索不够: 搜索被取消后方向键没人消费, 会交给 Android 的 FocusFinder 按屏幕位置在整个窗口里找,
+    // 卡片背后是原生页面 (探索 / 追番 / 搜索) 时就挑中它们的视图, 焦点照样跑出卡片. 所以方向键在卡片里自己移焦点并吞掉
+    // (tvContainDirectionalKeys).
     val trapFocus = LocalAniUiBehavior.current.focusDrivenNavigation && hasUpdateCard
 
     AniAnimatedVisibility(
@@ -167,6 +171,7 @@ fun BoxScope.UpdateNotifier(
             .ifThen(trapFocus) {
                 focusProperties { onExit = { cancelFocusChange() } }
                     .focusGroup()
+                    .tvContainDirectionalKeys()
             },
     ) {
         when {
@@ -174,6 +179,7 @@ fun BoxScope.UpdateNotifier(
                 NewVersionPopupCard(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
+                    showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
                         newVersion?.let { viewModel.startDownload(it, uriHandler) }
@@ -267,6 +273,7 @@ fun BoxScope.UpdateSettingsNotifier(
                 NewVersionPopupCard(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
+                    showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
                         newVersion?.let { viewModel.startDownload(it, uriHandler) }
