@@ -14,7 +14,6 @@ import androidx.paging.LoadStates
 import androidx.paging.PagingData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.*
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
@@ -40,11 +39,12 @@ class FollowedSubjectsRepository(
 //    private val subjectProgressRepository: EpisodeProgressRepository,
 //    private val subjectCollectionDao: SubjectCollectionDao,
     private val sessionManager: SessionStateProvider,
+    // 保留只是为了不动 Koin 那边的构造调用: NSFW 规则已经在 SubjectCollectionRepository 里算完
+    // (见 toFollowedSubjectInfos 的说明), 这里不再订阅第二遍设置.
+    @Suppress("UNUSED_PARAMETER")
     settingsRepository: SettingsRepository,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
 ) : Repository(defaultDispatcher) {
-    private val nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode }
-
     private fun followedSubjectsFlow(
         updatePeriod: Duration = 1.hours,
     ): Flow<List<FollowedSubjectInfo>> {
@@ -87,8 +87,12 @@ class FollowedSubjectsRepository(
                 types = listOf(
                     UnifiedCollectionType.DOING,
                 ),
-            ).combine(nsfwModeSettingsFlow) { subjectCollectionInfoList, nsfwMode ->
-                toFollowedSubjectInfos(subjectCollectionInfoList, nsfwMode)
+            ).map { subjectCollectionInfoList ->
+                // 这里不要再 combine 一次设置 flow. 上游那条已经 combine 过同一个 uiSettings flow, 且它后面跟着
+                // distinctUntilChanged —— 改一项与 NSFW 无关的 UI 设置不会往下发. 而这里若自己再订阅一遍,
+                // 任何 UISettings 变更都会让 64 条 FollowedSubjectInfo 全部重建并重新排序, PagingData 换新对象,
+                // 探索页"继续观看"整行 LazyPagingItems 重建一次 snapshot, 而 nsfwMode 其实一个字节都没变.
+                toFollowedSubjectInfos(subjectCollectionInfoList)
                     .toMutableList()
                     .apply {
                         sortWith(sorter)
@@ -111,19 +115,18 @@ class FollowedSubjectsRepository(
      */
     private fun toFollowedSubjectInfos(
         subjectCollectionInfoList: List<SubjectCollectionInfo>,
-        nsfwMode: NsfwMode,
     ): List<FollowedSubjectInfo> = subjectCollectionInfoList.map { subjectCollectionInfo ->
         FollowedSubjectInfo(
             subjectCollectionInfo,
-            // 这两个在 SubjectCollectionInfo 里已经按**同样的参数**算好了 (见
+            // 这三个在 SubjectCollectionInfo 里已经按**同样的参数**算好了 (见
             // SubjectCollectionRepository 的 toSubjectCollectionInfo: airDate 同一列、recurrence 同源、
-            // episodes 同一份, 只差两次相隔几毫秒的 PackedDate.now()). 直接复用, 不要再算一遍 ——
-            // 每次都要遍历并排序该条目的全部剧集, 64 部就是 128 遍.
+            // episodes 同一份, 只差两次相隔几毫秒的 PackedDate.now(); nsfwMode 也是同一条
+            // `if (nsfw) 设置值 else DISPLAY`, 喂给它的还是同一个 uiSettings flow). 直接复用, 不要再算一遍 ——
+            // airingInfo/progressInfo 每次都要遍历并排序该条目的全部剧集, 64 部就是 128 遍; nsfwMode 则是
+            // 多订阅一条设置 flow, 会让无关设置变更把整栏推倒重建.
             subjectCollectionInfo.airingInfo,
             subjectCollectionInfo.progressInfo,
-            nsfwMode =
-                if (subjectCollectionInfo.subjectInfo.nsfw) nsfwMode
-                else NsfwMode.DISPLAY,
+            nsfwMode = subjectCollectionInfo.nsfwMode,
         )
     }
 
