@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.update
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ChangelogTest {
     @Test
@@ -86,5 +88,68 @@ class ChangelogTest {
                 """.trimIndent(),
             ).changes,
         )
+    }
+
+    /**
+     * 详情弹窗那份要留住「本次更新」**之前**的反馈群段 (二维码在那儿), 同时丢掉画不出来的东西:
+     * 下载表那一节、链接定义行与 markdown 注释.
+     */
+    @Test
+    fun `detailed changes keep feedback group and drop download section`() {
+        val changelog = Changelog(
+            "", "",
+            """
+            [//]: # (ANI-SERVER-MAGIC-SEPARATOR)
+
+            [github-android]: https://example.com/a.apk
+
+            ## 问题反馈群
+
+            使用中遇到问题欢迎[进群](https://qm.qq.com/q/aaa)，或扫下面的二维码。
+
+            ![加入 QQ 反馈群](https://quickchart.io/qr?text=x&size=200)
+
+            ## 下载
+
+            | 处理器架构 | 下载 |
+            |---|---|
+            | universal | [GitHub][github-android] |
+
+            ## 本次更新
+
+            * 全新沉浸式追番页
+            """.trimIndent(),
+        )
+        assertEquals(
+            """
+            ## 问题反馈群
+
+            使用中遇到问题欢迎[进群](https://qm.qq.com/q/aaa)，或扫下面的二维码。
+
+            ![加入 QQ 反馈群](https://quickchart.io/qr?text=x&size=200)
+
+            ## 本次更新
+
+            * 全新沉浸式追番页
+            """.trimIndent(),
+            changelog.detailedChanges,
+        )
+        // 气泡那份照旧只有「本次更新」之后的条目
+        assertEquals("* 全新沉浸式追番页", changelog.changes)
+        assertTrue(changelog.hasFeedbackGroup)
+    }
+
+    /** 没有反馈群那段 (上游格式的 release) 就不该提示去扫码. */
+    @Test
+    fun `no feedback group hint without the section`() {
+        val changelog = Changelog(
+            "", "",
+            """
+            ## 本次更新
+
+            * 全新沉浸式追番页
+            """.trimIndent(),
+        )
+        assertFalse(changelog.hasFeedbackGroup)
     }
 }

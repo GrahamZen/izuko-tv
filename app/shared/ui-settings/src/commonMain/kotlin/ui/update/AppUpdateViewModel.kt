@@ -307,6 +307,9 @@ class NewVersion(
             .map { it.removePrefix("- ").removePrefix("* ") }
     }.take(4).toList()
 
+    /** 见 [Changelog.hasFeedbackGroup]: 气泡上要不要提示"去详情弹窗扫码加群". */
+    val hasFeedbackGroup: Boolean = changelogs.any { it.hasFeedbackGroup }
+
     /**
      * 完整更新内容, 给详情弹窗用 (气泡上只放得下 [majorChanges] 那前几条).
      *
@@ -327,25 +330,50 @@ class Changelog(
     /**
      * 完整正文, **保留**小节标题 (`### 修复` 等) —— 详情弹窗按标题分段显示, 几十条更新才读得下去.
      */
-    val detailedChanges: String = cleanReleaseBody(changes, keepSectionHeadings = true)
+    val detailedChanges: String =
+        cleanReleaseBody(changes, keepSectionHeadings = true, keepPreamble = true)
 
     /** 条目正文, 不含小节标题 —— 更新气泡上只列前几条, 标题混在里面反而看不出哪条是更新内容. */
-    val changes: String = cleanReleaseBody(changes, keepSectionHeadings = false)
+    val changes: String = cleanReleaseBody(changes, keepSectionHeadings = false, keepPreamble = false)
+
+    /**
+     * 这一版的 note 里带加群那一段 (见 `ci-helper/release-template.md`).
+     *
+     * 气泡是逐行纯文本, 画不出二维码, 于是改为在气泡上提示一句"去详情弹窗扫码". 判据取自 note 本身,
+     * 没有那一段的版本 (以及上游格式的 release) 就不提示.
+     *
+     * 认的是**加群链接**而不是小节标题: 标题是每次发版都在改的文案 (「问题反馈群」→「交流群」),
+     * 拿它当判据, 改一次标题就把气泡上那句提示悄悄关掉了.
+     */
+    val hasFeedbackGroup: Boolean = FEEDBACK_GROUP_LINK in detailedChanges
 }
+
+/** 本 fork 的 release body 里, 真正的更新内容从这个标题开始 (见 `ci-helper/release-template.md`). */
+private const val CHANGES_HEADING = "## 本次更新"
+
+/** 加群链接 (`https://qm.qq.com/q/xxxx`) 的域名: note 里出现它就说明这一版带了加群那一段. */
+private const val FEEDBACK_GROUP_LINK = "qm.qq.com"
+
+/** 下载链接表那一节的标题. */
+private const val DOWNLOAD_HEADING = "## 下载"
 
 /**
  * 把 GitHub release body 洗成可直接显示的正文.
  *
- * 两个调用方 ([Changelog.changes] 与 [Changelog.detailedChanges]) 只差"要不要留小节标题"一项,
- * 其余四步 (截取、去 Full Changelog、去引用块、折叠空行) 完全相同 —— 原本是两条各自写死的管线,
- * 结果去引用块那步只加进了其中一条, 另一条上线后才补.
+ * 两个调用方 ([Changelog.changes] 与 [Changelog.detailedChanges]) 只差前两项开关, 其余几步
+ * (去 Full Changelog、去引用块、折叠空行) 完全相同 —— 原本是两条各自写死的管线, 结果去引用块那步
+ * 只加进了其中一条, 另一条上线后才补.
  *
  * @param keepSectionHeadings true 保留 `### 修复` 这类小节标题; false 连标题一起丢掉只留条目.
+ * @param keepPreamble true 保留「本次更新」之前那些能显示的段落 (反馈群的二维码就在那儿);
+ * false 从 [CHANGES_HEADING] 一刀切下去, 前面的一律不要.
  */
-private fun cleanReleaseBody(body: String, keepSectionHeadings: Boolean): String = body
-    // 本 fork 的 release body 前半是下载链接表 (见 ci-helper/release-template.md),
-    // 真正的更新内容从 "## 本次更新" 标题开始; 没有该标题 (上游格式) 则原样使用
-    .substringAfter("## 本次更新", body)
+private fun cleanReleaseBody(
+    body: String,
+    keepSectionHeadings: Boolean,
+    keepPreamble: Boolean,
+): String = body
+    .let { if (keepPreamble) it.dropUndisplayableParts() else it.substringAfter(CHANGES_HEADING, it) }
     .lineSequence()
     .filterNot {
         it.startsWith("**Full Changelog**: ", ignoreCase = true)
@@ -363,6 +391,36 @@ private fun cleanReleaseBody(body: String, keepSectionHeadings: Boolean): String
     // 删掉整行后留下的连续空行折叠成一个空行
     .replace(Regex("\n{3,}"), "\n\n")
     .trim()
+
+/**
+ * 详情弹窗那份的截取: **不能**像气泡那样从 [CHANGES_HEADING] 一刀切 —— 「问题反馈群」段在它前面,
+ * 而那段里的二维码正是要显示的东西. 改为只丢掉画不出来的部分:
+ *
+ * - 「## 下载」整节: 弹窗不渲染表格, 而那几行下载链接在电视上也点不动;
+ * - 链接定义行 (`[github-android]: https://…`) 与 markdown 注释 (`[//]: # (…)`): 渲染出来就是一行原文.
+ */
+private fun String.dropUndisplayableParts(): String {
+    var inDownloadSection = false
+    return lineSequence()
+        .filter { line ->
+            val trimmed = line.trim()
+            when {
+                trimmed.startsWith("## ") -> {
+                    inDownloadSection = trimmed == DOWNLOAD_HEADING
+                    !inDownloadSection
+                }
+
+                inDownloadSection -> false
+                trimmed.isLinkDefinition() -> false
+                else -> true
+            }
+        }
+        .joinToString("\n")
+}
+
+/** `[xxx]: https://…` 形状的行 (markdown 的链接定义与注释都长这样), 只在源码里有意义. */
+private fun String.isLinkDefinition(): Boolean =
+    startsWith("[") && indexOf("]: ") > 0 && substringAfter("]: ").isNotBlank()
 
 @TestOnly
 val TestNewVersion
