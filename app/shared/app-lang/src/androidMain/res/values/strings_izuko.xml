@@ -43,6 +43,7 @@
     <string name="settings_storage_image_cache">Clear image cache</string>
     <string name="settings_storage_image_cache_usage">Posters, stills and other images. Currently using %1$s; old entries are evicted automatically, so manual clearing is normally unnecessary</string>
     <string name="settings_storage_image_cache_cleared">Image cache cleared</string>
+    <string name="settings_update_popup_feedback_group_hint">Tap &quot;See details&quot; to scan the QR code and join the QQ group</string>
     <string name="exploration_tv_watch_now">Watch Now</string>
     <string name="exploration_tv_more_details">More Details</string>
     <string name="exploration_tv_air_date">%1$d-%2$d</string>
