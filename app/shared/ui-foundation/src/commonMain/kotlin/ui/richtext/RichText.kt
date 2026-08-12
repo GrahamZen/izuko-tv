@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024 OpenAni and contributors.
+ * Copyright (C) 2024-2026 OpenAni and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
@@ -14,10 +14,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
@@ -64,7 +64,6 @@ import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.ClickableText
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.widgets.Toaster
-import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun RichText(
@@ -215,7 +214,7 @@ object RichTextDefaults {
         onClick: (UIRichElement.Annotated) -> Unit
     ) {
         val inlineStickerMap: MutableMap<String, InlineTextContent> = remember { mutableStateMapOf() }
-        val stickerSizeSp = with(LocalDensity.current) { StickerSize.dp.toSp() }
+        val density = LocalDensity.current
         val bodyLarge = MaterialTheme.typography.bodyLarge.fontSize.value
         val colorScheme = MaterialTheme.colorScheme
 
@@ -288,11 +287,14 @@ object RichTextDefaults {
                         val correspondingText = inlineContentId
                         elementLength = correspondingText.length
 
+                        // 各个表情包的原图大小差得很远 (方图 / 扁的颜文字 / 宽的动图),
+                        // 尺寸由 StickerSizes 按拉到的原图给, 见那里的说明
+                        val displaySize = StickerSizes.displaySize(e.id, StickerSize.dp)
                         appendInlineContent(inlineContentId, correspondingText)
                         inlineStickerMap[inlineContentId] = InlineTextContent(
                             placeholder = Placeholder(
-                                stickerSizeSp,
-                                stickerSizeSp,
+                                with(density) { displaySize.width.toSp() },
+                                with(density) { displaySize.height.toSp() },
                                 PlaceholderVerticalAlign.AboveBaseline,
                             ),
                             children = { id ->
@@ -301,11 +303,10 @@ object RichTextDefaults {
                                     .filterIsInstance<UIRichElement.Annotated.Sticker>()
                                     .find { it.id == id }
 
-                                if (sticker?.resource != null) {
-                                    androidx.compose.foundation.Image(
-                                        painter = painterResource(sticker.resource),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(StickerSize.dp).offset(y = 2.dp),
+                                if (sticker != null) {
+                                    StickerImage(
+                                        sticker = sticker,
+                                        modifier = Modifier.fillMaxSize().offset(y = 2.dp),
                                     )
                                 }
                             },
