@@ -232,7 +232,11 @@ fun EpisodeDetails(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
     danmakuListState: DanmakuListState? = null,
-    /** 选中一个数据源后是否顺手关掉选择器, 见 `VideoScaffoldConfig.hideSelectorOnSelect`. */
+    /**
+     * 选中一个数据源后是否顺手关掉选择器, 见 `VideoScaffoldConfig.hideSelectorOnSelect`.
+     *
+     * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
+     */
     hideSelectorOnSelect: Boolean = false,
 ) {
     var showSubjectDetails by rememberSaveable {
@@ -374,6 +378,11 @@ fun EpisodeDetails(
             if (showMediaSelector) {
                 val windowAdaptiveInfo = currentWindowAdaptiveInfo1()
                 val (viewKind, onViewKindChange) = rememberSaveable { mutableStateOf(initialMediaSelectorViewKind) }
+                // 指针形态一律选完即关: 那个开关默认是关的, 直接读它等于把"点完源弹窗还盖着"变成默认行为,
+                // 而这两处 (侧栏 / 底部弹窗) 一贯是点完即关.
+                // 遥控器形态才照配置走: 那边返回键本来就是关面板的固定出口, 留着可以当场接着换下一个源.
+                val hideOnSelectEffective =
+                    hideSelectorOnSelect || !LocalAniUiBehavior.current.focusDrivenNavigation
 
                 if (windowAdaptiveInfo.isWidthAtLeastMedium) {
                     val sheetState = rememberModalSideSheetState()
@@ -425,7 +434,7 @@ fun EpisodeDetails(
                                 stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
-                                    if (hideSelectorOnSelect) {
+                                    if (hideOnSelectEffective) {
                                         showMediaSelector = false
                                     }
                                 },
@@ -462,7 +471,7 @@ fun EpisodeDetails(
                             stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                             onClickItem = {
                                 mediaSelectorState.select(it)
-                                if (hideSelectorOnSelect) {
+                                if (hideOnSelectEffective) {
                                     showMediaSelector = false
                                 }
                             },
