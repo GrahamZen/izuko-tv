@@ -11,7 +11,6 @@ package me.him188.ani.app.ui.comment
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -69,6 +68,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -90,8 +91,8 @@ import me.him188.ani.app.ui.lang.comment_more_actions
 import me.him188.ani.app.ui.rating.FiveRatingStars
 import me.him188.ani.app.ui.richtext.RichText
 import me.him188.ani.app.ui.richtext.RichTextDefaults
+import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.UIRichElement
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 object CommentItemTestTags {
@@ -244,6 +245,7 @@ fun CommentItem(
                 {
                     CommentItemDefaults.ReactionsRow(
                         reactions = comment.reactions,
+                        source = comment.source,
                         onClickItem = onToggleReaction?.let { handler ->
                             { value -> handler(comment, value) }
                         },
@@ -463,6 +465,36 @@ object CommentItemDefaults {
     val StickerSize = 16.dp
 
     /**
+     * 回应编号 -> 一枚表情; 拼不出图时返回 `null` (调用方画占位图标).
+     *
+     * **两个来源的编号空间不一样, 不能一律当表情代码用**:
+     * - [UICommentSource.BANGUMI]: 值是 Bangumi 数据库的 `chii_likes.value`, 与表情代码整体差 16
+     *   (`bgm54` = `(bgm38)`), 见 [BangumiStickers.reactionStickerToken];
+     * - [UICommentSource.ANI]: 值就是 [CommentDefaults.ReactionPicker] 发出去的那一串, 即表情代码本身.
+     *
+     * Bangumi 那侧换算不出图时退回按代码解释, 免得历史数据或服务端将来统一编号时整排变成占位图标.
+     *
+     * 取图走 [BangumiStickers] 而不是随包的 [BangumiCommentSticker]: 后者只有最早那 125 张,
+     * 新表情包 (娘 / TV 500+ / 颜文字) 一律画不出来. 两处对同一枚表情的表现要一致, 见 [StickerImage].
+     */
+    private fun reactionSticker(value: String, source: UICommentSource): UIRichElement.Annotated.Sticker? {
+        val asCode = value.takeIf { it.startsWith("bgm") }?.let { "($it)" }
+        val candidates = when (source) {
+            UICommentSource.BANGUMI -> listOfNotNull(BangumiStickers.reactionStickerTokenOf(value), asCode)
+            UICommentSource.ANI -> listOfNotNull(asCode)
+        }
+        candidates.forEach { token ->
+            val sticker = BangumiStickers.stickerOf(token)
+            if (sticker.hasImage) return UIRichElement.Annotated.Sticker(
+                id = sticker.token,
+                resource = sticker.resource,
+                imageUrl = sticker.imageUrl,
+            )
+        }
+        return null
+    }
+
+    /**
      * 贴纸 chip, 对应 Figma "StickerChip".
      *
      * 未贴: 透明底 + outlineVariant 描边; 已贴: secondaryContainer 实底无描边.
@@ -470,6 +502,7 @@ object CommentItemDefaults {
     @Composable
     fun StickerChip(
         reaction: UICommentReaction,
+        source: UICommentSource,
         modifier: Modifier = Modifier,
         onClick: (() -> Unit)? = null,
     ) {
@@ -490,16 +523,17 @@ object CommentItemDefaults {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val previewing = LocalIsPreviewing.current
-                val reactionDrawableRes = reaction.value.removePrefix("bgm").toIntOrNull()
-                    ?.let { BangumiCommentSticker[it] }
-                if (previewing || reactionDrawableRes == null) Icon(
+                val sticker = remember(reaction.value, source) { reactionSticker(reaction.value, source) }
+                if (previewing || sticker == null) Icon(
                     imageVector = Icons.Rounded.Face,
                     modifier = Modifier.size(StickerSize),
                     contentDescription = reaction.value,
-                ) else Image(
-                    painter = painterResource(reactionDrawableRes),
-                    modifier = Modifier.size(StickerSize),
-                    contentDescription = reaction.value,
+                ) else StickerImage(
+                    sticker = sticker,
+                    // 固定见方: chip 高度定死 24dp, 扁的颜文字与宽动图按 Fit 缩进这个方框, 不撑行高
+                    modifier = Modifier
+                        .size(StickerSize)
+                        .semantics { contentDescription = reaction.value },
                 )
                 Text(
                     text = reaction.count.toString(),
@@ -532,12 +566,14 @@ object CommentItemDefaults {
     /**
      * 贴纸回应行, 对应 Figma "ReactionsBar". 仅在已有人贴过贴纸时展示.
      *
+     * @param source 回应编号的来源, 决定编号怎么解释, 见 [reactionSticker].
      * @param onClickItem 点击贴纸 toggle 跟贴/取消. `null` 表示只读.
      * @param clipped 列表模式: 最多一行占满, 溢出隐藏 + 右缘渐隐. `false` 时自动换行 (thread 页).
      */
     @Composable
     fun ReactionsRow(
         reactions: List<UICommentReaction>,
+        source: UICommentSource,
         modifier: Modifier = Modifier,
         onClickItem: ((value: String) -> Unit)? = null,
         clipped: Boolean = true,
@@ -574,6 +610,7 @@ object CommentItemDefaults {
                     reactions.forEach { reaction ->
                         StickerChip(
                             reaction = reaction,
+                            source = source,
                             onClick = onClickItem?.let { handler -> { handler(reaction.value) } },
                         )
                     }
@@ -587,6 +624,7 @@ object CommentItemDefaults {
                     reactions.forEach { reaction ->
                         StickerChip(
                             reaction = reaction,
+                            source = source,
                             onClick = onClickItem?.let { handler -> { handler(reaction.value) } },
                         )
                     }

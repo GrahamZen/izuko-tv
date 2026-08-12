@@ -50,9 +50,10 @@ private fun PreviewImpl() {
                         url = "https://localhost",
                     ),
                     UIRichElement.Annotated.Sticker(
-                        "sticker_1",
-                        null,
-                        "",
+                        id = "(bgm38)",
+                        resource = null,
+                        imageUrl = null,
+                        url = "",
                     ),
                 ),
             ),
