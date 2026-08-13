@@ -56,4 +56,13 @@
 -keepattributes LineNumberTable,SourceFile
 -renamesourcefileattribute SourceFile
 -keepnames class me.him188.ani.** { *; }
--keepnames class ** { *; } # Keep all names as this only increases pacakge size by a few MBs, but significantly helps with debugging.
+-keepnames class !com.google.common.**, !com.google.thirdparty.**, ** { *; } # Keep all names as this only increases pacakge size by a few MBs, but significantly helps with debugging.
+
+# Guava 例外: 有的电视 ROM 在 BOOTCLASSPATH 里带了老版本 Guava (例如 /system/framework/libsetting.jar).
+# 类加载双亲优先, APK 里的 com.google.common 被整个遮蔽, media3 调新方法 (ImmutableMap.Builder.buildOrThrow)
+# 直接 NoSuchMethodError, 一打开播放器就崩. 放开 Guava 的类名, 让 R8 改名并挪进下面这个包, 与 ROM 那份再无关系.
+# 成员名照旧保留: Guava 内部按字段名反射 (AbstractFuture 的 AtomicReferenceFieldUpdater 等).
+-keepclassmembernames class com.google.common.** { *; }
+-keepclassmembernames class com.google.thirdparty.** { *; }
+# 所有改了名的类 (Guava 与 R8 合成的类) 放进我们独有的包, 不落在默认包里 (默认包里的短类名同样可能被 ROM 撞上).
+-repackageclasses me.him188.ani.r8

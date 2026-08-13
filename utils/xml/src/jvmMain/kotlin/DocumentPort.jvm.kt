@@ -17,8 +17,9 @@
 package me.him188.ani.utils.xml
 
 
-actual typealias Document = org.jsoup.nodes.Document
-actual typealias Node = org.jsoup.nodes.Node
-actual typealias Element = org.jsoup.nodes.Element
-actual typealias Elements = org.jsoup.select.Elements
-actual typealias Evaluator = org.jsoup.select.Evaluator
+// 换了包名的 jsoup, 为什么见 utils/jsoup-shaded/build.gradle.kts.
+actual typealias Document = me.him188.ani.shaded.jsoup.nodes.Document
+actual typealias Node = me.him188.ani.shaded.jsoup.nodes.Node
+actual typealias Element = me.him188.ani.shaded.jsoup.nodes.Element
+actual typealias Elements = me.him188.ani.shaded.jsoup.select.Elements
+actual typealias Evaluator = me.him188.ani.shaded.jsoup.select.Evaluator

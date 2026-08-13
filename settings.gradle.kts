@@ -74,6 +74,7 @@ includeProject(":utils:ktor-client", "utils/ktor-client")
 includeProject(":utils:io", "utils/io")
 includeProject(":utils:testing", "utils/testing")
 includeProject(":utils:xml")
+includeProject(":utils:jsoup-shaded") // 换了包名的 jsoup, 躲开 ROM 自带的 org.jsoup
 includeProject(":utils:jsonpath")
 includeProject(":utils:bbcode", "utils/bbcode")
 includeProject(":utils:bbcode:test-codegen")
