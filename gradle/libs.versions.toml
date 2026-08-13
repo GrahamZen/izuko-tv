@@ -124,6 +124,7 @@ undercouch-download = { id = "de.undercouch.download", version.ref = "undercouch
 openapi-generator = { id = "org.openapi.generator", version.ref = "openapi-generator" }
 compose-stability-analyzer = { id = "com.github.skydoves.compose.stability.analyzer", version.ref = "stability-analyzer" }
 aboutlibraries = { id = "com.mikepenz.aboutlibraries.plugin", version.ref = "aboutlibraries" }
+shadow = { id = "com.gradleup.shadow", version = "9.6.1" } # https://github.com/GradleUp/shadow/releases
 
 [libraries]
 # Plugin libraries for build-logic.

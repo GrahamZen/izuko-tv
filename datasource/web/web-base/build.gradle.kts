@@ -18,7 +18,7 @@ dependencies {
     api(projects.datasource.datasourceApi)
     api(libs.kotlinx.coroutines.core)
     api(libs.kotlinx.serialization.json)
-    api(libs.jsoup)
+    api(projects.utils.jsoupShaded)
 
     api(projects.utils.ktorClient)
     api(projects.utils.logging)
