@@ -40,6 +40,11 @@
 -dontwarn javax.mail.**
 
 
+# jsoup: Xml.jvm.kt 在 ROM 自带 jsoup 遮蔽了 APK 内 jsoup 时会反射调用 QueryParser.parse (issue #12)
+-keepclassmembers class org.jsoup.select.QueryParser {
+    static org.jsoup.select.Evaluator parse(java.lang.String);
+}
+
 # anitorrent
 -keep class org.openani.anitorrent.binding.** { *; }
 
