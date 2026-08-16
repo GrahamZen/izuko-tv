@@ -35,9 +35,14 @@ data class PlayerKernelConfig(
      * Media3 requires the effect graph to exist before the first prepare in order to
      * support switching effects while playback is active.
      *
+     * **本 fork 把默认值从上游的 true 改成 false**: 即便传的是空列表, 提前 setVideoEffects 也会把
+     * ExoPlayer 从"解码器直连 SurfaceView"切到 GL 合成管线, 而 NVIDIA Shield (Tegra X1 / API 30)
+     * 上 10bit HEVC 走这条路只出声音不出画面 (2026-08-15 实测, 缓存好的 WebRip 全部如此).
+     * 默认关着的功能不该改变管线; 需要"播放中途切换效果立即生效"的用户可以自行打开.
+     *
      * @see [me.him188.ani.app.videoplayer.videoenhancement.ExoPlayerVideoEnhancementController]
      */
-    val exoPlayerInitEffectGraphInAdvance: Boolean = true,
+    val exoPlayerInitEffectGraphInAdvance: Boolean = false,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {
