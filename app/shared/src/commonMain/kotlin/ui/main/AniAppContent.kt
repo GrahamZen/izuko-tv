@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -516,10 +517,20 @@ private fun AniAppContentImpl(
             }
             entry<NavRoutes.EpisodeDetail> { route ->
                 val context = LocalContext.current
+                // route 里的 episodeId 是**进这一页时**那一集, 之后不会再变: 播放器内换集 (选集条 /
+                // 详情层 / 播完自动连播) 一律是就地 switchEpisode, 根本不导航.
+                //
+                // 而本页从更深的页面 (播放器里的"缓存"入口 -> 缓存管理) 返回时是整个重新组合的,
+                // 按 route 去认会话就与保留着的会话对不上 -> 热会话被销毁重建, 播放器**倒退回进来
+                // 那一集** (那一集的缓存要是刚在缓存页删掉, 紧接着还会报一次播放失败).
+                //
+                // 用 rememberSaveable 记"这一页此刻在播哪一集": 它随返回栈条目存活, 正好是"页面
+                // 实例"这个粒度 —— 从更深页面返回时恢复, 而换一集重新导航是新的条目, 不会串.
+                var pageEpisodeId by rememberSaveable { mutableIntStateOf(route.episodeId) }
                 val initializer: CreationExtras.() -> EpisodeViewModel = {
                     EpisodeViewModel(
                         subjectId = route.subjectId,
-                        initialEpisodeId = route.episodeId,
+                        initialEpisodeId = pageEpisodeId,
                         initialIsFullscreen = false,
                         context,
                     )
@@ -535,7 +546,13 @@ private fun AniAppContentImpl(
                     // 重组一次就会在新会话的空 store 里凭空建出第二个 EpisodeViewModel (第二个播放器).
                     // 一个会话的 store 里恒定只有一个 VM, 所以这里也不需要 key.
                     val session = remember(playbackSessionHolder, route) {
-                        playbackSessionHolder.openSession(route.subjectId, route.episodeId)
+                        playbackSessionHolder.openSession(route.subjectId, pageEpisodeId)
+                    }
+                    // 会话换集后同步回本页: 下次重新组合 (从缓存页返回) 才认得回同一个会话.
+                    // session.info 是 snapshot state, snapshotFlow 在这里是成立的
+                    LaunchedEffect(session) {
+                        snapshotFlow { session.info.episodeId }
+                            .collect { if (it > 0) pageEpisodeId = it }
                     }
                     viewModel<EpisodeViewModel>(
                         viewModelStoreOwner = session,
