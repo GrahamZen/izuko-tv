@@ -17,6 +17,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.media3.common.util.UnstableApi
@@ -41,31 +42,37 @@ actual fun VideoPlayer(
     } else {
         val libassPlayer = player as? LibassExoPlayerMediampPlayer
         val exoPlayer = libassPlayer?.exoMediampPlayer ?: player as ExoPlayerMediampPlayer
-        ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
-            (videoSurfaceView as? SurfaceView)?.let { registerAndroidVideoSurface(player, it) }
-            controllerAutoShow = false
-            useController = false
-            controllerHideOnTouch = false
-            subtitleView?.apply {
-                libassPlayer?.let { addView(AssSubtitleView(context, it.assHandler)) }
-                this.setStyle(
-                    CaptionStyleCompat(
-                        Color.WHITE,
-                        0x000000FF,
-                        0x00000000,
-                        CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                        Color.BLACK,
-                        Typeface.DEFAULT,
-                    ),
+        // key(player): 下面这个配置块只在 AndroidView factory 跑一次, 播放器实例变了
+        // 不会重新执行 —— 不重建的话新播放器不会进 registerAndroidVideoSurface
+        // (dataspace 兜底失效), 旧播放器的清理重试还可能碰到被同值接任的旧 Surface。
+        // 换实例就换 SurfaceView, 新旧账各归各的 Surface 代次
+        key(player) {
+            ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
+                (videoSurfaceView as? SurfaceView)?.let { registerAndroidVideoSurface(player, it) }
+                controllerAutoShow = false
+                useController = false
+                controllerHideOnTouch = false
+                subtitleView?.apply {
+                    libassPlayer?.let { addView(AssSubtitleView(context, it.assHandler)) }
+                    this.setStyle(
+                        CaptionStyleCompat(
+                            Color.WHITE,
+                            0x000000FF,
+                            0x00000000,
+                            CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                            Color.BLACK,
+                            Typeface.DEFAULT,
+                        ),
+                    )
+                }
+                setControllerVisibilityListener(
+                    ControllerVisibilityListener { visibility ->
+                        if (visibility == View.VISIBLE) {
+                            hideController()
+                        }
+                    },
                 )
             }
-            setControllerVisibilityListener(
-                ControllerVisibilityListener { visibility ->
-                    if (visibility == View.VISIBLE) {
-                        hideController()
-                    }
-                },
-            )
         }
     }
 }
