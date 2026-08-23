@@ -12,13 +12,26 @@
 package me.him188.ani.app.videoplayer.videoenhancement
 
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.seconds
+
+private val logger = logger("VideoEnhancementController")
+
+/** 增强开着时每隔这么久记一次帧率/丢帧, 用来判断卡顿卡在哪一级。 */
+private val statsInterval = 2.seconds
 
 actual fun createVideoEnhancementController(
     player: MediampPlayer,
@@ -44,6 +57,12 @@ private class ExoPlayerVideoEnhancementController(
     private var scalerApplied = false
     private var appliedWidth = 0
     private var appliedHeight = 0
+
+    /**
+     * 增强开着期间的帧率/丢帧采样 (只记日志, 不改行为)。加这个是为了判断"能播但卡"卡在哪:
+     * 解码器实付帧数涨得慢 = GL 那几级 shader 吃不消; 丢帧多而实付正常 = 提交慢/显示端跟不上。
+     */
+    private var statsJob: Job? = null
 
     init {
         // 上游把这次 pre-init 做成了开关 (exoPlayerInitEffectGraphInAdvance), 理由是 media3 要求
@@ -79,29 +98,73 @@ private class ExoPlayerVideoEnhancementController(
             (!shouldApplyScaler || appliedWidth == viewportSize.width && appliedHeight == viewportSize.height)
         ) return
 
-        exoPlayer.setVideoEffects(
-            buildList {
-                when (mode) {
-                    VideoEnhancementMode.OFF -> Unit
-                    VideoEnhancementMode.PERFORMANCE -> add(Anime4kRestoreEffect)
-                    VideoEnhancementMode.QUALITY -> {
-                        add(Anime4kRestoreQualityEffect)
-                        add(Anime4kUpscaleQualityEffect)
-                    }
+        val effects = buildList {
+            when (mode) {
+                VideoEnhancementMode.OFF -> Unit
+                VideoEnhancementMode.PERFORMANCE -> add(Anime4kRestoreEffect)
+                VideoEnhancementMode.QUALITY -> {
+                    add(Anime4kRestoreQualityEffect)
+                    add(Anime4kUpscaleQualityEffect)
                 }
-                if (shouldApplyScaler) {
-                    add(DesktopStyleLanczosSharpEffect(viewportSize.width, viewportSize.height))
-                }
-            },
-        )
+            }
+            if (shouldApplyScaler) {
+                add(DesktopStyleLanczosSharpEffect(viewportSize.width, viewportSize.height))
+            }
+        }
+        logger.info {
+            "Applying video effects: mode=$mode, " +
+                "video=${videoSize?.width}x${videoSize?.height}, " +
+                "viewport=${viewportSize?.width}x${viewportSize?.height}, " +
+                "effects=${effects.map { it::class.java.simpleName }}"
+        }
+        exoPlayer.setVideoEffects(effects)
+        startStatsSampler(mode)
         appliedMode = mode
         scalerApplied = shouldApplyScaler
         appliedWidth = if (shouldApplyScaler) viewportSize.width else 0
         appliedHeight = if (shouldApplyScaler) viewportSize.height else 0
     }
 
+    /**
+     * 每 [statsInterval] 记一次解码器的实付/丢帧计数, 折算成 fps。只记日志。
+     */
+    private fun startStatsSampler(mode: VideoEnhancementMode) {
+        statsJob?.cancel()
+        statsJob = scope.launch {
+            var lastRendered = 0
+            var lastDropped = 0
+            while (isActive) {
+                delay(statsInterval)
+                val counters = exoPlayer.videoDecoderCounters ?: continue
+                val rendered = counters.renderedOutputBufferCount
+                val dropped = counters.droppedBufferCount
+                val renderedDelta = rendered - lastRendered
+                val droppedDelta = dropped - lastDropped
+                lastRendered = rendered
+                lastDropped = dropped
+                val fps = renderedDelta * 1000.0 / statsInterval.inWholeMilliseconds
+                // 计数器只能在播放线程读 (上面几行), 但写日志不能留在这条线程上: [scope] 绑的是
+                // player.mainDispatcher, 而 logback 是同步写文件的 —— 每 2 秒在播放线程做一次
+                // 文件 I/O, 那是在给"排查卡顿"的工具本身制造卡顿。取完数就换线程再打。
+                val state = exoPlayer.playbackState
+                val playWhenReady = exoPlayer.playWhenReady
+                withContext(Dispatchers.IO) {
+                    logger.info {
+                        "Video enhancement stats (mode=$mode): ${String.format("%.1f", fps)} fps " +
+                            "(+$renderedDelta rendered, +$droppedDelta dropped; " +
+                            "total rendered=$rendered dropped=$dropped), " +
+                            "state=$state playWhenReady=$playWhenReady"
+                    }
+                }
+            }
+        }
+    }
+
     override fun restore() {
         if (appliedMode == VideoEnhancementMode.OFF) return
+        logger.info { "Clearing video effects (was mode=$appliedMode)" }
+        statsJob?.cancel()
+        statsJob = null
         exoPlayer.setVideoEffects(emptyList())
         appliedMode = VideoEnhancementMode.OFF
         scalerApplied = false
