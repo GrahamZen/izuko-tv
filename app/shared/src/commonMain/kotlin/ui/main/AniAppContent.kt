@@ -46,7 +46,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
@@ -342,7 +341,12 @@ private fun AniAppContentImpl(
         entryDecorators = listOf(
             // 让每个页面各自持有 rememberSaveable 状态和 ViewModel, 出栈时一并销毁
             rememberSaveableStateHolderNavEntryDecorator(),
-            rememberViewModelStoreNavEntryDecorator(),
+            // **不能用库的 rememberViewModelStoreNavEntryDecorator**: 它在"条目内容离开组合"时就
+            // 销毁 per-entry 的 ViewModelStore, 而 Nav3 里被别的页面盖住同样会离开组合 —— 于是从
+            // 详情页返回时下层页面的 VM 全是新的: 搜索词丢了 (顶部空词 + "没有找到相关条目")、
+            // 追番页 tab 回默认、焦点落点对不上、主屏的启动/更新检查每次返回都重跑 (更新气泡反复弹)。
+            // 换成按返回栈判定的实现: 只有 key 真的不在栈里了才 clear。取证与判据见那个文件。
+            rememberBackStackAwareViewModelStoreNavEntryDecorator(backStack),
             // 下发"本页是不是栈顶": 页面靠它在返回时补焦点落点. **不能用页面自己的 lifecycle** ——
             // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
             rememberPageForegroundNavEntryDecorator(backStack),
