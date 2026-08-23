@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
+import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -448,6 +449,8 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         //    是"不连续", 每次都触发一次上报. 播放页在场时的自动暂停 (`AutoPauseEffect`) 本来就用
         //    同一个开关放过跟随模式, 这里跟着它, 前台后台一致.
         launch {
+            // 在途的"等画面就位再恢复", 见 [resumeWhenVideoVisible]
+            var resumeJob: Job? = null
             combine(
                 playerPageVisible,
                 vm.player.state,
@@ -459,15 +462,16 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                         // 回到播放页: 把"离开时的临时暂停"原样还回去. 判据只有本类记下的那一笔账,
                         // 所以用户自己按的暂停不会被误恢复成播放 (那时下面根本没记账).
                         //
-                        // 标志**当场消账**: 不消的话每次 state 变化都会再 play() 一次, 用户刚回到
-                        // 页面按暂停会被立刻掀回播放态.
-                        if (vm.autoPausedOffPage) {
-                            vm.autoPausedOffPage = false
-                            logger.info { "Player page visible again, resuming auto-paused playback" }
-                            vm.player.play()
+                        // 恢复不是当场 play(), 而是先等新的视频输出面出画 (见
+                        // [resumeWhenVideoVisible]). 消账也跟着挪到真的 play() 那一刻, 于是这里
+                        // 得自己防重入 —— 不消账的话每次 state 变化都会再起一个恢复任务.
+                        if (vm.autoPausedOffPage && resumeJob?.isActive != true) {
+                            resumeJob = launch { resumeWhenVideoVisible(vm) }
                         }
                         return@collect
                     }
+                    // 又走了: 在途的恢复作废 (账留着, 下次回来重新等)
+                    resumeJob?.cancel()
                     // 这里必须是**严格** isPlaying (时钟真的在走), 不能图省事换成 playWhenReady ——
                     // 换过, 三个症状一起来 (2026-08-11 真机复现):
                     //
@@ -648,8 +652,51 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         session.info = updated
     }
 
+    /**
+     * 回到播放页时的恢复: **等视频面出画之后再放声音**.
+     *
+     * 视频输出面 (Android 上是播放页那块 SurfaceView) 跟着页面生死, 回来是新的一代; 而播放器
+     * 本体一直活着, 所以立刻 `play()` 的结果是"声音已经在走, 画面还黑着" —— 解码器得先把输出
+     * 重定向到新 Surface, 就地改不了的芯片还要释放重建、从关键帧重解 (实测索尼 BRAVIA BF1 上
+     * 的联发科解码器就是这样, Shield 上不明显). 那几百毫秒的画面内容用户是真的没看到.
+     *
+     * 等一下再开, 声画一起起来, 一帧不漏. 三条约束:
+     * - **有上限** ([RESUME_FRAME_WAIT]): 万一某设备在暂停状态下压根不渲染 (要播起来才出帧),
+     *   等下去就是永远黑屏 —— 超时照旧 `play()`, 退化成老行为;
+     * - 等的期间用户可能又走了, 或者"一起看"接管了播放, 落地前重新确认一遍;
+     * - **消账挪到真的 `play()` 那一刻**: 提前清掉的话, 等待期间用户又退出去, 这笔"回来要恢复"
+     *   的账就凭空消失了 (再进来播放器停着不动).
+     *
+     * 拿不到 [VideoSurfaceFrameSignal] 的播放器 (桌面/iOS) 不等, 语义与从前一致.
+     */
+    private suspend fun resumeWhenVideoVisible(vm: EpisodeViewModel) {
+        val signal = vm.player as? VideoSurfaceFrameSignal
+        var timedOut = false
+        if (signal != null && !signal.hasFrameOnCurrentSurface.value) {
+            timedOut = withTimeoutOrNull(RESUME_FRAME_WAIT) {
+                signal.hasFrameOnCurrentSurface.first { it }
+            } == null
+        }
+        if (!playerPageVisible.value || vm.playbackAutomationSuppressed.value) return
+        if (!vm.autoPausedOffPage) return
+        vm.autoPausedOffPage = false
+        logger.info {
+            "Player page visible again, resuming auto-paused playback " +
+                if (timedOut) "(no video frame within $RESUME_FRAME_WAIT, resuming anyway)" else "(video frame is up)"
+        }
+        vm.player.play()
+    }
+
     private companion object {
         private val logger = logger<RetainedPlaybackSessionHolder>()
+
+        /**
+         * 恢复播放前最多等新输出面出第一帧多久, 见 [resumeWhenVideoVisible].
+         *
+         * 正常路径 (重定向输出面, 或释放重建解码器 + 从关键帧重解) 在这个量级以内. 到点仍然
+         * 起播: 宁可退回"黑屏有声", 也不能把画面永远等在这儿.
+         */
+        private val RESUME_FRAME_WAIT = 1.seconds
 
         /** 问题状态要持续这么久才提示, 见 [guard] 第 4 条. */
         private val PROBLEM_SETTLE_DELAY = 6.seconds
