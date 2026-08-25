@@ -13,10 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
@@ -114,12 +113,18 @@ class MediaSelectorSummaryStateProducer(
 
 @OptIn(UnsafeOriginalMediaAccess::class)
 val MediaSelector.selectedMaybeExcludedMediaFlow: Flow<MaybeExcludedMedia?>
-    get() = this.selected.mapLatest { selected ->
+    get() = this.selected.flatMapLatest { selected ->
         if (selected == null) {
-            null
+            flowOf(null)
         } else {
-            filteredCandidates.first() // No need to subscribe to flow change. When selected is updated, filteredCandidates should have already been updated.
-                .firstOrNull { it.original === selected } // identity check is enough and fast
+            // 必须持续订阅, 不能只在 selected 变化时取一次快照:
+            // 条目信息还没到位时 MediaSelectorFilterSortAlgorithm 不构造 MediaListFilterContext,
+            // 条目名校验一次都不跑, 那一份快照里所有资源都是 Included (exclusionReason 全为 null).
+            // 只取一次的话, "条目名不匹配" / "不是精确匹配" 就再也不会显示 —— 除非 selected 又变一次,
+            // 或者用户打开数据源菜单再返回, 让这个 flow 重新被收集一遍 (2026-08-25 实测到的正是这两种).
+            filteredCandidates.map { list ->
+                list.firstOrNull { it.original === selected } // identity check is enough and fast
+            }
         }
     }
 
