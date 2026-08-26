@@ -17,6 +17,7 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
+import me.him188.ani.datasources.api.EpisodeType
 import kotlin.time.Clock
 
 /**
@@ -112,14 +113,25 @@ fun TmdbEpisodeStills.matchToEpisodes(
             // 与当日列表按序对位; 两边同日集数不一致时取末位保底
             candidates.getOrNull(sameDateOrdinals[episode.episodeId] ?: 0) ?: candidates.lastOrNull()
         }
-        if (byDate != null) matchedDates[index] = sameDayKey
+        // **集名命中优先于日期**: 逐字同名 (含后缀认领, 见 findByEpisodeName) 是比日期更强的证据.
+        // 日期轴会给出"看着很确定但错"的答案 —— 衍生短篇与正片同期播出时, Bangumi 把短篇的
+        // 播出日记成**正片那天**而 TMDB 记的是次日 (网络上传日), 于是短篇条目的每一集都在日期轴上
+        // **精确命中正片**, 整排选集卡拿到正片的图 (2026-09-06 用户报的
+        // 「Re:ゼロから始める休憩時間 3rd season」16 集全是正片的图; 同族还有 4th season).
+        // 那天只有正片一个候选, 所以 preferredSeasonByEpisodeNames 的"同日多季投票"也没票可投.
+        //
+        // 名字对不上太常见 (译名/空格/注音/副标题), 所以这一档**只在真的命中时**抢先;
+        // 撞名的键在索引侧就整条丢弃了 (见 fetchEpisodeStills 里的 byName), 后缀认领另有
+        // "全表唯一 + 至少 4 字符"两道闸门, 所以命中即可信.
+        val byName = findByEpisodeName(episode.episodeInfo.name, episode.episodeInfo.nameCn)
         // 集号兜底仅限 Bangumi 分集完全没有日期的老番: 有日期却对不上说明匹配到的
         // TMDB 条目本身可疑 (如正传名命中单季外传), 按集号硬凑只会拿到错图.
-        // 集名精确一致的兜底不受此限 —— 特别篇两边日期记录常有出入
-        // (如 救われるラミリス 後編 差 8 天), 而逐字同名是比日期更强的证据.
-        val media = byDate
+        val media = byName
+            ?: byDate
             ?: episodeNumber?.takeIf { local == null }?.let { byEpisodeNumber[it] }
-            ?: findByEpisodeName(episode.episodeInfo.name, episode.episodeInfo.nameCn)
+        // 日期锚点只在**真的按日期取用**时记: 集名赢了就说明这条目的时间轴与 TMDB 对不齐,
+        // 拿它当三明治插值的锚点会把邻集也带偏
+        if (byName == null && byDate != null) matchedDates[index] = sameDayKey
         if (media != null) result[episode.episodeId] = media
     }
 
@@ -159,7 +171,14 @@ fun TmdbEpisodeStills.matchToEpisodes(
     // **至少要有一个真实的邻居锚点**, 所以只对两集以上的条目做: 单集条目两侧都是季边界, 等于
     // 没有任何证据 —— 而季里恰好也只有一集时算出来的差正好是 2, 会白送一张图, 绕过"有日期却
     // 对不上说明匹配到的条目本身可疑"那道闸门 (单测抓到的).
-    if (byEpisodeNumber.isNotEmpty() && episodes.size >= 2) {
+    //
+    // **轴上只排正片**: 特别篇命中的是 TMDB 的 season 0, 而 [byEpisodeNumber] 只索引正片那一季 ——
+    // 它在集号轴上是个空洞, 让它占一个位置就会把**相邻正片集**的锚点打断 (邻居"命中了"但反查不出
+    // 集号, 于是直接放弃). 实测「カーニバル・ファンタズム」12 集正片 + 1 集 SP (与第 1 集同期):
+    // SP 排在第 1 集前后任一侧, 第 1 集都拿不到图; 把 SP 从轴上摘掉后 13 集全有.
+    // SP 自己的图不受影响 —— 它走的是日期/集名那两条路.
+    val numberAxis = episodes.filter { it.episodeInfo.type == EpisodeType.MainStory }
+    if (byEpisodeNumber.isNotEmpty() && numberAxis.size >= 2) {
         // 集号索引反查; 内容完全相同的集 (字段全空的占位集) 一律弃用, 免得夹错
         val numberByMedia = mutableMapOf<TmdbEpisodeMedia, Int?>()
         for ((number, media) in byEpisodeNumber) {
@@ -167,13 +186,13 @@ fun TmdbEpisodeStills.matchToEpisodes(
         }
         val lowest = byEpisodeNumber.keys.min()
         val highest = byEpisodeNumber.keys.max()
-        episodes.forEachIndexed { index, episode ->
+        numberAxis.forEachIndexed { index, episode ->
             if (episode.episodeId in result) return@forEachIndexed
             val prevNumber = if (index == 0) lowest - 1 else {
-                result[episodes[index - 1].episodeId]?.let { numberByMedia[it] } ?: return@forEachIndexed
+                result[numberAxis[index - 1].episodeId]?.let { numberByMedia[it] } ?: return@forEachIndexed
             }
-            val nextNumber = if (index == episodes.lastIndex) highest + 1 else {
-                result[episodes[index + 1].episodeId]?.let { numberByMedia[it] } ?: return@forEachIndexed
+            val nextNumber = if (index == numberAxis.lastIndex) highest + 1 else {
+                result[numberAxis[index + 1].episodeId]?.let { numberByMedia[it] } ?: return@forEachIndexed
             }
             if (nextNumber - prevNumber != 2) return@forEachIndexed
             byEpisodeNumber[prevNumber + 1]?.let { result[episode.episodeId] = it }

@@ -79,6 +79,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.matchToEpisodes
 import me.him188.ani.app.data.network.newestAiredDateStringOrNull
@@ -1307,6 +1308,8 @@ private fun rememberTvPlayingEpisodeStill(subjectId: Int, episodeId: Int): Strin
                 // 见 SubjectDetailsStateFactory 同名参数
                 subjectAirDate = info.subjectInfo.airDate.toLocalDateOrNull()?.toString(),
                 subjectEpisodeCount = info.episodes.size,
+                subjectEpisodeNames = info.episodes.map { it.episodeInfo.name },
+                hints = info.subjectInfo.toTmdbMatchHints(),
             )
                 ?.matchToEpisodes(info.episodes, info.subjectInfo.airDate.toLocalDateOrNull()?.toString())
                 ?.get(episodeId)

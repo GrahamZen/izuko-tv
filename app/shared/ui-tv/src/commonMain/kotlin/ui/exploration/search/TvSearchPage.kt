@@ -120,6 +120,7 @@ import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.LoadError
@@ -842,13 +843,19 @@ private fun TvSearchResultsPane(
         },
         resolve = { s ->
             items.itemSnapshotList.items.firstOrNull { it.subjectId == s.subjectId }?.let { item ->
-                tmdb.prefetchTvBackdrop(s.subjectId, item.originalName.ifBlank { item.title })
+                tmdb.prefetchTvBackdrop(
+                    s.subjectId, item.originalName.ifBlank { item.title },
+                    hints = item.tmdbHints,
+                )
             }
         },
         resolveNeighbor = { _, neighbor ->
             // 邻居的原名就在列表项里 (本页链短的原因), 不用发条目信息请求
             items.itemSnapshotList.items.firstOrNull { it.subjectId == neighbor.subjectId }?.let { item ->
-                tmdb.prefetchTvBackdrop(neighbor.subjectId, item.originalName.ifBlank { item.title })
+                tmdb.prefetchTvBackdrop(
+                    neighbor.subjectId, item.originalName.ifBlank { item.title },
+                    hints = item.tmdbHints,
+                )
             }
         },
         afterResolve = { s ->

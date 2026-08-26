@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.newestAiredDateStringOrNull
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
@@ -184,6 +185,9 @@ object TvUpNextStore {
             collection.subjectId,
             collection.subjectInfo.name,
             activeAsOfDate = collection.episodes.newestAiredDateStringOrNull(),
+            // 与详情页喂同一份输入: 少喂一项就可能算出另一个结果, 而结果是**按条目共享缓存**的,
+            // 先算的那次会把后算的钉死 (见 TmdbMatchHints)
+            hints = collection.subjectInfo.toTmdbMatchHints(),
         )
     }
 
