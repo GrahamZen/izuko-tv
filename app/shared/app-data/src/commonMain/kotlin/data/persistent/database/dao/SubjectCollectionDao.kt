@@ -86,6 +86,29 @@ data class SubjectCollectionEntity(
     val relations: SubjectRelations = SubjectRelations.Empty,
 
     /**
+     * infobox 「上映年度」里最早的那个年份; `null` 表示条目没有这个字段.
+     *
+     * [airDate] 对**剧场上映的 OVA** 常常记的是「发售日」而非首映日 (如「彼女と彼女の猫」
+     * 发售 2002-04-19 / 上映 2000-04-23, 而 TMDB 记首映 1999-10-01), TMDB 匹配的年份判据
+     * 因此会误伤. 只取最早那个: 老片的 infobox 常把 4K 重映年也列进去 (攻殻機動隊 是
+     * `[1995, 2025]`), 全盘接受会把年份判据放宽到没用.
+     *
+     * @since 6.0.4
+     */
+    @ColumnInfo(defaultValue = "NULL")
+    val screeningYear: Int? = null,
+    /**
+     * 是否为**只在影院放映**的条目 (infobox 有「上映年度」而没有「放送开始」).
+     *
+     * 用于 TMDB 匹配时决定要不要先搜 movie. 不用服务端的 `platform` 字段是因为它是个
+     * 含义未标注的整数; 而这个 infobox 判据实测 196 个剧场版条目判对 195 个.
+     *
+     * @since 6.0.4
+     */
+    @ColumnInfo(defaultValue = "0")
+    val theatrical: Boolean = false,
+
+    /**
      * 此条目最后被修改的时间 (如修改收藏状态). 与服务器同步.
      */
     @ColumnInfo(defaultValue = "0")

@@ -141,16 +141,25 @@ class TmdbImageService(
      * (未知)** 而不是 false —— false 的语义是"确认正传", 会让分集索引把 S0 殿后, 衍生条目
      * 就此错拿正片数据. 未知则维持原顺序, 与拿不到关系数据时一致.
      * 拿不到系列主条目 (或主条目就是自己) 时返回 null, 由调用方回落到 Bangumi.
+     *
+     * **排除条目自己的每一个名字, 不只是 [originalName]**: 这个接口返回的是系列内**全部**
+     * 条目名 (原名与中文名各算一个), 只比原名的话, 「うらおん!」会把紧跟其后的自身中文名
+     * 「K-On!:Ura-On!」当成系列主条目名 —— 它在 TMDB 上什么都搜不到, 而真正的母条目
+     * 「けいおん！」只在 Bangumi 的「主线故事」出边上, 于是回落被这个假结果彻底挡死.
+     * 归一化后比, 因为同系列条目名常只差标点 (`うらおん!` / `うらおん!!`).
      */
-    private suspend fun resolveLineageViaAni(subjectId: Int, originalName: String): BgmLineage? = try {
+    private suspend fun resolveLineageViaAni(
+        subjectId: Int,
+        originalName: String,
+        nameCn: String,
+    ): BgmLineage? = try {
         val relations = aniRelationsApi { getSubjectRelations(subjectId.toLong()).body() }
-        val rootName = relations.seriesMainSubjectNames
-            .firstOrNull { it.isNotBlank() && it != originalName }
+        val rootName = tmdbSeriesRootName(relations.seriesMainSubjectNames, originalName, nameCn)
         if (rootName == null) {
             null
         } else {
             logger.info { "Resolved lineage for $subjectId via Ani: root=$rootName" }
-            BgmLineage(rootName = rootName, isDerivative = null)
+            BgmLineage(rootName = rootName, isDerivative = null, viaAni = true)
         }
     } catch (e: CancellationException) {
         throw e
@@ -274,7 +283,7 @@ class TmdbImageService(
     /**
      * 只有查询串与 tv/movie 进键 —— 年份为什么不进, 见 [searchRawResults].
      */
-    private data class SearchKey(val query: String, val type: String)
+    private data class SearchKey(val query: String, val type: String, val language: String? = null)
 
     /**
      * 承载合流任务的作用域: 任务不能挂在**发起者**的协程上 —— 发起者 (某次聚焦) 被取消时,
@@ -429,11 +438,13 @@ class TmdbImageService(
      *
      * @param activeAsOfDate 该条目最新已播集的日期 (`YYYY-MM-DD`), 拿不到分集时可传开播日期.
      *   决定负缓存的有效期 (见 [negativeCacheTtl]); 不传则负缓存永久有效 (旧行为).
+     * @param hints 条目侧的附加信息 (中文名 / 上映年度 / 是否影院放映), 见 [TmdbMatchHints].
      */
     suspend fun getBackdropUrl(
         subjectId: Int,
         originalName: String,
         activeAsOfDate: String? = null,
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): String? {
         // 本进程已解析出 URL 的直接给结果, 连 withContext 与读盘都省掉 (正缓存永久有效, 读盘只会
         // 拿到同一个 URL).
@@ -442,7 +453,7 @@ class TmdbImageService(
         // 而这张表只记结果不记时间, 短路会把"传了更近播出日期本该重取一次"的条目钉死到进程结束.
         // `map[id]` 对"值为 null"与"没解析过"都返回 null, 正好只短路正缓存.
         resolvedBackdropUrls[subjectId]?.let { return it }
-        return resolveBackdropUrl(subjectId, originalName, activeAsOfDate)
+        return resolveBackdropUrl(subjectId, originalName, activeAsOfDate, hints)
     }
 
     /**
@@ -453,12 +464,13 @@ class TmdbImageService(
         subjectId: Int,
         originalName: String,
         activeAsOfDate: String?,
+        hints: TmdbMatchHints,
     ): String? {
         if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return null
         val task = backdropInFlightLock.withLock {
             backdropInFlight[subjectId] ?: resolveScope.async {
                 try {
-                    doResolveBackdropUrl(subjectId, originalName, activeAsOfDate)
+                    doResolveBackdropUrl(subjectId, originalName, activeAsOfDate, hints)
                 } finally {
                     backdropInFlightLock.withLock { backdropInFlight.remove(subjectId) }
                 }
@@ -471,6 +483,7 @@ class TmdbImageService(
         subjectId: Int,
         originalName: String,
         activeAsOfDate: String?,
+        hints: TmdbMatchHints,
     ): String? = withContext(ioDispatcher) {
         run {
             // 合流等待期间前一个任务可能已经把这条解析完了, 再看一眼热表, 命中就连读盘都省了
@@ -485,8 +498,12 @@ class TmdbImageService(
                 }
                 // 负缓存: 过期才重取, 且闸门保证进程内每条目只放行一次 ——
                 // TMDB 侧确实没图时, 反复进出详情页不会反复空拉
+                // 上次是列表页 (没有条目信息) 查空的, 这次带着 hints —— 无视 TTL 重查一次,
+                // 见 [TmdbImageCache.backdropMissWithoutHints]
+                val retryWithHints = hints != TmdbMatchHints.Empty &&
+                        subjectId in cache.backdropMissWithoutHints
                 val stale = negativeCacheStale(cache.backdropMissAt[subjectId], activeAsOfDate)
-                if (!backdropRefreshGate.shouldRefresh(subjectId) { stale }) {
+                if (!retryWithHints && !backdropRefreshGate.shouldRefresh(subjectId) { stale }) {
                     rememberResolvedBackdrop(subjectId, null)
                     return@withContext null
                 }
@@ -497,11 +514,44 @@ class TmdbImageService(
             // 日期", 对剧场版/OVA 就等于上映日; 对连载 TV 则晚于开播年 —— 而 tv 侧判的是下界,
             // 年份取大只会更宽松, 不会误杀. 调用方没传日期的路径 (如 TV 搜索页的邻居预取)
             // 拿不到年份, 该处退化为原行为 (不否决).
-            val subjectYear = activeAsOfDate.yearOrNull()
+            val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
+            // 剧场版闸门比的是"本条目的候选串集合", 见 [TmdbSearchResult.matchesAnyCandidate]
+            val candidateNames = if (hints.theatrical) {
+                searchQueryCandidates(originalName).all.mapTo(mutableSetOf()) { normalizeForMatch(it) }
+            } else {
+                emptySet()
+            }
+            // 两次 searchLayered 共用一个 resolver: 各建各的会把 lineage 请求发两遍
+            val resolveRootName = rootNameResolver(subjectId, originalName, hints.nameCn)
             val path = try {
-                searchLayered(originalName, { resolveLineageOrNull(subjectId, originalName)?.rootName }) { query ->
-                    searchBackdropPath(query, subjectYear)
+                searchLayered(
+                    originalName,
+                    resolveRootName,
+                    hints = hints,
+                    thirdTier = { query -> searchThirdTierBackdrop(query, subjectYear) },
+                    chineseTier = { name, isAlias ->
+                        searchChineseBackdrop(name, subjectYear, isAlias, originalName)
+                    },
+                    collectionTier = {
+                        searchExactCollection(originalName, hints, subjectYear, CHINESE_LANGUAGE)?.backdropPath
+                    },
+                ) { query, requireExactTitle ->
+                    searchBackdropPath(
+                        query, subjectYear, requireExactTitle,
+                        theatrical = hints.theatrical, candidateNames = candidateNames,
+                    )
                 }
+                    ?: searchLayered(
+                        originalName,
+                        resolveRootName,
+                        hints = hints,
+                    ) { query, requireExactTitle ->
+                        // 海报兜底也走完整的层序: 匹配得上但那条 TMDB 记录只有 poster 的条目
+                        // (Kanon 2002 东映版), 前面每一层都会空手而归.
+                        // **逐字同名那道闸门要一起带过来**: 少了它, `ANGEL VOICE` 削出的 `ANGEL`
+                        // 会在这一遍拿到 Angel Beats! 的海报 —— backdrop 那遍拦住的正是这个.
+                        searchPosterPath(query, subjectYear, requireExactTitle)?.let { LayeredHit(it) }
+                    }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -513,7 +563,9 @@ class TmdbImageService(
 
             val url = path?.let { "$IMAGE_BASE_URL$it" }
             logger.info { "TMDB backdrop for subject $subjectId: ${url ?: "not found"}" }
-            dataStore.updateData { it.withBackdropResult(subjectId, url) }
+            dataStore.updateData {
+                it.withBackdropResult(subjectId, url, hadHints = hints != TmdbMatchHints.Empty)
+            }
             rememberResolvedBackdrop(subjectId, url)
             url
         }
@@ -531,6 +583,8 @@ class TmdbImageService(
         subjectId: Int,
         originalName: String,
         activeAsOfDate: String? = null,
+        /** 与 [getBackdropUrl] 喂同一份条目侧输入, 少喂一项就可能算出另一个结果. */
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): List<String> = withContext(ioDispatcher) {
         if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
 
@@ -543,9 +597,12 @@ class TmdbImageService(
         }
 
         // 见 doResolveBackdropUrl 里同名变量的说明
-        val subjectYear = activeAsOfDate.yearOrNull()
+        val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
         val urls = try {
-            searchLayered(originalName, { resolveLineageOrNull(subjectId, originalName)?.rootName }) { query ->
+            searchLayered(
+                originalName,
+                rootNameResolver(subjectId, originalName, hints.nameCn),
+            ) { query, _ ->
                 searchAnimeRef(query, subjectYear)
             }?.let { fetchBackdropPaths(it) }
                 .orEmpty()
@@ -626,6 +683,9 @@ class TmdbImageService(
         newestWantedAirDate: String? = null,
         subjectAirDate: String? = null,
         subjectEpisodeCount: Int? = null,
+        /** bgm 分集原语言名, 供削字合集档按集标题认领 parts (SE/总集编条目, 见 [collectionAsEpisodes]). */
+        subjectEpisodeNames: List<String> = emptyList(),
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): TmdbEpisodeStills? {
         if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
             return TmdbEpisodeStills()
@@ -639,7 +699,7 @@ class TmdbImageService(
                 try {
                     doGetEpisodeStills(
                         subjectId, originalName, language,
-                        newestWantedAirDate, subjectAirDate, subjectEpisodeCount,
+                        newestWantedAirDate, subjectAirDate, subjectEpisodeCount, subjectEpisodeNames, hints,
                     )
                 } finally {
                     episodeStillsInFlightLock.withLock { episodeStillsInFlight.remove(key) }
@@ -656,6 +716,8 @@ class TmdbImageService(
         newestWantedAirDate: String?,
         subjectAirDate: String?,
         subjectEpisodeCount: Int?,
+        subjectEpisodeNames: List<String>,
+        hints: TmdbMatchHints,
     ): TmdbEpisodeStills? =
         withContext(ioDispatcher) {
             val cached = readCache().episodeStills[subjectId]?.takeIf { it.language == language }
@@ -668,9 +730,15 @@ class TmdbImageService(
             val stills = try {
                 fetchEpisodeStills(
                     subjectId, originalName, language,
-                    subjectYear = (subjectAirDate ?: newestWantedAirDate).yearOrNull(),
+                    subjectYear = tmdbSubjectYear(
+                        (subjectAirDate ?: newestWantedAirDate).yearOrNull(),
+                        hints.screeningYear,
+                        hints.airYear,
+                    ),
                     subjectAirDate = subjectAirDate,
                     subjectEpisodeCount = subjectEpisodeCount,
+                    subjectEpisodeNames = subjectEpisodeNames,
+                    hints = hints,
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -712,16 +780,19 @@ class TmdbImageService(
         originalName: String,
         language: String,
         subjectYear: Int?,
-        rootName: String?,
+        subjectAirDate: String?,
     ): TmdbEpisodeStills {
-        val movieId = searchLayered(originalName, { rootName }) { query ->
-            val movie = searchAnime(query, "movie", subjectYear)
-            val hit = movie.primary.firstOrNull { it.id != null }
-                ?: movie.fallback.firstOrNull { it.id != null }
-                ?: return@searchLayered null
-            LayeredHit(hit.id!!, isTentativeSeasonHit(query, "movie", hit))
-        } ?: return TmdbEpisodeStills()
+        val movieId = findOwnMovieId(originalName, subjectYear, subjectAirDate)
+            ?: return TmdbEpisodeStills()
         logger.info { "TMDB movie match for subject $subjectId: https://www.themoviedb.org/movie/$movieId" }
+        return buildMovieAsSingleEpisode(movieId, language)
+    }
+
+    /** 把一部电影按"整部就是一集"索引: backdrop 当图, `runtime` 当时长, `overview` 当简介. */
+    private suspend fun HttpClient.buildMovieAsSingleEpisode(
+        movieId: Int,
+        language: String,
+    ): TmdbEpisodeStills {
         val detail = json.decodeFromString(
             TmdbMovieDetail.serializer(),
             getApi("/movie/$movieId") {
@@ -742,6 +813,115 @@ class TmdbImageService(
             language = language,
             showOverview = overview,
         )
+    }
+
+    /**
+     * **hero 背景图 = `/{type}/{id}/images` 里第一张无字幕的**; 拿不到才退回搜索结果自带的
+     * `backdrop_path`.
+     *
+     * 为什么不用 `backdrop_path`: 那是 TMDB **按语言各存一个**的"主图"字段, 同一条记录 en 与
+     * zh/ja 可以指向不同的图 —— Re:Zero tv/65942 的 en 是 `/ai8bVS8…`, zh/ja 是 `/7ZruEnS…`。
+     * 而**网页 (themoviedb.org/tv/65942) 三个语言页显示的都是 `/7ZruEnS…`**: 网页取的是
+     * `/images` 按票数排序的结果, **与语言无关**。用户看的就是网页那张。
+     *
+     * **取"无字幕首张"而不是"票数首张"**: 票数最高的可能是印了标题/字幕的宣传图
+     * (`iso_639_1` 非空), 而 hero 上还要叠标题与按钮。实测三例正好覆盖三种情形:
+     * - Re:Zero tv/65942: 无字幕首张 = `/7ZruEnS…` = 网页那张 ⇒ 修好;
+     * - ガンダムビルドダイバーズ tv/76821: backdrop **全都带字**, 这一档取不到 ⇒ 退回
+     *   `backdrop_path`, 与 main 结果一致;
+     * - 攻殻機動隊 movie/9323: 票数首张带字, 无字幕首张恰好就是 `backdrop_path` ⇒ 不变。
+     *
+     * 代价 = 每个条目**解析时多一个请求**, 而正缓存永久有效, 所以只有第一次。
+     *
+     * **别再去改 `backdrop_path` 取哪个语言**: 2026-09-06 在 en 与 zh 之间来回改过两轮,
+     * 两个方向都不对 —— 网页显示的既不是 en 也不是 zh 的那个字段。
+     */
+    private suspend fun heroBackdropPath(result: TmdbSearchResult, type: String): String {
+        val fallback = result.backdropPath!!
+        val id = result.id ?: return fallback
+        return runCatching {
+            client.use {
+                val body = getApi("/$type/$id/images") {
+                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    shortConnectTimeout()
+                }.bodyAsText()
+                json.decodeFromString(TmdbImagesResponse.serializer(), body).backdrops
+                    // TMDB 已按票数排序, 取第一张无字幕的
+                    .firstOrNull { it.language.isNullOrBlank() && !it.filePath.isNullOrBlank() }
+                    ?.filePath
+            }
+        }.getOrNull() ?: fallback
+    }
+
+    /** 剧照链路的第三档 (只搜 tv), 判据同 [searchThirdTierBackdrop]. */
+    private suspend fun searchThirdTierTv(query: String, subjectYear: Int?, rejected: Set<Int>): Int? {
+        val tokens = tokenizeForMatch(query)
+        val queryNormalized = normalizeForMatch(query)
+        return searchRawResults(query, "tv").firstOrNull { result ->
+            result.id?.let { it !in rejected } == true &&
+                    result.genreIds.isNotEmpty() &&
+                    GENRE_ANIMATION !in result.genreIds &&
+                    result.yearPlausible("tv", subjectYear) &&
+                    result.matchesTokens(tokens) &&
+                    result.hasExactTitle(queryNormalized)
+        }?.id
+    }
+
+    /** 剧照链路的中文候选 (只搜 tv), 判据同 [searchChineseBackdrop]. */
+    private suspend fun searchChineseTv(nameCn: String, subjectYear: Int?, rejected: Set<Int>): Int? {
+        val queryNormalized = normalizeForMatch(nameCn)
+        for (result in searchRawResults(nameCn, "tv", language = CHINESE_LANGUAGE)) {
+            val id = result.id ?: continue
+            if (id in rejected) continue
+            // genres 为空的条目放行: 变体档已有逐字闸门 + 对称年份双保险, 而 TMDB 冷门条目
+            // 常缺 genre (「GUNDAM EVOLVE」的 tv/101719 genres 是空的, 按 16 过滤等于拒绝正主)
+            if (result.genreIds.isNotEmpty() && GENRE_ANIMATION !in result.genreIds) continue
+            if (!tmdbExactVariantYearPlausible(result.releaseYearOrNull(), subjectYear)) continue
+            if (result.hasExactTitle(queryNormalized)) return id
+            val alt = runCatching { fetchAlternativeTitles(id, "tv") }.getOrElse { emptyList() }
+            if (alt.any { normalizeForMatch(it) == queryNormalized }) return id
+        }
+        return null
+    }
+
+    /**
+     * 找"本条目自己那部电影". 分两档, 都是实测逼出来的:
+     *
+     *  - **primary 候选** (原名 / 同形字折叠形) 命中即用. 剧场版条目的正解几乎都落在这一档,
+     *    而且 TMDB 的剧场版标题普遍带副标题 (`…キャメロット- 前編 Wandering; Agateram`),
+     *    这一档要是也要求逐字同名, `劇場版 CLANNAD` / `映画 Yes!プリキュア5` / `映画 妖怪学園Y`
+     *    这些会从有图退成无图.
+     *  - **削字候选**要多过一道闸门: **上映日与条目日期差 <=1 天, 或与条目原名逐字同名**.
+     *    削字这一档不能不要 —— `ジョジョ…ファントムブラッド` 的正解只有削掉副标题才搜得到
+     *    (TMDB 那边写作 `ファントム ブラッド`, 连写串召回不到), `Heaven's Feel` 同理;
+     *    但不加闸门的话, 放开削字守卫后新生的 `CLANNAD` 会让「智代編」(OVA) 拿到剧场版
+     *    movie/16516 的图 (Δ=305 天), 而它本该落到母番的 season 0.
+     *
+     * **不走关联回溯的根条目名**: root 给的是系列名, 命中的 movie 必然是系列里的**另一部**
+     * (`Kong — The Origin` 顺着根条目名 `悟空` 拿到了龙珠剧场版).
+     */
+    private suspend fun HttpClient.findOwnMovieId(
+        originalName: String,
+        subjectYear: Int?,
+        subjectAirDate: String?,
+    ): Int? {
+        val candidates = searchQueryCandidates(originalName)
+        for (query in candidates.primary) {
+            val movie = searchAnime(query, "movie", subjectYear)
+            (movie.primary.firstOrNull { it.id != null } ?: movie.fallback.firstOrNull { it.id != null })
+                ?.let { return it.id }
+        }
+        val nameNormalized = normalizeForMatch(originalName)
+        for (query in candidates.derived) {
+            val movie = searchAnime(query, "movie", subjectYear)
+            val hit = (movie.primary + movie.fallback).firstOrNull { it.id != null } ?: continue
+            val sameName = hit.hasExactTitle(nameNormalized)
+            val closeDate = subjectAirDate != null &&
+                    hit.releaseDate?.daysFrom(subjectAirDate)?.let { it <= 1 } == true
+            if (sameName || closeDate) return hit.id
+            break
+        }
+        return null
     }
 
     /** 分集缓存的陈旧重取闸门: 进程内每条目最多放行一次, 见 [getEpisodeStills]. */
@@ -798,11 +978,13 @@ class TmdbImageService(
         subjectYear: Int?,
         subjectAirDate: String?,
         subjectEpisodeCount: Int?,
+        subjectEpisodeNames: List<String>,
+        hints: TmdbMatchHints,
     ): TmdbEpisodeStills = client.use {
         val token = currentAniBuildConfig.tmdbApiToken
         // 血统判定在搜索前主动做 (搜索层只在直搜落空时才需要根条目名):
         // 建索引时要用"是否衍生作"决定 season 0 的取舍, 见下方季循环.
-        val lineage = resolveLineageOrNull(subjectId, originalName)
+        val lineage = resolveLineageOrNull(subjectId, originalName, hints.nameCn)
 
         // **单集条目 (剧场版/OVA) 先搜 movie**: 这类条目在 TMDB 上就是一个 movie, 而 tv 搜索
         // 几乎总能撞上同系列的某部剧 (实测 君の名は。命中毫不相干的 tv「キミの名を呼べば」、
@@ -811,8 +993,13 @@ class TmdbImageService(
         //
         // 只有"拿到了图"才直接采用: OVA 单集有时并没有独立 movie 条目, 数据在母番的 season 0
         // 里 (みなみけ べつばら/おまたせ), 那种情况要继续走下面的 tv 分层搜索.
-        val ownMovie = if (subjectEpisodeCount == 1) {
-            fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, lineage?.rootName)
+        //
+        // **闸门是 `只在影院放映 或 只有一集`**: 原先只看集数, 而「新世紀エヴァンゲリオン劇場版
+        // Air/まごころを、君に」在 Bangumi 是 **2 集** (同日、沿用 TV 的集号), 于是它被 tv 搜索
+        // 赢走、拿了 1995 年 TV 版的分集数据 —— 当初为此单写了一条"没有任何一季年份吻合就再找
+        // movie"的启发式, 现在 infobox 判据一个字段就认出来了.
+        val ownMovie = if (hints.theatrical || subjectEpisodeCount == 1) {
+            fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
         } else {
             null
         }
@@ -824,6 +1011,22 @@ class TmdbImageService(
         // 空壳条目重试时要排除的 tv id, 见下方 maxAttempts 处的说明.
         val rejectedTvIds = mutableSetOf<Int>()
 
+        // root 档的第二手, 语义同 [rootNameResolver] 的 attempt 1. findTv 会被重试多次,
+        // 结果记住不重发.
+        var bgmRootResolved = false
+        var bgmRootName: String? = null
+        suspend fun bgmFallbackRootName(): String? {
+            if (!bgmRootResolved) {
+                bgmRootResolved = true
+                bgmRootName = if (lineage?.viaAni == true) {
+                    resolveLineageViaBgm(subjectId, originalName)?.rootName
+                } else {
+                    null
+                }
+            }
+            return bgmRootName
+        }
+
         // 逐层搜索 (层次同 searchLayered), 对确认正传的条目多一条规则: 首候选 (完整条目名)
         // 的非精确标题命中不可信 —— 超集标题常是拆分出的兄弟条目 (如 "進撃の巨人 The Final
         // Season" 命中单集条目 "…完結編(後編)"), 正传季应归属母条目; 暂存该命中, 根条目名
@@ -832,16 +1035,28 @@ class TmdbImageService(
         //
         // 返回 (tv id, 命中它的候选词); 每次调用重跑整个候选序列 (已被 [rejectedTvIds] 排除的
         // id 视同没命中), 所以重试时会自动落到下一个候选词上.
-        suspend fun findTv(): Pair<Int, String?>? {
+        suspend fun findTv(): Triple<Int, String?, Boolean>? {
             val tried = mutableSetOf<String>()
             var acceptedId: Int? = null
             var matchedQuery: String? = null
             var tentativeId: Int? = null
+            var truncatedId: Int? = null
+            var truncatedQuery: String? = null
+            suspend fun accept(id: Int, query: String?): Boolean {
+                acceptedId = id
+                matchedQuery = query
+                return true
+            }
+
+            suspend fun searchOne(query: String): TmdbSearchResult? {
+                val usable = { r: TmdbSearchResult -> r.id?.let { it !in rejectedTvIds } == true }
+                return searchAnime(query, "tv", subjectYear)
+                    .let { it.primary.firstOrNull(usable) ?: it.fallback.firstOrNull(usable) }
+            }
+
             suspend fun trySearch(query: String): Boolean {
                 if (!tried.add(query)) return false
-                val usable = { r: TmdbSearchResult -> r.id?.let { it !in rejectedTvIds } == true }
-                val result = searchAnime(query, "tv", subjectYear)
-                    .let { it.primary.firstOrNull(usable) ?: it.fallback.firstOrNull(usable) } ?: return false
+                val result = searchOne(query) ?: return false
                 val id = result.id ?: return false
                 if (lineage?.isDerivative == false && query == nameCandidates.primary.firstOrNull() &&
                     !result.hasExactTitle(normalizeForMatch(query))
@@ -849,22 +1064,81 @@ class TmdbImageService(
                     tentativeId = id
                     return false
                 }
-                acceptedId = id
-                matchedQuery = query
-                return true
+                return accept(id, query)
             }
             run {
                 nameCandidates.primary.forEach { if (trySearch(it)) return@run }
-                nameCandidates.derived.forEach { if (trySearch(it)) return@run }
-                lineage?.rootName?.let { root ->
-                    searchQueryCandidates(root).all.forEach { if (trySearch(it)) return@run }
+                // 第三档与中文候选的位置同 [searchLayered], 理由见那里
+                nameCandidates.primary.forEach { candidate ->
+                    val id = searchThirdTierTv(candidate, subjectYear, rejectedTvIds)
+                    if (id != null && accept(id, candidate)) return@run
+                }
+                // **有 tentative 在手时, 削字类候选不得胜出**: tentative = 原名档已命中搜索
+                // 第一名, 只是 TMDB 收录名与 Bangumi 名不逐字相等 (写法体系不同, 如
+                // 「BanG Dream! ゆめ∞みた」vs TMDB 的「バンドリ！ ゆめ∞みた」); 而削字候选
+                // 是原名的截断, 削掉的恰是区分子作品的部分, 它"逐字精确"命中的天然是更泛的
+                // 本传/母作 ("BanG Dream!" 精确命中 39 集的本传 tv/69236, 挤掉了 tentative
+                // 里那个才是正确答案的 tv/300112, 选集卡从此一张图都对不上). root 档在
+                // rootName=(self) 时同样会削原名, 所以只用根名直搜, 不展开它的削字候选.
+                // 中文档是独立名字体系, 照旧可胜出 (岩窟王那类 tentative 是错剧、中文救回
+                // 的受益者不受影响).
+                // **削字命中一律降为暂定, 不再当场定案**: 削掉的恰是区分子作品的部分, 它精确
+                // 命中的天然是更泛的本传/母作 —— 「機動戦士ガンダムSEED C.E.73 STARGAZER」原名
+                // 0 结果, 削出的「機動戦士ガンダムSEED」逐字命中本传, 而能逐字命中正确条目
+                // tv/43142 的中文名排在后面, 从来轮不到. 先让中文档 (带逐字校验) 试, 它命中就
+                // 顶掉暂定; miss 才回头用削字的命中 (与原先定案等价, 不会从错图变无图).
+                if (tentativeId == null) {
+                    for (candidate in nameCandidates.derived) {
+                        if (!tried.add(candidate)) continue
+                        val result = searchOne(candidate) ?: continue
+                        val id = result.id ?: continue
+                        // 纯拉丁削字候选仍须逐字同名 (ANGEL 不能拿 Angel Beats!)
+                        if (candidate.none { ch -> ch.isCjkOrKana() } &&
+                            !result.hasExactTitle(normalizeForMatch(candidate))
+                        ) continue
+                        truncatedId = id
+                        truncatedQuery = candidate
+                        break // 削字由长到短, 第一个命中的最具体; 暂定只收一个
+                    }
+                }
+                // 中文名与别名分档, 同 searchLayered: 别名命中要过原名召回集的佐证
+                if (hints.nameCn.isNotBlank()) {
+                    val id = searchChineseTv(hints.nameCn, subjectYear, rejectedTvIds)
+                    if (id != null && accept(id, hints.nameCn)) return@run
+                }
+                for (alias in hints.aliases) {
+                    if (alias.isBlank() || alias == hints.nameCn) continue
+                    val id = searchChineseTv(alias, subjectYear, rejectedTvIds)
+                        ?.takeIf { it in ownNameRecallIds(originalName, "tv") }
+                    if (id != null && accept(id, alias)) return@run
+                }
+                // 削字暂定在手时 root 档不再走: 削字候选派生自条目自己的名字, 优先级本就
+                // 高于根条目名 (原先削字命中当场定案, root 同样走不到 —— 保持这个次序).
+                if (truncatedId == null) {
+                    lineage?.rootName?.let { root ->
+                        val rootCandidates = searchQueryCandidates(root)
+                        (if (tentativeId == null) rootCandidates.all else rootCandidates.primary)
+                            .forEach { if (trySearch(it)) return@run }
+                    }
+                    bgmFallbackRootName()?.let { root ->
+                        val rootCandidates = searchQueryCandidates(root)
+                        (if (tentativeId == null) rootCandidates.all else rootCandidates.primary)
+                            .forEach { if (trySearch(it)) return@run }
+                    }
                 }
             }
+            var viaFallback = false
             if (acceptedId == null && tentativeId != null) {
                 acceptedId = tentativeId
                 matchedQuery = nameCandidates.primary.firstOrNull()
+                viaFallback = true
             }
-            return acceptedId?.let { it to matchedQuery }
+            if (acceptedId == null && truncatedId != null) {
+                acceptedId = truncatedId
+                matchedQuery = truncatedQuery
+                viaFallback = true
+            }
+            return acceptedId?.let { Triple(it, matchedQuery, viaFallback) }
         }
 
         // **版本条目 (HDリマスター/完全版…) 在 TMDB 上常是个空壳**: 分集只有占位集名
@@ -874,12 +1148,34 @@ class TmdbImageService(
         // 这种情况把该 id 排除再搜一轮, 让"剥掉版本后缀"的候选词命中原作 (背景图那条链路
         // 靠 firstWithBackdrop 天然跳过了空壳, 所以只有剧照这边需要补).
         //
-        // **只对版本条目做**: 普通条目匹配到的正确剧集本来就可能一张剧照都没有 (冷门番常见),
-        // 那种情况换下一个候选只会把对的换成错的.
-        val maxAttempts = if (tmdbStripVersionSuffix(originalName) != originalName) STUB_TV_ATTEMPTS else 1
+        // **不能一律"没图就换下一个"**: 普通条目匹配到的正确剧集本来就可能一张剧照都没有
+        // (冷门番常见), 那种情况换下一个候选只会把对的换成错的. 所以要么是版本条目 (上面那类),
+        // 要么得有别的证据说明"这个不是它" —— 见 [looksLikeStubSeason] 的集数判据.
+        val versionEntry = tmdbStripVersionSuffix(originalName) != originalName
         var firstBuilt: TmdbEpisodeStills? = null
-        while (rejectedTvIds.size < maxAttempts) {
-            val (tvId, matchedQuery) = findTv() ?: break
+        var collectionChecked = false
+        var collectionEpisodes: TmdbEpisodeStills? = null
+        // findTv 会被重试多次, 合集查询记住结果, 别重复发
+        suspend fun collectionOrNull(): TmdbEpisodeStills? {
+            if (!collectionChecked) {
+                collectionChecked = true
+                collectionEpisodes = collectionAsEpisodes(
+                    subjectId, originalName, language, subjectYear, subjectEpisodeCount,
+                    subjectEpisodeNames, hints,
+                )
+            }
+            return collectionEpisodes
+        }
+        while (rejectedTvIds.size < STUB_TV_ATTEMPTS) {
+            val found = findTv()
+            if (found == null || found.third) {
+                // **合集精确匹配优先于暂定兜底**: findTv 走到 tentative/削字暂定 (或全空) 说明
+                // 没有任何精确命中 —— 此时条目名/中文名/别名能逐字命中一个 TMDB 合集的话
+                // ("每集一部电影"的 OVA 系列, 如「機動戦士ガンダム THE ORIGIN」= 6 部 movie),
+                // 按 parts 上映日当集表远比暂定条目可信 (暂定给的是更泛的本传, 集数日期全错).
+                collectionOrNull()?.let { return@use it }
+            }
+            val (tvId, matchedQuery) = found ?: break
             // 排查错配时可据此人工核对 tvId 指向的剧对不对
             logger.info {
                 "TMDB tv match for subject $subjectId: https://www.themoviedb.org/tv/$tvId (matched \"$matchedQuery\")"
@@ -892,15 +1188,65 @@ class TmdbImageService(
             logger.info { "TMDB tv/$tvId has no still at all for subject $subjectId" }
             if (firstBuilt == null) firstBuilt = built
             rejectedTvIds += tvId
+            // 换下一个候选要有理由; 没理由就守着第一个结果 (它多半是对的, 只是真没图)
+            if (!versionEntry && !looksLikeStubSeason(built, subjectEpisodeCount)) break
         }
         // tv 一个都没匹配上时再找 movie: 剧场版条目在 TMDB 上就是一个 movie, 没有季/集 ——
         // **整部就是一集**. 原先这条链路只搜 tv, 所以剧场版条目永远拿不到自己的分集数据
         // (攻殻機動隊 1995 的背景图修好之后, 选集卡片仍然是空的).
         // 只在 tv 全落空时才走, 所以不会把本来对的 tv 结果挤掉; 命中的 movie 仍然要过
         // 同一套动画过滤/标题校验/年份否决.
+        //
+        // **中文候选的 movie 侧只能挂在这里** (整条 tv 链路之后): 放到前面去的话,
+        // 「CLANNAD -クラナド-」这个 22 集的 TV 母条目会被同名的剧场版顶掉, 一次丢 22 集图.
+        // 而 FGO ソロモン 正是靠它才拿到 movie/829920 —— 那条 TMDB 记录的四个标题字段全是
+        // 罗马字/英文, 只有中文别名对得上.
         firstBuilt
             ?: ownMovie
-            ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, lineage?.rootName)
+            ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
+                .takeIf { it.byEpisodeNumber.values.any { media -> media.stillUrl != null } }
+            ?: hints.nameCn.takeIf { it.isNotBlank() }?.let { nameCn ->
+                fetchChineseMovieAsSingleEpisode(subjectId, nameCn, language, subjectYear, false, originalName)
+            }
+            ?: hints.aliases.firstNotNullOfOrNull { alias ->
+                if (alias.isBlank() || alias == hints.nameCn) {
+                    null
+                } else {
+                    fetchChineseMovieAsSingleEpisode(subjectId, alias, language, subjectYear, true, originalName)
+                }
+            }
+            ?: TmdbEpisodeStills()
+    }
+
+    /**
+     * 中文候选的 movie 侧: 用条目中文名找那部电影, 判据同 [searchChineseBackdrop].
+     * 找不到返回 `null` (而不是空结果), 让调用方能区分"没找到"与"找到了但没图".
+     */
+    private suspend fun HttpClient.fetchChineseMovieAsSingleEpisode(
+        subjectId: Int,
+        nameCn: String,
+        language: String,
+        subjectYear: Int?,
+        isAlias: Boolean,
+        originalName: String,
+    ): TmdbEpisodeStills? {
+        if (nameCn.isBlank()) return null
+        val queryNormalized = normalizeForMatch(nameCn)
+        // 别名候选要过原名召回集的佐证, 见 ownNameRecallIds
+        val recall = if (isAlias) ownNameRecallIds(originalName, "movie") else null
+        val movieId = searchRawResults(nameCn, "movie", language = CHINESE_LANGUAGE).firstOrNull { result ->
+            val id = result.id
+            id != null && (recall == null || id in recall) &&
+                    (result.genreIds.isEmpty() || GENRE_ANIMATION in result.genreIds) &&
+                    tmdbExactVariantYearPlausible(result.releaseYearOrNull(), subjectYear) &&
+                    (
+                            result.hasExactTitle(queryNormalized) ||
+                                    runCatching { fetchAlternativeTitles(id, "movie") }.getOrElse { emptyList() }
+                                        .any { normalizeForMatch(it) == queryNormalized }
+                            )
+        }?.id ?: return null
+        logger.info { "TMDB movie match via Chinese name for subject $subjectId: movie/$movieId" }
+        return buildMovieAsSingleEpisode(movieId, language)
     }
 
     /**
@@ -947,7 +1293,7 @@ class TmdbImageService(
                 seasonYears.any { (it - subjectYearOrNull).absoluteValue <= YEAR_TOLERANCE }
             if (!plausible) {
                 val byMovie = ownMovie
-                    ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, lineage?.rootName)
+                    ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
                 if (byMovie.byAirDate.keys.any { it.daysFrom(subjectAirDate).let { d -> d != null && d <= 1 } }) {
                     logger.info {
                         "TMDB tv/$tvId has no season near $subjectAirDate for subject $subjectId, using movie instead"
@@ -1129,8 +1475,8 @@ class TmdbImageService(
      * 1. 原名直搜 (含同形字折叠形, 见 [NameQueries.primary]) — 有独立 TMDB 条目的剧场版/
      *    衍生作 (如 デート・ア・バレット) 必须先命中自己的条目, 回溯放前面会把它们错误归并到母番;
      * 2. 削字规则 (见 [NameQueries.derived]) — 从条目**自己的名字**削出来的更短候选;
-     * 3. Bangumi 关联条目回溯到根条目再搜 — 数据驱动, 覆盖 "Re:ゼロから始める休憩時間"
-     *    这类换名短篇 (任何削字规则都不可解); 根条目名也过一遍削字候选.
+     * 3. 关联条目回溯到根条目再搜 — 数据驱动, 覆盖 "Re:ゼロから始める休憩時間" 这类换名短篇
+     *    (任何削字规则都不可解); 根条目名也过一遍削字候选. 名字来源与尝试次序见 [rootNameResolver].
      *
      * **削字必须排在关联回溯之前**: 一切派生自条目自己名字的候选 (原名 / 折叠形 / 削字形) 都比
      * "另一部作品的名字"可信 —— 关联回溯给的是**系列主条目**, 精确命中它就短路, 于是自己那个
@@ -1142,12 +1488,34 @@ class TmdbImageService(
      */
     private suspend fun <R : Any> searchLayered(
         originalName: String,
-        resolveRootName: suspend () -> String?,
-        search: suspend (query: String) -> LayeredHit<R>?,
+        /** 按尝试次序给出根条目名, 见 [rootNameResolver]; 给完了返回 null. */
+        resolveRootName: suspend (attempt: Int) -> String?,
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
+        /**
+         * **第三档**: 动画过滤的两档 (genre 16 / genre 缺失+日语) 都接不住"genre 填了但漏了 16"
+         * 的条目 —— `LEMON ANGEL PROJECT` 的 TMDB 条目 genre 只有 `18 Drama`, 直搜唯一命中就是
+         * 它却被两档同时丢掉. 只用 **primary 候选**并要求逐字同名, 且排在 [derived][NameQueries.derived]
+         * **之前** —— 放到最末尾的话, 放开削字守卫后新生的短拉丁候选 (`ANGEL` / `lost` /
+         * `DEATH STRANDING`) 会抢先命中 Angel Beats! / Lost / 困獸 那些无关条目.
+         */
+        thirdTier: (suspend (query: String) -> R?)? = null,
+        /**
+         * **中文候选**: TMDB 那边只有罗马字/英文标题, 或与 Bangumi 用了不同的汉字异体时,
+         * 日文原名怎么削都搜不到 (`巖窟王` vs TMDB 的 `巌窟王`; FGO ソロモン 的四个标题字段全是
+         * 罗马字). 用条目中文名搜一次能解开这一类. 排在 root 之前 —— 实测 root 层给出的是
+         * 同系列的**另一部** (FGO 拿到了キャメロット), 不比中文名可信.
+         */
+        chineseTier: (suspend (name: String, isAlias: Boolean) -> R?)? = null,
+        /**
+         * **合集精确匹配** (见 [searchExactCollection]): 单条目档全 miss 时, 条目名/变体
+         * 逐字命中一个 movie 合集也算精确答案 —— 排在削字暂定与 root 之前.
+         */
+        collectionTier: (suspend () -> R?)? = null,
+        search: suspend (query: String, requireExactTitle: Boolean) -> LayeredHit<R>?,
     ): R? {
         val tried = mutableSetOf<String>()
-        suspend fun trySearch(query: String): LayeredHit<R>? =
-            if (tried.add(query)) search(query) else null
+        suspend fun trySearch(query: String, requireExactTitle: Boolean = false): LayeredHit<R>? =
+            if (tried.add(query)) search(query, requireExactTitle) else null
 
         val nameCandidates = searchQueryCandidates(originalName)
         // 第一层的可疑命中先扣住 (见 LayeredHit.tentative), 让后两层有机会给出更可信的答案;
@@ -1158,15 +1526,43 @@ class TmdbImageService(
             if (!hit.tentative) return hit.value
             if (tentative == null) tentative = hit.value
         }
-        nameCandidates.derived.forEach { candidate ->
-            trySearch(candidate)?.let { return it.value }
-        }
-        resolveRootName()?.let { rootName ->
-            searchQueryCandidates(rootName).all.forEach { candidate ->
-                trySearch(candidate)?.let { return it.value }
+        if (thirdTier != null) {
+            nameCandidates.primary.forEach { candidate ->
+                thirdTier(candidate)?.let { return it }
             }
         }
-        return tentative
+        // **削字命中一律降为暂定** (与剧照链 findTv 同一条规则, 理由见那边): 削掉的恰是
+        // 区分子作品的部分, 精确命中的天然是更泛的本传; 让中文档 (带逐字校验) 先胜出,
+        // miss 才用削字的命中. 纯拉丁削字候选仍须逐字同名 (ANGEL 不能拿 Angel Beats!,
+        // 那条闸门原样保留在 requireExactTitle 上).
+        var truncated: R? = null
+        for (candidate in nameCandidates.derived) {
+            val hit = trySearch(candidate, requireExactTitle = candidate.none { it.isCjkOrKana() })
+                ?: continue
+            truncated = hit.value
+            break // 削字由长到短, 第一个命中的最具体
+        }
+        if (chineseTier != null) {
+            // 中文名与别名分成两档: 别名要过"原名召回集"佐证 (见 ownNameRecallIds), 中文名不要
+            if (hints.nameCn.isNotBlank()) {
+                chineseTier(hints.nameCn, false)?.let { return it }
+            }
+            for (alias in hints.aliases) {
+                if (alias.isBlank() || alias == hints.nameCn) continue
+                chineseTier(alias, true)?.let { return it }
+            }
+        }
+        collectionTier?.invoke()?.let { return it }
+        // 削字暂定在手时 root 档不再走 (原先削字命中当场定案, root 同样走不到).
+        if (truncated == null) {
+            for (attempt in 0..<ROOT_NAME_ATTEMPTS) {
+                val rootName = resolveRootName(attempt) ?: continue
+                searchQueryCandidates(rootName).all.forEach { candidate ->
+                    trySearch(candidate)?.let { return it.value }
+                }
+            }
+        }
+        return truncated ?: tentative
     }
 
     /**
@@ -1214,16 +1610,26 @@ class TmdbImageService(
      * 直接调 Bangumi v0 公开 API 而非 Ani API: 后者服务端会过滤掉「主线故事」关系
      * (实测 getRelatedSubjects 对 Re:ゼロ休憩時間只返回续集). 失败返回 null, 不影响兜底.
      */
-    @OptIn(ExperimentalAtomicApi::class)
-    private suspend fun resolveLineageOrNull(subjectId: Int, originalName: String): BgmLineage? {
+    private suspend fun resolveLineageOrNull(
+        subjectId: Int,
+        originalName: String,
+        nameCn: String = "",
+    ): BgmLineage? {
         // 先走 Ani 的关系索引: 墙内可直连, 一次请求直接拿到名字 (见 [resolveLineageViaAni]).
         // 它给不出系列主条目时才回落到下面的 Bangumi 逐跳回溯.
-        resolveLineageViaAni(subjectId, originalName)?.let { return it }
+        resolveLineageViaAni(subjectId, originalName, nameCn)?.let { return it }
+        return resolveLineageViaBgm(subjectId, originalName)
+    }
+
+    /** [resolveLineageOrNull] 的 Bangumi 逐跳回溯那半, 单独拿出来给 [rootNameResolver] 再试一次用. */
+    @OptIn(ExperimentalAtomicApi::class)
+    private suspend fun resolveLineageViaBgm(subjectId: Int, originalName: String): BgmLineage? {
         if (lineageFailureStreak.load() >= LINEAGE_FAILURE_LIMIT) return null
         return try {
             var currentId = subjectId
             var rootName: String? = null
             var sawMainStoryEdge = false
+            var usedSoftEdge = false
             val seen = mutableSetOf(subjectId)
             var hops = 0
             while (hops < MAX_RELATION_HOPS) {
@@ -1236,9 +1642,17 @@ class TmdbImageService(
                     .filter { it.type == BGM_SUBJECT_TYPE_ANIME }
                 val mainStory = relations.firstOrNull { it.relation == "主线故事" }
                 if (mainStory != null) sawMainStoryEdge = true
-                val next = mainStory
-                    ?: relations.firstOrNull { it.relation == "前传" }
-                    ?: break
+                val next = mainStory ?: relations.firstOrNull { it.relation == "前传" }
+                if (next == null) {
+                    // 硬边 (主线故事/前传) 走完了, 第一跳还可以试一次软边, 见 [softSeriesEdge]
+                    if (hops == 0) {
+                        relations.softSeriesEdge(originalName, seen)?.let {
+                            rootName = it.name
+                            usedSoftEdge = true
+                        }
+                    }
+                    break
+                }
                 if (!seen.add(next.id)) break
                 currentId = next.id
                 if (next.name.isNotBlank()) rootName = next.name
@@ -1247,7 +1661,9 @@ class TmdbImageService(
             lineageFailureStreak.store(0)
             BgmLineage(
                 rootName = rootName?.takeIf { it != originalName },
-                isDerivative = sawMainStoryEdge,
+                // 软边条目本身就是番外/PV, 但那条边说明不了它是不是衍生 —— 给"未知"而不是
+                // false, 免得分集索引拿"确认正传"去把 S0 殿后 (见 [BgmLineage.isDerivative])
+                isDerivative = if (usedSoftEdge) null else sawMainStoryEdge,
             ).also {
                 logger.info {
                     "Resolved lineage for $subjectId: root=${it.rootName ?: "(self)"}, " +
@@ -1271,17 +1687,65 @@ class TmdbImageService(
     }
 
     /**
+     * root 档的名字来源, 按尝试顺序惰性给出 (见 [searchLayered] 的 `resolveRootName`).
+     *
+     * 0. [resolveLineageOrNull] —— Ani 关系索引优先, 它给不出时内部已回落 Bangumi;
+     * 1. Ani 给了名字却搜不到图时, **再走一遍 Bangumi 逐跳**: Ani 只列系列内条目名, 衍生作的
+     *    母条目 (「タチコマな日々」→ 攻殻機動隊 SAC) 只在「主线故事」出边上, 那条边只有
+     *    Bangumi 有. 实测衍生/前导类 821 条上多救回 9 条, 其余情形不多发请求.
+     *
+     * 第 1 档只在第 0 档来自 Ani 时才有意义 —— 走过 Bangumi 的结果已经是最后一手.
+     */
+    private fun rootNameResolver(
+        subjectId: Int,
+        originalName: String,
+        nameCn: String,
+    ): suspend (attempt: Int) -> String? {
+        var viaAni = false
+        return { attempt ->
+            when (attempt) {
+                0 -> resolveLineageOrNull(subjectId, originalName, nameCn)
+                    ?.also { viaAni = it.viaAni }?.rootName
+
+                else -> if (viaAni) resolveLineageViaBgm(subjectId, originalName)?.rootName else null
+            }
+        }
+    }
+
+    /**
      * 跨类型按信号强弱取 backdrop: tv 动画 → movie 动画 → tv 兜底 → movie 兜底.
      * 兜底档 (genre 缺失 + 日语原声) 必须排在两个类型的动画档之后 —— 否则舞台剧/纪录片
      * 这类无 genre 条目会抢在真正的动画前面 (实测 "千と千尋の神隠し" 的 tv 搜索首位是
      * 舞台剧纪录片, 无 genre、日语、标题含全部查询词, 正确的 movie 条目反而排在了后面).
      * tv 动画档命中时不发 movie 请求 (最常见情形保持单请求).
      */
-    private suspend fun searchBackdropPath(query: String, subjectYear: Int?): LayeredHit<String>? {
+    private suspend fun searchBackdropPath(
+        query: String,
+        subjectYear: Int?,
+        requireExactTitle: Boolean = false,
+        theatrical: Boolean = false,
+        candidateNames: Set<String> = emptySet(),
+    ): LayeredHit<String>? {
+        val queryNormalized = normalizeForMatch(query)
         // 取"档次里第一个有图的结果"而不是直接取图: 要拿结果本身去判 isTentativeSeasonHit
-        fun List<TmdbSearchResult>.firstWithBackdrop() = firstOrNull { it.backdropPath != null }
-        fun TmdbSearchResult.hit(type: String) =
-            LayeredHit(backdropPath!!, isTentativeSeasonHit(query, type, this))
+        fun List<TmdbSearchResult>.firstWithBackdrop() = firstOrNull {
+            it.backdropPath != null && (!requireExactTitle || it.hasExactTitle(queryNormalized))
+        }
+
+        suspend fun TmdbSearchResult.hit(type: String) =
+            LayeredHit(heroBackdropPath(this, type), isTentativeSeasonHit(query, type, this))
+
+        // **只在影院放映的条目先搜 movie**: TMDB 上它们是独立的 movie 条目, 而 tv 搜索几乎总能
+        // 撞上同系列的某部剧 —— 实测 `ジョジョの奇妙な冒険 ファントムブラッド` 拿的是 1993 年那部
+        // OVA 剧集, `UP` 拿的是毫不相干的「All Grown Up!」. 命中**必须与本条目的某个候选串逐字
+        // 同名**才采用: 否则 `怪獣8号 第1期総集編` 会拿到**同日上映**的兄弟作「保科の休日」
+        // (同日, 日期判据分不开), `Kong — The Origin` 会顺着根条目名 `悟空` 拿到龙珠剧场版.
+        if (theatrical) {
+            val movieFirst = searchAnime(query, "movie", subjectYear)
+            (movieFirst.primary + movieFirst.fallback).firstOrNull {
+                it.backdropPath != null && it.matchesAnyCandidate(candidateNames)
+            }?.let { return it.hit("movie") }
+        }
 
         val tv = searchAnime(query, "tv", subjectYear)
         tv.primary.firstWithBackdrop()?.let { return it.hit("tv") }
@@ -1289,6 +1753,118 @@ class TmdbImageService(
         return movie.primary.firstWithBackdrop()?.hit("movie")
             ?: tv.fallback.firstWithBackdrop()?.hit("tv")
             ?: movie.fallback.firstWithBackdrop()?.hit("movie")
+    }
+
+    /**
+     * **海报兜底**: 整条链路都没找到 backdrop 时, 退而取同一批候选里的竖版海报.
+     *
+     * TMDB 上"有条目但没有背景图"是实打实的一类 —— 757 条语料里 42 条无图, 其中 **8 条**属此
+     * (`Kanon` 2002 东映版 tv/72540 就只有 poster). 这一档不发新请求: 前面几层已经把同样的
+     * 查询串搜过一遍, [searchRawResults] 的进程内记忆化会直接命中.
+     *
+     * **动画过滤的两档与顺序都跟 [searchAnime] 一致**: 兜底档 (genre 缺失 + 日语原声) 原先漏在
+     * 这里, 于是 backdrop 那边接得住的条目 poster 这边接不住 —— `ドラゴンリーグ` 的 tv/103336
+     * 名字与年份都逐字吻合, 只因 genre 空且没有背景图, 整条链路空手而归.
+     */
+    private suspend fun searchPosterPath(
+        query: String,
+        subjectYear: Int?,
+        requireExactTitle: Boolean = false,
+    ): String? {
+        val tokens = tokenizeForMatch(query)
+        val queryNormalized = normalizeForMatch(query)
+        fun List<TmdbSearchResult>.pick(type: String, fallback: Boolean) = firstOrNull { result ->
+            result.posterPath != null &&
+                    (if (fallback) {
+                        result.genreIds.isEmpty() && result.originalLanguage == "ja"
+                    } else {
+                        GENRE_ANIMATION in result.genreIds
+                    }) &&
+                    result.yearPlausible(type, subjectYear) &&
+                    result.matchesTokens(tokens) &&
+                    (!requireExactTitle || result.hasExactTitle(queryNormalized))
+        }
+
+        val tv = searchRawResults(query, "tv")
+        tv.pick("tv", fallback = false)?.let { return it.posterPath }
+        val movie = searchRawResults(query, "movie")
+        return movie.pick("movie", fallback = false)?.posterPath
+            ?: tv.pick("tv", fallback = true)?.posterPath
+            ?: movie.pick("movie", fallback = true)?.posterPath
+    }
+
+    /**
+     * **动画过滤的第三档**: genre 非空但不含 16 的结果, 要求与查询词逐字同名.
+     *
+     * 两档动画过滤 (genre 16 / genre 缺失 + 日语原声) 中间漏了一种: **genre 填了, 只是没填 16**.
+     * `LEMON ANGEL PROJECT` 的 tv/35812 原名与条目逐字相同、日期也相同, genre 却只有 `18 Drama`,
+     * 于是两档同时丢掉它. 逐字同名这道闸门是必需的 —— 不要求同名时 `Kanon` 会命中一部希腊剧.
+     */
+    private suspend fun searchThirdTierBackdrop(query: String, subjectYear: Int?): String? {
+        val tokens = tokenizeForMatch(query)
+        val queryNormalized = normalizeForMatch(query)
+        for (type in listOf("tv", "movie")) {
+            val hit = searchRawResults(query, type).firstOrNull { result ->
+                result.genreIds.isNotEmpty() &&
+                        GENRE_ANIMATION !in result.genreIds &&
+                        result.backdropPath != null &&
+                        result.yearPlausible(type, subjectYear) &&
+                        result.matchesTokens(tokens) &&
+                        result.hasExactTitle(queryNormalized)
+            }
+            if (hit != null) return hit.backdropPath
+        }
+        return null
+    }
+
+    /**
+     * **中文候选**: 用条目中文名搜一次, 命中须与中文名逐字同名.
+     *
+     * 比较对象是三处的并集, 缺一条就少修一个条目:
+     *  - **`language=zh-CN` 的 `name`/`title`** —— TMDB 的中文名只在这里, **不在 alternative_titles**
+     *    (tv/9543 的 alt 全是欧洲语言 + 韩语, 而 zh-CN name 正是 `岩窟王`, 与 bgm 的中文名逐字相同,
+     *    日文原名那边是异体字 `巌`/`巖`, NFKC 折叠不管这个);
+     *  - 原名 (`original_name`/`original_title`);
+     *  - **`alternative_titles`** —— FGO ソロモン 的 zh-CN title 用的是官方译名「命运／冠位指定…」,
+     *    对不上 bgm 的写法, 而 alt 里恰好有一条 `Fate/Grand Order - 终局特异点…` 逐字相同.
+     *
+     * 逐字同名这道闸门同样是必需的: `Kong — The Origin` 的 bgm 中文名是 `悟空`, 不加闸门会捞到
+     * 乐高悟空小侠、悟空传、黑神话：悟空 一大串.
+     */
+    /**
+     * @param isAlias 这个候选来自 infobox「别名」而非中文名 —— 命中要过原名召回集的佐证,
+     *   见 [ownNameRecallIds].
+     */
+    /**
+     * 搜索带 `language=zh-CN` (要拿 TMDB 的中文标题逐字比), 但**取图不看这一档的语言** ——
+     * 统一走 [heroBackdropPath].
+     */
+    private suspend fun searchChineseBackdrop(
+        name: String,
+        subjectYear: Int?,
+        isAlias: Boolean,
+        originalName: String,
+    ): String? {
+        val queryNormalized = normalizeForMatch(name)
+        for (type in listOf("tv", "movie")) {
+            val results = searchRawResults(name, type, language = CHINESE_LANGUAGE)
+            for (result in results) {
+                if (result.backdropPath == null) continue
+                // genres 空放行, 理由见 searchChineseTv
+                if (result.genreIds.isNotEmpty() && GENRE_ANIMATION !in result.genreIds) continue
+                if (!tmdbExactVariantYearPlausible(result.releaseYearOrNull(), subjectYear)) continue
+                val id = result.id ?: continue
+                if (isAlias && id !in ownNameRecallIds(originalName, type)) continue
+                // 这一档本来就是 zh-CN 搜的, 结果里那张已经是中文版; 与主档口径一致
+                // 与主档同一个取图出口: 否则"哪一档赢"决定拿哪张图, 同一部剧各季 hero 不一致
+                if (result.hasExactTitle(queryNormalized)) return heroBackdropPath(result, type)
+                val alt = runCatching { fetchAlternativeTitles(id, type) }.getOrElse { emptyList() }
+                if (alt.any { normalizeForMatch(it) == queryNormalized }) {
+                    return heroBackdropPath(result, type)
+                }
+            }
+        }
+        return null
     }
 
     /**
@@ -1313,13 +1889,17 @@ class TmdbImageService(
      * 把年份放进键、整个后处理一起缓存, 于是「機動戦士ガンダム」这串被两个不同年份的条目各搜了
      * 一遍 (同进程内相隔 26 秒), 记忆化在最该生效的兄弟条目场景上全落空.
      */
-    private suspend fun searchRawResults(query: String, type: String): List<TmdbSearchResult> {
-        val key = SearchKey(query, type)
+    private suspend fun searchRawResults(
+        query: String,
+        type: String,
+        language: String? = null,
+    ): List<TmdbSearchResult> {
+        val key = SearchKey(query, type, language)
         val task = searchMemoLock.withLock {
             searchMemo[key]?.let { return it }
             searchInFlight[key] ?: resolveScope.async {
                 try {
-                    fetchSearchResults(query, type).also { result ->
+                    fetchSearchResults(query, type, language).also { result ->
                         searchMemoLock.withLock {
                             searchMemo[key] = result
                             // 定容: 超了按插入序摘最早的那些 (mutableMapOf 是 LinkedHashMap).
@@ -1339,10 +1919,18 @@ class TmdbImageService(
         return task.await()
     }
 
-    private suspend fun fetchSearchResults(query: String, type: String): List<TmdbSearchResult> = client.use {
+    private suspend fun fetchSearchResults(
+        query: String,
+        type: String,
+        language: String? = null,
+    ): List<TmdbSearchResult> = client.use {
         val body = getApi("/search/$type") {
             parameter("query", query)
             parameter("include_adult", "true")
+            // 只有中文候选那一档会传 language: 拿的是 TMDB 的**中文标题**, 它不在
+            // alternative_titles 里 (见 [searchChineseBackdrop]). 其余搜索一律不传,
+            // 保持 name/title 为 en-US —— 现有的逐字同名判据依赖这个口径.
+            language?.let { parameter("language", it) }
             bearerAuth(currentAniBuildConfig.tmdbApiToken)
             shortConnectTimeout()
         }.bodyAsText()
@@ -1411,18 +1999,211 @@ class TmdbImageService(
     }
 
     /**
+     * **合集 (collection) 的精确匹配**: TMDB 把"每集一部电影"的 OVA 系列记成 movie 合集
+     * (「機動戦士ガンダム THE ORIGIN」= 6 部 movie 的合集, tv 侧没有本体), 单条目搜索怎么都
+     * 够不到. 条目名/中文名/别名逐字命中合集名 (剥掉「（系列）/シリーズ/Collection」类惯例
+     * 后缀, 见 [COLLECTION_SUFFIX_REGEX]) 才算, 且至少一部 part 的上映年须与条目年接近
+     * (对称容差, 同 [tmdbExactVariantYearPlausible]) —— 合集没有 genre 字段, 这两道闸门就是
+     * 全部防御.
+     *
+     * 搜索固定用中文召回并校验 (TMDB 的 query 跨语言, 中文合集名最全, 校验对全部变体做);
+     * 详情按 [language] 拉, 让 parts 的简介本地化.
+     */
+    private suspend fun searchExactCollection(
+        originalName: String,
+        hints: TmdbMatchHints,
+        subjectYear: Int?,
+        language: String,
+    ): TmdbCollectionDetail? = client.use {
+        val variants = buildList {
+            add(originalName)
+            addAll(hints.exactNameVariants)
+        }.filter { it.isNotBlank() }.distinct()
+        if (variants.isEmpty()) return@use null
+        val variantsNormalized = variants.mapTo(mutableSetOf()) { normalizeForMatch(it) }
+        for (query in variants) {
+            val response = json.decodeFromString(
+                TmdbCollectionSearchResponse.serializer(),
+                getApi("/search/collection") {
+                    parameter("query", query)
+                    parameter("language", CHINESE_LANGUAGE)
+                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    shortConnectTimeout()
+                }.bodyAsText(),
+            )
+            for (result in response.results) {
+                val id = result.id ?: continue
+                val name = result.name ?: continue
+                if (normalizeForMatch(COLLECTION_SUFFIX_REGEX.replace(name, "")) !in variantsNormalized) continue
+                val detail = json.decodeFromString(
+                    TmdbCollectionDetail.serializer(),
+                    getApi("/collection/$id") {
+                        parameter("language", language)
+                        bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                        shortConnectTimeout()
+                    }.bodyAsText(),
+                )
+                val years = detail.parts.mapNotNull { it.releaseDate?.take(4)?.toIntOrNull() }
+                if (subjectYear != null && years.isNotEmpty() &&
+                    years.none { (it - subjectYear).absoluteValue <= EXACT_VARIANT_YEAR_TOLERANCE }
+                ) continue
+                logger.info { "TMDB collection match: $id ($name) via query $query" }
+                return@use detail
+            }
+        }
+        null
+    }
+
+    /**
+     * [searchExactCollection] 命中时把 parts 按上映日当集表 (语义同 [buildMovieAsSingleEpisode],
+     * 但一部一"集"). 集数闸门: "合集当集表"只适用每集一部电影的形态, parts 数与条目集数差太多
+     * 说明这是"正传剧 + 几部剧场版"的普通合集, 硬当集表只会全错 (那种条目的正解在 tv 侧).
+     */
+    private suspend fun collectionAsEpisodes(
+        subjectId: Int,
+        originalName: String,
+        language: String,
+        subjectYear: Int?,
+        subjectEpisodeCount: Int?,
+        subjectEpisodeNames: List<String>,
+        hints: TmdbMatchHints,
+    ): TmdbEpisodeStills? {
+        searchExactCollection(originalName, hints, subjectYear, language)?.let { detail ->
+            wholeCollectionAsEpisodes(subjectId, detail, language, subjectEpisodeCount)?.let { return it }
+        }
+        // **削字合集 + parts 按集标题认领**: SE/总集编条目的合集名往往是"系列基名 + シリーズ"
+        // (機動戦士ガンダムSEED シリーズ), 与条目全名对不上, 只有削字候选剥后缀后逐字.
+        // 单集条目走 movie 档, 两集起才有认领的意义.
+        if (subjectEpisodeNames.size >= 2) {
+            searchTruncatedCollection(originalName, language)?.let { detail ->
+                claimCollectionPartsByEpisodeTitles(subjectId, detail, subjectEpisodeNames, language)
+                    ?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** 精确变体命中的合集整体当集表 (一部一"集"). */
+    private fun wholeCollectionAsEpisodes(
+        subjectId: Int,
+        detail: TmdbCollectionDetail,
+        language: String,
+        subjectEpisodeCount: Int?,
+    ): TmdbEpisodeStills? {
+        val parts = detail.parts.filter { !it.releaseDate.isNullOrBlank() }.sortedBy { it.releaseDate }
+        if (parts.isEmpty()) return null
+        if (subjectEpisodeCount != null && (parts.size - subjectEpisodeCount).absoluteValue > 2) return null
+        val medias = parts.map { it.toEpisodeMedia() }
+        if (medias.none { it.stillUrl != null }) return null
+        logger.info { "TMDB collection-as-episodes for subject $subjectId: ${parts.size} parts" }
+        return TmdbEpisodeStills(
+            byAirDate = partsByAirDate(parts, medias),
+            byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
+            language = language,
+            showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    /**
+     * 削字候选搜合集. 削字命中的合集**不能整体采信** (系列基名级的合集谁都能削出来), 只作为
+     * [claimCollectionPartsByEpisodeTitles] 的输入. **不做年份判据**: TMDB 给 parts 记的常是
+     * HD 重映日 (SEED SE 原发售 2004, TMDB 记 2023), 条目年对不上是常态, 认领闸门足够硬.
+     * 搜索与校验用日文 (削字候选来自日文原名, 合集的中文名常是意译, 剥后缀后对不上).
+     */
+    private suspend fun searchTruncatedCollection(
+        originalName: String,
+        language: String,
+    ): TmdbCollectionDetail? = client.use {
+        val candidates = searchQueryCandidates(originalName)
+        for (query in candidates.derived) {
+            val queryNormalized = normalizeForMatch(query)
+            val response = json.decodeFromString(
+                TmdbCollectionSearchResponse.serializer(),
+                getApi("/search/collection") {
+                    parameter("query", query)
+                    parameter("language", "ja-JP")
+                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    shortConnectTimeout()
+                }.bodyAsText(),
+            )
+            for (result in response.results) {
+                val id = result.id ?: continue
+                val name = result.name ?: continue
+                if (normalizeForMatch(COLLECTION_SUFFIX_REGEX.replace(name, "")) != queryNormalized) continue
+                return@use json.decodeFromString(
+                    TmdbCollectionDetail.serializer(),
+                    getApi("/collection/$id") {
+                        parameter("language", language)
+                        bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                        shortConnectTimeout()
+                    }.bodyAsText(),
+                )
+            }
+        }
+        null
+    }
+
+    /**
+     * 从合集 parts 里按 **bgm 分集标题**认领"属于本条目的那几部": part 的原语言标题须**包含**
+     * 集名 (「機動戦士ガンダムSEED スペシャルエディション 虚空の戦場」⊇「虚空の戦場」),
+     * **每一集都认领到且各对到不同 part** 才算数 —— 一集对不上就整体放弃, 这是削字合集档的
+     * 全部闸门. 集名归一化后短于 4 字符的不参与 (「第1話」类占位名会瞎撞).
+     * 认领结果按集号填 byEpisodeNumber (SE 类条目的 bgm 分集常无日期, 日期轴不可用),
+     * parts 有上映日的同时填 byAirDate.
+     */
+    private fun claimCollectionPartsByEpisodeTitles(
+        subjectId: Int,
+        detail: TmdbCollectionDetail,
+        episodeNames: List<String>,
+        language: String,
+    ): TmdbEpisodeStills? {
+        // 两侧都剥掉括号段再比: TMDB 的 part 标题常给汉字加注音括号
+        // (「運命（さだめ）の業火」 vs bgm 集名「運命の業火」), 含匹配会因此漏掉.
+        fun normalizeTitle(t: String) = normalizeForMatch(t.replace(PAREN_SEGMENT_REGEX, ""))
+        val partTitles = detail.parts.map { normalizeTitle(it.originalTitle ?: it.title ?: "") }
+        val used = mutableSetOf<Int>()
+        val claimed = ArrayList<TmdbCollectionPart>(episodeNames.size)
+        for (epName in episodeNames) {
+            val n = normalizeTitle(epName)
+            if (n.length < 4) return null
+            val idx = partTitles.indices.firstOrNull { it !in used && partTitles[it].contains(n) }
+                ?: return null
+            used += idx
+            claimed += detail.parts[idx]
+        }
+        val medias = claimed.map { it.toEpisodeMedia() }
+        if (medias.none { it.stillUrl != null }) return null
+        logger.info {
+            "TMDB collection parts claimed by episode titles for subject $subjectId: " +
+                    "${claimed.size}/${detail.parts.size}"
+        }
+        return TmdbEpisodeStills(
+            byAirDate = partsByAirDate(claimed, medias),
+            byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
+            language = language,
+            showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun TmdbCollectionPart.toEpisodeMedia() = TmdbEpisodeMedia(
+        stillUrl = backdropPath?.let { "$STILL_IMAGE_BASE_URL$it" },
+        overview = overview?.trim()?.takeIf { it.isNotBlank() },
+    )
+
+    private fun partsByAirDate(
+        parts: List<TmdbCollectionPart>,
+        medias: List<TmdbEpisodeMedia>,
+    ): Map<String, List<TmdbEpisodeMedia>> = buildMap {
+        parts.forEachIndexed { i, part ->
+            val key = part.releaseDate?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
+            put(key, get(key).orEmpty() + medias[i])
+        }
+    }
+
+    /**
      * 条目名派生出的搜索候选, 按**尝试时机**分成两层 (见 [searchLayered]):
      * 先试 [primary], 再试 [derived], 最后才轮到关联回溯给的根条目名.
      */
-    private class NameQueries(
-        /** 与条目名同义的写法 (原名 / 同形字折叠形): 必须先于一切削短过的候选. */
-        val primary: List<String>,
-        /** 削字规则派生的更短候选: [primary] 全落空后才轮到, 但仍先于关联回溯. */
-        val derived: List<String>,
-    ) {
-        /** 两层顺序拼接. 根条目名自己的候选不分层, 按这个顺序全试. */
-        val all: List<String> get() = primary + derived
-    }
 
     /**
      * 生成搜索候选名, 依次尝试: 原名 → 同形字折叠形 → 去掉 OVA/OAD 类关键字 → 剥版本后缀 →
@@ -1444,106 +2225,35 @@ class TmdbImageService(
      * 所以只需把条目名还原成母番名: 去掉关键字直接搜 (含副标题也常能命中, 如
      * "進撃の巨人 悔いなき選択"), 搜不到再逐词去掉尾部副标题.
      */
-    private fun searchQueryCandidates(name: String): NameQueries {
-        val primary = mutableListOf<String>()
-        val derived = mutableListOf<String>()
+    private fun searchQueryCandidates(name: String): NameQueries =
+        tmdbSearchQueryCandidates(name)
 
-        fun normalized(candidate: String) = candidate.replace(Regex("""\s+"""), " ").trim()
-
-        /** 与条目名同义的候选, 属第一层 (必须先于削字候选). */
-        fun addPrimary(candidate: String) {
-            val n = normalized(candidate)
-            if (n.isNotBlank() && n !in primary) primary += n
-        }
-
-        /** 削字规则派生的候选, 属第二层 (排在关联回溯之前). */
-        fun addCandidate(candidate: String) {
-            val n = normalized(candidate)
-            if (n.isNotBlank() && n !in primary && n !in derived) derived += n
-        }
-        addPrimary(name)
-        // 同形字折叠后的写法与原名同义, 所以**同属第一层**: 哪种写法搜得到取决于 TMDB 那边录了
-        // 什么别名 —— 「機動戦士ガンダムΖΖ」(希腊 Ζ) 直搜 0 结果、折叠成拉丁 ZZ 才命中, 而
-        // 「機動戦士Ζガンダム」反过来靠希腊写法的别名命中. 两种都试, 原名在前.
-        // 放进第一层而不是追加到末尾是关键 —— 它必须先于**削字候选**: ZZ 的削字候选是
-        // 「機動戦士ガンダムΖ」和「機動戦士ガンダム」(末尾希腊 Ζ 不是假名/汉字, 被逐字回退剥掉),
-        // 折叠形排在它们后面的话, 先命中的会是 Z 高达或初代高达.
-        addPrimary(foldCompatibility(name))
-
-        val ovaMode = OVA_KEYWORD_REGEX.containsMatchIn(name)
-        val base = if (ovaMode) name.replace(OVA_KEYWORD_REGEX, " ") else name
-        addCandidate(base)
-
-        // 版本/媒介后缀 (HD 重制、新编集版、导演剪辑版): 这是"同一部作品的另一个版本",
-        // TMDB 多数不给它独立条目, 数据都在原作品那条上. 「機動戦士ガンダムSEED DESTINY
-        // HDリマスター」整串直搜是 0 结果, 剥掉后命中 tv/20111 (它的 S2 正是 DESTINY, 50 集
-        // 逐集对得上).
-        //
-        // 下面的"逐词去尾"如今也能去掉这类尾词, 这一步仍然单列, 因为它 **① 不依赖空格**
-        // (后缀直接贴在名字上时逐词去尾无从下手), **② 排在前面、只削这一处**, 比逐词那几步精确;
-        // 而且 [tmdbStripVersionSuffix] 本身还被另外两处用到 (按季名认领条目对应的季、判断
-        // "这是不是个版本条目"), 不是纯为候选而存在.
-        //
-        // 少数确实有独立条目的 (機動戦士ガンダムSEED HDリマスター = tv/332355) 不受影响:
-        // 原名直搜在第一层就命中了, 轮不到这里.
-        val versionStripped = tmdbStripVersionSuffix(base)
-        addCandidate(versionStripped)
-
-        val suffixStripped = tmdbStripSeasonSuffix(versionStripped)
-        addCandidate(suffixStripped)
-        val romanStripped = suffixStripped.replace(Regex("""[ⅡⅢⅣⅤⅥⅦⅧⅨⅩ]"""), "")
-        addCandidate(romanStripped)
-        // 裸数字季号: 续季常直接在名字尾部跟数字 (如 "有頂天家族2" — TMDB 只有 "有頂天家族" 一个剧条目).
-        // 只认 1-2 位, 3 位以上视为名字本体 (如 "モブサイコ100"); 且作为末位候选,
-        // 仅在前面候选全部落空时才轮到, 名字本体恰好以数字结尾的条目会先被原名命中.
-        // (下面的逐字符回退不适用纯拉丁名, 这条规则保留给它们, 如 "STEINS;GATE 0".)
-        addCandidate(romanStripped.replace(Regex("""\s*[0-9０-９]{1,2}$"""), ""))
-
-        // 逐词去尾: 从**最后一个空格**处一次去掉一个尾词, 由长到短依次作候选. 三种用途:
-        //  - OVA 条目: 还原母番名 (如 "進撃の巨人 悔いなき選択" → "進撃の巨人");
-        //  - 剥掉**拉丁副标题** —— 下面那条逐字符回退对长拉丁尾巴无效. 实测
-        //    「劇場版 Fate/stay night [Heaven's Feel] I.presage flower」: 尾巴 17 个字符,
-        //    逐字符剥满 12 步只到 "…I.p", 每一步在 TMDB 上都是 0 结果; 而逐词去掉一到两个
-        //    就命中 movie/283984 (TMDB 那边写作「」+ 弯引号 + 罗马数字 Ⅰ, 整串直搜 0 结果);
-        //  - 剥掉**日文/中文的尾词** —— 这类后缀花样太多, 逐条列关键字列不完: 次篇 / 続編 /
-        //    特別版 / 真生版 / 70mm版 / 第1シリーズ / 第一季 (中文数字, 季号正则的 `\d` 不认)
-        //    /総集編 / 序章 / 第一章…, 而它们全都是"母番名 + 一个尾词"的形状. 实测 350 条语料里
-        //    这一步救回 21 个条目的背景图与 31 集剧照 (如「ベルセルク 次篇」→ 2016 年那部的 S2、
-        //    「機動戦士ガンダムSEED FREEDOM 特別版」→ 自己那部电影、「凡人修仙传 星海飞驰篇 序章」
-        //    → 母番), 且一处换图/丢图都没有.
-        //
-        // 两个守卫 (只对非 OVA):
-        //  - 剩下的部分仍须含日文/中文, 否则会把 "BanG Dream! It's MyGO!!!!!" 这种纯拉丁名拆碎;
-        //  - 剩下的部分不能只是个**形态词** (见 [String.isMediaFormWordOnly]).
-        //
-        // 排在逐字符回退**之前**: 两者很少同时适用 (逐字符主要服务无空格的名字), 而同时适用时
-        // 逐词那几步远比逐字符的十几步有意义, 早一步命中就少十几个白发的请求.
-        var truncated = romanStripped.replace(Regex("""\s+"""), " ").trim()
-        var depth = 0
-        while (depth < WORD_TRUNCATE_MAX_DEPTH && truncated.contains(' ')) {
-            truncated = truncated.substringBeforeLast(' ').trim()
-            if (!ovaMode && (truncated.none { it.isCjkOrKana() } || truncated.isMediaFormWordOnly())) break
-            addCandidate(truncated)
-            depth++
-        }
-
-        // 末尾非文字字符逐个回退: 尾部季号/副标题形态繁多 (ASCII 罗马数字 "灼眼のシャナII"、
-        // "R2"、"III -Final-" 等), 枚举不完; 从末尾逐字符去掉非日文/中文的字符, 每一步都
-        // 作为候选 (先长后短, 更具体的先试). 要求剩余部分仍含日文/中文字符, 避免把
-        // "BLEACH" 这类纯拉丁名逐字拆碎; 限最多回退 12 字符, 防病态长尾.
-        var walked = romanStripped
-        var steps = 0
-        while (steps < 12) {
-            val trimmed = walked.trimEnd()
-            val last = trimmed.lastOrNull() ?: break
-            if (last.isCjkOrKana()) break
-            walked = trimmed.dropLast(1)
-            steps++
-            if (walked.none { it.isCjkOrKana() }) break
-            addCandidate(walked)
-        }
-        return NameQueries(primary, derived)
-    }
+    /**
+     * 条目**自己名字**在 TMDB 的搜索召回集 (primary 候选 × 一种 type 的全部结果 id).
+     *
+     * 这是**别名档的佐证**: 别名是本名的变体, 本名一定能把同一条 TMDB 记录召回来 —— 哪怕标题
+     * 对不上字 (那才需要别名去逐字命中), TMDB 的模糊召回也会给出它. 召回不到, 说明这条别名
+     * 指的是**另一部作品**.
+     *
+     * 病例 (2026-09-06): `Re:プチから始める異世界生活` (bgm 185837) 的 infobox「别名」写着
+     * `Isekai Shokudou` —— 那是**異世界食堂**, 与本作毫无关系 (bangumi 上的数据错误). 别名档
+     * 逐字命中 tv/72425 (2017-07-04, 24 集), 对称年份容差 3 拦不住 (Δ1 年), 于是 hero 背景和
+     * 整排选集卡全成了異世界食堂的图. 而它自己的原名与中文名在 TMDB 上都是 **0 结果**,
+     * 召回集是空的 —— 闸门据此拒掉, 条目回落到「主线故事」根 (Re:ゼロ 本传), 与同族的
+     * 「休憩時間」一致.
+     * 反面对照: `GUNDAM EVOLVE` (42789) 原名直搜就召回 tv/101719 + movie/411218, 正是两条
+     * 别名逐字命中的那两条 —— 放行, 那条修复不受影响.
+     *
+     * **只管 aliases, 不碰 nameCn**: 中文名是条目的权威译名, 而 infobox「别名」是自由文本,
+     * 谁都能往里写别的作品. 「巖窟王」(异体字) / 「FGO ソロモン」(TMDB 四个标题字段全是罗马字)
+     * 这类正是"原名召回不到正主、只有中文名对得上"的条目, 给中文名加闸门会把它们打回无图.
+     *
+     * 零额外请求: [searchRawResults] 自带 memo, primary 候选在本次解析里早已被第一档搜过.
+     */
+    private suspend fun ownNameRecallIds(originalName: String, type: String): Set<Int> =
+        searchQueryCandidates(originalName).primary
+            .flatMap { searchRawResults(it, type) }
+            .mapNotNullTo(mutableSetOf()) { it.id }
 
     /**
      * 读缓存; 版本不符时整体作废重建 —— 匹配算法变更后旧结果可能是错的
@@ -1595,6 +2305,9 @@ class TmdbImageService(
         /** 关联回溯跳数上限 (实测常见链 1-2 跳, 上限只是环路/脏数据保险). */
         private const val MAX_RELATION_HOPS = 8
 
+        /** root 档最多问几次名字, 见 [rootNameResolver]. */
+        private const val ROOT_NAME_ATTEMPTS = 2
+
 
         /**
          * 关联回溯连续失败多少次后本次进程放弃 (见 [lineageFailureStreak]).
@@ -1626,12 +2339,11 @@ class TmdbImageService(
         private const val MAX_BACKDROPS_PER_SUBJECT = 20
 
         /** 逐词去尾最多剥几个词, 见 [searchQueryCandidates]. */
-        private const val WORD_TRUNCATE_MAX_DEPTH = 3
+
+        /** 中文候选那一档搜索用的语言 (见 [searchChineseBackdrop]). */
+        private const val CHINESE_LANGUAGE = "zh-CN"
 
         /** OVA/OAD/特别篇类关键字: 触发母番名还原 (这些内容在 TMDB 里是母番的 season 0 特别篇). */
-        private val OVA_KEYWORD_REGEX =
-            Regex("""(?i)\b(?:OVA|OAD)S?\b|特別[編篇]|特别篇|スペシャル""")
-
         /**
          * 分集 still 官方档位只有 w92/w185/w300/original, w300 太糊, 存原图档 URL;
          * 消费端按用途降档: 选集卡片 [tmdbStillCardSizeUrl] (w780), 全屏 hero 背景
@@ -1697,7 +2409,7 @@ fun tmdbStillHeroSizeUrl(url: String, fullQuality: Boolean = false): String =
 fun tmdbBackdropOriginalSizeUrl(url: String): String = url.replace("/t/p/w1280/", "/t/p/original/")
 
 /** 日文假名/汉字 (含中文): 候选名末尾回退时视为名字本体, 到此为止不再往前剥. */
-private fun Char.isCjkOrKana(): Boolean =
+internal fun Char.isCjkOrKana(): Boolean =
     this in '぀'..'ヿ' || // 平假名 + 片假名 (含长音符 ー)
         this in '一'..'鿿' || // CJK 统一汉字
         this == '々' // 々 (叠字符)
@@ -1724,7 +2436,11 @@ private fun Char.isCjkOrKana(): Boolean =
  * 淘汰按批 ([PERSISTED_BACKDROP_EVICT_BATCH]) 而不是每次挤掉一条, 免得到达上限之后每一次
  * 写入都要重算淘汰集。被淘汰的条目下次聚焦时重新走一次 TMDB, 只是慢一点, 不会出错。
  */
-internal fun TmdbImageCache.withBackdropResult(subjectId: Int, url: String?): TmdbImageCache {
+internal fun TmdbImageCache.withBackdropResult(
+    subjectId: Int,
+    url: String?,
+    hadHints: Boolean = true,
+): TmdbImageCache {
     val urls = backdropUrls + (subjectId to (url ?: ""))
     // 拿到图就清掉时间戳, 免得这个 map 随收藏量无限增长
     val missAt = if (url != null) {
@@ -1732,12 +2448,22 @@ internal fun TmdbImageCache.withBackdropResult(subjectId: Int, url: String?): Tm
     } else {
         backdropMissAt + (subjectId to currentTimeMillis())
     }
+    // 只有"没带 hints 又没拿到图"才留记号; 带着 hints 查过一次之后就摘掉, 不再重查
+    val noHints = if (url == null && !hadHints) {
+        backdropMissWithoutHints + subjectId
+    } else {
+        backdropMissWithoutHints - subjectId
+    }
     if (urls.size <= PERSISTED_BACKDROP_MAX) {
-        return copy(backdropUrls = urls, backdropMissAt = missAt)
+        return copy(backdropUrls = urls, backdropMissAt = missAt, backdropMissWithoutHints = noHints)
     }
     // Map.plus 返回 LinkedHashMap, 反序列化出来的也是 —— keys 的迭代顺序就是写入顺序
     val dropped = urls.keys.take(urls.size - PERSISTED_BACKDROP_MAX + PERSISTED_BACKDROP_EVICT_BATCH).toSet()
-    return copy(backdropUrls = urls - dropped, backdropMissAt = missAt - dropped)
+    return copy(
+        backdropUrls = urls - dropped,
+        backdropMissAt = missAt - dropped,
+        backdropMissWithoutHints = noHints - dropped,
+    )
 }
 
 /**
@@ -1763,6 +2489,17 @@ data class TmdbImageCache(
      * 缺失 (旧缓存写下的负缓存) 视为已过期, 下次访问重取一次. 新字段有默认值, 不影响旧缓存.
      */
     val backdropMissAt: Map<Int, Long> = emptyMap(),
+    /**
+     * 负结果是**没带 [TmdbMatchHints] 时写下**的条目.
+     *
+     * TV 的时间表/搜索页只有 `subjectId + 名字`, 拿不到"是不是影院放映"与"上映年度",
+     * 于是剧场版闸门与上映年度那两档在它们那里不生效. 老条目的负缓存又是**永久**的
+     * (见 [negativeCacheTtl]), 列表页先解析失败的话, 之后带着完整信息进详情页也不会再查 ——
+     * 那 9 条老剧场版 (エースをねらえ! / UP / 銀河鉄道999 映画版 / 彼女と彼女の猫 …) 就此钉死.
+     * 记一笔, 让**第一次带着 hints 的调用**无视 TTL 重查一次; 重查后无论结果如何都会移出这张表,
+     * 所以每个条目最多多查一次.
+     */
+    val backdropMissWithoutHints: Set<Int> = emptySet(),
     /**
      * 同 [backdropMissAt], 对应 [allBackdrops].
      * 必须与前者分开存: 共用一份时间戳会让"单图重取成功后清除时间戳"把全量剧照的负缓存
@@ -1824,8 +2561,19 @@ data class TmdbImageCache(
          *      - 认不出季时按季名认领 (SEED DESTINY HDリマスター 复播日期离两季首播日都很远,
          *        50 集全无图; Fate/kaleid liner プリズマ☆イリヤ 差 7 天);
          *      - 集名索引去掉假名注音括号 (SEED 第 7/33/38 集两边注音方式不一致).
+         * v21: 条目匹配整批改, 存的既有空的正缓存也有错的正缓存, 整表作废重取:
+         *      - 剧场版优先匹配 movie 而不是同系列的电视版; 削字放开到「拉丁名 + 日文副标题」;
+         *        动画过滤补一档 (genre 填了但漏了 16); 中文名与 infobox 上映年度兜底;
+         *        没有横版背景图时回退竖版海报;
+         *      - root 档的名字来源改了 (见 rootNameResolver): 此前拿到的是条目自己的中文名,
+         *        うらおん! 因此搜不到任何东西 (空的正缓存), ハンター×ハンター・ザ・リアル 4-D
+         *        撞上同名作品存了《魔晶猎人》的图 (错的正缓存).
+         * v22: **别名档加了原名召回集佐证** (见 ownNameRecallIds), 存的是错的正缓存, 必须作废:
+         *      bgm 的 infobox「别名」是自由文本, 写着别的作品时整条链路跟着错图 ——
+         *      `Re:プチから始める異世界生活` (185837) 的别名字段是「Isekai Shokudou」(異世界食堂),
+         *      hero 背景与整排选集卡都存成了那部的图 (2026-09-06 用户报的).
          */
-        const val CURRENT_VERSION = 20
+        const val CURRENT_VERSION = 22
     }
 }
 
@@ -1874,11 +2622,52 @@ data class TmdbEpisodeStills(
      */
     val byAirDateOrigin: Map<String, List<TmdbEpisodeOrigin>> = emptyMap(),
 ) {
-    /** 按集名 (原名/中文名等, 依次尝试) 精确匹配; 名字归一化后比较, 见 [tmdbEpisodeNameKey]. */
+    /**
+     * 按集名 (原名/中文名等, 依次尝试) 匹配; 名字归一化后比较, 见 [tmdbEpisodeNameKey].
+     *
+     * 先逐字, 再**后缀认领** —— 见 [findByEpisodeNameSuffix].
+     */
     fun findByEpisodeName(vararg names: String?): TmdbEpisodeMedia? =
         names.firstNotNullOfOrNull { name ->
             name?.let { tmdbEpisodeNameKey(it) }?.takeIf { it.isNotEmpty() }?.let { byEpisodeName[it] }
+        } ?: names.firstNotNullOfOrNull { name ->
+            name?.let { tmdbEpisodeNameKey(it) }?.let(::findByEpisodeNameSuffix)
         }
+
+    /**
+     * **后缀认领**: TMDB 集名以本集名结尾且**全表唯一**时算命中.
+     *
+     * TMDB 把一个系列的全部衍生短篇混装进正传的 season 0, 于是**必须靠前缀区分**, 集名写成
+     * 「作品名 + 本集名」; 而 Bangumi 那边分集只有本集名. 实测 tv/65942 (Re:Zero) 的 S0 有 81 集,
+     * 混了四部衍生:
+     *
+     * ```
+     * E12  Re:プチから始める異世界生活 ぷち1 再来の学校      <- bgm 185837 ep1 = 「ぷち①再来の学校」
+     * E51  Re:ゼロから始める休憩時間 3rd season 眠れる鬼の夜話 <- bgm 516311 ep1 = 「眠れる鬼の夜話」
+     * ```
+     *
+     * 这两条日期轴也救不了: 两边记的播出日差 3 天 (超出 ±1 容差) 或差 1 天但**正片当天也有一集**,
+     * 于是要么整部无图, 要么整排拿到正片的图. 而集号轴被"有日期却对不上说明条目可疑"那道闸门关着
+     * (见 `TmdbEpisodeMatcher`) —— 那条判据在这里不成立: 条目是对的, 只是两边日期记法不同.
+     *
+     * **三道闸门**, 每一道都为了别把"名字短又常见"的集认错:
+     * - 归一化后**至少 4 个字符**: 与关系软边那条判据同源 (最长公共子串 >= 4, 见
+     *   `project-tv-tmdb-backdrop` 第 26 节), 实测那条界线是硬的;
+     * - **全表唯一** (`singleOrNull`): 两条以上就说明这个后缀分不出来, 宁可无图;
+     * - 只认**后缀**不认任意位置的包含: 前缀是作品名, 本集名一定在末尾。
+     */
+    private fun findByEpisodeNameSuffix(key: String): TmdbEpisodeMedia? {
+        if (key.length < MIN_SUFFIX_CLAIM_LENGTH) return null
+        return byEpisodeName.entries
+            .filter { it.key.length > key.length && it.key.endsWith(key) }
+            .singleOrNull()
+            ?.value
+    }
+
+    private companion object {
+        /** 后缀认领的最短集名, 见 [findByEpisodeNameSuffix]. */
+        const val MIN_SUFFIX_CLAIM_LENGTH = 4
+    }
 
     /**
      * 是否拿到了任何一张剧照. 用来识别 TMDB 上的**空壳条目** —— 占位分集只有集号与时长,
@@ -1932,6 +2721,8 @@ private data class TmdbImagesResponse(
 @Serializable
 private data class TmdbImageFile(
     @SerialName("file_path") val filePath: String? = null,
+    /** 图上印的字幕/标题语言; null 或空 = 无字幕. 见 [TmdbImageService.heroBackdropPath]. */
+    @SerialName("iso_639_1") val language: String? = null,
 )
 
 /** 条目所属系列的回溯结果, 见 `resolveLineageOrNull`. */
@@ -1948,6 +2739,12 @@ private class BgmLineage(
      * `== true` 的显式比较, null 自然落到"两边都不成立", 即维持原顺序.
      */
     val isDerivative: Boolean?,
+    /**
+     * 这条结果是不是 Ani 关系索引给的. Ani 的 `seriesMainSubjectNames` 只列**系列内**条目名,
+     * 拿不到「主线故事」出边指向的母条目, 所以它给的名字搜不到时还得再走一遍 Bangumi 逐跳
+     * (见 `rootNameResolver`); Bangumi 那条已经是最后一手, 不必再回落.
+     */
+    val viaAni: Boolean = false,
 )
 
 /** Bangumi v0 `/subjects/{id}/subjects` 关联条目; relation 是中文关系名 ("前传"/"主线故事"...). */
@@ -1968,6 +2765,8 @@ private data class TmdbSearchResponse(
 private data class TmdbSearchResult(
     val id: Int? = null,
     @SerialName("backdrop_path") val backdropPath: String? = null,
+    /** 竖版海报. 只在整条链路都找不到 backdrop 时兜底用, 见 [TmdbImageService.searchPosterPath]. */
+    @SerialName("poster_path") val posterPath: String? = null,
     @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
     @SerialName("original_language") val originalLanguage: String? = null,
     @SerialName("original_name") val originalName: String? = null, // tv
@@ -1983,6 +2782,98 @@ private data class TmdbSearchResult(
 /** 查询词分词: 兼容折叠后按非字母/数字切开, 小写. 用于 [TmdbSearchResult.matchesTokens]. */
 private fun tokenizeForMatch(query: String): List<String> =
     foldCompatibility(query).lowercase().split(Regex("""[^\p{L}\p{N}]+""")).filter { it.isNotBlank() }
+
+/**
+ * 关系里指向本传的**软边**: 番外/总集编/联动 PV 这类条目, Bangumi 上常常既没有「主线故事」
+ * 也没有「前传」出边, 本传挂在「其他」或「相同世界观」上 (`苺ましまろプロローグ` → `苺ましまろ`,
+ * `ちはやふる番外編` → `ちはやふる3`, `荒野のコトブキ飛行隊外伝` → `荒野のコトブキ飛行隊`).
+ *
+ * 但「其他」是个杂物筐, 也会挂**同档播出/同场上映的兄弟作** —— 直接采用会把 `King Kong` 顺着
+ * `TOM of T.H.U.M.B.` 匹配到猫和老鼠, 把 `世紀末リーダー外伝たけし!` 顺着同场上映的
+ * `ONE PIECE 倒せ!海賊ギャンザック` 匹配到海贼王剧场版, **两条都是从"命中自己"变成错图**.
+ *
+ * 判据是**与本条目名的最长公共子串**: 番外/外传/总集编的名字里一定含本传名, 兄弟作没有共同词干.
+ * 实测这条界线很干净 —— 两条错的是 0 和 1 个字, 六条对的最短也有 5 个字, 中间没有任何取值,
+ * 所以 [SOFT_EDGE_MIN_STEM] 取多少都一样 (实测 3/4/5 结果完全相同), 不是调参凑出来的阈值.
+ */
+private fun List<BgmRelatedSubject>.softSeriesEdge(
+    originalName: String,
+    seen: Set<Int>,
+): BgmRelatedSubject? {
+    return firstOrNull {
+        it.relation in SOFT_SERIES_RELATIONS && it.name.isNotBlank() && it.id !in seen &&
+                tmdbSoftEdgeUsable(it.name, originalName)
+    }
+}
+
+/** [softSeriesEdge] 的判据: 这条软边指向的名字与本条目名有没有共同词干. */
+internal fun tmdbSoftEdgeUsable(edgeName: String, originalName: String): Boolean =
+    longestCommonSubstringLength(
+        normalizeForMatch(edgeName),
+        normalizeForMatch(originalName),
+    ) >= SOFT_EDGE_MIN_STEM
+
+/** 见 [softSeriesEdge]. 「续集」不在内 —— 前导片的"续集"才是本传, 但那条已由别处覆盖. */
+private val SOFT_SERIES_RELATIONS = setOf("其他", "相同世界观")
+
+/** 软边要求的最短公共词干, 见 [softSeriesEdge]. */
+private const val SOFT_EDGE_MIN_STEM = 4
+
+/** 最长公共子串长度; 只用来判两个标题有没有共同词干, 见 [softSeriesEdge]. */
+private fun longestCommonSubstringLength(a: String, b: String): Int {
+    if (a.isEmpty() || b.isEmpty()) return 0
+    var previous = IntArray(b.length + 1)
+    var current = IntArray(b.length + 1)
+    var best = 0
+    for (i in 1..a.length) {
+        for (j in 1..b.length) {
+            current[j] = if (a[i - 1] == b[j - 1]) previous[j - 1] + 1 else 0
+            if (current[j] > best) best = current[j]
+        }
+        val swap = previous
+        previous = current
+        current = swap
+    }
+    return best
+}
+
+/**
+ * 从 Ani 关系索引的 `seriesMainSubjectNames` 里挑系列主条目名 —— **条目自己的每一个名字都要排除**.
+ *
+ * 那个列表是系列内全部条目名 (原名与中文名各算一个), 只比原名的话「うらおん!」会把紧跟其后的
+ * 自身中文名「K-On!:Ura-On!」当成主条目名, 而它在 TMDB 上什么都搜不到 —— 真正的母条目
+ * 「けいおん！」只在 Bangumi 的「主线故事」出边上, 回落就此被这个假结果挡死.
+ *
+ * 归一化后比: 同系列条目名常只差标点 (`うらおん!` / `うらおん!!`).
+ * 一个都不剩时返回 null, 调用方回落到 Bangumi 逐跳.
+ */
+internal fun tmdbSeriesRootName(names: List<String>, originalName: String, nameCn: String): String? {
+    val own = listOf(originalName, nameCn)
+        .filter { it.isNotBlank() }
+        .mapTo(mutableSetOf()) { normalizeForMatch(it) }
+    return names.firstOrNull { it.isNotBlank() && normalizeForMatch(it) !in own }
+}
+
+/**
+ * **匹配到的那一季集数远少于条目集数** —— 配合"一张剧照都没有"用, 说明命中的多半是个占位壳.
+ *
+ * TMDB 上同一部番会有重复条目 (社区新建的与已有的还没合并), 而**日期逐字相同的那个未必是有
+ * 数据的那个**: 实测「同じゼミの染谷さんがセクシー女優だった話。」有三条同名记录, 首播日与
+ * Bangumi 一模一样的 tv/331481 只有 1 集 0 剧照, 真数据在差一天的 tv/325473 (8 集 7 张).
+ *
+ * **判据用集数而不是"有没有图"**: 冷门番匹配到的正确剧集本来就可能一张图都没有, 只看图会把
+ * 对的换成错的. 集数对得上就认它"真没图"; 差一半以上才认为找错了剧.
+ * 太短的条目 (< [STUB_MIN_SUBJECT_EPISODES] 集) 不判 —— 单集 OVA 与占位壳天然分不开.
+ *
+ * 换下一个也不会更差: 调用方留着第一个结果兜底 (见 `firstBuilt`).
+ */
+private fun looksLikeStubSeason(built: TmdbEpisodeStills, subjectEpisodeCount: Int?): Boolean {
+    if (subjectEpisodeCount == null || subjectEpisodeCount < STUB_MIN_SUBJECT_EPISODES) return false
+    return built.byEpisodeNumber.size * 2 <= subjectEpisodeCount
+}
+
+/** 见 [looksLikeStubSeason]: 短于这个集数的条目不做"集数对不上"的判定. */
+private const val STUB_MIN_SUBJECT_EPISODES = 3
 
 /** 标题归一化: 兼容折叠后只保留字母/数字 (假名/汉字也是字母), 小写 —— 忽略标点/空白差异. */
 private fun normalizeForMatch(s: String): String =
@@ -2013,6 +2904,11 @@ private fun Char.compatibilityFoldOrNull(): String? = when (code) {
     in 0xFF10..0xFF19, in 0xFF21..0xFF3A, in 0xFF41..0xFF5A -> (code - 0xFEE0).toChar().toString()
     in 0x2160..0x2169 -> ROMAN_NUMERALS[code - 0x2160] // Ⅰ..Ⅹ
     in 0x2170..0x2179 -> ROMAN_NUMERALS[code - 0x2170] // ⅰ..ⅹ
+    // 圈数字 ①..⑳ -> 1..20 (NFKC 等价, 同前三类).
+    // normalizeForMatch 只留 isLetterOrDigit, 而 ① 是 No 类不是 Nd —— 不折叠的话它被**整个滤掉**,
+    // 于是 Bangumi 的「ぷち①再来の学校」归一成「ぷち再来の学校」而 TMDB 的「ぷち1 再来の学校」
+    // 留着那个 1, 两边永远对不上 (Re:プチから始める異世界生活 14 集全无图, 2026-09-06 用户报的).
+    in 0x2460..0x2473 -> (code - 0x2460 + 1).toString()
     else -> HOMOGLYPH_MAP[this]?.toString()
 }
 
@@ -2210,6 +3106,69 @@ private fun TmdbSearchResult.releaseYearOrNull(): Int? =
 private fun TmdbSearchResult.yearPlausible(type: String, subjectYear: Int?): Boolean =
     tmdbYearPlausible(releaseYearOrNull(), subjectYear, isMovie = type == "movie")
 
+/**
+ * 条目侧参与 TMDB 匹配的附加信息. 都是可选的 —— 拿不到时退化为原行为.
+ *
+ * @param nameCn 条目中文名, 作为**补充候选**用 (排在日文原名与削字候选之后, 见 [TmdbImageService.searchLayered]).
+ *   注意这不违背"搜索必须传日文原名"那条: 中文名只是最后的补位, 不是主候选.
+ * @param screeningYear infobox 「上映年度」里最早的年份. 与条目开播年**不同**时说明
+ *   `airDate` 记的是发售日 (剧场上映的 OVA 常见), 年份判据改用它 —— 实测「彼女と彼女の猫」
+ *   发售 2002 / 上映 2000 而 TMDB 记首映 1999, 按发售年算会被 movie 的 `|Δ|<=1` 误伤.
+ *   **只取最早那个**: 老片的 infobox 会把 4K 重映年也列上 (攻殻機動隊 是 `[1995, 2025]`),
+ *   全盘接受会让 2026 年的新片也过判据.
+ * @param theatrical 是否**只在影院放映** (infobox 有上映日期而无「放送开始」). 为 true 时
+ *   先搜 movie —— TMDB 上剧场版是独立的 movie 条目, 而 tv 搜索几乎总能撞上同系列的某部剧.
+ */
+data class TmdbMatchHints(
+    val nameCn: String = "",
+    val screeningYear: Int? = null,
+    val theatrical: Boolean = false,
+    /**
+     * 条目自己的开播/上映年, **年份判据的最后一手**.
+     *
+     * 调用方传的 `activeAsOfDate` 是"最新已播集的日期", 搜索结果这类列表里根本没有分集数据,
+     * 只能传 null —— 于是年份判据整个失效, 而失效的代价是实打实的错图: `攻殻機動隊` (1995
+     * 剧场版) 的 tv 搜索**首位**就是同系列 2026 年的新剧, 没有年份否决就直接赢下来, 还会被
+     * 写进正缓存污染其它页面. 条目年份是列表项一定拿得到的 (卡片本来就要显示), 补上它就够.
+     */
+    val airYear: Int? = null,
+    /**
+     * 条目的别名 (服务端 aliases + bgm infobox「别名」, 见 SubjectInfo.aliases). 别名是完整
+     * 名字的变体, 与中文名同一档: **逐字命中即定案, 优先于削字暂定** —— 「GUNDAM EVOLVE」的
+     * 原名/削字候选全都撞错条目, 而别名「机动战士高达 进化」与 TMDB 的 zh 名逐字相同.
+     * 别名质量参差没有关系, 这一档带逐字闸门, 对不上字的别名只是白发一次搜索.
+     * (时间表页这类拿不到别名的列表调用方退化为原行为 —— 那里只有当季新番, 原名档就够.)
+     */
+    val aliases: List<String> = emptyList(),
+) {
+    /** 中文名 + 别名: "完整名字的精确变体"档的查询序列, 每一个都要求逐字命中. */
+    val exactNameVariants: List<String>
+        get() = buildList {
+            if (nameCn.isNotBlank()) add(nameCn)
+            for (alias in aliases) {
+                if (alias.isNotBlank() && alias !in this) add(alias)
+            }
+        }
+
+    companion object {
+        val Empty = TmdbMatchHints()
+    }
+}
+
+/**
+ * 年份判据用的基准年, 按可信度取: [screeningYear] > 最新已播集年 > 条目开播年 ([subjectAirYear]).
+ *
+ * [screeningYear] 只在"条目的 `airDate` 年份不在 infobox 上映年度里"时才有值 (见
+ * `AniInfobox.screeningYearOrNull`), 也就是说它非空就等于"`airDate` 记的是发售日, 别拿它判年份".
+ *
+ * [subjectAirYear] 垫底, 见 [TmdbMatchHints.airYear] —— 缺了它整条年份判据会在列表页失效.
+ */
+internal fun tmdbSubjectYear(
+    activeYear: Int?,
+    screeningYear: Int?,
+    subjectAirYear: Int? = null,
+): Int? = screeningYear ?: activeYear ?: subjectAirYear
+
 /** [yearPlausible] 的纯函数内核, 抽出来是为了能直接测两侧判据的不对称性. */
 internal fun tmdbYearPlausible(candidateYear: Int?, subjectYear: Int?, isMovie: Boolean): Boolean {
     if (subjectYear == null || candidateYear == null) return true
@@ -2222,6 +3181,21 @@ internal fun tmdbYearPlausible(candidateYear: Int?, subjectYear: Int?, isMovie: 
 
 /** @see yearPlausible */
 private const val YEAR_TOLERANCE = 1
+
+/**
+ * **精确变体档 (中文名/别名/合集) 的年份判据, 对称容差**: 这一档命中的语义是"这就是条目自己
+ * 在 TMDB 的名字", 年份理应接近 —— 与 tv 档"条目晚于首播多少都行"的宽松方向不同 (那是给
+ * 续季/衍生挂多季母条目用的场景, 变体档不承担, 挂母剧走 root 档).
+ * 不对称的代价实测过: 「GTO」是 THE ORIGIN 的缩写别名, 经 alternative_titles 逐字命中了
+ * 1999 年的麻辣教师动画 (Δ16 年), tv 宽松方向拦不住. 容差 3 是给 TMDB 数据不全留的:
+ * 「GUNDAM EVOLVE」条目 2001 年开始, TMDB 那条从 2003 年的 EVOLVE../9 才记起 (Δ2).
+ */
+internal fun tmdbExactVariantYearPlausible(candidateYear: Int?, subjectYear: Int?): Boolean {
+    if (subjectYear == null || candidateYear == null) return true
+    return (candidateYear - subjectYear).absoluteValue <= EXACT_VARIANT_YEAR_TOLERANCE
+}
+
+private const val EXACT_VARIANT_YEAR_TOLERANCE = 3
 
 /**
  * 认领"本条目对应 TMDB 的哪一季" —— 按**季首播日与条目开播日相差 ≤[SEASON_MATCH_TOLERANCE_DAYS] 天**.
@@ -2311,6 +3285,141 @@ private val RUBY_ANNOTATION_REGEX = Regex("[(（][\\u3041-\\u309F\\u30A0-\\u30FF
  * 空壳条目) 时排除它再搜一轮, 见 `fetchEpisodeStills`. 只多给一次机会 —— 再往下就是越来越短的
  * 削字候选, 命中的剧与本条目的关系越来越弱.
  */
+internal class NameQueries(
+    /** 与条目名同义的写法 (原名 / 同形字折叠形): 必须先于一切削短过的候选. */
+    val primary: List<String>,
+    /** 削字规则派生的更短候选: [primary] 全落空后才轮到, 但仍先于关联回溯. */
+    val derived: List<String>,
+) {
+    /** 两层顺序拼接. 根条目名自己的候选不分层, 按这个顺序全试. */
+    val all: List<String> get() = primary + derived
+}
+
+internal fun tmdbSearchQueryCandidates(name: String): NameQueries {
+    val primary = mutableListOf<String>()
+    val derived = mutableListOf<String>()
+
+    fun normalized(candidate: String) = candidate.replace(Regex("""\s+"""), " ").trim()
+
+    /** 与条目名同义的候选, 属第一层 (必须先于削字候选). */
+    fun addPrimary(candidate: String) {
+        val n = normalized(candidate)
+        if (n.isNotBlank() && n !in primary) primary += n
+    }
+
+    /** 削字规则派生的候选, 属第二层 (排在关联回溯之前). */
+    fun addCandidate(candidate: String) {
+        val n = normalized(candidate)
+        if (n.isNotBlank() && n !in primary && n !in derived) derived += n
+    }
+    addPrimary(name)
+    // 同形字折叠后的写法与原名同义, 所以**同属第一层**: 哪种写法搜得到取决于 TMDB 那边录了
+    // 什么别名 —— 「機動戦士ガンダムΖΖ」(希腊 Ζ) 直搜 0 结果、折叠成拉丁 ZZ 才命中, 而
+    // 「機動戦士Ζガンダム」反过来靠希腊写法的别名命中. 两种都试, 原名在前.
+    // 放进第一层而不是追加到末尾是关键 —— 它必须先于**削字候选**: ZZ 的削字候选是
+    // 「機動戦士ガンダムΖ」和「機動戦士ガンダム」(末尾希腊 Ζ 不是假名/汉字, 被逐字回退剥掉),
+    // 折叠形排在它们后面的话, 先命中的会是 Z 高达或初代高达.
+    addPrimary(foldCompatibility(name))
+
+    // 「劇場版 」**前缀**剥除也是同义写法: TMDB 的剧场版原题多数不带这个前缀
+    // (「劇場版 BanG Dream! It's MyGO!!!!! 後編 うたう、…」在 TMDB 是
+    // 「BanG Dream! It's MyGO!!!!! 後編：うたう、…」), 带着搜连逐词校验都过不了,
+    // 削字则一路撞到前篇被日期闸门拦掉, 全链空手. 只剥前缀不动中/后缀的「劇場版」
+    // (「うたの☆プリンスさまっ♪ … 劇場版」不是这个形状); 懒惰短路保证
+    // 「劇場版 CLANNAD」这类带前缀就能命中的条目不会发这个候选.
+    val theatricalPrefixStripped = name.removePrefix("劇場版").trim()
+    if (theatricalPrefixStripped != name && theatricalPrefixStripped.isNotBlank()) {
+        addPrimary(theatricalPrefixStripped)
+        addPrimary(foldCompatibility(theatricalPrefixStripped))
+    }
+
+    val ovaMode = OVA_KEYWORD_REGEX.containsMatchIn(name)
+    val base = if (ovaMode) name.replace(OVA_KEYWORD_REGEX, " ") else name
+    addCandidate(base)
+
+    // 版本/媒介后缀 (HD 重制、新编集版、导演剪辑版): 这是"同一部作品的另一个版本",
+    // TMDB 多数不给它独立条目, 数据都在原作品那条上. 「機動戦士ガンダムSEED DESTINY
+    // HDリマスター」整串直搜是 0 结果, 剥掉后命中 tv/20111 (它的 S2 正是 DESTINY, 50 集
+    // 逐集对得上).
+    //
+    // 下面的"逐词去尾"如今也能去掉这类尾词, 这一步仍然单列, 因为它 **① 不依赖空格**
+    // (后缀直接贴在名字上时逐词去尾无从下手), **② 排在前面、只削这一处**, 比逐词那几步精确;
+    // 而且 [tmdbStripVersionSuffix] 本身还被另外两处用到 (按季名认领条目对应的季、判断
+    // "这是不是个版本条目"), 不是纯为候选而存在.
+    //
+    // 少数确实有独立条目的 (機動戦士ガンダムSEED HDリマスター = tv/332355) 不受影响:
+    // 原名直搜在第一层就命中了, 轮不到这里.
+    val versionStripped = tmdbStripVersionSuffix(base)
+    addCandidate(versionStripped)
+
+    val suffixStripped = tmdbStripSeasonSuffix(versionStripped)
+    addCandidate(suffixStripped)
+    val romanStripped = suffixStripped.replace(Regex("""[ⅡⅢⅣⅤⅥⅦⅧⅨⅩ]"""), "")
+    addCandidate(romanStripped)
+    // 裸数字季号: 续季常直接在名字尾部跟数字 (如 "有頂天家族2" — TMDB 只有 "有頂天家族" 一个剧条目).
+    // 只认 1-2 位, 3 位以上视为名字本体 (如 "モブサイコ100"); 且作为末位候选,
+    // 仅在前面候选全部落空时才轮到, 名字本体恰好以数字结尾的条目会先被原名命中.
+    // (下面的逐字符回退不适用纯拉丁名, 这条规则保留给它们, 如 "STEINS;GATE 0".)
+    addCandidate(romanStripped.replace(Regex("""\s*[0-9０-９]{1,2}$"""), ""))
+
+    // 逐词去尾: 从**最后一个空格**处一次去掉一个尾词, 由长到短依次作候选. 三种用途:
+    //  - OVA 条目: 还原母番名 (如 "進撃の巨人 悔いなき選択" → "進撃の巨人");
+    //  - 剥掉**拉丁副标题** —— 下面那条逐字符回退对长拉丁尾巴无效. 实测
+    //    「劇場版 Fate/stay night [Heaven's Feel] I.presage flower」: 尾巴 17 个字符,
+    //    逐字符剥满 12 步只到 "…I.p", 每一步在 TMDB 上都是 0 结果; 而逐词去掉一到两个
+    //    就命中 movie/283984 (TMDB 那边写作「」+ 弯引号 + 罗马数字 Ⅰ, 整串直搜 0 结果);
+    //  - 剥掉**日文/中文的尾词** —— 这类后缀花样太多, 逐条列关键字列不完: 次篇 / 続編 /
+    //    特別版 / 真生版 / 70mm版 / 第1シリーズ / 第一季 (中文数字, 季号正则的 `\d` 不认)
+    //    /総集編 / 序章 / 第一章…, 而它们全都是"母番名 + 一个尾词"的形状. 实测 350 条语料里
+    //    这一步救回 21 个条目的背景图与 31 集剧照 (如「ベルセルク 次篇」→ 2016 年那部的 S2、
+    //    「機動戦士ガンダムSEED FREEDOM 特別版」→ 自己那部电影、「凡人修仙传 星海飞驰篇 序章」
+    //    → 母番), 且一处换图/丢图都没有.
+    //
+    // 守卫只剩一个 (只对非 OVA): 剩下的部分不能只是个**形态词** (见 [String.isMediaFormWordOnly]).
+    //
+    // **原先还有一条"剩下的部分仍须含日文/中文"**, 2026-08-25 去掉了 —— 它拦的不只是
+    // "BanG Dream! It's MyGO!!!!!" 这一种, 而是**「拉丁本体 + 日文副标题」整整一类**:
+    // 「CLANNAD もうひとつの世界 智代編」削不出 `CLANNAD`, 于是背景图与剧照全空.
+    // 去掉它的代价由调用侧的一条规则兜住: **削出来的候选若不含日文/中文, 它的命中必须
+    // 逐字同名, 否则跳过继续下一个候选** (见 [searchLayered])。实测 284 条触发面上,
+    // 裸放开是 18 对 9 错 (ANGEL VOICE→Angel Beats! 这类), 加上逐字同名后是 12 对 1 错;
+    // 而"跳过而不是整条放弃"是必需的 —— 杏編正是靠它从 `CLANNAD 〜AFTER` 落到 `CLANNAD`.
+    //
+    // 排在逐字符回退**之前**: 两者很少同时适用 (逐字符主要服务无空格的名字), 而同时适用时
+    // 逐词那几步远比逐字符的十几步有意义, 早一步命中就少十几个白发的请求.
+    var truncated = romanStripped.replace(Regex("""\s+"""), " ").trim()
+    var depth = 0
+    while (depth < WORD_TRUNCATE_MAX_DEPTH && truncated.contains(' ')) {
+        truncated = truncated.substringBeforeLast(' ').trim()
+        if (truncated.isEmpty()) break
+        if (!ovaMode && truncated.isMediaFormWordOnly()) break
+        addCandidate(truncated)
+        depth++
+    }
+
+    // 末尾非文字字符逐个回退: 尾部季号/副标题形态繁多 (ASCII 罗马数字 "灼眼のシャナII"、
+    // "R2"、"III -Final-" 等), 枚举不完; 从末尾逐字符去掉非日文/中文的字符, 每一步都
+    // 作为候选 (先长后短, 更具体的先试). 要求剩余部分仍含日文/中文字符, 避免把
+    // "BLEACH" 这类纯拉丁名逐字拆碎; 限最多回退 12 字符, 防病态长尾.
+    var walked = romanStripped
+    var steps = 0
+    while (steps < 12) {
+        val trimmed = walked.trimEnd()
+        val last = trimmed.lastOrNull() ?: break
+        if (last.isCjkOrKana()) break
+        walked = trimmed.dropLast(1)
+        steps++
+        if (walked.none { it.isCjkOrKana() }) break
+        addCandidate(walked)
+    }
+    return NameQueries(primary, derived)
+}
+
+private const val WORD_TRUNCATE_MAX_DEPTH = 3
+
+private val OVA_KEYWORD_REGEX =
+    Regex("""(?i)\b(?:OVA|OAD)S?\b|特別[編篇]|特别篇|スペシャル""")
+
 private const val STUB_TV_ATTEMPTS = 2
 
 /**
@@ -2333,6 +3442,19 @@ internal fun tmdbYearProximity(candidateYear: Int?, subjectYear: Int?): Int =
     else (candidateYear - subjectYear).absoluteValue
 
 /** 是否有标题与查询完全一致 (归一化后). 用于在多个通过校验的结果中把正主排到外传/衍生作之前. */
+/**
+ * 结果的任一标题, 归一化后是否落在**本条目的候选串**集合里.
+ *
+ * 剧场版闸门用它挡住"同系列的另一部": `怪獣8号 第1期総集編` 与「保科の休日」**同日上映**,
+ * 日期判据分不开, 只有名字分得开. 而 `ジョジョ…ファントムブラッド` (TMDB 写作
+ * `ファントム ブラッド`, 中间多个空格) 与 `銀河鉄道999 映画版` (削掉形态词后的候选是
+ * `銀河鉄道999`) 都能通过 —— 所以比的是**候选串集合**而不是单个原名.
+ */
+private fun TmdbSearchResult.matchesAnyCandidate(candidateNames: Set<String>): Boolean =
+    candidateNames.isNotEmpty() &&
+            listOfNotNull(originalName, originalTitle, name, title)
+                .any { normalizeForMatch(it) in candidateNames }
+
 private fun TmdbSearchResult.hasExactTitle(queryNormalized: String): Boolean =
     listOfNotNull(originalName, originalTitle, name, title)
         .any { normalizeForMatch(it) == queryNormalized }
@@ -2367,6 +3489,43 @@ private data class TmdbTvDetail(
 )
 
 /** TMDB `/movie/{id}`: 剧场版条目按"整部就是一集"取用, 见 [TmdbImageService.fetchMovieAsSingleEpisode]. */
+@Serializable
+private data class TmdbCollectionSearchResult(
+    val id: Int? = null,
+    val name: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+)
+
+@Serializable
+private data class TmdbCollectionSearchResponse(
+    val results: List<TmdbCollectionSearchResult> = emptyList(),
+)
+
+@Serializable
+private data class TmdbCollectionPart(
+    val title: String? = null,
+    /** 原语言标题 (语言无关字段): parts 按集标题认领时必须用它与 bgm 原语言集名比. */
+    @SerialName("original_title") val originalTitle: String? = null,
+    val overview: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+)
+
+@Serializable
+private data class TmdbCollectionDetail(
+    val name: String? = null,
+    val overview: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    val parts: List<TmdbCollectionPart> = emptyList(),
+)
+
+/** 全半角括号段 (注音/补注), parts 按集标题认领前两侧都剥掉. */
+private val PAREN_SEGMENT_REGEX = Regex("""（[^）]*）|\([^)]*\)""")
+
+/** TMDB 合集名的惯例后缀 (「機動戦士ガンダム THE ORIGIN（系列）」), 逐字比较前剥掉. */
+private val COLLECTION_SUFFIX_REGEX =
+    Regex("""[（(]?\s*(系列|合集|シリーズ|Collection|Series)\s*[）)]?\s*${'$'}""", RegexOption.IGNORE_CASE)
+
 @Serializable
 private data class TmdbMovieDetail(
     val overview: String? = null,

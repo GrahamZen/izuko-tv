@@ -11,10 +11,22 @@ package me.him188.ani.app.data.models.subject
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.domain.search.SubjectType
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.utils.platform.annotations.TestOnly
+
+/**
+ * 条目侧参与 TMDB 匹配的附加信息, 见 [TmdbMatchHints].
+ */
+fun SubjectInfo.toTmdbMatchHints(): TmdbMatchHints = TmdbMatchHints(
+    nameCn = nameCn,
+    screeningYear = screeningYear,
+    theatrical = theatrical,
+    airYear = airDate.takeIf { it.isValid }?.year,
+    aliases = aliases,
+)
 
 /**
  * 条目本身的信息
@@ -79,6 +91,18 @@ data class SubjectInfo(
      */
     @Deprecated("Removed, because we always have episodes now")
     val completeDate: PackedDate,
+    /**
+     * infobox 「上映年度」里最早的那个年份, `null` 表示没有这个字段.
+     *
+     * [airDate] 对**剧场上映的 OVA** 常常是「发售日」而不是首映日, TMDB 那边记的却是首映,
+     * 匹配时的年份判据会因此误伤. 见 `SubjectCollectionEntity.screeningYear`.
+     */
+    val screeningYear: Int? = null,
+    /**
+     * 是否为**只在影院放映**的条目 (infobox 有上映日期而没有「放送开始」).
+     * TMDB 匹配据此决定要不要先搜 movie.
+     */
+    val theatrical: Boolean = false,
 ) {
     override fun toString(): String {
         return "SubjectInfo(subjectId=$subjectId, nameCn='$nameCn')"
