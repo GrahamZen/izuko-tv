@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -188,6 +189,21 @@ internal fun AniAsyncImage(
     decodeAtOriginalSize: Boolean = false,
 ) {
     var requestSize by remember { mutableStateOf<IntSize?>(null) }
+
+    // **测到布局尺寸之前不发请求** (decodeAtOriginalSize 除外, 它与尺寸无关).
+    // 否则首次组合就把无尺寸的 request 交给 sketch 先打一发, 首帧布局后 onSizeChanged 一设
+    // requestSize, request 内容变化 -> sketch 取消旧请求重来 —— 每张图两次请求、第一次必
+    // CANCELLED (真机日志: 115 个人物头像 URL 逐一"先取消再成功", API 请求量直接翻倍).
+    // 这里只差一帧 (下一帧 onSizeChanged 即到), 视觉上与 placeholder 首帧无异.
+    if (!decodeAtOriginalSize && requestSize == null) {
+        Box(
+            modifier.onSizeChanged { size ->
+                val roundedSize = size.toAniImageRequestSize()
+                if (requestSize != roundedSize) requestSize = roundedSize
+            },
+        )
+        return
+    }
 
     val placeholderStateImage = rememberStateImage(placeholder, "placeholder")
     val errorStateImage = rememberStateImage(error, "error")
