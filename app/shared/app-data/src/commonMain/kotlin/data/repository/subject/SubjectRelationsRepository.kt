@@ -10,9 +10,13 @@
 package me.him188.ani.app.data.repository.subject
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -38,6 +42,9 @@ import me.him188.ani.app.data.persistent.database.entity.SubjectCharacterRelatio
 import me.him188.ani.app.data.persistent.database.entity.SubjectPersonRelationEntity
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.collections.mapToIntArray
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
@@ -139,11 +146,11 @@ class DefaultSubjectRelationsRepository(
 //    }
 
     override fun subjectRelatedPersonsFlow(subjectId: Int): Flow<List<RelatedPersonInfo>> {
-        return subjectCollectionRepository.subjectCollectionFlow(subjectId)
+        return relationsFreshnessFlow(subjectId)
             .autoRefresh()
-            .flatMapLatest { subjectCollection ->
-                if ((currentTimeMillis() - subjectCollection.cachedCharactersUpdated).milliseconds > cacheExpiry) {
-                    fetchAndSaveSubjectRelations(subjectId)
+            .flatMapLatest { cachedCharactersUpdated ->
+                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                    fetchRelationsIfStaleOrNull(subjectId)
                 }
 
                 subjectRelationsDao.subjectRelatedPersonsFlow(subjectId).map { list ->
@@ -157,11 +164,11 @@ class DefaultSubjectRelationsRepository(
     }
 
     override fun subjectRelatedCharactersFlow(subjectId: Int): Flow<List<RelatedCharacterInfo>> {
-        return subjectCollectionRepository.subjectCollectionFlow(subjectId)
+        return relationsFreshnessFlow(subjectId)
             .autoRefresh()
-            .flatMapLatest { subjectCollection ->
-                if ((currentTimeMillis() - subjectCollection.cachedCharactersUpdated).milliseconds > cacheExpiry) {
-                    fetchAndSaveSubjectRelations(subjectId)
+            .flatMapLatest { cachedCharactersUpdated ->
+                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                    fetchRelationsIfStaleOrNull(subjectId)
                 }
 
                 subjectRelationsDao.subjectRelatedCharactersFlow(subjectId).flatMapLatest { list ->
@@ -184,6 +191,77 @@ class DefaultSubjectRelationsRepository(
             }.flowOn(defaultDispatcher)
     }
 
+    /**
+     * 角色/制作人员这两条流**只跟着"关联数据什么时候取的"这一个字段走**, 不跟着整个条目走.
+     *
+     * 它们都是 `flatMapLatest { 过期就取数; 再返回 DAO flow }`, 而上游
+     * [SubjectCollectionRepository.subjectCollectionFlow] 底下是 Room 的 `findById` ——
+     * **Room 的失效是表级的**: 网格页预取往 `subject_collection` 写**别的**条目, 这条流照样重发,
+     * `flatMapLatest` 就把在途的取数掐掉重来.
+     *
+     * 真机实测 (2026-08-26, 進撃の巨人 S2): 详情页停留 7 秒、期间别的条目落库 8 次, 本条目的流重算
+     * 18 次、relations 取数被触发 **10 次、完成 0 次** —— 一次都没跑完, `updateCachedRelationsUpdated`
+     * 就从没写过, 于是永远判"过期", 死循环; 更糟的是内层 DAO flow 压根轮不到创建, **角色/制作人员
+     * 区块连库里的旧数据都显示不出来**. HTTP 侧同期 `/characters` 打了 10 次、`/staff` 7 次.
+     *
+     * 收敛到单个 `Long` 再 `distinctUntilChanged`, 无关写入就不再惊动这两条流.
+     */
+    private fun relationsFreshnessFlow(subjectId: Int): Flow<Long> =
+        subjectCollectionRepository.subjectCollectionFlow(subjectId)
+            .map { it.cachedCharactersUpdated }
+            .distinctUntilChanged()
+
+    private val relationsFetcher = StaleKeyedFetcher<Int>()
+
+    /**
+     * **同一条目的关联数据只取一次**: 角色区块与制作人员区块是两条独立的流, 各自判一遍"过期就取",
+     * 于是同一份数据取两遍 —— 实测每次进详情页 `/characters` 与 `/staff` **各打两遍**, 落库也各跑
+     * 一遍, 而落库本身要 1.5~3 秒且 `upsert 三张表 → 再 upsert relations` 之间没有事务
+     * (那个顺序是外键要求的, 两份交错跑没有保护).
+     *
+     * 去重靠 [StaleKeyedFetcher]: 按 subjectId 串行, 等到锁再重查一次新鲜度, 已经取回来了就直接返回.
+     */
+    /**
+     * 同 [fetchRelationsIfStale], 但**取数失败不抛** —— 这里的调用方在 flatMapLatest 里,
+     * 异常会把整条流杀死: 角色/制作人员区块从此定格, UI 侧的加载骨架永远收不掉 (count 停在
+     * null), 直到重进页面.
+     *
+     * 失败先**短退避重试** ([RELATIONS_FETCH_RETRIES] 次): 一次瞬时网络抖动如果直接放弃,
+     * DAO flow 发出的空列表会被 UI 读成"这部作品确实没有角色/制作人员", 而下一次自动重试
+     * 是 autoRefresh 的一小时后. 重试全败才放弃 —— 此时多半是持续断网, 显示空区块 (有旧
+     * 缓存则显示旧的) 比让骨架永远转下去诚实.
+     */
+    private suspend fun fetchRelationsIfStaleOrNull(subjectId: Int) {
+        var delayMillis = RELATIONS_FETCH_RETRY_DELAY_MILLIS
+        repeat(RELATIONS_FETCH_RETRIES + 1) { attempt ->
+            try {
+                fetchRelationsIfStale(subjectId)
+                return
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (attempt == RELATIONS_FETCH_RETRIES) {
+                    logger.warn(e) { "Failed to fetch relations for subject $subjectId after ${attempt + 1} attempts, showing cached data if any" }
+                    return
+                }
+                delay(delayMillis)
+                delayMillis *= 4
+            }
+        }
+    }
+
+    private suspend fun fetchRelationsIfStale(subjectId: Int) {
+        relationsFetcher.fetchIfStale(
+            key = subjectId,
+            isFresh = {
+                val updated = subjectCollectionDao.findById(subjectId).first()?.cachedCharactersUpdated ?: 0L
+                (currentTimeMillis() - updated).milliseconds <= cacheExpiry
+            },
+        ) {
+            fetchAndSaveSubjectRelations(subjectId)
+        }
+    }
+
     private fun <T> Flow<T>.autoRefresh() = refreshTicker().flatMapLatest { this@autoRefresh }
 
     private fun refreshTicker() = flow {
@@ -194,22 +272,52 @@ class DefaultSubjectRelationsRepository(
     }
 
     private suspend fun fetchAndSaveSubjectRelations(subjectId: Int) {
-        val batch = subjectService.getSubjectRelations(subjectId, withCharacterActors = true)
-        subjectRelationsDao.upsertPersons(batch.allPersons.map { it.toEntity() }.toList())
-        subjectRelationsDao.upsertCharacters(batch.relatedCharacterInfoList.map { it.character.toEntity() })
-        subjectRelationsDao.upsertCharacterActors(batch.characterActorRelations().toList())
-
-        // 必须先插入前三个, 再插入 relations, 否则会 violate foreign key constraint
-
-        subjectRelationsDao.upsertSubjectPersonRelations(
-            batch.relatedPersonInfoList.map { it.toRelationEntity(subjectId) },
-        )
-        subjectRelationsDao.upsertSubjectCharacterRelations(
-            batch.relatedCharacterInfoList.map { it.toRelationEntity(subjectId) },
+        val t0 = currentTimeMillis()
+        // **必须有超时**: 实测单个 staff 请求会在连接上挂死 9 秒+ (2026-08-26, 高达00 subject
+        // 1010, characters 371ms 就回来了而并行的 staff 一直不响应) —— 并行等待要两个都完成,
+        // 整个取数跟着挂, UI 的加载骨架也跟着挂; 而退避重试要"失败"才触发, 挂死不算失败,
+        // 用户只能退出重进 (流取消) 手动帮它重试. 超时算失败, 交给重试: 这种挂死换个连接
+        // 第二发通常几百 ms 就成功. 正常耗时中位 ~500ms, 5 秒已远超长尾.
+        val batch = try {
+            withTimeout(RELATIONS_FETCH_TIMEOUT_MILLIS) {
+                subjectService.getSubjectRelations(subjectId, withCharacterActors = true)
+            }
+        } catch (e: TimeoutCancellationException) {
+            // 转成普通异常: TimeoutCancellationException 是 CancellationException 子类, 原样
+            // 往外抛会被上层"取消照抛"的分支当成外部取消, 绕过重试直接杀流
+            throw RepositoryServiceUnavailableException("relations fetch for $subjectId timed out", e)
+        }
+        val tFetched = currentTimeMillis()
+        // 落库是单个事务 (全有或全无 + 一轮 invalidation), 见 [SubjectRelationsDao.upsertBatch];
+        // "盖章"留在事务外且放最后: 全部落库成功才算这份数据新鲜
+        subjectRelationsDao.upsertBatch(
+            subjectId = subjectId,
+            persons = batch.allPersons.map { it.toEntity() }.toList(),
+            characters = batch.relatedCharacterInfoList.map { it.character.toEntity() },
+            characterActors = batch.characterActorRelations().toList(),
+            personRelations = batch.relatedPersonInfoList.map { it.toRelationEntity(subjectId) },
+            characterRelations = batch.relatedCharacterInfoList.map { it.toRelationEntity(subjectId) },
         )
         subjectCollectionDao.updateCachedRelationsUpdated(subjectId)
+        // 网络与落库分开记账: "进详情页角色区块 1.5~3 秒才出来"的大头到底在哪, 靠这一条分辨
+        logger.info {
+            "Fetched subject $subjectId relations: ${batch.relatedCharacterInfoList.size} characters, " +
+                    "network ${tFetched - t0}ms, db ${currentTimeMillis() - tFetched}ms"
+        }
     }
 
+    private companion object {
+        private val logger = logger<SubjectRelationsRepository>()
+
+        /** 取数失败的追加重试次数 (总尝试 = 这个数 + 1). */
+        private const val RELATIONS_FETCH_RETRIES = 2
+
+        /** 首次重试前的等待; 之后每次 x4 (1s -> 4s). */
+        private const val RELATIONS_FETCH_RETRY_DELAY_MILLIS = 1000L
+
+        /** 单次取数 (两个并行请求 + 解析) 的超时; 见 [fetchAndSaveSubjectRelations] 里的挂死记录. */
+        private const val RELATIONS_FETCH_TIMEOUT_MILLIS = 5000L
+    }
 }
 
 private fun RelatedCharacterView.toRelatedCharacterInfo(

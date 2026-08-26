@@ -158,6 +158,65 @@ interface SubjectCollectionDao {
     @Transaction
     suspend fun upsert(item: List<SubjectCollectionEntity>)
 
+    // ==== 条目 + 分集的单事务落库 (episode 表的操作定义在本 DAO: @Transaction 的默认实现
+    //      只能调本 DAO 的方法, 而这两张表必须同事务) ====
+
+    @Upsert
+    suspend fun upsertEpisodesInternal(items: List<EpisodeCollectionEntity>)
+
+    @Query("""SELECT episodeId FROM episode_collection WHERE subjectId = :subjectId""")
+    suspend fun episodeIdsOf(subjectId: Int): List<Int>
+
+    @Query("""DELETE FROM episode_collection WHERE subjectId = :subjectId AND episodeId IN (:episodeIds)""")
+    suspend fun deleteEpisodesByIds(subjectId: Int, episodeIds: List<Int>)
+
+    @Query("""SELECT subjectId, cachedStaffUpdated, cachedCharactersUpdated FROM subject_collection WHERE subjectId IN (:subjectIds)""")
+    suspend fun relationsFreshnessOf(subjectIds: List<Int>): List<RelationsFreshness>
+
+    /**
+     * **保留 relations 的"盖章"**: 网络来的条目数据里没有 cachedStaff/CharactersUpdated,
+     * toEntity 只能填 0 —— 整行 @Upsert 会把 SubjectRelationsRepository 刚写的时间戳抹掉,
+     * 详情页开着时角色/制作人员被判"过期"强制重取一遍 (真机日志: 条目主体落库 400ms 后
+     * 同一个 /characters 又打了一遍).
+     */
+    private suspend fun List<SubjectCollectionEntity>.preservingRelationsFreshness(): List<SubjectCollectionEntity> {
+        val freshness = relationsFreshnessOf(map { it.subjectId }).associateBy { it.subjectId }
+        return map { entity ->
+            val f = freshness[entity.subjectId] ?: return@map entity
+            entity.copy(
+                cachedStaffUpdated = f.cachedStaffUpdated,
+                cachedCharactersUpdated = f.cachedCharactersUpdated,
+            )
+        }
+    }
+
+    /**
+     * 单条目 + 其分集的完整落库, **单个事务**: 中途取消/失败就整体回滚, 不会留下
+     * "subject 已盖新 lastFetched 但分集残缺"的中间态 (那会让下一次判"新鲜"跳过刷新,
+     * 选集残缺一整个缓存周期). 差集删除 (服务器已删的集) 也在同一事务里.
+     */
+    @Transaction
+    suspend fun upsertSubjectWithEpisodes(
+        subject: SubjectCollectionEntity,
+        episodes: List<EpisodeCollectionEntity>,
+    ) {
+        upsert(listOf(subject).preservingRelationsFreshness().single())
+        val newIds = episodes.mapTo(HashSet()) { it.episodeId }
+        val staleIds = episodeIdsOf(subject.subjectId).filter { it !in newIds }
+        upsertEpisodesInternal(episodes)
+        if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
+    }
+
+    /** 批量版 (收藏列表分页): 同样保留盖章 + 条目与分集同事务; 不做差集删除 (与原行为一致). */
+    @Transaction
+    suspend fun upsertSubjectsWithEpisodes(
+        subjects: List<SubjectCollectionEntity>,
+        episodes: List<EpisodeCollectionEntity>,
+    ) {
+        upsert(subjects.preservingRelationsFreshness())
+        upsertEpisodesInternal(episodes)
+    }
+
     @Query("""UPDATE subject_collection SET collectionType = :collectionType, lastUpdated = :lastUpdated WHERE subjectId = :subjectId""")
     suspend fun updateType(
         subjectId: Int,
@@ -405,3 +464,10 @@ fun SubjectCollectionDao.filterMostRecentUpdatedWithEpisodes(
 } else {
     filterMostRecentUpdatedWithEpisodes(collectionTypes, limit, offset)
 }
+
+/** [SubjectCollectionDao.relationsFreshnessOf] 的投影: relations "盖章"时间戳, upsert 前保留旧值用. */
+data class RelationsFreshness(
+    val subjectId: Int,
+    val cachedStaffUpdated: Long,
+    val cachedCharactersUpdated: Long,
+)
