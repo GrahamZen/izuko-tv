@@ -97,6 +97,7 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
 import me.him188.ani.utils.logging.debug
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
@@ -300,6 +301,58 @@ class SubjectCollectionRepositoryImpl(
         return (currentTimeMillis() - lastFetched).milliseconds > cacheExpiry
     }
 
+    private val subjectFetcher = StaleKeyedFetcher<Int>()
+
+    /**
+     * **同一条目的重取只做一次**.
+     *
+     * [subjectCollectionFlow] 在仓库里有十几个调用点 (详情页状态工厂 / EpisodeCollectionRepository /
+     * SubjectRelationsRepository / GetSubjectEpisodeInfoBundleFlowUseCase / MediaSelectorFactory /
+     * 缓存页…), **每个调用都是一条独立冷流, 各自跑一遍"要不要 fetch"的判定** —— 实测一次进详情页
+     * 有 4 条判定、3 条真的发了请求. 后果按严重度:
+     *
+     * 1. **并发写同一批行**: 下面是 `upsert(subject)` → 读 `oldIds` → `upsert(episodes)` →
+     *    `deleteAllByEpisodeIds(oldIds - new)`, 而"读 oldIds"与"delete"之间没有事务. 多副本交错时,
+     *    某个副本只拿到部分集就会删掉另一副本刚写进去的行 —— 「选集区永久空白」那个 bug 的同族温床;
+     * 2. 进页延迟: 三份重复网络与 DB 写和首屏抢 IO;
+     * 3. 缓存过期后每次进页发 N 次请求而不是 1 次, 对 Ani API / bgm.tv 也是 N 倍.
+     *
+     * 去重靠 [StaleKeyedFetcher] (串行 + 进临界区后重查), 取舍见那里.
+     *
+     * 写完不必自己 emit: 上游是 Room flow, 写库会让它重新发射, `transform` 再跑一遍时
+     * `existing` 已经是新的了.
+     *
+     * 落库整段已包进单个 Room 事务 ([SubjectCollectionDao.upsertSubjectWithEpisodes]),
+     * 中间态与并发交错都堵死了.
+     */
+    private suspend fun fetchSubjectCollectionIfStale(subjectId: Int) {
+        subjectFetcher.fetchIfStale(
+            key = subjectId,
+            isFresh = {
+                val fresh = subjectCollectionDao.findById(subjectId).first()?.isExpired() == false
+                // 等到锁却发现数据已经新鲜 = 刚被另一个订阅者取回来了, 这一次省掉了
+                if (fresh) logger.info { "Subject $subjectId already fresh, skipped duplicate fetch" }
+                fresh
+            },
+        ) {
+            val subject = subjectService.getSubjectCollection(subjectId)
+            val lastFetched = currentTimeMillis()
+            val subjectEntity = subject?.toEntity(
+                lastFetched = lastFetched,
+            )
+            if (subjectEntity != null) {
+                val episodeEntities = subject.episodes.map {
+                    it.toEntity1(subjectId, lastFetched = lastFetched)
+                }
+                // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
+                subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
+                // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)
+                logger.info { "Fetched subject $subjectId: ${episodeEntities.size} episodes" }
+            }
+            // TODO: 2025/5/24 handle subject not found
+        }
+    }
+
     override fun subjectCollectionFlow(
         subjectId: Int
     ): Flow<SubjectCollectionInfo> = getEpisodeTypeFiltersUseCase().flatMapLatest { epTypes ->
@@ -313,8 +366,7 @@ class SubjectCollectionRepositoryImpl(
 
                 // 如果没有缓存, 则 fetch 然后插入 subject 缓存
                 if (existing == null || existing.isExpired()) {
-                    refetchSubjectCollection(subjectId)
-                    // TODO: 2025/5/24 handle subject not found 
+                    fetchSubjectCollectionIfStale(subjectId)
                 }
             }
             .filterNotNull()
@@ -332,6 +384,11 @@ class SubjectCollectionRepositoryImpl(
                     nsfwModeSettings = nsfwModeSettings,
                 )
             }
+            // Room 的失效是**表级**的: 往 subject_collection / episode_collection 写**别的**条目也会
+            // 让这条流重发一份一模一样的值. 下游用 flatMapLatest 的消费者 (关联数据、媒体选择器…) 会
+            // 因此把在途的工作掐掉重来 —— 详情页的角色/制作人员就是这么被反复重启到一次都取不完的
+            // (见 SubjectRelationsRepository.relationsFreshnessFlow). 内容没变就别往下传.
+            .distinctUntilChanged()
     }.flowOn(defaultDispatcher)
 
     /**
@@ -457,17 +514,14 @@ class SubjectCollectionRepositoryImpl(
 
         onFetched(items)
 
-        // 批量插入条目信息
+        // 批量插入条目信息与分集, 单个事务 (含保留 relations 盖章, 否则这里每写一批就会把
+        // 详情页刚取好的角色/制作人员时间戳抹回 0, 触发一轮强制重取); 条目在前, 分集有外键依赖
         val lastFetched = currentTimeMillis()
-        subjectCollectionDao.upsert(
-            items.mapIndexed { index, batchSubjectCollection ->
+        subjectCollectionDao.upsertSubjectsWithEpisodes(
+            subjects = items.mapIndexed { index, batchSubjectCollection ->
                 batchSubjectCollection.toEntity(lastFetched = lastFetched)
             },
-        )
-
-        // 必须先插入好条目信息, 否则插入 episode 会 foreign key constraint failed
-        episodeCollectionDao.upsert(
-            items
+            episodes = items
                 .flatMap { it.episodes }
                 .map { episode ->
                     episode.toEntity1(
