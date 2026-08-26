@@ -84,6 +84,7 @@ import me.him188.ani.client.models.AniEpisodeCollection
 import me.him188.ani.client.models.AniEpisodeCollectionType
 import me.him188.ani.client.models.AniEpisodeType
 import me.him188.ani.client.models.AniFavourite
+import me.him188.ani.client.models.AniInfobox
 import me.him188.ani.client.models.AniSelfRatingInfo
 import me.him188.ani.client.models.AniSubjectCollection
 import me.him188.ani.client.models.AniSubjectRelations
@@ -710,6 +711,8 @@ private fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
         ratingInfo = ratingInfo,
         collectionStats = collectionStats,
         completeDate = completeDate,
+        screeningYear = screeningYear,
+        theatrical = theatrical,
     )
 }
 
@@ -877,11 +880,43 @@ fun AniSubjectCollection.toEntity(
         collectionType = collectionType.toUnifiedCollectionType(),
         recurrence = airingInfo?.recurrence?.toSubjectRecurrence(),
         relations = relations.toSubjectRelationsEntity(),
+        screeningYear = infobox?.screeningYearOrNull(PackedDate.parseFromDate(airDate).year),
+        theatrical = infobox?.isTheatricalOnly() == true,
         lastUpdated = updatedAt?.let { Instant.parse(it) }?.toEpochMilliseconds() ?: 0,
         lastFetched = lastFetched,
         cachedStaffUpdated = 0,
         cachedCharactersUpdated = 0,
     )
+}
+
+/** infobox 里表示"影院上映日期"的字段名. */
+private val SCREENING_DATE_KEYS = setOf("上映年度", "上映日期", "其他上映日期", "其他上映年度")
+
+private val YEAR_REGEX = Regex("""(?:19|20)\d{2}""")
+
+/**
+ * infobox 「上映年度」里**最早**的那个年份; 没有该字段, **或 [airYear] 本来就在这些年份里**,
+ * 都返回 `null` —— 后者说明 `airDate` 记的就是上映日, 没必要换个年份去判.
+ *
+ * 只取最早那个: 老片的 infobox 会把重映年也列上 (攻殻機動隊 是 `[1995, 2025]`, 2025 是 4K 重映),
+ * 全盘接受会让 2026 年的新片「The Ghost in the Shell」也过年份判据、顶掉 1995 那部正解.
+ */
+private fun AniInfobox.screeningYearOrNull(airYear: Int?): Int? {
+    val years = fields.asSequence()
+        .filter { it.key in SCREENING_DATE_KEYS }
+        .flatMap { item -> item.propertyValues.asSequence().map { it.v } }
+        .mapNotNull { YEAR_REGEX.find(it)?.value?.toIntOrNull() }
+        .toList()
+    if (years.isEmpty() || airYear in years) return null
+    return years.min()
+}
+
+/**
+ * 是否**只在影院放映**: 有上映日期而没有「放送开始」. 见 [SubjectCollectionEntity.theatrical].
+ */
+private fun AniInfobox.isTheatricalOnly(): Boolean {
+    val keys = fields.mapTo(mutableSetOf()) { it.key }
+    return keys.any { it in SCREENING_DATE_KEYS } && "放送开始" !in keys
 }
 
 /**

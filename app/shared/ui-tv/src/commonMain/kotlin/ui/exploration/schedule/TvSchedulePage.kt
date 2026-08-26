@@ -86,6 +86,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.number
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.LoadError
@@ -261,16 +262,21 @@ fun TvSchedulePage(
 
     // 预取要的两样东西 (subjectId 之外): TMDB 只认**原名**, 而负缓存限期失效要**播出日期**.
     // 一屏网格就是一天, 所以日期对全网格是同一个; 名字按 subjectId 查表 —— 邻居只带 id 过来.
+    // 中文名也带上: TMDB 那边只有罗马字标题或用了不同汉字写法时, 靠它才匹配得上
+    // (见 TmdbMatchHints). 剧场版闸门与上映年度那两项本页拿不到, 只能等详情页补.
     val cardNames = remember(dayItems) {
         dayItems.cards.mapNotNull { it.item }
-            .associate { it.subjectId to it.subjectName.ifBlank { it.subjectTitle } }
+            .associate { it.subjectId to (it.subjectName.ifBlank { it.subjectTitle } to it.subjectTitle) }
     }
     val displayedDate = displayedDay?.date?.toString()
     val prefetchBackdrop: suspend (Int) -> Unit = { subjectId ->
-        cardNames[subjectId]?.let { name ->
+        cardNames[subjectId]?.let { (name, titleCn) ->
             // 传播出日期: 新番刚播时 TMDB 往往还没有 backdrop, 负缓存据此限期失效
             // (本页恰恰是带得出播出日期的那一个, 见 prefetchTvBackdrop 的说明)
-            tmdb.prefetchTvBackdrop(subjectId, name, activeAsOfDate = displayedDate)
+            tmdb.prefetchTvBackdrop(
+                subjectId, name, activeAsOfDate = displayedDate,
+                hints = TmdbMatchHints(nameCn = titleCn),
+            )
         }
     }
     // 接进四页共用的 hero 媒体流水线 (2026-08-16). 本页原先只有"聚焦后现拉当前这张"一条路,
@@ -308,7 +314,10 @@ fun TvSchedulePage(
         for (item in todayItems) {
             if (focusedTarget != null) return@LaunchedEffect // 用户已经进卡片区, 不必再找默认图
             // 聚焦过 (或别的页面预取过) 的条目已经在服务层热表里, prefetch 会直接返回, 不重复请求
-            tmdb.prefetchTvBackdrop(item.subjectId, item.subjectName.ifBlank { item.subjectTitle }, airDate)
+            tmdb.prefetchTvBackdrop(
+                item.subjectId, item.subjectName.ifBlank { item.subjectTitle }, airDate,
+                hints = TmdbMatchHints(nameCn = item.subjectTitle),
+            )
             val url = tmdb.peekBackdropUrl(item.subjectId)
             if (url != null) {
                 defaultBackdrop = url

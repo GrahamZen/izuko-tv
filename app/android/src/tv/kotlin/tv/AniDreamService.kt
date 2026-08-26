@@ -67,6 +67,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.android.activity.UiScaleMirror
 import me.him188.ani.android.activity.withUiScale
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.data.network.newestAiredDateStringOrNull
@@ -253,6 +254,7 @@ class AniDreamService : DreamService() {
                             info.subjectInfo.name,
                             // 新番刚播时 TMDB 常常还没有剧照, 负缓存据此限期失效而非永久
                             activeAsOfDate = info.episodes.newestAiredDateStringOrNull(),
+                            hints = info.subjectInfo.toTmdbMatchHints(),
                         )
                     }.getOrElse { emptyList() }
                     if (backdrops.isEmpty()) null // TMDB 搜不到剧照, 跳过该动画

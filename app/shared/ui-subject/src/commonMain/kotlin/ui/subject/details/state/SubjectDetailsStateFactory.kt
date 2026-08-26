@@ -47,6 +47,7 @@ import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
 import me.him188.ani.app.data.network.BangumiSummaryService
@@ -363,6 +364,8 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 // 条目开播日: 分集全无日期时靠它认领 TMDB 的哪一季 (见 tmdbOwnSeasonNumber)
                 subjectAirDate = subjectInfo.airDate.toLocalDateOrNull()?.toString(),
                 subjectEpisodeCount = collection.episodes.size,
+                subjectEpisodeNames = collection.episodes.map { it.episodeInfo.name },
+                hints = subjectInfo.toTmdbMatchHints(),
             ) ?: TmdbEpisodeStills()
             val stillUrls = mutableMapOf<Int, String>()
             val runtimes = mutableMapOf<Int, Int>()
@@ -455,6 +458,7 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                             // 用开播日期 (此处拿不到分集): 新番刚播时 TMDB 往往还没上传 backdrop,
                             // 负缓存据此限期失效, 不然补图之后这个条目也永远不会再查
                             activeAsOfDate = subjectInfo.airDate.toLocalDateOrNull()?.toString(),
+                            hints = subjectInfo.toTmdbMatchHints(),
                         )
                     },
                 )

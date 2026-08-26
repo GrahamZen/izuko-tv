@@ -297,6 +297,51 @@ class TmdbMatchingTest {
         )
 
     @Test
+    fun `集号轴三明治 - 特别篇不占轴上的位置`() {
+        // 「カーニバル・ファンタズム」: 12 集正片 + 1 集 SP, SP 与正片第 1 集同期播出.
+        // SP 命中的是 TMDB 的 season 0, 不在 byEpisodeNumber (只索引正片那一季) 里 —— 它在集号轴上
+        // 是个空洞. 让它占位置的话, 相邻正片集的锚点反查不出集号, 三明治直接放弃, 第 1 集就丢图.
+        val stills = TmdbEpisodeStills(
+            byEpisodeNumber = mapOf(
+                1 to TmdbEpisodeMedia(stillUrl = "s1e1"),
+                2 to TmdbEpisodeMedia(stillUrl = "s1e2"),
+                3 to TmdbEpisodeMedia(stillUrl = "s1e3"),
+            ),
+            byAirDate = mapOf(
+                // 正片第 2、3 集靠日期锚定; 第 1 集两边日期差 2 天 (超出 ±1 容差), 只能靠集号轴
+                "2011-08-20" to listOf(TmdbEpisodeMedia(stillUrl = "s1e2")),
+                "2011-08-27" to listOf(TmdbEpisodeMedia(stillUrl = "s1e3")),
+                // SP 那天只有 season 0 的一集
+                "2011-10-28" to listOf(TmdbEpisodeMedia(stillUrl = "s0e1")),
+            ),
+        )
+        val ep1 = episode(1, 1, PackedDate(2011, 8, 14))
+        val ep2 = episode(2, 2, PackedDate(2011, 8, 20))
+        val ep3 = episode(3, 3, PackedDate(2011, 8, 27))
+        val sp = EpisodeCollectionInfo(
+            EpisodeInfo(
+                episodeId = 99,
+                type = EpisodeType.SP,
+                sort = EpisodeSort(1, EpisodeType.SP),
+                airDate = PackedDate(2011, 10, 28),
+            ),
+            UnifiedCollectionType.NOT_COLLECTED,
+        )
+
+        // SP 排在正片第 1 集前后任一侧, 第 1 集都必须照样拿到图
+        for ((tag, episodes) in listOf(
+            "SP 在最前" to listOf(sp, ep1, ep2, ep3),
+            "SP 紧跟第 1 集" to listOf(ep1, sp, ep2, ep3),
+            "SP 在最后" to listOf(ep1, ep2, ep3, sp),
+        )) {
+            val matched = stills.matchToEpisodes(episodes)
+            assertEquals(TmdbEpisodeMedia(stillUrl = "s1e1"), matched[1], tag)
+            // SP 自己的图走日期那条路, 不受影响
+            assertEquals(TmdbEpisodeMedia(stillUrl = "s0e1"), matched[99], tag)
+        }
+    }
+
+    @Test
     fun `单集条目无分集日期 - 用条目开播日命中母番特别篇`() {
         // みなみけ 的三个特别篇在 TMDB 母番 season 0 里, 每一集的 air_date 与 Bangumi 的
         // **条目**日期逐字相同, 而 Bangumi 的**分集**没有日期 —— 原先一张图都拿不到.
@@ -696,5 +741,245 @@ class TmdbMatchingTest {
         assertEquals(tmdbEpisodeNameKey("宇宙の傷跡"), tmdbEpisodeSegmentKey("宇宙(そら)の傷跡"))
         // 集名索引那条**不切段**: 切了会让「A／その1」「A／その2」撞键, 而撞键整条弃用
         assertTrue(tmdbEpisodeNameKey("結末／その1") != tmdbEpisodeNameKey("結末／その2"))
+    }
+
+    // ---------- 衍生短篇混装进正传 season 0: 集名后缀认领 (2026-09-06) ----------
+
+    /**
+     * TMDB 把一个系列的全部衍生短篇混装进正传的 S0, 集名写成「作品名 + 本集名」以示区分,
+     * 而 Bangumi 那边只有本集名. 日期两边差 3 天 (超出 ±1 容差), 集号轴又被"有日期却对不上
+     * 说明条目可疑"那道闸门关着 —— 实测 Re:プチから始める異世界生活 (bgm 185837) 14 集全无图.
+     *
+     * 圈数字必须先折叠: normalizeForMatch 只留 isLetterOrDigit, 而 ① 是 No 类不是 Nd,
+     * 不折叠就被整个滤掉, 与 TMDB 那边留着的「1」永远差一个字符.
+     */
+    @Test
+    fun `衍生短篇 - 集名带作品名前缀时按后缀认领`() {
+        val stills = TmdbEpisodeStills(
+            byEpisodeName = mapOf(
+                tmdbEpisodeNameKey("Re:プチから始める異世界生活 ぷち1 再来の学校") to
+                        TmdbEpisodeMedia(stillUrl = "s0e12"),
+                tmdbEpisodeNameKey("Re:プチから始める異世界生活 ぷち2 自称先生、ベアトリス") to
+                        TmdbEpisodeMedia(stillUrl = "s0e13"),
+                tmdbEpisodeNameKey("Re:ゼロから始める休憩時間 3rd season 眠れる鬼の夜話") to
+                        TmdbEpisodeMedia(stillUrl = "s0e51"),
+            ),
+        )
+        // bgm 的日期在 TMDB 那边不存在 (两边差 3 天), 只能靠集名
+        val episodes = listOf(
+            dated(1, "ぷち①再来の学校", PackedDate(2016, 6, 24)),
+            dated(2, "ぷち②自称先生、ベアトリス", PackedDate(2016, 7, 1)),
+        )
+        val matched = stills.matchToEpisodes(episodes)
+        assertEquals(TmdbEpisodeMedia(stillUrl = "s0e12"), matched[1])
+        assertEquals(TmdbEpisodeMedia(stillUrl = "s0e13"), matched[2])
+    }
+
+    @Test
+    fun `衍生短篇 - 后缀撞上两条就宁可无图`() {
+        val stills = TmdbEpisodeStills(
+            byEpisodeName = mapOf(
+                tmdbEpisodeNameKey("作品甲 眠れる鬼の夜話") to TmdbEpisodeMedia(stillUrl = "a"),
+                tmdbEpisodeNameKey("作品乙 眠れる鬼の夜話") to TmdbEpisodeMedia(stillUrl = "b"),
+            ),
+        )
+        val matched = stills.matchToEpisodes(listOf(dated(1, "眠れる鬼の夜話", PackedDate(2024, 10, 2))))
+        assertNull(matched[1], "后缀分不出来时不许猜")
+    }
+
+    @Test
+    fun `衍生短篇 - 集名太短不认领`() {
+        val stills = TmdbEpisodeStills(
+            byEpisodeName = mapOf(
+                tmdbEpisodeNameKey("なにか長い作品名 決戦") to TmdbEpisodeMedia(stillUrl = "a"),
+            ),
+        )
+        // 归一化后只有 2 个字符, 短到随便撞: 与关系软边那条判据同源 (>= 4)
+        val matched = stills.matchToEpisodes(listOf(dated(1, "決戦", PackedDate(2024, 10, 2))))
+        assertNull(matched[1])
+    }
+
+
+    /**
+     * **日期轴给出"看着很确定但错"的答案**: 衍生短篇与正片同期播出时, Bangumi 把短篇的播出日
+     * 记成**正片那天**, 而 TMDB 记的是次日 (网络上传日). 于是短篇条目的每一集都在日期轴上
+     * **精确命中正片**, 整排选集卡拿到正片的图.
+     *
+     * 实测 bgm 516311「Re:ゼロから始める休憩時間 3rd season」16 集全是正片的图 (2026-09-06 用户报的):
+     * bgm ep1 = 2024-10-02「眠れる鬼の夜話」, TMDB S1 E51 = 2024-10-02「劇場型悪意」(正片),
+     * TMDB S0 E51 = 2024-10-03「Re:ゼロから始める休憩時間 3rd season 眠れる鬼の夜話」(才是它).
+     *
+     * 那天只有正片一个候选, 所以 preferredSeasonByEpisodeNames 的"同日多季投票"没票可投 ——
+     * 只能靠集名优先于日期.
+     */
+    @Test
+    fun `衍生短篇与正片同日 - 集名优先于日期轴`() {
+        val main = TmdbEpisodeMedia(stillUrl = "s1e51-正片")
+        val short = TmdbEpisodeMedia(stillUrl = "s0e51-短篇")
+        val stills = TmdbEpisodeStills(
+            byAirDate = mapOf("2024-10-02" to listOf(main), "2024-10-03" to listOf(short)),
+            byEpisodeName = mapOf(
+                tmdbEpisodeNameKey("劇場型悪意") to main,
+                tmdbEpisodeNameKey("Re:ゼロから始める休憩時間 3rd season 眠れる鬼の夜話") to short,
+            ),
+        )
+        val matched = stills.matchToEpisodes(listOf(dated(1, "眠れる鬼の夜話", PackedDate(2024, 10, 2))))
+        assertEquals(short, matched[1], "日期精确命中正片, 但集名认的是短篇 —— 集名说了算")
+    }
+
+    @Test
+    fun `集名对不上时日期照旧说了算`() {
+        val media = TmdbEpisodeMedia(stillUrl = "s1e1")
+        val stills = TmdbEpisodeStills(
+            byAirDate = mapOf("2024-10-02" to listOf(media)),
+            byEpisodeName = mapOf(tmdbEpisodeNameKey("别的集名") to TmdbEpisodeMedia(stillUrl = "x")),
+        )
+        val matched = stills.matchToEpisodes(listOf(dated(1, "本集名", PackedDate(2024, 10, 2))))
+        assertEquals(media, matched[1])
+    }
+
+    @Test
+    fun `圈数字折叠 - 与半角数字归一成同一个键`() {
+        assertEquals(tmdbEpisodeNameKey("ぷち1 再来の学校"), tmdbEpisodeNameKey("ぷち①再来の学校"))
+        assertEquals("20", tmdbEpisodeNameKey("⑳"))
+    }
+
+}
+
+/**
+ * 2026-08-25 那批匹配改动的判据. 每条都对着一个实测病例, 注释里写的就是它.
+ */
+class TmdbMatchingRulesTest {
+    // ---------- 逐词去尾: 去掉"剩余须含日文/中文"那条守卫 ----------
+
+    @Test
+    fun `逐词去尾 - 拉丁本体加日文副标题能削到本体`() {
+        // CLANNAD もうひとつの世界 智代編: TMDB 上没有这个独立条目, 数据在 tv/24835 的 season 0.
+        // 原先"剩余须含日文/中文"的守卫让 `CLANNAD` 生不出来, 背景图与剧照因此全空.
+        val candidates = tmdbSearchQueryCandidates("CLANNAD もうひとつの世界 智代編").all
+        assertTrue("CLANNAD もうひとつの世界" in candidates, candidates.toString())
+        assertTrue("CLANNAD" in candidates, candidates.toString())
+    }
+
+    @Test
+    fun `逐词去尾 - 中间态也要留着`() {
+        // 杏編削三刀: 靠"不逐字同名就跳过继续下一个候选"从 `CLANNAD 〜AFTER` 落到 `CLANNAD`,
+        // 所以两个中间态都必须在候选里 (整条放弃的话这个条目就修不好了)
+        val candidates = tmdbSearchQueryCandidates("CLANNAD 〜AFTER STORY〜もうひとつの世界 杏編").all
+        assertTrue("CLANNAD" in candidates, candidates.toString())
+    }
+
+    @Test
+    fun `逐词去尾 - 形态词守卫还在`() {
+        // 削到只剩「劇場版」会命中 tv/154779「龙珠剧场版」—— 这条守卫不能跟着一起去掉
+        val candidates = tmdbSearchQueryCandidates("劇場版 魔法科高校の劣等生 四葉継承編").all
+        assertFalse("劇場版" in candidates, candidates.toString())
+    }
+
+    @Test
+    fun `逐词去尾 - 纯拉丁名会被拆碎, 靠调用侧的逐字同名兜住`() {
+        // 守卫去掉之后 `ANGEL VOICE` 确实会削出 `ANGEL`(它会命中 Angel Beats!),
+        // 拦住它的是 searchLayered 里"纯拉丁候选的命中必须逐字同名"那一步 —— 判据就是下面这个.
+        val candidates = tmdbSearchQueryCandidates("ANGEL VOICE").all
+        assertTrue("ANGEL" in candidates, candidates.toString())
+        // 纯拉丁 = 会触发那道逐字同名闸门
+        assertTrue("ANGEL".none { it.isCjkOrKana() })
+        assertFalse("CLANNAD もうひとつの世界".none { it.isCjkOrKana() })
+    }
+
+    // ---------- root 档: Ani 关系索引给的系列主条目名 ----------
+
+    @Test
+    fun `系列主条目名 - 条目自己的中文名不算主条目名`() {
+        // うらおん! (K-On! 的 web 广播): Ani 只列系列内条目名, 第二个就是它自己的中文名.
+        // 只比原名的话会拿 `K-On!:Ura-On!` 去搜 TMDB (什么都搜不到), 而真正的母条目
+        // 「けいおん！」只在 Bangumi 的「主线故事」出边上 —— 回落被这个假结果挡死.
+        val names = listOf("うらおん!", "K-On!:Ura-On!", "うらおん!!", "K-On!!:Ura-On!!")
+        assertNull(tmdbSeriesRootName(names, "うらおん!", "K-On!:Ura-On!"))
+    }
+
+    @Test
+    fun `系列主条目名 - 只差标点的同系列名也要排掉`() {
+        // 归一化后比: 续集「うらおん!!」与本条目只差一个感叹号, 拿它去搜同样是空手而归
+        assertNull(tmdbSeriesRootName(listOf("うらおん!", "うらおん!!"), "うらおん!", ""))
+    }
+
+    @Test
+    fun `系列主条目名 - 真的主条目名要留下`() {
+        val names = listOf("ef - a tale of memories.", "悠久之翼", "ef - a tale of memories. ~prologue~")
+        assertEquals(
+            "ef - a tale of memories.",
+            tmdbSeriesRootName(names, "ef - a tale of memories. ~prologue~", "悠久之翼Prologue"),
+        )
+    }
+
+    // ---------- root 档: 指向本传的软关系边 ----------
+
+    @Test
+    fun `软关系边 - 番外与总集编的名字含本传名`() {
+        // 这些条目 Bangumi 上既没有「主线故事」也没有「前传」出边, 本传挂在「其他」上
+        assertTrue(tmdbSoftEdgeUsable("苺ましまろ", "苺ましまろプロローグ"))
+        assertTrue(tmdbSoftEdgeUsable("ちはやふる3", "ちはやふる番外編「新に会いにあわらへいこっさ！」"))
+        assertTrue(tmdbSoftEdgeUsable("荒野のコトブキ飛行隊", "荒野のコトブキ飛行隊外伝 大空のハルカゼ飛行隊"))
+    }
+
+    @Test
+    fun `软关系边 - 同档播出与同场上映的兄弟作要拒掉`() {
+        // 「其他」是杂物筐: 不拦的话这两条会从"命中自己"变成错图 (猫和老鼠 / 海贼王剧场版)
+        assertFalse(tmdbSoftEdgeUsable("TOM of T.H.U.M.B.", "King Kong"))
+        assertFalse(tmdbSoftEdgeUsable("ONE PIECE 倒せ!海賊ギャンザック", "世紀末リーダー外伝たけし!"))
+    }
+
+    @Test
+    fun `软关系边 - 同系列但不是本传的那个也会被跳过`() {
+        // 白テニ 的两条软边: ゼロ・クロニクル 没有共同词干, ミニアニメ劇場 有 —— 判据顺带选对了候选
+        assertFalse(tmdbSoftEdgeUsable("白猫プロジェクト ゼロ・クロニクル", "白テニミニアニメ劇場～今日もどこかでミューエンマ～"))
+        assertTrue(tmdbSoftEdgeUsable("白猫プロジェクト ミニアニメ劇場", "白テニミニアニメ劇場～今日もどこかでミューエンマ～"))
+    }
+
+    // ---------- 年份基准: infobox 的上映年度 ----------
+
+    @Test
+    fun `上映年度 - 有就用它, 没有才用开播年`() {
+        // 彼女と彼女の猫: airDate 2002-04-19 是**发售日**, infobox 上映年度 2000,
+        // 而 TMDB movie/18143 记首映 1999 —— 按 2002 算会被 movie 的 |Δ|<=1 否决
+        assertEquals(2000, tmdbSubjectYear(activeYear = 2002, screeningYear = 2000))
+        assertEquals(2002, tmdbSubjectYear(activeYear = 2002, screeningYear = null))
+        assertNull(tmdbSubjectYear(activeYear = null, screeningYear = null))
+    }
+
+    @Test
+    fun `年份基准 - 拿不到已播集日期时用条目开播年垫底`() {
+        // 搜索结果没有分集数据, activeYear 只能是 null —— 垫底那一手缺了的话, 年份判据整个
+        // 空转: 「攻殻機動隊」(1995 剧场版) 的 tv 搜索首位就是同系列 2026 年的新剧
+        assertEquals(1995, tmdbSubjectYear(activeYear = null, screeningYear = null, subjectAirYear = 1995))
+        // 优先级: 上映年度 > 已播集年 > 条目开播年
+        assertEquals(2000, tmdbSubjectYear(activeYear = 2002, screeningYear = 2000, subjectAirYear = 1998))
+        assertEquals(2002, tmdbSubjectYear(activeYear = 2002, screeningYear = null, subjectAirYear = 1998))
+        assertNull(tmdbSubjectYear(activeYear = null, screeningYear = null, subjectAirYear = null))
+    }
+
+    @Test
+    fun `上映年度 - 用它之后年份判据才放行 1999 那部`() {
+        assertFalse(tmdbYearPlausible(candidateYear = 1999, subjectYear = 2002, isMovie = true))
+        assertTrue(tmdbYearPlausible(candidateYear = 1999, subjectYear = 2000, isMovie = true))
+    }
+
+    // ---------- 负缓存: 区分写入时有没有带 hints ----------
+
+    @Test
+    fun `负缓存 - 没带 hints 查空的会留记号`() {
+        val cache = TmdbImageCache().withBackdropResult(1, url = null, hadHints = false)
+        assertTrue(1 in cache.backdropMissWithoutHints)
+    }
+
+    @Test
+    fun `负缓存 - 带着 hints 查过就摘掉记号, 不再重查`() {
+        val first = TmdbImageCache().withBackdropResult(1, url = null, hadHints = false)
+        // 详情页带着完整条目信息重查一次, 仍然没图 —— 记号也要摘掉, 否则每次进页面都重查
+        val second = first.withBackdropResult(1, url = null, hadHints = true)
+        assertFalse(1 in second.backdropMissWithoutHints)
+        val third = first.withBackdropResult(1, url = "https://image", hadHints = true)
+        assertFalse(1 in third.backdropMissWithoutHints)
     }
 }
