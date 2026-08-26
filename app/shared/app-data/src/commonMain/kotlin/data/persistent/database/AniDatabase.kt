@@ -87,7 +87,7 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         PlaybackHistoryRecordEntity::class,
         PlaybackHistoryPendingOpEntity::class,
     ],
-    version = 23,
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 1, to = 2, spec = Migrations.Migration_1_2::class),
         AutoMigration(from = 2, to = 3, spec = Migrations.Migration_2_3::class),
@@ -109,6 +109,10 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         AutoMigration(from = 18, to = 19, spec = Migrations.Migration_18_19::class),
         AutoMigration(from = 20, to = 21, spec = Migrations.Migration_20_21::class),
         AutoMigration(from = 22, to = 23, spec = Migrations.Migration_22_23::class),
+        // 23 -> 24: subject_collection 加 screeningYear / theatrical 两列 (纯加列, 有默认值,
+        // 不需要 spec). 供 TMDB 匹配判断"是不是只在影院放映"与"真正的上映年份", 见
+        // [SubjectCollectionEntity.screeningYear].
+        AutoMigration(from = 23, to = 24),
     ],
     exportSchema = true,
 )

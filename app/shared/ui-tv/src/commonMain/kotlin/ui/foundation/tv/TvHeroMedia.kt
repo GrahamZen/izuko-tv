@@ -44,10 +44,12 @@ import kotlinx.coroutines.sync.withPermit
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.settings.NetworkTroubleBeacon
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.network.matchToEpisodes
 import me.him188.ani.app.data.network.newestAiredDateStringOrNull
 import me.him188.ani.app.data.network.tmdbStillHeroSizeUrl
@@ -671,6 +673,7 @@ suspend fun resolveTvHeroMedia(
         subjectId,
         info.subjectInfo.name,
         activeAsOfDate = info.episodes.newestAiredDateStringOrNull(),
+        hints = info.subjectInfo.toTmdbMatchHints(),
     )
     return info
 }
@@ -693,6 +696,7 @@ suspend fun TmdbImageService.prefetchTvBackdrop(
     subjectId: Int,
     originalName: String,
     activeAsOfDate: String? = null,
+    hints: TmdbMatchHints = TmdbMatchHints.Empty,
 ) {
     // **只短路正缓存**: peekBackdropResolved 对"已确认无图"也为真, 而服务层特意让负结果继续
     // 走 getBackdropUrl —— 是否该重取由 activeAsOfDate 与重取闸门判定 (见 TmdbImageService
@@ -704,7 +708,7 @@ suspend fun TmdbImageService.prefetchTvBackdrop(
     // 取消必须重抛: runCatching 吞掉它的话, collectLatest 已取消的流水线会带着旧目标继续跑
     // 后面的邻居提交 (三个 prefetch 兄弟函数同此)
     try {
-        getBackdropUrl(subjectId, originalName, activeAsOfDate = activeAsOfDate)
+        getBackdropUrl(subjectId, originalName, activeAsOfDate = activeAsOfDate, hints = hints)
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
@@ -738,6 +742,8 @@ suspend fun TmdbImageService.prefetchTvNextEpisodeMedia(
             // 见 SubjectDetailsStateFactory 同名参数
             subjectAirDate = subjectInfo.airDate.toLocalDateOrNull()?.toString(),
             subjectEpisodeCount = episodes.size,
+            subjectEpisodeNames = episodes.map { it.episodeInfo.name },
+            hints = subjectInfo.toTmdbMatchHints(),
         ) ?: return
         stills.matchToEpisodes(episodes, subjectInfo.airDate.toLocalDateOrNull()?.toString())[nextEpisodeId]
     } catch (e: CancellationException) {
