@@ -250,6 +250,15 @@ data class DownloadOptions(
     val headers: Map<String, String> = emptyMap(),
     val maxRetriesPerSegment: Int = 100,
     val baseRetryDelayMillis: Long = 1000L,
+    /**
+     * 整个下载 (含合并) 的吞吐上限 (字节/秒), null = 不限速.
+     * 见 [me.him188.ani.utils.httpdownloader.ByteRateLimiter].
+     *
+     * **不跨续传保持**: 下载选项不落库, 断点续传时只能从 [DownloadState] 恢复 url 与请求头,
+     * 这一项会退回默认值. 需要长期生效的限速应由调用方在每次发起时给, 或改为持久化.
+     * m3u8 合并用的是 ffmpeg 的 -readrate, 与本项无关.
+     */
+    val maxBytesPerSecond: Long? = null,
 )
 
 /**
