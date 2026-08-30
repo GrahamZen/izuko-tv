@@ -48,6 +48,11 @@ class CacheEpisodeState(
      * 该缓存来源的数据源 id, 用于展示数据源名称. `null` 表示未知.
      */
     val mediaSourceId: String? = null,
+    /**
+     * 该缓存来源 `Media` 的 mediaId. 用于认出"这条缓存正是播放器此刻在播的那条"
+     * (见 [me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo]). `null` 表示未知.
+     */
+    val originMediaId: String? = null,
 ) {
     enum class Playability {
         PLAYABLE,

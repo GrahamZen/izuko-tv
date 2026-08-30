@@ -207,6 +207,16 @@ class CachedMedia(
 data class MediaCacheProperties(
     val totalSegments: Int? = null,
     val httpDownloaderStatus: String? = null,
+    /**
+     * 产出这个 [CachedMedia] 的那一份缓存的 `MediaCache.cacheId`.
+     *
+     * **[CachedMedia.mediaId] 认不出"具体是哪一份缓存"**: 它是 `缓存数据源id:origin.mediaId` 拼的,
+     * 而所有本地缓存存储共用同一个数据源 id, 不含引擎 —— 同一个磁力资源在开了 PikPak 时两个引擎
+     * 都能收, 各存一份, 两份的 mediaId 完全相同. 要判断"播放器正在用的那一份还在不在", 只能靠这个.
+     *
+     * 也不能拿最终文件路径代替: 还没下完的 BT 缓存给出的是磁力链, 根本没有路径.
+     */
+    val cacheId: String? = null,
 )
 
 /**

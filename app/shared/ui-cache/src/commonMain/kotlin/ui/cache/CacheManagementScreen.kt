@@ -106,6 +106,8 @@ import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.paneHorizontalPadding
 import me.him188.ani.app.ui.foundation.layout.plus
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
+import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.rememberCurrentTopAppBarContainerColor
 import me.him188.ani.app.ui.foundation.session.SelfAvatar
@@ -118,6 +120,7 @@ import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
 import me.him188.ani.app.ui.lang.cache_management_delete_cache_confirmation
 import me.him188.ani.app.ui.lang.cache_management_delete_cache_title
+import me.him188.ani.app.ui.lang.cache_management_delete_playing_warning
 import me.him188.ani.app.ui.lang.cache_management_delete_summary
 import me.him188.ani.app.ui.lang.cache_management_delete_summary_item
 import me.him188.ani.app.ui.lang.cache_management_enter_selection_mode
@@ -325,6 +328,7 @@ fun CacheManagementScreen(
         DeleteActionDialog(
             onDismiss = { deleteSelectedCacheDialog = false },
             summary = rememberCacheDeleteSummary(selectedEntries),
+            warning = rememberPlayingCacheWarning(selectedEntries),
             onConfirm = {
                 selectionEntries.filter { it.cacheId in selectionState.selectedIds }
                     .forEach { onDelete(it) }
@@ -821,6 +825,8 @@ internal fun DeleteActionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     summary: String? = null,
+    /** 见 [rememberPlayingCacheWarning]. */
+    warning: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -831,6 +837,9 @@ internal fun DeleteActionDialog(
                 Text(stringResource(Lang.cache_management_delete_cache_confirmation))
                 if (summary != null) {
                     Text(summary, color = MaterialTheme.colorScheme.error)
+                }
+                if (warning != null) {
+                    Text(warning, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
@@ -983,3 +992,22 @@ internal fun rememberCacheDeleteSummary(entries: List<CacheEpisodeState>): Strin
 
 /** 删除明细里最多列几部作品, 见 [rememberCacheDeleteSummary]. */
 private const val MAX_DELETE_SUMMARY_TITLES = 4
+
+/**
+ * 要删的这几条里有没有播放器此刻正在播的那条; 有就返回该提示的那句话, 否则 `null`.
+ *
+ * 删掉正在播的缓存不会当场出事 (播放器手上的文件句柄在文件被删之后依然有效, 画面照常走),
+ * 但下一次拖进度条就会落到错误的偏移上, 变成一句没头没尾的"未知错误" —— 只有事先说一句
+ * 用户才可能把这个结果与自己刚才的操作对上. 详见 [PlayingCacheInfo].
+ *
+ * 删除本身照旧允许: 删完播放会自动换到别的源 (见 `SwitchMediaOnPlayerErrorExtension`).
+ */
+@Composable
+internal fun rememberPlayingCacheWarning(entries: List<CacheEpisodeState>): String? {
+    val playing = LocalPlaybackSessionEntry.current.playingCache ?: return null
+    val hit = remember(entries, playing) {
+        entries.any { playing.matches(it.subjectId, it.episodeId, it.originMediaId) }
+    }
+    if (!hit) return null
+    return stringResource(Lang.cache_management_delete_playing_warning)
+}
