@@ -65,6 +65,19 @@ interface MediaCache {
         get() = flowOf(true)
 
     /**
+     * 正处在"下完了但还在合并"的阶段. 只有 web (m3u8) 缓存有这一步, 其余恒为 false.
+     *
+     * **纯展示用**: [state] 在这期间仍是 [MediaCacheState.IN_PROGRESS], 进度也已经是 100% ——
+     * 界面上就是一条一动不动的"下载中 100%", 而合并一集要几十秒 (整集完整读一遍再写一遍),
+     * 用户只会以为卡死了 (真机上真的这么问过). 这个标志让那一段有话可说.
+     *
+     * 不给 [MediaCacheState] 加成员是刻意的: 那是个被到处 `when` 穷举的状态机 (含 BT 缓存与
+     * 持久化), 为一句提示动它不划算.
+     */
+    val isMerging: Flow<Boolean>
+        get() = flowOf(false)
+
+    /**
      * Returns the [CachedMedia] instance for this cache.
      * The instance is cached so this function will immediately return the cached instance after the first successful call.
      */

@@ -53,6 +53,11 @@ class CacheEpisodeState(
      * (见 [me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo]). `null` 表示未知.
      */
     val originMediaId: String? = null,
+    /**
+     * 下完了但还在合并 (见 [me.him188.ani.app.domain.media.cache.MediaCache.isMerging]).
+     * 这期间 [state] 仍是下载中且进度已是 100%, 只有这个标志能让界面说出实话.
+     */
+    val isMerging: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,
