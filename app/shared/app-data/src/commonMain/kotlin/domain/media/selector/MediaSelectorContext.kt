@@ -69,7 +69,16 @@ data class MediaSelectorContext(
         /**
          * 刚开始查询时的默认值
          */
-        val Initial = MediaSelectorContext(null, null, null, null, null, null, null)
+        val Initial = MediaSelectorContext(
+            null, null, null, null, null, null, null,
+            // **必须显式给 null**: 构造参数的默认值是 `emptySet()` = "已确认没有不可播的缓存",
+            // 那是给直接构造 context 的测试与预览用的. 而生产路径首个 emit 的正是本对象
+            // (下面 producer 的 onStart), 让它带着"已确认为空"出门, 就等于告诉
+            // [MediaSelector.trySelectCached] 的等待"查完了, 没有不可播的" —— 那个 5 秒等待
+            // 会在第一帧当场结束, 没下完的 web 缓存照样被自动选中, 起播时 FileNotFoundException.
+            // 回归测试见 MediaSelectorContextProducerTest.
+            unplayableCacheMediaIds = null,
+        )
 
         val EmptyForPreview
             get() = MediaSelectorContext(
