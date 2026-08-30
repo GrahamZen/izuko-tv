@@ -799,8 +799,25 @@ class DefaultMediaSelector(
         }
 
         // 尽量选择满足用户偏好的缓存, 否则再随便挑一个缓存.
+        //
+        // 这一步的对错在界面上看不出来 —— "自动选了一个没下完的缓存"与"本来就没缓存可选"最终都
+        // 表现为去选在线源, 而 unplayable 的取值 (unknown = 上面等超时了) 正是判断"等待有没有
+        // 真的等到"的唯一依据. 所以要留日志.
+        //
+        // **但只在有话可说时打**: 本函数由自动选源在候选列表增长时反复调用 (真机实测 9 秒 70 次),
+        // 每次都写一行的话, 刷屏的全是"这一集压根没缓存"这种日常情况. 真正的失败特征
+        // ("有没下完的缓存却没被挡住") 一定伴随 unplayable 非空, 那种照打不误.
+        val unplayableText = unplayable?.size?.toString() ?: "unknown"
+        val worthLogging = unplayable == null || unplayable.isNotEmpty()
         val cached = preferredCandidates.first().firstSelectableCache()
-            ?: filteredCandidates.first().firstSelectableCache() ?: return null
+            ?: filteredCandidates.first().firstSelectableCache()
+            ?: run {
+                if (worthLogging) {
+                    logger.info { "trySelectCached: no selectable cache (unplayable=$unplayableText)" }
+                }
+                return null
+            }
+        logger.info { "trySelectCached: selecting ${cached.original.mediaId} (unplayable=$unplayableText)" }
         return selectDefault(cached.original)
     }
 
