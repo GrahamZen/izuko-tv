@@ -37,6 +37,8 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaMatch
 import me.him188.ani.datasources.api.source.MediaSource
 import me.him188.ani.datasources.api.source.MediaSourceInfo
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.source.matchesSubject
@@ -226,6 +228,10 @@ class MediaCacheStorageSource(
         "本地缓存",
         isSpecial = true,
     )
+
+    private companion object {
+        private val logger = logger<MediaCacheStorageSource>()
+    }
 }
 
 

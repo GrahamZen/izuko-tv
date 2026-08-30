@@ -18,6 +18,7 @@ import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.media.cache.MediaCacheManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory.Companion.withRepositories
 import me.him188.ani.datasources.api.Media
@@ -55,6 +56,7 @@ interface MediaSelectorFactory {
             mediaSourceManager = koin.get(),
             subjectRelationsRepository = koin.get(),
             subjectCollectionRepository = koin.get(),
+            mediaCacheManager = koin.get(),
         )
 
         fun withRepositories(
@@ -65,6 +67,7 @@ interface MediaSelectorFactory {
             subjectRelationsRepository: SubjectRelationsRepository,
             subtitlePreferences: MediaSelectorSubtitlePreferences = MediaSelectorSubtitlePreferences.CurrentPlatform,
             subjectCollectionRepository: SubjectCollectionRepository,
+            mediaCacheManager: MediaCacheManager,
         ): MediaSelectorFactory = object : MediaSelectorFactory {
             override fun create(
                 subjectId: Int,
@@ -86,6 +89,8 @@ interface MediaSelectorFactory {
                         },
                         mediaSourceManager.mediaSourceTiersFlow(),
                         flowOf(subtitlePreferences),
+                        // 缓存没下完时标成"不可用"而不是藏掉, 见 MediaExclusionReason.CacheNotReady
+                        unplayableCacheMediaIds = mediaCacheManager.unplayableCacheMediaIds(subjectId, episodeId),
                     ).flow,
                     mediaList,
                     savedUserPreference = episodePreferencesRepository.mediaPreferenceFlow(subjectId),
