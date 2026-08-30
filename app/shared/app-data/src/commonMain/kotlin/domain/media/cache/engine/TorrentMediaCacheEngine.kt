@@ -56,6 +56,7 @@ import me.him188.ani.app.torrent.api.files.TorrentFileEntry
 import me.him188.ani.app.torrent.api.files.TorrentFileHandle
 import me.him188.ani.app.torrent.api.files.isFinished
 import me.him188.ani.datasources.api.CachedMedia
+import me.him188.ani.datasources.api.MediaCacheProperties
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaCacheMetadata
 import me.him188.ani.datasources.api.topic.FileSize
@@ -158,6 +159,7 @@ class TorrentMediaCacheEngine(
                         origin,
                         mediaSourceId,
                         download = ResourceLocation.LocalFile(filePath.toString()),
+                        cacheProperties = MediaCacheProperties(cacheId = cacheId),
                     )
                 } else {
                     logger.info { "getCachedMedia: Torrent has not yet finished, returning torrent" }
@@ -165,6 +167,9 @@ class TorrentMediaCacheEngine(
                         origin,
                         mediaSourceId,
                         download = origin.download,
+                        // 没下完时 download 是磁力链, 认不出是哪一份缓存 —— 身份只能靠这个,
+                        // 见 MediaCacheProperties.cacheId
+                        cacheProperties = MediaCacheProperties(cacheId = cacheId),
                     )
                 }
             }
