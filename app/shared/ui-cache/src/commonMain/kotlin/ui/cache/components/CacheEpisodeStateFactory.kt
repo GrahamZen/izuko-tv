@@ -10,9 +10,9 @@
 package me.him188.ani.app.ui.cache.components
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.domain.media.cache.MediaCache
@@ -25,6 +25,7 @@ import me.him188.ani.app.torrent.api.files.averageRate
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.utils.coroutines.flows.combine
 import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
 import me.him188.ani.utils.coroutines.sampleWithInitial
 import kotlin.time.Duration.Companion.seconds
@@ -91,7 +92,8 @@ internal fun HasBackgroundScope.createCacheEpisodeStateFlow(
         subjectCollectionType,
         mediaCache.cache.canPlay,
         playbackProgressFlow,
-    ) { stats, state, type, canPlay, playbackProgress ->
+        mediaCache.cache.isMerging,
+    ) { stats, state, type, canPlay, playbackProgress, isMerging ->
         CacheEpisodeState(
             groupId = groupId,
             subjectId = subjectId,
@@ -114,6 +116,7 @@ internal fun HasBackgroundScope.createCacheEpisodeStateFlow(
             },
             mediaSourceId = mediaCache.cache.origin.mediaSourceId,
             originMediaId = mediaCache.cache.origin.mediaId,
+            isMerging = isMerging,
         )
     }
 }
