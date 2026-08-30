@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.tools.getOrZero
 import me.him188.ani.app.ui.cache.CacheActionDropdown
 import me.him188.ani.app.ui.cache.DeleteActionDialog
+import me.him188.ani.app.ui.cache.rememberPlayingCacheWarning
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -158,6 +159,8 @@ fun CacheEpisodeRow(
     if (showConfirmDelete) {
         DeleteActionDialog(
             onDismiss = { showConfirmDelete = false },
+            // 正在播的就是这一条时多提示一句 (fork; 见 rememberPlayingCacheWarning)
+            warning = rememberPlayingCacheWarning(listOf(episode)),
             onConfirm = {
                 // 删完本行会变回"未缓存"行, 把焦点交接过去 (方向与按下载时相反的同一件事)
                 if (focusDriven) {

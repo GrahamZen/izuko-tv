@@ -45,9 +45,11 @@ import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackProgress
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
+import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
+import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -173,6 +175,12 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
      * 见 [PlaybackSessionStatus]. 由 [guard] 第 7 条维护.
      */
     override var status: PlaybackSessionStatus? by mutableStateOf(null)
+        private set
+
+    /**
+     * 见 [PlayingCacheInfo]. 由 [guard] 第 8 条维护, 只有缓存页的删除确认框在读.
+     */
+    override var playingCache: PlayingCacheInfo? by mutableStateOf(null)
         private set
 
     /** 播放页此刻是否在前台. 由导航状态驱动 ([setPlayerPageVisible]). */
@@ -335,6 +343,8 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         pendingNotice = null
         // 进度同理: 留着的话换会话那一瞬间面板会显示上一集的进度条
         progress = null
+        // 换会话前记的是上一集在播哪条缓存, 留着会让缓存页对着不相干的行提示"正在播放"
+        playingCache = null
         // 新会话的初值就是"在准备": 第 7 条要等 debounce 才发第一个值, 那段时间面板不该还写着
         // 上一个会话的状态 (更不该是空的 —— 那一行会空掉半秒)
         status = vm?.let { PlaybackSessionStatus.Preparing }
@@ -676,6 +686,26 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                     // notify 里那条日志同一个理由). 状态变化很少, 不吵
                     logger.info { "Session status -> $it" }
                     status = it
+                }
+        }
+
+        // 8. 正在播的是不是某条缓存 —— 缓存页的删除确认框据此多提示一句 (见 [PlayingCacheInfo]).
+        //
+        //    集号取自会话的 info 而不是 playingMedia: [CachedMedia] 只带 origin.mediaId, 单凭它
+        //    认不出是哪一集 (合集资源各集共用同一个 mediaId), 而 info 里那两个 id 由第 5 条跟着
+        //    VM 走, 播放器内换集也是准的. 代价是换集那一瞬 info 可能还慢半拍 —— 这个值只在用户
+        //    打开删除确认框那一刻被读一次, 差这半秒无所谓.
+        launch {
+            vm.videoStatisticsFlow
+                .map { it.playingMedia as? CachedMedia }
+                .distinctUntilChanged()
+                .collect { cached ->
+                    val info = sessions.firstOrNull { it.vm === vm }?.info
+                    playingCache = if (cached == null || info == null) {
+                        null
+                    } else {
+                        PlayingCacheInfo(info.subjectId, info.episodeId, cached.origin.mediaId)
+                    }
                 }
         }
     }
