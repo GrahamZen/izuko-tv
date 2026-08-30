@@ -62,6 +62,28 @@ data class PlaybackProgress(
 )
 
 /**
+ * 后台会话此刻正在播放的那条**缓存**是哪一条.
+ *
+ * 用途只有一个: 缓存页在删除确认框里多提示一句"这一集正在播放". 删掉正在播的缓存不会当场
+ * 出事 —— 播放器手上那个文件句柄在文件被删之后依然有效, 画面照常走; 但下一次拖进度条就会
+ * 落到错误的偏移上, 变成一句没头没尾的"未知错误" (真因见 `SwitchMediaOnPlayerErrorExtension`
+ * 里 `observeCacheDeletedAndHandle` 的注释). 删除本身是允许的, 只是得让用户知道会发生什么.
+ *
+ * **三个字段缺一不可**: 合集资源 (一个种子覆盖多集) 的各集缓存共用同一个 `origin.mediaId`,
+ * 同一集也可能同时有 BT 和 WEB 两条缓存 —— 只比其中一两个都会把提示挂到不相干的行上.
+ */
+@Immutable
+data class PlayingCacheInfo(
+    val subjectId: Int,
+    val episodeId: Int,
+    /** 缓存来源 [me.him188.ani.datasources.api.Media] 的 mediaId (不是 `CachedMedia.mediaId`). */
+    val originMediaId: String,
+) {
+    fun matches(subjectId: Int, episodeId: Int, originMediaId: String?): Boolean =
+        this.subjectId == subjectId && this.episodeId == episodeId && this.originMediaId == originMediaId
+}
+
+/**
  * 后台会话此刻处在哪一步.
  *
  * 入口面板拿它当"正在播放"那行小字显示 (成品文案见 `playbackSessionStatusText`): 慢的源要十几秒,
@@ -116,6 +138,9 @@ interface PlaybackSessionEntry {
 
     /** 会话进行到哪一步了; `null` = 没有会话. 见 [PlaybackSessionStatus]. */
     val status: PlaybackSessionStatus?
+
+    /** 会话正在播的那条缓存; `null` = 没在播缓存 (在线源), 或没有会话. 见 [PlayingCacheInfo]. */
+    val playingCache: PlayingCacheInfo? get() = null
 
     /**
      * 结束会话: 销毁播放器与整条流水线.
