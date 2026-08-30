@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.HorizontalRule
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
+import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -166,6 +167,8 @@ internal fun FocusMediaSelectorItem(
     val sourceInfo by mediaSourceInfoProvider.rememberMediaSourceInfo(currentItem.mediaSourceId)
     val mediaDetailsStrings = rememberMediaDetailsStrings()
     val reasonText = mediaExclusionReasonText(group.exclusionReason)
+    // 硬性不可用 (缓存没下完): 点了也放不出来, 吞掉确认键. 其余排除原因仍可手动选中
+    val selectionBlocked = group.exclusionReason?.blocksSelection == true
     val unknownText = stringResource(Lang.cache_unknown)
     val infoText = remember(media, mediaDetailsStrings) {
         buildList {
@@ -178,7 +181,7 @@ internal fun FocusMediaSelectorItem(
         }.joinToString(" · ")
     }
     FocusSelectorSurface(
-        onClick = { onSelect(currentItem) },
+        onClick = { if (!selectionBlocked) onSelect(currentItem) },
         selected = selected,
         shape = RoundedCornerShape(12.dp),
         modifier = modifier,

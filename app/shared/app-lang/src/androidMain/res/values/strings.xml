@@ -1151,6 +1151,7 @@
     <string name="media_selector_item_single_episode_resource">Single-episode resource</string>
     <string name="media_selector_item_unsupported_playback">Unsupported playback</string>
     <string name="media_selector_item_season_mismatch">Season mismatch</string>
+    <string name="media_selector_item_cache_not_ready">Cache incomplete</string>
     <string name="media_selector_item_subject_title_mismatch">Title mismatch</string>
     <string name="mediafetch_request_editor_invalid_request">Invalid request. Please check it</string>
     <string name="mediafetch_request_editor_save_and_refresh">Save and refresh</string>

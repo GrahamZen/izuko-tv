@@ -1110,6 +1110,7 @@
     <string name="media_selector_item_single_episode_resource">單集資源</string>
     <string name="media_selector_item_unsupported_playback">不支援播放</string>
     <string name="media_selector_item_season_mismatch">季度不相符</string>
+    <string name="media_selector_item_cache_not_ready">緩存未完成</string>
     <string name="media_selector_item_subject_title_mismatch">條目標題不相符</string>
     <string name="mediafetch_request_editor_invalid_request">請求無效，請檢查</string>
     <string name="mediafetch_request_editor_save_and_refresh">儲存並重新整理</string>
