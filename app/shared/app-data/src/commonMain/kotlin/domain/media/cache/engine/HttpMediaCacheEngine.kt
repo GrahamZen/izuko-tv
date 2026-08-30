@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -225,13 +226,19 @@ class HttpMediaCacheEngine(
         internal val downloadId: DownloadId,
         override val metadata: MediaCacheMetadata,
     ) : MediaCache {
+        // 同 [canPlay]: 状态只有四档, 每段完成都重发一遍会让缓存列表整屏跟着重组
         override val state: Flow<MediaCacheState> =
             downloader.getProgressFlow(downloadId).map { it.status.toMediaCacheState() }
+                .distinctUntilChanged()
 
+        // **必须 distinctUntilChanged**: 上游 getProgressFlow 的 distinct 比的是整个 DownloadProgress
+        // (含已下载字节), 下载中每段完成都会发一次 —— 而这里只关心一个布尔. 不收窄的话每秒
+        // 几次的重复 false 会一路推到 MediaSelectorContext, 让整条筛选+排序流水线空转重算
+        // (每个资源都要做条目名相似度匹配), 缓存时界面明显变卡.
         override val canPlay: Flow<Boolean>
             get() = downloader.getProgressFlow(downloadId).map {
                 it.status == DownloadStatus.COMPLETED
-            }
+            }.distinctUntilChanged()
 
         override val fileStats: Flow<MediaCache.FileStats> = downloader.getProgressFlow(downloadId).map {
             val totalSize = it.totalBytes
