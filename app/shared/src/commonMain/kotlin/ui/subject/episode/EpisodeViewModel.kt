@@ -346,8 +346,12 @@ class EpisodeViewModel(
     var autoPausedOnBackground: Boolean = true
 
     /**
-     * 播放页离开前台 (导航去了别的页面, 或退出了播放页) 那一刻是不是"正在播放而被自动暂停"的
-     * —— 回到播放页要不要自动恢复的依据. 只由 `RetainedPlaybackSessionHolder` 读写 (第 2 条).
+     * 播放画面**不在用户眼前**期间是不是"正在播放而被自动暂停"的 —— 回到播放页要不要自动恢复的
+     * 依据. 只由 `RetainedPlaybackSessionHolder` 读写 (第 2 条).
+     *
+     * "不在眼前"含两种: 播放页不在导航栈顶 (导航去了别的页面, 或退出了播放页), 以及应用整个退到
+     * 后台而播放页仍是栈顶 (按 HOME 走开). 后者也记在这里而不是 [autoPausedOnBackground] 上,
+     * 是为了走 holder 那条"等新输出面出画再放声音"的恢复路径; 两本账各写各的字段, 见第 2 条.
      *
      * 初值 `false`: 首次进页面没有"上一次的自动暂停"要还回去, 起播由流水线自己负责.
      */
