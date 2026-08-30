@@ -9,6 +9,10 @@
 
 package me.him188.ani.app.domain.media.selector
 
+import me.him188.ani.utils.logging.warn
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.util.fastFirstOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -28,8 +32,14 @@ import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FI
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.selector.filter.MediaSelectorFilterSortAlgorithm
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.datasources.api.isLocalCache
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.topic.hasSeason
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -344,6 +354,46 @@ class DefaultMediaSelector(
         )
     }
 
+    /**
+     * 逐条筛选结果的记忆表的失效键: **只含真正影响单条筛选结果的输入**.
+     *
+     * 刻意不含整个 [MediaSelectorContext] —— 它里面的 `mediaSourceTiers` / `mediaSourcePrecedence`
+     * 只被排序用到 (见 [MediaSelectorFilterSortAlgorithm.sortMediaList]), 而它们来自数据源实例与
+     * 设置, 在搜索期间会反复变化. 用整个 context 作键的话, 每变一次就把记忆表整个作废, 于是又回到
+     * "每次全表重算" (真机实测每次 180~552ms).
+     */
+    private data class FilterMemoKey(
+        val preference: MediaPreference,
+        val settings: MediaSelectorSettings,
+        val subjectInfo: SubjectInfo?,
+        val episodeInfo: EpisodeInfo?,
+        val subjectSeriesInfo: SubjectSeriesInfo?,
+        val subjectFinished: Boolean?,
+        val subtitlePreferences: MediaSelectorSubtitlePreferences?,
+        // 注意: 不含 unplayableCacheMediaIds —— 它变化时只有涉及的那几条要重算, 见下面的定点失效
+    )
+
+    private fun MediaSelectorContext.filterMemoKey(
+        preference: MediaPreference,
+        settings: MediaSelectorSettings,
+    ) = FilterMemoKey(
+        preference, settings,
+        subjectInfo, episodeInfo, subjectSeriesInfo, subjectFinished,
+        subtitlePreferences,
+    )
+
+    private var filterMemoKey: FilterMemoKey? = null
+    private val filterMemo = HashMap<Media, MaybeExcludedMedia>()
+
+    /**
+     * 上一次见到的"不可播缓存 id" —— 单独记, 不进 [FilterMemoKey].
+     *
+     * 缓存下完那一刻这个集合会变 (某条从"不可播"变成可播), 若把它并进整表失效键, 就会在用户
+     * 正盯着选源列表的时候把 100+ 条全部重算一遍 (真机实测 126 条 295ms). 实际上受影响的
+     * 只有 id 出现在**新旧集合对称差**里的那几条, 定点剔除即可.
+     */
+    private var lastUnplayableCacheMediaIds: Set<String>? = null
+
     private val mediaSelectorSettings = mediaSelectorSettings.cached()
     private val mediaSelectorContext = mediaSelectorContextNotCached.cached()
 
@@ -355,8 +405,37 @@ class DefaultMediaSelector(
         this.mediaSelectorSettings,
         this.mediaSelectorContext,
     ) { list, pref, settings, context ->
-        algorithm.filterMediaList(list, pref, settings, context)
-            .let { algorithm.sortMediaList(it, settings, context) }
+        // 逐条筛选结果的记忆表: 搜索期间列表逐源追加, 每次都整表重算的代价太高
+        // (真机实测 127 条 280~1238ms, 三秒九次). 三个输入任一变化即整表作废.
+        val memoKey = context.filterMemoKey(pref, settings)
+        val memoInvalidated = filterMemoKey != memoKey
+        if (memoInvalidated) {
+            filterMemoKey = memoKey
+            filterMemo.clear()
+        }
+        // 不可播缓存集合单独处理: 只剔除对称差里那几条, 不动整张表.
+        // null 当空集看待 —— 生产者按设计先发一个 null (见 MediaSelectorContextFlowProducer),
+        // 那一轮本地缓存会被算成可选并记进表; 真集合到达时若不剔除, 没下完的缓存就会一直可选.
+        val unplayableIds = context.unplayableCacheMediaIds
+        if (unplayableIds != lastUnplayableCacheMediaIds) {
+            val old = lastUnplayableCacheMediaIds.orEmpty()
+            val new = unplayableIds.orEmpty()
+            lastUnplayableCacheMediaIds = unplayableIds
+            if (!memoInvalidated) {
+                val changed = (old - new) + (new - old)
+                if (changed.isNotEmpty()) {
+                    filterMemo.keys.removeAll { it.mediaId in changed }
+                }
+            }
+        }
+        // 只保留还在当前列表里的项: 本地源每次 restart 都会生成新的 CachedMedia 对象 (引用相等),
+        // 不清的话旧对象会一直积在表里
+        if (filterMemo.size > list.size) {
+            val alive = list.toHashSet()
+            filterMemo.keys.retainAll(alive)
+        }
+        val filtered = algorithm.filterMediaList(list, pref, settings, context, memo = filterMemo)
+        algorithm.sortMediaList(filtered, settings, context)
     }.cached()
 
     override val filteredCandidatesMedia: Flow<List<Media>> = filteredCandidates.map { list ->
@@ -693,11 +772,30 @@ class DefaultMediaSelector(
     @OptIn(UnsafeOriginalMediaAccess::class)
     override suspend fun trySelectCached(): Media? {
         if (selected.value != null) return null
+        // 先等"缓存可播性"这一项到位再决定.
+        //
+        // MediaSelectorContextFlowProducer 按设计先发一个 null (未知), 真集合要等
+        // MediaCacheManager 把每个缓存的 canPlay 都发过一次 (combine 语义) 才出来. 自动选缓存
+        // 跑得比它快时, 没下完的缓存会被当成可选直接选中, 随即 FileNotFoundException ——
+        // 最终文件要等下载完成合并后才存在 (真机复现: 缓存中途退出重进这一集).
+        //
+        // 判据直接读 context 而不是看 exclusionReason: 后者由筛选流水线算出, 即使 context 已经
+        // 更新, 候选列表也可能还停在上一轮的结果上.
+        val unplayable = withTimeoutOrNull(CACHE_PLAYABILITY_TIMEOUT) {
+            mediaSelectorContext.map { it.unplayableCacheMediaIds }.filterNotNull().first()
+        }
+        if (unplayable == null) {
+            // 迟迟拿不到 (例如某个 BT 缓存的 canPlay 一直不发) 就按老行为来: 宁可选到一个坏缓存
+            // 让它失败自动换源, 也不要让"缓存过的剧集不走缓存"
+            logger.warn { "Cache playability unknown after $CACHE_PLAYABILITY_TIMEOUT, selecting cached media anyway" }
+        }
+
         // 大部分排除原因 (不匹配偏好等) 都不妨碍"已经缓存了就直接播", 所以这里照旧看 original;
-        // 但 blocksSelection 的排除是硬性不可用 (缓存没下完, 最终文件还不存在), 选了必定加载失败,
-        // 必须在这里也挡住 —— 界面上的禁用只挡得住手点, 挡不住这条自动选择路径.
+        // 但硬性不可用的那档 (缓存没下完) 必须挡住 —— 界面上的禁用只挡得住手点, 挡不住这条路.
         fun List<MaybeExcludedMedia>.firstSelectableCache() = firstOrNull {
-            it.original.isLocalCache() && it.exclusionReason?.blocksSelection != true
+            it.original.isLocalCache() &&
+                    it.exclusionReason?.blocksSelection != true &&
+                    (unplayable == null || it.original.mediaId !in unplayable)
         }
 
         // 尽量选择满足用户偏好的缓存, 否则再随便挑一个缓存.
@@ -775,3 +873,13 @@ class DefaultMediaSelector(
         override fun toString(): String = "MediaPreferenceItem($debugName)"
     }
 }
+
+private val logger = me.him188.ani.utils.logging.logger("DefaultMediaSelector")
+
+/**
+ * [DefaultMediaSelector.trySelectCached] 等待"缓存可播性"的上限.
+ *
+ * 正常情况下这一项在毫秒级到位; 给上限是为了兜住"某个缓存的 canPlay 迟迟不发"那条路 ——
+ * 自动选择的几个策略是并行赛跑的, 这里多等一会儿不会拖住在线源那条路.
+ */
+private val CACHE_PLAYABILITY_TIMEOUT = 5.seconds
