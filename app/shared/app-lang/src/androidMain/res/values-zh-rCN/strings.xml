@@ -1191,6 +1191,7 @@
     <string name="media_selector_item_single_episode_resource">单集资源</string>
     <string name="media_selector_item_unsupported_playback">不支持播放</string>
     <string name="media_selector_item_season_mismatch">季度不匹配</string>
+    <string name="media_selector_item_cache_not_ready">缓存未完成</string>
     <string name="media_selector_item_subject_title_mismatch">条目标题不匹配</string>
     <string name="mediafetch_request_editor_invalid_request">请求无效，请检查</string>
     <string name="mediafetch_request_editor_save_and_refresh">保存并刷新</string>
