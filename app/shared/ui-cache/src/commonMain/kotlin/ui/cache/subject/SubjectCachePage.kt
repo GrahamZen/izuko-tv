@@ -73,6 +73,7 @@ import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
 import me.him188.ani.app.ui.cache.DeleteActionDialog
 import me.him188.ani.app.ui.cache.rememberCacheDeleteSummary
+import me.him188.ani.app.ui.cache.rememberPlayingCacheWarning
 import me.him188.ani.app.ui.cache.components.CacheEpisodeRow
 import me.him188.ani.app.ui.cache.components.CacheEpisodeState
 import me.him188.ani.app.ui.cache.components.CacheSelectionFloatingToolbar
@@ -225,6 +226,7 @@ fun SubjectCachePage(
             onDismiss = { showDeleteSelectedDialog = false },
             // 批量删除不可撤销, 把"到底要删什么"摊开写 (fork; 见 rememberCacheDeleteSummary)
             summary = rememberCacheDeleteSummary(selectedEntries),
+            warning = rememberPlayingCacheWarning(selectedEntries),
             onConfirm = {
                 selectedEntries.forEach(onDelete)
                 selectionState.clear()

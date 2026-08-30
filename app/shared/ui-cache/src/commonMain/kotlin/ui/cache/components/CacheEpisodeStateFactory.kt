@@ -113,6 +113,7 @@ internal fun HasBackgroundScope.createCacheEpisodeStateFlow(
                 else -> CacheEpisodeState.Playability.PLAYABLE
             },
             mediaSourceId = mediaCache.cache.origin.mediaSourceId,
+            originMediaId = mediaCache.cache.origin.mediaId,
         )
     }
 }
