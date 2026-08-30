@@ -251,3 +251,19 @@ data class DownloadOptions(
     val maxRetriesPerSegment: Int = 100,
     val baseRetryDelayMillis: Long = 1000L,
 )
+
+/**
+ * 下载**完成后**输出文件的相对路径.
+ *
+ * 与 [DownloadState.relativeOutputPath] 的区别: m3u8 在合并分段那一步会把扩展名改成 `.mp4`,
+ * 并把新路径写回 state. 也就是说下载途中读到的 [DownloadState.relativeOutputPath] 对 m3u8 来说
+ * **不是**最终路径.
+ *
+ * 公开出来是因为有两个使用者: 下载器自己在合并后写回, 以及 `HttpMediaCacheEngine` 要在下载还没
+ * 完成时就给出"将来文件会在哪" (选源菜单的资源列表是一次性快照, 见那里的注释). 两处必须同一份
+ * 实现 —— 各写各的话, 哪天改了扩展名规则就会有一处悄悄指错.
+ */
+fun DownloadState.finalOutputRelativePath(): String {
+    if (mediaType != MediaType.M3U8) return relativeOutputPath
+    return relativeOutputPath.replaceAfterLast('.', "mp4", missingDelimiterValue = "$relativeOutputPath.mp4")
+}

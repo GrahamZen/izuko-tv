@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
+import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.formatDateTime
@@ -61,6 +62,7 @@ import me.him188.ani.app.ui.lang.cache_unknown
 import me.him188.ani.app.ui.lang.media_selector_item_no_subtitle
 import me.him188.ani.app.ui.lang.media_selector_item_season_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
+import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
 import me.him188.ani.app.ui.lang.media_selector_item_subject_title_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
 import me.him188.ani.app.ui.lang.settings_debug_copied
@@ -98,11 +100,13 @@ internal fun MediaSelectorItem(
 
     // Determine the reason text, if any
     val reasonText = mediaExclusionReasonText(group.exclusionReason)
+    // 硬性不可用 (缓存没下完): 点了也放不出来, 直接吞掉点击. 其余排除原因仍可手动选中
+    val selectionBlocked = group.exclusionReason?.blocksSelection == true
 
     // Now we call the stateless layout, passing only the data and callbacks
     MediaSelectorItemLayout(
         selected = selected,
-        onClick = { onSelect(media) },
+        onClick = { if (!selectionBlocked) onSelect(media) },
         onLongClick = {
             if (media.download !is ResourceLocation.MagnetLink) {
                 return@MediaSelectorItemLayout
@@ -198,6 +202,7 @@ internal fun mediaExclusionReasonText(reason: MediaExclusionReason?): String? {
         MediaExclusionReason.FromSequelSeason -> stringResource(Lang.media_selector_item_season_mismatch)
         MediaExclusionReason.FromSeriesSeason -> stringResource(Lang.media_selector_item_season_mismatch)
         MediaExclusionReason.SubjectNameMismatch -> stringResource(Lang.media_selector_item_subject_title_mismatch)
+        MediaExclusionReason.CacheNotReady -> stringResource(Lang.media_selector_item_cache_not_ready)
     }
 }
 
@@ -337,9 +342,14 @@ private fun ExposedMediaSourceMenu(
             for (maybeExcluded in group.list) {
                 val item = maybeExcluded.original
                 val sourceInfo by mediaSourceInfoProvider.rememberMediaSourceInfo(item.mediaSourceId)
+                // 硬性不可用的那档 (缓存没下完, 最终文件还不存在) 也要在这里禁掉:
+                // 卡片主点击查了 blocksSelection, 但下拉项原先是无条件 onSelect —— 从这里选中
+                // 同样会去加载一个不存在的文件. 判据看**每一项自己**的排除原因, 不是整组的.
+                val itemBlocked = maybeExcluded.exclusionReason?.blocksSelection == true
                 DropdownMenuItem(
                     text = { Text(sourceInfo?.displayName ?: unknownText) },
                     leadingIcon = { MediaSourceIcon(sourceInfo, Modifier.size(24.dp)) },
+                    enabled = !itemBlocked,
                     onClick = {
                         groupState.selectedItem = item
                         onSelect(item)

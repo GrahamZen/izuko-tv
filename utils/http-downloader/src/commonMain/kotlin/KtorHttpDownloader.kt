@@ -1058,11 +1058,6 @@ open class KtorHttpDownloader(
             this
         }
 
-    private fun DownloadState.finalOutputRelativePath(): String {
-        if (mediaType != MediaType.M3U8) return relativeOutputPath
-        return relativeOutputPath.replaceAfterLast('.', "mp4", missingDelimiterValue = "$relativeOutputPath.mp4")
-    }
-
     private suspend fun setFFmpegKitLogHandler() {
         if (ffmpegLogHandlerSet) return
         ffmpegLogHandlerLock.withLock {
