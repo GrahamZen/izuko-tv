@@ -21,6 +21,7 @@ import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.tools.Progress
 import me.him188.ani.datasources.api.CachedMedia
+import me.him188.ani.datasources.api.MediaCacheProperties
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaCacheMetadata
 import me.him188.ani.datasources.api.topic.FileSize
@@ -81,7 +82,10 @@ class LocalFileMediaCache(
     private val deletionLock = Mutex()
 
     override suspend fun getCachedMedia(): CachedMedia {
-        return CachedMedia(origin, backedMediaSourceId, ResourceLocation.LocalFile(file.absolutePath))
+        return CachedMedia(
+            origin, backedMediaSourceId, ResourceLocation.LocalFile(file.absolutePath),
+            cacheProperties = MediaCacheProperties(cacheId = cacheId),
+        )
     }
 
     override suspend fun pause() {
