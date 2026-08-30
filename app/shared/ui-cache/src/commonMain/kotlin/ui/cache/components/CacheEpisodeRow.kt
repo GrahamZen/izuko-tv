@@ -59,6 +59,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_episode_download_failed
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
+import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_episode_status_paused
 import me.him188.ani.app.ui.lang.cache_episode_watched_progress
 import me.him188.ani.app.ui.lang.cache_filter_status_finished
@@ -292,12 +293,21 @@ fun CacheEpisodeRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val progress by animateFloatAsState(episode.progress.getOrZero())
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.weight(1f),
-                        strokeCap = StrokeCap.Round,
-                    )
+                    if (episode.isMerging) {
+                        // 合并期间进度恒为 100%, 确定式进度条就是一条不动的满格 —— 正是"看起来
+                        // 卡死了"的来源. 换成不定式: 它自己在动, 一眼就知道还在干活.
+                        LinearProgressIndicator(
+                            modifier = Modifier.weight(1f),
+                            strokeCap = StrokeCap.Round,
+                        )
+                    } else {
+                        val progress by animateFloatAsState(episode.progress.getOrZero())
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.weight(1f),
+                            strokeCap = StrokeCap.Round,
+                        )
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -305,6 +315,7 @@ fun CacheEpisodeRow(
                         val statusText = when {
                             episode.isFailed -> stringResource(Lang.cache_episode_download_failed)
                             episode.isPaused -> stringResource(Lang.cache_episode_status_paused)
+                            episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
                             else -> episode.speedText
                         }
                         statusText?.let {
@@ -382,6 +393,7 @@ private fun cacheEpisodeMetaText(
     }
     val statusText = when {
         episode.isFinished -> stringResource(Lang.cache_filter_status_finished)
+        episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
         else -> null
     }
     val watchedText = if (episode.isFinished) {
