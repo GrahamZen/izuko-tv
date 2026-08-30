@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.cache.storage
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
@@ -189,7 +190,14 @@ class MediaCacheStorageSource(
                 // HTTP (web m3u8) 引擎在下载未完成时直接 error(), 而这里的异常会顺着 flow 冒到
                 // MediaSourceMediaFetcher 的 catch, 把本数据源整个置为 Failed, 连同那些已经下完的
                 // 缓存一起消失. 症状: 有任意一个没下完的 web 缓存, 选源菜单里就一个本地缓存都看不到.
-                val media = runCatching { cache.getCachedMedia() }.getOrElse { e ->
+                // 只隔离"这一条缓存读不出来", 不能顺手把取消也吞了 —— runCatching 连
+                // CancellationException 都收, fetch 被取消时会继续把剩下的缓存挨个试一遍并打出
+                // 一串误导性的 warn, 取消被推迟, 还可能交出一份本该作废的结果.
+                val media = try {
+                    cache.getCachedMedia()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
                     logger.warn(e) { "Failed to get cached media for ${cache.cacheId}, skipping it" }
                     return@mapNotNull null
                 }

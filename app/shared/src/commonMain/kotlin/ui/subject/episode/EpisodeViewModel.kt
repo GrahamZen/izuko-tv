@@ -93,6 +93,7 @@ import me.him188.ani.app.domain.episode.mediaSelectorFlow
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.resolver.MediaResolver
@@ -1187,10 +1188,13 @@ class EpisodeViewModel(
         launchInBackground {
             @OptIn(UnsafeEpisodeSessionApi::class)
             fetchPlayState.episodeSessionFlow
-                .flatMapLatest { it.fetchSelectFlow }
-                .mapNotNull { it?.mediaFetchSession }
-                .distinctUntilChanged()
-                .flatMapLatest { session ->
+                .flatMapLatest { episodeSession ->
+                    episodeSession.fetchSelectFlow
+                        .mapNotNull { it?.mediaFetchSession }
+                        .distinctUntilChanged()
+                        .map { episodeSession.episodeId to it }
+                }
+                .flatMapLatest { (episodeId, session) ->
                     // 基线要在**会话就绪之后**才取: 会话可能是从后台恢复来的 (retained session),
                     // 它的快照早于本 ViewModel 创建, 那期间新建的缓存会落进"首值"里被 drop 掉.
                     // 基线取晚了只会多重启一次 (本地源, 不发网络请求), 取早了就会漏.
@@ -1199,7 +1203,17 @@ class EpisodeViewModel(
                     // getCachedMedia() 还会抛而被跳过; 等真身 attach 换上来时 cacheId 没变,
                     // 按 id 比会把这第二次 (也是唯一有效的那次) 通知吞掉, 那一条就要退出重进才出现.
                     // MediaCache 没有 equals, 列表按对象身份比较, 占位换真身即视为变化.
+                    // 只看**当前这一集**的缓存: 本地源的匹配在两边都有 episodeId 时是按 id 精确
+                    // 比的 (MediaFetchRequest.matches), 别集的缓存本来就进不了这一集的结果, 为它
+                    // 重启一次纯属空转 —— 批量缓存一整季时那是每建一条都空转一轮.
+                    // 空 episodeId 的缓存留着: 那种走的是模糊匹配 (按集名/集号), 可能命中本集.
+                    val episodeIdString = episodeId.toString()
                     mediaCacheManager.listCacheForSubject(subjectId)
+                        .map { caches ->
+                            caches.filter {
+                                it.metadata.episodeId == episodeIdString || it.metadata.episodeId.isEmpty()
+                            }
+                        }
                         .distinctUntilChanged()
                         // 首值当基线: 那一刻的现状就是本地源 fetch 时看到的东西
                         // (MediaCacheStorageSource.fetch 里读的是 storage.listFlow.first()).
@@ -1219,10 +1233,19 @@ class EpisodeViewModel(
                         .drop(1)
                         .map { session }
                 }
-                .collect { session ->
+                .collectLatest { session ->
                     session.mediaSourceResults
                         .filter { it.mediaSourceId == MediaCacheManager.LOCAL_FS_MEDIA_SOURCE_ID }
-                        .forEach { it.restart() }
+                        .forEach { result ->
+                            // restart() 在 Working 时直接返回, **且不排队** (MediaFetcher 里那个
+                            // when 对 Working 是 break). 而这里天然会连着来两次: 占位缓存入列
+                            // 触发第一次, 真身 attach 换上来触发第二次 —— 只有第二次那份是能
+                            // getCachedMedia() 的. 第二次落在第一次的查询窗口里就被静默丢掉,
+                            // 那条缓存仍要退出重进才出现, 正是本段要修的症状本身.
+                            // 等它跑完再重启; collectLatest 保证期间又有新变化时这次等待作废.
+                            result.state.first { it !is MediaSourceFetchState.Working }
+                            result.restart()
+                        }
                 }
         }
 
