@@ -52,12 +52,23 @@ class MediaSelectorFilterSortAlgorithm {
      * 第 0 条规则按当前剧集裁剪: 数据源返回条目下的全部资源, 不属于 [MediaSelectorContext.episodeInfo] 的资源
      * 以 [MediaExclusionReason.EpisodeMismatch] 排除. 剧集信息尚未加载时不按集裁剪.
      */
+    /**
+     * @param memo 逐条筛选结果的记忆表 (key = [Media] 本身); 传入即启用增量计算.
+     *
+     * 为什么需要它: 搜索期间资源列表是**逐源追加**的 (MediaSourceMediaFetcher 的 runningFold),
+     * 每追加一次就会整表重算一遍, 而单条的代价并不低 (要跟条目的全部别名做包含/相似度匹配).
+     * 真机实测 (2026-08-29): 127 条要 280~1238ms, 三秒内被触发九次 —— CPU 打满, 界面卡死好几秒.
+     * 而**同一条 media 在 (偏好, 设置, context) 不变时结果是确定的**, 所以只算新增的那些.
+     * 调用方负责在这三者变化时清空本表.
+     */
     fun filterMediaList(
         list: List<Media>,
         preference: MediaPreference,
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
-    ): List<MaybeExcludedMedia> = filterMediaList(list, preference, settings, context, matchEpisode = true)
+        memo: MutableMap<Media, MaybeExcludedMedia>? = null,
+    ): List<MaybeExcludedMedia> =
+        filterMediaList(list, preference, settings, context, matchEpisode = true, memo = memo)
 
     /**
      * 与 [filterMediaList] 相同, 但不应用第 0 条规则 [MediaExclusionReason.EpisodeMismatch],
@@ -76,6 +87,7 @@ class MediaSelectorFilterSortAlgorithm {
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
         matchEpisode: Boolean,
+        memo: MutableMap<Media, MaybeExcludedMedia>? = null,
     ): List<MaybeExcludedMedia> {
         val subjectInfo = context.subjectInfo?.takeIf { info ->
             info != SubjectInfo.Empty && info.allNames.any { it.isNotBlank() }
@@ -103,41 +115,15 @@ class MediaSelectorFilterSortAlgorithm {
         } else null
 
         return list.map { media ->
-            filterMedia(media, preference, settings, context, mediaListFilterContext, episodeMatch)
-        }
-    }
-
-    /**
-     * 当前剧集的匹配条件: 剧集范围包含 sort 或 ep; 特别篇等非正片的资源常常解析不出序号, 标题包含剧集名也算匹配 (#1738).
-     * 数据源的资源允许特别篇按序号匹配同号的正片 (站点常把特别篇按正片连续编号);
-     * 本地缓存记录的剧集是确定的: 记录了剧集 ID 就按 ID 匹配, 否则只按记录的那一集精确匹配, 免得看 SP01 时自动选中第 01 话的缓存.
-     */
-    private class EpisodeMatch(
-        private val episodeId: Int,
-        private val sort: EpisodeSort,
-        private val ep: EpisodeSort?,
-        name: String,
-        private val acceptOva: Boolean,
-    ) {
-        // 太短的名字 (如 "OP", "ED") 会匹配到所有含 NCOP 之类字样的资源, 不用
-        private val nameForSpecial: String? = name.trim().takeIf { sort !is EpisodeSort.Normal && it.length >= MIN_SPECIAL_NAME_LENGTH }
-
-        fun matches(media: Media): Boolean {
-            val range = media.episodeRange
-            if (media.isLocalCache()) {
-                val cacheEpisodeId = (media as? CachedMedia)?.cacheEpisodeId
-                if (!cacheEpisodeId.isNullOrEmpty() && episodeId != 0) return cacheEpisodeId == episodeId.toString()
-                return range != null && (
-                        range.contains(sort, allowSeason = false, allowSpecial = false) ||
-                                (ep != null && range.contains(ep, allowSeason = false, allowSpecial = false)))
+            if (memo == null) {
+                filterMedia(media, preference, settings, context, mediaListFilterContext, episodeMatch)
+            } else {
+                // **键必须是 media 本身而不是 mediaId**: 同一个 mediaId 可能对应内容不同的两条
+                // (例如同一资源的缓存版与原版), 按 id 记忆会把先算的那条的结果错配给后一条
+                memo.getOrPut(media) {
+                    filterMedia(media, preference, settings, context, mediaListFilterContext, episodeMatch)
+                }
             }
-            if (range != null) {
-                if (range.contains(sort)) return true
-                if (ep != null && range.contains(ep)) return true
-                if (acceptOva && range.knownSorts.any { it is EpisodeSort.Special && it.type == EpisodeType.OVA }) return true
-            }
-            if (nameForSpecial != null && MediaListFilters.specialContains(media.originalTitle, nameForSpecial)) return true
-            return false
         }
     }
 
