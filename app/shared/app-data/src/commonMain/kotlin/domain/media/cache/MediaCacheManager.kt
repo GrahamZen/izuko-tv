@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -96,6 +97,9 @@ abstract class MediaCacheManager(
             }
             playableById.filterValues { !it }.keys.toMutableSet()
         }
+            // 防御性收窄: 上游任何一条缓存状态流多发一次重复值, 都会让 MediaSelectorContext
+            // 重新 emit, 从而让整条筛选+排序流水线空转重算 (缓存时界面会明显变卡)
+            .distinctUntilChanged()
     }
 
     @Stable
