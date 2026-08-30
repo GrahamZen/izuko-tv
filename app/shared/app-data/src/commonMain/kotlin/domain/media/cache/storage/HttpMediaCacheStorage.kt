@@ -110,6 +110,11 @@ class HttpMediaCacheStorage(
                 }
 
                 pending.attach(createdCache, resume)
+                // 用真身替换占位: attach 既不改 cacheId 也不改变 listFlow 的内容, 于是观察 listFlow
+                // 的一方 (选源菜单的"新建缓存即时出现") 收不到任何变化 —— 占位期间 getCachedMedia()
+                // 会抛而被跳过, 之后再没有第二次通知, 那一条要退出重进才出现.
+                // 按身份换掉是安全的: 删除走 isSameMediaAndEpisode 匹配, 不看对象身份.
+                listFlow.value = listFlow.value.map { if (it === pending) createdCache else it }
                 pending
             } catch (e: Throwable) {
                 listFlow.value = listFlow.value.filterNot { it === pending }

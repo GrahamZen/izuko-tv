@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transformLatest
@@ -38,6 +39,62 @@ abstract class MediaCacheManager(
             flowOfEmptyList()
         } else combine(flows) {
             it.asSequence().flatten().toList()
+        }
+    }
+
+    /**
+     * [episodeId] 这一集里当前**不能播放**的缓存所对应的
+     * [me.him188.ani.datasources.api.CachedMedia.mediaId], 实时更新.
+     *
+     * 用途: 选源菜单要把这些缓存显示成"不可用"而不是直接藏掉 (藏掉的话用户看不出"我明明缓存过").
+     * 判据统一用 [MediaCache.canPlay] —— BT 缓存边下边播, 恒为 true; web (m3u8) 缓存只有下完才为 true.
+     *
+     * **按剧集收窄**: 这里的 id 拼法是 `storageId:origin.mediaId`, 不含剧集 —— 合集资源 (一个种子
+     * 覆盖多集) 会让不同集的缓存共用同一个 origin.mediaId. 若跨集聚合, 某一集没下完就会把另一集
+     * 已下完的那份也标成不可用. 选源菜单本来就只关心当前这一集, 收窄即可.
+     *
+     * 之所以必须"实时": 选源菜单的资源列表是一次性快照 (见 MediaSourceMediaFetcher 的
+     * runningFold + distinctBy), 下载完成后重新 fetch 也会因 mediaId 相同而被丢弃 —— 只能靠这条流
+     * 让 MediaSelectorContext 变化, 从而让筛选重算, 警告当场消失.
+     */
+    fun unplayableCacheMediaIds(subjectId: Int, episodeId: Int): Flow<Set<String>> {
+        val subjectIdString = subjectId.toString()
+        val episodeIdString = episodeId.toString()
+        val flows = storagesIncludingDisabled.map { storage ->
+            storage.listFlow
+                .map { caches ->
+                    caches.filter {
+                        it.metadata.subjectId == subjectIdString && it.metadata.episodeId == episodeIdString
+                    }
+                }
+                .distinctUntilChanged()
+                .flatMapLatest { caches ->
+                    if (caches.isEmpty()) return@flatMapLatest flowOf(emptyList())
+                    combine(
+                        caches.map { cache ->
+                            cache.canPlay.map { canPlay ->
+                                // 拼法必须与 CachedMedia.mediaId 一致
+                                "${storage.mediaSourceId}:${cache.origin.mediaId}" to canPlay
+                            }
+                        },
+                    ) { it.toList() }
+                }
+        }
+        return if (flows.isEmpty()) flowOf(emptySet())
+        else combine(flows) { perStorage ->
+            // **一个 id 可能对应多条缓存, 有一条能播就算能播**: 所有本地缓存 storage 共用
+            // `local-file-system` 作 mediaSourceId, 而这个 id 只由它和 origin.mediaId 拼成,
+            // 不含引擎 —— 同一个磁力资源在开了 PikPak 时两个引擎都 supports, 可以各存一份.
+            // 按"有一条不能播就算不能播"取并集的话, 已经下完的那份会被没下完的那份连坐标成
+            // 不可用, 自动选源也跟着跳过它, 用户看到的是"我明明缓存好了却用不了".
+            // 反过来最坏是选中一条坏的, 那会当场报错并自动换源 —— 响的错好过哑的错.
+            val playableById = mutableMapOf<String, Boolean>()
+            perStorage.forEach { list ->
+                list.forEach { (id, canPlay) ->
+                    playableById[id] = (playableById[id] ?: false) || canPlay
+                }
+            }
+            playableById.filterValues { !it }.keys.toMutableSet()
         }
     }
 

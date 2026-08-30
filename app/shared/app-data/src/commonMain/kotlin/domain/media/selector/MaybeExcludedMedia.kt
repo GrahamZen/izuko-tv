@@ -112,7 +112,24 @@ sealed class MediaExclusionReason {
      * 资源标题不匹配 (不包含 [SubjectInfo.allNames])
      */
     data object SubjectNameMismatch : MediaExclusionReason()
+
+    /**
+     * 本地缓存还没下载完, 现在播不了 (web m3u8 缓存的分段没下全).
+     *
+     * 与其他原因不同, 这一条是**硬**的: 它不表示"按偏好过滤掉了", 而是"选了也放不出来",
+     * 所以界面上不允许手动选中 (见 [blocksSelection]). 下完之后判据自动翻转、警告即刻消失 ——
+     * 数据来自 MediaCacheManager.unplayableCacheMediaIds 这条实时流.
+     */
+    data object CacheNotReady : MediaExclusionReason()
 }
+
+/**
+ * 这个排除原因是否意味着"选了也没用", 界面据此禁止手动选中.
+ *
+ * 其余原因都只是"按偏好或设置过滤掉", 用户展开已排除列表后仍可以刻意选中 —— 那是既定设计, 别改.
+ */
+val MediaExclusionReason.blocksSelection: Boolean
+    get() = this is MediaExclusionReason.CacheNotReady
 
 data class MatchMetadata(
     val subjectMatchKind: SubjectMatchKind, // FUZZY or EXACT

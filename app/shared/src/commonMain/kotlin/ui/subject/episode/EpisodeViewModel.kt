@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -334,6 +335,11 @@ class EpisodeViewModel(
      * 共用一个字段的话两边会互相清账 —— 离开播放页那一下是 holder 先按下暂停, 本页随后收到的
      * ON_STOP 看到的已经是"没在播", 按本条的语义它就该把标志清成 false, 顺手把 holder 记下的
      * "回来要恢复"一起抹掉; 表现就是"从人物/条目全屏页返回后播放器停着不动".
+     *
+     * **它只管"回到前台要不要接着播"这一件事, 不负责后台期间的按住**: 应用在后台时流水线自己
+     * 还会重新起播 (loadMedia 末尾的 `setMediaData(playWhenReady = true)`, 后台自动换源重试就会
+     * 走到), 而本标志是生命周期事件驱动的, 只在切后台那一下动一次. 持续按住由
+     * `RetainedPlaybackSessionHolder` 的第 2 条做 (那一维**不记账**, 免得两边互相清账).
      *
      * 只在按键/生命周期回调里读写, 不在组合里读, 因此是普通 var.
      */
@@ -1165,6 +1171,57 @@ class EpisodeViewModel(
     }
 
     init {
+        // **新建的缓存要能出现在选源菜单里.**
+        //
+        // 资源列表是进这一集时做的**一次性快照** (MediaSourceMediaFetcher 的 runningFold), 之后
+        // 新建的缓存不会被带进来 —— 真机症状: 在缓存页给当前集开了下载, 下完回到播放器, 数据源里
+        // 找不到它, 要退出重进才有 (2026-08-29 日志确认: 缓存 18:00:41 才建好, 而 fetch 在进集时).
+        //
+        // 只重启**本地缓存那一个源**: 它的 results 会重开 runningFold 发一遍全量, 新缓存的 mediaId
+        // 是新的, 会话级的 distinctBy 把它加进去而不动其他源; 别的源不受影响, 也就不会触发一轮
+        // 真正的网络搜索. 逐条筛选有记忆表, 这次重算只算新增的那一条.
+        launchInBackground {
+            @OptIn(UnsafeEpisodeSessionApi::class)
+            fetchPlayState.episodeSessionFlow
+                .flatMapLatest { it.fetchSelectFlow }
+                .mapNotNull { it?.mediaFetchSession }
+                .distinctUntilChanged()
+                .flatMapLatest { session ->
+                    // 基线要在**会话就绪之后**才取: 会话可能是从后台恢复来的 (retained session),
+                    // 它的快照早于本 ViewModel 创建, 那期间新建的缓存会落进"首值"里被 drop 掉.
+                    // 基线取晚了只会多重启一次 (本地源, 不发网络请求), 取早了就会漏.
+                    //
+                    // 比的是**列表本身**而不是 cacheId 集合: 新建缓存先以占位对象入列, 那一刻
+                    // getCachedMedia() 还会抛而被跳过; 等真身 attach 换上来时 cacheId 没变,
+                    // 按 id 比会把这第二次 (也是唯一有效的那次) 通知吞掉, 那一条就要退出重进才出现.
+                    // MediaCache 没有 equals, 列表按对象身份比较, 占位换真身即视为变化.
+                    mediaCacheManager.listCacheForSubject(subjectId)
+                        .distinctUntilChanged()
+                        // 首值当基线: 那一刻的现状就是本地源 fetch 时看到的东西
+                        // (MediaCacheStorageSource.fetch 里读的是 storage.listFlow.first()).
+                        //
+                        // **严格说这两个时刻不是同一个**: 本地源的快照取在它真正跑 fetch 的那一刻,
+                        // 本基线取在这个收集器订阅的那一刻 —— 都由"会话可用"触发, 但顺序不保证.
+                        // 缓存恰好建在这几毫秒里的话, 首值已经含它而快照没有, 它就会被 drop 掉,
+                        // 那一条仍要退出重进才出现. 不去消除这个窗口, 两个理由:
+                        // - 够不着: 缓存只有两个创建者 —— 用户在缓存页手动开 (点不进几毫秒),
+                        //   CacheOnBtPlayExtension (在选源完成、起播之后才建, 是秒级之后);
+                        // - "新会话无条件重启一次本地源"这个省事修法代价更大: restart() 会把该源
+                        //   置回加载中重新 fetch, 而会话刚建立那一刻正是自动选源在跑, 本地源短暂
+                        //   空掉会让它错过已下好的缓存去选在线源 —— 拿一个必经路径上的竞态换一个
+                        //   够不着的窗口.
+                        // 真要根治得拿本地源自己的 results 做差集; 注意没下完的缓存被 fetch 跳过
+                        // (getCachedMedia 会抛), 根本不在 results 里, 差集会长期非空, 判据要另设.
+                        .drop(1)
+                        .map { session }
+                }
+                .collect { session ->
+                    session.mediaSourceResults
+                        .filter { it.mediaSourceId == MediaCacheManager.LOCAL_FS_MEDIA_SOURCE_ID }
+                        .forEach { it.restart() }
+                }
+        }
+
         launchInBackground {
             val defaultMode = settingsRepository.videoScaffoldConfig.flow
                 .first()
