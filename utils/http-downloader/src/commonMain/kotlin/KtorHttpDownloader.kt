@@ -9,6 +9,9 @@
 
 package me.him188.ani.utils.httpdownloader
 
+import io.ktor.client.plugins.cookies.cookies
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Url
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpStatement
@@ -40,8 +43,10 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.io.RawSink
 import kotlinx.io.buffered
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
@@ -86,6 +91,7 @@ import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * A simple implementation of [HttpDownloader] that uses Ktor and coroutines.
@@ -136,6 +142,16 @@ open class KtorHttpDownloader(
     }
 
     protected val stateMutex = Mutex()
+
+    /**
+     * 跨所有下载任务的分段并发上限.
+     *
+     * 每个下载各自的 [DownloadOptions.maxConcurrentSegments] 只管自己, 批量缓存一季时任务数一多,
+     * 同时在跑的分段就会线性增长; 而下载线程池是 cached 的 (不能设固定上限, 否则"一个任务等另一个
+     * 任务"时会死锁), 于是阻塞线程数跟着无限涨 —— 内存、调度、系统响应都会再次受影响.
+     * 在这里封顶: 线程池仍可伸缩, 但真正在跑的分段有数.
+     */
+    private val globalSegmentLimit = Semaphore(MAX_GLOBAL_CONCURRENT_SEGMENTS)
 
     override suspend fun download(
         url: String,
@@ -224,7 +240,7 @@ open class KtorHttpDownloader(
                 emitProgress(downloadId)
                 logger.info { "Merging segments for $downloadId" }
 
-                mergeSegments(downloadId)
+                mergeSegments(downloadId, options)
 
                 updateState(downloadId) {
                     it.copy(status = COMPLETED, timestamp = clock.now().toEpochMilliseconds())
@@ -287,9 +303,12 @@ open class KtorHttpDownloader(
 
         logger.info { "Resuming $downloadId with status=${st.status}" }
 
+        // 恢复时只知道请求头 (选项不落库), 统一在这里构造一次, 免得各处各自 new 一个
+        val options = DownloadOptions(headers = st.requestHeaders)
+
         // If we have no segments, it means we failed during segment creation
         if (st.segments.isEmpty()) {
-            if (!createSegments(downloadId, st.url, st.mediaType, DownloadOptions(headers = st.requestHeaders))) {
+            if (!createSegments(downloadId, st.url, st.mediaType, options)) {
                 return false // Already marked as FAILED
             }
         }
@@ -303,14 +322,14 @@ open class KtorHttpDownloader(
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 logger.info { "Resumed: downloading segments for $downloadId" }
-                downloadSegments(downloadId, DownloadOptions(headers = st.requestHeaders))
+                downloadSegments(downloadId, options)
 
                 updateState(downloadId) {
                     it.copy(status = MERGING)
                 }
                 emitProgress(downloadId)
                 logger.info { "Merging segments for resumed $downloadId" }
-                mergeSegments(downloadId)
+                mergeSegments(downloadId, options)
 
                 updateState(downloadId) {
                     it.copy(status = COMPLETED)
@@ -853,6 +872,7 @@ open class KtorHttpDownloader(
     protected suspend fun downloadSingleSegment(
         segmentInfo: SegmentInfo,
         options: DownloadOptions,
+        rateLimiter: ByteRateLimiter? = null,
     ): Long {
         // If we have a range, add it to the request headers.
         val finalOptions = if (segmentInfo.rangeStart != null && segmentInfo.rangeEnd != null) {
@@ -862,8 +882,6 @@ open class KtorHttpDownloader(
         } else {
             options
         }
-        logger.info { "Downloading segment index=${segmentInfo.index}, range=(${segmentInfo.rangeStart}-${segmentInfo.rangeEnd})" }
-
         return httpGet(segmentInfo.url, finalOptions) { statement ->
             val response = statement.execute()
             val segmentPath = baseSaveDir.resolve(segmentInfo.relativeTempFilePath)
@@ -874,10 +892,7 @@ open class KtorHttpDownloader(
             }
 
             val channel = response.bodyAsChannel()
-            val byteSize = copyChannelToFile(channel, segmentPath)
-            byteSize.also {
-                logger.info { "Segment index=${segmentInfo.index} downloaded, size=$it" }
-            }
+            copyChannelToFile(channel, segmentPath, rateLimiter)
         }
     }
 
@@ -888,12 +903,16 @@ open class KtorHttpDownloader(
     private suspend fun copyChannelToFile(
         channel: ByteReadChannel,
         filePath: Path,
+        rateLimiter: ByteRateLimiter? = null,
     ): Long {
         val totalBytes = AtomicLong(0L)
-        fileSystem.sink(filePath).buffered().use { sink ->
+        openSink(filePath, SYNC_EVERY_BYTES_DOWNLOAD).buffered().use { sink ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             withContext(ioDispatcher) {
                 while (true) {
+                    // 先取令牌再读: 限速点放在读之前, 网络那头自然被 TCP 窗口顶住,
+                    // 不会先把数据吞进内存再丢弃
+                    rateLimiter?.acquire(buffer.size)
                     val bytesRead = channel.readAvailable(buffer, 0, buffer.size)
                     if (bytesRead == -1) break
                     sink.write(buffer, startIndex = 0, endIndex = bytesRead)
@@ -923,8 +942,10 @@ open class KtorHttpDownloader(
             return
         }
         val requestOptions = options.copy(headers = snapshot.requestHeaders + options.headers)
-        logger.info { "Downloading ${snapshot.segments.size} segments for $downloadId with concurrency=${options.maxConcurrentSegments}" }
+        logger.info { "Downloading ${snapshot.segments.size} segments for $downloadId with concurrency=${options.maxConcurrentSegments}, maxBytesPerSecond=${options.maxBytesPerSecond}" }
         val semaphore = Semaphore(options.maxConcurrentSegments)
+        // 整个下载共用一个: 限的是本次下载的总吞吐, 而不是每条分段各自的
+        val rateLimiter = options.maxBytesPerSecond?.let { ByteRateLimiter(it) { clock.now().toEpochMilliseconds() } }
 
         if (snapshot.mediaType == MediaType.M3U8) {
             downloadHlsEncryptionKeys(snapshot, requestOptions)
@@ -941,7 +962,13 @@ open class KtorHttpDownloader(
                             maxRetries = options.maxRetriesPerSegment,
                             baseDelayMillis = options.baseRetryDelayMillis,
                         ) {
-                            downloadSingleSegment(seg, requestOptions)
+                            // 全局上限 (见 globalSegmentLimit) 只圈住真正在传输的那一刻.
+                            // 圈住整个 withRetry 是错的: 退避 delay 也在里面, 而默认 100 次
+                            // 重试、单次封顶 30 秒, 一条彻底失效的分段能占着名额四十多分钟 ——
+                            // 六条这样的分段 (名额总数) 就让全应用的缓存下载一起停摆.
+                            globalSegmentLimit.withPermit {
+                                downloadSingleSegment(seg, requestOptions, rateLimiter)
+                            }
                         }
                         markSegmentDownloaded(downloadId, seg.index, newSize)
                     } finally {
@@ -954,6 +981,9 @@ open class KtorHttpDownloader(
     }
 
     protected suspend fun markSegmentDownloaded(downloadId: DownloadId, segmentIndex: Int, byteSize: Long) {
+        // 一段一行, 不是三行: 原先"开始下载"/"下载完"/"记账完"各打一条, 一集 380 段就是 1140 行,
+        // 而这些行写的正是我们在小心保持安静的那个文件系统. 保留这一条 (段号 + 大小) 已经够还原
+        // "哪一段卡住了/下了多少"; 重试有自己的日志, 进度有 progressFlow.
         logger.info { "Segment index=$segmentIndex fully downloaded for $downloadId, size=$byteSize" }
         updateState(downloadId) { old ->
             val updatedSegments = old.segments.map {
@@ -964,8 +994,11 @@ open class KtorHttpDownloader(
         emitProgress(downloadId)
     }
 
-    protected suspend fun mergeSegments(downloadId: DownloadId) = withContext(ioDispatcher) {
+    protected suspend fun mergeSegments(downloadId: DownloadId, options: DownloadOptions) = withContext(ioDispatcher) {
         val st = getState(downloadId) ?: return@withContext
+        // 拼接与下载共用同一个吞吐上限选项 (设了才限)
+        val mergeRateLimiter = options.maxBytesPerSecond
+            ?.let { ByteRateLimiter(it * MERGE_RATE_MULTIPLIER) { clock.now().toEpochMilliseconds() } }
         val cacheDir = baseSaveDir.resolve(st.relativeSegmentCacheDir)
         val finalOutputRelativePath = st.finalOutputRelativePath()
         val finalOutput = baseSaveDir.resolve(finalOutputRelativePath)
@@ -973,7 +1006,7 @@ open class KtorHttpDownloader(
         when (st.mediaType) {
             MediaType.M3U8 -> mergeM3u8Segments(st, cacheDir, finalOutput)
             MediaType.MP4,
-            MediaType.MKV -> concatenateSegments(st, finalOutput)
+            MediaType.MKV -> concatenateSegments(st, finalOutput, mergeRateLimiter)
         }
 
         if (finalOutputRelativePath != st.relativeOutputPath) {
@@ -994,13 +1027,59 @@ open class KtorHttpDownloader(
         logger.info { "Segments merged into $finalOutput, removed cache dir=$cacheDir for $downloadId" }
     }
 
-    protected fun concatenateSegments(st: DownloadState, finalOutput: Path) {
-        fileSystem.sink(finalOutput).buffered().use { out ->
+    /**
+     * MP4/MKV 的"合并"就是把分块按序拼回一个文件 (没有容器转换, 所以不需要 ffmpeg).
+     *
+     * 写盘走 [openPeriodicSyncSink]: 大块顺序写不控脏页会把整机压到蓝牙遥控器收不到按键,
+     * 见那里的说明. 这条路比 m3u8 那条更常见: 大部分在线源就是带 Range 的普通 mp4.
+     * 这条路比 m3u8 那条更常见: 大部分在线源就是带 Range 的普通 mp4.
+     */
+
+    /**
+     * 带周期 fsync 的输出 (平台不支持则退回普通 sink), 理由见 [openPeriodicSyncSink].
+     */
+    private fun openSink(path: Path, syncEveryBytes: Long): RawSink =
+        openPeriodicSyncSink(path.inSystem.absolutePath, syncEveryBytes) ?: fileSystem.sink(path)
+    protected suspend fun concatenateSegments(
+        st: DownloadState,
+        finalOutput: Path,
+        rateLimiter: ByteRateLimiter?,
+    ) {
+        openSink(finalOutput, SYNC_EVERY_BYTES_MERGE).buffered().use { out ->
             st.segments.sortedBy { it.index }.forEach { seg ->
                 fileSystem.source(baseSaveDir.resolve(seg.relativeTempFilePath)).buffered().use { input ->
-                    input.copyTo(out)
+                    if (rateLimiter == null) {
+                        input.copyTo(out)
+                    } else {
+                        // 按块取令牌, 限的只是"下一块什么时候搬"
+                        val buffer = kotlinx.io.Buffer()
+                        while (true) {
+                            rateLimiter.acquire(MERGE_THROTTLE_CHUNK)
+                            val read = input.readAtMostTo(buffer, MERGE_THROTTLE_CHUNK.toLong())
+                            if (read <= 0L) break
+                            out.write(buffer, buffer.size)
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * 盯着 [output], 每长 [SYNC_EVERY_BYTES_MERGE] 就替它 fsync 一次, 直到本协程被取消.
+     *
+     * 给的是**别人正在写**的文件 (ffmpeg 的合并输出), 见 [syncFileContents]. 平台不支持时
+     * 第一次就退出, 不空转.
+     */
+    private suspend fun syncWhileWritten(output: Path) {
+        val absolutePath = output.inSystem.absolutePath
+        var lastSyncedSize = 0L
+        while (true) {
+            delay(MERGE_SYNC_POLL_INTERVAL)
+            val size = output.inSystem.let { if (it.exists()) it.length() else 0L }
+            if (size - lastSyncedSize < SYNC_EVERY_BYTES_MERGE) continue
+            if (!syncFileContents(absolutePath)) return // 平台不支持, 别再轮询
+            lastSyncedSize = size
         }
     }
 
@@ -1008,27 +1087,62 @@ open class KtorHttpDownloader(
     open suspend fun mergeM3u8Segments(st: DownloadState, cacheDir: Path, finalOutput: Path) {
         setFFmpegKitLogHandler()
         val localPlaylistFile = createLocalHlsPlaylist(st, cacheDir).inSystem
-        val ffmpegArgs = listOf(
-            "-y", "-nostdin",
-            "-allowed_extensions", "ALL",
-            "-protocol_whitelist", "file,crypto,data",
-            "-i", localPlaylistFile.absolutePath,
-            "-map", "0",
-            "-c", "copy",
-            "-bsf:a", "aac_adtstoasc",
-            "-movflags",
-            "+faststart",
-            finalOutput.inSystem.absolutePath,
-        )
-        logger.info {
-            "Running FFmpeg merge for ${st.downloadId}: ffmpeg ${ffmpegArgs.joinToString(" ") { it.quoteForLog() }}"
+
+        fun buildArgs(throttled: Boolean) = buildList {
+            add("-y"); add("-nostdin")
+            // FFmpegKit 默认把 av_log 开到 trace (56), 于是每个 TS 包都回调一次, 而 logback 的
+            // root level 就是 TRACE —— 一次合并往 app.log 里灌进五万到十万行 `pid=100 stream_id=0xe0`.
+            // 实测两集合并后 app.log 从 12MB 涨到 46MB, 其中 94% 是 FFmpeg 行. 三重代价:
+            // 多出几十 MB 的写入 (正是我们在小心翼翼 fsync 的那个文件系统)、几十万次字符串格式化,
+            // 以及把真正有用的日志整个冲出滚动窗口 (排查缓存问题时反复吃过这个亏).
+            // info 保留 Duration/流映射/错误, 排查够用.
+            add("-loglevel"); add("info")
+            add("-allowed_extensions"); add("ALL")
+            add("-protocol_whitelist"); add("file,crypto,data")
+            if (throttled) {
+                // 兜底路径才用的限速 (见下面 runOnce 的说明). -readrate N = 按 N 倍播放时长速度
+                // 读输入; 取 15 时 24 分钟一集约 96 秒合并完, I/O ~5MB/s.
+                add("-readrate"); add(MERGE_READRATE.toString())
+            }
+            add("-i"); add(localPlaylistFile.absolutePath)
+            add("-map"); add("0")
+            add("-c"); add("copy")
+            add("-bsf:a"); add("aac_adtstoasc")
+            // **刻意不加 `-movflags +faststart`** (2026-08-29 去掉): 它会把整个文件再重写一遍
+            // (把 moov 原子搬到文件头), 等于把合并的读写量翻倍 —— 400MB 的缓存要多读写 400MB.
+            // 而 faststart 只对"边下边播的 HTTP 渐进流"有意义, 本地缓存文件随便 seek, 播放器
+            // 直接读文件尾的 moov 即可.
+            add(finalOutput.inSystem.absolutePath)
         }
 
-        if (finalOutput.inSystem.exists()) {
-            fileSystem.delete(finalOutput)
+        suspend fun runOnce(throttled: Boolean): FFmpegResult {
+            val args = buildArgs(throttled)
+            logger.info {
+                "Running FFmpeg merge for ${st.downloadId}: ffmpeg ${args.joinToString(" ") { it.quoteForLog() }}"
+            }
+            if (finalOutput.inSystem.exists()) {
+                fileSystem.delete(finalOutput)
+            }
+            return coroutineScope {
+                // ffmpeg 全速跑, 由这个协程替它的输出文件周期 fsync (见 syncFileContents):
+                // 不这么做的话几百 MB 脏页一次性积起来, 整机的 fsync 全排在后面, 蓝牙遥控器
+                // 按键都进不了系统. 限速 (-readrate) 是这件事做不到时的替代品, 只留作兜底.
+                val syncer = launch(ioDispatcher) { syncWhileWritten(finalOutput) }
+                try {
+                    executeFfmpeg(args)
+                } finally {
+                    syncer.cancel()
+                }
+            }
         }
 
-        val result = executeFfmpeg(ffmpegArgs)
+        var result = runOnce(throttled = false)
+        if (!result.isSuccess) {
+            // 兜底: 全速跑失败了 (输入有问题, 或者某些设备上就是不行) 再压着跑一次 ——
+            // 宁可慢也不能让缓存永远合并失败
+            logger.warn { "FFmpeg merge failed (exitCode=${result.exitCode}), retrying throttled for ${st.downloadId}" }
+            result = runOnce(throttled = true)
+        }
         if (!result.isSuccess) {
             if (finalOutput.inSystem.exists()) {
                 fileSystem.delete(finalOutput)
@@ -1067,7 +1181,11 @@ open class KtorHttpDownloader(
                 if (msg.isError) {
                     logger.error { "[FFmpeg:${msg.level}] ${msg.line}" }
                 } else if (msg.level >= 48) {
-                    logger.trace { "[FFmpeg:${msg.level}] ${msg.line}" }
+                    // debug(48)/trace(56) 是逐包级别的洪水, 一次合并十万行. 命令行已经用
+                    // `-loglevel info` 从源头关掉了, 这里是第二道闸: FFmpegKit 有自己设
+                    // av_log 级别的行为, 万一 -loglevel 没拦住, 也不能让它写进 app.log
+                    // (logback 的 root level 是 TRACE, 写了就是真落盘).
+                    return@setLogHandler
                 } else if (msg.level >= 40) {
                     logger.debug { "[FFmpeg:${msg.level}] ${msg.line}" }
                 } else if (msg.level >= 32) {
@@ -1078,6 +1196,8 @@ open class KtorHttpDownloader(
                     logger.error { "[FFmpeg:${msg.level}] ${msg.line}" }
                 }
             }
+            // 双检锁的另一半, 原先漏了 —— 每合并一集都会重进临界区重装一次全局回调
+            ffmpegLogHandlerSet = true
         }
     }
 
@@ -1195,6 +1315,31 @@ open class KtorHttpDownloader(
         private const val UPSTREAM_PLAYLIST_FILE_NAME = "upstream-playlist.m3u8"
         private const val UPSTREAM_PLAYLIST_URL_FILE_NAME = "upstream-playlist.url"
         private const val LOCAL_PLAYLIST_FILE_NAME = "local-playlist.m3u8"
+
+        /** m3u8 合并限速倍率 (ffmpeg -readrate); 只有全速那次失败了才用, 见 [mergeM3u8Segments]. */
+        private const val MERGE_READRATE = 15
+
+        /**
+         * 合并期间查一次输出文件大小的间隔, 见 [syncWhileWritten].
+         *
+         * 只是取个文件长度, 便宜; 间隔要明显小于"写满 4MB 的时间", 否则同步跟不上写入的节奏,
+         * 脏页还是会积起来.
+         */
+        private val MERGE_SYNC_POLL_INTERVAL = 200.milliseconds
+
+        /** 见 [globalSegmentLimit] */
+        private const val MAX_GLOBAL_CONCURRENT_SEGMENTS = 6
+
+        /**
+         * MP4/MKV 拼接的限速 = 下载限速 x 这个倍数.
+         *
+         * 比下载放宽一些: 拼接是纯顺序 I/O, 没有 TLS 与堆分配, 同样的字节数对系统的压力小得多;
+         * 而且它是下载完成前的最后一步, 拖太久用户会盯着 100% 干等.
+         */
+        private const val MERGE_RATE_MULTIPLIER = 3L
+
+        /** 拼接时每次取令牌的块大小 */
+        private const val MERGE_THROTTLE_CHUNK = 256 * 1024
     }
 }
 
