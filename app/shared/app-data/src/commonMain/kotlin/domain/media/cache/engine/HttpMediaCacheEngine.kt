@@ -332,6 +332,7 @@ class HttpMediaCacheEngine(
                         cacheProperties = MediaCacheProperties(
                             totalSegments = state.totalSegments,
                             httpDownloaderStatus = state.status.toString(),
+                            cacheId = cacheId,
                         ),
                     )
                 }
@@ -362,6 +363,7 @@ class HttpMediaCacheEngine(
                         cacheProperties = MediaCacheProperties(
                             totalSegments = state.totalSegments,
                             httpDownloaderStatus = state.status.toString(),
+                            cacheId = cacheId,
                         ),
                     )
                 }
