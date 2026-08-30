@@ -105,7 +105,15 @@ class MediaSelectorFilterSortAlgorithm {
 
         fun exclude(reason: MediaExclusionReason): MaybeExcludedMedia = MaybeExcludedMedia.Excluded(media, reason)
 
-        if (media.isLocalCache()) return include() // 本地缓存总是要显示
+        if (media.isLocalCache()) {
+            // 缓存还没下完 (web m3u8 分段没下全) 时**显示但不可选**: 直接藏掉的话用户看不出
+            // "我明明缓存过", 而放它进正常列表又会被自动选中并播放失败.
+            // 判据来自实时流, 下完那一刻本 context 重新 emit, 本次筛选重算, 警告自动消失.
+            if (context.unplayableCacheMediaIds?.contains(media.mediaId) == true) {
+                return exclude(MediaExclusionReason.CacheNotReady)
+            }
+            return include() // 本地缓存总是要显示
+        }
 
         if (settings.hideSingleEpisodeForCompleted
             && context.subjectFinished == true // 还未加载到剧集信息时, 先显示

@@ -36,6 +36,8 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaMatch
 import me.him188.ani.datasources.api.source.MediaSource
 import me.him188.ani.datasources.api.source.MediaSourceInfo
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.source.matches
@@ -182,9 +184,16 @@ class MediaCacheStorageSource(
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         return SinglePagePagedSource {
             storage.listFlow.first().mapNotNull { cache ->
-                val kind = query.matches(cache.metadata)
-                if (kind == null) null
-                else MediaMatch(cache.getCachedMedia(), kind)
+                val kind = query.matches(cache.metadata) ?: return@mapNotNull null
+                // **单个缓存取不到不能拖垮整个数据源** (2026-08-29): getCachedMedia 是会抛的 ——
+                // HTTP (web m3u8) 引擎在下载未完成时直接 error(), 而这里的异常会顺着 flow 冒到
+                // MediaSourceMediaFetcher 的 catch, 把本数据源整个置为 Failed, 连同那些已经下完的
+                // 缓存一起消失. 症状: 有任意一个没下完的 web 缓存, 选源菜单里就一个本地缓存都看不到.
+                val media = runCatching { cache.getCachedMedia() }.getOrElse { e ->
+                    logger.warn(e) { "Failed to get cached media for ${cache.cacheId}, skipping it" }
+                    return@mapNotNull null
+                }
+                MediaMatch(media, kind)
             }.asFlow()
         }
     }
@@ -194,6 +203,10 @@ class MediaCacheStorageSource(
         "本地缓存",
         isSpecial = true,
     )
+
+    private companion object {
+        private val logger = logger<MediaCacheStorageSource>()
+    }
 }
 
 

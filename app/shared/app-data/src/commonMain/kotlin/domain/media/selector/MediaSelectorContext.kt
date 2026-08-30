@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.media.selector
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onStart
 import me.him188.ani.app.data.models.episode.EpisodeInfo
@@ -44,6 +45,17 @@ data class MediaSelectorContext(
     val subjectInfo: SubjectInfo?,
     val episodeInfo: EpisodeInfo?,
     val mediaSourceTiers: MediaSelectorSourceTiers?,
+    /**
+     * 当前**不能播放**的本地缓存 (下载还没完成) 的 [me.him188.ani.datasources.api.Media.mediaId].
+     *
+     * `null` = **还没查到**, 不是"没有". 只有 [MediaSelectorContextFlowProducer] 会短暂发出 null
+     * (它先发一发好让 context 不必等缓存那条流); 直接构造 context 的地方 (测试、预览) 默认
+     * 已知为空集 —— 否则那些场景会永远停在"未知", 让依赖它的判断一直走兜底.
+     *
+     * 这是一条实时流的快照: 缓存下完的那一刻本 context 会重新 emit, 筛选随之重算, 界面上的
+     * "缓存未完成"警告当场消失. 见 MediaCacheManager.unplayableCacheMediaIds.
+     */
+    val unplayableCacheMediaIds: Set<String>? = emptySet(),
 ) {
     fun allFieldsLoaded() = subjectFinished != null
             && mediaSourcePrecedence != null
@@ -83,6 +95,8 @@ class MediaSelectorContextFlowProducer(
     episodeInfoFlow: Flow<EpisodeInfo>,
     mediaSourceTiersFlow: Flow<MediaSelectorSourceTiers>,
     subtitleKindFilters: Flow<MediaSelectorSubtitlePreferences> = flowOf(MediaSelectorSubtitlePreferences.CurrentPlatform),
+    /** 见 [MediaSelectorContext.unplayableCacheMediaIds]; 默认为空 (测试与预览不关心缓存). */
+    unplayableCacheMediaIds: Flow<Set<String>> = flowOf(emptySet()),
 ) {
     val flow = me.him188.ani.utils.coroutines.flows.combine(
         // 都 emit null, debug 时能知道是谁没 emit
@@ -112,9 +126,15 @@ class MediaSelectorContextFlowProducer(
             episodeInfo = episodeInfo,
             mediaSourceTiers = mediaSourceTiers,
         )
-    }.onStart {
-        emit(Initial) // 否则如果一直没获取到剧集信息, 就无法选集, #385
     }
+        // 缓存可播性单独 combine 一层, 不挤进上面那个 7 元 combine: 它与其余字段的来源和更新
+        // 频率都不同 (缓存下载进度), 而且这样每次下载状态变化只重算这一步
+        .combine(unplayableCacheMediaIds.onStart<Set<String>?> { emit(null) }) { context, ids ->
+            context.copy(unplayableCacheMediaIds = ids)
+        }
+        .onStart {
+            emit(Initial) // 否则如果一直没获取到剧集信息, 就无法选集, #385
+        }
 }
 
 

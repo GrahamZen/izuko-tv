@@ -29,6 +29,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCaseImpl
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
+import me.him188.ani.app.domain.media.cache.MediaCacheManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.app.domain.media.selector.testFramework.runSimpleMediaSelectorTestSuite
@@ -182,6 +183,11 @@ class MediaSelectorProductionWiringTest {
                         single<MediaSourceManager> { fakeManager }
                         single<EpisodePreferencesRepository> { repository }
                         single<SettingsRepository> { fakeSettings }
+                        // 选源器要按缓存可播性把"没下完的缓存"标成不可用 (见 MediaExclusionReason.CacheNotReady);
+                        // 本用例不涉及缓存, 给一个空的
+                        single<MediaCacheManager> {
+                            object : MediaCacheManager(emptyList(), backgroundScope) {}
+                        }
                     },
                 )
             }

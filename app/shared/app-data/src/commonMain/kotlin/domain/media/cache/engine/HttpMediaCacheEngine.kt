@@ -40,6 +40,7 @@ import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.httpdownloader.finalOutputRelativePath
 import me.him188.ani.utils.httpdownloader.DownloadId
 import me.him188.ani.utils.httpdownloader.DownloadOptions
 import me.him188.ani.utils.httpdownloader.DownloadProgress
@@ -268,7 +269,35 @@ class HttpMediaCacheEngine(
                 DownloadStatus.MERGING,
                 DownloadStatus.PAUSED,
                     -> {
-                    error("Download not completed, cannot get cached media for $downloadId")
+                    // **没下完也要给出 CachedMedia, 不能抛** (2026-08-29): 抛出去的话这条缓存连同
+                    // 同一存储里已经下完的那些会一起从选源菜单消失 (见 MediaCacheStorageSource.fetch),
+                    // 用户看到的是"我明明缓存过却找不到". 由选源器按 MediaCache.canPlay 标成
+                    // "缓存未完成"并禁止选中 (见 MediaExclusionReason.CacheNotReady).
+                    //
+                    // **download 必须指向最终的本地文件, 不能回退到 origin.download** (第一版这么写,
+                    // 当天真机就炸了): web 源的 origin.download 是 [ResourceLocation.WebVideo] ——
+                    // 一个要靠 WebView 现抓地址的网页, 而解析器是按 download 的类型派发的
+                    // (AndroidWebMediaResolver.supports = download is WebVideo). 于是这条"缓存"会被
+                    // 拿去重新解析网页, 报 NO_MATCHING_RESOURCE.
+                    //
+                    // 更要命的是**选源菜单的资源列表是一次性快照** (MediaSourceMediaFetcher 的
+                    // runningFold + distinctBy, 同 mediaId 重发会被丢弃): 下载完成后这个对象不会被
+                    // 换掉, 而 CacheNotReady 的排除又会随 canPlay 解除 —— 于是变成一颗"看着可用、
+                    // 点了必失败"的地雷. 而 relativeOutputPath 从创建那一刻就定死了, 所以这里直接
+                    // 用最终路径: 没下完时它被排除、点不了; 下完之后这个快照恰好就是正确的.
+                    CachedMedia(
+                        origin,
+                        cacheMediaSourceId = mediaSourceId,
+                        download = ResourceLocation.LocalFile(
+                            Path(saveDir, state.finalOutputRelativePath()).inSystem.absolutePath,
+                            state.toFileType(),
+                            originalUri = state.url,
+                        ),
+                        cacheProperties = MediaCacheProperties(
+                            totalSegments = state.totalSegments,
+                            httpDownloaderStatus = state.status.toString(),
+                        ),
+                    )
                 }
 
                 DownloadStatus.COMPLETED -> {
