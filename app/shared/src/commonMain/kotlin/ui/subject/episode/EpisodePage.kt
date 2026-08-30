@@ -79,6 +79,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -127,6 +129,8 @@ import me.him188.ani.app.ui.foundation.layout.isWidthCompact
 import me.him188.ani.app.ui.foundation.layout.setRequestFullScreen
 import me.him188.ani.app.ui.foundation.layout.setSystemBarVisible
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
+import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.pagerTabIndicatorOffset
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.theme.AniTheme
@@ -173,6 +177,8 @@ import me.him188.ani.danmaku.api.DanmakuLocation
 import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.danmaku.ui.DanmakuPresentation
 import me.him188.ani.datasources.api.source.MediaFetchRequest
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.isAndroid
 import me.him188.ani.utils.platform.isDesktop
 import me.him188.ani.utils.platform.isIos
@@ -1260,17 +1266,26 @@ private fun EpisodeCommentColumn(
  * 保留会话的形态下退出播放页会销毁组合但 VM 还活着, 原因见那个字段的文档.
  *
  * **本效果只管"应用切后台"这一个维度**: "播放页不在前台"(导航去更深的页面 / 退出播放页) 那条
- * 由 [RetainedPlaybackSessionHolder] 按导航状态自己暂停与恢复, 各记各的账 —— 共用一个标志会
- * 互相清账, 见 [EpisodeViewModel.autoPausedOnBackground] 的说明. 两条都只在"正在播放"时动作,
- * 重复触发无害.
+ * 由 [RetainedPlaybackSessionHolder] 按导航状态暂停与恢复.
+ *
+ * **有保留会话宿主时本效果整个不生效**: 那时"不在眼前"的两个维度都归 holder 第 2 条 —— 它记在
+ * 自己那本账上 (`autoPausedOffPage`), 恢复前还会等新的视频输出面出画 (`resumeWhenVideoVisible`).
+ * 与它并存的话谁先落地是不确定的, 而本效果先按下暂停的那一半会连着走偏:
+ * holder 就看不到 `isPlaying`, 不记账, 回前台由本效果当场 `play()` —— 绕过等首帧那一步,
+ * "先出声后出画"(e5a0cda1a 修的那个) 就回来了. 让位给它比两边各记一半账可靠.
  */
 @Composable
 private fun AutoPauseEffect(viewModel: EpisodeViewModel, enabled: Boolean) {
     if (LocalIsPreviewing.current || !enabled) return
+    // 有保留会话宿主时这件事整个归它, 见 KDoc
+    if (LocalPlaybackSessionEntry.current !== PlaybackSessionEntry.None) return
 
     val autoPauseTasker = rememberUiMonoTasker()
+    /** 应用此刻是不是停在后台; 下面那条"持续按住"的规则读它. */
+    val stopped = remember { MutableStateFlow(false) }
     OnLifecycleEvent {
         if (it == Lifecycle.Event.ON_STOP) {
+            stopped.value = true
             // 用 playWhenReady 而非严格 isPlaying: 切后台那一刻正在缓冲也算"本来在播",
             // 回前台应当恢复 (上游 mediamp 0.3.0 迁移时同样的取舍).
             if (viewModel.player.state.value.playWhenReady) {
@@ -1284,11 +1299,37 @@ private fun AutoPauseEffect(viewModel: EpisodeViewModel, enabled: Boolean) {
                 // 如果不是正在播放, 则不操作暂停, 当下次切回前台时, 也不要恢复播放
                 viewModel.autoPausedOnBackground = false
             }
-        } else if (it == Lifecycle.Event.ON_START && viewModel.autoPausedOnBackground) {
-            autoPauseTasker.launch {
-                viewModel.player.play() // 切回前台自动恢复, 当且仅当之前是自动暂停的
+        } else if (it == Lifecycle.Event.ON_START) {
+            // 先落地再恢复播放: 下面那条规则读的就是这个标志, 顺序反了会把这次恢复当场按回去
+            stopped.value = false
+            if (viewModel.autoPausedOnBackground) {
+                autoPauseTasker.launch {
+                    viewModel.player.play() // 切回前台自动恢复, 当且仅当之前是自动暂停的
+                }
+                viewModel.autoPausedOnBackground = false
             }
-            viewModel.autoPausedOnBackground = false
+        }
+    }
+
+    // 后台期间**持续**按住. 上面那半只在 ON_STOP 那一下动一次, 而流水线之后自己还会起播
+    // (loadMedia 末尾的 setMediaData(playWhenReady = true) —— 首次解析完成、出错后自动换源重试、
+    // 迟到的自动选源都会走到), 于是"暂停着按 HOME 走开, 过一会儿电视自己响起来"
+    // (2026-08-30 真机复现, 关掉保留会话时). 与 RetainedPlaybackSessionHolder 第 2 条同一条规则,
+    // 判据也一样是严格 isPlaying (理由见那边).
+    LaunchedEffect(viewModel, stopped) {
+        stopped.collectLatest { inBackground ->
+            if (!inBackground) return@collectLatest
+            viewModel.player.state.collect inner@{ state ->
+                if (!state.isPlaying) return@inner
+                // 回到前台那一下 ON_START 先把标志清掉, 恢复播放随后才到 —— 手上的这份值
+                // 可能还是上一轮的, 落地前再读一次现值
+                if (!stopped.value) return@inner
+                logger.info {
+                    "App in background, auto-pausing playback that started by itself " +
+                            "(mediaStatus=${state.mediaStatus})"
+                }
+                viewModel.player.pause()
+            }
         }
     }
 }
@@ -1363,3 +1404,5 @@ fun PreviewEpisodeSceneContentPhoneScaffoldTabs() {
         )
     }
 }
+
+private val logger = logger("EpisodePage")

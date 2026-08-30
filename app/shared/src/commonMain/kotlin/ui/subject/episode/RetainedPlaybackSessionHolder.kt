@@ -222,7 +222,15 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         }
         // 先销后建: 界面还在场的会话不能动 (它的页面会拿着已 release 的播放器继续渲染),
         // 其余的一律清掉, 不让两个播放器同时占着解码器
-        sessions.filter { it !in composedSessions }.forEach { destroy(it) }
+        sessions.filter { it !in composedSessions }.forEach {
+            // 认不出会话 = 热会话当场销毁重建 = 新播放器 + 整条流水线重跑, 而流水线末尾必然起播.
+            // 这一步原先完全静默 —— "应用在后台却自己响起来"到底是这条 (会话被重建) 还是单纯的
+            // loadMedia 重新起播 (换源重试等), 事后只能靠这行日志分辨
+            logger.info {
+                "Discarding retained session (ep${it.info.episodeId}) to open subject $subjectId episode $episodeId"
+            }
+            destroy(it)
+        }
         return Session(RetainedPlaybackSessionInfo(subjectId, episodeId)).also {
             sessions += it
             makeCurrent(it)
@@ -423,9 +431,31 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         //    5 秒后停下, 那样"退出去等它加载"就不成立了.
         launch { vm.pageState.collect { } }
 
-        // 2. 后台不出声, 回来照原样接着播. 只在离开那一刻暂停是不够的: 数据源解析完成后流水线
-        //    自己会 resume (PlayerSession.loadMedia 末尾), 于是必须持续按住 —— 这也正是常见的
-        //    "退出去之后忽然从后台传出声音".
+        // 2. 不在眼前就不出声, 回来照原样接着播. 只在离开那一刻暂停是不够的: 数据源解析完成后
+        //    流水线自己会 resume (loadMedia 末尾那句 `setMediaData(playWhenReady = true)`), 于是
+        //    必须持续按住 —— 这也正是常见的"退出去之后忽然从后台传出声音".
+        //
+        //    "不在眼前"是**两个互不包含的维度**, 本条两个都按住:
+        //
+        //    - **播放页不在导航栈顶** ([playerPageVisible] = false): 退出了播放页, 或者导航去了
+        //      更深的页面. 这一维**记账** ([EpisodeViewModel.autoPausedOffPage]), 回到播放页时
+        //      把这次临时暂停原样还回去 (下面那一半);
+        //    - **应用整个退到后台** ([appForeground] = false: 按 HOME 走开, 或者电视把信号源切去
+        //      别的设备). 播放页仍然是栈顶, 上面那一维一次都不会触发.
+        //
+        //      两维都记在**本类这一本账**上 ([EpisodeViewModel.autoPausedOffPage]), 而
+        //      `AutoPauseEffect` 在本类在场时**整个不生效** (它自己判 `LocalPlaybackSessionEntry`).
+        //      不是分工问题而是必须如此: 记在这边才能走下面那条"等新的视频输出面出画再放声音"的
+        //      恢复路径, 而它的 ON_START 是当场 play() —— 那正是 e5a0cda1a 修过的"先出声后出画".
+        //      两边并存的话谁先落地不确定, 它先按下暂停的那一半会连着走偏: 本条就看不到
+        //      isPlaying、不记账, 回前台由它当场恢复, 等首帧那一步整个被绕过去.
+        //
+        //      **这一维原先是漏的** (2026-08-30 修): 按 HOME 走开时全部防线只剩 `AutoPauseEffect`
+        //      在 ON_STOP 那一下按的**一次**暂停, 而"只按一次"正是本条开头写的那个不成立的做法.
+        //      后台自动换源重试 (SwitchMediaOnPlayerErrorExtension, 出错约 1 秒后换下一个源)、
+        //      迟到的自动选源、任何一条走到 loadMedia 的路都会重新置起播放意图, 而那时没有任何
+        //      东西再按它. 用户报的"暂停着按 HOME 走开 / 切走信号源, 过一会儿电视自己响起来"
+        //      就是它.
         //
         //    **暂停与恢复是同一条规则的两半, 都收在这一个 collector 里** (2026-08-22 修):
         //    离开播放页是"临时暂停", 回到播放页就该把它原样还回去 —— 进去之前在播就接着播, 之前
@@ -453,12 +483,15 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
             var resumeJob: Job? = null
             combine(
                 playerPageVisible,
+                appForeground,
                 vm.player.state,
                 vm.playbackAutomationSuppressed,
-            ) { visible, state, roomControlled -> Triple(visible, state, roomControlled) }
-                .collect { (visible, state, roomControlled) ->
+            ) { pageVisible, foreground, state, roomControlled ->
+                AutoPauseInput(pageVisible, foreground, state, roomControlled)
+            }
+                .collect { (pageVisible, foreground, state, roomControlled) ->
                     if (roomControlled) return@collect
-                    if (visible) {
+                    if (pageVisible && foreground) {
                         // 回到播放页: 把"离开时的临时暂停"原样还回去. 判据只有本类记下的那一笔账,
                         // 所以用户自己按的暂停不会被误恢复成播放 (那时下面根本没记账).
                         //
@@ -470,7 +503,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                         }
                         return@collect
                     }
-                    // 又走了: 在途的恢复作废 (账留着, 下次回来重新等)
+                    // 又走了 (或者应用退到了后台): 在途的恢复作废 (账留着, 下次回来重新等)
                     resumeJob?.cancel()
                     // 这里必须是**严格** isPlaying (时钟真的在走), 不能图省事换成 playWhenReady ——
                     // 换过, 三个症状一起来 (2026-08-11 真机复现):
@@ -487,12 +520,25 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                     //    (只有换媒体才重置) → 整集彻底没缩略图.
                     //
                     // 代价是时钟起走的那一瞬可能漏出一点声音, 这是原设计接受的取舍.
-                    if (state.isPlaying) {
-                        // 记账: 回到播放页时由上面那一半原样还回去
-                        vm.autoPausedOffPage = true
-                        logger.info { "Player page not visible, auto-pausing playback" }
-                        vm.player.pause()
+                    if (!state.isPlaying) return@collect
+                    // 回到前台那一下是根部的 ON_START 先把 appForeground 置起来, 播放页
+                    // `AutoPauseEffect` 的 ON_START 恢复播放随后才到 —— 本 collector 手上的那份值
+                    // 可能还是上一轮的, 落地前再读一次现值, 否则刚恢复的播放会被当场按回去
+                    if (pageVisible && appForeground.value) return@collect
+                    // 记账: 回到播放页 (且应用在前台) 时由上面那一半原样还回去
+                    vm.autoPausedOffPage = true
+                    // 日志分两句: 后台自己播起来是"没人看着的时候发生的事", 事后只能从日志还原
+                    // 到底是哪条路重新起的播 (换源重试? 迟到的选源? 会话被重建?) —— 前后那几行
+                    // videoLoadingState 与 "Discarding retained session" 就是答案
+                    logger.info {
+                        if (pageVisible) {
+                            "App in background, auto-pausing playback that started by itself " +
+                                    "(mediaStatus=${state.mediaStatus})"
+                        } else {
+                            "Player page not visible, auto-pausing playback"
+                        }
                     }
+                    vm.player.pause()
                 }
         }
 
@@ -677,7 +723,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                 signal.hasFrameOnCurrentSurface.first { it }
             } == null
         }
-        if (!playerPageVisible.value || vm.playbackAutomationSuppressed.value) return
+        // 等的这一秒里用户可能又走开了 (导航去别处, 或者干脆按 HOME 把应用切到后台), 也可能
+        // "一起看"接管了播放: 三种情况都不能落地, 而且都**不消账** —— 下次真的回到播放页时重新等
+        if (!playerPageVisible.value || !appForeground.value || vm.playbackAutomationSuppressed.value) return
         if (!vm.autoPausedOffPage) return
         vm.autoPausedOffPage = false
         logger.info {
@@ -720,6 +768,19 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         private val PLAYBACK_SETTLE_WAIT = 30.seconds
     }
 }
+
+/**
+ * [RetainedPlaybackSessionHolder.guard] 第 2 条的输入 (combine 没有四元组).
+ *
+ * [pageVisible] 与 [appForeground] 是"不在眼前"的两个维度, 不能先合成一个布尔值再传进去 ——
+ * 两边的记账方式不同 (前者要记, 后者不记), 合了就分不出该记哪一笔.
+ */
+private data class AutoPauseInput(
+    val pageVisible: Boolean,
+    val appForeground: Boolean,
+    val playerState: PlayerState,
+    val roomControlled: Boolean,
+)
 
 /** 数据源搜索层面的"再等也没用". */
 private enum class SelectionProblem {
