@@ -47,11 +47,21 @@ class MediaSelectorFilterSortAlgorithm {
     /**
      * 过滤掉 [MediaSelectorSettings] 指定的内容. 例如过滤生肉, 对于完结番过滤掉单集
      */
+    /**
+     * @param memo 逐条筛选结果的记忆表 (key = [Media] 本身); 传入即启用增量计算.
+     *
+     * 为什么需要它: 搜索期间资源列表是**逐源追加**的 (MediaSourceMediaFetcher 的 runningFold),
+     * 每追加一次就会整表重算一遍, 而单条的代价并不低 (要跟条目的全部别名做包含/相似度匹配).
+     * 真机实测 (2026-08-29): 127 条要 280~1238ms, 三秒内被触发九次 —— CPU 打满, 界面卡死好几秒.
+     * 而**同一条 media 在 (偏好, 设置, context) 不变时结果是确定的**, 所以只算新增的那些.
+     * 调用方负责在这三者变化时清空本表.
+     */
     fun filterMediaList(
         list: List<Media>,
         preference: MediaPreference,
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
+        memo: MutableMap<Media, MaybeExcludedMedia>? = null,
     ): List<MaybeExcludedMedia> {
         val subjectInfo = context.subjectInfo?.takeIf { info ->
             info != SubjectInfo.Empty && info.allNames.any { it.isNotBlank() }
@@ -68,7 +78,15 @@ class MediaSelectorFilterSortAlgorithm {
         } else null
 
         return list.map { media ->
-            filterMedia(media, preference, settings, context, mediaListFilterContext)
+            if (memo == null) {
+                filterMedia(media, preference, settings, context, mediaListFilterContext)
+            } else {
+                // **键必须是 media 本身而不是 mediaId**: 同一个 mediaId 可能对应内容不同的两条
+                // (例如同一资源的缓存版与原版), 按 id 记忆会把先算的那条的结果错配给后一条
+                memo.getOrPut(media) {
+                    filterMedia(media, preference, settings, context, mediaListFilterContext)
+                }
+            }
         }
     }
 

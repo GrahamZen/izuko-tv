@@ -9,8 +9,10 @@
 
 package me.him188.ani.app.domain.media.selector.legacy
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.media.selector.DefaultMediaSelector
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
@@ -134,5 +136,46 @@ class DefaultMediaSelectorCacheNotReadyTest : AbstractDefaultMediaSelectorTest()
         val result = cacheSelector.filteredCandidates.first().single()
         assertTrue(result.exclusionReason?.let { it != MediaExclusionReason.CacheNotReady } ?: true)
         assertEquals(cached, cacheSelector.trySelectCached())
+    }
+
+    /**
+     * 真机现场 (2026-08-30): 缓存中途退出播放器再进这一集, 自动选择先挑中了那个没下完的缓存,
+     * 立刻 `FileNotFoundException` (最终文件要等下载完成合并后才存在), 然后才自动换源成功.
+     *
+     * 原因是"可播性"这一项按设计先发 null (未知) —— 真集合要等每个缓存的 canPlay 都发过一次
+     * 才出来, 自动选缓存跑得比它快. 所以 [DefaultMediaSelector.trySelectCached] 必须先等它到位.
+     */
+    @Test
+    fun `可播性还未知时不会抢先选中缓存`() = runTest {
+        val origin = media(alliance = "字幕组")
+        val cached = cachedMediaOf(origin)
+        cachedList.value = listOf(cached)
+        // 未知: 生产者的第一发
+        mediaSelectorContext.value = mediaSelectorContext.value.copy(unplayableCacheMediaIds = null)
+
+        val selecting = async { cacheSelector.trySelectCached() }
+        runCurrent()
+        assertNull(cacheSelector.selected.value, "可播性未知时不应该已经选中")
+
+        // 真集合到了: 这条没下完
+        mediaSelectorContext.value = mediaSelectorContext.value.copy(
+            unplayableCacheMediaIds = setOf(cached.mediaId),
+        )
+        assertNull(selecting.await())
+        assertNull(cacheSelector.selected.value)
+    }
+
+    /** 同一条路: 可播性到位后发现是可播的, 就照常选中 (别把等待写成了永不选择) */
+    @Test
+    fun `可播性到位后可播的缓存照常选中`() = runTest {
+        val origin = media(alliance = "字幕组")
+        val cached = cachedMediaOf(origin)
+        cachedList.value = listOf(cached)
+        mediaSelectorContext.value = mediaSelectorContext.value.copy(unplayableCacheMediaIds = null)
+
+        val selecting = async { cacheSelector.trySelectCached() }
+        runCurrent()
+        mediaSelectorContext.value = mediaSelectorContext.value.copy(unplayableCacheMediaIds = emptySet())
+        assertEquals(cached, selecting.await())
     }
 }
