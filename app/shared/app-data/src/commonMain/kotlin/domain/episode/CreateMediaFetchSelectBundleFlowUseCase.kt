@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.onStart
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.media.cache.MediaCacheManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -75,6 +76,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
     private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
     private val settingsRepository: SettingsRepository by inject()
     private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
+    private val mediaCacheManager: MediaCacheManager by inject()
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>
@@ -164,6 +166,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     flowOf(bundle.subjectInfo),
                     fetchSession.latestRequest.map { bundle.episodeInfo.withRequestedNumbers(it) },
                     mediaSourceManager.mediaSourceTiersFlow(), // only access local settings
+                    // 缓存没下完时在选源菜单里标成"不可用"而不是藏掉, 见 MediaExclusionReason.CacheNotReady
+                    unplayableCacheMediaIds = mediaCacheManager.unplayableCacheMediaIds(bundle.subjectId, bundle.episodeId),
                 ).flow,
                 fetchSession.cumulativeResults,
                 savedUserPreference = episodePreferencesRepository.mediaPreferenceFlow(bundle.subjectId), // only access local settings

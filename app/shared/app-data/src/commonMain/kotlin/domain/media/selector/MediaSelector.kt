@@ -731,14 +731,17 @@ class DefaultMediaSelector(
         if (selected.value != null) return null
         // 剧集信息未加载时不筛剧集, 整个条目的缓存都在候选中, 不能选.
         if (!mediaSelectorContext.first().hasEpisode) return null
-        // 只选未被排除的缓存: 缓存只会因为不属于当前剧集 (MediaExclusionReason.EpisodeMismatch) 而被排除.
-        // 尽量选择满足用户偏好的缓存, 否则再随便挑一个缓存.
-        fun List<MaybeExcludedMedia>.firstCachedOrNull(): Media? =
-            firstNotNullOfOrNull { candidate -> candidate.result?.takeIf { it.isLocalCache() } }
+        // 大部分排除原因 (不匹配偏好等) 都不妨碍"已经缓存了就直接播", 所以这里照旧看 original;
+        // 但 blocksSelection 的排除是硬性不可用 (缓存没下完, 最终文件还不存在), 选了必定加载失败,
+        // 必须在这里也挡住 —— 界面上的禁用只挡得住手点, 挡不住这条自动选择路径.
+        fun List<MaybeExcludedMedia>.firstSelectableCache() = firstOrNull {
+            it.original.isLocalCache() && it.exclusionReason?.blocksSelection != true
+        }
 
-        val cached = preferredCandidates.first().firstCachedOrNull()
-            ?: filteredCandidates.first().firstCachedOrNull() ?: return null
-        return selectDefault(cached)
+        // 尽量选择满足用户偏好的缓存, 否则再随便挑一个缓存.
+        val cached = preferredCandidates.first().firstSelectableCache()
+            ?: filteredCandidates.first().firstSelectableCache() ?: return null
+        return selectDefault(cached.original)
     }
 
     override suspend fun removePreferencesUntilFirstCandidate() {
