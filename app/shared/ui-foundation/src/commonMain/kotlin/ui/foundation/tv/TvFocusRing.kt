@@ -22,10 +22,14 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Density
@@ -184,6 +188,90 @@ fun Modifier.tvFocusRingBorder(
         drawTvFocusRing(brush, widthPx, radiusPx)
     }
 }
+
+/**
+ * [tvFocusRingBorder] 的**倒计时形态**: 整圈是压暗的底轨, 走过的一段实色画满, 从**顶边左端**
+ * (左上圆角结束处) 顺时针推进; 走满一圈 = 那件事发生 (电视端片尾的「接下来播放」用它自动播下一集).
+ *
+ * 线宽与普通示焦描边同档: 这一圈同时**就是**示焦框, 粗过它就会与卡片底缘那条播放进度条糊成
+ * 一片 (两者语义完全不同: 一个是"还有多久执行", 一个是"这一集看了多少").
+ *
+ * 把倒计时画成聚焦框本身而不是另加一条横杠: 卡片底缘的横杠与播放进度条长得太像, 会被当成
+ * "这一集还剩多少"; 而这一圈的语义是"还有多久执行", 两者必须分开. 也因此它同时**就是**示焦框 ——
+ * 同色的两圈线套在一起只会看着乱.
+ *
+ * [progress] 是 provider 而非值: 它每 100ms 变一次, 读在绘制 lambda 里, 变化只失效绘制不重组
+ * (调用方若在组合里读, 整棵子树每 100ms 陪跑一次). 返回 <= 0 时画整圈 = 普通示焦框.
+ */
+fun Modifier.tvFocusRingCountdownBorder(
+    cornerRadius: Dp,
+    brush: Brush,
+    width: Dp = TvFocusRing.Width,
+    trackAlpha: Float = TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA,
+    progress: () -> Float,
+): Modifier = drawWithCache {
+    val widthPx = ringStrokeWidthPx(width, size)
+    val radiusPx = cornerRadius.resolveRingRadiusPx(this, size)
+    // 轮廓与测量器**按尺寸缓存**: 这一圈每 100ms 重画一次, 放进绘制 lambda 就是每帧一个
+    // Path + 一个 PathMeasure. 走过的那一段复用同一个 Path, 每帧 rewind
+    val outline = roundRectRingPathFromTopLeft(size, widthPx, radiusPx)
+    val measure = PathMeasure().apply { setPath(outline, false) }
+    val length = measure.length
+    val walked = Path()
+    val trackStyle = Stroke(width = widthPx)
+    // 走过那一段用圆头: 端点落在直边中段时方头会切出一道生硬的缺口
+    val walkedStyle = Stroke(width = widthPx, cap = StrokeCap.Round)
+    onDrawWithContent {
+        drawContent()
+        val fraction = progress().coerceIn(0f, 1f)
+        if (fraction <= 0f) {
+            drawPath(outline, brush, style = trackStyle)
+            return@onDrawWithContent
+        }
+        drawPath(outline, brush, alpha = trackAlpha, style = trackStyle)
+        walked.rewind()
+        measure.getSegment(0f, length * fraction, walked, true)
+        drawPath(walked, brush, style = walkedStyle)
+    }
+}
+
+/**
+ * 一圈圆角矩形描边的路径, **起点在顶边左端 (左上圆角结束处)、顺时针**闭合.
+ *
+ * 不用 `Path.addRoundRect`: 它的起点由实现决定, 各平台不保证一致, 而"从哪儿开始长"是这一圈的
+ * 主要观感. 起点取顶边左端而不是顶边中点: 后者会让环在一条直边的中间凭空冒头, 两侧还各留一段
+ * 空轨, 看着像画漏了 (中点起步只在正圆上自然, 那里没有边可参照).
+ *
+ * 几何与 [drawTvFocusRing] 一致: 内缩半个线宽把整条线放进轮廓内, 圆角半径同步减半个线宽.
+ */
+private fun roundRectRingPathFromTopLeft(size: Size, widthPx: Float, radiusPx: Float): Path {
+    val half = widthPx / 2f
+    val left = half
+    val top = half
+    val right = size.width - half
+    val bottom = size.height - half
+    val r = (radiusPx - half).coerceIn(0f, min(right - left, bottom - top) / 2f)
+    return Path().apply {
+        moveTo(left + r, top)
+        lineTo(right - r, top)
+        arcTo(Rect(right - 2 * r, top, right, top + 2 * r), -90f, 90f, false)
+        lineTo(right, bottom - r)
+        arcTo(Rect(right - 2 * r, bottom - 2 * r, right, bottom), 0f, 90f, false)
+        lineTo(left + r, bottom)
+        arcTo(Rect(left, bottom - 2 * r, left + 2 * r, bottom), 90f, 90f, false)
+        lineTo(left, top + r)
+        arcTo(Rect(left, top, left + 2 * r, top + 2 * r), 180f, 90f, false)
+        close()
+    }
+}
+
+/**
+ * 倒计时环底轨的不透明度.
+ *
+ * 底轨必须始终看得出**整圈**在哪里 (那是聚焦框), 又不能与走过的那段混在一起 —— 太淡则电视上
+ * 看不出边界, 太浓则读不出走到哪儿了.
+ */
+private const val TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA = 0.4f
 
 /**
  * 线宽换算, **与 `Modifier.border` 同一套**: 向上取整到整像素, 再按尺寸钳制.
