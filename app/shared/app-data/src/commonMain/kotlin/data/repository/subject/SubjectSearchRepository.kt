@@ -111,6 +111,9 @@ class SubjectSearchRepository(
                 tags,
                 airDates = season?.toBangumiAirDates(),
                 ratings = rating?.toBangumiRatings(),
+                // 按排名排序时只取有排名的条目: 服务端把"无排名"记作 rank 0, 升序会把它们全堆在最前面.
+                // 这个筛选同时让"只按排名排序、不给关键词"成为一次有效查询 (= 全站排行榜)
+                ranks = if (sort == SearchSort.RANK) listOf(">=1") else null,
                 nsfw = nsfw,
             )
         }
@@ -132,16 +135,21 @@ class SubjectSearchRepository(
         }
 
         /**
-         * 将数据过滤从View提升到分页层，不然会导致 #2380
+         * 服务端按发布日期排序的结果不严格有序, 在分页层再排一次 (#2380).
+         *
+         * 排名排序原先在这里按评分人数过滤 (`total >= 50`), 因为它实际排的是评分而不是排名,
+         * 榜首全是一两个人打满分的冷门条目. 现在服务端直接按排名排序并只返回有排名的条目
+         * ([toSubjectSearchFilters]), 不需要再过滤 —— 过滤本身还会让整页被清空,
+         * 而空页在下面被当作"没有下一页", 分页就此停住.
          */
         private fun filterSubjectsBySort(
             subjects: List<BatchSubjectDetails>,
             sort: SearchSort
         ): List<BatchSubjectDetails> {
             return when (sort) {
-                SearchSort.RANK -> subjects.filter { it.subjectInfo.ratingInfo.total >= 50 }
                 SearchSort.DATE -> subjects.sortedByDescending { it.subjectInfo.airDate }
                 SearchSort.MATCH,
+                SearchSort.RANK,
                 SearchSort.COLLECTION -> subjects
             }
         }
