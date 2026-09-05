@@ -492,6 +492,7 @@
     <!-- NewVersionPopupCard -->
     <string name="settings_update_popup_new_version">New Version</string>
     <string name="settings_update_popup_see_details">See details</string>
+    <string name="settings_update_popup_feedback_group_hint">Tap &quot;See details&quot; to scan the QR code and join the QQ group</string>
     <string name="settings_update_popup_auto_update">Auto-update</string>
     <string name="settings_update_popup_close">Close</string>
     <string name="settings_update_popup_downloading">Downloading Update</string>
