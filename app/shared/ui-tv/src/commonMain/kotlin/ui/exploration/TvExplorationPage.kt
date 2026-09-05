@@ -334,6 +334,8 @@ fun TvExplorationPage(
     val backdropUrl: () -> String? = { heroPipeline.backdropUrl(heroDisplay()?.toHeroMediaSpec()) }
     // 超时兜底的另一半 (URL 已解析但图片本体卡住): 语义见 TvHeroMediaPipelineState.underlayUrl
     val backdropUnderlayUrl: () -> String? = { heroPipeline.underlayUrl(heroDisplay()?.toHeroMediaSpec()) }
+    // 提前取色的目标条目 (见 TvPageBackdropLayer 的 themeSeedSubjectId)
+    val backdropSubjectId: () -> Int? = { heroDisplay()?.subjectId }
 
     val onFocusItem: (
         subjectId: Int, title: String, seed: SubjectCollectionInfo?, fromFollowed: Boolean, coverUrl: String,
@@ -842,6 +844,8 @@ fun TvExplorationPage(
             topScrim = false,
             cardness = { backdropCardness },
             underlayUrl = backdropUnderlayUrl,
+            // 这张图解码完顺手算主题色, 点进详情页第一帧就是动态色 (详情页取的也是这张)
+            themeSeedSubjectId = backdropSubjectId,
         )
 
         // ------------------------------------------------------------------
