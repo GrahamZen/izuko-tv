@@ -385,6 +385,9 @@ private fun SubjectDetailsPage(
     MaterialThemeFromPaletteAndImage(
         if (themeSettings.useDynamicSubjectPageTheme) paletteState.palette else null,
         if (themeSettings.useDynamicSubjectPageTheme) bitmap else null,
+        // 按条目缓存算好的配色: 取色是异步的, 不缓存的话每次重新进本页 (从设置页/播放页返回,
+        // 页面被返回栈重建) 都要先用主题色画一帧再跳成动态色
+        cacheKey = presentation.subjectId,
     ) {
         if (showSelectEpisode) {
             EpisodeListDialog(
