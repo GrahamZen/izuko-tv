@@ -65,6 +65,8 @@
 
 [iOS 自签]: https://myani.org/wiki/ios-install
 
+有问题想反馈？本页最下方有 QQ 群二维码，也可以直接[点这里进群](https://qm.qq.com/q/JaXFdpv3mC)。
+
 |                  | 下载                                               | 常见问题                                        |
 |------------------|--------------------------------------------------|---------------------------------------------|
 | 安卓 电视      | [主线](https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-universal.apk)       |                                             |
@@ -117,3 +119,11 @@
 * 快速翻动选集或封面时，个别卡片加载失败后不再一直空着，会自动重试。
 
 > Android TV 遥控器使用说明、系统版本要求与已知问题，请见仓库 [README 的「📺 Android TV 版说明」](https://github.com/GrahamZen/animeko#-android-tv-版说明)。
+
+## 问题反馈群
+
+使用中遇到问题、想提建议或反馈 bug，[欢迎进群](https://qm.qq.com/q/JaXFdpv3mC)，或用手机 QQ 扫下面的二维码。
+
+入群问题的答案是本仓库作者的 GitHub 用户名：$REPO_OWNER
+
+![加入 QQ 反馈群](https://quickchart.io/qr?text=https%3A%2F%2Fqm.qq.com%2Fq%2FJaXFdpv3mC&size=200&margin=2&ecLevel=M&dark=000000&light=ffffff)
