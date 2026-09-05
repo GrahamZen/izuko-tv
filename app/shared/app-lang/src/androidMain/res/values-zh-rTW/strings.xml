@@ -532,6 +532,7 @@
     <!-- NewVersionPopupCard -->
     <string name="settings_update_popup_new_version">新版本</string>
     <string name="settings_update_popup_see_details">查看詳情</string>
+    <string name="settings_update_popup_feedback_group_hint">點「查看詳情」可掃碼加入QQ交流/回饋群</string>
     <string name="settings_update_popup_auto_update">自動更新</string>
     <string name="settings_update_popup_close">關閉</string>
     <string name="settings_update_popup_downloading">正在下載更新</string>

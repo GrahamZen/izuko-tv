@@ -174,6 +174,7 @@ fun BoxScope.UpdateNotifier(
                 NewVersionPopupCard(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
+                    showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
                         newVersion?.let { viewModel.startDownload(it, uriHandler) }
@@ -267,6 +268,7 @@ fun BoxScope.UpdateSettingsNotifier(
                 NewVersionPopupCard(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
+                    showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
                         newVersion?.let { viewModel.startDownload(it, uriHandler) }
