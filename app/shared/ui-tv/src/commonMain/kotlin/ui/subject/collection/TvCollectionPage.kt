@@ -657,6 +657,8 @@ fun TvCollectionPage(
             fadeColor = AniThemeDefaults.shellBackgroundColor,
             modifier = Modifier.align(Alignment.TopEnd),
             underlayUrl = { heroPipeline.underlayUrl(heroDisplay()?.toHeroMediaSpec()) },
+            // 这张图解码完顺手算主题色, 点进详情页第一帧就是动态色 (详情页取的也是这张)
+            themeSeedSubjectId = { heroDisplay()?.subjectId },
         )
 
         Column(
