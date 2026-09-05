@@ -46,6 +46,7 @@ import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_update_popup_auto_update
 import me.him188.ani.app.ui.lang.settings_update_popup_close
+import me.him188.ani.app.ui.lang.settings_update_popup_feedback_group_hint
 import me.him188.ani.app.ui.lang.settings_update_popup_new_version
 import me.him188.ani.app.ui.lang.settings_update_popup_see_details
 import org.jetbrains.compose.resources.stringResource
@@ -58,6 +59,11 @@ fun NewVersionPopupCard(
     onAutoUpdateClick: () -> Unit,
     onDismissRequest: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    /**
+     * 末尾提示一句"去详情弹窗扫码加反馈群" (见 [NewVersion.hasFeedbackGroup]).
+     * 气泡是纯文本, 二维码只有详情弹窗画得出来.
+     */
+    showFeedbackGroupHint: Boolean = false,
     /** "自动更新"按钮的附加 modifier (TV 上挂初始焦点请求器). */
     autoUpdateButtonModifier: Modifier = Modifier,
 ) {
@@ -104,6 +110,14 @@ fun NewVersionPopupCard(
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
+                }
+                if (showFeedbackGroupHint) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(Lang.settings_update_popup_feedback_group_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         },

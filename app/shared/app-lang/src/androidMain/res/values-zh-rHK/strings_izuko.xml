@@ -75,6 +75,7 @@
     <string name="settings_player_skip_op_ed_off">不跳過</string>
     <string name="settings_player_tv_chrome">自訂播放器按鈕</string>
     <string name="settings_player_tv_chrome_description">排列播放器裏的按鈕，或者把用不上的藏起來；可以存幾套換着用</string>
+    <string name="settings_update_popup_feedback_group_hint">點「查看詳情」可掃碼加入QQ交流/反饋群</string>
     <string name="settings_network_proxy_service_tmdb">背景圖與劇照服務</string>
     <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>
