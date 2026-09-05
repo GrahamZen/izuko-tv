@@ -35,9 +35,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.ImageBitmap
+import me.him188.ani.app.ui.foundation.resize
+import me.him188.ani.app.ui.foundation.themeColor
+import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
+import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -67,6 +73,9 @@ import me.him188.ani.app.ui.foundation.rememberImageCompletionGrace
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.pow
@@ -496,6 +505,18 @@ fun TvPageBackdropLayer(
      * 上屏"的回调信号. null = 不垫 (默认, 其余页不受影响).
      */
     underlayUrl: () -> String? = { null },
+    /**
+     * 非 null 时: 这张 backdrop 解码完之后顺手算出条目主色写进 [SubjectSeedColorCache], 于是
+     * 点进详情页第一帧就是动态色, 不再"先主题色再跳".
+     *
+     * 传当前 hero 那个条目的 id. **详情页的主题色取的就是这张 backdrop** (同一条
+     * `tvHeroBackdropUrl` 解析规则, 没有横版图时两边一起回落到竖版封面), 所以两边同源;
+     * 换成别的图 (比如卡片的竖版封面) 会从"跳一次"变成"跳成另一个色".
+     *
+     * 时机天然就是"焦点停稳": hero 的图本来就要等 [TV_HERO_MEDIA_DEBOUNCE_MILLIS] 才发请求,
+     * 长按方向键飞掠过去的条目根本走不到这里.
+     */
+    themeSeedSubjectId: () -> Int? = { null },
 ) {
     Crossfade(
         backdropUrl(),
@@ -558,7 +579,9 @@ fun TvPageBackdropLayer(
                         alpha = TV_BACKDROP_UNDERLAY_ALPHA,
                     )
                 }
-                TvBackdropImage(url)
+                // 交叉淡入期间新旧两张图共存: 条目 id 必须在**这张图开始加载那一刻**取
+                // (remember(url)), 否则旧图加载完时读到的是新条目的 id, 色就串了
+                TvBackdropImage(url, remember(url) { themeSeedSubjectId() })
             }
         }
     }
@@ -576,7 +599,7 @@ fun TvPageBackdropLayer(
  * 固定延迟重试三次, 比原来 4s hedge 到点才补射恢复得更快. 别再把 hedge 加回来.
  */
 @Composable
-private fun TvBackdropImage(url: String) {
+private fun TvBackdropImage(url: String, themeSeedSubjectId: Int? = null) {
     // 接管在途预热 (见 TV_BACKDROP_PREFETCH_HANDOFF_MILLIS): 这张图正被预热时先等它.
     // 在组合里取一次, 没有在途的常规情形一帧都不耽误
     val prefetch = remember(url) { TvHeroImagePrefetch.inFlight(url) }
@@ -589,11 +612,20 @@ private fun TvBackdropImage(url: String) {
         }
     }
     if (waitingPrefetch) return
+    val scope = rememberCoroutineScope()
     AsyncImage(
         url,
         contentDescription = null,
         Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
+        onSuccess = { success ->
+            // 提前取色: 已经算过的条目直接跳过; 取色本身在后台线程 (与详情页同一条 themeColor)
+            val subjectId = themeSeedSubjectId ?: return@AsyncImage
+            if (SubjectSeedColorCache[subjectId] != null) return@AsyncImage
+            val bitmap = success.bitmap ?: return@AsyncImage
+            // 与详情页共用同一个取色函数: 算法不一致的话进页会被重算的色顶掉, 观感是"跳两次"
+            scope.launch { SubjectSeedColorCache[subjectId] = bitmap.subjectSeedColor() }
+        },
     )
 }
 
