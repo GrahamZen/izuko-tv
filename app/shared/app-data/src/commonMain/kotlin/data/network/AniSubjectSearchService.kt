@@ -60,7 +60,7 @@ class AniSubjectSearchService(
                 },
                 sortBy = when (sort) {
                     SearchSort.MATCH -> AniSubjectSearchSortBy.RELEVANCE
-                    SearchSort.RANK -> AniSubjectSearchSortBy.RATING_DESC
+                    SearchSort.RANK -> AniSubjectSearchSortBy.RANK_ASC
                     SearchSort.COLLECTION -> AniSubjectSearchSortBy.COLLECTION_DESC
                     SearchSort.DATE -> AniSubjectSearchSortBy.AIR_DATE_DESC
                 },
