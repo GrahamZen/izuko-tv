@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +55,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -68,7 +70,7 @@ private val SCROLLBAR_RESERVE = 12.dp
 private const val SCROLL_ANIM_MS = 120
 
 /**
- * 居中的可滚动纯文字弹窗: 标题 + 全文 (方向键按行滚动) + 可选的单个操作按钮.
+ * 居中的可滚动纯文字弹窗: 标题 + 全文 (方向键按行滚动) + 底行 (可选的单个操作按钮与一行元信息).
  *
  * 用途是给「放不下的长文」一个焦点友好的归宿: 页面上的正文块按可用高度截断且**不可聚焦**
  * (遥控器上每个焦点停留点都要一次按键, 而正文一旦可聚焦就有「按下键是滚动还是移到下一行」的
@@ -105,6 +107,14 @@ fun AniScrollableTextDialog(
      * 为 null 时焦点落在一个隐形节点上 (仅用于接收滚动键).
      */
     action: (@Composable (Modifier) -> Unit)? = null,
+    /**
+     * 底行右端的一行元信息 (如 "24 分钟 · 2024-01-15"): 与 [action] 同一行右对齐, 字号同正文.
+     *
+     * 由本弹窗而不是调用方渲染: 有背景图时正文要靠投影而非压暗背景来保证可读 (见 [background]),
+     * 这份对比度处理只有弹窗自己知道 —— 交给调用方就会出现"同一个面板里两处文字在图上的观感
+     * 不一样". 调用方只管把字凑好.
+     */
+    meta: String? = null,
 ) {
     val textScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -216,17 +226,46 @@ fun AniScrollableTextDialog(
                     }
                 }
             }
-            if (action != null) {
-                action(
-                    // 弹窗自身不分配焦点, 显式送进来; 锚点附着即送, 不重试
-                    Modifier.tvWindowInitialFocus(),
-                )
-            } else {
-                Box(
-                    Modifier.size(1.dp)
-                        .tvWindowInitialFocus()
-                        .focusable(),
-                )
+            // 底行: 左边唯一的操作按钮, 右端可选的一行元信息 (见 [meta]).
+            //
+            // 元信息**不放在正文里**: 正文是可滚动的长简介, 元信息跟着滚出视口就等于没有;
+            // 而它与按钮同处一行时, 面板底边成了一条完整的信息带 (做什么 | 这一集多长、哪天播),
+            // 上方的标题与正文都不必为它让位.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (action != null) {
+                    action(
+                        // 弹窗自身不分配焦点, 显式送进来; 锚点附着即送, 不重试
+                        Modifier.tvWindowInitialFocus(),
+                    )
+                } else {
+                    Box(
+                        Modifier.size(1.dp)
+                            .tvWindowInitialFocus()
+                            .focusable(),
+                    )
+                }
+                if (meta != null) {
+                    Text(
+                        meta,
+                        // 占满按钮之外的整段并右对齐: 按钮文案长短不一 (「标记看过」/「取消看过」),
+                        // 贴着按钮摆的话这一行会跟着左右晃.
+                        //
+                        // 右边距要与**正文**取齐 ([SCROLLBAR_RESERVE]): 正文恒为滚动条留着那一段
+                        // (哪怕没滚动条), 本行不留的话右缘会比正文多伸出 12dp —— 两行右端对不齐
+                        Modifier.weight(1f).padding(end = SCROLLBAR_RESERVE),
+                        color = contentColor.copy(alpha = 0.75f),
+                        // **字号跟正文 (简介) 同档, 不跟按钮**: 按钮文字外面还包着一圈按钮本体,
+                        // 视觉重量本来就比裸文字大, 字号再取齐反而显得这一行比按钮小一号
+                        // (2026-09-07 用户反馈). 与正文同档之后, 面板里所有裸文字是一个尺度
+                        style = MaterialTheme.typography.bodyLarge.copy(shadow = bodyShadow),
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

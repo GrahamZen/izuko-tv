@@ -170,6 +170,19 @@ class TvPlayerOverlayState(
     var episodeStripExpanded: Boolean by mutableStateOf(false)
         private set
 
+    /**
+     * 选集条正处在「接下来播放」倒计时态: 片尾自动展开的那一档 —— 只有卡片行与一行提示,
+     * 落点是**下一集**, 锚位聚焦框走成倒计时环, 后面的卡渐隐 (见 TvPlayerEpisodeStrip).
+     *
+     * **它是普通展开态的一层装饰, 不是第四种层级**: 底下仍是 `CONTROLS + episodeStripExpanded`,
+     * 于是遮罩、几何、按键路由、自动隐藏的抑制全部照旧, 用户按任意键退出本态就地变成普通选集条
+     * (见 [exitUpNextCountdown]). 早先想过让它在 HIDDEN 层单独渲染一份选集条 —— 那等于让
+     * "选集条在不在场"多一个与 [episodeStripExpanded] 平行的自由布尔, 而这两个标志一旦能各自
+     * 取值, 就会复现 2026-09-05 那个"控制层回来时选集条闪一下"的老 bug.
+     */
+    var upNextCountdown: Boolean by mutableStateOf(false)
+        private set
+
     /** 选集条可用性 (见 [TvEpisodeStripState]), 由选集条组件经 [onEpisodeStripStateChanged] 上报. */
     var episodeStrip: TvEpisodeStripState by mutableStateOf(TvEpisodeStripState.LOADING)
         private set
@@ -299,6 +312,7 @@ class TvPlayerOverlayState(
         // 覆盖层淡出途中复位会让被隐藏的控制行/图标行反向播放"回来"的入场动画
         // (半程可见后整层才消失), 观感是返回卡了一下
         episodeStripExpanded = false
+        upNextCountdown = false
         activePanel = null
         focusRegion = TvPlayerFocusRegion.NONE
         markInteraction()
@@ -315,6 +329,7 @@ class TvPlayerOverlayState(
         }
         layer = TvPlayerLayer.CONTROLS
         episodeStripExpanded = true
+        upNextCountdown = false
         activePanel = null
         focusRegion = TvPlayerFocusRegion.NONE
         markInteraction()
@@ -325,8 +340,74 @@ class TvPlayerOverlayState(
     fun expandEpisodeStrip() {
         expandStripWhenReady = false
         episodeStripExpanded = true
+        upNextCountdown = false
         markInteraction()
         requestFocus(TvPlayerFocusTarget.EPISODE_STRIP)
+    }
+
+    /**
+     * 片尾自动展开选集条的倒计时态 (见 [upNextCountdown]).
+     *
+     * 只在**纯视频态**下调用 (调用方判): 用户正在操作控制层/面板/详情层时不抢焦点, 那时倒计时
+     * 照常走完并自动连播, 只是不弹这一档 —— 抢焦点会把人从正在做的事上踢开.
+     *
+     * [focusStrip] = 是否顺带把焦点送进选集条. **焦点已经在选集条里时必须传 false**: 那种情形下
+     * 这次请求是多余且有害的 —— 送焦目标是卡片行这个**焦点组**, 而改道到某张卡的 `onEnter` 只在
+     * 焦点从组外进来时才触发; 焦点已在组内时这一下落在组节点自己身上, 不是任何一张卡. 卡片行里
+     * 换哪张卡该由轮播自己那条送焦通道做 (它会先滚到位再按帧重试, 见 revealEpisodeId).
+     *
+     * **不看 [episodeStrip] 那个可用性**: 纯视频态下选集条压根没组合过, 它多半还停在初始的
+     * LOADING —— 拿它当闸会让最该提示的那种人 (一路自动连播、全程没碰遥控器) 永远等不到提示.
+     * "有分集"这件事由调用方的判据保证: 提示要出现必须先算出下一集, 而它与选集条读的是同一份
+     * 列表 (EpisodeViewModel.episodeListUiStateFlow 的 allEpisodes).
+     */
+    fun enterUpNextCountdown(focusStrip: Boolean = true) {
+        layer = TvPlayerLayer.CONTROLS
+        expandStripWhenReady = false
+        episodeStripExpanded = true
+        upNextCountdown = true
+        activePanel = null
+        // 区域直接置成"选集条"而不是 NONE: 本态的定义就是焦点在选集条的卡片上. 置 NONE 的话,
+        // 从**焦点已经在选集条上**那一路进来时它再也不会被写回 —— 区域是靠卡片行的 onFocusChanged
+        // 写的, 而焦点自始至终没离开过那一行 (只是换了张卡), 一个事件都不会发, 于是上键从此
+        // 收不起选集条
+        focusRegion = TvPlayerFocusRegion.EPISODES
+        markInteraction()
+        if (focusStrip) requestFocus(TvPlayerFocusTarget.EPISODE_STRIP)
+    }
+
+    /**
+     * 片尾提示的**预告段** (见 TvUpNextState.preRoll): 只把选集条摆出来, 焦点落**当前播放集**,
+     * 倒计时那套装饰还不给.
+     *
+     * 到点由 [enterUpNextCountdown] 就地接管 (层级与展开态都已经对了, 那一下只换落点与装饰),
+     * 于是用户看到的是"卡片行滑一格到下一集", 而不是凭空出现一张已经在倒数的卡.
+     */
+    fun openEpisodeStripForUpNext() {
+        layer = TvPlayerLayer.CONTROLS
+        expandStripWhenReady = false
+        episodeStripExpanded = true
+        upNextCountdown = false
+        activePanel = null
+        // 这一路焦点是从组外 (纯视频态的根节点) 进来的, 置 NONE 无妨: 卡片行的 onFocusChanged
+        // 会在落焦那一刻写回 EPISODES (与 enterUpNextCountdown 里那条注释是互补的两种情形)
+        focusRegion = TvPlayerFocusRegion.NONE
+        markInteraction()
+        requestFocus(TvPlayerFocusTarget.EPISODE_STRIP)
+    }
+
+    /**
+     * 退出倒计时态, **就地**变成普通选集条 (卡片行不动、焦点不动, 只是提示行消失、渐隐的卡回到
+     * 全亮、锚位框从倒计时环变回普通描边).
+     *
+     * 用户按下的第一个方向键就走这里: 他既然开始自己挑, 提示行与倒计时环就该让位.
+     *
+     * **不动自动连播本身**: 到点了照样跳下一集 —— 那是设置里的全局开关 (设置 - 播放 - 自动连播)
+     * 说了算, 不想让它跳的人在那儿关一次就够, 没必要每一集在片尾再确认一遍.
+     */
+    fun exitUpNextCountdown() {
+        upNextCountdown = false
+        markInteraction()
     }
 
     /** 选集条还在加载时按了下键: 记下意图 (见 [expandStripWhenReady]). */
@@ -358,6 +439,7 @@ class TvPlayerOverlayState(
     /** 收起选集条 (卡片上按上键): 控制行回来, 焦点还给图标行. */
     fun collapseEpisodeStrip() {
         episodeStripExpanded = false
+        upNextCountdown = false
         markInteraction()
         requestFocus(TvPlayerFocusTarget.BOTTOM_ROW)
     }
@@ -367,6 +449,7 @@ class TvPlayerOverlayState(
         layer = TvPlayerLayer.HIDDEN
         danmakuInputExpanded = false
         expandStripWhenReady = false
+        upNextCountdown = false
         replyingComment = null
         requestFocus(TvPlayerFocusTarget.ROOT)
     }
@@ -376,6 +459,7 @@ class TvPlayerOverlayState(
         layer = TvPlayerLayer.DETAILS
         danmakuInputExpanded = false
         expandStripWhenReady = false
+        upNextCountdown = false
         replyingComment = null
     }
 
