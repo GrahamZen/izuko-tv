@@ -143,9 +143,16 @@ internal fun TvPlayerEpisodeStrip(
 
     // 仅展开态渲染: 平时完全不可见 (无 peek), 图标行按下键唤出.
     // 入场从底部整体上滑 (视觉上 = 卡片本来就在进度条下方, 聚焦时上移进画面,
-    // 上方控制行同时淡出), 收起反向滑出
+    // 上方控制行同时淡出), 收起反向滑出.
+    //
+    // **必须连层级一起判**: `episodeStripExpanded` 在 hideAll 里刻意不复位 (见
+    // TvPlayerOverlayState), 纯视频态下它常常还是 true. 从前那没关系 —— 那时整个控制层是卸载的;
+    // 但只要有东西 (片尾「接下来播放」卡片 / OP-ED 提示按钮) 把控制层留在场上, 本条就跟着留在
+    // 组合里, 于是下次 showControls() 把标志复位时它开始播**滑出动画**, 而 chrome 的 alpha 正好
+    // 同时从 0 升到 1 —— 屏幕上就是"选集条闪现了一下" (真机可见). 带上层级之后纯视频态下它压根
+    // 不在场, 控制层回来时也就没有动画可播
     AniAnimatedVisibility(
-        visible = overlay.episodeStripExpanded,
+        visible = overlay.episodeStripExpanded && overlay.layer == TvPlayerLayer.CONTROLS,
         modifier = modifier,
         enter = slideInVertically(tween(TV_STRIP_SLIDE_MS)) { it } + fadeIn(tween(TV_STRIP_SLIDE_MS)),
         exit = slideOutVertically(tween(TV_STRIP_SLIDE_MS)) { it } + fadeOut(tween(TV_STRIP_SLIDE_MS)),

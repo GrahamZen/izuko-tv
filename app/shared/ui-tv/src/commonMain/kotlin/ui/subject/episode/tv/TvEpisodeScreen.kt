@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -90,6 +91,7 @@ import me.him188.ani.app.ui.foundation.TV_PLAY_PAUSE_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.app.ui.foundation.theme.AniTheme
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
@@ -99,6 +101,7 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
@@ -158,6 +161,15 @@ private fun scrubStepMillis(totalDurationMillis: Long, repeats: Int): Long {
 
 /** 控制层自动隐藏延时 (播放中且无面板/弹层/输入时, Prime 行为). */
 internal const val TV_PLAYER_AUTO_HIDE_MILLIS = 5_000L
+
+/**
+ * 「接下来播放」卡片被临时藏起来之后, 隔多久才允许回来.
+ *
+ * 取控制层淡入那一档 ([EasingDurations.standardDecelerate]) —— 选集条自己的滑出也是同一档
+ * (TvPlayerEpisodeStrip 的 TV_STRIP_SLIDE_MS). **跟着动画时长走, 不是拍脑袋的数**: 这两个数
+ * 将来要是调了, 这里应当一起调.
+ */
+private const val UP_NEXT_RETURN_DELAY_MILLIS = EasingDurations.standardDecelerate.toLong()
 
 /** 剧照预取的起始延迟: 让首帧起播先用完带宽. */
 private const val TV_STILL_PREFETCH_DELAY_MILLIS = 2_000L
@@ -478,10 +490,72 @@ fun TvEpisodeScreenContent(
     var fastForwarding by remember { mutableStateOf(false) }
     // 长按结束后待补发的原速 (null = 无待办), 见下方"倍速还原补发"协程
     var pendingSpeedRestore by remember { mutableStateOf<Float?>(null) }
-    // 确认键的这一次**按下**是落在 OP/ED 提示按钮上的吗. 按下与抬起必须成对, 否则会吃到残余:
-    // 提交拖拽预览就是这样 —— 按下那一下在进度条上 (收起控制层 + 把焦点交给提示按钮), 抬起时
-    // 焦点已经在按钮上了, 不记账的话这一下抬起会把按钮也按掉, 顺带还让控制层再没机会回来
-    var confirmDownOnSkipTip by remember { mutableStateOf(false) }
+    // 确认键的这一次**按下**是落在浮层提示控件 (OP/ED 提示按钮 / 「接下来播放」卡片) 上的吗.
+    // 按下与抬起必须成对, 否则会吃到残余: 提交拖拽预览就是这样 —— 按下那一下在进度条上 (收起
+    // 控制层 + 把焦点交给提示按钮), 抬起时焦点已经在按钮上了, 不记账的话这一下抬起会把按钮也
+    // 按掉, 顺带还让控制层再没机会回来.
+    //
+    // 两个控件共用一个标志: 它们**互斥**在场 (卡片在场时不给 ED 的跳过按钮, 见 skipTip 的定义)
+    var confirmDownOnFloatingTip by remember { mutableStateOf(false) }
+
+    // ---- 片尾「接下来播放」卡片 (见 TvUpNextTip.kt) ----
+    // 与 OP/ED 提示按钮同一套: 出现即抢焦点, 确认键立刻播下一集, 走完把焦点还回原处.
+    val upNext = rememberTvUpNextState(vm)
+    var upNextFocused by remember { mutableStateOf(false) }
+
+    /**
+     * 卡片这一刻该不该在屏上. 比 [TvUpNextState.visible] 多两条**位置**上的判据 —— 那个只管
+     * "播到片尾了没有":
+     *
+     * - **选集条展开**: 人正在挑集, 卡片就在选集条上方那一带, 纯属挡路 (而且它挂在胶囊行下缘,
+     *   而那一整列在展开态是收起来的, 留着还会被收起动画切成半截);
+     * - **内嵌详情层**: 那是整屏内容, 卡片浮在上面挡视野.
+     *
+     * 两处都只是"暂时不显示", [TvUpNextState] 里的倒计时照走 —— 回到控制层/纯视频态它就回来,
+     * 到点该连播还是连播.
+     */
+    // 选集条**盖住控制层那一列**的那一档. 要**连层级一起判**: `episodeStripExpanded` 在 hideAll
+    // 里刻意不复位 (见 TvPlayerOverlayState), 纯视频态下它常常还是 true, 只看它会让卡片在最该
+    // 出现的时候 (屏上只剩画面) 反而不出现
+    val stripCoveringControls = overlay.episodeStripExpanded &&
+            overlay.layer == TvPlayerLayer.CONTROLS
+    val upNextHidden = overlay.layer == TvPlayerLayer.DETAILS || stripCoveringControls
+
+    // **藏起来之后要等这一段过场彻底演完再回来**, 不是条件一翻假就冒出来.
+    //
+    // 卡片是画到胶囊行边界之外的 (hangAboveBaseline), 而过场期间外层那个 AnimatedVisibility 正在
+    // 淡入 —— 淡入给子树套的 graphicsLayer 默认策略 (Auto) 在 alpha < 1 时开一块与节点等大的离屏
+    // 缓冲, 画在边界外的部分当场被裁, 观感是"先冒出下半截再补全". 与其想办法把边界撑大 (那要猜一个
+    // 溢出高度, 字号/语言/机型一变就不够), 不如干脆**别在过场里出现**: 等选集条滑完、控制层淡完
+    // 再淡入, 边界那时已经稳定, 裁不到.
+    var upNextTransitionSettled by remember { mutableStateOf(true) }
+    LaunchedEffect(stripCoveringControls) {
+        if (stripCoveringControls) {
+            upNextTransitionSettled = false
+        } else {
+            delay(UP_NEXT_RETURN_DELAY_MILLIS)
+            upNextTransitionSettled = true
+        }
+    }
+    // **这道门只管"选集条盖过控制层"那一档**: 要躲的是控制层那一列 (面板+胶囊+进度条+图标行)
+    // 的淡入 —— 它在选集条展开期间是隐藏的, 收起选集条 (无论收成控制层还是纯视频态) 它都要淡
+    // 回来, 而卡片画在它边界之外, 淡入那段会被离屏缓冲裁成半截.
+    //
+    // 详情层那一档**不必等**: 那期间控制层那一列一直是可见的 (chromeVisible 为假时它无条件留着),
+    // 按返回回纯视频态没有谁在淡, 卡片当场出现即可 —— 也只有当场出现, hideAll 那一路的 ROOT 改派
+    // (floatingTipRootFocus) 才认得出它. 从选集条回来时晚 250ms 没关系: 卡片一现身就自己要焦点
+    val upNextVisible = upNext.visible && !upNextHidden && upNextTransitionSettled
+    // 立刻播下一集: 卡片上写的与真正会播的必须是同一集, 所以两边都走 VM 那个单一来源算出的
+    // [TvUpNextState.nextEpisode]. 切集与自动连播同一条路 (episodeSelectorState), 不另开入口
+    val playNextEpisodeNow = playNext@{
+        val next = upNext.nextEpisode ?: return@playNext
+        upNext.dismiss()
+        if (!vm.episodeSelectorState.selectEpisodeId(next.episodeId)) {
+            // 选集器的候选还没到齐 (刚进页那几秒): 什么都不做比跳走一整页要好, 到点自动连播照旧
+            return@playNext
+        }
+        overlay.hideAll()
+    }
 
     // ---- OP/ED 提示按钮 (看上去是胶囊行最右一颗, 见 TvSkipOpEdTipButton) ----
     // 遥控器上这颗"取消"原本够不着: 没有任何东西把焦点送给它, 根路由也不认识它.
@@ -493,7 +567,14 @@ fun TvEpisodeScreenContent(
     //
     // 两副面孔 (见 TvSkipOpEdTipButton): 自动跳过倒计时中 = "取消跳过"; 人已经在 OP/ED 里
     // (刚按过取消, 或从别处 seek 进来) = "跳过". 于是整段 OP/ED 期间屏上始终有一颗可按的
+    // **兜底的互斥**: 两个都是"出现即抢焦点"的浮层控件, 同框必打架 (谁都想要焦点, 确认键还得
+    // 再分一次家), 而 floatingTipRootFocus 也假定了只有一个在场.
+    //
+    // 正常情况下它们本来就错不开: 卡片按**ED 结束**触发 (见 TvUpNextTip), 而这颗按钮的"跳过"
+    // 那副面孔只在人**处于** ED 段内时给. 这一句只挡边界情形 (章节数据变动/位置跳变),
+    // 不是设计上的替代关系 —— 跳过 ED 与进下一集不是一回事, ED 后面常还有次回预告
     val skipTip = vm.playerSkipOpEdState.currentTip
+        ?.takeUnless { it.kind == SkipOpEdKind.ED && upNextVisible }
     val skipTipCancelling = skipTip?.canCancel == true
     val skipTipVisible = skipTip != null
     // 渐隐期间提示已经没了, 按钮却还在淡出: 留住最后一次的内容, 免得文字/图标在渐隐途中变脸
@@ -560,6 +641,48 @@ fun TvEpisodeScreenContent(
         focus.request(TvPlayerFocusTarget.PROGRESS)
     }
 
+    // 「接下来播放」卡片的抢焦点与善后: 与上面那颗按钮同一套判据同一套理由, 逐条见上.
+    // 卡片只有一副面孔, 所以抢焦点不像按钮那样还要分"取消/跳过"两档 —— 在场就送.
+    var upNextHoldsFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(upNextFocused) {
+        if (upNextFocused) upNextHoldsFocus = true else if (upNextVisible) upNextHoldsFocus = false
+    }
+    // 卡片出现即抢焦点: 遥控器上没有别的路能走到它.
+    // 别的东西正管着焦点时不抢 (与 OP/ED 提示按钮同一份清单, 逐条理由见那边)
+    fun upNextMayTakeFocus() = !(
+            overlay.layer == TvPlayerLayer.DETAILS || overlay.replyingComment != null ||
+                    overlay.danmakuInputExpanded || overlay.openPopupCount > 0 ||
+                    anySheetVisible || imageViewer.viewing.value ||
+                    // 选集条这一条同样要连层级一起判 (见 upNextHidden): hideAll 不复位那个标志,
+                    // 只看它的话"从选集条按返回回纯视频"之后卡片永远拿不到焦点
+                    (overlay.episodeStripExpanded && overlay.layer == TvPlayerLayer.CONTROLS)
+            )
+    LaunchedEffect(upNextVisible) {
+        if (!upNextVisible || !upNextMayTakeFocus()) return@LaunchedEffect
+        focus.request(TvEpisodeFocus.UP_NEXT)
+    }
+    // **控制层收起、屏上只剩画面和这张卡的那一刻再抢一次**: 那时它是唯一能聚焦的东西 (同 OP/ED
+    // 提示按钮的"纯视频态无论哪副面孔都送"). 收起走的是 hideAll -> ROOT, 而 ROOT 本就会被落点
+    // 解析器改派给它 (见 floatingTipRootFocus) —— 这一条是给那条改派兜底, 免得某条收起路径没
+    // 经过 pendingFocus 就把焦点留在根节点上.
+    // **翻成 CONTROLS 时不抢**: 那是用户自己唤出控制层, 焦点该归进度条
+    LaunchedEffect(overlay.layer) {
+        if (overlay.layer != TvPlayerLayer.HIDDEN) return@LaunchedEffect
+        if (!upNextVisible || !upNextMayTakeFocus()) return@LaunchedEffect
+        focus.request(TvEpisodeFocus.UP_NEXT)
+    }
+    LaunchedEffect(upNextVisible) {
+        if (upNextVisible || !upNextHoldsFocus) return@LaunchedEffect
+        upNextHoldsFocus = false
+        if (overlay.layer != TvPlayerLayer.CONTROLS) {
+            overlay.requestRootFocus()
+            return@LaunchedEffect
+        }
+        overlay.activePanel = null
+        overlay.focusRegion = TvPlayerFocusRegion.NONE
+        focus.request(TvPlayerFocusTarget.PROGRESS)
+    }
+
     // 本页是否在前台 (返回栈栈顶). 从面板里点开别的页面 (相关推荐 -> 条目详情页) 期间为 false:
     //   - 那时不自动隐藏控制层 (子树被移除的话, 回来时焦点无处可还);
     //   - 重新回到前台时补发一次焦点落点 —— 离开期间聚焦的那个节点被销毁, Compose 会清掉
@@ -607,7 +730,10 @@ fun TvEpisodeScreenContent(
                 // 手势改姓, 否则长按倍速松手那记 KeyUp 就成了"按下取消跳过".
                 // 也不在抬起时清: 清了的话本次手势的 KeyUp 放行给按钮之后, 按钮自己那道闸
                 // (见下方 pillsRowTrailing) 读到的已经是"不归我", 反而把真正的点击吞掉
-                if (!confirmWasHeld) confirmDownOnSkipTip = skipTipVisible && skipTipFocused
+                if (!confirmWasHeld) {
+                    confirmDownOnFloatingTip = (skipTipVisible && skipTipFocused) ||
+                            (upNextVisible && upNextFocused)
+                }
                 confirmHeldAnywhere = true
             }
             if (isKeyUp) confirmHeldAnywhere = false
@@ -705,14 +831,14 @@ fun TvEpisodeScreenContent(
         if (skipTipVisible && skipTipFocused) {
             when {
                 isConfirm -> {
-                    // 归属在路由开头就定死了 (见 confirmDownOnSkipTip): 只有"焦点已经在按钮上时
+                    // 归属在路由开头就定死了 (见 confirmDownOnFloatingTip): 只有"焦点已经在按钮上时
                     // 全新按下的那一次"才归按钮, 归了就一路归到抬起; 不归它的整次手势从头到尾
                     // 落到分层路由, 与没有这颗按钮时一模一样.
                     //
                     // 按单个事件判是不行的 —— 一次按住会连发几十个 KeyDown, 中途焦点落到本按钮上
                     // 的话后半段会改姓: 纯视频态长按确认键倍速, 按住期间按钮出现并抢焦点, 抬起
                     // 就把按钮点掉了 (而且纯视频态那边收不到抬起, 倍速也停不下来)
-                    if (confirmDownOnSkipTip) {
+                    if (confirmDownOnFloatingTip) {
                         // 按下/连发/抬起都放行给按钮自己 (clickable 在抬起时才触发 onClick)
                         return@router false
                     }
@@ -739,6 +865,31 @@ fun TvEpisodeScreenContent(
                     return@router false
 
                 else -> {} // 返回 / 播放暂停 / 上下集 …… 全部照常, 交给下面的分层路由
+            }
+        }
+        // 「接下来播放」卡片持焦中. 规矩与上面那颗按钮几乎一样 (确认键放行给卡片自己, 控制层开着
+        // 时的方向键放行给空间焦点搜索), **只多一条**: 返回键 = 取消本次提示.
+        //
+        // 那颗提示按钮刻意没有"按键收起"(用户强调过), 卡片这里却给 —— 差别在于它会**替用户做事**
+        // (到点自己进下一集), 而不像跳过按钮那样只是"给你一个可按的东西". 各家都给这个逃生口
+        // (Kodi 的返回键、Jellyfin 的 Cancel). 代价: 纯视频态下这一下返回被卡片吃掉, 想退出播放器
+        // 得再按一次 —— 与 Kodi 同款, 可接受
+        if (upNextVisible && upNextFocused) {
+            when {
+                isConfirm -> if (confirmDownOnFloatingTip) return@router false
+
+                isBack -> {
+                    overlay.markInteraction()
+                    if (isKeyUp) upNext.dismiss()
+                    return@router true
+                }
+
+                overlay.layer == TvPlayerLayer.CONTROLS && !progressSliderState.isPreviewing &&
+                        (key == Key.DirectionUp || key == Key.DirectionDown ||
+                                key == Key.DirectionLeft || key == Key.DirectionRight) ->
+                    return@router false
+
+                else -> {}
             }
         }
         // 侧边 sheet (数据源/选集/弹幕设置) 打开: 返回关闭, 其余交给 sheet 内部导航
@@ -986,6 +1137,19 @@ fun TvEpisodeScreenContent(
     // 每次尝试都重新判一遍: 按钮可能在解析途中出现或消失.
     // 收在解析器这一个口子上, 而不是让"抢按钮"和"抢根节点"两个循环并发 —— 那是互抢焦点的老坑
     fun skipTipOwnsRootFocus() = vm.playerSkipOpEdState.run { showSkipTips || canSkipNow }
+
+    /**
+     * 纯视频态下 ROOT 的焦点该改派给谁; null = 就落根节点.
+     *
+     * 两个浮层控件都是"纯视频态下屏上唯一能聚焦的东西", 所以走 ROOT 的每条路 (返回收起控制层 /
+     * 自动隐藏 / 进页就赶上片尾) 都该落到它们身上. 卡片优先: 它在场时 ED 那副面孔本来就不给
+     * (见 skipTip 的定义), 两者不会同时在场, 这里的先后只是把那条约束再钉一遍.
+     */
+    fun floatingTipRootFocus(): TvFocusKey? = when {
+        upNextVisible -> TvEpisodeFocus.UP_NEXT
+        skipTipOwnsRootFocus() -> TvEpisodeFocus.SKIP_TIP
+        else -> null
+    }
     fun sendPendingFocus() {
         val target = overlay.pendingFocus.first
         val expectedLayer = when (target) {
@@ -997,11 +1161,7 @@ fun TvEpisodeScreenContent(
         }
         if (overlay.layer != expectedLayer) return
         focus.request(
-            if (target == TvPlayerFocusTarget.ROOT && skipTipOwnsRootFocus()) {
-                TvEpisodeFocus.SKIP_TIP
-            } else {
-                target
-            },
+            if (target == TvPlayerFocusTarget.ROOT) floatingTipRootFocus() ?: target else target,
         )
     }
     LaunchedEffect(Unit) {
@@ -1241,7 +1401,9 @@ fun TvEpisodeScreenContent(
                 // 照旧, 只是"收起"变成本层内部把除按钮之外的一切淡到透明 (chromeVisible), 布局仍在,
                 // 于是屏幕上只剩那颗按钮, 且纹丝不动
                 AniAnimatedVisibility(
-                    visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible,
+                    // 「接下来播放」卡片与提示按钮同一条道理: 它也是底部那一列的一员, 本层为它多活
+                    // 一会儿, 于是纯视频态下屏上只剩这张卡, 位置与控制层在场时分毫不差
+                    visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible || upNextVisible,
                     modifier = Modifier.matchParentSize(),
                 ) {
                     TvPlayerControlsOverlay(
@@ -1254,8 +1416,47 @@ fun TvEpisodeScreenContent(
                         framePreview = framePreview,
                         playerFocus = focus,
                         sheetsController = sheetsController,
-                        // OP/ED 提示按钮: 胶囊行最右的一颗 (取舍见 TvSkipOpEdTipButton 的 KDoc)
+                        // 胶囊行最右的插槽. 两个浮层控件轮流占用 —— 它们互斥在场 (卡片在场时
+                        // ED 那副面孔不给, 见 skipTip 的定义), 而"底边与胶囊对齐、面板从上方浮出
+                        // 也不会顶到它"这两条对两者都成立
                         pillsRowTrailing = {
+                            // 两者叠在同一个角上而不是并排: 交接那一瞬 (ED 提示淡出 / 卡片淡入)
+                            // 并排会让位置横跳一下
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                            // 片尾「接下来播放」卡片 (见 TvUpNextTip.kt).
+                            //
+                            // **退场不做动画** (`ExitTransition.None`): 本卡是用 hangAboveBaseline
+                            // 报 0 高、向上溢出画出来的, 有一大半在胶囊行的边界之外; 而它要退场的
+                            // 那一刻 (下键展开选集条) 外层那个 AnimatedVisibility 也正在淡出 ——
+                            // 淡出给整棵子树套的 graphicsLayer 默认是 CompositingStrategy.Auto,
+                            // alpha < 1 就**开一块与节点等大的离屏缓冲**, 画在边界之外的部分当场被裁,
+                            // 观感是"卡片上半截先被切掉再消失" (真机可见). 同帧撤掉就没得可裁.
+                            // 溢出被裁的根因已在控制层那一列顶部用预留高度解决 (见
+                            // TV_TRAILING_OVERFLOW_RESERVE), 这里不必再靠"延迟入场"躲着.
+                            // 退场仍不做动画: 下键进选集条时它该当场消失, 淡出反而拖泥带水
+                            AniAnimatedVisibility(visible = upNextVisible, exit = ExitTransition.None) {
+                                TvUpNextCard(
+                                    upNext,
+                                    onClick = { playNextEpisodeNow() },
+                                    modifier = Modifier
+                                        // 与提示按钮同一道闸: 卡片一出现就抢焦点, 用户手上那次
+                                        // 按住 (长按倍速) 剩下的连发与 KeyUp 会全落在它身上,
+                                        // 松手即"立刻播下一集"
+                                        .consumeHeldConfirmKey()
+                                        .tvFocusAnchor(focus, TvEpisodeFocus.UP_NEXT)
+                                        .onFocusChanged {
+                                            upNextFocused = it.hasFocus
+                                            if (it.hasFocus) {
+                                                overlay.markInteraction()
+                                                // 本卡不是面板触发器, 也不上报焦点区域 (面板只在
+                                                // 区域变成进度条/图标行时才自动清) —— 从「弹幕」
+                                                // 胶囊右移过来时那块面板会一直挂着, 自己收掉
+                                                overlay.activePanel = null
+                                            }
+                                        },
+                                )
+                            }
+                            // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
                             val shownTip = skipTip ?: lastSkipTip
                             AniAnimatedVisibility(visible = skipTipVisible) {
                                 if (shownTip == null) return@AniAnimatedVisibility
@@ -1283,6 +1484,7 @@ fun TvEpisodeScreenContent(
                                             if (it.hasFocus) overlay.markInteraction()
                                         },
                                 )
+                            }
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
@@ -1357,6 +1559,7 @@ fun TvEpisodeScreenContent(
 
 private enum class TvEpisodeFocus : TvFocusKey {
     SKIP_TIP,
+    UP_NEXT,
 }
 
 /** 缓冲/加载指示: 状态收集限制在本组合内, 不牵连整屏. */

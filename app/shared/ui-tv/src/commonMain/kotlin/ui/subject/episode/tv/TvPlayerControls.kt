@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Comment
-import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.rounded.Close
@@ -83,8 +82,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,7 +115,6 @@ import me.him188.ani.app.ui.lang.episode_comments
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_episode_cache
-import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_title
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_settings_title
 import me.him188.ani.app.ui.lang.subject_episode_external_links
 import me.him188.ani.app.ui.lang.subject_episode_fast_forward_seconds
@@ -228,14 +228,22 @@ internal fun TvPlayerControlsOverlay(
     playerFocus: TvFocusScope,
     sheetsController: VideoSideSheetsController<EpisodeVideoSideSheetPage>,
     /**
-     * 控制层本体可见吗. false = 本层只是**为了托住 [pillsRowTrailing] 那颗按钮而留在场上**:
-     * 除那颗按钮外一切淡出到透明, 但**布局照旧**, 于是按钮稳稳停在胶囊行原来的位置上.
+     * 控制层本体可见吗. false = 本层只是**为了托住 [pillsRowTrailing] 里那两个浮层控件而留在
+     * 场上**: 除它们之外一切淡出到透明, 布局仍在 (胶囊行与进度条行), **但图标行会一并收掉** ——
+     * 于是它们停在"只剩进度条与胶囊行"那一档的位置, 与焦点落在胶囊行时的收起态完全一致
+     * (见 `showBelowProgress`).
      *
-     * 为什么不让按钮自己浮在屏幕上按实测坐标跟随: 试过, 位置得等下一帧才到, 图标行收起那段
-     * 逐帧动画里按钮总慢一拍. 当成行内一员由布局直接给出位置, 就没有"跟随"这回事了.
+     * 为什么不让它们自己浮在屏幕上按实测坐标跟随: 试过, 位置得等下一帧才到, 图标行收起那段
+     * 逐帧动画里总慢一拍. 当成行内一员由布局直接给出位置, 就没有"跟随"这回事了.
      */
     chromeVisible: Boolean,
-    /** 胶囊行最右的插槽 (OP/ED 提示按钮): 与胶囊同排靠右, 位置由布局给出. */
+    /**
+     * 胶囊行最右的插槽 (OP/ED 提示按钮 / 片尾「接下来播放」卡片): 与胶囊同排靠右, **底边与胶囊
+     * 对齐**, 位置由布局给出.
+     *
+     * 两个都放这里而不是各自找地方: 面板是从本行**上方**浮出的, 放在本行之上的东西会被面板顶得
+     * 跳来跳去; 本行自己不动, 插槽也就不动. 高于胶囊的内容 (卡片) 向上长, 胶囊与进度条的间距不变.
+     */
     pillsRowTrailing: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -354,6 +362,15 @@ internal fun TvPlayerControlsOverlay(
                         overlay.focusRegion == TvPlayerFocusRegion.PANEL
             }
         }
+        // **控制层淡出时图标行一并收掉** (2026-09-05 改): 那时本层留在场上只为托住 trailing 那两个
+        // 浮层控件 (OP/ED 提示按钮 / 「接下来播放」卡片), 而它们该停在"只剩进度条与胶囊行"那一档的
+        // 位置上 —— 那是它们离画面底缘最近、最不挡画面的位置, 也与焦点落在胶囊行时的收起态完全一致,
+        // 于是这两种情形下位置一模一样, 不会因为控制层收没收起而上下跳.
+        //
+        // 这一条推翻了原来"图标行绝不能摘掉、否则按钮往下掉"的做法 —— 往下掉正是现在要的,
+        // 而且 AniAnimatedVisibility 会把这一段高度变化做成动画, 唤出控制层时位置自己滑回去.
+        // **进度条行仍然不许摘**: 摘了那两个控件就贴到屏幕底缘了.
+        val showBelowProgress = !hideBelowProgress && chromeVisible
         // 每个胶囊按钮的焦点请求器: 面板最底项按下键显式回到"打开它的那个胶囊" ——
         // 靠空间搜索会落到面板正下方的任意按钮, 落错后该按钮又把面板切成自己的 (卡片跳变)
         val pillFocusRequesters = remember { TvPlayerPanel.entries.associateWith { FocusRequester() } }
@@ -475,14 +492,14 @@ internal fun TvPlayerControlsOverlay(
                         framePreview = framePreview,
                         overlay = overlay,
                         // 图标行暂隐期间不能指向它 (节点已移出组合, 未附着的请求器会抛)
-                        downFocus = bottomRowFirstFocus.takeIf { !hideBelowProgress },
+                        downFocus = bottomRowFirstFocus.takeIf { showBelowProgress },
                         upFocus = pillFocusRequesters.getValue(TV_PILL_VISUAL_ORDER.first()),
                         modifier = chrome.tvFocusAnchor(playerFocus, TvPlayerFocusTarget.PROGRESS),
                     )
 
                     // 图标行 (原顶栏按钮并入; 再往下 = 选集条, 由根路由处理).
                     // 拖拽预览中同样按成隐形 (同上: 那会儿唯一该看的是圆点和缩略图)
-                    AniAnimatedVisibility(visible = !hideBelowProgress) {
+                    AniAnimatedVisibility(visible = showBelowProgress) {
                         Column(
                             chrome.graphicsLayer {
                                 alpha = if (progressSliderState.isPreviewing) 0f else 1f
@@ -661,7 +678,10 @@ private fun TvPlayerPillsRow(
     // 正开着的是不是"发表评论"那个弹窗 (评论胶囊点出来的那个, 没有引用区): 关掉后焦点要还给
     // 那颗胶囊. 只在弹窗开合时变一次, 不是每帧都动的热状态
     val composingNewComment = overlay.replyingComment.let { it != null && it.quoted == null }
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // **底边对齐而不是居中**: trailing 里可能是比胶囊高的东西 (片尾「接下来播放」卡片).
+    // 居中的话行一变高胶囊就往上挪, 而且卡片会往下探进胶囊与进度条之间那道间距里;
+    // 底边对齐则胶囊纹丝不动、卡片一律向上长. 两边一样高时 (只有提示按钮) 与居中完全等价
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         // 胶囊本体单独成组占满剩余宽度, 把 trailing 顶到最右.
         // 焦点区域上报只挂这一组, 不含 trailing: 那颗按钮聚焦时不该把图标行收起
         // (hideBelowProgress 判的就是 PILLS) —— 提示一出现焦点就落过去, 控制层会当场塌一档
@@ -725,21 +745,33 @@ private fun TvPlayerPillsRow(
                     abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
                 ),
             )
-            TvPlayerPill(
-                icon = { Icon(Icons.AutoMirrored.Rounded.FormatListBulleted, null, Modifier.size(TV_PILL_ICON_SIZE)) },
-                label = stringResource(Lang.subject_episode_danmaku_list_title),
-                panel = TvPlayerPanel.DANMAKU_LIST,
-                overlay = overlay,
-                focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.DANMAKU_LIST),
-            )
+            // 「弹幕」一颗顶原来的两颗 (弹幕列表 + 发送弹幕): 聚焦浮出弹幕列表面板 (含源开关与
+            // 延迟), 点击展开输入框发弹幕 —— 与「评论」那颗完全同一个模式 (聚焦看, 点击发),
+            // 原来拆成两颗等于把同一件事的"看"和"发"摆成两个并列入口, 还多占一格横向导航
             TvDanmakuSendEntry(
                 overlay = overlay,
                 danmakuEditorState = danmakuEditorState,
                 vm = vm,
+                panelFocusRequester = pillFocusRequesters.getValue(TvPlayerPanel.DANMAKU_LIST),
             )
         }
-        trailing()
+        // **不参与行高**: trailing 里的「接下来播放」卡片比胶囊高一大截, 让它撑高本行的话,
+        // 紧贴本行上方的浮出面板会被整个顶上去 (真机可见). 报 0 高、向上溢出绘制之后, 本行的
+        // 高度永远只由胶囊决定, 卡片则从行的下边缘往上长 —— 面板与胶囊一动不动.
+        // 横向照旧参与测量 (卡片要占住右边那块地方); 父容器不裁剪, 溢出部分正常绘制.
+        Box(Modifier.hangAboveBaseline()) { trailing() }
     }
+}
+
+/**
+ * 报 0 高、内容向上溢出: 放在 [Alignment.Bottom] 对齐的 Row 里, 效果是"底边贴着行的下边缘,
+ * 高度不计入行高".
+ */
+private fun Modifier.hangAboveBaseline() = layout { measurable, constraints ->
+    val placeable = measurable.measure(
+        constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+    )
+    layout(placeable.width, 0) { placeable.place(0, -placeable.height) }
 }
 
 /**

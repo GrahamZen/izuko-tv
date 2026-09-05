@@ -131,6 +131,12 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_still
+import me.him188.ani.app.ui.lang.settings_player_up_next_still_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_seconds
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
@@ -615,6 +621,14 @@ fun SettingsScope.SoftwareUpdateGroup(
     }
 }
 
+/**
+ * 片尾「接下来播放」提示的提前量选项 (秒); 0 = 不提示.
+ *
+ * 20 秒是默认: Netflix 15 与 Kodi 30 之间. 上限 60 是给"想早点看到下一集是什么"的人,
+ * 再长就跟片尾一样长了 (动画 ED 通常 90 秒), 卡片会在屏上挂太久.
+ */
+private val UP_NEXT_TIP_LEAD_SECONDS_OPTIONS = listOf(0, 10, 20, 30, 60)
+
 @Composable
 fun SettingsScope.PlayerGroup(
     videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
@@ -766,6 +780,38 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
+        // 片尾「接下来播放」提示: 只有遥控器形态有这个卡片 (它是底部那一列的一员, 靠焦点操作),
+        // 手机端播完直接连播, 没有对应的界面, 所以两项一起藏起来
+        if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            DropdownItem(
+                selected = { config.upNextTipLeadSeconds },
+                values = { UP_NEXT_TIP_LEAD_SECONDS_OPTIONS },
+                itemText = { seconds ->
+                    Text(
+                        if (seconds <= 0) {
+                            stringResource(Lang.settings_player_up_next_tip_off)
+                        } else {
+                            stringResource(Lang.settings_player_up_next_tip_seconds, seconds)
+                        },
+                    )
+                },
+                onSelect = { videoScaffoldConfig.update(config.copy(upNextTipLeadSeconds = it)) },
+                title = { Text(stringResource(Lang.settings_player_up_next_tip)) },
+                description = { Text(stringResource(Lang.settings_player_up_next_tip_description)) },
+            )
+            if (config.upNextTipLeadSeconds > 0) {
+                HorizontalDividerItem()
+                SwitchItem(
+                    checked = config.upNextTipShowStill,
+                    onCheckedChange = {
+                        videoScaffoldConfig.update(config.copy(upNextTipShowStill = it))
+                    },
+                    title = { Text(stringResource(Lang.settings_player_up_next_still)) },
+                    description = { Text(stringResource(Lang.settings_player_up_next_still_description)) },
+                )
+            }
+        }
         HorizontalDividerItem()
         DropdownItem(
             selected = { config.effectiveSkipOpEdMode },

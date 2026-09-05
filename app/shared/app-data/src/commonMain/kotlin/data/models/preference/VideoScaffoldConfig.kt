@@ -130,6 +130,27 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val opEdSkipDuration: Duration = 85.seconds,
     /**
+     * 片尾「接下来播放」提示提前多少秒进入倒计时; 0 = 不显示这个提示. 电视端专有.
+     *
+     * 卡片本身在**片尾 (ED) 一开始**就出现 (有 ED 标记时), 但在最后这些秒之前不倒计时 ——
+     * 想看片尾/次回预告的人不该被催, 想直接走的人按一下确认就走. 没有 ED 标记的集数则
+     * 到点才出现, 出现即倒计时.
+     *
+     * 取 20 秒: Netflix 15 / Kodi 30 之间. 动画 ED 通常 90 秒, 从 ED 一开始就倒计时太催.
+     *
+     * @since 6.0.5
+     */
+    val upNextTipLeadSeconds: Int = 20,
+    /**
+     * 「接下来播放」提示里显示下一集的剧照. 关掉只留文字.
+     *
+     * 单集剧照对没看过的人是剧透 (Jellyfin 也为此单独给了开关), 但它同时是"这是哪一集"
+     * 最快的判据, 所以默认开.
+     *
+     * @since 6.0.5
+     */
+    val upNextTipShowStill: Boolean = true,
+    /**
      * 在播放器错误时自动切换视频源
      */
     val autoSwitchMediaOnPlayerError: Boolean = true,
@@ -276,6 +297,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             autoPlayNext = false,
             autoSkipOpEd = false,
             skipOpEdMode = SkipOpEdMode.OFF,
+            upNextTipLeadSeconds = 0,
             autoSwitchMediaOnPlayerError = false,
             enableHighQualityAudioTimeStretch = false,
             enableExperimentalHlsSegmentFiltering = false,
