@@ -38,6 +38,7 @@ jobs:
           modified_content="$file_content"
           modified_content="${modified_content//\$GIT_TAG/${{ steps.step-1.outputs.tag }}}"
           modified_content="${modified_content//\$TAG_VERSION/${{ steps.step-2.outputs.substring }}}"
+          modified_content="${modified_content//\$REPO_OWNER/${{ github.repository_owner }}}"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$modified_content" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
