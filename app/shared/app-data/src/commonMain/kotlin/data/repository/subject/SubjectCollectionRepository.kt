@@ -335,22 +335,30 @@ class SubjectCollectionRepositoryImpl(
                 fresh
             },
         ) {
-            val subject = subjectService.getSubjectCollection(subjectId)
-            val lastFetched = currentTimeMillis()
-            val subjectEntity = subject?.toEntity(
-                lastFetched = lastFetched,
-            )
-            if (subjectEntity != null) {
-                val episodeEntities = subject.episodes.map {
-                    it.toEntity1(subjectId, lastFetched = lastFetched)
-                }
-                // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
-                subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
-                // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)
-                logger.info { "Fetched subject $subjectId: ${episodeEntities.size} episodes" }
-            }
+            fetchAndSaveSubjectCollection(subjectId)
             // TODO: 2025/5/24 handle subject not found
         }
+    }
+
+    /**
+     * 取单个条目的收藏与分集并落库.
+     *
+     * @return 服务端是否有这个条目的收藏记录; `false` 表示未收藏 (数据库不动)
+     */
+    private suspend fun fetchAndSaveSubjectCollection(subjectId: Int): Boolean {
+        val subject = subjectService.getSubjectCollection(subjectId)
+        val lastFetched = currentTimeMillis()
+        val subjectEntity = subject?.toEntity(
+            lastFetched = lastFetched,
+        ) ?: return false
+        val episodeEntities = subject.episodes.map {
+            it.toEntity1(subjectId, lastFetched = lastFetched)
+        }
+        // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
+        subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
+        // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)
+        logger.info { "Fetched subject $subjectId: ${episodeEntities.size} episodes" }
+        return true
     }
 
     override fun subjectCollectionFlow(
@@ -482,7 +490,12 @@ class SubjectCollectionRepositoryImpl(
                 // 只允许同时一个请求. 防止多个请求浪费带宽.
                 // 一般来说不会有多个请求. 最常见的并行请求可能是用户刚刚打开 APP 进入探索页自动刷新"继续观看"栏目, 在刷新还在进行时切换到收藏页触发自动刷新.
                 updateRecentlyUpdatedSubjectCollectionsMutex.withLock {
-                    fetchAndSaveSubjectCollectionsWithEpisodes(type, limit, offset)
+                    val fetched = fetchAndSaveSubjectCollectionsWithEpisodes(type, limit, offset)
+                    // 只有"某个类型最近更新的前 limit 条"这种请求能反推出哪些本地行已经不该是这个类型了,
+                    // offset != 0 时窗口不完整, 反推不成立
+                    if (type != null && offset == 0) {
+                        reconcileCollectionsLeftType(type, limit, fetched)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -495,13 +508,14 @@ class SubjectCollectionRepositoryImpl(
      * 执行网络查询条目收藏及其剧集列表, 在所有网络请求都成功后调用 [onFetched], 然后保存查询结果到数据库.
      *
      * @param onFetched 当所有网络请求都成功后调用
+     * @return 本次从服务端拿到并写入数据库的条目
      */
     private suspend inline fun fetchAndSaveSubjectCollectionsWithEpisodes(
         type: UnifiedCollectionType?,
         limit: Int,
         offset: Int,
         onFetched: (items: List<AniSubjectCollection>) -> Unit = {},
-    ) {
+    ): List<SubjectCollectionEntity> {
         require(type != UnifiedCollectionType.NOT_COLLECTED) { "type must not be NOT_COLLECTED" }
         require(limit > 0) { "limit must be positive" }
 
@@ -517,10 +531,9 @@ class SubjectCollectionRepositoryImpl(
         // 批量插入条目信息与分集, 单个事务 (含保留 relations 盖章, 否则这里每写一批就会把
         // 详情页刚取好的角色/制作人员时间戳抹回 0, 触发一轮强制重取); 条目在前, 分集有外键依赖
         val lastFetched = currentTimeMillis()
+        val subjects = items.map { it.toEntity(lastFetched = lastFetched) }
         subjectCollectionDao.upsertSubjectsWithEpisodes(
-            subjects = items.mapIndexed { index, batchSubjectCollection ->
-                batchSubjectCollection.toEntity(lastFetched = lastFetched)
-            },
+            subjects = subjects,
             episodes = items
                 .flatMap { it.episodes }
                 .map { episode ->
@@ -530,6 +543,46 @@ class SubjectCollectionRepositoryImpl(
                     )
                 },
         )
+        return subjects
+    }
+
+    /**
+     * 纠正"本地还标着 [type], 而服务端上已经不是了"的条目.
+     *
+     * [updateRecentlyUpdatedSubjectCollections] 只做 upsert, 服务端不再返回的条目没人来改. 于是在
+     * **另一台设备/另一个安装**上把番从"在看"改成"看过"之后, 本机那行会永远停在在看 —— 探索页
+     * "继续观看"和系统主屏预览频道一直挂着已经看完的番, 进一次详情页 (走单条 fetch) 才好.
+     *
+     * 服务端按收藏更新时间降序返回, 所以"本地标着 [type]、更新时间落在本次返回的窗口内、却没被返回"
+     * 就说明它的收藏状态在别处变过了. 逐个重取纠正; 服务端已无这条收藏记录 = 在别处取消了收藏, 删本地行.
+     */
+    private suspend fun reconcileCollectionsLeftType(
+        type: UnifiedCollectionType,
+        limit: Int,
+        fetched: List<SubjectCollectionEntity>,
+    ) {
+        val fetchedIds = fetched.mapTo(HashSet()) { it.subjectId }
+        // 返回数量不足 limit ⇒ 窗口盖住了服务端上该类型的**全部**条目, 没被返回的一律有问题;
+        // 拉满了就只信"更新时间不早于窗口最末一条"的那些 —— 更早的可能只是排在窗口之外.
+        val windowFloor = if (fetched.size < limit) Long.MIN_VALUE else fetched.minOf { it.lastUpdated }
+        val stale = subjectCollectionDao.filterMostRecentUpdated(listOf(type), limit).first()
+            .filter { it.subjectId !in fetchedIds && it.lastUpdated >= windowFloor }
+        if (stale.isEmpty()) return
+
+        logger.info { "Local collections still marked $type but missing from server: ${stale.map { it.subjectId }}" }
+        // 正常情况只有零星几条. 封顶是防"服务端排序与上述假设不符"时每小时都刷一整屏单条请求,
+        // 没纠正完的下一轮继续
+        for (entity in stale.take(RECONCILE_LEFT_TYPE_LIMIT)) {
+            subjectFetcher.fetchIfStale(
+                key = entity.subjectId,
+                // 与详情页那条单条 fetch 去重: 已经被它纠正过就不必再取
+                isFresh = { subjectCollectionDao.findById(entity.subjectId).first()?.collectionType != type },
+            ) {
+                if (!fetchAndSaveSubjectCollection(entity.subjectId)) {
+                    subjectCollectionDao.delete(entity.subjectId)
+                }
+            }
+        }
     }
 
     override suspend fun updateRating(
@@ -738,6 +791,9 @@ class SubjectCollectionRepositoryImpl(
          * [invalidateCache] 重新拉取条目的最大并行数.
          */
         private const val INVALIDATE_REFETCH_PARALLELISM = 4
+
+        /** 一轮刷新里最多纠正几条"本地类型已过期"的记录, 见 [reconcileCollectionsLeftType]. */
+        private const val RECONCILE_LEFT_TYPE_LIMIT = 8
     }
 }
 
