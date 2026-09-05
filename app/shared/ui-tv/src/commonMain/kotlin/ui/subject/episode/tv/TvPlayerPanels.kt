@@ -46,7 +46,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Reply
-import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -124,7 +124,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
-import me.him188.ani.app.ui.lang.episode_send_danmaku
+import me.him188.ani.app.ui.lang.episode_danmaku
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
@@ -1341,14 +1341,19 @@ private val TV_PERSON_PANEL_AVATAR_SIZE = 48.dp
 // ============================ 弹幕发送入口 ============================
 
 /**
- * 弹幕发送入口: 胶囊行末尾的圆钮, 点击向右展开成输入框 (自动聚焦弹系统键盘,
- * IME 确认发送后收起, 返回键收起 —— 与搜索页输入框同套路).
+ * 「弹幕」胶囊: 胶囊行末尾那颗, **聚焦浮出弹幕列表面板, 点击向右展开成输入框**发弹幕
+ * (自动聚焦弹系统键盘, IME 确认发送后收起, 返回键收起 —— 与搜索页输入框同套路).
+ *
+ * 与「评论」那颗同一个模式 (聚焦看, 点击发). 原先是两颗 —— 「弹幕列表」只管浮面板、
+ * 「发送弹幕」只管发 —— 那把同一件事的两半摆成了并列入口, 还多占一格横向导航.
  */
 @Composable
 internal fun TvDanmakuSendEntry(
     overlay: TvPlayerOverlayState,
     danmakuEditorState: DanmakuEditorState,
     vm: EpisodeViewModel,
+    /** 弹幕列表面板最底项按下键经此回到本胶囊 (空间搜索会落错按钮导致面板跳变). */
+    panelFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -1403,18 +1408,19 @@ internal fun TvDanmakuSendEntry(
         onClick = { if (!expanded) overlay.danmakuInputExpanded = true },
         interactionSource = interactionSource,
         modifier = modifier
+            .focusRequester(panelFocusRequester)
             .tvFocusNavSignal(focus)
             .tvFocusAnchor(
                 focus,
                 TvDanmakuSendFocus.BUTTON,
                 includeDescendants = false,
             )
-            // 本按钮与面板胶囊同在 PILLS 区域, 但它不是面板触发器: 聚焦到它时收起浮出的
-            // 面板 (面板只在焦点区域变成进度条/图标行时才自动清, 从"评论"胶囊右移过来
-            // 区域不变, 不收就一直挂着)
+            // 本胶囊也是面板触发器: 聚焦即浮出弹幕列表面板 (与其余胶囊一致).
+            // **展开成输入框那一段不浮面板**: 那时人在打字, 上方再冒出一整块列表既挡视线,
+            // 又让上键的去向变得不可预期
             .onFocusChanged { state ->
                 if (state.hasFocus) {
-                    overlay.activePanel = null
+                    overlay.activePanel = if (expanded) null else TvPlayerPanel.DANMAKU_LIST
                     return@onFocusChanged
                 }
                 // 焦点离开这颗胶囊 (hasFocus 含里面的输入框) 就收起输入框.
@@ -1428,10 +1434,12 @@ internal fun TvDanmakuSendEntry(
                 }
             },
     ) {
-        Icon(Icons.Rounded.Edit, null, Modifier.size(TV_PILL_ICON_SIZE))
+        Icon(Icons.Rounded.Subtitles, null, Modifier.size(TV_PILL_ICON_SIZE))
         if (!expanded) {
             Text(
-                stringResource(Lang.episode_send_danmaku),
+                // 就叫「弹幕」: 这颗现在既是列表入口也是发送入口, 挂哪一边的名字都偏.
+                // 与「评论」并排也整齐 (那颗同样是"聚焦看、点击发")
+                stringResource(Lang.episode_danmaku),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
             )

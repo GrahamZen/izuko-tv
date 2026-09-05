@@ -13,6 +13,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +100,7 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
@@ -478,10 +480,97 @@ fun TvEpisodeScreenContent(
     var fastForwarding by remember { mutableStateOf(false) }
     // 长按结束后待补发的原速 (null = 无待办), 见下方"倍速还原补发"协程
     var pendingSpeedRestore by remember { mutableStateOf<Float?>(null) }
-    // 确认键的这一次**按下**是落在 OP/ED 提示按钮上的吗. 按下与抬起必须成对, 否则会吃到残余:
-    // 提交拖拽预览就是这样 —— 按下那一下在进度条上 (收起控制层 + 把焦点交给提示按钮), 抬起时
-    // 焦点已经在按钮上了, 不记账的话这一下抬起会把按钮也按掉, 顺带还让控制层再没机会回来
-    var confirmDownOnSkipTip by remember { mutableStateOf(false) }
+    // 确认键的这一次**按下**是落在浮层提示控件 (OP/ED 提示按钮 / 「接下来播放」卡片) 上的吗.
+    // 按下与抬起必须成对, 否则会吃到残余: 提交拖拽预览就是这样 —— 按下那一下在进度条上 (收起
+    // 控制层 + 把焦点交给提示按钮), 抬起时焦点已经在按钮上了, 不记账的话这一下抬起会把按钮也
+    // 按掉, 顺带还让控制层再没机会回来.
+    //
+    // 两个控件共用一个标志: 它们**互斥**在场 (卡片在场时不给 ED 的跳过按钮, 见 skipTip 的定义)
+    var confirmDownOnFloatingTip by remember { mutableStateOf(false) }
+
+    // ---- 片尾「接下来播放」(见 TvUpNextState.kt 与 TvPlayerEpisodeStrip 的倒计时态) ----
+    //
+    // 界面不是一张独立的浮层卡, 而是**把选集条自动展开成倒计时态**: 落点是下一集, 锚位聚焦框
+    // 走成倒计时环, 后面只留两张渐隐的卡. 复用选集条而不是另画一张卡, 是因为"下一集长什么样、
+    // 怎么挑别的集"本来就是那一条在回答的问题 —— 另起一套卡片等于同一件事有两种外观, 而且
+    // 用户从卡片想去挑别的集时还得先学会"这张卡按右键会变成选集条".
+    val upNext = rememberTvUpNextState(vm)
+
+    // 别的东西正管着焦点时不自动展开 (与 OP/ED 提示按钮同一份清单, 逐条理由见那边):
+    // 那时倒计时照走、到点照样连播, 只是不弹这一档 —— 把人从正在做的事上踢开比不提示更糟
+    fun upNextMayOpen() = !(
+            overlay.replyingComment != null || overlay.danmakuInputExpanded ||
+                    overlay.openPopupCount > 0 || anySheetVisible || imageViewer.viewing.value
+            )
+
+    // 这一趟触发窗口里展开过没有 (自动展开的、按返回要回来的都算). 窗口走完 (换集 / 拖回片尾
+    // 之前 / 按返回收掉) 时复位, 下一趟照常
+    // 当前这一档选集条是不是"我们替用户摆出来的" (预告段 / 倒计时态). 用户自己动过之后就不算了,
+    // 见下面那条清账的效应
+    var upNextOwnsStrip by remember { mutableStateOf(false) }
+    var upNextOpenedThisWindow by remember { mutableStateOf(false) }
+    LaunchedEffect(upNext.visible) { if (!upNext.visible) upNextOpenedThisWindow = false }
+    LaunchedEffect(overlay.upNextCountdown) { if (overlay.upNextCountdown) upNextOpenedThisWindow = true }
+
+    // 两种情形自动展开, 都以"不打断用户手上的事"为界:
+    //
+    //  - **纯视频态**: 屏上什么都没有, 展开就是唯一的提示手段. **每次回到纯视频态都展开**,
+    //    不看这一趟展开过没有 —— 从内嵌详情页返回、或者把播放器组件收起来之后, 屏幕上又只剩画面了,
+    //    这时不提示等于白白错过 (2026-09-07 用户报: 加了一刀切的闩之后这两条路都不回来了);
+    //  - **焦点已经在选集条上**: 就地进入 —— 卡片行滑到下一集那张卡、提示行浮出. 这不算打断:
+    //    用户正在用的就是这一条, 落点也只是挪几格 (送焦走轮播自己那条通道, 用户一按键就收手).
+    //    早先这一档什么都不做, "片尾时正好在挑集"的人完全收不到提示 (同日用户报).
+    //    **这一路要闩住**: 用户按方向键退出倒计时态之后判据立刻又成立 (窗口没走完、焦点还在
+    //    选集条上), 不闩的话按一下右键提示就自己弹回来, 等于方向键失灵. 想手动要回来有路:
+    //    在选集条里按返回 (见根路由那条"就地退回上一档").
+    //
+    // 其余 (控制层/面板/详情层/弹窗) 一律不展开: 那一屏是用户自己开的, 顶掉它比不提示更糟.
+    // 那时倒计时照走, 到点该连播还是连播
+    LaunchedEffect(upNext.visible, overlay.layer, overlay.episodeStripExpanded, overlay.focusRegion) {
+        if (!upNext.visible || overlay.upNextCountdown) return@LaunchedEffect
+        if (!upNextMayOpen()) return@LaunchedEffect
+        val fromVideo = overlay.layer == TvPlayerLayer.HIDDEN
+        val fromStrip = !upNextOpenedThisWindow &&
+                overlay.layer == TvPlayerLayer.CONTROLS &&
+                overlay.episodeStripExpanded &&
+                overlay.focusRegion == TvPlayerFocusRegion.EPISODES
+        if (!fromVideo && !fromStrip) return@LaunchedEffect
+        upNextOwnsStrip = true
+        // 焦点已经在选集条里那一路不再送焦 (见 enterUpNextCountdown 的 focusStrip)
+        overlay.enterUpNextCountdown(focusStrip = fromVideo)
+    }
+    // **预告段** (见 TvUpNextState.preRoll): 倒计时开始前一秒半先把选集条摆出来, 焦点落在
+     // **当前播放集**上, 装饰一概不给 —— 到点由上面那条 fromStrip 判据就地接管, 焦点挪一格到
+     // 下一集, 卡片行由 pivot 自然滑过去 (要的就是这个起点: 凭空冒出一张已经在倒数的卡, 人得先
+     // 找一遍"这是哪一集").
+     //
+     // **只在纯视频态做** (用户要求): 其余层级本来就有东西占着屏幕, 提前摆出来纯属抢戏
+    LaunchedEffect(upNext.preRoll, overlay.layer) {
+        if (!upNext.preRoll || overlay.upNextCountdown) return@LaunchedEffect
+        if (overlay.layer != TvPlayerLayer.HIDDEN) return@LaunchedEffect
+        if (!upNextMayOpen()) return@LaunchedEffect
+        upNextOwnsStrip = true
+        overlay.openEpisodeStripForUpNext()
+    }
+    // 用户自己动过之后这一档就不再算"我们开的" (他收起了选集条, 或换了层): 之后由他处置
+    LaunchedEffect(overlay.episodeStripExpanded, overlay.layer) {
+        if (!overlay.episodeStripExpanded || overlay.layer != TvPlayerLayer.CONTROLS) {
+            upNextOwnsStrip = false
+        }
+    }
+    // 触发窗口走完而用户一直没动过 (自动连播换了集 / 拖回片尾之前 / 按返回收掉): 这一档自己
+    // 收掉回纯视频态. 也覆盖"预告段刚摆出来就作废"(拖回片尾之前) —— 不收的话选集条会一直挂在
+    // 画面上, 而用户从没打开过它.
+    // 用户按过键的话早就不在这两态里了 (upNextCountdown 已假, upNextOwnsStrip 也已清), 不动他
+    LaunchedEffect(upNext.visible, upNext.preRoll) {
+        if (upNext.visible || upNext.preRoll) return@LaunchedEffect
+        if (!overlay.upNextCountdown && !upNextOwnsStrip) return@LaunchedEffect
+        upNextOwnsStrip = false
+        // 用户自己打断的 (方向键/焦点挪开, 见 upNext.dismiss 的调用点): 选集条归他, 不替他收 ——
+        // 收掉的话人正挑到一半屏幕就黑了. 按返回收起的那条路自己会 hideAll, 不经这里
+        if (upNext.dismissed) return@LaunchedEffect
+        overlay.hideAll()
+    }
 
     // ---- OP/ED 提示按钮 (看上去是胶囊行最右一颗, 见 TvSkipOpEdTipButton) ----
     // 遥控器上这颗"取消"原本够不着: 没有任何东西把焦点送给它, 根路由也不认识它.
@@ -492,8 +581,16 @@ fun TvEpisodeScreenContent(
     // 这颗按钮"这一条. 早先返回键收起本次提示的做法已删 —— 那让返回键在这几秒里换了个意思.
     //
     // 两副面孔 (见 TvSkipOpEdTipButton): 自动跳过倒计时中 = "取消跳过"; 人已经在 OP/ED 里
-    // (刚按过取消, 或从别处 seek 进来) = "跳过". 于是整段 OP/ED 期间屏上始终有一颗可按的
+    // (刚按过取消, 或从别处 seek 进来) = "跳过". 于是整段 OP/ED 期间屏上始终有一颗可按的按钮.
+    //
+    // **兜底的互斥**: 两者都会自己抢焦点, 同框必打架 (谁都想要焦点, 确认键还得再分一次家);
+    // 而选集条的倒计时态一展开就盖住了这颗按钮所在的那一列.
+    //
+    // 正常情况下它们本来就错不开: 倒计时态按**ED 结束**触发 (见 TvUpNextState), 而这颗按钮的
+    // "跳过"那副面孔只在人**处于** ED 段内时给. 这一句只挡边界情形 (章节数据变动/位置跳变),
+    // 不是设计上的替代关系 —— 跳过 ED 与进下一集不是一回事, ED 后面常还有次回预告
     val skipTip = vm.playerSkipOpEdState.currentTip
+        ?.takeUnless { it.kind == SkipOpEdKind.ED && upNext.visible }
     val skipTipCancelling = skipTip?.canCancel == true
     val skipTipVisible = skipTip != null
     // 渐隐期间提示已经没了, 按钮却还在淡出: 留住最后一次的内容, 免得文字/图标在渐隐途中变脸
@@ -574,6 +671,20 @@ fun TvEpisodeScreenContent(
     OnReturnToForeground("player") {
         // 落点分四路, 日志里带上是哪一路: 界面上"焦点没回来"与"回到了别处"都长得像没反应
         logger.info { "Restoring focus after return: layer=${overlay.layer}, panel=${overlay.activePanel}" }
+        // 回来时正好在片尾窗口里: 直接回到「接下来播放」这一档.
+        //
+        // 进全屏页 (条目详情 / 人物介绍) 那一下播放页会被 NavHost 销毁, 而状态机只存 layer 与
+        // activePanel (见 TvPlayerOverlayState.Saver) —— 选集条的展开态与倒计时态都还原不出来,
+        // 于是人回来时落在"被还原出来的控制层"上, 而自动展开的判据要求纯视频态, 提示要等他一路
+        // 返回到画面才回来 (2026-09-07 用户报). 这里就地补一次.
+        //
+        // 面板/详情层还原出来时不抢: 那是用户离开前自己开着的, 回来该看见原样
+        if (upNext.visible && overlay.activePanel == null &&
+            overlay.layer != TvPlayerLayer.DETAILS && upNextMayOpen()
+        ) {
+            overlay.enterUpNextCountdown()
+            return@OnReturnToForeground
+        }
         when {
             overlay.layer == TvPlayerLayer.HIDDEN -> overlay.requestRootFocus()
             overlay.layer != TvPlayerLayer.CONTROLS -> {} // 详情层内部自己有落点
@@ -607,7 +718,9 @@ fun TvEpisodeScreenContent(
                 // 手势改姓, 否则长按倍速松手那记 KeyUp 就成了"按下取消跳过".
                 // 也不在抬起时清: 清了的话本次手势的 KeyUp 放行给按钮之后, 按钮自己那道闸
                 // (见下方 pillsRowTrailing) 读到的已经是"不归我", 反而把真正的点击吞掉
-                if (!confirmWasHeld) confirmDownOnSkipTip = skipTipVisible && skipTipFocused
+                if (!confirmWasHeld) {
+                    confirmDownOnFloatingTip = skipTipVisible && skipTipFocused
+                }
                 confirmHeldAnywhere = true
             }
             if (isKeyUp) confirmHeldAnywhere = false
@@ -705,14 +818,14 @@ fun TvEpisodeScreenContent(
         if (skipTipVisible && skipTipFocused) {
             when {
                 isConfirm -> {
-                    // 归属在路由开头就定死了 (见 confirmDownOnSkipTip): 只有"焦点已经在按钮上时
+                    // 归属在路由开头就定死了 (见 confirmDownOnFloatingTip): 只有"焦点已经在按钮上时
                     // 全新按下的那一次"才归按钮, 归了就一路归到抬起; 不归它的整次手势从头到尾
                     // 落到分层路由, 与没有这颗按钮时一模一样.
                     //
                     // 按单个事件判是不行的 —— 一次按住会连发几十个 KeyDown, 中途焦点落到本按钮上
                     // 的话后半段会改姓: 纯视频态长按确认键倍速, 按住期间按钮出现并抢焦点, 抬起
                     // 就把按钮点掉了 (而且纯视频态那边收不到抬起, 倍速也停不下来)
-                    if (confirmDownOnSkipTip) {
+                    if (confirmDownOnFloatingTip) {
                         // 按下/连发/抬起都放行给按钮自己 (clickable 在抬起时才触发 onClick)
                         return@router false
                     }
@@ -740,6 +853,63 @@ fun TvEpisodeScreenContent(
 
                 else -> {} // 返回 / 播放暂停 / 上下集 …… 全部照常, 交给下面的分层路由
             }
+        }
+        // 「接下来播放」倒计时态 (选集条自己展开的那一档).
+        //
+        // **方向键一按就退出这一态**, 就地变成普通选集条 —— 提示行消失、渐隐的卡回到全亮、锚位框
+        // 从倒计时环变回普通描边, 而卡片行与焦点一动不动. 方向键 = "我要自己挑", 那一刻默认那一集
+        // 就不该再摆着倒数.
+        //
+        // **一个键都不吞** (返回除外): 退出只是摘掉装饰, 方向键照常在选集条里移动/收起, 确认键
+        // 照常播聚焦的那一集. 返回则给一条逃生路 —— 直接回纯视频态 (而不是退成普通选集条,
+        // 那样人还得再按一次返回才能回到画面). 各家都给这个口子 (Kodi 的返回、Jellyfin 的
+        // Cancel). **不动自动连播本身**: 那是设置里的全局开关说了算, 见 exitUpNextCountdown.
+        //
+        // 播放/暂停这类键**不退出**: 它们不表示"我要挑集", 而倒计时是按播放位置算的 ——
+        // 一暂停它自己就冻住了, 提示留在原处正好 (恢复播放接着倒数)
+        if (overlay.upNextCountdown) {
+            if (isBack) {
+                overlay.markInteraction()
+                if (isKeyUp) {
+                    upNext.dismiss()
+                    overlay.hideAll()
+                }
+                return@router true
+            }
+            if (key == Key.DirectionUp || key == Key.DirectionDown ||
+                key == Key.DirectionLeft || key == Key.DirectionRight
+            ) {
+                overlay.exitUpNextCountdown()
+            }
+        }
+        // 片尾窗口里, 从"退出倒计时后的普通选集条"按返回: **就地退回上一档** (提示行与倒计时环
+        // 回来, 焦点回到下一集那张卡), 而不是收起一切.
+        //
+        // 打断只是"我先自己看看", 不等于"别提示了" —— 人还在这一集里, 返回该把上一档还给他.
+        // 层级不变, 所以这一下没有任何动画可播 (收起再自动展开会让选集条滑出去又滑回来,
+        // 真机上就是"按返回闪一下"). 再按一次返回才是"收掉这次提示 + 回纯视频" (走上面那条)
+        if (isBack && !overlay.upNextCountdown && upNext.visible &&
+            overlay.layer == TvPlayerLayer.CONTROLS && overlay.episodeStripExpanded &&
+            overlay.focusRegion == TvPlayerFocusRegion.EPISODES
+        ) {
+            overlay.markInteraction()
+            // 焦点此刻就在选集条的某张卡上 (判据里那条 focusRegion), 所以不送焦:
+            // 换到下一集那张卡由轮播自己的送焦通道做
+            if (isKeyUp) overlay.enterUpNextCountdown(focusStrip = false)
+            return@router true
+        }
+        // 预告段的选集条上按返回: 与倒计时态那一下同义 —— 收掉这一趟提示并回纯视频态.
+        // (那一档是我们替用户摆出来的, 他的返回键该能一次退干净, 而不是先退成"普通选集条")
+        if (isBack && upNext.preRoll && !upNext.visible &&
+            overlay.layer == TvPlayerLayer.CONTROLS && overlay.episodeStripExpanded &&
+            overlay.focusRegion == TvPlayerFocusRegion.EPISODES
+        ) {
+            overlay.markInteraction()
+            if (isKeyUp) {
+                upNext.dismiss()
+                overlay.hideAll()
+            }
+            return@router true
         }
         // 侧边 sheet (数据源/选集/弹幕设置) 打开: 返回关闭, 其余交给 sheet 内部导航
         if (anySheetVisible) {
@@ -986,6 +1156,18 @@ fun TvEpisodeScreenContent(
     // 每次尝试都重新判一遍: 按钮可能在解析途中出现或消失.
     // 收在解析器这一个口子上, 而不是让"抢按钮"和"抢根节点"两个循环并发 —— 那是互抢焦点的老坑
     fun skipTipOwnsRootFocus() = vm.playerSkipOpEdState.run { showSkipTips || canSkipNow }
+
+    /**
+     * 纯视频态下 ROOT 的焦点该改派给谁; null = 就落根节点.
+     *
+     * OP/ED 提示按钮是"纯视频态下屏上唯一能聚焦的东西", 所以走 ROOT 的每条路 (返回收起控制层 /
+     * 自动隐藏 / 进页就赶上 OP) 都该落到它身上. 片尾的「接下来播放」不走这里 —— 它展开的是
+     * 选集条, 层级变成 CONTROLS, 落点由状态机自己请求 (EPISODE_STRIP).
+     */
+    fun floatingTipRootFocus(): TvFocusKey? = when {
+        skipTipOwnsRootFocus() -> TvEpisodeFocus.SKIP_TIP
+        else -> null
+    }
     fun sendPendingFocus() {
         val target = overlay.pendingFocus.first
         val expectedLayer = when (target) {
@@ -997,11 +1179,7 @@ fun TvEpisodeScreenContent(
         }
         if (overlay.layer != expectedLayer) return
         focus.request(
-            if (target == TvPlayerFocusTarget.ROOT && skipTipOwnsRootFocus()) {
-                TvEpisodeFocus.SKIP_TIP
-            } else {
-                target
-            },
+            if (target == TvPlayerFocusTarget.ROOT) floatingTipRootFocus() ?: target else target,
         )
     }
     LaunchedEffect(Unit) {
@@ -1250,13 +1428,15 @@ fun TvEpisodeScreenContent(
                         overlay = overlay,
                         vm = vm,
                         page = page,
+                        upNext = upNext,
                         danmakuEditorState = danmakuEditorState,
                         progressSliderState = progressSliderState,
                         framePreview = framePreview,
                         playerFocus = focus,
                         sheetsController = sheetsController,
-                        // OP/ED 提示按钮: 胶囊行最右的一颗 (取舍见 TvSkipOpEdTipButton 的 KDoc)
+                        // 胶囊行最右的插槽 (OP/ED 提示按钮): 底边与胶囊对齐, 面板从上方浮出也不顶它
                         pillsRowTrailing = {
+                            // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
                             val shownTip = skipTip ?: lastSkipTip
                             AniAnimatedVisibility(visible = skipTipVisible) {
                                 if (shownTip == null) return@AniAnimatedVisibility
