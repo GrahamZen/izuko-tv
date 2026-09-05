@@ -778,6 +778,9 @@ fun SubjectDetailsTvPage(
                     TvHeroBackdrop(
                         imageUrl = url,
                         scrollState = scrollState,
+                        // 页面主题色从**这张背景图**取: 它就是屏幕上最大的一块颜色, 主色与它同源
+                        // 才不脱节 (改用竖版封面试过, 有些条目两张图色调差很远, 观感割裂).
+                        // 没有 backdrop 的条目由下面那条 hero 分支用竖版封面兜底, 见 heroBackdropUrl
                         onSuccess = {
                             backdropLoaded = true
                             onCoverImageSuccess(it)
