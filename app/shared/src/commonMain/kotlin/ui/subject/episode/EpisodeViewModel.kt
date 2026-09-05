@@ -19,6 +19,7 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -382,25 +384,7 @@ class EpisodeViewModel(
             MarkAsWatchedExtension,
             CacheOnBtPlayExtension,
             SwitchNextEpisodeExtension.Factory(
-                getNextEpisode = { currentEpisodeId ->
-                    val list = episodeCollectionsFlow.first()
-                    val subject = subjectCollectionFlow.first()
-                    val currentIndex = list.indexOfFirst { it.episodeId == currentEpisodeId }
-                    if (currentIndex == -1) {
-                        null
-                    } else {
-                        val nextEpisode = list.getOrNull(currentIndex + 1) ?: return@Factory null
-
-                        // 只拦"确定还没播出"的下一集. 不能写成 !isKnownCompleted —— 那是"一定已播出"的
-                        // 否定即"不确定播没播", 而 SP / OVA 常常没有播出日期, 会被一律当成没开播, 于是
-                        // 下一集是 SP 时既不自动连播、播放器也不显示"下一集"按钮
-                        if (nextEpisode.episodeInfo.isKnownOnAir(subject.recurrence)) {
-                            null
-                        } else {
-                            nextEpisode.episodeId
-                        }
-                    }
-                },
+                getNextEpisode = { currentEpisodeId -> computeAutoPlayNextEpisodeId(currentEpisodeId) },
             ),
             SwitchMediaOnPlayerErrorExtension,
             AutoSelectExtension,
@@ -444,6 +428,38 @@ class EpisodeViewModel(
 
     private val episodeCollectionsFlow = episodeCollectionRepository.subjectEpisodeCollectionInfosFlow(subjectId)
         .shareInBackground()
+
+    /**
+     * 自动连播会挑的那一集; null = 没有下一集, 或下一集确定还没播出.
+     *
+     * **单一来源**: [SwitchNextEpisodeExtension] 与电视端片尾的「接下来播放」提示都读它 ——
+     * 提示里写的那一集与真正会播的那一集必须是同一集, 两处各写一份判据迟早分家.
+     */
+    /**
+     * [computeAutoPlayNextEpisodeId] 的流形态: 换集即重算并发一个新值 (没有下一集就是 null).
+     *
+     * 电视端片尾的「接下来播放」提示收它 —— 每次发射同时也是"换集了"这个信号 (提示要借它复位
+     * 本集内的"不再提示"标记). 不加 distinctUntilChanged: 相邻两集的下一集当然不同, 而"值没变"
+     * 只会发生在数据还没到位的重复计算上, 那时也该让下游重新走一遍.
+     */
+    @OptIn(UnsafeEpisodeSessionApi::class, ExperimentalCoroutinesApi::class)
+    val autoPlayNextEpisodeIdFlow: Flow<Int?> = episodeIdFlow
+        .distinctUntilChanged()
+        .mapLatest { computeAutoPlayNextEpisodeId(it) }
+
+    @OptIn(UnsafeEpisodeSessionApi::class)
+    suspend fun computeAutoPlayNextEpisodeId(currentEpisodeId: Int): Int? {
+        val list = episodeCollectionsFlow.first()
+        val subject = subjectCollectionFlow.first()
+        val currentIndex = list.indexOfFirst { it.episodeId == currentEpisodeId }
+        if (currentIndex == -1) return null
+        val nextEpisode = list.getOrNull(currentIndex + 1) ?: return null
+
+        // 只拦"确定还没播出"的下一集. 不能写成 !isKnownCompleted —— 那是"一定已播出"的
+        // 否定即"不确定播没播", 而 SP / OVA 常常没有播出日期, 会被一律当成没开播, 于是
+        // 下一集是 SP 时既不自动连播、播放器也不显示"下一集"按钮
+        return if (nextEpisode.episodeInfo.isKnownOnAir(subject.recurrence)) null else nextEpisode.episodeId
+    }
 
     @UnsafeEpisodeSessionApi
     private val episodeInfoFlow = episodeCollectionFlow.map { it?.episodeInfo }.distinctUntilChanged()
