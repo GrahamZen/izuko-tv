@@ -131,6 +131,10 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_seconds
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
@@ -766,6 +770,38 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
+        // 片尾「接下来播放」: 只有遥控器形态有这一档界面 (选集条自动展开、锚位框走倒计时环),
+        // 手机端播完直接连播, 没有对应的界面, 所以整项藏起来
+        if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            val leadRange = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
+            val leadStep = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP
+            SliderItem(
+                value = config.upNextTipLeadSeconds.toFloat(),
+                onValueChange = { raw ->
+                    // 吸附后仍带浮点误差, 量化到步进网格再写 (同界面缩放那个滑块)
+                    val seconds = (raw / leadStep).roundToInt() * leadStep
+                    val clamped = seconds.coerceIn(leadRange)
+                    if (clamped != config.upNextTipLeadSeconds) {
+                        videoScaffoldConfig.update(config.copy(upNextTipLeadSeconds = clamped))
+                    }
+                },
+                valueRange = leadRange.first.toFloat()..leadRange.last.toFloat(),
+                steps = (leadRange.last - leadRange.first) / leadStep - 1,
+                title = { Text(stringResource(Lang.settings_player_up_next_tip)) },
+                description = { Text(stringResource(Lang.settings_player_up_next_tip_description)) },
+                // 最左一格 = 关掉这一档提示 (0 秒的"倒计时"没有意义)
+                valueLabel = {
+                    Text(
+                        if (config.upNextTipLeadSeconds <= 0) {
+                            stringResource(Lang.settings_player_up_next_tip_off)
+                        } else {
+                            stringResource(Lang.settings_player_up_next_tip_seconds, config.upNextTipLeadSeconds)
+                        },
+                    )
+                },
+            )
+        }
         HorizontalDividerItem()
         DropdownItem(
             selected = { config.effectiveSkipOpEdMode },

@@ -94,6 +94,23 @@ class PlayerSkipOpEdState(
         }.map { CurrentChapter(chapter = it, skipped = false, kind = opEdKindOf(it, length)) }
     }
 
+    /**
+     * 片尾 (ED) 放完于第几毫秒; null = 这一集没有 ED 标记.
+     *
+     * 给「接下来播放」提示当触发点用 (等价于 Plex/Netflix 的 credits marker). **要的是结束而
+     * 不是开始**: 片尾放完才算这一集的内容播完了, ED 进行中该给的还是「跳过 ED」按钮.
+     *
+     * **与设置里那四档无关** —— [opEdChapters] 只由章节表与视频长度推出, 关闭档 (驱动方不调
+     * [update]) 下它照样是对的.
+     *
+     * 取最后一段而不是第一段: 极少数集数会有两段疑似 ED (片尾曲 + 次回预告后的黑场), 贴着
+     * 片尾的那一段才是我们要的。
+     */
+    val edChapterEndMillis: Long? by derivedStateOf {
+        opEdChapters.lastOrNull { it.kind == SkipOpEdKind.ED }?.chapter
+            ?.let { it.offsetMillis + it.durationMillis }
+    }
+
     val skipped: Boolean by derivedStateOf {
         currentChapter?.skipped ?: false
     }
