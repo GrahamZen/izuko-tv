@@ -114,14 +114,22 @@ fun SettingsScope.ThemeGroup(
             description = { Text(stringResource(Lang.settings_theme_dynamic_subject_description)) },
         )
 
-        SwitchItem(
-            checked = themeSettings.enableAnimatedGradientSubjectPage,
-            onCheckedChange = { checked ->
-                state.update(themeSettings.copy(enableAnimatedGradientSubjectPage = checked))
-            },
-            title = { Text(stringResource(Lang.settings_theme_animated_gradient_subject)) },
-            description = { Text(stringResource(Lang.settings_theme_animated_gradient_subject_description)) },
-        )
+        // 电视端不给这条: 沉浸式详情页的背景是整屏 backdrop, 光斑几乎永远被它盖着 (代码里还专门
+        // 为此在盖住时暂停动画, 见 SubjectDetailsTvPage 的 paused), 而且色块要往 surface 混 85%,
+        // 深色+纯黑背景下本就近乎全黑 —— 开了看不出效果, 滚动露出来那段却要照付一层全屏 blur.
+        // 与"倍速范围"同一处理: 遥控器上没有意义的开关直接不显示
+        if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
+            SwitchItem(
+                checked = themeSettings.enableAnimatedGradientSubjectPage,
+                onCheckedChange = { checked ->
+                    state.update(themeSettings.copy(enableAnimatedGradientSubjectPage = checked))
+                },
+                title = { Text(stringResource(Lang.settings_theme_animated_gradient_subject)) },
+                description = {
+                    Text(stringResource(Lang.settings_theme_animated_gradient_subject_description))
+                },
+            )
+        }
 
         // isMobile() 在 Android TV 上也是真, 但沉浸式外壳既没有顶栏也没有导航栏, 这条毛玻璃
         // 开关在那儿是纯摆设 (见 AppChromeFrostedGlass 的调用点)
