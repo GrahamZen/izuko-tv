@@ -120,6 +120,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.tvFocusRingBorder
+import me.him188.ani.app.ui.foundation.tv.tvFocusRingCountdownBorder
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_episodes
@@ -228,6 +229,27 @@ fun FocusEpisodeCarousel(
      */
     focusCurrentEpisodeOnChange: Boolean = false,
     /**
+     * 非 null 时**初始滚动位置与进行落点**改成这一集, 而不是 [currentEpisodeId].
+     *
+     * 播放器选集条的「接下来播放」倒计时态用: 那一刻**正在播的**与**该聚焦的**不是同一集
+     * (正在播第 2 集, 焦点该落在第 3 集上). [currentEpisodeId] 仍是正在播的那一集 —— 它还要
+     * 画"正在播放"徽标, 两个职责混用会把徽标画到下一集上.
+     */
+    landingEpisodeId: Int? = null,
+    /**
+     * 非 null 时锚位聚焦框画成**倒计时环** (见 [tvFocusRingCountdownBorder]), provider 返回
+     * 已走比例 (0..1). 它每 100ms 变一次, 只在绘制 lambda 里读.
+     */
+    anchorCountdown: (() -> Float)? = null,
+    /**
+     * 每张卡的额外不透明度 (与"聚焦卡左侧压暗"相乘). 倒计时态用它把落点卡之后的卡渐隐 ——
+     * 那一刻唯一该被看见的是马上要播的那一集.
+     *
+     * 渐隐的卡**仍然可聚焦**: 按右键就是"我不要默认那一集了", 焦点得有地方去 (那一下同时
+     * 取消倒计时, 于是本 lambda 立即回到全亮, 渐变由卡片自己的 animateFloatAsState 补).
+     */
+    cardAlpha: ((index: Int) -> Float)? = null,
+    /**
      * 非 null 时挂在卡片行 (LazyRow) 上: 调用方对它 requestFocus 可把焦点送进轮播,
      * 进行落点改道会送到展示中的那张卡 (首次为当前集). 详情页返回键分层用
      * ("选集之下的区域按返回回到选集卡片").
@@ -269,6 +291,13 @@ fun FocusEpisodeCarousel(
     // 聚焦卡是否正被按住 (长按确认键): 固定聚焦框读它跟着缩放
     var pressingCard by remember { mutableStateOf(false) }
 
+    // 落点集: 初始滚动位置 + "没有卡片聚焦时展示/落焦"的那一集. 默认 = 当前播放集,
+    // 倒计时态由 [landingEpisodeId] 改成下一集 (见该参数)
+    val landingId = landingEpisodeId ?: currentEpisodeId
+    val landingIndex = remember(episodes, landingId) {
+        if (landingId == null) -1 else episodes.indexOfFirst { it.episodeId == landingId }
+    }
+
     // 长按卡片打开的单集操作菜单; 关闭后把焦点还给弹窗当前显示的那集的卡片
     var actionTarget by remember { mutableStateOf<EpisodeListItem?>(null) }
     // 菜单开合上报 (开着期间挂起, 关闭/离开组合时自动回报 false)
@@ -291,23 +320,20 @@ fun FocusEpisodeCarousel(
     // 信息行在 [FocusEpisodeInfoRow] 里读, 兜底下标走 derivedStateOf, 回调走快照观察
     val onDisplayedChangedState = rememberUpdatedState(onDisplayedChanged)
     if (onDisplayedChanged != null) {
-        LaunchedEffect(episodes, currentEpisodeId) {
+        LaunchedEffect(episodes, landingId) {
             snapshotFlow {
-                episodes.firstOrNull { it.episodeId == (focusedEpisodeId ?: currentEpisodeId) }
+                episodes.firstOrNull { it.episodeId == (focusedEpisodeId ?: landingId) }
                     ?: episodes.firstOrNull()
             }.collect { onDisplayedChangedState.value?.invoke(it) }
         }
     }
 
-    val currentIndex = remember(episodes, currentEpisodeId) {
-        if (currentEpisodeId == null) -1 else episodes.indexOfFirst { it.episodeId == currentEpisodeId }
-    }
-    // 初始滚动位置直接建在当前集 (而非从 0 起再靠效应滚动): 播放器选集条每次展开
-    // 都是全新组合, 若初始在 0, 焦点解析会赶在滚动前落到第一张卡 —— 当前集卡尚未
-    // 组合, 进行落点的请求器没挂上, 落点就错了. 初始即在当前集,
-    // 当前集卡首帧组合, 落焦必中.
+    // 初始滚动位置直接建在落点集 (而非从 0 起再靠效应滚动): 播放器选集条每次展开
+    // 都是全新组合, 若初始在 0, 焦点解析会赶在滚动前落到第一张卡 —— 落点集的卡尚未
+    // 组合, 进行落点的请求器没挂上, 落点就错了. 初始即在落点集,
+    // 该卡首帧组合, 落焦必中.
     val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = currentIndex.coerceAtLeast(0),
+        initialFirstVisibleItemIndex = landingIndex.coerceAtLeast(0),
     )
     // 停靠一律 scrollToItem(index, 0): 每张卡 (含首卡) 停靠后左边缘都在 horizontalPadding,
     // 聚焦框恒定不动; 非首卡停靠时上一张卡在屏幕左缘自然露出 horizontalPadding - cellSpacing
@@ -316,15 +342,23 @@ fun FocusEpisodeCarousel(
     // 用 scrollOffset=±peek 表达): TvScrollAnimator 与原生实现的 scrollOffset 符号语义相反
     // + 多条滚动路径混用, 真机上出过"每次右导航停靠位漂移", 且聚焦框要在两个停靠位之间
     // 跳 —— 整个删除, 别再引入非零 scrollOffset 或分叉停靠位.
-    // 数据异步到达后补一次"滚到当前集" (进页首帧 episodes 常为空, currentIndex = -1).
+    // 落点集换人 (进入/退出倒计时态) 时**同帧把压暗分界挪过去**.
+    //
+    // 分界线平时跟着聚焦卡走, 而焦点是随后几帧才送到落点卡的 —— 中间这几帧"左边压暗"还按上一张
+    // 聚焦卡算, 与倒计时那套渐隐叠在一起: 同一张卡先按 0.4 画、焦点落位后又跳回 1.0, 真机上就是
+    // "封面突然亮一下又变回来" (2026-09-07 用户报). 提前挪过去两者就始终一致.
+    LaunchedEffect(landingEpisodeId, landingIndex) {
+        if (landingEpisodeId != null && landingIndex >= 0) dimPivotIndex = landingIndex
+    }
+    // 数据异步到达后补一次"滚到落点集" (进页首帧 episodes 常为空, landingIndex = -1).
     //
     // 用户已在轮播里定位过 (聚焦过卡片 / 在简介或弹窗上左右切过) 之后就不再跟随: 停留期间
     // "当前集"变化几乎只由用户自己长按标记看过引起 —— 标记当前集看过会让当前集顺延到下一集,
     // 跟过去就是"瞬移一格, 再被聚焦卡吸附动画滑回来"的抖动 (焦点此刻正被还给刚标记的那张卡).
     // [focusedEpisodeId] 只在效应体内读, 不作 key, 不会让本函数 body 订阅热状态
-    LaunchedEffect(currentIndex) {
-        if (currentIndex >= 0 && focusedEpisodeId == null) {
-            listState.scrollToItem(currentIndex)
+    LaunchedEffect(landingIndex) {
+        if (landingIndex >= 0 && focusedEpisodeId == null) {
+            listState.scrollToItem(landingIndex)
         }
     }
 
@@ -375,7 +409,7 @@ fun FocusEpisodeCarousel(
     // 那是焦点驱动的, 交给 pivot 式 BringIntoViewSpec (见下方 LazyRow)
     val scrollAnimator = remember { TvScrollAnimator() }
     val moveDisplayedBy: (Int) -> Unit = moveDisplayed@{ delta ->
-        val displayedId = focusedEpisodeId ?: currentEpisodeId
+        val displayedId = focusedEpisodeId ?: landingId
         val index = episodes.indexOfFirst { it.episodeId == displayedId }.coerceAtLeast(0)
         val target = index + delta
         if (target !in episodes.indices) return@moveDisplayed
@@ -479,6 +513,12 @@ fun FocusEpisodeCarousel(
                         }
                     },
                     background = stillBackground,
+                    // 时长与播出日期落在底行右端 (按钮的对面).
+                    //
+                    // 播放器选集条去掉卡片下方那行信息之后这两项没了归宿, 而它们与简介是同一类
+                    // 东西 ——「这一集讲什么、多长、哪天播」, 入口理应也是同一个 (长按卡片).
+                    // 不塞进可滚动的正文里: 简介一长就被滚出视口, 等于没有
+                    meta = episodeMetaText(episodeRuntimes[target.episodeId], target.airDate),
                     // 面板与剧照同比例: 图铺满时不裁上下或左右. 无剧照的集也用同一比例,
                     // 否则弹窗尺寸会随 TMDB 有没有图而变
                     aspectRatio = EPISODE_STILL_ASPECT_RATIO,
@@ -523,9 +563,14 @@ fun FocusEpisodeCarousel(
         //
         // 落点下标跟随"展示中的集": 热状态推导包进 derivedStateOf, body 不读值 ——
         // 每个 item 自己再包一层"我是不是落点卡"的布尔 (见 LazyRow 内), 变化只重组进出的两张卡
-        val fallbackIndexState = remember(episodes, currentEpisodeId) {
+        //
+        // **[landingEpisodeId] 压过"上次聚焦过哪张"**: 它只在倒计时态非空, 而那一态里"该聚焦
+        // 哪一集"是调用方定死的 (下一集), 用户一按方向键就退出该态、本值随即变回 null.
+        // 不这么排的话, 本条在控制层里可能一直没离开组合 —— 上一趟浏览停在第 5 集, 下一趟片尾
+        // 展开时进行落点还是第 5 集 (真机复现: 移到别的组件再返回, 焦点跑到别的卡上)
+        val fallbackIndexState = remember(episodes, landingEpisodeId, landingId) {
             derivedStateOf {
-                val displayedId = focusedEpisodeId ?: currentEpisodeId
+                val displayedId = landingEpisodeId ?: focusedEpisodeId ?: landingId
                 val idx = episodes.indexOfFirst { it.episodeId == displayedId }
                 if (idx >= 0) idx else 0
             }
@@ -591,8 +636,12 @@ fun FocusEpisodeCarousel(
                         val dimmedPast by remember(index) {
                             derivedStateOf { dimPivotIndex > index }
                         }
+                        // 调用方给的额外不透明度 (倒计时态把落点卡之后的卡渐隐) 与压暗**相乘**:
+                        // 两者语义独立 (一个是"在聚焦卡左边", 一个是"不是马上要播的那一集"),
+                        // 相乘之后同一条 animateFloatAsState 就把两种变化都做成了渐变
+                        val extraAlpha = cardAlpha?.invoke(index) ?: 1f
                         val dimAlpha = animateFloatAsState(
-                            if (dimmedPast) EPISODE_PAST_CARD_DIM_ALPHA else 1f,
+                            (if (dimmedPast) EPISODE_PAST_CARD_DIM_ALPHA else 1f) * extraAlpha,
                             tween(EPISODE_DIM_FADE_MILLIS),
                             label = "pastCardDim",
                         )
@@ -658,6 +707,7 @@ fun FocusEpisodeCarousel(
                     cellHeight = cellHeight,
                     horizontalPadding = horizontalPadding,
                     monochrome = monochrome,
+                    countdown = anchorCountdown,
                 )
             }
         }
@@ -679,6 +729,7 @@ private fun FocusEpisodeAnchorRing(
     cellHeight: Dp,
     horizontalPadding: Dp,
     monochrome: Boolean,
+    countdown: (() -> Float)? = null,
 ) {
     // 上层重组可能换 provider lambda 实例, 缓存进 derivedStateOf 前必须经 rememberUpdatedState
     // 读最新实例 —— 直接捕获会永久留住首帧那个 (真机踩过: 捕获了空 episodes 的旧 lambda
@@ -702,10 +753,22 @@ private fun FocusEpisodeAnchorRing(
                 .size(cellWidth + TvFocusRing.Gap * 2, cellHeight + TvFocusRing.Gap * 2)
                 // 定尺寸之后缩放 = 绕框自身中心缩, 与卡片 (绕卡中心缩) 同心
                 .scale(pressScale)
-                .tvFocusRingBorder(
-                    EPISODE_CARD_CORNER + TvFocusRing.Gap,
-                    // 黑白态用纯白 (同播放器面板条目), 其余用主题动态色渐变
-                    if (monochrome) TvFocusRing.monochromeBrush else TvFocusRing.gradientBrush,
+                .then(
+                    // 倒计时态: 框本身就是倒计时环 —— 同色的两圈线套在一起只会看着乱
+                    // (见 [tvFocusRingCountdownBorder]); 其余时候是普通描边
+                    if (countdown == null) {
+                        Modifier.tvFocusRingBorder(
+                            EPISODE_CARD_CORNER + TvFocusRing.Gap,
+                            // 黑白态用纯白 (同播放器面板条目), 其余用主题动态色渐变
+                            if (monochrome) TvFocusRing.monochromeBrush else TvFocusRing.gradientBrush,
+                        )
+                    } else {
+                        Modifier.tvFocusRingCountdownBorder(
+                            EPISODE_CARD_CORNER + TvFocusRing.Gap,
+                            if (monochrome) TvFocusRing.monochromeBrush else TvFocusRing.gradientBrush,
+                            progress = countdown,
+                        )
+                    },
                 ),
         )
     }
@@ -1381,11 +1444,7 @@ private fun FocusEpisodeMetaLine(
     airDate: PackedDate,
     modifier: Modifier = Modifier,
 ) {
-    val text = listOfNotNull(
-        runtimeMinutes?.let { stringResource(Lang.subject_episode_duration_minutes, it) },
-        formatAirDate(airDate),
-    ).joinToString(EPISODE_META_SEPARATOR)
-    if (text.isEmpty()) return
+    val text = episodeMetaText(runtimeMinutes, airDate) ?: return
     Text(
         text,
         modifier,
@@ -1398,6 +1457,21 @@ private fun FocusEpisodeMetaLine(
 
 /** 时长与播出日期之间的分隔. */
 private const val EPISODE_META_SEPARATOR = " · "
+
+/**
+ * 单集的元信息一行: `"24 分钟 · 2024-01-15"`; 两项都没有时返回 null (调用方整块不显示).
+ *
+ * 两个消费端 ([FocusEpisodeMetaLine] 与长按卡片的「本集详情」弹窗) 共用同一份拼法:
+ * 同一条信息在同一个界面里出现两次, 分隔符或顺序不一样就是穿帮.
+ */
+@Composable
+internal fun episodeMetaText(runtimeMinutes: Int?, airDate: PackedDate): String? {
+    val text = listOfNotNull(
+        runtimeMinutes?.let { stringResource(Lang.subject_episode_duration_minutes, it) },
+        formatAirDate(airDate),
+    ).joinToString(EPISODE_META_SEPARATOR)
+    return text.ifEmpty { null }
+}
 
 private fun formatAirDate(date: PackedDate): String? {
     if (date == PackedDate.Invalid) return null
