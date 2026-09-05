@@ -117,3 +117,8 @@
 * 快速翻动选集或封面时，个别卡片加载失败后不再一直空着，会自动重试。
 
 > Android TV 遥控器使用说明、系统版本要求与已知问题，请见仓库 [README 的「📺 Android TV 版说明」](https://github.com/GrahamZen/animeko#-android-tv-版说明)。
+
+## 问题反馈群
+
+入群问题的答案是本仓库作者的 GitHub 用户名：$REPO_OWNER
+
