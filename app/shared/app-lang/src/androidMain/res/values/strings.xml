@@ -303,6 +303,10 @@
     <string name="settings_player_audio_time_stretch">High-quality audio time-stretch (WSOLA)</string>
     <string name="settings_player_audio_time_stretch_description">Better sound quality at non-1x speeds. Turn off if you hear crackling or corrupted audio</string>
     <string name="settings_player_auto_skip_op_ed">Skip OP and ED</string>
+    <string name="settings_player_up_next_tip">Next episode tip</string>
+    <string name="settings_player_up_next_tip_description">Near the end, the episode strip opens with the next episode selected; OK plays it now, Back closes it</string>
+    <string name="settings_player_up_next_tip_off">Off</string>
+    <string name="settings_player_up_next_tip_seconds">%1$d seconds before the end</string>
     <string name="settings_player_skip_op_ed_auto">Skip automatically</string>
     <string name="settings_player_skip_op_ed_auto_then_manual">Skip automatically, keep button if cancelled</string>
     <string name="settings_player_skip_op_ed_manual">Show skip button</string>
@@ -802,6 +806,7 @@
     <string name="video_player_skip_op_ed">Skipping OP or ED soon</string>
     <string name="video_player_cancel">Cancel</string>
     <string name="video_player_tv_cancel_skip_segment">Cancel skip %1$s</string>
+    <string name="video_player_tv_up_next_in">in %1$ds</string>
     <string name="video_player_tv_skip_segment">Skip %1$s</string>
     <string name="video_player_release_to_cancel">Release to cancel</string>
     <string name="video_player_stats_title">Playback Info</string>
@@ -1268,6 +1273,7 @@
     <string name="episode_danmaku_match_loading_danmaku">Loading danmaku list…</string>
     <string name="episode_danmaku_match_select_subject">Select subject</string>
     <string name="episode_danmaku_match_select_episode">Select episode</string>
+    <string name="episode_danmaku">Danmaku</string>
     <string name="episode_send_danmaku">Send</string>
     <string name="exploration_search_back_to_top">Back to top</string>
     <string name="exploration_search_results_shown">%1$d results shown</string>

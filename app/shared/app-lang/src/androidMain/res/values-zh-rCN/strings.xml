@@ -316,6 +316,10 @@
     <string name="settings_player_audio_time_stretch">高质量音频变速（WSOLA）</string>
     <string name="settings_player_audio_time_stretch_description">变速时提供更好的音质；如遇爆音或音频损坏可关闭</string>
     <string name="settings_player_auto_skip_op_ed">跳过 OP 和 ED</string>
+    <string name="settings_player_up_next_tip">片尾提示下一集</string>
+    <string name="settings_player_up_next_tip_description">快播完时自动展开选集条并选中下一集，按确认键立刻播、按返回键关掉</string>
+    <string name="settings_player_up_next_tip_off">不提示</string>
+    <string name="settings_player_up_next_tip_seconds">提前 %1$d 秒</string>
     <string name="settings_player_skip_op_ed_auto">自动跳过</string>
     <string name="settings_player_skip_op_ed_auto_then_manual">自动跳过，取消后保留跳过按钮</string>
     <string name="settings_player_skip_op_ed_manual">显示跳过按钮</string>
@@ -842,6 +846,7 @@
     <string name="video_player_skip_op_ed">即将跳过 OP 或 ED</string>
     <string name="video_player_cancel">取消</string>
     <string name="video_player_tv_cancel_skip_segment">取消跳过 %1$s</string>
+    <string name="video_player_tv_up_next_in">%1$d 秒后</string>
     <string name="video_player_tv_skip_segment">跳过 %1$s</string>
     <string name="video_player_release_to_cancel">松开手指取消</string>
     <string name="video_player_stats_title">播放信息</string>
@@ -1308,6 +1313,7 @@
     <string name="episode_danmaku_match_loading_danmaku">正在查询弹幕列表…</string>
     <string name="episode_danmaku_match_select_subject">选择条目</string>
     <string name="episode_danmaku_match_select_episode">选择剧集</string>
+    <string name="episode_danmaku">弹幕</string>
     <string name="episode_send_danmaku">发送弹幕</string>
     <string name="exploration_search_back_to_top">回到顶部</string>
     <string name="exploration_search_results_shown">已显示 %1$d 个结果</string>

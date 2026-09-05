@@ -130,6 +130,18 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val opEdSkipDuration: Duration = 85.seconds,
     /**
+     * 片尾「接下来播放」提前多少秒进入倒计时; 0 = 不提示. 电视端专有.
+     *
+     * 提示本身在**片尾 (ED) 放完**那一刻就出现 (有 ED 标记时), 但在最后这些秒之前不倒计时 ——
+     * 还想看次回预告的人不该被催, 想直接走的人按一下确认就走. 没有 ED 标记的集数则到点才
+     * 出现, 出现即倒计时.
+     *
+     * 取 20 秒: Netflix 15 / Kodi 30 之间.
+     *
+     * @since 6.0.5
+     */
+    val upNextTipLeadSeconds: Int = 20,
+    /**
      * 在播放器错误时自动切换视频源
      */
     val autoSwitchMediaOnPlayerError: Boolean = true,
@@ -276,6 +288,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             autoPlayNext = false,
             autoSkipOpEd = false,
             skipOpEdMode = SkipOpEdMode.OFF,
+            upNextTipLeadSeconds = 0,
             autoSwitchMediaOnPlayerError = false,
             enableHighQualityAudioTimeStretch = false,
             enableExperimentalHlsSegmentFiltering = false,
