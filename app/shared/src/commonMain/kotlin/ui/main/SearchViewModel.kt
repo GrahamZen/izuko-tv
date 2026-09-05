@@ -32,6 +32,7 @@ import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionReposito
 import me.him188.ani.app.data.repository.subject.SubjectSearchRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCase
+import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.ui.exploration.search.SearchPageEffect
 import me.him188.ani.app.ui.exploration.search.SearchPageIntent
@@ -315,5 +316,8 @@ private fun SubjectSearchQuery.shouldTriggerSearch(): Boolean {
             !tags.isNullOrEmpty() ||
             season != null ||
             rating != null ||
-            nsfw != null
+            nsfw != null ||
+            // 排名排序自带"只要有排名的条目"这个筛选, 没有关键词也能搜, 结果就是全站排行榜.
+            // 其余排序在没有关键词也没有筛选时服务端返回空列表, 不值得发这次请求
+            sort == SearchSort.RANK
 }
