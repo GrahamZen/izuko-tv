@@ -10,29 +10,34 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
  * @param name 
- * @param count 
+ * @param count 使用此标签标记本条目的用户数
+ * @param totalCount 此标签在所有条目中的使用总次数
  */
 @Serializable
 
-data class BangumiTag(
+data class BangumiTag (
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 
-    @SerialName(value = "count") @Required val count: kotlin.Int
+    /* 使用此标签标记本条目的用户数 */
+    @SerialName(value = "count") @Required val count: kotlin.Int,
+
+    /* 此标签在所有条目中的使用总次数 */
+    @SerialName(value = "total_count") @Required val totalCount: kotlin.Int
 
 ) {
 

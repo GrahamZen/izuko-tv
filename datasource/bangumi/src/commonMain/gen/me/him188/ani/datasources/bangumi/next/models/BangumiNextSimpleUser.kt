@@ -24,8 +24,8 @@ import kotlinx.serialization.encoding.*
  * 
  *
  * @param id 
- * @param nickname 
  * @param username 
+ * @param nickname 
  */
 @Serializable
 
@@ -33,9 +33,9 @@ data class BangumiNextSimpleUser (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
-    @SerialName(value = "nickname") @Required val nickname: kotlin.String,
+    @SerialName(value = "username") @Required val username: kotlin.String,
 
-    @SerialName(value = "username") @Required val username: kotlin.String
+    @SerialName(value = "nickname") @Required val nickname: kotlin.String
 
 ) {
 

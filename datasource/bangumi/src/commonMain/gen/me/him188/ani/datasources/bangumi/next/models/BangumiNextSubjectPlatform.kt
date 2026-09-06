@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,34 +10,32 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param alias
- * @param id
- * @param type
- * @param typeCN
- * @param enableHeader
- * @param order
+ * @param id 
+ * @param type 
+ * @param typeCN 
+ * @param alias 
+ * @param order 
+ * @param enableHeader 
+ * @param wikiTpl 
  * @param searchString 
  * @param sortKeys 
- * @param wikiTpl 
  */
 @Serializable
 
-data class BangumiNextSubjectPlatform(
-
-    @SerialName(value = "alias") @Required val alias: kotlin.String,
+data class BangumiNextSubjectPlatform (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
@@ -54,15 +43,17 @@ data class BangumiNextSubjectPlatform(
 
     @SerialName(value = "typeCN") @Required val typeCN: kotlin.String,
 
-    @SerialName(value = "enableHeader") val enableHeader: kotlin.Boolean? = null,
+    @SerialName(value = "alias") @Required val alias: kotlin.String,
 
     @SerialName(value = "order") val order: kotlin.Int? = null,
 
+    @SerialName(value = "enableHeader") val enableHeader: kotlin.Boolean? = null,
+
+    @SerialName(value = "wikiTpl") val wikiTpl: kotlin.String? = null,
+
     @SerialName(value = "searchString") val searchString: kotlin.String? = null,
 
-    @SerialName(value = "sortKeys") val sortKeys: kotlin.collections.List<kotlin.String>? = null,
-
-    @SerialName(value = "wikiTpl") val wikiTpl: kotlin.String? = null
+    @SerialName(value = "sortKeys") val sortKeys: kotlin.collections.List<kotlin.String>? = null
 
 ) {
 

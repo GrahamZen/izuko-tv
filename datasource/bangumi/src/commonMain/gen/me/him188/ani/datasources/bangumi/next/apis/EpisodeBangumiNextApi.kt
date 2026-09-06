@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2026 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -24,26 +15,23 @@
 
 package me.him188.ani.datasources.bangumi.next.apis
 
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextComment
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterComment200Response
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterCommentRequest
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextEpisode
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextErrorResponse
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextUpdateContent
+
+import me.him188.ani.datasources.bangumi.next.infrastructure.*
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
+import io.ktor.client.request.forms.formData
 import io.ktor.client.engine.HttpClientEngine
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
-import me.him188.ani.datasources.bangumi.next.infrastructure.ApiClient
-import me.him188.ani.datasources.bangumi.next.infrastructure.HttpResponse
-import me.him188.ani.datasources.bangumi.next.infrastructure.RequestConfig
-import me.him188.ani.datasources.bangumi.next.infrastructure.RequestMethod
-import me.him188.ani.datasources.bangumi.next.infrastructure.map
-import me.him188.ani.datasources.bangumi.next.infrastructure.wrap
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateEpisodeComment200Response
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateEpisodeCommentRequest
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextEpisode
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetEpisodeComments200ResponseInner
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextUpdateContent
+import io.ktor.http.ParametersBuilder
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 open class EpisodeBangumiNextApi : ApiClient {
 
@@ -60,21 +48,18 @@ open class EpisodeBangumiNextApi : ApiClient {
     ): super(baseUrl = baseUrl, httpClient = httpClient)
 
     /**
-     * 创建条目的剧集吐槽
+     * 创建条目的章节吐槽
      * 
      * @param episodeID 
-     * @param bangumiNextCreateEpisodeCommentRequest  (optional)
-     * @return BangumiNextCreateEpisodeComment200Response
+     * @param bangumiNextCreateCharacterCommentRequest 
+     * @return BangumiNextCreateCharacterComment200Response
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun createEpisodeComment(
-        episodeID: kotlin.Long,
-        bangumiNextCreateEpisodeCommentRequest: BangumiNextCreateEpisodeCommentRequest? = null
-    ): HttpResponse<BangumiNextCreateEpisodeComment200Response> {
+    open suspend fun createEpisodeComment(episodeID: kotlin.Int, bangumiNextCreateCharacterCommentRequest: BangumiNextCreateCharacterCommentRequest): HttpResponse<BangumiNextCreateCharacterComment200Response> {
 
         val localVariableAuthNames = listOf<String>()
 
-        val localVariableBody = bangumiNextCreateEpisodeCommentRequest
+        val localVariableBody = bangumiNextCreateCharacterCommentRequest
 
         val localVariableQuery = mutableMapOf<String, List<String>>()
         val localVariableHeaders = mutableMapOf<String, String>()
@@ -97,7 +82,7 @@ open class EpisodeBangumiNextApi : ApiClient {
 
 
     /**
-     * 删除条目的剧集吐槽
+     * 删除条目的章节吐槽
      * 
      * @param commentID 
      * @return kotlin.String
@@ -130,7 +115,7 @@ open class EpisodeBangumiNextApi : ApiClient {
 
 
     /**
-     * 获取剧集信息
+     * 获取章节信息
      * 
      * @param episodeID 
      * @return BangumiNextEpisode
@@ -157,19 +142,19 @@ open class EpisodeBangumiNextApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
 
     /**
-     * 获取条目的剧集吐槽箱
+     * 获取条目的章节吐槽箱
      * 
      * @param episodeID 
-     * @return kotlin.collections.List<BangumiNextGetEpisodeComments200ResponseInner>
+     * @return kotlin.collections.List<BangumiNextComment>
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getEpisodeComments(episodeID: kotlin.Long): HttpResponse<kotlin.collections.List<BangumiNextGetEpisodeComments200ResponseInner>> {
+    open suspend fun getEpisodeComments(episodeID: kotlin.Int): HttpResponse<kotlin.collections.List<BangumiNextComment>> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -195,25 +180,24 @@ open class EpisodeBangumiNextApi : ApiClient {
     }
 
     @Serializable(GetEpisodeCommentsResponse.Companion::class)
-    private class GetEpisodeCommentsResponse(val value: List<BangumiNextGetEpisodeComments200ResponseInner>) {
+    private class GetEpisodeCommentsResponse(val value: List<BangumiNextComment>) {
         companion object : KSerializer<GetEpisodeCommentsResponse> {
-            private val serializer: KSerializer<List<BangumiNextGetEpisodeComments200ResponseInner>> = serializer<List<BangumiNextGetEpisodeComments200ResponseInner>>()
+            private val serializer: KSerializer<List<BangumiNextComment>> = serializer<List<BangumiNextComment>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetEpisodeCommentsResponse) =
-                serializer.serialize(encoder, value.value)
+            override fun serialize(encoder: Encoder, value: GetEpisodeCommentsResponse) = serializer.serialize(encoder, value.value)
             override fun deserialize(decoder: Decoder) = GetEpisodeCommentsResponse(serializer.deserialize(decoder))
         }
     }
 
     /**
-     * 编辑条目的剧集吐槽
+     * 编辑条目的章节吐槽
      * 
      * @param commentID 
-     * @param bangumiNextUpdateContent  (optional)
+     * @param bangumiNextUpdateContent 
      * @return kotlin.String
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun updateEpisodeComment(commentID: kotlin.Int, bangumiNextUpdateContent: BangumiNextUpdateContent? = null): HttpResponse<kotlin.String> {
+    open suspend fun updateEpisodeComment(commentID: kotlin.Int, bangumiNextUpdateContent: BangumiNextUpdateContent): HttpResponse<kotlin.String> {
 
         val localVariableAuthNames = listOf<String>()
 

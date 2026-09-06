@@ -18,12 +18,14 @@ import io.ktor.client.plugins.HttpSend
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.SendCountExceedException
 import io.ktor.client.plugins.Sender
+import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.plugin
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.util.appendIfNameAbsent
@@ -164,13 +166,49 @@ abstract class AbstractBearerTokenHandler(
     }
 }
 
-// region UseBangumiToken = ScopedHttpClientFeatureKey<Boolean>("UseBangumiToken")
+// region UseAniToken
 val UseAniTokenFeature = ScopedHttpClientFeatureKey<Boolean>("UseAniToken")
 
 class UseAniTokenFeatureHandler(
     bearerToken: Flow<String?>,
     onRefresh: suspend () -> BearerTokens?,
 ) : AbstractBearerTokenHandler(UseAniTokenFeature, bearerToken, onRefresh)
+
+// endregion
+
+// region UseBangumiToken
+val UseBangumiTokenFeature = ScopedHttpClientFeatureKey<Boolean>("UseBangumiToken")
+
+/**
+ * 给直连 bangumi 的请求带上 bangumi token.
+ *
+ * 与 [UseAniTokenFeatureHandler] 有两处刻意的不同:
+ * - **按 host 限制**. 不用 Ktor 的 `Auth` 插件: 它的 `BearerAuthProvider` 会对任何回 401 且带
+ *   `WWW-Authenticate: Bearer` 的服务器补发 token, 于是 token 可能被送到 tmdb / 图床 / web 数据源
+ *   这些完全无关的 host 上去. 这里改成显式地只给 `*.bgm.tv` 加头.
+ * - **不重发**. [AbstractBearerTokenHandler.applyToClient] 里"非 2xx/3xx 就无条件再发一次"是为 Ani 的
+ *   token 刷新语义写的; 在 bangumi 上它只会让每个 4xx 都发两遍.
+ */
+class UseBangumiTokenFeatureHandler(
+    private val bearerToken: Flow<String?>,
+) : ScopedHttpClientFeatureHandler<Boolean>(UseBangumiTokenFeature) {
+    override fun applyToConfig(config: HttpClientConfig<*>, value: Boolean) {
+        if (!value) return
+        config.install(
+            createClientPlugin("UseBangumiToken") {
+                onRequest { request, _ ->
+                    if (!request.url.host.isBangumiHost()) return@onRequest
+                    if (request.headers.contains(HttpHeaders.Authorization)) return@onRequest
+                    bearerToken.first()?.let {
+                        request.headers.append(HttpHeaders.Authorization, "Bearer $it")
+                    }
+                }
+            },
+        )
+    }
+
+    private fun String.isBangumiHost(): Boolean = this == "bgm.tv" || endsWith(".bgm.tv")
+}
 
 // endregion
 

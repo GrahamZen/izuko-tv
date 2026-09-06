@@ -194,16 +194,16 @@ internal fun BangumiEpisode.toEpisodeInfo(): EpisodeInfo {
 internal fun BangumiEpisodeDetail.toEpisodeInfo(): EpisodeInfo {
     return EpisodeInfo(
         episodeId = id,
-        type = getEpisodeTypeByBangumiCode(this.type),
+        type = this.type.toEpisodeType(),
         name = name,
         nameCn = nameCn,
-        sort = EpisodeSort(this.sort, getEpisodeTypeByBangumiCode(this.type)),
+        sort = EpisodeSort(this.sort, this.type.toEpisodeType()),
         airDate = PackedDate.parseFromDate(this.airdate),
         comment = comment,
 //        duration = duration,
         desc = desc,
 //        disc = disc,
-        ep = EpisodeSort(this.ep ?: BigNum.ONE, getEpisodeTypeByBangumiCode(this.type)),
+        ep = EpisodeSort(this.ep ?: BigNum.ONE, this.type.toEpisodeType()),
     )
 }
 

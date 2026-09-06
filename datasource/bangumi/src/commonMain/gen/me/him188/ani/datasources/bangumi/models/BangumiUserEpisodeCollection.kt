@@ -10,30 +10,37 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiEpisode
+import me.him188.ani.datasources.bangumi.models.BangumiEpisodeCollectionType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
  * @param episode 
  * @param type 
+ * @param updatedAt A int64 unix timestamp, `0` as unknown or un-recorded.
  */
 @Serializable
 
-data class BangumiUserEpisodeCollection(
+data class BangumiUserEpisodeCollection (
 
     @SerialName(value = "episode") @Required val episode: BangumiEpisode,
 
-    @SerialName(value = "type") @Required val type: BangumiEpisodeCollectionType
+    @SerialName(value = "type") @Required val type: BangumiEpisodeCollectionType,
 
-) {
+    /* A int64 unix timestamp, `0` as unknown or un-recorded. */
+    @SerialName(value = "updated_at") @Required val updatedAt: kotlin.Int
+
+) : kotlin.collections.HashMap<String, kotlin.Any>() {
 
 
 }

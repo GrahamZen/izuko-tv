@@ -10,21 +10,22 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
+import me.him188.ani.datasources.bangumi.models.BangumiEpType
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
  * @param id 
- * @param type `0` 本篇，`1` SP，`2` OP，`3` ED
+ * @param type 
  * @param name 
  * @param nameCn 
  * @param sort 同类条目的排序和集数
@@ -38,12 +39,11 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiEpisodeDetail(
+data class BangumiEpisodeDetail (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
-    /* `0` 本篇，`1` SP，`2` OP，`3` ED */
-    @SerialName(value = "type") @Required val type: kotlin.Int,
+    @SerialName(value = "type") @Required val type: BangumiEpType,
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 

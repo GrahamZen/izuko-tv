@@ -16,9 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 意义同<a href=\"#model-Me\">Me</a>
@@ -28,7 +28,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiCreator(
+data class BangumiCreator (
 
     @SerialName(value = "username") @Required val username: kotlin.String,
 

@@ -107,6 +107,7 @@ import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
 import me.him188.ani.app.domain.foundation.ServerListFeatureHandler
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
 import me.him188.ani.app.domain.foundation.UseAniTokenFeatureHandler
+import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryFeatureHandler
@@ -203,6 +204,11 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                         (it as? AccessTokenSession)?.tokens?.aniAccessToken
                     },
                     onRefresh = { null },
+                ),
+                UseBangumiTokenFeatureHandler(
+                    sessionManager.sessionFlow.map {
+                        (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
+                    },
                 ),
                 ServerListFeatureHandler(
                     get<ServerSelector>().flow,

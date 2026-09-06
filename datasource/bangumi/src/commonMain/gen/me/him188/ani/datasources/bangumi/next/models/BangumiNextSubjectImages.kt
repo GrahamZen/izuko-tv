@@ -10,38 +10,38 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param common 
- * @param grid 
  * @param large 
+ * @param common 
  * @param medium 
  * @param small 
+ * @param grid 
  */
 @Serializable
 
-data class BangumiNextSubjectImages(
-
-    @SerialName(value = "common") @Required val common: kotlin.String,
-
-    @SerialName(value = "grid") @Required val grid: kotlin.String,
+data class BangumiNextSubjectImages (
 
     @SerialName(value = "large") @Required val large: kotlin.String,
 
+    @SerialName(value = "common") @Required val common: kotlin.String,
+
     @SerialName(value = "medium") @Required val medium: kotlin.String,
 
-    @SerialName(value = "small") @Required val small: kotlin.String
+    @SerialName(value = "small") @Required val small: kotlin.String,
+
+    @SerialName(value = "grid") @Required val grid: kotlin.String
 
 ) {
 

@@ -187,7 +187,7 @@ private fun bangumiFetcher(
             runCatching {
                 withTimeoutOrNull(FETCH_TIMEOUT) {
                     api {
-                        getEpisodeComments(episodeId).body().flatMap { comment ->
+                        getEpisodeComments(episodeId.toInt()).body().flatMap { comment ->
                             comment.replies.mapNotNull { reply ->
                                 // relatedID 指向主楼 (或自身/缺失) 时只是普通的楼内回复, 不算指向某条回复
                                 reply.relatedID
