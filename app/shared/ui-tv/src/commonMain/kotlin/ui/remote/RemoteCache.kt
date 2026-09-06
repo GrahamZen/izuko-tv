@@ -174,6 +174,17 @@ internal object RemoteCache {
         val created = CopyOnWriteArrayList<String>()
 
         val failures = CopyOnWriteArrayList<String>()
+
+        /**
+         * 当前这一集等着挑资源的那次查询 (见 [autoCacheOne]); 不在挑资源时为 null.
+         * 一集最长等 [AUTO_SELECT_TIMEOUT], 手机上据此写「已查完 8/14 个数据源 · 已等 0:42 / 最长 2:00」.
+         */
+        @Volatile
+        var fetchSession: MediaFetchSession? = null
+
+        /** 当前这一集开始等挑资源的时刻 (毫秒), [AUTO_SELECT_TIMEOUT] 从这里起算. */
+        @Volatile
+        var waitSince = 0L
     }
 
     @Volatile
@@ -181,6 +192,12 @@ internal object RemoteCache {
 
     /** 各集最近一次失败的原因 ((subjectId, episodeId) → 文案), 列表上显示; 那一集成功开始缓存即清. */
     private val errors = ConcurrentHashMap<Pair<Int, Int>, String>()
+
+    /**
+     * 播放页右滑缓存正在落库的集 ((subjectId, episodeId)), 见 [cacheMedia]. 落库完成之前 (BT 要先拿种子信息, 可能要好几秒)
+     * 这一集的下载状态还读不到, 靠它把这段时间也算作「在下载」.
+     */
+    private val creating: MutableSet<Pair<Int, Int>> = ConcurrentHashMap.newKeySet()
 
     /**
      * 这部番刚删掉的缓存原来用的源与资源, 由 [RemoteCacheList] 删之前记下. 删完马上重下时已缓存的集没了, 条目偏好又常是
@@ -271,7 +288,10 @@ internal object RemoteCache {
 
                         is EpisodeCacheStatus.Caching -> {
                             put("status", "caching")
-                            put("progress", (st.progress.getOrZero() * 100).toInt())
+                            val percent = st.progress.getOrZero() * 100
+                            put("progress", percent.toInt())
+                            // 不足 1% 给一位小数 (同「缓存」标签, 见 RemoteCacheList): 取整的话冷种子下了半天还是「0%」
+                            put("progressText", percentText(percent))
                             if (!st.totalSize.isUnspecified) put("size", st.totalSize.toString())
                         }
 
@@ -303,6 +323,15 @@ internal object RemoteCache {
                 put("created", b.created.size)
                 b.current?.let { put("current", it) }
                 putJsonArray("failures") { b.failures.forEach { add(it) } }
+                // 当前这一集在等哪些数据源 (一集最长等两分钟, 不说的话这段时间列表上什么都不动)
+                b.fetchSession?.takeIf { b.running }?.let { session ->
+                    val sources = session.mediaSourceResults
+                        .filter { it.kind != MediaSourceKind.LocalCache && it.state.value != MediaSourceFetchState.Disabled }
+                    put("sourcesDone", sources.count { !it.state.value.isStillSearching() })
+                    put("sourcesTotal", sources.size)
+                    put("waited", (System.currentTimeMillis() - b.waitSince).coerceAtLeast(0))
+                    put("waitLimit", AUTO_SELECT_TIMEOUT.inWholeMilliseconds)
+                }
             }
         }
     }
@@ -502,9 +531,9 @@ internal object RemoteCache {
         if (TvRemoteControl.isTvForeground()) return ""
         return when (kind) {
             // 只有 BT 会被挡住: 服务跑在独立进程里, 而上游只在 Ani 前台时才起它
-            MediaSourceKind.BitTorrent -> tr("。电视上没有打开 Ani，要打开后才会开始下载")
+            MediaSourceKind.BitTorrent -> tr("。电视上没有打开 Izuko，要打开后才会开始下载")
             // 自动挑资源时还不知道会挑到什么, 挑到在线源就不受影响, 所以说得留余地
-            null -> tr("。电视上没有打开 Ani，挑到 BT 资源的话要打开后才会开始下载")
+            null -> tr("。电视上没有打开 Izuko，挑到 BT 资源的话要打开后才会开始下载")
             // 在线源走 HTTP 引擎, 在主进程里下, 电视回不回前台都一样
             else -> ""
         }
@@ -551,6 +580,54 @@ internal object RemoteCache {
             true,
             tr("已开始缓存「{0}」", episodeLabel(b.episode)) +
                 (if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "") + tvBackgroundNote(entry.original.kind),
+        )
+    }
+
+    /**
+     * 播放页候选列表上右滑「缓存」: 用 [media] 缓存 [subjectId] 的第 [episodeId] 集 (电视当前在播的那一集).
+     *
+     * 与缓存面板里手动选资源 ([pick]) 同一条路: 先确认有存储收得下, 再在后台直接落库, 失败原因记在那一集上
+     * (缓存面板的剧集列表照常显示). 这一集已经在下载 (含暂停) 或已经缓存好时只提示, 不再建记录.
+     */
+    fun cacheMedia(subjectId: Int, episodeId: Int, media: Media): JsonObject {
+        if (media.kind == MediaSourceKind.LocalCache) return result(false, tr("这一条已经是缓存了"))
+        val status = runBlocking {
+            withTimeoutOrNull(STATUS_TIMEOUT) { cacheManager.downloadStatusForEpisode(subjectId, episodeId).first() }
+        } ?: return result(false, tr("读取缓存状态超时，请重试"))
+        when (status) {
+            is EpisodeCacheStatus.Caching -> return result(false, tr("这一集已经在下载了"))
+            is EpisodeCacheStatus.Cached -> return result(false, tr("这一集已经缓存好了"))
+            EpisodeCacheStatus.NotCached -> {}
+        }
+        if (!canDownload(media)) return result(false, tr("这个资源不支持缓存，换一个试试"))
+        val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
+        val ep = info.episodes.firstOrNull { it.episodeId == episodeId } ?: return result(false, tr("没有找到这一集"))
+        val key = subjectId to episodeId
+        if (!creating.add(key)) return result(false, tr("这一集已经在下载了"))
+        errors.remove(key)
+        scope.launch {
+            try {
+                addDownload(
+                    info.subjectInfo,
+                    ep.episodeInfo,
+                    media,
+                    MediaCacheMetadata(MediaFetchRequest.create(info.subjectInfo, ep.episodeInfo)),
+                )
+                logger.info { "Remote control started caching subject $subjectId episode $episodeId from the player's candidates" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Remote cache from the player's candidates failed for subject $subjectId episode $episodeId" }
+                errors[key] = tr("缓存失败：{0}", e.message ?: e::class.simpleName)
+            } finally {
+                creating.remove(key)
+            }
+        }
+        val isPack = media.episodeRange?.isSingleEpisode() == false
+        return result(
+            true,
+            tr("已开始缓存「{0}」", episodeLabel(ep)) +
+                (if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "") + tvBackgroundNote(media.kind),
         )
     }
 
@@ -687,6 +764,8 @@ internal object RemoteCache {
                 return null
             }
             val awaiting = state as DownloadRequestState.AwaitingSelection
+            batch?.waitSince = System.currentTimeMillis()
+            batch?.fetchSession = awaiting.fetchSession
             var why: String? = null
             val media = if (pinned == null) {
                 (withTimeoutOrNull(AUTO_SELECT_TIMEOUT) { selectByOrder(awaiting, subjectId) }
@@ -722,6 +801,8 @@ internal object RemoteCache {
         } catch (e: Exception) {
             logger.warn(e) { "Remote auto cache failed for subject $subjectId episode ${ep.episodeId}" }
             tr("缓存失败：{0}", e.message ?: e::class.simpleName).also { errors[key] = it }
+        } finally {
+            batch?.fetchSession = null
         }
     }
 
@@ -923,6 +1004,17 @@ internal object RemoteCache {
         append(ep.episodeInfo.sort.toString())
         val name = ep.episodeInfo.nameCn.ifBlank { ep.episodeInfo.name }
         if (name.isNotBlank()) append("  ").append(name)
+    }
+
+    /** 还在查 (没开始或查询中); 其余 (查完、失败、要验证、限流、暂停) 都算查完了这一轮. */
+    private fun MediaSourceFetchState.isStillSearching(): Boolean =
+        this == MediaSourceFetchState.Idle || this == MediaSourceFetchState.Working
+
+    /** 缓存进度的百分数文字: 不足 1% 时给一位小数 (最少 0.1), 否则取整; 同 `RemoteCacheList.Row.percentText`. */
+    private fun percentText(percent: Float): String = when {
+        percent <= 0f -> "0"
+        percent < 1f -> "0." + (percent * 10).toInt().coerceAtLeast(1)
+        else -> percent.toInt().coerceAtMost(100).toString()
     }
 
     private fun stateLabel(st: MediaSourceFetchState): String = when (st) {

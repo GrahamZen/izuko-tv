@@ -69,6 +69,7 @@ import me.him188.ani.app.ui.lang.settings_network_proxy_none
 import me.him188.ani.app.ui.lang.settings_network_proxy_not_detected
 import me.him188.ani.app.ui.lang.settings_network_proxy_optional
 import me.him188.ani.app.ui.lang.settings_network_proxy_overall_detecting
+import me.him188.ani.app.ui.lang.settings_network_proxy_overall_detecting_progress
 import me.him188.ani.app.ui.lang.settings_network_proxy_overall_failed_not_proxied
 import me.him188.ani.app.ui.lang.settings_network_proxy_overall_failed_proxied
 import me.him188.ani.app.ui.lang.settings_network_proxy_overall_success
@@ -160,10 +161,20 @@ fun SettingsScope.ConfigureProxyGroup(
 }
 
 @Composable
-private fun renderOverallTestText(state: ProxyOverallTestState): String {
-    return when (state) {
+private fun renderOverallTestText(state: ConfigureProxyUIState): String {
+    val testState = state.testState
+    return when (state.overallState) {
         ProxyOverallTestState.INIT -> stringResource(Lang.settings_network_proxy_overall_detecting)
-        ProxyOverallTestState.RUNNING -> stringResource(Lang.settings_network_proxy_overall_detecting)
+        // 各项并发测、各自最多十来秒: 说清测完了几项, 别只写「请稍候」让人干等
+        ProxyOverallTestState.RUNNING -> if (testState.items.isEmpty()) {
+            stringResource(Lang.settings_network_proxy_overall_detecting)
+        } else {
+            stringResource(
+                Lang.settings_network_proxy_overall_detecting_progress,
+                testState.completedCount,
+                testState.items.size,
+            )
+        }
         ProxyOverallTestState.FAILED_NOT_PROXIED -> stringResource(Lang.settings_network_proxy_overall_failed_not_proxied)
         ProxyOverallTestState.FAILED_PROXIED -> stringResource(Lang.settings_network_proxy_overall_failed_proxied)
         ProxyOverallTestState.SUCCESS -> stringResource(Lang.settings_network_proxy_overall_success)
@@ -180,7 +191,7 @@ private fun SettingsScope.ProxyTestStatusGroup(
     Group(
         title = {
             Text(
-                text = renderOverallTestText(state.overallState),
+                text = renderOverallTestText(state),
                 color = if (state.hasError)
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             )
@@ -463,6 +474,12 @@ class ProxyTestState(
     val testRunning: Boolean,
     val items: List<ProxyTestItem>
 ) {
+    /**
+     * 已出结果 (通或不通) 的项数. 各项并发测, 谁先出结果先算谁; 重测时各项先回到测试中, 所以测着的时候数的就是这一轮.
+     */
+    val completedCount: Int
+        get() = items.count { it.state == ProxyTestCaseState.SUCCESS || it.state == ProxyTestCaseState.FAILED }
+
     companion object {
         @Stable
         val Default = ProxyTestState(false, emptyList())

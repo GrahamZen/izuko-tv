@@ -122,10 +122,10 @@ class AniNavigatorTest {
 
     @Test
     fun `popBackStack never empties the stack`() {
-        val navigator = navigatorWith(NavRoutes.EmailLoginStart)
-        navigator.popBackStack(NavRoutes.EmailLoginStart, inclusive = true)
+        val navigator = navigatorWith(NavRoutes.Caches)
+        navigator.popBackStack(NavRoutes.Caches, inclusive = true)
 
-        assertEquals(listOf(NavRoutes.EmailLoginStart), navigator.backStack)
+        assertEquals(listOf(NavRoutes.Caches), navigator.backStack)
     }
 
     @Test
@@ -139,18 +139,18 @@ class AniNavigatorTest {
 
     @Test
     fun `navigateMain pops up to the target before pushing`() {
-        val navigator = navigatorWith(NavRoutes.EmailLoginStart, NavRoutes.EmailLoginVerify, NavRoutes.BangumiAuthorize)
-        navigator.navigateMain(MainScreenPage.Collection, popUpTargetInclusive = NavRoutes.EmailLoginStart)
+        val navigator = navigatorWith(NavRoutes.Caches, NavRoutes.Schedule, NavRoutes.BangumiAuthorize)
+        navigator.navigateMain(MainScreenPage.Collection, popUpTargetInclusive = NavRoutes.Caches)
 
         assertEquals(listOf(NavRoutes.Main(MainScreenPage.Collection)), navigator.backStack)
     }
 
     @Test
     fun `navigateMain without a pop target just pushes`() {
-        val navigator = navigatorWith(NavRoutes.EmailLoginStart)
+        val navigator = navigatorWith(NavRoutes.Caches)
         navigator.navigateMain(MainScreenPage.Collection)
 
-        assertEquals(listOf(NavRoutes.EmailLoginStart, NavRoutes.Main(MainScreenPage.Collection)), navigator.backStack)
+        assertEquals(listOf(NavRoutes.Caches, NavRoutes.Main(MainScreenPage.Collection)), navigator.backStack)
     }
 
     @Test
@@ -164,7 +164,7 @@ class AniNavigatorTest {
 
     @Test
     fun `popBackOrNavigateToMain resets the stack when there is no Main`() {
-        val navigator = navigatorWith(NavRoutes.EmailLoginStart, NavRoutes.EmailLoginVerify)
+        val navigator = navigatorWith(NavRoutes.Caches, NavRoutes.Schedule)
         navigator.popBackOrNavigateToMain(MainScreenPage.Collection)
 
         assertEquals(listOf(NavRoutes.Main(MainScreenPage.Collection)), navigator.backStack)

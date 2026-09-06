@@ -23,6 +23,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
+import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.TestSubjectInfo
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
@@ -181,5 +183,25 @@ class SubjectDetailsStateLoaderTest {
         assertEquals(2, factory.createCount)
         assertIs<SubjectDetailsUIState.Ok>(loader.state.value)
         assertTrue(factory.scopes.single().isActive)
+    }
+
+    /**
+     * 服务端不给这个条目 (NSFW 无权限 / 已删除) 时必须**当场**变成错误态.
+     *
+     * 曾经的行为: 取数失败不抛异常, 条目流一个值都不发, 于是只能等首屏超时兜底 (5 秒 x 5 次) —— 页面
+     * 转 25 秒圈再报一句"加载超时". 这条用例锁住"立刻失败", 并且错误要如实说明原因.
+     */
+    @Test
+    fun `subject not accessible fails immediately`() = runTest(UnconfinedTestDispatcher()) {
+        val factory = RecordingFactory()
+        val loader = SubjectDetailsStateLoader(factory, backgroundScope)
+
+        factory.failNextWith = RepositorySubjectNotAccessibleException(subjectId)
+        loader.load(subjectId)
+
+        val err = assertIs<SubjectDetailsUIState.Err>(loader.state.value)
+        assertEquals(LoadError.SubjectNotAccessible, err.error)
+        // 只跑了一次: 没有重试
+        assertEquals(1, factory.createCount)
     }
 }

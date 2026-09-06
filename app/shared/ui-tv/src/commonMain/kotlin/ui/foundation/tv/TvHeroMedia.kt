@@ -15,19 +15,21 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.text.intl.Locale
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
-import com.github.panpf.sketch.cache.CachePolicy
-import com.github.panpf.sketch.request.ImageRequest
-import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.source.DataFrom
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
+import me.him188.ani.app.ui.foundation.downloadToCache
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -459,10 +461,9 @@ object TvHeroPrefetch {
  * 落空都是这么来的). 但并行度必须压住 —— 与显示中的主图共用同一 host 的连接额度, 见
  * [MAX_INFLIGHT].
  *
- * **只落磁盘不进内存**: `memoryCachePolicy(DISABLED)` + 1×1 的目标尺寸 —— 下载缓存存的是网络
- * 原始字节 (按 URL 索引, 与显示时的请求同一条记录), 所以显示端照样能拿到全尺寸图, 而预热本身
- * 不解码出可用位图. 一张 w1280 解码后是 1280×720×4 ≈ 3.7MB, 预热几张就把 4K UI 下本就紧张的
- * 内存吃掉了.
+ * **只落磁盘、不解码** ([downloadToCache]) —— 下载缓存存的是网络原始字节 (按 URL 索引, 与显示时的请求同一条记录),
+ * 所以显示端照样能拿到全尺寸图. 解码进内存的话一张 w1280 是 1280×720×4 ≈ 3.7MB, 预热几张就把 4K UI 下本就紧张的
+ * 内存吃掉了; 1×1 的普通请求也不行, 照样要把整张熵解码一遍 (w1280 一张约 30ms), 还占着屏上卡片的解码队列.
  *
  * 曾经有个"最可能的那一个目标预解码进内存"的档 (实测省 ~70ms), 迁到 sketch 后删掉了: 它依赖
  * **coil 的内存缓存键只按 URL、对任何请求尺寸都判有效**, 而 sketch 的键含请求尺寸, 显示端是按
@@ -600,16 +601,9 @@ object TvHeroImagePrefetch {
         val startedAt = TimeSource.Monotonic.markNow()
         val job = scope.launch {
             try {
-                val result = sketch.execute(
-                    ImageRequest(context, url) {
-                        // 一律只落磁盘: 下载缓存按 URL 存网络原始字节, 与解码尺寸无关, 所以显示端
-                        // 无论按什么尺寸请求都能命中. 1×1 让这次几乎不解码 —— 预解码进内存对显示端
-                        // 没用 (sketch 的内存缓存键含请求尺寸), 详见类文档.
-                        downloadCachePolicy(CachePolicy.ENABLED)
-                        memoryCachePolicy(CachePolicy.DISABLED)
-                        size(1, 1)
-                    },
-                )
+                // 一律只落磁盘、不解码: 下载缓存按 URL 存网络原始字节, 与解码尺寸无关, 所以显示端
+                // 无论按什么尺寸请求都能命中, 详见类文档
+                val dataFrom = sketch.downloadToCache(context, url)
                 val elapsed = startedAt.elapsedNow().inWholeMilliseconds
                 // 冷启动未知期到此为止 (见 tvHeroImagePrefetchConcurrency). 缓存命中不进 EWMA
                 // 却照样算"跑完了" —— 磁盘全热时它是唯一能结束未知期的信号
@@ -617,13 +611,8 @@ object TvHeroImagePrefetch {
                 // 网络档位的信号源 (见 TvImageNetworkTier). 成功只记**真正走了网络的**:
                 // 磁盘/内存命中是 20~140ms, 图一热起来就会把慢网读成快网.
                 // 失败也要记 —— 否则最该进慢档的网络 (连续超时/重置) 一个样本都产生不了,
-                // 系统会一直停在快档, 继续开 3 条投机请求, 正好在坏网络上加剧竞争
-                when {
-                    result is ImageResult.Success && result.dataFrom == DataFrom.NETWORK ->
-                        TvImageNetworkSpeed.record(elapsed)
-
-                    result is ImageResult.Error -> TvImageNetworkSpeed.recordFailure(elapsed)
-                }
+                // 系统会一直停在快档, 继续开 3 条投机请求, 正好在坏网络上加剧竞争 (失败走下面的 catch)
+                if (dataFrom == DataFrom.NETWORK) TvImageNetworkSpeed.record(elapsed)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -669,8 +658,12 @@ object TvHeroImagePrefetch {
  * 聚焦路径与预取路径**必须走同一个入口**, [TvHeroPrefetch] 的在途去重才能把两者合流 ——
  * 各写各的话, "预取正卡在第一跳、用户走过去"就会从第一跳重新开始.
  *
- * 三跳是串行的, 省不掉: TMDB 只能按**日文原名**匹配 (中文译名命中率低且失败写持久负缓存),
- * 而原名要先拉条目信息才有。搜索页是例外 —— 它的列表项自带 `originalName`, 只有两跳.
+ * 三跳是串行的: TMDB 只能按**日文原名**匹配 (中文译名命中率低且失败写持久负缓存), 而原名要先拉条目信息才有。
+ * 搜索页是例外 —— 它的列表项自带 `originalName`, 只有两跳.
+ *
+ * **对应表里有的条目不等第一跳**: 对应表按条目 id 就能查, 与第一跳同时进行 ([TmdbImageService.prefetchBackdropFromMap]),
+ * 查到就落进热表, 背景图与条目信息一起出来 —— 经镜像时第一跳单个请求要几百毫秒, 启动那一波里要一两秒.
+ * 「继续观看」的条目除外: 那一行的 hero 先要单集剧照 (第二跳), 整部背景图先到会先显示再被剧照换掉.
  *
  * @param preferNextEpisodeStill 该条目在"继续观看"行 (hero 背景用单集剧照而非整部 backdrop).
  * @param settingsRepository 取剧照要用; 传 null 则跳过剧照那一跳 (预取邻居时不必).
@@ -682,10 +675,34 @@ suspend fun resolveTvHeroMedia(
     tmdb: TmdbImageService,
     preferNextEpisodeStill: Boolean = false,
     settingsRepository: SettingsRepository? = null,
+): SubjectCollectionInfo? = coroutineScope {
+    if (!preferNextEpisodeStill) {
+        launch {
+            // 查不到不影响主链: 第三跳还会再查一次对应表
+            try {
+                tmdb.prefetchBackdropFromMap(subjectId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+    resolveTvHeroMediaChain(subjectId, collectionRepo, tmdb, preferNextEpisodeStill, settingsRepository)
+}
+
+/** [resolveTvHeroMedia] 的三跳, 依次进行. */
+private suspend fun resolveTvHeroMediaChain(
+    subjectId: Int,
+    collectionRepo: SubjectCollectionRepository,
+    tmdb: TmdbImageService,
+    preferNextEpisodeStill: Boolean,
+    settingsRepository: SettingsRepository?,
 ): SubjectCollectionInfo? {
     // 第一跳: 条目信息. 进程级普通缓存命中就不走网络 (见 TvHeroMediaCache.peekSubjectInfo).
     // 取消异常必须重抛 —— runCatching 会吞掉它, 让已取消的协程继续往下跑
-    val info = TvHeroMediaCache.peekSubjectInfo(subjectId)
+    val chainStart = currentTimeMillis()
+    val cachedInfo = TvHeroMediaCache.peekSubjectInfo(subjectId)
+    val info = cachedInfo
         ?: try {
             collectionRepo.subjectCollectionFlow(subjectId).first()
         } catch (e: CancellationException) {
@@ -694,6 +711,9 @@ suspend fun resolveTvHeroMedia(
             null
         }?.also { TvHeroMediaCache.putSubjectInfo(subjectId, it) }
         ?: return null
+    // 三跳分开计时: "hero 背景慢"要能答出慢在哪一跳 —— 第一跳 (条目信息, 直连之后可能连着
+    // /p1/subjects + /v0/episodes 两个请求) 还是第三跳 (TMDB 匹配). 服务层那行只盖第三跳.
+    val hop1Millis = currentTimeMillis() - chainStart
     // 第二跳: "继续观看"的单集剧照 (只有那一行用). 放在整部 backdrop 之前: 它才是那一行 hero
     // 真正要显示的图, 不该排在兜底后面
     if (preferNextEpisodeStill && settingsRepository != null) {
@@ -705,14 +725,22 @@ suspend fun resolveTvHeroMedia(
     }
     // 第三跳: 整部 backdrop. **有剧照也照拉** —— 详情页 Hero 一律用整部 backdrop, 它同时是
     // 进详情页的门控条件 (见各页 navigateToSubject), 跳过等于让那条路冷启
+    val beforeBackdrop = currentTimeMillis()
     tmdb.prefetchTvBackdrop(
         subjectId,
         info.subjectInfo.name,
         activeAsOfDate = info.episodes.newestAiredDateStringOrNull(),
         hints = info.subjectInfo.toTmdbMatchHints(),
     )
+    logger.info {
+        "tvhero: subject $subjectId 解析完 ${currentTimeMillis() - chainStart}ms " +
+                "(条目 ${if (cachedInfo != null) "热缓存" else "取了 ${hop1Millis}ms"}, " +
+                "backdrop ${currentTimeMillis() - beforeBackdrop}ms)"
+    }
     return info
 }
+
+private val logger = logger<TvHeroMediaCache>()
 
 /**
  * **整部 backdrop 的预取**: 已解析过就直接返回, 否则解析一次 —— 结果自动落进服务层热表

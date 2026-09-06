@@ -61,6 +61,10 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import me.him188.ani.app.data.network.RecommendationRefreshProgress
+import me.him188.ani.app.data.recommendation.RecommendationGroup
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
@@ -87,7 +91,6 @@ import me.him188.ani.app.ui.foundation.HorizontalScrollControlState
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.ifNotNullThen
@@ -137,10 +140,33 @@ class ExplorationPageState(
     // 存下来的**下标**指向了别的行 —— 电视上表现为返回后"推荐区的卡片先坐在锚位上, 十来帧后
     // 才换成继续观看" (2026-08-12 真机日志: 空窗 165ms).
     val followedSubjectsPager: LazyPagingItems<FollowedSubjectInfo>,
+    /** 拍平的推荐 (手机端竖排网格用). 电视端按组画, 看 [recommendationGroups]. */
     val recommendationPager: LazyPagingItems<RecommendedItemInfo>,
+    /**
+     * 分好组的推荐, 每组一行、各有标题与来源 (见 `RecommendationGroupKind`).
+     *
+     * 是 [StateFlow] 而不是每次组合现收: 与上面两个分页实例同理, 挂在 ViewModel 上跨导航活着,
+     * 返回时立刻就有值, 不会有"整行短暂不存在"的空窗把 `listState` 存的下标指到别的行去.
+     */
+    val recommendationGroups: StateFlow<List<RecommendationGroup>>,
     val horizontalScrollTipFlow: Flow<Boolean>,
     private val onSetDisableHorizontalScrollTip: () -> Unit,
     private val onRefreshFollowedSubjects: () -> Unit = {},
+    /** 「换一批」: 立刻重新召回一批推荐 (动作面板里那颗钮). */
+    private val onShuffleRecommendations: () -> Unit = {},
+    /**
+     * 推荐是否正在重算.
+     *
+     * 只有**推荐区还空着**的那一次才值得告诉用户 (装完 / 登录后第一次进页, 要等十几秒,
+     * 期间那块是全空的); 已经有内容时的后台重算不该打扰人.
+     */
+    val recommendationsRefreshing: StateFlow<Boolean> = MutableStateFlow(false),
+    /** 真在重算时进行到哪了 (读收藏第几页 / 已完成几个请求), 同样只在推荐区空着时显示. */
+    val recommendationsRefreshProgress: StateFlow<RecommendationRefreshProgress?> = MutableStateFlow(null),
+    /** 「更多」: 按这一组出行时的来源接着推荐, 参数是 `RecommendationGroup.key`. */
+    private val onExtendRecommendationGroup: (String) -> Unit = {},
+    /** 正在「更多」的组 (`RecommendationGroup.key`): 行尾那张卡画成加载中. */
+    val extendingRecommendationGroups: StateFlow<Set<String>> = MutableStateFlow(emptySet()),
 ) {
     val trendingSubjectsCarouselState = CarouselState(
         itemCount = {
@@ -169,6 +195,15 @@ class ExplorationPageState(
      * 强制重拉"继续观看"栏目 (TV 端长按播放键): 平时它只跟着仓库里一小时一跳的定时同步走,
      * 用户想立刻确认某部有没有更新时需要一个入口.
      */
+    fun shuffleRecommendations() {
+        onShuffleRecommendations()
+    }
+
+    /** 行尾「更多」: 按 [groupKey] 那一组出行时的来源接着推荐, 见 `RecommendationRepository.extendGroup`. */
+    fun extendRecommendationGroup(groupKey: String) {
+        onExtendRecommendationGroup(groupKey)
+    }
+
     fun refreshFollowedSubjects() {
         onRefreshFollowedSubjects()
     }
@@ -194,16 +229,15 @@ fun ExplorationScreen(
     // 沉浸式外壳下顶栏 (标题/头像/搜索/设置) 全部由外壳侧边导航承载, 这里不再重复渲染顶栏
     val immersiveShell = LocalAniUiBehavior.current.immersiveShell
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
-    // 沉浸式变体: 入口提供了变体, 且运行时设置开启 (界面设置 → TV 沉浸式探索页, 默认开)
+    // 沉浸式变体: 入口提供了变体就用 (遥控器形态恒为沉浸式布局)
     val pageVariant = LocalExplorationPageVariant.current
-    val useImmersive = pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration
     // TV: 进入主页时把焦点落到最高热点栏目的第一张卡 (至少也在侧边栏之外). 该卡在分页首页加载
     // 完成前不存在, 且要和全局焦点兜底 (AniAppContent) 竞争 —— 故持续重试, 直到 onFocusChanged
     // 报告它真正拿到焦点为止 (不依赖 requestFocus 的返回, 后者未挂载时可能静默 no-op), 或超时放弃.
     // 沉浸式与原布局的热点第一张卡都挂着同一个 FocusRequester, 本机制对两种布局通用.
     // 沉浸式变体的初始/返回焦点由变体内部统一处理 (含从详情页返回时恢复到原卡片);
-    // 这里只为旧布局 (沉浸式关闭) 抢初始焦点到热点第一张卡.
-    if (focusDriven && !useImmersive) {
+    // 这里只为没有变体的默认布局抢初始焦点到热点第一张卡.
+    if (focusDriven && pageVariant == null) {
         LaunchedEffect(Unit) {
             repeat(80) {
                 if (state.trendingFirstItemFocused.value) return@LaunchedEffect
@@ -212,8 +246,8 @@ fun ExplorationScreen(
             }
         }
     }
-    // 沉浸式变体 (设置开关控制); 关掉则走下方默认布局
-    if (useImmersive && pageVariant != null) {
+    // 沉浸式变体; 没有变体的形态走下方默认布局
+    if (pageVariant != null) {
         pageVariant.Page(state, modifier.fillMaxSize())
         return
     }
@@ -465,6 +499,7 @@ private fun PreviewExplorationPage() {
                     trendingSubjectInfoPager,
                     followedSubjectsPager = followedPager,
                     recommendationPager = recPager,
+                    recommendationGroups = MutableStateFlow(emptyList()),
                     horizontalScrollTipFlow = flowOf(false),
                     onSetDisableHorizontalScrollTip = {},
                 )

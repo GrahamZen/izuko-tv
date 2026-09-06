@@ -14,11 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 
 /**
- * 追番页变体: 应用入口可提供一个替代布局 (如遥控器形态的沉浸式布局).
- *
- * 与沉浸式探索页共用同一运行时开关
- * [ThemeSettings.tvImmersiveExploration][me.him188.ani.app.data.models.preference.ThemeSettings.tvImmersiveExploration],
- * 关闭则回退默认布局.
+ * 追番页变体: 应用入口可提供一个替代布局 (如遥控器形态的沉浸式布局). 提供了就用, 没有回退开关.
  */
 fun interface CollectionPageVariant {
     @Composable

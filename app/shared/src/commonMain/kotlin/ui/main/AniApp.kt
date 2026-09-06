@@ -41,15 +41,19 @@ import me.him188.ani.app.data.models.preference.EpisodeProgressSettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebCaptchaDialogHost
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.session.auth.BangumiOAuthDialogHost
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.navigation.BrowserNavigator
+import me.him188.ani.app.navigation.rewritingUrls
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.platform.LocalContext
@@ -87,6 +91,12 @@ import me.him188.ani.utils.platform.currentPlatform
 import me.him188.ani.utils.platform.isMobile
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.him188.ani.app.navigation.OpenBrowserResult
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 
 @Stable
 class AniAppState(
@@ -99,12 +109,15 @@ class AniAppState(
     val episodeProgressSettings: EpisodeProgressSettings,
 )
 
+private val aniAppLogger = logger("AniApp")
+
 @Stable
 class AniAppViewModel : AbstractViewModel(), KoinComponent {
     private val settings: SettingsRepository by inject()
     private val httpClientProvider: HttpClientProvider by inject()
     private val downloadManager: MediaDownloadManager by inject()
     private val webSessionManager: WebSessionManager by inject()
+    private val bangumiOAuthManager: BangumiOAuthManager by inject()
     private val userRepository: UserRepository by inject()
     private val sessionStateProvider: SessionStateProvider by inject()
 
@@ -114,15 +127,13 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
         downloadManager.storages.map { @Composable { it.engine.ComposeContent() } },
     )
 
-    val browserNavigator by inject<BrowserNavigator>()
+    private val platformBrowserNavigator: BrowserNavigator by inject()
+    private val bangumiEndpoints: BangumiEndpointProvider by inject()
 
-    val bangumiSessionExpired =
-        combine(userRepository.selfInfoFlow, sessionStateProvider.stateFlow) { selfInfo, sessionState ->
-            val isBound = selfInfo?.bangumiUsername?.isNotBlank() == true
-            val serverTokenInvalid = selfInfo?.isBangumiSessionValid == false
-            val localTokenMissing = sessionState is SessionState.Valid && !sessionState.bangumiConnected
-            isBound && (serverTokenInvalid || localTokenMissing)
-        }.distinctUntilChanged().stateInBackground(false)
+    /** 交给浏览器的地址: Bangumi 网页按当前线路换站 (见 [BangumiEndpointProvider.webLink]), 其余原样. */
+    fun openLinkRewrite(url: String): String = bangumiEndpoints.webLink(url)
+
+    val browserNavigator: BrowserNavigator by lazy { platformBrowserNavigator.rewritingUrls(::openLinkRewrite) }
 
     val appState: Flow<AniAppState?> = combine(
         settings.themeSettings.flow,
@@ -135,7 +146,32 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
             uiSettings.mainSceneInitialPage,
             themeSettings,
             imageLoaderClient,
-            mediaCacheComposables + listOf(@Composable { WebCaptchaDialogHost(webSessionManager) }),
+            mediaCacheComposables + listOf(
+                @Composable { WebCaptchaDialogHost(webSessionManager) },
+                // 授权用的全屏浏览器: 放根部而不是授权页里, 见 BangumiOAuthDialogHost
+                @Composable {
+                    // **这个槽位读不到内容树里的 CompositionLocal**: 它挂在 AniApp 根部, 而
+                    // LocalBrowserNavigator 是 AniAppContent 里才 provide 的 —— 用
+                    // rememberAsyncBrowserNavigator() 会在**启动那一刻**就
+                    // "No BrowserNavigator provided" 崩掉 (2026-09-06 实测: 一进去就闪退).
+                    // 所以用 Koin 那个实例. 代价是少了它自带的"打不开就复制到剪贴板"兜底,
+                    // 改成自己记一行日志.
+                    // (LocalContext 无妨: Android 上它就是 Compose 自己的那个, 处处都有值.)
+                    val oauthContext = LocalContext.current
+                    val oauthScope = rememberCoroutineScope()
+                    BangumiOAuthDialogHost(
+                        bangumiOAuthManager,
+                        onOpenExternally = { url ->
+                            oauthScope.launch {
+                                val result = browserNavigator.openBrowser(oauthContext, url)
+                                if (result !is OpenBrowserResult.Success) {
+                                    aniAppLogger.warn { "打不开系统浏览器 (电视上常常一个都没有): $result" }
+                                }
+                            }
+                        },
+                    )
+                },
+            ),
             // Windows 并且 ani 语言为中文的话, 显式使用 Microsoft YaHei UI.
             // 如果 Windows 语言不是中文, 那系统会使用 Microsoft JhengHei UI 作为中文字体, 这个字体对简体中文的支持不好.
             if (currentPlatform() is Platform.Windows && uiSettings.appLanguage == LocaleZhCN) {
@@ -147,10 +183,6 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
         started = SharingStarted.Eagerly,
         replay = 1,
     )
-
-    suspend fun unbindBangumi() {
-        userRepository.unbindBangumi()
-    }
 
 }
 
@@ -167,6 +199,11 @@ fun AniApp(
      * 缺省实现不做任何事, 此时界面缩放只在 Compose 层生效.
      */
     uiScaleApplier: UiScaleApplier = NoopUiScaleApplier,
+    /**
+     * 应用状态 (主题等设置) 读出来之前画的东西, 由应用入口决定 (电视端是启动页). 在主题之外组合, 颜色要自己带.
+     * 缺省什么都不画, 露出窗口底色.
+     */
+    loadingPlaceholder: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val viewModel = viewModel { AniAppViewModel() }
@@ -174,7 +211,11 @@ fun AniApp(
     // 之前就得定下来 —— 档位进 URL、URL 进缓存键, 首屏拿了低档这次启动就一直是低档
     TrackAniDisplayTier()
     // 主题读好再进入 APP, 防止黑白背景闪烁
-    val appState = viewModel.appState.collectAsStateWithLifecycle(null).value ?: return
+    val appState = viewModel.appState.collectAsStateWithLifecycle(null).value
+    if (appState == null) {
+        loadingPlaceholder()
+        return
+    }
 
     // 界面缩放: 补偿部分电视/盒子上报错误的 densityDpi.
     //
@@ -243,8 +284,8 @@ fun AniApp(
                         clearFocusOnUnhandledTap()
                     },
             ) {
-                // 各处 uriHandler.openUri 打不开链接时不崩, 改弹二维码
-                ProvideOpenLinkFallback {
+                // 各处 uriHandler.openUri 打不开链接时不崩, 改弹二维码; Bangumi 网页按当前线路换站
+                ProvideOpenLinkFallback(rewriteUrl = viewModel::openLinkRewrite) {
                     Box {
                         for (composable in appState.overlayComposables) {
                             composable()

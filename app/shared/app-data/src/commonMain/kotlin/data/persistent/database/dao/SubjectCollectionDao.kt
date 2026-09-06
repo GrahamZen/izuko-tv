@@ -16,6 +16,8 @@ import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Relation
@@ -33,7 +35,9 @@ import me.him188.ani.app.data.persistent.database.ProtoConverters
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.platform.currentTimeMillis
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /**
  * @see SubjectInfo
@@ -154,6 +158,10 @@ interface SubjectCollectionDao {
     @Upsert
     suspend fun upsert(item: SubjectCollectionEntity)
 
+    /** 表里还没有这个条目才写进去; 已有的一行一概不动. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(item: SubjectCollectionEntity)
+
     @Upsert
     @Transaction
     suspend fun upsert(item: List<SubjectCollectionEntity>)
@@ -222,6 +230,25 @@ interface SubjectCollectionDao {
         subjectId: Int,
         collectionType: UnifiedCollectionType,
         lastUpdated: Long = currentTimeMillis(),
+    )
+
+    /** 只写播出周期 ([SubjectCollectionEntity.recurrence]) 这两列, 同一行别的列不动. */
+    @Query(
+        """UPDATE subject_collection SET recurrence_startTime = :startTime, recurrence_interval = :interval
+        WHERE subjectId = :subjectId""",
+    )
+    suspend fun updateRecurrence(subjectId: Int, startTime: Instant, interval: Duration)
+
+    /** 本地还是 [expected] 才改成 [replacement] (连同更新时间); 已经被改成别的 (之后又改过) 就不动. */
+    @Query(
+        """UPDATE subject_collection SET collectionType = :replacement, lastUpdated = :lastUpdated
+        WHERE subjectId = :subjectId AND collectionType = :expected""",
+    )
+    suspend fun replaceType(
+        subjectId: Int,
+        expected: UnifiedCollectionType,
+        replacement: UnifiedCollectionType,
+        lastUpdated: Long,
     )
 
     @Query("""DELETE FROM subject_collection WHERE subjectId = :subjectId""")
@@ -348,6 +375,20 @@ interface SubjectCollectionDao {
 
     @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
     fun findById(subjectId: Int): Flow<SubjectCollectionEntity?>
+
+    /**
+     * 真收藏的条数 (排除只是浏览过的 `NOT_COLLECTED`).
+     *
+     * 给推荐当"输入变了"的信号用: **只查个数**, 不查整行 —— 每浏览一个条目这张表就会写一次,
+     * 拿整行的 flow 当信号等于每次都重新解 500 行的标签.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM subject_collection
+        WHERE collectionType IS NOT NULL AND collectionType != 'NOT_COLLECTED'
+        """,
+    )
+    fun realCollectionCountFlow(): Flow<Int>
 
     @Query("""SELECT * FROM subject_collection WHERE subjectId IN (:subjectIds)""")
     fun filterByIds(subjectIds: IntArray): Flow<List<SubjectCollectionEntity>>

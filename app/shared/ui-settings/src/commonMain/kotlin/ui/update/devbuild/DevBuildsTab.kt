@@ -28,10 +28,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +63,10 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.TimeFormatter
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
+import me.him188.ani.app.ui.foundation.widgets.AniFilledTonalButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_debug_dev_builds_artifact
 import me.him188.ani.app.ui.lang.settings_debug_dev_builds_cancel
@@ -268,15 +268,15 @@ fun DevBuildsTabContent(
             file = install.file,
         )
 
-        is DevBuildInstallState.ReadyForManualInstall -> AlertDialog(
+        is DevBuildInstallState.ReadyForManualInstall -> AniAlertDialog(
             onDismissRequest = state::dismissInstallResult,
             confirmButton = {
-                TextButton({ scope.launch { state.revealPackage(install.file, context) } }) {
+                AniTextButton({ scope.launch { state.revealPackage(install.file, context) } }) {
                     Text(stringResource(Lang.settings_debug_dev_builds_manual_reveal))
                 }
             },
             dismissButton = {
-                TextButton(state::dismissInstallResult) {
+                AniTextButton(state::dismissInstallResult) {
                     Text(stringResource(Lang.settings_debug_dev_builds_close))
                 }
             },
@@ -361,15 +361,15 @@ private fun GitHubTokenDialog(
 ) {
     var draft by remember { mutableStateOf(token) }
     var visible by remember { mutableStateOf(false) }
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            TextButton({ onConfirm(draft.trim()) }, Modifier.testTag(DevBuildsTestTags.TOKEN_SAVE_BUTTON)) {
+            AniTextButton({ onConfirm(draft.trim()) }, Modifier.testTag(DevBuildsTestTags.TOKEN_SAVE_BUTTON)) {
                 Text(stringResource(Lang.settings_debug_dev_builds_token_save))
             }
         },
         dismissButton = {
-            TextButton(onDismissRequest) {
+            AniTextButton(onDismissRequest) {
                 Text(stringResource(Lang.settings_debug_dev_builds_cancel))
             }
         },
@@ -421,7 +421,7 @@ private fun DevBuildsErrorCard(
                 stringResource(Lang.settings_debug_dev_builds_load_failed, loadErrorMessage(throwable)),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            TextButton(onRetry, Modifier.testTag(DevBuildsTestTags.RETRY_BUTTON)) {
+            AniTextButton(onRetry, Modifier.testTag(DevBuildsTestTags.RETRY_BUTTON)) {
                 Text(stringResource(Lang.settings_debug_dev_builds_retry))
             }
         }
@@ -523,7 +523,7 @@ private fun DevBuildCommitRow(
                 }
             }
             if (busy != null) {
-                TextButton(
+                AniTextButton(
                     onClickCancel,
                     Modifier.height(32.dp).testTag(DevBuildsTestTags.CANCEL_BUTTON_PREFIX + commit.sha),
                     contentPadding = PaddingValues(horizontal = 12.dp),
@@ -531,7 +531,7 @@ private fun DevBuildCommitRow(
                     Text(stringResource(Lang.settings_debug_dev_builds_cancel), maxLines = 1)
                 }
             } else {
-                FilledTonalButton(
+                AniFilledTonalButton(
                     onClickInstall,
                     Modifier.height(32.dp).testTag(DevBuildsTestTags.INSTALL_BUTTON_PREFIX + commit.sha),
                     enabled = commit.artifact != null && !anyBusy,
@@ -650,10 +650,10 @@ private fun ConfirmInstallDevBuildDialog(
         DevBuildPackageKind.ANDROID_APK -> Lang.settings_debug_dev_builds_confirm_message_android
         DevBuildPackageKind.LINUX_APPIMAGE -> Lang.settings_debug_dev_builds_confirm_message_manual
     }
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            Button(onConfirm, Modifier.testTag(DevBuildsTestTags.CONFIRM_BUTTON)) {
+            AniButton(onConfirm, Modifier.testTag(DevBuildsTestTags.CONFIRM_BUTTON)) {
                 Text(
                     stringResource(
                         if (kind.supportsAutomaticInstall) Lang.settings_debug_dev_builds_confirm_install
@@ -663,7 +663,7 @@ private fun ConfirmInstallDevBuildDialog(
             }
         },
         dismissButton = {
-            TextButton(onDismissRequest, Modifier.testTag(DevBuildsTestTags.CONFIRM_CANCEL_BUTTON)) {
+            AniTextButton(onDismissRequest, Modifier.testTag(DevBuildsTestTags.CONFIRM_CANCEL_BUTTON)) {
                 Text(stringResource(Lang.settings_debug_dev_builds_cancel))
             }
         },

@@ -11,14 +11,19 @@ package me.him188.ani.app.data.models.user
 
 import androidx.compose.runtime.Stable
 import kotlinx.serialization.Serializable
-import kotlin.uuid.Uuid
 
 /**
  * @since 5.0
  */
 @Serializable
 data class SelfInfo(
-    val id: Uuid,
+    /**
+     * bangumi 的用户 id (`/p1/me` 的 `id`).
+     *
+     * 直连之前这里是 Ani 自己的用户 UUID. 存档里旧值解析不了正好 —— selfInfoStore 配了
+     * `ReplaceFileCorruptionHandler { null }`, 解析失败即当没缓存, 登录后重新拉一次.
+     */
+    val id: Int,
     val nickname: String,
     val email: String?,
     val hasPassword: Boolean,

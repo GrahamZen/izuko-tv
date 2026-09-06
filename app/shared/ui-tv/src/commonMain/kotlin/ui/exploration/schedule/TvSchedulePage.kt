@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.exploration.schedule
 
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -765,10 +764,10 @@ private fun Modifier.tvScheduleBleedToScreenEdges(): Modifier = layout { measura
 }
 
 /**
- * 越过第一格顶线往上走的那几部边走边淡 (同追番 / 搜索网格的 tvGridItemTopFade, 只是线不在内边距之后 —— 那里是固定
- * 焦点框 —— 而在第一格的顶上): 越线多远就多淡, 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个
- * 淡掉, 顶上不露半截; 滚动时往上走的那部也不会在哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层,
- * 零重组; ModulateAlpha 理由同 tvGridItemTopFade (默认 Auto 在 alpha < 1 时整行先画进离屏缓冲).
+ * 越过第一格顶线往上走的那几部边走边淡 (线不在内边距之后 —— 那里是固定焦点框 —— 而在第一格的顶上): 越线多远就多淡,
+ * 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个淡掉, 顶上不露半截; 滚动时往上走的那部也不会在
+ * 哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层, 零重组; ModulateAlpha: 默认 Auto 在 alpha < 1 时
+ * 整行先画进离屏缓冲.
  */
 private fun Modifier.tvScheduleTopFade(state: LazyGridState, index: Int): Modifier = graphicsLayer {
     compositingStrategy = CompositingStrategy.ModulateAlpha
@@ -1392,7 +1391,8 @@ private fun TvScheduleRow(
                     .tvTouchFocusOnTap()
                     .combinedClickable(
                         interactionSource = interactionSource,
-                        indication = LocalIndication.current,
+                        // 不要 indication: 聚焦由外面的聚焦框表达, 涟漪的焦点态层比框晚到一拍 (同 TvPortraitCard)
+                        indication = null,
                         onClick = onClick,
                         onLongClick = menu?.let { { menuExpanded = true } },
                     )
@@ -1473,14 +1473,14 @@ private fun TvScheduleRowSkeleton(modifier: Modifier = Modifier) {
 @Composable
 private fun TvScheduleCoverImage(url: String, contentDescription: String?) {
     val retry = rememberAsyncImageRetryState(url)
-    val loaded = rememberImageCompletionGrace(url)
+    val completionGrace = rememberImageCompletionGrace(url)
     AsyncImage(
         if (retry.suppressed) null else url,
         contentDescription = contentDescription,
         Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
-        onSuccess = { loaded.value = true },
         onError = { retry.onError() },
+        completionGrace = completionGrace,
     )
 }
 
@@ -1665,7 +1665,11 @@ private fun buildTvScheduleTimeline(presentation: SchedulePagePresentation, toda
     val itemEntries = ArrayList<IntArray>(days.size)
     for ((d, day) in days.withIndex()) {
         entries += TvScheduleEntry.Header(d, day)
-        if (day.cards.isEmpty()) entries += TvScheduleEntry.Empty(d)
+        // 时间表是**按天懒加载**的: 还没轮到的那天 cards 也是空的. 不区分的话进页头几秒每天都
+        // 写着"这一天没有新番", 过几秒又自己冒出卡片 (见 AiringScheduleForDate.pending).
+        val dayPending = presentation.airingSchedules
+            .firstOrNull { it.date == presentation.days.getOrNull(d)?.date }?.isPlaceholder != false
+        if (day.cards.isEmpty() && !dayPending) entries += TvScheduleEntry.Empty(d)
         val next = if (day.currentTime != null) day.firstUpcomingIndex else -1
         itemEntries += IntArray(day.cards.size) { i ->
             val card = day.cards[i]

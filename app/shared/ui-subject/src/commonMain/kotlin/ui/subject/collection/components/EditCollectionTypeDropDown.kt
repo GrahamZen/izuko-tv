@@ -9,28 +9,25 @@
 
 package me.him188.ani.app.ui.subject.collection.components
 
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.*
@@ -44,7 +41,6 @@ fun EditCollectionTypeDropDown(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = MenuDefaults.containerColor,
 ) {
     val presentation by state.presentationFlow.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -63,13 +59,14 @@ fun EditCollectionTypeDropDown(
             }
         },
         modifier = modifier,
-        containerColor = containerColor,
     )
 }
 
 /**
  * A drop down menu to edit the collection type of a subject.
  * Also includes a dialog to set all episodes as watched when the user attempts to mark the subject as [UnifiedCollectionType.DONE].
+ *
+ * 当前收藏状态画成菜单的选中项 (TV 上选中色 + ✓, 手机上主题色文字, 见 [AniDropdownMenuItem]).
  */
 @Composable
 fun EditCollectionTypeDropDown(
@@ -79,35 +76,28 @@ fun EditCollectionTypeDropDown(
     onClick: (action: SubjectCollectionAction) -> Unit,
     modifier: Modifier = Modifier,
     actions: List<SubjectCollectionAction> = SubjectCollectionActionsForEdit,
-    showDelete: Boolean = currentType != UnifiedCollectionType.NOT_COLLECTED,
-    /** 菜单容器色; TV 详情页传半透明色, 其他平台用默认. */
-    containerColor: Color = MenuDefaults.containerColor,
+    // bangumi 没有"取消收藏"的接口 (v0 与 p1 的 DELETE 都是 404), 这个入口整体去掉
+    showDelete: Boolean = false,
+    /** 焦点导航上菜单摆在哪 (见 [AniDropdownMenu] 的同名参数); null = 贴着锚点往下. */
+    positionProvider: PopupPositionProvider? = null,
 ) {
     var showConfirmDeleteDialog by rememberSaveable { mutableStateOf(false) }
-    DropdownMenu(
+    AniDropdownMenu(
         expanded,
         onDismissRequest = onDismissRequest,
         offset = DpOffset(x = 0.dp, y = 4.dp),
+        positionProvider = positionProvider,
         // 菜单是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器内嵌详情页点开时,
         // 画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
         modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
-        containerColor = containerColor,
     ) {
         for (action in actions) {
             if (!showDelete && action == SubjectCollectionActions.DeleteCollection) continue
 
-            val color = action.colorForCurrent(currentType)
-            DropdownMenuItem(
-                text = {
-                    CompositionLocalProvider(LocalContentColor provides color) {
-                        action.title()
-                    }
-                },
-                leadingIcon = {
-                    CompositionLocalProvider(LocalContentColor provides color) {
-                        action.icon()
-                    }
-                },
+            AniDropdownMenuItem(
+                text = { action.title() },
+                leadingIcon = { action.icon() },
+                selected = currentType == action.type,
                 onClick = {
                     if (action == SubjectCollectionActions.DeleteCollection) {
                         showConfirmDeleteDialog = true
@@ -120,14 +110,14 @@ fun EditCollectionTypeDropDown(
         }
 
         if (showConfirmDeleteDialog) {
-            AlertDialog(
+            AniAlertDialog(
                 onDismissRequest = { showConfirmDeleteDialog = false },
                 modifier = Modifier.tvOverlayWindowKeys { showConfirmDeleteDialog = false }, // 同上
                 title = { Text(stringResource(Lang.subject_collection_delete_confirm_title)) },
                 text = { Text(stringResource(Lang.subject_collection_delete_confirm_message)) },
                 icon = { SubjectCollectionActions.DeleteCollection.icon() },
                 confirmButton = {
-                    TextButton(
+                    AniTextButton(
                         onClick = {
                             onClick(SubjectCollectionActions.DeleteCollection)
                             onDismissRequest()
@@ -141,7 +131,7 @@ fun EditCollectionTypeDropDown(
                     }
                 },
                 dismissButton = {
-                    TextButton(
+                    AniTextButton(
                         onClick = { showConfirmDeleteDialog = false },
                     ) {
                         Text(stringResource(Lang.subject_collection_cancel))
@@ -150,13 +140,4 @@ fun EditCollectionTypeDropDown(
             )
         }
     }
-}
-
-@Composable
-private fun SubjectCollectionAction.colorForCurrent(
-    currentType: UnifiedCollectionType?
-) = if (currentType == type) {
-    MaterialTheme.colorScheme.primary
-} else {
-    LocalContentColor.current
 }

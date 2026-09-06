@@ -45,8 +45,6 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -74,6 +72,8 @@ import androidx.compose.ui.unit.sp
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.a
 import me.him188.ani.app.ui.foundation.lists.LazyListVerticalScrollbar
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_collapse
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
@@ -335,7 +335,7 @@ private fun DanmakuSourceChip(
         )
 
         if (showDropdown) {
-            DropdownMenu(
+            AniDropdownMenu(
                 expanded = showDropdown,
                 onDismissRequest = { showDropdown = false },
             ) {
@@ -363,7 +363,7 @@ private fun DanmakuSourceChip(
                 HorizontalDivider()
 
                 // 操作菜单项
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(if (sourceItem.enabled) disableText else enableText) },
                     leadingIcon = {
                         Icon(
@@ -377,7 +377,7 @@ private fun DanmakuSourceChip(
                     },
                 )
                 if (!isAnimeko) {
-                    DropdownMenuItem(
+                    AniDropdownMenuItem(
                         text = { Text(rematchText) },
                         leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
                         onClick = {
@@ -386,7 +386,7 @@ private fun DanmakuSourceChip(
                         },
                     )
                 }
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(timeShiftText) },
                     leadingIcon = { Icon(Icons.Outlined.Schedule, null) },
                     onClick = {

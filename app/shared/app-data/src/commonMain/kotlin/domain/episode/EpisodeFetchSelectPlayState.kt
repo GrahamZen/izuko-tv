@@ -17,13 +17,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -44,8 +49,10 @@ import me.him188.ani.app.domain.media.resolver.toEpisodeMetadata
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.player.ExtensionException
 import me.him188.ani.app.domain.player.PlayerExtensionManager
+import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.extension.EpisodePlayerExtensionFactory
 import me.him188.ani.app.domain.player.extension.ExtensionBackgroundTaskScope
+import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -54,6 +61,7 @@ import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.EpisodeSwitch
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
+import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -120,12 +128,26 @@ class EpisodeFetchSelectPlayState(
         mainDispatcher,
     )
 
+    /**
+     * 原地重载请求, 值是重载后要回到的位置. 由 [LoadMediaOnSelectExtension] 在当前选中的资源上执行,
+     * 与换源同在一条 `collectLatest` 里, 选中项一变, 未执行的重载随之作废.
+     */
+    private val reloadRequests = MutableSharedFlow<Long>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     private val extensionManager by lazy {
         val intrinsicExtensions = listOf(
             EpisodePlayerExtensionFactory { context, _ ->
-                LoadMediaOnSelectExtension { episodeId ->
-                    backgroundScope.launch { context.broadcast(MediaLoadedEvent(episodeId)) }
-                }
+                LoadMediaOnSelectExtension(
+                    onMediaLoaded = { episodeId ->
+                        backgroundScope.launch { context.broadcast(MediaLoadedEvent(episodeId)) }
+                    },
+                    onReloadMedia = { episodeId, positionMillis ->
+                        context.broadcast(MediaReloadEvent(episodeId, positionMillis))
+                    },
+                )
             },
         )
 
@@ -195,6 +217,7 @@ class EpisodeFetchSelectPlayState(
                     // 5. 创建新的 fetchSelectSession
                     logger.info { "SwitchEpisode($episodeId): Propagate newEpisodeSession" }
                     val newSession = newEpisodeSession(episodeId)
+                    _autoSwitchStatus.value = null // 上一集试到第几个与这一集无关
                     _episodeSessionFlow.value = newSession
 
                     // 6. Suspend until background tasks are started.
@@ -256,6 +279,42 @@ class EpisodeFetchSelectPlayState(
         episodeSessionFlow.value.restartLoad()
     }
 
+    /**
+     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis].
+     * 选中的资源还在加载 (还没有 [LoadMediaOnSelectExtension] 在等重载请求) 时返回 `false`.
+     *
+     * @see PlayerExtensionContext.reloadCurrentMedia
+     */
+    internal suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
+        if (reloadRequests.subscriptionCount.value == 0) return false
+        reloadRequests.emit(positionMillis)
+        return true
+    }
+
+    private val _autoSwitchStatus = MutableStateFlow<MediaAutoSwitchStatus?>(null)
+
+    /**
+     * 最近一次播放失败后自动换源的情况 (试到第几个、还剩几个), 加载提示据此多写一行; 换上的资源播起来、或换集之后为 `null`.
+     *
+     * @see PlayerExtensionContext.reportAutoSwitch
+     */
+    val autoSwitchStatus: StateFlow<MediaAutoSwitchStatus?> = _autoSwitchStatus.asStateFlow()
+
+    internal fun reportAutoSwitch(status: MediaAutoSwitchStatus) {
+        _autoSwitchStatus.value = status
+    }
+
+    init {
+        // 换上的资源真的播起来了, 「正在试第几个」就不用再说了
+        backgroundScope.launch {
+            combine(playerSession.videoLoadingState, player.state) { loading, state ->
+                loading is VideoLoadingState.Succeed && state.mediaStatus == MediaStatus.Ready && !state.isBuffering
+            }.distinctUntilChanged()
+                .filter { it }
+                .collect { _autoSwitchStatus.value = null }
+        }
+    }
+
     private suspend fun EpisodeSession.startSessionScopeTasks() {
         /**
          * Session-scope tasks are non-stopping, and is not aware of app lifecycle.
@@ -303,10 +362,12 @@ class EpisodeFetchSelectPlayState(
     /**
      * An intrinsic extension that is automatically and forcefully added to the extension manager.
      *
-     * This extension calls [PlayerSession.loadMedia] when a new media is selected.
+     * This extension calls [PlayerSession.loadMedia] when a new media is selected,
+     * and again for the same media on [reloadCurrentMedia].
      */
     private inner class LoadMediaOnSelectExtension(
-        private val onMediaLoaded: (episodeId: Int) -> Unit = { }
+        private val onMediaLoaded: (episodeId: Int) -> Unit = { },
+        private val onReloadMedia: suspend (episodeId: Int, positionMillis: Long) -> Unit = { _, _ -> },
     ) : PlayerExtension("LoadMediaOnSelect") {
         override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
             backgroundTaskScope.launch("LoadMediaOnSelect") {
@@ -323,6 +384,13 @@ class EpisodeFetchSelectPlayState(
 
                             playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata())
                             onMediaLoaded(episodeInfo.episodeId)
+
+                            reloadRequests.collect { positionMillis ->
+                                logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
+                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 装好开播时它会按这个位置恢复
+                                onReloadMedia(episodeInfo.episodeId, positionMillis)
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata())
+                            }
                         }
                     }
                 }
@@ -338,6 +406,12 @@ class EpisodeFetchSelectPlayState(
      * Event of intrinsic [LoadMediaOnSelectExtension] to indicate that the current media is loaded into player.
      */
     class MediaLoadedEvent(val episodeId: Int) : PlayerExtensionEvent
+
+    /**
+     * Event of intrinsic [LoadMediaOnSelectExtension], sent right before the current media is reloaded in place
+     * (see [reloadCurrentMedia]). After reloading, playback should resume at [positionMillis].
+     */
+    class MediaReloadEvent(val episodeId: Int, val positionMillis: Long) : PlayerExtensionEvent
 }
 
 /**

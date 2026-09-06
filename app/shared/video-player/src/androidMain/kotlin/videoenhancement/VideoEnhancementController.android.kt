@@ -15,13 +15,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
@@ -35,22 +31,15 @@ private val statsInterval = 2.seconds
 
 actual fun createVideoEnhancementController(
     player: MediampPlayer,
-    playerKernelConfig: Flow<PlayerKernelConfig>,
     parentCoroutineContext: CoroutineContext,
 ): VideoEnhancementController? {
     val exoPlayer = player.impl as? ExoPlayer ?: return null
-    return ExoPlayerVideoEnhancementController(
-        player,
-        exoPlayer,
-        playerKernelConfig.map { it.exoPlayerInitEffectGraphInAdvance },
-        parentCoroutineContext,
-    )
+    return ExoPlayerVideoEnhancementController(player, exoPlayer, parentCoroutineContext)
 }
 
 private class ExoPlayerVideoEnhancementController(
     player: MediampPlayer,
     private val exoPlayer: ExoPlayer,
-    preinitVideoEffects: Flow<Boolean>,
     parentCoroutineContext: CoroutineContext,
 ) : BaseVideoEnhancementController(player, parentCoroutineContext) {
     private var appliedMode = VideoEnhancementMode.OFF
@@ -65,20 +54,13 @@ private class ExoPlayerVideoEnhancementController(
     private var statsJob: Job? = null
 
     init {
-        // 上游把这次 pre-init 做成了开关 (exoPlayerInitEffectGraphInAdvance), 理由是 media3 要求
-        // 效果图在首次 prepare 之前就存在, 才能在播放中切换效果. **本 fork 把它的默认值改成了 false**,
-        // 见 PlayerKernelConfig 那边的注释 —— 即便传空列表, 这一调用也会把 ExoPlayer 从
-        // "解码器直连 SurfaceView" 切到 GL 合成管线 (DefaultVideoFrameProcessor), 而 Shield
-        // (Tegra X1 / API 30) 上 10bit HEVC 走这条路只出声音不出画面: 解码器正常起来
+        // 效果图不预先建 (media3 要求它在首次 prepare 之前就存在, 才能在播放中切换效果): 即便传空列表,
+        // setVideoEffects 也会把 ExoPlayer 从"解码器直连 SurfaceView"切到 GL 合成管线 (DefaultVideoFrameProcessor),
+        // 而 Shield (Tegra X1 / API 30) 上 10bit HEVC 走这条路只出声音不出画面: 解码器正常起来
         // (OMX.Nvidia.h265.decode)、surface 也连上, 就是黑屏 (2026-08-15 实测, 缓存好的 WebRip 全部如此).
         //
-        // 默认关着的功能不该改变管线. 关掉之后图在**首次真正启用增强时**才建 (见 apply); 代价是
+        // 没开增强就不该改变管线. 图在**首次真正启用增强时**才建 (见 apply); 代价是
         // 播放中途打开增强, 个别设备可能要 seek 一下才生效 —— 远好过默认就没画面.
-        scope.launch {
-            if (preinitVideoEffects.first()) {
-                exoPlayer.setVideoEffects(emptyList())
-            }
-        }
         startObserving()
     }
 

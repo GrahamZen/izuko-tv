@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.remote
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,64 +18,70 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.user.calculateDisplay
-import me.him188.ani.app.data.network.AniApiProvider
-import me.him188.ani.app.data.repository.RepositoryException
-import me.him188.ani.app.data.repository.RepositoryNetworkException
-import me.him188.ani.app.data.repository.RepositoryRateLimitedException
-import me.him188.ani.app.data.repository.RepositoryRequestError
-import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.session.InvalidSessionReason
-import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
-import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
-import me.him188.ani.app.domain.session.auth.OAuthConfigurator
+import me.him188.ani.app.domain.session.auth.BangumiOAuthConstants
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
-import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.mp.KoinPlatform
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Web 控制台「设置」标签顶上的**账号**: 电视登录的是谁, 以及**用手机登录**.
+ * Web 控制台「设置」标签顶上的**账号**: 电视登录的是谁, 以及**从手机上发起电视的登录**.
  *
- * 电视上登录要打开浏览器授权, 可电视上的浏览器要么没有、要么是个壳, 还吃内存 —— 实测 Shield 上一开 TCL 浏览器, 退到后台的
- * Animeko 就被系统低内存杀掉, 等授权结果的轮询跟着没了, 这次登录永远完不成. 手机上有现成的浏览器 (多半还登录着 Bangumi).
+ * 账号就是 Bangumi 账号. 授权完 Bangumi 跳回的是**电视本机的回环地址** (`127.0.0.1:41890`,
+ * 见 [BangumiOAuthConstants]), 而回环由**浏览器所在的那台设备**解析 —— 手机上打开同一个链接, 授权完跳到的是
+ * 手机自己的那个端口, 电视永远收不到 code. 走 Ani 服务器的那版能让手机直接登录, 靠的正是服务器接回调再中转,
+ * 直连之后没有这个中转站.
  *
- * 流程与电视登录页同一套 ([OAuthConfigurator]; 注册还是绑定按当前 Ani 会话有没有效来分, 同 BangumiAuthorizeScreen):
- * 电视向 Ani 服务器登记一个请求号、拿到 Bangumi 授权链接, **链接交给手机打开**; 授权完成后 Bangumi 跳回的是 Ani 服务器,
- * 电视照常每秒问一次结果, 拿到就 setSession —— 全程电视不开浏览器、不离开应用. (只在 main 成立: 直连分支的回调是本机
- * 回环地址, 手机上授权完跳不回电视.)
+ * 所以这里给三条路:
+ * - **手机授权** (默认): 把授权链接交给手机打开, 授权完那一跳必然失败, 但地址栏里带着 code ——
+ *   整个地址粘回来 (`api/account/login/callback`), 电视拿它换 token ([BangumiOAuthManager.submitCallbackUrl]).
+ * - **电视授权** (`where=tv`): 让电视弹出授权页 (挂在应用根部的 `BangumiOAuthDialogHost`, 电视在哪一页都能弹),
+ *   用遥控器完成. 电视上打字麻烦, 所以不是默认.
+ * - **个人令牌** (`api/account/token`): 在网页上生成令牌粘过来, 不经过授权页与换 token.
+ *   中国大陆经镜像只能走这条, 见 [BangumiOAuthManager.loginWithPersonalToken].
  *
- * 同一时间只等一次: 手机上再点一次 = 放弃上一次、重新开始. 等 [LOGIN_TIMEOUT] 还没结果就放弃 (用户多半把授权页关了).
+ * 同一时间只等一次: 再点一次 = 放弃上一次、重新开始. 等 [LOGIN_TIMEOUT] 还没结果就放弃.
  */
 internal object RemoteAccount {
     private val logger = logger<RemoteAccount>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineName("RemoteAccount"))
 
     private val sessionStateProvider: SessionStateProvider get() = KoinPlatform.getKoin().get()
-    private val sessionManager: SessionManager get() = KoinPlatform.getKoin().get()
-    private val aniApiProvider: AniApiProvider get() = KoinPlatform.getKoin().get()
     private val userRepository: UserRepository get() = KoinPlatform.getKoin().get()
+    private val oauthManager: BangumiOAuthManager get() = KoinPlatform.getKoin().get()
+    private val endpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
+    private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
 
     /** 手机发起的那次登录走到哪了. 成功后回到 Idle (登录状态看会话本身). */
     private sealed interface Login {
         data object Idle : Login
 
-        /** @param url 交给手机的授权链接; null = 还在向服务器要 */
-        class Waiting(val url: String?) : Login
+        /**
+         * 等授权完成.
+         * @param url 交给手机打开的授权链接; `null` = 授权页开在电视上, 手机只需要等
+         * @param deadline 等到这一刻 (毫秒) 还没结果就放弃, 见 [LOGIN_TIMEOUT]; 网页上倒数给用户看
+         */
+        class Waiting(val url: String?, val deadline: Long) : Login
 
         class Failed(val message: String) : Login
     }
@@ -97,12 +102,11 @@ internal object RemoteAccount {
             when {
                 request.path == "api/account" && get -> state()
                 !post -> null
-                request.path == "api/account/login" -> startLogin()
+                request.path == "api/account/login" -> startLogin(request)
+                request.path == "api/account/login/callback" -> submitCallback(request)
                 request.path == "api/account/login/cancel" -> cancelLogin()
+                request.path == "api/account/token" -> tokenLogin(request)
                 request.path == "api/account/logout" -> logout()
-                request.path == "api/account/nickname" -> setNickname(request)
-                request.path == "api/account/email/send" -> sendEmailOtp(request)
-                request.path == "api/account/email/verify" -> verifyEmailOtp(request)
                 else -> null
             }
         }.getOrElse {
@@ -120,28 +124,40 @@ internal object RemoteAccount {
             null
         }
         val current = login
+        val mirrorCredentials = mirrorCredentialsAllowed()
         // 挂起调用都在 buildJsonObject 外面 (它的构建块不是协程)
         buildJsonObject {
             put("ok", true)
             put("loggedIn", session is SessionState.Valid)
-            put("bangumi", session is SessionState.Valid && session.bangumiConnected)
-            // 连不上服务器而判成无效 (不是真的没登录): 单独说, 别让人以为被登出了
+            // 连不上 bangumi 而判成无效 (不是真的没登录): 单独说, 别让人以为被登出了
             put("offline", session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR)
             if (self != null) {
                 put("name", self.calculateDisplay().title)
-                put("nickname", self.nickname)
-                put("avatar", self.avatarUrl)
+                // 头像候选: 经电视转发 (按电视的 Bangumi 连接方式取, 存下的镜像地址也能换回来) → 手机直连
+                self.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                    putJsonArray("avatar") {
+                        add(RemoteImageProxy.proxied(url))
+                        add(url)
+                    }
+                }
                 put("bgmName", self.bangumiUsername)
-                put("email", self.email)
             }
+            // 经第三方镜像连着: 授权登录走不通, 网页上只给个人令牌那条路 (见 BangumiEndpointProvider.viaThirdPartyMirror)
+            put("viaMirror", endpoints.viaThirdPartyMirror.value)
+            // 「登录与收藏同步也经过镜像」开没开: 经镜像时不开就登录不了, 网页上先让用户开它
+            put("mirrorCred", mirrorCredentials)
+            // 生成个人令牌的页面只有官方的: 镜像上的登录页过不了 Cloudflare 人机验证 (它只认官方域名)
+            putJsonArray("tokenPages") { add(BangumiOAuthConstants.PERSONAL_TOKEN_PAGE) }
             putJsonObject("login") {
                 when (current) {
                     Login.Idle -> put("state", "idle")
                     is Login.Waiting -> {
                         put("state", "waiting")
+                        // 非空 = 手机授权那条路, 网页要把链接打开并让用户把回调地址粘回来
                         put("url", current.url)
+                        // 还剩多久放弃 (毫秒): 给剩余时长而不是时刻, 手机与电视的钟不一定对得上
+                        put("expiresIn", (current.deadline - System.currentTimeMillis()).coerceAtLeast(0))
                     }
-
                     is Login.Failed -> {
                         put("state", "failed")
                         put("message", current.message)
@@ -152,79 +168,162 @@ internal object RemoteAccount {
     }
 
     /**
-     * 开始一次登录 (放弃上一次): 等服务器给出授权链接就回给手机打开, 之后在后台等结果, 结果用提示送到手机上.
-     * 要链接这一步就失败 (连不上服务器) 的当场回错误.
+     * 发起一次授权 (放弃上一次), 之后在后台盯着结果, 结果用提示送到手机上.
+     *
+     * 表单 `where=tv` 时让电视弹授权页, 否则 (默认) 把授权链接交给手机打开, 见 [RemoteAccount] 的说明.
      */
-    private fun startLogin(): JsonObject {
+    private fun startLogin(request: LanHttpRequest): JsonObject {
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session is SessionState.Valid && session.bangumiConnected) return result(false, tr("电视已经登录了"))
-        // 同电视登录页: 没有有效的 Ani 会话 = 用 Bangumi 注册 / 登录 (新用户、老用户重新登录都走这条); 有会话只是没连 Bangumi = 绑定
-        val isRegister = session !is SessionState.Valid
-        val link = CompletableDeferred<String>()
-        val configurator = OAuthConfigurator(
-            client = BangumiOAuthClient(aniApiProvider.bangumiApi, sessionStateProvider),
-            sessionManager = sessionManager,
-            sessionStateProvider = sessionStateProvider,
-        )
+        if (session is SessionState.Valid) return result(false, tr("电视已经登录了"))
+        // 网页上经镜像时本来就不给这个入口; 评论区那颗登录按钮之类的旧入口走到这里时说清楚
+        if (endpoints.viaThirdPartyMirror.value) {
+            return result(false, tr("现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录"))
+        }
+        val manager = oauthManager
+        val onTv = request.formFields()["where"] == "tv"
+        if (onTv && !manager.inAppBrowserSupported) {
+            return result(false, tr("这台电视打不开授权页，改用手机授权"))
+        }
+        var url: String? = null
+        var configured = true
         // 在锁里起协程并登记: 它第一次 update 要拿同一把锁, 那时 job 一定已经是它
-        val current = synchronized(lock) {
+        synchronized(lock) {
             job?.cancel()
-            login = Login.Waiting(null)
-            scope.launch {
-                val me = coroutineContext.job
-                var handedOut = false
-                val outcome = withTimeoutOrNull(LOGIN_TIMEOUT) {
-                    configurator.auth(isRegister) { url ->
-                        handedOut = true
-                        update(me, Login.Waiting(url))
-                        link.complete(url)
-                    }
-                }
-                when (outcome) {
-                    is OAuthConfigurator.State.Success -> {
-                        update(me, Login.Idle)
-                        logger.info { "Remote control login succeeded" }
-                        TvRemoteControl.postNotice(tr("登录成功，电视已登录"))
-                    }
-
-                    is OAuthConfigurator.State.Failed -> {
-                        val message = errorText(outcome.error)
-                        update(me, Login.Failed(message))
-                        // 链接已经交出去了 (手机那头正在授权): 结果只能靠提示送过去; 没交出去的由 startLogin 当场回
-                        if (handedOut) TvRemoteControl.postNotice(tr("登录没有完成：{0}", message))
-                    }
-
-                    null -> {
-                        update(me, Login.Failed(tr("等太久没有结果，请重新登录")))
-                        TvRemoteControl.postNotice(tr("登录没有完成：等太久没有结果，请重新登录"))
-                    }
-
-                    else -> {} // Idle / AwaitingResult: auth 正常返回时不会是这两种
-                }
-            }.also { job = it }
-        }
-        val url = runBlocking {
-            withTimeoutOrNull(LINK_TIMEOUT) {
-                select<String?> {
-                    link.onAwait { it }
-                    current.onJoin { null }
-                }
+            // state 是进程内单例, 上一次的成功 / 失败会一直停在那儿, 不重置就再也起不来 (同电视授权页的做法)
+            manager.resetIfFinished()
+            if (onTv) {
+                manager.startInAppBrowser()
+            } else {
+                url = manager.startExternalBrowser()
+                configured = url != null
+            }
+            if (configured) {
+                login = Login.Waiting(url, System.currentTimeMillis() + LOGIN_TIMEOUT.inWholeMilliseconds)
+                scope.launch { awaitResult(coroutineContext.job, manager) }.also { job = it }
             }
         }
-        if (url != null) {
-            logger.info { "Remote control login started (${if (isRegister) "register" else "bind"}), link handed to phone" }
-            return buildJsonObject {
-                put("ok", true)
-                put("message", tr("请在打开的 Bangumi 页面里授权"))
-                put("url", url)
+        if (!configured) return result(false, tr("这个版本没有带 Bangumi 授权凭据，登录不了"))
+        logger.info { "Remote control started Bangumi OAuth (${if (onTv) "on TV" else "on phone"})" }
+        val authorizeUrl = url
+        return buildJsonObject {
+            put("ok", true)
+            if (authorizeUrl != null) {
+                put("url", authorizeUrl)
+                put("message", tr("请在打开的页面里授权"))
+            } else {
+                put("message", tr("电视上已经打开 Bangumi 授权页，请用遥控器完成授权"))
             }
         }
-        // 协程已经结束 = 要链接时就失败了, 原因在状态里; 否则是超时
-        (login as? Login.Failed)?.let { return result(false, it.message) }
-        current.cancel()
-        update(current, Login.Failed(tr("电视连不上登录服务器，请稍后再试")))
-        return result(false, tr("电视连不上登录服务器，请稍后再试"))
     }
+
+    /**
+     * 手机上授权完, 把浏览器地址栏里那个**打不开的**地址整个粘回来.
+     *
+     * 那一跳的目标是电视本机的回环端口, 在手机上必然连接失败 —— 但失败页的地址栏里带着 `code`,
+     * 交给电视就能换 token. 这是直连版让手机完成登录的唯一办法, 见 [RemoteAccount] 的说明.
+     */
+    private fun submitCallback(request: LanHttpRequest): JsonObject {
+        val url = request.formFields()["url"].orEmpty().trim()
+        if (url.isEmpty()) return result(false, tr("请粘贴授权完成后跳转到的那个地址"))
+        if (!BangumiOAuthConstants.isCallback(url)) {
+            return result(false, tr("这不像授权回调地址，它以 {0} 开头", BangumiOAuthConstants.CALLBACK_URL))
+        }
+        val manager = oauthManager
+        // submitCallbackUrl 自己不抛异常, 成败只体现在 state 上
+        runBlocking { withTimeoutOrNull(OP_TIMEOUT) { manager.submitCallbackUrl(url) } }
+            ?: return result(false, tr("换取登录凭据超时，请重试"))
+        return when (val state = manager.state.value) {
+            BangumiOAuthManager.State.Success -> result(true, tr("登录成功，电视已登录"))
+            is BangumiOAuthManager.State.Failed -> result(
+                false,
+                // 换 token 失败最常见的是授权码过期或已经用过 (bangumi 回 invalid_grant),
+                // 那时 LoadError 只是个 UnknownError, 照实报"未知错误"对用户没有任何帮助
+                if (state.error is LoadError.UnknownError) {
+                    tr("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。")
+                } else {
+                    errorText(state.error)
+                },
+            )
+            // 粘错了上一次的回调 (state 对不上) 会被原样忽略, 这里只能说它没生效
+            else -> result(false, tr("这个地址没能完成登录，请重新开始一次"))
+        }
+    }
+
+    /** 盯着 [BangumiOAuthManager.state] 直到有结果. */
+    private suspend fun awaitResult(me: Job, manager: BangumiOAuthManager) {
+        val outcome = withTimeoutOrNull(LOGIN_TIMEOUT) {
+            manager.state.first {
+                it !is BangumiOAuthManager.State.Authorizing && it !is BangumiOAuthManager.State.Exchanging
+            }
+        }
+        when (outcome) {
+            BangumiOAuthManager.State.Success -> {
+                update(me, Login.Idle)
+                logger.info { "Remote control login succeeded" }
+                TvRemoteControl.postNotice(tr("登录成功，电视已登录"))
+            }
+
+            is BangumiOAuthManager.State.Failed -> {
+                val message = errorText(outcome.error)
+                update(me, Login.Failed(message))
+                TvRemoteControl.postNotice(tr("登录没有完成：{0}", message))
+            }
+
+            BangumiOAuthManager.State.NotConfigured -> {
+                update(me, Login.Failed(tr("这个版本没有带 Bangumi 授权凭据，登录不了")))
+            }
+
+            // 授权页被关掉了 (电视上关的, 或者又点了一次登录)
+            BangumiOAuthManager.State.Idle -> update(me, Login.Idle)
+
+            null -> {
+                manager.cancel()
+                update(me, Login.Failed(tr("等太久没有结果，请重新登录")))
+                TvRemoteControl.postNotice(tr("登录没有完成：等太久没有结果，请重新登录"))
+            }
+
+            else -> {}
+        }
+    }
+
+    /**
+     * 用个人令牌登录 (表单 `token` + `days` = 令牌的有效天数, 与生成时选的一致). 正在等的授权作废.
+     */
+    private fun tokenLogin(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val token = fields["token"].orEmpty().trim()
+        if (token.isEmpty()) return result(false, tr("请先粘贴令牌"))
+        val days = fields["days"]?.toIntOrNull()?.takeIf { it in 1..MAX_TOKEN_DAYS }
+            ?: return result(false, tr("有效期不对"))
+        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
+        if (session is SessionState.Valid) return result(false, tr("电视已经登录了"))
+        // 经镜像而凭证不许经过镜像: 校验请求会被留在官方 (连不上) 干等到超时, 直接说要先开哪个开关
+        if (endpoints.viaThirdPartyMirror.value && !runBlocking { mirrorCredentialsAllowed() }) {
+            return result(false, tr("经镜像连接时，要先打开「登录与收藏同步也经过镜像」才能登录"))
+        }
+        cancelLogin()
+        // 包一层: 登录函数成功时返回 null, 直接交给 withTimeoutOrNull 就分不清成功与超时
+        val outcome = runBlocking {
+            withTimeoutOrNull(OP_TIMEOUT) { TokenLoginOutcome(oauthManager.loginWithPersonalToken(token, days)) }
+        } ?: return result(false, tr("校验令牌超时，请重试"))
+        val error = outcome.error ?: return result(true, tr("登录成功，电视已登录"))
+        return result(
+            false,
+            when (error) {
+                LoadError.RequiresLogin -> tr("令牌无效或已过期，请重新生成")
+                LoadError.NetworkError ->
+                    tr("电视连不上 Bangumi。在中国大陆请在「Bangumi 连接方式」里打开「登录与收藏同步也经过镜像」，或者设置代理")
+                else -> errorText(error)
+            },
+        )
+    }
+
+    private class TokenLoginOutcome(val error: LoadError?)
+
+    /** 「登录与收藏同步也经过镜像」开没开; 读不出来当成没开 (宁可多提示一句). */
+    private suspend fun mirrorCredentialsAllowed(): Boolean =
+        withTimeoutOrNull(STATE_TIMEOUT) { settingsRepository.bangumiEndpointSettings.flow.first() }
+            ?.allowCredentialsViaMirror == true
 
     private fun cancelLogin(): JsonObject {
         synchronized(lock) {
@@ -232,105 +331,20 @@ internal object RemoteAccount {
             job = null
             login = Login.Idle
         }
+        oauthManager.cancel()
         return result(true, tr("已取消"))
     }
 
     /**
-     * 退出登录 (网页上先确认): 同 App 设置里的「退出登录」(ProfileViewModel.logout → 清掉本地用户信息 + 清会话).
-     * 顺带放弃正在等的手机登录.
+     * 退出登录 (网页上先确认): 同 App 设置里的「退出登录」—— [UserRepository.clearSelfInfo] 清掉本地用户信息, 并连会话一起清.
+     * 顺带放弃正在等的登录.
      */
     private fun logout(): JsonObject {
         cancelLogin()
-        emailOtp = null
         runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.clearSelfInfo() } }
             ?: return result(false, tr("退出登录超时，请重试"))
         logger.info { "Logged out from remote control" }
         return result(true, tr("电视已退出登录"))
-    }
-
-    /** 改昵称: 规则同 App 的资料编辑 (ProfileViewModel.validateNickname): 中日文 / 字母 / 数字 / 下划线, 6~20 个字符, 非 ASCII 算 2 个. */
-    private fun setNickname(request: LanHttpRequest): JsonObject {
-        val nickname = request.formFields()["nickname"].orEmpty().trim()
-        if (!NICKNAME.matches(nickname) || nickname.sumOf { if (it.code < 256) 1 else 2 } !in 6..20) {
-            return result(false, tr("昵称要 6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线"))
-        }
-        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session !is SessionState.Valid) return result(false, tr("电视还没登录"))
-        runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.updateProfile(nickname) } }
-            ?: return result(false, tr("改昵称超时，请重试"))
-        logger.info { "Nickname changed from remote control" }
-        return result(true, tr("昵称已改成「{0}」", nickname))
-    }
-
-    /** 手机上要的邮箱验证码: 发到哪个邮箱、服务器给的 otpId、什么时候发的 (30 秒内不再发, 同 App). */
-    private class EmailOtp(val email: String, val id: String, val sentAt: Long)
-
-    @Volatile
-    private var emailOtp: EmailOtp? = null
-
-    /**
-     * **邮箱登录 / 注册 Animeko 账号** (App 登录页的「邮箱」那条路, 同 EmailLoginViewModel), 第一步: 发验证码.
-     * 不用浏览器, 电视直接跟 Ani 服务器说话. 已经登录时同一套流程是绑定 / 更换邮箱 (见 [verifyEmailOtp]).
-     */
-    private fun sendEmailOtp(request: LanHttpRequest): JsonObject {
-        val email = request.formFields()["email"].orEmpty().trim()
-        if (!EMAIL.matches(email)) return result(false, tr("邮箱格式不对"))
-        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR) {
-            return result(false, tr("电视连不上 Animeko 服务器，稍后再试"))
-        }
-        val wait = emailOtp?.let { RESEND_INTERVAL.inWholeMilliseconds - (currentTimeMillis() - it.sentAt) } ?: 0
-        if (wait > 0) return result(false, tr("{0} 秒后才能重新发送", (wait + 999) / 1000))
-        val info = try {
-            runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.sendEmailOtpForLogin(email) } }
-                ?: return result(false, tr("发送超时，请重试"))
-        } catch (e: RepositoryException) {
-            return result(false, repositoryErrorText(e))
-        }
-        emailOtp = EmailOtp(email, info.otpId, currentTimeMillis())
-        logger.info { "Email OTP sent from remote control (existing user: ${info.hasExistingUser})" }
-        return buildJsonObject {
-            put("ok", true)
-            put("message", tr("验证码已发到 {0}", email))
-            info.hasExistingUser?.let { put("existing", it) }
-        }
-    }
-
-    /** 第二步: 交验证码. 同 EmailLoginViewModel: 没有有效会话 = 登录 (新邮箱直接注册); 已登录 = 绑定或更换邮箱. 成功后服务器给的会话直接生效. */
-    private fun verifyEmailOtp(request: LanHttpRequest): JsonObject {
-        val code = request.formFields()["code"].orEmpty().filterNot { it.isWhitespace() }
-        if (code.isEmpty()) return result(false, tr("请填写验证码"))
-        val otp = emailOtp ?: return result(false, tr("先发送验证码"))
-        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        val bind = session is SessionState.Valid
-        val outcome = try {
-            runBlocking {
-                withTimeoutOrNull(OP_TIMEOUT) {
-                    if (bind) userRepository.bindOrReBindEmail(otp.id, code) else userRepository.registerOrLoginByEmailOtp(otp.id, code)
-                }
-            } ?: return result(false, tr("服务器没有回应，请重试"))
-        } catch (e: RepositoryException) {
-            return result(false, repositoryErrorText(e))
-        }
-        return when (outcome) {
-            is UserRepository.SendOtpResult.Success -> {
-                emailOtp = null
-                if (!bind) cancelLogin() // 手机上还挂着的 Bangumi 登录不要了
-                logger.info { "Email ${if (bind) "bind" else "login"} succeeded from remote control" }
-                result(true, if (bind) tr("邮箱已改成 {0}", otp.email) else tr("登录成功，电视已登录"))
-            }
-
-            UserRepository.SendOtpResult.InvalidOtp -> result(false, tr("验证码不对或已经过期"))
-            UserRepository.SendOtpResult.EmailAlreadyExist -> result(false, tr("这个邮箱已经绑在别的账号上了"))
-        }
-    }
-
-    private fun repositoryErrorText(e: RepositoryException): String = when (e) {
-        is RepositoryRequestError -> e.localizedMessage ?: tr("请求有误")
-        is RepositoryRateLimitedException -> tr("操作太频繁，稍后再试")
-        is RepositoryNetworkException -> tr("网络错误，电视连不上 Animeko 服务器")
-        is RepositoryServiceUnavailableException -> tr("服务器暂时不可用，稍后再试")
-        else -> tr("出错了：") + (e.message ?: e::class.simpleName)
     }
 
     /** 只有还是「当前这一次」时才改状态: 被新的一次顶掉的旧协程别把新状态冲掉. */
@@ -339,11 +353,12 @@ internal object RemoteAccount {
     }
 
     private fun errorText(error: LoadError): String = when (error) {
-        LoadError.NetworkError -> tr("网络错误，电视连不上登录服务器")
-        LoadError.ServiceUnavailable -> tr("登录服务器暂时不可用，稍后再试")
+        LoadError.NetworkError -> tr("网络错误，电视连不上 Bangumi")
+        LoadError.ServiceUnavailable -> tr("Bangumi 暂时不可用，稍后再试")
         LoadError.RateLimited -> tr("操作太频繁，稍后再试")
         LoadError.RequiresLogin -> tr("登录状态有问题，请重试")
         LoadError.NoResults -> tr("没有拿到登录结果，请重试")
+        LoadError.SubjectNotAccessible -> tr("这个条目当前账号看不到")
         is LoadError.RequestError -> error.localized
         is LoadError.UnknownError -> tr("未知错误") + (error.throwable?.message?.let { "：$it" } ?: "")
     }
@@ -355,21 +370,12 @@ internal object RemoteAccount {
 
     private val STATE_TIMEOUT = 3.seconds
 
-    /** 退出登录 / 改昵称等服务器回话最多等这么久. */
+    /** 退出登录等操作最多等这么久. */
     private val OP_TIMEOUT = 15.seconds
 
-    /** 只挡明显不是邮箱的 (服务器还会再验一遍, 格式不对回「邮箱格式不正确」). */
-    private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+    /** 个人令牌有效期的上限 (天). */
+    private const val MAX_TOKEN_DAYS = 3650
 
-    /** 同 EmailLoginViewModel: 发过一次验证码 30 秒内不再发. */
-    private val RESEND_INTERVAL = 30.seconds
-
-    /** 同 ProfileViewModel.NICKNAME_MATCHER. */
-    private val NICKNAME = Regex("^[一-鿿぀-ゟ゠-ヿa-zA-Z\\d_]+$")
-
-    /** 向 Ani 服务器要授权链接最多等这么久. */
-    private val LINK_TIMEOUT = 20.seconds
-
-    /** 链接交出去之后等结果的上限: 电视登录页那边有人盯着不设上限, 这里没人盯着, 要有个头. */
+    /** 授权页打开之后等结果的上限: 电视授权页那边有人盯着不设上限, 这里没人盯着, 要有个头. */
     private val LOGIN_TIMEOUT = 10.minutes
 }

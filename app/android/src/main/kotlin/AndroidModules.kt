@@ -45,6 +45,7 @@ import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.OfflineDownloadMediaResolver
+import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
 import me.him188.ani.app.domain.mediasource.web.AndroidOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.AndroidCaptchaBrowserFactory
@@ -267,7 +268,7 @@ fun getAndroidModules(
         val torrentResolvers = get<TorrentManager>().engines.map { TorrentMediaResolver(it, get()) }
         val btFallback = MediaResolver.from(torrentResolvers)
         MediaResolver.from(
-            listOf<MediaResolver>(OfflineDownloadMediaResolver(get(), fallback = btFallback))
+            listOf<MediaResolver>(QuarkMediaResolver(get()), OfflineDownloadMediaResolver(get(), fallback = btFallback))
                 .plus(torrentResolvers)
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
@@ -281,7 +282,7 @@ fun getAndroidModules(
                 ),
         )
     }
-    single<UpdateInstaller> { AndroidUpdateInstaller() }
+    single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
     single<AppTerminator> {
         object : AppTerminator {

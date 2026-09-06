@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -28,7 +26,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -50,6 +47,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.BackgroundScope
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.app.ui.lang.Lang
@@ -234,7 +233,7 @@ internal fun EditMediaSourceDialog(
 //        },
 //    ) { paddingValues ->
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest,
         title = {
             Text(state.info.displayName)
@@ -247,7 +246,7 @@ internal fun EditMediaSourceDialog(
         text = {
             if (state.arguments.isEmpty()) {
                 Text(stringResource(Lang.settings_media_source_no_config))
-                return@AlertDialog
+                return@AniAlertDialog
             }
 
             Column(Modifier.padding()) {
@@ -290,12 +289,12 @@ internal fun EditMediaSourceDialog(
                 }
             }
             when (state.editMediaSourceMode) {
-                is EditMediaSourceMode.Add -> Button(
+                is EditMediaSourceMode.Add -> AniButton(
                     { state.save() },
                     enabled = canSave,
                 ) { Text(stringResource(Lang.settings_media_source_add_button)) }
 
-                is EditMediaSourceMode.Edit -> Button(
+                is EditMediaSourceMode.Edit -> AniButton(
                     { state.save() },
                     enabled = canSave,
                 ) { Text(stringResource(Lang.settings_media_source_save_button)) }
