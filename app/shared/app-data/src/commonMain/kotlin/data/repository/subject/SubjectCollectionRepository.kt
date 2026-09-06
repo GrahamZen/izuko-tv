@@ -356,7 +356,9 @@ class SubjectCollectionRepositoryImpl(
         val existing = subjectCollectionDao.findById(subjectId).first()
         val subjectEntity = subject.toEntity(
             lastFetched = lastFetched,
-            recurrence = existing?.recurrence,
+            // 库里没有播出周期时从 bangumi-data 补一次 (它按月缓存, 同一个月的第二个条目起不发请求)
+            recurrence = existing?.recurrence
+                ?: animeScheduleRepository.getSubjectRecurrence(subjectId, subject.airtime.date),
             relations = existing?.relations ?: SubjectRelations.Empty,
         )
         val episodeEntities = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched)

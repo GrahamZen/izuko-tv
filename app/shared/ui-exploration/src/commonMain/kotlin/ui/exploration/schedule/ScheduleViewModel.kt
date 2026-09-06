@@ -161,20 +161,32 @@ class ScheduleViewModel(
         return SchedulePagePresentation(
             days = days,
             airingSchedules = loaded.getOrNull()?.map { airingSchedule ->
-                AiringSchedule(
-                    airingSchedule.date,
-                    SchedulePageDataHelper.toColumnItems(
-                        airingSchedule.list.map { it.toPresentation(timeZone) },
-                        addIndicator = currentDateTime.date == airingSchedule.date,
-                        currentDateTime.time,
-                    ),
-                )
+                // 这一天还没取完就先摆骨架: 空列表在界面上与"这一天真没有新番"长得一模一样,
+                // 而直连的时间表是一天一天填上来的, 进页面头几秒每天都会写着"没有新番"
+                if (airingSchedule.pending && airingSchedule.list.isEmpty()) {
+                    AiringSchedule(airingSchedule.date, PLACEHOLDER_EPISODES, isPlaceholder = true)
+                } else {
+                    AiringSchedule(
+                        airingSchedule.date,
+                        SchedulePageDataHelper.toColumnItems(
+                            airingSchedule.list.map { it.toPresentation(timeZone) },
+                            addIndicator = currentDateTime.date == airingSchedule.date,
+                            currentDateTime.time,
+                        ),
+                        isPlaceholder = airingSchedule.pending,
+                    )
+                }
             }.orEmpty(),
             error = loaded.exceptionOrNull()?.let { LoadError.fromException(it) },
         )
     }
 
     companion object {
+        /** 一天的骨架卡. 条数只是个观感上不空的数, 与那天真有几部无关. */
+        private val PLACEHOLDER_EPISODES = (1..10).map {
+            AiringScheduleColumnItem.PlaceholderData(id = it, showTime = true)
+        }
+
         /**
          * 从 [now] 到 [timeZone] 的下一个本地 00:00 的时长, 总是大于零.
          * 用 [LocalDate.atStartOfDayIn] 计算, 夏令时切换 (一天 23 或 25 小时, 或者 00:00 不存在) 也正确.

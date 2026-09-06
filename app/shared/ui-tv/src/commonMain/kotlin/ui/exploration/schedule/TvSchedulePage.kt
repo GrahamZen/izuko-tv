@@ -236,6 +236,11 @@ fun TvSchedulePage(
         )
     }
 
+    // 这一天是不是还在加载. 首屏整页占位 (presentation.isPlaceholder) 之外, 时间表还会**按天**
+    // 懒加载 —— 还没轮到的那天照样是空的, 不区分就会写着"这一天没有新番", 过几秒又自己冒出卡片.
+    val displayedDayLoading = presentation.isPlaceholder ||
+            presentation.airingSchedules.firstOrNull { it.date == displayedDay?.date }?.isPlaceholder != false
+
     // 收藏状态 (本地库, 无网络请求): 一个类型一条轻量 id 查询, 合成 subjectId -> 类型.
     // 卡片角标只认在看/想看 (时间表最实际的用法是"我追的番更没更"); 完整类型给长按菜单用.
     val collectionTypes by remember(collectionRepo) {
@@ -684,7 +689,7 @@ fun TvSchedulePage(
                         alpha = dayContentAlpha.value
                     },
             ) {
-                if (!presentation.isPlaceholder && dayItems.cards.isNotEmpty()) {
+                if (!displayedDayLoading && dayItems.cards.isNotEmpty()) {
                     TvScheduleSummaryLine(
                         dayItems = dayItems,
                         followedCount = dayItems.cards.count { card ->
@@ -791,12 +796,12 @@ fun TvSchedulePage(
                 // 占位期间对送焦报"还没有数据" (0 条): 骨架卡不可聚焦, 送焦要等真实数据到达.
                 // 送焦本身就一步 —— 等数据就绪 → 目标滚进视口 → request, 之后靠目标卡的锚点附着
                 // 事件送达, 没有重试也没有超时 (出口见 TvGridFocusState 文件头)
-                gridFocus.SendFocusEffect(gridState) { if (presentation.isPlaceholder) 0 else cards.size }
+                gridFocus.SendFocusEffect(gridState) { if (displayedDayLoading) 0 else cards.size }
                 // 替代旧 runResolveLoop 的 onEmptyIdle: 数据到了但这一天是空的, 目标卡永远不会出现,
                 // 得主动取消在途请求 —— 否则 SendFocusEffect 会一直等 itemCount > 0.
                 // 取消之后隐形锚点上的焦点会被判为 stranded, 由它的 onStranded 补落点到日期行
-                LaunchedEffect(cards, presentation.isPlaceholder) {
-                    if (!presentation.isPlaceholder && cards.isEmpty() && gridFocus.switching) {
+                LaunchedEffect(cards, displayedDayLoading) {
+                    if (!displayedDayLoading && cards.isEmpty() && gridFocus.switching) {
                         gridFocus.cancel()
                     }
                 }
@@ -948,7 +953,7 @@ fun TvSchedulePage(
                     }
                 }
                 // 空态: 这一天确实没有新番 (占位/出错各有自己的表现)
-                if (cards.isEmpty() && !presentation.isPlaceholder && error == null) {
+                if (cards.isEmpty() && !displayedDayLoading && error == null) {
                     Box(
                         Modifier.fillMaxSize().offset(y = -TV_SCHEDULE_EMPTY_HINT_RAISE),
                         contentAlignment = Alignment.Center,

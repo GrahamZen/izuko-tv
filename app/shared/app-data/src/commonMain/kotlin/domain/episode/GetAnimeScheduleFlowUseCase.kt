@@ -25,11 +25,18 @@ import kotlin.time.Instant
 data class AiringScheduleForDate(
     val date: LocalDate,
     val list: List<EpisodeWithAiringTime>,
+    /**
+     * 这一天的数据还没取完 (名册里还有条目没拿到分集).
+     *
+     * 时间表是按天懒加载的, [list] 为空有两种完全不同的含义: 这一天真没有新番, 或者只是还没轮到
+     * 它. 界面拿它区分"这一天没有新番"与骨架占位 —— 缺了这一位, 进页面头几秒每天都写着"没有新番".
+     */
+    val pending: Boolean = false,
 )
 
 /**
- * @param airingTime 放送时间. [timeKnown] 为 `false` 时, 这是该剧集的 Bangumi 放送日期在客户端时区的 00:00.
- * @param timeKnown 放送时间是否精确已知. `false` 表示服务端只知道 Bangumi 的放送日期, 而没有可靠的放送时刻 (如没有 recurrence, 或与 Bangumi 日期不符).
+ * @param airingTime 放送时间. [timeKnown] 为 `false` 时, 这是该剧集放送日期在客户端时区的 00:00.
+ * @param timeKnown 放送时刻是否精确已知 (直连时 = bangumi-data 给出了这部的播出时刻).
  */
 data class EpisodeWithAiringTime(
     val subject: LightSubjectInfo,

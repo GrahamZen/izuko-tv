@@ -31,7 +31,7 @@ import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniPersonCommentService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
-import me.him188.ani.app.data.network.AnimeScheduleService
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.AutoSkipRepository
@@ -373,6 +373,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             charactersApi = bangumiApiProvider.characterApi,
         )
     }
+    single<BangumiScheduleSource> {
+        BangumiScheduleSource(
+            // 名册/分集/bangumi-data 都是公开数据, 用匿名客户端
+            client = get<HttpClientProvider>().get(),
+            store = getContext().dataStores.animeScheduleCacheStore,
+        )
+    }
     single<AnimeScheduleRepository> { AnimeScheduleRepository(get()) }
     single<BangumiCommentRepository> {
         BangumiCommentRepository(
@@ -439,7 +446,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             builtinPeerFilterRuleApi = get<AniApiProvider>().pfRuleApi,
         )
     }
-    single<AnimeScheduleService> { AnimeScheduleService(get<AniApiProvider>().scheduleApi) }
     single<TmdbImageService> { TmdbImageService(get(), getContext().dataStores.tmdbImageCacheStore) }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
     single<TrendsRepository> { TrendsRepository(bangumiApiProvider.trendingApi) }

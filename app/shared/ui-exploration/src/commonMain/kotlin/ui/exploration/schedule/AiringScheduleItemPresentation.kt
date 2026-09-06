@@ -53,6 +53,12 @@ data class AiringScheduleItemPresentation(
 data class AiringSchedule(
     val date: LocalDate,
     val episodes: List<AiringScheduleColumnItem>,
+    /**
+     * 这一天还没加载完, [episodes] 里是骨架占位而不是真数据.
+     *
+     * @see me.him188.ani.app.domain.episode.AiringScheduleForDate.pending
+     */
+    val isPlaceholder: Boolean = false,
 )
 
 @Immutable
