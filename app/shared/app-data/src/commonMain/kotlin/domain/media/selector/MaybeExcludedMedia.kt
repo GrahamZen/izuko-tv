@@ -99,6 +99,12 @@ sealed class MediaExclusionReason {
     data class SingleEpisodeForCompleteSubject(val episodeRange: EpisodeRange?) : MediaExclusionReason()
 
     /**
+     * 资源的字幕组在用户的排除名单里 (按偏好过滤掉, 仍可手动选)
+     * @see me.him188.ani.app.data.models.preference.MediaPreference.excludedAlliancePatterns
+     */
+    data object ExcludedAlliance : MediaExclusionReason()
+
+    /**
      * 隐藏生肉资源
      * @see me.him188.ani.app.data.models.preference.MediaPreference.showWithoutSubtitle
      */
@@ -122,6 +128,11 @@ sealed class MediaExclusionReason {
     data object FromSeriesSeason : MediaExclusionReason()
 
     /**
+     * 资源发布得比这一集开播早得多, 不可能是这一集 (多半是同名的前几季或老番), 见 isPublishedLongBeforeAiring
+     */
+    data object PublishedBeforeAiring : MediaExclusionReason()
+
+    /**
      * 资源标题不匹配 (不包含 [SubjectInfo.allNames])
      */
     data object SubjectNameMismatch : MediaExclusionReason()
@@ -131,7 +142,7 @@ sealed class MediaExclusionReason {
      *
      * 与其他原因不同, 这一条是**硬**的: 它不表示"按偏好过滤掉了", 而是"选了也放不出来",
      * 所以界面上不允许手动选中 (见 [blocksSelection]). 下完之后判据自动翻转、警告即刻消失 ——
-     * 数据来自 MediaCacheManager.unplayableCacheMediaIds 这条实时流.
+     * 数据来自 MediaDownloadManager.unplayableCacheMediaIds 这条实时流.
      */
     data object CacheNotReady : MediaExclusionReason()
 }

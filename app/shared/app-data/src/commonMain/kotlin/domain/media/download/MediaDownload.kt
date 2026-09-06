@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import me.him188.ani.app.domain.media.cache.MediaCache
@@ -71,9 +72,31 @@ data class DownloadSnapshot(
      * 已排队或正在执行的操作, `null` 表示空闲.
      */
     val operation: DownloadOperation?,
+    /**
+     * 合并阶段的进度估计, 不在合并时为 `null`. 见 [MediaCache.mergeProgress].
+     */
+    val mergeProgress: Progress? = null,
+    /**
+     * 传输停着在等 BT 服务连上. 见 [MediaCache.isAwaitingTorrentService].
+     */
+    val awaitingTorrentService: Boolean = false,
+    /**
+     * 正在播放同一集, 停着等播放结束再接着下. 见 [MediaDownloadManager.waitingForPlayback].
+     */
+    val waitingForPlayback: Boolean = false,
 ) {
     val isBusy: Boolean get() = operation != null
+    val isMerging: Boolean get() = mergeProgress != null
 }
+
+/**
+ * 快照里纯展示用的阶段信息, 变化立即反映 (不经采样).
+ */
+private data class DownloadPhase(
+    val mergeProgress: Progress?,
+    val awaitingTorrentService: Boolean,
+    val waitingForPlayback: Boolean,
+)
 
 /**
  * 一个持久化的视频下载, 与 [MediaCache] 一一对应, 由 [MediaDownloadManager] 创建并保持实例稳定.
@@ -82,6 +105,8 @@ class MediaDownload internal constructor(
     val cache: MediaCache,
     val storage: MediaCacheStorage,
     sharingScope: CoroutineScope,
+    /** 见 [MediaDownloadManager.waitingForPlayback] */
+    private val waitingForPlayback: Flow<Set<String>> = flowOf(emptySet()),
 ) {
     val id: String = cache.cacheId
     val metadata: MediaCacheMetadata get() = cache.metadata
@@ -110,13 +135,21 @@ class MediaDownload internal constructor(
                 .averageRate()
             val transfer = combine(fileStats, downloadSpeed) { stats, speed -> stats to speed }
                 .sampleWithInitial(1.seconds)
+            val phase = combine(
+                cache.mergeProgress,
+                cache.isAwaitingTorrentService,
+                waitingForPlayback.map { id in it }.distinctUntilChanged(),
+            ) { mergeProgress, awaitingService, waiting ->
+                DownloadPhase(mergeProgress, awaitingService, waiting)
+            }
             emitAll(
                 combine(
                     transfer,
                     cache.state,
                     cache.canPlay,
                     queuedOperation,
-                ) { (stats, speed), state, canPlay, operation ->
+                    phase,
+                ) { (stats, speed), state, canPlay, operation, phase ->
                     DownloadSnapshot(
                         id = id,
                         metadata = metadata,
@@ -128,6 +161,9 @@ class MediaDownload internal constructor(
                         mediaSourceId = origin.mediaSourceId,
                         engineKey = engineKey,
                         operation = operation,
+                        mergeProgress = phase.mergeProgress,
+                        awaitingTorrentService = phase.awaitingTorrentService,
+                        waitingForPlayback = phase.waitingForPlayback,
                     )
                 },
             )

@@ -25,6 +25,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.EpisodeType
 
 /**
  * 「缓存还没下完」这一档排除 ([MediaExclusionReason.CacheNotReady]) 的行为.
@@ -34,6 +37,15 @@ import kotlin.test.assertTrue
  */
 class DefaultMediaSelectorCacheNotReadyTest : AbstractDefaultMediaSelectorTest() {
     private val cacheSourceId = "local-file-system"
+
+    init {
+        // 上游给 trySelectCached 加了守卫: 剧集信息没加载时整个条目的缓存都在候选里, 不能选
+        // (见 MediaSelectorContext.hasEpisode). 本测试关心的是"没下完的缓存挡不挡得住",
+        // 得先让剧集信息就位, 否则每条都因为守卫返回 null, 测不到真正的判据.
+        mediaSelectorContext.value = mediaSelectorContext.value.copy(
+            episodeInfo = EpisodeInfo(episodeId = 1, type = EpisodeType.MainStory, sort = EpisodeSort(1)),
+        )
+    }
 
     // 基类的 mediaList 限定为 DefaultMedia, 装不下 CachedMedia, 所以本测试自建一条输入流与 selector
     private val cachedList = MutableStateFlow<List<Media>>(emptyList())

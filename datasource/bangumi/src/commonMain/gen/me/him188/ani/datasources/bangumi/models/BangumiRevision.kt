@@ -10,14 +10,16 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiCreator
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -30,7 +32,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiRevision(
+data class BangumiRevision (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 

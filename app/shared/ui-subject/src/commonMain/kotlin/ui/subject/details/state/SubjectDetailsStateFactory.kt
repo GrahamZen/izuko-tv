@@ -41,14 +41,20 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import me.him188.ani.app.data.models.subject.tvPrefersTmdbText
+import me.him188.ani.app.data.network.TmdbSubjectText
+import me.him188.ani.app.data.network.subjectText
+import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
 import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
+import me.him188.ani.app.data.models.subject.SubjectAiringKind
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.TmdbAiring
 import me.him188.ani.app.data.network.TmdbEpisodeStills
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.matchToEpisodes
@@ -60,17 +66,12 @@ import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
-import me.him188.ani.app.data.models.comment.CommentReportTargetType
 import me.him188.ani.app.data.models.player.playProgressByEpisodeId
-import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.ui.comment.CommentMapperContext.parseToUIComment
 import me.him188.ani.app.ui.comment.CommentMapperContext.toCommentVoteValue
-import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.comment.UICommentSource
-import me.him188.ani.app.ui.comment.reportSnapshotText
-import me.him188.ani.app.ui.comment.toDataReason
 import me.him188.ani.app.ui.foundation.produceState
 import me.him188.ani.app.ui.rating.EditableRatingActions
 import me.him188.ani.app.ui.rating.EditableRatingUiState
@@ -116,11 +117,9 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
     private val bangumiRelatedPeopleService: BangumiRelatedPeopleService by inject()
     private val subjectRelationsRepository: SubjectRelationsRepository by inject()
     private val bangumiCommentRepository: BangumiCommentRepository by inject()
-    private val commentReportService: AniCommentReportService by inject()
     private val setSubjectCollectionTypeOrDeleteUseCase: SetSubjectCollectionTypeOrDeleteUseCase by inject()
     private val tmdbImageService: TmdbImageService by inject()
     private val bangumiSummaryService: BangumiSummaryService by inject()
-    private val episodePlayHistoryRepository: EpisodePlayHistoryRepository by inject()
 
     override fun create(
         subjectInfoFlow: Flow<SubjectInfo>
@@ -242,21 +241,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             },
         )
 
-        val subjectCommentReportState = CommentReportState(
-            onSubmitReport = { comment, reason, detail ->
-                commentReportService.createReport(
-                    targetType = CommentReportTargetType.SUBJECT_REVIEW,
-                    targetId = comment.sourceCommentId,
-                    reason = reason.toDataReason(),
-                    commentAuthorId = comment.author?.id,
-                    detail = detail.takeIf { it.isNotEmpty() },
-                    contentSnapshot = comment.reportSnapshotText(),
-                    subjectId = subjectId.toLong(),
-                )
-            },
-            backgroundScope = this,
-        )
-
         val relatedPersonsFlow = subjectRelationsRepository.subjectRelatedPersonsFlow(subjectId)
             .stateIn(this, SharingStarted.Eagerly, null)
 
@@ -296,26 +280,37 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 subjectEpisodeCount = collection.episodes.size,
                 subjectEpisodeNames = collection.episodes.map { it.episodeInfo.name },
                 hints = subjectInfo.toTmdbMatchHints(),
+                // Bangumi 算出「未开播」或一集都没录时要看 TMDB 是不是其实已经开播 (见 rememberTmdbAiringLabelState),
+                // 缓存里的播出情况还证明不了开播就重取
+                refreshAiring = collection.airingInfo.kind == SubjectAiringKind.UPCOMING || collection.episodes.isEmpty(),
             ) ?: TmdbEpisodeStills()
             val stillUrls = mutableMapOf<Int, String>()
             val runtimes = mutableMapOf<Int, Int>()
             val overviews = mutableMapOf<Int, String>()
+            val names = mutableMapOf<Int, String>()
             val subjectAirDateString = subjectInfo.airDate.toLocalDateOrNull()?.toString()
             for ((episodeId, media) in stills.matchToEpisodes(collection.episodes, subjectAirDateString)) {
                 media.stillUrl?.let { stillUrls[episodeId] = it }
                 media.runtimeMinutes?.let { runtimes[episodeId] = it }
                 media.overview?.let { overviews[episodeId] = it }
+                media.name?.let { names[episodeId] = it }
             }
-            // 整部简介覆盖: 仅当 APP 语言为中文、Bangumi 简介整段无中文 (全日文原文/纯英文,
-            // 自带翻译的混排简介不算) 且 TMDB 有中文简介时生效 —— TMDB 中文简介在前,
-            // Bangumi 原文简介附在后面 (原文不丢, 供对照)
-            val summaryOverride = stills.showOverview?.takeIf {
-                language.startsWith("zh") && summaryHasNoChinese(subjectInfo.summary)
-            }?.let { tmdbOverview ->
-                val original = subjectInfo.summary.trim()
-                if (original.isEmpty()) tmdbOverview else "$tmdbOverview\n\n$original"
+            val summaryOverride = if (tvPrefersTmdbText(language)) {
+                // 非中文界面: 讲本条目自己的 TMDB 简介 (界面语言, 见 TmdbEpisodeStills.subjectOverview) 整段替换; 没有就照用 Bangumi 的
+                stills.subjectOverview
+            } else {
+                // 中文界面: 仅当 Bangumi 简介整段无中文 (全日文原文/纯英文, 自带翻译的混排简介不算) 且 TMDB 有讲本条目的中文简介时生效
+                // (同上, 续作季不拿整部的) —— TMDB 中文简介在前, Bangumi 原文简介附在后面 (原文不丢, 供对照)
+                stills.subjectOverview?.takeIf { summaryHasNoChinese(subjectInfo.summary) }?.let { tmdbOverview ->
+                    val original = subjectInfo.summary.trim()
+                    if (original.isEmpty()) tmdbOverview else "$tmdbOverview\n\n$original"
+                }
             }
-            TmdbSubjectMedia(stillUrls.toMap(), runtimes.toMap(), overviews.toMap(), summaryOverride)
+            TmdbSubjectMedia(
+                stillUrls.toMap(), runtimes.toMap(), overviews.toMap(), names.toMap(), summaryOverride,
+                subjectText = stills.subjectText(),
+                airing = stills.airing,
+            )
         }.shareIn(this, SharingStarted.Lazily, replay = 1)
 
         val state = SubjectDetailsState(
@@ -348,6 +343,8 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 )
             }.cachedIn(this),
             relatedSubjectsPager = bangumiRelatedPeopleService.relatedSubjectsFlow(subjectId)
+                // NSFW 设为隐藏时去掉 (见 SubjectNsfw)
+                .withoutHiddenNsfw { it.subjectId }
                 .map {
                     // This response contains the complete list; no further pages will arrive.
                     PagingData.from(
@@ -364,7 +361,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 .map { PagingData.from(it) }
                 .cachedIn(this),
             subjectCommentState = subjectCommentState,
-            subjectCommentReportState = subjectCommentReportState,
             actions = actions,
             // 页面展示内容只从这一处派生, 每分钟重算一次以跟上日期变化 (播出状态、未开播判断)
             uiState = combine(
@@ -424,8 +420,15 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             tmdbEpisodeStillsFlow = tmdbEpisodeMediaFlow.map { it.episodeStills },
             tmdbEpisodeRuntimesFlow = tmdbEpisodeMediaFlow.map { it.episodeRuntimes },
             tmdbEpisodeOverviewsFlow = tmdbEpisodeMediaFlow.map { it.episodeOverviews },
-            // Bangumi 简介为全外文时的 TMDB 中文整部简介替换 (无则 null, UI 用原文)
+            tmdbEpisodeNamesFlow = tmdbEpisodeMediaFlow.map { it.episodeNames },
+            // 整段替换 Bangumi 简介的 TMDB 简介 (见 TmdbSubjectMedia.summaryOverride; 无则 null, UI 用原文)
             tmdbSummaryOverrideFlow = tmdbEpisodeMediaFlow.map { it.summaryOverride },
+            // 讲本条目的 TMDB 文字 (标题、简介与对应的季, 见 TmdbSubjectText)
+            tmdbSubjectTextFlow = tmdbEpisodeMediaFlow.map { it.subjectText },
+            // TMDB 上的播出情况: Bangumi 条目没人维护 (分集没日期 / 没录分集) 时修正详情页的播出状态文字
+            tmdbAiringFlow = tmdbEpisodeMediaFlow.map { it.airing },
+            episodesFetchStateFlow = subjectCollectionRepository.episodesFetchStateFlow(subjectId),
+            refetchEpisodes = { subjectCollectionRepository.refreshSubjectCollection(subjectId) },
             // Ani 服务器简介为空时直连 bgm.tv 补 (仅替代不合并); 简介不为空则直接发 "" (已解析、无需兜底).
             // 网络错误 (getSummary 抛出) 也按 "" 处理: 本次进页降级到 TMDB 兜底, 下次进页重试.
             // Lazily 同上, 仅 TV 详情页收集.
@@ -516,8 +519,16 @@ private class TmdbSubjectMedia(
     val episodeStills: Map<Int, String>,
     val episodeRuntimes: Map<Int, Int>,
     val episodeOverviews: Map<Int, String>,
-    /** Bangumi 简介整段无中文时: TMDB 中文整部简介 + 原文附后; 不需要覆盖或 TMDB 无翻译时为 null. */
+    /** 分集的 TMDB 集名 (只有非中文界面有, 见 TmdbEpisodeMedia.name). */
+    val episodeNames: Map<Int, String>,
+    /**
+     * 替换 Bangumi 整部简介的文字: 非中文界面是讲本条目的 TMDB 简介; 中文界面是 Bangumi 简介整段无中文时的
+     * 讲本条目的 TMDB 中文简介 + 原文附后. 不需要覆盖或 TMDB 无翻译时为 null.
+     */
     val summaryOverride: String?,
+    /** 讲本条目的 TMDB 文字 (标题只有非中文界面有, 见 TmdbEpisodeStills.subjectTitle). */
+    val subjectText: TmdbSubjectText,
+    val airing: TmdbAiring?,
 )
 
 /**

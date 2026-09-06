@@ -16,8 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 修改目录中条目的信息
@@ -27,7 +28,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiIndexSubjectEditInfo(
+data class BangumiIndexSubjectEditInfo (
 
     /* 排序条件，越小越靠前 */
     @SerialName(value = "sort") val sort: kotlin.Int? = null,

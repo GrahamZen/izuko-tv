@@ -34,6 +34,7 @@ import me.him188.ani.app.data.repository.media.ManualBrowseMemoryRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.download.DownloadOperation
 import me.him188.ani.app.domain.media.download.DownloadOperations
 import me.him188.ani.app.domain.media.download.DownloadRequestSession
@@ -94,8 +95,17 @@ class SubjectDownloadsPresenter(
     private val subject = reloadCount.flatMapLatest { subjects.subjectCollectionFlow(subjectId).asLoadState(subjectLoad) }
     private val downloads = reloadCount.flatMapLatest { downloadManager.snapshots(subjectId).asLoadState(downloadsLoad) }
 
+    /**
+     * 有 BT 建缓存请求停在等服务连上 (见 [TorrentMediaCacheEngine.isCreateAwaitingService]); 没有 BT 存储时恒为 false.
+     */
+    private val torrentCreateAwaitingService: Flow<Boolean> = downloadManager.storages
+        .mapNotNull { (it.engine as? TorrentMediaCacheEngine)?.isCreateAwaitingService }
+        .let { flows -> if (flows.isEmpty()) flowOf(false) else combine(flows) { values -> values.any { it } } }
+
     val uiState: StateFlow<SubjectDownloadsUiState> =
-        combine(subject, downloads, histories.flow, requestState) { subject, downloads, histories, request ->
+        combine(
+            subject, downloads, histories.flow, requestState, torrentCreateAwaitingService,
+        ) { subject, downloads, histories, request, torrentCreateAwaitingService ->
             val info = subject.value
             val historyByEpisode = histories.associateBy { it.episodeId }
             val items = downloads.value.orEmpty().map { snapshot ->
@@ -111,7 +121,7 @@ class SubjectDownloadsPresenter(
                 downloadsLoading = downloads.loading,
                 episodesFailed = subject.failed,
                 downloadsFailed = downloads.failed,
-                request = request.toRequestUiState(),
+                request = request.toRequestUiState(torrentCreateAwaitingService),
             )
         }.stateIn(scope, SharingStarted.WhileSubscribed(5000), SubjectDownloadsUiState(title = initialTitle))
 
@@ -283,10 +293,14 @@ class SubjectDownloadsPresenter(
     )
 }
 
-private fun DownloadRequestState?.toRequestUiState() = DownloadRequestUiState(
+/**
+ * @param torrentCreateAwaitingService 有 BT 建缓存请求停在等服务连上. 只有本会话正在持久化时才算它的.
+ */
+internal fun DownloadRequestState?.toRequestUiState(torrentCreateAwaitingService: Boolean) = DownloadRequestUiState(
     episodeIds = this?.pendingEpisodeIds?.toSet().orEmpty(),
     busy = this is DownloadRequestState.Preparing || this is DownloadRequestState.Creating,
     canCancel = this != null && this !is DownloadRequestState.Finished,
+    awaitingTorrentService = this is DownloadRequestState.Creating && torrentCreateAwaitingService,
 )
 
 /**

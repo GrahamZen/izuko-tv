@@ -18,14 +18,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.user.UploadAvatarResult
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
-import me.him188.ani.app.domain.session.auth.OAuthPlatform
+import me.him188.ani.app.domain.profile.BangumiProfileConversion
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfilesSave
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
@@ -35,10 +44,10 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.megaBytes
 import me.him188.ani.utils.coroutines.SingleTaskExecutor
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.restartable
-import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * It is used on both [AccountSettingsPopupMedium] and [AccountS].
@@ -46,6 +55,10 @@ import org.koin.core.component.inject
 class ProfileViewModel : AbstractViewModel(), KoinComponent {
     private val subjectCollectionRepo: SubjectCollectionRepository by inject()
     private val userRepo: UserRepository by inject()
+    private val localProfileConversion: LocalProfileConversion by inject()
+    private val bangumiProfileConversion: BangumiProfileConversion by inject()
+    private val selfRecords: SelfCollectionRecords by inject()
+    private val profileManager: UserProfileManager by inject()
 
     private val selfInfoStateProvider: SelfInfoStateProducer = SelfInfoStateProducer(koin = getKoin())
 
@@ -57,35 +70,24 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     private val avatarUploadState =
         MutableStateFlow<EditProfileState.UploadAvatarState>(EditProfileState.UploadAvatarState.Default)
 
-    /**
-     * 服务端已启用的、除 Bangumi 以外的第三方登录平台. 获取失败则为空, 此时只展示已绑定的账号.
-     */
-    private val externalPlatforms = MutableStateFlow<List<OAuthPlatform>>(emptyList())
-
-    init {
-        backgroundScope.launch {
-            val providers = try {
-                userRepo.getOAuthProviders()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to get OAuth providers" }
-                return@launch
-            }
-            externalPlatforms.value = providers.mapNotNull(OAuthPlatform::fromId).filter { it != OAuthPlatform.BANGUMI }
-        }
-    }
-
     val stateFlow = combine(
         selfInfoStateProvider.flow,
         avatarUploadState,
-        externalPlatforms,
-    ) { selfInfoState, avatarState, platforms ->
+        profileManager.state,
+        bangumiProfileConversion.pendingCollections.map { it.size },
+    ) { selfInfoState, avatarState, profiles, pendingCount ->
         AccountSettingsState(
             selfInfo = selfInfoState,
             boundBangumi = selfInfoState.isSessionValid == true && selfInfoState.bangumiConnected == true,
             avatarUploadState = avatarState,
-            externalPlatforms = platforms,
+            // Bangumi 用户可以改成本地用户 (登录着的改的时候先退出)
+            canConvertToLocal = localProfileConversion.isOffered,
+            canConvertToBangumi = bangumiProfileConversion.isOffered,
+            canSwitchProfile = profileManager.isSupported,
+            // 改成 Bangumi 用户后还没登录: 之前的本地收藏还等着 (登录后再选合并还是删除)
+            pendingLocalCollections = if (selfInfoState.isLocalProfile || selfInfoState.isSessionValid != false) 0 else pendingCount,
+            // 只有一个用户时打开应用本来就不选人
+            chooseProfileOnLaunch = profiles.chooseOnLaunch.takeIf { profileManager.isSupported && profiles.profiles.size >= 2 },
         )
     }
         .restartable(stateRefresher)
@@ -100,143 +102,58 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
-    fun resetAvatarUploadState() {
-        avatarUploadState.value = EditProfileState.UploadAvatarState.Default
-    }
+    /** 当前用户库里自己的收藏记录有多少 (本地用户清除前、1 号改成本地用户前给人看). */
+    suspend fun selfRecordCounts(): SelfCollectionRecords.Counts = selfRecords.counts()
 
-    suspend fun uploadAvatar(file: PlatformFile): Boolean {
-        return avatarUploadTasker.invoke {
-            avatarUploadState.value = EditProfileState.UploadAvatarState.Uploading
+    /** 本地用户清除自己的收藏记录. */
+    suspend fun clearSelfRecords() = selfRecords.clear()
 
-            val result = try {
-                if (file.size() > 1.megaBytes.inBytes) {
-                    EditProfileState.UploadAvatarState.SizeExceeded
-                } else {
-                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                    uploadAvatarInternal(
-                        imageBytes = bytes,
-                        unknownMapper = { err ->
-                            EditProfileState.UploadAvatarState.UnknownError(file = file, loadError = err)
-                        },
-                    )
+    /** 退出登录, 改成本地用户, 应用随后重启; [clearRecords] 为 true 时先清掉登录时留下的收藏记录. */
+    suspend fun convertToLocal(clearRecords: Boolean, defaultName: String) =
+        localProfileConversion.convert(clearRecords, defaultName)
+
+    private val _convertToLocalProgress = MutableStateFlow<ConvertToLocalProgress?>(null)
+
+    /** 「改成本地用户」进行到哪了 (见 [startConvertToLocal]); null = 还没开始. */
+    val convertToLocalProgress: StateFlow<ConvertToLocalProgress?> = _convertToLocalProgress.asStateFlow()
+
+    /**
+     * 在后台改成本地用户 (同 [convertToLocal]), 进度写进 [convertToLocalProgress]: 登录着、留下记录时要先取账号里的收藏, 要一会儿,
+     * 对话框开着显示进度; 跑在这个 ViewModel 的作用域里, 对话框关了也不打断. 成功时应用重启; 失败时什么都没改, 进度换成失败原因.
+     */
+    fun startConvertToLocal(clearRecords: Boolean, defaultName: String) {
+        if (_convertToLocalProgress.value is ConvertToLocalProgress.Downloading) return
+        _convertToLocalProgress.value = ConvertToLocalProgress.Downloading(0, 0)
+        backgroundScope.launch(Dispatchers.Main) {
+            try {
+                localProfileConversion.convert(clearRecords, defaultName) { p ->
+                    _convertToLocalProgress.value = ConvertToLocalProgress.Downloading(p.done, p.total)
                 }
-            } catch (ex: CancellationException) {
-                throw ex
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _convertToLocalProgress.value = ConvertToLocalProgress.Failed(e.message ?: e::class.simpleName.orEmpty())
             }
-
-            avatarUploadState.value = result
-            stateRefresher.restart()
-            result is EditProfileState.UploadAvatarState.Success
         }
     }
 
-    suspend fun uploadAvatar(imageBytes: ByteArray): Boolean {
-        return avatarUploadTasker.invoke {
-            avatarUploadState.value = EditProfileState.UploadAvatarState.Uploading
-
-            val result = try {
-                // ByteArray 路径也做大小保护，以保持一致的用户提示
-                if (imageBytes.size > 1.megaBytes.inBytes) {
-                    EditProfileState.UploadAvatarState.SizeExceeded
-                } else {
-                    uploadAvatarInternal(
-                        imageBytes = imageBytes,
-                        unknownMapper = { err ->
-                            EditProfileState.UploadAvatarState.UnknownErrorWithRetry(
-                                loadError = err,
-                                onRetry = { backgroundScope.launch { uploadAvatar(imageBytes) } },
-                            )
-                        },
-                    )
-                }
-            } catch (ex: CancellationException) {
-                throw ex
-            }
-
-            avatarUploadState.value = result
-            stateRefresher.restart()
-            result is EditProfileState.UploadAvatarState.Success
-        }
+    /** 看过失败原因了 (关掉对话框), 下次打开从头来. */
+    fun resetConvertToLocal() {
+        if (_convertToLocalProgress.value is ConvertToLocalProgress.Failed) _convertToLocalProgress.value = null
     }
 
-    private suspend fun uploadAvatarInternal(
-        imageBytes: ByteArray,
-        unknownMapper: (LoadError) -> EditProfileState.UploadAvatarState.Failed,
-    ): EditProfileState.UploadAvatarState {
-        return try {
-            if (!AvatarImageProcessor.checkImageFormat(imageBytes)) {
-                EditProfileState.UploadAvatarState.InvalidFormat
-            } else when (userRepo.uploadAvatar(imageBytes)) {
-                UploadAvatarResult.SUCCESS -> EditProfileState.UploadAvatarState.Success("")
-                UploadAvatarResult.TOO_LARGE -> EditProfileState.UploadAvatarState.SizeExceeded
-                UploadAvatarResult.INVALID_FORMAT -> EditProfileState.UploadAvatarState.InvalidFormat
-            }
-        } catch (ex: CancellationException) {
-            throw ex
-        } catch (ex: Exception) {
-            unknownMapper(LoadError.fromException(ex))
-        }
-    }
+    /** 登录着时账号里的收藏条数 (改成本地用户前给人看); 取不到为 null. */
+    suspend fun accountCollectionCount(): Int? =
+        withTimeoutOrNull(ACCOUNT_COUNT_TIMEOUT) { subjectCollectionRepo.subjectCollectionCountsFlow().filterNotNull().first().total }
 
-    fun validateNickname(nickname: String): Boolean {
-        if (nickname.isEmpty()) {
-            return true
-        }
+    /** 本地用户改成 Bangumi 用户, 应用随后重启; 本地收藏留着, 登录后再选合并到账号还是删除 (见 [BangumiProfileConversion]). */
+    suspend fun convertToBangumi() = bangumiProfileConversion.convert()
 
-        if (nickname.isBlank() || !NICKNAME_MATCHER.matches(nickname)) {
-            return false
-        }
-
-        val length = nickname.foldRight(0) { char, acc ->
-            acc + if (char.code < 256) 1 else 2 // ASCII characters count as 1, others count as 2
-        }
-
-        return length in 6..20
-    }
-
-    suspend fun saveProfile(profile: EditProfileState) {
-        val selfInfo = stateFlow.value.selfInfo.selfInfo
-        userRepo.updateProfile(
-            nickname = profile.nickname.takeIf { it != selfInfo?.nickname },
-        )
-        stateRefresher.restart()
-    }
-
-    suspend fun bangumiFullSync() {
-        subjectCollectionRepo.performBangumiFullSync()
-    }
-
-    suspend fun unbindBangumi() {
-        userRepo.unbindBangumi()
-        stateRefresher.restart()
-    }
-
-    /**
-     * @throws me.him188.ani.app.data.repository.RepositoryRequestError 这是用户的唯一登录方式
-     */
-    suspend fun unbindExternalAccount(provider: String) {
-        userRepo.unbindExternalAccount(provider)
-        stateRefresher.restart()
-    }
-
-    /**
-     * @throws me.him188.ani.app.data.repository.RepositoryRequestError 这是用户的唯一登录方式
-     */
-    suspend fun unbindEmail() {
-        userRepo.unbindEmail()
-        stateRefresher.restart()
-    }
-
-    /**
-     * 注销账号. 成功后本地退出登录.
-     *
-     * @throws me.him188.ani.app.data.repository.RepositoryException
-     */
-    suspend fun deleteAccount() {
-        userRepo.deleteAccount()
-    }
+    /** 见 [AccountSettingsState.chooseProfileOnLaunch]. */
+    suspend fun setChooseProfileOnLaunch(enabled: Boolean) = profileManager.setChooseOnLaunch(enabled)
 
     companion object {
+        private val ACCOUNT_COUNT_TIMEOUT = 10.seconds
         private val NICKNAME_MATCHER = Regex("^[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FFa-zA-Z\\d_]+$")
     }
 }
@@ -246,10 +163,19 @@ class AccountSettingsState(
     val selfInfo: SelfInfoUiState,
     val boundBangumi: Boolean,
     val avatarUploadState: EditProfileState.UploadAvatarState,
+    /** 显示「改成本地用户」, 见 [LocalProfileConversion]. */
+    val canConvertToLocal: Boolean = false,
+    /** 显示「改成 Bangumi 用户」, 见 [BangumiProfileConversion]. */
+    val canConvertToBangumi: Boolean = false,
+    /** 这个平台能换用户 (见 [UserProfileManager.isSupported]): 显示「切换用户」. */
+    val canSwitchProfile: Boolean = false,
+    /** 改成 Bangumi 用户后还没登录时, 等着处理的本地收藏条数 (其余情况为 0). */
+    val pendingLocalCollections: Int = 0,
     /**
-     * 服务端已启用的、除 Bangumi 以外的第三方登录平台
+     * 「打开应用时选择用户」开着没有 (整机一份, 见 [UserProfilesSave.chooseOnLaunch]);
+     * `null` = 不显示这一项: 只有一个用户, 或这个平台不能换人.
      */
-    val externalPlatforms: List<OAuthPlatform> = emptyList(),
+    val chooseProfileOnLaunch: Boolean? = null,
 ) {
     companion object {
         val Empty = AccountSettingsState(
@@ -302,38 +228,4 @@ val TestAccountSettingsState
     )
 
 private object AvatarImageProcessor {
-    fun checkImageFormat(headBytes: ByteArray): Boolean {
-        return isJpeg(headBytes) || isPng(headBytes) || isWebp(headBytes)
-    }
-
-    private fun isPng(data: ByteArray): Boolean {
-        // PNG signature: 137 80 78 71 13 10 26 10
-        return data.size >= 8 && data[0] == 137.toByte() &&
-                data[1] == 'P'.code.toByte() &&
-                data[2] == 'N'.code.toByte() &&
-                data[3] == 'G'.code.toByte() &&
-                data[4] == 13.toByte() &&
-                data[5] == 10.toByte() &&
-                data[6] == 26.toByte() &&
-                data[7] == 10.toByte()
-    }
-
-    private fun isJpeg(data: ByteArray): Boolean {
-        // JPEG signature: 0xFF 0xD8 0xFF
-        return data.size >= 3 && data[0] == 0xFF.toByte() &&
-                data[1] == 0xD8.toByte() &&
-                data[2] == 0xFF.toByte()
-    }
-
-    private fun isWebp(data: ByteArray): Boolean {
-        // WebP signature: "RIFF" + 4 bytes + "WEBP"
-        return data.size >= 12 && data[0] == 'R'.code.toByte() &&
-                data[1] == 'I'.code.toByte() &&
-                data[2] == 'F'.code.toByte() &&
-                data[3] == 'F'.code.toByte() &&
-                data[8] == 'W'.code.toByte() &&
-                data[9] == 'E'.code.toByte() &&
-                data[10] == 'B'.code.toByte() &&
-                data[11] == 'P'.code.toByte()
-    }
 }

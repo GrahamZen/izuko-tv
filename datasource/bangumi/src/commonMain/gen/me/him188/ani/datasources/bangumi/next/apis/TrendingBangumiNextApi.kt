@@ -10,7 +10,7 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.apis
@@ -37,17 +37,12 @@ open class TrendingBangumiNextApi : ApiClient {
         httpClientEngine: HttpClientEngine? = null,
         httpClientConfig: ((HttpClientConfig<*>) -> Unit)? = null,
         jsonSerializer: Json = ApiClient.JSON_DEFAULT
-    ) : super(
-        baseUrl = baseUrl,
-        httpClientEngine = httpClientEngine,
-        httpClientConfig = httpClientConfig,
-        jsonBlock = jsonSerializer,
-    )
+    ) : super(baseUrl = baseUrl, httpClientEngine = httpClientEngine, httpClientConfig = httpClientConfig, jsonBlock = jsonSerializer)
 
     constructor(
         baseUrl: String,
         httpClient: HttpClient
-    ) : super(baseUrl = baseUrl, httpClient = httpClient)
+    ): super(baseUrl = baseUrl, httpClient = httpClient)
 
     /**
      * 获取热门条目
@@ -58,11 +53,7 @@ open class TrendingBangumiNextApi : ApiClient {
      * @return BangumiNextGetTrendingSubjects200Response
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getTrendingSubjects(
-        type: BangumiNextSubjectType,
-        limit: kotlin.Int? = 20,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiNextGetTrendingSubjects200Response> {
+    open suspend fun getTrendingSubjects(type: BangumiNextSubjectType, limit: kotlin.Int? = 20, offset: kotlin.Int? = 0): HttpResponse<BangumiNextGetTrendingSubjects200Response> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -70,7 +61,7 @@ open class TrendingBangumiNextApi : ApiClient {
             io.ktor.client.utils.EmptyContent
 
         val localVariableQuery = mutableMapOf<String, List<String>>()
-        type?.apply { localVariableQuery["type"] = listOf("${type.value}") }
+        type?.apply { localVariableQuery["type"] = listOf("${ type.value }") }
         limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
         offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
         val localVariableHeaders = mutableMapOf<String, String>()
@@ -86,7 +77,7 @@ open class TrendingBangumiNextApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 

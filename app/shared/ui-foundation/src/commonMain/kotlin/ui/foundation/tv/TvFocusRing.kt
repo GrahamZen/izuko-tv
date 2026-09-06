@@ -12,8 +12,10 @@ package me.him188.ani.app.ui.foundation.tv
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -121,7 +124,7 @@ object TvFocusRing {
  * (Compose 只给返回 `Unit` 的做 restartable), 于是那次 `focused` 读被记到**调用方**头上 ——
  * 描边挂在哪张卡上, 那张卡的整个 composable body 就在每次焦点进出时重跑一遍, 只为在链上加/去一圈线.
  *
- * 遥控器长按横移时限流后仍有 8 格/秒, 每格牵动两张卡 (让出焦点的 + 拿到焦点的) ≈ 16 次整卡重组/秒,
+ * 遥控器长按横移时约 20 格/秒 (系统连发), 每格牵动两张卡 (让出焦点的 + 拿到焦点的) ≈ 40 次整卡重组/秒,
  * 而真正需要变的只有一圈描边的**绘制**.
  *
  * 现在焦点态存进一个普通 `MutableState`, 只在 `drawWithCache` 的绘制 lambda 里读: 快照系统把它
@@ -168,6 +171,22 @@ fun Modifier.tvFocusRing(
                 if (focused.value) drawTvFocusRing(brush, widthPx, radiusPx)
             }
         }
+}
+
+/**
+ * 用描边示焦、本身又是 M3 可点容器 (`Surface(onClick)` 这类) 的控件包在这里面: 焦点导航形态下不画 M3 的焦点态层, 示焦只由描边
+ * (连同与它同一帧换上的底色) 承担, 同 [tvFocusableCard] 关 indication 的道理.
+ *
+ * 描边在焦点变化后的下一帧就画上, 焦点态层却要先收到交互事件再淡入 45ms (离开时淡出 150ms): 两者叠在一起, 看起来就是框先到、
+ * 高亮后到. 包住的整棵子树都不画涟漪, 只用在内容里没有别的可点控件的卡片 / 列表项上. 其余形态原样组合 [content].
+ */
+@Composable
+fun ProvideRingOnlyFocus(content: @Composable () -> Unit) {
+    if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
+        content()
+        return
+    }
+    CompositionLocalProvider(LocalRippleConfiguration provides null, content = content)
 }
 
 /**
@@ -302,9 +321,9 @@ private fun roundRectRingPathFromTopLeft(size: Size, widthPx: Float, radiusPx: F
  * 倒计时环底轨的不透明度.
  *
  * 底轨必须始终看得出**整圈**在哪里 (那是聚焦框), 又不能与走过的那段混在一起 —— 太淡则电视上
- * 看不出边界, 太浓则读不出走到哪儿了.
+ * 看不出边界, 太浓则读不出走到哪儿了. 电视端原生选集行的倒计时环 (ui-tv 的 TvNativeEpisodeRingView) 用同一个值.
  */
-private const val TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA = 0.4f
+const val TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA = 0.4f
 
 /**
  * 线宽换算, **与 `Modifier.border` 同一套**: 向上取整到整像素, 再按尺寸钳制.

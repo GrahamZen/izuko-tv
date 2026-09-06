@@ -153,6 +153,10 @@ class CefCaptchaBrowser private constructor(
         requestHandler.interceptor = handler
     }
 
+    override fun setNavigationInterceptor(handler: ((String) -> Boolean)?) {
+        requestHandler.navigationInterceptor = handler
+    }
+
     @Composable
     override fun View(
         modifier: Modifier,
@@ -221,6 +225,10 @@ class CefCaptchaBrowser private constructor(
         @Volatile
         var interceptor: ((String) -> InterceptDecision)? = null
 
+        /** [setNavigationInterceptor] 设置的导航拦截: 返回 true 时取消这一跳, 调用方接管 (OAuth 回调). */
+        @Volatile
+        var navigationInterceptor: ((String) -> Boolean)? = null
+
         override fun onBeforeResourceLoad(
             browser: CefBrowser?,
             frame: CefFrame?,
@@ -258,7 +266,9 @@ class CefCaptchaBrowser private constructor(
             val instance = try {
                 AniCefApp.suspendCoroutineOnCefContext {
                     val requestHandler = CaptchaResourceRequestHandler(userAgent)
-                    val createdClient = AniCefApp.createClient(requestHandler)
+                    val createdClient = AniCefApp.createClient(requestHandler) { url ->
+                        requestHandler.navigationInterceptor?.invoke(url) == true
+                    }
                         ?: error("AniCefApp is not initialized, cannot create CaptchaBrowser")
                     client = createdClient
                     browserCreated = createdClient.browserCreatedSignal()

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import me.him188.ani.app.data.models.preference.AnitorrentConfig.Companion.SHARE
 import me.him188.ani.app.data.models.preference.supportsLimitUploadOnMeteredNetwork
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.LocalPlatform
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_torrent_download_rate_limit
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers
@@ -203,7 +203,7 @@ private fun SettingsScope.ExtraTrackersItem(
             title = { Text(stringResource(Lang.settings_media_torrent_extra_trackers)) },
             description = { Text(stringResource(Lang.settings_media_torrent_extra_trackers_dialog_description)) },
         ) {
-            OutlinedTextField(
+            AniOutlinedTextField(
                 value = editingValue,
                 onValueChange = { editingValue = it },
                 shape = MaterialTheme.shapes.medium,

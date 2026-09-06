@@ -50,6 +50,7 @@ import me.him188.ani.app.ui.lang.foundation_load_error_rate_limited
 import me.him188.ani.app.ui.lang.foundation_load_error_request_error
 import me.him188.ani.app.ui.lang.foundation_load_error_requires_login
 import me.him188.ani.app.ui.lang.foundation_load_error_service_unavailable
+import me.him188.ani.app.ui.lang.foundation_load_error_subject_not_accessible
 import me.him188.ani.app.ui.lang.foundation_load_error_unknown_feedback
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -104,6 +105,7 @@ private suspend fun renderLoadErrorToastMessage(error: LoadError): String {
         LoadError.NoResults -> getString(Lang.foundation_load_error_no_results)
         LoadError.RateLimited -> getString(Lang.foundation_load_error_rate_limited)
         LoadError.RequiresLogin -> getString(Lang.foundation_load_error_requires_login)
+        LoadError.SubjectNotAccessible -> getString(Lang.foundation_load_error_subject_not_accessible)
         LoadError.ServiceUnavailable -> getString(Lang.foundation_load_error_service_unavailable)
         is LoadError.UnknownError -> getString(Lang.foundation_load_error_unknown_feedback)
         is LoadError.RequestError -> getString(Lang.foundation_load_error_request_error, error.localized)

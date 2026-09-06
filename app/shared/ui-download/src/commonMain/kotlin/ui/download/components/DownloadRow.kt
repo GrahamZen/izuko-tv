@@ -58,8 +58,10 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_episode_download_failed
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
+import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_episode_status_paused
+import me.him188.ani.app.ui.lang.cache_episode_status_waiting_for_playback
 import me.him188.ani.app.ui.lang.cache_episode_watched_progress
 import me.him188.ani.app.ui.lang.cache_filter_status_finished
 import me.him188.ani.app.ui.lang.cache_management_episode_label
@@ -67,11 +69,12 @@ import me.him188.ani.app.ui.lang.cache_management_invalid_cache_info
 import me.him188.ani.app.ui.lang.cache_management_more_actions
 import me.him188.ani.app.ui.lang.cache_management_play
 import me.him188.ani.app.ui.lang.cache_management_streaming_not_supported
-import me.him188.ani.app.ui.cache.subject.CacheRowRefocus
-import me.him188.ani.app.ui.cache.subject.LocalCachePopupOpen
-import me.him188.ani.app.ui.cache.subject.REFOCUS_FRAMES
-import me.him188.ani.app.ui.cache.subject.LocalCacheRowRefocus
+import me.him188.ani.app.ui.download.CacheRowRefocus
+import me.him188.ani.app.ui.download.LocalCachePopupOpen
+import me.him188.ani.app.ui.download.REFOCUS_FRAMES
+import me.him188.ani.app.ui.download.LocalCacheRowRefocus
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.mediafetch.MediaSourceInfoProvider
 import org.jetbrains.compose.resources.stringResource
 
@@ -240,19 +243,22 @@ fun DownloadRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // TV (fork): 行尾只留"更多"一颗, 让每一行**只有一个焦点落点**, 且它跟上下
+                        // TV (fork): 行尾只留一颗 (TvDownloadRowAction), 让每一行**只有一个焦点落点**, 且它跟上下
                         // 各行下载按钮在同一列上 (中心 x 差 8px), 遥控器上下就是一条干净的单列.
-                        // 播放/暂停并没有丢, 都在下面那个菜单里 —— 多按一次确认键换来的是能按得到.
+                        // 按确定是主操作 (播放 / 暂停 / 继续), 按住确定弹出下面那个菜单.
                         if (!focusDriven) {
                             DownloadPrimaryAction(episode, onPlay = onPlay, onResume = onResume, onPause = onPause)
                         }
 
                         Box {
-                            IconButton(
+                            val moreModifier = Modifier
+                                .focusRequester(moreFocusRequester)
+                                .onFocusChanged { moreFocused = it.isFocused }
+                            if (focusDriven) {
+                                TvDownloadRowAction(episode, onPlay, onResume, onPause, onShowMenu = { showMenu = true }, modifier = moreModifier)
+                            } else IconButton(
                                 onClick = { showMenu = true },
-                                modifier = Modifier
-                                    .focusRequester(moreFocusRequester)
-                                    .onFocusChanged { moreFocused = it.isFocused },
+                                modifier = moreModifier,
                             ) {
                                 Icon(Icons.Rounded.MoreVert, stringResource(Lang.cache_management_more_actions))
                             }
@@ -279,6 +285,9 @@ fun DownloadRow(
                                     }
                                 },
                                 onDelete = { showConfirmDelete = true },
+                                // TV: 菜单是按住确定弹出来的, 吞掉那一次按住的余波; 行尾按钮上的那个操作不再重复
+                                modifier = if (focusDriven) Modifier.consumeHeldConfirmKey() else Modifier,
+                                omit = if (focusDriven) episode.tvPrimaryAction else null,
                             )
                         }
                     }
@@ -291,20 +300,34 @@ fun DownloadRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (episode.isMerging) {
-                        // 合并期间进度恒为 100%, 确定式进度条就是一条不动的满格 —— 正是"看起来
-                        // 卡死了"的来源. 换成不定式: 它自己在动, 一眼就知道还在干活.
-                        LinearProgressIndicator(
-                            modifier = Modifier.weight(1f),
-                            strokeCap = StrokeCap.Round,
-                        )
-                    } else {
-                        val progress by animateFloatAsState(episode.progress.getOrZero())
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.weight(1f),
-                            strokeCap = StrokeCap.Round,
-                        )
+                    // 合并期间下载进度恒为 100%, 进度条改画合并进度的估计 (见 DownloadItem.mergeProgress).
+                    // 三个分支各自一份动画状态: 从下载切到合并时直接画合并进度, 不会从满格一路倒退回去.
+                    when {
+                        !episode.isMerging -> {
+                            val progress by animateFloatAsState(episode.progress.getOrZero())
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
+
+                        episode.mergeProgress.isUnspecified -> {
+                            // 估不出合并进度时用不定式: 它自己在动, 一眼就知道还在干活
+                            LinearProgressIndicator(
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
+
+                        else -> {
+                            val progress by animateFloatAsState(episode.mergeProgress.getOrZero())
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -312,8 +335,12 @@ fun DownloadRow(
                     ) {
                         val statusText = when {
                             episode.isFailed -> stringResource(Lang.cache_episode_download_failed)
+                            // 停着是因为正在播这一集, 不是用户暂停的: 说清楚, 播完会自己接着下
+                            episode.waitingForPlayback -> stringResource(Lang.cache_episode_status_waiting_for_playback)
                             episode.isPaused -> stringResource(Lang.cache_episode_status_paused)
                             episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
+                            // BT 服务冷启动的十几秒里速度与进度都不动, 说清楚在等什么
+                            episode.awaitingTorrentService -> stringResource(Lang.cache_episode_status_awaiting_bt_service)
                             else -> episode.speedText
                         }
                         statusText?.let {
@@ -323,7 +350,9 @@ fun DownloadRow(
                                 color = if (episode.isFailed) MaterialTheme.colorScheme.error else Color.Unspecified,
                             )
                         }
-                        episode.progressText?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+                        // 合并中显示合并进度的估计; 估不出来时不显示百分比 (下载进度那时恒为 100%, 显示它是误导)
+                        val progressText = if (episode.isMerging) episode.mergeProgressText else episode.progressText
+                        progressText?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                     }
                 }
             }
@@ -389,11 +418,8 @@ private fun cacheEpisodeMetaText(
     val sourceName = episode.mediaSourceId?.let { id ->
         mediaSourceInfoProvider?.rememberMediaSourceInfo(id)?.value?.displayName
     }
-    val statusText = when {
-        episode.isFinished -> stringResource(Lang.cache_filter_status_finished)
-        episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
-        else -> null
-    }
+    // 合并中不在这里写: 下面的状态位已经写着「合并中」和合并进度
+    val statusText = if (episode.isFinished) stringResource(Lang.cache_filter_status_finished) else null
     val watchedText = if (episode.isFinished) {
         episode.playbackProgressText?.let { stringResource(Lang.cache_episode_watched_progress, it) }
     } else {

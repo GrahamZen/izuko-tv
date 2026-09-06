@@ -236,4 +236,20 @@ class BtListPresentationTest {
         assertEquals("", formatBtSize(FileSize.Zero))
         assertEquals("122.0 MB", formatBtSize(122.megaBytes))
     }
+
+    @Test
+    fun `values that only excluded media have do not apply the preference`() {
+        // 4K 只在别的集上: 这一集没有 4K 可放, 4K 偏好不筛
+        val other = media("other", resolution = "4K", episodeSort = 2)
+        val list = listOf(included(a), excluded(other, MediaExclusionReason.EpisodeMismatch(other.episodeRange)))
+        val result = projectBtList(
+            candidates(list, preference = MediaPreference.Empty.copy(resolution = "4K")),
+            episodeFilterEnabled = true,
+            sourceFilter = null,
+        )
+
+        assertEquals(listOf("1080P"), result.availableResolutions)
+        assertEquals(null, result.resolution)
+        assertEquals(listOf(a.mediaId), result.included.map { it.id })
+    }
 }

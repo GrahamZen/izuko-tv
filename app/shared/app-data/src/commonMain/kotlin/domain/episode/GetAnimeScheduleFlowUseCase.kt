@@ -28,11 +28,18 @@ import kotlin.time.Instant
 data class AiringScheduleForDate(
     val date: LocalDate,
     val list: List<EpisodeWithAiringTime>,
+    /**
+     * 这一天的数据还没取完 (名册里还有条目没拿到分集).
+     *
+     * 时间表是按天懒加载的, [list] 为空有两种完全不同的含义: 这一天真没有新番, 或者只是还没轮到
+     * 它. 界面拿它区分"这一天没有新番"与骨架占位 —— 缺了这一位, 进页面头几秒每天都写着"没有新番".
+     */
+    val pending: Boolean = false,
 )
 
 /**
- * @param airingTime 放送时间. [timeKnown] 为 `false` 时, 这是该剧集的 Bangumi 放送日期在客户端时区的 00:00.
- * @param timeKnown 放送时间是否精确已知. `false` 表示服务端只知道 Bangumi 的放送日期, 而没有可靠的放送时刻 (如没有 recurrence, 或与 Bangumi 日期不符).
+ * @param airingTime 放送时间. [timeKnown] 为 `false` 时, 这是该剧集放送日期在客户端时区的 00:00.
+ * @param timeKnown 放送时刻是否精确已知 (直连时 = bangumi-data 给出了这部的播出时刻).
  */
 data class EpisodeWithAiringTime(
     val subject: LightSubjectInfo,
@@ -72,12 +79,10 @@ class GetAnimeScheduleFlowUseCaseImpl(
     private val animeScheduleRepository: AnimeScheduleRepository,
     private val defaultDispatcher: CoroutineContext = Dispatchers.Default,
 ) : GetAnimeScheduleFlowUseCase {
+    // peekCached / invalidateCache 用接口的默认实现 (null / 空操作): 直连版的仓库没有进程级缓存,
+    // 它的"先出已有的再补齐"发生在 flow 内部 (BangumiScheduleSource.cachedEpisodesAndRules 是落盘的),
+    // 所以首帧仍然很快, 只是没有一个可以同步 peek 的快照.
     override fun invoke(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> =
         animeScheduleRepository.recentAiringSchedulesFlow(today, timeZone)
             .flowOn(defaultDispatcher)
-
-    override fun peekCached(today: LocalDate, timeZone: TimeZone): List<AiringScheduleForDate>? =
-        animeScheduleRepository.peekRecentAiringSchedules(today, timeZone)
-
-    override fun invalidateCache() = animeScheduleRepository.invalidateRecentAiringSchedules()
 }

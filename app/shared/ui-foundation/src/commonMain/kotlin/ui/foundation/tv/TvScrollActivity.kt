@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeMark
@@ -146,11 +148,34 @@ fun ReportTvScrollActivity(state: ScrollableState, layoutOffset: () -> Int) {
     }
 }
 
+/**
+ * 原生滚动容器 (电视原生页面的 RecyclerView) 的登记口: 容器自己按同一条判据 (开始滚动即算在滚, 连续两帧每帧挪动不超过 3 像素算停稳)
+ * 判好, 翻转时调 [setScrolling]. 同一个登记口只算一个容器.
+ */
+class TvScrollActivityReporter internal constructor(private val activity: TvScrollActivity) {
+    private var reported = false
+
+    fun setScrolling(scrolling: Boolean) {
+        if (scrolling == reported) return
+        reported = scrolling
+        activity.report(scrolling)
+    }
+}
+
+/** 当前页面 [TvScrollActivity] 的原生登记口 (没装信号时 null); 离开组合时自动撤销 (滚到一半被销毁也不会把计数卡住). */
+@Composable
+fun rememberTvScrollActivityReporter(): TvScrollActivityReporter? {
+    val activity = LocalTvScrollActivity.current ?: return null
+    val reporter = remember(activity) { TvScrollActivityReporter(activity) }
+    DisposableEffect(reporter) { onDispose { reporter.setScrolling(false) } }
+    return reporter
+}
+
 /** 布局偏移连续多少帧都没怎么挪就算停稳: 2 帧 ≈ 33ms, 再少会把 60fps 下偶尔的等值帧误判成停. */
-private const val TV_SCROLL_STILL_FRAMES = 2
+const val TV_SCROLL_STILL_FRAMES = 2
 
 /** 一帧挪动不超过这么多像素算"没挪": spring 尾段每帧只挪两三像素时肉眼已经是停的, 而 Prime 是淡出一结束就接淡入, 中间没有空白 —— 等到 1px 以内还要再多等一百多毫秒 (2026-09-09 Shield 录屏). */
-private const val TV_SCROLL_STILL_PX = 3
+const val TV_SCROLL_STILL_PX = 3
 
 /** 首项下标与首项偏移合成一个整数: 下标每进一位偏移量不可能超过这个数 (一张卡不会超过一百万像素). */
 private const val TV_SCROLL_OFFSET_STRIDE = 1_000_000
@@ -235,13 +260,17 @@ class TvScrollSettled<T> internal constructor(initial: T) {
  * 当场放行就等于没做. 不引起滚动的移动 (网格内横向换卡、行尾) 两帧后照常放行.
  *
  * 热状态的读取全部关在协程里, 调用方 body 不订阅.
+ *
+ * @param flushOn 它的值一变就当场放行此刻的目标, 不等上面三条 (如进 hero 态那一刻: 焦点刚换到这张就按了确认, 等静默期的话 hero
+ *   先露出上一张的内容). 默认不用.
  */
 @Composable
-fun <T> rememberTvScrollSettled(target: () -> T): TvScrollSettled<T> {
+fun <T> rememberTvScrollSettled(flushOn: () -> Any? = { null }, target: () -> T): TvScrollSettled<T> {
     val activity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
     // lambda 每次重组换新实例, 必须经 rememberUpdatedState 再进 snapshotFlow, 否则永久留住首帧值
     val latest = rememberUpdatedState(target)
+    val currentFlushOn = rememberUpdatedState(flushOn)
     // 种子值"不被观察地"读: 直接 target() 会把热状态的读算到调用方的 body 上
     val state = remember { TvScrollSettled(Snapshot.withoutReadObservation { target() }) }
     state.navKeys = navKeys
@@ -311,13 +340,21 @@ fun <T> rememberTvScrollSettled(target: () -> T): TvScrollSettled<T> {
             state.pending = false
         }
     }
+    LaunchedEffect(state) {
+        snapshotFlow { currentFlushOn.value.invoke() }.drop(1).collect {
+            state.burst = false
+            state.latched = false
+            state.settledValue = latest.value.invoke()
+            state.pending = false
+        }
+    }
     return state
 }
 
 /** [rememberTvScrollSettled] 的 provider 形态: 只要值, 不关心连发状态. */
 @Composable
 fun <T> rememberTvScrollSettledProvider(target: () -> T): () -> T {
-    val state = rememberTvScrollSettled(target)
+    val state = rememberTvScrollSettled(target = target)
     return remember(state) { { state.value } }
 }
 
@@ -331,8 +368,8 @@ fun <T> rememberTvScrollSettledProvider(target: () -> T): () -> T {
  * 态出来"不走先后路径, A 的淡出与 B 的滑入几乎同时跑 (用户 2026-09-10: "按键的还是快"); 它们按住时由连发去藏.
  */
 @Composable
-fun <T> rememberTvScrollHiddenProvider(target: () -> T?): () -> T? {
-    val state = rememberTvScrollSettled(target)
+fun <T> rememberTvScrollHiddenProvider(flushOn: () -> Any? = { null }, target: () -> T?): () -> T? {
+    val state = rememberTvScrollSettled(flushOn, target)
     val scrolling = rememberTvCardsScrollingProvider()
     return remember(state, scrolling) {
         {
@@ -379,7 +416,7 @@ class TvNavigationSettle(val settleMillis: Long) {
 }
 
 /**
- * 连发静默期 (毫秒): 必须长于长按方向键的连发间隔 (`tvFocusMoveRateLimit` 横向 8 次/秒 = 125ms), 否则
+ * 连发静默期 (毫秒): 必须长于长按方向键的连发间隔 (系统约 50ms 一发, `tvFocusMoveRateLimit` 不另外放慢), 否则
  * 按住期间仍会中途换; 也是停下来之后文字 / 背景图最迟多久跟上 (卡片行另有滚动停稳这一条, 通常更晚).
  */
 const val TV_NAV_SETTLE_MILLIS = 300L
@@ -494,7 +531,7 @@ val TV_INSTANT_CONTENT_SWAP =
     ContentTransform(EnterTransition.None, fadeOut(snap()), sizeTransform = null)
 
 /** 相邻两行进场的错开量 (毫秒). */
-private const val TV_HERO_TEXT_STAGGER_MILLIS = 40
+const val TV_HERO_TEXT_STAGGER_MILLIS = 40
 
 /**
  * [tvScrollHiddenTextTransform] 的**不滑**版本, 给详情页集信息行用: 旧文字整块淡出, 新文字**原地**淡入.
@@ -536,21 +573,21 @@ fun tvCarouselTextTransform(
 }
 
 /** 轮播态文字淡出 / 滑入时长 (毫秒), 见 [tvCarouselTextTransform]. */
-private const val TV_CAROUSEL_TEXT_OUT_MILLIS = 350
-private const val TV_CAROUSEL_TEXT_IN_MILLIS = 450
+const val TV_CAROUSEL_TEXT_OUT_MILLIS = 350
+const val TV_CAROUSEL_TEXT_IN_MILLIS = 450
 
 /** [tvScrollHiddenTextTransform] 的位移, 在组合里按当前 density 算一次 (transitionSpec 里拿不到 density). */
 @Composable
 fun tvScrollHiddenTextSlidePx(): Int = with(LocalDensity.current) { TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE.roundToPx() }
 
 /** 滑入起点距终点的距离: Prime 实测约 28px@1080p ≈ 14dp, 读得出是"滑进来"又不显得在飞. */
-private val TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE = 14.dp
+val TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE = 14.dp
 
 /** 淡入+滑入约 200ms (Prime 实测 12 帧), 线性. */
-private const val TV_SCROLL_HIDDEN_TEXT_IN_MILLIS = 200
+const val TV_SCROLL_HIDDEN_TEXT_IN_MILLIS = 200
 
 /** 直接切换 (轮播按键翻页 / 网格横移) 的淡出 300ms 线性 (Prime 是 220, 拉长的理由见 [tvScrollHiddenTextTransform]). */
-private const val TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS = 300
+const val TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS = 300
 
 /**
  * 藏起来 (目标变 null, 卡片行滚动 / 连发) 那条路的淡出 400ms 线性: 新文字要等卡片停稳才进, Shield 实测 (刚度 260)
@@ -558,7 +595,7 @@ private const val TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS = 300
  * 拉到 400 让旧文字的尾巴 (alpha < 0.2 肉眼已看不见) 盖住停稳前的那一段; 直接切换不动 —— 那条路进场起点固定,
  * 用户已经认可.
  */
-private const val TV_SCROLL_HIDDEN_TEXT_HIDE_OUT_MILLIS = 400
+const val TV_SCROLL_HIDDEN_TEXT_HIDE_OUT_MILLIS = 400
 
 /**
  * 新文字进场的统一起点 (按键后毫秒): 直接切换用作进场延迟 (淡出 300 + 停顿 10); 从隐藏态出来的由

@@ -102,7 +102,8 @@ class DirectApiAllEpisodesTest {
         )
         // 每条地址都属于自己那一集
         for (link in links) {
-            val sort = link.episodeRange?.knownSorts?.single().toString()
+            // EpisodeSort 的 toString 会给个位数补零 ("01"), 而 mock 的地址是 /ep1-
+            val sort = link.episodeRange?.knownSorts?.single().toString().trimStart('0')
             assertTrue(link.url.contains("/ep$sort-"), "${link.url} 不属于第 $sort 集")
         }
     }

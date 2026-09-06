@@ -101,6 +101,20 @@ class RepositoryRequestError(
     cause: Throwable? = null,
 ) : RepositoryException(message, cause)
 
+/**
+ * 服务端不提供这个条目.
+ *
+ * bangumi 对两种情况都回 404, 客户端分不出是哪一种:
+ * - 条目是 NSFW 而当前账号没有权限 (要求已登录**且**注册满 60 天, 见 bangumi 的 `AllowNSFW`);
+ * - 条目已被删除或合并.
+ *
+ * 搜索索引与条目接口的口径不一致, 所以搜到的条目点进去可能就是这个结果.
+ */
+class RepositorySubjectNotAccessibleException(
+    val subjectId: Int,
+    cause: Throwable? = null,
+) : RepositoryException("Subject $subjectId is not accessible", cause)
+
 class RepositoryUnknownException(throwable: Throwable) : RepositoryException(null, cause = throwable)
 
 val PagingSource.LoadResult.Error<*, *>.repositoryException: RepositoryException?
@@ -114,6 +128,8 @@ fun RepositoryException.shouldRetry() = when (this) {
     is RepositoryServiceUnavailableException -> false
     is RepositoryUnknownException -> false
     is RepositoryRequestError -> false
+    // 服务端就是不给这个条目, 重试多少次都一样
+    is RepositorySubjectNotAccessibleException -> false
 }
 
 fun RepositoryException.Companion.shouldRetry(throwable: Throwable): Boolean {

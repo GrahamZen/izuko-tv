@@ -8,14 +8,14 @@
   -->
 
 <resources>
-    <string name="app_name">Animeko TV</string>
-    <string name="app_package" translatable="false">me.him188.ani.tv</string>
-    <string name="service_torrent_engine_description">Animeko BT engine foreground service</string>
+    <string name="app_name">Izuko TV</string>
+    <string name="app_package" translatable="false">io.github.grahamzen.anime.tv</string>
+    <string name="service_torrent_engine_description">Izuko TV BT engine foreground service</string>
     <string name="app_service_title_text_idle">No download tasks</string>
     <string name="app_service_title_text_working">Downloading %1$d resource(s)</string>
     <string name="app_service_content_text">DOWN: %1$s, UP: %2$s</string>
     <string name="app_service_stop_text">STOP</string>
     <string name="service_remote_keep_alive_name">Web console</string>
-    <string name="service_remote_keep_alive_text">Stays reachable from your phone after Animeko is closed</string>
+    <string name="service_remote_keep_alive_text">Stays reachable from your phone after Izuko TV is closed</string>
 
 </resources>

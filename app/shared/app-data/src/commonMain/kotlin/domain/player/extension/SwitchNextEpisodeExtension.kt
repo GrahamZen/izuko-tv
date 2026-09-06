@@ -10,16 +10,20 @@
 package me.him188.ani.app.domain.player.extension
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
+import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.PlaybackEvent
 
@@ -27,6 +31,7 @@ import org.openani.mediamp.PlaybackEvent
  * 自动连播.
  *
  * 监听 [MediampPlayer.events] 的 [PlaybackEvent.MediaEnded] 事件, 当播放自然结束且最终位置距离视频结束不足 5 秒时, 切换到下一集.
+ * 这个资源打开后真的播过才算: 从结尾之后打开 (续播位置超过资源长度) 时播放器一打开就报播完, 那不是看完了.
  * 下一集由 [getNextEpisode] 提供.
  */
 class SwitchNextEpisodeExtension(
@@ -35,7 +40,6 @@ class SwitchNextEpisodeExtension(
     private val getNextEpisode: suspend (currentEpisodeId: Int) -> Int?,
 ) : PlayerExtension("SwitchNextEpisode") {
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
-    private val automationGate: PlaybackAutomationGate by koin.inject()
 
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         val mediaLoaded = CompletableDeferred<Unit>()
@@ -60,15 +64,23 @@ class SwitchNextEpisodeExtension(
         }
     }
 
-    private suspend fun impl(session: EpisodeSession): Nothing {
+    private suspend fun impl(session: EpisodeSession): Nothing = coroutineScope {
         val player = context.player
+        // 当前资源打开后 (或上次播完后) 有没有播起来过
+        val played = MutableStateFlow(false)
+        launch {
+            player.state.collect { state ->
+                if (state.mediaStatus == MediaStatus.Opening) played.value = false
+                if (state.isPlaying) played.value = true
+            }
+        }
         player.events.collect { event ->
             if (event !is PlaybackEvent.MediaEnded) return@collect
+            val playedBeforeEnd = played.getAndUpdate { false }
             val durationMillis = event.durationMillis
             val closeToEnd = durationMillis != null && durationMillis - event.finalPositionMillis < 5000
 
-            if (closeToEnd) {
-                if (automationGate.suppressed.value) return@collect
+            if (closeToEnd && playedBeforeEnd && !event.isTooShortForEpisode()) {
                 val nextEpisode = getNextEpisode(session.episodeId)
                 logger.info("播放完毕，切换下一集 $nextEpisode")
                 context.switchEpisode(nextEpisode ?: return@collect)

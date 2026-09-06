@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,44 +10,49 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextPersonImages
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param comment
- * @param id
- * @param lock
- * @param name
- * @param nameCN
- * @param nsfw 
+ * @param id 
+ * @param name 
+ * @param nameCN 
  * @param role 
+ * @param info 
+ * @param comment 
+ * @param lock 
+ * @param nsfw 
  * @param images 
  */
 @Serializable
 
-data class BangumiNextSlimCharacter(
-
-    @SerialName(value = "comment") @Required val comment: kotlin.Int,
+data class BangumiNextSlimCharacter (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
-
-    @SerialName(value = "lock") @Required val lock: kotlin.Boolean,
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 
     @SerialName(value = "nameCN") @Required val nameCN: kotlin.String,
 
-    @SerialName(value = "nsfw") @Required val nsfw: kotlin.Boolean,
-
     @SerialName(value = "role") @Required val role: kotlin.Int,
+
+    @SerialName(value = "info") @Required val info: kotlin.String,
+
+    @SerialName(value = "comment") @Required val comment: kotlin.Int,
+
+    @SerialName(value = "lock") @Required val lock: kotlin.Boolean,
+
+    @SerialName(value = "nsfw") @Required val nsfw: kotlin.Boolean,
 
     @SerialName(value = "images") val images: BangumiNextPersonImages? = null
 

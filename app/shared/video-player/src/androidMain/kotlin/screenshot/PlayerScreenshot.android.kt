@@ -57,11 +57,11 @@ actual fun rememberPlayerScreenshotSharer(): PlayerScreenshotSharer {
     return remember(context, clipboard) { AndroidPlayerScreenshotSharer(context, clipboard) }
 }
 
-private const val GALLERY_DIRECTORY = "Animeko"
+private const val GALLERY_DIRECTORY = "Izuko TV"
 private const val MIME_PNG = "image/png"
 
 /**
- * 用 [PixelCopy] 从 ExoPlayer 的 SurfaceView 抓取当前帧, 保存到系统相册的 `Pictures/Animeko`.
+ * 用 [PixelCopy] 从 ExoPlayer 的 SurfaceView 抓取当前帧, 保存到系统相册的 `Pictures/Izuko TV`.
  *
  * Android 10 起经 MediaStore 写入, 不需要权限; Android 9 及以下直接写公共图片目录,
  * 需要先取得 WRITE_EXTERNAL_STORAGE, 文件经 FileProvider 以 content URI 共享.

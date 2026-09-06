@@ -15,9 +15,11 @@
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiSearchSubjectsRequestFilter
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -28,7 +30,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiSearchSubjectsRequest(
+data class BangumiSearchSubjectsRequest (
 
     @SerialName(value = "keyword") @Required val keyword: kotlin.String,
 
@@ -46,14 +48,10 @@ data class BangumiSearchSubjectsRequest(
      */
     @Serializable
     enum class Sort(val value: kotlin.String) {
-        @SerialName(value = "match")
-        MATCH("match"),
-        @SerialName(value = "heat")
-        HEAT("heat"),
-        @SerialName(value = "rank")
-        RANK("rank"),
-        @SerialName(value = "score")
-        SCORE("score");
+        @SerialName(value = "match") MATCH("match"),
+        @SerialName(value = "heat") HEAT("heat"),
+        @SerialName(value = "rank") RANK("rank"),
+        @SerialName(value = "score") SCORE("score");
     }
 
 }

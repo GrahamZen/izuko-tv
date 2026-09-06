@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
+import me.him188.ani.app.data.models.feedback.FeedbackRecords
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.DanmakuCacheStrategy
@@ -29,8 +30,11 @@ import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.NotificationSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.CloudDriveAccounts
+import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -38,7 +42,8 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.models.subject.TestSubjectCollections
 import me.him188.ani.app.data.persistent.database.dao.DanmakuDao
@@ -53,7 +58,6 @@ import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.settings.NoProxyProvider
-import me.him188.ani.client.apis.DanmakuAniApi
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
 import me.him188.ani.danmaku.api.DanmakuLocation
@@ -172,7 +176,6 @@ class DanmakuCacheTest {
 
         return DanmakuRepository(
             parentCoroutineContext = backgroundScope.coroutineContext,
-            danmakuApi = UnusedApiInvoker,
             danmakuDao = danmakuDao,
             httpClientProvider = backgroundScope.run { TestHttpClientProvider() },
             getMediaCacheUseCase = mediaCacheUseCase,
@@ -251,12 +254,21 @@ class DanmakuCacheTest {
 
         override val danmakuEnabled: Settings<Boolean> by lazy { error("no implemented") }
         override val tmdbImagesDisabled: Settings<Boolean> by lazy { error("no implemented") }
+        override val tmdbImageEndpoint: Settings<EndpointSelection> by lazy { error("no implemented") }
+        override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val githubDownloadMirrorCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val feedbackEndpointCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val feedbackRecords: Settings<FeedbackRecords> by lazy { error("no implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("no implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("no implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("no implemented") }
         override val defaultMediaPreference: Settings<MediaPreference> by lazy { error("no implemented") }
         override val profileSettings: Settings<ProfileSettings> by lazy { error("no implemented") }
         override val proxySettings: Settings<ProxySettings> by lazy { error("no implemented") }
+        override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("no implemented") }
+        override val bangumiMirrorCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val bangumiEchAddressCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val bangumiEchDohCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("no implemented") }
         override val uiSettings: Settings<UISettings> by lazy { error("no implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("no implemented") }
@@ -266,12 +278,12 @@ class DanmakuCacheTest {
         override val videoResolverSettings: Settings<VideoResolverSettings> by lazy { error("no implemented") }
         override val anitorrentConfig: Settings<AnitorrentConfig> by lazy { error("no implemented") }
         override val pikpakConfig: Settings<PikPakConfig> by lazy { error("no implemented") }
+        override val cloudDriveAccounts: Settings<CloudDriveAccounts> by lazy { error("no implemented") }
+        override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> by lazy { error("no implemented") }
         override val torrentPeerConfig: Settings<TorrentPeerConfig> by lazy { error("no implemented") }
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("no implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("no implemented") }
         override val debugSettings: Settings<DebugSettings> by lazy { error("no implemented") }
-        override val watchTogetherSettings: Settings<WatchTogetherSettings> by lazy { error("no implemented") }
-        override val notificationSettings: Settings<NotificationSettings> by lazy { error("no implemented") }
     }
 
     private class TestDanmakuDao : DanmakuDao {
@@ -308,12 +320,6 @@ class DanmakuCacheTest {
         override suspend fun close() = Unit
         override suspend fun resume() = Unit
         override suspend fun closeAndDeleteFiles() = Unit
-    }
-
-    private object UnusedApiInvoker : ApiInvoker<DanmakuAniApi> {
-        override suspend fun <R> invoke(action: suspend DanmakuAniApi.() -> R): R {
-            error("ApiInvoker not expected in tests")
-        }
     }
 
     private companion object {

@@ -24,6 +24,8 @@ import me.him188.ani.app.domain.media.fetch.CompletedConditions
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoInfoRefresh
+import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -55,6 +57,26 @@ class SubjectMediaFetchSessionsTest {
         assertSame(first, second)
         assertEquals(1, created.size)
         assertEquals(1, created[0].subscribers)
+        sessions.close()
+    }
+
+    /** 长番 (在线源只产出查询时的那一集) 换了集要重新查, 同一集照旧复用. 剧集列表未知时同样. */
+    @Test
+    fun `long series switching episodes creates a new session`() = runTest {
+        val created = mutableListOf<FakeSession>()
+        val sessions = SubjectMediaFetchSessions(backgroundScope) { FakeSession(it).also { s -> created += s } }
+        val episodeIds = (1..SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES + 1).toList()
+
+        val first = sessions.get(request(1, episodeIds))
+        runCurrent()
+        assertSame(first, sessions.get(request(1, episodeIds)))
+        val second = sessions.get(request(2, episodeIds))
+        runCurrent()
+        assertNotSame(first, second)
+        assertEquals(0, created[0].subscribers)
+        assertEquals(1, created[1].subscribers)
+
+        assertNotSame(sessions.get(request(1, emptyList())), sessions.get(request(2, emptyList())))
         sessions.close()
     }
 
@@ -117,6 +139,22 @@ class SubjectMediaFetchSessionsTest {
         sessions.close()
     }
 
+    @Test
+    fun `reusing restarts drive sources that read new video info`() = runTest {
+        val drive = FakeSource("webdav-test-drive", MediaSourceFetchState.Succeed(0))
+        val other = FakeSource("other", MediaSourceFetchState.Succeed(0))
+        val sessions = SubjectMediaFetchSessions(backgroundScope) { FakeSession(it, listOf(drive, other)) }
+
+        sessions.get(request(1))
+        DriveVideoInfoRefresh.markStale("webdav-test-drive")
+        sessions.get(request(2))
+        assertEquals(listOf(1, 0), listOf(drive, other).map { it.restarts })
+        // 重查过了, 再切集不再重查
+        sessions.get(request(1))
+        assertEquals(listOf(1, 0), listOf(drive, other).map { it.restarts })
+        sessions.close()
+    }
+
     private class FakeSession(
         request: MediaFetchRequest,
         override val mediaSourceResults: List<MediaSourceFetchResult> = emptyList(),
@@ -147,6 +185,8 @@ class SubjectMediaFetchSessionsTest {
         override fun restart() {
             restarts++
         }
+
+        override fun pause() = Unit
 
         override fun enable() = Unit
     }

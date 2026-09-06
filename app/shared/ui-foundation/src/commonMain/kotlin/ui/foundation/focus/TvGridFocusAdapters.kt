@@ -188,8 +188,8 @@ fun TvFocusTransitAnchor(
     )
 }
 
-/** 隐形锚点的尺寸: 不能为 0 —— 零尺寸节点在部分版本上会被焦点系统跳过. */
-private val TV_TRANSIT_ANCHOR_SIZE = 1.dp
+/** 隐形锚点的尺寸 (占布局高度, 紧挨它的内容按它往下排): 不能为 0 —— 零尺寸节点在部分版本上会被焦点系统跳过. */
+val TV_TRANSIT_ANCHOR_SIZE = 1.dp
 
 /** 焦点驻留在隐形锚点期间要吞掉的按键 (返回键不在内: 它走返回分发器, 由页面的分层规则处理). */
 private val TV_TRANSIT_ANCHOR_SWALLOWED_KEYS = setOf(

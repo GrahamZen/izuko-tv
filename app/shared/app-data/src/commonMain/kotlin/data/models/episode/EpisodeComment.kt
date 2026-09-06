@@ -56,6 +56,14 @@ data class EpisodeComment(
      * `AniEpisodeCommentService` 里的 `withReplyTargets`. 服务端哪天给了真字段, 换成直接读它.
      */
     val replyToCommentId: String? = null,
+
+    /**
+     * 楼层号, 同 bangumi 网页: 主楼 `"3"`, 楼中回复 `"3-2"`, 显示成 `#3` / `#3-2`. 数据源不给时为 `null`.
+     */
+    val floor: String? = null,
+
+    /** 已被删除: bangumi 上仍占着楼层, 正文为空 (网页显示「删除了回复」). */
+    val deleted: Boolean = false,
 )
 
 data class EpisodeCommentReaction(

@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.exploration.schedule
 
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -123,6 +122,7 @@ import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.ui.external.placeholder.PlaceholderHighlight
 import me.him188.ani.app.ui.external.placeholder.fade
 import me.him188.ani.app.ui.external.placeholder.placeholder
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
@@ -765,10 +765,10 @@ private fun Modifier.tvScheduleBleedToScreenEdges(): Modifier = layout { measura
 }
 
 /**
- * 越过第一格顶线往上走的那几部边走边淡 (同追番 / 搜索网格的 tvGridItemTopFade, 只是线不在内边距之后 —— 那里是固定
- * 焦点框 —— 而在第一格的顶上): 越线多远就多淡, 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个
- * 淡掉, 顶上不露半截; 滚动时往上走的那部也不会在哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层,
- * 零重组; ModulateAlpha 理由同 tvGridItemTopFade (默认 Auto 在 alpha < 1 时整行先画进离屏缓冲).
+ * 越过第一格顶线往上走的那几部边走边淡 (线不在内边距之后 —— 那里是固定焦点框 —— 而在第一格的顶上): 越线多远就多淡,
+ * 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个淡掉, 顶上不露半截; 滚动时往上走的那部也不会在
+ * 哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层, 零重组; ModulateAlpha: 默认 Auto 在 alpha < 1 时
+ * 整行先画进离屏缓冲.
  */
 private fun Modifier.tvScheduleTopFade(state: LazyGridState, index: Int): Modifier = graphicsLayer {
     compositingStrategy = CompositingStrategy.ModulateAlpha
@@ -837,7 +837,7 @@ private fun TvScheduleDetailPanel(
                     .then(if (item == null) Modifier.placeholder(placeholder, shape = coverShape, highlight = null) else Modifier),
             ) {
                 if (item != null) {
-                    TvScheduleCoverImage(item.imageUrl, contentDescription = item.subjectTitle)
+                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = item.subjectTitle)
                 }
             }
             if (c != null && item != null) {
@@ -905,7 +905,8 @@ private fun TvSchedulePanelDayLine(day: () -> TvSchedulePanelDay?, placeholder: 
                     }
                 }
             },
-            color = if (shown.day.kind == ScheduleDay.Kind.TODAY) MaterialTheme.colorScheme.primary else tvHeroContentColor(),
+            // 「今天」与别的日子靠主次两档亮度分 (照 tvOS: 文字只有主要 / 次要几档, 不用强调色)
+            color = if (shown.day.kind == ScheduleDay.Kind.TODAY) tvHeroContentColor() else tvHeroSecondaryContentColor(),
             style = TvSchedulePanelText.headline,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -916,7 +917,7 @@ private fun TvSchedulePanelDayLine(day: () -> TvSchedulePanelDay?, placeholder: 
                 shown.items,
                 shown.followedCount,
                 placeholder,
-                followedColor = MaterialTheme.colorScheme.primary,
+                followedColor = tvHeroContentColor(),
                 alwaysShowFollowed = true,
             ) ?: AnnotatedString(""),
             Modifier.padding(top = 2.dp),
@@ -952,7 +953,8 @@ private fun TvSchedulePanelSide(
         val counting = !card.aired && item.time != null && now != null
         Text(
             tvScheduleStatusText(card, now),
-            color = if (counting) MaterialTheme.colorScheme.primary else secondary,
+            // 正在倒计时的用主要那档, 其余次要
+            color = if (counting) tvHeroContentColor() else secondary,
             style = body,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1020,13 +1022,13 @@ private fun TvSchedulePanelRating(rating: RatingInfo?, loaded: Boolean, modifier
             Icons.Rounded.Star,
             contentDescription = null,
             Modifier.size(18.dp),
-            tint = if (rated) MaterialTheme.colorScheme.primary else secondary,
+            tint = if (rated) tvHeroContentColor() else secondary,
         )
         if (rating != null && rated) {
             Text(
                 rating.score,
                 Modifier.padding(start = 4.dp).alignByBaseline(),
-                color = MaterialTheme.colorScheme.primary,
+                color = tvHeroContentColor(),
                 style = TvSchedulePanelText.subhead,
                 maxLines = 1,
             )
@@ -1055,7 +1057,7 @@ private fun TvSchedulePanelRating(rating: RatingInfo?, loaded: Boolean, modifier
 @Composable
 private fun TvSchedulePanelCollectionChip(type: UnifiedCollectionType, modifier: Modifier = Modifier) {
     val followed = type in TV_SCHEDULE_FOLLOWED_TYPES
-    val chipColor = if (followed) MaterialTheme.colorScheme.primary else tvHeroSecondaryContentColor()
+    val chipColor = if (followed) tvHeroContentColor() else tvHeroSecondaryContentColor()
     Row(
         modifier
             .border(1.dp, chipColor, RoundedCornerShape(50))
@@ -1223,7 +1225,7 @@ private fun TvScheduleDayHeader(
         if (day == null) return@Row
         Text(
             tvScheduleDayTitle(day, items.cards.size, placeholder),
-            color = if (day.kind == ScheduleDay.Kind.TODAY) MaterialTheme.colorScheme.primary else tvHeroContentColor(),
+            color = if (day.kind == ScheduleDay.Kind.TODAY) tvHeroContentColor() else tvHeroSecondaryContentColor(),
             style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = TV_SCHEDULE_TABULAR_NUMS),
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -1351,8 +1353,8 @@ private fun TvScheduleRow(
                         timeUnknownText = stringResource(Lang.exploration_schedule_time_unknown),
                     ),
                     color = when {
+                        // 已播过的降到次要那档; 还没播的 (含下一个要播的) 都是主要那档
                         card.aired -> tvHeroSecondaryContentColor()
-                        isNext -> MaterialTheme.colorScheme.primary
                         else -> tvHeroContentColor()
                     },
                     // "时间未定" 是四个字, 按时刻的字号放不进时刻列
@@ -1392,7 +1394,8 @@ private fun TvScheduleRow(
                     .tvTouchFocusOnTap()
                     .combinedClickable(
                         interactionSource = interactionSource,
-                        indication = LocalIndication.current,
+                        // 不要 indication: 聚焦由外面的聚焦框表达, 涟漪的焦点态层比框晚到一拍 (同 TvPortraitCard)
+                        indication = null,
                         onClick = onClick,
                         onLongClick = menu?.let { { menuExpanded = true } },
                     )
@@ -1404,7 +1407,7 @@ private fun TvScheduleRow(
                         .clip(RoundedCornerShape(TV_SCHEDULE_ROW_THUMB_CORNER))
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
-                    TvScheduleCoverImage(item.imageUrl, contentDescription = null)
+                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = null)
                 }
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1425,7 +1428,7 @@ private fun TvScheduleRow(
                                 Icons.Rounded.Favorite,
                                 contentDescription = null,
                                 Modifier.padding(start = 8.dp).size(TV_SCHEDULE_ROW_FOLLOWED_ICON_SIZE),
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = tvHeroContentColor(),
                             )
                         }
                     }
@@ -1468,19 +1471,20 @@ private fun TvScheduleRowSkeleton(modifier: Modifier = Modifier) {
 
 /**
  * 封面图 (时间线小图与左栏大图共用): 并发洪峰里失败的请求自动重试, 被丢弃时没下完的交给后台跑完写进磁盘缓存
- * (同 TvPortraitCard, 见 rememberAsyncImageRetryState / rememberImageCompletionGrace).
+ * (同 TvPortraitCard, 见 rememberAsyncImageRetryState / rememberImageCompletionGrace). NSFW 设为模糊时按 [subjectId] 打码.
  */
 @Composable
-private fun TvScheduleCoverImage(url: String, contentDescription: String?) {
+private fun TvScheduleCoverImage(url: String, subjectId: Int, contentDescription: String?) {
     val retry = rememberAsyncImageRetryState(url)
-    val loaded = rememberImageCompletionGrace(url)
+    val completionGrace = rememberImageCompletionGrace(url)
     AsyncImage(
         if (retry.suppressed) null else url,
         contentDescription = contentDescription,
         Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
-        onSuccess = { loaded.value = true },
         onError = { retry.onError() },
+        completionGrace = completionGrace,
+        downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(subjectId),
     )
 }
 
@@ -1665,7 +1669,11 @@ private fun buildTvScheduleTimeline(presentation: SchedulePagePresentation, toda
     val itemEntries = ArrayList<IntArray>(days.size)
     for ((d, day) in days.withIndex()) {
         entries += TvScheduleEntry.Header(d, day)
-        if (day.cards.isEmpty()) entries += TvScheduleEntry.Empty(d)
+        // 时间表是**按天懒加载**的: 还没轮到的那天 cards 也是空的. 不区分的话进页头几秒每天都
+        // 写着"这一天没有新番", 过几秒又自己冒出卡片 (见 AiringScheduleForDate.pending).
+        val dayPending = presentation.airingSchedules
+            .firstOrNull { it.date == presentation.days.getOrNull(d)?.date }?.isPlaceholder != false
+        if (day.cards.isEmpty() && !dayPending) entries += TvScheduleEntry.Empty(d)
         val next = if (day.currentTime != null) day.firstUpcomingIndex else -1
         itemEntries += IntArray(day.cards.size) { i ->
             val card = day.cards[i]

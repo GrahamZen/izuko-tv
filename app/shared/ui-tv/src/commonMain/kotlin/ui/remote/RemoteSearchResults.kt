@@ -115,6 +115,11 @@ internal object RemoteSearchResults {
 
     /** 标题下的一行筛选说明 (网页上有的那几项; 排序不写, 结果顺序本身就说明了). */
     private fun filterText(query: SubjectSearchQuery): String = buildList {
+        // 年份/季度写在最前, 理由同电视那行胶囊 (见 TvSearchPage 的 activeFilters): 表单里年份要往下滚才看得见,
+        // 选过一次就一直跟着后面每一次搜索, 结果恒为空而页面上说不出为什么
+        query.year?.let { year ->
+            add(query.season?.let { "$year Q${it.quarterNumber}" } ?: tr("{0} 年", year))
+        }
         query.rating?.min?.let { add(tr("{0} 分以上", it)) }
         query.tags?.takeIf { it.isNotEmpty() }?.let { add(it.joinToString(" / ")) }
     }.joinToString(" · ")
@@ -131,6 +136,9 @@ internal object RemoteSearchResults {
         submission.keywords == query.keywords &&
                 submission.sort == query.sort &&
                 submission.minRating == query.rating?.min &&
+                // 年份/季度也是网页表单里的字段: 漏掉它们的话, 只改年份重搜会被当成"已经是这份结果"
+                submission.year == query.year &&
+                submission.season == query.season &&
                 submission.tags.toSet() == query.tags.orEmpty().toSet()
 
     /**

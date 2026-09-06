@@ -12,6 +12,7 @@ package me.him188.ani.app.tools.update
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.him188.ani.utils.io.SystemPath
@@ -45,6 +46,14 @@ class DeltaPackageDownloader(
 
     private val _progress = MutableStateFlow(0f)
     override val progress: Flow<Float> get() = _progress
+
+    override val stage: StateFlow<FileDownloadStage?> get() = fallback.stage
+
+    /** 增量下载按地址工作: [DownloadPackage.sha256] 不参与, 校验照整包下载的 `.sha1`. */
+    override suspend fun download(packages: List<DownloadPackage>, saveDir: SystemPath): SystemPath? {
+        val fileNameByUrl = packages.flatMap { p -> p.sources.map { it to p.fileName } }.toMap()
+        return download(fileNameByUrl.keys.toList(), { fileNameByUrl.getValue(it) }, saveDir)
+    }
 
     override suspend fun download(
         alternativeUrls: List<String>,

@@ -51,9 +51,9 @@ const val LONG_PRESS_KEY_DOWN_COUNT = 2
  *
  * 略小于系统首个连发的间隔: 免得在连发首发偏早的设备上把正常长按推迟到第二发.
  *
- * internal: 返回键长按 ([TvBackLongPressHost]) 与本文件同一套判定参数.
+ * 返回键长按 ([TvBackLongPressHost]) 与电视原生页面的卡片 (ui-tv 的 TvNativeConfirmKey) 与本文件同一套判定参数.
  */
-internal val LONG_PRESS_MIN_HOLD = 350.milliseconds
+val LONG_PRESS_MIN_HOLD = 350.milliseconds
 
 /** 确认键: 遥控器 OK / 键盘回车. */
 val TV_CONFIRM_KEYS = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
@@ -156,6 +156,7 @@ fun rememberTvLongPressKeyState(): TvLongPressKeyState = remember { TvLongPressK
  * @param state 按住进度; 只在需要画按压反馈时传, 否则内部自建
  * @param keys 认领哪些键; 默认确认键, 播放键传 [TV_PLAY_KEYS]
  * @param readyToFire 触发闸门 (见下)
+ * @param enabled 此刻认不认这些键 (见下)
  */
 fun Modifier.tvLongPressKey(
     onLongPress: () -> Unit,
@@ -176,6 +177,12 @@ fun Modifier.tvLongPressKey(
      * 目标还在赶路时按下, 缩放动画无论怎么排都跟不上位置, 不如不做; 停下来按住的照常有.
      */
     readyToFire: (() -> Boolean)? = null,
+    /**
+     * 此刻认不认这些键, 每个事件问一次; false 时事件原样放行, 本次按住作废. 给自己可聚焦、里面还嵌着别的可聚焦项的控件用
+     * (搜索框与框里的「清除历史」图标、输入框): 预览事件自根部往下传, 挂在外层的本 modifier 先于里面那一项拿到键, 焦点进了里面那一项时
+     * 照样认领的话, 那一项的确认键永远被当成外层的短按. 这种控件传 `{ 外层自己持焦 }`.
+     */
+    enabled: () -> Boolean = { true },
 ): Modifier = composed {
     val resolved = state ?: remember { TvLongPressKeyState() }
     // hasFocus 而不是 isFocused: 本 modifier 可能挂在容器上 (真正持焦的是子树里的可点击节点),
@@ -183,6 +190,10 @@ fun Modifier.tvLongPressKey(
     onFocusChanged { if (!it.hasFocus) resolved.reset() }
         .onPreviewKeyEvent { event ->
             if (event.key !in keys) return@onPreviewKeyEvent false
+            if (!enabled()) {
+                resolved.reset()
+                return@onPreviewKeyEvent false
+            }
             when (event.type) {
                 KeyEventType.KeyDown -> {
                     val repeat = event.isAutoRepeat
@@ -222,5 +233,74 @@ fun Modifier.tvLongPressKey(
                 }
             }
             true
+        }
+}
+
+/**
+ * [tvLongPressKey] 的"短按留给底下那颗按钮"版: 挂在**已经有自己点击**的节点 (clickable / `Surface(onClick)` / 共享组件里的按钮) 或它的
+ * 祖先上, 只多出一个长按. 短按不由本 modifier 派发, 仍是底下那颗按钮自己在抬起时点.
+ *
+ * 用在改不动点击的地方: 点击藏在共享组件里 (倍速 / 字幕 / 画面比例的下拉, 展开状态外面碰不到), 或者一整排形态各异的按钮要统一加同一个长按.
+ *
+ * 判据与 [tvLongPressKey] 同一套 (起手 / 阈值 / 失焦复位), 放行规则按"底下那颗按钮看到什么"定:
+ * - 起手那一发 (新的一次按下) 放行, 底下的按钮照常进按下态;
+ * - 起手之后的连发一律吞掉 (底下的按钮本来也只认第一发), 到阈值当场触发 [onLongPress];
+ * - 抬起时没触发过长按就放行 (= 底下的按钮点一下), 触发过就吞掉, 那一下不再算点击;
+ * - 没起手就收到的连发与抬起 (别处的长按把焦点送过来, 那次按住还没松) 一律吞掉: 底下的 clickable 没有这层免疫, 残余的连发 + 抬起会被它
+ *   当成一次完整的点击.
+ *
+ * 长按之后底下那颗按钮收不到抬起, 按下态会留着, 直到它下一次抬起或离开组合. 所以只给"长按之后这一层会被换掉"的场合用 (开窗口、收起控制层);
+ * 长按之后界面原样不动的, 用 [tvLongPressKey].
+ *
+ * @param enabled 此刻认不认长按, 每个事件问一次; false 时事件原样放行 (如输入框展开的那一段).
+ */
+fun Modifier.tvLongPressKeyOverClick(
+    onLongPress: () -> Unit,
+    enabled: () -> Boolean = { true },
+    keys: Set<Key> = TV_CONFIRM_KEYS,
+): Modifier = composed {
+    val state = remember { TvLongPressKeyState() }
+    onFocusChanged { if (!it.hasFocus) state.reset() }
+        .onPreviewKeyEvent { event ->
+            if (event.key !in keys) return@onPreviewKeyEvent false
+            if (!enabled()) {
+                state.reset()
+                return@onPreviewKeyEvent false
+            }
+            when (event.type) {
+                KeyEventType.KeyDown -> {
+                    val repeat = event.isAutoRepeat
+                    if (repeat == false || (repeat == null && !state.tracking)) {
+                        // 新的一次按下: 从本节点起手, 这一发交给底下的按钮 (它据此进按下态、抬起时点击)
+                        state.reset()
+                        state.tracking = true
+                        state.start()
+                        false
+                    } else {
+                        if (state.tracking) {
+                            state.downCount++
+                            val held = state.startMark?.elapsedNow() ?: Duration.ZERO
+                            if (!state.longPressFired &&
+                                state.downCount >= LONG_PRESS_KEY_DOWN_COUNT &&
+                                held >= LONG_PRESS_MIN_HOLD
+                            ) {
+                                state.longPressFired = true
+                                onLongPress()
+                            }
+                        }
+                        // 起手之后的连发与没起手的残余连发都不给底下
+                        true
+                    }
+                }
+
+                KeyEventType.KeyUp -> {
+                    val shortPress = state.tracking && !state.longPressFired
+                    state.reset()
+                    // 短按放行: 底下的按钮在抬起时点一下. 长按过的、别处起手的都吞掉
+                    !shortPress
+                }
+
+                else -> false
+            }
         }
 }

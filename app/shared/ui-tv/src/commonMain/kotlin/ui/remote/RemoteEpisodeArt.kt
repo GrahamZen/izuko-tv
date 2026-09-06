@@ -20,6 +20,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.matchToEpisodes
 import me.him188.ani.app.data.network.toTmdbLanguage
@@ -99,6 +101,8 @@ internal object RemoteEpisodeArt {
 /** 状态 JSON 里放 `art` (见 [RemoteEpisodeArt]); 还没查到 / 没有图就不放. */
 internal fun JsonObjectBuilder.putEpisodeArt(subjectId: Int?, episodeId: Int?) {
     if (subjectId == null || episodeId == null) return
+    // NSFW 作品不给底图: 它也是手机锁屏媒体卡的封面, 那里糊不了 (见 SubjectNsfw)
+    if (SubjectNsfw.modeOf(subjectId) != NsfwMode.DISPLAY) return
     val art = RemoteEpisodeArt.peek(subjectId, episodeId)
     if (!art.isNullOrEmpty()) putJsonArray("art") { art.forEach { add(it) } }
 }

@@ -53,7 +53,7 @@ data class MediaSelectorContext(
      * 已知为空集 —— 否则那些场景会永远停在"未知", 让依赖它的判断一直走兜底.
      *
      * 这是一条实时流的快照: 缓存下完的那一刻本 context 会重新 emit, 筛选随之重算, 界面上的
-     * "缓存未完成"警告当场消失. 见 MediaCacheManager.unplayableCacheMediaIds.
+     * "缓存未完成"警告当场消失. 见 MediaDownloadManager.unplayableCacheMediaIds.
      */
     val unplayableCacheMediaIds: Set<String>? = emptySet(),
 ) {

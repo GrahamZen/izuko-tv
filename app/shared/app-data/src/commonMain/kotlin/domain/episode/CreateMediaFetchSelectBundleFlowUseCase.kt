@@ -24,14 +24,18 @@ import kotlinx.coroutines.flow.onStart
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
-import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.createFetchFetchSession
+import me.him188.ani.app.domain.media.fetch.withRegionalAliases
+import me.him188.ani.app.domain.media.fetch.withRegionalNames
+import me.him188.ani.app.domain.media.fetch.withRegionalSeriesNames
 import me.him188.ani.app.domain.media.selector.DefaultMediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorContextFlowProducer
+import me.him188.ani.app.domain.player.extension.holdSearchingForFinishedCache
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
@@ -77,7 +81,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
     private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
     private val settingsRepository: SettingsRepository by inject()
     private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
-    private val mediaCacheManager: MediaCacheManager by inject()
+    private val mediaCacheManager: MediaDownloadManager by inject()
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>
@@ -139,7 +143,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     bundle.episodeCollectionInfo.episodeInfo,
                     episodes = bundle.subjectCollectionInfo.episodes.map { it.episodeInfo },
                     seriesInfo = bundle.seriesInfo,
-                )
+                ).let { withRegionalNames(it) }
                 // 用户为本条目改过的搜索关键词只在建会话时读一次: 会话内改动走 MediaFetchSession.setFetchRequest,
                 // 不必因此重建整个会话 (选中项与播放都挂在会话上)
                 episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()
@@ -170,8 +174,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     mediaSourceManager.allInstances.map { list ->
                         list.map { it.mediaSourceId }
                     },
-                    flowOf(bundle.seriesInfo),
-                    flowOf(bundle.subjectInfo),
+                    flowOf(withRegionalSeriesNames(bundle.seriesInfo, bundle.subjectInfo)),
+                    flowOf(withRegionalAliases(bundle.subjectInfo, bundle.seriesInfo)),
                     fetchSession.latestRequest.map { bundle.episodeInfo.withRequestedNumbers(it) },
                     mediaSourceManager.mediaSourceTiersFlow(), // only access local settings
                     // 缓存没下完时在选源菜单里标成"不可用"而不是藏掉, 见 MediaExclusionReason.CacheNotReady
@@ -184,6 +188,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                 flowCoroutineContext = flowContext,
             )
 
+            // 「有缓存时直接播, 不搜索」: 交出去之前停住缓存以外的源, 见 PlayCacheWithoutSearchingExtension
+            holdSearchingForFinishedCache(fetchSession, settingsRepository, mediaCacheManager, bundle.subjectId, bundle.episodeId)
             MediaFetchSelectBundle(
                 fetchSession,
                 selector,
