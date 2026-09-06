@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -28,6 +29,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Slider
@@ -77,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import me.him188.ani.utils.logging.info
@@ -91,16 +97,23 @@ import me.him188.ani.app.ui.foundation.effects.onPointerEventMultiplatform
 import me.him188.ani.app.ui.foundation.input.asGesturePointerType
 import me.him188.ani.app.ui.foundation.theme.slightlyWeaken
 import me.him188.ani.app.ui.foundation.theme.weaken
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.player_frame_preview_failed
+import me.him188.ani.app.ui.lang.player_frame_preview_not_downloaded
 import me.him188.ani.app.videoplayer.ui.gesture.SwipeSeekerConfig
 import me.him188.ani.app.videoplayer.ui.gesture.isVerticalDragCancelled
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.chapters
+import org.jetbrains.compose.resources.stringResource
 import org.openani.mediamp.metadata.Chapter
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 const val TAG_PROGRESS_SLIDER_PREVIEW_POPUP = "ProgressSliderPreviewPopup"
 const val TAG_PROGRESS_SLIDER_PREVIEW_FRAME = "ProgressSliderPreviewFrame"
+const val TAG_PROGRESS_SLIDER_PREVIEW_LOADING = "ProgressSliderPreviewLoading"
+const val TAG_PROGRESS_SLIDER_PREVIEW_FAILED = "ProgressSliderPreviewFailed"
+const val TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED = "ProgressSliderPreviewNotDownloaded"
 const val TAG_PROGRESS_SLIDER_CENTERED_PREVIEW_FRAME = "ProgressSliderCenteredPreviewFrame"
 const val TAG_PROGRESS_SLIDER = "ProgressSlider"
 
@@ -601,12 +614,16 @@ fun MediaProgressSlider(
                         // BT 源只预览已下载完成的区域, 避免抢占播放位置的下载优先级.
                         //
                         // 副作用: 往前拖恰好就是"还没下载到"的方向, 于是 BT 源上往前拖基本
-                        // 拿不到缩略图, 且帧不会被清空 —— 浮窗里留着上一个位置的旧帧
-                        // (或首次的黑色占位). 留一行日志把这种"没请求"和"请求了但解不出"分开
-                        if (!cacheProgressInfoFlow().isPositionCached(positionMillis.toFloat() / total)) {
+                        // 拿不到缩略图. 维护加载状态的 (TV) 在画面位上标出「还没下载」; 其余的帧
+                        // 不清空, 浮窗里留着上一个位置的旧帧 (或首次的黑色占位).
+                        // 留一行日志把这种"没请求"和"请求了但解不出"分开
+                        if (!framePreview.fetchesUncachedPositions() &&
+                            !cacheProgressInfoFlow().isPositionCached(positionMillis.toFloat() / total)
+                        ) {
                             framePreviewLogger.info {
                                 "Skipping frame preview at $positionMillis ms: position not fully cached"
                             }
+                            framePreview.onPositionNotDownloaded()
                             return@collectLatest
                         }
                         framePreview.requestFrame(positionMillis)
@@ -623,7 +640,7 @@ fun MediaProgressSlider(
                 contentPadding = popupContentPadding(frameOnly),
             ) {
                 ProgressSliderPreviewContent(
-                    frame = framePreview?.frame,
+                    framePreview = framePreview,
                     text = previewTimeText,
                     previewTimeTextColor = colors.previewTimeTextColor,
                     showFrame = showFrame,
@@ -678,7 +695,7 @@ fun MediaProgressSlider(
                         contentPadding = popupContentPadding(frameOnly),
                     ) {
                         ProgressSliderPreviewContent(
-                            frame = framePreview?.frame,
+                            framePreview = framePreview,
                             text = previewTimeOnThumb,
                             previewTimeTextColor = colors.previewTimeTextColor,
                             showFrame = showFrame,
@@ -749,16 +766,16 @@ fun MediaProgressSlider(
 
 @Composable
 private fun ProgressSliderPreviewContent(
-    frame: ImageBitmap?,
+    framePreview: MediaProgressFramePreviewState?,
     text: String,
     previewTimeTextColor: Color,
     showFrame: Boolean,
     frameOnly: Boolean = false,
 ) {
     when {
-        frameOnly -> PreviewFrameWithOverlaidTime(frame = frame, text = text)
+        frameOnly && framePreview != null -> PreviewFrameWithOverlaidTime(framePreview = framePreview, text = text)
         showFrame -> PreviewFrameAndTimeText(
-            frame = frame,
+            frame = framePreview?.frame,
             text = text,
             previewTimeTextColor = previewTimeTextColor,
             showFrameArea = true,
@@ -780,15 +797,19 @@ private fun popupContentPadding(frameOnly: Boolean): PaddingValues =
 /**
  * 预览帧 + 叠在其底部居中的时间 ([ProgressSliderPreviewStyle.FrameOnly]).
  *
- * 帧还没解出来时保留这块半透明底: 它同时是"正在取帧"的占位 (解一帧要一秒以上), 也让叠在
- * 上面的时间有个可读的背景. 彻底取不到帧的媒体不会走到这里 —— 那种情况 `showFrame` 就是
- * false, 浮窗退化成纯时间胶囊 (见 [MediaProgressFramePreviewState.framesAvailable]).
+ * 帧还没解出来时保留这块半透明底, 让叠在上面的时间有个可读的背景. 维护加载状态的取帧源 (TV)
+ * 在画面位上分别标出: 正在取 (进度环; 留着的上一个位置的帧压暗)、这次没取到、这里还没下载 ——
+ * 一帧要取好几秒, 只给一块灰底的话, 用户分不出是在等、失败了还是根本不会有.
+ * 彻底取不到帧的媒体不会走到这里 —— 那种情况 `showFrame` 就是 false, 浮窗退化成纯时间胶囊
+ * (见 [MediaProgressFramePreviewState.framesAvailable]).
  */
 @Composable
 private fun PreviewFrameWithOverlaidTime(
-    frame: ImageBitmap?,
+    framePreview: MediaProgressFramePreviewState,
     text: String,
 ) {
+    val frame = framePreview.frame
+    val loadStatus = framePreview.loadStatus
     Box(
         Modifier
             .size(width = 160.dp, height = 90.dp)
@@ -804,6 +825,37 @@ private fun PreviewFrameWithOverlaidTime(
                     .matchParentSize()
                     .testTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME),
                 contentScale = ContentScale.Fit,
+            )
+        }
+        // 状态内容放在底部时间之上的那块区域的正中: 居中后再往上让一截, 不和时间挤在一起
+        val statusModifier = Modifier.align(Alignment.Center).padding(bottom = 14.dp)
+        when (loadStatus) {
+            FramePreviewLoadStatus.Idle -> {}
+            FramePreviewLoadStatus.Loading -> {
+                // 留着的帧是上一个位置的: 压暗, 别让它冒充圆点这里的画面
+                if (frame != null) {
+                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)))
+                }
+                FrameLoadingIndicator(framePreview, statusModifier)
+            }
+
+            FramePreviewLoadStatus.Failed -> FrameStatusMessage(
+                text = stringResource(Lang.player_frame_preview_failed),
+                modifier = statusModifier.testTag(TAG_PROGRESS_SLIDER_PREVIEW_FAILED),
+                icon = {
+                    Icon(
+                        Icons.Rounded.ErrorOutline,
+                        contentDescription = null,
+                        Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+            )
+
+            // 不是错误, 不给红色图标: BT 源只预览已经下载的部分, 往前拖多半是这个
+            FramePreviewLoadStatus.NotDownloaded -> FrameStatusMessage(
+                text = stringResource(Lang.player_frame_preview_not_downloaded),
+                modifier = statusModifier.testTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED),
             )
         }
         // 文字自带一小块暗底: 亮画面 (雪景/白墙) 上白字会糊掉.
@@ -825,6 +877,61 @@ private fun PreviewFrameWithOverlaidTime(
         }
     }
 }
+
+/**
+ * 取帧中的进度环, 按 [MediaProgressFramePreviewState.estimatedLoadProgress] 估算 (取帧器报不出真实进度).
+ *
+ * 每 [FRAME_LOAD_PROGRESS_TICK_MILLIS] 刷新一次而不是逐帧: 环只有 28dp, 这个频率已经看不出台阶;
+ * 逐帧的 withFrameMillis 死循环还会让 UI 测试一直等不到空闲. 进度在绘制阶段读, 不引起重组.
+ */
+@Composable
+private fun FrameLoadingIndicator(
+    framePreview: MediaProgressFramePreviewState,
+    modifier: Modifier = Modifier,
+) {
+    val since = framePreview.loadingSince
+    val progress = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(framePreview, since) {
+        progress.floatValue = 0f
+        if (since == null) return@LaunchedEffect
+        while (true) {
+            progress.floatValue = framePreview.estimatedLoadProgress(since.elapsedNow().inWholeMilliseconds)
+            delay(FRAME_LOAD_PROGRESS_TICK_MILLIS)
+        }
+    }
+    CircularProgressIndicator(
+        progress = { progress.floatValue },
+        modifier = modifier.size(28.dp).testTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING),
+        color = Color.White,
+        strokeWidth = 3.dp,
+        trackColor = Color.White.copy(alpha = 0.25f),
+    )
+}
+
+/** 画面位上的状态说明 (没取到 / 还没下载): 可选的图标 + 一两行小字. */
+@Composable
+private fun FrameStatusMessage(
+    text: String,
+    modifier: Modifier = Modifier,
+    icon: (@Composable () -> Unit)? = null,
+) {
+    Column(
+        modifier.padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        icon?.invoke()
+        // 与底部的时间同一档字号: 电视上再小就看不清了
+        Text(
+            text,
+            color = Color.White.copy(alpha = 0.85f),
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private const val FRAME_LOAD_PROGRESS_TICK_MILLIS = 33L
 
 /**
  * 浮窗形状: 只有时间文字时用胶囊形; 有预览帧时用圆角矩形, 避免图片角被大圆角裁掉.

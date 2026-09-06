@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.platform
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -36,6 +37,11 @@ import java.util.concurrent.ConcurrentLinkedQueue
 abstract class AniComponentActivity : ComponentActivity() {
     @Stable
     val snackbarHostState = SnackbarHostState()
+
+    override fun attachBaseContext(newBase: Context) {
+        // Android 12L 及以下的应用内语言要自己覆盖到 Activity 上, 见 AppLocales
+        super.attachBaseContext(AppLocales.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

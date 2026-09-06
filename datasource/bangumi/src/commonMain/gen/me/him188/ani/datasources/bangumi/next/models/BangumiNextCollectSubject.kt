@@ -10,26 +10,35 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectionType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
+ * @param type 
+ * @param rate 评分，0 表示删除评分
  * @param comment 评价
  * @param `private` 仅自己可见
- * @param rate 评分，0 表示删除评分
  * @param tags 
- * @param type 
+ * @param progress 是否自动完成条目进度，仅在 `type` 为 `看过` 时有效，并且不会产生对应的时间线记录：           - 书籍条目会检查总的话数和卷数，并更新收藏进度到最新;           - 动画和三次元会标记所有正片章节为已完成，并同时更新收藏进度
  */
 @Serializable
 
-data class BangumiNextCollectSubject(
+data class BangumiNextCollectSubject (
+
+    @SerialName(value = "type") val type: BangumiNextCollectionType? = null,
+
+    /* 评分，0 表示删除评分 */
+    @SerialName(value = "rate") val rate: kotlin.Int? = null,
 
     /* 评价 */
     @SerialName(value = "comment") val comment: kotlin.String? = null,
@@ -37,12 +46,10 @@ data class BangumiNextCollectSubject(
     /* 仅自己可见 */
     @SerialName(value = "private") val `private`: kotlin.Boolean? = null,
 
-    /* 评分，0 表示删除评分 */
-    @SerialName(value = "rate") val rate: kotlin.Int? = null,
-
     @SerialName(value = "tags") val tags: kotlin.collections.List<kotlin.String>? = null,
 
-    @SerialName(value = "type") val type: BangumiNextCollectionType? = null
+    /* 是否自动完成条目进度，仅在 `type` 为 `看过` 时有效，并且不会产生对应的时间线记录：           - 书籍条目会检查总的话数和卷数，并更新收藏进度到最新;           - 动画和三次元会标记所有正片章节为已完成，并同时更新收藏进度 */
+    @SerialName(value = "progress") val progress: kotlin.Boolean? = null
 
 ) {
 

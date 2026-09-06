@@ -16,11 +16,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -31,12 +34,14 @@ import me.him188.ani.app.platform.ContextMP
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.tools.update.DefaultFileDownloader
+import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.FileDownloaderState
 import me.him188.ani.app.tools.update.InstallationResult
 import me.him188.ani.app.tools.update.UpdateInstallationRunner
 import me.him188.ani.app.tools.update.UpdateInstallationState
 import me.him188.ani.app.tools.update.UpdateInstaller
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.inSystem
@@ -46,7 +51,9 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -61,8 +68,11 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val updateInstaller: UpdateInstaller by inject()
     private val installationRunner by lazy { UpdateInstallationRunner(updateInstaller) }
 
+    /** 直接取出来: 建出来就开始拉仓库里的镜像清单 (每天一次), 到用户点下载时已经是新的. */
+    private val downloadMirrors: GitHubDownloadMirrors = get()
+
     private val fileDownloader by lazy { DefaultFileDownloader(clientProvider.get()) }
-    private val updateChecker by lazy { UpdateChecker(clientProvider.get()) }
+    private val updateChecker by lazy { UpdateChecker(clientProvider.get(), downloadMirrors::sourcesOf) }
 
     /**
      * 最新的版本. 当 [checked] 为 `true` 时, `null` 表示没有新版本. 否则表示还没有检查过.
@@ -80,13 +90,23 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val installationTasker = MonoTasker(backgroundScope)
     private val checkUpdateErrorFlow = MutableStateFlow<LoadError?>(null)
 
+    /** 正在检查的那一次查到哪个来源了, 见 [UpdateCheckProgress]; 没在检查时为 null. */
+    private val checkProgressFlow = MutableStateFlow<UpdateCheckProgress?>(null)
+
+    private val installPermissionRequestFlow = MutableStateFlow<InstallPermissionRequest?>(null)
+
+    /**
+     * 等着安装授权才开始下载的版本 (见 [UpdateInstaller.canInstallNow]), 界面据此问用户要不要去授权.
+     */
+    val installPermissionRequest: StateFlow<InstallPermissionRequest?> = installPermissionRequestFlow.asStateFlow()
+
     val presentationFlow = combine(
         latestVersionFlow,
         fileDownloaderPresenter.flow,
         autoCheckTasker.isRunning,
         installationRunner.state,
-        checkUpdateErrorFlow,
-    ) { latestVersion, fileDownloaderStats, isCheckingUpdate, installationState, checkUpdateError ->
+        combine(checkUpdateErrorFlow, checkProgressFlow, ::Pair),
+    ) { latestVersion, fileDownloaderStats, isCheckingUpdate, installationState, (checkUpdateError, checkProgress) ->
         val latestVersion = latestVersion
         val state = when {
             // 还没检查过
@@ -119,6 +139,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
             fileDownloaderStats = fileDownloaderStats,
             isCheckingUpdate = isCheckingUpdate,
             checkUpdateError = checkUpdateError,
+            checkProgress = checkProgress.takeIf { isCheckingUpdate },
             installationFailure = (installationState as? UpdateInstallationState.Failed)?.result,
             isPlaceholder = latestVersion == null && fileDownloaderStats.isPlaceholder,
         )
@@ -161,7 +182,10 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 }
                 logger.info { "Checking latest version, updateSettings=${updateSettings}" }
 
-                updateChecker.checkLatestVersion(updateSettings.releaseClass)
+                updateChecker.checkLatestVersion(
+                    updateSettings.releaseClass,
+                    onProgress = { checkProgressFlow.value = it },
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -169,6 +193,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 logger.info { "Auto update checking failed due to IOException: $e" } // 故意不打印堆栈
                 return@launch
             } finally {
+                checkProgressFlow.value = null
                 lastCheckTime.value = currentTimeMillis()
             }
 
@@ -182,6 +207,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     }
 
     fun startDownload(ver: NewVersion, uriHandler: UriHandler?) {
+        autoInstalledFile = null // 重新下载的包要能再自动装一次
         downloadTasker.launch {
             val settings = updateSettings.first()
             if (!settings.inAppDownload) {
@@ -197,33 +223,87 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 return@launch
             }
 
-            // Linux prepares a small zsync file; other platforms prepare the package URL unchanged.
-            val preparationUrls = updateInstaller.getUpdatePreparationUrls(ver.downloadUrlAlternatives)
-            val dir = updateManager.saveDir
-            if (dir.exists()) {
-                // 删除旧的文件
-                val allowedFilenames = preparationUrls.map {
-                    it.substringAfterLast("/", "")
-                }.let { list ->
-                    list + list.map { "$it.sha1" }
+            // 下载之前先要到安装授权: 授权那一刻 Android 11 会杀掉本应用, 下完再授权的话重新打开还得再下一遍
+            if (!updateInstaller.canInstallNow()) {
+                logger.info {
+                    "Install permission missing, asking before downloading ${ver.name}, " +
+                            "settingsOpened=$installPermissionSettingsOpened"
                 }
-                for (file in dir.list()) {
-                    if (file.name == ".DS_Store") continue
-
-                    if (allowedFilenames.none { file.name.contains(it) }) {
-                        logger.info { "Deleting old installer: $file" }
-                        updateManager.deleteInstaller(file.inSystem)
-                    }
-                }
+                installPermissionRequestFlow.value = InstallPermissionRequest(
+                    version = ver,
+                    offerInstallWithoutPermission = installPermissionSettingsOpened,
+                )
+                return@launch
             }
 
-            withContext(Dispatchers.IO) { dir.createDirectories() }
-            fileDownloader.download(
-                alternativeUrls = preparationUrls,
-                filenameProvider = { it.substringAfterLast("/", "") },
-                saveDir = dir,
-            )
+            downloadInApp(ver)
         }
+    }
+
+    private fun startInAppDownload(ver: NewVersion) {
+        autoInstalledFile = null
+        downloadTasker.launch { downloadInApp(ver) }
+    }
+
+    private suspend fun downloadInApp(ver: NewVersion) {
+        // Linux prepares a small zsync file; other platforms prepare the package URL unchanged.
+        val preparationUrls = updateInstaller.getUpdatePreparationUrls(ver.downloadUrlAlternatives)
+        val dir = updateManager.saveDir
+        if (dir.exists()) {
+            // 删除旧的文件
+            val allowedFilenames = preparationUrls.map {
+                it.substringAfterLast("/", "")
+            }.let { list ->
+                list + list.map { "$it.sha1" }
+            }
+            for (file in dir.list()) {
+                if (file.name == ".DS_Store") continue
+
+                if (allowedFilenames.none { file.name.contains(it) }) {
+                    logger.info { "Deleting old installer: $file" }
+                    updateManager.deleteInstaller(file.inSystem)
+                }
+            }
+        }
+
+        withContext(Dispatchers.IO) { dir.createDirectories() }
+        // 每个包的来源 = GitHub 原地址 + 清单里的各个镜像, 下载器挑最快的; 有 GitHub 接口给的 SHA-256 就按它校验
+        val packages = preparationUrls.map { url ->
+            val fileName = url.substringAfterLast("/", "")
+            DownloadPackage(fileName, downloadMirrors.sourcesOf(url), ver.sha256ByFileName[fileName])
+        }
+        fileDownloader.download(packages, dir)
+    }
+
+    /**
+     * 打开系统的授权页. 授权时 Android 11 会杀掉本应用; 重新打开后照常检查更新, 那时再下载.
+     *
+     * 这台电视打不开授权页的话直接开始下载, 下完由系统安装器询问授权, 见 [startDownloadWithoutPermission].
+     */
+    fun requestInstallPermission(context: ContextMP) {
+        val request = installPermissionRequestFlow.value ?: return
+        installPermissionRequestFlow.value = null
+        if (updateInstaller.requestInstallPermission(context)) {
+            installPermissionSettingsOpened = true
+        } else {
+            logger.info { "Install permission settings unavailable, downloading ${request.version.name} for the system installer" }
+            startInAppDownload(request.version)
+        }
+    }
+
+    /**
+     * 不等授权直接下载, 下完照常拉起系统安装器, 由它询问授权 (厂商安装器也可能按全局「未知来源」开关直接装).
+     * 给授权页不起作用的电视用, 见 [InstallPermissionRequest.offerInstallWithoutPermission].
+     */
+    fun startDownloadWithoutPermission() {
+        val request = installPermissionRequestFlow.value ?: return
+        installPermissionRequestFlow.value = null
+        logger.info { "Downloading ${request.version.name} without install permission, the system installer will ask" }
+        startInAppDownload(request.version)
+    }
+
+    fun dismissInstallPermissionRequest() {
+        installPermissionRequestFlow.value = null
     }
 
     fun restartDownload(uriHandler: UriHandler) {
@@ -242,6 +322,27 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
+    /** 最近一次自动安装的文件, 见 [autoInstall]. */
+    @Volatile
+    private var autoInstalledFile: SystemPath? = null
+
+    /**
+     * 下载完成后自动安装 (TV), 同一个下载好的文件只装一次.
+     *
+     * [install] 期间界面状态会经过 [AppUpdateState.Installing] 再回到 [AppUpdateState.Downloaded], 界面按"已下载"
+     * 触发的话会一遍遍重装, 直到系统安装器盖住界面、界面停止收集状态为止 (2026-09-22 真机: 一秒内拉起两次安装器).
+     * 用户手动点「安装」走 [install], 不受影响.
+     */
+    fun autoInstall(context: ContextMP) {
+        val state = presentationFlow.value.state as? AppUpdateState.Downloaded ?: return
+        if (state.file == autoInstalledFile) {
+            logger.info { "autoInstall: ${state.file} 已经自动装过, 不再拉起安装器" }
+            return
+        }
+        autoInstalledFile = state.file
+        install(context)
+    }
+
     fun dismissInstallationFailure() {
         installationRunner.dismissFailure()
     }
@@ -255,6 +356,27 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     }
 }
 
+/**
+ * 本进程里已经把用户送去过授权页. Android 11 起授权成功会杀掉本应用, 这个进程还在又没有授权,
+ * 说明那个页面没起作用 (没列出本应用、开关不管用, 或者用户没开), 再问时给出「直接安装」.
+ *
+ * 按进程记而不是按 [AppUpdateViewModel] 记: 首页气泡与设置页各有一个 ViewModel, 从哪边去的授权页都算.
+ */
+@Volatile
+private var installPermissionSettingsOpened = false
+
+/**
+ * 下载之前要的安装授权, 见 [AppUpdateViewModel.installPermissionRequest].
+ *
+ * @param offerInstallWithoutPermission 去过授权页回来仍然没有授权, 那个页面在这台电视上多半不起作用:
+ * 给出「直接安装」(下完交给系统安装器询问), 不然只能一遍遍去设置.
+ */
+@Immutable
+class InstallPermissionRequest(
+    val version: NewVersion,
+    val offerInstallWithoutPermission: Boolean,
+)
+
 @Immutable
 data class AppUpdatePresentation(
     val newVersion: NewVersion?,
@@ -262,6 +384,8 @@ data class AppUpdatePresentation(
     val fileDownloaderStats: FileDownloaderStats,
     val isCheckingUpdate: Boolean,
     val checkUpdateError: LoadError? = null,
+    /** 检查进行到哪一步 (见 [UpdateCheckProgress]); 没在检查时为 null. */
+    val checkProgress: UpdateCheckProgress? = null,
     val installationFailure: InstallationResult.Failed? = null,
     val currentVersion: String = currentAniBuildConfig.versionName,
     val isPlaceholder: Boolean = false,
@@ -296,10 +420,13 @@ class NewVersion(
     val name: String,
     val changelogs: List<Changelog>,
     /**
-     * 所有可行的下载地址. 任意一个都可以用
+     * 本机装得上的安装包在 GitHub 上的原地址, 首选在前 (本机架构的专包, 然后 universal).
+     * 加速镜像在下载时按清单展开, 见 `GitHubDownloadMirrors`.
      */
     val downloadUrlAlternatives: List<String>,
     val publishedAt: String,
+    /** 安装包文件名 → GitHub 接口给的 SHA-256 (十六进制小写). 镜像回落时拿不到, 为空. */
+    val sha256ByFileName: Map<String, String> = emptyMap(),
 ) {
     val majorChanges = changelogs.asSequence().flatMap { changelog ->
         changelog.changes.lineSequence()

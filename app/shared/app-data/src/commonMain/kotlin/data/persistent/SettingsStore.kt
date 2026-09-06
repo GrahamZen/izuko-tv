@@ -17,8 +17,11 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.nullable
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.network.TmdbImageCache
+import me.him188.ani.app.data.network.SequelSeasonTableCache
+import me.him188.ani.app.data.network.TmdbSubjectMapCache
 import me.him188.ani.app.data.repository.SavedWindowState
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionsSaveData
@@ -92,6 +95,41 @@ abstract class PlatformDataStoreManager {
             produceFile = { resolveDataStoreFile("tmdbImageCache") },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 TmdbImageCache.Empty
+            },
+        )
+    }
+
+    /** 对应表 (bangumi-tmdb-map) 的下载元数据; 表的原文在单独的文件里, 见 TmdbSubjectMapRepository. */
+    val tmdbSubjectMapStore by lazy {
+        DataStoreFactory.create(
+            serializer = TmdbSubjectMapCache.serializer()
+                .asDataStoreSerializer({ TmdbSubjectMapCache.Empty }),
+            produceFile = { resolveDataStoreFile("tmdbSubjectMap") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                TmdbSubjectMapCache.Empty
+            },
+        )
+    }
+
+    /** 「续作 → 候选季」表 (bangumi-sequel-seasons) 的下载元数据; 表的原文在单独的文件里, 见 SequelSeasonTableRepository. */
+    val sequelSeasonTableStore by lazy {
+        DataStoreFactory.create(
+            serializer = SequelSeasonTableCache.serializer()
+                .asDataStoreSerializer({ SequelSeasonTableCache.Empty }),
+            produceFile = { resolveDataStoreFile("sequelSeasonTable") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                SequelSeasonTableCache.Empty
+            },
+        )
+    }
+
+    val animeScheduleCacheStore by lazy {
+        DataStoreFactory.create(
+            serializer = AnimeScheduleCache.serializer()
+                .asDataStoreSerializer({ AnimeScheduleCache.Empty }),
+            produceFile = { resolveDataStoreFile("animeScheduleCache") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                AnimeScheduleCache.Empty
             },
         )
     }

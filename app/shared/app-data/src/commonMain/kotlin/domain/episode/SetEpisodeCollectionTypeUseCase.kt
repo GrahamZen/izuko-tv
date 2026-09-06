@@ -10,14 +10,11 @@
 package me.him188.ani.app.domain.episode
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
-import me.him188.ani.utils.coroutines.retryWithBackoffDelay
 import org.koin.core.Koin
 
 data class SetEpisodeCollectionTypeRequest(
@@ -46,11 +43,8 @@ class SetEpisodeCollectionTypeUseCaseImpl(
     private val episodeCollectionRepository: EpisodeCollectionRepository by koin.inject()
     override suspend fun invoke(subjectId: Int, episodeId: Int, collectionType: UnifiedCollectionType) {
         withContext(Dispatchers.Default) {
-            suspend {
-                // ClientRequestException
-                // Client request(PATCH https://api.bgm.tv/v0/users/-/collections/235128/episodes) invalid: 400 . Text: "{"title":"Bad Request","details":{"path":"/v0/users/-/collections/235128/episodes","method":"PATCH"},"request_id":"****","description":"you need to add subject to your collection first"}
-                episodeCollectionRepository.setEpisodeCollectionType(subjectId, episodeId, collectionType)
-            }.asFlow().retryWithBackoffDelay(3).first()
+            // 重试与失败后改回本地都在仓库里: 在这里重试的话, 每试一次本地都要先改过去再改回来, 进度条跟着闪
+            episodeCollectionRepository.setEpisodeCollectionType(subjectId, episodeId, collectionType)
         }
     }
 }

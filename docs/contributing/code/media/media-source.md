@@ -43,6 +43,10 @@ interface MediaSource {
 完成标记与结果按序通过 `flatMapLatest` 的缓冲区；重试时忽略旧查询的标记，
 因此观察到终态时可以读取该次查询的完整结果（失败时为已收到的部分结果）。
 
+查询可以暂停（`MediaSourceFetchResult.pause`）：进行中的请求被取消，已拿到的结果保留，
+状态变为 `MediaSourceFetchState.Paused`（属于终态，等待完成的逻辑不会等它）；`restart` 从头重新查询。
+播放页用它在开始播放后省资源，见 [MediaSelector](media-selector.md#web-自动选择)。
+
 ## 数据源阶级
 
 > 自 Animeko v4.8。Channel 级阶级自 v4.9。
@@ -100,7 +104,7 @@ interface MediaSource {
 
 - （最简单）编写通用的数据源的配置。可以在 APP 内“设置-数据源管理”中添加 `Selector` 和 `RSS`
   类型数据源。只需编写一些 CSS Selector 配置即可使用。
-- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Animeko
+- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Izuko TV
   仓库提交代码，增加一个新的模块。
 
 [Media]: ../../../../datasource/api/src/commonMain/kotlin/Media.kt

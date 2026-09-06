@@ -206,6 +206,8 @@ sketch-compose-core = { module = "io.github.panpf.sketch4:sketch-compose-core", 
 sketch-http-core = { module = "io.github.panpf.sketch4:sketch-http-core", version.ref = "sketch" }
 sketch-svg = { module = "io.github.panpf.sketch4:sketch-svg", version.ref = "sketch" }
 sketch-animated-gif = { module = "io.github.panpf.sketch4:sketch-animated-gif", version.ref = "sketch" }
+# 电视原生页面 (View) 往 ImageView 里加载图片, 与 Compose 版共用同一个 Sketch 实例
+sketch-view-core = { module = "io.github.panpf.sketch4:sketch-view-core", version.ref = "sketch" }
 # ZoomImage (与 Sketch 同作者): 手势缩放/滚轮缩放/键盘缩放/大图分块加载
 # https://github.com/panpf/zoomimage
 zoomimage-compose-sketch4-core = { module = "io.github.panpf.zoomimage:zoomimage-compose-sketch4-core", version.ref = "zoomimage" }
@@ -281,6 +283,9 @@ onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android"
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 androidx-media = { module = "androidx.media:media", version = "1.7.0" }
 androidx-tvprovider = { module = "androidx.tvprovider:tvprovider", version = "1.0.0" }
+# 电视原生页面的行 / 列 (Google TV 桌面同款 VerticalGridView / HorizontalGridView). 钉 1.0.0: 按需挪用的 FOCUS_SCROLL_ITEM
+# 在之后的版本里标成不支持、实现已删
+androidx-leanback-grid = { module = "androidx.leanback:leanback-grid", version = "1.0.0" }
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-service = { module = "androidx.lifecycle:lifecycle-service", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "androidx-lifecycle" }

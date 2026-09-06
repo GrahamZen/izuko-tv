@@ -14,9 +14,11 @@ import androidx.compose.runtime.getValue
 import io.ktor.client.request.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -27,8 +29,10 @@ import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -36,6 +40,7 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.ProxyMode
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -43,20 +48,24 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
-import me.him188.ani.app.data.network.danmaku.AniBangumiSeverBaseUrls
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
+import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.TokenSave
+import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.codec.serializeSubscriptionToString
+import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
+import me.him188.ani.app.domain.mediasource.quark.ensureQuarkMediaSourceAdded
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.settings.ProxySettingsFlowProxyProvider
 import me.him188.ani.app.domain.settings.ProxyTester
@@ -75,6 +84,7 @@ import me.him188.ani.app.ui.settings.tabs.about.AboutTabInfo
 import me.him188.ani.app.ui.settings.tabs.app.SoftwareUpdateGroupState
 import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroupState
 import me.him188.ani.app.ui.settings.tabs.media.MediaSelectionGroupState
+import me.him188.ani.app.ui.settings.tabs.media.QuarkDriveGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.EditMediaSourceState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceLoader
@@ -102,15 +112,19 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val settingsRepository: SettingsRepository by inject()
     private val permissionManager: PermissionManager by inject()
     private val danmakuRegexFilterRepository: DanmakuRegexFilterRepository by inject()
+    private val bangumiMirrorListRepository: BangumiMirrorListRepository by inject()
 
     private val mediaSourceManager: MediaSourceManager by inject()
+    private val quarkDriveService: QuarkDriveService by inject()
     private val mediaSourceInstanceRepository: MediaSourceInstanceRepository by inject()
     private val mediaSourceSubscriptionRepository: MediaSourceSubscriptionRepository by inject()
     private val mediaSourceSubscriptionUpdater: MediaSourceSubscriptionUpdater by inject()
     private val mediaSourceCodecManager: MediaSourceCodecManager by inject()
     private val clientProvider: HttpClientProvider by inject()
     private val tmdbImageService: TmdbImageService by inject()
+    private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
     private val tokenRepository: TokenRepository by inject()
+    private val userRepository: UserRepository by inject()
 
     private val proxyProvider = ProxySettingsFlowProxyProvider(settingsRepository.proxySettings.flow, backgroundScope)
 
@@ -123,11 +137,35 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     val uiSettings: SettingsState<UISettings> =
         settingsRepository.uiSettings.stateInBackground(UISettings.Default.copy(_placeholder = -1))
 
+    val bangumiEndpointSettings: SettingsState<BangumiEndpointSettings> =
+        settingsRepository.bangumiEndpointSettings.stateInBackground(
+            BangumiEndpointSettings.Default.copy(_placeHolder = -1),
+        )
+
+    /** 自带的镜像清单 (每天从仓库拉一次, 拉不到用内置的), 「官方连不上时用镜像」那一档按顺序试. */
+    val bangumiMirrors: StateFlow<List<String>> =
+        bangumiMirrorListRepository.mirrors.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 是否登录着 Bangumi (有令牌, 不管现在连不连得上): 登录着改用镜像要先问, 见 BangumiEndpointGroup. */
+    val bangumiLoggedIn: StateFlow<Boolean> =
+        tokenRepository.session.map { it is AccessTokenSession }.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** 「退出登录并改用镜像」里的退出登录. */
+    suspend fun logoutBangumi() = userRepository.clearSelfInfo()
+
     val themeSettings: SettingsState<ThemeSettings> =
         settingsRepository.themeSettings.stateInBackground(ThemeSettings.Default.copy(_placeholder = -1))
 
     /** 代理页底部「不加载 TMDB 背景图」. */
     val tmdbImagesDisabled: SettingsState<Boolean> = settingsRepository.tmdbImagesDisabled.stateInBackground(false)
+
+    /** TMDB 图片走哪个入口. */
+    val tmdbImageEndpoint: SettingsState<EndpointSelection> =
+        settingsRepository.tmdbImageEndpoint.stateInBackground(EndpointSelection.Default.copy(_placeHolder = -1))
+
+    /** TMDB 图片的入口清单 (每天从仓库拉一次, 拉不到用内置的). */
+    val tmdbImageHosts: StateFlow<List<String>> =
+        tmdbImageEndpoints.candidates.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val videoScaffoldConfig: SettingsState<VideoScaffoldConfig> =
         settingsRepository.videoScaffoldConfig.stateInBackground(VideoScaffoldConfig.Default.copy(_placeholder = -1))
@@ -135,8 +173,6 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     val playerKernelConfig: SettingsState<PlayerKernelConfig> =
         settingsRepository.playerKernelConfig.stateInBackground(PlayerKernelConfig.Default.copy(_placeholder = -1))
 
-    val watchTogetherSettings: SettingsState<WatchTogetherSettings> =
-        settingsRepository.watchTogetherSettings.stateInBackground(WatchTogetherSettings.Default)
 
     val videoResolverSettingsState: SettingsState<VideoResolverSettings> =
         settingsRepository.videoResolverSettings.stateInBackground(VideoResolverSettings.Default.copy(_placeholder = -1))
@@ -149,6 +185,13 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val pikpakSettingsState: SettingsState<PikPakConfig> =
         settingsRepository.pikpakConfig.stateInBackground(PikPakConfig.Default)
+
+    val quarkDriveGroupState = QuarkDriveGroupState(
+        config = quarkDriveService.config.stateIn(backgroundScope, SharingStarted.Eagerly, QuarkConfig.Default),
+        service = quarkDriveService,
+        onLoggedIn = { ensureQuarkMediaSourceAdded(mediaSourceManager) },
+        scope = backgroundScope,
+    )
 
     // Probes PikPak auth with the currently-displayed credentials. The engine
     // keeps the password persisted (obscured, see PikPakConfig.password) so a
@@ -209,7 +252,9 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val debugSettingsState = settingsRepository.debugSettings.stateInBackground(DebugSettings(_placeHolder = -1))
     val isInDebugMode by derivedStateOf {
-        debugSettingsState.value.enabled
+        // debug 包直接给: 开启方式是"在关于页 1 秒内连点 5 下", 遥控器上又难按又难发现,
+        // 而这个包本来就是拿来调试的
+        debugSettingsState.value.enabled || currentAniBuildConfig.isDebug
     }
 
     // region ConfigureProxy
@@ -282,17 +327,6 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
         onImport = { danmakuRegexFilterRepository.import(it) },
     )
 
-    val danmakuServerTesters = DefaultConnectionTesterRunner(
-        AniBangumiSeverBaseUrls.list.map {
-            ConnectionTester(id = it) {
-                clientProvider.get().use {
-                    get("$it/status")
-                }
-                ConnectionTestResult.SUCCESS
-            }
-        },
-        backgroundScope,
-    )
 
 
     private val mediaSourceLoader = MediaSourceLoader(
@@ -325,7 +359,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val subscriptionsState = mediaSourceSubscriptionRepository.flow.produceState(emptyList())
     val mediaSourceSubscriptionGroupState = MediaSourceSubscriptionGroupState(
         subscriptionsState = subscriptionsState,
-        onUpdateAll = { mediaSourceSubscriptionUpdater.updateAllOutdated(force = true) },
+        onUpdateAll = { onProgress -> mediaSourceSubscriptionUpdater.updateAllOutdated(force = true, onProgress = onProgress) },
         onAdd = { mediaSourceSubscriptionRepository.add(it) },
         onDelete = {
             launchInBackground {
@@ -430,7 +464,6 @@ private fun Map<String, ServiceConnectionTester.TestState>.toUIState(): List<Pro
     return buildList {
         this@toUIState.forEach { (id, state) ->
             val case = when (id) {
-                ServiceConnectionTesters.ID_ANI -> ProxyTestCase.AniDanmakuApi
                 ServiceConnectionTesters.ID_BANGUMI -> ProxyTestCase.BangumiApi
                 ServiceConnectionTesters.ID_BANGUMI_NEXT -> ProxyTestCase.BangumiNextApi
                 ServiceConnectionTesters.ID_TMDB -> ProxyTestCase.TmdbApi

@@ -12,10 +12,15 @@ package me.him188.ani.app.domain.media.cache.engine
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,6 +64,7 @@ import me.him188.ani.utils.io.delete
 import me.him188.ani.utils.io.deleteRecursively
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.length
 import me.him188.ani.utils.io.readAndDigest
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -67,6 +73,7 @@ import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.source.SeekableInputMediaData
 import org.openani.mediamp.source.UriMediaData
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.seconds
 
 class HttpMediaCacheEngine(
     private val downloader: HttpDownloader,
@@ -269,6 +276,27 @@ class HttpMediaCacheEngine(
                 it.status == DownloadStatus.MERGING
             }.distinctUntilChanged()
 
+        // 只在合并期间、有人订阅时每秒看一次输出文件多大, 估法见 [estimateMergeProgress]
+        override val mergeProgress: Flow<Progress?>
+            get() = isMerging.flatMapLatest { merging ->
+                if (merging) pollMergeProgress() else flowOf(null)
+            }
+
+        private fun pollMergeProgress(): Flow<Progress> = flow {
+            // 合并开始时分段都已下完, 已下载字节数就是合并的输入总量, 合并期间不再变
+            val state = downloader.getState(downloadId)
+            if (state == null) {
+                emit(Progress.Unspecified)
+                return@flow
+            }
+            val output = Path(saveDir, state.finalOutputRelativePath()).inSystem
+            while (true) {
+                val written = if (output.exists()) output.length() else 0L
+                emit(estimateMergeProgress(written, state.downloadedBytes))
+                delay(MERGE_PROGRESS_POLL_INTERVAL)
+            }
+        }.distinctUntilChanged().flowOn(Dispatchers.IO_)
+
         override val fileStats: Flow<MediaCache.FileStats> = downloader.getProgressFlow(downloadId).map {
             val totalSize = it.totalBytes
             val downloadedBytes = it.downloadedBytes
@@ -442,12 +470,27 @@ class HttpMediaCacheEngine(
     companion object {
         private val logger = logger<HttpMediaCacheEngine>()
         private val PATH_AFFECTING_CHARS_REGEX = Regex("[\\\\/:*?\"<>|]")
+        private val MERGE_PROGRESS_POLL_INTERVAL = 1.seconds
 
         @Deprecated("Use HttpMediaCacheEngine.MEDIA_CACHE_DIR instead")
         const val LEGACY_MEDIA_CACHE_DIR = "web-m3u-cache"
         const val MEDIA_CACHE_DIR = "web-m3u"
     }
 }
+
+/**
+ * 合并进度的估计: 输出文件现在的大小 [writtenBytes] / 分段一共的字节数 [inputBytes], 最多 99%.
+ *
+ * mp4/mkv 的合并是把分段按序拼成一个文件, 逐字节搬运, 这个比值就是真实进度. m3u8 由 ffmpeg 把 TS
+ * 重新封装成 MP4, TS 的封包开销被去掉, 输出通常比输入小一些, 比值到不了 100%, 合并结束时会直接跳到
+ * 完成 —— 所以这只是估计. 封顶 99% 是为了合并没结束时不显示 100%.
+ */
+internal fun estimateMergeProgress(writtenBytes: Long, inputBytes: Long): Progress {
+    if (inputBytes <= 0L) return Progress.Unspecified
+    return (writtenBytes.toDouble() / inputBytes).toFloat().coerceIn(0f, MAX_ESTIMATED_MERGE_PROGRESS).toProgress()
+}
+
+private const val MAX_ESTIMATED_MERGE_PROGRESS = 0.99f
 
 internal fun DownloadStatus.toMediaCacheState(): MediaCacheState {
     return when (this) {

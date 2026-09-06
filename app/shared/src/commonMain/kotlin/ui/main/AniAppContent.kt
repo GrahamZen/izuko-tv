@@ -77,8 +77,6 @@ import me.him188.ani.app.navigation.rememberAniBackStack
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.LocalBrowserNavigator
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteDefaults
-import me.him188.ani.app.ui.bangumi.merge.BangumiMergeScreen
-import me.him188.ani.app.ui.bangumi.merge.BangumiMergeViewModel
 import me.him188.ani.app.ui.download.DownloadManagementScreen
 import me.him188.ani.app.ui.download.createDownloadManagementViewModel
 import me.him188.ani.app.ui.download.createSubjectDownloadsViewModel
@@ -89,7 +87,7 @@ import me.him188.ani.app.ui.download.details.MediaDetailsLazyGrid
 import me.him188.ani.app.ui.download.subject.SubjectDownloadsScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
-import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
 import me.him188.ani.app.ui.foundation.animation.ProvideAniMotionCompositionLocals
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
@@ -102,8 +100,6 @@ import me.him188.ani.app.ui.foundation.effects.OnLifecycleEvent
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
@@ -116,13 +112,9 @@ import me.him188.ani.app.ui.foundation.focus.tvEntryScrollGuard
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.main_network_check_failed
-import me.him188.ani.app.ui.login.EmailLoginStartScreen
-import me.him188.ani.app.ui.login.EmailLoginVerifyScreen
-import me.him188.ani.app.ui.login.EmailLoginViewModel
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeScreen
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeViewModel
 import me.him188.ani.app.ui.playback.PlaybackHistoryScreen
-import me.him188.ani.app.ui.playback.PlaybackHistorySyncStatusScreen
 import me.him188.ani.app.ui.playback.PlaybackHistoryViewModel
 import me.him188.ani.app.ui.profile.auth.AniContactList
 import me.him188.ani.app.ui.search.SearchScreen
@@ -147,10 +139,6 @@ import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.lang.playback_session_sound_hint
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherOverlayHost
-import me.him188.ani.app.ui.watchtogether.WatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherViewModel
 import me.him188.ani.datasources.api.source.FactoryId
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.seconds
@@ -163,24 +151,18 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 fun AniAppContent(aniNavigator: AniNavigator) {
     val aniAppViewModel = viewModel<AniAppViewModel>()
     val appState = aniAppViewModel.appState.collectAsStateWithLifecycle(null).value ?: return
-    val watchTogetherViewModel = viewModel { WatchTogetherViewModel() }
-    val watchTogetherPlayerController = remember(watchTogetherViewModel) {
-        WatchTogetherPlayerController(watchTogetherViewModel::onPlayerEntryClick)
-    }
-
-    // 只有在 APP 首次启动的时候使用 initialNavRoute, 之后 back stack 自己维护并跨进程恢复
-    val backStack = rememberAniBackStack(appState.initialNavRoute)
+    // 只有在 APP 首次启动的时候使用 initialNavRoute, 之后 back stack 自己维护并跨进程恢复.
+    // 引导还没做过就先进引导页 (TV), 做完换成主页
+    val onboarding = LocalTvOnboardingVariant.current
+    val backStack = rememberAniBackStack(
+        if (onboarding?.pendingOnLaunch == true) NavRoutes.TvOnboarding else appState.initialNavRoute,
+    )
     aniNavigator.setBackStack(backStack)
 
     // 根底色: 页面切换过渡的淡入淡出间隙会露出它, 见 AniUiBehavior.blackRootBackground
     val rootBackground =
         if (LocalAniUiBehavior.current.blackRootBackground) Color.Black
         else MaterialTheme.colorScheme.background
-    // "一起看" 入口把手: 弹窗本体在下面的 WatchTogetherOverlayHost 里 (与 NavHost 同级),
-    // 入口按钮在 NavHost 内的各页面上 (播放器胶囊行), 两边隔着 NavHost 靠它通气.
-    // viewModel 而不是 remember: 遥控器形态的动作面板在本函数外面组合, 靠"同 owner 同 key"
-    // 拿同一个实例 (见 WatchTogetherEntryState 的说明)
-    val watchTogetherEntry = viewModel { WatchTogetherEntryState() }
     // 保留播放会话 (遥控器形态, 可在设置里关): 播放页退出后播放器与整条起播流水线不销毁,
     // 由侧边栏"正在播放"条目回去. holder 挂在这里 (NavHost 之外) 才能不随播放页那个返回栈条目
     // 一起死; 它同时是入口把手 (PlaybackSessionEntry), 经 CompositionLocal 给到 NavHost 内的入口.
@@ -244,8 +226,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
         CompositionLocalProvider(
             LocalNavigator provides aniNavigator,
             LocalBrowserNavigator providesDefault aniAppViewModel.browserNavigator,
-            LocalWatchTogetherPlayerController provides watchTogetherPlayerController,
-            LocalWatchTogetherEntry provides watchTogetherEntry,
             LocalPlaybackSessionEntry provides (playbackSessionHolder ?: PlaybackSessionEntry.None),
         ) {
             ProvideAniMotionCompositionLocals {
@@ -258,17 +238,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                 )
                 // 盖在导航之上的一层 (TV: 详情页返回缩回列表页 hero, 见 TvHeroZoomHandoff.Shrink)
                 LocalSubjectDetailsPageVariant.current?.Overlay()
-                BangumiSessionExpiredPromptHost(
-                    viewModel = aniAppViewModel,
-                    enabled = appState.initialNavRoute is NavRoutes.Main,
-                    onLogin = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
-                )
-                WatchTogetherOverlayHost(
-                    viewModel = watchTogetherViewModel,
-                    aniNavigator = aniNavigator,
-                )
             }
         }
     }
@@ -315,7 +284,6 @@ private fun AniAppContentImpl(
     val windowInsets = ScaffoldDefaults.contentWindowInsets
         .add(WindowInsets.desktopTitleBar()) // Compose 目前不支持这个所以我们要自己加上
     val navMotionScheme by rememberUpdatedState(NavigationMotionScheme.current)
-    val emailLoginViewModel = viewModel<EmailLoginViewModel> { EmailLoginViewModel() }
 
     // 焦点导航的通用兜底 (无需任何页面单独配合): 没有任何焦点时 Compose 不会自动分配,
     // 方向键会完全失效 (按键只会派发到根部的 onKeyEvent). 这里常驻监视 —— 只要本窗口
@@ -376,12 +344,10 @@ private fun AniAppContentImpl(
     }
 
 
-    // TV 背景放大转场只在沉浸式详情页上成立 (放大层与接手都在那套版式里): 关掉沉浸式时不建会话, 照常交叉淡入 ——
-    // 否则会话建了却没人起跑, 详情页照样不淡入, 直接硬切出来. 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与
-    // 静止之后, 淡入则边淡边组合), 流畅档反而更该用它 (见 TvVisualEffectsLevel)
-    val tvHeroZoomAllowed = LocalThemeSettings.current.tvImmersiveDetails
-    // TV: 放大进来的详情页叠在来源列表页上, 列表页常驻组合, 返回缩回落地即回 (见 TvZoomStackScene). 只在 TV 上 (有 TV 详情页变体时)
-    val tvZoomStack = tvHeroZoomAllowed && LocalSubjectDetailsPageVariant.current != null
+    // TV: 放大进来的详情页叠在来源列表页上, 列表页常驻组合, 返回缩回落地即回 (见 TvZoomStackScene). 只在 TV 上 (有 TV 详情页变体时).
+    // 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与静止之后, 淡入则边淡边组合), 流畅档反而更该用它
+    // (见 TvVisualEffectsLevel)
+    val tvZoomStack = LocalSubjectDetailsPageVariant.current != null
     val sceneStrategies = remember(tvZoomStack) {
         listOf<SceneStrategy<NavRoutes>>(if (tvZoomStack) TvZoomStackSceneStrategy() else SinglePaneSceneStrategy())
     }
@@ -434,40 +400,6 @@ private fun AniAppContentImpl(
                 else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
             },
             entryProvider = entryProvider {
-                entry<NavRoutes.EmailLoginStart> {
-                    EmailLoginStartScreen(
-                        onOtpSent = {
-                            aniNavigator.navigateEmailLoginVerify()
-                        },
-                        onBangumiLoginClick = {
-                            aniNavigator.navigateBangumiAuthorize()
-                        },
-                        onNavigateSettings = {
-                            aniNavigator.navigateSettings()
-                        },
-                        onNavigateBack = {
-                            aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
-                        },
-                        vm = emailLoginViewModel,
-                    )
-                }
-                entry<NavRoutes.EmailLoginVerify> {
-                    EmailLoginVerifyScreen(
-                        onSuccess = {
-                            aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
-                        },
-                        onBangumiLoginClick = {
-                            aniNavigator.navigateBangumiAuthorize()
-                        },
-                        onNavigateSettings = {
-                            aniNavigator.navigateSettings()
-                        },
-                        onNavigateBack = {
-                            aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                        },
-                        vm = emailLoginViewModel,
-                    )
-                }
                 entry<NavRoutes.BangumiAuthorize> {
                     val vm = viewModel<BangumiAuthorizeViewModel> { BangumiAuthorizeViewModel() }
                     BangumiAuthorizeScreen(
@@ -483,8 +415,6 @@ private fun AniAppContentImpl(
                         },
                         onAuthorizeSuccess = {
                             aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
-                            aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                            aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
                         },
                     )
                 }
@@ -561,7 +491,7 @@ private fun AniAppContentImpl(
                         val contentKey = targetState.entries.lastOrNull()?.contentKey
                         val target = contentKey?.let { subjectDetailTarget(it) }
                         // TV 叠放布局下判定已在入栈前做过 (放大的那种根本不走转场), 这里只看会话在不在, 不再新建
-                        val zoom = target != null && tvHeroZoomAllowed &&
+                        val zoom = target != null &&
                                 (if (tvZoomStack) TvHeroZoomHandoff.session?.subjectId == target else TvHeroZoomHandoff.willZoom(target))
                         if (zoom) {
                             // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
@@ -679,7 +609,6 @@ private fun AniAppContentImpl(
                         viewModel {
                             SettingsViewModel()
                         },
-                        onNavigateToEmailLogin = { aniNavigator.navigateEmailLoginStart() },
                         onNavigateToBangumiOAuth = { aniNavigator.navigateBangumiAuthorize() },
                         loadOpenSourceLibrariesJsons = {
                             listOf(
@@ -711,9 +640,6 @@ private fun AniAppContentImpl(
                                 aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
                             }
                         },
-                        onOpenSyncStatus = {
-                            aniNavigator.navigatePlaybackHistorySyncStatus()
-                        },
                         modifier = Modifier.fillMaxSize(),
                         navigationIcon = {
                             BackNavigationIconButton(
@@ -725,46 +651,26 @@ private fun AniAppContentImpl(
                         windowInsets = windowInsetsWithoutTitleBar,
                     )
                 }
-                entry<NavRoutes.PlaybackHistorySyncStatus> { route ->
-                    PlaybackHistorySyncStatusScreen(
-                        vm = viewModel { PlaybackHistoryViewModel() },
-                        onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
-                        modifier = Modifier.fillMaxSize(),
-                        navigationIcon = {
-                            BackNavigationIconButton(
-                                {
-                                    aniNavigator.popBackStack(route, inclusive = true)
-                                },
-                            )
-                        },
-                        windowInsets = windowInsetsWithoutTitleBar,
-                    )
-                }
-                entry<NavRoutes.TvPlayerChrome> { route ->
-                    // 页面实现在 ui-tv, 共享代码只认插槽. 入口只在遥控器形态的设置里摆,
-                    // 所以这里拿不到变体 = 有人从别处硬跳进来了, 原样退回去
-                    val editor = LocalTvPlayerChromeEditorVariant.current
-                    val onBack: () -> Unit = { aniNavigator.popBackStack(route, inclusive = true) }
-                    if (editor == null) {
-                        LaunchedEffect(Unit) { onBack() }
-                    } else {
-                        editor.Page(onNavigateBack = onBack, modifier = Modifier.fillMaxSize())
+                entry<NavRoutes.TvOnboarding>(
+                    // 不淡入: 从登录层按返回回到这一页时, 登录层要等本页画出来才撤 (见 TvOnboardingPage),
+                    // 淡入的那一段底下的主页会透出来
+                    metadata = NavDisplay.transitionSpec { EnterTransition.None togetherWith ExitTransition.None },
+                ) { route ->
+                    // 页面实现在 ui-tv, 共享代码只认插槽. 拿不到变体 (恢复出的返回栈里留着它, 但这次没装) 就直接去主页
+                    val onboarding = LocalTvOnboardingVariant.current
+                    // 从登录那一步按返回回来的, 下面已经垫着主页: 只出栈本页, 别再压一个主页
+                    val onFinished: () -> Unit = {
+                        if (aniNavigator.backStack.any { it is NavRoutes.Main }) {
+                            aniNavigator.popBackStack(route, inclusive = true)
+                        } else {
+                            aniNavigator.navigateMain(mainSceneInitialPage, popUpTargetInclusive = route)
+                        }
                     }
-                }
-                entry<NavRoutes.BangumiMerge> { route ->
-                    BangumiMergeScreen(
-                        vm = viewModel { BangumiMergeViewModel() },
-                        onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
-                        modifier = Modifier.fillMaxSize(),
-                        navigationIcon = {
-                            BackNavigationIconButton(
-                                {
-                                    aniNavigator.popBackStack(route, inclusive = true)
-                                },
-                            )
-                        },
-                        windowInsets = windowInsetsWithoutTitleBar,
-                    )
+                    if (onboarding == null) {
+                        LaunchedEffect(Unit) { onFinished() }
+                    } else {
+                        onboarding.Page(onFinished = onFinished, modifier = Modifier.fillMaxSize())
+                    }
                 }
                 entry<NavRoutes.Caches> { route ->
                     val selfInfo by remember { SelfInfoStateProducer() }.flow.collectAsState(null)

@@ -39,7 +39,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -48,18 +47,17 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
@@ -108,7 +106,10 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniBottomSheetDefaults
+import me.him188.ani.app.ui.foundation.widgets.AniOutlinedButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
@@ -186,7 +187,8 @@ import kotlin.math.roundToLong
 class EpisodeDetailsState(
     val subjectInfo: State<SubjectInfo>,
     val airingLabelState: AiringLabelState,
-    val recommendations: State<List<SubjectRecommendation>>,
+    /** 相关推荐. `null` = 还没拿到 (加载中或加载失败); 空列表 = 拿到了但一条都没有. */
+    val recommendations: State<List<SubjectRecommendation>?>,
     val subjectDetailsStateLoader: SubjectDetailsStateLoader,
 ) {
     private val subject by subjectInfo
@@ -240,6 +242,12 @@ fun EpisodeDetails(
      * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
      */
     hideSelectorOnSelect: Boolean = false,
+    /** 选源面板打开 / 关闭, 见 `EpisodeViewModel.onMediaSelectorShown` 与 `onMediaSelectorHidden`. */
+    onMediaSelectorShown: () -> Unit = {},
+    onMediaSelectorHidden: () -> Unit = {},
+    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    fullSearch: Boolean? = null,
+    onFullSearchChange: (Boolean) -> Unit = {},
 ) {
     var showSubjectDetails by rememberSaveable {
         mutableStateOf(false)
@@ -378,6 +386,10 @@ fun EpisodeDetails(
         mediaSelectorItem = { innerPadding ->
             var showMediaSelector by rememberSaveable { mutableStateOf(false) }
             if (showMediaSelector) {
+                DisposableEffect(Unit) {
+                    onMediaSelectorShown()
+                    onDispose { onMediaSelectorHidden() }
+                }
                 val windowAdaptiveInfo = currentWindowAdaptiveInfo1()
                 val (viewKind, onViewKindChange) = rememberSaveable { mutableStateOf(initialMediaSelectorViewKind) }
                 // 指针形态一律选完即关: 那个开关默认是关的, 直接读它等于把"点完源弹窗还盖着"变成默认行为,
@@ -434,6 +446,8 @@ fun EpisodeDetails(
                                     .padding(vertical = 12.dp, horizontal = 16.dp)
                                     .fillMaxWidth(),
                                 defaultFetchRequest = defaultFetchRequest,
+                                fullSearch = fullSearch,
+                                onFullSearchChange = onFullSearchChange,
                                 stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
@@ -469,6 +483,8 @@ fun EpisodeDetails(
                             onRestartSource = onRestartSource,
                             onRefresh = onRefreshMediaSources,
                             defaultFetchRequest = defaultFetchRequest,
+                            fullSearch = fullSearch,
+                            onFullSearchChange = onFullSearchChange,
                             modifier = Modifier.padding(top = 12.dp)
                                 .padding(horizontal = 16.dp)
                                 .fillMaxWidth(),
@@ -597,7 +613,7 @@ fun EpisodeDetails(
                     Text(stringResource(Lang.subject_episode_related_recommendations))
                 }
             }
-            for (recommendation in subjectRecommendations) {
+            for (recommendation in subjectRecommendations.orEmpty()) {
                 item("subject_recommendation_${recommendation.uniqueId}") {
                     SubjectRecommendationCard(
                         {
@@ -739,10 +755,10 @@ fun DanmakuTimeShiftDialog( // public: 播放页变体 (遥控器形态) 的弹�
     val resetText = stringResource(Lang.subject_episode_danmaku_time_shift_reset)
     val restoreText = stringResource(Lang.subject_episode_danmaku_time_shift_restore)
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            TextButton(onClick = { onConfirm(shift.roundToLong()) }) {
+            AniTextButton(onClick = { onConfirm(shift.roundToLong()) }) {
                 Text(confirmText)
             }
         },
@@ -785,19 +801,19 @@ fun DanmakuTimeShiftDialog( // public: 播放页变体 (遥控器形态) 的弹�
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    TextButton(onClick = { adjust(-500f) }) { Text("-0.5 s") }
-                    TextButton(onClick = { adjust(-100f) }) { Text("-0.1 s") }
-                    TextButton(onClick = { adjust(100f) }) { Text("+0.1 s") }
-                    TextButton(onClick = { adjust(500f) }) { Text("+0.5 s") }
+                    AniTextButton(onClick = { adjust(-500f) }) { Text("-0.5 s") }
+                    AniTextButton(onClick = { adjust(-100f) }) { Text("-0.1 s") }
+                    AniTextButton(onClick = { adjust(100f) }) { Text("+0.1 s") }
+                    AniTextButton(onClick = { adjust(500f) }) { Text("+0.5 s") }
                 }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedButton(onClick = { shift = 0f }) {
+                    AniOutlinedButton(onClick = { shift = 0f }) {
                         Text(resetText)
                     }
-                    OutlinedButton(
+                    AniOutlinedButton(
                         onClick = {
                             shift = currentShiftMillis.toFloat().coerceIn(sliderRange.start, sliderRange.endInclusive)
                         },

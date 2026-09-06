@@ -27,7 +27,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
 /**
- * Web 控制台 (网页里标题叫「Animeko 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
+ * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
  * 设置标签再分「常规 / 数据源」两页.
  *
  * 带少量脚本 (与「搜索输入」时代的纯表单页不同): 数据源结果是陆续回来的, 不刷新就看不到新结果, 所以「播放器」
@@ -56,7 +56,7 @@ internal fun renderRemoteControlPage(
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#f7f2fa">
     <meta name="referrer" content="no-referrer">
-    <title>Animeko 控制台</title>
+    <title>Izuko TV 控制台</title>
     <script>
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
@@ -65,7 +65,7 @@ internal fun renderRemoteControlPage(
     </style>
     </head>
     <body>
-    <header><span>Animeko 控制台</span><button type="button" id="help-btn" aria-label="使用说明" title="使用说明">?<span class="help-dot" hidden></span></button></header>
+    <header><span>Izuko TV 控制台</span><button type="button" id="help-btn" aria-label="使用说明" title="使用说明">?<span class="help-dot" hidden></span></button></header>
     <div id="tv-state" class="tv-state" hidden></div>
     <div id="ld-bar" class="ld-bar" hidden><div class="ld-row"><span>电视上的二维码仍在显示</span><button type="button" class="ld-x" data-ld="hide" aria-label="收起" title="收起">×</button></div><div class="ld-row ld-acts"><button type="button" class="ld-close" data-ld="close">关闭电视上的二维码</button><label class="ld-mode">以后：<select data-ld-mode></select></label></div></div>
     <section class="tab" id="tab-search" hidden>
@@ -107,8 +107,11 @@ internal fun renderRemoteControlPage(
     <div id="set-look"></div>
     <div id="set-front"></div>
     <div id="set-keep"></div>
+    <div id="set-update"></div>
     <p class="hint">下面只放要打字的设置，开关类的请在电视上改。</p>
     <div id="set-proxy"></div>
+    <div id="set-bangumi"></div>
+    <div id="set-tmdb"></div>
     <div id="set-trackers"></div>
     <div id="set-dmfilter"></div>
     <div id="set-logs"></div>
@@ -116,6 +119,7 @@ internal fun renderRemoteControlPage(
     <div id="set-sources" hidden>
     <p class="hint">修改立即保存。正在播放的这一集不受影响，下一集或重新进入播放器时生效。订阅来的源只能启用或停用。</p>
     <div id="src-subs"></div>
+    <div id="src-quark"></div>
     <div id="src-add"></div>
     <div id="src-list"></div>
     </div>
@@ -131,7 +135,7 @@ internal fun renderRemoteControlPage(
     </div>
     <div id="pick-sheet" class="sheet" hidden>
     <div class="sheet-head"><div class="sheet-title">挑番缓存</div><button type="button" class="sheet-btn" id="pick-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
-    <div class="sheet-body"><div class="seg" id="pick-seg"><button type="button" data-ptype="DOING" class="on">在看</button><button type="button" data-ptype="WISH">想看</button></div><div id="pick-body"></div></div>
+    <div class="sheet-body"><div id="pick-head"><div class="seg" id="pick-seg"><button type="button" data-ptype="DOING" class="on">在看</button><button type="button" data-ptype="WISH">想看</button><button type="button" data-ptype="SCHEDULE">新番时间表</button></div><div id="pick-days" hidden></div></div><div id="pick-body"></div></div>
     </div>
     <div id="help-sheet" class="sheet" hidden>
     <div class="sheet-head"><div class="sheet-title" id="help-title">使用说明</div><button type="button" class="sheet-btn" id="help-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
@@ -147,7 +151,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -193,9 +197,22 @@ header { padding: 16px 16px 4px; font-size: 20px; font-weight: 700; display: fle
   background: var(--chip); color: var(--on-chip); font-size: 17px; font-weight: 700; line-height: 32px; text-align: center; }
 .help-dot { position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--err); box-shadow: 0 0 0 2px var(--bg); }
 #help-sheet { z-index: 54; }
-/* 缓存标签最下面「挑番缓存」(见 PICK_SCRIPT): 在看 / 想看的番, 行同搜索结果; 有新集的那句用主题色 */
+/* 缓存标签最下面「挑番缓存」(见 PICK_SCRIPT): 在看 / 想看的番与新番时间表, 行同搜索结果; 有新集的那句
+   (时间表里是自己在看 / 想看的番) 用主题色 */
 #cl-pick { margin-top: 14px; }
+/* 分段 (与时间表的星期) 贴在面板顶上: 一天的列表常要往下翻, 换一天不必先滚回去. 头自带底色、左右撑满面板,
+   滚过去的行不会从两侧漏出来; flow-root 让分段、星期的下边距算在头里 (不然那一截透明).
+   粘性定位从面板的内容框算起, top 抵掉面板 8px 的上内边距才贴到顶边 (同 .cache-bar 的 bottom: -24px) */
+#pick-head { position: sticky; top: -8px; z-index: 3; display: flow-root; margin: -8px -16px 0; padding: 8px 16px 0; background: var(--bg); }
 #pick-seg { margin-bottom: 10px; }
+/* 星期: 二级标签, 比上面的分段轻一档 —— 选中的主题色加下划线, 今天没选中时字深一点 */
+#pick-days { display: flex; margin: -2px 0 10px; border-bottom: 1px solid var(--line2); }
+#pick-days[hidden] { display: none; }
+#pick-days button { position: relative; flex: 1; background: none; padding: 8px 0 10px; font-size: 15px; color: var(--mute); }
+#pick-days button[data-today] { color: var(--fg); font-weight: 600; }
+#pick-days button.on { color: var(--p); font-weight: 700; }
+#pick-days button.on::after { content: ''; position: absolute; left: 50%; bottom: -1px; width: 22px; height: 3px; margin-left: -11px;
+  border-radius: 3px 3px 0 0; background: var(--p); }
 .pick-item .m.pick-new { color: var(--p); font-weight: 600; }
 /* 左滑「收藏」的小菜单挂在 body 上: 要盖过全屏面板 (.sheet 50 / 缓存面板 52), 否则在「挑番缓存」面板里弹出来被压在下面, 看着像没反应 */
 .ep-menu.coll-menu { z-index: 58; }
@@ -213,6 +230,11 @@ input[type=text]:focus, input[type=password]:focus, input[type=email]:focus, tex
 .pills input { position: absolute; opacity: 0; width: 0; height: 0; }
 .pills span { display: inline-block; padding: 7px 14px; border-radius: 18px; background: var(--chip); color: var(--on-chip); font-size: 14px; line-height: 1.3; user-select: none; }
 .pills input:checked + span { background: var(--p); color: var(--on-p); }
+/* 搜索筛选里「更多年份 / 收起」: 长得跟胶囊一样, 但它是按钮不是选项 */
+.morebtn { padding: 6px 13px; border-radius: 18px; background: none; border: 1px solid var(--outline); color: var(--sub); font-size: 14px; line-height: 1.3; }
+/* .pills 自己是 flex, 优先级压过 UA 样式表给 [hidden] 的 display:none, 不补这条藏不住 */
+.pills[hidden] { display: none; }
+#year-rest { margin-top: 8px; }
 button { font: inherit; border: 0; cursor: pointer; }
 .primary { background: var(--p); color: var(--on-p); font-weight: 600; padding: 13px 18px; border-radius: 14px; font-size: 16px; }
 .wide { width: 100%; }
@@ -233,6 +255,8 @@ button { font: inherit; border: 0; cursor: pointer; }
 .now-link::after { content: " ›"; color: var(--mute); font-weight: 400; }
 .now-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 10px 0 2px; padding: 8px 12px; border-radius: 12px; font-size: 13px; text-align: left; background: var(--chip); color: var(--on-chip); }
 .now-status span { opacity: .8; }
+/* 状态条里另起一行的细节 (自动缓存这一集等到哪了、登录 / 扫码还剩多久) */
+.now-status .now-sub { flex-basis: 100%; }
 .now-status.ready { background: var(--ok-bg); color: var(--ok-fg); }
 .now-status.attention { background: var(--warn-bg); color: var(--warn-fg); }
 .now-status.error { background: var(--err-bg); color: var(--err-fg); }
@@ -457,9 +481,13 @@ button { font: inherit; border: 0; cursor: pointer; }
 .je-bool input { width: 20px; height: 20px; flex: none; }
 .seg { display: flex; background: var(--chip); border-radius: 12px; padding: 3px; margin: 2px 0 12px; }
 /* 分页标签一直贴在顶上: 翻到下面想换页不必先滚回去。胶囊本身是圆角的, 两侧会漏出底下滚过的内容,
-   所以垫一层撑满容器宽度的背景 (.tab 左右各 16px 内边距) */
-#set-seg, #search-seg { position: sticky; top: 0; z-index: 4; }
+   所以垫一层撑满容器宽度的背景 (::before, .tab 左右各 16px 内边距). 粘性定位自成层叠上下文, 负 z-index 的垫层
+   画在标签自身背景之上, 所以灰色轨道不能靠 .seg 的背景, 由 ::after 画在垫层上面 (同为 -1, 后出现的在上).
+   iOS Safari 按贴着视口顶边的粘性元素给状态栏取色: 标签自身背景用页面底色 (反正被垫层盖住), 吸顶时离顶边留 8px,
+   顶边那一排全是垫层 —— 不论按元素背景还是按像素取色, 吸顶前后状态栏都是底色 */
+#set-seg, #search-seg { position: sticky; top: 8px; z-index: 4; background: var(--bg); }
 #set-seg::before, #search-seg::before { content: ''; position: absolute; inset: -10px -16px -4px; background: var(--bg); z-index: -1; }
+#set-seg::after, #search-seg::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--chip); z-index: -1; }
 .seg button { flex: 1; background: none; padding: 8px 6px; border-radius: 10px; font-size: 14px; color: var(--sub); }
 .seg button.on { background: var(--seg-on); color: var(--p); font-weight: 700; box-shadow: 0 1px 2px var(--shadow-sm); }
 .seg small { font-size: 12px; font-weight: 400; margin-left: 2px; }
@@ -534,6 +562,19 @@ button { font: inherit; border: 0; cursor: pointer; }
 .set-card { margin-top: 12px; }
 .set-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
 .set-title small { font-size: 12px; font-weight: 400; color: var(--mute); margin-left: 6px; }
+/* 「应用更新」(见 UPDATE_SCRIPT); 进度条借缓存列表的 .cl-bar */
+.upd-line { margin: 0 0 6px; font-size: 15px; }
+.upd-status { margin-top: 10px; }
+.upd-ok { color: var(--ok); }
+.upd-bad { color: var(--err); }
+.upd-notes { margin: 2px 0 8px; padding-left: 18px; font-size: 14px; line-height: 1.5; color: var(--sub); }
+#set-update .row { margin-top: 12px; }
+#set-update button:disabled { opacity: .5; }
+/* 数据源页的夸克网盘卡片 (QUARK_SCRIPT): 二维码白底黑码, 在深色主题下也好扫 */
+.qk-qr { display: flex; justify-content: center; margin: 12px 0 4px; }
+.qk-qr img { width: 200px; height: 200px; border-radius: 12px; }
+#src-quark a.primary { text-decoration: none; text-align: center; }
+#src-quark textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .log-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .log-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--soft); text-decoration: none; }
 .log-name { min-width: 0; font-size: 15px; font-weight: 600; color: var(--p); word-break: break-all; }
@@ -602,6 +643,34 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn.coll { background: #e0932f; }
 .sw-btn.del { background: var(--del); }
 .sw-btn:disabled { opacity: .6; }
+/* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
+.sw-btn.link { background: #2f7bf0; }
+#link-dlg, #login-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(0,0,0,.45); }
+.link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
+  background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
+.link-dlg-t { font-size: 17px; font-weight: 700; }
+/* 地址整条显示, 长了就在框里滚动 (小窗最高撑到接近满屏), 能选中复制 */
+.link-dlg-u { flex: 1 1 auto; min-height: 0; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--chip);
+  font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-user-select: text; user-select: text; }
+#link-dlg a.primary { text-decoration: none; text-align: center; }
+/* 手机授权前的教学 (loginGuide): 三步, 第二步是重点 —— 授权完停在打不开的页面是正常的 */
+.login-steps { margin: 12px 0 4px; padding-left: 1.4em; font-size: 15px; line-height: 1.6; }
+.login-steps li + li { margin-top: 8px; }
+.login-steps .risk { display: block; margin-top: 4px; color: var(--err); }
+/* 设置里「已登录改用镜像」的询问 (bgmAsk): 说明两段 (第二段是风险, 红字), 三个选择竖排 —— 一行放不下 */
+.dlg-p { margin: 12px 0 0; font-size: 15px; line-height: 1.6; }
+.dlg-p.risk { color: var(--err); }
+.dlg-acts { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+/* 播放页候选行包进 .sw 之后: 选中的描边往里收, 否则被外层的圆角裁剪整圈裁掉; 被排除 / 不可选的半透明挪到行里的内容上 ——
+   行本身半透明的话, 滑动时垫在下面的按钮会从行后面透出来 */
+.sw > .item.sel { outline-offset: -2px; }
+.sw > .item.ex, .sw > .item.blocked { opacity: 1; }
+.sw > .item.ex > * { opacity: .72; }
+.sw > .item.blocked > * { opacity: .45; }
+/* 「跳到正在播的那一条」亮一下的底色要淡入淡出: .sw > .item 的平移过渡会盖掉 .item 原来的背景过渡, 补回来; 拖动中照旧不过渡 */
+#player-sources .sw > .item:not(.dragging) { transition: transform .22s cubic-bezier(.2, .8, .2, 1), background-color .5s; }
 /* 删掉的那一行: 收起高度与间距再移除 */
 .sw.gone { height: 0 !important; opacity: 0; margin-top: -8px; transition: height .25s, opacity .2s, margin-top .25s; }
 .sub-item[data-lp] { position: relative; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -703,25 +772,10 @@ body.sel-on .sheet-body { padding-bottom: calc(80px + env(safe-area-inset-bottom
 .cm-sec textarea:disabled { background: var(--disabled); color: var(--mute); }
 .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .cm-foot .toggle { margin: 0; font-size: 14px; }
-/* 评论框底部一行: 「表情」与「发表」同高 */
+/* 评分表单底部一行的「保存」 */
 .cm-foot .primary { flex: none; box-sizing: border-box; height: 40px; padding: 0 24px; font-size: 15px; }
 .cm-foot .primary:disabled { opacity: .45; }
-.cm-emo { flex: none; box-sizing: border-box; height: 40px; display: inline-flex; align-items: center; gap: 6px; background: var(--chip); color: var(--on-chip); padding: 0 14px 0 10px; border-radius: 20px; font-size: 14px; }
-.cm-emo svg { width: 20px; height: 20px; fill: currentColor; }
-.cm-emo.on { background: var(--p); color: var(--on-p); }
-.cm-preview { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
-.cm-preview[hidden], .cm-picker[hidden] { display: none; }
-.cm-preview small { display: block; font-size: 12px; color: var(--mute); }
-.cm-preview img { max-height: 2em; vertical-align: middle; }
-.cm-picker { margin-top: 10px; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; }
-.cm-packs { position: relative; display: flex; gap: 6px; padding: 8px; overflow-x: auto; border-bottom: 1px solid var(--line); }
-.cm-packs button { flex: none; box-sizing: border-box; height: 32px; background: var(--chip); color: var(--on-chip); padding: 0 14px; border-radius: 16px; font-size: 14px; white-space: nowrap; }
-.cm-packs button.on { background: var(--p); color: var(--on-p); }
-.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 2px; padding: 6px; max-height: 236px; overflow-y: auto; }
-.cm-grid button { height: 44px; background: none; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-.cm-grid button:active { background: var(--chip); }
-.cm-grid img { width: 30px; height: 30px; object-fit: contain; }
-.cm-pk-msg { text-align: center; margin: 16px 0; }
+.cm-web { display: block; box-sizing: border-box; margin-top: 8px; text-align: center; text-decoration: none; }
 input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 #cm-body form { margin-top: 4px; }
 #dm-send { margin-top: 4px; }
@@ -916,7 +970,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .acct-wait { margin-top: 12px; }
 .acct-more { margin-left: auto; flex: none; font-size: 13px; color: var(--mute); }
 .acct-menu { display: flex; gap: 8px; margin-top: 12px; }
-/* 账号菜单三个钮 (修改昵称 / 绑定邮箱 / 退出登录) 挤一行: 字号小一档、图标与左右内边距收紧, 不折行 (360 宽的手机也放得下) */
+/* 点头像展开的账号菜单 (退出登录): 按钮占满一行 */
 .acct-menu button { flex: 1; min-width: 0; padding: 13px 6px; font-size: 14px; gap: 4px; white-space: nowrap; }
 .acct-menu button svg { flex: none; width: 16px; height: 16px; }
 .acct-menu .acct-danger { background: var(--err-bg); color: var(--err-fg); }
@@ -1285,6 +1339,21 @@ private val SCRIPT = """
     var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
     return (h ? h + ':' + (m < 10 ? '0' : '') + m : String(m)) + ':' + (sec < 10 ? '0' : '') + sec;
   }
+  window.mmss = mmss;
+  // 倒计时 (还剩多少毫秒) 的「4:12」: 秒向上取整, 到期那一刻正好是 0:00
+  window.countdown = function (ms) { return mmss(Math.ceil(Math.max(0, ms) / 1000) * 1000); };
+  // 传输进度「38/79 MB · 2.1 MB/s」, 同服务端 formatTransferProgress: 单位按总量挑, 不到 10 留一位小数, 一律向下取整
+  window.fmtTransfer = function (done, total, bps) {
+    var KB = 1024, MB = KB * 1024, GB = MB * 1024, top = total > 0 ? total : done;
+    var unit = top >= GB ? GB : top >= MB ? MB : KB, name = top >= GB ? 'GB' : top >= MB ? 'MB' : 'KB';
+    function num(v, u) {
+      var tenths = Math.floor(Math.max(0, v) * 10 / u);
+      return tenths >= 100 || tenths % 10 === 0 ? String(Math.floor(tenths / 10)) : Math.floor(tenths / 10) + '.' + (tenths % 10);
+    }
+    var s = (total > 0 ? num(done, unit) + '/' + num(total, unit) : num(done, unit)) + ' ' + name;
+    if (bps != null) s += ' · ' + (bps >= MB ? num(bps, MB) + ' MB/s' : Math.floor(Math.max(0, bps) / KB) + ' KB/s');
+    return s;
+  };
   function toast(msg, ms) {
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -1313,8 +1382,8 @@ private val SCRIPT = """
   // 请求没回应: 分不清是电视休眠了 (没开「后台常驻」时 Shield 一休眠就把 Ani 收掉)、Ani 没在运行, 还是不在同一个网络, 都说上;
   // 上次连上时「后台常驻」没开 (lastKeep, 见 pollNotice) 就顺带说去哪开
   function fail() {
-    toast(T('无法连接电视。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
-      (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请在网页的「设置」中开启「后台保持连接」。') : ''), 6000);
+    toast(T('无法连接电视。请确认电视已唤醒、Izuko 正在运行，并且手机和电视连接到同一网络。') +
+      (lastKeep === false ? T('想在电视休眠或离开 Izuko 后继续连接，请在网页的「设置」中开启「后台保持连接」。') : ''), 6000);
   }
   window.fail = fail;
   function failRead() { toast(T('读取失败，请确认手机与电视在同一网络')); }
@@ -1354,12 +1423,13 @@ private val SCRIPT = """
   // 第一次不带 after, 服务端只回当前序号当基线, 打开页面时不会弹旧提示.
   // 顺带管顶上的状态条: 电视上 Ani 不在前台 (屏保 / 别的应用), 或者连不上电视 —— 连续两次失败才算, 丢一个包不闪
   // lastKeep: 上次连上时「退出 Ani 后保留 Web 控制台」开没开 (null = 还没连上过), 断连时没开就提示去设置里开
-  var noticeSeq = null, noticeFails = 0, noticeBusy = false, noticeSkip = 0, lastKeep = null;
+  // lastBgm: 上次看到的 Bangumi 线路 (见 pollNotice)
+  var noticeSeq = null, noticeFails = 0, noticeBusy = false, noticeSkip = 0, lastKeep = null, lastBgm = null;
   var tvState = document.getElementById('tv-state');
   // btn: 「不在前台」那一条里的入口 (切到电视前台, 见 TvRemoteControl.manualFront; 设置里有同一个开关, 可以提前开或撤销):
   // 'enable' = 还没开, 点了先确认再开 / 'how' = 开了还没授权, 点了说怎么授权 / 'go' = 开了且授了权, 点了直接切.
   // 内容没变不重画: 每 2 秒一轮, 重画会把正要点的按钮换掉
-  var FRONT_HOW = T('在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Animeko 开启权限。只需授权一次，仅用于从手机打开 Ani。');
+  var FRONT_HOW = T('在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Izuko TV 开启权限。只需授权一次，仅用于从手机打开 Izuko TV。');
   function setTvState(kind, text, btn) {
     var key = (kind || '') + '|' + (text || '') + '|' + (btn || '');
     if (tvState._k === key) return;
@@ -1368,7 +1438,7 @@ private val SCRIPT = """
     tvState.className = 'tv-state' + (kind ? ' ' + kind : '');
     tvState.textContent = text || '';
     if (btn) tvState.insertAdjacentHTML('beforeend', '<button type="button" class="tv-front" data-tv-front="' + btn + '">' +
-      (btn === 'how' ? T('查看授权方法') : T('打开 Ani')) + '</button>');
+      (btn === 'how' ? T('查看授权方法') : T('打开 Izuko')) + '</button>');
   }
   function frontNow(b) {
     b.disabled = true;
@@ -1380,7 +1450,7 @@ private val SCRIPT = """
     var k = b.getAttribute('data-tv-front');
     if (k === 'go') { frontNow(b); return; }
     if (k === 'how') { alert(FRONT_HOW); return; }
-    if (!confirm(T('允许从手机打开电视上的 Ani？开启后，在手机上搜索或点播时，电视会自动打开 Ani。') +
+    if (!confirm(T('允许从手机打开电视上的 Izuko？开启后，在手机上搜索或点播时，电视会自动打开 Izuko。') +
       T('首次使用需要在电视上授权，可随时在设置中关闭。'))) return;
     b.disabled = true;
     post('api/settings/front', { on: '1' }).then(function (r) {
@@ -1409,21 +1479,26 @@ private val SCRIPT = """
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
         // 有没下完的缓存时补一句: BT 服务只在 Ani 前台时才起, 这会儿下载也是停着的 (见 TvRemoteControl.noticeState)
-        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Ani 才会继续。') : '';
-        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。') + cacheHalted, 'go');
-        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。') + cacheHalted, 'how');
-        else if (n.away) setTvState('away', T('电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。') + cacheHalted, 'enable');
+        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Izuko 才会继续。') : '';
+        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Izuko。搜索或点播时会自动打开 Izuko。') + cacheHalted, 'go');
+        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Izuko。完成一次授权后，就可以从手机打开 Izuko。') + cacheHalted, 'how');
+        else if (n.away) setTvState('away', T('电视当前没有显示 Izuko。搜索和点播仍会发送到电视，打开 Izuko 后即可看到。') + cacheHalted, 'enable');
         else setTvState('');
         ldShow(!!n.launchDialog);
         lastKeep = !!n.keep;
         // app 里换了语言 (见 RemoteI18n): 整页重载拿新的译文
         if (n.lang && n.lang !== LANG) location.reload();
+        // Bangumi 的线路变了 (电视上改了连接方式、自动改成用镜像、或刚在网页上改的): 账号卡片按新状态重读
+        if (n.bgm !== lastBgm) {
+          if (lastBgm !== null && window.loadAccount) window.loadAccount();
+          lastBgm = n.bgm;
+        }
       })
       .catch(function (e) {
         noticeBusy = false;
         if (e && e.message === 'gone') { setTvState('off', T('这个地址已失效（电视上重置过地址），请在电视上重新扫码')); return; }
-        if (++noticeFails >= 2) setTvState('off', T('电视已断开。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
-          (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请先在电视上打开 Ani，再到网页的「设置」中开启「后台保持连接」。') : ''));
+        if (++noticeFails >= 2) setTvState('off', T('电视已断开。请确认电视已唤醒、Izuko 正在运行，并且手机和电视连接到同一网络。') +
+          (lastKeep === false ? T('想在电视休眠或离开 Izuko 后继续连接，请先在电视上打开 Izuko，再到网页的「设置」中开启「后台保持连接」。') : ''));
         noticeSkip = Math.min(noticeFails - 1, 4);
       });
   }
@@ -1505,6 +1580,7 @@ private val SCRIPT = """
     if (tab === 'cache' && window.loadCaches) window.loadCaches();
     if (tab === 'settings') showSetSub(setSub);
     if (tab === 'settings' && window.loadLogs) window.loadLogs();
+    if (tab === 'settings' && window.loadUpdate) window.loadUpdate();
     if (tab === 'settings' && window.loadHistory) window.loadHistory();
   }
   // 别的脚本 (播放记录面板点 ▶ 之后) 切标签用
@@ -1522,9 +1598,11 @@ private val SCRIPT = """
     if (which === 'sources') {
       if (window.loadSources) window.loadSources();
       if (window.loadSubs) window.loadSubs();
+      if (window.loadQuark) window.loadQuark();
     } else {
       if (window.loadSettings) window.loadSettings();
       if (window.loadAccount) window.loadAccount();
+      if (window.loadUpdate) window.loadUpdate();
     }
   }
   // 搜索标签里的两页: 「搜索」表单 / 「结果」列表 (电视搜索页已加载的结果)
@@ -1568,9 +1646,26 @@ private val SCRIPT = """
       if (none) none.checked = true;
     }
   }
+  // 年份从 1943 起, 默认只摊开最近十几年 (服务端渲染时就分好了), 更早的折在「更多年份」后面.
+  // 收起会藏掉已选的老年份, 所以选着折起来的年份时按钮自己隐藏, 只剩「改选别的年份」这一条路.
+  var yearMore = document.getElementById('year-more');
+  var yearRest = document.getElementById('year-rest');
+  function syncYearMore() {
+    if (!yearMore || !yearRest || !searchForm) return;
+    var picked = searchForm.querySelector('input[name=year]:checked');
+    var pickedIsHidden = !!(picked && picked.value && yearRest.contains(picked));
+    yearMore.hidden = !yearRest.hidden && pickedIsHidden;
+    yearMore.textContent = yearRest.hidden ? T('更多年份') : T('收起');
+  }
+  if (yearMore && yearRest) {
+    yearMore.addEventListener('click', function () {
+      yearRest.hidden = !yearRest.hidden;
+      syncYearMore();
+    });
+  }
   if (searchForm) {
     searchForm.addEventListener('change', function (e) {
-      if (e.target && e.target.name === 'year') syncSeasonSection();
+      if (e.target && e.target.name === 'year') { syncSeasonSection(); syncYearMore(); }
     });
   }
   function loadHistory() {
@@ -1764,13 +1859,17 @@ private val SCRIPT = """
     logout: svgIcon('M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z'),
     plus: svgIcon('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'),
     close: svgIcon('M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'),
-    star: svgIcon('M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z')
+    star: svgIcon('M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z'),
+    // 打开链接 (播放页候选行左滑): 方框右上角伸出箭头
+    openLink: svgIcon('M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z')
   };
   function svgIcon(d) { return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; }
-  // 底图拉不到: 换下一个候选 (地址里没有空格, 用空格分隔); 全都拉不到就把这一层藏起来, 露出卡片本来的底色
+  // 底图 (以及带 alt-src 的图, 如账号头像) 拉不到: 换下一个候选 (地址里没有空格, 用空格分隔); 全都拉不到就把这一层藏起来,
+  // 露出卡片本来的底色
   document.addEventListener('error', function (e) {
     var img = e.target;
-    if (!img || img.tagName !== 'IMG' || !(img.classList.contains('cv-art') || img.classList.contains('cv-bg'))) return;
+    if (!img || img.tagName !== 'IMG' ||
+        !(img.classList.contains('cv-art') || img.classList.contains('cv-bg') || img.classList.contains('alt-src'))) return;
     var alt = (img.getAttribute('data-alt') || '').split(' ').filter(Boolean);
     if (alt.length) {
       img.setAttribute('data-alt', alt.slice(1).join(' '));
@@ -2226,9 +2325,8 @@ private val SCRIPT = """
   });
 
   // 搜索结果左滑「收藏」: 先读这部番现在的收藏状态, 弹一个同选集列表样式的小菜单 (当前那项打 ✓), 点一项就设;
-  // 菜单关掉时那一行收回去
-  var COLL_TYPES = [['WISH', T('想看')], ['DOING', T('在看')], ['DONE', T('看过')], ['ON_HOLD', T('搁置')], ['DROPPED', T('抛弃')],
-    ['NOT_COLLECTED', T('取消收藏')]];
+  // 菜单关掉时那一行收回去. 没有「取消收藏」: Bangumi 没有这个操作, 不想看了就选「抛弃」
+  var COLL_TYPES = [['WISH', T('想看')], ['DOING', T('在看')], ['DONE', T('看过')], ['ON_HOLD', T('搁置')], ['DROPPED', T('抛弃')]];
   var collMenu = null;
   function closeCollMenu() {
     if (!collMenu) return;
@@ -2249,11 +2347,10 @@ private val SCRIPT = """
       m.id = 'coll-menu';
       m.setAttribute('role', 'listbox');
       m.innerHTML = COLL_TYPES.map(function (c) {
-        var cur = c[0] === d.collection || (c[0] === 'NOT_COLLECTED' && !d.collection);
+        var cur = c[0] === d.collection;
         // 属性名别用 data-ctype: 「评论与评分」那排收藏按钮用的就是它
         return '<button type="button" role="option" class="ep-opt' + (cur ? ' cur' : '') + '" data-colltype="' + c[0] + '">' +
-          '<span class="ep-mark">' + (cur ? '✓' : '') + '</span><span class="ep-name">' +
-          (c[0] === 'NOT_COLLECTED' && cur ? T('未收藏') : c[1]) + '</span></button>';
+          '<span class="ep-mark">' + (cur ? '✓' : '') + '</span><span class="ep-name">' + c[1] + '</span></button>';
       }).join('');
       document.body.appendChild(m);
       // 右对齐在按钮下面; 下面放不下 (离底栏太近) 就开在上面
@@ -2270,20 +2367,26 @@ private val SCRIPT = """
   document.addEventListener('click', function (e) {
     if (!collMenu) return;
     var o = e.target.closest && e.target.closest('#coll-menu .ep-opt');
-    if (o) {
-      var id = collMenu._sid, cur = o.classList.contains('cur');
-      closeCollMenu();
-      if (cur) return;
-      post('api/subject/collection', { id: id, type: o.getAttribute('data-colltype') })
-        .then(function (r) {
-          toast(r.message);
-          // 在「挑番缓存」面板里改的: 这部番可能换了分段 (想看 → 在看), 列表重读
-          if (r.ok && window.loadPick) window.loadPick();
-        })
-        .catch(fail);
-      return;
+    if (!o) return;
+    var id = collMenu._sid, cur = o.classList.contains('cur');
+    closeCollMenu();
+    if (cur) return;
+    post('api/subject/collection', { id: id, type: o.getAttribute('data-colltype') })
+      .then(function (r) {
+        toast(r.message);
+        // 在「挑番缓存」面板里改的: 这部番可能换了分段 (想看 → 在看), 列表重读
+        if (r.ok && window.loadPick) window.loadPick();
+      })
+      .catch(fail);
+  }, true);
+  // 按到菜单外面就关. 按下就关, 不等 click: iOS 上点没有点击处理的地方 (面板空白处、标题) 不发 click, 菜单会一直关不掉.
+  // 这里只摘菜单, 滑开的那一行交给滑动那套收起 (按在别的行上 = 只收起、不当作点击, 同没开菜单时)
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target;
+    if (collMenu && !(t.closest && (t.closest('#coll-menu') || t.closest('[data-coll]')))) {
+      collMenu.remove();
+      collMenu = null;
     }
-    if (!e.target.closest('#coll-menu') && !e.target.closest('[data-coll]')) closeCollMenu();
   }, true);
   document.querySelector('.tabbar').addEventListener('click', closeCollMenu);
 
@@ -2343,8 +2446,17 @@ private val SCRIPT = """
     if (window.mediaSessionActive && document.hidden) {
       if (++pollSkips % 4 !== 0) return;
     } else pollSkips = 0;
+    flushList();
     poll(false);
   }, 1500);
+  /** 候选列表因为有行滑开而跳过的那次重画 (见 render), 行收起后用最近一份状态补上. */
+  var listStale = false;
+  function flushList() {
+    var src = document.getElementById('player-sources');
+    if (!listStale || !lastState || window.swBusy(src)) return;
+    listStale = false;
+    src.innerHTML = renderList(lastState);
+  }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(true); });
 
   // 画「播放器」标签那张卡, art = 底图候选 (剧照 → 横屏图, 铺满卡片 + 半透明底色层, 见样式 .now-card). 轮询时卡片常整张
@@ -2407,6 +2519,7 @@ private val SCRIPT = """
       document.getElementById('player-filters').innerHTML = '';
       lastFiltersHtml = '';
       renderRefetch(false);
+      listStale = false;
       src.innerHTML = '';
       window.runHooks('unavailable', hooks.unavailable, s);
       return;
@@ -2422,16 +2535,24 @@ private val SCRIPT = """
           (s.selectedMeta ? '<span class="now-meta">' + esc(s.selectedMeta) + '</span>' : '')
         : '<span class="now-meta">' + T('尚未选择数据源') + '</span>') + '</div>' +
       (s.selectedTitle ? '<div class="now-src" title="' + esc(s.selectedTitle) + '">' + esc(s.selectedTitle) + '</div>' : '') +
+      // 前台播放页还没播起来时 (换了源 / 集之后在查数据源、缓冲) 服务端也给 session, 播起来就不给了
       (s.background
         ? sessionChip(s.session) + '<p class="hint">' + T('电视未在播放页：可以照常换源和修改查询条件，新数据源会在后台加载，回到播放器即可继续播放。') + '</p>' +
           '<button class="primary wide ic" id="open-player">' + window.ICONS.tv + T('在电视上打开播放器') + '</button>'
-        : '<div id="player-controls"></div>') +
+        : sessionChip(s.session) + '<div id="player-controls"></div>') +
       '</div>', s.art);
     lastState = s;
     chips.innerHTML = renderChips(s);
     renderFilters(s);
-    renderRefetch(true);
-    src.innerHTML = renderList(s);
+    renderRefetch(true, s.sources.some(function (x) { return x.state === 'paused'; }));
+    // 有行正滑开 / 正在拖时先不重画 (重画会把它弹回去), 记一笔由 flushList 在收起后补画 ——
+    // 状态没变时服务端只回 same, 等不来下一次 render
+    if (window.swBusy(src)) listStale = true;
+    else {
+      listStale = false;
+      src.innerHTML = renderList(s);
+      window.swPeek(src, 'player-sources', '.sw > .item');
+    }
     window.runHooks('render', hooks.render, s);
   }
 
@@ -2489,19 +2610,21 @@ private val SCRIPT = """
     if (!p) return;
     if (epMenu) closeEpMenu(); else openEpMenu(p);
   });
-  // 选一集 / 点列表外面关掉 (捕获阶段: 先于页面上别的点击处理)
+  // 选一集 (捕获阶段: 先于页面上别的点击处理)
   document.addEventListener('click', function (e) {
     if (!epMenu) return;
     var o = e.target.closest('.ep-opt');
-    if (o && epMenu.contains(o)) {
-      closeEpMenu();
-      if (o.classList.contains('cur')) return;
-      post('api/player/episode', { id: o.getAttribute('data-ep') })
-        .then(function (r) { toast(r.message); poll(true); })
-        .catch(fail);
-      return;
-    }
-    if (!e.target.closest('#ep-menu') && !e.target.closest('#ep-pick')) closeEpMenu();
+    if (!o || !epMenu.contains(o)) return;
+    closeEpMenu();
+    if (o.classList.contains('cur')) return;
+    post('api/player/episode', { id: o.getAttribute('data-ep') })
+      .then(function (r) { toast(r.message); poll(true); })
+      .catch(fail);
+  }, true);
+  // 按到列表外面就关: 按下就关, 不等 click (iOS 上点没有点击处理的地方不发 click, 同收藏菜单)
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target;
+    if (epMenu && !(t.closest && (t.closest('#ep-menu') || t.closest('#ep-pick')))) closeEpMenu();
   }, true);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeEpMenu(); });
   window.addEventListener('resize', closeEpMenu);
@@ -2582,13 +2705,18 @@ private val SCRIPT = """
    *
    * 它在列表**上方**的独立容器里, 不跟着列表画: 点了某个数据源的胶囊时列表只剩那一段 (见 renderList
    * 的 srcFilter 分支), 跟在列表末尾的话, 正好会在「刚加的源没出现」这个要用它的场景下不见了。
+   *
+   * 有数据源被暂停时 (电视开播时还没查完的), 前面多一个「完整搜索」: 全部放开, 本播放页之后一直搜完。
    */
   var refetchShown = null;
-  function renderRefetch(on) {
-    if (on === refetchShown) return;   // 每秒一次的轮询无条件重画会把按下去的按钮换掉
-    refetchShown = on;
+  function renderRefetch(on, paused) {
+    var key = on ? (paused ? 'on+paused' : 'on') : 'off';
+    if (key === refetchShown) return;   // 每秒一次的轮询无条件重画会把按下去的按钮换掉
+    refetchShown = key;
     document.getElementById('player-refetch').innerHTML = on
-      ? '<div class="src-refetch"><button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
+      ? '<div class="src-refetch">' +
+        (paused ? '<button type="button" id="src-full">' + T('完整搜索') + '</button> ' : '') +
+        '<button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
         '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p></div>'
       : '';
   }
@@ -2602,6 +2730,36 @@ private val SCRIPT = """
   // 播放卡上的数据源胶囊 (另一段脚本) 点了要展开并重画列表
   window.lastPlayerState = function () { return lastState; };
   window.renderPlayerList = renderList;
+  /*
+   * 候选行左右滑 (见 swRow, 按钮写法同搜索结果): 右滑露出「缓存」= 用这一条缓存电视当前在播的这一集 (本地缓存那组本身就是缓存,
+   * 不给); 左滑露出「打开链接」= 在手机上打开它在数据源上的链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身).
+   * 链接只认 http(s), 服务端也只给这两种.
+   */
+  function itemSwipe(it, row) {
+    var left = it.cached ? '' :
+      '<button type="button" class="sw-btn cache" data-pcache="' + esc(it.id) + '">' + window.ICONS.download + T('缓存') + '</button>';
+    var right = it.url && /^https?:\/\//i.test(it.url)
+      ? '<button type="button" class="sw-btn link" data-plink="' + esc(it.url) + '">' + window.ICONS.openLink + T('打开链接') + '</button>'
+      : '';
+    return left || right ? window.swRow(left, right, row) : row;
+  }
+  /** 滑到底「打开链接」的小窗 (见候选列表的点击处理): 链接本身是 <a target=_blank>, 由人点才能新开标签页. */
+  function openLinkDialog(url) {
+    var old = document.getElementById('link-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'link-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('打开链接') + '</div>' +
+      '<div class="link-dlg-u">' + esc(url) + '</div><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<a class="primary" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" data-ldlg="open">' + T('在新标签页打开') + '</a>' +
+      '</div></div>';
+    // 点链接照默认行为新开标签页, 点取消或外面的空白处关掉; 关放到下一轮, 不在链接自己的点击里把它从页面上拿掉
+    d.addEventListener('click', function (e) {
+      if (e.target === d || e.target.closest('[data-ldlg]')) setTimeout(function () { d.remove(); }, 0);
+    });
+    document.body.appendChild(d);
+  }
   function groupHtml(g, s) {
     var h = '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
     // 点了播放卡的数据源胶囊后亮一下的那一条 (见那里的点击处理)
@@ -2611,11 +2769,11 @@ private val SCRIPT = """
       // 去重: 在线源的「字幕组」常就是字幕语言 (简中 · 简中)
       var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size]
         .filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
-      h += '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
+      h += itemSwipe(it, '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
         '" data-id="' + esc(it.id) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
         '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
         (it.excluded ? '<span class="why">' + T('已排除：') + esc(it.reason || '') + '</span>' : '') +
-        (sel ? '<span class="badge">' + (s.background ? T('当前') : T('正在播放')) + '</span>' : '') + '</button>';
+        (sel ? '<span class="badge">' + (s.background ? T('当前') : T('正在播放')) + '</span>' : '') + '</button>');
     });
     h += '</div>';
     if (g.more > 0) h += '<p class="hint">' + T('还有 {0} 条未列出，', g.more) +
@@ -2658,6 +2816,14 @@ private val SCRIPT = """
     if (hadFull) poll(true);
   });
   document.getElementById('player-refetch').addEventListener('click', function (e) {
+    var r = e.target.closest('#src-full');
+    if (r) {
+      r.disabled = true;
+      post('api/player/full-search', {})
+        .then(function (x) { if (x.message) toast(x.message); poll(true); })
+        .catch(fail);
+      return;
+    }
     var b = e.target.closest('#src-refetch');
     if (!b) return;
     b.disabled = true;
@@ -2675,6 +2841,26 @@ private val SCRIPT = """
     else if (k === 'sub') fSub = e.target.value;
     else if (k === 'all') fAll = e.target.value;
     poll(true);
+  });
+  // 滑开露出的两颗按钮 (同搜索结果, 滑过一半松手时由 swFire 替人点):
+  // 「打开链接」: 点按钮是真的点击, 直接新标签页打开. 滑到底松手时是脚本替人点的 (isTrusted 为 false), iOS 不把拖动过的
+  // 那一下算作点击, 这时新开标签页会被静默拦掉 —— 改弹 openLinkDialog, 由人点里面的链接, 新标签页照常打开.
+  // 「缓存」用这一条缓存电视当前在播的这一集, 这一集已经在下载或已经缓存好时服务端只回一句提示
+  document.getElementById('player-sources').addEventListener('click', function (e) {
+    var l = e.target.closest('[data-plink]');
+    if (l) {
+      var url = l.getAttribute('data-plink');
+      if (e.isTrusted) window.open(url, '_blank', 'noopener,noreferrer');
+      else openLinkDialog(url);
+      return;
+    }
+    var b = e.target.closest('[data-pcache]');
+    if (!b) return;
+    b.disabled = true;
+    post('api/player/cache', { id: b.getAttribute('data-pcache') })
+      .then(function (r) { toast(r.message); })
+      .catch(fail)
+      .then(function () { b.disabled = false; });
   });
   document.getElementById('player-sources').addEventListener('click', function (e) {
     // 分段标题: 点击在 details 自己开合之前, 记下点完之后的状态
@@ -2768,7 +2954,7 @@ private val REQUEST_SCRIPT = """
 """.trimIndent()
 
 /**
- * 静音载体那一帧画面的 H.264 数据 (480x270 的深色底 + 电视图标 + Animeko 字样)。
+ * 静音载体那一帧画面的 H.264 数据 (480x270, 由 TV 横幅缩成)。
  *
  * 载体是现拼的 MP4 (见 CONTROL_SCRIPT 的 silentClipUrl): 视频轨**只有这一帧**, 靠 sample duration 撑满
  * 整集; 音频轨是 N 个一模一样的静音 AAC 帧。画面是死的 —— 想画实时内容得 canvas.captureStream() ->
@@ -2783,10 +2969,10 @@ private val REQUEST_SCRIPT = """
  * 再把 Annex B 切成 NAL, 取 type 7 / 8 / 5 分别做 SPS / PPS / IDR (type 6 的 SEI 丢掉), 各自 base64。
  * baseline + yuv420p 别改: iOS 对这一帧挑剔, 换了可能解不出来而小窗一片黑。
  */
-private const val CARRIER_SPS_BASE64 = "Z0LAHtkB4I/qEAAAAwAQAAADAyDxYuSA"
+private const val CARRIER_SPS_BASE64 = "Z0LAHtkB4I/rARAAAAMAEAAAAwMg8WLkgA=="
 private const val CARRIER_PPS_BASE64 = "aMuDyyA="
 private const val CARRIER_IDR_BASE64 =
-    "ZYiECvEYoAAoex9JycnJycnJycnJycnJycnJycnJycnJycnJycnJyddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddf+W0Ntgq5ZQE1B0nwAJHfQksDgIHnZ6PFxJgYCUoWD9gSDPo8Dx/v/hPz++93333334rXOqQQB3BGbnl4R9dI6WE6xSXONoE0ivJTUFdddddddddddddddddddcdBUhf5r9a3BXfffffff///DwKteoK66666666666666666666666/wqcOHCwKoBLcGhPpPAA/xr1f+qgupwrBI3sac+PytMFdddQVOoK666666666666666666666666/6+TuJYwFXgJBZJl5AJL6x4AKPQoUqwyadMo8B+pu3/7DxwSmb7c7s07UEtdddddddddddddddddddddddddfCN3L/hIFHATmCR/QAosLP4UtnqGsxCDp4BjVLja6666666666666666666666+H/TU4VBVwytmWXCF5P/wwCCAfjbpbffa33338P8i2wqOwR+MT3lDNQV11111111111111111118+q/+EgUbwJfI0m/wk4wof/+HvUNd5Mfj+vw4U8BNS3Ov8fw4f+F/4LABCywaUz/VvffvF//4S4RqxgEtc353Q3p9QU1111111111111111111311/AYaf2CiAj3z8kE1TW95rtX2kf/h/w/gJhnJ+f4gAf/D3wHSGkt/rD7+FIEvqZ6qiTMI8qG/6YKa7666666666666666666666646GP/wCVpPHz///+CHwAIdW3ok2v/qHwQG76rjRpX3pB///9AhBFgBFirrBcZq9QR11111111111111111111111///wQhrgBEXynzmDUpZo0XYQiheewAUfgm//BDkRCOnT9sO5wIKsPUoTeJ2nEJeY8zb4CDDftoeYHb9tCmz5lOyOe9FcB0DvgAkn2Pd+NYYPhpHnlYbuwu/XtjlT12pPiYcAA/igP3vRQW1HxXxTut0qJYrdbIh7gcpw93ca6xR2D9T6S2lI+XJh2jAAAZmh+WR//7rg5BtvfCFDbd0F95e3I3t0ATHMdiJQAAGLAD1nO6P7MtAPkRgCG9TijhOBoFzqfuEosd8L/kOdPpZe74AtihuTEBWteYBYFExvH6ZnNwF5GNA8N0fQn+0YhOoHvxYGTm+K2NKG18Ug3OmysJzDdvGlQNoWCX9bwDRGs8sBsmmitse0fvJwxMVaz0dP7fggEgN5SzJ763lcoz1BHXXXXXXXXXXXXXXXXXXXXX/CH/D4ILaGGlruf7Bm0P+EiV+spbn3/8AxPeGbffz8ecB/4SjGAvYa1cv+AGATh1Kmrw7WaF49/3PnD/hKMdItI+4NEcLEkZe/+QA0RwsTZl7+cBX/4S+AGiHCxIjL3wAGV3CQbLfiEBP/4Sh6nFzfmW7+ENHX0NrqD/ZMX/+EoAYlo0BM2/2bfv4f5IDFRjPMZ2lJJf5IdDUTXXXXXXXXXXXXXXXXXXXXXXXfffffXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXg"
+    "ZYiEH8RigACU/HDHABk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5Op666666666666666666666666666666666666666666///4IQ1wBqpPn5/933eHRnHkd+dAnN+Wqty1QHzcT0Uv//F+NB2Ba6nE1o+o2LlT0v5E4lYZ1uSSAXp6mBlXbHpDOj+EhXsNmG94srDttQZnRzmbDLX+uc/VAVFwVUer8NdO8BZd0BZ1LcVVOglSPgwCleG0cme8cwz/+j4e/1Cddddddddddddddddddddddf/5O8sIAo4BWh9DZAm/WARXo2VytqSuLEefcJJG453/e7/+QNYBeh9OHJ/bTN3wMw0cMdbfiIfPAGEDy2tC+mgB/4cBQLw6KmD09MxC8ks8Xd54edBmTIyqudV+OgsHCL1cIk8v9QFmm+1en1OedhWAQjXGGdn+BD9Fbep+oLa6666666666666666666/5Fk34LwUR0dRhGYdWQN+7A5INk4W9/kX/+CIIm70fuj/hCPvWgzXX+0tmPyDQUcAvsaK7f/+bgPd/mYbWrVfmc/9B8NBrdiFd5m3CM5/NqYWE/IHxxYEPURh3nL/AS/pe0oKa66666666666666666//+1ocBNwE5TG1naI5OOAi8U/tL//BWcIFvJe6vDhCzOw/5mCGSrr//7MUOAm4BemZZ3d5uXgHeJf9pf/4IjggfXlv/CpQzMwmrTOrTOrdNKfSmKD27yfhDyMwkHk49+zNMFtdddddddddddddddddf7Q/7DgKATZ/NHQxjyZjsxEu0UsPMwUxBKO1119rext8g0FHAksaJMPGz/34dIkM5N3XzQ2oTvplVibV5lVv6Q+lIUDkCamaWSQfRJVlyP1GJNMHMO///+/qPrrrrrrrrrrrrrrrrr///YIwUB6mfLUwU11/2t/wWAimQwIBML7nLf+cf/8NG/lpsHBvIza7fwmp80ktL/uePr6AxId65SQZeCPesOajMmfdBNTa3QD0A/8//6igqtYdJSQBv/iQw6mSkRHm10lTXfhk/2/+dV1wWl4TzgAl1zF/b/pTD7BGPolM5bKH/9hMYJHoPeVryQe9eV3RVBPXXXXXXXXXXXXXXXX///BCHOADAt8SbQ/8nIuQF4wrEi+AbtorUo5MnIyV0Qmlv0wU1110v//k0FwJIEaJj70CMzNqQSZ8ozjADgH5/z/YmlsZ/jTQTZ7qHMzaYZheLxyf4duH8vP7rcea/n/6TT6TagTxfkS/DsnH8CV6H8vy6QFQ9PRT/NjhBoDeVj9rrrhqtY4zjmGJ6uhYDPIUb8y9v/9q/YTLggth2K6uJa9lzGoJ666666666666666///4LgRcAnCsGUM7/F453/IiIiy5BpuAkMNSbAlZkf7vamZeMzXn8KkNjHMp+IgpPAGGc4+uuv//7wXAiwCiyTmaYvb7f+N3uOQIG4DEWKKBTgJww8eqlfw3UN12+3ychIikXvwRm8ETso3f/ZXYVLMM7gEnjbs/AGb/WbAFhyIzYq0blqA2wRR/5///dzj2HSQxFO4jksnHP72lAK5tGRhdKttv/ok1VYApxG7yeGESAEZpvGX0IjjOzvwn40wyde+GkwnpggKEtuJ+AiXLgZAhjgxEEqU/Snw2Hm/3gr9gbQPNPeIwicKYJ666666666666666/ylYg+QaCjgFsYzb15/8dTOBqGmqyov///ww6fhvV4H+UOgBx+Ub8Mny7///ug6TR88AF/lHhf474gYv5kAfba4q/+OPoOxXyw95OB1NoKW0eZX+bf8b7+CjgjN0G3UYzkngGQM6993/yBrgjq7kbGx0BVKdDM+xt9tNO77l/3jpH9RD/f4AqxEA1E+M0cH1BJt8+//IiJ3l0icAnlNoDQ2WUKHfIks7AE+4db6l+qeMvwf+7QgTUyAKXkEdfaEl3R7QSDOiaqXjfdmozNYfI+RWd2XzwxvVZx6Px/gdoNeX/KzVYQ/gBGSXkBlCf33gJHho68GPiFZH2091vdffDj0W0hAxCC08FjZCXrgxzFdFsjWg8fyquZimkMzSrs12kf/B+oBBPi8q1Al8yUu0TnjE4DASnTYwCIaSj5PgsnH99Kqqvzc9bkGmn/F+f9DlYgPtpnumCPp6fCmOD1v94R75raZ2R9+IwTBPXXXXXXXXXXXXXXXmuD/+g0CbAi6Ls7+NoC/qXnSG4z3f93//0Cs4yilv5EiOnHf9rAHZiTubqLIyes83Mcjb8VQLKmsQwkVqaHxTCTkEJmC//C+gyCKANVI2n5qN8HdN6fjR3N+f5U/3d3/RfANkH2ogRfnBjcA5vstz/bvv/9BYo6yQdT4v6p/z50mgnBYGpgYw4s//zScOAmiohIOAvOeLR6Q2J+RbIonCxRDCRRHWIIxUozP8CT9V6dyWI3Jdc52W3OXiLPmYgJR0maAOSD1N8j01Jzx4+M9/bsxy7Df43AHBfolcA7t5NeeA6/kVM3/vkewfgMx3HtLNDGdJ9qbW+wuSQLYdjBC6+eblfOsP/+wQBMPqZr6f0/+w4M8DKSZZ6ZZt+yipJglrrrrrrrrrrrrrrrvv2tpRoZ7DQIgQW/WnUz6Y1jnvNCxd+H0p9ggK/9NPRNJhkDFdNXdv8nrIllmiGCuj7Wu11XF//QaBBHH1wbu5kEF6bf3364Tvz//a3tLECpvAIR9CW23AQvWMEX6PHp87fwy4bM4uRtP8kO/hCKS9f+X9gh8Ax4jDv9va1zYJPpLn+ROw7+seE7mRVdeeAskwT111111111111111116U+px1eOBMCNr5/hx0pDk/UjKtMLwAK7Z4Y7yT6CV0pQlSrBb6eJD4yH6nvDA0HOgbDlsfGWK3LS3gSoCr78XpM/BYKdY83TD954YRKfU8diF7fT/+q52C0+Ikoy8lFcsuXebah///xeC4PYAszDNizBo7WX4Xl3m3/7u78QTgFFhIXxAMWLLQxJltjc33mTIi4/+CeU5cWVId7OeFcrwKUidPQ0Tw35/yI0W7iT9lYs39/7N9o4QJjvwLyHsFhnuBKQHkO/EeOd7MZ8f8N2MOPBGX6ndZvoIQk+u1+mCeuuuuuuuuuuuuuuuuu1xP1X68FgJlqPSiACkm+t5Ej+ZyoqKv/mz9y0Hfd1vQZY/c+15uI6XeH6S+wuEX4EO3vP+aPfqIf9B8cAlw8V+QyKo8f///0GiKtSy5o/ANrnMc6Ij6fcmk333L/0GjgzDi0Mv9/kR0TWbn1+8V4/+gWQVo1niS62+Tf7v/1Q6NtXEuBPWnHf4JHu39p/3NvcnG/JJ35UvBHvBI4NVToi/V4BwPsnG+P8LuE0ahfyL//BWcIuKGdT3gAQO5r+/g74iCGCWDFi6666666666666666666WlrrrrrpaWlrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrw=="
 
 /**
  * 播放控制的脚本: 「正在播放」卡片里的进度条 + 后退 10 秒 / 播放暂停 / 前进 10 秒.
@@ -3317,7 +3503,7 @@ private val CONTROL_SCRIPT = """
     var metaKey = (mediaState.title || '') + '|' + (mediaState.episode || '') + '|' + list.join(',');
     if (metaKey === lastMetaKey) return;
     lastMetaKey = metaKey;
-    var title = mediaState.title || 'Animeko', artist = mediaState.episode || '';
+    var title = mediaState.title || 'Izuko TV', artist = mediaState.episode || '';
     function apply(artwork) {
       // 探测期间换集了就作废, 别把上一集的图贴到这一集上
       if (lastMetaKey !== metaKey) return;
@@ -3327,7 +3513,7 @@ private val CONTROL_SCRIPT = """
       navigator.mediaSession.metadata = new MediaMetadata({
         title: title,
         artist: artist,
-        album: 'Animeko',
+        album: 'Izuko TV',
         artwork: use
       });
     }
@@ -4322,22 +4508,26 @@ private val SOURCES_SCRIPT = """
     return chunks;
   }
 
-  /** 拆分 + 逐批发 + 汇总: 选文件与粘贴都走这条. */
-  function importSourcesJson(text) {
+  /** 拆分 + 逐批发 + 汇总: 选文件与粘贴都走这条. onBatch(第几批, 共几批) 在每一批发出前调. */
+  function importSourcesJson(text, onBatch) {
     var chunks = importChunks(text);
     if (!chunks) {
       return Promise.resolve({ ok: false, message: T('内容太大了，请按数据源拆成几份分别导入') });
     }
     if (chunks.length > 1) toast(T('内容较大，分 {0} 批导入', chunks.length));
-    return postImport(chunks);
+    return postImport(chunks, onBatch || function () {});
   }
   /** 多份时逐份发 (不并发, 电视那边只有一个线程池), 汇总服务端报回来的数量. */
-  function postImport(chunks) {
-    if (chunks.length === 1) return post('api/sources/import', { text: chunks[0] });
+  function postImport(chunks, onBatch) {
+    if (chunks.length === 1) {
+      onBatch(1, 1);
+      return post('api/sources/import', { text: chunks[0] });
+    }
     var added = 0, failed = 0, last = '';
     var chain = Promise.resolve();
-    chunks.forEach(function (body) {
+    chunks.forEach(function (body, i) {
       chain = chain.then(function () {
+        onBatch(i + 1, chunks.length);
         return post('api/sources/import', { text: body }).then(function (r) {
           if (r.ok) added += (r.added || 0); else failed++;
           if (r.message) last = r.message;
@@ -4436,11 +4626,21 @@ private val SOURCES_SCRIPT = """
     e.preventDefault();
     if (form.getAttribute('data-kind') === 'import') {
       var text = form.elements.text.value;
+      // 导入进行中再点 (或回车) 不再发一遍: 分批导入要一会儿, 重复点会把同一批源导入两次
+      var go = form.querySelector('button[type="submit"]');
+      if (form._importing) return;
       if (!text.trim()) { toast(T('先选一个 JSON 文件，或把内容粘贴到框里')); return; }
-      importSourcesJson(text).then(function (r) {
+      var label = go.textContent;
+      form._importing = true;
+      go.disabled = true;
+      var done = function () { form._importing = false; go.disabled = false; go.textContent = label; };
+      importSourcesJson(text, function (i, n) {
+        go.textContent = n > 1 ? T('导入中 {0}/{1} 批…', i, n) : T('导入中…');
+      }).then(function (r) {
+        done();
         toast(r.message);
         if (r.ok) { clearAdd(); lastTemplates = ''; load(); }
-      }).catch(fail);
+      }).catch(function () { done(); fail(); });
       return;
     }
     var t = data.templates[+document.getElementById('src-new').value];
@@ -4848,9 +5048,10 @@ private val SUBS_SCRIPT = """
   window.loadSubs = load;
   function render(d) {
     var items = d.items || [];
+    // 订阅一个个依次更新, 各要拉一次远端: 更新中写到第几个
     var h = '<div class="card sub-card"><div class="sub-head"><b>' + T('订阅') + '</b><small>' + T('在线数据源都来自订阅') + '</small>' +
       '<button type="button" class="sub-refresh ic" data-sub="refresh"' + (d.updating ? ' disabled' : '') + '>' +
-      window.ICONS.refresh + (d.updating ? T('更新中…') : T('立即更新')) + '</button></div>';
+      window.ICONS.refresh + (d.updating ? (d.total ? T('更新中 {0}/{1}…', d.current, d.total) : T('更新中…')) : T('立即更新')) + '</button></div>';
     if (!items.length) h += '<p class="hint">' + T('还没有订阅，把订阅地址粘贴到下面添加') + '</p>';
     items.forEach(function (s) {
       h += '<div class="sub-item" data-lp="' + esc(s.id) + '"><span class="sel-mark" aria-hidden="true"></span><div class="sub-url">' + esc(s.url) + '</div>' +
@@ -4912,12 +5113,156 @@ private val SUBS_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接) 与 BT 额外 tracker. 只在切到本标签时
+ * 「数据源」页的夸克网盘卡片 (见 RemoteQuark): 登录状态、扫码登录 (手机上点按钮唤起夸克 App 确认, 或另一台设备扫码)、
+ * 填 Cookie、转码开关、添加数据源、退出. 扫码进行中每 2 秒拉一次状态, 切回本页时立即拉一次.
+ */
+private val QUARK_SCRIPT = """
+(function () {
+  var box = document.getElementById('src-quark');
+  var timer = null, last = '', checked = false, polling = false;
+  // 二维码还剩多久过期: 按服务端给的剩余时长倒数, 每秒只改那一个数字 (整张卡片不跟着重画)
+  var qrDeadline = 0, qrTick = null;
+  function tickQr() {
+    var el = box.querySelector('.qk-left');
+    if (el) el.textContent = T('{0} 后过期', window.countdown(qrDeadline - Date.now()));
+  }
+  // 手机上点按钮让夸克 App 用内置浏览器打开二维码里的确认页 (带这次登录的 token), 在 App 里确认即登录.
+  // 直接打开二维码链接不行: 确认页只在夸克 App 内可用, 在别的浏览器里会转到夸克网盘的下载页, 也不带 token.
+  // 链接格式与 appkey 取自夸克官方网页的唤起代码; 本页就开在夸克 App 里时直接打开确认页.
+  var ua = navigator.userAgent;
+  var inQuark = /quark\//i.test(ua);
+  var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var phone = ios || /Android|HarmonyOS|OpenHarmony/i.test(ua);
+  // 微信、QQ 等 App 的内置浏览器拦截跳转到其他 App 的链接
+  var walled = !inQuark && /MicroMessenger|\sQQ\/|DingTalk|Weibo/i.test(ua);
+  function quarkAppLink(link) {
+    if (inQuark) return link;
+    var appkey = ios ? '656bdcddd4758b39206a8181c91a7d14' : 'b20b84fd735a8dd3f7541129bacc4e9a';
+    return 'qklink://www.uc.cn/' + appkey + '?action=open_url&url=' + encodeURIComponent(link);
+  }
+  function load() {
+    clearTimeout(timer);
+    fetch('api/quark').then(function (r) { return r.json(); }).then(render).catch(function () {});
+    // 每次打开页面向夸克核对一次登录是否还有效 (顺便更新昵称与会员)
+    if (!checked) {
+      checked = true;
+      post('api/quark/check', {}).then(render).catch(function () {});
+    }
+  }
+  window.loadQuark = load;
+  function act(path, data) {
+    return post(path, data || {}).then(function (r) {
+      if (r.message) toast(r.message);
+      // 出错时回的只有 ok / message, 重新拉一次状态
+      if (r.loggedIn === undefined) load(); else render(r);
+      if (window.loadSources) window.loadSources();
+      return r;
+    }).catch(fail);
+  }
+  function render(d) {
+    if (!d || d.loggedIn === undefined) return;
+    var q = d.qr || null;
+    var h = '<div class="card set-card"><div class="set-title">' + T('夸克网盘') + '<small>' + T('在你自己的夸克网盘里找番') + '</small></div>';
+    if (d.loggedIn) {
+      var who = [d.nickname, d.member].filter(Boolean).join(' · ');
+      h += d.expired
+        ? '<div class="now-status error"><b>' + T('登录已失效') + '</b><span>' + T('重新扫码或填 Cookie 登录') + '</span></div>'
+        : '<div class="now-status ready"><b>' + T('已登录') + '</b><span>' + esc(who) + '</span></div>';
+      if (!d.added) {
+        h += '<div class="now-status attention"><b>' + T('还没有添加「夸克网盘」数据源') + '</b></div>' +
+          '<div class="row"><button type="button" class="primary" data-qk="add">' + T('添加到数据源') + '</button></div>';
+      }
+      h += '<label class="toggle"><input type="checkbox" data-qk="transcode"' + (d.transcode ? ' checked' : '') + '>' + T('转码播放') + '</label>' +
+        '<p class="hint">' + T('关闭时播放原文件。非会员播放原文件会被限速，转码只有最低清晰度') + '</p>';
+    } else {
+      h += '<p class="hint">' + T('登录后，播放时会按番名在你的夸克网盘里找视频，找到的出现在选源列表的「夸克网盘」里。登录后自动添加这个数据源。') + '</p>';
+    }
+    if (!d.loggedIn || d.expired) {
+      if (q && q.state === 'waiting') {
+        var canOpen = phone && !walled;
+        if (q.expiresIn != null) qrDeadline = Date.now() + q.expiresIn;
+        h += '<div class="qk-qr"><img src="api/quark/qr.svg?k=' + encodeURIComponent(q.link.slice(-12)) + '" alt=""></div>' +
+          (q.expiresIn != null ? '<p class="hint qk-left"></p>' : '') +
+          '<p class="hint">' + (canOpen ? T('用装了夸克 App 的另一台手机扫码；或者在这台手机上点下面的按钮，跳到夸克 App 里确认登录。')
+            : walled ? T('在微信、QQ 里打开的页面不能跳转到夸克 App：点右上角菜单选「在浏览器打开」，或者用另一台手机扫码。')
+            : T('用手机上的夸克 App 扫码登录。')) + '</p>' +
+          '<div class="row">' +
+          (canOpen ? '<a class="primary" href="' + esc(quarkAppLink(q.link)) + '"' + (inQuark ? ' target="_blank" rel="noopener"' : '') + '>' + T('在夸克 App 中确认') + '</a>' : '') +
+          '<button type="button" class="ghost" data-qk="qr-cancel">' + T('取消') + '</button></div>';
+        if (canOpen && !inQuark) h += '<p class="hint">' + T('在夸克 App 里确认后回到这里。点了没反应的话，确认这台手机装了夸克 App。') + '</p>';
+      } else if (q && q.state === 'loading') {
+        h += '<div class="now-status"><b>' + T('正在获取二维码…') + '</b></div>';
+      } else if (q && q.state === 'confirmed') {
+        // 手机上确认了, 电视还要换登录 Cookie、读账号 (几个请求), 这几秒别还挂着二维码
+        h += '<div class="now-status busy"><b>' + T('已确认，正在登录…') + '</b></div>';
+      } else {
+        if (q && q.state === 'expired') h += '<div class="now-status attention"><b>' + T('二维码已过期') + '</b></div>';
+        if (q && q.state === 'failed') h += '<div class="now-status error"><b>' + T('登录失败') + '</b><span>' + esc(q.message || '') + '</span></div>';
+        h += '<div class="row"><button type="button" class="primary" data-qk="qr">' + T('扫码登录') + '</button></div>';
+      }
+      h += '<form id="qk-cookie"><label class="f"><span>' + T('或者填写 Cookie') + '</span>' +
+        '<textarea name="cookie" rows="3" spellcheck="false" autocomplete="off" placeholder="' + T('粘贴 Cookie') + '"></textarea>' +
+        '<em>' + T('在电脑浏览器登录 pan.quark.cn，打开开发者工具，复制任意一个请求里的整段 Cookie') + '</em></label>' +
+        '<div class="row"><button type="submit" class="ghost">' + T('用 Cookie 登录') + '</button></div></form>';
+    }
+    if (d.loggedIn) h += '<div class="row"><button type="button" class="ghost" data-qk="logout">' + T('退出登录') + '</button></div>';
+    h += '</div>';
+    if (h !== last) {
+      // 重画保住正在填的 Cookie 与焦点
+      var old = box.querySelector('#qk-cookie textarea');
+      var typed = old ? old.value : '', focused = old && document.activeElement === old;
+      box.innerHTML = h;
+      last = h;
+      var ta = box.querySelector('#qk-cookie textarea');
+      if (ta) { ta.value = typed; if (focused) ta.focus(); }
+    }
+    clearTimeout(timer);
+    polling = !!(q && (q.state === 'waiting' || q.state === 'loading' || q.state === 'confirmed'));
+    if (polling) timer = setTimeout(load, 2000);
+    clearInterval(qrTick);
+    qrTick = null;
+    if (box.querySelector('.qk-left')) {
+      tickQr();
+      qrTick = setInterval(tickQr, 1000);
+    }
+  }
+  // 从夸克 App 确认完切回来时马上刷新, 不等下一轮 (后台页的定时器会被浏览器暂停)
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && polling) load();
+  });
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-qk]');
+    if (!b || b.tagName === 'INPUT') return;
+    var a = b.getAttribute('data-qk');
+    if (a === 'qr') act('api/quark/qr/start');
+    else if (a === 'qr-cancel') act('api/quark/qr/cancel');
+    else if (a === 'add') act('api/quark/add');
+    else if (a === 'logout') { if (confirm(T('退出夸克网盘登录？'))) act('api/quark/logout'); }
+  });
+  box.addEventListener('change', function (e) {
+    if (e.target.getAttribute('data-qk') === 'transcode') act('api/quark/transcode', { on: e.target.checked ? '1' : '0' });
+  });
+  box.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (form.id !== 'qk-cookie') return;
+    e.preventDefault();
+    var cookie = form.elements.cookie.value.trim();
+    if (!cookie) { toast(T('先把 Cookie 粘到框里')); return; }
+    act('api/quark/cookie', { cookie: cookie }).then(function (r) { if (r && r.ok) form.elements.cookie.value = ''; });
+  });
+})();
+""".trimIndent()
+
+/**
+ * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接)、Bangumi 连接方式 (自带镜像清单、登录是否经过镜像与自建地址)
+ * 与 BT 额外 tracker. 只在切到本标签时
  * 拉一次, 不轮询 —— 表单正在填, 重画会冲掉. 密码框不回显, 留空 = 不改.
  */
 private val SETTINGS_SCRIPT = """
 (function () {
   var proxyBox = document.getElementById('set-proxy');
+  var bgmBox = document.getElementById('set-bangumi');
+  var tmdbBox = document.getElementById('set-tmdb');
   var trBox = document.getElementById('set-trackers');
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
@@ -4926,9 +5271,9 @@ private val SETTINGS_SCRIPT = """
   function renderKeep(k) {
     if (!k) { keepBox.innerHTML = ''; return; }
     keepBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('后台保持连接') + '</div>' +
-      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>' + T('电视休眠或离开 Ani 后仍保持连接') + '</label>' +
-      '<p class="hint">' + T('开启后，Ani 会继续在后台运行，并占用少量内存。配合「从手机打开 Ani」，电视休眠或退出 Ani 后，也可以从手机重新打开。') +
-      T('关闭后，电视休眠或退出 Ani 就会断开，需要先在电视上打开 Ani 才能连接。') + '</p></div>';
+      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>' + T('电视休眠或离开 Izuko 后仍保持连接') + '</label>' +
+      '<p class="hint">' + T('开启后，Izuko 会继续在后台运行，并占用少量内存。配合「从手机打开 Izuko」，电视休眠或退出 Izuko 后，也可以从手机重新打开。') +
+      T('关闭后，电视休眠或退出 Izuko 就会断开，需要先在电视上打开 Izuko 才能连接。') + '</p></div>';
   }
   keepBox.addEventListener('change', function (e) {
     var i = e.target;
@@ -4940,6 +5285,145 @@ private val SETTINGS_SCRIPT = """
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
   var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
+  var BGM_MODES = [['AUTO', T('官方连不上时用镜像')], ['MIRROR', T('用镜像')], ['DIRECT', T('只连官方')], ['CUSTOM', T('用我自己的镜像')]];
+  function bgmUsesMirrors(mode) { return mode === 'AUTO' || mode === 'MIRROR'; }
+  // Bangumi 连接方式 (同设置页那一组): 「官方连不上时用镜像」用自带清单, 不用填; 自建地址才要输入.
+  // 推荐的是上面的代理 (直连官方). 自带镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
+  // 自建地址会带登录, 所以那一档只提示填自己的服务器, 不推荐第三方
+  function bgmCredHint(on) {
+    return on ? T('你的登录凭证与收藏数据会经过镜像，风险由你自行承担。')
+      : T('镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。');
+  }
+  // 上次读到的 Bangumi 连接方式 (含电视是否登录着), 保存前判断要不要先问
+  var bgmSaved = null;
+  function renderBangumi(b) {
+    b = b || { mode: 'AUTO', custom: '', mirrors: [], allowCredentials: false };
+    bgmSaved = b;
+    var mirrors = (b.mirrors || []).map(esc).join(T('、'));
+    bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
+      '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。') + '</p><div class="pills">' +
+      BGM_MODES.map(function (m) {
+        return '<label><input type="radio" name="mode" value="' + m[0] + '"' + (b.mode === m[0] ? ' checked' : '') + '><span>' + m[1] + '</span></label>';
+      }).join('') + '</div>' +
+      '<p class="hint bgm-auto-only"' + (b.mode === 'AUTO' ? '' : ' hidden') + '>' + T('确定连不上官方后会自动改成「用镜像」，之后不再先试官方；需要时再改回这一档。') + '</p>' +
+      '<div class="bgm-auto"' + (bgmUsesMirrors(b.mode) ? '' : ' hidden') + '>' +
+      (mirrors ? '<p class="hint">' + T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) + '</p>' : '') +
+      '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
+      T('登录与收藏同步也经过镜像') + '</label><p class="hint bgm-cred">' + bgmCredHint(b.allowCredentials) + '</p></div>' +
+      '<div class="bgm-custom"' + (b.mode === 'CUSTOM' ? '' : ' hidden') + '>' +
+      '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
+      T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
+      '</em></label></div>' +
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+  }
+  bgmBox.addEventListener('change', function (e) {
+    var t = e.target, f = t.form;
+    if (t.name === 'cred') {
+      // 勾上要先确认风险 (点保存才生效); 取消勾选不用问
+      if (t.checked && !confirm(T('镜像由第三方运营。打开后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。') +
+          '\n\n' + T('更安全的做法是设置代理：应用直连 Bangumi 官方，不经过任何第三方。'))) t.checked = false;
+      f.querySelector('.bgm-cred').textContent = bgmCredHint(t.checked);
+      return;
+    }
+    if (t.name !== 'mode') return;
+    f.querySelector('.bgm-auto-only').hidden = t.value !== 'AUTO';
+    f.querySelector('.bgm-auto').hidden = !bgmUsesMirrors(t.value);
+    f.querySelector('.bgm-custom').hidden = t.value !== 'CUSTOM';
+  });
+  bgmBox.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var f = e.target, m = f.querySelector('input[name="mode"]:checked'), cred = !!(f.elements.cred && f.elements.cred.checked);
+    function save() {
+      post('api/settings/bangumi', new FormData(f)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+    }
+    // 电视登录着 (同设置页, 见 BangumiMirrorConsent): 改成「用镜像」而凭证不经过镜像先问; 用着镜像时关掉凭证先提醒
+    if (bgmSaved && bgmSaved.loggedIn && m && m.value === 'MIRROR' && !cred) {
+      if (bgmSaved.mode !== 'MIRROR') { bgmAsk(f, save); return; }
+      if (bgmSaved.allowCredentials &&
+          !confirm(T('现在用的是镜像。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）只走官方，官方连不上时都会失败。'))) return;
+    }
+    save();
+  });
+  // 已登录改用镜像的三个选择: 允许凭证经过镜像 / 退出登录再切 / 不切. 登录后连浏览都带着令牌, 凭证不经过镜像时
+  // 官方一连不上就什么都用不了, 所以不能不问就切
+  function bgmAsk(f, save) {
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'login-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('已登录，改用镜像？') + '</div>' +
+      '<p class="dlg-p">' + T('你已登录 Bangumi。登录后的请求（收藏、进度、评分，以及登录后浏览条目）默认只走官方，不经过第三方镜像，官方连不上时都会失败。') + '</p>' +
+      '<p class="dlg-p risk">' + T('选「允许并改用镜像」后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。不想交出账号的话，可以退出登录，只用镜像浏览。') + '</p>' +
+      '<div class="dlg-acts"><button type="button" class="ghost" data-bgm-ask="allow">' + T('允许并改用镜像') + '</button>' +
+      '<button type="button" class="ghost" data-bgm-ask="logout">' + T('退出登录并改用镜像') + '</button>' +
+      '<button type="button" class="primary" data-bgm-ask="cancel">' + T('取消') + '</button></div></div>';
+    d.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-bgm-ask]');
+      if (!b && e.target !== d) return;
+      var a = b ? b.getAttribute('data-bgm-ask') : 'cancel';
+      d.remove();
+      if (a === 'allow') {
+        f.elements.cred.checked = true;
+        f.querySelector('.bgm-cred').textContent = bgmCredHint(true);
+        save();
+      } else if (a === 'logout') {
+        post('api/account/logout', {}).then(function (r) {
+          if (!r.ok) { toast(r.message); return; }
+          save();
+          if (window.loadAccount) window.loadAccount();
+        }).catch(fail);
+      }
+    });
+    document.body.appendChild(d);
+  }
+  // TMDB 图片 (同设置页「背景图 (TMDB)」那一组): 自动选择 / 清单里的某个地址 / 自定义 / 不加载.
+  // 清单在项目仓库里维护, 电视每天拉一次; 自定义才要输入
+  function tmdbChoice(t) {
+    return t.disabled ? 'off' : t.mode === 'FIXED' ? t.fixed : t.mode === 'CUSTOM' ? 'custom' : 'auto';
+  }
+  // 入口地址去掉 https://; 含 {path} 的模板只显示域名 (同 EndpointUrls.displayName)
+  function tmdbHost(u) {
+    var h = String(u).replace('https://', '');
+    return String(u).indexOf('{path}') < 0 ? h : h.split('/')[0].split('?')[0];
+  }
+  function tmdbShow(f, c) {
+    f.querySelector('.tmdb-auto').hidden = c !== 'auto';
+    f.querySelector('.tmdb-fixed').hidden = c === 'auto' || c === 'custom' || c === 'off';
+    f.querySelector('.tmdb-custom').hidden = c !== 'custom';
+    f.querySelector('.tmdb-off').hidden = c !== 'off';
+  }
+  function renderTmdb(t) {
+    t = t || { disabled: false, mode: 'AUTO', fixed: '', custom: '', hosts: [] };
+    var hosts = t.hosts || [];
+    var cur = tmdbChoice(t);
+    var opts = [['auto', T('自动选择')]].concat(hosts.map(function (h) { return [h, tmdbHost(h)]; }));
+    // 选定的那个后来被清单去掉了: 照样列出来
+    if (t.mode === 'FIXED' && t.fixed && hosts.indexOf(t.fixed) < 0) opts.push([t.fixed, tmdbHost(t.fixed)]);
+    opts.push(['custom', T('自定义')], ['off', T('不加载')]);
+    tmdbBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('TMDB 图片') + '</div>' +
+      '<p class="hint">' + T('背景图与剧照来自 TMDB。原站连不上时（例如中国移动的网络），自动选择会换到能用的地址。') + '</p><div class="pills">' +
+      opts.map(function (o) {
+        return '<label><input type="radio" name="choice" value="' + esc(o[0]) + '"' + (cur === o[0] ? ' checked' : '') + '><span>' + esc(o[1]) + '</span></label>';
+      }).join('') + '</div>' +
+      '<p class="hint tmdb-auto">' + T('按顺序用第一个连得上的：{0}（清单每天从项目仓库更新）', hosts.map(tmdbHost).map(esc).join(T('、'))) + '</p>' +
+      '<p class="hint tmdb-fixed">' + T('只用这一个地址，连不上也不换') + '</p>' +
+      '<p class="hint tmdb-off">' + T('背景图与剧照改用条目封面，不再请求 TMDB。') + '</p>' +
+      '<div class="tmdb-custom"><label class="f"><span>' + T('自定义地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(t.custom) + '" placeholder="https://img.example.com"><em>' +
+      esc(T('与原站内容相同的地址，图片路径会接在后面；要把路径放进参数的代理，写成含 {path} 的模板，如 {0}', 'https://wsrv.nl/?url=image.tmdb.org{path}')) +
+      '</em></label></div>' +
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    tmdbShow(tmdbBox.querySelector('form'), cur);
+  }
+  tmdbBox.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.name === 'choice') tmdbShow(t.form, t.value);
+  });
+  tmdbBox.addEventListener('submit', function (e) {
+    e.preventDefault();
+    post('api/settings/tmdb-images', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+  });
   // 切到电视前台 (见 TvRemoteControl.frontState): 默认关; 开了还要在电视上授权一次「显示在其他应用的上层」.
   // 授权后回到本标签会重新拉一次 (load), 状态跟着更新
   function renderFront(f) {
@@ -4947,13 +5431,13 @@ private val SETTINGS_SCRIPT = """
     // 授过权的 (以前开过又关了) 不再说「首次开启时需要授权」
     var st = !f.needsPermission ? T('无需额外授权')
       : f.granted ? T('已授权')
-      : !f.enabled ? T('首次开启时，需要在电视上允许 Animeko「显示在其他应用的上层」。')
-      : T('尚未授权。Ani 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Ani。') +
-        T('也可在电视设置中为 Animeko 开启「显示在其他应用的上层」。');
-    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Ani') + '</div>' +
-      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Ani') + '</label>' +
-      '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Ani；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
-      T('关闭后，Ani 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Ani 才能看到。') + '</p>' +
+      : !f.enabled ? T('首次开启时，需要在电视上允许 Izuko TV「显示在其他应用的上层」。')
+      : T('尚未授权。Izuko 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Izuko。') +
+        T('也可在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。');
+    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Izuko') + '</div>' +
+      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Izuko') + '</label>' +
+      '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Izuko；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
+      T('关闭后，Izuko 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Izuko 才能看到。') + '</p>' +
       '<p class="hint">' + st + '</p></div>';
   }
   frontBox.addEventListener('change', function (e) {
@@ -4988,6 +5472,8 @@ private val SETTINGS_SCRIPT = """
       '<p class="hint">' + T('每行一个，BT 下载开始前与内置 tracker 一起添加。') + '</p>' +
       '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
       '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    renderBangumi(d.bangumi);
+    renderTmdb(d.tmdbImages);
     renderFront(d.front);
     renderKeep(d.keep);
     renderFilters(d.dmfilter);
@@ -5411,10 +5897,13 @@ private val CACHE_SCRIPT = """
     if (d.btStarting) h += '<div class="now-status busy"><b>' + T('正在启动 BT 服务') + '</b><span>' + T('第一次要十几秒，之后会自动开始下载') + '</span></div>';
     // 电视上没打开 Ani 时 BT 服务根本不会起 (上游的省电策略), 缓存会一直排队 —— 必须说明白, 否则就是"点了没反应"
     // 顶上那条「不在前台」被这个全屏面板盖住了, 所以这里再给一个入口 (同 api/tv/front, 没开 / 没授权时电视会在回话里说清楚)
-    else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Ani') + '</b><span>' + T('已经记下了，要在电视上打开 Ani 才会开始下载') + '</span></div>' +
-      '<button type="button" class="ghost wide cache-front">' + T('打开 Ani') + '</button>';
+    else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Izuko') + '</b><span>' + T('已经记下了，要在电视上打开 Izuko 才会开始下载') + '</span></div>' +
+      '<button type="button" class="ghost wide cache-front">' + T('打开 Izuko') + '</button>';
     if (running) {
-      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>' +
+      // 一集最长等两分钟挑资源: 第二行写这一集查完了几个数据源、等了多久 (服务端给, 列表每 2 秒刷新)
+      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span>' +
+        (b.sourcesTotal ? '<span class="now-sub">' + T('已查完 {0}/{1} 个数据源 · 已等 {2} / 最长 {3}', b.sourcesDone, b.sourcesTotal,
+          window.mmss(b.waited), window.mmss(b.waitLimit)) + '</span>' : '') + '</div>' +
         '<button type="button" class="ghost wide cache-cancel">' + T('取消自动缓存') + '</button>';
     } else if (b && b.failures.length) {
       h += '<div class="now-status error"><b>' + T('{0} 集没能自动缓存', b.failures.length) + '</b><span>' + T('原因写在对应那一集下面，可以点「选资源」自己挑') + '</span></div>';
@@ -5438,7 +5927,7 @@ private val CACHE_SCRIPT = """
       var st = x.status === 'cached' ? ['ok', T('已缓存') + size] : x.status === 'caching'
         // 进度满了还是 caching = 文件已经下完, 在等做种达标 (或 10 分钟没有上传活动) 才会标成已完成,
         // 见 TorrentMediaCacheEngine.subscribeStats. 这时再显示「缓存中 100%」会让人以为卡住了.
-        ? ['run', (x.progress >= 100 ? T('已下完 · 做种中') : T('缓存中 {0}%', x.progress)) + size]
+        ? ['run', (x.progress >= 100 ? T('已下完 · 做种中') : T('缓存中 {0}%', x.progressText || x.progress)) + size]
         : x.error ? ['bad', x.error] : x.pack ? ['', T('未缓存 · 已缓存的合集里有这一集')] : ['', T('未缓存')];
       var free = x.status === 'none';
       if (!free) delete picked[x.id];
@@ -5587,7 +6076,9 @@ private val CACHE_SCRIPT = """
     var total = 0;
     groups.forEach(function (g) { total += g.total; });
     var bad = d.sources.filter(function (s) { return s.state === 'failed' || s.state === 'captcha' || s.state === 'limited'; }).length;
-    var h = '<p class="hint">' + (d.loading ? T('正在查找资源… 已找到 {0} 条', total) : T('共 {0} 条', total)) +
+    // 查询中写查完了几个数据源 (慢的源要十几秒, 光写「正在查找」看不出还要等多久)
+    var searched = d.sources.filter(function (s) { return s.state !== 'loading'; }).length;
+    var h = '<p class="hint">' + (d.loading ? T('正在查找资源：已查完 {0}/{1} 个数据源，已找到 {2} 条', searched, d.sources.length, total) : T('共 {0} 条', total)) +
       (bad && !ccSrc ? T('，{0} 个数据源没查到', bad) : '') + T('。点一条开始缓存。') + '</p>';
     if (!groups.length) {
       var src = ccSrc ? d.sources.filter(function (x) { return x.id === ccSrc; })[0] : null;
@@ -5758,7 +6249,7 @@ private val CACHE_LIST_SCRIPT = """
       if (d.pending) run.push(T('没下完的还差') + ' ' + esc(d.pending));
       if (run.length) s += '<div class="cl-line">' + run.join(' · ') + '</div>';
       if (d.btStarting) s += '<div class="cl-line">' + T('正在启动 BT 服务，第一次要十几秒…') + '</div>';
-      else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Ani，要打开后才会开始下载') + '</div>';
+      else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Izuko，要打开后才会开始下载') + '</div>';
       if (d.lowSpace) s += '<div class="cl-warn">' + T('剩余空间不够把没下完的都下完') + '</div>';
       s += '</div>';
       if (!d.groups.length) {
@@ -5930,18 +6421,23 @@ private val CACHE_LIST_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「播放器」标签里的「评论与评分」区 (见 RemotePlayerExtras): 收藏状态、我的评分 + 短评、发表本集评论. 展开时才拉一次
- * (换了条目再拉), 不随轮询重画 —— 表单正在填. 评分的档位说法同 Bangumi.
+ * 「播放器」标签里的「评论与评分」区 (见 RemotePlayerExtras): 收藏状态、我的评分 + 短评, 以及去 Bangumi 网页发表本集评论的入口.
+ * 展开时才拉一次, 不随轮询重画 —— 表单正在填. 换了条目、电视刚登录上、或播放器状态里这部番的收藏与评分变了
+ * (`collection` / `score`: 在电视上改了, 或登录后才取回真实状态) 时重读, 焦点在表单里时不打断. 评分的档位说法同 Bangumi.
  *
  * 版式参照 App 的评分弹窗 (居中的分数 + 评价词、一行十颗星、短评、仅自己可见) 和 Bangumi 的收藏盒 (五种状态横排):
- * 星星点一下定分、按住左右滑动改分; 取消收藏会清掉进度和评价, 先确认. 没收藏时评分区置灰 (服务端本来也拒), 没登录只放登录入口.
- * 本集评论带表情面板 (目录见 RemoteStickers, 图由手机直接去 Bangumi 图片站拉, 不带 Referer) 与实时预览 (正文里认出表情代码才出现).
+ * 星星点一下定分、按住左右滑动改分. 没有「取消收藏」: Bangumi 没有这个操作, 收藏着的给一句提示改用「抛弃」.
+ * 没收藏时评分区置灰 (服务端本来也拒), 没登录只放登录入口.
+ * 本集评论不在这里写: Bangumi 发表评论要过人机验证, 只有它自己的网页过得去 —— 按钮在手机浏览器里打开这一集的页面,
+ * 用户在那里登录着 Bangumi 就能直接写. 这一段不看电视登没登录; 地址随播放器状态轮询 (`commentLink`, 换集、改连接方式
+ * 都会变), 变了就地换掉这一段, 不重读上面的表单.
  */
 private val REVIEW_SCRIPT = """
 (function () {
   var hooks = window.remoteHooks;
   var box = document.getElementById('cm-box'), body = document.getElementById('cm-body'), sum = document.getElementById('cm-sum');
-  var subject = null, loaded = false;
+  // link: 播放器状态里本集评论的地址 (见 commentSec); seen: 上次看到的电视上的收藏与评分
+  var subject = null, loaded = false, link = null, seen = null;
   var TYPES = [['NOT_COLLECTED', T('未收藏')], ['WISH', T('想看')], ['DOING', T('在看')], ['DONE', T('看过')], ['ON_HOLD', T('搁置')], ['DROPPED', T('抛弃')]];
   // 评价词同 App 的评分弹窗; 1 分和 10 分带「请谨慎评价」, 也跟 App 一样标红
   var WORDS = ['', T('不忍直视（请谨慎评价）'), T('很差'), T('差'), T('较差'), T('不过不失'), T('还行'), T('推荐'), T('力荐'), T('神作'), T('超神作（请谨慎评价）')];
@@ -5950,10 +6446,6 @@ private val REVIEW_SCRIPT = """
     '<path class="o" d="M19.65 9.04l-4.84-.42-1.89-4.45c-.34-.81-1.5-.81-1.84 0L9.19 8.63l-4.83.41c-.88.07-1.24 1.17-.57 1.75l3.67 3.18-1.1 4.72c-.2.86.73 1.54 1.49 1.08l4.15-2.5 4.15 2.51c.76.46 1.69-.22 1.49-1.08l-1.1-4.73 3.67-3.18c.67-.58.32-1.68-.56-1.75zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/>' +
     '<path class="f" d="M12 17.27l4.15 2.51c.76.46 1.69-.22 1.49-1.08l-1.1-4.72 3.67-3.18c.67-.58.31-1.68-.57-1.75l-4.83-.41-1.89-4.46c-.34-.81-1.5-.81-1.84 0L9.19 8.63l-4.83.41c-.88.07-1.24 1.17-.57 1.75l3.67 3.18-1.1 4.72c-.2.86.73 1.54 1.49 1.08l4.15-2.5z"/></svg>';
   var drag = null;
-  // 表情面板: 目录 (api/stickers) 头一回画出评论框时拉一次; pack = 当前分组 (记在手机上); emoOpen = 面板开着 (重画后照旧开着)
-  var stickers = null, stickerRe = null, stickerUrl = {}, emoOpen = false, pack = 0;
-  try { pack = Number(localStorage.getItem('remote.stickerPack')) || 0; } catch (e) {}
-  var EMO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>';
   try { box.open = localStorage.getItem('remote.cm') === '1'; } catch (e) {}
   box.addEventListener('toggle', function () {
     try { localStorage.setItem('remote.cm', box.open ? '1' : ''); } catch (e) {}
@@ -5964,11 +6456,24 @@ private val REVIEW_SCRIPT = """
   hooks.login.push(function () { if (box.open) load(); else loaded = false; });
   hooks.render.push(function (s) {
     box.hidden = false;
+    var mine = (s.collection || '') + '/' + (s.score || 0);
     if (s.subjectId !== subject) {
       subject = s.subjectId;
+      seen = mine;
       loaded = false;
       sum.textContent = '';
       if (box.open) load(); else body.innerHTML = '';
+    } else if (mine !== seen) {
+      // 电视上这部番的收藏或评分变了 (在电视上改的, 或登录后取回了真实状态): 读过的就静默重读, 收着也重读 (标题行上的
+      // 收藏状态要跟着变); 正在填表单 (焦点在里面) 时不打断
+      seen = mine;
+      if (loaded && !body.contains(document.activeElement)) load(true);
+    }
+    var c = s.commentLink || null;
+    if (JSON.stringify(c) !== JSON.stringify(link)) {
+      link = c;
+      var sec = document.getElementById('cm-ep');
+      if (sec) sec.outerHTML = commentSec();
     }
   });
   function typeLabel(t) {
@@ -5989,14 +6494,12 @@ private val REVIEW_SCRIPT = """
   function render(d) {
     if (!d.ok) { body.innerHTML = '<p class="hint">' + esc(d.message) + '</p>'; return; }
     sum.textContent = typeLabel(d.collection) + (d.score ? ' · ' + T('{0} 分', d.score) : '');
-    // 没登录时收藏、评分、评论都做不了, 只放登录入口 (登录上以后 hooks.login 会重读)
+    // 没登录时收藏、评分做不了, 只放登录入口 (登录上以后 hooks.login 会重读); 去网页写评论不看电视登没登录
     if (!d.loggedIn) {
-      body.innerHTML = '<div class="cm-login"><p class="hint cm-warn">' + T('还没登录：收藏、评分和评论都要先登录') + '</p>' +
-        '<button type="button" class="primary wide" data-login="1">' + T('用手机登录 Bangumi') + '</button></div>';
+      body.innerHTML = '<div class="cm-login"><p class="hint cm-warn">' + T('还没登录：收藏和评分要先登录') + '</p>' +
+        '<button type="button" class="primary wide" data-login="1">' + T('用手机登录 Bangumi') + '</button></div>' + commentSec();
       return;
     }
-    // 重画会冲掉正在写的本集评论, 先存下来
-    var old = body.querySelector('#cm-post textarea'), draft = old ? old.value : '';
     var collected = d.collection !== 'NOT_COLLECTED', off = collected ? '' : ' disabled';
     var seg = '', stars = '';
     for (var i = 1; i < TYPES.length; i++) {
@@ -6004,9 +6507,9 @@ private val REVIEW_SCRIPT = """
     }
     for (var j = 0; j < 10; j++) stars += STAR;
     body.innerHTML =
-      '<div class="cm-sec"><div class="cm-h"><span>' + T('收藏') + '</span>' +
-        (collected ? '<button type="button" class="cm-link" data-uncollect="1">' + T('取消收藏') + '</button>' : '') + '</div>' +
-        '<div class="seg cm-types">' + seg + '</div></div>' +
+      '<div class="cm-sec"><div class="cm-h"><span>' + T('收藏') + '</span></div>' +
+        '<div class="seg cm-types">' + seg + '</div>' +
+        (collected ? '<p class="hint cm-tip">' + T('Bangumi 不能取消收藏，不想看了就选「抛弃」') + '</p>' : '') + '</div>' +
       '<form id="cm-rate" class="cm-sec' + (collected ? '' : ' off') + '">' +
         '<div class="cm-h"><span>' + T('我的评分') + '</span><button type="button" class="cm-link" id="cm-clear">' + T('清除') + '</button></div>' +
         '<div class="cm-score" id="cm-score"><b></b><span></span></div>' +
@@ -6016,98 +6519,16 @@ private val REVIEW_SCRIPT = """
         '<textarea name="comment" rows="3" placeholder="' + T('写几句短评（可留空）') + '"' + off + '>' + esc(d.comment) + '</textarea>' +
         '<div class="cm-foot"><label class="toggle"><input type="checkbox" name="private" value="1"' + (d.private ? ' checked' : '') + off + '>' + T('仅自己可见') + '</label>' +
         '<button type="submit" class="primary"' + off + '>' + T('保存') + '</button></div></form>' +
-      '<form id="cm-post" class="cm-sec"><div class="cm-h"><span>' + T('本集评论') + (d.episode ? '<small>' + esc(d.episode) + '</small>' : '') + '</span></div>' +
-        '<textarea name="text" rows="3" placeholder="' + T('说点什么') + '"></textarea>' +
-        '<div class="cm-preview" id="cm-preview" hidden></div>' +
-        '<div class="cm-foot"><button type="button" class="cm-emo" data-emo="1">' + EMO_ICON + T('表情') + '</button>' +
-        '<button type="submit" class="primary">' + T('发表') + '</button></div>' +
-        '<div class="cm-picker" id="cm-picker" hidden></div></form>';
-    if (draft) body.querySelector('#cm-post textarea').value = draft;
-    paintPicker();
-    preview();
-    loadStickers();
+      commentSec();
     setScore(collected ? d.score : 0);
   }
-  function loadStickers() {
-    if (stickers) return;
-    stickers = [];
-    fetch('api/stickers').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
-      if (!d || !d.packs || !d.packs.length) { stickersFailed(); return; }
-      stickers = d.packs;
-      var toks = [];
-      stickers.forEach(function (p) { p.items.forEach(function (it) { stickerUrl[it[0]] = it[1]; toks.push(it[0]); }); });
-      // 长的在前: 正则按顺序试, 免得短代码抢先吃掉长代码的一截
-      toks.sort(function (a, b) { return b.length - a.length; });
-      stickerRe = toks.length ? new RegExp(toks.map(reEsc).join('|'), 'g') : null;
-      paintPicker();
-      preview();
-    }).catch(stickersFailed);
-  }
-  // 没拉到: 下次打开面板再拉
-  function stickersFailed() {
-    stickers = null;
-    var box = document.getElementById('cm-picker');
-    if (box && emoOpen) box.innerHTML = '<p class="hint cm-pk-msg">' + T('读取表情失败，收起再打开试试') + '</p>';
-  }
-  function reEsc(s) { return s.replace(/[.*+?^{}()|[\]\\\/]/g, function (c) { return '\\' + c; }); }
-  function paintPicker() {
-    var box = document.getElementById('cm-picker'), btn = body.querySelector('[data-emo]');
-    if (!box) return;
-    box.hidden = !emoOpen;
-    if (btn) btn.classList.toggle('on', emoOpen);
-    if (!emoOpen) return;
-    if (!stickers || !stickers.length) {
-      box.innerHTML = '<p class="hint cm-pk-msg">' + T('正在读取表情…') + '</p>';
-      loadStickers();
-      return;
-    }
-    if (pack >= stickers.length) pack = 0;
-    box.innerHTML = '<div class="cm-packs">' + stickers.map(function (x, i) {
-        return '<button type="button" data-pack="' + i + '"' + (i === pack ? ' class="on"' : '') + '>' + esc(x.name) + '</button>';
-      }).join('') + '</div><div class="cm-grid">' + stickers[pack].items.map(function (it) {
-        return '<button type="button" data-stk="' + esc(it[0]) + '" title="' + esc(it[0]) + '"><img src="' + esc(it[1]) + '" alt="' +
-          esc(it[0]) + '" loading="lazy" referrerpolicy="no-referrer"></button>';
-      }).join('') + '</div>';
-    // 重画后分组横排回到最左, 选中的那个可能在屏幕外 (最后一组「颜文字」在手机宽度上就露一半), 挪进来
-    var row = box.querySelector('.cm-packs'), on = row.querySelector('.on');
-    if (on && on.offsetLeft + on.offsetWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - 8;
-  }
-  // 正文里认出表情代码时, 在输入框下面按电视上的样子预览一遍 (代码换成图); 一枚都没有就不占地方
-  function preview() {
-    var ta = body.querySelector('#cm-post textarea'), box = document.getElementById('cm-preview');
-    if (!ta || !box) return;
-    var t = ta.value, out = '', last = 0, n = 0, m;
-    if (stickerRe && t) {
-      stickerRe.lastIndex = 0;
-      while ((m = stickerRe.exec(t))) {
-        out += esc(t.slice(last, m.index)) + '<img src="' + esc(stickerUrl[m[0]]) + '" alt="' + esc(m[0]) + '" referrerpolicy="no-referrer">';
-        last = m.index + m[0].length;
-        n++;
-      }
-    }
-    box.hidden = n === 0;
-    if (n) box.innerHTML = '<small>' + T('预览') + '</small>' + out + esc(t.slice(last));
-  }
-  // 插在光标处 (没点过输入框就是末尾). 不去聚焦输入框: 手机上一聚焦就弹键盘, 把表情面板顶走.
-  // 光标位置自己记 (caret): 点表情时输入框多半已经失焦, 而失焦的输入框改过 value 之后选区读出来是 0 (Chromium 实测),
-  // 连插两枚第二枚就跑到最前面. 离开输入框那一刻 (focusout) 记下的才准; 输入框还聚焦着 (Safari 点按钮不抢焦点) 就读实时的
-  var caret = null;
-  function rememberCaret(e) {
-    var t = e.target;
-    if (t && t.name === 'text' && t.closest && t.closest('#cm-post')) caret = [t.selectionStart, t.selectionEnd];
-  }
-  ['focusout', 'keyup', 'mouseup', 'select', 'input'].forEach(function (k) { body.addEventListener(k, rememberCaret); });
-  function insertSticker(tok) {
-    var ta = body.querySelector('#cm-post textarea');
-    if (!ta) return;
-    var len = ta.value.length, live = document.activeElement === ta;
-    var s = live ? ta.selectionStart : (caret ? caret[0] : len), e = live ? ta.selectionEnd : (caret ? caret[1] : len);
-    s = Math.min(s, len);
-    e = Math.min(Math.max(e, s), len);
-    ta.value = ta.value.slice(0, s) + tok + ta.value.slice(e);
-    caret = [s + tok.length, s + tok.length];
-    if (live) { try { ta.setSelectionRange(caret[0], caret[1]); } catch (err) {} }
-    preview();
+  // 本集评论: 在手机浏览器里打开这一集的 Bangumi 页面去写. 电视还不知道是哪一集时留一个空的占位, 地址到了原地换上
+  function commentSec() {
+    if (!link) return '<div id="cm-ep" hidden></div>';
+    return '<div class="cm-sec" id="cm-ep"><div class="cm-h"><span>' + T('本集评论') + (link.episode ? '<small>' + esc(link.episode) + '</small>' : '') + '</span></div>' +
+      '<p class="hint">' + T('评论在 Bangumi 网页上发表：打开这一集的页面，在手机浏览器里登录着 Bangumi 就能写。') +
+      (link.viaMirror ? T('电视现在经镜像连接，手机可能要开代理才能打开。') : '') + '</p>' +
+      '<a class="primary wide cm-web" href="' + esc(link.url) + '" target="_blank" rel="noopener noreferrer">' + T('去 Bangumi 发表评论') + '</a></div>';
   }
   // 分数 → 星星、大号数字、评价词、隐藏的表单项一起变
   function setScore(n) {
@@ -6150,9 +6571,6 @@ private val REVIEW_SCRIPT = """
     setScore(drag.from);
     drag = null;
   });
-  body.addEventListener('input', function (e) {
-    if (e.target.name === 'text' && e.target.closest('#cm-post')) preview();
-  });
   body.addEventListener('keydown', function (e) {
     if (e.target.id !== 'cm-stars') return;
     var v = Number(document.getElementById('cm-rate').elements.score.value);
@@ -6165,19 +6583,8 @@ private val REVIEW_SCRIPT = """
     var b = e.target.closest && e.target.closest('button');
     if (!b) return;
     if (b.id === 'cm-clear') { setScore(0); return; }
-    if (b.hasAttribute('data-emo')) { emoOpen = !emoOpen; paintPicker(); return; }
-    if (b.hasAttribute('data-pack')) {
-      pack = Number(b.getAttribute('data-pack')) || 0;
-      try { localStorage.setItem('remote.stickerPack', String(pack)); } catch (err) {}
-      paintPicker();
-      return;
-    }
-    if (b.hasAttribute('data-stk')) { insertSticker(b.getAttribute('data-stk')); return; }
     var type = b.getAttribute('data-ctype');
-    if (b.hasAttribute('data-uncollect')) {
-      if (!confirm(T('取消收藏？这会清除你的观看进度和评价，无法撤销。'))) return;
-      type = 'NOT_COLLECTED';
-    } else if (!type || b.classList.contains('on')) return;
+    if (!type || b.classList.contains('on')) return;
     // 选中态先挪过去, 手感跟得上; 结果回来后重读, 失败了也会被重读纠正
     var all = body.querySelectorAll('.cm-types button');
     for (var i = 0; i < all.length; i++) { all[i].classList.toggle('on', all[i] === b); all[i].disabled = true; }
@@ -6190,61 +6597,49 @@ private val REVIEW_SCRIPT = """
     e.preventDefault();
     var form = e.target, btn = form.querySelector('button[type="submit"]');
     btn.disabled = true;
-    var path = form.id === 'cm-rate' ? 'api/player/review/rate' : 'api/player/comment';
-    post(path, new FormData(form)).then(function (r) {
+    post('api/player/review/rate', new FormData(form)).then(function (r) {
       btn.disabled = false;
       toast(r.message);
-      if (!r.ok) return;
-      if (form.id === 'cm-post') { form.elements.text.value = ''; caret = null; preview(); }
-      else load(true);
+      if (r.ok) load(true);
     }).catch(function () { btn.disabled = false; fail(); });
   });
 })();
 """.trimIndent()
 
 /**
- * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时「用手机登录」—— 电视向服务器要来 Bangumi 授权链接,
- * 手机打开, 授完权电视自己就登录好了. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
- * 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
+ * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是哪个 Bangumi 账号; 没登录时点一下发起登录 —— 默认在手机上授权
+ * (授权完把浏览器跳到的网址粘回来), 也可以改在电视上登录; 另有「用个人令牌登录」, 不经过授权页 (中国大陆经镜像时授权页走不通).
+ * 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次. 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
  */
 private val ACCOUNT_SCRIPT = """
 (function () {
   var box = document.getElementById('set-account');
   var hooks = window.remoteHooks;
   var last = '', timer = null, waiting = false, wasIn = null;
-  // 点头像 / 名字展开的账号菜单 (修改昵称 / 绑定邮箱 / 退出登录); nick = 正在改昵称
-  var menu = false, nick = false, lastData = null;
-  // 邮箱登录 / 注册 (没登录时) 或绑定 / 更换邮箱 (已登录时, 在账号菜单里): null = 收着; step 'email' 填邮箱 → 'code' 填验证码
-  var em = null;
-  var MAIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>';
-  function emailFlow(d) {
-    var bind = !!d.loggedIn;
-    if (em.step === 'email') {
-      return '<form class="acct-nick" id="acct-email"><input type="email" name="e" inputmode="email" autocomplete="email" placeholder="' +
-        (bind ? T('要绑定的邮箱') : T('邮箱')) + '" value="' + esc(em.email || '') + '"><button type="submit">' + T('发送验证码') + '</button></form>' +
-        '<p class="hint">' + (bind ? (d.email ? T('现在绑定的是 {0}，换成新邮箱后要用新邮箱登录。', esc(d.email)) : T('绑定后也能用这个邮箱登录。'))
-          : T('登录 Animeko 账号，没注册过的邮箱会直接注册。要同步 Bangumi 的收藏、评分和评论，登录后再连接 Bangumi。')) + '</p>' +
-        '<div class="row"><button type="button" class="ghost" data-acct="email-close">' + T('取消') + '</button></div>';
-    }
-    return '<p class="hint">' + T('验证码已发到') + ' <b>' + esc(em.email) + '</b>' + (em.existing === false && !bind ? T('（还没注册过，验证后会注册新账号）') : '') + T('。') + '</p>' +
-      '<form class="acct-nick" id="acct-otp"><input type="text" name="c" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="' + T('验证码') + '">' +
-      '<button type="submit">' + (bind ? T('绑定') : T('登录')) + '</button></form>' +
-      '<div class="row"><button type="button" class="ghost" data-acct="email-resend">' + T('重新发送') + '</button>' +
-      '<button type="button" class="ghost" data-acct="email-back">' + T('换个邮箱') + '</button></div>';
+  // 等授权有上限 (电视那边等 10 分钟没结果就放弃): 按服务端给的剩余时长倒数, 每秒只改那一个数字
+  var loginDeadline = 0, loginTick = null;
+  function tickLogin() {
+    var el = box.querySelector('.acct-left');
+    if (el) el.textContent = T('剩 {0}', window.countdown(loginDeadline - Date.now()));
   }
-  function sendOtp(email, btn) {
-    btn.disabled = true;
-    post('api/account/email/send', { email: email }).then(function (r) {
-      btn.disabled = false;
-      toast(r.message);
-      if (!r.ok || !em) return;
-      em.step = 'code';
-      em.email = email;
-      em.existing = r.existing;
-      rerender();
-      var f = document.getElementById('acct-otp');
-      if (f) f.elements.c.focus();
-    }).catch(function () { btn.disabled = false; fail(); });
+  // 点头像 / 名字展开的账号菜单 (退出登录)
+  var menu = false, lastData = null;
+  // 个人令牌登录的表单展开着没有 (没登录时). 授权页连不上 (中国大陆经镜像) 时只能走这条
+  var tok = false;
+  var TOKEN_DAYS = [7, 30, 90, 180, 365];
+  function tokenForm(d, closable) {
+    var pages = (d.tokenPages || []).map(function (u) {
+      return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\//, '')) + '</a>';
+    }).join(T('、'));
+    return '<form class="acct-token" id="acct-token">' +
+      '<p class="hint">' + (pages ? T('生成令牌的页面：{0}', pages) + T('。') : '') +
+      '<a href="#" data-acct="token-guide">' + T('看步骤') + '</a></p>' +
+      '<label class="f"><span>' + T('令牌') + '</span><input type="text" name="token" autocomplete="off" spellcheck="false"></label>' +
+      '<label class="f"><span>' + T('有效期') + '</span><select name="days">' + TOKEN_DAYS.map(function (n) {
+        return '<option value="' + n + '"' + (n === 365 ? ' selected' : '') + '>' + T('{0} 天', n) + '</option>';
+      }).join('') + '</select><em>' + T('和生成令牌时选的一样。到期后电视会退出登录，再生成一个新的就行。') + '</em></label>' +
+      '<div class="row">' + (closable ? '<button type="button" class="ghost" data-acct="token-close">' + T('取消') + '</button>' : '') +
+      '<button type="submit" class="primary">' + T('登录') + '</button></div></form>';
   }
   function rerender() { if (lastData) render(lastData); }
   function load() {
@@ -6253,58 +6648,68 @@ private val ACCOUNT_SCRIPT = """
   }
   window.loadAccount = load;
   function avatar(d) {
-    if (d.avatar) return '<img src="' + esc(d.avatar) + '" alt="" referrerpolicy="no-referrer">';
+    // 候选依次试 (经电视转发 → 手机直连), 拉不到换下一张, 见 SCRIPT 里的 error 监听
+    var list = (d.avatar || []).filter(Boolean);
+    if (list.length) {
+      return '<img class="alt-src" src="' + esc(list[0]) + '" data-alt="' + esc(list.slice(1).join(' ')) + '" alt="" referrerpolicy="no-referrer">';
+    }
     return '<div class="acct-ph">' + esc((d.name || '?').charAt(0)) + '</div>';
   }
   function render(d) {
     if (!d.ok) return;
     lastData = d;
-    if (!d.loggedIn) { menu = false; nick = false; }
-    // 登录状态变了 (邮箱登录成功 / 在电视上退出了): 这一轮的邮箱流程作废
-    if (em && em.bind !== !!d.loggedIn) em = null;
-    var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi);
+    if (!d.loggedIn) menu = false; else tok = false;
+    var l = d.login || { state: 'idle' };
     // 刚登录上 (手机这边发起的, 或者电视上自己登的): 让评论与评分区重新读一次
-    if (wasIn === false && full) window.runHooks('login', hooks.login, undefined);
-    wasIn = full;
+    if (wasIn === false && d.loggedIn) window.runHooks('login', hooks.login, undefined);
+    wasIn = !!d.loggedIn;
     waiting = l.state === 'waiting';
     var h = '<div class="card set-card"><div class="set-title">' + T('账号') + '</div>';
     if (d.loggedIn) {
       h += '<div class="acct" data-acct="menu">' + avatar(d) + '<div><div class="acct-name">' + esc(d.name || T('已登录')) + '</div><div class="acct-sub">' +
-        (d.bangumi ? T('已连接 Bangumi') + (d.bgmName ? T('（{0}）', esc(d.bgmName)) : '') : T('还没连接 Bangumi，连接后收藏、进度和评分会同步到你的 Bangumi 账号')) +
+        T('已连接 Bangumi') + (d.bgmName ? T('（{0}）', esc(d.bgmName)) : '') +
         '</div></div><span class="acct-more">' + (menu ? T('收起') : T('管理')) + '</span></div>';
-      if (menu && nick) {
-        h += '<form class="acct-nick" id="acct-nick"><input type="text" name="n" maxlength="20" autocomplete="off" placeholder="' + T('新昵称') + '" value="' +
-          esc(d.nickname || '') + '"><button type="submit">' + T('保存') + '</button></form>' +
-          '<p class="hint">' + T('6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线') + '</p>';
-      } else if (menu && em) {
-        h += emailFlow(d);
-      } else if (menu) {
-        h += '<div class="acct-menu"><button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
-          '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>' +
+      if (menu) {
+        h += '<div class="acct-menu">' +
           '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + T('退出登录') + '</button></div>';
       }
     } else if (d.offline) {
-      h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
+      h += '<p class="hint">' + T('电视现在连不上 Bangumi，确认不了登录状态，稍后再看。') + '</p>';
     } else {
-      h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。') + '</p>';
+      h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度和评分都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' + T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行') + '</span></div>' +
-        (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
-          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>') +
+      // 手机授权: 授权完那一跳必然失败 (目标是电视本机的回环地址), 但地址栏里带着 code, 粘回来即可. 没有 url = 在电视上登录
+      var paste = !!l.url;
+      if (l.expiresIn != null) loginDeadline = Date.now() + l.expiresIn;
+      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b>' +
+        (l.expiresIn != null ? '<span class="acct-left"></span>' : '') + '<span class="now-sub">' +
+        (paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的') : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
+        (paste ? '<p class="hint">' + T('把那个打不开的页面的网址整个复制，粘到下面。') + '</p>' +
+          '<form class="acct-nick" id="acct-cb"><input type="text" name="u" inputmode="url" autocomplete="off" placeholder="' +
+          T('粘贴那个网址') + '"><button type="submit">' + T('完成登录') + '</button></form>' +
+          '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>' : '') +
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
-    } else if (!full && !d.offline) {
+    } else if (!d.loggedIn && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
-      h += '<div class="row"><button type="button" class="primary" data-login="1">' + (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) +
-        '</button></div><p class="hint">' + T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。') + '</p>';
-      // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
-      if (!d.loggedIn) {
-        h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
+      if (d.viaMirror) {
+        // 经第三方镜像: 授权页与换 token 在镜像上走不通, 只剩个人令牌; 而令牌要经镜像校验, 得先许凭证经过镜像
+        // (不开的话校验请求被留在官方, 连不上, 只会等到超时)
+        h += '<div class="now-status attention"><b>' + T('现在经镜像连接 Bangumi') + '</b><span>' +
+          T('经镜像时授权登录走不通，只能用个人令牌登录。') + '</span></div>';
+        h += d.mirrorCred && tok ? tokenForm(d, false)
+          : '<div class="row"><button type="button" class="primary" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
+      } else {
+        h += '<div class="row"><button type="button" class="primary" data-login="1">' + T('用手机登录 Bangumi') + '</button>' +
+          '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button></div><p class="hint">' +
+          T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。') + '</p>';
+        // 个人令牌: 不经过授权页
+        h += tok ? tokenForm(d, true) : '<div class="row"><button type="button" class="ghost" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
       }
     }
     h += '</div>';
     if (h !== last) {
-      // 重画保住正在填的 (邮箱 / 验证码 / 昵称) 与焦点
+      // 重画保住正在填的 (回调网址 / 令牌) 与焦点
       var typed = {}, act = document.activeElement, focus = act && box.contains(act) && act.form ? act.form.id + '.' + act.name : null;
       [].forEach.call(box.querySelectorAll('form[id] input[name]'), function (i) { typed[i.form.id + '.' + i.name] = i.value; });
       box.innerHTML = h;
@@ -6315,17 +6720,88 @@ private val ACCOUNT_SCRIPT = """
         if (k === focus) i.focus();
       });
     }
-    if (waiting) timer = setTimeout(load, 2000);
+    clearInterval(loginTick);
+    loginTick = null;
+    if (waiting) {
+      tickLogin();
+      loginTick = setInterval(tickLogin, 1000);
+      timer = setTimeout(load, 2000);
+    }
+  }
+  // 用手机授权之前先讲清楚: 授权完浏览器会停在一个打不开的页面 (回调是电视本机的地址, 手机上当然打不开),
+  // 不讲的话都以为登录失败了. 「知道了」那一下也是用户点的, 在里面开新页面不会被当成弹窗拦掉
+  function loginGuide(btn) {
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'login-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('用手机登录 Bangumi') + '</div><ol class="login-steps">' +
+      '<li>' + T('接下来会打开 Bangumi 的授权页：登录你的 Bangumi 账号，点「允许」。') + '</li>' +
+      '<li>' + T('授权完，浏览器会跳到一个打不开的页面（提示无法访问、连接被拒绝之类）。这是正常的，不是登录失败。') + '</li>' +
+      '<li>' + T('把那个打不开的页面的网址整个复制下来，回到这里粘贴，点「完成登录」。') + '</li></ol><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<button type="button" class="primary" data-ldlg="go">' + T('知道了，去授权') + '</button></div></div>';
+    d.addEventListener('click', function (e) {
+      if (e.target.closest('[data-ldlg="go"]')) { d.remove(); startLogin(btn); return; }
+      if (e.target === d || e.target.closest('[data-ldlg="close"]')) d.remove();
+    });
+    document.body.appendChild(d);
+  }
+  // 个人令牌登录的完整步骤. 经镜像时第一步是打开「登录与收藏同步也经过镜像」: 不开的话令牌校验被留在官方 (连不上),
+  // 只会等到超时 (测试用户实测, 打开之后就登上了). 那一步的按钮就是同意 —— 风险写在步骤里, 不再另弹确认
+  function tokenGuide(d) {
+    var needCred = !!(d.viaMirror && !d.mirrorCred);
+    var page = (d.tokenPages || [])[0] || 'https://next.bgm.tv/demo/access-token';
+    var link = '<a href="' + esc(page) + '" target="_blank" rel="noopener">' + esc(page.replace(/^https?:\/\//, '')) + '</a>';
+    var steps = [];
+    if (needCred) {
+      steps.push(T('打开「登录与收藏同步也经过镜像」，不然令牌校验发不出去。') +
+        '<span class="risk">' + T('打开后，令牌、收藏和观看进度都会经过第三方镜像，对方能看到并使用你的账号。点下面的「我了解风险，打开并继续」会直接打开这个选项，即表示你接受这个风险。') + '</span>');
+    }
+    steps.push(d.viaMirror
+      ? T('生成个人令牌：让手机临时开代理，或者换一个能打开 bgm.tv 的网络，打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。镜像网站上的登录页过不了人机验证，这一步只能在官网做。', link)
+      : T('生成个人令牌：打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。', link));
+    steps.push(T('复制生成的令牌，回到这里粘到「令牌」框，「有效期」选和刚才一样的天数，点「登录」。'));
+    steps.push(T('令牌到期后电视会退出登录，到时再生成一个新的粘进来就行。'));
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var dlg = document.createElement('div');
+    dlg.id = 'login-dlg';
+    dlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('用个人令牌登录') + '</div><ol class="login-steps">' +
+      steps.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<button type="button" class="primary" data-ldlg="go">' + (needCred ? T('我了解风险，打开并继续') : T('知道了')) + '</button></div></div>';
+    dlg.addEventListener('click', function (e) {
+      var go = e.target.closest('[data-ldlg="go"]');
+      if (go) {
+        if (!needCred) { dlg.remove(); openTokenForm(); return; }
+        go.disabled = true;
+        post('api/settings/bangumi/cred', { on: '1' }).then(function (r) {
+          toast(r.message);
+          dlg.remove();
+          if (r.ok) openTokenForm(); else load();
+        }).catch(function () { go.disabled = false; fail(); });
+        return;
+      }
+      if (e.target === dlg || e.target.closest('[data-ldlg="close"]')) dlg.remove();
+    });
+    document.body.appendChild(dlg);
+  }
+  function openTokenForm() {
+    tok = true;
+    load();
   }
   // 登录按钮 (账号卡片、评论与评分区): 点下去当场先开一个空白页, 等电视要来链接再让它跳过去 ——
   // 等请求回来再开新页面会被浏览器当成弹窗拦掉. 开不了新页面 (有的内置浏览器) 就在本页跳, 授权完按返回回来
   function startLogin(btn) {
-    var w = null;
-    try { w = window.open('', '_blank'); } catch (e) {}
+    // 点下去当场先开一个空白页, 等电视把授权链接回来再让它跳过去 —— 等请求回来再开会被当成弹窗拦掉.
+    // 「改在电视上登录」那颗不开页面: 授权页弹在电视上, 手机这边只是等
+    var onTv = btn.getAttribute('data-login') === 'tv', w = null;
+    if (!onTv) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
-    post('api/account/login', {}).then(function (r) {
+    post('api/account/login', onTv ? { where: 'tv' } : {}).then(function (r) {
       btn.disabled = false;
-      if (!r.ok) {
+      if (!r.ok || !r.url) {
         if (w) w.close();
         toast(r.message);
       } else if (w) {
@@ -6342,63 +6818,55 @@ private val ACCOUNT_SCRIPT = """
   }
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-login]');
-    if (b) { if (!b.disabled) startLogin(b); return; }
+    if (b) {
+      if (b.disabled) return;
+      // 经镜像时授权登录走不通 (评论与评分区的登录按钮也走这里): 指到账号卡片的个人令牌
+      if (lastData && lastData.viaMirror) { toast(T('现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录')); return; }
+      if (b.getAttribute('data-login') === 'tv') startLogin(b); else loginGuide(b);
+      return;
+    }
+    if (e.target.closest('[data-acct="token-guide"]')) {
+      e.preventDefault();
+      if (lastData) tokenGuide(lastData);
+      return;
+    }
     if (e.target.closest('[data-acct="cancel"]')) {
       post('api/account/login/cancel', {}).then(function (r) { toast(r.message); load(); }).catch(fail);
       return;
     }
-    if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; nick = false; em = null; rerender(); return; }
-    // 邮箱: 打开 / 收起 / 换个邮箱 / 重新发送
-    if (e.target.closest('[data-acct="email"]')) {
-      em = { step: 'email', email: '', bind: !!(lastData && lastData.loggedIn) };
-      rerender();
-      var ef = document.getElementById('acct-email');
-      if (ef) ef.elements.e.focus();
-      return;
-    }
-    if (e.target.closest('[data-acct="email-close"]')) { em = null; rerender(); return; }
-    if (e.target.closest('[data-acct="email-back"]')) { if (em) em.step = 'email'; rerender(); return; }
-    var rs = e.target.closest('[data-acct="email-resend"]');
-    if (rs) { if (em && !rs.disabled) sendOtp(em.email, rs); return; }
-    if (e.target.closest('[data-acct="nick"]')) {
-      nick = true;
-      rerender();
-      var f = document.getElementById('acct-nick');
-      if (f) f.elements.n.focus();
-      return;
-    }
+    if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; rerender(); return; }
+    if (e.target.closest('[data-acct="token-close"]')) { tok = false; rerender(); return; }
     if (e.target.closest('[data-acct="logout"]')) {
-      if (!confirm(T('退出电视上的登录？\n\n退出后收藏同步、评分和评论都要重新登录才能用。'))) return;
+      if (!confirm(T('退出电视上的登录？\n\n退出后收藏同步和评分都要重新登录才能用。'))) return;
       post('api/account/logout', {}).then(function (r) { toast(r.message); menu = false; load(); }).catch(fail);
     }
   });
   box.addEventListener('submit', function (e) {
     var f = e.target;
-    if (f.id === 'acct-email') {
+    if (f.id === 'acct-cb') {
       e.preventDefault();
-      sendOtp(f.elements.e.value.trim(), f.querySelector('button'));
-      return;
-    }
-    if (f.id === 'acct-otp') {
-      e.preventDefault();
-      var vb = f.querySelector('button');
-      vb.disabled = true;
-      post('api/account/email/verify', { code: f.elements.c.value.trim() }).then(function (r) {
-        vb.disabled = false;
+      var cb = f.querySelector('button');
+      cb.disabled = true;
+      post('api/account/login/callback', { url: f.elements.u.value.trim() }).then(function (r) {
+        cb.disabled = false;
         toast(r.message);
-        if (r.ok) { em = null; menu = false; load(); }
-      }).catch(function () { vb.disabled = false; fail(); });
+        if (r.ok) { f.elements.u.value = ''; }
+        load();
+      }).catch(function () { cb.disabled = false; fail(); });
       return;
     }
-    if (e.target.id !== 'acct-nick') return;
-    e.preventDefault();
-    var btn = e.target.querySelector('button');
-    btn.disabled = true;
-    post('api/account/nickname', { nickname: e.target.elements.n.value.trim() }).then(function (r) {
-      btn.disabled = false;
-      toast(r.message);
-      if (r.ok) { menu = false; nick = false; load(); }
-    }).catch(function () { btn.disabled = false; fail(); });
+    if (f.id === 'acct-token') {
+      e.preventDefault();
+      var tb = f.querySelector('button[type=submit]');
+      tb.disabled = true;
+      post('api/account/token', { token: f.elements.token.value.trim(), days: f.elements.days.value }).then(function (r) {
+        tb.disabled = false;
+        toast(r.message);
+        if (r.ok) { tok = false; f.elements.token.value = ''; }
+        load();
+      }).catch(function () { tb.disabled = false; fail(); });
+      return;
+    }
   });
   // 从授权页切回来: 马上问一次, 不等下一轮 (后台标签页里的定时器会被浏览器压着)
   document.addEventListener('visibilitychange', function () {
@@ -6412,6 +6880,241 @@ private val ACCOUNT_SCRIPT = """
  * 常驻的字看过一次就成了背景, 反而占地方; 会影响决定的后果 / 限制 (改完立即生效、订阅来的源只能启停…) 仍留在原地.
  * 从没打开过时按钮上带小红点 (记在这台手机的浏览器里). 手势另有列表里的一次性滑开提示 (swPeek), 不指望用户先来读说明.
  */
+/**
+ * 「设置 → 常规」的「应用更新」(见 RemoteAppUpdate): 检查新版本、下载并安装, 或用手机上的安装包更新 (分块上传, 块大小由服务端给,
+ * 按顺序一块一块发). 安装由电视上的系统确认框确认, 结果 (失败原因) 回到这里; 上传的包没装成时可以直接用它再装一次.
+ * 下载 / 等确认时每秒刷新一次, 其余只在切到设置时读.
+ * 确认安装后 Izuko 会被系统关掉, 这期间连不上是正常的: 隔两秒再来, 重新打开后显示上次安装的结果.
+ */
+private val UPDATE_SCRIPT = """
+(function () {
+  var box = document.getElementById('set-update');
+  if (!box) return;
+  // 选文件的 input 放在卡片外面: 刷新时整张卡片重画, 不能把正开着的文件选择器换掉.
+  // 不设 accept: iPhone 的 Safari 认不出 .apk 这个类型, 设了之后文件选择里所有文件都是灰的、一个也选不了;
+  // 选错了文件有两道兜底: 文件名不是 .apk 时先问一句, 电视上核对不是安装包会拒装
+  var picker = document.createElement('input');
+  picker.type = 'file';
+  picker.id = 'upd-picker';
+  picker.hidden = true;
+  document.body.appendChild(picker);
+  // up: 正在上传 { size, sent, finishing }; err: 卡片上的操作 (检查、下载安装、上传、授权) 没成的原因, 不弹 toast,
+  // 像安装失败一样用红字留在状态 / 进度条那一行, 直到下一次操作; waitRestart: 等确认安装时电视上的 Izuko 关掉了 (点了「更新」会这样, 内存紧张时确认框一弹出系统也会回收它, 网页分不出是哪种), 等它重新打开.
+  // 安装前要先有「安装未知应用」的授权: permAsked = 已请电视打开授权页, 等授权 (Android 11 起授权会让 Izuko 重启;
+  // Izuko 在后台时授权页等它回到前台才打开, 期间 permPending); permSkip = 这台电视打不开授权页, 直接装 (anyway=1), 由系统询问
+  // line: 挑的下载线路 (域名), 空 = 自动; 只在这个网页里记着, 下次打开还是自动
+  var last = null, timer = null, up = null, err = null, waitRestart = false, permAsked = false, permSkip = false, line = '';
+  function visible() { return !document.hidden && !!box.offsetParent; }
+  function later(ms) {
+    clearTimeout(timer);
+    timer = setTimeout(function () { if (visible()) load(); }, ms);
+  }
+  function load() {
+    getJson('api/update').then(function (d) {
+      var j = d.job;
+      waitRestart = false;
+      if (d.canInstall) permAsked = false;
+      // 电视上开始了别的安装 (可能是另一台手机发起的): 上次没成的原因不再留着
+      if (d.checking || j.busy || j.phase === 'confirm' || j.phase === 'waiting_front' || j.phase === 'success') err = null;
+      render(d);
+      if (d.checking || j.busy || j.phase === 'confirm' || j.phase === 'waiting_front') later(1000);
+      else if (permAsked) later(2000);
+    }).catch(function () {
+      if (last && (waitRestart || last.job.phase === 'confirm')) {
+        waitRestart = true;
+        render(last);
+        later(2000);
+      } else if (permAsked) later(2000);
+    });
+  }
+  window.loadUpdate = load;
+  // 手机锁屏或切到别的应用时, 定时刷新会跳过 (见 later), 轮询就此停下: 回到网页时补读一次, 这期间电视上装完了也能看到结果
+  document.addEventListener('visibilitychange', function () { if (visible()) load(); });
+  // 先按手上的状态重画出原因 (之后读状态失败了也看得到), 再由调用方去读最新状态
+  function showErr(msg) {
+    err = msg;
+    render(last);
+  }
+  function netErr() { return T('无法连接电视。请确认电视已唤醒、Izuko 正在运行，并且手机和电视连接到同一网络。'); }
+  function pct(p) { return Math.round(Math.max(0, Math.min(1, p)) * 100); }
+  function render(d) {
+    if (!d) return;
+    last = d;
+    var j = d.job, busy = j.busy || !!up, needPerm = !d.canInstall && !permSkip;
+    var h = '<div class="card set-card"><div class="set-title">' + T('应用更新') + '</div>' +
+      '<p class="upd-line">' + T('当前版本：{0}', esc(d.current)) + '</p>';
+    // 上次安装的结果: 开始上传新的就不再显示 (服务端在上传收齐、开始安装时才清掉它)
+    if (d.last && !up) h += '<p class="upd-line ' + (d.last.ok ? 'upd-ok' : 'upd-bad') + '">' + esc(d.last.text) + '</p>';
+    // GitHub 连不上时电视逐个试镜像 (每个最长 20 秒), 服务端给「GitHub 连不上，正在查镜像 2/4」
+    if (d.checking) h += '<p class="hint">' + esc(d.checkText || T('正在检查更新…')) + '</p>';
+    else if (d.checkError) h += '<p class="upd-line upd-bad">' + esc(d.checkError) + '</p>';
+    else if (d.latest) {
+      h += '<p class="upd-line">' + T('最新版本：{0}', esc(d.latest.name)) + '</p>';
+      if (d.latest.notes.length) {
+        h += '<ul class="upd-notes">' + d.latest.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>';
+      }
+    } else if (d.checked) h += '<p class="hint">' + T('已是最新版本') + '</p>';
+    // 传的是哪个安装包: 名字与大小一直显示 (新的上传替换), 选错了文件在电视上点「安装」之前就看得出来; 电视核对过后补上读出来的版本
+    var pk = up ? { name: up.name, size: up.size } : d.upload;
+    if (pk) {
+      h += '<p class="upd-line">' + T('安装包：{0}（{1}）', esc(pk.name), window.fmtTransfer(pk.size, 0)) + '</p>';
+      if (!up && pk.version) {
+        h += '<p class="hint">' + (pk.otherPkg ? T('版本 {0}，是另一个 Izuko TV：{1}', esc(pk.version), esc(pk.otherPkg))
+          : T('版本 {0}，装在这个 Izuko TV 上', esc(pk.version))) + '</p>';
+      }
+    }
+    var text, bad = false;
+    if (waitRestart) text = T('电视上的 Izuko TV 已关闭，重新打开后这里会显示结果。');
+    else if (up) text = up.finishing ? T('正在核对安装包…') : T('正在上传：{0}', window.fmtTransfer(up.sent, up.size, upRate()));
+    else if (err) { text = err; bad = true; }
+    else if (permAsked && needPerm) {
+      text = d.permPending ? T('回到电视上的 Izuko TV 后会打开授权页。')
+        : T('在电视上打开「允许」后，Izuko TV 可能会重启；重新打开后回到这里继续。');
+    } else { text = j.text; bad = j.phase === 'failed'; }
+    // 进度条: 上传 (手机这边的已发字节)、下载与写入安装会话 (电视报的, 挑线路 / 校验 / 落盘这些看不出进度的步骤不给)
+    var p = up ? (up.finishing ? null : up.sent / up.size)
+      : ((j.phase === 'downloading' || j.phase === 'preparing') && j.progress != null ? j.progress : null);
+    if (text) h += '<p class="upd-line upd-status' + (bad ? ' upd-bad' : '') + '">' + esc(text) + '</p>';
+    if (p != null) h += '<div class="cl-bar"><div style="width:' + pct(p) + '%"></div></div>';
+    // 上传的包没装成 (电视上误按了取消之类): 包还在电视上, 直接再装一次, 不用重新上传
+    if (d.retry && !up) {
+      h += '<div class="row"><button type="button" class="primary" data-upd="retry"' + (busy ? ' disabled' : '') + '>' +
+        T('用这个安装包再装一次') + '</button></div>';
+    }
+    if (!d.latest || d.checking) {
+      h += '<div class="row"><button type="button" class="ghost" data-upd="check"' + (d.checking || busy ? ' disabled' : '') + '>' + T('检查更新') + '</button></div>';
+    } else if (!needPerm) {
+      // 下载线路: 默认自动 (各条一起测速, 从最快的下, 失败换下一条); 挑了哪条就只从哪条下.
+      // 每条后面是服务端给的一句: 上次从它下完的平均速度、没下成的原因, 或只测过速时的「能连上」
+      if (d.lines && d.lines.length > 1) {
+        if (!d.lines.some(function (l) { return l.host === line; })) line = '';
+        h += '<label class="look-ld"><span>' + T('下载线路') + '</span><select data-upd-line' + (busy ? ' disabled' : '') + '>' +
+          '<option value="">' + T('自动（选最快的）') + '</option>' +
+          d.lines.map(function (l) {
+            var name = l.official ? T('{0}（官方）', esc(l.host)) : esc(l.host);
+            return '<option value="' + esc(l.host) + '"' + (l.host === line ? ' selected' : '') + '>' +
+              name + (l.note ? ' · ' + esc(l.note) : '') + '</option>';
+          }).join('') + '</select></label>';
+      }
+      h += '<div class="row"><button type="button" class="primary" data-upd="install"' + (busy ? ' disabled' : '') + '>' +
+        T('下载并安装 {0}', esc(d.latest.name)) + '</button></div>';
+    }
+    h += needPerm
+      ? '<div class="row"><button type="button" class="primary" data-upd="perm"' + (busy ? ' disabled' : '') + '>' + T('在电视上允许安装应用') + '</button></div>' +
+        '<p class="hint">' + T('电视还没允许 Izuko TV 安装应用，要先允许一次：在电视上打开的授权页里，把 Izuko TV 的「允许」打开。') + '</p>'
+      : '<div class="row"><button type="button" class="ghost" data-upd="pick"' + (busy ? ' disabled' : '') + '>' + T('上传安装包') + '</button></div>';
+    h += '<p class="hint">' + T('安装时电视上会弹出系统的确认框，用遥控器点「安装」或「更新」。装完 Izuko TV 会关闭，在电视上重新打开即可。') + '</p></div>';
+    setHtml(box, h);
+  }
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-upd]');
+    if (!b || b.disabled) return;
+    var a = b.getAttribute('data-upd');
+    if (a === 'pick') {
+      picker.value = '';
+      picker.click();
+      return;
+    }
+    b.disabled = true;
+    err = null;
+    if (a === 'perm') {
+      post('api/update/permission', {}).then(function (r) {
+        if (r.ok) {
+          permAsked = true;
+          if (r.message) toast(r.message, 6000);
+        } else {
+          permSkip = true;
+          if (r.message) showErr(r.message);
+        }
+        load();
+      }).catch(function () { b.disabled = false; showErr(netErr()); });
+      return;
+    }
+    var api = a === 'install' ? 'api/update/install' : a === 'retry' ? 'api/update/retry' : 'api/update/check';
+    post(api, { anyway: permSkip ? '1' : '', line: a === 'install' ? line : '' }).then(function (r) {
+      if (!r.ok && r.message) showErr(r.message);
+      load();
+    }).catch(function () { b.disabled = false; showErr(netErr()); });
+  });
+  box.addEventListener('change', function (e) {
+    var s = e.target.closest('[data-upd-line]');
+    if (s) line = s.value;
+  });
+  picker.addEventListener('change', function () {
+    var f = picker.files && picker.files[0];
+    if (f) upload(f);
+  });
+  // 上传速度: 最近 5 秒的平均 (只看最后一块的话一抖就大起大落); 样本不够两个时不写速度
+  function upRate() {
+    var s = up && up.samples, a = s && s[0], b = s && s[s.length - 1];
+    return s && s.length > 1 && b[0] > a[0] ? (b[1] - a[1]) * 1000 / (b[0] - a[0]) : null;
+  }
+  function upload(file) {
+    if (file.name.toLowerCase().slice(-4) !== '.apk' && !confirm(T('「{0}」看起来不是安装包（.apk），仍要上传吗？', file.name))) return;
+    err = null;
+    up = { name: file.name, size: file.size || 1, sent: 0, samples: [[Date.now(), 0]], painted: 0 };
+    render(last);
+    post('api/update/upload/start', { size: String(file.size), name: file.name, anyway: permSkip ? '1' : '' }).then(function (r) {
+      if (!r.ok) throw r;
+      return sendFrom(file, r.id, r.chunk, 0).then(function () { return r.id; });
+    }).then(function (id) {
+      // 收齐了: 等核对与准备的结果, 这期间别露出上一次安装的状态
+      up.finishing = true;
+      render(last);
+      return finish(id, false);
+    }).then(function () {
+      up = null;
+      load();
+    }).catch(function (e) {
+      up = null;
+      showErr(e && e.message ? e.message : T('上传失败，请重试'));
+      load();
+    });
+  }
+  // 按顺序一块一块发; 服务端回已收到多少, 下一块从那里接着发 (重发过的块它会认出来)
+  function sendFrom(file, id, chunk, offset) {
+    if (offset >= file.size) return Promise.resolve();
+    return sendChunk(file.slice(offset, Math.min(file.size, offset + chunk)), id, offset, 3).then(function (received) {
+      var before = pct(up.sent / up.size), now = Date.now();
+      up.sent = received;
+      up.samples.push([now, received]);
+      while (up.samples.length > 2 && now - up.samples[1][0] >= 5000) up.samples.shift();
+      // 百分比变了就重画; 不变时也每秒刷一次已传多少与速度
+      if (pct(up.sent / up.size) !== before || now - up.painted >= 1000) {
+        up.painted = now;
+        render(last);
+      }
+      return sendFrom(file, id, chunk, received);
+    });
+  }
+  function sendChunk(blob, id, offset, retries) {
+    return fetchT('api/update/upload/chunk?id=' + encodeURIComponent(id) + '&offset=' + offset,
+      { method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream' } }, 60000)
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) { r.fatal = true; throw r; }
+        return r.received;
+      })
+      .catch(function (e) {
+        if (e && e.fatal) throw e;
+        if (retries > 0) return sendChunk(blob, id, offset, retries - 1);
+        throw { message: T('上传中断了，请确认手机与电视在同一网络后重试') };
+      });
+  }
+  // 装的是另一个 Izuko TV, 或者比电视上现在的版本旧: 服务端先回 ask, 问一句再带 force 装. 核对不过的原因交给上面留在卡片上
+  function finish(id, force) {
+    return post('api/update/upload/finish', { id: id, force: force ? '1' : '' }).then(function (r) {
+      if (r.ok) return;
+      if (r.ask) {
+        if (confirm(r.message)) return finish(id, true);
+        return;
+      }
+      throw { message: r.message || T('上传失败，请重试') };
+    });
+  }
+})();
+""".trimIndent()
+
 private val HELP_SCRIPT = """
 (function () {
   var btn = document.getElementById('help-btn'), sheet = document.getElementById('help-sheet');
@@ -6440,6 +7143,7 @@ private val HELP_SCRIPT = """
     T('点「接入锁屏 / 控制中心」后，可用手机的系统播放控件操作电视；网页只播放无声占位音轨，不会把电视声音传到手机。')
   ]) + sec(T('数据源'), [
     T('点一条就换成它播放；上面的胶囊可以只看某个源，下拉框按分辨率、字幕、字幕组筛。'),
+    T('右滑一条：用它缓存这一集，这一集已在下载或已缓存时只提示；左滑：在手机上打开它的播放链接。滑过一半松手直接执行。'),
     T('弹幕、音轨与字幕、播放信息、评论与评分在下面可以展开的卡片里。'),
     T('电视退出了播放器（播放还在后台留着）时也能换源，播放控制要回到播放器才能用。')
   ]);
@@ -6451,14 +7155,17 @@ private val HELP_SCRIPT = """
     T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。'),
     T('左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。'),
     T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
-    T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存。')
+    T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存；「新番时间表」按星期列出这一周每天更新的番，自己在看 / 想看的用主题色标出。')
   ]);
   var GENERAL = sec(T('账号'), [
-    T('没登录时可以「用手机登录 Bangumi」（在手机上授权），或用邮箱登录 / 注册 Animeko 账号。'),
-    T('点头像或名字：修改昵称、绑定 / 更换邮箱、退出登录。')
+    T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
+    T('点头像或名字：退出登录。')
   ]) + sec(T('播放记录'), [
     T('点右边的封面（或 ▶）：在电视上接着看，看完的播下一集；点其他地方：电视打开详情页。'),
     T('右滑缓存，左滑删除，滑过一半松手直接执行；长按一行可以多选，一起删除。')
+  ]) + sec(T('应用更新'), [
+    T('「检查更新」后可以直接下载并安装新版本；也可以「上传安装包」，用手机上下好的安装包更新或装测试版，卡片上会显示传的是哪个包。'),
+    T('安装时电视上会弹出确认框，用遥控器点「安装」或「更新」；装不上时这里会显示原因。')
   ]) + sec(T('其他'), [
     T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；最底下可以下载电视的日志。')
   ]);
@@ -6497,16 +7204,23 @@ private val HELP_SCRIPT = """
 /**
  * 缓存标签最下面的「挑番缓存」(见 RemoteCollections): 在看 / 想看的番, 想提前缓存时不用先搜名字、也不用先进一次播放器.
  * 行与搜索结果同一套 (右滑缓存 = 打开这部番的缓存面板, 左滑改收藏, 点封面播放 / 点其他地方开详情, 接口也复用搜索结果的);
- * 在看里有新集的排前面并标出几集还没缓存. 两段各读一次, 缓存面板关上时重读当前段 (刚缓存了, 「未缓存」的数跟着变).
+ * 在看里有新集的排前面并标出几集还没缓存. 各段各读一次, 缓存面板关上时重读当前段 (刚缓存了, 「未缓存」的数跟着变).
+ * 第三段「新番时间表」(见 RemoteSchedule): 分段下面一排星期, 一周一次拿回来、换一天就地换列表; 电视那边按天逐步补齐,
+ * 没补完的时候隔一会儿再要一次.
  */
 private val PICK_SCRIPT = """
 (function () {
   var box = document.getElementById('cl-pick'), sheet = document.getElementById('pick-sheet');
   var body = document.getElementById('pick-body'), seg = document.getElementById('pick-seg');
+  var days = document.getElementById('pick-days'), scroller = sheet.querySelector('.sheet-body');
   var type = 'DOING', data = {}, loading = {};
-  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + T('挑番缓存（在看 / 想看）') + '</button>';
-  // 两段各一个容器, 切换只是显示 / 隐藏: 画好的那段原样留着, 切回来不重画、封面不重新淡入
-  body.innerHTML = '<div class="pick-pane" data-pt="DOING"></div><div class="pick-pane" data-pt="WISH" hidden></div>';
+  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + T('挑番缓存（在看 / 想看 / 新番时间表）') + '</button>';
+  // 每段一个容器, 切换只是显示 / 隐藏: 画好的那段原样留着, 切回来不重画、封面不重新淡入
+  body.innerHTML = '<div class="pick-pane" data-pt="DOING"></div><div class="pick-pane" data-pt="WISH" hidden></div>' +
+    '<div class="pick-pane" data-pt="SCHEDULE" hidden></div>';
+  // 时间表看哪一天 (1 = 周一 … 7 = 周日), 每次打开面板回到今天. 今天先按手机的算, 数据回来后按电视的
+  var WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+  var today = (new Date().getDay() + 6) % 7 + 1, day = today, dayPicked = false, retry = null;
   /** 读过的一段这么久之内切回来不重新请求 (打开面板 / 改了收藏 / 缓存面板关上时照样强制重读). */
   var FRESH = 60000;
   function row(x) {
@@ -6531,6 +7245,7 @@ private val PICK_SCRIPT = """
         (d.needLogin ? '<p class="hint">' + T('在「设置」里登录后再来') + '</p>' : '') + '</div>';
       return;
     }
+    if (t === 'SCHEDULE') { paintSchedule(p, d); return; }
     var items = d.items || [];
     if (!items.length) {
       p.innerHTML = '<div class="empty"><p>' + (t === 'DOING' ? T('没有在看的番') : T('没有想看的番')) + '</p></div>';
@@ -6545,19 +7260,69 @@ private val PICK_SCRIPT = """
     // 按行增量更新 (同搜索结果): 没变的行原样留着, 封面不重建、不闪
     window.patchList(list, items.map(row));
   }
+  /** 一排星期: 选中的是 day, 今天标出来; 没变就不重画. */
+  function paintDays() {
+    var h = WEEKDAYS.map(function (w, i) {
+      var n = i + 1;
+      return '<button type="button" data-day="' + n + '"' + (n === day ? ' class="on"' : '') + (n === today ? ' data-today' : '') + '>' +
+        T(w) + '</button>';
+    }).join('');
+    if (days._h !== h) { days.innerHTML = h; days._h = h; }
+  }
+  /** 时间表: 选中那一天的番, 行同在看 / 想看. 那天还没补完、又一部都没有时写「正在读取」而不是「没有新番」. */
+  function paintSchedule(p, d) {
+    if (d.today) {
+      today = d.today;
+      if (!dayPicked) day = today;
+    }
+    paintDays();
+    var all = d.days || [];
+    var cur = all.filter(function (x) { return x.weekday === day; })[0] || { items: [], pending: true };
+    var items = cur.items || [];
+    // 电视那边一天天补齐 (第一次没有落盘缓存时要逐部去拿分集): 说读完了几天
+    var loaded = all.filter(function (x) { return !x.pending; }).length;
+    if (!items.length) {
+      p.innerHTML = !cur.pending ? '<div class="empty"><p>' + T('这一天没有新番') + '</p></div>'
+        : d.failed ? '<div class="empty"><p>' + esc(d.failed) + '</p></div>'
+        : '<p class="hint">' + (all.length ? T('正在读取… 已读完 {0}/{1} 天', loaded, all.length) : T('正在读取…')) + '</p>';
+      return;
+    }
+    var list = p.querySelector(':scope > .list');
+    if (!list) {
+      p.innerHTML = '<p class="hint pick-prog" hidden></p><div class="list"></div>';
+      list = p.querySelector(':scope > .list');
+    }
+    var prog = p.querySelector(':scope > .pick-prog');
+    if (prog) {
+      prog.hidden = !d.partial;
+      if (d.partial) prog.textContent = T('已读完 {0}/{1} 天', loaded, all.length);
+    }
+    window.patchList(list, items.map(row));
+  }
+  // 电视那边按天逐步补齐: 还有没补完的那天就过一会儿再要 (面板还开着、还停在这一段才要)
+  function retrySchedule() {
+    clearTimeout(retry);
+    if (!data.SCHEDULE || !data.SCHEDULE.partial) return;
+    retry = setTimeout(function () { if (!sheet.hidden && type === 'SCHEDULE') load('SCHEDULE', true); }, 2000);
+  }
   function load(t, force) {
     var old = data[t];
-    if (loading[t] || (!force && old && old.ok && Date.now() - old.at < FRESH)) return;
+    // 没补完的时间表不算新鲜, 切回来接着要
+    if (loading[t] || (!force && old && old.ok && !old.partial && Date.now() - old.at < FRESH)) return;
     loading[t] = true;
-    fetch('api/collections?type=' + t).then(function (r) { return r.json(); }).then(function (d) {
+    // 时间表带上正在看的那天: 电视补完那一天就回
+    fetch(t === 'SCHEDULE' ? 'api/schedule?day=' + day : 'api/collections?type=' + t).then(function (r) { return r.json(); }).then(function (d) {
       loading[t] = false;
       d.at = Date.now();
+      d.partial = t === 'SCHEDULE' && d.ok && !d.failed && (d.days || []).some(function (x) { return x.pending; });
       data[t] = d;
       if (!sheet.hidden) paint(t);
+      if (t === 'SCHEDULE') retrySchedule();
     }).catch(function () {
       loading[t] = false;
       if (!data[t]) data[t] = { ok: false, message: T('读取失败，关掉再打开试试') };
       if (!sheet.hidden) paint(t);
+      if (t === 'SCHEDULE') retrySchedule();
     });
   }
   // 改了收藏状态之后: 当前段就地重读 (先留着旧的不闪「正在读取」), 另一段作废, 切过去时重读
@@ -6568,6 +7333,11 @@ private val PICK_SCRIPT = """
   };
   function open() {
     window.sheets.open(sheet);
+    if (type === 'SCHEDULE' && day !== today) scroller.scrollTop = 0;
+    day = today;
+    dayPicked = false;
+    days.hidden = type !== 'SCHEDULE';
+    paintDays();
     paint(type);
     load(type, true);
   }
@@ -6580,8 +7350,21 @@ private val PICK_SCRIPT = """
     type = b.getAttribute('data-ptype');
     [].forEach.call(seg.children, function (c) { c.classList.toggle('on', c === b); });
     [].forEach.call(body.querySelectorAll('.pick-pane'), function (p) { p.hidden = p.getAttribute('data-pt') !== type; });
+    days.hidden = type !== 'SCHEDULE';
+    paintDays();
     paint(type);
     load(type, false);
+  });
+  // 换一天: 就地换列表 (一周的都在手上), 回到列表开头; 那天还没补完就马上要一次, 不等下一轮
+  days.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-day]');
+    if (!b) return;
+    day = +b.getAttribute('data-day');
+    dayPicked = true;
+    paintDays();
+    paint('SCHEDULE');
+    scroller.scrollTop = 0;
+    if (data.SCHEDULE && data.SCHEDULE.partial) load('SCHEDULE', true);
   });
   body.addEventListener('click', function (e) {
     var b = e.target.closest('.pick-item');

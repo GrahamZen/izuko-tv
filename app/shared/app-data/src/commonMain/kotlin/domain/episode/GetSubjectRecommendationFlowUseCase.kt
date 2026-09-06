@@ -34,13 +34,14 @@ class GetSubjectRecommendationUseCaseImpl(private val service: SubjectService) :
     override suspend fun invoke(subjectId: Int): List<SubjectRecommendation> {
         return service.getSubjectRecommendations(subjectId, 15).map {
             SubjectRecommendation(
-                subjectId = it.subjectId,
-                name = it.subjectName,
-                nameCn = it.subjectNameCn,
-                desc1 = it.desc1,
-                desc2 = it.desc2,
+                subjectId = it.subjectId.toLong(),
+                name = it.name,
+                nameCn = it.nameCn,
+                // Ani 那边这两行是服务端拼好的说明文字 (评分/播出年份之类), bangumi 的 recs 不给
+                desc1 = "",
+                desc2 = "",
                 imageUrl = it.imageUrl,
-                uri = it.uri,
+                uri = null,
             )
         }
     }

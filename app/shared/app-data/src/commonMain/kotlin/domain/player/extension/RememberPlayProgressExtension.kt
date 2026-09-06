@@ -13,9 +13,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -25,7 +27,6 @@ import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
@@ -51,7 +52,6 @@ class RememberPlayProgressExtension(
     private val initialReportDelay: Duration = 5.seconds,
 ) : PlayerExtension(name = "SaveProgressExtension") {
     private val playProgressRepository: EpisodePlayHistoryRepository by koin.inject()
-    private val automationGate: PlaybackAutomationGate by koin.inject()
     private val latestInfoBundleMutex = Mutex()
     private val latestInfoBundles = mutableMapOf<Int, SubjectEpisodeInfoBundle>()
 
@@ -61,6 +61,19 @@ class RememberPlayProgressExtension(
             context.subscribeEvents<EpisodeFetchSelectPlayState.MediaLoadedEvent>().collectLatest { event ->
                 if (event.episodeId == episodeSession.episodeId && mediaLoaded.isActive) {
                     mediaLoaded.complete(Unit)
+                }
+            }
+        }
+
+        /**
+         * 原地重载 (见 [EpisodeFetchSelectPlayState.MediaReloadEvent]) 要回到的位置: 重载前播放器出了错, 没法按常规存进度,
+         * 而存下的进度最久是一分钟前的. 下一次恢复进度用它, 用完即清.
+         */
+        val reloadPositionMillis = MutableStateFlow<Long?>(null)
+        backgroundTaskScope.launch("MediaReloadListener") {
+            context.subscribeEvents<EpisodeFetchSelectPlayState.MediaReloadEvent>().collect { event ->
+                if (event.episodeId == episodeSession.episodeId) {
+                    reloadPositionMillis.value = event.positionMillis
                 }
             }
         }
@@ -101,12 +114,8 @@ class RememberPlayProgressExtension(
              */
             suspend fun restoreSavedPositionOnce() {
                 if (haveResumedOnce) return
-                if (automationGate.suppressed.value) {
-                    // 一起看跟随模式: 位置由房主说了算, 本地不恢复
-                    haveResumedOnce = true
-                    return
-                }
-                val positionMillis = playProgressRepository.getPositionMillisByEpisodeId(episodeSession.episodeId)
+                val positionMillis = reloadPositionMillis.getAndUpdate { null }
+                    ?: playProgressRepository.getPositionMillisByEpisodeId(episodeSession.episodeId)
                 if (positionMillis == null) {
                     logger.info { "Did not find saved position" }
                     haveResumedOnce = true

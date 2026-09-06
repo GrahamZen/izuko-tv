@@ -113,7 +113,11 @@ object ReleaseArtifactNames {
     private const val STABLE_META_CODE = 99
     private const val MAX_PATCH = 1_000_000 // patch * 100 + meta 必须能放进 Int, 留足余量
 
-    fun androidApp(fullVersion: String, arch: String): String = "$appName-$fullVersion-$arch.apk"
+    /**
+     * @param prefix 文件名前缀. 应用检查更新时只认自己这个前缀的包, 见 `AniBuildConfig.updateAssetPrefix`.
+     */
+    fun androidApp(fullVersion: String, arch: String, prefix: String = appName): String =
+        "$prefix-$fullVersion-$arch.apk"
 
     fun androidAppQr(fullVersion: String, arch: String, server: String): String =
         "${androidApp(fullVersion, arch)}.$server.qrcode.png"
@@ -414,6 +418,10 @@ abstract class UploadAndroidApksTask : ReleaseUploadTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val apkDirectory: DirectoryProperty
 
+    /** 见 [ReleaseArtifactNames.androidApp] 的 `prefix`. */
+    @get:Input
+    abstract val assetNamePrefix: Property<String>
+
     @TaskAction
     fun uploadApks() {
         val fullVersion = releaseFullVersion.get()
@@ -436,7 +444,7 @@ abstract class UploadAndroidApksTask : ReleaseUploadTask() {
                 ?: throw GradleException("Cannot infer Android architecture from file name '${file.name}'")
 
             uploadReleaseAsset(
-                name = ReleaseArtifactNames.androidApp(fullVersion, arch),
+                name = ReleaseArtifactNames.androidApp(fullVersion, arch, assetNamePrefix.get()),
                 contentType = "application/vnd.android.package-archive",
                 file = file,
             )

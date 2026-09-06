@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.AniMotionScheme
 import me.him188.ani.app.ui.foundation.animation.AnimatedVisibilityMotionScheme
@@ -67,6 +68,10 @@ import me.him188.ani.app.ui.settings.SettingsTab
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.TextItem
 import org.jetbrains.compose.resources.*
+import androidx.compose.material3.TextButton
+import org.jetbrains.compose.resources.stringResource
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.oauth_bangumi_authorize_external_browser
 
 sealed interface AuthState {
     data class LoggedInAni(val bound: Boolean) : Idle
@@ -75,7 +80,8 @@ sealed interface AuthState {
 
     sealed interface Idle : AuthState
 
-    data object AwaitingResult : AuthState
+    /** 授权进行中, [stage] 是走到哪一步了 (按钮上的字跟着换). */
+    data class AwaitingResult(val stage: BangumiOAuthManager.Stage) : AuthState
 
     data object Success : AuthState
     class Failed(val error: LoadError, val loggedIn: Boolean) : AuthState
@@ -84,8 +90,11 @@ sealed interface AuthState {
 @Composable
 fun BangumiAuthorizeLayout(
     authorizeState: AuthState,
+    /** 经第三方镜像连着: 授权登录走不通, 不给授权按钮, 换成去手机控制台用个人令牌登录的指引. */
+    viaMirror: Boolean,
     contactActions: @Composable () -> Unit,
     onClickAuthorize: () -> Unit,
+    onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
@@ -114,7 +123,16 @@ fun BangumiAuthorizeLayout(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                Column(
+                if (viaMirror) {
+                    Text(
+                        stringResource(Lang.oauth_bangumi_via_mirror),
+                        modifier = Modifier
+                            .padding(top = 24.dp)
+                            .widthIn(max = 720.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                } else Column(
                     modifier = Modifier
                         .padding(top = 24.dp)
                         .fillMaxWidth(),
@@ -127,6 +145,18 @@ fun BangumiAuthorizeLayout(
                             .fillMaxWidth()
                             .widthIn(max = 720.dp),
                     )
+                    // 次要入口: 手机上用系统浏览器更顺手 (密码管理器自动填充 + 复用已登录的
+                    // bgm 会话). 放在这里而不是只在内嵌浏览器的顶栏 —— 那里得先进 WebView 才切得动.
+                    //
+                    // 电视上也给: 回调已经从自定义 scheme 换成回环 http 地址 (见
+                    // OAuthLoopbackServer) —— 电视浏览器不把 `ani://` 交给系统, 但普通 http
+                    // 它照常请求, 请求直接落进 app 自己的监听里.
+                    TextButton(
+                        onClick = onClickAuthorizeExternally,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) {
+                        Text(stringResource(Lang.oauth_bangumi_authorize_external_browser))
+                    }
                     AuthorizeStateText(
                         authorizeState,
                         modifier = Modifier.padding(vertical = 8.dp),
@@ -176,7 +206,9 @@ private fun AuthorizeButton(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 3.dp,
                             )
-                            Text(stringResource(Lang.oauth_bangumi_waiting_result))
+                            // 打开登录页 / 等授权 / 换凭证三步分开说: 最后一步卡住 (换 token 请求挂着) 与
+                            // 还没授权是两回事, 合成一句「正在等待结果」分不出来
+                            Text(stringResource(renderAwaitingStage(it.stage)))
                         }
                     }
 
@@ -221,6 +253,12 @@ private fun AuthorizeButton(
             )
         }
     }
+}
+
+private fun renderAwaitingStage(stage: BangumiOAuthManager.Stage): StringResource = when (stage) {
+    BangumiOAuthManager.Stage.OpeningBrowser -> Lang.oauth_bangumi_stage_opening
+    BangumiOAuthManager.Stage.AwaitingAuthorization -> Lang.oauth_bangumi_stage_authorizing
+    BangumiOAuthManager.Stage.Exchanging -> Lang.oauth_bangumi_stage_exchanging
 }
 
 @Composable

@@ -11,7 +11,10 @@ package me.him188.ani.app.ui.download.subject
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import me.him188.ani.app.domain.media.download.DownloadRequestState
 import me.him188.ani.app.ui.download.components.createTestDownloadItem
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -28,6 +31,17 @@ class SubjectDownloadsPresentationTest {
         assertEquals(3, items.map { it.key }.distinct().size)
         assertEquals(2, items.filterIsInstance<SubjectDownloadListItem.Download>().size)
         assertEquals(2, assertIs<SubjectDownloadListItem.Episode>(items.last()).episode.episodeId)
+    }
+
+    @Test
+    fun `waiting for the torrent service only counts while persisting`() {
+        val creating = DownloadRequestState.Creating(1, listOf(1))
+        assertTrue(creating.toRequestUiState(torrentCreateAwaitingService = true).awaitingTorrentService)
+        assertFalse(creating.toRequestUiState(torrentCreateAwaitingService = false).awaitingTorrentService)
+        // 别的会话在等服务时, 本会话还在准备或已结束就不算
+        assertFalse(DownloadRequestState.Preparing(1, listOf(1)).toRequestUiState(true).awaitingTorrentService)
+        assertFalse(DownloadRequestState.Finished().toRequestUiState(true).awaitingTorrentService)
+        assertFalse(null.toRequestUiState(true).awaitingTorrentService)
     }
 
     @Test

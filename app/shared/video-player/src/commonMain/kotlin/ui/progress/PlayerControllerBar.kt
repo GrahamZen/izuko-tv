@@ -15,7 +15,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -31,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,8 +48,6 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -67,7 +63,6 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -105,10 +100,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.domain.media.player.MediaCacheProgressInfo
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.SteppedSlider
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
 import me.him188.ani.app.ui.foundation.effects.onKey
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.app.ui.foundation.FOCUS_REQ_DELAY_MILLIS
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -635,15 +635,18 @@ object PlayerControllerDefaults {
             properties = PlatformPopupProperties(focusable = true, clippingEnabled = false),
         ) {
             AniTheme(darkModeOverride = DarkMode.DARK) {
+                // TV: 与其他弹窗 / 菜单同一套 (半透明面板色, 不画阴影)
+                val panelStyle = LocalAniUiBehavior.current.focusDrivenNavigation
                 Surface(
                     modifier = Modifier
                         .testTag(TAG_SPEED_SWITCHER_DROPDOWN_MENU)
                         // 同 OptionsSwitcher: 独立窗口自己接播放暂停键
                         .tvOverlayWindowKeys(onDismissRequest)
                         .width(280.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shadowElevation = 8.dp,
+                    shape = CENTERED_PANEL_SHAPE,
+                    color = if (panelStyle) centeredPanelColor else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = if (panelStyle) 0.dp else 8.dp,
                 ) {
                     SteppedSlider(
                         value = currentSpeed,
@@ -729,7 +732,7 @@ object PlayerControllerDefaults {
                 renderValueExposed(value)
             }
 
-            DropdownMenu(
+            AniDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 properties = properties,
@@ -749,39 +752,21 @@ object PlayerControllerDefaults {
                     },
             ) {
                 val options = remember(optionsProvider) { optionsProvider() }
-                // TV: 打开后自动聚焦第一项 (等 popup 渲染完成再请求), 聚焦项画高亮背景示焦
+                // TV: 打开后自动聚焦第一项 (等 popup 渲染完成再请求); 示焦与当前值的样子见 AniDropdownMenuItem
                 val firstItemFocusRequester = remember { FocusRequester() }
                 LaunchedEffect(Unit) {
                     delay(FOCUS_REQ_DELAY_MILLIS)
                     runCatching { firstItemFocusRequester.requestFocus() }
                 }
                 options.forEachIndexed { index, option ->
-                    var itemFocused by remember { mutableStateOf(false) }
-                    DropdownMenuItem(
-                        text = {
-                            val color = if (value == option) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                LocalContentColor.current
-                            }
-                            CompositionLocalProvider(LocalContentColor provides color) {
-                                renderValue(option)
-                            }
-                        },
+                    AniDropdownMenuItem(
+                        text = { renderValue(option) },
                         onClick = {
                             expanded = false
                             onValueChange(option)
                         },
-                        modifier = Modifier
-                            .then(
-                                if (index == 0) Modifier.focusRequester(firstItemFocusRequester)
-                                else Modifier,
-                            )
-                            .onFocusEvent { itemFocused = it.isFocused }
-                            .background(
-                                if (itemFocused) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                else Color.Transparent,
-                            ),
+                        modifier = if (index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier,
+                        selected = value == option,
                     )
                 }
             }

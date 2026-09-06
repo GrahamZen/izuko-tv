@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -53,8 +52,8 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.Res
-import me.him188.ani.app.ui.foundation.a
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.app_icon
 import me.him188.ani.app.ui.foundation.icons.AniIcons
 import me.him188.ani.app.ui.foundation.icons.AwardStar
 import me.him188.ani.app.ui.foundation.icons.DeployedCodeAccount
@@ -75,7 +74,6 @@ import me.him188.ani.app.ui.lang.settings_about_qq_group
 import me.him188.ani.app.ui.lang.settings_about_release_notes
 import me.him188.ani.app.ui.lang.settings_about_source_code
 import me.him188.ani.app.ui.lang.settings_about_version
-import me.him188.ani.app.ui.lang.settings_about_website
 import me.him188.ani.app.ui.lang.settings_help_telegram
 import me.him188.ani.app.ui.settings.rendering.ReleaseClassIcon
 import me.him188.ani.app.ui.settings.rendering.guessReleaseClass
@@ -95,7 +93,6 @@ fun AboutTab(
     state: AboutTabInfo,
     onTriggerDebugMode: () -> Unit,
     onClickReleaseNotes: () -> Unit,
-    onClickWebsite: () -> Unit,
     onClickFeedback: () -> Unit,
     onClickSource: () -> Unit,
     onClickDevelopers: () -> Unit,
@@ -128,14 +125,6 @@ fun AboutTab(
             modifier = Modifier.clickable(onClick = onClickReleaseNotes, role = Role.Button),
             leadingContent = {
                 Icon(Icons.Outlined.News, contentDescription = null)
-            },
-            colors = listItemColors,
-        )
-        ListItem(
-            headlineContent = { Text(stringResource(Lang.settings_about_website)) },
-            modifier = Modifier.clickable(onClick = onClickWebsite),
-            leadingContent = {
-                Icon(Icons.Outlined.Home, contentDescription = null)
             },
             colors = listItemColors,
         )
@@ -230,7 +219,7 @@ fun AniHeroIconAndDescriptions(modifier: Modifier = Modifier) {
             ),
         ) {
             Icon(
-                painterResource(Res.drawable.a),
+                painterResource(Res.drawable.app_icon),
                 contentDescription = stringResource(Lang.settings_about_icon_description),
                 Modifier
                     .clip(CircleShape)
@@ -275,7 +264,7 @@ private fun PreviewAboutTab() {
     ProvideCompositionLocalsForPreview {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest) {
             AboutTab(
-                TestAboutTabInfo, {}, {}, {}, {}, {}, {}, {},
+                TestAboutTabInfo, {}, {}, {}, {}, {}, {},
             )
         }
     }

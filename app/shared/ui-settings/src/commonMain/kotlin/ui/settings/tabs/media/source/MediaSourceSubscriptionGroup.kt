@@ -21,16 +21,12 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -47,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -59,6 +56,10 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.getClipEntryText
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -85,6 +86,7 @@ import me.him188.ani.app.ui.lang.settings_media_source_subscription_unauthorized
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_unknown_error
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_update_failed
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_update_success
+import me.him188.ani.app.ui.lang.settings_media_source_subscription_updating
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_url
 import me.him188.ani.app.ui.lang.settings_mediasource_clipboard_empty
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
@@ -93,10 +95,13 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.jvm.JvmName
 
+/**
+ * @param onUpdateAll 更新全部订阅; 开始更新第几个 (从 1 起) / 共几个时回调一次
+ */
 @Stable
 class MediaSourceSubscriptionGroupState(
     subscriptionsState: State<List<MediaSourceSubscription>>,
-    private val onUpdateAll: suspend () -> Unit,
+    private val onUpdateAll: suspend (onProgress: (updating: Int, total: Int) -> Unit) -> Unit,
     private val onAdd: suspend (MediaSourceSubscription) -> Unit,
     private val onDelete: (MediaSourceSubscription) -> Unit,
     private val onExportLocalChangesToString: suspend (MediaSourceSubscription) -> String,
@@ -106,9 +111,18 @@ class MediaSourceSubscriptionGroupState(
 
     private val updateAllTasker = MonoTasker(backgroundScope)
     val isUpdateAllInProgress get() = updateAllTasker.isRunning
+
+    /** 正在更新第几个 / 共几个 (订阅一个个依次拉); 没在更新或还没开始拉时为 null. */
+    var updateProgress: Pair<Int, Int>? by mutableStateOf(null)
+        private set
+
     fun updateAll() {
         updateAllTasker.launch {
-            onUpdateAll()
+            try {
+                onUpdateAll { updating, total -> updateProgress = updating to total }
+            } finally {
+                updateProgress = null
+            }
         }
     }
 
@@ -153,6 +167,11 @@ class MediaSourceSubscriptionGroupState(
     }
 }
 
+internal object MediaSourceSubscriptionGroupTestTags {
+    /** 「全部更新」按钮: 更新中也一直在, 只换里面的图标 */
+    const val REFRESH = "mediaSourceSubscriptionRefresh"
+}
+
 @Composable
 internal fun SettingsScope.MediaSourceSubscriptionGroup(
     state: MediaSourceSubscriptionGroupState,
@@ -169,20 +188,36 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                 )
             }
 
-            AnimatedContent(
-                state.isUpdateAllInProgress.collectAsStateWithLifecycle().value,
-                transitionSpec = LocalAniMotionScheme.current.animatedContent.standard,
-                contentAlignment = Alignment.CenterEnd,
+            // 更新中按钮照旧在原处, 只把图标换成进度圈: 遥控器焦点常停在这颗按钮上, 把它整个换成别的东西焦点就丢了
+            val updating by state.isUpdateAllInProgress.collectAsStateWithLifecycle()
+            val progress = state.updateProgress.takeIf { updating }
+            if (progress != null) {
+                Text(
+                    stringResource(Lang.settings_media_source_subscription_updating, progress.first, progress.second),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // 更新中再按不重来 (重来会把正在拉的这一轮取消掉从头开始)
+            IconButton(
+                { if (!updating) state.updateAll() },
+                Modifier.testTag(MediaSourceSubscriptionGroupTestTags.REFRESH),
             ) {
-                if (it) {
-                    CircularProgressIndicator(Modifier.size(24.dp))
-                } else {
-                    IconButton({ state.updateAll() }) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = stringResource(Lang.settings_media_source_subscription_refresh_all),
+                if (updating) {
+                    if (progress != null) {
+                        // 已经更新完的个数 / 总数
+                        CircularProgressIndicator(
+                            progress = { (progress.first - 1).toFloat() / progress.second },
+                            modifier = Modifier.size(24.dp),
                         )
+                    } else {
+                        CircularProgressIndicator(Modifier.size(24.dp))
                     }
+                } else {
+                    Icon(
+                        Icons.Rounded.Refresh,
+                        contentDescription = stringResource(Lang.settings_media_source_subscription_refresh_all),
+                    )
                 }
             }
         },
@@ -204,7 +239,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                 state.addNew(state.editingUrl)
             }
             val isAddInProgressState = state.isAddInProgress.collectAsStateWithLifecycle()
-            AlertDialog(
+            AniAlertDialog(
                 { showAddDialog = false },
                 confirmButton = {
                     AnimatedContent(
@@ -215,7 +250,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                         if (it) {
                             CircularProgressIndicator(Modifier.size(24.dp))
                         } else {
-                            TextButton(confirmAdd) {
+                            AniTextButton(confirmAdd) {
                                 Text(stringResource(Lang.settings_media_source_subscription_add_confirm))
                             }
                         }
@@ -289,12 +324,12 @@ private fun SettingsScope.SubscriptionItem(
             IconButton({ showDropdown = true }) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = null)
             }
-            DropdownMenu(showDropdown, { showDropdown = false }) {
+            AniDropdownMenu(showDropdown, { showDropdown = false }) {
                 val uiScope = rememberCoroutineScope()
                 val clipboard = LocalClipboard.current
                 val toaster = LocalToaster.current
 
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Share, null) },
                     text = { Text(stringResource(Lang.settings_media_source_subscription_copy_link)) },
                     onClick = {
@@ -307,7 +342,7 @@ private fun SettingsScope.SubscriptionItem(
                 )
 
                 val enableActions = !state.isExportInProgress.collectAsStateWithLifecycle().value
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Share, null) },
                     text = { Text(stringResource(Lang.settings_media_source_subscription_export_all)) },
                     onClick = {
@@ -321,7 +356,7 @@ private fun SettingsScope.SubscriptionItem(
                     enabled = enableActions,
                 )
 
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     text = {
                         Text(
@@ -339,7 +374,7 @@ private fun SettingsScope.SubscriptionItem(
         },
     )
     if (showConfirmDelete) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showConfirmDelete = false },
             icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(stringResource(Lang.settings_media_source_subscription_delete_dialog)) },
@@ -352,7 +387,7 @@ private fun SettingsScope.SubscriptionItem(
                 )
             },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     {
                         state.delete(subscription)
                         showConfirmDelete = false

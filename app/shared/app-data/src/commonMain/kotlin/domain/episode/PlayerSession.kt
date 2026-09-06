@@ -22,11 +22,15 @@ import me.him188.ani.app.domain.media.hls.HlsPlaybackProxySession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.MediaResolutionException
+import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
+import me.him188.ani.app.domain.media.resolver.MediaResolveDeadlineReporter
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaSourceOpenException
 import me.him188.ani.app.domain.media.resolver.OpenFailures
 import me.him188.ani.app.domain.media.resolver.ResolutionFailures
 import me.him188.ani.app.domain.media.resolver.TorrentBackedMediaDataProvider
+import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
+import me.him188.ani.app.domain.media.resolver.TorrentOpenProgressReporter
 import me.him188.ani.app.domain.media.resolver.UnsupportedMediaException
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -74,6 +78,31 @@ class PlayerSession(
      */
     val videoLoadingState: StateFlow<VideoLoadingState> get() = _videoLoadingStateFlow.asStateFlow()
 
+    private val _resolveDeadline = MutableStateFlow<MediaResolveDeadline?>(null)
+
+    /**
+     * 正在解析 ([VideoLoadingState.ResolvingSource]) 的这一轮最多等到什么时候; 不在解析、或解析器不按超时等时为 `null`.
+     * 由解析器经 [MediaResolveDeadlineReporter] 报来 (见 [reportResolveAttempt]).
+     */
+    val resolveDeadline: StateFlow<MediaResolveDeadline?> get() = _resolveDeadline.asStateFlow()
+
+    private val _torrentOpenProgress = MutableStateFlow<TorrentOpenProgress?>(null)
+
+    /**
+     * 打开 BT 资源、在等种子信息时连上了几个节点; 不在这一步时为 `null`.
+     * 由 `TorrentMediaDataProvider.open` 经 [TorrentOpenProgressReporter] 报来.
+     */
+    val torrentOpenProgress: StateFlow<TorrentOpenProgress?> get() = _torrentOpenProgress.asStateFlow()
+
+    private val _loadedMedia = MutableStateFlow<Media?>(null)
+
+    /**
+     * 当前装进播放器的资源, 停止播放 ([stopPlayback]) 后为 `null`.
+     *
+     * 与选源器的选中项不总是一致: 播放中改了搜索名, 选源会话会重建、新的选源器暂时什么都没选, 播放器却照旧在播原来那个.
+     */
+    val loadedMedia: StateFlow<Media?> get() = _loadedMedia.asStateFlow()
+
     /**
      * 解析 media 并开始播放这个 media.
      */
@@ -84,20 +113,33 @@ class PlayerSession(
         if (media == null) {
             return@coroutineScope
         }
+        _loadedMedia.value = media
 
         var preparedHlsPlaybackProxySession: HlsPlaybackProxySession? = null
         try {
             _videoLoadingStateFlow.value = VideoLoadingState.ResolvingSource
-            val source = mediaResolver.resolve(
-                media,
-                episodeInfo,
-            )
+            val source = try {
+                withContext(MediaResolveDeadlineReporter { _resolveDeadline.value = it }) {
+                    mediaResolver.resolve(
+                        media,
+                        episodeInfo,
+                    )
+                }
+            } finally {
+                _resolveDeadline.value = null
+            }
             _videoLoadingStateFlow.compareAndSet(
                 VideoLoadingState.ResolvingSource,
                 VideoLoadingState.DecodingData(isBt = media.kind == MediaSourceKind.BitTorrent),
             )
 
-            val data = source.open(scopeForCleanup = backgroundScope) // may throw MediaSourceOpenException
+            val data = try {
+                withContext(TorrentOpenProgressReporter { _torrentOpenProgress.value = it }) {
+                    source.open(scopeForCleanup = backgroundScope) // may throw MediaSourceOpenException
+                }
+            } finally {
+                _torrentOpenProgress.value = null
+            }
             val preparedData = prepareHlsPlaybackIfEnabled(data).also {
                 preparedHlsPlaybackProxySession = it.session
             }.data
@@ -157,6 +199,7 @@ class PlayerSession(
     }
 
     suspend fun stopPlayback() {
+        _loadedMedia.value = null
         stopPlayer()
         closeHlsPlaybackProxySession()
     }

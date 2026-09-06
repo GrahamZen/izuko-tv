@@ -9,6 +9,7 @@
 
 package me.him188.ani.datasources.bangumi
 
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
@@ -41,20 +42,25 @@ class BangumiClientImpl(
 ) : BangumiClient {
 
     override suspend fun testConnectionMaster(): ConnectionStatus {
-        return testConnection(BANGUMI_API_HOST)
+        // 不带令牌取「我」, 立刻回 401. 不测根路径: 它走「找不到」那条处理, 实测 3~8 秒才回 (正常接口 0.1~0.2 秒)
+        return testConnection("$BANGUMI_API_HOST/v0/me")
     }
 
     override suspend fun testConnectionNext(): ConnectionStatus {
         return testConnection(BANGUMI_NEXT_API_HOST)
     }
 
-    private suspend fun testConnection(host: String): ConnectionStatus {
-        return client.use {
-            get(host).run {
-                if (status.isSuccess() || status == HttpStatusCode.NotFound)
-                    ConnectionStatus.SUCCESS
-                else ConnectionStatus.FAILED
-            }
+    private suspend fun testConnection(url: String): ConnectionStatus {
+        val status = try {
+            client.use { get(url).status }
+        } catch (e: ResponseException) {
+            // 客户端开着 expectSuccess 时 4xx/5xx 抛到这里
+            e.response.status
+        }
+        return if (status.isSuccess() || status == HttpStatusCode.NotFound || status == HttpStatusCode.Unauthorized) {
+            ConnectionStatus.SUCCESS
+        } else {
+            ConnectionStatus.FAILED
         }
     }
 }

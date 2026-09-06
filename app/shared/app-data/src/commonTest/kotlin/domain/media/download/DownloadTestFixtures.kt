@@ -22,6 +22,7 @@ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.engine.MediaStats
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
+import me.him188.ani.app.tools.Progress
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -38,6 +39,8 @@ internal class DownloadTestCache(
     metadata: MediaCacheMetadata,
 ) : TestMediaCache(media, metadata) {
     override val canPlay = MutableStateFlow(true)
+    override val mergeProgress = MutableStateFlow<Progress?>(null)
+    override val isAwaitingTorrentService = MutableStateFlow(false)
 
     var pauseCalls = 0
         private set
