@@ -12,28 +12,36 @@ package me.him188.ani.app.data.network
 import io.ktor.client.plugins.*
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
-import me.him188.ani.app.data.repository.subject.toEntity1
+import me.him188.ani.app.data.network.mapper.toEntity
+import me.him188.ani.app.data.network.mapper.toUnifiedCollectionType
+import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.canAccessAniApiNow
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniBatchUpdateEpisodeCollectionsRequest
-import me.him188.ani.client.models.AniEpisodeCollectionType
-import me.him188.ani.client.models.AniEpisodeCollectionTypeUpdate
+import me.him188.ani.app.domain.session.canAccessBangumiApiNow
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.EpisodeType.*
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.paging.Paged
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.datasources.bangumi.models.BangumiEpType
+import me.him188.ani.datasources.bangumi.models.BangumiEpisodeCollectionType
+import me.him188.ani.datasources.bangumi.models.BangumiPatchUserSubjectEpisodeCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiEpisode
 import me.him188.ani.datasources.bangumi.models.BangumiEpisodeDetail
 import me.him188.ani.datasources.bangumi.models.BangumiUserEpisodeCollection
 import me.him188.ani.datasources.bangumi.processing.toCollectionType
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.logger
@@ -67,6 +75,13 @@ sealed interface EpisodeService {
     suspend fun getEpisodeCollectionById(subjectId: Int, episodeId: Int): EpisodeCollectionInfo?
 
     /**
+     * 取条目的**全部**分集 (含自己的观看状态), 直接给出可落库的实体.
+     *
+     * 未登录时观看状态一律是 [UnifiedCollectionType.NOT_COLLECTED], 分集本身照常返回.
+     */
+    suspend fun getEpisodeCollectionEntities(subjectId: Int, lastFetched: Long): List<EpisodeCollectionEntity>
+
+    /**
      * 设置多个剧集的收藏状态.
      *
      * 当设置成功时返回 `true`. 返回 `false` 表示用户没有收藏这个条目. 其他异常将会抛出.
@@ -79,11 +94,66 @@ sealed interface EpisodeService {
 }
 
 class EpisodeServiceImpl(
-    private val subjectApi: ApiInvoker<SubjectsAniApi>,
+    private val bangumiV0Api: ApiInvoker<DefaultApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : EpisodeService, KoinComponent {
     private val logger = logger<EpisodeServiceImpl>()
     private val sessionManager: SessionStateProvider by inject()
+
+    override suspend fun getEpisodeCollectionEntities(
+        subjectId: Int,
+        lastFetched: Long,
+    ): List<EpisodeCollectionEntity> = withContext(ioDispatcher) {
+        // **先问登录状态**, 别无条件去打需要登录的那个端点: 登出时每个条目都要白等一次 401 才退到
+        // 公开端点, 真机日志里每次 300~480ms, 逛得越多废请求越多 (2026-09-06 实测).
+        // 下面的 catch 只当兜底 —— 有 session 但 token 过期/被吊销时还是要能退回去.
+        val authorized = sessionManager.canAccessBangumiApiNow()
+        bangumiV0Api {
+            val withSelfStatus = if (!authorized) null else try {
+                // 一个请求同时给分集与自己的观看状态; 对未收藏的条目也返回全部分集 (状态 0)
+                fetchAllPages { offset ->
+                    getUserSubjectEpisodeCollection(subjectId, offset = offset, limit = PAGE_SIZE).body()
+                        .let { page -> page.total to page.data.orEmpty() }
+                }.map { it.episode.toEntity(subjectId, it.type.toUnifiedCollectionType(), lastFetched) }
+                    .also { list ->
+                        logger.info {
+                            "bgm-direct: episodes subject=$subjectId -> ${list.size} (auth), " +
+                                    "watched=${list.count { it.selfCollectionType == UnifiedCollectionType.DONE }}"
+                        }
+                    }
+            } catch (e: ClientRequestException) {
+                if (e.response.status != HttpStatusCode.Unauthorized) throw e
+                logger.info { "bgm-direct: episodes subject=$subjectId 有 session 但被拒, 退到公开端点" }
+                null
+            }
+            withSelfStatus ?: run {
+                // 未登录 (或 token 失效): 公开端点, 没有观看状态
+                fetchAllPages { offset ->
+                    getEpisodes(subjectId, offset = offset, limit = PAGE_SIZE).body()
+                        .let { page -> (page.total ?: 0) to page.data.orEmpty() }
+                }.map { it.toEntity(subjectId, UnifiedCollectionType.NOT_COLLECTED, lastFetched) }
+                    .also { logger.info { "bgm-direct: episodes subject=$subjectId -> ${it.size} (anonymous)" } }
+            }
+        }
+    }
+
+    /**
+     * v0 的 limit 上限是 100, 长番要翻页. [fetch] 返回 (总数, 本页).
+     *
+     * 第一页报出总数之后, 其余页同时取 (最多 [PAGE_PARALLELISM] 个在飞), 按页序拼回来: 一千多集的长番
+     * 一页一页翻是十几个来回, 大图区与详情页的选集都在等它落库.
+     */
+    private suspend fun <T> fetchAllPages(fetch: suspend (offset: Int) -> Pair<Int, List<T>>): List<T> = coroutineScope {
+        val (total, first) = fetch(0)
+        // 按第一页的实际条数算步长: 服务端要是把每页压得比 PAGE_SIZE 小, 照样一页不漏
+        val step = first.size
+        if (step == 0 || step >= total) return@coroutineScope first
+        val permits = Semaphore(PAGE_PARALLELISM)
+        val rest = (step until minOf(total, MAX_EPISODES) step step)
+            .map { offset -> async { permits.withPermit { fetch(offset).second } } }
+            .awaitAll()
+        first + rest.flatten()
+    }
 
     override suspend fun getEpisodeCollectionInfosPaged(
         subjectId: Int,
@@ -91,39 +161,25 @@ class EpisodeServiceImpl(
         limit: Int?,
         episodeType: BangumiEpType?,
     ): Paged<EpisodeCollectionInfo> {
+        // 一次给全: bangumi 的分集接口本身要翻页, 但 [getEpisodeCollectionEntities] 已经翻完了,
+        // 而调用方 (RemoteMediator) 本来就把返回当成"一页装下全部" —— Ani 那版也是这么做的
+        // (它注释里写着"API 不支持 paging")
         return withContext(ioDispatcher) {
-
-            subjectApi.invoke {
-                this.getSubject(subjectId.toLong()).body() // TODO: 2025/6/15 API 不支持 paging 
-            }.let { subjectCollection ->
-                Paged(
-                    subjectCollection.episodes.map {
-                        it.toEntity1(subjectId, lastFetched = currentTimeMillis())
-                            .toEpisodeCollectionInfo()
-                    },
-                )
-            }
-//                .run {
-////                    Paged.processPagedResponse(total, limit ?: 100, data)
-////                }.map {
-////                    it.toEpisodeCollectionInfo()
-////                }
+            Paged(
+                getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+                    .map { it.toEpisodeCollectionInfo() },
+            )
         }
     }
 
 
     override suspend fun getEpisodeCollectionById(subjectId: Int, episodeId: Int): EpisodeCollectionInfo? =
         withContext(ioDispatcher) {
-            try {
-                return@withContext subjectApi.invoke {
-                    this.getEpisode(subjectId.toLong(), episodeId.toLong()).body().toEpisodeCollectionInfo()
-                }
-            } catch (e: ClientRequestException) {
-                if (e.response.status == HttpStatusCode.NotFound) {
-                    return@withContext null
-                }
-                throw e
-            }
+            // bangumi 没有"取某条目的某一集"的接口, 只能取全部再挑 —— 这条路本来就只在缓存缺项时
+            // 走一次, 而分集列表已经在同一个请求里翻完了
+            getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+                .firstOrNull { it.episodeId == episodeId }
+                ?.toEpisodeCollectionInfo()
         }
 
     override suspend fun setEpisodeCollection(
@@ -135,15 +191,17 @@ class EpisodeServiceImpl(
             return@withContext false
         }
         try {
-            subjectApi {
-                batchUpdateEpisodeCollections(
-                    subjectId.toLong(),
-                    AniBatchUpdateEpisodeCollectionsRequest(
-                        episodeIds = episodeId.map { it.toLong() },
-                        episodeCollectionType = type.toAniEpisodeCollectionTypeUpdate(),
+            bangumiV0Api {
+                // v0 的批量端点与 Ani 那个形状一致: 一次给一批 episodeId 设同一个状态
+                patchUserSubjectEpisodeCollection(
+                    subjectId,
+                    BangumiPatchUserSubjectEpisodeCollectionRequest(
+                        episodeId = episodeId,
+                        type = type.toBangumiEpisodeCollectionType(),
                     ),
                 ).body()
             }
+            logger.info { "bgm-direct: WRITE episodes subject=$subjectId ids=$episodeId type=$type" }
             true
         } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.NotFound) {
@@ -154,6 +212,16 @@ class EpisodeServiceImpl(
     }
 
     private companion object {
+        const val PAGE_SIZE = 100 // v0 的 limit 上限
+
+        /** 长番翻页时同时在飞的页数, 见 [fetchAllPages]. 一千多集四页一起取, 一秒多就齐了, 不必一口气全发出去. */
+        const val PAGE_PARALLELISM = 4
+
+        /**
+         * 长番 (海贼王一千多集) 的封顶, 防止翻页翻不完.
+         */
+        const val MAX_EPISODES = 3000
+
         fun HttpStatusCode.isUnauthorized(): Boolean {
             return this == HttpStatusCode.Unauthorized || this == HttpStatusCode.Forbidden
         }
@@ -162,6 +230,18 @@ class EpisodeServiceImpl(
             return this.value in 500..599
         }
     }
+}
+
+/**
+ * bangumi 的分集收藏状态没有"搁置"这一档; [UnifiedCollectionType.NOT_COLLECTED] 映射成 0 (未收藏),
+ * 效果是把这一集的状态清掉.
+ */
+private fun UnifiedCollectionType.toBangumiEpisodeCollectionType(): BangumiEpisodeCollectionType = when (this) {
+    UnifiedCollectionType.WISH -> BangumiEpisodeCollectionType.WATCHLIST
+    UnifiedCollectionType.DONE -> BangumiEpisodeCollectionType.WATCHED
+    UnifiedCollectionType.DROPPED -> BangumiEpisodeCollectionType.DISCARDED
+    UnifiedCollectionType.DOING, UnifiedCollectionType.ON_HOLD,
+    UnifiedCollectionType.NOT_COLLECTED -> BangumiEpisodeCollectionType.NOT_COLLECTED
 }
 
 private fun EpisodeInfo.createNotCollected(): EpisodeCollectionInfo {
@@ -194,16 +274,16 @@ internal fun BangumiEpisode.toEpisodeInfo(): EpisodeInfo {
 internal fun BangumiEpisodeDetail.toEpisodeInfo(): EpisodeInfo {
     return EpisodeInfo(
         episodeId = id,
-        type = getEpisodeTypeByBangumiCode(this.type),
+        type = this.type.toEpisodeType(),
         name = name,
         nameCn = nameCn,
-        sort = EpisodeSort(this.sort, getEpisodeTypeByBangumiCode(this.type)),
+        sort = EpisodeSort(this.sort, this.type.toEpisodeType()),
         airDate = PackedDate.parseFromDate(this.airdate),
         comment = comment,
 //        duration = duration,
         desc = desc,
 //        disc = disc,
-        ep = EpisodeSort(this.ep ?: BigNum.ONE, getEpisodeTypeByBangumiCode(this.type)),
+        ep = EpisodeSort(this.ep ?: BigNum.ONE, this.type.toEpisodeType()),
     )
 }
 
@@ -245,24 +325,3 @@ private fun getEpisodeTypeByBangumiCode(code: Int): EpisodeType? {
     }
 }
 
-fun UnifiedCollectionType.toAniEpisodeCollectionType(): AniEpisodeCollectionType? {
-    return when (this) {
-        UnifiedCollectionType.NOT_COLLECTED -> null
-        UnifiedCollectionType.WISH -> null
-        UnifiedCollectionType.DOING -> null
-        UnifiedCollectionType.DONE -> AniEpisodeCollectionType.DONE
-        UnifiedCollectionType.ON_HOLD -> null
-        UnifiedCollectionType.DROPPED -> null
-    }
-}
-
-fun UnifiedCollectionType.toAniEpisodeCollectionTypeUpdate(): AniEpisodeCollectionTypeUpdate {
-    return when (this) {
-        UnifiedCollectionType.NOT_COLLECTED -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.WISH -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DOING -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DONE -> AniEpisodeCollectionTypeUpdate.DONE
-        UnifiedCollectionType.ON_HOLD -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DROPPED -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-    }
-}

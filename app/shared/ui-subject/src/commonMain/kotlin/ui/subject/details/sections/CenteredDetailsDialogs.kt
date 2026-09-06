@@ -57,6 +57,7 @@ import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
@@ -65,7 +66,11 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
+import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.rating.FiveRatingStars
 
@@ -116,13 +121,16 @@ internal fun <T : Any> ViewAllGridDialog(
                 .ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) }
                 .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeight(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
-            shape = RoundedCornerShape(16.dp),
+            shape = CENTERED_PANEL_SHAPE,
             color = centeredPanelColor,
             // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Box(Modifier.fillMaxSize()) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
+                    verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
+                ) {
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -133,7 +141,10 @@ internal fun <T : Any> ViewAllGridDialog(
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleLarge,
                         )
-                        headerAction()
+                        // 标题行的按钮 (如评论的「写评价」) 画成弹窗动作按钮, 见 ProvidePopupControlStyle
+                        ProvidePopupControlStyle {
+                            headerAction()
+                        }
                     }
                     // **不要自己动滚动位置**: 试过用 initialFirstVisibleItemIndex 把目标那一条顶到最上面,
                     // 真机上是"第三条先跑到顶上, 立刻又闪回中间" (用户 2026-09-15) —— 分页刚到的那几条
@@ -252,54 +263,56 @@ private fun CommentGridCard(
     var expanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    Surface(
-        onClick = { expanded = !expanded },
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = if (focused) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
-        },
-        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        interactionSource = interactionSource,
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AvatarImage(
-                    comment.author?.avatarUrl,
-                    Modifier.size(24.dp).clip(CircleShape),
-                )
-                Text(
-                    comment.author?.nickname ?: comment.author?.id?.toString() ?: "",
-                    Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    formatDateTime(comment.createdAt, showTime = false),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-                if (showRating) {
-                    comment.rating?.takeIf { it > 0 }?.let { rating ->
-                        FiveRatingStars(rating, starSize = 12.dp)
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = { expanded = !expanded },
+            modifier = modifier,
+            shape = RoundedCornerShape(12.dp),
+            color = if (focused) {
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+            },
+            border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            interactionSource = interactionSource,
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AvatarImage(
+                        comment.author?.avatarUrl,
+                        Modifier.size(24.dp).clip(CircleShape),
+                    )
+                    Text(
+                        comment.author?.nickname ?: comment.author?.id?.toString() ?: "",
+                        Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        formatDateTime(comment.createdAt, showTime = false),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                    if (showRating) {
+                        comment.rating?.takeIf { it > 0 }?.let { rating ->
+                            FiveRatingStars(rating, starSize = 12.dp)
+                        }
                     }
                 }
+                Text(
+                    remember(comment) { comment.content.toPlainText() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) Int.MAX_VALUE else TV_COMMENT_COLLAPSED_MAX_LINES,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                remember(comment) { comment.content.toPlainText() },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (expanded) Int.MAX_VALUE else TV_COMMENT_COLLAPSED_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

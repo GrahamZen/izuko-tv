@@ -118,8 +118,6 @@ fun AniScrollableTextDialog(
 ) {
     val textScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
-    // 背景态下由面板提供白色, 否则跟随主题
-    val contentColor = LocalContentColor.current
     var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
     var fitLines by remember { mutableStateOf(1) }
     var topLine by remember(text) { mutableStateOf(0) }
@@ -157,6 +155,9 @@ fun AniScrollableTextDialog(
         background = background,
         aspectRatio = aspectRatio,
     ) {
+        // **必须在面板里面读**: 有背景图时白色是面板的 Surface 给的 (见 AniCenteredPanelDialog 的 contentColor),
+        // 在外面读到的是弹窗宿主那一层的颜色 —— 浅色主题下是黑的, 压在剧照上看不清 (用户 10-01 报的日期那一行)
+        val contentColor = LocalContentColor.current
         Column(
             Modifier.fillMaxSize()
                 // 本弹窗可能被长按开出来 (按住途中已弹出, 见 tvLongPressKey), 而打开后焦点又

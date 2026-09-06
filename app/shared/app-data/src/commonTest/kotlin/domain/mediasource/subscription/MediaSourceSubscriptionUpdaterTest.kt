@@ -116,6 +116,46 @@ class MediaSourceSubscriptionUpdaterTest {
     }
 
     @Test
+    fun `progress counts only the subscriptions updated in this round`() = runTest {
+        val repository = MediaSourceSubscriptionRepository(
+            MemoryDataStore(
+                MediaSourceSubscriptionsSaveData(
+                    listOf("a", "b", "c").map { MediaSourceSubscription(it, url = "https://localhost/$it.json") },
+                    version = 1,
+                ),
+            ),
+        )
+        val updater = MediaSourceSubscriptionUpdater(
+            subscriptions = repository,
+            mediaSourceManager = NoopMediaSourceManager,
+            codecManager = MediaSourceCodecManager(),
+            requester = { SubscriptionUpdateData(ExportedMediaSourceDataList(emptyList())) },
+            getCurrentTimeMillis = { now },
+        )
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val record: (Int, Int) -> Unit = { updating, total -> progress += updating to total }
+
+        updater.updateAllOutdated(onProgress = record)
+        assertEquals(listOf(1 to 3, 2 to 3, 3 to 3), progress)
+
+        // 都刚更新过: 这一轮一个都不拉
+        progress.clear()
+        now += 20_000
+        updater.updateAllOutdated(onProgress = record)
+        assertEquals(emptyList(), progress)
+
+        // 新加一个: 只拉它
+        repository.add(MediaSourceSubscription("d", url = "https://localhost/d.json"))
+        updater.updateAllOutdated(onProgress = record)
+        assertEquals(listOf(1 to 1), progress)
+
+        // 强制: 全部重拉
+        progress.clear()
+        updater.updateAllOutdated(force = true, onProgress = record)
+        assertEquals(listOf(1 to 4, 2 to 4, 3 to 4, 4 to 4), progress)
+    }
+
+    @Test
     fun `no subscription does not throw`() = runTest {
         val emptyUpdater = MediaSourceSubscriptionUpdater(
             subscriptions = MediaSourceSubscriptionRepository(

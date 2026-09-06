@@ -60,6 +60,15 @@ sealed class MediaSourceFetchState {
     ) : Completed()
 
     /**
+     * 视频开始播放后为了省资源暂停的查询. 暂停前已拿到的结果保留. [MediaSourceFetchResult.restart] 从头重新查询.
+     *
+     * @see MediaSourceFetchResult.pause
+     */
+    data class Paused(
+        override val id: Int,
+    ) : Completed()
+
+    /**
      * Failed because the flow collector has thrown an exception (and stopped collection)
      */
     data class Abandoned(
@@ -73,3 +82,4 @@ val MediaSourceFetchState.isFinal get() = this is MediaSourceFetchState.Complete
 val MediaSourceFetchState.isFailedOrAbandoned get() = this is MediaSourceFetchState.Failed || this is MediaSourceFetchState.Abandoned
 val MediaSourceFetchState.isCaptchaRequired get() = this is MediaSourceFetchState.CaptchaRequired
 val MediaSourceFetchState.isRateLimited get() = this is MediaSourceFetchState.RateLimited
+val MediaSourceFetchState.isPaused get() = this is MediaSourceFetchState.Paused

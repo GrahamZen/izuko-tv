@@ -42,6 +42,10 @@ data class DownloadRequestUiState(
     val episodeIds: Set<Int> = emptySet(),
     val busy: Boolean = false,
     val canCancel: Boolean = false,
+    /**
+     * 正在持久化 BT 下载, 而 BT 服务还没连上 (冷启动要十几秒), 转圈这段时间其实是在等服务.
+     */
+    val awaitingTorrentService: Boolean = false,
 )
 
 @Immutable

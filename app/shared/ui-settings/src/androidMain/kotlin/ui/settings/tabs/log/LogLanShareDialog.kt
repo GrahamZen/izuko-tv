@@ -15,11 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.lan.findLanAddress
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_log_send_to_phone
 import me.him188.ani.app.ui.lang.settings_log_send_to_phone_close
@@ -89,7 +89,7 @@ internal fun LogLanShareDialog(
         onDispose { holder.close() }
     }
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(Lang.settings_log_send_to_phone)) },
         text = {
@@ -118,7 +118,7 @@ internal fun LogLanShareDialog(
             }
         },
         confirmButton = {
-            TextButton(onDismissRequest) { Text(stringResource(Lang.settings_log_send_to_phone_close)) }
+            AniTextButton(onDismissRequest) { Text(stringResource(Lang.settings_log_send_to_phone_close)) }
         },
     )
 }

@@ -31,13 +31,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +60,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
+import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
 import me.him188.ani.app.ui.richtext.StickerImage
@@ -226,7 +225,8 @@ private enum class TvStickerPickerFocus : TvFocusKey { FirstCell }
 
 /**
  * 表情包名: 聚焦即换包 (不必再按一下确定 —— 换包本来就只是"让右边显示这一包").
- * 当前包在失焦时也保持高亮, 否则焦点一进网格就看不出自己在哪一包了.
+ * 当前包在失焦时也保持选中色, 否则焦点一进网格就看不出自己在哪一包了. 三态同弹窗里的其他选项
+ * (见 [AniFocusSelectableSurface]), 没选中的不铺底.
  */
 @Composable
 private fun TvStickerPackItem(
@@ -235,28 +235,16 @@ private fun TvStickerPackItem(
     onFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    Surface(
+    AniFocusSelectableSurface(
         onClick = { }, // 聚焦即生效, 点击无额外动作 (但要可点才可聚焦)
+        selected = selected,
+        shape = RoundedCornerShape(10.dp),
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocused()
-            }
+            .onFocusChanged { if (it.isFocused) onFocused() }
             // 触屏: 点一下即聚焦 = 换到这一包 (本条目"聚焦即生效", 点击本身是空操作). 电视上不装
             .tvTouchFocusOnTap(),
-        shape = RoundedCornerShape(10.dp),
-        color = when {
-            focused -> MaterialTheme.colorScheme.primary
-            selected -> MaterialTheme.colorScheme.surfaceContainerHighest
-            else -> Color.Transparent
-        },
-        contentColor = if (focused) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
+        unselectedColor = Color.Transparent,
     ) {
         Text(
             name,
@@ -276,14 +264,12 @@ private fun TvStickerCell(
     modifier: Modifier = Modifier,
 ) {
     val imageUrl = BangumiStickers.imageUrlOf(token) ?: return
-    var focused by remember { mutableStateOf(false) }
-    Surface(
+    AniFocusSelectableSurface(
         onClick = onClick,
-        modifier = modifier
-            .size(TV_STICKER_CELL_SIZE)
-            .onFocusChanged { focused = it.isFocused },
+        selected = false,
         shape = RoundedCornerShape(10.dp),
-        color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+        modifier = modifier.size(TV_STICKER_CELL_SIZE),
+        unselectedColor = Color.Transparent,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             StickerImage(

@@ -16,8 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -27,7 +28,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiDetailOneOf(
+data class BangumiDetailOneOf (
 
     /* error message */
     @SerialName(value = "error") val error: kotlin.String? = null,

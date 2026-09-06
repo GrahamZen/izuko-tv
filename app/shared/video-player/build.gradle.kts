@@ -41,6 +41,8 @@ kotlin {
         implementation(libs.androidx.media3.datasource.okhttp)
         implementation(libs.libass.media)
         implementation(libs.androidx.core.ktx)
+        // LiftableAssSubtitleView 直接用 libass 的帧与渲染器 (ass-media 只在运行时带上它)
+        implementation(libs.libass.kt)
         api(libs.mediamp.exoplayer)
     }
     sourceSets.getByName("androidHostTest").dependencies {

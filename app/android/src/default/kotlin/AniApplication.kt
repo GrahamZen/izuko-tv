@@ -38,6 +38,9 @@ import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
+import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
@@ -52,13 +55,16 @@ import me.him188.ani.app.platform.createAppRootCoroutineScope
 import me.him188.ani.app.platform.getCommonKoinModule
 import me.him188.ani.app.platform.startCommonKoinModule
 import me.him188.ani.app.platform.trace.recordAppStart
+import me.him188.ani.app.ui.foundation.aniSharedSketch
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsConfig
 import me.him188.ani.utils.analytics.AnalyticsImpl
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.error
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import okio.Path.Companion.toPath
 import org.koin.android.ext.android.getKoin
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -66,6 +72,7 @@ import org.openani.mediamp.ffmpeg.FFmpegKit
 import java.io.File
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import kotlin.time.TimeSource
 import kotlin.uuid.ExperimentalUuidApi
 
 
@@ -112,7 +119,8 @@ class AniApplication : Application() {
         }
         startupTimeMonitor.mark(StepName.UncaughtExceptionHandler)
 
-        if (processName().contains("torrent_service")) {
+        val currentProcess = processName()
+        if (currentProcess.contains("torrent_service") || currentProcess.contains("codecprobe")) {
             // In service process, we don't need any dependency which is use in app process.
             return
         }
@@ -157,6 +165,19 @@ class AniApplication : Application() {
         startupTimeMonitor.mark(StepName.Modules)
 
         val koin = getKoin()
+        // 图片磁盘缓存第一次打开要把整份 journal 读一遍 (几千条), 读完之前所有图片请求都在等 —— 冷启动时这就是封面全灰的那几秒,
+        // 还没编译优化的包上要好几秒. 进程一起来就在后台先打开, 与界面启动并行; 用主界面与屏保共用的那个实例 (见 aniSharedSketch)
+        scope.launch(Dispatchers.IO_) {
+            val start = TimeSource.Monotonic.markNow()
+            val size = aniSharedSketch(
+                this@AniApplication,
+                koin.get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
+                appCacheDirectory = cacheDir.absolutePath.toPath(),
+            ).downloadCache.size
+            logger<AniApplication>().info {
+                "Image disk cache opened in ${start.elapsedNow().inWholeMilliseconds}ms (${size / 1024 / 1024} MiB)"
+            }
+        }
         val analyticsInitializer = scope.launch {
             val settingsRepository = koin.get<SettingsRepository>()
             val userRepository = koin.get<UserRepository>()

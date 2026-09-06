@@ -26,10 +26,13 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,6 +75,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
@@ -85,14 +89,17 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import androidx.paging.compose.itemKey
 import kotlinx.coroutines.flow.collectLatest
@@ -101,6 +108,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.nameCn
+import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.LocalTimeFormatter
@@ -119,14 +127,19 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
+import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
+import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
+import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
@@ -138,6 +151,7 @@ import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
 import me.him188.ani.app.ui.subject.episode.details.DanmakuSourceChips
 import me.him188.ani.app.ui.subject.episode.details.DanmakuTimeShiftDialog
 import me.him188.ani.app.ui.subject.episode.details.components.renderDanmakuServiceId
+import me.him188.ani.app.ui.subject.episode.statistics.DanmakuStatistics
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuLocation
 import me.him188.ani.danmaku.api.DanmakuServiceId
@@ -149,6 +163,11 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 
 // ---- 面板调参 ----
 
@@ -339,6 +358,12 @@ internal fun TvPlayerPanelHost(
                 layout(placeable.width, placeable.height) { placeable.place(0, 0) }
             }
             .padding(bottom = 14.dp)
+            // 从下方胶囊按上键进来 (焦点搜索进组) 一律改道到入口锚点 (index 0), 与点击胶囊同一个落点.
+            // 交给空间搜索的话它只认胶囊正上方的候选: 弹幕面板最底行是一排靠左的窄胶囊, 从行末的「弹幕」胶囊
+            // 往上会越过它们, 落到上面整行宽的弹幕条上. onEnter 只在焦点组上生效, 组在 TvPanelList 里, 挂在它外面正好
+            .focusProperties {
+                onEnter = { panel?.let { runCatching { focus.requesterOf(TvPanelEntryFocus(it)).requestFocus() } } }
+            }
             // 最底项 (index 0) 按下键: 显式回到打开本面板的胶囊 —— 交给空间搜索会落到
             // 面板正下方的任意按钮, 落错后该按钮的聚焦回调又把面板切成自己的 (面板跳变)
             .onPreviewKeyEvent { event ->
@@ -484,25 +509,27 @@ private fun TvPanelItem(
             if (current == index) itemFocus.register(selfFocusRequester)
         }
     }
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .focusRequester(selfFocusRequester)
-            .onFocusChanged {
-                if (it.isFocused) {
-                    focusedIndex.intValue = index
-                    itemFocus.register(selfFocusRequester)
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier
+                .fillMaxWidth()
+                .focusRequester(selfFocusRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        focusedIndex.intValue = index
+                        itemFocus.register(selfFocusRequester)
+                    }
                 }
-            }
-            .tvTouchFocusOnTap(),
-        shape = RoundedCornerShape(12.dp),
-        color = if (focused) TV_PANEL_ITEM_FOCUSED_COLOR else TV_PANEL_ITEM_COLOR,
-        contentColor = Color.White,
-        border = if (focused) BorderStroke(2.dp, Color.White) else null,
-        interactionSource = interactionSource,
-    ) {
-        content(focused)
+                .tvTouchFocusOnTap(),
+            shape = RoundedCornerShape(12.dp),
+            color = if (focused) TV_PANEL_ITEM_FOCUSED_COLOR else TV_PANEL_ITEM_COLOR,
+            contentColor = Color.White,
+            border = if (focused) BorderStroke(2.dp, Color.White) else null,
+            interactionSource = interactionSource,
+        ) {
+            content(focused)
+        }
     }
 }
 
@@ -674,8 +701,24 @@ private fun TvRecommendationsPanel(
     modifier: Modifier = Modifier,
 ) {
     val navigator = LocalNavigator.current
-    val recommendations by vm.episodeDetailsState.recommendations
+    // null = 还没拿到 (加载中或失败), 面板留空; 空列表 = 拿到了但一条都没有, 显示空状态.
+    // Bangumi 的推荐 (「看过这部的人也看过」) 对 2023 年下半年起开播的条目普遍为空, 近几年的番多半走空状态
+    val loaded by vm.episodeDetailsState.recommendations
+    val recommendations = loaded.orEmpty()
     TvPanelList(listState, overlay, focusedIndex, modifier) {
+        if (loaded?.isEmpty() == true) {
+            item("recommendations_empty") {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    // 放不下就换行, 不截断
+                    Text(
+                        stringResource(Lang.subject_episode_related_recommendations_empty),
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
         items(
             count = recommendations.size,
             key = { i -> recommendations[i].uniqueId },
@@ -794,6 +837,35 @@ internal fun openNewEpisodeComment(
     overlay.startReply(TvCommentReplyTarget(context = context))
 }
 
+/**
+ * 进播放页就拉本集评论, 并把加载状态报给状态机 ([TvPlayerOverlayState.commentsLoad]); 挂在播放页上, 不随控制层收起.
+ *
+ * 评论胶囊据此呼吸 (加载中) 或显示失败, 不用先打开面板 —— 与弹幕胶囊一样, 一进这一集就能看出评论有没有加载成功.
+ * 面板打开时用的是这里拉好的同一份分页数据 (`cachedIn` 缓存着), 不再发请求. 换集时分页流跟着换, 状态按分集 id 记.
+ *
+ * loadState 在一次加载里会变好几回, 用 snapshotFlow 读, 不读在本组合的 body 上.
+ */
+@Composable
+internal fun TvCommentsLoadTracker(
+    vm: EpisodeViewModel,
+    overlay: TvPlayerOverlayState,
+    episodeId: Int,
+) {
+    val comments = vm.episodeCommentState.list.collectAsLazyPagingItemsWithLifecycle()
+    LaunchedEffect(comments, episodeId) {
+        snapshotFlow { comments.loadState.refresh }.collect { refresh ->
+            overlay.reportCommentsLoad(
+                episodeId,
+                when (refresh) {
+                    is LoadState.Loading -> TvPanelLoadState.LOADING
+                    is LoadState.Error -> TvPanelLoadState.FAILED
+                    is LoadState.NotLoading -> null
+                },
+            )
+        }
+    }
+}
+
 @Composable
 private fun TvCommentsPanel(
     vm: EpisodeViewModel,
@@ -807,7 +879,23 @@ private fun TvCommentsPanel(
 ) {
     val comments = vm.episodeCommentState.list.collectAsLazyPagingItemsWithLifecycle()
     val snapshot = comments.itemSnapshotList
-    val rows = remember(snapshot) { flattenTvCommentRows(snapshot) }
+    val sort = vm.videoScaffoldConfig.episodeCommentSort
+    // 楼的先后只在评论集合或排序变了时重排, 贴贴 / 回复让计数变了不挪位置 —— 按贴贴数排时点一个表情,
+    // 正开着的弹窗与焦点不能就此换到别的楼上
+    val threadIds = remember(snapshot) { snapshot.mapNotNull { it?.stableId } }
+    val threadOrder = remember(threadIds, sort) {
+        tvSortCommentThreads(snapshot.filterNotNull(), sort).map { it.stableId }
+    }
+    val rows = remember(snapshot, threadOrder) { flattenTvCommentRows(snapshot, threadOrder) }
+    // 换了排序: 回到最底那一条 (新排序的第一条), 同面板每次浮出时. 新顺序交给列表之后才跳 (按 threadOrder 起效),
+    // 否则列表按 key 保位置, 又停回原来那条现在所在的地方
+    var listedSort by remember { mutableStateOf(sort) }
+    LaunchedEffect(threadOrder) {
+        if (listedSort == sort) return@LaunchedEffect
+        listedSort = sort
+        focusedIndex.intValue = -1
+        runCatching { listState.scrollToItem(0) }
+    }
     // 弹窗里正在显示的是哪一行 (左右键翻相邻评论的锚). -1 = 没开弹窗
     var shownRowIndex by remember { mutableIntStateOf(-1) }
     val dialogOpen = overlay.replyingComment != null
@@ -846,6 +934,9 @@ private fun TvCommentsPanel(
                     // 弹窗按"文本段 + 图片"逐块渲染 (卡片上的 [图片] 占位在这里变成真图)
                     blocks = row.comment.content.toCommentBlocks(),
                     reactions = row.comment.reactions.toTvReactions(),
+                    authorSign = row.comment.author?.sign,
+                    floorText = row.comment.floorText(),
+                    deleted = row.comment.deleted,
                 ),
                 canReply = canReply,
             ),
@@ -980,30 +1071,41 @@ private class TvCommentReplyRow(
 }
 
 /**
- * 主楼 + 一层回复展平成面板行.
+ * 主楼 + 一层回复展平成面板行, 主楼按 [threadOrder] (主楼 stableId, 见 [tvSortCommentThreads]) 的先后.
  *
- * 面板是 reverseLayout (index 0 在底, 越大越靠上), 所以同一楼里回复要**先**发且倒序,
+ * 面板是 reverseLayout (index 0 在底, 越大越靠上), 所以排在前面的楼贴着胶囊; 同一楼里回复要**先**发且倒序,
  * 主楼最后发 —— 这样视觉自上而下才是 主楼 → 回复1 → 回复2, 方向键上下 = 空间上下.
  *
  * Ani 源按无回复关系处理 (服务端不返回被回复者, 见 `AniEpisodeCommentReply`): 只出主楼,
  * 与改动前完全一致.
  */
-private fun flattenTvCommentRows(comments: List<UIComment?>): List<TvCommentRow> = buildList {
-    comments.forEachIndexed { pagerIndex, comment ->
-        if (comment == null) return@forEachIndexed
-        val replies = if (comment.source == UICommentSource.ANI) emptyList() else comment.briefReplies
-        replies.asReversed().forEach { reply ->
-            add(TvCommentReplyRow(pagerIndex, reply, comment, reply.replyTo?.authorName))
+private fun flattenTvCommentRows(comments: List<UIComment?>, threadOrder: List<String>): List<TvCommentRow> {
+    val pagerIndexOf = HashMap<String, Int>(comments.size)
+    comments.forEachIndexed { pagerIndex, comment -> if (comment != null) pagerIndexOf[comment.stableId] = pagerIndex }
+    return buildList {
+        for (id in threadOrder) {
+            val pagerIndex = pagerIndexOf[id] ?: continue
+            val comment = comments[pagerIndex] ?: continue
+            val replies = if (comment.source == UICommentSource.ANI) emptyList() else comment.briefReplies
+            replies.asReversed().forEach { reply ->
+                add(TvCommentReplyRow(pagerIndex, reply, comment, reply.replyTo?.authorName))
+            }
+            add(TvCommentMainRow(pagerIndex, comment, replies.size))
         }
-        add(TvCommentMainRow(pagerIndex, comment, replies.size))
     }
 }
 
 /** 条目文本. 时间要 [formatDateTime] (@Composable), 所以在组合里算好再给非组合的点击回调用. */
 private class TvCommentText(
     val authorName: String,
+    /** 个人签名, 跟在昵称后面的灰字 (同 bangumi 网页); 没有为 null. */
+    val sign: String?,
+    /** `#3` / `#3-2`, 数据源不给时为 null. */
+    val floorText: String?,
     val timeText: String,
     val content: TvInlineText,
+    /** 已被删除: 正文换成「删除了回复」. */
+    val deleted: Boolean,
 )
 
 @Composable
@@ -1013,11 +1115,26 @@ private fun rememberTvCommentText(comment: UIComment): TvCommentText {
     return remember(comment.stableId, timeText, content) {
         TvCommentText(
             authorName = comment.displayAuthorName(),
+            sign = comment.author?.sign,
+            floorText = comment.floorText(),
             timeText = timeText,
             content = content,
+            deleted = comment.deleted,
         )
     }
 }
+
+/** 楼层号的展示: `#3` / `#3-2`. */
+private fun UIComment.floorText(): String? = floor?.let { "#$it" }
+
+/** 昵称 + 灰色的个人签名 `(签名)`, 一行放不下时先截签名. */
+private fun authorWithSign(authorName: String, sign: String?, signColor: Color): AnnotatedString =
+    buildAnnotatedString {
+        append(authorName)
+        if (sign != null) {
+            withStyle(SpanStyle(color = signColor, fontWeight = FontWeight.Normal)) { append("  ($sign)") }
+        }
+    }
 
 /** 昵称缺失时退到用户 id (匿名/注销用户). 卡片与弹窗共用一套取法. */
 private fun UIComment.displayAuthorName(): String = author?.nickname ?: author?.id.orEmpty()
@@ -1082,7 +1199,7 @@ private fun TvCommentRowContent(
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text.authorName,
+                authorWithSign(text.authorName, text.sign, secondaryColor),
                 Modifier.weight(1f),
                 style = if (isReply) {
                     MaterialTheme.typography.labelMedium
@@ -1107,21 +1224,30 @@ private fun TvCommentRowContent(
                 )
                 Spacer(Modifier.width(8.dp))
             }
+            // 楼层号在时间前面, 同 bangumi 网页的「#3 - 时间」
             Text(
-                text.timeText,
+                text.floorText?.let { "$it  ${text.timeText}" } ?: text.timeText,
                 style = MaterialTheme.typography.labelSmall,
                 color = secondaryColor,
             )
         }
         Spacer(Modifier.height(if (isReply) 3.dp else 4.dp))
-        Text(
-            text.content.text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f),
-            maxLines = if (isReply) 3 else 4,
-            overflow = TextOverflow.Ellipsis,
-            inlineContent = tvStickerInlineContent(text.content.stickers),
-        )
+        if (text.deleted) {
+            Text(
+                stringResource(Lang.video_player_tv_comment_deleted),
+                style = MaterialTheme.typography.bodyMedium,
+                color = secondaryColor,
+            )
+        } else {
+            Text(
+                text.content.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = if (isReply) 3 else 4,
+                overflow = TextOverflow.Ellipsis,
+                inlineContent = tvStickerInlineContent(text.content.stickers),
+            )
+        }
     }
 }
 
@@ -1357,8 +1483,30 @@ private val TV_PERSON_PANEL_AVATAR_SIZE = 48.dp
 // ============================ 弹幕发送入口 ============================
 
 /**
+ * 这一集的弹幕没加载出来: 请求本身出错了 (网络错误、超时、服务出错; 不是"没匹配到"), 手上也一条弹幕都没有.
+ *
+ * 远程失败但本地缓存的弹幕照常在屏上时不算 —— 那时远程那条结果根本不会发出来 (见 DanmakuLoaderImpl),
+ * 看起来也没有任何问题. [DanmakuLoadingState.Failed] 是本地库出错那一路, 同样算没加载出来.
+ */
+internal fun DanmakuStatistics.isLoadFailed(): Boolean =
+    danmakuLoadingState is DanmakuLoadingState.Failed ||
+            (fetchResults.any { it.matchInfo.fetchFailed } && fetchResults.none { it.matchInfo.count > 0 })
+
+/**
+ * 这一集的弹幕还没好: 正在请求, 或者请求还没发出去 (要等视频加载出来、拿到时长; 换集时也会先回到这一步) 而手上
+ * 一条弹幕都没有 —— 对看的人来说两段都是"弹幕在加载", 胶囊从进播放器起就呼吸, 不是等视频加载完才开始动.
+ * 有本地缓存时读到缓存就算加载完 (远程还在后台拉, 屏上已经有弹幕).
+ */
+internal fun DanmakuStatistics.isLoading(): Boolean = when (danmakuLoadingState) {
+    DanmakuLoadingState.Loading -> true
+    DanmakuLoadingState.Idle -> fetchResults.none { it.matchInfo.count > 0 }
+    else -> false
+}
+
+/**
  * 「弹幕」胶囊: 胶囊行末尾那颗, **聚焦浮出弹幕列表面板, 点击向右展开成输入框**发弹幕
- * (自动聚焦弹系统键盘, IME 确认发送后收起, 返回键收起 —— 与搜索页输入框同套路).
+ * (点击即进编辑: 自动聚焦弹系统键盘. IME 确认发送后收起, 返回键或键盘被收起时收回胶囊 —— 胶囊相当于搜索页输入框的框,
+ * 见 TvTextFieldFrame).
  *
  * 与「评论」那颗同一个模式 (聚焦看, 点击发). 原先是两颗 —— 「弹幕列表」只管浮面板、
  * 「发送弹幕」只管发 —— 那把同一件事的两半摆成了并列入口, 还多占一格横向导航.
@@ -1370,12 +1518,18 @@ internal fun TvDanmakuSendEntry(
     vm: EpisodeViewModel,
     /** 弹幕列表面板最底项按下键经此回到本胶囊 (空间搜索会落错按钮导致面板跳变). */
     panelFocusRequester: FocusRequester,
+    /** 这一集的弹幕没加载出来 (见 [isLoadFailed]): 图标换成警示图标、文字压暗. */
+    loadFailed: Boolean,
+    /** 这一集的弹幕正在加载, 且胶囊在屏上 (见 [isLoading]): 胶囊呼吸. */
+    loading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
+    val sendFailedText = stringResource(Lang.episode_send_danmaku_failed)
     val expanded = overlay.danmakuInputExpanded
     val focus = rememberTvFocusScope()
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var everExpanded by remember { mutableStateOf(false) }
     // 本次展开期间输入框是否真的拿到过焦点. 展开那一刻焦点还在圆钮上、要等一两帧才交到输入框,
     // 这期间不能把"焦点不在输入框"当成用户离开 (否则刚展开就自己收回去了)
@@ -1383,21 +1537,46 @@ internal fun TvDanmakuSendEntry(
     // 这次收起是因为焦点被挪走 (而不是发送/返回键): 别再把焦点抢回来, 用户正往别处走
     var collapsedByFocusLoss by remember { mutableStateOf(false) }
     val isSending by danmakuEditorState.isSending.collectAsStateWithLifecycle()
+    // 「编辑弹幕时暂停视频」(VideoScaffoldConfig.pauseVideoOnEditDanmaku): 输入框展开时正在播就暂停, 收起时只恢复自己停的那一次
+    // (展开前本来就暂停着的不动). 离开播放页不恢复: 保留的播放会话不该在后台自己播起来
+    var pausedForInput by remember { mutableStateOf(false) }
 
     // 展开/收起都只发一次语义请求; 目标未组合时由锚点附着事件继续送达.
     LaunchedEffect(expanded) {
         if (expanded) {
             everExpanded = true
             collapsedByFocusLoss = false
+            if (vm.videoScaffoldConfig.pauseVideoOnEditDanmaku && vm.player.state.value.playWhenReady) {
+                pausedForInput = true
+                vm.player.pause()
+            }
             focus.request(TvDanmakuSendFocus.FIELD)
         } else if (everExpanded) {
+            if (pausedForInput) {
+                pausedForInput = false
+                vm.player.play()
+            }
             keyboard?.hide()
             if (collapsedByFocusLoss) {
                 collapsedByFocusLoss = false
                 return@LaunchedEffect
             }
-            if (overlay.layer == TvPlayerLayer.CONTROLS) focus.request(TvDanmakuSendFocus.BUTTON)
+            // **无条件把焦点还给胶囊**: 原先只在层级是 CONTROLS 时才还, 而输入框这一收
+            // 那个持焦的节点就没了 —— 条件不成立的那条路上焦点直接悬空, 遥控器整个失灵
+            // (2026-09-06 用户实测: 发完弹幕焦点不见了, 方向键全不响应)
+            focus.request(TvDanmakuSendFocus.BUTTON)
         }
+    }
+
+    // 键盘被收起 (输入法多半自己吃掉返回键) 就收回胶囊, 不然光标还留在输入框里, 要再按一次返回.
+    // 只认「先看见它弹出、再看见它消失」, 拿不到 IME insets 的形态下静默不生效
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    LaunchedEffect(expanded) {
+        if (!expanded) return@LaunchedEffect
+        snapshotFlow { imeVisible.value }.first { it }
+        snapshotFlow { imeVisible.value }.first { !it }
+        overlay.danmakuInputExpanded = false
     }
 
     val send: () -> Unit = send@{
@@ -1412,8 +1591,14 @@ internal fun TvDanmakuSendEntry(
                     location = DanmakuLocation.NORMAL,
                 ),
             )
+            // 失败时 post 会把原文放回 text (见 DanmakuEditorState.post), 据此判断成败:
+            // 失败还把输入框收掉的话, 用户既看不到失败也不知道文字还在
+            if (danmakuEditorState.text.isEmpty()) {
+                overlay.danmakuInputExpanded = false
+            } else {
+                toaster.toast(sendFailedText)
+            }
         }
-        overlay.danmakuInputExpanded = false
     }
 
     val interactionSource = remember { MutableInteractionSource() }
@@ -1423,6 +1608,9 @@ internal fun TvDanmakuSendEntry(
         highlighted = focused && !expanded,
         onClick = { if (!expanded) overlay.danmakuInputExpanded = true },
         interactionSource = interactionSource,
+        // 输入框那一段不压暗也不呼吸: 那时人在打字, 灰掉的只会是输入框前面那个图标, 呼吸则是在打字的地方一闪一闪
+        dimmed = loadFailed && !expanded,
+        loading = loading && !expanded,
         modifier = modifier
             .focusRequester(panelFocusRequester)
             .tvFocusNavSignal(focus)
@@ -1450,7 +1638,11 @@ internal fun TvDanmakuSendEntry(
                 }
             },
     ) {
-        Icon(Icons.Rounded.Subtitles, null, Modifier.size(TV_PILL_ICON_SIZE))
+        if (loadFailed && !expanded) {
+            TvPillFailedIcon(highlighted = focused)
+        } else {
+            Icon(Icons.Rounded.Subtitles, null, Modifier.size(TV_PILL_ICON_SIZE))
+        }
         if (!expanded) {
             Text(
                 // 就叫「弹幕」: 这颗现在既是列表入口也是发送入口, 挂哪一边的名字都偏.
