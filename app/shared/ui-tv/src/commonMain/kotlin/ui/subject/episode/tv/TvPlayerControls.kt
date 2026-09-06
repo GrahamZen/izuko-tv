@@ -118,19 +118,21 @@ import me.him188.ani.app.ui.foundation.animation.StandardAccelerateEasing
 import me.him188.ani.app.ui.foundation.animation.StandardDecelerateEasing
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
+import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
+import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
+import me.him188.ani.app.ui.foundation.tvLongPressKeyOverClick
 import me.him188.ani.app.ui.foundation.icons.AniIcons
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.icons.Forward80
 import me.him188.ani.app.ui.foundation.icons.Forward85
 import me.him188.ani.app.ui.foundation.icons.Forward90
 import me.him188.ani.app.ui.foundation.icons.SubtitleGear
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.episode_comments
 import me.him188.ani.app.ui.lang.subject_details_characters
@@ -141,6 +143,7 @@ import me.him188.ani.app.ui.lang.subject_episode_external_links
 import me.him188.ani.app.ui.lang.subject_episode_fast_forward_seconds
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations
 import me.him188.ani.app.ui.lang.subject_episode_select_media_source
+import me.him188.ani.app.ui.lang.subject_episode_strip_loading
 import me.him188.ani.app.ui.lang.video_player_disable_danmaku
 import me.him188.ani.app.ui.lang.video_player_enable_danmaku
 import me.him188.ani.app.ui.lang.video_player_next_episode
@@ -277,6 +280,11 @@ internal fun TvPlayerControlsOverlay(
      */
     pillsRowTrailing: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 按钮上长按确认键: 去「自定义播放器按钮」, 焦点落在这一颗上 (见 TvEpisodeScreen). null = 没有这个入口 (不在 TV 根部底下).
+     * 短按照旧是按钮自己的动作.
+     */
+    onEditChromeItem: ((TvPlayerChromeItem) -> Unit)? = null,
 ) {
     // 控制层本体的淡入淡出. 整层的显隐原本由外面的 AniAnimatedVisibility 做, 现在本层要为提示
     // 按钮多活一会儿, 淡出就得挪到里面来 —— 只作用于"除那颗按钮之外"的部分, 时长与那边的
@@ -394,13 +402,18 @@ internal fun TvPlayerControlsOverlay(
         //
         // 收起时本层整个退出组合 (外层 AniAnimatedVisibility), 所以下次唤出来就是新版式 —— 换版式
         // 永远发生在"屏幕上没有可聚焦按钮"的那一段, 代价只是控制层开着时换的那一次要等它收一下.
-        // 以后不管从哪加"播放中切换版式"的入口 (手机控制台 / 动作面板 / 某个键), 这道闸都在.
-        val chromeLayout = remember { vm.videoScaffoldConfig.tvPlayerChrome.active }
+        // 播放中改版式的那个入口 (按钮上长按 → 「自定义播放器按钮」窗口) 也守这道闸: 开窗口前先收起控制层, 关掉后再唤出.
+        // 收起时本层若为托着 OP/ED 提示按钮留在场上 (透明, 没有持焦的按钮), 推一下 chromeLayoutGeneration 让它重读
+        val chromeLayout = remember(overlay.chromeLayoutGeneration) { vm.videoScaffoldConfig.tvPlayerChrome.active }
         // 两行此刻各自摆着什么 (版式 + 运行时筛选). 要在行组合之前知道:
         // 进度条上/下键的落点、以及"整行空了就别摆出来"都依赖它
         val pillItems = rememberTvPillItems(chromeLayout)
         val bottomRowItems = rememberTvBottomRowItems(vm, chromeLayout)
         val pillOrder = remember(pillItems) { tvPillVisualOrder(pillItems) }
+        // 两行每一颗按钮的公共挂件 (焦点锚点 + 长按去改版式, 见 tvPlayerChromeItem). 发弹幕的输入框展开期间不认长按: 那时人在打字
+        val chromeItemModifier: (TvPlayerChromeItem) -> Modifier = remember(playerFocus, onEditChromeItem, overlay) {
+            { item: TvPlayerChromeItem -> Modifier.tvPlayerChromeItem(item, playerFocus, onEditChromeItem) { !overlay.danmakuInputExpanded } }
+        }
         // derivedStateOf: focusRegion 每次方向键都在变, 直接读会让整个覆盖层
         // (scrim/标题/胶囊/面板) 随每步导航重组; 收窄成布尔翻转才失效
         val hideBelowProgress by remember {
@@ -540,9 +553,14 @@ internal fun TvPlayerControlsOverlay(
                         overlay = overlay,
                         danmakuEditorState = danmakuEditorState,
                         vm = vm,
+                        episodeId = page.episodePresentation.episodeId,
+                        danmakuLoading = page.danmakuStatistics.isLoading(),
+                        danmakuLoadFailed = page.danmakuStatistics.isLoadFailed(),
+                        // 只剩 OP/ED 提示按钮托着本层时整层是透明的, 胶囊看不见, 不呼吸
+                        loadingPulseEnabled = chromeVisible,
                         items = pillItems,
+                        chromeItemModifier = chromeItemModifier,
                         pillFocusRequesters = pillFocusRequesters,
-                        onNewComment = { openNewEpisodeComment(vm, page, overlay) },
                         onViewAllPeople = { peopleViewAll = it },
                         // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
                         // 中途还一次焦点会与正要打开的预览抢
@@ -589,6 +607,7 @@ internal fun TvPlayerControlsOverlay(
                                 page = page,
                                 sheetsController = sheetsController,
                                 items = bottomRowItems,
+                                chromeItemModifier = chromeItemModifier,
                                 firstButtonFocus = bottomRowFirstFocus,
                                 upFocus = playerFocus.requesterOf(TvPlayerFocusTarget.PROGRESS),
                                 modifier = Modifier.tvFocusAnchor(
@@ -613,9 +632,33 @@ internal fun TvPlayerControlsOverlay(
                 // 同 TvPlayerPanelHost: 卡片行要整层合成
                 modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth(),
             )
+            TvEpisodeStripLoadingHint(
+                overlay,
+                chrome.align(Alignment.BottomStart)
+                    .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = TV_EPISODE_STRIP_LOADING_HINT_BOTTOM),
+            )
         }
     }
 }
+
+/**
+ * 图标行按了下键、选集条还在加载 (长番要一两秒): 在选集条的位置先说一声. 意图已经记下, 就绪后照样自动展开
+ * (见 [TvPlayerOverlayState.expandStripWhenReady]), 但这一两秒里画面没有任何变化的话, 用户会以为没按到而重复按.
+ * 状态在本组件里读, 不连带控制层重组.
+ */
+@Composable
+private fun TvEpisodeStripLoadingHint(overlay: TvPlayerOverlayState, modifier: Modifier = Modifier) {
+    if (!overlay.expandStripWhenReady || overlay.episodeStrip != TvEpisodeStripState.LOADING) return
+    Text(
+        stringResource(Lang.subject_episode_strip_loading),
+        modifier,
+        color = Color.White.copy(alpha = 0.8f),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+/** 选集加载提示离屏幕底边的距离 (大致是选集条卡片行所在的高度). */
+private val TV_EPISODE_STRIP_LOADING_HINT_BOTTOM = 40.dp
 
 /** 顶部信息: 左上大标题 + 集号副标题 (Prime 风格), 右上系统时钟. */
 @Composable
@@ -762,11 +805,20 @@ private fun TvPlayerPillsRow(
     overlay: TvPlayerOverlayState,
     danmakuEditorState: DanmakuEditorState,
     vm: EpisodeViewModel,
+    /** 正在播的这一集: 评论胶囊拿它对 [TvPlayerOverlayState.commentsLoad]. */
+    episodeId: Int,
+    /** 这一集的弹幕正在加载: 弹幕胶囊呼吸. */
+    danmakuLoading: Boolean,
+    /** 这一集的弹幕没加载出来: 弹幕胶囊压暗. */
+    danmakuLoadFailed: Boolean,
+    /** 加载中的胶囊呼不呼吸: 胶囊真在屏上时才开. */
+    loadingPulseEnabled: Boolean,
     /** 本行此刻要摆的胶囊, 已排好序 (见 [rememberTvPillItems]). */
     items: List<TvPlayerChromeItem>,
+    /** 每颗胶囊的公共挂件 (焦点锚点 + 长按去改版式, 见 [tvPlayerChromeItem]). */
+    chromeItemModifier: (TvPlayerChromeItem) -> Modifier,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
     /** 评论胶囊按下确定: 发表本集评论 (见 [openNewEpisodeComment]). */
-    onNewComment: () -> Unit,
     /** 角色 / 制作人员胶囊按下确定: 开对应的「查看全部」弹窗. */
     onViewAllPeople: (TvPlayerPanel) -> Unit,
     /** 上面那条路正占着焦点的是哪一颗胶囊 (弹窗或它点开的人物预览还开着); null = 都关了. */
@@ -802,6 +854,7 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.RECOMMENDATIONS,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.RECOMMENDATIONS),
+                        modifier = chromeItemModifier(item),
                     )
 
                     TvPlayerChromeItem.PILL_STAFF -> TvPlayerPill(
@@ -814,7 +867,7 @@ private fun TvPlayerPillsRow(
                         // 这一下改成弹详情页那份「查看全部」大网格 —— 聚焦时浮出的窄面板只够扫一眼,
                         // 而这两类内容在播放器里没有别的入口 (内嵌详情页是精简版, 没有这两个区块)
                         onClick = { onViewAllPeople(TvPlayerPanel.STAFF) },
-                        modifier = Modifier.restoreFocusAfter(
+                        modifier = chromeItemModifier(item).restoreFocusAfter(
                             viewAllPeopleActive == TvPlayerPanel.STAFF,
                             abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
                         ),
@@ -827,7 +880,7 @@ private fun TvPlayerPillsRow(
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.CHARACTERS),
                         onClick = { onViewAllPeople(TvPlayerPanel.CHARACTERS) },
-                        modifier = Modifier.restoreFocusAfter(
+                        modifier = chromeItemModifier(item).restoreFocusAfter(
                             viewAllPeopleActive == TvPlayerPanel.CHARACTERS,
                             abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
                         ),
@@ -839,18 +892,19 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.COMMENTS,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.COMMENTS),
-                        // 本颗胶囊的点击另有其用: 发表本集评论.
-                        //
-                        // 默认的"把焦点送进面板"与直接按上键完全重复 (面板早在聚焦本胶囊时就浮出来了),
-                        // 这一下等于白按; 而发新评论此前在 TV 上没有任何入口 —— 只能回复已有评论,
-                        // 手机端那颗「发送评论」FAB 在遥控器形态下没有对应物
-                        onClick = onNewComment,
+                        // 本颗胶囊的点击退回默认行为 (把焦点送进面板): 直连 bangumi 之后发不了吐槽
+                        // —— 发表要过 Cloudflare Turnstile 验证码, 遥控器上做不了, 点开只会让人打完字
+                        // 再收到一个错误. 验证码那条路做通了就把 onNewComment 接回来.
                         // 弹窗关掉后焦点还给本胶囊: 弹窗抢焦点时本节点还在场 (控制层与面板都留在下面),
                         // 但 Compose 不会自己还回来. 控制层已经收起时放弃 —— 那时焦点归属归根路由管
-                        modifier = Modifier.restoreFocusAfter(
+                        modifier = chromeItemModifier(item).restoreFocusAfter(
                             composingNewComment,
                             abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
                         ),
+                        // 本集评论加载中 / 加载失败 (进播放页就拉, 见 TvCommentsLoadTracker)
+                        loadFailed = overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.FAILED),
+                        loading = loadingPulseEnabled &&
+                                overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.LOADING),
                     )
 
                     // 「弹幕」一颗顶原来的两颗 (弹幕列表 + 发送弹幕): 聚焦浮出弹幕列表面板 (含源开关与
@@ -861,6 +915,9 @@ private fun TvPlayerPillsRow(
                         danmakuEditorState = danmakuEditorState,
                         vm = vm,
                         panelFocusRequester = pillFocusRequesters.getValue(TvPlayerPanel.DANMAKU_LIST),
+                        loadFailed = danmakuLoadFailed,
+                        loading = loadingPulseEnabled && danmakuLoading,
+                        modifier = chromeItemModifier(item),
                     )
 
                     else -> Unit // 图标行的条目走不到这里 (按 row 分流过)
@@ -893,34 +950,6 @@ private fun Modifier.hangAboveBaseline() = layout { measurable, constraints ->
  *
  * 显隐由 [TvPlayerBottomRow] 判断 —— 功能被关掉时本组合整个消失, 焦点善后只能由父级做.
  */
-@Composable
-private fun TvWatchTogetherButton(
-    overlay: TvPlayerOverlayState,
-    modifier: Modifier = Modifier,
-) {
-    val entry = LocalWatchTogetherEntry.current
-    val dialogVisible = entry.dialogVisible
-    // 弹窗是独立窗口, 根部那个唯一按键路由收不到它的按键 -> interactionTick 不再自增,
-    // 五秒后控制层连同本按钮一起被自动隐藏吃掉. 按下拉弹层同一套引用计数上报住.
-    DisposableEffect(dialogVisible) {
-        if (dialogVisible) overlay.onPopupExpandedChanged(true)
-        onDispose { if (dialogVisible) overlay.onPopupExpandedChanged(false) }
-    }
-
-    TvBottomRowIcon(
-        icon = Icons.Rounded.SyncAlt,
-        contentDescription = stringResource(Lang.watch_together_title),
-        onClick = { entry.open(overDarkBackground = true) },
-        // 关掉后焦点还给本按钮: 弹窗是独立窗口, 关闭时主窗口未必把焦点还到原处,
-        // 不还的话控制层还在但方向键全失效.
-        // 控制层已经收起时放弃: 那时焦点归属由根路由的解析器负责, 再抢就是打架
-        modifier = modifier.restoreFocusAfter(
-            dialogVisible,
-            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-        ),
-    )
-}
-
 /** 单个胶囊按钮: 聚焦白底黑字 (Prime 样式), 同时浮出对应面板. */
 @Composable
 private fun TvPlayerPill(
@@ -933,6 +962,10 @@ private fun TvPlayerPill(
     modifier: Modifier = Modifier,
     /** 默认是把焦点送进面板 (与上键一致); 另有动作的胶囊自己传 (见评论胶囊). */
     onClick: () -> Unit = { overlay.requestPanelFocus() },
+    /** 面板内容没加载出来: 图标换成警示图标、文字压暗 (见 [TvPillFailedIcon]). */
+    loadFailed: Boolean = false,
+    /** 面板内容正在加载: 胶囊呼吸 (见 [TvPillShell] 的同名参数). */
+    loading: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -941,11 +974,13 @@ private fun TvPlayerPill(
         onClick = onClick,
         interactionSource = interactionSource,
         touchTwoStep = true,
+        dimmed = loadFailed,
+        loading = loading,
         modifier = modifier
             .focusRequester(focusRequester)
             .onFocusChanged { if (it.isFocused) overlay.activePanel = panel },
     ) {
-        icon()
+        if (loadFailed) TvPillFailedIcon(highlighted = focused) else icon()
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
@@ -1078,7 +1113,8 @@ private fun TvPlayerProgressRow(
     } else {
         val player = vm.player
         val isPlaying = remember(player) { { player.state.value.playWhenReady } }
-        val pause = remember(player) { { player.pause() } }
+        // 拖动时暂不暂停与遥控器同一个设置 (见 TvScrubPlayback); 松手后恢复按下前的状态由 tvProgressTouchSeek 自己做
+        val pause = remember(vm, player) { { if (vm.videoScaffoldConfig.pauseVideoOnScrub) player.pause() } }
         val play = remember(player) { { player.play() } }
         val onInteraction = remember(overlay) { { overlay.markInteraction() } }
         Modifier
@@ -1187,34 +1223,87 @@ private fun rememberTvBottomRowItems(
     layout: TvPlayerChromeLayout,
 ): List<TvPlayerChromeItem> {
     val touchInput = LocalTvTouchInputEnabled.current
-    val watchTogether = LocalWatchTogetherEntry.current.enabled
     val hasNextEpisode = vm.episodeSelectorState.hasNextEpisode
     val hasSubtitleTracks = vm.player.subtitleTracks != null
     val hasSpeed = vm.player.features[PlaybackSpeed] != null
     val hasAspectRatio = vm.player.features[VideoAspectRatio] != null
     return remember(
-        layout, touchInput, watchTogether, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio,
+        layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio,
     ) {
-        TvPlayerChromeLayout.tidySeparators(
-            layout.visibleItemsOf(TvPlayerChromeRow.BOTTOM).filter { item ->
-                when (item) {
-                    TvPlayerChromeItem.NEXT_EPISODE -> hasNextEpisode
-                    // 触屏 (平板装了 TV 包) 专有的两颗, 电视上连编辑页都不列
-                    TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS -> touchInput
-                    TvPlayerChromeItem.WATCH_TOGETHER -> watchTogether
-                    TvPlayerChromeItem.SUBTITLE_TRACK -> hasSubtitleTracks
-                    TvPlayerChromeItem.PLAYBACK_SPEED -> hasSpeed
-                    TvPlayerChromeItem.ASPECT_RATIO -> hasAspectRatio
-                    else -> true
-                }
-            },
-        )
+        tvBottomRowItemsOf(layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio)
     }
 }
 
+/** [rememberTvBottomRowItems] 的算法本体: 版式里显示的那几颗, 过一道运行时筛选, 再收拾落单的分组竖线. */
+private fun tvBottomRowItemsOf(
+    layout: TvPlayerChromeLayout,
+    touchInput: Boolean,
+    hasNextEpisode: Boolean,
+    hasSubtitleTracks: Boolean,
+    hasSpeed: Boolean,
+    hasAspectRatio: Boolean,
+): List<TvPlayerChromeItem> = TvPlayerChromeLayout.tidySeparators(
+    layout.visibleItemsOf(TvPlayerChromeRow.BOTTOM).filter { item ->
+        when (item) {
+            TvPlayerChromeItem.NEXT_EPISODE -> hasNextEpisode
+            // 触屏 (平板装了 TV 包) 专有的两颗, 电视上连编辑页都不列
+            TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS -> touchInput
+            // 「一起看」是 Ani 服务器的功能, 直连之后没有了. 枚举项保留是为了让已经存下来的
+            // 版式配置还能反序列化 —— 但它永远不出现, 编辑页那边也别列 (见 TvPlayerChromeCatalog)
+            TvPlayerChromeItem.WATCH_TOGETHER -> false
+            TvPlayerChromeItem.SUBTITLE_TRACK -> hasSubtitleTracks
+            TvPlayerChromeItem.PLAYBACK_SPEED -> hasSpeed
+            TvPlayerChromeItem.ASPECT_RATIO -> hasAspectRatio
+            else -> true
+        }
+    },
+)
+
+/** 按 [layout] 摆出来的控制层上此刻有没有 [item] (两行各自的筛选, 与控制层实际摆的一致). */
+internal fun EpisodeViewModel.tvChromeItemShown(
+    layout: TvPlayerChromeLayout,
+    item: TvPlayerChromeItem,
+    touchInput: Boolean,
+): Boolean = when (item.row) {
+    TvPlayerChromeRow.PILLS -> item in layout.visibleItemsOf(TvPlayerChromeRow.PILLS)
+    TvPlayerChromeRow.BOTTOM -> item in tvBottomRowItemsOf(
+        layout,
+        touchInput,
+        hasNextEpisode = episodeSelectorState.hasNextEpisode,
+        hasSubtitleTracks = player.subtitleTracks != null,
+        hasSpeed = player.features[PlaybackSpeed] != null,
+        hasAspectRatio = player.features[VideoAspectRatio] != null,
+    )
+}
+
+/**
+ * [item] 没被隐藏时, 控制层上是不是**总会**有它这一颗能按 (能长按回到「自定义播放器按钮」): 竖线与留白不能聚焦,
+ * 看运行时条件的 (下一集 / 字幕轨 / 倍速 / 画面比例) 不一定在场, 触屏专有与退役的在电视上不画 —— 与 [tvBottomRowItemsOf] 的筛选对应.
+ */
+internal fun tvChromeItemAlwaysShown(item: TvPlayerChromeItem): Boolean =
+    !item.isSeparator && !item.isConditional && !item.isTouchOnly && !item.isRetired
+
+/** 控制层上 [item] 那一颗的焦点锚点 (见 [tvPlayerChromeItem]). */
+internal data class TvPlayerChromeFocusKey(val item: TvPlayerChromeItem) : TvFocusKey
+
+/**
+ * 控制层上一颗按钮的两样公共挂件: 焦点锚点 ([TvPlayerChromeFocusKey], 从「自定义播放器按钮」回来时焦点落回这一颗),
+ * 与长按确认键去那一页 ([onEdit]). 短按不经这里, 照旧是按钮自己的点击 (见 [tvLongPressKeyOverClick]) —— 三颗文字下拉的点击藏在
+ * 共享组件里, 外面没法替它派发. 长按之后控制层随即收起, 按钮留着的按下态跟着它一起离开组合.
+ *
+ * 挂在按钮本身或它的外壳上都行 (锚点送焦会落到里面第一个焦点目标上, 长按判的是焦点所在的子树).
+ */
+private fun Modifier.tvPlayerChromeItem(
+    item: TvPlayerChromeItem,
+    focus: TvFocusScope,
+    onEdit: ((TvPlayerChromeItem) -> Unit)?,
+    editEnabled: () -> Boolean,
+): Modifier = tvFocusAnchor(focus, TvPlayerChromeFocusKey(item))
+    .then(if (onEdit == null) Modifier else Modifier.tvLongPressKeyOverClick(onLongPress = { onEdit(item) }, enabled = editEnabled))
+
 /**
  * 图标行: 默认是 播放组 (从头开始/下一集/跳OP) | 数据源 | 弹幕组 (开关/设置) ... 右侧文字选项组与低频组,
- * 但**顺序与显隐由用户排** (设置 - 播放器 - 自定义播放器按钮, 见 [TvPlayerChromeLayout]),
+ * 但**顺序与显隐由用户排** (在这一行上长按任意一颗, 见 [TvPlayerChromeLayout]),
  * 本组合只按 [items] 摆.
  *
  * 再往下键 = 详情页 (根路由). 播放/暂停走遥控器确认键, 不再放按钮 (Prime 布局);
@@ -1228,6 +1317,8 @@ private fun TvPlayerBottomRow(
     sheetsController: VideoSideSheetsController<EpisodeVideoSideSheetPage>,
     /** 本行此刻要摆的条目, 已排好序并筛过 (见 [rememberTvBottomRowItems]). */
     items: List<TvPlayerChromeItem>,
+    /** 每颗按钮的公共挂件 (焦点锚点 + 长按去改版式, 见 [tvPlayerChromeItem]). */
+    chromeItemModifier: (TvPlayerChromeItem) -> Modifier,
     /** 行内第一颗**可聚焦**条目的请求器: 进度条按下键的固定落点 (分组竖线不能当落点). */
     firstButtonFocus: FocusRequester,
     /** 行内所有按钮按上键的显式落点 (进度条行): 空间搜索会越过细进度条落到胶囊按钮上. */
@@ -1236,21 +1327,6 @@ private fun TvPlayerBottomRow(
 ) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    // "一起看"按钮的显隐在本行 (而不是按钮自己) 判断: 用户可以在弹窗的 ⋮ 里关掉整个功能,
-    // 那一下按钮连同它自己的焦点善后逻辑一起被移除, 只有留在场上的父级能接手 —— 把焦点送回
-    // 进度条 (与从面板按返回同一个落点). 没有这一手就是按钮消失 + 焦点消失, 方向键全失效.
-    val watchTogetherEnabled = LocalWatchTogetherEntry.current.enabled
-    var watchTogetherWasEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(watchTogetherEnabled) {
-        if (watchTogetherEnabled) {
-            watchTogetherWasEnabled = true
-            return@LaunchedEffect
-        }
-        // 一开始就没开 (或本行刚组合出来) 不算"刚被关掉", 不能抢焦点
-        if (!watchTogetherWasEnabled) return@LaunchedEffect
-        watchTogetherWasEnabled = false
-        overlay.focusProgress()
-    }
     // 进度条按下键的落点 = 第一颗**可聚焦**的条目: 用户可以把分组竖线排到行首 (tidySeparators
     // 只清掉落单的那种), 把请求器挂到不可聚焦的节点上, 下键会当场蒸发
     val firstFocusable = items.firstOrNull { !it.isSeparator }
@@ -1271,11 +1347,11 @@ private fun TvPlayerBottomRow(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             for (item in items) {
-                // 落点只挂在第一颗可聚焦的条目上, 其余拿一个空壳
+                // 进度条按下键的落点只挂在第一颗可聚焦的条目上; 分组竖线与弹性留白不用这个 modifier
                 val itemModifier = if (item === firstFocusable) {
-                    Modifier.focusRequester(firstButtonFocus)
+                    Modifier.focusRequester(firstButtonFocus).then(chromeItemModifier(item))
                 } else {
-                    Modifier
+                    chromeItemModifier(item)
                 }
                 when (item) {
                     // 从头开始 (Prime 同款). Replay 的图形几乎占满 24dp 视口 (环形箭头画到边),
@@ -1356,8 +1432,8 @@ private fun TvPlayerBottomRow(
                         modifier = itemModifier,
                     )
 
-                    // 一起看: 与弹幕同属"和别人一起看"那一类, 默认版式里并在弹幕组末尾
-                    TvPlayerChromeItem.WATCH_TOGETHER -> TvWatchTogetherButton(overlay, itemModifier)
+                    // 「一起看」已随 Ani 服务器一起删掉; 过滤那一步就把它挡住了, 这里只是穷尽分支
+                    TvPlayerChromeItem.WATCH_TOGETHER -> Unit
 
                     // ---- 文字选项组 (字幕轨/倍速/画面比例, 自描述文字按钮, 标签槽位仅为行内对齐) ----
                     TvPlayerChromeItem.SUBTITLE_TRACK -> vm.player.subtitleTracks?.let {
@@ -1712,9 +1788,9 @@ private class TvProgressTrackGeometry {
  * "整行是一个焦点节点"的进度条行里再嵌一个焦点节点 —— 平板配遥控器时就是"可聚焦容器套可聚焦子节点"
  * 那个坑, 而且它还会接管方向键. 这里只接指针, 焦点结构与遥控器路由一个字不动.
  *
- * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂停 (画面跑着
- * 而圆点停在别处会对不上, 取帧也更稳), 落地后恢复**按下之前**的播放状态 —— 不像遥控器那样一律续播,
- * 触屏上拖进度条从来不改变播放/暂停. 被别处抢走 (手势取消) = 丢弃预览位置.
+ * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂不暂停看同一个设置
+ * ([pause] 由调用方按设置决定是否真的暂停, 见 TvScrubPlayback), 落地后恢复**按下之前**的播放状态 —— 不像遥控器
+ * 那样确认即播, 触屏上拖进度条从来不改变播放/暂停. 被别处抢走 (手势取消) = 丢弃预览位置.
  */
 private fun Modifier.tvProgressTouchSeek(
     geometry: TvProgressTrackGeometry,

@@ -27,10 +27,8 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.subject.toEpisodeType
-import me.him188.ani.app.data.repository.subject.toUnifiedCollectionType
+import me.him188.ani.app.data.repository.writeLocalFirst
 import me.him188.ani.app.domain.episode.EpisodeCollections
-import me.him188.ani.client.models.AniEpisodeCollection
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -354,6 +352,58 @@ class EpisodeCollectionRepository(
     }
 }
 
+/** 把本地这一集的看过状态改成 [type] 再 [send], 流程见 [writeLocalFirst]. */
+internal suspend fun EpisodeCollectionDao.setSelfCollectionTypeLocalFirst(
+    subjectId: Int,
+    episodeId: Int,
+    type: UnifiedCollectionType,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        findByEpisodeId(episodeId).first()?.selfCollectionType
+            .also { updateSelfCollectionType(subjectId, episodeId, type) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, previous, type)
+    },
+    revertLocal = { previous ->
+        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, type, previous)
+    },
+)
+
+/**
+ * 把本地这个条目的每一集都标成看过再 [send], 流程见 [writeLocalFirst]. 补写与改回只动原来不是看过的那些集,
+ * 而且各自按条件: 期间又改过的那一集不动.
+ */
+internal suspend fun EpisodeCollectionDao.setAllEpisodesWatchedLocalFirst(
+    subjectId: Int,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        filterBySubjectId(subjectId).first()
+            .associate { it.episodeId to it.selfCollectionType }
+            .also { setAllEpisodesWatched(subjectId) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        // 先读一遍: 通常一集都不用补, 长篇 (上千集) 也只花一次查询
+        for (episode in filterBySubjectId(subjectId).first()) {
+            val before = previous[episode.episodeId] ?: continue
+            if (before != UnifiedCollectionType.DONE && episode.selfCollectionType == before) {
+                replaceSelfCollectionType(subjectId, episode.episodeId, before, UnifiedCollectionType.DONE)
+            }
+        }
+    },
+    revertLocal = { previous ->
+        for ((episodeId, before) in previous) {
+            if (before != UnifiedCollectionType.DONE) {
+                replaceSelfCollectionType(subjectId, episodeId, UnifiedCollectionType.DONE, before)
+            }
+        }
+    },
+)
+
 suspend inline fun EpisodeCollectionRepository.setEpisodeWatched(subjectId: Int, episodeId: Int, watched: Boolean) =
     setEpisodeCollectionType(
         subjectId,
@@ -390,12 +440,6 @@ fun EpisodeCollectionEntity.toEpisodeCollectionInfo() =
         collectionType = selfCollectionType,
     )
 
-fun AniEpisodeCollection.toEpisodeCollectionInfo() =
-    EpisodeCollectionInfo(
-        episodeInfo = toEpisodeInfo(),
-        collectionType = collectionType.toUnifiedCollectionType(),
-    )
-
 private fun EpisodeCollectionEntity.toEpisodeInfo(): EpisodeInfo {
     return EpisodeInfo(
         episodeId = this.episodeId,
@@ -412,18 +456,3 @@ private fun EpisodeCollectionEntity.toEpisodeInfo(): EpisodeInfo {
     )
 }
 
-private fun AniEpisodeCollection.toEpisodeInfo(): EpisodeInfo {
-    return EpisodeInfo(
-        episodeId = this.episodeId.toInt(),
-        type = this.type.toEpisodeType(),
-        name = this.name,
-        nameCn = this.nameCn,
-        airDate = this.airdate?.let { PackedDate.parseFromDate(it) } ?: PackedDate.Invalid,
-        comment = 0,
-        desc = this.description,
-        sort = EpisodeSort(BigNum(this.sort), this.type.toEpisodeType()),
-        ep = this.ep?.let { EpisodeSort(BigNum(it), this.type.toEpisodeType()) },
-        imageMedium = this.imageMedium,
-        imageLarge = this.imageLarge,
-    )
-}

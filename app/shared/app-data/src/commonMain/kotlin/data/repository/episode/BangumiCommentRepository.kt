@@ -52,8 +52,9 @@ class BangumiCommentRepository(
      * 对条目评价投票 (点赞/点踩). [vote] 为 `null` 表示取消投票.
      * 只支持 [SubjectReviewSource.ANI] 来源的评价, [reviewId] 为服务端评价 ID.
      */
+    /** bangumi 的条目吐槽没有点赞/点踩这个概念, 保留空实现是为了不改 UI 结构 (S8 一并去掉). */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun voteSubjectReview(subjectId: Int, reviewId: String, vote: CommentVoteValue?) {
-        commentService.voteSubjectReview(subjectId, reviewId, vote)
     }
 
     private inner class SubjectReviewPagingSource(

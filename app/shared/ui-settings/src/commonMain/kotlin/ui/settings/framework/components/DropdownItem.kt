@@ -1,13 +1,8 @@
 package me.him188.ani.app.ui.settings.framework.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,7 +10,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 
 /**
  * 下来菜单, 用于显示简单的选择. 例如选择主题是深色还是浅色.
@@ -48,28 +44,25 @@ fun <T> SettingsScope.DropdownItem(
             TextButton(onClick = { showDropdown = true }, enabled = enabled) {
                 exposedItemText(selectedState)
             }
-            DropdownMenu(
+            AniDropdownMenu(
                 expanded = showDropdown,
                 onDismissRequest = { showDropdown = false },
             ) {
                 values().forEach { value ->
-                    val color = if (value == selectedState) {
-                        MaterialTheme.colorScheme.primary
-                    } else Color.Unspecified
-                    CompositionLocalProvider(LocalContentColor providesDefault color) {
-                        DropdownMenuItem(
-                            text = { itemText(value) },
-                            leadingIcon = if (itemIcon != null) {
-                                {
-                                    itemIcon(value)
-                                }
-                            } else null,
-                            onClick = {
-                                onSelect(value)
-                                showDropdown = false
-                            },
-                        )
-                    }
+                    // 当前值画成选中项 (TV 上选中色 + ✓, 其余平台主题色文字, 见 AniDropdownMenuItem)
+                    AniDropdownMenuItem(
+                        text = { itemText(value) },
+                        leadingIcon = if (itemIcon != null) {
+                            {
+                                itemIcon(value)
+                            }
+                        } else null,
+                        onClick = {
+                            onSelect(value)
+                            showDropdown = false
+                        },
+                        selected = value == selectedState,
+                    )
                 }
             }
         },

@@ -159,10 +159,15 @@ class MediaSelectorProductionWiringTest {
 
                 override val danmakuEnabled get() = error("not used")
                 override val tmdbImagesDisabled get() = error("not used")
+                override val tmdbImageEndpoint get() = error("not used")
+                override val tmdbImageHostCache get() = error("not used")
+                override val githubDownloadMirrorCache get() = error("not used")
                 override val danmakuConfig get() = error("not used")
                 override val danmakuFilterConfig get() = error("not used")
                 override val profileSettings get() = error("not used")
                 override val proxySettings get() = error("not used")
+                override val bangumiEndpointSettings get() = error("not used")
+                override val bangumiMirrorCache get() = error("not used")
                 override val mediaCacheSettings get() = error("not used")
                 override val danmakuSettings get() = error("not used")
                 override val uiSettings get() = error("not used")
@@ -177,7 +182,6 @@ class MediaSelectorProductionWiringTest {
                 override val oneshotActionConfig get() = error("not used")
                 override val analyticsSettings get() = error("not used")
                 override val debugSettings get() = error("not used")
-                override val watchTogetherSettings get() = error("not used")
             }
 
             startKoin {

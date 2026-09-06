@@ -46,6 +46,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -655,6 +656,25 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
         advanceUntilIdle()
 
         assertEquals(500, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `原地重载后回到重载时给的位置, 不按存下的进度`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 500)
+        // 选中的资源还没装进播放器, 没有可重载的
+        assertFalse(state.reloadCurrentMedia(42_000))
+
+        loadSelectedMedia(suite, state)
+        assertEquals(500, suite.player.currentPositionMillis.value) // 第一次打开照常恢复存下的进度
+
+        // 重载会重新打开这个资源 (位置先归零), 开播后回到 42 秒; 没重新打开的话会停在 500
+        assertTrue(state.reloadCurrentMedia(42_000))
+        advanceUntilIdle()
+        assertEquals(42_000, suite.player.currentPositionMillis.value)
+
         testScope.cancel()
     }
 

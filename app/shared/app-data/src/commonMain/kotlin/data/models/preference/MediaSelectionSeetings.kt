@@ -83,6 +83,11 @@ constructor(
      * @since 6.2
      */
     val rememberManualSelection: Boolean = true,
+    /**
+     * 始终完整搜索: 视频播起来后也把所有数据源查完, 不暂停.
+     * 关闭 (默认) 时播放页在开始播放后暂停还没查完的数据源, 选源面板里可以临时开「完整搜索」.
+     */
+    val alwaysFullSearch: Boolean = false,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {

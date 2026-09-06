@@ -21,14 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -56,6 +54,8 @@ import me.him188.ani.app.ui.foundation.getClipEntryText
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -113,13 +113,13 @@ internal fun SettingsScope.DanmakuRegexFilterGroup(
         val importSuccess = stringResource(Lang.settings_danmaku_import_success)
         val importFailed = stringResource(Lang.settings_danmaku_import_failed)
 
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showImportDialog = false },
             icon = { Icon(Icons.Rounded.ContentPaste, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(stringResource(Lang.settings_danmaku_import_title)) },
             text = { Text(stringResource(Lang.settings_danmaku_import_description)) },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         scope.launch {
                             val text = clipboard.getClipEntryText()
@@ -174,7 +174,7 @@ internal fun SettingsScope.DanmakuRegexFilterGroup(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(
+            AniTextButton(
                 onClick = {
                     scope.launch {
                         val data = state.onExport()
@@ -186,7 +186,7 @@ internal fun SettingsScope.DanmakuRegexFilterGroup(
                 Text(stringResource(Lang.settings_danmaku_export_to_clipboard))
             }
 
-            TextButton(onClick = { showImportDialog = true }) {
+            AniTextButton(onClick = { showImportDialog = true }) {
                 Text(stringResource(Lang.settings_danmaku_import_from_clipboard))
             }
         }
@@ -284,10 +284,10 @@ fun AddRegexFilterDialog(
         focusManager.clearFocus()
     }
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            TextButton(
+            AniTextButton(
                 onClick = {
                     handleAdd()
                 }, // Pass the text field value to onConfirm

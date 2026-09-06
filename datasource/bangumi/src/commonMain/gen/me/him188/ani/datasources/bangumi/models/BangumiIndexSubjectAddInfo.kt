@@ -16,8 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 新增某条目到目录的请求信息
@@ -28,7 +29,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiIndexSubjectAddInfo(
+data class BangumiIndexSubjectAddInfo (
 
     @SerialName(value = "subject_id") val subjectId: kotlin.Int? = null,
 
