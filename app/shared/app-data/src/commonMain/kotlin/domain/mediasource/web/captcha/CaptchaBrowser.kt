@@ -93,6 +93,23 @@ interface CaptchaBrowser : AutoCloseable {
     fun setResourceInterceptor(handler: ((url: String) -> InterceptDecision)?)
 
     /**
+     * 设置**导航**拦截器 (与 [setResourceInterceptor] 的资源请求是两回事). 传 `null` 清除.
+     *
+     * [handler] 返回 `true` = 这一跳由调用方接管, 浏览器不要加载它.
+     *
+     * 用途是 OAuth 回调: bangumi 授权完会把浏览器导航到 `ani://bangumi-oauth-callback?code=...`,
+     * 而自定义 scheme 走不到资源拦截 (Android 的 `shouldInterceptRequest` 不覆盖它, 让它加载只会
+     * 得到 `ERR_UNKNOWN_URL_SCHEME`). 拦在这里等于**根本不经过系统**, 桌面端也就不需要
+     * 注册 scheme 或起本地服务器.
+     *
+     * 只有 Android (`shouldOverrideUrlLoading`) 与桌面 CEF (`onBeforeBrowse`) 实现了它;
+     * 其余平台默认空实现 —— 那些平台的登录走"外部浏览器 + 系统 deep link"那条路.
+     *
+     * [handler] 在浏览器线程被调用, 必须快速返回.
+     */
+    fun setNavigationInterceptor(handler: ((url: String) -> Boolean)?) {}
+
+    /**
      * 浏览器视图 (desktop `SwingPanel` / android `AndroidView`).
      *
      * TV (fork): Android 实现会在视图上叠一层遥控器虚拟光标 (方向键移动 / 确认键点击 /

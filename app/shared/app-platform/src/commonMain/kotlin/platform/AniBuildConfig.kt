@@ -26,6 +26,18 @@ interface AniBuildConfig {
     /** TMDB API Read Access Token (v4 Bearer), 用于获取横版背景图/剧集缩略图. 未配置时为空串. */
     val tmdbApiToken: String
         get() = ""
+
+    /**
+     * 直连 bangumi 的 OAuth 应用凭据 (`ani.bangumi.oauth.client.id` / `.secret`).
+     *
+     * bangumi 的授权码换 token 必须带 secret, 而它没有 PKCE 之类的免 secret 流程, 只能随包发。
+     * 未配置时为空串, 登录入口据此提示"这个构建没带凭据"。
+     */
+    val bangumiOauthClientId: String
+        get() = ""
+
+    val bangumiOauthClientSecret: String
+        get() = ""
     val sentryDsn: String
     val overrideAniApiServer: String
         get() = ""

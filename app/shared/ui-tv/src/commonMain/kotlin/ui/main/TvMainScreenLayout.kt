@@ -284,7 +284,7 @@ fun TvMainScreenLayout(
                     TvRailAvatarAction(
                         Icons.AutoMirrored.Outlined.Login,
                         stringResource(Lang.settings_account_popup_login_register),
-                    ) { navigator.navigateEmailLoginStart() },
+                    ) { navigator.navigateBangumiAuthorize() },
                 )
                 add(
                     TvRailAvatarAction(
@@ -298,7 +298,7 @@ fun TvMainScreenLayout(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
             onAvatarClick = {
-                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateEmailLoginStart()
+                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateBangumiAuthorize()
             },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)

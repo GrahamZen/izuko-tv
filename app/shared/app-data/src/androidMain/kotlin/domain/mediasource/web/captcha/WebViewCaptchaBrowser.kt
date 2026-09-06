@@ -80,6 +80,7 @@ class WebViewCaptchaBrowser private constructor(
     override val isLoading: StateFlow<Boolean> get() = _isLoading
 
     private val interceptor = atomic<((String) -> InterceptDecision)?>(null)
+    private val navigationInterceptor = atomic<((String) -> Boolean)?>(null)
 
     override val userAgent: String
         get() = webView.settings.userAgentString ?: WebSettings.getDefaultUserAgent(webView.context)
@@ -129,6 +130,10 @@ class WebViewCaptchaBrowser private constructor(
 
     override fun setResourceInterceptor(handler: ((String) -> InterceptDecision)?) {
         interceptor.value = handler
+    }
+
+    override fun setNavigationInterceptor(handler: ((String) -> Boolean)?) {
+        navigationInterceptor.value = handler
     }
 
     @Composable
@@ -369,6 +374,15 @@ class WebViewCaptchaBrowser private constructor(
                         LoadedPage(finalUrl = finalUrl, html = decodeJavascriptString(rawHtml)),
                     )
                 }
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url?.toString()
+                val handler = navigationInterceptor.value
+                if (url != null && handler != null && handler(url)) {
+                    return true // 调用方接管 (OAuth 回调), 不要加载
+                }
+                return super.shouldOverrideUrlLoading(view, request)
             }
 
             override fun shouldInterceptRequest(

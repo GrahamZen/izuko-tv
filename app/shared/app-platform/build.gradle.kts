@@ -24,6 +24,11 @@ val aniAuthServerUrlRelease = getPropertyOrNull("ani.auth.server.url.release") ?
 val dandanplayAppId = getPropertyOrNull("ani.dandanplay.app.id") ?: ""
 val dandanplayAppSecret = getPropertyOrNull("ani.dandanplay.app.secret") ?: ""
 val tmdbApiToken = getPropertyOrNull("ani.tmdb.api.token") ?: ""
+
+// 直连 bangumi 的 OAuth 应用 (fork 自己注册的). 回调地址 `ani://bangumi-oauth-callback`.
+// 没配置时为空串 —— 登录页会直接告诉用户"这个构建没带凭据", 而不是跳到一个必然报错的授权页.
+val bangumiOauthClientId = getPropertyOrNull("ani.bangumi.oauth.client.id") ?: ""
+val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secret") ?: ""
 val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val overrideAniApiServer = getPropertyOrNull("ani.api.server")?.takeIf { it.isNotBlank() }
@@ -125,6 +130,8 @@ buildConfig {
         stringField("dandanplayAppId", dandanplayAppId)
         stringField("dandanplayAppSecret", dandanplayAppSecret)
         stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         stringField("distroChannel", distroChannel)
@@ -139,6 +146,8 @@ buildConfig {
         stringField("dandanplayAppId", dandanplayAppId)
         stringField("dandanplayAppSecret", dandanplayAppSecret)
         stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         stringField("distroChannel", distroChannel)
@@ -154,6 +163,8 @@ buildConfig {
             stringField("dandanplayAppId", dandanplayAppId)
             stringField("dandanplayAppSecret", dandanplayAppSecret)
             stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
             stringField("sentryDsn", sentryDsn)
 
             val sentryEnabled = (getPropertyOrNull("ani.sentry.ios") ?: "true").toBooleanStrict()

@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.platform.AniComponentActivity
 import me.him188.ani.app.platform.rememberPlatformWindow
@@ -58,6 +59,7 @@ class MainActivity : AniComponentActivity() {
 
     private val externalContentProviderFactory: ExternalContentProviderFactory by inject()
     private val settingsRepository: SettingsRepository by inject()
+    private val bangumiOAuthManager: BangumiOAuthManager by inject()
 
     /**
      * 本次 Activity 创建时落到窗口层的界面缩放, 由 [attachBaseContext] 定下, 之后不再变 ——
@@ -104,6 +106,16 @@ class MainActivity : AniComponentActivity() {
     private fun handleStartIntent(intent: Intent) {
         val data = intent.data ?: return
         if (data.scheme != "ani") return
+        if (data.host == "bangumi-oauth-callback") {
+            // 外部浏览器那条登录路的回调 (应用内浏览器是自己拦下来的, 不经过系统).
+            // 授权页可能早就不在了, 所以喂给进程内的单例而不是某个页面
+            val url = data.toString()
+            lifecycleScope.launch {
+                runCatching { bangumiOAuthManager.submitCallbackUrl(url) }
+                    .onFailure { logger.error(it) { "Failed to handle bangumi oauth callback" } }
+            }
+            return
+        }
         if (data.host == "subjects") {
             val id = data.pathSegments.getOrNull(0)?.toIntOrNull() ?: return
             lifecycleScope.launch {

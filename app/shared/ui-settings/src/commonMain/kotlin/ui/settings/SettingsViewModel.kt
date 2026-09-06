@@ -206,7 +206,9 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val debugSettingsState = settingsRepository.debugSettings.stateInBackground(DebugSettings(_placeHolder = -1))
     val isInDebugMode by derivedStateOf {
-        debugSettingsState.value.enabled
+        // debug 包直接给: 开启方式是"在关于页 1 秒内连点 5 下", 遥控器上又难按又难发现,
+        // 而这个包本来就是拿来调试的
+        debugSettingsState.value.enabled || currentAniBuildConfig.isDebug
     }
 
     // region ConfigureProxy

@@ -33,11 +33,8 @@ import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.GuestSession
 import me.him188.ani.app.data.repository.user.Session
 import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.OAuthResult
-import me.him188.ani.app.domain.session.auth.toOAuthResult
-import me.him188.ani.client.apis.UserAuthenticationAniApi
-import me.him188.ani.client.models.AniRefreshTokenRequest
-import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.thisLogger
@@ -49,14 +46,17 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 
-class AniSessionRefresher(
-    private val getUserAuthApi: () -> ApiInvoker<UserAuthenticationAniApi>
+/**
+ * 用 bangumi 的 `grant_type=refresh_token` 续期.
+ *
+ * **bangumi 的 accessToken 只活 7 天** (Ani 服务器给的是一个月, 且它自己替你续), 所以这条路
+ * 是直连之后的必需品 —— 不实现的话用户每周被踢下线一次. 见 [SessionManager.Config].
+ */
+class BangumiSessionRefresher(
+    private val getClient: () -> BangumiOAuthClient,
 ) : SessionManager.SessionRefresher {
     override suspend fun refresh(refreshToken: String): OAuthResult {
-        return getUserAuthApi().invoke {
-            val resp = refreshToken(AniRefreshTokenRequest(refreshToken)).body()
-            resp.toOAuthResult()
-        }
+        return getClient().refresh(refreshToken)
     }
 }
 
@@ -89,7 +89,9 @@ class SessionManager(
          *
          * 刷新失败会在一段时间后自动重试. [refreshTokenBefore] 时间长一点可以增加更多重试机会.
          */
-        val refreshTokenBefore: Duration = 7.days, // 注意, Ani 服务器会至少给 31 天 accessToken.
+        // bangumi 的 accessToken 只有 7 天 (Ani 服务器给的是 31 天, 那时这里填 7 天是合理的).
+        // 照搬过来等于"一拿到 token 就该刷新了", 每次冷启动都刷一遍; 提前 1 天足够重试.
+        val refreshTokenBefore: Duration = 1.days,
         /**
          * 在刷新失败后, 等待多久再尝试刷新.
          */
@@ -224,6 +226,15 @@ class SessionManager(
 
     fun startBackgroundJob() {
         backgroundJob // lazy init
+    }
+
+    /**
+     * 启动时作废老流程写下的会话 (见 [me.him188.ani.app.data.repository.user.TokenSave.loginFlowVersion]).
+     */
+    suspend fun clearLegacySessionOnStartup() {
+        if (tokenRepository.clearLegacySession()) {
+            logger.info { "SessionManager: 清掉了老登录流程 (Ani 服务器) 的会话, 需要重新登录 bangumi" }
+        }
     }
 
     suspend fun clearSessionIfAccessTokenExpired() {

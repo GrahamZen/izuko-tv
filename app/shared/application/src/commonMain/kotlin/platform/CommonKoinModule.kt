@@ -137,7 +137,9 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
-import me.him188.ani.app.domain.session.AniSessionRefresher
+import me.him188.ani.app.domain.session.BangumiSessionRefresher
+import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.settings.ProxyProvider
@@ -181,7 +183,21 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         SessionManager(
             tokenRepository = get(),
             coroutineScope = coroutineScope,
-            refreshSession = AniSessionRefresher { aniApiProvider.userAuthApi },
+            // 刷新走 bangumi 自己的 refresh_token; 它的 accessToken 只有 7 天
+            refreshSession = BangumiSessionRefresher { get<BangumiOAuthClient>() },
+        )
+    }
+    single<BangumiOAuthClient> {
+        // 换 token 这一步**不能带 bangumi token** (给 bgm.tv 的 Authorization 头是另一回事),
+        // 所以要一个不装 UseBangumiTokenFeature 的裸客户端
+        BangumiOAuthClient(get<HttpClientProvider>().get())
+    }
+    single<BangumiOAuthManager> {
+        BangumiOAuthManager(
+            client = get(),
+            sessionManager = get(),
+            browserFactory = get(),
+            scope = coroutineScope,
         )
     }
     single<SessionStateProvider> {
@@ -600,6 +616,7 @@ fun KoinApplication.startCommonKoinModule(
 ): KoinApplication {
     // Start the proxy provider very soon (before initialization of any other components)
     runBlocking {
+        koin.get<SessionManager>().clearLegacySessionOnStartup()
         koin.get<SessionManager>().clearSessionIfAccessTokenExpired()
         // We have to block here to read the saved proxy settings
         when (val proxyProvider = koin.get<HttpClientProvider>()) {

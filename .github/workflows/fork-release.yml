@@ -98,6 +98,8 @@ jobs:
           echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
           echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
           echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
+          echo "ani.bangumi.oauth.client.id=${{ secrets.BANGUMI_OAUTH_CLIENT_ID }}" >> local.properties
+          echo "ani.bangumi.oauth.client.secret=${{ secrets.BANGUMI_OAUTH_CLIENT_SECRET }}" >> local.properties
           echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
           echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
       - id: 'step-7'

@@ -120,6 +120,23 @@ fun DebugTab(
                 },
             )
             TextItem(
+                // 直连之后 token 只活 7 天, 续期是必需品, 而它平时六天才跑一次 —— 出了问题
+                // 用户只会看到"某天突然被登出". 这个入口把那条路当场跑一遍 (成功会把轮换后的
+                // 新 token 写回存档, 与自动续期完全同一条代码).
+                title = { Text("刷新登录会话 (测试 token 续期)") },
+                onClick = {
+                    scope.launch {
+                        val result = runCatching { GlobalKoin.get<SessionManager>().refreshSession() }
+                        toaster.toast(
+                            result.fold(
+                                onSuccess = { "续期成功" },
+                                onFailure = { "续期失败: ${it::class.simpleName} ${it.message}" },
+                            ),
+                        )
+                    }
+                },
+            )
+            TextItem(
                 title = { Text("Crash") },
                 onClick = {
                     throw ManualCrashException()
