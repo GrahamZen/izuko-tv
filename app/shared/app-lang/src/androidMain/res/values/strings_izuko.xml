@@ -161,6 +161,7 @@
     <string name="settings_network_tmdb_images_disable">Skip TMDB backdrops</string>
     <string name="settings_network_tmdb_images_disable_description">Turn this on if TMDB is unreachable on your network. Backdrops and episode stills use the cover instead, with no waiting and no requests.</string>
     <string name="settings_network_proxy_service_tmdb_image">Backdrop image CDN</string>
+    <string name="oauth_bangumi_authorize_external_browser">Sign in with system browser</string>
     <string name="video_player_tv_restart">Restart</string>
     <string name="video_player_tv_collection">Collection</string>
     <string name="video_player_tv_cancel_skip_segment">Cancel skip %1$s</string>

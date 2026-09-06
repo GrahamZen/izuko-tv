@@ -45,6 +45,8 @@ import me.him188.ani.client.models.AniRegisterOrLoginByEmailOtpRequest
 import me.him188.ani.client.models.AniSendEmailOtpRequest
 import me.him188.ani.client.models.AniUpdateProfileRequest
 import me.him188.ani.client.models.AniUserAuthRoutingAuthenticationResponse
+import me.him188.ani.datasources.bangumi.next.apis.MiscBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextProfile
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.catching
 import me.him188.ani.utils.coroutines.flows.restartable
@@ -57,6 +59,7 @@ import kotlin.uuid.Uuid
 
 class UserRepository(
     private val dataStore: DataStore<SelfInfo?>,
+    private val bangumiMiscApi: ApiInvoker<MiscBangumiNextApi>,
     private val sessionStateProvider: SessionStateProvider,
     private val userApi: ApiInvoker<UserAniApi>,
     private val authApi: ApiInvoker<UserAuthenticationAniApi>,
@@ -91,7 +94,10 @@ class UserRepository(
             is SessionState.Valid -> {
                 emit(dataStore.data.firstOrNull())
                 suspend {
-                    userApi.invoke { getUser().body() }.toSelfInfo()
+                    // 直连之后"我是谁"来自 bangumi 自己: /p1/me 给 id/用户名/昵称/头像.
+                    // Ani 那个 /v1/me 还给 email、是否设过密码、bangumi 绑没绑 —— 直连之后
+                    // 这些概念都不存在了 (账号就是 bangumi 账号), 见 toSelfInfo
+                    bangumiMiscApi.invoke { getCurrentUser().body() }.toSelfInfo()
                 }
                     .asFlow()
                     // 首次登录这里的 http client 可能还是旧的, 添加重试机制确保 user info 能够正确获取.
@@ -321,12 +327,30 @@ enum class UploadAvatarResult {
 
 private fun AniAniSelfUser.toSelfInfo(): SelfInfo {
     return SelfInfo(
-        id = Uuid.parse(id),
+        id = id.hashCode(),
         nickname = nickname,
         email = email,
         hasPassword = hasPassword,
         avatarUrl = largeAvatar,
         bangumiUsername = bangumiUsername,
         isBangumiSessionValid = isBangumiSessionValid,
+    )
+}
+
+/**
+ * `/p1/me` -> [SelfInfo].
+ *
+ * `email` / `hasPassword` 是 Ani 账号体系的东西, 直连之后恒为空: 账号就是 bangumi 账号,
+ * 密码在 bangumi 那边. `isBangumiSessionValid` 恒为 true —— 能拿到这个响应本身就是证明.
+ */
+private fun BangumiNextProfile.toSelfInfo(): SelfInfo {
+    return SelfInfo(
+        id = id,
+        nickname = nickname,
+        email = null,
+        hasPassword = false,
+        avatarUrl = avatar.large,
+        bangumiUsername = username,
+        isBangumiSessionValid = true,
     )
 }

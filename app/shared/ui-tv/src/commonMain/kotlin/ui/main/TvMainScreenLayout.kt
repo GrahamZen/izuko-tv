@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -138,6 +139,7 @@ import me.him188.ani.app.ui.lang.playback_nothing_to_play
 import me.him188.ani.app.ui.lang.playback_prepare_in_background
 import me.him188.ani.app.ui.lang.playback_up_next_continue
 import me.him188.ani.app.ui.lang.playback_up_next_start
+import me.him188.ani.app.ui.lang.settings_account_popup_login_register
 import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
@@ -288,6 +290,12 @@ fun TvMainScreenLayout(
             } else {
                 add(
                     TvRailAvatarAction(
+                        Icons.AutoMirrored.Outlined.Login,
+                        stringResource(Lang.settings_account_popup_login_register),
+                    ) { navigator.navigateBangumiAuthorize() },
+                )
+                add(
+                    TvRailAvatarAction(
                         Icons.Outlined.History,
                         stringResource(Lang.playback_history_title),
                     ) { navigator.navigatePlaybackHistory() },
@@ -298,7 +306,7 @@ fun TvMainScreenLayout(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
             onAvatarClick = {
-                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateEmailLoginStart()
+                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateBangumiAuthorize()
             },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)

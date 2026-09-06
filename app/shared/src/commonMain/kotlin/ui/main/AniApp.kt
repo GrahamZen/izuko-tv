@@ -47,6 +47,8 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebCaptchaDialogHost
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.session.auth.BangumiOAuthDialogHost
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.navigation.BrowserNavigator
@@ -87,6 +89,12 @@ import me.him188.ani.utils.platform.currentPlatform
 import me.him188.ani.utils.platform.isMobile
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.him188.ani.app.navigation.OpenBrowserResult
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 
 @Stable
 class AniAppState(
@@ -99,12 +107,15 @@ class AniAppState(
     val episodeProgressSettings: EpisodeProgressSettings,
 )
 
+private val aniAppLogger = logger("AniApp")
+
 @Stable
 class AniAppViewModel : AbstractViewModel(), KoinComponent {
     private val settings: SettingsRepository by inject()
     private val httpClientProvider: HttpClientProvider by inject()
     private val downloadManager: MediaDownloadManager by inject()
     private val webSessionManager: WebSessionManager by inject()
+    private val bangumiOAuthManager: BangumiOAuthManager by inject()
     private val userRepository: UserRepository by inject()
     private val sessionStateProvider: SessionStateProvider by inject()
 
@@ -135,7 +146,32 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
             uiSettings.mainSceneInitialPage,
             themeSettings,
             imageLoaderClient,
-            mediaCacheComposables + listOf(@Composable { WebCaptchaDialogHost(webSessionManager) }),
+            mediaCacheComposables + listOf(
+                @Composable { WebCaptchaDialogHost(webSessionManager) },
+                // 授权用的全屏浏览器: 放根部而不是授权页里, 见 BangumiOAuthDialogHost
+                @Composable {
+                    // **这个槽位读不到内容树里的 CompositionLocal**: 它挂在 AniApp 根部, 而
+                    // LocalBrowserNavigator 是 AniAppContent 里才 provide 的 —— 用
+                    // rememberAsyncBrowserNavigator() 会在**启动那一刻**就
+                    // "No BrowserNavigator provided" 崩掉 (2026-09-06 实测: 一进去就闪退).
+                    // 所以用 Koin 那个实例. 代价是少了它自带的"打不开就复制到剪贴板"兜底,
+                    // 改成自己记一行日志.
+                    // (LocalContext 无妨: Android 上它就是 Compose 自己的那个, 处处都有值.)
+                    val oauthContext = LocalContext.current
+                    val oauthScope = rememberCoroutineScope()
+                    BangumiOAuthDialogHost(
+                        bangumiOAuthManager,
+                        onOpenExternally = { url ->
+                            oauthScope.launch {
+                                val result = browserNavigator.openBrowser(oauthContext, url)
+                                if (result !is OpenBrowserResult.Success) {
+                                    aniAppLogger.warn { "打不开系统浏览器 (电视上常常一个都没有): $result" }
+                                }
+                            }
+                        },
+                    )
+                },
+            ),
             // Windows 并且 ani 语言为中文的话, 显式使用 Microsoft YaHei UI.
             // 如果 Windows 语言不是中文, 那系统会使用 Microsoft JhengHei UI 作为中文字体, 这个字体对简体中文的支持不好.
             if (currentPlatform() is Platform.Windows && uiSettings.appLanguage == LocaleZhCN) {

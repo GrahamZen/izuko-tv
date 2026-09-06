@@ -215,7 +215,8 @@ private fun MainScreenContent(
             },
             onNavigateToLogin = {
                 showAccountSettingsPopup = false
-                navigator.navigateEmailLoginStart()
+                // 直连之后没有 Ani 账号了, 登录 = bangumi 授权
+                navigator.navigateBangumiAuthorize()
             },
         )
     }

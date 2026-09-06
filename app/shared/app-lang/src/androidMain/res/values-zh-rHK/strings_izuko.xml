@@ -80,6 +80,7 @@
     <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>
     <string name="settings_network_tmdb_images_disable_description">你的網絡連不上 TMDB 時開啟：背景圖與劇照直接改用條目封面，不再等待載入，也不再發送請求</string>
+    <string name="oauth_bangumi_authorize_external_browser">用系統瀏覽器登入</string>
     <string name="video_player_tv_cancel_skip_segment">取消跳過 %1$s</string>
     <string name="video_player_tv_up_next_in">%1$d 秒後</string>
     <string name="video_player_tv_episodes">劇集</string>

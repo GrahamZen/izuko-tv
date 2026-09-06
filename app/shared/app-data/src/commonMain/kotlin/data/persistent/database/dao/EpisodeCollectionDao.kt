@@ -186,6 +186,10 @@ interface EpisodeCollectionDao {
     )
     suspend fun lastFetched(subjectId: Int): Long
 
+    /** 所有分集缓存视为已过期 (登录时用, 见 [me.him188.ani.app.domain.session.SessionManager]). 不删数据. */
+    @Query("""UPDATE episode_collection SET lastFetched = 0""")
+    suspend fun resetAllLastFetched()
+
     @Query(
         """
         DELETE FROM episode_collection 

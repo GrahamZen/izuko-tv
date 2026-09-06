@@ -26,18 +26,14 @@ import me.him188.ani.app.data.repository.RepositoryAuthorizationException
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
-import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.GuestSession
 import me.him188.ani.app.data.repository.user.Session
 import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.OAuthResult
-import me.him188.ani.app.domain.session.auth.toOAuthResult
-import me.him188.ani.client.apis.UserAuthenticationAniApi
-import me.him188.ani.client.models.AniRefreshTokenRequest
-import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.thisLogger
@@ -49,14 +45,26 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 
-class AniSessionRefresher(
-    private val getUserAuthApi: () -> ApiInvoker<UserAuthenticationAniApi>
+/** 续不上时界面显示的原因: 连不上、被限流与 bangumi 暂时不可用都算网络问题. */
+private fun RepositoryException.toInvalidSessionReason(): InvalidSessionReason = when (this) {
+    is RepositoryNetworkException,
+    is RepositoryRateLimitedException,
+    is RepositoryServiceUnavailableException -> InvalidSessionReason.NETWORK_ERROR
+
+    else -> InvalidSessionReason.UNKNOWN
+}
+
+/**
+ * 用 bangumi 的 `grant_type=refresh_token` 续期.
+ *
+ * **bangumi 的 accessToken 只活 7 天** (Ani 服务器给的是一个月, 且它自己替你续), 所以这条路
+ * 是直连之后的必需品 —— 不实现的话用户每周被踢下线一次. 见 [SessionManager.Config].
+ */
+class BangumiSessionRefresher(
+    private val getClient: () -> BangumiOAuthClient,
 ) : SessionManager.SessionRefresher {
     override suspend fun refresh(refreshToken: String): OAuthResult {
-        return getUserAuthApi().invoke {
-            val resp = refreshToken(AniRefreshTokenRequest(refreshToken)).body()
-            resp.toOAuthResult()
-        }
+        return getClient().refresh(refreshToken)
     }
 }
 
@@ -75,6 +83,12 @@ class SessionManager(
     private val refreshSession: SessionRefresher,
     private val clock: Clock = Clock.System,
     private val config: Config = Config(),
+    /**
+     * 新登录**写入会话之前**调用: 让本地的条目与分集缓存全部过期. 登录前匿名取回的缓存 (分集一律「没看过」)
+     * 在过期前都算新鲜, 不作废的话登录后的刷新会跳过它们, 进度一直停在第一集, 要进一次详情页才对.
+     * 放在写入会话之前: 登录后立刻开始的刷新不会抢在作废之前判断「新鲜」.
+     */
+    private val beforeNewLogin: suspend () -> Unit = {},
 ) {
     fun interface SessionRefresher {
         /**
@@ -89,7 +103,9 @@ class SessionManager(
          *
          * 刷新失败会在一段时间后自动重试. [refreshTokenBefore] 时间长一点可以增加更多重试机会.
          */
-        val refreshTokenBefore: Duration = 7.days, // 注意, Ani 服务器会至少给 31 天 accessToken.
+        // bangumi 的 accessToken 只有 7 天 (Ani 服务器给的是 31 天, 那时这里填 7 天是合理的).
+        // 照搬过来等于"一拿到 token 就该刷新了", 每次冷启动都刷一遍; 提前 1 天足够重试.
+        val refreshTokenBefore: Duration = 1.days,
         /**
          * 在刷新失败后, 等待多久再尝试刷新.
          */
@@ -121,91 +137,93 @@ class SessionManager(
         }
 
         /**
+         * 续到成功为止: 成功后 [sessionFlow] 发出新会话, 调用方随之被取消、以新会话重来.
+         * refreshToken 被拒 (过期或被撤销) 就退出登录; 其他失败 (连不上、bangumi 5xx…) 每隔
+         * [Config.refreshAttemptInterval] 重试, 旧 token 已经过期时让界面知道现在续不上, 而不是还登录着.
+         */
+        suspend fun refreshUntilDone(session: AccessTokenSession) {
+            while (true) {
+                try {
+                    refreshSession() // This is expected to throw RepositoryException
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val re = RepositoryException.wrapOrThrowCancellation(e)
+                    if (re is RepositoryAuthorizationException) {
+                        logger.warn { "SessionManager: refresh token rejected, clearing session" }
+                        clearSession()
+                        return
+                    }
+                    if (re is RepositoryUnknownException) {
+                        logger.error(
+                            "Refresh session failed with unknown exception, see cause. Retrying in ${config.refreshAttemptInterval}",
+                            e,
+                        )
+                    } else {
+                        // 对于已知的错误, 不要记录冗长的堆栈
+                        logger.warn("Refresh session failed with $re. Retrying in ${config.refreshAttemptInterval}")
+                    }
+                    if (session.tokens.isExpired(clock)) {
+                        emitState(SessionState.Invalid(re.toInvalidSessionReason()))
+                    }
+                    delay(config.refreshAttemptInterval)
+                }
+            }
+        }
+
+        /**
          * 维护 accessToken 的有效性. 此函数可在有新的 session 时被 cancel.
          *
          * 只有这里会修改 [stateProvider].
+         *
+         * 有 refreshToken 的会话在过期前 [Config.refreshTokenBefore] 续期, 已经过期的立即续 (见 [refreshUntilDone]).
+         * 没有 refreshToken 的会话 (个人令牌) 续不了, 到期就退出登录.
          */
         suspend fun maintainAccessTokenLoop(session: AccessTokenSession) {
             logger.debug {
                 "SessionManager: maintainAccessTokenLoop started with session: $session"
             }
+            val canRefresh = tokenRepository.refreshToken.first() != null
 
             if (session.tokens.isExpired(clock)) {
-                // 我们确定此时已经过期了. 但是先别急, 可以刷新
-
-                try {
+                if (canRefresh) {
                     // 目前不支持检查 refreshToken 是否过期, 所以直接请求刷新
-                    refreshSession() // This is expected to throw RepositoryException
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: RepositoryException) {
-                    // 翻译错误为 InvalidSessionReason, emit 给其他人
-                    val reason = when (e) {
-                        is RepositoryAuthorizationException -> {
-                            // 说明 refreshToken 都过期了, 那就真没办法了
-                            clearSession()
-                            InvalidSessionReason.NO_TOKEN
-                        }
-
-                        is RepositoryNetworkException -> InvalidSessionReason.NETWORK_ERROR
-
-                        // 服务器不太可能会返回 429, 就把它当做网络错误了
-                        is RepositoryRateLimitedException -> InvalidSessionReason.NETWORK_ERROR
-
-                        is RepositoryServiceUnavailableException -> InvalidSessionReason.NO_TOKEN
-                        is RepositoryUnknownException -> InvalidSessionReason.UNKNOWN
-                        is RepositoryRequestError -> InvalidSessionReason.UNKNOWN
-                    }
-
-                    if (reason == InvalidSessionReason.UNKNOWN) {
-                        logger.error("Refresh session failed with unknown error", e)
-                    } else {
-                        // 对于已知的错误, 不要记录冗长的堆栈
-                        logger.warn { "Refresh session failed with known error: $reason" }
-                    }
-
-                    emitState(SessionState.Invalid(reason))
-                } catch (e: Exception) {
-                    emitState(SessionState.Invalid(InvalidSessionReason.UNKNOWN))
-                    logger.error("Refresh session failed", e)
+                    refreshUntilDone(session)
+                } else {
+                    logger.info { "SessionManager: access token expired and cannot be refreshed, clearing session" }
+                    clearSession()
                 }
-            } else {
-                // token 还没有过期, 直接发出有效的状态
-                emitState(SessionState.Valid(bangumiConnected = session.tokens.bangumiAccessToken != null))
-
-                // Token 会在未来过期, 所以我们延迟到那个时候
-                val ttl = (session.tokens.expiresAtMillis - clock.now().toEpochMilliseconds()).milliseconds
-                    .minus(config.refreshTokenBefore) // 提前一小会
-
-                logger.debug {
-                    "SessionManager: access token is valid, will refresh in $ttl ms"
-                }
-
-                delay(ttl)
-
-                logger.info {
-                    "SessionManager: access token is about to expire, refreshing now"
-                }
-
-                // 每小时尝试一次
-                while (session.tokens.isExpired(clock)) {
-                    try {
-                        refreshSession()
-                    } catch (e: Exception) {
-                        // 不管是什么错误, 反正失败了就等
-                        val re = RepositoryException.wrapOrThrowCancellation(e)
-                        if (re is RepositoryUnknownException) {
-                            logger.error(
-                                "Refresh session failed with unknown exception, see cause. Retrying in ${config.refreshAttemptInterval}",
-                                e,
-                            )
-                        } else {
-                            logger.warn("Refresh session failed with $re. Retrying in ${config.refreshAttemptInterval}")
-                        }
-                        delay(config.refreshAttemptInterval)
-                    }
-                }
+                return
             }
+
+            // token 还没有过期, 直接发出有效的状态
+            emitState(SessionState.Valid(bangumiConnected = session.tokens.bangumiAccessToken != null))
+
+            if (!canRefresh) {
+                // 续不了: 到期就退出登录, 界面回到「未登录」
+                delay(session.tokens.timeUntilExpired(clock))
+                logger.info { "SessionManager: access token expired and cannot be refreshed, clearing session" }
+                clearSession()
+                return
+            }
+
+            // Token 会在未来过期, 提前 refreshTokenBefore 续期
+            val ttl = (session.tokens.expiresAtMillis - clock.now().toEpochMilliseconds()).milliseconds
+                .minus(config.refreshTokenBefore)
+
+            logger.debug {
+                "SessionManager: access token is valid, will refresh in $ttl ms"
+            }
+
+            delay(ttl)
+
+            logger.info {
+                "SessionManager: access token is about to expire, refreshing now"
+            }
+            // 醒来时 token 通常还没过期 (提前了 refreshTokenBefore), 所以不能拿 isExpired 当续期的循环条件 ——
+            // 那样一次都不会续
+            refreshUntilDone(session)
         }
 
 
@@ -226,10 +244,27 @@ class SessionManager(
         backgroundJob // lazy init
     }
 
+    /**
+     * 启动时作废老流程写下的会话 (见 [me.him188.ani.app.data.repository.user.TokenSave.loginFlowVersion]).
+     */
+    suspend fun clearLegacySessionOnStartup() {
+        if (tokenRepository.clearLegacySession()) {
+            logger.info { "SessionManager: 清掉了老登录流程 (Ani 服务器) 的会话, 需要重新登录 bangumi" }
+        }
+    }
+
+    /**
+     * 启动时: 已经过期、又续不了 (没有 refreshToken) 的会话直接清掉. 能续的留给后台任务去续 ——
+     * bangumi 的 token 只有 7 天, 启动时清掉的话, 隔一周打开应用就得重新登录.
+     */
     suspend fun clearSessionIfAccessTokenExpired() {
         val session = tokenRepository.session.first()
         if (session is AccessTokenSession && session.tokens.isExpired(clock)) {
-            logger.info { "SessionManager: saved access token is expired on startup, clearing session" }
+            if (tokenRepository.refreshToken.first() != null) {
+                logger.info { "SessionManager: saved access token is expired on startup, will refresh it" }
+                return
+            }
+            logger.info { "SessionManager: saved access token is expired on startup and cannot be refreshed, clearing session" }
             clearSession()
         }
     }
@@ -239,12 +274,12 @@ class SessionManager(
      */
     suspend fun setSession(
         session: AccessTokenSession,
-        // Ani 登录保证每次登录都返回新的 refreshToken, 所以我们要求都更新
-        refreshToken: String,
+        /** 每次登录 / 续期都换新的; `null` = 续不了 (个人令牌), 到期就退出登录. */
+        refreshToken: String?,
         isNewLogin: Boolean = true,
     ) {
-        tokenRepository.setSession(session)
-        tokenRepository.setRefreshToken(refreshToken)
+        if (isNewLogin) beforeNewLogin()
+        tokenRepository.setSession(session, refreshToken)
         if (isNewLogin) {
             _stateProvider.emitEvent(SessionEvent.NewLogin)
         }

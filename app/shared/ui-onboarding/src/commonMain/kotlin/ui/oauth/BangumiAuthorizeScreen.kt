@@ -44,14 +44,18 @@ fun BangumiAuthorizeScreen(
     BangumiAuthorizeScreen(
         state = state,
         onClickAuthorize = {
-            scope.launch {
-                val currentState = state
-                if (currentState is AuthState.AwaitingResult) return@launch
-
-                vm.doOAuth(
-                    state is AuthState.NoAniAccount || (currentState is AuthState.Failed && !currentState.loggedIn),
-                ) {
-                    browserNavigator.openBrowser(context, it)
+            if (state !is AuthState.AwaitingResult) {
+                // 应用内浏览器优先 (电视上唯一可行的一条: 跳去外部浏览器就回不来了);
+                // 没有应用内浏览器的平台才落到外部浏览器 + deep link 回调
+                vm.startAuthorize { url ->
+                    scope.launch { browserNavigator.openBrowser(context, url) }
+                }
+            }
+        },
+        onClickAuthorizeExternally = {
+            if (state !is AuthState.AwaitingResult) {
+                vm.startAuthorizeExternally { url ->
+                    scope.launch { browserNavigator.openBrowser(context, url) }
                 }
             }
         },
@@ -66,6 +70,7 @@ fun BangumiAuthorizeScreen(
 internal fun BangumiAuthorizeScreen(
     state: AuthState,
     onClickAuthorize: () -> Unit,
+    onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
     onNavigateSettings: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -82,6 +87,7 @@ internal fun BangumiAuthorizeScreen(
             authorizeState = state,
             contactActions = contactActions,
             onClickAuthorize = onClickAuthorize,
+            onClickAuthorizeExternally = onClickAuthorizeExternally,
             onCancelAuthorize = onCancelAuthorize,
             scrollState = scrollState,
         )

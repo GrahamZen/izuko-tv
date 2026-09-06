@@ -93,6 +93,23 @@ interface CaptchaBrowser : AutoCloseable {
     fun setResourceInterceptor(handler: ((url: String) -> InterceptDecision)?)
 
     /**
+     * 设置**导航**拦截器 (与 [setResourceInterceptor] 的资源请求是两回事). 传 `null` 清除.
+     *
+     * [handler] 返回 `true` = 这一跳由调用方接管, 浏览器不要加载它.
+     *
+     * 用途是 OAuth 回调: bangumi 授权完会把浏览器导航到 `ani://bangumi-oauth-callback?code=...`,
+     * 而自定义 scheme 走不到资源拦截 (Android 的 `shouldInterceptRequest` 不覆盖它, 让它加载只会
+     * 得到 `ERR_UNKNOWN_URL_SCHEME`). 拦在这里等于**根本不经过系统**, 桌面端也就不需要
+     * 注册 scheme 或起本地服务器.
+     *
+     * 只有 Android (`shouldOverrideUrlLoading`) 与桌面 CEF (`onBeforeBrowse`) 实现了它;
+     * 其余平台默认空实现 —— 那些平台的登录走"外部浏览器 + 系统 deep link"那条路.
+     *
+     * [handler] 在浏览器线程被调用, 必须快速返回.
+     */
+    fun setNavigationInterceptor(handler: ((url: String) -> Boolean)?) {}
+
+    /**
      * 浏览器视图 (desktop `SwingPanel` / android `AndroidView`).
      *
      * TV (fork): Android 实现会在视图上叠一层遥控器虚拟光标 (方向键移动 / 确认键点击 /
@@ -117,7 +134,7 @@ enum class TvWebInputMode {
      * 虚拟光标: 方向键移动一个圆点, 确认键在圆点处注入触摸点击.
      * 光标走到视口边缘时带着页面滚动 (否则折叠线以下的按钮永远够不着).
      *
-     * **默认就用它**. 理由是[焦点遍历][NativeFocus]**给不出保证**:
+     * **默认就用它**, 验证码页与 bangumi 登录页都是. 理由是[焦点遍历][NativeFocus]**给不出保证**:
      * 方向键只能到达标准可聚焦元素 (`a[href]` / `button` / `input` / 带 tabindex 的), 页面用
      * `<div onclick>` 挂点击处理时它永远碰不到 —— 而验证码的滑块图块正是这种. 光标是注入触摸事件,
      * 页面上任何东西都点得到.
