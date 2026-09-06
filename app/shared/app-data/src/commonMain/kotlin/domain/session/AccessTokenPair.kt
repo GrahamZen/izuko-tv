@@ -10,7 +10,9 @@
 package me.him188.ani.app.domain.session
 
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 捆绑 Bangumi 和 Ani 的 accessTokens, 简化授权逻辑
@@ -26,7 +28,15 @@ data class AccessTokenPair(
     }
 }
 
+/** 提前这么久就把 token 当作过期, 避免交给服务器时已经失效 (403). */
+private val EXPIRY_MARGIN = 1.hours
+
 fun AccessTokenPair.isExpired(clock: Clock = Clock.System): Boolean {
-    return expiresAtMillis <=
-            (clock.now().toEpochMilliseconds() + 1.hours.inWholeMilliseconds) // 提前 1 小时让 token 过期, 避免交给服务器时 403.
+    return expiresAtMillis <= clock.now().toEpochMilliseconds() + EXPIRY_MARGIN.inWholeMilliseconds
+}
+
+/** 离 [isExpired] 变成 `true` 还有多久; 已经过期时为 0. */
+fun AccessTokenPair.timeUntilExpired(clock: Clock = Clock.System): Duration {
+    return (expiresAtMillis - EXPIRY_MARGIN.inWholeMilliseconds - clock.now().toEpochMilliseconds())
+        .coerceAtLeast(0).milliseconds
 }

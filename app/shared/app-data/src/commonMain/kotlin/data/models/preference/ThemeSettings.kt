@@ -15,19 +15,19 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.him188.ani.app.ui.theme.DefaultSeedColor
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 
 @Serializable
 enum class DarkMode {
     AUTO, LIGHT, DARK,
 }
 
-/** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 /**
  * TV 新番时间表的版式. 三版都留着, 设置里可选 —— 改版换掉的东西未必人人都想要
  * (用户 2026-09-18)。
  *
  * 旧的布尔 `tvImmersiveSchedule` 已撤: 存储层是 `ignoreUnknownKeys = true` (见 DataStoreMP),
- * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认的 [Timeline],
+ * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认版式,
  * 再选一次即可。
  */
 @Serializable
@@ -35,13 +35,33 @@ enum class TvScheduleLayout {
     /** 上游原布局: 15 天并排的纵向列表. */
     Upstream,
 
-    /** 日期胶囊行 + **全竖版卡片网格** (2026-09-13 改版之前的 TV 版式). */
+    /** 日期胶囊行 + 海报墙 (同追番页的卡片墙, 原生视图; 默认). 存储名沿用 2026-09-13 之前的竖版卡片网格. */
     Grid,
 
-    /** 左侧焦点详情大图大字 + 右侧单列时间线 (改版后, 默认). */
+    /** 左侧焦点详情大图大字 + 右侧单列时间线. */
     Timeline,
 }
 
+/**
+ * TV: 海报墙 (探索 / 追番 / 搜索, 以及新番时间表) 的卡片上按确定做什么. 见 [ThemeSettings.tvPosterConfirm].
+ * 播放键、长按 (收藏菜单)、推荐行末的「更多」卡三档都不变.
+ */
+@Serializable
+enum class TvPosterConfirmAction {
+    /**
+     * 先看简介: 探索 / 追番 / 搜索页先切到 hero 态 (背景大图与简介), 再按确定进详情页 (从大图放大, 或铺着模糊背景时对焦);
+     * 新番时间表 (没有 hero 态) 直接进详情页. 默认.
+     */
+    Hero,
+
+    /** 直接播放: 同播放键 —— 有观看进度接着播下一集, 没有从第一集开始; 分集信息还没取到时进详情页. 四页都是. */
+    Play,
+
+    /** 直接进详情页: 不进 hero 态. 卡片墙上没有大图, 进详情页走普通的页面切换; 新番时间表照旧对焦后进. */
+    Details,
+}
+
+/** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 @Serializable
 enum class TvExitBehavior {
     /** 直接退出应用 —— 加确认之前的老行为. */
@@ -94,7 +114,9 @@ enum class TvLongPressAction {
  *
  * **不分档** (三档相同): 滚动与连发期间藏起 hero 文字、背景图停稳再换 (ui-foundation 的 TvScrollActivity, Shield 上
  * 不做就 janky 8~10%, 强机也要); 网络相关的等待 (封面兜底 / 重发 / 预热并发, 按实测网速自动, 见 TvImageNetworkTier);
- * 按键时背景压暗; **进详情页的背景放大** —— 它比流畅档原来用的交叉淡入还顺 (2026-09-13 同包同条目对照: 淡入期间三帧
+ * 按键时背景压暗; 海报墙上进出 hero 态的淡入淡出 (流畅档里聚焦行照旧直接跳到位: 贵的是行的滚动动画, 淡入淡出只改几层透明度)、
+ * 模糊背景点开时的对焦 (回来的倒放流畅档照旧直接到位)、轮播按钮与圆点的淡入;
+ * **进详情页的背景放大** —— 它比流畅档原来用的交叉淡入还顺 (2026-09-13 同包同条目对照: 淡入期间三帧
  * 39~56ms 落在透明度变化最快的一段, 放大运动中每帧 3~6ms, 重活挪到落地尾段与静止之后), 弱机更该用它.
  *
  * 默认均衡: 转场实测与交叉淡入同价 (放大转场 Shield 上无长帧), 真正的常驻开销 (装饰 / 原图) 只在完整档;
@@ -103,7 +125,7 @@ enum class TvLongPressAction {
 @Serializable
 enum class TvVisualEffectsLevel {
     /**
-     * 流畅: 只保留进详情页的背景放大 (三档都有); 没有转场、没有常驻装饰、不用原图,
+     * 流畅: 只保留三档都有的那几样 (进详情页的背景放大、hero 态的淡入淡出、模糊背景点开的对焦、轮播按钮的淡入); 没有其余转场、没有常驻装饰、不用原图,
      * **焦点滚动也不带动画** (瞬时跳位, 见 [animatedScroll])。给主线程吃紧的弱机。
      */
     Smooth,
@@ -152,10 +174,9 @@ enum class TvVisualEffectsLevel {
 }
 
 /**
- * TV: 网格页 (追番 / 搜索 / 时间表网格版) 的竖版卡片聚焦时怎么突出 (见 [ThemeSettings.tvCardFocusStyle]).
- * 设置里按声明顺序列出.
+ * TV: 竖版卡片聚焦时怎么突出. 海报墙 (探索 / 搜索 / 追番 / 时间表) 照 Apple TV 固定用 [Scale] (见 ui-tv 的
+ * `TV_POSTER_WALL_CARD_FOCUS_STYLE`); 选集轮播是钉在锚位的固定聚焦框, 不用它.
  *
- * 探索页卡片区与选集轮播不受它影响: 那里是钉在锚位的固定聚焦框, 卡片在框下滑动, 本身就有运动提示.
  * 网格页的焦点是在一屏几十张封面之间瞬移的, 细描边在封面颜色接近主题色时容易看丢 —— 放大同时给出
  * 尺寸差与"变大那一下"的运动, 两样都能把视线拉过去. 两种放大样式的框与放大都按"聚焦格"画, 上下翻页时框不动
  * (见 ui-tv 的 `TvGridFocusSlot`).
@@ -197,12 +218,43 @@ data class ThemeSettings(
     val seedColorValue: ULong = DefaultSeedColor.value,
     val enableAnimatedGradientSubjectPage: Boolean = false,
     val enableFrostedGlassEffect: Boolean = false,
-    /** TV: 探索页使用沉浸式布局 (Hero 轮播); 关闭则回退上游原布局 (低端机可关以降低开销). */
-    val tvImmersiveExploration: Boolean = true,
-    /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
-    val tvImmersiveDetails: Boolean = true,
+    /**
+     * TV: 探索 / 搜索 / 追番三页的 hero 背景模式 (聚焦卡片的背景大图与简介常显). 三页现在只有海报墙一种画面, 本字段不被读取,
+     * 设置里也不显示; 字段留着给以后的 hero 模式.
+     *
+     * @since 1.0.4
+     */
+    val tvHeroBackdrop: Boolean = true,
+    /**
+     * TV: 探索 / 追番 / 搜索三页海报墙的 hero 态 (卡片上按一下确定之后) 在整页底下铺聚焦那部的模糊背景 (整部的横版背景图, 同新番时间表);
+     * 右上角的 hero 图 (继续观看的条目是单集剧照) 与文字照旧画在上面, 整屏底色不压黑 (深色主题也是, 一直是卡片墙的灰). 再按确定时卡片与
+     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. 默认开; 关 = hero 态整页是纯色底 (深色主题压成近黑), 进出详情页从 hero 图
+     * 放大 / 缩回. 轮播与卡片墙不受影响.
+     *
+     * @since 1.0.4
+     */
+    val tvHeroBlurBackdrop: Boolean = true,
+    /**
+     * TV: 海报墙的卡片上按确定做什么 (见 [TvPosterConfirmAction]). 只有 [TvPosterConfirmAction.Hero] 有 hero 态, [tvHeroBlurBackdrop] 也只对它有用.
+     *
+     * @since 1.0.4
+     */
+    val tvPosterConfirm: TvPosterConfirmAction = TvPosterConfirmAction.Hero,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
-    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Timeline,
+    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Grid,
+    /**
+     * TV: 追番页顶部那排收藏分类标签的先后顺序 (想看 / 在看 / 搁置 / 看过 / 抛弃).
+     *
+     * **空 = 没排过**, 用页面自己的默认顺序; 排过之后存的也只是一份"用户排出来的顺序", 与当前版本的
+     * 分类集合未必一致 —— 读取一律走 [resolveSavedOrder] 对齐 (缺的按默认位置补回, 不认识的丢掉).
+     *
+     * 为什么值得让用户排: 各人常用的分类差得远 —— 只看在追的那几部的人希望「在看」在最左 (进页焦点
+     * 落第一个非空标签), 补旧番的人则更常开「想看」. 顺序只影响这一页的展示与左右导航, 选中项仍按
+     * 类型存取, 重排不会把内容切走.
+     *
+     * @since 1.0.2
+     */
+    val tvCollectionTabOrder: List<UnifiedCollectionType> = emptyList(),
     /**
      * TV: 退出播放页后保留播放会话 (播放器与整条"搜索数据源 → 选源 → 起播"的流水线),
      * 由侧边栏"正在播放"条目回去; 数据源在后台就绪时弹一次提示.
@@ -261,8 +313,6 @@ data class ThemeSettings(
      * [visualEffects], 别直接读这个字段.
      */
     val tvVisualEffects: TvVisualEffectsLevel? = null,
-    /** TV: 网格页竖版卡片的聚焦样式, 见 [TvCardFocusStyle]. */
-    val tvCardFocusStyle: TvCardFocusStyle = TvCardFocusStyle.ScaleAndRing,
     /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
     val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
     /**
@@ -280,6 +330,13 @@ data class ThemeSettings(
      * 就能让文字和布局等比缩放; 两个都改会导致文字被缩放两次.
      */
     val uiScale: Float = 1f,
+    /**
+     * TV: 海报墙三页 (探索 / 追番 / 搜索结果) 卡片的缩放系数, 叠在 [uiScale] 之上: 海报、番名与卡片之间的间距一起按比例变 (一排放几张随之变);
+     * hero 的标题与简介、轮播、组标题、标签行、搜索栏与侧边栏不变, 只跟 [uiScale]. 1f = 与其余界面一样大. 读取走 [effectivePosterWallScale].
+     *
+     * @since 1.0.4
+     */
+    val tvPosterWallScale: Float = 1f,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient
@@ -298,6 +355,11 @@ data class ThemeSettings(
     @Transient
     val effectiveUiScale: Float =
         if (uiScale.isFinite()) uiScale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX) else 1f
+
+    /** 已 clamp 的 [tvPosterWallScale] (理由同 [effectiveUiScale]). */
+    @Transient
+    val effectivePosterWallScale: Float =
+        if (tvPosterWallScale.isFinite()) tvPosterWallScale.coerceIn(POSTER_WALL_SCALE_MIN, POSTER_WALL_SCALE_MAX) else 1f
 
     /**
      * 实际生效的"主页按返回"行为 —— **读这个, 别读 [tvExitBehavior]**.
@@ -341,5 +403,17 @@ data class ThemeSettings(
         /** [UI_SCALE_MIN]..[UI_SCALE_MAX], 供 Slider 之类需要 range 的调用方使用. */
         @Stable
         val UI_SCALE_RANGE = UI_SCALE_MIN..UI_SCALE_MAX
+
+        /** [tvPosterWallScale] 的下界: 1080p 下一行十一二张卡. */
+        const val POSTER_WALL_SCALE_MIN = 0.5f
+
+        /** [tvPosterWallScale] 的上界: 再大首屏就只剩一行卡. */
+        const val POSTER_WALL_SCALE_MAX = 1.5f
+
+        /**
+         * [tvPosterWallScale] 取值的网格: 存下来的值都在这一格一格上. 滑块不是一格一格走, 而是一按换一种每排张数 (见 ui-tv 的
+         * tvPosterWallScaleStops), 落在这张网格上离 100% 最近的那一格.
+         */
+        const val POSTER_WALL_SCALE_STEP = 0.05f
     }
 }

@@ -11,10 +11,11 @@ package me.him188.ani.app.ui.login
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -43,24 +44,23 @@ import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
-import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
-import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.lang.*
+import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import org.jetbrains.compose.resources.*
 
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun EmailLoginScreenLayout(
-    onThirdPartyLoginClick: (OAuthPlatform) -> Unit,
+    onBangumiLoginClick: () -> Unit,
     onNavigateSettings: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
     title: @Composable () -> Unit = { Text(stringResource(Lang.login_sign_in)) },
-    /**
-     * 显示在底部的第三方登录平台. 为空则不显示 "其他登录方式".
-     */
-    thirdPartyPlatforms: List<OAuthPlatform> = emptyList(),
+    showThirdPartyLogin: Boolean = true,
+    /** 主栏右侧的一栏 (TV 登录页放手机控制台的码). 有它时主栏固定 480dp, 两栏一起居中. */
+    sidePanel: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.(scrollState: ScrollState) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -70,6 +70,7 @@ internal fun EmailLoginScreenLayout(
             TopAppBar(
                 title = title,
                 navigationIcon = { BackNavigationIconButton(onNavigateBack) },
+                colors = AniThemeDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onNavigateSettings) {
@@ -83,18 +84,25 @@ internal fun EmailLoginScreenLayout(
     ) { contentPadding ->
         BoxWithConstraints {
             val availableHeight = maxHeight - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding() - 48.dp
-            // 分割线 56dp + 每个按钮 40dp 及间距, 再留一些余量
-            val thirdPartyLoginHeight = if (thirdPartyPlatforms.isEmpty()) 0.dp else 84.dp + 48.dp * thirdPartyPlatforms.size
+            val thirdPartyLoginHeight = if (showThirdPartyLogin) 180.dp else 0.dp
             val contentAreaHeight = availableHeight - thirdPartyLoginHeight
             val scrollState = rememberScrollState()
             
-            Column(
+            val widthAtLeastMedium = currentWindowAdaptiveInfo1().windowSizeClass.isWidthAtLeastMedium
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .wrapContentWidth(align = Alignment.CenterHorizontally)
-                    .ifThen(currentWindowAdaptiveInfo1().windowSizeClass.isWidthAtLeastMedium) {
-                        widthIn(max = 480.dp)
+                    .wrapContentWidth(align = Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+            Column(
+                Modifier
+                    .ifThen(sidePanel == null) {
+                        fillMaxWidth()
+                            .wrapContentWidth(align = Alignment.CenterHorizontally)
+                            .ifThen(widthAtLeastMedium) { widthIn(max = 480.dp) }
                     }
+                    .ifThen(sidePanel != null) { widthIn(max = 480.dp) }
                     .padding(contentPadding)
                     .padding(horizontal = 24.dp)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -109,46 +117,19 @@ internal fun EmailLoginScreenLayout(
                     content(scrollState)
                 }
 
-                ThirdPartyLoginMethods(
-                    thirdPartyPlatforms,
-                    onThirdPartyLoginClick,
-                    Modifier.heightIn(min = thirdPartyLoginHeight).wrapContentHeight(align = Alignment.Top),
-                )
+                if (showThirdPartyLogin) {
+                    ThirdPartyLoginMethods(
+                        listOf(OAuthPlatform.BANGUMI),
+                        onClick = { onBangumiLoginClick() },
+                        Modifier.heightIn(min = 180.dp).wrapContentHeight(align = Alignment.Top),
+                    )
+                }
+            }
+            if (sidePanel != null) {
+                Box(Modifier.padding(contentPadding).padding(start = 48.dp)) { sidePanel() }
+            }
             }
         }
     }
 }
 
-/**
- * 适合全屏中间使用的
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-fun CenteredSectionHeader(
-    title: @Composable () -> Unit,
-    description: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
-) {
-    Column(
-        modifier.padding(contentPadding)
-            .fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ProvideTextStyleContentColor(
-            MaterialTheme.typography.titleLargeEmphasized
-                .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface,
-        ) {
-            title()
-        }
-
-        ProvideTextStyleContentColor(
-            MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        ) {
-            description()
-        }
-    }
-}

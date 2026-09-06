@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.tools.Progress
@@ -82,6 +83,23 @@ interface MediaCache {
      * 持久化), 为一句提示动它不划算.
      */
     val isMerging: Flow<Boolean>
+        get() = flowOf(false)
+
+    /**
+     * 合并阶段的进度: 不在合并时为 `null`; 合并中为估计值, 估不出来时为 [Progress.Unspecified].
+     *
+     * **只是估计, 纯展示用**: 算法由实现决定 (web 缓存按输出文件已写的字节数估), 界面拿它显示"合并到哪了",
+     * 完成与否只看 [state]. 默认实现只跟随 [isMerging], 不给估计值.
+     */
+    val mergeProgress: Flow<Progress?>
+        get() = isMerging.map { merging -> if (merging) Progress.Unspecified else null }
+
+    /**
+     * 传输停着在等 BT 服务连上. 只有没下完的 BT 缓存会这样 (服务冷启动要十几秒), 其余恒为 false.
+     *
+     * **纯展示用**, 同 [isMerging]: 这段时间进度一动不动, 界面据此说明在等什么.
+     */
+    val isAwaitingTorrentService: Flow<Boolean>
         get() = flowOf(false)
 
     /**

@@ -33,7 +33,7 @@ class RemoteControlPageMediaSessionTest {
     fun `media session publishes metadata state and progress`() {
         assertContains(page, "navigator.mediaSession.metadata = new MediaMetadata")
         // 标题 / 集名的来路 (探封面那几秒里先用空 artwork 贴一次, 所以这里是先取局部变量再塞进 MediaMetadata)
-        assertContains(page, "var title = mediaState.title || 'Animeko', artist = mediaState.episode || ''")
+        assertContains(page, "var title = mediaState.title || 'Izuko TV', artist = mediaState.episode || ''")
         assertContains(page, "title: title,")
         assertContains(page, "artist: artist,")
         assertContains(page, "navigator.mediaSession.playbackState")

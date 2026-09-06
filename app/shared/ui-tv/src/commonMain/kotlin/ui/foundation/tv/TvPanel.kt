@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -27,8 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
+import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 
 /**
@@ -48,13 +49,15 @@ import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
  *   一大片空白下面.
  * @param overlay 盖在本面板**之上**的内容 (与面板同在这一个全屏 Box 里, 因此可以
  *   `matchParentSize()` 再铺一层自己的 scrim). 回复弹窗上的表情选择器就是这么叠的.
+ *
+ * 外观与独立窗口的弹窗 ([me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog]) 同一套:
+ * 底色、圆角、内边距、遮罩深浅都取那边的公共值.
  */
 @Composable
 internal fun TvInWindowPanel(
     widthFraction: Float,
     modifier: Modifier = Modifier,
     heightFraction: Float? = null,
-    contentPadding: Dp = TV_PANEL_CONTENT_PADDING,
     overlay: @Composable BoxScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -70,34 +73,29 @@ internal fun TvInWindowPanel(
             Modifier
                 .fillMaxWidth(widthFraction)
                 .then(if (heightFraction != null) Modifier.fillMaxHeight(heightFraction) else Modifier),
-            shape = RoundedCornerShape(TV_PANEL_CORNER),
+            shape = CENTERED_PANEL_SHAPE,
             // 与其他弹窗同一个底色与内容色 (见 centeredPanelColor / AniCenteredPanelDialog)
             color = centeredPanelColor,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .then(if (heightFraction != null) Modifier.fillMaxHeight() else Modifier)
-                    .padding(contentPadding),
-                content = content,
-            )
+            ProvidePopupControlStyle {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (heightFraction != null) Modifier.fillMaxHeight() else Modifier)
+                        .padding(CENTERED_PANEL_CONTENT_PADDING),
+                    content = content,
+                )
+            }
         }
         overlay()
     }
 }
 
 /**
- * 面板背后的压暗层.
+ * 面板背后的压暗层: 与独立窗口弹窗的系统压暗同一个深浅 ([CENTERED_PANEL_WINDOW_DIM]).
  *
- * 0.38 是从 0.55 调下来的 —— 播放器上盖面板时, 太重的 scrim 会把正在播的画面压成一块死黑,
- * 看不出面板是浮在视频上. 当时两处各写一份, 只改了其中一处, 于是同一套界面里回复弹窗与表情
- * 选择器压暗程度不一样; 现在只有这一个值.
+ * 播放器上盖面板时, 太重的 scrim 会把正在播的画面压成一块死黑, 看不出面板是浮在视频上.
+ * 表情选择器叠在回复弹窗上时会再压一层, 两层叠起来约 0.58.
  */
-private val TV_PANEL_SCRIM_COLOR = Color.Black.copy(alpha = 0.38f)
-
-/** 面板圆角. */
-private val TV_PANEL_CORNER = 20.dp
-
-/** 面板内容默认内边距. */
-private val TV_PANEL_CONTENT_PADDING = 24.dp
+private val TV_PANEL_SCRIM_COLOR = Color.Black.copy(alpha = CENTERED_PANEL_WINDOW_DIM)

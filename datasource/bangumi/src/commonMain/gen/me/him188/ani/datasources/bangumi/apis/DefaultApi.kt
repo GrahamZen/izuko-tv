@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,26 +10,32 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.apis
 
-import me.him188.ani.datasources.bangumi.models.BangumiCharacterDetail
+import me.him188.ani.datasources.bangumi.models.BangumiCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiCharacterPerson
 import me.him188.ani.datasources.bangumi.models.BangumiCharacterRevision
 import me.him188.ani.datasources.bangumi.models.BangumiDetailedRevision
 import me.him188.ani.datasources.bangumi.models.BangumiEpType
 import me.him188.ani.datasources.bangumi.models.BangumiEpisodeDetail
 import me.him188.ani.datasources.bangumi.models.BangumiErrorDetail
+import me.him188.ani.datasources.bangumi.models.BangumiGetMyself200Response
 import me.him188.ani.datasources.bangumi.models.BangumiGetUserSubjectEpisodeCollection200Response
 import me.him188.ani.datasources.bangumi.models.BangumiIndex
 import me.him188.ani.datasources.bangumi.models.BangumiIndexBasicInfo
 import me.him188.ani.datasources.bangumi.models.BangumiIndexSubjectAddInfo
 import me.him188.ani.datasources.bangumi.models.BangumiIndexSubjectEditInfo
+import me.him188.ani.datasources.bangumi.models.BangumiPagedCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiPagedEpisode
+import me.him188.ani.datasources.bangumi.models.BangumiPagedPerson
 import me.him188.ani.datasources.bangumi.models.BangumiPagedRevision
+import me.him188.ani.datasources.bangumi.models.BangumiPagedSubject
+import me.him188.ani.datasources.bangumi.models.BangumiPagedUserCharacterCollection
 import me.him188.ani.datasources.bangumi.models.BangumiPagedUserCollection
+import me.him188.ani.datasources.bangumi.models.BangumiPagedUserPersonCollection
 import me.him188.ani.datasources.bangumi.models.BangumiPatchUserSubjectEpisodeCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiPersonCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiPersonDetail
@@ -46,14 +43,18 @@ import me.him188.ani.datasources.bangumi.models.BangumiPersonRevision
 import me.him188.ani.datasources.bangumi.models.BangumiPutUserEpisodeCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiRelatedCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiRelatedPerson
-import me.him188.ani.datasources.bangumi.models.BangumiSearchSubjects200Response
+import me.him188.ani.datasources.bangumi.models.BangumiSearchCharactersRequest
+import me.him188.ani.datasources.bangumi.models.BangumiSearchPersonsRequest
 import me.him188.ani.datasources.bangumi.models.BangumiSearchSubjectsRequest
 import me.him188.ani.datasources.bangumi.models.BangumiSubject
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectCategory
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectRevision
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
 import me.him188.ani.datasources.bangumi.models.BangumiUser
+import me.him188.ani.datasources.bangumi.models.BangumiUserCharacterCollection
 import me.him188.ani.datasources.bangumi.models.BangumiUserEpisodeCollection
+import me.him188.ani.datasources.bangumi.models.BangumiUserPersonCollection
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollectionModifyPayload
 import me.him188.ani.datasources.bangumi.models.BangumiV0RelatedSubject
@@ -77,17 +78,12 @@ open class DefaultApi : ApiClient {
         httpClientEngine: HttpClientEngine? = null,
         httpClientConfig: ((HttpClientConfig<*>) -> Unit)? = null,
         jsonSerializer: Json = ApiClient.JSON_DEFAULT
-    ) : super(
-        baseUrl = baseUrl,
-        httpClientEngine = httpClientEngine,
-        httpClientConfig = httpClientConfig,
-        jsonBlock = jsonSerializer,
-    )
+    ) : super(baseUrl = baseUrl, httpClientEngine = httpClientEngine, httpClientConfig = httpClientConfig, jsonBlock = jsonSerializer)
 
     constructor(
         baseUrl: String,
         httpClient: HttpClient
-    ) : super(baseUrl = baseUrl, httpClient = httpClient)
+    ): super(baseUrl = baseUrl, httpClient = httpClient)
 
     /**
      * Add a subject to Index
@@ -96,10 +92,7 @@ open class DefaultApi : ApiClient {
      * @param bangumiIndexSubjectAddInfo  (optional)
      * @return void
      */
-    open suspend fun addSubjectToIndexByIndexId(
-        indexId: kotlin.Int,
-        bangumiIndexSubjectAddInfo: BangumiIndexSubjectAddInfo? = null
-    ): HttpResponse<Unit> {
+    open suspend fun addSubjectToIndexByIndexId(indexId: kotlin.Int, bangumiIndexSubjectAddInfo: BangumiIndexSubjectAddInfo? = null): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -119,10 +112,42 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
+
+
+    /**
+     * Collect character for current user
+     * 为当前用户收藏角色
+     * @param characterId 角色 ID
+     * @return void
+     */
+    open suspend fun collectCharacterByCharacterIdAndUserId(characterId: kotlin.Int): HttpResponse<Unit> {
+
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.POST,
+            "/v0/characters/{character_id}/collect".replace("{" + "character_id" + "}", "$characterId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
 
 
     /**
@@ -152,7 +177,39 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * Collect person for current user
+     * 为当前用户收藏人物
+     * @param personId 人物 ID
+     * @return void
+     */
+    open suspend fun collectPersonByPersonIdAndUserId(personId: kotlin.Int): HttpResponse<Unit> {
+
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.POST,
+            "/v0/persons/{person_id}/collect".replace("{" + "person_id" + "}", "$personId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -164,10 +221,7 @@ open class DefaultApi : ApiClient {
      * @param subjectId 条目 ID
      * @return void
      */
-    open suspend fun delelteSubjectFromIndexByIndexIdAndSubjectID(
-        indexId: kotlin.Int,
-        subjectId: kotlin.Int
-    ): HttpResponse<Unit> {
+    open suspend fun delelteSubjectFromIndexByIndexIdAndSubjectID(indexId: kotlin.Int, subjectId: kotlin.Int): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -179,8 +233,7 @@ open class DefaultApi : ApiClient {
 
         val localVariableConfig = RequestConfig<kotlin.Any?>(
             RequestMethod.DELETE,
-            "/v0/indices/{index_id}/subjects/{subject_id}".replace("{" + "index_id" + "}", "$indexId")
-                .replace("{" + "subject_id" + "}", "$subjectId"),
+            "/v0/indices/{index_id}/subjects/{subject_id}".replace("{" + "index_id" + "}", "$indexId").replace("{" + "subject_id" + "}", "$subjectId"),
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -189,7 +242,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -202,10 +255,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiIndex
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun editIndexById(
-        indexId: kotlin.Int,
-        bangumiIndexBasicInfo: BangumiIndexBasicInfo? = null
-    ): HttpResponse<BangumiIndex> {
+    open suspend fun editIndexById(indexId: kotlin.Int, bangumiIndexBasicInfo: BangumiIndexBasicInfo? = null): HttpResponse<BangumiIndex> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -225,7 +275,7 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -239,11 +289,7 @@ open class DefaultApi : ApiClient {
      * @param bangumiIndexSubjectEditInfo  (optional)
      * @return void
      */
-    open suspend fun editIndexSubjectsByIndexIdAndSubjectID(
-        indexId: kotlin.Int,
-        subjectId: kotlin.Int,
-        bangumiIndexSubjectEditInfo: BangumiIndexSubjectEditInfo? = null
-    ): HttpResponse<Unit> {
+    open suspend fun editIndexSubjectsByIndexIdAndSubjectID(indexId: kotlin.Int, subjectId: kotlin.Int, bangumiIndexSubjectEditInfo: BangumiIndexSubjectEditInfo? = null): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -254,8 +300,7 @@ open class DefaultApi : ApiClient {
 
         val localVariableConfig = RequestConfig<kotlin.Any?>(
             RequestMethod.PUT,
-            "/v0/indices/{index_id}/subjects/{subject_id}".replace("{" + "index_id" + "}", "$indexId")
-                .replace("{" + "subject_id" + "}", "$subjectId"),
+            "/v0/indices/{index_id}/subjects/{subject_id}".replace("{" + "index_id" + "}", "$indexId").replace("{" + "subject_id" + "}", "$subjectId"),
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -264,7 +309,7 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -274,10 +319,10 @@ open class DefaultApi : ApiClient {
      * Get Character Detail
      * cache with 60s
      * @param characterId 角色 ID
-     * @return BangumiCharacterDetail
+     * @return BangumiCharacter
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getCharacterById(characterId: kotlin.Int): HttpResponse<BangumiCharacterDetail> {
+    open suspend fun getCharacterById(characterId: kotlin.Int): HttpResponse<BangumiCharacter> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -298,7 +343,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -332,7 +377,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -365,7 +410,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -379,11 +424,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedRevision
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getCharacterRevisions(
-        characterId: kotlin.Int,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedRevision> {
+    open suspend fun getCharacterRevisions(characterId: kotlin.Int, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedRevision> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -407,7 +448,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -440,7 +481,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -473,7 +514,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -487,11 +528,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedRevision
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getEpisodeRevisions(
-        episodeId: kotlin.Int,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedRevision> {
+    open suspend fun getEpisodeRevisions(episodeId: kotlin.Int, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedRevision> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -515,7 +552,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -530,12 +567,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedEpisode
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getEpisodes(
-        subjectId: kotlin.Int,
-        type: BangumiEpType? = null,
-        limit: kotlin.Int? = 100,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedEpisode> {
+    open suspend fun getEpisodes(subjectId: kotlin.Int, type: BangumiEpType? = null, limit: kotlin.Int? = 100, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedEpisode> {
 
         val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
 
@@ -544,7 +576,7 @@ open class DefaultApi : ApiClient {
 
         val localVariableQuery = mutableMapOf<String, List<String>>()
         subjectId?.apply { localVariableQuery["subject_id"] = listOf("$subjectId") }
-        type?.apply { localVariableQuery["type"] = listOf("${type.value}") }
+        type?.apply { localVariableQuery["type"] = listOf("${ type.value }") }
         limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
         offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
         val localVariableHeaders = mutableMapOf<String, String>()
@@ -560,7 +592,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -593,7 +625,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -607,12 +639,7 @@ open class DefaultApi : ApiClient {
      * @param offset 分页参数 (optional, default to 0)
      * @return void
      */
-    open suspend fun getIndexSubjectsByIndexId(
-        indexId: kotlin.Int,
-        type: BangumiSubjectType? = null,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<Unit> {
+    open suspend fun getIndexSubjectsByIndexId(indexId: kotlin.Int, type: BangumiSubjectType? = null, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
 
@@ -620,7 +647,7 @@ open class DefaultApi : ApiClient {
             io.ktor.client.utils.EmptyContent
 
         val localVariableQuery = mutableMapOf<String, List<String>>()
-        type?.apply { localVariableQuery["type"] = listOf("${type.value}") }
+        type?.apply { localVariableQuery["type"] = listOf("${ type.value }") }
         limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
         offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
         val localVariableHeaders = mutableMapOf<String, String>()
@@ -636,7 +663,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -644,10 +671,10 @@ open class DefaultApi : ApiClient {
     /**
      * Get User
      * 返回当前 Access Token 对应的用户信息
-     * @return BangumiUser
+     * @return BangumiGetMyself200Response
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getMyself(): HttpResponse<BangumiUser> {
+    open suspend fun getMyself(): HttpResponse<BangumiGetMyself200Response> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -668,7 +695,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -701,7 +728,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -735,7 +762,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -768,7 +795,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -782,11 +809,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedRevision
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getPersonRevisions(
-        personId: kotlin.Int,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedRevision> {
+    open suspend fun getPersonRevisions(personId: kotlin.Int, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedRevision> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -810,7 +833,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -843,21 +866,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedCharactersByPersonIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedCharactersByPersonIdResponse.Companion::class)
     private class GetRelatedCharactersByPersonIdResponse(val value: List<BangumiPersonCharacter>) {
         companion object : KSerializer<GetRelatedCharactersByPersonIdResponse> {
-            private val serializer: KSerializer<List<BangumiPersonCharacter>> =
-                serializer<List<BangumiPersonCharacter>>()
+            private val serializer: KSerializer<List<BangumiPersonCharacter>> = serializer<List<BangumiPersonCharacter>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedCharactersByPersonIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedCharactersByPersonIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedCharactersByPersonIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedCharactersByPersonIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -889,21 +908,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedCharactersBySubjectIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedCharactersBySubjectIdResponse.Companion::class)
     private class GetRelatedCharactersBySubjectIdResponse(val value: List<BangumiRelatedCharacter>) {
         companion object : KSerializer<GetRelatedCharactersBySubjectIdResponse> {
-            private val serializer: KSerializer<List<BangumiRelatedCharacter>> =
-                serializer<List<BangumiRelatedCharacter>>()
+            private val serializer: KSerializer<List<BangumiRelatedCharacter>> = serializer<List<BangumiRelatedCharacter>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedCharactersBySubjectIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedCharactersBySubjectIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedCharactersBySubjectIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedCharactersBySubjectIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -935,21 +950,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedPersonsByCharacterIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedPersonsByCharacterIdResponse.Companion::class)
     private class GetRelatedPersonsByCharacterIdResponse(val value: List<BangumiCharacterPerson>) {
         companion object : KSerializer<GetRelatedPersonsByCharacterIdResponse> {
-            private val serializer: KSerializer<List<BangumiCharacterPerson>> =
-                serializer<List<BangumiCharacterPerson>>()
+            private val serializer: KSerializer<List<BangumiCharacterPerson>> = serializer<List<BangumiCharacterPerson>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedPersonsByCharacterIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedPersonsByCharacterIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedPersonsByCharacterIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedPersonsByCharacterIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -981,7 +992,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedPersonsBySubjectIdResponse>().map { value }
     }
 
@@ -990,11 +1001,8 @@ open class DefaultApi : ApiClient {
         companion object : KSerializer<GetRelatedPersonsBySubjectIdResponse> {
             private val serializer: KSerializer<List<BangumiRelatedPerson>> = serializer<List<BangumiRelatedPerson>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedPersonsBySubjectIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedPersonsBySubjectIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedPersonsBySubjectIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedPersonsBySubjectIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -1026,21 +1034,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedSubjectsByCharacterIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedSubjectsByCharacterIdResponse.Companion::class)
     private class GetRelatedSubjectsByCharacterIdResponse(val value: List<BangumiV0RelatedSubject>) {
         companion object : KSerializer<GetRelatedSubjectsByCharacterIdResponse> {
-            private val serializer: KSerializer<List<BangumiV0RelatedSubject>> =
-                serializer<List<BangumiV0RelatedSubject>>()
+            private val serializer: KSerializer<List<BangumiV0RelatedSubject>> = serializer<List<BangumiV0RelatedSubject>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsByCharacterIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedSubjectsByCharacterIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsByCharacterIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedSubjectsByCharacterIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -1072,21 +1076,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedSubjectsByPersonIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedSubjectsByPersonIdResponse.Companion::class)
     private class GetRelatedSubjectsByPersonIdResponse(val value: List<BangumiV0RelatedSubject>) {
         companion object : KSerializer<GetRelatedSubjectsByPersonIdResponse> {
-            private val serializer: KSerializer<List<BangumiV0RelatedSubject>> =
-                serializer<List<BangumiV0RelatedSubject>>()
+            private val serializer: KSerializer<List<BangumiV0RelatedSubject>> = serializer<List<BangumiV0RelatedSubject>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsByPersonIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedSubjectsByPersonIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsByPersonIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedSubjectsByPersonIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -1118,21 +1118,17 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap<GetRelatedSubjectsBySubjectIdResponse>().map { value }
     }
 
     @Serializable(GetRelatedSubjectsBySubjectIdResponse.Companion::class)
     private class GetRelatedSubjectsBySubjectIdResponse(val value: List<BangumiV0SubjectRelation>) {
         companion object : KSerializer<GetRelatedSubjectsBySubjectIdResponse> {
-            private val serializer: KSerializer<List<BangumiV0SubjectRelation>> =
-                serializer<List<BangumiV0SubjectRelation>>()
+            private val serializer: KSerializer<List<BangumiV0SubjectRelation>> = serializer<List<BangumiV0SubjectRelation>>()
             override val descriptor = serializer.descriptor
-            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsBySubjectIdResponse) =
-                serializer.serialize(encoder, value.value)
-
-            override fun deserialize(decoder: Decoder) =
-                GetRelatedSubjectsBySubjectIdResponse(serializer.deserialize(decoder))
+            override fun serialize(encoder: Encoder, value: GetRelatedSubjectsBySubjectIdResponse) = serializer.serialize(encoder, value.value)
+            override fun deserialize(decoder: Decoder) = GetRelatedSubjectsBySubjectIdResponse(serializer.deserialize(decoder))
         }
     }
 
@@ -1164,7 +1160,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1198,7 +1194,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1231,7 +1227,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1245,11 +1241,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedRevision
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getSubjectRevisions(
-        subjectId: kotlin.Int,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedRevision> {
+    open suspend fun getSubjectRevisions(subjectId: kotlin.Int, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedRevision> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -1273,7 +1265,57 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 浏览条目
+     * 第一页会 cache 24h，之后会 cache 1h
+     * @param type 条目类型
+     * @param cat 条目分类，参照 &#x60;SubjectCategory&#x60; enum (optional)
+     * @param series 是否系列，仅对书籍类型的条目有效 (optional)
+     * @param platform 平台，仅对游戏类型的条目有效 (optional)
+     * @param sort 排序，枚举值 {date|rank} (optional)
+     * @param year 年份 (optional)
+     * @param month 月份 (optional)
+     * @param limit 分页参数 (optional, default to 30)
+     * @param offset 分页参数 (optional, default to 0)
+     * @return BangumiPagedSubject
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getSubjects(type: BangumiSubjectType, cat: BangumiSubjectCategory? = null, series: kotlin.Boolean? = null, platform: kotlin.String? = null, sort: kotlin.String? = null, year: kotlin.Int? = null, month: kotlin.Int? = null, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedSubject> {
+
+        val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        type?.apply { localVariableQuery["type"] = listOf("${ type.value }") }
+        cat?.apply { localVariableQuery["cat"] = listOf("$cat") }
+        series?.apply { localVariableQuery["series"] = listOf("$series") }
+        platform?.apply { localVariableQuery["platform"] = listOf("$platform") }
+        sort?.apply { localVariableQuery["sort"] = listOf("$sort") }
+        year?.apply { localVariableQuery["year"] = listOf("$year") }
+        month?.apply { localVariableQuery["month"] = listOf("$month") }
+        limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
+        offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/v0/subjects",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1307,7 +1349,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1340,23 +1382,87 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
 
     /**
-     * 获取用户单个收藏
-     * 获取对应用户的收藏，查看私有收藏需要access token。
+     * 获取用户单个角色收藏信息
+     * 
+     * @param username 设置了用户名之后无法使用 UID。
+     * @param characterId 角色 ID
+     * @return BangumiUserCharacterCollection
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getUserCharacterCollection(username: kotlin.String, characterId: kotlin.Int): HttpResponse<BangumiUserCharacterCollection> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/v0/users/{username}/collections/-/characters/{character_id}".replace("{" + "username" + "}", "$username").replace("{" + "character_id" + "}", "$characterId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 获取用户角色收藏列表
+     * 
+     * @param username 设置了用户名之后无法使用 UID。
+     * @return BangumiPagedUserCharacterCollection
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getUserCharacterCollections(username: kotlin.String): HttpResponse<BangumiPagedUserCharacterCollection> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/v0/users/{username}/collections/-/characters".replace("{" + "username" + "}", "$username"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 获取用户单个条目收藏
+     * 获取对应用户的收藏，查看私有收藏需要 access token
      * @param username 设置了用户名之后无法使用 UID。
      * @param subjectId 条目 ID
      * @return BangumiUserSubjectCollection
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getUserCollection(
-        username: kotlin.String,
-        subjectId: kotlin.Int
-    ): HttpResponse<BangumiUserSubjectCollection> {
+    open suspend fun getUserCollection(username: kotlin.String, subjectId: kotlin.Int): HttpResponse<BangumiUserSubjectCollection> {
 
         val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
 
@@ -1368,8 +1474,7 @@ open class DefaultApi : ApiClient {
 
         val localVariableConfig = RequestConfig<kotlin.Any?>(
             RequestMethod.GET,
-            "/v0/users/{username}/collections/{subject_id}".replace("{" + "username" + "}", "$username")
-                .replace("{" + "subject_id" + "}", "$subjectId"),
+            "/v0/users/{username}/collections/{subject_id}".replace("{" + "username" + "}", "$username").replace("{" + "subject_id" + "}", "$subjectId"),
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -1378,7 +1483,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1394,13 +1499,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiPagedUserCollection
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getUserCollectionsByUsername(
-        username: kotlin.String,
-        subjectType: BangumiSubjectType? = null,
-        type: BangumiSubjectCollectionType? = null,
-        limit: kotlin.Int? = 30,
-        offset: kotlin.Int? = 0
-    ): HttpResponse<BangumiPagedUserCollection> {
+    open suspend fun getUserCollectionsByUsername(username: kotlin.String, subjectType: BangumiSubjectType? = null, type: BangumiSubjectCollectionType? = null, limit: kotlin.Int? = 30, offset: kotlin.Int? = 0): HttpResponse<BangumiPagedUserCollection> {
 
         val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
 
@@ -1408,8 +1507,8 @@ open class DefaultApi : ApiClient {
             io.ktor.client.utils.EmptyContent
 
         val localVariableQuery = mutableMapOf<String, List<String>>()
-        subjectType?.apply { localVariableQuery["subject_type"] = listOf("${subjectType.value}") }
-        type?.apply { localVariableQuery["type"] = listOf("${type.value}") }
+        subjectType?.apply { localVariableQuery["subject_type"] = listOf("${ subjectType.value }") }
+        type?.apply { localVariableQuery["type"] = listOf("${ type.value }") }
         limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
         offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
         val localVariableHeaders = mutableMapOf<String, String>()
@@ -1425,7 +1524,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1458,7 +1557,74 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 获取用户单个人物收藏信息
+     * 
+     * @param username 设置了用户名之后无法使用 UID。
+     * @param personId 人物 ID
+     * @return BangumiUserPersonCollection
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getUserPersonCollection(username: kotlin.String, personId: kotlin.Int): HttpResponse<BangumiUserPersonCollection> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/v0/users/{username}/collections/-/persons/{person_id}".replace("{" + "username" + "}", "$username").replace("{" + "person_id" + "}", "$personId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 获取用户人物收藏列表
+     * 
+     * @param username 设置了用户名之后无法使用 UID。
+     * @return BangumiPagedUserPersonCollection
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getUserPersonCollections(username: kotlin.String): HttpResponse<BangumiPagedUserPersonCollection> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/v0/users/{username}/collections/-/persons".replace("{" + "username" + "}", "$username"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1473,12 +1639,7 @@ open class DefaultApi : ApiClient {
      * @return BangumiGetUserSubjectEpisodeCollection200Response
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun getUserSubjectEpisodeCollection(
-        subjectId: kotlin.Int,
-        offset: kotlin.Int? = 0,
-        limit: kotlin.Int? = 100,
-        episodeType: BangumiEpType? = null
-    ): HttpResponse<BangumiGetUserSubjectEpisodeCollection200Response> {
+    open suspend fun getUserSubjectEpisodeCollection(subjectId: kotlin.Int, offset: kotlin.Int? = 0, limit: kotlin.Int? = 100, episodeType: BangumiEpType? = null): HttpResponse<BangumiGetUserSubjectEpisodeCollection200Response> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -1488,7 +1649,7 @@ open class DefaultApi : ApiClient {
         val localVariableQuery = mutableMapOf<String, List<String>>()
         offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
         limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
-        episodeType?.apply { localVariableQuery["episode_type"] = listOf("${episodeType.value}") }
+        episodeType?.apply { localVariableQuery["episode_type"] = listOf("${ episodeType.value }") }
         val localVariableHeaders = mutableMapOf<String, String>()
 
         val localVariableConfig = RequestConfig<kotlin.Any?>(
@@ -1502,7 +1663,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1534,7 +1695,7 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1546,12 +1707,9 @@ open class DefaultApi : ApiClient {
      * @param bangumiUserSubjectCollectionModifyPayload  (optional)
      * @return void
      */
-    open suspend fun patchUserCollection(
-        subjectId: kotlin.Int,
-        bangumiUserSubjectCollectionModifyPayload: BangumiUserSubjectCollectionModifyPayload? = null
-    ): HttpResponse<Unit> {
+    open suspend fun patchUserCollection(subjectId: kotlin.Int, bangumiUserSubjectCollectionModifyPayload: BangumiUserSubjectCollectionModifyPayload? = null): HttpResponse<Unit> {
 
-        val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
 
         val localVariableBody = bangumiUserSubjectCollectionModifyPayload
 
@@ -1569,7 +1727,7 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1582,10 +1740,7 @@ open class DefaultApi : ApiClient {
      * @param bangumiPatchUserSubjectEpisodeCollectionRequest  (optional)
      * @return void
      */
-    open suspend fun patchUserSubjectEpisodeCollection(
-        subjectId: kotlin.Int,
-        bangumiPatchUserSubjectEpisodeCollectionRequest: BangumiPatchUserSubjectEpisodeCollectionRequest? = null
-    ): HttpResponse<Unit> {
+    open suspend fun patchUserSubjectEpisodeCollection(subjectId: kotlin.Int, bangumiPatchUserSubjectEpisodeCollectionRequest: BangumiPatchUserSubjectEpisodeCollectionRequest? = null): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -1605,25 +1760,22 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
 
 
     /**
-     * 新增或修改用户单个收藏
+     * 新增或修改用户单个条目收藏
      * 修改条目收藏状态, 如果不存在则创建，如果存在则修改  由于直接修改剧集条目的完成度可能会引起意料之外效果，只能用于修改书籍类条目的完成度。  方法的所有请求体字段均可选 
      * @param subjectId 条目 ID
      * @param bangumiUserSubjectCollectionModifyPayload  (optional)
      * @return void
      */
-    open suspend fun postUserCollection(
-        subjectId: kotlin.Int,
-        bangumiUserSubjectCollectionModifyPayload: BangumiUserSubjectCollectionModifyPayload? = null
-    ): HttpResponse<Unit> {
+    open suspend fun postUserCollection(subjectId: kotlin.Int, bangumiUserSubjectCollectionModifyPayload: BangumiUserSubjectCollectionModifyPayload? = null): HttpResponse<Unit> {
 
-        val localVariableAuthNames = listOf<String>("OptionalHTTPBearer")
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
 
         val localVariableBody = bangumiUserSubjectCollectionModifyPayload
 
@@ -1641,7 +1793,7 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1654,10 +1806,7 @@ open class DefaultApi : ApiClient {
      * @param bangumiPutUserEpisodeCollectionRequest  (optional)
      * @return void
      */
-    open suspend fun putUserEpisodeCollection(
-        episodeId: kotlin.Int,
-        bangumiPutUserEpisodeCollectionRequest: BangumiPutUserEpisodeCollectionRequest? = null
-    ): HttpResponse<Unit> {
+    open suspend fun putUserEpisodeCollection(episodeId: kotlin.Int, bangumiPutUserEpisodeCollectionRequest: BangumiPutUserEpisodeCollectionRequest? = null): HttpResponse<Unit> {
 
         val localVariableAuthNames = listOf<String>("HTTPBearer")
 
@@ -1677,7 +1826,81 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+
+    /**
+     * 角色搜索
+     * ## 实验性 API， 本 schema 和实际的 API 行为都可能随时发生改动  目前支持的筛选条件包括: - &#x60;nsfw&#x60;: 使用 &#x60;include&#x60; 包含NSFW搜索结果。默认排除搜索NSFW条目。无权限情况下忽略此选项，不会返回NSFW条目。 
+     * @param limit 分页参数 (optional)
+     * @param offset 分页参数 (optional)
+     * @param bangumiSearchCharactersRequest  (optional)
+     * @return BangumiPagedCharacter
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun searchCharacters(limit: kotlin.Int? = null, offset: kotlin.Int? = null, bangumiSearchCharactersRequest: BangumiSearchCharactersRequest? = null): HttpResponse<BangumiPagedCharacter> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = bangumiSearchCharactersRequest
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
+        offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.POST,
+            "/v0/search/characters",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return jsonRequest(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+
+    /**
+     * 人物搜索
+     * ## 实验性 API， 本 schema 和实际的 API 行为都可能随时发生改动  目前支持的筛选条件包括: - &#x60;career&#x60;: 职业，可以多次出现。&#x60;且&#x60; 关系。  不同筛选条件之间为 &#x60;且&#x60; 
+     * @param limit 分页参数 (optional)
+     * @param offset 分页参数 (optional)
+     * @param bangumiSearchPersonsRequest  (optional)
+     * @return BangumiPagedPerson
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun searchPersons(limit: kotlin.Int? = null, offset: kotlin.Int? = null, bangumiSearchPersonsRequest: BangumiSearchPersonsRequest? = null): HttpResponse<BangumiPagedPerson> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = bangumiSearchPersonsRequest
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
+        offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.POST,
+            "/v0/search/persons",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return jsonRequest(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
         ).wrap()
     }
 
@@ -1685,18 +1908,14 @@ open class DefaultApi : ApiClient {
 
     /**
      * 条目搜索
-     * ## 实验性 API， 本 schema 和实际的 API 行为都可能随时发生改动  目前支持的筛选条件包括: - &#x60;type&#x60;: 条目类型，参照 &#x60;SubjectType&#x60; enum， &#x60;或&#x60;。 - &#x60;tag&#x60;: 标签，可以多次出现。&#x60;且&#x60; 关系。 - &#x60;airdate&#x60;: 播出日期/发售日期。&#x60;且&#x60; 关系。 - &#x60;rating&#x60;: 用于搜索指定评分的条目。&#x60;且&#x60; 关系。 - &#x60;rank&#x60;: 用于搜索指定排名的条目。&#x60;且&#x60; 关系。 - &#x60;nsfw&#x60;: 使用 &#x60;include&#x60; 包含NSFW搜索结果。默认排除搜索NSFW条目。无权限情况下忽略此选项，不会返回NSFW条目。  不同筛选条件之间为 &#x60;且&#x60;   由于目前 meilisearch 的一些问题，条目排名更新并不会触发搜索数据更新，所以条目排名可能是过期数据。  希望未来版本的 meilisearch 能解决相关的问题。 
+     * ## 实验性 API， 本 schema 和实际的 API 行为都可能随时发生改动  目前支持的筛选条件包括: - &#x60;type&#x60;: 条目类型，参照 &#x60;SubjectType&#x60; enum， &#x60;或&#x60;。 - &#x60;tag&#x60;: 标签，可以多次出现。&#x60;且&#x60; 关系。 - &#x60;air_date&#x60;: 播出日期/发售日期。&#x60;且&#x60; 关系。 - &#x60;rating&#x60;: 用于搜索指定评分的条目。&#x60;且&#x60; 关系。 - &#x60;rating_count&#x60;: 用于按照评分人数筛选条目。&#x60;且&#x60; 关系。 - &#x60;rank&#x60;: 用于搜索指定排名的条目。&#x60;且&#x60; 关系。 - &#x60;nsfw&#x60;: 使用 &#x60;include&#x60; 包含NSFW搜索结果。默认排除搜索NSFW条目。无权限情况下忽略此选项，不会返回NSFW条目。  不同筛选条件之间为 &#x60;且&#x60; 
      * @param limit 分页参数 (optional)
      * @param offset 分页参数 (optional)
      * @param bangumiSearchSubjectsRequest  (optional)
-     * @return BangumiSearchSubjects200Response
+     * @return BangumiPagedSubject
      */
     @Suppress("UNCHECKED_CAST")
-    open suspend fun searchSubjects(
-        limit: kotlin.Int? = null,
-        offset: kotlin.Int? = null,
-        bangumiSearchSubjectsRequest: BangumiSearchSubjectsRequest? = null
-    ): HttpResponse<BangumiSearchSubjects200Response> {
+    open suspend fun searchSubjects(limit: kotlin.Int? = null, offset: kotlin.Int? = null, bangumiSearchSubjectsRequest: BangumiSearchSubjectsRequest? = null): HttpResponse<BangumiPagedSubject> {
 
         val localVariableAuthNames = listOf<String>()
 
@@ -1718,15 +1937,47 @@ open class DefaultApi : ApiClient {
         return jsonRequest(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
         ).wrap()
     }
 
 
 
     /**
+     * Uncollect character for current user
+     * 为当前用户取消收藏角色 
+     * @param characterId 角色 ID
+     * @return void
+     */
+    open suspend fun uncollectCharacterByCharacterIdAndUserId(characterId: kotlin.Int): HttpResponse<Unit> {
+
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.DELETE,
+            "/v0/characters/{character_id}/collect".replace("{" + "character_id" + "}", "$characterId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
      * Uncollect index for current user
-     * 为当前用户取消收藏一条目录
+     * 为当前用户取消收藏一条目录 
      * @param indexId 目录 ID
      * @return void
      */
@@ -1751,7 +2002,39 @@ open class DefaultApi : ApiClient {
         return request(
             localVariableConfig,
             localVariableBody,
-            localVariableAuthNames,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * Uncollect person for current user
+     * 为当前用户取消收藏人物
+     * @param personId 人物 ID
+     * @return void
+     */
+    open suspend fun uncollectPersonByPersonIdAndUserId(personId: kotlin.Int): HttpResponse<Unit> {
+
+        val localVariableAuthNames = listOf<String>("HTTPBearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.DELETE,
+            "/v0/persons/{person_id}/collect".replace("{" + "person_id" + "}", "$personId"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
         ).wrap()
     }
 

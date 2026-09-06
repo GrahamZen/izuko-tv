@@ -52,6 +52,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -65,10 +66,14 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.focus.tvContainDirectionalKeys
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.ModalSideSheet
+import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.foundation.widgets.rememberModalSideSheetState
 import me.him188.ani.app.ui.lang.Lang
@@ -217,13 +222,24 @@ private fun PeoplePreviewSideSheet(
                     Modifier.align(Alignment.Center)
                         .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
                         .width(TV_PEOPLE_PREVIEW_WIDTH),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = CENTERED_PANEL_SHAPE,
                     color = centeredPanelColor,
                     // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    // 居中形态没有退场动画, 关闭就是直接清空目标
-                    PeoplePreviewBody(target, imageViewer, onClose = onDismissRequest, onDismissImmediately = onDismissRequest)
+                    // 弹窗里的控件约定 (按钮画成动作按钮), 见 ProvidePopupControlStyle
+                    ProvidePopupControlStyle {
+                        // 方向键在弹窗里走完: 里面有原生横滑行, 没接住的方向键交给系统会按屏幕位置挑中行里的卡
+                        Box(Modifier.tvContainDirectionalKeys()) {
+                            // 居中形态没有退场动画, 关闭就是直接清空目标. 横滑行用电视入口提供的原生实现
+                            PeoplePreviewBody(
+                                target, imageViewer,
+                                onClose = onDismissRequest,
+                                onDismissImmediately = onDismissRequest,
+                                rows = LocalPeoplePreviewRows.current,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -254,6 +270,8 @@ private fun PeoplePreviewBody(
     onClose: () -> Unit,
     /** 「打开完整页面」前立即关掉预览, 两种形态都不播退场动画 (下一帧就换页了). */
     onDismissImmediately: () -> Unit,
+    /** 横滑行的另一套实现 (TV 的原生行), 见 [PeoplePreviewRows]; null = Compose 的行. */
+    rows: PeoplePreviewRows? = null,
 ) {
     val navigator = LocalNavigator.current
     when (target) {
@@ -265,6 +283,7 @@ private fun PeoplePreviewBody(
                 navigator.navigatePersonDetails(target.personId)
             },
             onDismissRequest = onClose,
+            rows = rows,
         )
 
         is PeoplePreviewTarget.Character -> CharacterPreviewContent(
@@ -275,6 +294,7 @@ private fun PeoplePreviewBody(
                 navigator.navigateCharacterDetails(target.characterId)
             },
             onDismissRequest = onClose,
+            rows = rows,
         )
     }
 }
@@ -285,6 +305,7 @@ private fun PersonPreviewContent(
     imageViewer: ImageViewerHandler,
     onOpenFullPage: () -> Unit,
     onDismissRequest: () -> Unit,
+    rows: PeoplePreviewRows?,
 ) {
     val vm = viewModel<PersonDetailsViewModel>(key = "person-preview-$personId") { PersonDetailsViewModel(personId) }
     val details by vm.details.collectAsState()
@@ -307,12 +328,15 @@ private fun PersonPreviewContent(
                 details = details,
                 casts = vm.castsPager.collectAsLazyPagingItems(),
                 works = vm.worksPager.collectAsLazyPagingItems(),
-                comments = vm.comments,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                commentState = vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
+                modifier = Modifier.padding(horizontal = PEOPLE_PREVIEW_CONTENT_PADDING).padding(bottom = 16.dp),
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
                 onTopContentFocused = if (focusDriven) scrollToTop else null,
+                previewRows = rows,
+                previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )
         }
     }
@@ -324,6 +348,7 @@ private fun CharacterPreviewContent(
     imageViewer: ImageViewerHandler,
     onOpenFullPage: () -> Unit,
     onDismissRequest: () -> Unit,
+    rows: PeoplePreviewRows?,
 ) {
     val vm = viewModel<CharacterDetailsViewModel>(key = "character-preview-$characterId") {
         CharacterDetailsViewModel(characterId)
@@ -345,12 +370,15 @@ private fun CharacterPreviewContent(
             CharacterDetailsContentColumn(
                 details = details,
                 subjects = vm.subjectsPager.collectAsLazyPagingItems(),
-                comments = vm.comments,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                commentState = vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
+                modifier = Modifier.padding(horizontal = PEOPLE_PREVIEW_CONTENT_PADDING).padding(bottom = 16.dp),
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
                 onTopContentFocused = if (focusDriven) scrollToTop else null,
+                previewRows = rows,
+                previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )
         }
     }
@@ -386,7 +414,7 @@ private fun PreviewSheetHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
+        AniFocusIconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
             Icon(
                 Icons.Rounded.OpenInFull,
                 contentDescription = stringResource(Lang.person_details_open_full_page),
@@ -403,3 +431,6 @@ private fun PreviewSheetHeader(
 /** TV 人物预览弹窗的宽度与高度占屏比例. */
 private val TV_PEOPLE_PREVIEW_WIDTH = 560.dp
 private const val TV_PEOPLE_PREVIEW_HEIGHT_FRACTION = 0.85f
+
+/** 预览内容列两侧的留白 (原生横滑行往两侧出血这么多, 到弹窗边上). */
+private val PEOPLE_PREVIEW_CONTENT_PADDING: Dp = 16.dp

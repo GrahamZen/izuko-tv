@@ -26,6 +26,11 @@ internal val formFactorUiBehavior: AniUiBehavior get() = AniUiBehavior.Default
 @Composable
 internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composable () -> Unit) = content()
 
+/** 应用状态读出来之前什么都不画, 露出窗口底色. */
+@Composable
+internal fun FormFactorStartupPlaceholder() {
+}
+
 /** 无需额外初始化. */
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
     // no-op

@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,8 +42,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.OutlinedTag
 import me.him188.ani.app.ui.foundation.AniSelectionContainer
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
@@ -97,13 +100,29 @@ fun SectionHeader(
     }
 }
 
-/** 区块标题行右侧的 "content ›" 文本按钮. */
+/**
+ * 区块标题行右侧的 "content ›" 文本按钮. 焦点导航上是弹窗动作按钮 ([AniFocusActionButton]: 常态中性胶囊, 聚焦才变色) ——
+ * M3 文字按钮的焦点只是一层淡态层, 电视上看不出停在它上面; 页面与弹窗 (人物预览) 里是同一颗.
+ */
 @Composable
 fun SectionHeaderActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+        AniFocusActionButton(onClick, modifier) {
+            ProvideTextStyle(MaterialTheme.typography.labelLarge) {
+                content()
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                Modifier.size(18.dp),
+            )
+        }
+        return
+    }
     TextButton(onClick, modifier) {
         content()
         Icon(

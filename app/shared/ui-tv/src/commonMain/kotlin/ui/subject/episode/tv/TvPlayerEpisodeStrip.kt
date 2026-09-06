@@ -51,13 +51,14 @@ import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.video_player_tv_episodes
 import me.him188.ani.app.ui.lang.video_player_tv_up_next_in
 import me.him188.ani.app.ui.lang.playback_up_next_start
-import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeCarousel
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
@@ -151,13 +152,13 @@ internal fun TvPlayerEpisodeStrip(
     // 的话, 同一个条目在详情页有 SP、进播放器就没了.
     val episodes = episodeList?.allEpisodes.orEmpty()
     val uiState by detailsState.subjectDetailsStateLoader.state.collectAsStateWithLifecycle()
-    val state = (uiState as? SubjectDetailsUIState.Ok)?.value
+    val state = (uiState as? SubjectDetailsLoadState.Ok)?.value
     SideEffect {
         val stripState = when {
             // "还没到"与"没有"必须分开: 前者下键要等, 后者才该直通详情层
             episodeList == null ->
                 // 详情状态都加载失败了, 按"确认无分集"上报: 详情层有错误页和重试入口
-                if (uiState is SubjectDetailsUIState.Err) TvEpisodeStripState.EMPTY
+                if (uiState is SubjectDetailsLoadState.Err) TvEpisodeStripState.EMPTY
                 else TvEpisodeStripState.LOADING
 
             episodes.isEmpty() -> TvEpisodeStripState.EMPTY
@@ -396,6 +397,8 @@ internal fun TvPlayerEpisodeStrip(
                 // 卡片浮在视频画面上, 与进度条旁的胶囊按钮同一套黑白配色 (聚焦即白底黑字)
                 monochrome = true,
                 rowFocusModifier = rowFocusModifier,
+                // 卡片行换原生 View (同详情页选集轮播)
+                rowContent = { TvNativeEpisodeRow(it) },
             )
         }
     }

@@ -70,7 +70,7 @@ internal object RemoteCollections {
             return buildJsonObject {
                 put("ok", false)
                 put("needLogin", !offline)
-                put("message", if (offline) tr("电视连不上 Animeko 服务器，稍后再试") else tr("电视还没登录，登录后才能看到在看 / 想看"))
+                put("message", if (offline) tr("电视连不上 Bangumi，稍后再试") else tr("电视还没登录，登录后才能看到在看 / 想看"))
             }
         }
         // 同一种收藏一分钟内同步过就不再联网 (网页上切来切去、缓存面板关上重读), 直接读本地库

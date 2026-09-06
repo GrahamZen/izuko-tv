@@ -18,6 +18,7 @@ jobs:
     outputs:
       uploadUrl: '${{ steps.step-4.outputs.upload_url }}'
       id: '${{ steps.step-4.outputs.id }}'
+      prefix: '${{ steps.prefix.outputs.prefix }}'
     steps:
       - id: 'step-0'
         uses: 'actions/checkout@v4'
@@ -30,6 +31,17 @@ jobs:
           value: '${{ steps.step-1.outputs.tag }}'
           index_of_str: 'v'
           default_return_value: '${{ steps.step-1.outputs.tag }}'
+      # 安装包文件名前缀 (gradle.properties 的 ani.update.asset.prefix): 应用检查更新时只认这个前缀的包
+      - id: 'prefix'
+        name: 'Read Asset Prefix'
+        run: |
+          set -euo pipefail
+          prefix=$(sed -n 's/^ani\.update\.asset\.prefix=//p' gradle.properties | tr -d '\r')
+          if [ -z "$prefix" ]; then
+            echo "::error::ani.update.asset.prefix missing in gradle.properties"
+            exit 1
+          fi
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
       - id: 'step-3'
         name: 'Generate Release Notes'
         run: |-
@@ -39,6 +51,7 @@ jobs:
           modified_content="${modified_content//\$GIT_TAG/${{ steps.step-1.outputs.tag }}}"
           modified_content="${modified_content//\$TAG_VERSION/${{ steps.step-2.outputs.substring }}}"
           modified_content="${modified_content//\$REPO_OWNER/${{ github.repository_owner }}}"
+          modified_content="${modified_content//\$ASSET_PREFIX/${{ steps.prefix.outputs.prefix }}}"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$modified_content" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -98,6 +111,8 @@ jobs:
           echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
           echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
           echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
+          echo "ani.bangumi.oauth.client.id=${{ secrets.BANGUMI_OAUTH_CLIENT_ID }}" >> local.properties
+          echo "ani.bangumi.oauth.client.secret=${{ secrets.BANGUMI_OAUTH_CLIENT_SECRET }}" >> local.properties
           echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
           echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
       - id: 'step-7'
@@ -169,7 +184,7 @@ jobs:
       - id: 'step-16'
         name: 'Generate Mock google-services.json'
         run: |
-          echo '{"project_info":{"project_number":"0","project_id":"mock-project","storage_bucket":"mock-bucket"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000000","android_client_info":{"package_name":"me.him188.ani"}},"api_key":[{"current_key":"mock_key"}]},{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000001","android_client_info":{"package_name":"me.him188.ani.tv"}},"api_key":[{"current_key":"mock_key"}]}]}' > ./app/android/google-services.json
+          echo '{"project_info":{"project_number":"0","project_id":"mock-project","storage_bucket":"mock-bucket"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000000","android_client_info":{"package_name":"io.github.grahamzen.anime"}},"api_key":[{"current_key":"mock_key"}]},{"client_info":{"mobilesdk_app_id":"1:123456789012:android:0000000000000001","android_client_info":{"package_name":"io.github.grahamzen.anime.tv"}},"api_key":[{"current_key":"mock_key"}]}]}' > ./app/android/google-services.json
       - id: 'step-17'
         name: 'Build Android Release APKs'
         env:
@@ -241,6 +256,7 @@ jobs:
         run: |
           set -euo pipefail
           version='${{ steps.step-2.outputs.substring }}'
+          prefix='${{ needs.create-release.outputs.prefix }}'
           out='app/android/build/outputs/apk/defaultTv/release'
           mkdir -p legacy-apks
           for abi in arm64-v8a armeabi-v7a universal; do
@@ -249,6 +265,6 @@ jobs:
               echo "::error::Legacy APK missing: $src"
               exit 1
             fi
-            cp "$src" "legacy-apks/ani-$version-legacy-$abi.apk"
+            cp "$src" "legacy-apks/$prefix-$version-legacy-$abi.apk"
           done
           gh release upload '${{ steps.step-1.outputs.tag }}' legacy-apks/*.apk --clobber

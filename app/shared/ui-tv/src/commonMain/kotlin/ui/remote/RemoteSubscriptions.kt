@@ -59,6 +59,10 @@ internal object RemoteSubscriptions {
     @Volatile
     private var updating = false
 
+    /** 正在更新第几个 / 这一轮共几个 (订阅一个个依次拉); 还没开始拉 (排队等锁) 时为 null */
+    @Volatile
+    private var progress: Pair<Int, Int>? = null
+
     private val repository: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val updater: MediaSourceSubscriptionUpdater get() = KoinPlatform.getKoin().get()
     private val manager: MediaSourceManager get() = KoinPlatform.getKoin().get()
@@ -89,6 +93,10 @@ internal object RemoteSubscriptions {
         val subs = runBlocking { repository.flow.first() }
         return buildJsonObject {
             put("updating", updating)
+            progress?.takeIf { updating }?.let { (current, total) ->
+                put("current", current)
+                put("total", total)
+            }
             putJsonArray("items") {
                 for (sub in subs) addJsonObject {
                     put("id", sub.subscriptionId)
@@ -151,11 +159,12 @@ internal object RemoteSubscriptions {
         scope.launch {
             updateMutex.withLock {
                 try {
-                    updater.updateAllOutdated(force = force)
+                    updater.updateAllOutdated(force = force) { current, total -> progress = current to total }
                 } catch (e: Exception) {
                     // 单个订阅的失败记在它自己的 lastUpdated 里; 走到这里的是意料之外的错误
                     logger.warn(e) { "Remote subscription update failed" }
                 } finally {
+                    progress = null
                     updating = false
                 }
             }

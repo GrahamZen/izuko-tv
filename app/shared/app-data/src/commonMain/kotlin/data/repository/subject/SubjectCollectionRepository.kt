@@ -18,6 +18,7 @@ import androidx.paging.RemoteMediator
 import androidx.paging.map
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -38,15 +40,16 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
@@ -59,6 +62,7 @@ import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.EpisodeService
+import me.him188.ani.app.data.network.SubjectCollectionUpdate
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.ProtoConverters
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionDao
@@ -72,29 +76,21 @@ import me.him188.ani.app.data.persistent.database.dao.deleteAll
 import me.him188.ani.app.data.persistent.database.dao.filterMostRecentUpdatedWithEpisodes
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.repository.shouldRetry
+import me.him188.ani.app.data.repository.writeLocalFirst
 import me.him188.ani.app.domain.search.SubjectType
+import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.domain.session.restartOnNewLogin
-import me.him188.ani.client.models.AniAnimeRecurrence
-import me.him188.ani.client.models.AniCollectionType
-import me.him188.ani.client.models.AniEpisodeCollection
-import me.him188.ani.client.models.AniEpisodeCollectionType
-import me.him188.ani.client.models.AniEpisodeType
-import me.him188.ani.client.models.AniFavourite
-import me.him188.ani.client.models.AniInfobox
-import me.him188.ani.client.models.AniSelfRatingInfo
-import me.him188.ani.client.models.AniSubjectCollection
-import me.him188.ani.client.models.AniSubjectRelations
-import me.him188.ani.client.models.AniTag
-import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
 import me.him188.ani.utils.logging.debug
@@ -107,6 +103,7 @@ import me.him188.ani.utils.serialization.BigNum
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
@@ -126,6 +123,22 @@ abstract class SubjectCollectionRepository(
     abstract fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?>
 
     abstract fun subjectCollectionFlow(subjectId: Int): Flow<SubjectCollectionInfo>
+
+    /**
+     * 只读本地库里的这个条目 (连同分集), **不发请求**, 过期的也照给; 本地没有时为 `null`.
+     *
+     * 给「先把手上有的显示出来」用: 冷启动时 hero 文字不必陪着整条媒体链等. 要最新的走 [subjectCollectionFlow].
+     */
+    open suspend fun subjectCollectionOffline(subjectId: Int): SubjectCollectionInfo? = null
+
+    /**
+     * **无视新鲜度**重取一个条目 (条目本身 + 分集 + 收藏状态/评分).
+     *
+     * 缓存按一小时算, 这期间进详情页都直接用本地那份 —— 在 bgm 网页或另一台设备上改了评分/收藏
+     * 状态时本地要等到过期才对齐。这个方法是"就现在拿最新的"的出口: 电视上接在动作面板的
+     * 「刷新本页」上 (见 `SubjectDetailsTvPage`).
+     */
+    abstract suspend fun refreshSubjectCollection(subjectId: Int)
 
     abstract fun subjectCollectionsPager(
         query: CollectionsFilterQuery = CollectionsFilterQuery.Empty,
@@ -200,57 +213,10 @@ abstract class SubjectCollectionRepository(
      */
     abstract fun getSubjectDisplayInfoOffline(subjectId: Int): Flow<OfflineSubjectDisplayInfo?>
 
+    abstract suspend fun getSubjectIdsByCollectionType(types: List<UnifiedCollectionType>): Flow<List<Int>>
+
     abstract suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>>
 
-    abstract suspend fun performBangumiFullSync()
-
-    abstract suspend fun getBangumiFullSyncState(): BangumiSyncState?
-
-    /**
-     * 使 [subjectIds] 对应条目的本地缓存失效, 并立即从服务端重新拉取这些条目 (并行度有限, 见实现):
-     * - 服务端仍有收藏 → 用服务端的值覆盖本地行与剧集缓存 (正在展示的收藏列表随之更新);
-     * - 服务端已无收藏 (条目不存在或未收藏) → 删除本地行 (剧集缓存随之级联删除);
-     * - 网络失败 → 保留本地行 (绝不因失败删除), 只将其 `lastFetched` 置 0, 下次访问时重新拉取;
-     *   首次失败后不再对剩余条目发起新的拉取 (多半是断网, 逐个等待超时会让 "应用合并" 长时间转圈), 已发起的照常完成.
-     *
-     * 之后将所有条目的 `lastFetched` 置 0 (下次创建收藏列表分页器时从服务端刷新), 并发出 [collectionsInvalidated].
-     *
-     * [subjectIds] 为空时不做任何事.
-     *
-     * 用于服务端解决 Bangumi 收藏冲突之后: 这些条目在服务端的值已经改变, 本地缓存不再可信.
-     */
-    abstract suspend fun invalidateCache(subjectIds: List<Int>)
-
-    /**
-     * 将所有条目的 `lastFetched` 置 0 (不删除本地数据), 使下次进入收藏页或条目页时从服务端刷新, 并发出 [collectionsInvalidated].
-     *
-     * 用于服务端 Bangumi 全量同步 (对账) 完成之后: 自动合并的结果已写入服务端, 本地缓存可能过期.
-     */
-    abstract suspend fun invalidateAllCaches()
-
-    private val _collectionsInvalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    /**
-     * [invalidateCache] / [invalidateAllCaches] 完成后发出一次, 供已经创建的收藏列表分页器重新加载.
-     *
-     * 分页器只在创建时 (`RemoteMediator.initialize`) 根据 `lastFetched` 决定是否从服务端刷新, 已在展示的列表不会因为
-     * `lastFetched` 被置 0 而自动刷新; 收藏页的 ViewModel 收集此流并重建分页器.
-     */
-    val collectionsInvalidated: SharedFlow<Unit> = _collectionsInvalidated.asSharedFlow()
-
-    /**
-     * [collectionsInvalidated] 当前的订阅者数. 仅测试用: 等 ViewModel 订阅之后再触发失效, 否则事件没有订阅者会被丢弃.
-     */
-    @TestOnly
-    val collectionsInvalidatedSubscriptionCount: StateFlow<Int>
-        get() = _collectionsInvalidated.subscriptionCount
-
-    /**
-     * 缓存失效完成后调用, 发出 [collectionsInvalidated]. 没有订阅者时直接丢弃; 订阅者来不及处理时多次失效合并为一次.
-     */
-    protected fun notifyCollectionsInvalidated() {
-        _collectionsInvalidated.tryEmit(Unit)
-    }
 }
 
 class SubjectCollectionRepositoryImpl(
@@ -264,6 +230,11 @@ class SubjectCollectionRepositoryImpl(
     private val nsfwModeSettingsFlow: Flow<NsfwMode>,
     private val getCurrentDate: () -> PackedDate = { PackedDate.now() },
     private val getEpisodeTypeFiltersUseCase: GetEpisodeTypeFiltersUseCase,
+    /**
+     * 条目重取的归属作用域, 见 [StaleKeyedFetcher]: 取数**不能**挂在调用方协程上 ——
+     * hero 流水线的 collectLatest 一换焦点就会把落库前的活儿全掐掉.
+     */
+    scope: CoroutineScope,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val cacheExpiry: Duration = 1.hours,
 ) : SubjectCollectionRepository(defaultDispatcher) {
@@ -300,7 +271,25 @@ class SubjectCollectionRepositoryImpl(
         return (currentTimeMillis() - lastFetched).milliseconds > cacheExpiry
     }
 
-    private val subjectFetcher = StaleKeyedFetcher<Int>()
+    private val subjectFetcher = StaleKeyedFetcher<Int>(scope)
+
+    private val recurrenceFiller = SubjectRecurrenceFiller(animeScheduleRepository, subjectCollectionDao, scope, getCurrentDate)
+
+    /**
+     * 本进程里新登录的次数 ([SessionEvent.NewLogin]). 取一个条目时先记下, 落库前变了 = 这次取数开始于登录生效之前.
+     *
+     * 登录时先把取数时刻清零、再写会话 (SessionManager 的 `beforeNewLogin`); 清零让正在订阅这个条目的页面马上重取,
+     * 而那一刻 token 还没写进去, 这次取数是匿名的 (收藏状态一律「未收藏」). 它的结果照写, 但取数时刻记 0 (过期),
+     * 否则登录后带着 token 的重取都会被当成重复跳过 —— 同一条目的取数是串行的 ([StaleKeyedFetcher]), 带 token 的那次
+     * 一定排在它之后落库.
+     */
+    private val loginGeneration = atomic(0)
+
+    init {
+        scope.launch {
+            sessionManager.eventFlow.filterIsInstance<SessionEvent.NewLogin>().collect { loginGeneration.incrementAndGet() }
+        }
+    }
 
     /**
      * **同一条目的重取只做一次**.
@@ -316,7 +305,7 @@ class SubjectCollectionRepositoryImpl(
      * 2. 进页延迟: 三份重复网络与 DB 写和首屏抢 IO;
      * 3. 缓存过期后每次进页发 N 次请求而不是 1 次, 对 Ani API / bgm.tv 也是 N 倍.
      *
-     * 去重靠 [StaleKeyedFetcher] (串行 + 进临界区后重查), 取舍见那里.
+     * 去重靠 [StaleKeyedFetcher] (串行 + 进临界区后重查 + 取数脱离调用方协程), 取舍见那里.
      *
      * 写完不必自己 emit: 上游是 Room flow, 写库会让它重新发射, `transform` 再跑一遍时
      * `existing` 已经是新的了.
@@ -324,19 +313,45 @@ class SubjectCollectionRepositoryImpl(
      * 落库整段已包进单个 Room 事务 ([SubjectCollectionDao.upsertSubjectWithEpisodes]),
      * 中间态与并发交错都堵死了.
      */
+    override suspend fun refreshSubjectCollection(subjectId: Int) {
+        withContext(defaultDispatcher) {
+            fetchAndSaveSubjectCollection(subjectId, forceEpisodes = true)
+            episodesFetchAttemptedLock.withLock { episodesFetchAttempted.add(subjectId) }
+        }
+    }
+
     private suspend fun fetchSubjectCollectionIfStale(subjectId: Int) {
         subjectFetcher.fetchIfStale(
             key = subjectId,
             isFresh = {
-                val fresh = subjectCollectionDao.findById(subjectId).first()?.isExpired() == false
+                val fresh = subjectCollectionDao.findById(subjectId).first()
+                    ?.isExpired() == false && !needsEpisodes(subjectId)
                 // 等到锁却发现数据已经新鲜 = 刚被另一个订阅者取回来了, 这一次省掉了
                 if (fresh) logger.info { "Subject $subjectId already fresh, skipped duplicate fetch" }
                 fresh
             },
         ) {
             fetchAndSaveSubjectCollection(subjectId)
+            episodesFetchAttemptedLock.withLock { episodesFetchAttempted.add(subjectId) }
             // TODO: 2025/5/24 handle subject not found
         }
+    }
+
+    /**
+     * **条目行新鲜不代表分集也在**.
+     *
+     * 追番列表现在只取条目不取分集 (Ani 那个列表接口是把分集内联一起给的), 于是"刚被列表刷新过"
+     * 的条目进详情页时, 只看 [SubjectCollectionEntity.isExpired] 会判成新鲜、直接跳过取数,
+     * 选集条就是空的 —— 死神千年血战篇就是这么空的 (库里 0 条分集).
+     *
+     * 本进程内每个条目最多因此多取一次: 真的没有分集 (未播出/未定档) 的条目不会陷入反复重取.
+     */
+    private val episodesFetchAttempted = mutableSetOf<Int>()
+    private val episodesFetchAttemptedLock = Mutex()
+
+    private suspend fun needsEpisodes(subjectId: Int): Boolean {
+        if (episodesFetchAttemptedLock.withLock { subjectId in episodesFetchAttempted }) return false
+        return episodeCollectionDao.listIdBySubjectId(subjectId).first().isEmpty()
     }
 
     /**
@@ -344,20 +359,96 @@ class SubjectCollectionRepositoryImpl(
      *
      * @return 服务端是否有这个条目的收藏记录; `false` 表示未收藏 (数据库不动)
      */
-    private suspend fun fetchAndSaveSubjectCollection(subjectId: Int): Boolean {
-        val subject = subjectService.getSubjectCollection(subjectId)
+    private suspend fun episodesExpired(subjectId: Int): Boolean {
+        val episodes = episodeCollectionDao.filterBySubjectId(subjectId).first()
+        if (episodes.isEmpty()) return true
+        return episodes.all { (currentTimeMillis() - it.lastFetched).milliseconds > cacheExpiry }
+    }
+
+    /**
+     * 条目 + 分集**并发取**, 不排队.
+     *
+     * 这条链是 TV hero 背景的第一跳: 推荐区那些**没收藏过**的条目本地没有缓存行, 每聚焦一张卡都要整条走一遍,
+     * 这里的每一次等待都直接顶在用户眼前 (见 `resolveTvHeroMedia`). 所以:
+     * - 分集要不要取只跟本地缓存有关 ([episodesExpired]), 不必等条目回来才知道, 先发出去;
+     * - 播出周期不在这条链上: 库里没有的落库之后在后台补 (见 [SubjectRecurrenceFiller]).
+     */
+    private suspend fun fetchAndSaveSubjectCollection(
+        subjectId: Int,
+        forceEpisodes: Boolean = false,
+    ): Boolean = coroutineScope {
         val lastFetched = currentTimeMillis()
-        val subjectEntity = subject?.toEntity(
-            lastFetched = lastFetched,
-        ) ?: return false
-        val episodeEntities = subject.episodes.map {
-            it.toEntity1(subjectId, lastFetched = lastFetched)
+        val generation = loginGeneration.value
+        // 分集单独按 cacheExpiry 判: 强制刷新会连着重取条目, 每次都跟着把分集也拉一遍不值当
+        // —— 分集变化远比收藏状态慢
+        val fetchEpisodes = forceEpisodes || episodesExpired(subjectId)
+        // 分集与条目是并发取的, 分集的失败**不能**直接抛出来: 它会顺着 coroutineScope 立刻取消条目那一路,
+        // 于是"这个条目取不到"的结论变成了分集接口的那条异常 —— 同一个不存在/没权限的条目, 谁先回来就报谁,
+        // 详情页一会儿说"账号看不到这个条目"、一会儿甩出 collections/{id}/episodes 的 404 原文 (2026-09-27 真机实测).
+        // 条目本身才是结论的来源: 分集失败先收着, 等条目那边定了再说.
+        val episodesDeferred = if (fetchEpisodes) {
+            async { runCatching { episodeService.getEpisodeCollectionEntities(subjectId, lastFetched) } }
+        } else {
+            null
         }
-        // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
-        subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
-        // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)
-        logger.info { "Fetched subject $subjectId: ${episodeEntities.size} episodes" }
-        return true
+        val subject = subjectService.getSubjectCollection(subjectId)
+        if (subject == null) {
+            // 服务端没有这个条目的收藏记录: 分集也就没用了, 别让它白跑完
+            episodesDeferred?.cancel()
+            return@coroutineScope false
+        }
+        // p1 的条目里没有 recurrence 与 relations (那两个是 Ani 服务端自己算的). 在它们各自的替代
+        // 方案接上之前, 沿用库里已有的值 —— 否则每刷新一次条目就把之前取到的抹成空.
+        val existing = subjectCollectionDao.findById(subjectId).first()
+        val recurrence = existing?.recurrence
+        val subjectEntity = subject.toEntity(
+            lastFetched = lastFetched,
+            recurrence = recurrence,
+            relations = existing?.relations ?: SubjectRelations.Empty,
+        )
+        // 条目取到了而分集没取到: 条目照存, 分集这次留空 (本进程内不会因此反复重取, 见 episodesFetchAttempted).
+        // 整次取数不因此失败 —— 页面至少能显示条目信息, 比整页报错强.
+        val episodeEntities = episodesDeferred?.await()?.getOrElse { e ->
+            if (e is CancellationException) throw e
+            logger.warn(e) { "Failed to fetch episodes of subject $subjectId, keeping the subject without them" }
+            null
+        }
+        // 取数期间有新登录: 结果照写, 取数时刻记 0, 见 [loginGeneration]
+        val staleByLogin = loginGeneration.value != generation
+        if (staleByLogin) logger.info { "bgm-direct: subject $subjectId was fetched across a new login, saved as stale" }
+        val savedSubject = if (staleByLogin) subjectEntity.copy(lastFetched = 0) else subjectEntity
+        if (episodeEntities != null) {
+            // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
+            subjectCollectionDao.upsertSubjectWithEpisodes(
+                savedSubject,
+                if (staleByLogin) episodeEntities.map { it.copy(lastFetched = 0) } else episodeEntities,
+            )
+            logger.info { "bgm-direct: fetched subject $subjectId with ${episodeEntities.size} episodes" }
+        } else {
+            subjectCollectionDao.upsert(savedSubject)
+            logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
+        }
+        if (recurrence == null) {
+            recurrenceFiller.fillLater(
+                subjectId,
+                subject.airtime.date,
+                episodeEntities ?: episodeCollectionDao.filterBySubjectId(subjectId).first(),
+            )
+        }
+        true
+    }
+
+    override suspend fun subjectCollectionOffline(subjectId: Int): SubjectCollectionInfo? = withContext(defaultDispatcher) {
+        val entity = subjectCollectionDao.findById(subjectId).first() ?: return@withContext null
+        val episodes = episodeCollectionDao
+            .filterBySubjectId(subjectId, getEpisodeTypeFiltersUseCase().first())
+            .first()
+            .map { it.toEpisodeCollectionInfo() }
+        entity.toSubjectCollectionInfo(
+            episodes = episodes,
+            currentDate = getCurrentDate(),
+            nsfwModeSettings = nsfwModeSettingsFlow.first(),
+        )
     }
 
     override fun subjectCollectionFlow(
@@ -371,9 +462,15 @@ class SubjectCollectionRepositoryImpl(
                     emit(existing)
                 }
 
-                // 如果没有缓存, 则 fetch 然后插入 subject 缓存
-                if (existing == null || existing.isExpired()) {
+                // 没有缓存, 过期, 或者条目行在但分集没有 (见 needsEpisodes) 都要取一次
+                if (existing == null || existing.isExpired() || needsEpisodes(subjectId)) {
                     fetchSubjectCollectionIfStale(subjectId)
+                    // 取过一轮库里还是没有这一行 = 服务端不给这个条目 (404: NSFW 无权限或已被删除).
+                    // 不抛的话这条流一个值都发不出来 —— 下游 `subjectCollectionInfoFlow.stateIn` 会一直
+                    // 挂着, 详情页只能靠首屏超时兜底 (5 秒 x 5 次), 转 25 秒圈再报一句不相干的"加载超时".
+                    if (existing == null && subjectCollectionDao.findById(subjectId).first() == null) {
+                        throw RepositorySubjectNotAccessibleException(subjectId)
+                    }
                 }
             }
             .filterNotNull()
@@ -397,32 +494,6 @@ class SubjectCollectionRepositoryImpl(
             // (见 SubjectRelationsRepository.relationsFreshnessFlow). 内容没变就别往下传.
             .distinctUntilChanged()
     }.flowOn(defaultDispatcher)
-
-    /**
-     * 从服务端拉取条目 (含用户的收藏状态与剧集) 并写入本地缓存: 覆盖同 id 的旧行 (`lastFetched` 为当前时间), 删除本地多余的剧集.
-     *
-     * @return 服务端返回的条目; 条目不存在 (404) 时为 `null`, 此时不写入任何东西.
-     */
-    private suspend fun refetchSubjectCollection(subjectId: Int): AniSubjectCollection? {
-        val subject = subjectService.getSubjectCollection(subjectId) ?: return null
-        val lastFetched = currentTimeMillis()
-        val subjectEntity = subject.toEntity(lastFetched = lastFetched)
-        val episodeEntities = subject.episodes.map {
-            it.toEntity1(subjectId, lastFetched = lastFetched)
-        }
-        subjectCollectionDao.upsert(subjectEntity)
-
-        // 更新剧集列表
-        val oldIds = episodeCollectionDao.listIdBySubjectId(subjectId).first().toMutableList()
-        episodeCollectionDao.upsert(episodeEntities)
-        for (newEntity in episodeEntities) {
-            oldIds.remove(newEntity.episodeId)
-        }
-        if (oldIds.isNotEmpty()) { // 删除本地存的多余的剧集 (通常没有)
-            episodeCollectionDao.deleteAllByEpisodeIds(subjectId, oldIds)
-        }
-        return subject
-    }
 
     /**
      * 整条链只有**一条** Room flow: 条目与其剧集在同一次查询里取出 (`@Relation`), 数据库一变就整体重算.
@@ -513,7 +584,7 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
         limit: Int,
         offset: Int,
-        onFetched: (items: List<AniSubjectCollection>) -> Unit = {},
+        onFetched: (items: List<BangumiNextSubject>) -> Unit = {},
     ): List<SubjectCollectionEntity> {
         require(type != UnifiedCollectionType.NOT_COLLECTED) { "type must not be NOT_COLLECTED" }
         require(limit > 0) { "limit must be positive" }
@@ -530,19 +601,53 @@ class SubjectCollectionRepositoryImpl(
         // 批量插入条目信息与分集, 单个事务 (含保留 relations 盖章, 否则这里每写一批就会把
         // 详情页刚取好的角色/制作人员时间戳抹回 0, 触发一轮强制重取); 条目在前, 分集有外键依赖
         val lastFetched = currentTimeMillis()
-        val subjects = items.map { it.toEntity(lastFetched = lastFetched) }
-        subjectCollectionDao.upsertSubjectsWithEpisodes(
-            subjects = subjects,
-            episodes = items
-                .flatMap { it.episodes }
-                .map { episode ->
-                    episode.toEntity1(
-                        subjectId = episode.subjectId.toInt(),
-                        lastFetched = lastFetched,
-                    )
-                },
-        )
+        val existing = subjectCollectionDao.filterByIds(items.map { it.id }.toIntArray()).first()
+            .associateBy { it.subjectId }
+        val subjects = items.map {
+            // recurrence/relations 沿用库里的, 理由同 fetchAndSaveSubjectCollection
+            it.toEntity(
+                lastFetched = lastFetched,
+                recurrence = existing[it.id]?.recurrence,
+                relations = existing[it.id]?.relations ?: SubjectRelations.Empty,
+            )
+        }
+        subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = subjects, episodes = emptyList())
+        fetchEpisodesForInProgressSubjects(subjects, lastFetched)
         return subjects
+    }
+
+    /**
+     * 列表接口只给条目不给分集 (Ani 那个是内联的), 一页 30 条要逐个补分集就是 30 个请求.
+     *
+     * 只补**在看**与**搁置**的 (看到一半的): 「继续观看」要的下一集 id、卡片上的进度与"更新至 X 话"
+     * 只有它们用得上; 看过/想看的卡片在没有分集时会走 [toSubjectCollectionInfo] 里的降级路径 (用条目
+     * 自带的总集数与收藏状态), 进过一次详情页之后分集自然就齐了.
+     *
+     * 这两类的量级很小 (几部到几十部), 且**已经有新鲜分集的跳过**, 所以稳态下这里基本不发请求.
+     */
+    private suspend fun fetchEpisodesForInProgressSubjects(
+        subjects: List<SubjectCollectionEntity>,
+        lastFetched: Long,
+    ) {
+        val doing = subjects.filter {
+            it.collectionType == UnifiedCollectionType.DOING || it.collectionType == UnifiedCollectionType.ON_HOLD
+        }
+        if (doing.isEmpty()) return
+        for (subject in doing) {
+            val cached = episodeCollectionDao.filterBySubjectId(subject.subjectId).first()
+            if (cached.isNotEmpty() && cached.all { currentTimeMillis() - it.lastFetched < cacheExpiry.inWholeMilliseconds }) {
+                continue
+            }
+            try {
+                val episodes = episodeService.getEpisodeCollectionEntities(subject.subjectId, lastFetched)
+                episodeCollectionDao.upsert(episodes)
+                logger.info { "bgm-direct: 补在看/搁置条目的分集 subject=${subject.subjectId} -> ${episodes.size}" }
+            } catch (e: Exception) {
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                // 分集补取失败不该让整页收藏加载失败: 卡片退化成没有进度, 下次刷新再补
+                logger.warn { "Failed to fetch episodes for in-progress subject ${subject.subjectId}: $e" }
+            }
+        }
     }
 
     /**
@@ -592,27 +697,25 @@ class SubjectCollectionRepositoryImpl(
         isPrivate: Boolean?,
     ) {
         withContext(defaultDispatcher) {
-            val stats = subjectService.patchSubjectCollection(
+            // 每个字段原样透传: null = 不动它. 用 orEmpty()/?: false 去顶会把用户在 bangumi 上
+            // 的标签清空、把"仅自己可见"改掉 —— 详情页改评分时 tags 就是 null.
+            subjectService.patchSubjectCollection(
                 subjectId,
-                AniUpdateSubjectCollectionRequest(
-                    selfRating = AniSelfRatingInfo(
-                        score = score ?: 0,
-                        comment = comment,
-                        tags = tags.orEmpty(),
-                        isPrivate = isPrivate ?: false,
-                    ),
+                SubjectCollectionUpdate(
+                    score = score,
+                    comment = comment,
+                    tags = tags,
+                    isPrivate = isPrivate,
                 ),
             )
 
-            subjectCollectionDao.updateRatingAndStats(
+            subjectCollectionDao.updateRating(
                 subjectId,
                 score,
                 comment,
                 // 这一列按 protobuf 存, 查询参数得先自己编码 (直接传列表会被 Room 展开, 见 DAO 上的说明)
                 tags?.let { ProtoConverters.StringList().fromList(it) },
                 isPrivate,
-                collectionStats = stats.favorite.toSubjectCollectionStats(),
-                ratingInfo = ratingInfoOf(stats.rank, stats.score, stats.scoreDetails),
             )
         }
     }
@@ -648,6 +751,8 @@ class SubjectCollectionRepositoryImpl(
                             // 仅在网络请求成功后才删除缓存, 否则会导致无网络时清空缓存
                             // 必须清除缓存, 让顺序与服务器同步, 否则会死循环刷新
                             subjectCollectionDao.deleteAll(query.type)
+                            // 数字与卡片一起对齐: 计数是另一组请求, 不跟着列表走
+                            subjectService.invalidateCollectionCounts()
                         }
 
                         // 拿到的数量小于请求的 limit 就代表这是最后一页, 否则总数不是 limit 整数倍时
@@ -672,10 +777,16 @@ class SubjectCollectionRepositoryImpl(
             if (type == null || type == UnifiedCollectionType.NOT_COLLECTED) {
                 deleteSubjectCollection(subjectId)
             } else {
-                patchSubjectCollection(
-                    subjectId,
-                    AniUpdateSubjectCollectionRequest(collectionType = type.toAniSubjectCollectionType()),
-                )
+                // 必须把当前评分一起送过去: bangumi 收到带 type 而不带 rate 的请求会把评分清零
+                val currentScore = subjectCollectionDao.findById(subjectId).first()
+                    ?.selfRatingInfo?.score?.takeIf { it > 0 }
+                // 先改本地 (界面上的收藏状态立刻变), 见 setCollectionTypeLocalFirst
+                subjectCollectionDao.setCollectionTypeLocalFirst(subjectId, type) {
+                    subjectService.patchSubjectCollection(
+                        subjectId,
+                        SubjectCollectionUpdate(collectionType = type, score = currentScore),
+                    )
+                }
             }
         }
     }
@@ -697,23 +808,12 @@ class SubjectCollectionRepositoryImpl(
         }
     }
 
-    override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> {
-        return subjectCollectionDao.subjectNamesCnByCollectionType(types).flowOn(defaultDispatcher)
+    override suspend fun getSubjectIdsByCollectionType(types: List<UnifiedCollectionType>): Flow<List<Int>> {
+        return subjectCollectionDao.subjectIdsByCollectionType(types).flowOn(defaultDispatcher)
     }
 
-    private suspend fun patchSubjectCollection(
-        subjectId: Int,
-        payload: AniUpdateSubjectCollectionRequest,
-    ) {
-        withContext(defaultDispatcher) {
-            val stats = subjectService.patchSubjectCollection(subjectId, payload)
-            subjectCollectionDao.updateTypeAndStats(
-                subjectId,
-                payload.collectionType.toUnifiedCollectionType(),
-                collectionStats = stats.favorite.toSubjectCollectionStats(),
-                ratingInfo = ratingInfoOf(stats.rank, stats.score, stats.scoreDetails),
-            )
-        }
+    override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> {
+        return subjectCollectionDao.subjectNamesCnByCollectionType(types).flowOn(defaultDispatcher)
     }
 
     private suspend fun deleteSubjectCollection(subjectId: Int) {
@@ -723,82 +823,40 @@ class SubjectCollectionRepositoryImpl(
         }
     }
 
-    override suspend fun performBangumiFullSync() {
-        try {
-            withContext(defaultDispatcher) {
-                subjectService.performBangumiFullSync()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    override suspend fun getBangumiFullSyncState(): BangumiSyncState? {
-        return try {
-            withContext(defaultDispatcher) {
-                subjectService.getBangumiFullSyncState()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    override suspend fun invalidateCache(subjectIds: List<Int>) {
-        if (subjectIds.isEmpty()) return
-        withContext(defaultDispatcher) {
-            coroutineScope {
-                // 有限并行: 解决冲突后通常要重新拉取几十个条目 (每个都带完整剧集列表), 串行会让 "应用合并" 等几十个 RTT.
-                val semaphore = Semaphore(INVALIDATE_REFETCH_PARALLELISM)
-                // 首次网络失败后不再发起新的拉取: 断网时每个请求都要等到连接超时, 剩余行由下面的 resetAllLastFetched 覆盖.
-                val failed = atomic(false)
-                subjectIds.distinct().map { subjectId ->
-                    async {
-                        semaphore.withPermit {
-                            if (failed.value) return@withPermit
-                            val fetched = try {
-                                refetchSubjectCollection(subjectId)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                // 网络失败: 保留本地行, 靠下面的 resetAllLastFetched 让它下次重新拉取.
-                                // 绝不因失败删除, 否则条目会从正在展示的收藏列表里消失.
-                                failed.value = true
-                                logger.warn(e) { "Failed to refetch subject collection $subjectId after invalidation, keeping the cached row and skipping the remaining refetches" }
-                                return@withPermit
-                            }
-                            if (fetched == null || fetched.collectionType == null) {
-                                // 服务端已无收藏 (条目不存在或未收藏): 删除本地行, 剧集缓存有 ON DELETE CASCADE 随之删除
-                                subjectCollectionDao.delete(subjectId)
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }
-            // 分页器创建时只看最新的 lastFetched 决定是否从服务端刷新; 已在展示的分页器由 collectionsInvalidated 触发重建
-            subjectCollectionDao.resetAllLastFetched()
-        }
-        notifyCollectionsInvalidated()
-    }
-
-    override suspend fun invalidateAllCaches() {
-        withContext(defaultDispatcher) {
-            subjectCollectionDao.resetAllLastFetched()
-        }
-        notifyCollectionsInvalidated()
-    }
 
     private companion object {
         private val logger = logger<SubjectCollectionRepository>()
-
-        /**
-         * [invalidateCache] 重新拉取条目的最大并行数.
-         */
-        private const val INVALIDATE_REFETCH_PARALLELISM = 4
 
         /** 一轮刷新里最多纠正几条"本地类型已过期"的记录, 见 [reconcileCollectionsLeftType]. */
         private const val RECONCILE_LEFT_TYPE_LIMIT = 8
     }
 }
+
+/**
+ * 把本地的收藏类型改成 [type] 再 [send], 流程见 [writeLocalFirst]. 改回时连更新时间一起还原 (收藏列表按它排序).
+ */
+internal suspend fun SubjectCollectionDao.setCollectionTypeLocalFirst(
+    subjectId: Int,
+    type: UnifiedCollectionType,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        findById(subjectId).first()
+            ?.let { it.collectionType to it.lastUpdated }
+            .also { updateType(subjectId, type) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        if (previous != null && previous.first != type) {
+            replaceType(subjectId, previous.first, type, currentTimeMillis())
+        }
+    },
+    revertLocal = { previous ->
+        if (previous != null && previous.first != type) {
+            replaceType(subjectId, type, previous.first, previous.second)
+        }
+    },
+)
 
 data class CollectionsFilterQuery(
     val type: UnifiedCollectionType?,
@@ -840,12 +898,23 @@ private fun SubjectCollectionEntity.toSubjectCollectionInfo(
         subjectInfo = subjectInfo,
         selfRatingInfo = selfRatingInfo,
         episodes = episodes,
-        airingInfo = SubjectAiringInfo.computeFromEpisodeList(
-            episodes.map { it.episodeInfo },
-            airDate,
-            recurrence,
-        ),
-        progressInfo = SubjectProgressInfo.compute(subjectInfo, episodes, currentDate, recurrence),
+        // 没有分集时退到只用条目自身的信息. 追番列表只为"在看"与"搁置"的条目补分集 (见
+        // fetchEpisodesForInProgressSubjects), 其余类型的卡片走这条路, 进过详情页之后分集就齐了.
+        airingInfo = if (episodes.isEmpty()) {
+            SubjectAiringInfo.computeFromSubjectInfo(subjectInfo, totalEpisodes)
+        } else {
+            SubjectAiringInfo.computeFromEpisodeList(
+                episodes.map { it.episodeInfo },
+                airDate,
+                recurrence,
+            )
+        },
+        progressInfo = if (episodes.isEmpty() && collectionType == UnifiedCollectionType.DONE) {
+            // 没有分集时 compute 会算成"还没看过"→ 显示"开始观看". 用户已经标了看过, 直接给完成态.
+            SubjectProgressInfo.Done
+        } else {
+            SubjectProgressInfo.compute(subjectInfo, episodes, currentDate, recurrence)
+        },
 //        isOnAir = ,
         recurrence = recurrence,
         cachedStaffUpdated = cachedStaffUpdated,
@@ -947,80 +1016,22 @@ fun <T : Any> calculateIndexBasedLoadInfo(
     }
 }
 
-fun AniSubjectCollection.toEntity(
-    lastFetched: Long,
-): SubjectCollectionEntity {
-    return SubjectCollectionEntity(
-        subjectId = id.toInt(),
-        name = name,
-        nameCn = nameCn,
-        summary = summary,
-        nsfw = nsfw,
-        imageLarge = staticSubjectImageLargeUrl(id.toInt()),
-        totalEpisodes = episodes.size,
-        airDate = PackedDate.parseFromDate(airDate),
-        aliases = buildList {
-            addAll(aliases)
-            // Also extract "别名" entries from infobox — the server's aliases field may be
-            // incomplete and miss Traditional Chinese / English / other-language names.
-            infobox?.fields
-                ?.filter { it.key == "别名" }
-                ?.flatMap { item -> item.propertyValues.map { it.v } }
-                ?.filter { it.isNotBlank() && !aliases.contains(it) }
-                ?.let { addAll(it) }
-        },
-        tags = tags.map { it.toTag() },
-        collectionStats = favorite.toSubjectCollectionStats(),
-        ratingInfo = ratingInfoOf(rank, score, scoreDetails),
-        completeDate = PackedDate.Invalid,
-        selfRatingInfo = selfRating.toSelfRatingInfo(),
-        collectionType = collectionType.toUnifiedCollectionType(),
-        recurrence = airingInfo?.recurrence?.toSubjectRecurrence(),
-        relations = relations.toSubjectRelationsEntity(),
-        screeningYear = infobox?.screeningYearOrNull(PackedDate.parseFromDate(airDate).year),
-        theatrical = infobox?.isTheatricalOnly() == true,
-        lastUpdated = updatedAt?.let { Instant.parse(it) }?.toEpochMilliseconds() ?: 0,
-        lastFetched = lastFetched,
-        cachedStaffUpdated = 0,
-        cachedCharactersUpdated = 0,
-    )
-}
-
 /** infobox 里表示"影院上映日期"的字段名. */
 private val SCREENING_DATE_KEYS = setOf("上映年度", "上映日期", "其他上映日期", "其他上映年度")
 
 private val YEAR_REGEX = Regex("""(?:19|20)\d{2}""")
 
+
 /**
- * infobox 「上映年度」里**最早**的那个年份; 没有该字段, **或 [airYear] 本来就在这些年份里**,
- * 都返回 `null` —— 后者说明 `airDate` 记的就是上映日, 没必要换个年份去判.
+ * 条目大封面的地址, 不依赖本地数据库 —— 本地没有记录时的兜底展示.
  *
- * 只取最早那个: 老片的 infobox 会把重映年也列上 (攻殻機動隊 是 `[1995, 2025]`, 2025 是 4K 重映),
- * 全盘接受会让 2026 年的新片「The Ghost in the Shell」也过年份判据、顶掉 1995 那部正解.
- */
-private fun AniInfobox.screeningYearOrNull(airYear: Int?): Int? {
-    val years = fields.asSequence()
-        .filter { it.key in SCREENING_DATE_KEYS }
-        .flatMap { item -> item.propertyValues.asSequence().map { it.v } }
-        .mapNotNull { YEAR_REGEX.find(it)?.value?.toIntOrNull() }
-        .toList()
-    if (years.isEmpty() || airYear in years) return null
-    return years.min()
-}
-
-/**
- * 是否**只在影院放映**: 有上映日期而没有「放送开始」. 见 [SubjectCollectionEntity.theatrical].
- */
-private fun AniInfobox.isTheatricalOnly(): Boolean {
-    val keys = fields.mapTo(mutableSetOf()) { it.key }
-    return keys.any { it in SCREENING_DATE_KEYS } && "放送开始" !in keys
-}
-
-/**
- * 条目大封面的静态 CDN 地址. 不依赖本地数据库, 可用于本地无记录时的兜底展示.
+ * 走 bangumi 自己的重定向端点而不是直接拼图床路径: `lain.bgm.tv` 的路径里带着图片自己的哈希
+ * (`/pic/cover/l/b7/58/302286_s3o3E.jpg`), 光有 subjectId 拼不出来; 这个端点 302 过去.
+ *
+ * 它是 `bgm.tv` 域名, 所以连不上官方时会被镜像改写一并接管 (见 `BangumiMirrorFeature`).
  */
 fun staticSubjectImageLargeUrl(subjectId: Int): String =
-    "https://static.myani.org/bangumi/subjects/$subjectId/large"
+    "https://api.bgm.tv/v0/subjects/$subjectId/image?type=large"
 
 /**
  * 本地数据库中缓存的条目展示信息.
@@ -1033,124 +1044,3 @@ data class OfflineSubjectDisplayInfo(
     val totalEpisodes: Int,
 )
 
-fun AniSubjectRelations.toSubjectRelationsEntity(): SubjectRelations {
-    return SubjectRelations(
-        seriesMainSubjectIds,
-        seriesMainSubjectNames,
-        sequelSubjects,
-        sequelSubjectNames,
-    )
-}
-
-fun AniTag.toTag(): Tag = Tag(
-    name = name,
-    count = count,
-)
-
-/**
- * @param scoreDetails 键为 `"1"` 到 `"10"`
- */
-private fun ratingInfoOf(rank: Int?, score: String?, scoreDetails: Map<String, Int>): RatingInfo = RatingInfo(
-    rank = rank ?: 0,
-    total = scoreDetails.values.sum(),
-    count = RatingCounts(
-        s1 = scoreDetails["1"] ?: 0,
-        s2 = scoreDetails["2"] ?: 0,
-        s3 = scoreDetails["3"] ?: 0,
-        s4 = scoreDetails["4"] ?: 0,
-        s5 = scoreDetails["5"] ?: 0,
-        s6 = scoreDetails["6"] ?: 0,
-        s7 = scoreDetails["7"] ?: 0,
-        s8 = scoreDetails["8"] ?: 0,
-        s9 = scoreDetails["9"] ?: 0,
-        s10 = scoreDetails["10"] ?: 0,
-    ),
-    score = score ?: "0",
-)
-
-fun AniFavourite.toSubjectCollectionStats(): SubjectCollectionStats {
-    return SubjectCollectionStats(
-        wish = wish,
-        doing = doing,
-        done = done,
-        onHold = onHold,
-        dropped = dropped,
-    )
-}
-
-fun AniAnimeRecurrence.toSubjectRecurrence(): SubjectRecurrence? {
-    return SubjectRecurrence(
-        Instant.parse(startTime),
-        interval = intervalMillis.milliseconds,
-    )
-}
-
-fun AniCollectionType?.toUnifiedCollectionType(): UnifiedCollectionType {
-    return when (this) {
-        AniCollectionType.WISH -> UnifiedCollectionType.WISH
-        AniCollectionType.DOING -> UnifiedCollectionType.DOING
-        AniCollectionType.DONE -> UnifiedCollectionType.DONE
-        AniCollectionType.ON_HOLD -> UnifiedCollectionType.ON_HOLD
-        AniCollectionType.DROPPED -> UnifiedCollectionType.DROPPED
-        null -> UnifiedCollectionType.NOT_COLLECTED
-    }
-}
-
-fun AniEpisodeCollection.toEntity1(
-    subjectId: Int,
-    lastFetched: Long,
-): EpisodeCollectionEntity {
-    return EpisodeCollectionEntity(
-        subjectId = subjectId,
-        episodeId = episodeId.toInt(),
-        episodeType = type.toEpisodeType(),
-        name = name,
-        nameCn = nameCn,
-        airDate = airdate?.let { PackedDate.parseFromDate(it) } ?: PackedDate.Invalid,
-        comment = 0,
-        desc = description,
-        sort = EpisodeSort(BigNum(sort), type.toEpisodeType()),
-        ep = ep?.let { EpisodeSort(BigNum(it), type.toEpisodeType()) },
-        sortNumber = sort.toFloatOrNull() ?: 0f,
-        imageMedium = imageMedium,
-        imageLarge = imageLarge,
-        selfCollectionType = collectionType.toUnifiedCollectionType(),
-        lastFetched = lastFetched,
-    )
-}
-
-fun AniEpisodeType.toEpisodeType(): EpisodeType? {
-    return when (this) {
-        AniEpisodeType.MAIN -> EpisodeType.MainStory
-        AniEpisodeType.SPECIAL -> EpisodeType.SP
-        AniEpisodeType.OP -> EpisodeType.OP
-        AniEpisodeType.ED -> EpisodeType.ED
-        AniEpisodeType.TRAILER -> EpisodeType.PV
-        AniEpisodeType.MAD -> EpisodeType.MAD
-        AniEpisodeType.OTHER -> null
-    }
-}
-
-fun AniEpisodeCollectionType?.toUnifiedCollectionType(): UnifiedCollectionType {
-    return when (this) {
-        null -> UnifiedCollectionType.NOT_COLLECTED
-        AniEpisodeCollectionType.DONE -> UnifiedCollectionType.DONE
-    }
-}
-
-fun AniSelfRatingInfo.toSelfRatingInfo(): SelfRatingInfo {
-    return SelfRatingInfo(
-        score = score, comment = comment, tags = tags, isPrivate = isPrivate,
-    )
-}
-
-fun UnifiedCollectionType.toAniSubjectCollectionType(): AniCollectionType? {
-    return when (this) {
-        UnifiedCollectionType.WISH -> AniCollectionType.WISH
-        UnifiedCollectionType.DOING -> AniCollectionType.DOING
-        UnifiedCollectionType.DONE -> AniCollectionType.DONE
-        UnifiedCollectionType.ON_HOLD -> AniCollectionType.ON_HOLD
-        UnifiedCollectionType.DROPPED -> AniCollectionType.DROPPED
-        UnifiedCollectionType.NOT_COLLECTED -> null
-    }
-}

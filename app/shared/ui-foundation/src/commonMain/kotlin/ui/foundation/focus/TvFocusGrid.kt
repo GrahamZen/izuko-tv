@@ -17,6 +17,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -237,6 +238,46 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
         cancel()
     }
 
+    /**
+     * 原生网格的卡拿到焦点 (同 [tvGridFocusItem] 的获焦出口, 见 [NativeSendFocusEffect]): 目标到位即清; 落到别的卡上 = 有别人在驱动焦点,
+     * 在途那一发作废.
+     */
+    fun onNativeItemFocused(index: Int) {
+        focusedIndex = index
+        // 原生卡片没有 Compose 节点可记, 补射 (节点被销毁) 那条路在原生网格上不存在: RecyclerView 换数据时持焦的视图原地重绑
+        focusedNode = null
+        val target = pendingIndex
+        when {
+            target != null && index == target -> cancel()
+            target != null -> onFocusTakenByOtherItem(index)
+        }
+    }
+
+    /**
+     * 原生网格页把焦点停放在自己身上 / 解除 (换标签时焦点还在换下去的那份网格上, 新那份的卡还没到): 同焦点驻留在 [TvFocusTransitAnchor] 上,
+     * 这期间的按键被原生那边吞掉, 不算用户接管 (见 [TvFocusScope.onUserKeyDown]), 在途的换标签送焦照常落地.
+     */
+    fun onNativeFocusParked(parked: Boolean) {
+        scope.focusParkedOnTransit = parked
+    }
+
+    internal fun installedGridsForNative(delta: Int) {
+        installedGrids += delta
+    }
+
+    internal fun requestGenerationForNative(): Int = requestGeneration
+
+    /** 把行缘目标按原生网格的列数解析成下标 (见 [resolveTvGridRowEdge]). */
+    internal fun resolveRowEdgeForNative(columns: Int, itemCount: Int) {
+        val edge = pendingRowEdge ?: return
+        pendingRowEdge = null
+        pendingIndex = resolveTvGridRowEdge(edge.first, edge.second, columns.coerceAtLeast(1), itemCount)
+    }
+
+    internal fun setPendingIndexForNative(index: Int) {
+        pendingIndex = index
+    }
+
     /** 取消在途请求 (调用方确定目标不会出现, 如分页确定空列表). */
     fun cancel() {
         pendingIndex = null
@@ -248,14 +289,22 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
      * 送焦效应: 网格组合内装一次. 等数据就绪 (快照事件) -> 行缘目标按目标网格布局列数
      * 解析为下标 (布局事件) -> 目标滚进视口 -> [TvFocusScope.request] (锚点附着事件送达)
      * -> 等到位. 超时 (4 秒) 即 [cancel]; pending 出口见文件头. [itemCount] 须读 snapshot 状态.
+     *
+     * [bringIntoView]: 目标不在视口里时怎么把它滚进来, 默认 `scrollToItem(目标)` (目标行顶到最上面, 吸顶的网格
+     * 聚焦后本来就停在那). 聚焦后停在别处的网格 (海报墙停在正中) 要传自己的停位, 否则焦点一落位又得滚过去.
      */
     @Composable
-    fun SendFocusEffect(gridState: LazyGridState, itemCount: () -> Int) {
+    fun SendFocusEffect(
+        gridState: LazyGridState,
+        bringIntoView: (suspend (index: Int) -> Unit)? = null,
+        itemCount: () -> Int,
+    ) {
         // 网格在场记账: 补射请求的裁决靠它区分"卡被换掉"与"整个网格走了" (见 [rearmRequest])
         DisposableEffect(this) {
             installedGrids++
             onDispose { installedGrids-- }
         }
+        val currentBringIntoView by rememberUpdatedState(bringIntoView)
         LaunchedEffect(requestGeneration, gridState) {
             if (pendingIndex == null && pendingRowEdge == null) {
                 return@LaunchedEffect
@@ -327,7 +376,7 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
                     // ensureActive() 负责区分: 本效应自己被取消 (requestGeneration 变了 / 组合退场 /
                     // withTimeoutOrNull 超时) 时它重新抛出, 语义不变.
                     try {
-                        gridState.scrollToItem(target)
+                        currentBringIntoView?.invoke(target) ?: gridState.scrollToItem(target)
                     } catch (e: CancellationException) {
                         currentCoroutineContext().ensureActive()
                     }
@@ -358,6 +407,52 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
                 // 闸门回落交给调用方的 onStranded / 空态兜底接手
                 this@TvGridFocusState.cancel()
             }
+        }
+    }
+}
+
+/**
+ * 原生网格 (电视原生页面的 RecyclerView) 版的 [TvGridFocusState.SendFocusEffect]: 协议相同 (等数据 → 行缘目标按列数解析 → 送焦 → 等到位,
+ * [SEND_FOCUS_TIMEOUT_MILLIS] 超时即取消), 目标卡由原生视图聚焦 ([focusNative]), 到位由原生卡片的获焦回调经
+ * [TvGridFocusState.onNativeItemFocused] 报上来. [columns] = 原生网格的列数 (行缘目标按它解析).
+ *
+ * [focusNative] 返回 true = 目标此刻已经持着焦点 (不会再有获焦回调), 当场判到位.
+ */
+@Composable
+fun TvGridFocusState.NativeSendFocusEffect(
+    columns: () -> Int,
+    itemCount: () -> Int,
+    focusNative: (index: Int) -> Boolean,
+) {
+    DisposableEffect(this) {
+        installedGridsForNative(+1)
+        onDispose { installedGridsForNative(-1) }
+    }
+    val currentFocusNative by rememberUpdatedState(focusNative)
+    val currentColumns by rememberUpdatedState(columns)
+    LaunchedEffect(requestGenerationForNative()) {
+        if (!switching) return@LaunchedEffect
+        val satisfied = withTimeoutOrNull(SEND_FOCUS_TIMEOUT_MILLIS) {
+            snapshotFlow { itemCount() }.first { it > 0 }
+            resolveRowEdgeForNative(currentColumns(), itemCount())
+            val count = itemCount()
+            val pending = pendingIndex
+            if (count <= 0 || pending == null) {
+                cancel()
+                return@withTimeoutOrNull Unit
+            }
+            val target = pending.coerceIn(0, count - 1)
+            setPendingIndexForNative(target)
+            if (currentFocusNative(target)) {
+                // 目标已经持焦: 不会再有获焦回调, 当场判到位 (同 SendFocusEffect 的短路)
+                cancel()
+                return@withTimeoutOrNull Unit
+            }
+            snapshotFlow { switching }.first { !it }
+        }
+        if (satisfied == null) {
+            logger.warn { "TvGridFocusState: 原生网格送焦 ${SEND_FOCUS_TIMEOUT_MILLIS}ms 未到位, 主动收摊. pendingIndex=$pendingIndex" }
+            cancel()
         }
     }
 }

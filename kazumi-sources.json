@@ -1,0 +1,376 @@
+[
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:7sefun",
+   "description": "由 KazumiRules 转换; https://www.7sefun.top/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.7sefun.top/vodsearch/-------------.html?wd={keyword}",
+    "rawBaseUrl": "https://www.7sefun.top",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div div:nth-of-type(2)",
+     "selectLinks": "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(1) div a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:AGE",
+   "description": "由 KazumiRules 转换; https://www.agedm.io/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.agedm.io/search?query={keyword}",
+    "rawBaseUrl": "https://www.agedm.io",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div:nth-of-type(2) > div > section > div > div > div > div div > div:nth-of-type(2) > h5 > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div:nth-of-type(2) > div > section > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div ul > li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:DM84",
+   "description": "由 KazumiRules 转换; https://dmbus.cc/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://dmbus.cc/s----------.html?wd={keyword}",
+    "rawBaseUrl": "https://dmbus.cc",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div > div:nth-of-type(3) > ul > li div > a:nth-of-type(2)",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div > div:nth-of-type(4) > div > ul li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:LMM",
+   "description": "由 KazumiRules 转换; https://www.lmm85.com/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.lmm85.com/vod/search.html?wd={keyword}",
+    "rawBaseUrl": "https://www.lmm85.com",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div#mdym div[class*=\"video-img-box\"] h6 > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div[class*=\"module-player-list\"] a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?",
+     "addHeadersToVideo": {
+      "referer": "https://www.lmm85.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+     }
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:MXdm",
+   "description": "由 KazumiRules 转换; https://www.dcc3.com/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.dcc3.com/search/?wd={keyword}",
+    "rawBaseUrl": "https://www.dcc3.com",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div:nth-of-type(3) > ul > li h3 > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div:nth-of-type(4) > div > div > ul li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:akianime",
+   "description": "由 KazumiRules 转换; https://www.akianime.cc/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.akianime.cc/bgmsearch/-------------.html?wd={keyword}",
+    "rawBaseUrl": "https://www.akianime.cc",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div.vod-detail.style-detail.cor4.search-list div > div:nth-of-type(2) > a > h3",
+     "selectLinks": "div.vod-detail.style-detail.cor4.search-list div > div:nth-of-type(2) > div > div:nth-of-type(1) > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:baimao",
+   "description": "由 KazumiRules 转换; https://www.baimaodm.com/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.baimaodm.com/s_all?ex=1&kw={keyword}",
+    "rawBaseUrl": "https://www.baimaodm.com",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div:nth-of-type(4) > div:nth-of-type(2) > div:nth-of-type(1) > ul > li h2 > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(8) > div > div > ul li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:dalvdm",
+   "description": "由 KazumiRules 转换; https://www.dalvdm.cc/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.dalvdm.cc/index.php/vod/search.html?wd={keyword}",
+    "rawBaseUrl": "https://www.dalvdm.cc",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div.vod-detail.style-detail.cor4.search-list div > div:nth-of-type(2) > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:giriGiriLove",
+   "description": "由 KazumiRules 转换; https://ani.girigirilove.com",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://ani.girigirilove.com/search/-------------/?wd={keyword}",
+    "rawBaseUrl": "https://ani.girigirilove.com",
+    "subjectFormatId": "a",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatA": {
+     "selectLists": "div.vod-detail.style-detail.cor4.search-list div > div:nth-of-type(2) > a",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:gugu3",
+   "description": "由 KazumiRules 转换; https://www.gugu3.com/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.gugu3.com/index.php/vod/search.html?wd={keyword}",
+    "rawBaseUrl": "https://www.gugu3.com",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div.public-list-box.search-box.flex.rel div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1)",
+     "selectLinks": "div.public-list-box.search-box.flex.rel div:nth-of-type(3) > div:nth-of-type(2) > a:nth-of-type(1)",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:mgnacg",
+   "description": "由 KazumiRules 转换; https://www.mgnacg.com",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.mgnacg.com/search/-------------/?wd={keyword}",
+    "rawBaseUrl": "https://www.mgnacg.com",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div.public-list-box.search-box.flex.rel div > div:nth-of-type(1) > div",
+     "selectLinks": "div.public-list-box.search-box.flex.rel div > div:nth-of-type(2) > a:nth-of-type(1)",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:mutefun",
+   "description": "由 KazumiRules 转换; https://www.2kdm.com/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://www.2kdm.com/vodsearch/-------------.html?wd={keyword}",
+    "rawBaseUrl": "https://www.2kdm.com",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div:nth-of-type(1) > div:nth-of-type(3) > div > div > div:nth-of-type(3) > div div div:nth-of-type(2) > div:nth-of-type(1) > a > strong",
+     "selectLinks": "div:nth-of-type(1) > div:nth-of-type(3) > div > div > div:nth-of-type(3) > div div div:nth-of-type(3) > a:nth-of-type(2)",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "div:nth-of-type(1) > div:nth-of-type(3) > div > div:nth-of-type(3) div div > div > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ },
+ {
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+   "name": "K:xfdmneo",
+   "description": "由 KazumiRules 转换; https://dm1.xfdm.pro/",
+   "iconUrl": "",
+   "searchConfig": {
+    "searchUrl": "https://dm1.xfdm.pro/search.html?wd={keyword}",
+    "rawBaseUrl": "https://dm1.xfdm.pro",
+    "subjectFormatId": "indexed",
+    "channelFormatId": "no-channel",
+    "filterBySubjectName": true,
+    "filterByEpisodeSort": true,
+    "selectorSubjectFormatIndexed": {
+     "selectNames": "div.public-list-box.search-box.flex.rel div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1)",
+     "selectLinks": "div.public-list-box.search-box.flex.rel div:nth-of-type(3) > div:nth-of-type(2) > a:nth-of-type(1)",
+     "preferShorterName": true
+    },
+    "selectorChannelFormatNoChannel": {
+     "selectEpisodes": "ul.anthology-list-play.size li > a",
+     "selectEpisodeLinks": ""
+    },
+    "matchVideo": {
+     "matchNestedUrl": "^(?!.*\\.(css|js|png|jpe?g|webp|gif|ico|woff2?)([?#]|$)).+(m3u8|xigua\\.php).+\\?"
+    }
+   }
+  }
+ }
+]

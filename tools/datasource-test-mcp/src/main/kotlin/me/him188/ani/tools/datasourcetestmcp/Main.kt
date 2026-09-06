@@ -118,6 +118,7 @@ fun main(args: Array<String>) {
         )
         val sourceTestService = SourceTestService(
             httpClient = client,
+            aniInfoService = aniInfoService,
             registry = DataSourceRegistry(scopedClient, webSourceSession.sessionManager),
             json = json,
             resolver = resolver,

@@ -11,15 +11,16 @@ package me.him188.ani.app.ui.foundation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.github.panpf.sketch.LocalPlatformContext
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
-import com.github.panpf.sketch.cache.CachePolicy
-import com.github.panpf.sketch.request.Disposable
-import com.github.panpf.sketch.request.ImageRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.logger
 
@@ -52,9 +53,12 @@ private val logger = logger("ImageCompletionGrace")
  * 丢弃新的则两条都不占: 不取消任何在途连接, 而且每次都真能攒下完整的几张. 代价是最新离场的
  * 那张不补 —— 它恰恰是最可能马上被划回来的, 但届时可见请求自己会重下, 与不补下时一样.
  *
- * 不加锁: 提交点是 Compose 的 `onDispose`, 移除点是 Sketch 的 request listener, 两者都在主线程.
+ * 不加锁: 提交点是 Compose 的 `onDispose`, 移除点是补下协程的 finally ([completionScope] 在主线程上调度), 两者都在主线程.
  */
-private val pendingCompletions = LinkedHashMap<String, Disposable>()
+private val pendingCompletions = LinkedHashMap<String, Job>()
+
+/** 补下协程的作用域: 不跟着组合走, 卡片离场之后照样跑完. 主线程调度, 真正的下载在 [downloadToCache] 里切到 IO. */
+private val completionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
 /**
  * 图片加载的"完成宽限": 卡片离开组合时那张还没下完的图, 交给后台跑完并写进磁盘缓存.
@@ -65,33 +69,47 @@ private val pendingCompletions = LinkedHashMap<String, Disposable>()
  * → 回来重下"里打转, 永远下不完, 卡片就在骨架和图之间反复闪 (issue #7 报告者的日志里
  * 五十多条 CANCELLED, 同一张封面被取消两次才终于下完).
  *
- * 补下的请求**不进内存缓存**: 它已经不在屏上了, 占着只会把真正可见的那些挤出去; 写到磁盘就够
- * —— 焦点转回来时从本地读, 不必再走网络.
+ * 补下**只落盘、不解码** (见 [downloadToCache]): 卡片已经不在屏上了, 解出位图没人用, 还占着屏上卡片的解码队列;
+ * 写到磁盘就够 —— 焦点转回来时从本地读, 不必再走网络.
  *
- * 用法: 拿到的标志位交给 `onSuccess` 置位, 没置位就说明丢弃时还没下完, 需要补.
+ * 只补**真正发出过**的请求, 补的也是**实际发出的地址**: AsyncImage 测到尺寸才发请求, 而 Bangumi 封面按显示宽度换成了
+ * 图床的缩略图 (见 bangumiCoverThumbnailUrl) —— 补下原图的话下次显示用不上. 预组合了却没摆上屏的卡片 (懒列表的预取)
+ * 还没发请求, 离场时什么都不做, 不占补下的名额.
+ *
+ * 用法: 拿到的对象交给 [AsyncImage] 的 `completionGrace`, 由它记下发出的地址、上屏时置位.
  * ```
- * val loaded = rememberImageCompletionGrace(imageUrl)
- * AsyncImage(imageUrl, ..., onSuccess = { loaded.value = true })
+ * val grace = rememberImageCompletionGrace(imageUrl)
+ * AsyncImage(imageUrl, ..., completionGrace = grace)
  * ```
  *
- * @param url 要补下的图片 URL; 为 null 时什么都不做.
+ * @param url 卡片要显示的图片 URL; 换了就重新计.
  */
 @Composable
 fun rememberImageCompletionGrace(
     url: String?,
     sketch: Sketch = LocalSketch.current,
-): MutableState<Boolean> {
+): ImageCompletionGrace {
     val context = LocalPlatformContext.current
-    val loaded = remember(url) { mutableStateOf(false) }
-    DisposableEffect(url, sketch) {
+    val grace = remember(url) { ImageCompletionGrace() }
+    DisposableEffect(grace, sketch) {
         onDispose {
             // 在 onDispose 里读, 不是组合期间读 —— 不会给这个卡片建立重组订阅
-            if (!loaded.value && url != null) {
-                submitImageCompletion(context, sketch, url)
+            val target = grace.requestUrl
+            if (!grace.loaded && target != null) {
+                submitImageCompletion(context, sketch, target)
             }
         }
     }
-    return loaded
+    return grace
+}
+
+/** 见 [rememberImageCompletionGrace]. 只在主线程读写 (组合后的 SideEffect、加载回调、onDispose). */
+class ImageCompletionGrace internal constructor() {
+    /** 这张图已经上屏 (AsyncImage 加载成功时置位). */
+    internal var loaded: Boolean = false
+
+    /** 实际发出的地址, AsyncImage 发请求时写入; 补下的就是它. 还没发过请求时为 null. */
+    internal var requestUrl: String? = null
 }
 
 private fun submitImageCompletion(context: PlatformContext, sketch: Sketch, url: String) {
@@ -100,27 +118,17 @@ private fun submitImageCompletion(context: PlatformContext, sketch: Sketch, url:
         logger.debug { "Completion queue full, dropping: $url" }
         return
     }
-
-    val request = ImageRequest(context, url) {
-        memoryCachePolicy(CachePolicy.DISABLED)
-        // 下载缓存存的是网络原始字节, 正是补下要落盘的东西; 结果缓存 (重编码后的位图) 不需要
-        downloadCachePolicy(CachePolicy.ENABLED)
-        resultCachePolicy(CachePolicy.DISABLED)
-        // 1×1: 补下要的只是"把字节写进磁盘缓存", 而磁盘存的是网络原始字节, 在解码之前就写好了.
-        // 不给尺寸的话按原尺寸解码, 每张都完整解出一张原尺寸位图 (一张竖版封面约 5MB), 随即因
-        // memoryCachePolicy(DISABLED) 当场作废 —— 纯白烧 CPU 与 GC.
-        // 与 hero 的磁盘档预热同一处理 (见 TvHeroImagePrefetch)
-        size(1, 1)
-        addListener(
-            onCancel = { pendingCompletions.remove(url) },
-            onError = { _, _ -> pendingCompletions.remove(url) },
-            onSuccess = { _, _ ->
-                pendingCompletions.remove(url)
-                logger.debug { "Completed in background: $url" }
-            },
-        )
+    // 非立即调度: 先登记再开跑, finally 里的移除一定在登记之后
+    pendingCompletions[url] = completionScope.launch {
+        try {
+            sketch.downloadToCache(context, url)
+            logger.debug { "Completed in background: $url" }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 补下失败无所谓: 卡片回到屏上时自己会再请求一次
+        } finally {
+            pendingCompletions.remove(url)
+        }
     }
-
-    // enqueue 走 Sketch 自己的 scope, 不跟着组合走, 所以能跑完
-    pendingCompletions[url] = sketch.enqueue(request)
 }
