@@ -16,18 +16,3 @@ data class SubjectSearchFilters(
     val ranks: List<String>? = null,
     val nsfw: Boolean? = null,
 )
-
-enum class SubjectSearchField {
-    NAME,
-    SUMMARY,
-    IMAGE_LARGE,
-    NSFW,
-    AIR_DATE,
-    SCORE,
-    RANK,
-    RATING_TOTAL,
-    FAVORITE,
-    TAGS,
-    MAIN_EPISODE_COUNT,
-    LIGHT_RELATED_PERSON_INFO,
-}

@@ -133,6 +133,7 @@ val stripeApiP1 = tasks.register("stripeApiP1") {
             // 人物 / 角色
             "/p1/persons/{personID}",
             "/p1/persons/{personID}/casts",
+            "/p1/persons/{personID}/works",
             "/p1/persons/{personID}/comments",
             "/p1/characters/{characterID}",
             "/p1/characters/{characterID}/casts",

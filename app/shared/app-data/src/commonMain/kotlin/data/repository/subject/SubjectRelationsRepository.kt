@@ -28,7 +28,7 @@ import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.RelatedPersonInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
-import me.him188.ani.app.data.network.AniSubjectRelationIndexService
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.BatchSubjectRelations
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.dao.RelatedCharacterView
@@ -80,7 +80,7 @@ class DefaultSubjectRelationsRepository(
     private val subjectRelationsDao: SubjectRelationsDao,
     private val subjectService: SubjectService,
     private val subjectCollectionRepository: SubjectCollectionRepository,
-    private val aniSubjectRelationIndexService: AniSubjectRelationIndexService,
+    private val subjectSeriesIndexService: SubjectSeriesIndexService,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val autoRefreshPeriod: Duration = 1.hours,
     // 角色与制作人员几乎不变, 过期时间不宜太短: 该接口曾占服务端出站流量的一半以上.
@@ -89,8 +89,8 @@ class DefaultSubjectRelationsRepository(
     override fun subjectSequelSubjectIdsFlow(subjectId: Int): Flow<List<Int>> = flow {
         emit(
             kotlinx.coroutines.withTimeoutOrNull(10_000) {
-                // 这服务极快, 不会超时. 10 秒还没完, 只能是服务器重启了一下, 正在构造索引
-                aniSubjectRelationIndexService.getSubjectRelationIndex(subjectId).sequelSubjects
+                // 客户端自己走关系闭包, 每个节点一个请求; 结果有内存缓存, 超时基本只会发生在首次且网络很差时
+                subjectSeriesIndexService.getSubjectRelationIndex(subjectId).sequelSubjects
             }
                 ?: throw RepositoryServiceUnavailableException("Failed to fetch subject sequel subjects for $subjectId due to timeout"),
         )
@@ -115,7 +115,7 @@ class DefaultSubjectRelationsRepository(
 
     override fun subjectSeriesInfoFlow(subjectId: Int): Flow<SubjectSeriesInfo> = flow {
         emit(
-            aniSubjectRelationIndexService.getSubjectRelationIndex(subjectId),
+            subjectSeriesIndexService.getSubjectRelationIndex(subjectId),
         )
     }.combine(subjectCollectionRepository.subjectCollectionFlow(subjectId)) { relations, requestingSubject ->
         combine(

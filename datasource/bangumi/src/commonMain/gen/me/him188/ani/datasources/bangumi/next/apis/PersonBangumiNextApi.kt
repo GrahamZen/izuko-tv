@@ -20,6 +20,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterC
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterCommentRequest
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextErrorResponse
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetPersonCasts200Response
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetPersonWorks200Response
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextPerson
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 
@@ -197,5 +198,46 @@ open class PersonBangumiNextApi : ApiClient {
             override fun deserialize(decoder: Decoder) = GetPersonCommentsResponse(serializer.deserialize(decoder))
         }
     }
+
+    /**
+     * 获取人物的参与作品
+     * 
+     * @param personID 
+     * @param subjectType  (optional)
+     * @param position 职位 (optional)
+     * @param limit max 100 (optional, default to 20)
+     * @param offset min 0 (optional, default to 0)
+     * @return BangumiNextGetPersonWorks200Response
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getPersonWorks(personID: kotlin.Int, subjectType: BangumiNextSubjectType? = null, position: kotlin.Int? = null, limit: kotlin.Int? = 20, offset: kotlin.Int? = 0): HttpResponse<BangumiNextGetPersonWorks200Response> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        subjectType?.apply { localVariableQuery["subjectType"] = listOf("${ subjectType.value }") }
+        position?.apply { localVariableQuery["position"] = listOf("$position") }
+        limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
+        offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/p1/persons/{personID}/works".replace("{" + "personID" + "}", "$personID"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
 
 }

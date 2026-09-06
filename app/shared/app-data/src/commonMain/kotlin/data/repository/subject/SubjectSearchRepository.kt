@@ -23,7 +23,6 @@ import me.him188.ani.app.data.models.schedule.AnimeSeasonId
 import me.him188.ani.app.data.models.schedule.yearMonths
 import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.BatchSubjectDetails
-import me.him188.ani.app.data.network.SubjectSearchField
 import me.him188.ani.app.data.network.SubjectSearchFilters
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
@@ -75,7 +74,6 @@ class SubjectSearchRepository(
                     limit = params.loadSize,
                     filters = filters,
                     sort = searchQuery.sort,
-                    fields = subjectSearchFields,
                 )
 
                 val filteredSubjects = if (ignoreDoneAndDropped()) {
@@ -161,18 +159,5 @@ class SubjectSearchRepository(
             initialLoadSize = 20,
         )
 
-        private val subjectSearchFields = listOf(
-            SubjectSearchField.NAME,
-            SubjectSearchField.SUMMARY,
-            SubjectSearchField.IMAGE_LARGE,
-            SubjectSearchField.NSFW,
-            SubjectSearchField.AIR_DATE,
-            SubjectSearchField.SCORE,
-            SubjectSearchField.RANK,
-            SubjectSearchField.RATING_TOTAL,
-            SubjectSearchField.TAGS,
-            SubjectSearchField.MAIN_EPISODE_COUNT,
-            SubjectSearchField.LIGHT_RELATED_PERSON_INFO,
-        )
     }
 }
