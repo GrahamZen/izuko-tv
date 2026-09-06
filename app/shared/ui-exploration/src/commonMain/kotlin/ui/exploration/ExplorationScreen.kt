@@ -61,6 +61,9 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import me.him188.ani.app.data.recommendation.RecommendationGroup
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
@@ -137,7 +140,15 @@ class ExplorationPageState(
     // 存下来的**下标**指向了别的行 —— 电视上表现为返回后"推荐区的卡片先坐在锚位上, 十来帧后
     // 才换成继续观看" (2026-08-12 真机日志: 空窗 165ms).
     val followedSubjectsPager: LazyPagingItems<FollowedSubjectInfo>,
+    /** 拍平的推荐 (手机端竖排网格用). 电视端按组画, 看 [recommendationGroups]. */
     val recommendationPager: LazyPagingItems<RecommendedItemInfo>,
+    /**
+     * 分好组的推荐, 每组一行、各有标题与来源 (见 `RecommendationGroupKind`).
+     *
+     * 是 [StateFlow] 而不是每次组合现收: 与上面两个分页实例同理, 挂在 ViewModel 上跨导航活着,
+     * 返回时立刻就有值, 不会有"整行短暂不存在"的空窗把 `listState` 存的下标指到别的行去.
+     */
+    val recommendationGroups: StateFlow<List<RecommendationGroup>>,
     val horizontalScrollTipFlow: Flow<Boolean>,
     private val onSetDisableHorizontalScrollTip: () -> Unit,
     private val onRefreshFollowedSubjects: () -> Unit = {},
@@ -465,6 +476,7 @@ private fun PreviewExplorationPage() {
                     trendingSubjectInfoPager,
                     followedSubjectsPager = followedPager,
                     recommendationPager = recPager,
+                    recommendationGroups = MutableStateFlow(emptyList()),
                     horizontalScrollTipFlow = flowOf(false),
                     onSetDisableHorizontalScrollTip = {},
                 )

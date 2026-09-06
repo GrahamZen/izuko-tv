@@ -581,6 +581,13 @@
     <string name="exploration_schedule_next_weekday">下周%1$s</string>
     <string name="exploration_continue_watching">继续观看</string>
     <string name="exploration_recommendations">推荐</string>
+    <string name="exploration_rec_because_you_liked">因为你喜欢《%1$s》</string>
+    <string name="exploration_rec_also_watched">看过《%1$s》的人还看了</string>
+    <string name="exploration_rec_for_you_high_rated">符合你口味的高分动画</string>
+    <string name="exploration_rec_top_rated">高分经典</string>
+    <string name="exploration_rec_this_season">本季你可能会喜欢</string>
+    <string name="exploration_rec_change_taste">换换口味</string>
+    <string name="exploration_rec_trending">大家最近在看</string>
     <string name="exploration_tv_watch_now">立即观看</string>
     <string name="exploration_tv_more_details">更多详细内容</string>
     <string name="exploration_tv_air_date">%1$d年%2$d月</string>

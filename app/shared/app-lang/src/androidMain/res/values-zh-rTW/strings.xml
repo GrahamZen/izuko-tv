@@ -573,6 +573,13 @@
     <string name="exploration_schedule_next_weekday">下週%1$s</string>
     <string name="exploration_continue_watching">繼續觀看</string>
     <string name="exploration_recommendations">推薦</string>
+    <string name="exploration_rec_because_you_liked">因為你喜歡《%1$s》</string>
+    <string name="exploration_rec_also_watched">看過《%1$s》的人還看了</string>
+    <string name="exploration_rec_for_you_high_rated">符合你口味的高分動畫</string>
+    <string name="exploration_rec_top_rated">高分經典</string>
+    <string name="exploration_rec_this_season">本季你可能會喜歡</string>
+    <string name="exploration_rec_change_taste">換換口味</string>
+    <string name="exploration_rec_trending">大家最近在看</string>
     <string name="exploration_horizontal_scroll_tip">按住 Shift + 滑鼠滾輪 同樣可以水平滾動</string>
 
     <!-- MainScreenPage -->

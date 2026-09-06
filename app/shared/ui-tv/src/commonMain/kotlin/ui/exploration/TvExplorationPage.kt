@@ -98,6 +98,8 @@ import me.him188.ani.app.data.models.player.EpisodeHistory
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
+import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.data.recommendation.RecommendationGroupKind
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.subjectInfo
@@ -169,7 +171,13 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
-import me.him188.ani.app.ui.lang.exploration_recommendations
+import me.him188.ani.app.ui.lang.exploration_rec_also_watched
+import me.him188.ani.app.ui.lang.exploration_rec_because_you_liked
+import me.him188.ani.app.ui.lang.exploration_rec_change_taste
+import me.him188.ani.app.ui.lang.exploration_rec_for_you_high_rated
+import me.him188.ani.app.ui.lang.exploration_rec_this_season
+import me.him188.ani.app.ui.lang.exploration_rec_top_rated
+import me.him188.ani.app.ui.lang.exploration_rec_trending
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_air_date
 import me.him188.ani.app.ui.lang.exploration_tv_all_caught_up
@@ -488,11 +496,17 @@ fun TvExplorationPage(
     // 要一百多毫秒才把缓存好的数据 present 出来, 那段空窗里"继续观看"整行不存在, 而 listState
     // 存的是**下标**不是键 —— 下标 1 当场变成推荐区第一行, 卡片就坐在锚位上闪那么十来帧.
     val followedItems = state.followedSubjectsPager
-    val recommendations = state.recommendationPager
+    // 推荐按组画: 一组一行, 各有标题与来源. 组的条数不固定 (种子那一组最多 10 条, /recs 的上限),
+    // 所以行容量必须问组要, 不能再按固定行宽切平铺下标.
+    val recGroups by state.recommendationGroups.collectAsStateWithLifecycle()
+    val recFlat = remember(recGroups) { recGroups.flatMap { it.items } }
+    // 第 i 组在平铺列表里的起点; 末尾多一个哨兵 = 总条数
+    val recRowStarts = remember(recGroups) {
+        recGroups.runningFold(0) { acc, group -> acc + group.items.size }
+    }
     val hasFollowed = followedItems.itemCount > 0
     val followedRowCount = if (hasFollowed) 1 else 0
-    val recRowCount =
-        (recommendations.itemCount + TV_EXPLORATION_REC_ROW_SIZE - 1) / TV_EXPLORATION_REC_ROW_SIZE
+    val recRowCount = recGroups.size
     val rowCount = followedRowCount + recRowCount
     // 行键稳定跨 hasFollowed 翻转 ("继续观看"分页迟到时推荐行的键不变, 状态不串行);
     // 页面级焦点簿记一律记**键**, 不记绝对行号 —— 绝对行号会在 followed 行迟到时整体 +1.
@@ -512,15 +526,15 @@ fun TvExplorationPage(
         }
     }
     // 行键 → LazyColumn 的 item 下标. item 布局 (与下面的 items 块一一对应):
-    //   [继续观看标题, 继续观看行] (仅 hasFollowed) + [推荐标题, 推荐行 × N]
+    //   [继续观看标题, 继续观看行] (仅 hasFollowed) + [组标题, 组行] × N
     // 只有一个用处: 目标行没组合出来时 scrollToItem 把它滚进来 (其余定位全靠焦点驱动).
     val itemIndexOfRowKey: (String) -> Int? = { key ->
         val row = rowIndexOfKey(key)
         when {
             row == null -> null
             row < followedRowCount -> 1 // 0 是继续观看标题
-            // 推荐区: 前面是 (继续观看标题+行)? + 推荐标题
-            else -> followedRowCount * 2 + 1 + (row - followedRowCount)
+            // 推荐区: 前面是 (继续观看标题+行)?, 每组占两个 item, 行本身是那一对里的第二个
+            else -> (followedRowCount + (row - followedRowCount)) * 2 + 1
         }
     }
 
@@ -908,20 +922,25 @@ fun TvExplorationPage(
         // 取两者的 max 而不是只看聚焦区块那一个: 上键回"继续观看"时聚焦区块瞬间切换, 而"推荐"
         // 标题还压在标签线上要滑下去, 只看聚焦区块的话本层会在那一帧直接跳出来, 与它叠成双词.
         // ------------------------------------------------------------------
+        val focusedRecRow = (focusedRowIndex ?: 0) - followedRowCount
         val anchorLabel = when {
             rowCount == 0 -> null
-            (focusedRowIndex ?: 0) < followedRowCount -> stringResource(Lang.exploration_continue_watching)
-            else -> stringResource(Lang.exploration_recommendations)
+            focusedRecRow < 0 -> stringResource(Lang.exploration_continue_watching)
+            else -> recGroups.getOrNull(focusedRecRow)?.let { tvRecGroupTitle(it) }
         }
         if (anchorLabel != null) {
             TvSectionHeader(
                 anchorLabel,
                 Modifier.padding(start = TV_EXPLORATION_START_PAD, top = TV_EXPLORATION_LABEL_TOP)
                     .graphicsLayer {
-                        alpha = 1f - maxOf(
-                            tvSectionHeaderAlpha(listState, TV_FOLLOWED_HEADER_KEY, this),
-                            tvSectionHeaderAlpha(listState, TV_REC_HEADER_KEY, this),
-                        )
+                        // 取所有行内标题的 max 而不是只看聚焦那一个: 换行的那一帧聚焦区块瞬间切换,
+                        // 而上一个标题还压在标签线上要滑下去, 只看聚焦的话本层会当场跳出来叠成双词.
+                        // 分组之后标题变多, 但同一时刻压在标签线上的至多一个, max 照样成立.
+                        var inline = tvSectionHeaderAlpha(listState, TV_FOLLOWED_HEADER_KEY, this)
+                        for (i in recGroups.indices) {
+                            inline = maxOf(inline, tvSectionHeaderAlpha(listState, tvRecHeaderKey(i), this))
+                        }
+                        alpha = 1f - inline
                     },
             )
         }
@@ -1109,91 +1128,97 @@ fun TvExplorationPage(
                         }
                     }
 
-                    if (recRowCount > 0) {
-                        item(key = TV_REC_HEADER_KEY) {
+                    // 推荐: 一组一行, 每行自带标题 (各组来源不同, 见 RecommendationGroupKind)
+                    recGroups.forEachIndexed { recRow, group ->
+                        item(key = tvRecHeaderKey(recRow)) {
                             TvSectionHeader(
-                                stringResource(Lang.exploration_recommendations),
+                                tvRecGroupTitle(group),
                                 Modifier.padding(start = TV_EXPLORATION_ROW_START_BLEED)
-                                    .sectionHeaderTopFade(listState, TV_REC_HEADER_KEY),
+                                    .sectionHeaderTopFade(listState, tvRecHeaderKey(recRow)),
                             )
                         }
-                    }
-                    // 推荐: 每行固定行容量, 行数随分页无限增长 (纵向无限行)
-                    items(recRowCount, key = { tvRecRowKey(it) }) { recRow ->
-                        val rowKey = tvRecRowKey(recRow)
-                        val rowStart = recRow * TV_EXPLORATION_REC_ROW_SIZE
-                        val rowItemCount = minOf(TV_EXPLORATION_REC_ROW_SIZE, recommendations.itemCount - rowStart)
-                        val absoluteRow = followedRowCount + recRow
-                        // 压暗档 (Prime 式主次): 全亮只留给聚焦行及其上方 (上方的淡出交给位置
-                        // 驱动), 聚焦行之下的预览行压暗; hero 态不压暗 —— 那时整个卡片区都是
-                        // 预览, 主次由 backdrop 层级表达.
-                        val rowDimTarget by remember(absoluteRow) {
-                            derivedStateOf {
-                                val focused = focusedRowKey?.let(rowIndexOfKey)
-                                if (focused == null || absoluteRow <= focused) 1f else TV_ROW_UNFOCUSED_DIM_ALPHA
+                        item(key = tvRecRowKey(recRow)) {
+                            val rowKey = tvRecRowKey(recRow)
+                            val rowStart = recRowStarts[recRow]
+                            val rowItemCount = group.items.size
+                            val absoluteRow = followedRowCount + recRow
+                            // 压暗档 (Prime 式主次): 全亮只留给聚焦行及其上方 (上方的淡出交给位置
+                            // 驱动), 聚焦行之下的预览行压暗; hero 态不压暗 —— 那时整个卡片区都是
+                            // 预览, 主次由 backdrop 层级表达.
+                            val rowDimTarget by remember(absoluteRow) {
+                                derivedStateOf {
+                                    val focused = focusedRowKey?.let(rowIndexOfKey)
+                                    if (focused == null || absoluteRow <= focused) 1f else TV_ROW_UNFOCUSED_DIM_ALPHA
+                                }
                             }
-                        }
-                        val rowDimAlpha = animateFloatAsState(
-                            rowDimTarget,
-                            tween(TV_ROW_DIM_FADE_MILLIS),
-                            label = "rowDim",
-                        )
-                        TvAnchoredCardRow(
-                            itemCount = rowItemCount,
-                            // 无继续观看时推荐首行就是最顶行, 按上键回 hero
-                            isFirstRow = absoluteRow == 0,
-                            onNavigateUpToHero = { heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.SCHEDULE) },
-                            focusRequest = cardFocusRequest?.takeIf { it.rowKey == rowKey },
-                            onFocusRequestDone = { cardFocusRequest = null },
-                            bringIntoViewSpec = horizontalBringIntoViewSpec,
-                            modifier = Modifier.rowTopFade(listState, rowKey) { rowDimAlpha.value }
-                                // 进卡片区的落点行 (见 LazyColumn 的 onEnter)
-                                .ifThen(anchorRowKey == rowKey) { focusRequester(anchorRowRequester) },
-                            // 推荐行横向循环: 末卡右侧即首卡
-                            loop = true,
-                        ) { localIndex, reportFocus ->
-                            val item = recommendations[rowStart + localIndex] as? RecommendedSubjectInfo
-                            TvPortraitCard(
-                                imageUrl = item?.imageLarge,
-                                contentDescription = item?.nameCn,
-                                onClick = {
-                                    item?.let {
-                                        navigateToSubject(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation")
-                                    }
-                                },
-                                onFocused = {
-                                    item?.let {
-                                        onFocusItem(
-                                            it.bangumiId, it.nameCn, null, false, it.imageLarge,
-                                            // 顺方向两格 + 下一行同列 (gridKeyNavigation 的下键落点)
-                                            tvRecNeighborsOf(recommendations, rowStart + localIndex),
-                                        )
-                                    }
-                                    recordFocusedCard(rowKey, localIndex)
-                                    reportFocus()
-                                },
-                                modifier = Modifier.width(TV_PAGE_CARD_WIDTH)
-                                    // 播放键**短按**: 直接进播放器 (无进度从第一集; 信息未加载退化为详情).
-                                    // 必须走 tvPlayKeyShortPress 而不是自己判 KeyDown —— 播放键按下
-                                    // 那一刻还分不出短按还是长按, 自己在 KeyDown 处理会把全局的长按手势
-                                    // (打开动作面板) 整个吃掉. 这里原先正是那么写的
-                                    .then(
-                                        tvPlayKeyShortPress(
-                                            onPlay = {
-                                                item?.let {
-                                                    navigateToPlay(
-                                                        it.bangumiId, it.nameCn, it.imageLarge,
-                                                        "home_recommendation_play",
-                                                    )
-                                                    true
-                                                } ?: false
-                                            },
-                                        ),
-                                    ),
-                                // 聚焦框由卡片区固定锚位的 TvPortraitCardFocusRing 统一画
-                                showFocusRing = false,
-                                menu = item?.let { collectionMenuFor(it.bangumiId) },
+                            val rowDimAlpha = animateFloatAsState(
+                                rowDimTarget,
+                                tween(TV_ROW_DIM_FADE_MILLIS),
+                                label = "rowDim",
                             )
+                            TvAnchoredCardRow(
+                                itemCount = rowItemCount,
+                                // 无继续观看时推荐首行就是最顶行, 按上键回 hero
+                                isFirstRow = absoluteRow == 0,
+                                onNavigateUpToHero = { heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.SCHEDULE) },
+                                focusRequest = cardFocusRequest?.takeIf { it.rowKey == rowKey },
+                                onFocusRequestDone = { cardFocusRequest = null },
+                                bringIntoViewSpec = horizontalBringIntoViewSpec,
+                                modifier = Modifier.rowTopFade(listState, rowKey) { rowDimAlpha.value }
+                                    // 进卡片区的落点行 (见 LazyColumn 的 onEnter)
+                                    .ifThen(anchorRowKey == rowKey) { focusRequester(anchorRowRequester) },
+                                // 推荐行横向循环: 末卡右侧即首卡
+                                loop = true,
+                            ) { localIndex, reportFocus ->
+                                val item = recFlat.getOrNull(rowStart + localIndex)
+                                TvPortraitCard(
+                                    imageUrl = item?.imageLarge,
+                                    contentDescription = item?.nameCn,
+                                    onClick = {
+                                        item?.let {
+                                            navigateToSubject(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation")
+                                        }
+                                    },
+                                    onFocused = {
+                                        item?.let {
+                                            onFocusItem(
+                                                it.bangumiId, it.nameCn, null, false, it.imageLarge,
+                                                // 顺方向两格 + 下一行同列 (gridKeyNavigation 的下键落点)
+                                                tvRecNeighborsOf(
+                                                    recFlat, rowStart + localIndex,
+                                                    rowStart = rowStart,
+                                                    rowSize = rowItemCount,
+                                                    nextRowStart = recRowStarts.getOrNull(recRow + 1),
+                                                    nextRowSize = recGroups.getOrNull(recRow + 1)?.items?.size ?: 0,
+                                                ),
+                                            )
+                                        }
+                                        recordFocusedCard(rowKey, localIndex)
+                                        reportFocus()
+                                    },
+                                    modifier = Modifier.width(TV_PAGE_CARD_WIDTH)
+                                        // 播放键**短按**: 直接进播放器 (无进度从第一集; 信息未加载退化为详情).
+                                        // 必须走 tvPlayKeyShortPress 而不是自己判 KeyDown —— 播放键按下
+                                        // 那一刻还分不出短按还是长按, 自己在 KeyDown 处理会把全局的长按手势
+                                        // (打开动作面板) 整个吃掉. 这里原先正是那么写的
+                                        .then(
+                                            tvPlayKeyShortPress(
+                                                onPlay = {
+                                                    item?.let {
+                                                        navigateToPlay(
+                                                            it.bangumiId, it.nameCn, it.imageLarge,
+                                                            "home_recommendation_play",
+                                                        )
+                                                        true
+                                                    } ?: false
+                                                },
+                                            ),
+                                        ),
+                                    // 聚焦框由卡片区固定锚位的 TvPortraitCardFocusRing 统一画
+                                    showFocusRing = false,
+                                    menu = item?.let { collectionMenuFor(it.bangumiId) },
+                                )
+                            }
                         }
                     }
                 }
@@ -1835,25 +1860,49 @@ private fun <T : Any> LazyPagingItems<T>.peekOrNull(index: Int): T? =
  * 新的邻居被排上了.
  */
 private fun tvRecNeighborsOf(
-    recommendations: LazyPagingItems<RecommendedItemInfo>,
+    items: List<RecommendedSubjectInfo>,
     flatIndex: Int,
+    rowStart: Int,
+    rowSize: Int,
+    nextRowStart: Int?,
+    nextRowSize: Int,
 ): TvHeroNeighbors {
     // 推荐行的条目一律走整部 backdrop (不是"在看"的), 偏好恒 false
-    fun idAt(i: Int) = (recommendations.peekOrNull(i) as? RecommendedSubjectInfo)
-        ?.bangumiId?.let(::TvHeroNeighbor)
+    fun idAt(i: Int) = items.getOrNull(i)?.bangumiId?.let(::TvHeroNeighbor)
     // 推荐行开着循环导航 (末卡右侧回到首卡, 见 TvAnchoredCardRow 的 loop): 顺方向按行内下标
     // 取模, 否则行尾的预取押在下一行开头, 真正的落点 (本行首卡) 反而没人管
-    val rowStart = flatIndex - flatIndex % TV_EXPLORATION_REC_ROW_SIZE
-    val rowSize = minOf(TV_EXPLORATION_REC_ROW_SIZE, recommendations.itemCount - rowStart)
     fun wrappedIdAt(step: Int): TvHeroNeighbor? {
         if (rowSize <= 1) return null // 单卡的行没有"右边"
         val i = rowStart + (flatIndex - rowStart + step) % rowSize
         return if (i == flatIndex) null else idAt(i) // 兜一圈回到自己 (行只有 2 张时的 +2) 不算邻居
     }
+    // 下键落点是**下一组同列**. 各组条数不同 (种子那组最多 10 条), 列号超出下一组就没有落点
+    val column = flatIndex - rowStart
+    val below = nextRowStart?.takeIf { column < nextRowSize }?.let { idAt(it + column) }
     return TvHeroNeighbors(
-        singleStep = listOfNotNull(wrappedIdAt(1), idAt(flatIndex + TV_EXPLORATION_REC_ROW_SIZE)),
+        singleStep = listOfNotNull(wrappedIdAt(1), below),
         urlOnly = listOfNotNull(wrappedIdAt(2)),
     )
+}
+
+/** 分组标题. 只有"因为你喜欢《X》"要填参数. */
+@Composable
+private fun tvRecGroupTitle(group: RecommendationGroup): String = when (group.kind) {
+    RecommendationGroupKind.BECAUSE_YOU_LIKED -> stringResource(
+        Lang.exploration_rec_because_you_liked,
+        group.titleArg.orEmpty(),
+    )
+
+    RecommendationGroupKind.ALSO_WATCHED -> stringResource(
+        Lang.exploration_rec_also_watched,
+        group.titleArg.orEmpty(),
+    )
+
+    RecommendationGroupKind.FOR_YOU_HIGH_RATED -> stringResource(Lang.exploration_rec_for_you_high_rated)
+    RecommendationGroupKind.TOP_RATED -> stringResource(Lang.exploration_rec_top_rated)
+    RecommendationGroupKind.THIS_SEASON -> stringResource(Lang.exploration_rec_this_season)
+    RecommendationGroupKind.CHANGE_TASTE -> stringResource(Lang.exploration_rec_change_taste)
+    RecommendationGroupKind.TRENDING -> stringResource(Lang.exploration_rec_trending)
 }
 
 private data class TvHeroTarget(
@@ -1955,7 +2004,8 @@ private fun TvCarouselIndicator(
 
 private const val TV_FOLLOWED_HEADER_KEY = "followed-header"
 private const val TV_FOLLOWED_ROW_KEY = "followed-row"
-private const val TV_REC_HEADER_KEY = "rec-header"
+private const val TV_REC_HEADER_KEY_PREFIX = "rec-header-"
+private fun tvRecHeaderKey(recRow: Int) = "$TV_REC_HEADER_KEY_PREFIX$recRow"
 private const val TV_REC_ROW_KEY_PREFIX = "rec-row-"
 private fun tvRecRowKey(recRow: Int) = "$TV_REC_ROW_KEY_PREFIX$recRow"
 
@@ -2042,9 +2092,6 @@ private const val TV_EXPLORATION_BACKDROP_HEIGHT_FRACTION = 0.66f
 
 /** backdrop 两态渐变 (hero 态 <-> 卡片态) 切换动画时长. */
 private const val TV_BACKDROP_STATE_ANIM_MILLIS = 400
-
-/** 推荐区每行的条目数 (每行是一条固定锚点轮播, 行数随分页无限增长). */
-private const val TV_EXPLORATION_REC_ROW_SIZE = 12
 
 /**
  * 卡片行的上边界淡出 (Prime 式"无边界"): 卡片区已向上出血 [TV_EXPLORATION_TOP_BLEED],
