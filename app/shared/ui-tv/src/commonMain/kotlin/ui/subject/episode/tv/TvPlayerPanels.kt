@@ -122,9 +122,11 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
+import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
@@ -1357,6 +1359,8 @@ internal fun TvDanmakuSendEntry(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
+    val sendFailedText = stringResource(Lang.episode_send_danmaku_failed)
     val expanded = overlay.danmakuInputExpanded
     val focus = rememberTvFocusScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -1380,7 +1384,10 @@ internal fun TvDanmakuSendEntry(
                 collapsedByFocusLoss = false
                 return@LaunchedEffect
             }
-            if (overlay.layer == TvPlayerLayer.CONTROLS) focus.request(TvDanmakuSendFocus.BUTTON)
+            // **无条件把焦点还给胶囊**: 原先只在层级是 CONTROLS 时才还, 而输入框这一收
+            // 那个持焦的节点就没了 —— 条件不成立的那条路上焦点直接悬空, 遥控器整个失灵
+            // (2026-09-06 用户实测: 发完弹幕焦点不见了, 方向键全不响应)
+            focus.request(TvDanmakuSendFocus.BUTTON)
         }
     }
 
@@ -1396,8 +1403,14 @@ internal fun TvDanmakuSendEntry(
                     location = DanmakuLocation.NORMAL,
                 ),
             )
+            // 失败时 post 会把原文放回 text (见 DanmakuEditorState.post), 据此判断成败:
+            // 失败还把输入框收掉的话, 用户既看不到失败也不知道文字还在
+            if (danmakuEditorState.text.isEmpty()) {
+                overlay.danmakuInputExpanded = false
+            } else {
+                toaster.toast(sendFailedText)
+            }
         }
-        overlay.danmakuInputExpanded = false
     }
 
     val interactionSource = remember { MutableInteractionSource() }

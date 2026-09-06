@@ -147,7 +147,6 @@ enum class SettingsTab {
     PLAYER,
     MEDIA_SOURCE,
     MEDIA_SELECTOR,
-    SERVER,
 
     PROXY,
     BT,

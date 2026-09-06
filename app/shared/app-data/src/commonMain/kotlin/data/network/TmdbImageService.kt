@@ -491,6 +491,10 @@ class TmdbImageService(
         activeAsOfDate: String?,
         hints: TmdbMatchHints,
     ): String? = withContext(ioDispatcher) {
+        // 背景图慢不慢只能量, 不能猜: 这一行给出"这条目从开始解析到定下 URL 花了多久",
+        // 以及其中有多少是系列名解析 (BFS 关系图) 的账 —— 后者是直连之后新增的开销
+        // (Ani 那边 seriesMainSubjectIds 是随条目一起下发的, 零请求).
+        val startMillis = currentTimeMillis()
         run {
             // 合流等待期间前一个任务可能已经把这条解析完了, 再看一眼热表, 命中就连读盘都省了
             resolvedBackdropUrls[subjectId]?.let { return@withContext it }
@@ -568,7 +572,13 @@ class TmdbImageService(
             }
 
             val url = path?.let { "$IMAGE_BASE_URL$it" }
-            logger.info { "TMDB backdrop for subject $subjectId: ${url ?: "not found"}" }
+            logger.info {
+                val elapsed = currentTimeMillis() - startMillis
+                val lineage = seriesIndexService.lastStatsOf(subjectId)
+                    ?.let { ", lineage ${it.requests} req/${it.millis}ms" }
+                    ?: ""
+                "TMDB backdrop for subject $subjectId: ${url ?: "not found"} (${elapsed}ms$lineage)"
+            }
             dataStore.updateData {
                 it.withBackdropResult(subjectId, url, hadHints = hints != TmdbMatchHints.Empty)
             }

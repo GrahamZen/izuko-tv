@@ -44,7 +44,6 @@ import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.network.TmdbImageService
-import me.him188.ani.app.data.network.danmaku.AniBangumiSeverBaseUrls
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
@@ -278,17 +277,6 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
         onImport = { danmakuRegexFilterRepository.import(it) },
     )
 
-    val danmakuServerTesters = DefaultConnectionTesterRunner(
-        AniBangumiSeverBaseUrls.list.map {
-            ConnectionTester(id = it) {
-                clientProvider.get().use {
-                    get("$it/status")
-                }
-                ConnectionTestResult.SUCCESS
-            }
-        },
-        backgroundScope,
-    )
 
 
     private val mediaSourceLoader = MediaSourceLoader(

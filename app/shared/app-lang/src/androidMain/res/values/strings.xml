@@ -1277,6 +1277,7 @@
     <string name="episode_danmaku_match_select_episode">Select episode</string>
     <string name="episode_danmaku">Danmaku</string>
     <string name="episode_send_danmaku">Send</string>
+    <string name="episode_send_danmaku_failed">Failed to send danmaku</string>
     <string name="exploration_search_back_to_top">Back to top</string>
     <string name="exploration_search_results_shown">%1$d results shown</string>
     <string name="exploration_search_sort_match">Best match</string>

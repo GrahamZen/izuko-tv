@@ -47,6 +47,13 @@ class DanmakuMatchInfo(
     val serviceId: DanmakuServiceId,
     val count: Int,
     val method: DanmakuMatchMethod,
+    /**
+     * 弹幕源那边的分集 id (dandanplay 的"弹幕库 ID"). 发弹幕要用它 —— 发弹幕是发到某个弹幕库,
+     * 而不是发到 bangumi 的某一集; 两者没有换算关系, 只有匹配那一步知道对应的是哪个库.
+     *
+     * 只有 dandanplay 会填. 从本地缓存重建的结果没有 (缓存里不存它), 那时发弹幕会提示先加载弹幕.
+     */
+    val sourceEpisodeId: Long? = null,
 ) {
     companion object
 }
