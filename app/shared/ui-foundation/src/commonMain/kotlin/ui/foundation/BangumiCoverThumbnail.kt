@@ -22,7 +22,7 @@ import kotlinx.atomicfu.atomic
  *   请求尺寸是显示尺寸的 [ANI_IMAGE_REQUEST_OVERSAMPLE] 倍, 相邻两档至多差 2 倍, 于是缩略图总比请求尺寸小、按原尺寸解,
  *   解出来不小于显示尺寸 (不欠采样, 见 [ANI_IMAGE_REQUEST_OVERSAMPLE]). 宽过原图时图床按原尺寸出.
  * - 只改 `lain.` 开头的图床上 `/pic/cover/l/` 的地址: 原站与 Mirrox 镜像 (`lain.bangumi.vip`, 自建的同理) 都原样透传这个路径
- *   (实测字节一致). 数据里存的是镜像域名时照样改, 请求时再由 BangumiMirrorFeature 按线路换域名.
+ *   (实测字节一致). 数据里存的是镜像域名时照样改, 请求时再由 BangumiRoutingFeature 按线路换域名.
  * - 显示宽度超过最大一档时用原图. 缩略图请求失败时下载层当场改取原图 (见 ScopedHttpClientHttpStack); 连续几次都是缩略图失败、
  *   原图却能取到, 就当这条线路不支持缩略图, 本进程不再换 (见 [noteBangumiCoverThumbnailFallback]).
  */

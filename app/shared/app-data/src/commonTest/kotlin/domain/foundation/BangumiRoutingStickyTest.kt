@@ -1,0 +1,300 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.domain.foundation
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.io.IOException
+import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
+
+/**
+ * 粘在哪条线路上什么时候作废, 试线路时的超时, 以及数据里存着的线路地址怎么走.
+ */
+class BangumiRoutingStickyTest {
+    private val auto = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Mirror("bangumi.vip")))
+    private val mirror = BangumiRouting(listOf(BangumiRoute.Mirror("bangumi.vip")))
+
+    private var nowMillis = 0L
+    private val clock = object : Clock {
+        override fun now(): Instant = Instant.fromEpochMilliseconds(nowMillis)
+    }
+
+    /** 官方的响应由 [origin] 决定 (`null` = 连不上), 其他域名一律 200. */
+    private fun client(
+        routing: Flow<BangumiRouting>,
+        hosts: MutableList<String>,
+        origin: () -> HttpStatusCode? = { HttpStatusCode.OK },
+    ): HttpClient {
+        val engine = MockEngine { req ->
+            hosts += req.url.host
+            val status = if (req.url.host.endsWith("bgm.tv")) origin() else HttpStatusCode.OK
+            respond("", status ?: throw IOException("blocked"))
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiRoutingFeatureHandler(routing, clock = clock).applyToClient(client, true)
+        return client
+    }
+
+    private data class Attempt(val host: String, val connect: Long?, val socket: Long?)
+
+    /** 同 [client], 另外装上 HttpTimeout (默认 30 秒, 与应用一致) 并记下每一跳实际带的超时. */
+    private fun timeoutClient(
+        routing: BangumiRouting,
+        attempts: MutableList<Attempt>,
+        origin: () -> HttpStatusCode?,
+    ): HttpClient {
+        val engine = MockEngine { req ->
+            val t = req.getCapabilityOrNull(HttpTimeoutCapability)
+            attempts += Attempt(req.url.host, t?.connectTimeoutMillis, t?.socketTimeoutMillis)
+            val status = if (req.url.host.endsWith("bgm.tv")) origin() else HttpStatusCode.OK
+            respond("", status ?: throw IOException("blocked"))
+        }
+        val client = HttpClient(engine) {
+            expectSuccess = false
+            install(HttpTimeout) {
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 30_000
+            }
+        }
+        BangumiRoutingFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
+        return client
+    }
+
+    @Test
+    fun `还不知道官方通不通时试官方用短超时，换到镜像恢复原来的`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { null }.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(
+            listOf(Attempt("api.bgm.tv", 3_000, 5_000), Attempt("api.bangumi.vip", 30_000, 30_000)),
+            attempts,
+        )
+    }
+
+    @Test
+    fun `官方成功过之后恢复默认超时，免得官方偶尔慢被当成连不上`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val client = timeoutClient(auto, attempts) { HttpStatusCode.OK }
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        assertEquals(listOf(Attempt("api.bgm.tv", 3_000, 5_000), Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `写请求试官方不缩超时，免得没等到回应就换镜像重发写两遍`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { HttpStatusCode.OK }.post("https://api.bgm.tv/v0/search/subjects")
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `带凭证的读请求试官方不缩超时，慢一点的官方不会被当成连不上`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech))
+        timeoutClient(routing, attempts) { HttpStatusCode.OK }.get("https://api.bgm.tv/v0/me") {
+            header(HttpHeaders.Authorization, "Bearer token")
+        }
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `请求自己设了更短的超时就用更短的`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { HttpStatusCode.OK }.get("https://lain.bgm.tv/pic/cover/l/1.jpg") {
+            timeout {
+                connectTimeoutMillis = 2_500
+                socketTimeoutMillis = 3_000
+            }
+        }
+        assertEquals(listOf(Attempt("lain.bgm.tv", 2_500, 3_000)), attempts)
+    }
+
+    @Test
+    fun `加密直连也还没成功过时同样用短超时，最后一站不缩`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val engine = MockEngine { req ->
+            val t = req.getCapabilityOrNull(HttpTimeoutCapability)
+            attempts += Attempt(req.url.host, t?.connectTimeoutMillis, t?.socketTimeoutMillis)
+            if (!req.url.host.endsWith("bangumi.vip")) throw IOException("blocked")
+            respond("", HttpStatusCode.OK)
+        }
+        val client = HttpClient(engine) {
+            expectSuccess = false
+            install(HttpTimeout) {
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 30_000
+            }
+        }
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech, BangumiRoute.Mirror("bangumi.vip")))
+        BangumiRoutingFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(
+            listOf(
+                Attempt("api.bgm.tv", 3_000, 5_000),
+                Attempt("api.bgm-tv.ech.invalid", 3_000, 5_000),
+                Attempt("api.bangumi.vip", 30_000, 30_000),
+            ),
+            attempts,
+        )
+    }
+
+    @Test
+    fun `加密直连上的粘性也会到期，官方恢复了就回到官方`() = runTest {
+        var originUp = false
+        val hosts = mutableListOf<String>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech))
+        val client = client(flowOf(routing), hosts) { if (originUp) HttpStatusCode.OK else null }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        nowMillis = 20.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        originUp = true
+        nowMillis = 31.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/3")
+
+        assertEquals(listOf("api.bgm.tv", "api.bgm-tv.ech.invalid", "api.bgm-tv.ech.invalid", "api.bgm.tv"), hosts)
+    }
+
+    @Test
+    fun `没有镜像可退时不缩`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(BangumiRouting.Direct, attempts) { HttpStatusCode.OK }.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `从用镜像手动改回官方连不上时用镜像，下一个请求先试官方`() = runTest {
+        val routing = MutableStateFlow(mirror)
+        val hosts = mutableListOf<String>()
+        val client = client(routing, hosts)
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        routing.value = auto
+        client.get("https://api.bgm.tv/v0/subjects/2")
+
+        assertEquals(listOf("api.bangumi.vip", "api.bgm.tv"), hosts)
+    }
+
+    @Test
+    fun `镜像上的粘性从换过去那一刻算，一直有请求也会到期`() = runTest {
+        var originStatus: HttpStatusCode? = HttpStatusCode.BadGateway
+        val hosts = mutableListOf<String>()
+        val client = client(flowOf(auto), hosts) { originStatus }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        nowMillis = 20.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        originStatus = HttpStatusCode.OK
+        nowMillis = 31.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/3")
+
+        assertEquals(listOf("api.bgm.tv", "api.bangumi.vip", "api.bangumi.vip", "api.bgm.tv"), hosts)
+    }
+
+    @Test
+    fun `到期后官方还是 5xx 就重新计时，不会每个请求都先打一遍官方`() = runTest {
+        val hosts = mutableListOf<String>()
+        val client = client(flowOf(auto), hosts) { HttpStatusCode.BadGateway }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        nowMillis = 31.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        nowMillis = 32.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/3")
+
+        assertEquals(listOf("api.bgm.tv", "api.bangumi.vip", "api.bgm.tv", "api.bangumi.vip", "api.bangumi.vip"), hosts)
+    }
+
+    @Test
+    fun `数据里存着的镜像地址，官方能通时换回官方`() = runTest {
+        val hosts = mutableListOf<String>()
+        client(flowOf(auto), hosts).get("https://lain.bangumi.vip/pic/cover/l/c4/ca/1.jpg")
+        assertEquals(listOf("lain.bgm.tv"), hosts)
+    }
+
+    @Test
+    fun `只连官方时也换回官方`() = runTest {
+        val hosts = mutableListOf<String>()
+        val direct = BangumiRouting.Direct.copy(knownRoutes = listOf(BangumiRoute.Mirror("bangumi.vip")))
+        client(flowOf(direct), hosts).get("https://next.bangumi.vip/p1/subjects/1")
+        assertEquals(listOf("next.bgm.tv"), hosts)
+    }
+
+    @Test
+    fun `用镜像时照样走镜像`() = runTest {
+        val hosts = mutableListOf<String>()
+        client(flowOf(mirror), hosts).get("https://lain.bangumi.vip/pic/cover/l/c4/ca/1.jpg")
+        assertEquals(listOf("lain.bangumi.vip"), hosts)
+    }
+
+    @Test
+    fun `网页控制台转发图片前先把镜像地址换回原站`() = runTest {
+        val provider = BangumiEndpointProvider(
+            settings = flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)),
+            mirrors = flowOf(listOf("bangumi.vip")),
+            scope = backgroundScope,
+        )
+        runCurrent()
+        assertEquals(
+            "https://lain.bgm.tv/pic/cover/l/c4/ca/1.jpg",
+            provider.canonicalUrl("https://lain.bangumi.vip/pic/cover/l/c4/ca/1.jpg"),
+        )
+        assertEquals("https://image.tmdb.org/t/p/w500/a.jpg", provider.canonicalUrl("https://image.tmdb.org/t/p/w500/a.jpg"))
+        // 加密直连的域名只在本机认得, 漏到哪儿都换回原站
+        assertEquals("https://api.bgm.tv/v0/me", provider.canonicalUrl("https://api.bgm-tv.ech.invalid/v0/me"))
+    }
+
+    @Test
+    fun `官方跳转到图床那一跳照样按线路走`() = runTest {
+        // api.bgm.tv/v0/subjects/{id}/image 回 302 到 lain.bgm.tv: 跳转那一跳也要走加密直连, 不然在大陆会被拦
+        val hosts = mutableListOf<String>()
+        val engine = MockEngine { req ->
+            hosts += req.url.host
+            if (req.url.encodedPath.endsWith("/image")) {
+                respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://lain.bgm.tv/pic/cover/l/1.jpg"))
+            } else {
+                respond("", HttpStatusCode.OK)
+            }
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiRoutingFeatureHandler(flowOf(BangumiRouting(listOf(BangumiRoute.Ech))), clock = clock).applyToClient(client, true)
+        assertEquals(HttpStatusCode.OK, client.get("https://api.bgm.tv/v0/subjects/1/image").status)
+        assertEquals(listOf("api.bgm-tv.ech.invalid", "lain.bgm-tv.ech.invalid"), hosts)
+    }
+
+    @Test
+    fun `不相干的域名不碰`() = runTest {
+        val hosts = mutableListOf<String>()
+        val client = client(flowOf(auto), hosts)
+        client.get("https://example.com/a")
+        client.get("https://lain.notbangumi.vip/a")
+        assertEquals(listOf("example.com", "lain.notbangumi.vip"), hosts)
+    }
+}

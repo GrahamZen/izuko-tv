@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.test.Test
@@ -39,13 +40,22 @@ class SubjectFeedbackReportTest {
         }
     }
 
-    private class Harness(scheduler: TestCoroutineScheduler, relays: List<String>) {
+    private class Harness(
+        scheduler: TestCoroutineScheduler,
+        relays: List<String>,
+        ech: Boolean = false,
+        preferEch: Boolean = false,
+    ) {
         /** 按地址给 (状态码, 响应体); 返回 `null` = 连不上. */
         var replies: (url: String) -> Pair<Int, String>? = { null }
 
         /** 这些地址连接一直挂着, 不回也不断. */
         var hanging: (url: String) -> Boolean = { false }
         val requested = mutableListOf<String>()
+
+        /** 加密直连握手被拒时换不换得到新配置 (见 SubjectFeedbackService.recoverEch); 每换一次记一次. */
+        var recoverable = false
+        var recovered = 0
 
         // 引擎跑在测试调度器上: 请求与超时走同一个虚拟时钟 (默认的 IO 线程上回响应时, 测试调度器以为没事可做, 直接把时间拨过超时)
         private val client = HttpClient(MockEngine) {
@@ -66,6 +76,11 @@ class SubjectFeedbackReportTest {
             MemorySettings(RepoHostedListCache(relays, updatedAt = if (relays.isEmpty()) 0 else currentTimeMillis())),
             client = { client.asScopedHttpClient() },
             scope = CoroutineScope(Job().apply { cancel() }),
+            transport = CloudflareServiceTransport(
+                echUsable = { ech },
+                preferEch = { preferEch },
+                recoverEch = { if (recoverable) true.also { recoverable = false; recovered++ } else false },
+            ),
         )
 
         suspend fun report() = service.reportEntry(1, null)
@@ -112,5 +127,40 @@ class SubjectFeedbackReportTest {
         assertEquals(SubjectFeedbackService.Result.Unreachable, harness.report())
         // 清单的四个入口都试过, 没有可试的中转
         assertEquals(4, harness.requested.size)
+    }
+
+    @Test
+    fun `直连不通 — 同一个中转再走加密直连`() = runTest {
+        val harness = Harness(testScheduler, relays, ech = true)
+        harness.replies = { url -> if (".ech.invalid" in url) 200 to """{"issue": 7}""" else null }
+        assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
+        assertEquals(
+            listOf("https://a.example.com/entry-report", "https://a.example.com.ech.invalid/entry-report"),
+            harness.requested,
+        )
+    }
+
+    @Test
+    fun `bangumi 已经在走加密直连 — 先试加密直连`() = runTest {
+        val harness = Harness(testScheduler, relays, ech = true, preferEch = true)
+        harness.replies = { 200 to """{"issue": 7}""" }
+        assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
+        assertEquals(listOf("https://a.example.com.ech.invalid/entry-report"), harness.requested)
+    }
+
+    @Test
+    fun `加密直连握手被拒 — 换配置再试一次`() = runTest {
+        val harness = Harness(testScheduler, listOf("https://a.example.com"), ech = true, preferEch = true)
+        harness.recoverable = true
+        harness.replies = { url -> if (".ech.invalid" in url && harness.recovered > 0) 200 to """{"issue": 7}""" else null }
+        assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
+        assertEquals(List(2) { "https://a.example.com.ech.invalid/entry-report" }, harness.requested)
+    }
+
+    @Test
+    fun `加密直连用不了 — 只试直连`() = runTest {
+        val harness = Harness(testScheduler, relays, ech = false, preferEch = true)
+        assertEquals(SubjectFeedbackService.Result.Unreachable, harness.report())
+        assertEquals(listOf("https://a.example.com/entry-report", "https://b.example.com/entry-report"), harness.requested)
     }
 }
