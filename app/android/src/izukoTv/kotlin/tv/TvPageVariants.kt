@@ -40,6 +40,7 @@ import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
 import me.him188.ani.app.ui.foundation.LocalTvPlayLongPressHost
 import me.him188.ani.app.ui.foundation.TV_PLAY_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
@@ -53,7 +54,7 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
 import me.him188.ani.app.ui.foundation.tv.tvTouchKeyboardMode
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
-import me.him188.ani.app.ui.foundation.TvPageRefreshHost
+import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
@@ -136,7 +137,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
     LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
-    val pageRefresh = remember { TvPageRefreshHost() }
+    val pageRefresh = remember { TvPageActionHost() }
+    // 「换一批」: 目前只有探索页的推荐区注册
+    val pageShuffle = remember { TvPageActionHost() }
     // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
@@ -166,6 +169,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvPageRefreshHost provides pageRefresh,
         LocalTvNavKeyTracker provides navKeys,
         LocalTvTouchInputEnabled provides touchInput,
+        LocalTvPageShuffleHost provides pageShuffle,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -333,6 +337,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 navigator = aniNavigator,
                 playback = playbackEntry,
                 refreshHost = pageRefresh,
+                shuffleHost = pageShuffle,
                 onGoHome = {
                     // 焦点交接走标志 (探索页消费, 见 TvBackLongPressHost.pendingHomeFocus);
                     // 不在 Main 上时先 pop 回去, 落在别的 tab 上由主壳看着标志补一步切换

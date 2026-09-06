@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SyncAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -101,7 +102,8 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
-import me.him188.ani.app.ui.foundation.TvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
+import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -141,8 +143,10 @@ import me.him188.ani.app.ui.lang.settings_account_popup_login_register
 import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
+import me.him188.ani.app.ui.lang.tv_shuffle_toast
 import me.him188.ani.app.ui.lang.tv_quick_menu_home
 import me.him188.ani.app.ui.lang.tv_quick_menu_refresh
+import me.him188.ani.app.ui.lang.tv_quick_menu_shuffle
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusSeverity
@@ -401,6 +405,7 @@ private fun TvExitAppDialog(
         navigator = navigator,
         playback = LocalPlaybackSessionEntry.current,
         refreshHost = LocalTvPageRefreshHost.current,
+        shuffleHost = LocalTvPageShuffleHost.current,
         // 退出确认里不出服务连通那一行: 这个弹窗只回答"要不要退出", 多一行状态就是多一个
         // 让人停下来读的东西, 而它与该不该退出没有关系
         connectivity = null,
@@ -424,7 +429,8 @@ private fun TvExitAppDialog(
 fun TvQuickActionMenu(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost,
+    refreshHost: TvPageActionHost,
+    shuffleHost: TvPageActionHost?,
     onGoHome: () -> Unit,
     onExitApp: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -433,6 +439,7 @@ fun TvQuickActionMenu(
         navigator = navigator,
         playback = playback,
         refreshHost = refreshHost,
+        shuffleHost = shuffleHost,
         // 在这里 (而不是根部) 建: 本菜单只在打开的那一瞬间被组合, 所以整个探测子系统在用户第一次
         // 长按返回之前根本不存在 —— 挂在根部就等于每次冷启动都多跑五个请求
         connectivity = viewModel { TvServiceConnectivityState() },
@@ -510,7 +517,8 @@ private enum class TvActionPanelFocus : TvFocusKey {
 private fun TvActionPanelDialog(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost?,
+    refreshHost: TvPageActionHost?,
+    shuffleHost: TvPageActionHost?,
     connectivity: TvServiceConnectivityState?,
     onGoHome: (() -> Unit)?,
     onExitApp: () -> Unit,
@@ -546,6 +554,18 @@ private fun TvActionPanelDialog(
                     // 刷新本身可能没有可见变化 (数据没变时界面一模一样), 必须给一句反馈
                     toast.toast(refreshingText)
                     refresh()
+                },
+            )
+        }
+        shuffleHost?.current?.let { shuffle ->
+            val toast = LocalToaster.current
+            val shufflingText = stringResource(Lang.tv_shuffle_toast)
+            add(
+                TvActionPanelAction(Icons.Rounded.Shuffle, stringResource(Lang.tv_quick_menu_shuffle)) {
+                    onDismissRequest()
+                    // 换一批要重新召回 (几个请求, 一两秒), 结果到了会自己替换掉当前那批
+                    toast.toast(shufflingText)
+                    shuffle()
                 },
             )
         }

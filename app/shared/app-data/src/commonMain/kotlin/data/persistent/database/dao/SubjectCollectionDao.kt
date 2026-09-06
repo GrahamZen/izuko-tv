@@ -349,6 +349,20 @@ interface SubjectCollectionDao {
     @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
     fun findById(subjectId: Int): Flow<SubjectCollectionEntity?>
 
+    /**
+     * 真收藏的条数 (排除只是浏览过的 `NOT_COLLECTED`).
+     *
+     * 给推荐当"输入变了"的信号用: **只查个数**, 不查整行 —— 每浏览一个条目这张表就会写一次,
+     * 拿整行的 flow 当信号等于每次都重新解 500 行的标签.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM subject_collection
+        WHERE collectionType IS NOT NULL AND collectionType != 'NOT_COLLECTED'
+        """,
+    )
+    fun realCollectionCountFlow(): Flow<Int>
+
     @Query("""SELECT * FROM subject_collection WHERE subjectId IN (:subjectIds)""")
     fun filterByIds(subjectIds: IntArray): Flow<List<SubjectCollectionEntity>>
 

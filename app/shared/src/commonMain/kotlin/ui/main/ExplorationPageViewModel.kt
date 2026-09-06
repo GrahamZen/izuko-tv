@@ -14,8 +14,10 @@ import androidx.paging.cachedIn
 import androidx.paging.compose.launchAsLazyPagingItemsIn
 import androidx.paging.filter
 import androidx.paging.flatMap
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.subjectInfo
@@ -69,8 +71,13 @@ class ExplorationPageViewModel : AbstractViewModel(), KoinComponent {
             subjects.filter { !it.subjectInfo.nsfw }
         }.cachedIn(backgroundScope).launchAsLazyPagingItemsIn(backgroundScope),
         onRefreshFollowedSubjects = { followedSubjectsRestarter.restart() },
+        onShuffleRecommendations = { recommendationRepository.requestRefresh(force = true) },
+        // 推荐只读 Room 缓存, 进页零请求; 重算是另一条线, 见下面的 requestRefresh
         recommendationPager = recommendationRepository.recommendedSubjectsPager()
             .cachedIn(backgroundScope).launchAsLazyPagingItemsIn(backgroundScope),
+        recommendationGroups = recommendationRepository.recommendationGroups()
+            .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList()),
+        recommendationsRefreshing = recommendationRepository.isRefreshing,
         horizontalScrollTipFlow = horizontalScrollTipFlow,
         onSetDisableHorizontalScrollTip = {
             backgroundScope.launch {
@@ -81,4 +88,10 @@ class ExplorationPageViewModel : AbstractViewModel(), KoinComponent {
 //                emit(arrayOfNulls<FollowedSubjectInfo>(10).toList())
 //            }
     )
+
+    init {
+        // 过期了才会真去算, 而且要等首帧宽限过去 —— 这里调用是不花钱的, 每次进页调一次即可.
+        // 结果落 Room 后由 Room 自己推给上面那个 pager.
+        recommendationRepository.requestRefresh()
+    }
 }

@@ -57,7 +57,16 @@ class AniSubjectSearchService(
 
         sort: SearchSort = SearchSort.MATCH,
         filters: SubjectSearchFilters? = null,
-    ): List<BatchSubjectDetails> = withContext(ioDispatcher) {
+    ): List<BatchSubjectDetails> = searchSubjectsPage(keyword, offset, limit, sort, filters).items
+
+    /** 同 [searchSubjects], 另外带上服务端报的结果总数 (翻页、随机取页要用). */
+    suspend fun searchSubjectsPage(
+        keyword: String,
+        offset: Int? = null,
+        limit: Int? = null,
+        sort: SearchSort = SearchSort.MATCH,
+        filters: SubjectSearchFilters? = null,
+    ): SubjectSearchPage = withContext(ioDispatcher) {
         val result = bangumiV0Api.invoke {
             searchSubjects(
                 limit = limit,
@@ -67,25 +76,29 @@ class AniSubjectSearchService(
                     sort = sort.toBangumiSort(),
                     filter = BangumiSearchSubjectsRequestFilter(
                         type = listOf(BangumiSubjectType.Anime),
+                        metaTags = filters?.metaTags,
                         tag = filters?.tags,
                         airDate = filters?.airDates,
                         rating = filters?.ratings,
                         // bangumi 把"无排名"记作 rank 0, 排行榜必须显式排除, 否则一堆没排名的排最前.
                         // 与 Ani 那边 `ranks=">=1"` 是同一件事.
                         rank = filters?.ranks,
+                        ratingCount = filters?.ratingCounts,
                         nsfw = filters?.nsfw,
                     ),
                 ),
             )
         }.body()
 
-        result.data.orEmpty().map { it.toBatchSubjectDetails() }.also { list ->
-            logger.info {
-                "bgm-direct: search q='$keyword' sort=$sort offset=$offset tags=${filters?.tags} " +
-                        "ranks=${filters?.ranks} ratings=${filters?.ratings} airDates=${filters?.airDates} " +
-                        "-> total=${result.total} page=${list.size}"
-            }
+        val list = result.data.orEmpty().map { it.toBatchSubjectDetails() }
+        logger.info {
+            "bgm-direct: search q='$keyword' sort=$sort offset=$offset tags=${filters?.tags} " +
+                    "ranks=${filters?.ranks} ratings=${filters?.ratings} airDates=${filters?.airDates} " +
+                    "ratingCounts=${filters?.ratingCounts} metaTags=${filters?.metaTags} " +
+                    "-> total=${result.total} page=${list.size}"
         }
+        // 服务端没报总数时只知道有这一页
+        SubjectSearchPage(list, result.total ?: list.size)
     }
 
     companion object {
@@ -138,9 +151,16 @@ class AniSubjectSearchService(
                 lightRelatedPersonInfoList = infobox.orEmpty().toLightRelatedPersonInfoList(),
                 lightRelatedCharacterInfoList = emptyList(),
             ),
+            metaTags = metaTags,
         )
     }
 }
+
+/** 一页搜索结果, 连同服务端报的总数. */
+class SubjectSearchPage(
+    val items: List<BatchSubjectDetails>,
+    val total: Int,
+)
 
 /**
  * infobox 的键 -> 职位. 搜索卡片上那行"制作: …"只显示 `RoleSet.Default` 里的四个职位

@@ -59,12 +59,28 @@ import kotlin.coroutines.CoroutineContext
  * Performs network requests.
  * Use [SubjectManager] instead.
  */
+/** 一页收藏, 带服务端报的总条数. */
+class SubjectCollectionsPage(
+    val items: List<BangumiNextSubject>,
+    val total: Int,
+)
+
 interface SubjectService {
     suspend fun getSubjectCollections(
         type: BangumiSubjectCollectionType?,
         offset: Int,
         limit: Int
     ): List<BangumiNextSubject>
+
+    /**
+     * 同上, 但**把服务端报的总条数一起给出来** —— 调用方需要"翻到底"时不能靠"这页没满就是结束",
+     * 那只在最后一页成立, 中间某页恰好满时无从判断还有没有.
+     */
+    suspend fun getSubjectCollectionsPage(
+        type: BangumiSubjectCollectionType?,
+        offset: Int,
+        limit: Int
+    ): SubjectCollectionsPage
 
     /**
      * 当 [subjectId] 不存在时, 返回 `null`.
@@ -172,8 +188,15 @@ class RemoteSubjectService(
         type: BangumiSubjectCollectionType?,
         offset: Int,
         limit: Int
-    ): List<BangumiNextSubject> = withContext(ioDispatcher) {
+    ): List<BangumiNextSubject> = getSubjectCollectionsPage(type, offset, limit).items
+
+    override suspend fun getSubjectCollectionsPage(
+        type: BangumiSubjectCollectionType?,
+        offset: Int,
+        limit: Int
+    ): SubjectCollectionsPage = withContext(ioDispatcher) {
         sessionManager.checkAccessAniApiNow()
+        var total = 0
         val collections = try {
             bangumiCollectionApi {
                 // 按收藏更新时间降序返回 (实测), updateRecentlyUpdatedSubjectCollections 依赖这个顺序
@@ -182,7 +205,7 @@ class RemoteSubjectService(
                     type = type?.toBangumiNextCollectionType(),
                     limit = limit,
                     offset = offset,
-                ).body().data
+                ).body().also { total = it.total }.data
             }
         } catch (e: ClientRequestException) {
             // invalid: 400 . Text: "{"title":"Bad Request","details":{"path":"/v0/users/him188/collections","method":"GET","query_string":"subject_type=2&type=1&limit=30&offset=35"},"request_id":".","description":"offset should be less than or equal to 34"}
@@ -192,8 +215,11 @@ class RemoteSubjectService(
                 throw e
             }
         }
-        logger.info { "bgm-direct: collections type=$type offset=$offset limit=$limit -> ${collections.size} items" }
-        return@withContext collections
+        logger.info {
+            "bgm-direct: collections type=$type offset=$offset limit=$limit -> " +
+                    "${collections.size} items (total=$total)"
+        }
+        return@withContext SubjectCollectionsPage(collections, total)
     }
 
     override suspend fun getSubjectCollection(subjectId: Int): BangumiNextSubject? {
@@ -427,6 +453,13 @@ data class BatchSubjectDetails(
     val subjectInfo: SubjectInfo,
     val mainEpisodeCount: Int,
     val lightSubjectRelations: LightSubjectRelations,
+    /**
+     * bangumi 的官方标签 (维基人维护, 已归一化): 形态 (TV/WEB/剧场版/OVA) 与地区 (日本/中国/美国/欧美…).
+     *
+     * 比用户标签可靠: 用户标签里常常没有地区 (魔卡少女樱的高票标签里就没有"日本"), 或者写法不一
+     * (国漫多写"国产"而不是"中国"). 只有搜索那条路填, 别的来源是空.
+     */
+    val metaTags: List<String> = emptyList(),
 )
 
 data class LightSubjectRelations(

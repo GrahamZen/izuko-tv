@@ -28,8 +28,14 @@ import androidx.compose.runtime.staticCompositionLocalOf
  * 只在"刷新有意义"的页面上注册 (追番 / 新番时间表 / 探索页): 这些页面的数据是一小时一刷的
  * 定时拉取, 用户想立刻看到更新时没有别的入口.
  */
+/**
+ * 一叠"当前页面提供的某个动作", 栈顶那个生效 (页面叠起来时只有最上面那页说话).
+ *
+ * 同一个形状喂两个 CompositionLocal: [LocalTvPageRefreshHost] 是「刷新本页」,
+ * [LocalTvPageShuffleHost] 是「换一批」—— 两者语义不同, 注册的页面也不同.
+ */
 @Stable
-class TvPageRefreshHost {
+class TvPageActionHost {
     // mutableStateListOf: 菜单在组合里读 current 决定「刷新本页」显不显示, 得可观察
     private val entries = mutableStateListOf<() -> Unit>()
 
@@ -43,7 +49,24 @@ class TvPageRefreshHost {
 }
 
 /** 由应用根部 (TV 形态装配处) 提供; 其余形态为 null, [TvPageRefreshHandler] 退化为空操作. */
-val LocalTvPageRefreshHost = staticCompositionLocalOf<TvPageRefreshHost?> { null }
+val LocalTvPageRefreshHost = staticCompositionLocalOf<TvPageActionHost?> { null }
+
+/**
+ * 「换一批」: 只有"结果整批可以换掉"的页面才注册 (目前只有探索页的推荐区).
+ *
+ * 与刷新分开是因为语义不同: 刷新 = 把同一份数据重新取一遍; 换一批 = 换成另一批内容.
+ */
+val LocalTvPageShuffleHost = staticCompositionLocalOf<TvPageActionHost?> { null }
+
+@Composable
+fun TvPageShuffleHandler(onShuffle: () -> Unit) {
+    val host = LocalTvPageShuffleHost.current ?: return
+    val currentAction by rememberUpdatedState(onShuffle)
+    DisposableEffect(host) {
+        val unregister = host.register { currentAction() }
+        onDispose { unregister() }
+    }
+}
 
 /** 注册本页的强制刷新动作, 生命周期跟随组合. */
 @Composable

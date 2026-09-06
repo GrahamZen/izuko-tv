@@ -20,6 +20,8 @@
     <string name="exit_app_close_playback">關閉正在播放</string>
     <string name="tv_quick_menu_home">回到主介面</string>
     <string name="tv_quick_menu_refresh">重新整理本頁</string>
+    <string name="tv_quick_menu_shuffle">換一批推薦</string>
+    <string name="tv_shuffle_toast">正在換一批推薦…</string>
     <string name="playback_session_none">沒有正在播放的內容</string>
     <string name="playback_nothing_to_play">暫無可播放的內容</string>
     <string name="playback_up_next_continue">繼續播放</string>
@@ -76,6 +78,16 @@
     <string name="settings_player_tv_chrome">自訂播放器按鈕</string>
     <string name="settings_player_tv_chrome_description">排列播放器裡的按鈕，或者把用不上的藏起來；可以存幾套換著用</string>
     <string name="settings_update_popup_feedback_group_hint">點「查看詳情」可掃碼加入QQ交流/回饋群</string>
+    <string name="exploration_rec_because_you_liked">因為你喜歡《%1$s》</string>
+    <string name="exploration_rec_also_watched">看過《%1$s》的人還看了</string>
+    <string name="exploration_rec_similar_to">和《%1$s》相似的作品</string>
+    <string name="exploration_rec_for_you_high_rated">符合你口味的高分動畫</string>
+    <string name="exploration_rec_top_rated">高分經典</string>
+    <string name="exploration_rec_this_season">本季你可能會喜歡</string>
+    <string name="exploration_rec_this_season_new">本季新番</string>
+    <string name="exploration_rec_change_taste">換換口味</string>
+    <string name="exploration_rec_trending">大家最近在看</string>
+    <string name="exploration_rec_loading">正在為你挑選推薦，需要十幾秒</string>
     <string name="settings_network_proxy_service_tmdb">背景圖與劇照服務</string>
     <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>

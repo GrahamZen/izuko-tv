@@ -33,6 +33,8 @@ import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCommentDao
 import me.him188.ani.app.data.persistent.database.dao.HttpCacheDownloadStateDao
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryDao
+import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedDao
+import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedEntity
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryPendingOpEntity
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryRecordEntity
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSource
@@ -86,8 +88,9 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         PreferredWebMediaSource::class,
         PlaybackHistoryRecordEntity::class,
         PlaybackHistoryPendingOpEntity::class,
+        RecommendationFeedEntity::class, // 6.1.x: 探索页推荐的结果缓存
     ],
-    version = 25,
+    version = 26,
     autoMigrations = [
         AutoMigration(from = 1, to = 2, spec = Migrations.Migration_1_2::class),
         AutoMigration(from = 2, to = 3, spec = Migrations.Migration_2_3::class),
@@ -118,6 +121,8 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         // 24 -> 25 由手写的 [MIGRATION_24_25] 提供 —— **不能用 AutoMigration**: 这一步要删掉 fork 的
         // `torrent_cache_file`, 而 @DeleteTable 生成的 DROP 跑在 onPostMigrate 之前, 表里的数据没机会搬走.
         // 逐项说明见 [MIGRATION_24_25], 逐项断言见 MIG-08.
+        // 25 -> 26: 新增 recommendation_feed 表 (纯加表, 不需要 spec), 见 [RecommendationFeedEntity].
+        AutoMigration(from = 25, to = 26),
     ],
     exportSchema = true,
 )
@@ -167,6 +172,11 @@ abstract class AniDatabase : RoomDatabase() {
     abstract fun danmakuDao(): DanmakuDao
     abstract fun preferredWebMediaSourceDao(): PreferredWebMediaSourceDao
     abstract fun playbackHistoryDao(): PlaybackHistoryDao
+
+    /**
+     * @since 6.1.x
+     */
+    abstract fun recommendationFeedDao(): RecommendationFeedDao
 }
 
 expect object AniDatabaseConstructor : RoomDatabaseConstructor<AniDatabase> {

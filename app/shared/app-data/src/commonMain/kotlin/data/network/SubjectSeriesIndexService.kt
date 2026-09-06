@@ -22,7 +22,9 @@ import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
@@ -69,6 +71,32 @@ data class SubjectRelationIndex(
     }
 }
 
+/** 系列关系图里的一个条目, 即 `/p1/subjects/{id}/relations` 列出的精简条目. */
+data class SeriesNode(
+    val id: Int,
+    val name: String,
+    val nameCn: String,
+    val imageLarge: String,
+    /** bangumi 官方标签: 形态 (TV / WEB / 剧场版 / OVA…)、地区等. */
+    val metaTags: List<String>,
+    val nsfw: Boolean,
+    /** 首播日期, 取自精简条目的 `info` 串 (`26话 / 2004年7月4日 / …`); 没写时为 [PackedDate.Invalid]. */
+    val airDate: PackedDate,
+    /** 集数, 同样取自 `info` 串; 没写时为 `null`. */
+    val episodes: Int?,
+)
+
+/** [SubjectSeriesIndexService.prequelChain] 的结果. */
+class PrequelChain(
+    /**
+     * 起点条目自己. `/relations` 不含条目自己, 这份取自它前传的续集列表, 所以没有前传 (或关系只登了单向)
+     * 时为 `null`.
+     */
+    val self: SeriesNode?,
+    /** 一路经过的前传, 近的在前. */
+    val prequels: List<SeriesNode>,
+)
+
 /**
  * 系列索引的客户端实现, 取代 Ani 服务端算好的那份 (`/v1/subject-relations/{id}`).
  *
@@ -78,6 +106,9 @@ data class SubjectRelationIndex(
  *
  * 代价是**每个节点一个请求** (上面那个例子 5 个), 所以结果按 subjectId 缓存在内存里 ——
  * 详情页与 TMDB 匹配会对同一个条目反复问.
+ *
+ * 每个节点的邻居另有一层缓存, 给 [prequelChain] (推荐把续作换成最早一季) 与 BFS 共用:
+ * 两边走到同一个条目只发一次请求.
  */
 class SubjectSeriesIndexService(
     private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
@@ -115,6 +146,11 @@ class SubjectSeriesIndexService(
 
     /** subjectId -> 在途的 BFS. 与 [cache] 共用 [cacheLock], 临界区里不含挂起工作. */
     private val inFlight = mutableMapOf<Int, Deferred<SubjectRelationIndex>>()
+
+    /** 每个条目的前传/续集邻居 (一个条目一个请求), 见 [edgesOf]. */
+    private val edgesLock = Mutex()
+    private val edgesCache = LinkedHashMap<Int, Edges>()
+    private val edgesInFlight = mutableMapOf<Int, Deferred<Edges>>()
 
     suspend fun getSubjectRelationIndex(subjectId: Int): SubjectRelationIndex {
         cacheLock.withLock { cache[subjectId] }?.let { return it }
@@ -161,23 +197,94 @@ class SubjectSeriesIndexService(
             }
         }
 
+    /**
+     * 顺着「前传」一路往前走, 最多 [maxHops] 跳.
+     *
+     * 一个条目挂着好几个前传时 (TV 续作的前传常常同时挂着剧场版) 先走 [prefer] 为真的那个,
+     * 都不是就走第一个. 只走前传这一个方向: 找「最早的一季」用不着续集那一半, 请求数约是
+     * [getSubjectRelationIndex] 的一半.
+     *
+     * @param fetched 真正发出去的请求数往这里加 (命中缓存的不算), 给调用方记账
+     */
+    suspend fun prequelChain(
+        subjectId: Int,
+        maxHops: Int,
+        fetched: AtomicInt? = null,
+        prefer: (SeriesNode) -> Boolean = { true },
+    ): PrequelChain {
+        val chain = mutableListOf<SeriesNode>()
+        var self: SeriesNode? = null
+        val visited = hashSetOf(subjectId)
+        var current = subjectId
+        while (chain.size < maxHops) {
+            val edges = edgesOf(current, fetched)
+            // 起点自己的精简条目只能从别人的列表里拿: 第一个前传的续集里就有它 (maxHops 为 1 时拿不到)
+            if (self == null && current != subjectId) self = edges.sequels.firstOrNull { it.id == subjectId }
+            val prequels = edges.prequels.filter { it.id !in visited }
+            val next = prequels.firstOrNull(prefer) ?: prequels.firstOrNull() ?: break
+            chain += next
+            visited += next.id
+            current = next.id
+        }
+        return PrequelChain(self, chain)
+    }
+
+    /**
+     * 一个条目的前传/续集邻居: 按 subjectId 缓存, 并发问同一个条目只发一次请求.
+     *
+     * 请求归 [scope] 而不是调用方, 理由同 BFS: 调用方走开时请求照样跑完并落进缓存.
+     *
+     * @param fetched 这次调用真的发了请求时 +1 (命中缓存或合流到在途请求都不算), 给日志记账用
+     */
+    private suspend fun edgesOf(subjectId: Int, fetched: AtomicInt? = null): Edges {
+        edgesLock.withLock { edgesCache[subjectId] }?.let { return it }
+        var created: Deferred<Edges>? = null
+        val task = edgesLock.withLock {
+            edgesCache[subjectId]?.let { return it }
+            edgesInFlight[subjectId] ?: newEdgesTask(subjectId).also {
+                edgesInFlight[subjectId] = it
+                created = it
+            }
+        }
+        created?.let {
+            fetched?.incrementAndGet()
+            it.start()
+        }
+        return task.await()
+    }
+
+    private fun newEdgesTask(subjectId: Int): Deferred<Edges> =
+        scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
+            try {
+                val edges = try {
+                    fetchEdges(subjectId)
+                } catch (e: Exception) {
+                    throw RepositoryException.wrapOrThrowCancellation(e)
+                }
+                edgesLock.withLock {
+                    edgesCache[subjectId] = edges
+                    while (edgesCache.size > EDGES_CACHE_SIZE) edgesCache.remove(edgesCache.keys.first())
+                }
+                edges
+            } finally {
+                edgesLock.withLock { edgesInFlight.remove(subjectId) }
+            }
+        }
+
     private suspend fun compute(subjectId: Int, requestCount: AtomicInt): SubjectRelationIndex {
         val edges = HashMap<Int, Edges>()
 
-        suspend fun edgesOf(id: Int): Edges = edges.getOrPut(id) {
-            requestCount.incrementAndGet()
-            fetchEdges(id)
-        }
+        suspend fun edgesOfNode(id: Int): Edges = edges.getOrPut(id) { edgesOf(id, requestCount) }
 
         // 两个方向各走一遍传递闭包. 用 LinkedHashSet 保持发现顺序 (= 时间先后)
-        suspend fun walk(direction: (Edges) -> List<BangumiNextSlimSubject>): LinkedHashSet<Int> {
+        suspend fun walk(direction: (Edges) -> List<SeriesNode>): LinkedHashSet<Int> {
             val result = LinkedHashSet<Int>()
-            var frontier = direction(edgesOf(subjectId))
+            var frontier = direction(edgesOfNode(subjectId))
             while (frontier.isNotEmpty() && result.size < MAX_NODES) {
-                val next = mutableListOf<BangumiNextSlimSubject>()
+                val next = mutableListOf<SeriesNode>()
                 for (subject in frontier) {
                     if (!result.add(subject.id)) continue
-                    next.addAll(direction(edgesOf(subject.id)))
+                    next.addAll(direction(edgesOfNode(subject.id)))
                 }
                 frontier = next
             }
@@ -219,7 +326,7 @@ class SubjectSeriesIndexService(
             ?: return emptyList()
         return listOfNotNull(
             subject.name.takeIf { it.isNotBlank() },
-            subject.nameCN.takeIf { it.isNotBlank() && it != subject.name },
+            subject.nameCn.takeIf { it.isNotBlank() && it != subject.name },
         )
     }
 
@@ -231,17 +338,31 @@ class SubjectSeriesIndexService(
         ).body().data
         Edges(
             // 2 = 前传, 3 = 续集. 特别篇/衍生 (6/11) 不算主线, 排除资源时也不该带上
-            prequels = relations.filter { it.relation.id == RELATION_PREQUEL }.map { it.subject },
-            sequels = relations.filter { it.relation.id == RELATION_SEQUEL }.map { it.subject },
+            prequels = relations.filter { it.relation.id == RELATION_PREQUEL }.map { it.subject.toSeriesNode() },
+            sequels = relations.filter { it.relation.id == RELATION_SEQUEL }.map { it.subject.toSeriesNode() },
         )
     }
+
+    private fun BangumiNextSlimSubject.toSeriesNode() = SeriesNode(
+        id = id,
+        name = name,
+        nameCn = nameCN,
+        imageLarge = images?.large.orBangumiPlaceholder(),
+        metaTags = metaTags,
+        nsfw = nsfw,
+        airDate = INFO_DATE.find(info)?.destructured?.let { (year, month, day) ->
+            // 只写到年或年月的, 缺的部分按 1 算
+            PackedDate(year.toInt(), month.toIntOrNull() ?: 1, day.toIntOrNull() ?: 1)
+        } ?: PackedDate.Invalid,
+        episodes = INFO_EPISODES.find(info)?.groupValues?.get(1)?.toIntOrNull(),
+    )
 
     /** 只留字母数字并小写: 同系列条目名常只差标点与空格. */
     private fun String.normalizeForNameMatch(): String = lowercase().filter { it.isLetterOrDigit() }
 
     private class Edges(
-        val prequels: List<BangumiNextSlimSubject>,
-        val sequels: List<BangumiNextSlimSubject>,
+        val prequels: List<SeriesNode>,
+        val sequels: List<SeriesNode>,
     )
 
     private companion object {
@@ -253,5 +374,14 @@ class SubjectSeriesIndexService(
         const val MAX_NODES = 20
 
         const val CACHE_SIZE = 128
+
+        /** 邻居缓存的条目数. 一条只有几个邻居, 推荐一次回溯百来个节点, 留几轮的量. */
+        const val EDGES_CACHE_SIZE = 512
+
+        /** 精简条目 `info` 串里的首播日期: `2004年7月4日`, 也有只写到年月或年的. */
+        val INFO_DATE = Regex("""(\d{4})年(?:(\d{1,2})月(?:(\d{1,2})日)?)?""")
+
+        /** 精简条目 `info` 串里的集数: 打头的 `26话`. */
+        val INFO_EPISODES = Regex("""^\s*(\d+)话""")
     }
 }

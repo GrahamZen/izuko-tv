@@ -35,10 +35,19 @@ class TrendsRepository(
     private val trendsApi: ApiInvoker<TrendingBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_
 ) : Repository() {
-    suspend fun getTrendsInfo(): TrendsInfo {
+    /**
+     * 热度榜的一页.
+     *
+     * @param offset 从第几名起. 探索页顶上的 hero 轮播放的就是 `offset = 0` 那一页的**全部**
+     *   [TRENDING_LIMIT] 条, 所以推荐区那一行必须从 [TRENDING_LIMIT] 名往后取 —— 否则整行都是
+     *   用户刚在轮播里转过一遍的 (2026-09-07 用户反馈"重复太多"). 榜一共 1000 条 (实测), 往后
+     *   翻几十名依然是"大家最近在看".
+     */
+    suspend fun getTrendsInfo(limit: Int = TRENDING_LIMIT, offset: Int = 0): TrendsInfo {
         return withContext(ioDispatcher) {
             trendsApi {
-                getTrendingSubjects(BangumiNextSubjectType.Anime, limit = TRENDING_LIMIT).body().toTrendsInfo()
+                getTrendingSubjects(BangumiNextSubjectType.Anime, limit = limit, offset = offset)
+                    .body().toTrendsInfo()
             }
         }
     }
@@ -67,9 +76,18 @@ class TrendsRepository(
             }
         }.flow
     }
-}
 
-private const val TRENDING_LIMIT = 20
+    companion object {
+        /**
+         * 热度榜一页给多少条.
+         *
+         * **同时也是"用户已经在屏幕上看过的那一批"的边界**: 探索页的 hero 轮播就是拿
+         * [trendsInfoPager] 这一页渲染的, 一条不落 (轮播圆点上限恰好也是 20). 推荐区想避开
+         * 重复就得知道这个数.
+         */
+        const val TRENDING_LIMIT = 20
+    }
+}
 
 fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
     logger<TrendsRepository>().info { "bgm-direct: trending -> ${data.size}" }
