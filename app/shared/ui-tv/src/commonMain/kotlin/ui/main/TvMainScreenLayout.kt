@@ -10,13 +10,22 @@
 package me.him188.ani.app.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
+import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -37,6 +46,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -44,6 +54,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SyncAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -99,8 +110,11 @@ import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
+import me.him188.ani.app.ui.foundation.LocalTvPageAdjustHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
-import me.him188.ani.app.ui.foundation.TvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
+import me.him188.ani.app.ui.foundation.TvPageActionHost
+import me.him188.ani.app.ui.foundation.TvPageAdjustHost
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -124,8 +138,9 @@ import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
@@ -138,17 +153,19 @@ import me.him188.ani.app.ui.lang.playback_nothing_to_play
 import me.him188.ani.app.ui.lang.playback_prepare_in_background
 import me.him188.ani.app.ui.lang.playback_up_next_continue
 import me.him188.ani.app.ui.lang.playback_up_next_start
+import me.him188.ani.app.ui.lang.settings_account_popup_login_register
 import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
+import me.him188.ani.app.ui.lang.tv_shuffle_toast
 import me.him188.ani.app.ui.lang.tv_quick_menu_home
 import me.him188.ani.app.ui.lang.tv_quick_menu_refresh
+import me.him188.ani.app.ui.lang.tv_quick_menu_shuffle
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusSeverity
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.playbackSessionStatusText
-import me.him188.ani.app.ui.subject.episode.tv.TvRetainedFrameStore
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteQrCard
@@ -249,22 +266,44 @@ fun TvMainScreenLayout(
             }
         }
     }
+    // 整屏底色: 不是海报墙的页铺 hero 的底 (深色近黑, 浅色是海报墙那档浅灰, 见 tvPosterWallHeroBackground); 海报墙页 (探索 / 追番)
+    // 卡片墙铺 Apple 灰阶的 Gray 5, 深色下 hero 态与探索页的热门轮播回到 hero 的底, 页面把自己此刻的黑度登记进来
+    // (见 TvPosterWallTone); 侧边栏展开面板同色. 换页时从上一页的值交接过去
+    val posterWallPage = when (page) {
+        MainScreenPage.Exploration, MainScreenPage.Collection -> true
+        MainScreenPage.CacheManagement -> false
+    }
+    val shellBackground = AniThemeDefaults.shellBackgroundColor
+    val wallTone = rememberTvPosterWallTone(
+        wall = tvPosterWallBackground(),
+        hero = tvPosterWallHeroBackground(shellBackground),
+        wallPage = posterWallPage,
+    )
+    val railScrim: DrawScope.() -> Unit = remember(wallTone) { { wallTone.drawBackground(this) } }
     Box(
-        // 全屏背景由本外层 Box 统一绘制, 主壳内各页 (探索/收藏/缓存) 在 TV 上把自身 Scaffold
+        // 全屏背景由本外层 Box 统一绘制 (第一个子项), 主壳内各页 (探索/收藏/缓存) 在 TV 上把自身 Scaffold
         // 设透明透出此色 (搜索/设置是独立页面, 不受影响); 颜色与侧边栏展开面板一致.
-        modifier.fillMaxSize().background(AniThemeDefaults.shellBackgroundColor)
+        modifier.fillMaxSize()
             // 进入 Main 的焦点一律先送进内容区 (而非侧边栏); 页面对落点还有更精确的意见时
             // 在自己根上再挂一层 focusProperties.onEnter 改道 (如探索页回上次聚焦的卡)
             .focusProperties { onEnter = { contentFocus.requestFocus() } }
             .focusGroup(),
     ) {
+        // 整屏底色: 单独一层, 海报墙进出 hero 态时底色逐帧在变 (探索页热门轮播那条分界线随列表滚动), 只重录这一层
+        Spacer(Modifier.matchParentSize().graphicsLayer {}.drawBehind { wallTone.drawBackground(this) })
+        // 内容区从屏幕左缘铺满, 侧边栏是盖在上面的透明浮层: 各页自己把内容让开侧边栏 (LocalShellContentStartInset; 电视专属的页直接按
+        // 侧边栏收起宽度排). 内容区的边界不停在侧边栏边上, 最左一列的放大与投影、滑出屏的卡片画进侧边栏底下, 淡入淡出之类要进离屏缓冲的层
+        // 也不会在那里把它们裁掉
         Box(
             Modifier.fillMaxSize()
-                .padding(start = TvNavigationRailDefaults.CollapsedWidth)
                 .focusRequester(contentFocus)
                 .focusGroup(),
         ) {
-            CompositionLocalProvider(LocalTvRailEnter provides railEnter) {
+            CompositionLocalProvider(
+                LocalTvRailEnter provides railEnter,
+                LocalTvPosterWallTone provides wallTone,
+                LocalShellContentStartInset provides TvNavigationRailDefaults.CollapsedWidth,
+            ) {
                 pageContent()
             }
         }
@@ -288,6 +327,12 @@ fun TvMainScreenLayout(
             } else {
                 add(
                     TvRailAvatarAction(
+                        Icons.AutoMirrored.Outlined.Login,
+                        stringResource(Lang.settings_account_popup_login_register),
+                    ) { navigator.navigateBangumiAuthorize() },
+                )
+                add(
+                    TvRailAvatarAction(
                         Icons.Outlined.History,
                         stringResource(Lang.playback_history_title),
                     ) { navigator.navigatePlaybackHistory() },
@@ -298,7 +343,7 @@ fun TvMainScreenLayout(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
             onAvatarClick = {
-                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateEmailLoginStart()
+                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateBangumiAuthorize()
             },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)
@@ -310,6 +355,7 @@ fun TvMainScreenLayout(
                 onSettings = { onNavigateToSettings(null) },
             ),
             modifier = Modifier.fillMaxHeight(),
+            scrimPainter = railScrim,
         )
         TvExitHintToast(state = exitHintState, text = pressAgainText)
     }
@@ -395,7 +441,8 @@ private fun TvExitAppDialog(
         navigator = navigator,
         playback = LocalPlaybackSessionEntry.current,
         refreshHost = LocalTvPageRefreshHost.current,
-        watchTogether = LocalWatchTogetherEntry.current,
+        shuffleHost = LocalTvPageShuffleHost.current,
+        adjustHost = LocalTvPageAdjustHost.current,
         // 退出确认里不出服务连通那一行: 这个弹窗只回答"要不要退出", 多一行状态就是多一个
         // 让人停下来读的东西, 而它与该不该退出没有关系
         connectivity = null,
@@ -414,16 +461,15 @@ private fun TvExitAppDialog(
  * @param onGoHome 回到主界面: pop 到 Main + 置 pendingHomeFocus, 由调用方 (根部) 实现 ——
  *   切 tab 与聚焦轮播主按钮分别由主壳和探索页看着标志接力完成.
  * @param refreshHost 当前页注册的强制刷新动作 (没人注册就不显示「刷新本页」).
- * @param watchTogether 「一起看」入口把手; 本入口由调用方传进来而不是读
- *   [LocalWatchTogetherEntry] —— 本菜单组合在 AniAppContent **外面**, 那个 CompositionLocal
- *   在这里读到的是默认空实例 (见 [WatchTogetherEntryState]).
+ * @param adjustHost 当前页注册的「调整本页」圆钮 (海报墙大小 / 标签顺序, 见 [TvPageAdjustHost]).
  */
 @Composable
 fun TvQuickActionMenu(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost,
-    watchTogether: WatchTogetherEntryState?,
+    refreshHost: TvPageActionHost,
+    shuffleHost: TvPageActionHost?,
+    adjustHost: TvPageAdjustHost?,
     onGoHome: () -> Unit,
     onExitApp: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -432,7 +478,8 @@ fun TvQuickActionMenu(
         navigator = navigator,
         playback = playback,
         refreshHost = refreshHost,
-        watchTogether = watchTogether,
+        shuffleHost = shuffleHost,
+        adjustHost = adjustHost,
         // 在这里 (而不是根部) 建: 本菜单只在打开的那一瞬间被组合, 所以整个探测子系统在用户第一次
         // 长按返回之前根本不存在 —— 挂在根部就等于每次冷启动都多跑五个请求
         connectivity = viewModel { TvServiceConnectivityState() },
@@ -510,8 +557,9 @@ private enum class TvActionPanelFocus : TvFocusKey {
 private fun TvActionPanelDialog(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost?,
-    watchTogether: WatchTogetherEntryState?,
+    refreshHost: TvPageActionHost?,
+    shuffleHost: TvPageActionHost?,
+    adjustHost: TvPageAdjustHost?,
     connectivity: TvServiceConnectivityState?,
     onGoHome: (() -> Unit)?,
     onExitApp: () -> Unit,
@@ -538,20 +586,6 @@ private fun TvActionPanelDialog(
                 },
             )
         }
-        // 「一起看」: 只在设置里打开了功能时出现. 原先是侧边栏最底那颗常驻图标, 2026-08-17 挪到
-        // 这里 —— 侧边栏那颗要"按左 + 一路往下", 而这个面板是一个手势就到; 播放器内够不到面板,
-        // 但那里本来就有胶囊行末尾那颗常驻入口, 覆盖不缺.
-        //
-        // 不放第一颗: 默认焦点恒定落第一颗 (见本函数文档), 位置就是肌肉记忆, 新增条目不该把它挪走.
-        watchTogether?.takeIf { it.enabled }?.let { entry ->
-            add(
-                TvActionPanelAction(Icons.Rounded.SyncAlt, stringResource(Lang.watch_together_title)) {
-                    onDismissRequest()
-                    // 面板压在普通页面上 (播放器里长按返回是收叠层, 弹不出本面板), 不是深色背景
-                    entry.open()
-                },
-            )
-        }
         refreshHost?.current?.let { refresh ->
             val toast = LocalToaster.current
             val refreshingText = stringResource(Lang.tv_force_refresh_toast)
@@ -561,6 +595,27 @@ private fun TvActionPanelDialog(
                     // 刷新本身可能没有可见变化 (数据没变时界面一模一样), 必须给一句反馈
                     toast.toast(refreshingText)
                     refresh()
+                },
+            )
+        }
+        shuffleHost?.current?.let { shuffle ->
+            val toast = LocalToaster.current
+            val shufflingText = stringResource(Lang.tv_shuffle_toast)
+            add(
+                TvActionPanelAction(Icons.Rounded.Shuffle, stringResource(Lang.tv_quick_menu_shuffle)) {
+                    onDismissRequest()
+                    // 换一批要重新召回 (几个请求, 一两秒), 结果到了会自己替换掉当前那批
+                    toast.toast(shufflingText)
+                    shuffle()
+                },
+            )
+        }
+        // 「调整本页」(海报墙大小 / 标签顺序): 打开编辑页 (盖在本页上的窗口), 也属于"去别处", 先关面板
+        adjustHost?.current?.forEach { adjust ->
+            add(
+                TvActionPanelAction(adjust.icon, adjust.label) {
+                    onDismissRequest()
+                    adjust.onClick()
                 },
             )
         }
@@ -650,6 +705,8 @@ private fun TvActionPanelDialog(
     // 不用 Popup 挂码卡: 它挂在应用窗口上, 在弹窗窗口里的定位与层级都靠不住
     val showRemoteQr = defaultFocus != TvActionPanelDefaultFocus.EXIT
     Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // 窗外压暗与其他弹窗同一档 (系统默认 0.6 会把背后的页面压成一片黑)
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         var panelBounds by remember { mutableStateOf<Rect?>(null) }
         var qrBounds by remember { mutableStateOf<Rect?>(null) }
         Box(
@@ -666,7 +723,7 @@ private fun TvActionPanelDialog(
                 .align(Alignment.Center)
                 .onGloballyPositioned { panelBounds = it.boundsInParent() }
                 .width(TV_ACTION_PANEL_WIDTH),
-            shape = RoundedCornerShape(16.dp),
+            shape = CENTERED_PANEL_SHAPE,
             // 与其他 TV 弹窗同一底色 (半透明玻璃), 内容色显式给 —— 半透明底查不到 "on" 色,
             // 不给会退回 LocalContentColor 的默认纯黑 (见 AniCenteredPanelDialog 的注释)
             color = centeredPanelColor,
@@ -1255,15 +1312,18 @@ private fun TvNowPlayingPlaceholderCard(
 }
 
 /**
- * 卡片左边那块 16:9, 按可得性逐级回退 —— 三档都是 16:9, 所以版式不会因为回退而跳动:
+ * 卡片左边那块 16:9, 按可得性逐级回退 —— 两档都是 16:9, 所以版式不会因为回退而跳动:
  *
- * 1. **最后停在的那一帧** ([TvRetainedFrameStore]): 永远是当前这一集, 而且是"我刚才看的画面缩到
- *    了这里"的空间连续性. 帧在**暂停那一刻**由播放页截好存着, 不是这里现取 —— 现取要另起一路
- *    解码器, 后台会话正握着硬解实例, 那是 issue #10 的引信.
- * 2. **TMDB 单集图**: 那一集自己的剧照.
- * 3. **整部 backdrop**: 进程内热表同步可读, 且它是进详情页的门控条件, 几乎必然有.
+ * 1. **TMDB 单集图**: 那一集自己的剧照.
+ * 2. **整部 backdrop**: 进程内热表同步可读, 且它是进详情页的门控条件, 几乎必然有.
  *
- * 兜底的**主题色渐变 + 大号半透明集号不是第四档, 而是一直铺在最底下**的底色, 上面三档谁到位谁盖
+ * **不用播放时停下的那一帧**: 视频由硬解直接送显示层, 应用手里没有现成的 RGB 画面. 在播放页里截
+ * (PixelCopy) 要在应用的渲染线程上把硬解出的 YUV 帧转色、缩小、读回, Android 13 及以前这段时间界面
+ * 一帧都画不出来 —— 4K 10bit 片源在慢电视上一次 0.6~0.8 秒, 暂停后控制层跟着迟出来; 离开播放页之后
+ * 画面已经没了, 再取只能另起一路解码器 (后台会话正握着硬解实例, 那是 issue #10 的引信) 或改道主播放器
+ * 的输出 (拖动预览切小画面那条路, 部分盒子上会解码出错).
+ *
+ * 兜底的**主题色渐变 + 大号半透明集号不是第三档, 而是一直铺在最底下**的底色, 上面两档谁到位谁盖
  * 上去. 这样"URL 还没解析出来""图正在下载""图下载失败"三种情况自动都是渐变, 一个状态判断都不用
  * 写 —— [AsyncImage] 在这里没有 placeholder 也没有 error painter, 加载中和失败都是**什么都不画**,
  * 底下没东西垫着就是一块空白 (慢网上肉眼可见地空好几秒). 也**不出占位图**: 一张灰底破图片图标会
@@ -1274,11 +1334,10 @@ private fun TvNowPlayingPlaceholderCard(
 @Composable
 private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: String) {
     val tmdb = remember { GlobalKoin.get<TmdbImageService>() }
-    // 第一档 (最后停在的那一帧) 只有"正在播放"态才可能命中: 「接下来播放」那一集根本还没播过,
-    // 帧表里自然没有它, 于是自动落到剧照/backdrop, 不必在这里分叉
-    val frame = TvRetainedFrameStore.frameFor(subjectId, episodeId)
     val stillUrl = rememberTvPlayingEpisodeStill(subjectId, episodeId)
     val imageUrl = stillUrl ?: tmdb.peekBackdropUrl(subjectId)
+    // NSFW 作品打码 (自己的播放记录不藏, 见 NsfwPolicy.ownedCoverDownsample): 剧照 / 背景图取小图
+    val obscure = rememberNsfwPolicy().obscuresOwned(subjectId)
     val shape = RoundedCornerShape(6.dp)
     Box(
         Modifier
@@ -1302,19 +1361,13 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
                 style = MaterialTheme.typography.headlineMedium,
             )
         }
-        if (frame != null) {
-            Image(
-                frame,
-                contentDescription = null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else if (imageUrl != null) {
+        if (imageUrl != null) {
             AsyncImage(
                 imageUrl,
                 contentDescription = null,
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                downsampleLongEdgePx = if (obscure) NSFW_OBSCURED_COVER_LONG_EDGE_PX else null,
             )
         }
     }

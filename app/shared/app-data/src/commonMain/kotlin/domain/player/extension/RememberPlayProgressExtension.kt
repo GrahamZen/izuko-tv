@@ -13,9 +13,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -26,7 +29,6 @@ import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
@@ -38,6 +40,9 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * 记忆播放进度.
+ *
+ * 恢复: 第一次装这一集时播放器直接从存下的进度打开 ([startPositionMillis]); 同一集换源时从旧资源最后播到的位置打开 ([LastPlayedPosition]),
+ * 不知道那个位置时从头打开, 开播后再跳回存下的进度.
  *
  * 在以下情况时保存播放进度:
  * - 开始或恢复播放 5 秒后
@@ -55,16 +60,63 @@ class RememberPlayProgressExtension(
     private val initialReportDelay: Duration = 5.seconds,
 ) : PlayerExtension(name = "SaveProgressExtension") {
     private val playProgressRepository: EpisodePlayHistoryRepository by koin.inject()
-    private val automationGate: PlaybackAutomationGate by koin.inject()
     private val latestInfoBundleMutex = Mutex()
     private val latestInfoBundles = mutableMapOf<Int, SubjectEpisodeInfoBundle>()
+
+    /** 最近一次装进播放器的资源是哪一集 (见 [EpisodeFetchSelectPlayState.MediaLoadedEvent]), 见 [startPositionMillis]. */
+    private val loadedEpisodeId = MutableStateFlow<Int?>(null)
+
+    /**
+     * 正在装的资源从哪里打开 ([startPositionMillis] 给出的, 或原地重载给的位置); 从头打开时为 null.
+     * 恢复进度时目标正是它、播放位置也确实在那里, 就不再 seek.
+     */
+    private val openedAtMillis = MutableStateFlow<Long?>(null)
+
+    /** 播放器里这一集最后播到的位置, 同一集换源时用 (见 [startPositionMillis]). */
+    private val lastPlayed = LastPlayedPosition()
+
+    /**
+     * 下一次恢复进度要回到的位置 (哪一集, 毫秒), 不按存下的进度, 用完即清:
+     * - 原地重载 (见 [EpisodeFetchSelectPlayState.MediaReloadEvent]): 重载前播放器出了错, 没法按常规存进度, 而存下的进度最久是一分钟前的;
+     * - 同一集换源: 旧资源最后播到的位置 (见 [startPositionMillis]).
+     */
+    private val reloadPosition = MutableStateFlow<Pair<Int, Long>?>(null)
+
+    /**
+     * 第一次装这一集时从存下的进度打开 (原地重载由调用方直接给位置). 同一集换源时从旧资源最后播到的位置打开, 开播时以它为准:
+     * 换源前保存进度与这里读进度没有先后保证, 存下的可能是一分钟前的. 不知道那个位置时不给, 从头打开、开播后再跳回存下的进度
+     * (见 onStart 里的 restoreSavedPositionOnce).
+     */
+    override suspend fun startPositionMillis(episodeId: Int): Long? {
+        val positionMillis = if (loadedEpisodeId.value == episodeId) {
+            lastPlayed.of(episodeId)?.also { reloadPosition.value = episodeId to it }
+        } else {
+            playProgressRepository.getResumePositionMillisByEpisodeId(episodeId)
+        }
+        openedAtMillis.value = positionMillis
+        return positionMillis
+    }
 
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         val mediaLoaded = CompletableDeferred<Unit>()
         backgroundTaskScope.launch("MediaLoadedListener") {
             context.subscribeEvents<EpisodeFetchSelectPlayState.MediaLoadedEvent>().collectLatest { event ->
+                loadedEpisodeId.value = event.episodeId
                 if (event.episodeId == episodeSession.episodeId && mediaLoaded.isActive) {
                     mediaLoaded.complete(Unit)
+                }
+            }
+        }
+
+        backgroundTaskScope.launch("LastPlayedPosition") {
+            lastPlayed.track(context.player, loadedEpisodeId)
+        }
+
+        backgroundTaskScope.launch("MediaReloadListener") {
+            context.subscribeEvents<EpisodeFetchSelectPlayState.MediaReloadEvent>().collect { event ->
+                if (event.episodeId == episodeSession.episodeId) {
+                    reloadPosition.value = event.episodeId to event.positionMillis
+                    openedAtMillis.value = event.positionMillis // 重载从这里打开
                 }
             }
         }
@@ -95,6 +147,8 @@ class RememberPlayProgressExtension(
             // 已经恢复过记忆进度的媒体. 播放器在原位置重新打开同一个 MediaData 时 (Android 上视频输出超时后恢复播放),
             // 保留播放器打开时的位置, 不跳回记忆的进度.
             var resumedMediaData: MediaData? = null
+            // 正在打开的媒体是不是要一打开就播 (打开中那一刻的 playWhenReady). 一打开就报播完时播放器会转成暂停, 退回开头后照这个接着播
+            var openedToPlay = false
 
             /**
              * 恢复历史进度, 至多一次.
@@ -105,34 +159,57 @@ class RememberPlayProgressExtension(
              * 用户回到页面才开播、才 seek、才二次缓冲, "后台就绪"的提示因此必然说谎
              * (2026-08-11 真机确认: 本地文件已就绪 1 分 43 秒, 播放器一直没动, 回页面那一秒才开播).
              * 见 `RetainedPlaybackSessionHolder` 的第 3 条.
+             *
+             * 存下的进度离这个资源的结尾不到 [EpisodeHistory.FINISHED_THRESHOLD_MILLIS] (进度是同一集别的资源存下的, 如完整的正片,
+             * 而这个资源没那么长, 如预告、SP) 时不跳过去 —— 跳过去会立刻播完、自动连播到下一集 —— 从头播.
+             *
+             * @param afterEnded 播放器在恢复之前就报了播完: 只处理从结尾之后打开 (见上) 这一种, 别的情况不在这里恢复
+             * @return 是否把停在结尾的播放器退回了开头
              */
-            suspend fun restoreSavedPositionOnce() {
+            suspend fun restoreSavedPositionOnce(afterEnded: Boolean = false): Boolean {
                 val mediaData = player.mediaData.value
                 if (mediaData != null && mediaData === resumedMediaData) {
                     haveResumedOnce = true
                 }
-                if (haveResumedOnce) return
-                if (automationGate.suppressed.value) {
-                    // 一起看跟随模式: 位置由房主说了算, 本地不恢复
-                    haveResumedOnce = true
-                    resumedMediaData = mediaData
-                    return
-                }
-                val positionMillis = playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
+                if (haveResumedOnce) return false
+                val reload = reloadPosition.value?.takeIf { it.first == episodeSession.episodeId }
+                val positionMillis = reload?.second
+                    ?: playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
                 if (positionMillis == null) {
+                    if (afterEnded) return false
                     logger.info { "Did not find saved position" }
                     haveResumedOnce = true
                     resumedMediaData = mediaData
-                    return
+                    return false
                 }
                 logger.info { "Loaded saved position: $positionMillis, waiting for video properties" }
-                player.mediaProperties.first { (it?.durationMillis ?: 0L) > 0L }
-                withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
-                    logger.info { "Video properties ready, seeking to saved position: $positionMillis" }
-                    player.seekTo(positionMillis)
+                val durationMillis = player.mediaProperties.mapNotNull { it?.durationMillis }.first { it > 0L }
+                val pastEnd = durationMillis - positionMillis < EpisodeHistory.FINISHED_THRESHOLD_MILLIS
+                if (afterEnded && !pastEnd) return false
+                if (reload != null) reloadPosition.compareAndSet(reload, null)
+                return withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
+                    val currentMillis = player.currentPositionMillis.value
+                    val openedAt = openedAtMillis.getAndUpdate { null }
+                    var rewound = false
+                    if (pastEnd) {
+                        logger.info { "Saved position $positionMillis is past the end of this media ($durationMillis ms), playing from the start" }
+                        // 打开时就带着这个位置: 播放器一打开就停在结尾、报成播完 (并转成暂停). 退回开头, 照打开时的意思接着播
+                        rewound = durationMillis - currentMillis < EpisodeHistory.FINISHED_THRESHOLD_MILLIS
+                        if (rewound) {
+                            player.seekTo(0)
+                            if (afterEnded && openedToPlay) player.resume()
+                        }
+                    } else if (openedAt == positionMillis && currentMillis in (positionMillis - START_SLACK_MILLIS)..(positionMillis + RESUMED_TOLERANCE_MILLIS)) {
+                        // 打开时就从这里开始了: 再 seek 一次会把刚缓冲的扔掉重来
+                        logger.info { "Opened at saved position $positionMillis (now $currentMillis), not seeking" }
+                    } else {
+                        logger.info { "Video properties ready, seeking to saved position: $positionMillis" }
+                        player.seekTo(positionMillis)
+                    }
                     // seek 引起的状态变化会取消本次收集, 标记必须在 NonCancellable 内完成
                     haveResumedOnce = true
                     resumedMediaData = mediaData
+                    rewound
                 }
             }
 
@@ -141,6 +218,7 @@ class RememberPlayProgressExtension(
                     state.mediaStatus == MediaStatus.Opening -> {
                         // 新媒体正在打开, 重置恢复进度标记
                         haveResumedOnce = false
+                        openedToPlay = state.playWhenReady
                     }
 
                     state.isPlaying -> {
@@ -169,6 +247,9 @@ class RememberPlayProgressExtension(
                     }
 
                     state.mediaStatus == MediaStatus.Ended -> { // 播放完成
+                        // 从结尾之后打开的: 一打开就是这个状态, 退回开头 (见 restoreSavedPositionOnce). 这时不存进度:
+                        // 位置还是结尾, 存下就把这一集记成看完了
+                        if (restoreSavedPositionOnce(afterEnded = true)) return@collectLatest
                         mediaLoaded.await() // 播放器开始播放了一次之后再保存状态
                         savePlayProgressOrRemove(episodeSession)
                     }
@@ -257,5 +338,14 @@ class RememberPlayProgressExtension(
             RememberPlayProgressExtension(context, koin)
 
         private val logger = logger<RememberPlayProgressExtension>()
+
+        /**
+         * 打开时带了起始位置的话, 恢复进度时播放位置在 [起始位置 - [START_SLACK_MILLIS], 起始位置 + 这么多] 之内就当已经在那里.
+         * 往后宽出几秒: 检查时可能已经播了一会儿. 播放器没理会起始位置 (从头打开) 时位置在开头, 不在这个范围里, 照常 seek.
+         */
+        private const val RESUMED_TOLERANCE_MILLIS = 5_000L
+
+        /** 见 [RESUMED_TOLERANCE_MILLIS]: 播放器从起始位置附近的关键帧开始时位置会略早一点. */
+        private const val START_SLACK_MILLIS = 1_000L
     }
 }

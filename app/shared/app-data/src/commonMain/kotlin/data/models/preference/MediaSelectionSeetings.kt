@@ -84,6 +84,15 @@ constructor(
      * @since 6.2
      */
     val rememberManualSelection: Boolean = true,
+    /**
+     * 「完整搜索」: 开始播放后还没查完的数据源怎么办 (见 [FullSearchMode]). null = 没选过, 按设备定 (见 [effectiveFullSearchMode]).
+     */
+    val fullSearchMode: FullSearchMode? = null,
+    /**
+     * 订阅更新时把这个订阅的数据源排回订阅里的顺序. 关闭 (默认) 时保留用户自己调过的顺序, 新加的源排在最后;
+     * 数据源的配置照常随订阅更新, 启用 / 停用一直保留 (见 `MediaSourceSubscriptionUpdater`).
+     */
+    val restoreSubscriptionOrder: Boolean = false,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {

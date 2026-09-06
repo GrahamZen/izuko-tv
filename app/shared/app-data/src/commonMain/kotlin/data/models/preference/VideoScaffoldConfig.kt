@@ -13,6 +13,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.utils.platform.annotations.SerializationOnly
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -122,6 +123,25 @@ enum class HlsAdFilteringMode {
     OFF,
 }
 
+/**
+ * 剧集评论 (章节吐槽箱) 的排序. bangumi 的接口一次给全部评论、不带排序参数, 排序在客户端做.
+ * 网页上是按楼层 (时间正序) 排; 倒序、按贴贴数、按回复数是常见的网页增强脚本给的另外几种.
+ */
+@Serializable
+enum class EpisodeCommentSort {
+    /** 最早的在前 (楼层顺序). */
+    TIME_ASCENDING,
+
+    /** 最新的在前. */
+    TIME_DESCENDING,
+
+    /** 贴贴 (表情回应) 人数最多的在前. */
+    MOST_REACTIONS,
+
+    /** 楼中回复最多的在前. */
+    MOST_REPLIES,
+}
+
 @Serializable
 @Immutable
 data class VideoScaffoldConfig @SerializationOnly constructor(
@@ -141,6 +161,13 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * @since 3.2.0-beta01
      */
     val pauseVideoOnEditDanmaku: Boolean = true,
+    /**
+     * 电视上拖动进度条选位置 (遥控器长按左右键 / 进度条上按左右, 或触屏拖动) 时暂停播放.
+     * 关掉则边播边选, 按确认键才跳过去. 规则见 ui-tv 的 `TvScrubPlayback`.
+     */
+    val pauseVideoOnScrub: Boolean = true,
+    /** 电视上拖动预览的画面画在哪, 见 [SeekPreviewDisplay]. */
+    val seekPreviewDisplay: SeekPreviewDisplay = SeekPreviewDisplay.WINDOW,
     /**
      * 在观看到 90% 进度后, 自动标记看过
      */
@@ -223,6 +250,14 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val enableHighQualityAudioTimeStretch: Boolean = true,
     /**
+     * 「边下边播」: Android 上在线播放时把下过的数据存在本机 (见 video-player 的 `PlaybackDiskCache`):
+     * 往回拖、重看时从盘上读, 拖动预览下载过的位置马上出画面. 关着时不存, 拖动预览每个位置都要先下载.
+     * 每打开一个视频时读一次.
+     */
+    val enablePlaybackDiskCache: Boolean = false,
+    /** 杜比、DTS 这类音轨要不要直通, 见 [AudioPassthroughMode]. 每次选音轨时读. */
+    val audioPassthrough: AudioPassthroughMode = AudioPassthroughMode.AUTO,
+    /**
      * 6.2 的 HLS 插播广告过滤开关, 由 [hlsAdFilteringMode] 取代, 只在迁移时读取 (见 [effectiveHlsAdFilteringMode]).
      *
      * 5.7 至 6.1 的同类开关是默认关闭的 `enableExperimentalHlsSegmentFiltering`, 不读取.
@@ -301,11 +336,16 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * 那两行上摆着十几个功能, 而各人用得上的完全不是同一批: 不看弹幕的人嫌前几颗碍事,
      * 常换源的人希望它排在第一颗. 默认版式 (见 [TvPlayerChromeItem] 的声明顺序) 只是个合理的起点,
      * 这里让用户自己排, 而且可以排**几套**换着用 (见 [TvPlayerChromePresets]); 改的地方是
-     * 设置 - 播放器 - 「自定义播放器按钮」那一页 (`TvPlayerChromeLayoutPage`).
+     * 播放器里长按控制层上的按钮打开的「自定义播放器按钮」(`TvPlayerChromeLayoutPage`;
+     * 评论胶囊的长按是排序菜单, 这一页在菜单末项).
      *
      * @since 6.0.7
      */
     val tvPlayerChrome: TvPlayerChromePresets = TvPlayerChromePresets.Default,
+    /**
+     * TV: 播放器评论面板 (本集吐槽箱) 的排序, 在评论胶囊的长按菜单里换.
+     */
+    val episodeCommentSort: EpisodeCommentSort = EpisodeCommentSort.TIME_ASCENDING,
     // WARNING: if you add new property here, review Companion properties.
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
@@ -410,6 +450,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             enableFramePreview = false,
             videoEnhancementDefaultMode = VideoEnhancementDefaultMode.OFF,
             pauseVideoOnEditDanmaku = false,
+            pauseVideoOnScrub = false,
             autoMarkDone = false,
             hideSelectorOnSelect = false,
             autoFullscreenOnLandscapeMode = false,

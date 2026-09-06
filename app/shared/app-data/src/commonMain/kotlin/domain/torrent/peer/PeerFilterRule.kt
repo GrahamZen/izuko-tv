@@ -13,7 +13,6 @@ import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
 import me.him188.ani.app.torrent.api.peer.PeerInfo
-import me.him188.ani.client.models.AniPeerFilterRule
 
 /**
  * 一个 Peer 过滤规则, 此规则可以从[订阅][PeerFilterSubscriptionRepository]或[本地 preference][TorrentPeerConfig] 构建.
@@ -51,10 +50,3 @@ data class PeerFilterRule(
     }
 }
 
-fun AniPeerFilterRule.toPeerFilterRule(): PeerFilterRule {
-    return PeerFilterRule(
-        blockedIpPattern = blockedIpPattern,
-        blockedIdRegex = blockedIdRegex,
-        blockedClientRegex = blockedClientRegex,
-    )
-}

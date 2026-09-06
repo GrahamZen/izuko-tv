@@ -10,6 +10,7 @@
 package me.him188.ani.app.data.persistent.database.dao
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Query
@@ -54,18 +55,25 @@ data class TorrentCacheInfoEntity(
      * 已发布版本按资源记录的完成状态. 只在该资源的某条剧集记录还没有 [TorrentCacheEpisodeEntity] 时读取,
      * 见 `TorrentMediaCacheEngine`; 新记录不再写入.
      */
+    // 这四列要 @ColumnInfo(defaultValue): fork 的 21 -> 22 (MIGRATION_21_22) 把 torrent_cache
+    // 重建成了"种子级"表, 已发布版本的库里没有它们; 24 -> 25 要把它们加回来给上游的回退逻辑读,
+    // 而 Room 的 AutoMigration 不允许加没有默认值的 NOT NULL 列.
+    @ColumnInfo(defaultValue = "0")
     val completed: Boolean = false,
     /**
      * 已发布版本按资源记录的文件路径, 语义同 [completed].
      */
+    @ColumnInfo(defaultValue = "")
     val pathInTorrent: String = "",
     /**
      * 已发布版本按资源记录的已下载大小, 语义同 [completed].
      */
+    @ColumnInfo(defaultValue = "0")
     val downloadSize: Long = 0,
     /**
      * 已发布版本按资源记录的已上传大小, 语义同 [completed].
      */
+    @ColumnInfo(defaultValue = "0")
     val uploadSize: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean {

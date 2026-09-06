@@ -13,8 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Outbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +25,8 @@ import me.him188.ani.app.ui.episode.share.MediaShareData
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_share_copy_link
 import me.him188.ani.app.ui.lang.subject_episode_share_copy_source_page
@@ -55,7 +55,7 @@ fun ShareEpisodeDropdown(
     val browserNavigator = rememberAsyncBrowserNavigator()
     val context = LocalContext.current
 
-    DropdownMenu(
+    AniDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
@@ -71,7 +71,7 @@ fun ShareEpisodeDropdown(
             val copyDownloadText = stringResource(Lang.subject_episode_share_copy_link, downloadText)
             val openDownloadText = stringResource(Lang.subject_episode_share_open_link, downloadText)
             val openWithOtherAppText = stringResource(Lang.subject_episode_share_open_with_other_app)
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = {
                     Text(copyDownloadText)
                 },
@@ -83,7 +83,7 @@ fun ShareEpisodeDropdown(
                 },
                 leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
             )
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(openDownloadText) },
                 onClick = {
                     onDismissRequest()
@@ -92,7 +92,7 @@ fun ShareEpisodeDropdown(
                 leadingIcon = { Icon(Icons.Rounded.ArrowOutward, null) },
             )
             if (LocalPlatform.current.isAndroid() && download !is ResourceLocation.WebVideo) {
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(openWithOtherAppText) },
                     onClick = {
                         onDismissRequest()
@@ -106,7 +106,7 @@ fun ShareEpisodeDropdown(
         data.websiteUrl?.let { websiteUrl ->
             val copySourcePageText = stringResource(Lang.subject_episode_share_copy_source_page)
             val openSourcePageText = stringResource(Lang.subject_episode_share_open_source_page)
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(copySourcePageText) },
                 onClick = {
                     onDismissRequest()
@@ -116,7 +116,7 @@ fun ShareEpisodeDropdown(
                 },
                 leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
             )
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(openSourcePageText) },
                 onClick = {
                     onDismissRequest()

@@ -9,7 +9,7 @@
 
 package me.him188.ani.utils.httpdownloader
 
-import io.ktor.client.plugins.cookies.cookies
+import io.ktor.client.plugins.timeout
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.client.request.header
@@ -80,6 +80,7 @@ import me.him188.ani.utils.io.length
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.io.writeText
 import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.ktor.rawCookieHeader
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -107,6 +108,8 @@ open class KtorHttpDownloader(
     private val m3u8Parser: M3u8Parser = DefaultM3u8Parser,
     parentScope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 所有下载共用的吞吐闸门 (例如播放时给播放让路), 见 [DownloadThroughputGate]; `null` 表示不管. */
+    private val throughputGate: DownloadThroughputGate? = null,
 ) : HttpDownloader {
 
     protected val scope = parentScope.childScope()
@@ -123,13 +126,32 @@ open class KtorHttpDownloader(
      */
     private val segmentFailures = MutableStateFlow(persistentMapOf<DownloadId, SegmentFailure>())
 
+    /**
+     * 各任务正在下的分段里已经收到、但还没算进 [DownloadState.downloadedBytes] (只在整段下完时才加) 的字节. 只在内存里, 只给进度与速度用:
+     * 网盘按连接限速时一段要下一两分钟, 不算这部分的话界面上的速度大半时间是 0.
+     */
+    private val inFlightBytes = MutableStateFlow(persistentMapOf<DownloadId, Long>())
+
+    private fun addInFlightBytes(downloadId: DownloadId, delta: Long) {
+        inFlightBytes.update {
+            val updated = (this[downloadId] ?: 0L) + delta
+            if (updated <= 0L) remove(downloadId) else put(downloadId, updated)
+        }
+    }
+
     override fun getProgressFlow(downloadId: DownloadId): Flow<DownloadProgress> {
-        return combine(downloadStatesFlow, segmentFailures) { states, failures ->
-            states.firstOrNull { it.downloadId == downloadId }?.let { createProgress(it, failures[downloadId]) }
+        return combine(downloadStatesFlow, segmentFailures, inFlightBytes) { states, failures, inFlight ->
+            states.firstOrNull { it.downloadId == downloadId }
+                ?.let { createProgress(it, failures[downloadId], inFlight[downloadId] ?: 0L) }
         }
             .filterNotNull()
             .distinctUntilChanged()
     }
+
+    override val receivedBytesFlow: Flow<Long>
+        get() = combine(downloadStatesFlow, inFlightBytes) { states, inFlight ->
+            states.sumOf { it.downloadedBytes } + inFlight.values.sum()
+        }
 
     /**
      * Our map of download states.
@@ -183,11 +205,18 @@ open class KtorHttpDownloader(
             ?: guessFromValue(url) // https://foo.com/index.php?key=video.m3u8
     }
 
+    /**
+     * 实际用来下载的选项. 新建与恢复 (恢复时只有落库的请求头) 都过这一道; 子类可以按请求头里的提示调整, 例如并发几段.
+     */
+    protected open fun optionsFor(options: DownloadOptions): DownloadOptions = options
+
     override suspend fun downloadWithId(
         downloadId: DownloadId,
         url: String,
         options: DownloadOptions,
     ): DownloadState? {
+        // 落库的是原样的请求头 (恢复时再过一遍 optionsFor), 请求用调整过的
+        val effective = optionsFor(options)
         val mediaType = getMediaTypeFromUrl(url) ?: MediaType.MP4
         logger.info { "Preparing to download with id=$downloadId, url=$url, mediaType=$mediaType" }
 
@@ -224,7 +253,7 @@ open class KtorHttpDownloader(
         emitProgress(downloadId)
 
         // 2) Create segments
-        if (!createSegments(downloadId, url, mediaType, options)) {
+        if (!createSegments(downloadId, url, mediaType, effective)) {
             // If creation failed, the state is set to FAILED. We stop here.
             return null
         }
@@ -239,7 +268,7 @@ open class KtorHttpDownloader(
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 logger.info { "Downloading segments for $downloadId" }
-                downloadSegments(downloadId, options)
+                downloadSegments(downloadId, effective)
 
                 clearSegmentFailure(downloadId)
                 updateState(downloadId) {
@@ -248,7 +277,7 @@ open class KtorHttpDownloader(
                 emitProgress(downloadId)
                 logger.info { "Merging segments for $downloadId" }
 
-                mergeSegments(downloadId, options)
+                mergeSegments(downloadId, effective)
 
                 updateState(downloadId) {
                     it.copy(status = COMPLETED, timestamp = clock.now().toEpochMilliseconds())
@@ -313,7 +342,7 @@ open class KtorHttpDownloader(
         logger.info { "Resuming $downloadId with status=${st.status}" }
 
         // 恢复时只知道请求头 (选项不落库), 统一在这里构造一次, 免得各处各自 new 一个
-        val options = DownloadOptions(headers = st.requestHeaders)
+        val options = optionsFor(DownloadOptions(headers = st.requestHeaders))
 
         // If we have no segments, it means we failed during segment creation
         if (st.segments.isEmpty()) {
@@ -850,6 +879,9 @@ open class KtorHttpDownloader(
     /**
      * Attempt a small GET with Range=0-0 to detect whether partial content is supported
      * and to parse the total file size from 'Content-Range: bytes 0-0/<size>'.
+     *
+     * 一次最多等 [RANGE_PROBE_TIMEOUT_MILLIS] (client 的重试再给一次): 建缓存在等它 (删这条缓存又在等建缓存),
+     * 探不出来照样能整条下 (单段)。请求头同分段下载 (经 [httpGet], 网盘的 Cookie 原样发出)。
      */
     private suspend fun probeRangeSupport(
         url: String,
@@ -859,10 +891,8 @@ open class KtorHttpDownloader(
             headers = options.headers + ("Range" to "bytes=0-0"),
         )
         return try {
-            client.use {
-                prepareGet(url) {
-                    rangeOptions.headers.forEach { (k, v) -> header(k, v) }
-                }.execute { response ->
+            httpGet(url, rangeOptions, requestTimeoutMillis = RANGE_PROBE_TIMEOUT_MILLIS) { statement ->
+                statement.execute { response ->
                     when (response.status.value) {
                         206 -> {
                             val contentRange =
@@ -885,11 +915,13 @@ open class KtorHttpDownloader(
         }
     }
 
+    /** @param onReceived 收到数据就报 (攒够 [PROGRESS_REPORT_BYTES] 报一次, 结束时报剩下的), 进度与速度用 */
     @OptIn(ExperimentalAtomicApi::class)
     protected suspend fun downloadSingleSegment(
         segmentInfo: SegmentInfo,
         options: DownloadOptions,
         rateLimiter: ByteRateLimiter? = null,
+        onReceived: (bytes: Long) -> Unit = {},
     ): Long {
         // If we have a range, add it to the request headers.
         val finalOptions = if (segmentInfo.rangeStart != null && segmentInfo.rangeEnd != null) {
@@ -914,7 +946,7 @@ open class KtorHttpDownloader(
                 // 上游 #3407 已把这里改成流式 execute { } (与 fork 原来那条修复同一做法);
                 // fork 这边只保留自己的限速器参数 (见 rateLimiter: 缓存下载会拖垮整机)
                 val channel = response.bodyAsChannel()
-                val byteSize = copyChannelToFile(channel, segmentPath, rateLimiter)
+                val byteSize = copyChannelToFile(channel, segmentPath, rateLimiter, onReceived)
                 byteSize.also {
                     logger.info { "Segment index=${segmentInfo.index} downloaded, size=$it" }
                 }
@@ -930,22 +962,31 @@ open class KtorHttpDownloader(
         channel: ByteReadChannel,
         filePath: Path,
         rateLimiter: ByteRateLimiter? = null,
+        onReceived: (bytes: Long) -> Unit = {},
     ): Long {
         val totalBytes = AtomicLong(0L)
+        var unreported = 0L
         openSink(filePath, SYNC_EVERY_BYTES_DOWNLOAD).buffered().use { sink ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             withContext(ioDispatcher) {
                 while (true) {
                     // 先取令牌再读: 限速点放在读之前, 网络那头自然被 TCP 窗口顶住,
                     // 不会先把数据吞进内存再丢弃
+                    throughputGate?.acquire(buffer.size)
                     rateLimiter?.acquire(buffer.size)
                     val bytesRead = channel.readAvailable(buffer, 0, buffer.size)
                     if (bytesRead == -1) break
                     sink.write(buffer, startIndex = 0, endIndex = bytesRead)
                     totalBytes.fetchAndAdd(bytesRead.toLong())
+                    unreported += bytesRead
+                    if (unreported >= PROGRESS_REPORT_BYTES) {
+                        onReceived(unreported)
+                        unreported = 0
+                    }
                 }
             }
         }
+        if (unreported > 0) onReceived(unreported)
         return totalBytes.load()
     }
 
@@ -967,7 +1008,8 @@ open class KtorHttpDownloader(
             logger.info { "No segments to download for $downloadId" }
             return
         }
-        val requestOptions = options.copy(headers = snapshot.requestHeaders + options.headers)
+        // 落库的请求头里可能带着给本下载器看的提示 (见 optionsFor), 合进来之后再过一遍
+        val requestOptions = optionsFor(options.copy(headers = snapshot.requestHeaders + options.headers))
         logger.info { "Downloading ${snapshot.segments.size} segments for $downloadId with concurrency=${options.maxConcurrentSegments}, maxBytesPerSecond=${options.maxBytesPerSecond}" }
         val semaphore = Semaphore(options.maxConcurrentSegments)
         // 整个下载共用一个: 限的是本次下载的总吞吐, 而不是每条分段各自的
@@ -977,17 +1019,23 @@ open class KtorHttpDownloader(
             downloadHlsEncryptionKeys(snapshot, requestOptions)
         }
 
+        val startedAt = clock.now()
         coroutineScope {
             snapshot.segments.forEach { seg ->
                 if (seg.isDownloaded) return@forEach
                 semaphore.acquire()
                 launch(ioDispatcher, start = CoroutineStart.ATOMIC) {
+                    // 这一段这次尝试已经收到多少 (记进 inFlightBytes 的那部分): 失败重来、下完或取消时从在途里扣掉
+                    var received = 0L
                     try {
+                        val segmentStartedAt = clock.now()
                         // Retry with exponential backoff if download fails
                         val newSize = withRetry(
                             maxRetries = options.maxRetriesPerSegment,
                             baseDelayMillis = options.baseRetryDelayMillis,
                             onFailure = { attempt, error ->
+                                addInFlightBytes(downloadId, -received)
+                                received = 0L
                                 recordSegmentFailure(downloadId, seg.index, attempt, options.maxRetriesPerSegment, error)
                             },
                         ) {
@@ -996,24 +1044,37 @@ open class KtorHttpDownloader(
                             // 重试、单次封顶 30 秒, 一条彻底失效的分段能占着名额四十多分钟 ——
                             // 六条这样的分段 (名额总数) 就让全应用的缓存下载一起停摆.
                             globalSegmentLimit.withPermit {
-                                downloadSingleSegment(seg, requestOptions, rateLimiter)
+                                downloadSingleSegment(seg, requestOptions, rateLimiter) { bytes ->
+                                    received += bytes
+                                    addInFlightBytes(downloadId, bytes)
+                                }
                             }
                         }
-                        markSegmentDownloaded(downloadId, seg.index, newSize)
+                        addInFlightBytes(downloadId, -received)
+                        received = 0L
+                        markSegmentDownloaded(downloadId, seg.index, newSize, (clock.now() - segmentStartedAt).inWholeMilliseconds)
                     } finally {
+                        if (received != 0L) addInFlightBytes(downloadId, -received) // 取消或彻底失败
                         semaphore.release()
                     }
                 }
             }
         }
-        logger.info { "All segments downloaded for $downloadId" }
+        // 这一轮下了多少、用了多久: 用户的日志里看得出是不是被限速 (网盘按连接限速时, 每段的用时见 markSegmentDownloaded)
+        val millis = (clock.now() - startedAt).inWholeMilliseconds
+        val bytes = (getState(downloadId)?.downloadedBytes ?: snapshot.downloadedBytes) - snapshot.downloadedBytes
+        logger.info {
+            "All segments downloaded for $downloadId: ${bytes / 1024} KiB in ${millis}ms with concurrency=${options.maxConcurrentSegments}, " +
+                    "${if (millis > 0) bytes * 1000 / millis / 1024 else 0} KiB/s"
+        }
     }
 
-    protected suspend fun markSegmentDownloaded(downloadId: DownloadId, segmentIndex: Int, byteSize: Long) {
+    /** @param tookMillis 这一段从开始下到下完用了多久 (含重试) */
+    protected suspend fun markSegmentDownloaded(downloadId: DownloadId, segmentIndex: Int, byteSize: Long, tookMillis: Long) {
         // 一段一行, 不是三行: 原先"开始下载"/"下载完"/"记账完"各打一条, 一集 380 段就是 1140 行,
         // 而这些行写的正是我们在小心保持安静的那个文件系统. 保留这一条 (段号 + 大小) 已经够还原
         // "哪一段卡住了/下了多少"; 重试有自己的日志, 进度有 progressFlow.
-        logger.info { "Segment index=$segmentIndex fully downloaded for $downloadId, size=$byteSize" }
+        logger.info { "Segment index=$segmentIndex fully downloaded for $downloadId, size=$byteSize in ${tookMillis}ms" }
         updateState(downloadId) { old ->
             val updatedSegments = old.segments.map {
                 if (it.index == segmentIndex) it.copy(isDownloaded = true, byteSize = byteSize) else it
@@ -1252,6 +1313,7 @@ open class KtorHttpDownloader(
     private fun createProgress(
         st: DownloadState,
         lastSegmentFailure: SegmentFailure? = segmentFailures.value[st.downloadId],
+        inFlight: Long = inFlightBytes.value[st.downloadId] ?: 0L,
     ): DownloadProgress {
         val downloadedSegments = st.segments.count { it.isDownloaded }
         return DownloadProgress(
@@ -1260,9 +1322,9 @@ open class KtorHttpDownloader(
             mediaType = st.mediaType,
             totalSegments = st.totalSegments,
             downloadedSegments = downloadedSegments,
-            downloadedBytes = st.downloadedBytes,
+            downloadedBytes = st.downloadedBytes + inFlight,
             totalBytes = st.segments.sumOf { it.byteSize.coerceAtLeast(0) }
-                .coerceAtLeast(st.downloadedBytes),
+                .coerceAtLeast(st.downloadedBytes + inFlight),
             status = st.status,
             error = st.error,
             lastSegmentFailure = lastSegmentFailure,
@@ -1291,10 +1353,24 @@ open class KtorHttpDownloader(
         segmentFailures.update { remove(downloadId) }
     }
 
-    protected suspend inline fun <R> httpGet(url: String, options: DownloadOptions, block: (HttpStatement) -> R): R {
+    /** @param requestTimeoutMillis 整个请求最多等多久; null 时用 client 的设置 */
+    protected suspend inline fun <R> httpGet(
+        url: String,
+        options: DownloadOptions,
+        requestTimeoutMillis: Long? = null,
+        block: (HttpStatement) -> R,
+    ): R {
         return client.use {
             prepareGet(url) {
-                options.headers.forEach { (k, v) -> header(k, v) }
+                timeout {
+                    // 连不上的节点早点换下一个 (同播放器): 下载域名一解析好几个 IP, 连不通的要等满连接超时才换, 默认 30 秒一个
+                    connectTimeoutMillis = 3_000
+                    this.requestTimeoutMillis = requestTimeoutMillis
+                }
+                options.headers.forEach { (k, v) ->
+                    // 手写的 Cookie (网盘直链靠它鉴权) 不能交给 client 的 Cookie 插件, 它会改坏, 见 rawCookieHeader
+                    if (k.equals(HttpHeaders.Cookie, ignoreCase = true)) rawCookieHeader(v) else header(k, v)
+                }
             }.let { statement -> block(statement) }
         }
     }
@@ -1385,8 +1461,11 @@ open class KtorHttpDownloader(
          */
         private val MERGE_SYNC_POLL_INTERVAL = 200.milliseconds
 
-        /** 见 [globalSegmentLimit] */
-        private const val MAX_GLOBAL_CONCURRENT_SEGMENTS = 6
+        /** 分段下载时每收到这么多字节报一次进度 (见 [downloadSingleSegment] 的 onReceived). */
+        private const val PROGRESS_REPORT_BYTES = 256L * 1024
+
+        /** 见 [globalSegmentLimit]. 至少要容得下一个开满并发的下载 (按连接限速的网盘直链对非会员开到 16 段). */
+        private const val MAX_GLOBAL_CONCURRENT_SEGMENTS = 16
 
         /**
          * MP4/MKV 拼接的限速 = 下载限速 x 这个倍数.
@@ -1398,6 +1477,9 @@ open class KtorHttpDownloader(
 
         /** 拼接时每次取令牌的块大小 */
         private const val MERGE_THROTTLE_CHUNK = 256 * 1024
+
+        /** 建任务时探测 Range 一次最多等多久, 见 [probeRangeSupport] */
+        private const val RANGE_PROBE_TIMEOUT_MILLIS = 5_000L
     }
 }
 

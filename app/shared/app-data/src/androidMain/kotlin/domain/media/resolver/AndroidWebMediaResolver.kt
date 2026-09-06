@@ -40,6 +40,7 @@ import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebViewConfig
+import me.him188.ani.datasources.api.matcher.sniffTimeoutMillis
 import me.him188.ani.datasources.api.matcher.videoOrNull
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.logging.info
@@ -135,8 +136,8 @@ class AndroidWebMediaResolver(
         val config = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
             matcher.patchConfig(acc)
         }
-        val timeoutMillis = settingsRepository.videoResolverSettings.flow.first().effectiveResourceExtractionTimeoutMillis
         logger.info { "Final config: ${config.toLogText()}" }
+        val timeoutMillis = allMatchers.sniffTimeoutMillis(settingsRepository.videoResolverSettings.flow.first().effectiveResourceExtractionTimeoutMillis)
         // WebView 的代理是进程级的, 每次解析前按当前设置更新一次 (必须在主线程设, 且要赶在加载之前)
         val proxyConfig = proxyProvider.proxy.first()
         withContext(Dispatchers.Main) { WebViewProxy.apply(proxyConfig) }
@@ -156,12 +157,16 @@ class AndroidWebMediaResolver(
                 userAgent = config.userAgent,
                 timeoutMillis = timeoutMillis,
                 resourceMatcher = resourceMatcher,
-            ) ?: AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
-                attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
-                media.download.uri,
-                config,
-                resourceMatcher,
-            )
+            ) ?: run {
+                // 新开 WebView 嗅探这一轮最多等 timeoutMillis, 加载提示据此倒数
+                reportResolveAttempt(timeoutMillis)
+                AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
+                    attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
+                    media.download.uri,
+                    config,
+                    resourceMatcher,
+                ) ?: throw MediaResolutionException(ResolutionFailures.FETCH_TIMEOUT) // 等满也没嗅到视频: 报超时 (加载提示刚倒数完), 不是没找到文件
+            }
             )?.let { resource ->
             allMatchers.firstNotNullOfOrNull { matcher ->
                 matcher.match(resource.url, context).videoOrNull

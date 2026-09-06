@@ -16,9 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -27,7 +27,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiV(
+data class BangumiV (
 
     @SerialName(value = "v") @Required val v: kotlin.String
 

@@ -14,6 +14,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.view.WindowCompat
 import me.him188.ani.android.BuildConfig
+import me.him188.ani.android.FormFactorStartupPlaceholder
 import me.him188.ani.android.InstallFormFactorUi
 import me.him188.ani.android.formFactorUiBehavior
 import me.him188.ani.android.onFormFactorActivityCreated
@@ -40,20 +42,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import me.him188.ani.android.BuildConfig
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.user.QrLoginRepository
 import me.him188.ani.app.domain.episode.EpisodeLink
 import me.him188.ani.app.domain.episode.ResolveEpisodeLinkUseCase
 import me.him188.ani.app.domain.foundation.LoadError
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.pip.PIPModeChangedListener
 import me.him188.ani.app.pip.PictureInPictureHost
 import me.him188.ani.app.pip.UserLeaveHintListener
 import me.him188.ani.app.platform.AniComponentActivity
+import me.him188.ani.app.platform.ProfileSwitchFrame
+import me.him188.ani.app.platform.ProfileSwitchFrameDrawable
 import me.him188.ani.app.platform.rememberPlatformWindow
 import me.him188.ani.app.ui.exprovider.ExternalContentProviderFactory
 import me.him188.ani.app.ui.exprovider.LocalExternalContentProvider
@@ -71,6 +78,7 @@ import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.logger
 import org.koin.android.ext.android.inject
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : AniComponentActivity(), PictureInPictureHost {
     private val logger = logger<MainActivity>()
@@ -85,6 +93,7 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
 
     private val externalContentProviderFactory: ExternalContentProviderFactory by inject()
     private val settingsRepository: SettingsRepository by inject()
+    private val bangumiOAuthManager: BangumiOAuthManager by inject()
 
     /**
      * 本次 Activity 创建时落到窗口层的界面缩放, 由 [attachBaseContext] 定下, 之后不再变 ——
@@ -162,8 +171,20 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
         TvPolishFlags.zoomScrimT = intent.getFloatExtra("ani_polish_zoom_scrim_t", TvPolishFlags.zoomScrimT)
         TvPolishFlags.shrinkScrimT = intent.getFloatExtra("ani_polish_shrink_scrim_t", TvPolishFlags.shrinkScrimT)
         TvPolishFlags.zoomSoftEdge = intent.getBooleanExtra("ani_polish_zoom_soft_edge", TvPolishFlags.zoomSoftEdge)
+        TvPolishFlags.pagerSkipOffscreen = intent.getBooleanExtra("ani_polish_pager_skip_offscreen", TvPolishFlags.pagerSkipOffscreen)
+        TvPolishFlags.startupLogo = intent.getBooleanExtra("ani_polish_startup_logo", TvPolishFlags.startupLogo)
         val data = intent.data ?: return
         if (data.scheme != "ani") return
+        if (data.host == "bangumi-oauth-callback") {
+            // 外部浏览器那条登录路的回调 (应用内浏览器是自己拦下来的, 不经过系统).
+            // 授权页可能早就不在了, 所以喂给进程内的单例而不是某个页面
+            val url = data.toString()
+            lifecycleScope.launch {
+                runCatching { bangumiOAuthManager.submitCallbackUrl(url) }
+                    .onFailure { logger.error(it) { "Failed to handle bangumi oauth callback" } }
+            }
+            return
+        }
         when (data.host) {
             "subjects", "episodes" -> {
                 val link = EpisodeLink.parse(data.toString()) ?: return
@@ -209,6 +230,18 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
         super.onCreate(savedInstanceState)
         // 用户主题的外壳底色先铺上: 清单主题只能是固定的纯黑, 浅色主题在第一帧之前也不该露黑
         WindowBackgroundMirror.read(this)?.let { window.setBackgroundDrawable(ColorDrawable(it)) }
+        if (intent.getBooleanExtra(ProfileRestartActivity.EXTRA_PROFILE_CHOSEN, false)) {
+            UserProfiles.launchedBySwitch = true
+            // 换人重启进来的: 接力的那一帧先铺成窗口底 (界面组合出来之前露的就是它), 界面上的过场接着显示它, 见 ProfileSwitchFrame
+            if (savedInstanceState == null) {
+                ProfileSwitchFrame.read(this)?.let { frame ->
+                    val landing = ProfileSwitchFrameDrawable(frame, ProfileSwitchFrameDrawable.FLOOR_MAIN)
+                    ProfileSwitchFrame.showLanding(landing)
+                    window.setBackgroundDrawable(landing)
+                    holdBackWhileLanding()
+                }
+            }
+        }
         handleStartIntent(intent.withoutReplayedLink(savedInstanceState))
 
         // 本形态 (phone / tv) 的附加初始化, 见各 flavor 下的 FormFactorSetup.kt
@@ -243,7 +276,12 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
 
         setContent {
             // 界面行为由本形态决定, 共享界面代码不判断设备 (见 AniUiBehavior)
-            AniApp(uiBehavior = formFactorUiBehavior, uiScaleApplier = uiScaleApplier) {
+            AniApp(
+                uiBehavior = formFactorUiBehavior,
+                uiScaleApplier = uiScaleApplier,
+                // 设置读出来之前: 电视端一打开就先画启动页
+                loadingPlaceholder = { FormFactorStartupPlaceholder() },
+            ) {
                 val externalComponentProviderUpdated by rememberUpdatedState(externalContentProvider)
 
                 SystemBarColorEffect()
@@ -264,6 +302,8 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
                     Box(rootModifier) {
                         // 本形态特有的页面变体装配 (见各 Local*Variant 插槽)
                         InstallFormFactorUi(aniNavigator) {
+                            // 在形态的配色里读: 电视端浅色主题的页面底换成了海报墙那档浅灰 (见 TvPageBackgroundTheme), 窗口底色要跟页面实际铺的一致
+                            WindowBackgroundSyncEffect()
                             AniAppContent(aniNavigator)
                         }
                     }
@@ -271,4 +311,41 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
             }
         }
     }
+
+    /**
+     * 换人进来的过场盖着 ([ProfileSwitchFrame.landing]) 的时候主界面不接按键与返回: 按下去的会落到被盖住的首页上
+     * (比如首页的「再按一次返回退出」, 过场一撤提示就露出来). 按键 (返回也是按键, 见 manifest 的 enableOnBackInvokedCallback)
+     * 在 [dispatchKeyEvent] 里吞掉.
+     * 界面上的过场最多盖几秒 (见 TvProfileSwitchLandingHost); 它要是一直没撤 (界面没起来), 到点这里自己放掉, 遥控器不会一直没反应.
+     */
+    private fun holdBackWhileLanding() {
+        lifecycleScope.launch {
+            val dismissed = withTimeoutOrNull(PROFILE_SWITCH_LANDING_MAX) {
+                ProfileSwitchFrame.landing.first { it == null }
+                true
+            }
+            if (dismissed == null) ProfileSwitchFrame.release(this@MainActivity)
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (ProfileSwitchFrame.landing.value != null) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * 窗口底色跟着页面的外壳底色走, 并抄进 [WindowBackgroundMirror] 给下次启动 (与界面缩放的重建) 用.
+     * 要在形态的页面配色里调用 (见 InstallFormFactorUi), 读到的才是页面实际铺的那个颜色.
+     */
+    @Composable
+    private fun WindowBackgroundSyncEffect() {
+        val color = AniThemeDefaults.shellBackgroundColor.toArgb()
+        LaunchedEffect(color) {
+            window.setBackgroundDrawable(ColorDrawable(color))
+            WindowBackgroundMirror.write(this@MainActivity, color)
+        }
+    }
 }
+
+/** 换人进来的过场最多盖多久 (界面上的过场自己最多等 8 秒封面再淡出, 见 TvProfileSwitchLandingHost). */
+private val PROFILE_SWITCH_LANDING_MAX = 12.seconds

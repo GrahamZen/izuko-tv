@@ -49,6 +49,7 @@ import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.app.ui.remote.RemotePlayerExtras.putCommentLink
 import me.him188.ani.app.ui.remote.RemotePlayerExtras.putDanmakuState
 import me.him188.ani.app.ui.remote.RemotePlayerExtras.putTrackState
 import me.him188.ani.app.ui.remote.RemoteCandidates.putCandidates
@@ -133,15 +134,23 @@ internal class RemotePlayerHandle(
     @Volatile
     var presentation: MediaSelectorState.Presentation? = null
 
+    /** 这部番自己的收藏状态 (`null` = 还没取到). 由 [RegisterTvRemotePlayer] 持续收集. */
+    @Volatile
+    var selfCollectionType: UnifiedCollectionType? = null
+
     fun stateJson(filter: RemoteMediaFilter = RemoteMediaFilter.None): JsonObject {
         val page = page
         val pres = presentation
-        val selected = pres?.selected
+        // 播的是哪个就显示哪个: 播放中改了搜索名, 选源会话重建、新的选源器暂时没有选中项, 播放器却照旧在播原来那个
+        val selected = pres?.selected ?: vm.loadedMedia.value
         return buildJsonObject {
             put("available", true)
             put("background", background)
             // 手机上点卡片的剧名 = 电视打开这部的详情页
             put("subjectId", vm.subjectId)
+            // 这部番自己的收藏与评分: 手机上「评论与评分」看到它变了 (电视上改了收藏、登录后取回了真实状态) 就重读
+            selfCollectionType?.let { put("collection", it.name) }
+            page?.playingEpisodeSummary?.selfRatingInfo?.let { put("score", it.score) }
             if (page != null) {
                 put("title", page.subjectPresentation.title)
                 val ep = page.episodePresentation
@@ -162,8 +171,11 @@ internal class RemotePlayerHandle(
                 }
             }
 
-            // 弹幕与音轨 / 字幕轨 (手机上两个可收起的区), 见 RemotePlayerExtras
-            if (page != null) putDanmakuState(page)
+            // 弹幕与音轨 / 字幕轨 (手机上两个可收起的区), 以及本集评论的网页地址, 见 RemotePlayerExtras
+            if (page != null) {
+                putDanmakuState(page)
+                putCommentLink(page)
+            }
             putTrackState(this@RemotePlayerHandle)
 
             // 当前查询条件 (「编辑查询请求」那几项), 手机上的表单用它预填
@@ -228,12 +240,20 @@ internal class RemotePlayerHandle(
      */
     fun select(mediaId: String): String? {
         val page = page ?: return tr("电视当前不在播放页")
-        val entry = presentation?.filteredCandidates.orEmpty().firstOrNull { it.original.mediaId == mediaId }
-            ?: return tr("这个数据源已不在列表里，请刷新")
+        val entry = findCandidate(mediaId) ?: return tr("这个数据源已不在列表里，请刷新")
         if (entry.exclusionReason?.blocksSelection == true) return tr("这个资源现在不能播放（缓存还没下完）")
         uiScope.launch { page.mediaSelectorState.select(entry.original) }
         return null
     }
+
+    /** 当前候选 (含被排除的) 里 [mediaId] 对应的资源; 手机上的列表可能已过时, 不在了为 null. */
+    fun candidate(mediaId: String): Media? = findCandidate(mediaId)?.original
+
+    /** 电视当前在播的这一集; 页面状态还没出来时为 null. */
+    val currentEpisodeId: Int? get() = page?.episodePresentation?.episodeId
+
+    private fun findCandidate(mediaId: String) =
+        presentation?.filteredCandidates.orEmpty().firstOrNull { it.original.mediaId == mediaId }
 
     /**
      * 换集: 与电视上选集条 / 选集侧边栏同一条路 ([EpisodeSelectorState.selectEpisodeId], 就地换集不导航).
@@ -274,6 +294,11 @@ internal class RemotePlayerHandle(
         val default = page.defaultFetchRequest ?: return tr("数据源还在加载，请稍后再试")
         uiScope.launch { vm.updateFetchRequest(default) }
         return null
+    }
+
+    /** 手机上点了「完整搜索」: 同电视选源面板里的开关, 放开被暂停的数据源, 本播放页之后一直查完. */
+    fun searchAllSources() {
+        vm.setFullMediaSearch(true)
     }
 
     /**
@@ -467,6 +492,7 @@ internal class RemotePlayerHandle(
         isCaptchaRequired -> "captcha"
         isRateLimited -> "limited"
         isFailedOrAbandoned -> "failed"
+        isPaused -> "paused"
         else -> "done"
     }
 
@@ -491,6 +517,12 @@ fun RegisterTvRemotePlayer(vm: EpisodeViewModel, page: EpisodePageState, backgro
     LaunchedEffect(handle, selectorState) {
         // presentationFlow 是 WhileSubscribed 的: 电视上数据源弹窗没开时没人订阅, 这里订着让它保持最新
         selectorState.presentationFlow.collect { handle.presentation = it }
+    }
+    LaunchedEffect(handle) {
+        // 同上, 也是 WhileSubscribed: 电视上收藏按钮不在屏幕上时没人订阅
+        vm.editableSubjectCollectionTypeState.presentationFlow.collect {
+            handle.selfCollectionType = if (it.isPlaceholder) null else it.selfCollectionType
+        }
     }
     // 音轨 / 字幕轨的候选与选中缓存到把手上, HTTP 线程只读缓存 (candidates 是 Flow, 不在请求里阻塞地取)
     LaunchedEffect(handle) {

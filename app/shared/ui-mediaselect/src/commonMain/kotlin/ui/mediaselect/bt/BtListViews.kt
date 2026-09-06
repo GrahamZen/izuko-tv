@@ -80,6 +80,9 @@ import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
 import me.him188.ani.app.ui.lang.media_selector_item_subject_title_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
 import me.him188.ani.app.ui.lang.subject_episode_cached
+import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
+import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
+import me.him188.ani.app.ui.lang.media_selector_item_published_before_airing
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -126,6 +129,9 @@ internal class BtLabelStrings(
     val unsupportedPlayback: String,
     val seasonMismatch: String,
     val subjectTitleMismatch: String,
+    val cacheNotReady: String,
+    val excludedAlliance: String,
+    val publishedBeforeAiring: String,
     val details: MediaDetailsStrings,
 ) {
     fun exclusion(exclusion: BtRowExclusion): String = when (exclusion) {
@@ -137,6 +143,9 @@ internal class BtLabelStrings(
             MediaExclusionReason.UnsupportedByPlatformPlayer -> unsupportedPlayback
             MediaExclusionReason.FromSequelSeason, MediaExclusionReason.FromSeriesSeason -> seasonMismatch
             MediaExclusionReason.SubjectNameMismatch -> subjectTitleMismatch
+            MediaExclusionReason.CacheNotReady -> cacheNotReady
+            MediaExclusionReason.ExcludedAlliance -> excludedAlliance
+            MediaExclusionReason.PublishedBeforeAiring -> publishedBeforeAiring
         }
     }
 
@@ -179,6 +188,9 @@ internal fun rememberBtLabelStrings(): BtLabelStrings {
         unsupportedPlayback = stringResource(Lang.media_selector_item_unsupported_playback),
         seasonMismatch = stringResource(Lang.media_selector_item_season_mismatch),
         subjectTitleMismatch = stringResource(Lang.media_selector_item_subject_title_mismatch),
+        cacheNotReady = stringResource(Lang.media_selector_item_cache_not_ready),
+        excludedAlliance = stringResource(Lang.media_selector_item_excluded_alliance),
+        publishedBeforeAiring = stringResource(Lang.media_selector_item_published_before_airing),
         details = details,
     )
 }

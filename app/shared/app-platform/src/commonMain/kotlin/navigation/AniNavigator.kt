@@ -129,15 +129,6 @@ interface AniNavigator {
     )
 
     @MainThread
-    fun navigateEmailLoginStart() {
-        navigate(NavRoutes.EmailLoginStart)
-    }
-
-    @MainThread
-    fun navigateEmailLoginVerify() {
-        navigate(NavRoutes.EmailLoginVerify)
-    }
-
     /**
      * 返回到第一个 [NavRoutes.Main], 根据当前的 [backStack] 进行不同的操作:
      *
@@ -148,10 +139,10 @@ interface AniNavigator {
     fun popBackOrNavigateToMain(mainSceneInitialPage: MainScreenPage)
 
     /**
-     * 登录页面
+     * 登录页面. 直连之后登录就是 bangumi 授权 (原先是 Ani 的邮箱验证码登录).
      */
     fun navigateLogin() {
-        navigate(NavRoutes.EmailLoginStart)
+        navigateBangumiAuthorize()
     }
 
     /**
@@ -162,6 +153,7 @@ interface AniNavigator {
     }
 
     fun navigateBangumiAuthorize() {
+        BangumiAuthorizeRedirect.target?.let { return it(this) }
         navigateOAuthAuthorize("bangumi")
     }
 
@@ -174,10 +166,6 @@ interface AniNavigator {
      */
     fun navigateQrLoginConfirm(requestId: String) {
         navigate(NavRoutes.QrLoginConfirm(requestId))
-    }
-
-    fun navigatePlaybackHistorySyncStatus() {
-        navigate(NavRoutes.PlaybackHistorySyncStatus)
     }
 
     fun navigateSettings(tab: SettingsTab? = null) {
@@ -232,43 +220,6 @@ interface AniNavigator {
     /**
      * 合并收藏: 处理 Animeko 与 Bangumi 两侧的收藏冲突.
      */
-    fun navigateBangumiMerge() {
-        navigate(NavRoutes.BangumiMerge)
-    }
-
-    fun navigateNotifications() {
-        navigate(NavRoutes.Notifications)
-    }
-
-    /**
-     * @param notificationId 见 [NavRoutes.NotificationDetail.notificationId]
-     */
-    fun navigateNotificationDetail(notificationId: String) {
-        // 避免同一条通知在栈中重复出现
-        popBackStack(NavRoutes.NotificationDetail(notificationId), inclusive = true)
-        navigate(NavRoutes.NotificationDetail(notificationId))
-    }
-
-    fun navigateAnnouncements() {
-        navigate(NavRoutes.Announcements)
-    }
-
-    /**
-     * @param announcementId 见 [NavRoutes.AnnouncementDetail.announcementId]
-     */
-    fun navigateAnnouncementDetail(announcementId: String) {
-        popBackStack(NavRoutes.AnnouncementDetail(announcementId), inclusive = true)
-        navigate(NavRoutes.AnnouncementDetail(announcementId))
-    }
-
-    fun navigateNotificationSettings() {
-        navigate(NavRoutes.NotificationSettings)
-    }
-
-    /** TV: 自定义播放器按钮 (见 [NavRoutes.TvPlayerChrome]). */
-    fun navigateTvPlayerChrome() {
-        navigateSingleInstance(NavRoutes.TvPlayerChrome)
-    }
 }
 
 /**

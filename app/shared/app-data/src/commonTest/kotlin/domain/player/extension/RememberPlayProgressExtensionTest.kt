@@ -38,6 +38,7 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.utils.coroutines.childScope
 import org.openani.mediamp.PlaybackErrorCode
+import org.openani.mediamp.PlaybackEvent
 import org.openani.mediamp.PlaybackException
 import org.openani.mediamp.metadata.MediaProperties
 import org.openani.mediamp.test.TestMediampPlayer
@@ -46,6 +47,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -655,6 +657,100 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
         advanceUntilIdle()
 
         assertEquals(500, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `第一次打开这一集时直接从存下的进度打开，不另外 seek`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 500)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        loadSelectedMedia(suite, state)
+
+        assertEquals(500, suite.player.currentPositionMillis.value)
+        // 开播后再 seek 一次的话, 真播放器会把刚缓冲的扔掉重来 (没有回退缓冲)
+        assertEquals(emptyList(), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `同一集换源时直接从换源前播到的位置打开，不另外 seek`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        loadSelectedMedia(suite, state, mediaIndex = 0)
+        suite.player.seekTo(3000)
+        advanceUntilIdle()
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        loadSelectedMedia(suite, state, mediaIndex = 1)
+
+        assertEquals(3000, suite.player.currentPositionMillis.value)
+        // 开播后再 seek 一次的话, 真播放器会把刚缓冲的扔掉重来
+        assertEquals(emptyList(), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `原地重载后回到重载时给的位置，不按存下的进度`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 500)
+        // 选中的资源还没装进播放器, 没有可重载的
+        assertFalse(state.reloadCurrentMedia(42_000))
+
+        loadSelectedMedia(suite, state)
+        assertEquals(500, suite.player.currentPositionMillis.value) // 第一次打开照常恢复存下的进度
+
+        // 重载会重新打开这个资源 (位置先归零), 开播后回到 42 秒; 没重新打开的话会停在 500
+        assertTrue(state.reloadCurrentMedia(42_000))
+        advanceUntilIdle()
+        assertEquals(42_000, suite.player.currentPositionMillis.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `存下的进度超过这个资源的长度时从头播`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        // 用完整的正片看到 111 秒, 这一集现在选中的是 65 秒的 SP
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 111_000)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        loadSelectedMedia(suite, state, durationMillis = 65_000)
+
+        assertEquals(0, suite.player.currentPositionMillis.value)
+        assertEquals(listOf(0L), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `同一集换成更短的资源时不跳到超出它长度的进度`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        loadSelectedMedia(suite, state, mediaIndex = 0)
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 80_000)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        // 同集换源从头打开, 存下的 80 秒超出了新资源的长度
+        loadSelectedMedia(suite, state, durationMillis = 65_000, mediaIndex = 1)
+
+        assertEquals(0, suite.player.currentPositionMillis.value)
+        assertEquals(emptyList(), seeks)
         testScope.cancel()
     }
 

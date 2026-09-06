@@ -19,6 +19,11 @@
     androidx.media3.exoplayer.mediacodec.MediaCodecInfo codecInfo;
 }
 
+# DeferredMkvFonts 补完字体后反射换掉 AssHandler 的渲染器
+-keepclassmembers class io.github.peerless2012.ass.media.AssHandler {
+    io.github.peerless2012.ass.AssRender render;
+}
+
 # Torrent4j
 -keep class org.libtorrent4j.swig.libtorrent_jni {*;}
 -keep class me.him188.ani.app.ui.settings.tabs.** {*;} # 否则设置页切换 tab 会 crash, #367
@@ -46,6 +51,15 @@
 # ffmpeg native
 -keep class org.openani.mediamp.ffmpeg.JvmFFmpegProcess { *; }
 
+# FfmpegAudioFallback 按类名反射构造 mediamp 的 WSOLA 变速处理链 (Kotlin internal, 不能直接引用)
+-keep class org.openani.mediamp.exoplayer.internal.WsolaAudioProcessorChain { public <init>(); }
+# FFmpeg 音频软解 (video-player 里的 androidx.media3.decoder.ffmpeg, 同 media3 官方扩展自带的规则): native 方法名不能改,
+# growOutputBuffer 由 JNI 按名字调用
+-keepclasseswithmembernames class * { native <methods>; }
+-keep, includedescriptorclasses class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder {
+  private java.nio.ByteBuffer growOutputBuffer(androidx.media3.decoder.SimpleDecoderOutputBuffer, int);
+}
+
 # onnxruntime
 -keep class ai.onnxruntime.** { *; } # onnxruntime4j_jni constructs Java values through FindClass/GetMethodID
 
@@ -66,3 +80,14 @@
 -keepclassmembernames class com.google.thirdparty.** { *; }
 # 所有改了名的类 (Guava 与 R8 合成的类) 放进我们独有的包, 不落在默认包里 (默认包里的短类名同样可能被 ROM 撞上).
 -repackageclasses me.him188.ani.r8
+
+# 加密直连 (ConscryptEchTransport): Conscrypt 按方法名反射找信任管理器上的 getNetworkSecurityPolicy() 决定用不用 ECH,
+# 按签名反射找 checkServerTrusted(链, 认证类型, 主机名) 校验证书. 代码里没有调用方, 不留着会被当成没用删掉 ——
+# 前者没了 ECH 一律不开, 连接退回明文域名而被拦; 后者没了证书校验不按主机名走网络安全配置.
+-keepclassmembers class me.him188.ani.app.domain.foundation.EchRequiredTrustManager {
+    public org.conscrypt.NetworkSecurityPolicy getNetworkSecurityPolicy();
+    public void checkServerTrusted(java.security.cert.X509Certificate[], java.lang.String, java.lang.String);
+}
+# Conscrypt 的原生库按类名与成员名回调 Java
+-keep class org.conscrypt.** { *; }
+-dontwarn org.conscrypt.**

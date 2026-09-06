@@ -18,9 +18,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import me.him188.ani.app.data.persistent.database.dao.HttpCacheDownloadStateDao
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.httpdownloader.DownloadId
+import me.him188.ani.utils.httpdownloader.DownloadOptions
 import me.him188.ani.utils.httpdownloader.DownloadState
+import me.him188.ani.utils.httpdownloader.DownloadThroughputGate
 import me.him188.ani.utils.httpdownloader.DownloadStatus
 import me.him188.ani.utils.httpdownloader.KtorHttpDownloader
 import me.him188.ani.utils.httpdownloader.m3u.DefaultM3u8Parser
@@ -45,6 +48,7 @@ class KtorPersistentHttpDownloader(
     clock: Clock = Clock.System,
     m3u8Parser: M3u8Parser = DefaultM3u8Parser,
     scope: CoroutineScope,
+    throughputGate: DownloadThroughputGate? = null,
 ) : KtorHttpDownloader(
     client = client,
     fileSystem = fileSystem,
@@ -53,11 +57,14 @@ class KtorPersistentHttpDownloader(
     m3u8Parser = m3u8Parser,
     parentScope = scope,
     ioDispatcher = ioDispatcher,
+    throughputGate = throughputGate,
 ) {
     override suspend fun init() {
         super.init()
         restoreStates()
     }
+
+    override fun optionsFor(options: DownloadOptions): DownloadOptions = options.withParallelRangeHint()
 
     /**
      * Replaces the current in-memory map with data loaded from [dataStore], but does not resume them.
@@ -124,4 +131,16 @@ class KtorPersistentHttpDownloader(
     private companion object {
         private val logger = logger<KtorPersistentHttpDownloader>()
     }
+}
+
+/**
+ * 解析器在请求头里放了并发提示 ([PlaybackRequestHints.PARALLEL_RANGE_HEADER], 每个连接限速的网盘直链) 就照它同时下几段.
+ * 提示只在落库的请求头里留着 (恢复时还要用), 发出去的请求里去掉 (连同和它一起给的其他提示).
+ */
+internal fun DownloadOptions.withParallelRangeHint(): DownloadOptions {
+    val hint = headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER] ?: return this
+    return copy(
+        headers = PlaybackRequestHints.strip(headers),
+        maxConcurrentSegments = hint.toIntOrNull()?.takeIf { it > 1 } ?: maxConcurrentSegments,
+    )
 }

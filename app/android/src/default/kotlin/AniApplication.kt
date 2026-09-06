@@ -12,6 +12,7 @@ package me.him188.ani.android
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
@@ -28,15 +29,21 @@ import kotlinx.coroutines.runBlocking
 import me.him188.ani.android.activity.MainActivity
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
 import me.him188.ani.app.data.persistent.dataStores
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
+import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
 import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
 import me.him188.ani.app.platform.AndroidLoggingConfigurator
+import me.him188.ani.app.platform.DevSwitchesAndroid
+import me.him188.ani.app.platform.PreviousExits
+import me.him188.ani.app.videoplayer.media.SeekPreviewCrashMarker
 import me.him188.ani.app.platform.AppStartupTasks
 import me.him188.ani.app.platform.JvmLogHelper
 import me.him188.ani.app.platform.StartupTimeMonitor
@@ -45,11 +52,14 @@ import me.him188.ani.app.platform.createAppRootCoroutineScope
 import me.him188.ani.app.platform.getCommonKoinModule
 import me.him188.ani.app.platform.startCommonKoinModule
 import me.him188.ani.app.platform.trace.recordAppStart
+import me.him188.ani.app.ui.foundation.aniSharedSketch
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.error
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import okio.Path.Companion.toPath
 import org.koin.android.ext.android.getKoin
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -57,7 +67,13 @@ import org.openani.mediamp.ffmpeg.FFmpegKit
 import java.io.File
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import kotlin.time.TimeSource
 import kotlin.uuid.ExperimentalUuidApi
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.android.activity.ProfileRestartActivity
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.toKtPath
 
 
 class AniApplication : Application() {
@@ -85,14 +101,24 @@ class AniApplication : Application() {
 
     inner class Instance()
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        DevSwitchesAndroid.install(base)
+    }
+
     @OptIn(ExperimentalUuidApi::class)
     override fun onCreate() {
         super.onCreate()
+        val currentProcess = processName()
+        // 换人重启的中转进程只画一帧、结束主进程再拉起主界面, 连日志都不配: 越早画出那一帧越好 (见 ProfileRestartActivity)
+        if (currentProcess.contains(ProfileRestartActivity.PROCESS_SUFFIX)) return
         val startupTimeMonitor = StartupTimeMonitor()
 
         val logsDir = applicationContext.getLogsDir().absolutePath
         AndroidLoggingConfigurator.configure(logsDir)
         AppStartupTasks.printVersions()
+        if (currentProcess == packageName) PreviousExits.log(this)
+        if (currentProcess == packageName) SeekPreviewCrashMarker.checkPreviousRun(this)
         startupTimeMonitor.mark(StepName.Logging)
 
         val defaultUEH = Thread.getDefaultUncaughtExceptionHandler()
@@ -103,10 +129,17 @@ class AniApplication : Application() {
         }
         startupTimeMonitor.mark(StepName.UncaughtExceptionHandler)
 
-        if (processName().contains("torrent_service")) {
+        if (currentProcess.contains("torrent_service") ||
+            currentProcess.contains("codecprobe")
+        ) {
             // In service process, we don't need any dependency which is use in app process.
             return
         }
+
+        // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
+        UserProfiles.install(
+            UserProfileRegistry.load(filesDir.resolve(UserProfileRegistry.FILE_NAME).toKtPath().inSystem),
+        )
 
         instance = Instance() // set instance
 
@@ -148,13 +181,27 @@ class AniApplication : Application() {
         startupTimeMonitor.mark(StepName.Modules)
 
         val koin = getKoin()
+        // 图片磁盘缓存第一次打开要把整份 journal 读一遍 (几千条), 读完之前所有图片请求都在等 —— 冷启动时这就是封面全灰的那几秒,
+        // 还没编译优化的包上要好几秒. 进程一起来就在后台先打开, 与界面启动并行; 用主界面与屏保共用的那个实例 (见 aniSharedSketch)
+        scope.launch(Dispatchers.IO_) {
+            val start = TimeSource.Monotonic.markNow()
+            val size = aniSharedSketch(
+                this@AniApplication,
+                koin.get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
+                appCacheDirectory = cacheDir.absolutePath.toPath(),
+            ).downloadCache.size
+            logger<AniApplication>().info {
+                "Image disk cache opened in ${start.elapsedNow().inWholeMilliseconds}ms (${size / 1024 / 1024} MiB)"
+            }
+        }
         val analyticsInitializer = launchTelemetryInitialization(scope, applicationContext, koin)
 
         // torrent_cache rows carry no engine; MediaCacheSave.engine says which engine owns a media.
         val anitorrentMediaIds = dataStores.mediaCacheMetadataStore.data.map { saves ->
             saves.filter { it.engine == MediaCacheEngineKey.Anitorrent }.map { it.origin.mediaId }.toSet()
         }
-        val torrentCacheInfoDao = koin.get<AniDatabase>().torrentCacheInfoDao()
+        // 缓存是整台设备共用的, 在设备库里 (多用户: 每人一份库)
+        val torrentCacheInfoDao = koin.get<DeviceAniDatabase>().database.torrentCacheInfoDao()
         anitorrentTorrents.value = combine(
             torrentCacheInfoDao.getAll(),
             anitorrentMediaIds,

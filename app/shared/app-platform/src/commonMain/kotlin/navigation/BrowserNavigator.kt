@@ -16,7 +16,7 @@ interface BrowserNavigator {
 
     fun openJoinTelegram(context: Context): OpenBrowserResult = openBrowser(
         context,
-        "https://t.me/openani",
+        ChatGroups.telegramLink,
     )
 
     // Android Intent.ACTION_VIEW
@@ -24,6 +24,20 @@ interface BrowserNavigator {
 
     fun intentOpenVideo(context: Context, url: String): OpenBrowserResult {
         return OpenBrowserResult.Success
+    }
+}
+
+/**
+ * 打开之前先把地址换一遍 ([rewrite]), 例如 Bangumi 网页按当前线路换站 (见 `BangumiEndpointProvider.webLink`).
+ */
+fun BrowserNavigator.rewritingUrls(rewrite: (String) -> String): BrowserNavigator {
+    val delegate = this
+    return object : BrowserNavigator by delegate {
+        override fun openBrowser(context: Context, url: String): OpenBrowserResult =
+            delegate.openBrowser(context, rewrite(url))
+
+        override fun intentActionView(context: Context, url: String): OpenBrowserResult =
+            delegate.intentActionView(context, rewrite(url))
     }
 }
 

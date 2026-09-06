@@ -31,13 +31,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,8 +58,11 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
+import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
 import me.him188.ani.app.ui.richtext.StickerImage
@@ -182,40 +183,44 @@ internal fun TvStickerPicker(
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(TV_STICKER_CELL_SIZE),
-                        state = gridState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            // 网格四周同样不留出口 (理由同上). 只拦"那个方向确实没有格子"的情形,
-                            // 其余照常交给网格自己的空间搜索 —— 它会把目标滚进视口
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                val columns = gridState.layoutInfo.visibleItemsInfo
-                                    .maxOfOrNull { it.column + 1 }
-                                    ?.coerceAtLeast(1) ?: return@onPreviewKeyEvent false
-                                val index = focusedCellIndex
-                                val lastIndex = pack.tokens.lastIndex
-                                when (event.key) {
-                                    Key.DirectionUp -> index < columns // 首行
-                                    Key.DirectionDown -> index / columns == lastIndex / columns // 末行
-                                    // 行末按右: 不拦的话空间搜索会绕到别处 (同 TvSchedulePage 的日期行)
-                                    Key.DirectionRight -> index % columns == columns - 1 || index == lastIndex
-                                    else -> false // 左键回包列表, 交给空间搜索
+                    // 滚不完的格子上下渐隐; 遥控器上焦点格滚进来时避开渐隐那一截
+                    ProvideScrollFadeFocusMargin {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(TV_STICKER_CELL_SIZE),
+                            state = gridState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .aniVerticalScrollFade(gridState)
+                                // 网格四周同样不留出口 (理由同上). 只拦"那个方向确实没有格子"的情形,
+                                // 其余照常交给网格自己的空间搜索 —— 它会把目标滚进视口
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    val columns = gridState.layoutInfo.visibleItemsInfo
+                                        .maxOfOrNull { it.column + 1 }
+                                        ?.coerceAtLeast(1) ?: return@onPreviewKeyEvent false
+                                    val index = focusedCellIndex
+                                    val lastIndex = pack.tokens.lastIndex
+                                    when (event.key) {
+                                        Key.DirectionUp -> index < columns // 首行
+                                        Key.DirectionDown -> index / columns == lastIndex / columns // 末行
+                                        // 行末按右: 不拦的话空间搜索会绕到别处 (同 TvSchedulePage 的日期行)
+                                        Key.DirectionRight -> index % columns == columns - 1 || index == lastIndex
+                                        else -> false // 左键回包列表, 交给空间搜索
+                                    }
                                 }
+                                .focusRestorer(),
+                        ) {
+                            itemsIndexed(pack.tokens, key = { _, token -> token }) { index, token ->
+                                TvStickerCell(
+                                    token = token,
+                                    onClick = { onPick(token) },
+                                    modifier = Modifier
+                                        .onFocusChanged { if (it.isFocused) focusedCellIndex = index }
+                                        .ifThen(index == 0) {
+                                            tvFocusAnchor(focus, TvStickerPickerFocus.FirstCell)
+                                        },
+                                )
                             }
-                            .focusRestorer(),
-                    ) {
-                        itemsIndexed(pack.tokens, key = { _, token -> token }) { index, token ->
-                            TvStickerCell(
-                                token = token,
-                                onClick = { onPick(token) },
-                                modifier = Modifier
-                                    .onFocusChanged { if (it.isFocused) focusedCellIndex = index }
-                                    .ifThen(index == 0) {
-                                        tvFocusAnchor(focus, TvStickerPickerFocus.FirstCell)
-                                    },
-                            )
                         }
                     }
                 }
@@ -226,7 +231,8 @@ private enum class TvStickerPickerFocus : TvFocusKey { FirstCell }
 
 /**
  * 表情包名: 聚焦即换包 (不必再按一下确定 —— 换包本来就只是"让右边显示这一包").
- * 当前包在失焦时也保持高亮, 否则焦点一进网格就看不出自己在哪一包了.
+ * 当前包在失焦时也保持选中色, 否则焦点一进网格就看不出自己在哪一包了. 三态同弹窗里的其他选项
+ * (见 [AniFocusSelectableSurface]), 没选中的不铺底.
  */
 @Composable
 private fun TvStickerPackItem(
@@ -235,28 +241,16 @@ private fun TvStickerPackItem(
     onFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    Surface(
+    AniFocusSelectableSurface(
         onClick = { }, // 聚焦即生效, 点击无额外动作 (但要可点才可聚焦)
+        selected = selected,
+        shape = RoundedCornerShape(10.dp),
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocused()
-            }
+            .onFocusChanged { if (it.isFocused) onFocused() }
             // 触屏: 点一下即聚焦 = 换到这一包 (本条目"聚焦即生效", 点击本身是空操作). 电视上不装
             .tvTouchFocusOnTap(),
-        shape = RoundedCornerShape(10.dp),
-        color = when {
-            focused -> MaterialTheme.colorScheme.primary
-            selected -> MaterialTheme.colorScheme.surfaceContainerHighest
-            else -> Color.Transparent
-        },
-        contentColor = if (focused) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
+        unselectedColor = Color.Transparent,
     ) {
         Text(
             name,
@@ -276,14 +270,12 @@ private fun TvStickerCell(
     modifier: Modifier = Modifier,
 ) {
     val imageUrl = BangumiStickers.imageUrlOf(token) ?: return
-    var focused by remember { mutableStateOf(false) }
-    Surface(
+    AniFocusSelectableSurface(
         onClick = onClick,
-        modifier = modifier
-            .size(TV_STICKER_CELL_SIZE)
-            .onFocusChanged { focused = it.isFocused },
+        selected = false,
         shape = RoundedCornerShape(10.dp),
-        color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+        modifier = modifier.size(TV_STICKER_CELL_SIZE),
+        unselectedColor = Color.Transparent,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             StickerImage(

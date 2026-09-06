@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.io.files.Path
 import me.him188.ani.app.data.repository.RepositoryNetworkException
+import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.FileDownloader
 import me.him188.ani.app.tools.update.FileDownloaderState
 import me.him188.ani.utils.io.inSystem
@@ -25,6 +26,8 @@ import me.him188.ani.utils.platform.annotations.TestOnly
 
 /**
  * 将 [FileDownloader] 状态收集为 Compose [State]
+ *
+ * @param stage 进行到哪一步 (见 [FileDownloader.stage]); 下载卡片据此写「挑选下载线路 3/5」「38/79 MB · 2.1 MB/s」
  */
 @Stable
 data class FileDownloaderStats(
@@ -32,6 +35,7 @@ data class FileDownloaderStats(
     val progress: Float,
     val state: FileDownloaderState,
     val isPlaceholder: Boolean = false,
+    val stage: FileDownloadStage? = null,
 ) {
     companion object {
         val Placeholder = FileDownloaderStats(
@@ -49,8 +53,10 @@ class FileDownloaderPresenter(
     val flow = combine(
         fileDownloader.progress,
         fileDownloader.state,
-        ::FileDownloaderStats,
-    ).stateIn(
+        fileDownloader.stage,
+    ) { progress, state, stage ->
+        FileDownloaderStats(progress, state, stage = stage)
+    }.stateIn(
         scope = flowScope,
         started = SharingStarted.WhileSubscribed(),
         initialValue = FileDownloaderStats.Placeholder,
@@ -65,6 +71,13 @@ object TestFileDownloaderStats {
             progress = 0.5f,
             state = FileDownloaderState.Downloading,
             isPlaceholder = false,
+            stage = FileDownloadStage.Transferring(
+                line = 1,
+                lines = 3,
+                downloadedBytes = 40L * 1024 * 1024,
+                totalBytes = 80L * 1024 * 1024,
+                bytesPerSecond = 2L * 1024 * 1024,
+            ),
         )
 
     @TestOnly

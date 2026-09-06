@@ -51,6 +51,7 @@ import me.him188.ani.app.ui.foundation.BackgroundScope
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.icons.PlayingIcon
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close
 import me.him188.ani.app.ui.lang.subject_episode_now_playing
@@ -179,7 +180,7 @@ fun EpisodeVideoSideSheets.EpisodeSelectorSheet(
                 )
             }
         }
-        LazyColumn(state = lazyListState) {
+        LazyColumn(Modifier.aniVerticalScrollFade(lazyListState), state = lazyListState) {
             itemsIndexed(state.items, key = { _, item -> item.episodeId }) { index, item ->
                 val selected = index == state.currentIndex
                 val color = contentColorForWatchStatus(item.collectionType, item.isKnownBroadcast)

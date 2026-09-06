@@ -21,7 +21,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import me.him188.ani.android.navigation.AndroidBrowserNavigator
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
@@ -38,11 +38,13 @@ import me.him188.ani.app.domain.media.resolver.ApiVideoMediaResolver
 import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
 import me.him188.ani.app.domain.mediasource.web.AndroidOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.AndroidCaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.player.recordingFailures
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
@@ -80,6 +82,8 @@ import org.koin.dsl.module
 import java.io.File
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
+import me.him188.ani.android.activity.AndroidAppRestarter
+import me.him188.ani.app.platform.AppRestarter
 
 /**
  * BT 引擎是否跑在 `:torrent_service` 独立进程里.
@@ -176,7 +180,7 @@ fun getAndroidModules(
         logger.info { "HttpMediaCacheEngine base save directory: $saveDir" }
 
         HttpMediaCacheEngine(
-            dao = get<AniDatabase>().httpCacheDownloadStateDao(),
+            dao = get<DeviceAniDatabase>().database.httpCacheDownloadStateDao(),
             mediaSourceId = MediaDownloadManager.LOCAL_FS_MEDIA_SOURCE_ID,
             downloader = get<HttpDownloader>(),
             saveDir = saveDir,
@@ -186,7 +190,8 @@ fun getAndroidModules(
 
     factory<MediaResolver> {
         MediaResolver.from(
-            torrentMediaResolvers(get<TorrentManager>().engines, get())
+            listOf<MediaResolver>(CloudDriveMediaResolver(get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(ApiVideoMediaResolver(get<MediaSourceManager>().apiVideoResolverLoader))
@@ -198,10 +203,12 @@ fun getAndroidModules(
                         get<ProxyProvider>(),
                     ),
                 ),
-        )
+        ).recordingFailures()
     }
-    single<UpdateInstaller> { AndroidUpdateInstaller() }
+    single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
+    // 换用户 = 重启进程 (见 UserProfiles)
+    single<AppRestarter> { AndroidAppRestarter(androidContext()) }
     single<AppTerminator> {
         object : AppTerminator {
             override fun exitApp(context: ContextMP, status: Int): Nothing {

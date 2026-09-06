@@ -105,7 +105,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
@@ -125,7 +124,6 @@ import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.paneHorizontalPadding
 import me.him188.ani.app.ui.foundation.session.SelfAvatar
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.appChromeFrostedGlass
 import me.him188.ani.app.ui.foundation.theme.appChromeHazeSource
 import me.him188.ani.app.ui.foundation.theme.isAppChromeFrostedGlassActive
@@ -155,7 +153,6 @@ import me.him188.ani.app.ui.subject.collection.progress.rememberSubjectProgressS
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListDialog
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListUiState
-import me.him188.ani.app.ui.user.BangumiFullSyncStateDialog
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
@@ -252,7 +249,6 @@ class UserCollectionsState(
 fun CollectionPage(
     state: UserCollectionsState,
     selfInfo: SelfInfoUiState,
-    fullSyncState: BangumiSyncState?,
     onClickSearch: () -> Unit,
     onClickLogin: () -> Unit,
     onClickSettings: () -> Unit,
@@ -263,15 +259,14 @@ fun CollectionPage(
     enableAnimation: Boolean = true,
 
     ) {
-    // 沉浸式变体 (与沉浸式探索页共用同一开关, 关闭则回退下方默认布局)
+    // 沉浸式变体; 没有变体的形态走下方默认布局
     val pageVariant = LocalCollectionPageVariant.current
-    if (pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration) {
+    if (pageVariant != null) {
         pageVariant.Page(state, modifier)
         return
     }
     val scope = rememberCoroutineScope()
     var hideBangumiSync by rememberSaveable { mutableStateOf(false) }
-    val isBangumiSyncing = fullSyncState != null && !fullSyncState.finished
     // 焦点导航: tab 行按下键时把焦点直接请求到列表首张卡片
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
     val firstItemFocusRequester = remember { FocusRequester() }
@@ -288,7 +283,7 @@ fun CollectionPage(
             }
         },
         actions = {
-            if (hideBangumiSync && isBangumiSyncing) {
+            if (false) {
                 val infiniteTransition = rememberInfiniteTransition(label = "rotation")
                 val angle by infiniteTransition.animateFloat(
                     initialValue = 0f,
@@ -370,7 +365,7 @@ fun CollectionPage(
                 },
             )
         },
-        isRefreshing = { state.selectedPageRefreshing || isBangumiSyncing },
+        isRefreshing = { state.selectedPageRefreshing },
         onRefresh = { state.refreshSelectedPage() },
         modifier,
         windowInsets,
@@ -385,7 +380,7 @@ fun CollectionPage(
                 isPullToRefreshing,
                 onRefresh = { items.refresh() },
                 state = pullToRefreshState,
-                enabled = !isBangumiSyncing,
+                enabled = true,
                 touchOnly = true,
                 indicator = {
                     // 内容延伸到 top bar 下方, 指示器需要避开 top bar.
@@ -435,12 +430,6 @@ fun CollectionPage(
         }
     }
 
-    if (!hideBangumiSync && isBangumiSyncing) {
-        BangumiFullSyncStateDialog(
-            state = fullSyncState,
-            onDismissRequest = { hideBangumiSync = true },
-        )
-    }
 }
 
 /**

@@ -95,10 +95,13 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.jvm.JvmName
 
+/**
+ * @param onUpdateAll 更新全部订阅; 开始更新第几个 (从 1 起) / 共几个时回调一次
+ */
 @Stable
 class MediaSourceSubscriptionGroupState(
     subscriptionsState: State<List<MediaSourceSubscription>>,
-    private val onUpdateAll: suspend () -> Unit,
+    private val onUpdateAll: suspend (onProgress: (updating: Int, total: Int) -> Unit) -> Unit,
     private val onUpdate: suspend (subscriptionId: String) -> Unit,
     private val onAdd: suspend (MediaSourceSubscription) -> Unit,
     private val onDelete: (MediaSourceSubscription) -> Unit,
@@ -113,9 +116,18 @@ class MediaSourceSubscriptionGroupState(
 
     private val updateAllTasker = MonoTasker(backgroundScope)
     val isUpdateAllInProgress get() = updateAllTasker.isRunning
+
+    /** 正在更新第几个 / 共几个 (订阅一个个依次拉); 没在更新或还没开始拉时为 null. */
+    var updateProgress: Pair<Int, Int>? by mutableStateOf(null)
+        private set
+
     fun updateAll() {
         updateAllTasker.launch {
-            onUpdateAll()
+            try {
+                onUpdateAll { updating, total -> updateProgress = updating to total }
+            } finally {
+                updateProgress = null
+            }
         }
     }
 

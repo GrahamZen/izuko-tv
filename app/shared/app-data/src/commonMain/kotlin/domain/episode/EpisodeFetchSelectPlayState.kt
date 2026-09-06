@@ -17,13 +17,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -50,7 +53,6 @@ import me.him188.ani.app.domain.player.extension.ExtensionBackgroundTaskScope
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.EpisodeSwitch
 import me.him188.ani.utils.logging.info
@@ -100,7 +102,6 @@ class EpisodeFetchSelectPlayState(
     private val selectorCacheRepo by koin.inject<SelectorMediaSourceEpisodeCacheRepository>()
     private val mediaSourceManager by koin.inject<MediaSourceManager>()
     private val playHistoryRepository by koin.inject<EpisodePlayHistoryRepository>()
-    private val automationGate by koin.inject<PlaybackAutomationGate>()
 
     /**
      * 条目级查询会话, 各集共用: 切集只重建选择器, 不重新查询.
@@ -126,12 +127,26 @@ class EpisodeFetchSelectPlayState(
         mainDispatcher,
     )
 
+    /**
+     * 原地重载请求, 值是重载后要回到的位置. 由 [LoadMediaOnSelectExtension] 在当前选中的资源上执行,
+     * 与换源同在一条 `collectLatest` 里, 选中项一变, 未执行的重载随之作废.
+     */
+    private val reloadRequests = MutableSharedFlow<Long>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     private val extensionManager by lazy {
         val intrinsicExtensions = listOf(
             EpisodePlayerExtensionFactory { context, _ ->
-                LoadMediaOnSelectExtension { episodeId ->
-                    backgroundScope.launch { context.broadcast(MediaLoadedEvent(episodeId)) }
-                }
+                LoadMediaOnSelectExtension(
+                    onMediaLoaded = { episodeId ->
+                        backgroundScope.launch { context.broadcast(MediaLoadedEvent(episodeId)) }
+                    },
+                    onReloadMedia = { episodeId, positionMillis ->
+                        context.broadcast(MediaReloadEvent(episodeId, positionMillis))
+                    },
+                )
             },
         )
 
@@ -262,6 +277,18 @@ class EpisodeFetchSelectPlayState(
         episodeSessionFlow.value.restartLoad()
     }
 
+    /**
+     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis].
+     * 选中的资源还在加载 (还没有 [LoadMediaOnSelectExtension] 在等重载请求) 时返回 `false`.
+     *
+     * @see PlayerExtensionContext.reloadCurrentMedia
+     */
+    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
+        if (reloadRequests.subscriptionCount.value == 0) return false
+        reloadRequests.emit(positionMillis)
+        return true
+    }
+
     private suspend fun EpisodeSession.startSessionScopeTasks() {
         /**
          * Session-scope tasks are non-stopping, and is not aware of app lifecycle.
@@ -310,10 +337,12 @@ class EpisodeFetchSelectPlayState(
      * An intrinsic extension that is automatically and forcefully added to the extension manager.
      *
      * This extension calls [PlayerSession.loadMedia] when a new media is selected,
-     * starting at the remembered progress of the episode (see [startPositionMillis]).
+     * starting at the remembered progress of the episode (see [startPositionMillis]),
+     * and again for the same media on [reloadCurrentMedia].
      */
     private inner class LoadMediaOnSelectExtension(
-        private val onMediaLoaded: (episodeId: Int) -> Unit = { }
+        private val onMediaLoaded: (episodeId: Int) -> Unit = { },
+        private val onReloadMedia: suspend (episodeId: Int, positionMillis: Long) -> Unit = { _, _ -> },
     ) : PlayerExtension("LoadMediaOnSelect") {
         override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
             backgroundTaskScope.launch("LoadMediaOnSelect") {
@@ -329,12 +358,16 @@ class EpisodeFetchSelectPlayState(
                                 .episodeInfo
 
                             callOnBeforeLoadMedia(episodeSession)
-                            playerSession.loadMedia(
-                                media,
-                                episodeInfo.toEpisodeMetadata(),
-                                startPositionMillis(episodeInfo.episodeId),
-                            )
+                            val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
+                            playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
                             onMediaLoaded(episodeInfo.episodeId)
+
+                            reloadRequests.collect { positionMillis ->
+                                logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
+                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 从这个位置打开, 开播时它据此确认已经回到这里
+                                onReloadMedia(episodeInfo.episodeId, positionMillis)
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis)
+                            }
                         }
                     }
                 }
@@ -357,25 +390,6 @@ class EpisodeFetchSelectPlayState(
         }
     }
 
-    /**
-     * 起播位置: 本集记忆的播放进度. 播放器直接在这里打开, 不先从头起播再跳转 (见 [PlayerSession.loadMedia]).
-     *
-     * 进度只在这里读取, 并且在 [PlayerExtension.onBeforeLoadMedia] 之后: 换源时 RememberPlayProgressExtension
-     * 在那里保存旧资源的进度, 新资源因此从换源时的位置继续.
-     * 一起看时进度由房间同步, 不续播. 读取失败时从头播放.
-     */
-    private suspend fun startPositionMillis(episodeId: Int): Long {
-        if (automationGate.suppressed.value) return 0L
-        return try {
-            playHistoryRepository.getResumePositionMillisByEpisodeId(episodeId) ?: 0L
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to read play progress of episode $episodeId, starting from the beginning" }
-            0L
-        }
-    }
-
     private companion object {
         private val logger = logger<EpisodeFetchSelectPlayState>()
     }
@@ -384,6 +398,12 @@ class EpisodeFetchSelectPlayState(
      * Event of intrinsic [LoadMediaOnSelectExtension] to indicate that the current media is loaded into player.
      */
     class MediaLoadedEvent(val episodeId: Int) : PlayerExtensionEvent
+
+    /**
+     * Event of intrinsic [LoadMediaOnSelectExtension], sent right before the current media is reloaded in place
+     * (see [reloadCurrentMedia]). After reloading, playback should resume at [positionMillis].
+     */
+    class MediaReloadEvent(val episodeId: Int, val positionMillis: Long) : PlayerExtensionEvent
 }
 
 /**

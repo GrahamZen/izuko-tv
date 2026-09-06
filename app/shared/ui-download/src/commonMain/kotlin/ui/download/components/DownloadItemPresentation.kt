@@ -45,6 +45,10 @@ internal fun DownloadSnapshot.toDownloadItem(
         },
         mediaSourceId = mediaSourceId,
         isBusy = isBusy,
+        isMerging = isMerging,
+        mergeProgress = mergeProgress ?: Progress.Unspecified,
+        awaitingTorrentService = awaitingTorrentService,
+        waitingForPlayback = waitingForPlayback,
     )
 }
 

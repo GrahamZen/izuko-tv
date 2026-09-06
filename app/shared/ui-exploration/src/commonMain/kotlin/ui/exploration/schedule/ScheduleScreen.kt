@@ -153,7 +153,7 @@ fun ScheduleScreen(
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
 ) {
     // 变体布局 (遥控器形态): 15 天并排的纵向列表在电视上没法用, TV 换成日期胶囊 + 海报网格.
-    // 可在设置里关掉回退上游原布局 (同探索页/详情页那两个开关)
+    // 设置里可选回上游原布局 (见 TvScheduleLayout)
     LocalSchedulePageVariant.current
         ?.takeIf { LocalThemeSettings.current.tvScheduleLayout != TvScheduleLayout.Upstream }
         ?.let { variant ->

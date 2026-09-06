@@ -26,6 +26,9 @@ import me.him188.ani.app.data.models.subject.SubjectAiringInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
+import me.him188.ani.app.data.network.TmdbAiring
+import me.him188.ani.app.data.network.TmdbSubjectText
+import me.him188.ani.app.data.repository.subject.EpisodesFetchState
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.rating.EditableRatingActions
@@ -77,11 +80,17 @@ class SubjectDetailsState(
     val tmdbEpisodeRuntimesFlow: Flow<Map<Int, Int>> = flowOf(emptyMap()),
     /** TMDB 中文分集简介 (episodeId -> 简介, TV 选集卡片优先展示); Bangumi 的简介多为日文. 惰性同上. */
     val tmdbEpisodeOverviewsFlow: Flow<Map<Int, String>> = flowOf(emptyMap()),
+    /** TMDB 集名 (episodeId -> 集名), 只有非中文界面有 (见 TmdbEpisodeMedia.name); TV 选集区用. 惰性同上. */
+    val tmdbEpisodeNamesFlow: Flow<Map<Int, String>> = flowOf(emptyMap()),
     /**
-     * TMDB 中文整部简介, 仅当 Bangumi 简介整段无中文 (全日文原文/纯英文) 时非 null,
-     * UI 直接整段替换 [SubjectInfo.summary]; null = 不需要替换 / TMDB 无翻译 / 加载中 (用原文). 惰性同上.
+     * 整段替换 [SubjectInfo.summary] 的 TMDB 简介: 非中文界面是讲本条目的那段 (界面语言); 中文界面仅当 Bangumi 简介整段无中文
+     * (全日文原文/纯英文) 时是讲本条目的 TMDB 中文简介 + 原文. null = 不需要替换 / TMDB 无翻译 / 加载中 (用原文). 惰性同上.
      */
     val tmdbSummaryOverrideFlow: Flow<String?> = flowOf(null),
+    /**
+     * 讲本条目的 TMDB 文字 (界面语言的标题、简介与对应的季, 见 TmdbSubjectText); 电视各页的共享表用它. 还没取到为 null. 惰性同上.
+     */
+    val tmdbSubjectTextFlow: Flow<TmdbSubjectText?> = flowOf(null),
     /**
      * bgm.tv 简介兜底, 仅当 Ani 服务器返回的简介为空时请求 (服务端部分条目 summary 缺失).
      * 语义: null = 结果未出 (加载中); "" = 已确认 bgm.tv 也没有 (此时才轮到 TMDB 兜底);
@@ -90,6 +99,12 @@ class SubjectDetailsState(
     val bangumiSummaryFallbackFlow: Flow<String?> = flowOf(""),
     /** 各集播放进度 (episodeId -> 0..1 观看比例, TV 选集卡片进度条用); 无记录的集不含在内. */
     val playProgressFlow: Flow<Map<Int, Float>> = flowOf(emptyMap()),
+    /** TMDB 上的播出情况, TV 详情页据此修正播出状态文字 (见 rememberTmdbAiringLabelState); null = 没匹配到或加载中. 惰性同上. */
+    val tmdbAiringFlow: Flow<TmdbAiring?> = flowOf(null),
+    /** 分集在本进程里取过没有 (见 [EpisodesFetchState]): TV 播放键在分集还没出来时据此等着或弹说明. */
+    val episodesFetchStateFlow: Flow<EpisodesFetchState> = flowOf(EpisodesFetchState.Fetched(0)),
+    /** 连同分集重取本条目; 分集上次没取到时 TV 播放键按下去用. */
+    val refetchEpisodes: suspend () -> Unit = {},
     actions: SubjectDetailsActions = SubjectDetailsActions.Noop,
 ) : SubjectDetailsActions by actions {
     val detailsTabLazyListState = LazyListState()

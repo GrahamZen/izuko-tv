@@ -11,10 +11,13 @@ package me.him188.ani.app.domain.foundation
 
 import androidx.paging.CombinedLoadStates
 import me.him188.ani.app.data.repository.RepositoryAuthorizationException
+import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
+import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.tools.paging.exceptions
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
@@ -31,6 +34,12 @@ sealed class LoadError {
     data object NetworkError : LoadError()
     data object ServiceUnavailable : LoadError()
     data object RateLimited : LoadError()
+
+    /**
+     * 服务端不提供这个条目, 见 [me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException].
+     * 重试没有意义.
+     */
+    data object SubjectNotAccessible : LoadError()
     data class RequestError(val localized: String, val throwable: Throwable?) : LoadError()
     data class UnknownError(val throwable: Throwable?) : LoadError()
 
@@ -58,8 +67,15 @@ sealed class LoadError {
                 is RepositoryNetworkException -> NetworkError
                 is RepositoryServiceUnavailableException -> ServiceUnavailable
                 is RepositoryRateLimitedException -> RateLimited
+                is RepositorySubjectNotAccessibleException -> SubjectNotAccessible
                 is RepositoryRequestError -> RequestError(e.localizedMessage, e.cause)
-                else -> UnknownError(e)
+                is RepositoryException, is CancellationException -> UnknownError(e)
+                // 没经过仓库层包装就到这里的网络层异常 (服务端 5xx、连不上、401 …): 按仓库层同一套规则归类,
+                // 不然界面上是「未知错误」加一整段原始报错
+                else -> when (val wrapped = RepositoryException.wrapOrThrowCancellation(e)) {
+                    is RepositoryUnknownException -> UnknownError(e)
+                    else -> fromException(wrapped)
+                }
             }
         }
 
