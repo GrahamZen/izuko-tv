@@ -11,6 +11,11 @@ package me.him188.ani.app.data.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.AtomicInt
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.repository.RepositoryException
@@ -19,6 +24,8 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -72,17 +79,42 @@ class SubjectSeriesIndexService(
     private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) {
+    private val logger = logger<SubjectSeriesIndexService>()
     private val cacheLock = Mutex()
     private val cache = LinkedHashMap<Int, SubjectRelationIndex>()
 
+    /**
+     * 上一次为某条目算索引的开销 (请求数 + 耗时), 只给日志用 (见 `TmdbImageService` 的背景图那行).
+     *
+     * 这条 BFS 是直连之后新增的: Ani 把 `seriesMainSubjectIds` 随条目一起下发, 零请求;
+     * 现在长系列最多要走 [MAX_NODES] 跳, 每跳一个 `/p1/subjects/{id}/relations`。
+     * 命中内存缓存时不记 (那次没有开销).
+     */
+    class ComputeStats(val requests: Int, val millis: Long)
+
+    private val statsLock = SynchronizedObject()
+    private val stats = LinkedHashMap<Int, ComputeStats>()
+
+    fun lastStatsOf(subjectId: Int): ComputeStats? = synchronized(statsLock) { stats[subjectId] }
+
     suspend fun getSubjectRelationIndex(subjectId: Int): SubjectRelationIndex {
         cacheLock.withLock { cache[subjectId] }?.let { return it }
+        val startMillis = currentTimeMillis()
+        val requestCount = atomic(0)
         val computed = withContext(ioDispatcher) {
             try {
-                compute(subjectId)
+                compute(subjectId, requestCount)
             } catch (e: Exception) {
                 throw RepositoryException.wrapOrThrowCancellation(e)
             }
+        }
+        synchronized(statsLock) {
+            stats[subjectId] = ComputeStats(requestCount.value, currentTimeMillis() - startMillis)
+            while (stats.size > CACHE_SIZE) stats.remove(stats.keys.first())
+        }
+        logger.info {
+            "bgm-direct: seriesIndex subject=$subjectId -> main=${computed.seriesMainSubjectIds} " +
+                    "sequels=${computed.sequelSubjects} rootNames=${computed.seriesRootNames.take(2)}"
         }
         cacheLock.withLock {
             cache[subjectId] = computed
@@ -91,10 +123,13 @@ class SubjectSeriesIndexService(
         return computed
     }
 
-    private suspend fun compute(subjectId: Int): SubjectRelationIndex {
+    private suspend fun compute(subjectId: Int, requestCount: AtomicInt): SubjectRelationIndex {
         val edges = HashMap<Int, Edges>()
 
-        suspend fun edgesOf(id: Int): Edges = edges.getOrPut(id) { fetchEdges(id) }
+        suspend fun edgesOf(id: Int): Edges = edges.getOrPut(id) {
+            requestCount.incrementAndGet()
+            fetchEdges(id)
+        }
 
         // 两个方向各走一遍传递闭包. 用 LinkedHashSet 保持发现顺序 (= 时间先后)
         suspend fun walk(direction: (Edges) -> List<BangumiNextSlimSubject>): LinkedHashSet<Int> {

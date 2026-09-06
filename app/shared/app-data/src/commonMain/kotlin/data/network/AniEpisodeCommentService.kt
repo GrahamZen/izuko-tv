@@ -24,6 +24,8 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextLikeEpisodeComme
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextReaction
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -46,6 +48,7 @@ open class AniEpisodeCommentService(
      *
      * 只取一次: 同一个进程里不会变 (换账号会重建 Koin 图).
      */
+    private val logger = logger<AniEpisodeCommentService>()
     private var selfUserId: Int? = null
     private var selfUserIdLoaded = false
 
@@ -60,7 +63,14 @@ open class AniEpisodeCommentService(
         if (after != null) return@withContext EpisodeCommentPage(emptyList())
         try {
             val comments = episodeApi.invoke { getEpisodeComments(episodeId.toInt()).body() }
-            EpisodeCommentPage(comments.map { it.toEpisodeComment(episodeId, currentUserIdOrNull()) })
+            val mapped = comments.map { it.toEpisodeComment(episodeId, currentUserIdOrNull()) }
+            logger.info {
+                "bgm-direct: episodeComments ep=$episodeId -> ${mapped.size} 楼, " +
+                        "回复=${mapped.sumOf { it.replies.size }}, " +
+                        "带回复目标=${mapped.sumOf { c -> c.replies.count { it.replyToCommentId != null } }}, " +
+                        "带表情=${mapped.count { it.reactions.isNotEmpty() }}"
+            }
+            EpisodeCommentPage(mapped)
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
@@ -72,6 +82,7 @@ open class AniEpisodeCommentService(
         value: String,
     ) = withContext(ioDispatcher) {
         val reactionValue = value.toReactionValueOrNull() ?: return@withContext
+        logger.info { "bgm-direct: WRITE reaction comment=$commentId value=$value(=$reactionValue)" }
         try {
             episodeApi.invoke {
                 likeEpisodeComment(

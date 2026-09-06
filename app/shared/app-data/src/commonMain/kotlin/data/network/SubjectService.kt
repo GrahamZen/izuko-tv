@@ -51,6 +51,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.restartable
@@ -178,6 +179,7 @@ class RemoteSubjectService(
                 throw e
             }
         }
+        logger.info { "bgm-direct: collections type=$type offset=$offset limit=$limit -> ${collections.size} items" }
         return@withContext collections
     }
 
@@ -200,6 +202,10 @@ class RemoteSubjectService(
             }
         }
 
+        logger.info {
+            "bgm-direct: relations subject=$subjectId -> characters=${characters.size} " +
+                    "staffPositions=${positions.data.size}"
+        }
         BatchSubjectRelations(
             subjectId = subjectId,
             relatedCharacterInfoList = characters.mapIndexed { index, rc ->
@@ -264,6 +270,11 @@ class RemoteSubjectService(
                 Unit
             }
         }
+        // 写入是最危险的一条路 (带 type 不带 rate 会被服务端把评分清零), 每次都记下发了什么
+        logger.info {
+            "bgm-direct: WRITE subject=$subjectId type=${payload.collectionType} score=${payload.score} " +
+                    "comment=${payload.comment != null} tags=${payload.tags?.size} private=${payload.isPrivate}"
+        }
         subjectCountStatsRestarter.restart()
     }
 
@@ -293,6 +304,7 @@ class RemoteSubjectService(
                 }
             }
 
+            logger.info { "bgm-direct: counts $counts" }
             emit(
                 SubjectCollectionCounts(
                     wish = counts[BangumiNextCollectionType.Wish] ?: 0,
@@ -340,6 +352,12 @@ class RemoteSubjectService(
                         null
                     } else {
                         throw e
+                    }
+                }?.also { subject ->
+                    logger.info {
+                        "bgm-direct: subject $subjectId -> eps=${subject.eps} collected=${subject.interest?.type} " +
+                                "rate=${subject.interest?.rate} epStatus=${subject.interest?.epStatus} " +
+                                "image=${subject.images != null}"
                     }
                 },
             )

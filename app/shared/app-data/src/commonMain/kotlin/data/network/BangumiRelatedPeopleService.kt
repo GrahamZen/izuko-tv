@@ -17,12 +17,17 @@ import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectRelation
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 
 class BangumiRelatedPeopleService(
     private val subjectApi: ApiInvoker<SubjectBangumiNextApi>,
 ) {
+    private val logger = logger<BangumiRelatedPeopleService>()
+
     fun relatedSubjectsFlow(subjectId: Int): Flow<List<RelatedSubjectInfo>> = flow {
         val list = subjectApi { fetchAllAnimeRelations(subjectId) }
+        logger.info { "bgm-direct: relatedSubjects subject=$subjectId -> ${list.size}" }
         emit(
             list.map { relation ->
                 val subject = relation.subject

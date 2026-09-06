@@ -577,6 +577,7 @@ class SubjectCollectionRepositoryImpl(
             try {
                 val episodes = episodeService.getEpisodeCollectionEntities(subject.subjectId, lastFetched)
                 episodeCollectionDao.upsert(episodes)
+                logger.info { "bgm-direct: 补在看条目的分集 subject=${subject.subjectId} -> ${episodes.size}" }
             } catch (e: Exception) {
                 if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                 // 分集补取失败不该让整页收藏加载失败: 卡片退化成没有进度, 下次刷新再补

@@ -41,6 +41,7 @@ import me.him188.ani.datasources.bangumi.models.BangumiEpisode
 import me.him188.ani.datasources.bangumi.models.BangumiEpisodeDetail
 import me.him188.ani.datasources.bangumi.models.BangumiUserEpisodeCollection
 import me.him188.ani.datasources.bangumi.processing.toCollectionType
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.logger
@@ -115,6 +116,12 @@ class EpisodeServiceImpl(
                     getUserSubjectEpisodeCollection(subjectId, offset = offset, limit = PAGE_SIZE).body()
                         .let { page -> page.total to page.data.orEmpty() }
                 }.map { it.episode.toEntity(subjectId, it.type.toUnifiedCollectionType(), lastFetched) }
+                    .also { list ->
+                        logger.info {
+                            "bgm-direct: episodes subject=$subjectId -> ${list.size} (auth), " +
+                                    "watched=${list.count { it.selfCollectionType == UnifiedCollectionType.DONE }}"
+                        }
+                    }
             } catch (e: ClientRequestException) {
                 if (e.response.status != HttpStatusCode.Unauthorized) throw e
                 logger.info { "bgm-direct: episodes subject=$subjectId 有 session 但被拒, 退到公开端点" }
@@ -126,6 +133,7 @@ class EpisodeServiceImpl(
                     getEpisodes(subjectId, offset = offset, limit = PAGE_SIZE).body()
                         .let { page -> (page.total ?: 0) to page.data.orEmpty() }
                 }.map { it.toEntity(subjectId, UnifiedCollectionType.NOT_COLLECTED, lastFetched) }
+                    .also { logger.info { "bgm-direct: episodes subject=$subjectId -> ${it.size} (anonymous)" } }
             }
         }
     }
@@ -205,6 +213,7 @@ class EpisodeServiceImpl(
                     ),
                 ).body()
             }
+            logger.info { "bgm-direct: WRITE episodes subject=$subjectId ids=$episodeId type=$type" }
             true
         } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.NotFound) {

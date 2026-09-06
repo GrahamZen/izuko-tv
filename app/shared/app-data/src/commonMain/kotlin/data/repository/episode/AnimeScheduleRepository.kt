@@ -35,6 +35,8 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.UTC9
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.serialization.BigNum
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
@@ -54,6 +56,7 @@ import kotlin.time.Instant
  */
 class AnimeScheduleRepository(
     private val source: BangumiScheduleSource,
+    @Suppress("unused")
     private val updatePeriod: Duration = 1.hours,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
 ) : Repository(defaultDispatcher) {
@@ -64,6 +67,7 @@ class AnimeScheduleRepository(
     fun recentAiringSchedulesFlow(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> = flow {
         val dates = OFFSET_DAYS_RANGE.map { today.plus(DatePeriod(days = it)) }
         val calendar = source.calendar()
+        logger.info { "bgm-direct: schedule 名册 ${calendar.values.sumOf { it.size }} 部 (7 天), 窗口 ${dates.first()}..${dates.last()}" }
 
         // 每天要用到的条目 = 这个星期几在播的那些
         val subjectsByDate = dates.associateWith { date ->
@@ -114,7 +118,13 @@ class AnimeScheduleRepository(
                 )?.startTime
                 changed = true
             }
-            if (changed) emitCurrent()
+            if (changed) {
+                logger.info {
+                    val items = roster.count { episodes[it.id]?.any { e -> e.airDate == date.toString() } == true }
+                    "bgm-direct: schedule $date 补完: 名册 ${roster.size} 部 (回源 ${missing.size}), 当天有更新 $items 条"
+                }
+                emitCurrent()
+            }
         }
     }.flowOn(defaultDispatcher)
 

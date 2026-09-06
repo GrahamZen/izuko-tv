@@ -23,6 +23,8 @@ import me.him188.ani.app.tools.paging.SinglePagePagingSource
 import me.him188.ani.datasources.bangumi.next.apis.TrendingBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetTrendingSubjects200Response
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.error
@@ -69,6 +71,7 @@ class TrendsRepository(
 private const val TRENDING_LIMIT = 20
 
 fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
+    logger<TrendsRepository>().info { "bgm-direct: trending -> ${data.size}" }
     return TrendsInfo(
         subjects = data.map {
             TrendingSubjectInfo(

@@ -35,6 +35,8 @@ import me.him188.ani.datasources.bangumi.models.BangumiSubject
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -45,6 +47,8 @@ class AniSubjectSearchService(
     private val bangumiV0Api: ApiInvoker<DefaultApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) {
+    private val logger = logger<AniSubjectSearchService>()
+
     suspend fun searchSubjects(
         keyword: String,
         offset: Int? = null,
@@ -74,7 +78,13 @@ class AniSubjectSearchService(
             )
         }.body()
 
-        result.data.orEmpty().map { it.toBatchSubjectDetails() }
+        result.data.orEmpty().map { it.toBatchSubjectDetails() }.also { list ->
+            logger.info {
+                "bgm-direct: search q='$keyword' sort=$sort offset=$offset tags=${filters?.tags} " +
+                        "ranks=${filters?.ranks} ratings=${filters?.ratings} airDates=${filters?.airDates} " +
+                        "-> total=${result.total} page=${list.size}"
+            }
+        }
     }
 
     companion object {

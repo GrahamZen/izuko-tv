@@ -22,6 +22,9 @@ import com.github.panpf.sketch.source.DataFrom
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -649,7 +652,9 @@ suspend fun resolveTvHeroMedia(
 ): SubjectCollectionInfo? {
     // 第一跳: 条目信息. 进程级普通缓存命中就不走网络 (见 TvHeroMediaCache.peekSubjectInfo).
     // 取消异常必须重抛 —— runCatching 会吞掉它, 让已取消的协程继续往下跑
-    val info = TvHeroMediaCache.peekSubjectInfo(subjectId)
+    val chainStart = currentTimeMillis()
+    val cachedInfo = TvHeroMediaCache.peekSubjectInfo(subjectId)
+    val info = cachedInfo
         ?: try {
             collectionRepo.subjectCollectionFlow(subjectId).first()
         } catch (e: CancellationException) {
@@ -658,6 +663,9 @@ suspend fun resolveTvHeroMedia(
             null
         }?.also { TvHeroMediaCache.putSubjectInfo(subjectId, it) }
         ?: return null
+    // 三跳分开计时: "hero 背景慢"要能答出慢在哪一跳 —— 第一跳 (条目信息, 直连之后可能连着
+    // /p1/subjects + /v0/episodes 两个请求) 还是第三跳 (TMDB 匹配). 服务层那行只盖第三跳.
+    val hop1Millis = currentTimeMillis() - chainStart
     // 第二跳: "继续观看"的单集剧照 (只有那一行用). 放在整部 backdrop 之前: 它才是那一行 hero
     // 真正要显示的图, 不该排在兜底后面
     if (preferNextEpisodeStill && settingsRepository != null) {
@@ -669,14 +677,22 @@ suspend fun resolveTvHeroMedia(
     }
     // 第三跳: 整部 backdrop. **有剧照也照拉** —— 详情页 Hero 一律用整部 backdrop, 它同时是
     // 进详情页的门控条件 (见各页 navigateToSubject), 跳过等于让那条路冷启
+    val beforeBackdrop = currentTimeMillis()
     tmdb.prefetchTvBackdrop(
         subjectId,
         info.subjectInfo.name,
         activeAsOfDate = info.episodes.newestAiredDateStringOrNull(),
         hints = info.subjectInfo.toTmdbMatchHints(),
     )
+    logger.info {
+        "tvhero: subject $subjectId 解析完 ${currentTimeMillis() - chainStart}ms " +
+                "(条目 ${if (cachedInfo != null) "热缓存" else "取了 ${hop1Millis}ms"}, " +
+                "backdrop ${currentTimeMillis() - beforeBackdrop}ms)"
+    }
     return info
 }
+
+private val logger = logger<TvHeroMediaCache>()
 
 /**
  * **整部 backdrop 的预取**: 已解析过就直接返回, 否则解析一次 —— 结果自动落进服务层热表

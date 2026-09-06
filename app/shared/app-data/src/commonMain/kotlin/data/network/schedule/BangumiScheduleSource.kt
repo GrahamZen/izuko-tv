@@ -83,6 +83,7 @@ class BangumiScheduleSource(
                 )
             }
         }.toMap()
+        logger.info { "bgm-direct: schedule 名册回源 -> ${roster.values.sumOf { it.size }} 部" }
         update { it.copy(calendar = roster, calendarFetchedAt = currentTimeMillis()) }
         return roster
     }
@@ -127,6 +128,7 @@ class BangumiScheduleSource(
         val now = currentTimeMillis()
         val toStore = fetched.mapNotNull { (id, list) -> list?.let { id to CachedEpisodes(it, now) } }.toMap()
         if (toStore.isNotEmpty()) {
+            logger.info { "bgm-direct: schedule 分集回源 ${toStore.size} 部 (并发 $FETCH_CONCURRENCY)" }
             update { it.copy(episodes = it.episodes + toStore) }
         }
         for ((id, list) in fetched) {

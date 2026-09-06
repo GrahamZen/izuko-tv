@@ -20,6 +20,8 @@ import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectInterestComment
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -39,6 +41,8 @@ class BangumiBangumiCommentServiceImpl(
     private val subjectsApi: ApiInvoker<SubjectBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : BangumiCommentService {
+    private val logger = logger<BangumiBangumiCommentServiceImpl>()
+
     override suspend fun getSubjectComments(subjectId: Int, offset: Int, limit: Int): Paged<SubjectReview>? {
         return withContext(ioDispatcher) {
             try {
@@ -46,6 +50,7 @@ class BangumiBangumiCommentServiceImpl(
                     getSubjectComments(subjectId, limit = limit, offset = offset).body()
                 }
                 val list = response.data.map { it.toSubjectReview() }
+                logger.info { "bgm-direct: subjectComments subject=$subjectId offset=$offset -> ${list.size}/${response.total}" }
                 Paged(
                     total = response.total,
                     hasMore = offset + list.size < response.total,

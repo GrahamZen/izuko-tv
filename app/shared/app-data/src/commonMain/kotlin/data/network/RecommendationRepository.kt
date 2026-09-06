@@ -28,6 +28,7 @@ import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.error
+import me.him188.ani.utils.logging.info
 import kotlin.coroutines.CoroutineContext
 
 /**

@@ -42,6 +42,8 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextComment
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextInfoboxItem
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextPerson
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.ktor.ApiInvoker
 
 /**
@@ -70,6 +72,7 @@ class PersonDetailsRepository(
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
+        logger.info { "bgm-direct: person $personId -> works=$workCount casts=$castCount career=${person.career}" }
         emit(
             PersonDetailsInfo(
                 person = person.toPersonInfo(),
@@ -95,6 +98,7 @@ class PersonDetailsRepository(
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
+        logger.info { "bgm-direct: character $characterId -> subjects=$subjectCount" }
         emit(
             CharacterDetailsInfo(
                 character = character.toCharacterInfo(),
