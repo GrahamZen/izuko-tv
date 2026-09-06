@@ -90,8 +90,6 @@ import me.him188.ani.app.ui.foundation.effects.OnLifecycleEvent
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
@@ -131,10 +129,6 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_sound_hint
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherOverlayHost
-import me.him188.ani.app.ui.watchtogether.WatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherViewModel
 import me.him188.ani.datasources.api.source.FactoryId
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.seconds
@@ -146,11 +140,6 @@ import kotlin.time.Duration.Companion.seconds
 fun AniAppContent(aniNavigator: AniNavigator) {
     val aniAppViewModel = viewModel<AniAppViewModel>()
     val appState = aniAppViewModel.appState.collectAsStateWithLifecycle(null).value ?: return
-    val watchTogetherViewModel = viewModel { WatchTogetherViewModel() }
-    val watchTogetherPlayerController = remember(watchTogetherViewModel) {
-        WatchTogetherPlayerController(watchTogetherViewModel::onPlayerEntryClick)
-    }
-
     // 只有在 APP 首次启动的时候使用 initialNavRoute, 之后 back stack 自己维护并跨进程恢复
     val backStack = rememberAniBackStack(appState.initialNavRoute)
     aniNavigator.setBackStack(backStack)
@@ -159,11 +148,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
     val rootBackground =
         if (LocalAniUiBehavior.current.blackRootBackground) Color.Black
         else MaterialTheme.colorScheme.background
-    // "一起看" 入口把手: 弹窗本体在下面的 WatchTogetherOverlayHost 里 (与 NavHost 同级),
-    // 入口按钮在 NavHost 内的各页面上 (播放器胶囊行), 两边隔着 NavHost 靠它通气.
-    // viewModel 而不是 remember: 遥控器形态的动作面板在本函数外面组合, 靠"同 owner 同 key"
-    // 拿同一个实例 (见 WatchTogetherEntryState 的说明)
-    val watchTogetherEntry = viewModel { WatchTogetherEntryState() }
     // 保留播放会话 (遥控器形态, 可在设置里关): 播放页退出后播放器与整条起播流水线不销毁,
     // 由侧边栏"正在播放"条目回去. holder 挂在这里 (NavHost 之外) 才能不随播放页那个返回栈条目
     // 一起死; 它同时是入口把手 (PlaybackSessionEntry), 经 CompositionLocal 给到 NavHost 内的入口.
@@ -227,8 +211,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
         CompositionLocalProvider(
             LocalNavigator provides aniNavigator,
             LocalBrowserNavigator providesDefault aniAppViewModel.browserNavigator,
-            LocalWatchTogetherPlayerController provides watchTogetherPlayerController,
-            LocalWatchTogetherEntry provides watchTogetherEntry,
             LocalPlaybackSessionEntry provides (playbackSessionHolder ?: PlaybackSessionEntry.None),
         ) {
             ProvideAniMotionCompositionLocals {
@@ -245,10 +227,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                     onLogin = {
                         aniNavigator.navigateBangumiAuthorize()
                     },
-                )
-                WatchTogetherOverlayHost(
-                    viewModel = watchTogetherViewModel,
-                    aniNavigator = aniNavigator,
                 )
             }
         }

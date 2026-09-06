@@ -204,7 +204,7 @@ fun buildTvRailItems(
                 iconContent = { focused -> TvNowPlayingRailGlyph(focused, status = { playback.status }) },
                 onClick = {
                     // force: 这不是"去开另一集", 而是回到**已经在播的这一集**, 所以跳过跟随房主时
-                    // 那道导航守卫 (WatchTogetherManager.observeFollowerMode). 那道守卫只在目标与
+                    // 那道导航守卫. 那道守卫只在目标与
                     // 房主已发布的播放位置一字不差时放行 —— 房主还没发布 (还在选源/详情页) 时是
                     // null, 一律拒绝, 于是跟随者退出播放页后连回自己的会话都被挡住. 跟随该拦的是
                     // "播别的", 不是"回去接着看".

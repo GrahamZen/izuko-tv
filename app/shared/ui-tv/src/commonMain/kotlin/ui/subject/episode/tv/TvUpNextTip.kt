@@ -170,12 +170,8 @@ internal fun rememberTvUpNextState(vm: EpisodeViewModel): TvUpNextState {
             vm.player.mediaProperties.map { it?.durationMillis ?: 0L }.distinctUntilChanged(),
             snapshotFlow { vm.playerSkipOpEdState.edChapterEndMillis },
             snapshotFlow { vm.videoScaffoldConfig.upNextTipLeadSeconds to vm.videoScaffoldConfig.autoPlayNext },
-            // 一起看: 自动连播被这道闸拦着 (见 SwitchNextEpisodeExtension), 卡片也得跟着不出现 ——
-            // 否则它会倒数完然后什么都不发生, 是句假话
-            vm.playbackAutomationSuppressed,
-        ) { pos, duration, edEnd, (leadSeconds, autoPlayNext), automationSuppressed ->
-            val enabled = leadSeconds > 0 && duration > 0L &&
-                    state.nextEpisode != null && !automationSuppressed
+        ) { pos, duration, edEnd, (leadSeconds, autoPlayNext) ->
+            val enabled = leadSeconds > 0 && duration > 0L && state.nextEpisode != null
             val leadMillis = leadSeconds * 1000L
             val remaining = duration - pos
             // 片尾标记只用来"提前把卡片摆出来", 倒计时一律按距结尾算.

@@ -110,7 +110,6 @@ includeProject(":app:shared:ui-mediaselect")
 includeProject(":app:shared:ui-tv") // Android TV (遥控器) 专属界面, 只含 android target
 includeProject(":app:shared:ui-episode")
 includeProject(":app:shared:ui-exprovider")
-includeProject(":app:shared:ui-watchtogether")
 includeProject(":app:shared:video-player:video-player-api", "app/shared/video-player/api")
 includeProject(":app:shared:video-player:torrent-source")
 includeProject(":app:shared:video-player")

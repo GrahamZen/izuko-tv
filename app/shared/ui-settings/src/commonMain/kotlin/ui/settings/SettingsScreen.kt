@@ -166,7 +166,6 @@ import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibrariesTab
 import me.him188.ani.app.ui.settings.tabs.app.AppearanceGroup
 import me.him188.ani.app.ui.settings.tabs.app.PlayerGroup
 import me.him188.ani.app.ui.settings.tabs.app.SoftwareUpdateGroup
-import me.him188.ani.app.ui.settings.tabs.app.WatchTogetherGroup
 import me.him188.ani.app.ui.settings.tabs.log.LogTab
 import me.him188.ani.app.ui.settings.tabs.media.BackupSettings
 import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroup
@@ -367,7 +366,6 @@ fun SettingsScreen(
                                     vm.isInDebugMode,
                                     vm.themeSettings,
                                 )
-                                WatchTogetherGroup(vm.watchTogetherSettings)
                             }
 
                             SettingsTab.MEDIA_SOURCE -> {

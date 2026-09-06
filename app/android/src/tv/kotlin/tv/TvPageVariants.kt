@@ -45,7 +45,6 @@ import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
@@ -182,10 +181,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
         val playbackEntry: PlaybackSessionEntry =
             if (retainSession) sessionHolder else PlaybackSessionEntry.None
-        // 「一起看」入口把手: 同样是 Activity 级 ViewModel, 与 AniAppContent 里 provide 给
-        // LocalWatchTogetherEntry 的是同一个实例 —— 本处在那个 provider 的**外面**, 读
-        // CompositionLocal 只会拿到默认空实例 (见 WatchTogetherEntryState)
-        val watchTogetherEntry = viewModel { WatchTogetherEntryState() }
         // 两个键的动作走同一段逻辑, 只是各读各的设置.
         //
         // Panel 档没有会话时照样开面板 (不 toast"没有正在播放"): 面板里那张压暗的占位卡把同一句话
@@ -230,7 +225,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 navigator = aniNavigator,
                 playback = playbackEntry,
                 refreshHost = pageRefresh,
-                watchTogether = watchTogetherEntry,
                 onGoHome = {
                     // 焦点交接走标志 (探索页消费, 见 TvBackLongPressHost.pendingHomeFocus);
                     // 不在 Main 上时先 pop 回去, 落在别的 tab 上由主壳看着标志补一步切换

@@ -79,8 +79,6 @@ import me.him188.ani.app.ui.subject.episode.video.sidesheet.DanmakuRegexFilterSe
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.MediaSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.rememberTestEpisodeSelectorState
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherPlayerController
 import me.him188.ani.app.videoplayer.ui.ControllerVisibility
 import me.him188.ani.app.videoplayer.ui.NoOpPlaybackSpeedController
 import me.him188.ani.app.videoplayer.ui.NoOpVideoAspectRatio
@@ -225,7 +223,6 @@ class EpisodeVideoControllerTest {
         playbackSpeed: PlaybackSpeed = NoOpPlaybackSpeedController,
         onCommitPlaybackSpeed: (Float) -> Unit = {},
         opEdSkipDuration: Duration = 85.seconds,
-        watchTogetherPlayerController: WatchTogetherPlayerController? = null,
         onPlayerStateCreated: (TestMediampPlayer) -> Unit = {},
         showDanmakuEditor: () -> Boolean = { true },
         onEditorEscape: (() -> Unit)? = null,
@@ -235,10 +232,7 @@ class EpisodeVideoControllerTest {
         cacheChunkState: ChunkState = ChunkState.NONE,
     ) {
         ProvideCompositionLocalsForPreview(darkMode = DarkMode.DARK) {
-            val actualWatchTogetherPlayerController = watchTogetherPlayerController
-                ?: remember { WatchTogetherPlayerController() }
             CompositionLocalProvider(
-                LocalWatchTogetherPlayerController provides actualWatchTogetherPlayerController,
             ) {
                 val scope = rememberCoroutineScope()
                 val playerState = remember {
@@ -460,102 +454,6 @@ class EpisodeVideoControllerTest {
             runOnIdle {
                 assertEquals((durationSeconds + 5) * 1_000L, playerState.currentPositionMillis.value)
             }
-        }
-    }
-
-    @Test
-    fun `player menu shows watch together first and dispatches click`() = runAniComposeUiTest {
-        var watchTogetherClicks = 0
-        val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-        val watchTogetherPlayerController = WatchTogetherPlayerController { watchTogetherClicks++ }
-        setContent {
-            Player(
-                GestureFamily.MOUSE,
-                playerControllerState = visibleControllerState,
-                watchTogetherPlayerController = watchTogetherPlayerController,
-            )
-        }
-
-        onNodeWithContentDescription("More options").performClick()
-
-        val watchTogetherItem = onNodeWithTag(TAG_WATCH_TOGETHER_MENU_ITEM)
-        val playerStatsItem = onNodeWithText("Show Playback Info")
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherItem.exists() && playerStatsItem.exists()
-        }
-        val watchTogetherTop = watchTogetherItem.fetchSemanticsNode().boundsInRoot.top
-        val playerStatsTop = playerStatsItem.fetchSemanticsNode().boundsInRoot.top
-        assertTrue(watchTogetherTop < playerStatsTop)
-
-        watchTogetherItem.performClick()
-
-        runOnIdle {
-            assertEquals(1, watchTogetherClicks)
-        }
-        watchTogetherItem.doesNotExist()
-    }
-
-    @Test
-    fun `watch together popup follows controller while video fills page`() = runAniComposeUiTest {
-        val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-        val watchTogetherPlayerController = WatchTogetherPlayerController()
-        var isFullscreen by mutableStateOf(true)
-        var isExpandedLayout by mutableStateOf(false)
-        var sidebarVisible by mutableStateOf(true)
-        mainClock.autoAdvance = false
-        setContent {
-            CompositionLocalProvider(LocalWatchTogetherPlayerController provides watchTogetherPlayerController) {
-                WatchTogetherPopupVisibilityEffect(
-                    playerControllerState = visibleControllerState,
-                    isFullscreen = isFullscreen,
-                    isExpandedLayout = isExpandedLayout,
-                    sidebarVisible = sidebarVisible,
-                )
-            }
-        }
-
-        runOnIdle {
-            assertTrue(watchTogetherPlayerController.isDraggablePopupVisible)
-            visibleControllerState.toggleFullVisible(false)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            visibleControllerState.toggleFullVisible(true)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            visibleControllerState.toggleFullVisible(false)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            isFullscreen = false
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            isExpandedLayout = true
-            sidebarVisible = false
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            sidebarVisible = true
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
         }
     }
 

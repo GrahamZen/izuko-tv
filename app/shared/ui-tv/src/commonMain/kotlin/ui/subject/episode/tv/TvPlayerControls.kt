@@ -109,7 +109,6 @@ import me.him188.ani.app.ui.foundation.icons.Forward80
 import me.him188.ani.app.ui.foundation.icons.Forward85
 import me.him188.ani.app.ui.foundation.icons.Forward90
 import me.him188.ani.app.ui.foundation.icons.SubtitleGear
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.episode_comments
 import me.him188.ani.app.ui.lang.subject_details_characters
@@ -776,34 +775,6 @@ private fun Modifier.hangAboveBaseline() = layout { measurable, constraints ->
  *
  * 显隐由 [TvPlayerBottomRow] 判断 —— 功能被关掉时本组合整个消失, 焦点善后只能由父级做.
  */
-@Composable
-private fun TvWatchTogetherButton(
-    overlay: TvPlayerOverlayState,
-    modifier: Modifier = Modifier,
-) {
-    val entry = LocalWatchTogetherEntry.current
-    val dialogVisible = entry.dialogVisible
-    // 弹窗是独立窗口, 根部那个唯一按键路由收不到它的按键 -> interactionTick 不再自增,
-    // 五秒后控制层连同本按钮一起被自动隐藏吃掉. 按下拉弹层同一套引用计数上报住.
-    DisposableEffect(dialogVisible) {
-        if (dialogVisible) overlay.onPopupExpandedChanged(true)
-        onDispose { if (dialogVisible) overlay.onPopupExpandedChanged(false) }
-    }
-
-    TvBottomRowIcon(
-        icon = Icons.Rounded.SyncAlt,
-        contentDescription = stringResource(Lang.watch_together_title),
-        onClick = { entry.open(overDarkBackground = true) },
-        // 关掉后焦点还给本按钮: 弹窗是独立窗口, 关闭时主窗口未必把焦点还到原处,
-        // 不还的话控制层还在但方向键全失效.
-        // 控制层已经收起时放弃: 那时焦点归属由根路由的解析器负责, 再抢就是打架
-        modifier = modifier.restoreFocusAfter(
-            dialogVisible,
-            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-        ),
-    )
-}
-
 /** 单个胶囊按钮: 聚焦白底黑字 (Prime 样式), 同时浮出对应面板. */
 @Composable
 private fun TvPlayerPill(
@@ -1037,21 +1008,6 @@ private fun TvPlayerBottomRow(
 ) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    // "一起看"按钮的显隐在本行 (而不是按钮自己) 判断: 用户可以在弹窗的 ⋮ 里关掉整个功能,
-    // 那一下按钮连同它自己的焦点善后逻辑一起被移除, 只有留在场上的父级能接手 —— 把焦点送回
-    // 进度条 (与从面板按返回同一个落点). 没有这一手就是按钮消失 + 焦点消失, 方向键全失效.
-    val watchTogetherEnabled = LocalWatchTogetherEntry.current.enabled
-    var watchTogetherWasEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(watchTogetherEnabled) {
-        if (watchTogetherEnabled) {
-            watchTogetherWasEnabled = true
-            return@LaunchedEffect
-        }
-        // 一开始就没开 (或本行刚组合出来) 不算"刚被关掉", 不能抢焦点
-        if (!watchTogetherWasEnabled) return@LaunchedEffect
-        watchTogetherWasEnabled = false
-        overlay.focusProgress()
-    }
     CompositionLocalProvider(
         LocalContentColor provides Color.White,
         LocalTextStyle provides MaterialTheme.typography.labelMedium,
@@ -1115,7 +1071,6 @@ private fun TvPlayerBottomRow(
             // 一起看: 与弹幕同属"和别人一起看"那一类, 所以并进本组末尾. 位置的取舍是 ——
             // 一次观看里最多开一次, 排不到从头开始/下一集/换源前面; 但再往右就是收藏/统计
             // 那些低频项与右半边的设置类按钮, 一个招牌功能埋在那儿要多按七八下才够得着
-            if (watchTogetherEnabled) TvWatchTogetherButton(overlay)
 
             // 左右两块之间的弹性留白 (常用组靠左, 其余靠右)
             Spacer(Modifier.weight(1f))

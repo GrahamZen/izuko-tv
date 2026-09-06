@@ -37,7 +37,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.models.subject.TestSubjectCollections
 import me.him188.ani.app.data.persistent.database.dao.DanmakuDao
@@ -268,7 +267,6 @@ class DanmakuCacheTest {
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("no implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("no implemented") }
         override val debugSettings: Settings<DebugSettings> by lazy { error("no implemented") }
-        override val watchTogetherSettings: Settings<WatchTogetherSettings> by lazy { error("no implemented") }
     }
 
     private class TestDanmakuDao : DanmakuDao {

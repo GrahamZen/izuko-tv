@@ -52,7 +52,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.network.protocol.ReleaseClass
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.getIcon
@@ -178,10 +177,6 @@ import me.him188.ani.app.ui.lang.settings_update_type_stable
 import me.him188.ani.app.ui.lang.settings_update_type_stable_short
 import me.him188.ani.app.ui.lang.settings_update_up_to_date
 import me.him188.ani.app.ui.lang.settings_update_view_changelog
-import me.him188.ani.app.ui.lang.settings_watch_together_description
-import me.him188.ani.app.ui.lang.settings_watch_together_entry_hint_tv
-import me.him188.ani.app.ui.lang.settings_watch_together_social
-import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.settings.SettingsTab
 import me.him188.ani.app.ui.settings.danmaku.DanmakuRegexFilterGroup
 import me.him188.ani.app.ui.settings.danmaku.DanmakuRegexFilterState
@@ -232,7 +227,6 @@ fun AppSettingsTab(
     themeSettings: SettingsState<ThemeSettings>,
     videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
     playerKernelConfig: SettingsState<PlayerKernelConfig>,
-    watchTogetherSettings: SettingsState<WatchTogetherSettings>,
     danmakuFilterConfig: SettingsState<DanmakuFilterConfig>,
     danmakuRegexFilterState: DanmakuRegexFilterState,
     showDebug: Boolean,
@@ -250,32 +244,7 @@ fun AppSettingsTab(
             showDebug,
             themeSettings,
         )
-        WatchTogetherGroup(watchTogetherSettings)
         AppSettingsTabPlatform()
-    }
-}
-
-@Composable
-fun SettingsScope.WatchTogetherGroup(state: SettingsState<WatchTogetherSettings>) {
-    val config by state
-    Group(title = { Text(stringResource(Lang.settings_watch_together_social)) }, useThinHeader = true) {
-        SwitchItem(
-            checked = config.enabled,
-            onCheckedChange = { state.update(config.copy(enabled = it)) },
-            title = { Text(stringResource(Lang.watch_together_title)) },
-            description = {
-                // 遥控器形态补一句入口在哪: 那里没有悬浮气泡, 入口是长按返回那个面板里的一颗图标,
-                // 平时不在视野里 —— 开着却找不到, 等于没开
-                Text(
-                    if (LocalAniUiBehavior.current.immersiveShell) {
-                        stringResource(Lang.settings_watch_together_description) +
-                                stringResource(Lang.settings_watch_together_entry_hint_tv)
-                    } else {
-                        stringResource(Lang.settings_watch_together_description)
-                    },
-                )
-            },
-        )
     }
 }
 
@@ -1140,7 +1109,6 @@ private fun PreviewAppSettingsTab() {
         themeSettings = rememberTestSettingsState(ThemeSettings.Default),
         videoScaffoldConfig = rememberTestSettingsState(VideoScaffoldConfig.Default),
         playerKernelConfig = rememberTestSettingsState(PlayerKernelConfig.Default),
-        watchTogetherSettings = rememberTestSettingsState(WatchTogetherSettings.Default),
         danmakuFilterConfig = rememberTestSettingsState(DanmakuFilterConfig.Default),
         danmakuRegexFilterState = createTestDanmakuRegexFilterState(),
         showDebug = true,

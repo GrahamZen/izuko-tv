@@ -495,12 +495,10 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                 playerPageVisible,
                 appForeground,
                 vm.player.state,
-                vm.playbackAutomationSuppressed,
-            ) { pageVisible, foreground, state, roomControlled ->
-                AutoPauseInput(pageVisible, foreground, state, roomControlled)
+            ) { pageVisible, foreground, state ->
+                AutoPauseInput(pageVisible, foreground, state)
             }
-                .collect { (pageVisible, foreground, state, roomControlled) ->
-                    if (roomControlled) return@collect
+                .collect { (pageVisible, foreground, state) ->
                     if (pageVisible && foreground) {
                         // 回到播放页: 把"离开时的临时暂停"原样还回去. 判据只有本类记下的那一笔账,
                         // 所以用户自己按的暂停不会被误恢复成播放 (那时下面根本没记账).
@@ -753,9 +751,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
                 signal.hasFrameOnCurrentSurface.first { it }
             } == null
         }
-        // 等的这一秒里用户可能又走开了 (导航去别处, 或者干脆按 HOME 把应用切到后台), 也可能
-        // "一起看"接管了播放: 三种情况都不能落地, 而且都**不消账** —— 下次真的回到播放页时重新等
-        if (!playerPageVisible.value || !appForeground.value || vm.playbackAutomationSuppressed.value) return
+        // 等的这一秒里用户可能又走开了 (导航去别处, 或者干脆按 HOME 把应用切到后台):
+        // 两种情况都不能落地, 而且都**不消账** —— 下次真的回到播放页时重新等
+        if (!playerPageVisible.value || !appForeground.value) return
         if (!vm.autoPausedOffPage) return
         vm.autoPausedOffPage = false
         logger.info {
@@ -809,7 +807,6 @@ private data class AutoPauseInput(
     val pageVisible: Boolean,
     val appForeground: Boolean,
     val playerState: PlayerState,
-    val roomControlled: Boolean,
 )
 
 /** 数据源搜索层面的"再等也没用". */

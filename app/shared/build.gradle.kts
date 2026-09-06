@@ -77,7 +77,6 @@ kotlin {
         api(projects.app.shared.uiEpisode)
         api(projects.app.shared.uiMediaselect)
         api(projects.app.shared.uiExprovider)
-        api(projects.app.shared.uiWatchtogether)
 
         // Compose
         api(libs.compose.lifecycle.viewmodel.compose)
