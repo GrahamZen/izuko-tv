@@ -649,7 +649,7 @@ button { font: inherit; border: 0; cursor: pointer; }
   font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; overflow-y: auto; overscroll-behavior: contain;
   -webkit-user-select: text; user-select: text; }
 #link-dlg a.primary { text-decoration: none; text-align: center; }
-/* 手机授权前的教学 (loginGuide): 三步, 第二步是重点 —— 授权完停在打不开的页面是正常的 */
+/* 个人令牌登录的步骤 (tokenGuide) */
 .login-steps { margin: 12px 0 4px; padding-left: 1.4em; font-size: 15px; line-height: 1.6; }
 .login-steps li + li { margin-top: 8px; }
 .login-steps .risk { display: block; margin-top: 4px; color: var(--err); }
@@ -972,6 +972,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .acct-nick input { flex: 1; min-width: 0; }
 .acct-nick button { flex: none; background: var(--p); color: var(--on-p); font-weight: 600; padding: 10px 16px; border-radius: 12px; }
 .acct-nick button:disabled { opacity: .5; }
+.acct-cap { display: flex; gap: 8px; align-items: center; }
+.acct-cap input { flex: 1; min-width: 0; }
+.acct-cap img { flex: none; height: 46px; min-width: 90px; border-radius: 10px; background: #fff; cursor: pointer; }
 .acct-wait .now-status { margin-top: 0; }
 .acct-wait a { color: var(--p); }
 #cc-chips .chips { margin-top: 4px; }
@@ -5137,36 +5140,44 @@ private val SETTINGS_SCRIPT = """
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
   var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
-  var BGM_MODES = [['AUTO', T('官方连不上时用镜像')], ['MIRROR', T('用镜像')], ['DIRECT', T('只连官方')], ['CUSTOM', T('用我自己的镜像')]];
-  function bgmUsesMirrors(mode) { return mode === 'AUTO' || mode === 'MIRROR'; }
-  // Bangumi 连接方式 (同设置页那一组): 「官方连不上时用镜像」用自带清单, 不用填; 自建地址才要输入.
-  // 推荐的是上面的代理 (直连官方). 自带镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
-  // 自建地址会带登录, 所以那一档只提示填自己的服务器, 不推荐第三方
+  // Bangumi 连接方式 (同设置页那一组): 官方、我自己的镜像、加密直连、社区镜像各一个勾, 按这个顺序尝试.
+  // 推荐的是上面的代理 (直连官方). 社区镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
+  // 自建地址会带登录, 所以只提示填自己的服务器, 不推荐第三方
   function bgmCredHint(on) {
     return on ? T('你的登录凭证与收藏数据会经过镜像，风险由你自行承担。')
-      : T('镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。');
+      : T('镜像不带登录：登录与收藏同步不经过镜像，第三方看不到你的账号。');
+  }
+  // 开着的线路里只剩社区镜像 (同 BangumiMirrorConsent.onlyThirdPartyRoutes): 登录着又不让凭证经过镜像时, 什么都用不了
+  function bgmOnlyMirror(r, custom, ech) {
+    return !!r.mirrors && !r.origin && !(r.custom && custom) && !(r.ech && ech);
   }
   // 上次读到的 Bangumi 连接方式 (含电视是否登录着), 保存前判断要不要先问
   var bgmSaved = null;
   function renderBangumi(b) {
-    b = b || { mode: 'AUTO', custom: '', mirrors: [], allowCredentials: false };
+    b = b || { routes: { origin: true, ech: true, mirrors: true }, echAvailable: false, custom: '', mirrors: [], allowCredentials: false };
     bgmSaved = b;
+    var r = b.routes || {};
     var mirrors = (b.mirrors || []).map(esc).join(T('、'));
+    function route(id, label, hint, extra) {
+      return '<label class="toggle"><input type="checkbox" name="route_' + id + '" value="1"' + (r[id] ? ' checked' : '') + '>' + label + '</label>' +
+        (hint ? '<p class="hint">' + hint + '</p>' : '') + (extra || '');
+    }
     bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
-      '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。') + '</p><div class="pills">' +
-      BGM_MODES.map(function (m) {
-        return '<label><input type="radio" name="mode" value="' + m[0] + '"' + (b.mode === m[0] ? ' checked' : '') + '><span>' + m[1] + '</span></label>';
-      }).join('') + '</div>' +
-      '<p class="hint bgm-auto-only"' + (b.mode === 'AUTO' ? '' : ' hidden') + '>' + T('确定连不上官方后会自动改成「用镜像」，之后不再先试官方；需要时再改回这一档。') + '</p>' +
-      '<div class="bgm-auto"' + (bgmUsesMirrors(b.mode) ? '' : ' hidden') + '>' +
-      (mirrors ? '<p class="hint">' + T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) + '</p>' : '') +
-      '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
-      T('登录与收藏同步也经过镜像') + '</label><p class="hint bgm-cred">' + bgmCredHint(b.allowCredentials) + '</p></div>' +
-      '<div class="bgm-custom"' + (b.mode === 'CUSTOM' ? '' : ' hidden') + '>' +
-      '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
-      esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
-      T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
-      '</em></label></div>' +
+      '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。下面几条线路按顺序尝试，前一条连不上用下一条。') + '</p>' +
+      '<input type="hidden" name="routes" value="1">' +
+      route('origin', T('官方直连'), T('确定连不上时会自动关掉，之后不再先试它；网络好了可以再打开。')) +
+      route('custom', T('我自己的镜像'), '', '<div class="bgm-custom"' + (r.custom ? '' : ' hidden') + '>' +
+        '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+        esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
+        T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
+        '</em></label></div>') +
+      // 这台电视用不了加密直连时不列, 但原样带上它的开关, 别让保存把它关掉
+      (b.echAvailable ? route('ech', T('加密直连'), T('连的仍是 Bangumi 官方，只是把要连的网址藏进加密的握手里，绕开按网址的拦截；登录与收藏同步照常走它。设了代理时不用它。'))
+        : (r.ech ? '<input type="hidden" name="route_ech" value="1">' : '')) +
+      route('mirrors', T('社区镜像'), mirrors ? T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) : '',
+        '<div class="bgm-auto"' + (r.mirrors ? '' : ' hidden') + '>' +
+        '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
+        T('登录与收藏同步也经过镜像') + '</label><p class="hint bgm-cred">' + bgmCredHint(b.allowCredentials) + '</p></div>') +
       '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
   }
   bgmBox.addEventListener('change', function (e) {
@@ -5178,34 +5189,39 @@ private val SETTINGS_SCRIPT = """
       f.querySelector('.bgm-cred').textContent = bgmCredHint(t.checked);
       return;
     }
-    if (t.name !== 'mode') return;
-    f.querySelector('.bgm-auto-only').hidden = t.value !== 'AUTO';
-    f.querySelector('.bgm-auto').hidden = !bgmUsesMirrors(t.value);
-    f.querySelector('.bgm-custom').hidden = t.value !== 'CUSTOM';
+    if (t.name === 'route_custom') f.querySelector('.bgm-custom').hidden = !t.checked;
+    if (t.name === 'route_mirrors') f.querySelector('.bgm-auto').hidden = !t.checked;
   });
   bgmBox.addEventListener('submit', function (e) {
     e.preventDefault();
-    var f = e.target, m = f.querySelector('input[name="mode"]:checked'), cred = !!(f.elements.cred && f.elements.cred.checked);
+    var f = e.target, el = f.elements, cred = !!(el.cred && el.cred.checked);
+    function on(id) {
+      var i = el['route_' + id];
+      return !!(i && (i.type === 'hidden' || i.checked));
+    }
+    var target = { origin: on('origin'), custom: on('custom'), ech: on('ech'), mirrors: on('mirrors') };
+    if (!target.origin && !target.custom && !target.ech && !target.mirrors) { toast(T('至少开一条线路')); return; }
     function save() {
       post('api/settings/bangumi', new FormData(f)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
     }
-    // 电视登录着 (同设置页, 见 BangumiMirrorConsent): 改成「用镜像」而凭证不经过镜像先问; 用着镜像时关掉凭证先提醒
-    if (bgmSaved && bgmSaved.loggedIn && m && m.value === 'MIRROR' && !cred) {
-      if (bgmSaved.mode !== 'MIRROR') { bgmAsk(f, save); return; }
+    // 电视登录着 (同设置页, 见 BangumiMirrorConsent): 改成只剩镜像而凭证不经过镜像先问; 只剩镜像时关掉凭证先提醒
+    var ech = !!(bgmSaved && bgmSaved.echAvailable);
+    if (bgmSaved && bgmSaved.loggedIn && !cred && bgmOnlyMirror(target, (el.custom.value || '').trim(), ech)) {
+      if (!bgmOnlyMirror(bgmSaved.routes || {}, bgmSaved.custom, ech)) { bgmAsk(f, save); return; }
       if (bgmSaved.allowCredentials &&
-          !confirm(T('现在用的是镜像。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）只走官方，官方连不上时都会失败。'))) return;
+          !confirm(T('现在只剩镜像可用。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）不经过镜像，都会失败。'))) return;
     }
     save();
   });
-  // 已登录改用镜像的三个选择: 允许凭证经过镜像 / 退出登录再切 / 不切. 登录后连浏览都带着令牌, 凭证不经过镜像时
-  // 官方一连不上就什么都用不了, 所以不能不问就切
+  // 已登录改成只剩镜像的三个选择: 允许凭证经过镜像 / 退出登录再切 / 不切. 登录后连浏览都带着令牌, 凭证不经过镜像时
+  // 只剩镜像就什么都用不了, 所以不能不问就切
   function bgmAsk(f, save) {
     var old = document.getElementById('login-dlg');
     if (old) old.remove();
     var d = document.createElement('div');
     d.id = 'login-dlg';
     d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('已登录，改用镜像？') + '</div>' +
-      '<p class="dlg-p">' + T('你已登录 Bangumi。登录后的请求（收藏、进度、评分，以及登录后浏览条目）默认只走官方，不经过第三方镜像，官方连不上时都会失败。') + '</p>' +
+      '<p class="dlg-p">' + T('你已登录 Bangumi。登录后的请求（收藏、进度、评分，以及登录后浏览条目）默认不经过第三方镜像，只剩镜像可用时都会失败。') + '</p>' +
       '<p class="dlg-p risk">' + T('选「允许并改用镜像」后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。不想交出账号的话，可以退出登录，只用镜像浏览。') + '</p>' +
       '<div class="dlg-acts"><button type="button" class="ghost" data-bgm-ask="allow">' + T('允许并改用镜像') + '</button>' +
       '<button type="button" class="ghost" data-bgm-ask="logout">' + T('退出登录并改用镜像') + '</button>' +
@@ -6478,8 +6494,10 @@ private val ACCOUNT_SCRIPT = """
   var menu = false, lastData = null;
   // 个人令牌登录的表单展开着没有 (没登录时). 授权页连不上 (中国大陆经镜像) 时只能走这条
   var tok = false;
+  // 输入账号密码登录 (RemoteWebLogin): 表单展开着没有, 以及电视取回来的验证码 (data: 地址, 手机连不上 bgm 取不了图)
+  var web = false, webCap = '';
   var TOKEN_DAYS = [7, 30, 90, 180, 365];
-  function tokenForm(d, closable) {
+  function tokenForm(d) {
     var pages = (d.tokenPages || []).map(function (u) {
       return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\//, '')) + '</a>';
     }).join(T('、'));
@@ -6490,13 +6508,23 @@ private val ACCOUNT_SCRIPT = """
       '<label class="f"><span>' + T('有效期') + '</span><select name="days">' + TOKEN_DAYS.map(function (n) {
         return '<option value="' + n + '"' + (n === 365 ? ' selected' : '') + '>' + T('{0} 天', n) + '</option>';
       }).join('') + '</select><em>' + T('和生成令牌时选的一样。到期后电视会退出登录，再生成一个新的就行。') + '</em></label>' +
-      '<div class="row">' + (closable ? '<button type="button" class="ghost" data-acct="token-close">' + T('取消') + '</button>' : '') +
+      '<div class="row"><button type="submit" class="primary">' + T('登录') + '</button></div></form>';
+  }
+  function webForm() {
+    return '<form class="acct-token" id="acct-web">' +
+      '<p class="hint">' + T('电视替你登录 Bangumi：邮箱和密码只经过这台手机和电视，由电视直接发给 Bangumi，不会存下来。') + '</p>' +
+      '<label class="f"><span>' + T('邮箱') + '</span><input type="email" name="email" autocomplete="username" spellcheck="false" autocapitalize="off"></label>' +
+      '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="current-password"></label>' +
+      '<label class="f"><span>' + T('验证码') + '</span><span class="acct-cap"><input type="text" name="captcha" autocomplete="off" spellcheck="false" autocapitalize="off">' +
+      '<img src="' + esc(webCap) + '" alt="" data-acct="web-captcha"></span><em>' + T('看不清？点图换一张') + '</em></label>' +
+      '<div class="row"><button type="button" class="ghost" data-acct="web-close">' + T('取消') + '</button>' +
       '<button type="submit" class="primary">' + T('登录') + '</button></div></form>';
   }
   function rerender() { if (lastData) render(lastData); }
   function load() {
     clearTimeout(timer);
-    fetch('api/account').then(function (r) { return r.json(); }).then(render).catch(function () {});
+    // host: 手机连电视用的地址, 电视据此判断手机扫码授权完能不能跳回来 (见 BangumiOAuthRelay)
+    fetch('api/account?host=' + encodeURIComponent(location.host)).then(function (r) { return r.json(); }).then(render).catch(function () {});
   }
   window.loadAccount = load;
   function avatar(d) {
@@ -6510,7 +6538,7 @@ private val ACCOUNT_SCRIPT = """
   function render(d) {
     if (!d.ok) return;
     lastData = d;
-    if (!d.loggedIn) menu = false; else tok = false;
+    if (!d.loggedIn) menu = false; else { tok = false; web = false; }
     var l = d.login || { state: 'idle' };
     // 刚登录上 (手机这边发起的, 或者电视上自己登的): 让评论与评分区重新读一次
     if (wasIn === false && d.loggedIn) window.runHooks('login', hooks.login, undefined);
@@ -6531,32 +6559,39 @@ private val ACCOUNT_SCRIPT = """
       h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度和评分都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      // 手机授权: 授权完那一跳必然失败 (目标是电视本机的回环地址), 但地址栏里带着 code, 粘回来即可. 没有 url = 在电视上登录
-      var paste = !!l.url;
+      // 手机授权 (有 url): 授权完 Worker 把手机跳回电视, 什么都不用粘. 没有 url = 在电视上登录
       if (l.expiresIn != null) loginDeadline = Date.now() + l.expiresIn;
       h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b>' +
         (l.expiresIn != null ? '<span class="acct-left"></span>' : '') + '<span class="now-sub">' +
-        (paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的') : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
-        (paste ? '<p class="hint">' + T('把那个打不开的页面的网址整个复制，粘到下面。') + '</p>' +
-          '<form class="acct-nick" id="acct-cb"><input type="text" name="u" inputmode="url" autocomplete="off" placeholder="' +
-          T('粘贴那个网址') + '"><button type="submit">' + T('完成登录') + '</button></form>' +
-          '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>' : '') +
+        (l.url ? T('授权完会自动回到电视，电视就登录好了') : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
+        (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>' : '') +
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!d.loggedIn && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
-      if (d.viaMirror) {
+      // 登录方式跟着电视实际走的线路, 只给走得通的那一条 (见 BangumiLoginPath)
+      var path = d.loginPath || (d.viaMirror ? 'token' : 'browser');
+      if (path === 'token') {
         // 经第三方镜像: 授权页与换 token 在镜像上走不通, 只剩个人令牌; 而令牌要经镜像校验, 得先许凭证经过镜像
         // (不开的话校验请求被留在官方, 连不上, 只会等到超时)
         h += '<div class="now-status attention"><b>' + T('现在经镜像连接 Bangumi') + '</b><span>' +
           T('经镜像时授权登录走不通，只能用个人令牌登录。') + '</span></div>';
-        h += d.mirrorCred && tok ? tokenForm(d, false)
+        h += d.mirrorCred && tok ? tokenForm(d)
           : '<div class="row"><button type="button" class="primary" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
+      } else if (path === 'web') {
+        // 经加密直连: 手机多半打不开 Bangumi, 填账号密码由电视去登录并生成令牌 (见 RemoteWebLogin)
+        h += web ? webForm() : '<div class="row"><button type="button" class="primary" data-acct="web">' + T('输入账号密码登录') + '</button></div><p class="hint">' +
+          T('电视替你登录 Bangumi，并生成一个一年有效的令牌；到期后再登录一次就行。') + '</p>';
+      } else if (web) {
+        h += webForm();
       } else {
-        h += '<div class="row"><button type="button" class="primary" data-login="1">' + T('用手机登录 Bangumi') + '</button>' +
+        // 官方 / 自建: 手机扫码授权, 授权完自动回到电视. 跳不回来 (没带中转凭据, 或手机不是经内网地址连的控制台) 时
+        // 换成填账号密码由电视登录
+        h += '<div class="row">' + (d.phoneRelay
+          ? '<button type="button" class="primary" data-login="1">' + T('用手机登录 Bangumi') + '</button>'
+          : '<button type="button" class="primary" data-acct="web">' + T('输入账号密码登录') + '</button>') +
           '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button></div><p class="hint">' +
-          T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。') + '</p>';
-        // 个人令牌: 不经过授权页
-        h += tok ? tokenForm(d, true) : '<div class="row"><button type="button" class="ghost" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
+          (d.phoneRelay ? T('在手机上授权，完成后会自动回到电视；电视上打字麻烦，所以默认走这条。')
+            : T('电视替你登录 Bangumi，并生成一个一年有效的令牌；到期后再登录一次就行。')) + '</p>';
       }
     }
     h += '</div>';
@@ -6580,25 +6615,6 @@ private val ACCOUNT_SCRIPT = """
       timer = setTimeout(load, 2000);
     }
   }
-  // 用手机授权之前先讲清楚: 授权完浏览器会停在一个打不开的页面 (回调是电视本机的地址, 手机上当然打不开),
-  // 不讲的话都以为登录失败了. 「知道了」那一下也是用户点的, 在里面开新页面不会被当成弹窗拦掉
-  function loginGuide(btn) {
-    var old = document.getElementById('login-dlg');
-    if (old) old.remove();
-    var d = document.createElement('div');
-    d.id = 'login-dlg';
-    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('用手机登录 Bangumi') + '</div><ol class="login-steps">' +
-      '<li>' + T('接下来会打开 Bangumi 的授权页：登录你的 Bangumi 账号，点「允许」。') + '</li>' +
-      '<li>' + T('授权完，浏览器会跳到一个打不开的页面（提示无法访问、连接被拒绝之类）。这是正常的，不是登录失败。') + '</li>' +
-      '<li>' + T('把那个打不开的页面的网址整个复制下来，回到这里粘贴，点「完成登录」。') + '</li></ol><div class="row">' +
-      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
-      '<button type="button" class="primary" data-ldlg="go">' + T('知道了，去授权') + '</button></div></div>';
-    d.addEventListener('click', function (e) {
-      if (e.target.closest('[data-ldlg="go"]')) { d.remove(); startLogin(btn); return; }
-      if (e.target === d || e.target.closest('[data-ldlg="close"]')) d.remove();
-    });
-    document.body.appendChild(d);
-  }
   // 个人令牌登录的完整步骤. 经镜像时第一步是打开「登录与收藏同步也经过镜像」: 不开的话令牌校验被留在官方 (连不上),
   // 只会等到超时 (测试用户实测, 打开之后就登上了). 那一步的按钮就是同意 —— 风险写在步骤里, 不再另弹确认
   function tokenGuide(d) {
@@ -6610,9 +6626,7 @@ private val ACCOUNT_SCRIPT = """
       steps.push(T('打开「登录与收藏同步也经过镜像」，不然令牌校验发不出去。') +
         '<span class="risk">' + T('打开后，令牌、收藏和观看进度都会经过第三方镜像，对方能看到并使用你的账号。点下面的「我了解风险，打开并继续」会直接打开这个选项，即表示你接受这个风险。') + '</span>');
     }
-    steps.push(d.viaMirror
-      ? T('生成个人令牌：让手机临时开代理，或者换一个能打开 bgm.tv 的网络，打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。镜像网站上的登录页过不了人机验证，这一步只能在官网做。', link)
-      : T('生成个人令牌：打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。', link));
+    steps.push(T('生成个人令牌：让手机临时开代理，或者换一个能打开 bgm.tv 的网络，打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。镜像网站上的登录页过不了人机验证，这一步只能在官网做。', link));
     steps.push(T('复制生成的令牌，回到这里粘到「令牌」框，「有效期」选和刚才一样的天数，点「登录」。'));
     steps.push(T('令牌到期后电视会退出登录，到时再生成一个新的粘进来就行。'));
     var old = document.getElementById('login-dlg');
@@ -6651,7 +6665,8 @@ private val ACCOUNT_SCRIPT = """
     var onTv = btn.getAttribute('data-login') === 'tv', w = null;
     if (!onTv) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
-    post('api/account/login', onTv ? { where: 'tv' } : {}).then(function (r) {
+    // host: 手机连电视用的地址, 授权完 Worker 按它把手机跳回来 (见 BangumiOAuthRelay)
+    post('api/account/login', onTv ? { where: 'tv' } : { host: location.host }).then(function (r) {
       btn.disabled = false;
       if (!r.ok || !r.url) {
         if (w) w.close();
@@ -6674,7 +6689,10 @@ private val ACCOUNT_SCRIPT = """
       if (b.disabled) return;
       // 经镜像时授权登录走不通 (评论与评分区的登录按钮也走这里): 指到账号卡片的个人令牌
       if (lastData && lastData.viaMirror) { toast(T('现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录')); return; }
-      if (b.getAttribute('data-login') === 'tv') startLogin(b); else loginGuide(b);
+      if (lastData && lastData.loginPath === 'web') { toast(T('现在经加密直连连接 Bangumi，手机打不开授权页。请在「设置 → 账号」里输入账号密码登录')); return; }
+      // 手机授权跳不回来 (评论与评分区的登录按钮也走这里): 指到账号卡片的账号密码登录
+      if (b.getAttribute('data-login') !== 'tv' && lastData && !lastData.phoneRelay) { toast(T('这里用不了手机扫码授权，请在「设置 → 账号」里输入账号密码登录')); return; }
+      startLogin(b);
       return;
     }
     if (e.target.closest('[data-acct="token-guide"]')) {
@@ -6682,12 +6700,47 @@ private val ACCOUNT_SCRIPT = """
       if (lastData) tokenGuide(lastData);
       return;
     }
+    var wb = e.target.closest('#set-account [data-acct="web"]');
+    if (wb) {
+      if (wb.disabled) return;
+      // 开始时电视要先找一条连得上 bgm 登录页的线路, 可能要等十几秒
+      wb.disabled = true;
+      toast(T('正在连接 Bangumi…'), 15000);
+      post('api/account/weblogin/start', {}).then(function (r) {
+        wb.disabled = false;
+        if (!r.ok) { toast(r.message); return; }
+        document.getElementById('toast').classList.remove('on');
+        web = true;
+        webCap = r.captcha;
+        rerender();
+        var em = box.querySelector('#acct-web input[name=email]');
+        if (em) em.focus();
+      }).catch(function () { wb.disabled = false; fail(); });
+      return;
+    }
+    if (e.target.closest('#set-account [data-acct="web-captcha"]')) {
+      e.preventDefault();
+      post('api/account/weblogin/captcha', {}).then(function (r) {
+        if (!r.ok) { toast(r.message); if (r.expired) web = false; rerender(); return; }
+        webCap = r.captcha;
+        var c = box.querySelector('#acct-web input[name=captcha]');
+        if (c) c.value = '';
+        rerender();
+      }).catch(fail);
+      return;
+    }
+    if (e.target.closest('[data-acct="web-close"]')) {
+      web = false;
+      webCap = '';
+      post('api/account/weblogin/cancel', {}).catch(function () {});
+      rerender();
+      return;
+    }
     if (e.target.closest('[data-acct="cancel"]')) {
       post('api/account/login/cancel', {}).then(function (r) { toast(r.message); load(); }).catch(fail);
       return;
     }
     if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; rerender(); return; }
-    if (e.target.closest('[data-acct="token-close"]')) { tok = false; rerender(); return; }
     if (e.target.closest('[data-acct="logout"]')) {
       if (!confirm(T('退出电视上的登录？\n\n退出后收藏同步和评分都要重新登录才能用。'))) return;
       post('api/account/logout', {}).then(function (r) { toast(r.message); menu = false; load(); }).catch(fail);
@@ -6695,16 +6748,23 @@ private val ACCOUNT_SCRIPT = """
   });
   box.addEventListener('submit', function (e) {
     var f = e.target;
-    if (f.id === 'acct-cb') {
+    if (f.id === 'acct-web') {
       e.preventDefault();
-      var cb = f.querySelector('button');
-      cb.disabled = true;
-      post('api/account/login/callback', { url: f.elements.u.value.trim() }).then(function (r) {
-        cb.disabled = false;
-        toast(r.message);
-        if (r.ok) { f.elements.u.value = ''; }
-        load();
-      }).catch(function () { cb.disabled = false; fail(); });
+      var wsb = f.querySelector('button[type=submit]');
+      var em = f.elements.email.value.trim(), pw = f.elements.password.value, cp = f.elements.captcha.value.trim();
+      if (!em || !pw) { toast(T('请填写邮箱和密码')); return; }
+      if (!cp) { toast(T('请填写验证码')); f.elements.captcha.focus(); return; }
+      wsb.disabled = true;
+      post('api/account/weblogin/submit', { email: em, password: pw, captcha: cp }).then(function (r) {
+        wsb.disabled = false;
+        toast(r.message, r.ok ? 2400 : 5000);
+        if (r.ok) { web = false; webCap = ''; load(); return; }
+        // 验证码提交一次就作废: 被拒时电视顺手换了一张新的
+        if (r.expired) web = false;
+        if (r.captcha) webCap = r.captcha;
+        f.elements.captcha.value = '';
+        rerender();
+      }).catch(function () { wsb.disabled = false; fail(); });
       return;
     }
     if (f.id === 'acct-token') {

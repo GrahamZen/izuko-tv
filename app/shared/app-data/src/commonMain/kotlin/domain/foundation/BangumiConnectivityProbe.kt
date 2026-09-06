@@ -1,0 +1,116 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.domain.foundation
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import me.him188.ani.app.data.models.preference.BangumiConnectionPreset
+import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.utils.ktor.ScopedHttpClient
+
+/**
+ * 「这台设备连不连得上 Bangumi」的一次检测 (首次启动引导用): 官方、加密直连、镜像清单里的每个镜像**直接**各连一次, 并行.
+ * 怎么连、怎么判见 [ReachabilityProbe]; [client] 同样不能带 [BangumiRoutingFeature], 要测加密直连就得带 [BangumiEchFeature].
+ */
+class BangumiConnectivityProbe(
+    client: () -> ScopedHttpClient,
+    private val mirrors: Flow<List<String>>,
+    /** 这台设备能不能加密直连 (见 [BangumiEndpointProvider.echAvailable]); 不能就不测这一路. */
+    private val echAvailable: Boolean = false,
+    /** 每一路的封顶; 官方与各镜像并行测, 一轮最多也就这么久. */
+    val timeoutMillis: Long = 8_000L,
+) {
+    private val probe = ReachabilityProbe(client, timeoutMillis)
+
+    data class Result(
+        val origin: Reachability = Reachability.Checking,
+        /** 加密直连; `null` = 这台设备用不了, 不测. */
+        val ech: Reachability? = null,
+        /** 展示用的镜像: 连得上的第一个, 都连不上时是清单第一个; 清单为空时为 `null`. */
+        val mirror: String? = null,
+        val mirrorReachability: Reachability = Reachability.Checking,
+    ) {
+        val completed: Boolean
+            get() = origin != Reachability.Checking && ech != Reachability.Checking &&
+                    mirrorReachability != Reachability.Checking
+
+        /** 至少有一路连得上: 本机是联网的. */
+        val online: Boolean
+            get() = origin is Reachability.Reachable || ech is Reachability.Reachable ||
+                    mirrorReachability is Reachability.Reachable
+
+        /** 建议的组合; 还没测完, 或都连不上 (多半是本机没网) 时为 `null`. */
+        val recommended: BangumiConnectionPreset?
+            get() = when {
+                !completed -> null
+                origin is Reachability.Reachable -> BangumiConnectionPreset.AUTO
+                online -> BangumiConnectionPreset.SKIP_ORIGIN
+                else -> null
+            }
+
+        /** 照建议 (或用户选的 [preset]) 设好之后, 请求会落在第三方镜像上: 官方与加密直连都测出来连不上 (还在测的不算), 只有镜像通. */
+        fun landsOnMirror(preset: BangumiConnectionPreset): Boolean =
+            preset != BangumiConnectionPreset.DIRECT && origin == Reachability.Unreachable &&
+                    (ech == null || ech == Reachability.Unreachable) && mirrorReachability is Reachability.Reachable
+    }
+
+    /** 测一轮: 先发一次「检测中」, 之后每出一个结论发一次; 最后一次的 [Result.completed] 为 true. */
+    fun run(): Flow<Result> = channelFlow {
+        val mirrorList = mirrors.first()
+        var result = Result(
+            ech = if (echAvailable) Reachability.Checking else null,
+            mirror = mirrorList.firstOrNull(),
+            mirrorReachability = if (mirrorList.isEmpty()) Reachability.Unreachable else Reachability.Checking,
+        )
+        val lock = Mutex()
+        suspend fun update(transform: (Result) -> Result) = lock.withLock {
+            result = transform(result)
+            send(result)
+        }
+        send(result)
+        launch {
+            val origin = probe.probe("https://$ORIGIN_PROBE_HOST$PROBE_PATH")
+            update { it.copy(origin = origin) }
+        }
+        if (echAvailable) launch {
+            val host = checkNotNull(BangumiRoute.Ech.hostFor(ORIGIN_PROBE_HOST))
+            val ech = probe.probe("https://$host$PROBE_PATH")
+            update { it.copy(ech = ech) }
+        }
+        if (mirrorList.isNotEmpty()) launch {
+            val targets = mirrorList.mapNotNull { mirror ->
+                BangumiMirrorHosts.mirrorHostOf(ORIGIN_PROBE_HOST, mirror)?.let { mirror to "https://$it$PROBE_PATH" }
+            }
+            val hit = probe.firstReachable(targets.map { it.second })
+            update {
+                it.copy(
+                    mirror = hit?.let { hit -> targets[hit.index].first } ?: mirrorList.first(),
+                    mirrorReachability = hit?.value ?: Reachability.Unreachable,
+                )
+            }
+        }
+    }
+
+    private companion object {
+        /** 官方那一路测的域名. */
+        const val ORIGIN_PROBE_HOST = "api.bgm.tv"
+
+        /**
+         * 测的路径: 不带令牌取「我」, 立刻回 401 (对方在回答, 算连得上), 不查数据 (官方约 0.2 秒, 镜像约 0.6 秒).
+         * 不用根路径: 根路径走「找不到」那条处理, 2026-09-25 实测 3~8 秒才回 (正常接口 0.1~0.2 秒), 5 秒的读超时下
+         * 官方和镜像 (镜像只是转发) 会一起被判成连不上.
+         */
+        const val PROBE_PATH = "/v0/me"
+    }
+}
