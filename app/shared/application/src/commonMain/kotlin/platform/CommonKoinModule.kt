@@ -26,7 +26,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.network.AniApiProvider
-import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniPersonCommentService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
@@ -421,7 +420,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<EpisodeScreenshotRepository> { WhatslinkEpisodeScreenshotRepository() }
     single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(bangumiApiProvider.subjectApi) }
     single<AniEpisodeCommentService> { AniEpisodeCommentService(bangumiApiProvider.episodeApi, bangumiApiProvider.miscApi) }
-    single<AniCommentReportService> { AniCommentReportService(get<AniApiProvider>().commentsApi) }
     single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
     single<AniPersonCommentService> {
         AniPersonCommentService(

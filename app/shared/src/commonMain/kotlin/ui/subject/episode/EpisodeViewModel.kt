@@ -57,7 +57,6 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.comment.CommentReportTargetType
 import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
 import me.him188.ani.app.data.models.preference.SkipOpEdMode
@@ -67,7 +66,6 @@ import me.him188.ani.app.data.models.preference.parseMpvOptions
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
-import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.network.AutoSkipRepository
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
@@ -129,8 +127,6 @@ import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.comment.EditCommentSticker
 import me.him188.ani.app.ui.comment.UICommentSource
-import me.him188.ani.app.ui.comment.reportSnapshotText
-import me.him188.ani.app.ui.comment.toDataReason
 import me.him188.ani.app.ui.danmaku.UIDanmakuEvent
 import me.him188.ani.app.ui.episode.PlayingEpisodeSummary
 import me.him188.ani.app.ui.episode.danmaku.MatchingDanmakuPresenter
@@ -290,7 +286,6 @@ class EpisodeViewModel(
     private val danmakuRegexFilterRepository: DanmakuRegexFilterRepository by inject()
     private val mediaSourceManager: MediaSourceManager by inject()
     private val episodeCommentRepository: EpisodeCommentRepository by inject()
-    private val commentReportService: AniCommentReportService by inject()
     private val subjectDetailsStateFactory: SubjectDetailsStateFactory by inject()
     private val setDanmakuEnabledUseCase: SetDanmakuEnabledUseCase by inject()
     private val postCommentUseCase: PostCommentUseCase by inject()
@@ -812,23 +807,11 @@ class EpisodeViewModel(
         },
     )
 
-    @OptIn(UnsafeEpisodeSessionApi::class)
-    val commentReportState: CommentReportState = CommentReportState(
-        onSubmitReport = { comment, reason, detail ->
-            commentReportService.createReport(
-                targetType = CommentReportTargetType.EPISODE_COMMENT,
-                targetId = comment.sourceCommentId,
-                reason = reason.toDataReason(),
-                commentAuthorId = comment.author?.id,
-                detail = detail.takeIf { it.isNotEmpty() },
-                contentSnapshot = comment.reportSnapshotText(),
-                subjectId = subjectId.toLong(),
-                // 举报里的 episodeId 必须是评论所属集
-                episodeId = comment.episodeId ?: episodeIdFlow.first().toLong(),
-            )
-        },
-        backgroundScope = backgroundScope,
-    )
+    /**
+     * 举报评论走的是 Ani 服务器 (它自己的审核后台), 直连 bangumi 之后没有这个东西 ——
+     * bangumi 的举报只在网页上做. 评论菜单里的"举报"因此整个不给 (那两个组件都认 null).
+     */
+    val commentReportState: CommentReportState? = null
 
     @OptIn(UnsafeEpisodeSessionApi::class)
     val commentEditorState: CommentEditorState = CommentEditorState(
