@@ -155,8 +155,6 @@ import me.him188.ani.app.ui.lang.settings_tab_settings_backup
 import me.him188.ani.app.ui.lang.settings_tab_storage
 import me.him188.ani.app.ui.lang.settings_tab_theme
 import me.him188.ani.app.ui.lang.settings_tab_update
-import me.him188.ani.app.ui.settings.account.BangumiSyncTab
-import me.him188.ani.app.ui.settings.account.GithubAccountTab
 import me.him188.ani.app.ui.settings.account.ProfileGroup
 import me.him188.ani.app.ui.settings.account.SelfInfoBanner
 import me.him188.ani.app.ui.settings.framework.components.LocalSliderBackKeyExitsLeft
@@ -173,7 +171,6 @@ import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibrariesTab
 import me.him188.ani.app.ui.settings.tabs.app.AppearanceGroup
 import me.him188.ani.app.ui.settings.tabs.app.PlayerGroup
 import me.him188.ani.app.ui.settings.tabs.app.SoftwareUpdateGroup
-import me.him188.ani.app.ui.settings.tabs.app.WatchTogetherGroup
 import me.him188.ani.app.ui.settings.tabs.log.LogTab
 import me.him188.ani.app.ui.settings.tabs.media.BackupSettings
 import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroup
@@ -184,8 +181,8 @@ import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSelectionActions
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.rememberMediaSourceSelectionState
+import me.him188.ani.app.ui.settings.tabs.network.BangumiEndpointGroup
 import me.him188.ani.app.ui.settings.tabs.network.ConfigureProxyGroup
-import me.him188.ani.app.ui.settings.tabs.network.ServerSelectionGroup
 import me.him188.ani.app.ui.settings.tabs.network.TmdbImagesGroup
 import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.devbuild.DevBuildsTab
@@ -201,8 +198,7 @@ typealias SettingsTab = me.him188.ani.app.navigation.SettingsTab
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel,
-    onNavigateToEmailLogin: () -> Unit,
-    onNavigateToOAuth: (OAuthPlatform) -> Unit,
+    onNavigateToBangumiOAuth: () -> Unit,
     loadOpenSourceLibrariesJsons: suspend () -> List<ByteArray>,
     modifier: Modifier = Modifier,
     initialTab: SettingsTab? = null,
@@ -211,7 +207,6 @@ fun SettingsScreen(
     /**
      * 前往扫码登录其他设备. 为 `null` (当前平台不能扫码) 时不显示入口
      */
-    onNavigateToQrLogin: (() -> Unit)? = null,
 ) {
     // 界面缩放改动后, 离开设置页时把窗口层 (弹窗/菜单) 一并对齐
     UiScaleSyncEffect()
@@ -283,7 +278,7 @@ fun SettingsScreen(
                 selfInfoState,
                 checked = bannerChecked,
                 { navigateToTab(SettingsTab.PROFILE) },
-                onNavigateToEmailLogin,
+                onNavigateToBangumiOAuth,
                 Modifier.fillMaxWidth().tabFocusTarget(SettingsTab.PROFILE),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             )
@@ -298,7 +293,6 @@ fun SettingsScreen(
             Item(SettingsTab.MEDIA_SELECTOR)
 
             Title(stringResource(Lang.settings_category_network_storage))
-            Item(SettingsTab.SERVER)
             Item(SettingsTab.PROXY)
             Item(SettingsTab.BT)
 //            Item(SettingsTab.CACHE)
@@ -338,7 +332,6 @@ fun SettingsScreen(
                                 AniHelperDestination.RELEASE_PREFIX + vm.aboutTabInfo.version,
                             )
                         },
-                        onClickWebsite = { browserNavigator.openBrowser(context, AniHelperDestination.ANI_WEBSITE) },
                         onClickFeedback = { browserNavigator.openBrowser(context, AniHelperDestination.ISSUE_TRACKER) },
                         onClickSource = { browserNavigator.openBrowser(context, AniHelperDestination.GITHUB_HOME) },
                         onClickDevelopers = {
@@ -366,17 +359,7 @@ fun SettingsScreen(
                         tabModifier,
                     ) {
                         when (currentTab) {
-                            SettingsTab.PROFILE -> ProfileGroup(
-                                onNavigateToEmail = onNavigateToEmailLogin,
-                                onNavigateToBangumiSync = {
-                                    navigateTo(DetailPaneRoutes.BangumiSync)
-                                },
-                                onNavigateToOAuth = onNavigateToOAuth,
-                                onNavigateToGithubAccount = {
-                                    navigateTo(DetailPaneRoutes.GithubAccount)
-                                },
-                                onNavigateToQrLogin = onNavigateToQrLogin,
-                            )
+                            SettingsTab.PROFILE -> ProfileGroup()
 
                             SettingsTab.APPEARANCE -> AppearanceGroup(vm.uiSettings, vm.themeSettings)
                             SettingsTab.THEME -> ThemeGroup(vm.themeSettings)
@@ -390,7 +373,6 @@ fun SettingsScreen(
                                     vm.isInDebugMode,
                                     vm.themeSettings,
                                 )
-                                WatchTogetherGroup(vm.watchTogetherSettings)
                             }
 
                             SettingsTab.MEDIA_SOURCE -> {
@@ -405,13 +387,23 @@ fun SettingsScreen(
                             }
 
                             SettingsTab.MEDIA_SELECTOR -> MediaSelectionGroup(vm.mediaSelectionGroupState)
-                            SettingsTab.SERVER -> ServerSelectionGroup(vm.danmakuSettingsState, vm.danmakuServerTesters)
+                            // SettingsTab.SERVER (Ani 服务器选择) 已随 Ani 服务器一起删掉
                             SettingsTab.PROXY -> {
                                 ConfigureProxyGroup(
                                     state = vm.configureProxyState,
                                     onStartProxyTestLoop = { vm.startProxyTesterLoop() },
                                 )
-                                TmdbImagesGroup(vm.tmdbImagesDisabled)
+                                val tmdbImageHosts by vm.tmdbImageHosts.collectAsStateWithLifecycle()
+                                TmdbImagesGroup(vm.tmdbImagesDisabled, vm.tmdbImageEndpoint, tmdbImageHosts)
+                                // 与代理同一页: 用户为"连不上 bangumi"来这里, 两条路都在这儿
+                                val bangumiMirrors by vm.bangumiMirrors.collectAsStateWithLifecycle()
+                                val bangumiLoggedIn by vm.bangumiLoggedIn.collectAsStateWithLifecycle()
+                                BangumiEndpointGroup(
+                                    vm.bangumiEndpointSettings,
+                                    bangumiMirrors,
+                                    loggedIn = bangumiLoggedIn,
+                                    onLogout = vm::logoutBangumi,
+                                )
                             }
 
                             SettingsTab.BT -> {
@@ -888,48 +880,6 @@ internal fun SettingsPageLayout(
                             }
                         }
                     }
-                    entry<DetailPaneRoutes.BangumiSync> {
-                        DetailPaneRoute(
-                            topAppBar = {
-                                AniTopAppBar(
-                                    title = { AniTopAppBarDefaults.Title(stringResource(Lang.settings_account_bangumi_sync_title)) },
-                                    navigationIcon = {
-                                        BackNavigationIconButton(navigateUp)
-                                    },
-                                    colors = topAppBarColors,
-                                    windowInsets = topAppBarWindowInsets,
-                                    size = topAppBarSize,
-                                    scrollBehavior = detailPaneTopAppBarScrollBehavior,
-                                )
-                            },
-                            detailPaneTopAppBarScrollBehavior,
-                        ) {
-                            RouteContent(scrollable = false) {
-                                BangumiSyncTab()
-                            }
-                        }
-                    }
-                    entry<DetailPaneRoutes.GithubAccount> {
-                        DetailPaneRoute(
-                            topAppBar = {
-                                AniTopAppBar(
-                                    title = { AniTopAppBarDefaults.Title(stringResource(Lang.settings_account_github_title)) },
-                                    navigationIcon = {
-                                        BackNavigationIconButton(navigateUp)
-                                    },
-                                    colors = topAppBarColors,
-                                    windowInsets = topAppBarWindowInsets,
-                                    size = topAppBarSize,
-                                    scrollBehavior = detailPaneTopAppBarScrollBehavior,
-                                )
-                            },
-                            detailPaneTopAppBarScrollBehavior,
-                        ) {
-                            RouteContent {
-                                GithubAccountTab()
-                            }
-                        }
-                    }
                     entry<DetailPaneRoutes.DevBuilds> {
                         DetailPaneRoute(
                             topAppBar = {
@@ -1081,12 +1031,6 @@ sealed class DetailPaneRoutes : NavKey {
     data object BuildInfo : DetailPaneRoutes()
 
     @Serializable
-    data object BangumiSync : DetailPaneRoutes()
-
-    @Serializable
-    data object GithubAccount : DetailPaneRoutes()
-
-    @Serializable
     data object DevBuilds : DetailPaneRoutes()
 }
 
@@ -1103,8 +1047,6 @@ private val DetailPaneBackStackSaver: Saver<SnapshotStateList<DetailPaneRoutes>,
                     "OpenSourceLicenses" -> DetailPaneRoutes.OpenSourceLicenses
                     "Developers" -> DetailPaneRoutes.Developers
                     "BuildInfo" -> DetailPaneRoutes.BuildInfo
-                    "BangumiSync" -> DetailPaneRoutes.BangumiSync
-                    "GithubAccount" -> DetailPaneRoutes.GithubAccount
                     "DevBuilds" -> DetailPaneRoutes.DevBuilds
                     else -> DetailPaneRoutes.Main
                 }
@@ -1147,7 +1089,6 @@ private fun getIcon(tab: SettingsTab): ImageVector {
         SettingsTab.PLAYER -> Icons.Outlined.SmartDisplay
         SettingsTab.MEDIA_SOURCE -> Icons.Outlined.Subscriptions
         SettingsTab.MEDIA_SELECTOR -> Icons.Outlined.FilterList
-        SettingsTab.SERVER -> Icons.Outlined.Public
         SettingsTab.PROXY -> Icons.Outlined.VpnKey
         SettingsTab.BT -> Icons.Filled.P2p
 //        SettingsTab.CACHE -> Icons.Rounded.Download // Icons.Outlined.Download 太 sharp 了
@@ -1169,7 +1110,6 @@ private fun getName(tab: SettingsTab): String {
         SettingsTab.PLAYER -> stringResource(Lang.settings_tab_player)
         SettingsTab.MEDIA_SOURCE -> stringResource(Lang.settings_tab_media_source)
         SettingsTab.MEDIA_SELECTOR -> stringResource(Lang.settings_tab_media_selector)
-        SettingsTab.SERVER -> stringResource(Lang.settings_tab_danmaku)
         SettingsTab.PROXY -> stringResource(Lang.settings_tab_proxy)
         SettingsTab.BT -> stringResource(Lang.settings_tab_bt)
 //        SettingsTab.CACHE -> stringResource(Lang.settings_tab_cache)

@@ -17,29 +17,20 @@ import kotlinx.coroutines.flow.Flow
 import me.him188.ani.app.data.models.comment.CommentVoteValue
 import me.him188.ani.app.data.models.episode.EpisodeComment
 import me.him188.ani.app.data.network.AniEpisodeCommentService
-import me.him188.ani.app.data.network.BangumiReplyRelationService
 import me.him188.ani.app.data.network.toEpisodeComment
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 
 class EpisodeCommentRepository(
     private val aniCommentService: AniEpisodeCommentService,
-    /** 补"回复了谁"的那层关系, 见 [BangumiReplyRelationService]; `null` 则只靠正文引用推断. */
-    private val replyRelationService: BangumiReplyRelationService? = null,
 ) : Repository() {
-    /**
-     * @param onBangumiUnavailable 首屏拿到了 Ani 评论但服务端没能取到 Bangumi 评论时调用一次
-     */
     fun subjectEpisodeCommentsPager(
         episodeId: Long,
-        onBangumiUnavailable: () -> Unit = {},
     ): Flow<PagingData<EpisodeComment>> {
         return Pager(defaultPagingConfig) {
             EpisodeCommentPagingSource(
                 episodeId = episodeId,
                 aniCommentService = aniCommentService,
-                replyRelationService = replyRelationService,
-                onBangumiUnavailable = onBangumiUnavailable,
             )
         }.flow
     }
@@ -57,26 +48,14 @@ class EpisodeCommentRepository(
         }
     }
 
-    /**
-     * 对评论投票 (点赞/点踩). [vote] 为 `null` 表示取消投票.
-     */
-    suspend fun submitVote(
-        episodeId: Long,
-        commentId: String,
-        vote: CommentVoteValue?,
-    ) {
-        aniCommentService.voteEpisodeComment(episodeId, commentId, vote)
-    }
 }
 
 /**
- * 剧集评论翻页. Ani 与 Bangumi 的评论已由服务端合并排序好, 客户端只按游标顺序取.
+ * 剧集评论翻页. bangumi 的吐槽箱一次给全部, 所以只有首屏一页.
  */
 internal class EpisodeCommentPagingSource(
     private val episodeId: Long,
     private val aniCommentService: AniEpisodeCommentService,
-    private val replyRelationService: BangumiReplyRelationService? = null,
-    private val onBangumiUnavailable: () -> Unit = {},
 ) : PagingSource<String, EpisodeComment>() {
     override fun getRefreshKey(state: PagingState<String, EpisodeComment>): String? = null
 
@@ -87,14 +66,9 @@ internal class EpisodeCommentPagingSource(
                 after = params.key,
                 limit = params.loadSize.coerceAtMost(MAX_LIMIT),
             )
-            // 只在首屏报一次, 免得每翻一页都提示
-            if (response.bangumiUnavailable && params.key == null) {
-                onBangumiUnavailable()
-            }
-            val comments = response.items.map { it.toEpisodeComment() }
             LoadResult.Page(
-                // "回复了谁"服务端不给, 能连上 Bangumi 就补真值, 补不上就用正文引用推断出来的那份
-                data = replyRelationService?.fillInReplyTargets(episodeId, comments) ?: comments,
+                // 直连之后每条回复自带 relatedID, 不用再补回复关系
+                data = response.items,
                 prevKey = null,
                 nextKey = response.nextCursor,
             )

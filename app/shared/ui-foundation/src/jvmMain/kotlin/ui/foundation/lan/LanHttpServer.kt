@@ -65,11 +65,14 @@ import java.util.concurrent.atomic.AtomicLong
  *   抛异常回 500.
  * @param port 0 = 随机空闲端口 (默认); 要固定地址 (手机加书签) 时给固定值, 被占会抛 [IOException].
  * @param token null = 每次新生成; 要固定地址时由调用方持久化后传入.
+ * @param maxBodyBytes 按路径给请求体上限 (路径是 token 之后、查询串之前、未解码的那段), 超了回 413; 默认都是 [MAX_BODY_BYTES].
+ *   请求体整个读进内存, 放宽的接口要自己控制大小 (Web 控制台只有上传安装包的那一个).
  */
 class LanHttpServer(
     private val handler: (LanHttpRequest) -> LanHttpResponse,
     port: Int = 0,
     token: String? = null,
+    private val maxBodyBytes: (path: String) -> Long = { MAX_BODY_BYTES },
 ) : AutoCloseable {
     val token: String = token ?: generateToken()
 
@@ -268,7 +271,7 @@ class LanHttpServer(
         // 日志里只记路径, 不记查询串 (里面可能有搜索词)
         record.target = "$method /" + rawPath.removePrefix(prefix)
         lastRealRequestNanos = System.nanoTime()
-        if (contentLength > MAX_BODY_BYTES) {
+        if (contentLength > maxBodyBytes(rawPath.removePrefix(prefix))) {
             LanHttpResponse.status(413, "Payload Too Large").writeTo(output, headOnly = false)
             return
         }
@@ -407,8 +410,8 @@ class LanHttpServer(
         /** 读请求的超时; 手机扫完码连上来是毫秒级的事, 超过这个数就是有人在拿别的东西探端口. */
         private const val REQUEST_TIMEOUT_MILLIS = 15_000
 
-        /** 请求体上限: 这里只收表单里的一句话. */
-        private const val MAX_BODY_BYTES = 64L * 1024
+        /** 默认的请求体上限: 一般的接口只收表单里的一句话 (放宽见 [maxBodyBytes]). */
+        const val MAX_BODY_BYTES = 64L * 1024
 
         /** 接受队列长度. */
         private const val BACKLOG = 16

@@ -26,6 +26,7 @@ import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -33,14 +34,15 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.danmaku.ui.DanmakuConfig
 import me.him188.ani.utils.logging.debug
@@ -58,6 +60,15 @@ interface SettingsRepository {
     /** 设置 → 代理页底部「不加载 TMDB 背景图」, 见 `TmdbImageService.disabledByUser`. */
     val tmdbImagesDisabled: Settings<Boolean>
 
+    /** TMDB 图片走哪个入口, 见 `TmdbImageEndpoints`. */
+    val tmdbImageEndpoint: Settings<EndpointSelection>
+
+    /** TMDB 图片入口清单的本地缓存, 见 `RepoHostedList`. */
+    val tmdbImageHostCache: Settings<RepoHostedListCache>
+
+    /** 更新包下载镜像清单的本地缓存, 见 `GitHubDownloadMirrors`. */
+    val githubDownloadMirrorCache: Settings<RepoHostedListCache>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -72,6 +83,12 @@ interface SettingsRepository {
      */
     val profileSettings: Settings<ProfileSettings>
     val proxySettings: Settings<ProxySettings>
+
+    /** bangumi 走原站还是镜像, 见 [BangumiEndpointSettings]. */
+    val bangumiEndpointSettings: Settings<BangumiEndpointSettings>
+
+    /** 镜像清单的本地缓存, 见 `BangumiMirrorListRepository`. */
+    val bangumiMirrorCache: Settings<RepoHostedListCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -95,7 +112,6 @@ interface SettingsRepository {
 
     val analyticsSettings: Settings<AnalyticsSettings>
     val debugSettings: Settings<DebugSettings>
-    val watchTogetherSettings: Settings<WatchTogetherSettings>
 }
 
 @Stable
@@ -170,6 +186,21 @@ class PreferencesRepositoryImpl(
 
     override val danmakuEnabled: Settings<Boolean> = BooleanPreference("danmaku_enabled", default = true)
     override val tmdbImagesDisabled: Settings<Boolean> = BooleanPreference("tmdb_images_disabled", default = false)
+    override val tmdbImageEndpoint: Settings<EndpointSelection> = SerializablePreference(
+        "tmdbImageEndpoint",
+        EndpointSelection.serializer(),
+        default = { EndpointSelection.Default },
+    )
+    override val tmdbImageHostCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "tmdbImageHostCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val githubDownloadMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "githubDownloadMirrorCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
     override val danmakuConfig: Settings<DanmakuConfig> =
         SerializablePreference("danmaku_config", DanmakuConfigSerializer, default = { DanmakuConfig.Default })
     override val danmakuFilterConfig: Settings<DanmakuFilterConfig> =
@@ -198,6 +229,16 @@ class PreferencesRepositoryImpl(
         "proxyPreferences",
         ProxySettings.serializer(),
         default = { ProxySettings.Default },
+    )
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> = SerializablePreference(
+        "bangumiEndpointPreferences",
+        BangumiEndpointSettings.serializer(),
+        default = { BangumiEndpointSettings.Default },
+    )
+    override val bangumiMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "bangumiMirrorCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
     )
     override val mediaCacheSettings: Settings<MediaCacheSettings> = SerializablePreference(
         "cachePreferences",
@@ -273,12 +314,6 @@ class PreferencesRepositoryImpl(
         "debugSettings",
         DebugSettings.serializer(),
         default = { DebugSettings.Default },
-    )
-
-    override val watchTogetherSettings: Settings<WatchTogetherSettings> = SerializablePreference(
-        "watchTogetherSettings",
-        WatchTogetherSettings.serializer(),
-        default = { WatchTogetherSettings.Default },
     )
 
     private companion object {

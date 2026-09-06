@@ -82,6 +82,16 @@ interface PlayerExtensionContext {
     suspend fun switchEpisode(newEpisodeId: Int)
 
     suspend fun broadcast(event: PlayerExtensionEvent)
+
+    /**
+     * 把当前选中的资源原地重新装进播放器一次, 装好后回到 [positionMillis]. 选中的资源还没装进播放器时返回 `false`.
+     */
+    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean = false
+
+    /**
+     * 自动换到了下一个资源, 交给界面显示 (见 [MediaAutoSwitchStatus]). 新资源播起来、或换集时由播放状态自己清掉.
+     */
+    fun reportAutoSwitch(status: MediaAutoSwitchStatus) {}
 }
 
 inline fun <reified T : PlayerExtensionEvent> PlayerExtensionContext.subscribeEvents(): Flow<T> {

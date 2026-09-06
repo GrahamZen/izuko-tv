@@ -42,10 +42,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Reorder
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,7 +51,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -94,6 +90,10 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.DismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.ifThen
@@ -127,6 +127,7 @@ import me.him188.ani.app.ui.lang.settings_media_source_selected_count
 import me.him188.ani.app.ui.lang.settings_media_source_sort
 import me.him188.ani.app.ui.lang.settings_media_source_start_test
 import me.him188.ani.app.ui.lang.settings_media_source_stop_test
+import me.him188.ani.app.ui.lang.settings_media_source_test_progress
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterResultIndicator
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.TextButtonItem
@@ -396,7 +397,7 @@ internal fun SettingsScope.MediaSourceGroup(
                     var showMoreDropdown by remember { mutableStateOf(false) }
                     var showConfirmDeletionDialog by rememberSaveable { mutableStateOf(false) }
                     if (showConfirmDeletionDialog) {
-                        AlertDialog(
+                        AniAlertDialog(
                             onDismissRequest = { showConfirmDeletionDialog = false },
                             icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
                             title = { Text(stringResource(Lang.settings_media_source_delete)) },
@@ -408,7 +409,7 @@ internal fun SettingsScope.MediaSourceGroup(
                                 }
                             },
                             confirmButton = {
-                                TextButton(
+                                AniTextButton(
                                     {
                                         edit.deleteMediaSource(item)
                                         showConfirmDeletionDialog = false
@@ -643,6 +644,19 @@ internal fun SettingsScope.MediaSourceGroup(
             onClick = {
                 state.mediaSourceTesters.toggleTest()
             },
+            // 全部数据源并发测, 进度写在左边; 右边聚焦着的按钮只在「开始 / 终止」之间切换
+            headline = {
+                state.mediaSourceTesters.progress?.let { progress ->
+                    Text(
+                        stringResource(
+                            Lang.settings_media_source_test_progress,
+                            progress.completed,
+                            progress.total,
+                            progress.failed,
+                        ),
+                    )
+                }
+            },
             title = {
                 if (state.mediaSourceTesters.anyTesting) {
                     Text(stringResource(Lang.settings_media_source_stop_test))
@@ -787,11 +801,11 @@ private fun MoreOptionsDropdown(
     onEnterSelection: (() -> Unit)? = null,
 ) {
     // 本菜单只从"三个点"按钮/右键打开 (长按行是进多选), 没有长按余波要吞
-    DropdownMenu(
+    AniDropdownMenu(
         expanded = showMore,
         onDismissRequest = onDismissRequest,
     ) {
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = {
                 if (item.isEnabled) {
                     Icon(Icons.Rounded.VisibilityOff, null)
@@ -811,7 +825,7 @@ private fun MoreOptionsDropdown(
                 onDismissRequest()
             },
         )
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.Edit, null) },
             text = { Text(stringResource(Lang.settings_media_source_edit)) }, // 直接点击数据源一行也可以编辑, 但还是在这里放一个按钮以免有人不知道
             onClick = {
@@ -819,7 +833,7 @@ private fun MoreOptionsDropdown(
                 onDismissRequest()
             },
         )
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
             text = {
                 Text(
@@ -834,7 +848,7 @@ private fun MoreOptionsDropdown(
         )
         if (onEnterSelection != null) {
             HorizontalDivider()
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 leadingIcon = { Icon(Icons.Filled.SelectAll, null) },
                 text = { Text(stringResource(Lang.settings_media_source_enter_selection_mode)) },
                 onClick = {
@@ -862,7 +876,7 @@ private fun BulkOptionsDropdown(
     onStartCarry: () -> Unit,
     onSelectAllChange: () -> Unit,
 ) {
-    DropdownMenu(
+    AniDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         // 本菜单只有长按一个入口, 恒吞掉还没松手的那一下确认键
@@ -875,7 +889,7 @@ private fun BulkOptionsDropdown(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         HorizontalDivider()
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.Visibility, null) },
             text = { Text(stringResource(Lang.settings_media_source_enable_selected)) },
             enabled = actions.canEnable,
@@ -884,7 +898,7 @@ private fun BulkOptionsDropdown(
                 onDismissRequest()
             },
         )
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.VisibilityOff, null) },
             text = { Text(stringResource(Lang.settings_media_source_disable_selected)) },
             enabled = actions.canDisable,
@@ -893,7 +907,7 @@ private fun BulkOptionsDropdown(
                 onDismissRequest()
             },
         )
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
             text = {
                 Text(
@@ -908,7 +922,7 @@ private fun BulkOptionsDropdown(
             },
         )
         HorizontalDivider()
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(Icons.Rounded.Reorder, null) },
             text = { Text(stringResource(Lang.settings_media_source_sort)) },
             onClick = {
@@ -918,7 +932,7 @@ private fun BulkOptionsDropdown(
         )
         // 全选放进来: 遥控器上没有别的办法触发它 (标题行右边那颗图标按钮要从列表往上够).
         // "退出多选"不放 —— 返回键已经是退出的出口, 语义完全一样, 多一项只是多占一个焦点位
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             leadingIcon = { Icon(if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll, null) },
             text = {
                 Text(
@@ -946,7 +960,7 @@ internal fun SelectMediaSourceTemplateDialog(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         title = {
             Text(stringResource(Lang.settings_media_source_select_template))

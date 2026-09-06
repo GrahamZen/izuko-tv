@@ -119,6 +119,11 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val pauseVideoOnEditDanmaku: Boolean = true,
     /**
+     * 电视上拖动进度条选位置 (遥控器长按左右键 / 进度条上按左右, 或触屏拖动) 时暂停播放.
+     * 关掉则边播边选, 按确认键才跳过去. 规则见 ui-tv 的 `TvScrubPlayback`.
+     */
+    val pauseVideoOnScrub: Boolean = true,
+    /**
      * 在观看到 90% 进度后, 自动标记看过
      */
     val autoMarkDone: Boolean = true,
@@ -269,7 +274,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * 那两行上摆着十几个功能, 而各人用得上的完全不是同一批: 不看弹幕的人嫌前几颗碍事,
      * 常换源的人希望它排在第一颗. 默认版式 (见 [TvPlayerChromeItem] 的声明顺序) 只是个合理的起点,
      * 这里让用户自己排, 而且可以排**几套**换着用 (见 [TvPlayerChromePresets]); 改的地方是
-     * 设置 - 播放器 - 「自定义播放器按钮」那一页 (`TvPlayerChromeLayoutPage`).
+     * 播放器里长按控制层上任意一颗按钮打开的「自定义播放器按钮」(`TvPlayerChromeLayoutPage`).
      *
      * @since 6.0.7
      */
@@ -370,6 +375,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             enableFramePreview = false,
             videoEnhancementDefaultMode = VideoEnhancementDefaultMode.OFF,
             pauseVideoOnEditDanmaku = false,
+            pauseVideoOnScrub = false,
             autoMarkDone = false,
             hideSelectorOnSelect = false,
             autoFullscreenOnLandscapeMode = false,

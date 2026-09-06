@@ -27,10 +27,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.io.decodeFromSource
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.app.domain.torrent.peer.PeerFilterRule
 import me.him188.ani.app.domain.torrent.peer.PeerFilterSubscription
-import me.him188.ani.app.domain.torrent.peer.toPeerFilterRule
-import me.him188.ani.client.apis.PeerFilterRuleAniApi
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.update
 import me.him188.ani.utils.io.SystemPath
@@ -52,7 +52,8 @@ class PeerFilterSubscriptionRepository(
     private val dataStore: DataStore<PeerFilterSubscriptionsSaveData>,
     private val ruleSaveDir: SystemPath,
     private val httpClient: ScopedHttpClient,
-    private val builtinPeerFilterRuleApi: ApiInvoker<PeerFilterRuleAniApi>
+    /** 放内置规则的 GitHub 仓库, 见 [fetchBuiltinRules]. */
+    private val repository: () -> String = { currentAniBuildConfig.projectRepository },
 ) {
     private val logger = logger<PeerFilterSubscriptionRepository>()
 
@@ -101,20 +102,16 @@ class PeerFilterSubscriptionRepository(
         }
 
         try {
-            if (sub.subscriptionId == PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID) {
-                val rule = builtinPeerFilterRuleApi.invoke { get().body() }.toPeerFilterRule()
-                resolveSaveFile(subscriptionId).writeText(json.encodeToString(rule))
-
-                if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, rule) }
-                sub.updateSuccessResult(rule)
+            val (respText, rule) = if (sub.subscriptionId == PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID) {
+                fetchBuiltinRules()
             } else {
-                val respText = httpClient.use { get(sub.url).bodyAsText() }
-                resolveSaveFile(subscriptionId).writeText(respText)
-
-                val rule = json.decodeFromString<PeerFilterRule>(respText)
-                if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, rule) }
-                sub.updateSuccessResult(rule)
+                val text = httpClient.use { get(sub.url).bodyAsText() }
+                text to json.decodeFromString<PeerFilterRule>(text)
             }
+            // 解析成功才覆盖本地那份: 拉回来的若是错误页, 写进去就把上一份好的规则顶掉了
+            resolveSaveFile(subscriptionId).writeText(respText)
+            if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, rule) }
+            sub.updateSuccessResult(rule)
 
             logger.info { "Peer filter subscription $subscriptionId is successfully updated and loaded." }
         } catch (cancellation: CancellationException) {
@@ -147,6 +144,27 @@ class PeerFilterSubscriptionRepository(
                 }
             }
         }
+    }
+
+    /**
+     * 内置规则: 本项目仓库根目录的 [BUILTIN_RULES_FILE] (反吸血: 迅雷等只下载不上传的客户端与离线下载服务器),
+     * 按 [GitHubFileSources] 的顺序试 (jsDelivr 在前, 中国大陆连得上). 改规则只改那个文件, 不用发版.
+     * 某个入口拿到的不是规则 (错误页之类) 就试下一个; 都不行就抛, 由调用方退回本地存的上一份.
+     */
+    private suspend fun fetchBuiltinRules(): Pair<String, PeerFilterRule> {
+        var lastError: Exception? = null
+        for (url in GitHubFileSources.urls(repository(), BUILTIN_RULES_FILE)) {
+            try {
+                val text = httpClient.use { get(url).bodyAsText() }
+                return text to json.decodeFromString<PeerFilterRule>(text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.info { "Built-in peer filter rules: $url failed (${e::class.simpleName})" }
+                lastError = e
+            }
+        }
+        throw lastError ?: IllegalStateException("No source for the built-in peer filter rules")
     }
 
     private fun resolveSaveFile(subscriptionId: String): SystemPath {
@@ -203,6 +221,11 @@ class PeerFilterSubscriptionRepository(
 
     init {
         ruleSaveDir.createDirectories()
+    }
+
+    private companion object {
+        /** 内置规则在仓库里的文件名, 见 [fetchBuiltinRules]. */
+        const val BUILTIN_RULES_FILE = "peer-filter-rules.json"
     }
 }
 

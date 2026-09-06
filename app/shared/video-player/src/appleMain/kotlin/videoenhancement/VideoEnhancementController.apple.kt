@@ -9,13 +9,10 @@
 
 package me.him188.ani.app.videoplayer.videoenhancement
 
-import kotlinx.coroutines.flow.Flow
-import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.CoroutineContext
 
 actual fun createVideoEnhancementController(
     player: MediampPlayer,
-    playerKernelConfig: Flow<PlayerKernelConfig>,
     parentCoroutineContext: CoroutineContext,
 ): VideoEnhancementController? = null

@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.download.components
 
 import androidx.compose.runtime.Immutable
+import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.DelicateCoroutinesApi
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
@@ -57,6 +58,15 @@ data class DownloadItem(
      * 这期间 [state] 仍是下载中且进度已是 100%, 只有这个标志能让界面说出实话.
      */
     val isMerging: Boolean = false,
+    /**
+     * 合并进度的估计 (见 [me.him188.ani.app.domain.media.cache.MediaCache.mergeProgress]),
+     * 不在合并或估不出来时为 [Progress.Unspecified].
+     */
+    val mergeProgress: Progress = Progress.Unspecified,
+    /**
+     * 传输停着在等 BT 服务连上 (见 [me.him188.ani.app.domain.media.cache.MediaCache.isAwaitingTorrentService]).
+     */
+    val awaitingTorrentService: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,
@@ -101,6 +111,14 @@ data class DownloadItem(
             "${String.format1f(value.toPercentageOrZero())}%"
         }
     }
+
+    /**
+     * 合并进度的估计, 取整到百分之一 (估计值给小数位是假精确), 合并没结束时最多 99%.
+     * 不在合并或估不出来时为 `null`.
+     */
+    val mergeProgressText: String? = mergeProgress.getOrNull()
+        ?.takeIf { isMerging }
+        ?.let { "${(it * 100).roundToInt().coerceAtMost(99)}%" }
 
     val speedText = run {
         val speed = stats.downloadSpeed
