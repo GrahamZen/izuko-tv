@@ -66,6 +66,14 @@ interface MediaSourceFetchResult {
     fun restart()
 
     /**
+     * 暂停还没完成的查询 ([MediaSourceFetchState.Idle] 或 [MediaSourceFetchState.Working]): 进行中的请求被取消,
+     * 已拿到的结果保留, 状态变为 [MediaSourceFetchState.Paused]. 已完成、已禁用的数据源不受影响.
+     *
+     * 调用 [restart] 继续, 从头重新查询.
+     */
+    fun pause()
+
+    /**
      * 使禁用的数据源重新启用.
      *
      * 如果该数据源已经被 [restart] 过了, 此函数不会有任何效果. 否则, 会将状态重置为 [MediaSourceFetchState.Idle].

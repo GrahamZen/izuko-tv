@@ -55,6 +55,11 @@ enum class TvPlayerChromeItem(
     val isConditional: Boolean = false,
     /** 只在触屏设备 (平板装了 TV 包) 上存在, 电视上连编辑页都不列出. */
     val isTouchOnly: Boolean = false,
+    /**
+     * 这颗按钮背后的功能本分发版里没有. 枚举项保留只为让已经存下来的版式配置还能读懂 (见 [resolveOrder]),
+     * 播放器里不画, 编辑页也不列出.
+     */
+    val isRetired: Boolean = false,
 ) {
     // ---- 胶囊行 (左 -> 右) ----
     PILL_RECOMMENDATIONS(TvPlayerChromeRow.PILLS),
@@ -74,7 +79,8 @@ enum class TvPlayerChromeItem(
     DIVIDER_2(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     DANMAKU_TOGGLE(TvPlayerChromeRow.BOTTOM),
     DANMAKU_SETTINGS(TvPlayerChromeRow.BOTTOM),
-    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true),
+    // 「一起看」要 Ani 服务器牵线, 直连版没有这条路
+    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true, isRetired = true),
     SPACER(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     SUBTITLE_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
     PLAYBACK_SPEED(TvPlayerChromeRow.BOTTOM, isConditional = true),
@@ -203,25 +209,7 @@ data class TvPlayerChromeLayout(
         fun resolveOrder(
             saved: List<TvPlayerChromeItem>,
             defaults: List<TvPlayerChromeItem>,
-        ): List<TvPlayerChromeItem> {
-            if (saved.isEmpty()) return defaults
-            val result = saved.distinct().filterTo(mutableListOf()) { it in defaults }
-            if (result.size == defaults.size) return result
-            for ((index, item) in defaults.withIndex()) {
-                if (item in result) continue
-                // 默认版式里它前面最近的、已经落位的那个条目 —— 插到它后面
-                var anchor = -1
-                for (i in index - 1 downTo 0) {
-                    val at = result.indexOf(defaults[i])
-                    if (at >= 0) {
-                        anchor = at
-                        break
-                    }
-                }
-                result.add(anchor + 1, item)
-            }
-            return result
-        }
+        ): List<TvPlayerChromeItem> = resolveSavedOrder(saved, defaults)
     }
 }
 

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,6 +115,22 @@ enum class TvPlayerFocusTarget : TvFocusKey {
     PANEL,
 }
 
+/** 面板内容的加载状态里胶囊要标出来的两种 (见 [TvPlayerOverlayState.commentsLoad]); 加载完成胶囊就是原样, 不用记. */
+enum class TvPanelLoadState {
+    /** 正在加载: 胶囊呼吸. */
+    LOADING,
+
+    /** 加载失败: 胶囊换成警示图标、文字压暗. */
+    FAILED,
+}
+
+/** 哪一集的本集评论处在 [state]. */
+@Immutable
+data class TvCommentsLoad(
+    val episodeId: Int,
+    val state: TvPanelLoadState,
+)
+
 /**
  * TV 播放器覆盖层状态机.
  *
@@ -162,6 +179,19 @@ class TvPlayerOverlayState(
 
     /** 播放器统计悬浮层开关 (三个点菜单切换). */
     var showPlayerStats: Boolean by mutableStateOf(false)
+
+    /**
+     * 控制层版式的读取代数: 控制层每次出现只读一次版式 (见 TvPlayerControlsOverlay), 这个数一变就重读.
+     * 只在「自定义播放器按钮」窗口关掉、版式改过的时候推一次 ([reloadChromeLayout]). 开窗口前控制层已经收起, 多半早退出了组合,
+     * 唤出时本来就重读; 要靠它的是托着 OP/ED 提示按钮留在场上的那一层 —— 那时它是透明的, 没有持焦的按钮会随重排消失.
+     */
+    var chromeLayoutGeneration: Int by mutableIntStateOf(0)
+        private set
+
+    /** 让控制层按设置里此刻的版式重新摆一遍 (见 [chromeLayoutGeneration]). */
+    fun reloadChromeLayout() {
+        chromeLayoutGeneration++
+    }
 
     /**
      * 选集条展开中 (Prime 形态): 胶囊/进度条/图标行隐藏, 选集条完整展开在底部.
@@ -277,6 +307,20 @@ class TvPlayerOverlayState(
      * 根路由据此把起跳点让给进度条.
      */
     var bottomRowPresent: Boolean by mutableStateOf(true)
+
+    /**
+     * 本集评论的加载状态, 由播放页上的 TvCommentsLoadTracker 上报 (进播放页就拉评论); 评论胶囊据此呼吸 (加载中)
+     * 或显示失败, 见 TvPlayerPillsRow. null = 没有要标的 (加载完成、或还没开始拉).
+     *
+     * 连同分集 id 一起记: 换集时新一集的状态报上来之前, 旧那集的状态对不上当前这一集, 不会标错.
+     */
+    var commentsLoad: TvCommentsLoad? by mutableStateOf(null)
+        private set
+
+    /** 上报 [episodeId] 的评论加载状态; null = 加载完成. */
+    fun reportCommentsLoad(episodeId: Int, state: TvPanelLoadState?) {
+        commentsLoad = state?.let { TvCommentsLoad(episodeId, it) }
+    }
 
     /** 把焦点送回面板里当前聚焦的那一条 (见 [panelItemFocusTick]). */
     fun requestPanelItemFocus() {

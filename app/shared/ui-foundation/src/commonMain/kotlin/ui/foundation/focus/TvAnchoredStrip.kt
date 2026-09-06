@@ -13,6 +13,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -26,11 +27,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -61,8 +70,12 @@ import me.him188.ani.app.ui.foundation.tv.tvAnimatedScroll
  * 末尾几张卡够不到锚位 (滚动到底了) 时框架自然停在边界, 焦点框继续往右走 —— 这些卡各自画自己的
  * 焦点框, 不像探索页那样有个钉死的框, 所以不需要给末项留一整屏空白.
  *
+ * 一屏放得下好几格的小格子行 (演职人员的圆头像) 可以改用 [TvStripScroll.OnDemand]: 规则 1 换成"按需挪动"
+ * (见 [tvOnDemandBringIntoViewSpec]), 一屏之内左右移动整行不动, 走到边上才一格一格地挪; 规则 2 照旧.
+ *
  * @param itemSpacing 卡片间距.
- * @param contentPadding 行内留白; 其**起始值即锚位** (聚焦卡的停靠线).
+ * @param contentPadding 行内留白; 其**起始值即锚位** (聚焦卡的停靠线). 按需挪动时两端就是停靠的两条边.
+ * @param scroll 横向滚动方式, 见 [TvStripScroll].
  * @param itemContent 第二个参数必须挂到该卡的**可聚焦节点**上 (落点请求器 + 聚焦簿记都在里面).
  */
 @Composable
@@ -72,15 +85,7 @@ fun TvAnchoredStrip(
     itemSpacing: Dp = 12.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     state: LazyListState = rememberLazyListState(),
-    /**
-     * 长按左右键时每秒移动几格; 默认取全局上限 [TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL].
-     *
-     * **格子明显小于默认卡片的行要调高**: 限流限的是"格数"而不是距离, 格变窄之后同样的格数/秒
-     * 在画面上滚过的距离就变少了. 2026-09-15 逐帧量 Apple TV 的演职人员行 (相位相关, 取匀速段中位数):
-     * 每帧 126.4px @27.18fps = 3435px/秒 = **1717 dp/秒**, 按它 150dp 的步距是 11.4 格/秒;
-     * 我们的圆头像行步距 128dp, 要达到同样的 dp/秒需要约 13.4 格/秒.
-     */
-    horizontalMoveRate: Int = TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL,
+    scroll: TvStripScroll = TvStripScroll.Anchored,
     itemContent: @Composable (index: Int, itemModifier: Modifier) -> Unit,
 ) {
     if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
@@ -96,10 +101,17 @@ fun TvAnchoredStrip(
     }
 
     val density = LocalDensity.current
-    val startPadding = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val layoutDirection = LocalLayoutDirection.current
+    val startPadding = contentPadding.calculateStartPadding(layoutDirection)
+    val endPadding = contentPadding.calculateEndPadding(layoutDirection)
     val animatedScroll = tvAnimatedScroll()
-    val bringIntoViewSpec = remember(density, startPadding, animatedScroll) {
-        tvAnchorBringIntoViewSpec(with(density) { startPadding.toPx() }, animated = animatedScroll)
+    val bringIntoViewSpec = remember(density, startPadding, endPadding, animatedScroll, scroll) {
+        with(density) {
+            when (scroll) {
+                TvStripScroll.Anchored -> tvAnchorBringIntoViewSpec(startPadding.toPx(), animated = animatedScroll)
+                TvStripScroll.OnDemand -> tvOnDemandBringIntoViewSpec(startPadding.toPx(), endPadding.toPx())
+            }
+        }
     }
     // 上次聚焦的下标 (进行落点).
     //
@@ -121,9 +133,9 @@ fun TvAnchoredStrip(
     CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
         LazyRow(
             modifier
-                // 长按方向键的移动频率上限 (同探索页/选集轮播): 系统连发 ~20 次/秒, 每发都换卡
-                // 的话滑动动画不断被打断, 卡片是闪过去而不是滑过去
-                .tvFocusMoveRateLimit(horizontalMaxPerSecond = horizontalMoveRate)
+                // 长按方向键的移动频率上限 (同探索页/选集轮播)
+                .tvFocusMoveRateLimit()
+                .tvRowEndKeys(itemCount = { itemCount }, focusedIndex = { lastFocusedIndex })
                 // onEnter 只在**焦点组**节点上生效, 少一个 focusGroup 就完全不触发 (真机踩过)
                 .focusProperties { onEnter = { runCatching { enterRequester.requestFocus() } } }
                 .focusGroup(),
@@ -144,4 +156,34 @@ fun TvAnchoredStrip(
             }
         }
     }
+}
+
+/**
+ * 横向一行的两端: 末项按右 / 首项按左时照常让 Compose 往那边找, 找不到也吞掉这一下 (挂在行容器上, 按键从聚焦的卡冒上来). 不吞的话
+ * 按键交还给 Android 的 FocusFinder, 它在整个窗口里按屏幕几何挑可聚焦的 View —— 同页的原生视图 (详情页的关联条目行) 会被挑中,
+ * 长按右键跑到头就跳进那一行接着滚.
+ *
+ * @param focusedIndex 此刻聚焦的下标 (事件只在焦点在本行里时才到这里)
+ */
+fun Modifier.tvRowEndKeys(itemCount: () -> Int, focusedIndex: () -> Int): Modifier = composed {
+    val focusManager = LocalFocusManager.current
+    onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+        val direction = when {
+            event.key == Key.DirectionRight && focusedIndex() == itemCount() - 1 -> FocusDirection.Right
+            event.key == Key.DirectionLeft && focusedIndex() == 0 -> FocusDirection.Left
+            else -> return@onKeyEvent false
+        }
+        focusManager.moveFocus(direction)
+        true
+    }
+}
+
+/** [TvAnchoredStrip] 的横向滚动方式. */
+enum class TvStripScroll {
+    /** 聚焦卡一律停在行首锚位, 整行滑动 (与探索页卡片区、选集轮播同一套手感). */
+    Anchored,
+
+    /** 按需挪动: 聚焦卡还在两端留白之间就不动, 越过哪边才滚到刚好贴着那边 (见 [tvOnDemandBringIntoViewSpec]). */
+    OnDemand,
 }

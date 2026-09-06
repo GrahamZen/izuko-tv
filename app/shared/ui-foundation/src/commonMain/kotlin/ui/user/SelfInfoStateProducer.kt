@@ -23,7 +23,6 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.koin.core.Koin
 import kotlin.coroutines.CoroutineContext
-import kotlin.uuid.Uuid
 
 @Immutable
 data class SelfInfoUiState(
@@ -43,7 +42,7 @@ data class SelfInfoUiState(
 val TestSelfInfoUiState
     get() = SelfInfoUiState(
         SelfInfo(
-            id = Uuid.random(),
+            id = 209100,
             nickname = "TestUser",
             email = "test@animeko.org",
             hasPassword = false,

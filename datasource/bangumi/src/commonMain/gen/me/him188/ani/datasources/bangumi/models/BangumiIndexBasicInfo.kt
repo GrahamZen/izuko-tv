@@ -16,8 +16,9 @@
 package me.him188.ani.datasources.bangumi.models
 
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 新增或修改条目的内容，同名字段意义同<a href=\"#model-Subject\">Subject</a>
@@ -27,7 +28,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiIndexBasicInfo(
+data class BangumiIndexBasicInfo (
 
     @SerialName(value = "title") val title: kotlin.String? = null,
 

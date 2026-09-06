@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +23,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import me.him188.ani.app.ui.foundation.saveable.mutableStateSaver
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -80,12 +80,12 @@ fun MediaFetchRequestEditorDialog(
     val discardConfirmationText = stringResource(Lang.mediafetch_request_editor_discard_confirmation)
     val restoreNamesText = stringResource(Lang.mediafetch_request_editor_restore_names)
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequestWrapped,
         // 独立窗口: 遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
         modifier = Modifier.tvOverlayWindowKeys(onDismissRequestWrapped),
         confirmButton = {
-            TextButton(
+            AniTextButton(
                 {
                     editingRequest.toMediaFetchRequestOrNull(fetchRequest.episodes)?.let {
                         onDismissRequestWrapped()
@@ -102,7 +102,7 @@ fun MediaFetchRequestEditorDialog(
                 if (defaultFetchRequest != null) {
                     // 把编辑区整体退回 Bangumi 的名字 (分集字段同样退回默认); 保存后记住的关键词随之清掉
                     val defaultEditing = defaultFetchRequest.toEditingMediaFetchRequest()
-                    TextButton(
+                    AniTextButton(
                         onClick = { editingRequest = defaultEditing },
                         enabled = editingRequest != defaultEditing,
                     ) {
@@ -126,13 +126,13 @@ fun MediaFetchRequestEditorDialog(
     )
 
     if (showConfirmDiscard) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = {
                 showConfirmDiscard = false
             },
             modifier = Modifier.tvOverlayWindowKeys { showConfirmDiscard = false },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         showConfirmDiscard = false
                         onDismissRequest()

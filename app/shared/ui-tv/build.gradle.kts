@@ -97,6 +97,8 @@ kotlin {
         // 用来替代 mediamp 那份打不开 HLS 的 MediaMetadataRetriever 实现
         implementation(libs.androidx.media3.transformer)
         implementation(libs.androidx.media3.exoplayer)
+        // 原生页面 (View) 的行 / 列, 见 ui/foundation/tv/nativeview
+        implementation(libs.androidx.leanback.grid)
     }
     sourceSets.commonTest.dependencies {
         implementation(projects.utils.testing)

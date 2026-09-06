@@ -75,6 +75,7 @@ import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
+import me.him188.ani.app.platform.AppLocales
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.aniSharedSketch
@@ -99,7 +100,7 @@ import java.lang.Math.floorMod
  *   每个动画取全部 backdrop, 轮到它时随机放一张.
  * - 交互 (isInteractive): 确定键 → deep link 打开当前动画详情页并退出屏保;
  *   左/右键 → 手动切上一个/下一个动画; 其他任意键 → 正常退出屏保.
- * - 需要用户在系统设置 → 屏保 里选择 Animeko (代码无法自动设为默认).
+ * - 需要用户在系统设置 → 屏保 里选择 Izuko TV (代码无法自动设为默认).
  *
  * 跑在主进程, Koin/TMDB 缓存/图片磁盘缓存全部复用; ComposeView 需要手动挂
  * lifecycle owner (DreamService 不是 LifecycleOwner), 见 [DreamLifecycleOwner].
@@ -149,9 +150,10 @@ class AniDreamService : DreamService() {
         window.decorView.setViewTreeLifecycleOwner(owner)
         window.decorView.setViewTreeSavedStateRegistryOwner(owner)
         setContentView(
-            // 屏保是独立于 MainActivity 的 window, 拿不到那边的界面缩放; 从镜像自己读一份,
-            // 否则在 densityDpi 上报不准的电视上, 主界面已经校正、屏保仍然偏小 (见 UiScaleApplier)
-            ComposeView(withUiScale(UiScaleMirror.read(this))).apply {
+            // 屏保是独立于 MainActivity 的 window, 拿不到那边的界面缩放与应用内语言, 自己套一份.
+            // 缩放从镜像读, 否则在 densityDpi 上报不准的电视上, 主界面已经校正、屏保仍然偏小 (见 UiScaleApplier);
+            // 语言见 AppLocales —— 屏保可能在还没有 Activity 的新进程里启动
+            ComposeView(AppLocales.wrap(this).withUiScale(UiScaleMirror.read(this))).apply {
                 setContent {
                     // 屏保是独立 window, 不经过 AniApp, 所以自己 provide 图片加载器
                     CompositionLocalProvider(LocalSketch provides loader) {

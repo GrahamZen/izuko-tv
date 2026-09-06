@@ -10,28 +10,30 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param count 
  * @param subject 
+ * @param count 
  */
 @Serializable
 
-data class BangumiNextTrendingSubject(
+data class BangumiNextTrendingSubject (
 
-    @SerialName(value = "count") @Required val count: kotlin.Int,
+    @SerialName(value = "subject") @Required val subject: BangumiNextSlimSubject,
 
-    @SerialName(value = "subject") @Required val subject: BangumiNextSlimSubject
+    @SerialName(value = "count") @Required val count: kotlin.Int
 
 ) {
 
