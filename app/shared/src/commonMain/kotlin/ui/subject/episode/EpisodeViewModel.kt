@@ -66,7 +66,6 @@ import me.him188.ani.app.data.models.preference.parseMpvOptions
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
-import me.him188.ani.app.data.network.AutoSkipRepository
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCommentRepository
@@ -287,7 +286,6 @@ class EpisodeViewModel(
     private val subjectDetailsStateFactory: SubjectDetailsStateFactory by inject()
     private val setDanmakuEnabledUseCase: SetDanmakuEnabledUseCase by inject()
     private val postCommentUseCase: PostCommentUseCase by inject()
-    private val autoSkipRepository: AutoSkipRepository by inject()
     private val getMediaSelectorSettings: GetMediaSelectorSettingsUseCase by inject()
     private val getMediaSourceInstances: GetMediaSourceInstancesUseCase by inject()
     private val selectorEpisodeCacheRepository: SelectorMediaSourceEpisodeCacheRepository by inject()
@@ -826,58 +824,17 @@ class EpisodeViewModel(
         backgroundScope = backgroundScope,
     )
 
-    // Combine original chapters with AutoSkip rules fetched from server
-    @OptIn(UnsafeEpisodeSessionApi::class, InternalMediampApi::class)
-    private val autoSkipChaptersFlow: Flow<List<Chapter>> = combine(
-        fetchPlayState.episodeSessionFlow.flatMapLatest { session ->
-            autoSkipRepository.rulesFlow(session.episodeId)
-        },
-        player.mediaProperties.mapNotNull { it?.durationMillis?.milliseconds },
-        settingsRepository.videoScaffoldConfig.flow
-            .map { it.opEdSkipDuration }
-            .distinctUntilChanged(),
-    ) { millisecondTimes, videoLength, opEdSkipDuration ->
-        val durationMillis = when {
-            videoLength > 20.minutes -> opEdSkipDuration.inWholeMilliseconds
-            videoLength > 10.minutes -> 55_000L
-            else -> 0L
-        }
-        if (durationMillis == 0L) {
-            emptyList()
-        } else {
-            millisecondTimes.mapIndexed { index, t ->
-                val name = if (millisecondTimes.size == 2) {
-                    val anotherIndex = if (index == 0) 1 else 0
-                    if (t <= millisecondTimes[anotherIndex]) {
-                        "OP"
-                    } else {
-                        "ED"
-                    }
-                } else {
-                    "Ch ${index + 1}"
-                }
-                Chapter(
-                    name,
-                    durationMillis,
-                    t,
-                )
-            }
-        }
-    }.catch {
-        logger.warn(it) { "Failed to fetch AutoSkip chapters" }
-    }
 
+    /**
+     * 章节 (进度条上的分段 + 跳过 OP/ED 的依据).
+     *
+     * 直连之前这里还合并了一份 Ani 服务器的众包 OP/ED 时间点 (用户手动跳过时上报, 服务端汇总
+     * 后下发). 那份数据在 Ani 服务器上, 没了; 现在**只认片源自己带的章节** —— MKV 分章的片源
+     * 照旧能跳, 没分章的片源就只能手动.
+     */
+    private val combinedChaptersFlow: Flow<List<Chapter>> = player.chapters ?: flowOf(emptyList())
 
-    private val combinedChaptersFlow: Flow<List<Chapter>> =
-        combine(
-            (player.chapters ?: flowOf(emptyList())),
-            flow {
-                emit(emptyList()) // 先给个空列表, 避免刚开始时因为等待网络而没有进度
-                emitAll(autoSkipChaptersFlow)
-            },
-        ) { a, b -> if (b.isEmpty()) a else (a + b) }
-
-    // Chapters to be displayed on progress slider (merged with AutoSkip rules)
+    // Chapters to be displayed on progress slider
     val progressChaptersFlow: Flow<List<Chapter>> = combinedChaptersFlow
 
     val playerSkipOpEdState: PlayerSkipOpEdState = PlayerSkipOpEdState(
@@ -1093,36 +1050,13 @@ class EpisodeViewModel(
     }
 
     /**
-     * UI handler for the "skip OP/ED" button.
-     * Reports the action to server with throttling and then performs the seek.
+     * 「跳过 OP/ED」按钮.
+     *
+     * 原先跳完还会把时间点上报给 Ani 服务器做众包统计 (见 combinedChaptersFlow 的说明),
+     * 直连之后没有那个服务器, 只剩下跳这一件事.
      */
-    @OptIn(UnsafeEpisodeSessionApi::class)
     fun onClickSkipOpEd(currentPositionMillis: Long) {
-        val skipDuration = videoScaffoldConfig.opEdSkipDuration
-        // Seek immediately for UX
-        player.skip(skipDuration.inWholeMilliseconds)
-        // Report in background
-        launchInBackground {
-            logger.info {
-                "Reporting skip ${skipDuration.inWholeSeconds} at ${currentPositionMillis / 1000}s"
-            }
-            val episodeId = fetchPlayState.getCurrentEpisodeId()
-            val selected = fetchPlayState.episodeSessionFlow.firstOrNull()
-                ?.fetchSelectFlow
-                ?.firstOrNull()
-                ?.mediaSelector
-                ?.selected
-                ?.firstOrNull()
-            val mediaSourceId = selected?.mediaSourceId ?: return@launchInBackground
-            val timeSeconds = (currentPositionMillis / 1000).toInt()
-            if (timeSeconds < 0 || timeSeconds > 200 * 60) {
-                logger.warn {
-                    "Refusing to report skip ${skipDuration.inWholeSeconds} at invalid time ${timeSeconds}s"
-                }
-                return@launchInBackground
-            }
-            autoSkipRepository.reportSkip(episodeId, mediaSourceId, timeSeconds, currentPositionMillis)
-        }
+        player.skip(videoScaffoldConfig.opEdSkipDuration.inWholeMilliseconds)
     }
 
     fun restartSource(instanceId: String) {
