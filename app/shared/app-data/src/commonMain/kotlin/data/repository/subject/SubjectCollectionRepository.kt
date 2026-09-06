@@ -43,7 +43,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.preference.NsfwMode
@@ -207,55 +206,6 @@ abstract class SubjectCollectionRepository(
 
     abstract suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>>
 
-    abstract suspend fun performBangumiFullSync()
-
-    abstract suspend fun getBangumiFullSyncState(): BangumiSyncState?
-
-    /**
-     * 使 [subjectIds] 对应条目的本地缓存失效, 并立即从服务端重新拉取这些条目 (并行度有限, 见实现):
-     * - 服务端仍有收藏 → 用服务端的值覆盖本地行与剧集缓存 (正在展示的收藏列表随之更新);
-     * - 服务端已无收藏 (条目不存在或未收藏) → 删除本地行 (剧集缓存随之级联删除);
-     * - 网络失败 → 保留本地行 (绝不因失败删除), 只将其 `lastFetched` 置 0, 下次访问时重新拉取;
-     *   首次失败后不再对剩余条目发起新的拉取 (多半是断网, 逐个等待超时会让 "应用合并" 长时间转圈), 已发起的照常完成.
-     *
-     * 之后将所有条目的 `lastFetched` 置 0 (下次创建收藏列表分页器时从服务端刷新), 并发出 [collectionsInvalidated].
-     *
-     * [subjectIds] 为空时不做任何事.
-     *
-     * 用于服务端解决 Bangumi 收藏冲突之后: 这些条目在服务端的值已经改变, 本地缓存不再可信.
-     */
-    abstract suspend fun invalidateCache(subjectIds: List<Int>)
-
-    /**
-     * 将所有条目的 `lastFetched` 置 0 (不删除本地数据), 使下次进入收藏页或条目页时从服务端刷新, 并发出 [collectionsInvalidated].
-     *
-     * 用于服务端 Bangumi 全量同步 (对账) 完成之后: 自动合并的结果已写入服务端, 本地缓存可能过期.
-     */
-    abstract suspend fun invalidateAllCaches()
-
-    private val _collectionsInvalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    /**
-     * [invalidateCache] / [invalidateAllCaches] 完成后发出一次, 供已经创建的收藏列表分页器重新加载.
-     *
-     * 分页器只在创建时 (`RemoteMediator.initialize`) 根据 `lastFetched` 决定是否从服务端刷新, 已在展示的列表不会因为
-     * `lastFetched` 被置 0 而自动刷新; 收藏页的 ViewModel 收集此流并重建分页器.
-     */
-    val collectionsInvalidated: SharedFlow<Unit> = _collectionsInvalidated.asSharedFlow()
-
-    /**
-     * [collectionsInvalidated] 当前的订阅者数. 仅测试用: 等 ViewModel 订阅之后再触发失效, 否则事件没有订阅者会被丢弃.
-     */
-    @TestOnly
-    val collectionsInvalidatedSubscriptionCount: StateFlow<Int>
-        get() = _collectionsInvalidated.subscriptionCount
-
-    /**
-     * 缓存失效完成后调用, 发出 [collectionsInvalidated]. 没有订阅者时直接丢弃; 订阅者来不及处理时多次失效合并为一次.
-     */
-    protected fun notifyCollectionsInvalidated() {
-        _collectionsInvalidated.tryEmit(Unit)
-    }
 }
 
 class SubjectCollectionRepositoryImpl(
@@ -809,25 +759,6 @@ class SubjectCollectionRepositoryImpl(
         }
     }
 
-    override suspend fun performBangumiFullSync() {
-        try {
-            withContext(defaultDispatcher) {
-                subjectService.performBangumiFullSync()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    override suspend fun getBangumiFullSyncState(): BangumiSyncState? {
-        return try {
-            withContext(defaultDispatcher) {
-                subjectService.getBangumiFullSyncState()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
 
     override suspend fun invalidateCache(subjectIds: List<Int>) {
         if (subjectIds.isEmpty()) return

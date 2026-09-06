@@ -310,7 +310,6 @@ private fun MainScreenNavigationLayout(
                         CollectionPage(
                             state = userCollectionsViewModel.state,
                             selfInfo = selfInfo,
-                            fullSyncState = userCollectionsViewModel.fullSyncState.collectAsStateWithLifecycle().value,
                             onClickSearch = onNavigateToSearch,
                             onClickLogin = onLogin,
                             onClickSettings = { navigator.navigateSettings() },

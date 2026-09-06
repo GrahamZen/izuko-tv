@@ -27,12 +27,6 @@ import org.jetbrains.compose.resources.stringResource
 @Serializable
 sealed class NavRoutes : NavKey {
     @Serializable
-    data object EmailLoginStart : NavRoutes()
-
-    @Serializable
-    data object EmailLoginVerify : NavRoutes()
-
-    @Serializable
     data class Main(
         val initialPage: MainScreenPage,
         val requestSearchFocus: Boolean = false,

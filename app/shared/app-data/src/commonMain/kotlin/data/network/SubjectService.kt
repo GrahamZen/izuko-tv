@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
 import me.him188.ani.app.data.models.subject.PersonPosition
@@ -109,12 +108,6 @@ interface SubjectService {
      */
     fun invalidateCollectionCounts()
 
-    /**
-     * 执行 Bangumi 全量同步, 从 Bangumi 同步到 ani
-     */
-    suspend fun performBangumiFullSync()
-
-    suspend fun getBangumiFullSyncState(): BangumiSyncState?
 }
 
 data class BatchSubjectCollection(
@@ -376,22 +369,6 @@ class RemoteSubjectService(
         }.flowOn(ioDispatcher)
     }
 
-    override suspend fun performBangumiFullSync() {
-        sessionManager.checkAccessAniApiNow()
-        subjectApi.invoke {
-            bangumiFullSync().body()
-        }
-    }
-
-    override suspend fun getBangumiFullSyncState(): BangumiSyncState? {
-        return subjectApi.invoke {
-            val result = getBangumiFullSyncState()
-            if (result.status == HttpStatusCode.NoContent.value) {
-                return@invoke null
-            }
-            BangumiSyncState.fromEntity(result.body())
-        }
-    }
 
     private companion object {
         const val CHARACTER_PAGE_SIZE = 100 // p1 的 limit 上限

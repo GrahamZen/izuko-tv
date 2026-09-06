@@ -277,7 +277,7 @@ fun SubjectDetailsScreen(
                 selfInfo,
                 layoutParams,
                 onPlay = onPlay,
-                onClickLogin = { navigator.navigateEmailLoginStart() },
+                onClickLogin = { navigator.navigateBangumiAuthorize() },
                 onClickTag,
                 onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
                 Modifier,

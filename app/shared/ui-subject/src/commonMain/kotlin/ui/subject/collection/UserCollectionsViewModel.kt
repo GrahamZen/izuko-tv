@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.preference.MyCollectionsSettings
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
@@ -68,7 +67,6 @@ class UserCollectionsViewModel : AbstractViewModel(), KoinComponent {
         .produceState(MyCollectionsSettings.Default)
 
     private val fullSyncTasker = MonoTasker(backgroundScope)
-    val fullSyncState: MutableStateFlow<BangumiSyncState?> = MutableStateFlow(null)
 
     /**
      * 重启各类型收藏数量流 (tab 标题的数量). 数量只在登录时拉取一次, 缓存失效 / 换账号后要重新拉取, 否则标题与刷新后的列表对不上.

@@ -124,15 +124,6 @@ interface AniNavigator {
     )
 
     @MainThread
-    fun navigateEmailLoginStart() {
-        navigate(NavRoutes.EmailLoginStart)
-    }
-
-    @MainThread
-    fun navigateEmailLoginVerify() {
-        navigate(NavRoutes.EmailLoginVerify)
-    }
-
     /**
      * 返回到第一个 [NavRoutes.Main], 根据当前的 [backStack] 进行不同的操作:
      *
@@ -143,10 +134,10 @@ interface AniNavigator {
     fun popBackOrNavigateToMain(mainSceneInitialPage: MainScreenPage)
 
     /**
-     * 登录页面
+     * 登录页面. 直连之后登录就是 bangumi 授权 (原先是 Ani 的邮箱验证码登录).
      */
     fun navigateLogin() {
-        navigate(NavRoutes.EmailLoginStart)
+        navigate(NavRoutes.BangumiAuthorize)
     }
 
     fun navigateBangumiAuthorize() {

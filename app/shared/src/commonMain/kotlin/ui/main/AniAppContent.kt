@@ -99,9 +99,6 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.TopAppBarActionButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.main_network_check_failed
-import me.him188.ani.app.ui.login.EmailLoginStartScreen
-import me.him188.ani.app.ui.login.EmailLoginVerifyScreen
-import me.him188.ani.app.ui.login.EmailLoginViewModel
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeScreen
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeViewModel
 import me.him188.ani.app.ui.playback.PlaybackHistoryScreen
@@ -265,7 +262,6 @@ private fun AniAppContentImpl(
     val windowInsets = ScaffoldDefaults.contentWindowInsets
         .add(WindowInsets.desktopTitleBar()) // Compose 目前不支持这个所以我们要自己加上
     val navMotionScheme by rememberUpdatedState(NavigationMotionScheme.current)
-    val emailLoginViewModel = viewModel<EmailLoginViewModel> { EmailLoginViewModel() }
 
     // 焦点导航的通用兜底 (无需任何页面单独配合): 没有任何焦点时 Compose 不会自动分配,
     // 方向键会完全失效 (按键只会派发到根部的 onKeyEvent). 这里常驻监视 —— 只要本窗口
@@ -338,40 +334,6 @@ private fun AniAppContentImpl(
             navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
         },
         entryProvider = entryProvider {
-            entry<NavRoutes.EmailLoginStart> {
-                EmailLoginStartScreen(
-                    onOtpSent = {
-                        aniNavigator.navigateEmailLoginVerify()
-                    },
-                    onBangumiLoginClick = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
-                    onNavigateSettings = {
-                        aniNavigator.navigateSettings()
-                    },
-                    onNavigateBack = {
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
-                    },
-                    vm = emailLoginViewModel,
-                )
-            }
-            entry<NavRoutes.EmailLoginVerify> {
-                EmailLoginVerifyScreen(
-                    onSuccess = {
-                        aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
-                    },
-                    onBangumiLoginClick = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
-                    onNavigateSettings = {
-                        aniNavigator.navigateSettings()
-                    },
-                    onNavigateBack = {
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                    },
-                    vm = emailLoginViewModel,
-                )
-            }
             entry<NavRoutes.BangumiAuthorize> {
                 val vm = viewModel<BangumiAuthorizeViewModel> { BangumiAuthorizeViewModel() }
                 BangumiAuthorizeScreen(
@@ -387,8 +349,6 @@ private fun AniAppContentImpl(
                     },
                     onAuthorizeSuccess = {
                         aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
                     },
                 )
             }
@@ -556,7 +516,6 @@ private fun AniAppContentImpl(
                     viewModel {
                         SettingsViewModel()
                     },
-                    onNavigateToEmailLogin = { aniNavigator.navigateEmailLoginStart() },
                     onNavigateToBangumiOAuth = { aniNavigator.navigateBangumiAuthorize() },
                     loadOpenSourceLibrariesJsons = {
                         listOf(

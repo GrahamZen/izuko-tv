@@ -153,8 +153,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             val route = runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull()
             route != null &&
                     route !is NavRoutes.EpisodeDetail &&
-                    route !is NavRoutes.EmailLoginStart &&
-                    route !is NavRoutes.EmailLoginVerify &&
                     route !is NavRoutes.BangumiAuthorize
         }
         // **两个长按各配各的** (设置-界面, 见 [TvLongPressAction]), 默认都开动作面板:
