@@ -26,6 +26,7 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -78,7 +79,7 @@ class BangumiScheduleSource(
                     id = item.subject.id,
                     name = item.subject.name,
                     nameCn = item.subject.nameCN,
-                    imageLarge = item.subject.images?.large.orEmpty(),
+                    imageLarge = item.subject.images?.large.orBangumiPlaceholder(),
                     weekday = weekday,
                 )
             }
@@ -153,8 +154,8 @@ class BangumiScheduleSource(
                     id = it.id,
                     name = it.name,
                     nameCn = it.nameCn,
-                    sort = it.sort,
-                    ep = it.ep,
+                    sort = it.sort.toSortString(),
+                    ep = it.ep?.toSortString(),
                     airDate = it.airdate,
                 )
             }
@@ -306,10 +307,10 @@ data class BroadcastRule(
 // region 网络 DTO (只声明用得上的字段)
 
 @Serializable
-private class CalendarItem(val subject: CalendarSubject)
+internal class CalendarItem(val subject: CalendarSubject)
 
 @Serializable
-private class CalendarSubject(
+internal class CalendarSubject(
     val id: Int,
     val name: String,
     val nameCN: String,
@@ -317,35 +318,40 @@ private class CalendarSubject(
 )
 
 @Serializable
-private class CalendarImages(val large: String? = null)
+internal class CalendarImages(val large: String? = null)
 
 /** 响应是 `{"1": [...], ..., "7": [...]}`, 键是星期几. */
-private val CalendarResponseSerializer = MapSerializer(
+internal val CalendarResponseSerializer = MapSerializer(
     String.serializer(),
     ListSerializer(CalendarItem.serializer()),
 )
 
 @Serializable
-private class V0EpisodePage(val data: List<V0Episode> = emptyList())
+internal class V0EpisodePage(val data: List<V0Episode> = emptyList())
 
 @Serializable
-private class V0Episode(
+internal class V0Episode(
     val id: Int,
     val name: String = "",
     @kotlinx.serialization.SerialName("name_cn") val nameCn: String = "",
-    val sort: String = "",
-    val ep: String? = null,
+    /** **数字**不是字符串 (`"sort": 1`), 而且可能是小数 (补录的 5.5 话). */
+    val sort: Double = 0.0,
+    val ep: Double? = null,
     val airdate: String = "",
 )
 
+/** 整数别带 `.0`: 这个串会进 `EpisodeSort`, 也会显示成"第 N 集". */
+internal fun Double.toSortString(): String =
+    if (this == toLong().toDouble()) toLong().toString() else toString()
+
 @Serializable
-private class BangumiDataItem(
+internal class BangumiDataItem(
     val broadcast: String? = null,
     val sites: List<BangumiDataSite> = emptyList(),
 )
 
 @Serializable
-private class BangumiDataSite(val site: String = "", val id: String = "")
+internal class BangumiDataSite(val site: String = "", val id: String = "")
 
 // endregion
 

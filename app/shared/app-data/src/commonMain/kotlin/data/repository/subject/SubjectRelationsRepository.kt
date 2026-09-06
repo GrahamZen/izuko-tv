@@ -30,6 +30,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.BatchSubjectRelations
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.dao.RelatedCharacterView
 import me.him188.ani.app.data.persistent.database.dao.RelatedPersonView
@@ -336,8 +337,10 @@ private fun CharacterEntity.toCharacterInfo(actors: List<PersonInfo>): Character
         name = name,
         nameCn = nameCn,
         actors = actors,
-        imageLarge = imageLarge,
-        imageMedium = imageMedium,
+        // 出库时再兜一次占位图: 库里存着一批空串 —— 是补占位图之前写进去的 (真机上 person 表
+        // 7393 行里 34 行为空), 而这两张表按 TTL 缓存, 不重新取就一直画成黑块.
+        imageLarge = imageLarge.orBangumiPlaceholder(),
+        imageMedium = imageMedium.orBangumiPlaceholder(),
     )
 }
 
@@ -355,8 +358,9 @@ private fun PersonEntity.toPersonInfo(): PersonInfo {
         name = name,
         type = type,
         careers = emptyList(),
-        imageLarge = imageLarge,
-        imageMedium = imageMedium,
+        // 同上: 出库时兜占位图
+        imageLarge = imageLarge.orBangumiPlaceholder(),
+        imageMedium = imageMedium.orBangumiPlaceholder(),
         summary = summary,
         locked = false,
         nameCn = nameCn,

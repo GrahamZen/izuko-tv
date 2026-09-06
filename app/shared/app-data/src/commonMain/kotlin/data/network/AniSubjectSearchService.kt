@@ -22,6 +22,7 @@ import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.search.SearchSort
@@ -110,7 +111,7 @@ class AniSubjectSearchService(
                 nameCn = nameCn,
                 summary = summary,
                 nsfw = nsfw,
-                imageLarge = images.large,
+                imageLarge = images.large.orBangumiPlaceholder(),
                 totalEpisodes = eps,
                 airDate = PackedDate.parseFromDate(date ?: ""),
                 tags = tags.map { Tag(it.name, it.count) },

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import me.him188.ani.app.data.models.subject.RelatedSubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectRelation
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectRelation
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
@@ -42,7 +43,7 @@ class BangumiRelatedPeopleService(
                     },
                     name = subject.name,
                     nameCn = subject.nameCN,
-                    image = subject.images?.large ?: "",
+                    image = subject.images?.large.orBangumiPlaceholder(),
                 )
             }.let(RelatedSubjectInfo::sortList),
         )

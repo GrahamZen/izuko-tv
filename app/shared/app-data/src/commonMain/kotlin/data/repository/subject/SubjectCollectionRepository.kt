@@ -109,6 +109,7 @@ import me.him188.ani.utils.serialization.BigNum
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
@@ -270,6 +271,7 @@ class SubjectCollectionRepositoryImpl(
     private val getEpisodeTypeFiltersUseCase: GetEpisodeTypeFiltersUseCase,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val cacheExpiry: Duration = 1.hours,
+    private val subjectDetailsExpiry: Duration = 1.minutes,
 ) : SubjectCollectionRepository(defaultDispatcher) {
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> {
         return (subjectService.subjectCollectionCountsFlow() as Flow<SubjectCollectionCounts?>)
@@ -304,6 +306,17 @@ class SubjectCollectionRepositoryImpl(
         return (currentTimeMillis() - lastFetched).milliseconds > cacheExpiry
     }
 
+    /**
+     * 详情页用的新鲜度阈值, 比列表那个 [cacheExpiry] 短得多.
+     *
+     * 收藏状态/评分/短评在**别处**改了 (bgm 网页、手机上的另一个安装) 时, 本地要能很快对齐 ——
+     * 按一小时算的话, 网页上改完评分回到 app 进详情页看到的还是旧值, 而且怎么退出重进都不变.
+     * 这一档只影响**条目本身**要不要重取; 分集另算 (见 [episodesExpired]), 所以代价是一个请求.
+     */
+    private fun SubjectCollectionEntity.isSubjectStaleForDetails(): Boolean {
+        return (currentTimeMillis() - lastFetched).milliseconds > subjectDetailsExpiry
+    }
+
     private val subjectFetcher = StaleKeyedFetcher<Int>()
 
     /**
@@ -332,15 +345,34 @@ class SubjectCollectionRepositoryImpl(
         subjectFetcher.fetchIfStale(
             key = subjectId,
             isFresh = {
-                val fresh = subjectCollectionDao.findById(subjectId).first()?.isExpired() == false
+                val fresh = subjectCollectionDao.findById(subjectId).first()
+                    ?.isSubjectStaleForDetails() == false && !needsEpisodes(subjectId)
                 // 等到锁却发现数据已经新鲜 = 刚被另一个订阅者取回来了, 这一次省掉了
                 if (fresh) logger.info { "Subject $subjectId already fresh, skipped duplicate fetch" }
                 fresh
             },
         ) {
             fetchAndSaveSubjectCollection(subjectId)
+            episodesFetchAttemptedLock.withLock { episodesFetchAttempted.add(subjectId) }
             // TODO: 2025/5/24 handle subject not found
         }
+    }
+
+    /**
+     * **条目行新鲜不代表分集也在**.
+     *
+     * 追番列表现在只取条目不取分集 (Ani 那个列表接口是把分集内联一起给的), 于是"刚被列表刷新过"
+     * 的条目进详情页时, 只看 [SubjectCollectionEntity.isExpired] 会判成新鲜、直接跳过取数,
+     * 选集条就是空的 —— 死神千年血战篇就是这么空的 (库里 0 条分集).
+     *
+     * 本进程内每个条目最多因此多取一次: 真的没有分集 (未播出/未定档) 的条目不会陷入反复重取.
+     */
+    private val episodesFetchAttempted = mutableSetOf<Int>()
+    private val episodesFetchAttemptedLock = Mutex()
+
+    private suspend fun needsEpisodes(subjectId: Int): Boolean {
+        if (episodesFetchAttemptedLock.withLock { subjectId in episodesFetchAttempted }) return false
+        return episodeCollectionDao.listIdBySubjectId(subjectId).first().isEmpty()
     }
 
     /**
@@ -348,6 +380,12 @@ class SubjectCollectionRepositoryImpl(
      *
      * @return 服务端是否有这个条目的收藏记录; `false` 表示未收藏 (数据库不动)
      */
+    private suspend fun episodesExpired(subjectId: Int): Boolean {
+        val episodes = episodeCollectionDao.filterBySubjectId(subjectId).first()
+        if (episodes.isEmpty()) return true
+        return episodes.all { (currentTimeMillis() - it.lastFetched).milliseconds > cacheExpiry }
+    }
+
     private suspend fun fetchAndSaveSubjectCollection(subjectId: Int): Boolean {
         val subject = subjectService.getSubjectCollection(subjectId) ?: return false
         val lastFetched = currentTimeMillis()
@@ -361,11 +399,17 @@ class SubjectCollectionRepositoryImpl(
                 ?: animeScheduleRepository.getSubjectRecurrence(subjectId, subject.airtime.date),
             relations = existing?.relations ?: SubjectRelations.Empty,
         )
-        val episodeEntities = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched)
-        // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
-        subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
-        // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)
-        logger.info { "Fetched subject $subjectId: ${episodeEntities.size} episodes" }
+        // 分集单独按 cacheExpiry 判: 详情页的条目重取比分集频繁得多 (见 isSubjectStaleForDetails),
+        // 每次都跟着把分集也拉一遍不值当 —— 分集变化远比收藏状态慢
+        if (episodesExpired(subjectId)) {
+            val episodeEntities = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched)
+            // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
+            subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
+            logger.info { "bgm-direct: fetched subject $subjectId with ${episodeEntities.size} episodes" }
+        } else {
+            subjectCollectionDao.upsert(subjectEntity)
+            logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
+        }
         return true
     }
 
@@ -380,8 +424,8 @@ class SubjectCollectionRepositoryImpl(
                     emit(existing)
                 }
 
-                // 如果没有缓存, 则 fetch 然后插入 subject 缓存
-                if (existing == null || existing.isExpired()) {
+                // 没有缓存, 过期 (详情页用的是分钟级阈值), 或者条目行在但分集没有 (见 needsEpisodes)
+                if (existing == null || existing.isSubjectStaleForDetails() || needsEpisodes(subjectId)) {
                     fetchSubjectCollectionIfStale(subjectId)
                 }
             }
@@ -686,6 +730,8 @@ class SubjectCollectionRepositoryImpl(
                             // 仅在网络请求成功后才删除缓存, 否则会导致无网络时清空缓存
                             // 必须清除缓存, 让顺序与服务器同步, 否则会死循环刷新
                             subjectCollectionDao.deleteAll(query.type)
+                            // 数字与卡片一起对齐: 计数是另一组请求, 不跟着列表走
+                            subjectService.invalidateCollectionCounts()
                         }
 
                         // 拿到的数量小于请求的 limit 就代表这是最后一页, 否则总数不是 limit 整数倍时

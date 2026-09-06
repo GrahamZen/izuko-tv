@@ -55,7 +55,7 @@ fun BangumiNextSubject.toEntity(
         nameCn = nameCN,
         summary = summary,
         nsfw = nsfw,
-        imageLarge = images?.large.orEmpty().ifBlank { BANGUMI_NO_ICON_IMAGE },
+        imageLarge = images?.large.orBangumiPlaceholder(),
         // Ani 用的是它内联的 episodes.size; p1 的列表接口不内联分集, 用 wiki 的话数
         totalEpisodes = eps,
         airDate = airDate,

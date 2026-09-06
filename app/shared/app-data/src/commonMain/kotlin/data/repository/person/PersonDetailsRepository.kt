@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
 import me.him188.ani.app.data.models.subject.PersonInfo
 import me.him188.ani.app.data.models.subject.PersonPosition
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.models.subject.PersonType
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
@@ -42,6 +43,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextComment
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextInfoboxItem
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextPerson
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.ktor.ApiInvoker
@@ -64,8 +66,8 @@ class PersonDetailsRepository(
                 personsApi {
                     val person = getPerson(personId).body()
                     // 这两个计数 bangumi 只在列表接口的 total 里给
-                    val works = getPersonWorks(personId, limit = 1).body().total
-                    val casts = getPersonCasts(personId, limit = 1).body().total
+                    val works = getPersonWorks(personId, subjectType = ANIME, limit = 1).body().total
+                    val casts = getPersonCasts(personId, subjectType = ANIME, limit = 1).body().total
                     Triple(person, works, casts)
                 }
             }
@@ -87,21 +89,28 @@ class PersonDetailsRepository(
     }
 
     fun characterDetailsFlow(characterId: Int): Flow<CharacterDetailsInfo> = flow {
-        val (character, subjectCount) = try {
+        val (character, casts) = try {
             withContext(defaultDispatcher) {
                 charactersApi {
                     val character = getCharacter(characterId).body()
-                    val subjects = getCharacterCasts(characterId, limit = 1).body().total
-                    character to subjects
+                    // 声优不在角色详情里, 只能从出演条目那边取: 取一页, 跨条目去重
+                    val casts = getCharacterCasts(characterId, subjectType = ANIME, limit = CASTS_FOR_ACTORS).body()
+                    character to casts
                 }
             }
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
-        logger.info { "bgm-direct: character $characterId -> subjects=$subjectCount" }
+        val actors = casts.data
+            .flatMap { it.casts }
+            .map { it.person }
+            .distinctBy { it.id }
+            .map { it.toPersonInfo() }
+        val subjectCount = casts.total
+        logger.info { "bgm-direct: character $characterId -> subjects=$subjectCount actors=${actors.size}" }
         emit(
             CharacterDetailsInfo(
-                character = character.toCharacterInfo(),
+                character = character.toCharacterInfo(actors),
                 role = character.role.value,
                 summary = character.summary,
                 infobox = character.infobox.toRows(),
@@ -113,7 +122,7 @@ class PersonDetailsRepository(
     }
 
     fun personWorksPager(personId: Int): Flow<PagingData<PersonWorkInfo>> = offsetPager { offset, limit ->
-        personsApi { getPersonWorks(personId, limit = limit, offset = offset).body() }.let { page ->
+        personsApi { getPersonWorks(personId, subjectType = ANIME, limit = limit, offset = offset).body() }.let { page ->
             Paged(
                 total = page.total,
                 items = page.data.map {
@@ -127,7 +136,7 @@ class PersonDetailsRepository(
     }
 
     fun personCastsPager(personId: Int): Flow<PagingData<PersonCastInfo>> = offsetPager { offset, limit ->
-        personsApi { getPersonCasts(personId, limit = limit, offset = offset).body() }.let { page ->
+        personsApi { getPersonCasts(personId, subjectType = ANIME, limit = limit, offset = offset).body() }.let { page ->
             Paged(
                 total = page.total,
                 // bangumi 按角色分组, 一个角色可能出现在多部作品里; UI 要的是 (作品, 角色) 一行一条
@@ -140,8 +149,8 @@ class PersonDetailsRepository(
                                 name = cast.character.name,
                                 nameCn = cast.character.nameCN,
                                 actors = emptyList(),
-                                imageMedium = cast.character.images?.medium ?: "",
-                                imageLarge = cast.character.images?.large ?: "",
+                                imageMedium = cast.character.images?.medium.orBangumiPlaceholder(),
+                                imageLarge = cast.character.images?.large.orBangumiPlaceholder(),
                             ),
                         )
                     }
@@ -152,7 +161,9 @@ class PersonDetailsRepository(
 
     fun characterSubjectsPager(characterId: Int): Flow<PagingData<CharacterSubjectInfo>> =
         offsetPager { offset, limit ->
-            charactersApi { getCharacterCasts(characterId, limit = limit, offset = offset).body() }.let { page ->
+            charactersApi {
+                getCharacterCasts(characterId, subjectType = ANIME, limit = limit, offset = offset).body()
+            }.let { page ->
                 Paged(
                     total = page.total,
                     items = page.data.map {
@@ -182,6 +193,20 @@ class PersonDetailsRepository(
     }
 
     private class Paged<T>(val total: Int, val items: List<T>)
+
+    private companion object {
+        /**
+         * 人物/角色的这几个列表接口不分条目类型, 不过滤会把画集、游戏、三次元一起列出来
+         * (久保带人的"参与作品"在 bangumi 上是 41 条, Ani 那边过滤后是 16 条).
+         */
+        val ANIME = BangumiNextSubjectType.Anime
+
+        /**
+         * 取声优时拉几条出演条目. 同一个角色在不同作品里的声优多半是同一个人, 一页足够去重出全部;
+         * 拉太多只是白花请求.
+         */
+        const val CASTS_FOR_ACTORS = 20
+    }
 
     private fun <T : Any> offsetPager(
         fetch: suspend (offset: Int, limit: Int) -> Paged<T>,
@@ -221,23 +246,22 @@ private fun BangumiNextPerson.toPersonInfo(): PersonInfo {
         name = name,
         type = PersonType.fromId(type.value),
         careers = emptyList(),
-        imageLarge = images?.large ?: "",
-        imageMedium = images?.medium ?: "",
+        imageLarge = images?.large.orBangumiPlaceholder(),
+        imageMedium = images?.medium.orBangumiPlaceholder(),
         summary = summary,
         locked = lock,
         nameCn = nameCN,
     )
 }
 
-private fun BangumiNextCharacter.toCharacterInfo(): CharacterInfo {
+private fun BangumiNextCharacter.toCharacterInfo(actors: List<PersonInfo>): CharacterInfo {
     return CharacterInfo(
         id = id,
         name = name,
         nameCn = nameCN,
-        // 配音演员在 /casts 里, 详情本体不带
-        actors = emptyList(),
-        imageMedium = images?.medium ?: "",
-        imageLarge = images?.large ?: "",
+        actors = actors,
+        imageMedium = images?.medium.orBangumiPlaceholder(),
+        imageLarge = images?.large.orBangumiPlaceholder(),
     )
 }
 
@@ -246,7 +270,7 @@ private fun BangumiNextSlimSubject.toSummary(): PersonSubjectSummary {
         subjectId = id,
         name = name,
         nameCn = nameCN,
-        imageLarge = images?.large ?: "",
+        imageLarge = images?.large.orBangumiPlaceholder(),
     )
 }
 

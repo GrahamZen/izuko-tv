@@ -102,6 +102,14 @@ interface SubjectService {
     fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts>
 
     /**
+     * 让 [subjectCollectionCountsFlow] 重新算一次.
+     *
+     * 计数是单独一组请求, 不会随收藏列表刷新自动更新: 在**别处**改了收藏 (bgm 网页、另一个安装) 时,
+     * 列表刷新后卡片对齐了而 tab 上的数字还是旧的.
+     */
+    fun invalidateCollectionCounts()
+
+    /**
      * 执行 Bangumi 全量同步, 从 Bangumi 同步到 ani
      */
     suspend fun performBangumiFullSync()
@@ -252,6 +260,10 @@ class RemoteSubjectService(
     }
 
     val subjectCountStatsRestarter = FlowRestarter()
+
+    override fun invalidateCollectionCounts() {
+        subjectCountStatsRestarter.restart()
+    }
 
     override suspend fun patchSubjectCollection(subjectId: Int, payload: SubjectCollectionUpdate) {
         sessionManager.checkAccessAniApiNow()

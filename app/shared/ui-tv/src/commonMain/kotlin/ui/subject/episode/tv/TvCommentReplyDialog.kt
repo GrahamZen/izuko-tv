@@ -332,16 +332,15 @@ internal fun TvCommentReplyDialog(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.height(4.dp))
-                // 可回复时给的是与手机端编辑框同一句提示 (评论发到 Ani, Bangumi 评论只读):
-                // 这个弹窗是 TV 上唯一的发评论入口, 不写在这里就没有别处能看到.
-                // 不可回复时换成"仅可查看", 说明为什么下面没有输入框
-                Text(
-                    stringResource(
-                        if (target.canReply) Lang.comment_ani_only_notice else Lang.comment_reply_unsupported,
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = hintColor,
-                )
+                // 只在能回复时给提示. 直连 bangumi 之后一条都不能回复 (发表吐槽要过 Cloudflare
+                // Turnstile 验证码), 每条评论都挂一句"不支持回复"只是噪音 —— 标题已经是"查看评论".
+                if (target.canReply) {
+                    Text(
+                        stringResource(Lang.comment_ani_only_notice),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = hintColor,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 // ---- 被回复的评论 (可上下键翻); 发表新评论时整块不出 ----

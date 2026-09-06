@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.trending.TrendingSubjectInfo
 import me.him188.ani.app.data.models.trending.TrendsInfo
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 import me.him188.ani.app.tools.paging.SinglePagePagingSource
@@ -77,7 +78,7 @@ fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
             TrendingSubjectInfo(
                 it.subject.id,
                 it.subject.nameCN.ifEmpty { it.subject.name },
-                it.subject.images?.large ?: "",
+                it.subject.images?.large.orBangumiPlaceholder(),
             )
         },
     )

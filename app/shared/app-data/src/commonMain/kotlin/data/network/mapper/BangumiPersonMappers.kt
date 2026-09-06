@@ -26,11 +26,15 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
  * - **`careers` 不再是空的**. Ani 的映射写死 `emptyList()`, p1 带 `career` 字段.
  */
 /**
- * 没有头像的人物/角色, bangumi 自己的页面用的占位图.
+ * 没有图的人物/角色/条目, bangumi 自己的页面用的占位图.
  *
- * p1 对没图的人物直接不给 `images` 字段. 不能就这么留空串: 卡片会画成一个黑块.
+ * p1 对没图的对象直接不给 `images` 字段. 不能就这么留空串: 卡片会画成一个黑块.
  * Ani 那条路是 `api.animeko.org/v2/persons/{id}/image` 代理, 对没图的人物返回的正是这张
  * (实测 sha256 与 `lain.bgm.tv/img/no_icon_subject.png` 逐字节相同), 所以填它就是保持原样.
+ *
+ * **凡是从 bangumi 取图的映射点都要过 [orBangumiPlaceholder]**: 漏一处就是一处黑块,
+ * 而漏了的那处只有"恰好碰上没图的那个条目/人物"时才看得出来 (2026-09-06 用户在人物页的
+ * 「出演角色」上撞到, 那条路径有自己的一套局部映射, 没走这里).
  */
 internal const val BANGUMI_NO_ICON_IMAGE = "https://lain.bgm.tv/img/no_icon_subject.png"
 
@@ -39,8 +43,8 @@ internal fun BangumiNextSlimPerson.toPersonInfo(): PersonInfo = PersonInfo(
     name = name,
     type = PersonType.fromId(type),
     careers = career.mapNotNull { it.toPersonCareerOrNull() },
-    imageLarge = images?.large.orPlaceholder(),
-    imageMedium = images?.medium.orPlaceholder(),
+    imageLarge = images?.large.orBangumiPlaceholder(),
+    imageMedium = images?.medium.orBangumiPlaceholder(),
     // Ani 的 summary 实测基本都是空串; p1 的 info 是 "性别 男 / 生日 ... / 血型 ..." 这种一行简介
     summary = info,
     locked = lock,
@@ -52,14 +56,14 @@ internal fun BangumiNextSlimCharacter.toCharacterInfo(actors: List<PersonInfo>):
     name = name,
     nameCn = nameCN,
     actors = actors,
-    imageMedium = images?.medium.orPlaceholder(),
-    imageLarge = images?.large.orPlaceholder(),
+    imageMedium = images?.medium.orBangumiPlaceholder(),
+    imageLarge = images?.large.orBangumiPlaceholder(),
 )
 
 internal fun BangumiNextSubjectCharacter.toCharacterInfo(): CharacterInfo =
     character.toCharacterInfo(casts.map { it.person.toPersonInfo() })
 
-private fun String?.orPlaceholder(): String =
+internal fun String?.orBangumiPlaceholder(): String =
     if (isNullOrBlank()) BANGUMI_NO_ICON_IMAGE else this
 
 private fun String.toPersonCareerOrNull(): PersonCareer? = when (this) {

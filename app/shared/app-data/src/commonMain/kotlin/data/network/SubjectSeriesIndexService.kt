@@ -40,20 +40,20 @@ data class SubjectRelationIndex(
     val seriesMainSubjectNames: List<String>,
     /**
      * 可以当作「系列主条目名」去 TMDB 搜的候选, 最可能的在最前 (原名与中文名各算一个).
+     * 一个候选都没有时调用方回落到自己逐跳找 —— **宁可没有, 也不能给错的**.
      *
-     * = 全部**祖先** + 名字被自己包含的**续集**. 后半条是为前导篇/序章准备的: 它们的本传恰恰是
-     * 续集 (`ef - a tale of memories. ~prologue~` 的本传是 `ef - a tale of memories.`,
-     * `THE IDOLM@STER Prologue SideM` 的是 `偶像大师 SideM`), 排掉续集这些条目就一张图都拿不到.
+     * 三类候选, 都是锚点测试 (`ANI_TMDB_E2E=1`) 逼出来的, 改这里必须重跑:
+     * 1. **祖先** (前传链). 系列主条目按定义往前找.
+     * 2. **名字被自己包含的续集**. 前导篇/序章的本传恰恰是它的续集 ——
+     *    `ef - a tale of memories. ~prologue~` 的本传是 `ef - a tale of memories.`,
+     *    `THE IDOLM@STER Prologue SideM` 的是 `偶像大师 SideM`. 排掉它们这些条目一张图都没有.
      *
-     * 但**不能无条件收下续集**: 299802「ふたりはプリキュア総集編…2020edition」的续集是另一部
-     * 総集編「Max Heart 総集編…2021edition」, 拿它当母条目会搜回毫不相干的海报. 名字包含关系
-     * 正好把两类分开 —— 前导篇的名字是"本传名 + 后缀", 而两部総集編只是同系列的兄弟.
+     * **兄弟续集不算**. 1600「BLEACH」是系列起点, 没有前传只有续集「千年血战篇」, 把续集当母条目
+     * 会让它去搜续集、hero 与单集背景全变成续集的图. 同理 299802「総集編」的兄弟是另一部総集編.
      *
-     * 兄弟续集 (既不是祖先也不是本传的那些) 排在最后当末位候选: 它们多半搜不到东西, 但"搜不到"
-     * 会让调用方走二次回落, 结果反而比一开始就没有名字更好 (177998「Re:ゼロから始める休憩時間」).
-     * **総集編除外** —— 它的兄弟是另一部総集編, 不是本传, 拿去搜会取回毫不相干的图 (299802).
-     *
-     * 这三条都是锚点测试抓出来的 (`ANI_TMDB_E2E=1`), 改这里必须重跑.
+     * **「主线故事」出边也不算**, 尽管它确实指向本篇. 番外/特辑 (高达 FRAG.、艾伦特辑、
+     * 哆啦A梦短片) 要走下游那条 bangumi 逐跳回溯: 那条路除了名字还会判出"这是衍生作"
+     * (`BgmLineage.isDerivative`), 而这里给不出这个判断. 从索引提前给名字会把它们截走, 图就错了.
      */
     val seriesRootNames: List<String>,
     /** 自己之后的续作 (传递闭包) */
@@ -160,15 +160,11 @@ class SubjectSeriesIndexService(
                 normalized.isNotEmpty() && selfNames.any { it != normalized && it.contains(normalized) }
             }
         }
-        // 総集編/合集类条目不收兄弟名 (见 seriesRootNames)
-        val isCompilation = selfNames.any { name -> COMPILATION_MARKERS.any { name.contains(it) } }
-        val siblingSequels = if (isCompilation) emptyList() else sequels.filter { it !in parentWorks }
         return SubjectRelationIndex(
             seriesMainSubjectIds = mainLine,
             seriesMainSubjectNames = mainLine.flatMap { namesOf(it, edges) },
             seriesRootNames = ancestors.flatMap { namesOf(it, edges) } +
-                    parentWorks.flatMap { namesOf(it, edges) } +
-                    siblingSequels.flatMap { namesOf(it, edges) },
+                    parentWorks.flatMap { namesOf(it, edges) },
             sequelSubjects = sequels.toList(),
             sequelSubjectNames = sequels.toList().flatMap { namesOf(it, edges) },
         )
@@ -219,8 +215,5 @@ class SubjectSeriesIndexService(
         const val MAX_NODES = 20
 
         const val CACHE_SIZE = 128
-
-        /** 归一化后的総集編标记 (标点已去掉). */
-        val COMPILATION_MARKERS = listOf("総集編", "総集篇", "总集篇", "总集编")
     }
 }

@@ -466,7 +466,6 @@ internal fun TvPlayerControlsOverlay(
                         danmakuEditorState = danmakuEditorState,
                         vm = vm,
                         pillFocusRequesters = pillFocusRequesters,
-                        onNewComment = { openNewEpisodeComment(vm, page, overlay) },
                         onViewAllPeople = { peopleViewAll = it },
                         // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
                         // 中途还一次焦点会与正要打开的预览抢
@@ -664,7 +663,6 @@ private fun TvPlayerPillsRow(
     vm: EpisodeViewModel,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
     /** 评论胶囊按下确定: 发表本集评论 (见 [openNewEpisodeComment]). */
-    onNewComment: () -> Unit,
     /** 角色 / 制作人员胶囊按下确定: 开对应的「查看全部」弹窗. */
     onViewAllPeople: (TvPlayerPanel) -> Unit,
     /** 上面那条路正占着焦点的是哪一颗胶囊 (弹窗或它点开的人物预览还开着); null = 都关了. */
@@ -732,12 +730,9 @@ private fun TvPlayerPillsRow(
                 panel = TvPlayerPanel.COMMENTS,
                 overlay = overlay,
                 focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.COMMENTS),
-                // 本颗胶囊的点击另有其用: 发表本集评论.
-                //
-                // 默认的"把焦点送进面板"与直接按上键完全重复 (面板早在聚焦本胶囊时就浮出来了),
-                // 这一下等于白按; 而发新评论此前在 TV 上没有任何入口 —— 只能回复已有评论,
-                // 手机端那颗「发送评论」FAB 在遥控器形态下没有对应物
-                onClick = onNewComment,
+                // 本颗胶囊的点击原本是"发表本集评论". 直连 bangumi 之后发不了 —— 发表吐槽要过
+                // Cloudflare Turnstile 验证码, 遥控器上做不了 —— 点开只会让人打完字再收到一个错误,
+                // 所以退回默认行为 (把焦点送进面板). 验证码那条路做通了就把 onNewComment 接回来.
                 // 弹窗关掉后焦点还给本胶囊: 弹窗抢焦点时本节点还在场 (控制层与面板都留在下面),
                 // 但 Compose 不会自己还回来. 控制层已经收起时放弃 —— 那时焦点归属归根路由管
                 modifier = Modifier.restoreFocusAfter(

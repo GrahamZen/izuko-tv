@@ -21,10 +21,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.error
@@ -119,7 +121,7 @@ class RecommendationRepository(
                         RecommendedSubjectInfo(
                             bangumiId = subject.id,
                             nameCn = subject.nameCN.ifEmpty { subject.name },
-                            imageLarge = subject.images?.large ?: "",
+                            imageLarge = subject.images?.large.orBangumiPlaceholder(),
                         )
                     }
                 logger.info {
