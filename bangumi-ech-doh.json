@@ -1,0 +1,9 @@
+{
+  "_comment": "Bangumi 加密直连 (ECH) 拉 Cloudflare 公共 ECH 配置时问的 DoH (见 BangumiEchDohList). 应用每天拉一次这个文件, 按顺序问, 第一个答得上的为准; 某家被封或不答了就改这里, 不用发版. 每条是完整地址, 要回 DoH 的 JSON 格式 (application/dns-json), 问带 ech 参数的 HTTPS 记录. 大陆连得上的排前面.",
+  "endpoints": [
+    "https://dns.alidns.com/resolve?name=crypto.cloudflare.com&type=65",
+    "https://doh.360.cn/resolve?name=crypto.cloudflare.com&type=65",
+    "https://cloudflare-dns.com/dns-query?name=crypto.cloudflare.com&type=HTTPS",
+    "https://dns.google/resolve?name=crypto.cloudflare.com&type=65"
+  ]
+}

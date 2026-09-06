@@ -47,6 +47,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.search.SubjectSearchQuery
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
@@ -760,12 +761,18 @@ object TvRemoteControl {
         val token = p.getString(KEY_TOKEN, null) ?: LanHttpServer.generateToken().also {
             p.edit().putString(KEY_TOKEN, it).apply()
         }
+        fun create(port: Int) = LanHttpServer(
+            ::handle, port = port, token = token,
+            maxBodyBytes = RemoteAppUpdate::maxBodyBytes,
+            // 手机授权完经 Worker 跳回来的那一跳带不了 token, 见 RemoteAccount.relayReturn
+            publicHandlers = mapOf(BangumiOAuthRelay.RETURN_PATH to RemoteAccount::relayReturn),
+        )
         val s = try {
-            LanHttpServer(::handle, port = fixedPort, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
+            create(fixedPort)
         } catch (e: IOException) {
             logger.warn(e) { "Fixed port $fixedPort unavailable for remote control, falling back to a random port" }
             try {
-                LanHttpServer(::handle, port = 0, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
+                create(0)
             } catch (e2: IOException) {
                 logger.warn(e2) { "Failed to start remote control server" }
                 return
@@ -800,6 +807,9 @@ object TvRemoteControl {
         }
         return host
     }
+
+    /** 控制台页面的路径 (`/<token>/`); 服务没起来时为 `null`. 只给已经认出是本机发起的回跳页用 (见 RemoteAccount.relayReturn). */
+    internal fun consolePath(): String? = synchronized(lock) { server }?.let { "/${it.token}/" }
 
     private fun rememberHost(host: String?) {
         host ?: return
@@ -1072,11 +1082,11 @@ object TvRemoteControl {
             put("keep", keepAliveOnExit())
             // app 里换了语言: 网页发现和自己加载时的不一样就整页重载 (见 RemoteI18n)
             put("lang", RemoteI18n.lang.tag)
-            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 经镜像时只给个人令牌登录
+            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 登录方式跟着线路换 (见 BangumiLoginPath)
             val endpoints = bangumiEndpoints
             put(
                 "bgm",
-                listOf(endpoints.currentRouting?.hashCode(), endpoints.viaThirdPartyMirror.value, endpoints.trustedMirrorRoot.value)
+                listOf(endpoints.currentRouting?.hashCode(), endpoints.loginPath.value, endpoints.trustedMirrorRoot.value)
                     .joinToString("|"),
             )
         }

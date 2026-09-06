@@ -35,6 +35,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.app.domain.foundation.RepoHostedList
 import me.him188.ani.app.platform.currentAniBuildConfig
@@ -52,6 +53,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * 中转的根地址放在对应表仓库根目录的 `report-endpoints.json` (字段 `endpoints`, 按顺序试, 连不上换下一个; 中转部署时由那边的 worker
  * 工作流写进去): workers.dev 在大陆多半连不上, 换地址、加自定义域名都不用发版.
+ * 中转在 Cloudflare 上, 怎么连见 [CloudflareServiceTransport] (直连不通再走加密直连).
  *
  * 「对应的作品不对」的备选 ([entryCandidates]) 取自对应表的核对页数据 (`docs/data/s/<id / 2000>.json`, 与核对页上「备选」同一份).
  */
@@ -59,6 +61,7 @@ class SubjectFeedbackService(
     listCache: Settings<RepoHostedListCache>,
     private val client: () -> ScopedHttpClient,
     scope: CoroutineScope,
+    private val transport: CloudflareServiceTransport = CloudflareServiceTransport.DirectOnly,
 ) {
     private val endpoints = RepoHostedList(SPEC, listCache, client, scope, repository = { TMDB_SUBJECT_MAP_REPOSITORY })
 
@@ -138,29 +141,7 @@ class SubjectFeedbackService(
         var answered = false
         for (base in bases) {
             val url = "$base/$path"
-            val reply = try {
-                withTimeoutOrNull(REPORT_TIMEOUT) {
-                    client().use {
-                        val response = post(url) {
-                            expectSuccess = false
-                            // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
-                            header("X-Izuko-Client", currentAniBuildConfig.versionName)
-                            contentType(ContentType.Application.Json)
-                            setBody(text)
-                        }
-                        response.status.value to response.bodyAsText()
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.info { "feedback: $url unreachable (${e::class.simpleName})" }
-                continue
-            }
-            if (reply == null) {
-                logger.info { "feedback: $url timed out" }
-                continue
-            }
+            val reply = transport.request(url) { send(it, text) } ?: continue
             answered = true
             val (status, answer) = reply
             when (status) {
@@ -184,6 +165,21 @@ class SubjectFeedbackService(
         }
         return if (answered) Result.Failed else Result.Unreachable
     }
+
+    /** 发一次报告, 回 (状态码, 回应体); 超时为 `null`, 连不上抛异常 (由 [transport] 换下一种连法). */
+    private suspend fun send(url: String, text: String): Pair<Int, String>? =
+        withTimeoutOrNull(REPORT_TIMEOUT) {
+            client().use {
+                val response = post(url) {
+                    expectSuccess = false
+                    // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
+                    header("X-Izuko-Client", currentAniBuildConfig.versionName)
+                    contentType(ContentType.Application.Json)
+                    setBody(text)
+                }
+                response.status.value to response.bodyAsText()
+            }
+        }
 
     /**
      * 「对应的作品不对」的选项: 核对页数据里这个条目现在对应的 TMDB 作品与备选. 网络出错返回 null; 核对页里没有这个条目 (还没查过)

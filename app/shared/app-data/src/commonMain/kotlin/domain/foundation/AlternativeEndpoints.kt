@@ -80,7 +80,7 @@ val AlternativeEndpointsFeature = ScopedHttpClientFeatureKey<Boolean>("Alternati
  *
  * 回了 4xx 不换: 那是对方在回答 (比如图片不存在), 换一个入口也是同一个答案.
  *
- * 与 [BangumiMirrorFeatureHandler] 是同一个位置 (`HttpSend` 拦截), 但没有凭证那一层顾虑: 归这里管的都是
+ * 与 [BangumiRoutingFeatureHandler] 是同一个位置 (`HttpSend` 拦截), 但没有凭证那一层顾虑: 归这里管的都是
  * 不带凭证的公开资源.
  */
 class AlternativeEndpointsFeatureHandler(
