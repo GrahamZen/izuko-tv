@@ -55,6 +55,15 @@ import me.him188.ani.app.ui.lang.subject_details_relation_derived
 import me.him188.ani.app.ui.lang.subject_details_relation_prequel
 import me.him188.ani.app.ui.lang.subject_details_relation_sequel
 import me.him188.ani.app.ui.lang.subject_details_relation_special
+import me.him188.ani.app.ui.lang.subject_details_relation_adaptation
+import me.him188.ani.app.ui.lang.subject_details_relation_alternative
+import me.him188.ani.app.ui.lang.subject_details_relation_character
+import me.him188.ani.app.ui.lang.subject_details_relation_collaboration
+import me.him188.ani.app.ui.lang.subject_details_relation_different_setting
+import me.him188.ani.app.ui.lang.subject_details_relation_full_story
+import me.him188.ani.app.ui.lang.subject_details_relation_main_story
+import me.him188.ani.app.ui.lang.subject_details_relation_same_setting
+import me.him188.ani.app.ui.lang.subject_details_relation_summary
 import me.him188.ani.app.ui.search.createTestPager
 import me.him188.ani.app.ui.subject.details.TestRelatedSubjects
 import me.him188.ani.utils.platform.annotations.TestOnly
@@ -184,6 +193,15 @@ private fun renderSubjectRelation(relation: SubjectRelation): String = when (rel
     SubjectRelation.SEQUEL -> stringResource(Lang.subject_details_relation_sequel)
     SubjectRelation.DERIVED -> stringResource(Lang.subject_details_relation_derived)
     SubjectRelation.SPECIAL -> stringResource(Lang.subject_details_relation_special)
+    SubjectRelation.MAIN_STORY -> stringResource(Lang.subject_details_relation_main_story)
+    SubjectRelation.SUMMARY -> stringResource(Lang.subject_details_relation_summary)
+    SubjectRelation.FULL_STORY -> stringResource(Lang.subject_details_relation_full_story)
+    SubjectRelation.ALTERNATIVE_VERSION -> stringResource(Lang.subject_details_relation_alternative)
+    SubjectRelation.ADAPTATION -> stringResource(Lang.subject_details_relation_adaptation)
+    SubjectRelation.SAME_SETTING -> stringResource(Lang.subject_details_relation_same_setting)
+    SubjectRelation.DIFFERENT_SETTING -> stringResource(Lang.subject_details_relation_different_setting)
+    SubjectRelation.CHARACTER_APPEARANCE -> stringResource(Lang.subject_details_relation_character)
+    SubjectRelation.COLLABORATION -> stringResource(Lang.subject_details_relation_collaboration)
 }
 
 @OptIn(TestOnly::class)

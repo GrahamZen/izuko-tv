@@ -1162,6 +1162,15 @@
     <string name="subject_details_relation_sequel">续集</string>
     <string name="subject_details_relation_derived">衍生</string>
     <string name="subject_details_relation_special">番外篇</string>
+    <string name="subject_details_relation_main_story">主线故事</string>
+    <string name="subject_details_relation_summary">总集篇</string>
+    <string name="subject_details_relation_full_story">全集</string>
+    <string name="subject_details_relation_alternative">不同演绎</string>
+    <string name="subject_details_relation_adaptation">改编</string>
+    <string name="subject_details_relation_same_setting">相同世界观</string>
+    <string name="subject_details_relation_different_setting">不同世界观</string>
+    <string name="subject_details_relation_character">角色出演</string>
+    <string name="subject_details_relation_collaboration">联动</string>
     <string name="subject_details_prev_page">上一页</string>
     <string name="subject_details_next_page">下一页</string>
     <string name="subject_details_air_date_format">%1$s 年 %2$s 月 %3$s 日</string>

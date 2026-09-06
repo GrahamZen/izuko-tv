@@ -34,11 +34,27 @@ class BangumiRelatedPeopleService(
                 val subject = relation.subject
                 RelatedSubjectInfo(
                     subjectId = subject.id,
+                    // relation id 表是 2026-09-06 采样 28 个条目的 p1 relations 收全的:
+                    // 1 改编 / 2 前传 / 3 续集 / 4 总集篇 / 5 全集 / 6 番外篇 / 7 角色出演 /
+                    // 8 相同世界观 / 9 不同世界观 / 10 不同演绎 / 11 衍生 / 12 主线故事 /
+                    // 14 联动 / 99 其他. (1004+ / 3001+ / 4007+ 那几组属于书籍/音乐/游戏,
+                    // 上面按 type=2 过滤过, 到不了这里.)
+                    // 原先只认 2/3/6/11, 其余全落进 null —— 详情页「关联条目」卡片下方一片空白,
+                    // 而衍生条目最常见的那条边恰好是 12 主线故事.
                     relation = when (relation.relation.id) {
+                        1 -> SubjectRelation.ADAPTATION
                         2 -> SubjectRelation.PREQUEL
                         3 -> SubjectRelation.SEQUEL
+                        4 -> SubjectRelation.SUMMARY
+                        5 -> SubjectRelation.FULL_STORY
                         6 -> SubjectRelation.SPECIAL
+                        7 -> SubjectRelation.CHARACTER_APPEARANCE
+                        8 -> SubjectRelation.SAME_SETTING
+                        9 -> SubjectRelation.DIFFERENT_SETTING
+                        10 -> SubjectRelation.ALTERNATIVE_VERSION
                         11 -> SubjectRelation.DERIVED
+                        12 -> SubjectRelation.MAIN_STORY
+                        14 -> SubjectRelation.COLLABORATION
                         else -> null
                     },
                     name = subject.name,

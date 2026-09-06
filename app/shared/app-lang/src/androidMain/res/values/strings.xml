@@ -1122,6 +1122,15 @@
     <string name="subject_details_relation_sequel">Sequel</string>
     <string name="subject_details_relation_derived">Spin-off</string>
     <string name="subject_details_relation_special">Special</string>
+    <string name="subject_details_relation_main_story">Main story</string>
+    <string name="subject_details_relation_summary">Recap</string>
+    <string name="subject_details_relation_full_story">Complete edition</string>
+    <string name="subject_details_relation_alternative">Alternative version</string>
+    <string name="subject_details_relation_adaptation">Adaptation</string>
+    <string name="subject_details_relation_same_setting">Same setting</string>
+    <string name="subject_details_relation_different_setting">Different setting</string>
+    <string name="subject_details_relation_character">Character cameo</string>
+    <string name="subject_details_relation_collaboration">Collaboration</string>
     <string name="subject_details_prev_page">Previous page</string>
     <string name="subject_details_next_page">Next page</string>
     <string name="subject_details_air_date_format">%1$s/%2$s/%3$s</string>
