@@ -42,6 +42,7 @@ import me.him188.ani.client.models.AniSubjectRecommendation
 import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiCount
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
@@ -67,7 +68,7 @@ interface SubjectService {
     /**
      * 当 [subjectId] 不存在时, 返回 `null`.
      */
-    suspend fun getSubjectCollection(subjectId: Int): AniSubjectCollection?
+    suspend fun getSubjectCollection(subjectId: Int): BangumiNextSubject?
 
     suspend fun getSubjectRelations(
         subjectId: Int,
@@ -77,7 +78,7 @@ interface SubjectService {
     /**
      * 获取用户对这个条目的收藏状态. flow 一定会 emit 至少一个值或抛出异常. 当用户没有收藏这个条目时 emit `null`. 当没有登录时 emit `null`.
      */
-    fun subjectCollectionById(subjectId: Int): Flow<AniSubjectCollection?>
+    fun subjectCollectionById(subjectId: Int): Flow<BangumiNextSubject?>
 
     suspend fun patchSubjectCollection(subjectId: Int, payload: AniUpdateSubjectCollectionRequest)
     suspend fun deleteSubjectCollection(subjectId: Int)
@@ -149,7 +150,7 @@ class RemoteSubjectService(
         return@withContext collections
     }
 
-    override suspend fun getSubjectCollection(subjectId: Int): AniSubjectCollection? {
+    override suspend fun getSubjectCollection(subjectId: Int): BangumiNextSubject? {
         return subjectCollectionById(subjectId).first()
     }
 
@@ -281,12 +282,12 @@ class RemoteSubjectService(
 //        }.flowOn(ioDispatcher)
     }
 
-    override fun subjectCollectionById(subjectId: Int): Flow<AniSubjectCollection?> {
+    override fun subjectCollectionById(subjectId: Int): Flow<BangumiNextSubject?> {
         return flow {
             emit(
                 try {
-                    subjectApi {
-                        this.getSubject(subjectId.toLong()).body()
+                    bangumiSubjectApi {
+                        this.getSubject(subjectId).body()
                     }
                 } catch (e: ResponseException) {
                     if (e.response.status == HttpStatusCode.NotFound) {

@@ -47,6 +47,7 @@ import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
@@ -346,14 +347,17 @@ class SubjectCollectionRepositoryImpl(
      * @return 服务端是否有这个条目的收藏记录; `false` 表示未收藏 (数据库不动)
      */
     private suspend fun fetchAndSaveSubjectCollection(subjectId: Int): Boolean {
-        val subject = subjectService.getSubjectCollection(subjectId)
+        val subject = subjectService.getSubjectCollection(subjectId) ?: return false
         val lastFetched = currentTimeMillis()
-        val subjectEntity = subject?.toEntity(
+        // p1 的条目里没有 recurrence 与 relations (那两个是 Ani 服务端自己算的). 在它们各自的替代
+        // 方案接上之前, 沿用库里已有的值 —— 否则每刷新一次条目就把之前取到的抹成空.
+        val existing = subjectCollectionDao.findById(subjectId).first()
+        val subjectEntity = subject.toEntity(
             lastFetched = lastFetched,
-        ) ?: return false
-        val episodeEntities = subject.episodes.map {
-            it.toEntity1(subjectId, lastFetched = lastFetched)
-        }
+            recurrence = existing?.recurrence,
+            relations = existing?.relations ?: SubjectRelations.Empty,
+        )
+        val episodeEntities = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched)
         // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
         subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
         // 验收去重效果就看这条: 一次进详情页只该出现**一条** (改动前是三条)

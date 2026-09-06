@@ -16,9 +16,13 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
+import me.him188.ani.app.data.network.mapper.toEntity
+import me.him188.ani.app.data.network.mapper.toUnifiedCollectionType
+import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.repository.subject.toEntity1
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.canAccessAniApiNow
+import me.him188.ani.app.domain.session.canAccessBangumiApiNow
 import me.him188.ani.client.apis.SubjectsAniApi
 import me.him188.ani.client.models.AniBatchUpdateEpisodeCollectionsRequest
 import me.him188.ani.client.models.AniEpisodeCollectionType
@@ -29,6 +33,7 @@ import me.him188.ani.datasources.api.EpisodeType.*
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.paging.Paged
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.datasources.bangumi.models.BangumiEpType
 import me.him188.ani.datasources.bangumi.models.BangumiEpisode
 import me.him188.ani.datasources.bangumi.models.BangumiEpisodeDetail
@@ -67,6 +72,13 @@ sealed interface EpisodeService {
     suspend fun getEpisodeCollectionById(subjectId: Int, episodeId: Int): EpisodeCollectionInfo?
 
     /**
+     * 取条目的**全部**分集 (含自己的观看状态), 直接给出可落库的实体.
+     *
+     * 未登录时观看状态一律是 [UnifiedCollectionType.NOT_COLLECTED], 分集本身照常返回.
+     */
+    suspend fun getEpisodeCollectionEntities(subjectId: Int, lastFetched: Long): List<EpisodeCollectionEntity>
+
+    /**
      * 设置多个剧集的收藏状态.
      *
      * 当设置成功时返回 `true`. 返回 `false` 表示用户没有收藏这个条目. 其他异常将会抛出.
@@ -80,10 +92,56 @@ sealed interface EpisodeService {
 
 class EpisodeServiceImpl(
     private val subjectApi: ApiInvoker<SubjectsAniApi>,
+    private val bangumiV0Api: ApiInvoker<DefaultApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : EpisodeService, KoinComponent {
     private val logger = logger<EpisodeServiceImpl>()
     private val sessionManager: SessionStateProvider by inject()
+
+    override suspend fun getEpisodeCollectionEntities(
+        subjectId: Int,
+        lastFetched: Long,
+    ): List<EpisodeCollectionEntity> = withContext(ioDispatcher) {
+        // **先问登录状态**, 别无条件去打需要登录的那个端点: 登出时每个条目都要白等一次 401 才退到
+        // 公开端点, 真机日志里每次 300~480ms, 逛得越多废请求越多 (2026-09-06 实测).
+        // 下面的 catch 只当兜底 —— 有 session 但 token 过期/被吊销时还是要能退回去.
+        val authorized = sessionManager.canAccessBangumiApiNow()
+        bangumiV0Api {
+            val withSelfStatus = if (!authorized) null else try {
+                // 一个请求同时给分集与自己的观看状态; 对未收藏的条目也返回全部分集 (状态 0)
+                fetchAllPages { offset ->
+                    getUserSubjectEpisodeCollection(subjectId, offset = offset, limit = PAGE_SIZE).body()
+                        .let { page -> page.total to page.data.orEmpty() }
+                }.map { it.episode.toEntity(subjectId, it.type.toUnifiedCollectionType(), lastFetched) }
+            } catch (e: ClientRequestException) {
+                if (e.response.status != HttpStatusCode.Unauthorized) throw e
+                logger.info { "bgm-direct: episodes subject=$subjectId 有 session 但被拒, 退到公开端点" }
+                null
+            }
+            withSelfStatus ?: run {
+                // 未登录 (或 token 失效): 公开端点, 没有观看状态
+                fetchAllPages { offset ->
+                    getEpisodes(subjectId, offset = offset, limit = PAGE_SIZE).body()
+                        .let { page -> (page.total ?: 0) to page.data.orEmpty() }
+                }.map { it.toEntity(subjectId, UnifiedCollectionType.NOT_COLLECTED, lastFetched) }
+            }
+        }
+    }
+
+    /**
+     * v0 的 limit 上限是 100, 长番要翻页. [fetch] 返回 (总数, 本页).
+     */
+    private suspend inline fun <T> fetchAllPages(fetch: (offset: Int) -> Pair<Int, List<T>>): List<T> {
+        val result = mutableListOf<T>()
+        var offset = 0
+        while (true) {
+            val (total, page) = fetch(offset)
+            result.addAll(page)
+            offset += page.size
+            if (page.isEmpty() || result.size >= total || offset >= MAX_EPISODES) break
+        }
+        return result
+    }
 
     override suspend fun getEpisodeCollectionInfosPaged(
         subjectId: Int,
@@ -154,6 +212,13 @@ class EpisodeServiceImpl(
     }
 
     private companion object {
+        const val PAGE_SIZE = 100 // v0 的 limit 上限
+
+        /**
+         * 长番 (海贼王一千多集) 的封顶, 防止翻页翻不完.
+         */
+        const val MAX_EPISODES = 3000
+
         fun HttpStatusCode.isUnauthorized(): Boolean {
             return this == HttpStatusCode.Unauthorized || this == HttpStatusCode.Forbidden
         }

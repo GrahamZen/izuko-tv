@@ -364,7 +364,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             sessionManager = get(),
         )
     }
-    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi) }
+    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi, bangumiApiProvider.v0Api) }
 
     single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
     single<PersonDetailsRepository> {
