@@ -166,7 +166,7 @@ class LinuxWindowUtils : AwtWindowUtils() {
                     "/org/freedesktop/ScreenSaver",
                     ScreenSaverInterface::class.java,
                 )
-                val cookie = screenSaver.Inhibit("Animeko", "Playing video")
+                val cookie = screenSaver.Inhibit("Izuko TV", "Playing video")
                 connection = conn
                 inhibitCookie = cookie
                 logger.info("[ScreenSaver] D-Bus inhibit cookie: $cookie")
@@ -244,7 +244,7 @@ class LinuxWindowUtils : AwtWindowUtils() {
 
             return runCatching {
                 val p = ProcessBuilder(
-                    "systemd-inhibit", "--what=sleep:idle", "--who=Animeko",
+                    "systemd-inhibit", "--what=sleep:idle", "--who=Izuko TV",
                     "--why=Playing video", "--mode=block", "sleep", "infinity",
                 ).redirectErrorStream(true).start()
 

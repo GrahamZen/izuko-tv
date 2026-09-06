@@ -100,7 +100,6 @@ import me.him188.ani.app.ui.foundation.layout.plus
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.foundation.preview.PreviewSizeClasses
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
@@ -124,9 +123,9 @@ fun SearchPage(
     contentWindowInsets: WindowInsets = AniWindowInsets.forPageContent(),
     navigationIcon: @Composable () -> Unit = {},
 ) {
-    // 沉浸式变体 (与沉浸式探索页共用同一开关, 关闭则回退下方默认布局)
+    // 沉浸式变体; 没有变体的形态走下方默认布局
     val pageVariant = LocalSearchPageVariant.current
-    if (pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration) {
+    if (pageVariant != null) {
         pageVariant.Page(
             state = state,
             onIntent = onIntent,

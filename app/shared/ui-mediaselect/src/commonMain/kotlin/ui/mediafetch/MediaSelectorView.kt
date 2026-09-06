@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -29,7 +30,10 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -87,7 +91,10 @@ import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.icons.EditSquare
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.FOCUS_REQ_DELAY_MILLIS
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.media_selector_full_search
 import me.him188.ani.app.ui.lang.media_selector_view_detailed_mode
 import me.him188.ani.app.ui.lang.media_selector_view_filtered_count
 import me.him188.ani.app.ui.lang.media_selector_view_show_excluded
@@ -130,6 +137,11 @@ fun MediaSelectorView(
      * 由 Bangumi 信息生成、未套用用户改动的请求, 供编辑对话框里「恢复 Bangumi 名称」用.
      */
     defaultFetchRequest: MediaFetchRequest? = null,
+    /**
+     * 「完整搜索」开关的当前值, `null` 时不显示. 播放页用: 打开后搜索一直查完, 开播、关面板都不暂停.
+     */
+    fullSearch: Boolean? = null,
+    onFullSearchChange: (Boolean) -> Unit = {},
 ) {
     val bringIntoViewRequesters = remember { mutableStateMapOf<Media, BringIntoViewRequester>() }
     val presentation by state.presentationFlow.collectAsStateWithLifecycle()
@@ -161,6 +173,8 @@ fun MediaSelectorView(
             viewKind,
             onViewKindChange,
             onRequestFetchRequestEdit = { showEditRequest = true },
+            fullSearch,
+            onFullSearchChange,
             Modifier.fillMaxWidth().padding(bottom = 16.dp),
         )
 
@@ -242,6 +256,8 @@ private fun ViewKindAndMoreRow(
     viewKind: ViewKind,
     onViewKindChange: (ViewKind) -> Unit,
     onRequestFetchRequestEdit: () -> Unit,
+    fullSearch: Boolean?,
+    onFullSearchChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val simpleModeText = stringResource(Lang.media_selector_view_simple_mode)
@@ -256,6 +272,41 @@ private fun ViewKindAndMoreRow(
             kotlinx.coroutines.delay(FOCUS_REQ_DELAY_MILLIS) // Wait for layout to complete
             firstButtonFocusRequester.requestFocus()
         }
+    }
+
+    if (focusDriven) {
+        // TV: 与面板里其他胶囊同一套 (AniFocusChip / AniFocusIconButton) —— M3 分段按钮、FilterChip、IconButton
+        // 的聚焦只有一层淡态层, 而面板一打开焦点就落在这一行
+        Row(
+            modifier,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AniFocusChip(
+                text = simpleModeText,
+                selected = viewKind == ViewKind.WEB,
+                onClick = { onViewKindChange(ViewKind.WEB) },
+                modifier = Modifier.focusRequester(firstButtonFocusRequester),
+            )
+            AniFocusChip(
+                text = detailedModeText,
+                selected = viewKind == ViewKind.BT,
+                onClick = { onViewKindChange(ViewKind.BT) },
+            )
+            Spacer(Modifier.weight(1f))
+            // 开关常驻 (只变选中态): 遥控器焦点停在上面时不会因为它消失而丢焦点
+            if (fullSearch != null) {
+                AniFocusChip(
+                    text = stringResource(Lang.media_selector_full_search),
+                    selected = fullSearch,
+                    onClick = { onFullSearchChange(!fullSearch) },
+                )
+            }
+            AniFocusIconButton(onRequestFetchRequestEdit) {
+                Icon(Icons.Rounded.EditSquare, contentDescription = stringResource(Lang.settings_media_source_more))
+            }
+        }
+        return
     }
 
     Row(
@@ -281,6 +332,21 @@ private fun ViewKindAndMoreRow(
             ) {
                 Text(detailedModeText, softWrap = false)
             }
+        }
+
+        // 开关常驻 (只变选中态): 遥控器焦点停在上面时不会因为它消失而丢焦点
+        if (fullSearch != null) {
+            FilterChip(
+                selected = fullSearch,
+                onClick = { onFullSearchChange(!fullSearch) },
+                label = { Text(stringResource(Lang.media_selector_full_search), softWrap = false) },
+                modifier = Modifier.padding(start = 8.dp),
+                leadingIcon = if (fullSearch) {
+                    { Icon(Icons.Rounded.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
+                } else {
+                    null
+                },
+            )
         }
 
         IconButton(

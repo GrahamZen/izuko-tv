@@ -110,6 +110,14 @@ internal object RemoteCandidates {
                                 // 硬性不可用 (缓存还没下完) 电视上也不许选; 其余被排除的都能手动选
                                 put("blocked", reason.blocksSelection)
                             }
+                            // 匹配结果: 自动选源为什么挑了这条 / 为什么没挑它, 看这三项比看排除原因直观
+                            // (排除原因只在被排除时才有). 条目名是模糊还是精确匹配上的、集号按 ep 还是 sort 对上的、
+                            // 以及 0~100 的相似度 —— 「自动选源播错动画」那类问题就靠它定位.
+                            (entry as? MaybeExcludedMedia.Included)?.metadata?.let { meta ->
+                                put("similarity", meta.similarity)
+                                put("subjectMatch", meta.subjectMatchKind.name)
+                                put("episodeMatch", meta.episodeMatchKind.name)
+                            }
                         }
                     }
                 }
@@ -126,7 +134,13 @@ internal object RemoteCandidates {
         put("alliance", props.alliance.takeIf { it.isNotBlank() })
         put("size", props.size.takeIf { it.inBytes > 0 }?.toString())
         put("cached", media.kind == MediaSourceKind.LocalCache)
+        // 播放页左滑「打开链接」: 数据源上的原始链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身;
+        // 缓存沿用来源资源的). 只给 http(s): 链接来自数据源配置, 别的协议 (javascript: 之类) 进了 href 就是在控制台页面里跑脚本
+        put("url", media.originalUrl.takeIf { it.isHttpUrl() })
     }
+
+    private fun String.isHttpUrl(): Boolean =
+        startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
     /** 一个下拉框的选项: 取值 / 显示文字 / 条数; 空值不列. [rank] 非 null 时按它从高到低排, 否则按条数. */
     private fun JsonObjectBuilder.putOptions(

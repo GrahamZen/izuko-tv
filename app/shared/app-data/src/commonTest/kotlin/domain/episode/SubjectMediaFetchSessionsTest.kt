@@ -148,6 +148,8 @@ class SubjectMediaFetchSessionsTest {
             restarts++
         }
 
+        override fun pause() = Unit
+
         override fun enable() = Unit
     }
 }

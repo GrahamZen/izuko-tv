@@ -21,10 +21,12 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.io.files.Path
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.selector.testFramework.collectEvents
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.runSimpleMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.tier
+import me.him188.ani.app.domain.player.extension.PlayerLoadError
 import me.him188.ani.app.domain.player.extension.PlayerLoadErrorHandler
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceKind.WEB
@@ -379,6 +381,40 @@ class PlayerLoadErrorHandlerTest {
         assertEquals(replacement.mediaId, selector.selected.value?.mediaId)
         assertEquals(setOf(failed.mediaId), handler.blacklist)
     }
+
+    @Test
+    fun `player error resumes paused sources and waits for them when no WEB candidate remains`() =
+        runFetchMediaSelectorTestSuite {
+            initSubject("test")
+            val (_, session, sources) = configureFetchSession {
+                object {
+                    val remembered by web { tier = 0 }
+                    val other by web { tier = 0 }
+                }
+            }
+            val rememberedId = sources.remembered.instance.mediaSourceId
+            session.pauseSearching(keep = { it.mediaSourceId == rememberedId })
+            val failed = media(kind = WEB, subjectName = initApi.subjectName)
+            sources.remembered.complete(failed)
+            testScope().runCurrent()
+            selector.select(selector.filteredCandidatesMedia.first().single { it.mediaId == failed.mediaId })
+            assertEquals(0, sources.other.fetchCount)
+
+            val handler = PlayerLoadErrorHandler(getPreferKind = { WEB }, getSourceTiers = { preferenceApi.sourceTiers!! })
+            val job = testScope().launch { handler.handleError(session, selector) }
+            testScope().advanceTimeBy(3.seconds)
+            testScope().runCurrent()
+            // 被暂停的源放开了; 换源在等它的结果, 不像手上还有资源时那样一秒后就放弃
+            assertEquals(1, sources.other.fetchCount)
+            assertFalse(job.isCompleted)
+            assertEquals(failed.mediaId, selector.selected.value?.mediaId)
+
+            val replacement = media(kind = WEB, subjectName = initApi.subjectName)
+            sources.other.complete(replacement)
+            testScope().runCurrent()
+            assertTrue(job.isCompleted)
+            assertEquals(replacement.mediaId, selector.selected.value?.mediaId)
+        }
 
     context(scope: TestScope)
     private fun testScope(): TestScope = implicit()

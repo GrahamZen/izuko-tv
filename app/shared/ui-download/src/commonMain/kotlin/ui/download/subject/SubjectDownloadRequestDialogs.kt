@@ -27,9 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -37,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,6 +62,9 @@ import me.him188.ani.app.domain.media.fetch.restart
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_management_episode_label
 import me.him188.ani.app.ui.lang.cache_subject_cache
@@ -173,11 +173,11 @@ internal fun SubjectDownloadRequestDialogs(
         }
     }
     if (state.failed) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = onCancel,
             text = { Text(stringResource(Lang.downloads_create_failed)) },
             confirmButton = {
-                TextButton(onClick = onCancel) { Text(stringResource(Lang.cache_subject_cancel)) }
+                AniTextButton(onClick = onCancel) { Text(stringResource(Lang.cache_subject_cancel)) }
             },
         )
     }
@@ -448,7 +448,7 @@ internal fun DownloadEpisodePicker(
                 Modifier.weight(1f).testTag(DownloadEpisodePickerTestTags.SELECTED_COUNT),
                 style = MaterialTheme.typography.bodyLarge,
             )
-            Button(
+            AniButton(
                 onClick = { onConfirm(selected) },
                 enabled = selected.isNotEmpty(),
                 modifier = Modifier.testTag(DownloadEpisodePickerTestTags.CONFIRM),

@@ -62,7 +62,6 @@ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.player.ChunkState
 import me.him188.ani.app.domain.media.player.staticMediaCacheProgressState
 import me.him188.ani.app.domain.player.VideoLoadingState
-import me.him188.ani.app.pip.PictureInPictureController
 import me.him188.ani.app.ui.danmaku.PlayerDanmakuEditor
 import me.him188.ani.app.ui.episode.share.MediaShareData
 import me.him188.ani.app.ui.foundation.LocalPlatform
@@ -87,8 +86,6 @@ import me.him188.ani.app.ui.subject.episode.video.sidesheet.DanmakuRegexFilterSe
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.MediaSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.rememberTestEpisodeSelectorState
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
-import me.him188.ani.app.ui.watchtogether.WatchTogetherPlayerController
 import me.him188.ani.app.videoplayer.ui.ControllerVisibility
 import me.him188.ani.app.videoplayer.ui.NoOpPlaybackSpeedController
 import me.him188.ani.app.videoplayer.ui.NoOpVideoAspectRatio
@@ -239,7 +236,6 @@ class EpisodeVideoControllerTest {
         playbackSpeed: PlaybackSpeed = NoOpPlaybackSpeedController,
         onCommitPlaybackSpeed: (Float) -> Unit = {},
         opEdSkipDuration: Duration = 85.seconds,
-        watchTogetherPlayerController: WatchTogetherPlayerController? = null,
         onPlayerStateCreated: (TestMediampPlayer) -> Unit = {},
         showDanmakuEditor: () -> Boolean = { true },
         onEditorEscape: (() -> Unit)? = null,
@@ -254,10 +250,7 @@ class EpisodeVideoControllerTest {
         onToggleSidebar: (Boolean) -> Unit = {},
     ) {
         ProvideCompositionLocalsForPreview(darkMode = DarkMode.DARK) {
-            val actualWatchTogetherPlayerController = watchTogetherPlayerController
-                ?: remember { WatchTogetherPlayerController() }
             CompositionLocalProvider(
-                LocalWatchTogetherPlayerController provides actualWatchTogetherPlayerController,
             ) {
                 val scope = rememberCoroutineScope()
                 val playerState = remember {
@@ -564,227 +557,6 @@ class EpisodeVideoControllerTest {
         }
     }
 
-    @Test
-    fun `player menu shows watch together first and dispatches click`() = runAniComposeUiTest {
-        var watchTogetherClicks = 0
-        val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-        val watchTogetherPlayerController = WatchTogetherPlayerController { watchTogetherClicks++ }
-        setContent {
-            Player(
-                GestureFamily.MOUSE,
-                playerControllerState = visibleControllerState,
-                watchTogetherPlayerController = watchTogetherPlayerController,
-            )
-        }
-
-        onNodeWithContentDescription("More options").performClick()
-
-        val watchTogetherItem = onNodeWithTag(TAG_WATCH_TOGETHER_MENU_ITEM)
-        val playerStatsItem = onNodeWithText("Show Playback Info")
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherItem.exists() && playerStatsItem.exists()
-        }
-        val watchTogetherTop = watchTogetherItem.fetchSemanticsNode().boundsInRoot.top
-        val playerStatsTop = playerStatsItem.fetchSemanticsNode().boundsInRoot.top
-        assertTrue(watchTogetherTop < playerStatsTop)
-
-        watchTogetherItem.performClick()
-
-        runOnIdle {
-            assertEquals(1, watchTogetherClicks)
-        }
-        watchTogetherItem.doesNotExist()
-    }
-
-    @Test
-    fun `watch together popup follows controller while video fills page`() = runAniComposeUiTest {
-        val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-        val watchTogetherPlayerController = WatchTogetherPlayerController()
-        var isFullscreen by mutableStateOf(true)
-        var isExpandedLayout by mutableStateOf(false)
-        var sidebarVisible by mutableStateOf(true)
-        mainClock.autoAdvance = false
-        setContent {
-            CompositionLocalProvider(LocalWatchTogetherPlayerController provides watchTogetherPlayerController) {
-                WatchTogetherPopupVisibilityEffect(
-                    playerControllerState = visibleControllerState,
-                    isFullscreen = isFullscreen,
-                    isExpandedLayout = isExpandedLayout,
-                    sidebarVisible = sidebarVisible,
-                )
-            }
-        }
-
-        runOnIdle {
-            assertTrue(watchTogetherPlayerController.isDraggablePopupVisible)
-            visibleControllerState.toggleFullVisible(false)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            visibleControllerState.toggleFullVisible(true)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            visibleControllerState.toggleFullVisible(false)
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            isFullscreen = false
-        }
-        settleFrame()
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            isExpandedLayout = true
-            sidebarVisible = false
-        }
-        settleFrame()
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        runOnIdle {
-            sidebarVisible = true
-        }
-        settleFrame()
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-    }
-
-    /**
-     * 系统小窗展示整个应用窗口, 一起看浮层不随播放器页最小化, 因此小窗期间必须隐藏气泡.
-     */
-    @Test
-    fun `watch together popup hidden in picture in picture`() = runAniComposeUiTest {
-        val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-        val watchTogetherPlayerController = WatchTogetherPlayerController()
-        val pictureInPictureController = FakePictureInPictureController()
-        setContent {
-            CompositionLocalProvider(LocalWatchTogetherPlayerController provides watchTogetherPlayerController) {
-                WatchTogetherPopupVisibilityEffect(
-                    playerControllerState = visibleControllerState,
-                    isFullscreen = false,
-                    isExpandedLayout = false,
-                    sidebarVisible = true,
-                    pictureInPictureController = pictureInPictureController,
-                )
-            }
-        }
-
-        runOnIdle {
-            assertTrue(watchTogetherPlayerController.isDraggablePopupVisible)
-            pictureInPictureController.isInPictureInPicture.value = true
-        }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            !watchTogetherPlayerController.isDraggablePopupVisible
-        }
-
-        // 退出小窗后恢复常显
-        runOnIdle { pictureInPictureController.isInPictureInPicture.value = false }
-        waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-            watchTogetherPlayerController.isDraggablePopupVisible
-        }
-    }
-
-    /**
-     * 一起看跟播切集会重建播放页: 新页先组合 (写 false), 旧页在转场结束后才销毁.
-     * 旧页销毁时不能把可见性写回, 否则小窗里刚隐藏的气泡又出现.
-     */
-    @Test
-    fun `watch together popup stays hidden when the old page is disposed in picture in picture`() =
-        runAniComposeUiTest {
-            val visibleControllerState = PlayerControllerState(NORMAL_VISIBLE)
-            val watchTogetherPlayerController = WatchTogetherPlayerController()
-            val pictureInPictureController = FakePictureInPictureController()
-            var oldPageComposed by mutableStateOf(true)
-            var newPageComposed by mutableStateOf(false)
-            setContent {
-                CompositionLocalProvider(LocalWatchTogetherPlayerController provides watchTogetherPlayerController) {
-                    if (oldPageComposed) {
-                        WatchTogetherPopupVisibilityEffect(
-                            playerControllerState = visibleControllerState,
-                            isFullscreen = false,
-                            isExpandedLayout = false,
-                            sidebarVisible = true,
-                            pictureInPictureController = pictureInPictureController,
-                        )
-                    }
-                    if (newPageComposed) {
-                        WatchTogetherPopupVisibilityEffect(
-                            playerControllerState = visibleControllerState,
-                            isFullscreen = false,
-                            isExpandedLayout = false,
-                            sidebarVisible = true,
-                            pictureInPictureController = pictureInPictureController,
-                        )
-                    }
-                }
-            }
-
-            runOnIdle { pictureInPictureController.isInPictureInPicture.value = true }
-            waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-                !watchTogetherPlayerController.isDraggablePopupVisible
-            }
-
-            // 转场期间新旧两页并存, 转场结束后旧页才销毁
-            runOnIdle { newPageComposed = true }
-            settleFrame()
-            runOnIdle { oldPageComposed = false }
-            settleFrame()
-
-            assertFalse(watchTogetherPlayerController.isDraggablePopupVisible)
-        }
-
-    /**
-     * 播放页销毁会撤销自己提出的隐藏请求, 没有人再要求隐藏时气泡恢复常显.
-     */
-    @Test
-    fun `watch together popup is restored when the page is disposed outside picture in picture`() =
-        runAniComposeUiTest {
-            val invisibleControllerState = PlayerControllerState(NORMAL_INVISIBLE)
-            val watchTogetherPlayerController = WatchTogetherPlayerController()
-            val pictureInPictureController = FakePictureInPictureController()
-            var effectComposed by mutableStateOf(true)
-            setContent {
-                CompositionLocalProvider(LocalWatchTogetherPlayerController provides watchTogetherPlayerController) {
-                    if (effectComposed) {
-                        WatchTogetherPopupVisibilityEffect(
-                            playerControllerState = invisibleControllerState,
-                            // 全屏时气泡跟随控制条, 控制条隐藏 → 气泡隐藏
-                            isFullscreen = true,
-                            isExpandedLayout = false,
-                            sidebarVisible = true,
-                            pictureInPictureController = pictureInPictureController,
-                        )
-                    }
-                }
-            }
-
-            waitUntil(timeoutMillis = WAIT_TIMEOUT) {
-                !watchTogetherPlayerController.isDraggablePopupVisible
-            }
-
-            runOnIdle { effectComposed = false }
-            settleFrame()
-
-            assertTrue(watchTogetherPlayerController.isDraggablePopupVisible)
-        }
-
-    /**
-     * @see GestureFamily.clickToToggleController
-     */
     @Test
     fun `touch - clickToToggleController - show`() = runAniComposeUiTest {
         setContent {
@@ -2676,14 +2448,3 @@ class EpisodeVideoControllerTest {
     }
 }
 
-private class FakePictureInPictureController : PictureInPictureController {
-    override val isSupported: Boolean get() = true
-    override val isInPictureInPicture: MutableStateFlow<Boolean> = MutableStateFlow(false)
-    override val isPictureInPicturePossible: MutableStateFlow<Boolean> = MutableStateFlow(true)
-
-    override fun updatePolicy(autoEnterEnabled: Boolean, aspectWidth: Int?, aspectHeight: Int?) {
-    }
-
-    override fun enterPictureInPicture() {
-    }
-}

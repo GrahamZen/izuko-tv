@@ -27,12 +27,6 @@ import org.jetbrains.compose.resources.stringResource
 @Serializable
 sealed class NavRoutes : NavKey {
     @Serializable
-    data object EmailLoginStart : NavRoutes()
-
-    @Serializable
-    data object EmailLoginVerify : NavRoutes()
-
-    @Serializable
     data class Main(
         val initialPage: MainScreenPage,
         val requestSearchFocus: Boolean = false,
@@ -138,21 +132,12 @@ sealed class NavRoutes : NavKey {
     @Serializable
     data object PlaybackHistory : NavRoutes()
 
-    @Serializable
-    data object PlaybackHistorySyncStatus : NavRoutes()
-
     /**
-     * 合并收藏: 处理 Animeko 与 Bangumi 两侧的收藏冲突.
+     * TV: 首次启动引导 (检测连 Bangumi 的网络、选连接方式、登录). 引导还没做过时作为起始页,
+     * 做完换成 [Main]. 页面实现在 ui-tv, 经 `LocalTvOnboardingVariant` 注入.
      */
     @Serializable
-    data object BangumiMerge : NavRoutes()
-
-    /**
-     * TV: 自定义播放器按钮 (一个不播放东西的播放器, 在上面排两行按钮的顺序与显隐).
-     * 页面实现在 ui-tv, 经 `LocalTvPlayerChromeEditorVariant` 注入; 入口只在遥控器形态的设置里.
-     */
-    @Serializable
-    data object TvPlayerChrome : NavRoutes()
+    data object TvOnboarding : NavRoutes()
 }
 
 /** Explicit entry identity; a person's asynchronously loaded careers never change their route. */
@@ -192,7 +177,6 @@ enum class SettingsTab {
     PLAYER,
     MEDIA_SOURCE,
     MEDIA_SELECTOR,
-    SERVER,
 
     PROXY,
     BT,

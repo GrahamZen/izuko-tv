@@ -56,6 +56,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
@@ -102,6 +103,7 @@ import me.him188.ani.app.ui.episode.danmaku.renderDanmakuServiceId
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniBottomSheetDefaults
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
@@ -176,7 +178,8 @@ import org.jetbrains.compose.resources.stringResource
 class EpisodeDetailsState(
     val subjectInfo: State<SubjectInfo>,
     val airingLabelState: AiringLabelState,
-    val recommendations: State<List<SubjectRecommendation>>,
+    /** 相关推荐. `null` = 还没拿到 (加载中或加载失败); 空列表 = 拿到了但一条都没有. */
+    val recommendations: State<List<SubjectRecommendation>?>,
     val subjectDetailsStateLoader: SubjectDetailsStateLoader,
 ) {
     private val subject by subjectInfo
@@ -234,6 +237,12 @@ fun EpisodeDetails(
      * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
      */
     hideSelectorOnSelect: Boolean = false,
+    /** 选源面板打开 / 关闭, 见 `EpisodeViewModel.onMediaSelectorShown` 与 `onMediaSelectorHidden`. */
+    onMediaSelectorShown: () -> Unit = {},
+    onMediaSelectorHidden: () -> Unit = {},
+    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    fullSearch: Boolean? = null,
+    onFullSearchChange: (Boolean) -> Unit = {},
 ) {
     var showSubjectDetails by rememberSaveable {
         mutableStateOf(false)
@@ -495,7 +504,7 @@ fun EpisodeDetails(
                     Text(stringResource(Lang.subject_episode_related_recommendations))
                 }
             }
-            for (recommendation in subjectRecommendations) {
+            for (recommendation in subjectRecommendations.orEmpty()) {
                 item("subject_recommendation_${recommendation.uniqueId}") {
                     SubjectRecommendationCard(
                         {

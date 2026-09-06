@@ -7,7 +7,7 @@
  * https://github.com/open-ani/ani/blob/main/LICENSE
  */
 
-package me.him188.ani.app.ui.cache
+package me.him188.ani.app.ui.download
 
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.data.models.preference.DarkMode

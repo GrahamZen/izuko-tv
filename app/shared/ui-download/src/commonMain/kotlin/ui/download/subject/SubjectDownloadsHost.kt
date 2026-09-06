@@ -9,9 +9,7 @@
 
 package me.him188.ani.app.ui.download.subject
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +20,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.PermissionManager
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_subject_cancel
 import me.him188.ani.app.ui.lang.downloads_operation_failed
@@ -74,10 +74,10 @@ internal fun SubjectDownloadsHost(
         )
     }
     if (failedOperations > 0) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = presenter::dismissOperationFailures,
             text = { Text(stringResource(Lang.downloads_operation_failed, failedOperations)) },
-            confirmButton = { TextButton(onClick = presenter::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
+            confirmButton = { AniTextButton(onClick = presenter::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
         )
     }
     content(state, actions, presenter.sourceInfoProvider)
