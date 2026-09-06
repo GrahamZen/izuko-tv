@@ -20,6 +20,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterC
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextCreateCharacterCommentRequest
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextEpisode
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextErrorResponse
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextLikeEpisodeCommentRequest
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextUpdateContent
 
 import me.him188.ani.datasources.bangumi.next.infrastructure.*
@@ -188,6 +189,73 @@ open class EpisodeBangumiNextApi : ApiClient {
             override fun deserialize(decoder: Decoder) = GetEpisodeCommentsResponse(serializer.deserialize(decoder))
         }
     }
+
+    /**
+     * 给条目的章节吐槽点赞
+     * 
+     * @param commentID 
+     * @param bangumiNextLikeEpisodeCommentRequest 
+     * @return kotlin.String
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun likeEpisodeComment(commentID: kotlin.Int, bangumiNextLikeEpisodeCommentRequest: BangumiNextLikeEpisodeCommentRequest): HttpResponse<kotlin.String> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = bangumiNextLikeEpisodeCommentRequest
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.PUT,
+            "/p1/episodes/-/comments/{commentID}/like".replace("{" + "commentID" + "}", "$commentID"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return jsonRequest(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+
+    /**
+     * 取消条目的章节吐槽点赞
+     * 
+     * @param commentID 
+     * @return kotlin.String
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun unlikeEpisodeComment(commentID: kotlin.Int): HttpResponse<kotlin.String> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.DELETE,
+            "/p1/episodes/-/comments/{commentID}/like".replace("{" + "commentID" + "}", "$commentID"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
 
     /**
      * 编辑条目的章节吐槽

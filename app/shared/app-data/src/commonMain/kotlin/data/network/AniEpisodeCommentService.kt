@@ -12,84 +12,55 @@ package me.him188.ani.app.data.network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.UserInfo
-import me.him188.ani.app.data.models.comment.CommentVoteValue
 import me.him188.ani.app.data.models.episode.EpisodeComment
 import me.him188.ani.app.data.models.episode.EpisodeCommentReaction
 import me.him188.ani.app.data.models.episode.EpisodeCommentSource
 import me.him188.ani.app.data.repository.RepositoryException
-import me.him188.ani.client.apis.EpisodesAniApi
-import me.him188.ani.client.models.AniCommentVoteValue
-import me.him188.ani.client.models.AniCreateEpisodeCommentRequest
-import me.him188.ani.client.models.AniCreateEpisodeReplyRequest
-import me.him188.ani.client.models.AniEpisodeComment
-import me.him188.ani.client.models.AniEpisodeCommentReply
-import me.him188.ani.client.models.AniEpisodeCommentSource
-import me.him188.ani.client.models.AniEpisodeCommentsResponse
+import me.him188.ani.datasources.bangumi.next.apis.EpisodeBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.apis.MiscBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextComment
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCommentBase
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextLikeEpisodeCommentRequest
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextReaction
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.seconds
 
+/**
+ * 剧集评论 (bangumi 的"章节吐槽箱"), 直连 `next.bgm.tv/p1`.
+ *
+ * 与经 Ani 服务端合并的那版相比:
+ * - **回复关系是真的**. p1 的每条回复自带 `relatedID` 指出它在回复谁, 不再需要从正文开头那条
+ *   `[quote][b]昵称[/b] 说:` 反推 (原来那套认不出被删掉引用的情况, 也认不出同名的人).
+ * - Animeko 自己那部分评论没有了, 只剩 bangumi 的.
+ * - 点赞/点踩 (`vote`) 这个概念 bangumi 没有, 它只有表情回应.
+ */
 open class AniEpisodeCommentService(
-    private val episodesApi: ApiInvoker<EpisodesAniApi>,
+    private val episodeApi: ApiInvoker<EpisodeBangumiNextApi>,
+    private val meApi: ApiInvoker<MiscBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) {
     /**
-     * 获取剧集评论, 新评论在前. 服务端已合并 Bangumi 评论, 客户端不再自行拉取 Bangumi.
+     * 自己的 bangumi 用户 id, 用来判断某个表情回应里有没有自己. 未登录时为 `null`.
      *
-     * 只支持游标翻页: [after] 传上一页的 [AniEpisodeCommentsResponse.nextCursor], `null` 表示首屏.
-     * 用游标而非 offset, 是因为滚动期间新增的评论会让 offset 漂移, 导致某条评论重复出现 —— 而列表按
-     * `stableId` 做 key, 重复项会直接崩溃.
-     *
-     * 上游 Bangumi 故障时本接口仍返回 Ani 评论, 并置 [AniEpisodeCommentsResponse.bangumiUnavailable].
+     * 只取一次: 同一个进程里不会变 (换账号会重建 Koin 图).
+     */
+    private var selfUserId: Int? = null
+    private var selfUserIdLoaded = false
+
+    /**
+     * 取剧集评论. bangumi 的吐槽箱**不分页**, 一次给全部, 所以 [after] 只用于判断是不是首屏.
      */
     open suspend fun listEpisodeComments(
         episodeId: Long,
         after: String? = null,
         limit: Int = 30,
-    ): AniEpisodeCommentsResponse = withContext(ioDispatcher) {
+    ): EpisodeCommentPage = withContext(ioDispatcher) {
+        if (after != null) return@withContext EpisodeCommentPage(emptyList())
         try {
-            episodesApi.invoke {
-                listEpisodeComments(
-                    episodeId = episodeId,
-                    limit = limit,
-                    includeBangumi = true,
-                    after = after,
-                ).body()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    open suspend fun createEpisodeComment(
-        episodeId: Long,
-        contentBbcode: String,
-    ) = withContext(ioDispatcher) {
-        try {
-            episodesApi.invoke {
-                createEpisodeComment(
-                    episodeId = episodeId,
-                    aniCreateEpisodeCommentRequest = AniCreateEpisodeCommentRequest(contentBbcode),
-                ).body()
-            }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    open suspend fun createEpisodeReply(
-        episodeId: Long,
-        commentId: String,
-        contentBbcode: String,
-    ) = withContext(ioDispatcher) {
-        try {
-            episodesApi.invoke {
-                createEpisodeReply(
-                    episodeId = episodeId,
-                    commentId = commentId,
-                    aniCreateEpisodeReplyRequest = AniCreateEpisodeReplyRequest(contentBbcode),
-                ).body()
-            }
+            val comments = episodeApi.invoke { getEpisodeComments(episodeId.toInt()).body() }
+            EpisodeCommentPage(comments.map { it.toEpisodeComment(episodeId, currentUserIdOrNull()) })
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
@@ -100,12 +71,12 @@ open class AniEpisodeCommentService(
         commentId: String,
         value: String,
     ) = withContext(ioDispatcher) {
+        val reactionValue = value.toReactionValueOrNull() ?: return@withContext
         try {
-            episodesApi.invoke {
-                addEpisodeCommentReaction(
-                    episodeId = episodeId,
-                    commentId = commentId,
-                    value = value,
+            episodeApi.invoke {
+                likeEpisodeComment(
+                    commentID = commentId.toInt(),
+                    bangumiNextLikeEpisodeCommentRequest = BangumiNextLikeEpisodeCommentRequest(reactionValue),
                 ).body()
             }
         } catch (e: Exception) {
@@ -119,160 +90,86 @@ open class AniEpisodeCommentService(
         value: String,
     ) = withContext(ioDispatcher) {
         try {
-            episodesApi.invoke {
-                removeEpisodeCommentReaction(
-                    episodeId = episodeId,
-                    commentId = commentId,
-                    value = value,
-                ).body()
-            }
+            episodeApi.invoke { unlikeEpisodeComment(commentID = commentId.toInt()).body() }
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
     }
 
-    /**
-     * 对评论投票. [vote] 为 `null` 表示取消投票.
-     * 只有 Ani 源的根评论可投票.
-     */
-    open suspend fun voteEpisodeComment(
-        episodeId: Long,
-        commentId: String,
-        vote: CommentVoteValue?,
-    ) = withContext(ioDispatcher) {
-        try {
-            episodesApi.invoke {
-                if (vote == null) {
-                    removeEpisodeCommentVote(
-                        episodeId = episodeId,
-                        commentId = commentId,
-                    ).body()
-                } else {
-                    voteEpisodeComment(
-                        episodeId = episodeId,
-                        commentId = commentId,
-                        vote = vote.toAniCommentVoteValue(),
-                    ).body()
-                }
-            }
+    private suspend fun currentUserIdOrNull(): Int? {
+        if (selfUserIdLoaded) return selfUserId
+        selfUserId = try {
+            meApi.invoke { getCurrentUser().body().id }
         } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
+            null // 未登录, 或者取不到: 表情回应就都显示成"没选中"
         }
+        selfUserIdLoaded = true
+        return selfUserId
     }
 }
 
-internal fun CommentVoteValue.toAniCommentVoteValue(): AniCommentVoteValue = when (this) {
-    CommentVoteValue.LIKE -> AniCommentVoteValue.LIKE
-    CommentVoteValue.DISLIKE -> AniCommentVoteValue.DISLIKE
-}
-
-internal fun AniCommentVoteValue.toCommentVoteValue(): CommentVoteValue = when (this) {
-    AniCommentVoteValue.LIKE -> CommentVoteValue.LIKE
-    AniCommentVoteValue.DISLIKE -> CommentVoteValue.DISLIKE
-}
-
-fun AniEpisodeComment.toEpisodeComment(): EpisodeComment {
-    // 服务端合并后 Bangumi 评论也从这个接口返回, 来源必须以服务端字段为准, 不能假设是 ANI
-    val commentSource = when (source) {
-        AniEpisodeCommentSource.ANIMEKO -> EpisodeCommentSource.ANI
-        AniEpisodeCommentSource.BANGUMI -> EpisodeCommentSource.BANGUMI
-    }
-    return EpisodeComment(
-        stableId = id,
-        source = commentSource,
-        sourceCommentId = sourceCommentId,
-        commentId = sourceCommentId,
-        episodeId = episodeId,
-        createdAt = createdAtMillis,
-        content = contentBbcode,
-        author = author?.let {
-            UserInfo(
-                id = it.id,
-                username = null,
-                nickname = it.nickname,
-                avatarUrl = it.avatarUrl,
-            )
-        },
-        reactions = reactions.map { it.toEpisodeCommentReaction() },
-        replies = briefReplies.map { it.toEpisodeComment(episodeId, commentSource) }.withReplyTargets(),
-        canReply = canReply,
-        replyCount = replyCount,
-        likeCount = likeCount,
-        selfVote = selfVote?.toCommentVoteValue(),
-    )
-}
-
-/**
- * 给楼内回复补上"这条在回复谁" ([EpisodeComment.replyToCommentId]).
- *
- * 接口本身不带回复关系 (Bangumi 的 `relatedID` 只有客户端直连时拿得到), 所以从正文里认:
- * 在 Bangumi 上回复某条楼内回复时, 站点会把被回复的内容以
- * `[quote][b]昵称[/b] 说: ……[/quote]` 的形式塞在正文开头, 见 [quotedAuthorNicknameOrNull].
- *
- * 认出昵称后还要在**同一楼**里找到那条回复本身 —— 界面上要显示的是名字, 而名字只能由那条回复
- * 提供 (见 `CommentMapperContext.parseToUIComment`). 找不到就留 `null` (只缩进不写名字), 与
- * 原先"被回复的那条不在本楼 brief 列表里"时的表现一致.
- *
- * 同名的人在同一楼里各回一条时, 取时间上不晚于本条的那个最近的 —— 被回复的一定先发出来.
- */
-private fun List<EpisodeComment>.withReplyTargets(): List<EpisodeComment> {
-    if (size < 2) return this // 一条回复不可能在回复本楼里的另一条
-    return map { reply ->
-        val nickname = quotedAuthorNicknameOrNull(reply.content) ?: return@map reply
-        val candidates = filter { it.sourceCommentId != reply.sourceCommentId && it.author?.nickname == nickname }
-        val target = candidates.filter { it.createdAt <= reply.createdAt }.maxByOrNull { it.createdAt }
-            ?: candidates.firstOrNull()
-            ?: return@map reply
-        reply.copy(replyToCommentId = target.sourceCommentId)
-    }
-}
-
-/**
- * 认出正文开头那条引用是谁说的, 认不出返回 `null`.
- *
- * 只认**开头**的引用: 正文中间的引用是用户自己贴的, 不代表回复关系. 引用里的昵称可能带 `[b]`
- * 也可能不带 (取决于发布时的客户端), 冒号半角全角都见过.
- */
-internal fun quotedAuthorNicknameOrNull(contentBbcode: String): String? {
-    val match = QUOTED_AUTHOR_REGEX.find(contentBbcode) ?: return null
-    val nickname = match.groupValues[1].takeIf { it.isNotEmpty() } ?: match.groupValues[2]
-    return nickname.trim().takeIf { it.isNotBlank() }
-}
-
-private val QUOTED_AUTHOR_REGEX = Regex(
-    """^\s*\[quote]\s*(?:\[b]\s*([^\[\]]{1,64}?)\s*\[/b]|([^\[\]\n]{1,64}?))\s*说\s*[:：]""",
-    RegexOption.IGNORE_CASE,
+/** bangumi 的吐槽箱一次给全部, 保留这个包装只是为了调用方仍能表达"还有没有下一页". */
+class EpisodeCommentPage(
+    val items: List<EpisodeComment>,
+    val nextCursor: String? = null,
 )
 
-private fun AniEpisodeCommentReply.toEpisodeComment(
-    episodeId: Long,
-    source: EpisodeCommentSource,
-): EpisodeComment {
+internal fun BangumiNextComment.toEpisodeComment(episodeId: Long, selfUserId: Int?): EpisodeComment {
     return EpisodeComment(
-        stableId = id,
-        source = source,
-        sourceCommentId = sourceCommentId,
-        commentId = sourceCommentId,
+        stableId = id.toString(),
+        source = EpisodeCommentSource.BANGUMI,
+        sourceCommentId = id.toString(),
+        commentId = id.toString(),
         episodeId = episodeId,
-        createdAt = createdAtMillis,
-        content = contentBbcode,
-        author = author?.let {
-            UserInfo(
-                id = it.id,
-                username = null,
-                nickname = it.nickname,
-                avatarUrl = it.avatarUrl,
-            )
-        },
-        reactions = reactions.map { it.toEpisodeCommentReaction() },
+        createdAt = createdAt.toLong().seconds.inWholeMilliseconds,
+        content = content,
+        author = user?.toUserInfo(),
+        reactions = reactions?.map { it.toEpisodeCommentReaction(selfUserId) }.orEmpty(),
+        replies = replies.map { it.toEpisodeComment(episodeId, mainId = id, selfUserId = selfUserId) },
+        // 发表评论要过 Cloudflare Turnstile 验证码, 电视上没法做, 见 PostCommentUseCase
         canReply = false,
+        replyCount = replies.size,
+        likeCount = 0,
+        selfVote = null,
     )
 }
 
-private fun me.him188.ani.client.models.AniEpisodeCommentReaction.toEpisodeCommentReaction(): EpisodeCommentReaction {
-    return EpisodeCommentReaction(
-        value = value,
-        count = count,
-        selected = selected,
+private fun BangumiNextCommentBase.toEpisodeComment(
+    episodeId: Long,
+    mainId: Int,
+    selfUserId: Int?,
+): EpisodeComment {
+    return EpisodeComment(
+        stableId = id.toString(),
+        source = EpisodeCommentSource.BANGUMI,
+        sourceCommentId = id.toString(),
+        commentId = id.toString(),
+        episodeId = episodeId,
+        createdAt = createdAt.toLong().seconds.inWholeMilliseconds,
+        content = content,
+        author = user?.toUserInfo(),
+        reactions = reactions?.map { it.toEpisodeCommentReaction(selfUserId) }.orEmpty(),
+        canReply = false,
+        // relatedID 指向主楼 (或自身/缺失) 时只是普通的楼内回复, 不算指向某条回复
+        replyToCommentId = relatedID
+            .takeIf { it != 0 && it != mainID && it != mainId && it != id }
+            ?.toString(),
     )
 }
+
+private fun me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimUser.toUserInfo(): UserInfo = UserInfo(
+    id = id.toString(),
+    username = username,
+    nickname = nickname,
+    avatarUrl = avatar.large,
+)
+
+private fun BangumiNextReaction.toEpisodeCommentReaction(selfUserId: Int?): EpisodeCommentReaction =
+    EpisodeCommentReaction(
+        // 传输用的值是 "bgm" + bangumi 的回应编号 (不是表情代码, 两者差 16), 见 BangumiStickers
+        value = "bgm$value",
+        count = users.size,
+        selected = selfUserId != null && users.any { it.id == selfUserId },
+    )
+
+private fun String.toReactionValueOrNull(): Int? = removePrefix("bgm").toIntOrNull()

@@ -126,6 +126,7 @@ val stripeApiP1 = tasks.register("stripeApiP1") {
             "/p1/episodes/{episodeID}", // 单集信息
             "/p1/episodes/{episodeID}/comments", // 剧集吐槽箱, 作为剧集评论
             "/p1/episodes/-/comments/{commentID}", // 剧集评论的增删改
+            "/p1/episodes/-/comments/{commentID}/like", // 表情回应
             // 收藏
             "/p1/collections/subjects", // 追番列表
             "/p1/collections/subjects/{subjectID}", // 改收藏状态/评分/短评

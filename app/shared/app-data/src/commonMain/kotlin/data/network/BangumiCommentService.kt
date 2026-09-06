@@ -12,60 +12,45 @@ package me.him188.ani.app.data.network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.UserInfo
-import me.him188.ani.app.data.models.comment.CommentVoteValue
 import me.him188.ani.app.data.models.subject.SubjectReview
 import me.him188.ani.app.data.models.subject.SubjectReviewSource
 import me.him188.ani.app.data.repository.RepositoryException
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniSubjectReview
-import me.him188.ani.client.models.AniSubjectReviewSource
 import me.him188.ani.datasources.api.paging.Paged
-import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectInterestComment
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.ktor.ApiInvoker
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.Instant
+import kotlin.time.Duration.Companion.seconds
 
+/**
+ * 条目吐槽箱 (详情页的"评价"), 直连 `next.bgm.tv/p1`.
+ *
+ * 投票 (点赞/点踩) 那个方法没了: 那是 Ani 自己的概念, bangumi 的条目吐槽只有表情回应.
+ */
 interface BangumiCommentService {
     /**
      * @return `null` if [subjectId] is invalid
      */
     suspend fun getSubjectComments(subjectId: Int, offset: Int, limit: Int): Paged<SubjectReview>?
-
-    /**
-     * 对条目评价投票. [vote] 为 `null` 表示取消投票.
-     * 只有 [SubjectReviewSource.ANI] 来源的评价可投票.
-     */
-    suspend fun voteSubjectReview(subjectId: Int, reviewId: String, vote: CommentVoteValue?)
 }
 
 class BangumiBangumiCommentServiceImpl(
-    private val subjectsApi: ApiInvoker<SubjectsAniApi>,
+    private val subjectsApi: ApiInvoker<SubjectBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : BangumiCommentService {
     override suspend fun getSubjectComments(subjectId: Int, offset: Int, limit: Int): Paged<SubjectReview>? {
         return withContext(ioDispatcher) {
-            val response = subjectsApi {
-                getSubjectReviews(subjectId.toLong(), offset, limit).body()
-            }
-            val list = response.items.map { it.toSubjectReview() }
-            Paged(
-                total = response.total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                hasMore = offset + list.size < response.total,
-                page = list,
-            )
-        }
-    }
-
-    override suspend fun voteSubjectReview(subjectId: Int, reviewId: String, vote: CommentVoteValue?) {
-        withContext(ioDispatcher) {
             try {
-                subjectsApi {
-                    if (vote == null) {
-                        removeSubjectReviewVote(subjectId.toLong(), reviewId).body()
-                    } else {
-                        voteSubjectReview(subjectId.toLong(), reviewId, vote.toAniCommentVoteValue()).body()
-                    }
+                val response = subjectsApi {
+                    getSubjectComments(subjectId, limit = limit, offset = offset).body()
                 }
+                val list = response.data.map { it.toSubjectReview() }
+                Paged(
+                    total = response.total,
+                    hasMore = offset + list.size < response.total,
+                    page = list,
+                )
             } catch (e: Exception) {
                 throw RepositoryException.wrapOrThrowCancellation(e)
             }
@@ -73,24 +58,19 @@ class BangumiBangumiCommentServiceImpl(
     }
 }
 
-private fun AniSubjectReview.toSubjectReview() = SubjectReview(
-    id = id.hashCode().toLong(),
-    reviewId = id,
-    source = when (source) {
-        AniSubjectReviewSource.ANIMEKO -> SubjectReviewSource.ANI
-        AniSubjectReviewSource.BANGUMI -> SubjectReviewSource.BANGUMI
-    },
-    content = contentBbcode,
-    updatedAt = Instant.parse(updatedAt).toEpochMilliseconds(),
-    rating = rating,
-    creator = author?.let {
-        UserInfo(
-            id = it.id,
-            nickname = it.nickname,
-            username = null,
-            avatarUrl = it.avatarUrl,
-        )
-    },
-    likeCount = likeCount,
-    selfVote = selfVote?.toCommentVoteValue(),
+private fun BangumiNextSubjectInterestComment.toSubjectReview() = SubjectReview(
+    id = id.toLong(),
+    reviewId = id.toString(),
+    source = SubjectReviewSource.BANGUMI,
+    content = comment,
+    updatedAt = updatedAt.toLong().seconds.inWholeMilliseconds,
+    rating = rate,
+    creator = UserInfo(
+        id = user.id.toString(),
+        nickname = user.nickname,
+        username = user.username,
+        avatarUrl = user.avatar.large,
+    ),
+    likeCount = reactions.orEmpty().sumOf { it.users.size },
+    selfVote = null,
 )
