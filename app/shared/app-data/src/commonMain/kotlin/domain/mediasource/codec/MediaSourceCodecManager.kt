@@ -23,6 +23,11 @@ import me.him188.ani.app.domain.mediasource.subscription.SubscriptionUpdateDataR
 import me.him188.ani.app.domain.mediasource.subscription.UnsupportedSubscriptionSchemaException
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceCodec
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.utils.platform.annotations.TestOnly
 
@@ -36,6 +41,11 @@ class MediaSourceCodecManager(
         SelectorMediaSourceCodec,
         JsonApiMediaSourceCodec,
         DirectApiMediaSourceCodec,
+        MacCmsMediaSourceCodec,
+        CloudDriveMediaSourceCodec,
+        CloudDriveAddedShareMediaSourceCodec,
+        CloudDriveShareSearchMediaSourceCodec,
+        RuleMediaSourceCodec,
     )
 ) {
 
@@ -189,4 +199,7 @@ fun MediaSourceCodecManager.serializeToString(
 fun createTestMediaSourceCodecManager(): MediaSourceCodecManager = MediaSourceCodecManager()
 
 fun MediaSourceSave.getArgumentOrNull(codecManager: MediaSourceCodecManager) =
-    config.serializedArguments?.let { codecManager.deserializeArgument(factoryId, it) }
+    config.serializedArguments?.let {
+        // 这一版认不出的类型 (以前版本留下的数据源) 或参数坏了都当没有: 读全部数据源的地方不能因为一个崩掉
+        runCatching { codecManager.deserializeArgument(factoryId, it) }.getOrNull()
+    }

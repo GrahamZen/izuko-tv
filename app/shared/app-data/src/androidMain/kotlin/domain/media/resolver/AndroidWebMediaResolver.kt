@@ -11,12 +11,15 @@ package me.him188.ani.app.domain.media.resolver
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import kotlinx.coroutines.CompletableDeferred
@@ -39,10 +42,12 @@ import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebViewConfig
+import me.him188.ani.datasources.api.matcher.sniffTimeoutMillis
 import me.him188.ani.datasources.api.matcher.videoOrNull
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import java.io.ByteArrayInputStream
 import java.util.concurrent.ConcurrentSkipListSet
 
@@ -135,7 +140,7 @@ class AndroidWebMediaResolver(
             matcher.patchConfig(acc)
         }
         logger.info { "Final config: $config" }
-        val timeoutMillis = settingsRepository.videoResolverSettings.flow.first().effectiveResourceExtractionTimeoutMillis
+        val timeoutMillis = allMatchers.sniffTimeoutMillis(settingsRepository.videoResolverSettings.flow.first().effectiveResourceExtractionTimeoutMillis)
         // WebView 的代理是进程级的, 每次解析前按当前设置更新一次 (必须在主线程设, 且要赶在加载之前)
         val proxyConfig = proxyProvider.proxy.first()
         withContext(Dispatchers.Main) { WebViewProxy.apply(proxyConfig) }
@@ -155,12 +160,16 @@ class AndroidWebMediaResolver(
                 userAgent = config.userAgent,
                 timeoutMillis = timeoutMillis,
                 resourceMatcher = resourceMatcher,
-            ) ?: AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
-                attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
-                media.download.uri,
-                config,
-                resourceMatcher,
-            )
+            ) ?: run {
+                // 新开 WebView 嗅探这一轮最多等 timeoutMillis, 加载提示据此倒数
+                reportResolveAttempt(timeoutMillis)
+                AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
+                    attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
+                    media.download.uri,
+                    config,
+                    resourceMatcher,
+                )
+            }
             )?.let { resource ->
             allMatchers.firstNotNullOfOrNull { matcher ->
                 matcher.match(resource.url, context).videoOrNull
@@ -276,6 +285,17 @@ class AndroidWebViewVideoExtractor(
         webView.settings.domStorageEnabled = true
         userAgent?.let { webView.settings.userAgentString = it }
         webView.webViewClient = object : WebViewClient() {
+            /**
+             * 不处理的话, 渲染进程一没 (系统为腾内存把它杀掉, 或它自己崩溃) WebView 会把整个应用一起结束.
+             * 这次解析按没找到资源收场, 由 [deferred] 的收尾把 WebView 销毁.
+             */
+            @RequiresApi(Build.VERSION_CODES.O)
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                logger.warn { "WebView render process gone (crashed=${detail.didCrash()}), giving up this resolution" }
+                deferred.completeExceptionally(MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE))
+                return true
+            }
+
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest

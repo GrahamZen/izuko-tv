@@ -19,6 +19,7 @@ import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.models.fold
 import me.him188.ani.app.data.models.runApiRequest
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.domain.media.fetch.seasonEpisodeSorts
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
@@ -68,6 +69,7 @@ import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.minutes
 
 @Suppress("unused") // bug
 private typealias ArgumentType = SelectorMediaSourceArguments
@@ -129,9 +131,15 @@ class SelectorMediaSource(
          *
          * 超过它 (柯南、海贼这种上千集的) 就退回只产出当前这一集: 那时源站的条目页往往有同样多的剧集,
          * 给每一集都建资源对象会把低内存设备压垮 (见 `fix(mediasource): 低内存设备看长番时加载或切集被系统杀掉`).
-         * 代价是这类条目切集后在线源要等会话换代才有结果.
+         * 代价是这类条目切集时要换一个查询会话 (见 `servesEpisodeOf`), BT 源随之重新搜索.
          */
         const val MAX_WHOLE_SUBJECT_EPISODES = 300
+
+        /**
+         * 只读回当前一集的缓存时, 页面在这么久之内写入、又有当前这一集, 就直接用, 不因为缺「已上映的最新一集」而重搜.
+         * 站点比 Bangumi 晚一两集是常事; 长番切集要换查询会话, 不这样的话每切一集都要把上千集的条目页重新抓一遍、写一遍缓存.
+         */
+        val RECENT_SEARCH = 30.minutes
 
         /**
          * [matcher] 对 WebView 配置的修改: 依次合并 [config] 已有的 cookies、[matchVideo] 中配置的 cookies 和 [captchaCookies];
@@ -322,7 +330,7 @@ class SelectorMediaSource(
         // 只读回当前集的话, 这一页在切集之后产不出任何资源. 窄读因此只留给长番 —— 那时
         // `subjectEpisodeSorts` 本来就是 null.
         val narrowed = query.subjectEpisodeSorts == null &&
-                query.episodeSort is EpisodeSort.Normal && searchConfig.filterByEpisodeSort
+                query.episodeSort is EpisodeSort.Normal && searchConfig.autoMatch.filterByEpisodeSort
         val caches = try {
             if (narrowed) {
                 repository.getCacheForEpisode(
@@ -341,10 +349,31 @@ class SelectorMediaSource(
 
         val probe = query.freshnessProbe
             ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
+        val now = currentTimeMillis()
+        // 窄读只读回当前这一集的行, 判断页面新旧要找的「已上映的最新一集」不在里面, 每页都会被当成旧的、整个重搜
+        // (长番切集就是这样). 另外窄读一次最新那一集: 有它的页面才算新, 仍然不必整页读回
+        val freshPages = if (narrowed && probe.episodeSort != query.episodeSort) {
+            try {
+                repository.getCacheForEpisode(subjectId, mediaSourceId, query.subjectName, probe.episodeSort, probe.episodeEp)
+                    .filter { it.webEpisodeInfos.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null }
+                    .mapTo(HashSet()) { it.webSubjectInfo.fullUrl }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "SelectorMediaSource '$mediaSourceId': failed to read search cache, falling back to search" }
+                return null
+            }
+        } else {
+            null
+        }
         return buildList {
             for (cache in caches) {
                 val episodes = cache.webEpisodeInfos
-                if (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null) {
+                val fresh = freshPages?.contains(cache.webSubjectInfo.fullUrl)
+                    ?: (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null)
+                val recentWithCurrent = narrowed && now - cache.cachedAt < RECENT_SEARCH.inWholeMilliseconds &&
+                        episodes.findMatchingEpisodeOrNull(query.episodeSort, query.episodeEp, query.episodeName) != null
+                if (!fresh && !recentWithCurrent) {
                     continue
                 }
                 addAll(
@@ -354,7 +383,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = cache.webSubjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }.takeIf(List<DefaultMedia>::isNotEmpty)
@@ -417,7 +446,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = subjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }
@@ -473,13 +502,13 @@ class SelectorMediaSource(
     }
 
     /**
-     * 本条目的全部集号, 交给 [SelectorSearchQuery.subjectEpisodeSorts] 决定产出范围.
+     * 本条目的全部集号, 交给 [SelectorSearchQuery.subjectEpisodeSorts] 决定产出范围. 拆分季的后一段再加上整季序号 ([seasonEpisodeSorts]).
      *
      * 剧集列表未知, 或条目集数超过 [MAX_WHOLE_SUBJECT_EPISODES] 时为 `null` —— 那时退回"只产出当前这一集".
      */
     private fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
         if (episodes.isEmpty() || episodes.size > MAX_WHOLE_SUBJECT_EPISODES) return null
-        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) }
+        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) } + seasonEpisodeSorts()
     }
 
     // region 浏览: 列表模式, 不做任何自动匹配

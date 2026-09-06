@@ -18,20 +18,34 @@ plugins {
     id("ani.build-config")
 }
 
-val aniAuthServerUrlDebug =
-    getPropertyOrNull("ani.auth.server.url.debug") ?: "https://auth.myani.org"
-val aniAuthServerUrlRelease = getPropertyOrNull("ani.auth.server.url.release") ?: "https://auth.myani.org"
 val dandanplayAppId = getPropertyOrNull("ani.dandanplay.app.id") ?: ""
 val dandanplayAppSecret = getPropertyOrNull("ani.dandanplay.app.secret") ?: ""
 val tmdbApiToken = getPropertyOrNull("ani.tmdb.api.token") ?: ""
-val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
-val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
-val overrideAniApiServer = getPropertyOrNull("ani.api.server")?.takeIf { it.isNotBlank() }
 
+// 直连 bangumi 的 OAuth 应用 (fork 自己注册的). 回调地址 `ani://bangumi-oauth-callback`.
+// 没配置时为空串 —— 登录页会直接告诉用户"这个构建没带凭据", 而不是跳到一个必然报错的授权页.
+val bangumiOauthClientId = getPropertyOrNull("ani.bangumi.oauth.client.id") ?: ""
+val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secret") ?: ""
+val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
+// 交流群: 只给装了应用的人看, 不写进源码 (GitHub 上谁都能翻到); 本机放 local.properties, CI 由 secret 写进去. 没配就是空, 界面上不显示
+val chatQqGroupId = getPropertyOrNull("ani.chat.qq.id") ?: ""
+val chatQqGroupLink = getPropertyOrNull("ani.chat.qq.link") ?: ""
+val chatTelegramLink = getPropertyOrNull("ani.chat.telegram.link") ?: ""
+val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
+
+// 性能对比包等 release 包也带 Web 控制台的「调试」组 (-Pani.devConsole=true); debug 包总是带
+val devConsole = getPropertyOrNull("ani.devConsole") == "true"
 
 // 构建时的 git 分支 / commit, 在 "关于 > 构建信息" 里展示. 见 build-logic 的 git.kt.
 val currentGitInfo = gitInfo.get()
+
+// 本项目的 GitHub 仓库 (见 gradle.properties). 应用里的项目链接、UA 与镜像清单都按它拼地址.
+val projectRepository = getProperty("ani.repository")
+// 更新时只装 release 里这个前缀的 APK (见 gradle.properties).
+val updateAssetPrefix = getProperty("ani.update.asset.prefix")
+// 检查更新、下载安装包的仓库, 默认就是本项目的仓库. 发版前真机走一遍更新时用 -P 或 local.properties 指到测试仓库.
+val updateRepository = getPropertyOrNull("ani.update.repository") ?: projectRepository
 
 kotlin {
     android {
@@ -136,10 +150,17 @@ buildConfig {
         stringField("dandanplayAppId", dandanplayAppId)
         stringField("dandanplayAppSecret", dandanplayAppSecret)
         stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
-        stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         stringField("distroChannel", distroChannel)
         gitFields()
+        stringField("projectRepository", projectRepository)
+        stringField("updateAssetPrefix", updateAssetPrefix)
+        stringField("updateRepository", updateRepository)
+        stringField("chatQqGroupId", chatQqGroupId)
+        stringField("chatQqGroupLink", chatQqGroupLink)
+        stringField("chatTelegramLink", chatTelegramLink)
 
         firebaseFields()
     }
@@ -151,12 +172,20 @@ buildConfig {
         stringField("dandanplayAppId", dandanplayAppId)
         stringField("dandanplayAppSecret", dandanplayAppSecret)
         stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
-        stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         expressionField("distroChannel", "me.him188.ani.buildconfig.AndroidBuildConfig.DISTRO_CHANNEL")
         gitFields()
+        stringField("projectRepository", projectRepository)
+        stringField("updateAssetPrefix", updateAssetPrefix)
+        stringField("updateRepository", updateRepository)
+        stringField("chatQqGroupId", chatQqGroupId)
+        stringField("chatQqGroupLink", chatQqGroupLink)
+        stringField("chatTelegramLink", chatTelegramLink)
 
         booleanField("analyticsEnabled", enableFirebase)
+        booleanField("devConsole", devConsole)
     }
 
     // iOS platform configuration (only if enabled)
@@ -167,11 +196,12 @@ buildConfig {
             stringField("dandanplayAppId", dandanplayAppId)
             stringField("dandanplayAppSecret", dandanplayAppSecret)
             stringField("tmdbApiToken", tmdbApiToken)
+        stringField("bangumiOauthClientId", bangumiOauthClientId)
+        stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
             stringField("sentryDsn", sentryDsn)
 
             val sentryEnabled = (getPropertyOrNull("ani.sentry.ios") ?: "true").toBooleanStrict()
             booleanField("sentryEnabled", sentryEnabled)
-            stringField("overrideAniApiServer", overrideAniApiServer ?: "")
             stringField("distroChannel", distroChannel)
             gitFields()
 

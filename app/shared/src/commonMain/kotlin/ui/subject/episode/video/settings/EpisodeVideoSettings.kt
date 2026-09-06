@@ -41,9 +41,11 @@ import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.rememberDebugSettingsViewModel
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_video_settings_bottom
 import me.him188.ani.app.ui.lang.subject_episode_video_settings_colorful
@@ -189,44 +191,28 @@ fun EpisodeVideoSettings(
                     Modifier.padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    ElevatedFilterChip(
+                    DanmakuTypeChip(
+                        text = topText,
                         selected = danmakuConfig.enableTop,
                         onClick = { setDanmakuConfig { config -> config.copy(enableTop = !config.enableTop) } },
-                        leadingIcon = {
-                            if (danmakuConfig.enableTop) Icon(Icons.Rounded.Check, contentDescription = null)
-                            else Icon(Icons.Rounded.Close, contentDescription = null)
-                        },
-                        label = { Text(topText, maxLines = 1) },
                         modifier = if (firstItemFocusRequester != null) Modifier.focusRequester(firstItemFocusRequester) else Modifier,
                     )
-                    ElevatedFilterChip(
+                    DanmakuTypeChip(
+                        text = floatingText,
                         selected = danmakuConfig.enableFloating,
                         onClick = { setDanmakuConfig { config -> config.copy(enableFloating = !config.enableFloating) } },
-                        label = { Text(floatingText, maxLines = 1) },
-                        leadingIcon = {
-                            if (danmakuConfig.enableFloating) Icon(Icons.Rounded.Check, contentDescription = null)
-                            else Icon(Icons.Rounded.Close, contentDescription = null)
-                        },
                     )
-                    ElevatedFilterChip(
+                    DanmakuTypeChip(
+                        text = bottomText,
                         selected = danmakuConfig.enableBottom,
                         onClick = { setDanmakuConfig { config -> config.copy(enableBottom = !config.enableBottom) } },
-                        label = { Text(bottomText, maxLines = 1) },
-                        leadingIcon = {
-                            if (danmakuConfig.enableBottom) Icon(Icons.Rounded.Check, contentDescription = null)
-                            else Icon(Icons.Rounded.Close, contentDescription = null)
-                        },
                     )
-                    ElevatedFilterChip(
+                    DanmakuTypeChip(
+                        text = colorfulText,
                         selected = danmakuConfig.enableColor,
                         onClick = {
                             setDanmakuConfig { config -> config.copy(enableColor = !config.enableColor) }
                         },
-                        leadingIcon = {
-                            if (danmakuConfig.enableColor) Icon(Icons.Rounded.Check, contentDescription = null)
-                            else Icon(Icons.Rounded.Close, contentDescription = null)
-                        },
-                        label = { Text(colorfulText, maxLines = 1) },
                     )
                 }
             }
@@ -457,4 +443,31 @@ private fun PreviewEpisodeVideoSettingsSideSheet() = ProvideCompositionLocalsFor
             )
         }
     }
+}
+
+/**
+ * 弹幕类型开关 (顶部 / 滚动 / 底部 / 彩色). 遥控器形态用弹窗里统一的胶囊 ([AniFocusChip]: 聚焦主题色实底, 开着是选中色 + ✓),
+ * 其余平台是 M3 [ElevatedFilterChip] (开 ✓ / 关 ✕).
+ */
+@Composable
+private fun DanmakuTypeChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+        AniFocusChip(text = text, selected = selected, onClick = onClick, modifier = modifier)
+        return
+    }
+    ElevatedFilterChip(
+        selected = selected,
+        onClick = onClick,
+        leadingIcon = {
+            if (selected) Icon(Icons.Rounded.Check, contentDescription = null)
+            else Icon(Icons.Rounded.Close, contentDescription = null)
+        },
+        label = { Text(text, maxLines = 1) },
+        modifier = modifier,
+    )
 }

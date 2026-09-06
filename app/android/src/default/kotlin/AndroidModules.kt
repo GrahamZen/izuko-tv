@@ -38,11 +38,13 @@ import me.him188.ani.app.domain.media.resolver.ApiVideoMediaResolver
 import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
 import me.him188.ani.app.domain.mediasource.web.AndroidOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.AndroidCaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.player.recordingFailures
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
@@ -186,7 +188,8 @@ fun getAndroidModules(
 
     factory<MediaResolver> {
         MediaResolver.from(
-            torrentMediaResolvers(get<TorrentManager>().engines, get())
+            listOf<MediaResolver>(CloudDriveMediaResolver(get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(ApiVideoMediaResolver(get<MediaSourceManager>().apiVideoResolverLoader))
@@ -198,9 +201,9 @@ fun getAndroidModules(
                         get<ProxyProvider>(),
                     ),
                 ),
-        )
+        ).recordingFailures()
     }
-    single<UpdateInstaller> { AndroidUpdateInstaller() }
+    single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
     single<AppTerminator> {
         object : AppTerminator {

@@ -59,6 +59,7 @@ import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.SubtitleKind
 import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.topic.EpisodeRange
@@ -97,7 +98,8 @@ data class SelectorSearchQuery(
      */
     val freshnessProbe: SelectorEpisodeProbe? = null,
     /**
-     * 本条目的全部集号 (`sort` 与 `ep` 都算). 非空时, 按集号裁剪产出的范围放宽到**整个条目**.
+     * 本条目的全部集号 (`sort` 与 `ep` 都算; 拆分季的后一段还有整季序号, 见 [MediaFetchRequest.seasonEpisodeCount]).
+     * 非空时, 按集号裁剪产出的范围放宽到**整个条目**: 正片只留这些集号, 特别篇与解析不出集号的都产出, 由选择器判断.
      *
      * **为什么不能只产出当次那一集**: 播放页的查询会话是按条目复用的 (见
      * `SubjectMediaFetchSessions`), 切集只重建选择器、不重新查询. 产出里只有第一次进来那一集的话,
@@ -278,19 +280,17 @@ abstract class SelectorMediaSourceEngine {
         val mediaList = createMedia(episodes, config, query, mediaSourceId, subjectName) { episodeSort ->
             when {
                 !bySortOnly -> true
-                // 整个条目的集号都留下, 见 [SelectorSearchQuery.subjectEpisodeSorts]
-                wholeSubject != null -> episodeSort in wholeSubject
+                // 整个条目的集号都留下, 见 [SelectorSearchQuery.subjectEpisodeSorts]. 特别篇 (OVA、SP) 与解析不出集号的
+                // 交给选择器, 同上游把整页交给它时一样: OVA 条目认同一页上的 "OVA", 特别篇按名字认
+                wholeSubject != null -> episodeSort !is EpisodeSort.Normal || episodeSort in wholeSubject
                 else -> EpisodeRange.single(episodeSort).let { range ->
                     range.contains(query.episodeSort) || (query.episodeEp != null && range.contains(query.episodeEp))
                 }
             }
         }
         if (wholeSubject != null) {
-            // 条目级查询: 这一遍也按"集号属于本条目"筛, 而不是按当次那一集 —— 否则刚产出的别的集又被滤光.
-            // 它挡的是集号解析不出来、靠剧集名蒙混进来的行 (同一页上的另一部作品).
-            return mediaList.filter { media ->
-                media.episodeRange?.let { range -> wholeSubject.any { range.contains(it) } } == true
-            }
+            // 条目级查询: 不再按当次那一集筛 ([filterMedia]), 否则刚产出的别的集又被滤光. 哪条是当前集由选择器判断
+            return mediaList
         }
         return filterMedia(mediaList, config, query)
     }
@@ -572,8 +572,8 @@ internal fun guessSubtitleLanguageIds(
     episodeName: String,
     parser: LabelFirstRawTitleParser,
 ): List<String>? {
-    val languagesFromChannel = channel?.let { parser.parseSubtitleLanguages(it) } ?: emptyList()
-    val languagesFromName = parser.parseSubtitleLanguages(episodeName)
+    val languagesFromChannel = channel?.let { SubtitleLanguageGuesses.of(parser, it) } ?: emptyList()
+    val languagesFromName = SubtitleLanguageGuesses.of(parser, episodeName)
 
     return when {
         languagesFromChannel.isEmpty() && languagesFromName.isEmpty() -> null

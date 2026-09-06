@@ -23,7 +23,6 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemTemporaryDirectory
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodePlayerTestSuite
 import me.him188.ani.app.domain.episode.EpisodeSession
@@ -40,7 +39,6 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.io.delete
 import me.him188.ani.utils.io.inSystem
@@ -96,6 +94,64 @@ class LoadMediaOnSelectExtensionTest : AbstractPlayerExtensionTest() {
         return Triple(testScope, suite, state)
     }
 
+    /** 只给起始位置的扩展. */
+    private fun startAt(positionMillis: (episodeId: Int) -> Long?) = EpisodePlayerExtensionFactory { _, _ ->
+        object : PlayerExtension("StartAt") {
+            override suspend fun startPositionMillis(episodeId: Int): Long? = positionMillis(episodeId)
+        }
+    }
+
+    @Test
+    fun `opens the selected media where an extension says to start`() = runTest {
+        val (testScope, suite, state) = createCase(extensions = listOf(startAt { 42_000L }))
+
+        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
+        val myMedia = TestMediaList[0]
+        ms1.complete(listOf(myMedia))
+        state.mediaSelectorFlow.filterNotNull().first().select(myMedia)
+        advanceUntilIdle()
+
+        assertEquals(42_000, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `an extension failing to give a start position still plays from the start`() = runTest {
+        val (testScope, suite, state) = createCase(extensions = listOf(startAt { error("broken extension") }))
+
+        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
+        val myMedia = TestMediaList[0]
+        ms1.complete(listOf(myMedia))
+        state.mediaSelectorFlow.filterNotNull().first().select(myMedia)
+        advanceUntilIdle()
+
+        assertIs<VideoLoadingState.Succeed>(state.playerSession.videoLoadingState.value)
+        assertEquals(0, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `selecting the media that is already playing does not reload it`() = runTest {
+        // 选源会话重建 (重新搜索) 后新的选源器又选中了正在播的同一资源: 接着播, 不回到起播位置重新缓冲
+        val (testScope, suite, state) = createCase(extensions = listOf(startAt { 42_000L }))
+
+        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
+        val myMedia = TestMediaList[0]
+        ms1.complete(listOf(myMedia))
+        val selector = state.mediaSelectorFlow.filterNotNull().first()
+        selector.select(myMedia)
+        advanceUntilIdle()
+        suite.player.seekTo(100_000)
+
+        selector.unselect() // 新的选源器一开始什么都没选
+        advanceUntilIdle()
+        selector.select(myMedia)
+        advanceUntilIdle()
+
+        assertEquals(100_000, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
     @Test
     fun `can load media on select`() = runTest {
         val (testScope, suite, state) =
@@ -115,27 +171,10 @@ class LoadMediaOnSelectExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `opens media at saved play progress`() = runTest {
-        val (testScope, suite, state) = createCase()
-        suite.koin.get<EpisodePlayHistoryRepository>().saveOrUpdate(initialEpisodeId, 30_000)
-
-        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
-        ms1.complete(listOf(TestMediaList[0]))
-        state.mediaSelectorFlow.filterNotNull().first().select(TestMediaList[0])
-        advanceUntilIdle()
-
-        // 播放器在打开时就定位到记忆的进度, 不需要任何扩展在起播后跳转
-        assertEquals(MediaStatus.Ready, suite.player.state.value.mediaStatus)
-        assertEquals(30_000, suite.player.currentPositionMillis.value)
-
-        testScope.cancel()
-    }
-
-    @Test
-    fun `passes start position to the hls preparer as prefetch hint`() = runTest {
+    fun `passes the start position to the hls preparer as hint`() = runTest {
         val preparer = HintRecordingHlsPlaybackPreparer()
-        val (testScope, suite, state) = createCase(hlsPreparer = preparer)
-        suite.koin.get<EpisodePlayHistoryRepository>().saveOrUpdate(initialEpisodeId, 30_000)
+        // 起播位置由扩展给 (实际是 RememberPlayProgressExtension 读的播放进度), 播放器直接从这里打开, HLS 预缓存也从这里开始
+        val (testScope, suite, state) = createCase(extensions = listOf(startAt { 30_000L }), hlsPreparer = preparer)
 
         val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
         ms1.complete(listOf(TestMediaList[0]))
@@ -149,11 +188,9 @@ class LoadMediaOnSelectExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `starts from the beginning while watch together suppresses resume`() = runTest {
+    fun `no start position means no hls hint`() = runTest {
         val preparer = HintRecordingHlsPlaybackPreparer()
         val (testScope, suite, state) = createCase(hlsPreparer = preparer)
-        suite.koin.get<EpisodePlayHistoryRepository>().saveOrUpdate(initialEpisodeId, 30_000)
-        suite.koin.get<PlaybackAutomationGate>().setSuppressed(true)
 
         val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
         ms1.complete(listOf(TestMediaList[0]))
@@ -162,63 +199,6 @@ class LoadMediaOnSelectExtensionTest : AbstractPlayerExtensionTest() {
 
         assertEquals(listOf<Long?>(null), preparer.hints)
         assertEquals(0, suite.player.currentPositionMillis.value)
-
-        testScope.cancel()
-    }
-
-    @Test
-    fun `starts from the beginning when play progress cannot be read`() = runTest {
-        val (testScope, suite, state) = createCase {
-            val repository = koin.get<EpisodePlayHistoryRepository>()
-            registerComponent<EpisodePlayHistoryRepository> {
-                object : EpisodePlayHistoryRepository by repository {
-                    override suspend fun getResumePositionMillisByEpisodeId(episodeId: Int): Long? =
-                        throw IllegalStateException("database unavailable")
-                }
-            }
-        }
-
-        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
-        ms1.complete(listOf(TestMediaList[0]))
-        state.mediaSelectorFlow.filterNotNull().first().select(TestMediaList[0])
-        advanceUntilIdle()
-
-        assertIs<VideoLoadingState.Succeed>(state.playerSession.videoLoadingState.value)
-        assertEquals(0, suite.player.currentPositionMillis.value)
-
-        testScope.cancel()
-    }
-
-    @Test
-    fun `reads start position after onBeforeLoadMedia while the player still holds the previous media`() = runTest {
-        val previousMediaInHook = mutableListOf<MediaData?>()
-        val (testScope, suite, state) = createCase(
-            extensions = listOf(
-                EpisodePlayerExtensionFactory { context, koin ->
-                    object : PlayerExtension("SaveOnBeforeLoadMedia") {
-                        override suspend fun onBeforeLoadMedia(episodeSession: EpisodeSession) {
-                            previousMediaInHook += context.player.mediaData.value
-                            koin.get<EpisodePlayHistoryRepository>()
-                                .saveOrUpdate(episodeSession.episodeId, context.player.currentPositionMillis.value)
-                        }
-                    }
-                },
-            ),
-        )
-
-        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
-        ms1.complete(TestMediaList.take(2))
-        state.mediaSelectorFlow.filterNotNull().first().select(TestMediaList[0])
-        advanceUntilIdle()
-        val firstData = assertNotNull(suite.player.mediaData.value)
-
-        suite.player.seekTo(42_000)
-        state.mediaSelectorFlow.filterNotNull().first().select(TestMediaList[1])
-        advanceUntilIdle()
-
-        assertEquals(listOf(null, firstData), previousMediaInHook)
-        assertNotSame(firstData, suite.player.mediaData.value)
-        assertEquals(42_000, suite.player.currentPositionMillis.value)
 
         testScope.cancel()
     }

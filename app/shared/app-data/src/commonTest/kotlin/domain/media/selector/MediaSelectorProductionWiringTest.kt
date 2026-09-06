@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
@@ -30,7 +31,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCaseImpl
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
-import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.app.domain.media.selector.testFramework.runSimpleMediaSelectorTestSuite
@@ -48,6 +49,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.advanceTimeBy
+import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 
 /**
  * P0#17 的生产接线点覆盖: 此前跨会话测试用 lambda/测试实现顶替了生产类, 导致
@@ -155,14 +157,21 @@ class MediaSelectorProductionWiringTest {
             val fakeSettings = object : SettingsRepository {
                 override val mediaSelectorSettings = staticSettings(MediaSelectorSettings.Default)
                 override val defaultMediaPreference = staticSettings(MediaPreference.Empty)
+                // 建会话时读「有缓存时直接播, 不搜索」(默认关)
+                override val mediaCacheSettings = staticSettings(MediaCacheSettings.Default)
 
                 override val danmakuEnabled get() = error("not used")
                 override val tmdbImagesDisabled get() = error("not used")
+                override val tmdbImageEndpoint get() = error("not used")
+                override val tmdbImageHostCache get() = error("not used")
+                override val githubDownloadMirrorCache get() = error("not used")
+                override val feedbackEndpointCache get() = error("not used")
                 override val danmakuConfig get() = error("not used")
                 override val danmakuFilterConfig get() = error("not used")
                 override val profileSettings get() = error("not used")
                 override val proxySettings get() = error("not used")
-                override val mediaCacheSettings get() = error("not used")
+                override val bangumiEndpointSettings get() = error("not used")
+                override val bangumiMirrorCache get() = error("not used")
                 override val danmakuSettings get() = error("not used")
                 override val uiSettings get() = error("not used")
                 override val themeSettings get() = error("not used")
@@ -172,12 +181,12 @@ class MediaSelectorProductionWiringTest {
                 override val videoResolverSettings get() = error("not used")
                 override val anitorrentConfig get() = error("not used")
                 override val pikpakConfig get() = error("not used")
+                override val cloudDriveAccounts get() = error("not used")
+                override val cloudDriveAddedShares get() = error("not used")
                 override val torrentPeerConfig get() = error("not used")
                 override val oneshotActionConfig get() = error("not used")
                 override val analyticsSettings get() = error("not used")
                 override val debugSettings get() = error("not used")
-                override val watchTogetherSettings get() = error("not used")
-                override val notificationSettings get() = error("not used")
             }
 
             startKoin {
@@ -188,9 +197,11 @@ class MediaSelectorProductionWiringTest {
                         single<SettingsRepository> { fakeSettings }
                         // 选源器要按缓存可播性把"没下完的缓存"标成不可用 (见 MediaExclusionReason.CacheNotReady);
                         // 本用例不涉及缓存, 给一个空的
-                        single<MediaCacheManager> {
-                            object : MediaCacheManager(emptyList(), backgroundScope) {}
+                        single<MediaDownloadManager> {
+                            MediaDownloadManager(emptyList(), backgroundScope)
                         }
+                        // 上游新增的依赖 (见 UseCaseModules), 生产接线用例要跟着注册
+                        single { MediaFetchSessionRefresh() }
                     },
                 )
             }

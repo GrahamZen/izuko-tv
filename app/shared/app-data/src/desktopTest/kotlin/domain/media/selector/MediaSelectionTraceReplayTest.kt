@@ -336,6 +336,7 @@ class MediaSelectionTraceReplayTest {
                 // Rate limiting stays distinct: the fetcher retries it, so selection keeps waiting for deadlines.
                 // The trace does not record the retry time.
                 "RateLimited" -> MediaSourceFetchState.RateLimited(retryAt = 0, id = update.generation ?: 0)
+                "Paused" -> MediaSourceFetchState.Paused(update.generation ?: 0)
                 // Automatic selection treats these as terminal non-success states; retain the recorded name in the cause.
                 "Failed", "Abandoned", "CaptchaRequired" ->
                     MediaSourceFetchState.Failed(IllegalStateException(update.state), update.generation ?: 0)
@@ -347,5 +348,6 @@ class MediaSelectionTraceReplayTest {
             if (state.value is MediaSourceFetchState.Disabled) state.value = MediaSourceFetchState.Idle
         }
         override fun restart() = error("Source retries are driven exclusively by the recorded timeline")
+        override fun pause() = error("Source pauses are driven exclusively by the recorded timeline")
     }
 }

@@ -56,11 +56,12 @@ fun PlayerControllerDefaults.AudioSwitcher(
     playerState: TrackGroup<AudioTrack>,
     modifier: Modifier = Modifier,
     onSelect: (AudioTrack?) -> Unit = { playerState.select(it) },
+    onExpandedChanged: (expanded: Boolean) -> Unit = {},
 ) {
     val state = remember(playerState) {
         AudioTrackState(playerState.selected, playerState.candidates)
     }
-    AudioSwitcher(state, onSelect, modifier)
+    AudioSwitcher(state, onSelect, modifier, onExpandedChanged)
 }
 
 @Composable
@@ -68,6 +69,8 @@ fun PlayerControllerDefaults.AudioSwitcher(
     state: AudioTrackState,
     onSelect: (AudioTrack?) -> Unit,
     modifier: Modifier = Modifier,
+    onExpandedChanged: (expanded: Boolean) -> Unit = {},
+    unplayableFormatOf: (AudioTrack) -> String? = { null },
 ) {
     val options by state.options.collectAsStateWithLifecycle(emptyList())
     AudioSwitcher(
@@ -75,11 +78,15 @@ fun PlayerControllerDefaults.AudioSwitcher(
         onValueChange = { onSelect(it?.audioTrack) },
         optionsProvider = { options },
         modifier,
+        onExpandedChanged = onExpandedChanged,
+        unplayableFormatOf = unplayableFormatOf,
     )
 }
 
 /**
  * 选音轨.
+ *
+ * @param unplayableFormatOf 设备放不了的音轨返回它的格式名 (认不出格式为空串), 列表里注明并压暗; 能放的返回 null
  */
 @Composable
 fun PlayerControllerDefaults.AudioSwitcher(
@@ -87,6 +94,8 @@ fun PlayerControllerDefaults.AudioSwitcher(
     onValueChange: (AudioPresentation?) -> Unit,
     optionsProvider: () -> List<AudioPresentation>,
     modifier: Modifier = Modifier,
+    onExpandedChanged: (expanded: Boolean) -> Unit = {},
+    unplayableFormatOf: (AudioTrack) -> String? = { null },
 ) {
     val optionsProviderUpdated by rememberUpdatedState(optionsProvider)
     val options by remember {
@@ -103,13 +112,14 @@ fun PlayerControllerDefaults.AudioSwitcher(
             if (it == null) {
                 Text(stringResource(Lang.video_player_auto))
             } else {
-                Text(it.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                UnplayableAwareAudioName(it.shownName(options.indexOf(it) + 1), unplayableFormatOf(it.audioTrack))
             }
         },
         renderValueExposed = {
             val audioTrackText = stringResource(Lang.video_player_audio_track)
+            val name = it?.shownName(options.indexOf(it) + 1)
             Text(
-                remember(it, audioTrackText) { it?.displayName ?: audioTrackText },
+                remember(name, audioTrackText) { name ?: audioTrackText },
                 Modifier.widthIn(max = 64.dp),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -119,5 +129,11 @@ fun PlayerControllerDefaults.AudioSwitcher(
             clippingEnabled = false,
             focusable = true, // Critical for TV focus (especially Android TV); applied on all platforms
         ),
+        onExpandedChanged = onExpandedChanged,
     )
 }
+
+/** 列表里第 [number] 条音轨显示的名字: 没起名的写「音轨 N」. */
+@Composable
+private fun AudioPresentation.shownName(number: Int): String =
+    if (audioTrack.isNamed) displayName else stringResource(Lang.video_player_audio_track_numbered, number)

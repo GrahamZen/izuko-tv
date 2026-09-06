@@ -55,7 +55,12 @@ fun aniSharedSketch(
             context = context,
             client = client,
             cacheDirectory = appCacheDirectory.resolve(ANI_IMAGE_CACHE_DIRECTORY),
-        )
+        ).also { sketch ->
+            // 启动页进度条的前一段就是图片缓存打开的进度 (见 AniStartupProgress)
+            (sketch.downloadCache as? AniImageDiskCache)?.let {
+                AniStartupProgress.bindImageCacheOpenProgress(it.openProgress)
+            }
+        }
     }.also { sharedSketch = it }
 }
 

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.repository.subject
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -28,8 +29,11 @@ import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.RelatedPersonInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
-import me.him188.ani.app.data.network.AniSubjectRelationIndexService
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
+import me.him188.ani.app.data.network.splitSeasonOf
+import me.him188.ani.app.data.network.toSubjectRelations
 import me.him188.ani.app.data.network.BatchSubjectRelations
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.dao.RelatedCharacterView
 import me.him188.ani.app.data.persistent.database.dao.RelatedPersonView
@@ -80,7 +84,9 @@ class DefaultSubjectRelationsRepository(
     private val subjectRelationsDao: SubjectRelationsDao,
     private val subjectService: SubjectService,
     private val subjectCollectionRepository: SubjectCollectionRepository,
-    private val aniSubjectRelationIndexService: AniSubjectRelationIndexService,
+    private val subjectSeriesIndexService: SubjectSeriesIndexService,
+    /** 见 [StaleKeyedFetcher]: 关联数据的重取也不能挂在调用方协程上. */
+    scope: CoroutineScope,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val autoRefreshPeriod: Duration = 1.hours,
     // 角色与制作人员几乎不变, 过期时间不宜太短: 该接口曾占服务端出站流量的一半以上.
@@ -89,8 +95,8 @@ class DefaultSubjectRelationsRepository(
     override fun subjectSequelSubjectIdsFlow(subjectId: Int): Flow<List<Int>> = flow {
         emit(
             kotlinx.coroutines.withTimeoutOrNull(10_000) {
-                // 这服务极快, 不会超时. 10 秒还没完, 只能是服务器重启了一下, 正在构造索引
-                aniSubjectRelationIndexService.getSubjectRelationIndex(subjectId).sequelSubjects
+                // 客户端自己走关系闭包, 每个节点一个请求; 结果有内存缓存, 超时基本只会发生在首次且网络很差时
+                subjectSeriesIndexService.getSubjectRelationIndex(subjectId).sequelSubjects
             }
                 ?: throw RepositoryServiceUnavailableException("Failed to fetch subject sequel subjects for $subjectId due to timeout"),
         )
@@ -113,13 +119,13 @@ class DefaultSubjectRelationsRepository(
             }.flowOn(defaultDispatcher)
     }
 
-    /**
-     * 系列关系 (含拆分季) 取自条目收藏信息里的 [SubjectCollectionInfo.relations], 与系列索引接口是同一份数据, 不单独请求.
-     */
-    override fun subjectSeriesInfoFlow(subjectId: Int): Flow<SubjectSeriesInfo> =
-        subjectCollectionRepository.subjectCollectionFlow(subjectId)
-            .map { SubjectSeriesInfo.compute(it) }
-            .flowOn(defaultDispatcher)
+    override fun subjectSeriesInfoFlow(subjectId: Int): Flow<SubjectSeriesInfo> = flow {
+        emit(subjectSeriesIndexService.getSubjectRelationIndex(subjectId))
+    }.combine(subjectCollectionRepository.subjectCollectionFlow(subjectId)) { index, requestingSubject ->
+        // 条目库里的 relations 原本由 Ani 服务端随条目下发, 直连后没人填: 用刚走出来的系列索引
+        val relations = index.toSubjectRelations().copy(splitSeason = index.splitSeasonOf(requestingSubject))
+        SubjectSeriesInfo.compute(requestingSubject.copy(relations = relations))
+    }.flowOn(defaultDispatcher)
 
 //    override fun subjectSequelSubjectNamesFlow(subjectId: Int): Flow<Set<String>> {
 //        return subjectSequelSubjectsFlow(subjectId)
@@ -139,7 +145,7 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
                     fetchRelationsIfStaleOrNull(subjectId)
                 }
 
@@ -157,7 +163,7 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
                     fetchRelationsIfStaleOrNull(subjectId)
                 }
 
@@ -201,7 +207,7 @@ class DefaultSubjectRelationsRepository(
             .map { it.cachedCharactersUpdated }
             .distinctUntilChanged()
 
-    private val relationsFetcher = StaleKeyedFetcher<Int>()
+    private val relationsFetcher = StaleKeyedFetcher<Int>(scope)
 
     /**
      * **同一条目的关联数据只取一次**: 角色区块与制作人员区块是两条独立的流, 各自判一遍"过期就取",
@@ -245,7 +251,7 @@ class DefaultSubjectRelationsRepository(
             key = subjectId,
             isFresh = {
                 val updated = subjectCollectionDao.findById(subjectId).first()?.cachedCharactersUpdated ?: 0L
-                (currentTimeMillis() - updated).milliseconds <= cacheExpiry
+                relationsFresh(updated, currentTimeMillis(), cacheExpiry)
             },
         ) {
             fetchAndSaveSubjectRelations(subjectId)
@@ -326,8 +332,10 @@ private fun CharacterEntity.toCharacterInfo(actors: List<PersonInfo>): Character
         name = name,
         nameCn = nameCn,
         actors = actors,
-        imageLarge = imageLarge,
-        imageMedium = imageMedium,
+        // 出库时再兜一次占位图: 库里存着一批空串 —— 是补占位图之前写进去的 (真机上 person 表
+        // 7393 行里 34 行为空), 而这两张表按 TTL 缓存, 不重新取就一直画成黑块.
+        imageLarge = imageLarge.orBangumiPlaceholder(),
+        imageMedium = imageMedium.orBangumiPlaceholder(),
     )
 }
 
@@ -345,8 +353,9 @@ private fun PersonEntity.toPersonInfo(): PersonInfo {
         name = name,
         type = type,
         careers = emptyList(),
-        imageLarge = imageLarge,
-        imageMedium = imageMedium,
+        // 同上: 出库时兜占位图
+        imageLarge = imageLarge.orBangumiPlaceholder(),
+        imageMedium = imageMedium.orBangumiPlaceholder(),
         summary = summary,
         locked = false,
         nameCn = nameCn,
@@ -354,12 +363,31 @@ private fun PersonEntity.toPersonInfo(): PersonInfo {
 }
 
 
-private fun BatchSubjectRelations.characterActorRelations() =
-    relatedCharacterInfoList.asSequence().flatMap { relatedCharacterInfo ->
-        relatedCharacterInfo.character.actors.asSequence().map { person ->
+/**
+ * 每个角色落一行声优: character_actor 表的主键只有角色, 一个角色只存得下一位 —— 全写进去的话后写的覆盖先写的,
+ * 存下的就成了接口顺序里的最后那位 (常常是中配 / 日配, 不是原版). 存排第一的那位 (原版优先, 见 sortedByOriginalCast).
+ */
+internal fun BatchSubjectRelations.characterActorRelations(): Sequence<CharacterActorEntity> =
+    relatedCharacterInfoList.asSequence().mapNotNull { relatedCharacterInfo ->
+        relatedCharacterInfo.character.actors.firstOrNull()?.let { person ->
             CharacterActorEntity(relatedCharacterInfo.character.id, person.id)
         }
     }
+
+/**
+ * 条目的关联数据 (角色 / 制作人员 / 声优) 在 [now] 还算不算新鲜: [updated] 是上次取完的时刻, 过了 [expiry] 就重取.
+ *
+ * [RELATIONS_VALID_SINCE_MILLIS] 之前取的一律当过期: 那时每个角色存下的声优是接口顺序里的最后一位, 常常是配音而不是原版
+ * (见 [characterActorRelations]), 已看过的条目下次进详情页就重取. 设备时钟早于它时不看这条 —— 否则取完盖的章总早于它,
+ * 每次都判过期、反复重取.
+ */
+internal fun relationsFresh(updated: Long, now: Long, expiry: Duration): Boolean {
+    if (now >= RELATIONS_VALID_SINCE_MILLIS && updated < RELATIONS_VALID_SINCE_MILLIS) return false
+    return (now - updated).milliseconds <= expiry
+}
+
+/** 2026-09-29T03:40:00Z, 声优改成原版优先、每个角色只存一位 (见 [relationsFresh]). */
+internal const val RELATIONS_VALID_SINCE_MILLIS = 1_790_653_200_000L
 
 private fun CharacterInfo.toEntity(): CharacterEntity {
     return CharacterEntity(

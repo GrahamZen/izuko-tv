@@ -30,6 +30,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.him188.ani.danmaku.dandanplay.data.DandanplayDanmaku
 import me.him188.ani.danmaku.dandanplay.data.DandanplayDanmakuListResponse
+import me.him188.ani.danmaku.dandanplay.data.DandanplaySendCommentRequest
+import me.him188.ani.danmaku.dandanplay.data.DandanplaySendCommentResponse
 import me.him188.ani.danmaku.dandanplay.data.DandanplayGetBangumiResponse
 import me.him188.ani.danmaku.dandanplay.data.DandanplayMatchVideoResponse
 import me.him188.ani.danmaku.dandanplay.data.DandanplaySearchEpisodeResponse
@@ -49,6 +51,8 @@ internal class DandanplayClient(
     private val appId: String,
     private val appSecret: String,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO,
+    /** 作品详情接口记结果、被限额时暂停 (见 [DandanplayBangumiCalls]). */
+    val bangumiCalls: DandanplayBangumiCalls = DandanplayBangumiCalls(),
 ) {
     /**
      * Must be used at the last step of building the request.
@@ -122,7 +126,8 @@ internal class DandanplayClient(
 
     suspend fun getBangumiEpisodes(
         bangumiId: Int, // 注意, 这是 dandanplay 的 id, 不是 Bangumi.tv 的 id
-    ): DandanplayGetBangumiResponse = withContext(ioDispatcher) {
+    ): DandanplayGetBangumiResponse = bangumiCalls.anime(bangumiId) {
+        withContext(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/$bangumiId") {
@@ -133,11 +138,13 @@ internal class DandanplayClient(
 
             response.body<DandanplayGetBangumiResponse>()
         }
+        }
     }
 
     suspend fun getBangumiEpisodesByBgmtvSubjectId(
         bgmtvSubjectId: Int,
-    ): DandanplayGetBangumiResponse = withContext(ioDispatcher) {
+    ): DandanplayGetBangumiResponse = bangumiCalls.bgmtv(bgmtvSubjectId) {
+        withContext(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/bgmtv/$bgmtvSubjectId") {
@@ -147,6 +154,7 @@ internal class DandanplayClient(
                 }
 
             response.body<DandanplayGetBangumiResponse>()
+        }
         }
     }
 
@@ -198,6 +206,30 @@ internal class DandanplayClient(
         }
     }
 
+
+    /**
+     * 向 dandanplay 的**开放弹幕网络**发一条弹幕 (`POST /comment/{episodeId}/app`), 返回弹幕 id.
+     *
+     * 与官方那个 `POST /comment/{episodeId}` 的区别: 那个要 dandanplay **用户** token
+     * (得让用户去登录 dandanplay 账号), 而这个只要应用自己的 AppId/AppSecret, 昵称由应用指定,
+     * 弹幕存进本应用的私有弹幕库, 拉弹幕时会一并返回。
+     *
+     * 注意配额: 官方文档写着"只有社区合作/商业授权层级的应用有完整额度, 其他层级仅限测试使用"。
+     */
+    suspend fun postAppComment(
+        episodeId: Long,
+        request: DandanplaySendCommentRequest,
+    ): DandanplaySendCommentResponse = withContext(ioDispatcher) {
+        client.use {
+            post("https://api.dandanplay.net/api/v2/comment/$episodeId/app") {
+                configureTimeout()
+                accept(ContentType.Application.Json)
+                contentType(ContentType.Application.Json)
+                setBody(request)
+                addAuthorizationHeaders()
+            }.body()
+        }
+    }
 
     private fun HttpRequestBuilder.configureTimeout() {
         timeout {

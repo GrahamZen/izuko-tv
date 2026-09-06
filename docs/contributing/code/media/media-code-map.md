@@ -100,12 +100,52 @@
    里该条目的记忆 `browseSubject` 记住的条目、在记住的线路里按位置找目标集，`createMedia` 后 `select`，
    并更新记忆。命中则不进入第 7 步。
 7. `MediaSelectorAutoSelectUseCaseImpl` 准备配置并启用上次使用的源，调用
-   `MediaAutoSelector.select`；后者统一处理缓存、记忆源、WEB 两段超时或 BT 完成条件。
-8. `EpisodeFetchSelectPlayState.LoadMediaOnSelectExtension` 监听 `mediaSelector.selected`，先调用各扩展的
-   `onBeforeLoadMedia`（换源时 `RememberPlayProgressExtension` 在这里保存旧资源的进度），再读出本集记忆的播放进度
-   作为起播位置（一起看时从头），调用 `PlayerSession.loadMedia(...)`。
+   `MediaAutoSelector.select`；后者统一处理缓存、记忆源、WEB 两段超时或 BT 完成条件，
+   离开记忆源阶段时调用 `MediaFetchSession.resumePausedSources`（开播后被暂停的源，切集或换源时才会遇到）；
+   记忆源自己被暂停时先只放开它、在记忆源阶段等它的结果。
+8. `EpisodeFetchSelectPlayState.LoadMediaOnSelectExtension` 监听 `mediaSelector.selected` 并调用
+   `PlayerSession.loadMedia(...)`。
 9. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`，播放器直接在起播位置打开。
+   Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
+   mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
+   播放中卡住缓冲时 `RebufferDiagnostics`（挂在播放器上的 `AnalyticsListener`）往日志写两行 `[Rebuffer]`：卡住那一刻的缓冲余量、
+   最近 30 秒实收与最慢请求、片源码率、网络（Wi-Fi 信号与协商速率），恢复时卡了多久、期间整机与本 app 各收了多少；
+   开播、拖动、换媒体后的第一次缓冲不算。平时只在内存里记取数据记录，查系统信息与写日志都在后台线程。
+   实收按播放器实际从网络读到的字节算：播放器的测速器换成 `DeliveredBytesMeter`，所有数据源读到的字节都经它按秒累计
+   （网盘直链一次打开读到文件尾，测速采样要等读完才报）。
+   网盘直链（解析器给了并发提示）的视频由 `ParallelRangeDataSource` 分块并发下载，播放与推迟读的字体附件共用这个文件的总长；
+   外挂字幕不是这个文件，单连接直接下（共用总长会按视频的长度分块去要字幕，一个字节也拿不到）。
+   网盘直链的缓冲策略是 `ThrottledSourceLoadControl`：开播 / 跳转后攒够 5 秒才播，播放中卡住后攒够 10 秒，
+   同一个媒体每多卡一次翻倍（最多 60 秒）；在等这些门槛时它报出要攒多少，电视播放页的 `TvThrottledBufferHint` 据此说明原因。
+9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
+   （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
+   `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
+   `EpisodeViewModel` 管选源面板开关（`onMediaSelectorShown` / `onMediaSelectorHidden`）与「完整搜索」
+   （`setFullMediaSearch`，手机控制中心经 `TvRemoteControl` 的 `api/player/full-search`）；
+   播放失败换源（`PlayerLoadErrorHandler.handleError`）也会放开暂停的数据源。
+10. 媒体的轨道出来时，Android 播放器（`LibassExoPlayerMediampPlayer` 里的 `PreferredTrackSelector`）问
+    `PreferredTracksExtension` 设置的 `SubjectTrackChooser` 选哪条字幕与音轨（规则见 `TrackChoicePolicy`：
+    字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。
+    轨道的语言从轨道名与容器里的语言码认（`TrackLanguage`）。mediamp 的 ExoPlayer 后端只下发字幕的选择，
+    音轨的选择由 `PreferredTrackSelector` 设成 ExoPlayer 的 override。设备自己解不了、HDMI 也接不出直通的音频
+    （多数盒子上的 TrueHD、DTS）由 FFmpeg 软解成 PCM：`FfmpegAudioFallback` 在 ExoPlayer 构建前换上打开了扩展渲染器的
+    渲染器工厂，FFmpeg 排在系统解码器后面。软解库是 media3 的 FFmpeg 扩展：Java 类原样放在 video-player 的
+    `src/androidMain/java/androidx/media3/decoder/ffmpeg/`，`libffmpegJNI.so` 由 `native/media3-ffmpeg/build.sh` 编（只含音频解码器，
+    给 TrueHD 补了声道布局，FFmpeg 6.x 没有它解不了 TrueHD）。override 不看设备能不能解，
+    所以连 FFmpeg 也放不了的音轨记成 `TrackCandidate.isPlayable = false`，选音轨时不选；
+    它们也经 `AudioTrackSupport` 交给选音轨的界面（电视底栏 `TvAudioSwitcher`、手机控制中心）注明并拦下，切过去会报错并被自动换源换掉整个资源。
+    播放器报错是因为设备放不了某种编码格式时，`UnsupportedFormat` 从渲染器异常里认出是音频还是画面、哪种格式，
+    加载提示据此写成「这台电视放不了…」（H.264 的 10-bit、4:2:2、4:4:4 规格写进名字，如「H.264 10-bit 1080p」）。
+    这几种 H.264 规格硬件解码器基本都解不了，有的设备照样解、不报错，只输出一片片错位的色块：
+    `UndecodableProfileGuardingVideoRenderer`（`PassthroughGatedRenderersFactory` 换上的系统解码器视频渲染器）在没有解码器声明支持时
+    不开解码器，解码器初始化报错，之后同样提示并自动换源。日志 `[VideoDecoder]` 在每次开解码器时记下格式与各解码器认不认它，
+    每个进程第一次建播放器时列出本机全部视频解码器声明的最大尺寸、10-bit 与否和 profile。音轨全都放不了时播放器不选音轨、照常放画面，不报错，
+    `AudioTrackSupport.allAudioUnplayable` 让电视弹提示请用户手动换源（`TvUnplayableAudioNotice`）。
+    字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
+    手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
+    `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
+    `CharsetFixingSubtitleParserFactory` 里（SRT / ASS / SSA / WebVTT 转成 UTF-8）。编码按整条轨认（`SubtitleCharsetGuesser`）。
 
 ### 播放拖入的本地文件（桌面端）
 

@@ -149,6 +149,41 @@ class SwitchNextEpisodeExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `does not switch after a video too short for an episode`() = runTest {
+        // 网页源抓到的站点公告片 (几秒) 播完不算这一集播完
+        val (testScope, suite, state) =
+            createCase(getNextEpisode = { 1000 })
+
+        loadSelectedMedia(suite, state, durationMillis = 10_000L)
+
+        suite.player.seekTo(10_000L)
+        advanceUntilIdle()
+        suite.player.injectEnded()
+
+        advanceUntilIdle()
+
+        assertEquals(2, state.getCurrentEpisodeId())
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `does not switch when the media ends without having played`() = runTest {
+        // 从结尾之后打开 (续播位置超过资源长度): 播放器开不了播, 一打开就报播完
+        val (testScope, suite, state) =
+            createCase(getNextEpisode = { 1000 })
+        suite.player.openInitiallyStalled = true
+
+        loadSelectedMedia(suite, state)
+        suite.player.injectEnded()
+        advanceUntilIdle()
+
+        assertEquals(initialEpisodeId, state.getCurrentEpisodeId())
+
+        testScope.cancel()
+    }
+
+    @Test
     fun `switches only once`() = runTest {
         var getNextEpisodeCalled = 0
         val (testScope, suite, state) =

@@ -9,19 +9,15 @@
 
 package me.him188.ani.app.domain.mediasource.subscription
 
-import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpStatusCode.Companion.UnprocessableEntity
-import kotlinx.serialization.json.io.decodeFromSource
+import io.ktor.client.statement.bodyAsText
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
-import me.him188.ani.client.apis.SubscriptionsAniApi
-import me.him188.ani.utils.coroutines.withExceptionCollector
-import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.app.domain.mediasource.rule.AniBakaSubscription
 import me.him188.ani.utils.ktor.ScopedHttpClient
-import me.him188.ani.utils.ktor.toSource
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
 
 fun interface MediaSourceSubscriptionRequester {
@@ -31,9 +27,14 @@ fun interface MediaSourceSubscriptionRequester {
     ): SubscriptionUpdateData
 }
 
+/**
+ * 订阅更新只走**直连**: 订阅源本来就是用户自己填的地址, 打不开该让他看见.
+ *
+ * [sourcesOf] 给出一个订阅地址的全部来源 (原地址在前): GitHub 上的地址带上加速镜像, 原地址不通时依次试镜像, 每个限时 [MIRROR_TIMEOUT_MILLIS].
+ */
 class MediaSourceSubscriptionRequesterImpl(
     private val client: ScopedHttpClient,
-    private val api: ApiInvoker<SubscriptionsAniApi>,
+    private val sourcesOf: suspend (url: String) -> List<String> = { listOf(it) },
 ) : MediaSourceSubscriptionRequester {
     /**
      * 执行网络请求, 下载新订阅数据.
@@ -42,38 +43,32 @@ class MediaSourceSubscriptionRequesterImpl(
     override suspend fun request(
         subscription: MediaSourceSubscription,
     ): SubscriptionUpdateData {
-        suspend fun HttpResponse.decode() = bodyAsChannel().toSource().use {
-            MediaSourceCodecManager.Companion.json.decodeFromSource(
-                SubscriptionUpdateDataReader,
-                it,
-            )
-        }
-
-        withExceptionCollector {
-            // 首先直连
+        val urls = sourcesOf(subscription.url).ifEmpty { listOf(subscription.url) }
+        var lastError: Exception? = null
+        for (url in urls) {
             try {
-                return client.use {
-                    get(subscription.url).decode()
+                val text = client.use {
+                    get(url) {
+                        if (urls.size > 1) timeout { requestTimeoutMillis = MIRROR_TIMEOUT_MILLIS }
+                    }.bodyAsText()
                 }
+                // 订阅地址也可以是 AniBaka 的规则库: 下载到的是它就转换成规则源
+                return AniBakaSubscription.decodeOrNull(text, url) { ruleUrl -> client.use { get(ruleUrl).bodyAsText() } }
+                    ?: MediaSourceCodecManager.json.decodeFromString(SubscriptionUpdateDataReader, text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UnsupportedSubscriptionSchemaException) {
-                throw e // 代理返回的是同一份内容
+                throw e // 各镜像给的是同一份内容
             } catch (e: Exception) {
-                collect(e) // continue
-            }
-
-            // 失败则尝试代理服务
-            return try {
-                api {
-                    proxy(subscription.url).response.decode()
-                }
-            } catch (e: ClientRequestException) {
-                if (e.response.status == UnprocessableEntity) {
-                    throwLast() // ignore this exception, throw the previous one
-                }
-                throw e
+                if (urls.size > 1) logger.warn { "Subscription request failed via $url: $e" }
+                lastError = e
             }
         }
+        throw lastError!!
+    }
+
+    private companion object {
+        private val logger = logger<MediaSourceSubscriptionRequesterImpl>()
+        private const val MIRROR_TIMEOUT_MILLIS = 15_000L
     }
 }

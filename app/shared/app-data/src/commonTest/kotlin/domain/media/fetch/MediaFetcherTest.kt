@@ -13,6 +13,7 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -21,12 +22,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.media.TestMediaList
@@ -37,7 +40,10 @@ import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.app.domain.mediasource.web.PageExpectation
 import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
+import me.him188.ani.app.domain.player.extension.pauseSearchingWhilePlaying
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.paging.PageBasedPagedSource
+import me.him188.ani.datasources.api.paging.Paged
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.MatchKind
@@ -344,6 +350,150 @@ class MediaFetcherTest {
         assertEquals(5, session.awaitCompletedResults().size)
         assertEquals(5, session.cumulativeResults.first().size)
         assertEquals(5, res.results.first().size)
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // pause
+    ///////////////////////////////////////////////////////////////////////////
+
+    @Test
+    fun `source paused before it starts is not fetched and counts as completed`() = runTest {
+        val session = createFetcher(
+            createTestMediaSourceInstance(
+                TestHttpMediaSource(
+                    fetch = {
+                        SinglePagePagedSource {
+                            TestMediaList.take(2).map { MediaMatch(it, MatchKind.EXACT) }.asFlow()
+                        }
+                    },
+                ),
+            ),
+            createTestMediaSourceInstance(TestHttpMediaSource(fetch = { fail("Should not fetch") })),
+        ).newSession(request1)
+        val kept = session.mediaSourceResults[0]
+        val paused = session.mediaSourceResults[1]
+
+        assertEquals(1, session.pauseSearching(keep = { it === kept }))
+        assertIs<MediaSourceFetchState.Paused>(paused.state.value)
+
+        assertEquals(2, session.awaitCompletedResults().size)
+        assertIs<MediaSourceFetchState.Succeed>(kept.state.value)
+        assertIs<MediaSourceFetchState.Paused>(paused.state.value)
+        assertEquals(emptyList(), paused.results.first())
+    }
+
+    @Test
+    fun `resuming a paused source fetches it`() = runTest {
+        var fetchCount = 0
+        val session = createFetcher(
+            createTestMediaSourceInstance(
+                TestHttpMediaSource(
+                    fetch = {
+                        fetchCount++
+                        SinglePagePagedSource {
+                            TestMediaList.map { MediaMatch(it, MatchKind.EXACT) }.asFlow()
+                        }
+                    },
+                ),
+            ),
+        ).newSession(request1)
+        val result = session.mediaSourceResults.single()
+        assertEquals(1, session.pauseSearching())
+        assertEquals(emptyList(), session.awaitCompletedResults())
+        assertEquals(0, fetchCount)
+
+        assertTrue(session.resumePausedSources())
+        assertIs<MediaSourceFetchState.Idle>(result.state.value)
+        assertEquals(5, session.awaitCompletedResults().size)
+        assertIs<MediaSourceFetchState.Succeed>(result.state.value)
+        assertEquals(1, fetchCount)
+        assertFalse(session.resumePausedSources())
+    }
+
+    @Test
+    fun `pausing a working source cancels it and keeps results so far`() = runTest {
+        var fetchCount = 0
+        val laterPages = CompletableDeferred<Unit>()
+        val session = createFetcher(
+            createTestMediaSourceInstance(
+                TestHttpMediaSource(
+                    fetch = {
+                        fetchCount++
+                        PageBasedPagedSource { page ->
+                            if (page == 0) {
+                                Paged(null, hasMore = true, TestMediaList.take(2).map { MediaMatch(it, MatchKind.EXACT) })
+                            } else {
+                                laterPages.await() // 后面的页还在路上
+                                Paged(null, hasMore = false, TestMediaList.drop(2).map { MediaMatch(it, MatchKind.EXACT) })
+                            }
+                        }
+                    },
+                ),
+            ),
+        ).newSession(request1)
+        val result = session.mediaSourceResults.single()
+        val collector = launch { session.cumulativeResults.collect() }
+        assertEquals(2, result.results.first { it.size == 2 }.size)
+        assertIs<MediaSourceFetchState.Working>(result.state.value)
+
+        result.pause()
+        assertIs<MediaSourceFetchState.Paused>(result.state.value)
+        laterPages.complete(Unit)
+        advanceUntilIdle()
+        // 进行中的查询已被取消: 后面的页不会再进来, 暂停前拿到的保留
+        assertEquals(2, result.results.first().size)
+        assertIs<MediaSourceFetchState.Paused>(result.state.value)
+        assertTrue(session.hasCompleted.first().allCompleted())
+
+        result.restart()
+        assertEquals(5, result.results.first { it.size == 5 }.size)
+        result.state.first { it is MediaSourceFetchState.Succeed }
+        assertEquals(2, fetchCount)
+        collector.cancel()
+    }
+
+    @Test
+    fun `pausing while playing after the selector was opened lets searching sources finish`() = runTest {
+        val running = CompletableDeferred<Unit>()
+        fun neverEnding() = createTestMediaSourceInstance(
+            TestHttpMediaSource(fetch = { SinglePagePagedSource { running.await(); emptyFlow() } }),
+        )
+        val opened = createFetcher(neverEnding(), neverEnding()).newSession(request1)
+        val notOpened = createFetcher(neverEnding(), neverEnding()).newSession(request1)
+        for (session in listOf(opened, notOpened)) {
+            // 只订阅第一个: 它在查, 第二个还没开始
+            backgroundScope.launch { session.mediaSourceResults[0].results.collect() }
+        }
+        advanceUntilIdle()
+        assertIs<MediaSourceFetchState.Working>(opened.mediaSourceResults[0].state.value)
+
+        assertEquals(1, opened.pauseSearchingWhilePlaying(selectorOpened = true, keep = { false }))
+        assertIs<MediaSourceFetchState.Working>(opened.mediaSourceResults[0].state.value, "正在查的让它查完")
+        assertIs<MediaSourceFetchState.Paused>(opened.mediaSourceResults[1].state.value)
+
+        assertEquals(2, notOpened.pauseSearchingWhilePlaying(selectorOpened = false, keep = { false }), "没开过面板: 全停")
+        running.complete(Unit)
+    }
+
+    @Test
+    fun `pausing a completed source keeps its state and results`() = runTest {
+        val session = createFetcher(
+            createTestMediaSourceInstance(
+                TestHttpMediaSource(
+                    fetch = {
+                        SinglePagePagedSource {
+                            TestMediaList.map { MediaMatch(it, MatchKind.EXACT) }.asFlow()
+                        }
+                    },
+                ),
+            ),
+        ).newSession(request1)
+        val result = session.mediaSourceResults.single()
+        assertEquals(5, session.awaitCompletedResults().size)
+
+        assertEquals(0, session.pauseSearching())
+        assertIs<MediaSourceFetchState.Succeed>(result.state.value)
+        assertEquals(5, result.results.first().size)
     }
 
     ///////////////////////////////////////////////////////////////////////////

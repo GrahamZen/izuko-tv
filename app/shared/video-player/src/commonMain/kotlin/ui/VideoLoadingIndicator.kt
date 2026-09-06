@@ -28,10 +28,16 @@ fun VideoLoadingIndicator(
     text: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.labelLarge,
+    /** 不为 `null` 时画定量的进度环 (0..1, 在绘制阶段读), 否则转圈. 只在 [showProgress] 时有效. */
+    progress: (() -> Float)? = null,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         if (showProgress) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+            if (progress != null) {
+                CircularProgressIndicator(progress = progress, modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
+            } else {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+            }
         }
 
         Row(Modifier.padding(top = 8.dp)) {

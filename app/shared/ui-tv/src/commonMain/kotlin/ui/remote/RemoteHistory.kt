@@ -23,6 +23,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.staticSubjectImageLargeUrl
@@ -167,6 +169,8 @@ internal object RemoteHistory {
                         // 封面候选: 镜像站原图直连 → 电视转发 → Bangumi 600 宽 (见 remoteCoverCandidates)
                         if (!lite) h.subjectId?.let { id ->
                             putJsonArray("imgs") { remoteCoverCandidates(id, h.subjectImageUrl).forEach { add(it) } }
+                            // NSFW 作品的封面糊着画 (自己的记录不藏, 隐藏与模糊都糊; 同电视, 见 NsfwPolicy.ownedCoverDownsample)
+                            if (SubjectNsfw.modeOf(id) != NsfwMode.DISPLAY) put("blur", true)
                         }
                     }
                 }
@@ -276,18 +280,19 @@ internal fun remoteCoverUrl(url: String): String = url.replace(BANGUMI_COVER, "/
 
 /**
  * 手机列表项 (播放记录 / 搜索结果) 的竖版封面候选, 网页依次试 (拉不到换下一张):
- * 1. **Ani 镜像站原图, 手机直连**: 同上游 App 的条目封面 (`staticSubjectImageLargeUrl`), 面向国内、手机一般直连得到;
- *    原图交给浏览器自己按显示尺寸解码最清楚 (试过电视缩小再给, 真机明显发虚, 见 [RemoteImageProxy]);
- * 2. **经电视转发同一张**: 手机连不上镜像站时, 电视用自己的网络 (代理) 拉, 原样转;
- * 3. **Bangumi 图片站 600 宽** ([remoteCoverUrl]): 镜像站里还没有的新条目.
- * 只在 main 成立: 纯直连分支没有 Ani 服务器.
+ * 1. **经电视转发**: 电视用自己的网络拉 ([staticSubjectImageLargeUrl] 是 bangumi 的封面重定向端点),
+ *    原样转给手机 —— 排第一是因为 bangumi 在国内连不上, 而电视这边有代理与镜像回落;
+ * 2. **手机直连同一张**: 电视不在同一网络或转发失败时的退路;
+ * 3. **Bangumi 图片站 600 宽** ([remoteCoverUrl]): 已经有具体图片地址时更省一次重定向.
+ *
+ * 原图交给浏览器自己按显示尺寸解码最清楚 (试过电视缩小再给, 真机明显发虚, 见 [RemoteImageProxy]).
  */
 internal fun remoteCoverCandidates(subjectId: Int, bangumiUrl: String?): List<String> {
-    val mirror = staticSubjectImageLargeUrl(subjectId)
+    val cover = staticSubjectImageLargeUrl(subjectId)
     return buildList {
-        add(mirror)
-        add(RemoteImageProxy.proxied(mirror))
-        bangumiUrl?.takeIf { it.isNotBlank() }?.let(::remoteCoverUrl)?.takeIf { it != mirror }?.let(::add)
+        add(RemoteImageProxy.proxied(cover))
+        add(cover)
+        bangumiUrl?.takeIf { it.isNotBlank() }?.let(::remoteCoverUrl)?.takeIf { it != cover }?.let(::add)
     }
 }
 

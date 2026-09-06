@@ -15,10 +15,14 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.builtins.nullable
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.network.TmdbImageCache
+import me.him188.ani.app.data.network.SeriesGraphTableCache
+import me.him188.ani.app.data.network.TmdbSubjectMapCache
 import me.him188.ani.app.data.repository.SavedWindowState
 import me.him188.ani.app.data.repository.media.ManualBrowseMemories
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
@@ -95,6 +99,52 @@ abstract class PlatformDataStoreManager {
             produceFile = { resolveDataStoreFile("tmdbImageCache") },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 TmdbImageCache.Empty
+            },
+        )
+    }
+
+    /** 对应表 (bangumi-tmdb-map) 的下载元数据; 表的原文在单独的文件里, 见 TmdbSubjectMapRepository. */
+    val tmdbSubjectMapStore by lazy {
+        DataStoreFactory.create(
+            serializer = TmdbSubjectMapCache.serializer()
+                .asDataStoreSerializer({ TmdbSubjectMapCache.Empty }),
+            produceFile = { resolveDataStoreFile("tmdbSubjectMap") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                TmdbSubjectMapCache.Empty
+            },
+        )
+    }
+
+    /** 系列关系图 (bangumi-sequel-seasons 的 bgm-series-graph.tsv) 的下载元数据; 表的原文在单独的文件里, 见 SeriesGraphTableRepository. */
+    val seriesGraphTableStore by lazy {
+        DataStoreFactory.create(
+            serializer = SeriesGraphTableCache.serializer()
+                .asDataStoreSerializer({ SeriesGraphTableCache.Empty }),
+            produceFile = { resolveDataStoreFile("seriesGraphTable") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                SeriesGraphTableCache.Empty
+            },
+        )
+    }
+
+    /** 登记过是 NSFW 的条目 id (见 SubjectNsfw); 不分用户, 是条目本身的属性. */
+    val subjectNsfwStore by lazy {
+        DataStoreFactory.create(
+            serializer = ListSerializer(Int.serializer()).asDataStoreSerializer({ emptyList() }),
+            produceFile = { resolveDataStoreFile("subjectNsfw") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                emptyList()
+            },
+        )
+    }
+
+    val animeScheduleCacheStore by lazy {
+        DataStoreFactory.create(
+            serializer = AnimeScheduleCache.serializer()
+                .asDataStoreSerializer({ AnimeScheduleCache.Empty }),
+            produceFile = { resolveDataStoreFile("animeScheduleCache") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                AnimeScheduleCache.Empty
             },
         )
     }

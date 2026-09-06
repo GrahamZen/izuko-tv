@@ -22,10 +22,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import me.him188.ani.app.data.models.danmaku.DanmakuConfigSerializer
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
+import me.him188.ani.app.data.models.feedback.FeedbackRecords
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.CloudDriveAccounts
+import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -34,14 +38,15 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.danmaku.ui.DanmakuConfig
 import me.him188.ani.utils.logging.debug
@@ -59,6 +64,21 @@ interface SettingsRepository {
     /** 设置 → 代理页底部「不加载 TMDB 背景图」, 见 `TmdbImageService.disabledByUser`. */
     val tmdbImagesDisabled: Settings<Boolean>
 
+    /** TMDB 图片走哪个入口, 见 `TmdbImageEndpoints`. */
+    val tmdbImageEndpoint: Settings<EndpointSelection>
+
+    /** TMDB 图片入口清单的本地缓存, 见 `RepoHostedList`. */
+    val tmdbImageHostCache: Settings<RepoHostedListCache>
+
+    /** 更新包下载镜像清单的本地缓存, 见 `GitHubDownloadMirrors`. */
+    val githubDownloadMirrorCache: Settings<RepoHostedListCache>
+
+    /** 详情页「反馈」的中转地址清单的本地缓存, 见 `SubjectFeedbackService`. */
+    val feedbackEndpointCache: Settings<RepoHostedListCache>
+
+    /** 这台电视提交过的反馈 (见 FeedbackRecordRepository). */
+    val feedbackRecords: Settings<FeedbackRecords>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -73,6 +93,12 @@ interface SettingsRepository {
      */
     val profileSettings: Settings<ProfileSettings>
     val proxySettings: Settings<ProxySettings>
+
+    /** bangumi 走原站还是镜像, 见 [BangumiEndpointSettings]. */
+    val bangumiEndpointSettings: Settings<BangumiEndpointSettings>
+
+    /** 镜像清单的本地缓存, 见 `BangumiMirrorListRepository`. */
+    val bangumiMirrorCache: Settings<RepoHostedListCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -90,14 +116,34 @@ interface SettingsRepository {
     val videoResolverSettings: Settings<VideoResolverSettings>
     val anitorrentConfig: Settings<AnitorrentConfig>
     val pikpakConfig: Settings<PikPakConfig>
+    /** 各网盘的账号, 见 `CloudDriveRegistry`. */
+    val cloudDriveAccounts: Settings<CloudDriveAccounts>
+
+    /** 各网盘里给条目添加的分享. */
+    val cloudDriveAddedShares: Settings<CloudDriveAddedShares>
     val torrentPeerConfig: Settings<TorrentPeerConfig>
 
     val oneshotActionConfig: Settings<OneshotActionConfig>
 
     val analyticsSettings: Settings<AnalyticsSettings>
     val debugSettings: Settings<DebugSettings>
-    val watchTogetherSettings: Settings<WatchTogetherSettings>
-    val notificationSettings: Settings<NotificationSettings>
+
+    /** 以前版本按设置键 [key] 存的一份设置的原文 (JSON); 没有时为 null. 网盘认领旧数据时用, 见 `DriveLegacyData`. */
+    suspend fun readLegacyPreference(key: String): String? = null
+
+    /** 删掉设置键 [key] 那份设置 (认领完旧数据后). */
+    suspend fun removeLegacyPreference(key: String) {}
+
+    /** 一次性的事 [key] (如补上自带的订阅) 做过没有. */
+    suspend fun isMarked(key: String): Boolean = false
+
+    /** 记下一次性的事 [key] 做过了. */
+    suspend fun mark(key: String) {}
+
+    /** 按设置键 [key] 存的一段文本 (如数据源画像, 见 `SourceProfiles`); 没有时为 null. */
+    suspend fun readText(key: String): String? = null
+
+    suspend fun writeText(key: String, value: String) {}
 }
 
 @Stable
@@ -172,6 +218,31 @@ class PreferencesRepositoryImpl(
 
     override val danmakuEnabled: Settings<Boolean> = BooleanPreference("danmaku_enabled", default = true)
     override val tmdbImagesDisabled: Settings<Boolean> = BooleanPreference("tmdb_images_disabled", default = false)
+    override val tmdbImageEndpoint: Settings<EndpointSelection> = SerializablePreference(
+        "tmdbImageEndpoint",
+        EndpointSelection.serializer(),
+        default = { EndpointSelection.Default },
+    )
+    override val tmdbImageHostCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "tmdbImageHostCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val githubDownloadMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "githubDownloadMirrorCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val feedbackEndpointCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "feedbackEndpointCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val feedbackRecords: Settings<FeedbackRecords> = SerializablePreference(
+        "feedbackRecords",
+        FeedbackRecords.serializer(),
+        default = { FeedbackRecords.Empty },
+    )
     override val danmakuConfig: Settings<DanmakuConfig> =
         SerializablePreference("danmaku_config", DanmakuConfigSerializer, default = { DanmakuConfig.Default })
     override val danmakuFilterConfig: Settings<DanmakuFilterConfig> =
@@ -200,6 +271,16 @@ class PreferencesRepositoryImpl(
         "proxyPreferences",
         ProxySettings.serializer(),
         default = { ProxySettings.Default },
+    )
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> = SerializablePreference(
+        "bangumiEndpointPreferences",
+        BangumiEndpointSettings.serializer(),
+        default = { BangumiEndpointSettings.Default },
+    )
+    override val bangumiMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "bangumiMirrorCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
     )
     override val mediaCacheSettings: Settings<MediaCacheSettings> = SerializablePreference(
         "cachePreferences",
@@ -253,6 +334,37 @@ class PreferencesRepositoryImpl(
         default = { PikPakConfig.Default },
     )
 
+    override val cloudDriveAccounts: Settings<CloudDriveAccounts> = SerializablePreference(
+        "cloudDriveAccounts",
+        CloudDriveAccounts.serializer(),
+        default = { CloudDriveAccounts.Default },
+    )
+
+    override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> = SerializablePreference(
+        "cloudDriveAddedShares",
+        CloudDriveAddedShares.serializer(),
+        default = { CloudDriveAddedShares.Default },
+    )
+
+    override suspend fun readLegacyPreference(key: String): String? =
+        preferences.data.first()[stringPreferencesKey(key)]
+
+    override suspend fun removeLegacyPreference(key: String) {
+        preferences.edit { it.remove(stringPreferencesKey(key)) }
+    }
+
+    override suspend fun isMarked(key: String): Boolean = preferences.data.first()[booleanPreferencesKey(key)] == true
+
+    override suspend fun mark(key: String) {
+        preferences.edit { it[booleanPreferencesKey(key)] = true }
+    }
+
+    override suspend fun readText(key: String): String? = preferences.data.first()[stringPreferencesKey(key)]
+
+    override suspend fun writeText(key: String, value: String) {
+        preferences.edit { it[stringPreferencesKey(key)] = value }
+    }
+
     override val torrentPeerConfig: Settings<TorrentPeerConfig> = SerializablePreference(
         "torrentPeerConfig",
         TorrentPeerConfig.serializer(),
@@ -275,18 +387,6 @@ class PreferencesRepositoryImpl(
         "debugSettings",
         DebugSettings.serializer(),
         default = { DebugSettings.Default },
-    )
-
-    override val watchTogetherSettings: Settings<WatchTogetherSettings> = SerializablePreference(
-        "watchTogetherSettings",
-        WatchTogetherSettings.serializer(),
-        default = { WatchTogetherSettings.Default },
-    )
-
-    override val notificationSettings: Settings<NotificationSettings> = SerializablePreference(
-        "notificationSettings",
-        NotificationSettings.serializer(),
-        default = { NotificationSettings.Default },
     )
 
     private companion object {

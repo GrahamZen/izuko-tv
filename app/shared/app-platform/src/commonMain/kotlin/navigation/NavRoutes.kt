@@ -27,12 +27,6 @@ import org.jetbrains.compose.resources.stringResource
 @Serializable
 sealed class NavRoutes : NavKey {
     @Serializable
-    data object EmailLoginStart : NavRoutes()
-
-    @Serializable
-    data object EmailLoginVerify : NavRoutes()
-
-    @Serializable
     data class Main(
         val initialPage: MainScreenPage,
         val requestSearchFocus: Boolean = false,
@@ -74,6 +68,12 @@ sealed class NavRoutes : NavKey {
     data class SubjectSearch(
         val keyword: String? = null,
         val tags: List<String>? = null,
+        /**
+         * 这一次打开的编号, [AniNavigator.navigateSubjectSearch] 每次换一个. Navigation 3 按路由给每页存 rememberSaveable 状态与
+         * ViewModel, 栈里两条相等的路由共用一份: 同一个标签点第二次时, 新开的那页拿到的是第一次那页此刻的状态 —— 包括用户在那页里
+         * 换过的搜索词, 看起来就是点了标签却回到了别的搜索结果.
+         */
+        val instance: Long = 0,
     ) : NavRoutes()
 
     @Serializable
@@ -138,55 +138,12 @@ sealed class NavRoutes : NavKey {
     @Serializable
     data object PlaybackHistory : NavRoutes()
 
-    @Serializable
-    data object PlaybackHistorySyncStatus : NavRoutes()
-
     /**
-     * 合并收藏: 处理 Animeko 与 Bangumi 两侧的收藏冲突.
+     * TV: 首次启动引导 (检测连 Bangumi 的网络、选连接方式、登录). 引导还没做过时作为起始页,
+     * 做完换成 [Main]. 页面实现在 ui-tv, 经 `LocalTvOnboardingVariant` 注入.
      */
     @Serializable
-    data object BangumiMerge : NavRoutes()
-
-    /**
-     * 通知中心.
-     */
-    @Serializable
-    data object Notifications : NavRoutes()
-
-    /**
-     * 单独打开的一条通知 (窄屏). 宽屏时通知详情显示在通知中心的右侧.
-     *
-     * @param notificationId 服务端的通知 ID
-     */
-    @Serializable
-    data class NotificationDetail(val notificationId: String) : NavRoutes()
-
-    /**
-     * 公告列表.
-     */
-    @Serializable
-    data object Announcements : NavRoutes()
-
-    /**
-     * 单独打开的一条公告 (窄屏). 宽屏时公告详情显示在公告列表的右侧.
-     *
-     * @param announcementId 服务端的公告 ID
-     */
-    @Serializable
-    data class AnnouncementDetail(val announcementId: String) : NavRoutes()
-
-    /**
-     * 通知设置.
-     */
-    @Serializable
-    data object NotificationSettings : NavRoutes()
-
-    /**
-     * TV: 自定义播放器按钮 (一个不播放东西的播放器, 在上面排两行按钮的顺序与显隐).
-     * 页面实现在 ui-tv, 经 `LocalTvPlayerChromeEditorVariant` 注入; 入口只在遥控器形态的设置里.
-     */
-    @Serializable
-    data object TvPlayerChrome : NavRoutes()
+    data object TvOnboarding : NavRoutes()
 }
 
 /** Explicit entry identity; a person's asynchronously loaded careers never change their route. */
@@ -226,7 +183,6 @@ enum class SettingsTab {
     PLAYER,
     MEDIA_SOURCE,
     MEDIA_SELECTOR,
-    SERVER,
 
     PROXY,
     BT,

@@ -19,10 +19,11 @@ interface MediaSource {
 
 ## 数据源类型
 
-目前支持三种通用数据源和一些特别支持的数据源：
+目前支持以下通用数据源和一些特别支持的数据源：
 
 - `SelectorMediaSource`：通用 [CSS Selector][CSS Selector] 数据源；
 - `JsonApiMediaSource`：通用 JSON 接口数据源，用于站点内容只经 JSON 接口（通常是 POST）加载、HTML 页面里没有数据的情况；
+- `RuleMediaSource`：按步骤规则抓取网站的通用数据源（规则源）；
 - `RssMediaSource`：通用 RSS 订阅数据源；
 - 特别支持的数据源：
     - `JellyfinMediaSource`、`EmbyMediaSource`：Jellyfin、Emby 媒体库；
@@ -30,7 +31,126 @@ interface MediaSource {
     - `IkarosMediaSource`：[Ikaros][Ikaros] 媒体库。
 
 特别支持的数据源只是实现 `MediaSource` 接口以接入对应平台，本文不赘述。
-下面我们将着重了解 `SelectorMediaSource`、`JsonApiMediaSource` 和 `RssMediaSource`。
+下面我们将着重了解 `SelectorMediaSource`、`JsonApiMediaSource` 和 `RssMediaSource`，以及网盘数据源。
+
+### 网盘数据源
+
+网盘数据源（`domain/mediasource/clouddrive`）的代码里没有任何具体的网盘：某个网盘的地址、请求参数、响应字段、状态码、
+扫码登录的步骤、分享链接的格式都写在一份协议 JSON（`CloudDriveProtocol`）里，作为 `cloud-drive` 数据源的参数随订阅或导入下发。
+`CloudDriveApi` 按协议解释执行一组固定的操作（搜索、列目录、取直链、转码地址、建文件夹、删除、任务轮询、打开分享、列分享、转存、扫码），
+各操作是请求模板加上从响应里取值的路径（路径语法同直链 API 数据源）。
+
+每个网盘（按协议 `id`）有一个 `CloudDriveService`，由 `CloudDriveRegistry` 从保存的数据源实例里读出全部协议后建立；
+账号存在 `cloudDriveAccounts` 里，与数据源配置分开（导出配置不带账号）。三种数据源共用它：
+
+- `cloud-drive`：在用户自己的网盘里按条目名搜视频；
+- `cloud-drive-added-shares`：用户在 Web 控制台给条目添加的分享链接；
+- `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时转存到自己的网盘。
+
+资源的 `download` 是占位地址（模板也在协议里），播放时由 `CloudDriveMediaResolver` 认出属于哪个网盘再取直链。
+资源的条目名取 `MediaFetchRequest.catalogSubjectName`（条目服务上的名字，用户改搜索名时不变，见 `CloudDriveMediaSource.subjectNameOf`）：
+文件已经按条目对上了，而选择器判条目名不匹配只认条目服务的名字。
+协议的文件字段写了视频时长（`DriveFileFields.duration`）时，生成资源时把平均码率（文件大小 ÷ 时长）按资源 id 记进
+`DriveVideoBitrates`，选源面板与 Web 控制台的候选列表在大小后面显示；`Media` 本身没有码率字段，所以另记一份，只在内存里。
+
+协议的 `type` 是 `webdav` 时是一台 WebDAV 服务器（NAS 等，见 `WebDav`）：不写请求模板，`WebDavClient` 用 `PROPFIND` 列目录，
+直链就是文件在服务器上的地址；账号密码登录（存在账号的 `username` / `password`），列目录、播放、取字幕都带 Basic 认证头。
+这类网盘由用户在 Web 控制台添加（`WebDavSources`，默认层级 T0），协议里只有名字、地址与媒体文件夹，账号密码不随数据源导出。
+没有服务端搜索时（WebDAV，或指定了媒体文件夹的接口网盘，见 `searchesLibrary`），`cloud-drive` 在媒体文件夹的索引
+（`DriveLibraryIndex`：往下列 `library.depth` 层，用 `refreshMinutes` 后后台重建）里按名字找番，之后与搜索结果一样往下展开、认季认集。
+WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读候选视频的文件头（`DriveVideoInfoProbe`，mkv / mp4，经 `MediaStreamProbe`）
+补上，才标得对分辨率、显示得出码率；结果按文件记在账号里只读一次。只等当前这一集的（最多 1 秒），其余各集在后台读；
+条目级查询切集不再查，后来才读到的由 `DriveVideoInfoRefresh` 记下，切集复用查询时让这个源重查一次。
+
+分享搜索用去掉季号与副标题的主标题搜站点，整个系列的分享都会搜出来，每次只打开前 `maxShares` 个。
+打开前按站点剧名写的季排先后（同一档保持站点的顺序）：写了本季的在前，没写季的居中，只写了别的季的最后。
+只排序不去掉，因为写着「第二季」的分享里常连第一季一起放。
+
+系列里的作品常以第一部的名字开头（「机动战士高达」→「机动战士高达SEED」「机动战士高达 水星的魔女」），按名字包含来认会把它们都当成这一部。
+自动按名字找的地方（分享站的标题、固定合集的文件夹、分享与自己网盘里文件的路径）由 `OtherWorkGuard` 排除同系列别的作品：
+名字里含有系列关系图（`SeriesGraphTable.nodesContaining`）里一部比本条目名字长、又含有它的已知番名，而名字里没有本条目同样长的名字时去掉；
+系列的第一部（表里没有前传）还看分享站标题写的年份，都与开播年份差一年以上的去掉（重制版除外；续作不看年份，整部的合集常按第一季的年份写）。
+自动记下的文件夹（分享搜索与自己网盘播过的那一集所在的文件夹）是别的作品时当作失效、忘掉重搜：自动选错过一次的会被记下。
+用户添加的分享、手挑的文件夹不查。系列关系图只收有前传或续作的动画，只有一部的作品认不出。
+
+整个系列的合集里各季、外传、剧场版的视频都从 01 编起，认集时（`DriveSubjectMatcher.matchEpisodes`）：文件夹的季也认罗马数字
+（「XX I」…「XX V」、`Ⅳ`，前面是 Part / Vol 的不算），按季分好的一层只列本季的文件夹；
+文件夹或文件名写明是剧场版、外传、OVA（`DriveNameParser.workKindsOf`）而条目不是这一类的不要，「TV+剧场版」「1-4季」这类合集名不算，
+只有一集的条目（剧场版）与用户手挑的文件夹不查。
+
+### BT 源查续作
+
+按关键词搜发布标题的 BT 源（`TopicMediaSource`、`RssMediaSource`）用条目的每个名字各搜一次，查续作时再用系列名搜一次
+（`fetchWithSeriesName`，系列名取自 `fallbackSearchKeywords`）：字幕组给续作的标题常不写季号，只写系列名加系列内序号
+（「药屋少女的呢喃 [49]」是第三季第 1 集）或「S3」。系列名会搜出整个系列，而选择器不核对 BT 资源的名字，
+所以只留下认得出是本季这一集的：集号含系列内序号且它与条目内序号不同，或者标题写明了本季且集号对得上。
+集号只认解析出的具体序号，解析成「整季」的不算。条目名没写季、集号又每季从 1 编时，系列名搜到的分不出季，不多搜。
+蜜柑按条目 id 找番剧页，不需要这一步。
+协议的 `legacy` 段可以声明这个网盘以前由专门代码支持时留下的设置键与数据源类型，`CloudDriveRegistry` 第一次见到协议时把它们认领过来。
+
+### RSS 源：从标题算出直链
+
+有的视频在另一个文件站上按发布标题存放，地址哪里都不直接给，只能从种子站的标题算出来（如 ANi 的文件站）。
+RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、生成资源之前改写条目：`pattern` 整个匹配标题，
+对不上的条目丢掉；它的命名分组在 `url`、`title` 模板里用 `{名字}` 取（`url` 里做 URL 编码，`{名字:raw}` 原样）。
+文件站按番开播的季度分目录时用 `{seasonYear}` / `{seasonMonth}` / `{seasonMonth2}`：开播日期取条目正片里最早的 Bangumi 播出日期
+（`MediaFetchRequest.firstAirDate`，经 `RssSearchQuery.subjectAirDate` 传进来），不知道时用同一部番（命名分组 `groupBy`）里最早一条的发布日期。
+种子站的搜索结果常常只有最近的几十条，而且续作常与第一季同名，所以优先用条目的日期；比它早一个月以上发布的条目是更早的季，丢掉。
+`seasonRoundUpDays` 让季末几天首播的番归到下一季，`maxAgeDays` 丢掉开播太久、文件站已经删掉的。
+改写出的视频地址放在条目的 enclosure 上，原来的链接留作来源页。
+配置了 `titleToLink` 的 RSS 源结果全是直链，算在线源（`rssSourceKindOf`），其余 RSS 源算 BT：选源面板按数据源的类别分栏，
+在线源那一排只收在线源、BT 栏只收种子，类别不对的源两边都显示不出来。
+
+`searchFallbackKeywords` 让 RSS 源在条目名之外也用回退关键词搜，其中有对应表里的港台译名（`withRegionalNames`），
+只认台湾译名的种子站要靠它。
+
+### 规则源
+
+规则源（`domain/mediasource/rule`，类型 `rule`）用一份 JSON 规则（`RuleConfig`）抓取网站，适合 `SelectorMediaSource`
+固定的「搜索页 → 条目页 → 播放页」形状表达不了的站点：剧集表写在脚本或一段文本里、播放地址要再请求一个接口、
+要在几种取法之间回落。规则分搜索、详情、播放三段，每段是一串步骤（`RuleStep`），由 `RuleEngine` 依次执行：
+
+- 每段从输入开始（关键词、条目页地址、剧集页地址），步骤改写「当前值」或存取变量：请求（`fetch`）、CSS 取值（`select`）、
+  正则（`regex`）、JSON 取值（`json`，路径语法同直链 API 数据源）、模板与变量（`template`、`set`、`query`）、
+  字符串变换（`transform`）、解密与摘要（`crypto`：AES-CBC 解密、MD5）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；
+  `first` 依次尝试几个分支。
+- 搜索段以条目列表步骤结束（`subjects`、`jsonSubjects`），详情段以剧集列表步骤结束（`episodes`、`jsonEpisodes`、`regexEpisodes`，
+  以及苹果 CMS 视频接口的 `maccmsEpisodes`：按 `vod_play_from` / `vod_play_url` 拆线路与剧集，与苹果 CMS 数据源共用 `MacCmsEngine.parsePlayLines`）；
+  播放段结束时的当前值就是视频地址，以 `sniff`（`goal = video`）结束表示交给 WebView 嗅探。
+
+站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，
+匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。
+自动匹配每个关键词最多打开 `maxSubjects` 个条目页，顺序是名字对得上请求条目的在前（判据同选择器过滤 WEB 资源，
+其中再按 `autoMatch.preferShorterName` 排）、对不上的在后并保持站点的顺序（`orderRuleSubjects`）：
+有的站搜索结果固定是一整页按相关度排的条目，整页按名字长短排会把最短的那几个无关条目排到最前面。资源的 `download` 是剧集页（`WebVideo`），
+播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，播放器按 `matchVideo` 用 WebView 打开剧集页。
+GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
+
+`fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
+不带就 403。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表。站点只给「全部条目」的列表、没有搜索接口时，
+`jsonSubjects` / `subjects` 的 `filterByKeyword` 按关键词筛（两边去掉空白与标点、繁转简后比较）；列表的每一项本身是数组时，路径用 `[0]`、`[1]` 按下标取。
+
+播放段的 `sniff`（`goal = video`）可以写 `timeoutMillis`：站点要很久才发出视频请求时，这个源的 WebView 嗅探至少等这么久。
+匹配器实现 `WebVideoSniffTimeout` 报出它，安卓的解析器取全局设置与它中较大的（它最多算 30 秒，与设置里能选的最长时长相同）。
+
+`AniBakaRuleImporter` 把 AniBaka 的规则（`anx-rule/2`）转换成规则源：两者都是「当前值 + 变量」的步骤流水线，
+多数步骤一一对应；用到规则源没有的步骤（站点专用步骤、HLS 清单处理）的规则不转换并说明原因。
+XPath（`listXPath` / `roadsXPath` 等）由 `XPathToCss` 换成 CSS 选择器，只认按节点名与属性、文字挑元素的写法，换不了的照样报原因。
+`fetch` 的请求体写成对象时，按 `contentType` 拼成表单字段或 JSON（变量用模板的 `{x:json}` 按 JSON 字符串转义）。
+`jsonSeries` 只给条目 id（AniBaka 由详情段自己拼请求地址）时，条目地址取详情段开头那个用到 `{seriesId}` 的请求的地址，详情段的那个请求改为直接打开条目地址。
+站点专用步骤里能用通用步骤表达的照样翻译：anime1 的三步翻成「番剧表按关键词筛 → 分类页翻页取文章 → 文章里的 token 换视频地址并带上接口发的 Cookie」。
+`keywordMatch` 对到 `filterByKeyword`。
+嗅探的选项照录进 `sniff`：等待时长生效；页面加载好 / 被挡的标志文字（`readyContains` / `rejectContains`）、加载好后再等多久、
+视频地址要跟随跳转（`resolveMediaRedirects`）目前只记录，不起作用。
+Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引的地址（由电视下载）。
+订阅地址也可以直接填 AniBaka 规则库索引（`AniBakaSubscription`，挂在 `MediaSourceSubscriptionRequesterImpl` 下载之后）：
+每次更新订阅都重新下载并转换，之后与普通订阅一样按名字增删改；有规则文件没下载下来时这次更新算失败、原有的源不动，
+否则缺了的源会被删掉再新建，用户对它的启停设置随之丢失。
+
+订阅更新（`MediaSourceSubscriptionUpdater`）按名字对应新旧：新的加、没了的删、同名的原地换配置（实例与启停不变）。
+订阅里改了名的源由 `SubscriptionRenames` 认出（同类型、同站点的一删一增配成一对，站点不看图标地址），同样原地更新。
+更新后默认保留用户调过的顺序，新加的源排在最后；设置「订阅更新时恢复订阅里的顺序」
+（`MediaSelectorSettings.restoreSubscriptionOrder`）打开时才把这个订阅的源排回订阅里的顺序。
 
 ### `SelectorMediaSource`
 
@@ -82,6 +202,16 @@ Selector 配置据此分两层：
 只用后者搜索会一无所获，而取首词后它变成「更多」，更搜不到。回退只在前面都失败时发起，本来搜得到的条目不会多发请求。
 「搜到了」的判据与选择器过滤 WEB 资源的名称规则相同，所以这里认为搜到的，选择器不会再以名字不符为由排除。
 回退关键词只用于搜索，不加入名称匹配：基础名同时是第一季的名字，加入匹配会放过第一季的资源。
+
+回退关键词的最后是一个港台译名（`RegionalSubjectNames`，接在 `CreateMediaFetchSelectBundleFlowUseCase` 建请求处）：
+台湾、香港的站点只认当地译名，两岸译名又常常不只是简繁之别（间谍过家家 / 間諜家家酒、药屋少女的呢喃 / 藥師少女的獨語）。
+它来自 TMDB 对应表（bangumi-tmdb-map）的 `names` 列，即 TMDB 条目的 zh-TW / zh-HK 翻译。TMDB 的剧集按系列登记，译名是系列名，
+所以按条目名字里的季号补上（「藥師少女的獨語 第二季」）。排在最后，是因为只有别的名字都没搜到时才该用它：
+排在系列名前面的话，简体站会先用台湾的系列名（「排球少年！！」）命中第一季，而不再试「排球少年 第二季」。
+只给一个，是因为用它搜到的繁体条目名对不上 Bangumi 的名字，这条链认不出已经搜到，再给一个就会对同一个站再搜一遍。
+选择器那边把港台译名作为条目别名（同样补上季号；后面的季推不出季号时不加，否则系列名会让第一季的资源也算作本季），
+站点上的繁体条目名才对得上；同时把别的季的港台名字（译名补上它们各自的季号，第一季是译名本身）加进系列信息，
+别季的繁体页面才会按「页名是系列里别的季」排除 —— 只差「第三季」三个字的长名字（「SPY×FAMILY間諜家家酒」）模糊匹配率能过线，光有别名会被当成本季。BT 查续作从回退关键词里挑系列名时只挑条目自己某个名字里含有的，不会拿港台译名去搜：BT 资源不核对名字。
 搜索缓存同时充当这条链的记忆：缓存行按关键词写入，只有搜到过条目页的关键词才有行；下次查询把有行的关键词排到最前，
 它们搜到了就不再碰其余的，所以「更多」这类搜不到的关键词只在第一次和缓存过期后各花一次请求。
 有行只说明搜到过条目页，不说明名字对上了，因此记忆只决定顺序，不参与判定。
@@ -101,6 +231,10 @@ Selector 配置据此分两层：
 `MediaFetcher` 先将结果写入共享回放缓存，再发布成功或失败等终态。
 完成标记与结果按序通过 `flatMapLatest` 的缓冲区；重试时忽略旧查询的标记，
 因此观察到终态时可以读取该次查询的完整结果（失败时为已收到的部分结果）。
+
+查询可以暂停（`MediaSourceFetchResult.pause`）：进行中的请求被取消，已拿到的结果保留，
+状态变为 `MediaSourceFetchState.Paused`（属于终态，等待完成的逻辑不会等它）；`restart` 从头重新查询。
+播放页用它在开始播放后省资源，见 [MediaSelector](media-selector.md#web-自动选择)。
 
 ### `JsonApiMediaSource`
 
@@ -161,6 +295,13 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 
 阶级来源于数据源配置 `MediaSourceArguments.tier`，通常由订阅提供；用户未配置时使用回退值
 `MediaSourceTier.Fallback`（`2`）。
+
+从 AniBaka 规则库导入或订阅的规则源按库里标注的广告情况定阶级：无广告 `0`、少广告 `1`、有广告 `3`
+（`AniBakaRuleImporter.tierOfLabels`）。
+
+`SourceProfiles` 记下每个数据源最近几次播放的实际表现（开播用时、分辨率与码率、有没有删到插播广告、规则源走没走 WebView、
+失败），控制台据此给出建议阶级。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
+其他数据源的阶级只取配置。
 
 ### Channel 级阶级
 
@@ -236,7 +377,7 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 
 - （最简单）编写通用的数据源的配置。可以在 APP 内“设置-数据源管理”中添加 `Selector`、`JSON API` 和 `RSS`
   类型数据源。只需编写一些 CSS Selector 或 JSONPath 配置即可使用。
-- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Animeko
+- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Izuko TV
   仓库提交代码，增加一个新的模块。
 
 [Media]: ../../../../datasource/api/src/commonMain/kotlin/Media.kt
