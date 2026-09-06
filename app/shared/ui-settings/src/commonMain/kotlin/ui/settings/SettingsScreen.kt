@@ -177,7 +177,6 @@ import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSelectionActio
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.rememberMediaSourceSelectionState
 import me.him188.ani.app.ui.settings.tabs.network.ConfigureProxyGroup
-import me.him188.ani.app.ui.settings.tabs.network.ServerSelectionGroup
 import me.him188.ani.app.ui.settings.tabs.network.TmdbImagesGroup
 import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.devbuild.DevBuildsTab
@@ -285,7 +284,6 @@ fun SettingsScreen(
             Item(SettingsTab.MEDIA_SELECTOR)
 
             Title(stringResource(Lang.settings_category_network_storage))
-            Item(SettingsTab.SERVER)
             Item(SettingsTab.PROXY)
             Item(SettingsTab.BT)
 //            Item(SettingsTab.CACHE)
@@ -378,7 +376,7 @@ fun SettingsScreen(
                             }
 
                             SettingsTab.MEDIA_SELECTOR -> MediaSelectionGroup(vm.mediaSelectionGroupState)
-                            SettingsTab.SERVER -> ServerSelectionGroup(vm.danmakuSettingsState, vm.danmakuServerTesters)
+                            // SettingsTab.SERVER (Ani 服务器选择) 已随 Ani 服务器一起删掉
                             SettingsTab.PROXY -> {
                                 ConfigureProxyGroup(
                                     state = vm.configureProxyState,
@@ -1044,7 +1042,6 @@ private fun getIcon(tab: SettingsTab): ImageVector {
         SettingsTab.PLAYER -> Icons.Outlined.SmartDisplay
         SettingsTab.MEDIA_SOURCE -> Icons.Outlined.Subscriptions
         SettingsTab.MEDIA_SELECTOR -> Icons.Outlined.FilterList
-        SettingsTab.SERVER -> Icons.Outlined.Public
         SettingsTab.PROXY -> Icons.Outlined.VpnKey
         SettingsTab.BT -> Icons.Filled.P2p
 //        SettingsTab.CACHE -> Icons.Rounded.Download // Icons.Outlined.Download 太 sharp 了
@@ -1066,7 +1063,6 @@ private fun getName(tab: SettingsTab): String {
         SettingsTab.PLAYER -> stringResource(Lang.settings_tab_player)
         SettingsTab.MEDIA_SOURCE -> stringResource(Lang.settings_tab_media_source)
         SettingsTab.MEDIA_SELECTOR -> stringResource(Lang.settings_tab_media_selector)
-        SettingsTab.SERVER -> stringResource(Lang.settings_tab_danmaku)
         SettingsTab.PROXY -> stringResource(Lang.settings_tab_proxy)
         SettingsTab.BT -> stringResource(Lang.settings_tab_bt)
 //        SettingsTab.CACHE -> stringResource(Lang.settings_tab_cache)

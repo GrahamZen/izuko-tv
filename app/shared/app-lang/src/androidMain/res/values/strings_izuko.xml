@@ -199,6 +199,7 @@
     <string name="media_selector_item_cache_not_ready">Cache incomplete</string>
     <string name="mediafetch_request_editor_restore_names">Restore Bangumi names</string>
     <string name="episode_danmaku">Danmaku</string>
+    <string name="episode_send_danmaku_failed">Failed to send danmaku</string>
     <string name="settings_log_share_failed">Failed to share the log file. This device may not support sharing; try copying the log content instead</string>
     <string name="settings_log_export_file">Export today\'s log file</string>
     <string name="settings_log_export_succeed">Log exported to %1$s</string>

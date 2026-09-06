@@ -199,6 +199,7 @@
     <string name="media_selector_item_cache_not_ready">缓存未完成</string>
     <string name="mediafetch_request_editor_restore_names">恢复 Bangumi 名称</string>
     <string name="episode_danmaku">弹幕</string>
+    <string name="episode_send_danmaku_failed">弹幕发送失败, 稍后再试</string>
     <string name="settings_log_share_failed">分享日志文件失败，当前设备可能不支持分享，可改用复制日志内容</string>
     <string name="settings_log_export_file">导出当日日志文件</string>
     <string name="settings_log_export_succeed">日志已导出到 %1$s</string>

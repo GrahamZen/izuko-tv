@@ -1051,7 +1051,12 @@ class EpisodeViewModel(
     @OptIn(UnsafeEpisodeSessionApi::class)
     suspend fun postDanmaku(danmaku: DanmakuContent): DanmakuInfo {
         return withContext(Dispatchers.Default) {
-            danmakuRepository.post(fetchPlayState.getCurrentEpisodeId(), danmaku)
+            danmakuRepository.post(
+                fetchPlayState.getCurrentEpisodeId(),
+                danmaku,
+                // 昵称走 bangumi 的; dandanplay 那条路的昵称由应用自己指定 (见 DanmakuRepository.post)
+                userName = selfInfoFlow.first().selfInfo?.nickname?.takeIf { it.isNotBlank() } ?: "Animeko 用户",
+            )
         }
     }
 
