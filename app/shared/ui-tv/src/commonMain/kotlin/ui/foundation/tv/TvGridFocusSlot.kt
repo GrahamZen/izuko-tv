@@ -39,22 +39,22 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * 网格页 (追番 / 搜索 / 时间表网格) 的**聚焦格**: 聚焦卡停稳后所在的那一格. 聚焦框画在格上, 卡片按
+ * 网格页 (时间表网格) 的**聚焦格**: 聚焦卡停稳后所在的那一格. 聚焦框画在格上, 卡片按
  * "离格多近"放大 —— 而不是"谁有焦点就放大谁".
  *
- * 为什么按位置而不按焦点: 追番 / 搜索网格聚焦行吸顶, 上下键时屏幕上的聚焦位置不动, 动的是整个网格.
- * 按焦点放大的话每按一下都是"旧卡原地缩回、新卡从下面滑上来再放大", 框在同一个位置闪一下. 按位置算就和
- * 探索页的固定框一样: 框钉在格上, 卡从框下滑过, 离开的边走边缩、进来的边走边放大.
+ * 为什么按位置而不按焦点: 翻页时 (聚焦行与顶行一起挪一行) 屏幕上的聚焦位置不动, 动的是整个网格.
+ * 按焦点放大的话每按一下都是"旧卡原地缩回、新卡从下面滑上来再放大", 框在同一个位置闪一下. 按位置算则是
+ * 框钉在格上, 卡从框下滑过, 离开的边走边缩、进来的边走边放大.
  *
- * **换格** (左右键; 时间表网格在可见的几行之间上下) 则是旧格淡出、新格就地淡入, 框立刻到位, 不在两格之间滑动.
+ * **换格** (左右键; 在可见的几行之间上下) 则是旧格淡出、新格就地淡入, 框立刻到位, 不在两格之间滑动.
  * 每个格子各有一段淡入淡出, 连按时几格各走各的, 中途换目标不会跳变.
  *
  * 换格的淡入淡出是 [TV_CARD_FOCUS_TRANSITION_MILLIS]; 上下翻页时放大跟着滚动走, 没有单独的时长.
  *
  * [TvCardFocusStyle.Ring] (原版) 不经过这里: 卡片自己画描边、不放大 (见 [usesCardRing]).
  *
- * 坐标: 格 = (列号, 相对"内容区顶线"的行数). 顶线即 contentPadding 之后那条线 (`LazyGridItemInfo.offset.y == 0`);
- * 追番 / 搜索吸顶, 行恒为 0; 时间表网格 = 聚焦行 − 顶行. 行高按条目实测 (条目高 + 行距), 时间表卡连下方标题一起算.
+ * 坐标: 格 = (列号, 纵向位置). 纵向位置是相对"内容区顶线"的行数 (= 聚焦行 − 顶行): 顶线即 contentPadding 之后那条线
+ * (`LazyGridItemInfo.offset.y == 0`). 行高按条目实测 (条目高 + 行距), 时间表卡连下方标题一起算.
  *
  * 全部在绘制阶段读 (卡片的 graphicsLayer / 框的 drawBehind): 焦点移动、淡入淡出与滚动都不触发重组.
  */
@@ -77,7 +77,8 @@ class TvGridFocusSlot internal constructor() {
     private var targetColumn = Int.MIN_VALUE
     private var targetRow = Int.MIN_VALUE
 
-    internal class Cell(val column: Int, val row: Int, val fade: Animatable<Float, AnimationVector1D>)
+    /** [line] = 纵向位置: 相对顶线的行数. */
+    internal class Cell(val column: Int, val line: Int, val fade: Animatable<Float, AnimationVector1D>)
 
     /** 聚焦格上那张卡的放大倍数 (随设置的样式; 1 = 不放大). */
     val focusScale: Float get() = style.focusScale
@@ -101,14 +102,14 @@ class TvGridFocusSlot internal constructor() {
             cells.add(Cell(column, row, Animatable(1f)))
             return
         }
-        val target = cells.firstOrNull { it.column == column && it.row == row }
+        val target = cells.firstOrNull { it.column == column && it.line == row }
             ?: Cell(column, row, Animatable(0f)).also { cells.add(it) }
         for (cell in cells.toList()) {
             val isTarget = cell === target
             s.launch {
                 // 新的一次 animateTo 抢走锁, 取消还在跑的上一段 (连按时从当前值接着走)
                 cell.fade.animateTo(if (isTarget) 1f else 0f, FADE_SPEC)
-                if (!isTarget && cell.fade.value == 0f && !(cell.column == targetColumn && cell.row == targetRow)) {
+                if (!isTarget && cell.fade.value == 0f && !(cell.column == targetColumn && cell.line == targetRow)) {
                     cells.remove(cell)
                 }
             }
@@ -153,7 +154,7 @@ class TvGridFocusSlot internal constructor() {
             if (cell.column != info.column) continue
             val f = cell.fade.value
             if (f <= 0f) continue
-            val wy = 1f - abs(info.offset.y - cell.row * pitch) / pitch
+            val wy = 1f - abs(info.offset.y - cell.line * pitch) / pitch
             if (wy > 0f) w += f * wy
         }
         return p * w.coerceAtMost(1f)
@@ -182,16 +183,18 @@ internal val TvCardFocusStyle.focusScale: Float
         TvCardFocusStyle.Ring -> 1f
     }
 
-/** 每个网格实例一份 (追番页换 tab 时新旧两个网格各一份, 各自随网格滑入滑出). */
+/**
+ * 每个网格实例一份, 按 [focusStyle] 画框与放大.
+ */
 @Composable
-fun rememberTvGridFocusSlot(): TvGridFocusSlot {
+fun rememberTvGridFocusSlot(focusStyle: TvCardFocusStyle = TvCardFocusStyle.ScaleAndRing): TvGridFocusSlot {
     val settings = LocalThemeSettings.current
     // 样式在创建时就定下来: 首帧卡片要按它决定自己画不画描边 (见 usesCardRing), 等 SideEffect 就晚了一帧
-    val slot = remember { TvGridFocusSlot().apply { style = settings.tvCardFocusStyle } }
+    val slot = remember { TvGridFocusSlot().apply { style = focusStyle } }
     val scope = rememberCoroutineScope()
     SideEffect {
         slot.scope = scope
-        slot.style = settings.tvCardFocusStyle
+        slot.style = focusStyle
         // 流畅档不做过渡, 直接到位 (与该档其它瞬切一致)
         slot.animated = settings.visualEffects.transitions
     }
@@ -240,9 +243,9 @@ fun TvGridFocusSlotRing(
                 val ref = items.firstOrNull { it.column == cell.column } ?: continue
                 val w = ref.size.width
                 val h = (w / TV_PORTRAIT_CARD_COVER_RATIO).roundToInt()
-                val pitch = ref.size.height + rowSpacing.toPx()
+                val lineTop = cell.line * (ref.size.height + rowSpacing.toPx())
                 drawTvFocusRingAt(
-                    topLeft = Offset(contentStart.toPx() + ref.offset.x, contentTop.toPx() + cell.row * pitch),
+                    topLeft = Offset(contentStart.toPx() + ref.offset.x, contentTop.toPx() + lineTop),
                     size = Size(w.toFloat(), h.toFloat()),
                     cornerRadius = TV_PORTRAIT_CARD_CORNER + TvFocusRing.Gap,
                     brush = brush,

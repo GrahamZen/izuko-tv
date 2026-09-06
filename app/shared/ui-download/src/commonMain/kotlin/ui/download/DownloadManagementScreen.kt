@@ -37,16 +37,12 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Restore
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -112,6 +108,10 @@ import me.him188.ani.app.ui.foundation.rememberCurrentTopAppBarContainerColor
 import me.him188.ani.app.ui.foundation.session.SelfAvatar
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.appChromeHazeSource
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -185,10 +185,10 @@ fun DownloadManagementScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val failedOperations by vm.operationFailures.collectAsStateWithLifecycle()
     if (failedOperations > 0) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = vm::dismissOperationFailures,
             text = { Text(stringResource(Lang.downloads_operation_failed, failedOperations)) },
-            confirmButton = { TextButton(onClick = vm::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
+            confirmButton = { AniTextButton(onClick = vm::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
         )
     }
     DownloadManagementScreen(
@@ -843,7 +843,7 @@ internal fun DeleteActionDialog(
     /** 要删的里面有正在播的那条时的提示, 见 [rememberPlayingCacheWarning]. */
     warning: String? = null,
 ) {
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(stringResource(Lang.cache_management_delete_cache_title)) },
@@ -859,14 +859,14 @@ internal fun DeleteActionDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            AniTextButton(
                 onClick = onConfirm,
                 enabled = confirmEnabled,
                 modifier = Modifier.testTag(DownloadManagementTestTags.DELETE_CONFIRM_BUTTON),
             ) { Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = {
-            TextButton(onDismiss) { Text(stringResource(Lang.cache_subject_cancel)) }
+            AniTextButton(onDismiss) { Text(stringResource(Lang.cache_subject_cancel)) }
         },
     )
 }
@@ -891,7 +891,7 @@ internal fun DownloadActionDropdown(
     val invalidCacheInfoText = stringResource(Lang.cache_management_invalid_cache_info)
     val streamingNotSupportedText = stringResource(Lang.cache_management_streaming_not_supported)
     val moreInfoText = stringResource(Lang.cache_management_more_info)
-    DropdownMenu(
+    AniDropdownMenu(
         expanded = show,
         onDismissRequest = onDismiss,
         modifier = modifier,
@@ -899,7 +899,7 @@ internal fun DownloadActionDropdown(
     ) {
         if (!episode.isFinished) {
             if (episode.isPaused) {
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(resumeDownloadText) },
                     enabled = !episode.isBusy,
                     leadingIcon = { Icon(Icons.Rounded.Restore, null) },
@@ -909,7 +909,7 @@ internal fun DownloadActionDropdown(
                     },
                 )
             } else if (!episode.isFailed) {
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(pauseDownloadText) },
                     enabled = !episode.isBusy,
                     leadingIcon = { Icon(Icons.Rounded.Pause, null) },
@@ -921,7 +921,7 @@ internal fun DownloadActionDropdown(
             }
         }
         if (!episode.isFailed) {
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(playText) },
                 leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) },
                 onClick = {
@@ -943,7 +943,7 @@ internal fun DownloadActionDropdown(
             )
         }
         onViewDetail?.let {
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(moreInfoText) },
                 leadingIcon = { Icon(Icons.Rounded.Info, null) },
                 onClick = {
@@ -953,7 +953,7 @@ internal fun DownloadActionDropdown(
             )
         }
 
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             text = { Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error) },
             enabled = !episode.isBusy,
             leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },

@@ -26,29 +26,29 @@ import kotlinx.serialization.encoding.*
 /**
  * 
  *
- * @param comment 
  * @param id 
- * @param rate 
- * @param type 
- * @param updatedAt 
  * @param user 
+ * @param type 
+ * @param rate 
+ * @param comment 
+ * @param updatedAt 
  * @param reactions 
  */
 @Serializable
 
 data class BangumiNextSubjectInterestComment (
 
-    @SerialName(value = "comment") @Required val comment: kotlin.String,
-
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
-    @SerialName(value = "rate") @Required val rate: kotlin.Int,
+    @SerialName(value = "user") @Required val user: BangumiNextSlimUser,
 
     @SerialName(value = "type") @Required val type: BangumiNextCollectionType,
 
-    @SerialName(value = "updatedAt") @Required val updatedAt: kotlin.Int,
+    @SerialName(value = "rate") @Required val rate: kotlin.Int,
 
-    @SerialName(value = "user") @Required val user: BangumiNextSlimUser,
+    @SerialName(value = "comment") @Required val comment: kotlin.String,
+
+    @SerialName(value = "updatedAt") @Required val updatedAt: kotlin.Int,
 
     @SerialName(value = "reactions") val reactions: kotlin.collections.List<BangumiNextReaction>? = null
 

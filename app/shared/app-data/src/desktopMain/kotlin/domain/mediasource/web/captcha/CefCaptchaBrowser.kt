@@ -64,6 +64,7 @@ class CefCaptchaBrowser private constructor(
     private val capturedUserAgent = atomic<String?>(null)
 
     private val interceptor = atomic<((String) -> InterceptDecision)?>(null)
+    private val navigationInterceptor = atomic<((String) -> Boolean)?>(null)
 
     override val userAgent: String
         get() = capturedUserAgent.value ?: fallbackUserAgent()
@@ -154,6 +155,10 @@ class CefCaptchaBrowser private constructor(
         interceptor.value = handler
     }
 
+    override fun setNavigationInterceptor(handler: ((String) -> Boolean)?) {
+        navigationInterceptor.value = handler
+    }
+
     @Composable
     override fun View(
         modifier: Modifier,
@@ -209,6 +214,21 @@ class CefCaptchaBrowser private constructor(
         )
         client.addRequestHandler(
             object : CefRequestHandlerAdapter() {
+                override fun onBeforeBrowse(
+                    browser: CefBrowser?,
+                    frame: CefFrame?,
+                    request: CefRequest?,
+                    userGesture: Boolean,
+                    isRedirect: Boolean,
+                ): Boolean {
+                    val url = request?.url
+                    val handler = navigationInterceptor.value
+                    if (url != null && handler != null && handler(url)) {
+                        return true // 取消这一跳, 调用方接管 (OAuth 回调)
+                    }
+                    return super.onBeforeBrowse(browser, frame, request, userGesture, isRedirect)
+                }
+
                 override fun getResourceRequestHandler(
                     browser: CefBrowser?,
                     frame: CefFrame?,

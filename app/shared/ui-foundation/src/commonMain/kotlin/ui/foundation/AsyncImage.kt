@@ -15,6 +15,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import com.github.panpf.sketch.asBitmapOrNull
 import com.github.panpf.sketch.cache.CachePolicy
 import com.github.panpf.sketch.cache.DiskCache
 import com.github.panpf.sketch.cache.MemoryCache
+import com.github.panpf.sketch.cache.internal.LruMemoryCache
 import com.github.panpf.sketch.decode.supportSvg
 import com.github.panpf.sketch.painter.asEquitable
 import com.github.panpf.sketch.rememberAsyncImagePainter
@@ -76,6 +78,7 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.platform.currentPlatform
 import me.him188.ani.utils.platform.isDesktop
 import me.him188.ani.utils.platform.isIos
+import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
 import com.github.panpf.sketch.AsyncImage as SketchAsyncImage
@@ -120,7 +123,11 @@ fun rememberAniSketchInstance(client: ScopedHttpClient): Sketch {
         createDefaultSketch(context, client, appCacheRoot.resolve(ANI_IMAGE_CACHE_DIRECTORY))
     }
     DisposableEffect(sketch) {
-        onDispose(sketch::shutdown)
+        val stopWatchingMemory = sketch.clearMemoryCacheOnCriticalMemory(context)
+        onDispose {
+            stopWatchingMemory()
+            sketch.shutdown()
+        }
     }
     return sketch
 }
@@ -160,6 +167,8 @@ fun AsyncImage(
      * RenderEffect, 那条路只能退化成纯色块), 也不花 GPU 模糊的开销.
      */
     downsampleLongEdgePx: Int? = null,
+    /** 离场时没下完就交给后台补下 (见 [rememberImageCompletionGrace]); 这里记下实际发出的地址、上屏时置位. */
+    completionGrace: ImageCompletionGrace? = null,
 ) {
     val state = rememberAsyncImageState()
     AniAsyncImage(
@@ -183,6 +192,7 @@ fun AsyncImage(
         crossfadeDurationMillis = crossfadeDurationMillis,
         decodeAtOriginalSize = decodeAtOriginalSize,
         downsampleLongEdgePx = downsampleLongEdgePx,
+        completionGrace = completionGrace,
     )
 }
 
@@ -208,6 +218,7 @@ internal fun AniAsyncImage(
     crossfadeDurationMillis: Int? = null,
     decodeAtOriginalSize: Boolean = false,
     downsampleLongEdgePx: Int? = null,
+    completionGrace: ImageCompletionGrace? = null,
 ) {
     var requestSize by remember { mutableStateOf<IntSize?>(null) }
 
@@ -231,7 +242,17 @@ internal fun AniAsyncImage(
     val errorStateImage = rememberStateImage(error, "error")
     val fallbackStateImage = rememberStateImage(fallback, "fallback")
 
-    val request = ComposableImageRequest(model) {
+    // Bangumi 封面按显示宽度换成图床的缩略图 (见 bangumiCoverThumbnailUrl). 原尺寸解码那条路与尺寸无关, 不换
+    val requestModel = if (decodeAtOriginalSize || model == null) {
+        model
+    } else {
+        requestSize?.let { bangumiCoverThumbnailUrl(model, it.width) } ?: model
+    }
+    if (completionGrace != null && requestModel != null) {
+        SideEffect { completionGrace.requestUrl = requestModel }
+    }
+
+    val request = ComposableImageRequest(requestModel) {
         if (placeholderStateImage != null) placeholder(placeholderStateImage)
         if (errorStateImage != null) error(errorStateImage)
         if (fallbackStateImage != null) fallback(fallbackStateImage)
@@ -248,7 +269,15 @@ internal fun AniAsyncImage(
         configureAniImageCrossfade(if (imageCrossfade) crossfade else false, crossfadeDurationMillis)
     }
 
-    ImageLoadStateEffect(state, onLoading, onSuccess, onError)
+    val onSuccessWithGrace: ((AniImageLoadSuccess) -> Unit)? = if (completionGrace == null) {
+        onSuccess
+    } else {
+        { success ->
+            completionGrace.loaded = true
+            onSuccess?.invoke(success)
+        }
+    }
+    ImageLoadStateEffect(state, onLoading, onSuccessWithGrace, onError)
     SketchAsyncImage(
         request = request,
         sketch = LocalSketch.current,
@@ -577,17 +606,22 @@ internal fun createDefaultSketch(
     cacheDirectory: Path? = null,
 ): Sketch = Sketch.Builder(context).apply {
     componentLoaderEnabled(false)
-    // 内存缓存**保留** (走 sketch 默认的 LRU: Android 上占堆的 25~33%), 与上游不同 ——
-    // 上游换成了 DisabledMemoryCache, 理由是"别让请求把解码后的位图留在内存里".
-    // 但电视上这个代价太大: 一张全屏 backdrop/剧照解一次要几十毫秒, 而遥控器导航天然是"来回走"
-    // (A→B→A 极常见), 没有内存缓存就每次都从磁盘字节重解码 —— 网格滚动与 hero 换图肉眼可见地卡.
-    // fork 在 coil 时代就是显式开着的 (maxSizePercent), 那条注释记的是同一件事.
-    downloadCacheOptions(
-        DiskCache.Options(
-            directory = cacheDirectory?.resolve("download"),
-            maxSize = IMAGE_DOWNLOAD_CACHE_SIZE,
-        ),
-    )
+    // 遥控器导航天然是"来回走" (A→B→A 极常见), 没有内存缓存就每次都从磁盘字节重解码 —— 网格滚动与 hero
+    // 换图肉眼可见地卡. 上限按设备总内存定, 见 aniImageMemoryCacheSize
+    aniImageMemoryCacheSize(context)?.let { memoryCache(LruMemoryCache(it)) }
+    if (cacheDirectory != null) {
+        // 打开快的那个实现 (磁盘格式与 Sketch 自带的相同), 见 AniImageDiskCache
+        downloadCache {
+            AniImageDiskCache(
+                context = context,
+                fileSystem = FileSystem.SYSTEM,
+                maxSize = IMAGE_DOWNLOAD_CACHE_SIZE,
+                directory = cacheDirectory.resolve("download"),
+            )
+        }
+    } else {
+        downloadCacheOptions(DiskCache.Options(maxSize = IMAGE_DOWNLOAD_CACHE_SIZE))
+    }
     resultCacheOptions(
         DiskCache.Options(
             directory = cacheDirectory?.resolve("result"),
@@ -596,7 +630,7 @@ internal fun createDefaultSketch(
     globalImageOptions(
         ImageOptions {
             downloadCachePolicy(CachePolicy.ENABLED)
-            memoryCachePolicy(CachePolicy.ENABLED) // 见上: fork 保留内存缓存
+            memoryCachePolicy(CachePolicy.ENABLED)
 
             // Result cache re-encodes transformed images. Keep the original bytes in the LRU
             // download cache instead so disk caching cannot reduce image quality.

@@ -19,7 +19,6 @@ kotlin {
 }
 
 dependencies {
-    implementation(projects.client)
     implementation(projects.datasource.datasourceApi)
     implementation(projects.datasource.dmhy)
     implementation(projects.datasource.mikan)

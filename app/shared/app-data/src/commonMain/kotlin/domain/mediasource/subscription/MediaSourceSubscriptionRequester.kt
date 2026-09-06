@@ -9,17 +9,12 @@
 
 package me.him188.ani.app.domain.mediasource.subscription
 
-import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpStatusCode.Companion.UnprocessableEntity
 import kotlinx.serialization.json.io.decodeFromSource
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
-import me.him188.ani.client.apis.SubscriptionsAniApi
-import me.him188.ani.utils.coroutines.withExceptionCollector
-import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.ktor.toSource
 import kotlin.coroutines.cancellation.CancellationException
@@ -31,9 +26,14 @@ fun interface MediaSourceSubscriptionRequester {
     ): SubscriptionUpdateData
 }
 
+/**
+ * 订阅更新只走**直连**.
+ *
+ * 直连之前还有一层兜底: 直连失败时改让 Ani 服务器代取 (`/v1/subs/proxy`)。那个代理没了,
+ * 于是直连失败就是失败 —— 订阅源本来就是用户自己填的地址, 打不开该让他看见.
+ */
 class MediaSourceSubscriptionRequesterImpl(
     private val client: ScopedHttpClient,
-    private val api: ApiInvoker<SubscriptionsAniApi>,
 ) : MediaSourceSubscriptionRequester {
     /**
      * 执行网络请求, 下载新订阅数据.
@@ -49,29 +49,8 @@ class MediaSourceSubscriptionRequesterImpl(
             )
         }
 
-        withExceptionCollector {
-            // 首先直连
-            try {
-                return client.use {
-                    get(subscription.url).decode()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                collect(e) // continue
-            }
-
-            // 失败则尝试代理服务
-            return try {
-                api {
-                    proxy(subscription.url).response.decode()
-                }
-            } catch (e: ClientRequestException) {
-                if (e.response.status == UnprocessableEntity) {
-                    throwLast() // ignore this exception, throw the previous one
-                }
-                throw e
-            }
+        return client.use {
+            get(subscription.url).decode()
         }
     }
 }

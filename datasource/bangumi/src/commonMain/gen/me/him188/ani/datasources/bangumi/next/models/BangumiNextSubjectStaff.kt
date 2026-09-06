@@ -10,7 +10,7 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
@@ -25,16 +25,16 @@ import kotlinx.serialization.encoding.*
 /**
  * 
  *
- * @param positions 
  * @param staff 
+ * @param positions 
  */
 @Serializable
 
-data class BangumiNextSubjectStaff(
+data class BangumiNextSubjectStaff (
 
-    @SerialName(value = "positions") @Required val positions: kotlin.collections.List<BangumiNextSubjectStaffPosition>,
+    @SerialName(value = "staff") @Required val staff: BangumiNextSlimPerson,
 
-    @SerialName(value = "staff") @Required val staff: BangumiNextSlimPerson
+    @SerialName(value = "positions") @Required val positions: kotlin.collections.List<BangumiNextSubjectStaffPosition>
 
 ) {
 

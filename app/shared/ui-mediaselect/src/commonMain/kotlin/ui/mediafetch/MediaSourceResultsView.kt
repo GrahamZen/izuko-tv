@@ -132,12 +132,22 @@ fun MediaSourceResultsView(
 ) {
     val searchingText = stringResource(Lang.media_source_results_searching)
     val searchedText = stringResource(Lang.media_source_results_searched)
-    val dataSourcesCountText = stringResource(
-        Lang.media_source_results_data_sources_count,
-        if (sourceResults.anyLoading) searchingText else searchedText,
-        sourceResults.enabledSourceCount,
-        sourceResults.totalSourceCount,
-    )
+    // 查询中是「查完几个 / 启用几个」(看得出进度); 查完了是「启用几个 / 一共几个」
+    val dataSourcesCountText = if (sourceResults.anyLoading) {
+        stringResource(
+            Lang.media_source_results_data_sources_count,
+            searchingText,
+            sourceResults.finishedSourceCount,
+            sourceResults.enabledSourceCount,
+        )
+    } else {
+        stringResource(
+            Lang.media_source_results_data_sources_count,
+            searchedText,
+            sourceResults.enabledSourceCount,
+            sourceResults.totalSourceCount,
+        )
+    }
     val refreshText = stringResource(Lang.settings_mediasource_refresh)
     val helpText = stringResource(Lang.media_source_results_help)
     val settingsText = stringResource(Lang.media_source_results_settings)

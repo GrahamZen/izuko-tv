@@ -58,6 +58,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_episode_download_failed
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
+import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_episode_status_paused
 import me.him188.ani.app.ui.lang.cache_episode_watched_progress
@@ -291,20 +292,34 @@ fun DownloadRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (episode.isMerging) {
-                        // 合并期间进度恒为 100%, 确定式进度条就是一条不动的满格 —— 正是"看起来
-                        // 卡死了"的来源. 换成不定式: 它自己在动, 一眼就知道还在干活.
-                        LinearProgressIndicator(
-                            modifier = Modifier.weight(1f),
-                            strokeCap = StrokeCap.Round,
-                        )
-                    } else {
-                        val progress by animateFloatAsState(episode.progress.getOrZero())
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.weight(1f),
-                            strokeCap = StrokeCap.Round,
-                        )
+                    // 合并期间下载进度恒为 100%, 进度条改画合并进度的估计 (见 DownloadItem.mergeProgress).
+                    // 三个分支各自一份动画状态: 从下载切到合并时直接画合并进度, 不会从满格一路倒退回去.
+                    when {
+                        !episode.isMerging -> {
+                            val progress by animateFloatAsState(episode.progress.getOrZero())
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
+
+                        episode.mergeProgress.isUnspecified -> {
+                            // 估不出合并进度时用不定式: 它自己在动, 一眼就知道还在干活
+                            LinearProgressIndicator(
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
+
+                        else -> {
+                            val progress by animateFloatAsState(episode.mergeProgress.getOrZero())
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.weight(1f),
+                                strokeCap = StrokeCap.Round,
+                            )
+                        }
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -314,6 +329,8 @@ fun DownloadRow(
                             episode.isFailed -> stringResource(Lang.cache_episode_download_failed)
                             episode.isPaused -> stringResource(Lang.cache_episode_status_paused)
                             episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
+                            // BT 服务冷启动的十几秒里速度与进度都不动, 说清楚在等什么
+                            episode.awaitingTorrentService -> stringResource(Lang.cache_episode_status_awaiting_bt_service)
                             else -> episode.speedText
                         }
                         statusText?.let {
@@ -323,7 +340,9 @@ fun DownloadRow(
                                 color = if (episode.isFailed) MaterialTheme.colorScheme.error else Color.Unspecified,
                             )
                         }
-                        episode.progressText?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+                        // 合并中显示合并进度的估计; 估不出来时不显示百分比 (下载进度那时恒为 100%, 显示它是误导)
+                        val progressText = if (episode.isMerging) episode.mergeProgressText else episode.progressText
+                        progressText?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                     }
                 }
             }
@@ -389,11 +408,8 @@ private fun cacheEpisodeMetaText(
     val sourceName = episode.mediaSourceId?.let { id ->
         mediaSourceInfoProvider?.rememberMediaSourceInfo(id)?.value?.displayName
     }
-    val statusText = when {
-        episode.isFinished -> stringResource(Lang.cache_filter_status_finished)
-        episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
-        else -> null
-    }
+    // 合并中不在这里写: 下面的状态位已经写着「合并中」和合并进度
+    val statusText = if (episode.isFinished) stringResource(Lang.cache_filter_status_finished) else null
     val watchedText = if (episode.isFinished) {
         episode.playbackProgressText?.let { stringResource(Lang.cache_episode_watched_progress, it) }
     } else {

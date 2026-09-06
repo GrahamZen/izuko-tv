@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 27,
-    "identityHash": "45b7d7d8be2c537dc6bb0d8e34c12c44",
+    "identityHash": "6ece8eb8baaa1733d962088e6fb05658",
     "entities": [
       {
         "tableName": "search_history",
@@ -82,7 +82,7 @@
       },
       {
         "tableName": "subject_collection",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `summary` TEXT NOT NULL, `nsfw` INTEGER NOT NULL, `imageLarge` TEXT NOT NULL, `imageThumb` TEXT NOT NULL DEFAULT '', `totalEpisodes` INTEGER NOT NULL, `airDate` INTEGER NOT NULL, `aliases` BLOB NOT NULL, `tags` BLOB NOT NULL, `completeDate` INTEGER NOT NULL, `collectionType` TEXT NOT NULL, `tmdbArt` BLOB, `lastUpdated` INTEGER NOT NULL DEFAULT 0, `lastFetched` INTEGER NOT NULL DEFAULT 0, `cachedStaffUpdated` INTEGER NOT NULL DEFAULT 0, `cachedCharactersUpdated` INTEGER NOT NULL DEFAULT 0, `collection_stats_wish` INTEGER NOT NULL, `collection_stats_doing` INTEGER NOT NULL, `collection_stats_done` INTEGER NOT NULL, `collection_stats_onHold` INTEGER NOT NULL, `collection_stats_dropped` INTEGER NOT NULL, `rating_rank` INTEGER NOT NULL, `rating_total` INTEGER NOT NULL, `rating_score` TEXT NOT NULL, `rating_count_s1` INTEGER NOT NULL, `rating_count_s2` INTEGER NOT NULL, `rating_count_s3` INTEGER NOT NULL, `rating_count_s4` INTEGER NOT NULL, `rating_count_s5` INTEGER NOT NULL, `rating_count_s6` INTEGER NOT NULL, `rating_count_s7` INTEGER NOT NULL, `rating_count_s8` INTEGER NOT NULL, `rating_count_s9` INTEGER NOT NULL, `rating_count_s10` INTEGER NOT NULL, `self_rating_score` INTEGER NOT NULL, `self_rating_comment` TEXT, `self_rating_tags` BLOB NOT NULL, `self_rating_isPrivate` INTEGER NOT NULL, `recurrence_startTime` INTEGER, `recurrence_interval` TEXT, `relations_seriesMainSubjectIds` BLOB NOT NULL DEFAULT '[]', `relations_seriesMainSubjectNames` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjects` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjectNames` BLOB NOT NULL DEFAULT '[]', PRIMARY KEY(`subjectId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `summary` TEXT NOT NULL, `nsfw` INTEGER NOT NULL, `imageLarge` TEXT NOT NULL, `imageThumb` TEXT NOT NULL DEFAULT '', `totalEpisodes` INTEGER NOT NULL, `airDate` INTEGER NOT NULL, `aliases` BLOB NOT NULL, `tags` BLOB NOT NULL, `completeDate` INTEGER NOT NULL, `collectionType` TEXT NOT NULL, `tmdbArt` BLOB, `screeningYear` INTEGER DEFAULT NULL, `theatrical` INTEGER NOT NULL DEFAULT 0, `lastUpdated` INTEGER NOT NULL DEFAULT 0, `lastFetched` INTEGER NOT NULL DEFAULT 0, `cachedStaffUpdated` INTEGER NOT NULL DEFAULT 0, `cachedCharactersUpdated` INTEGER NOT NULL DEFAULT 0, `collection_stats_wish` INTEGER NOT NULL, `collection_stats_doing` INTEGER NOT NULL, `collection_stats_done` INTEGER NOT NULL, `collection_stats_onHold` INTEGER NOT NULL, `collection_stats_dropped` INTEGER NOT NULL, `rating_rank` INTEGER NOT NULL, `rating_total` INTEGER NOT NULL, `rating_score` TEXT NOT NULL, `rating_count_s1` INTEGER NOT NULL, `rating_count_s2` INTEGER NOT NULL, `rating_count_s3` INTEGER NOT NULL, `rating_count_s4` INTEGER NOT NULL, `rating_count_s5` INTEGER NOT NULL, `rating_count_s6` INTEGER NOT NULL, `rating_count_s7` INTEGER NOT NULL, `rating_count_s8` INTEGER NOT NULL, `rating_count_s9` INTEGER NOT NULL, `rating_count_s10` INTEGER NOT NULL, `self_rating_score` INTEGER NOT NULL, `self_rating_comment` TEXT, `self_rating_tags` BLOB NOT NULL, `self_rating_isPrivate` INTEGER NOT NULL, `recurrence_startTime` INTEGER, `recurrence_interval` TEXT, `relations_seriesMainSubjectIds` BLOB NOT NULL DEFAULT '[]', `relations_seriesMainSubjectNames` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjects` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjectNames` BLOB NOT NULL DEFAULT '[]', PRIMARY KEY(`subjectId`))",
         "fields": [
           {
             "fieldPath": "subjectId",
@@ -167,6 +167,19 @@
             "fieldPath": "tmdbArt",
             "columnName": "tmdbArt",
             "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "screeningYear",
+            "columnName": "screeningYear",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "theatrical",
+            "columnName": "theatrical",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "lastUpdated",
@@ -1198,7 +1211,7 @@
       },
       {
         "tableName": "torrent_cache",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, `completed` INTEGER NOT NULL, `pathInTorrent` TEXT NOT NULL, `downloadSize` INTEGER NOT NULL, `uploadSize` INTEGER NOT NULL, PRIMARY KEY(`mediaId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, `completed` INTEGER NOT NULL DEFAULT 0, `pathInTorrent` TEXT NOT NULL DEFAULT '', `downloadSize` INTEGER NOT NULL DEFAULT 0, `uploadSize` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`mediaId`))",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -1222,25 +1235,29 @@
             "fieldPath": "completed",
             "columnName": "completed",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "pathInTorrent",
             "columnName": "pathInTorrent",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "''"
           },
           {
             "fieldPath": "downloadSize",
             "columnName": "downloadSize",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "uploadSize",
             "columnName": "uploadSize",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1826,11 +1843,79 @@
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_episode_collection_pending_op_episodeId` ON `${TABLE_NAME}` (`episodeId`)"
           }
         ]
+      },
+      {
+        "tableName": "recommendation_feed",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`groupKey` TEXT NOT NULL, `orderIndex` INTEGER NOT NULL, `subjectId` INTEGER NOT NULL, `nameCn` TEXT NOT NULL, `imageLarge` TEXT NOT NULL, `computedAt` INTEGER NOT NULL, `titleArg` TEXT, `algoVersion` INTEGER NOT NULL DEFAULT 0, `profileKey` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`groupKey`, `orderIndex`))",
+        "fields": [
+          {
+            "fieldPath": "groupKey",
+            "columnName": "groupKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderIndex",
+            "columnName": "orderIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameCn",
+            "columnName": "nameCn",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageLarge",
+            "columnName": "imageLarge",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "computedAt",
+            "columnName": "computedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleArg",
+            "columnName": "titleArg",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "algoVersion",
+            "columnName": "algoVersion",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "profileKey",
+            "columnName": "profileKey",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "groupKey",
+            "orderIndex"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '45b7d7d8be2c537dc6bb0d8e34c12c44')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6ece8eb8baaa1733d962088e6fb05658')"
     ]
   }
 }
