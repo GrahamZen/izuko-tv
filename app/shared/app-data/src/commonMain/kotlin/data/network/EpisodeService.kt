@@ -35,6 +35,8 @@ import me.him188.ani.datasources.api.paging.Paged
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.datasources.bangumi.models.BangumiEpType
+import me.him188.ani.datasources.bangumi.models.BangumiEpisodeCollectionType
+import me.him188.ani.datasources.bangumi.models.BangumiPatchUserSubjectEpisodeCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiEpisode
 import me.him188.ani.datasources.bangumi.models.BangumiEpisodeDetail
 import me.him188.ani.datasources.bangumi.models.BangumiUserEpisodeCollection
@@ -193,12 +195,13 @@ class EpisodeServiceImpl(
             return@withContext false
         }
         try {
-            subjectApi {
-                batchUpdateEpisodeCollections(
-                    subjectId.toLong(),
-                    AniBatchUpdateEpisodeCollectionsRequest(
-                        episodeIds = episodeId.map { it.toLong() },
-                        episodeCollectionType = type.toAniEpisodeCollectionTypeUpdate(),
+            bangumiV0Api {
+                // v0 的批量端点与 Ani 那个形状一致: 一次给一批 episodeId 设同一个状态
+                patchUserSubjectEpisodeCollection(
+                    subjectId,
+                    BangumiPatchUserSubjectEpisodeCollectionRequest(
+                        episodeId = episodeId,
+                        type = type.toBangumiEpisodeCollectionType(),
                     ),
                 ).body()
             }
@@ -227,6 +230,18 @@ class EpisodeServiceImpl(
             return this.value in 500..599
         }
     }
+}
+
+/**
+ * bangumi 的分集收藏状态没有"搁置"这一档; [UnifiedCollectionType.NOT_COLLECTED] 映射成 0 (未收藏),
+ * 效果是把这一集的状态清掉.
+ */
+private fun UnifiedCollectionType.toBangumiEpisodeCollectionType(): BangumiEpisodeCollectionType = when (this) {
+    UnifiedCollectionType.WISH -> BangumiEpisodeCollectionType.WATCHLIST
+    UnifiedCollectionType.DONE -> BangumiEpisodeCollectionType.WATCHED
+    UnifiedCollectionType.DROPPED -> BangumiEpisodeCollectionType.DISCARDED
+    UnifiedCollectionType.DOING, UnifiedCollectionType.ON_HOLD,
+    UnifiedCollectionType.NOT_COLLECTED -> BangumiEpisodeCollectionType.NOT_COLLECTED
 }
 
 private fun EpisodeInfo.createNotCollected(): EpisodeCollectionInfo {

@@ -30,6 +30,7 @@ import me.him188.ani.app.data.models.subject.RelatedPersonInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.platform.getAniUserAgent
@@ -41,9 +42,13 @@ import me.him188.ani.client.models.AniSubjectCollection
 import me.him188.ani.client.models.AniSubjectRecommendation
 import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiCount
+import me.him188.ani.datasources.bangumi.next.apis.CollectionBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectSubject
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectionType
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
 import me.him188.ani.utils.coroutines.IO_
@@ -63,7 +68,7 @@ interface SubjectService {
         type: BangumiSubjectCollectionType?,
         offset: Int,
         limit: Int
-    ): List<AniSubjectCollection>
+    ): List<BangumiNextSubject>
 
     /**
      * 当 [subjectId] 不存在时, 返回 `null`.
@@ -80,7 +85,12 @@ interface SubjectService {
      */
     fun subjectCollectionById(subjectId: Int): Flow<BangumiNextSubject?>
 
-    suspend fun patchSubjectCollection(subjectId: Int, payload: AniUpdateSubjectCollectionRequest)
+    suspend fun patchSubjectCollection(subjectId: Int, payload: SubjectCollectionUpdate)
+
+    /**
+     * bangumi 没有"取消收藏"这个操作 (v0 与 p1 的 DELETE 都是 404), 调用即抛.
+     * UI 上这个入口已经去掉, 见 `EditCollectionTypeDropDown` 的 `showDelete`.
+     */
     suspend fun deleteSubjectCollection(subjectId: Int)
 
     suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<AniSubjectRecommendation>
@@ -106,20 +116,39 @@ data class BatchSubjectCollection(
     val collection: BangumiUserSubjectCollection?,
 )
 
+/**
+ * 改条目收藏的载荷. **每个字段都是 null 表示"不动它"**, 不要用空值去顶.
+ *
+ * bangumi 的 PUT 名义上是部分更新, 但有一处例外会毁数据: **请求里带了 `type` 却没带 `rate` 时,
+ * 服务端把 `rate` 当成 0 写回去, 即删掉用户的评分** (实测条目 8: PUT `{"type":2}` 后 rate 9 → 0,
+ * 而短评/标签/进度都还在). 所以改收藏状态时必须把当前评分一起送过去, 见
+ * `SubjectCollectionRepositoryImpl.setSubjectCollectionTypeOrDelete`.
+ *
+ * 同理 `tags` 传空列表 = 清空标签, 想保留就传 null.
+ */
+data class SubjectCollectionUpdate(
+    val collectionType: UnifiedCollectionType? = null,
+    val score: Int? = null,
+    val comment: String? = null,
+    val tags: List<String>? = null,
+    val isPrivate: Boolean? = null,
+)
+
 suspend inline fun SubjectService.setSubjectCollectionTypeOrDelete(
     subjectId: Int,
-    type: AniCollectionType?
+    type: UnifiedCollectionType?
 ) {
-    return if (type == null) {
+    return if (type == null || type == UnifiedCollectionType.NOT_COLLECTED) {
         deleteSubjectCollection(subjectId)
     } else {
-        patchSubjectCollection(subjectId, AniUpdateSubjectCollectionRequest(collectionType = type))
+        patchSubjectCollection(subjectId, SubjectCollectionUpdate(collectionType = type))
     }
 }
 
 class RemoteSubjectService(
     private val subjectApi: ApiInvoker<SubjectsAniApi>,
     private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
+    private val bangumiCollectionApi: ApiInvoker<CollectionBangumiNextApi>,
     private val sessionManager: SessionStateProvider,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : SubjectService, KoinComponent {
@@ -129,15 +158,17 @@ class RemoteSubjectService(
         type: BangumiSubjectCollectionType?,
         offset: Int,
         limit: Int
-    ): List<AniSubjectCollection> = withContext(ioDispatcher) {
+    ): List<BangumiNextSubject> = withContext(ioDispatcher) {
         sessionManager.checkAccessAniApiNow()
         val collections = try {
-            subjectApi {
-                getSubjectCollections(
-                    type = type?.toAniCollectionType(),
+            bangumiCollectionApi {
+                // 按收藏更新时间降序返回 (实测), updateRecentlyUpdatedSubjectCollections 依赖这个顺序
+                getMySubjectCollections(
+                    subjectType = BangumiNextSubjectType.Anime,
+                    type = type?.toBangumiNextCollectionType(),
                     limit = limit,
                     offset = offset,
-                ).body().items
+                ).body().data
             }
         } catch (e: ClientRequestException) {
             // invalid: 400 . Text: "{"title":"Bad Request","details":{"path":"/v0/users/him188/collections","method":"GET","query_string":"subject_type=2&type=1&limit=30&offset=35"},"request_id":".","description":"offset should be less than or equal to 34"}
@@ -192,6 +223,13 @@ class RemoteSubjectService(
         )
     }
 
+    private suspend fun CollectionBangumiNextApi.countOf(type: BangumiNextCollectionType): Int =
+        getMySubjectCollections(
+            subjectType = BangumiNextSubjectType.Anime,
+            type = type,
+            limit = 1,
+        ).body().total
+
     private suspend fun SubjectBangumiNextApi.fetchAllCharacters(
         subjectId: Int,
     ): List<BangumiNextSubjectCharacter> {
@@ -209,13 +247,19 @@ class RemoteSubjectService(
 
     val subjectCountStatsRestarter = FlowRestarter()
 
-    override suspend fun patchSubjectCollection(subjectId: Int, payload: AniUpdateSubjectCollectionRequest) {
+    override suspend fun patchSubjectCollection(subjectId: Int, payload: SubjectCollectionUpdate) {
         sessionManager.checkAccessAniApiNow()
         withContext(ioDispatcher) {
-            subjectApi {
-                this.updateSubjectCollection(
-                    subjectId.toLong(),
-                    payload,
+            bangumiCollectionApi {
+                updateSubjectCollection(
+                    subjectId,
+                    BangumiNextCollectSubject(
+                        type = payload.collectionType?.toBangumiNextCollectionType(),
+                        rate = payload.score,
+                        comment = payload.comment,
+                        `private` = payload.isPrivate,
+                        tags = payload.tags,
+                    ),
                 )
                 Unit
             }
@@ -234,27 +278,29 @@ class RemoteSubjectService(
     }
 
     override suspend fun deleteSubjectCollection(subjectId: Int) {
-        sessionManager.checkAccessAniApiNow()
-        subjectApi {
-            this.deleteSubjectCollection(subjectId.toLong()).body()
-        }
-        subjectCountStatsRestarter.restart()
+        throw UnsupportedOperationException("bangumi 没有取消收藏的接口")
     }
 
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts> {
         return flow {
-            val stats = subjectApi {
-                this.getSubjectCollectionStats().body()
+            // bangumi 没有"一次给全部类型计数"的端点, 只能每个类型问一次 total (limit=1).
+            // 五个请求互不依赖, 并行发.
+            val counts = bangumiCollectionApi {
+                coroutineScope {
+                    BangumiNextCollectionType.entries
+                        .map { type -> type to async { countOf(type) } }
+                        .associate { (type, deferred) -> type to deferred.await() }
+                }
             }
 
             emit(
                 SubjectCollectionCounts(
-                    wish = stats.wish,
-                    doing = stats.doing,
-                    done = stats.done,
-                    onHold = stats.onHold,
-                    dropped = stats.dropped,
-                    total = stats.wish + stats.doing + stats.done + stats.onHold + stats.dropped,
+                    wish = counts[BangumiNextCollectionType.Wish] ?: 0,
+                    doing = counts[BangumiNextCollectionType.Doing] ?: 0,
+                    done = counts[BangumiNextCollectionType.Collect] ?: 0,
+                    onHold = counts[BangumiNextCollectionType.OnHold] ?: 0,
+                    dropped = counts[BangumiNextCollectionType.Dropped] ?: 0,
+                    total = counts.values.sum(),
                 ),
             )
         }.restartable(subjectCountStatsRestarter)
@@ -390,6 +436,25 @@ internal fun BangumiUserSubjectCollection?.toSelfRatingInfo(): SelfRatingInfo {
         tags = tags,
         isPrivate = private,
     )
+}
+
+private fun UnifiedCollectionType.toBangumiNextCollectionType(): BangumiNextCollectionType? = when (this) {
+    UnifiedCollectionType.WISH -> BangumiNextCollectionType.Wish
+    UnifiedCollectionType.DONE -> BangumiNextCollectionType.Collect
+    UnifiedCollectionType.DOING -> BangumiNextCollectionType.Doing
+    UnifiedCollectionType.ON_HOLD -> BangumiNextCollectionType.OnHold
+    UnifiedCollectionType.DROPPED -> BangumiNextCollectionType.Dropped
+    UnifiedCollectionType.NOT_COLLECTED -> null
+}
+
+private fun BangumiSubjectCollectionType.toBangumiNextCollectionType(): BangumiNextCollectionType {
+    return when (this) {
+        BangumiSubjectCollectionType.Wish -> BangumiNextCollectionType.Wish
+        BangumiSubjectCollectionType.Done -> BangumiNextCollectionType.Collect
+        BangumiSubjectCollectionType.Doing -> BangumiNextCollectionType.Doing
+        BangumiSubjectCollectionType.OnHold -> BangumiNextCollectionType.OnHold
+        BangumiSubjectCollectionType.Dropped -> BangumiNextCollectionType.Dropped
+    }
 }
 
 private fun BangumiSubjectCollectionType.toAniCollectionType(): AniCollectionType {

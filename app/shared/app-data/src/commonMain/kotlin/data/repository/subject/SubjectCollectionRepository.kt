@@ -60,6 +60,7 @@ import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.EpisodeService
+import me.him188.ani.app.data.network.SubjectCollectionUpdate
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
@@ -95,6 +96,7 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
 import me.him188.ani.utils.logging.debug
@@ -518,7 +520,7 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
         limit: Int,
         offset: Int,
-        onFetched: (items: List<AniSubjectCollection>) -> Unit = {},
+        onFetched: (items: List<BangumiNextSubject>) -> Unit = {},
     ): List<SubjectCollectionEntity> {
         require(type != UnifiedCollectionType.NOT_COLLECTED) { "type must not be NOT_COLLECTED" }
         require(limit > 0) { "limit must be positive" }
@@ -535,19 +537,50 @@ class SubjectCollectionRepositoryImpl(
         // 批量插入条目信息与分集, 单个事务 (含保留 relations 盖章, 否则这里每写一批就会把
         // 详情页刚取好的角色/制作人员时间戳抹回 0, 触发一轮强制重取); 条目在前, 分集有外键依赖
         val lastFetched = currentTimeMillis()
-        val subjects = items.map { it.toEntity(lastFetched = lastFetched) }
-        subjectCollectionDao.upsertSubjectsWithEpisodes(
-            subjects = subjects,
-            episodes = items
-                .flatMap { it.episodes }
-                .map { episode ->
-                    episode.toEntity1(
-                        subjectId = episode.subjectId.toInt(),
-                        lastFetched = lastFetched,
-                    )
-                },
-        )
+        val existing = subjectCollectionDao.filterByIds(items.map { it.id }.toIntArray()).first()
+            .associateBy { it.subjectId }
+        val subjects = items.map {
+            // recurrence/relations 沿用库里的, 理由同 fetchAndSaveSubjectCollection
+            it.toEntity(
+                lastFetched = lastFetched,
+                recurrence = existing[it.id]?.recurrence,
+                relations = existing[it.id]?.relations ?: SubjectRelations.Empty,
+            )
+        }
+        subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = subjects, episodes = emptyList())
+        fetchEpisodesForDoingSubjects(subjects, lastFetched)
         return subjects
+    }
+
+    /**
+     * 列表接口只给条目不给分集 (Ani 那个是内联的), 一页 30 条要逐个补分集就是 30 个请求.
+     *
+     * 只补**在看**的: 「继续观看」要的下一集 id、卡片上的"更新至 X 话"都只有在看的条目才用得上;
+     * 看过/想看/搁置的卡片在没有分集时会走 [toSubjectCollectionInfo] 里的降级路径 (用条目自带的
+     * 总集数与收藏状态), 进过一次详情页之后分集自然就齐了.
+     *
+     * 在看的量级很小 (几部到几十部), 且**已经有新鲜分集的跳过**, 所以稳态下这里基本不发请求.
+     */
+    private suspend fun fetchEpisodesForDoingSubjects(
+        subjects: List<SubjectCollectionEntity>,
+        lastFetched: Long,
+    ) {
+        val doing = subjects.filter { it.collectionType == UnifiedCollectionType.DOING }
+        if (doing.isEmpty()) return
+        for (subject in doing) {
+            val cached = episodeCollectionDao.filterBySubjectId(subject.subjectId).first()
+            if (cached.isNotEmpty() && cached.all { currentTimeMillis() - it.lastFetched < cacheExpiry.inWholeMilliseconds }) {
+                continue
+            }
+            try {
+                val episodes = episodeService.getEpisodeCollectionEntities(subject.subjectId, lastFetched)
+                episodeCollectionDao.upsert(episodes)
+            } catch (e: Exception) {
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                // 分集补取失败不该让整页收藏加载失败: 卡片退化成没有进度, 下次刷新再补
+                logger.warn { "Failed to fetch episodes for doing subject ${subject.subjectId}: $e" }
+            }
+        }
     }
 
     /**
@@ -597,15 +630,15 @@ class SubjectCollectionRepositoryImpl(
         isPrivate: Boolean?,
     ) {
         withContext(defaultDispatcher) {
+            // 每个字段原样透传: null = 不动它. 用 orEmpty()/?: false 去顶会把用户在 bangumi 上
+            // 的标签清空、把"仅自己可见"改掉 —— 详情页改评分时 tags 就是 null.
             subjectService.patchSubjectCollection(
                 subjectId,
-                AniUpdateSubjectCollectionRequest(
-                    selfRating = AniSelfRatingInfo(
-                        score = score ?: 0,
-                        comment = comment,
-                        tags = tags.orEmpty(),
-                        isPrivate = isPrivate ?: false,
-                    ),
+                SubjectCollectionUpdate(
+                    score = score,
+                    comment = comment,
+                    tags = tags,
+                    isPrivate = isPrivate,
                 ),
             )
 
@@ -674,9 +707,12 @@ class SubjectCollectionRepositoryImpl(
             if (type == null || type == UnifiedCollectionType.NOT_COLLECTED) {
                 deleteSubjectCollection(subjectId)
             } else {
+                // 必须把当前评分一起送过去: bangumi 收到带 type 而不带 rate 的请求会把评分清零
+                val currentScore = subjectCollectionDao.findById(subjectId).first()
+                    ?.selfRatingInfo?.score?.takeIf { it > 0 }
                 patchSubjectCollection(
                     subjectId,
-                    AniUpdateSubjectCollectionRequest(collectionType = type.toAniSubjectCollectionType()),
+                    SubjectCollectionUpdate(collectionType = type, score = currentScore),
                 )
             }
         }
@@ -709,11 +745,11 @@ class SubjectCollectionRepositoryImpl(
 
     private suspend fun patchSubjectCollection(
         subjectId: Int,
-        payload: AniUpdateSubjectCollectionRequest,
+        payload: SubjectCollectionUpdate,
     ) {
         withContext(defaultDispatcher) {
             subjectService.patchSubjectCollection(subjectId, payload)
-            subjectCollectionDao.updateType(subjectId, payload.collectionType.toUnifiedCollectionType())
+            payload.collectionType?.let { subjectCollectionDao.updateType(subjectId, it) }
         }
     }
 
@@ -841,12 +877,23 @@ private fun SubjectCollectionEntity.toSubjectCollectionInfo(
         subjectInfo = subjectInfo,
         selfRatingInfo = selfRatingInfo,
         episodes = episodes,
-        airingInfo = SubjectAiringInfo.computeFromEpisodeList(
-            episodes.map { it.episodeInfo },
-            airDate,
-            recurrence,
-        ),
-        progressInfo = SubjectProgressInfo.compute(subjectInfo, episodes, currentDate, recurrence),
+        // 没有分集时退到只用条目自身的信息. 追番列表只为"在看"的条目补分集 (见
+        // fetchEpisodesForDoingSubjects), 其余类型的卡片走这条路, 进过详情页之后分集就齐了.
+        airingInfo = if (episodes.isEmpty()) {
+            SubjectAiringInfo.computeFromSubjectInfo(subjectInfo, totalEpisodes)
+        } else {
+            SubjectAiringInfo.computeFromEpisodeList(
+                episodes.map { it.episodeInfo },
+                airDate,
+                recurrence,
+            )
+        },
+        progressInfo = if (episodes.isEmpty() && collectionType == UnifiedCollectionType.DONE) {
+            // 没有分集时 compute 会算成"还没看过"→ 显示"开始观看". 用户已经标了看过, 直接给完成态.
+            SubjectProgressInfo.Done
+        } else {
+            SubjectProgressInfo.compute(subjectInfo, episodes, currentDate, recurrence)
+        },
 //        isOnAir = ,
         recurrence = recurrence,
         cachedStaffUpdated = cachedStaffUpdated,
