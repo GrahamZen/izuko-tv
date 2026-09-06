@@ -99,6 +99,17 @@ class BangumiOAuthManager(
      * 界面观察 [state], 见到 [State.Authorizing] 且 `browser != null` 就把
      * [CaptchaBrowser.View] 画成全屏.
      */
+    /** 外部浏览器那条的回环监听; 见 [OAuthLoopbackServer]. */
+    private var loopbackServer: OAuthLoopbackServer? = null
+    private var loopbackJob: Job? = null
+
+    private fun stopLoopback() {
+        loopbackServer?.stop()
+        loopbackServer = null
+        loopbackJob?.cancel()
+        loopbackJob = null
+    }
+
     fun startInAppBrowser() {
         if (!client.isConfigured) {
             _state.value = State.NotConfigured
@@ -150,6 +161,20 @@ class BangumiOAuthManager(
         pendingState = oauthState
         val url = BangumiOAuthConstants.authorizeUrl(state = oauthState)
         _state.value = State.Authorizing(url, browser = null)
+        // 回环监听接住浏览器里的回调 (见 OAuthLoopbackServer): 电视浏览器不把自定义 scheme
+        // 交给系统, deep link 那条在那边收不到. 起不来 (端口被占/iOS) 就还是等 deep link.
+        val server = OAuthLoopbackServer(BangumiOAuthConstants.CALLBACK_PORT)
+        loopbackServer = server
+        loopbackJob = scope.launch {
+            server.start { callbackUrl ->
+                // **另起一个协程**, 不能直接在这里 await: submitCallbackUrl 里的 closeBrowser()
+                // 会 stopLoopback() 把 loopbackJob 取消掉, 而这个回调正跑在那个 job 上 ——
+                // 于是它取消了自己, 换 token 的请求当场夭折 (实测 POST access_token
+                // "CANCELLED in 1ms"), 状态卡在 Exchanging, 界面永远显示"正在等待结果"
+                // (2026-09-06). 应用内浏览器那条一直是对的, 正是因为它这么写.
+                scope.launch { submitCallbackUrl(callbackUrl) }
+            }
+        }
         logger.info { "bgm-direct: oauth 打开授权页 (外部浏览器)" }
         return url
     }
@@ -224,6 +249,8 @@ class BangumiOAuthManager(
     }
 
     private fun closeBrowser() {
+        // 回环监听与浏览器同生共死: 换一条路 / 取消 / 换到 token 了都要把端口放掉
+        stopLoopback()
         browserJob?.cancel()
         browserJob = null
         currentBrowser?.let { browser ->

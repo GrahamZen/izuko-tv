@@ -67,6 +67,10 @@ import me.him188.ani.app.ui.settings.SettingsTab
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.TextItem
 import org.jetbrains.compose.resources.*
+import androidx.compose.material3.TextButton
+import org.jetbrains.compose.resources.stringResource
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.oauth_bangumi_authorize_external_browser
 
 sealed interface AuthState {
     data class LoggedInAni(val bound: Boolean) : Idle
@@ -86,6 +90,7 @@ fun BangumiAuthorizeLayout(
     authorizeState: AuthState,
     contactActions: @Composable () -> Unit,
     onClickAuthorize: () -> Unit,
+    onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
@@ -127,6 +132,18 @@ fun BangumiAuthorizeLayout(
                             .fillMaxWidth()
                             .widthIn(max = 720.dp),
                     )
+                    // 次要入口: 手机上用系统浏览器更顺手 (密码管理器自动填充 + 复用已登录的
+                    // bgm 会话). 放在这里而不是只在内嵌浏览器的顶栏 —— 那里得先进 WebView 才切得动.
+                    //
+                    // 电视上也给: 回调已经从自定义 scheme 换成回环 http 地址 (见
+                    // OAuthLoopbackServer) —— 电视浏览器不把 `ani://` 交给系统, 但普通 http
+                    // 它照常请求, 请求直接落进 app 自己的监听里.
+                    TextButton(
+                        onClick = onClickAuthorizeExternally,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) {
+                        Text(stringResource(Lang.oauth_bangumi_authorize_external_browser))
+                    }
                     AuthorizeStateText(
                         authorizeState,
                         modifier = Modifier.padding(vertical = 8.dp),

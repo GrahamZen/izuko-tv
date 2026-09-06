@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.session.auth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +26,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.rounded.Adjust
+import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -47,8 +49,18 @@ import me.him188.ani.app.domain.mediasource.web.captcha.TvWebInputMode
  * 为什么是**根部的叠层**而不是授权页里的一块: 授权中用户可能返回、可能被别的页面盖住,
  * 而这个浏览器一旦销毁, 授权就只能从头再来 —— 电视上尤其伤 (遥控器打一遍账号密码).
  */
+/**
+ * @param onOpenExternally 用系统浏览器打开授权页; 传 null 则不显示那个按钮.
+ *
+ * **由调用方注入**: 打开浏览器的助手 (`rememberAsyncBrowserNavigator`) 在 ui-foundation 里,
+ * app-data 依赖不到. 而那个助手恰好在打不开时会把链接复制到剪贴板并 toast —— 电视上常常
+ * 一个浏览器都没有 (同 TV 上 ACTION_SEND 零接收方那类), 这个兜底不能少.
+ */
 @Composable
-fun BangumiOAuthDialogHost(manager: BangumiOAuthManager) {
+fun BangumiOAuthDialogHost(
+    manager: BangumiOAuthManager,
+    onOpenExternally: ((String) -> Unit)? = null,
+) {
     val state by manager.state.collectAsState()
     val authorizing = state as? BangumiOAuthManager.State.Authorizing ?: return
     val browser = authorizing.browser ?: return
@@ -83,25 +95,41 @@ fun BangumiOAuthDialogHost(manager: BangumiOAuthManager) {
                         color = Color.White,
                         modifier = Modifier.align(Alignment.Center).padding(horizontal = 104.dp),
                     )
-                    IconButton(
-                        onClick = {
-                            tvInputMode = if (tvInputMode == TvWebInputMode.NativeFocus) {
-                                TvWebInputMode.Cursor
-                            } else {
-                                TvWebInputMode.NativeFocus
+                    Row(Modifier.align(Alignment.CenterEnd)) {
+                        if (onOpenExternally != null) {
+                            // 换用系统浏览器: 手机上能用密码管理器自动填充、也能复用已登录的
+                            // bgm 会话, 比在这个内嵌 WebView 里敲账号密码顺手得多.
+                            // startExternalBrowser 自带 cancel(), 会把内嵌浏览器关掉并换一个
+                            // 新 state, 回调走 deep link 回来 (见 BangumiOAuthManager 的两条路).
+                            IconButton(
+                                onClick = { manager.startExternalBrowser()?.let(onOpenExternally) },
+                            ) {
+                                Icon(
+                                    Icons.Rounded.OpenInBrowser,
+                                    contentDescription = "用系统浏览器打开",
+                                    tint = Color.White,
+                                )
                             }
-                        },
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                    ) {
-                        Icon(
-                            if (tvInputMode == TvWebInputMode.NativeFocus) {
-                                Icons.Rounded.Adjust // 切到光标
-                            } else {
-                                Icons.Rounded.Keyboard // 切回方向键遍历
+                        }
+                        IconButton(
+                            onClick = {
+                                tvInputMode = if (tvInputMode == TvWebInputMode.NativeFocus) {
+                                    TvWebInputMode.Cursor
+                                } else {
+                                    TvWebInputMode.NativeFocus
+                                }
                             },
-                            contentDescription = "切换遥控器操作方式",
-                            tint = Color.White,
-                        )
+                        ) {
+                            Icon(
+                                if (tvInputMode == TvWebInputMode.NativeFocus) {
+                                    Icons.Rounded.Adjust // 切到光标
+                                } else {
+                                    Icons.Rounded.Keyboard // 切回方向键遍历
+                                },
+                                contentDescription = "切换遥控器操作方式",
+                                tint = Color.White,
+                            )
+                        }
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(4.dp)) {

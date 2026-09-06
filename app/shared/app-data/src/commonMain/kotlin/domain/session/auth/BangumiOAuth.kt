@@ -29,13 +29,24 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 直连 bangumi 的 OAuth 常量.
  *
- * 回调地址在 bangumi 那边是**注册死的**, 不能按平台变 (实测传别的地址, 用户若未登录, bgm 走完
- * 登录页之后就把回调地址忘了, 直接报错). 所以三端统一用这个自定义 scheme:
- * Android 由 manifest 的 intent-filter 接住; **应用内 WebView 则在导航到它时直接拦下来**
- * —— 后者不经过系统, 桌面端也能用.
+ * 回调地址在 bangumi 那边是**注册死的**, 传什么 `redirect_uri` 参数都没用 (实测: 用户若未登录,
+ * bgm 走完登录页之后就把传来的地址忘了, 只认注册的那个). 所以这里的地址必须与 bgm 应用设置里
+ * 填的**逐字一致**.
+ *
+ * **用回环 http 而不是自定义 scheme** (RFC 8252 的原生应用做法, 2026-09-06 改): 自定义 scheme
+ * 要靠浏览器把它交给系统, 而**电视浏览器普遍不交** —— Shield 自带的 BrowseHere 直接塞进自己的
+ * WebView 加载, 报 "unknown protocol: ani", 授权成功了 code 却回不来. 回环地址是普通 http,
+ * 浏览器照常请求, 请求落进 app 自己的监听 (见 [OAuthLoopbackServer]), 不需要任何外部服务器.
+ * 应用内 WebView 那条照旧在导航到它时直接拦下来, 不经过系统.
  */
 object BangumiOAuthConstants {
-    const val CALLBACK_URL = "ani://bangumi-oauth-callback"
+    /** 回环监听端口; 与 bgm 应用设置里注册的回调地址必须一致. */
+    const val CALLBACK_PORT = 41890
+
+    const val CALLBACK_URL = "http://127.0.0.1:$CALLBACK_PORT/callback"
+
+    /** 迁移到回环地址之前用的自定义 scheme; 仍然认它, 免得半路换配置时两头不认. */
+    private const val LEGACY_CALLBACK_URL = "ani://bangumi-oauth-callback"
 
     private const val AUTHORIZE_URL = "https://bgm.tv/oauth/authorize"
     const val TOKEN_URL = "https://bgm.tv/oauth/access_token"
@@ -56,7 +67,8 @@ object BangumiOAuthConstants {
     /**
      * 这个地址是不是 OAuth 回调 (WebView 拦截判据). bangumi 会带上 `?code=...&state=...`.
      */
-    fun isCallback(url: String): Boolean = url.startsWith(CALLBACK_URL)
+    fun isCallback(url: String): Boolean =
+        url.startsWith(CALLBACK_URL) || url.startsWith(LEGACY_CALLBACK_URL)
 
     /** 从回调地址里取授权码; 不是回调或没有 code 时返回 `null`. */
     fun extractCode(url: String): String? = extractQueryParam(url, "code")

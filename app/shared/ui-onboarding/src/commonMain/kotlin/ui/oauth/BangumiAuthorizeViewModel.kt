@@ -76,6 +76,20 @@ class BangumiAuthorizeViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
+    /**
+     * **明确**用系统浏览器授权 (界面上那个次要按钮).
+     *
+     * 手机上比应用内浏览器顺手: 密码管理器能自动填充, 也能复用浏览器里已登录的 bgm 会话.
+     * 回调靠 deep link (`ani://bangumi-oauth-callback`) 回到 [BangumiOAuthManager.submitCallbackUrl].
+     *
+     * **同一台设备上装了两个包 (release + debug) 时这条路会卡住**: 两个包都注册了这个 scheme,
+     * 系统会弹应用选择器, 回调可能进了另一个包 —— 表现是授权完回来一直停在"正在等待结果"
+     * (2026-09-06 实测, logcat 里是 ResolverListAdapter 列出两个 MainActivity).
+     */
+    fun startAuthorizeExternally(openExternally: (String) -> Unit) {
+        manager.startExternalBrowser()?.let(openExternally)
+    }
+
     suspend fun collectNewLoginEvent(block: () -> Unit) {
         sessionManager.stateProvider
             .eventFlow

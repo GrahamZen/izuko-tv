@@ -802,6 +802,7 @@
     <!-- OAuth -->
     <string name="oauth_bangumi_authorize_title">授权 Bangumi 登录</string>
     <string name="oauth_bangumi_description">授权 Bangumi 账号，可以同步你的观看记录到 Bangumi 或便捷登录 Ani</string>
+    <string name="oauth_bangumi_authorize_external_browser">用系统浏览器登录</string>
     <string name="oauth_bangumi_bind_account">绑定 Bangumi 账号</string>
     <string name="oauth_bangumi_sign_in_or_sign_up">登录 / 注册</string>
     <string name="oauth_bangumi_waiting_result">正在等待结果</string>

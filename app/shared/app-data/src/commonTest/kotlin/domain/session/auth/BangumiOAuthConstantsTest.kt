@@ -28,16 +28,20 @@ class BangumiOAuthConstantsTest {
         assertTrue("client_id=bgm123" in url, url)
         assertTrue("response_type=code" in url, url)
         assertTrue("state=abc-def" in url, url)
-        // 回调地址必须转义: 不转义的话 `ani://...` 里的 `/` 会把后面的参数吃掉
-        assertTrue("redirect_uri=ani%3A%2F%2Fbangumi-oauth-callback" in url, url)
+        // 回调地址必须转义: 不转义的话里面的 `/` `:` 会把后面的参数吃掉
+        assertTrue("redirect_uri=http%3A%2F%2F127.0.0.1%3A41890%2Fcallback" in url, url)
     }
 
     @Test
     fun `认得出回调, 认不出别的`() {
+        assertTrue(BangumiOAuthConstants.isCallback("http://127.0.0.1:41890/callback?code=x&state=y"))
+        assertTrue(BangumiOAuthConstants.isCallback("http://127.0.0.1:41890/callback"))
+        // 迁移到回环地址之前那个仍然要认: 半路换配置时两头都不认最难查
         assertTrue(BangumiOAuthConstants.isCallback("ani://bangumi-oauth-callback?code=x&state=y"))
-        assertTrue(BangumiOAuthConstants.isCallback("ani://bangumi-oauth-callback"))
         assertFalse(BangumiOAuthConstants.isCallback("https://bgm.tv/oauth/authorize?client_id=x"))
         assertFalse(BangumiOAuthConstants.isCallback("ani://subjects/302286"))
+        // 别的本机端口不算 —— 端口是与 bgm 注册的那个逐字对上的
+        assertFalse(BangumiOAuthConstants.isCallback("http://127.0.0.1:8080/callback?code=x"))
     }
 
     @Test

@@ -762,6 +762,7 @@
     <!-- OAuth -->
     <string name="oauth_bangumi_authorize_title">Authorize Bangumi Sign-In</string>
     <string name="oauth_bangumi_description">Authorize your Bangumi account to sync your watch history to Bangumi or sign in to Ani more conveniently.</string>
+    <string name="oauth_bangumi_authorize_external_browser">Sign in with system browser</string>
     <string name="oauth_bangumi_bind_account">Bind Bangumi Account</string>
     <string name="oauth_bangumi_sign_in_or_sign_up">Sign In / Sign Up</string>
     <string name="oauth_bangumi_waiting_result">Waiting for result</string>

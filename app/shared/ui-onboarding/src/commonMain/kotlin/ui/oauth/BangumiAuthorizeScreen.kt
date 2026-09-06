@@ -52,6 +52,13 @@ fun BangumiAuthorizeScreen(
                 }
             }
         },
+        onClickAuthorizeExternally = {
+            if (state !is AuthState.AwaitingResult) {
+                vm.startAuthorizeExternally { url ->
+                    scope.launch { browserNavigator.openBrowser(context, url) }
+                }
+            }
+        },
         onCancelAuthorize = { vm.cancelCurrentOAuth() },
         onNavigateSettings = onNavigateSettings,
         onNavigateBack = onNavigateBack,
@@ -63,6 +70,7 @@ fun BangumiAuthorizeScreen(
 internal fun BangumiAuthorizeScreen(
     state: AuthState,
     onClickAuthorize: () -> Unit,
+    onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
     onNavigateSettings: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -79,6 +87,7 @@ internal fun BangumiAuthorizeScreen(
             authorizeState = state,
             contactActions = contactActions,
             onClickAuthorize = onClickAuthorize,
+            onClickAuthorizeExternally = onClickAuthorizeExternally,
             onCancelAuthorize = onCancelAuthorize,
             scrollState = scrollState,
         )
