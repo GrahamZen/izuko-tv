@@ -407,7 +407,16 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
     single<TrendsRepository> { TrendsRepository(bangumiApiProvider.trendingApi) }
-    single<RecommendationRepository> { RecommendationRepository(bangumiApiProvider.subjectApi, database.subjectCollection()) }
+    single<RecommendationRepository> {
+        RecommendationRepository(
+            bangumiApiProvider.subjectApi,
+            database.subjectCollection(),
+            database.recommendationFeedDao(),
+            get(),
+            get(),
+            scope = coroutineScope,
+        )
+    }
 
     single<DanmakuRepository> {
         DanmakuRepository(

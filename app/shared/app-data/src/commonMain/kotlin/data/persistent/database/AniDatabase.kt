@@ -33,6 +33,8 @@ import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCommentDao
 import me.him188.ani.app.data.persistent.database.dao.HttpCacheDownloadStateDao
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryDao
+import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedDao
+import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedEntity
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryPendingOpEntity
 import me.him188.ani.app.data.persistent.database.dao.PlaybackHistoryRecordEntity
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSource
@@ -86,8 +88,9 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         PreferredWebMediaSource::class,
         PlaybackHistoryRecordEntity::class,
         PlaybackHistoryPendingOpEntity::class,
+        RecommendationFeedEntity::class, // 6.1.x: 探索页推荐的结果缓存
     ],
-    version = 24,
+    version = 25,
     autoMigrations = [
         AutoMigration(from = 1, to = 2, spec = Migrations.Migration_1_2::class),
         AutoMigration(from = 2, to = 3, spec = Migrations.Migration_2_3::class),
@@ -113,6 +116,9 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         // 不需要 spec). 供 TMDB 匹配判断"是不是只在影院放映"与"真正的上映年份", 见
         // [SubjectCollectionEntity.screeningYear].
         AutoMigration(from = 23, to = 24),
+        // 24 -> 25: 新增 recommendation_feed 表 (纯加表, 不需要 spec). 探索页推荐改成
+        // "缓存住 + 后台重算", 见 [RecommendationFeedEntity].
+        AutoMigration(from = 24, to = 25),
     ],
     exportSchema = true,
 )
@@ -162,6 +168,11 @@ abstract class AniDatabase : RoomDatabase() {
     abstract fun danmakuDao(): DanmakuDao
     abstract fun preferredWebMediaSourceDao(): PreferredWebMediaSourceDao
     abstract fun playbackHistoryDao(): PlaybackHistoryDao
+
+    /**
+     * @since 6.1.x
+     */
+    abstract fun recommendationFeedDao(): RecommendationFeedDao
 }
 
 expect object AniDatabaseConstructor : RoomDatabaseConstructor<AniDatabase> {
