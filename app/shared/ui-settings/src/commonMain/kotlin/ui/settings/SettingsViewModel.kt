@@ -414,7 +414,6 @@ private fun Map<String, ServiceConnectionTester.TestState>.toUIState(): List<Pro
     return buildList {
         this@toUIState.forEach { (id, state) ->
             val case = when (id) {
-                ServiceConnectionTesters.ID_ANI -> ProxyTestCase.AniDanmakuApi
                 ServiceConnectionTesters.ID_BANGUMI -> ProxyTestCase.BangumiApi
                 ServiceConnectionTesters.ID_BANGUMI_NEXT -> ProxyTestCase.BangumiNextApi
                 ServiceConnectionTesters.ID_TMDB -> ProxyTestCase.TmdbApi

@@ -74,7 +74,6 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuite
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteDefaults
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteLayout
-import me.him188.ani.app.ui.bangumi.merge.BangumiConflictNotifier
 import me.him188.ani.app.ui.cache.CacheManagementScreen
 import me.him188.ani.app.ui.cache.CacheManagementViewModel
 import me.him188.ani.app.ui.exploration.ExplorationScreen
@@ -467,14 +466,7 @@ private fun TabContent(
                 Modifier.matchParentSize()
                     .padding(LocalAppChromeOverlayInsets.current.asPaddingValues()),
                 top = { UpdateNotifierWithVersionExpiryCheck() },
-                bottom = {
-                    // 版本过期锁定页展示时不检查 Bangumi 收藏冲突, 也不在其上叠加提示.
-                    val versionExpiryService = remember { KoinPlatform.getKoin().get<VersionExpiryService>() }
-                    val versionExpired by versionExpiryService.state.collectAsStateWithLifecycle(null)
-                    if (versionExpired == null) {
-                        BangumiConflictNotifier(selfInfo = selfInfo)
-                    }
-                },
+                bottom = { },
             )
         }
     }

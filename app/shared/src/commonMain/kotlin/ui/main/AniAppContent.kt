@@ -69,8 +69,6 @@ import me.him188.ani.app.navigation.rememberAniBackStack
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.LocalBrowserNavigator
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteDefaults
-import me.him188.ani.app.ui.bangumi.merge.BangumiMergeScreen
-import me.him188.ani.app.ui.bangumi.merge.BangumiMergeViewModel
 import me.him188.ani.app.ui.cache.CacheManagementScreen
 import me.him188.ani.app.ui.cache.CacheManagementViewModel
 import me.him188.ani.app.ui.cache.details.MediaCacheDetailsPageViewModel
@@ -217,13 +215,6 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                     appState.mainSceneInitialPage,
                     playbackSessionHolder,
                     Modifier.fillMaxSize(),
-                )
-                BangumiSessionExpiredPromptHost(
-                    viewModel = aniAppViewModel,
-                    enabled = appState.initialNavRoute is NavRoutes.Main,
-                    onLogin = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
                 )
             }
         }
@@ -547,21 +538,6 @@ private fun AniAppContentImpl(
                             aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
                         }
                     },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    windowInsets = windowInsetsWithoutTitleBar,
-                )
-            }
-            entry<NavRoutes.BangumiMerge> { route ->
-                BangumiMergeScreen(
-                    vm = viewModel { BangumiMergeViewModel() },
-                    onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
                     modifier = Modifier.fillMaxSize(),
                     navigationIcon = {
                         BackNavigationIconButton(

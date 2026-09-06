@@ -51,7 +51,6 @@ import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.settings.NoProxyProvider
-import me.him188.ani.client.apis.DanmakuAniApi
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
 import me.him188.ani.danmaku.api.DanmakuLocation
@@ -170,7 +169,6 @@ class DanmakuCacheTest {
 
         return DanmakuRepository(
             parentCoroutineContext = backgroundScope.coroutineContext,
-            danmakuApi = UnusedApiInvoker,
             danmakuDao = danmakuDao,
             httpClientProvider = backgroundScope.run { TestHttpClientProvider() },
             getMediaCacheUseCase = mediaCacheUseCase,
@@ -303,12 +301,6 @@ class DanmakuCacheTest {
         override suspend fun close() = Unit
         override suspend fun resume() = Unit
         override suspend fun closeAndDeleteFiles() = Unit
-    }
-
-    private object UnusedApiInvoker : ApiInvoker<DanmakuAniApi> {
-        override suspend fun <R> invoke(action: suspend DanmakuAniApi.() -> R): R {
-            error("ApiInvoker not expected in tests")
-        }
     }
 
     private companion object {

@@ -25,9 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import me.him188.ani.app.data.network.AniApiProvider
 import me.him188.ani.app.data.network.AniEpisodeCommentService
-import me.him188.ani.app.data.network.AniPersonCommentService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
@@ -67,7 +65,6 @@ import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepositoryImpl
 import me.him188.ani.app.data.repository.player.EpisodeScreenshotRepository
 import me.him188.ani.app.data.repository.player.WhatslinkEpisodeScreenshotRepository
-import me.him188.ani.app.data.repository.person.PersonCommentRepository
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
 import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.DefaultSubjectRelationsRepository
@@ -98,9 +95,7 @@ import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
-import me.him188.ani.app.domain.foundation.ServerListFeatureHandler
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
-import me.him188.ani.app.domain.foundation.UseAniTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
@@ -162,7 +157,6 @@ import kotlin.time.Duration.Companion.seconds
 private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
 private val Scope.settingsRepository get() = get<SettingsRepository>()
-private val Scope.aniApiProvider get() = get<AniApiProvider>()
 private val Scope.bangumiApiProvider get() = get<BangumiApiProvider>()
 
 fun KoinApplication.getCommonKoinModule(getContext: () -> Context, coroutineScope: CoroutineScope) =
@@ -195,32 +189,16 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<SessionStateProvider> {
         get<SessionManager>().stateProvider
     }
-    single<ServerSelector> {
-        ServerSelector(
-            settingsRepository.danmakuSettings.flow.map { it.useGlobal },
-            proxyProvider = get(),
-            coroutineScope,
-        )
-    }
     single<HttpClientProvider> {
         val sessionManager by inject<SessionManager>()
         DefaultHttpClientProvider(
             get(), coroutineScope,
             featureHandlers = listOf(
                 UserAgentFeatureHandler,
-                UseAniTokenFeatureHandler(
-                    sessionManager.sessionFlow.map {
-                        (it as? AccessTokenSession)?.tokens?.aniAccessToken
-                    },
-                    onRefresh = { null },
-                ),
                 UseBangumiTokenFeatureHandler(
                     sessionManager.sessionFlow.map {
                         (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
                     },
-                ),
-                ServerListFeatureHandler(
-                    get<ServerSelector>().flow,
                 ),
                 DistributionChannelFeatureHandler { currentAniBuildConfig.distroChannel },
                 ConvertSendCountExceedExceptionFeatureHandler,
@@ -271,7 +249,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             }
         }
     }
-    single<AniApiProvider> { AniApiProvider(get<HttpClientProvider>().get(useAniToken = true)) }
     single<BangumiApiProvider> { BangumiApiProvider(get<HttpClientProvider>().get(useBangumiToken = true)) }
     single<TokenRepository> { TokenRepository(getContext().dataStores.tokenStore) }
     single<EpisodePreferencesRepository> {
@@ -348,13 +325,12 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     // Data layer network services
     single<SubjectService> {
         RemoteSubjectService(
-            aniApiProvider.subjectApi,
             bangumiApiProvider.subjectApi,
             bangumiApiProvider.collectionApi,
             sessionManager = get(),
         )
     }
-    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi, bangumiApiProvider.v0Api) }
+    single<EpisodeService> { EpisodeServiceImpl(bangumiApiProvider.v0Api) }
 
     single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
     single<PersonDetailsRepository> {
@@ -397,13 +373,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(bangumiApiProvider.subjectApi) }
     single<AniEpisodeCommentService> { AniEpisodeCommentService(bangumiApiProvider.episodeApi, bangumiApiProvider.miscApi) }
     single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
-    single<AniPersonCommentService> {
-        AniPersonCommentService(
-            personsApi = get<AniApiProvider>().personsApi,
-            charactersApi = get<AniApiProvider>().charactersApi,
-        )
-    }
-    single<PersonCommentRepository> { PersonCommentRepository(aniCommentService = get()) }
     single<MediaSourceInstanceRepository> {
         MediaSourceInstanceRepositoryImpl(getContext().dataStores.mediaSourceSaveStore)
     }
@@ -423,7 +392,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             dataStore = getContext().dataStores.peerFilterSubscriptionStore,
             ruleSaveDir = getContext().files.dataDir.resolve("peerfilter-subs"),
             httpClient = get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
-            builtinPeerFilterRuleApi = get<AniApiProvider>().pfRuleApi,
         )
     }
     single<TmdbImageService> { TmdbImageService(get(), getContext().dataStores.tmdbImageCacheStore) }
@@ -434,7 +402,6 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<DanmakuRepository> {
         DanmakuRepository(
             parentCoroutineContext = coroutineScope.coroutineContext,
-            danmakuApi = aniApiProvider.danmakuApi,
             danmakuDao = database.danmakuDao(),
             httpClientProvider = get(),
             getMediaCacheUseCase = get(),
@@ -555,7 +522,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             get<MediaSourceSubscriptionRepository>(),
             get<MediaSourceManager>(),
             get<MediaSourceCodecManager>(),
-            requester = MediaSourceSubscriptionRequesterImpl(client, get<AniApiProvider>().subscriptionApi),
+            requester = MediaSourceSubscriptionRequesterImpl(client),
         )
     }
     single<SelectorMediaSourceEpisodeCacheRepository> {

@@ -33,7 +33,6 @@ import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.ui.foundation.BackgroundScope
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
-import me.him188.ani.client.apis.DanmakuAniApi
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
 import me.him188.ani.danmaku.api.provider.DanmakuFetchRequest
@@ -62,7 +61,6 @@ import kotlin.time.Duration.Companion.seconds
  */
 class DanmakuRepository(
     parentCoroutineContext: CoroutineContext = EmptyCoroutineContext,
-    danmakuApi: ApiInvoker<DanmakuAniApi>,
     private val danmakuDao: DanmakuDao,
     httpClientProvider: HttpClientProvider,
     private val getMediaCacheUseCase: GetMediaCacheUseCase,

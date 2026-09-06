@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.user.UploadAvatarResult
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.tools.MonoTasker

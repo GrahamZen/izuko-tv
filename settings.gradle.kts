@@ -123,7 +123,6 @@ includeProject(":app:desktop", "app/desktop") // desktop JVM client for macOS, W
 includeProject(":app:android", "app/android") // Android client
 includeProject(":app:ios", "app/ios") // iOS Launcher
 
-includeProject(":client")
 
 // server
 //includeProject(":server:core", "server/core") // server core

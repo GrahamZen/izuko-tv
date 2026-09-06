@@ -20,9 +20,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniEpisodeCollection
-import me.him188.ani.client.models.AniSubjectCollection
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.MediaProperties
@@ -35,6 +32,7 @@ import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.tools.datasourcetestmcp.StageResult
+import me.him188.ani.tools.datasourcetestmcp.info.AniInfoService
 import me.him188.ani.tools.datasourcetestmcp.resolver.CandidateTestMode
 import me.him188.ani.tools.datasourcetestmcp.resolver.CandidateVideoResolver
 import me.him188.ani.tools.datasourcetestmcp.resolver.ChannelTestExecutor
@@ -46,6 +44,8 @@ import me.him188.ani.tools.datasourcetestmcp.video.VideoUrlProbeEngine
 
 class SourceTestService(
     private val httpClient: HttpClient,
+    // 条目/分集元数据从这里取 (直连 bangumi), 原先是自己 new 一个 Ani 的 SubjectsAniApi
+    private val aniInfoService: AniInfoService,
     private val registry: DataSourceRegistry,
     private val json: Json,
     private val resolver: CandidateVideoResolver = WebViewVideoResolverEngine(),
@@ -279,28 +279,33 @@ class SourceTestService(
         }
     }
 
+    /**
+     * 条目/分集元数据. 直连之后走 bangumi (见 [AniInfoService]) —— 名字这一串是喂给数据源搜索的,
+     * 与 app 里那条路取的是同一份数据.
+     */
     private suspend fun fetchAniMetadata(input: TestSubjectEpisodeSourceInput): AniMetadataResult {
-        val api = SubjectsAniApi(input.aniApiBaseUrl, httpClient).apply {
-            input.aniBearerToken?.takeIf { it.isNotBlank() }?.let(::setBearerToken)
-        }
-        val subject = api.getSubject(input.subjectId).body()
-        val episode = api.getEpisode(input.subjectId, input.episodeId).body()
+        val context = aniInfoService.fetchEpisodeQueryContext(
+            subjectId = input.subjectId,
+            episodeId = input.episodeId,
+            baseUrl = input.aniApiBaseUrl,
+            bearerToken = input.aniBearerToken,
+        )
         return AniMetadataResult(
             request = MediaFetchRequest(
-                subjectId = subject.id.toString(),
-                episodeId = episode.episodeId.toString(),
-                subjectNameCN = subject.nameCn.ifBlank { subject.name }.ifBlank { null },
-                subjectNames = subject.allKnownNames(),
-                episodeSort = EpisodeSort(episode.sort),
-                episodeName = episode.displayName(),
-                episodeEp = episode.ep?.let(::EpisodeSort),
+                subjectId = input.subjectId.toString(),
+                episodeId = input.episodeId.toString(),
+                subjectNameCN = context.subjectDisplayName.ifBlank { null },
+                subjectNames = context.subjectNames,
+                episodeSort = EpisodeSort(context.episodeSort),
+                episodeName = context.episodeName.orEmpty(),
+                episodeEp = context.episodeEp?.let(::EpisodeSort),
             ),
-            subjectId = subject.id,
-            subjectName = subject.name,
-            subjectNameCn = subject.nameCn.ifBlank { null },
-            episodeId = episode.episodeId,
-            episodeSort = episode.sort,
-            episodeEp = episode.ep,
+            subjectId = input.subjectId,
+            subjectName = context.subjectNames.lastOrNull() ?: context.subjectDisplayName,
+            subjectNameCn = context.subjectDisplayName.ifBlank { null },
+            episodeId = input.episodeId,
+            episodeSort = context.episodeSort,
+            episodeEp = context.episodeEp,
         )
     }
 
@@ -526,16 +531,3 @@ private data class AniMetadataResult(
     val episodeEp: String?,
 )
 
-private fun AniSubjectCollection.allKnownNames(): List<String> {
-    return buildList {
-        add(nameCn)
-        add(name)
-        addAll(aliases)
-    }.map(String::trim)
-        .filter(String::isNotBlank)
-        .distinct()
-}
-
-private fun AniEpisodeCollection.displayName(): String {
-    return nameCn.ifBlank { name }.ifBlank { description }
-}

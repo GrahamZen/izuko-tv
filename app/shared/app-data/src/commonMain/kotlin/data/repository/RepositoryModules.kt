@@ -9,16 +9,13 @@
 
 package me.him188.ani.app.data.repository
 
-import me.him188.ani.app.data.network.AniApiProvider
 import me.him188.ani.app.data.persistent.PlatformDataStoreManager
 import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.bangumi.BangumiConflictChecker
 import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
 
-val Scope.aniApiProvider get() = get<AniApiProvider>()
 
 @Suppress("UnusedReceiverParameter")
 fun KoinApplication.repositoryModules(dataStores: PlatformDataStoreManager) = module {
@@ -29,10 +26,6 @@ fun KoinApplication.repositoryModules(dataStores: PlatformDataStoreManager) = mo
             // "我是谁"改由 bangumi 的 /p1/me 回答
             get<BangumiApiProvider>().miscApi,
             get(),
-            aniApiProvider.userApi,
-            aniApiProvider.userAuthApi,
-            aniApiProvider.userProfileApi,
-            aniApiProvider.bangumiApi,
             get(),
         )
     }

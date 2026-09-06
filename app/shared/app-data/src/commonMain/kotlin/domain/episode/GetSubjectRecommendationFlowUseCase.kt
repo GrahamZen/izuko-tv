@@ -32,19 +32,16 @@ fun interface GetSubjectRecommendationUseCase : UseCase {
 
 class GetSubjectRecommendationUseCaseImpl(private val service: SubjectService) : GetSubjectRecommendationUseCase {
     override suspend fun invoke(subjectId: Int): List<SubjectRecommendation> {
-        return service.getSubjectRecommendations(subjectId, 15).filter {
-            // 服务端会混入广告条目: 只有外链 uri 而没有有效 subjectId.
-            // 与首页 RecommendationRepository 相同, 只保留真实条目
-            it.uri == null && (it.subjectId ?: 0) > 0
-        }.map {
+        return service.getSubjectRecommendations(subjectId, 15).map {
             SubjectRecommendation(
-                subjectId = it.subjectId,
-                name = it.subjectName,
-                nameCn = it.subjectNameCn,
-                desc1 = it.desc1,
-                desc2 = it.desc2,
+                subjectId = it.subjectId.toLong(),
+                name = it.name,
+                nameCn = it.nameCn,
+                // Ani 那边这两行是服务端拼好的说明文字 (评分/播出年份之类), bangumi 的 recs 不给
+                desc1 = "",
+                desc2 = "",
                 imageUrl = it.imageUrl,
-                uri = it.uri,
+                uri = null,
             )
         }
     }

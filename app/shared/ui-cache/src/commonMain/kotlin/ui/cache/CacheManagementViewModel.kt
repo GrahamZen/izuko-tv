@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.subject.staticSubjectImageLargeUrl
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.domain.media.cache.DeleteCacheByCacheIdUseCase
 import me.him188.ani.app.domain.media.cache.MediaCacheManager
 import me.him188.ani.app.domain.media.cache.engine.MediaStats
@@ -104,7 +104,7 @@ class CacheManagementViewModel : AbstractViewModel(), KoinComponent {
                             ?: caches.first().cache.metadata.run { subjectNameCN ?: subjectNames.firstOrNull() ?: "" },
                         entries = entries,
                         collectionType = type,
-                        imageUrl = info?.imageLarge ?: staticSubjectImageLargeUrl(subjectId.toInt()),
+                        imageUrl = info?.imageLarge.orBangumiPlaceholder(),
                         totalEpisodeCount = info?.totalEpisodes?.takeIf { it > 0 },
                     )
                 }

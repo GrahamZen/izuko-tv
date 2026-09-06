@@ -25,10 +25,7 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.subject.toEpisodeType
-import me.him188.ani.app.data.repository.subject.toUnifiedCollectionType
 import me.him188.ani.app.domain.episode.EpisodeCollections
-import me.him188.ani.client.models.AniEpisodeCollection
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -289,12 +286,6 @@ fun EpisodeCollectionEntity.toEpisodeCollectionInfo() =
         collectionType = selfCollectionType,
     )
 
-fun AniEpisodeCollection.toEpisodeCollectionInfo() =
-    EpisodeCollectionInfo(
-        episodeInfo = toEpisodeInfo(),
-        collectionType = collectionType.toUnifiedCollectionType(),
-    )
-
 private fun EpisodeCollectionEntity.toEpisodeInfo(): EpisodeInfo {
     return EpisodeInfo(
         episodeId = this.episodeId,
@@ -309,16 +300,3 @@ private fun EpisodeCollectionEntity.toEpisodeInfo(): EpisodeInfo {
     )
 }
 
-private fun AniEpisodeCollection.toEpisodeInfo(): EpisodeInfo {
-    return EpisodeInfo(
-        episodeId = this.episodeId.toInt(),
-        type = this.type.toEpisodeType(),
-        name = this.name,
-        nameCn = this.nameCn,
-        airDate = this.airdate?.let { PackedDate.parseFromDate(it) } ?: PackedDate.Invalid,
-        comment = 0,
-        desc = this.description,
-        sort = EpisodeSort(BigNum(this.sort), this.type.toEpisodeType()),
-        ep = this.ep?.let { EpisodeSort(BigNum(it), this.type.toEpisodeType()) },
-    )
-}

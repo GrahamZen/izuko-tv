@@ -35,11 +35,6 @@ import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.platform.getAniUserAgent
 import me.him188.ani.app.data.network.mapper.toCharacterInfo
 import me.him188.ani.app.data.network.mapper.toPersonInfo
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniCollectionType
-import me.him188.ani.client.models.AniSubjectCollection
-import me.him188.ani.client.models.AniSubjectRecommendation
-import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiCount
 import me.him188.ani.datasources.bangumi.next.apis.CollectionBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
@@ -47,6 +42,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectionType
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
@@ -93,7 +89,11 @@ interface SubjectService {
      */
     suspend fun deleteSubjectCollection(subjectId: Int)
 
-    suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<AniSubjectRecommendation>
+    /**
+     * 「看过这部的人也看过」. 直连之后走 bangumi 的 `/p1/subjects/{id}/recs`
+     * (Ani 那个 `/v2/subjects/{id}/recommendations` 是它服务端自己算的, 而且会混广告进来).
+     */
+    suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<SubjectRecommendationItem>
 
     /**
      * 获取各个收藏分类的数量.
@@ -109,6 +109,19 @@ interface SubjectService {
     fun invalidateCollectionCounts()
 
 }
+
+/**
+ * 条目推荐里的一条 (见 [SubjectService.getSubjectRecommendations]).
+ *
+ * 取代了 Ani 的 `AniSubjectRecommendation`: 那个还带 desc1/desc2/uri 三个字段 —— 前两个是服务端
+ * 拼的说明文字, uri 是广告用的外链, bangumi 都没有。
+ */
+data class SubjectRecommendationItem(
+    val subjectId: Int,
+    val name: String,
+    val nameCn: String?,
+    val imageUrl: String,
+)
 
 data class BatchSubjectCollection(
     val batchSubjectDetails: BatchSubjectDetails,
@@ -148,7 +161,6 @@ suspend inline fun SubjectService.setSubjectCollectionTypeOrDelete(
 }
 
 class RemoteSubjectService(
-    private val subjectApi: ApiInvoker<SubjectsAniApi>,
     private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
     private val bangumiCollectionApi: ApiInvoker<CollectionBangumiNextApi>,
     private val sessionManager: SessionStateProvider,
@@ -283,14 +295,25 @@ class RemoteSubjectService(
         subjectCountStatsRestarter.restart()
     }
 
-    override suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<AniSubjectRecommendation> {
-        return subjectApi {
-            this.getSubjectRecommendations(
-                subjectId = subjectId.toLong(),
-                userAgent = getAniUserAgent(),
-                limit = limit,
-            ).body()
+    override suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<SubjectRecommendationItem> {
+        val recs = bangumiSubjectApi {
+            // `/recs` 的 limit 上限是 10
+            getSubjectRecs(subjectId, limit = limit.coerceAtMost(10)).body().data
         }
+        logger.info { "bgm-direct: subject $subjectId recs -> ${recs.size}" }
+        return recs.asSequence()
+            .map { it.subject }
+            // 「看过这部的人也看过」不分条目类型, 漫画/游戏/三次元都会混进来
+            .filter { it.type == BangumiNextSubjectType.Anime }
+            .map { subject ->
+                SubjectRecommendationItem(
+                    subjectId = subject.id,
+                    name = subject.name,
+                    nameCn = subject.nameCN.takeIf { it.isNotEmpty() },
+                    imageUrl = subject.images?.large.orBangumiPlaceholder(),
+                )
+            }
+            .toList()
     }
 
     override suspend fun deleteSubjectCollection(subjectId: Int) {
@@ -461,16 +484,6 @@ private fun BangumiSubjectCollectionType.toBangumiNextCollectionType(): BangumiN
         BangumiSubjectCollectionType.Doing -> BangumiNextCollectionType.Doing
         BangumiSubjectCollectionType.OnHold -> BangumiNextCollectionType.OnHold
         BangumiSubjectCollectionType.Dropped -> BangumiNextCollectionType.Dropped
-    }
-}
-
-private fun BangumiSubjectCollectionType.toAniCollectionType(): AniCollectionType {
-    return when (this) {
-        BangumiSubjectCollectionType.Wish -> AniCollectionType.WISH
-        BangumiSubjectCollectionType.Done -> AniCollectionType.DONE
-        BangumiSubjectCollectionType.Doing -> AniCollectionType.DOING
-        BangumiSubjectCollectionType.OnHold -> AniCollectionType.ON_HOLD
-        BangumiSubjectCollectionType.Dropped -> AniCollectionType.DROPPED
     }
 }
 

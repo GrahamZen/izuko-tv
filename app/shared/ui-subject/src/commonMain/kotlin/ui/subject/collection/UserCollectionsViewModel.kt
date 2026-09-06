@@ -94,15 +94,6 @@ class UserCollectionsViewModel : AbstractViewModel(), KoinComponent {
                 refreshCollections()
             }
         }
-
-        launchInBackground {
-            // 服务端改写了收藏 (解决 Bangumi 冲突 / 全量同步自动合并) 后本地缓存被失效:
-            // 已创建的分页器不会自动重新拉取 (只在创建时判断是否刷新), 这里重建它, 并重新拉取数量.
-            subjectCollectionRepository.collectionsInvalidated.collect {
-                logger.info { "收藏缓存已失效, 刷新列表" }
-                refreshCollections()
-            }
-        }
     }
 
     /**

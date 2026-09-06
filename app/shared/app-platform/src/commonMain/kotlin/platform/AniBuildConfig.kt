@@ -39,9 +39,6 @@ interface AniBuildConfig {
     val bangumiOauthClientSecret: String
         get() = ""
     val sentryDsn: String
-    val overrideAniApiServer: String
-        get() = ""
-
     val distroChannel: String
 
     val sentryEnabled: Boolean

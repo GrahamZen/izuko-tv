@@ -18,9 +18,6 @@ plugins {
     id("ani.build-config")
 }
 
-val aniAuthServerUrlDebug =
-    getPropertyOrNull("ani.auth.server.url.debug") ?: "https://auth.myani.org"
-val aniAuthServerUrlRelease = getPropertyOrNull("ani.auth.server.url.release") ?: "https://auth.myani.org"
 val dandanplayAppId = getPropertyOrNull("ani.dandanplay.app.id") ?: ""
 val dandanplayAppSecret = getPropertyOrNull("ani.dandanplay.app.secret") ?: ""
 val tmdbApiToken = getPropertyOrNull("ani.tmdb.api.token") ?: ""
@@ -31,8 +28,6 @@ val bangumiOauthClientId = getPropertyOrNull("ani.bangumi.oauth.client.id") ?: "
 val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secret") ?: ""
 val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
-val overrideAniApiServer = getPropertyOrNull("ani.api.server")?.takeIf { it.isNotBlank() }
-
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
 kotlin {
@@ -133,7 +128,6 @@ buildConfig {
         stringField("bangumiOauthClientId", bangumiOauthClientId)
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
-        stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         stringField("distroChannel", distroChannel)
 
         firebaseFields()
@@ -149,7 +143,6 @@ buildConfig {
         stringField("bangumiOauthClientId", bangumiOauthClientId)
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
-        stringField("overrideAniApiServer", overrideAniApiServer ?: "")
         stringField("distroChannel", distroChannel)
 
         booleanField("analyticsEnabled", enableFirebase)
@@ -169,8 +162,7 @@ buildConfig {
 
             val sentryEnabled = (getPropertyOrNull("ani.sentry.ios") ?: "true").toBooleanStrict()
             booleanField("sentryEnabled", sentryEnabled)
-            stringField("overrideAniApiServer", overrideAniApiServer ?: "")
-            stringField("distroChannel", distroChannel)
+                stringField("distroChannel", distroChannel)
 
             firebaseFields()
         }

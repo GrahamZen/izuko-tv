@@ -79,18 +79,6 @@ import me.him188.ani.app.domain.search.SubjectType
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.domain.session.restartOnNewLogin
-import me.him188.ani.client.models.AniAnimeRecurrence
-import me.him188.ani.client.models.AniCollectionType
-import me.him188.ani.client.models.AniEpisodeCollection
-import me.him188.ani.client.models.AniEpisodeCollectionType
-import me.him188.ani.client.models.AniEpisodeType
-import me.him188.ani.client.models.AniFavourite
-import me.him188.ani.client.models.AniInfobox
-import me.him188.ani.client.models.AniSelfRatingInfo
-import me.him188.ani.client.models.AniSubjectCollection
-import me.him188.ani.client.models.AniSubjectRelations
-import me.him188.ani.client.models.AniTag
-import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
@@ -400,32 +388,6 @@ class SubjectCollectionRepositoryImpl(
             // (见 SubjectRelationsRepository.relationsFreshnessFlow). 内容没变就别往下传.
             .distinctUntilChanged()
     }.flowOn(defaultDispatcher)
-
-    /**
-     * 从服务端拉取条目 (含用户的收藏状态与剧集) 并写入本地缓存: 覆盖同 id 的旧行 (`lastFetched` 为当前时间), 删除本地多余的剧集.
-     *
-     * @return 服务端返回的条目; 条目不存在 (404) 时为 `null`, 此时不写入任何东西.
-     */
-    private suspend fun refetchSubjectCollection(subjectId: Int): AniSubjectCollection? {
-        val subject = subjectService.getSubjectCollection(subjectId) ?: return null
-        val lastFetched = currentTimeMillis()
-        val subjectEntity = subject.toEntity(lastFetched = lastFetched)
-        val episodeEntities = subject.episodes.map {
-            it.toEntity1(subjectId, lastFetched = lastFetched)
-        }
-        subjectCollectionDao.upsert(subjectEntity)
-
-        // 更新剧集列表
-        val oldIds = episodeCollectionDao.listIdBySubjectId(subjectId).first().toMutableList()
-        episodeCollectionDao.upsert(episodeEntities)
-        for (newEntity in episodeEntities) {
-            oldIds.remove(newEntity.episodeId)
-        }
-        if (oldIds.isNotEmpty()) { // 删除本地存的多余的剧集 (通常没有)
-            episodeCollectionDao.deleteAllByEpisodeIds(subjectId, oldIds)
-        }
-        return subject
-    }
 
     /**
      * 整条链只有**一条** Room flow: 条目与其剧集在同一次查询里取出 (`@Relation`), 数据库一变就整体重算.
@@ -760,57 +722,8 @@ class SubjectCollectionRepositoryImpl(
     }
 
 
-    override suspend fun invalidateCache(subjectIds: List<Int>) {
-        if (subjectIds.isEmpty()) return
-        withContext(defaultDispatcher) {
-            coroutineScope {
-                // 有限并行: 解决冲突后通常要重新拉取几十个条目 (每个都带完整剧集列表), 串行会让 "应用合并" 等几十个 RTT.
-                val semaphore = Semaphore(INVALIDATE_REFETCH_PARALLELISM)
-                // 首次网络失败后不再发起新的拉取: 断网时每个请求都要等到连接超时, 剩余行由下面的 resetAllLastFetched 覆盖.
-                val failed = atomic(false)
-                subjectIds.distinct().map { subjectId ->
-                    async {
-                        semaphore.withPermit {
-                            if (failed.value) return@withPermit
-                            val fetched = try {
-                                refetchSubjectCollection(subjectId)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                // 网络失败: 保留本地行, 靠下面的 resetAllLastFetched 让它下次重新拉取.
-                                // 绝不因失败删除, 否则条目会从正在展示的收藏列表里消失.
-                                failed.value = true
-                                logger.warn(e) { "Failed to refetch subject collection $subjectId after invalidation, keeping the cached row and skipping the remaining refetches" }
-                                return@withPermit
-                            }
-                            if (fetched == null || fetched.collectionType == null) {
-                                // 服务端已无收藏 (条目不存在或未收藏): 删除本地行, 剧集缓存有 ON DELETE CASCADE 随之删除
-                                subjectCollectionDao.delete(subjectId)
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }
-            // 分页器创建时只看最新的 lastFetched 决定是否从服务端刷新; 已在展示的分页器由 collectionsInvalidated 触发重建
-            subjectCollectionDao.resetAllLastFetched()
-        }
-        notifyCollectionsInvalidated()
-    }
-
-    override suspend fun invalidateAllCaches() {
-        withContext(defaultDispatcher) {
-            subjectCollectionDao.resetAllLastFetched()
-        }
-        notifyCollectionsInvalidated()
-    }
-
     private companion object {
         private val logger = logger<SubjectCollectionRepository>()
-
-        /**
-         * [invalidateCache] 重新拉取条目的最大并行数.
-         */
-        private const val INVALIDATE_REFETCH_PARALLELISM = 4
 
         /** 一轮刷新里最多纠正几条"本地类型已过期"的记录, 见 [reconcileCollectionsLeftType]. */
         private const val RECONCILE_LEFT_TYPE_LIMIT = 8
@@ -975,96 +888,11 @@ fun <T : Any> calculateIndexBasedLoadInfo(
     }
 }
 
-fun AniSubjectCollection.toEntity(
-    lastFetched: Long,
-): SubjectCollectionEntity {
-    return SubjectCollectionEntity(
-        subjectId = id.toInt(),
-        name = name,
-        nameCn = nameCn,
-        summary = summary,
-        nsfw = nsfw,
-        imageLarge = staticSubjectImageLargeUrl(id.toInt()),
-        totalEpisodes = episodes.size,
-        airDate = PackedDate.parseFromDate(airDate),
-        aliases = buildList {
-            addAll(aliases)
-            // Also extract "别名" entries from infobox — the server's aliases field may be
-            // incomplete and miss Traditional Chinese / English / other-language names.
-            infobox?.fields
-                ?.filter { it.key == "别名" }
-                ?.flatMap { item -> item.propertyValues.map { it.v } }
-                ?.filter { it.isNotBlank() && !aliases.contains(it) }
-                ?.let { addAll(it) }
-        },
-        tags = tags.map { it.toTag() },
-        collectionStats = favorite.toSubjectCollectionStats(),
-        ratingInfo = RatingInfo(
-            rank = rank ?: 0,
-            total = scoreDetails.values.sum(),
-            count = RatingCounts(
-                s1 = scoreDetails["1"] ?: 0,
-                s2 = scoreDetails["2"] ?: 0,
-                s3 = scoreDetails["3"] ?: 0,
-                s4 = scoreDetails["4"] ?: 0,
-                s5 = scoreDetails["5"] ?: 0,
-                s6 = scoreDetails["6"] ?: 0,
-                s7 = scoreDetails["7"] ?: 0,
-                s8 = scoreDetails["8"] ?: 0,
-                s9 = scoreDetails["9"] ?: 0,
-                s10 = scoreDetails["10"] ?: 0,
-            ),
-            score = score ?: "0",
-        ),
-        completeDate = PackedDate.Invalid,
-        selfRatingInfo = selfRating.toSelfRatingInfo(),
-        collectionType = collectionType.toUnifiedCollectionType(),
-        recurrence = airingInfo?.recurrence?.toSubjectRecurrence(),
-        relations = relations.toSubjectRelationsEntity(),
-        screeningYear = infobox?.screeningYearOrNull(PackedDate.parseFromDate(airDate).year),
-        theatrical = infobox?.isTheatricalOnly() == true,
-        lastUpdated = updatedAt?.let { Instant.parse(it) }?.toEpochMilliseconds() ?: 0,
-        lastFetched = lastFetched,
-        cachedStaffUpdated = 0,
-        cachedCharactersUpdated = 0,
-    )
-}
-
 /** infobox 里表示"影院上映日期"的字段名. */
 private val SCREENING_DATE_KEYS = setOf("上映年度", "上映日期", "其他上映日期", "其他上映年度")
 
 private val YEAR_REGEX = Regex("""(?:19|20)\d{2}""")
 
-/**
- * infobox 「上映年度」里**最早**的那个年份; 没有该字段, **或 [airYear] 本来就在这些年份里**,
- * 都返回 `null` —— 后者说明 `airDate` 记的就是上映日, 没必要换个年份去判.
- *
- * 只取最早那个: 老片的 infobox 会把重映年也列上 (攻殻機動隊 是 `[1995, 2025]`, 2025 是 4K 重映),
- * 全盘接受会让 2026 年的新片「The Ghost in the Shell」也过年份判据、顶掉 1995 那部正解.
- */
-private fun AniInfobox.screeningYearOrNull(airYear: Int?): Int? {
-    val years = fields.asSequence()
-        .filter { it.key in SCREENING_DATE_KEYS }
-        .flatMap { item -> item.propertyValues.asSequence().map { it.v } }
-        .mapNotNull { YEAR_REGEX.find(it)?.value?.toIntOrNull() }
-        .toList()
-    if (years.isEmpty() || airYear in years) return null
-    return years.min()
-}
-
-/**
- * 是否**只在影院放映**: 有上映日期而没有「放送开始」. 见 [SubjectCollectionEntity.theatrical].
- */
-private fun AniInfobox.isTheatricalOnly(): Boolean {
-    val keys = fields.mapTo(mutableSetOf()) { it.key }
-    return keys.any { it in SCREENING_DATE_KEYS } && "放送开始" !in keys
-}
-
-/**
- * 条目大封面的静态 CDN 地址. 不依赖本地数据库, 可用于本地无记录时的兜底展示.
- */
-fun staticSubjectImageLargeUrl(subjectId: Int): String =
-    "https://static.myani.org/bangumi/subjects/$subjectId/large"
 
 /**
  * 本地数据库中缓存的条目展示信息.
@@ -1077,101 +905,3 @@ data class OfflineSubjectDisplayInfo(
     val totalEpisodes: Int,
 )
 
-fun AniSubjectRelations.toSubjectRelationsEntity(): SubjectRelations {
-    return SubjectRelations(
-        seriesMainSubjectIds,
-        seriesMainSubjectNames,
-        sequelSubjects,
-        sequelSubjectNames,
-    )
-}
-
-fun AniTag.toTag(): Tag = Tag(
-    name = name,
-    count = count,
-)
-
-fun AniFavourite.toSubjectCollectionStats(): SubjectCollectionStats {
-    return SubjectCollectionStats(
-        wish = wish,
-        doing = doing,
-        done = done,
-        onHold = onHold,
-        dropped = dropped,
-    )
-}
-
-fun AniAnimeRecurrence.toSubjectRecurrence(): SubjectRecurrence? {
-    return SubjectRecurrence(
-        Instant.parse(startTime),
-        interval = intervalMillis.milliseconds,
-    )
-}
-
-fun AniCollectionType?.toUnifiedCollectionType(): UnifiedCollectionType {
-    return when (this) {
-        AniCollectionType.WISH -> UnifiedCollectionType.WISH
-        AniCollectionType.DOING -> UnifiedCollectionType.DOING
-        AniCollectionType.DONE -> UnifiedCollectionType.DONE
-        AniCollectionType.ON_HOLD -> UnifiedCollectionType.ON_HOLD
-        AniCollectionType.DROPPED -> UnifiedCollectionType.DROPPED
-        null -> UnifiedCollectionType.NOT_COLLECTED
-    }
-}
-
-fun AniEpisodeCollection.toEntity1(
-    subjectId: Int,
-    lastFetched: Long,
-): EpisodeCollectionEntity {
-    return EpisodeCollectionEntity(
-        subjectId = subjectId,
-        episodeId = episodeId.toInt(),
-        episodeType = type.toEpisodeType(),
-        name = name,
-        nameCn = nameCn,
-        airDate = airdate?.let { PackedDate.parseFromDate(it) } ?: PackedDate.Invalid,
-        comment = 0,
-        desc = description,
-        sort = EpisodeSort(BigNum(sort), type.toEpisodeType()),
-        ep = ep?.let { EpisodeSort(BigNum(it), type.toEpisodeType()) },
-        sortNumber = sort.toFloatOrNull() ?: 0f,
-        selfCollectionType = collectionType.toUnifiedCollectionType(),
-        lastFetched = lastFetched,
-    )
-}
-
-fun AniEpisodeType.toEpisodeType(): EpisodeType? {
-    return when (this) {
-        AniEpisodeType.MAIN -> EpisodeType.MainStory
-        AniEpisodeType.SPECIAL -> EpisodeType.SP
-        AniEpisodeType.OP -> EpisodeType.OP
-        AniEpisodeType.ED -> EpisodeType.ED
-        AniEpisodeType.TRAILER -> EpisodeType.PV
-        AniEpisodeType.MAD -> EpisodeType.MAD
-        AniEpisodeType.OTHER -> null
-    }
-}
-
-fun AniEpisodeCollectionType?.toUnifiedCollectionType(): UnifiedCollectionType {
-    return when (this) {
-        null -> UnifiedCollectionType.NOT_COLLECTED
-        AniEpisodeCollectionType.DONE -> UnifiedCollectionType.DONE
-    }
-}
-
-fun AniSelfRatingInfo.toSelfRatingInfo(): SelfRatingInfo {
-    return SelfRatingInfo(
-        score = score, comment = comment, tags = tags, isPrivate = isPrivate,
-    )
-}
-
-fun UnifiedCollectionType.toAniSubjectCollectionType(): AniCollectionType? {
-    return when (this) {
-        UnifiedCollectionType.WISH -> AniCollectionType.WISH
-        UnifiedCollectionType.DOING -> AniCollectionType.DOING
-        UnifiedCollectionType.DONE -> AniCollectionType.DONE
-        UnifiedCollectionType.ON_HOLD -> AniCollectionType.ON_HOLD
-        UnifiedCollectionType.DROPPED -> AniCollectionType.DROPPED
-        UnifiedCollectionType.NOT_COLLECTED -> null
-    }
-}

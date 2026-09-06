@@ -96,7 +96,6 @@ kotlin {
         api(projects.datasource.bangumi)
         api(projects.datasource.mikan)
 
-        api(projects.client)
         api(projects.utils.logging)
         api(projects.utils.coroutines)
         api(projects.utils.io)

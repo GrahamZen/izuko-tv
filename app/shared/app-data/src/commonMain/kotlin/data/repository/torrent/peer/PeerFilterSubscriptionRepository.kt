@@ -29,8 +29,6 @@ import kotlinx.serialization.json.io.decodeFromSource
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.torrent.peer.PeerFilterRule
 import me.him188.ani.app.domain.torrent.peer.PeerFilterSubscription
-import me.him188.ani.app.domain.torrent.peer.toPeerFilterRule
-import me.him188.ani.client.apis.PeerFilterRuleAniApi
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.update
 import me.him188.ani.utils.io.SystemPath
@@ -52,7 +50,6 @@ class PeerFilterSubscriptionRepository(
     private val dataStore: DataStore<PeerFilterSubscriptionsSaveData>,
     private val ruleSaveDir: SystemPath,
     private val httpClient: ScopedHttpClient,
-    private val builtinPeerFilterRuleApi: ApiInvoker<PeerFilterRuleAniApi>
 ) {
     private val logger = logger<PeerFilterSubscriptionRepository>()
 
@@ -101,12 +98,13 @@ class PeerFilterSubscriptionRepository(
         }
 
         try {
+            // 内置订阅原先是从 Ani 服务器拉的 (`/v2/pfrule`), 那份规则随服务器一起没了;
+            // 用户自己添加的订阅 (URL) 照旧直连拉取
             if (sub.subscriptionId == PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID) {
-                val rule = builtinPeerFilterRuleApi.invoke { get().body() }.toPeerFilterRule()
-                resolveSaveFile(subscriptionId).writeText(json.encodeToString(rule))
-
-                if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, rule) }
-                sub.updateSuccessResult(rule)
+                sub.updateFailResult(
+                    IllegalStateException("内置规则订阅已随 Ani 服务器下线, 请改用自定义订阅"),
+                    keepLastStat = true,
+                )
             } else {
                 val respText = httpClient.use { get(sub.url).bodyAsText() }
                 resolveSaveFile(subscriptionId).writeText(respText)

@@ -116,7 +116,6 @@ enum class TvServiceProbeResult {
  * 同一个域名分两项探 (接口与图床) 时, 只有按功能命名才能让两行看起来是两件事.
  */
 private val TV_SERVICE_PROBES = listOf(
-    TvServiceProbe(ServiceConnectionTesters.ID_ANI, TvServiceTier.Required),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB, TvServiceTier.Degraded),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB_IMAGE, TvServiceTier.Degraded),
     TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI, TvServiceTier.Optional),
@@ -462,7 +461,6 @@ private fun TvServiceProbeChip(item: TvServiceProbeState) {
 
 @Composable
 private fun probeLabel(id: String): String = when (id) {
-    ServiceConnectionTesters.ID_ANI -> stringResource(Lang.tv_service_probe_ani)
     // api.bgm.tv: fork 里条目数据已经走 Animeko 服务器, 这个域名只剩"补条目简介"与登录
     ServiceConnectionTesters.ID_BANGUMI -> stringResource(Lang.tv_service_probe_bangumi)
     ServiceConnectionTesters.ID_BANGUMI_NEXT -> stringResource(Lang.tv_service_probe_bangumi_next)

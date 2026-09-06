@@ -114,14 +114,6 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
 
     val browserNavigator by inject<BrowserNavigator>()
 
-    val bangumiSessionExpired =
-        combine(userRepository.selfInfoFlow, sessionStateProvider.stateFlow) { selfInfo, sessionState ->
-            val isBound = selfInfo?.bangumiUsername?.isNotBlank() == true
-            val serverTokenInvalid = selfInfo?.isBangumiSessionValid == false
-            val localTokenMissing = sessionState is SessionState.Valid && !sessionState.bangumiConnected
-            isBound && (serverTokenInvalid || localTokenMissing)
-        }.distinctUntilChanged().stateInBackground(false)
-
     val appState: Flow<AniAppState?> = combine(
         settings.themeSettings.flow,
         settings.uiSettings.flow.take(1).map { it.mainSceneInitialPage }, // 只需要读取一次
@@ -148,10 +140,6 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
         started = SharingStarted.Eagerly,
         replay = 1,
     )
-
-    suspend fun unbindBangumi() {
-        userRepository.unbindBangumi()
-    }
 
 }
 
