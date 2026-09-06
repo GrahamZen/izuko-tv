@@ -315,6 +315,7 @@ class MediaSelectionTraceReplayTest {
                 "Working" -> MediaSourceFetchState.Working
                 "Disabled" -> MediaSourceFetchState.Disabled
                 "Succeed" -> MediaSourceFetchState.Succeed(update.generation ?: 0)
+                "Paused" -> MediaSourceFetchState.Paused(update.generation ?: 0)
                 // Automatic selection treats these as terminal non-success states; retain the recorded name in the cause.
                 "Failed", "Abandoned", "CaptchaRequired", "RateLimited" ->
                     MediaSourceFetchState.Failed(IllegalStateException(update.state), update.generation ?: 0)
@@ -326,5 +327,6 @@ class MediaSelectionTraceReplayTest {
             if (state.value is MediaSourceFetchState.Disabled) state.value = MediaSourceFetchState.Idle
         }
         override fun restart() = error("Source retries are driven exclusively by the recorded timeline")
+        override fun pause() = error("Source pauses are driven exclusively by the recorded timeline")
     }
 }

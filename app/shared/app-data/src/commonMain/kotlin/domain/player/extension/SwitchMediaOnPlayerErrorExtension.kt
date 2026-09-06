@@ -32,12 +32,16 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.isFinal
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.CachedMedia
@@ -63,7 +67,7 @@ class SwitchMediaOnPlayerErrorExtension(
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSelectorSettingsFlowUseCase: GetMediaSelectorSettingsFlowUseCase by koin.inject()
     private val getSourceTiersUseCase: GetMediaSelectorSourceTiersUseCase by koin.inject()
-    private val mediaCacheManager: MediaCacheManager by koin.inject()
+    private val mediaCacheManager: MediaDownloadManager by koin.inject()
 
 
     override fun onStart(
@@ -169,8 +173,8 @@ class SwitchMediaOnPlayerErrorExtension(
                     // 去停用户的播放 (只有 DummyMediaCacheEngine 之类不带 cacheId).
                         ?: return@select
 
-                    mediaCacheManager.listCacheForSubject(context.subjectId)
-                        .map { caches -> caches.any { it.cacheId == trackedCacheId } }
+                    mediaCacheManager.downloadsForSubject(context.subjectId)
+                        .map { downloads -> downloads.any { it.cache.cacheId == trackedCacheId } }
                         // 缓存列表在启动恢复/服务重连时会整体重建, 中途可能短暂查不到 —— 稳定消失才算删除
                         .debounce(CACHE_DELETION_SETTLE_DELAY)
                         .distinctUntilChanged()
@@ -253,6 +257,9 @@ class SwitchMediaOnPlayerErrorExtension(
         mediaFetchSessionFlow.collectLatest { bundle ->
             if (bundle == null) return@collectLatest
 
+            // 因解码器被收回而原地重载过的资源, 每个只重载一次, 再出同样的错就照常换源
+            var reloadedMediaId: String? = null
+
             combine(
                 videoLoadingStateFlow, // 解析链接出错 (未匹配到链接)
                 playerStateFlow, // 解析成功, 但播放器出错 (无法链接到链接, 例如链接错误)
@@ -276,13 +283,25 @@ class SwitchMediaOnPlayerErrorExtension(
             }.distinctUntilChangedBy { it != null }
                 .collectLatest { error ->
                     if (error != null) {
-                        if (error.isPlayerLifecycleError()) {
-                            // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
-                            logger.info {
-                                "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                        val media = bundle.mediaSelector.selected.value
+                        when {
+                            error.isPlayerLifecycleError() -> {
+                                // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
+                                logger.info {
+                                    "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                                }
                             }
-                        } else {
-                            handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+
+                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑
+                            isDecoderPreempted(error.cause) && media != null && media.mediaId != reloadedMediaId &&
+                                    context.reloadCurrentMedia(context.player.currentPositionMillis.value) -> {
+                                reloadedMediaId = media.mediaId
+                                logger.warn(error.cause) {
+                                    "Player errored (${error.description}), decoder preempted, reloading ${media.mediaId} in place"
+                                }
+                            }
+
+                            else -> handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
                         }
                     } // else: cancel selection
                 }
@@ -362,7 +381,6 @@ internal class PlayerLoadErrorHandler(
         }
 
         // 将当前播放的 mediaId 加入黑名单
-        val failedMedia = mediaSelector.selected.value
         failedMedia?.let { blacklist(it.mediaId) }
 
         delay(1.seconds) // 稍等让用户看到播放出错
@@ -379,18 +397,29 @@ internal class PlayerLoadErrorHandler(
             return
         }
 
+        // 手上还有能换的在线资源时照旧立刻换. 已经没有了、但还有在线源没查完 (包括被暂停的, 换源时会放开重新查,
+        // 见 MediaAutoSelector) 时, 按正常的两段截止时间等它们的结果回来, 不然会在结果回来之前就判为无资源
+        val hasRemaining = mediaSelector.filteredCandidatesMedia.first()
+            .any { it.kind == MediaSourceKind.WEB && it.mediaId !in blacklistedMediaIds }
+        val waitForSearching = !hasRemaining && session.mediaSourceResults.any {
+            it.kind == MediaSourceKind.WEB && (!it.state.value.isFinal || it.state.value.isPaused)
+        }
         val result = MediaAutoSelector(mediaSelector).select(
             session,
             MediaAutoSelector.Config(
                 selectCache = false,
                 blacklist = blacklistedMediaIds,
-                web = MediaAutoSelector.Web(
-                    sourceTiers = sourceTiers,
-                    // 错误切换不需要等太长时间。
-                    exactMatchAfter = 1.seconds,
-                    fuzzyMatchAfter = 1.seconds,
-                    waitForPendingSources = false,
-                ),
+                web = if (waitForSearching) {
+                    MediaAutoSelector.Web(sourceTiers = sourceTiers)
+                } else {
+                    MediaAutoSelector.Web(
+                        sourceTiers = sourceTiers,
+                        // 错误切换不需要等太长时间。
+                        exactMatchAfter = 1.seconds,
+                        fuzzyMatchAfter = 1.seconds,
+                        waitForPendingSources = false,
+                    )
+                },
             ),
             expectedSelection = failedMedia,
         )

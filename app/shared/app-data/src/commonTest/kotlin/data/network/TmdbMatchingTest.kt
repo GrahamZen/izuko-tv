@@ -965,21 +965,14 @@ class TmdbMatchingRulesTest {
         assertTrue(tmdbYearPlausible(candidateYear = 1999, subjectYear = 2000, isMovie = true))
     }
 
-    // ---------- 负缓存: 区分写入时有没有带 hints ----------
+    // ---------- 本机缓存只存找到的 (没找到只在本次运行里记, 见 TmdbImageService 的 localBackdropMisses) ----------
 
     @Test
-    fun `负缓存 - 没带 hints 查空的会留记号`() {
-        val cache = TmdbImageCache().withBackdropResult(1, url = null, hadHints = false)
-        assertTrue(1 in cache.backdropMissWithoutHints)
-    }
-
-    @Test
-    fun `负缓存 - 带着 hints 查过就摘掉记号，不再重查`() {
-        val first = TmdbImageCache().withBackdropResult(1, url = null, hadHints = false)
-        // 详情页带着完整条目信息重查一次, 仍然没图 —— 记号也要摘掉, 否则每次进页面都重查
-        val second = first.withBackdropResult(1, url = null, hadHints = true)
-        assertFalse(1 in second.backdropMissWithoutHints)
-        val third = first.withBackdropResult(1, url = "https://image", hadHints = true)
-        assertFalse(1 in third.backdropMissWithoutHints)
+    fun `背景图缓存 - 只写找到的地址，超上限按写入顺序淘汰`() {
+        val cache = TmdbImageCache().withBackdropResult(1, "https://image/1")
+        assertEquals(mapOf(1 to "https://image/1"), cache.backdropUrls)
+        val full = (1..2001).fold(TmdbImageCache()) { acc, id -> acc.withBackdropResult(id, "https://image/$id") }
+        assertFalse(1 in full.backdropUrls)
+        assertEquals("https://image/2001", full.backdropUrls[2001])
     }
 }

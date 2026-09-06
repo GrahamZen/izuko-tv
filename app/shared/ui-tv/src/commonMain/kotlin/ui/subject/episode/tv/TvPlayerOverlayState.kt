@@ -9,8 +9,10 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -114,6 +116,22 @@ enum class TvPlayerFocusTarget : TvFocusKey {
     PANEL,
 }
 
+/** 面板内容的加载状态里胶囊要标出来的两种 (见 [TvPlayerOverlayState.commentsLoad]); 加载完成胶囊就是原样, 不用记. */
+enum class TvPanelLoadState {
+    /** 正在加载: 胶囊呼吸. */
+    LOADING,
+
+    /** 加载失败: 胶囊换成警示图标、文字压暗. */
+    FAILED,
+}
+
+/** 哪一集的本集评论处在 [state]. */
+@Immutable
+data class TvCommentsLoad(
+    val episodeId: Int,
+    val state: TvPanelLoadState,
+)
+
 /**
  * TV 播放器覆盖层状态机.
  *
@@ -164,11 +182,41 @@ class TvPlayerOverlayState(
     var showPlayerStats: Boolean by mutableStateOf(false)
 
     /**
+     * 控制层版式的读取代数: 控制层每次出现只读一次版式 (见 TvPlayerControlsOverlay), 这个数一变就重读.
+     * 只在「自定义播放器按钮」窗口关掉、版式改过的时候推一次 ([reloadChromeLayout]). 开窗口前控制层已经收起, 多半早退出了组合,
+     * 唤出时本来就重读; 要靠它的是托着 OP/ED 提示按钮留在场上的那一层 —— 那时它是透明的, 没有持焦的按钮会随重排消失.
+     */
+    var chromeLayoutGeneration: Int by mutableIntStateOf(0)
+        private set
+
+    /** 让控制层按设置里此刻的版式重新摆一遍 (见 [chromeLayoutGeneration]). */
+    fun reloadChromeLayout() {
+        chromeLayoutGeneration++
+    }
+
+    /**
      * 选集条展开中 (Prime 形态): 胶囊/进度条/图标行隐藏, 选集条完整展开在底部.
      * 收起态只在图标行下露出 "剧集" 标题 + 卡片顶部一条 (peek).
      */
     var episodeStripExpanded: Boolean by mutableStateOf(false)
         private set
+
+    /**
+     * 控制层底部区块的上沿 (window 坐标原始 px, 没量到为 NaN), 由 TvPlayerControlsOverlay 量: 胶囊行的与选集条的.
+     * 胶囊行那个也是浮出面板的下锚点; 两个都只在测量 / snapshotFlow 里读.
+     */
+    internal val pillsRowTopPx = mutableFloatStateOf(Float.NaN)
+    internal val episodeStripTopPx = mutableFloatStateOf(Float.NaN)
+
+    /**
+     * 控制层挡住画面底部那一块的上沿 (window 坐标 px): 播放器把底部字幕挪到它上面. 控制层不在场时为 null, 字幕在原位.
+     * 选集条展开时挡住的是选集条, 否则是胶囊行起往下那一块.
+     */
+    fun subtitleObstructionTopPx(): Float? {
+        if (layer != TvPlayerLayer.CONTROLS) return null
+        val top = if (episodeStripExpanded) episodeStripTopPx.floatValue else pillsRowTopPx.floatValue
+        return top.takeUnless { it.isNaN() }
+    }
 
     /**
      * 选集条正处在「接下来播放」倒计时态: 片尾自动展开的那一档 —— 只有卡片行与一行提示,
@@ -277,6 +325,20 @@ class TvPlayerOverlayState(
      * 根路由据此把起跳点让给进度条.
      */
     var bottomRowPresent: Boolean by mutableStateOf(true)
+
+    /**
+     * 本集评论的加载状态, 由播放页上的 TvCommentsLoadTracker 上报 (进播放页就拉评论); 评论胶囊据此呼吸 (加载中)
+     * 或显示失败, 见 TvPlayerPillsRow. null = 没有要标的 (加载完成、或还没开始拉).
+     *
+     * 连同分集 id 一起记: 换集时新一集的状态报上来之前, 旧那集的状态对不上当前这一集, 不会标错.
+     */
+    var commentsLoad: TvCommentsLoad? by mutableStateOf(null)
+        private set
+
+    /** 上报 [episodeId] 的评论加载状态; null = 加载完成. */
+    fun reportCommentsLoad(episodeId: Int, state: TvPanelLoadState?) {
+        commentsLoad = state?.let { TvCommentsLoad(episodeId, it) }
+    }
 
     /** 把焦点送回面板里当前聚焦的那一条 (见 [panelItemFocusTick]). */
     fun requestPanelItemFocus() {

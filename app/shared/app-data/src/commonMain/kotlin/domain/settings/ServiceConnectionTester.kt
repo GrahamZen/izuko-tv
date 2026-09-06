@@ -227,7 +227,6 @@ private val logger = logger("ServiceConnectionTesters")
 object ServiceConnectionTesters {
     const val ID_BANGUMI = "BANGUMI"
     const val ID_BANGUMI_NEXT = "BANGUMI_NEXT"
-    const val ID_ANI = "ANI"
     const val ID_TMDB = "TMDB"
 
     /**
@@ -256,7 +255,7 @@ object ServiceConnectionTesters {
     internal const val TMDB_TEST_TIMEOUT_MILLIS = 15_000L
 
 
-    val DefaultServiceIds = setOf(ID_BANGUMI, ID_BANGUMI_NEXT, ID_ANI, ID_TMDB, ID_TMDB_IMAGE)
+    val DefaultServiceIds = setOf(ID_BANGUMI, ID_BANGUMI_NEXT, ID_TMDB, ID_TMDB_IMAGE)
 
     fun createDefault(
         bangumiClient: BangumiClient,
@@ -275,19 +274,6 @@ object ServiceConnectionTesters {
                 Service(ID_BANGUMI_NEXT) {
                     withTestTimeout(ID_BANGUMI_NEXT) {
                         bangumiClient.testConnectionNext() == ConnectionStatus.SUCCESS
-                    }
-                },
-                Service(ID_ANI) {
-                    withTestTimeout(ID_ANI) {
-                        runCatching {
-                            // Note, we may have `expectSuccess = true` so on failure it will throw an exception.
-                            aniClient.use {
-                                // 与 ServerSelector 一致, 用轻量的 /status 探活, 避免请求业务接口浪费服务器资源
-                                get(ServerListFeatureConfig.MAGIC_ANI_SERVER) {
-                                    url { appendPathSegments("status") }
-                                }.status.isSuccess()
-                            }
-                        }.getOrElse { false }
                     }
                 },
                 // 详情页背景图与选集卡片剧照的来源. 接口与图片 CDN 是两个域名, 分成两项各自

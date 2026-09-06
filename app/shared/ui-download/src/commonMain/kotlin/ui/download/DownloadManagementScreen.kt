@@ -37,16 +37,12 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Restore
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -112,6 +108,10 @@ import me.him188.ani.app.ui.foundation.rememberCurrentTopAppBarContainerColor
 import me.him188.ani.app.ui.foundation.session.SelfAvatar
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.appChromeHazeSource
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -185,10 +185,10 @@ fun DownloadManagementScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val failedOperations by vm.operationFailures.collectAsStateWithLifecycle()
     if (failedOperations > 0) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = vm::dismissOperationFailures,
             text = { Text(stringResource(Lang.downloads_operation_failed, failedOperations)) },
-            confirmButton = { TextButton(onClick = vm::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
+            confirmButton = { AniTextButton(onClick = vm::dismissOperationFailures) { Text(stringResource(Lang.cache_subject_cancel)) } },
         )
     }
     DownloadManagementScreen(
@@ -343,6 +343,8 @@ fun DownloadManagementScreen(
             confirmEnabled = state.groups.flatMap { it.entries }.none { current ->
                 current.isBusy && entries.any { it.id == current.id }
             },
+            summary = rememberCacheDeleteSummary(entries),
+            warning = rememberPlayingCacheWarning(entries),
             onConfirm = {
                 entries.forEach(onDelete)
                 pendingDeleteEntries = null
@@ -836,8 +838,12 @@ internal fun DeleteActionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     confirmEnabled: Boolean = true,
+    /** 批量删除时按作品分行的明细, 见 [rememberCacheDeleteSummary]. */
+    summary: String? = null,
+    /** 要删的里面有正在播的那条时的提示, 见 [rememberPlayingCacheWarning]. */
+    warning: String? = null,
 ) {
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(stringResource(Lang.cache_management_delete_cache_title)) },
@@ -853,14 +859,14 @@ internal fun DeleteActionDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            AniTextButton(
                 onClick = onConfirm,
                 enabled = confirmEnabled,
                 modifier = Modifier.testTag(DownloadManagementTestTags.DELETE_CONFIRM_BUTTON),
             ) { Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = {
-            TextButton(onDismiss) { Text(stringResource(Lang.cache_subject_cancel)) }
+            AniTextButton(onDismiss) { Text(stringResource(Lang.cache_subject_cancel)) }
         },
     )
 }
@@ -885,7 +891,7 @@ internal fun DownloadActionDropdown(
     val invalidCacheInfoText = stringResource(Lang.cache_management_invalid_cache_info)
     val streamingNotSupportedText = stringResource(Lang.cache_management_streaming_not_supported)
     val moreInfoText = stringResource(Lang.cache_management_more_info)
-    DropdownMenu(
+    AniDropdownMenu(
         expanded = show,
         onDismissRequest = onDismiss,
         modifier = modifier,
@@ -893,7 +899,7 @@ internal fun DownloadActionDropdown(
     ) {
         if (!episode.isFinished) {
             if (episode.isPaused) {
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(resumeDownloadText) },
                     enabled = !episode.isBusy,
                     leadingIcon = { Icon(Icons.Rounded.Restore, null) },
@@ -903,7 +909,7 @@ internal fun DownloadActionDropdown(
                     },
                 )
             } else if (!episode.isFailed) {
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(pauseDownloadText) },
                     enabled = !episode.isBusy,
                     leadingIcon = { Icon(Icons.Rounded.Pause, null) },
@@ -915,7 +921,7 @@ internal fun DownloadActionDropdown(
             }
         }
         if (!episode.isFailed) {
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(playText) },
                 leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) },
                 onClick = {
@@ -937,7 +943,7 @@ internal fun DownloadActionDropdown(
             )
         }
         onViewDetail?.let {
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(moreInfoText) },
                 leadingIcon = { Icon(Icons.Rounded.Info, null) },
                 onClick = {
@@ -947,7 +953,7 @@ internal fun DownloadActionDropdown(
             )
         }
 
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             text = { Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error) },
             enabled = !episode.isBusy,
             leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
@@ -991,7 +997,7 @@ private fun PreviewDownloadManagementScreen() {
  * 加省略号 (真到那个量级, "跨了很多部"这个事实已经传达到了).
  */
 @Composable
-internal fun rememberCacheDeleteSummary(entries: List<CacheEpisodeState>): String? {
+internal fun rememberCacheDeleteSummary(entries: List<DownloadItem>): String? {
     if (entries.isEmpty()) return null
     val header = stringResource(Lang.cache_management_delete_summary, entries.size)
     val byTitle = entries.groupBy { it.subjectName }
@@ -1016,7 +1022,7 @@ private const val MAX_DELETE_SUMMARY_TITLES = 4
  * 删除本身照旧允许: 删完播放会自动换到别的源 (见 `SwitchMediaOnPlayerErrorExtension`).
  */
 @Composable
-internal fun rememberPlayingCacheWarning(entries: List<CacheEpisodeState>): String? {
+internal fun rememberPlayingCacheWarning(entries: List<DownloadItem>): String? {
     val playing = LocalPlaybackSessionEntry.current.playingCache ?: return null
     val hit = remember(entries, playing) {
         entries.any { playing.matches(it.subjectId, it.episodeId, it.originMediaId) }

@@ -14,6 +14,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchHorizontalSwipe
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,7 +71,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +89,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
+import me.him188.ani.app.ui.foundation.tv.TvTextFieldFrame
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorder
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
 import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
@@ -113,6 +114,11 @@ import me.him188.ani.app.ui.lang.comment_view_comment
 import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.UIRichElement
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 
 /**
  * 弹窗正文块: 文本段与图片按原顺序排列.
@@ -158,6 +164,12 @@ class TvQuotedComment(
      * 得先做一套选表情的导航, 而看别人贴了什么本身就是评论的一部分信息.
      */
     val reactions: List<TvCommentReaction> = emptyList(),
+    /** 作者的个人签名, 跟在昵称后面的灰字; 没有为 null. */
+    val authorSign: String? = null,
+    /** 楼层号 `#3` / `#3-2`, 摆在时间前面; 没有为 null. */
+    val floorText: String? = null,
+    /** 已被删除: 正文处显示「删除了回复」. */
+    val deleted: Boolean = false,
 )
 
 /** 一枚回应: 一个表情 + 贴的人数. */
@@ -185,14 +197,6 @@ private val TV_REPLY_REACTION_GAP = 10.dp
 /** 回应里表情图的边长 (与正文行内表情差不多大, 一眼能认出是哪一枚). */
 private val TV_REPLY_REACTION_STICKER_SIZE = 22.dp
 
-/**
- * 弹窗外的压暗层: 这层要的就是"把下面的画面按下去", 与主题无关, 用黑.
- *
- * 别只看这个数: 弹窗开着时控制层与评论面板都留在下面 (见调用处), 它自己的上/下渐变 scrim
- * 还要再叠一层, 屏幕上下缘的实际暗度是 `1-(1-本值)(1-那层)`. 所以这层给得比一般弹窗遮罩松.
- */
-/** 弹窗内容内边距: 比面板默认那档宽一些, 这里内容多且有输入框. */
-private val TV_REPLY_DIALOG_PADDING = 28.dp
 
 /**
  * 弹窗内取色一律走配色表, 与其他弹窗 (更换弹幕、评分等) 同一套语言:
@@ -256,23 +260,17 @@ internal fun TvCommentReplyDialog(
 ) {
     val scope = rememberCoroutineScope()
     val focus = rememberTvFocusScope()
-    val keyboard = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
     val quoteFocusRequester = focus.requesterOf(TvCommentReplyFocus.Quote)
     val fieldFocusRequester = focus.requesterOf(TvCommentReplyFocus.Field)
     val sendFocusRequester = remember { FocusRequester() }
     var quoteFocused by remember { mutableStateOf(false) }
-    var fieldFocused by remember { mutableStateOf(false) }
     val sending by editorState.sending.collectAsStateWithLifecycle()
 
     val quoted = target.quoted
-    // 初始焦点落引用区 (阅读态), 不直接进输入框: 一进来就弹系统键盘会把弹窗下半遮掉,
-    // 而用户多半要先看完被回复的那条. 发表新评论没有引用区, 直接进输入框
+    // 初始焦点落引用区 (阅读态): 用户多半要先看完被回复的那条. 发表新评论没有引用区, 落在输入框上
+    // (输入框按确认才弹键盘, 见 [TvTextFieldFrame])
     focus.InitialFocus(if (quoted == null) TvCommentReplyFocus.Field else TvCommentReplyFocus.Quote)
-    // 焦点进出输入框时开合软键盘 (TV 上没有物理键盘, 不主动弹就没法打字)
-    LaunchedEffect(fieldFocused) {
-        if (fieldFocused) keyboard?.show() else keyboard?.hide()
-    }
     // 左右键原地换了一条评论 (见 [onNavigate]): 正文回到顶部. 不归零的话新评论会从上一条
     // 停在的那个像素位置开始显示 —— 短评论直接看起来是空白
     LaunchedEffect(target) {
@@ -302,7 +300,6 @@ internal fun TvCommentReplyDialog(
         modifier = modifier.tvFocusNavSignal(focus),
         // 没有引用区就按内容收高: 撑满屏高的话输入框和发送按钮会吊在一大片空白下面
         heightFraction = if (quoted != null) TV_REPLY_DIALOG_HEIGHT_FRACTION else null,
-        contentPadding = TV_REPLY_DIALOG_PADDING,
         overlay = {
             // 表情选择器: 盖在本弹窗之上 (同一个全屏 Box 里的第二个孩子). 返回键先关它再关本弹窗,
             // 由根路由处理 (见 TvEpisodeScreen) —— 它在弹窗之上, 但按键仍走那唯一一条路由
@@ -333,16 +330,15 @@ internal fun TvCommentReplyDialog(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.height(4.dp))
-                // 可回复时给的是与手机端编辑框同一句提示 (评论发到 Ani, Bangumi 评论只读):
-                // 这个弹窗是 TV 上唯一的发评论入口, 不写在这里就没有别处能看到.
-                // 不可回复时换成"仅可查看", 说明为什么下面没有输入框
-                Text(
-                    stringResource(
-                        if (target.canReply) Lang.comment_ani_only_notice else Lang.comment_reply_unsupported,
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = hintColor,
-                )
+                // 只在能回复时给提示. 直连 bangumi 之后一条都不能回复 (发表吐槽要过 Cloudflare
+                // Turnstile 验证码), 每条评论都挂一句"不支持回复"只是噪音 —— 标题已经是"查看评论".
+                if (target.canReply) {
+                    Text(
+                        stringResource(Lang.comment_ani_only_notice),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = hintColor,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 // ---- 被回复的评论 (可上下键翻); 发表新评论时整块不出 ----
@@ -404,15 +400,30 @@ internal fun TvCommentReplyDialog(
                         Column(Modifier.weight(1f, fill = false).verticalScroll(scrollState)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    quoted.authorName,
+                                    buildAnnotatedString {
+                                        append(quoted.authorName)
+                                        quoted.authorSign?.let { sign ->
+                                            withStyle(SpanStyle(color = hintColor, fontWeight = FontWeight.Normal)) {
+                                                append("  ($sign)")
+                                            }
+                                        }
+                                    },
                                     Modifier.weight(1f),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    quoted.timeText,
+                                    quoted.floorText?.let { "$it  ${quoted.timeText}" } ?: quoted.timeText,
                                     style = MaterialTheme.typography.labelSmall,
+                                    color = hintColor,
+                                )
+                            }
+                            if (quoted.deleted) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(Lang.video_player_tv_comment_deleted),
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = hintColor,
                                 )
                             }
@@ -477,63 +488,71 @@ internal fun TvCommentReplyDialog(
                             }
                         }
                     }
-                } else Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(TV_REPLY_BLOCK_CORNER),
-                    color = fieldContainerColor,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    // 聚焦即主题色描边 (与 M3 输入框聚焦态、更换弹幕弹窗一致)
-                    border = tvFieldBorderStroke(fieldFocused, idleBorderColor),
-                ) {
-                    BasicTextField(
-                        value = editorState.content,
-                        onValueChange = { editorState.setContent(it) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 64.dp)
-                            .padding(horizontal = 14.dp, vertical = 12.dp)
-                            // 上下键给显式落点: 输入框是多行的, 交给空间搜索会在换行之间
-                            // 打转 (文本框自己也会吃掉上下键去挪光标), 走不出去
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                when (event.key) {
-                                    // 没有引用区时上键就地吞掉: 焦点留在输入框 (往上没有第二个目标,
-                                    // 放行的话会飘出弹窗去撞焦点组的边界)
-                                    Key.DirectionUp -> {
-                                        if (quoted != null) runCatching { quoteFocusRequester.requestFocus() }
-                                        true
-                                    }
-
-                                    Key.DirectionDown -> {
-                                        runCatching { sendFocusRequester.requestFocus() }
-                                        true
-                                    }
-
-                                    else -> false
+                } else TvTextFieldFrame(
+                    Modifier
+                        .fillMaxWidth()
+                        // 上下键给显式落点: 输入框是多行的, 交给空间搜索会在换行之间
+                        // 打转 (文本框自己也会吃掉上下键去挪光标), 走不出去
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (event.key) {
+                                // 没有引用区时上键就地吞掉: 焦点留在输入框 (往上没有第二个目标,
+                                // 放行的话会飘出弹窗去撞焦点组的边界)
+                                Key.DirectionUp -> {
+                                    if (quoted != null) runCatching { quoteFocusRequester.requestFocus() }
+                                    true
                                 }
+
+                                Key.DirectionDown -> {
+                                    runCatching { sendFocusRequester.requestFocus() }
+                                    true
+                                }
+
+                                else -> false
                             }
-                            .tvFocusAnchor(focus, TvCommentReplyFocus.Field)
-                            .onFocusChanged { fieldFocused = it.isFocused },
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                        ),
-                        // 光标与 M3 输入框一样用主题色
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = 3,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { send() }),
-                        decorationBox = { inner ->
-                            if (editorState.content.text.isEmpty()) {
-                                Text(
-                                    stringResource(Lang.comment_send_comment),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = hintColor,
-                                )
-                            }
-                            inner()
-                        },
-                    )
+                        }
+                        .tvFocusAnchor(focus, TvCommentReplyFocus.Field),
+                ) {
+                    val fieldFocused by editorInteractionSource.collectIsFocusedAsState()
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(TV_REPLY_BLOCK_CORNER),
+                        color = fieldContainerColor,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        // 聚焦即主题色描边 (与 M3 输入框聚焦态、更换弹幕弹窗一致)
+                        border = tvFieldBorderStroke(fieldFocused, idleBorderColor),
+                    ) {
+                        BasicTextField(
+                            value = editorState.content,
+                            onValueChange = { editorState.setContent(it) },
+                            modifier = Modifier
+                                .textEditor()
+                                .fillMaxWidth()
+                                .heightIn(min = 64.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            readOnly = editorReadOnly,
+                            interactionSource = editorInteractionSource,
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = MaterialTheme.typography.bodyLarge.fontSize,
+                            ),
+                            // 光标与 M3 输入框一样用主题色
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            maxLines = 3,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { send() }),
+                            decorationBox = { inner ->
+                                if (editorState.content.text.isEmpty()) {
+                                    Text(
+                                        stringResource(Lang.comment_send_comment),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = hintColor,
+                                    )
+                                }
+                                inner()
+                            },
+                        )
+                    }
                 }
 
                 // 发送失败原因 (成功即关窗, 不需要成功提示)

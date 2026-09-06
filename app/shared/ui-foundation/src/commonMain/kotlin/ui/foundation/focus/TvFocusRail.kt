@@ -173,9 +173,10 @@ fun rememberTvFocusRail(
  *   连发不会调到这里
  * @param onNavigateUp 上键; 返回是否消费. 默认不消费 (交回焦点系统, 如追番页标签行上面就是页顶)
  * @param onNavigateDown 下键; 返回是否消费
- * @param consumeLeftEdge 焦点在首项 (或下标未知) 时按左是否消费: true = 消费掉不动
- *   (本行不做左出口, 交回空间搜索的落点不可预测); false = 放行, 由焦点系统接手
- *   (追番页靠它从第一个标签按左进侧边栏)
+ * @param onLeftEdge 焦点在首项时按左的出口 (追番页: 进侧边栏), 新按下与按住的连发一样走它, 这一下总是消费掉;
+ *   null = 本行不做左出口, 就地消费. 出口直接送焦, 不交给空间焦点搜索: 此刻下面的网格可能正因"聚焦即选中"换内容,
+ *   搜索会捞到一张即将销毁的卡片 —— 焦点落上去随分页替换销毁而死, 再被全局兜底捞回标签 (2026-08-29 真机日志:
+ *   长按左到首标签, 焦点闪跳到卡片又弹回)
  * @param preSwallow 页面自己的额外闸门, 返回 true 即当场消费且不再做任何上报/移动
  *   (追番页用它在"从空网格回落标签"的窗口里只吞长按残余连发)
  */
@@ -185,7 +186,7 @@ fun Modifier.tvFocusRailKeys(
     onNavigateDown: () -> Boolean,
     onUserNavigation: () -> Unit = {},
     onNavigateUp: () -> Boolean = { false },
-    consumeLeftEdge: Boolean = false,
+    onLeftEdge: (() -> Unit)? = null,
     preSwallow: (KeyEvent) -> Boolean = { false },
 ): Modifier = onPreviewKeyEvent { event ->
     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -209,16 +210,11 @@ fun Modifier.tvFocusRailKeys(
             if (index > 0) {
                 state.moveTo(index - 1)
                 true
-            } else if (event.isAutoRepeat == true || index < 0) {
-                // 长按滑到首项后的**残余连发**, 以及下标未知的窗口: 一律就地消费.
-                // [consumeLeftEdge] = false 的放行只属于"全新按下"那一次 (首标签按左进侧边栏是
-                // 一个刻意手势) —— 连发也放行的话会交给空间焦点搜索, 而此刻网格正因"聚焦即选中"
-                // 换内容, 搜索会捞到一张即将销毁的卡片: 焦点落上去随分页替换销毁而死, 再被全局
-                // 兜底捞回标签 (2026-08-29 真机日志: 长按左到首标签, 焦点闪跳到卡片又弹回,
-                // 观感是"不知什么时候跳到卡片上"). 与右键"末项一律消费"对称.
-                true
             } else {
-                consumeLeftEdge
+                // 首项 (新按下与长按滑到首项后的连发一样) 走左出口, 没有出口就不动; 下标未知的窗口一律就地消费.
+                // 与右键"末项一律消费"对称
+                if (index == 0) onLeftEdge?.invoke()
+                true
             }
 
         // 行内还有下一项就移动过去; 末项与**下标未知**的窗口一律消费掉 —— 不消费就落到默认

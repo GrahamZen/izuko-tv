@@ -13,27 +13,27 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 
 data class SubjectSearchFilters(
     val tags: List<String>? = null, // "童年", "原创"
+    /**
+     * 按 bangumi 的**官方** meta_tags 筛, 如 `"TV"` / `"WEB"` / `"剧场版"`.
+     *
+     * 与 [tags] (用户打的标签) 不是一回事: 那些是众包的, 同一个意思有好几种写法; 这些是站方
+     * 归一化过的, 拿来判"是不是连载形态"才靠得住. 多个之间是**且**关系, 所以"TV 或 WEB"
+     * 只能分两次问.
+     */
+    val metaTags: List<String>? = null,
     val airDates: List<String>? = null, // YYYY-MM-DD
     val ratings: List<String>? = null, // ">=6", "<8"
     val ranks: List<String>? = null,
+    /**
+     * 按**评分人数**筛, 如 `">=1000"`.
+     *
+     * 排行榜必须靠它兜住"分不低但没几个人看过"的条目: bangumi 的 rank 不管观众规模, 于是
+     * 1981 年只有 292 人评过分的作品照样能排进某个标签的前 20 (2026-09-07 实测).
+     */
+    val ratingCounts: List<String>? = null,
     val nsfw: Boolean? = null,
     /**
-     * 排除当前用户收藏为这些类型的条目, 由服务端按登录用户的收藏过滤.
+     * 排除当前用户收藏为这些类型的条目. bangumi 的搜索接口没有这个筛选, 由 [AniSubjectSearchService] 按本地收藏滤掉.
      */
     val excludeCollectionTypes: List<UnifiedCollectionType>? = null,
 )
-
-enum class SubjectSearchField {
-    NAME,
-    SUMMARY,
-    IMAGE_LARGE,
-    NSFW,
-    AIR_DATE,
-    SCORE,
-    RANK,
-    RATING_TOTAL,
-    FAVORITE,
-    TAGS,
-    MAIN_EPISODE_COUNT,
-    LIGHT_RELATED_PERSON_INFO,
-}

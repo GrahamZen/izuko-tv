@@ -84,6 +84,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.BackgroundBehavior
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.domain.comment.CommentContext
@@ -99,7 +100,6 @@ import me.him188.ani.app.platform.features.StreamType
 import me.him188.ani.app.platform.features.getComponentAccessors
 import me.him188.ani.app.tools.rememberUiMonoTasker
 import me.him188.ani.app.ui.comment.CommentEditorState
-import me.him188.ani.app.ui.comment.CommentReportHost
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
@@ -174,7 +174,6 @@ import me.him188.ani.app.ui.subject.episode.video.sidesheet.DanmakuRegexFilterSe
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.MediaSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.topbar.EpisodePlayerTitle
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
 import me.him188.ani.app.videoplayer.screenshot.playerScreenshotFileName
 import me.him188.ani.app.videoplayer.ui.LocalVideoScaffoldSheetWindowInsets
 import me.him188.ani.app.videoplayer.ui.PlaybackSpeedControllerState
@@ -272,7 +271,6 @@ private fun EpisodeScreenContent(
     ImageViewerBackHandler(imageViewer)
 
     val playerState by vm.player.state.collectAsStateWithLifecycle()
-    val playbackAutomationSuppressed by vm.playbackAutomationSuppressed.collectAsStateWithLifecycle()
     if (playerState.playWhenReady) {
         ScreenOnEffect()
     }
@@ -281,9 +279,7 @@ private fun EpisodeScreenContent(
     var didSetPaused by rememberSaveable { mutableStateOf(false) }
 
     val pauseOnPlaying: () -> Unit = {
-        if (playbackAutomationSuppressed) {
-            didSetPaused = false
-        } else if (vm.player.state.value.playWhenReady) {
+        if (vm.player.state.value.playWhenReady) {
             didSetPaused = true
             vm.player.pause()
         } else {
@@ -291,7 +287,7 @@ private fun EpisodeScreenContent(
         }
     }
     val tryUnpause: () -> Unit = {
-        if (didSetPaused && !playbackAutomationSuppressed) {
+        if (didSetPaused) {
             didSetPaused = false
             vm.player.play()
         }
@@ -301,7 +297,7 @@ private fun EpisodeScreenContent(
 
     AutoPauseEffect(
         vm,
-        enabled = !playbackAutomationSuppressed,
+        enabled = true,
         pictureInPictureController = pictureInPictureController,
     )
     DisplayModeEffect(vm.videoScaffoldConfig)
@@ -390,13 +386,6 @@ private fun EpisodeScreenContent(
                     danmakuEditorState.style = vm.danmakuSendStyleFlow.first()
                 }
 
-                WatchTogetherPopupVisibilityEffect(
-                    playerControllerState = vm.playerControllerState,
-                    isFullscreen = vm.isFullscreen,
-                    isExpandedLayout = showExpandedUI,
-                    sidebarVisible = vm.sidebarVisible,
-                    pictureInPictureController = pictureInPictureController,
-                )
 
                 page.matchingDanmakuUiState?.let { uiState ->
                     MatchingDanmakuDialog(
@@ -456,9 +445,6 @@ private fun EpisodeScreenContent(
         ImageViewer(imageViewer) { imageViewer.clear() }
     }
 
-    // 页面级唯一 Host: 评论列表所在 tab 切走时也能收到举报结果提示
-    CommentReportHost(vm.commentReportState)
-
     if (showEditCommentSheet) {
         EpisodeEditCommentSheet(
             state = vm.commentEditorState,
@@ -476,45 +462,6 @@ private fun EpisodeScreenContent(
     }
 
     vm.mediaResolver.ComposeContent()
-}
-
-/**
- * 一起看气泡的显隐: 全屏/宽屏收侧边栏时跟随控制条, 其余场景常显.
- *
- * 小窗期间也隐藏: 系统小窗展示整个应用窗口, 而一起看浮层挂在应用根节点上, 不随播放器页最小化,
- * 不隐藏就会浮在小窗的视频上面.
- *
- * @param pictureInPictureController 播放页自己的画中画控制器
- */
-@Composable
-internal fun WatchTogetherPopupVisibilityEffect(
-    playerControllerState: PlayerControllerState,
-    isFullscreen: Boolean,
-    isExpandedLayout: Boolean,
-    sidebarVisible: Boolean,
-    pictureInPictureController: PictureInPictureController = NoOpPictureInPictureController,
-) {
-    val watchTogetherController = LocalWatchTogetherPlayerController.current
-    val isInPictureInPicture by pictureInPictureController.isInPictureInPicture.collectAsStateWithLifecycle()
-
-    val playerControllerRequester = remember { Any() }
-    val followControllerVisibility = isFullscreen || (isExpandedLayout && !sidebarVisible)
-
-    LaunchedEffect(followControllerVisibility, playerControllerState) {
-        snapshotFlow { followControllerVisibility && !playerControllerState.visibility.topBar }
-            .collect { watchTogetherController.setRequestHidden(playerControllerRequester, it) }
-    }
-
-    LaunchedEffect(isInPictureInPicture) {
-        watchTogetherController.setRequestHidden("pictureInPicture", isInPictureInPicture)
-    }
-
-    DisposableEffect(watchTogetherController) {
-        onDispose {
-            watchTogetherController.setRequestHidden(playerControllerRequester, false)
-            if (!isInPictureInPicture) watchTogetherController.setRequestHidden("pictureInPicture", false)
-        }
-    }
 }
 
 /**
@@ -885,6 +832,10 @@ private fun EpisodeScreenPhoneDetails(
                         }
                     },
                     hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                    onMediaSelectorShown = { vm.onMediaSelectorShown() },
+                    onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
+                    fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                    onFullSearchChange = { vm.setFullMediaSearch(it) },
                 )
             }
         },
@@ -1435,7 +1386,7 @@ private fun FullscreenMediaSelectorContainer(
 @Composable
 private fun EpisodeCommentColumn(
     commentState: CommentState,
-    commentReportState: CommentReportState,
+    commentReportState: CommentReportState?,
     commentEditorState: CommentEditorState,
     subjectId: Int,
     episodeId: Int,
@@ -1505,7 +1456,9 @@ private fun AutoPauseEffect(
     // 有保留会话宿主时这件事整个归它, 见 KDoc
     if (LocalPlaybackSessionEntry.current !== PlaybackSessionEntry.None) return
 
-    val backgroundBehavior = viewModel.videoScaffoldConfig.backgroundBehavior
+    // 播放页变体 (遥控器形态) 不设小窗策略, 进不了小窗, 设置里也不给这一项: 切后台一律按暂停处理
+    val backgroundBehavior = if (LocalEpisodeScreenVariant.current != null) BackgroundBehavior.PAUSE
+    else viewModel.videoScaffoldConfig.backgroundBehavior
     val autoPauseTasker = rememberUiMonoTasker()
     /** 应用此刻是不是停在后台; 下面那条"持续按住"的规则读它. */
     val stopped = remember { MutableStateFlow(false) }

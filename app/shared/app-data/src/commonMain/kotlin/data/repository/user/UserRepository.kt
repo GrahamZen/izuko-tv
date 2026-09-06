@@ -11,12 +11,10 @@ package me.him188.ani.app.data.repository.user
 
 import androidx.datastore.core.DataStore
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +27,6 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.models.user.ExternalAccount
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.repository.RepositoryAuthorizationException
 import me.him188.ani.app.data.repository.RepositoryException
@@ -39,17 +36,8 @@ import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
-import me.him188.ani.client.apis.BangumiAniApi
-import me.him188.ani.client.apis.OAuthAniApi
-import me.him188.ani.client.apis.UserAniApi
-import me.him188.ani.client.apis.UserAuthenticationAniApi
-import me.him188.ani.client.apis.UserProfileAniApi
-import me.him188.ani.client.models.AniAniSelfUser
-import me.him188.ani.client.models.AniEditEmailRequest
-import me.him188.ani.client.models.AniRegisterOrLoginByEmailOtpRequest
-import me.him188.ani.client.models.AniSendEmailOtpRequest
-import me.him188.ani.client.models.AniUpdateProfileRequest
-import me.him188.ani.client.models.AniUserAuthRoutingAuthenticationResponse
+import me.him188.ani.datasources.bangumi.next.apis.MiscBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextProfile
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.catching
 import me.him188.ani.utils.coroutines.flows.restartable
@@ -62,12 +50,8 @@ import kotlin.uuid.Uuid
 
 class UserRepository(
     private val dataStore: DataStore<SelfInfo?>,
+    private val bangumiMiscApi: ApiInvoker<MiscBangumiNextApi>,
     private val sessionStateProvider: SessionStateProvider,
-    private val userApi: ApiInvoker<UserAniApi>,
-    private val authApi: ApiInvoker<UserAuthenticationAniApi>,
-    private val profileApi: ApiInvoker<UserProfileAniApi>,
-    private val bangumiApi: ApiInvoker<BangumiAniApi>,
-    private val oauthApi: ApiInvoker<OAuthAniApi>,
     private val sessionManager: SessionManager,
     coroutineContext: CoroutineContext = Dispatchers.Default,
 ) {
@@ -97,7 +81,10 @@ class UserRepository(
             is SessionState.Valid -> {
                 emit(dataStore.data.firstOrNull())
                 suspend {
-                    userApi.invoke { getUser().body() }.toSelfInfo()
+                    // 直连之后"我是谁"来自 bangumi 自己: /p1/me 给 id/用户名/昵称/头像.
+                    // Ani 那个 /v1/me 还给 email、是否设过密码、bangumi 绑没绑 —— 直连之后
+                    // 这些概念都不存在了 (账号就是 bangumi 账号), 见 toSelfInfo
+                    bangumiMiscApi.invoke { getCurrentUser().body() }.toSelfInfo()
                 }
                     .asFlow()
                     // 首次登录这里的 http client 可能还是旧的, 添加重试机制确保 user info 能够正确获取.
@@ -130,163 +117,12 @@ class UserRepository(
         }
     }.shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
-    sealed class SendOtpResult {
-        data class Success(
-            val user: SelfInfo,
-        ) : SendOtpResult()
-
-        data object InvalidOtp : SendOtpResult()
-        data object EmailAlreadyExist : SendOtpResult()
-    }
-
     /**
      * @throws me.him188.ani.app.data.repository.RepositoryRateLimitedException
      */
-    suspend fun registerOrLoginByEmailOtp(
-        otpId: String,
-        otp: String,
-    ): SendOtpResult = withContext(Dispatchers.Default) {
-        requestEmailOtpAuth {
-            registerOrLoginByEmailOtp(AniRegisterOrLoginByEmailOtpRequest(otpId = otpId, otpValue = otp)).body()
-        }
-    }
-
-    suspend fun bindOrReBindEmail(
-        otpId: String,
-        otp: String,
-    ): SendOtpResult = withContext(Dispatchers.Default) {
-        requestEmailOtpAuth {
-            editEmail(AniEditEmailRequest(otpId = otpId, otpValue = otp)).body()
-        }
-    }
-
-    private suspend fun requestEmailOtpAuth(block: suspend UserAuthenticationAniApi.() -> AniUserAuthRoutingAuthenticationResponse): SendOtpResult {
-        return authApi.invoke {
-            try {
-                val data = block()
-
-                sessionManager.setSession(
-                    AccessTokenSession(
-                        AccessTokenPair(
-                            aniAccessToken = data.tokens.accessToken,
-                            expiresAtMillis = data.tokens.expiresAtMillis,
-                            bangumiAccessToken = data.tokens.bangumiAccessToken,
-                        ),
-                    ),
-                    refreshToken = data.tokens.refreshToken,
-                )
-
-                SendOtpResult.Success(
-                    user = data.user.toSelfInfo(),
-                )
-            } catch (e: Exception) {
-                if (e is ClientRequestException) {
-                    when (e.response.status) {
-                        HttpStatusCode.Conflict -> {
-                            return@invoke SendOtpResult.EmailAlreadyExist
-                        }
-
-                        HttpStatusCode.BadRequest -> {
-                            return@invoke SendOtpResult.InvalidOtp
-                        }
-
-                        HttpStatusCode.UnprocessableEntity -> {
-                            return@invoke SendOtpResult.InvalidOtp
-                        }
-                    }
-                }
-                throw RepositoryException.wrapOrThrowCancellation(e)
-            }
-        }
-    }
-
-    data class SendEmailOtpInfo(
-        val otpId: String,
-        val hasExistingUser: Boolean?,
-    )
-
-    suspend fun sendEmailOtpForLogin(
-        email: String,
-    ): SendEmailOtpInfo = withContext(Dispatchers.Default) {
-        authApi.invoke {
-            try {
-                val resp = this.sendEmailOtp(
-                    AniSendEmailOtpRequest(
-                        email = email,
-                    ),
-                ).body()
-
-                SendEmailOtpInfo(
-                    otpId = resp.otpId,
-                    hasExistingUser = resp.hasExistingUser,
-                )
-            } catch (e: Exception) {
-                if (e is ClientRequestException) {
-                    if (e.response.status == HttpStatusCode.UnprocessableEntity) {
-                        // 邮箱不正确
-                        throw RepositoryRequestError(
-                            localizedMessage = "邮箱格式不正确", // TODO: localize
-                            cause = e,
-                        )
-                    }
-                }
-                throw RepositoryException.wrapOrThrowCancellation(e)
-            }
-        }
-    }
-
     /**
      * 所有参数都是 `nullable`, 传入 `null` 则表示不修改对应的字段.
      */
-    suspend fun updateProfile(
-        nickname: String?
-    ) = withContext(Dispatchers.Default) {
-        // 所有参数为 null 表示什么也不更新
-        if (nickname == null) {
-            return@withContext
-        }
-        profileApi.invoke {
-            try {
-                this.updateProfile(AniUpdateProfileRequest(nickname)).body()
-                    // 更新 profile 后刷新一下
-                    .also { selfInfoRefresher.restart() }
-            } catch (e: Exception) {
-                throw RepositoryException.wrapOrThrowCancellation(e)
-            }
-        }
-    }
-
-    suspend fun uploadAvatar(
-        avatar: ByteArray,
-    ) = withContext(Dispatchers.Default) {
-        profileApi.invoke {
-            try {
-                // openapi generator 生成的 OctetByteArray 有问题，改成 OutgoingContent
-                // 每次生成 API 都要把参数类型改成 OutgoingContent
-                // todo: write patch in build scripts.
-                this.uploadAvatar(
-                    object : OutgoingContent.ByteArrayContent() {
-                        override fun bytes(): ByteArray {
-                            return avatar
-                        }
-                    },
-                ).body()
-
-                // 上传成功后刷新用户信息
-                selfInfoRefresher.restart()
-                UploadAvatarResult.SUCCESS
-            } catch (e: ClientRequestException) {
-                when (e.response.status) {
-                    HttpStatusCode.PayloadTooLarge -> UploadAvatarResult.TOO_LARGE
-                    HttpStatusCode.UnprocessableEntity -> UploadAvatarResult.INVALID_FORMAT
-                    else -> throw RepositoryException.wrapOrThrowCancellation(e)
-                }
-            } catch (e: Exception) {
-                throw RepositoryException.wrapOrThrowCancellation(e)
-            }
-        }
-    }
-
     suspend fun clearSelfInfo() {
         dataStore.updateData {
             null
@@ -294,117 +130,22 @@ class UserRepository(
         sessionManager.clearSession()
     }
 
-    /**
-     * 服务端已启用的第三方登录平台的 ID. 可能包含客户端不认识的平台.
-     *
-     * @throws RepositoryException
-     */
-    suspend fun getOAuthProviders(): List<String> = withContext(Dispatchers.Default) {
-        try {
-            oauthApi.invoke { getProviders().body().providers }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    /**
-     * 解绑第三方账号 (不含 Bangumi, 见 [unbindBangumi]).
-     *
-     * @throws RepositoryRequestError 这是用户的唯一登录方式 (HTTP 409), 消息可以直接展示给用户
-     * @throws RepositoryException
-     */
-    suspend fun unbindExternalAccount(provider: String) = withContext(Dispatchers.Default) {
-        try {
-            val resp = oauthApi.invoke { removeBind(provider).body() }
-            applyAuthenticationResponse(resp)
-        } catch (e: ClientRequestException) {
-            if (e.response.status == HttpStatusCode.Conflict) {
-                throw RepositoryRequestError(e.response.bodyAsText(), cause = e)
-            }
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    /**
-     * 解绑邮箱. 换绑见 [bindOrReBindEmail].
-     *
-     * @throws RepositoryRequestError 这是用户的唯一登录方式 (HTTP 409), 消息可以直接展示给用户
-     * @throws RepositoryException
-     */
-    suspend fun unbindEmail() = withContext(Dispatchers.Default) {
-        try {
-            val resp = authApi.invoke { unbindEmail().body() }
-            applyAuthenticationResponse(resp)
-        } catch (e: ClientRequestException) {
-            if (e.response.status == HttpStatusCode.Conflict) {
-                throw RepositoryRequestError(e.response.bodyAsText(), cause = e)
-            }
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
-
-    /**
-     * 注销账号: 服务端删除此账号的全部数据, 成功后清除本地的登录状态. 不可撤回.
-     *
-     * @throws RepositoryException
-     */
-    suspend fun deleteAccount() = withContext(Dispatchers.Default) {
-        try {
-            profileApi.invoke { deleteAccount() }
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-        // 账号已经没了, 本地登录状态必须清除, 不能因为界面离开而中断
-        withContext(NonCancellable) {
-            clearSelfInfo()
-        }
-    }
-
-    private suspend fun applyAuthenticationResponse(resp: AniUserAuthRoutingAuthenticationResponse) {
-        sessionManager.setSession(
-            AccessTokenSession(
-                AccessTokenPair(
-                    aniAccessToken = resp.tokens.accessToken,
-                    expiresAtMillis = resp.tokens.expiresAtMillis,
-                    bangumiAccessToken = resp.tokens.bangumiAccessToken,
-                ),
-            ),
-            refreshToken = resp.tokens.refreshToken,
-        )
-
-        // update local self info cache
-        val self = resp.user.toSelfInfo()
-        dataStore.updateData { self }
-        selfInfoRefresher.restart()
-    }
-
-    suspend fun unbindBangumi() = withContext(Dispatchers.Default) {
-        try {
-            val resp = bangumiApi.invoke { unbind().body() }
-            applyAuthenticationResponse(resp)
-        } catch (e: Exception) {
-            throw RepositoryException.wrapOrThrowCancellation(e)
-        }
-    }
 }
 
-enum class UploadAvatarResult {
-    SUCCESS, TOO_LARGE, INVALID_FORMAT
-}
-
-private fun AniAniSelfUser.toSelfInfo(): SelfInfo {
+/**
+ * `/p1/me` -> [SelfInfo].
+ *
+ * `email` / `hasPassword` 是 Ani 账号体系的东西, 直连之后恒为空: 账号就是 bangumi 账号,
+ * 密码在 bangumi 那边. `isBangumiSessionValid` 恒为 true —— 能拿到这个响应本身就是证明.
+ */
+private fun BangumiNextProfile.toSelfInfo(): SelfInfo {
     return SelfInfo(
-        id = Uuid.parse(id),
+        id = id,
         nickname = nickname,
-        email = email,
-        hasPassword = hasPassword,
-        avatarUrl = largeAvatar,
-        bangumiUsername = bangumiUsername,
-        isBangumiSessionValid = isBangumiSessionValid,
-        externalAccounts = externalAccounts.map { ExternalAccount(it.provider, it.username) },
+        email = null,
+        hasPassword = false,
+        avatarUrl = avatar.large,
+        bangumiUsername = username,
+        isBangumiSessionValid = true,
     )
 }

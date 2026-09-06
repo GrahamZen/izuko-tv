@@ -82,6 +82,9 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
      * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
      */
     hideOnSelect: Boolean = false,
+    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    fullSearch: Boolean? = null,
+    onFullSearchChange: (Boolean) -> Unit = {},
 ) {
     val selectMediaSourceText = stringResource(Lang.subject_episode_select_media_source)
     val closeSelectorText = stringResource(Lang.subject_episode_close_selector)

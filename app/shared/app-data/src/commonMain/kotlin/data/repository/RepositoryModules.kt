@@ -11,8 +11,6 @@ package me.him188.ani.app.data.repository
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.data.network.AniApiProvider
-import me.him188.ani.app.data.network.AutoSkipRepository
 import me.him188.ani.app.data.network.RecommendationRepository
 import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.data.persistent.dataStores
@@ -33,37 +31,26 @@ import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.media.MikanIndexCacheRepository
 import me.him188.ani.app.data.repository.media.MikanIndexCacheRepositoryImpl
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
-import me.him188.ani.app.data.repository.person.PersonCommentRepository
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepositoryImpl
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepositoryImpl
 import me.him188.ani.app.data.repository.player.EpisodeScreenshotRepository
-import me.him188.ani.app.data.repository.player.PlaybackHistorySyncer
 import me.him188.ani.app.data.repository.player.WhatslinkEpisodeScreenshotRepository
-import me.him188.ani.app.data.repository.subject.BangumiMergeRepository
-import me.him188.ani.app.data.repository.subject.BangumiSyncCommandRepository
-import me.him188.ani.app.data.repository.subject.DefaultBangumiMergeRepository
 import me.him188.ani.app.data.repository.subject.DefaultSubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.FollowedSubjectsRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepositoryImpl
-import me.him188.ani.app.data.repository.subject.SubjectRelationGraphRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchRepository
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
-import me.him188.ani.app.data.repository.user.DefaultDeveloperVerificationRepository
-import me.him188.ani.app.data.repository.user.DefaultQrLoginRepository
-import me.him188.ani.app.data.repository.user.DeveloperVerificationRepository
 import me.him188.ani.app.data.repository.user.PreferencesRepositoryImpl
-import me.him188.ani.app.data.repository.user.QrLoginRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.bangumi.BangumiConflictChecker
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
@@ -71,11 +58,11 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.files
 import me.him188.ani.utils.io.resolve
+import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
 
-val Scope.aniApiProvider get() = get<AniApiProvider>()
 
 private val Scope.database get() = get<AniDatabase>()
 private val Scope.settingsRepository get() = get<SettingsRepository>()
@@ -88,34 +75,10 @@ fun KoinApplication.repositoryModules(
     single<UserRepository> {
         UserRepository(
             getContext().dataStores.selfInfoStore,
+            // "我是谁"改由 bangumi 的 /p1/me 回答
+            get<BangumiApiProvider>().miscApi,
             get(),
-            aniApiProvider.userApi,
-            aniApiProvider.userAuthApi,
-            aniApiProvider.userProfileApi,
-            aniApiProvider.bangumiApi,
-            aniApiProvider.oauthApi,
             get(),
-        )
-    }
-    single<QrLoginRepository> { DefaultQrLoginRepository(aniApiProvider.qrLoginApi, get()) }
-    single<DeveloperVerificationRepository> {
-        DefaultDeveloperVerificationRepository(aniApiProvider.developerVerificationApi)
-    }
-    single<BangumiSyncCommandRepository> {
-        BangumiSyncCommandRepository(
-            aniApiProvider.bangumiApi,
-        )
-    }
-    single<BangumiMergeRepository> {
-        DefaultBangumiMergeRepository(
-            aniApiProvider.bangumiApi,
-            get(),
-        )
-    }
-    single<BangumiConflictChecker> {
-        BangumiConflictChecker(
-            mergeRepository = get(),
-            subjectCollectionRepository = get(),
         )
     }
 
@@ -144,6 +107,7 @@ fun KoinApplication.repositoryModules(
             sessionManager = get(),
             nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
             getEpisodeTypeFiltersUseCase = get(),
+            scope = coroutineScope,
         )
     }
 
@@ -179,17 +143,15 @@ fun KoinApplication.repositoryModules(
             database.subjectRelations(),
             subjectService = get(),
             subjectCollectionRepository = get(),
-            aniSubjectRelationIndexService = get(),
+            subjectSeriesIndexService = get(),
+            scope = coroutineScope,
         )
-    }
-    single<SubjectRelationGraphRepository> {
-        SubjectRelationGraphRepository(aniApiProvider.subjectApi, database.subjectCollection())
     }
 
     single<PersonDetailsRepository> {
         PersonDetailsRepository(
-            personsApi = aniApiProvider.personsApi,
-            charactersApi = aniApiProvider.charactersApi,
+            personsApi = get<BangumiApiProvider>().personApi,
+            charactersApi = get<BangumiApiProvider>().characterApi,
         )
     }
 
@@ -224,11 +186,7 @@ fun KoinApplication.repositoryModules(
 
     single<EpisodeScreenshotRepository> { WhatslinkEpisodeScreenshotRepository() }
 
-    single<EpisodeCommentRepository> {
-        EpisodeCommentRepository(aniCommentService = get(), replyRelationService = get())
-    }
-
-    single<PersonCommentRepository> { PersonCommentRepository(aniCommentService = get()) }
+    single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
 
     single<MediaSourceInstanceRepository> {
         MediaSourceInstanceRepositoryImpl(getContext().dataStores.mediaSourceSaveStore)
@@ -242,7 +200,6 @@ fun KoinApplication.repositoryModules(
         EpisodePlayHistoryRepositoryImpl(
             dataStore = getContext().dataStores.episodeHistoryStore,
             playbackHistoryDao = database.playbackHistoryDao(),
-            onDirtyChanged = { get<PlaybackHistorySyncer>().requestSync() },
         )
     }
 
@@ -251,20 +208,36 @@ fun KoinApplication.repositoryModules(
             dataStore = getContext().dataStores.peerFilterSubscriptionStore,
             ruleSaveDir = getContext().files.dataDir.resolve("peerfilter-subs"),
             httpClient = get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
-            builtinPeerFilterRuleApi = get<AniApiProvider>().pfRuleApi,
         )
     }
 
-    single<TrendsRepository> { TrendsRepository(get<AniApiProvider>().trendsApi) }
+    single<TrendsRepository> {
+        TrendsRepository(
+            get<BangumiApiProvider>().trendingApi,
+            cacheFile = getContext().files.cacheDir.resolve("trending.json"),
+            backgroundScope = coroutineScope,
+        )
+    }
 
-    single<RecommendationRepository> { RecommendationRepository(get<AniApiProvider>().homeApi) }
-
-    single<AutoSkipRepository> { AutoSkipRepository(get<AniApiProvider>().episodesApi) }
+    single<RecommendationRepository> {
+        RecommendationRepository(
+            get<BangumiApiProvider>().subjectApi,
+            database.subjectCollection(),
+            get(),
+            database.recommendationFeedDao(),
+            get(),
+            get(),
+            seriesIndexService = get(),
+            sequelSeasonTable = get(),
+            sessionStateProvider = get(),
+            scope = coroutineScope,
+            cacheDir = getContext().files.cacheDir,
+        )
+    }
 
     single<DanmakuRepository> {
         DanmakuRepository(
             parentCoroutineContext = coroutineScope.coroutineContext,
-            danmakuApi = aniApiProvider.danmakuApi,
             danmakuDao = database.danmakuDao(),
             httpClientProvider = get(),
             getMediaCacheUseCase = get(),
