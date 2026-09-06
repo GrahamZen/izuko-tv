@@ -136,6 +136,8 @@ import kotlin.time.Duration.Companion.milliseconds
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
+import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
+import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import com.kmpalette.color
 import com.kmpalette.palette.graphics.Palette
 import kotlinx.collections.immutable.toImmutableList
@@ -455,6 +457,17 @@ fun SubjectDetailsTvPage(
     }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    // 动作面板「刷新本页」: 无视一小时的缓存新鲜度重取这个条目 (收藏状态/评分/短评/分集).
+    // 在 bgm 网页或另一台设备上改完再回到这页时, 本地那份要等过期才对齐 —— 这是唯一的即时出口.
+    // 内嵌变体 (播放器里的介绍页) 不注册: 那边的动作面板归播放器管.
+    if (!videoBackground) {
+        val collectionRepository = remember { GlobalKoin.get<SubjectCollectionRepository>() }
+        val subjectId = state.subjectId
+        TvPageRefreshHandler {
+            scope.launch { collectionRepository.refreshSubjectCollection(subjectId) }
+        }
+    }
 
     // Hero 标签墙的状态: rememberSaveable 跨"点击标签→搜索→返回"保留 —
     // 返回本页时浏览模式不变, 焦点直接恢复到最后聚焦的那个标签上 (restorePending 标记)

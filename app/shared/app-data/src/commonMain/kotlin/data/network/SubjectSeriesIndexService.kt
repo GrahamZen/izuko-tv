@@ -9,7 +9,11 @@
 
 package me.him188.ani.app.data.network
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.AtomicInt
@@ -77,8 +81,20 @@ data class SubjectRelationIndex(
  */
 class SubjectSeriesIndexService(
     private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
+    /**
+     * BFS 的归属作用域: **不能挂在调用方协程上**.
+     *
+     * 这条 BFS 是直连之后新增的开销 (Ani 把 `seriesMainSubjectIds` 随条目一起下发, 零请求),
+     * 长系列最多走 [MAX_NODES] 跳、每跳一个 `/p1/subjects/{id}/relations`. 而调用它的两条路
+     * (详情页关联数据 / TMDB 匹配的 root 档) 都活在 `collectLatest` 底下 —— 焦点一挪就取消,
+     * 十几个请求全废且什么都没缓存, 下次进来从零再来一遍. Re:Zero 家族 19 个节点, 正是重灾区.
+     *
+     * 同时补上**在途去重**: 原先并发问同一个条目会各跑一遍完整 BFS.
+     */
+    scope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) {
+    private val scope = scope
     private val logger = logger<SubjectSeriesIndexService>()
     private val cacheLock = Mutex()
     private val cache = LinkedHashMap<Int, SubjectRelationIndex>()
@@ -97,31 +113,53 @@ class SubjectSeriesIndexService(
 
     fun lastStatsOf(subjectId: Int): ComputeStats? = synchronized(statsLock) { stats[subjectId] }
 
+    /** subjectId -> 在途的 BFS. 与 [cache] 共用 [cacheLock], 临界区里不含挂起工作. */
+    private val inFlight = mutableMapOf<Int, Deferred<SubjectRelationIndex>>()
+
     suspend fun getSubjectRelationIndex(subjectId: Int): SubjectRelationIndex {
         cacheLock.withLock { cache[subjectId] }?.let { return it }
-        val startMillis = currentTimeMillis()
-        val requestCount = atomic(0)
-        val computed = withContext(ioDispatcher) {
-            try {
-                compute(subjectId, requestCount)
-            } catch (e: Exception) {
-                throw RepositoryException.wrapOrThrowCancellation(e)
+        var created: Deferred<SubjectRelationIndex>? = null
+        val task = cacheLock.withLock {
+            // 二次查: 等锁期间前一个任务可能已经算完写进缓存了
+            cache[subjectId]?.let { return it }
+            inFlight[subjectId] ?: newComputeTask(subjectId).also {
+                inFlight[subjectId] = it
+                created = it
             }
         }
-        synchronized(statsLock) {
-            stats[subjectId] = ComputeStats(requestCount.value, currentTimeMillis() - startMillis)
-            while (stats.size > CACHE_SIZE) stats.remove(stats.keys.first())
-        }
-        logger.info {
-            "bgm-direct: seriesIndex subject=$subjectId -> main=${computed.seriesMainSubjectIds} " +
-                    "sequels=${computed.sequelSubjects} rootNames=${computed.seriesRootNames.take(2)}"
-        }
-        cacheLock.withLock {
-            cache[subjectId] = computed
-            while (cache.size > CACHE_SIZE) cache.remove(cache.keys.first())
-        }
-        return computed
+        // LAZY + 出锁再 start: 任务的 finally 要拿同一把锁摘除自己
+        created?.start()
+        // 调用者被取消只取消这个 await, BFS 照跑完并落进缓存
+        return task.await()
     }
+
+    private fun newComputeTask(subjectId: Int): Deferred<SubjectRelationIndex> =
+        scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
+            try {
+                val startMillis = currentTimeMillis()
+                val requestCount = atomic(0)
+                val computed = try {
+                    compute(subjectId, requestCount)
+                } catch (e: Exception) {
+                    throw RepositoryException.wrapOrThrowCancellation(e)
+                }
+                synchronized(statsLock) {
+                    stats[subjectId] = ComputeStats(requestCount.value, currentTimeMillis() - startMillis)
+                    while (stats.size > CACHE_SIZE) stats.remove(stats.keys.first())
+                }
+                logger.info {
+                    "bgm-direct: seriesIndex subject=$subjectId -> main=${computed.seriesMainSubjectIds} " +
+                            "sequels=${computed.sequelSubjects} rootNames=${computed.seriesRootNames.take(2)}"
+                }
+                cacheLock.withLock {
+                    cache[subjectId] = computed
+                    while (cache.size > CACHE_SIZE) cache.remove(cache.keys.first())
+                }
+                computed
+            } finally {
+                cacheLock.withLock { inFlight.remove(subjectId) }
+            }
+        }
 
     private suspend fun compute(subjectId: Int, requestCount: AtomicInt): SubjectRelationIndex {
         val edges = HashMap<Int, Edges>()

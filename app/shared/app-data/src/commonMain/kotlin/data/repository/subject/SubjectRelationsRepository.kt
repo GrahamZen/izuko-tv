@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.repository.subject
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -82,6 +83,8 @@ class DefaultSubjectRelationsRepository(
     private val subjectService: SubjectService,
     private val subjectCollectionRepository: SubjectCollectionRepository,
     private val subjectSeriesIndexService: SubjectSeriesIndexService,
+    /** 见 [StaleKeyedFetcher]: 关联数据的重取也不能挂在调用方协程上. */
+    scope: CoroutineScope,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val autoRefreshPeriod: Duration = 1.hours,
     // 角色与制作人员几乎不变, 过期时间不宜太短: 该接口曾占服务端出站流量的一半以上.
@@ -212,7 +215,7 @@ class DefaultSubjectRelationsRepository(
             .map { it.cachedCharactersUpdated }
             .distinctUntilChanged()
 
-    private val relationsFetcher = StaleKeyedFetcher<Int>()
+    private val relationsFetcher = StaleKeyedFetcher<Int>(scope)
 
     /**
      * **同一条目的关联数据只取一次**: 角色区块与制作人员区块是两条独立的流, 各自判一遍"过期就取",

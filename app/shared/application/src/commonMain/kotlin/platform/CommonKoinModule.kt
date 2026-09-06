@@ -281,6 +281,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             sessionManager = get(),
             nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
             getEpisodeTypeFiltersUseCase = get(),
+            scope = coroutineScope,
         )
     }
     single<FollowedSubjectsRepository> {
@@ -319,6 +320,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             subjectService = get(),
             subjectCollectionRepository = get(),
             subjectSeriesIndexService = get(),
+            scope = coroutineScope,
         )
     }
 
@@ -385,7 +387,9 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             playbackHistoryDao = database.playbackHistoryDao(),
         )
     }
-    single<SubjectSeriesIndexService> { SubjectSeriesIndexService(bangumiApiProvider.subjectApi) }
+    single<SubjectSeriesIndexService> {
+        SubjectSeriesIndexService(bangumiApiProvider.subjectApi, scope = coroutineScope)
+    }
 
     single<PeerFilterSubscriptionRepository> {
         PeerFilterSubscriptionRepository(
