@@ -151,6 +151,7 @@ import me.him188.ani.app.domain.watchtogether.WatchTogetherManager
 import me.him188.ani.app.domain.usecase.useCaseModules
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
+import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.datasources.bangumi.BangumiClient
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
 import me.him188.ani.utils.coroutines.IO_
@@ -169,6 +170,7 @@ private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
 private val Scope.settingsRepository get() = get<SettingsRepository>()
 private val Scope.aniApiProvider get() = get<AniApiProvider>()
+private val Scope.bangumiApiProvider get() = get<BangumiApiProvider>()
 
 fun KoinApplication.getCommonKoinModule(getContext: () -> Context, coroutineScope: CoroutineScope) =
     listOf(useCaseModules(), repositoryModules(getContext().dataStores), otherModules(getContext, coroutineScope))
@@ -263,6 +265,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         }
     }
     single<AniApiProvider> { AniApiProvider(get<HttpClientProvider>().get(useAniToken = true)) }
+    single<BangumiApiProvider> { BangumiApiProvider(get<HttpClientProvider>().get(useBangumiToken = true)) }
     single<WatchTogetherApiService> {
         DefaultWatchTogetherApiService(
             provider = get(),
@@ -357,12 +360,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<SubjectService> {
         RemoteSubjectService(
             aniApiProvider.subjectApi,
+            bangumiApiProvider.subjectApi,
             sessionManager = get(),
         )
     }
     single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi) }
 
-    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(get<AniApiProvider>().subjectApi) }
+    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
     single<PersonDetailsRepository> {
         PersonDetailsRepository(
             personsApi = aniApiProvider.personsApi,

@@ -23,9 +23,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
-import me.him188.ani.app.data.models.subject.PersonInfo
 import me.him188.ani.app.data.models.subject.PersonPosition
-import me.him188.ani.app.data.models.subject.PersonType
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.RelatedPersonInfo
@@ -35,13 +33,16 @@ import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.platform.getAniUserAgent
+import me.him188.ani.app.data.network.mapper.toCharacterInfo
+import me.him188.ani.app.data.network.mapper.toPersonInfo
 import me.him188.ani.client.apis.SubjectsAniApi
 import me.him188.ani.client.models.AniCollectionType
-import me.him188.ani.client.models.AniPerson
 import me.him188.ani.client.models.AniSubjectCollection
 import me.him188.ani.client.models.AniSubjectRecommendation
 import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.bangumi.models.BangumiCount
+import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
 import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
 import me.him188.ani.datasources.bangumi.models.BangumiUserSubjectCollection
 import me.him188.ani.utils.coroutines.IO_
@@ -117,6 +118,7 @@ suspend inline fun SubjectService.setSubjectCollectionTypeOrDelete(
 
 class RemoteSubjectService(
     private val subjectApi: ApiInvoker<SubjectsAniApi>,
+    private val bangumiSubjectApi: ApiInvoker<SubjectBangumiNextApi>,
     private val sessionManager: SessionStateProvider,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : SubjectService, KoinComponent {
@@ -155,41 +157,53 @@ class RemoteSubjectService(
         subjectId: Int,
         withCharacterActors: Boolean
     ): BatchSubjectRelations = withContext(ioDispatcher) {
-        val (characters, persons) = subjectApi {
+        val (characters, positions) = bangumiSubjectApi {
             // 两个请求互不依赖, 并行发 (原先串行, 实测每次白等 300~490ms)
             coroutineScope {
-                val chars = async {
-                    getSubjectCharacters(subjectId.toLong(), withCharacterActors.takeIf { it } ?: false).body()
-                }
-                val staff = async { getSubjectStaff(subjectId.toLong()).body() }
+                val chars = async { fetchAllCharacters(subjectId) }
+                // 制作人员用 positions 而不是 persons: 一页给全, 且已按职位号排好序 (原作/导演在前).
+                // persons 那个是按人分组的, 条目大了要翻三四页, 而且顺序是乱的.
+                val staff = async { getSubjectStaffPositions(subjectId, limit = STAFF_POSITION_LIMIT).body() }
                 Pair(chars.await(), staff.await())
             }
         }
 
         BatchSubjectRelations(
             subjectId = subjectId,
-            relatedCharacterInfoList = characters.map { rc ->
+            relatedCharacterInfoList = characters.mapIndexed { index, rc ->
                 RelatedCharacterInfo(
-                    index = rc.index,
-                    character = CharacterInfo(
-                        id = rc.character.id.toInt(),
-                        name = rc.character.name,
-                        nameCn = rc.character.nameCn,
-                        actors = rc.character.actors.map { it.toPersonInfo() },
-                        imageMedium = rc.character.imageMedium,
-                        imageLarge = rc.character.imageLarge,
-                    ),
-                    role = CharacterRole(rc.role),
+                    index = index,
+                    character = rc.toCharacterInfo(),
+                    // p1 的 item.type 与 Ani 的 role 是同一个编号 (1 主角 / 2 配角 / 4 客串),
+                    // 对照 302286 的 104 个角色分布完全一致. 注意别用 character.role, 那是"角色/机体/组织"
+                    role = CharacterRole(rc.type),
                 )
             },
-            relatedPersonInfoList = persons.map { rp ->
+            relatedPersonInfoList = positions.data.flatMap { group ->
+                group.staffs.map { staff -> group.position.id to staff.person }
+            }.mapIndexed { index, (positionId, person) ->
                 RelatedPersonInfo(
-                    index = rp.index,
-                    personInfo = rp.person.toPersonInfo(),
-                    position = PersonPosition(rp.position),
+                    index = index,
+                    personInfo = person.toPersonInfo(),
+                    position = PersonPosition(positionId),
                 )
             },
         )
+    }
+
+    private suspend fun SubjectBangumiNextApi.fetchAllCharacters(
+        subjectId: Int,
+    ): List<BangumiNextSubjectCharacter> {
+        val result = mutableListOf<BangumiNextSubjectCharacter>()
+        var offset = 0
+        while (true) {
+            // limit 上限是 100, 角色多的条目 (死神 104 个) 要翻页
+            val page = getSubjectCharacters(subjectId, limit = CHARACTER_PAGE_SIZE, offset = offset).body()
+            result.addAll(page.data)
+            offset += page.data.size
+            if (page.data.isEmpty() || result.size >= page.total || offset >= MAX_CHARACTERS) break
+        }
+        return result
     }
 
     val subjectCountStatsRestarter = FlowRestarter()
@@ -301,6 +315,20 @@ class RemoteSubjectService(
             BangumiSyncState.fromEntity(result.body())
         }
     }
+
+    private companion object {
+        const val CHARACTER_PAGE_SIZE = 100 // p1 的 limit 上限
+
+        /**
+         * 角色多到这个数量的条目不存在, 只是防止翻页翻不完.
+         */
+        const val MAX_CHARACTERS = 500
+
+        /**
+         * 职位数 (不是人数), 52 个是死神那种大条目的量级.
+         */
+        const val STAFF_POSITION_LIMIT = 100
+    }
 }
 
 
@@ -373,16 +401,3 @@ private fun BangumiSubjectCollectionType.toAniCollectionType(): AniCollectionTyp
     }
 }
 
-private fun AniPerson.toPersonInfo(): PersonInfo {
-    return PersonInfo(
-        id = id.toInt(),
-        name = name,
-        type = PersonType.fromId(type),
-        careers = emptyList(),
-        imageLarge = imageLarge,
-        imageMedium = imageMedium,
-        summary = summary,
-        locked = false,
-        nameCn = nameCn,
-    )
-}

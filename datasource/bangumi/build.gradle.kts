@@ -115,7 +115,10 @@ val stripeApiP1 = tasks.register("stripeApiP1") {
             "/p1/subjects/{subjectID}/episodes", // 分集列表 (带 auth 时含每集 collection.status)
             "/p1/subjects/{subjectID}/relations", // 关联条目
             "/p1/subjects/{subjectID}/characters", // 角色 (含声优)
-            "/p1/subjects/{subjectID}/staffs/persons", // 制作人员
+            // 制作人员. 用 positions 而不是 persons: 前者按职位分组、一页给全 (52 个职位 vs 256 个人分 3 页)、
+            // 且已按职位号排好序 (原作/导演在前), 与 Ani 那个端点的展示顺序一致.
+            "/p1/subjects/{subjectID}/staffs/positions",
+            "/p1/subjects/{subjectID}/staffs/persons",
             "/p1/subjects/{subjectID}/recs", // 猜你喜欢
             "/p1/subjects/{subjectID}/comments", // 条目吐槽箱, 作为条目评论
             "/p1/subjects/-/comments/{commentID}", // 条目评论的增删改

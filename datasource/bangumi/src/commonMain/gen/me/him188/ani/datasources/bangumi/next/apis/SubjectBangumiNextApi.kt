@@ -26,6 +26,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetSubjectEpisod
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetSubjectRecs200Response
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetSubjectRelations200Response
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetSubjectStaffPersons200Response
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetSubjectStaffPositions200Response
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextUpdateSubjectComment
@@ -376,6 +377,43 @@ open class SubjectBangumiNextApi : ApiClient {
         val localVariableConfig = RequestConfig<kotlin.Any?>(
             RequestMethod.GET,
             "/p1/subjects/{subjectID}/staffs/persons".replace("{" + "subjectID" + "}", "$subjectID"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
+
+    /**
+     * 获取条目的制作人员职位
+     * 
+     * @param subjectID 
+     * @param limit max 100 (optional, default to 20)
+     * @param offset min 0 (optional, default to 0)
+     * @return BangumiNextGetSubjectStaffPositions200Response
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun getSubjectStaffPositions(subjectID: kotlin.Int, limit: kotlin.Int? = 20, offset: kotlin.Int? = 0): HttpResponse<BangumiNextGetSubjectStaffPositions200Response> {
+
+        val localVariableAuthNames = listOf<String>()
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        limit?.apply { localVariableQuery["limit"] = listOf("$limit") }
+        offset?.apply { localVariableQuery["offset"] = listOf("$offset") }
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.GET,
+            "/p1/subjects/{subjectID}/staffs/positions".replace("{" + "subjectID" + "}", "$subjectID"),
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = false,
