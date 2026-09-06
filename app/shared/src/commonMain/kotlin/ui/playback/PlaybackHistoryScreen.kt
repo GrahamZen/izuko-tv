@@ -34,8 +34,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.rounded.CloudDone
-import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
@@ -75,7 +73,6 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.player.PlaybackHistoryPendingOp
-import me.him188.ani.app.data.repository.player.PlaybackHistorySyncer
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
@@ -103,16 +100,6 @@ import me.him188.ani.app.ui.lang.playback_history_exit_selection
 import me.him188.ani.app.ui.lang.playback_history_progress_unknown_duration
 import me.him188.ani.app.ui.lang.playback_history_select_all
 import me.him188.ani.app.ui.lang.playback_history_selected_count
-import me.him188.ani.app.ui.lang.playback_history_sync_delete_all
-import me.him188.ani.app.ui.lang.playback_history_sync_delete_pending
-import me.him188.ani.app.ui.lang.playback_history_sync_empty
-import me.him188.ani.app.ui.lang.playback_history_sync_op_delete
-import me.him188.ani.app.ui.lang.playback_history_sync_op_upsert
-import me.him188.ani.app.ui.lang.playback_history_sync_pending_episode
-import me.him188.ani.app.ui.lang.playback_history_sync_pending_title
-import me.him188.ani.app.ui.lang.playback_history_sync_status_pending
-import me.him188.ani.app.ui.lang.playback_history_sync_status_synced
-import me.him188.ani.app.ui.lang.playback_history_sync_status_title
 import me.him188.ani.app.ui.lang.playback_history_title
 import me.him188.ani.app.ui.lang.playback_history_unknown_episode
 import me.him188.ani.app.ui.lang.playback_history_unknown_subject
@@ -134,24 +121,11 @@ data class PlaybackHistoryUiItem(
     val updatedAtMillis: Long,
 )
 
-@Immutable
-data class PlaybackHistorySyncStatusUiItem(
-    val id: Long,
-    val episodeId: Int,
-    val operationName: String,
-    val subjectName: String?,
-    val episodeName: String?,
-    val versionMillis: Long,
-)
-
 @Stable
 class PlaybackHistoryViewModel : AbstractViewModel(), KoinComponent {
     private val repository: EpisodePlayHistoryRepository by inject()
-    private val syncer: PlaybackHistorySyncer by inject()
 
     val stateFlow = repository.flow
-        .stateInBackground(emptyList())
-    val pendingOpsFlow = repository.pendingOpsFlow
         .stateInBackground(emptyList())
 
     fun delete(episodeIds: Collection<Int>) {
@@ -161,16 +135,6 @@ class PlaybackHistoryViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
-    fun deletePendingOps(ids: Collection<Long>) {
-        if (ids.isEmpty()) return
-        backgroundScope.launch {
-            repository.deletePendingOps(ids)
-        }
-    }
-
-    suspend fun syncOnce() {
-        syncer.syncOnce()
-    }
 }
 
 @Composable
@@ -178,34 +142,17 @@ fun PlaybackHistoryScreen(
     vm: PlaybackHistoryViewModel,
     onNavigateBack: () -> Unit,
     onOpenHistory: (PlaybackHistoryUiItem) -> Unit,
-    onOpenSyncStatus: () -> Unit,
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
 ) {
-    val asyncHandler = rememberAsyncHandler()
     val histories by vm.stateFlow.collectAsStateWithLifecycle()
-    val pendingOps by vm.pendingOpsFlow.collectAsStateWithLifecycle()
-    fun requestSync() {
-        if (asyncHandler.isWorking) return
-        asyncHandler.launch {
-            vm.syncOnce()
-        }
-    }
-
-    LaunchedEffect(vm) {
-        requestSync()
-    }
 
     PlaybackHistoryScreen(
         histories = histories.toUiItems(),
-        pendingOpCount = pendingOps.size,
         onNavigateBack = onNavigateBack,
         onOpenHistory = onOpenHistory,
-        onOpenSyncStatus = onOpenSyncStatus,
         onDelete = vm::delete,
-        isRefreshing = asyncHandler.isWorking,
-        onRefresh = ::requestSync,
         modifier = modifier,
         navigationIcon = navigationIcon,
         windowInsets = windowInsets,
@@ -216,13 +163,9 @@ fun PlaybackHistoryScreen(
 @Composable
 fun PlaybackHistoryScreen(
     histories: List<PlaybackHistoryUiItem>,
-    pendingOpCount: Int = 0,
     onNavigateBack: () -> Unit,
     onOpenHistory: (PlaybackHistoryUiItem) -> Unit,
-    onOpenSyncStatus: () -> Unit = {},
     onDelete: (Collection<Int>) -> Unit,
-    isRefreshing: Boolean = false,
-    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
@@ -271,9 +214,7 @@ fun PlaybackHistoryScreen(
                 selectedCount = selectedEpisodeIds.size,
                 allSelected = allSelected,
                 hasEntries = histories.isNotEmpty(),
-                pendingOpCount = pendingOpCount,
                 onEnterSelection = { selectionMode = true },
-                onOpenSyncStatus = onOpenSyncStatus,
                 onExitSelection = {
                     selectionMode = false
                     selectedEpisodeIds = emptySet()
@@ -294,15 +235,11 @@ fun PlaybackHistoryScreen(
         containerColor = AniThemeDefaults.pageContentBackgroundColor,
         contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = onRefresh,
+        Box(
             modifier = Modifier
                 .padding(padding)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .fillMaxSize(),
-            enabled = !inSelection,
-            touchOnly = true,
         ) {
             if (histories.isEmpty()) {
                 EmptyPlaybackHistory(Modifier.fillMaxSize())
@@ -348,9 +285,7 @@ private fun PlaybackHistoryTopBar(
     selectedCount: Int,
     allSelected: Boolean,
     hasEntries: Boolean,
-    pendingOpCount: Int,
     onEnterSelection: () -> Unit,
-    onOpenSyncStatus: () -> Unit,
     onExitSelection: () -> Unit,
     onToggleSelectAll: () -> Unit,
     onDeleteSelected: () -> Unit,
@@ -384,26 +319,10 @@ private fun PlaybackHistoryTopBar(
         )
     } else {
         val enterSelectionText = stringResource(Lang.playback_history_enter_selection_mode)
-        val syncStatusText = if (pendingOpCount > 0) {
-            stringResource(Lang.playback_history_sync_status_pending, pendingOpCount)
-        } else {
-            stringResource(Lang.playback_history_sync_status_synced)
-        }
         AniTopAppBar(
             title = { AniTopAppBarDefaults.Title(stringResource(Lang.playback_history_title)) },
             navigationIcon = navigationIcon,
             actions = {
-                IconButton(onClick = onOpenSyncStatus) {
-                    Icon(
-                        if (pendingOpCount > 0) Icons.Rounded.CloudUpload else Icons.Rounded.CloudDone,
-                        syncStatusText,
-                        tint = if (pendingOpCount > 0) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
                 IconButton(
                     onClick = onEnterSelection,
                     enabled = hasEntries,
@@ -414,161 +333,6 @@ private fun PlaybackHistoryTopBar(
             colors = AniThemeDefaults.topAppBarColors(),
             windowInsets = windowInsets,
         )
-    }
-}
-
-@Composable
-fun PlaybackHistorySyncStatusScreen(
-    vm: PlaybackHistoryViewModel,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    navigationIcon: @Composable () -> Unit = {},
-    windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
-) {
-    val pendingOps by vm.pendingOpsFlow.collectAsStateWithLifecycle()
-    PlaybackHistorySyncStatusScreen(
-        pendingOps = pendingOps.toSyncStatusUiItems(),
-        onNavigateBack = onNavigateBack,
-        onDeletePendingOps = vm::deletePendingOps,
-        modifier = modifier,
-        navigationIcon = navigationIcon,
-        windowInsets = windowInsets,
-    )
-}
-
-@Composable
-fun PlaybackHistorySyncStatusScreen(
-    pendingOps: List<PlaybackHistorySyncStatusUiItem>,
-    onNavigateBack: () -> Unit,
-    onDeletePendingOps: (Collection<Long>) -> Unit,
-    modifier: Modifier = Modifier,
-    navigationIcon: @Composable () -> Unit = {},
-    windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
-) {
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            AniTopAppBar(
-                title = { AniTopAppBarDefaults.Title(stringResource(Lang.playback_history_sync_status_title)) },
-                navigationIcon = navigationIcon,
-                actions = {
-                    if (pendingOps.isNotEmpty()) {
-                        IconButton(onClick = { onDeletePendingOps(pendingOps.map { it.id }) }) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                stringResource(Lang.playback_history_sync_delete_all),
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                },
-                colors = AniThemeDefaults.topAppBarColors(),
-                windowInsets = AniWindowInsets.forTopAppBarWithoutDesktopTitle(),
-            )
-        },
-        containerColor = AniThemeDefaults.pageContentBackgroundColor,
-        contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-    ) { padding ->
-        BackHandler {
-            onNavigateBack()
-        }
-        if (pendingOps.isEmpty()) {
-            Box(
-                Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(Lang.playback_history_sync_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-                    .testTag(PlaybackHistoryTestTags.SYNC_PENDING_LIST),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item {
-                    Text(
-                        stringResource(Lang.playback_history_sync_pending_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                items(pendingOps, key = { it.id }) { item ->
-                    PlaybackHistorySyncPendingItem(
-                        item = item,
-                        onDelete = { onDeletePendingOps(listOf(item.id)) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlaybackHistorySyncPendingItem(
-    item: PlaybackHistorySyncStatusUiItem,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val title = item.subjectName?.takeIf { it.isNotBlank() }
-        ?: stringResource(Lang.playback_history_sync_pending_episode, item.episodeId)
-    val episodeName = item.episodeName?.takeIf { it.isNotBlank() }
-        ?: stringResource(Lang.playback_history_unknown_episode)
-    Surface(
-        modifier
-            .clip(MaterialTheme.shapes.large)
-            .fillMaxWidth()
-            .testTag("${PlaybackHistoryTestTags.SYNC_PENDING_ITEM_PREFIX}${item.id}"),
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = 1.dp,
-        color = MaterialTheme.colorScheme.surface,
-    ) {
-        Row(
-            Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Rounded.CloudUpload,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "${item.operationName} · $episodeName",
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    formatDateTime(item.versionMillis),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Rounded.Delete,
-                    stringResource(Lang.playback_history_sync_delete_pending),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
     }
 }
 
@@ -764,33 +528,6 @@ private fun List<EpisodeHistory>.toUiItems(): List<PlaybackHistoryUiItem> {
             )
         }
         .toList()
-}
-
-@Composable
-private fun List<PlaybackHistoryPendingOp>.toSyncStatusUiItems(): List<PlaybackHistorySyncStatusUiItem> {
-    val upsertName = stringResource(Lang.playback_history_sync_op_upsert)
-    val deleteName = stringResource(Lang.playback_history_sync_op_delete)
-    return map { op ->
-        when (op) {
-            is PlaybackHistoryPendingOp.Upsert -> PlaybackHistorySyncStatusUiItem(
-                id = op.id,
-                episodeId = op.episodeId,
-                operationName = upsertName,
-                subjectName = op.subjectName,
-                episodeName = op.episodeName,
-                versionMillis = op.updatedAtMillis,
-            )
-
-            is PlaybackHistoryPendingOp.Delete -> PlaybackHistorySyncStatusUiItem(
-                id = op.id,
-                episodeId = op.episodeId,
-                operationName = deleteName,
-                subjectName = null,
-                episodeName = null,
-                versionMillis = op.deletedAtMillis,
-            )
-        }
-    }
 }
 
 private fun Set<Int>.toggle(id: Int): Set<Int> {

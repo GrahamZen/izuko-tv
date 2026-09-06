@@ -9,15 +9,11 @@
 
 package me.him188.ani.app.data.models.trending
 
-import me.him188.ani.client.models.AniTrendingSubject
 
 data class TrendsInfo(
     val subjects: List<TrendingSubjectInfo>
 )
 
-/**
- * @see AniTrendingSubject
- */
 data class TrendingSubjectInfo(
     val bangumiId: Int,
     val nameCn: String,

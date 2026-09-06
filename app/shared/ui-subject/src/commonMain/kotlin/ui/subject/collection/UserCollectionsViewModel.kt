@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.preference.MyCollectionsSettings
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
@@ -68,7 +67,6 @@ class UserCollectionsViewModel : AbstractViewModel(), KoinComponent {
         .produceState(MyCollectionsSettings.Default)
 
     private val fullSyncTasker = MonoTasker(backgroundScope)
-    val fullSyncState: MutableStateFlow<BangumiSyncState?> = MutableStateFlow(null)
 
     /**
      * 重启各类型收藏数量流 (tab 标题的数量). 数量只在登录时拉取一次, 缓存失效 / 换账号后要重新拉取, 否则标题与刷新后的列表对不上.
@@ -93,15 +91,6 @@ class UserCollectionsViewModel : AbstractViewModel(), KoinComponent {
             sessionStateProvider.eventFlow.filter { it is SessionEvent.NewLogin }.collectLatest {
                 logger.info { "登录信息变更, 清空缓存" }
                 // 如果有变更登录, 清空缓存
-                refreshCollections()
-            }
-        }
-
-        launchInBackground {
-            // 服务端改写了收藏 (解决 Bangumi 冲突 / 全量同步自动合并) 后本地缓存被失效:
-            // 已创建的分页器不会自动重新拉取 (只在创建时判断是否刷新), 这里重建它, 并重新拉取数量.
-            subjectCollectionRepository.collectionsInvalidated.collect {
-                logger.info { "收藏缓存已失效, 刷新列表" }
                 refreshCollections()
             }
         }

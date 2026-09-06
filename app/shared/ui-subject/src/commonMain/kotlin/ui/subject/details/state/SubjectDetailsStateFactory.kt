@@ -65,17 +65,12 @@ import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
-import me.him188.ani.app.data.models.comment.CommentReportTargetType
 import me.him188.ani.app.data.models.player.playProgressByEpisodeId
-import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.ui.comment.CommentMapperContext.parseToUIComment
 import me.him188.ani.app.ui.comment.CommentMapperContext.toCommentVoteValue
-import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.comment.UICommentSource
-import me.him188.ani.app.ui.comment.reportSnapshotText
-import me.him188.ani.app.ui.comment.toDataReason
 import me.him188.ani.app.ui.foundation.produceState
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.rating.EditableRatingState
@@ -123,7 +118,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
     private val bangumiRelatedPeopleService: BangumiRelatedPeopleService by inject()
     private val subjectRelationsRepository: SubjectRelationsRepository by inject()
     private val bangumiCommentRepository: BangumiCommentRepository by inject()
-    private val commentReportService: AniCommentReportService by inject()
     private val setSubjectCollectionTypeOrDeleteUseCase: SetSubjectCollectionTypeOrDeleteUseCase by inject()
     private val tmdbImageService: TmdbImageService by inject()
     private val bangumiSummaryService: BangumiSummaryService by inject()
@@ -298,21 +292,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             },
         )
 
-        val subjectCommentReportState = CommentReportState(
-            onSubmitReport = { comment, reason, detail ->
-                commentReportService.createReport(
-                    targetType = CommentReportTargetType.SUBJECT_REVIEW,
-                    targetId = comment.sourceCommentId,
-                    reason = reason.toDataReason(),
-                    commentAuthorId = comment.author?.id,
-                    detail = detail.takeIf { it.isNotEmpty() },
-                    contentSnapshot = comment.reportSnapshotText(),
-                    subjectId = subjectId.toLong(),
-                )
-            },
-            backgroundScope = this,
-        )
-
 //        val relatedPersonsFlow = bangumiRelatedPeopleService.relatedPersonsFlow(subjectId)
 //            .onEach {
 //                withContext(Dispatchers.Main) { totalStaffCountState.value = it.size }
@@ -444,7 +423,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             editableRatingState = editableRatingState,
             subjectProgressState = subjectProgressState,
             subjectCommentState = subjectCommentState,
-            subjectCommentReportState = subjectCommentReportState,
             presentation = combine(
                 minuteTicker,
                 subjectCollectionFlow,

@@ -43,7 +43,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.danmaku.AniBangumiSeverBaseUrls
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
@@ -135,8 +134,6 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     val playerKernelConfig: SettingsState<PlayerKernelConfig> =
         settingsRepository.playerKernelConfig.stateInBackground(PlayerKernelConfig.Default.copy(_placeholder = -1))
 
-    val watchTogetherSettings: SettingsState<WatchTogetherSettings> =
-        settingsRepository.watchTogetherSettings.stateInBackground(WatchTogetherSettings.Default)
 
     val videoResolverSettingsState: SettingsState<VideoResolverSettings> =
         settingsRepository.videoResolverSettings.stateInBackground(VideoResolverSettings.Default.copy(_placeholder = -1))
@@ -432,7 +429,6 @@ private fun Map<String, ServiceConnectionTester.TestState>.toUIState(): List<Pro
     return buildList {
         this@toUIState.forEach { (id, state) ->
             val case = when (id) {
-                ServiceConnectionTesters.ID_ANI -> ProxyTestCase.AniDanmakuApi
                 ServiceConnectionTesters.ID_BANGUMI -> ProxyTestCase.BangumiApi
                 ServiceConnectionTesters.ID_BANGUMI_NEXT -> ProxyTestCase.BangumiNextApi
                 ServiceConnectionTesters.ID_TMDB -> ProxyTestCase.TmdbApi

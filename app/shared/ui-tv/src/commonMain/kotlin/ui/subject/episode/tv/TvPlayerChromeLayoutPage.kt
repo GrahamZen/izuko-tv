@@ -143,10 +143,10 @@ fun TvPlayerChromeLayoutPage(
         scope.launch { settings.videoScaffoldConfig.update { copy(tvPlayerChrome = new) } }
     }
 
-    // 本页在电视上不列触屏专有的那两颗, 但它们照样在版式里 —— 移动时要把它们跨过去,
-    // 否则按一次左键会像没反应 (见 TvPlayerChromeLayout.moved 的 among)
+    // 本页在电视上不列触屏专有的那两颗, 功能不存在的 (isRetired) 也不列, 但它们照样在版式里 ——
+    // 移动时要把它们跨过去, 否则按一次左键会像没反应 (见 TvPlayerChromeLayout.moved 的 among)
     fun visibleItemsOf(layout: TvPlayerChromeLayout, row: TvPlayerChromeRow) =
-        layout.orderOf(row).filterNot { it.isTouchOnly && !touchInput }
+        layout.orderOf(row).filterNot { it.isRetired || (it.isTouchOnly && !touchInput) }
 
     // 移动只改本地草稿, 放下那一刻才落盘 —— 一路按着左键走过去不该写十次设置
     fun move(delta: Int) {

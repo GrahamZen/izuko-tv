@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
@@ -47,7 +46,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
@@ -197,8 +195,6 @@ internal class FakeSubjectCollectionRepository : SubjectCollectionRepository() {
     override fun getSubjectDisplayInfoOffline(subjectId: Int): Flow<OfflineSubjectDisplayInfo?> =
         flowOf(displayInfos[subjectId])
 
-    override suspend fun invalidateAllCaches() = throw UnsupportedOperationException()
-    override suspend fun invalidateCache(subjectIds: List<Int>) = throw UnsupportedOperationException()
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> = throw UnsupportedOperationException()
     override fun subjectCollectionsPager(
         query: CollectionsFilterQuery,
@@ -225,9 +221,6 @@ internal class FakeSubjectCollectionRepository : SubjectCollectionRepository() {
 
     override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> =
         throw UnsupportedOperationException()
-
-    override suspend fun performBangumiFullSync() = throw UnsupportedOperationException()
-    override suspend fun getBangumiFullSyncState(): BangumiSyncState? = throw UnsupportedOperationException()
 }
 
 /**
@@ -307,7 +300,6 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val oneshotActionConfig: Settings<OneshotActionConfig> get() = error("Not used")
     override val analyticsSettings: Settings<AnalyticsSettings> get() = error("Not used")
     override val debugSettings: Settings<DebugSettings> get() = error("Not used")
-    override val watchTogetherSettings: Settings<WatchTogetherSettings> get() = error("Not used")
 }
 
 /**

@@ -94,7 +94,6 @@ import me.him188.ani.app.platform.features.StreamType
 import me.him188.ani.app.platform.features.getComponentAccessors
 import me.him188.ani.app.tools.rememberUiMonoTasker
 import me.him188.ani.app.ui.comment.CommentEditorState
-import me.him188.ani.app.ui.comment.CommentReportHost
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
@@ -162,7 +161,6 @@ import me.him188.ani.app.ui.subject.episode.video.sidesheet.DanmakuRegexFilterSe
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.MediaSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.topbar.EpisodePlayerTitle
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
 import me.him188.ani.app.videoplayer.ui.PlaybackSpeedControllerState
 import me.him188.ani.app.videoplayer.ui.PlayerControllerState
 import me.him188.ani.app.videoplayer.ui.PlayerFocusState
@@ -255,7 +253,6 @@ private fun EpisodeScreenContent(
     ImageViewerBackHandler(imageViewer)
 
     val playerState by vm.player.state.collectAsStateWithLifecycle()
-    val playbackAutomationSuppressed by vm.playbackAutomationSuppressed.collectAsStateWithLifecycle()
     if (playerState.playWhenReady) {
         ScreenOnEffect()
     }
@@ -264,9 +261,7 @@ private fun EpisodeScreenContent(
     var didSetPaused by rememberSaveable { mutableStateOf(false) }
 
     val pauseOnPlaying: () -> Unit = {
-        if (playbackAutomationSuppressed) {
-            didSetPaused = false
-        } else if (vm.player.state.value.playWhenReady) {
+        if (vm.player.state.value.playWhenReady) {
             didSetPaused = true
             vm.player.pause()
         } else {
@@ -274,13 +269,13 @@ private fun EpisodeScreenContent(
         }
     }
     val tryUnpause: () -> Unit = {
-        if (didSetPaused && !playbackAutomationSuppressed) {
+        if (didSetPaused) {
             didSetPaused = false
             vm.player.play()
         }
     }
 
-    AutoPauseEffect(vm, enabled = !playbackAutomationSuppressed)
+    AutoPauseEffect(vm, enabled = true)
     DisplayModeEffect(vm.videoScaffoldConfig)
 
     VideoNotifEffect(vm)
@@ -367,12 +362,6 @@ private fun EpisodeScreenContent(
                     danmakuEditorState.style = vm.danmakuSendStyleFlow.first()
                 }
 
-                WatchTogetherPopupVisibilityEffect(
-                    playerControllerState = vm.playerControllerState,
-                    isFullscreen = vm.isFullscreen,
-                    isExpandedLayout = showExpandedUI,
-                    sidebarVisible = vm.sidebarVisible,
-                )
 
                 page.matchingDanmakuUiState?.let { uiState ->
                     MatchingDanmakuDialog(
@@ -444,9 +433,6 @@ private fun EpisodeScreenContent(
         ImageViewer(imageViewer) { imageViewer.clear() }
     }
 
-    // 页面级唯一 Host: 评论列表所在 tab 切走时也能收到举报结果提示
-    CommentReportHost(vm.commentReportState)
-
     if (showEditCommentSheet) {
         EpisodeEditCommentSheet(
             state = vm.commentEditorState,
@@ -464,32 +450,6 @@ private fun EpisodeScreenContent(
     }
 
     vm.mediaResolver.ComposeContent()
-}
-
-@Composable
-internal fun WatchTogetherPopupVisibilityEffect(
-    playerControllerState: PlayerControllerState,
-    isFullscreen: Boolean,
-    isExpandedLayout: Boolean,
-    sidebarVisible: Boolean,
-) {
-    val watchTogetherPlayerController = LocalWatchTogetherPlayerController.current
-    val followControllerVisibility = isFullscreen || (isExpandedLayout && !sidebarVisible)
-
-    LaunchedEffect(followControllerVisibility, playerControllerState, watchTogetherPlayerController) {
-        if (followControllerVisibility) {
-            snapshotFlow { playerControllerState.visibility.topBar }.collect {
-                watchTogetherPlayerController.setDraggablePopupVisibility(it)
-            }
-        } else {
-            watchTogetherPlayerController.setDraggablePopupVisibility(true)
-        }
-    }
-    DisposableEffect(watchTogetherPlayerController) {
-        onDispose {
-            watchTogetherPlayerController.setDraggablePopupVisibility(true)
-        }
-    }
 }
 
 @Composable
@@ -1262,7 +1222,7 @@ private fun EpisodeVideo(
 @Composable
 private fun EpisodeCommentColumn(
     commentState: CommentState,
-    commentReportState: CommentReportState,
+    commentReportState: CommentReportState?,
     commentEditorState: CommentEditorState,
     subjectId: Int,
     episodeId: Int,

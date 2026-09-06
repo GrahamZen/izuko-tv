@@ -6203,8 +6203,8 @@ private val REVIEW_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时「用手机登录」—— 电视向服务器要来 Bangumi 授权链接,
- * 手机打开, 授完权电视自己就登录好了. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
+ * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时点一下发起登录 —— 直连版 (`direct`) 是让电视弹出
+ * 授权页、在电视上用遥控器完成, 走 Ani 服务器的那版是把授权链接交给手机打开. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
  * 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
  */
 private val ACCOUNT_SCRIPT = """
@@ -6262,7 +6262,7 @@ private val ACCOUNT_SCRIPT = """
     if (!d.loggedIn) { menu = false; nick = false; }
     // 登录状态变了 (邮箱登录成功 / 在电视上退出了): 这一轮的邮箱流程作废
     if (em && em.bind !== !!d.loggedIn) em = null;
-    var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi);
+    var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi), direct = !!d.direct;
     // 刚登录上 (手机这边发起的, 或者电视上自己登的): 让评论与评分区重新读一次
     if (wasIn === false && full) window.runHooks('login', hooks.login, undefined);
     wasIn = full;
@@ -6279,26 +6279,32 @@ private val ACCOUNT_SCRIPT = """
       } else if (menu && em) {
         h += emailFlow(d);
       } else if (menu) {
-        h += '<div class="acct-menu"><button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
-          '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>' +
+        h += '<div class="acct-menu">' +
+          (direct ? '' : '<button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
+            '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>') +
           '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + T('退出登录') + '</button></div>';
       }
     } else if (d.offline) {
-      h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
+      h += '<p class="hint">' + (direct ? T('电视现在连不上 Bangumi，确认不了登录状态，稍后再看。')
+        : T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。')) + '</p>';
     } else {
       h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' + T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行') + '</span></div>' +
-        (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
-          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>') +
+      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' +
+        (direct ? T('电视上已经打开 Bangumi 授权页，用遥控器完成登录') : T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行')) + '</span></div>' +
+        (direct ? '' : (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
+          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>')) +
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!full && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
-      h += '<div class="row"><button type="button" class="primary" data-login="1">' + (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) +
-        '</button></div><p class="hint">' + T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。') + '</p>';
+      h += '<div class="row"><button type="button" class="primary" data-login="1">' +
+        (direct ? T('在电视上登录 Bangumi') : (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi'))) +
+        '</button></div><p class="hint">' +
+        (direct ? T('点一下，电视上就会弹出 Bangumi 授权页，用遥控器登录并同意授权。')
+          : T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。')) + '</p>';
       // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
-      if (!d.loggedIn) {
+      if (!d.loggedIn && !direct) {
         h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
       }
     }
@@ -6320,12 +6326,13 @@ private val ACCOUNT_SCRIPT = """
   // 登录按钮 (账号卡片、评论与评分区): 点下去当场先开一个空白页, 等电视要来链接再让它跳过去 ——
   // 等请求回来再开新页面会被浏览器当成弹窗拦掉. 开不了新页面 (有的内置浏览器) 就在本页跳, 授权完按返回回来
   function startLogin(btn) {
-    var w = null;
-    try { w = window.open('', '_blank'); } catch (e) {}
+    // 直连版的授权页在电视上 (回调是电视的回环地址), 手机这边不开新页面; 还不知道是哪一版时先开着, 回来没有链接再关掉
+    var direct = !!(lastData && lastData.direct), w = null;
+    if (!direct) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
     post('api/account/login', {}).then(function (r) {
       btn.disabled = false;
-      if (!r.ok) {
+      if (!r.ok || !r.url) {
         if (w) w.close();
         toast(r.message);
       } else if (w) {

@@ -36,7 +36,7 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
  * 而漏了的那处只有"恰好碰上没图的那个条目/人物"时才看得出来 (2026-09-06 用户在人物页的
  * 「出演角色」上撞到, 那条路径有自己的一套局部映射, 没走这里).
  */
-internal const val BANGUMI_NO_ICON_IMAGE = "https://lain.bgm.tv/img/no_icon_subject.png"
+const val BANGUMI_NO_ICON_IMAGE = "https://lain.bgm.tv/img/no_icon_subject.png"
 
 internal fun BangumiNextSlimPerson.toPersonInfo(): PersonInfo = PersonInfo(
     id = id,
@@ -63,7 +63,7 @@ internal fun BangumiNextSlimCharacter.toCharacterInfo(actors: List<PersonInfo>):
 internal fun BangumiNextSubjectCharacter.toCharacterInfo(): CharacterInfo =
     character.toCharacterInfo(casts.map { it.person.toPersonInfo() })
 
-internal fun String?.orBangumiPlaceholder(): String =
+fun String?.orBangumiPlaceholder(): String =
     if (isNullOrBlank()) BANGUMI_NO_ICON_IMAGE else this
 
 private fun String.toPersonCareerOrNull(): PersonCareer? = when (this) {

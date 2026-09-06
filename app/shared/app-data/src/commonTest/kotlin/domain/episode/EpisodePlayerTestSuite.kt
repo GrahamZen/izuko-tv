@@ -28,7 +28,6 @@ import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRe
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
 import me.him188.ani.app.domain.media.hls.NoopHlsPlaybackPreparer
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import org.koin.core.Koin
 import org.koin.dsl.module
 import org.openani.mediamp.test.TestMediampPlayer
@@ -86,9 +85,6 @@ class EpisodePlayerTestSuite(
                         GetVideoScaffoldConfigUseCase {
                             flowOf(VideoScaffoldConfig.AllDisabled)
                         }
-                    }
-                    single<PlaybackAutomationGate> {
-                        PlaybackAutomationGate()
                     }
                     single<HlsPlaybackPreparer> {
                         NoopHlsPlaybackPreparer

@@ -111,7 +111,6 @@ includeProject(":app:shared:ui-mediaselect")
 includeProject(":app:shared:ui-tv") // Android TV (遥控器) 专属界面, 只含 android target
 includeProject(":app:shared:ui-episode")
 includeProject(":app:shared:ui-exprovider")
-includeProject(":app:shared:ui-watchtogether")
 includeProject(":app:shared:video-player:video-player-api", "app/shared/video-player/api")
 includeProject(":app:shared:video-player:torrent-source")
 includeProject(":app:shared:video-player")
@@ -125,7 +124,6 @@ includeProject(":app:desktop", "app/desktop") // desktop JVM client for macOS, W
 includeProject(":app:android", "app/android") // Android client
 includeProject(":app:ios", "app/ios") // iOS Launcher
 
-includeProject(":client")
 
 // server
 //includeProject(":server:core", "server/core") // server core

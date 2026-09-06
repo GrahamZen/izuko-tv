@@ -241,7 +241,6 @@ internal object RemoteSettings {
     private val TEST_TIMEOUT = 25.seconds
     private val TRACKER_SCHEMES = listOf("udp://", "http://", "https://", "ws://", "wss://")
     private val SERVICE_NAMES = mapOf(
-        ServiceConnectionTesters.ID_ANI to "Animeko 服务器",
         ServiceConnectionTesters.ID_BANGUMI to "Bangumi",
         ServiceConnectionTesters.ID_BANGUMI_NEXT to "Bangumi Next",
         ServiceConnectionTesters.ID_TMDB to "TMDB 接口",

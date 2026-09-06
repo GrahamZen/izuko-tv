@@ -19,14 +19,9 @@ import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.data.network.mapper.toUnifiedCollectionType
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
-import me.him188.ani.app.data.repository.subject.toEntity1
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.canAccessAniApiNow
 import me.him188.ani.app.domain.session.canAccessBangumiApiNow
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniBatchUpdateEpisodeCollectionsRequest
-import me.him188.ani.client.models.AniEpisodeCollectionType
-import me.him188.ani.client.models.AniEpisodeCollectionTypeUpdate
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.EpisodeType.*
@@ -94,7 +89,6 @@ sealed interface EpisodeService {
 }
 
 class EpisodeServiceImpl(
-    private val subjectApi: ApiInvoker<SubjectsAniApi>,
     private val bangumiV0Api: ApiInvoker<DefaultApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : EpisodeService, KoinComponent {
@@ -159,39 +153,25 @@ class EpisodeServiceImpl(
         limit: Int?,
         episodeType: BangumiEpType?,
     ): Paged<EpisodeCollectionInfo> {
+        // 一次给全: bangumi 的分集接口本身要翻页, 但 [getEpisodeCollectionEntities] 已经翻完了,
+        // 而调用方 (RemoteMediator) 本来就把返回当成"一页装下全部" —— Ani 那版也是这么做的
+        // (它注释里写着"API 不支持 paging")
         return withContext(ioDispatcher) {
-
-            subjectApi.invoke {
-                this.getSubject(subjectId.toLong()).body() // TODO: 2025/6/15 API 不支持 paging 
-            }.let { subjectCollection ->
-                Paged(
-                    subjectCollection.episodes.map {
-                        it.toEntity1(subjectId, lastFetched = currentTimeMillis())
-                            .toEpisodeCollectionInfo()
-                    },
-                )
-            }
-//                .run {
-////                    Paged.processPagedResponse(total, limit ?: 100, data)
-////                }.map {
-////                    it.toEpisodeCollectionInfo()
-////                }
+            Paged(
+                getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+                    .map { it.toEpisodeCollectionInfo() },
+            )
         }
     }
 
 
     override suspend fun getEpisodeCollectionById(subjectId: Int, episodeId: Int): EpisodeCollectionInfo? =
         withContext(ioDispatcher) {
-            try {
-                return@withContext subjectApi.invoke {
-                    this.getEpisode(subjectId.toLong(), episodeId.toLong()).body().toEpisodeCollectionInfo()
-                }
-            } catch (e: ClientRequestException) {
-                if (e.response.status == HttpStatusCode.NotFound) {
-                    return@withContext null
-                }
-                throw e
-            }
+            // bangumi 没有"取某条目的某一集"的接口, 只能取全部再挑 —— 这条路本来就只在缓存缺项时
+            // 走一次, 而分集列表已经在同一个请求里翻完了
+            getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+                .firstOrNull { it.episodeId == episodeId }
+                ?.toEpisodeCollectionInfo()
         }
 
     override suspend fun setEpisodeCollection(
@@ -334,24 +314,3 @@ private fun getEpisodeTypeByBangumiCode(code: Int): EpisodeType? {
     }
 }
 
-fun UnifiedCollectionType.toAniEpisodeCollectionType(): AniEpisodeCollectionType? {
-    return when (this) {
-        UnifiedCollectionType.NOT_COLLECTED -> null
-        UnifiedCollectionType.WISH -> null
-        UnifiedCollectionType.DOING -> null
-        UnifiedCollectionType.DONE -> AniEpisodeCollectionType.DONE
-        UnifiedCollectionType.ON_HOLD -> null
-        UnifiedCollectionType.DROPPED -> null
-    }
-}
-
-fun UnifiedCollectionType.toAniEpisodeCollectionTypeUpdate(): AniEpisodeCollectionTypeUpdate {
-    return when (this) {
-        UnifiedCollectionType.NOT_COLLECTED -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.WISH -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DOING -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DONE -> AniEpisodeCollectionTypeUpdate.DONE
-        UnifiedCollectionType.ON_HOLD -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-        UnifiedCollectionType.DROPPED -> AniEpisodeCollectionTypeUpdate.NOT_COLLECTED
-    }
-}

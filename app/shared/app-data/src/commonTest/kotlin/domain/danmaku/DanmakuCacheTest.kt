@@ -37,7 +37,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.models.subject.TestSubjectCollections
 import me.him188.ani.app.data.persistent.database.dao.DanmakuDao
@@ -52,7 +51,6 @@ import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.settings.NoProxyProvider
-import me.him188.ani.client.apis.DanmakuAniApi
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
 import me.him188.ani.danmaku.api.DanmakuLocation
@@ -171,7 +169,6 @@ class DanmakuCacheTest {
 
         return DanmakuRepository(
             parentCoroutineContext = backgroundScope.coroutineContext,
-            danmakuApi = UnusedApiInvoker,
             danmakuDao = danmakuDao,
             httpClientProvider = backgroundScope.run { TestHttpClientProvider() },
             getMediaCacheUseCase = mediaCacheUseCase,
@@ -269,7 +266,6 @@ class DanmakuCacheTest {
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("no implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("no implemented") }
         override val debugSettings: Settings<DebugSettings> by lazy { error("no implemented") }
-        override val watchTogetherSettings: Settings<WatchTogetherSettings> by lazy { error("no implemented") }
     }
 
     private class TestDanmakuDao : DanmakuDao {
@@ -306,12 +302,6 @@ class DanmakuCacheTest {
         override suspend fun close() = Unit
         override suspend fun resume() = Unit
         override suspend fun closeAndDeleteFiles() = Unit
-    }
-
-    private object UnusedApiInvoker : ApiInvoker<DanmakuAniApi> {
-        override suspend fun <R> invoke(action: suspend DanmakuAniApi.() -> R): R {
-            error("ApiInvoker not expected in tests")
-        }
     }
 
     private companion object {

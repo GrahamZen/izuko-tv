@@ -500,13 +500,6 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         //    各记各的账 (本条用 `autoPausedOffPage`) 之后互不干扰; 恢复这一侧还刻意做成**状态**
         //    而不是事件 —— 哪怕别处在"不可见"期间又插一次暂停, 随后到达的 visible=true 也会把它
         //    收拾掉, 于是顺序不再重要.
-        //
-        //    唯一的例外是"一起看"跟随模式 (`playbackAutomationSuppressed`): 那时候播与不播由房主
-        //    说了算, 本地任何自动暂停都是跟房间对着干 —— 房主在播, 房间的持续校正每秒发现本地是
-        //    暂停就下发一次同步, 播放器 resume, 这里又按回去, 一秒一轮; 与此同时本地位置不动而
-        //    房主在走, 偏差越拉越大, 于是每轮还多一次 seek + "已与房主同步"的提示, 状态翻转还都
-        //    是"不连续", 每次都触发一次上报. 播放页在场时的自动暂停 (`AutoPauseEffect`) 本来就用
-        //    同一个开关放过跟随模式, 这里跟着它, 前台后台一致.
         launch {
             // 在途的"等画面就位再恢复", 见 [resumeWhenVideoVisible]
             var resumeJob: Job? = null
@@ -514,12 +507,10 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
                 playerPageVisible,
                 appForeground,
                 vm.player.state,
-                vm.playbackAutomationSuppressed,
-            ) { pageVisible, foreground, state, roomControlled ->
-                AutoPauseInput(pageVisible, foreground, state, roomControlled)
+            ) { pageVisible, foreground, state ->
+                AutoPauseInput(pageVisible, foreground, state)
             }
-                .collect { (pageVisible, foreground, state, roomControlled) ->
-                    if (roomControlled) return@collect
+                .collect { (pageVisible, foreground, state) ->
                     if (pageVisible && foreground) {
                         // 回到播放页: 把"离开时的临时暂停"原样还回去. 判据只有本类记下的那一笔账,
                         // 所以用户自己按的暂停不会被误恢复成播放 (那时下面根本没记账).
@@ -772,9 +763,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
                 signal.hasFrameOnCurrentSurface.first { it }
             } == null
         }
-        // 等的这一秒里用户可能又走开了 (导航去别处, 或者干脆按 HOME 把应用切到后台), 也可能
-        // "一起看"接管了播放: 三种情况都不能落地, 而且都**不消账** —— 下次真的回到播放页时重新等
-        if (!playerPageVisible.value || !appForeground.value || vm.playbackAutomationSuppressed.value) return
+        // 等的这一秒里用户可能又走开了 (导航去别处, 或者干脆按 HOME 把应用切到后台):
+        // 两种情况都不能落地, 而且都**不消账** —— 下次真的回到播放页时重新等
+        if (!playerPageVisible.value || !appForeground.value) return
         if (!vm.autoPausedOffPage) return
         vm.autoPausedOffPage = false
         logger.info {
@@ -828,7 +819,6 @@ private data class AutoPauseInput(
     val pageVisible: Boolean,
     val appForeground: Boolean,
     val playerState: PlayerState,
-    val roomControlled: Boolean,
 )
 
 /** 数据源搜索层面的"再等也没用". */

@@ -21,6 +21,7 @@ import me.him188.ani.app.data.models.preference.TvPlayerChromeLayout.Companion.r
 import me.him188.ani.app.data.persistent.DataStoreJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TvPlayerChromeLayoutTest {
@@ -158,6 +159,16 @@ class TvPlayerChromeLayoutTest {
 
         assertTrue(presets.active.isDefault)
         assertEquals(0, presets.activeIndexResolved)
+    }
+
+    @Test
+    fun `功能已经没有的项 — 版式里留着，但编辑页不列出来`() {
+        val bottom = TvPlayerChromeLayout.Default.orderOf(TvPlayerChromeRow.BOTTOM)
+        // 枚举项必须留着 —— 已经存下来的版式配置还要读得懂 (见 resolveOrder)
+        assertTrue(TvPlayerChromeItem.WATCH_TOGETHER in bottom)
+        // 编辑页用的就是这个过滤条件 (TvPlayerChromeLayoutPage.visibleItemsOf):
+        // 功能不存在的按钮不该还能被拖进版式
+        assertFalse(TvPlayerChromeItem.WATCH_TOGETHER in bottom.filterNot { it.isRetired })
     }
 
     @Test
