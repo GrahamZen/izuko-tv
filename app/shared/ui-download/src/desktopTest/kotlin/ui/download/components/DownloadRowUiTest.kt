@@ -29,6 +29,8 @@ import me.him188.ani.app.tools.toProgress
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
+import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
+import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_management_more_actions
 import me.him188.ani.app.ui.lang.cache_subject_delete
 import me.him188.ani.app.ui.lang.Lang
@@ -111,5 +113,44 @@ class DownloadRowUiTest {
         onNodeWithText(metadataText, useUnmergedTree = true).assertExists()
         onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
             .assertCountEquals(0)
+    }
+
+    @Test
+    fun `status slot shows merge progress while merging and the torrent service state while waiting`() = runAniComposeUiTest {
+        var episode by mutableStateOf(
+            createTestDownloadItem(1, initialState = DownloadStatus.IN_PROGRESS, progress = 1f.toProgress())
+                .copy(isMerging = true, mergeProgress = 0.634f.toProgress()),
+        )
+        val merging = runBlocking { getString(Lang.cache_episode_status_merging) }
+        val awaiting = runBlocking { getString(Lang.cache_episode_status_awaiting_bt_service) }
+        setContent {
+            ProvideCompositionLocalsForPreview {
+                DownloadRow(
+                    episode = episode,
+                    mediaSourceInfoProvider = null,
+                    selectionMode = false,
+                    selected = false,
+                    onToggleSelected = {},
+                    onEnterSelection = {},
+                    onPlay = {},
+                    onResume = {},
+                    onPause = {},
+                    onDelete = {},
+                    onViewDetail = null,
+                )
+            }
+        }
+
+        onNodeWithText(merging, useUnmergedTree = true).assertExists()
+        onNodeWithText("63%", useUnmergedTree = true).assertExists()
+        // 合并期间下载进度恒为 100%, 不能再显示它
+        onNodeWithText("100.0%", useUnmergedTree = true).assertDoesNotExist()
+
+        runOnIdle {
+            episode = createTestDownloadItem(2, initialState = DownloadStatus.IN_PROGRESS)
+                .copy(awaitingTorrentService = true)
+        }
+        onNodeWithText(awaiting, useUnmergedTree = true).assertExists()
+        onNodeWithText(merging, useUnmergedTree = true).assertDoesNotExist()
     }
 }

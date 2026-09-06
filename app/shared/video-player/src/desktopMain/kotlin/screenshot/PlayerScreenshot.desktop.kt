@@ -48,10 +48,10 @@ actual fun rememberPlayerScreenshotSharer(): PlayerScreenshotSharer {
     return remember(clipboard, window) { DesktopPlayerScreenshotSharer(clipboard, window) }
 }
 
-private const val SCREENSHOT_DIRECTORY = "Animeko"
+private const val SCREENSHOT_DIRECTORY = "Izuko TV"
 
 /**
- * 通过播放器后端的 [Screenshots] 把当前帧写入用户图片目录下的 `Animeko` 文件夹 (`~/Pictures/Animeko`);
+ * 通过播放器后端的 [Screenshots] 把当前帧写入用户图片目录下的 `Izuko TV` 文件夹 (`~/Pictures/Izuko TV`);
  * 图片目录不可用时退回应用数据目录下的 `screenshots`. 桌面系统写入用户目录不需要权限.
  */
 private class DesktopPlayerScreenshotCapturer(

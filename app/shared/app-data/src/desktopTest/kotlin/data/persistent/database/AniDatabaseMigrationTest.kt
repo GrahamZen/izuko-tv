@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
  *
  * 生产迁移链 (CommonKoinModule): 1..15 destructive, 16 起走
  * AutoMigration 16→17→18→19, 手动 [MIGRATION_19_20], AutoMigration 20→21,
- * 手写 [MIGRATION_21_22] 与 [MIGRATION_24_25], AutoMigration 22→23→24.
+ * 手写 [MIGRATION_21_22] 与 [MIGRATION_24_25], AutoMigration 22→23→24, 25→26→27.
  *
  * **版本号语义与上游不同**: fork 先用掉了 22/23/24 三个号, 上游同期也用掉了这三个
  * 号但内容完全不同, 于是上游那三步在这边合并成 24→25 一步. 跟上游 rebase 后别把
@@ -266,6 +266,51 @@ class AniDatabaseMigrationTest {
                 assertTrue(statement.isNull(0))
                 assertTrue(statement.isNull(1))
                 assertEquals("第1集", statement.getText(2))
+            }
+        }
+    }
+
+    /**
+     * 跟上游 6.2 对齐的一步: 上游的看过状态 outbox 表与 subject_collection 的两个新列 (列表封面、TMDB 图).
+     * 上游那边是 24→25→26→27 三步, 这边版本号语义不同 (见类注释), 合成 fork 的 26→27 一步 AutoMigration.
+     */
+    @Test
+    fun `MIG-09 v26到v27的AutoMigration新建看过状态待同步表并为subject_collection加两列且旧行保留`() {
+        val helper = createHelper()
+        helper.createDatabase(26).use { connection ->
+            connection.execSQL(SUBJECT_COLLECTION_INSERT)
+        }
+        helper.runMigrationsAndValidate(27, emptyList()).use { connection ->
+            assertContains(connection.tableNames(), "episode_collection_pending_op")
+            val columns = connection.columnNames("subject_collection")
+            assertContains(columns, "imageThumb")
+            assertContains(columns, "tmdbArt")
+            // fork 自己的列还在
+            assertContains(columns, "screeningYear")
+            assertContains(columns, "theatrical")
+            connection.prepare(
+                "SELECT `nameCn`, `imageThumb`, `tmdbArt` FROM `subject_collection` WHERE `subjectId` = 1",
+            ).use { statement ->
+                assertTrue(statement.step())
+                assertEquals("cn", statement.getText(0))
+                assertEquals("", statement.getText(1))
+                assertTrue(statement.isNull(2))
+            }
+        }
+    }
+
+    /** 已发布的最老一版 fork 库 (24) 一路升到最新, 中间那步手写迁移也要接得上. */
+    @Test
+    fun `MIG-10 v24经手写24-25与后续AutoMigration升到v27通过schema校验`() {
+        val helper = createHelper()
+        helper.createDatabase(24).use { connection ->
+            connection.execSQL(SUBJECT_COLLECTION_INSERT)
+        }
+        helper.runMigrationsAndValidate(27, listOf(MIGRATION_24_25)).use { connection ->
+            assertContains(connection.tableNames(), "episode_collection_pending_op")
+            connection.prepare("SELECT `nameCn` FROM `subject_collection` WHERE `subjectId` = 1").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("cn", statement.getText(0))
             }
         }
     }

@@ -56,6 +56,7 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.lan.findLanAddress
 import me.him188.ani.app.ui.foundation.lan.lanInterfacesSummary
+import me.him188.ani.app.ui.foundation.playback.PlaybackPreparingStage
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
@@ -65,6 +66,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.IOException
@@ -297,17 +299,17 @@ object TvRemoteControl {
         val message = when {
             !on -> tr("已关闭")
             granted -> tr("已开启")
-            opened -> tr("授权页已打开。请允许 Animeko「显示在其他应用的上层」，然后返回 Ani。")
-            else -> tr("请在 30 分钟内回到电视上的 Ani，并完成授权。")
+            opened -> tr("授权页已打开。请允许 Izuko TV「显示在其他应用的上层」，然后返回。")
+            else -> tr("请在 30 分钟内回到电视上的 Izuko，并完成授权。")
         }
         return JsonObject(frontState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
 
     /** 网页顶上「不在前台」那一条里的「切到 Ani」. */
     private fun manualFront(): JsonObject {
-        if (tvForeground) return result(true, tr("Ani 已在电视上显示"))
-        if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Animeko 开启「显示在其他应用的上层」。"))
-        return if (bringToFront()) result(true, tr("已打开 Ani")) else result(false, tr("无法打开 Ani，请在电视上手动打开。"))
+        if (tvForeground) return result(true, tr("Izuko 已在电视上显示"))
+        if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。"))
+        return if (bringToFront()) result(true, tr("已打开 Izuko")) else result(false, tr("无法打开 Izuko，请在电视上手动打开。"))
     }
 
     /** 打开系统的「显示在其他应用的上层」授权页 (本应用那一项; 有的电视是整张应用列表). Ani 在后台时系统会拦. */
@@ -401,7 +403,7 @@ object TvRemoteControl {
         val message = when {
             !on -> tr("已关闭")
             tvForeground -> tr("已开启")
-            else -> tr("已开启。下次打开 Ani 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
+            else -> tr("已开启。下次打开 Izuko 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
         }
         return JsonObject(keepState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
@@ -436,6 +438,15 @@ object TvRemoteControl {
             Thread.sleep(100)
         }
         logger.info { "Remote player action: TV app foreground=$tvForeground after bringing to front (woke=$woke)" }
+    }
+
+    /**
+     * 网页发起的安装要在电视上打开授权页、弹系统的确认界面, 只有 Ani 在前台时打得开: 不在前台就像播放器操作那样叫回来 ([awaitFront]),
+     * 返回现在在不在前台. 会等几秒, 别在主线程调.
+     */
+    internal fun bringToFrontForInstall(): Boolean {
+        awaitFront()
+        return tvForeground
     }
 
     /**
@@ -589,6 +600,8 @@ object TvRemoteControl {
         if (foreground) scheduleFrontAuth()
         // 「退出 Ani 后保留」开着: 常驻服务只能在前台起, 回来了就补上 (见 syncKeepAlive)
         if (foreground) syncKeepAlive()
+        // 网页发起的安装在等 Ani 回前台打开授权页 / 弹确认 (见 RemoteAppUpdate)
+        if (foreground) RemoteAppUpdate.onTvForeground()
     }
 
     // 没人收集时不走这条 (见 deliverSearch 里的分支), replay = 0
@@ -650,6 +663,7 @@ object TvRemoteControl {
             fixedPort = fixedPortFor(context.packageName)
             _knownHost.value = prefs?.getString(KEY_KNOWN_HOST, null)
         }
+        RemoteAppUpdate.attach(context)
         // 启动时的二维码弹窗关掉时, 看看有没有欠着的授权页要打开 (它开着时先不打开, 免得叠在一起; 见 scheduleFrontAuth)
         scope.launch { _dialogVisible.collect { if (!it) scheduleFrontAuth() } }
         scope.launch {
@@ -747,11 +761,11 @@ object TvRemoteControl {
             p.edit().putString(KEY_TOKEN, it).apply()
         }
         val s = try {
-            LanHttpServer(::handle, port = fixedPort, token = token)
+            LanHttpServer(::handle, port = fixedPort, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
         } catch (e: IOException) {
             logger.warn(e) { "Fixed port $fixedPort unavailable for remote control, falling back to a random port" }
             try {
-                LanHttpServer(::handle, port = 0, token = token)
+                LanHttpServer(::handle, port = 0, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
             } catch (e2: IOException) {
                 logger.warn(e2) { "Failed to start remote control server" }
                 return
@@ -835,16 +849,18 @@ object TvRemoteControl {
             )
             path == PATH_PLAYER_STATE && get -> playerState(request)
             path == PATH_PLAYER_SELECT && post -> json(selectMedia(request))
+            path == PATH_PLAYER_CACHE && post -> json(cacheCandidate(request))
             path == PATH_PLAYER_OPEN && post -> json(openPlayer())
             path == PATH_PLAYER_UPNEXT && post -> json(playUpNext())
             path == PATH_PLAYER_REQUEST && post -> json(updateRequest(request))
             path == PATH_PLAYER_REFETCH && post -> json(refetchSources())
+            path == PATH_PLAYER_FULL_SEARCH && post -> json(searchAllSources())
             path == PATH_PLAYER_CONTROL && post -> json(control(request))
             path == PATH_PLAYER_EPISODE && post -> json(switchEpisode(request))
             path == PATH_PLAYER_DETAILS && post -> json(openDetails(request))
             // 弹幕 (开关 / 偏移 / 手动匹配) 与音轨字幕轨, 见 RemotePlayerExtras
             (post && (path.startsWith("api/player/danmaku/") || path == "api/player/track" ||
-                    path == "api/player/comment" || path.startsWith("api/player/review/"))) ||
+                    path.startsWith("api/player/review/"))) ||
                     (get && path == "api/player/review") ->
                 json(player?.let { RemotePlayerExtras.handle(it, request) } ?: result(false, tr("电视当前不在播放页")))
             // 不依赖播放页的收藏状态 (手机搜索结果左滑「收藏」), 见 RemotePlayerExtras.subjectCollection
@@ -864,20 +880,26 @@ object TvRemoteControl {
             // 「设置」标签: 代理 / BT tracker 等要打字的设置, 见 RemoteSettings
             path == "api/settings" || path.startsWith("api/settings/") ->
                 RemoteSettings.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 设置标签「数据源」页里的夸克网盘 (登录 / 添加数据源), 见 RemoteQuark
+            path == "api/quark" || path.startsWith("api/quark/") ->
+                RemoteQuark.handle(request, scope) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 设置标签的「数据源」页: 设置里数据源管理那一页的网页版, 见 RemoteSources
             path == "api/sources" || path.startsWith("api/sources/") ->
                 RemoteSources.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签底部的日志 (列表 / 下载), 见 RemoteLogs
             path == "api/logs" || path.startsWith("api/logs/") ->
                 RemoteLogs.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
-            // 「本集评论」表情面板的表情目录, 见 RemoteStickers
-            path == "api/stickers" && get -> json(RemoteStickers.catalog)
             // 「设置」里的播放记录 (列表 / 打开详情 / 接着播), 见 RemoteHistory
             path == "api/history" || path.startsWith("api/history/") ->
                 RemoteHistory.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 缓存标签「挑番缓存」: 在看 / 想看的番 (几集新的、几集没缓存), 见 RemoteCollections
             path == "api/collections" ->
                 RemoteCollections.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 挑番面板的「新番时间表」: 这一周每天播出的番, 见 RemoteSchedule
+            path == "api/schedule" && get -> json(RemoteSchedule.schedule(request))
+            // 设置「应用更新」: 检查、下载或上传安装包、会话安装, 见 RemoteAppUpdate
+            path == "api/update" || path.startsWith("api/update/") ->
+                RemoteAppUpdate.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 手机上的 TMDB 图经电视转发 (播放记录的剧照 / 横屏图), 见 RemoteImageProxy
             path == "api/img" && get -> RemoteImageProxy.handle(request)
             // 数据源名字前的图标 (内置源的打包图标 / 源自己配置的图标地址), 见 RemoteSourceIcons
@@ -999,6 +1021,8 @@ object TvRemoteControl {
 
     private fun historyRepository(): SubjectSearchHistoryRepository = KoinPlatform.getKoin().get()
 
+    private val bangumiEndpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
+
     /**
      * 「结果」标签的状态: 电视搜索页结果面板的快照 (离场后用最后一份). 网页每秒轮询, 带版本号, 没变只回 same.
      */
@@ -1051,6 +1075,13 @@ object TvRemoteControl {
             put("keep", keepAliveOnExit())
             // app 里换了语言: 网页发现和自己加载时的不一样就整页重载 (见 RemoteI18n)
             put("lang", RemoteI18n.lang.tag)
+            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 经镜像时只给个人令牌登录
+            val endpoints = bangumiEndpoints
+            put(
+                "bgm",
+                listOf(endpoints.currentRouting?.hashCode(), endpoints.viaThirdPartyMirror.value, endpoints.trustedMirrorRoot.value)
+                    .joinToString("|"),
+            )
         }
     }
 
@@ -1109,8 +1140,9 @@ object TvRemoteControl {
                 fullSource = request.queryParam("full")?.takeIf { it.isNotEmpty() },
             )
             val base = handle.stateJson(filter)
-            // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来
-            val session = if (handle.background) sessionStatusJson() else null
+            // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来.
+            // 前台播放页只在还没播起来时附 (手机上换了源 / 集, 卡片上看得到「准备中 · 已查完 9/14 个数据源」→「缓冲中」)
+            val session = if (handle.background) sessionStatusJson() else foregroundSessionStatusJson(handle)
             if (session != null) JsonObject(base + ("session" to session)) else base
         } else {
             val session = playbackSessionProvider?.invoke()
@@ -1166,15 +1198,40 @@ object TvRemoteControl {
     }
 
     /**
+     * 播放页候选列表上右滑「缓存」: 用这一条缓存电视当前在播的这一集, 见 [RemoteCache.cacheMedia].
+     *
+     * 不进 [PLAYER_FRONT_PATHS]: 缓存不用看电视, 不必把 Ani 叫到前台 (BT 要等 Ani 回前台才开始下, 提示里会说)。
+     */
+    private fun cacheCandidate(request: LanHttpRequest): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        val episodeId = handle.currentEpisodeId ?: return result(false, tr("电视当前不在播放页"))
+        val media = handle.candidate(request.formFields()["id"].orEmpty())
+            ?: return result(false, tr("这个数据源已不在列表里，请刷新"))
+        return RemoteCache.cacheMedia(handle.vm.subjectId, episodeId, media)
+    }
+
+    /**
      * 「重新搜索（含新数据源）」: 搜索会话建立时对数据源列表取了快照, 之后改数据源 / 更新订阅都不会让新源参与
      * 这一次搜索 (见 MediaFetchSessionRefresh 的说明) —— 按一下让播放页用当前的数据源列表重建会话。
      *
      * 不进 [PLAYER_FRONT_PATHS]: 不需要把 Ani 叫到前台, 电视在后台时刷了也算数 (下次进播放页就是新的)。
      */
     private fun refetchSources(): JsonObject {
+        // 用户主动重新搜索就是要搜: 播放页先开「完整搜索」, 重建出来的会话一直搜完, 不因为正在播而暂停
+        player?.searchAllSources()
         KoinPlatform.getKoin().get<MediaFetchSessionRefresh>().request()
         logger.info { "Remote requested a media fetch session rebuild, newly added sources will join the search" }
         return result(true, tr("正在用最新的数据源重新搜索"))
+    }
+
+    /**
+     * 手机上点了「完整搜索」: 开播后被暂停的数据源放开重新查, 本播放页之后一直查完 (同电视选源面板里的开关).
+     * 手机上没有「打开选源面板」的时机, 暂停的数据源只能这样放开.
+     */
+    private fun searchAllSources(): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        handle.searchAllSources()
+        return result(true, tr("已开启完整搜索，会一直搜完全部数据源"))
     }
 
     private fun updateRequest(request: LanHttpRequest): JsonObject {
@@ -1198,7 +1255,7 @@ object TvRemoteControl {
         val handle = player ?: return result(false, tr("电视当前不在播放页"))
         // 后台会话被按住暂停 (见本类 KDoc), 这里放行只会被立刻按回去
         if (handle.background) return result(false, tr("电视未在播放页，播放控制不可用"))
-        if (!tvForeground) return result(false, tr("电视当前没有显示 Ani，播放控制不可用。在「设置」中开启「从手机打开 Ani」后，使用播放控制时会自动打开 Ani。"))
+        if (!tvForeground) return result(false, tr("电视当前没有显示 Izuko，播放控制不可用。在「设置」中开启「从手机打开 Izuko」后，使用播放控制时会自动打开 Izuko。"))
         val fields = request.formFields()
         val action = fields["action"].orEmpty()
         // 拖进度条 / 输入时间点: 跳到 ms (服务端夹在片长以内)
@@ -1313,11 +1370,26 @@ object TvRemoteControl {
      * `text` 是跟在后面的一句说明. 判据与电视侧边栏图标、动作面板顶行同一套 ([PlaybackSessionStatus]);
      * 失败的具体原因在电视画面上看, 这里只说下一步能做什么.
      */
-    private fun sessionStatusJson(): JsonObject? {
-        val status = playbackStatusProvider?.invoke() ?: return null
+    private fun sessionStatusJson(status: PlaybackSessionStatus? = playbackStatusProvider?.invoke()): JsonObject? {
+        status ?: return null
         val (kind, label, text) = when (status) {
             PlaybackSessionStatus.Ready -> Triple("ready", tr("已就绪"), tr("回到播放器就能接着看"))
-            PlaybackSessionStatus.Preparing -> Triple("busy", tr("准备中"), tr("正在查找数据源、解析播放地址"))
+            is PlaybackSessionStatus.Preparing -> Triple(
+                "busy",
+                tr("准备中"),
+                when (status.stage) {
+                    PlaybackPreparingStage.SearchingSources -> if (status.sourcesTotal > 0) {
+                        tr("已查完 {0}/{1} 个数据源，找到 {2} 条", status.sourcesFinished, status.sourcesTotal, status.found)
+                    } else {
+                        tr("正在查找数据源")
+                    }
+
+                    PlaybackPreparingStage.StartingBtService -> tr("正在启动 BT 服务，第一次要十几秒…")
+                    PlaybackPreparingStage.ResolvingSource -> tr("正在解析资源链接")
+                    PlaybackPreparingStage.PreparingVideo -> tr("资源解析成功，正在准备视频")
+                    PlaybackPreparingStage.FetchingTorrentInfo -> tr("正在获取种子信息")
+                },
+            )
             PlaybackSessionStatus.Buffering -> Triple("busy", tr("缓冲中"), tr("马上就好"))
             PlaybackSessionStatus.NeedsSelection -> Triple("attention", tr("等你选数据源"), tr("在下面挑一个就会开始加载"))
             PlaybackSessionStatus.NoMedia -> Triple("error", tr("没有可播放的资源"), tr("可以试试修改查询条件"))
@@ -1329,6 +1401,21 @@ object TvRemoteControl {
             put("label", label)
             put("text", text)
         }
+    }
+
+    /**
+     * 前台播放页的那一条状态: 只在还没播起来 (不是已就绪) 时给, 播起来之后手机卡片上不再挂这一行.
+     *
+     * 状态取自保留会话 (同 [sessionStatusJson], 前台后台都在更新), 所以先核对保留会话正是前台在播的这一集;
+     * 没开保留会话时拿不到状态, 不给.
+     */
+    private fun foregroundSessionStatusJson(handle: RemotePlayerHandle): JsonObject? {
+        val info = playbackSessionProvider?.invoke() ?: return null
+        val episodeId = handle.currentEpisodeId ?: return null
+        if (!info.isSameEpisodeAs(handle.vm.subjectId, episodeId)) return null
+        val status = playbackStatusProvider?.invoke() ?: return null
+        if (status == PlaybackSessionStatus.Ready) return null
+        return sessionStatusJson(status)
     }
 
     // ---------------------------- 工具 ----------------------------
@@ -1412,7 +1499,7 @@ object TvRemoteControl {
 
     private val KEEP_ALIVE_START_DELAY = 20.seconds
 
-    private const val UI_GONE_MESSAGE = "Ani 已退出，无法从手机打开。请先在电视上重新打开 Ani。开启「从手机打开 Ani」并完成授权后，下次可直接从手机打开。"
+    private const val UI_GONE_MESSAGE = "Izuko 已退出，无法从手机打开。请先在电视上重新打开 Izuko。开启「从手机打开 Izuko」并完成授权后，下次可直接从手机打开。"
 
     /** 账号状态 (等授权时网页每 2 秒轮询, 不刷 knownHost), 见 RemoteAccount. */
     private const val PATH_ACCOUNT = "api/account"
@@ -1430,10 +1517,12 @@ object TvRemoteControl {
 
     private const val PATH_PLAYER_STATE = "api/player"
     private const val PATH_PLAYER_SELECT = "api/player/select"
+    private const val PATH_PLAYER_CACHE = "api/player/cache"
     private const val PATH_PLAYER_OPEN = "api/player/open"
     private const val PATH_PLAYER_UPNEXT = "api/player/upnext"
     private const val PATH_PLAYER_REQUEST = "api/player/request"
     private const val PATH_PLAYER_REFETCH = "api/player/refetch"
+    private const val PATH_PLAYER_FULL_SEARCH = "api/player/full-search"
     private const val PATH_PLAYER_CONTROL = "api/player/control"
     private const val PATH_PLAYER_EPISODE = "api/player/episode"
     private const val PATH_PLAYER_DETAILS = "api/player/details"
@@ -1457,7 +1546,7 @@ object TvRemoteControl {
     /** 手机打开网页后, 启动弹窗留着显示「手机已连接」多久再自动关. */
     private val LAUNCH_DIALOG_CLOSE_DELAY = 1500.milliseconds
 
-    private const val RELEASE_PACKAGE = "me.him188.ani.tv"
+    private const val RELEASE_PACKAGE = "io.github.grahamzen.anime.tv"
     private const val RELEASE_PORT = 41892
     private const val DEBUG_PORT = 41893
     private const val OTHER_PORT_BASE = 41894

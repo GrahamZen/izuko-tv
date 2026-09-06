@@ -10,14 +10,21 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiCollection
+import me.him188.ani.datasources.bangumi.models.BangumiImages
+import me.him188.ani.datasources.bangumi.models.BangumiItem
+import me.him188.ani.datasources.bangumi.models.BangumiRating
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
+import me.him188.ani.datasources.bangumi.models.BangumiTag
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -27,22 +34,24 @@ import kotlinx.serialization.Serializable
  * @param name 
  * @param nameCn 
  * @param summary 
+ * @param series 是否为书籍系列的主条目
  * @param nsfw 
  * @param locked 
- * @param platform TV, Web, 欧美剧, PS4...
+ * @param platform TV, Web, 欧美剧, DLC...
  * @param images 
  * @param volumes 书籍条目的册数，由旧服务端从wiki中解析
  * @param eps 由旧服务端从wiki中解析，对于书籍条目为`话数`
  * @param totalEpisodes 数据库中的章节数量
  * @param rating 
  * @param collection 
+ * @param metaTags 由维基人维护的 tag
  * @param tags 
  * @param date air date in `YYYY-MM-DD` format
  * @param infobox 
  */
 @Serializable
 
-data class BangumiSubject(
+data class BangumiSubject (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
@@ -54,11 +63,14 @@ data class BangumiSubject(
 
     @SerialName(value = "summary") @Required val summary: kotlin.String,
 
+    /* 是否为书籍系列的主条目 */
+    @SerialName(value = "series") @Required val series: kotlin.Boolean,
+
     @SerialName(value = "nsfw") @Required val nsfw: kotlin.Boolean,
 
     @SerialName(value = "locked") @Required val locked: kotlin.Boolean,
 
-    /* TV, Web, 欧美剧, PS4... */
+    /* TV, Web, 欧美剧, DLC... */
     @SerialName(value = "platform") @Required val platform: kotlin.String,
 
     @SerialName(value = "images") @Required val images: BangumiImages,
@@ -75,6 +87,9 @@ data class BangumiSubject(
     @SerialName(value = "rating") @Required val rating: BangumiRating,
 
     @SerialName(value = "collection") @Required val collection: BangumiCollection,
+
+    /* 由维基人维护的 tag */
+    @SerialName(value = "meta_tags") @Required val metaTags: kotlin.collections.List<kotlin.String>,
 
     @SerialName(value = "tags") @Required val tags: kotlin.collections.List<BangumiTag>,
 

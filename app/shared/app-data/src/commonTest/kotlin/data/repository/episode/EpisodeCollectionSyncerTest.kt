@@ -25,12 +25,7 @@ import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.infrastructure.HttpResponse
-import me.him188.ani.client.models.AniBatchUpdateEpisodeCollectionsRequest
-import me.him188.ani.client.models.AniEpisodeCollectionTypeUpdate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
-import me.him188.ani.utils.ktor.ApiInvoker
 import kotlinx.io.IOException
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
@@ -52,30 +47,22 @@ class EpisodeCollectionSyncerTest {
         override val eventFlow: Flow<SessionEvent> = emptyFlow()
     }
 
-    private data class Call(val subjectId: Long, val episodeIds: List<Long>, val type: AniEpisodeCollectionTypeUpdate)
+    private data class Call(val subjectId: Int, val episodeIds: List<Int>, val type: UnifiedCollectionType)
 
-    /** 拦截 batchUpdateEpisodeCollections, 按 [failures] 决定每次调用的结果. */
-    private class FakeSubjectsApi(
-        private val failures: ArrayDeque<Throwable?>,
-    ) : SubjectsAniApi(httpClientEngine = MockEngine { respond("") }) {
+    /** 记下每一次推送, 按 [failures] 决定每次调用的结果: 异常就抛, `false` 就返回 false, `null` 表示成功. */
+    private class FakePusher(
+        private val failures: ArrayDeque<Any?>,
+    ) : EpisodeCollectionPusher {
         val calls = mutableListOf<Call>()
 
-        override suspend fun batchUpdateEpisodeCollections(
-            subjectId: Long,
-            aniBatchUpdateEpisodeCollectionsRequest: AniBatchUpdateEpisodeCollectionsRequest,
-        ): HttpResponse<Any> {
-            calls += Call(
-                subjectId,
-                aniBatchUpdateEpisodeCollectionsRequest.episodeIds,
-                aniBatchUpdateEpisodeCollectionsRequest.episodeCollectionType,
-            )
-            failures.removeFirstOrNull()?.let { throw it }
-            return super.batchUpdateEpisodeCollections(subjectId, aniBatchUpdateEpisodeCollectionsRequest)
+        override suspend fun push(subjectId: Int, episodeIds: List<Int>, collectionType: UnifiedCollectionType): Boolean {
+            calls += Call(subjectId, episodeIds, collectionType)
+            return when (val f = failures.removeFirstOrNull()) {
+                is Throwable -> throw f
+                false -> false
+                else -> true
+            }
         }
-    }
-
-    private class FakeInvoker(val api: FakeSubjectsApi) : ApiInvoker<SubjectsAniApi> {
-        override suspend fun <R> invoke(action: suspend SubjectsAniApi.() -> R): R = api.action()
     }
 
     private suspend fun clientRequestException(status: HttpStatusCode): ClientRequestException {
@@ -88,11 +75,11 @@ class EpisodeCollectionSyncerTest {
 
     private fun createSyncer(
         source: FakeSource,
-        api: FakeSubjectsApi,
+        api: FakePusher,
         session: SessionStateProvider = FakeSession(),
     ) = EpisodeCollectionSyncer(
         repository = source,
-        api = FakeInvoker(api),
+        pusher = api,
         sessionStateProvider = session,
         scope = kotlinx.coroutines.CoroutineScope(EmptyCoroutineContext),
         ioDispatcher = EmptyCoroutineContext,
@@ -108,15 +95,15 @@ class EpisodeCollectionSyncerTest {
                 op(4, subjectId = 1, episodeId = 13, type = UnifiedCollectionType.WISH),
             ),
         )
-        val api = FakeSubjectsApi(ArrayDeque())
+        val api = FakePusher(ArrayDeque())
 
         createSyncer(source, api).syncOnce()
 
         assertEquals(
             listOf(
-                Call(1, listOf(11, 12), AniEpisodeCollectionTypeUpdate.DONE),
-                Call(2, listOf(21), AniEpisodeCollectionTypeUpdate.DONE),
-                Call(1, listOf(13), AniEpisodeCollectionTypeUpdate.NOT_COLLECTED),
+                Call(1, listOf(11, 12), UnifiedCollectionType.DONE),
+                Call(2, listOf(21), UnifiedCollectionType.DONE),
+                Call(1, listOf(13), UnifiedCollectionType.WISH),
             ),
             api.calls,
         )
@@ -126,7 +113,7 @@ class EpisodeCollectionSyncerTest {
     @Test
     fun `network failure keeps remaining ops for next time`() = runTest {
         val source = FakeSource(listOf(op(1, subjectId = 1, episodeId = 11), op(2, subjectId = 2, episodeId = 21)))
-        val api = FakeSubjectsApi(ArrayDeque(listOf(null, IOException("offline"))))
+        val api = FakePusher(ArrayDeque(listOf(null, IOException("offline"))))
 
         assertFailsWith<RepositoryNetworkException> { createSyncer(source, api).syncOnce() }
 
@@ -136,7 +123,7 @@ class EpisodeCollectionSyncerTest {
     @Test
     fun `server rejection drops the batch and continues`() = runTest {
         val source = FakeSource(listOf(op(1, subjectId = 1, episodeId = 11), op(2, subjectId = 2, episodeId = 21)))
-        val api = FakeSubjectsApi(ArrayDeque(listOf(clientRequestException(HttpStatusCode.NotFound), null)))
+        val api = FakePusher(ArrayDeque(listOf(clientRequestException(HttpStatusCode.NotFound), null)))
 
         createSyncer(source, api).syncOnce()
 
@@ -147,7 +134,7 @@ class EpisodeCollectionSyncerTest {
     @Test
     fun `unauthorized keeps ops`() = runTest {
         val source = FakeSource(listOf(op(1, subjectId = 1, episodeId = 11)))
-        val api = FakeSubjectsApi(ArrayDeque(listOf(clientRequestException(HttpStatusCode.Unauthorized))))
+        val api = FakePusher(ArrayDeque(listOf(clientRequestException(HttpStatusCode.Unauthorized))))
 
         assertFailsWith<RepositoryException> { createSyncer(source, api).syncOnce() }
 
@@ -155,9 +142,21 @@ class EpisodeCollectionSyncerTest {
     }
 
     @Test
+    fun `batch the service cannot push is dropped`() = runTest {
+        // 条目或剧集在 Bangumi 上已经没了: 服务返回 false, 这批丢掉, 后面的照推
+        val source = FakeSource(listOf(op(1, subjectId = 1, episodeId = 11), op(2, subjectId = 2, episodeId = 21)))
+        val api = FakePusher(ArrayDeque(listOf(false, null)))
+
+        createSyncer(source, api).syncOnce()
+
+        assertEquals(2, api.calls.size)
+        assertEquals(emptyList(), source.ops.value)
+    }
+
+    @Test
     fun `does nothing without a valid session`() = runTest {
         val source = FakeSource(listOf(op(1, subjectId = 1, episodeId = 11)))
-        val api = FakeSubjectsApi(ArrayDeque())
+        val api = FakePusher(ArrayDeque())
 
         createSyncer(source, api, session = FakeSession(valid = false)).syncOnce()
 

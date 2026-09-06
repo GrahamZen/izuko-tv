@@ -33,6 +33,7 @@ import me.him188.ani.app.domain.media.resolver.DesktopWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
 import me.him188.ani.app.domain.mediasource.web.DesktopOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.DesktopCaptchaBrowserFactory
@@ -154,7 +155,8 @@ fun getDesktopModules(getContext: () -> DesktopContext, scope: CoroutineScope) =
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get(), alignTimestamps = true) }
     factory<MediaResolver> {
         MediaResolver.from(
-            torrentMediaResolvers(get<TorrentManager>().engines, get())
+            listOf<MediaResolver>(QuarkMediaResolver(get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(

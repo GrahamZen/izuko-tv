@@ -23,11 +23,15 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
+import me.him188.ani.app.data.network.TMDB_CDN_PROCESSING_ERROR_HEADER
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.ktor.UnsafeScopedHttpClientApi
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.assertNull
 import com.github.panpf.sketch.http.HttpHeaders as SketchHttpHeaders
@@ -346,5 +350,172 @@ class ImageHostPageResolutionTest {
 
         assertEquals("image/png", stack.request("https://example.com/a.png", null, null) { it.contentType })
         assertEquals(1, requests)
+    }
+}
+
+/**
+ * Bangumi 封面换成了图床的缩略图 (`/r/<宽>/`, 见 bangumiCoverThumbnailUrl). 线路不支持这个路径时 (自建反代之类),
+ * 下载层当场改取原图, 卡片照样有图; 连续几次都这样就停用改写.
+ */
+class BangumiCoverThumbnailFallbackTest {
+    private val original = "https://lain.bgm.tv/pic/cover/l/fe/45/6049_zy52O.jpg"
+    private val thumbnail = "https://lain.bgm.tv/r/400/pic/cover/l/fe/45/6049_zy52O.jpg"
+
+    @BeforeTest
+    fun resetBefore() = resetBangumiCoverThumbnailsForTest()
+
+    @AfterTest
+    fun resetAfter() = resetBangumiCoverThumbnailsForTest()
+
+    private fun stackRespondingWith(requested: MutableList<String>, status: (String) -> HttpStatusCode) =
+        ScopedHttpClientHttpStack(
+            TrackingScopedHttpClient(
+                HttpClient(
+                    MockEngine { request ->
+                        val url = request.url.toString()
+                        requested += url
+                        respond(
+                            content = if (status(url) == HttpStatusCode.OK) "jpeg" else "invalid size format",
+                            status = status(url),
+                            headers = headersOf(KtorHttpHeaders.ContentType, "image/jpeg"),
+                        )
+                    },
+                ),
+            ),
+        )
+
+    /** 同 Sketch 的 HttpUriFetcher: 非 200 就抛. */
+    private suspend fun ScopedHttpClientHttpStack.fetch(url: String): String =
+        request(url, null, null) { response ->
+            if (response.code != 200) throw IOException("HTTP code error. code=${response.code}")
+            response.content().readUtf8AndClose()
+        }
+
+    @Test
+    fun `falls back to the original when the thumbnail fails`() = runTest {
+        val requested = mutableListOf<String>()
+        val stack = stackRespondingWith(requested) { url ->
+            if ("/r/" in url) HttpStatusCode.NotFound else HttpStatusCode.OK
+        }
+
+        assertEquals("jpeg", stack.fetch(thumbnail))
+        assertEquals(listOf(thumbnail, original), requested)
+        assertTrue(bangumiCoverThumbnailsEnabled(), "一次失败不停用")
+    }
+
+    @Test
+    fun `stops rewriting when the route keeps failing thumbnails`() = runTest {
+        val stack = stackRespondingWith(mutableListOf()) { url ->
+            if ("/r/" in url) HttpStatusCode.BadGateway else HttpStatusCode.OK
+        }
+
+        repeat(3) { assertEquals("jpeg", stack.fetch(thumbnail)) }
+
+        assertFalse(bangumiCoverThumbnailsEnabled())
+        assertNull(bangumiCoverThumbnailUrl(original, 275))
+    }
+
+    /** 原图也取不到是这张图本身的问题, 不算线路不支持缩略图. */
+    @Test
+    fun `failing original does not count against thumbnails`() = runTest {
+        val requested = mutableListOf<String>()
+        val stack = stackRespondingWith(requested) { HttpStatusCode.NotFound }
+
+        repeat(3) { assertFailsWith<IOException> { stack.fetch(thumbnail) } }
+
+        assertEquals(6, requested.size)
+        assertTrue(bangumiCoverThumbnailsEnabled())
+    }
+
+    @Test
+    fun `working thumbnail is used as is`() = runTest {
+        val requested = mutableListOf<String>()
+        val stack = stackRespondingWith(requested) { HttpStatusCode.OK }
+
+        assertEquals("jpeg", stack.fetch(thumbnail))
+        assertEquals(listOf(thumbnail), requested)
+    }
+}
+
+/**
+ * TMDB 图床节点缓存的坏图 (200 + 几 KB 的纯黑图 + `X-BO-Processing-Error`, 见 `tmdbBrokenRenditionFallbackUrl`):
+ * 换一档再取一次, 交给图片库的是好的那份.
+ */
+class TmdbBrokenRenditionRefetchTest {
+    private fun jpeg(length: Int, processingError: Boolean) = headersOf(
+        *listOfNotNull(
+            KtorHttpHeaders.ContentType to listOf("image/jpeg"),
+            KtorHttpHeaders.ContentLength to listOf(length.toString()),
+            if (processingError) TMDB_CDN_PROCESSING_ERROR_HEADER to listOf("104") else null,
+        ).toTypedArray(),
+    )
+
+    @Test
+    fun `broken w1280 is refetched at w780`() = runTest {
+        val requested = mutableListOf<String>()
+        val client = HttpClient(
+            MockEngine { request ->
+                requested += request.url.toString()
+                if ("/t/p/w1280/" in request.url.encodedPath) {
+                    respond(ByteArray(5684), headers = jpeg(5684, processingError = true))
+                } else {
+                    respond("good", headers = jpeg(4, processingError = false))
+                }
+            },
+        )
+        val stack = ScopedHttpClientHttpStack(TrackingScopedHttpClient(client))
+
+        try {
+            val body = stack.request("https://image.tmdb.org/t/p/w1280/a.jpg", null, null) {
+                it.content().readUtf8AndClose()
+            }
+            assertEquals("good", body)
+            assertEquals(
+                listOf("https://image.tmdb.org/t/p/w1280/a.jpg", "https://image.tmdb.org/t/p/w780/a.jpg"),
+                requested,
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    /** 正常图约一成也带这个头: 体积正常就原样交出去. */
+    @Test
+    fun `processing error header on a normal sized image is not refetched`() = runTest {
+        var requests = 0
+        val client = HttpClient(
+            MockEngine {
+                requests++
+                respond(ByteArray(185649), headers = jpeg(185649, processingError = true))
+            },
+        )
+        val stack = ScopedHttpClientHttpStack(TrackingScopedHttpClient(client))
+
+        try {
+            assertEquals(185649L, stack.request("https://image.tmdb.org/t/p/w1280/a.jpg", null, null) { it.contentLength })
+            assertEquals(1, requests)
+        } finally {
+            client.close()
+        }
+    }
+
+    /** 换的那一档也是坏的就到此为止, 不来回换. */
+    @Test
+    fun `refetches at most once`() = runTest {
+        var requests = 0
+        val client = HttpClient(
+            MockEngine {
+                requests++
+                respond(ByteArray(2500), headers = jpeg(2500, processingError = true))
+            },
+        )
+        val stack = ScopedHttpClientHttpStack(TrackingScopedHttpClient(client))
+
+        try {
+            assertEquals(2500L, stack.request("https://image.tmdb.org/t/p/w1280/a.jpg", null, null) { it.contentLength })
+            assertEquals(2, requests)
+        } finally {
+            client.close()
+        }
     }
 }

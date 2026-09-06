@@ -17,10 +17,12 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
@@ -29,15 +31,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.IntOffset
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.ui.foundation.AniUiBehavior
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatformFontFamily
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.copyWithPlatformFontFamily
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults.pageContentBackgroundColor
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CORNER
 
 val LocalThemeSettings = compositionLocalOf<ThemeSettings> {
     error("LocalThemeSettings not provided")
@@ -93,7 +100,11 @@ fun AniTheme(
         DarkMode.DARK -> true
         DarkMode.AUTO -> isSystemInDarkThemeDetected()
     }
-    val colorScheme = appColorScheme(isDark = isDark)
+    val behavior = LocalAniUiBehavior.current
+    val baseScheme = appColorScheme(isDark = isDark)
+    val colorScheme = if (behavior.strongSelectionColors) remember(baseScheme) { baseScheme.withStrongSelectionColors() } else baseScheme
+    val baseShapes = MaterialTheme.shapes
+    val shapes = if (behavior.panelsAsCenteredDialogs) remember(baseShapes) { baseShapes.withPanelDialogShapes() } else baseShapes
     // 深色主题直接复用当前配色; 浅色主题需额外生成一套, 界面上没有取用方时这次生成是多余的,
     // 换来的是取用方不再按列表项各自生成.
     val darkOnSurface = if (isDark) colorScheme.onSurface else appColorScheme(isDark = true).onSurface
@@ -104,6 +115,7 @@ fun AniTheme(
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
+            shapes = shapes,
             typography = MaterialTheme.typography.copyWithPlatformFontFamily(platformFontFamily),
             content = content,
         )
@@ -135,13 +147,18 @@ object AniThemeDefaults {
         }
 
     /**
-     * 默认的 [TopAppBarColors], 期望用于 [pageContentBackgroundColor] 的容器之内
+     * 默认的 [TopAppBarColors], 期望用于 [pageContentBackgroundColor] 的容器之内.
+     * 沉浸式外壳下内容滚到顶栏底下时也不换色: 顶栏与整屏背景同底, 换成 surfaceContainer 就是压在上面的一条色带 (浅色下是白的).
      */
     @Composable
     fun topAppBarColors(containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest): TopAppBarColors =
         TopAppBarDefaults.topAppBarColors(
             containerColor = containerColor,
-            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            scrolledContainerColor = if (LocalAniUiBehavior.current.immersiveShell) {
+                containerColor
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
         )
 
     /**
@@ -243,6 +260,33 @@ object EasingDurations {
     const val standardDecelerate = 250
     const val standardAccelerate = 200
 }
+
+/**
+ * 加深选中态的容器色 (见 [AniUiBehavior.strongSelectionColors]): secondaryContainer 换成主色掺进面板底色 (surfaceContainerHigh) ——
+ * 浅色掺 [STRONG_SELECTION_TINT_LIGHT], 深色掺 [STRONG_SELECTION_TINT_DARK]; 上面的字用正文色, 两种主题下都清楚.
+ */
+fun ColorScheme.withStrongSelectionColors(): ColorScheme {
+    val dark = surface.luminance() < 0.5f
+    return copy(
+        secondaryContainer = lerp(surfaceContainerHigh, primary, if (dark) STRONG_SELECTION_TINT_DARK else STRONG_SELECTION_TINT_LIGHT),
+        onSecondaryContainer = onSurface,
+    )
+}
+
+/**
+ * 居中面板形态 (见 [AniUiBehavior.panelsAsCenteredDialogs]) 下 M3 对话框的圆角: extraLarge (M3 默认 28dp, `AlertDialog`、
+ * 底部抽屉用它) 改成与居中面板同一档 [CENTERED_PANEL_CORNER] —— 同一个界面里自绘的弹窗是 16, 系统对话框是 28, 看着不是一套.
+ *
+ * 只动 extraLarge: 其余几档是卡片、输入框、菜单项这些控件的圆角, 与弹窗无关.
+ */
+fun Shapes.withPanelDialogShapes(): Shapes =
+    copy(extraSmall, small, medium, large, RoundedCornerShape(CENTERED_PANEL_CORNER))
+
+/** 浅色主题下选中态容器掺进的主色比例, 见 [withStrongSelectionColors]. */
+private const val STRONG_SELECTION_TINT_LIGHT = 0.35f
+
+/** 深色主题下选中态容器掺进的主色比例, 见 [withStrongSelectionColors]. */
+private const val STRONG_SELECTION_TINT_DARK = 0.4f
 
 fun modifyColorSchemeForBlackBackground(
     colorScheme: ColorScheme,

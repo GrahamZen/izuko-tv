@@ -9,10 +9,8 @@
 
 package me.him188.ani.app.ui.settings.tabs.media.source
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -21,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_continue_editing
 import me.him188.ani.app.ui.lang.settings_media_source_discard
@@ -64,17 +64,17 @@ fun ConfirmDiscardChangeDialog(
     modifier: Modifier = Modifier,
 ) {
     if (state.isVisible) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = state::dismissDialog,
             title = { Text(stringResource(Lang.settings_media_source_discard_changes)) },
             confirmButton = {
-                TextButton(onClick = state::confirmDiscard) {
+                AniTextButton(onClick = state::confirmDiscard) {
                     Text(stringResource(Lang.settings_media_source_discard), color = MaterialTheme.colorScheme.error)
                 }
             },
             modifier = modifier,
             dismissButton = {
-                TextButton(onClick = state::dismissDialog) {
+                AniTextButton(onClick = state::dismissDialog) {
                     Text(stringResource(Lang.settings_media_source_continue_editing))
                 }
             },

@@ -52,6 +52,35 @@ class RatingEditControllerTest {
     }
 
     @Test
+    fun `only the entry that opened the dialog is editing`() = runTest(UnconfinedTestDispatcher()) {
+        val controller = RatingEditController(
+            isCollected = { true },
+            currentSelfRating = { selfRating.value },
+            onRate = {},
+            backgroundScope,
+        )
+        val uiState = uiStateOf(controller)
+        val ratingEntry = Any()
+        val writeReviewEntry = Any()
+
+        controller.requestEditRating(writeReviewEntry)
+        uiState.first().let {
+            assertTrue(it.isEditingFrom(writeReviewEntry))
+            assertFalse(it.isEditingFrom(ratingEntry))
+        }
+
+        controller.cancelEditRating()
+        assertFalse(uiState.first().isEditingFrom(writeReviewEntry), "closed dialog is not editing from any entry")
+
+        controller.requestEditRating()
+        uiState.first().let {
+            assertTrue(it.showRatingDialog)
+            assertFalse(it.isEditingFrom(writeReviewEntry), "a request without source clears the previous one")
+            assertTrue(it.isEditingFrom(null))
+        }
+    }
+
+    @Test
     fun `request edit when collected opens dialog and submit closes it`() = runTest(UnconfinedTestDispatcher()) {
         var rated: RateRequest? = null
         val rateGate = CompletableDeferred<Unit>()

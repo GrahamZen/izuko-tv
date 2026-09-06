@@ -27,8 +27,6 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.a
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_rematch
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_baha_short
@@ -190,7 +190,7 @@ fun DanmakuSourceSettingsDropdown(
     serviceId: DanmakuServiceId? = null,
     changeText: String = stringResource(Lang.subject_episode_danmaku_rematch),
 ) {
-    DropdownMenu(expanded, onDismissRequest, modifier) {
+    AniDropdownMenu(expanded, onDismissRequest, modifier) {
         if (serviceId != null) {
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -202,7 +202,7 @@ fun DanmakuSourceSettingsDropdown(
             }
             HorizontalDivider()
         }
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             modifier = Modifier.testTag("danmaku-source-toggle"),
             text = { Text(stringResource(if (enabled) Lang.subject_episode_disable else Lang.subject_episode_enable)) },
             leadingIcon = { Icon(if (enabled) Icons.Outlined.Close else Icons.Outlined.CheckCircle, null) },
@@ -212,7 +212,7 @@ fun DanmakuSourceSettingsDropdown(
             },
         )
         if (onClickChange != null) {
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 modifier = Modifier.testTag("danmaku-source-rematch"),
                 text = { Text(changeText) },
                 leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
@@ -222,7 +222,7 @@ fun DanmakuSourceSettingsDropdown(
                 },
             )
         }
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             modifier = Modifier.testTag("danmaku-source-shift"),
             text = {
                 Text(

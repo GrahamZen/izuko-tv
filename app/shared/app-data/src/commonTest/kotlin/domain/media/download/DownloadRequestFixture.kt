@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.preference.MediaPreference
@@ -262,6 +261,8 @@ internal class DownloadRequestFixture(
             emit(subject)
         }
 
+        override suspend fun refreshSubjectCollection(subjectId: Int) = throw UnsupportedOperationException()
+
         override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> =
             throw UnsupportedOperationException()
 
@@ -305,14 +306,6 @@ internal class DownloadRequestFixture(
 
         override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> =
             throw UnsupportedOperationException()
-
-        override suspend fun performBangumiFullSync() = throw UnsupportedOperationException()
-
-        override suspend fun getBangumiFullSyncState(): BangumiSyncState? = throw UnsupportedOperationException()
-
-        override suspend fun invalidateCache(subjectIds: List<Int>) = throw UnsupportedOperationException()
-
-        override suspend fun invalidateAllCaches() = throw UnsupportedOperationException()
     }
 
     private inner class Preferences : EpisodePreferencesRepository {

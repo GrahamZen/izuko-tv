@@ -34,11 +34,14 @@ import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.isFinal
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.CachedMedia
@@ -98,6 +101,7 @@ class SwitchMediaOnPlayerErrorExtension(
         val handler = PlayerLoadErrorHandler(
             getPreferKind = { getMediaSelectorSettingsFlowUseCase().first().preferKind },
             getSourceTiers = { getSourceTiersUseCase().first() },
+            onSwitched = { context.reportAutoSwitch(it) },
         )
 
         coroutineScope {
@@ -254,6 +258,9 @@ class SwitchMediaOnPlayerErrorExtension(
         mediaFetchSessionFlow.collectLatest { bundle ->
             if (bundle == null) return@collectLatest
 
+            // 因解码器被收回而原地重载过的资源, 每个只重载一次, 再出同样的错就照常换源
+            var reloadedMediaId: String? = null
+
             combine(
                 videoLoadingStateFlow, // 解析链接出错 (未匹配到链接)
                 playerStateFlow, // 解析成功, 但播放器出错 (无法链接到链接, 例如链接错误)
@@ -265,6 +272,7 @@ class SwitchMediaOnPlayerErrorExtension(
                     videoLoadingState is VideoLoadingState.Failed -> PlayerLoadError(
                         videoLoadingState.toString(),
                         (videoLoadingState as? VideoLoadingState.UnknownError)?.cause,
+                        failure = videoLoadingState,
                     )
 
                     mediaStatus is MediaStatus.Error -> PlayerLoadError(
@@ -277,13 +285,25 @@ class SwitchMediaOnPlayerErrorExtension(
             }.distinctUntilChangedBy { it != null }
                 .collectLatest { error ->
                     if (error != null) {
-                        if (error.isPlayerLifecycleError()) {
-                            // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
-                            logger.info {
-                                "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                        val media = bundle.mediaSelector.selected.value
+                        when {
+                            error.isPlayerLifecycleError() -> {
+                                // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
+                                logger.info {
+                                    "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                                }
                             }
-                        } else {
-                            handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+
+                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑
+                            isDecoderPreempted(error.cause) && media != null && media.mediaId != reloadedMediaId &&
+                                    context.reloadCurrentMedia(context.player.currentPositionMillis.value) -> {
+                                reloadedMediaId = media.mediaId
+                                logger.warn(error.cause) {
+                                    "Player errored (${error.description}), decoder preempted, reloading ${media.mediaId} in place"
+                                }
+                            }
+
+                            else -> handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
                         }
                     } // else: cancel selection
                 }
@@ -308,11 +328,15 @@ class SwitchMediaOnPlayerErrorExtension(
 internal class PlayerLoadError(
     val description: String,
     val cause: Throwable?,
+    /** 解析这一步失败时是哪一种 (界面上说「上一个源解析超时」); 播放器报错、缓存被删为 `null`. */
+    val failure: VideoLoadingState.Failed? = null,
 )
 
 internal class PlayerLoadErrorHandler(
     private val getPreferKind: suspend () -> MediaSourceKind?,
     private val getSourceTiers: suspend () -> MediaSelectorSourceTiers,
+    /** 自动换到了下一个资源, 交给界面显示试到第几个 (见 [MediaAutoSwitchStatus]). */
+    private val onSwitched: (MediaAutoSwitchStatus) -> Unit = {},
 ) {
     /**
      * 不可变集合本身可以安全共享, 但 `x = x.add(...)` 是读-改-写三步, 而拉黑来自三条并发的路
@@ -379,22 +403,48 @@ internal class PlayerLoadErrorHandler(
             return
         }
 
+        // 手上还有能换的在线资源时照旧立刻换. 已经没有了、但还有在线源没查完 (包括被暂停的, 换源时会放开重新查,
+        // 见 MediaAutoSelector) 时, 按正常的两段截止时间等它们的结果回来, 不然会在结果回来之前就判为无资源
+        val hasRemaining = mediaSelector.filteredCandidatesMedia.first()
+            .any { it.kind == MediaSourceKind.WEB && it.mediaId !in blacklistedMediaIds }
+        val waitForSearching = !hasRemaining && session.mediaSourceResults.any {
+            it.kind == MediaSourceKind.WEB && (!it.state.value.isFinal || it.state.value.isPaused)
+        }
         val result = MediaAutoSelector(mediaSelector).select(
             session,
             MediaAutoSelector.Config(
                 selectCache = false,
                 blacklist = blacklistedMediaIds,
-                web = MediaAutoSelector.Web(
-                    sourceTiers = sourceTiers,
-                    // 错误切换不需要等太长时间。
-                    exactMatchAfter = 1.seconds,
-                    fuzzyMatchAfter = 1.seconds,
-                    waitForPendingSources = false,
-                ),
+                web = if (waitForSearching) {
+                    MediaAutoSelector.Web(sourceTiers = sourceTiers)
+                } else {
+                    MediaAutoSelector.Web(
+                        sourceTiers = sourceTiers,
+                        // 错误切换不需要等太长时间。
+                        exactMatchAfter = 1.seconds,
+                        fuzzyMatchAfter = 1.seconds,
+                        waitForPendingSources = false,
+                    )
+                },
             ),
             expectedSelection = failedMedia,
         )
         logger.info { "Player errored, automatically switched to next media: $result" }
+
+        val switchedTo = mediaSelector.selected.value
+        if (switchedTo != null && switchedTo != failedMedia) {
+            // 本集的在线候选里: 拉黑过的都试过了 (含刚失败的那个), 没拉黑的除了正在试的这个都还能换
+            val webCandidates = mediaSelector.filteredCandidatesMedia.first().filter { it.kind == MediaSourceKind.WEB }
+            onSwitched(
+                MediaAutoSwitchStatus(
+                    previousFailure = error?.failure,
+                    attempt = webCandidates.count { it.mediaId in blacklistedMediaIds } + 1,
+                    remaining = webCandidates.count {
+                        it.mediaId !in blacklistedMediaIds && it.mediaId != switchedTo.mediaId
+                    },
+                ),
+            )
+        }
     }
 
     companion object {

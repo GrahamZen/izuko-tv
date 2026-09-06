@@ -38,6 +38,7 @@ class RatingEditController(
     private val subjectId: Int? = null,
 ) : EditableRatingActions {
     private val showRatingDialog = MutableStateFlow(false)
+    private val editRequestSource = MutableStateFlow<Any?>(null)
     private val showRatingRequiresCollectionDialog = MutableStateFlow(false)
     private val tasker = MonoTasker(backgroundScope)
 
@@ -53,10 +54,10 @@ class RatingEditController(
     ): Flow<EditableRatingUiState> = combine(
         selfRatingInfo,
         enableEdit,
-        showRatingDialog,
+        combine(showRatingDialog, editRequestSource, ::Pair),
         showRatingRequiresCollectionDialog,
         tasker.isRunning,
-    ) { self, enable, showDialog, showRequiresCollection, updating ->
+    ) { self, enable, (showDialog, source), showRequiresCollection, updating ->
         EditableRatingUiState(
             ratingInfo = ratingInfo,
             selfRatingInfo = self,
@@ -64,11 +65,17 @@ class RatingEditController(
             showRatingDialog = showDialog,
             showRatingRequiresCollectionDialog = showRequiresCollection,
             isUpdating = updating,
+            editRequestSource = source,
         )
     }
 
     override fun requestEditRating() {
+        requestEditRating(null)
+    }
+
+    override fun requestEditRating(source: Any?) {
         if (isCollected()) {
+            editRequestSource.value = source
             showRatingDialog.value = true
             val hasExistingScore = currentSelfRating().score > 0
             Analytics.recordEvent(RatingEnter) {

@@ -17,10 +17,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.foundation.HttpClientProvider
-import me.him188.ani.app.domain.foundation.ServerListFeature
-import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
+import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
-import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.settings.ServiceConnectionTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTesters
 import me.him188.ani.app.ui.foundation.AbstractViewModel
@@ -35,32 +33,32 @@ open class MainScreenSharedViewModel : AbstractViewModel(), KoinComponent {
 
     private val clientProvider: HttpClientProvider by inject()
 
-    // 只探 ID_ANI, 但 createDefault 要构造全部五项, TMDB 那两项拿它建 (见 ServiceConnectionTesters)
+    // 只探 bangumi next (直连之后它才是命根子), 但 createDefault 要构造全部项, TMDB 那两项拿它建
     private val tmdbImageService: TmdbImageService by inject()
 
     private val networkCheckFailedChannel = Channel<Unit>(Channel.BUFFERED)
 
     /**
-     * 启动时检测 Animeko 服务连接, 失败时发出一个事件, UI 提示用户检查网络或配置代理.
+     * 启动时检测 bangumi 连接, 失败时发出一个事件, UI 提示用户检查网络或配置代理.
      */
     val networkCheckFailed: Flow<Unit> = networkCheckFailedChannel.receiveAsFlow()
 
     init {
         launchInBackground {
-            val client = clientProvider.get(
-                setOf(ServerListFeature.withValue(ServerListFeatureConfig.Default)),
-            )
+            // 带镜像改写 (便捷 get 默认带): 测的是用户实际在走的那条路 —— 只测官方的话, 在大陆用镜像
+            // 一切正常时也会每次启动都提示一次连不上
+            val client = clientProvider.get(ScopedHttpClientUserAgent.ANI)
             val tester = ServiceConnectionTesters.createDefault(
                 bangumiClient = BangumiClientImpl(client),
                 aniClient = client,
                 tmdbImageService = tmdbImageService,
-                serviceIds = setOf(ServiceConnectionTesters.ID_ANI),
+                serviceIds = setOf(ServiceConnectionTesters.ID_BANGUMI_NEXT),
             )
             coroutineScope {
                 launch { tester.testAll() }
                 // 内部 state 是 StateFlow, 测试完成后再订阅也能拿到最终结果
                 val results = tester.results.first { it.allCompleted() }
-                val state = results.findStateById(ServiceConnectionTesters.ID_ANI)
+                val state = results.findStateById(ServiceConnectionTesters.ID_BANGUMI_NEXT)
                 if (state != null && state !is ServiceConnectionTester.TestState.Success) {
                     networkCheckFailedChannel.send(Unit)
                 }

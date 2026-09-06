@@ -107,7 +107,6 @@ import me.him188.ani.app.ui.lang.subject_episode_select_media_source
 import me.him188.ani.app.ui.lang.video_player_stats_title_hide
 import me.him188.ani.app.ui.lang.video_player_stats_title_show
 import me.him188.ani.app.ui.lang.video_player_video_enhancement
-import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.mediafetch.TestMediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediafetch.rememberTestMediaSelectorState
@@ -126,7 +125,6 @@ import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.MediaSelectorSheet
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.rememberTestEpisodeSelectorState
 import me.him188.ani.app.ui.subject.episode.video.topbar.EpisodePlayerTitle
-import me.him188.ani.app.ui.watchtogether.LocalWatchTogetherPlayerController
 import me.him188.ani.app.videoplayer.ui.ControllerVisibility
 import me.him188.ani.app.videoplayer.ui.MutablePlayerFullscreenState
 import me.him188.ani.app.videoplayer.ui.NoOpVideoAspectRatio
@@ -194,7 +192,6 @@ internal const val TAG_SHOW_MEDIA_SELECTOR = "ShowMediaSelector"
 internal const val TAG_VIDEO_ENHANCEMENT = "VideoEnhancement"
 internal const val TAG_SHOW_SETTINGS = "ShowSettings"
 internal const val TAG_COLLAPSE_SIDEBAR = "collapseSidebar"
-internal const val TAG_WATCH_TOGETHER_MENU_ITEM = "WatchTogetherMenuItem"
 
 internal const val TAG_MEDIA_SELECTOR_SHEET = "MediaSelectorSheet"
 internal const val TAG_EPISODE_SELECTOR_SHEET = "EpisodeSelectorSheet"
@@ -268,7 +265,6 @@ internal fun EpisodeVideoImpl(
     // 进出小窗只隐藏视频以外的层, 不切换组合结构: 播放器节点被重建会销毁视频输出
     // (Android 的 Surface; iOS 上 AVPictureInPictureController 持有的 AVPlayerLayer 会失效, 小窗立即关闭且之后无法再启动).
     val videoOnly = isInPictureInPicture && !LocalPlatform.current.isIos()
-    val watchTogetherPlayerController = LocalWatchTogetherPlayerController.current
 
     // auto hide cursor
     val videoInteractionSource = remember { MutableInteractionSource() }
@@ -319,7 +315,6 @@ internal fun EpisodeVideoImpl(
                                 sheetsController = sheetsController,
                                 shareData = shareData,
                                 onClickCache = onClickCache,
-                                onClickWatchTogether = watchTogetherPlayerController::toggle,
                                 playerControllerState = playerControllerState,
                                 videoEnhancement = videoEnhancement,
                                 sidebarVisible = sidebarVisible,
@@ -661,7 +656,6 @@ private fun EpisodeVideoTopBarActions(
     sheetsController: VideoSideSheetsController<EpisodeVideoSideSheetPage>,
     shareData: MediaShareData,
     onClickCache: () -> Unit,
-    onClickWatchTogether: () -> Unit,
     playerControllerState: PlayerControllerState,
     videoEnhancement: VideoEnhancementController?,
     sidebarVisible: Boolean,
@@ -685,7 +679,6 @@ private fun EpisodeVideoTopBarActions(
     val moreOptionsText = stringResource(Lang.subject_episode_more_options)
     val externalLinksText = stringResource(Lang.subject_episode_external_links)
     val cacheText = stringResource(Lang.subject_episode_cache)
-    val watchTogetherText = stringResource(Lang.watch_together_title)
     val showPlayerStatsText = stringResource(Lang.video_player_stats_title_show)
     val hidePlayerStatsText = stringResource(Lang.video_player_stats_title_hide)
     val collapseSidebarText = stringResource(Lang.subject_episode_collapse_sidebar)
@@ -773,15 +766,6 @@ private fun EpisodeVideoTopBarActions(
             expanded = showMoreDropdown,
             onDismissRequest = { showMoreDropdown = false },
         ) {
-            DropdownMenuItem(
-                text = { Text(watchTogetherText) },
-                onClick = {
-                    showMoreDropdown = false
-                    onClickWatchTogether()
-                },
-                leadingIcon = { Icon(Icons.Rounded.Groups, null) },
-                modifier = Modifier.testTag(TAG_WATCH_TOGETHER_MENU_ITEM),
-            )
             if (!expanded && videoEnhancement != null) {
                 val mode by videoEnhancement.mode.collectAsState()
                 DropdownMenuItem(

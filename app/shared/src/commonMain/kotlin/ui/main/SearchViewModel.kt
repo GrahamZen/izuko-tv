@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.main
 import androidx.compose.runtime.Stable
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import androidx.paging.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -118,6 +119,12 @@ open class SearchViewModel(
                         characters = subject.lightSubjectRelations.lightRelatedCharacterInfoList,
                     )
                 }
+                    // 选了"隐藏 NSFW"就真的别列出来: 请求里已经带了 filter.nsfw=false, 但服务端的搜索
+                    // 与条目接口对 NSFW 的口径并不一致 (搜到的条目点进去可能 404), 客户端再兜一道.
+                    // compute 把非 NSFW 条目的 nsfwMode 记为 DISPLAY, 所以这里只会滤掉真正的 NSFW 条目;
+                    // 点 R18 标签进来时 explicitR18 已把模式换成 DISPLAY, 不受影响.
+                    // 判据与手机控制台的搜索结果一致 (见 RemoteSearchResults).
+                    .filter { it.nsfwMode != NsfwMode.HIDE }
             }.cachedIn(scope)
         },
         backgroundScope = backgroundScope,

@@ -171,6 +171,12 @@ private class FakeMediaSourceFetchResult(
         state.value = MediaSourceFetchState.Working
     }
 
+    override fun pause() {
+        if (state.value == MediaSourceFetchState.Idle || state.value == MediaSourceFetchState.Working) {
+            state.value = MediaSourceFetchState.Paused(1)
+        }
+    }
+
     override fun enable() {
         if (state.value is MediaSourceFetchState.Disabled) {
             state.value = MediaSourceFetchState.Idle
