@@ -95,8 +95,18 @@ data class PlayingCacheInfo(
  */
 @Immutable
 sealed interface PlaybackSessionStatus {
-    /** 还在搜数据源 / 解析播放地址. */
-    data object Preparing : PlaybackSessionStatus
+    /**
+     * 地址还没交给播放器, 走到了 [stage] 这一步.
+     *
+     * 搜数据源这一步 [sourcesTotal] > 0: 参与搜索的 [sourcesTotal] 个源里查完了 [sourcesFinished] 个,
+     * 通过筛选的资源 [found] 条. 其余几步这三个数都是 0.
+     */
+    data class Preparing(
+        val stage: PlaybackPreparingStage = PlaybackPreparingStage.SearchingSources,
+        val sourcesFinished: Int = 0,
+        val sourcesTotal: Int = 0,
+        val found: Int = 0,
+    ) : PlaybackSessionStatus
 
     /** 地址已经交给播放器, 在缓冲首帧. */
     data object Buffering : PlaybackSessionStatus
@@ -115,6 +125,27 @@ sealed interface PlaybackSessionStatus {
 
     /** 解析数据源失败; [cause] 决定显示哪一句原因. */
     data class LoadFailed(val cause: VideoLoadingState.Failed) : PlaybackSessionStatus
+}
+
+/**
+ * [PlaybackSessionStatus.Preparing] 走到了哪一步, 与播放画面上转圈时那行字的分法一一对应:
+ * 面板上说的与点进去画面上写的是同一件事.
+ */
+enum class PlaybackPreparingStage {
+    /** 还在搜数据源, 或查完了在等自动选中. */
+    SearchingSources,
+
+    /** 选中的是 BT 资源, 在等 BT 服务起来 (第一次要十几秒). */
+    StartingBtService,
+
+    /** 选好了, 在解析播放地址. */
+    ResolvingSource,
+
+    /** 地址解析出来了, 在打开视频. */
+    PreparingVideo,
+
+    /** BT 资源在取种子信息. */
+    FetchingTorrentInfo,
 }
 
 /**

@@ -9,52 +9,46 @@
 
 package me.him188.ani.app.ui.exploration.search
 
-import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
-import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedContent
-import me.him188.ani.app.ui.foundation.tv.tvTouchTap
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -63,54 +57,52 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -125,20 +117,17 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
-import kotlinx.coroutines.Job
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.schedule.AnimeSeason
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
-import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.LoadError
@@ -147,80 +136,98 @@ import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
+import me.him188.ani.app.ui.main.TvWallScaleEntry
+import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
-import me.him188.ani.app.ui.foundation.tv.tvGridItemTopFade
-import me.him188.ani.app.ui.foundation.tv.TvGridFocusSlotRing
-import me.him188.ani.app.ui.foundation.tv.rememberTvGridFocusSlot
-import me.him188.ani.app.ui.foundation.tv.tvGridBleed
-import me.him188.ani.app.ui.foundation.tv.tvGridFocusSlotScale
-import me.him188.ani.app.ui.foundation.tv.firstItemBelowTopLine
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.focus.TvFocusKey
+import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
+import me.him188.ani.app.ui.foundation.focus.TvFlowFocusScrollEffect
+import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
+import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
+import me.him188.ani.app.ui.foundation.focus.rememberTvFlowFocusState
+import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
+import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusContent
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusItem
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusViewport
+import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
+import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
+import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
-import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
 import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
 import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
-import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
-import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
-import me.him188.ani.app.ui.foundation.tv.TvPageBackdropLayer
-import me.him188.ani.app.ui.foundation.tv.TvPortraitCard
-import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
-import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
-import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
-import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
-import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
-import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextTransform
-import me.him188.ani.app.ui.foundation.tv.tvHeroLineEnter
-import me.him188.ani.app.ui.foundation.tv.tvHeroTextEnterBaseDelay
-import me.him188.ani.app.ui.foundation.tv.tvHeroTextStaggerEnabled
-import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextSlidePx
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_MEDIA_DEBOUNCE_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TvNavigationSettle
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallBaseColorScheme
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
+import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
+import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
+import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
+import me.him188.ani.app.ui.foundation.tv.tvHeroScaleShift
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
+import me.him188.ani.app.ui.foundation.tv.focusScale
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
-import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
-import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
-import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_COLUMN_SPACING
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_MIN_WIDTH
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_ROW_SPACING
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_BOTTOM_PAD
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_ICON_SIZE
-import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_SUMMARY_WIDTH_FRACTION
-import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.focus.TvFocusKey
-import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
-import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
-import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
-import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
-import me.him188.ani.app.ui.foundation.focus.tvGridFocusItem
-import me.him188.ani.app.ui.foundation.focus.tvGridKeyNavigation
-import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
-import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
-import me.him188.ani.app.ui.foundation.tv.tvHeroTitleHandoff
-import me.him188.ani.app.ui.foundation.tv.TvHeroRatingBadge
-import me.him188.ani.app.ui.foundation.tv.TvHeroSummaryText
-import me.him188.ani.app.ui.foundation.tv.tvAnimatedScroll
-import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
+import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
+import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
+import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
+import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
+import me.him188.ani.app.ui.foundation.tv.tvGlassColors
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGlassLabelStyle
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
+import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
+import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.tvTouchTap
+import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search_filter_audience
@@ -241,37 +248,37 @@ import me.him188.ani.app.ui.lang.exploration_search_sort_collection
 import me.him188.ani.app.ui.lang.exploration_search_sort_date
 import me.him188.ani.app.ui.lang.exploration_search_sort_match
 import me.him188.ani.app.ui.lang.exploration_search_sort_rank
-import me.him188.ani.app.ui.lang.search_tv_empty
+import me.him188.ani.app.ui.lang.search_tv_clear_history
 import me.him188.ani.app.ui.lang.search_tv_filter
-import me.him188.ani.app.ui.lang.search_tv_remote_input_caption
 import me.him188.ani.app.ui.lang.search_tv_filter_any
 import me.him188.ani.app.ui.lang.search_tv_filter_confirm
-import me.him188.ani.app.ui.lang.search_tv_clear_history
-import me.him188.ani.app.ui.lang.search_tv_remote_connected
-import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
-import me.him188.ani.app.ui.lang.search_tv_remote_panel_desc
-import me.him188.ani.app.ui.lang.search_tv_remote_reset
-import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
-import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_filter_rating_min
 import me.him188.ani.app.ui.lang.search_tv_filter_season
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
 import me.him188.ani.app.ui.lang.search_tv_filter_year
+import me.him188.ani.app.ui.lang.search_tv_filter_year_less
+import me.him188.ani.app.ui.lang.search_tv_filter_year_more
 import me.him188.ani.app.ui.lang.search_tv_input_hint
-import me.him188.ani.app.ui.lang.search_tv_remote_hint
+import me.him188.ani.app.ui.lang.search_tv_remote_connected
+import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
+import me.him188.ani.app.ui.lang.search_tv_remote_input_caption
+import me.him188.ani.app.ui.lang.search_tv_remote_panel_desc
+import me.him188.ani.app.ui.lang.search_tv_remote_reset
+import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
+import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_results_all
 import me.him188.ani.app.ui.lang.search_tv_results_title
+import me.him188.ani.app.ui.remote.RemoteSearchResultsSnapshot
+import me.him188.ani.app.ui.remote.RemoteSearchResultsSource
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.collectItemsWithLifecycle
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
-import me.him188.ani.app.ui.remote.RemoteSearchResultsSnapshot
-import me.him188.ani.app.ui.remote.RemoteSearchResultsSource
-import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Duration.Companion.seconds
-import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
 
 /**
  * `railExitRestore` 的结果. 布尔不够用: "没送成"要分成**两种**, 否则调用方只能一律退到搜索框 ——
@@ -304,11 +311,15 @@ private val searchRestoreLogger = logger("TvSearchPage")
  * 两个形态渐隐切换 ——
  * - 输入态: 顶部居中一个搜索框 (聚焦自动弹系统键盘), 下方候选列表 (空文本 = 搜索历史,
  *   有文本 = 补全建议); 确认提交后整个输入 UI 消失;
- * - 结果态: 全屏沉浸展示 (骨架同追番页): 顶部为搜索词 + 筛选按钮, Hero 区显示聚焦条目的
- *   标题/评分/元信息/简介, TMDB backdrop 渐隐背景, 下方 2:3 海报网格 (行吸顶/播放键直达).
+ * - 结果态: 海报墙 (骨架同追番页): 顶部为搜索词 + 筛选按钮, 下面直接是「海报 + 番名」网格, 聚焦行尽量停在视口
+ *   垂直正中 (同 Apple TV, 见 TvNativeGridStops), 播放键直达. 卡片上按确认先进 hero 态 (聚焦条目的
+ *   标题/评分/元信息/简介 + TMDB backdrop 渐隐背景), 再按确认才放大进详情页. 背景图 / hero 文字 / 网格是原生 View
+ *   (见 TvSearchNativeGrid.kt).
  *
- * 返回分层: 网格非首卡 -> 回首卡; 结果态其余位置 -> 回输入态 (保留文字与光标, 自动弹键盘);
+ * 返回分层: hero 态 -> 回卡片墙; 网格非首卡 -> 回首卡; 结果态其余位置 -> 回输入态 (保留文字与光标, 自动弹键盘);
  * 输入态 -> 退出搜索页. 进详情/播放返回本页恢复焦点到原卡片.
+ *
+ * 深色主题下整页 (含输入态) 底色是深灰.
  */
 @Composable
 fun TvSearchPage(
@@ -327,11 +338,8 @@ fun TvSearchPage(
     // 带初始查询进入时, 结果态按返回直接退出本页 (回详情页), 想改词要点顶部搜索词文字;
     // 用户在本页手动提交过搜索后恢复"返回回输入态"
     var backGoesToInput by rememberSaveable { mutableStateOf(!state.query.hasSearchRequest()) }
-    // 网格滚动与最后聚焦卡片下标提到页面级: 跨形态切换与跨导航 (进详情返回) 都要保留.
-    // 传 State 而非取值: 结果面板里的协程 (落点等待/吸顶 snapshotFlow) 要能观察到实时变化
-    val gridState = rememberLazyGridState()
-    // 网格换行滚动登记进页面级信号: 低特效档下 hero 文字块在滚动期间不画, 见 TvScrollActivity
-    ReportTvScrollActivity(gridState)
+    // 最后聚焦卡片下标提到页面级: 跨形态切换与跨导航 (进详情返回) 都要保留.
+    // 传 State 而非取值: 结果面板里的落点还原闭包与返回分层 (derivedStateOf) 要读到实时值
     val lastFocusedCard = rememberSaveable { mutableIntStateOf(-1) }
     // 进页那一刻的恢复目标快照 (从详情/播放器返回时恢复焦点); 只在结果态首次组合时消费一次
     val restoreCardIndex = remember { lastFocusedCard.intValue }
@@ -429,6 +437,8 @@ fun TvSearchPage(
     // 内容区焦点入口: 从页面外进来的焦点 (导航兜底的无方向 enter) 一律先送进内容区而非侧边栏
     // (同主页外壳 TvMainScreenLayout 的做法); 侧边栏靠内容区里按左键进入
     val contentFocus = remember { FocusRequester() }
+    // 侧边栏的入口 (按左进入时的落点): 结果态的原生网格行首按左时直接送进去 (见 TvSearchNativeGrid)
+    val searchRailEnter = remember { FocusRequester() }
     // 结果面板的落点解析是否在途 (内层的 gridFocus.switching 提到页面级, 给下面的 onEnter 读)
     val gridSendInFlight = remember { mutableStateOf(false) }
     // 侧边栏右键/返回退出时的焦点还原: 结果面板在此注册"回上次聚焦卡片"的处理 (走带
@@ -495,8 +505,17 @@ fun TvSearchPage(
             onDismiss = { showFilterDialog = false },
         )
     }
+    // 海报墙的整页底色: 卡片墙铺 Apple 灰阶的 Gray 5, 深色下 hero 态是近黑 (浅色不换色; 结果面板把自己此刻的黑度登记进来,
+    // 见 TvPosterWallTone); 侧边栏展开面板同色
+    val wallTone = rememberTvPosterWallTone(
+        wall = tvPosterWallBackground(),
+        // 深色 hero 态的底取海报墙换配色之前的页面底色 (见 LocalTvPosterWallBaseColorScheme)
+        hero = tvPosterWallHeroBackground((LocalTvPosterWallBaseColorScheme.current ?: MaterialTheme.colorScheme).background),
+        wallPage = true,
+    )
+    val railScrimColor = remember(wallTone) { { wallTone.color() } }
     Box(
-        modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        modifier.fillMaxSize()
             .onFocusChanged { pageHasFocus = it.hasFocus }
             .focusProperties {
                 onEnter = {
@@ -508,7 +527,7 @@ fun TvSearchPage(
                     // 然后才被落点拉到卡片上 (真机日志: 两者相隔 126ms).
                     when {
                         // ① 落点解析在途: 放行. 它送焦到目标卡的那个 requestFocus 同样要"进入"本组,
-                        // 在这里改道就把它拆了 (同 TvAnchoredCardRow 那条"解析进行中一律放行")
+                        // 在这里改道就把它拆了 (解析进行中一律放行)
                         gridSendInFlight.value -> {}
                         // ② 结果态: 直接回上次那张卡. **不依赖上面那个跨层 state 的时序** ——
                         // railExitRestore 是同步的, 数据在就当场送到位
@@ -528,10 +547,12 @@ fun TvSearchPage(
             }
             .focusGroup(),
     ) {
+        // 整页底色 (连同侧边栏底下那一条): 单独一层, 海报墙进出 hero 态时底色逐帧在变, 只重录这一层
+        Spacer(Modifier.matchParentSize().graphicsLayer {}.drawBehind { drawRect(wallTone.color()) })
         Box(
             Modifier.fillMaxSize()
-                // 让开左缘侧边栏, 使本页内容左边界与探索/追番页一致
-                .padding(start = TvNavigationRailDefaults.CollapsedWidth)
+                // 内容区从屏幕左缘铺满, 侧边栏是盖在上面的透明浮层 (同主壳, 见 TvMainScreenLayout): 两态各自把内容让开侧边栏,
+                // 结果态网格最左一列的放大与投影画进侧边栏底下, 两态切换的淡入淡出也不会在侧边栏边上把它们裁掉
                 .focusRequester(contentFocus)
                 // **页面外/兜底进来的焦点统一在此改道** (同探索页与主壳的做法): 结果态回上次
                 // 聚焦的那张卡, 输入态回搜索框.
@@ -546,8 +567,7 @@ fun TvSearchPage(
                     onEnter = {
                         // NotReady (数据还没到) 一律**放行**: 既不改道也不退到搜索框 —— 退过去就是
                         // 那一下"闪". 放行后本组此刻若没有可聚焦目标, 整页会短暂没有焦点, 由上面那条
-                        // 页面级兜底接手 (落点已在等数据, 到了自己送焦). 同 TvAnchoredCardRow 里
-                        // "解析进行中就放行"的处理.
+                        // 页面级兜底接手 (落点已在等数据, 到了自己送焦).
                         if (railExitRestore.value?.invoke() == RailExitRestoreResult.NoTarget) {
                             searchRestoreLogger.info { "[restore] onEnter -> search field" }
                             runCatching { inputFieldFocus.requestFocus() }
@@ -578,19 +598,24 @@ fun TvSearchPage(
                 // 历史上按确认又提交一次、在搜索框上按确认弹出输入法 (2026-09-14 审查)
                 Box(Modifier.tvSwallowKeysWhenLeaving { results != showResults }, propagateMinConstraints = true) {
                 if (results) {
-                    TvSearchResultsPane(
-                        state = state,
-                        onIntent = onIntent,
-                        gridState = gridState,
-                        lastFocusedCard = lastFocusedCard,
-                        restoreCardIndex = if (restoreConsumed) -1 else restoreCardIndex,
-                        onRestoreConsumed = { restoreConsumed = true },
-                        onBackToInput = { showResults = false },
-                        backGoesToInput = backGoesToInput,
-                        onOpenFilter = { showFilterDialog = true },
-                        railExitRestore = railExitRestore,
-                        gridSendInFlight = gridSendInFlight,
-                    )
+                    CompositionLocalProvider(LocalTvRailEnter provides searchRailEnter) {
+                        // 海报墙大小 (动作面板): 结果态的卡片按它缩放, 顶部行与 hero 的文字不变 (见 TvPosterWallScaled)
+                        TvPosterWallScaled {
+                            TvSearchResultsPane(
+                                state = state,
+                                onIntent = onIntent,
+                                wallTone = wallTone,
+                                lastFocusedCard = lastFocusedCard,
+                                restoreCardIndex = if (restoreConsumed) -1 else restoreCardIndex,
+                                onRestoreConsumed = { restoreConsumed = true },
+                                onBackToInput = { showResults = false },
+                                backGoesToInput = backGoesToInput,
+                                onOpenFilter = { showFilterDialog = true },
+                                railExitRestore = railExitRestore,
+                                gridSendInFlight = gridSendInFlight,
+                            )
+                        }
+                    }
                 } else {
                     TvSearchInputPane(
                         query = query,
@@ -630,6 +655,8 @@ fun TvSearchPage(
                 onSettings = { navigator.navigateSettings() },
             ),
             modifier = Modifier.fillMaxHeight(),
+            enterRequester = searchRailEnter,
+            scrimColorProvider = railScrimColor,
         )
     }
 }
@@ -648,7 +675,7 @@ private fun SubjectSearchQuery.willTriggerSearch(): Boolean =
 // ============================ 输入态 ============================
 
 @Composable
-private fun TvSearchInputPane(
+internal fun TvSearchInputPane(
     query: TextFieldValue,
     onQueryChange: (TextFieldValue) -> Unit,
     historyPager: Flow<PagingData<String>>,
@@ -678,6 +705,8 @@ private fun TvSearchInputPane(
     var editing by remember { mutableStateOf(false) }
     var everEdited by remember { mutableStateOf(false) }
     var boxFocused by remember { mutableStateOf(false) }
+    // 输入框是否真持焦: 进编辑态时框等它接住焦点才让位, 见框上的 canFocus
+    var editorFocused by remember { mutableStateOf(false) }
     val editorFocus = remember { FocusRequester() }
     // 进/出编辑态的焦点交接必须放在效应里: `canFocus` 是组合期读的, 在按键回调里当场
     // requestFocus 时对方还不可聚焦, 请求会被静默拒绝
@@ -787,10 +816,12 @@ private fun TvSearchInputPane(
                             )
                         }
                         // 非编辑态: 框自己是焦点目标 (页面级 requester 指向这里, 见 inputFieldFocus);
-                        // 编辑态: 让位给里面的输入框
+                        // 编辑态: 让位给里面的输入框. **让位要等输入框接住焦点之后**: 持焦的框当场变成不可聚焦时
+                        // Compose 清空整窗焦点, 整页兜底按默认进组落到第一条候选, 交接效应随后才把焦点送进输入框 ——
+                        // 按确认时焦点在候选上闪一下
                         .focusRequester(fieldFocusRequester)
                         .focusProperties {
-                            canFocus = !editing
+                            canFocus = !editing || !editorFocused
                             // 下键直落第一条候选 (显式指定, 不靠空间搜索猜)
                             if (values.itemCount > 0) down = firstRowFocus
                         }
@@ -805,6 +836,8 @@ private fun TvSearchInputPane(
                         .tvLongPressKey(
                             onLongPress = { if (isHistory && values.itemCount > 0) clearArmed = true },
                             onShortPress = { editing = true },
+                            // 框里嵌着「清除历史」图标与输入框: 焦点在它们身上时确认键交给它们, 不算框的短按 / 长按
+                            enabled = { boxFocused },
                         )
                         // 进页/回本态的初始焦点由页面级 inputFieldFocus (onEnter 改道 + 整页失焦补救) 负责.
                         // **别在这里挂 tvWindowInitialFocus**: 挂在 focusable 之后时它的 requester 与
@@ -840,6 +873,7 @@ private fun TvSearchInputPane(
                                 .focusRequester(editorFocus)
                                 .focusProperties { canFocus = editing }
                                 .onFocusChanged {
+                                    editorFocused = it.isFocused
                                     // 焦点被方向键带走 (走到候选项) 也算退出编辑
                                     if (!it.isFocused && editing) editing = false
                                 },
@@ -1178,11 +1212,12 @@ private fun TvSearchIconButton(
             }
         }
         if (badge) {
+            // 「已有筛选」的点也是灰阶 (照 tvOS: 角标用主次两档白, 不用强调色)
             Box(
                 Modifier.align(Alignment.TopEnd)
                     .padding(6.dp)
                     .size(8.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    .background(MaterialTheme.colorScheme.onSurface, CircleShape),
             )
         }
         if (focused) {
@@ -1268,7 +1303,8 @@ private fun TvSearchSuggestionRow(
 private fun TvSearchResultsPane(
     state: SearchPageState,
     onIntent: (SearchPageIntent) -> Unit,
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    /** 页面根画的整页底色, 本面板把海报墙的黑度登记进去. */
+    wallTone: TvPosterWallTone,
     lastFocusedCard: MutableIntState,
     restoreCardIndex: Int,
     onRestoreConsumed: () -> Unit,
@@ -1329,13 +1365,13 @@ private fun TvSearchResultsPane(
 
     // Hero 数据源: 聚焦卡片驱动; 默认当前列表第一项, 列表确认为空才清
     var heroItem by remember { mutableStateOf<SubjectPreviewItemInfo?>(null) }
-    // 聚焦卡的邻居 (subjectId -> 邻居), 在 onFocused 里按网格几何算好; 记 subjectId 是为了
+    // 聚焦卡的邻居 (subjectId -> 邻居), 在 onCardFocused 里按网格几何算好; 记 subjectId 是为了
     // 默认 hero (列表第一项, 没被聚焦过) 时不错用上一次聚焦位置的邻居
     var heroNeighbors by remember { mutableStateOf<Pair<Int, TvHeroNeighbors>?>(null) }
     // **进页恢复到某张卡时不能先摆默认 hero** (与追番页同病同修, 见那边的
     // `heroDefaultBlockedByRestore`): [heroItem] 是 `remember` —— 从详情页返回时本页组合已经重建、
     // 值回到 null, 下面这条效应数据一到就把它设成**第一项**, 而恢复落点要几十到几百毫秒后才由
-    // 卡片的 onFocused 改成正确那张. 真机上看得见 backdrop 先闪一下第一张卡的图再跳回来
+    // 卡片的 onCardFocused 改成正确那张. 真机上看得见 backdrop 先闪一下第一张卡的图再跳回来
     // (翻得越深越明显: 落点要先滚过去).
     // 放开的时机在下方恢复效应里: 落点**有结果**(送达/用户接手/判空取消) 才放 —— 送达时 hero 已经
     // 是正确那张, 放开只为兜住"恢复失败"的情形 (那时该退回第一项).
@@ -1358,11 +1394,13 @@ private fun TvSearchResultsPane(
 
     // hero 的**展示**目标: 低特效档下连发导航期间不换背景图/文字, 停下来才换一次 (完整特效档
     // 原样直通). 下面的数据预取仍读真实的 heroItem —— 停下来时数据已在缓存里, 换挡不等网络.
-    // 用 provider 版的理由同追番页 (别把热状态读进页面 body), 见 [rememberTvSettledHeroProvider]
-    val heroDisplay = rememberTvSettledHeroProvider { heroItem }
+    // 收 provider 的理由同追番页 (别把热状态读进页面 body), 见 [rememberTvSettledHeroProvider]
+    val nativeState = rememberTvNativeGridPageState()
+    // 进出 hero 态那一刻背景图与文字当场换到聚焦的那张 (返回键远跳落地后排队的确认, 焦点刚到就进 hero 态)
+    val heroDisplay = rememberTvSettledHeroProvider(flushOn = { nativeState.heroActive }) { heroItem }
     // hero **文字**的展示目标, 与背景图分开: 低特效档下网格滚动 (换行) 期间为 null, 停稳后才是
     // 最后聚焦那张; 完整档透传. 机理与实测见 TvScrollActivity
-    val heroTextDisplay = rememberTvScrollHiddenProvider { heroItem }
+    val heroTextDisplay = rememberTvScrollHiddenProvider(flushOn = { nativeState.heroActive }) { heroItem }
 
     // subjectId -> TMDB backdrop URL (null = 已查过没有); 搜索结果没有 summary 字段,
     // 简介一律按聚焦条目异步向 bgm.tv 取 ("" = 查过没有); 网络错误都不写缓存, 下次聚焦重试.
@@ -1418,7 +1456,7 @@ private fun TvSearchResultsPane(
     )
 
     // 卡片长按弹出的收藏下拉 (与探索页/追番页一致); 打开后短暂吞掉长按残余的确认键, 避免误触第一项.
-    // remember: 工厂被网格 items 内容 lambda 捕获, 每次新实例都会让所有可见卡片跟着重组
+    // 菜单锚在原生网格报上来的封面框上 (见 TvNativeGridPageHost). remember: 工厂只建一份, 面板重组时不换实例
     val collectionMenuFor: (Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit = remember {
         { subjectId ->
             { expanded, onDismiss ->
@@ -1435,24 +1473,38 @@ private fun TvSearchResultsPane(
                     },
                     // 卡片的菜单只有长按一个入口, 恒吞掉那次长按残余的确认键
                     modifier = Modifier.consumeHeldConfirmKey(),
+                    // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
+                    positionProvider = rememberTvBesideAnchorPositionProvider(),
                 )
             }
         }
     }
 
-    // 焦点动线锚点与网格落点解析 (与追番页共用 [TvGridFocusState] 落点机制:
-    // 目标滚进视口后靠锚点附着事件送达, 不轮询)
+    // 焦点动线锚点与网格落点解析 (与追番页共用 [TvGridFocusState] 落点机制; 送焦由原生网格做,
+    // 见 TvNativeGridPageHost 的 NativeSendFocusEffect)
     val titleFocusRequester = remember { FocusRequester() }
     val errorCardFocusRequester = remember { FocusRequester() }
     val focus = rememberTvFocusScope()
     val gridFocus = rememberTvGridFocus(focus)
     var gridHasFocus by remember { mutableStateOf(false) }
     var gridColumns by remember { mutableIntStateOf(1) }
+    // 海报墙: 顶部行 (与筛选行) 下面直接是「海报 + 番名」网格, 聚焦行停在视口正中; 背景图与 hero 信息块只在 hero 态画.
+    // hero 流水线在卡片墙态也跑 —— 它同时是详情页的预取. 背景图 / hero 文字 / 网格是原生 View (见 TvSearchNativeGrid.kt),
+    // 顶部行、筛选行、数据、送焦框架、返回键分层在本页 (原生海报墙的页面侧状态 nativeState 声明在 hero 展示目标之前)
+    val nativeScrollReporter = rememberTvScrollActivityReporter()
+    val railEnter = LocalTvRailEnter.current
+    // 错误横幅的高度 (含上间距): 原生网格的顶线跟着它往下让
+    var nativeErrorCardHeightPx by remember { mutableIntStateOf(0) }
+    // hero 态 (见 TvNativeGridPageState): 卡片上按确定先进 hero 态 (背景图 + hero 文字), 再按确定才放大进详情页; 同追番页.
     // 进页恢复的落点流程是否已收尾 (发出 request 或放弃). 见下方 backToFirstCard: 这一段
     // "数据已到但 request 还没发出"的缝隙必须算作"焦点还在网格里", 否则返回键会误跳输入态
     var restoreSettled by remember { mutableStateOf(false) }
-
-    gridFocus.SendFocusEffect(gridState) { items.itemCount }
+    // 返回键回首卡是远跳: 这一发送焦前的滚动走 Apple TV 那条 spring, 一路滚上去 (原生网格按它选滚法), 别的送焦照旧
+    // 瞬时对齐. 只在处理按键 / 协程里读写; 首卡本来就在屏上 (不用滚) 时这一发收尾就清掉
+    var wallFarJump by remember { mutableStateOf(false) }
+    LaunchedEffect(gridFocus) {
+        snapshotFlow { gridFocus.switching }.collect { if (!it) wallFarJump = false }
+    }
 
     // 恢复落点期间让全局兜底让位, 否则它会抢在前面把焦点塞给页顶的搜索框, 等本页的落点派出去
     // 又被拉到卡片上 —— 看着就是"焦点先闪一下搜索框再跑到卡上" (用户 2026-09-18).
@@ -1542,10 +1594,17 @@ private fun TvSearchResultsPane(
     }
 
     // 已选筛选项 (标签 / 最低评分 / 非默认排序): 顶部行下方一行胶囊, 点击取消该项.
-    // remember: 列表被网格 items 内容 lambda 间接捕获 (见 onNavigateDown), 只在查询变化时重建
+    // remember: 只在查询变化时重建 (列表传给筛选行, 也被顶部行与原生网格的回调捕获)
     val currentSortLabel = tvSearchSortLabel(state.query.sort)
     val activeFilters = remember(state.query, currentSortLabel) {
         buildList {
+            // 年份/季度排在最前: 它最容易被忘在那儿 —— 按季度浏览完再搜作品名, 季度还挂着, 搜什么都是空,
+            // 而这一行原先只有标签/评分/排序, 屏幕上没有一处能看出年份还开着 (2026-09-28 用户实测:
+            // 同一部番换了三个名字都搜不到, 八分钟后才发现是季度筛选). 季度从属年份, 一起清.
+            state.query.year?.let { year ->
+                val label = state.query.season?.let { "$year Q${it.quarterNumber}" } ?: year.toString()
+                add(label to state.query.copy(year = null, season = null))
+            }
             state.query.tags.orEmpty().forEach { tag ->
                 add(tag to state.query.copy(tags = (state.query.tags.orEmpty() - tag).ifEmpty { null }))
             }
@@ -1563,8 +1622,8 @@ private fun TvSearchResultsPane(
     // 确认 + 重试; 此前首选"直连首卡 requestFocus", 偶发被焦点系统静默拒绝时 runCatching
     // 照样报成功, 下键被吞且不再重试, 表现为卡在顶部行下不去); 网格空时退到错误横幅
     val focusGridFromAbove: () -> Boolean = {
-        // 吸顶线以下那一张 (出血区里正在淡出的上一行不算, 见 firstItemBelowTopLine)
-        val firstVisible = gridState.firstItemBelowTopLine()?.index
+        // 网格顶线以下那一张 (出血区里正在淡出的上一行不算, 见 TvNativeGridView.firstIndexBelowTopLine)
+        val firstVisible = nativeState.view?.firstIndexBelowTopLine()
         if (firstVisible != null) {
             gridFocus.focusItem((firstVisible / gridColumns) * gridColumns)
             true
@@ -1578,7 +1637,7 @@ private fun TvSearchResultsPane(
     // derivedStateOf: 条件里的焦点下标每移一格都变, 直接读会让整个结果面板每格重组,
     // 收窄成布尔后只在 首卡<->非首卡 边界变化时才失效
     // **「焦点在网格里」不能只看 gridHasFocus**: 从详情页返回本页时它要等数据到达 → 滚到目标卡
-    // → 卡片组合 → 聚焦到位才变 true (实测 300ms~1.9s, 目标卡越靠后越久). 这段窗口里按返回会
+    // → 卡片排出来 → 聚焦到位才变 true (实测 300ms~1.9s, 目标卡越靠后越久). 这段窗口里按返回会
     // 掉到下面那条"回输入态"上 —— 用户明明停在第 19 张卡, 整页却退回搜索框, 看起来就是
     // "搜索结果全没了" (issue #2; 实测那次按键与焦点落位只差 6ms). 恢复未收尾时一律视同焦点
     // 已在网格里: pending 非空 = 落点解析进行中; itemCount == 0 = 数据还没到 (request 都还没发).
@@ -1595,11 +1654,26 @@ private fun TvSearchResultsPane(
         }
     }
     BackHandler(enabled = backToFirstCard) {
+        // 回首卡还在滚又按了返回 (多半是嫌慢): 当场落到首卡, 同途中按方向键
+        if (nativeState.view?.landFarJump() == true) return@BackHandler
+        wallFarJump = true
         gridFocus.focusItem(0)
     }
     BackHandler(enabled = backGoesToInput && !backToFirstCard) {
         onBackToInput()
     }
+    // hero 态里按返回先回卡片墙 (排在上面两条之后登记, 优先级更高)
+    BackHandler(enabled = nativeState.heroActive) {
+        nativeState.exitHero()
+    }
+
+    // 动作面板里的「海报墙大小」(只在结果态: 输入态没有海报墙): 盖在本页上开编辑窗口. 值变了网格按新尺寸重建, 打开前焦点在网格上的话回到那张卡
+    val wallRefocusPending = TvWallScaleEntry(
+        page = TvPosterWallPreviewPage.SEARCH,
+        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        beforeOpen = { nativeState.capture() },
+        refocus = { gridFocus.focusItem(lastFocusedCard.intValue.coerceAtLeast(0)) },
+    )
 
     // 播放键: 短按直达播放聚焦那张卡. **挂在页面根上而不是网格的键路由里** —— 那条路由只看
     // KeyDown, 而播放键按下那一刻还分不出短按还是长按, 在那儿处理会把全局的长按手势 (打开动作
@@ -1619,35 +1693,77 @@ private fun TvSearchResultsPane(
 
     Box(
         modifier.fillMaxSize()
-            // 方向/确认键即取消在途送焦; tvGridKeyNavigation 不再自己上报, 全指这一处
+            // 方向/确认键即取消在途送焦, 本面板只在这一处上报
             .tvFocusNavSignal(focus)
             .then(playKeyModifier),
     ) {
-        // 背景 backdrop 层: 同追番页 (16:9 贴右上角, 恒用卡片态渐变).
-        // URL 用 lambda 传入: 聚焦条目状态在组件内部才读取, 换卡只重组这一小块
-        TvPageBackdropLayer(
-            // 搜索结果没有"下一集"的概念, 只用整部 backdrop; 隐藏条目的封面兜底/垫底门控
-            // 在 toHeroMediaSpec 里 (判据照抄卡片: 卡片不出图, 全屏更不能出)
-            backdropUrl = { heroPipeline.backdropUrl(heroDisplay()?.toHeroMediaSpec()) },
-            // NSFW 模糊模式: 同卡片降采样打码 (TMDB 图与封面兜底都算); 详情页不打码
-            obscure = { heroDisplay()?.nsfwMode == NsfwMode.BLUR },
-            // 本页是独立页面, 图层正下方是页面根 Box 自铺的 colorScheme.background
-            fadeColor = MaterialTheme.colorScheme.background,
-            modifier = Modifier.align(Alignment.TopEnd),
-            underlayUrl = { heroPipeline.underlayUrl(heroDisplay()?.toHeroMediaSpec()) },
-            // 这张图解码完顺手算主题色, 点进详情页第一帧就是动态色 (详情页取的也是这张)
-            themeSeedSubjectId = { heroDisplay()?.subjectId },
-            // 按下即压暗: 焦点一换到新条目就暗, 等展示目标跟上再放开 (本页无剧照, 不升档)
-            dimTrigger = { heroItem?.subjectId },
-            dimming = { heroItem?.subjectId != heroDisplay()?.subjectId },
+        // 整页底色 (页面根画, 见 TvPosterWallTone): 深色下 hero 态是近黑, 卡片墙是深灰; 黑度由原生视图逐帧写进来 (见 TvNativeGridPageState)
+        TvPosterWallToneSource(wallTone) { nativeState.tone }
+        // 原生海报墙 (见 TvSearchNativeGrid.kt): 背景图 / hero 文字 / 网格都在原生视图里, 画在顶部行与筛选行底下
+        // 筛选行 (有的话) 与错误横幅 (有的话) 的高度, 网格顶线往下让开它们
+        val wallLayout = tvSearchWallLayout(
+            hasFilters = activeFilters.isNotEmpty(),
+            errorTopPx = if (items.loadState.hasError) nativeErrorCardHeightPx else 0,
+        )
+        gridColumns = wallLayout.columns
+        TvSearchNativeGrid(
+            state = nativeState,
+            metrics = wallLayout.metrics,
+            cardWidth = wallLayout.cardWidth,
+            items = items,
+            heroRaw = { heroItem },
+            heroDisplay = heroDisplay,
+            heroText = heroTextDisplay,
+            heroPipeline = heroPipeline,
+            summaryCache = summaryCache,
+            fadeColor = wallTone.heroColor,
+            gridFocus = gridFocus,
+            farJump = { wallFarJump },
+            onFarJumpConsumed = { wallFarJump = false },
+            callbacks = TvNativeGridPageCallbacks(
+                onCardFocused = { index, info ->
+                    info?.let {
+                        heroItem = it
+                        // 邻居按网格几何算 (中间卡四方向); 本页无剧照链, 偏好恒 false
+                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, wallLayout.columns) { i ->
+                            if (i in 0 until items.itemCount) items.peek(i)?.subjectId?.let(::TvHeroNeighbor) else null
+                        }
+                    }
+                    lastFocusedCard.intValue = index
+                },
+                onCardClick = { index, info -> onIntent(SearchPageIntent.OpenSubjectDetails(index, info)) },
+                onCardPlay = { _, info -> onIntent(SearchPageIntent.Play(info)) },
+                // 顶行上键: 有筛选行先回筛选行, 否则回顶部行搜索词
+                onTopRowUp = {
+                    (activeFilters.isNotEmpty() && runCatching { chipsFocusRequester.requestFocus() }.getOrDefault(false)) ||
+                        runCatching { titleFocusRequester.requestFocus() }.getOrDefault(false)
+                },
+                // 行首按左进侧边栏; 行尾按右由网格吞掉
+                onRowEdge = { direction, _ ->
+                    if (direction < 0) {
+                        railEnter?.requestFocus()
+                        true
+                    } else {
+                        false
+                    }
+                },
+                onGridFocusChanged = { gridHasFocus = it },
+                onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
+            ),
+            menuFor = collectionMenuFor,
+            // 从详情 / 播放器返回时恢复的那张 (见下方初始焦点) / 海报墙大小改完按新尺寸重建时焦点要回的那张: 建网格时就按住聚焦态
+            landingIndex = if (wallRefocusPending) lastFocusedCard.intValue else restoreCardIndex,
         )
 
+        // 页面从屏幕左缘铺起 (侧边栏盖在上面), 左边让开侧边栏
         Column(
             Modifier.fillMaxSize()
-                .padding(start = TV_SEARCH_START_PAD, top = TV_SEARCH_TOP_PAD),
+                .padding(start = TvNavigationRailDefaults.CollapsedWidth + TV_SEARCH_START_PAD, top = TV_SEARCH_TOP_PAD),
         ) {
             // 顶部行: 搜索词 (确认回输入态改词) + 筛选按钮
             TvSearchTopRow(
+                // hero 态的模糊背景点开时顶部行跟着卡片淡没 (见 TvNativeGridPageState.wallFade), 在绘制里读
+                modifier = Modifier.height(TV_SEARCH_TOP_ROW_HEIGHT).graphicsLayer { alpha = 1f - nativeState.wallFade },
                 keywords = state.query.keywords,
                 hasFilters = state.query.hasFilters(),
                 titleFocusRequester = titleFocusRequester,
@@ -1662,8 +1778,8 @@ private fun TvSearchResultsPane(
                 onFallbackFocused = focus::notifyFocusFallbackSettled,
             )
 
-            // 已选筛选项行 (点击取消; 超宽时吸左滚动): 占固定高度块 (上间距 + 行高 = 简介
-            // 两行行距 40dp), 出现时下方 hero 信息块等量压缩 —— 简介少两行, 网格位置不动
+            // 已选筛选项行 (点击取消; 超宽时吸左滚动): 占固定高度块 (上间距 + 行高 = 简介两行行距 40dp), 出现时网格顶线
+            // 等量下移, hero 信息块等量压缩 —— 简介少两行, hero 态聚焦行位置不动
             if (activeFilters.isNotEmpty()) {
                 TvSearchActiveFiltersRow(
                     filters = activeFilters,
@@ -1675,31 +1791,19 @@ private fun TvSearchResultsPane(
                     onNavigateDown = focusGridFromAbove,
                     onEmptied = { runCatching { titleFocusRequester.requestFocus() } },
                     modifier = Modifier.padding(top = TV_SEARCH_FILTERS_TOP_GAP)
-                        .height(TV_SEARCH_FILTERS_ROW_HEIGHT),
+                        .height(TV_SEARCH_FILTERS_ROW_HEIGHT)
+                        .graphicsLayer { alpha = 1f - nativeState.wallFade },
                 )
             }
 
-            // Hero 信息块 (固定高度; 换条目整块文字渐隐渐现). 聚焦条目状态在子组件内部
-            // 才读取, 遥控器换卡只重组信息块自身, 不连带整个结果面板
-            TvSearchHeroInfoBlock(
-                heroItemProvider = heroTextDisplay,
-                summaryCache = summaryCache,
-                // end 留白与探索页 hero 块一致, 否则 fillMaxWidth(比例) 的基数比其他页宽.
-                // 有筛选行时等量压缩高度, 保持网格位置不变
-                modifier = Modifier.fillMaxWidth()
-                    .padding(top = TV_SEARCH_TITLE_TO_HERO_GAP, end = TV_PAGE_END_PAD)
-                    .height(
-                        if (activeFilters.isEmpty()) TV_SEARCH_HERO_INFO_HEIGHT
-                        else TV_SEARCH_HERO_INFO_HEIGHT - TV_SEARCH_FILTERS_TOP_GAP - TV_SEARCH_FILTERS_ROW_HEIGHT,
-                    ),
-            )
-
-            // 竖版海报网格
+            // 加载出错时的错误横幅 (网格本身在原生视图里)
             if (items.loadState.hasError) {
                 LoadErrorCard(
                     LoadError.fromCombinedLoadStates(items.loadState),
                     onRetry = { items.refresh() },
-                    Modifier.padding(top = TV_SEARCH_HERO_TO_GRID_GAP, end = TV_PAGE_END_PAD)
+                    // 原生网格的顶线按它的高度往下让 (见 tvSearchWallLayout)
+                    Modifier.onSizeChanged { nativeErrorCardHeightPx = it.height }
+                        .padding(top = TV_SEARCH_HERO_TO_GRID_GAP, end = TV_PAGE_END_PAD)
                         .focusRequester(errorCardFocusRequester)
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
@@ -1710,299 +1814,71 @@ private fun TvSearchResultsPane(
                         },
                 )
             }
-            BoxWithConstraints(
-                Modifier.weight(1f).fillMaxWidth()
-                    .padding(top = TV_SEARCH_HERO_TO_GRID_GAP)
-                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页; 向左出血: 首列卡聚焦放大
-                    // 不被左边界切掉 (见 tvGridBleed)
-                    .tvGridBleed(top = TV_GRID_TOP_BLEED, start = TV_GRID_START_BLEED)
-                    .onFocusChanged { gridHasFocus = it.hasFocus },
-            ) {
-                // 复刻 GridCells.Adaptive 的列数算法 (整数 px 运算), 供行列换算
-                val density = LocalDensity.current
-                gridColumns = with(density) {
-                    val available = (this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD).roundToPx()
-                    val spacing = TV_GRID_CARD_COLUMN_SPACING.roundToPx()
-                    maxOf(1, (available + spacing) / (TV_GRID_CARD_MIN_WIDTH.roundToPx() + spacing))
-                }
-                // 底部补白 = 视口高 - 一行卡高: 让最后一行也能吸到网格顶部
-                // (内容不足一屏时 animateScrollToItem 滚不动, 接近底部的行会失去吸顶)
-                val gridBottomPad = run {
-                    val available = this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
-                    val cardWidth = (available - TV_GRID_CARD_COLUMN_SPACING * (gridColumns - 1)) / gridColumns
-                    val cardHeight = cardWidth / TV_PORTRAIT_CARD_COVER_RATIO
-                    // maxHeight 含向上出血, 先减掉
-                    (this@BoxWithConstraints.maxHeight - TV_GRID_TOP_BLEED - cardHeight).coerceAtLeast(24.dp)
-                }
-                // 聚焦行吸顶 (同追番页): 关闭默认"刚好露出"式自动滚动, 聚焦行滚到网格顶部
-                val noBringIntoView = remember {
-                    object : BringIntoViewSpec {
-                        override fun calculateScrollDistance(
-                            offset: Float,
-                            size: Float,
-                            containerSize: Float,
-                        ): Float = 0f
-                    }
-                }
-                // 聚焦框 + 放大 (见 TvGridFocusSlot). 聚焦行吸顶, 格恒在顶线上 (row 0), 上下翻页时框不动
-                val focusSlot = rememberTvGridFocusSlot()
-                LaunchedEffect(focusSlot) {
-                    snapshotFlow { gridHasFocus }.collect { focusSlot.setGridFocused(it) }
-                }
-                val animatedScroll = tvAnimatedScroll()
-                LaunchedEffect(gridState, animatedScroll) {
-                    // collectLatest + TvScrollAnimator: 连发按键取消进行中的滚动并继承速度,
-                    // 列表连续流动 (原 collect 要等上一格动画跑完才响应下一个目标)
-                    val scrollAnimator = TvScrollAnimator(animated = animatedScroll)
-                    snapshotFlow { lastFocusedCard.intValue }.collectLatest { focused ->
-                        if (focused >= 0) {
-                            focusSlot.moveTo(column = focused % gridColumns, row = 0)
-                            runCatching {
-                                scrollAnimator.animateScrollToItem(gridState, (focused / gridColumns) * gridColumns)
-                            }
-                        }
-                    }
-                }
-                CompositionLocalProvider(LocalBringIntoViewSpec provides noBringIntoView) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(TV_GRID_CARD_MIN_WIDTH),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clipToBounds()
-                            // 长按方向键的移动频率上限 (同追番页/探索页). 必须挂在 tvGridKeyNavigation
-                            // 之前: 两者都是 onPreviewKeyEvent, 靠前的先收到, 导航逻辑只看放行的那几发
-                            .tvFocusMoveRateLimit()
-                            // 同列上下导航 + 播放键直达 (与追番页共享实现, 理由见 [tvGridKeyNavigation])
-                            .tvGridKeyNavigation(
-                                gridFocus,
-                                focusedIndex = { lastFocusedCard.intValue },
-                                itemCount = { items.itemCount },
-                                columns = { gridColumns },
-                                // 顶行上键: 有筛选行先回筛选行, 否则回顶部行搜索词
-                                onTopRowUp = {
-                                    (activeFilters.isNotEmpty() &&
-                                            runCatching { chipsFocusRequester.requestFocus() }.getOrDefault(false)) ||
-                                            runCatching { titleFocusRequester.requestFocus() }.getOrDefault(false)
-                                },
-                            ),
-                        state = gridState,
-                        horizontalArrangement = Arrangement.spacedBy(TV_GRID_CARD_COLUMN_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(TV_GRID_CARD_ROW_SPACING),
-                        contentPadding = PaddingValues(
-                            start = TV_GRID_START_BLEED,
-                            top = TV_GRID_TOP_BLEED,
-                            end = TV_PAGE_END_PAD,
-                            bottom = gridBottomPad,
-                        ),
-                    ) {
-                        items(
-                            count = items.itemCount,
-                            // 搜索分页可能跨页返回重复条目, key 必须掺入 index (同原搜索页做法),
-                            // 只用 subjectId 会因重复 key 直接崩溃
-                            key = { index ->
-                                val item = items.peek(index)
-                                if (item == null) {
-                                    "TvSearchPage-placeholder-$index"
-                                } else {
-                                    "TvSearchPage-$index-${item.subjectId}"
-                                }
-                            },
-                        ) { index ->
-                            val info = items[index]
-                            TvPortraitCard(
-                                // 隐藏条目不显示封面 (占位图); NSFW 模糊模式降采样打码
-                                imageUrl = info?.takeIf { !it.hide }?.imageUrl,
-                                obscureImage = info?.nsfwMode == NsfwMode.BLUR,
-                                contentDescription = info?.title,
-                                onClick = {
-                                    info?.let { onIntent(SearchPageIntent.OpenSubjectDetails(index, it)) }
-                                },
-                                onFocused = {
-                                    info?.let {
-                                        heroItem = it
-                                        // 邻居按网格几何算 (中间卡四方向), 见 tvGridNeighborsOf
-                                        heroNeighbors = it.subjectId to tvGridNeighborsOf(
-                                            index, gridColumns,
-                                        ) { i ->
-                                            // 本页无剧照链, 偏好恒 false
-                                            if (i in 0 until items.itemCount) {
-                                                items.peek(i)?.subjectId?.let(::TvHeroNeighbor)
-                                            } else null
-                                        }
-                                    }
-                                    lastFocusedCard.intValue = index
-                                },
-                                modifier = Modifier
-                                    // 越过吸顶线的行边上移边淡出 (同探索页, 见 tvGridItemTopFade)
-                                    .tvGridItemTopFade(gridState, index, TV_GRID_CARD_ROW_SPACING)
-                                    .tvGridFocusSlotScale(focusSlot, gridState, index, TV_GRID_CARD_ROW_SPACING)
-                                    .tvGridFocusItem(gridFocus, index = index, itemCount = items.itemCount),
-                                // 聚焦框由 focusSlot 画在聚焦格上; 原版样式才由卡片自己画
-                                showFocusRing = focusSlot.usesCardRing,
-                                menu = info?.let { collectionMenuFor(it.subjectId) },
-                                onMenuExpandedChange = { focusSlot.setHeld(it) },
-                            )
-                        }
-                    }
-                }
-                TvGridFocusSlotRing(
-                    focusSlot,
-                    gridState,
-                    contentStart = TV_GRID_START_BLEED,
-                    contentTop = TV_GRID_TOP_BLEED,
-                    rowSpacing = TV_GRID_CARD_ROW_SPACING,
-                )
-                // 空结果提示 / 首屏加载指示
-                if (items.itemCount == 0 && !items.loadState.hasError) {
-                    // 补回出血 (见 tvGridBleed), 否则提示居中的是含出血的整块, 看上去偏左上
-                    Box(
-                        Modifier.fillMaxSize().padding(start = TV_GRID_START_BLEED, top = TV_GRID_TOP_BLEED),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (items.isLoadingFirstPageOrRefreshing) {
-                            CircularProgressIndicator()
-                        } else {
-                            Text(
-                                stringResource(Lang.search_tv_empty),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 底缘弱渐变遮罩: 轻压被视口截断的下一行卡片, 保证右下角提示可读
-        run {
-            val bg = MaterialTheme.colorScheme.background
-            Box(
-                Modifier.align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(TV_PAGE_BOTTOM_SCRIM_HEIGHT)
-                    .background(
-                        Brush.verticalGradient(
-                            *Array(11) { i ->
-                                val f = i / 10f
-                                val ease = f * f * (3f - 2f * f)
-                                f to bg.copy(alpha = ease * TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA)
-                            },
-                        ),
-                    ),
-            )
-        }
-
-        // 右下角遥控键提示
-        Row(
-            Modifier.align(Alignment.BottomEnd)
-                .padding(end = TV_PAGE_END_PAD, bottom = TV_PAGE_HINT_BOTTOM_PAD),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Icon(
-                Icons.Rounded.PlayArrow,
-                contentDescription = null,
-                Modifier.size(TV_PAGE_HINT_ICON_SIZE),
-                tint = tvHeroSecondaryContentColor(),
-            )
-            Text(
-                stringResource(Lang.search_tv_remote_hint),
-                color = tvHeroSecondaryContentColor(),
-                style = MaterialTheme.typography.labelMedium,
-            )
         }
     }
+}
+
+/**
+ * 搜索结果 (海报墙) 的几何 (见 [TvNativeGridWallLayout]), 页面与「海报墙大小」的预览页共用. [hasFilters] = 顶部行下面有已选筛选项那一行,
+ * [errorTopPx] = 错误横幅的高度 (没有是 0): 网格顶线往下让开它们, 有筛选行时 hero 信息块等量压缩 (简介少两行, hero 态聚焦行不动).
+ */
+@Composable
+internal fun tvSearchWallLayout(hasFilters: Boolean, errorTopPx: Int = 0): TvNativeGridWallLayout {
+    val density = LocalDensity.current
+    val railWidth = TvNavigationRailDefaults.CollapsedWidth
+    val windowSize = LocalWindowInfo.current.containerSize
+    val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } - railWidth
+    val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
+    // 列数与卡宽按海报墙大小算 (见 tvPosterWallGrid), 顶部行与 hero 照常
+    val nativeGrid = with(density) { tvPosterWallGrid(tvGridPageWallContentWidth(), LocalTvPosterWallScale.current) }
+    val nativeColumns = nativeGrid.columns
+    val nativeCardWidth = nativeGrid.cardWidth
+    val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+    val heroWidth = pageWidth - TV_SEARCH_START_PAD - TV_PAGE_END_PAD
+    val filtersBlock = if (hasFilters) TV_SEARCH_FILTERS_TOP_GAP + TV_SEARCH_FILTERS_ROW_HEIGHT else 0.dp
+    // hero 态聚焦行离网格顶线多远: 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP. 网格顶线在顶部行下面、隔着简介到网格的间距 (简介块
+    // 画在原生视图里, 不占布局高度), 有筛选行时再往下一截
+    val wallHeroLinePx = with(density) {
+        (TV_POSTER_WALL_HERO_ROW_TOP - TV_SEARCH_TOP_PAD - TV_SEARCH_TOP_ROW_HEIGHT - TV_SEARCH_HERO_TO_GRID_GAP - filtersBlock).roundToPx()
+    }
+    val nativeMetrics = with(density) {
+        val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
+        // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
+        val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
+        TvNativeGridPageMetrics(
+            pageWidthPx = pageWidth.roundToPx(),
+            pageHeightPx = pageHeight.roundToPx(),
+            // 顶部行 + 筛选行 (有的话) + 错误横幅 (有的话) + 简介到网格的间距
+            gridTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_HERO_TO_GRID_GAP).roundToPx() +
+                errorTopPx,
+            grid = TvNativeGridMetrics(
+                columns = nativeColumns,
+                startPx = TV_GRID_START_BLEED.roundToPx(),
+                endPx = TV_PAGE_END_PAD.roundToPx(),
+                topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
+                bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
+                endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
+                heroLinePx = wallHeroLinePx + heroShiftPx,
+                fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
+            ),
+            backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
+            backdropHeightPx = backdropHeightPx,
+            heroLeftPx = TV_SEARCH_START_PAD.roundToPx(),
+            heroTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_TITLE_TO_HERO_GAP).roundToPx(),
+            heroWidthPx = heroWidth.roundToPx(),
+            heroHeightPx = (TV_SEARCH_WALL_HERO_INFO_HEIGHT - filtersBlock).roundToPx() + heroShiftPx,
+            titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
+            summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
+            // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉
+            bleedLeftPx = railWidth.roundToPx(),
+        )
+    }
+    return TvNativeGridWallLayout(nativeColumns, nativeCardWidth, nativeMetrics)
 }
 
 /** 顶部行: 搜索词 (可聚焦, 确认回输入态) + 筛选圆钮 (有筛选生效时角标小圆点). */
-/**
- * Hero 信息块 (标题 + 评分/元信息行 + 简介): 换条目整块文字渐隐渐现 (contentKey=条目).
- * [heroItemProvider] 用 lambda 传入: 聚焦条目状态在本组件内部才读取, 遥控器每移一格
- * 只重组这一块, 不连带整个结果面板作用域.
- */
 @Composable
-private fun TvSearchHeroInfoBlock(
-    heroItemProvider: () -> SubjectPreviewItemInfo?,
-    summaryCache: Map<Int, String>,
-    modifier: Modifier = Modifier,
-) {
-    val slidePx = tvScrollHiddenTextSlidePx()
-    // 分行错落进场 (完整档): 容器不整块进场, 各行自己带延迟进, 见 tvHeroLineEnter
-    val stagger = tvHeroTextStaggerEnabled()
-    // 流畅档直接换字, 不淡入淡出 (见 tvContentSwapAnimated)
-    val swapAnimated = tvContentSwapAnimated()
-    // 各行进场的基准起点在 transitionSpec 里算好 (那里才知道 initialState), 内容首次组合时读走 (理由见探索页)
-    val enterPlan = remember { IntArray(1) }
-    val heroTextTarget = heroItemProvider()
-    AnimatedContent(
-        targetState = heroTextTarget,
-        modifier = modifier,
-        transitionSpec = {
-            enterPlan[0] = tvHeroTextEnterBaseDelay(initialState != null)
-            tvScrollHiddenTextTransform(
-                slidePx, sequential = initialState != null, childrenEnter = stagger,
-                hiding = targetState == null, animated = swapAnimated,
-            )
-        },
-        contentKey = { it?.subjectId },
-        label = "searchHeroInfo",
-    ) { hero ->
-        // **流畅档: 退场那一份当帧就不画**. `AnimatedContent` 要等 transition 收敛才移除退场项,
-        // 那是下一帧, 而流畅档没有淡出把它变透明 (snap 也不行 —— Transition 在 targetState 变化
-        // 的那次组合里返回的还是旧值), 于是整整一帧新旧两份都画着 —— 就是"换 hero 时文字重影"
-        // (2026-09-19 逐帧取证). 卡片态看不到是因为那条路是 A → null → B, 两份从不同时在.
-        if (!swapAnimated && hero?.subjectId != heroTextTarget?.subjectId) return@AnimatedContent
-        val lineBase = remember { enterPlan[0] }
-        fun Modifier.line(index: Int) = tvHeroLineEnter(this@AnimatedContent, stagger, lineBase, index, slidePx)
-        Column(
-            Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (hero != null) {
-                Text(
-                    hero.title,
-                    Modifier.line(0).fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
-                        // 放大转场的标题接线, 见该 modifier (本页标题不跑马灯)
-                        .tvHeroTitleHandoff(hero.subjectId, hero.title),
-                    color = tvHeroContentColor(),
-                    style = MaterialTheme.typography.headlineLarge,
-                    // 超长换行, 至多两行 (与探索页/追番页统一); 简介 weight 自动让出空间
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(
-                    Modifier.line(1),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    val score = hero.rating.score
-                    TvHeroRatingBadge(score)
-                    // 元信息行 (开播季度 · 话数 · 类型标签, 见 SubjectPreviewItemInfo.compute)
-                    Text(
-                        hero.tags,
-                        color = tvHeroSecondaryContentColor(),
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                // 进程级共享表 (TvHeroMediaCache.summaryFallbacks), 邻居预取会为用户还没看到的
-                // 条目写入; SnapshotStateMap 没有按键订阅粒度, 直接读会让每次邻居写入都重组这个
-                // 文字块. derived 之后值没变就不往下传播 (见 TvHeroMediaCache.subjectInfos 的说明)
-                val summary by remember(hero.subjectId) {
-                    derivedStateOf { summaryCache[hero.subjectId].orEmpty() }
-                }
-                TvHeroSummaryText(
-                    summary,
-                    Modifier.line(2).weight(1f).fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvSearchTopRow(
+internal fun TvSearchTopRow(
     keywords: String,
     hasFilters: Boolean,
     titleFocusRequester: FocusRequester,
@@ -2012,8 +1888,9 @@ private fun TvSearchTopRow(
     onFallbackFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 关掉 48dp 最小交互尺寸 (TV 无触摸), 搜索词/筛选钮按真实内容高度排
+    // 关掉 48dp 最小交互尺寸 (TV 无触摸), 搜索词/筛选钮按真实内容高度排; 不叠 M3 焦点态层 (见 TvGlassColors)
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+    ProvideRingOnlyFocus {
     Row(
         modifier.onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
@@ -2025,30 +1902,30 @@ private fun TvSearchTopRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // 搜索词: 聚焦时填充主题色圆角块. 只换字色在沉浸背景 (hero 大图) 上几乎看不出来,
-        // 需要一个有面积的形状; 未聚焦时底透明, 不占视觉重量.
+        // 搜索词: 常态垫一块玻璃胶囊 (卡片从顶栏底下滑过), 聚焦时换成浅色实底配黑字并抬起 (配色见 TvGlassColors)
+        val glass = tvGlassColors()
         run {
             val interactionSource = remember { MutableInteractionSource() }
-            val focused by interactionSource.collectIsFocusedAsState()
-            val color = if (focused) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
+            // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
+            var focused by remember { mutableStateOf(false) }
+            val color = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface
             Surface(
                 onClick = onEditQuery,
                 modifier = Modifier.focusRequester(titleFocusRequester)
                     .onFocusChanged {
+                        focused = it.isFocused
                         if (it.isFocused) {
                             onFallbackFocused()
                         }
-                    },
-                shape = RoundedCornerShape(8.dp),
-                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    }
+                    .tvGlassFocusLift(focused, CircleShape)
+                    .tvGlassBackground(CircleShape),
+                shape = CircleShape,
+                color = if (focused) glass.focusedPlatter else Color.Transparent,
                 interactionSource = interactionSource,
             ) {
                 Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -2065,45 +1942,44 @@ private fun TvSearchTopRow(
                             stringResource(Lang.search_tv_results_title, keywords)
                         },
                         color = color,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = tvGlassLabelStyle(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
         }
-        // 筛选圆钮
+        // 筛选圆钮: 常态玻璃圆底 (与搜索词一致), 聚焦时换成浅色实底并抬起
         run {
             val interactionSource = remember { MutableInteractionSource() }
-            val focused by interactionSource.collectIsFocusedAsState()
+            var focused by remember { mutableStateOf(false) }
             Box {
                 Surface(
                     onClick = onOpenFilter,
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused }
+                        .tvGlassFocusLift(focused, CircleShape)
+                        .tvGlassBackground(CircleShape),
                     shape = CircleShape,
-                    // 常态不画圆底 (与搜索词一致, 只留图标), 聚焦时才填充主题色示焦
-                    color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    color = if (focused) glass.focusedPlatter else Color.Transparent,
                     interactionSource = interactionSource,
                 ) {
                     Icon(
                         Icons.Rounded.Tune,
                         contentDescription = stringResource(Lang.search_tv_filter),
                         Modifier.padding(7.dp).size(18.dp),
-                        tint = if (focused) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
+                        tint = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 if (hasFilters) {
                     Box(
                         Modifier.align(Alignment.TopEnd)
                             .size(8.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                            .background(MaterialTheme.colorScheme.onSurface, CircleShape),
                     )
                 }
             }
         }
+    }
     }
     }
 }
@@ -2158,15 +2034,20 @@ private fun TvSearchActiveFiltersRow(
         LocalMinimumInteractiveComponentSize provides 0.dp,
     ) {
         LazyRow(
-            modifier.tvFocusNavSignal(focus).onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.DirectionUp -> onNavigateUp()
-                    Key.DirectionDown -> onNavigateDown()
-                    else -> false
-                }
-            },
+            modifier
+                // 聚焦的胶囊放大、投影伸出胶囊外 (见 tvGlassFocusLift), 而 LazyRow 按主轴边界裁切: 往左出血、两头留内边距
+                // 让出这一截, 行首位置不变
+                .tvGridBleed(start = TV_GLASS_FOCUS_BLEED)
+                .tvFocusNavSignal(focus).onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionUp -> onNavigateUp()
+                        Key.DirectionDown -> onNavigateDown()
+                        else -> false
+                    }
+                },
             state = listState,
+            contentPadding = PaddingValues(horizontal = TV_GLASS_FOCUS_BLEED),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2201,41 +2082,43 @@ private fun TvSearchActiveFilterChip(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val container = if (focused) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val content = if (focused) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { if (it.isFocused) onFocused() },
-        shape = CircleShape,
-        color = container,
-        interactionSource = interactionSource,
-    ) {
-        Row(
-            Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+    var focused by remember { mutableStateOf(false) }
+    // 常态玻璃胶囊 (同顶栏其余控件), 聚焦时换成浅色实底配黑字并抬起; 不叠 M3 焦点态层 (配色见 TvGlassColors)
+    val glass = tvGlassColors()
+    val container = if (focused) glass.focusedPlatter else Color.Transparent
+    val content = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocused()
+                }
+                .tvGlassFocusLift(focused, CircleShape)
+                .tvGlassBackground(CircleShape),
+            shape = CircleShape,
+            color = container,
+            interactionSource = interactionSource,
         ) {
-            Text(
-                label,
-                color = content,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-            )
-            Icon(
-                Icons.Rounded.Close,
-                contentDescription = null,
-                Modifier.size(14.dp),
-                tint = content,
-            )
+            Row(
+                Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    label,
+                    color = content,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                )
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = null,
+                    Modifier.size(14.dp),
+                    tint = content,
+                )
+            }
         }
     }
 }
@@ -2245,6 +2128,9 @@ private fun TvSearchActiveFilterChip(
 /**
  * 筛选弹窗: 排序 / 最低评分 / 各标签维度的胶囊选项. 改动先存本地, 确认才应用
  * (避免每碰一个选项就触发一次搜索), 取消/返回丢弃.
+ *
+ * 外观同其他弹窗 (半透明面板色、压暗、内边距取 AniCenteredPanelDialog 的公共值); 不直接套它是因为
+ * 初始焦点与分区吸附要在 Dialog 内容里自己建.
  */
 @Composable
 private fun TvSearchFilterDialog(
@@ -2266,6 +2152,7 @@ private fun TvSearchFilterDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         // 必须在 Dialog 内容里建: 窗口初始焦点的私有 scope 按 LocalWindowInfo 判窗口焦点来重试,
         // 建在外面读到的是主窗口 (见 ViewAllGridDialog 同一处注释)
         val firstChipModifier = Modifier.tvWindowInitialFocus()
@@ -2274,143 +2161,133 @@ private fun TvSearchFilterDialog(
             Modifier.tvOverlayWindowKeys(onDismiss)
                 .fillMaxWidth(TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeight(TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = CENTERED_PANEL_SHAPE,
+            color = centeredPanelColor,
+            // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Column(Modifier.padding(24.dp)) {
+            Column(Modifier.padding(CENTERED_PANEL_CONTENT_PADDING)) {
                 Text(
                     stringResource(Lang.search_tv_filter),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleLarge,
                 )
-                val listState = rememberLazyListState()
-                val scope = rememberCoroutineScope()
-                // 焦点进入某分区时该分区吸附到列表顶: 分区标题与胶囊行同属一个 item, 默认 BringIntoView 只保证聚焦的
-                // 胶囊可见, 上移导航时标题会留在视口外永远露不出来; 吸附后标题总是完整可见 (同详情页区块吸附的行为).
-                // 吸附本身有三条约束, 都是踩出来的:
-                //
-                // 1. **只保留最后一次**: 连按向下时上一次的 animateScrollToItem 还没跑完又起一个, 两个动画抢同一个
-                //    滚动位置, 画面往回跳一下;
-                // 2. **已经贴在顶上就不动**: 省掉一次没必要的动画;
-                // 3. **比视口还高的分区不吸附**: 年份那一节胶囊多, FlowRow 折成好几行, 整节高过视口 —— 这时"把它的顶
-                //    拉到视口顶"与 Compose 自己的 bringIntoView (把焦点滚进视野) 方向相反, 你往下走到它的后几行,
-                //    吸附又把画面拽回这一节的开头, 就是"往下滚画面却跑上去". 快按必现、慢按看不出来, 因为慢按时
-                //    上一个动画已经跑完 (用户 2026-09-16). 这种分区交给默认的 bringIntoView 就好.
-                var snapJob by remember { mutableStateOf<Job?>(null) }
-                val sectionSnap: (index: Int) -> Modifier = { index ->
-                    Modifier.onFocusChanged {
-                        if (it.hasFocus) {
-                            val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { v -> v.index == index }
-                            val viewport = listState.layoutInfo.viewportSize.height
-                            val tooTall = info != null && viewport > 0 && info.size > viewport
-                            if (!tooTall && (info == null || info.offset != 0)) {
-                                snapJob?.cancel()
-                                snapJob = scope.launch { runCatching { listState.animateScrollToItem(index) } }
-                            }
-                        }
-                    }
-                }
-                LazyColumn(
-                    Modifier.weight(1f).padding(top = 16.dp),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    item(key = "sort") {
-                        TvSearchFilterSection(
-                            stringResource(Lang.search_tv_filter_sort),
-                            modifier = sectionSnap(0),
-                        ) {
+                // 上下键照卡片列表 (见 TvFlowFocusState): 各节全部排好, 上下由它按坐标落到相邻一行、直接送焦, 焦点所在的行滚到视口中间,
+                // 框架的 bring-into-view 关掉. 不用懒加载列表: 按住方向键时焦点跑在滚动前面, 下一节还没排出来、区块吸附与 bring-into-view
+                // 又互相打断, 空间搜索找不到下一项, 焦点就停在原地.
+                val flowFocus = rememberTvFlowFocusState()
+                val scrollState = rememberScrollState()
+                TvFlowFocusScrollEffect(flowFocus, scrollState, animated = LocalThemeSettings.current.visualEffects.animatedScroll)
+                CompositionLocalProvider(LocalBringIntoViewSpec provides TvNoBringIntoViewSpec) {
+                    Column(
+                        Modifier.weight(1f).padding(top = CENTERED_PANEL_TITLE_GAP)
+                            .tvFocusMoveRateLimit()
+                            .tvFlowFocusViewport(flowFocus)
+                            .verticalScroll(scrollState)
+                            .tvFlowFocusContent(flowFocus),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        TvSearchFilterSection(stringResource(Lang.search_tv_filter_sort)) {
                             SearchSort.entries.forEachIndexed { index, entry ->
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = tvSearchSortLabel(entry),
                                     selected = sort == entry,
                                     onClick = { sort = entry },
-                                    modifier = if (index == 0) firstChipModifier else Modifier,
+                                    modifier = (if (index == 0) firstChipModifier else Modifier).tvFlowFocusItem(flowFocus, "sort-$entry"),
                                 )
                             }
                         }
-                    }
-                    item(key = "rating") {
-                        TvSearchFilterSection(
-                            stringResource(Lang.search_tv_filter_rating_min),
-                            modifier = sectionSnap(1),
-                        ) {
+                        TvSearchFilterSection(stringResource(Lang.search_tv_filter_rating_min)) {
                             listOf(null, 7, 8, 9).forEach { min ->
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = min?.let { "$it+" }
                                         ?: stringResource(Lang.search_tv_filter_any),
                                     selected = minRating == min,
                                     onClick = { minRating = min },
+                                    modifier = Modifier.tvFlowFocusItem(flowFocus, "rating-$min"),
                                 )
                             }
                         }
-                    }
-                    if (years.isNotEmpty()) {
-                        item(key = "year") {
-                            TvSearchFilterSection(
-                                stringResource(Lang.search_tv_filter_year),
-                                modifier = sectionSnap(2),
-                            ) {
-                                TvSearchFilterChip(
+                        if (years.isNotEmpty()) {
+                            // 年份一路列到 1943, 全摊开是几十个胶囊、遥控器要按很久. 默认只给最近
+                            // [TV_SEARCH_RECENT_YEAR_COUNT] 年, 更早的折在「更多年份」后面.
+                            val recentYears = remember(years) { years.take(TV_SEARCH_RECENT_YEAR_COUNT) }
+                            val olderYears = remember(years) { years.drop(TV_SEARCH_RECENT_YEAR_COUNT) }
+                            // 进来时就选着老年份 (如从手机控制台设的) 就直接展开, 否则选中项看不见
+                            var yearsExpanded by remember { mutableStateOf(query.year?.let { it !in recentYears } == true) }
+                            TvSearchFilterSection(stringResource(Lang.search_tv_filter_year)) {
+                                AniFocusChip(
                                     text = stringResource(Lang.exploration_search_filter_year_all),
                                     selected = year == null,
                                     // 清年份连带清季度: 季度从属于年份 (同上游 withYearFilter)
                                     onClick = { year = null; season = null },
+                                    modifier = Modifier.tvFlowFocusItem(flowFocus, "year-all"),
                                 )
-                                years.forEach { y ->
-                                    TvSearchFilterChip(
+                                recentYears.forEach { y ->
+                                    AniFocusChip(
                                         text = y.toString(),
                                         selected = year == y,
                                         onClick = { if (year != y) season = null; year = y },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "year-$y"),
                                     )
                                 }
+                                // 展开/收起按钮夹在最近年份与更早年份之间, 位置不随展开状态移动 —— 遥控器按下它
+                                // 之后焦点还留在原处, 不会被挤到几行之外.
+                                // 收起会藏掉已选的老年份, 所以选着老年份时只给展开这一个方向.
+                                if (olderYears.isNotEmpty() && !(yearsExpanded && year?.let { it in olderYears } == true)) {
+                                    AniFocusChip(
+                                        text = stringResource(
+                                            if (yearsExpanded) Lang.search_tv_filter_year_less
+                                            else Lang.search_tv_filter_year_more,
+                                        ),
+                                        selected = false,
+                                        onClick = { yearsExpanded = !yearsExpanded },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "year-toggle"),
+                                    )
+                                }
+                                if (yearsExpanded) {
+                                    olderYears.forEach { y ->
+                                        AniFocusChip(
+                                            text = y.toString(),
+                                            selected = year == y,
+                                            onClick = { if (year != y) season = null; year = y },
+                                            modifier = Modifier.tvFlowFocusItem(flowFocus, "year-$y"),
+                                        )
+                                    }
+                                }
                             }
-                        }
-                        // 季度只在选了年份之后才出现: 没有年份时它整节都是无效选项, 在遥控器上是白占焦点位
-                        if (year != null) {
-                            item(key = "season") {
-                                TvSearchFilterSection(
-                                    stringResource(Lang.search_tv_filter_season),
-                                    modifier = sectionSnap(3),
-                                ) {
-                                    TvSearchFilterChip(
+                            // 季度只在选了年份之后才出现: 没有年份时它整节都是无效选项, 在遥控器上是白占焦点位
+                            if (year != null) {
+                                TvSearchFilterSection(stringResource(Lang.search_tv_filter_season)) {
+                                    AniFocusChip(
                                         text = stringResource(Lang.exploration_search_filter_season_all),
                                         selected = season == null,
                                         onClick = { season = null },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "season-all"),
                                     )
                                     AnimeSeason.entries.forEach { s ->
-                                        TvSearchFilterChip(
+                                        AniFocusChip(
                                             text = "Q${s.quarterNumber}",
                                             selected = season == s,
                                             onClick = { season = s },
+                                            modifier = Modifier.tvFlowFocusItem(flowFocus, "season-$s"),
                                         )
                                     }
                                 }
                             }
                         }
-                    }
-                    val tagSectionBase = when {
-                        years.isEmpty() -> 2
-                        year == null -> 3
-                        else -> 4
-                    }
-                    items(
-                        filterState.chips.size,
-                        key = { "chip-$it" },
-                    ) { chipIndex ->
-                        val chip = filterState.chips[chipIndex]
-                        TvSearchFilterSection(
-                            tvSearchFilterKindLabel(chip.kind),
-                            modifier = sectionSnap(tagSectionBase + chipIndex),
-                        ) {
-                            chip.values.forEach { value ->
-                                TvSearchFilterChip(
-                                    text = value,
-                                    selected = selectedTags[value] == true,
-                                    onClick = {
-                                        selectedTags[value] = !(selectedTags[value] == true)
-                                    },
-                                )
+                        filterState.chips.forEachIndexed { chipIndex, chip ->
+                            TvSearchFilterSection(tvSearchFilterKindLabel(chip.kind)) {
+                                chip.values.forEach { value ->
+                                    AniFocusChip(
+                                        text = value,
+                                        selected = selectedTags[value] == true,
+                                        onClick = {
+                                            selectedTags[value] = !(selectedTags[value] == true)
+                                        },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "tag-$chipIndex-$value"),
+                                    )
+                                }
                             }
                         }
                     }
@@ -2420,9 +2297,7 @@ private fun TvSearchFilterDialog(
                     Modifier.fillMaxWidth().padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    TvSearchFilterChip(
-                        text = stringResource(Lang.search_tv_filter_confirm),
-                        selected = true,
+                    AniFocusActionButton(
                         onClick = {
                             onConfirm(
                                 query.copy(
@@ -2434,7 +2309,9 @@ private fun TvSearchFilterDialog(
                                 ),
                             )
                         },
-                    )
+                    ) {
+                        Text(stringResource(Lang.search_tv_filter_confirm), style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         }
@@ -2459,42 +2336,6 @@ private fun TvSearchFilterSection(
         ) {
             content()
         }
-    }
-}
-
-@Composable
-private fun TvSearchFilterChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val container = when {
-        focused -> MaterialTheme.colorScheme.primary
-        selected -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val content = when {
-        focused -> MaterialTheme.colorScheme.onPrimary
-        selected -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = CircleShape,
-        color = container,
-        interactionSource = interactionSource,
-    ) {
-        Text(
-            text,
-            Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-            color = content,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-        )
     }
 }
 
@@ -2537,7 +2378,7 @@ private val TV_SEARCH_INPUT_CORNER = 12.dp
 private const val TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS = 300L
 
 /** 输入态: 搜索区左缘与悬浮侧边栏收起宽度之间的间距. */
-private val TV_SEARCH_PAGE_START_GAP = 24.dp
+private val TV_SEARCH_PAGE_START_GAP = 72.dp
 
 /** 输入态: 右侧面板到屏幕右缘. */
 private val TV_SEARCH_PAGE_END_PAD = 48.dp
@@ -2581,25 +2422,21 @@ private val TV_SEARCH_QR_SIZE = 180.dp
 /** 二维码四周留白: 规范要求 ≥ 4 模块, 按上面的模块尺寸算 24dp. */
 private val TV_SEARCH_QR_QUIET_ZONE = 24.dp
 
-/** 结果态: 内容左侧留白 (外层已让开侧边栏 48dp, 总左缘 = 48 + 此值, 与探索/追番页一致). */
-private val TV_SEARCH_START_PAD = 16.dp
+/** 结果态: 内容左侧留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值, 与探索 / 追番页一致. */
+internal val TV_SEARCH_START_PAD = 16.dp
 
 /** 结果态: 页面顶部留白. */
-private val TV_SEARCH_TOP_PAD = 24.dp
+internal val TV_SEARCH_TOP_PAD = 24.dp
 
 /** 结果态: 顶部行到 Hero 信息块的间距. */
 private val TV_SEARCH_TITLE_TO_HERO_GAP = 4.dp
 
-/**
- * Hero 信息块固定高度 (标题 + 评分/元信息行 + 简介), 切换聚焦条目时网格不跳动.
- * 简介用 weight 填满剩余空间, 调大 = 简介更多行, 网格更矮
- * (标题+元信息行 ≈ 80dp, 简介每行 ≈ 20dp).
- */
-private val TV_SEARCH_HERO_INFO_HEIGHT = 230.dp
+/** 结果态: 顶部行定高 (搜索词胶囊与筛选圆钮都是 32): 简介块的高度由它倒推, 见 [TV_SEARCH_WALL_HERO_INFO_HEIGHT]. */
+internal val TV_SEARCH_TOP_ROW_HEIGHT = 32.dp
 
 /**
  * 结果态: 已选筛选项行的固定行高. 与上间距 [TV_SEARCH_FILTERS_TOP_GAP] 相加恰为简介
- * 两行行距 (2×20dp): 筛选行出现时 hero 信息块等量压缩 (简介少两行), 网格位置不动
+ * 两行行距 (2×20dp): 筛选行出现时 hero 信息块等量压缩 (简介少两行), hero 态聚焦行位置不动
  * 且简介换行网格对齐不破.
  */
 private val TV_SEARCH_FILTERS_ROW_HEIGHT = 30.dp
@@ -2613,19 +2450,33 @@ private val TV_SEARCH_FILTERS_TOP_GAP = 10.dp
  */
 private val TV_SEARCH_HERO_TO_GRID_GAP = 16.dp
 
+/**
+ * hero 态的简介块高度 (标题 + 评分/元信息行 + 简介): 从顶部行下方 [TV_SEARCH_TITLE_TO_HERO_GAP] 处起, 下沿停在 hero 态聚焦行
+ * (三页对齐的 [TV_POSTER_WALL_HERO_ROW_TOP]) 上方 [TV_SEARCH_HERO_TO_GRID_GAP] 处; 有筛选行时等量压缩.
+ */
+private val TV_SEARCH_WALL_HERO_INFO_HEIGHT = TV_POSTER_WALL_HERO_ROW_TOP - TV_SEARCH_HERO_TO_GRID_GAP -
+        TV_SEARCH_TOP_PAD - TV_SEARCH_TOP_ROW_HEIGHT - TV_SEARCH_TITLE_TO_HERO_GAP
 
+
+
+/**
+ * 年份筛选默认摊开的年数, 更早的收在「更多年份」后面 (手机控制台的搜索表单同用这个值).
+ *
+ * 取 12 是因为一行大约放得下这么多个胶囊, 展开前后布局不会差太多.
+ */
+internal const val TV_SEARCH_RECENT_YEAR_COUNT = 12
 
 /** 筛选弹窗宽/高占屏比例. */
-// 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行 (整节比视口还高, 见 sectionSnap 那里的说明)
+// 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行
 private const val TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION = 0.78f
 private const val TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION = 0.88f
 
 /**
  * 交给共享流水线/展示层的最小描述, 见 [TvHeroMediaSpec]. 封面兜底的隐藏门控在这里:
- * **判据照抄卡片那边** (见本页 imageUrl 的 takeIf) —— 被隐藏的条目卡片上就不出图,
+ * **判据照抄卡片那边** (见 TvSearchNativeGrid 里卡片 imageUrl 的 takeIf) —— 被隐藏的条目卡片上就不出图,
  * 兜底要是照放, 等于把用户特意藏起来的图铺满整屏. NSFW 模糊模式不拦, 由背景层 obscure 打码.
  */
-private fun SubjectPreviewItemInfo.toHeroMediaSpec(neighbors: TvHeroNeighbors = TvHeroNeighbors()) =
+internal fun SubjectPreviewItemInfo.toHeroMediaSpec(neighbors: TvHeroNeighbors = TvHeroNeighbors()) =
     TvHeroMediaSpec(
         subjectId = subjectId,
         coverUrl = takeIf { !it.hide }?.imageUrl.orEmpty(),

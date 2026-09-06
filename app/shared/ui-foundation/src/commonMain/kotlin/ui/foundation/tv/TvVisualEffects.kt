@@ -44,7 +44,8 @@ fun Modifier.tvAmbientMarquee(enabled: Boolean = true, iterations: Int? = null):
     return this.basicMarquee(iterations = iterations ?: tvAmbientMarqueeIterations())
 }
 
-private const val TV_REDUCED_MARQUEE_ITERATIONS = 3
+/** 视觉效果均衡档的跑马灯只滚这么多遍 (完整档一直滚, 流畅档不滚). */
+const val TV_REDUCED_MARQUEE_ITERATIONS = 3
 
 /**
  * 焦点滚动要不要动画: 流畅档瞬时跳位, 见 `TvVisualEffectsLevel.animatedScroll`.
@@ -60,16 +61,14 @@ fun tvAnimatedScroll(): Boolean = LocalThemeSettings.current.visualEffects.anima
  * 砍它的理由与 [tvAnimatedScroll] 同源, 但量更大: 换一次 hero 会同时起 600ms 的背景交叉淡入与
  * 500ms 的文字进出, 两者都长过遥控器连发间隔 (250ms) —— 索尼实测 12 次方向键**原样 98 帧、
  * 时长改 0 后 12 帧**, 每按一格陪跑约 8 帧, 而那 8 帧画的全是"新旧两份在互相淡入淡出"
- * (期间两块整屏图层 + 两棵 CJK 文本树同时活着). 连发有换挡合并兜着 (见 `rememberTvSettledHero`),
+ * (期间两块整屏图层 + 两棵 CJK 文本树同时活着). 连发有换挡合并兜着 (见 `rememberTvSettledHeroProvider`),
  * 单击这一路没有, 正是报告者"单按上下键 127-140ms"的那一份.
  *
  * 终态逐像素一致, 砍掉的只有中间过程.
  *
- * **背景图的交叉淡入是例外, 不归它管** (2026-09-19 回归): `TvModulatedCrossfade` 用 snap 时
- * `transition.currentState` 下一帧就等于目标, 那段"不在动画中只留目标那一张"会**当帧移除旧图**,
- * 而新图还在下载解码 —— 屏幕上空出一段没有背景的窗口, 观感是"hero 背景出来得慢". 那 600ms 不只是
- * 装饰, 它顺带把旧图撑到新图就位. 要砍它得先给 `TvModulatedCrossfade` 一个"新内容已经有像素了"
- * 的信号, 在那之前一律保持淡入.
+ * **背景图的交叉淡入是例外, 不归它管** (2026-09-19 回归): 换图时若当帧移除旧图, 而新图还在下载解码,
+ * 屏幕上空出一段没有背景的窗口, 观感是"hero 背景出来得慢". 那段淡入不只是装饰, 它顺带把旧图撑到新图就位.
+ * 要砍它得先有"新图已经有像素了"的信号, 在那之前一律保持淡入.
  */
 @Composable
 fun tvContentSwapAnimated(): Boolean = LocalThemeSettings.current.visualEffects.transitions

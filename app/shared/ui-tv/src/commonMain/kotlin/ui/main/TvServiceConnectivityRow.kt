@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,7 +58,6 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.tv_service_check_hint_never
 import me.him188.ani.app.ui.lang.tv_service_check_hint_stale
-import me.him188.ani.app.ui.lang.tv_service_probe_ani
 import me.him188.ani.app.ui.lang.tv_service_probe_bangumi
 import me.him188.ani.app.ui.lang.tv_service_probe_bangumi_next
 import me.him188.ani.app.ui.lang.tv_service_probe_tmdb
@@ -72,20 +72,18 @@ import kotlin.time.Duration.Companion.minutes
 /**
  * 一项探测挂了之后, 用户实际会遇到什么.
  *
- * 分档的唯一目的是**不制造假警报**: 五项里有两项 (Bangumi 主站与 Bangumi Next) 在大陆网络下
- * 长期就是连不上的, 而它们不通完全不影响看番 —— 若与"连不上 Animeko 服务器"同色同权重地报红,
- * 那么绝大多数国内用户会看到一行永久的红叉, 于是这一行的信息量归零: 真出问题时没人会注意到它.
- *
- * 所以颜色按本枚举给, 而不是按"成功/失败"给.
+ * 颜色按本枚举给, 而不是按"成功/失败"给: 真影响看番的才报错误色, 不然一行长期亮着的红叉会让人不再看它,
+ * 真出问题时没人注意到. Bangumi 两项是必需 (条目、收藏、搜索与分集全从那里来); 探测走的是应用自己的客户端,
+ * 经镜像连 Bangumi 时测的就是镜像 (实际在用的线路), 中国大陆用户不会因为官方被墙而看到永久红叉.
  */
 enum class TvServiceTier {
-    /** 挂了就用不了: 搜索、条目数据、弹幕全走这里. 报错误色. */
+    /** 挂了就用不了: 条目、收藏、搜索与分集都从这里来. 报错误色. */
     Required,
 
     /** 挂了掉一块功能, 但番照样能看 (背景图与剧照). 报警示色, 不用错误色. */
     Degraded,
 
-    /** 挂了只掉锦上添花的东西 (条目简介、评论回复关系). **失败也保持次要色**, 不报警. */
+    /** 挂了只掉锦上添花的东西. **失败也保持次要色**, 不报警. */
     Optional,
 }
 
@@ -116,11 +114,10 @@ enum class TvServiceProbeResult {
  * 同一个域名分两项探 (接口与图床) 时, 只有按功能命名才能让两行看起来是两件事.
  */
 private val TV_SERVICE_PROBES = listOf(
-    TvServiceProbe(ServiceConnectionTesters.ID_ANI, TvServiceTier.Required),
+    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI_NEXT, TvServiceTier.Required),
+    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI, TvServiceTier.Required),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB, TvServiceTier.Degraded),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB_IMAGE, TvServiceTier.Degraded),
-    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI, TvServiceTier.Optional),
-    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI_NEXT, TvServiceTier.Optional),
 )
 
 /**
@@ -248,6 +245,8 @@ class TvServiceConnectivityState : AbstractViewModel(), KoinComponent {
      */
     fun refresh() {
         lastRunStartedAt = currentTimeMillis()
+        // 各项先回到待测: 「在测」的标志可能比各项的新状态先到, 刷新钮里的进度环不能先数到上一轮的结果
+        probes = probes.map { TvServiceProbeState(it.probe, TvServiceProbeResult.Pending) }
         if (started) {
             tester.restartTest()
             return
@@ -269,6 +268,13 @@ class TvServiceConnectivityState : AbstractViewModel(), KoinComponent {
         }
     }
 }
+
+/**
+ * 已出结果 (通或不通) 的项数占全部的比例. 各项并发测、各自封顶 (最长 15 秒), 谁先出结果先算谁;
+ * 重测时各项先回到 [TvServiceProbeResult.Pending], 所以测着的时候数的就是这一轮.
+ */
+internal fun List<TvServiceProbeState>.completedFraction(): Float =
+    if (isEmpty()) 0f else count { it.result != TvServiceProbeResult.Pending }.toFloat() / size
 
 private fun ServiceConnectionTester.TestState?.toResult(): TvServiceProbeResult = when (this) {
     null, ServiceConnectionTester.TestState.Idle, ServiceConnectionTester.TestState.Testing ->
@@ -370,10 +376,14 @@ internal fun TvServiceConnectivityRow(
             onClick = state::refresh,
             icon = {
                 if (state.running) {
+                    // 圆环按已出结果的项数走 (四项里测完一项走四分之一), 淡色底圈是还在等的那部分
+                    val progress by animateFloatAsState(state.probes.completedFraction())
                     CircularProgressIndicator(
-                        Modifier.size(TV_SERVICE_SPINNER_SIZE),
+                        progress = { progress },
+                        modifier = Modifier.size(TV_SERVICE_SPINNER_SIZE),
                         strokeWidth = 2.dp,
                         color = LocalContentColor.current,
+                        trackColor = LocalContentColor.current.copy(alpha = TV_SERVICE_PROGRESS_TRACK_ALPHA),
                     )
                 } else {
                     Icon(
@@ -462,8 +472,7 @@ private fun TvServiceProbeChip(item: TvServiceProbeState) {
 
 @Composable
 private fun probeLabel(id: String): String = when (id) {
-    ServiceConnectionTesters.ID_ANI -> stringResource(Lang.tv_service_probe_ani)
-    // api.bgm.tv: fork 里条目数据已经走 Animeko 服务器, 这个域名只剩"补条目简介"与登录
+    // api.bgm.tv 是 v0 接口 (搜索、分集与看过进度), next.bgm.tv 是 p1 (条目、收藏、评论)
     ServiceConnectionTesters.ID_BANGUMI -> stringResource(Lang.tv_service_probe_bangumi)
     ServiceConnectionTesters.ID_BANGUMI_NEXT -> stringResource(Lang.tv_service_probe_bangumi_next)
     ServiceConnectionTesters.ID_TMDB -> stringResource(Lang.tv_service_probe_tmdb)
@@ -479,8 +488,11 @@ private val TvServiceOkColor = Color(0xFF43A047)
 
 private val TV_SERVICE_GLYPH_SIZE = 14.dp
 
-/** 刷新钮里那圈转圈: 比钮里的刷新字形 (20dp) 小一点才不显得撑满. */
+/** 刷新钮里那圈进度环: 比钮里的刷新字形 (20dp) 小一点才不显得撑满. */
 private val TV_SERVICE_SPINNER_SIZE = 16.dp
+
+/** 进度环底圈的透明度: 一项都没测完时也看得出是个环, 而不是钮里空了. */
+private const val TV_SERVICE_PROGRESS_TRACK_ALPHA = 0.3f
 
 /**
  * 五项挤在 412dp (面板内宽) 的一行里. 中文标签合计约 300dp 富余不少, 但英文

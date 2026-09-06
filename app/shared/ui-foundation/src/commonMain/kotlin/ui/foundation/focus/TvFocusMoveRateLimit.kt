@@ -23,21 +23,20 @@ import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * 长按**左右**键时焦点移动的频率上限 (次/秒).
+ * 长按**左右**键时焦点移动的频率上限 (次/秒): 高于系统连发 (按住期间约 50ms 一发 ≈ 20 次/秒), 按住时每一发都走一格.
  *
- * 系统按住期间约 50ms 连发一次 KeyDown (≈20 次/秒), 远快于卡片滑动/淡出动画能跟上的节奏 ——
- * 每一发都换一次聚焦卡的话, 动画器不断被新目标打断, 卡片看起来是"嗖"地闪过去而不是滑过去.
- * 真机实测 8 次/秒动画还能完整跟上, 即取这个上界 —— 用户手调过, 改前先问.
+ * 照 Apple TV 安卓版 (2026-09-29 Shield 逐帧实测: 横向约 20 张/秒, 不另外限速): 每一段滚动接着上一段的速度, 连成一段匀速滑动,
+ * 途中焦点领先滚动两三格 (原生横滑行因此行外多排几张, 见 ui-tv 的 TV_NATIVE_STRIP_HOLD_LEAD_CARDS). 留着上限只挡连发异常快的遥控器.
+ * 用户定的, 改前先问.
  */
-const val TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL = 8
+const val TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL = 25
 
 /**
- * 长按**上下**键时焦点移动的频率上限 (次/秒), **必须比横向更低**.
- *
- * 换行比行内换卡贵得多: 一行的可见卡片全部换新 (取图/解码/分页取数), 还要带着 hero 文字与
- * backdrop 换目标 —— 同样的连发频率下横向只是滑动, 纵向会真卡. 用户手调过, 改前先问.
+ * 长按**上下**键时焦点移动的频率上限 (次/秒), 同横向 ([TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL]): Apple TV 安卓版纵向实测约 20 行/秒.
+ * 纵向列表 / 网格上下各多排一屏, 滚动落后焦点的两三行都已排好; hero 文字与背景图等连发停下来才换 (TvScrollActivity 的静默期).
+ * 用户定的, 改前先问.
  */
-const val TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL = 6
+const val TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL = 25
 
 /** 遥控器左右键. */
 val TV_HORIZONTAL_KEYS = setOf(Key.DirectionLeft, Key.DirectionRight)
@@ -49,8 +48,7 @@ val TV_VERTICAL_KEYS = setOf(Key.DirectionUp, Key.DirectionDown)
  * 给一整片焦点区域的方向键限流: 长按方向键时把"每秒移动几格"压到上限以内, 超频的那几发连发
  * 直接吞掉 (不下传, 于是既不移动焦点也不触发区域内自定义的方向键处理).
  *
- * **横纵两个独立的闸门**: 上下比左右贵 (见 [TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL]), 各自计时
- * 互不影响 —— 共用一个闸门的话刚换过行会连带压掉紧接着的左右移动.
+ * **横纵两个独立的闸门**: 各有各的上限, 各自计时互不影响 —— 共用一个闸门的话刚换过行会连带压掉紧接着的左右移动.
  *
  * **只限流系统连发**: `isAutoRepeat == false` 的新按下一律放行 —— 手动连按再快也不该丢键
  * (拿不到连发信息的平台上退化为全部限流, 焦点驱动的 TV UI 只在 Android 上启用).

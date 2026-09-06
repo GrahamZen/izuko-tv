@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.episode.tv
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,6 +86,12 @@ internal fun TvPlayerSideSheets(
             }
         },
         mediaSelectorPage = {
+            // 面板开着期间搜索一直查完; 关面板时正在播又没开完整搜索就暂停 (见 EpisodeViewModel.onMediaSelectorHidden)
+            DisposableEffect(Unit) {
+                vm.onMediaSelectorShown()
+                onDispose { vm.onMediaSelectorHidden() }
+            }
+            val fullSearch by vm.fullMediaSearch.collectAsStateWithLifecycle()
             val pageState by vm.pageState.collectAsStateWithLifecycle()
             pageState?.let { page ->
                 val (viewKind, onViewKindChange) = rememberSaveable {
@@ -106,6 +113,8 @@ internal fun TvPlayerSideSheets(
                         defaultFetchRequest = page.defaultFetchRequest,
                         onRestartSource = { vm.restartSource(it) },
                         onRefresh = { vm.refreshFetch() },
+                        fullSearch = fullSearch,
+                        onFullSearchChange = { vm.setFullMediaSearch(it) },
                         // 固定占满弹窗高度: 筛选后条目变少时布局不跳动
                         modifier = Modifier.fillMaxSize(),
                         onClickItem = {

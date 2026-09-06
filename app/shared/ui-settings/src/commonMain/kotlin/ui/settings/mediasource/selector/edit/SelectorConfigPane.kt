@@ -29,8 +29,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
@@ -79,6 +77,8 @@ import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_rss_auto_save_hint
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_auto_match
@@ -313,9 +313,9 @@ internal fun SelectorConfigurationPane(
                             Text(state.defaultResolution.displayName)
                         }
                         if (showMenu) {
-                            DropdownMenu(showMenu, { showMenu = false }) {
+                            AniDropdownMenu(showMenu, { showMenu = false }) {
                                 for (resolution in Resolution.entries.asReversed()) {
-                                    DropdownMenuItem(
+                                    AniDropdownMenuItem(
                                         text = { Text(resolution.displayName) },
                                         onClick = {
                                             state.defaultResolution = resolution
@@ -345,9 +345,9 @@ internal fun SelectorConfigurationPane(
                             Text(state.defaultSubtitleLanguage.displayName)
                         }
                         if (showMenu) {
-                            DropdownMenu(showMenu, { showMenu = false }) {
+                            AniDropdownMenu(showMenu, { showMenu = false }) {
                                 for (language in SubtitleLanguage.matchableEntries.asReversed()) {
-                                    DropdownMenuItem(
+                                    AniDropdownMenuItem(
                                         text = { Text(language.displayName) },
                                         onClick = {
                                             state.defaultSubtitleLanguage = language

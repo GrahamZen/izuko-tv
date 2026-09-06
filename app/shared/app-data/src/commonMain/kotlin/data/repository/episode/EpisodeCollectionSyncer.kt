@@ -20,18 +20,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import me.him188.ani.app.data.network.toAniEpisodeCollectionTypeUpdate
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.player.LeadingTrailingSyncGate
 import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
-import me.him188.ani.client.apis.SubjectsAniApi
-import me.him188.ani.client.models.AniBatchUpdateEpisodeCollectionsRequest
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.coroutines.IO_
-import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.CoroutineContext
@@ -46,7 +42,7 @@ import kotlin.time.Duration.Companion.seconds
  */
 class EpisodeCollectionSyncer(
     private val repository: EpisodeCollectionPendingOpSource,
-    private val api: ApiInvoker<SubjectsAniApi>,
+    private val pusher: EpisodeCollectionPusher,
     private val sessionStateProvider: SessionStateProvider,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
@@ -89,28 +85,22 @@ class EpisodeCollectionSyncer(
         if (pendingOps.isEmpty()) return@withLock
 
         for (batch in pendingOps.batchBySubjectAndType()) {
-            val dropped = try {
+            val pushed = try {
                 withContext(ioDispatcher) {
-                    api {
-                        batchUpdateEpisodeCollections(
-                            batch.subjectId.toLong(),
-                            AniBatchUpdateEpisodeCollectionsRequest(
-                                episodeIds = batch.ops.map { it.episodeId.toLong() },
-                                episodeCollectionType = batch.collectionType.toAniEpisodeCollectionTypeUpdate(),
-                            ),
-                        )
-                    }
+                    pusher.push(batch.subjectId, batch.ops.map { it.episodeId }, batch.collectionType)
                 }
-                false
             } catch (e: ClientRequestException) {
                 if (e.response.status.isRetryable()) throw RepositoryException.wrapOrThrowCancellation(e)
                 logger.warn { "Server rejected episode collection ops for subject ${batch.subjectId}, dropping: ${e.message}" }
-                true
+                false
             } catch (e: Exception) {
                 throw RepositoryException.wrapOrThrowCancellation(e)
             }
-            if (!dropped) {
+            if (pushed) {
                 logger.info { "Synced ${batch.ops.size} episode collection ops for subject ${batch.subjectId}" }
+            } else if (sessionStateProvider.stateFlow.first() !is SessionState.Valid) {
+                // 推的途中登出了: 剩下的留到下次登录再推
+                return@withLock
             }
             repository.deletePendingOps(batch.ops.map { it.id })
         }
@@ -133,6 +123,18 @@ class EpisodeCollectionSyncer(
     }
 }
 
+/**
+ * 把一批同条目、同状态的剧集看过状态推到 Bangumi.
+ */
+fun interface EpisodeCollectionPusher {
+    /**
+     * @return `false` 表示这批推不了且不必重试 (例如条目或剧集在 Bangumi 上已不存在); 未登录时也返回 `false`,
+     * 由 [EpisodeCollectionSyncer] 按登录状态决定保留还是丢弃.
+     * @throws ClientRequestException 服务端拒绝; 是否重试见 [EpisodeCollectionSyncer]
+     */
+    suspend fun push(subjectId: Int, episodeIds: List<Int>, collectionType: UnifiedCollectionType): Boolean
+}
+
 internal data class EpisodeCollectionOpBatch(
     val subjectId: Int,
     val collectionType: UnifiedCollectionType,
@@ -140,10 +142,10 @@ internal data class EpisodeCollectionOpBatch(
 )
 
 /**
- * 按 (条目, 状态) 分组, 组的顺序按组内最早的操作排; 服务端只区分看过和未看过, 其他状态按 [toAniEpisodeCollectionTypeUpdate] 的映射归到未看过.
+ * 按 (条目, 状态) 分组, 组的顺序按组内最早的操作排. 状态到 Bangumi 剧集状态的换算由 [EpisodeCollectionPusher] 的实现负责.
  */
 internal fun List<EpisodeCollectionPendingOp>.batchBySubjectAndType(): List<EpisodeCollectionOpBatch> {
-    return groupBy { it.subjectId to it.collectionType.toAniEpisodeCollectionTypeUpdate() }
+    return groupBy { it.subjectId to it.collectionType }
         .values
         .map { ops -> EpisodeCollectionOpBatch(ops.first().subjectId, ops.first().collectionType, ops) }
         .sortedBy { batch -> batch.ops.minOf { it.id } }

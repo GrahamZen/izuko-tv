@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadAttempt
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.utils.platform.annotations.TestOnly
 
@@ -74,7 +75,14 @@ class SubjectDetailsStateLoader(
                 emitAll(
                     subjectDetailsStateFactory.create(req.subjectId, req.placeholder)
                         .map { SubjectDetailsLoadState.Ok(it.subjectId, it) }
-                        .retryUntilFirstEmission(FIRST_LOAD_TIMEOUT, MAX_LOAD_ATTEMPTS),
+                        .retryUntilFirstEmission<SubjectDetailsLoadState>(FIRST_LOAD_TIMEOUT, MAX_LOAD_ATTEMPTS) { attempt ->
+                            // 上一次超时了: 占位页据此说网络慢、正在第几次尝试
+                            SubjectDetailsLoadState.Placeholder(
+                                req.subjectId,
+                                req.placeholder,
+                                SubjectDetailsLoadAttempt(attempt, MAX_LOAD_ATTEMPTS),
+                            )
+                        },
                 )
             }.catch { e ->
                 emit(SubjectDetailsLoadState.Err(req.subjectId, req.placeholder, LoadError.fromException(e)))
@@ -109,14 +117,12 @@ class SubjectDetailsStateLoader(
         request.value = null
     }
 
-    private companion object {
-        /** 未加载任何条目时的占位 (subjectId = 0 不对应真实条目). */
-        private val Idle = SubjectDetailsLoadState.Placeholder(subjectId = 0)
-    }
-
     private fun nextAttempt(): Int = (request.value?.attempt ?: 0) + 1
 
     private companion object {
+        /** 未加载任何条目时的占位 (subjectId = 0 不对应真实条目). */
+        private val Idle = SubjectDetailsLoadState.Placeholder(subjectId = 0)
+
         /**
          * 首屏内容 (第一次发射) 的最长等待时间.
          *
@@ -134,11 +140,13 @@ class SubjectDetailsStateLoader(
  * 只给**第一次发射**限时: 超过 [timeout] 还没有第一个元素就取消这次订阅重来, 最多 [maxAttempts] 次;
  * 第一个元素到了之后不再限时, 后续更新照常流过 (详情页要靠它持续收数据库的变化).
  *
+ * 每次超时重来之前先发出 [onRetry] (参数是接下来第几次尝试, 从 2 起), 让界面知道还在等、等到第几次了.
  * 全部尝试都超时则抛 [RepositoryNetworkException], 由调用方的 catch 转成错误页.
  */
 private fun <T> Flow<T>.retryUntilFirstEmission(
     timeout: Duration,
     maxAttempts: Int,
+    onRetry: (nextAttempt: Int) -> T,
 ): Flow<T> = channelFlow {
     var attempts = 0
     while (true) {
@@ -159,6 +167,7 @@ private fun <T> Flow<T>.retryUntilFirstEmission(
             if (attempts >= maxAttempts) {
                 throw RepositoryNetworkException("加载超时", e)
             }
+            send(onRetry(attempts + 1))
         }
     }
 }

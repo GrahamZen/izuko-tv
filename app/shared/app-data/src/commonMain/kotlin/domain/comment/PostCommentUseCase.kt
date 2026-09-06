@@ -13,7 +13,6 @@ import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.network.AniEpisodeCommentService
-import me.him188.ani.app.data.network.AniPersonCommentService
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.usecase.UseCase
@@ -27,7 +26,6 @@ interface PostCommentUseCase : UseCase {
 
 class PostCommentUseCaseImpl(
     private val commentService: AniEpisodeCommentService,
-    private val personCommentService: AniPersonCommentService,
     private val context: CoroutineContext = Dispatchers.Main,
 ) : PostCommentUseCase {
     private val logger = logger<PostCommentUseCase>()
@@ -35,18 +33,7 @@ class PostCommentUseCaseImpl(
     override suspend operator fun invoke(context: CommentContext, content: String): CommentSendResult {
         try {
             withContext(this.context) {
-                when (context) {
-                    is CommentContext.Episode, is CommentContext.EpisodeReply ->
-                        commentService.postEpisodeComment(context, content)
-
-                    is CommentContext.PersonComment ->
-                        personCommentService.createComment(context.target, content)
-
-                    is CommentContext.PersonCommentReply ->
-                        personCommentService.createReply(context.target, context.commentId, content)
-
-                    is CommentContext.SubjectReview -> error("SubjectReview is not posted through PostCommentUseCase")
-                }
+                commentService.postEpisodeComment(context, content)
             }
             return CommentSendResult.Ok
         } catch (e: Exception) {
@@ -73,17 +60,13 @@ sealed interface CommentSendResult {
     data object Ok : CommentSendResult
 }
 
+/**
+ * bangumi 发表吐槽要过 Cloudflare Turnstile 验证码 (`POST /p1/episodes/{id}/comments` 的
+ * 请求体里要带 turnstile token), 遥控器上没法做, 所以直连之后这个功能不再提供.
+ */
 private suspend fun AniEpisodeCommentService.postEpisodeComment(
     context: CommentContext,
     content: String,
-) {
-    when (context) {
-        is CommentContext.Episode ->
-            createEpisodeComment(context.episodeId, content)
-
-        is CommentContext.EpisodeReply ->
-            createEpisodeReply(context.episodeId, context.commentId, content)
-
-        else -> error("unreachable on postEpisodeComment: $context")
-    }
+): Nothing {
+    throw UnsupportedOperationException("bangumi 发表吐槽需要通过验证码, 暂不支持")
 }

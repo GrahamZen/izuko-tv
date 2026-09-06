@@ -11,6 +11,14 @@ package me.him188.ani.app.ui.mediaselect.manual
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +53,7 @@ import me.him188.ani.app.domain.mediasource.web.captcha.BrowserCookie
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowser
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.InterceptDecision
+import me.him188.ani.app.domain.mediasource.web.captcha.TvWebInputMode
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
@@ -62,14 +71,6 @@ import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import me.him188.ani.utils.ktor.createDefaultHttpClient
 import me.him188.ani.utils.platform.annotations.TestOnly
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * [ManualBrowseState] 的纯 Kotlin 单测: 用 [TestBrowsableMediaSource] 假源, 断言一律经 [ManualBrowseState.presentationFlow] 的 `first { }`
@@ -822,7 +823,12 @@ private class SolvingCaptchaBrowser(
     }
 
     @Composable
-    override fun View(modifier: Modifier) {
+    override fun View(
+        modifier: Modifier,
+        onExitRequest: (() -> Unit)?,
+        onConfirmRequest: (() -> Unit)?,
+        tvInputMode: TvWebInputMode,
+    ) {
     }
 
     override fun close() {

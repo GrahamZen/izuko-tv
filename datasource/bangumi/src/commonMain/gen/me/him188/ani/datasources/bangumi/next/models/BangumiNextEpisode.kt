@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,61 +10,65 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextEpisodeCollection
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextEpisodeType
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param airdate
- * @param comment
- * @param disc
- * @param duration
- * @param id
- * @param name
- * @param nameCN 
- * @param sort 
+ * @param id 
  * @param subjectID 
+ * @param sort 
  * @param type 
+ * @param disc 
+ * @param name 
+ * @param nameCN 
+ * @param duration 
+ * @param airdate 
+ * @param comment 
  * @param desc 
- * @param status 
  * @param subject 
+ * @param collection 
  */
 @Serializable
 
-data class BangumiNextEpisode(
-
-    @SerialName(value = "airdate") @Required val airdate: kotlin.String,
-
-    @SerialName(value = "comment") @Required val comment: kotlin.Int,
-
-    @SerialName(value = "disc") @Required val disc: kotlin.Int,
-
-    @SerialName(value = "duration") @Required val duration: kotlin.String,
+data class BangumiNextEpisode (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
+
+    @SerialName(value = "subjectID") @Required val subjectID: kotlin.Int,
+
+    @SerialName(value = "sort") @Required val sort: @Serializable(me.him188.ani.utils.serialization.BigNumAsDoubleStringSerializer::class) me.him188.ani.utils.serialization.BigNum,
+
+    @SerialName(value = "type") @Required val type: BangumiNextEpisodeType,
+
+    @SerialName(value = "disc") @Required val disc: kotlin.Int,
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 
     @SerialName(value = "nameCN") @Required val nameCN: kotlin.String,
 
-    @SerialName(value = "sort") @Required val sort: @Serializable(me.him188.ani.utils.serialization.BigNumAsDoubleStringSerializer::class) me.him188.ani.utils.serialization.BigNum,
+    @SerialName(value = "duration") @Required val duration: kotlin.String,
 
-    @SerialName(value = "subjectID") @Required val subjectID: kotlin.Int,
+    @SerialName(value = "airdate") @Required val airdate: kotlin.String,
 
-    @SerialName(value = "type") @Required val type: BangumiNextEpisodeType,
+    @SerialName(value = "comment") @Required val comment: kotlin.Int,
 
-    @SerialName(value = "desc") val desc: kotlin.String? = null,
+    @SerialName(value = "desc") @Required val desc: kotlin.String,
 
-    @SerialName(value = "status") val status: BangumiNextEpisodeCollectionStatus? = null,
+    @SerialName(value = "subject") val subject: BangumiNextSlimSubject? = null,
 
-    @SerialName(value = "subject") val subject: BangumiNextSlimSubject? = null
+    @SerialName(value = "collection") val collection: BangumiNextEpisodeCollection? = null
 
 ) {
 

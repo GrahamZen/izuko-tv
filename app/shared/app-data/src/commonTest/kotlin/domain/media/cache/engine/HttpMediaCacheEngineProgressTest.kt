@@ -74,6 +74,21 @@ class HttpMediaCacheEngineProgressTest {
     }
 
     @Test
+    fun `merge progress estimate is output size over downloaded bytes and stays below 100 percent`() {
+        assertEquals(Progress.Zero, estimateMergeProgress(writtenBytes = 0, inputBytes = 400))
+        assertEquals(0.25f.toProgress(), estimateMergeProgress(writtenBytes = 100, inputBytes = 400))
+        // 输出写满或比输入还大时, 合并没结束之前也不显示 100%
+        assertEquals(0.99f.toProgress(), estimateMergeProgress(writtenBytes = 400, inputBytes = 400))
+        assertEquals(0.99f.toProgress(), estimateMergeProgress(writtenBytes = 500, inputBytes = 400))
+    }
+
+    @Test
+    fun `merge progress estimate is unspecified when the input size is unknown`() {
+        assertEquals(Progress.Unspecified, estimateMergeProgress(writtenBytes = 100, inputBytes = 0))
+        assertEquals(Progress.Unspecified, estimateMergeProgress(writtenBytes = 100, inputBytes = -1))
+    }
+
+    @Test
     fun `initializing and merging count as in progress`() {
         assertEquals(MediaCacheState.IN_PROGRESS, DownloadStatus.INITIALIZING.toMediaCacheState())
         assertEquals(MediaCacheState.IN_PROGRESS, DownloadStatus.DOWNLOADING.toMediaCacheState())

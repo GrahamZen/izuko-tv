@@ -10,16 +10,6 @@
 package me.him188.ani.app.ui.subject.person
 
 import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddComment
-import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.testTag
-import me.him188.ani.app.ui.comment.EditCommentSheet
-import me.him188.ani.app.ui.lang.person_details_write_comment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,10 +28,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +59,9 @@ import me.him188.ani.app.ui.foundation.ImageViewer
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
+import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
+import me.him188.ani.app.ui.foundation.focus.tvHeaderActionFirst
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
@@ -190,8 +190,6 @@ internal fun peopleMetaLine(kindLabel: String, collects: Int): String =
 
 /**
  * 头部行: 竖版立绘/照片 (固定 110x147, crop 顶部对齐) + 名字/原名/meta 行. 用于单栏与侧边预览.
- *
- * @param onClickImage 点击图片的回调 (如打开大图查看器). 为 `null` 时图片不可点击.
  */
 @Composable
 internal fun PeopleHeaderRow(
@@ -201,6 +199,7 @@ internal fun PeopleHeaderRow(
     metaLine: String,
     modifier: Modifier = Modifier,
     isPlaceholder: Boolean = false,
+    /** 点击图片的回调 (如打开大图查看器). 为 `null` 时图片不可点击. */
     onClickImage: (() -> Unit)? = null,
 ) {
     Row(
@@ -434,18 +433,40 @@ internal fun <T : Any> PeopleStripSection(
     modifier: Modifier = Modifier,
     onViewAll: (() -> Unit)? = null,
     itemSpacing: Dp = 12.dp,
+    /**
+     * 非 null 时横滑内容换成这一行 (预览弹窗的原生行, 见 [PeoplePreviewRows]), [itemContent] 不用. 焦点进到原生行里时 Compose 不替它滚,
+     * 整块在焦点进来时自己滚进可见范围.
+     */
+    nativeRow: (@Composable () -> Unit)? = null,
     itemContent: @Composable (T, Modifier) -> Unit,
 ) {
     if (items.itemCount == 0) return
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // 标题行的「查看全部」夹在上一块与原生行之间, 上下键按几何挑不中它 (见 tvHeaderActionFirst): 原生行上下键先经过它
+    val viewAll = remember { FocusRequester() }
+    var viewAllFocused by remember { mutableStateOf(false) }
+    Column(
+        modifier.fillMaxWidth().ifThen(nativeRow != null) { tvBringIntoViewOnFocus() },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (onViewAll != null) {
-            SectionHeader(title, actionLabel = stringResource(Lang.subject_details_view_all), onAction = onViewAll)
+            SectionHeader(
+                title,
+                actionLabel = stringResource(Lang.subject_details_view_all),
+                onAction = onViewAll,
+                actionModifier = Modifier.focusRequester(viewAll).onFocusChanged { viewAllFocused = it.isFocused },
+            )
         } else {
             SectionHeader(title)
         }
-        TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
-            val item = items[i] ?: return@TvAnchoredStrip
-            itemContent(item, itemModifier)
+        if (nativeRow != null) {
+            Box(Modifier.ifThen(onViewAll != null) { tvHeaderActionFirst(viewAll, { viewAllFocused }) }) {
+                nativeRow()
+            }
+        } else {
+            TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
+                val item = items[i] ?: return@TvAnchoredStrip
+                itemContent(item, itemModifier)
+            }
         }
     }
 }
@@ -461,6 +482,10 @@ internal fun PersonCommentsSection(
     maxPreviewItems: Int = 3,
 ) {
     val comments = state.list.collectAsLazyPagingItemsWithLifecycle()
+    // 标题行右边的「N 条」夹在上一块 (出演作品等横滑行) 与评论之间, 上下键按几何挑不中它 (见 tvHeaderActionFirst):
+    // 从上面下来先落到它, 第一条评论按上回到它
+    val showAll = remember { FocusRequester() }
+    var showAllFocused by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(
             stringResource(Lang.person_details_comments),
@@ -468,6 +493,7 @@ internal fun PersonCommentsSection(
                 ?.let { stringResource(Lang.person_details_comments_count, remember(it) { groupThousands(it) }) }
                 ?: stringResource(Lang.subject_details_view_all),
             onAction = onShowAll,
+            actionModifier = Modifier.focusRequester(showAll).onFocusChanged { showAllFocused = it.isFocused },
         )
         val previewCount = minOf(comments.itemCount, maxPreviewItems)
         if (previewCount == 0) {
@@ -476,14 +502,23 @@ internal fun PersonCommentsSection(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        for (i in 0 until previewCount) {
-            val comment = comments[i] ?: continue
-            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            PersonCommentPreviewItem(
-                comment,
-                Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onShowAll),
-            )
+        } else {
+            Column(
+                Modifier.tvHeaderActionFirst(showAll, { showAllFocused }, upFromContent = false),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                for (i in 0 until previewCount) {
+                    val comment = comments[i] ?: continue
+                    if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    PersonCommentPreviewItem(
+                        comment,
+                        Modifier
+                            .ifThen(i == 0) { focusProperties { up = showAll } }
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable(onClick = onShowAll),
+                    )
+                }
+            }
         }
     }
 }
@@ -531,27 +566,21 @@ private fun PersonCommentPreviewItem(
 
 /**
  * 全量评论 sheet: 复用剧集/条目评论列 ([SubjectCommentColumn]), 支持 BBCode 表情/图片/链接.
- * 与条目评论 sheet 的差别: 人物评论无评分. 头部提供 "写评论" 入口, Ani 评论可回复/贴纸回应/点赞/举报,
- * Bangumi 评论只读, 可在 Bangumi 打开.
- *
- * 编辑器 ([EditCommentSheet]) 挂在本 sheet 的内容里 (而不是页面级): 它是 Popup, 必须与本 sheet 处于同一窗口才能盖在上面.
- * 举报弹层则由页面级的 [PeopleCommentsHost] 承载.
+ * 与条目评论 sheet 的差别: 人物评论无评分, 也没有 "写评价" 入口.
  *
  * TV 上改为大号居中弹窗 (可导航的纯文本评论卡片网格, 确认键展开全文, 返回键关闭).
  */
 @Composable
 internal fun PersonCommentsSheet(
-    comments: PeopleCommentsState,
+    state: CommentState,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    originalCommentsUrl: String? = null,
 ) {
-    // 遥控器形态: 底部 sheet 够不着, 改成大号居中弹窗 (纯文本卡片网格, 确认键展开全文).
-    // 那条路没有编辑器/举报入口 —— 电视上不写评论.
     if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
-        val commentState = comments.commentState
-        val gridComments = commentState.list.collectAsLazyPagingItemsWithLifecycle()
+        val gridComments = state.list.collectAsLazyPagingItemsWithLifecycle()
         CommentsGridDialog(
-            title = commentState.count?.takeIf { it > 0 }?.let {
+            title = state.count?.takeIf { it > 0 }?.let {
                 stringResource(Lang.person_details_comments) + " · " + remember(it) { groupThousands(it) }
             } ?: stringResource(Lang.person_details_comments),
             comments = gridComments,
@@ -560,99 +589,44 @@ internal fun PersonCommentsSheet(
         )
         return
     }
+    val browserNavigator = LocalUriHandler.current
+    val toaster = LocalToaster.current
+    val externalAppLinkWarningPrefix = stringResource(Lang.foundation_richtext_external_app_link_warning_prefix)
+    val openLinkFailedPrefix = stringResource(Lang.foundation_richtext_open_failed_prefix)
     val imageViewer = rememberImageViewerHandler()
+
     ModalBottomSheet(
         onDismissRequest,
         modifier = modifier,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        PersonCommentsSheetContent(
-            comments,
-            onClickImage = { imageViewer.viewImage(it) },
-        )
-    }
-    ImageViewer(imageViewer) { imageViewer.clear() }
-}
-
-/**
- * [PersonCommentsSheet] 的内容: 标题行 (评论数 + "写评论") + 评论列 + 编辑器. 拆出来是为了能脱离 [ModalBottomSheet] 测试.
- */
-@Composable
-internal fun PersonCommentsSheetContent(
-    comments: PeopleCommentsState,
-    onClickImage: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val state = comments.commentState
-    val browserNavigator = LocalUriHandler.current
-    val toaster = LocalToaster.current
-    val externalAppLinkWarningPrefix = stringResource(Lang.foundation_richtext_external_app_link_warning_prefix)
-    val openLinkFailedPrefix = stringResource(Lang.foundation_richtext_open_failed_prefix)
-    // 不用 rememberSaveable: 编辑目标存在 view model 里, 进程重建后 sheet 也不会自动恢复
-    var showEditor by remember { mutableStateOf(false) }
-
-    Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column(Modifier.fillMaxWidth()) {
             Text(
                 state.count?.takeIf { it > 0 }?.let {
                     stringResource(Lang.person_details_comments) + " · " + remember(it) { groupThousands(it) }
                 } ?: stringResource(Lang.person_details_comments),
-                Modifier.weight(1f),
+                Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.titleLarge,
             )
-            TextButton(
-                onClick = {
-                    comments.startNewComment()
-                    showEditor = true
+            SubjectDetailsDefaults.SubjectCommentColumn(
+                state = state,
+                onClickUrl = { url ->
+                    RichTextDefaults.checkSanityAndOpen(
+                        url,
+                        browserNavigator,
+                        toaster,
+                        externalAppLinkWarningPrefix,
+                        openLinkFailedPrefix,
+                    )
                 },
-                Modifier.testTag(PersonCommentsSheetTestTags.WriteComment),
-            ) {
-                Icon(Icons.Rounded.AddComment, contentDescription = null, Modifier.size(18.dp))
-                Text(
-                    stringResource(Lang.person_details_write_comment),
-                    Modifier.padding(start = 8.dp),
-                )
-            }
+                onClickImage = { imageViewer.viewImage(it) },
+                onOpenOriginal = originalCommentsUrl?.let { url ->
+                    { browserNavigator.openUri(url) }
+                },
+                connectedScrollState = rememberConnectedScrollState(),
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            )
         }
-        SubjectDetailsDefaults.SubjectCommentColumn(
-            state = state,
-            onClickUrl = { url ->
-                RichTextDefaults.checkSanityAndOpen(
-                    url,
-                    browserNavigator,
-                    toaster,
-                    externalAppLinkWarningPrefix,
-                    openLinkFailedPrefix,
-                )
-            },
-            onClickImage = onClickImage,
-            reportState = comments.reportState,
-            onOpenOriginal = { browserNavigator.openUri(comments.originalCommentsUrl) },
-            onClickReply = { comment ->
-                comments.startReply(comment.sourceCommentId)
-                showEditor = true
-            },
-            onToggleReaction = { comment, value -> state.submitReaction(comment, value) },
-            connectedScrollState = rememberConnectedScrollState(),
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-        )
     }
-
-    if (showEditor) {
-        EditCommentSheet(
-            state = comments.editorState,
-            onDismiss = {
-                showEditor = false
-                comments.editorState.cancelSend()
-            },
-            onSendComplete = { comments.refresh() },
-        )
-    }
-}
-
-object PersonCommentsSheetTestTags {
-    const val WriteComment = "PersonCommentsSheet.WriteComment"
+    ImageViewer(imageViewer) { imageViewer.clear() }
 }

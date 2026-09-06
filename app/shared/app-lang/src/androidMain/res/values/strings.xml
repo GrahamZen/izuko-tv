@@ -26,7 +26,7 @@
     <string name="playback_history_select_all">Select all</string>
     <string name="playback_history_delete_selected">Delete selected playback records</string>
     <string name="playback_history_delete_title">Delete playback records?</string>
-    <string name="playback_history_delete_confirmation">Selected records will be removed from this device and synced to your account.</string>
+    <string name="playback_history_delete_confirmation">Selected records will be removed from this device.</string>
     <string name="playback_history_sync_status_synced">Playback history synced</string>
     <string name="playback_history_sync_status_pending">%1$d pending sync items</string>
     <string name="playback_history_sync_status_title">Sync Status</string>
@@ -93,19 +93,19 @@
     <string name="settings_debug_metered_network">Metered network information</string>
     <string name="settings_debug_others">Others</string>
     <string name="settings_debug_get_bangumi_token">Obtain Bangumi access token</string>
-    <string name="settings_debug_get_ani_token">Obtain Ani access token</string>
+    <string name="settings_debug_get_ani_token">Obtain Bangumi access token</string>
     <string name="settings_debug_copied">Copied: %1$s</string>
     <string name="settings_debug_install_package">Installer package</string>
     <string name="settings_debug_install_package_on_drop">Drop installer package to install</string>
-    <string name="settings_debug_install_package_on_drop_description">Drop an installer package (%1$s) onto the Ani window to install it and restart after confirmation. Useful for trying out a test build</string>
+    <string name="settings_debug_install_package_on_drop_description">Drop an installer package (%1$s) onto the Izuko window to install it and restart after confirmation. Useful for trying out a test build</string>
     <string name="settings_debug_install_package_confirm_title">Install this version?</string>
-    <string name="settings_debug_install_package_confirm_message">Ani will quit immediately, replace the current version with this package and restart automatically. Your settings and data are not affected, and the package is not deleted.</string>
+    <string name="settings_debug_install_package_confirm_message">Izuko will quit immediately, replace the current version with this package and restart automatically. Your settings and data are not affected, and the package is not deleted.</string>
     <string name="settings_debug_install_package_confirm">Install and restart</string>
     <string name="settings_debug_install_package_cancel">Cancel</string>
     <string name="settings_debug_install_package_unsupported">Unsupported installer package. Supported formats: %1$s</string>
     <string name="settings_debug_install_package_drop_title">Release to install</string>
     <string name="settings_debug_install_package_drop_unknown_name">Installer package</string>
-    <string name="settings_debug_install_package_drop_meta">Ani will quit, replace the current %1$s and restart automatically</string>
+    <string name="settings_debug_install_package_drop_meta">Izuko will quit, replace the current %1$s and restart automatically</string>
     <string name="settings_debug_install_package_drop_supported_hint">%1$s packages</string>
     <string name="settings_debug_install_package_drop_badge">Developer feature · Drop installer package to install</string>
     <string name="settings_debug_install_package_confirm_new_version">New version</string>
@@ -145,7 +145,7 @@
     <string name="settings_debug_dev_builds_extracting">Extracting package…</string>
     <string name="settings_debug_dev_builds_installing">Installing…</string>
     <string name="settings_debug_dev_builds_confirm_title">Install this commit?</string>
-    <string name="settings_debug_dev_builds_confirm_message_desktop">%1$s (%2$s) will be downloaded. Ani will then quit, replace the current version with it and restart automatically. Your settings and data are not affected.</string>
+    <string name="settings_debug_dev_builds_confirm_message_desktop">%1$s (%2$s) will be downloaded. Izuko will then quit, replace the current version with it and restart automatically. Your settings and data are not affected.</string>
     <string name="settings_debug_dev_builds_confirm_message_android">%1$s (%2$s) will be downloaded, then the system installer opens. The APK is signed with the release key and cannot be installed over a debug build.</string>
     <string name="settings_debug_dev_builds_confirm_message_manual">%1$s (%2$s) will be downloaded. Replace the current AppImage with it manually afterwards.</string>
     <string name="settings_debug_dev_builds_confirm_install">Download and install</string>
@@ -181,15 +181,13 @@
     <string name="settings_help_telegram">Telegram</string>
     <string name="settings_help_github">GitHub</string>
     <string name="settings_help_feedback">Send feedback</string>
-    <string name="settings_help_website">Ani official website</string>
     <string name="settings_about_version">Version</string>
     <string name="settings_about_release_notes">Release notes</string>
-    <string name="settings_about_website">Website</string>
     <string name="settings_about_feedback">Feedback &amp; suggestions</string>
     <string name="settings_about_source_code">Source code</string>
     <string name="settings_about_chat_groups">Chat groups</string>
-    <string name="settings_about_icon_description">Animeko Icon</string>
-    <string name="settings_about_app_name">Animeko</string>
+    <string name="settings_about_icon_description">Izuko TV Icon</string>
+    <string name="settings_about_app_name">Izuko TV</string>
     <string name="settings_about_app_description">A one-stop platform for searching, following, and watching anime with bullet comments</string>
     <string name="settings_about_build_info">Build info</string>
     <string name="settings_build_info_branch">Branch</string>
@@ -301,7 +299,7 @@
     <string name="settings_mediasource_selector_episodes_supporting">CSS selector expression. Expected to return some elements, each of which will have its text used as the episode name.\nIf the element is &lt;a&gt;, its href will be read as the episode link by default. Alternatively, you can configure the following settings to extract the link in a different way.\nIf the element is not &lt;a&gt;, you’ll need to configure the following settings to extract the link.</string>
     <string name="settings_mediasource_selector_episode_links_label">Extract the episode links (optional)</string>
     <string name="settings_mediasource_selector_episode_links_supporting">An optional CSS selector expression. If the previously extracted episode elements are not &lt;a&gt;, you’ll need to configure this to extract the link.</string>
-    <string name="settings_mediasource_selector_unsupported_format">This version does not support the configuration type: %1$s\n\nIt might be due to importing a config edited in a newer version.\nUpdate Ani or switch to another config type.</string>
+    <string name="settings_mediasource_selector_unsupported_format">This version does not support the configuration type: %1$s\n\nIt might be due to importing a config edited in a newer version.\nUpdate Izuko or switch to another config type.</string>
     <string name="settings_mediasource_test_keyword">Keyword</string>
     <string name="settings_mediasource_test_random">Random</string>
     <string name="settings_mediasource_test_episode_sort">Episode number</string>
@@ -510,7 +508,7 @@
     <string name="settings_mediasource_cancel">Cancel</string>
     <string name="settings_mediasource_clipboard_empty">Clipboard is empty</string>
     <string name="settings_mediasource_multiple_configs">The clipboard content contains multiple data source configurations, the current import function only supports a single configuration</string>
-    <string name="settings_mediasource_invalid_content">The clipboard content is invalid. Please check the data source type (Selector or RSS) and the Ani version used for export</string>
+    <string name="settings_mediasource_invalid_content">The clipboard content is invalid. Please check the data source type (Selector or RSS) and the Izuko version used for export</string>
     <string name="settings_mediasource_unsupported_factory">The data source type is not supported, please upgrade the software</string>
     <string name="settings_mediasource_unsupported_version">The data source version is not supported, please upgrade the software</string>
     <string name="settings_mediasource_close">Close</string>
@@ -629,7 +627,7 @@
     <string name="exploration_horizontal_scroll_tip">Hold Shift + mouse wheel to scroll horizontally</string>
 
     <!-- MainScreenPage -->
-    <string name="main_network_check_failed">Failed to connect to the Animeko server. Check your network, or configure a proxy in Settings.</string>
+    <string name="main_network_check_failed">Failed to connect to Bangumi. Check your network, or configure a proxy in Settings.</string>
     <string name="main_screen_page_exploration">Explore</string>
     <string name="main_screen_page_collection">Collection</string>
     <string name="main_screen_page_cache_management">Downloads</string>
@@ -709,8 +707,8 @@
     <string name="settings_network_proxy_password">Password</string>
     <string name="settings_network_proxy_retest">Retest</string>
     <string name="settings_network_proxy_service_danmaku">Danmaku service</string>
-    <string name="settings_network_proxy_service_collection">Collection data service</string>
-    <string name="settings_network_proxy_service_comment">Comment service</string>
+    <string name="settings_network_proxy_service_collection">Search &amp; episodes</string>
+    <string name="settings_network_proxy_service_comment">Titles &amp; collections</string>
     <string name="settings_network_proxy_test_success">Connection successful</string>
     <string name="settings_network_proxy_test_failed">Connection failed</string>
     <string name="settings_network_proxy_current_disabled">Proxy disabled</string>
@@ -775,7 +773,8 @@
     <string name="login_other_methods">Other sign-in methods</string>
 
     <!-- OAuth -->
-    <string name="oauth_bangumi_description">Authorize your Bangumi account to sync your watch history to Bangumi or sign in to Ani more conveniently.</string>
+    <string name="oauth_bangumi_description">Authorize your Bangumi account to sync your watch history to Bangumi or sign in to Izuko more conveniently.</string>
+    <string name="oauth_bangumi_bind_account">Sign in to Bangumi again</string>
     <string name="oauth_authorize_title">Authorize %1$s Sign-In</string>
     <string name="oauth_bind_account">Bind %1$s Account</string>
     <string name="oauth_sign_in_or_sign_up">Sign In / Sign Up</string>
@@ -1428,7 +1427,7 @@
     <string name="rating_summary">%1$d ratings | #%2$d</string>
     <string name="comment_send_failed_network">Failed to send: network error</string>
     <string name="comment_send_failed_unknown">Failed to send. Please report this issue with logs attached.\n%1$s</string>
-    <string name="comment_ani_only_notice">Comments are posted to Ani. Bangumi comments are read-only</string>
+    <string name="comment_ani_only_notice">Comments are posted to Bangumi</string>
     <string name="comment_send_comment">Write a comment</string>
     <string name="comment_rendering">Rendering...</string>
     <string name="comment_reply">Reply to comment</string>
@@ -1467,7 +1466,7 @@
     <string name="comment_preview">Preview</string>
     <string name="comment_send">Send</string>
     <string name="foundation_browser_open_failed_copied">Unable to open the link. It has been copied to the clipboard. Please open it in your browser</string>
-    <string name="foundation_richtext_external_app_link_warning_prefix">This link may open another app. ani will not open this link:\n</string>
+    <string name="foundation_richtext_external_app_link_warning_prefix">This link may open another app. Izuko will not open this link:\n</string>
     <string name="foundation_richtext_open_failed_prefix">Unable to open this link:\n</string>
     <string name="foundation_nsfw_hidden">This content cannot be shown</string>
     <string name="foundation_nsfw_temporary_display">Show temporarily</string>
