@@ -90,7 +90,7 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         PlaybackHistoryPendingOpEntity::class,
         RecommendationFeedEntity::class, // 6.1.x: 探索页推荐的结果缓存
     ],
-    version = 25,
+    version = 27,
     autoMigrations = [
         AutoMigration(from = 1, to = 2, spec = Migrations.Migration_1_2::class),
         AutoMigration(from = 2, to = 3, spec = Migrations.Migration_2_3::class),
@@ -119,6 +119,12 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         // 24 -> 25: 新增 recommendation_feed 表 (纯加表, 不需要 spec). 探索页推荐改成
         // "缓存住 + 后台重算", 见 [RecommendationFeedEntity].
         AutoMigration(from = 24, to = 25),
+        // 25 -> 26: recommendation_feed 加 titleArg / algoVersion 两列 (纯加列, 有默认值).
+        // 推荐改成分组, 见 [RecommendationFeedEntity].
+        AutoMigration(from = 25, to = 26),
+        // 26 -> 27: recommendation_feed 加 profileKey 一列 (纯加列, 有默认值). 画像变了
+        // (最典型: 登录) 就让缓存作废, 见 [RecommendationFeedEntity.profileKey].
+        AutoMigration(from = 26, to = 27),
     ],
     exportSchema = true,
 )

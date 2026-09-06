@@ -411,6 +411,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         RecommendationRepository(
             bangumiApiProvider.subjectApi,
             database.subjectCollection(),
+            get(),
             database.recommendationFeedDao(),
             get(),
             get(),
