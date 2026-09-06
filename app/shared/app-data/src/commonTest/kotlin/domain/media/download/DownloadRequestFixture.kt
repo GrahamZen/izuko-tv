@@ -261,6 +261,8 @@ internal class DownloadRequestFixture(
             emit(subject)
         }
 
+        override suspend fun refreshSubjectCollection(subjectId: Int) = throw UnsupportedOperationException()
+
         override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> =
             throw UnsupportedOperationException()
 

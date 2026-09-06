@@ -189,6 +189,8 @@ internal class FakeSubjectCollectionRepository : SubjectCollectionRepository() {
         emitAll(collection.filterNotNull())
     }
 
+    override suspend fun refreshSubjectCollection(subjectId: Int) = throw UnsupportedOperationException()
+
     override fun getSubjectCollectionTypeOffline(subjectId: Int): Flow<UnifiedCollectionType?> =
         flowOf(collectionTypes[subjectId])
 

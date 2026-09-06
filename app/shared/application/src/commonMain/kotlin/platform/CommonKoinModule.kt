@@ -292,6 +292,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             sessionManager = get(),
             nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
             getEpisodeTypeFiltersUseCase = get(),
+            scope = coroutineScope,
         )
     }
     single<FollowedSubjectsRepository> {
@@ -330,6 +331,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             subjectService = get(),
             subjectCollectionRepository = get(),
             subjectSeriesIndexService = get(),
+            scope = coroutineScope,
         )
     }
 
@@ -396,7 +398,9 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             playbackHistoryDao = database.playbackHistoryDao(),
         )
     }
-    single<SubjectSeriesIndexService> { SubjectSeriesIndexService(bangumiApiProvider.subjectApi) }
+    single<SubjectSeriesIndexService> {
+        SubjectSeriesIndexService(bangumiApiProvider.subjectApi, scope = coroutineScope)
+    }
 
     single<PeerFilterSubscriptionRepository> {
         PeerFilterSubscriptionRepository(
@@ -407,10 +411,12 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     }
     // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
     single<TmdbImageService> {
+        // 系列索引传单例: 各建一份的话同一条目的 BFS 会算两遍, 见 TmdbImageService.seriesIndexService
         TmdbImageService(
             get(),
             getContext().dataStores.tmdbImageCacheStore,
             disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
+            injectedSeriesIndexService = get(),
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
