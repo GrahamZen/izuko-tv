@@ -816,41 +816,24 @@ class EpisodeViewModel(
         list = episodeIdFlow
             .restartable(commentStateRestarter)
             .flatMapLatest { episodeId ->
-                episodeCommentRepository.subjectEpisodeCommentsPager(
-                    episodeId.toLong(),
-                    // Ani 评论正常但服务端没取到 Bangumi 评论: 列表照常显示, 额外提示一次, 免得看起来像"没有评论"
-                    onBangumiUnavailable = {
-                        commentLoadFailureChannel.trySend(
-                            RepositoryServiceUnavailableException("Bangumi episode comments unavailable"),
-                        )
-                    },
-                )
+                episodeCommentRepository.subjectEpisodeCommentsPager(episodeId.toLong())
                     .map { page -> page.map { it.parseToUIComment() } }
             }.cachedIn(backgroundScope),
         countState = stateOf(null),
         onSubmitCommentReaction = { comment, value, selected ->
-            // Bangumi 评论只读, 不支持提交表情回应
-            if (comment.source == UICommentSource.ANI) {
-                episodeCommentRepository.submitReaction(
-                    // 用评论所属集而非当前播放集: 自动连播/页内切集后两者可能不一致
-                    episodeId = comment.episodeId ?: episodeIdFlow.first().toLong(),
-                    commentId = comment.sourceCommentId,
-                    value = value,
-                    selected = selected,
-                )
-            }
+            // 直连之后表情回应走 bangumi 自己的接口, 全部评论都能回应
+            episodeCommentRepository.submitReaction(
+                // 用评论所属集而非当前播放集: 自动连播/页内切集后两者可能不一致
+                episodeId = comment.episodeId ?: episodeIdFlow.first().toLong(),
+                commentId = comment.sourceCommentId,
+                value = value,
+                selected = selected,
+            )
         },
         backgroundScope = backgroundScope,
         commentLoadFailures = commentLoadFailureChannel.receiveAsFlow(),
-        onSubmitCommentVote = { comment, vote ->
-            // Bangumi 评论只读, 不支持点赞
-            if (comment.source == UICommentSource.ANI) {
-                episodeCommentRepository.submitVote(
-                    episodeId = comment.episodeId ?: episodeIdFlow.first().toLong(),
-                    commentId = comment.sourceCommentId,
-                    vote = vote?.toCommentVoteValue(),
-                )
-            }
+        onSubmitCommentVote = { _, _ ->
+            // 点赞/点踩是 Ani 自己的概念; 直连 bangumi 之后评论只有表情回应 (见 submitReaction)
         },
     )
 

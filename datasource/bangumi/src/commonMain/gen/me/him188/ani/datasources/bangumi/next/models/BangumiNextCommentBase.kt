@@ -25,37 +25,40 @@ import kotlinx.serialization.encoding.*
 /**
  * 
  *
- * @param content 
- * @param createdAt 
- * @param creatorID 
  * @param id 
  * @param mainID 
+ * @param creatorID 
  * @param relatedID 
+ * @param createdAt 
+ * @param content 
  * @param state 
- * @param reactions 
+ * @param relatedPhotoID 
  * @param user 
+ * @param reactions 
  */
 @Serializable
 
 data class BangumiNextCommentBase (
 
-    @SerialName(value = "content") @Required val content: kotlin.String,
-
-    @SerialName(value = "createdAt") @Required val createdAt: kotlin.Int,
-
-    @SerialName(value = "creatorID") @Required val creatorID: kotlin.Int,
-
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
     @SerialName(value = "mainID") @Required val mainID: kotlin.Int,
 
+    @SerialName(value = "creatorID") @Required val creatorID: kotlin.Int,
+
     @SerialName(value = "relatedID") @Required val relatedID: kotlin.Int,
+
+    @SerialName(value = "createdAt") @Required val createdAt: kotlin.Int,
+
+    @SerialName(value = "content") @Required val content: kotlin.String,
 
     @SerialName(value = "state") @Required val state: kotlin.Int,
 
-    @SerialName(value = "reactions") val reactions: kotlin.collections.List<BangumiNextReaction>? = null,
+    @SerialName(value = "relatedPhotoID") val relatedPhotoID: kotlin.Int? = null,
 
-    @SerialName(value = "user") val user: BangumiNextSlimUser? = null
+    @SerialName(value = "user") val user: BangumiNextSlimUser? = null,
+
+    @SerialName(value = "reactions") val reactions: kotlin.collections.List<BangumiNextReaction>? = null
 
 ) {
 

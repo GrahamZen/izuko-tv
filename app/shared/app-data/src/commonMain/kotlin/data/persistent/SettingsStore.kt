@@ -17,6 +17,7 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.nullable
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.network.TmdbImageCache
 import me.him188.ani.app.data.repository.SavedWindowState
@@ -92,6 +93,17 @@ abstract class PlatformDataStoreManager {
             produceFile = { resolveDataStoreFile("tmdbImageCache") },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 TmdbImageCache.Empty
+            },
+        )
+    }
+
+    val animeScheduleCacheStore by lazy {
+        DataStoreFactory.create(
+            serializer = AnimeScheduleCache.serializer()
+                .asDataStoreSerializer({ AnimeScheduleCache.Empty }),
+            produceFile = { resolveDataStoreFile("animeScheduleCache") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                AnimeScheduleCache.Empty
             },
         )
     }

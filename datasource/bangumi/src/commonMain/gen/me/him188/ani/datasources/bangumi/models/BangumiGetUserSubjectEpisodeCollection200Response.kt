@@ -10,14 +10,16 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiUserEpisodeCollection
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -29,7 +31,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiGetUserSubjectEpisodeCollection200Response(
+data class BangumiGetUserSubjectEpisodeCollection200Response (
 
     @SerialName(value = "total") @Required val total: kotlin.Int,
 

@@ -17,36 +17,41 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.trending.TrendingSubjectInfo
 import me.him188.ani.app.data.models.trending.TrendsInfo
+import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 import me.him188.ani.app.tools.paging.SinglePagePagingSource
-import me.him188.ani.client.apis.TrendsAniApi
-import me.him188.ani.client.models.AniTrends
+import me.him188.ani.datasources.bangumi.next.apis.TrendingBangumiNextApi
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextGetTrendingSubjects200Response
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.error
 import kotlin.coroutines.CoroutineContext
 
 class TrendsRepository(
-    private val trendsApi: ApiInvoker<TrendsAniApi>,
+    private val trendsApi: ApiInvoker<TrendingBangumiNextApi>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_
 ) : Repository() {
     suspend fun getTrendsInfo(): TrendsInfo {
         return withContext(ioDispatcher) {
             trendsApi {
-                getTrends().body().toTrendsInfo()
+                getTrendingSubjects(BangumiNextSubjectType.Anime, limit = TRENDING_LIMIT).body().toTrendsInfo()
             }
         }
     }
 
-    // From animeko server
+    // bangumi 的每日热度榜
     fun trendsInfoPager(): Flow<PagingData<TrendsInfo>> {
         return Pager(defaultPagingConfig) {
             SinglePagePagingSource<Unit, TrendsInfo> {
                 runWrappingExceptionAsLoadResult<Unit, TrendsInfo> {
                     val trendsInfo = withContext(ioDispatcher) {
                         trendsApi {
-                            getTrends().body().toTrendsInfo()
+                            getTrendingSubjects(BangumiNextSubjectType.Anime, limit = TRENDING_LIMIT).body()
+                                .toTrendsInfo()
                         }
                     }
                     PagingSource.LoadResult.Page(
@@ -64,10 +69,17 @@ class TrendsRepository(
     }
 }
 
-fun AniTrends.toTrendsInfo(): TrendsInfo {
+private const val TRENDING_LIMIT = 20
+
+fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
+    logger<TrendsRepository>().info { "bgm-direct: trending -> ${data.size}" }
     return TrendsInfo(
-        subjects = trendingSubjects.map {
-            TrendingSubjectInfo(it.bangumiId, it.nameCn, it.imageLarge)
+        subjects = data.map {
+            TrendingSubjectInfo(
+                it.subject.id,
+                it.subject.nameCN.ifEmpty { it.subject.name },
+                it.subject.images?.large.orBangumiPlaceholder(),
+            )
         },
     )
 }

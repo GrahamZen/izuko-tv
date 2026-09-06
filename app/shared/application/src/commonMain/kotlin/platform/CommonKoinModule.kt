@@ -29,16 +29,15 @@ import me.him188.ani.app.data.network.AniApiProvider
 import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniPersonCommentService
-import me.him188.ani.app.data.network.AniSubjectRelationIndexService
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
-import me.him188.ani.app.data.network.AnimeScheduleService
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.AutoSkipRepository
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
-import me.him188.ani.app.data.network.BangumiReplyRelationService
 import me.him188.ani.app.data.network.DefaultWatchTogetherApiService
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
@@ -110,6 +109,7 @@ import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
 import me.him188.ani.app.domain.foundation.ServerListFeatureHandler
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
 import me.him188.ani.app.domain.foundation.UseAniTokenFeatureHandler
+import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryFeatureHandler
@@ -153,6 +153,7 @@ import me.him188.ani.app.domain.watchtogether.WatchTogetherManager
 import me.him188.ani.app.domain.usecase.useCaseModules
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
+import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.datasources.bangumi.BangumiClient
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
 import me.him188.ani.utils.coroutines.IO_
@@ -171,6 +172,7 @@ private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
 private val Scope.settingsRepository get() = get<SettingsRepository>()
 private val Scope.aniApiProvider get() = get<AniApiProvider>()
+private val Scope.bangumiApiProvider get() = get<BangumiApiProvider>()
 
 fun KoinApplication.getCommonKoinModule(getContext: () -> Context, coroutineScope: CoroutineScope) =
     listOf(useCaseModules(), repositoryModules(getContext().dataStores), otherModules(getContext, coroutineScope))
@@ -209,6 +211,11 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                         (it as? AccessTokenSession)?.tokens?.aniAccessToken
                     },
                     onRefresh = { null },
+                ),
+                UseBangumiTokenFeatureHandler(
+                    sessionManager.sessionFlow.map {
+                        (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
+                    },
                 ),
                 ServerListFeatureHandler(
                     get<ServerSelector>().flow,
@@ -264,6 +271,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         }
     }
     single<AniApiProvider> { AniApiProvider(get<HttpClientProvider>().get(useAniToken = true)) }
+    single<BangumiApiProvider> { BangumiApiProvider(get<HttpClientProvider>().get(useBangumiToken = true)) }
     single<WatchTogetherApiService> {
         DefaultWatchTogetherApiService(
             provider = get(),
@@ -325,7 +333,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     }
     single<AniSubjectSearchService> {
         AniSubjectSearchService(
-            subjectApi = aniApiProvider.subjectApi,
+            bangumiV0Api = bangumiApiProvider.v0Api,
         )
     }
     single<SubjectSearchRepository> {
@@ -350,7 +358,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             database.subjectRelations(),
             subjectService = get(),
             subjectCollectionRepository = get(),
-            aniSubjectRelationIndexService = get(),
+            subjectSeriesIndexService = get(),
         )
     }
 
@@ -358,16 +366,25 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<SubjectService> {
         RemoteSubjectService(
             aniApiProvider.subjectApi,
+            bangumiApiProvider.subjectApi,
+            bangumiApiProvider.collectionApi,
             sessionManager = get(),
         )
     }
-    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi) }
+    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi, bangumiApiProvider.v0Api) }
 
-    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(get<AniApiProvider>().subjectApi) }
+    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
     single<PersonDetailsRepository> {
         PersonDetailsRepository(
-            personsApi = aniApiProvider.personsApi,
-            charactersApi = aniApiProvider.charactersApi,
+            personsApi = bangumiApiProvider.personApi,
+            charactersApi = bangumiApiProvider.characterApi,
+        )
+    }
+    single<BangumiScheduleSource> {
+        BangumiScheduleSource(
+            // 名册/分集/bangumi-data 都是公开数据, 用匿名客户端
+            client = get<HttpClientProvider>().get(),
+            store = getContext().dataStores.animeScheduleCacheStore,
         )
     }
     single<AnimeScheduleRepository> { AnimeScheduleRepository(get()) }
@@ -394,16 +411,10 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     single<EpisodeScreenshotRepository> { WhatslinkEpisodeScreenshotRepository() }
-    single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(get<AniApiProvider>().subjectApi) }
-    single<AniEpisodeCommentService> { AniEpisodeCommentService(get<AniApiProvider>().episodesApi) }
+    single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(bangumiApiProvider.subjectApi) }
+    single<AniEpisodeCommentService> { AniEpisodeCommentService(bangumiApiProvider.episodeApi, bangumiApiProvider.miscApi) }
     single<AniCommentReportService> { AniCommentReportService(get<AniApiProvider>().commentsApi) }
-    // 匿名客户端 (与 BangumiClient 同一个): 只读公开的评论关系, 不带任何 token
-    single<BangumiReplyRelationService> {
-        BangumiReplyRelationService(get<HttpClientProvider>().get(userAgent = ScopedHttpClientUserAgent.ANI))
-    }
-    single<EpisodeCommentRepository> {
-        EpisodeCommentRepository(aniCommentService = get(), replyRelationService = get())
-    }
+    single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
     single<AniPersonCommentService> {
         AniPersonCommentService(
             personsApi = get<AniApiProvider>().personsApi,
@@ -432,10 +443,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             scope = coroutineScope,
         ).also { it.start() }
     }
-    single<AniSubjectRelationIndexService> {
-        val provider = get<AniApiProvider>()
-        AniSubjectRelationIndexService(provider.subjectRelationsApi)
-    }
+    single<SubjectSeriesIndexService> { SubjectSeriesIndexService(bangumiApiProvider.subjectApi) }
 
     single<PeerFilterSubscriptionRepository> {
         PeerFilterSubscriptionRepository(
@@ -445,7 +453,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             builtinPeerFilterRuleApi = get<AniApiProvider>().pfRuleApi,
         )
     }
-    single<AnimeScheduleService> { AnimeScheduleService(get<AniApiProvider>().scheduleApi) }
+    // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
     single<TmdbImageService> {
         TmdbImageService(
             get(),
@@ -454,8 +462,8 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
-    single<TrendsRepository> { TrendsRepository(get<AniApiProvider>().trendsApi) }
-    single<RecommendationRepository> { RecommendationRepository(get<AniApiProvider>().homeApi) }
+    single<TrendsRepository> { TrendsRepository(bangumiApiProvider.trendingApi) }
+    single<RecommendationRepository> { RecommendationRepository(bangumiApiProvider.subjectApi, database.subjectCollection()) }
     single<AutoSkipRepository> { AutoSkipRepository(get<AniApiProvider>().episodesApi) }
 
     single<DanmakuRepository> {

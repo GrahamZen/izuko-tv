@@ -10,14 +10,15 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -27,7 +28,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiNextUpdateSubjectProgress(
+data class BangumiNextUpdateSubjectProgress (
 
     /* 书籍条目章节进度 */
     @SerialName(value = "epStatus") val epStatus: kotlin.Int? = null,

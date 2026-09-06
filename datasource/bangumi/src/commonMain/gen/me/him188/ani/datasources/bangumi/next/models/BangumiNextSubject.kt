@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,44 +10,53 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextInfoboxItem
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectAirtime
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectImages
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectInterest
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectPlatform
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectRating
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectTag
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param airtime
- * @param collection
- * @param eps
- * @param id
- * @param info
- * @param infobox
- * @param locked
- * @param metaTags
- * @param name
- * @param nameCN
- * @param nsfw
- * @param platform
- * @param rating
- * @param redirect
- * @param series
- * @param seriesEntry
- * @param summary
- * @param tags 
+ * @param airtime 
+ * @param collection 
+ * @param eps 
+ * @param id 
+ * @param infobox 
+ * @param info 
+ * @param metaTags 
+ * @param locked 
+ * @param name 
+ * @param nameCN 
+ * @param nsfw 
+ * @param platform 
+ * @param rating 
+ * @param redirect 
+ * @param series 
+ * @param seriesEntry 
+ * @param summary 
  * @param type 
  * @param volumes 
+ * @param tags 
  * @param images 
  * @param interest 
  */
 @Serializable
 
-data class BangumiNextSubject(
+data class BangumiNextSubject (
 
     @SerialName(value = "airtime") @Required val airtime: BangumiNextSubjectAirtime,
 
@@ -66,13 +66,13 @@ data class BangumiNextSubject(
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
-    @SerialName(value = "info") @Required val info: kotlin.String,
-
     @SerialName(value = "infobox") @Required val infobox: kotlin.collections.List<BangumiNextInfoboxItem>,
 
-    @SerialName(value = "locked") @Required val locked: kotlin.Boolean,
+    @SerialName(value = "info") @Required val info: kotlin.String,
 
     @SerialName(value = "metaTags") @Required val metaTags: kotlin.collections.List<kotlin.String>,
+
+    @SerialName(value = "locked") @Required val locked: kotlin.Boolean,
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 
@@ -92,11 +92,11 @@ data class BangumiNextSubject(
 
     @SerialName(value = "summary") @Required val summary: kotlin.String,
 
-    @SerialName(value = "tags") @Required val tags: kotlin.collections.List<BangumiNextSubjectTag>,
-
     @SerialName(value = "type") @Required val type: BangumiNextSubjectType,
 
     @SerialName(value = "volumes") @Required val volumes: kotlin.Int,
+
+    @SerialName(value = "tags") @Required val tags: kotlin.collections.List<BangumiNextSubjectTag>,
 
     @SerialName(value = "images") val images: BangumiNextSubjectImages? = null,
 

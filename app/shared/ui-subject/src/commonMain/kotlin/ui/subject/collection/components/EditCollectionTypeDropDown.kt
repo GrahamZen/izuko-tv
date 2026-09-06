@@ -79,7 +79,8 @@ fun EditCollectionTypeDropDown(
     onClick: (action: SubjectCollectionAction) -> Unit,
     modifier: Modifier = Modifier,
     actions: List<SubjectCollectionAction> = SubjectCollectionActionsForEdit,
-    showDelete: Boolean = currentType != UnifiedCollectionType.NOT_COLLECTED,
+    // bangumi 没有"取消收藏"的接口 (v0 与 p1 的 DELETE 都是 404), 这个入口整体去掉
+    showDelete: Boolean = false,
     /** 菜单容器色; TV 详情页传半透明色, 其他平台用默认. */
     containerColor: Color = MenuDefaults.containerColor,
 ) {

@@ -10,36 +10,44 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
  * @param id 
+ * @param type 
  * @param staff 
- * @param nameCn 
+ * @param eps 参与章节/曲目
  * @param name 
+ * @param nameCn 
  * @param image 
  */
 @Serializable
 
-data class BangumiV0RelatedSubject(
+data class BangumiV0RelatedSubject (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
+    @SerialName(value = "type") @Required val type: BangumiSubjectType,
+
     @SerialName(value = "staff") @Required val staff: kotlin.String,
 
-    @SerialName(value = "name_cn") @Required val nameCn: kotlin.String,
+    /* 参与章节/曲目 */
+    @SerialName(value = "eps") @Required val eps: kotlin.String,
 
-    @SerialName(value = "name") val name: kotlin.String? = null,
+    @SerialName(value = "name") @Required val name: kotlin.String,
+
+    @SerialName(value = "name_cn") @Required val nameCn: kotlin.String,
 
     @SerialName(value = "image") val image: kotlin.String? = null
 

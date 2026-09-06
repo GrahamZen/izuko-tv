@@ -186,6 +186,15 @@
     <string name="cache_episode_status_merging">Merging</string>
     <string name="subject_details_nav_home">Home</string>
     <string name="subject_details_no_summary">No information</string>
+    <string name="subject_details_relation_main_story">Main story</string>
+    <string name="subject_details_relation_summary">Recap</string>
+    <string name="subject_details_relation_full_story">Complete edition</string>
+    <string name="subject_details_relation_alternative">Alternative version</string>
+    <string name="subject_details_relation_adaptation">Adaptation</string>
+    <string name="subject_details_relation_same_setting">Same setting</string>
+    <string name="subject_details_relation_different_setting">Different setting</string>
+    <string name="subject_details_relation_character">Character cameo</string>
+    <string name="subject_details_relation_collaboration">Collaboration</string>
     <string name="media_selector_item_cache_not_ready">Cache incomplete</string>
     <string name="mediafetch_request_editor_restore_names">Restore Bangumi names</string>
     <string name="episode_danmaku">Danmaku</string>

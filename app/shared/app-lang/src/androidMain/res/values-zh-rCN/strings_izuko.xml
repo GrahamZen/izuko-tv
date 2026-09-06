@@ -186,6 +186,15 @@
     <string name="cache_episode_status_merging">合并中</string>
     <string name="subject_details_nav_home">主页</string>
     <string name="subject_details_no_summary">暂无信息</string>
+    <string name="subject_details_relation_main_story">主线故事</string>
+    <string name="subject_details_relation_summary">总集篇</string>
+    <string name="subject_details_relation_full_story">全集</string>
+    <string name="subject_details_relation_alternative">不同演绎</string>
+    <string name="subject_details_relation_adaptation">改编</string>
+    <string name="subject_details_relation_same_setting">相同世界观</string>
+    <string name="subject_details_relation_different_setting">不同世界观</string>
+    <string name="subject_details_relation_character">角色出演</string>
+    <string name="subject_details_relation_collaboration">联动</string>
     <string name="media_selector_item_cache_not_ready">缓存未完成</string>
     <string name="mediafetch_request_editor_restore_names">恢复 Bangumi 名称</string>
     <string name="episode_danmaku">弹幕</string>
