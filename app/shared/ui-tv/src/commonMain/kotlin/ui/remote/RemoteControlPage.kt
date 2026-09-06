@@ -109,6 +109,7 @@ internal fun renderRemoteControlPage(
     <div id="set-keep"></div>
     <p class="hint">下面只放要打字的设置，开关类的请在电视上改。</p>
     <div id="set-proxy"></div>
+    <div id="set-bangumi"></div>
     <div id="set-trackers"></div>
     <div id="set-dmfilter"></div>
     <div id="set-logs"></div>
@@ -4912,12 +4913,14 @@ private val SUBS_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接) 与 BT 额外 tracker. 只在切到本标签时
+ * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接)、Bangumi 连接方式 (自带镜像清单、登录是否经过镜像与自建地址)
+ * 与 BT 额外 tracker. 只在切到本标签时
  * 拉一次, 不轮询 —— 表单正在填, 重画会冲掉. 密码框不回显, 留空 = 不改.
  */
 private val SETTINGS_SCRIPT = """
 (function () {
   var proxyBox = document.getElementById('set-proxy');
+  var bgmBox = document.getElementById('set-bangumi');
   var trBox = document.getElementById('set-trackers');
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
@@ -4940,6 +4943,53 @@ private val SETTINGS_SCRIPT = """
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
   var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
+  var BGM_MODES = [['AUTO', T('官方连不上时用镜像')], ['MIRROR', T('用镜像')], ['DIRECT', T('只连官方')], ['CUSTOM', T('用我自己的镜像')]];
+  function bgmUsesMirrors(mode) { return mode === 'AUTO' || mode === 'MIRROR'; }
+  // Bangumi 连接方式 (同设置页那一组): 「官方连不上时用镜像」用自带清单, 不用填; 自建地址才要输入.
+  // 推荐的是上面的代理 (直连官方). 自带镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
+  // 自建地址会带登录, 所以那一档只提示填自己的服务器, 不推荐第三方
+  function bgmCredHint(on) {
+    return on ? T('你的登录凭证与收藏数据会经过镜像，风险由你自行承担。')
+      : T('镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。');
+  }
+  function renderBangumi(b) {
+    b = b || { mode: 'AUTO', custom: '', mirrors: [], allowCredentials: false };
+    var mirrors = (b.mirrors || []).map(esc).join(T('、'));
+    bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
+      '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。') + '</p><div class="pills">' +
+      BGM_MODES.map(function (m) {
+        return '<label><input type="radio" name="mode" value="' + m[0] + '"' + (b.mode === m[0] ? ' checked' : '') + '><span>' + m[1] + '</span></label>';
+      }).join('') + '</div>' +
+      '<p class="hint bgm-auto-only"' + (b.mode === 'AUTO' ? '' : ' hidden') + '>' + T('确定连不上官方后会自动改成「用镜像」，之后不再先试官方；需要时再改回这一档。') + '</p>' +
+      '<div class="bgm-auto"' + (bgmUsesMirrors(b.mode) ? '' : ' hidden') + '>' +
+      (mirrors ? '<p class="hint">' + T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) + '</p>' : '') +
+      '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
+      T('登录与收藏同步也经过镜像') + '</label><p class="hint bgm-cred">' + bgmCredHint(b.allowCredentials) + '</p></div>' +
+      '<div class="bgm-custom"' + (b.mode === 'CUSTOM' ? '' : ' hidden') + '>' +
+      '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
+      T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
+      '</em></label></div>' +
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+  }
+  bgmBox.addEventListener('change', function (e) {
+    var t = e.target, f = t.form;
+    if (t.name === 'cred') {
+      // 勾上要先确认风险 (点保存才生效); 取消勾选不用问
+      if (t.checked && !confirm(T('镜像由第三方运营。打开后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。') +
+          '\n\n' + T('更安全的做法是设置代理：应用直连 Bangumi 官方，不经过任何第三方。'))) t.checked = false;
+      f.querySelector('.bgm-cred').textContent = bgmCredHint(t.checked);
+      return;
+    }
+    if (t.name !== 'mode') return;
+    f.querySelector('.bgm-auto-only').hidden = t.value !== 'AUTO';
+    f.querySelector('.bgm-auto').hidden = !bgmUsesMirrors(t.value);
+    f.querySelector('.bgm-custom').hidden = t.value !== 'CUSTOM';
+  });
+  bgmBox.addEventListener('submit', function (e) {
+    e.preventDefault();
+    post('api/settings/bangumi', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+  });
   // 切到电视前台 (见 TvRemoteControl.frontState): 默认关; 开了还要在电视上授权一次「显示在其他应用的上层」.
   // 授权后回到本标签会重新拉一次 (load), 状态跟着更新
   function renderFront(f) {
@@ -4988,6 +5038,7 @@ private val SETTINGS_SCRIPT = """
       '<p class="hint">' + T('每行一个，BT 下载开始前与内置 tracker 一起添加。') + '</p>' +
       '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
       '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    renderBangumi(d.bangumi);
     renderFront(d.front);
     renderKeep(d.keep);
     renderFilters(d.dmfilter);
@@ -6203,8 +6254,8 @@ private val REVIEW_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时「用手机登录」—— 电视向服务器要来 Bangumi 授权链接,
- * 手机打开, 授完权电视自己就登录好了. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
+ * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时点一下发起登录 —— 直连版 (`direct`) 是让电视弹出
+ * 授权页、在电视上用遥控器完成, 走 Ani 服务器的那版是把授权链接交给手机打开. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
  * 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
  */
 private val ACCOUNT_SCRIPT = """
@@ -6262,7 +6313,7 @@ private val ACCOUNT_SCRIPT = """
     if (!d.loggedIn) { menu = false; nick = false; }
     // 登录状态变了 (邮箱登录成功 / 在电视上退出了): 这一轮的邮箱流程作废
     if (em && em.bind !== !!d.loggedIn) em = null;
-    var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi);
+    var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi), direct = !!d.direct;
     // 刚登录上 (手机这边发起的, 或者电视上自己登的): 让评论与评分区重新读一次
     if (wasIn === false && full) window.runHooks('login', hooks.login, undefined);
     wasIn = full;
@@ -6279,26 +6330,32 @@ private val ACCOUNT_SCRIPT = """
       } else if (menu && em) {
         h += emailFlow(d);
       } else if (menu) {
-        h += '<div class="acct-menu"><button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
-          '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>' +
+        h += '<div class="acct-menu">' +
+          (direct ? '' : '<button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
+            '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>') +
           '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + T('退出登录') + '</button></div>';
       }
     } else if (d.offline) {
-      h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
+      h += '<p class="hint">' + (direct ? T('电视现在连不上 Bangumi，确认不了登录状态，稍后再看。')
+        : T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。')) + '</p>';
     } else {
       h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' + T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行') + '</span></div>' +
-        (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
-          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>') +
+      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' +
+        (direct ? T('电视上已经打开 Bangumi 授权页，用遥控器完成登录') : T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行')) + '</span></div>' +
+        (direct ? '' : (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
+          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>')) +
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!full && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
-      h += '<div class="row"><button type="button" class="primary" data-login="1">' + (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) +
-        '</button></div><p class="hint">' + T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。') + '</p>';
+      h += '<div class="row"><button type="button" class="primary" data-login="1">' +
+        (direct ? T('在电视上登录 Bangumi') : (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi'))) +
+        '</button></div><p class="hint">' +
+        (direct ? T('点一下，电视上就会弹出 Bangumi 授权页，用遥控器登录并同意授权。')
+          : T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。')) + '</p>';
       // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
-      if (!d.loggedIn) {
+      if (!d.loggedIn && !direct) {
         h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
       }
     }
@@ -6320,12 +6377,13 @@ private val ACCOUNT_SCRIPT = """
   // 登录按钮 (账号卡片、评论与评分区): 点下去当场先开一个空白页, 等电视要来链接再让它跳过去 ——
   // 等请求回来再开新页面会被浏览器当成弹窗拦掉. 开不了新页面 (有的内置浏览器) 就在本页跳, 授权完按返回回来
   function startLogin(btn) {
-    var w = null;
-    try { w = window.open('', '_blank'); } catch (e) {}
+    // 直连版的授权页在电视上 (回调是电视的回环地址), 手机这边不开新页面; 还不知道是哪一版时先开着, 回来没有链接再关掉
+    var direct = !!(lastData && lastData.direct), w = null;
+    if (!direct) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
     post('api/account/login', {}).then(function (r) {
       btn.disabled = false;
-      if (!r.ok) {
+      if (!r.ok || !r.url) {
         if (w) w.close();
         toast(r.message);
       } else if (w) {

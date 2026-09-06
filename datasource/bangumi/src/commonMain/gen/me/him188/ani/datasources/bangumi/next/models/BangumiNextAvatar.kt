@@ -23,19 +23,19 @@ import kotlinx.serialization.encoding.*
 /**
  * 
  *
- * @param large 
- * @param medium 
  * @param small 
+ * @param medium 
+ * @param large 
  */
 @Serializable
 
 data class BangumiNextAvatar (
 
-    @SerialName(value = "large") @Required val large: kotlin.String,
+    @SerialName(value = "small") @Required val small: kotlin.String,
 
     @SerialName(value = "medium") @Required val medium: kotlin.String,
 
-    @SerialName(value = "small") @Required val small: kotlin.String
+    @SerialName(value = "large") @Required val large: kotlin.String
 
 ) {
 

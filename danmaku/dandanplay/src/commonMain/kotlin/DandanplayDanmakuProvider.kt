@@ -11,7 +11,9 @@ package me.him188.ani.danmaku.dandanplay
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
+import me.him188.ani.danmaku.api.DanmakuLocation
 import me.him188.ani.danmaku.api.DanmakuServiceId
 import me.him188.ani.danmaku.api.provider.DanmakuEpisode
 import me.him188.ani.danmaku.api.provider.DanmakuEpisodeWithSubject
@@ -24,6 +26,7 @@ import me.him188.ani.danmaku.api.provider.DanmakuMatchers
 import me.him188.ani.danmaku.api.provider.DanmakuProviderId
 import me.him188.ani.danmaku.api.provider.DanmakuSubject
 import me.him188.ani.danmaku.api.provider.MatchingDanmakuProvider
+import me.him188.ani.danmaku.dandanplay.data.DandanplaySendCommentRequest
 import me.him188.ani.danmaku.dandanplay.data.SearchEpisodesAnime
 import me.him188.ani.danmaku.dandanplay.data.toDanmakuOrNull
 import me.him188.ani.datasources.api.EpisodeSort
@@ -74,6 +77,9 @@ class DandanplayDanmakuProvider(
                     serviceId = origin.serviceId,
                     count = list.size,
                     method = raw.matchInfo.method,
+                    // **必须带上**: 发弹幕要的就是这个弹幕库 id, 而调用方只看得到分类之后的结果
+                    // (2026-09-06 掉在这里过: 发送时报"尚未匹配到弹幕库", 一个请求都没发出去)
+                    sourceEpisodeId = raw.matchInfo.sourceEpisodeId,
                 ),
                 list = list,
             )
@@ -354,8 +360,54 @@ class DandanplayDanmakuProvider(
         logger.info { "${DanmakuServiceId.Dandanplay} Fetched danmaku list: ${list.size}" }
         return DanmakuFetchResult(
             providerId = providerId,
-            matchInfo = DanmakuMatchInfo(DanmakuServiceId.Dandanplay, list.size, matchMethod),
+            // 带上弹幕库 id: 发弹幕要发到这个库 (见 DanmakuMatchInfo.sourceEpisodeId)
+            matchInfo = DanmakuMatchInfo(DanmakuServiceId.Dandanplay, list.size, matchMethod, episodeId),
             list = list.mapNotNull { it.toDanmakuOrNull() },
+        )
+    }
+
+    /**
+     * 发一条弹幕到 [episodeId] 这个弹幕库 (dandanplay 开放弹幕网络).
+     *
+     * 直连之前发弹幕是发到 Ani 自己的弹幕池的, 那个池子随服务器一起没了。这条路只要应用的
+     * AppId/AppSecret, 不需要用户去登录 dandanplay; 昵称由调用方给。
+     */
+    suspend fun postDanmaku(
+        episodeId: Long,
+        content: DanmakuContent,
+        userName: String,
+    ): DanmakuInfo = withContext(defaultDispatcher) {
+        val response = dandanplayClient.postAppComment(
+            episodeId,
+            DandanplaySendCommentRequest(
+                // 接口收的是**秒**
+                time = content.playTimeMillis / 1000.0,
+                mode = when (content.location) {
+                    DanmakuLocation.TOP -> 4
+                    DanmakuLocation.BOTTOM -> 5
+                    DanmakuLocation.NORMAL -> 1
+                },
+                // dandanplay 的颜色算法是 R*255*255+G*255+B, 与常见的 R<<16|G<<8|B 不同
+                color = content.color.let { argb ->
+                    val r = (argb shr 16) and 0xFF
+                    val g = (argb shr 8) and 0xFF
+                    val b = argb and 0xFF
+                    r * 255 * 255 + g * 255 + b
+                },
+                comment = content.text,
+                userName = userName,
+            ),
+        )
+        if (!response.success) {
+            throw IllegalStateException(
+                "Failed to send danmaku: code=${response.errorCode}, message=${response.errorMessage}",
+            )
+        }
+        DanmakuInfo(
+            id = response.cid.toString(),
+            serviceId = DanmakuServiceId.Dandanplay,
+            senderId = userName,
+            content = content,
         )
     }
 
@@ -399,6 +451,7 @@ class DandanplayDanmakuProvider(
                             subject.name,
                             episode.name,
                         ),
+                        sourceEpisodeId = episodeId,
                     ),
                     list = list,
                 ),

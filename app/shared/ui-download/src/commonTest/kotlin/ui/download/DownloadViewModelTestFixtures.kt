@@ -23,13 +23,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -47,7 +48,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
@@ -191,14 +191,14 @@ internal class FakeSubjectCollectionRepository : SubjectCollectionRepository() {
         emitAll(collection.filterNotNull())
     }
 
+    override suspend fun refreshSubjectCollection(subjectId: Int) = throw UnsupportedOperationException()
+
     override fun getSubjectCollectionTypeOffline(subjectId: Int): Flow<UnifiedCollectionType?> =
         flowOf(collectionTypes[subjectId])
 
     override fun getSubjectDisplayInfoOffline(subjectId: Int): Flow<OfflineSubjectDisplayInfo?> =
         flowOf(displayInfos[subjectId])
 
-    override suspend fun invalidateAllCaches() = throw UnsupportedOperationException()
-    override suspend fun invalidateCache(subjectIds: List<Int>) = throw UnsupportedOperationException()
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> = throw UnsupportedOperationException()
     override fun subjectCollectionsPager(
         query: CollectionsFilterQuery,
@@ -225,9 +225,6 @@ internal class FakeSubjectCollectionRepository : SubjectCollectionRepository() {
 
     override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> =
         throw UnsupportedOperationException()
-
-    override suspend fun performBangumiFullSync() = throw UnsupportedOperationException()
-    override suspend fun getBangumiFullSyncState(): BangumiSyncState? = throw UnsupportedOperationException()
 }
 
 /**
@@ -292,6 +289,8 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val defaultMediaPreference: Settings<MediaPreference> get() = error("Not used")
     override val profileSettings: Settings<ProfileSettings> get() = error("Not used")
     override val proxySettings: Settings<ProxySettings> get() = error("Not used")
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> get() = error("Not used")
+    override val bangumiMirrorCache: Settings<BangumiMirrorCache> get() = error("Not used")
     override val mediaCacheSettings: Settings<MediaCacheSettings> get() = error("Not used")
     override val danmakuSettings: Settings<DanmakuSettings> get() = error("Not used")
     override val uiSettings: Settings<UISettings> get() = error("Not used")
@@ -307,7 +306,6 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val oneshotActionConfig: Settings<OneshotActionConfig> get() = error("Not used")
     override val analyticsSettings: Settings<AnalyticsSettings> get() = error("Not used")
     override val debugSettings: Settings<DebugSettings> get() = error("Not used")
-    override val watchTogetherSettings: Settings<WatchTogetherSettings> get() = error("Not used")
 }
 
 /**

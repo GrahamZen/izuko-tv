@@ -14,6 +14,7 @@ import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
 import me.him188.ani.app.data.models.subject.PersonInfo
 import me.him188.ani.app.data.models.subject.PersonPosition
+import kotlin.time.Instant
 
 /**
  * 人物 (声优/制作人员) 详情页数据.
@@ -89,4 +90,15 @@ data class CharacterSubjectInfo(
     val subject: PersonSubjectSummary,
     val role: CharacterRole,
     val actors: List<PersonInfo>,
+)
+
+data class PersonCommentInfo(
+    val id: Long,
+    /** Bangumi 用户 id. */
+    val authorId: String?,
+    val authorNickname: String?,
+    val authorAvatarUrl: String?,
+    val content: String,
+    val createdAt: Instant,
+    val replyCount: Int,
 )

@@ -32,10 +32,11 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
-import me.him188.ani.app.data.models.bangumi.BangumiSyncState
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -52,11 +53,12 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
-import me.him188.ani.app.data.network.AnimeScheduleService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
+import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
+import me.him188.ani.app.data.persistent.MemoryDataStore
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.AniDatabaseConstructor
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
@@ -72,12 +74,13 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
-import me.him188.ani.client.apis.ScheduleAniApi
-import me.him188.ani.client.apis.SubjectsAniApi
 import me.him188.ani.danmaku.ui.DanmakuConfig
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.ktor.UnsafeScopedHttpClientApi
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -93,8 +96,7 @@ import kotlin.time.Duration.Companion.seconds
  * 覆盖 [UserCollectionsViewModel] 构造时启动的后台收集 (Kotlin `init {}` 块):
  * 本 ViewModel 由 androidx `viewModel {}` 取得, 不会被 compose remember, 所以
  * [me.him188.ani.app.ui.foundation.AbstractViewModel.init] 永远不会执行. 这里不 remember、不调用 `onRemembered`, 直接构造后验证:
- * - 仓库发出 `collectionsInvalidated` → 分页器被重建 (分页器工厂再次被调用), 各类型收藏数量流被重新收集;
- * - `SessionEvent.NewLogin` → 同样刷新.
+ * - `SessionEvent.NewLogin` → 分页器被重建 (分页器工厂再次被调用), 各类型收藏数量流被重新收集.
  *
  * 用 Koin 提供 fake 仓库; [EpisodeProgressRepository] 是 final 类, 构造它需要真实的 [EpisodeCollectionRepository], 用内存 Room 库.
  */
@@ -111,8 +113,6 @@ class UserCollectionsViewModelTest {
         /** [subjectCollectionCountsFlow] 返回的流被收集的次数. */
         val countsCollected = AtomicInteger(0)
 
-        fun invalidate() = notifyCollectionsInvalidated()
-
         override fun subjectCollectionsPager(
             query: CollectionsFilterQuery,
             pagingConfig: PagingConfig,
@@ -125,10 +125,6 @@ class UserCollectionsViewModelTest {
             countsCollected.incrementAndGet()
             emit(null)
         }
-
-        override suspend fun invalidateAllCaches() = invalidate()
-
-        override suspend fun invalidateCache(subjectIds: List<Int>) = invalidate()
 
         override fun subjectCollectionFlow(subjectId: Int): Flow<SubjectCollectionInfo> =
             throw UnsupportedOperationException()
@@ -169,9 +165,7 @@ class UserCollectionsViewModelTest {
         override suspend fun getSubjectNamesCnByCollectionType(types: List<UnifiedCollectionType>): Flow<List<String>> =
             throw UnsupportedOperationException()
 
-        override suspend fun performBangumiFullSync() = throw UnsupportedOperationException()
-
-        override suspend fun getBangumiFullSyncState(): BangumiSyncState? = throw UnsupportedOperationException()
+        override suspend fun refreshSubjectCollection(subjectId: Int) = throw UnsupportedOperationException()
     }
 
     private class FakeSessionStateProvider : SessionStateProvider {
@@ -200,6 +194,8 @@ class UserCollectionsViewModelTest {
         override val defaultMediaPreference: Settings<MediaPreference> by lazy { error("not implemented") }
         override val profileSettings: Settings<ProfileSettings> by lazy { error("not implemented") }
         override val proxySettings: Settings<ProxySettings> by lazy { error("not implemented") }
+        override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("not implemented") }
+        override val bangumiMirrorCache: Settings<BangumiMirrorCache> by lazy { error("not implemented") }
         override val mediaCacheSettings: Settings<MediaCacheSettings> by lazy { error("not implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("not implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("not implemented") }
@@ -213,19 +209,19 @@ class UserCollectionsViewModelTest {
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("not implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("not implemented") }
         override val debugSettings: Settings<DebugSettings> by lazy { error("not implemented") }
-        override val watchTogetherSettings: Settings<WatchTogetherSettings> by lazy { error("not implemented") }
     }
 
-    private object UnusedSubjectsApi : ApiInvoker<SubjectsAniApi> {
-        override suspend fun <R> invoke(action: suspend SubjectsAniApi.() -> R): R {
+    private object UnusedBangumiApi : ApiInvoker<DefaultApi> {
+        override suspend fun <R> invoke(action: suspend DefaultApi.() -> R): R {
             error("ApiInvoker not expected in tests")
         }
     }
 
-    private object UnusedScheduleApi : ApiInvoker<ScheduleAniApi> {
-        override suspend fun <R> invoke(action: suspend ScheduleAniApi.() -> R): R {
-            error("ApiInvoker not expected in tests")
-        }
+    /** 时间表在这个用例里碰不到; 只要构造得出来. */
+    @OptIn(UnsafeScopedHttpClientApi::class)
+    private object UnusedHttpClient : ScopedHttpClient() {
+        override fun borrow(): Ticket = error("HttpClient not expected in tests")
+        override fun returnClient(ticket: Ticket) = error("HttpClient not expected in tests")
     }
 
     private lateinit var database: AniDatabase
@@ -244,11 +240,13 @@ class UserCollectionsViewModelTest {
         repository = FakeSubjectCollectionRepository()
         sessionStateProvider = FakeSessionStateProvider()
 
-        val animeScheduleRepository = AnimeScheduleRepository(AnimeScheduleService(UnusedScheduleApi))
+        val animeScheduleRepository = AnimeScheduleRepository(
+            BangumiScheduleSource(UnusedHttpClient, MemoryDataStore(AnimeScheduleCache.Empty)),
+        )
         val episodeCollectionRepository = EpisodeCollectionRepository(
             subjectDao = database.subjectCollection(),
             episodeCollectionDao = database.episodeCollection(),
-            episodeService = EpisodeServiceImpl(UnusedSubjectsApi),
+            episodeService = EpisodeServiceImpl(UnusedBangumiApi),
             animeScheduleRepository = animeScheduleRepository,
             subjectCollectionRepository = lazy { repository },
             getEpisodeTypeFiltersUseCase = GetEpisodeTypeFiltersUseCase { flowOf(EpisodeType.entries) },
@@ -308,18 +306,8 @@ class UserCollectionsViewModelTest {
         }
     }
 
-    @Test
-    fun `COLL-VM-01 collectionsInvalidated 时重建分页器并重新拉取数量 - 构造即订阅, 无需 remember`() = runViewModelTest { _ ->
-        // 构造时就已订阅 (而不是 onRemembered 时)
-        withTimeout(10.seconds) { repository.collectionsInvalidatedSubscriptionCount.first { it >= 1 } }
-        assertEquals(1, repository.pagerCalls.get())
-        assertEquals(1, repository.countsCollected.get())
-
-        repository.invalidate()
-
-        awaitAtLeast(2, repository.pagerCalls, "pager rebuilt after invalidation")
-        awaitAtLeast(2, repository.countsCollected, "counts re-collected after invalidation")
-    }
+    // COLL-VM-01 (仓库广播失效 -> 重建分页器) 已删: 直连之后仓库不再有那套失效广播,
+    // 测的概念本身没了.
 
     @Test
     fun `COLL-VM-02 NewLogin 时重建分页器并重新拉取数量`() = runViewModelTest { _ ->

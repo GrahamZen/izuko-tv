@@ -52,12 +52,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.domain.foundation.HttpClientProvider
-import me.him188.ani.app.domain.foundation.ServerListFeature
-import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.settings.NetworkTroubleBeacon
 import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -91,18 +90,41 @@ class TmdbImageService(
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
     /** 设置里的「不加载 TMDB 背景图」, 见 [disabledByUser]. */
     disabledByUserFlow: Flow<Boolean> = flowOf(false),
+    /** 见 [seriesIndexService]; 生产由 Koin 注入单例, 测试留 null 自建. */
+    private val injectedSeriesIndexService: SubjectSeriesIndexService? = null,
 ) {
-    private val client = httpClientProvider.get()
+    /**
+     * TMDB 与 bangumi 两边的请求共用. **带 bangumi token**: 这个 client 也会去打
+     * `api.bgm.tv/v0/subjects/{id}/subjects` (系列关系兜底), 而 R18 条目匿名访问是 404 ——
+     * 见 seriesIndexService 那里的说明。token 只会加到 `*.bgm.tv` 上, TMDB 请求不受影响
+     * (见 UseBangumiTokenFeature).
+     */
+    private val client = httpClientProvider.get(useBangumiToken = true)
 
     /**
-     * Ani 的条目关系索引, 用于解析系列主条目名 (见 [resolveLineageViaAni]).
-     *
-     * 单独借一个带 [ServerListFeature] 的客户端: Ani 的接口 baseurl 是占位符, 要靠这个
-     * feature 在可用服务器之间选路, 上面那个裸 client 拿不到.
+     * 条目的系列索引, 用于解析系列主条目名 (见 [resolveLineageViaSeriesIndex]).
      */
-    private val aniRelationsApi = AniApiProvider(
-        httpClientProvider.get(setOf(ServerListFeature.withValue(ServerListFeatureConfig.Default))),
-    ).subjectRelationsApi
+    /**
+     * 系列索引. **优先用注入进来的那一个** (Koin 单例, 同时给 `SubjectRelationsRepository` 用):
+     * 它按 subjectId 缓存 BFS 结果, 而这条 BFS 最多 20 跳 —— 各建一个实例就是各存一份缓存,
+     * 同一个条目的 BFS 会算两遍 (2026-09-06 真机日志: subject 638494 / 310194 各两次).
+     *
+     * 没注入时 (测试) 自建一个: **必须带 bangumi token**, R18 条目的
+     * `/p1/subjects/{id}/relations` 匿名访问一律 404 (条目本身也 404), 于是系列索引整条失败
+     * —— 表现是这类条目的 hero 背景/剧照要多等两个失败请求 (p1 404 → v0 兜底) 才开始匹配,
+     * 甚至彻底没图 (2026-09-06 从真机日志抓到: subject 79201/377273 都是这样).
+     * Koin 那个单例用的 `BangumiApiProvider` 本来就是 `useBangumiToken = true`, 语义一致.
+     *
+     * by lazy: 自建那条要用下面才声明的 resolveScope, 而属性按声明顺序初始化.
+     */
+    private val seriesIndexService: SubjectSeriesIndexService by lazy {
+        injectedSeriesIndexService ?: SubjectSeriesIndexService(
+            BangumiApiProvider(httpClientProvider.get(useBangumiToken = true)).subjectApi,
+            // BFS 归 resolveScope: 调用方 (collectLatest 底下的 hero / 详情页) 走开不该把
+            // 十几个请求的活儿作废, 见 SubjectSeriesIndexService 的 scope 参数
+            scope = resolveScope,
+        )
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -156,17 +178,17 @@ class TmdbImageService(
      * 「けいおん！」只在 Bangumi 的「主线故事」出边上, 于是回落被这个假结果彻底挡死.
      * 归一化后比, 因为同系列条目名常只差标点 (`うらおん!` / `うらおん!!`).
      */
-    private suspend fun resolveLineageViaAni(
+    private suspend fun resolveLineageViaSeriesIndex(
         subjectId: Int,
         originalName: String,
         nameCn: String,
     ): BgmLineage? = try {
-        val relations = aniRelationsApi { getSubjectRelations(subjectId.toLong()).body() }
-        val rootName = tmdbSeriesRootName(relations.seriesMainSubjectNames, originalName, nameCn)
+        val relations = seriesIndexService.getSubjectRelationIndex(subjectId)
+        val rootName = tmdbSeriesRootName(relations.seriesRootNames, originalName, nameCn)
         if (rootName == null) {
             null
         } else {
-            logger.info { "Resolved lineage for $subjectId via Ani: root=$rootName" }
+            logger.info { "Resolved lineage for $subjectId via series index: root=$rootName" }
             BgmLineage(rootName = rootName, isDerivative = null, viaAni = true)
         }
     } catch (e: CancellationException) {
@@ -531,6 +553,10 @@ class TmdbImageService(
         activeAsOfDate: String?,
         hints: TmdbMatchHints,
     ): String? = withContext(ioDispatcher) {
+        // 背景图慢不慢只能量, 不能猜: 这一行给出"这条目从开始解析到定下 URL 花了多久",
+        // 以及其中有多少是系列名解析 (BFS 关系图) 的账 —— 后者是直连之后新增的开销
+        // (Ani 那边 seriesMainSubjectIds 是随条目一起下发的, 零请求).
+        val startMillis = currentTimeMillis()
         run {
             // 合流等待期间前一个任务可能已经把这条解析完了, 再看一眼热表, 命中就连读盘都省了
             resolvedBackdropUrls[subjectId]?.let { return@withContext it }
@@ -608,7 +634,13 @@ class TmdbImageService(
             }
 
             val url = path?.let { "$IMAGE_BASE_URL$it" }
-            logger.info { "TMDB backdrop for subject $subjectId: ${url ?: "not found"}" }
+            logger.info {
+                val elapsed = currentTimeMillis() - startMillis
+                val lineage = seriesIndexService.lastStatsOf(subjectId)
+                    ?.let { ", lineage ${it.requests} req/${it.millis}ms" }
+                    ?: ""
+                "TMDB backdrop for subject $subjectId: ${url ?: "not found"} (${elapsed}ms$lineage)"
+            }
             dataStore.updateData {
                 it.withBackdropResult(subjectId, url, hadHints = hints != TmdbMatchHints.Empty)
             }
@@ -1661,9 +1693,9 @@ class TmdbImageService(
         originalName: String,
         nameCn: String = "",
     ): BgmLineage? {
-        // 先走 Ani 的关系索引: 墙内可直连, 一次请求直接拿到名字 (见 [resolveLineageViaAni]).
+        // 先走 Ani 的关系索引: 墙内可直连, 一次请求直接拿到名字 (见 [resolveLineageViaSeriesIndex]).
         // 它给不出系列主条目时才回落到下面的 Bangumi 逐跳回溯.
-        resolveLineageViaAni(subjectId, originalName, nameCn)?.let { return it }
+        resolveLineageViaSeriesIndex(subjectId, originalName, nameCn)?.let { return it }
         return resolveLineageViaBgm(subjectId, originalName)
     }
 
@@ -2780,7 +2812,7 @@ private class BgmLineage(
      * true = 衍生, false = 确认正传 (整链只有前传边), 建分集索引时可放心跳过 TMDB season 0 特别篇.
      *
      * **null = 未知**, 必须与 false 区分开: 走 Ani 关系索引那条路时拿不到「主线故事」出边
-     * (见 `resolveLineageViaAni`), 若把未知当成"确认正传", 衍生条目的分集就会因为 S0 被殿后
+     * (见 `resolveLineageViaSeriesIndex`), 若把未知当成"确认正传", 衍生条目的分集就会因为 S0 被殿后
      * 而错拿正片数据 —— 正是各处判定注释里警告的那种错序. 三处判定都写成 `== false` /
      * `== true` 的显式比较, null 自然落到"两边都不成立", 即维持原顺序.
      */

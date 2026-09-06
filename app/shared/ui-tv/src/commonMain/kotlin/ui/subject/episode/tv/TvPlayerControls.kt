@@ -130,7 +130,6 @@ import me.him188.ani.app.ui.foundation.icons.Forward80
 import me.him188.ani.app.ui.foundation.icons.Forward85
 import me.him188.ani.app.ui.foundation.icons.Forward90
 import me.him188.ani.app.ui.foundation.icons.SubtitleGear
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.episode_comments
 import me.him188.ani.app.ui.lang.subject_details_characters
@@ -542,7 +541,6 @@ internal fun TvPlayerControlsOverlay(
                         vm = vm,
                         items = pillItems,
                         pillFocusRequesters = pillFocusRequesters,
-                        onNewComment = { openNewEpisodeComment(vm, page, overlay) },
                         onViewAllPeople = { peopleViewAll = it },
                         // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
                         // 中途还一次焦点会与正要打开的预览抢
@@ -766,7 +764,6 @@ private fun TvPlayerPillsRow(
     items: List<TvPlayerChromeItem>,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
     /** 评论胶囊按下确定: 发表本集评论 (见 [openNewEpisodeComment]). */
-    onNewComment: () -> Unit,
     /** 角色 / 制作人员胶囊按下确定: 开对应的「查看全部」弹窗. */
     onViewAllPeople: (TvPlayerPanel) -> Unit,
     /** 上面那条路正占着焦点的是哪一颗胶囊 (弹窗或它点开的人物预览还开着); null = 都关了. */
@@ -839,12 +836,9 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.COMMENTS,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.COMMENTS),
-                        // 本颗胶囊的点击另有其用: 发表本集评论.
-                        //
-                        // 默认的"把焦点送进面板"与直接按上键完全重复 (面板早在聚焦本胶囊时就浮出来了),
-                        // 这一下等于白按; 而发新评论此前在 TV 上没有任何入口 —— 只能回复已有评论,
-                        // 手机端那颗「发送评论」FAB 在遥控器形态下没有对应物
-                        onClick = onNewComment,
+                        // 本颗胶囊的点击退回默认行为 (把焦点送进面板): 直连 bangumi 之后发不了吐槽
+                        // —— 发表要过 Cloudflare Turnstile 验证码, 遥控器上做不了, 点开只会让人打完字
+                        // 再收到一个错误. 验证码那条路做通了就把 onNewComment 接回来.
                         // 弹窗关掉后焦点还给本胶囊: 弹窗抢焦点时本节点还在场 (控制层与面板都留在下面),
                         // 但 Compose 不会自己还回来. 控制层已经收起时放弃 —— 那时焦点归属归根路由管
                         modifier = Modifier.restoreFocusAfter(
@@ -893,34 +887,6 @@ private fun Modifier.hangAboveBaseline() = layout { measurable, constraints ->
  *
  * 显隐由 [TvPlayerBottomRow] 判断 —— 功能被关掉时本组合整个消失, 焦点善后只能由父级做.
  */
-@Composable
-private fun TvWatchTogetherButton(
-    overlay: TvPlayerOverlayState,
-    modifier: Modifier = Modifier,
-) {
-    val entry = LocalWatchTogetherEntry.current
-    val dialogVisible = entry.dialogVisible
-    // 弹窗是独立窗口, 根部那个唯一按键路由收不到它的按键 -> interactionTick 不再自增,
-    // 五秒后控制层连同本按钮一起被自动隐藏吃掉. 按下拉弹层同一套引用计数上报住.
-    DisposableEffect(dialogVisible) {
-        if (dialogVisible) overlay.onPopupExpandedChanged(true)
-        onDispose { if (dialogVisible) overlay.onPopupExpandedChanged(false) }
-    }
-
-    TvBottomRowIcon(
-        icon = Icons.Rounded.SyncAlt,
-        contentDescription = stringResource(Lang.watch_together_title),
-        onClick = { entry.open(overDarkBackground = true) },
-        // 关掉后焦点还给本按钮: 弹窗是独立窗口, 关闭时主窗口未必把焦点还到原处,
-        // 不还的话控制层还在但方向键全失效.
-        // 控制层已经收起时放弃: 那时焦点归属由根路由的解析器负责, 再抢就是打架
-        modifier = modifier.restoreFocusAfter(
-            dialogVisible,
-            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-        ),
-    )
-}
-
 /** 单个胶囊按钮: 聚焦白底黑字 (Prime 样式), 同时浮出对应面板. */
 @Composable
 private fun TvPlayerPill(
@@ -1187,13 +1153,12 @@ private fun rememberTvBottomRowItems(
     layout: TvPlayerChromeLayout,
 ): List<TvPlayerChromeItem> {
     val touchInput = LocalTvTouchInputEnabled.current
-    val watchTogether = LocalWatchTogetherEntry.current.enabled
     val hasNextEpisode = vm.episodeSelectorState.hasNextEpisode
     val hasSubtitleTracks = vm.player.subtitleTracks != null
     val hasSpeed = vm.player.features[PlaybackSpeed] != null
     val hasAspectRatio = vm.player.features[VideoAspectRatio] != null
     return remember(
-        layout, touchInput, watchTogether, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio,
+        layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio,
     ) {
         TvPlayerChromeLayout.tidySeparators(
             layout.visibleItemsOf(TvPlayerChromeRow.BOTTOM).filter { item ->
@@ -1201,7 +1166,9 @@ private fun rememberTvBottomRowItems(
                     TvPlayerChromeItem.NEXT_EPISODE -> hasNextEpisode
                     // 触屏 (平板装了 TV 包) 专有的两颗, 电视上连编辑页都不列
                     TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS -> touchInput
-                    TvPlayerChromeItem.WATCH_TOGETHER -> watchTogether
+                    // 「一起看」是 Ani 服务器的功能, 直连之后没有了. 枚举项保留是为了让已经存下来的
+                    // 版式配置还能反序列化 —— 但它永远不出现, 编辑页那边也别列 (见 TvPlayerChromeCatalog)
+                    TvPlayerChromeItem.WATCH_TOGETHER -> false
                     TvPlayerChromeItem.SUBTITLE_TRACK -> hasSubtitleTracks
                     TvPlayerChromeItem.PLAYBACK_SPEED -> hasSpeed
                     TvPlayerChromeItem.ASPECT_RATIO -> hasAspectRatio
@@ -1236,21 +1203,6 @@ private fun TvPlayerBottomRow(
 ) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    // "一起看"按钮的显隐在本行 (而不是按钮自己) 判断: 用户可以在弹窗的 ⋮ 里关掉整个功能,
-    // 那一下按钮连同它自己的焦点善后逻辑一起被移除, 只有留在场上的父级能接手 —— 把焦点送回
-    // 进度条 (与从面板按返回同一个落点). 没有这一手就是按钮消失 + 焦点消失, 方向键全失效.
-    val watchTogetherEnabled = LocalWatchTogetherEntry.current.enabled
-    var watchTogetherWasEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(watchTogetherEnabled) {
-        if (watchTogetherEnabled) {
-            watchTogetherWasEnabled = true
-            return@LaunchedEffect
-        }
-        // 一开始就没开 (或本行刚组合出来) 不算"刚被关掉", 不能抢焦点
-        if (!watchTogetherWasEnabled) return@LaunchedEffect
-        watchTogetherWasEnabled = false
-        overlay.focusProgress()
-    }
     // 进度条按下键的落点 = 第一颗**可聚焦**的条目: 用户可以把分组竖线排到行首 (tidySeparators
     // 只清掉落单的那种), 把请求器挂到不可聚焦的节点上, 下键会当场蒸发
     val firstFocusable = items.firstOrNull { !it.isSeparator }
@@ -1356,8 +1308,8 @@ private fun TvPlayerBottomRow(
                         modifier = itemModifier,
                     )
 
-                    // 一起看: 与弹幕同属"和别人一起看"那一类, 默认版式里并在弹幕组末尾
-                    TvPlayerChromeItem.WATCH_TOGETHER -> TvWatchTogetherButton(overlay, itemModifier)
+                    // 「一起看」已随 Ani 服务器一起删掉; 过滤那一步就把它挡住了, 这里只是穷尽分支
+                    TvPlayerChromeItem.WATCH_TOGETHER -> Unit
 
                     // ---- 文字选项组 (字幕轨/倍速/画面比例, 自描述文字按钮, 标签槽位仅为行内对齐) ----
                     TvPlayerChromeItem.SUBTITLE_TRACK -> vm.player.subtitleTracks?.let {

@@ -24,15 +24,13 @@ import me.him188.ani.app.domain.session.isExpired
 /**
  * Do not access directly. Use [SessionManager] instead.
  */
+/** 当前登录流程的代号: 1 = 直连 bangumi 的 OAuth. 见 [TokenSave.loginFlowVersion]. */
+const val CURRENT_LOGIN_FLOW_VERSION = 1
+
 class TokenRepository(
     private val dataStore: DataStore<TokenSave>
 ) {
     val refreshToken: Flow<String?> = dataStore.data.map { it.refreshToken }
-    suspend fun setRefreshToken(value: String) {
-        dataStore.updateData {
-            it.copy(refreshToken = value)
-        }
-    }
 
     /**
      * 当前的登录会话, 为 `null` 表示未登录.
@@ -54,6 +52,26 @@ class TokenRepository(
     }
 
     /**
+     * 登录或续期成功后写入会话与 [refreshToken], 一次更新: 分两次写的话, 会话变化触发的续期逻辑可能读到
+     * 新会话配上一次登录留下的 refresh token.
+     *
+     * @param refreshToken `null` = 这个会话续不了 (个人令牌), 到期只能重新登录
+     */
+    suspend fun setSession(session: AccessTokenSession, refreshToken: String?) {
+        dataStore.updateData {
+            it.copy(
+                accessTokens = TokenSave.AccessTokens(
+                    bangumiAccessToken = session.tokens.bangumiAccessToken,
+                    aniAccessToken = session.tokens.aniAccessToken,
+                    expiresAtMillis = session.tokens.expiresAtMillis,
+                ),
+                refreshToken = refreshToken,
+                loginFlowVersion = CURRENT_LOGIN_FLOW_VERSION,
+            )
+        }
+    }
+
+    /**
      * Updates [TokenSave.accessTokens].
      *
      * For [GuestSession], this also removes [TokenSave.refreshToken].
@@ -68,6 +86,7 @@ class TokenRepository(
                             aniAccessToken = session.tokens.aniAccessToken,
                             expiresAtMillis = session.tokens.expiresAtMillis,
                         ),
+                        loginFlowVersion = CURRENT_LOGIN_FLOW_VERSION,
                     )
                 }
             }
@@ -93,6 +112,28 @@ class TokenRepository(
     }
 
     /**
+     * 老流程 (Ani 服务器) 写下的会话作废, 强制重登一次. 返回是否真的清了.
+     *
+     * 见 [TokenSave.loginFlowVersion]. 只在启动时调一次.
+     */
+    suspend fun clearLegacySession(): Boolean {
+        var cleared = false
+        dataStore.updateData { save ->
+            if (save.accessTokens == null || save.loginFlowVersion >= CURRENT_LOGIN_FLOW_VERSION) {
+                save
+            } else {
+                cleared = true
+                save.copy(
+                    refreshToken = null,
+                    accessTokens = null,
+                    loginFlowVersion = CURRENT_LOGIN_FLOW_VERSION,
+                )
+            }
+        }
+        return cleared
+    }
+
+    /**
      * for settings backup only
      */
     suspend fun getTokenSaveSnapshot(): TokenSave {
@@ -112,6 +153,15 @@ class TokenRepository(
 data class TokenSave internal constructor(
     val refreshToken: String? = null,
     val accessTokens: AccessTokens? = null,
+    /**
+     * 这份存档是哪一代登录流程写的.
+     *
+     * `0` (老存档的默认值) = Ani 服务器那套: refreshToken 是 Ani 的 JWT, 拿去 bangumi 刷新必然
+     * 失败; 而存档里的 `expiresAtMillis` 是 Ani 给的一年后, **完全不反映 bangumi token 的 7 天**,
+     * 于是那一周过完之后, app 会在"自以为登录着"的状态下对所有 bangumi 请求收 401。
+     * 只能强制重登一次, 见 [TokenRepository.clearLegacySession].
+     */
+    val loginFlowVersion: Int = 0,
 ) {
     @Serializable
     data class AccessTokens(

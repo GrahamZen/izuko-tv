@@ -224,6 +224,18 @@ interface SubjectCollectionDao {
         lastUpdated: Long = currentTimeMillis(),
     )
 
+    /** 本地还是 [expected] 才改成 [replacement] (连同更新时间); 已经被改成别的 (之后又改过) 就不动. */
+    @Query(
+        """UPDATE subject_collection SET collectionType = :replacement, lastUpdated = :lastUpdated
+        WHERE subjectId = :subjectId AND collectionType = :expected""",
+    )
+    suspend fun replaceType(
+        subjectId: Int,
+        expected: UnifiedCollectionType,
+        replacement: UnifiedCollectionType,
+        lastUpdated: Long,
+    )
+
     @Query("""DELETE FROM subject_collection WHERE subjectId = :subjectId""")
     suspend fun delete(subjectId: Int)
 
@@ -348,6 +360,20 @@ interface SubjectCollectionDao {
 
     @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
     fun findById(subjectId: Int): Flow<SubjectCollectionEntity?>
+
+    /**
+     * 真收藏的条数 (排除只是浏览过的 `NOT_COLLECTED`).
+     *
+     * 给推荐当"输入变了"的信号用: **只查个数**, 不查整行 —— 每浏览一个条目这张表就会写一次,
+     * 拿整行的 flow 当信号等于每次都重新解 500 行的标签.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM subject_collection
+        WHERE collectionType IS NOT NULL AND collectionType != 'NOT_COLLECTED'
+        """,
+    )
+    fun realCollectionCountFlow(): Flow<Int>
 
     @Query("""SELECT * FROM subject_collection WHERE subjectId IN (:subjectIds)""")
     fun filterByIds(subjectIds: IntArray): Flow<List<SubjectCollectionEntity>>

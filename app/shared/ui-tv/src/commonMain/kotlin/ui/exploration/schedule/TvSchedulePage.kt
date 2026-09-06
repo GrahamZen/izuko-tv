@@ -1665,7 +1665,11 @@ private fun buildTvScheduleTimeline(presentation: SchedulePagePresentation, toda
     val itemEntries = ArrayList<IntArray>(days.size)
     for ((d, day) in days.withIndex()) {
         entries += TvScheduleEntry.Header(d, day)
-        if (day.cards.isEmpty()) entries += TvScheduleEntry.Empty(d)
+        // 时间表是**按天懒加载**的: 还没轮到的那天 cards 也是空的. 不区分的话进页头几秒每天都
+        // 写着"这一天没有新番", 过几秒又自己冒出卡片 (见 AiringScheduleForDate.pending).
+        val dayPending = presentation.airingSchedules
+            .firstOrNull { it.date == presentation.days.getOrNull(d)?.date }?.isPlaceholder != false
+        if (day.cards.isEmpty() && !dayPending) entries += TvScheduleEntry.Empty(d)
         val next = if (day.currentTime != null) day.firstUpcomingIndex else -1
         itemEntries += IntArray(day.cards.size) { i ->
             val card = day.cards[i]

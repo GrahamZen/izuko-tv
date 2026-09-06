@@ -33,6 +33,8 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -40,7 +42,6 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.models.preference.WatchTogetherSettings
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.danmaku.ui.DanmakuConfig
 import me.him188.ani.utils.logging.debug
@@ -72,6 +73,12 @@ interface SettingsRepository {
      */
     val profileSettings: Settings<ProfileSettings>
     val proxySettings: Settings<ProxySettings>
+
+    /** bangumi 走原站还是镜像, 见 [BangumiEndpointSettings]. */
+    val bangumiEndpointSettings: Settings<BangumiEndpointSettings>
+
+    /** 远程镜像清单的本地缓存, 见 [BangumiMirrorCache]. */
+    val bangumiMirrorCache: Settings<BangumiMirrorCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -95,7 +102,6 @@ interface SettingsRepository {
 
     val analyticsSettings: Settings<AnalyticsSettings>
     val debugSettings: Settings<DebugSettings>
-    val watchTogetherSettings: Settings<WatchTogetherSettings>
 }
 
 @Stable
@@ -199,6 +205,16 @@ class PreferencesRepositoryImpl(
         ProxySettings.serializer(),
         default = { ProxySettings.Default },
     )
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> = SerializablePreference(
+        "bangumiEndpointPreferences",
+        BangumiEndpointSettings.serializer(),
+        default = { BangumiEndpointSettings.Default },
+    )
+    override val bangumiMirrorCache: Settings<BangumiMirrorCache> = SerializablePreference(
+        "bangumiMirrorCache",
+        BangumiMirrorCache.serializer(),
+        default = { BangumiMirrorCache.Default },
+    )
     override val mediaCacheSettings: Settings<MediaCacheSettings> = SerializablePreference(
         "cachePreferences",
         MediaCacheSettings.serializer(),
@@ -273,12 +289,6 @@ class PreferencesRepositoryImpl(
         "debugSettings",
         DebugSettings.serializer(),
         default = { DebugSettings.Default },
-    )
-
-    override val watchTogetherSettings: Settings<WatchTogetherSettings> = SerializablePreference(
-        "watchTogetherSettings",
-        WatchTogetherSettings.serializer(),
-        default = { WatchTogetherSettings.Default },
     )
 
     private companion object {

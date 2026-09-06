@@ -40,6 +40,7 @@ import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
 import me.him188.ani.app.ui.foundation.LocalTvPlayLongPressHost
 import me.him188.ani.app.ui.foundation.TV_PLAY_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
@@ -53,16 +54,16 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
 import me.him188.ani.app.ui.foundation.tv.tvTouchKeyboardMode
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
-import me.him188.ani.app.ui.foundation.TvPageRefreshHost
+import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
+import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
@@ -137,7 +138,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
     LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
-    val pageRefresh = remember { TvPageRefreshHost() }
+    val pageRefresh = remember { TvPageActionHost() }
+    // 「换一批」: 目前只有探索页的推荐区注册
+    val pageShuffle = remember { TvPageActionHost() }
     // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
@@ -167,6 +170,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvPageRefreshHost provides pageRefresh,
         LocalTvNavKeyTracker provides navKeys,
         LocalTvTouchInputEnabled provides touchInput,
+        LocalTvPageShuffleHost provides pageShuffle,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -229,8 +233,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             val route = runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull()
             route != null &&
                     route !is NavRoutes.EpisodeDetail &&
-                    route !is NavRoutes.EmailLoginStart &&
-                    route !is NavRoutes.EmailLoginVerify &&
                     route !is NavRoutes.BangumiAuthorize
         }
         // **两个长按各配各的** (设置-界面, 见 [TvLongPressAction]), 默认都开动作面板:
@@ -283,10 +285,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 key(vm) { RegisterTvRemoteBackgroundPlayer(vm) }
             }
         }
-        // 「一起看」入口把手: 同样是 Activity 级 ViewModel, 与 AniAppContent 里 provide 给
-        // LocalWatchTogetherEntry 的是同一个实例 —— 本处在那个 provider 的**外面**, 读
-        // CompositionLocal 只会拿到默认空实例 (见 WatchTogetherEntryState)
-        val watchTogetherEntry = viewModel { WatchTogetherEntryState() }
         // 两个键的动作走同一段逻辑, 只是各读各的设置.
         //
         // Panel 档没有会话时照样开面板 (不 toast"没有正在播放"): 面板里那张压暗的占位卡把同一句话
@@ -326,6 +324,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvKeyLongPressHandler(playLongPress) { performLongPress(playLongPressAction) }
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
+        // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
+        TvMirrorConsentHost()
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹
         LaunchedEffect(Unit) {
@@ -340,7 +340,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 navigator = aniNavigator,
                 playback = playbackEntry,
                 refreshHost = pageRefresh,
-                watchTogether = watchTogetherEntry,
+                shuffleHost = pageShuffle,
                 onGoHome = {
                     // 焦点交接走标志 (探索页消费, 见 TvBackLongPressHost.pendingHomeFocus);
                     // 不在 Main 上时先 pop 回去, 落在别的 tab 上由主壳看着标志补一步切换

@@ -75,7 +75,6 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuite
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteDefaults
 import me.him188.ani.app.ui.adaptive.navigation.AniNavigationSuiteLayout
-import me.him188.ani.app.ui.bangumi.merge.BangumiConflictNotifier
 import me.him188.ani.app.ui.download.DownloadManagementScreen
 import me.him188.ani.app.ui.download.DownloadManagementViewModel
 import me.him188.ani.app.ui.download.createDownloadManagementViewModel
@@ -215,7 +214,8 @@ private fun MainScreenContent(
             },
             onNavigateToLogin = {
                 showAccountSettingsPopup = false
-                navigator.navigateEmailLoginStart()
+                // 直连之后没有 Ani 账号了, 登录 = bangumi 授权
+                navigator.navigateBangumiAuthorize()
             },
         )
     }
@@ -315,7 +315,6 @@ private fun MainScreenNavigationLayout(
                         CollectionPage(
                             state = userCollectionsViewModel.state,
                             selfInfo = selfInfo,
-                            fullSyncState = userCollectionsViewModel.fullSyncState.collectAsStateWithLifecycle().value,
                             onClickSearch = onNavigateToSearch,
                             onClickLogin = onLogin,
                             onClickSettings = { navigator.navigateSettings() },
@@ -474,18 +473,7 @@ private fun TabContent(
                 Modifier.matchParentSize()
                     .padding(LocalAppChromeOverlayInsets.current.asPaddingValues()),
                 top = { UpdateNotifierWithVersionExpiryCheck() },
-                bottom = {
-                    // 版本过期锁定页展示时不检查 Bangumi 收藏冲突, 也不在其上叠加可跳转的提示.
-                    val versionExpiryService = remember { KoinPlatform.getKoin().get<VersionExpiryService>() }
-                    val versionExpired by versionExpiryService.state.collectAsStateWithLifecycle(null)
-                    if (versionExpired == null) {
-                        val navigator = LocalNavigator.current
-                        BangumiConflictNotifier(
-                            selfInfo = selfInfo,
-                            onNavigateToMerge = { navigator.navigateBangumiMerge() },
-                        )
-                    }
-                },
+                bottom = { },
             )
         }
     }

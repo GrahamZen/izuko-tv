@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SyncAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -100,7 +102,8 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
-import me.him188.ani.app.ui.foundation.TvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
+import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -124,8 +127,6 @@ import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
-import me.him188.ani.app.ui.foundation.watchtogether.LocalWatchTogetherEntry
-import me.him188.ani.app.ui.foundation.watchtogether.WatchTogetherEntryState
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
@@ -138,11 +139,14 @@ import me.him188.ani.app.ui.lang.playback_nothing_to_play
 import me.him188.ani.app.ui.lang.playback_prepare_in_background
 import me.him188.ani.app.ui.lang.playback_up_next_continue
 import me.him188.ani.app.ui.lang.playback_up_next_start
+import me.him188.ani.app.ui.lang.settings_account_popup_login_register
 import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
+import me.him188.ani.app.ui.lang.tv_shuffle_toast
 import me.him188.ani.app.ui.lang.tv_quick_menu_home
 import me.him188.ani.app.ui.lang.tv_quick_menu_refresh
+import me.him188.ani.app.ui.lang.tv_quick_menu_shuffle
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusSeverity
@@ -288,6 +292,12 @@ fun TvMainScreenLayout(
             } else {
                 add(
                     TvRailAvatarAction(
+                        Icons.AutoMirrored.Outlined.Login,
+                        stringResource(Lang.settings_account_popup_login_register),
+                    ) { navigator.navigateBangumiAuthorize() },
+                )
+                add(
+                    TvRailAvatarAction(
                         Icons.Outlined.History,
                         stringResource(Lang.playback_history_title),
                     ) { navigator.navigatePlaybackHistory() },
@@ -298,7 +308,7 @@ fun TvMainScreenLayout(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
             onAvatarClick = {
-                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateEmailLoginStart()
+                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateBangumiAuthorize()
             },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)
@@ -395,7 +405,7 @@ private fun TvExitAppDialog(
         navigator = navigator,
         playback = LocalPlaybackSessionEntry.current,
         refreshHost = LocalTvPageRefreshHost.current,
-        watchTogether = LocalWatchTogetherEntry.current,
+        shuffleHost = LocalTvPageShuffleHost.current,
         // 退出确认里不出服务连通那一行: 这个弹窗只回答"要不要退出", 多一行状态就是多一个
         // 让人停下来读的东西, 而它与该不该退出没有关系
         connectivity = null,
@@ -414,16 +424,13 @@ private fun TvExitAppDialog(
  * @param onGoHome 回到主界面: pop 到 Main + 置 pendingHomeFocus, 由调用方 (根部) 实现 ——
  *   切 tab 与聚焦轮播主按钮分别由主壳和探索页看着标志接力完成.
  * @param refreshHost 当前页注册的强制刷新动作 (没人注册就不显示「刷新本页」).
- * @param watchTogether 「一起看」入口把手; 本入口由调用方传进来而不是读
- *   [LocalWatchTogetherEntry] —— 本菜单组合在 AniAppContent **外面**, 那个 CompositionLocal
- *   在这里读到的是默认空实例 (见 [WatchTogetherEntryState]).
  */
 @Composable
 fun TvQuickActionMenu(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost,
-    watchTogether: WatchTogetherEntryState?,
+    refreshHost: TvPageActionHost,
+    shuffleHost: TvPageActionHost?,
     onGoHome: () -> Unit,
     onExitApp: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -432,7 +439,7 @@ fun TvQuickActionMenu(
         navigator = navigator,
         playback = playback,
         refreshHost = refreshHost,
-        watchTogether = watchTogether,
+        shuffleHost = shuffleHost,
         // 在这里 (而不是根部) 建: 本菜单只在打开的那一瞬间被组合, 所以整个探测子系统在用户第一次
         // 长按返回之前根本不存在 —— 挂在根部就等于每次冷启动都多跑五个请求
         connectivity = viewModel { TvServiceConnectivityState() },
@@ -510,8 +517,8 @@ private enum class TvActionPanelFocus : TvFocusKey {
 private fun TvActionPanelDialog(
     navigator: AniNavigator,
     playback: PlaybackSessionEntry,
-    refreshHost: TvPageRefreshHost?,
-    watchTogether: WatchTogetherEntryState?,
+    refreshHost: TvPageActionHost?,
+    shuffleHost: TvPageActionHost?,
     connectivity: TvServiceConnectivityState?,
     onGoHome: (() -> Unit)?,
     onExitApp: () -> Unit,
@@ -538,20 +545,6 @@ private fun TvActionPanelDialog(
                 },
             )
         }
-        // 「一起看」: 只在设置里打开了功能时出现. 原先是侧边栏最底那颗常驻图标, 2026-08-17 挪到
-        // 这里 —— 侧边栏那颗要"按左 + 一路往下", 而这个面板是一个手势就到; 播放器内够不到面板,
-        // 但那里本来就有胶囊行末尾那颗常驻入口, 覆盖不缺.
-        //
-        // 不放第一颗: 默认焦点恒定落第一颗 (见本函数文档), 位置就是肌肉记忆, 新增条目不该把它挪走.
-        watchTogether?.takeIf { it.enabled }?.let { entry ->
-            add(
-                TvActionPanelAction(Icons.Rounded.SyncAlt, stringResource(Lang.watch_together_title)) {
-                    onDismissRequest()
-                    // 面板压在普通页面上 (播放器里长按返回是收叠层, 弹不出本面板), 不是深色背景
-                    entry.open()
-                },
-            )
-        }
         refreshHost?.current?.let { refresh ->
             val toast = LocalToaster.current
             val refreshingText = stringResource(Lang.tv_force_refresh_toast)
@@ -561,6 +554,18 @@ private fun TvActionPanelDialog(
                     // 刷新本身可能没有可见变化 (数据没变时界面一模一样), 必须给一句反馈
                     toast.toast(refreshingText)
                     refresh()
+                },
+            )
+        }
+        shuffleHost?.current?.let { shuffle ->
+            val toast = LocalToaster.current
+            val shufflingText = stringResource(Lang.tv_shuffle_toast)
+            add(
+                TvActionPanelAction(Icons.Rounded.Shuffle, stringResource(Lang.tv_quick_menu_shuffle)) {
+                    onDismissRequest()
+                    // 换一批要重新召回 (几个请求, 一两秒), 结果到了会自己替换掉当前那批
+                    toast.toast(shufflingText)
+                    shuffle()
                 },
             )
         }

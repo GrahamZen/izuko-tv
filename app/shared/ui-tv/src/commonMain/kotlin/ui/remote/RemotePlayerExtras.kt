@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.comment.CommentContext
 import me.him188.ani.app.domain.comment.CommentSendResult
 import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
+import me.him188.ani.app.domain.danmaku.DanmakuNotMatchedException
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
@@ -199,7 +200,17 @@ internal object RemotePlayerExtras {
         val vm = handle.vm
         val content = DanmakuContent(vm.player.currentPositionMillis.value, WHITE_ARGB, text, DanmakuLocation.NORMAL)
         val info = runCatching { runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { vm.postDanmaku(content) } } }
-            .getOrElse { return result(false, errorText(it, tr("发送失败"))) }
+            .getOrElse {
+                // 弹幕发往弹弹play (应用自己的凭据), 与 Bangumi 登录无关: 鉴权失败别说成「先登录」
+                return result(
+                    false,
+                    when (it) {
+                        is DanmakuNotMatchedException -> tr("这一集还没匹配到弹幕库，等电视上的弹幕加载出来再发")
+                        is RepositoryAuthorizationException -> tr("弹弹play 拒绝了这次发送，稍后再试")
+                        else -> errorText(it, tr("发送失败"))
+                    },
+                )
+            }
             ?: return result(false, tr("发送超时，请重试"))
         if (!handle.background) handle.runOnUi { vm.danmakuHostState.send(DanmakuPresentation(info, isSelf = true)) }
         return result(true, tr("已发送"))

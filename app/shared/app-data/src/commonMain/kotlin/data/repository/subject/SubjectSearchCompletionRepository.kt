@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.network.AniSubjectSearchService
-import me.him188.ani.app.data.network.SubjectSearchField
 import me.him188.ani.app.data.network.SubjectSearchFilters
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
@@ -59,7 +58,6 @@ class SubjectSearchCompletionRepository(
                                 NsfwMode.HIDE -> false
                             },
                         ),
-                        fields = listOf(SubjectSearchField.NAME),
                     )
 
                     val filteredSubjects = if (ignoreDoneAndDroppedFlow.first()) {
