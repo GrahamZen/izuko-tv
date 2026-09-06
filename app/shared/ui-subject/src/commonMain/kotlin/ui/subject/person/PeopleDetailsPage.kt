@@ -46,13 +46,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -64,14 +65,16 @@ import me.him188.ani.app.data.models.person.PersonCastInfo
 import me.him188.ani.app.data.models.person.PersonDetailsInfo
 import me.him188.ani.app.data.models.person.PersonWorkInfo
 import me.him188.ani.app.data.models.subject.nameCn
+import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.external.placeholder.placeholder
-import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.ImageViewer
-import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
-import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.ImageViewerHandler
-import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
+import me.him188.ani.app.ui.foundation.AsyncImage
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
+import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalAppChromeHazeState
 import me.him188.ani.app.ui.foundation.theme.appChromeFrostedGlass
@@ -122,11 +125,16 @@ fun PersonDetailsScreen(
             )
         },
         summary = details?.person?.summary.orEmpty(),
-        centerStrips = { PersonStrips(casts, works) },
-        comments = vm.comments,
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        centerStrips = { rowsPadding ->
+            PersonStrips(casts, works, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+        },
+        commentState = vm.commentState,
+        originalCommentsUrl = vm.originalCommentsUrl,
         compactContent = { imageViewer ->
             PersonDetailsContentColumn(
-                details, casts, works, vm.comments,
+                details, casts, works, vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
                 imageViewer = imageViewer,
             )
         },
@@ -163,11 +171,16 @@ fun CharacterDetailsScreen(
             )
         },
         summary = details?.summary.orEmpty(),
-        centerStrips = { CharacterStrips(details, subjects) },
-        comments = vm.comments,
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        centerStrips = { rowsPadding ->
+            CharacterStrips(details, subjects, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+        },
+        commentState = vm.commentState,
+        originalCommentsUrl = vm.originalCommentsUrl,
         compactContent = { imageViewer ->
             CharacterDetailsContentColumn(
-                details, subjects, vm.comments,
+                details, subjects, vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
                 imageViewer = imageViewer,
             )
         },
@@ -182,11 +195,9 @@ fun CharacterDetailsScreen(
  * - Expanded: 评论卡移到右栏.
  *
  * 整页一起滚动, 与条目详情多栏布局一致.
- *
- * 页面级 [ImageViewer] 覆盖整个骨架, 供多栏左栏图片与单栏头部行图片 (经 [compactContent] 参数传入) 点击放大.
  */
 @Composable
-private fun PeopleDetailsScaffold(
+internal fun PeopleDetailsScaffold(
     topBarTitle: String,
     navigationIcon: @Composable () -> Unit,
     windowInsets: WindowInsets,
@@ -195,12 +206,18 @@ private fun PeopleDetailsScaffold(
     sidebarInfo: List<InfoboxRowInfo>,
     titleBlock: @Composable (isPlaceholder: Boolean) -> Unit,
     summary: String,
-    centerStrips: @Composable () -> Unit,
-    comments: PeopleCommentsState,
+    /**
+     * 中栏的横滑条; 参数 = 横滑行 (原生行) 最多往两侧出血多少: 中栏与侧栏之间的栏距. 最左一张聚焦放大时不在中栏边上被裁, 滑过行首的
+     * 卡不画进侧栏.
+     */
+    centerStrips: @Composable (rowsPadding: Dp) -> Unit,
+    commentState: CommentState,
     compactContent: @Composable (imageViewer: ImageViewerHandler) -> Unit,
     modifier: Modifier = Modifier,
+    originalCommentsUrl: String? = null,
 ) {
     var showAllComments by rememberSaveable { mutableStateOf(false) }
+    // 页面级图片放大: 覆盖整个骨架, 供左栏大图与单栏头部行图片 (经 compactContent 传下去) 点击放大
     val imageViewer = rememberImageViewerHandler()
 
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -229,203 +246,206 @@ private fun PeopleDetailsScaffold(
 
         // 本页自带一个独立的毛玻璃作用域: 粘性顶栏模糊其下方滚过的内容.
         CompositionLocalProvider(LocalAppChromeHazeState provides rememberHazeState()) {
-            val frostedGlassActive = isAppChromeFrostedGlassActive()
-            Scaffold(
-                topBar = {
-                    // 返回按钮隐藏时, 顶栏只剩占位 (正文自带大标题块), 整块不渲染
-                    if (LocalAniUiBehavior.current.showNavigationTopAppBar) {
-                    Box {
-                        // 透明背景的, 总是显示
+        val frostedGlassActive = isAppChromeFrostedGlassActive()
+        Scaffold(
+            topBar = {
+                // 返回按钮隐藏时, 顶栏只剩占位 (正文自带大标题块), 整块不渲染
+                if (LocalAniUiBehavior.current.showNavigationTopAppBar) {
+                Box {
+                    // 透明背景的, 总是显示
+                    TopAppBar(
+                        title = {},
+                        navigationIcon = navigationIcon,
+                        colors = AniThemeDefaults.topAppBarColors().copy(containerColor = Color.Transparent),
+                        windowInsets = topAppBarWindowInsets,
+                    )
+                    // 有背景和标题的, 仅在页内标题滚出后显示.
+                    AniAnimatedVisibility(stickyTopBarVisible && topBarTitle.isNotBlank()) {
                         TopAppBar(
-                            title = {},
+                            title = {
+                                Text(topBarTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            modifier = Modifier.appChromeFrostedGlass(
+                                enabled = frostedGlassActive,
+                                containerColor = stickyTopBarColor,
+                            ),
                             navigationIcon = navigationIcon,
-                            colors = AniThemeDefaults.topAppBarColors().copy(containerColor = Color.Transparent),
+                            colors = if (frostedGlassActive) {
+                                AniThemeDefaults.topAppBarColors().copy(containerColor = Color.Transparent)
+                            } else {
+                                AniThemeDefaults.topAppBarColors(containerColor = stickyTopBarColor)
+                            },
                             windowInsets = topAppBarWindowInsets,
                         )
-                        // 有背景和标题的, 仅在页内标题滚出后显示
-                        AniAnimatedVisibility(stickyTopBarVisible && topBarTitle.isNotBlank()) {
-                            TopAppBar(
-                                title = {
-                                    Text(topBarTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                },
-                                modifier = Modifier.appChromeFrostedGlass(
-                                    enabled = frostedGlassActive,
-                                    containerColor = stickyTopBarColor,
-                                ),
-                                navigationIcon = navigationIcon,
-                                colors = if (frostedGlassActive) {
-                                    AniThemeDefaults.topAppBarColors().copy(containerColor = Color.Transparent)
-                                } else {
-                                    AniThemeDefaults.topAppBarColors(containerColor = stickyTopBarColor)
-                                },
-                                windowInsets = topAppBarWindowInsets,
-                            )
-                        }
                     }
-                    }
-                },
-                containerColor = backgroundColor,
-                contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-            ) { padding ->
-                if (!layoutParams.isMultiColumn) {
-                    val layoutDirection = LocalLayoutDirection.current
+                }
+                }
+            },
+            containerColor = backgroundColor,
+            contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+        ) { padding ->
+            if (!layoutParams.isMultiColumn) {
+                val layoutDirection = LocalLayoutDirection.current
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        // 毛玻璃粘性顶栏的模糊来源.
+                        .appChromeHazeSource(backgroundColor = backgroundColor)
+                        // top padding 放在滚动内容内, 让内容可以滚动到顶栏下方 (与条目详情单栏一致).
+                        .padding(
+                            start = padding.calculateStartPadding(layoutDirection),
+                            end = padding.calculateEndPadding(layoutDirection),
+                            bottom = padding.calculateBottomPadding(),
+                        )
+                        .verticalScroll(scrollState)
+                        .padding(top = padding.calculateTopPadding())
+                        .padding(horizontal = layoutParams.contentHorizontalPadding)
+                        .padding(
+                            top = contentTopPadding,
+                            bottom = layoutParams.contentBottomPadding,
+                        ),
+                ) {
+                    compactContent(imageViewer)
+                }
+            } else {
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        // 毛玻璃粘性顶栏的模糊来源 (多栏内容不延伸到顶栏下方, 采样到页面背景).
+                        .appChromeHazeSource(backgroundColor = backgroundColor)
+                        .padding(padding)
+                        .verticalScroll(scrollState)
+                        .padding(
+                            start = layoutParams.contentHorizontalPadding,
+                            end = layoutParams.contentHorizontalPadding,
+                            top = contentTopPadding,
+                            bottom = layoutParams.contentBottomPadding,
+                        ),
+                    horizontalArrangement = Arrangement.spacedBy(layoutParams.columnSpacing),
+                ) {
+                    // 左栏: 图片 + 基本信息
                     Column(
-                        Modifier
-                            .fillMaxSize()
-                            // 毛玻璃粘性顶栏的模糊来源.
-                            .appChromeHazeSource(backgroundColor = backgroundColor)
-                            // top padding 放在滚动内容内, 让内容可以滚动到顶栏下方 (与条目详情单栏一致).
-                            .padding(
-                                start = padding.calculateStartPadding(layoutDirection),
-                                end = padding.calculateEndPadding(layoutDirection),
-                                bottom = padding.calculateBottomPadding(),
-                            )
-                            .verticalScroll(scrollState)
-                            .padding(top = padding.calculateTopPadding())
-                            .padding(horizontal = layoutParams.contentHorizontalPadding)
-                            .padding(
-                                top = contentTopPadding,
-                                bottom = layoutParams.contentBottomPadding,
-                            ),
+                        Modifier.width(layoutParams.sidebarWidth),
+                        verticalArrangement = Arrangement.spacedBy(layoutParams.sidebarItemSpacing),
                     ) {
-                        compactContent(imageViewer)
-                    }
-                } else {
-                    Row(
-                        Modifier
-                            .fillMaxSize()
-                            // 毛玻璃粘性顶栏的模糊来源 (多栏内容不延伸到顶栏下方, 采样到页面背景).
-                            .appChromeHazeSource(backgroundColor = backgroundColor)
-                            .padding(padding)
-                            .verticalScroll(scrollState)
-                            .padding(
-                                start = layoutParams.contentHorizontalPadding,
-                                end = layoutParams.contentHorizontalPadding,
-                                top = contentTopPadding,
-                                bottom = layoutParams.contentBottomPadding,
-                            ),
-                        horizontalArrangement = Arrangement.spacedBy(layoutParams.columnSpacing),
-                    ) {
-                        // 左栏: 图片 + 基本信息
-                        Column(
-                            Modifier.width(layoutParams.sidebarWidth),
-                            verticalArrangement = Arrangement.spacedBy(layoutParams.sidebarItemSpacing),
-                        ) {
-                            // 定稿: 固定宽度, 高按原图比例自适应 (加载前用 340:482 占位)
-                            var coverAspect by remember(sidebarImageUrl) { mutableStateOf(340f / 482f) }
-                            val onClickSidebarImage = imageViewer.viewImageOrNull(sidebarImageUrl)
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(coverAspect.coerceIn(0.4f, 1.6f))
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .then(
-                                        if (onClickSidebarImage != null) {
-                                            Modifier.clickable(onClick = onClickSidebarImage)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    // 没有简介时这张图就是进页落点 (见中栏顶部块那处的说明)
-                                    .ifThen(entryFocusOnSidebarImage && onClickSidebarImage != null) {
-                                        tvWindowInitialFocus()
-                                    }
-                                    .placeholder(isPlaceholder),
-                            ) {
-                                AsyncImage(
-                                    model = sidebarImageUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier.matchParentSize(),
-                                    contentScale = ContentScale.Fit,
-                                    onSuccess = { result ->
-                                        if (result.width > 0 && result.height > 0) {
-                                            coverAspect = result.width.toFloat() / result.height
-                                        }
+                        // 定稿: 固定宽度, 高按原图比例自适应 (加载前用 340:482 占位)
+                        var coverAspect by remember(sidebarImageUrl) { mutableStateOf(340f / 482f) }
+                        val onClickSidebarImage = imageViewer.viewImageOrNull(sidebarImageUrl)
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(coverAspect.coerceIn(0.4f, 1.6f))
+                                .clip(MaterialTheme.shapes.medium)
+                                .then(
+                                    if (onClickSidebarImage != null) {
+                                        Modifier.clickable(onClick = onClickSidebarImage)
+                                    } else {
+                                        Modifier
                                     },
                                 )
-                            }
-                            if (sidebarInfo.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text(
-                                        stringResource(Lang.person_details_basic_info),
-                                        style = MaterialTheme.typography.titleSmall,
-                                    )
-                                    PeopleInfoTable(sidebarInfo)
+                                // 没有简介时这张图就是进页落点 (见中栏顶部块那处的说明)
+                                .ifThen(entryFocusOnSidebarImage && onClickSidebarImage != null) {
+                                    tvWindowInitialFocus()
                                 }
-                            }
-                        }
-
-                        // 中栏
-                        Column(
-                            Modifier.weight(1f).widthIn(max = 840.dp),
-                            verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
+                                .placeholder(isPlaceholder),
                         ) {
-                            // 焦点驱动形态: 顶部内容块 (标题/简介) 获得焦点时滚动归零, 露出左栏大图与
-                            // 标题顶部 (滚动纯靠焦点驱动, 到不了不可聚焦的图片/标题; 同人物预览弹窗的处理).
-                            // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部
-                            val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
-                            val scope = rememberCoroutineScope()
-                            Column(
-                                Modifier.ifThen(focusDriven) {
-                                    onFocusChanged {
-                                        if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                            AsyncImage(
+                                model = sidebarImageUrl,
+                                contentDescription = null,
+                                modifier = Modifier.matchParentSize(),
+                                contentScale = ContentScale.Fit,
+                                onSuccess = { result ->
+                                    if (result.width > 0 && result.height > 0) {
+                                        coverAspect = result.width.toFloat() / result.height
                                     }
                                 },
-                                verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
-                            ) {
-                                titleBlock(isPlaceholder)
-                                if (summary.isNotBlank()) {
-                                    // **进页落点**. 本页是从移动端迁过来的, 原先没有落点, 焦点由 AniAppContent
-                                    // 的全局兜底按几何挑一个送进来 —— 而这一页在数据到达前中栏**一个焦点目标都
-                                    // 没有** (标题块是纯文字; 出演 / 作品两条在 `itemCount == 0` 时整块 return),
-                                    // 只有页底的评论区恒有一个"查看全部". 于是兜底只能挑它, 表现就是"进页看不到
-                                    // 焦点框 (它在视口外), 一按下键画面瞬间跳到最底下" (用户 2026-09-17).
-                                    //
-                                    // 落点挂在**简介**上而不是外层那个 Column: 请求悬挂到锚点附着事件, 挂在恒在的
-                                    // 容器上会在数据到达前就被消化掉 (那一刻它进不去任何子节点, 失败且不会重来),
-                                    // 挂在"数据到了才组合"的节点上才正好赶上. 简介落焦还会触发上面那个
-                                    // animateScrollTo(0), 画面一并回到顶部.
-                                    SubjectSummarySection(
-                                        summary,
-                                        Modifier.ifThen(focusDriven) { tvWindowInitialFocus() },
-                                    )
-                                }
-                            }
-                            centerStrips()
-                            if (!layoutParams.showRail) {
-                                PersonCommentsSection(comments.commentState, onShowAll = { showAllComments = true })
+                            )
+                        }
+                        if (sidebarInfo.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(
+                                    stringResource(Lang.person_details_basic_info),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                PeopleInfoTable(sidebarInfo)
                             }
                         }
+                    }
 
-                        // 右栏 (仅三栏): 评论卡
-                        if (layoutParams.showRail) {
-                            Surface(
-                                Modifier.width(layoutParams.railWidth),
-                                shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            ) {
-                                PersonCommentsSection(
-                                    comments.commentState,
-                                    onShowAll = { showAllComments = true },
-                                    // 对齐修正后的设计稿 rail 卡 (视觉: 标题字形距顶 ~21, 距侧 20):
-                                    // 标题行自带 ~17dp 顶空 (TextButton min 40dp 居中 + 行框留白, 截图实测),
-                                    // 故 top=4; 左右 20 / 下 18 与设计稿一致.
-                                    Modifier.padding(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 18.dp),
+                    // 中栏
+                    Column(
+                        Modifier.weight(1f).widthIn(max = 840.dp),
+                        verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
+                    ) {
+                        // 焦点驱动形态: 顶部内容块 (标题/简介) 获得焦点时滚动归零, 露出左栏大图与
+                        // 标题顶部 (滚动纯靠焦点驱动, 到不了不可聚焦的图片/标题; 同人物预览弹窗的处理).
+                        // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部
+                        val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
+                        val scope = rememberCoroutineScope()
+                        Column(
+                            Modifier.ifThen(focusDriven) {
+                                onFocusChanged {
+                                    if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                                }
+                            },
+                            verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
+                        ) {
+                            titleBlock(isPlaceholder)
+                            if (summary.isNotBlank()) {
+                                // **进页落点**. 本页是从移动端迁过来的, 原先没有落点, 焦点由 AniAppContent
+                                // 的全局兜底按几何挑一个送进来 —— 而这一页在数据到达前中栏**一个焦点目标都
+                                // 没有** (标题块是纯文字; 出演 / 作品两条在 `itemCount == 0` 时整块 return),
+                                // 只有页底的评论区恒有一个"查看全部". 于是兜底只能挑它, 表现就是"进页看不到
+                                // 焦点框 (它在视口外), 一按下键画面瞬间跳到最底下" (用户 2026-09-17).
+                                //
+                                // 落点挂在**简介**上而不是外层那个 Column: 请求悬挂到锚点附着事件, 挂在恒在的
+                                // 容器上会在数据到达前就被消化掉 (那一刻它进不去任何子节点, 失败且不会重来),
+                                // 挂在"数据到了才组合"的节点上才正好赶上. 简介落焦还会触发上面那个
+                                // animateScrollTo(0), 画面一并回到顶部.
+                                SubjectSummarySection(
+                                    summary,
+                                    Modifier.ifThen(focusDriven) { tvWindowInitialFocus() },
                                 )
                             }
+                        }
+                        centerStrips(layoutParams.columnSpacing)
+                        if (!layoutParams.showRail) {
+                            PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
+                        }
+                    }
+
+                    // 右栏 (仅三栏): 评论卡
+                    if (layoutParams.showRail) {
+                        Surface(
+                            Modifier.width(layoutParams.railWidth),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            PersonCommentsSection(
+                                commentState,
+                                onShowAll = { showAllComments = true },
+                                // 对齐修正后的设计稿 rail 卡 (视觉: 标题字形距顶 ~21, 距侧 20):
+                                // 标题行自带 ~17dp 顶空 (TextButton min 40dp 居中 + 行框留白, 截图实测),
+                                // 故 top=4; 左右 20 / 下 18 与设计稿一致.
+                                Modifier.padding(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 18.dp),
+                            )
                         }
                     }
                 }
             }
         }
+        }
 
         // 页面级大图查看器, 覆盖整个骨架 (含顶栏).
         ImageViewer(imageViewer) { imageViewer.clear() }
+    }
 
-        // 评论区宿主 (举报弹层/失败提示/全量评论 sheet). 单栏由 compactContent 里的内容列自带, 这里只在多栏挂.
-        if (layoutParams.isMultiColumn) {
-            PeopleCommentsHost(comments, showAllComments, onDismissAllComments = { showAllComments = false })
-        }
+    if (showAllComments) {
+        PersonCommentsSheet(
+            commentState,
+            onDismissRequest = { showAllComments = false },
+            originalCommentsUrl = originalCommentsUrl,
+        )
     }
 }
 
@@ -452,9 +472,11 @@ internal fun PersonDetailsContentColumn(
     details: PersonDetailsInfo?,
     casts: LazyPagingItems<PersonCastInfo>,
     works: LazyPagingItems<PersonWorkInfo>,
-    comments: PeopleCommentsState,
+    commentState: CommentState,
+    originalCommentsUrl: String? = null,
     modifier: Modifier = Modifier,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    /** 页面级图片放大; 由调用方 (详情页骨架 / 预览弹窗) 持有. */
     imageViewer: ImageViewerHandler? = null,
     /**
      * 顶部内容块 (头图行 + 简介) 获得焦点时回调. TV 预览弹窗用它把滚动归零:
@@ -462,6 +484,10 @@ internal fun PersonDetailsContentColumn(
      * 顶部, 头图只露出一截 (与详情页"焦点回 Hero 滚回顶部"同一处理).
      */
     onTopContentFocused: (() -> Unit)? = null,
+    /** 预览弹窗 (TV) 的原生横滑行, 见 [PeoplePreviewRows]; null = Compose 的行. */
+    previewRows: PeoplePreviewRows? = null,
+    /** 调用方给这一列的水平留白: [previewRows] 的行往两侧出血这么多, 到弹窗边上. */
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllComments by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -490,18 +516,29 @@ internal fun PersonDetailsContentColumn(
                 PeopleInfoTable(rows)
             }
         }
-        PersonStrips(casts, works, navigation)
-        PersonCommentsSection(comments.commentState, onShowAll = { showAllComments = true })
+        PersonStrips(casts, works, navigation, previewRows, previewRowsPadding)
+        PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
     }
-    PeopleCommentsHost(comments, showAllComments, onDismissAllComments = { showAllComments = false })
+    if (showAllComments) {
+        PersonCommentsSheet(
+            commentState,
+            onDismissRequest = { showAllComments = false },
+            originalCommentsUrl = originalCommentsUrl,
+        )
+    }
 }
 
-/** 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). */
+/**
+ * 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). [previewRows] 非 null 时 (电视: 预览弹窗与整页) 两条都换成原生行:
+ * 出演角色是圆头像 (角色头像 + 名字 + 作品名), 参与作品是海报 (作品 + 职位).
+ */
 @Composable
 private fun PersonStrips(
     casts: LazyPagingItems<PersonCastInfo>,
     works: LazyPagingItems<PersonWorkInfo>,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllCasts by rememberSaveable { mutableStateOf(false) }
     var showAllWorks by rememberSaveable { mutableStateOf(false) }
@@ -510,6 +547,23 @@ private fun PersonStrips(
         stringResource(Lang.person_details_casts),
         casts,
         onViewAll = { showAllCasts = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = casts.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { cast ->
+                        cast?.let { PeopleRowItem(it.character.imageMedium, it.character.displayName, it.subject.displayName) }
+                    }
+                }
+                rows.PeopleRow(
+                    items,
+                    onClick = { i -> casts.peek(i)?.let { navigation.onClickCharacter(it.character.id) } },
+                    onBind = { i -> if (i < casts.itemCount) casts[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { cast, itemModifier ->
         PeoplePortraitCard(
             imageUrl = cast.character.imageMedium,
@@ -523,6 +577,25 @@ private fun PersonStrips(
         stringResource(Lang.person_details_works),
         works,
         onViewAll = { showAllWorks = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = works.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { work ->
+                        work?.let {
+                            PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.positions.firstNotNullOfOrNull { p -> p.nameCn })
+                        }
+                    }
+                }
+                rows.PosterRow(
+                    items,
+                    onClick = { i -> works.peek(i)?.let { navigation.onClickSubject(it.subject) } },
+                    onBind = { i -> if (i < works.itemCount) works[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { work, itemModifier ->
         PeopleSubjectCard(
             subject = work.subject,
@@ -573,12 +646,17 @@ private fun PersonStrips(
 internal fun CharacterDetailsContentColumn(
     details: CharacterDetailsInfo?,
     subjects: LazyPagingItems<CharacterSubjectInfo>,
-    comments: PeopleCommentsState,
+    commentState: CommentState,
+    originalCommentsUrl: String? = null,
     modifier: Modifier = Modifier,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    /** 页面级图片放大; 由调用方 (详情页骨架 / 预览弹窗) 持有. */
     imageViewer: ImageViewerHandler? = null,
     /** 顶部内容块获得焦点时回调, 语义见 [PersonDetailsContentColumn]. */
     onTopContentFocused: (() -> Unit)? = null,
+    /** 同 [PersonDetailsContentColumn] 的同名参数. */
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllComments by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -607,35 +685,60 @@ internal fun CharacterDetailsContentColumn(
                 PeopleInfoTable(rows)
             }
         }
-        CharacterStrips(details, subjects, navigation)
-        PersonCommentsSection(comments.commentState, onShowAll = { showAllComments = true })
+        CharacterStrips(details, subjects, navigation, previewRows, previewRowsPadding)
+        PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
     }
-    PeopleCommentsHost(comments, showAllComments, onDismissAllComments = { showAllComments = false })
+    if (showAllComments) {
+        PersonCommentsSheet(
+            commentState,
+            onDismissRequest = { showAllComments = false },
+            originalCommentsUrl = originalCommentsUrl,
+        )
+    }
 }
 
-/** 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). */
+/**
+ * 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). [previewRows] 非 null 时 (电视: 预览弹窗与整页) 两条都换成原生行:
+ * 声优是圆头像 (原版在前, 见 sortedByOriginalCast), 出演作品是海报 (作品 + 主角 / 配角).
+ */
 @Composable
 private fun CharacterStrips(
     details: CharacterDetailsInfo?,
     subjects: LazyPagingItems<CharacterSubjectInfo>,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllSubjects by rememberSaveable { mutableStateOf(false) }
 
     val actors = details?.character?.actors.orEmpty()
     if (actors.isNotEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.ifThen(previewRows != null) { tvBringIntoViewOnFocus() },
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             SectionHeader(stringResource(Lang.person_details_voice_actors))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (actor in actors) {
-                    PeoplePortraitCard(
-                        imageUrl = actor.imageMedium,
-                        name = actor.displayName,
-                        caption = null,
-                        onClick = { navigation.onClickPerson(actor.id) },
-                        width = 76.dp,
-                        circleCrop = true,
-                    )
+            if (previewRows != null) {
+                val items = remember(actors) { actors.map { PeopleRowItem(it.imageMedium, it.displayName, "") } }
+                previewRows.PeopleRow(
+                    items,
+                    onClick = { i -> actors.getOrNull(i)?.let { navigation.onClickPerson(it.id) } },
+                    onBind = {},
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (actor in actors) {
+                        PeoplePortraitCard(
+                            imageUrl = actor.imageMedium,
+                            name = actor.displayName,
+                            caption = null,
+                            onClick = { navigation.onClickPerson(actor.id) },
+                            width = 76.dp,
+                            circleCrop = true,
+                        )
+                    }
                 }
             }
         }
@@ -644,6 +747,21 @@ private fun CharacterStrips(
         stringResource(Lang.person_details_character_subjects),
         subjects,
         onViewAll = { showAllSubjects = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = subjects.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { item -> item?.let { PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.role.nameCn) } }
+                }
+                rows.PosterRow(
+                    items,
+                    onClick = { i -> subjects.peek(i)?.let { navigation.onClickSubject(it.subject) } },
+                    onBind = { i -> if (i < subjects.itemCount) subjects[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { item, itemModifier ->
         PeopleSubjectCard(
             subject = item.subject,

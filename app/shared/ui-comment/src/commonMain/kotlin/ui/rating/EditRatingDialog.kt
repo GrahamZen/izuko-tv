@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -36,10 +35,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -76,9 +73,12 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.icons.EditSquare
 import me.him188.ani.app.ui.foundation.theme.adjustHsv
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
 import me.him188.ani.app.ui.lang.Lang
@@ -148,14 +148,14 @@ fun RatingEditorDialog(
     val cancelText = stringResource(Lang.settings_mediasource_cancel)
     var showConfirmCancelDialog by remember { mutableStateOf(false) }
     if (showConfirmCancelDialog) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showConfirmCancelDialog = false },
             // 独立窗口: 遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
             modifier = Modifier.tvOverlayWindowKeys { showConfirmCancelDialog = false },
             title = { Text(discardEditTitle) },
             text = { Text(discardEditMessage) },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         showConfirmCancelDialog = false
                         onDismissRequest()
@@ -168,7 +168,7 @@ fun RatingEditorDialog(
                 }
             },
             // "继续编辑" = 关掉这个确认框回去接着写, 遥控器上返回键就是这个意思
-            dismissButton = dismissDialogButton(continueEditingText) { showConfirmCancelDialog = false },
+            dismissButton = dismissDialogButton(continueEditingText, { showConfirmCancelDialog = false }),
             containerColor = aniDialogContainerColor(),
         )
     }
@@ -191,7 +191,7 @@ fun RatingEditorDialog(
         return
     }
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         icon = { Icon(Icons.Rounded.EditSquare, null) },
         title = { Text(editRatingText) },
@@ -209,7 +209,7 @@ fun RatingEditorDialog(
                     CircularProgressIndicator(Modifier.size(24.dp))
                 }
             } else {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         onRate(RateRequest(state.score, state.comment, state.isPrivate))
                     },
@@ -219,7 +219,7 @@ fun RatingEditorDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            AniTextButton(
                 {
                     if (state.hasModifiedComment) {
                         showConfirmCancelDialog = true
@@ -352,7 +352,7 @@ private fun TvRatingEditorDialog(
 
             val commentLabelText = stringResource(Lang.rating_comment_label)
             val commentOptionalText = stringResource(Lang.rating_comment_optional)
-            OutlinedTextField(
+            AniOutlinedTextField(
                 state.comment,
                 { state.comment = it },
                 Modifier
@@ -624,7 +624,7 @@ fun RatingEditor(
             Row {
                 val interactionSource = remember { MutableInteractionSource() }
                 val isFocused by interactionSource.collectIsFocusedAsState()
-                OutlinedTextField(
+                AniOutlinedTextField(
                     comment,
                     onCommentChange,
                     Modifier.fillMaxWidth().heightIn(max = 360.dp),

@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.IconButton
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_add_name
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_collapse
@@ -124,7 +125,7 @@ fun MediaFetchRequestEditor(
 //            modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
 //        )
 
-        OutlinedTextField(
+        AniOutlinedTextField(
             value = fetchRequest.primaryName,
             onValueChange = { onFetchRequestChange(fetchRequest.copy(primaryName = it)) },
             label = { Text(primaryNameText) },
@@ -171,7 +172,7 @@ fun MediaFetchRequestEditor(
                 ) {
                     fetchRequest.complementaryNames.forEachIndexed { index, name ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
+                            AniOutlinedTextField(
                                 value = name,
                                 onValueChange = { newName ->
                                     val updated =
@@ -257,7 +258,7 @@ fun MediaFetchRequestEditor(
 
             // --- Episode sort ---------------------------------------------------------------------
             val sortAndEpAreError = fetchRequest.episodeSort.isEmpty() && fetchRequest.episodeEp.isEmpty()
-            OutlinedTextField(
+            AniOutlinedTextField(
                 value = fetchRequest.episodeSort,
                 onValueChange = { newValue ->
                     onFetchRequestChange(fetchRequest.copy(episodeSort = newValue))
@@ -268,7 +269,7 @@ fun MediaFetchRequestEditor(
                 singleLine = true,
                 isError = sortAndEpAreError,
             )
-            OutlinedTextField(
+            AniOutlinedTextField(
                 value = fetchRequest.episodeEp,
                 onValueChange = { newValue ->
                     onFetchRequestChange(fetchRequest.copy(episodeEp = newValue))

@@ -10,6 +10,7 @@
 package me.him188.ani.app.videoplayer.ui.progress
 
 import androidx.collection.floatListOf
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTouchInput
+import kotlinx.coroutines.CompletableDeferred
 import me.him188.ani.app.domain.media.player.ChunkState
 import me.him188.ani.app.domain.media.player.MediaCacheProgressInfo
 import me.him188.ani.app.ui.framework.exists
@@ -27,6 +29,7 @@ import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import org.openani.mediamp.features.PreviewFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -182,6 +185,172 @@ class MediaProgressSliderFramePreviewTest {
             onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).exists().not(),
             "frame should not be shown when framePreview is null",
         )
+    }
+
+    /**
+     * TV 的用法: 圆点上方的浮窗, 由 [PlayerProgressSliderState.previewPositionRatio] 驱动.
+     * 下面几个用例不用鼠标悬停 —— 测试窗口小, 悬停浮窗会被挤到顶上盖住指针, 指针在进度条与浮窗之间
+     * 来回进出, 悬停态反复翻转, 每翻一次就重新取一次帧, 界面永远不空闲.
+     */
+    @Composable
+    private fun FrameOnlySlider(
+        framePreview: MediaProgressFramePreviewState,
+        sliderState: PlayerProgressSliderState,
+        cacheProgressInfo: MediaCacheProgressInfo? = null,
+    ) {
+        MediaProgressSlider(
+            sliderState,
+            cacheProgressInfoFlow = { cacheProgressInfo },
+            framePreview = framePreview,
+            previewStyle = ProgressSliderPreviewStyle.FrameOnly,
+        )
+    }
+
+    @Test
+    fun `loading indicator shows until the frame arrives`() = runAniComposeUiTest {
+        val result = CompletableDeferred<ImageBitmap?>()
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = { result.await() },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING, useUnmergedTree = true).exists()
+        }
+        assertEquals(FramePreviewLoadStatus.Loading, framePreview.loadStatus)
+
+        result.complete(solidFrame(Color.Green))
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).exists()
+        }
+        waitForIdle()
+        assertFalse(onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING, useUnmergedTree = true).exists())
+        assertEquals(FramePreviewLoadStatus.Idle, framePreview.loadStatus)
+    }
+
+    @Test
+    fun `previous frame stays under the loading indicator while the next position loads`() = runAniComposeUiTest {
+        val second = CompletableDeferred<ImageBitmap?>()
+        var fetches = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = { if (fetches++ == 0) solidFrame(Color.Green) else second.await() },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).exists()
+        }
+        runOnUiThread { sliderState.previewPositionRatio(0.8f) }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING, useUnmergedTree = true).exists()
+        }
+        // 上一个位置的帧留着 (浮窗把它压暗), 没有被清成灰底
+        onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).assertExists()
+
+        second.complete(solidFrame(Color.Blue))
+        waitUntil(timeoutMillis = 5_000) { framePreview.loadStatus == FramePreviewLoadStatus.Idle }
+    }
+
+    @Test
+    fun `failed fetch keeps the frame slot and shows the failure`() = runAniComposeUiTest {
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = { null },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FAILED, useUnmergedTree = true).exists()
+        }
+        assertTrue(framePreview.framesAvailable, "a failed fetch should not collapse the frame slot")
+    }
+
+    @Test
+    fun `failed fetch without load status falls back to time only`() = runAniComposeUiTest {
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = { null },
+            debounceMillis = 0,
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) { !framePreview.framesAvailable }
+        waitForIdle()
+        onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_POPUP, useUnmergedTree = true).assertExists()
+        assertFalse(onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FAILED, useUnmergedTree = true).exists())
+        assertEquals(FramePreviewLoadStatus.Idle, framePreview.loadStatus)
+    }
+
+    @Test
+    fun `uncached position shows not downloaded when load status is reported`() = runAniComposeUiTest {
+        var fetchCount = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = {
+                fetchCount++
+                solidFrame(Color.Red)
+            },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+        )
+        val uncachedInfo = MediaCacheProgressInfo(
+            chunkWeights = floatListOf(1f),
+            chunkStates = listOf(ChunkState.NONE),
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState, uncachedInfo) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED, useUnmergedTree = true).exists()
+        }
+        assertEquals(0, fetchCount, "fetchFrame should not be called for uncached position")
+    }
+
+    @Test
+    fun `unsupported source shows time only without failure`() = runAniComposeUiTest {
+        var fetchCount = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = {
+                fetchCount++
+                null
+            },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+            isSupported = { false },
+        )
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) { !framePreview.framesAvailable }
+        waitForIdle()
+        onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_POPUP, useUnmergedTree = true).assertExists()
+        assertFalse(onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FAILED, useUnmergedTree = true).exists())
+        assertFalse(onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING, useUnmergedTree = true).exists())
+        assertEquals(0, fetchCount, "an unsupported source should not be asked for frames")
+    }
+
+    @Test
+    fun `estimated load progress keeps rising but never completes`() {
+        val state = MediaProgressFramePreviewState(fetchFrame = { null })
+        // 基准耗时默认 3 秒: 到基准时 80%, 之后越走越慢
+        assertEquals(0f, state.estimatedLoadProgress(0))
+        assertEquals(0.8f, state.estimatedLoadProgress(3_000), 0.001f)
+        val samples = listOf(500L, 1_500L, 3_000L, 6_000L, 15_000L, 30_000L).map { state.estimatedLoadProgress(it) }
+        assertTrue(samples.zipWithNext().all { (a, b) -> b > a }, "progress should keep rising: $samples")
+        assertTrue(samples.all { it <= 0.99f }, "progress should never complete: $samples")
     }
 
     @Test

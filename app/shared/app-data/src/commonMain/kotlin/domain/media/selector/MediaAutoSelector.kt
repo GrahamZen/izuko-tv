@@ -22,6 +22,8 @@ import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FI
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.isFinal
+import me.him188.ani.app.domain.media.fetch.isPaused
+import me.him188.ani.app.domain.media.fetch.resumePausedSources
 import me.him188.ani.app.domain.media.selector.MatchMetadata.SubjectMatchKind
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.datasources.api.Media
@@ -91,13 +93,21 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
                 when (decision) {
                     Decision.StartFallback -> {
                         if (stage.value == Stage.PreferredSource) {
-                            val web = checkNotNull(config.web)
-                            stage.value = if (web.fastSelect) Stage.Instant else Stage.Exact
-                            deadlines = launch {
-                                delay(web.exactStageAfter)
+                            // 记住的源 (或手上已有的结果) 给不出能选的资源: 上一次开播后被暂停的数据源
+                            // (切到下一集 / 播放失败换源时) 放开重新查
+                            session.resumePausedSources()
+                            val web = config.web
+                            if (web == null) {
+                                // 离开记住源的阶段, 之后按完成条件选 (见 decideOnCompletion)
                                 stage.value = Stage.Exact
-                                delay((web.fuzzyMatchAfter - web.exactStageAfter).coerceAtLeast(Duration.ZERO))
-                                stage.value = Stage.Fuzzy
+                            } else {
+                                stage.value = if (web.fastSelect) Stage.Instant else Stage.Exact
+                                deadlines = launch {
+                                    delay(web.exactStageAfter)
+                                    stage.value = Stage.Exact
+                                    delay((web.fuzzyMatchAfter - web.exactStageAfter).coerceAtLeast(Duration.ZERO))
+                                    stage.value = Stage.Fuzzy
+                                }
                             }
                         }
                         false
@@ -177,7 +187,15 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             }
         }
 
-        if (config.web == null) return decideOnCompletion(snapshot, preferred)
+        if (config.web == null) {
+            // 有源在上一次开播后被暂停着: 先按记住的源选, 它给不出资源再放开其它源 (select 收到 StartFallback 时放开),
+            // 否则被暂停的源一直不会查完, 按完成条件会一直等下去
+            if (stage == Stage.PreferredSource && snapshot.sources.any { it.state.isPaused }) {
+                return if (preferredSource != null && !preferredSource.state.isFinal) Decision.Wait
+                else Decision.StartFallback
+            }
+            return decideOnCompletion(snapshot, preferred)
+        }
         if (stage == Stage.PreferredSource) {
             if (preferredSource != null && !preferredSource.state.isFinal) return Decision.Wait
             if (preferredSource != null && preferredSource.results.isNotEmpty() &&
@@ -197,7 +215,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             it.kind == snapshot.settings.preferKind && it.state !is MediaSourceFetchState.Disabled
         }
         val waitingFor = preferredSources.ifEmpty { snapshot.sources }
-        if (waitingFor.any { !it.state.isFinal }) return Decision.Wait
+        if (waitingFor.any { !it.state.isSettled }) return Decision.Wait
         if (preferred.isEmpty()) return Decision.Exhausted
         if (!snapshot.context.allFieldsLoaded()) return Decision.Wait
         val media = MediaSelectionDecider.findByPreference(
@@ -215,7 +233,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
     ): Decision {
         val web = checkNotNull(config.web)
         val webSources = snapshot.sources.filter { it.kind == MediaSourceKind.WEB }
-        val allCompleted = webSources.all { it.state.isFinal }
+        val allCompleted = webSources.all { it.state.isSettled }
         if (!web.fastSelect && !allCompleted) return Decision.Wait
         // Settled sources produce no new candidates, so waiting for the remaining deadlines cannot change the choice.
         val effectiveStage = if (webSources.all { it.state.isSettled }) web.lastStage else stage
@@ -279,9 +297,12 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
     /**
      * Final with no automatic retry pending. A rate-limited source restarts itself after its cooldown and may
      * still return results, so it keeps the deadlines in effect like a running source.
+     *
+     * 被暂停的数据源也按没查完算: 过了记忆源阶段它们都已放开重查 (见 [select] 收到 StartFallback 时), 快照里还显示暂停,
+     * 只是新状态还没传过来, 不能当成查完了、判为没有资源.
      */
     private val MediaSourceFetchState.isSettled: Boolean
-        get() = isFinal && this !is MediaSourceFetchState.RateLimited
+        get() = isFinal && !isPaused && this !is MediaSourceFetchState.RateLimited
 
     private fun findWebCandidate(
         snapshot: MediaAutoSelectSnapshot,

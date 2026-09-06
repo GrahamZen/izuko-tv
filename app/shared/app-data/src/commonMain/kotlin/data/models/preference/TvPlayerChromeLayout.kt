@@ -40,7 +40,7 @@ enum class TvPlayerChromeRow {
  * - 普通功能条目: 一颗按钮.
  * - [isSeparator] 为真的装饰条目 ([DIVIDER_1] 等分组竖线与那段把两半推开的 [SPACER]): 不可聚焦,
  *   参与排列与显隐, 但不能当作焦点落点 (进度条上/下键的落点解析要跳过它们).
- * - [isConditional] 为真的条目: 本来就不是每次都在场的 (没有下一集 / 片源没有字幕轨 / 功能被关掉),
+ * - [isConditional] 为真的条目: 本来就不是每次都在场的 (没有下一集 / 片源没有字幕轨或只有一条音轨 / 功能被关掉),
  *   "用户没隐藏"只是**允许它出现**, 真正在不在还要看运行时. 编辑页里会标一句.
  *
  * @since 6.0.7
@@ -55,6 +55,11 @@ enum class TvPlayerChromeItem(
     val isConditional: Boolean = false,
     /** 只在触屏设备 (平板装了 TV 包) 上存在, 电视上连编辑页都不列出. */
     val isTouchOnly: Boolean = false,
+    /**
+     * 这颗按钮背后的功能本分发版里没有. 枚举项保留只为让已经存下来的版式配置还能读懂 (见 [resolveOrder]),
+     * 播放器里不画, 编辑页也不列出.
+     */
+    val isRetired: Boolean = false,
 ) {
     // ---- 胶囊行 (左 -> 右) ----
     PILL_RECOMMENDATIONS(TvPlayerChromeRow.PILLS),
@@ -74,9 +79,12 @@ enum class TvPlayerChromeItem(
     DIVIDER_2(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     DANMAKU_TOGGLE(TvPlayerChromeRow.BOTTOM),
     DANMAKU_SETTINGS(TvPlayerChromeRow.BOTTOM),
-    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true),
+    // 「一起看」要 Ani 服务器牵线, 直连版没有这条路
+    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true, isRetired = true),
     SPACER(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     SUBTITLE_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
+    /** 片源有两条以上音轨时才出现 (国日双语之类). */
+    AUDIO_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
     PLAYBACK_SPEED(TvPlayerChromeRow.BOTTOM, isConditional = true),
     ASPECT_RATIO(TvPlayerChromeRow.BOTTOM, isConditional = true),
     DIVIDER_3(TvPlayerChromeRow.BOTTOM, isSeparator = true),
@@ -203,25 +211,7 @@ data class TvPlayerChromeLayout(
         fun resolveOrder(
             saved: List<TvPlayerChromeItem>,
             defaults: List<TvPlayerChromeItem>,
-        ): List<TvPlayerChromeItem> {
-            if (saved.isEmpty()) return defaults
-            val result = saved.distinct().filterTo(mutableListOf()) { it in defaults }
-            if (result.size == defaults.size) return result
-            for ((index, item) in defaults.withIndex()) {
-                if (item in result) continue
-                // 默认版式里它前面最近的、已经落位的那个条目 —— 插到它后面
-                var anchor = -1
-                for (i in index - 1 downTo 0) {
-                    val at = result.indexOf(defaults[i])
-                    if (at >= 0) {
-                        anchor = at
-                        break
-                    }
-                }
-                result.add(anchor + 1, item)
-            }
-            return result
-        }
+        ): List<TvPlayerChromeItem> = resolveSavedOrder(saved, defaults)
     }
 }
 

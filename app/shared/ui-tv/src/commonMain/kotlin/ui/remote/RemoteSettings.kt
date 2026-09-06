@@ -18,15 +18,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.app.data.models.preference.EndpointSelectionMode
+import me.him188.ani.app.data.models.preference.EndpointUrls
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
+import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.settings.ProxyTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.TestState
@@ -55,6 +65,9 @@ internal object RemoteSettings {
     private val logger = logger<RemoteSettings>()
 
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
+    private val bangumiMirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
+    private val tokenRepository: TokenRepository get() = KoinPlatform.getKoin().get()
+    private val tmdbImageEndpoints: TmdbImageEndpoints get() = KoinPlatform.getKoin().get()
     private val danmakuFilters: DanmakuRegexFilterRepository get() = KoinPlatform.getKoin().get()
 
     /** 处理 `api/settings` 下的请求; 路径或方法不认识返回 null. */
@@ -67,6 +80,9 @@ internal object RemoteSettings {
                 !post -> null
                 request.path == "api/settings/proxy" -> saveProxy(request)
                 request.path == "api/settings/proxy/test" -> testConnection()
+                request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
+                request.path == "api/settings/bangumi/cred" -> setMirrorCredentials(request)
+                request.path == "api/settings/tmdb-images" -> saveTmdbImages(request)
                 request.path == "api/settings/trackers" -> saveTrackers(request)
                 // 「切到电视前台」开关, 状态与授权都在 TvRemoteControl
                 request.path == "api/settings/front" -> TvRemoteControl.setBringToFront(request.formFields()["on"] == "1")
@@ -90,12 +106,33 @@ internal object RemoteSettings {
         // 挂起调用都放在 buildJsonObject 外面 (它的构建块不是协程)
         val filterConfig = settingsRepository.danmakuFilterConfig.flow.first()
         val filters = danmakuFilters.flow.first()
+        val bangumi = settingsRepository.bangumiEndpointSettings.flow.first()
+        val loggedIn = tokenRepository.session.first() is AccessTokenSession
+        val mirrors = bangumiMirrorList.mirrors.first()
+        val tmdbImagesDisabled = settingsRepository.tmdbImagesDisabled.flow.first()
+        val tmdbImageEndpoint = tmdbImageEndpoints.selection.flow.first()
+        val tmdbImageHosts = tmdbImageEndpoints.candidates.first()
         buildJsonObject {
             putJsonObject("proxy") {
                 put("mode", proxy.mode.name)
                 put("url", proxy.manualUrl)
                 put("username", proxy.manualUsername.orEmpty())
                 put("hasPassword", !proxy.manualPassword.isNullOrEmpty())
+            }
+            putJsonObject("bangumi") {
+                put("mode", bangumi.mode.name)
+                put("custom", bangumi.customBaseUrl)
+                putJsonArray("mirrors") { mirrors.forEach { add(it) } }
+                put("allowCredentials", bangumi.allowCredentialsViaMirror)
+                // 登录着改用镜像要先问 (见 BangumiMirrorConsent), 网页在保存前判断
+                put("loggedIn", loggedIn)
+            }
+            putJsonObject("tmdbImages") {
+                put("disabled", tmdbImagesDisabled)
+                put("mode", tmdbImageEndpoint.mode.name)
+                put("fixed", tmdbImageEndpoint.fixedBaseUrl)
+                put("custom", tmdbImageEndpoint.customBaseUrl)
+                putJsonArray("hosts") { tmdbImageHosts.forEach { add(it) } }
             }
             put("trackers", torrent.extraTrackers)
             put("front", TvRemoteControl.frontState())
@@ -187,6 +224,107 @@ internal object RemoteSettings {
     }
 
     /**
+     * Bangumi 连接方式 (同设置页「Bangumi 连接方式」那一组). 自建地址要能归一成根域名, 认不出来的当场拒绝 ——
+     * 存进去也会被当成没填、退回直连, 那在大陆表现为「设置了但一样连不上」, 用户看不出是自己填错了.
+     *
+     * `cred` = 登录与收藏同步也经过镜像 ([BangumiEndpointSettings.allowCredentialsViaMirror]); 网页上勾选时已经确认过风险.
+     */
+    private fun saveBangumiEndpoint(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val mode = BangumiEndpointMode.entries.firstOrNull { it.name == fields["mode"] }
+            ?: return result(false, tr("无效的连接方式"))
+        val custom = fields["custom"].orEmpty().trim()
+        val allowCredentials = fields["cred"] == "1"
+        if (mode == BangumiEndpointMode.CUSTOM && BangumiMirrorHosts.normalizeMirrorRoot(custom) == null) {
+            return result(false, tr("请填根域名，例如 bangumi.example.com"))
+        }
+        runBlocking {
+            settingsRepository.bangumiEndpointSettings.update {
+                copy(
+                    mode = mode,
+                    customBaseUrl = if (mode == BangumiEndpointMode.CUSTOM) custom else customBaseUrl,
+                    allowCredentialsViaMirror = allowCredentials,
+                )
+            }
+        }
+        logger.info { "Remote control saved Bangumi endpoint: mode=$mode, allowCredentials=$allowCredentials" }
+        return result(
+            true,
+            when (mode) {
+                BangumiEndpointMode.AUTO ->
+                    if (allowCredentials) tr("已改为官方连不上时用镜像，登录与收藏同步也经过镜像")
+                    else tr("已改为官方连不上时用镜像")
+                BangumiEndpointMode.MIRROR ->
+                    if (allowCredentials) tr("已改为用镜像，登录与收藏同步也经过镜像")
+                    else tr("已改为用镜像")
+                BangumiEndpointMode.DIRECT -> tr("已改为只连官方")
+                BangumiEndpointMode.CUSTOM -> tr("已保存，立即生效")
+            },
+        )
+    }
+
+    /**
+     * TMDB 图片 (同设置页「背景图 (TMDB)」那一组): `choice` = `auto` (自动选择入口) / `off` (不加载) / `custom` (用 `custom`
+     * 字段里的地址) / 清单里某个入口的地址 (只用它). 自定义地址认不出来的当场拒绝 —— 存进去也会被当成没填、按自动走,
+     * 用户看不出是自己填错了.
+     */
+    private fun saveTmdbImages(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val choice = fields["choice"].orEmpty()
+        val custom = fields["custom"].orEmpty().trim()
+        val message = runBlocking {
+            val endpoint = tmdbImageEndpoints.selection
+            when (choice) {
+                "off" -> {
+                    settingsRepository.tmdbImagesDisabled.set(true)
+                    tr("已改为不加载 TMDB 背景图")
+                }
+
+                "auto" -> {
+                    endpoint.update { copy(mode = EndpointSelectionMode.AUTO) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已改为自动选择图片地址")
+                }
+
+                "custom" -> {
+                    if (EndpointUrls.normalizeBaseUrl(custom) == null) {
+                        return@runBlocking null
+                    }
+                    endpoint.update { copy(mode = EndpointSelectionMode.CUSTOM, customBaseUrl = custom) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已保存，立即生效")
+                }
+
+                else -> {
+                    // 只接清单里有的, 或者本来就选着的那个 (清单后来去掉了它)
+                    val known = tmdbImageEndpoints.candidates.first() + endpoint.flow.first().fixedBaseUrl
+                    if (choice.isEmpty() || choice !in known) return@runBlocking ""
+                    endpoint.update { copy(mode = EndpointSelectionMode.FIXED, fixedBaseUrl = choice) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已改为只用 {0}", EndpointUrls.displayName(choice))
+                }
+            }
+        }
+        logger.info { "Remote control saved TMDB images: choice=$choice, ok=${!message.isNullOrEmpty()}" }
+        return when (message) {
+            null -> result(false, tr("认不出这个地址：请填 https://域名（可以带路径），或含 {path} 的模板"))
+            "" -> result(false, tr("无效的选项"))
+            else -> result(true, message)
+        }
+    }
+
+    /**
+     * 只改「登录与收藏同步也经过镜像」, 连接方式不动: 账号卡片上经镜像时那颗按钮用 (网页那边先弹风险确认).
+     * 经第三方镜像时不打开它就登录不了 —— 带凭证的请求会被留在官方, 而官方连不上.
+     */
+    private fun setMirrorCredentials(request: LanHttpRequest): JsonObject {
+        val on = request.formFields()["on"] == "1"
+        runBlocking { settingsRepository.bangumiEndpointSettings.update { copy(allowCredentialsViaMirror = on) } }
+        logger.info { "Remote control set allowCredentialsViaMirror=$on" }
+        return result(true, if (on) tr("已打开：登录与收藏同步也经过镜像") else tr("已关闭：登录与收藏同步只走官方"))
+    }
+
+    /**
      * 测一遍各服务能不能连上 (同设置页「保存并测试」与动作面板那一行). 用一个一次性的 [ProxyTester]: 起它的测试循环,
      * 等全部测完 (每项自带 10~15 秒超时), 取结果后关掉. 按当前生效的代理测.
      */
@@ -224,6 +362,8 @@ internal object RemoteSettings {
         }
     }
 
+    // ---------------------------- hero 背景与文字 ----------------------------
+
     private fun saveTrackers(request: LanHttpRequest): JsonObject {
         // 每行一个, 去掉空行与首尾空白; 与设置页同一个字段 (BT 下载开始前与内置 tracker 一起添加)
         val text = request.formFields()["text"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -241,7 +381,6 @@ internal object RemoteSettings {
     private val TEST_TIMEOUT = 25.seconds
     private val TRACKER_SCHEMES = listOf("udp://", "http://", "https://", "ws://", "wss://")
     private val SERVICE_NAMES = mapOf(
-        ServiceConnectionTesters.ID_ANI to "Animeko 服务器",
         ServiceConnectionTesters.ID_BANGUMI to "Bangumi",
         ServiceConnectionTesters.ID_BANGUMI_NEXT to "Bangumi Next",
         ServiceConnectionTesters.ID_TMDB to "TMDB 接口",

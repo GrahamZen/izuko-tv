@@ -18,7 +18,7 @@ import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
-import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory.Companion.withRepositories
 import me.him188.ani.datasources.api.Media
@@ -67,7 +67,7 @@ interface MediaSelectorFactory {
             subjectRelationsRepository: SubjectRelationsRepository,
             subtitlePreferences: MediaSelectorSubtitlePreferences = MediaSelectorSubtitlePreferences.CurrentPlatform,
             subjectCollectionRepository: SubjectCollectionRepository,
-            mediaCacheManager: MediaCacheManager,
+            mediaCacheManager: MediaDownloadManager,
         ): MediaSelectorFactory = object : MediaSelectorFactory {
             override fun create(
                 subjectId: Int,

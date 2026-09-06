@@ -23,13 +23,12 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldRole
 import androidx.compose.material3.adaptive.navigation.ThreePaneScaffoldNavigator
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,6 +47,7 @@ import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
 import me.him188.ani.app.ui.foundation.IconButton
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.tv.AniTextField
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 
@@ -181,7 +181,7 @@ private fun SearchBlockedIp(state: PeerFilterSettingsState) {
 
     val searchQuery by state.searchBlockedIpQuery.collectAsStateWithLifecycle("")
 
-    TextField(
+    AniTextField(
         value = searchQuery,
         onValueChange = { state.setSearchBlockIpQuery(it) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -195,5 +195,5 @@ private fun SearchBlockedIp(state: PeerFilterSettingsState) {
         modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
     )
 
-    SideEffect { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 }

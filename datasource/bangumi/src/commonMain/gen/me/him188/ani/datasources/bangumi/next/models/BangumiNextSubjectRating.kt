@@ -10,31 +10,31 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param count 
  * @param rank 
+ * @param count 
  * @param score 
  * @param total 
  */
 @Serializable
 
-data class BangumiNextSubjectRating(
-
-    @SerialName(value = "count") @Required val count: kotlin.collections.List<kotlin.Int>,
+data class BangumiNextSubjectRating (
 
     @SerialName(value = "rank") @Required val rank: kotlin.Int,
+
+    @SerialName(value = "count") @Required val count: kotlin.collections.List<kotlin.Int>,
 
     @SerialName(value = "score") @Required val score: @Serializable(me.him188.ani.utils.serialization.BigNumAsDoubleStringSerializer::class) me.him188.ani.utils.serialization.BigNum,
 

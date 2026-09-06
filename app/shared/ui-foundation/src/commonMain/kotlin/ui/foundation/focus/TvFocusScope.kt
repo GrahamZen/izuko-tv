@@ -60,6 +60,13 @@ private data class NamedFocusKey(val name: String) : TvFocusKey {
 }
 
 /**
+ * 焦点驻留在过渡处 (跨 tab / 跨天的隐形锚点, 或原生网格把焦点停放在自己身上) 时, 按键在这段时间内被吞掉、不算用户接管
+ * (见 [TvFocusScope.onUserKeyDown]). 正常的跨 tab / 跨天落地实测 ≤300ms; 过了还没落地多半是落不了地了 (目标不存在), 这时的按键
+ * 就该取消它 —— 否则吞键又取消不掉, 要一直等到网格送焦的 4 秒超时, 期间遥控器全无反应 (2026-09-11 真机, 空的「抛弃」标签).
+ */
+const val TV_TRANSIT_PARK_KEY_GRACE_MILLIS = 600L
+
+/**
  * 页面级焦点调度器. 经 [rememberTvFocusScope] 创建; 页面根部须装 [Resolver] 消化请求.
  *
  * 线程模型: 全部在主线程 (组合/效应/按键分发) 使用.
@@ -186,7 +193,7 @@ class TvFocusScope {
     }
 
     /** 取消指定锚点仍在途的请求; 其他锚点后来发出的请求不受影响. */
-    internal fun cancel(key: TvFocusKey) {
+    fun cancel(key: TvFocusKey) {
         if (pending?.first != key) return
         pending = null
     }
@@ -210,12 +217,8 @@ class TvFocusScope {
     /** 焦点停到过渡锚点上的那一刻 (见 [focusParkedOnTransit]). */
     private var parkedMark: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
 
-    /**
-     * 驻留在过渡锚点上时, 按键在这段时间内不算用户接管 (见 [onUserKeyDown]). 正常的跨 tab / 跨天落地
-     * 实测 ≤300ms; 过了还没落地多半是落不了地了 (目标不存在), 这时的按键就该取消它 —— 否则吞键又取消不掉,
-     * 要一直等到网格送焦的 4 秒超时, 期间遥控器全无反应 (2026-09-11 真机, 空的「抛弃」标签). 测试可调.
-     */
-    internal var transitParkKeyGraceMillis: Long = 600
+    /** 驻留在过渡锚点上时, 按键在这段时间内不算用户接管 (见 [TV_TRANSIT_PARK_KEY_GRACE_MILLIS]). 测试可调. */
+    internal var transitParkKeyGraceMillis: Long = TV_TRANSIT_PARK_KEY_GRACE_MILLIS
 
     /**
      * [tvFocusNavSignal] 收到方向/确认键按下时的记账.

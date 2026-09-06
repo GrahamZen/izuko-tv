@@ -17,7 +17,6 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.platform.DesktopContext
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.AppUpdateViewModel
-import me.him188.ani.app.ui.update.UpdateChecker
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -98,7 +97,8 @@ object UpdateE2eTestTask : KoinComponent {
             get<SettingsRepository>().updateSettings.update {
                 copy(autoCheckUpdate = true, autoDownloadUpdate = true, inAppDownload = true)
             }
-            val vm = AppUpdateViewModel(UpdateChecker(listOf(config.serverUrl)))
+            // fork 的更新检查查 GitHub 发布, 用不上 config.serverUrl 那个模拟的更新服务器; fork 的 CI 不跑这个测试
+            val vm = AppUpdateViewModel()
             vm.startCheckLatestVersion(uriHandler = null)
             val presentation = vm.presentationFlow.first { p ->
                 p.checkUpdateError != null

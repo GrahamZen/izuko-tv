@@ -200,7 +200,7 @@ fun getAndroidModules(
                 ),
         )
     }
-    single<UpdateInstaller> { AndroidUpdateInstaller() }
+    single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
     single<AppTerminator> {
         object : AppTerminator {

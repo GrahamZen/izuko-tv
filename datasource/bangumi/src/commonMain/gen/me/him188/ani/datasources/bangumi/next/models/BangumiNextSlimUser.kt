@@ -24,31 +24,35 @@ import kotlinx.serialization.encoding.*
 /**
  * 
  *
+ * @param id 
+ * @param username 
+ * @param nickname 
  * @param avatar 
  * @param group 
- * @param id 
- * @param joinedAt 
- * @param nickname 
  * @param sign 
- * @param username 
+ * @param joinedAt 
+ * @param isFriend Whether the authenticated user has added this user as a friend; false when the endpoint does not populate viewer friendship
  */
 @Serializable
 
 data class BangumiNextSlimUser (
 
+    @SerialName(value = "id") @Required val id: kotlin.Int,
+
+    @SerialName(value = "username") @Required val username: kotlin.String,
+
+    @SerialName(value = "nickname") @Required val nickname: kotlin.String,
+
     @SerialName(value = "avatar") @Required val avatar: BangumiNextAvatar,
 
     @SerialName(value = "group") @Required val group: kotlin.Int,
 
-    @SerialName(value = "id") @Required val id: kotlin.Int,
+    @SerialName(value = "sign") @Required val sign: kotlin.String,
 
     @SerialName(value = "joinedAt") @Required val joinedAt: kotlin.Int,
 
-    @SerialName(value = "nickname") @Required val nickname: kotlin.String,
-
-    @SerialName(value = "sign") @Required val sign: kotlin.String,
-
-    @SerialName(value = "username") @Required val username: kotlin.String
+    /* Whether the authenticated user has added this user as a friend; false when the endpoint does not populate viewer friendship */
+    @SerialName(value = "isFriend") @Required val isFriend: kotlin.Boolean
 
 ) {
 
