@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -27,16 +27,22 @@ import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 
 /**
- * 半透明居中大面板弹窗: 按窗口比例定尺寸, 下层内容 (视频画面 / 页面) 经系统遮罩隐约透出.
+ * 居中面板弹窗, 「轻透玻璃」的样子 (见 AniGlass.kt): 接近实底的中性底色, 一圈白色细描边.
+ * 宽按窗口比例, 高随内容 (最高 [heightFraction] 屏高); 下层内容 (视频画面 / 页面) 隐约透出.
  *
  * 用于大屏上替代贴边侧栏与底部抽屉 —— 贴边面板离视线中心远, 焦点跳到屏幕边缘的过程也难以
  * 看清. 是否改用这个形态由
@@ -50,9 +56,10 @@ fun AniCenteredPanelDialog(
     onDismissRequest: () -> Unit,
     title: (@Composable () -> Unit)? = null,
     widthFraction: Float = CENTERED_PANEL_WIDTH_FRACTION,
-    heightFraction: Float = CENTERED_PANEL_HEIGHT_FRACTION,
+    /** 最高占窗口比, 内容矮时跟着内容收高; null = 只按内容收高, 不设上限. */
+    heightFraction: Float? = CENTERED_PANEL_HEIGHT_FRACTION,
     /**
-     * 非 null 时高度由 [widthFraction] 推出的宽度按此宽高比算, 忽略 [heightFraction] ——
+     * 非 null 时高度由宽度按此宽高比算, 忽略 [heightFraction] ——
      * 背景是定比例的图 (如 16:9 剧照) 时用它, 面板与图同比例, 图铺满时不会被裁掉上下或左右.
      */
     aspectRatio: Float? = null,
@@ -70,6 +77,11 @@ fun AniCenteredPanelDialog(
      * 遮罩之上永远是深底, 不能跟随主题的 onSurface (浅色主题下会变成深字压深底).
      */
     background: (@Composable BoxScope.() -> Unit)? = null,
+    /**
+     * 非 null 时触屏上 (平板 / iPad) 两侧加左右切换的箭头、横滑也切 (如相邻集的详情), 见 [AniPanelSideNavHost].
+     * 遥控器上不画: 左右键已经由内容自己切 (如 AniScrollableTextDialog 的 onHorizontalNav), 箭头纯属占地方.
+     */
+    sideNav: AniPanelSideNav? = null,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -79,35 +91,60 @@ fun AniCenteredPanelDialog(
         // 面板占掉大半个屏幕, 窗口默认那档 0.6 的压暗会把四周压得几乎全黑 (电视上尤其明显).
         // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来
         DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
-        Surface(
-            // maxWidth 必须**在外层**: widthIn 会先服从传进来的约束, 而 fillMaxWidth 给的是
-            // min = max = 比例宽度, 放在它后面等于没写 (实测宽度仍是整整那个比例)
-            Modifier
-                // 盖在播放画面上时 (播放器的二级页/一起看/详情弹窗) 遥控器播放暂停键照常可用:
-                // Dialog 是独立窗口, 按键到不了播放页的根路由, 得自己接一道. 播放页之外为空操作
-                .tvOverlayWindowKeys(onDismissRequest)
-                .then(
-                    if (maxWidth != Dp.Unspecified) {
-                        Modifier.widthIn(max = maxWidth).fillMaxWidth()
-                    } else {
-                        Modifier.fillMaxWidth(widthFraction)
-                    },
-                )
-                .then(
-                    if (aspectRatio != null) {
-                        Modifier.aspectRatio(aspectRatio)
-                    } else {
-                        Modifier.fillMaxHeight(heightFraction)
-                    },
-                ),
-            shape = RoundedCornerShape(16.dp),
-            color = if (background != null) Color.Transparent else centeredPanelColor,
-            // 必须显式给: Surface 默认用 contentColorFor(color) 推内容色, 而这里的底色带了 alpha,
-            // 在配色表里查不到对应的 "on" 色 -> 退回 LocalContentColor, 而它的**默认值是纯黑**
-            // (material3 的 compositionLocalOf { Color.Black }). 弹窗宿主往往不在任何 Surface 里
-            // (如 EditableRatingDialogsHost), 于是深色主题下标题/正文全是黑字压深底.
-            contentColor = if (background != null) Color.White else MaterialTheme.colorScheme.onSurface,
-        ) {
+        if (sideNav == null || !LocalTvTouchInputEnabled.current) {
+            CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, content)
+        } else {
+            AniPanelSideNavHost(sideNav, onDismissRequest) {
+                CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, content)
+            }
+        }
+    }
+}
+
+/** [AniCenteredPanelDialog] 的面板本身. */
+@Composable
+private fun CenteredPanel(
+    onDismissRequest: () -> Unit,
+    title: (@Composable () -> Unit)?,
+    widthFraction: Float,
+    heightFraction: Float?,
+    aspectRatio: Float?,
+    maxWidth: Dp,
+    background: (@Composable BoxScope.() -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        // maxWidth 必须**在外层**: widthIn 会先服从传进来的约束, 而 fillMaxWidth 给的是
+        // min = max = 比例宽度, 放在它后面等于没写 (实测宽度仍是整整那个比例)
+        Modifier
+            // 盖在播放画面上时 (播放器的二级页/一起看/详情弹窗) 遥控器播放暂停键照常可用:
+            // Dialog 是独立窗口, 按键到不了播放页的根路由, 得自己接一道. 播放页之外为空操作
+            .tvOverlayWindowKeys(onDismissRequest)
+            .then(
+                if (maxWidth != Dp.Unspecified) {
+                    Modifier.widthIn(max = maxWidth).fillMaxWidth()
+                } else {
+                    Modifier.fillMaxWidth(widthFraction)
+                },
+            )
+            .then(
+                when {
+                    aspectRatio != null -> Modifier.aspectRatio(aspectRatio)
+                    heightFraction != null -> Modifier.fillMaxHeightAtMost(heightFraction)
+                    else -> Modifier
+                },
+            ),
+        shape = ANI_GLASS_PANEL_SHAPE,
+        color = if (background != null) Color.Transparent else aniGlassPanelColor(),
+        border = aniGlassEdge(),
+        // 必须显式给: Surface 默认用 contentColorFor(color) 推内容色, 而这里的底色带了 alpha,
+        // 在配色表里查不到对应的 "on" 色 -> 退回 LocalContentColor, 而它的**默认值是纯黑**
+        // (material3 的 compositionLocalOf { Color.Black }). 弹窗宿主往往不在任何 Surface 里
+        // (如 EditableRatingDialogsHost), 于是深色主题下标题/正文全是黑字压深底.
+        contentColor = if (background != null) Color.White else MaterialTheme.colorScheme.onSurface,
+    ) {
+        // 面板里的项目换成玻璃底、对话框按钮画成动作按钮, 见 ProvideAniGlassPanelContent
+        ProvideAniGlassPanelContent {
             Box {
                 if (background != null) {
                     background()
@@ -118,10 +155,10 @@ fun AniCenteredPanelDialog(
                     )
                 }
                 // 内容色由上面 Surface 的 contentColor 供给 (背景图时为白, 否则 onSurface)
-                Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
+                Column(Modifier.padding(CENTERED_PANEL_CONTENT_PADDING)) {
                     title?.let {
-                        ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                            Row(Modifier.fillMaxWidth().padding(bottom = 16.dp)) { it() }
+                        ProvideTextStyle(aniPanelTitleStyle) {
+                            Row(Modifier.fillMaxWidth().padding(bottom = CENTERED_PANEL_TITLE_GAP)) { it() }
                         }
                     }
                     content()
@@ -131,20 +168,57 @@ fun AniCenteredPanelDialog(
     }
 }
 
+/**
+ * 高最多占给的高的 [fraction], 内容矮时跟着内容 (不撑满); 内容用 fillMaxSize 的照样撑到这个上限. 面板弹窗「高度随内容、设最大高」用它
+ * (这里与「查看全部」那类自绘的玻璃弹窗).
+ */
+fun Modifier.fillMaxHeightAtMost(fraction: Float): Modifier = layout { measurable, constraints ->
+    val placeable = if (constraints.hasBoundedHeight) {
+        val max = (constraints.maxHeight * fraction).roundToInt().coerceAtLeast(constraints.minHeight)
+        measurable.measure(constraints.copy(maxHeight = max))
+    } else {
+        measurable.measure(constraints)
+    }
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+
+/**
+ * 弹窗 / 菜单 / 窗口内面板的统一圆角. 公开给不能直接套 [AniCenteredPanelDialog] 的那些 (自绘的 Dialog、Popup、
+ * 下拉菜单、播放器里的窗口内面板): 各写各的数时, 同一个界面里出现过 16 / 20 / 28 / 4 四档.
+ * TV 上 M3 对话框 (`AlertDialog`) 的默认圆角也改成这一档, 见 `AniTheme`.
+ */
+val CENTERED_PANEL_CORNER: Dp = 16.dp
+
+/** [CENTERED_PANEL_CORNER] 的形状. */
+val CENTERED_PANEL_SHAPE: Shape = RoundedCornerShape(CENTERED_PANEL_CORNER)
+
+/** 弹窗内容的统一内边距: 左右 24、上下 20 (与 [CENTERED_PANEL_SHAPE] 同理公开). */
+val CENTERED_PANEL_CONTENT_PADDING: PaddingValues = PaddingValues(horizontal = 24.dp, vertical = 20.dp)
+
+/** 标题 (titleLarge) 与正文之间的间距. */
+val CENTERED_PANEL_TITLE_GAP: Dp = 16.dp
+
 private const val CENTERED_PANEL_WIDTH_FRACTION = 0.72f
 private const val CENTERED_PANEL_HEIGHT_FRACTION = 0.85f
 
 /**
- * 面板不透明度: 半透明玻璃感, 下层 (视频画面 / 页面) 透得出来.
+ * 面板不透明度 (页面上的弹窗), 同菜单底 (MENU_CONTAINER_ALPHA). 各平台的弹窗面板都是实心的: M3 对话框不透明, tvOS 半透明
+ * 但带模糊, 背后读不出字. 这里不做模糊, 再透的话背后的字和轮廓直接透上来 (浅色主题下最明显).
+ */
+private const val CENTERED_PANEL_ALPHA = 0.95f
+
+/**
+ * 盖在播放器上时的面板不透明度: 半透明玻璃感, 播放画面透得出来 (知道自己没离开播放器).
  *
  * 0.94 时肉眼几乎看不出后面还在放视频 (盖在播放器上的角色/制作人员大网格被反馈"像不透明的板子");
  * 0.85 能看出画面在动, 又不至于让正文压在花色上. 弹窗外还有 [CENTERED_PANEL_WINDOW_DIM] 那层
  * 系统压暗, 实际透出的是压暗后的画面, 别只按这个数字估观感.
  */
-private const val CENTERED_PANEL_ALPHA = 0.85f
+private const val CENTERED_PANEL_ALPHA_OVER_PLAYER = 0.85f
 
 /**
- * 面板底色 = `surfaceContainerHigh` + 半透明.
+ * 面板底色 = `surfaceContainerHigh` + 半透明: 盖在播放器上 (播放页提供了 [LocalTvPlayPauseHandler], 从播放器里开的弹窗同样拿得到)
+ * 按 [CENTERED_PANEL_ALPHA_OVER_PLAYER], 其余按 [CENTERED_PANEL_ALPHA].
  *
  * 角色刻意与 M3 `AlertDialog` 的默认容器色一致: 所有弹窗 (这里的大面板、复用的手机端对话框、
  * 弹幕延迟这类小对话框) 底色于是同出一处, 不会一个偏亮一个偏暗.
@@ -160,7 +234,9 @@ private const val CENTERED_PANEL_ALPHA = 0.85f
  */
 val centeredPanelColor: Color
     @Composable
-    get() = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = CENTERED_PANEL_ALPHA)
+    get() = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+        alpha = if (LocalTvPlayPauseHandler.current != null) CENTERED_PANEL_ALPHA_OVER_PLAYER else CENTERED_PANEL_ALPHA,
+    )
 
 /**
  * 弹窗 (`AlertDialog` 一族) 的容器底色: **TV 上半透明**, 其余平台保持 M3 默认.
@@ -199,7 +275,8 @@ private const val CENTERED_PANEL_SCRIM_ALPHA = 0.45f
 /**
  * 弹窗窗口外的系统压暗 (见 [DialogWindowDimAmount]); 系统对话框默认 0.6, 大面板上太黑.
  *
- * 公开给共用 [centeredPanelColor] 的那几个居中大弹窗: 面板半透明之后, 透出来的是这层压暗之后的
+ * 公开给共用 [centeredPanelColor] 的其他弹窗 (自绘的 Dialog 各自调一次 [DialogWindowDimAmount];
+ * 播放器里不开独立窗口的面板用同一个值画自己的遮罩): 面板半透明之后, 透出来的是这层压暗之后的
  * 画面 —— 不一起改的话, 面板里透出的画面比面板四周的还黑 (0.6 压暗 + 面板自己的 85% 底色).
  */
 const val CENTERED_PANEL_WINDOW_DIM = 0.35f

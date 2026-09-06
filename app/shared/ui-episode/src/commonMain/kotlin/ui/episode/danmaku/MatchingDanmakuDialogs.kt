@@ -10,8 +10,6 @@
 package me.him188.ani.app.ui.episode.danmaku
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,12 +18,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,9 +34,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
-import me.him188.ani.app.ui.foundation.widgets.focusHighlightedButtonColors
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.episode_danmaku_match_change
 import me.him188.ani.app.ui.lang.episode_danmaku_match_loading_danmaku
@@ -67,7 +66,7 @@ fun MatchingDanmakuDialog(
 ) {
     val changeDanmakuText = stringResource(Lang.episode_danmaku_match_change)
     val cancelText = stringResource(Lang.settings_mediasource_cancel)
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
         },
@@ -137,7 +136,7 @@ fun MatchingDanmakuScreen(
         var query by rememberSaveable {
             mutableStateOf(initialQuery)
         }
-        OutlinedTextField(
+        AniOutlinedTextField(
             value = query,
             onValueChange = { query = it },
             label = { Text(keywordText) },
@@ -148,13 +147,9 @@ fun MatchingDanmakuScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Button to submit the query and fetch subject list
-        val searchInteractionSource = remember { MutableInteractionSource() }
-        val searchFocused by searchInteractionSource.collectIsFocusedAsState()
-        Button(
+        AniButton(
             onClick = { onSubmitQuery(query) },
             enabled = query.isNotBlank() && !uiState.isLoadingSubjects,
-            colors = focusHighlightedButtonColors(searchFocused),
-            interactionSource = searchInteractionSource,
         ) {
             Text(searchText)
         }
@@ -224,11 +219,12 @@ fun SubjectPickerDialog(
 ) {
     val selectSubjectText = stringResource(Lang.episode_danmaku_match_select_subject)
     val cancelText = stringResource(Lang.settings_mediasource_cancel)
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(selectSubjectText) },
         text = {
-            LazyColumn {
+            val listState = rememberLazyListState()
+            LazyColumn(Modifier.aniVerticalScrollFade(listState), state = listState) {
                 items(subjects, key = { "MatchingDanmakuDialog-" + it.id }, contentType = { 1 }) { subject ->
                     ListItem(
                         headlineContent = { Text(subject.name) },
@@ -253,11 +249,12 @@ fun EpisodePickerDialog(
 ) {
     val selectEpisodeText = stringResource(Lang.episode_danmaku_match_select_episode)
     val cancelText = stringResource(Lang.settings_mediasource_cancel)
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(selectEpisodeText) },
         text = {
-            LazyColumn {
+            val listState = rememberLazyListState()
+            LazyColumn(Modifier.aniVerticalScrollFade(listState), state = listState) {
                 items(episodes, key = { "MatchingDanmakuDialog-" + it.id }, contentType = { 1 }) { episode ->
                     ListItem(
                         headlineContent = {

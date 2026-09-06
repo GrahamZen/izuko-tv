@@ -1,0 +1,7 @@
+{
+  "_comment": "TMDB 图片的入口清单. 应用每天拉一次这个文件 (见 TmdbImageEndpoints), 某个入口被封或下线时改这里就行, 不用发版. 两种写法: 入口地址 (如 https://images.tmdb.org), 原站的图片路径 /t/p/<尺寸>/<文件名> 直接接在后面, 所以只能写与 image.tmdb.org 内容相同的地址; 或含 {path} 的模板 (如 https://wsrv.nl/?url=image.tmdb.org{path}), 路径换进去, 给把路径放在参数里的代理用. 「自动选择」按顺序用第一个连得上的.",
+  "hosts": [
+    "https://images.tmdb.org",
+    "https://image.tmdb.org"
+  ]
+}

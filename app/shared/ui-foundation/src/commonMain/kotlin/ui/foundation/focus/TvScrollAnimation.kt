@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Stable
 import kotlin.math.abs
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -105,7 +106,24 @@ class TvScrollAnimator(
         animateBy(state, (mainAxisOffset + scrollOffset).toFloat())
     }
 
-    private suspend fun animateBy(state: ScrollableState, distance: Float) {
+    /**
+     * 按像素距离平滑滚动, 同样继承速度. 给**各项定高、自己算得出距离**的列表用 (探索页海报墙):
+     * 目标项此刻不在组合里时 [animateScrollToItem] 只能退回自带实现 (快, 像闪现), 按距离跑就不受这个限制.
+     *
+     * @param pace 逐格导航用 [TvScrollSpring.Step]; 返回键跳回组首行 / 回顶这类远跳用 [TvScrollSpring.Far].
+     * 同一段滚动分几次发起 (先滚进组合、焦点落位后再对准停位) 时各次要传同一档, 速度才接得上.
+     */
+    suspend fun animateScrollBy(state: ScrollableState, distance: Float, pace: TvScrollSpring = TvScrollSpring.Step) {
+        if (!animated) {
+            // 流畅档: 一步到位, 不产生中间帧 (见 TvVisualEffectsLevel.animatedScroll)
+            velocity = 0f
+            state.scrollBy(distance)
+            return
+        }
+        animateBy(state, distance, pace)
+    }
+
+    private suspend fun animateBy(state: ScrollableState, distance: Float, pace: TvScrollSpring = TvScrollSpring.Step) {
         if (abs(distance) < 0.5f) {
             velocity = 0f
             return
@@ -123,8 +141,8 @@ class TvScrollAnimator(
             AnimationState(initialValue = 0f, initialVelocity = initialVelocity).animateTo(
                 targetValue = distance,
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = TV_SCROLL_STIFFNESS,
+                    dampingRatio = pace.dampingRatio,
+                    stiffness = pace.stiffness,
                     visibilityThreshold = 0.5f,
                 ),
             ) {
@@ -206,6 +224,26 @@ fun tvAnchorBringIntoViewSpec(anchorPx: Float, animated: Boolean = true): BringI
     }
 
 /**
+ * 按需滚动的 [BringIntoViewSpec]: 聚焦项整个落在 `[startPx, 容器宽 - endPx]` 这一段里就不动; 越过哪一边,
+ * 只滚到它刚好贴着那一边 (比这一段还宽的项对齐起始边).
+ *
+ * 与框架默认的"最小滚动到可见"相比, 两端各留一段: 默认贴着容器边停, 聚焦放大 / 描边会被容器裁掉, 下一项也
+ * 露不出来. 两个留白通常取行内 `contentPadding` 的两端 —— 静止时首项本就停在起始留白上, 于是在一屏之内
+ * 左右移动整行不动, 走到边上才一格一格地挪.
+ */
+fun tvOnDemandBringIntoViewSpec(startPx: Float, endPx: Float): BringIntoViewSpec = object : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val leading = startPx
+        val trailing = containerSize - endPx
+        return when {
+            offset < leading -> offset - leading
+            offset + size > trailing -> minOf(offset + size - trailing, offset - leading)
+            else -> 0f
+        }
+    }
+}
+
+/**
  * 焦点滚动 spring 刚度: 决定"单格滚动多久" (质量 1, 临界阻尼下停靠时间 ≈ 4/√stiffness 秒).
  * 调大更快更利落, 调小更慢更从容; Leanback 的参照区间是单格 200-250ms. 只调这里, 全部 TV 焦点
  * 滚动统一手感 —— 除本动画器 (网格吸顶/选集轮播) 外, public 也给探索页那套官方 pivot 式
@@ -216,3 +254,17 @@ fun tvAnchorBringIntoViewSpec(anchorPx: Float, animated: Boolean = true): BringI
  * 停稳判据的最短 (TvScrollActivity), 背景图不等停稳. **用户手调过, 改前先问.**
  */
 const val TV_SCROLL_STIFFNESS = 260f
+
+/** [TvScrollAnimator] 按距离滚动的两档 spring (质量 1). */
+enum class TvScrollSpring(val stiffness: Float, val dampingRatio: Float) {
+    /** 逐格导航: [TV_SCROLL_STIFFNESS], 临界阻尼. */
+    Step(TV_SCROLL_STIFFNESS, Spring.DampingRatioNoBouncy),
+
+    /**
+     * 远跳 (返回键跳回组首行 / 回顶): 照 Android TV 版 Apple TV App 页面纵向滚动的参数 —— app.js 里页面跟焦点滚动的默认值与容器
+     * `resetScroll` 都是 `{type: Spring, damping: 30, stiffness: 150, mass: 1}`, 阻尼比 = 30 / (2√150) ≈ 1.22, 略过阻尼.
+     * 同样的距离峰值速度是 [Step] 的 0.66 倍, 走完 99% 约 780ms ([Step] 约 420ms), 减速段长: 用 [Step] 跳十来行时峰值一帧要滚过
+     * 近一整行, 看着一闪而过、还掉帧. 逐格导航不用它 —— [TV_SCROLL_STIFFNESS] 是用户手调过的.
+     */
+    Far(150f, 1.2247f),
+}

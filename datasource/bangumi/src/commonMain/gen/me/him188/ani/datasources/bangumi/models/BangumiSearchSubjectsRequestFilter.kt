@@ -15,25 +15,33 @@
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 不同条件之间是 `且` 的关系
  *
  * @param type 条目类型，参照 `SubjectType` enum，多值之间为 `或` 的关系。
+ * @param metaTags 公共标签。多个值之间为 `且` 关系。可以用 `-` 排除标签。比如 `-科幻` 可以排除科幻标签。
  * @param tag 标签，可以多次出现。多值之间为 `且` 关系。
  * @param airDate 播出日期/发售日期，日期必需为 `YYYY-MM-DD` 格式。多值之间为 `且` 关系。
  * @param rating 用于搜索指定评分的条目，多值之间为 `且` 关系。
+ * @param ratingCount 用于按照评分人数筛选条目，多值之间为 `且` 关系，格式与 `rating` 相同。
  * @param rank 用于搜索指定排名的条目，多值之间为 `且` 关系。
  * @param nsfw 无权限的用户会直接忽略此字段，不会返回R18条目。  默认或者 `null` 会返回包含 R18 的所有搜索结果。  `true` 只会返回 R18 条目。  `false` 只会返回非 R18 条目。 
  */
 @Serializable
 
-data class BangumiSearchSubjectsRequestFilter(
+data class BangumiSearchSubjectsRequestFilter (
 
     /* 条目类型，参照 `SubjectType` enum，多值之间为 `或` 的关系。 */
     @SerialName(value = "type") val type: kotlin.collections.List<BangumiSubjectType>? = null,
+
+    /* 公共标签。多个值之间为 `且` 关系。可以用 `-` 排除标签。比如 `-科幻` 可以排除科幻标签。 */
+    @SerialName(value = "meta_tags") val metaTags: kotlin.collections.List<kotlin.String>? = null,
 
     /* 标签，可以多次出现。多值之间为 `且` 关系。 */
     @SerialName(value = "tag") val tag: kotlin.collections.List<kotlin.String>? = null,
@@ -43,6 +51,9 @@ data class BangumiSearchSubjectsRequestFilter(
 
     /* 用于搜索指定评分的条目，多值之间为 `且` 关系。 */
     @SerialName(value = "rating") val rating: kotlin.collections.List<kotlin.String>? = null,
+
+    /* 用于按照评分人数筛选条目，多值之间为 `且` 关系，格式与 `rating` 相同。 */
+    @SerialName(value = "rating_count") val ratingCount: kotlin.collections.List<kotlin.String>? = null,
 
     /* 用于搜索指定排名的条目，多值之间为 `且` 关系。 */
     @SerialName(value = "rank") val rank: kotlin.collections.List<kotlin.String>? = null,

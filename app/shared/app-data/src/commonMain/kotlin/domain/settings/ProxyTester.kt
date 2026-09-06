@@ -18,9 +18,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.shareIn
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.foundation.HttpClientProvider
-import me.him188.ani.app.domain.foundation.ServerListFeature
-import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
-import me.him188.ani.app.domain.foundation.withValue
+import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.trace.ErrorReport
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
 import me.him188.ani.utils.analytics.Analytics
@@ -47,9 +45,8 @@ class ProxyTester(
     private val proxyTestRestarter = FlowRestarter()
 
     private val connectionTester = clientProvider.configurationFlow.map {
-        val client = clientProvider.get(
-            setOf(ServerListFeature.withValue(ServerListFeatureConfig.Default)),
-        )
+        // 与应用自己的请求同一套特性: Bangumi 按当前连接方式走 (经镜像时测的就是镜像), 带应用的 UA
+        val client = clientProvider.get()
 
         ServiceConnectionTesters.createDefault(
             bangumiClient = BangumiClientImpl(client),

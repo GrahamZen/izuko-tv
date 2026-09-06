@@ -23,3 +23,11 @@ class SubtitlePresentation(
 val SubtitleTrack.subtitleLanguage: String
     get() = language ?: labels.firstOrNull()?.value ?: internalId
 
+/**
+ * 片源里给这条字幕起了名字. 没起名时 [subtitleLanguage] 只是播放器内部的轨道编号 (ExoPlayer 后端把编号填进
+ * [SubtitleTrack.language]), 界面上改写「字幕 N」.
+ */
+@Stable
+val SubtitleTrack.isNamed: Boolean
+    get() = labels.isNotEmpty() || (language != null && language != internalId)
+

@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
  * 新番时间表页变体: 应用入口可提供一个替代布局 (遥控器形态的日期胶囊 + 竖版海报网格).
  *
  * PC/移动端那套 15 天并排纵向列表靠横向翻页浏览, 遥控器上没法用 —— TV 变体把两个维度拆正交
- * (日期走胶囊行, 时间走网格), 见 `TvSchedulePage`. 条目点击由变体自己走导航, 因此不需要
+ * (日期走胶囊行, 时间走网格), 见 `TvScheduleGridPage`. 条目点击由变体自己走导航, 因此不需要
  * [ScheduleScreen] 那样的 onClickItem 回调.
  */
 fun interface SchedulePageVariant {

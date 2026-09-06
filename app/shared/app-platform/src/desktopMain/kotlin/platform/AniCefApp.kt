@@ -95,7 +95,20 @@ object AniCefApp {
      */
     private class AniCefRequestHandler(
         private val resourceRequestHandler: CefResourceRequestHandler?,
+        private val onBeforeBrowse: ((url: String) -> Boolean)?,
     ) : CefRequestHandlerAdapter() {
+        override fun onBeforeBrowse(
+            browser: CefBrowser?,
+            frame: CefFrame?,
+            request: CefRequest?,
+            userGesture: Boolean,
+            isRedirect: Boolean,
+        ): Boolean {
+            val url = request?.url
+            if (url != null && onBeforeBrowse?.invoke(url) == true) return true
+            return super.onBeforeBrowse(browser, frame, request, userGesture, isRedirect)
+        }
+
         override fun getResourceRequestHandler(
             browser: CefBrowser?,
             frame: CefFrame?,
@@ -364,9 +377,15 @@ object AniCefApp {
      * 不要再对返回的 client 调用 `addRequestHandler`: client 已有处理代理认证的 request handler, 后加的会被 JCEF 静默忽略.
      * @return `null` if [initialize] has never been called.
      */
-    fun createClient(resourceRequestHandler: CefResourceRequestHandler? = null): CefClient? {
+    /**
+     * @param onBeforeBrowse 主框架与子框架每次导航前调用, 返回 true 时取消这一跳.
+     */
+    fun createClient(
+        resourceRequestHandler: CefResourceRequestHandler? = null,
+        onBeforeBrowse: ((url: String) -> Boolean)? = null,
+    ): CefClient? {
         return app?.createClient()
-            ?.apply { addRequestHandler(AniCefRequestHandler(resourceRequestHandler)) }
+            ?.apply { addRequestHandler(AniCefRequestHandler(resourceRequestHandler, onBeforeBrowse)) }
     }
 
     fun configureDataSourceBrowserLimit(limit: Int) {

@@ -10,6 +10,8 @@
 package me.him188.ani.app.platform
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -18,66 +20,88 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import me.him188.ani.app.data.models.feedback.FeedbackDevice
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.PikPakConfig
-import me.him188.ani.app.data.network.AniAnnouncementService
-import me.him188.ani.app.data.network.AniApiProvider
-import me.him188.ani.app.data.network.AniCommentReportService
 import me.him188.ani.app.data.network.AniEpisodeCommentService
-import me.him188.ani.app.data.network.AniNotificationService
-import me.him188.ani.app.data.network.AniPersonCommentService
-import me.him188.ani.app.data.network.AniSubjectRelationIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
-import me.him188.ani.app.data.network.AnimeScheduleService
-import me.him188.ani.app.data.network.BangumiSummaryService
-import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
-import me.him188.ani.app.data.network.BangumiReplyRelationService
-import me.him188.ani.app.data.network.DefaultWatchTogetherApiService
+import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
+import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
+import me.him188.ani.app.data.network.RecommendationCatalogRepository
+import me.him188.ani.app.data.network.SeriesGraphTableRepository
+import me.him188.ani.app.data.network.SubjectRecommendationsCache
+import me.him188.ani.app.data.network.FeedbackTicketService
+import me.him188.ani.app.data.network.SubjectFeedbackService
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.SubjectService
-import me.him188.ani.app.data.network.WatchTogetherApiService
+import me.him188.ani.app.data.network.TmdbImageEndpoints
+import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
+import me.him188.ani.app.data.network.TrendsRepository
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.MIGRATION_19_20
 import me.him188.ani.app.data.persistent.database.MIGRATION_21_22
+import me.him188.ani.app.data.persistent.database.MIGRATION_24_25
 import me.him188.ani.app.data.persistent.database.SelfRatingTagsRepair
 import me.him188.ani.app.data.persistent.database.createDatabaseBuilder
-import me.him188.ani.app.data.repository.media.MediaSourceSaves
-import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
-import me.him188.ani.app.data.repository.player.PlaybackHistorySyncer
+import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
+import me.him188.ani.app.data.repository.media.MediaSourceSaves
+import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.feedback.FeedbackTickets
+import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
+import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
+import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.torrent.TorrentEngineType
-import me.him188.ani.app.domain.torrent.engines.PikPakEngine
-import me.him188.ani.torrent.pikpak.PikPakCredentials
-import me.him188.ani.torrent.pikpak.PikPakSessionStoreAdapter
-import me.him188.ani.utils.io.inSystem
 import me.him188.ani.app.domain.foundation.AniInstallIdFeatureHandler
+import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
+import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiEchAddressList
+import me.him188.ani.app.domain.foundation.BangumiEchDohList
+import me.him188.ani.app.domain.foundation.BangumiEchConfig
+import me.him188.ani.app.domain.foundation.BangumiEchFeature
+import me.him188.ani.app.domain.foundation.BangumiEchFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.BangumiRoute
+import me.him188.ani.app.domain.foundation.BangumiRoutingFeature
+import me.him188.ani.app.domain.foundation.BangumiRoutingFeatureHandler
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeatureHandler
 import me.him188.ani.app.domain.foundation.CookieJarFeatureHandler
-import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
 import me.him188.ani.app.domain.foundation.DefaultVersionExpiryService
@@ -90,19 +114,40 @@ import me.him188.ani.app.domain.foundation.MaxRequestsPerHostFeatureHandler
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
-import me.him188.ani.app.domain.foundation.ServerListFeatureHandler
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
-import me.him188.ani.app.domain.foundation.UseAniTokenFeatureHandler
+import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryService
+import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.install.InstallIdRepository
 import me.him188.ani.app.domain.install.InstallReporter
+import me.him188.ani.app.domain.media.cache.PikPakWebM3uCacheMigration
+import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.KtorPersistentHttpDownloader
+import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.media.cache.engine.PlaybackYieldingGate
+import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.createCacheDownloadDispatcher
+import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
+import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
+import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
 import me.him188.ani.app.domain.media.download.DownloadOperations
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
+import me.him188.ani.app.domain.media.player.PlaybackActivity
+import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveShareIndexFileStore
+import me.him188.ani.app.domain.mediasource.clouddrive.LegacyPreferences
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
 import me.him188.ani.app.domain.mediasource.web.captcha.BrowserImageCaptchaSolver
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
@@ -113,52 +158,61 @@ import me.him188.ani.app.domain.notification.NotificationBadgeManager
 import me.him188.ani.app.domain.notification.NotificationBadgeManagerImpl
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
-import me.him188.ani.app.domain.media.cache.PikPakWebM3uCacheMigration
-import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
-import me.him188.ani.app.domain.media.cache.engine.createCacheDownloadDispatcher
-import me.him188.ani.app.domain.media.cache.engine.KtorPersistentHttpDownloader
-import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
-import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
-import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
-import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
-import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
-import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
-import me.him188.ani.app.domain.media.fetch.MediaSourceManager
-import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
-import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
-import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
-import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
-import me.him188.ani.app.domain.session.AniSessionRefresher
+import me.him188.ani.app.domain.profile.AccountCollectionsDownload
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.LocalProfileImporter
+import me.him188.ani.app.domain.profile.ProfileArchiver
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfileSeeder
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
+import me.him188.ani.app.domain.session.BangumiSessionRefresher
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionStateProvider
+import me.him188.ani.app.domain.session.canAccessBangumiApiNow
+import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
+import me.him188.ani.app.domain.session.auth.BangumiWebLogin
+import me.him188.ani.app.domain.session.auth.createBangumiWebLoginClient
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
+import me.him188.ani.app.domain.torrent.TorrentEngineType
 import me.him188.ani.app.domain.torrent.TorrentManager
+import me.him188.ani.app.domain.torrent.engines.PikPakEngine
 import me.him188.ani.app.domain.update.UpdateManager
-import me.him188.ani.app.domain.watchtogether.LocalPlaybackBridge
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
-import me.him188.ani.app.domain.watchtogether.WatchTogetherManager
 import me.him188.ani.app.domain.usecase.useCaseModules
+import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.datasources.bangumi.BangumiClient
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
+import me.him188.ani.torrent.pikpak.PikPakCredentials
+import me.him188.ani.torrent.pikpak.PikPakSessionStoreAdapter
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.coroutines.childScopeContext
 import me.him188.ani.utils.httpdownloader.HttpDownloader
+import me.him188.ani.utils.io.delete
+import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
-import kotlin.time.Duration.Companion.seconds
 
 private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
+/** 缓存索引那几张表只从整机库取, 见 [DeviceAniDatabase]. */
+private val Scope.deviceDatabase get() = get<DeviceAniDatabase>().database
 private val Scope.settingsRepository get() = get<SettingsRepository>()
-private val Scope.aniApiProvider get() = get<AniApiProvider>()
+private val Scope.bangumiApiProvider get() = get<BangumiApiProvider>()
 
 /**
  * 各端共享的 Koin 装配，默认包含完整缓存/BT 模块。
@@ -186,26 +240,138 @@ private fun KoinApplication.otherModules(
         SessionManager(
             tokenRepository = get(),
             coroutineScope = coroutineScope,
-            refreshSession = AniSessionRefresher { aniApiProvider.userAuthApi },
-            newLoginListener = SessionManager.NewLoginListener { userId ->
-                get<InstallReporter>().beforeNewLogin(userId)
+            // 刷新走 bangumi 自己的 refresh_token; 它的 accessToken 只有 7 天
+            refreshSession = BangumiSessionRefresher({ get<BangumiOAuthClient>() }, { get<BangumiOAuthRelayClient>() }),
+            beforeNewLogin = {
+                database.subjectCollection().resetAllLastFetched()
+                database.episodeCollection().resetAllLastFetched()
             },
+        )
+    }
+    single<BangumiOAuthClient> {
+        // 换 token 这一步**不能带 bangumi token** (给 bgm.tv 的 Authorization 头是另一回事),
+        // 所以要一个不装 UseBangumiTokenFeature 的裸客户端
+        BangumiOAuthClient(get<HttpClientProvider>().get())
+    }
+    single<BangumiOAuthRelayClient> { BangumiOAuthRelayClient(get<HttpClientProvider>().get()) }
+    single<BangumiOAuthManager> {
+        BangumiOAuthManager(
+            client = get(),
+            sessionManager = get(),
+            browserFactory = get(),
+            scope = coroutineScope,
+            trustedMirrorRoot = { get<BangumiEndpointProvider>().trustedMirrorRoot.value },
+            // 多人共用时内置浏览器里可能还登着上一个人的 bgm 账号
+            clearWebLoginBeforeInAppBrowser = { UserProfiles.registry.state.value.profiles.size > 1 },
+            relay = get(),
+        )
+    }
+    single<BangumiWebLogin> {
+        BangumiWebLogin(
+            newClient = { createBangumiWebLoginClient(get<ProxyProvider>().proxy.first(), getOrNull<BangumiEchTransport>()) },
+            routing = { get<BangumiEndpointProvider>().routing.first() },
+            recover = { route, cause -> route == BangumiRoute.Ech && getOrNull<BangumiEchTransport>()?.recover(cause) == true },
+            tokenName = "${BangumiWebLogin.TOKEN_NAME} · ${getContext().deviceLabel()}",
+            currentToken = { (get<TokenRepository>().session.first() as? AccessTokenSession)?.tokens?.bangumiAccessToken },
+            scope = coroutineScope,
         )
     }
     single<SessionStateProvider> {
         get<SessionManager>().stateProvider
     }
-    single<ServerSelector> {
-        ServerSelector(
-            settingsRepository.danmakuSettings.flow.map { it.useGlobal },
-            proxyProvider = get(),
-            coroutineScope,
-        )
-    }
-    single<InstallIdRepository> { InstallIdRepository(getContext().dataStores.installInfoStore) }
     // 数据源发请求时用得到本机浏览器 UA; 数据源由工厂创建拿不到 Context, 在这里装进去
     DeviceBrowserUserAgentHolder.install { getContext().deviceBrowserUserAgent() }
 
+    single<BangumiMirrorListRepository> {
+        BangumiMirrorListRepository(
+            cache = get<SettingsRepository>().bangumiMirrorCache,
+            // 惰性: HttpClientProvider 反过来要经 BangumiEndpointProvider 拿到本仓库, 见构造参数的说明
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    single<TmdbImageEndpoints> {
+        val settings = get<SettingsRepository>()
+        TmdbImageEndpoints(
+            selection = settings.tmdbImageEndpoint,
+            listCache = settings.tmdbImageHostCache,
+            // 惰性: HttpClientProvider 反过来要装经本对象换入口的处理器, 见 RepoHostedList 的构造参数
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    single<GitHubDownloadMirrors> {
+        GitHubDownloadMirrors(
+            listCache = get<SettingsRepository>().githubDownloadMirrorCache,
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    // 自家放在 Cloudflare 上的服务 (反馈中转、故障工单): 直连不通走加密直连, 条件同 bangumi 那条线路 (平台支持且没设代理)
+    single<CloudflareServiceTransport> {
+        CloudflareServiceTransport(
+            echUsable = { getOrNull<BangumiEchTransport>()?.available == true && get<ProxyProvider>().proxy.first() == null },
+            preferEch = { !get<BangumiEndpointProvider>().usingOrigin },
+            recoverEch = { cause -> getOrNull<BangumiEchTransport>()?.recover(cause) == true },
+        )
+    }
+    single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
+    single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
+    single<LowRamDevice> { LowRamDevice(getContext().isLowRamDevice()) }
+    single<SubjectFeedbackService> {
+        SubjectFeedbackService(
+            listCache = get<SettingsRepository>().feedbackEndpointCache,
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+            transport = get(),
+            records = get(),
+        )
+    }
+    single<FeedbackTicketService> {
+        FeedbackTicketService({ get<HttpClientProvider>().get() }, get(), FeedbackTicketService::configuredEndpoints)
+    }
+    // 启动就建: 每天查一次故障工单与修正请求的处理结果
+    single<FeedbackTickets>(createdAtStart = true) {
+        FeedbackTickets(
+            get(), get(), get(), coroutineScope,
+            // 用到时才取: 中转的服务一建好就去拉地址清单, 没有开着的修正请求的人不为它多发请求
+            subjectStatus = { ids -> get<SubjectFeedbackService>().status(ids) },
+            subjectMap = { id -> get<TmdbSubjectMapRepository>().lookup(id) },
+        ).also { it.start() }
+    }
+    single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
+    // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
+    single<BangumiEchConfig> {
+        // DoH 清单在第一次拉配置时才建 (建时就去仓库拉): 用不到加密直连的人不为它多发请求
+        BangumiEchConfig({ get<HttpClientProvider>().get() }, coroutineScope, dohEndpoints = { get<BangumiEchDohList>().endpoints.value })
+    }
+    single<BangumiEchDohList> {
+        BangumiEchDohList(get<SettingsRepository>().bangumiEchDohCache, { get<HttpClientProvider>().get() }, coroutineScope)
+    }
+    single<BangumiEchAddressList> {
+        BangumiEchAddressList(get<SettingsRepository>().bangumiEchAddressCache, { get<HttpClientProvider>().get() }, coroutineScope)
+    }
+    single<BangumiEndpointProvider> {
+        val settings = get<SettingsRepository>().bangumiEndpointSettings
+        BangumiEndpointProvider(
+            settings = settings.flow,
+            mirrors = get<BangumiMirrorListRepository>().mirrors,
+            scope = coroutineScope,
+            echAvailable = getOrNull<BangumiEchTransport>()?.available == true,
+            proxyInUse = get<ProxyProvider>().proxy.map { it != null },
+            onOriginUnreachable = { workingRoute ->
+                val current = settings.flow.first()
+                val loggedIn = get<TokenRepository>().session.first() is AccessTokenSession
+                // 通了的是第三方镜像 (前面能带凭证的线路都没通), 已登录而凭证不经过镜像: 关掉官方后登录与同步就断了,
+                // 不替用户改, 请界面问他 (见 BangumiMirrorConsent)
+                if (workingRoute.thirdParty && loggedIn && !current.allowCredentialsViaMirror) {
+                    get<BangumiMirrorConsentRequests>().request()
+                } else {
+                    settings.update { afterOriginUnreachable() }
+                }
+            },
+        )
+    }
     single<HttpClientProvider> {
         val sessionManager by inject<SessionManager>()
         val installIdRepository = get<InstallIdRepository>()
@@ -213,15 +379,22 @@ private fun KoinApplication.otherModules(
             get(), coroutineScope,
             featureHandlers = listOf(
                 UserAgentFeatureHandler,
-                UseAniTokenFeatureHandler(
+                // bangumi 按线路改写 + 前一条不通时回落. 必须在这里注册 —— 没注册的特性会被
+                // DefaultHttpClientProvider.extendWithNotSet 静默丢掉
+                get<BangumiEndpointProvider>().let {
+                    val ech = getOrNull<BangumiEchTransport>()
+                    BangumiRoutingFeatureHandler(
+                        it.routing, it::reportSettled, it::reportOriginUnreachable,
+                        recover = { route, cause -> route == BangumiRoute.Ech && ech?.recover(cause) == true },
+                    )
+                },
+                BangumiEchFeatureHandler(getOrNull<BangumiEchTransport>()),
+                // 可换入口的服务 (TMDB 图片…): 请求时换到选定 / 连得上的入口
+                AlternativeEndpointsFeatureHandler(listOf(get<TmdbImageEndpoints>())),
+                UseBangumiTokenFeatureHandler(
                     sessionManager.sessionFlow.map {
-                        (it as? AccessTokenSession)?.tokens?.aniAccessToken
+                        (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
                     },
-                    onRefresh = { null },
-                ),
-                AniInstallIdFeatureHandler { installIdRepository.currentId },
-                ServerListFeatureHandler(
-                    get<ServerSelector>().flow,
                 ),
                 DistributionChannelFeatureHandler { currentAniBuildConfig.distroChannel },
                 ConvertSendCountExceedExceptionFeatureHandler,
@@ -273,27 +446,7 @@ private fun KoinApplication.otherModules(
             }
         }
     }
-    single<AniApiProvider> {
-        AniApiProvider(get<HttpClientProvider>().get(useAniToken = true, useAniInstallId = true))
-    }
-    single<WatchTogetherApiService> {
-        DefaultWatchTogetherApiService(
-            provider = get(),
-            eventsClient = get<HttpClientProvider>().get(useAniToken = true, useAniInstallId = true, useSse = true),
-        )
-    }
-    single<LocalPlaybackBridge> { LocalPlaybackBridge() }
-    single<PlaybackAutomationGate> { PlaybackAutomationGate() }
-    single(createdAtStart = true) {
-        WatchTogetherManager(
-            scope = coroutineScope,
-            api = get(),
-            settings = get<SettingsRepository>().watchTogetherSettings,
-            sessionStateProvider = get(),
-            playbackBridge = get(),
-            automationGate = get(),
-        ).also { it.start() }
-    }
+    single<BangumiApiProvider> { BangumiApiProvider(get<HttpClientProvider>().get(useBangumiToken = true)) }
     single<BangumiClient> {
         BangumiClientImpl(
             get<HttpClientProvider>().get(
@@ -304,82 +457,95 @@ private fun KoinApplication.otherModules(
 
     single<AniSubjectSearchService> {
         AniSubjectSearchService(
-            subjectApi = aniApiProvider.subjectApi,
+            bangumiV0Api = bangumiApiProvider.v0Api,
+            subjectIdsByCollectionType = { types -> database.subjectCollection().subjectIdsByCollectionType(types).first().toSet() },
         )
     }
 
     // Data layer network services
     single<SubjectService> {
         RemoteSubjectService(
-            aniApiProvider.subjectApi,
+            bangumiApiProvider.subjectApi,
+            bangumiApiProvider.collectionApi,
             sessionManager = get(),
+            recommendationsCache = SubjectRecommendationsCache(
+                catalog = { get<RecommendationCatalogRepository>().current() },
+                file = getContext().files.dataDir.resolve("subject-recs.json"),
+            ),
         )
     }
-    single<EpisodeService> { EpisodeServiceImpl(aniApiProvider.subjectApi) }
-    single { EpisodeSubjectRepository(aniApiProvider.episodesApi) }
+    single<EpisodeService> { EpisodeServiceImpl(bangumiApiProvider.v0Api) }
 
-    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(get<AniApiProvider>().subjectApi) }
-    single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(get<AniApiProvider>().subjectApi) }
-    single<AniEpisodeCommentService> { AniEpisodeCommentService(get<AniApiProvider>().episodesApi) }
-    single<AniCommentReportService> { AniCommentReportService(get<AniApiProvider>().commentsApi) }
-    single<AniNotificationService> { AniNotificationService(aniApiProvider.notificationsApi) }
-    single<AniAnnouncementService> { AniAnnouncementService(aniApiProvider.announcementsApi) }
-    single<NotificationBadgeManager>(createdAtStart = true) {
-        NotificationBadgeManagerImpl(
-            notificationService = get(),
-            sessionStateProvider = get(),
-            scope = coroutineScope,
-            notificationSettings = get<SettingsRepository>().notificationSettings.flow,
-        ).also { it.start() }
-    }
-    // 匿名客户端 (与 BangumiClient 同一个): 只读公开的评论关系, 不带任何 token
-    single<BangumiReplyRelationService> {
-        BangumiReplyRelationService(get<HttpClientProvider>().get(userAgent = ScopedHttpClientUserAgent.ANI))
-    }
-    single<AniPersonCommentService> {
-        AniPersonCommentService(
-            personsApi = get<AniApiProvider>().personsApi,
-            charactersApi = get<AniApiProvider>().charactersApi,
+    single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
+    single<BangumiScheduleSource> {
+        BangumiScheduleSource(
+            // 名册/分集/bangumi-data 都是公开数据, 用匿名客户端
+            client = get<HttpClientProvider>().get(),
+            store = getContext().dataStores.animeScheduleCacheStore,
         )
     }
+    single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(bangumiApiProvider.subjectApi) }
+    single<AniEpisodeCommentService> { AniEpisodeCommentService(bangumiApiProvider.episodeApi, bangumiApiProvider.miscApi) }
     single(createdAtStart = true) {
         EpisodeCollectionSyncer(
             repository = get<EpisodeCollectionRepository>(),
-            api = aniApiProvider.subjectApi,
+            // 直连: 看过状态直接推给 Bangumi (EpisodeService 的 v0 批量端点)
+            pusher = { subjectId, episodeIds, type ->
+                get<EpisodeService>().setEpisodeCollection(subjectId, episodeIds, type)
+            },
             sessionStateProvider = get(),
             scope = coroutineScope,
         ).also { it.start() }
     }
-    single(createdAtStart = true) {
-        PlaybackHistorySyncer(
-            repository = get(),
-            api = aniApiProvider.playbackHistoryApi,
-            sessionStateProvider = get(),
+    single<SubjectSeriesIndexService> {
+        SubjectSeriesIndexService(
+            bangumiApiProvider.subjectApi,
             scope = coroutineScope,
-        ).also { it.start() }
-    }
-    single(createdAtStart = true) {
-        InstallReporter(
-            store = getContext().dataStores.installInfoStore,
-            playHistoryRepository = get(),
-            api = aniApiProvider.userProfileApi,
-            sessionStateProvider = get(),
-            currentUserId = get<UserRepository>().selfInfoFlow.map { it?.id?.toString() },
-            scope = coroutineScope,
-        ).also { it.start() }
-    }
-    single<AniSubjectRelationIndexService> {
-        val provider = get<AniApiProvider>()
-        AniSubjectRelationIndexService(provider.subjectRelationsApi)
+            graph = { get<SeriesGraphTableRepository>().current() },
+        )
     }
 
-    single<AnimeScheduleService> { AnimeScheduleService(get<AniApiProvider>().scheduleApi) }
+    // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
+    // 启动就建: 表在后台读盘 / 下载, 第一次走系列时已经备好
+    single<SeriesGraphTableRepository>(createdAtStart = true) {
+        SeriesGraphTableRepository(
+            cache = getContext().dataStores.seriesGraphTableStore,
+            tableFile = getContext().files.dataDir.resolve("bgm-series-graph.tsv"),
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+            // 续作换季原先单独下的「续作 → 候选季」表, 换季改由系列关系图在本地算
+            obsoleteFiles = listOf(getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv")),
+        )
+    }
+    // 推荐目录: 探索页推荐与「相关推荐」先在本地答; 启动就建, 后台读盘 / 下载
+    single<RecommendationCatalogRepository>(createdAtStart = true) {
+        RecommendationCatalogRepository(
+            dir = getContext().files.dataDir.resolve("rec-catalog"),
+            client = { get<HttpClientProvider>().get() },
+            seriesGraph = { get<SeriesGraphTableRepository>().current() },
+            scope = coroutineScope,
+        )
+    }
+    single<TmdbSubjectMapRepository> {
+        TmdbSubjectMapRepository(
+            cache = getContext().dataStores.tmdbSubjectMapStore,
+            mapFile = getContext().files.dataDir.resolve("tmdb-subject-map.tsv"),
+            client = { get<HttpClientProvider>().get() },
+            enabled = get<SettingsRepository>().tmdbImagesDisabled.flow.map { !it },
+            scope = coroutineScope,
+        )
+    }
     // TV 横版 backdrop / 分集剧照; 未配置 ani.tmdb.api.token 时自动关闭
     single<TmdbImageService> {
+        // 系列索引传单例: 各建一份的话同一条目的 BFS 会算两遍, 见 TmdbImageService.seriesIndexService
         TmdbImageService(
             get(),
             getContext().dataStores.tmdbImageCacheStore,
             disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
+            injectedSeriesIndexService = get(),
+            subjectMap = get(),
+            // 用时再取: 构造时就要 BangumiEndpointProvider 会与 HttpClientProvider 绕成环
+            bangumiRouting = { get<BangumiEndpointProvider>().currentRouting },
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
@@ -391,21 +557,96 @@ private fun KoinApplication.otherModules(
         )
     }
 
-    single<AniDatabase> {
-        getContext().createDatabaseBuilder()
-            .fallbackToDestructiveMigrationOnDowngrade(true)
-            .fallbackToDestructiveMigrationFrom(
-                dropAllTables = true,
-                startVersions = buildList {
-                    addAll(1..15) // 16 is destructive
-                }.toIntArray(),
-            )
-            .addMigrations(MIGRATION_19_20, MIGRATION_21_22)
-            // 旧版评分把标签列写成了纯文本, 那样的行一读就抛异常: 打开时修掉 (见 SelfRatingTagsRepair)
-            .addCallback(SelfRatingTagsRepair)
-            .setDriver(BundledSQLiteDriver())
-            .setQueryCoroutineContext(Dispatchers.IO_)
-            .build()
+    // 当前用户的库; 缓存索引那几张表另从整机库取 (1 号用户在用时两者是同一个实例)
+    single<AniDatabase> { buildAniDatabase(getContext(), UserProfiles.current.databaseFileName) }
+    single<DeviceAniDatabase> {
+        if (UserProfiles.current.isPrimary) {
+            DeviceAniDatabase(get<AniDatabase>())
+        } else {
+            DeviceAniDatabase(buildAniDatabase(getContext(), UserProfile.PRIMARY_DATABASE_FILE_NAME))
+        }
+    }
+    single<UserProfileRegistry> { UserProfiles.registry }
+    single<UserProfileManager> {
+        UserProfileManager(
+            registry = get(),
+            restarter = getOrNull<AppRestarter>() ?: AppRestarter.Unsupported,
+            deleteFiles = { profile -> deleteUserProfileFiles(getContext(), profile) },
+            beforeSwitch = { target -> get<UserProfileSeeder>().seed(target) },
+        )
+    }
+    // 把本地用户的收藏加到当前登录的 Bangumi 账号 (只增不删), 见 LocalProfileImporter
+    single<LocalProfileImporter> {
+        LocalProfileImporter(
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            fetchBangumiCollectedIds = { get<SubjectService>().fetchAllCollectedSubjectIds() },
+            isCollectedOnBangumi = { subjectId ->
+                // 条目接口带着当前账号对它的收藏 (interest), 没收藏时为 null
+                val subject = checkNotNull(get<SubjectService>().getSubjectCollection(subjectId)) {
+                    "Subject $subjectId is not accessible on Bangumi"
+                }
+                subject.interest != null
+            },
+            addBangumiCollection = { subjectId, update -> get<SubjectService>().patchSubjectCollection(subjectId, update) },
+            markBangumiEpisodesWatched = { subjectId, episodeIds ->
+                // 没登录 / 条目没收藏时它返回 false 而不抛, 同样算失败
+                check(get<EpisodeService>().setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)) {
+                    "Bangumi did not accept watched episodes of subject $subjectId"
+                }
+            },
+            afterImport = {
+                database.subjectCollection().resetAllLastFetched()
+                database.episodeCollection().resetAllLastFetched()
+                get<SubjectService>().invalidateCollectionCounts()
+            },
+        )
+    }
+    // 本地用户导出成文件 / 从文件导入当前的本地用户 (Web 控制台), 见 ProfileArchiver
+    single<ProfileArchiver> {
+        ProfileArchiver(
+            currentProfile = { UserProfiles.current },
+            currentDatabase = database,
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            setLocalCollectionType = { subjectId, type ->
+                // 本地档的仓库只写本地库; 当前用户若是登录 Bangumi 的, 同一个调用会发请求改他的账号
+                check(UserProfiles.current.isLocal) { "Archives can only be restored into a local profile" }
+                get<SubjectCollectionRepository>().setSubjectCollectionTypeOrDelete(subjectId, type)
+            },
+            // 本地档的重取保留库里的收藏状态、评分与看过
+            loadEpisodes = { subjectId -> get<SubjectCollectionRepository>().refreshSubjectCollection(subjectId) },
+        )
+    }
+    // 当前用户自己的收藏记录 (计数 / 清除); Bangumi 用户改成本地用户, 见 LocalProfileConversion
+    single<SelfCollectionRecords> { SelfCollectionRecords(database) }
+    single<LocalProfileConversion> {
+        LocalProfileConversion(
+            manager = get(),
+            records = get(),
+            pending = get(),
+            // 刚启动时登录状态要等刷新令牌才有; 等不到按登录着算 (先去取账号里的收藏, 取不到就不改)
+            isLoggedIn = { withTimeoutOrNull(5.seconds) { get<SessionStateProvider>().canAccessBangumiApiNow() } ?: true },
+            downloadAccountCollections = { onProgress -> get<AccountCollectionsDownload>().download(onProgress) },
+            clearSession = { get<UserRepository>().clearSelfInfo() },
+        )
+    }
+    deviceMigration(getContext) { fileName -> buildAniDatabase(getContext(), fileName) }
+    bangumiProfileConversion(getContext)
+    // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)
+    single<UserProfileSeeder> {
+        UserProfileSeeder(
+            currentDatabase = get(),
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            subjectIds = {
+                withTimeoutOrNull(500.milliseconds) {
+                    get<TrendsRepository>().getTrendsInfo().subjects
+                        .take(TrendsRepository.HERO_CAROUSEL_SIZE)
+                        .map { it.bangumiId }
+                }.orEmpty()
+            },
+        )
     }
 
     // Bound even without media cache: SettingsViewModel, which TV also uses, injects it lazily.
@@ -451,10 +692,13 @@ private fun KoinApplication.otherModules(
         )
     }
 
+    // 正在播放什么: 播放页上报, 缓存下载据此给播放让路
+    single { PlaybackActivity() }
+
     if (enableMediaCache) {
         single<HttpDownloader> {
             KtorPersistentHttpDownloader(
-                dao = database.httpCacheDownloadStateDao(),
+                dao = deviceDatabase.httpCacheDownloadStateDao(),
                 get<HttpClientProvider>().get(),
                 fileSystem = SystemFileSystem,
                 baseSaveDir = get<MediaSaveDirProvider>().saveDir
@@ -462,6 +706,8 @@ private fun KoinApplication.otherModules(
                 // 专用低优先级线程, 不与驱动界面的数据流抢协程池 (见 createCacheDownloadDispatcher)
                 ioDispatcher = createCacheDownloadDispatcher(),
                 scope = coroutineScope,
+                // 播放时按缓冲余量给播放让路
+                throughputGate = get<PlaybackActivity>().let { activity -> PlaybackYieldingGate(activity.current) { activity.currentValue } },
             )
         }
 
@@ -498,7 +744,7 @@ private fun KoinApplication.otherModules(
                                     torrentEngine = engine,
                                     // PikPak runs in-process and must not start Android's BT foreground service.
                                     engineAccess = if (isPikPak) AlwaysUseTorrentEngineAccess else get(),
-                                    dao = database.torrentCacheInfoDao(),
+                                    dao = deviceDatabase.torrentCacheInfoDao(),
                                     baseSaveDirProvider = get(),
                                 ),
                                 displayName = "LocalTorrent",
@@ -514,7 +760,7 @@ private fun KoinApplication.otherModules(
                         HttpMediaCacheStorage(
                             mediaSourceId = id,
                             store = metadataStore,
-                            dao = database.httpCacheDownloadStateDao(),
+                            dao = deviceDatabase.httpCacheDownloadStateDao(),
                             httpEngine = get<HttpMediaCacheEngine>(),
                             displayName = "LocalWebM3u",
                             coroutineScope.childScopeContext(),
@@ -522,6 +768,7 @@ private fun KoinApplication.otherModules(
                     )
                 },
                 backgroundScope = coroutineScope.childScope(),
+                playbackActivity = get(),
             )
         }
     } else {
@@ -537,6 +784,22 @@ private fun KoinApplication.otherModules(
     single<MediaSourceCodecManager> {
         MediaSourceCodecManager()
     }
+    single<CloudDriveRegistry> {
+        val settings = get<SettingsRepository>()
+        CloudDriveRegistry(
+            instances = get<MediaSourceInstanceRepository>(),
+            accounts = settings.cloudDriveAccounts,
+            addedShares = settings.cloudDriveAddedShares,
+            legacyPreferences = object : LegacyPreferences {
+                override suspend fun read(key: String): String? = settings.readLegacyPreference(key)
+                override suspend fun remove(key: String) = settings.removeLegacyPreference(key)
+            },
+            tmdbSubjectMap = get<TmdbSubjectMapRepository>(),
+            parentCoroutineContext = coroutineScope.childScopeContext(),
+            seriesGraph = get<SeriesGraphTableRepository>(),
+            shareIndexStore = DriveShareIndexFileStore(getContext().files.cacheDir.resolve("drive-share-indexes.json"), coroutineScope.childScopeContext()),
+        )
+    }
     single<MediaSourceManager> {
         MediaSourceManagerImpl(
             additionalSources = {
@@ -551,7 +814,14 @@ private fun KoinApplication.otherModules(
             get<MediaSourceSubscriptionRepository>(),
             get<MediaSourceManager>(),
             get<MediaSourceCodecManager>(),
-            requester = MediaSourceSubscriptionRequesterImpl(client, get<AniApiProvider>().subscriptionApi),
+            requester = MediaSourceSubscriptionRequesterImpl(client) { url ->
+                // GitHub 上的订阅大陆直连常常不通, 带上加速镜像
+                if (url.startsWith("https://raw.githubusercontent.com/") || url.startsWith("https://github.com/")) {
+                    get<GitHubDownloadMirrors>().sourcesOf(url)
+                } else {
+                    listOf(url)
+                }
+            },
         )
     }
 
@@ -569,6 +839,7 @@ fun KoinApplication.startCommonKoinModule(
 ): KoinApplication {
     // Start the proxy provider very soon (before initialization of any other components)
     runBlocking {
+        koin.get<SessionManager>().clearLegacySessionOnStartup()
         koin.get<SessionManager>().clearSessionIfAccessTokenExpired()
         // 在任何请求之前加载, 让发往 Ani 服务器的请求都带上安装 ID
         try {
@@ -623,6 +894,12 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        SourceProfiles.load(koin.get<SettingsRepository>())
+        BundledSubscriptions.reconcile(
+            koin.get<MediaSourceSubscriptionRepository>(),
+            koin.get<MediaSourceManager>(),
+            koin.get<SettingsRepository>(),
+        )
         val subscriptionUpdater = koin.get<MediaSourceSubscriptionUpdater>()
         while (currentCoroutineContext().isActive) {
             val nextDelay = subscriptionUpdater.updateAllOutdated()
@@ -645,8 +922,54 @@ fun KoinApplication.startCommonKoinModule(
         peerFilterRepo.updateOrLoadAll()
     }
 
+    // 作品是不是 NSFW 的登记表 (见 SubjectNsfw): 读回落盘的、从收藏库补齐, 跟上设置
+    SubjectNsfw.attach(
+        coroutineScope,
+        store = context.dataStores.subjectNsfwStore,
+        modeFlow = koin.get<SettingsRepository>().uiSettings.flow.map { it.searchSettings.nsfwMode }.distinctUntilChanged(),
+        seed = { koin.get<AniDatabase>().subjectCollection().nsfwSubjectIds() },
+    )
+
+    // 选人页上显示各人的 Bangumi 头像: 本进程的用户登录状态一变就记下来
+    coroutineScope.launch {
+        val profiles = koin.get<UserProfileManager>()
+        koin.get<UserRepository>().selfInfoFlow
+            .map { it?.avatarUrl }
+            .distinctUntilChanged()
+            .collect { profiles.updateAvatar(it) }
+    }
+
+    coroutineScope.launchPendingLocalCollectionsRestore(koin)
     koin.get<SessionManager>().startBackgroundJob()
     return this
+}
+
+private fun buildAniDatabase(context: Context, fileName: String): AniDatabase =
+    context.createDatabaseBuilder(fileName)
+        .fallbackToDestructiveMigrationOnDowngrade(true)
+        .fallbackToDestructiveMigrationFrom(
+            dropAllTables = true,
+            startVersions = buildList {
+                addAll(1..15) // 16 is destructive
+            }.toIntArray(),
+        )
+        .addMigrations(MIGRATION_19_20, MIGRATION_21_22, MIGRATION_24_25)
+        // 旧版评分把标签列写成了纯文本, 那样的行一读就抛异常: 打开时修掉 (见 SelfRatingTagsRepair)
+        .addCallback(SelfRatingTagsRepair)
+        .setDriver(BundledSQLiteDriver())
+        .setQueryCoroutineContext(Dispatchers.IO_)
+        .build()
+
+/** 删用户: 他的库 (连同 SQLite 旁边的几个文件与 Room 的文件锁)、按人的配置、推荐快照、改成 Bangumi 用户时留下的本地收藏. */
+private suspend fun deleteUserProfileFiles(context: Context, profile: UserProfile) = withContext(Dispatchers.IO_) {
+    for (suffix in listOf("", "-wal", "-shm", "-journal", ".lck")) {
+        context.databaseFile(profile.databaseFileName + suffix).delete()
+    }
+    for (name in UserProfile.SCOPED_DATASTORE_NAMES) {
+        context.dataStores.resolveDataStoreFile(profile.scopedFileName(name)).delete()
+    }
+    context.files.cacheDir.resolve(profile.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME)).delete()
+    pendingLocalCollectionsFile(context, profile).delete()
 }
 
 /**
@@ -659,6 +982,9 @@ private fun holdingInstanceMatrixSequence() = sequence {
                 setOf(
                     UserAgentFeature.withValue(userAgent),
                     ServerListFeature.withValue(ServerListFeatureConfig.Default),
+                    BangumiRoutingFeature.withValue(true),
+                    BangumiEchFeature.withValue(true),
+                    AlternativeEndpointsFeature.withValue(true),
                     ConvertSendCountExceedExceptionFeature.withValue(true),
                 ),
             ),
@@ -670,6 +996,9 @@ private fun holdingInstanceMatrixSequence() = sequence {
             setOf(
                 UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
                 ServerListFeature.withValue(ServerListFeatureConfig.Default),
+                BangumiRoutingFeature.withValue(true),
+                BangumiEchFeature.withValue(true),
+                AlternativeEndpointsFeature.withValue(true),
                 ConvertSendCountExceedExceptionFeature.withValue(true),
             ),
         ),

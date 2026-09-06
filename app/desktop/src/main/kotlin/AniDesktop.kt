@@ -60,7 +60,6 @@ import me.him188.ani.app.data.persistent.database.BundledSqliteInterpositionGuar
 import me.him188.ani.app.data.repository.SavedWindowState
 import me.him188.ani.app.data.repository.WindowStateRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
-import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.desktop.storage.AppFolderResolver
 import me.him188.ani.app.desktop.storage.AppInfo
 import me.him188.ani.app.desktop.window.WindowFrame
@@ -324,7 +323,6 @@ object AniDesktop {
             TestTasks.handleTestTask(taskName, args, context)
         }
         val settingsRepository = koin.koin.get<SettingsRepository>()
-        val userRepository = koin.koin.get<UserRepository>()
 
         coroutineScope.launch {
             settingsRepository.videoResolverSettings.flow
@@ -351,7 +349,8 @@ object AniDesktop {
                     AnalyticsImpl(
                         AnalyticsConfig.create(),
                         settings.deviceId,
-                        userId = { userRepository.selfInfoFlow.first()?.id },
+                        // 账号是 Bangumi 账号 (数字 ID), 不关联到分析数据
+                        userId = { null },
                         AnalyticsSecrets(
                             apiSecret = AniBuildConfigDesktop.firebaseGAApiSecret,
                             firebaseAppId = AniBuildConfigDesktop.firebaseGAAppId,

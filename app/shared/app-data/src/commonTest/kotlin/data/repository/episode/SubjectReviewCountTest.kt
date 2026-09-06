@@ -11,7 +11,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import me.him188.ani.app.data.models.comment.CommentVoteValue
 import me.him188.ani.app.data.models.subject.SubjectReview
 import me.him188.ani.app.data.models.subject.SubjectReviewSource
 import me.him188.ani.app.data.network.BangumiCommentService
@@ -33,8 +32,6 @@ class SubjectReviewCountTest {
         val service = object : BangumiCommentService {
             override suspend fun getSubjectComments(subjectId: Int, offset: Int, limit: Int) =
                 Paged(total = if (hasMore) 2 else 128, hasMore = hasMore, page = listOf(review))
-
-            override suspend fun voteSubjectReview(subjectId: Int, reviewId: String, vote: CommentVoteValue?) = Unit
         }
         val dao = object : SubjectReviewDao {
             override suspend fun upsert(item: SubjectReviewEntity) = error("The network pager must not write the database")

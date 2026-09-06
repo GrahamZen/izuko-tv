@@ -12,7 +12,10 @@ package me.him188.ani.app.ui.subject.episode.tv
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,16 +25,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.subject_details_load_retrying
 import me.him188.ani.app.ui.subject.details.SubjectDetailsScreen
-import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * L3 详情页覆盖层: 隐藏全部播放器组件, 正在播放的视频画面作为背景 (透明容器 + 视频遮罩,
@@ -66,11 +73,11 @@ internal fun TvPlayerDetailsOverlay(
         vm.ensureTvSubjectDetails()
     }
     val subjectDetailsState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsUIState.Placeholder(detailsState.subjectId))
+        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
 
     Box(modifier) {
         when (val state = subjectDetailsState) {
-            is SubjectDetailsUIState.Ok, is SubjectDetailsUIState.Err -> {
+            is SubjectDetailsLoadState.Ok, is SubjectDetailsLoadState.Err -> {
                 // 开合状态经 DisposableEffect 上报 (不在组合里直接赋值): 本分支随数据到达/页面
                 // 销毁反复进出组合, onDispose 保证退出时一定收回
                 DisposableEffect(Unit) {
@@ -111,6 +118,17 @@ internal fun TvPlayerDetailsOverlay(
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
+                // 首屏超时重来之后说一句网络慢、第几次尝试 (全部超时要二十多秒才出错误页).
+                // 用偏移挂在转圈下方, 字出现时转圈不挪位置
+                val loadAttempt = (state as? SubjectDetailsLoadState.Placeholder)?.loadAttempt
+                if (loadAttempt != null && loadAttempt.isRetrying) {
+                    Text(
+                        stringResource(Lang.subject_details_load_retrying, loadAttempt.attempt, loadAttempt.maxAttempts),
+                        Modifier.offset(y = RETRY_HINT_OFFSET),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
             }
         }
     }
@@ -128,15 +146,18 @@ internal fun EpisodeViewModel.ensureTvSubjectDetails() {
     val loader = episodeDetailsState.subjectDetailsStateLoader
     val current = loader.state.value
     // 正在加载这部番: 别打断 (load 会取消了重来)
-    if (current is SubjectDetailsUIState.Placeholder && current.subjectId == subjectId) return
+    if (current is SubjectDetailsLoadState.Placeholder && current.subjectId == subjectId) return
     loader.load(subjectId, tvSubjectPlaceholder())
 }
 
 /** 详情层错误页的「重试」. */
 internal fun EpisodeViewModel.reloadTvSubjectDetails() {
-    episodeDetailsState.subjectDetailsStateLoader.reload(subjectId, tvSubjectPlaceholder())
+    episodeDetailsState.subjectDetailsStateLoader.load(subjectId, tvSubjectPlaceholder(), force = true)
 }
 
 /** 首屏占位: 信息包到了才有; 还没到 (那时是 `SubjectInfo.Empty`) 就不给. */
 private fun EpisodeViewModel.tvSubjectPlaceholder(): SubjectInfo? =
     episodeDetailsState.subjectInfo.value.takeIf { it.subjectId == subjectId }
+
+/** 加载中那句"网络较慢"的中线在转圈中线之下多远: 转圈 40dp 高, 字在它下面留出一点空隙. */
+private val RETRY_HINT_OFFSET = 48.dp

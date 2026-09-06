@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
+import me.him188.ani.app.ui.foundation.widgets.TvMenuOption
 import me.him188.ani.app.ui.lang.*
 import org.openani.mediamp.metadata.SubtitleTrack
 import org.openani.mediamp.metadata.TrackGroup
@@ -148,13 +149,14 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
             if (it == null) {
                 Text(stringResource(Lang.video_player_off))
             } else {
-                Text(it.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(it.shownName(options.indexOf(it) + 1), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         renderValueExposed = {
             val subtitleText = stringResource(Lang.video_player_subtitle)
+            val name = it?.shownName(options.indexOf(it) + 1)
             Text(
-                remember(it, subtitleText) { it?.displayName ?: subtitleText },
+                remember(name, subtitleText) { name ?: subtitleText },
                 Modifier.widthIn(max = 64.dp),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -165,5 +167,13 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
             focusable = true, // Critical for TV focus (especially Android TV); applied on all platforms
         ),
         onExpandedChanged = onExpandedChanged,
+        optionLabel = {
+            TvMenuOption(if (it == null) stringResource(Lang.video_player_off) else it.shownName(options.indexOf(it) + 1))
+        },
     )
 }
+
+/** 列表里第 [number] 条字幕显示的名字: 没起名的写「字幕 N」. */
+@Composable
+private fun SubtitlePresentation.shownName(number: Int): String =
+    if (subtitleTrack.isNamed) displayName else stringResource(Lang.video_player_subtitle_numbered, number)

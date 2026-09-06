@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2024-2025 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 /**
  *
  * Please note:
@@ -19,48 +10,56 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubjectInterest
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectImages
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectRating
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param id
- * @param info
- * @param locked
+ * @param id 
  * @param name 
  * @param nameCN 
- * @param nsfw 
- * @param rating 
  * @param type 
+ * @param info 
+ * @param metaTags 
+ * @param rating 
+ * @param locked 
+ * @param nsfw 
  * @param images 
  * @param interest 
  */
 @Serializable
 
-data class BangumiNextSlimSubject(
+data class BangumiNextSlimSubject (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
-
-    @SerialName(value = "info") @Required val info: kotlin.String,
-
-    @SerialName(value = "locked") @Required val locked: kotlin.Boolean,
 
     @SerialName(value = "name") @Required val name: kotlin.String,
 
     @SerialName(value = "nameCN") @Required val nameCN: kotlin.String,
 
-    @SerialName(value = "nsfw") @Required val nsfw: kotlin.Boolean,
+    @SerialName(value = "type") @Required val type: BangumiNextSubjectType,
+
+    @SerialName(value = "info") @Required val info: kotlin.String,
+
+    @SerialName(value = "metaTags") @Required val metaTags: kotlin.collections.List<kotlin.String>,
 
     @SerialName(value = "rating") @Required val rating: BangumiNextSubjectRating,
 
-    @SerialName(value = "type") @Required val type: BangumiNextSubjectType,
+    @SerialName(value = "locked") @Required val locked: kotlin.Boolean,
+
+    @SerialName(value = "nsfw") @Required val nsfw: kotlin.Boolean,
 
     @SerialName(value = "images") val images: BangumiNextSubjectImages? = null,
 

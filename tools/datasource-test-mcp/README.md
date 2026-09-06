@@ -1,6 +1,6 @@
 # datasource-test-mcp
 
-An HTTP MCP server for developing and validating Animeko media sources.
+An HTTP MCP server for developing and validating Izuko TV media sources.
 
 The transport is a stateless subset of the MCP Streamable HTTP spec: JSON-RPC messages are POSTed to
 `/mcp` and answered as `application/json` (no SSE streams, no sessions). The server binds to
@@ -34,7 +34,7 @@ The transport is a stateless subset of the MCP Streamable HTTP spec: JSON-RPC me
 
 ### 视频能力
 
-- `probe_video` — 探测最终视频 URL: HTTP 可达性 + **用 Animeko 桌面端同款播放器 (mediamp-mpv) 真实播放**.
+- `probe_video` — 探测最终视频 URL: HTTP 可达性 + **用 Izuko TV 桌面端同款播放器 (mediamp-mpv) 真实播放**.
   默认弹出 Compose 测试窗口实时显示画面 (`showWindow=false` 可关), 实际播放几秒验证可播放性,
   并从 mpv 读取真实媒体信息 (分辨率/时长/编码/帧率/码率).
   mpv 原生库自动加载 (可用 `-Dani.mpv.native.dir` 指定目录); 加载失败时降级为仅 HTTP 探测.

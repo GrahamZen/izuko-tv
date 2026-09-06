@@ -86,6 +86,15 @@ class DownloadItemTest {
     }
 
     @Test
+    fun `merge progress text is a whole percent and only shown while merging`() {
+        val downloading = downloadItem(initialStatus = DownloadStatus.IN_PROGRESS, progress = 1f.toProgress())
+        assertEquals(null, downloading.copy(mergeProgress = 0.5f.toProgress()).mergeProgressText)
+        assertEquals(null, downloading.copy(isMerging = true).mergeProgressText)
+        assertEquals("63%", downloading.copy(isMerging = true, mergeProgress = 0.634f.toProgress()).mergeProgressText)
+        assertEquals("99%", downloading.copy(isMerging = true, mergeProgress = 0.99f.toProgress()).mergeProgressText)
+    }
+
+    @Test
     fun `progress not available`() = runComposeStateTest {
         downloadItem(
             initialStatus = DownloadStatus.IN_PROGRESS,

@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -25,7 +23,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +36,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastRoundToInt
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.FileDownloaderState
+import me.him188.ani.app.tools.update.formatTransferProgress
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.settings_update_download_probing
+import me.him188.ani.app.ui.lang.settings_update_download_switching
+import me.him188.ani.app.ui.lang.settings_update_download_verifying
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel_download
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel_install
@@ -66,6 +71,10 @@ fun DownloadingUpdatePopupCard(
     onCancelClick: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** "安装"按钮的附加 modifier (TV 上挂焦点锚点, 下载完成后把焦点送过去). */
+    installButtonModifier: Modifier = Modifier,
+    /** "重试"按钮的附加 modifier (TV 上挂焦点锚点, 下载失败后把焦点送过去). */
+    retryButtonModifier: Modifier = Modifier,
 ) {
     var showConfirmCancel by rememberSaveable { mutableStateOf(false) }
     val onRequestCancel = {
@@ -82,7 +91,7 @@ fun DownloadingUpdatePopupCard(
     }
 
     if (showConfirmCancel) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showConfirmCancel = false },
             text = {
                 Text(
@@ -93,7 +102,7 @@ fun DownloadingUpdatePopupCard(
                 )
             },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         onCancelClick()
                         showConfirmCancel = false
@@ -103,7 +112,7 @@ fun DownloadingUpdatePopupCard(
                 }
             },
             dismissButton = {
-                TextButton(
+                AniTextButton(
                     onClick = { showConfirmCancel = false },
                 ) {
                     Text(
@@ -133,8 +142,9 @@ fun DownloadingUpdatePopupCard(
         subtitle = { Text(version.name) },
         actions = {
             if (!isInstalling && fileDownloaderStats.state is FileDownloaderState.Succeed) {
-                Button(
+                AniButton(
                     onClick = onInstallClick,
+                    modifier = installButtonModifier,
                 ) {
                     Text(stringResource(Lang.settings_update_popup_restart_update))
                 }
@@ -163,6 +173,7 @@ fun DownloadingUpdatePopupCard(
                     error,
                     onRetry = onRetryClick,
                     elevation = CardDefaults.cardElevation(),
+                    retryButtonModifier = retryButtonModifier,
                 )
 //                ListItem(
 //                    headlineContent = {
@@ -184,7 +195,13 @@ fun DownloadingUpdatePopupCard(
             }
 
             else -> {
-                val progress = if (isInstalling) null else fileDownloaderStats.progress
+                val stage = if (isInstalling) null else fileDownloaderStats.stage
+                // 有字节进度 (知道总长) 才画确定的进度条; 挑线路、换线路、校验时进度不动, 画不确定的, 下面一行字说在等什么
+                val progress = if (stage is FileDownloadStage.Transferring && stage.totalBytes != null) {
+                    fileDownloaderStats.progress
+                } else {
+                    null
+                }
                 val indicatorModifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 8.dp)
@@ -196,6 +213,9 @@ fun DownloadingUpdatePopupCard(
                         } else {
                             LinearProgressIndicator(progress = { progress }, modifier = indicatorModifier)
                         }
+                    },
+                    supportingContent = stage?.let {
+                        { Text(downloadStageText(it)) }
                     },
                     trailingContent = progress?.let {
                         {
@@ -218,6 +238,15 @@ fun DownloadingUpdatePopupCard(
             }
         }
     }
+}
+
+/** 下载卡片进度条下面那行字: 「挑选下载线路 3/5」「38/79 MB · 2.1 MB/s」「上一条线路失败，换第 2 条线路」「正在校验…」. */
+@Composable
+private fun downloadStageText(stage: FileDownloadStage): String = when (stage) {
+    is FileDownloadStage.Probing -> stringResource(Lang.settings_update_download_probing, stage.finished, stage.total)
+    is FileDownloadStage.Transferring -> formatTransferProgress(stage.downloadedBytes, stage.totalBytes, stage.bytesPerSecond)
+    is FileDownloadStage.Switching -> stringResource(Lang.settings_update_download_switching, stage.line)
+    FileDownloadStage.Verifying -> stringResource(Lang.settings_update_download_verifying)
 }
 
 @OptIn(TestOnly::class)

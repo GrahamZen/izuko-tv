@@ -15,10 +15,18 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import kotlinx.io.readByteArray
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -33,14 +41,37 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.Platform
 import me.him188.ani.utils.platform.currentPlatform
 
-internal const val FORK_OWNER = "GrahamZen"
-internal const val FORK_REPO = "animeko"
+/**
+ * 检查更新、下载安装包的仓库 (`AniBuildConfig.updateRepository`).
+ * 发版前在真机上走一遍更新时, 把它指到测试仓库 —— 草稿 release 对应用不可见.
+ */
+internal val FORK_OWNER: String get() = currentAniBuildConfig.updateRepository.substringBefore('/')
+internal val FORK_REPO: String get() = currentAniBuildConfig.updateRepository.substringAfter('/')
 
 /** 每个 release 的更新说明模板 (CI 在它上面做变量替换后当 release body). 镜像回落时直接读 tag 下的这份. */
 internal const val RELEASE_TEMPLATE_PATH = "ci-helper/release-template.md"
 
 /**
- * jsDelivr 的几个入口, 按顺序试. `@latest` 解析只含正式版 (实测 6.0.6-alpha01 存在时仍解析到 6.0.5),
+ * 本应用的版本线: 主版本号**小于**这个数. 6 及以上是改分发包名之前的旧版本 (安装包叫 `ani-…`).
+ *
+ * 两条线共用一个仓库, 而镜像只能回答"最新版是哪个"这一个版本号 —— 不限定版本线的话, jsDelivr 会把
+ * 版本号更大的旧版本当成本应用的最新版, 于是提示一个在 release 里根本不存在的安装包.
+ * 前提是仓库里没有别的 1.x ~ 5.x 的 tag (上游历史上那批要删掉).
+ */
+internal const val UPDATE_LINE_MAJOR_EXCLUSIVE = 6
+
+/** [version] (不带 `v`) 是不是本应用这条版本线上的. 解析不出主版本号的一律不算. */
+internal fun isInUpdateLine(version: String): Boolean =
+    version.substringBefore('.').toIntOrNull()?.let { it < UPDATE_LINE_MAJOR_EXCLUSIVE } ?: false
+
+/**
+ * 在 jsDelivr 上找本版本线最新正式版用的版本范围 (`<6`, URL 编码后的样子).
+ * jsDelivr 按语义版本范围解析, 与 `@latest` 一样只含正式版 (实测 `@<6.0.6` 解析到 6.0.5).
+ */
+private const val JSDELIVR_UPDATE_LINE_RANGE = "%3C$UPDATE_LINE_MAJOR_EXCLUSIVE"
+
+/**
+ * jsDelivr 的几个入口, 按顺序试. 版本范围的解析只含正式版 (实测 6.0.6-alpha01 存在时 `@latest` 仍解析到 6.0.5),
  * 版本号在响应头 `x-jsd-version` 里; 解析结果有最长 12 小时的缓存, 刚发版时可能还是上一版.
  *
  * 不含 fastly 入口: 它在国内会 301 到 raw.githubusercontent.com, 真机上要么超时要么 10 秒才回, 且没有版本头.
@@ -48,7 +79,25 @@ internal const val RELEASE_TEMPLATE_PATH = "ci-helper/release-template.md"
  */
 internal val JSDELIVR_HOSTS = listOf("gcore.jsdelivr.net", "testingcf.jsdelivr.net", "cdn.jsdelivr.net")
 
-/** ghfast.top: 公共的 GitHub 下载代理, release 资源 / raw / releases/latest 跳转都能代理, API 与 atom 不行 (403). */
+/** GitHub 连不上时依次查几个镜像: jsDelivr 的各个入口, 最后是 ghfast. */
+internal val UPDATE_CHECK_MIRROR_COUNT get() = JSDELIVR_HOSTS.size + 1
+
+/**
+ * 检查更新进行到哪一步 (见 [UpdateChecker.checkLatestVersion]): 每个来源最长 20 秒, GitHub 连不上时要一个个试镜像,
+ * 界面据此写「GitHub 连不上，正在查镜像 2/4」, 不然只能一直「检查中…」.
+ */
+sealed interface UpdateCheckProgress {
+    /** 在查 GitHub 接口. */
+    data object GitHub : UpdateCheckProgress
+
+    /** GitHub 连不上, 在查第 [index] 个镜像 (从 1 起, 共 [total] 个). */
+    data class Mirror(val index: Int, val total: Int) : UpdateCheckProgress
+}
+
+/**
+ * ghfast.top: 公共的 GitHub 下载代理, raw / releases/latest 跳转都能代理, API 与 atom 不行 (403).
+ * 只在检查更新的镜像回落里用; 下载安装包的镜像见 `GitHubDownloadMirrors`.
+ */
 internal fun ghfastUrl(gitHubUrl: String) = "https://ghfast.top/$gitHubUrl"
 
 /** 镜像回落时拿不到资源列表, 按 fork-release.yml 的命名规则合成; 不存在的那个下载时 404, 下载器接着试下一个. */
@@ -58,9 +107,59 @@ internal val RELEASE_APK_SUFFIXES = listOf(
 )
 
 internal fun releaseApkAssets(version: String): List<GitHubAsset> = RELEASE_APK_SUFFIXES.map { suffix ->
-    val name = "ani-$version-$suffix.apk"
+    val name = "${currentAniBuildConfig.updateAssetPrefix}-$version-$suffix.apk"
     GitHubAsset(name, "https://github.com/$FORK_OWNER/$FORK_REPO/releases/download/v$version/$name")
 }
+
+/** 候选版本算不算"可以更新过去": 在本版本线上 ([isInUpdateLine]), 并且比当前版本新. */
+internal fun isUpdateCandidate(
+    candidate: String,
+    currentVersion: String,
+    isNewer: (candidate: String, current: String) -> Boolean,
+): Boolean = isInUpdateLine(candidate) && isNewer(candidate, currentVersion)
+
+/**
+ * 从 releases 里挑出第一个「可以更新过去 ([isUpdateCandidate])、而且本机与本分发版真装得上」的.
+ *
+ * **必须一路往下找, 不能只看最上面那个**: 最新的 release 里未必有能装的包 —— 老设备遇到不出兼容包的
+ * 版本, 或者排在最上面的是别的版本线的 release. 只看第一个的话这些情况一律表现为"没有更新".
+ *
+ * [releases] 按 tag 所指提交的时间倒序 (GitHub API 的默认顺序), 所以第一个满足条件的就是最新的可用版本.
+ *
+ * @param abis 设备的完整 ABI 列表, 见 [pickInstallableApks]; `null` = 非 Android, 不按 ABI 挑
+ * @param legacy 低于正式包 minSdk 的设备只能装兼容包, 见 [LEGACY_APK_MARKER]
+ */
+internal fun selectUsableRelease(
+    releases: List<GitHubRelease>,
+    currentVersion: String,
+    releaseClass: ReleaseClass,
+    assetPrefix: String,
+    abis: List<String>?,
+    legacy: Boolean = false,
+    isNewer: (candidate: String, current: String) -> Boolean,
+    onSkip: (GitHubRelease) -> Unit = {},
+): Pair<GitHubRelease, List<GitHubAsset>>? = releases
+    .asSequence()
+    .filter { !it.draft }
+    .filter { release ->
+        when (releaseClass) {
+            ReleaseClass.STABLE -> !release.prerelease
+            else -> true // BETA / ALPHA / RC: include prerelease
+        }
+    }
+    .mapNotNull { release ->
+        val candidate = release.tagName.removePrefix("v")
+        if (!isUpdateCandidate(candidate, currentVersion, isNewer)) return@mapNotNull null
+        val apks = release.assets.filter { it.name.endsWith(".apk") && it.name.startsWith("$assetPrefix-") }
+        if (abis == null) return@mapNotNull release to apks
+        val installable = apks.pickInstallableApks(abis, legacy)
+        if (installable.isEmpty()) {
+            onSkip(release)
+            return@mapNotNull null
+        }
+        release to installable
+    }
+    .firstOrNull()
 
 private val TAG_IN_RELEASE_URL = Regex("""/releases/tag/v?([^/?#]+)""")
 
@@ -116,23 +215,36 @@ private fun List<GitHubAsset>.pickByAbi(abis: List<String>): List<GitHubAsset>? 
 
 /**
  * 检查更新. 首选 GitHub API; 它连不上 (国内常见, 另有未认证 60 次/小时/IP 的限流, 移动网络共用出口 IP 会撞上)
- * 时回落到国内大多可达的镜像, 见 [findLatestStableOnMirrors]. 镜像回落**只查正式版**.
+ * 时回落到国内大多可达的镜像, 见 [latestOnJsDelivr] 与 [latestOnGhfast]. 镜像回落**只查正式版**.
+ *
+ * 镜像只回答"最新版是哪个", 回答的版本要确认确实发布了 ([isPublished]) 才提示: jsDelivr 按 tag 解析版本,
+ * 推了 tag 还没发布的草稿、发布后又删掉的 release 都会被它当成最新版, 而它们的安装包在原地址与各个下载镜像上都是 404.
  *
  * 走应用的统一客户端: 应用内设置的代理对更新检查同样生效, 每个请求也都进日志 (以前自建客户端, 两样都没有).
  *
- * 下载地址在 GitHub 原地址之外追加 ghfast 代理地址, 下载器按顺序逐个尝试 (同一个文件的备选源,
- * 见 [NewVersion.downloadUrlAlternatives]). 经第三方下载的安全性靠两道: Android 拒绝签名不同的覆盖安装;
- * 下载器按「地址 + .sha1」校验 (ghfast 代理出来的 .sha1 与 GitHub 原站逐字一致).
+ * 结果里的下载地址只有 GitHub 原地址 ([NewVersion.downloadUrlAlternatives], 每个可装的包一个); 加速镜像在下载时
+ * 按仓库维护的清单展开 (`GitHubDownloadMirrors`), 下载器在原地址与镜像里挑最快的. 经第三方镜像下载的安全性靠两道:
+ * Android 拒绝签名不同的覆盖安装; 走 GitHub 接口时按接口给的 SHA-256 校验 (镜像回落时退回来源旁边的 .sha1).
+ *
+ * @param downloadSources 安装包原地址的全部下载来源: 原地址在前, 然后是各个加速镜像 (`GitHubDownloadMirrors.sourcesOf`).
+ * 镜像回落时用它确认安装包在不在, 与下载时用的是同一套来源
  */
-class UpdateChecker(private val client: ScopedHttpClient) {
+class UpdateChecker(
+    private val client: ScopedHttpClient,
+    private val downloadSources: suspend (packageUrl: String) -> List<String>,
+) {
     /**
      * 检查是否有更新的版本. 返回最新版本的信息, 或者 `null` 表示没有新版本.
      * GitHub 与所有镜像都连不上时抛出 GitHub 那次的异常.
+     *
+     * @param onProgress 开始查每个来源时调一次 (先 GitHub, 连不上再逐个镜像), 见 [UpdateCheckProgress]
      */
     suspend fun checkLatestVersion(
         releaseClass: ReleaseClass,
         currentVersion: String = currentAniBuildConfig.versionName,
+        onProgress: (UpdateCheckProgress) -> Unit = {},
     ): NewVersion? {
+        onProgress(UpdateCheckProgress.GitHub)
         val gitHubError = try {
             val version = getVersionFromGitHub(currentVersion, releaseClass)
             // 连选中的安装包一起打出来: 装不上的报障 (架构不符) 只凭版本号看不出问题在哪,
@@ -145,16 +257,28 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             logger.error(e) { "Failed to get latest version from GitHub, trying mirrors" }
             e
         }
-        val release = findLatestStableOnMirrors() ?: run {
-            logger.warn { "Mirror update check failed too" }
-            throw gitHubError
-        }
-        return newVersionFromMirror(release, currentVersion).also { version ->
+
+        fun offered(release: MirrorRelease) = newVersionFromMirror(release, currentVersion).also { version ->
             logger.info {
                 "Got latest version from mirror (${release.source}): latest=${release.version}, " +
                     "new=${version?.name}, packages=${version?.packageNames()}"
             }
         }
+
+        val fromJsDelivr = latestOnJsDelivr(onProgress)
+        if (fromJsDelivr != null) {
+            val version = offered(fromJsDelivr) ?: return null
+            if (isPublished(version)) return version
+        }
+        // jsDelivr 都不通, 或者它说的那一版没发布: releases/latest 只指向已发布的 release
+        val fromGhfast = latestOnGhfast(onProgress) ?: run {
+            if (fromJsDelivr != null) return null
+            logger.warn { "Mirror update check failed too" }
+            throw gitHubError
+        }
+        if (fromGhfast.version == fromJsDelivr?.version) return null
+        val version = offered(fromGhfast) ?: return null
+        return version.takeIf { isPublished(it) }
     }
 
     private suspend fun getVersionFromGitHub(
@@ -171,27 +295,19 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             json.decodeFromString<List<GitHubRelease>>(it)
         }
 
-        val latest = releases
-            .filter { !it.draft }
-            .filter { release ->
-                when (releaseClass) {
-                    ReleaseClass.STABLE -> !release.prerelease
-                    else -> true // BETA / ALPHA / RC: include prerelease
-                }
-            }
-            .firstOrNull() ?: return null
+        val android = currentPlatform() as? Platform.Android
+        val (latest, packages) = selectUsableRelease(
+            releases = releases,
+            currentVersion = currentVersion,
+            releaseClass = releaseClass,
+            assetPrefix = currentAniBuildConfig.updateAssetPrefix,
+            abis = android?.supportedAbis,
+            legacy = android?.sdkInt?.let { it < NORMAL_APK_MIN_SDK } ?: false,
+            isNewer = ::isNewerThan,
+            onSkip = { logger.info { "Release ${it.tagName} has no package installable on this device, skipping" } },
+        ) ?: return null
 
         val versionName = latest.tagName.removePrefix("v")
-        if (!isNewerThan(versionName, currentVersion)) return null
-
-        val packages = latest.assets
-            .filter { it.name.endsWith(".apk") }
-            .pickInstallableApks()
-        if (packages.isEmpty() && currentPlatform() is Platform.Android) {
-            // 只会发生在老设备遇到不出兼容包的 release: 提示了也装不上, 不如当没有新版本
-            logger.info { "Release ${latest.tagName} has no package installable on this device, skipping" }
-            return null
-        }
 
         return NewVersion(
             name = versionName,
@@ -202,23 +318,26 @@ class UpdateChecker(private val client: ScopedHttpClient) {
                     changes = latest.body,
                 ),
             ),
-            // API 通了, GitHub 下载多半也通: 原地址在前, 镜像兜底
-            downloadUrlAlternatives = packages.flatMap { listOf(it.browserDownloadUrl, ghfastUrl(it.browserDownloadUrl)) },
+            downloadUrlAlternatives = packages.map { it.browserDownloadUrl },
             publishedAt = latest.publishedAt,
+            sha256ByFileName = packages.mapNotNull { asset -> asset.sha256?.let { asset.name to it } }.toMap(),
         )
     }
 
     private class MirrorRelease(val version: String, val templateBody: String, val source: String)
 
     /**
-     * 在镜像上找最新正式版. 先 jsDelivr (一个请求同时拿到版本号与那一版的更新说明模板), 都不通再用
-     * ghfast 代理 `releases/latest` 的跳转取 tag, 更新说明再经 ghfast 代理 raw 取. `null` = 全部不通.
+     * 在 jsDelivr 上找本版本线 ([UPDATE_LINE_MAJOR_EXCLUSIVE]) 的最新正式版: 一个请求同时拿到版本号与那一版的更新说明模板.
+     * 各个入口按顺序试, 第一个回答的为准; `null` = 都不通.
      */
-    private suspend fun findLatestStableOnMirrors(): MirrorRelease? {
-        for (host in JSDELIVR_HOSTS) {
+    private suspend fun latestOnJsDelivr(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
+        for ((index, host) in JSDELIVR_HOSTS.withIndex()) {
+            onProgress(UpdateCheckProgress.Mirror(index + 1, UPDATE_CHECK_MIRROR_COUNT))
             val release = tryMirror("jsDelivr $host") {
                 client.use {
-                    val response = get("https://$host/gh/$FORK_OWNER/$FORK_REPO@latest/$RELEASE_TEMPLATE_PATH") {
+                    val response = get(
+                        "https://$host/gh/$FORK_OWNER/$FORK_REPO@$JSDELIVR_UPDATE_LINE_RANGE/$RELEASE_TEMPLATE_PATH",
+                    ) {
                         expectSuccess = false
                         mirrorTimeout()
                     }
@@ -233,6 +352,17 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             }
             if (release != null) return release
         }
+        return null
+    }
+
+    /**
+     * 用 ghfast 代理 `releases/latest` 的跳转取 tag, 更新说明再经 ghfast 代理 raw 取. `null` = 不通.
+     *
+     * `releases/latest` 只指向已发布的 release, 但不能指定版本线: 它指向的是仓库里被标成 Latest 的那个 release,
+     * 可能是别的版本线的. 那时交给调用方按版本线丢掉, 等同于没找到.
+     */
+    private suspend fun latestOnGhfast(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
+        onProgress(UpdateCheckProgress.Mirror(UPDATE_CHECK_MIRROR_COUNT, UPDATE_CHECK_MIRROR_COUNT))
         val tag = tryMirror("ghfast latest") {
             val finalUrl = client.use {
                 get(ghfastUrl("https://github.com/$FORK_OWNER/$FORK_REPO/releases/latest")) {
@@ -256,7 +386,9 @@ class UpdateChecker(private val client: ScopedHttpClient) {
 
     private fun newVersionFromMirror(release: MirrorRelease, currentVersion: String): NewVersion? {
         val versionName = release.version
-        if (!isNewerThan(versionName, currentVersion)) return null
+        if (!isUpdateCandidate(versionName, currentVersion, ::isNewerThan)) {
+            return null
+        }
         val packages = releaseApkAssets(versionName).pickInstallableApks()
         if (packages.isEmpty() && currentPlatform() is Platform.Android) return null
         // 与 fork-release.yml 的 release-notes 步骤同一套替换
@@ -264,14 +396,80 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             .replace("\$GIT_TAG", "v$versionName")
             .replace("\$TAG_VERSION", versionName)
             .replace("\$REPO_OWNER", FORK_OWNER)
+            .replace("\$ASSET_PREFIX", currentAniBuildConfig.updateAssetPrefix)
         return NewVersion(
             name = versionName,
             changelogs = listOf(Changelog(version = versionName, publishedAt = "", changes = body)),
-            // 走到回落说明 GitHub API 不通, 下载多半也不通: 镜像在前, 省掉一轮注定超时的尝试
-            downloadUrlAlternatives = packages.flatMap { listOf(ghfastUrl(it.browserDownloadUrl), it.browserDownloadUrl) },
+            downloadUrlAlternatives = packages.map { it.browserDownloadUrl },
             publishedAt = "",
         )
     }
+
+    /** 一个来源对安装包的回答, 见 [probePackage]. */
+    private enum class PackageAnswer {
+        /** 回了安装包. */
+        SERVED,
+
+        /** 回 404: 没有这个文件. 草稿与删掉的 release 的资源在原地址与各个下载镜像上都是这样. */
+        MISSING,
+
+        /** 连不上、别的状态码、回的不是安装包: 看不出有没有. */
+        UNKNOWN,
+    }
+
+    /**
+     * 镜像回落查到的 [version] 是不是真发布了: 每个包的全部来源 ([downloadSources]) 同时各取开头几个字节 ([probePackage]).
+     * - 有来源回了安装包: 是;
+     * - 没有, 而有来源回 404: 不是 (草稿或删掉的 release), 不提示;
+     * - 都没有明确回答: 看不出来, 照样提示. 这时本来就下不成, 下载时会说清每条线路的原因.
+     */
+    private suspend fun isPublished(version: NewVersion): Boolean {
+        val sources = version.downloadUrlAlternatives.flatMap { downloadSources(it) }.distinct()
+        var missing = false
+        val served = channelFlow {
+            for (url in sources) launch { send(url to probePackage(url)) }
+        }.firstOrNull { (_, answer) ->
+            if (answer == PackageAnswer.MISSING) missing = true
+            answer == PackageAnswer.SERVED
+        }
+        if (served != null) {
+            logger.info { "Mirror: package of ${version.name} served by ${served.first}" }
+            return true
+        }
+        if (missing) {
+            logger.warn { "Mirror: packages of ${version.name} not found (draft or deleted release?), not offering it" }
+            return false
+        }
+        logger.warn { "Mirror: no source answered for the packages of ${version.name}, offering it anyway" }
+        return true
+    }
+
+    /**
+     * 从 [url] 取安装包开头几个字节. 回 2xx 还要看内容是不是以 APK 的文件头 ([APK_MAGIC]) 开始: 加速站出错时可能回 200 的网页.
+     * 不认 Range 的来源会发整个文件, 读够就断开.
+     */
+    private suspend fun probePackage(url: String): PackageAnswer = tryMirror("package $url") {
+        client.use {
+            prepareGet(url) {
+                header(HttpHeaders.Range, "bytes=0-${APK_MAGIC.size - 1}")
+                expectSuccess = false
+                mirrorTimeout()
+            }.execute { response ->
+                val answer = when {
+                    response.status == HttpStatusCode.NotFound -> PackageAnswer.MISSING
+                    !response.status.isSuccess() -> PackageAnswer.UNKNOWN
+                    response.bodyAsChannel().readRemaining(APK_MAGIC.size.toLong()).readByteArray()
+                        .contentEquals(APK_MAGIC) -> PackageAnswer.SERVED
+
+                    else -> PackageAnswer.UNKNOWN
+                }
+                if (answer != PackageAnswer.SERVED) {
+                    logger.info { "Mirror package $url: status=${response.status.value}, $answer" }
+                }
+                answer
+            }
+        }
+    } ?: PackageAnswer.UNKNOWN
 
     /** 单个镜像请求: 失败只记一行 (不打栈, 回落链本来就预期会有失败) 并返回 null, 取消照常抛出. */
     private suspend fun <T> tryMirror(name: String, block: suspend () -> T?): T? = try {
@@ -300,12 +498,12 @@ class UpdateChecker(private val client: ScopedHttpClient) {
      * 从 release 的全部 APK 里挑出本机装得上的: 本机架构的专包在前, universal 兜底在后, 其余一律不留.
      *
      * 不筛的后果是"自动更新后安装提示不兼容" (`INSTALL_FAILED_NO_MATCHING_ABIS`):
-     * [downloadUrlAlternatives] 会被 [me.him188.ani.app.tools.update.FileDownloader] 当成
-     * **同一个文件的备选下载源** (逐个尝试, 第一个成功即停), 于是永远下载 release 里的第一个 APK ——
-     * 按文件名排序就是 `arm64-v8a`. 32 位设备与 x86 设备装上去必然失败.
+     * [downloadUrlAlternatives] 里的包会被 [me.him188.ani.app.tools.update.FileDownloader] 按顺序逐个尝试,
+     * 第一个下成即停, 于是永远下载 release 里的第一个 APK —— 按文件名排序就是 `arm64-v8a`.
+     * 32 位设备与 x86 设备装上去必然失败.
      *
-     * 混入其它架构还有个更隐蔽的后果: 首选包下载中途失败时, 循环会接着下另一个架构的包并
-     * "成功" —— 那不是镜像而是另一个文件, 下完照样装不上. 所以这里是 filter 而非单纯排序.
+     * 混入其它架构还有个更隐蔽的后果: 首选包下载失败时, 下载器会接着下另一个架构的包并
+     * "成功" —— 下完照样装不上. 所以这里是 filter 而非单纯排序.
      *
      * 用设备的**完整** ABI 列表而不是只用首选 ABI ([me.him188.ani.utils.platform.Arch]):
      * 见 [Platform.Android.supportedAbis] —— 只看首选 ABI 时 x86 的电视模拟器会被当成 arm64 设备.
@@ -358,11 +556,14 @@ class UpdateChecker(private val client: ScopedHttpClient) {
     private companion object {
         private val logger = logger<UpdateChecker>()
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** APK (zip) 开头的本地文件头 `PK\u0003\u0004`. */
+        private val APK_MAGIC = byteArrayOf(0x50, 0x4B, 0x03, 0x04)
     }
 }
 
 @Serializable
-private data class GitHubRelease(
+internal data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
     @SerialName("body") val body: String = "",
     @SerialName("draft") val draft: Boolean = false,
@@ -375,4 +576,12 @@ private data class GitHubRelease(
 internal data class GitHubAsset(
     @SerialName("name") val name: String,
     @SerialName("browser_download_url") val browserDownloadUrl: String,
-)
+    /** GitHub 算的摘要, 形如 `sha256:<十六进制>`. 镜像回落时合成的资源没有. */
+    @SerialName("digest") val digest: String? = null,
+) {
+    /** [digest] 里的 SHA-256 (十六进制小写); 不是 SHA-256 或没有时为 `null`. */
+    val sha256: String?
+        get() = digest?.takeIf { it.startsWith(SHA256_DIGEST_PREFIX) }?.removePrefix(SHA256_DIGEST_PREFIX)?.lowercase()
+}
+
+private const val SHA256_DIGEST_PREFIX = "sha256:"

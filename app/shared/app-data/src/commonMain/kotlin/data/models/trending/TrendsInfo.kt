@@ -10,15 +10,13 @@
 package me.him188.ani.app.data.models.trending
 
 import me.him188.ani.app.data.network.BatchSubjectDetails
-import me.him188.ani.client.models.AniTrendingSubject
+import kotlinx.serialization.Serializable
 
 data class TrendsInfo(
     val subjects: List<TrendingSubjectInfo>
 )
 
-/**
- * @see AniTrendingSubject
- */
+@Serializable
 data class TrendingSubjectInfo(
     val bangumiId: Int,
     val nameCn: String,

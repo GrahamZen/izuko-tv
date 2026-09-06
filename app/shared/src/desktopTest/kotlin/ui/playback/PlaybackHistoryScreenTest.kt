@@ -9,13 +9,20 @@
 
 package me.him188.ani.app.ui.playback
 
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyPress
+import androidx.compose.ui.test.requestFocus
 import kotlinx.coroutines.runBlocking
+import me.him188.ani.app.ui.foundation.LONG_PRESS_MIN_HOLD
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import me.him188.ani.app.ui.lang.Lang
@@ -94,91 +101,42 @@ class PlaybackHistoryScreenTest {
         }
     }
 
+    @OptIn(InternalComposeUiApi::class)
     @Test
-    fun `shows synced and pending sync status icons`() = runAniComposeUiTest {
-        val syncedText = runBlocking { getString(Lang.playback_history_sync_status_synced) }
-        val pendingText = runBlocking { getString(Lang.playback_history_sync_status_pending, 2) }
-        var opened = 0
-
+    fun `holding confirm on a history opens its subject and a short press still plays it`() = runAniComposeUiTest {
+        var played = emptyList<Int>()
+        var opened = emptyList<Int>()
         setContent {
             ProvideCompositionLocalsForPreview {
                 PlaybackHistoryScreen(
                     histories = listOf(testHistory()),
-                    pendingOpCount = 0,
                     onNavigateBack = {},
-                    onOpenHistory = {},
-                    onOpenSyncStatus = { opened++ },
+                    onOpenHistory = { played = played + it.episodeId },
                     onDelete = {},
+                    onOpenSubject = { opened = opened + it.subjectId!! },
                 )
             }
         }
+        val item = onNodeWithTag("${PlaybackHistoryTestTags.ITEM_PREFIX}1")
+        item.requestFocus()
 
-        onNodeWithContentDescription(syncedText).performClick()
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyUp))
         runOnIdle {
-            assertEquals(1, opened)
+            assertEquals(listOf(1), played)
+            assertEquals(emptyList(), opened)
         }
 
-        setContent {
-            ProvideCompositionLocalsForPreview {
-                PlaybackHistoryScreen(
-                    histories = listOf(testHistory()),
-                    pendingOpCount = 2,
-                    onNavigateBack = {},
-                    onOpenHistory = {},
-                    onOpenSyncStatus = { opened++ },
-                    onDelete = {},
-                )
-            }
-        }
-
-        onNodeWithContentDescription(pendingText).performClick()
+        // 按住: 第二发 KeyDown 且距按下够久才算长按 (见 tvLongPressKey); 不进多选
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        Thread.sleep(LONG_PRESS_MIN_HOLD.inWholeMilliseconds + 100)
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyUp))
         runOnIdle {
-            assertEquals(2, opened)
+            assertEquals(listOf(100), opened)
+            assertEquals(listOf(1), played)
         }
-    }
-
-    @Test
-    fun `sync status screen lists and deletes pending ops`() = runAniComposeUiTest {
-        val deletePendingText = runBlocking { getString(Lang.playback_history_sync_delete_pending) }
-        var deletedEpisodeIds = emptyList<Int>()
-
-        setContent {
-            ProvideCompositionLocalsForPreview {
-                PlaybackHistorySyncStatusScreen(
-                    pendingOps = listOf(
-                        PlaybackHistorySyncStatusUiItem(
-                            episodeId = 11,
-                            operationNames = listOf("更新进度", "标记看过"),
-                            subjectName = "葬送的芙莉莲",
-                            episodeName = "别离",
-                            versionMillis = 1_700_000_000_000,
-                            playbackOpId = 1,
-                            collectionOpId = 5,
-                        ),
-                        PlaybackHistorySyncStatusUiItem(
-                            episodeId = 12,
-                            operationNames = listOf("删除记录"),
-                            subjectName = null,
-                            episodeName = null,
-                            versionMillis = 1_700_000_100_000,
-                            playbackOpId = 2,
-                        ),
-                    ),
-                    onNavigateBack = {},
-                    onDeletePendingItems = { items -> deletedEpisodeIds = items.map { it.episodeId }.sorted() },
-                )
-            }
-        }
-
-        onNodeWithTag(PlaybackHistoryTestTags.SYNC_PENDING_LIST).assertExists()
-        onNodeWithTag("${PlaybackHistoryTestTags.SYNC_PENDING_ITEM_PREFIX}11").assertExists()
-        onNodeWithText("葬送的芙莉莲", substring = true).assertExists()
-        onNodeWithText("更新进度 · 标记看过 · 别离", substring = true).assertExists()
-        onAllNodesWithContentDescription(deletePendingText)[0].performClick()
-
-        runOnIdle {
-            assertEquals(listOf(11), deletedEpisodeIds)
-        }
+        onNodeWithText(runBlocking { getString(Lang.playback_history_selected_count, 1) }).assertDoesNotExist()
     }
 
     private fun testHistory(

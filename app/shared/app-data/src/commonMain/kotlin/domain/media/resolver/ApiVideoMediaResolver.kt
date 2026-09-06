@@ -16,6 +16,7 @@ import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.datasources.api.Media
@@ -82,6 +83,7 @@ class ApiVideoMediaResolver(
 
         is RepositoryAuthorizationException,
         is RepositoryRequestError,
+        is RepositorySubjectNotAccessibleException,
         is RepositoryUnknownException,
             -> ResolutionFailures.ENGINE_ERROR
     }

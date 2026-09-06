@@ -12,17 +12,26 @@ package me.him188.ani.app.ui.foundation.tv
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -49,7 +58,7 @@ import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
  * 余波也照旧由卡片自己的 [me.him188.ani.app.ui.foundation.tvLongPressKey] 吞掉.
  *
  * 代价是焦点还在底下的卡片上, 方向键会把它挪走 (用户看不见焦点去哪了) —— 所以开着期间
- * [tvImageZoomKeys] **吞掉一切按键**, 只留返回键关闭.
+ * [tvImageZoomKeys] **吞掉一切按键**, 只留返回键关闭; 一次开了几张图时左右键换一张.
  *
  * ## 用法 (三处都要挂)
  *
@@ -63,19 +72,46 @@ import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
  */
 @Stable
 class TvImageZoomState {
-    /** 正在放大的图 URL; null = 没开. */
-    var url: String? by mutableStateOf(null)
+    /** 这次打开的一组图; 空 = 没开. */
+    var urls: List<String> by mutableStateOf(emptyList())
         private set
 
-    val zooming: Boolean get() = url != null
+    /** 正在看 [urls] 里的第几张. */
+    var index: Int by mutableIntStateOf(0)
+        private set
+
+    /** 正在放大的图 URL; null = 没开. */
+    val url: String? get() = urls.getOrNull(index)
+
+    val zooming: Boolean get() = urls.isNotEmpty()
 
     /** 空 URL 不开层 (数据缺图时长按不该弹出一块空白). */
     fun open(url: String) {
-        if (url.isNotBlank()) this.url = url
+        open(listOf(url))
+    }
+
+    /**
+     * 开一组图, 从 [urls] 里的第 [index] 张看起; 不止一张时左右键换图 (见 [tvImageZoomKeys]).
+     * 空白 URL 去掉, 一张都不剩就不开.
+     */
+    fun open(urls: List<String>, index: Int = 0) {
+        val valid = urls.filter { it.isNotBlank() }
+        if (valid.isEmpty()) return
+        this.urls = valid
+        this.index = urls.take(index).count { it.isNotBlank() }.coerceIn(valid.indices)
+    }
+
+    /** 换到相邻的一张 ([delta] = -1 / +1); 到头不动, 返回 false. */
+    fun step(delta: Int): Boolean {
+        val next = index + delta
+        if (next !in urls.indices) return false
+        index = next
+        return true
     }
 
     fun close() {
-        url = null
+        urls = emptyList()
+        index = 0
     }
 }
 
@@ -83,7 +119,7 @@ class TvImageZoomState {
 fun rememberTvImageZoomState(): TvImageZoomState = remember { TvImageZoomState() }
 
 /**
- * 大图开着期间**吞掉一切按键**, 返回键抬起时关掉大图.
+ * 大图开着期间**吞掉一切按键**, 返回键抬起时关掉大图; 开了不止一张时左右键换一张 (按住连发就一张张翻, 到头不动).
  *
  * 挂在**焦点所在子树的祖先**上 (页面根 / 弹窗内容根): `onPreviewKeyEvent` 只在焦点路径上触发,
  * 挂在旁支节点上收不到任何事件. 祖先先行, 所以它也会吞掉卡片长按那次按住余下的连发与抬起 ——
@@ -96,12 +132,18 @@ fun rememberTvImageZoomState(): TvImageZoomState = remember { TvImageZoomState()
  */
 fun Modifier.tvImageZoomKeys(state: TvImageZoomState): Modifier = onPreviewKeyEvent { event ->
     if (!state.zooming) return@onPreviewKeyEvent false
-    if (event.key in TV_BACK_KEYS && event.type == KeyEventType.KeyUp) state.close()
+    when {
+        event.key in TV_BACK_KEYS -> if (event.type == KeyEventType.KeyUp) state.close()
+        event.type != KeyEventType.KeyDown -> Unit
+        event.key == Key.DirectionLeft -> state.step(-1)
+        event.key == Key.DirectionRight -> state.step(1)
+    }
     true
 }
 
 /**
  * 居中大图层: 压一层 scrim, 中央按原比例摆一张图 (不裁切, 长边贴 [TV_ZOOM_IMAGE_FRACTION] 的框).
+ * 一组图不止一张时, 两侧画左右箭头 (到头的那一侧变淡), 底部写「第几张 / 共几张」.
  *
  * 不放相框/圆角: 图的实际比例要等加载完才知道, 先按预设比例画一块底再换成真比例, 落地就是
  * 加载完那一帧尺寸跳一下.
@@ -129,6 +171,28 @@ fun TvZoomedImageOverlay(state: TvImageZoomState, modifier: Modifier = Modifier)
             onSuccess = { loaded = true },
             onError = { retry.onError() },
         )
+        val count = state.urls.size
+        if (count > 1) {
+            val index = state.index
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = TV_ZOOM_EDGE_PADDING).size(TV_ZOOM_ARROW_SIZE),
+                tint = Color.White.copy(alpha = if (index > 0) TV_ZOOM_CHROME_ALPHA else TV_ZOOM_CHROME_DIM_ALPHA),
+            )
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = TV_ZOOM_EDGE_PADDING).size(TV_ZOOM_ARROW_SIZE),
+                tint = Color.White.copy(alpha = if (index < count - 1) TV_ZOOM_CHROME_ALPHA else TV_ZOOM_CHROME_DIM_ALPHA),
+            )
+            Text(
+                "${index + 1} / $count",
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = TV_ZOOM_EDGE_PADDING),
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = TV_ZOOM_CHROME_ALPHA),
+            )
+        }
     }
 }
 
@@ -139,3 +203,12 @@ private val TV_ZOOM_SCRIM_COLOR = Color.Black.copy(alpha = 0.82f)
 private const val TV_ZOOM_IMAGE_FRACTION = 0.86f
 
 private val TV_ZOOM_SPINNER_SIZE = 48.dp
+
+/** 左右箭头与张数离屏幕边缘的距离: 落在图框 ([TV_ZOOM_IMAGE_FRACTION]) 之外的那一圈里. */
+private val TV_ZOOM_EDGE_PADDING = 12.dp
+
+private val TV_ZOOM_ARROW_SIZE = 40.dp
+
+/** 箭头与张数的不透明度; 到头那一侧的箭头淡到几乎看不见. */
+private const val TV_ZOOM_CHROME_ALPHA = 0.8f
+private const val TV_ZOOM_CHROME_DIM_ALPHA = 0.2f

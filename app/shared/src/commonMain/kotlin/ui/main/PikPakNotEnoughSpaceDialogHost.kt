@@ -9,16 +9,18 @@
 
 package me.him188.ani.app.ui.main
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.flow.Flow
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.DismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.pikpak_not_enough_space_message
 import me.him188.ani.app.ui.lang.pikpak_not_enough_space_ok
@@ -36,14 +38,15 @@ internal fun PikPakNotEnoughSpaceDialogHost(events: Flow<PikPakNotEnoughSpaceExc
         events.collect { shown = true }
     }
     if (shown) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { shown = false },
+            // 可能在播放中弹出: 独立窗口里把遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
+            modifier = Modifier.tvOverlayWindowKeys { shown = false },
             title = { Text(stringResource(Lang.pikpak_not_enough_space_title)) },
             text = { Text(stringResource(Lang.pikpak_not_enough_space_message)) },
+            // 纯提示, 唯一的按钮就是"知道了"
             confirmButton = {
-                TextButton(onClick = { shown = false }) {
-                    Text(stringResource(Lang.pikpak_not_enough_space_ok))
-                }
+                DismissDialogButton(stringResource(Lang.pikpak_not_enough_space_ok)) { shown = false }
             },
         )
     }

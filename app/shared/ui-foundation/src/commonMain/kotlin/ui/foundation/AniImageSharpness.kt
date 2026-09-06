@@ -73,7 +73,7 @@ private const val SHARPNESS_TOLERANCE = 1.02f
 /** 低于这个倍数算"明显过采样": 解出的边长是显示的 1.33 倍以上, 即多解了约 80% 像素. */
 private const val OVERSAMPLE_THRESHOLD = 0.75f
 
-/** 小于这个尺寸的请求当成预取/探测 (hero 预取用 `size(1,1)` 只为填磁盘缓存), 不计入统计. */
+/** 小于这个尺寸的请求当成探测 (如只为把字节落进磁盘缓存的 `size(1,1)` 请求), 不计入统计. */
 private const val MIN_MEASURABLE_BOX = 8
 
 internal enum class ImageSharpnessVerdict {
@@ -369,8 +369,8 @@ internal object ImageSharpnessLog {
  * 于是: 数据已经拿到、解码还没开始 —— 计时器量的**只有解码**这一段; 而内存缓存 (15) 与结果缓存
  * (45) 命中根本走不到这里, 计数天然等于真实解码次数.
  *
- * 只量**声明了显示尺寸**的请求 ([aniDisplaySize]); 预取那种"只为把字节落进磁盘缓存"的请求
- * (`size(1,1)`) 没有显示尺寸, 直接跳过.
+ * 只量**声明了显示尺寸**的请求 ([aniDisplaySize]); "只为把字节落进磁盘缓存"的 `size(1,1)` 请求
+ * 没有显示尺寸, 直接跳过 (应用里的预热与补下已改走 downloadToCache, 不解码).
  */
 internal data object AniImageSharpnessInterceptor : Interceptor {
     override val key: String? = null // 不参与请求/缓存键: 它只观察, 不改变结果

@@ -14,7 +14,6 @@ package me.him188.ani.app.videoplayer.videoenhancement
 import androidx.media3.common.Effect
 import androidx.media3.common.util.Size
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.openani.mediamp.metadata.MediaProperties
@@ -30,7 +29,7 @@ class VideoEnhancementControllerTest {
         val player = TestMediampPlayer(backgroundScope.coroutineContext)
         val effects = mutableListOf<List<Effect>>()
         val controller = ExoPlayerVideoEnhancementController(
-            player, { effects.add(it) }, flowOf(false), backgroundScope.coroutineContext,
+            player, { effects.add(it) }, backgroundScope.coroutineContext,
         )
         try {
             controller.setViewportSize(1920, 1080)

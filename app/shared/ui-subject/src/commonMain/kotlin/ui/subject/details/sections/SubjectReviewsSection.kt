@@ -9,32 +9,29 @@
 
 package me.him188.ani.app.ui.subject.details.sections
 
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.focus.onFocusChanged
-import me.him188.ani.app.data.models.subject.RatingInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
@@ -50,19 +47,23 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
+import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
@@ -71,9 +72,12 @@ import me.him188.ani.app.ui.comment.UIRichText
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
+import me.him188.ani.app.ui.foundation.focus.tvRowEndKeys
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_hot_reviews
 import me.him188.ani.app.ui.lang.subject_details_reviews_count
@@ -139,8 +143,9 @@ private val STACK_REVIEW_CARDS_BELOW_WIDTH = 480.dp
  * (WCAG H2 "相邻的冗余链接应合并", ARIA "复合控件在焦点序列里只占一个停靠点"). 于是改成整块只有行末一个落点.
  *
  * 但真机上一排卡里只有最右一张能聚焦很别扭 (用户 2026-09-15), 而"九个落点一个结果"的病根其实是**结果相同**,
- * 不是落点多: 现在每张卡进的是全量弹窗里**它自己那一条** ([onShowAll] 带序号), 落点与结果一一对应, 冗余链接
- * 的前提不成立. 形态仍照 Plex 的评论行 (卡不可写, 写评价交给手机).
+ * 不是落点多: 现在每张卡进的是**它自己那一条** —— 电视上直接开那一条的全文 (见 ViewAllCommentsList.hasThread),
+ * 别处是全量弹窗里的那一条 ([onShowAll] 带序号), 落点与结果一一对应, 冗余链接的前提不成立.
+ * 形态仍照 Plex 的评论行 (卡不可写, 写评价交给手机).
  */
 @Composable
 fun ReviewsSummarySection(
@@ -162,6 +167,12 @@ fun ReviewsSummarySection(
     /** 正文行数上限. 卡矮了行数要跟着降, 否则文字撑破卡片. */
     cardTextLines: Int = TV_REVIEW_CARD_TEXT_LINES,
 ) {
+    // 电视上卡片直接开那一条的全文 (见 ViewAllCommentsList.hasThread); -1 = 没开
+    val commentsList = LocalViewAllCommentsList.current
+    var threadAt by remember { mutableIntStateOf(-1) }
+    if (threadAt >= 0) {
+        CommentThreadDialog(stringResource(Lang.subject_details_tab_comments), comments, threadAt, showRating = true, onDismissRequest = { threadAt = -1 })
+    }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(TV_REVIEW_HEADER_GAP)) {
         // **不放评分汇总**: hero 的信息带上已经有分数了 (用户 2026-09-15 指出重复)
         SectionHeader(stringResource(Lang.subject_details_tab_comments))
@@ -184,17 +195,21 @@ fun ReviewsSummarySection(
             } else {
                 Modifier.width(TV_REVIEW_MORE_WIDTH).fillMaxHeight()
             }
+            // 此刻聚焦的那一格 (行末那格 = count): 行尾按右 / 行首按左不交给 Android 找焦点 (会跳进下方原生的关联条目行, 见 tvRowEndKeys)
+            var focusedCell by remember { mutableIntStateOf(-1) }
             Row(
-                if (cardHeight == null) Modifier.height(IntrinsicSize.Min) else Modifier,
+                (if (cardHeight == null) Modifier.height(IntrinsicSize.Min) else Modifier)
+                    // 行尾按右停住: 右边没有该去的地方 (播放器内嵌介绍页里往右找会挑中上面的标签)
+                    .tvRowEndKeys(itemCount = { count + 1 }, focusedIndex = { focusedCell }, exitRight = false),
                 horizontalArrangement = Arrangement.spacedBy(TV_REVIEW_CARD_SPACING),
             ) {
                 repeat(count) { i ->
                     comments[i]?.let { comment ->
-                        // 每张卡进的是全量弹窗里它自己那一条 (见本函数 KDoc)
+                        // 每张卡进的是它自己那一条 (见本函数 KDoc)
                         ReviewPreviewCard(
                             comment,
-                            onClick = { onShowAll(i) },
-                            modifier = cardModifier,
+                            onClick = { if (commentsList.hasThread) threadAt = i else onShowAll(i) },
+                            modifier = cardModifier.onFocusChanged { if (it.hasFocus) focusedCell = i },
                             maxTextLines = cardTextLines,
                             tvCard = true,
                         )
@@ -204,7 +219,7 @@ fun ReviewsSummarySection(
                 ReviewsMoreCell(
                     remaining = totalCount?.minus(count),
                     onClick = { onShowAll(0) },
-                    modifier = moreModifier,
+                    modifier = moreModifier.onFocusChanged { if (it.hasFocus) focusedCell = count },
                 )
             }
         }
@@ -227,39 +242,41 @@ private fun ReviewsMoreCell(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    Surface(
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.hasFocus },
-        shape = MaterialTheme.shapes.medium,
-        // 与同排的评论卡同一套底色与示焦 (见 ReviewPreviewCard): 一排卡里只有它换个颜色很跳
-        color = if (focused) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
-        },
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-    ) {
-        Column(
-            Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.onFocusChanged { focused = it.hasFocus },
+            shape = MaterialTheme.shapes.medium,
+            // 与同排的评论卡同一套底色与示焦 (见 ReviewPreviewCard): 一排卡里只有它换个颜色很跳
+            color = if (focused) {
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+            },
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         ) {
-            if (remaining != null && remaining > 0) {
+            Column(
+                Modifier.padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            ) {
+                if (remaining != null && remaining > 0) {
+                    Text(
+                        "+$remaining",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                }
                 Text(
-                    "+$remaining",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    stringResource(Lang.subject_details_view_all),
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
-            Text(
-                stringResource(Lang.subject_details_view_all),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }
@@ -300,7 +317,7 @@ private fun ReviewPreviewCard(
     modifier: Modifier = Modifier,
     /** 正文行数上限: 预览行里一行, 评价块的大卡多几行. */
     maxTextLines: Int = 1,
-    /** TV 详情页评价块的大卡: 两行头部 + 半透明底 + 聚焦泛白高亮 (与全量弹窗里的评论卡同一套示焦). */
+    /** TV 详情页评价块的大卡: 两行头部 + 半透明底 + 聚焦换一档底色并描边 (与全量弹窗里的评论卡同一套示焦). */
     tvCard: Boolean = false,
 ) {
     val shape = MaterialTheme.shapes.medium
@@ -330,12 +347,16 @@ private fun ReviewPreviewCard(
     if (onClick == null) {
         Surface(modifier, shape, color, contentColor, content = body)
     } else {
-        Surface(
-            onClick, modifier, shape = shape, color = color, contentColor = contentColor,
-            border = if (tvCard && focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-            interactionSource = interactionSource,
-            content = body,
-        )
+        val card: @Composable () -> Unit = {
+            Surface(
+                onClick, modifier, shape = shape, color = color, contentColor = contentColor,
+                border = if (tvCard && focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                interactionSource = interactionSource,
+                content = body,
+            )
+        }
+        // 只有大卡画描边; 其余形态没有描边, 示焦还靠焦点态层
+        if (tvCard) ProvideRingOnlyFocus(card) else card()
     }
 }
 
@@ -511,7 +532,7 @@ fun SubjectCommentsSheet(
             headerAction = {
                 // 评分弹窗关掉之后焦点还回本按钮 (它自己是另一个弹窗窗口里的元素,
                 // 上面那层关掉时不保证把焦点还回来, 遥控器会当场失去焦点)
-                TextButton(onClickWriteReview, Modifier.restoreFocusAfter(ratingDialogVisible)) {
+                AniTextButton(onClickWriteReview, Modifier.restoreFocusAfter(ratingDialogVisible)) {
                     Icon(Icons.Rounded.AddComment, contentDescription = null, Modifier.size(18.dp))
                     Text(
                         stringResource(Lang.subject_details_write_review),

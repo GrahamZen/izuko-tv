@@ -9,13 +9,10 @@
 
 package me.him188.ani.app.ui.subject.person
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -52,6 +49,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -65,11 +63,19 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.tv.LocalTvReadableBlocks
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
+import me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
+import me.him188.ani.app.ui.foundation.focus.tvContainDirectionalKeys
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.ModalSideSheet
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.ProvideAniGlassPanelContent
 import me.him188.ani.app.ui.foundation.widgets.rememberModalSideSheetState
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.person_details_open_full_page
@@ -139,6 +145,8 @@ fun rememberPeopleClickHandler(): (PeoplePreviewTarget) -> Unit {
 /**
  * 在 [content] 范围内启用人物/角色侧边预览: 提供 [LocalPeoplePreviewHandler],
  * 并在有目标时渲染右侧 modal side sheet. 仅应在中大屏布局使用.
+ *
+ * 电视与平板 (居中弹窗形态) 的页面上不开预览, 原样交给外层: 点人物直接进整页. 播放器里传 [previewInCenteredDialogs] 照旧开预览 (进整页就离开了播放器).
  */
 @Composable
 fun PeoplePreviewHost(
@@ -147,8 +155,11 @@ fun PeoplePreviewHost(
      * 按键不经过播放器根路由, 不上报会在预览开着时被 5 秒计时收掉).
      */
     onPreviewOpenChanged: ((Boolean) -> Unit)? = null,
+    /** 居中弹窗形态 (电视 / 平板) 下也开预览; 默认不开, 点人物直接进整页. */
+    previewInCenteredDialogs: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs && !previewInCenteredDialogs) return content()
     // 跨导航保留: 见 [PeoplePreviewTargetSaver]
     var target by rememberSaveable(stateSaver = PeoplePreviewTargetSaver) {
         mutableStateOf<PeoplePreviewTarget?>(null)
@@ -198,32 +209,34 @@ private fun PeoplePreviewSideSheet(
             onDismissRequest = onDismissRequest,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            // 底色/窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来.
+            // 底色与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来.
             // 四周只靠这层系统压暗, 不再自己多画一层黑 (两层叠起来会把画面压到近乎全黑)
             DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
-            // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
-            // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
-            Box(Modifier.fillMaxSize().tvOverlayWindowKeys(onDismissRequest)) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismissRequest,
-                        ),
-                )
-                Surface(
-                    Modifier.align(Alignment.Center)
-                        .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
-                        .width(TV_PEOPLE_PREVIEW_WIDTH),
-                    shape = RoundedCornerShape(16.dp),
-                    color = centeredPanelColor,
-                    // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ) {
-                    // 居中形态没有退场动画, 关闭就是直接清空目标
-                    PeoplePreviewBody(target, imageViewer, onClose = onDismissRequest, onDismissImmediately = onDismissRequest)
+            // 面板就是弹窗内容的根; 点面板外面由 Dialog 自己关
+            Surface(
+                // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
+                // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
+                Modifier.tvOverlayWindowKeys(onDismissRequest)
+                    .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
+                    .width(TV_PEOPLE_PREVIEW_WIDTH),
+                shape = ANI_GLASS_PANEL_SHAPE,
+                color = aniGlassPanelColor(),
+                border = aniGlassEdge(),
+                // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                // 玻璃面板里的控件约定 (项目换成玻璃底、按钮画成动作按钮), 见 ProvideAniGlassPanelContent
+                ProvideAniGlassPanelContent {
+                    // 方向键在弹窗里走完: 里面有原生横滑行, 没接住的方向键交给系统会按屏幕位置挑中行里的卡
+                    Box(Modifier.tvContainDirectionalKeys()) {
+                        // 居中形态没有退场动画, 关闭就是直接清空目标. 横滑行用电视入口提供的原生实现
+                        PeoplePreviewBody(
+                            target, imageViewer,
+                            onClose = onDismissRequest,
+                            onDismissImmediately = onDismissRequest,
+                            rows = LocalPeoplePreviewRows.current,
+                        )
+                    }
                 }
             }
         }
@@ -246,14 +259,19 @@ private fun PeoplePreviewSideSheet(
     }
 }
 
+/**
+ * 预览的内容: 头部 (名字 + 「打开完整页面」, 指针设备另有关闭) 与单栏详情列. 电视播放器在胶囊上方的叠层里也用它 (ui-tv 的 TvPlayerDetailLayers).
+ */
 @Composable
-private fun PeoplePreviewBody(
+fun PeoplePreviewBody(
     target: PeoplePreviewTarget,
     imageViewer: ImageViewerHandler,
     /** 头部关闭按钮: 侧边形态传 `state.close()` 以播退场动画, TV 居中形态不显示该按钮. */
     onClose: () -> Unit,
     /** 「打开完整页面」前立即关掉预览, 两种形态都不播退场动画 (下一帧就换页了). */
     onDismissImmediately: () -> Unit,
+    /** 横滑行的另一套实现 (TV 的原生行), 见 [PeoplePreviewRows]; null = Compose 的行. */
+    rows: PeoplePreviewRows? = null,
 ) {
     val navigator = LocalNavigator.current
     when (target) {
@@ -265,6 +283,7 @@ private fun PeoplePreviewBody(
                 navigator.navigatePersonDetails(target.personId)
             },
             onDismissRequest = onClose,
+            rows = rows,
         )
 
         is PeoplePreviewTarget.Character -> CharacterPreviewContent(
@@ -275,6 +294,7 @@ private fun PeoplePreviewBody(
                 navigator.navigateCharacterDetails(target.characterId)
             },
             onDismissRequest = onClose,
+            rows = rows,
         )
     }
 }
@@ -285,12 +305,14 @@ private fun PersonPreviewContent(
     imageViewer: ImageViewerHandler,
     onOpenFullPage: () -> Unit,
     onDismissRequest: () -> Unit,
+    rows: PeoplePreviewRows?,
 ) {
     val vm = viewModel<PersonDetailsViewModel>(key = "person-preview-$personId") { PersonDetailsViewModel(personId) }
     val details by vm.details.collectAsState()
     // 焦点驱动的滚动到不了不可聚焦的头图/名字: 顶部内容块 (头图+简介) 或头部
     // 按钮获得焦点时整体滚回顶部, 露出完整头图.
-    // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部
+    // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部.
+    // 长内容能停焦点翻页的地方 (LocalTvReadableBlocks) 也不回顶: 焦点在简介正文与「显示更多」之间挪也会触发, 把正在读的那段拽回顶上
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -301,18 +323,21 @@ private fun PersonPreviewContent(
             onHeaderFocused = if (focusDriven) scrollToTop else ({}),
         )
         Column(
-            Modifier.fillMaxWidth().verticalScroll(scrollState),
+            Modifier.fillMaxWidth().aniVerticalScrollFade(scrollState).verticalScroll(scrollState),
         ) {
             PersonDetailsContentColumn(
                 details = details,
                 casts = vm.castsPager.collectAsLazyPagingItems(),
                 works = vm.worksPager.collectAsLazyPagingItems(),
-                comments = vm.comments,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                commentState = vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
+                modifier = Modifier.padding(horizontal = PEOPLE_PREVIEW_CONTENT_PADDING).padding(bottom = 16.dp),
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
-                onTopContentFocused = if (focusDriven) scrollToTop else null,
+                onTopContentFocused = if (focusDriven && !LocalTvReadableBlocks.current) scrollToTop else null,
+                previewRows = rows,
+                previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )
         }
     }
@@ -324,6 +349,7 @@ private fun CharacterPreviewContent(
     imageViewer: ImageViewerHandler,
     onOpenFullPage: () -> Unit,
     onDismissRequest: () -> Unit,
+    rows: PeoplePreviewRows?,
 ) {
     val vm = viewModel<CharacterDetailsViewModel>(key = "character-preview-$characterId") {
         CharacterDetailsViewModel(characterId)
@@ -340,17 +366,20 @@ private fun CharacterPreviewContent(
             onHeaderFocused = if (focusDriven) scrollToTop else ({}),
         )
         Column(
-            Modifier.fillMaxWidth().verticalScroll(scrollState),
+            Modifier.fillMaxWidth().aniVerticalScrollFade(scrollState).verticalScroll(scrollState),
         ) {
             CharacterDetailsContentColumn(
                 details = details,
                 subjects = vm.subjectsPager.collectAsLazyPagingItems(),
-                comments = vm.comments,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                commentState = vm.commentState,
+                originalCommentsUrl = vm.originalCommentsUrl,
+                modifier = Modifier.padding(horizontal = PEOPLE_PREVIEW_CONTENT_PADDING).padding(bottom = 16.dp),
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
-                onTopContentFocused = if (focusDriven) scrollToTop else null,
+                onTopContentFocused = if (focusDriven && !LocalTvReadableBlocks.current) scrollToTop else null,
+                previewRows = rows,
+                previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )
         }
     }
@@ -382,11 +411,11 @@ private fun PreviewSheetHeader(
         Text(
             title,
             Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
+            style = aniPanelTitleStyle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
+        AniFocusIconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
             Icon(
                 Icons.Rounded.OpenInFull,
                 contentDescription = stringResource(Lang.person_details_open_full_page),
@@ -403,3 +432,6 @@ private fun PreviewSheetHeader(
 /** TV 人物预览弹窗的宽度与高度占屏比例. */
 private val TV_PEOPLE_PREVIEW_WIDTH = 560.dp
 private const val TV_PEOPLE_PREVIEW_HEIGHT_FRACTION = 0.85f
+
+/** 预览内容列两侧的留白 (原生横滑行往两侧出血这么多, 到弹窗边上). */
+private val PEOPLE_PREVIEW_CONTENT_PADDING: Dp = 16.dp

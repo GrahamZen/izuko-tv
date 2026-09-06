@@ -14,11 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 
 /**
- * 探索页变体: 应用入口可提供一个替代布局 (如遥控器形态的沉浸式 Hero 布局).
- *
- * 与其它页面变体不同, 本变体还受运行时设置约束: 只有
- * [ThemeSettings.tvImmersiveExploration][me.him188.ani.app.data.models.preference.ThemeSettings.tvImmersiveExploration]
- * 开启时才生效 (低端设备可关闭以回退默认布局, 降低渲染开销).
+ * 探索页变体: 应用入口可提供一个替代布局 (如遥控器形态的沉浸式 Hero 布局). 提供了就用, 没有回退开关.
  */
 fun interface ExplorationPageVariant {
     @Composable

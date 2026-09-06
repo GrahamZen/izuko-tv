@@ -27,6 +27,8 @@ fun AvatarImage(
     colorFilter: ColorFilter? = null,
     contentScale: ContentScale = ContentScale.Crop,
     alignment: Alignment = Alignment.Center,
+    /** 同 AsyncImage 的 downsampleLongEdgePx: 给 NSFW 封面打码 (见 NsfwPolicy.coverDownsample). */
+    downsampleLongEdgePx: Int? = null,
 ) {
     if (url == null) {
         Image(Icons.Rounded.Person, null, modifier)
@@ -40,6 +42,7 @@ fun AvatarImage(
             alignment = alignment,
             contentScale = contentScale,
             colorFilter = colorFilter,
+            downsampleLongEdgePx = downsampleLongEdgePx,
         )
     }
 }

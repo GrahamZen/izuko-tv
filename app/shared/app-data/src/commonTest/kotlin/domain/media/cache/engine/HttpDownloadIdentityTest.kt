@@ -76,7 +76,8 @@ class HttpDownloadIdentityTest {
 
         val results = MediaCacheStorageSource(storage, "Test HTTP Storage").fetch(query).results.toList()
 
-        val cached = results.single().media
+        // 没下完的缓存也给出 CachedMedia (由选源器标成「缓存未完成」, 见 HttpMediaCacheEngine), 所以第 1 集那条也在结果里
+        val cached = results.map { it.media }.single { it.download == completed.getCachedMedia().download }
         assertTrue(cached.isLocalCache())
         assertEquals(completed.getCachedMedia().download, cached.download)
         assertEquals(listOf(EpisodeSort(2)), cached.episodeRange?.knownSorts?.toList())

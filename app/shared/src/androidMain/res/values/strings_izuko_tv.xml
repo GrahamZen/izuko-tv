@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统主屏频道 (TvHomeChannels / TvHomeTodayChannel) 的文案: 由系统 launcher 显示, 写入时按当时的语言取. -->
+<resources>
+    <string name="home_channel_today_name">Airing today</string>
+    <string name="home_channel_today_airs_at">Airs %1$s</string>
+    <string name="home_channel_today_airs_today">Airs today</string>
+    <string name="home_channel_episode">Episode %1$s</string>
+</resources>

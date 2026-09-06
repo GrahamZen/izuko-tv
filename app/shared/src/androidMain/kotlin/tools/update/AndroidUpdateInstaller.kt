@@ -14,6 +14,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import me.him188.ani.app.platform.ContextMP
@@ -28,28 +29,35 @@ import java.io.File
 private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
 
-class AndroidUpdateInstaller : UpdateInstaller {
+class AndroidUpdateInstaller(
+    private val appContext: Context,
+) : UpdateInstaller {
     private companion object {
         private val logger = logger<AndroidUpdateInstaller>()
     }
 
+    // Android 8 之前「未知来源」是全局开关, 由系统安装器自己拦
+    override fun canInstallNow(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || appContext.packageManager.canRequestPackageInstalls()
+
+    override fun requestInstallPermission(context: ContextMP): Boolean =
+        runCatching {
+            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                .setData(Uri.parse(String.format("package:%s", context.packageName)))
+            context.startActivity(intent)
+        }.onFailure {
+            logger.warn(it) { "Failed to request permission to install APK" }
+        }.isSuccess
+
     override fun install(file: SystemPath, context: ContextMP): InstallationResult {
-        logger.info { "Requesting install APK" }
-        if (!context.packageManager.canRequestPackageInstalls()) {
-            // Request permission from the user
-            runCatching {
-                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                    .setData(Uri.parse(String.format("package:%s", context.packageName)))
-                context.startActivity(intent)
-            }.onFailure {
-                logger.warn(it) { "Failed to request permission to install APK" }
-            }
-        } else {
-            runCatching {
-                installApk(context, file.toFile())
-            }.onFailure {
-                logger.warn(it) { "Failed to install update APK using installApkLegacy" }
-            }
+        // 没授权也拉起系统安装器: 由它自己询问 (厂商安装器可能看全局「未知来源」开关直接装).
+        // 下载前已经问过一次 (见 AppUpdateViewModel.startDownload), 走到这里没授权说明用户选了「直接安装」,
+        // 或者这台电视打不开授权页
+        logger.info { "Requesting install APK, canInstallNow=${canInstallNow()}" }
+        runCatching {
+            installApk(context, file.toFile())
+        }.onFailure {
+            logger.warn(it) { "Failed to install update APK using installApkLegacy" }
         }
         return InstallationResult.Succeed
     }

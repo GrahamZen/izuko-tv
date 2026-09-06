@@ -10,35 +10,40 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.next.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCollectionType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
  *
- * @param comment 
+ * @param id 
  * @param rate 
- * @param tags 
  * @param type 
+ * @param comment 
+ * @param tags 
  * @param updatedAt 
  */
 @Serializable
 
-data class BangumiNextSlimSubjectInterest(
+data class BangumiNextSlimSubjectInterest (
 
-    @SerialName(value = "comment") @Required val comment: kotlin.String,
+    @SerialName(value = "id") @Required val id: kotlin.Int,
 
     @SerialName(value = "rate") @Required val rate: kotlin.Int,
 
-    @SerialName(value = "tags") @Required val tags: kotlin.collections.List<kotlin.String>,
-
     @SerialName(value = "type") @Required val type: BangumiNextCollectionType,
+
+    @SerialName(value = "comment") @Required val comment: kotlin.String,
+
+    @SerialName(value = "tags") @Required val tags: kotlin.collections.List<kotlin.String>,
 
     @SerialName(value = "updatedAt") @Required val updatedAt: kotlin.Int
 

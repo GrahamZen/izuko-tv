@@ -10,14 +10,18 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiPersonCareer
+import me.him188.ani.datasources.bangumi.models.BangumiPersonImages
+import me.him188.ani.datasources.bangumi.models.BangumiPersonType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -27,11 +31,12 @@ import kotlinx.serialization.Serializable
  * @param type `1`, `2`, `3` 表示 `个人`, `公司`, `组合`
  * @param career 
  * @param relation 
+ * @param eps 参与章节/曲目
  * @param images object with some size of images, this object maybe `null`
  */
 @Serializable
 
-data class BangumiRelatedPerson(
+data class BangumiRelatedPerson (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
@@ -43,6 +48,9 @@ data class BangumiRelatedPerson(
     @SerialName(value = "career") @Required val career: kotlin.collections.List<BangumiPersonCareer>,
 
     @SerialName(value = "relation") @Required val relation: kotlin.String,
+
+    /* 参与章节/曲目 */
+    @SerialName(value = "eps") @Required val eps: kotlin.String,
 
     /* object with some size of images, this object maybe `null` */
     @SerialName(value = "images") val images: BangumiPersonImages? = null

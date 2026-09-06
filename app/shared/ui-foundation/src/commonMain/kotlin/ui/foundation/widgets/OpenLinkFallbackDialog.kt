@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +41,7 @@ fun OpenLinkFallbackDialog(
     url: String,
     onDismissRequest: () -> Unit,
 ) {
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(Lang.foundation_browser_open_failed_title)) },
         text = {
@@ -69,7 +67,7 @@ fun OpenLinkFallbackDialog(
             }
         },
         confirmButton = {
-            TextButton(onDismissRequest) { Text(stringResource(Lang.foundation_browser_open_failed_close)) }
+            AniTextButton(onDismissRequest) { Text(stringResource(Lang.foundation_browser_open_failed_close)) }
         },
         containerColor = aniDialogContainerColor(),
     )

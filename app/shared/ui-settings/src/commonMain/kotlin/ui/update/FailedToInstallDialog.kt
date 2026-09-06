@@ -9,10 +9,7 @@
 
 package me.him188.ani.app.ui.update
 
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -20,6 +17,8 @@ import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.tools.update.UpdateInstaller
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
@@ -59,10 +58,10 @@ fun FailedToInstallDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest,
         confirmButton = {
-            Button(
+            AniButton(
                 onClick = {
                     scope.launch {
                         if (file == null) {

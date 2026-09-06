@@ -39,7 +39,7 @@ import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
-import me.him188.ani.app.ui.cache.ForcedDarkTheme
+import me.him188.ani.app.ui.download.ForcedDarkTheme
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility

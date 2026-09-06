@@ -14,6 +14,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchHorizontalSwipe
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,10 +48,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -70,7 +73,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,12 +92,16 @@ import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
+import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
+import me.him188.ani.app.ui.foundation.tv.TvTextFieldFrame
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorder
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
+import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.richtext.CommentAsyncImage
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
@@ -109,10 +117,15 @@ import me.him188.ani.app.ui.lang.comment_send
 import me.him188.ani.app.ui.lang.comment_send_comment
 import me.him188.ani.app.ui.lang.comment_send_failed_network
 import me.him188.ani.app.ui.lang.comment_send_failed_unknown
-import me.him188.ani.app.ui.lang.comment_view_comment
 import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.UIRichElement
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
+import me.him188.ani.app.ui.lang.video_player_tv_comment_image_zoom_hint
 
 /**
  * 弹窗正文块: 文本段与图片按原顺序排列.
@@ -138,13 +151,17 @@ class TvCommentReplyTarget(
      */
     val quoted: TvQuotedComment? = null,
     /**
-     * 这条评论到底能不能回复. `false` 时弹窗退化成只读 (不出输入框和发送按钮, 顶部给出提示).
+     * 这条评论到底能不能回复. `false` 时是只读的一整楼 (见 [TvCommentThreadView]), 不出输入框和发送按钮.
      *
      * 能回复的只有 Ani 源且服务端给了 `canReply` 的**主楼**: Bangumi 评论在 Ani 内只读,
      * 楼中回复也没有对应的写接口 (`createEpisodeReply` 只接受主楼 id).
      * 发表新评论走的是 `createEpisodeComment`, 恒可写.
      */
     val canReply: Boolean = true,
+    /** 只读时一起显示的这一楼的回复, 由上往下 (见 [TvCommentThreadView]). */
+    val replies: List<TvThreadReply> = emptyList(),
+    /** 只读时打开落在第几条回复上 ([replies] 的下标); -1 = 落在主楼上. */
+    val focusReply: Int = -1,
 )
 
 /** 引用区里展示的那条评论. */
@@ -158,6 +175,16 @@ class TvQuotedComment(
      * 得先做一套选表情的导航, 而看别人贴了什么本身就是评论的一部分信息.
      */
     val reactions: List<TvCommentReaction> = emptyList(),
+    /** 作者的个人签名, 跟在昵称后面的灰字; 没有为 null. */
+    val authorSign: String? = null,
+    /** 楼层号 `#3` / `#3-2`, 摆在时间前面; 没有为 null. */
+    val floorText: String? = null,
+    /** 已被删除: 正文处显示「删除了回复」. */
+    val deleted: Boolean = false,
+    /** 作者头像 (整楼视图里用, 见 [TvCommentThreadView]); 没有为 null. */
+    val avatarUrl: String? = null,
+    /** 评分 (1~10, 条目评价才有); null = 不画星. */
+    val rating: Int? = null,
 )
 
 /** 一枚回应: 一个表情 + 贴的人数. */
@@ -166,12 +193,6 @@ class TvCommentReaction(
     val sticker: UIRichElement.Annotated.Sticker,
     val count: Int,
 )
-
-/** 回复弹窗宽度占屏比 (TV 上 dp 视口约 960x540, 0.62 约合 600dp). */
-private const val TV_REPLY_DIALOG_WIDTH_FRACTION = 0.62f
-
-/** 回复弹窗高度占屏比. */
-private const val TV_REPLY_DIALOG_HEIGHT_FRACTION = 0.78f
 
 /** 弹窗内各块 (引用区 / 输入框 / 预览) 的圆角: 裁剪与边框共用, 三块必须一致. */
 private val TV_REPLY_BLOCK_CORNER = 12.dp
@@ -185,14 +206,6 @@ private val TV_REPLY_REACTION_GAP = 10.dp
 /** 回应里表情图的边长 (与正文行内表情差不多大, 一眼能认出是哪一枚). */
 private val TV_REPLY_REACTION_STICKER_SIZE = 22.dp
 
-/**
- * 弹窗外的压暗层: 这层要的就是"把下面的画面按下去", 与主题无关, 用黑.
- *
- * 别只看这个数: 弹窗开着时控制层与评论面板都留在下面 (见调用处), 它自己的上/下渐变 scrim
- * 还要再叠一层, 屏幕上下缘的实际暗度是 `1-(1-本值)(1-那层)`. 所以这层给得比一般弹窗遮罩松.
- */
-/** 弹窗内容内边距: 比面板默认那档宽一些, 这里内容多且有输入框. */
-private val TV_REPLY_DIALOG_PADDING = 28.dp
 
 /**
  * 弹窗内取色一律走配色表, 与其他弹窗 (更换弹幕、评分等) 同一套语言:
@@ -225,18 +238,19 @@ private val reactionChipColor: Color
 
 /**
  * TV 评论弹窗: 回复某条评论, 或发表本集评论 (`target.quoted == null`, 见 [TvCommentReplyTarget]).
+ * 不能回复时 (只读) 是一整楼的视图, 见 [TvCommentThreadView].
  *
- * 发表新评论没有引用区, 弹窗高度按内容收 (撑满 78% 屏高的话输入框会吊在一大片空白上面),
+ * 发表新评论没有引用区, 高度按内容收 (撑满的话输入框会吊在一大片空白上面),
  * 初始焦点也直接落输入框 —— 那时没有"先看完被回复的那条"这一步.
  *
  * 与手机端的底部 sheet ([me.him188.ani.app.ui.comment.EditComment]) 相比:
- * - 大弹窗居中, 被回复的评论正文在**输入框上方**, 放不下时可用上下键翻 (翻到底再按下键
- *   才进输入框), 而不是把正文挤成两行贴在输入框下面;
- * - 没有右上角关闭按钮, 纯弹窗: 出口只有返回键 (由 TvEpisodeScreen 的唯一按键路由处理);
- * - 焦点锁在弹窗内 (方向键走到边界即取消这次焦点搜索), 不会滑到底下还在场的播放器控件上.
+ * - 叠在胶囊上方 (评论面板的位置, 同宽, 见 TvPlayerDetailLayers), 被回复的评论正文在**输入框上方**, 放不下时可用上下键翻
+ *   (翻到底再按下键才进输入框), 而不是把正文挤成两行贴在输入框下面;
+ * - 没有右上角关闭按钮: 出口是返回键 (由 TvEpisodeScreen 的唯一按键路由处理), 以及在最下面再按下回到评论胶囊 (这一层留着);
+ * - 左右上走到边停住 (见 [TvPlayerLayerPanel]), 不会滑到底下还在场的播放器控件上.
  *
  * 不用真 `Dialog`: 那是独立窗口, 播放器根部的唯一按键路由收不到它的按键, 且本窗口会失去
- * 窗口焦点 —— 与详情层/侧边 sheet 一样, 这里也是同窗口内的全屏 Box.
+ * 窗口焦点 —— 这里画在控制层里.
  */
 @Composable
 internal fun TvCommentReplyDialog(
@@ -252,27 +266,38 @@ internal fun TvCommentReplyDialog(
      * 用左右键而不是上下键: 上下键在这个弹窗里是"翻长评论正文 / 翻到底进输入框", 抢不得.
      */
     onNavigate: ((delta: Int) -> Unit)? = null,
+    /**
+     * 非 null 时引用区里的图可以放大看: 引用区上长按确认键, 从正文翻到的那张图开始全屏看, 不止一张时左右键换图.
+     * 大图由控制层铺满整屏画 (见 TvPlayerControlsOverlay), 焦点留在引用区; 返回键由调用方的根路由先关它.
+     */
+    imageZoom: TvImageZoomState? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (target.quoted != null && !target.canReply) {
+        TvCommentThreadView(target, onNavigate, imageZoom, modifier)
+        return
+    }
     val scope = rememberCoroutineScope()
     val focus = rememberTvFocusScope()
-    val keyboard = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
     val quoteFocusRequester = focus.requesterOf(TvCommentReplyFocus.Quote)
     val fieldFocusRequester = focus.requesterOf(TvCommentReplyFocus.Field)
     val sendFocusRequester = remember { FocusRequester() }
     var quoteFocused by remember { mutableStateOf(false) }
-    var fieldFocused by remember { mutableStateOf(false) }
     val sending by editorState.sending.collectAsStateWithLifecycle()
 
     val quoted = target.quoted
-    // 初始焦点落引用区 (阅读态), 不直接进输入框: 一进来就弹系统键盘会把弹窗下半遮掉,
-    // 而用户多半要先看完被回复的那条. 发表新评论没有引用区, 直接进输入框
-    focus.InitialFocus(if (quoted == null) TvCommentReplyFocus.Field else TvCommentReplyFocus.Quote)
-    // 焦点进出输入框时开合软键盘 (TV 上没有物理键盘, 不主动弹就没法打字)
-    LaunchedEffect(fieldFocused) {
-        if (fieldFocused) keyboard?.show() else keyboard?.hide()
+    val imageUrls = remember(quoted) { quoted?.blocks?.filterIsInstance<TvCommentBlock.Image>()?.map { it.url }.orEmpty() }
+    val canZoom = imageZoom != null && imageUrls.isNotEmpty()
+    // 每张图在正文里的下沿 (滚动内容的坐标): 长按时从「还没翻过去」的第一张看起
+    val imageBottoms = remember(target) { mutableStateMapOf<Int, Int>() }
+    // 弹窗关掉 (或整个收起) 时大图跟着收, 下次打开不带着它
+    DisposableEffect(imageZoom) {
+        onDispose { imageZoom?.close() }
     }
+    // 初始焦点落引用区 (阅读态): 用户多半要先看完被回复的那条. 发表新评论没有引用区, 落在输入框上
+    // (输入框按确认才弹键盘, 见 [TvTextFieldFrame])
+    focus.InitialFocus(if (quoted == null) TvCommentReplyFocus.Field else TvCommentReplyFocus.Quote)
     // 左右键原地换了一条评论 (见 [onNavigate]): 正文回到顶部. 不归零的话新评论会从上一条
     // 停在的那个像素位置开始显示 —— 短评论直接看起来是空白
     LaunchedEffect(target) {
@@ -297,12 +322,13 @@ internal fun TvCommentReplyDialog(
     // 选中的表情包: 记在弹窗这一层, 关掉选择器再开还在原来那一包
     var stickerPackIndex by remember { mutableIntStateOf(0) }
 
-    TvInWindowPanel(
-        widthFraction = TV_REPLY_DIALOG_WIDTH_FRACTION,
-        modifier = modifier.tvFocusNavSignal(focus),
-        // 没有引用区就按内容收高: 撑满屏高的话输入框和发送按钮会吊在一大片空白下面
-        heightFraction = if (quoted != null) TV_REPLY_DIALOG_HEIGHT_FRACTION else null,
-        contentPadding = TV_REPLY_DIALOG_PADDING,
+    TvPlayerLayerPanel(
+        // 大图开着时左右键换图、其余按键一概吞掉 (返回键由根路由处理)
+        modifier = modifier.tvFocusNavSignal(focus).ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) },
+        // 没有引用区就按内容收高: 撑满的话输入框和发送按钮会吊在一大片空白下面
+        fillHeight = quoted != null,
+        // 表情选择器盖上来时本层不画: 两层半透明的底叠着会透出下面的字
+        contentHidden = stickerPickerOpen,
         overlay = {
             // 表情选择器: 盖在本弹窗之上 (同一个全屏 Box 里的第二个孩子). 返回键先关它再关本弹窗,
             // 由根路由处理 (见 TvEpisodeScreen) —— 它在弹窗之上, 但按键仍走那唯一一条路由
@@ -321,28 +347,23 @@ internal fun TvCommentReplyDialog(
         },
     ) {
                 Text(
-                    stringResource(
-                        when {
-                            quoted == null -> Lang.comment_new_comment
-                            // 只读态标题不能还写"回复评论": 下面没有输入框, 两者对不上
-                            target.canReply -> Lang.comment_reply
-                            else -> Lang.comment_view_comment
-                        },
-                    ),
+                    stringResource(if (quoted == null) Lang.comment_new_comment else Lang.comment_reply),
                     // 标题字号与其他居中大弹窗一致 (AniCenteredPanelDialog 的 title 用 titleLarge)
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.height(4.dp))
-                // 可回复时给的是与手机端编辑框同一句提示 (评论发到 Ani, Bangumi 评论只读):
-                // 这个弹窗是 TV 上唯一的发评论入口, 不写在这里就没有别处能看到.
-                // 不可回复时换成"仅可查看", 说明为什么下面没有输入框
                 Text(
-                    stringResource(
-                        if (target.canReply) Lang.comment_ani_only_notice else Lang.comment_reply_unsupported,
-                    ),
+                    stringResource(Lang.comment_ani_only_notice),
                     style = MaterialTheme.typography.labelLarge,
                     color = hintColor,
                 )
+                if (canZoom) {
+                    Text(
+                        stringResource(Lang.video_player_tv_comment_image_zoom_hint),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = hintColor,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 // ---- 被回复的评论 (可上下键翻); 发表新评论时整块不出 ----
@@ -378,18 +399,28 @@ internal fun TvCommentReplyDialog(
                                 else -> false
                             }
                         }
-                        // 只读态与预览态下面都没有输入框 (预览把 BasicTextField 整个换掉了),
+                        // 预览态下面没有输入框 (预览把 BasicTextField 整个换掉了),
                         // 不能给 down 指一个未附着的请求器: 焦点搜索命中自定义落点后就不再退回
                         // 空间搜索, 而未附着的请求器只是静默返回 false, 下键当场变死键.
                         // 不给 down, 空间搜索会自己落到下面的按钮行 (与 [actionUpFocus] 对称)
                         .then(
-                            if (target.canReply && !previewing) {
+                            if (!previewing) {
                                 Modifier.focusProperties { down = fieldFocusRequester }
                             } else {
                                 Modifier
                             },
                         )
                         .tvFocusAnchor(focus, TvCommentReplyFocus.Quote)
+                        // 长按确认键放大看图; 短按没有动作 (引用区本来就只翻页)
+                        .ifThen(canZoom) {
+                            tvLongPressKey(
+                                onLongPress = {
+                                    val start = imageUrls.indices.firstOrNull { (imageBottoms[it] ?: 0) > scrollState.value } ?: 0
+                                    imageZoom?.open(imageUrls, start)
+                                },
+                                onShortPress = {},
+                            )
+                        }
                         .onFocusChanged { quoteFocused = it.isFocused }
                         .focusable()
                         .clip(RoundedCornerShape(TV_REPLY_BLOCK_CORNER))
@@ -401,21 +432,37 @@ internal fun TvCommentReplyDialog(
                     // 回应行钉在框底 (不随正文滚): 正文可能很长, 跟在末尾就得翻到底才看得见,
                     // 而它是"这条评论收到了什么反响"的概览, 该和作者行一样一直在
                     Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.weight(1f, fill = false).verticalScroll(scrollState)) {
+                        Column(Modifier.weight(1f, fill = false).aniVerticalScrollFade(scrollState).verticalScroll(scrollState)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    quoted.authorName,
+                                    buildAnnotatedString {
+                                        append(quoted.authorName)
+                                        quoted.authorSign?.let { sign ->
+                                            withStyle(SpanStyle(color = hintColor, fontWeight = FontWeight.Normal)) {
+                                                append("  ($sign)")
+                                            }
+                                        }
+                                    },
                                     Modifier.weight(1f),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    quoted.timeText,
+                                    quoted.floorText?.let { "$it  ${quoted.timeText}" } ?: quoted.timeText,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = hintColor,
                                 )
                             }
+                            if (quoted.deleted) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(Lang.video_player_tv_comment_deleted),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = hintColor,
+                                )
+                            }
+                            var imageIndex = 0
                             quoted.blocks.forEach { block ->
                                 Spacer(Modifier.height(8.dp))
                                 when (block) {
@@ -425,7 +472,13 @@ internal fun TvCommentReplyDialog(
                                         inlineContent = tvStickerInlineContent(block.text.stickers),
                                     )
 
-                                    is TvCommentBlock.Image -> TvCommentQuoteImage(block.url)
+                                    is TvCommentBlock.Image -> {
+                                        val index = imageIndex++
+                                        TvCommentQuoteImage(
+                                            block.url,
+                                            Modifier.onPlaced { imageBottoms[index] = it.positionInParent().y.toInt() + it.size.height },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -434,11 +487,6 @@ internal fun TvCommentReplyDialog(
                             TvCommentReactionRow(quoted.reactions)
                         }
                     }
-                }
-
-                // 只读态到这里就结束: 引用区已经 weight(1f) 撑满剩余高度
-                if (!target.canReply) {
-                    return@TvInWindowPanel
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -477,63 +525,71 @@ internal fun TvCommentReplyDialog(
                             }
                         }
                     }
-                } else Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(TV_REPLY_BLOCK_CORNER),
-                    color = fieldContainerColor,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    // 聚焦即主题色描边 (与 M3 输入框聚焦态、更换弹幕弹窗一致)
-                    border = tvFieldBorderStroke(fieldFocused, idleBorderColor),
-                ) {
-                    BasicTextField(
-                        value = editorState.content,
-                        onValueChange = { editorState.setContent(it) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 64.dp)
-                            .padding(horizontal = 14.dp, vertical = 12.dp)
-                            // 上下键给显式落点: 输入框是多行的, 交给空间搜索会在换行之间
-                            // 打转 (文本框自己也会吃掉上下键去挪光标), 走不出去
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                when (event.key) {
-                                    // 没有引用区时上键就地吞掉: 焦点留在输入框 (往上没有第二个目标,
-                                    // 放行的话会飘出弹窗去撞焦点组的边界)
-                                    Key.DirectionUp -> {
-                                        if (quoted != null) runCatching { quoteFocusRequester.requestFocus() }
-                                        true
-                                    }
-
-                                    Key.DirectionDown -> {
-                                        runCatching { sendFocusRequester.requestFocus() }
-                                        true
-                                    }
-
-                                    else -> false
+                } else TvTextFieldFrame(
+                    Modifier
+                        .fillMaxWidth()
+                        // 上下键给显式落点: 输入框是多行的, 交给空间搜索会在换行之间
+                        // 打转 (文本框自己也会吃掉上下键去挪光标), 走不出去
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (event.key) {
+                                // 没有引用区时上键就地吞掉: 焦点留在输入框 (往上没有第二个目标,
+                                // 放行的话会飘出弹窗去撞焦点组的边界)
+                                Key.DirectionUp -> {
+                                    if (quoted != null) runCatching { quoteFocusRequester.requestFocus() }
+                                    true
                                 }
+
+                                Key.DirectionDown -> {
+                                    runCatching { sendFocusRequester.requestFocus() }
+                                    true
+                                }
+
+                                else -> false
                             }
-                            .tvFocusAnchor(focus, TvCommentReplyFocus.Field)
-                            .onFocusChanged { fieldFocused = it.isFocused },
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                        ),
-                        // 光标与 M3 输入框一样用主题色
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = 3,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { send() }),
-                        decorationBox = { inner ->
-                            if (editorState.content.text.isEmpty()) {
-                                Text(
-                                    stringResource(Lang.comment_send_comment),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = hintColor,
-                                )
-                            }
-                            inner()
-                        },
-                    )
+                        }
+                        .tvFocusAnchor(focus, TvCommentReplyFocus.Field),
+                ) {
+                    val fieldFocused by editorInteractionSource.collectIsFocusedAsState()
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(TV_REPLY_BLOCK_CORNER),
+                        color = fieldContainerColor,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        // 聚焦即主题色描边 (与 M3 输入框聚焦态、更换弹幕弹窗一致)
+                        border = tvFieldBorderStroke(fieldFocused, idleBorderColor),
+                    ) {
+                        BasicTextField(
+                            value = editorState.content,
+                            onValueChange = { editorState.setContent(it) },
+                            modifier = Modifier
+                                .textEditor()
+                                .fillMaxWidth()
+                                .heightIn(min = 64.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            readOnly = editorReadOnly,
+                            interactionSource = editorInteractionSource,
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = MaterialTheme.typography.bodyLarge.fontSize,
+                            ),
+                            // 光标与 M3 输入框一样用主题色
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            maxLines = 3,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { send() }),
+                            decorationBox = { inner ->
+                                if (editorState.content.text.isEmpty()) {
+                                    Text(
+                                        stringResource(Lang.comment_send_comment),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = hintColor,
+                                    )
+                                }
+                                inner()
+                            },
+                        )
+                    }
                 }
 
                 // 发送失败原因 (成功即关窗, 不需要成功提示)
@@ -604,7 +660,7 @@ private enum class TvCommentReplyFocus : TvFocusKey { Quote, Field }
  * 不可聚焦、不可点: 见 [TvCommentReplyTarget.reactions].
  */
 @Composable
-private fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: Modifier = Modifier) {
+internal fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: Modifier = Modifier) {
     FlowRow(
         modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -639,13 +695,13 @@ private fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: M
  * 加载完成前给个最小高度占位 —— 固有尺寸未知时高度是 0, 图片到位时整块正文会往下弹一大截,
  * 正在翻页的话会当场跳位.
  *
- * 不做可点放大: 引用区是"整块一个焦点 + 上下键翻页", 多一个可聚焦目标就得重做那套导航.
+ * 图本身不可聚焦: 引用区是"整块一个焦点 + 上下键翻页"; 放大看图走引用区的长按 (见 [TvCommentReplyDialog] 的 imageZoom).
  */
 @Composable
-private fun TvCommentQuoteImage(url: String) {
+internal fun TvCommentQuoteImage(url: String, modifier: Modifier = Modifier) {
     CommentAsyncImage(
         url,
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         contentScale = ContentScale.FillWidth,
         cornerRadius = TV_REPLY_BLOCK_CORNER,
         unloadedModifier = Modifier.heightIn(min = TV_REPLY_IMAGE_PLACEHOLDER_HEIGHT),

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Hd
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.SubtitlesOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,9 +24,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.util.fastAll
+import me.him188.ani.app.data.models.preference.FullSearchMode
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
+import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
+import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.lang.Lang
@@ -33,11 +38,19 @@ import me.him188.ani.app.ui.lang.settings_media_advanced_settings
 import me.him188.ani.app.ui.lang.settings_media_advanced_settings_description
 import me.him188.ani.app.ui.lang.settings_media_alliance
 import me.him188.ani.app.ui.lang.settings_media_alliance_description
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_description
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_none
 import me.him188.ani.app.ui.lang.settings_media_any
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_all
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_none
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_partial
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_space
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_always
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_description
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_manual
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_on_panel
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last_description
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_15min
@@ -251,6 +264,28 @@ internal fun SettingsScope.MediaSelectionGroup(
                 state.defaultMediaPreferenceState.update(
                     state.defaultMediaPreference.copy(
                         alliancePatterns = new.split(",", "，").map { it.trim() },
+                    ),
+                )
+            },
+            sanitizeValue = { it.replace("，", ",") },
+        )
+
+        val excludedAllianceRegexes by remember(state) {
+            derivedStateOf { state.defaultMediaPreference.excludedAlliancePatterns?.joinToString() ?: "" }
+        }
+        TextFieldItem(
+            value = excludedAllianceRegexes,
+            title = { Text(stringResource(Lang.settings_media_excluded_alliance)) },
+            description = {
+                Text(stringResource(Lang.settings_media_excluded_alliance_description))
+            },
+            icon = { Icon(Icons.Outlined.SubtitlesOff, null) },
+            placeholder = { Text(stringResource(Lang.settings_media_excluded_alliance_none)) },
+            onValueChangeCompleted = { new ->
+                state.defaultMediaPreferenceState.update(
+                    state.defaultMediaPreference.copy(
+                        // 空白项不留: 空串会匹配所有字幕组
+                        excludedAlliancePatterns = new.split(",", "，").map { it.trim() }.filter { it.isNotEmpty() },
                     ),
                 )
             },
@@ -515,6 +550,33 @@ internal fun SettingsScope.MediaSelectionGroup(
                 },
                 title = { Text(stringResource(Lang.settings_media_auto_enable_last)) },
                 description = { Text(stringResource(Lang.settings_media_auto_enable_last_description)) },
+            )
+
+            HorizontalDividerItem()
+
+            // 完整搜索: 没选过的按设备定 (系统标成低内存的设备只手动)
+            val lowRamDevice = remember { GlobalKoin.getOrNull<LowRamDevice>()?.value == true }
+            DropdownItem(
+                selected = { mediaSelectorSettings.effectiveFullSearchMode(lowRamDevice) },
+                values = { FullSearchMode.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                FullSearchMode.Always -> Lang.settings_media_full_search_mode_always
+                                FullSearchMode.OnPanel -> Lang.settings_media_full_search_mode_on_panel
+                                FullSearchMode.Manual -> Lang.settings_media_full_search_mode_manual
+                            },
+                        ),
+                    )
+                },
+                onSelect = {
+                    state.mediaSelectorSettingsState.update(
+                        mediaSelectorSettings.copy(fullSearchMode = it),
+                    )
+                },
+                title = { Text(stringResource(Lang.settings_media_full_search_mode)) },
+                description = { Text(stringResource(Lang.settings_media_full_search_mode_description)) },
             )
         }
     }

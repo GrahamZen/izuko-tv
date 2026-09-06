@@ -16,6 +16,8 @@ import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Relation
@@ -35,7 +37,9 @@ import me.him188.ani.app.data.persistent.database.ProtoConverters
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.platform.currentTimeMillis
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /**
  * @see SubjectInfo
@@ -173,6 +177,10 @@ interface SubjectCollectionDao {
     @Upsert
     suspend fun upsert(item: SubjectCollectionEntity)
 
+    /** 表里还没有这个条目才写进去; 已有的一行一概不动. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(item: SubjectCollectionEntity)
+
     @Upsert
     @Transaction
     suspend fun upsert(item: List<SubjectCollectionEntity>)
@@ -226,6 +234,71 @@ interface SubjectCollectionDao {
         if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
     }
 
+    @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
+    suspend fun getById(subjectId: Int): SubjectCollectionEntity?
+
+    @Query("""SELECT episodeId, selfCollectionType FROM episode_collection WHERE subjectId = :subjectId""")
+    suspend fun episodeSelfStatesOf(subjectId: Int): List<EpisodeSelfState>
+
+    /**
+     * 本地档的单条目落库 (见 `UserProfileKind.LOCAL`): 同 [upsertSubjectWithEpisodes], 但收藏类型、自己的评分、收藏更新时间
+     * 与每集的看过状态**保留库里的** —— 本地档取到的是匿名结果, 这几项一律是空的, 而这个人的收藏只存在本地.
+     * 读与写在同一个事务里: 取数途中用户改了收藏 (那也是写这张表), 不会被这次落库盖回去.
+     *
+     * @param episodes `null` = 分集这次没取 (还新鲜), 只写条目
+     */
+    @Transaction
+    suspend fun upsertSubjectKeepingSelfState(
+        subject: SubjectCollectionEntity,
+        episodes: List<EpisodeCollectionEntity>?,
+    ) {
+        val kept = getById(subject.subjectId)?.let { local ->
+            subject.copy(
+                collectionType = local.collectionType,
+                selfRatingInfo = local.selfRatingInfo,
+                lastUpdated = local.lastUpdated,
+            )
+        } ?: subject
+        upsert(listOf(kept).preservingRelationsFreshness().single())
+        if (episodes == null) return
+        val watched = episodeSelfStatesOf(subject.subjectId).associate { it.episodeId to it.selfCollectionType }
+        val keptEpisodes = episodes.map { episode ->
+            watched[episode.episodeId]?.let { episode.copy(selfCollectionType = it) } ?: episode
+        }
+        val newIds = keptEpisodes.mapTo(HashSet()) { it.episodeId }
+        val staleIds = watched.keys.filter { it !in newIds }
+        upsertEpisodesInternal(keptEpisodes)
+        if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
+    }
+
+    /** 收藏了的条目数 (浏览过而没收藏的不算). */
+    @Query("""SELECT COUNT(*) FROM subject_collection WHERE collectionType != :notCollected""")
+    suspend fun countSelfCollected(notCollected: UnifiedCollectionType = UnifiedCollectionType.NOT_COLLECTED): Int
+
+    /** 标成 [type] 的集数. */
+    @Query("""SELECT COUNT(*) FROM episode_collection WHERE selfCollectionType = :type""")
+    suspend fun countEpisodesBySelfType(type: UnifiedCollectionType): Int
+
+    /**
+     * 清掉这个库里所有自己的记录: 收藏类型改回没收藏, 评分 / 短评 / 标签 / 私密清空, 每集的看过状态清掉; 条目与分集信息留着.
+     *
+     * @param emptyTags 按 [ProtoConverters.StringList] 编码好的空标签列表 (见 [updateRating] 上的说明)
+     */
+    @Transaction
+    suspend fun clearAllSelfStates(emptyTags: ByteArray) {
+        resetAllSubjectSelfStates(UnifiedCollectionType.NOT_COLLECTED, emptyTags)
+        resetAllEpisodeSelfTypes(UnifiedCollectionType.NOT_COLLECTED)
+    }
+
+    @Query(
+        """UPDATE subject_collection SET collectionType = :notCollected, self_rating_score = 0, self_rating_comment = NULL,
+        self_rating_tags = :emptyTags, self_rating_isPrivate = 0""",
+    )
+    suspend fun resetAllSubjectSelfStates(notCollected: UnifiedCollectionType, emptyTags: ByteArray)
+
+    @Query("""UPDATE episode_collection SET selfCollectionType = :notCollected""")
+    suspend fun resetAllEpisodeSelfTypes(notCollected: UnifiedCollectionType)
+
     /** 批量版 (收藏列表分页): 同样保留盖章 + 条目与分集同事务; 不做差集删除 (与原行为一致). */
     @Transaction
     suspend fun upsertSubjectsWithEpisodes(
@@ -243,35 +316,37 @@ interface SubjectCollectionDao {
         lastUpdated: Long = currentTimeMillis(),
     )
 
-    /**
-     * 更新收藏类型和全站统计. 在同一个事务中, 观察者只会看到一次变化.
-     */
-    @Transaction
-    suspend fun updateTypeAndStats(
-        subjectId: Int,
-        collectionType: UnifiedCollectionType,
-        collectionStats: SubjectCollectionStats,
-        ratingInfo: RatingInfo,
-    ) {
-        updateType(subjectId, collectionType)
-        updateStats(subjectId, collectionStats, ratingInfo)
-    }
+    /** 只写播出周期 ([SubjectCollectionEntity.recurrence]) 这两列, 同一行别的列不动. */
+    @Query(
+        """UPDATE subject_collection SET recurrence_startTime = :startTime, recurrence_interval = :interval
+        WHERE subjectId = :subjectId""",
+    )
+    suspend fun updateRecurrence(subjectId: Int, startTime: Instant, interval: Duration)
 
-    /**
-     * 更新全站统计 (收藏数与评分). 条目不在缓存中时什么也不做.
-     */
-    @Transaction
-    suspend fun updateStats(
+    /** 本地还是 [expected] 才改成 [replacement] (连同更新时间); 已经被改成别的 (之后又改过) 就不动. */
+    @Query(
+        """UPDATE subject_collection SET collectionType = :replacement, lastUpdated = :lastUpdated
+        WHERE subjectId = :subjectId AND collectionType = :expected""",
+    )
+    suspend fun replaceType(
         subjectId: Int,
-        collectionStats: SubjectCollectionStats,
-        ratingInfo: RatingInfo,
-    ) {
-        val entity = getById(subjectId) ?: return
-        upsert(entity.copy(collectionStats = collectionStats, ratingInfo = ratingInfo))
-    }
+        expected: UnifiedCollectionType,
+        replacement: UnifiedCollectionType,
+        lastUpdated: Long,
+    )
 
     @Query("""DELETE FROM subject_collection WHERE subjectId = :subjectId""")
     suspend fun delete(subjectId: Int)
+
+    /**
+     * 移出收藏 (在别处改了类别或取消了收藏, 服务端的这一类里已经没有它): 行留着 —— 分集、弹幕缓存、偏好的数据源与角色都挂在它上面,
+     * 删行会级联删掉; 取数时间置 0, 下次用到时重取它现在的收藏状态.
+     */
+    @Query("""UPDATE subject_collection SET collectionType = :notCollected, lastFetched = 0 WHERE subjectId IN (:subjectIds)""")
+    suspend fun markLeftCollection(
+        subjectIds: List<Int>,
+        notCollected: UnifiedCollectionType = UnifiedCollectionType.NOT_COLLECTED,
+    )
 
     /**
      * 删除多个条目的本地缓存. 剧集缓存 ([EpisodeCollectionEntity]) 会级联删除.
@@ -395,11 +470,26 @@ interface SubjectCollectionDao {
     @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
     fun findById(subjectId: Int): Flow<SubjectCollectionEntity?>
 
-    @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
-    suspend fun getById(subjectId: Int): SubjectCollectionEntity?
+    /**
+     * 真收藏的条数 (排除只是浏览过的 `NOT_COLLECTED`).
+     *
+     * 给推荐当"输入变了"的信号用: **只查个数**, 不查整行 —— 每浏览一个条目这张表就会写一次,
+     * 拿整行的 flow 当信号等于每次都重新解 500 行的标签.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM subject_collection
+        WHERE collectionType IS NOT NULL AND collectionType != 'NOT_COLLECTED'
+        """,
+    )
+    fun realCollectionCountFlow(): Flow<Int>
 
     @Query("""SELECT * FROM subject_collection WHERE subjectId IN (:subjectIds)""")
     fun filterByIds(subjectIds: IntArray): Flow<List<SubjectCollectionEntity>>
+
+    /** 记着是 NSFW 的条目 (启动时补进登记表, 见 SubjectNsfw). */
+    @Query("""SELECT subjectId FROM subject_collection WHERE nsfw""")
+    suspend fun nsfwSubjectIds(): List<Int>
 
     @Query(
         """
@@ -444,23 +534,6 @@ interface SubjectCollectionDao {
     suspend fun updateRating(subjectId: Int, score: Int?, comment: String?, tags: ByteArray?, private: Boolean?)
 
     /**
-     * 更新自己的评分和全站统计. 在同一个事务中, 观察者只会看到一次变化.
-     */
-    @Transaction
-    suspend fun updateRatingAndStats(
-        subjectId: Int,
-        score: Int?,
-        comment: String?,
-        tags: List<String>?,
-        private: Boolean?,
-        collectionStats: SubjectCollectionStats,
-        ratingInfo: RatingInfo,
-    ) {
-        updateRating(subjectId, score, comment, tags, private)
-        updateStats(subjectId, collectionStats, ratingInfo)
-    }
-
-    /**
      * 只包含保存在数据库的, 可能不完整
      */
     @Query("""SELECT COUNT(*) FROM subject_collection WHERE (collectionType is NOT NULL AND (:collectionType IS NULL OR collectionType = :collectionType))""")
@@ -468,6 +541,15 @@ interface SubjectCollectionDao {
 
     @Query("""UPDATE subject_collection SET cachedStaffUpdated = :time, cachedCharactersUpdated = :time WHERE subjectId = :subjectId""")
     suspend fun updateCachedRelationsUpdated(subjectId: Int, time: Long = currentTimeMillis())
+
+    @Query(
+        """
+        SELECT sc.subjectId FROM subject_collection sc
+        WHERE collectionType IS NOT NULL
+        AND (collectionType IN (:collectionTypes))
+        """,
+    )
+    fun subjectIdsByCollectionType(collectionTypes: List<UnifiedCollectionType>): Flow<List<Int>>
 
     @Query(
         """
@@ -536,4 +618,10 @@ data class RelationsFreshness(
     val subjectId: Int,
     val cachedStaffUpdated: Long,
     val cachedCharactersUpdated: Long,
+)
+
+/** [SubjectCollectionDao.episodeSelfStatesOf] 的投影: 一集的看过状态, 本地档落库时保留用. */
+data class EpisodeSelfState(
+    val episodeId: Int,
+    val selfCollectionType: UnifiedCollectionType,
 )

@@ -70,6 +70,8 @@ kotlin {
     }
     sourceSets.androidMain.dependencies {
         api(libs.compose.material3.adaptive.core)
+        // 电视原生页面往 ImageView 里加载图片 (TvNativeImages)
+        implementation(libs.sketch.view.core)
         // Preview only
     }
     sourceSets.getByName("jvmMain").dependencies {

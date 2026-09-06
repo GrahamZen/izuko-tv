@@ -53,7 +53,7 @@ class TvGridFocusSlotTest {
     fun `moves to the focused cell`() {
         val slot = slot()
         slot.moveTo(column = 3, row = 1)
-        assertEquals(listOf(Triple(3, 1, 1f)), slot.cells.map { Triple(it.column, it.row, it.fade.value) })
+        assertEquals(listOf(Triple(3, 1, 1f)), slot.cells.map { Triple(it.column, it.line, it.fade.value) })
     }
 
     @Test
@@ -62,7 +62,7 @@ class TvGridFocusSlotTest {
         slot.setGridFocused(true)
         slot.moveTo(column = 0, row = 0)
         slot.moveTo(column = 1, row = 0)
-        assertEquals(listOf(Triple(1, 0, 1f)), slot.cells.map { Triple(it.column, it.row, it.fade.value) })
+        assertEquals(listOf(Triple(1, 0, 1f)), slot.cells.map { Triple(it.column, it.line, it.fade.value) })
     }
 
     @Test

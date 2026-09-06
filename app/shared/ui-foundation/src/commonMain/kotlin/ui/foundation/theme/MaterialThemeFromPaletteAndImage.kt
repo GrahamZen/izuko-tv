@@ -27,6 +27,7 @@ import com.materialkolor.dynamicColorScheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.resize
 import me.him188.ani.app.ui.foundation.themeColor
 
@@ -58,6 +59,7 @@ fun MaterialThemeFromPaletteAndImage(
         DarkMode.AUTO -> isSystemInDarkThemeDetected()
     }
     val useBlackBackground = themeSettings.useBlackBackground
+    val strongSelection = LocalAniUiBehavior.current.strongSelectionColors
 
     // **缓存的是取出来的主色, 不是算好的配色**: 主色与深浅色/纯黑背景无关, 键只要条目 id;
     // 而 dynamicColorScheme 是纯函数, 有了主色就能在组合里同步算出来 —— 于是命中缓存时第一帧
@@ -78,7 +80,7 @@ fun MaterialThemeFromPaletteAndImage(
 
     // 纯函数, 但**必须包 remember**: 不包的话每次重组都要重算一整套配色
     val colorScheme = seedColor?.let { primary ->
-        remember(primary, isDark, useBlackBackground) {
+        remember(primary, isDark, useBlackBackground, strongSelection) {
             dynamicColorScheme(
                 primary = primary,
                 isDark = isDark,
@@ -91,7 +93,7 @@ fun MaterialThemeFromPaletteAndImage(
                         useBlackBackground,
                     )
                 },
-            )
+            ).let { if (strongSelection) it.withStrongSelectionColors() else it }
         }
     }
 

@@ -15,7 +15,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
+import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
+import me.him188.ani.app.domain.foundation.ConscryptEchTransport
 import me.him188.ani.app.domain.media.fetch.toHeader
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
 import me.him188.ani.app.domain.media.hls.PlatformHlsPlaybackPreparer
@@ -45,6 +48,8 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
         AndroidPermissionManager()
     }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
+    single<BangumiEchTransport> { ConscryptEchTransport(get(), lazy { get() }) } // bangumi 加密直连
+    playbackDiskCacheStorage(coroutineScope)
 
     single<MediampPlayerFactory<*>> {
         val videoScaffoldConfig = get<SettingsRepository>().videoScaffoldConfig
@@ -52,6 +57,14 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
         val playbackProxy = get<ProxyProvider>().proxy
             .map { config -> config?.let { PlaybackProxyConfig.parse(it.url, it.authorization?.toHeader()) } }
             .stateIn(coroutineScope, SharingStarted.Eagerly, null)
+        // 每打开一个视频读一次, 在主线程上: 不能等 DataStore
+        val playbackDiskCacheEnabled = videoScaffoldConfig.flow
+            .map { it.enablePlaybackDiskCache }
+            .stateIn(coroutineScope, SharingStarted.Eagerly, VideoScaffoldConfig.Default.enablePlaybackDiskCache)
+        // 每次选音轨时读, 在播放线程上
+        val audioPassthrough = videoScaffoldConfig.flow
+            .map { it.audioPassthrough }
+            .stateIn(coroutineScope, SharingStarted.Eagerly, VideoScaffoldConfig.Default.audioPassthrough)
         MediampPlayerFactoryLoader.register(
             LibassExoPlayerMediampPlayerFactory(
                 enableHighQualityAudioTimeStretch = {
@@ -60,6 +73,8 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
                     runBlocking { videoScaffoldConfig.flow.first().enableHighQualityAudioTimeStretch }
                 },
                 proxyConfig = { playbackProxy.value },
+                diskCacheEnabled = { playbackDiskCacheEnabled.value },
+                audioPassthrough = { audioPassthrough.value },
             ),
         )
         MediampPlayerSurfaceProviderLoader.register(ExoPlayerMediampPlayerSurfaceProvider())

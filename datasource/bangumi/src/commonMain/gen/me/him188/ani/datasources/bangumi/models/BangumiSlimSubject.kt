@@ -10,14 +10,18 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiImages
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
+import me.him188.ani.datasources.bangumi.models.BangumiTag
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -32,12 +36,13 @@ import kotlinx.serialization.Serializable
  * @param eps 由旧服务端从wiki中解析，对于书籍条目为`话数`
  * @param collectionTotal 收藏人数
  * @param score 分数
+ * @param rank 排名
  * @param tags 前 10 个 tag
  * @param date air date in `YYYY-MM-DD` format
  */
 @Serializable
 
-data class BangumiSlimSubject(
+data class BangumiSlimSubject (
 
     @SerialName(value = "id") @Required val id: kotlin.Int,
 
@@ -63,6 +68,9 @@ data class BangumiSlimSubject(
 
     /* 分数 */
     @SerialName(value = "score") @Required val score: @Serializable(me.him188.ani.utils.serialization.BigNumAsDoubleStringSerializer::class) me.him188.ani.utils.serialization.BigNum,
+
+    /* 排名 */
+    @SerialName(value = "rank") @Required val rank: kotlin.Int,
 
     /* 前 10 个 tag */
     @SerialName(value = "tags") @Required val tags: kotlin.collections.List<BangumiTag>,

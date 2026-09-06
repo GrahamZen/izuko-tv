@@ -9,14 +9,17 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
+import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 
 /**
  * TV 播放器覆盖层的层级. 整个播放器界面只有这一个状态机, 所有层级切换都经由
@@ -32,6 +35,12 @@ enum class TvPlayerLayer {
 
     /** 详情页覆盖层: 隐藏全部播放器组件, 正在播放的视频画面作为详情页背景. */
     DETAILS,
+
+    /**
+     * 选源面板 (TvPlayerSourcePanel): 纯视频态按上键打开 (触屏是图标行的「数据源」), 隐藏全部播放器组件, 画面右侧是面板,
+     * 左侧画面照常露出. 方向键与确定键全交给面板; 返回在进去的那一层里先退一层, 否则直接关 (关上回纯视频态; 按返回关的, 再打开落回焦点当时停的地方, 见 TvEpisodeScreen).
+     */
+    SOURCES,
 }
 
 /** 胶囊按钮对应的浮出面板 (第二层). */
@@ -71,13 +80,16 @@ enum class TvEpisodeStripState {
 /**
  * 焦点当前所在的区域. 由各行容器的 onFocusChanged 上报 —— 只在获得焦点时更新,
  * 失焦不清除 (焦点交接的瞬间两边都是无焦点, 清除会产生瞬时 NONE 抖动).
- * 根按键路由据此决定边界行为 (如图标行按下进详情页, 面板内按返回回进度条).
+ * 根按键路由据此决定边界行为 (如图标行按下进详情页, 面板内按返回回胶囊).
  */
 enum class TvPlayerFocusRegion {
     NONE,
 
     /** 浮出面板内 (弹幕列表/推荐/评论的条目上). */
     PANEL,
+
+    /** 胶囊上方的叠层里 (画廊 / 人物页 / 查看全部 / 评论详情, 见 TvPlayerDetailLayers). */
+    LAYER,
 
     /** 进度条上方的胶囊按钮行. */
     PILLS,
@@ -113,6 +125,22 @@ enum class TvPlayerFocusTarget : TvFocusKey {
     /** 浮出面板入口. */
     PANEL,
 }
+
+/** 面板内容的加载状态里胶囊要标出来的两种 (见 [TvPlayerOverlayState.commentsLoad]); 加载完成胶囊就是原样, 不用记. */
+enum class TvPanelLoadState {
+    /** 正在加载: 胶囊呼吸. */
+    LOADING,
+
+    /** 加载失败: 胶囊换成警示图标、文字压暗. */
+    FAILED,
+}
+
+/** 哪一集的本集评论处在 [state]. */
+@Immutable
+data class TvCommentsLoad(
+    val episodeId: Int,
+    val state: TvPanelLoadState,
+)
 
 /**
  * TV 播放器覆盖层状态机.
@@ -150,6 +178,30 @@ class TvPlayerOverlayState(
     var replyingComment: TvCommentReplyTarget? by mutableStateOf(null)
         private set
 
+    /** 胶囊上方的叠层 (三颗胶囊的画廊、人物页、人物页里的「查看全部」, 见 TvPlayerDetailLayers). 评论详情那一层由 [replyingComment] 驱动. */
+    internal val detailLayers = TvPlayerDetailLayersState()
+
+    /** 有叠层开着 (人物 / 画廊 / 评论详情). */
+    val hasDetailLayer: Boolean get() = detailLayers.isOpen || replyingComment != null
+
+    /**
+     * 叠层往下出边、焦点回到胶囊的那一下: 同一次按住的下键连发不再往下走 (否则一路从胶囊跳进度条, 面板一收叠层就清掉了), 松手解锁.
+     * 由根路由读写 (见 TvEpisodeScreen 的 downKeyLatched).
+     */
+    var downKeyLatchedByLayer: Boolean = false
+
+    /**
+     * 评论弹窗里长按引用区放大看的图 (见 TvCommentReplyDialog). 画在弹窗之上、同一个窗口里;
+     * 放在这里是因为返回键走根路由 ([TvEpisodeScreen] 里先关它, 再关表情选择器 / 弹窗).
+     */
+    val commentImageZoom = TvImageZoomState()
+
+    /**
+     * 评论面板上次停在哪一楼 (主楼的 stableId; 焦点走到的、点开过的): 收起控制层或换了胶囊再打开评论面板时落回这一楼 (见 TvCommentsPanel).
+     * 换集、换排序时清掉; null = 从第一楼开始. 活到离开播放页.
+     */
+    internal var lastCommentThreadId: String? = null
+
     /**
      * 面板条目焦点找回锚: 每次自增一下, 面板宿主就把焦点送回**当前聚焦的那一条**
      * (由条目获焦时登记请求器, 见 TvPlayerPanelHost).
@@ -164,11 +216,41 @@ class TvPlayerOverlayState(
     var showPlayerStats: Boolean by mutableStateOf(false)
 
     /**
+     * 控制层版式的读取代数: 控制层只在这个数变的时候读一次版式 (见 TvPlayerControlsOverlay), 在场期间版式定死.
+     * 两处会推: 控制层收起、淡完之后 ([onControlsHidden], 那时没有持焦的按钮会随重排消失, 设置里改的版式下次唤出就生效);
+     * 「自定义播放器按钮」窗口关掉、版式改过时 ([reloadChromeLayout], 开窗口前控制层已经收起).
+     */
+    var chromeLayoutGeneration: Int by mutableIntStateOf(0)
+        private set
+
+    /** 让控制层按设置里此刻的版式重新摆一遍 (见 [chromeLayoutGeneration]). */
+    fun reloadChromeLayout() {
+        chromeLayoutGeneration++
+    }
+
+    /**
      * 选集条展开中 (Prime 形态): 胶囊/进度条/图标行隐藏, 选集条完整展开在底部.
      * 收起态只在图标行下露出 "剧集" 标题 + 卡片顶部一条 (peek).
      */
     var episodeStripExpanded: Boolean by mutableStateOf(false)
         private set
+
+    /**
+     * 控制层底部区块的上沿 (window 坐标原始 px, 没量到为 NaN), 由 TvPlayerControlsOverlay 量: 胶囊行的与选集条的.
+     * 胶囊行那个也是浮出面板的下锚点; 两个都只在测量 / snapshotFlow 里读.
+     */
+    internal val pillsRowTopPx = mutableFloatStateOf(Float.NaN)
+    internal val episodeStripTopPx = mutableFloatStateOf(Float.NaN)
+
+    /**
+     * 控制层挡住画面底部那一块的上沿 (window 坐标 px): 播放器把底部字幕挪到它上面. 控制层不在场时为 null, 字幕在原位.
+     * 选集条展开时挡住的是选集条, 否则是胶囊行起往下那一块.
+     */
+    fun subtitleObstructionTopPx(): Float? {
+        if (layer != TvPlayerLayer.CONTROLS) return null
+        val top = if (episodeStripExpanded) episodeStripTopPx.floatValue else pillsRowTopPx.floatValue
+        return top.takeUnless { it.isNaN() }
+    }
 
     /**
      * 选集条正处在「接下来播放」倒计时态: 片尾自动展开的那一档 —— 只有卡片行与一行提示,
@@ -278,6 +360,20 @@ class TvPlayerOverlayState(
      */
     var bottomRowPresent: Boolean by mutableStateOf(true)
 
+    /**
+     * 本集评论的加载状态, 由播放页上的 TvCommentsLoadTracker 上报 (进播放页就拉评论); 评论胶囊据此呼吸 (加载中)
+     * 或显示失败, 见 TvPlayerPillsRow. null = 没有要标的 (加载完成、或还没开始拉).
+     *
+     * 连同分集 id 一起记: 换集时新一集的状态报上来之前, 旧那集的状态对不上当前这一集, 不会标错.
+     */
+    var commentsLoad: TvCommentsLoad? by mutableStateOf(null)
+        private set
+
+    /** 上报 [episodeId] 的评论加载状态; null = 加载完成. */
+    fun reportCommentsLoad(episodeId: Int, state: TvPanelLoadState?) {
+        commentsLoad = state?.let { TvCommentsLoad(episodeId, it) }
+    }
+
     /** 把焦点送回面板里当前聚焦的那一条 (见 [panelItemFocusTick]). */
     fun requestPanelItemFocus() {
         panelItemFocusTick++
@@ -305,10 +401,13 @@ class TvPlayerOverlayState(
         markInteraction()
     }
 
-    /** 关闭评论弹窗, 焦点还给刚点开的那条评论. */
-    fun dismissReply() {
+    /**
+     * 关闭评论详情, 焦点还给刚点开的那条评论. [restoreFocus] = false: 焦点不在详情里 (已经回到胶囊上, 那里返回或换胶囊时顺手关掉), 不动焦点.
+     */
+    fun dismissReply(restoreFocus: Boolean = true) {
         val target = replyingComment ?: return
         replyingComment = null
+        if (!restoreFocus) return
         // 面板里点开的那条: 焦点还给它. 胶囊点开的"发表评论"没有对应的面板条目 (面板里那些
         // 条目此刻一个都没被点过), 焦点由那颗胶囊自己的 restoreFocusAfter 收回 —— 这里再抢
         // 一次就是把焦点硬塞进面板, 与用户离开时的位置对不上
@@ -455,6 +554,19 @@ class TvPlayerOverlayState(
         requestFocus(TvPlayerFocusTarget.BOTTOM_ROW)
     }
 
+    /**
+     * 控制层收起、淡到全透明之后调 (见 TvPlayerControlsOverlay 的休眠): 控制层不拆掉, 留在组合里等下次唤出,
+     * 上次留下的视觉状态 (浮出的面板、展开的选集条、倒计时态) 在这时复位 —— 谁也看不见, 复位带出的动画也就看不见;
+     * 版式顺带跟上设置 (见 [chromeLayoutGeneration]).
+     */
+    fun onControlsHidden() {
+        episodeStripExpanded = false
+        upNextCountdown = false
+        activePanel = null
+        focusRegion = TvPlayerFocusRegion.NONE
+        chromeLayoutGeneration++
+    }
+
     /** 隐藏一切组件回纯视频态, 焦点收回根节点. 视觉状态不复位 (见 [showControls]). */
     fun hideAll() {
         layer = TvPlayerLayer.HIDDEN
@@ -474,9 +586,19 @@ class TvPlayerOverlayState(
         replyingComment = null
     }
 
-    /** 把焦点送回进度条行 (面板内按返回等). */
+    /** 把焦点送回进度条行. */
     fun focusProgress() {
         requestFocus(TvPlayerFocusTarget.PROGRESS)
+    }
+
+    /** 打开选源面板 (纯视频态的上键 / 触屏图标行的「数据源」). 焦点由面板自己送进去 (见 [TvPlayerLayer.SOURCES]). */
+    fun openSources() {
+        layer = TvPlayerLayer.SOURCES
+        activePanel = null
+        danmakuInputExpanded = false
+        expandStripWhenReady = false
+        upNextCountdown = false
+        markInteraction()
     }
 
     companion object {
@@ -487,12 +609,17 @@ class TvPlayerOverlayState(
          * 用 `remember` 记状态机的话返回时整层复位成 HIDDEN —— 用户报的"按返回直接回了播放器
          * (组件全隐藏) 而不是列表展开的状态"就是这一条.
          *
+         * 选源面板存成纯视频态: 面板的焦点与进去的那一层都不存, 回来时再按上键重新开.
+         *
          * **只存这两个字段**: 其余全是瞬时态 (焦点区域 / 输入框展开 / 弹层计数 / 回复目标 /
          * 拖拽与解析簿记), 跨页恢复它们只会让状态机与真实的焦点/窗口情况打架. 面板的滚动位置
          * 与条目焦点也刻意不存 —— 面板每次浮出都复位到第一项是既定设计 (见 TvPlayerPanelHost).
          */
         val Saver: Saver<TvPlayerOverlayState, Any> = listSaver(
-            save = { listOf(it.layer.ordinal, it.activePanel?.ordinal ?: -1) },
+            save = {
+                val layer = if (it.layer == TvPlayerLayer.SOURCES) TvPlayerLayer.HIDDEN else it.layer
+                listOf(layer.ordinal, it.activePanel?.ordinal ?: -1)
+            },
             restore = { saved ->
                 val layer = saved.getOrNull(0)?.let { TvPlayerLayer.entries.getOrNull(it) }
                     ?: return@listSaver null

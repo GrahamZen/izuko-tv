@@ -146,7 +146,7 @@ class AniImageSharpnessTest {
         assertTrue("SECRET" !in sample.detail(), sample.detail())
     }
 
-    /** hero 预取用 `size(1,1)` 只为把字节落进磁盘缓存, 不该污染统计. */
+    /** 只为把字节落进磁盘缓存的 `size(1,1)` 请求不该污染统计. */
     @Test
     fun `prefetch sized requests are not measured`() {
         assertNull(

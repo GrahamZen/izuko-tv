@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.subject.episode
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import me.him188.ani.app.ui.foundation.playback.PlaybackPreparingStage
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_now_playing
@@ -18,8 +19,13 @@ import me.him188.ani.app.ui.lang.playback_session_status_needs_selection
 import me.him188.ani.app.ui.lang.playback_session_status_no_media
 import me.him188.ani.app.ui.lang.playback_session_status_player_error
 import me.him188.ani.app.ui.lang.playback_session_status_preparing
+import me.him188.ani.app.ui.lang.playback_session_status_searching_sources
+import me.him188.ani.app.ui.lang.playback_session_status_starting_bt_service
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_decoding_data
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_failed_prefix
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolving_source_short
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_torrent_metadata
 import me.him188.ani.app.ui.subject.episode.video.loading.renderCause
 import me.him188.ani.app.ui.subject.episode.video.loading.videoLoadingCauseLabels
 import org.jetbrains.compose.resources.stringResource
@@ -60,8 +66,27 @@ fun playbackSessionStatusText(status: PlaybackSessionStatus?): PlaybackSessionSt
         PlaybackSessionStatusSeverity.Normal,
     )
 
-    PlaybackSessionStatus.Preparing -> PlaybackSessionStatusText(
-        stringResource(Lang.playback_session_status_preparing),
+    is PlaybackSessionStatus.Preparing -> PlaybackSessionStatusText(
+        when (status.stage) {
+            PlaybackPreparingStage.SearchingSources -> if (status.sourcesTotal > 0) {
+                stringResource(
+                    Lang.playback_session_status_searching_sources,
+                    status.sourcesFinished,
+                    status.sourcesTotal,
+                )
+            } else {
+                stringResource(Lang.playback_session_status_preparing)
+            }
+
+            // 之后几步用播放画面上那几句 (画面上的第二行说明这里放不下): 面板与画面说的是同一件事
+            PlaybackPreparingStage.StartingBtService -> stringResource(Lang.playback_session_status_starting_bt_service)
+            PlaybackPreparingStage.ResolvingSource ->
+                stringResource(Lang.subject_episode_video_loading_resolving_source_short)
+
+            PlaybackPreparingStage.PreparingVideo -> stringResource(Lang.subject_episode_video_loading_decoding_data)
+            PlaybackPreparingStage.FetchingTorrentInfo ->
+                stringResource(Lang.subject_episode_video_loading_torrent_metadata)
+        },
         PlaybackSessionStatusSeverity.Normal,
     )
 

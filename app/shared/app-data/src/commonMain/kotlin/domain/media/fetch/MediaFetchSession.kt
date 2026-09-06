@@ -112,6 +112,37 @@ fun MediaFetchSession.restart(instanceId: String) {
 }
 
 /**
+ * 暂停还没查完的数据源 (见 [MediaSourceFetchResult.pause]), [keep] 返回 `true` 的除外.
+ *
+ * @return 这次新暂停的数据源个数
+ */
+fun MediaFetchSession.pauseSearching(keep: (MediaSourceFetchResult) -> Boolean = { false }): Int {
+    var paused = 0
+    for (result in mediaSourceResults) {
+        if (keep(result) || result.state.value.isPaused) continue
+        result.pause()
+        if (result.state.value.isPaused) paused++
+    }
+    return paused
+}
+
+/**
+ * 继续所有被暂停的数据源, 从头重新查询.
+ *
+ * @return 是否有数据源被继续
+ */
+fun MediaFetchSession.resumePausedSources(): Boolean {
+    var resumed = false
+    for (result in mediaSourceResults) {
+        if (result.state.value.isPaused) {
+            result.restart()
+            resumed = true
+        }
+    }
+    return resumed
+}
+
+/**
  * 启动所有 [MediaSource] 的查询, 挂起当前协程, 直到所有 [MediaSource] 都查询完成.
  *
  * 支持 cancellation.

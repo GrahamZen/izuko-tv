@@ -10,14 +10,18 @@
     "ArrayInDataClass",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport",
+    "UnusedImport"
 )
 
 package me.him188.ani.datasources.bangumi.models
 
-import kotlinx.serialization.Required
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import me.him188.ani.datasources.bangumi.models.BangumiSlimSubject
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectCollectionType
+import me.him188.ani.datasources.bangumi.models.BangumiSubjectType
+
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 
 /**
  * 
@@ -36,7 +40,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 
-data class BangumiUserSubjectCollection(
+data class BangumiUserSubjectCollection (
 
     @SerialName(value = "subject_id") @Required val subjectId: kotlin.Int,
 
