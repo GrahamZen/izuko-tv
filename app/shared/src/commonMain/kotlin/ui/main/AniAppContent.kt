@@ -107,7 +107,6 @@ import me.him188.ani.app.ui.login.EmailLoginViewModel
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeScreen
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeViewModel
 import me.him188.ani.app.ui.playback.PlaybackHistoryScreen
-import me.him188.ani.app.ui.playback.PlaybackHistorySyncStatusScreen
 import me.him188.ani.app.ui.playback.PlaybackHistoryViewModel
 import me.him188.ani.app.ui.profile.auth.AniContactList
 import me.him188.ani.app.ui.search.SearchScreen
@@ -611,24 +610,6 @@ private fun AniAppContentImpl(
                             aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
                         }
                     },
-                    onOpenSyncStatus = {
-                        aniNavigator.navigatePlaybackHistorySyncStatus()
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    windowInsets = windowInsetsWithoutTitleBar,
-                )
-            }
-            entry<NavRoutes.PlaybackHistorySyncStatus> { route ->
-                PlaybackHistorySyncStatusScreen(
-                    vm = viewModel { PlaybackHistoryViewModel() },
-                    onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
                     modifier = Modifier.fillMaxSize(),
                     navigationIcon = {
                         BackNavigationIconButton(

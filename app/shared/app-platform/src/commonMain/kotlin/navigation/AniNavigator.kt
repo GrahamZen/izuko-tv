@@ -153,10 +153,6 @@ interface AniNavigator {
         navigate(NavRoutes.BangumiAuthorize)
     }
 
-    fun navigatePlaybackHistorySyncStatus() {
-        navigate(NavRoutes.PlaybackHistorySyncStatus)
-    }
-
     fun navigateSettings(tab: SettingsTab? = null) {
         navigateSingleInstance(NavRoutes.Settings(tab))
     }

@@ -70,7 +70,6 @@ import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepositoryImpl
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepositoryImpl
 import me.him188.ani.app.data.repository.player.EpisodeScreenshotRepository
-import me.him188.ani.app.data.repository.player.PlaybackHistorySyncer
 import me.him188.ani.app.data.repository.player.WhatslinkEpisodeScreenshotRepository
 import me.him188.ani.app.data.repository.person.PersonCommentRepository
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
@@ -441,16 +440,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         EpisodePlayHistoryRepositoryImpl(
             dataStore = getContext().dataStores.episodeHistoryStore,
             playbackHistoryDao = database.playbackHistoryDao(),
-            onDirtyChanged = { get<PlaybackHistorySyncer>().requestSync() },
         )
-    }
-    single(createdAtStart = true) {
-        PlaybackHistorySyncer(
-            repository = get(),
-            api = aniApiProvider.playbackHistoryApi,
-            sessionStateProvider = get(),
-            scope = coroutineScope,
-        ).also { it.start() }
     }
     single<SubjectSeriesIndexService> { SubjectSeriesIndexService(bangumiApiProvider.subjectApi) }
 
