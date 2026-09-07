@@ -398,7 +398,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             httpClient = get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
         )
     }
-    single<TmdbImageService> { TmdbImageService(get(), getContext().dataStores.tmdbImageCacheStore) }
+    single<TmdbImageService> {
+        // 系列索引传单例: 各建一份的话同一条目的 BFS 会算两遍, 见 TmdbImageService.seriesIndexService
+        TmdbImageService(
+            get(), getContext().dataStores.tmdbImageCacheStore,
+            injectedSeriesIndexService = get(),
+        )
+    }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
     single<TrendsRepository> { TrendsRepository(bangumiApiProvider.trendingApi) }
     single<RecommendationRepository> { RecommendationRepository(bangumiApiProvider.subjectApi, database.subjectCollection()) }

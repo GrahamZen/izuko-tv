@@ -243,9 +243,26 @@
       "date": "2016-04-08",
       "eps": 11,
       "theatrical": false,
-      "expectAirDateKeys": [],
-      "minWithStill": 60,
-      "why": "直连 bangumi 后期望值变了 (2026-09-05): 原值 (112 张, 含 2016-04-04) 是 Ani 的一个偶然 —— 它给的母条目名 (Re:プチ) 在 TMDB 搜不到, 于是走了二次回落. 直连后血统由 bangumi 的「主线故事」出边正常解析出来, 拿到 80 张. 这是个 2 分钟的短篇衍生, 两种结果都是主线的剧照, 取哪一季属于启发式"
+      "expectAirDateKeys": [
+        "2016-04-05"
+      ],
+      "minWithStill": 72,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)",
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "WORLD 1 - 1",
+        "WORLD 1 - 4 SIDE A",
+        "WORLD 1 - 4 EPILOGUE",
+        "WORLD 2 - 1",
+        "WORLD 2 - 2",
+        "WORLD 2 - 3",
+        "WORLD 2 - 4",
+        "WORLD 2 - 5 SIDE A",
+        "WORLD 2 - 5 SIDE B",
+        "WORLD 2 - 5 - 3 SIDE C",
+        "WORLD 2 - 5 EPILOGUE"
+      ]
     },
     {
       "subjectId": 497594,

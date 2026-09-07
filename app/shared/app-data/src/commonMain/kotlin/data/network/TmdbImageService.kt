@@ -82,6 +82,8 @@ class TmdbImageService(
     httpClientProvider: HttpClientProvider,
     private val dataStore: DataStore<TmdbImageCache>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 见 [seriesIndexService]; 生产由 Koin 注入单例, 测试留 null 自建. */
+    private val injectedSeriesIndexService: SubjectSeriesIndexService? = null,
 ) {
     /**
      * TMDB 与 bangumi 两边的请求共用. **带 bangumi token**: 这个 client 也会去打
@@ -94,13 +96,21 @@ class TmdbImageService(
     /**
      * 条目的系列索引, 用于解析系列主条目名 (见 [resolveLineageViaSeriesIndex]).
      */
-    // by lazy 而不是直接初始化: 它要用下面才声明的 resolveScope, 而属性按声明顺序初始化
-    private val seriesIndexService by lazy {
-        SubjectSeriesIndexService(
-            // **必须带 bangumi token**: R18 条目的 `/p1/subjects/{id}/relations` 匿名访问一律 404
-            // (条目本身也 404), 于是系列索引整条失败 —— 表现是这类条目的 hero 背景/剧照要多等两个
-            // 失败请求 (p1 404 → v0 兜底) 才开始匹配, 甚至彻底没图 (2026-09-06 从真机日志抓到:
-            // subject 79201/377273 都是这样)
+    /**
+     * 系列索引. **优先用注入进来的那一个** (Koin 单例, 同时给 `SubjectRelationsRepository` 用):
+     * 它按 subjectId 缓存 BFS 结果, 而这条 BFS 最多 20 跳 —— 各建一个实例就是各存一份缓存,
+     * 同一个条目的 BFS 会算两遍 (2026-09-06 真机日志: subject 638494 / 310194 各两次).
+     *
+     * 没注入时 (测试) 自建一个: **必须带 bangumi token**, R18 条目的
+     * `/p1/subjects/{id}/relations` 匿名访问一律 404 (条目本身也 404), 于是系列索引整条失败
+     * —— 表现是这类条目的 hero 背景/剧照要多等两个失败请求 (p1 404 → v0 兜底) 才开始匹配,
+     * 甚至彻底没图 (2026-09-06 从真机日志抓到: subject 79201/377273 都是这样).
+     * Koin 那个单例用的 `BangumiApiProvider` 本来就是 `useBangumiToken = true`, 语义一致.
+     *
+     * by lazy: 自建那条要用下面才声明的 resolveScope, 而属性按声明顺序初始化.
+     */
+    private val seriesIndexService: SubjectSeriesIndexService by lazy {
+        injectedSeriesIndexService ?: SubjectSeriesIndexService(
             BangumiApiProvider(httpClientProvider.get(useBangumiToken = true)).subjectApi,
             // BFS 归 resolveScope: 调用方 (collectLatest 底下的 hero / 详情页) 走开不该把
             // 十几个请求的活儿作废, 见 SubjectSeriesIndexService 的 scope 参数
