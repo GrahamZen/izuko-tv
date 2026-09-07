@@ -131,6 +131,9 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_off
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
@@ -770,9 +773,42 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
-        // 片尾「接下来播放」: 只有遥控器形态有这一档界面 (选集条自动展开、锚位框走倒计时环),
-        // 手机端播完直接连播, 没有对应的界面, 所以整项藏起来
+        // 以下两项只有遥控器形态有: 手机端播完直接连播, 也没有"组件全隐藏"这个常态
         if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            // 一个滑块兼管开关与粗细: 最左一格 = 不显示, 往右依次 2~8dp (用户 2026-09-11 要求并成一项).
+            //
+            // 滑块值用**档位下标**而不是 dp: 1dp 刻意不给 (见 IDLE_PROGRESS_BAR_HEIGHT_RANGE), 直接拿 dp
+            // 当值的话 0 与 2 之间空着一格, 遥控器上会有一下"按了没反应"
+            val thicknessRange = VideoScaffoldConfig.IDLE_PROGRESS_BAR_HEIGHT_RANGE
+            val barDp = config.effectiveIdleProgressBarHeightDp
+            val lastStop = thicknessRange.last - thicknessRange.first + 1
+            SliderItem(
+                value = (if (barDp <= 0) 0 else barDp - thicknessRange.first + 1).toFloat(),
+                onValueChange = { raw ->
+                    val stop = raw.roundToInt().coerceIn(0, lastStop)
+                    val dp = if (stop == 0) 0 else thicknessRange.first + stop - 1
+                    if (dp != barDp) {
+                        // 顺手把旧开关置真: 从这一下起滑块 (含 0 档) 是唯一的真相
+                        videoScaffoldConfig.update(
+                            config.copy(showIdleProgressBar = true, idleProgressBarHeightDp = dp),
+                        )
+                    }
+                },
+                valueRange = 0f..lastStop.toFloat(),
+                steps = lastStop - 1,
+                title = { Text(stringResource(Lang.settings_player_idle_progress_bar)) },
+                description = { Text(stringResource(Lang.settings_player_idle_progress_bar_description)) },
+                valueLabel = {
+                    Text(
+                        if (barDp <= 0) {
+                            stringResource(Lang.settings_player_idle_progress_bar_off)
+                        } else {
+                            "$barDp dp"
+                        },
+                    )
+                },
+            )
             HorizontalDividerItem()
             val leadRange = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
             val leadStep = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP
