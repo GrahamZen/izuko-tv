@@ -468,15 +468,11 @@ private fun TabContent(
                     .padding(LocalAppChromeOverlayInsets.current.asPaddingValues()),
                 top = { UpdateNotifierWithVersionExpiryCheck() },
                 bottom = {
-                    // 版本过期锁定页展示时不检查 Bangumi 收藏冲突, 也不在其上叠加可跳转的提示.
+                    // 版本过期锁定页展示时不检查 Bangumi 收藏冲突, 也不在其上叠加提示.
                     val versionExpiryService = remember { KoinPlatform.getKoin().get<VersionExpiryService>() }
                     val versionExpired by versionExpiryService.state.collectAsStateWithLifecycle(null)
                     if (versionExpired == null) {
-                        val navigator = LocalNavigator.current
-                        BangumiConflictNotifier(
-                            selfInfo = selfInfo,
-                            onNavigateToMerge = { navigator.navigateBangumiMerge() },
-                        )
+                        BangumiConflictNotifier(selfInfo = selfInfo)
                     }
                 },
             )
