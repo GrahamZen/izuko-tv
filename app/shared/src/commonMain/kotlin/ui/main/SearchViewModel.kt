@@ -134,8 +134,16 @@ class SearchViewModel(
     private var currentPreviewingSubject: SubjectInfo? = null
     private var initialSearchQueryStarted = false
 
+    /**
+     * **必须 `cachedIn`**: `Pager.flow` 只允许被收一次, 而调用方是
+     * `collectAsLazyPagingItemsWithLifecycle` —— 页面从 STOP 回到 START 时它会重新收一遍同一个
+     * 实例, 于是抛 "Attempt to collect twice from pageEventFlow" (电视上页面被盖住再恢复很频繁,
+     * 必中; 真机日志里是 SearchViewModel 后台 scope 里的未捕获异常, 表现为搜索建议整块不出来).
+     * 紧邻的 [searchHistoryPager] 本来就这么处理的.
+     */
     fun suggestionsPager(query: String): Flow<PagingData<String>> {
         return subjectSearchCompletionRepository.completionsFlow(query.trim())
+            .cachedIn(backgroundScope)
     }
 
     fun onSearchPageIntent(intent: SearchPageIntent) {
