@@ -258,7 +258,7 @@ class BangumiMergeScreenshotTest {
     @Test
     fun notifier412() = captureContent(412, 200, "bangumi-merge-notifier-412") {
         Box(Modifier.fillMaxSize()) {
-            BangumiConflictNotifierContent(conflictCount = 6, onResolveClick = {})
+            BangumiConflictNotifierContent(conflictCount = 6)
         }
     }
 }
