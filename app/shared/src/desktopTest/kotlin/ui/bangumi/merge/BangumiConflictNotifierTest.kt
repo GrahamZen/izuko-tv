@@ -45,41 +45,34 @@ class BangumiConflictNotifierTest {
     // region 无状态
 
     @Test
-    fun `NOTIFY-UI-01 有冲突时展示提示与动作`() = runAniComposeUiTest {
+    fun `NOTIFY-UI-01 有冲突时展示提示`() = runAniComposeUiTest {
         val message = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 6) }
-        val actionLabel = runBlocking { getString(Lang.bangumi_merge_conflict_notification_action) }
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
-                    BangumiConflictNotifierContent(
-                        conflictCount = 6,
-                        onResolveClick = {},
-                    )
+                    BangumiConflictNotifierContent(conflictCount = 6)
                 }
             }
         }
 
         onNodeWithText(message).assertIsDisplayed()
-        onNodeWithText(actionLabel).assertIsDisplayed()
     }
 
     @Test
-    fun `NOTIFY-UI-02 点击动作触发导航回调`() = runAniComposeUiTest {
+    fun `NOTIFY-UI-02 提示不带按钮`() = runAniComposeUiTest {
+        // 只是个几秒就消失的提示: 既没有"去处理"动作, 也没有关闭按钮 (合并页从设置进)
+        val message = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 3) }
         val actionLabel = runBlocking { getString(Lang.bangumi_merge_conflict_notification_action) }
-        var navigated = false
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
-                    BangumiConflictNotifierContent(
-                        conflictCount = 3,
-                        onResolveClick = { navigated = true },
-                    )
+                    BangumiConflictNotifierContent(conflictCount = 3)
                 }
             }
         }
 
-        onNodeWithText(actionLabel).performClick()
-        runOnIdle { assertTrue(navigated) }
+        onNodeWithText(message).assertIsDisplayed()
+        onNodeWithText(actionLabel).assertDoesNotExist()
     }
 
     @Test
@@ -88,10 +81,7 @@ class BangumiConflictNotifierTest {
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
-                    BangumiConflictNotifierContent(
-                        conflictCount = 0,
-                        onResolveClick = {},
-                    )
+                    BangumiConflictNotifierContent(conflictCount = 0)
                 }
             }
         }
@@ -100,27 +90,22 @@ class BangumiConflictNotifierTest {
     }
 
     @Test
-    fun `NOTIFY-UI-04 点击动作后提示关闭 同计数重组不重新出现`() = runAniComposeUiTest {
+    fun `NOTIFY-UI-04 提示自动消失后 同计数重组不重新出现`() = runAniComposeUiTest {
         val message = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 3) }
-        val actionLabel = runBlocking { getString(Lang.bangumi_merge_conflict_notification_action) }
-        var clicks = 0
         var unrelatedState by mutableStateOf(0)
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
                     // 读取无关状态, 使其变化时触发重组.
                     Box(Modifier.testTag("recomposeProbe$unrelatedState"))
-                    BangumiConflictNotifierContent(
-                        conflictCount = 3,
-                        onResolveClick = { clicks++ },
-                    )
+                    BangumiConflictNotifierContent(conflictCount = 3)
                 }
             }
         }
 
-        onNodeWithText(actionLabel).performClick()
-        runOnIdle { assertEquals(1, clicks) }
-        onNodeWithText(message).assertDoesNotExist()
+        onNodeWithText(message).assertIsDisplayed()
+        // Short 时长自己走完, 不需要点任何东西
+        waitUntil(timeoutMillis = 15_000) { onAllNodesWithText(message).fetchSemanticsNodes().isEmpty() }
 
         // 计数不变时, 无关重组不会让提示重新出现.
         unrelatedState = 1
@@ -132,22 +117,17 @@ class BangumiConflictNotifierTest {
     fun `NOTIFY-UI-05 冲突数变化后重新提示`() = runAniComposeUiTest {
         val message3 = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 3) }
         val message5 = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 5) }
-        val actionLabel = runBlocking { getString(Lang.bangumi_merge_conflict_notification_action) }
         var count by mutableStateOf(3)
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
-                    BangumiConflictNotifierContent(
-                        conflictCount = count,
-                        onResolveClick = {},
-                    )
+                    BangumiConflictNotifierContent(conflictCount = count)
                 }
             }
         }
 
-        // 关闭当前提示 (点击动作).
-        onNodeWithText(actionLabel).performClick()
-        onNodeWithText(message3).assertDoesNotExist()
+        // 等当前提示自己消失.
+        waitUntil(timeoutMillis = 15_000) { onAllNodesWithText(message3).fetchSemanticsNodes().isEmpty() }
 
         // 冲突数变化: dismissed 以计数为 key, 重新提示.
         count = 5
@@ -169,7 +149,6 @@ class BangumiConflictNotifierTest {
                 Box(Modifier.fillMaxSize()) {
                     BangumiConflictNotifier(
                         selfInfo = TestSelfInfoUiState,
-                        onNavigateToMerge = {},
                         checker = checker,
                     )
                 }
@@ -184,18 +163,15 @@ class BangumiConflictNotifierTest {
     }
 
     @Test
-    fun `NOTIFY-UI-07 点击处理 导航并关闭提示 但不清空计数`() = runAniComposeUiTest {
+    fun `NOTIFY-UI-07 提示自动消失后不清空计数`() = runAniComposeUiTest {
         val message = runBlocking { getString(Lang.bangumi_merge_conflict_notification, 6) }
-        val actionLabel = runBlocking { getString(Lang.bangumi_merge_conflict_notification_action) }
         val repository = FakeBangumiMergeRepository({ createTestBangumiMergeState(now) })
         val checker = createTestConflictChecker(repository)
-        var navigated = false
         setContent {
             ProvideCompositionLocalsForPreview {
                 Box(Modifier.fillMaxSize()) {
                     BangumiConflictNotifier(
                         selfInfo = TestSelfInfoUiState,
-                        onNavigateToMerge = { navigated = true },
                         checker = checker,
                     )
                 }
@@ -203,13 +179,9 @@ class BangumiConflictNotifierTest {
         }
 
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText(message).fetchSemanticsNodes().isNotEmpty() }
-        onNodeWithText(actionLabel).performClick()
-        runOnIdle {
-            assertTrue(navigated)
-            // 计数保留: 用户不处理直接返回时设置入口仍显示数量; 再提示由 dismissed (以计数为 key) 抑制.
-            assertEquals(6, checker.conflictCount.value)
-        }
-        onNodeWithText(message).assertDoesNotExist()
+        waitUntil(timeoutMillis = 15_000) { onAllNodesWithText(message).fetchSemanticsNodes().isEmpty() }
+        // 计数保留: 设置里的入口仍要显示数量; 再提示由 dismissed (以计数为 key) 抑制.
+        assertEquals(6, checker.conflictCount.value)
     }
 
     @Test
@@ -223,7 +195,6 @@ class BangumiConflictNotifierTest {
                 Box(Modifier.fillMaxSize()) {
                     BangumiConflictNotifier(
                         selfInfo = selfInfo,
-                        onNavigateToMerge = {},
                         checker = checker,
                     )
                 }
@@ -247,7 +218,6 @@ class BangumiConflictNotifierTest {
                 Box(Modifier.fillMaxSize()) {
                     BangumiConflictNotifier(
                         selfInfo = TestSelfInfoUiState.copy(bangumiConnected = false),
-                        onNavigateToMerge = {},
                         checker = checker,
                     )
                 }
@@ -273,7 +243,6 @@ class BangumiConflictNotifierTest {
                 Box(Modifier.fillMaxSize()) {
                     BangumiConflictNotifier(
                         selfInfo = loading,
-                        onNavigateToMerge = {},
                         checker = checker,
                     )
                 }
