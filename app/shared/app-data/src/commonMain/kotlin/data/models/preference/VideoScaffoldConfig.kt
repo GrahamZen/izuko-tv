@@ -130,6 +130,27 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val opEdSkipDuration: Duration = 85.seconds,
     /**
+     * 播放器组件全部隐藏时, 在屏幕最底缘显示一条极细的播放进度. 电视端专有.
+     *
+     * 纯画面态下没有任何东西告诉用户"播到哪儿了", 而唤出控制层就会遮住画面 —— 这一条贴在边缘
+     * 上, 不占画面也不用按键. 与 Netflix / B 站电视端同一个做法.
+     *
+     * 6.0.6-alpha02 起开关并进了 [idleProgressBarHeightDp] 的 0 档, 本字段只为**读旧配置**保留
+     * (关过它的人升级后仍是关的, 见 [effectiveIdleProgressBarHeightDp]); 新代码一律读那个.
+     *
+     * @since 6.0.6
+     */
+    val showIdleProgressBar: Boolean = true,
+    /**
+     * 上面那条进度条的粗细 (dp), 见 [IDLE_PROGRESS_BAR_HEIGHT_RANGE]; **0 = 不显示**. 电视端专有.
+     *
+     * 做成可调是因为"看得见"与"不打扰"的那条线**由屏幕尺寸与观看距离决定**, 开发时定不了:
+     * 55 寸三米开外看 2dp 已经很淡, 而近距离小屏上它就够明显了.
+     *
+     * @since 6.0.6
+     */
+    val idleProgressBarHeightDp: Int = IDLE_PROGRESS_BAR_HEIGHT_RANGE.first,
+    /**
      * 片尾「接下来播放」提前多少秒进入倒计时; 0 = 不提示. 电视端专有.
      *
      * 提示本身在**片尾 (ED) 放完**那一刻就出现 (有 ED 标记时), 但在最后这些秒之前不倒计时 ——
@@ -273,6 +294,16 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
         }
 
         /**
+         * 纯画面态那条贴底进度条**显示时**的粗细可选范围 (dp), 见 [idleProgressBarHeightDp];
+         * 不显示是另外的 0 档, 1dp 刻意不给.
+         *
+         * 下限 2dp = 1080p 电视上 4px: 再细 (1dp) 在亮画面上基本看不出来, 等于白给一档.
+         * 上限 8dp: 到这儿它已经是"屏幕底下有条进度条"而不是"画面边缘的一道刻度"了,
+         * 再粗就开始吃画面 —— 而这条东西存在的前提就是不打扰观看.
+         */
+        val IDLE_PROGRESS_BAR_HEIGHT_RANGE = 2..8
+
+        /**
          * 片尾倒计时可选的秒数范围, 见 [upNextTipLeadSeconds]. 0 = 关掉这一档提示.
          *
          * 上限 30 秒: 对齐同类应用的最长档 —— 商业流媒体 (Netflix/Disney+/Prime) 一律 10~15 秒,
@@ -301,6 +332,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             autoSkipOpEd = false,
             skipOpEdMode = SkipOpEdMode.OFF,
             upNextTipLeadSeconds = 0,
+            showIdleProgressBar = false,
             autoSwitchMediaOnPlayerError = false,
             enableHighQualityAudioTimeStretch = false,
             enableExperimentalHlsSegmentFiltering = false,
@@ -314,6 +346,15 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val effectiveSkipOpEdMode: SkipOpEdMode
         get() = skipOpEdMode ?: if (autoSkipOpEd) SkipOpEdMode.AUTO else SkipOpEdMode.OFF
+
+    /**
+     * 纯画面态那条贴底进度条实际的粗细 (dp); 0 = 不显示.
+     *
+     * 旧开关 [showIdleProgressBar] 关着就是 0 —— 否则 6.0.5 / 6.0.6-alpha01 里关掉过它的人升级后
+     * 会被悄悄打开. 设置页一动滑块就把旧开关置真, 从那以后 [idleProgressBarHeightDp] (含 0 档) 说了算.
+     */
+    val effectiveIdleProgressBarHeightDp: Int
+        get() = if (showIdleProgressBar) idleProgressBarHeightDp else 0
 
     @Serializable
     data class PlayerVolume(val level: Float, val mute: Boolean)
