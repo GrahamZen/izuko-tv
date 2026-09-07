@@ -61,7 +61,6 @@ class BangumiConflictNotifierStackTest {
                         bottom = {
                             BangumiConflictNotifierContent(
                                 conflictCount = 3,
-                                onResolveClick = {},
                             )
                         },
                     )
