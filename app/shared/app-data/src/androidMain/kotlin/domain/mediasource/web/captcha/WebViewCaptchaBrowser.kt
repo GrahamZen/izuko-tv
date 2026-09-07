@@ -257,7 +257,7 @@ class WebViewCaptchaBrowser private constructor(
         val repeatCount = (keyEvent.nativeKeyEvent as? android.view.KeyEvent)?.repeatCount ?: 0
         val baseStep = with(density) { 20.dp.toPx() }
         val step = baseStep * (1f + repeatCount / 12f).coerceAtMost(5f)
-        // 光标到边缘 (留一点余量) 就改成滚页面: 折叠线以下的按钮就是这么够不着的
+        // 光标到边缘 (留一点余量) 就改成滚页面: 折叠线以下的"授权"按钮就是这么够不着的
         val edge = with(density) { 48.dp.toPx() }
         // 滚页面的步长与光标步长分开: 按光标那 20dp 滚, 一页要按几十下
         val scrollStep = with(density) { 96.dp.toPx() } * (1f + repeatCount / 6f).coerceAtMost(4f)
@@ -474,10 +474,10 @@ class WebViewCaptchaBrowser private constructor(
          * 页面加载完把焦点放到**第一个可见的可操作元素**上, 并滚到可见.
          *
          * 电视上 `WebView.requestFocus()` 只是让这个 *View* 拿到焦点, DOM 里仍然什么都没聚焦,
-         * 于是方向键第一下不知道从哪儿开始 —— 表现就是"焦点吸不到页面上的按钮"
-         * (2026-09-06 真机实测: 只有一个按钮的确认页、失败页的"返回上一页" 都够不着).
+         * 于是方向键第一下不知道从哪儿开始 —— 表现就是"焦点吸不到授权按钮上"
+         * (2026-09-06 用户实测: 授权页的授权按钮、失败页的"返回上一页" 都够不着).
          *
-         * 按 DOM 顺序取第一个, 三种页面正好各得其所: 只有一个按钮的确认页 -> 焦点落在它身上;
+         * 按 DOM 顺序取第一个, 三种页面正好各得其所: 授权页只有一个按钮 -> 焦点落在授权按钮;
          * 登录页第一个是邮箱输入框 -> 焦点落在那里并弹输入法; 失败页第一个是"返回上一页"链接.
          *
          * 只认标准可聚焦元素, **不给别的元素硬塞 tabindex** —— 那会把一堆装饰性节点也拉进
