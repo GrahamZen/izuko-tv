@@ -131,6 +131,10 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_thickness
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_thickness_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
@@ -770,9 +774,40 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
-        // 片尾「接下来播放」: 只有遥控器形态有这一档界面 (选集条自动展开、锚位框走倒计时环),
-        // 手机端播完直接连播, 没有对应的界面, 所以整项藏起来
+        // 以下两项只有遥控器形态有: 手机端播完直接连播, 也没有"组件全隐藏"这个常态
         if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            SwitchItem(
+                checked = config.showIdleProgressBar,
+                onCheckedChange = {
+                    videoScaffoldConfig.update(config.copy(showIdleProgressBar = it))
+                },
+                title = { Text(stringResource(Lang.settings_player_idle_progress_bar)) },
+                description = { Text(stringResource(Lang.settings_player_idle_progress_bar_description)) },
+            )
+            // 粗细只在那条进度条真的显示时才有意义: 关掉时这一格连同分隔线一起收起,
+            // 免得留一个调不出任何变化的滑块在那儿
+            if (config.showIdleProgressBar) {
+                HorizontalDividerItem()
+                val thicknessRange = VideoScaffoldConfig.IDLE_PROGRESS_BAR_HEIGHT_RANGE
+                SliderItem(
+                    value = config.idleProgressBarHeightDp.toFloat(),
+                    onValueChange = { raw ->
+                        val dp = raw.roundToInt().coerceIn(thicknessRange)
+                        if (dp != config.idleProgressBarHeightDp) {
+                            videoScaffoldConfig.update(config.copy(idleProgressBarHeightDp = dp))
+                        }
+                    },
+                    valueRange = thicknessRange.first.toFloat()..thicknessRange.last.toFloat(),
+                    // 每格 1dp: 两端差得不多 (2~8dp), 再粗的粒度就只剩三四档可选
+                    steps = thicknessRange.last - thicknessRange.first - 1,
+                    title = { Text(stringResource(Lang.settings_player_idle_progress_bar_thickness)) },
+                    description = {
+                        Text(stringResource(Lang.settings_player_idle_progress_bar_thickness_description))
+                    },
+                    valueLabel = { Text("${config.idleProgressBarHeightDp} dp") },
+                )
+            }
             HorizontalDividerItem()
             val leadRange = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
             val leadStep = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP
