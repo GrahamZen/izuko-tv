@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -47,7 +46,6 @@ import org.koin.mp.KoinPlatform
 @Composable
 fun BoxScope.BangumiConflictNotifier(
     selfInfo: SelfInfoUiState,
-    onNavigateToMerge: () -> Unit,
     modifier: Modifier = Modifier,
     checker: BangumiConflictChecker = remember { KoinPlatform.getKoin().get<BangumiConflictChecker>() },
 ) {
@@ -70,7 +68,6 @@ fun BoxScope.BangumiConflictNotifier(
     BangumiConflictNotifierContent(
         // 展示也以会话状态门控: 登出瞬间正在展示的 snackbar 会随之关闭.
         conflictCount = if (sessionReady) conflictCount else 0,
-        onResolveClick = onNavigateToMerge,
         modifier = modifier,
     )
 }
@@ -78,12 +75,15 @@ fun BoxScope.BangumiConflictNotifier(
 /**
  * 无状态部分: [conflictCount] > 0 时展示 snackbar.
  *
- * 关闭状态以 [conflictCount] 为 key: 用户关闭后本次不再提示, 冲突数变化时重新提示.
+ * **只是个几秒就消失的提示, 不带按钮**: 原先是 [SnackbarDuration.Indefinite] + "去处理"动作 +
+ * 关闭按钮, 一直挂在屏幕底部不走, 挡着内容也挡着遥控器焦点. 合并页从
+ * 设置 - 账号 - Bangumi 同步 进得去, 提示本身不必是入口 (2026-09-06 按用户要求改).
+ *
+ * 关闭状态以 [conflictCount] 为 key: 本次提示过就不再提, 冲突数变化时重新提示.
  */
 @Composable
 fun BoxScope.BangumiConflictNotifierContent(
     conflictCount: Int,
-    onResolveClick: () -> Unit,
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
@@ -91,18 +91,12 @@ fun BoxScope.BangumiConflictNotifierContent(
 
     if (conflictCount > 0 && !dismissed) {
         val message = stringResource(Lang.bangumi_merge_conflict_notification, conflictCount)
-        val actionLabel = stringResource(Lang.bangumi_merge_conflict_notification_action)
-        LaunchedEffect(message, actionLabel) {
-            val result = snackbarHostState.showSnackbar(
+        LaunchedEffect(message) {
+            snackbarHostState.showSnackbar(
                 message = message,
-                actionLabel = actionLabel,
-                withDismissAction = true,
-                duration = SnackbarDuration.Indefinite,
+                duration = SnackbarDuration.Short,
             )
             dismissed = true
-            if (result == SnackbarResult.ActionPerformed) {
-                onResolveClick()
-            }
         }
     }
 
