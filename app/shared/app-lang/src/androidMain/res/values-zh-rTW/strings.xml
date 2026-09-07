@@ -329,6 +329,8 @@
     <string name="settings_player_audio_time_stretch">高品質音訊變速（WSOLA）</string>
     <string name="settings_player_audio_time_stretch_description">變速時提供更好的音質；如遇爆音或音訊損壞可關閉</string>
     <string name="settings_player_auto_skip_op_ed">跳過 OP 和 ED</string>
+    <string name="settings_player_idle_progress_bar">純畫面時顯示底部進度條</string>
+    <string name="settings_player_idle_progress_bar_description">播放器組件全部隱藏時，在螢幕最底緣顯示一條極細的播放進度</string>
     <string name="settings_player_up_next_tip">片尾提示下一集</string>
     <string name="settings_player_up_next_tip_description">快播完時自動展開選集條並選中下一集，按確認鍵立刻播、按返回鍵關掉</string>
     <string name="settings_player_up_next_tip_off">不提示</string>

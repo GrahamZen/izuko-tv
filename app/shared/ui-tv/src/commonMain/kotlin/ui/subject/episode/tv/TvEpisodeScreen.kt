@@ -14,12 +14,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -107,6 +111,7 @@ import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingInd
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
+import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
 import me.him188.ani.app.videoplayer.ui.progress.rememberMediaProgressSliderState
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.app.videoplayer.ui.rememberVideoSideSheetsController
@@ -160,6 +165,17 @@ private fun scrubStepMillis(totalDurationMillis: Long, repeats: Int): Long {
 
 /** 控制层自动隐藏延时 (播放中且无面板/弹层/输入时, Prime 行为). */
 internal const val TV_PLAYER_AUTO_HIDE_MILLIS = 5_000L
+
+/**
+ * 纯画面态那条贴底进度条的厚度.
+ *
+ * 2dp: 1080p 电视上 4px, 4K 上 8px —— 隔几米看得见, 又不至于在画面底缘割出一条明显的边.
+ * 再薄 (1dp) 在 1080p 上只剩 2px, 亮画面上基本看不出来.
+ */
+private val TV_IDLE_PROGRESS_HEIGHT = 2.dp
+
+/** 那条进度条的底轨: 与控制层进度条同值 (见 TvPlayerProgressRow 的 colors). */
+private val TV_IDLE_PROGRESS_TRACK_COLOR = Color.White.copy(alpha = 0.3f)
 
 /** 剧照预取的起始延迟: 让首帧起播先用完带宽. */
 private const val TV_STILL_PREFETCH_DELAY_MILLIS = 2_000L
@@ -1400,6 +1416,19 @@ fun TvEpisodeScreenContent(
                 // 无论切换来自确认键/控制按钮/面板操作都有反馈)
                 TvPauseFlash(vm.player, Modifier.align(Alignment.Center))
 
+                // 纯画面态贴底的极细进度条: 屏上什么都没有时, 它是唯一还在报"播到哪儿了"的东西.
+                //
+                // **只在纯视频态给** (用户要求): 控制层/详情层自己带着进度条, 两条同时在屏上是重复
+                // 信息; OP/ED 提示按钮在场时也不给 —— 那时屏上已经有东西了.
+                // 全宽贴到屏幕最底缘 (不留边距、不避让安全区): 它要的就是"在画面之外"
+                AniAnimatedVisibility(
+                    visible = overlay.layer == TvPlayerLayer.HIDDEN && !skipTipVisible &&
+                            !anySheetVisible && vm.videoScaffoldConfig.showIdleProgressBar,
+                    modifier = Modifier.align(Alignment.BottomStart),
+                ) {
+                    TvIdleProgressBar(progressSliderState, Modifier.fillMaxWidth())
+                }
+
                 // 快进退反馈: 纯视频态左右键不唤出控制层, 这是唯一的反馈
                 TvSeekFlash(seekFlash, Modifier.align(Alignment.Center))
 
@@ -1674,6 +1703,34 @@ private fun TvSeekFlash(
             tint = color,
         )
     }
+}
+
+/**
+ * 纯画面态贴底的极细进度条 (见调用处).
+ *
+ * 位置与进度**全部读在绘制里**: 播放位置每 100ms 变一次, 在组合里读会让整个播放器界面跟着重组
+ * (本文件的重组纪律见 TvPlayerControls). 于是这一条每帧只失效自己的绘制, 不牵连任何人.
+ *
+ * 颜色与控制层的进度条同一套 (白 / 白 30%), 只是薄到 [TV_IDLE_PROGRESS_HEIGHT] —— 它不该被看成
+ * 一个控件, 只是画面边缘的一道刻度.
+ */
+@Composable
+private fun TvIdleProgressBar(
+    progressSliderState: PlayerProgressSliderState,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .height(TV_IDLE_PROGRESS_HEIGHT)
+            .drawBehind {
+                drawRect(TV_IDLE_PROGRESS_TRACK_COLOR)
+                // 比例直接取 slider 那份 (derivedStateOf): 位置/时长/拖拽预览三件事它已经算过一遍,
+                // 这里再算一遍迟早会与控制层的进度条对不上
+                val fraction = progressSliderState.displayPositionRatio.coerceIn(0f, 1f)
+                if (fraction <= 0f) return@drawBehind
+                drawRect(Color.White, size = Size(size.width * fraction, size.height))
+            },
+    )
 }
 
 /**

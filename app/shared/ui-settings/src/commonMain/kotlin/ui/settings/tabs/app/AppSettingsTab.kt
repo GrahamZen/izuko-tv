@@ -131,6 +131,8 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
@@ -778,9 +780,17 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
-        // 片尾「接下来播放」: 只有遥控器形态有这一档界面 (选集条自动展开、锚位框走倒计时环),
-        // 手机端播完直接连播, 没有对应的界面, 所以整项藏起来
+        // 以下两项只有遥控器形态有: 手机端播完直接连播, 也没有"组件全隐藏"这个常态
         if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            SwitchItem(
+                checked = config.showIdleProgressBar,
+                onCheckedChange = {
+                    videoScaffoldConfig.update(config.copy(showIdleProgressBar = it))
+                },
+                title = { Text(stringResource(Lang.settings_player_idle_progress_bar)) },
+                description = { Text(stringResource(Lang.settings_player_idle_progress_bar_description)) },
+            )
             HorizontalDividerItem()
             DropdownItem(
                 selected = { config.upNextTipLeadSeconds },

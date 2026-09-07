@@ -130,6 +130,15 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val opEdSkipDuration: Duration = 85.seconds,
     /**
+     * 播放器组件全部隐藏时, 在屏幕最底缘显示一条极细的播放进度. 电视端专有.
+     *
+     * 纯画面态下没有任何东西告诉用户"播到哪儿了", 而唤出控制层就会遮住画面 —— 这一条贴在边缘
+     * 上, 不占画面也不用按键. 与 Netflix / B 站电视端同一个做法.
+     *
+     * @since 6.0.6
+     */
+    val showIdleProgressBar: Boolean = true,
+    /**
      * 片尾「接下来播放」提前多少秒进入倒计时; 0 = 不提示. 电视端专有.
      *
      * 提示本身在**片尾 (ED) 放完**那一刻就出现 (有 ED 标记时), 但在最后这些秒之前不倒计时 ——
@@ -289,6 +298,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             autoSkipOpEd = false,
             skipOpEdMode = SkipOpEdMode.OFF,
             upNextTipLeadSeconds = 0,
+            showIdleProgressBar = false,
             autoSwitchMediaOnPlayerError = false,
             enableHighQualityAudioTimeStretch = false,
             enableExperimentalHlsSegmentFiltering = false,

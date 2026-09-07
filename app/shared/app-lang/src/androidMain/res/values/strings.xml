@@ -303,6 +303,8 @@
     <string name="settings_player_audio_time_stretch">High-quality audio time-stretch (WSOLA)</string>
     <string name="settings_player_audio_time_stretch_description">Better sound quality at non-1x speeds. Turn off if you hear crackling or corrupted audio</string>
     <string name="settings_player_auto_skip_op_ed">Skip OP and ED</string>
+    <string name="settings_player_idle_progress_bar">Thin progress bar when idle</string>
+    <string name="settings_player_idle_progress_bar_description">Show a hairline progress bar at the bottom edge while all player controls are hidden</string>
     <string name="settings_player_up_next_tip">Next episode tip</string>
     <string name="settings_player_up_next_tip_description">Near the end, the episode strip opens with the next episode selected; OK plays it now, Back closes it</string>
     <string name="settings_player_up_next_tip_off">Off</string>
