@@ -18,15 +18,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.settings.ProxyTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.TestState
@@ -55,6 +60,7 @@ internal object RemoteSettings {
     private val logger = logger<RemoteSettings>()
 
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
+    private val bangumiMirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
     private val danmakuFilters: DanmakuRegexFilterRepository get() = KoinPlatform.getKoin().get()
 
     /** 处理 `api/settings` 下的请求; 路径或方法不认识返回 null. */
@@ -67,6 +73,7 @@ internal object RemoteSettings {
                 !post -> null
                 request.path == "api/settings/proxy" -> saveProxy(request)
                 request.path == "api/settings/proxy/test" -> testConnection()
+                request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
                 request.path == "api/settings/trackers" -> saveTrackers(request)
                 // 「切到电视前台」开关, 状态与授权都在 TvRemoteControl
                 request.path == "api/settings/front" -> TvRemoteControl.setBringToFront(request.formFields()["on"] == "1")
@@ -90,12 +97,20 @@ internal object RemoteSettings {
         // 挂起调用都放在 buildJsonObject 外面 (它的构建块不是协程)
         val filterConfig = settingsRepository.danmakuFilterConfig.flow.first()
         val filters = danmakuFilters.flow.first()
+        val bangumi = settingsRepository.bangumiEndpointSettings.flow.first()
+        val mirrors = bangumiMirrorList.mirrors.first()
         buildJsonObject {
             putJsonObject("proxy") {
                 put("mode", proxy.mode.name)
                 put("url", proxy.manualUrl)
                 put("username", proxy.manualUsername.orEmpty())
                 put("hasPassword", !proxy.manualPassword.isNullOrEmpty())
+            }
+            putJsonObject("bangumi") {
+                put("mode", bangumi.mode.name)
+                put("custom", bangumi.customBaseUrl)
+                putJsonArray("mirrors") { mirrors.forEach { add(it) } }
+                put("allowCredentials", bangumi.allowCredentialsViaMirror)
             }
             put("trackers", torrent.extraTrackers)
             put("front", TvRemoteControl.frontState())
@@ -182,6 +197,46 @@ internal object RemoteSettings {
                 // 设置页在 Android 上同样不显示「检测到的系统代理」: 这一档在电视上取不到系统代理, 等于不用
                 ProxyUIMode.SYSTEM -> tr("已改为跟随系统（电视上通常等于不使用代理）")
                 ProxyUIMode.CUSTOM -> tr("已保存，立即生效")
+            },
+        )
+    }
+
+    /**
+     * Bangumi 连接方式 (同设置页「Bangumi 连接方式」那一组). 自建地址要能归一成根域名, 认不出来的当场拒绝 ——
+     * 存进去也会被当成没填、退回直连, 那在大陆表现为「设置了但一样连不上」, 用户看不出是自己填错了.
+     *
+     * `cred` = 登录与收藏同步也经过镜像 ([BangumiEndpointSettings.allowCredentialsViaMirror]); 网页上勾选时已经确认过风险.
+     */
+    private fun saveBangumiEndpoint(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val mode = BangumiEndpointMode.entries.firstOrNull { it.name == fields["mode"] }
+            ?: return result(false, tr("无效的连接方式"))
+        val custom = fields["custom"].orEmpty().trim()
+        val allowCredentials = fields["cred"] == "1"
+        if (mode == BangumiEndpointMode.CUSTOM && BangumiMirrorHosts.normalizeMirrorRoot(custom) == null) {
+            return result(false, tr("请填根域名，例如 bangumi.example.com"))
+        }
+        runBlocking {
+            settingsRepository.bangumiEndpointSettings.update {
+                copy(
+                    mode = mode,
+                    customBaseUrl = if (mode == BangumiEndpointMode.CUSTOM) custom else customBaseUrl,
+                    allowCredentialsViaMirror = allowCredentials,
+                )
+            }
+        }
+        logger.info { "Remote control saved Bangumi endpoint: mode=$mode, allowCredentials=$allowCredentials" }
+        return result(
+            true,
+            when (mode) {
+                BangumiEndpointMode.AUTO ->
+                    if (allowCredentials) tr("已改为官方连不上时用镜像，登录与收藏同步也经过镜像")
+                    else tr("已改为官方连不上时用镜像")
+                BangumiEndpointMode.MIRROR ->
+                    if (allowCredentials) tr("已改为用镜像，登录与收藏同步也经过镜像")
+                    else tr("已改为用镜像")
+                BangumiEndpointMode.DIRECT -> tr("已改为只连官方")
+                BangumiEndpointMode.CUSTOM -> tr("已保存，立即生效")
             },
         )
     }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -89,6 +90,10 @@ import me.him188.ani.app.domain.foundation.CookieJarFeatureHandler
 import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiMirrorFeature
+import me.him188.ani.app.domain.foundation.BangumiMirrorFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.DefaultVersionExpiryService
 import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
 import me.him188.ani.app.domain.foundation.DistributionChannelFeatureHandler
@@ -191,6 +196,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             sessionManager = get(),
             browserFactory = get(),
             scope = coroutineScope,
+            trustedMirrorRoot = { get<BangumiEndpointProvider>().trustedMirrorRoot.value },
         )
     }
     single<SessionStateProvider> {
@@ -199,12 +205,34 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     // 数据源发请求时用得到本机浏览器 UA; 数据源由工厂创建拿不到 Context, 在这里装进去
     DeviceBrowserUserAgentHolder.install { getContext().deviceBrowserUserAgent() }
 
+    single<BangumiMirrorListRepository> {
+        BangumiMirrorListRepository(
+            cache = get<SettingsRepository>().bangumiMirrorCache,
+            // 惰性: HttpClientProvider 反过来要经 BangumiEndpointProvider 拿到本仓库, 见构造参数的说明
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    single<BangumiEndpointProvider> {
+        val settings = get<SettingsRepository>().bangumiEndpointSettings
+        BangumiEndpointProvider(
+            settings = settings.flow,
+            mirrors = get<BangumiMirrorListRepository>().mirrors,
+            scope = coroutineScope,
+            switchToMirror = { settings.update { afterOriginUnreachable() } },
+        )
+    }
     single<HttpClientProvider> {
         val sessionManager by inject<SessionManager>()
         DefaultHttpClientProvider(
             get(), coroutineScope,
             featureHandlers = listOf(
                 UserAgentFeatureHandler,
+                // bangumi 镜像改写 + 原站不通时回落. 必须在这里注册 —— 没注册的特性会被
+                // DefaultHttpClientProvider.extendWithNotSet 静默丢掉
+                get<BangumiEndpointProvider>().let {
+                    BangumiMirrorFeatureHandler(it.routing, it::reportSettled, it::reportOriginUnreachable)
+                },
                 UseBangumiTokenFeatureHandler(
                     sessionManager.sessionFlow.map {
                         (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
@@ -646,6 +674,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                 setOf(
                     UserAgentFeature.withValue(userAgent),
                     ServerListFeature.withValue(ServerListFeatureConfig.Default),
+                    BangumiMirrorFeature.withValue(true),
                     ConvertSendCountExceedExceptionFeature.withValue(true),
                 ),
             ),
@@ -657,6 +686,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
             setOf(
                 UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
                 ServerListFeature.withValue(ServerListFeatureConfig.Default),
+                BangumiMirrorFeature.withValue(true),
                 ConvertSendCountExceedExceptionFeature.withValue(true),
             ),
         ),

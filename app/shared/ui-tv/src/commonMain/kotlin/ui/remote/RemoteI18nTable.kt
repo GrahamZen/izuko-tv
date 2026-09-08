@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5()
+    get() = part1() + part2() + part3() + part4() + part5() + part6()
 
 private fun part1() = listOf(
     RemoteText("Animeko 控制台", "Animeko Console", "Animeko 控制台", "Animeko 控制台"),
@@ -922,4 +922,30 @@ private fun part5() = listOf(
     RemoteText("选资源时可以展开「搜索名与集数」：改过的搜索名会记住，这部番以后缓存和播放都用它；集数只影响这一集，BT 合集编号和 Bangumi 不同时改这里才能下对文件。", "When picking a resource, expand “Search names and episode”: edited search names are remembered for this anime's caching and playback; episode numbers only affect this episode, and fixing them picks the right file in BT batches numbered differently from Bangumi.", "選資源時可以展開「搜尋名稱與集數」：改過的搜尋名稱會記住，這部番以後緩存和播放都用它；集數只影響這一集，BT 合集編號和 Bangumi 不同時改這裡才能下對文件。", "選資源時可以展開「搜尋名稱與集數」：改過的搜尋名稱會記住，這部番以後快取和播放都用它；集數只影響這一集，BT 合集編號和 Bangumi 不同時改這裡才能下對檔案。"),
     RemoteText("已恢复 Bangumi 名称和集数，正在重新搜索", "Restored Bangumi names and episode numbers. Searching again.", "已恢復 Bangumi 名稱和集數，正在重新搜尋", "已恢復 Bangumi 名稱和集數，正在重新搜尋"),
     RemoteText("已按新的集数重新搜索（只影响这一集）", "Searching again with the new episode numbers (this episode only).", "已按新的集數重新搜尋（只影響這一集）", "已按新的集數重新搜尋（只影響這一集）"),
+)
+
+private fun part6() = listOf(
+    RemoteText("Bangumi 连接方式", "Bangumi connection", "Bangumi 連接方式", "Bangumi 連線方式"),
+    RemoteText("中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。", "If Bangumi can't be reached (for example in mainland China), setting up the proxy above is recommended: the app connects to Bangumi directly without any third party. You can also browse through a mirror.", "中國大陸連不上 Bangumi 官方時，推薦優先設置上面的代理：直連官方，不經過任何第三方。也可以經鏡像瀏覽。", "中國大陸連不上 Bangumi 官方時，建議優先設定上面的代理：直連官方，不經過任何第三方。也可以經鏡像瀏覽。"),
+    RemoteText("官方连不上时用镜像", "Use a mirror when Bangumi is unreachable", "官方連不上時用鏡像", "官方連不上時用鏡像"),
+    RemoteText("只连官方", "Official site only", "只連官方", "只連官方"),
+    RemoteText("用我自己的镜像", "My own mirror", "用我自己的鏡像", "用我自己的鏡像"),
+    RemoteText("、", ", ", "、", "、"),
+    RemoteText("自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。", "Built-in mirrors: {0} (the list updates daily and is tried in order). No address needed.", "內建鏡像：{0}（清單每天自動更新，按順序嘗試），不用填地址。", "內建鏡像：{0}（清單每天自動更新，依序嘗試），不用填網址。"),
+    RemoteText("镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。", "Mirrors don't carry your login: sign-in and collection sync still go to Bangumi directly, so third-party mirrors can't see your account.", "鏡像不帶登錄：登錄與收藏同步仍只走官方地址，第三方鏡像看不到你的帳號。", "鏡像不帶登入：登入與收藏同步仍只走官方網址，第三方鏡像看不到你的帳號。"),
+    RemoteText("登录与收藏同步也经过镜像", "Also send sign-in and collection sync through the mirror", "登錄與收藏同步也經過鏡像", "登入與收藏同步也經過鏡像"),
+    RemoteText("你的登录凭证与收藏数据会经过镜像，风险由你自行承担。", "Your sign-in credentials and collection data go through the mirror. You accept the risk.", "你的登錄憑證與收藏數據會經過鏡像，風險由你自行承擔。", "你的登入憑證與收藏資料會經過鏡像，風險由你自行承擔。"),
+    RemoteText("镜像由第三方运营。打开后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。", "Mirrors are run by third parties. If you turn this on, your Bangumi credentials, collections and watch progress pass through the mirror server, and whoever runs it can see and use your account. You take full responsibility for any consequences.", "鏡像由第三方運營。打開後，你的 Bangumi 登錄憑證、收藏與觀看進度都會經過鏡像服務器，對方可以看到並使用你的帳號，由此產生的風險由你自行承擔。", "鏡像由第三方營運。開啟後，你的 Bangumi 登入憑證、收藏與觀看進度都會經過鏡像伺服器，對方可以看到並使用你的帳號，由此產生的風險由你自行承擔。"),
+    RemoteText("更安全的做法是设置代理：应用直连 Bangumi 官方，不经过任何第三方。", "The safer option is to set up a proxy: the app then connects to Bangumi directly without any third party.", "更安全的做法是設置代理：應用直連 Bangumi 官方，不經過任何第三方。", "更安全的做法是設定代理：應用直連 Bangumi 官方，不經過任何第三方。"),
+    RemoteText("镜像地址", "Mirror address", "鏡像地址", "鏡像網址"),
+    RemoteText("填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。", "Enter the root domain of your own reverse proxy. It must forward every Bangumi subdomain (api, next, lain and so on) as is. Your login goes through it, so only use a server you run yourself.", "填你自己搭的反代的根域名，它要把 Bangumi 的各個子域（api、next、lain 等）原樣轉發。登錄會經過它，所以只填自己的服務器。", "填你自己架設的反向代理的根網域，它要把 Bangumi 的各個子網域（api、next、lain 等）原樣轉發。登入會經過它，所以只填自己的伺服器。"),
+    RemoteText("无效的连接方式", "Invalid connection mode", "無效的連接方式", "無效的連線方式"),
+    RemoteText("请填根域名，例如 bangumi.example.com", "Enter a root domain, e.g. bangumi.example.com", "請填根域名，例如 bangumi.example.com", "請填根網域，例如 bangumi.example.com"),
+    RemoteText("已改为官方连不上时用镜像", "Now using a mirror when Bangumi is unreachable", "已改為官方連不上時用鏡像", "已改為官方連不上時用鏡像"),
+    RemoteText("已改为官方连不上时用镜像，登录与收藏同步也经过镜像", "Now using a mirror when Bangumi is unreachable, including sign-in and collection sync", "已改為官方連不上時用鏡像，登錄與收藏同步也經過鏡像", "已改為官方連不上時用鏡像，登入與收藏同步也經過鏡像"),
+    RemoteText("已改为只连官方", "Now connecting to the official site only", "已改為只連官方", "已改為只連官方"),
+    RemoteText("用镜像", "Use a mirror", "用鏡像", "用鏡像"),
+    RemoteText("确定连不上官方后会自动改成「用镜像」，之后不再先试官方；需要时再改回这一档。", "Once Bangumi is found unreachable, this switches to “Use a mirror” and stops trying Bangumi first. Switch back here any time.", "確定連不上官方後會自動改成「用鏡像」，之後不再先試官方；需要時再改回這一檔。", "確定連不上官方後會自動改成「用鏡像」，之後不再先試官方；需要時再改回這一檔。"),
+    RemoteText("已改为用镜像", "Now using a mirror", "已改為用鏡像", "已改為用鏡像"),
+    RemoteText("已改为用镜像，登录与收藏同步也经过镜像", "Now using a mirror, including sign-in and collection sync", "已改為用鏡像，登錄與收藏同步也經過鏡像", "已改為用鏡像，登入與收藏同步也經過鏡像"),
 )

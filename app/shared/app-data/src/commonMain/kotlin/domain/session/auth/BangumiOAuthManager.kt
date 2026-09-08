@@ -48,6 +48,13 @@ class BangumiOAuthManager(
     private val sessionManager: SessionManager,
     private val browserFactory: CaptchaBrowserFactory,
     private val scope: CoroutineScope,
+    /**
+     * 当前**可信**镜像的根域名; `null` = 用原站.
+     *
+     * 授权页要丢给浏览器/内嵌 WebView 打开, 那条路不经过 HttpClient, 所以镜像改写只能在拼地址时做.
+     * **只接可信镜像** (用户自建, 或用户允许凭证经过的): 那个页面上用户要输 bangumi 的账号密码, 第三方反代原样看得到.
+     */
+    private val trustedMirrorRoot: () -> String? = { null },
     private val random: Random = Random.Default,
 ) {
     private val logger = logger<BangumiOAuthManager>()
@@ -118,7 +125,7 @@ class BangumiOAuthManager(
         cancel()
         val oauthState = Uuid.random(random).toString()
         pendingState = oauthState
-        val url = BangumiOAuthConstants.authorizeUrl(state = oauthState)
+        val url = BangumiOAuthConstants.authorizeUrl(state = oauthState, mirrorRoot = trustedMirrorRoot())
         _state.value = State.Authorizing(url, browser = null)
 
         browserJob = scope.launch {
@@ -159,7 +166,7 @@ class BangumiOAuthManager(
         cancel()
         val oauthState = Uuid.random(random).toString()
         pendingState = oauthState
-        val url = BangumiOAuthConstants.authorizeUrl(state = oauthState)
+        val url = BangumiOAuthConstants.authorizeUrl(state = oauthState, mirrorRoot = trustedMirrorRoot())
         _state.value = State.Authorizing(url, browser = null)
         // 回环监听接住浏览器里的回调 (见 OAuthLoopbackServer): 电视浏览器不把自定义 scheme
         // 交给系统, deep link 那条在那边收不到. 起不来 (端口被占/iOS) 就还是等 deep link.

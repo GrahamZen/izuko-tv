@@ -1,0 +1,6 @@
+{
+  "_comment": "Bangumi 反代镜像清单. 应用每天拉一次这个文件 (见 BangumiMirrorListRepository), 所以镜像域名死掉时改这里就行, 不用发版. 只写根域名: 应用按通配子域自己换算 api./next./lain. 等. 排在前面的先试.",
+  "mirrors": [
+    "bangumi.vip"
+  ]
+}

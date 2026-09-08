@@ -35,6 +35,8 @@ import kotlinx.coroutines.withTimeout
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -192,6 +194,8 @@ class UserCollectionsViewModelTest {
         override val defaultMediaPreference: Settings<MediaPreference> by lazy { error("not implemented") }
         override val profileSettings: Settings<ProfileSettings> by lazy { error("not implemented") }
         override val proxySettings: Settings<ProxySettings> by lazy { error("not implemented") }
+        override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("not implemented") }
+        override val bangumiMirrorCache: Settings<BangumiMirrorCache> by lazy { error("not implemented") }
         override val mediaCacheSettings: Settings<MediaCacheSettings> by lazy { error("not implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("not implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("not implemented") }

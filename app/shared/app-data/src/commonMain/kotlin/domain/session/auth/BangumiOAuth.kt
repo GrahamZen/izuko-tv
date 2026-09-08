@@ -53,16 +53,24 @@ object BangumiOAuthConstants {
 
     /**
      * 授权页地址. [state] 原样回传, 用来防止串号 (同一台设备上先后开两次授权).
+     *
+     * @param mirrorRoot **只能传可信镜像的根域名** (见 `BangumiEndpointProvider.trustedMirrorRoot`);
+     *   `null` = 用原站. 授权页要丢给浏览器/内嵌 WebView 打开, 那条路不经过 HttpClient, 所以镜像改写
+     *   得在这里做. **用户没同意的第三方镜像绝不能放进来**: 用户要在这个页面上输 bangumi 的账号密码.
      */
     fun authorizeUrl(
         clientId: String = currentAniBuildConfig.bangumiOauthClientId,
         state: String,
         callbackUrl: String = CALLBACK_URL,
-    ): String = "$AUTHORIZE_URL" +
+        mirrorRoot: String? = null,
+    ): String = authorizeUrlBase(mirrorRoot) +
             "?client_id=${clientId.encodeURLParameter()}" +
             "&response_type=code" +
             "&state=${state.encodeURLParameter()}" +
             "&redirect_uri=${callbackUrl.encodeURLParameter()}"
+
+    private fun authorizeUrlBase(mirrorRoot: String?): String =
+        if (mirrorRoot == null) AUTHORIZE_URL else "https://$mirrorRoot/oauth/authorize"
 
     /**
      * 这个地址是不是 OAuth 回调 (WebView 拦截判据). bangumi 会带上 `?code=...&state=...`.

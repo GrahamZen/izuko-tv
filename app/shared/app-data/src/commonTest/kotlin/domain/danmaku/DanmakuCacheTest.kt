@@ -30,6 +30,8 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -253,6 +255,8 @@ class DanmakuCacheTest {
         override val defaultMediaPreference: Settings<MediaPreference> by lazy { error("no implemented") }
         override val profileSettings: Settings<ProfileSettings> by lazy { error("no implemented") }
         override val proxySettings: Settings<ProxySettings> by lazy { error("no implemented") }
+        override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("no implemented") }
+        override val bangumiMirrorCache: Settings<BangumiMirrorCache> by lazy { error("no implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("no implemented") }
         override val uiSettings: Settings<UISettings> by lazy { error("no implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("no implemented") }

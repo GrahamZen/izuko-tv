@@ -16,6 +16,7 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -57,6 +58,7 @@ import kotlin.time.Duration.Companion.seconds
 internal object RemoteImageProxy {
     private val logger = logger<RemoteImageProxy>()
     private val httpClientProvider: HttpClientProvider get() = KoinPlatform.getKoin().get()
+    private val endpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
     private val client by lazy { httpClientProvider.get() }
 
     private class Image(val bytes: ByteArray, val contentType: String)
@@ -92,6 +94,8 @@ internal object RemoteImageProxy {
     fun handle(request: LanHttpRequest): LanHttpResponse {
         val url = request.query.split('&').firstOrNull { it.startsWith("u=") }
             ?.let { runCatching { URLDecoder.decode(it.substring(2), Charsets.UTF_8.name()) }.getOrNull() }
+            // 经镜像拿到的数据里图片是镜像域名 (lain.<镜像>), 先换回原站再过白名单; 真正去取时再按设置决定打哪儿
+            ?.let { endpoints.canonicalUrl(it) }
             ?.takeIf { u -> ".." !in u && ALLOWED_PREFIXES.any { u.startsWith(it) } }
             ?: return LanHttpResponse.status(400, "Bad Request")
         return serve(url)

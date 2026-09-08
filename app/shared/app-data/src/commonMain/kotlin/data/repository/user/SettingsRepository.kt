@@ -33,6 +33,8 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -71,6 +73,12 @@ interface SettingsRepository {
      */
     val profileSettings: Settings<ProfileSettings>
     val proxySettings: Settings<ProxySettings>
+
+    /** bangumi 走原站还是镜像, 见 [BangumiEndpointSettings]. */
+    val bangumiEndpointSettings: Settings<BangumiEndpointSettings>
+
+    /** 远程镜像清单的本地缓存, 见 [BangumiMirrorCache]. */
+    val bangumiMirrorCache: Settings<BangumiMirrorCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -196,6 +204,16 @@ class PreferencesRepositoryImpl(
         "proxyPreferences",
         ProxySettings.serializer(),
         default = { ProxySettings.Default },
+    )
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> = SerializablePreference(
+        "bangumiEndpointPreferences",
+        BangumiEndpointSettings.serializer(),
+        default = { BangumiEndpointSettings.Default },
+    )
+    override val bangumiMirrorCache: Settings<BangumiMirrorCache> = SerializablePreference(
+        "bangumiMirrorCache",
+        BangumiMirrorCache.serializer(),
+        default = { BangumiMirrorCache.Default },
     )
     override val mediaCacheSettings: Settings<MediaCacheSettings> = SerializablePreference(
         "cachePreferences",

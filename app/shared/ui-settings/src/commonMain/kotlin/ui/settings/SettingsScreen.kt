@@ -176,6 +176,7 @@ import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSelectionActions
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.rememberMediaSourceSelectionState
+import me.him188.ani.app.ui.settings.tabs.network.BangumiEndpointGroup
 import me.him188.ani.app.ui.settings.tabs.network.ConfigureProxyGroup
 import me.him188.ani.app.ui.settings.tabs.network.TmdbImagesGroup
 import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
@@ -383,6 +384,9 @@ fun SettingsScreen(
                                     onStartProxyTestLoop = { vm.startProxyTesterLoop() },
                                 )
                                 TmdbImagesGroup(vm.tmdbImagesDisabled)
+                                // 与代理同一页: 用户为"连不上 bangumi"来这里, 两条路都在这儿
+                                val bangumiMirrors by vm.bangumiMirrors.collectAsStateWithLifecycle()
+                                BangumiEndpointGroup(vm.bangumiEndpointSettings, bangumiMirrors)
                             }
 
                             SettingsTab.BT -> {

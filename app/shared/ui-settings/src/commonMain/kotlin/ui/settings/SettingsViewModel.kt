@@ -14,9 +14,11 @@ import androidx.compose.runtime.getValue
 import io.ktor.client.request.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -36,6 +38,7 @@ import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.ProxyMode
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
@@ -50,6 +53,7 @@ import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.TokenSave
+import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -100,6 +104,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val settingsRepository: SettingsRepository by inject()
     private val permissionManager: PermissionManager by inject()
     private val danmakuRegexFilterRepository: DanmakuRegexFilterRepository by inject()
+    private val bangumiMirrorListRepository: BangumiMirrorListRepository by inject()
 
     private val mediaSourceManager: MediaSourceManager by inject()
     private val mediaSourceInstanceRepository: MediaSourceInstanceRepository by inject()
@@ -120,6 +125,15 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val uiSettings: SettingsState<UISettings> =
         settingsRepository.uiSettings.stateInBackground(UISettings.Default.copy(_placeholder = -1))
+
+    val bangumiEndpointSettings: SettingsState<BangumiEndpointSettings> =
+        settingsRepository.bangumiEndpointSettings.stateInBackground(
+            BangumiEndpointSettings.Default.copy(_placeHolder = -1),
+        )
+
+    /** 自带的镜像清单 (每天从仓库拉一次, 拉不到用内置的), 「官方连不上时用镜像」那一档按顺序试. */
+    val bangumiMirrors: StateFlow<List<String>> =
+        bangumiMirrorListRepository.mirrors.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val themeSettings: SettingsState<ThemeSettings> =
         settingsRepository.themeSettings.stateInBackground(ThemeSettings.Default.copy(_placeholder = -1))

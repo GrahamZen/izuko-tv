@@ -29,6 +29,8 @@ import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -287,6 +289,8 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val defaultMediaPreference: Settings<MediaPreference> get() = error("Not used")
     override val profileSettings: Settings<ProfileSettings> get() = error("Not used")
     override val proxySettings: Settings<ProxySettings> get() = error("Not used")
+    override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> get() = error("Not used")
+    override val bangumiMirrorCache: Settings<BangumiMirrorCache> get() = error("Not used")
     override val mediaCacheSettings: Settings<MediaCacheSettings> get() = error("Not used")
     override val danmakuSettings: Settings<DanmakuSettings> get() = error("Not used")
     override val uiSettings: Settings<UISettings> get() = error("Not used")

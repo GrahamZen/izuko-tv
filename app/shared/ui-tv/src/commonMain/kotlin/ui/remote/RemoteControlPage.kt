@@ -109,6 +109,7 @@ internal fun renderRemoteControlPage(
     <div id="set-keep"></div>
     <p class="hint">下面只放要打字的设置，开关类的请在电视上改。</p>
     <div id="set-proxy"></div>
+    <div id="set-bangumi"></div>
     <div id="set-trackers"></div>
     <div id="set-dmfilter"></div>
     <div id="set-logs"></div>
@@ -4912,12 +4913,14 @@ private val SUBS_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接) 与 BT 额外 tracker. 只在切到本标签时
+ * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接)、Bangumi 连接方式 (自带镜像清单、登录是否经过镜像与自建地址)
+ * 与 BT 额外 tracker. 只在切到本标签时
  * 拉一次, 不轮询 —— 表单正在填, 重画会冲掉. 密码框不回显, 留空 = 不改.
  */
 private val SETTINGS_SCRIPT = """
 (function () {
   var proxyBox = document.getElementById('set-proxy');
+  var bgmBox = document.getElementById('set-bangumi');
   var trBox = document.getElementById('set-trackers');
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
@@ -4940,6 +4943,53 @@ private val SETTINGS_SCRIPT = """
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
   var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
+  var BGM_MODES = [['AUTO', T('官方连不上时用镜像')], ['MIRROR', T('用镜像')], ['DIRECT', T('只连官方')], ['CUSTOM', T('用我自己的镜像')]];
+  function bgmUsesMirrors(mode) { return mode === 'AUTO' || mode === 'MIRROR'; }
+  // Bangumi 连接方式 (同设置页那一组): 「官方连不上时用镜像」用自带清单, 不用填; 自建地址才要输入.
+  // 推荐的是上面的代理 (直连官方). 自带镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
+  // 自建地址会带登录, 所以那一档只提示填自己的服务器, 不推荐第三方
+  function bgmCredHint(on) {
+    return on ? T('你的登录凭证与收藏数据会经过镜像，风险由你自行承担。')
+      : T('镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。');
+  }
+  function renderBangumi(b) {
+    b = b || { mode: 'AUTO', custom: '', mirrors: [], allowCredentials: false };
+    var mirrors = (b.mirrors || []).map(esc).join(T('、'));
+    bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
+      '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。') + '</p><div class="pills">' +
+      BGM_MODES.map(function (m) {
+        return '<label><input type="radio" name="mode" value="' + m[0] + '"' + (b.mode === m[0] ? ' checked' : '') + '><span>' + m[1] + '</span></label>';
+      }).join('') + '</div>' +
+      '<p class="hint bgm-auto-only"' + (b.mode === 'AUTO' ? '' : ' hidden') + '>' + T('确定连不上官方后会自动改成「用镜像」，之后不再先试官方；需要时再改回这一档。') + '</p>' +
+      '<div class="bgm-auto"' + (bgmUsesMirrors(b.mode) ? '' : ' hidden') + '>' +
+      (mirrors ? '<p class="hint">' + T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) + '</p>' : '') +
+      '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
+      T('登录与收藏同步也经过镜像') + '</label><p class="hint bgm-cred">' + bgmCredHint(b.allowCredentials) + '</p></div>' +
+      '<div class="bgm-custom"' + (b.mode === 'CUSTOM' ? '' : ' hidden') + '>' +
+      '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
+      T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
+      '</em></label></div>' +
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+  }
+  bgmBox.addEventListener('change', function (e) {
+    var t = e.target, f = t.form;
+    if (t.name === 'cred') {
+      // 勾上要先确认风险 (点保存才生效); 取消勾选不用问
+      if (t.checked && !confirm(T('镜像由第三方运营。打开后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。') +
+          '\n\n' + T('更安全的做法是设置代理：应用直连 Bangumi 官方，不经过任何第三方。'))) t.checked = false;
+      f.querySelector('.bgm-cred').textContent = bgmCredHint(t.checked);
+      return;
+    }
+    if (t.name !== 'mode') return;
+    f.querySelector('.bgm-auto-only').hidden = t.value !== 'AUTO';
+    f.querySelector('.bgm-auto').hidden = !bgmUsesMirrors(t.value);
+    f.querySelector('.bgm-custom').hidden = t.value !== 'CUSTOM';
+  });
+  bgmBox.addEventListener('submit', function (e) {
+    e.preventDefault();
+    post('api/settings/bangumi', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+  });
   // 切到电视前台 (见 TvRemoteControl.frontState): 默认关; 开了还要在电视上授权一次「显示在其他应用的上层」.
   // 授权后回到本标签会重新拉一次 (load), 状态跟着更新
   function renderFront(f) {
@@ -4988,6 +5038,7 @@ private val SETTINGS_SCRIPT = """
       '<p class="hint">' + T('每行一个，BT 下载开始前与内置 tracker 一起添加。') + '</p>' +
       '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
       '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    renderBangumi(d.bangumi);
     renderFront(d.front);
     renderKeep(d.keep);
     renderFilters(d.dmfilter);
