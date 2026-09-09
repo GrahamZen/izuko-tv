@@ -10,6 +10,22 @@
 #   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放
 #   ./scripts/fork-rebase.sh verify             # 逐条对照重放前后, 看哪条被上游改了
 #
+# fork 内部 (feat/* 追 main, 不涉及上游):
+#
+#   ./scripts/fork-rebase.sh stack-preflight    # 找落点、算规模、列会打架的文件, 不动东西
+#   ./scripts/fork-rebase.sh stack              # 打备份 tag + 重放到 main 上
+#   ./scripts/fork-rebase.sh stack-verify       # 对拍
+#
+# **最省事的路是根本不用 stack**: 改写 main (fixup/amend/reorder) 时**从 feat 的顶上发起**
+# `git rebase -i --update-refs <要动的那条的父提交>`, main 的 ref 会被一起挪到正确位置,
+# feat 侧零操作. 只有 main **追加**了新提交 (没改写) 时才需要动 feat, 而那时 `git rebase main`
+# 直接就是对的 (落点仍是 main 的祖先). stack 只是给"忘了 --update-refs 就把 main 重写了"
+# 这种情况兜底 —— 那时 feat 的落点已不是 main 的祖先, 直接 `git rebase main` 会把 feat 里那份
+# **旧的 main 历史副本** (TV 基线 303 文件) 重新贴一遍, 是灾难.
+#
+# 别把 rebase.updateRefs 设成全局 true: 它会把范围内**所有**分支 ref 一起挪, 这个仓库里有
+# 二十来个 backup/* 分支散在历史各处.
+#
 # 环境变量: UPSTREAM (默认 upstream/main), TIP (默认当前分支)
 set -euo pipefail
 
@@ -137,9 +153,140 @@ cmd_verify() {
 EOF
 }
 
+# ---------------------------------------------------------------------------
+# feat/* 追 main
+# ---------------------------------------------------------------------------
+
+# feat 上次落在 main 的哪一条上. 三条路, 按可靠程度排:
+#   1. 上次 stack 记下的 tag forkbase/<TIP>
+#   2. 分支自己的 reflog 里最近一条 "rebase (finish): ... onto <sha>"
+#   3. git 自己按 main 的 reflog 猜 (--fork-point; reflog 会过期, 所以排最后)
+stack_base() {
+    local tag="forkbase/$TIP"
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null &&
+       git merge-base --is-ancestor "$tag" "$TIP"; then
+        echo "$(git rev-parse "$tag") tag:$tag"; return
+    fi
+    local sha
+    sha=$(git reflog show "$TIP" 2>/dev/null |
+          grep -oE "rebase \(finish\): refs/heads/$TIP onto [0-9a-f]+" |
+          head -1 | awk '{print $NF}') || true
+    if [ -n "$sha" ] && git merge-base --is-ancestor "$sha" "$TIP"; then
+        echo "$sha reflog"; return
+    fi
+    sha=$(git merge-base --fork-point main "$TIP" 2>/dev/null) || true
+    if [ -n "$sha" ] && [ "$sha" != "$(git merge-base main "$TIP")" ]; then
+        echo "$sha fork-point"; return
+    fi
+    return 1
+}
+
+# 设置全局 STACK_BASE; 已经叠好时返回 1
+stack_report() {
+    [ "$TIP" != "main" ] || die "在 feat/* 分支上跑, 不是 main"
+
+    if git merge-base --is-ancestor main "$TIP"; then
+        echo "$TIP 已经叠在 main 上 (main 之上 $(git rev-list --count main.."$TIP") 条), 无事可做."
+        echo "main 只是追加了新提交的话, 直接 git rebase main 就行."
+        return 1
+    fi
+
+    local found how
+    found=$(stack_base) || die "找不到 $TIP 上次的落点.
+手动找: git reflog show $TIP | grep 'rebase (finish)'; 或者
+       git tag forkbase/$TIP <落点 sha>  然后重跑."
+    STACK_BASE=${found%% *}; how=${found#* }
+    local base=$STACK_BASE
+
+    hr "落点"
+    echo "  $(git log --oneline -1 "$base")   (来源: $how)"
+    hr "规模"
+    echo "  要重放 (feat 自己的活儿)   $(git rev-list --count "$base".."$TIP") 条"
+    echo "  feat 独有 (按 patch-id)     $(git rev-list --count --cherry-pick --right-only main..."$TIP") 条"
+    echo "  main 独有 (按 patch-id)     $(git rev-list --count --cherry-pick --left-only main..."$TIP") 条"
+    echo "  ↑ 第一行应等于第二行减去下面\"会被丢掉\"的条数; 对不上就别往下走"
+
+    # 落点之前、但 main 上已没有的那些 = feat 里的旧副本. 它们会被 --onto 原地丢掉,
+    # 所以每一条都要能在 main 上找到新版 —— 这里按提交说明首行粗查, 查不到的要人工确认
+    hr "会被丢掉的旧副本 (每条都该能在 main 上找到新版)"
+    git log --format='%h %s' --cherry-pick --right-only main..."$base" |
+        while read -r h subject; do
+            if git log --format=%h -1 --fixed-strings --grep="$subject" main | grep -q .; then
+                echo "  ✓ $h $subject"
+            else
+                echo "  ✗ $h $subject   ← main 上按标题找不到, 先确认再继续"
+            fi
+        done
+
+    hr "两边都改的文件 (这次会打架的地方)"
+    comm -12 <(git diff --name-only "$base" "$TIP" | sort)              <(git diff --name-only "$base" main 2>/dev/null | sort) || true
+
+    hr "Room 数据库版本 (撞车会开不了机)"
+    for ref in main "$TIP"; do
+        printf '  %-24s ' "$ref"
+        git show "$ref:app/shared/app-data/src/commonMain/kotlin/data/persistent/database/AniDatabase.kt" 2>/dev/null |
+            grep -oE 'version = [0-9]+' | head -1 || echo "?"
+    done
+}
+
+cmd_stack_preflight() {
+    stack_report || true
+}
+
+cmd_stack() {
+    require_clean
+    stack_report || return 0
+    local base=$STACK_BASE
+
+    local tag_tip="forkbak/stack-$STAMP/$TIP" tag_main="forkbak/stack-$STAMP/main"
+    git tag -f "$tag_tip" "$TIP" >/dev/null
+    git tag -f "$tag_main" main >/dev/null
+    { echo "STACK_BASE=$base"; echo "OLD_TIP=$tag_tip"; echo "OLD_MAIN=$tag_main"; } > ".git/fork-stack-$STAMP.env"
+    echo
+    echo "备份: $tag_tip / $tag_main"
+
+    # rerere 关掉: rr-cache 里有当初反向 pick 到 main 时记下的**相反**答案 (踩过)
+    hr "重放 $(git rev-list --count "$base".."$TIP") 条到 main"
+    echo "冲突时: 解完 git add, 然后 git rebase --continue; 放弃用 git rebase --abort"
+    echo "modify/delete 的冲突先问\"main 把这个功能搬到哪去了\", 把改动搬过去, 别只保留删除"
+    git -c rerere.enabled=false rebase --onto main "$base" "$TIP"
+
+    git tag -f "forkbase/$TIP" main >/dev/null
+    hr "完成; 落点已记到 forkbase/$TIP, 接着跑 stack-verify"
+}
+
+cmd_stack_verify() {
+    local env_file; env_file=$(ls -t .git/fork-stack-*.env 2>/dev/null | head -1)         || die "找不到备份记录, 先跑 stack"
+    # shellcheck disable=SC1090
+    source "$env_file"
+
+    hr "逐条对照 (只应有被 main 真正改到的那几条是 !)"
+    git range-diff "$STACK_BASE..$OLD_TIP" "main..$TIP" || true
+
+    # range-diff 抓不到静默错并 (自动合并成了 main 的版本, 毫无冲突提示); 文件集对拍能抓:
+    # 旧 feat → 新 feat 变了的文件, 每一个都应能归因到 main 这次带来的改动
+    hr "文件集对拍: 在左不在右的才可疑 (应该只剩你手动清的那几个)"
+    comm -23 <(git diff --name-only "$OLD_TIP" "$TIP" | sort)              <(git diff --name-only "$STACK_BASE" main | sort) || true
+
+    hr "行尾自查"
+    local a b
+    a=$(git diff --numstat "$OLD_TIP" "$TIP" | wc -l)
+    b=$(git diff --numstat --ignore-cr-at-eol "$OLD_TIP" "$TIP" | wc -l)
+    [ "$a" = "$b" ] && echo "  行尾干净" || echo "  ⚠ 有文件只差行尾"
+
+    hr "还要人工过的"
+    cat <<'EOF'
+  1. 全树 grep 被删概念的名字 (WatchTogether / playbackAutomationSuppressed …), 清孤儿注释
+  2. 编译 + 测试: ./gradlew :app:android:assembleDefaultTvDebug :app:shared:app-data:testAndroidHostTest
+EOF
+}
+
 case "${1:-}" in
-    preflight) cmd_preflight ;;
-    run)       cmd_run ;;
-    verify)    cmd_verify ;;
-    *) die "用法: $0 {preflight|run|verify}" ;;
+    preflight)    cmd_preflight ;;
+    run)          cmd_run ;;
+    verify)       cmd_verify ;;
+    stack-preflight) cmd_stack_preflight ;;
+    stack)           cmd_stack ;;
+    stack-verify)    cmd_stack_verify ;;
+    *) die "用法: $0 {preflight|run|verify|stack-preflight|stack|stack-verify}" ;;
 esac
