@@ -231,6 +231,7 @@ fun EpisodeDetails(
     loadError: EpisodePageLoadError?,
     onRetryLoad: () -> Unit,
     modifier: Modifier = Modifier,
+    defaultFetchRequest: MediaFetchRequest? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
     danmakuListState: DanmakuListState? = null,
     /**
@@ -432,6 +433,7 @@ fun EpisodeDetails(
                                 modifier = Modifier
                                     .padding(vertical = 12.dp, horizontal = 16.dp)
                                     .fillMaxWidth(),
+                                defaultFetchRequest = defaultFetchRequest,
                                 stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
@@ -466,6 +468,7 @@ fun EpisodeDetails(
                             mediaSourceResultListPresentation(),
                             onRestartSource = onRestartSource,
                             onRefresh = onRefreshMediaSources,
+                            defaultFetchRequest = defaultFetchRequest,
                             modifier = Modifier.padding(top = 12.dp)
                                 .padding(horizontal = 16.dp)
                                 .fillMaxWidth(),

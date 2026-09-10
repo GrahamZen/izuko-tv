@@ -40,6 +40,7 @@ import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
+import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.UISettings
@@ -396,6 +397,8 @@ internal class FakeEpisodePreferencesRepository : EpisodePreferencesRepository {
     override suspend fun setPreferredWebMediaSource(subjectId: Int, webSourceId: String) = error("Not used")
     override fun getPreferredWebMediaSource(subjectId: Int): Flow<String?> = error("Not used")
     override suspend fun removePreferredWebMediaSource(subjectId: Int) = error("Not used")
+    override fun searchKeywordsFlow(subjectId: Int): Flow<SubjectSearchKeywords?> = error("Not used")
+    override suspend fun setSearchKeywords(subjectId: Int, keywords: SubjectSearchKeywords?) = error("Not used")
 }
 
 /**

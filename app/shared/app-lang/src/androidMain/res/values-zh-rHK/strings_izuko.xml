@@ -104,6 +104,7 @@
     <string name="subject_details_nav_home">主頁</string>
     <string name="subject_details_no_summary">暫無信息</string>
     <string name="media_selector_item_cache_not_ready">緩存未完成</string>
+    <string name="mediafetch_request_editor_restore_names">恢復 Bangumi 名稱</string>
     <string name="episode_danmaku">彈幕</string>
     <string name="settings_log_share_failed">分享日誌檔案失敗，目前裝置可能不支援分享，可改用複製日誌內容</string>
     <string name="settings_log_export_file">匯出當日日誌檔案</string>
