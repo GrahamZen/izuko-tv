@@ -21,6 +21,7 @@ import me.him188.ani.datasources.api.topic.SubtitleLanguage
 import me.him188.ani.datasources.api.topic.isSingleEpisode
 import me.him188.ani.datasources.api.topic.orEmpty
 import me.him188.ani.datasources.api.topic.plus
+import me.him188.ani.datasources.api.util.namedGroup
 
 /**
  * 只解析剧集, 分辨率等必要信息, 不解析标题. 拥有更高正确率
@@ -340,8 +341,8 @@ class LabelFirstRawTitleParser : RawTitleParser() {
 //                return true
 //            }
             collectionPattern.find(str)?.let { result ->
-                val start = result.groups["start"]?.value ?: return@let
-                val end = result.groups["end"]?.value ?: return@let
+                val start = result.namedGroup(collectionPattern, "start")?.value ?: return@let
+                val end = result.namedGroup(collectionPattern, "end")?.value ?: return@let
                 start.getPrefix()?.let { prefix ->
                     if (!end.startsWith(prefix)) {
                         // "SP1-5"
@@ -354,7 +355,7 @@ class LabelFirstRawTitleParser : RawTitleParser() {
                     return EpisodeRange.single(EpisodeSort(end))
                 }
 
-                val extra = result.groups["extra"]?.value
+                val extra = result.namedGroup(collectionPattern, "extra")?.value
                 return if (extra != null) {
                     EpisodeRange.combined(
                         EpisodeRange.range(start, end),
@@ -484,14 +485,13 @@ internal fun String.splitWords(vararg delimiters: Char = DEFAULT_SPLIT_WORDS_DEL
             index = result.range.last + 1
 
 
-            val groups = result.groups
-            val tag = groups["v1"]
-                ?: groups["v2"]
-                ?: groups["v3"]
-                ?: groups["v4"]
-                ?: groups["v5"]
-                ?: groups["v6"]
-                ?: groups["v7"]
+            val tag = result.namedGroup(brackets, "v1")
+                ?: result.namedGroup(brackets, "v2")
+                ?: result.namedGroup(brackets, "v3")
+                ?: result.namedGroup(brackets, "v4")
+                ?: result.namedGroup(brackets, "v5")
+                ?: result.namedGroup(brackets, "v6")
+                ?: result.namedGroup(brackets, "v7")
             // can be "WebRip 1080p HEVC-10bit AAC" or "简繁内封字幕"
             yield(tag!!.value)
         }
