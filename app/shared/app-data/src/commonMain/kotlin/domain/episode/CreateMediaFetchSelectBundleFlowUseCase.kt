@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -104,10 +105,14 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
             // 所以我们总是等待一个 not null SubjectEpisodeInfoBundle 比较.
             .filterNotNull()
             .map { bundle ->
-                MediaFetchRequest.create(
+                val request = MediaFetchRequest.create(
                     bundle.subjectCollectionInfo.subjectInfo,
                     bundle.episodeCollectionInfo.episodeInfo,
                 )
+                // 用户为本条目改过的搜索关键词只在建会话时读一次: 会话内改动走 MediaFetchSession.setFetchRequest,
+                // 不必因此重建整个会话 (选中项与播放都挂在会话上)
+                episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()
+                    ?.applyTo(request) ?: request
             }
             .distinctUntilChanged() // very important to avoid re-query
             .mapLatest { req ->

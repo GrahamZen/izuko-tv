@@ -1210,7 +1210,8 @@
     <string name="mediafetch_request_editor_save_and_refresh">保存并刷新</string>
     <string name="mediafetch_request_editor_title">编辑查询请求</string>
     <string name="mediafetch_request_editor_primary_name">主搜索名</string>
-    <string name="mediafetch_request_editor_primary_name_supporting">大多数数据源只使用此名称</string>
+    <string name="mediafetch_request_editor_primary_name_supporting">大多数数据源只使用此名称。修改后会为本条目记住</string>
+    <string name="mediafetch_request_editor_restore_names">恢复 Bangumi 名称</string>
     <string name="mediafetch_request_editor_secondary_names">次要搜索名</string>
     <string name="mediafetch_request_editor_secondary_names_supporting">在线源会忽略这些名称</string>
     <string name="mediafetch_request_editor_collapse">收起</string>
