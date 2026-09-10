@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.subject.episode.tv
 
 import androidx.compose.animation.animateContentSize
+import me.him188.ani.app.ui.foundation.tv.tvTouchHorizontalSwipe
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -353,6 +354,10 @@ internal fun TvCommentReplyDialog(
                         // 才把下键放行, 由下面的 down 指定落点进输入框; 短评论一按即穿透.
                         // 上键对称: 翻到顶再往上没有目标, 焦点组会拦住
                         .tvPageScrollKeys(scrollState)
+                        // 触屏: 横滑 = 左右键 (左滑下一条 / 右滑上一条), 同一条"有草稿就不翻"守卫. 电视上不装
+                        .tvTouchHorizontalSwipe { delta ->
+                            if (editorState.content.text.isBlank()) onNavigate?.invoke(delta)
+                        }
                         // 左右键交给 [onNavigate] 换相邻评论: 引用区里左右无处可去, 原本只是被
                         // 焦点组拦住. 恒返回 true (没给回调时也吞掉), 免得焦点飘出弹窗
                         .onPreviewKeyEvent { event ->

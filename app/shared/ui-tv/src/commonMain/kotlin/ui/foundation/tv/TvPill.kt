@@ -41,11 +41,13 @@ internal fun TvPillShell(
     onClick: () -> Unit,
     interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier,
+    /** 触屏: 未聚焦时第一下只聚焦 (聚焦本身就浮面板的胶囊用), 见 [tvTouchFocusOnTap]. */
+    touchTwoStep: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.tvTouchFocusOnTap(twoStep = touchTwoStep),
         shape = CircleShape,
         color = if (highlighted) Color.White else Color.White.copy(alpha = TV_PILL_IDLE_ALPHA),
         contentColor = if (highlighted) Color.Black else Color.White,

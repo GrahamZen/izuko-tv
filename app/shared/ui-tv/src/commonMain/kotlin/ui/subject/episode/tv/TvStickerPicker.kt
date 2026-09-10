@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.subject.episode.tv
 
 import androidx.compose.foundation.background
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -242,7 +243,9 @@ private fun TvStickerPackItem(
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused()
-            },
+            }
+            // 触屏: 点一下即聚焦 = 换到这一包 (本条目"聚焦即生效", 点击本身是空操作). 电视上不装
+            .tvTouchFocusOnTap(),
         shape = RoundedCornerShape(10.dp),
         color = when {
             focused -> MaterialTheme.colorScheme.primary

@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -1028,6 +1029,8 @@ private fun TvPlaybackCard(
                         mainFocused = it.isFocused
                         if (it.isFocused) onFocusLabel(mainLabel, false)
                     }
+                    // 触屏: 点即聚焦, 下面的标签行才跟着换 (电视上不装)
+                    .tvTouchFocusOnTap()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -1110,6 +1113,7 @@ private fun TvPlaybackCard(
                             trailingFocused = it.isFocused
                             if (it.isFocused) onFocusLabel(trailingLabel, trailingDanger)
                         }
+                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -1217,6 +1221,7 @@ private fun TvNowPlayingPlaceholderCard(
                 focused = it.isFocused
                 onFocusChanged(it.isFocused)
             }
+            .tvTouchFocusOnTap()
             .focusable()
             .background(container),
         contentAlignment = Alignment.Center,
