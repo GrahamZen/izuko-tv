@@ -10,30 +10,25 @@
 package me.him188.ani.app.platform
 
 import kotlinx.io.IOException
-import java.nio.file.Path
-import kotlin.io.path.deleteIfExists
-import kotlin.io.path.extension
-import kotlin.io.path.getLastModifiedTime
-import kotlin.io.path.isDirectory
-import kotlin.io.path.listDirectoryEntries
-import kotlin.io.path.name
+import java.io.File
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
-import kotlin.time.toKotlinInstant
+import kotlin.time.Instant
 
 object JvmLogHelper {
+    /**
+     * 用 [File] 而不是 `java.nio.file.Path`: 后者在 Android API 26 以下不存在,
+     * 而 minSdk 已经降到 25 (标准的 core library desugaring 不覆盖 java.nio.file).
+     */
     @Throws(IOException::class)
-    fun deleteOldLogs(logsFolder: Path) {
+    fun deleteOldLogs(logsFolder: File) {
         val now = Clock.System.now()
-        logsFolder.run {
-            if (isDirectory()) {
-                listDirectoryEntries()
-            } else emptyList()
-        }.forEach { file ->
+        val files = if (logsFolder.isDirectory) logsFolder.listFiles().orEmpty() else emptyArray()
+        for (file in files) {
             if (file.extension == "log" && (file.name.startsWith("app") || file.name.startsWith("cef-"))
-                && now - file.getLastModifiedTime().toInstant().toKotlinInstant() > 3.days
+                && now - Instant.fromEpochMilliseconds(file.lastModified()) > 3.days
             ) {
-                file.deleteIfExists()
+                file.delete()
             }
         }
     }
