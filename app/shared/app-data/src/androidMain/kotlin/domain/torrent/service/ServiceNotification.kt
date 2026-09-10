@@ -22,12 +22,15 @@ import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Parcelable
+import androidx.annotation.RequiresApi
 import kotlinx.parcelize.Parcelize
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 
+// 只在 :torrent_service 进程里使用, 而该进程只在 API 27+ 上启动 (见 AndroidModules.supportsTorrentServiceProcess).
+@RequiresApi(Build.VERSION_CODES.O)
 class ServiceNotification(
     private val context: Context
 ) {
