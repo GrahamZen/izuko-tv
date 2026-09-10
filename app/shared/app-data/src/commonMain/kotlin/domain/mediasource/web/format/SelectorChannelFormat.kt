@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceEngine
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.util.namedGroup
 import me.him188.ani.utils.xml.Element
 import me.him188.ani.utils.xml.QueryParser
 import me.him188.ani.utils.xml.parseSelectorOrNull
@@ -297,17 +298,10 @@ private fun Regex.findGroupOrFullText(
 ): String? {
     val result = find(text) ?: return null
     // matched
-    result.groups.getOrNull(groupName)?.let { group ->
-        return group.value
+    val group = try {
+        result.namedGroup(this, groupName)
+    } catch (_: IllegalArgumentException) { // 正则里没有这个分组
+        null
     }
-    return text
+    return group?.value ?: text
 }
-
-
-private fun MatchGroupCollection.getOrNull(name: String): MatchGroup? {
-    return try {
-        get(name)
-    } catch (_: IllegalArgumentException) {
-        return null
-    }
-} 

@@ -36,6 +36,18 @@ internal const val FORK_REPO = "animeko"
 private const val UNIVERSAL_APK_MARKER = "universal"
 
 /**
+ * Android 7.1 兼容包的文件名标记: `ani-<版本>-legacy-<架构>.apk` (fork-release.yml 上传时命名).
+ * 与正式包只差这一段, 架构段完全同名, 所以按 ABI 挑包之前必须先按这个标记把两族分开.
+ */
+private const val LEGACY_APK_MARKER = "-legacy-"
+
+/**
+ * 正式包的 minSdk (gradle.properties 的 `android.min.sdk`). 低于它的设备只能装兼容包
+ * (`-Pani.android.legacy=true` 构建, minSdk 25), 装正式包会 `INSTALL_FAILED_OLDER_SDK`.
+ */
+private const val NORMAL_APK_MIN_SDK = 27
+
+/**
  * 该资产是否是 [abi] 的包. release 资产名形如 `ani-<版本>-<架构>.apk`
  * (见 `ReleaseArtifactNames.androidApp`), 所以按 `-<架构>.` 这一整段匹配.
  *
@@ -44,15 +56,30 @@ private const val UNIVERSAL_APK_MARKER = "universal"
  */
 private fun GitHubAsset.isForAbi(abi: String) = "-$abi." in name
 
-/** 见 [UpdateChecker.pickInstallableApks]; 抽成顶层纯函数以便测试 (设备 ABI 列表由调用方给出). */
-internal fun List<GitHubAsset>.pickInstallableApks(abis: List<String>): List<GitHubAsset> {
+/**
+ * 见 [UpdateChecker.pickInstallableApks]; 抽成顶层纯函数以便测试 (设备 ABI 列表与是否老设备由调用方给出).
+ *
+ * [legacy] = 设备低于正式包 minSdk, 只能装兼容包. 两族包的架构段同名 (`-arm64-v8a.` / `-universal.`),
+ * 不先切开的话: 老设备会拿到正式包 (装不上); 正常设备走 universal 兜底时也会拿到兼容包 ——
+ * GitHub 按文件名返回, `-legacy-universal` 排在 `-universal` 前面.
+ */
+internal fun List<GitHubAsset>.pickInstallableApks(abis: List<String>, legacy: Boolean = false): List<GitHubAsset> {
     if (abis.isEmpty()) return this
+    val (legacyApks, normalApks) = partition { LEGACY_APK_MARKER in it.name }
+    // 老设备: 只在兼容包里挑; 一个都没有 (旧 release 不出兼容包) 就是没有可装的, 交空列表让调用方不提示,
+    // 绝不能退回正式包 —— 那只会换来 INSTALL_FAILED_OLDER_SDK.
+    if (legacy) return legacyApks.pickByAbi(abis) ?: emptyList()
+    // 正常设备: 兼容包一律不看. 命名规则变了 (匹配不到任何东西) 时宁可退回旧行为也不要空列表.
+    return normalApks.pickByAbi(abis) ?: normalApks.ifEmpty { this }
+}
+
+/** 本机架构的专包在前, universal 兜底在后; 两个都没有返回 `null`. */
+private fun List<GitHubAsset>.pickByAbi(abis: List<String>): List<GitHubAsset>? {
     // 按设备自己的偏好顺序取第一个"有对应包"的 ABI, 而不是只看首选 ABI —— 首选的那个不一定出包:
     // x86 电视模拟器首选 x86 (本项目不出), 但它支持 armeabi-v7a, 该装 v7 包
     val exact = abis.firstNotNullOfOrNull { abi -> firstOrNull { it.isForAbi(abi) } }
     val universal = firstOrNull { it.isForAbi(UNIVERSAL_APK_MARKER) }
-    // 两个都没有 = release 命名规则变了: 宁可退回旧行为也不要空列表
-    return listOfNotNull(exact, universal).ifEmpty { this }
+    return listOfNotNull(exact, universal).ifEmpty { null }
 }
 
 class UpdateChecker {
@@ -108,6 +135,15 @@ class UpdateChecker {
         val versionName = latest.tagName.removePrefix("v")
         if (!isNewerThan(versionName, currentVersion)) return null
 
+        val packages = latest.assets
+            .filter { it.name.endsWith(".apk") }
+            .pickInstallableApks()
+        if (packages.isEmpty() && currentPlatform() is Platform.Android) {
+            // 只会发生在老设备遇到不出兼容包的 release: 提示了也装不上, 不如当没有新版本
+            logger.info { "Release ${latest.tagName} has no package installable on this device, skipping" }
+            return null
+        }
+
         return NewVersion(
             name = versionName,
             changelogs = listOf(
@@ -117,10 +153,7 @@ class UpdateChecker {
                     changes = latest.body,
                 ),
             ),
-            downloadUrlAlternatives = latest.assets
-                .filter { it.name.endsWith(".apk") }
-                .pickInstallableApks()
-                .map { it.browserDownloadUrl },
+            downloadUrlAlternatives = packages.map { it.browserDownloadUrl },
             publishedAt = latest.publishedAt,
         )
     }
@@ -139,9 +172,16 @@ class UpdateChecker {
      * 用设备的**完整** ABI 列表而不是只用首选 ABI ([me.him188.ani.utils.platform.Arch]):
      * 见 [Platform.Android.supportedAbis] —— 只看首选 ABI 时 x86 的电视模拟器会被当成 arm64 设备.
      * 非 Android 平台拿不到列表 (空), 此时不筛, 保持原有行为.
+     *
+     * 低于正式包 minSdk 的设备 (Android 7.1) 只能装 `-legacy-` 兼容包, 见 [LEGACY_APK_MARKER].
      */
-    private fun List<GitHubAsset>.pickInstallableApks(): List<GitHubAsset> =
-        pickInstallableApks((currentPlatform() as? Platform.Android)?.supportedAbis ?: emptyList())
+    private fun List<GitHubAsset>.pickInstallableApks(): List<GitHubAsset> {
+        val android = currentPlatform() as? Platform.Android
+        return pickInstallableApks(
+            abis = android?.supportedAbis ?: emptyList(),
+            legacy = android?.sdkInt?.let { it < NORMAL_APK_MIN_SDK } ?: false,
+        )
+    }
 
     /**
      * Returns true if [candidate] is a newer version than [current].

@@ -56,6 +56,9 @@ import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
+// 整个服务进程只在 API 27+ 上启动 (AIDL 协议用到 API 27 的 SharedMemory),
+// 更低版本走进程内引擎, 见 AndroidModules.supportsTorrentServiceProcess.
+@RequiresApi(Build.VERSION_CODES.O_MR1)
 sealed class AniTorrentService : LifecycleService() {
     private val scope = CoroutineScope(
         Dispatchers.Default + CoroutineName("AniTorrentService") +
@@ -279,4 +282,5 @@ class AniTorrentServiceApi34 : AniTorrentService()
  *
  * 在 manifest 的 fgsType 是 dataSync
  */
+@RequiresApi(Build.VERSION_CODES.O_MR1)
 class AniTorrentServiceApiDefault : AniTorrentService()
