@@ -20,7 +20,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.core.content.FileProvider
@@ -39,6 +43,7 @@ import me.him188.ani.app.ui.lang.settings_log_export_file
 import me.him188.ani.app.ui.lang.settings_log_export_succeed
 import me.him188.ani.app.ui.lang.settings_log_exported
 import me.him188.ani.app.ui.lang.settings_log_file_not_found
+import me.him188.ani.app.ui.lang.settings_log_send_to_phone
 import me.him188.ani.app.ui.lang.settings_log_share_failed
 import me.him188.ani.app.ui.lang.settings_log_share_file
 import me.him188.ani.app.ui.lang.settings_log_share_today_log_file
@@ -68,6 +73,7 @@ internal actual fun ColumnScope.PlatformLoggingItems(listItemColors: ListItemCol
     val copyTodayLogContentText = stringResource(Lang.settings_log_copy_today_log_content)
     val logFileNotFoundText = stringResource(Lang.settings_log_file_not_found)
     val shareFailedText = stringResource(Lang.settings_log_share_failed)
+    var lanShareDialogOpen by remember { mutableStateOf(false) }
 
     // 让用户自己挑落地位置 —— 插了 U 盘的话系统选择器里就能选到它, 这是把日志拷出电视的唯一办法.
     // 走 SAF 而不是申请存储权限: 从 Android 10 起权限已经给不到「任意路径」, 而 U 盘挂在
@@ -127,6 +133,28 @@ internal actual fun ColumnScope.PlatformLoggingItems(listItemColors: ListItemCol
         },
         colors = listItemColors,
     )
+
+    if (!supportsFileSharing) {
+        // 没有分享目标的设备 (电视) 上, 插 U 盘之外把日志拿出来的另一条路: 起个局域网 HTTP 服务,
+        // 手机扫码直接从电视下载. 手机上有系统分享面板, 用不着这个
+        ListItem(
+            headlineContent = { Text(stringResource(Lang.settings_log_send_to_phone)) },
+            Modifier.clickable {
+                if (!context.getCurrentLogFile().exists()) {
+                    toaster.toast(logFileNotFoundText)
+                    return@clickable
+                }
+                lanShareDialogOpen = true
+            },
+            colors = listItemColors,
+        )
+        if (lanShareDialogOpen) {
+            LogLanShareDialog(
+                logsDir = context.getLogsDir(),
+                onDismissRequest = { lanShareDialogOpen = false },
+            )
+        }
+    }
 
     ListItem(
         headlineContent = { Text(copyTodayLogContentText) },

@@ -20,6 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -80,6 +82,8 @@ import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.user.SelfInfoUiState
+import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -107,6 +111,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    }
+    // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
+    // 用 navigator 把电视带过去. 见 TvRemoteControl
+    LaunchedEffect(aniNavigator) {
+        TvRemoteControl.install(appContext, aniNavigator)
     }
     CompositionLocalProvider(
         LocalTvBackLongPressHost provides backLongPress,
@@ -191,6 +200,19 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
         val playbackEntry: PlaybackSessionEntry =
             if (retainSession) sessionHolder else PlaybackSessionEntry.None
+        // 手机控制中心: 播放页不在前台时, 网页上的「在电视上打开播放器」要知道回哪个会话
+        val currentPlaybackEntry by rememberUpdatedState(playbackEntry)
+        DisposableEffect(Unit) {
+            TvRemoteControl.playbackSessionProvider = { currentPlaybackEntry.session }
+            onDispose { TvRemoteControl.playbackSessionProvider = null }
+        }
+        // 播放页不在前台时手机上照样能换源: 后台会话照常搜源解析 (见 RegisterTvRemoteBackgroundPlayer).
+        // key(vm): 换会话时旧把手注销、新把手登记
+        if (retainSession) {
+            sessionHolder.currentViewModel?.let { vm ->
+                key(vm) { RegisterTvRemoteBackgroundPlayer(vm) }
+            }
+        }
         // 「一起看」入口把手: 同样是 Activity 级 ViewModel, 与 AniAppContent 里 provide 给
         // LocalWatchTogetherEntry 的是同一个实例 —— 本处在那个 provider 的**外面**, 读
         // CompositionLocal 只会拿到默认空实例 (见 WatchTogetherEntryState)
