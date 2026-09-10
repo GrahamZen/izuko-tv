@@ -58,6 +58,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
     onRefresh: () -> Unit,
     onRestartSource: (instanceId: String) -> Unit,
     modifier: Modifier = Modifier,
+    defaultFetchRequest: MediaFetchRequest? = null,
     /**
      * 选中一个数据源后是否顺手关掉本面板, 见 `VideoScaffoldConfig.hideSelectorOnSelect`.
      *
@@ -92,7 +93,8 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
             mediaSourceResultListPresentation,
             onRestartSource = onRestartSource,
             onRefresh,
-            modifier.padding(horizontal = 16.dp)
+            defaultFetchRequest = defaultFetchRequest,
+            modifier = modifier.padding(horizontal = 16.dp)
                 .fillMaxWidth()
                 .navigationBarsPadding(),
             stickyHeaderBackgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh,
