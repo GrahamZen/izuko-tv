@@ -145,6 +145,7 @@ import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.playbackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.tv.TvRetainedFrameStore
 import me.him188.ani.app.ui.user.SelfInfoUiState
+import me.him188.ani.app.ui.remote.TvRemoteControlDialog
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
 
@@ -259,6 +260,9 @@ fun TvMainScreenLayout(
         }
         // 头像关联动作 (焦点在头像上时于其上方浮现): 按登录态切换
         val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
+        // 点头像本身 = 弹「手机控制中心」二维码 (用户 2026-09-11). 原先点头像是进编辑资料 / 登录, 那两项
+        // 本来就在上方的浮出按钮里 (列表第一项), 改掉不丢入口
+        var showRemoteControl by remember { mutableStateOf(false) }
         val avatarActions = buildList {
             if (loggedIn) {
                 add(
@@ -297,9 +301,7 @@ fun TvMainScreenLayout(
         TvNavigationSideRail(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
-            onAvatarClick = {
-                if (loggedIn) onNavigateToSettings(SettingsTab.PROFILE) else navigator.navigateEmailLoginStart()
-            },
+            onAvatarClick = { showRemoteControl = true },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)
             onExitFocus = { runCatching { contentFocus.requestFocus() } },
@@ -311,6 +313,9 @@ fun TvMainScreenLayout(
             modifier = Modifier.fillMaxHeight(),
         )
         TvExitHintToast(state = exitHintState, text = pressAgainText)
+        if (showRemoteControl) {
+            TvRemoteControlDialog(onDismissRequest = { showRemoteControl = false })
+        }
     }
 }
 

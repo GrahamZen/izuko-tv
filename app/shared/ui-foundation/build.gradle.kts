@@ -72,6 +72,9 @@ kotlin {
         api(libs.compose.material3.adaptive.core)
         // Preview only
     }
+    sourceSets.getByName("jvmMain").dependencies {
+        implementation(libs.zxing.core) // 局域网交互的二维码 (设置页导出日志 / 搜索页手机输入), 见 ui/foundation/lan
+    }
     sourceSets.desktopMain.dependencies {
         implementation(libs.jna)
         implementation(libs.jna.platform)
