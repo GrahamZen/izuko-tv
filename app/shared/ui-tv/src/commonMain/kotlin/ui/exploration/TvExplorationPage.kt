@@ -10,6 +10,13 @@
 package me.him188.ani.app.ui.exploration
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -1006,6 +1013,32 @@ fun TvExplorationPage(
                     maxHeight - TV_EXPLORATION_TOP_BLEED -
                             TV_PAGE_CARD_WIDTH / TV_PORTRAIT_CARD_COVER_RATIO
                     ).coerceAtLeast(TV_EXPLORATION_MIN_BOTTOM_PAD)
+            // 触屏 (平板装了 TV 包): 手指拖卡片区 = "焦点进了首行", hero 收起 (否则 hero 态会把列表拽回顶部);
+            // 在顶端继续往下拉 = 首行按上键回 hero. 电视上连接器不建, 见 [TvExplorationTouchScroll]
+            val touchScroll = if (LocalTvTouchInputEnabled.current) {
+                val density = LocalDensity.current
+                remember(listState, density) {
+                    TvExplorationTouchScroll(listState, with(density) { TV_EXPLORATION_TOUCH_PULL_TO_HERO.toPx() })
+                }
+            } else {
+                null
+            }
+            if (touchScroll != null) {
+                SideEffect {
+                    touchScroll.collapseHero = {
+                        if (focusedRowKey == null && rowCount > 0) focusedRowKey = rowKeyAt(0)
+                    }
+                    // 与快捷菜单「回到主界面」同一组动作 (见 pendingHomeFocus): 撤掉卡片落点, 回 hero 态;
+                    // 焦点真在卡片上时一并送回轮播主按钮, 否则留一张看不见的持焦卡
+                    touchScroll.expandHero = {
+                        if (focusedRowKey != null) {
+                            focusedRowKey = null
+                            cardFocusRequest = null
+                            if (cardAreaHasFocus) heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
+                        }
+                    }
+                }
+            }
             CompositionLocalProvider(LocalBringIntoViewSpec provides verticalBringIntoViewSpec) {
                 LazyColumn(
                     Modifier.fillMaxSize().clipToBounds()
@@ -1037,7 +1070,8 @@ fun TvExplorationPage(
                         // 长按方向键的移动频率上限: 系统连发 ~20 次/秒, 每发都换卡的话滑动
                         // 动画不断被打断. 挂在整个卡片区上, 上下左右一起限.
                         .tvFocusMoveRateLimit()
-                        .onFocusChanged { cardAreaHasFocus = it.hasFocus },
+                        .onFocusChanged { cardAreaHasFocus = it.hasFocus }
+                        .then(if (touchScroll != null) Modifier.nestedScroll(touchScroll) else Modifier),
                     state = listState,
                     contentPadding = PaddingValues(
                         top = TV_EXPLORATION_TOP_BLEED,
@@ -2238,3 +2272,58 @@ private const val TV_ROW_UNFOCUSED_DIM_ALPHA = 0.45f
 
 /** 压暗档切换 (聚焦行↔预览行) 的渐变时长. */
 private const val TV_ROW_DIM_FADE_MILLIS = 200
+
+// ============================ 触屏滚动 (平板装了 TV 包) ============================
+
+/**
+ * 探索页卡片区的触屏滚动 → 页面态. 只在触屏设备上装 (见调用处).
+ *
+ * hero 态由"卡片区有没有持焦的行"决定 (`focusedRowKey == null`): 遥控器按下键进卡片区时它自然收起. 触屏上手指
+ * 直接拖列表, 焦点一动不动 —— hero 态那条"停下就拽回顶部"的守卫于是每次松手都把列表拉回去, 第二行往下永远看不到.
+ * 这里把手指拖动翻译成同一个状态变化:
+ *
+ * - 往上拖 (看下面的内容) = [collapseHero], 等价于"焦点进了首行", hero 收起, 列表从此自由滚动;
+ * - 在顶端继续往下拉够 [pullToHeroPx] = [expandHero], 等价于首行按上键回 hero.
+ *
+ * 只认 [NestedScrollSource.UserInput]: 程序滚动 (hero 态回顶 / 焦点驱动的 bringIntoView) 直接改列表状态,
+ * 不走嵌套滚动, 不会被误当成手指. 不消费任何滚动量.
+ */
+private class TvExplorationTouchScroll(
+    private val listState: LazyListState,
+    private val pullToHeroPx: Float,
+) : NestedScrollConnection {
+    var collapseHero: () -> Unit = {}
+    var expandHero: () -> Unit = {}
+    private var pulled = 0f
+
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (source == NestedScrollSource.UserInput && available.y < 0f) {
+            pulled = 0f
+            collapseHero()
+        }
+        return Offset.Zero
+    }
+
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+        if (source != NestedScrollSource.UserInput) return Offset.Zero
+        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        if (atTop && available.y > 0f) {
+            pulled += available.y
+            if (pulled >= pullToHeroPx) {
+                pulled = 0f
+                expandHero()
+            }
+        } else if (consumed.y != 0f) {
+            pulled = 0f
+        }
+        return Offset.Zero
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        pulled = 0f
+        return Velocity.Zero
+    }
+}
+
+/** 在顶端继续往下拉多远算"回 hero". */
+private val TV_EXPLORATION_TOUCH_PULL_TO_HERO = 72.dp
