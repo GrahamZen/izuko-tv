@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.models.preference.MediaPreference
+import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSource
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSourceDao
@@ -39,6 +40,17 @@ interface EpisodePreferencesRepository : KoinComponent {
     fun getPreferredWebMediaSource(subjectId: Int): Flow<String?>
 
     suspend fun removePreferredWebMediaSource(subjectId: Int)
+
+    /**
+     * 用户为该条目改过的数据源搜索关键词. 没改过时为 `null`.
+     * @see SubjectSearchKeywords
+     */
+    fun searchKeywordsFlow(subjectId: Int): Flow<SubjectSearchKeywords?>
+
+    /**
+     * 保存该条目的搜索关键词; 传 `null` 表示恢复成 Bangumi 的名字.
+     */
+    suspend fun setSearchKeywords(subjectId: Int, keywords: SubjectSearchKeywords?)
 }
 
 class EpisodePreferencesRepositoryImpl(
@@ -85,5 +97,29 @@ class EpisodePreferencesRepositoryImpl(
 
     override suspend fun removePreferredWebMediaSource(subjectId: Int) {
         preferredWebMediaSourceDao.deletePreferredMediaSource(subjectId)
+    }
+
+    // 与 MediaPreference 共用一个 store; MediaPreference 的键是裸 subjectId, 这里加前缀区分
+    private fun searchKeywordsKey(subjectId: Int) = stringPreferencesKey("search_keywords:$subjectId")
+
+    override fun searchKeywordsFlow(subjectId: Int): Flow<SubjectSearchKeywords?> {
+        return store.data.map { it[searchKeywordsKey(subjectId)] }.map { encoded ->
+            if (encoded.isNullOrBlank()) return@map null
+            runCatching {
+                json.decodeFromString(SubjectSearchKeywords.serializer(), encoded)
+            }.getOrNull()
+        }
+    }
+
+    override suspend fun setSearchKeywords(subjectId: Int, keywords: SubjectSearchKeywords?) {
+        logger.info { "Saved search keywords for subject $subjectId: $keywords" }
+        store.edit {
+            val key = searchKeywordsKey(subjectId)
+            if (keywords == null) {
+                it.remove(key)
+            } else {
+                it[key] = json.encodeToString(SubjectSearchKeywords.serializer(), keywords)
+            }
+        }
     }
 }

@@ -415,6 +415,7 @@ private fun EpisodeScreenContent(
                                 { vm.updateFetchRequest(it) },
                                 pauseOnPlaying = pauseOnPlaying,
                                 tryUnpause = tryUnpause,
+                                defaultFetchRequest = page.defaultFetchRequest,
                                 setShowEditCommentSheet = { showEditCommentSheet = it },
                                 modifier = Modifier.fillMaxSize(),
                                 windowInsets = windowInsets,
@@ -499,6 +500,7 @@ private fun EpisodeScreenTabletVeryWide(
     setShowEditCommentSheet: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
+    defaultFetchRequest: MediaFetchRequest? = null,
 ) {
     BoxWithConstraints {
         val maxWidth = maxWidth
@@ -608,6 +610,7 @@ private fun EpisodeScreenTabletVeryWide(
                                     { page.mediaSourceResultListPresentation },
                                     page.selfInfo,
                                     modifier = Modifier.fillMaxSize(),
+                                    defaultFetchRequest = defaultFetchRequest,
                                     onSwitchEpisode = { episodeId ->
                                         if (!vm.episodeSelectorState.selectEpisodeId(episodeId)) {
                                             navigator.navigateEpisodeDetails(vm.subjectId, episodeId)
@@ -778,6 +781,7 @@ private fun EpisodeScreenContentPhone(
                     page.mediaSelectorState,
                     { page.mediaSourceResultListPresentation },
                     page.selfInfo,
+                    defaultFetchRequest = page.defaultFetchRequest,
                     onSwitchEpisode = { episodeId ->
                         if (!vm.episodeSelectorState.selectEpisodeId(episodeId)) {
                             navigator.navigateEpisodeDetails(vm.subjectId, episodeId)
@@ -1202,6 +1206,7 @@ private fun EpisodeVideo(
                             { vm.updateFetchRequest(it) },
                             onDismissRequest = { goBack() },
                             onRefresh = { vm.refreshFetch() },
+                            defaultFetchRequest = page.defaultFetchRequest,
                             onRestartSource = { vm.restartSource(it) },
                             hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
                         )
