@@ -37,6 +37,11 @@ sealed class Platform {
          * 只看 [arch] 会把它当成 arm64 设备, 装 arm64 包必然失败.
          */
         val supportedAbis: List<String> = listOf(arch.displayName),
+        /**
+         * 系统 API 级别 (`Build.VERSION.SDK_INT`); `null` = 拿不到 (单元测试). 自动更新用它判断该装正式包
+         * 还是 Android 7.1 兼容包 —— 低于正式包 minSdk 的设备装正式包会 `INSTALL_FAILED_OLDER_SDK`.
+         */
+        val sdkInt: Int? = null,
     ) : Mobile() {
         override val name: String get() = "Android"
     }

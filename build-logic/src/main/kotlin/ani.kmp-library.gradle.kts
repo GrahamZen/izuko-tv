@@ -50,7 +50,7 @@ configure<KotlinMultiplatformExtension> {
 
     android {
         compileSdk = getIntProperty("android.compile.sdk")
-        minSdk = getIntProperty("android.min.sdk")
+        minSdk = androidMinSdk
         androidResources.enable = true
 
         withHostTestBuilder {
@@ -61,7 +61,7 @@ configure<KotlinMultiplatformExtension> {
             sourceSetTreeName = KotlinSourceSetTree.test.name
         }.configure {
             targetSdk {
-                release(getIntProperty("android.min.sdk"))
+                release(androidMinSdk)
             }
             instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
             instrumentationRunnerArguments["runnerBuilder"] = "de.mannodermaus.junit5.AndroidJUnit5Builder"
