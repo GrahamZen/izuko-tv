@@ -78,6 +78,7 @@ kotlin {
 
     sourceSets.commonMain.dependencies {
         implementation(projects.utils.platform)
+        implementation(libs.kotlinx.serialization.json) // Web 控制台的 JSON 接口 (ui/remote)
         // app:shared 是顶层界面聚合模块 (播放页 ViewModel / 主页导航), TV 页面直接复用它的状态层.
         // 方向是 ui-tv -> app:shared, 反向由"本模块只有 android target"从物理上阻止.
         api(projects.app.shared)

@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
@@ -253,4 +254,29 @@ fun Modifier.consumeHeldConfirmKey(enabled: Boolean = true): Modifier = composed
         }
         true // 残余: 按住途中的连发, 或那一次按住最终的 KeyUp
     }
+}
+
+/**
+ * [consumeHeldConfirmKey] 的常驻版: 给**长按把焦点送过来的目标**用, 每次获得焦点都重新武装 ——
+ * 从获焦起直到看见新的一次按下 (`repeatCount == 0` 的 KeyDown) 为止, 确认键事件一律消费.
+ *
+ * 场景: 搜索页历史行长按确认键直接删除, 那一行随即消失、焦点被送回搜索框, 而用户的手还没松 ——
+ * 同一次按住剩下的连发与最后的 KeyUp 落在搜索框上, 它认 KeyUp 进编辑态, 表现为"长按删除一松手
+ * 键盘弹出来". [consumeHeldConfirmKey] 只保护挂载后的第一次按下, 常驻节点上用不了, 所以要按获焦
+ * 重新武装. 正常导航过来时下一次按下是新按下, 当场放行, 不影响短按.
+ *
+ * 挂在目标节点自己的 `onPreviewKeyEvent` **之前** (同一节点上靠前的 modifier 先拿到 preview 事件).
+ */
+fun Modifier.consumeHeldConfirmKeyOnFocus(): Modifier = composed {
+    var armed by remember { mutableStateOf(true) }
+    onFocusChanged { if (it.isFocused) armed = true }
+        .onPreviewKeyEvent { event ->
+            if (!armed) return@onPreviewKeyEvent false
+            if (event.key !in TV_CONFIRM_KEYS) return@onPreviewKeyEvent false
+            if (event.type == KeyEventType.KeyDown && event.isAutoRepeat != true) {
+                armed = false
+                return@onPreviewKeyEvent false
+            }
+            true
+        }
 }

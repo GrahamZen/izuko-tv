@@ -36,9 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.rounded.Close
@@ -76,6 +74,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -131,8 +135,6 @@ import me.him188.ani.app.ui.lang.playback_nothing_to_play
 import me.him188.ani.app.ui.lang.playback_prepare_in_background
 import me.him188.ani.app.ui.lang.playback_up_next_continue
 import me.him188.ani.app.ui.lang.playback_up_next_start
-import me.him188.ani.app.ui.lang.settings_account_popup_edit_profile
-import me.him188.ani.app.ui.lang.settings_account_popup_login_register
 import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
@@ -145,6 +147,8 @@ import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.playbackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.tv.TvRetainedFrameStore
 import me.him188.ani.app.ui.user.SelfInfoUiState
+import me.him188.ani.app.ui.remote.TvRemoteControl
+import me.him188.ani.app.ui.remote.TvRemoteQrCard
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
 
@@ -259,14 +263,9 @@ fun TvMainScreenLayout(
         }
         // 头像关联动作 (焦点在头像上时于其上方浮现): 按登录态切换
         val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
+        // 编辑资料 / 登录与点头像本身重复, 不占浮出按钮
         val avatarActions = buildList {
             if (loggedIn) {
-                add(
-                    TvRailAvatarAction(
-                        Icons.Outlined.Edit,
-                        stringResource(Lang.settings_account_popup_edit_profile),
-                    ) { onNavigateToSettings(SettingsTab.PROFILE) },
-                )
                 add(
                     TvRailAvatarAction(
                         Icons.Outlined.History,
@@ -280,12 +279,6 @@ fun TvMainScreenLayout(
                     ) { onLogout() },
                 )
             } else {
-                add(
-                    TvRailAvatarAction(
-                        Icons.AutoMirrored.Outlined.Login,
-                        stringResource(Lang.settings_account_popup_login_register),
-                    ) { navigator.navigateEmailLoginStart() },
-                )
                 add(
                     TvRailAvatarAction(
                         Icons.Outlined.History,
@@ -523,6 +516,10 @@ private fun TvActionPanelDialog(
     val session = playback.session
     val upNext = if (session == null) TvUpNextStore.target else null
 
+    // Web 控制台让电视跳走了 (搜索 / 播放 / 打开详情): 面板是独立窗口, 页面换了它还挡在上面, 自己关掉.
+    // 调用方给的关闭动作只是把根部的开关置 false, 首次组合时那份就够用
+    LaunchedEffect(Unit) { TvRemoteControl.remoteNavigations.collect { onDismissRequest() } }
+
     // 圆钮先列出来再渲染: 默认焦点按"第一颗 / 最后一颗"定位, 而哪些颗在场是上下文决定的
     val actions = buildList {
         onGoHome?.let { goHome ->
@@ -637,9 +634,30 @@ private fun TvActionPanelDialog(
     // 由来; 而重发窗口里用户按遥控器就会被抢回去. 现在两样都没有 —— 锚点附着即送, 单发不抢.
     focus.InitialFocus(initialKey)
 
-    Dialog(onDismissRequest = onDismissRequest) {
+    // 「Web 控制台」码卡放在屏幕右上角 (2026-09-12, 用户要: 面板照旧, 码单独一块, 长按播放键一开就能扫).
+    // 退出确认变体 (探索页 hero 上按返回) 不放: 那一刻的意图是走人, 码是噪音.
+    //
+    // 为了能把卡放到屏幕角上, 弹窗窗口铺满全屏 (usePlatformDefaultWidth = false), 面板在里面居中 —— 位置、尺寸、内容、
+    // 焦点都与原来一样. 代价: 「点弹窗外面关掉」(触屏) 系统不管了 (窗口就是整个屏幕), 自己判: 点在面板与码卡之外才关.
+    // 不用 Popup 挂码卡: 它挂在应用窗口上, 在弹窗窗口里的定位与层级都靠不住
+    val showRemoteQr = defaultFocus != TvActionPanelDefaultFocus.EXIT
+    Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        var panelBounds by remember { mutableStateOf<Rect?>(null) }
+        var qrBounds by remember { mutableStateOf<Rect?>(null) }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { p ->
+                        if (panelBounds?.contains(p) != true && qrBounds?.contains(p) != true) onDismissRequest()
+                    }
+                },
+        ) {
         Surface(
-            Modifier.width(TV_ACTION_PANEL_WIDTH),
+            Modifier
+                .align(Alignment.Center)
+                .onGloballyPositioned { panelBounds = it.boundsInParent() }
+                .width(TV_ACTION_PANEL_WIDTH),
             shape = RoundedCornerShape(16.dp),
             // 与其他 TV 弹窗同一底色 (半透明玻璃), 内容色显式给 —— 半透明底查不到 "on" 色,
             // 不给会退回 LocalContentColor 的默认纯黑 (见 AniCenteredPanelDialog 的注释)
@@ -901,6 +919,18 @@ private fun TvActionPanelDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (showRemoteQr) {
+            // 不吃焦点: 码只是给手机扫的, 面板的焦点路径 (卡片 → 连通行 → 圆钮) 与标签行都不受影响.
+            // 底色同面板 (半透明玻璃), 两块透明度一致; 只有码自带不透明底
+            TvRemoteQrCard(
+                containerColor = centeredPanelColor,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = TV_REMOTE_QR_CARD_MARGIN, end = TV_REMOTE_QR_CARD_MARGIN)
+                    .onGloballyPositioned { qrBounds = it.boundsInParent() },
+            )
+        }
         }
     }
 }
@@ -1347,6 +1377,12 @@ private fun renderPlaybackTime(millis: Long): String {
  * 卡片右侧文字要留得下剧名, 而缩略图 + 关闭已经占掉 190dp.
  */
 private val TV_ACTION_PANEL_WIDTH = 460.dp
+
+/**
+ * 动作面板开着时右上角「Web 控制台」码卡离屏幕上边、右边的距离. 960dp 宽的 1080p 电视上卡片右缘在 928dp,
+ * 左缘约 732dp, 与居中 460dp 宽的面板 (右缘 710dp) 之间留 20dp 左右, 不重叠.
+ */
+private val TV_REMOTE_QR_CARD_MARGIN = 32.dp
 
 /** 正在播放卡的高度: 缩略图 72dp + 上下各 12dp. */
 private val TV_NOW_PLAYING_CARD_HEIGHT = 96.dp

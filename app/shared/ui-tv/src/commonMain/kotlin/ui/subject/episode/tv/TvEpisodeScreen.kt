@@ -108,6 +108,7 @@ import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
+import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
@@ -241,6 +242,9 @@ fun TvEpisodeScreenContent(
     val togglePlayPause: () -> Unit = remember(vm) { { vm.player.togglePlayWhenReady() } }
 
     SideEffect { vm.onUIReady() }
+
+    // Web 控制台的「播放器」标签: 页面在组合里时登记, 手机才能读候选、切数据源 (见 RegisterTvRemotePlayer)
+    RegisterTvRemotePlayer(vm, page)
 
     // 暂停那一刻截一张画面留给动作面板的"正在播放"卡 (见 TvRetainedFrameStore).
     // 挂在**暂停**上而不是"离开页面"上: 退出播放页必然伴随一次自动暂停 (保留会话的宿主按的),
@@ -1331,7 +1335,7 @@ fun TvEpisodeScreenContent(
     // 置真, 所以这里不会读到隐藏期遗留的陈旧真值 (hideAll 刻意不复位它, 见 TvPlayerOverlayState).
     // 副作用是选集条开着就会一直挂在画面上, 与"暂停时不隐藏"同一档取舍: 用户自己按返回/上键收.
     //
-    // **播放意图 (playWhenReady) 也是键**: 暂停着就不计时; 从别处恢复播放 (手机遥控 / 一起看同步) 不经按键、
+    // **播放意图 (playWhenReady) 也是键**: 暂停着就不计时; 从别处恢复播放 (Web 控制台 / 一起看同步) 不经按键、
     // interactionTick 不动, 原来到点查到暂停就作罢、之后再没人重新计时, 控制层一直挂着. 现在恢复播放本身
     // 就重新数 5 秒, 与从哪儿恢复无关. combine 之后不能去重: 每次按键都要把计时重置
     LaunchedEffect(Unit) {
