@@ -97,9 +97,10 @@ fun EpisodeCacheRequester(
     mediaFetcherLazy: Flow<MediaFetcher>,
     mediaSelectorFactory: MediaSelectorFactory,
     storagesLazy: Flow<List<MediaCacheStorage>>,
+    transformFetchRequest: suspend (MediaFetchRequest) -> MediaFetchRequest = { it },
 //    flowContext: CoroutineContext = Dispatchers.Default,
 ): EpisodeCacheRequester = EpisodeCacheRequesterImpl(
-    mediaFetcherLazy, mediaSelectorFactory, storagesLazy,
+    mediaFetcherLazy, mediaSelectorFactory, storagesLazy, transformFetchRequest,
 //    flowContext
 )
 
@@ -107,6 +108,10 @@ class EpisodeCacheRequesterImpl(
     private val mediaFetcherLazy: Flow<MediaFetcher>,
     private val mediaSelectorFactory: MediaSelectorFactory,
     private val storagesLazy: Flow<List<MediaCacheStorage>>,
+    /**
+     * 发起搜索前对请求做的调整, 例如套用用户为该条目记住的搜索关键词.
+     */
+    private val transformFetchRequest: suspend (MediaFetchRequest) -> MediaFetchRequest = { it },
 //    private val flowContext: CoroutineContext = EmptyCoroutineContext,
 //    private val enableCaching: Boolean = true,
 ) : EpisodeCacheRequester { // TODO: consider lifecycle of EpisodeCacheRequesterImpl
@@ -292,7 +297,9 @@ class EpisodeCacheRequesterImpl(
             val new = SelectMedia(
                 request,
                 mediaFetcherLazy.first().newSession(
-                    MediaFetchRequest.Companion.create(request.subjectInfo, request.episodeInfo),
+                    transformFetchRequest(
+                        MediaFetchRequest.Companion.create(request.subjectInfo, request.episodeInfo),
+                    ),
                 ),
             )
             stage.value = new
