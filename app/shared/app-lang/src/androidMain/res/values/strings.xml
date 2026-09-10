@@ -1169,7 +1169,8 @@
     <string name="mediafetch_request_editor_save_and_refresh">Save and refresh</string>
     <string name="mediafetch_request_editor_title">Edit request</string>
     <string name="mediafetch_request_editor_primary_name">Primary search name</string>
-    <string name="mediafetch_request_editor_primary_name_supporting">Most data sources only use this name</string>
+    <string name="mediafetch_request_editor_primary_name_supporting">Most data sources only use this name. Changes are remembered for this subject</string>
+    <string name="mediafetch_request_editor_restore_names">Restore Bangumi names</string>
     <string name="mediafetch_request_editor_secondary_names">Secondary search names</string>
     <string name="mediafetch_request_editor_secondary_names_supporting">Online sources ignore these names</string>
     <string name="mediafetch_request_editor_collapse">Collapse</string>

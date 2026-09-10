@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.mediafetch.request
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -32,6 +33,7 @@ import me.him188.ani.app.ui.lang.mediafetch_request_editor_continue_editing
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_discard
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_discard_confirmation
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_invalid_request
+import me.him188.ani.app.ui.lang.mediafetch_request_editor_restore_names
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_save_and_refresh
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_title
 import me.him188.ani.app.ui.lang.settings_danmaku_cancel
@@ -46,6 +48,10 @@ fun MediaFetchRequestEditorDialog(
     fetchRequest: MediaFetchRequest,
     onDismissRequest: () -> Unit,
     onFetchRequestChange: (MediaFetchRequest) -> Unit,
+    /**
+     * 未经用户修改、由 Bangumi 信息生成的请求. 提供时显示「恢复 Bangumi 名称」按钮.
+     */
+    defaultFetchRequest: MediaFetchRequest? = null,
 ) {
     var editingRequest by rememberSaveable(
         fetchRequest,
@@ -71,6 +77,7 @@ fun MediaFetchRequestEditorDialog(
     val discardText = stringResource(Lang.mediafetch_request_editor_discard)
     val continueEditingText = stringResource(Lang.mediafetch_request_editor_continue_editing)
     val discardConfirmationText = stringResource(Lang.mediafetch_request_editor_discard_confirmation)
+    val restoreNamesText = stringResource(Lang.mediafetch_request_editor_restore_names)
 
     AlertDialog(
         onDismissRequestWrapped,
@@ -89,7 +96,21 @@ fun MediaFetchRequestEditorDialog(
                 Text(saveAndRefreshText)
             }
         },
-        dismissButton = dismissDialogButton(cancelText, onDismissRequestWrapped),
+        dismissButton = {
+            Row {
+                if (defaultFetchRequest != null) {
+                    // 把编辑区整体退回 Bangumi 的名字 (分集字段同样退回默认); 保存后记住的关键词随之清掉
+                    val defaultEditing = defaultFetchRequest.toEditingMediaFetchRequest()
+                    TextButton(
+                        onClick = { editingRequest = defaultEditing },
+                        enabled = editingRequest != defaultEditing,
+                    ) {
+                        Text(restoreNamesText)
+                    }
+                }
+                dismissDialogButton(cancelText, onDismissRequestWrapped)?.invoke()
+            }
+        },
         title = {
             Text(editRequestTitle)
         },
