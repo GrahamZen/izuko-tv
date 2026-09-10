@@ -37,6 +37,15 @@ class SubjectSearchHistoryRepository(
         searchHistory.deleteByContent(content)
     }
 
+    suspend fun clearHistory() = withContext(defaultDispatcher) {
+        searchHistory.deleteAll()
+    }
+
+    /** 最近的 [limit] 条搜索记录 (新的在前). 给不方便收分页流的地方用 (TV 的 Web 控制台). */
+    suspend fun recentHistory(limit: Int): List<String> = withContext(defaultDispatcher) {
+        searchHistory.recent(limit)
+    }
+
     fun getHistoryPager(): Flow<PagingData<String>> {
         return Pager(
             config = defaultPagingConfig,
