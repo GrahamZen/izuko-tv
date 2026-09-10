@@ -37,7 +37,7 @@ android {
     compileSdk = getIntProperty("android.compile.sdk")
     defaultConfig {
         applicationId = "me.him188.ani"
-        minSdk = getIntProperty("android.min.sdk")
+        minSdk = androidMinSdk
         targetSdk = getIntProperty("android.compile.sdk")
         versionCode = getIntProperty("android.version.code")
         versionName = project.version.toString()
@@ -131,6 +131,11 @@ android {
         compose = true
         buildConfig = true
     }
+    compileOptions {
+        // 只在兼容包上开: minSdk 低于 26 时系统里没有 java.time (kotlinx-datetime 等在用), 需要 D8 回填.
+        // 这是模块级设置, 开了就是所有用户一起换成回填实现, 所以正式包坚决不开. 见 buildLegacyAndroidApp.
+        isCoreLibraryDesugaringEnabled = buildLegacyAndroidApp
+    }
 }
 
 dependencies {
@@ -151,6 +156,11 @@ dependencies {
 
     implementation(libs.ktor.client.core)
     implementation(libs.mediamp.ffmpeg)
+
+    // 必须与 isCoreLibraryDesugaringEnabled 同进同退: 只挂依赖不开开关, AGP 会直接报错.
+    if (buildLegacyAndroidApp) {
+        coreLibraryDesugaring(libs.android.desugar.jdk.libs)
+    }
 }
 
 idea {
