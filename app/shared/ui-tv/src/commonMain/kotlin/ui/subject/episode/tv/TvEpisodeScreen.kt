@@ -18,6 +18,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -50,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -64,6 +68,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.panpf.sketch.LocalPlatformContext
@@ -95,6 +101,9 @@ import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
 import me.him188.ani.app.ui.foundation.TV_PLAY_PAUSE_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.tvTouchPressSignal
+import kotlin.math.abs
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.theme.AniTheme
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -1376,6 +1385,80 @@ fun TvEpisodeScreenContent(
 
     // 播放/暂停键递给整棵组合: 独立窗口 (弹窗 / 下拉菜单 / 一起看) 的按键到不了上面那个根路由,
     // 它们在自己的内容根上挂 Modifier.tvPlayPauseKey() 读这里
+    // 触屏 (平板装了 TV 包) 的手势落点: 与根路由调同一批局部函数, 语义对照见 [TvPlayerTouchLayer].
+    // 电视上 touchInput 为 false, 手势层根本不组合 (开关见 TvTouchInput.kt)
+    val touchInput = LocalTvTouchInputEnabled.current
+    // 电视上连这个落点对象都不建 (每次重组都会分配一把 lambda)
+    val touchScrub = if (touchInput) remember { TvTouchScrubState() } else null
+    val touchHandler = if (touchScrub == null) null else TvPlayerTouchHandler(
+        layer = { overlay.layer },
+        onPressStart = {
+            // 与确认键 KeyDown 同一记账: 倍速协程按 TV_FAST_FORWARD_HOLD_MILLIS 判长按
+            if (!confirmKeyHeld) {
+                confirmKeyHeld = true
+                confirmKeyHoldTick++
+            }
+        },
+        onPressEnd = { confirmKeyHeld = false },
+        isFastForwarding = { fastForwarding },
+        onTap = {
+            when (overlay.layer) {
+                // 单击只唤出控制层, 不切播放 (平板惯例; 遥控器确认键是"切播放并唤出")
+                TvPlayerLayer.HIDDEN -> overlay.showControls()
+                // 空白处单击 = 收起; 拖拽预览中 = 取消 (与返回键同义)
+                TvPlayerLayer.CONTROLS -> {
+                    if (progressSliderState.isPreviewing) exitScrub(commit = false) else overlay.hideAll()
+                }
+
+                TvPlayerLayer.DETAILS -> Unit
+            }
+        },
+        onDoubleTap = { zone ->
+            when (zone) {
+                TvTouchZone.CENTER -> {
+                    // 与播放/暂停键同义 (见根路由): 暂停态恢复不唤出控制层, 播放态暂停仍唤出
+                    val resuming = !vm.player.state.value.playWhenReady
+                    vm.player.togglePlayWhenReady()
+                    if (!resuming) overlay.showControls()
+                }
+
+                TvTouchZone.LEFT, TvTouchZone.RIGHT -> {
+                    // 与单按左右键同义: 跳一步, 中央箭头反馈, 不唤出控制层
+                    if (!progressSliderState.isPreviewing) {
+                        val forward = zone == TvTouchZone.RIGHT
+                        vm.player.skip(if (forward) TV_PLAYER_SEEK_STEP_MILLIS else -TV_PLAYER_SEEK_STEP_MILLIS)
+                        seekFlash.flash(forward)
+                    }
+                }
+            }
+        },
+        canScrub = {
+            progressSliderState.totalDurationMillis > 0L &&
+                    !overlay.danmakuInputExpanded && overlay.replyingComment == null
+        },
+        onScrubStart = {
+            val total = progressSliderState.totalDurationMillis
+            touchScrub.anchorMillis = if (progressSliderState.isPreviewing) {
+                (progressSliderState.displayPositionRatio * total).toLong()
+            } else {
+                progressSliderState.currentPositionMillis
+            }
+            // 与 enterScrub 同一套: 中央箭头让位, 暂停 (画面跑着而圆点停在别处会对不上), 唤出进度条
+            seekFlash.cancel()
+            vm.player.pause()
+            if (overlay.layer == TvPlayerLayer.HIDDEN) overlay.showControls()
+        },
+        onScrub = { widthFraction ->
+            val total = progressSliderState.totalDurationMillis
+            if (total > 0L) {
+                val target = (touchScrub.anchorMillis + (widthFraction * TV_TOUCH_SCRUB_FULL_WIDTH_MILLIS).toLong())
+                    .coerceIn(0L, total)
+                progressSliderState.previewPositionRatio(target.toFloat() / total)
+            }
+        },
+        onScrubEnd = { commit -> exitScrub(commit) },
+    )
+
     CompositionLocalProvider(LocalTvPlayPauseHandler provides togglePlayPause) {
         AniTheme(darkModeOverride = DarkMode.DARK) {
             Box(
@@ -1383,6 +1466,8 @@ fun TvEpisodeScreenContent(
                     .fillMaxSize()
                     .background(Color.Black)
                     .tvFocusNavSignal(focus)
+                    // 触屏: 任何按下都算一次交互 (重置控制层自动隐藏计时), 电视上不存在这一层
+                    .tvTouchPressSignal { overlay.markInteraction() }
                     .onPreviewKeyEvent(onRootKeyEvent)
                     .tvFocusAnchor(
                         focus,
@@ -1396,6 +1481,12 @@ fun TvEpisodeScreenContent(
                     vm.player,
                     Modifier.matchParentSize(),
                 )
+
+                // 触屏手势层 (电视上不组合): 在视频面之上、一切覆盖层之下 —— 覆盖层里可点/可滚的节点
+                // 在 z 序上压着它, 命中它们的事件到不了这里, 只有落在空白处的手势才算画面手势
+                if (touchHandler != null) {
+                    TvPlayerTouchLayer(touchHandler, Modifier.matchParentSize())
+                }
 
                 // 弹幕层
                 AniAnimatedVisibility(page.danmakuEnabled, Modifier.matchParentSize()) {
@@ -1840,3 +1931,135 @@ private const val TV_PAUSE_FLASH_HOLD_MS = 120
 private const val TV_PAUSE_FLASH_SHADOW_ALPHA = 0.55f
 
 private val logger = logger("TvEpisodeScreen")
+
+// ============================ 触屏手势 (平板装了 TV 包) ============================
+
+/**
+ * 触屏的画面手势层. 语义与根路由一一对应, 全部经 [TvPlayerTouchHandler] 落到同一个状态机, 不另起一套:
+ *
+ * | 手势 | 纯视频态 | 控制层 |
+ * |---|---|---|
+ * | 单击 | 唤出控制层 (不切播放, 平板惯例) | 空白处收起; 拖拽预览中取消 |
+ * | 双击中央 | 播放/暂停 (= 播放键) | 同左 |
+ * | 双击左/右边缘 ([TV_TOUCH_SEEK_EDGE_FRACTION]) | 退/进 [TV_PLAYER_SEEK_STEP_MILLIS] (= 单按左右键) | 同左 |
+ * | 长按 | 倍速 (= 长按确认键, 同一协程同一记账) | 无 |
+ * | 横向拖动 | 拖拽预览 (= 长按左右键那一态), 松手落地 | 同左 |
+ *
+ * 详情层什么都不做: 那一层的空白处是详情页自己的背景. 只在**空白处**起手: 覆盖层里可点/可滚的节点在 z 序上
+ * 压着本层, 命中它们的事件到不了这里. 单击要等一个双击窗口才兑现 (与手机端一样), 代价是控制层晚约 0.3 秒出现.
+ * 纵向滑动不做事 (亮度/音量留待以后), 起手后直接放弃本次手势.
+ */
+@Composable
+private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier = Modifier) {
+    val current by rememberUpdatedState(handler)
+    Box(
+        modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                val h = current
+                val down = awaitFirstDown()
+                if (h.layer() == TvPlayerLayer.DETAILS) return@awaitEachGesture
+                val slop = viewConfiguration.touchSlop
+                // 纯视频态的按下 = 确认键按下 (倍速记账); 抬起/滑动起手/取消都要关掉这笔账, 且只关一次
+                var pressOpen = h.layer() == TvPlayerLayer.HIDDEN
+                if (pressOpen) h.onPressStart()
+                fun closePress() {
+                    if (pressOpen) {
+                        pressOpen = false
+                        h.onPressEnd()
+                    }
+                }
+
+                var scrubbing = false
+                var endedWithUp = false
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (change.changedToUpIgnoreConsumed()) {
+                            endedWithUp = scrubbing || !change.isConsumed
+                            break
+                        }
+                        if (!change.pressed) break
+                        if (!scrubbing && change.isConsumed) break // 别处接管了
+                        val dx = change.position.x - down.position.x
+                        val dy = change.position.y - down.position.y
+                        if (scrubbing) {
+                            change.consume()
+                            h.onScrub(dx / size.width)
+                            continue
+                        }
+                        if (abs(dx) <= slop && abs(dy) <= slop) continue
+                        // 横向滑出阈值 = 拖拽预览; 纵向 / 倍速中 / 不能拖 (时长未知等) 则放弃本次手势
+                        if (abs(dx) > abs(dy) && !h.isFastForwarding() && h.canScrub()) {
+                            closePress() // 滑动不是按住
+                            scrubbing = true
+                            h.onScrubStart()
+                            change.consume()
+                            h.onScrub(dx / size.width)
+                        } else {
+                            break
+                        }
+                    }
+                } finally {
+                    closePress()
+                }
+                if (scrubbing) {
+                    h.onScrubEnd(endedWithUp)
+                    return@awaitEachGesture
+                }
+                if (!endedWithUp) return@awaitEachGesture
+                // 长按倍速已生效: 抬起只负责还原 (由倍速协程做), 不当点击 —— 与根路由的确认键抬起同一判据
+                if (h.isFastForwarding()) return@awaitEachGesture
+                // 单击 / 双击: 等一个双击窗口, 第二下也必须落在空白处
+                val second = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) { awaitFirstDown() }
+                if (second == null) {
+                    h.onTap()
+                    return@awaitEachGesture
+                }
+                val secondUp = waitForUpOrCancellation() ?: return@awaitEachGesture
+                if ((secondUp.position - second.position).getDistance() > slop) return@awaitEachGesture
+                val width = size.width.toFloat()
+                h.onDoubleTap(
+                    when {
+                        second.position.x < width * TV_TOUCH_SEEK_EDGE_FRACTION -> TvTouchZone.LEFT
+                        second.position.x > width * (1f - TV_TOUCH_SEEK_EDGE_FRACTION) -> TvTouchZone.RIGHT
+                        else -> TvTouchZone.CENTER
+                    },
+                )
+            }
+        },
+    )
+}
+
+/** [TvPlayerTouchLayer] 的落点: 每一项都对应根路由里的一档, 由 TvEpisodeScreenContent 用同一批局部函数实现. */
+private class TvPlayerTouchHandler(
+    val layer: () -> TvPlayerLayer,
+    /** 纯视频态按下 / 抬起: 与确认键 KeyDown / KeyUp 同一倍速记账. */
+    val onPressStart: () -> Unit,
+    val onPressEnd: () -> Unit,
+    val isFastForwarding: () -> Boolean,
+    val onTap: () -> Unit,
+    val onDoubleTap: (TvTouchZone) -> Unit,
+    val canScrub: () -> Boolean,
+    val onScrubStart: () -> Unit,
+    /** 相对起手点的横向位移, 以本层宽度为单位 (右为正). */
+    val onScrub: (widthFraction: Float) -> Unit,
+    val onScrubEnd: (commit: Boolean) -> Unit,
+)
+
+/**
+ * 双击落点分区: 左右各一条窄边 ([TV_TOUCH_SEEK_EDGE_FRACTION]) 是跳步, 其余一大片都是播放/暂停 ——
+ * 双击暂停远比跳步常用, 早先三等分时暂停只占中间三分之一, 稍偏一点就成了快进退.
+ */
+private enum class TvTouchZone { LEFT, CENTER, RIGHT }
+
+/** 横向拖动的锚: 起手那一刻的播放位置, 之后按位移算目标. */
+private class TvTouchScrubState {
+    var anchorMillis: Long = 0L
+}
+
+/** 横向拖满一屏宽对应的时间量 (与手机端滑动 seek 同量级, 见 SwipeSeekerConfig.maxDragSeconds). */
+private const val TV_TOUCH_SCRUB_FULL_WIDTH_MILLIS = 90_000L
+
+/** 触屏双击跳步的边缘宽度 (占画面宽度的比例, 左右各一条); 其余一大片都是双击暂停. */
+private const val TV_TOUCH_SEEK_EDGE_FRACTION = 0.2f
