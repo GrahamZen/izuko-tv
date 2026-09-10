@@ -106,6 +106,7 @@ fun TvCapsuleButton(
                 }
                 .clip(CircleShape)
                 .background(containerColor)
+                .tvTouchFocusOnTap()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

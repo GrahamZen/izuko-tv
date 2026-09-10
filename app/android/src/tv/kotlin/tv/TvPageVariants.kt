@@ -9,6 +9,7 @@
 
 package me.him188.ani.android.tv
 
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
@@ -39,6 +40,8 @@ import me.him188.ani.app.ui.foundation.TV_PLAY_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.TvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.tvTouchKeyboardMode
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageRefreshHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
@@ -100,11 +103,17 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val playLongPress = remember { TvKeyLongPressHost(TV_PLAY_KEYS) }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageRefreshHost() }
+    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
+    val appContext = LocalContext.current
+    val touchInput = remember(appContext) {
+        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    }
     CompositionLocalProvider(
         LocalTvBackLongPressHost provides backLongPress,
         // 下发播放键宿主只为让独立窗口的桥接够得着 (处理器仍只有下面那一个)
         LocalTvPlayLongPressHost provides playLongPress,
         LocalTvPageRefreshHost provides pageRefresh,
+        LocalTvTouchInputEnabled provides touchInput,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -247,7 +256,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         Box(
             Modifier
                 .tvKeyLongPressInterceptor(backLongPress)
-                .tvKeyLongPressInterceptor(playLongPress),
+                .tvKeyLongPressInterceptor(playLongPress)
+                .tvTouchKeyboardMode(),
         ) {
             content()
         }
