@@ -9,6 +9,8 @@
 
 package me.him188.ani.android.tv
 
+import android.content.pm.PackageManager
+import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
@@ -44,10 +46,12 @@ import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.TvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
+import me.him188.ani.app.ui.foundation.tv.tvTouchKeyboardMode
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageRefreshHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
@@ -122,7 +126,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageRefreshHost() }
+    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
     val appContext = LocalContext.current
+    val touchInput = remember(appContext) {
+        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     LaunchedEffect(aniNavigator) {
@@ -141,6 +149,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvPlayLongPressHost provides playLongPress,
         LocalTvPageRefreshHost provides pageRefresh,
         LocalTvNavKeyTracker provides navKeys,
+        LocalTvTouchInputEnabled provides touchInput,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -314,9 +323,17 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             Modifier
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
-                .tvNavKeyInterceptor(navKeys),
+                .tvNavKeyInterceptor(navKeys)
+                .tvTouchKeyboardMode(),
         ) {
-            content()
+            if (touchInput) {
+                // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
+                // 电视上不包这一层, content 原样组合
+                val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
+                CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
+            } else {
+                content()
+            }
         }
     }
 }

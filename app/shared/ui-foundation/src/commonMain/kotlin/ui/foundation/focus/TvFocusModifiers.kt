@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import me.him188.ani.app.ui.foundation.isAutoRepeat
+import me.him188.ani.app.ui.foundation.tv.tvTouchPressSignal
+import androidx.compose.runtime.Composable
 
 /*
  * TV 焦点框架的使用侧 API: 页面用这些 Modifier 扩展声明焦点层级与操作方式,
@@ -116,7 +118,13 @@ fun Modifier.tvFocusLink(
  *
  * 每个持有 [TvFocusScope] 的页面都应在根上挂本 modifier.
  */
-fun Modifier.tvFocusNavSignal(scope: TvFocusScope): Modifier = onPreviewKeyEvent { event ->
+@Composable
+fun Modifier.tvFocusNavSignal(scope: TvFocusScope): Modifier = tvTouchPressSignal {
+    // 触屏 (平板装了 TV 包): 指针按下与方向/确认键按下同义 —— 用户刚点走的焦点同样不该被在途请求抢回.
+    // 电视上 (LocalTvTouchInputEnabled = false) 这一层不存在, 见 TvTouchInput.kt
+    scope.notifyUserNavigation()
+    scope.notifyUserInput()
+}.onPreviewKeyEvent { event ->
     // **系统按住连发不算新的用户介入** (fork 加的守卫; 上游只在它的快捷键 modifier 里有, 这里漏了).
     //
     // 漏了会让"长按方向键驱动的整批切换"自己把自己取消: 换天/换分类是由按键触发的 —— 第一发
