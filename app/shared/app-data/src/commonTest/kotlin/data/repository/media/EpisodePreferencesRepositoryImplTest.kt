@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.preference.MediaPreference
+import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.persistent.createTestPreferencesDataStore
 import me.him188.ani.app.data.persistent.database.dao.createMemoryPreferredWebMediaSourceDao
 import kotlin.test.Test
@@ -150,6 +151,43 @@ class EpisodePreferencesRepositoryImplTest {
             MediaPreference.PlatformDefault.copy(alliance = "Legacy"),
             repository.mediaPreferenceFlow(SUBJECT_ID).first(),
         )
+    }
+
+    @Test
+    fun `搜索关键词 未设置时为 null, set 后读回, 传 null 删除`() = runTest {
+        val store = createTestPreferencesDataStore()
+        val repository = createRepository(store)
+        assertNull(repository.searchKeywordsFlow(SUBJECT_ID).first())
+
+        val keywords = SubjectSearchKeywords(listOf("史莱姆 第三季", "転スラ"))
+        repository.setSearchKeywords(SUBJECT_ID, keywords)
+        assertEquals(keywords, repository.searchKeywordsFlow(SUBJECT_ID).first())
+        // 别的条目不受影响
+        assertNull(repository.searchKeywordsFlow(SUBJECT_ID + 1).first())
+
+        repository.setSearchKeywords(SUBJECT_ID, null)
+        assertNull(repository.searchKeywordsFlow(SUBJECT_ID).first())
+    }
+
+    @Test
+    fun `搜索关键词与 MediaPreference 共用 store 但互不覆盖`() = runTest {
+        val store = createTestPreferencesDataStore()
+        val repository = createRepository(store)
+        val preference = MediaPreference.Empty.copy(alliance = "字幕组A")
+        repository.setMediaPreference(SUBJECT_ID, preference)
+        repository.setSearchKeywords(SUBJECT_ID, SubjectSearchKeywords(listOf("史莱姆")))
+
+        assertEquals(preference, repository.mediaPreferenceFlow(SUBJECT_ID).first())
+        assertEquals(SubjectSearchKeywords(listOf("史莱姆")), repository.searchKeywordsFlow(SUBJECT_ID).first())
+    }
+
+    @Test
+    fun `搜索关键词 坏 JSON 视为未设置`() = runTest {
+        val store = createTestPreferencesDataStore()
+        val repository = createRepository(store)
+        store.edit { it[stringPreferencesKey("search_keywords:$SUBJECT_ID")] = "not json" }
+
+        assertNull(repository.searchKeywordsFlow(SUBJECT_ID).first())
     }
 
     private companion object {

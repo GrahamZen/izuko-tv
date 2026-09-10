@@ -152,6 +152,11 @@ class SubjectCacheViewModelImpl(
                             mediaSourceManager.mediaFetcher,
                             MediaSelectorFactory.withKoin(),
                             storagesLazy = cacheManager.enabledStorages,
+                            // 与播放页一致: 套用用户为本条目记住的搜索关键词
+                            transformFetchRequest = { request ->
+                                episodePreferencesRepository.searchKeywordsFlow(subjectId).first()
+                                    ?.applyTo(request) ?: request
+                            },
                         )
                         EpisodeCacheState(
                             episodeId = episode.episodeId,
