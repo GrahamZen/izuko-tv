@@ -65,6 +65,7 @@ dbus-java = "5.2.0"
 jsonpathkt-kotlinx = "3.0.2"
 ksoup = "0.2.2"
 filekit = "0.13.0" # https://github.com/vinceglb/FileKit/releases
+zxing = "3.5.3" # https://github.com/zxing/zxing/releases
 kotlinpoet = "1.18.1" # https://github.com/square/kotlinpoet/releases
 log4j-core = "2.20.0"
 ktor = "3.1.1" # https://github.com/ktorio/ktor/releases
@@ -344,6 +345,7 @@ diamondedge-logging = { module = "com.diamondedge:logging", version.ref = "diamo
 jsonpathkt-kotlinx = { module = "com.eygraber:jsonpathkt-kotlinx", version.ref = "jsonpathkt-kotlinx" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 compose-native-tray = { module = "io.github.kdroidfilter:composenativetray", version.ref = "compose-native-tray" }
 # Workaround for Kotlin compiler bug
 stately-common = { module = "co.touchlab:stately-common", version.ref = "stately-common" }

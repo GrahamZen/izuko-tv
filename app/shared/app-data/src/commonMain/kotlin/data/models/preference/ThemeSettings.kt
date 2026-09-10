@@ -59,6 +59,19 @@ enum class TvLongPressAction {
     None,
 }
 
+/**
+ * TV: 「Web 控制台」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]). **已不再使用** (2026-09-12): 入口改成动作面板
+ * 右侧常驻的二维码, 侧边栏与头像菜单的条目都删了. 类型与字段留着只为读得懂旧设置 (设置 JSON 里存过它的人).
+ */
+@Serializable
+enum class TvRemoteEntryPlacement {
+    /** 侧边栏常驻一个图标 (默认): 一眼能看到这个功能. */
+    Rail,
+
+    /** 收进头像上方的浮出菜单: 焦点移到头像上才出现. */
+    Avatar,
+}
+
 @Serializable
 @Immutable
 data class ThemeSettings(
@@ -134,6 +147,13 @@ data class ThemeSettings(
      * 高性能盒子的用户在设置里一键开回完整档.
      */
     val tvFullVisualEffects: Boolean = false,
+    /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
+    val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
+    /**
+     * TV: 打开应用时弹一次「Web 控制台」二维码 (2026-09-12, 用户要默认开). 设置-界面与弹窗里「启动时不再显示」都能关.
+     * 一个进程只弹一次, 没连局域网 (拿不到地址) 不弹, 见 `TvRemoteControl.showDialogOnLaunch`.
+     */
+    val tvRemoteShowOnLaunch: Boolean = true,
     /**
      * TV: 界面整体缩放系数, 叠加在系统 density 之上 (1f = 跟随系统).
      *
