@@ -71,3 +71,29 @@ val Project.buildIosFramework
 
 val Project.enableFirebase
     get() = getPropertyOrNull("ani.enable.firebase")?.toBooleanStrict() ?: false
+
+/**
+ * 兼容包 (Android 7.1 / API 25) 的总开关: `-Pani.android.legacy=true`.
+ *
+ * 默认关闭, 关闭时正式包的构建配置与本开关引入前**完全一致** —— 这是刻意的:
+ * core library desugaring 是模块级设置, 无法只对老设备生效, 一旦对正式包开启,
+ * 所有用户的 java.time / java.nio.file 都会换成回填实现 (实测踩过: 用错变体会让 27+ 的 BT 播放静默卡死).
+ * 因此兼容性下调只在单独构建兼容包时打开, 正式包一行字节码都不受影响.
+ *
+ * @see androidMinSdk
+ */
+val Project.buildLegacyAndroidApp
+    get() = getPropertyOrNull("ani.android.legacy")?.toBooleanStrict() ?: false
+
+/**
+ * 兼容包的 minSdk. 25 = Android 7.1.1, 也是 ISRG Root X1 进入系统信任库的第一个版本 ——
+ * 再往下 Let's Encrypt 签发的证书会直接握手失败, 得自带根证书才行.
+ */
+const val LEGACY_ANDROID_MIN_SDK = 25
+
+/**
+ * 所有 Android 模块的 minSdk 都必须读这里而不是直接读 `android.min.sdk` 属性:
+ * 开兼容包时要整体下调, 否则库模块仍是 27, manifest 合并会直接失败.
+ */
+val Project.androidMinSdk: Int
+    get() = if (buildLegacyAndroidApp) LEGACY_ANDROID_MIN_SDK else getIntProperty("android.min.sdk")
