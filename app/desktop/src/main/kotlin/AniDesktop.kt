@@ -259,7 +259,7 @@ object AniDesktop {
 
         coroutineScope.launch(Dispatchers.IO) {
             kotlin.runCatching {
-                JvmLogHelper.deleteOldLogs(logsDir.toPath())
+                JvmLogHelper.deleteOldLogs(logsDir)
             }.onFailure {
                 logger.error(it) { "Failed to delete old logs" }
             }
