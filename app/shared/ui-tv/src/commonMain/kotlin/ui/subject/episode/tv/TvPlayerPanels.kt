@@ -122,6 +122,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
@@ -483,7 +484,8 @@ private fun TvPanelItem(
                     focusedIndex.intValue = index
                     itemFocus.register(selfFocusRequester)
                 }
-            },
+            }
+            .tvTouchFocusOnTap(),
         shape = RoundedCornerShape(12.dp),
         color = if (focused) TV_PANEL_ITEM_FOCUSED_COLOR else TV_PANEL_ITEM_COLOR,
         contentColor = Color.White,
