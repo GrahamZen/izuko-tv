@@ -102,6 +102,7 @@ import me.him188.ani.app.ui.foundation.animation.StandardDecelerateEasing
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -841,6 +842,7 @@ private fun TvPlayerPill(
         highlighted = focused,
         onClick = onClick,
         interactionSource = interactionSource,
+        touchTwoStep = true,
         modifier = modifier
             .focusRequester(focusRequester)
             .onFocusChanged { if (it.isFocused) overlay.activePanel = panel },
@@ -1372,7 +1374,7 @@ private fun TvBottomRowIconButton(
     val focused by interactionSource.collectIsFocusedAsState()
     Surface(
         onClick = onClick,
-        modifier = modifier.size(TV_ICON_BUTTON_SIZE),
+        modifier = modifier.size(TV_ICON_BUTTON_SIZE).tvTouchFocusOnTap(),
         shape = CircleShape,
         color = if (focused) Color.White else Color.Transparent,
         contentColor = if (focused) Color.Black else Color.White,

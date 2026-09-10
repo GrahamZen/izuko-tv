@@ -156,6 +156,7 @@ fun TvPortraitCard(
                             )
                         },
                     )
+                    .tvTouchFocusOnTap()
                     .combinedClickable(
                         interactionSource = interactionSource,
                         indication = LocalIndication.current,
@@ -282,7 +283,8 @@ fun TvHeroButton(
             .onFocusChanged {
                 if (it.isFocused) onFocused()
                 onFocusChangedExtra?.invoke(it.isFocused)
-            },
+            }
+            .tvTouchFocusOnTap(),
         shape = RoundedCornerShape(TV_HERO_BUTTON_CORNER),
         color = container,
         interactionSource = interactionSource,

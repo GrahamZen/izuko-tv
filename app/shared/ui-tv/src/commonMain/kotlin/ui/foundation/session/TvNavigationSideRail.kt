@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -528,6 +529,7 @@ private fun TvRailAvatar(
                     Modifier.size(TV_RAIL_ITEM_SIZE)
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
+                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -550,6 +552,7 @@ private fun TvRailAvatar(
                     modifier = Modifier
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
+                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -590,6 +593,7 @@ private fun TvRailFloatingActionButton(
         Modifier
             .onFocusChanged { focused = it.isFocused }
             .railExitKeys(onExitFocus)
+            .tvTouchFocusOnTap()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -658,6 +662,7 @@ private fun TvRailIconItem(
                 .railExitKeys(onExitFocus)
                 // 自绘聚焦指示 (图标方块反色), 关掉默认 indication 避免整行水波.
                 // 只保留焦点高亮: 不标记"当前页", 否则聚焦项与当前页两处高亮会误导用户.
+                .tvTouchFocusOnTap()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
