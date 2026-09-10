@@ -12,6 +12,10 @@ kotlinx-collections-immutable = "0.4.0" # https://github.com/Kotlin/kotlinx.coll
 
 ### ANDROIDX ###
 androidx-annotation = "1.9.1"
+# minSdk < 26 时回填 java.time. 必须用 _nio 变体: 本项目有 200+ 处 java.nio.file 引用,
+# 标准变体不覆盖 java.nio.file, 会导致 FileTime.toInstant() 这类跨界调用返回平台 java.time.Instant
+# 而调用方期待 j$.time.Instant. https://github.com/google/desugar_jdk_libs
+android-desugar-jdk-libs = "2.1.5"
 androidx-media3 = "1.9.0" # https://developer.android.com/jetpack/androidx/releases/media3
 androidx-lifecycle = "2.11.0" # https://developer.android.com/jetpack/androidx/releases/lifecycle
 paging = "3.4.1" # https://developer.android.com/jetpack/androidx/releases/paging
@@ -253,6 +257,8 @@ compose-material3-adaptive-layout = { module = "org.jetbrains.compose.material3.
 compose-material3-adaptive-navigation0 = { module = "org.jetbrains.compose.material3.adaptive:adaptive-navigation", version.ref = "compose-material3-adaptive" }
 compose-material3-adaptive-navigation-suite = { module = "org.jetbrains.compose.material3:material3-adaptive-navigation-suite", version.ref = "compose-material3" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
+
+android-desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "android-desugar-jdk-libs" }
 
 # Jetpack Compose
 androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidx-annotation" }

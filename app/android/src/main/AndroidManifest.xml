@@ -12,6 +12,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      只对兼容包 (-Pani.android.legacy=true, minSdk 25) 有意义, 正式包 minSdk 27 时这行不起任何作用.
+      anitorrent-native 的 aar 声明 minSdk 26, 但实测其 .so 的未定义符号里最高只到 API 24
+      (getifaddrs / if_nametoindex / __read_chk), 26 只是当年跟 animeko 的 minSdk 对齐抄的.
+      在原生库重新按 25 编译之前, 这里强制放行.
+    -->
+    <uses-sdk tools:overrideLibrary="org.openani.anitorrent.natives" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -122,7 +130,8 @@
                 android:enabled="true"
                 android:exported="false"
                 android:foregroundServiceType="dataSync"
-                android:process=":torrent_service" />
+                android:process=":torrent_service"
+                tools:targetApi="27" />
 
     </application>
 </manifest>

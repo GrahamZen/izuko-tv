@@ -65,6 +65,7 @@ import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.datasources.api.topic.SubtitleLanguage
 import me.him188.ani.datasources.api.topic.contains
 import me.him188.ani.datasources.api.topic.titles.LabelFirstRawTitleParser
+import me.him188.ani.datasources.api.util.namedGroup
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.jsonpath.JsonPath
 import me.him188.ani.utils.jsonpath.compileOrNull
@@ -398,9 +399,10 @@ abstract class SelectorMediaSourceEngine {
             return WebVideoMatcher.MatchResult.LoadPage
         }
 
-        val result = searchConfig.matchVideoUrlRegex?.find(url) ?: return WebVideoMatcher.MatchResult.Continue
+        val regex = searchConfig.matchVideoUrlRegex ?: return WebVideoMatcher.MatchResult.Continue
+        val result = regex.find(url) ?: return WebVideoMatcher.MatchResult.Continue
         val videoUrl = try {
-            result.groups["v"]?.value ?: url
+            result.namedGroup(regex, "v")?.value ?: url
         } catch (_: IllegalArgumentException) { // no group
             url
         }

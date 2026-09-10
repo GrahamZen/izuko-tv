@@ -222,3 +222,33 @@ jobs:
           AWS_BUCKET: '${{ secrets.AWS_BUCKET }}'
         timeout-minutes: 180
         run: './gradlew :ci-helper:uploadAndroidApk "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      # 兼容包 (Android 7.1 / API 25): 单独再构建一次, 与正式包完全隔离.
+      # 必须排在正式包上传之后 —— 它会覆盖同样的输出路径.
+      # minSdk 25 + core library desugaring 只在这一次构建里生效, 正式包一行字节码都不受影响.
+      - id: 'step-23'
+        name: 'Build Android Legacy (API 25) Release APKs'
+        env:
+          signing_release_storeFileFromRoot: '${{ steps.step-15.outputs.filePath }}'
+          signing_release_storePassword: '${{ secrets.SIGNING_RELEASE_STOREPASSWORD }}'
+          signing_release_keyAlias: '${{ secrets.SIGNING_RELEASE_KEYALIAS }}'
+          signing_release_keyPassword: '${{ secrets.SIGNING_RELEASE_KEYPASSWORD }}'
+        timeout-minutes: 180
+        run: './gradlew assembleDefaultTvRelease "-Pani.android.legacy=true" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      - id: 'step-24'
+        name: 'Upload Android Legacy (API 25) APK for Release'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        run: |
+          set -euo pipefail
+          version='${{ steps.step-2.outputs.substring }}'
+          out='app/android/build/outputs/apk/defaultTv/release'
+          mkdir -p legacy-apks
+          for abi in arm64-v8a armeabi-v7a universal; do
+            src="$out/android-default-tv-$abi-release.apk"
+            if [ ! -f "$src" ]; then
+              echo "::error::Legacy APK missing: $src"
+              exit 1
+            fi
+            cp "$src" "legacy-apks/ani-$version-legacy-$abi.apk"
+          done
+          gh release upload '${{ steps.step-1.outputs.tag }}' legacy-apks/*.apk --clobber
