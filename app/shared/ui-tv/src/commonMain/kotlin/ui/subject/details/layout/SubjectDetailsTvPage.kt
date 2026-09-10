@@ -190,6 +190,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
 import me.him188.ani.app.ui.foundation.tv.TV_FOCUSED_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
@@ -2892,7 +2893,8 @@ private fun TvPlayButton(
                     } else {
                         Modifier.tvLongPressKey(onLongPress = onLongPress, onShortPress = onPlay)
                     },
-                ),
+                )
+                .tvTouchFocusOnTap(),
             shape = TV_BUTTON_SHAPE,
             color = containerColor,
             contentColor = contentColor,
