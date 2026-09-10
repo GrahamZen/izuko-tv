@@ -68,6 +68,7 @@ fun Modifier.tvFocusableCard(
         // 描边必须在 clip 之前, 否则被卡片自己的圆角裁掉一半
         .tvFocusRing(cornerRadius, enabled = focusDriven)
         .clip(RoundedCornerShape(cornerRadius))
+        .tvTouchFocusOnTap()
         .clickable(
             interactionSource = source,
             indication = if (focusDriven) null else LocalIndication.current,

@@ -10,6 +10,10 @@
 package me.him188.ani.app.ui.subject.episode.tv
 
 import androidx.compose.foundation.background
+import me.him188.ani.app.ui.lang.subject_episode_details
+import me.him188.ani.app.ui.lang.video_player_select_episode
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +31,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -86,6 +95,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -102,6 +113,8 @@ import me.him188.ani.app.ui.foundation.animation.StandardDecelerateEasing
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -841,6 +854,7 @@ private fun TvPlayerPill(
         highlighted = focused,
         onClick = onClick,
         interactionSource = interactionSource,
+        touchTwoStep = true,
         modifier = modifier
             .focusRequester(focusRequester)
             .onFocusChanged { if (it.isFocused) overlay.activePanel = panel },
@@ -963,6 +977,22 @@ private fun TvPlayerProgressRow(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    // 触屏设备 (平板装了 TV 包) 才接指针拖动, 见 [tvProgressTouchSeek]; 电视上为 null, 行的修饰符链与布局原样
+    val touchInput = LocalTvTouchInputEnabled.current
+    val touchGeometry = if (touchInput) remember { TvProgressTrackGeometry() } else null
+    val touchSeek = if (touchGeometry == null) {
+        Modifier
+    } else {
+        val player = vm.player
+        val isPlaying = remember(player) { { player.state.value.playWhenReady } }
+        val pause = remember(player) { { player.pause() } }
+        val play = remember(player) { { player.play() } }
+        val onInteraction = remember(overlay) { { overlay.markInteraction() } }
+        Modifier
+            .onPlaced { touchGeometry.row = it }
+            .tvProgressTouchSeek(touchGeometry, progressSliderState, isPlaying, pause, play, onInteraction)
+            .padding(vertical = TV_PROGRESS_TOUCH_PAD_V)
+    }
     Row(
         modifier
             .fillMaxWidth()
@@ -971,7 +1001,8 @@ private fun TvPlayerProgressRow(
                 up = upFocus
             }
             .onFocusChanged { if (it.isFocused) overlay.focusRegion = TvPlayerFocusRegion.PROGRESS }
-            .focusable(interactionSource = interactionSource),
+            .focusable(interactionSource = interactionSource)
+            .then(touchSeek),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 拖拽预览中这里仍是**播放位置** (Prime 实测): 目标时间由圆点上方的浮窗给出,
@@ -980,7 +1011,8 @@ private fun TvPlayerProgressRow(
         Box(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp)
+                .then(if (touchGeometry != null) Modifier.onPlaced { touchGeometry.track = it } else Modifier),
         ) {
             // 不可见时不订阅: 缓存进度在下载期间刷得很勤, 而 by 解构是在本行的组合里读
             val cacheProgressInfo = if (live) {
@@ -994,11 +1026,13 @@ private fun TvPlayerProgressRow(
                 { cacheProgressInfo?.value },
                 colors = MediaProgressSliderDefaults.colors(
                     trackProgressColor = Color.White,
-                    // 圆点即示焦: 未聚焦隐藏, 聚焦出现
-                    thumbColor = if (focused) Color.White else Color.Transparent,
+                    // 圆点即示焦: 未聚焦隐藏, 聚焦出现. 触屏设备上常显 —— 那是"这里能拖"的提示
+                    thumbColor = if (focused || touchInput) Color.White else Color.Transparent,
                     trackBackgroundColor = Color.White.copy(alpha = 0.3f),
                 ),
-                enabled = false, // 展示用; 快进退走遥控器左右键 (根路由)
+                // 展示用; 快进退走遥控器左右键 (根路由). 触屏拖动由行上的 tvProgressTouchSeek 接,
+                // 不启用滑块自己的拖动 (理由见那里)
+                enabled = false,
                 // 拖拽预览态时在圆点上方浮出"缩略图 + 目标时间"
                 showPreviewTimeTextOnThumb = true,
                 framePreview = framePreview,
@@ -1115,6 +1149,26 @@ private fun TvPlayerBottomRow(
             }
             // 跳过 OP/ED (快进配置的时长)
             TvSkipOpEdButton(vm)
+            // 触屏 (平板装了 TV 包): 选集条与内嵌详情层在遥控器上是"图标行再按下键"进去的, 触屏没有下键,
+            // 这里补两颗只在触屏设备上出现的按钮, 语义与根路由里下键那两档相同. 电视上不组合
+            if (LocalTvTouchInputEnabled.current) {
+                TvBottomRowIcon(
+                    icon = Icons.Rounded.ViewCarousel,
+                    contentDescription = stringResource(Lang.video_player_select_episode),
+                    onClick = {
+                        when (overlay.episodeStrip) {
+                            TvEpisodeStripState.AVAILABLE -> overlay.expandEpisodeStrip()
+                            TvEpisodeStripState.LOADING -> overlay.expandEpisodeStripWhenReady()
+                            TvEpisodeStripState.EMPTY -> overlay.openDetails()
+                        }
+                    },
+                )
+                TvBottomRowIcon(
+                    icon = Icons.Rounded.Info,
+                    contentDescription = stringResource(Lang.subject_episode_details),
+                    onClick = { overlay.openDetails() },
+                )
+            }
 
             TvBottomRowDivider()
 
@@ -1372,7 +1426,7 @@ private fun TvBottomRowIconButton(
     val focused by interactionSource.collectIsFocusedAsState()
     Surface(
         onClick = onClick,
-        modifier = modifier.size(TV_ICON_BUTTON_SIZE),
+        modifier = modifier.size(TV_ICON_BUTTON_SIZE).tvTouchFocusOnTap(),
         shape = CircleShape,
         color = if (focused) Color.White else Color.Transparent,
         contentColor = if (focused) Color.Black else Color.White,
@@ -1448,3 +1502,84 @@ private fun TvPlayerShareButton(
         )
     }
 }
+
+// ============================ 进度条触屏拖动 (平板装了 TV 包) ============================
+
+/**
+ * 进度条行的轨道几何: 行与轨道各自的布局坐标, 手势里现算轨道在行坐标系的左缘与宽度.
+ * 普通字段不进快照系统 —— 只在指针事件里读, 布局每变一次不该带着行重组.
+ */
+private class TvProgressTrackGeometry {
+    var row: LayoutCoordinates? = null
+    var track: LayoutCoordinates? = null
+
+    /** 轨道在行坐标系里的 (左缘, 宽度); 还没布局好时 null. */
+    fun span(): Pair<Float, Float>? {
+        val r = row?.takeIf { it.isAttached } ?: return null
+        val t = track?.takeIf { it.isAttached } ?: return null
+        val width = t.size.width.toFloat()
+        if (width <= 0f) return null
+        return r.localPositionOf(t, Offset.Zero).x to width
+    }
+}
+
+/**
+ * 触屏拖动进度条: 按下即进拖拽预览 (圆点跳到手指处, 上方浮出缩略图), 拖动跟手, 抬起落地; 点一下 = 跳到那里.
+ *
+ * 为什么不直接把 [MediaProgressSlider] 设成 enabled: Material3 Slider 启用后自带一个 focusable, 会在
+ * "整行是一个焦点节点"的进度条行里再嵌一个焦点节点 —— 平板配遥控器时就是"可聚焦容器套可聚焦子节点"
+ * 那个坑, 而且它还会接管方向键. 这里只接指针, 焦点结构与遥控器路由一个字不动.
+ *
+ * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂停 (画面跑着
+ * 而圆点停在别处会对不上, 取帧也更稳), 落地后恢复**按下之前**的播放状态 —— 不像遥控器那样一律续播,
+ * 触屏上拖进度条从来不改变播放/暂停. 被别处抢走 (手势取消) = 丢弃预览位置.
+ */
+private fun Modifier.tvProgressTouchSeek(
+    geometry: TvProgressTrackGeometry,
+    state: PlayerProgressSliderState,
+    isPlaying: () -> Boolean,
+    pause: () -> Unit,
+    play: () -> Unit,
+    onInteraction: () -> Unit,
+): Modifier = pointerInput(geometry, state, isPlaying, pause, play, onInteraction) {
+    val slack = TV_PROGRESS_TOUCH_SLACK_H.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown()
+        val (left, width) = geometry.span() ?: return@awaitEachGesture
+        // 两端的时间文字不算: 点在时间上跳到片头/片尾太意外
+        if (down.position.x < left - slack || down.position.x > left + width + slack) return@awaitEachGesture
+        if (state.totalDurationMillis <= 0L) return@awaitEachGesture // 时长未知 (刚起播/直播)
+        fun ratioAt(x: Float) = ((x - left) / width).coerceIn(0f, 1f)
+
+        down.consume()
+        val wasPlaying = isPlaying()
+        pause()
+        onInteraction()
+        state.previewPositionRatio(ratioAt(down.position.x))
+        var commit = false
+        try {
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (change.changedToUpIgnoreConsumed()) {
+                    change.consume()
+                    commit = true
+                    break
+                }
+                if (!change.pressed) break
+                change.consume()
+                state.previewPositionRatio(ratioAt(change.position.x))
+            }
+        } finally {
+            if (commit) state.finishPreview() else state.cancelPreview() // finish 内部走 onPreviewFinished -> seekTo
+            if (wasPlaying) play()
+            onInteraction() // 从落地那一刻重新起算自动隐藏
+        }
+    }
+}
+
+/** 轨道两端各放宽的触摸余量 (= 轨道与时间文字之间的留白). */
+private val TV_PROGRESS_TOUCH_SLACK_H = 12.dp
+
+/** 触屏设备上进度条行上下各加的触摸高度: 光是 24dp 的滑块对手指太窄. 电视上不加, 布局不变. */
+private val TV_PROGRESS_TOUCH_PAD_V = 8.dp

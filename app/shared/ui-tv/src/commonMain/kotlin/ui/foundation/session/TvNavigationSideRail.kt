@@ -10,6 +10,9 @@
 package me.him188.ani.app.ui.foundation.session
 
 import androidx.compose.animation.AnimatedVisibility
+import me.him188.ani.app.ui.lang.tv_rail_action_panel
+import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -22,6 +25,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -163,6 +167,18 @@ fun buildTvRailItems(
                 label = entry.getText(),
                 defaultFocus = entry == MainScreenPage.Exploration,
                 onClick = { onNavigateToPage(entry) },
+            ),
+        )
+    }
+    // 「动作面板」: 只在触屏设备 (平板装了 TV 包) 上有 —— 遥控器上它靠长按返回 / 播放键打开, 触屏没有这两个键.
+    // 电视上 LocalTvOpenActionPanel 为 null, 这一项不出现. 面板就地弹出, 焦点不必清
+    LocalTvOpenActionPanel.current?.let { openPanel ->
+        add(
+            TvNavRailItem(
+                icon = Icons.Rounded.Apps,
+                label = stringResource(Lang.tv_rail_action_panel),
+                keepFocusOnClick = true,
+                onClick = openPanel,
             ),
         )
     }
@@ -528,6 +544,7 @@ private fun TvRailAvatar(
                     Modifier.size(TV_RAIL_ITEM_SIZE)
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
+                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -550,6 +567,7 @@ private fun TvRailAvatar(
                     modifier = Modifier
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
+                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -590,6 +608,7 @@ private fun TvRailFloatingActionButton(
         Modifier
             .onFocusChanged { focused = it.isFocused }
             .railExitKeys(onExitFocus)
+            .tvTouchFocusOnTap()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -658,6 +677,7 @@ private fun TvRailIconItem(
                 .railExitKeys(onExitFocus)
                 // 自绘聚焦指示 (图标方块反色), 关掉默认 indication 避免整行水波.
                 // 只保留焦点高亮: 不标记"当前页", 否则聚焦项与当前页两处高亮会误导用户.
+                .tvTouchFocusOnTap()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
