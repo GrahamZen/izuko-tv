@@ -34,7 +34,7 @@ import org.jetbrains.compose.resources.stringResource
  * 提示里说法一致, 也不必在两处各维护一份 `when`.
  */
 @Immutable
-internal class RetainedPlaybackNoticeTexts(
+class RetainedPlaybackNoticeTexts internal constructor(
     private val ready: String,
     /** 每种解析失败的原因, 已经套进"后台播放遇到问题: ……"的模板. */
     private val causes: VideoLoadingCauseLabels,
@@ -52,8 +52,9 @@ internal class RetainedPlaybackNoticeTexts(
     }
 }
 
+/** 公开是为了 TV 根组合 (TvPageVariants) 把同一份文案转给 Web 控制台. */
 @Composable
-internal fun rememberRetainedPlaybackNoticeTexts(): RetainedPlaybackNoticeTexts {
+fun rememberRetainedPlaybackNoticeTexts(): RetainedPlaybackNoticeTexts {
     val ready = stringResource(Lang.playback_session_ready_toast)
     val problemTemplate = stringResource(Lang.playback_session_problem_toast, CAUSE_PLACEHOLDER)
     val causes = videoLoadingCauseLabels().map { problemTemplate.replace(CAUSE_PLACEHOLDER, it) }

@@ -417,6 +417,22 @@ class TmdbImageService(
     /** 该条目是否已解析过 (含"已确认无图"). 与 [peekBackdropUrl] 一起构成三态. */
     fun peekBackdropResolved(subjectId: Int): Boolean = resolvedBackdropUrls.containsKey(subjectId)
 
+    /**
+     * 只查缓存的 backdrop: 进程内热表 → 持久缓存, **不发请求**; 没缓存或已确认无图都返回 null.
+     * 给「顺带看一眼, 不值得为它触发 TMDB 查询」的地方用 (TV Web 控制台的播放记录列表, 一次几十部).
+     */
+    suspend fun peekCachedBackdropUrl(subjectId: Int): String? {
+        if (disabledByUser) return null
+        resolvedBackdropUrls[subjectId]?.let { return it }
+        return withContext(ioDispatcher) { readCache().backdropUrls[subjectId]?.takeIf { it.isNotEmpty() } }
+    }
+
+    /** 只查持久缓存的分集剧照, **不发请求**; 没缓存或缓存的语言不同返回 null. 用途同 [peekCachedBackdropUrl]. */
+    suspend fun peekCachedEpisodeStills(subjectId: Int, language: String): TmdbEpisodeStills? {
+        if (disabledByUser) return null
+        return withContext(ioDispatcher) { readCache().episodeStills[subjectId]?.takeIf { it.language == language } }
+    }
+
     private fun rememberResolvedBackdrop(subjectId: Int, url: String?) {
         synchronized(resolvedLock) {
             if (subjectId !in resolvedBackdropUrls) {

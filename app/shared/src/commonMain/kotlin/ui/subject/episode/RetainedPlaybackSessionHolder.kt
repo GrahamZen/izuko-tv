@@ -166,6 +166,13 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
     override val session: RetainedPlaybackSessionInfo? get() = currentSession?.info
 
     /**
+     * 当前会话的 [EpisodeViewModel] (没有会话为 null). snapshot state, 组合里读会跟着换会话重组.
+     * 给「播放页之外还要操作这个会话」的地方用: TV 的 Web 控制台在播放器后台时从手机换源.
+     * 只读; 会话的开关仍然只走本类自己的入口.
+     */
+    val currentViewModel: EpisodeViewModel? get() = currentSession?.vm
+
+    /**
      * 见 [PlaybackProgress]. 由 [guard] 每秒更新一次, 只有动作面板在读.
      */
     override var progress: PlaybackProgress? by mutableStateOf(null)

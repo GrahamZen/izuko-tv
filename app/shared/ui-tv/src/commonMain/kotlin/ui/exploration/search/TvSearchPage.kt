@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
@@ -56,7 +57,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +69,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -84,13 +88,17 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -102,10 +110,13 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.paging.LoadState
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import androidx.paging.compose.itemContentType
@@ -130,8 +141,11 @@ import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
+import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -199,8 +213,16 @@ import me.him188.ani.app.ui.lang.exploration_search_sort_match
 import me.him188.ani.app.ui.lang.exploration_search_sort_rank
 import me.him188.ani.app.ui.lang.search_tv_empty
 import me.him188.ani.app.ui.lang.search_tv_filter
+import me.him188.ani.app.ui.lang.search_tv_remote_input_caption
 import me.him188.ani.app.ui.lang.search_tv_filter_any
 import me.him188.ani.app.ui.lang.search_tv_filter_confirm
+import me.him188.ani.app.ui.lang.search_tv_clear_history
+import me.him188.ani.app.ui.lang.search_tv_remote_connected
+import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
+import me.him188.ani.app.ui.lang.search_tv_remote_panel_desc
+import me.him188.ani.app.ui.lang.search_tv_remote_reset
+import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
+import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_filter_rating_min
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
 import me.him188.ani.app.ui.lang.search_tv_input_hint
@@ -211,6 +233,9 @@ import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.collectItemsWithLifecycle
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
+import me.him188.ani.app.ui.remote.RemoteSearchResultsSnapshot
+import me.him188.ani.app.ui.remote.RemoteSearchResultsSource
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import org.jetbrains.compose.resources.stringResource
 
@@ -268,6 +293,27 @@ fun TvSearchPage(
     }
     val submit: (String) -> Unit = { text -> applyQuery(state.query.copy(keywords = text)) }
 
+    // 手机扫码输入 (见 [TvRemoteControl]): 服务应用级常驻, 本页只登记在场/取走不在场时收到的提交;
+    // 手机提交的词走与手动提交同一条路 (输入态/结果态都收, 结果态收到就换词重搜).
+    // 服务起不来或没连局域网时 url 为 null, 二维码不画
+    val remoteInputUrl by TvRemoteControl.url.collectAsState()
+    val remotePhoneConnected by TvRemoteControl.phoneConnected.collectAsState()
+    val remoteKnownHost by TvRemoteControl.knownHost.collectAsState()
+    val remoteHostChanged by TvRemoteControl.hostChanged.collectAsState()
+    val currentApplyQuery by rememberUpdatedState(applyQuery)
+    // 网页预填电视当前查询: 结果态用 VM 里的, 输入态把还没提交的输入框文字也带上 (同筛选弹窗)
+    val currentQuery by rememberUpdatedState(
+        if (showResults) state.query else state.query.copy(keywords = query.text.trim()),
+    )
+    DisposableEffect(Unit) {
+        TvRemoteControl.acquire()
+        TvRemoteControl.currentQueryProvider = { currentQuery }
+        onDispose {
+            TvRemoteControl.currentQueryProvider = null
+            TvRemoteControl.release()
+        }
+    }
+
     // 本页的 rememberSaveable 恢复了 (所以还停在结果态), 但 VM 是新的 —— [SearchViewModel] 的
     // 初始查询取自**路由** (从主页进搜索页时为空), 用户在页面里提交的词只活在 VM 里, 没有写回
     // 路由。结果就是: 结果态顶部搜索词为空 + pager 用空词查 → "没有找到相关条目", 看起来像
@@ -302,6 +348,16 @@ fun TvSearchPage(
             }
             showResults = false
         }
+    }
+
+    // **必须声明在上面的恢复效应之后** (效应按声明顺序跑): 先跑的话它把 showResults 置 true, 恢复效应
+    // 随后拿着组合时的旧 state 看到 "VM 没有查询" 就把页面拨回输入态 (2026-09-10 真机日志坐实).
+    // 放在后面, 恢复效应在输入态直接返回, 这里再把提交搜掉
+    LaunchedEffect(Unit) {
+        // 本页不在场时 (书签从别的页面打开) 收到的那条提交: 服务把电视导航到本页, 进场先把它搜掉
+        TvRemoteControl.takePending()?.let { currentApplyQuery(it.applyTo(currentQuery)) }
+        // 网页上的筛选项套在当前查询上 (保留季度等网页没有的字段), 与筛选弹窗确认同一条路
+        TvRemoteControl.submissions.collect { currentApplyQuery(it.applyTo(currentQuery)) }
     }
 
     // 内容区焦点入口: 从页面外进来的焦点 (导航兜底的无方向 enter) 一律先送进内容区而非侧边栏
@@ -415,6 +471,13 @@ fun TvSearchPage(
                         fieldFocusRequester = inputFieldFocus,
                         onOpenFilter = { showFilterDialog = true },
                         hasFilters = state.query.hasFilters(),
+                        remoteInputUrl = remoteInputUrl,
+                        remotePhoneConnected = remotePhoneConnected,
+                        remoteKnownHost = remoteKnownHost,
+                        remoteHostChanged = remoteHostChanged,
+                        onResetRemoteAddress = { TvRemoteControl.resetAddress() },
+                        onRemoveHistory = { onIntent(SearchPageIntent.RemoveHistory(it)) },
+                        onClearHistory = { onIntent(SearchPageIntent.ClearHistory) },
                     )
                 }
             }
@@ -463,6 +526,13 @@ private fun TvSearchInputPane(
     fieldFocusRequester: FocusRequester,
     onOpenFilter: () -> Unit,
     hasFilters: Boolean,
+    remoteInputUrl: String?,
+    remotePhoneConnected: Boolean,
+    remoteKnownHost: String?,
+    remoteHostChanged: Boolean,
+    onResetRemoteAddress: () -> Unit,
+    onRemoveHistory: (String) -> Unit,
+    onClearHistory: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -484,6 +554,13 @@ private fun TvSearchInputPane(
     // 焦点被方向键带走那条路 (下面输入框的 onFocusChanged) 也会退出编辑态, 那时用户已经站在
     // 第一个候选上了, 再收一次就是把焦点从他脚下拽回来 —— 表现为"往下导航时焦点被拉回搜索框一次".
     var returnFocusToBox by remember { mutableStateOf(false) }
+    // 搜索框内最右的「清除历史」图标 (用户 2026-09-10): 平时不可聚焦, 方向键路过搜索框碰不到它; **长按搜索框**
+    // 把焦点送上去 (武装 -> 效应里 requestFocus, 同 editing 的交接方式), 再按确认才清空; 失焦即解除武装
+    var clearArmed by remember { mutableStateOf(false) }
+    val clearIconFocus = remember { FocusRequester() }
+    LaunchedEffect(clearArmed) {
+        if (clearArmed) runCatching { clearIconFocus.requestFocus() }
+    }
     LaunchedEffect(editing) {
         if (editing) {
             everEdited = true
@@ -532,152 +609,412 @@ private fun TvSearchInputPane(
         runCatching { fieldFocusRequester.requestFocus() }
     }
 
-    Column(
+    // 候选列表数据: 空文本显示搜索历史, 有文本显示防抖后的补全建议; 确认即提交.
+    // 提前到布局之前算: 搜索框的「下键落点」与列表标题行都要看它
+    var debounced by remember { mutableStateOf(query.text) }
+    LaunchedEffect(query.text) {
+        delay(TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS)
+        debounced = query.text
+    }
+    val isHistory = debounced.isEmpty()
+    val values = remember(debounced) {
+        if (debounced.isEmpty()) historyPager else suggestionsPager(debounced)
+    }.collectAsLazyPagingItemsWithLifecycle()
+    val firstRowFocus = remember { FocusRequester() }
+    // 版式 (2026-09-10 按用户草图): 左 = 搜索区 (搜索框+筛选钮 / 候选列表), 右 = 「手机扫码输入」面板
+    // (标题+重置钮 / 说明 / 二维码 / 地址 / 连接状态). 左缘让出悬浮侧边栏的收起宽度; 面板定宽, 搜索区吃掉其余宽度.
+    // **顶部内边距只给左侧搜索区**: 挂在整行上的话右侧那一栏也被砍掉这一截, 面板是在「屏幕高减顶距」里居中,
+    // 看上去比屏幕中心低半个顶距 (用户 2026-09-10 反馈偏低)
+    Row(
         modifier.fillMaxSize().imePadding()
-            .onFocusChanged { paneHasFocus = it.hasFocus },
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .onFocusChanged { paneHasFocus = it.hasFocus }
+            .padding(
+                start = TvNavigationRailDefaults.CollapsedWidth + TV_SEARCH_PAGE_START_GAP,
+                end = TV_SEARCH_PAGE_END_PAD,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(TV_SEARCH_PANEL_GAP),
     ) {
-        Spacer(Modifier.height(TV_SEARCH_INPUT_TOP_PAD))
-        // 搜索框 (参考 Crunchyroll: 顶部居中单框; 聚焦高亮描边) 与右侧筛选钮.
-        // **筛选入口必须在输入态也有**: 查询本来就允许"只有标签没有关键词"
-        // ([SubjectSearchQuery.hasSearchRequest]), 但本页进结果态必须先提交一次搜索, 而筛选钮
-        // 原先只在结果态顶部行 —— 于是"不打字直接按标签浏览"在本页够不着 (上游手机/桌面端的
-        // 筛选胶囊行一直摆在搜索页上, 不需要先搜一次).
-        // 整行宽度仍是候选列表那个比例 (框左边界与下方候选项对齐不变), 框用 weight 让出钮的宽度;
-        // height(IntrinsicSize.Min) 让钮跟着框的内容高度走, 不写死高度.
-        Row(
-            Modifier.fillMaxWidth(TV_SEARCH_INPUT_WIDTH_FRACTION).height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                Modifier.weight(1f)
-                    .ifThen(boxFocused || editing) {
-                        border(
-                            2.5.dp,
-                            MaterialTheme.colorScheme.primary,
-                            RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-                        )
-                    }
-                    // 非编辑态: 框自己是焦点目标 (页面级 requester 指向这里, 见 inputFieldFocus);
-                    // 编辑态: 让位给里面的输入框
-                    .focusRequester(fieldFocusRequester)
-                    .focusProperties { canFocus = !editing }
-                    .onFocusChanged { boxFocused = it.isFocused }
-                    // 确认键进编辑态. 认 KeyUp: 键盘一弹出就抢走后续按键, 在 KeyDown 上做会把同一次
-                    // 按键的 KeyUp 留给 IME (它可能当成一次"确定"); KeyDown 也一并吞掉, 免得
-                    // focusable 的默认点击语义或 Enter 触发别的东西
-                    .onPreviewKeyEvent { event ->
-                        if (event.key !in TV_CONFIRM_KEYS) return@onPreviewKeyEvent false
-                        if (event.type == KeyEventType.KeyUp) editing = true
-                        true
-                    }
-                    .focusable()
-                    // 进页/回本态的初始焦点: 落在框上 (非编辑态), 不是落进输入框
-                    .tvWindowInitialFocus(),
-                shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        Column(Modifier.weight(1f).fillMaxHeight().padding(top = TV_SEARCH_INPUT_TOP_PAD)) {
+            // 搜索框 (聚焦高亮描边) 与右侧筛选钮.
+            // **筛选入口必须在输入态也有**: 查询本来就允许"只有标签没有关键词"
+            // ([SubjectSearchQuery.hasSearchRequest]), 但本页进结果态必须先提交一次搜索, 而筛选钮
+            // 原先只在结果态顶部行 —— 于是"不打字直接按标签浏览"在本页够不着 (上游手机/桌面端的
+            // 筛选胶囊行一直摆在搜索页上, 不需要先搜一次).
+            // 框用 weight 让出钮的宽度; height(IntrinsicSize.Min) 让钮跟着框的内容高度走, 不写死高度.
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Surface(
+                    Modifier.weight(1f)
+                        .ifThen(boxFocused || editing) {
+                            border(
+                                2.5.dp,
+                                MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
+                            )
+                        }
+                        // 非编辑态: 框自己是焦点目标 (页面级 requester 指向这里, 见 inputFieldFocus);
+                        // 编辑态: 让位给里面的输入框
+                        .focusRequester(fieldFocusRequester)
+                        .focusProperties {
+                            canFocus = !editing
+                            // 下键直落第一条候选 (显式指定, 不靠空间搜索猜)
+                            if (values.itemCount > 0) down = firstRowFocus
+                        }
+                        .onFocusChanged { boxFocused = it.isFocused }
+                        // 长按删除历史行后焦点被送回这里, 同一次按住剩下的连发/抬起不能被下面当成
+                        // "确认键抬起 -> 进编辑态" (表现为一松手键盘弹出来), 见 consumeHeldConfirmKeyOnFocus
+                        .consumeHeldConfirmKeyOnFocus()
+                        // 确认键: 短按进编辑态, 长按把焦点送到框内的「清除历史」图标 (没有历史时长按无效).
+                        // 短按仍认 KeyUp: 键盘一弹出就抢走后续按键, 在 KeyDown 上做会把同一次按键的 KeyUp
+                        // 留给 IME (它可能当成一次"确定"); tvLongPressKey 把认领键的 KeyDown/KeyUp 全吞掉,
+                        // focusable 的默认点击语义或 Enter 不会触发别的东西
+                        .tvLongPressKey(
+                            onLongPress = { if (isHistory && values.itemCount > 0) clearArmed = true },
+                            onShortPress = { editing = true },
+                        )
+                        .focusable()
+                        // 进页/回本态的初始焦点: 落在框上 (非编辑态), 不是落进输入框
+                        .tvWindowInitialFocus(),
+                    shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    val textStyle = MaterialTheme.typography.titleMedium
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { onQueryChange(it.copy(text = it.text.trim('\n'))) },
-                        modifier = Modifier.weight(1f)
-                            .focusRequester(editorFocus)
-                            .focusProperties { canFocus = editing }
-                            .onFocusChanged {
-                                // 焦点被方向键带走 (走到候选项) 也算退出编辑
-                                if (!it.isFocused && editing) editing = false
-                            },
-                        readOnly = !editing,
-                        textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { onSubmit(query.text) }),
-                        decorationBox = { innerTextField ->
-                            Box {
-                                if (query.text.isEmpty()) {
-                                    Text(
-                                        stringResource(Lang.search_tv_input_hint),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = textStyle,
-                                        maxLines = 1,
-                                    )
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val textStyle = MaterialTheme.typography.titleMedium
+                        BasicTextField(
+                            value = query,
+                            onValueChange = { onQueryChange(it.copy(text = it.text.trim('\n'))) },
+                            modifier = Modifier.weight(1f)
+                                .focusRequester(editorFocus)
+                                .focusProperties { canFocus = editing }
+                                .onFocusChanged {
+                                    // 焦点被方向键带走 (走到候选项) 也算退出编辑
+                                    if (!it.isFocused && editing) editing = false
+                                },
+                            readOnly = !editing,
+                            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { onSubmit(query.text) }),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (query.text.isEmpty()) {
+                                        Text(
+                                            stringResource(Lang.search_tv_input_hint),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = textStyle,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                    innerTextField()
                                 }
-                                innerTextField()
-                            }
-                        },
+                            },
+                        )
+                        if (isHistory && values.itemCount > 0) {
+                            TvSearchInlineClearIcon(
+                                armed = clearArmed,
+                                focusRequester = clearIconFocus,
+                                onDisarm = { clearArmed = false },
+                                onClear = {
+                                    clearArmed = false
+                                    onClearHistory()
+                                    // 图标随最后一条历史一起消失, 焦点不会自动改派, 先送回搜索框
+                                    runCatching { fieldFocusRequester.requestFocus() }
+                                },
+                                onEscape = { runCatching { fieldFocusRequester.requestFocus() } },
+                                label = stringResource(Lang.search_tv_clear_history),
+                            )
+                        }
+                    }
+                }
+                // 筛选钮: 纯图标方钮 (用户 2026-09-10: 不要文字, 聚焦时文字浮在钮下方)
+                TvSearchIconButton(
+                    icon = Icons.Rounded.Tune,
+                    label = stringResource(Lang.search_tv_filter),
+                    onClick = onOpenFilter,
+                    badge = hasFilters,
+                    modifier = Modifier.fillMaxHeight(),
+                )
+            }
+
+            LazyColumn(
+                Modifier.fillMaxWidth().padding(top = TV_SEARCH_LIST_TOP_GAP).weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                items(
+                    count = values.itemCount,
+                    key = values.itemKey { "tv-search-suggestion-$it" },
+                    contentType = values.itemContentType { 1 },
+                ) { index ->
+                    val text = values[index] ?: return@items
+                    TvSearchSuggestionRow(
+                        text = text,
+                        isHistory = isHistory,
+                        onClick = { onSubmit(text) },
+                        // 只有历史能删 (补全建议不是本地数据); 删掉的那行若正持焦, 焦点回搜索框
+                        onRemove = if (isHistory) ({ onRemoveHistory(text) }) else null,
+                        onRemovedWhileFocused = { runCatching { fieldFocusRequester.requestFocus() } },
+                        modifier = if (index == 0) Modifier.focusRequester(firstRowFocus) else Modifier,
                     )
                 }
             }
-            TvSearchInputFilterButton(
-                hasFilters = hasFilters,
-                onClick = onOpenFilter,
-                modifier = Modifier.fillMaxHeight(),
-            )
         }
-
-        // 候选列表: 空文本显示搜索历史, 有文本显示防抖后的补全建议; 确认即提交
-        var debounced by remember { mutableStateOf(query.text) }
-        LaunchedEffect(query.text) {
-            delay(TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS)
-            debounced = query.text
-        }
-        val isHistory = debounced.isEmpty()
-        val values = remember(debounced) {
-            if (debounced.isEmpty()) historyPager else suggestionsPager(debounced)
-        }.collectAsLazyPagingItemsWithLifecycle()
-        LazyColumn(
-            Modifier.fillMaxWidth(TV_SEARCH_INPUT_WIDTH_FRACTION)
-                .padding(top = 12.dp)
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        // 面板在右侧那一栏里整体垂直居中, 不与顶部的搜索框争第一视觉焦点 (搜索才是主操作)
+        Box(
+            Modifier.width(TV_SEARCH_REMOTE_PANEL_WIDTH).fillMaxHeight(),
+            contentAlignment = Alignment.Center,
         ) {
-            items(
-                count = values.itemCount,
-                key = values.itemKey { "tv-search-suggestion-$it" },
-                contentType = values.itemContentType { 1 },
-            ) { index ->
-                val text = values[index] ?: return@items
-                TvSearchSuggestionRow(
-                    text = text,
-                    isHistory = isHistory,
-                    onClick = { onSubmit(text) },
-                )
-            }
+            TvSearchRemotePanel(
+                url = remoteInputUrl,
+                phoneConnected = remotePhoneConnected,
+                knownHost = remoteKnownHost,
+                hostChanged = remoteHostChanged,
+                onReset = onResetRemoteAddress,
+            )
         }
     }
 }
 
 /**
- * 输入态搜索框右侧的筛选钮: 打开与结果态同一个筛选弹窗 (排序 / 最低评分 / 标签).
- * 空关键词下选了标签确认即直接进结果态 —— 这是"不打字只按标签浏览"的入口.
- * 外观跟搜索框同一套 (同底色/同圆角/聚焦时主题色描边), 已有筛选时右上角一个小圆点.
+ * 「手机扫码输入」面板: 标题行 (右端「重置地址」图标钮) / 一句说明 / 二维码 / 地址文字 / 状态行.
+ * 地址固定 (见 TvRemoteControl), 印出来给手机加书签用; IP 变了 ([hostChanged]) 时地址与状态行标红,
+ * 提示重新扫码. 没连局域网 (url == null) 时二维码位置画一块占位, 状态行说明原因.
+ * 面板里唯一可聚焦的是重置钮: 从搜索框/候选行按右键过来, 返回键按输入态的规矩回搜索框.
+ *
+ * 位置: 在右侧那一栏里**整体垂直居中** (用户 2026-09-10) —— 与顶部的搜索框顶对齐时两个大块争第一视觉焦点,
+ * 而搜索才是主操作.
  */
 @Composable
-private fun TvSearchInputFilterButton(
-    hasFilters: Boolean,
+private fun TvSearchRemotePanel(
+    url: String?,
+    phoneConnected: Boolean,
+    knownHost: String?,
+    hostChanged: Boolean,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier.padding(TV_SEARCH_REMOTE_PANEL_PAD),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(Lang.search_tv_remote_input_caption),
+                    Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                TvSearchPanelIconButton(
+                    icon = Icons.Rounded.Refresh,
+                    label = stringResource(Lang.search_tv_remote_reset),
+                    onClick = onReset,
+                )
+            }
+            Text(
+                stringResource(Lang.search_tv_remote_panel_desc),
+                // 多让一段: 标题行右端重置钮聚焦时的浮动标签落在这块区域, 不留空会叠在说明文字上
+                Modifier.fillMaxWidth().padding(top = TV_SEARCH_PANEL_DESC_TOP_GAP),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (url != null) {
+                QrCodeImage(url, Modifier.size(TV_SEARCH_QR_SIZE), quietZone = TV_SEARCH_QR_QUIET_ZONE)
+            } else {
+                Box(
+                    Modifier.size(TV_SEARCH_QR_SIZE + TV_SEARCH_QR_QUIET_ZONE * 2)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
+                )
+            }
+            if (url != null) {
+                // 地址印出来: 手机加书签 / 手敲用. IP 变了标红 —— 手机上存的是旧地址, 这个新地址它还不知道
+                Text(
+                    url,
+                    Modifier.fillMaxWidth(),
+                    color = if (hostChanged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            val statusText = when {
+                url == null -> stringResource(Lang.search_tv_remote_unavailable)
+                hostChanged -> stringResource(Lang.search_tv_remote_host_changed, knownHost.orEmpty())
+                phoneConnected -> stringResource(Lang.search_tv_remote_connected)
+                else -> stringResource(Lang.search_tv_remote_waiting)
+            }
+            Text(
+                statusText,
+                Modifier.fillMaxWidth(),
+                color = when {
+                    url != null && hostChanged -> MaterialTheme.colorScheme.error
+                    url != null && phoneConnected -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * 面板标题行右端的小图标钮 (重置地址): 未聚焦只有图标, 聚焦 = 主题色实底 (示焦约定见 FocusHighlight),
+ * 文字标签只在聚焦时浮现在钮下方 (同搜索行的 [TvSearchIconButton]).
+ */
+@Composable
+private fun TvSearchPanelIconButton(
+    icon: ImageVector,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    Box(modifier) {
+    var heightPx by remember { mutableIntStateOf(0) }
+    val labelGapPx = with(LocalDensity.current) { TV_SEARCH_ROW_BUTTON_LABEL_GAP.roundToPx() }
+    Box(modifier.onSizeChanged { heightPx = it.height }) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.size(TV_SEARCH_PANEL_BUTTON_SIZE),
+            shape = CircleShape,
+            color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+            contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            interactionSource = interactionSource,
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, Modifier.size(20.dp))
+            }
+        }
+        if (focused) {
+            Text(
+                label,
+                Modifier.align(Alignment.TopCenter)
+                    .layout { measurable, _ ->
+                        val placeable = measurable.measure(Constraints())
+                        layout(0, 0) { placeable.place(-placeable.width / 2, heightPx + labelGapPx) }
+                    },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * 搜索框内最右的「清除历史」图标: 没有底色块, 只有图标本身 (用户 2026-09-10). 平时 `canFocus = false`,
+ * 方向键导航碰不到; 只有搜索框长按把它武装起来才可聚焦并接住焦点. 聚焦 = 图标变主题色 + 文字标签浮在
+ * 下方; 确认键清空历史; 方向键 / 失焦 = 退回搜索框并解除武装.
+ *
+ * 长按武装那一刻用户的手还按着, 剩下的连发与 KeyUp 会随着焦点一起落到这里 —— [consumeHeldConfirmKeyOnFocus]
+ * 把它们吞掉, 见到新的一次按下才算「按了清除」.
+ */
+@Composable
+private fun TvSearchInlineClearIcon(
+    armed: Boolean,
+    focusRequester: FocusRequester,
+    onDisarm: () -> Unit,
+    onClear: () -> Unit,
+    onEscape: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val iconSizePx = with(LocalDensity.current) { TV_SEARCH_INLINE_ICON_SIZE.roundToPx() }
+    val labelOffsetPx = with(LocalDensity.current) { TV_SEARCH_INLINE_ICON_LABEL_OFFSET.roundToPx() }
+    Box(
+        modifier
+            .focusRequester(focusRequester)
+            .focusProperties { canFocus = armed }
+            .onFocusChanged { if (!it.isFocused && armed) onDisarm() }
+            .consumeHeldConfirmKeyOnFocus()
+            .onPreviewKeyEvent { event ->
+                when {
+                    event.key in TV_CONFIRM_KEYS -> {
+                        if (event.type == KeyEventType.KeyUp) onClear()
+                        true
+                    }
+                    event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
+                            event.key == Key.DirectionUp || event.key == Key.DirectionDown -> {
+                        if (event.type == KeyEventType.KeyDown) onEscape()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .focusable(interactionSource = interactionSource),
+    ) {
+        // 聚焦效果: 图标背后一个主题色圆底 + 图标反白 (同面板里的重置钮). 只换图标颜色的话在深色界面上
+        // 看不出来是"选中了". 用 drawBehind 画而不是加个底块: 圆比图标大, 塞进布局会把搜索框撑高,
+        // 画出去的那一圈落在搜索框自己的内边距里, 不会被裁
+        val focusRing = MaterialTheme.colorScheme.primary
+        Icon(
+            Icons.Rounded.DeleteSweep,
+            contentDescription = label,
+            Modifier.size(TV_SEARCH_INLINE_ICON_SIZE)
+                .drawBehind {
+                    if (focused) drawCircle(focusRing, radius = TV_SEARCH_INLINE_ICON_FOCUS_RADIUS.toPx())
+                },
+            tint = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (focused) {
+            Text(
+                label,
+                Modifier.align(Alignment.TopCenter)
+                    .layout { measurable, _ ->
+                        val placeable = measurable.measure(Constraints())
+                        // 浮在搜索框之下: 图标高 + 框的下内边距 + 间距, 不参与布局
+                        layout(0, 0) { placeable.place(-placeable.width / 2, iconSizePx + labelOffsetPx) }
+                    },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * 搜索框那一行里的纯图标方钮 (筛选 / 清空历史): 与搜索框同底色同圆角, 聚焦时主题色描边, **文字标签只在
+ * 聚焦时浮现在钮的正下方**, 用 0 高度的 layout 放置, 不占布局、不把候选列表往下挤 (用户 2026-09-10: 行里
+ * 不要文字). [badge] 为 true 时右上角一个小圆点 (筛选钮「已有筛选」的提示, 同结果态顶部行).
+ */
+@Composable
+private fun TvSearchIconButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badge: Boolean = false,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    var heightPx by remember { mutableIntStateOf(0) }
+    val labelGapPx = with(LocalDensity.current) { TV_SEARCH_ROW_BUTTON_LABEL_GAP.roundToPx() }
+    Box(modifier.onSizeChanged { heightPx = it.height }) {
         Surface(
             onClick = onClick,
             modifier = Modifier.fillMaxHeight()
+                .width(TV_SEARCH_ROW_BUTTON_WIDTH)
                 .ifThen(focused) {
                     border(
                         2.5.dp,
@@ -689,27 +1026,16 @@ private fun TvSearchInputFilterButton(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             interactionSource = interactionSource,
         ) {
-            Row(
-                Modifier.padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Rounded.Tune,
-                    contentDescription = null,
-                    Modifier.size(20.dp),
+                    icon,
+                    contentDescription = label,
+                    Modifier.size(22.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    stringResource(Lang.search_tv_filter),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
                 )
             }
         }
-        // 有筛选时的小圆点 (同结果态顶部行的筛选钮)
-        if (hasFilters) {
+        if (badge) {
             Box(
                 Modifier.align(Alignment.TopEnd)
                     .padding(6.dp)
@@ -717,21 +1043,56 @@ private fun TvSearchInputFilterButton(
                     .background(MaterialTheme.colorScheme.primary, CircleShape),
             )
         }
+        if (focused) {
+            Text(
+                label,
+                Modifier.align(Alignment.TopCenter)
+                    // 自身占 0×0, 文字放到钮底边之下 labelGap 处并按钮的中线居中 —— 浮在下面, 不参与行布局
+                    .layout { measurable, _ ->
+                        val placeable = measurable.measure(Constraints())
+                        layout(0, 0) { placeable.place(-placeable.width / 2, heightPx + labelGapPx) }
+                    },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
     }
 }
 
+/**
+ * 候选行. [onRemove] 非 null (历史记录) 时长按确认键**直接删除** —— 手机端是行尾的叉号, 遥控器上没有
+ * 第二个可聚焦的位置, 长按是唯一不占版面的入口. 不弹菜单也不二次确认 (用户 2026-09-10 要求; 手机端同样
+ * 没有确认): 搜索历史丢了代价为零.
+ *
+ * @param onRemovedWhileFocused 本行持焦时被移出组合 (删除生效后 paging 重刷) 时回调: 焦点跟着节点
+ *   一起消失, 不会自动改派, 得有人把它送回搜索框.
+ */
 @Composable
 private fun TvSearchSuggestionRow(
     text: String,
     isHistory: Boolean,
     onClick: () -> Unit,
+    onRemove: (() -> Unit)?,
+    onRemovedWhileFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    val currentFocused by rememberUpdatedState(focused)
+    val currentOnRemovedWhileFocused by rememberUpdatedState(onRemovedWhileFocused)
+    DisposableEffect(Unit) {
+        onDispose { if (currentFocused) currentOnRemovedWhileFocused() }
+    }
+    Box(modifier.fillMaxWidth()) {
     Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth()
+            .then(
+                // 有删除入口才接管确认键 (按住到阈值当场删除, 短按仍是提交); 补全建议交回 Surface 自己的点击
+                if (onRemove == null) Modifier
+                else Modifier.tvLongPressKey(onLongPress = onRemove, onShortPress = onClick),
+            ),
         shape = RoundedCornerShape(8.dp),
         color = if (focused) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
         interactionSource = interactionSource,
@@ -755,6 +1116,7 @@ private fun TvSearchSuggestionRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
     }
 }
 
@@ -783,6 +1145,38 @@ private fun TvSearchResultsPane(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val items = state.searchState.collectItemsWithLifecycle()
+
+    // Web 控制台的「结果」标签读这份列表 (见 RemoteSearchResults): 快照由 HTTP 线程在需要时读, 不进本面板的
+    // 组合; 手机上「加载更多」= 访问最后一项, 分页库照常追加下一页 (出错时重试), 投到本面板的主线程 scope
+    val remoteQuery by rememberUpdatedState(state.query)
+    DisposableEffect(items) {
+        val source = object : RemoteSearchResultsSource {
+            override fun snapshot(): RemoteSearchResultsSnapshot {
+                val loadState = items.loadState
+                val error = loadState.refresh as? LoadState.Error ?: loadState.append as? LoadState.Error
+                return RemoteSearchResultsSnapshot(
+                    query = remoteQuery,
+                    items = items.itemSnapshotList.items,
+                    refreshing = loadState.refresh is LoadState.Loading,
+                    appending = loadState.append is LoadState.Loading,
+                    endReached = loadState.append.endOfPaginationReached,
+                    error = error?.error?.let { it.message ?: it::class.simpleName },
+                )
+            }
+
+            override fun loadMore() {
+                scope.launch {
+                    if (items.loadState.append is LoadState.Error) {
+                        items.retry()
+                    } else if (items.itemCount > 0) {
+                        items[items.itemCount - 1]
+                    }
+                }
+            }
+        }
+        TvRemoteControl.registerSearchResults(source)
+        onDispose { TvRemoteControl.unregisterSearchResults(source) }
+    }
 
     // Hero 数据源: 聚焦卡片驱动; 默认当前列表第一项, 列表确认为空才清
     var heroItem by remember { mutableStateOf<SubjectPreviewItemInfo?>(null) }
@@ -1814,14 +2208,56 @@ private const val TV_SEARCH_MODE_FADE_MILLIS = 500
 /** 输入态: 搜索框距页面顶部的距离. */
 private val TV_SEARCH_INPUT_TOP_PAD = 48.dp
 
-/** 输入态: 搜索框与候选列表占屏宽比例. */
-private const val TV_SEARCH_INPUT_WIDTH_FRACTION = 0.55f
-
 /** 输入态: 搜索框圆角. */
 private val TV_SEARCH_INPUT_CORNER = 12.dp
 
 /** 输入态: 补全建议的防抖时长. */
 private const val TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS = 300L
+
+/** 输入态: 搜索区左缘与悬浮侧边栏收起宽度之间的间距. */
+private val TV_SEARCH_PAGE_START_GAP = 24.dp
+
+/** 输入态: 右侧面板到屏幕右缘. */
+private val TV_SEARCH_PAGE_END_PAD = 48.dp
+
+/** 输入态: 搜索区与右侧面板的间距. */
+private val TV_SEARCH_PANEL_GAP = 32.dp
+
+/** 输入态: 搜索框那一行里图标方钮的宽度 (高度跟随行). */
+private val TV_SEARCH_ROW_BUTTON_WIDTH = 56.dp
+
+/** 输入态: 搜索框内「清除历史」图标的边长. */
+private val TV_SEARCH_INLINE_ICON_SIZE = 22.dp
+
+/** 输入态: 「清除历史」图标聚焦时背后圆底的半径 (直径 36dp, 落在搜索框 14dp 的内边距之内). */
+private val TV_SEARCH_INLINE_ICON_FOCUS_RADIUS = 18.dp
+
+/** 输入态: 「清除历史」图标聚焦时浮动标签相对图标底边的下移量 (框的下内边距 14dp + 6dp 间距). */
+private val TV_SEARCH_INLINE_ICON_LABEL_OFFSET = 20.dp
+
+/** 输入态: 图标钮聚焦时浮现的文字标签与钮底边的间距. */
+private val TV_SEARCH_ROW_BUTTON_LABEL_GAP = 6.dp
+
+/** 输入态: 「手机扫码输入」面板宽度 (定宽, 搜索区吃掉其余宽度). */
+private val TV_SEARCH_REMOTE_PANEL_WIDTH = 300.dp
+
+/** 输入态: 候选列表与搜索框行的间距. */
+private val TV_SEARCH_LIST_TOP_GAP = 12.dp
+
+/** 输入态: 面板标题行右端图标钮 (重置地址) 的直径. */
+private val TV_SEARCH_PANEL_BUTTON_SIZE = 36.dp
+
+/** 输入态: 面板说明文字额外下移, 给标题行重置钮的浮动标签让位. */
+private val TV_SEARCH_PANEL_DESC_TOP_GAP = 12.dp
+
+/** 输入态: 面板内边距. */
+private val TV_SEARCH_REMOTE_PANEL_PAD = 20.dp
+
+/** 「手机扫码输入」二维码本体边长 (不含留白). 36 字符的地址是 29 模块, 180dp 下一模块 6.2dp, 沙发距离够扫. */
+private val TV_SEARCH_QR_SIZE = 180.dp
+
+/** 二维码四周留白: 规范要求 ≥ 4 模块, 按上面的模块尺寸算 24dp. */
+private val TV_SEARCH_QR_QUIET_ZONE = 24.dp
 
 /** 结果态: 内容左侧留白 (外层已让开侧边栏 48dp, 总左缘 = 48 + 此值, 与探索/追番页一致). */
 private val TV_SEARCH_START_PAD = 16.dp

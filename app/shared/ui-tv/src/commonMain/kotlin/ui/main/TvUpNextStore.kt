@@ -114,6 +114,13 @@ object TvUpNextStore {
             }
     }
 
+    /**
+     * 某一条播放记录接下来该播什么, 与卡片同一套规则 (没看完就播它, 看完了取同一部的下一集; 没有下一集 / 下一集还没播 /
+     * 拿不到剧集列表为 null). Web 控制台的播放记录 (`RemoteHistory`) 点 ▶ 用.
+     */
+    internal suspend fun resolveTarget(record: EpisodeHistory): TvUpNextTarget? =
+        resolve(record, GlobalKoin.get())?.target
+
     private suspend fun resolve(
         latest: EpisodeHistory,
         subjects: SubjectCollectionRepository,
