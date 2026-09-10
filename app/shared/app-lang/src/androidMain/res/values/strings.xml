@@ -587,6 +587,7 @@
     <string name="search_tv_remote_host_changed">TV IP changed (was %1$s). Scan the code again or update your bookmark</string>
     <string name="tv_remote_control_title">Web console</string>
     <string name="tv_remote_control_close">Close</string>
+    <string name="tv_rail_action_panel">Actions</string>
     <string name="settings_theme_tv_remote_show_on_launch">Show web console on startup</string>
     <string name="settings_theme_tv_remote_show_on_launch_description">Show the QR code each time the app starts, ready to scan with your phone or open on a computer. It can also be turned off in the popup.</string>
     <string name="tv_remote_control_dont_show_on_launch">Do not show on startup</string>

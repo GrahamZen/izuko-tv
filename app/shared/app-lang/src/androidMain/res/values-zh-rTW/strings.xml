@@ -1299,6 +1299,7 @@
     <string name="search_tv_remote_host_changed">電視 IP 已變化（原 %1$s），請重新掃碼或更新書籤</string>
     <string name="tv_remote_control_title">Web 控制台</string>
     <string name="tv_remote_control_close">關閉</string>
+    <string name="tv_rail_action_panel">動作面板</string>
     <string name="settings_theme_tv_remote_show_on_launch">啟動時彈出 Web 控制台</string>
     <string name="settings_theme_tv_remote_show_on_launch_description">每次開啟應用時彈出二維碼，方便用手機掃碼或在電腦上開啟；也可以在彈窗裡關掉</string>
     <string name="tv_remote_control_dont_show_on_launch">啟動時不再顯示</string>

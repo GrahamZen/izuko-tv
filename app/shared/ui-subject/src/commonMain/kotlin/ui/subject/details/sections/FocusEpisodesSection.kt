@@ -126,6 +126,7 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.rememberTvCardsScrollingProvider
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollSettled
 import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextEnabled
 import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextFadeTransform
@@ -1211,7 +1212,7 @@ fun FocusEpisodeCard(
         onClick = onClick,
         // scale 放链最外层: 按住缩小时整张卡 (含调用方 modifier 里的装饰) 一起缩;
         // 行层的固定锚位聚焦框按同一比例同步缩 —— 框不缩的话按住时卡与框脱开一圈, 像焦点掉了
-        modifier = Modifier.scale(pressScale).then(modifier).height(height).then(longPressModifier),
+        modifier = Modifier.scale(pressScale).then(modifier).height(height).then(longPressModifier).tvTouchFocusOnTap(),
         shape = RoundedCornerShape(EPISODE_CARD_CORNER),
         color = containerColor,
         interactionSource = interactionSource,

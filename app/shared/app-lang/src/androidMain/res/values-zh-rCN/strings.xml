@@ -627,6 +627,7 @@
     <string name="search_tv_remote_host_changed">电视 IP 已变化（原 %1$s），请重新扫码或更新书签</string>
     <string name="tv_remote_control_title">Web 控制台</string>
     <string name="tv_remote_control_close">关闭</string>
+    <string name="tv_rail_action_panel">动作面板</string>
     <string name="settings_theme_tv_remote_show_on_launch">启动时弹出 Web 控制台</string>
     <string name="settings_theme_tv_remote_show_on_launch_description">每次打开应用时弹出二维码，方便用手机扫码或在电脑上打开；也可以在弹窗里关掉</string>
     <string name="tv_remote_control_dont_show_on_launch">启动时不再显示</string>
