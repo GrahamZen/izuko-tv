@@ -83,9 +83,9 @@ import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
-import me.him188.ani.app.ui.lang.login_sign_in
 import me.him188.ani.app.ui.lang.playback_session_now_playing
 import me.him188.ani.app.ui.lang.settings
+import me.him188.ani.app.ui.lang.tv_rail_remote_control
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import org.jetbrains.compose.resources.stringResource
 
@@ -306,8 +306,8 @@ private fun playbackSessionStatusSeverityOf(status: PlaybackSessionStatus?): TvR
 /**
  * TV 可展开左侧导航栏 (主页与详情页共用同一实现):
  * 收起态是一列图标 (头像置顶 + 若干图标条目); 焦点进入后展开为"图标 + 文字"并压一层左缘渐变遮罩,
- * 焦点离开自动收起. 头像点击进入设置的用户信息页 (由 [onAvatarClick] 决定); 未登录时头像退化成
- * 设置里那个默认人物符号 (AccountCircle), 尺寸/对齐与其他图标完全一致.
+ * 焦点离开自动收起. 头像点击做什么由 [onAvatarClick] 决定 (主页 = 打开手机控制中心), 旁边的文字已登录写昵称、
+ * 未登录写「控制中心」; 未登录时头像退化成设置里那个默认人物符号 (AccountCircle), 尺寸/对齐与其他图标完全一致.
  *
  * @param selfInfo 头像用户信息; 传 null 则不显示头像/用户名, 但仍保留头像槽位的等高占位,
  *   使其余按钮位置不变 (如详情页不需要头像).
@@ -558,11 +558,12 @@ private fun TvRailAvatar(
                 )
             }
             if (expanded) {
+                // 点头像打开的是手机控制中心 (见 TvMainScreenLayout), 没登录时就写这个; 登录入口在上方浮出的动作按钮里
                 Text(
                     if (loggedIn) {
-                        selfInfo.selfInfo?.nickname ?: stringResource(Lang.login_sign_in)
+                        selfInfo.selfInfo?.nickname ?: stringResource(Lang.tv_rail_remote_control)
                     } else {
-                        stringResource(Lang.login_sign_in)
+                        stringResource(Lang.tv_rail_remote_control)
                     },
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.labelMedium,

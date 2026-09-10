@@ -25,8 +25,14 @@ interface SearchHistoryDao {
     @Query("delete from `search_history` where `content`=:content")
     suspend fun deleteByContent(content: String)
 
+    @Query("delete from `search_history`")
+    suspend fun deleteAll()
+
     @Query("select content from `search_history` where trim(`content`) != '' order by sequence desc")
     fun allPager(): PagingSource<Int, String>
+
+    @Query("select content from `search_history` where trim(`content`) != '' order by sequence desc limit :limit")
+    suspend fun recent(limit: Int): List<String>
 }
 
 @Entity(

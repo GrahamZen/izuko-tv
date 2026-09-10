@@ -19,6 +19,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +54,7 @@ import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
+import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.exploration.ExplorationPageVariant
 import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
@@ -64,6 +67,7 @@ import me.him188.ani.app.ui.exploration.search.TvSearchPage
 import me.him188.ani.app.ui.main.LocalMainScreenShellVariant
 import me.him188.ani.app.ui.main.MainScreenShellVariant
 import me.him188.ani.app.ui.main.TvMainScreenLayout
+import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
@@ -77,6 +81,9 @@ import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.user.SelfInfoUiState
+import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
+import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -100,6 +107,19 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val playLongPress = remember { TvKeyLongPressHost(TV_PLAY_KEYS) }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageRefreshHost() }
+    val appContext = LocalContext.current
+    // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
+    // 用 navigator 把电视带过去. 见 TvRemoteControl
+    LaunchedEffect(aniNavigator) {
+        TvRemoteControl.install(appContext, aniNavigator)
+    }
+    // 手机「设置」标签底部的日志下载, 与设置 → 日志 →「扫码传到手机」同一个目录
+    DisposableEffect(appContext) {
+        TvRemoteControl.logsDirProvider = { appContext.getLogsDir() }
+        onDispose { TvRemoteControl.logsDirProvider = null }
+    }
+    // Ani 退到后台 (屏保 / 别的应用 / 息屏) 时手机控制中心顶上一条提示: 操作照样生效, 只是电视上看不到
+    TrackTvRemoteForeground()
     CompositionLocalProvider(
         LocalTvBackLongPressHost provides backLongPress,
         // 下发播放键宿主只为让独立窗口的桥接够得着 (处理器仍只有下面那一个)
@@ -182,6 +202,32 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
         val playbackEntry: PlaybackSessionEntry =
             if (retainSession) sessionHolder else PlaybackSessionEntry.None
+        // 手机控制中心: 播放页不在前台时, 网页上的「在电视上打开播放器」要知道回哪个会话
+        val currentPlaybackEntry by rememberUpdatedState(playbackEntry)
+        DisposableEffect(Unit) {
+            TvRemoteControl.playbackSessionProvider = { currentPlaybackEntry.session }
+            TvRemoteControl.playbackStatusProvider = { currentPlaybackEntry.status }
+            // 手机「缓存」标签删正在播的那条缓存时多提示一句 (同电视缓存页的删除确认框)
+            TvRemoteControl.playingCacheProvider = { currentPlaybackEntry.playingCache }
+            onDispose {
+                TvRemoteControl.playbackSessionProvider = null
+                TvRemoteControl.playbackStatusProvider = null
+                TvRemoteControl.playingCacheProvider = null
+            }
+        }
+        // 后台会话的提示 (准备好了 / 出问题) 同步给手机控制中心, 与电视上的 toast 同一份文案.
+        // notices 是 SharedFlow, 与 AniAppContent 那个收集者各收各的
+        val noticeTexts = rememberRetainedPlaybackNoticeTexts()
+        LaunchedEffect(sessionHolder, noticeTexts) {
+            sessionHolder.notices.collect { TvRemoteControl.postNotice(noticeTexts.textOf(it)) }
+        }
+        // 播放页不在前台时手机上照样能换源: 后台会话照常搜源解析 (见 RegisterTvRemoteBackgroundPlayer).
+        // key(vm): 换会话时旧把手注销、新把手登记
+        if (retainSession) {
+            sessionHolder.currentViewModel?.let { vm ->
+                key(vm) { RegisterTvRemoteBackgroundPlayer(vm) }
+            }
+        }
         // 「一起看」入口把手: 同样是 Activity 级 ViewModel, 与 AniAppContent 里 provide 给
         // LocalWatchTogetherEntry 的是同一个实例 —— 本处在那个 provider 的**外面**, 读
         // CompositionLocal 只会拿到默认空实例 (见 WatchTogetherEntryState)
