@@ -84,6 +84,12 @@
 
 [github-android-qr]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-universal.apk.github.qrcode.png
 
+### Android 7.1 兼容包
+
+上面的安装包要求 Android 8.1 及以上。装不上并提示 `INSTALL_FAILED_OLDER_SDK` 的话，用文件名带 `legacy` 的那几个（`ani-$TAG_VERSION-legacy-arm64-v8a.apk` 等），它们支持到 Android 7.1。
+
+兼容包和正式包功能一致，但只在少量设备上验证过；能装正式包就别用它。另外 Android 7.1 上 BT 引擎跑在应用进程内，退到后台被系统回收后下载不会保活。
+
 ## 本次更新
 
 
