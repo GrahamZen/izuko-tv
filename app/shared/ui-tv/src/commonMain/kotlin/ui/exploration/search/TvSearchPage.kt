@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.exploration.search
 
 import androidx.compose.animation.AnimatedContent
+import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -694,6 +695,13 @@ private fun TvSearchInputPane(
                         // **别在这里挂 tvWindowInitialFocus**: 挂在 focusable 之后时它的 requester 与
                         // onFocusChanged 只认链上排在后面的焦点目标 (= 里面不可聚焦的输入框), 送焦永远被拒,
                         // 框获焦也不上报 —— 请求悬挂, 回输入态 2 秒后必打一条"送焦请求悬挂" (2026-09-11 日志)
+                        // 触屏 (平板装了 TV 包): 点一下 = 确认键短按 (进编辑态), 长按 = 确认键长按 (武装清除历史).
+                        // 武装期间点框不进编辑态: 那一下多半是冲着框里的清除图标去的 (两处都会收到同一次点按). 电视上不装
+                        .tvTouchTap(
+                            onTap = { if (!clearArmed) editing = true },
+                            // 编辑态下不认长按: 输入框里长按是选字 / 粘贴, 而长按一旦触发会吞掉这次按住剩下的事件
+                            onLongPress = if (editing) null else ({ if (isHistory && values.itemCount > 0) clearArmed = true }),
+                        )
                         .focusable(),
                     shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -978,6 +986,8 @@ private fun TvSearchInlineClearIcon(
                     else -> false
                 }
             }
+            // 触屏: 武装后点图标 = 确认键 (清空历史). 电视上不装
+            .tvTouchTap(onTap = { if (armed) onClear() })
             .focusable(interactionSource = interactionSource),
     ) {
         // 聚焦效果: 图标背后一个主题色圆底 + 图标反白 (同面板里的重置钮). 只换图标颜色的话在深色界面上
