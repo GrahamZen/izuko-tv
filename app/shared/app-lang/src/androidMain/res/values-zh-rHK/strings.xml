@@ -665,6 +665,9 @@
     <string name="settings_network_proxy_service_collection">收藏數據服務</string>
     <string name="settings_network_proxy_service_comment">評論服務</string>
     <string name="settings_network_proxy_service_tmdb">背景圖與劇照服務</string>
+    <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
+    <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>
+    <string name="settings_network_tmdb_images_disable_description">你的網絡連不上 TMDB 時開啟：背景圖與劇照直接改用條目封面，不再等待載入，也不再發送請求</string>
     <string name="settings_network_proxy_test_success">連接成功</string>
     <string name="settings_network_proxy_test_failed">連接失敗</string>
     <string name="settings_network_proxy_current_disabled">未啟用代理</string>
