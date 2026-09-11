@@ -813,6 +813,8 @@ fun TmdbImageService.tvHeroBackdropUrl(
     coverFallbackNow: Boolean = false,
 ): String? {
     if (subjectId == null) return null
+    // 用户关了 TMDB 图: 进程里可能还存着关之前取到的剧照/backdrop URL, 那张图多半也下不来, 一律直接给封面
+    if (disabledByUser) return coverUrl?.takeIf { it.isNotBlank() }
     val stillEntry = if (preferNextEpisodeStill) TvHeroMediaCache.nextEpisodeMedia[subjectId] else null
     // **本页 (列表/网格) 恒 w1280 档, 原生 4K UI 上也不升**: 4K 的升档只给详情页那一张全屏
     // hero (在那边之上叠一层原图, 见 SubjectDetailsTvPage 的 HeroBackdropSharpeningOverlay).
