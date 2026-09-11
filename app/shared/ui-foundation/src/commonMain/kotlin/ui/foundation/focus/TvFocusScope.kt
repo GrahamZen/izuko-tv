@@ -197,6 +197,42 @@ class TvFocusScope {
         pending = null
     }
 
+    /**
+     * 焦点此刻停在过渡用的隐形锚点上 (由 [TvFocusTransitAnchor] 维护). 锚点会吞掉这期间的方向/确认键,
+     * 焦点哪儿也没去, 所以这一下**不算用户接管**, 见 [onUserKeyDown].
+     */
+    internal var focusParkedOnTransit: Boolean = false
+        set(value) {
+            if (value && !field) parkedMark = kotlin.time.TimeSource.Monotonic.markNow()
+            field = value
+        }
+
+    /** 焦点停到过渡锚点上的那一刻 (见 [focusParkedOnTransit]). */
+    private var parkedMark: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
+
+    /**
+     * 驻留在过渡锚点上时, 按键在这段时间内不算用户接管 (见 [onUserKeyDown]). 正常的跨 tab / 跨天落地
+     * 实测 ≤300ms; 过了还没落地多半是落不了地了 (目标不存在), 这时的按键就该取消它 —— 否则吞键又取消不掉,
+     * 要一直等到网格送焦的 4 秒超时, 期间遥控器全无反应 (2026-09-11 真机, 空的「抛弃」标签). 测试可调.
+     */
+    internal var transitParkKeyGraceMillis: Long = 600
+
+    /**
+     * [tvFocusNavSignal] 收到方向/确认键按下时的记账.
+     *
+     * - 系统连发不算新的用户介入, 只推进 [userInputGeneration] (理由见 [tvFocusNavSignal]).
+     * - 焦点停在过渡锚点上 (且未超过 [transitParkKeyGraceMillis]) 时两个代数都不动: 这一下被锚点吞掉,
+     *   既没移走焦点, 也不该让在途的换 tab / 换天送焦作废. 否则送焦被取消 -> 锚点不再可聚焦 -> 搁浅兜底
+     *   把焦点送回标签/日期行. 2026-09-11 真机: 追番页往左跨回首 tab, 首 tab 卡多、送焦约 300ms 才落地,
+     *   其间单次按下的左键把它取消, 焦点落到首个标签, 再按左就进了侧边栏 (连发不推进代数, 所以长按没事).
+     */
+    internal fun onUserKeyDown(isAutoRepeat: Boolean?) {
+        val parkedMillis = parkedMark?.elapsedNow()?.inWholeMilliseconds ?: 0L
+        if (focusParkedOnTransit && parkedMillis < transitParkKeyGraceMillis) return
+        if (isAutoRepeat != true) notifyUserNavigation()
+        notifyUserInput()
+    }
+
     /** 锚点节点附着上报 (由 tvFocusAnchor 自动挂接). 同 key 多节点按引用计数记账. */
     fun onAnchorAttached(key: TvFocusKey) {
         val count = (anchorRefCount[key] ?: 0) + 1

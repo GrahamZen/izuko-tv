@@ -720,6 +720,8 @@ fun TvSchedulePage(
             TvFocusTransitAnchor(
                 requester = transitAnchor,
                 switching = { gridFocus.switching },
+                // 驻留期间的按键被锚点吞掉, 不算用户接管 (否则换天送焦被取消, 焦点落回日期行)
+                scope = focus,
                 // 在途请求被取消 (数据迟迟不来被判空, 或用户接手) 时焦点还停在锚点上, 锚点随即
                 // 不可聚焦: 补落点到日期行
                 onStranded = { focusSelectedDate() },
