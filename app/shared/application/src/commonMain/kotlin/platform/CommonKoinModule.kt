@@ -439,7 +439,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     single<AnimeScheduleService> { AnimeScheduleService(get<AniApiProvider>().scheduleApi) }
-    single<TmdbImageService> { TmdbImageService(get(), getContext().dataStores.tmdbImageCacheStore) }
+    single<TmdbImageService> {
+        TmdbImageService(
+            get(),
+            getContext().dataStores.tmdbImageCacheStore,
+            disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
+        )
+    }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
     single<TrendsRepository> { TrendsRepository(get<AniApiProvider>().trendsApi) }
     single<RecommendationRepository> { RecommendationRepository(get<AniApiProvider>().homeApi) }
