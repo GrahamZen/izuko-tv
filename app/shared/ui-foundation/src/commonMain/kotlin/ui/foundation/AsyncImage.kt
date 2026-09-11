@@ -62,6 +62,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.roundToInt
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.files
 import me.him188.ani.utils.coroutines.IO_
@@ -141,6 +142,12 @@ fun AsyncImage(
     crossfade: Boolean? = null,
     crossfadeDurationMillis: Int? = null,
     decodeAtOriginalSize: Boolean = false,
+    /**
+     * 非 null 时刻意只解一张长边约这么多像素的小图 (按布局比例), 放大交给 GPU 双线性 ——
+     * 结果就是一张糊掉的图, 用来给 NSFW 封面打码. 不依赖 `Modifier.blur` (Android 12 以下没有
+     * RenderEffect, 那条路只能退化成纯色块), 也不花 GPU 模糊的开销.
+     */
+    downsampleLongEdgePx: Int? = null,
 ) {
     val state = rememberAsyncImageState()
     AniAsyncImage(
@@ -163,6 +170,7 @@ fun AsyncImage(
         crossfade = crossfade,
         crossfadeDurationMillis = crossfadeDurationMillis,
         decodeAtOriginalSize = decodeAtOriginalSize,
+        downsampleLongEdgePx = downsampleLongEdgePx,
     )
 }
 
@@ -187,6 +195,7 @@ internal fun AniAsyncImage(
     crossfade: Boolean? = null,
     crossfadeDurationMillis: Int? = null,
     decodeAtOriginalSize: Boolean = false,
+    downsampleLongEdgePx: Int? = null,
 ) {
     var requestSize by remember { mutableStateOf<IntSize?>(null) }
 
@@ -219,6 +228,7 @@ internal fun AniAsyncImage(
             alignment = alignment,
             requestSize = requestSize,
             decodeAtOriginalSize = decodeAtOriginalSize,
+            downsampleLongEdgePx = downsampleLongEdgePx,
         )
 
         when {
@@ -359,6 +369,7 @@ internal fun ImageRequest.Builder.configureAniImageRequest(
     requestSize: IntSize? = null,
     oversample: Int = ANI_IMAGE_REQUEST_OVERSAMPLE,
     decodeAtOriginalSize: Boolean = false,
+    downsampleLongEdgePx: Int? = null,
 ) {
     if (decodeAtOriginalSize) {
         // 按源图原尺寸解码, 给"同一 URL、多个尺寸互不相同的消费端"用 (分集剧照: 详情页卡片 /
@@ -383,10 +394,21 @@ internal fun ImageRequest.Builder.configureAniImageRequest(
         return
     }
     if (requestSize != null && requestSize.width > 0 && requestSize.height > 0) {
-        size(requestSize.width * oversample, requestSize.height * oversample)
-        // 顺手把"这张图要显示成多大"记进请求 (不进缓存键/请求键, 见 aniDisplaySize):
-        // 解码时要拿它算清晰度 —— 只看 size() 的话就得反推 oversample, 反推错了度量就是错的.
-        setAniDisplaySize(requestSize.width, requestSize.height)
+        if (downsampleLongEdgePx != null) {
+            // 刻意欠采样 (打码): 按框比例缩到长边 downsampleLongEdgePx. 下面的 precision 照旧,
+            // Crop 仍是"幂次采样 + 纯裁剪", 不会走 EXACTLY 的最近邻软件缩放; 放大全交给 GPU.
+            // **不挂 aniDisplaySize**: 否则清晰度日志会把每张打码图报成 UNDERSAMPLED.
+            val factor = downsampleLongEdgePx.toFloat() / maxOf(requestSize.width, requestSize.height)
+            size(
+                (requestSize.width * factor).roundToInt().coerceAtLeast(1),
+                (requestSize.height * factor).roundToInt().coerceAtLeast(1),
+            )
+        } else {
+            size(requestSize.width * oversample, requestSize.height * oversample)
+            // 顺手把"这张图要显示成多大"记进请求 (不进缓存键/请求键, 见 aniDisplaySize):
+            // 解码时要拿它算清晰度 —— 只看 size() 的话就得反推 oversample, 反推错了度量就是错的.
+            setAniDisplaySize(requestSize.width, requestSize.height)
+        }
     }
     scale(aniScaleDecider(contentScale, alignment))
     when (contentScale) {
