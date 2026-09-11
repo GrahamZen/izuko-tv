@@ -75,10 +75,10 @@ enum class TvRemoteEntryPlacement {
 @Serializable
 @Immutable
 data class ThemeSettings(
-    val darkMode: DarkMode = DarkMode.AUTO,
+    val darkMode: DarkMode = DarkMode.DARK,
     val useDynamicTheme: Boolean = false, // only supported on Android with Build.VERSION.SDK_INT >= 31
-    // TODO: Default "true" if supported (on Android, Build.VERSION.SDK_INT >= 31)
-    val useBlackBackground: Boolean = false,
+    /** 高对比度 (纯黑背景), 只在深色主题下生效. */
+    val useBlackBackground: Boolean = true,
     val alwaysDarkInEpisodePage: Boolean = false,
     val useDynamicSubjectPageTheme: Boolean = false,
     val seedColorValue: ULong = DefaultSeedColor.value,
