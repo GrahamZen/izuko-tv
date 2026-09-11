@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import me.him188.ani.app.data.network.tmdbStillHeroSizeUrl
 import androidx.compose.runtime.snapshotFlow
 import com.github.panpf.sketch.LocalPlatformContext
 import kotlinx.coroutines.CoroutineScope
@@ -131,15 +132,27 @@ class TvHeroMediaPipelineState internal constructor(
      */
     internal var coverFallbackFor: Int? by mutableStateOf(null)
 
-    /** 展示层主图: 单集剧照 -> 整部 backdrop -> 竖版封面, 三级回落见 [tvHeroBackdropUrl]. */
+    /**
+     * 展示层主图: 单集剧照 -> 整部 backdrop -> 竖版封面, 三级回落见 [tvHeroBackdropUrl]. **恒 w1280 档**, 与
+     * 设置无关 —— 完整档的原图不在这里, 走 [upgradeUrl] 在停稳后升 (2026-09-10 两步走).
+     */
     fun backdropUrl(spec: TvHeroMediaSpec?): String? = spec?.let { s ->
         tmdb.tvHeroBackdropUrl(
             s.subjectId,
-            fullVisualEffects,
+            fullVisualEffects = false,
             preferNextEpisodeStill = s.preferNextEpisodeStill,
             coverUrl = s.coverUrl,
             coverFallbackNow = coverFallbackFor == s.subjectId,
         )
+    }
+
+    /**
+     * 视觉效果完整档且 4K 界面时的剧照**升档目标** (原图 URL), 给 `TvPageBackdropLayer.upgradeUrl`: 只有剧照那一路
+     * 有原图 (backdrop 那路服务层已是 w1280), 且只在调用方传进来的 fullVisualEffects 为真时给. 显示端先用 w1280 crossfade, 停稳后原地换成它.
+     */
+    fun upgradeUrl(spec: TvHeroMediaSpec?): String? = spec?.let { s ->
+        if (!fullVisualEffects || !s.preferNextEpisodeStill) return@let null
+        TvHeroMediaCache.nextEpisodeMedia[s.subjectId]?.stillUrl?.let { tmdbStillHeroSizeUrl(it, fullQuality = true) }
     }
 
     /**
@@ -152,7 +165,7 @@ class TvHeroMediaPipelineState internal constructor(
             it.isNotBlank() && coverFallbackFor == s.subjectId &&
                 // 只垫"有真实主图在路上"的情形; URL 未解析时封面已经是主图, 不必重复画
                 tmdb.tvHeroBackdropUrl(
-                    s.subjectId, fullVisualEffects,
+                    s.subjectId, fullVisualEffects = false,
                     preferNextEpisodeStill = s.preferNextEpisodeStill,
                 ) != null
         }
@@ -221,8 +234,9 @@ fun rememberTvHeroMediaPipeline(
                     val targets = listOf(TvHeroNeighbor(s.subjectId, s.preferNextEpisodeStill)) +
                         s.neighbors.singleStep
                     targets.forEach { t ->
+                        // 展示与预热都恒 w1280 (原图只在停稳后由 upgradeUrl 升, 从不预热)
                         tmdb.tvHeroBackdropUrl(
-                            t.subjectId, fullVisualEffects,
+                            t.subjectId, fullVisualEffects = false,
                             preferNextEpisodeStill = t.preferNextEpisodeStill,
                         )?.let(::add)
                     }
@@ -260,7 +274,7 @@ fun rememberTvHeroMediaPipeline(
                             snapshotFlow {
                                 // 偏好取**邻居自己的**: 抄 spec 的会热错档, 见 TvHeroNeighbor
                                 tmdb.tvHeroBackdropUrl(
-                                    neighbor.subjectId, fullVisualEffects,
+                                    neighbor.subjectId, fullVisualEffects = false,
                                     preferNextEpisodeStill = neighbor.preferNextEpisodeStill,
                                 )
                             }.filterNotNull().first()

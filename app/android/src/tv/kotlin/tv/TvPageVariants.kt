@@ -32,6 +32,8 @@ import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
+import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
@@ -41,6 +43,11 @@ import me.him188.ani.app.ui.foundation.TV_PLAY_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.TvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
+import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageRefreshHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
@@ -76,6 +83,8 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsLayoutParams
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsTvLoadingPlaceholder
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsTvPage
+import me.him188.ani.app.ui.subject.details.layout.TvHeroZoomLayer
+import me.him188.ani.app.ui.subject.details.layout.tvHeroZoomHoldsPlaceholder
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
@@ -106,6 +115,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 挂在下方根 Box 上; "长按之后干什么"由在场的界面注册 (播放器收叠层在栈顶, 这里只有兜底)
     val backLongPress = remember { TvBackLongPressHost() }
     val playLongPress = remember { TvKeyLongPressHost(TV_PLAY_KEYS) }
+    // 方向键按住的真信号 (hero 文字 / 背景图 / 集信息行按住期间不换), 见 TvNavKeyTracker
+    val navKeys = rememberTvNavKeyTracker()
+    // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
+    val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
+    LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageRefreshHost() }
     val appContext = LocalContext.current
@@ -126,6 +140,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 下发播放键宿主只为让独立窗口的桥接够得着 (处理器仍只有下面那一个)
         LocalTvPlayLongPressHost provides playLongPress,
         LocalTvPageRefreshHost provides pageRefresh,
+        LocalTvNavKeyTracker provides navKeys,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -150,17 +165,19 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             )
         },
+        // ProvideTvScrollActivity: 每个带卡片的 TV 页一份"有卡片在滚动"的信号, 低特效档下
+        // hero 文字 / 集信息行据此在滚动期间隐藏, 背景图也等停稳才换 (时间表页只有后一项).
         LocalExplorationPageVariant provides ExplorationPageVariant { state, modifier ->
-            TvExplorationPage(state, modifier)
+            ProvideTvScrollActivity { TvExplorationPage(state, modifier) }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
-            TvSchedulePage(presentation, onRetry, modifier)
+            ProvideTvScrollActivity { TvSchedulePage(presentation, onRetry, modifier) }
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->
-            TvSearchPage(state, onIntent, suggestionsPager, modifier)
+            ProvideTvScrollActivity { TvSearchPage(state, onIntent, suggestionsPager, modifier) }
         },
         LocalCollectionPageVariant provides CollectionPageVariant { state, modifier ->
-            TvCollectionPage(state, modifier)
+            ProvideTvScrollActivity { TvCollectionPage(state, modifier) }
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
         LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
@@ -298,7 +315,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         Box(
             Modifier
                 .tvKeyLongPressInterceptor(backLongPress)
-                .tvKeyLongPressInterceptor(playLongPress),
+                .tvKeyLongPressInterceptor(playLongPress)
+                .tvNavKeyInterceptor(navKeys),
         ) {
             content()
         }
@@ -330,25 +348,27 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
         videoBackground: Boolean,
         onVideoBackgroundExitUp: (() -> Unit)?,
     ) {
-        SubjectDetailsTvPage(
-            state = state,
-            selfInfo = selfInfo,
-            layoutParams = layoutParams,
-            onPlay = onPlay,
-            onClickTag = onClickTag,
-            onClickLogin = onClickLogin,
-            onShowComments = onShowComments,
-            modifier = modifier,
-            onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
-            showTopBar = showTopBar,
-            windowInsets = windowInsets,
-            backgroundPalette = backgroundPalette,
-            onClickOpenExternal = onClickOpenExternal,
-            onCoverImageSuccess = onCoverImageSuccess,
-            onClickCache = onClickCache,
-            videoBackground = videoBackground,
-            onVideoBackgroundExitUp = onVideoBackgroundExitUp,
-        )
+        ProvideTvScrollActivity {
+            SubjectDetailsTvPage(
+                state = state,
+                selfInfo = selfInfo,
+                layoutParams = layoutParams,
+                onPlay = onPlay,
+                onClickTag = onClickTag,
+                onClickLogin = onClickLogin,
+                onShowComments = onShowComments,
+                modifier = modifier,
+                onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
+                showTopBar = showTopBar,
+                windowInsets = windowInsets,
+                backgroundPalette = backgroundPalette,
+                onClickOpenExternal = onClickOpenExternal,
+                onCoverImageSuccess = onCoverImageSuccess,
+                onClickCache = onClickCache,
+                videoBackground = videoBackground,
+                onVideoBackgroundExitUp = onVideoBackgroundExitUp,
+            )
+        }
     }
 
     @Composable
@@ -360,4 +380,12 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
     ) {
         SubjectDetailsTvLoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets)
     }
+
+    @Composable
+    override fun Underlay() {
+        TvHeroZoomLayer()
+    }
+
+    @Composable
+    override fun holdPlaceholder(subjectId: Int): Boolean = tvHeroZoomHoldsPlaceholder(subjectId)
 }
