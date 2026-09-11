@@ -675,9 +675,11 @@ private fun TvSearchInputPane(
                             onLongPress = { if (isHistory && values.itemCount > 0) clearArmed = true },
                             onShortPress = { editing = true },
                         )
-                        .focusable()
-                        // 进页/回本态的初始焦点: 落在框上 (非编辑态), 不是落进输入框
-                        .tvWindowInitialFocus(),
+                        // 进页/回本态的初始焦点由页面级 inputFieldFocus (onEnter 改道 + 整页失焦补救) 负责.
+                        // **别在这里挂 tvWindowInitialFocus**: 挂在 focusable 之后时它的 requester 与
+                        // onFocusChanged 只认链上排在后面的焦点目标 (= 里面不可聚焦的输入框), 送焦永远被拒,
+                        // 框获焦也不上报 —— 请求悬挂, 回输入态 2 秒后必打一条"送焦请求悬挂" (2026-09-11 日志)
+                        .focusable(),
                     shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
@@ -2007,12 +2009,13 @@ private fun TvSearchFilterDialog(
     val selectedTags = remember { mutableStateMapOf<String, Boolean>().apply { query.tags.orEmpty().forEach { put(it, true) } } }
     var sort by remember { mutableStateOf(query.sort) }
     var minRating by remember { mutableStateOf(query.rating?.min) }
-    val firstChipModifier = Modifier.tvWindowInitialFocus()
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 必须在 Dialog 内容里建: 窗口初始焦点的私有 scope 按 LocalWindowInfo 判窗口焦点来重试,
+        // 建在外面读到的是主窗口 (见 ViewAllGridDialog 同一处注释)
+        val firstChipModifier = Modifier.tvWindowInitialFocus()
         Surface(
             // 独立窗口: 遥控器全局键接回主窗口 (长按返回一步弹快捷菜单, 见 tvOverlayWindowKeys)
             Modifier.tvOverlayWindowKeys(onDismiss)

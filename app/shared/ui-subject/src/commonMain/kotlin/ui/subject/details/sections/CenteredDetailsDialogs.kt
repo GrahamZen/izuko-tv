@@ -90,13 +90,15 @@ internal fun <T : Any> ViewAllGridDialog(
     headerAction: @Composable () -> Unit = {},
     itemContent: @Composable (item: T, modifier: Modifier) -> Unit,
 ) {
-    val focus = rememberTvFocusScope()
-    // 首格随分页数据迟到时, 请求悬挂到锚点附着事件再送达, 不再逐帧轮询.
-    focus.InitialFocus(ViewAllGridFirstItemFocus)
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // **scope 必须建在 Dialog 内容里**: 它的解析器按 LocalWindowInfo 判"窗口有焦点"来重试,
+        // 建在外面读到的是主窗口 (弹窗开着必为 false), 按帧重试永不运行、窗口获焦事件也听错了窗口.
+        // 首格随分页数据迟到时, 请求悬挂到锚点附着事件再送达, 不再逐帧轮询.
+        val focus = rememberTvFocusScope()
+        focus.InitialFocus(ViewAllGridFirstItemFocus)
         // 底色/窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
         DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         Surface(

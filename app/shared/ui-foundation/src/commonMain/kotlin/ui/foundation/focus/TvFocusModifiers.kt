@@ -125,12 +125,9 @@ fun Modifier.tvFocusNavSignal(scope: TvFocusScope): Modifier = onPreviewKeyEvent
     // 送回标签/日期行, 后续连发就变成在标签行里横向导航. 真机实测: 时间表长按右键换天时焦点
     // 跳到日期行并开始左右切日期.
     if (event.type == KeyEventType.KeyDown && event.key in TV_USER_INTERACTION_KEYS) {
-        // 诊断: 连发守卫是否真的生效 —— isAutoRepeat 是 expect/actual, Android 读
-        // nativeKeyEvent.repeatCount; 电视遥控器长按到底会不会带 repeatCount>0 未经实测
-        if (event.isAutoRepeat != true) scope.notifyUserNavigation()
-        // 连发也要记一笔 (只推进代数, 不取消请求): 用来分辨"焦点是用户按过去的"还是
-        // "组合销毁时跌落过去的", 见 [TvFocusScope.userInputGeneration]
-        scope.notifyUserInput()
+        // 连发只推进按键代数 (用来分辨"焦点是用户按过去的"还是"组合销毁时跌落过去的", 见
+        // [TvFocusScope.userInputGeneration]); 焦点停在过渡锚点上时两个代数都不动. 见 [TvFocusScope.onUserKeyDown]
+        scope.onUserKeyDown(event.isAutoRepeat)
     }
     false // 只旁听, 不消费
 }
