@@ -132,6 +132,8 @@ fun Modifier.tvGridKeyNavigation(
  * @param extraCanFocus 除过渡以外额外允许聚焦的条件 (如等条目离开本 tab 期间)
  * @param onStranded 焦点仍在锚点上但锚点已不再允许聚焦时调用 (在途请求被取消/放弃):
  *   焦点即将被系统收走, 调用方补一个自己的落点 (如聚焦选中的标签/日期胶囊)
+ * @param scope 页面的焦点域: 焦点停在本锚点期间告诉它"按键被吞了, 不算用户接管"
+ *   (见 [TvFocusScope.onUserKeyDown]). 不传的话驻留期间一次单按就会取消在途送焦, 焦点被搁浅兜底带走
  */
 @Composable
 fun TvFocusTransitAnchor(
@@ -140,8 +142,14 @@ fun TvFocusTransitAnchor(
     modifier: Modifier = Modifier,
     extraCanFocus: () -> Boolean = { false },
     onStranded: () -> Unit = {},
+    scope: TvFocusScope? = null,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
+    // 离开组合时收回驻留标记: 节点脱离时 Android TV 不补发失焦回调, 不收的话标记永远为真,
+    // 之后用户的按键再也取消不了任何在途送焦
+    androidx.compose.runtime.DisposableEffect(scope) {
+        onDispose { if (hasFocus) scope?.focusParkedOnTransit = false }
+    }
     // canFocus 变 false 会让 Compose 在同一轮焦点失效处理中先移走焦点. 原实现只观察
     // (hasFocus, canFocus), 协程常常直接从 (true,true) 跳到 (false,false), 永远看不到
     // (true,false), 因而漏掉 onStranded. 在失焦回调里把这条因果单独记成事件代数.
@@ -166,6 +174,7 @@ fun TvFocusTransitAnchor(
             .focusProperties { this.canFocus = canFocus() }
             .onFocusChanged {
                 val lostWhileDisallowed = hasFocus && !it.isFocused && !canFocus()
+                if (hasFocus != it.isFocused) scope?.focusParkedOnTransit = it.isFocused
                 hasFocus = it.isFocused
                 if (lostWhileDisallowed) strandedEpoch++
             }

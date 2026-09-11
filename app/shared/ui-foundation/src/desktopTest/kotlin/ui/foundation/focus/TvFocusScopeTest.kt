@@ -211,6 +211,42 @@ class TvFocusScopeTest {
         assertNotNull(scope.pending)
     }
 
+    /**
+     * 焦点停在过渡锚点上时的按键不算用户接管 (纯记账): 锚点会吞掉这一下, 焦点哪儿也没去, 在途送焦
+     * 必须留着. 反过来, 焦点不在锚点上时单按照旧取消 —— 两半都测, 撤掉修复或把守卫写反都会红.
+     * 真机症状 (2026-09-11): 追番页往左跨回首 tab 的送焦落地前再单按一次左, 焦点落到首个标签、再按就进侧边栏.
+     */
+    @Test
+    fun `key swallowed by transit anchor does not cancel in-flight request`() {
+        val scope = TvFocusScope()
+        scope.request(Target)
+
+        scope.focusParkedOnTransit = true
+        scope.onUserKeyDown(isAutoRepeat = false)
+        assertNotNull(scope.pending)
+
+        scope.focusParkedOnTransit = false
+        scope.onUserKeyDown(isAutoRepeat = true) // 连发: 只记按键, 不取消
+        assertNotNull(scope.pending)
+        scope.onUserKeyDown(isAutoRepeat = false) // 焦点不在锚点上的单按: 用户接管, 取消
+        assertNull(scope.pending)
+    }
+
+    /**
+     * 驻留超过时限后按键照旧算接管: 目标落不了地时 (空 tab), 吞键又不取消会让遥控器一直没反应到 4 秒超时
+     * (2026-09-11 真机「抛弃」标签). 时限设成 0 模拟"已驻留很久".
+     */
+    @Test
+    fun `key while parked past the grace cancels the request`() {
+        val scope = TvFocusScope()
+        scope.transitParkKeyGraceMillis = 0
+        scope.request(Target)
+
+        scope.focusParkedOnTransit = true
+        scope.onUserKeyDown(isAutoRepeat = false)
+        assertNull(scope.pending)
+    }
+
     private data object Target : TvFocusKey
     private data object ExactTarget : TvFocusKey
 }
