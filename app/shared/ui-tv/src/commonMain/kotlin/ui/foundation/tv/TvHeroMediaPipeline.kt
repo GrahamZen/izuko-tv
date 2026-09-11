@@ -151,7 +151,7 @@ class TvHeroMediaPipelineState internal constructor(
      * 有原图 (backdrop 那路服务层已是 w1280), 且只在调用方传进来的 fullVisualEffects 为真时给. 显示端先用 w1280 crossfade, 停稳后原地换成它.
      */
     fun upgradeUrl(spec: TvHeroMediaSpec?): String? = spec?.let { s ->
-        if (!fullVisualEffects || !s.preferNextEpisodeStill) return@let null
+        if (!fullVisualEffects || !s.preferNextEpisodeStill || tmdb.disabledByUser) return@let null
         TvHeroMediaCache.nextEpisodeMedia[s.subjectId]?.stillUrl?.let { tmdbStillHeroSizeUrl(it, fullQuality = true) }
     }
 

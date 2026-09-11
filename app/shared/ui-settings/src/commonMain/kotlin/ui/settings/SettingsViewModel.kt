@@ -126,6 +126,9 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     val themeSettings: SettingsState<ThemeSettings> =
         settingsRepository.themeSettings.stateInBackground(ThemeSettings.Default.copy(_placeholder = -1))
 
+    /** 代理页底部「不加载 TMDB 背景图」. */
+    val tmdbImagesDisabled: SettingsState<Boolean> = settingsRepository.tmdbImagesDisabled.stateInBackground(false)
+
     val videoScaffoldConfig: SettingsState<VideoScaffoldConfig> =
         settingsRepository.videoScaffoldConfig.stateInBackground(VideoScaffoldConfig.Default.copy(_placeholder = -1))
 
