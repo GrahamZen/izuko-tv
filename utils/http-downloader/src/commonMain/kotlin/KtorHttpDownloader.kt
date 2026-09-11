@@ -883,16 +883,19 @@ open class KtorHttpDownloader(
             options
         }
         return httpGet(segmentInfo.url, finalOptions) { statement ->
-            val response = statement.execute()
-            val segmentPath = baseSaveDir.resolve(segmentInfo.relativeTempFilePath)
-            withContext(ioDispatcher) {
-                fileSystem.createDirectories(
-                    segmentPath.parent ?: error("Parent dir not found for segmentInfo: $segmentInfo"),
-                )
+            // 必须用带回调的 execute: 不带回调的 execute() 会先把**整个响应体**读进内存 (Ktor 的 save) 再返回,
+            // 之后的 bodyAsChannel 读的是内存里那份. HLS 小分段、按 Range 切块的 mp4 看不出来; 不支持 Range 的整片
+            // 视频只有一个分段 = 整个文件压在 Java 堆上, 按下载速度几分钟就 OOM (电视 512MB 堆, 实测每秒涨 5MB),
+            // 而且每次启动续传都从头再来一遍, 应用反复被撑爆.
+            statement.execute { response ->
+                val segmentPath = baseSaveDir.resolve(segmentInfo.relativeTempFilePath)
+                withContext(ioDispatcher) {
+                    fileSystem.createDirectories(
+                        segmentPath.parent ?: error("Parent dir not found for segmentInfo: $segmentInfo"),
+                    )
+                }
+                copyChannelToFile(response.bodyAsChannel(), segmentPath, rateLimiter)
             }
-
-            val channel = response.bodyAsChannel()
-            copyChannelToFile(channel, segmentPath, rateLimiter)
         }
     }
 
