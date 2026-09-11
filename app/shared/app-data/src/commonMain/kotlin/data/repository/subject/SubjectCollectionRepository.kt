@@ -62,6 +62,7 @@ import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.models.subject.TmdbImage
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.SubjectService
+import me.him188.ani.app.data.persistent.database.ProtoConverters
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionAndEpisodes
@@ -599,7 +600,8 @@ class SubjectCollectionRepositoryImpl(
                 subjectId,
                 score,
                 comment,
-                tags,
+                // 这一列按 protobuf 存, 查询参数得先自己编码 (直接传列表会被 Room 展开, 见 DAO 上的说明)
+                tags?.let { ProtoConverters.StringList().fromList(it) },
                 isPrivate,
                 collectionStats = stats.favorite.toSubjectCollectionStats(),
                 ratingInfo = ratingInfoOf(stats.rank, stats.score, stats.scoreDetails),
