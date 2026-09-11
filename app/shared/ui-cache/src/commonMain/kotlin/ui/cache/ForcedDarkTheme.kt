@@ -21,6 +21,9 @@ import me.him188.ani.app.ui.foundation.theme.AniTheme
  * 缓存相关页面 (缓存管理 / 缓存详情) 在只从播放链路进入的形态下
  * (播放器 → 条目缓存页 → 管理全部缓存 → 缓存详情) 前后都是暗色内容;
  * 浅色主题下这些页面突然一页亮白非常刺眼, 统一成深色.
+ *
+ * 只能包**自己铺不透明背景**的页面. 缓存管理页不包: 它在沉浸式外壳下容器透明、背景来自外壳
+ * (跟随用户主题), 强制深色会让页面内的色块在浅色背景上变成一块黑.
  */
 @Composable
 internal fun ForcedDarkTheme(content: @Composable () -> Unit) {

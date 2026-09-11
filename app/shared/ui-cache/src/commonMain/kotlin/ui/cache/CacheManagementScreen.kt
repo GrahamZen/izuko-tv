@@ -182,7 +182,8 @@ fun CacheManagementScreen(
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
 ) {
     val state by vm.stateFlow.collectAsStateWithLifecycle()
-    ForcedDarkTheme {
+    // 不包 ForcedDarkTheme: 沉浸式外壳下本页容器透明、透出外壳按用户主题铺的背景,
+    // 强制深色只会把顶栏 / 统计块 / 卡片染黑, 浅色主题下成了压在浅色背景上的一块黑.
     CacheManagementScreen(
         state,
         selfInfo,
@@ -210,7 +211,6 @@ fun CacheManagementScreen(
             }
         },
     )
-    }
 }
 
 
