@@ -89,7 +89,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
@@ -142,6 +144,9 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
+import me.him188.ani.app.ui.foundation.tv.tvGridItemTopFade
+import me.him188.ani.app.ui.foundation.tv.tvGridTopBleed
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvLongPressKey
@@ -159,7 +164,14 @@ import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropLayer
 import me.him188.ani.app.ui.foundation.tv.TvPortraitCard
 import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
+import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextTransform
+import me.him188.ani.app.ui.foundation.tv.tvHeroLineEnter
+import me.him188.ani.app.ui.foundation.tv.tvHeroTextEnterBaseDelay
+import me.him188.ani.app.ui.foundation.tv.tvHeroTextStaggerEnabled
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextSlidePx
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_MEDIA_DEBOUNCE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvNavigationSettle
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
@@ -171,8 +183,8 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_FADE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
@@ -273,6 +285,8 @@ fun TvSearchPage(
     // 网格滚动与最后聚焦卡片下标提到页面级: 跨形态切换与跨导航 (进详情返回) 都要保留.
     // 传 State 而非取值: 结果面板里的协程 (落点等待/吸顶 snapshotFlow) 要能观察到实时变化
     val gridState = rememberLazyGridState()
+    // 网格换行滚动登记进页面级信号: 低特效档下 hero 文字块在滚动期间不画, 见 TvScrollActivity
+    ReportTvScrollActivity(gridState)
     val lastFocusedCard = rememberSaveable { mutableIntStateOf(-1) }
     // 进页那一刻的恢复目标快照 (从详情/播放器返回时恢复焦点); 只在结果态首次组合时消费一次
     val restoreCardIndex = remember { lastFocusedCard.intValue }
@@ -1213,6 +1227,9 @@ private fun TvSearchResultsPane(
     // 原样直通). 下面的数据预取仍读真实的 heroItem —— 停下来时数据已在缓存里, 换挡不等网络.
     // 用 provider 版的理由同追番页 (别把热状态读进页面 body), 见 [rememberTvSettledHeroProvider]
     val heroDisplay = rememberTvSettledHeroProvider { heroItem }
+    // hero **文字**的展示目标, 与背景图分开: 低特效档下网格滚动 (换行) 期间为 null, 停稳后才是
+    // 最后聚焦那张; 完整档透传. 机理与实测见 TvScrollActivity
+    val heroTextDisplay = rememberTvScrollHiddenProvider { heroItem }
 
     // subjectId -> TMDB backdrop URL (null = 已查过没有); 搜索结果没有 summary 字段,
     // 简介一律按聚焦条目异步向 bgm.tv 取 ("" = 查过没有); 网络错误都不写缓存, 下次聚焦重试.
@@ -1432,6 +1449,9 @@ private fun TvSearchResultsPane(
             underlayUrl = { heroPipeline.underlayUrl(heroDisplay()?.toHeroMediaSpec()) },
             // 这张图解码完顺手算主题色, 点进详情页第一帧就是动态色 (详情页取的也是这张)
             themeSeedSubjectId = { heroDisplay()?.subjectId },
+            // 按下即压暗: 焦点一换到新条目就暗, 等展示目标跟上再放开 (本页无剧照, 不升档)
+            dimTrigger = { heroItem?.subjectId },
+            dimming = { heroItem?.subjectId != heroDisplay()?.subjectId },
         )
 
         Column(
@@ -1474,7 +1494,7 @@ private fun TvSearchResultsPane(
             // Hero 信息块 (固定高度; 换条目整块文字渐隐渐现). 聚焦条目状态在子组件内部
             // 才读取, 遥控器换卡只重组信息块自身, 不连带整个结果面板
             TvSearchHeroInfoBlock(
-                heroItemProvider = heroDisplay,
+                heroItemProvider = heroTextDisplay,
                 summaryCache = summaryCache,
                 // end 留白与探索页 hero 块一致, 否则 fillMaxWidth(比例) 的基数比其他页宽.
                 // 有筛选行时等量压缩高度, 保持网格位置不变
@@ -1505,6 +1525,8 @@ private fun TvSearchResultsPane(
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth()
                     .padding(top = TV_SEARCH_HERO_TO_GRID_GAP)
+                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页 (见 tvGridTopBleed)
+                    .tvGridTopBleed()
                     .onFocusChanged { gridHasFocus = it.hasFocus },
             ) {
                 // 复刻 GridCells.Adaptive 的列数算法 (整数 px 运算), 供行列换算
@@ -1520,7 +1542,8 @@ private fun TvSearchResultsPane(
                     val available = this@BoxWithConstraints.maxWidth - TV_PAGE_END_PAD
                     val cardWidth = (available - TV_PAGE_CARD_SPACING * (gridColumns - 1)) / gridColumns
                     val cardHeight = cardWidth / TV_PORTRAIT_CARD_COVER_RATIO
-                    (this@BoxWithConstraints.maxHeight - cardHeight).coerceAtLeast(24.dp)
+                    // maxHeight 含向上出血, 先减掉
+                    (this@BoxWithConstraints.maxHeight - TV_GRID_TOP_BLEED - cardHeight).coerceAtLeast(24.dp)
                 }
                 // 聚焦行吸顶 (同追番页): 关闭默认"刚好露出"式自动滚动, 聚焦行滚到网格顶部
                 val noBringIntoView = remember {
@@ -1569,7 +1592,7 @@ private fun TvSearchResultsPane(
                         state = gridState,
                         horizontalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
                         verticalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                        contentPadding = PaddingValues(end = TV_PAGE_END_PAD, bottom = gridBottomPad),
+                        contentPadding = PaddingValues(top = TV_GRID_TOP_BLEED, end = TV_PAGE_END_PAD, bottom = gridBottomPad),
                     ) {
                         items(
                             count = items.itemCount,
@@ -1608,6 +1631,8 @@ private fun TvSearchResultsPane(
                                     lastFocusedCard.intValue = index
                                 },
                                 modifier = Modifier
+                                    // 越过吸顶线的行边上移边淡出 (同探索页, 见 tvGridItemTopFade)
+                                    .tvGridItemTopFade(gridState, index, TV_PAGE_CARD_SPACING)
                                     .tvGridFocusItem(gridFocus, index = index, itemCount = items.itemCount),
                                 menu = info?.let { collectionMenuFor(it.subjectId) },
                             )
@@ -1616,7 +1641,8 @@ private fun TvSearchResultsPane(
                 }
                 // 空结果提示 / 首屏加载指示
                 if (items.itemCount == 0 && !items.loadState.hasError) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // 补回向上出血 (见 tvGridTopBleed), 否则提示居中的是含出血的整块, 看上去偏上
+                    Box(Modifier.fillMaxSize().padding(top = TV_GRID_TOP_BLEED), contentAlignment = Alignment.Center) {
                         if (items.isLoadingFirstPageOrRefreshing) {
                             CircularProgressIndicator()
                         } else {
@@ -1684,16 +1710,23 @@ private fun TvSearchHeroInfoBlock(
     summaryCache: Map<Int, String>,
     modifier: Modifier = Modifier,
 ) {
+    val slidePx = tvScrollHiddenTextSlidePx()
+    // 分行错落进场 (完整档): 容器不整块进场, 各行自己带延迟进, 见 tvHeroLineEnter
+    val stagger = tvHeroTextStaggerEnabled()
+    // 各行进场的基准起点在 transitionSpec 里算好 (那里才知道 initialState), 内容首次组合时读走 (理由见探索页)
+    val enterPlan = remember { IntArray(1) }
     AnimatedContent(
         targetState = heroItemProvider(),
         modifier = modifier,
         transitionSpec = {
-            fadeIn(tween(TV_HERO_TEXT_FADE_MILLIS)) togetherWith
-                    fadeOut(tween(TV_HERO_TEXT_FADE_MILLIS))
+            enterPlan[0] = tvHeroTextEnterBaseDelay(initialState != null)
+            tvScrollHiddenTextTransform(slidePx, sequential = initialState != null, childrenEnter = stagger, hiding = targetState == null)
         },
         contentKey = { it?.subjectId },
         label = "searchHeroInfo",
     ) { hero ->
+        val lineBase = remember { enterPlan[0] }
+        fun Modifier.line(index: Int) = tvHeroLineEnter(this@AnimatedContent, stagger, lineBase, index, slidePx)
         Column(
             Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1701,7 +1734,9 @@ private fun TvSearchHeroInfoBlock(
             if (hero != null) {
                 Text(
                     hero.title,
-                    Modifier.fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION),
+                    Modifier.line(0).fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
+                        // 登记标题位置, 给详情页的放大转场 (标题从这里平移过去)
+                        .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(hero.subjectId, it.boundsInRoot(), hero.title) },
                     color = tvHeroContentColor(),
                     style = MaterialTheme.typography.headlineLarge,
                     // 超长换行, 至多两行 (与探索页/追番页统一); 简介 weight 自动让出空间
@@ -1709,6 +1744,7 @@ private fun TvSearchHeroInfoBlock(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(
+                    Modifier.line(1),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
@@ -1748,7 +1784,7 @@ private fun TvSearchHeroInfoBlock(
                 }
                 Text(
                     summary,
-                    Modifier.weight(1f).fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION),
+                    Modifier.line(2).weight(1f).fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION),
                     color = tvHeroContentColor(),
                     style = MaterialTheme.typography.bodyMedium,
                     overflow = TextOverflow.Ellipsis,

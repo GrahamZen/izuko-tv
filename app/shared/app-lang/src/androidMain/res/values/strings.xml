@@ -627,10 +627,13 @@
     <string name="settings_theme_tv_immersive_schedule_description">Show the airing schedule as a date rail plus a poster grid. Turn off to fall back to the classic side-by-side day columns</string>
     <string name="settings_theme_tv_ui_scale">Interface scale</string>
     <string name="settings_theme_tv_ui_scale_description">Scale the whole interface up or down. Use this when your TV or box reports a wrong screen density and everything looks too large or too small. 100% follows the system. The interface reloads once when you leave settings so that dialogs and menus match</string>
-    <string name="settings_theme_tv_full_visual_effects">Full visual effects</string>
-    <string name="settings_theme_tv_full_visual_effects_description">Off by default to keep low-end devices smooth (card animations are unaffected either way); turn on if your device is powerful</string>
     <string name="settings_theme_tv_retain_playback_session">Keep playback session after leaving</string>
     <string name="settings_theme_tv_retain_playback_session_description">Keeps the player alive after you leave (shown in the action panel), with a toast once it is ready to play. Off: nothing is kept</string>
+    <string name="settings_theme_tv_visual_effects">Visual effects</string>
+    <string name="settings_theme_tv_visual_effects_description">Smooth: no transitions; Balanced: transitions; Full: all effects, original-size images on 4K UI</string>
+    <string name="settings_theme_tv_visual_effects_smooth">Smooth</string>
+    <string name="settings_theme_tv_visual_effects_balanced">Balanced</string>
+    <string name="settings_theme_tv_visual_effects_full">Full</string>
     <string name="settings_theme_tv_exit_behavior">Back on the Explore carousel</string>
     <string name="settings_theme_tv_exit_behavior_description">What the last Back press on the home screen does</string>
     <string name="settings_theme_tv_exit_direct">Quit immediately</string>

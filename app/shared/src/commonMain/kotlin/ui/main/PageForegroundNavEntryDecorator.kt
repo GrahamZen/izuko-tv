@@ -9,14 +9,18 @@
 
 package me.him188.ani.app.ui.main
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
 /**
  * 给每个导航条目下发 [LocalPageIsForeground] —— "本页此刻是不是返回栈栈顶".
@@ -44,7 +48,17 @@ fun <T : Any> rememberPageForegroundNavEntryDecorator(backStack: List<T>): NavEn
                 }
             }
             CompositionLocalProvider(LocalPageIsForeground provides isForeground) {
-                entry.Content()
+                // TV 背景放大转场期间, 放大层整屏不透明地盖在最上面 (见 TvHeroZoomHandoff.covering): 被盖住的页整层
+                // 不画 —— alpha 0 的节点 HWUI 直接跳过, 省下它每帧的全屏底色与其余内容 (4K 下一次全屏填充约 2~3ms).
+                // 在绘制阶段读, 翻转只改这一层的属性, 不重组页面. propagateMinConstraints: 这层 Box 对测量完全透明
+                Box(
+                    Modifier.graphicsLayer {
+                        alpha = if (TvHeroZoomHandoff.covering && !isForeground.value) 0f else 1f
+                    },
+                    propagateMinConstraints = true,
+                ) {
+                    entry.Content()
+                }
             }
         }
     }
