@@ -84,6 +84,21 @@ fun interface SubjectDetailsPageVariant {
             CircularProgressIndicator()
         }
     }
+
+    /**
+     * 垫在 [LoadingPlaceholder] / [Page] 之下、且**不随两者切换重建**的一层. TV 的放大转场用它: 放大那张图要从导航后
+     * 第一帧一路画到真页接手, 中间不能因为占位页换成真页而重建 —— 重建的新图片实例头一两帧是空的. 默认什么都不画.
+     */
+    @Composable
+    fun Underlay() {
+    }
+
+    /**
+     * 条目 [subjectId] 的真页 ([Page]) 此刻要不要先不组合、继续显示 [LoadingPlaceholder]. TV 的放大转场用它: 真页首次
+     * 组合要几十毫秒, 落在放大的快段里就是一次看得见的顿挫, 等放大走进看不出位移的尾段再换. 默认 false.
+     */
+    @Composable
+    fun holdPlaceholder(subjectId: Int): Boolean = false
 }
 
 val LocalSubjectDetailsPageVariant = staticCompositionLocalOf<SubjectDetailsPageVariant?> { null }

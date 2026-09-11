@@ -116,6 +116,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
@@ -334,6 +335,8 @@ fun TvSchedulePage(
     // 换天过渡期的隐形焦点驻留点 (上游没有这东西, 保留的理由见 TvFocusTransitAnchor)
     val transitAnchor = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
+    // 网格换行滚动登记进页面级信号: 低特效档下全屏 backdrop 等停稳才换, 见 TvScrollActivity
+    ReportTvScrollActivity(gridState)
     val dateListState = rememberLazyListState()
     val errorCardFocusRequester = remember { FocusRequester() }
     var anyFocusObtained by remember { mutableStateOf(false) }
@@ -601,6 +604,9 @@ fun TvSchedulePage(
                     defaultBackdrop
                 }
             },
+            // 只有聚焦过的卡片的图才算"它自己的": 点它进详情页走放大转场 (全屏对全屏, 图原地不动) + 提前取主色.
+            // 默认图 (今天第一张有图的) 不登记 —— 点进去的多半不是它
+            themeSeedSubjectId = { backdropDisplayTarget()?.subjectId },
         )
 
         Column(
@@ -938,12 +944,12 @@ fun TvSchedulePage(
                                     // 窥视态: 被长按那张淡一档 (仍看得清, 但透出点 backdrop),
                                     // 其余淡到看不见. 无人长按时进度为 0, 两者都是 1f
                                     .graphicsLayer {
-                                        val target = if (menuExpandedCard == index) {
-                                            TV_SCHEDULE_PEEK_SELF_ALPHA
-                                        } else {
-                                            TV_SCHEDULE_PEEK_OTHERS_ALPHA
-                                        }
+                                        val self = menuExpandedCard == index
+                                        val target = if (self) TV_SCHEDULE_PEEK_SELF_ALPHA else TV_SCHEDULE_PEEK_OTHERS_ALPHA
                                         alpha = 1f + (target - 1f) * peekProgress.value
+                                        // 其余卡一路淡到 0: 逐绘制指令调制, 不必每张卡各开一块离屏缓冲 (卡内图字重叠处的透视
+                                        // 在淡没的过程里看不出). 被长按那张要停在半透明上, 调制会让封面从字底下透出来, 照旧离屏
+                                        compositingStrategy = if (self) CompositingStrategy.Auto else CompositingStrategy.ModulateAlpha
                                     },
                             )
                         }

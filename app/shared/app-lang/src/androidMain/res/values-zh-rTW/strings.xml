@@ -44,6 +44,11 @@
     <string name="tv_service_probe_tmdb_image">圖床</string>
     <string name="settings_theme_tv_retain_playback_session">退出播放頁後保留播放狀態</string>
     <string name="settings_theme_tv_retain_playback_session_description">退出後保留播放器狀態（在動作面板裡顯示），可以播放時會有氣泡提示。關閉則不保留</string>
+    <string name="settings_theme_tv_visual_effects">視覺效果</string>
+    <string name="settings_theme_tv_visual_effects_description">流暢：只保留進詳情頁的放大；均衡：全部轉場動畫；完整：全部效果，4K 介面載入原圖</string>
+    <string name="settings_theme_tv_visual_effects_smooth">流暢</string>
+    <string name="settings_theme_tv_visual_effects_balanced">均衡</string>
+    <string name="settings_theme_tv_visual_effects_full">完整</string>
     <string name="settings_theme_tv_exit_behavior">在探索頁輪播區按返回</string>
     <string name="settings_theme_tv_exit_behavior_description">主頁上最後一次按返回執行的操作</string>
     <string name="settings_theme_tv_exit_direct">直接退出</string>
