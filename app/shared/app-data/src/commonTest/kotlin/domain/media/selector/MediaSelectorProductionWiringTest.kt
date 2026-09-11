@@ -156,6 +156,7 @@ class MediaSelectorProductionWiringTest {
                 override val defaultMediaPreference = staticSettings(MediaPreference.Empty)
 
                 override val danmakuEnabled get() = error("not used")
+                override val tmdbImagesDisabled get() = error("not used")
                 override val danmakuConfig get() = error("not used")
                 override val danmakuFilterConfig get() = error("not used")
                 override val profileSettings get() = error("not used")

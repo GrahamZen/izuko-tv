@@ -55,6 +55,9 @@ interface SettingsRepository {
     val danmakuConfig: Settings<DanmakuConfig>
     val danmakuFilterConfig: Settings<DanmakuFilterConfig>
 
+    /** 设置 → 代理页底部「不加载 TMDB 背景图」, 见 `TmdbImageService.disabledByUser`. */
+    val tmdbImagesDisabled: Settings<Boolean>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -166,6 +169,7 @@ class PreferencesRepositoryImpl(
     }
 
     override val danmakuEnabled: Settings<Boolean> = BooleanPreference("danmaku_enabled", default = true)
+    override val tmdbImagesDisabled: Settings<Boolean> = BooleanPreference("tmdb_images_disabled", default = false)
     override val danmakuConfig: Settings<DanmakuConfig> =
         SerializablePreference("danmaku_config", DanmakuConfigSerializer, default = { DanmakuConfig.Default })
     override val danmakuFilterConfig: Settings<DanmakuFilterConfig> =
