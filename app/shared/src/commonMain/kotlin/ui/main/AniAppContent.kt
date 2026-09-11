@@ -9,6 +9,9 @@
 
 package me.him188.ani.app.ui.main
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -83,6 +86,8 @@ import me.him188.ani.app.ui.exploration.schedule.ScheduleScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
 import me.him188.ani.app.ui.foundation.animation.ProvideAniMotionCompositionLocals
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import androidx.compose.ui.graphics.Color
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
@@ -334,6 +339,10 @@ private fun AniAppContentImpl(
     }
 
 
+    // TV 背景放大转场只在沉浸式详情页上成立 (放大层与接手都在那套版式里): 关掉沉浸式时不建会话, 照常交叉淡入 ——
+    // 否则会话建了却没人起跑, 详情页照样不淡入, 直接硬切出来. 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与
+    // 静止之后, 淡入则边淡边组合), 流畅档反而更该用它 (见 TvVisualEffectsLevel)
+    val tvHeroZoomAllowed = LocalThemeSettings.current.tvImmersiveDetails
     NavDisplay(
         backStack = backStack,
         modifier = navDisplayModifier,
@@ -480,7 +489,34 @@ private fun AniAppContentImpl(
                     windowInsets = windowInsets,
                 )
             }
-            entry<NavRoutes.SubjectDetail> { route ->
+            entry<NavRoutes.SubjectDetail>(
+                // TV 的放大转场 (TvHeroZoomHandoff): 列表页正画着目标条目的同一张图时, 详情页**不淡入** ——
+                // hero 背景本来就是不透明的, 放大过程不该有半透明的时候. 旧页照常按时长保留在下面.
+                // 其余情形与别的页面一样交叉淡入
+                metadata = NavDisplay.transitionSpec {
+                    // contentKey 不一定是路由对象本身 (Nav3 默认是它的 toString), 两种都认
+                    val contentKey = targetState.entries.lastOrNull()?.contentKey
+                    val target = (contentKey as? NavRoutes.SubjectDetail)?.subjectId
+                        ?: contentKey?.toString()?.let { Regex("subjectId=(\\d+)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+                    val zoom = target != null && tvHeroZoomAllowed && TvHeroZoomHandoff.willZoom(target)
+                    if (zoom) {
+                        // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
+                        TvHeroZoomHandoff.noteEntryKey(target, contentKey)
+                        // 不淡入 (详情页第一帧就满不透明). 但**不能用 EnterTransition.None**: 旧页那条 exit 是 alpha
+                        // 1 → 1 的"时长占位", 起止相同的动画 Compose 当作已完成, 撑不住转场 —— 原来是靠新页的淡入把
+                        // 转场撑满, 淡入一去掉, 转场下一帧就结束、旧页被移出组合 (2026-09-10 探针: 导航后 +171ms 列表页
+                        // hero retract), 而详情页的图 +357ms 才上屏, 中间两百毫秒整屏黑. 换成一条肉眼看不见、却真在跑的
+                        // scaleIn (0.9999 → 1, 纯变换不开离屏层) 撑住转场, 旧页一直留到详情页的图就位
+                        // 缓动恒为 1: 起止值不同, 转场照样按时长跑满; 而每一帧算出来的缩放恰好是 1f (插值在 fraction = 1
+                        // 时就是终点值), 整页全程是单位矩阵. 默认缓动下 700ms 里每帧一个 ≠1 的缩放, 整页每帧都要重画
+                        // (2026-09-13 Shield A/B, 按键后 250~1100ms: GPU 合计 1080p 255 → 192ms、4K 352 → 263ms, 少画 ~8 帧)
+                        scaleIn(tween(TV_HERO_ZOOM_NAV_HOLD_MILLIS, easing = { 1f }), initialScale = 0.9999f) togetherWith
+                            navMotionScheme.exitTransition
+                    } else {
+                        navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
+                    }
+                },
+            ) { route ->
                 val vm = viewModel<SubjectDetailsViewModel>(key = route.subjectId.toString()) {
                     val placeholder = route.placeholder?.run {
                         SubjectInfo.createPlaceholder(id, name, coverUrl, nameCN)

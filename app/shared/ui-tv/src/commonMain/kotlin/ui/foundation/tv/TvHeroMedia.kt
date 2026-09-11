@@ -818,7 +818,7 @@ fun TmdbImageService.tvHeroBackdropUrl(
     // hero (在那边之上叠一层原图, 见 SubjectDetailsTvPage 的 HeroBackdropSharpeningOverlay).
     // 这里的 hero 跟着焦点换, 还带邻居预取, 升档的代价要乘上"每划过一张卡一次" —— 2026-08-21
     // 在 Shield 4K 上连本页一起升过, 实测净亏, 账记在 tmdbBackdropOriginalSizeUrl.
-    // "完整视觉效果"那个开关不受影响: 它管的是剧照那一路要不要上原图, 与分辨率档位无关
+    // 剧照那一路要不要上原图由调用方算好传进来 (视觉效果完整档且 4K 界面, 见 TvVisualEffectsLevel.originalImages)
     stillEntry?.stillUrl?.let { return tmdbStillHeroSizeUrl(it, fullVisualEffects) }
     peekBackdropUrl(subjectId)?.let { return it }
     // 剧照那一路也得先有结论: 只查过 backdrop 就回退, 剧照随后到达还是会闪一下

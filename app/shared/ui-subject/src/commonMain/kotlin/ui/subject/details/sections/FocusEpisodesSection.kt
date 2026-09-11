@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.details.sections
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import me.him188.ani.app.ui.foundation.tv.tvAmbientMarqueeIterations
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -45,8 +46,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.material3.HorizontalDivider
@@ -118,7 +123,12 @@ import me.him188.ani.app.ui.foundation.focus.tvAnchorBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
+import me.him188.ani.app.ui.foundation.tv.rememberTvCardsScrollingProvider
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollSettled
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextEnabled
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextFadeTransform
 import me.him188.ani.app.ui.foundation.tv.tvFocusRingBorder
 import me.him188.ani.app.ui.foundation.tv.tvFocusRingCountdownBorder
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
@@ -335,6 +345,8 @@ fun FocusEpisodeCarousel(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = landingIndex.coerceAtLeast(0),
     )
+    // 吸附滚动登记进页面级信号 (TV 详情页装了, 手机布局/播放器选集条没装 = 无操作), 见 TvScrollActivity
+    ReportTvScrollActivity(listState)
     // 停靠一律 scrollToItem(index, 0): 每张卡 (含首卡) 停靠后左边缘都在 horizontalPadding,
     // 聚焦框恒定不动; 非首卡停靠时上一张卡在屏幕左缘自然露出 horizontalPadding - cellSpacing
     // 宽的切边. 详情页与播放器选集条完全同一套几何, 没有任何按调用方分叉的停靠逻辑.
@@ -443,6 +455,17 @@ fun FocusEpisodeCarousel(
         }
     }
 
+    // 集信息行的"展示中的集": 卡片滚动 / 方向键连发期间整行藏起来, 停稳才换到最后聚焦那张 (两档相同) ——
+    // 三行 CJK 简介每格重排是这一屏最贵的一笔, 撞在吸附 spring 里就是掉帧 (四个版本的实测见
+    // TvScrollActivity). 手机布局没装信号, 每格键立即换
+    val infoSettled = rememberTvScrollSettled { focusedEpisodeId }
+    val cardsScrolling = rememberTvCardsScrollingProvider()
+    val infoEpisodeId = remember(infoSettled) { { infoSettled.value } }
+    // 藏的判据 (连发 / 换了集还在滚 / 滚过又按着键) 见 TvScrollSettled.isHidden
+    val infoHidden = remember(infoSettled, cardsScrolling) {
+        { infoSettled.isHidden(cardsScrolling()) }
+    }
+
     Column(modifier.tvFocusNavSignal(focusScope), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (header != null) {
             Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) {
@@ -453,7 +476,8 @@ fun FocusEpisodeCarousel(
             FocusEpisodeInfoRow(
                 episodes = episodes,
                 currentEpisodeId = currentEpisodeId,
-                focusedEpisodeId = { focusedEpisodeId },
+                focusedEpisodeId = infoEpisodeId,
+                hidden = infoHidden,
                 episodeOverviews = episodeOverviews,
                 episodeRuntimes = episodeRuntimes,
                 descContent = descContent,
@@ -1257,7 +1281,8 @@ fun FocusEpisodeCard(
                     Text(
                         name,
                         Modifier.alignByBaseline()
-                            .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                            // 完整档以外滚几次就停: 播放器片尾自动展开选集条时焦点停在这张卡上, 无限滚会把叠在视频上的界面一直顶到 60fps
+                            .then(if (focused) Modifier.basicMarquee(iterations = tvAmbientMarqueeIterations()) else Modifier),
                         color = Color.White.copy(alpha = 0.85f),
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
@@ -1327,7 +1352,7 @@ fun FocusEpisodeCard(
                     // 集名单独一行, 行首恒是文字: 补满一个三角内白才与上一行的墨迹同线
                     // (上一行行首可能是三角/声浪图标/数字, 已各自补到同一线上)
                     Modifier.padding(start = playInkInset)
-                        .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                        .then(if (focused) Modifier.basicMarquee(iterations = tvAmbientMarqueeIterations()) else Modifier),
                     color = nameColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -1652,6 +1677,11 @@ fun FocusEpisodeGridDropdown(
  * 顶对齐, 读起来像简介的附注而不是标题的一部分.
  *
  * 行宽以 [endPadding] 收边, 与上方大标题/简介共用同一右边界 (不与封面重叠).
+ * [hidden] 为 true 时 (卡片滚动 / 方向键连发期间) 简介与时长/日期都空着, 占位高度不变:
+ * 简介走 minLines 预留, 元数据列是 matchParentSize 的, 两边都不因内容为空而缩. 藏 / 显 / 换集
+ * 都经 AnimatedContent 走 [tvScrollHiddenTextFadeTransform] (整块淡出、原地淡入, 照 Prime 选集页的
+ * 观感, 不像 hero 那样滑); 手机布局瞬切如旧.
+ *
  * 简介高度不写死: 由简介组件自己按 minLines 预留固定行数 —— 切集时长短不同,
  * 不预留会让下方卡片行跳动. (写死 dp 的老做法只要比 行高x行数 差几像素末行就被裁掉:
  * 排版真正的约束是容器高度而不是 maxLines, 而标称行高又摊不平首行的字体内衬.)
@@ -1668,6 +1698,8 @@ private fun FocusEpisodeInfoRow(
     episodes: List<EpisodeListItem>,
     currentEpisodeId: Int?,
     focusedEpisodeId: () -> Int?,
+    /** 整行内容藏起来 (占位不变), 见 KDoc. lambda: 滚动起止只重组本行. */
+    hidden: () -> Boolean,
     episodeOverviews: Map<Int, String>,
     episodeRuntimes: Map<Int, Int>,
     descContent: (@Composable ColumnScope.(desc: String, onHorizontalNav: (delta: Int) -> Unit) -> Unit)?,
@@ -1678,52 +1710,68 @@ private fun FocusEpisodeInfoRow(
     val displayed = episodes.firstOrNull { it.episodeId == (focusedEpisodeId() ?: currentEpisodeId) }
         ?: episodes.firstOrNull()
         ?: return
-    Box(Modifier.fillMaxWidth().padding(start = horizontalPadding, end = endPadding)) {
-        val desc = mergedEpisodeDesc(episodeOverviews[displayed.episodeId], displayed.desc)
-        Column(Modifier.fillMaxWidth().padding(end = DETAILS_TEXT_END_RESERVE)) {
-            if (descContent != null) {
-                // 简介为空也保持组合: 左右键切到无简介的集时占位仍在, 高度不跳
-                descContent(desc, moveDisplayedBy)
-            } else if (desc.isNotBlank()) {
-                Text(
-                    desc,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = EPISODE_FOCUSED_DESC_LINES,
-                    minLines = EPISODE_FOCUSED_DESC_LINES,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    val fade = tvScrollHiddenTextEnabled()
+    AnimatedContent(
+        // null = 藏起来. 两态结构相同、等高 (简介传空串由 minLines 撑高, 元数据列不画), 不会触发尺寸动画
+        targetState = if (hidden()) null else displayed,
+        modifier = Modifier.fillMaxWidth().padding(start = horizontalPadding, end = endPadding),
+        transitionSpec = {
+            if (fade) {
+                tvScrollHiddenTextFadeTransform(sequential = initialState != null, hiding = targetState == null)
+            } else {
+                EnterTransition.None togetherWith ExitTransition.None
             }
-        }
-        // 时长 / 播出日期: 落在简介的尾部预留里, 一个顶着简介块上边界、一个顶着下边界
-        // (SpaceBetween 撑在 matchParentSize 拿到的简介高度上), 行高不必再跟简介凑总高.
-        //
-        // 弱化靠 onSurfaceVariant + 常规字重, 不靠缩小字号 —— 10 英尺距离下字号再小就
-        // 读不清了. 用 bodyLarge 而不是 titleMedium: 同为 16sp, 但不带 Medium 字重.
-        val metaStyle = MaterialTheme.typography.bodyLarge
-            .copy(lineHeight = EPISODE_META_LINE_HEIGHT)
-        Column(
-            // 上下按正文的内边距内收: 时长与正文首行对齐, 日期与正文末行对齐.
-            // 不内收就会从块的边界起排, 比正文高出/低出这一截
-            Modifier.matchParentSize().padding(vertical = DETAILS_TEXT_CONTENT_PADDING),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.End,
-        ) {
-            episodeRuntimes[displayed.episodeId]?.let { runtimeMinutes ->
-                Text(
-                    stringResource(Lang.subject_episode_duration_minutes, runtimeMinutes),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = metaStyle,
-                    maxLines = 1,
-                )
+        },
+        contentKey = { it?.episodeId },
+        label = "episodeInfoRow",
+    ) { shown ->
+        Box(Modifier.fillMaxWidth()) {
+            val desc = shown?.let { mergedEpisodeDesc(episodeOverviews[it.episodeId], it.desc) } ?: ""
+            Column(Modifier.fillMaxWidth().padding(end = DETAILS_TEXT_END_RESERVE)) {
+                if (descContent != null) {
+                    // 简介为空也保持组合: 左右键切到无简介的集时占位仍在, 高度不跳
+                    descContent(desc, moveDisplayedBy)
+                } else if (desc.isNotBlank()) {
+                    Text(
+                        desc,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = EPISODE_FOCUSED_DESC_LINES,
+                        minLines = EPISODE_FOCUSED_DESC_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            formatAirDate(displayed.airDate)?.let { dateText ->
-                Text(
-                    dateText,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = metaStyle,
-                    maxLines = 1,
-                )
+            // 时长 / 播出日期: 落在简介的尾部预留里, 一个顶着简介块上边界、一个顶着下边界
+            // (SpaceBetween 撑在 matchParentSize 拿到的简介高度上), 行高不必再跟简介凑总高.
+            //
+            // 弱化靠 onSurfaceVariant + 常规字重, 不靠缩小字号 —— 10 英尺距离下字号再小就
+            // 读不清了. 用 bodyLarge 而不是 titleMedium: 同为 16sp, 但不带 Medium 字重.
+            val metaStyle = MaterialTheme.typography.bodyLarge
+                .copy(lineHeight = EPISODE_META_LINE_HEIGHT)
+            Column(
+                // 上下按正文的内边距内收: 时长与正文首行对齐, 日期与正文末行对齐.
+                // 不内收就会从块的边界起排, 比正文高出/低出这一截
+                Modifier.matchParentSize().padding(vertical = DETAILS_TEXT_CONTENT_PADDING),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.End,
+            ) {
+                shown?.let { episodeRuntimes[it.episodeId] }?.let { runtimeMinutes ->
+                    Text(
+                        stringResource(Lang.subject_episode_duration_minutes, runtimeMinutes),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = metaStyle,
+                        maxLines = 1,
+                    )
+                }
+                shown?.let { formatAirDate(it.airDate) }?.let { dateText ->
+                    Text(
+                        dateText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = metaStyle,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

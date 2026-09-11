@@ -9,14 +9,23 @@
 
 package me.him188.ani.app.ui.main
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
 /**
  * 给每个导航条目下发 [LocalPageIsForeground] —— "本页此刻是不是返回栈栈顶".
@@ -33,6 +42,19 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 @Composable
 fun <T : Any> rememberPageForegroundNavEntryDecorator(backStack: List<T>): NavEntryDecorator<T> {
     val currentBackStack = rememberUpdatedState(backStack)
+    // 栈顶条目的 contentKey: 放大进来的详情页还在栈顶时, 下面的条目接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
+    val topKey = remember {
+        derivedStateOf { currentBackStack.value.lastOrNull()?.let { NavEntry(it) {}.contentKey } }
+    }
+    // coverEntryKey 只在放大转场那一段有用 (之后列表页已被移出组合); 过了导航转场的时长就清掉, 不留到以后.
+    // 否则同一个详情页日后以交叉淡入再进来时 (栈顶 key 又对上了), 淡入期间下面的列表页会被当成"被盖住"藏掉
+    LaunchedEffect(Unit) {
+        snapshotFlow { TvHeroZoomHandoff.coverEntryKey }.collectLatest { key ->
+            if (key == null) return@collectLatest
+            delay(TV_HERO_ZOOM_NAV_HOLD_MILLIS + 500L)
+            if (TvHeroZoomHandoff.coverEntryKey == key) TvHeroZoomHandoff.coverEntryKey = null
+        }
+    }
     return remember {
         NavEntryDecorator { entry ->
             // derivedStateOf: 返回栈每变一次只重算一次, 且只有真的翻转才通知读者;
@@ -44,7 +66,21 @@ fun <T : Any> rememberPageForegroundNavEntryDecorator(backStack: List<T>): NavEn
                 }
             }
             CompositionLocalProvider(LocalPageIsForeground provides isForeground) {
-                entry.Content()
+                // TV 背景放大转场期间, 放大层整屏不透明地盖在最上面 (见 TvHeroZoomHandoff.covering): 被盖住的页整层
+                // 不画 —— alpha 0 的节点 HWUI 直接跳过, 省下它每帧的全屏底色与其余内容 (4K 下一次全屏填充约 2~3ms).
+                // 在绘制阶段读, 翻转只改这一层的属性, 不重组页面. propagateMinConstraints: 这层 Box 对测量完全透明
+                // 真页接手后放大会话就结束了, 但导航转场还撑着列表页到 ~+700ms: 放大进来的详情页仍在栈顶期间接着不画
+                // (coverEntryKey, 详情页此时已不透明). 往前跳 / 返回时栈顶一变就不成立
+                Box(
+                    Modifier.graphicsLayer {
+                        val covered = TvHeroZoomHandoff.covering ||
+                                TvHeroZoomHandoff.coverEntryKey?.let { it == topKey.value } == true
+                        alpha = if (covered && !isForeground.value) 0f else 1f
+                    },
+                    propagateMinConstraints = true,
+                ) {
+                    entry.Content()
+                }
             }
         }
     }
