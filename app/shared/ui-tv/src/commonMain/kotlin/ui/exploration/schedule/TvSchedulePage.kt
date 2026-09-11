@@ -116,6 +116,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
@@ -334,6 +335,8 @@ fun TvSchedulePage(
     // 换天过渡期的隐形焦点驻留点 (上游没有这东西, 保留的理由见 TvFocusTransitAnchor)
     val transitAnchor = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
+    // 网格换行滚动登记进页面级信号: 低特效档下全屏 backdrop 等停稳才换, 见 TvScrollActivity
+    ReportTvScrollActivity(gridState)
     val dateListState = rememberLazyListState()
     val errorCardFocusRequester = remember { FocusRequester() }
     var anyFocusObtained by remember { mutableStateOf(false) }

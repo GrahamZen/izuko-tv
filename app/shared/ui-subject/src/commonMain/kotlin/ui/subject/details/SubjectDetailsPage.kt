@@ -261,34 +261,45 @@ fun SubjectDetailsScreen(
             maxWidth,
             tenFoot = LocalAniUiBehavior.current.immersiveShell,
         )
+        // 放大转场那一层 (TV): 挂在占位页 / 真页的切换之外, 两者切换时不重建, 见 SubjectDetailsPageVariant.Underlay
+        val immersiveVariant = LocalSubjectDetailsPageVariant.current
+            ?.takeIf { !videoBackground && LocalThemeSettings.current.tvImmersiveDetails }
+        immersiveVariant?.Underlay()
+        val holdPlaceholder = state is SubjectDetailsUIState.Ok &&
+            immersiveVariant?.holdPlaceholder(state.subjectId) == true
         when (state) {
-            null, is SubjectDetailsUIState.Placeholder -> PlaceholderSubjectDetailsPage(
-                state?.subjectInfo,
-                layoutParams,
-                Modifier,
-                showTopBar,
-                windowInsets,
-                navigationIcon,
-                onClickOpenExternal,
-            )
-
-            is SubjectDetailsUIState.Ok -> SubjectDetailsPage(
-                state.value,
-                selfInfo,
-                layoutParams,
-                onPlay = onPlay,
-                onClickLogin = { navigator.navigateEmailLoginStart() },
-                onClickTag,
-                onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
-                Modifier,
-                showTopBar,
-                showBlurredBackground,
-                windowInsets,
-                navigationIcon,
-                onClickOpenExternal,
-                videoBackground = videoBackground,
-                onVideoBackgroundExitUp = onVideoBackgroundExitUp,
-            )
+            // 真页已就绪也可能先扣着占位页 (放大转场的快段, 见 SubjectDetailsPageVariant.holdPlaceholder). 两种情形共用
+            // 同一个占位页调用点: 调用点一换, 占位页就被销毁重建
+            null, is SubjectDetailsUIState.Placeholder, is SubjectDetailsUIState.Ok ->
+                if (state is SubjectDetailsUIState.Ok && !holdPlaceholder) SubjectDetailsPage(
+                    state.value,
+                    selfInfo,
+                    layoutParams,
+                    onPlay = onPlay,
+                    onClickLogin = { navigator.navigateEmailLoginStart() },
+                    onClickTag,
+                    onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
+                    Modifier,
+                    showTopBar,
+                    showBlurredBackground,
+                    windowInsets,
+                    navigationIcon,
+                    onClickOpenExternal,
+                    videoBackground = videoBackground,
+                    onVideoBackgroundExitUp = onVideoBackgroundExitUp,
+                ) else PlaceholderSubjectDetailsPage(
+                    when (state) {
+                        is SubjectDetailsUIState.Ok -> state.value.info
+                        is SubjectDetailsUIState.Placeholder -> state.subjectInfo
+                        else -> null
+                    },
+                    layoutParams,
+                    Modifier,
+                    showTopBar,
+                    windowInsets,
+                    navigationIcon,
+                    onClickOpenExternal,
+                )
 
             is SubjectDetailsUIState.Err -> ErrorSubjectDetailsPage(
                 state.placeholder,
