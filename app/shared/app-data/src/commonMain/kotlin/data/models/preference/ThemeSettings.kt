@@ -60,6 +60,49 @@ enum class TvLongPressAction {
 }
 
 /**
+ * TV: 视觉效果三档 (见 [ThemeSettings.tvVisualEffects]; 读取走 [ThemeSettings.visualEffects]).
+ *
+ * 按**开销的性质**分, 不是按"好看的程度":
+ * - 按一下动一次的转场 (追番页换分类卡片滑动、hero 文字分行错落): 只在操作那一刻花, 看得见, 性能好的机器值得开 ——
+ *   均衡档起;
+ * - 一直在动的装饰 (加载占位脉动、hero 长标题一直滚): 用户不按也在重画, 页面进不了静止态, 远看收益又小 —— 只给完整档;
+ * - 高清原图 ("继续观看"剧照停稳后升原图、详情页停留后加清): 同时花流量、解码内存 (原图位图约 33MB, w1280 约 3.7MB)
+ *   与 GPU 上传, 且只有 4K 界面看得出 —— 只给完整档, 调用方另外要求 4K 界面.
+ *
+ * 设备 × 网络的四种组合落到三档: 性能好网络好 = 完整; 性能好网络差 = 均衡; 性能差 (不论网络) = 流畅. 原图的解码
+ * 对弱机本身就是负担, 网络再快也不该升, 所以"性能差"那两格是同一档.
+ *
+ * **不分档** (三档相同): 滚动与连发期间藏起 hero 文字、背景图停稳再换 (ui-foundation 的 TvScrollActivity, Shield 上
+ * 不做就 janky 8~10%, 强机也要); 网络相关的等待 (封面兜底 / 重发 / 预热并发, 按实测网速自动, 见 TvImageNetworkTier);
+ * 按键时背景压暗; **进详情页的背景放大** —— 它比流畅档原来用的交叉淡入还顺 (2026-09-13 同包同条目对照: 淡入期间三帧
+ * 39~56ms 落在透明度变化最快的一段, 放大运动中每帧 3~6ms, 重活挪到落地尾段与静止之后), 弱机更该用它.
+ *
+ * 默认均衡: 转场实测与交叉淡入同价 (放大转场 Shield 上无长帧), 真正的常驻开销 (装饰 / 原图) 只在完整档;
+ * 弱机仍卡的用户在设置里降一档.
+ */
+@Serializable
+enum class TvVisualEffectsLevel {
+    /** 流畅: 只保留进详情页的背景放大 (三档都有); 换分类渐隐渐现、hero 文字整块进场; 没有常驻装饰; 不用原图. */
+    Smooth,
+
+    /** 均衡: 在流畅之上开其余转场 (卡片滑动 / 文字错落). */
+    Balanced,
+
+    /** 完整: 在均衡之上开常驻装饰 (占位脉动 / 长标题一直滚) 与 4K 界面上的原图. */
+    Full,
+    ;
+
+    /** 按一下动一次的转场: 均衡档起. */
+    val transitions: Boolean get() = this >= Balanced
+
+    /** 一直在动的装饰动画: 只有完整档. */
+    val ambient: Boolean get() = this == Full
+
+    /** 高清原图: 只有完整档 (调用方另外要求 4K 界面, 见 AniDisplayTier). */
+    val originalImages: Boolean get() = this == Full
+}
+
+/**
  * TV: 「Web 控制台」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]). **已不再使用** (2026-09-12): 入口改成动作面板
  * 右侧常驻的二维码, 侧边栏与头像菜单的条目都删了. 类型与字段留着只为读得懂旧设置 (设置 JSON 里存过它的人).
  */
@@ -135,18 +178,19 @@ data class ThemeSettings(
      */
     val tvPlayLongPress: TvLongPressAction = TvLongPressAction.Panel,
     /**
-     * TV: 完整视觉效果 (**默认关**), 即不为低端设备让步的那一档.
+     * **已被 [tvVisualEffects] 取代, 只留着做迁移** —— 判断一律用 [visualEffects], 别读这个.
      *
-     * 一个开关打包全部"好看但费机器"的取舍, 因为需要其中一项的设备通常三项都扛得住:
-     * - 过渡动画: 跨分类切换的卡片滑动 (关 = 渐隐渐现);
-     * - 常驻装饰动画: 加载占位脉动、hero 长标题无限跑马灯 (关 = 静态 / 滚固定次数即停);
-     * - 图片档位: "继续观看"hero 背景剧照用 TMDB 原图 (关 = w1280).
-     *
-     * 默认关: 实测这三项分别贡献了换分类的掉帧、页面永远进不了静止态的常驻底噪、
-     * 每次换卡 8-33MB 的位图解码 —— 而收益在 10-foot 观看距离上本就不明显.
-     * 高性能盒子的用户在设置里一键开回完整档.
+     * 它原先是个两档开关 (开 = 完整视觉效果, 关 = 为低端设备让步). 升级成三档之后不能直接删: 这套设置的 JSON 是
+     * `encodeDefaults = false`, 开过它的人存着 `{"tvFullVisualEffects":true}`, 字段一没这份选择就丢了.
      */
     val tvFullVisualEffects: Boolean = false,
+    /**
+     * TV: 视觉效果档 (见 [TvVisualEffectsLevel]).
+     *
+     * **`null` = 还没显式选过**, 这时按老开关 [tvFullVisualEffects] 推导 (开过 = 完整, 否则均衡) —— 读取一律走
+     * [visualEffects], 别直接读这个字段.
+     */
+    val tvVisualEffects: TvVisualEffectsLevel? = null,
     /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
     val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
     /**
@@ -193,6 +237,14 @@ data class ThemeSettings(
     @Transient
     val exitBehavior: TvExitBehavior =
         tvExitBehavior ?: if (tvExitConfirmation) TvExitBehavior.DoubleBack else TvExitBehavior.Direct
+
+    /**
+     * 实际生效的视觉效果档 —— **读这个, 别读 [tvVisualEffects] / [tvFullVisualEffects]**. 没显式选过时由老开关推导:
+     * 开过完整视觉效果的人得到完整档, 其余人得到默认的均衡档.
+     */
+    @Transient
+    val visualEffects: TvVisualEffectsLevel =
+        tvVisualEffects ?: if (tvFullVisualEffects) TvVisualEffectsLevel.Full else TvVisualEffectsLevel.Balanced
 
     companion object {
         @Stable

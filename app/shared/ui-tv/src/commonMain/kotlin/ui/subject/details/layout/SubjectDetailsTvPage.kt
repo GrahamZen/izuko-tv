@@ -11,6 +11,23 @@ package me.him188.ani.app.ui.subject.details.layout
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
+import androidx.compose.ui.util.lerp
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -64,6 +81,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
@@ -91,6 +109,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
@@ -100,8 +119,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.contentColorFor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -162,6 +183,11 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE
+import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeToBlackStops
+import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeFromBlackStops
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_START
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
 import me.him188.ani.app.ui.foundation.tv.TV_FOCUSED_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
@@ -215,6 +241,8 @@ import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -261,6 +289,14 @@ fun SubjectDetailsTvLoadingPlaceholder(
     }
     val heroBackdropUrl = heroBackdrop?.value
 
+    // 放大会话进行中 (见 TvHeroZoomLayer): 图与底色由下面那一层画, 占位页透明, 只画大标题 (跟着会话进度平移) 与侧边栏
+    val zoomSession = TvHeroZoomHandoff.session
+    val underZoom = zoomSession != null
+    // 放大进来的占位页, 会话可能在条目信息到达之前就结束 (放大层等不到真页, 自己收场): 之后这一页照常画背景、底色与
+    // 加载转圈, 但标题和侧边栏不能跟着消失 —— 标题此时只有导航时从列表页带来的那一份, 侧边栏本来就在同一位置
+    val enteredWithZoom = remember { underZoom }
+    val navTitle = remember { zoomSession?.title }
+
     var slowLoad by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(SLOW_LOAD_SPINNER_DELAY)
@@ -280,8 +316,11 @@ fun SubjectDetailsTvLoadingPlaceholder(
             windowInsets,
             scrollState = scrollState,
             backgroundOverlay = {
-                heroBackdropUrl?.let { TvHeroBackdrop(it, scrollState, onSuccess = {}) }
+                // 放大会话进行中背景由放大那一层画 (见 TvHeroZoomLayer), 这里组合着但不画: 会话结束那一帧直接显示 ——
+                // 新图片实例头一两帧是空的, 到那时才组合会闪一下
+                heroBackdropUrl?.let { url -> TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom) }
             },
+            containerColor = if (underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         ) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(start = pad)) {
                 // 与 TvHeroBlock 的标题列逐项对齐 (top 8dp / headlineLarge / 白字 + 柔和黑影 /
@@ -298,13 +337,14 @@ fun SubjectDetailsTvLoadingPlaceholder(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        subjectInfo?.displayName.orEmpty(),
+                        subjectInfo?.displayName ?: navTitle.orEmpty(),
+                        Modifier.tvHeroZoomTitleShift(zoomSession),
                         style = MaterialTheme.typography.headlineLarge.copy(shadow = titleShadow),
                         color = Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (slowLoad) {
+                    if (slowLoad && !underZoom) {
                         CircularProgressIndicator(
                             Modifier.padding(top = 16.dp).size(28.dp),
                             color = Color.White,
@@ -312,6 +352,18 @@ fun SubjectDetailsTvLoadingPlaceholder(
                         )
                     }
                 }
+            }
+        }
+        // 放大进来的占位页也画侧边栏 (列表页那条已被放大那一层的底色盖住, 真页那条要等它组合; 会话提前结束也留着): 只是样子, 焦点
+        // 不许进来 —— 全局兜底会把焦点送到页面上唯一可聚焦的节点, 侧边栏一持焦就展开. 不用 canFocus 开关 (见
+        // 2026-09-10 那次: 停用一个已在焦点树里的节点会把整页焦点吞掉), 用焦点组的 onEnter 拒绝进入
+        if (enteredWithZoom) {
+            Box(
+                Modifier.align(Alignment.CenterStart).zIndex(1f)
+                    .focusGroup()
+                    .focusProperties { onEnter = { cancelFocusChange() } },
+            ) {
+                TvDetailsSideRail(onExitToHero = {}, scrimColor = tvDetailsRailScrimColor())
             }
         }
     }
@@ -431,6 +483,81 @@ fun SubjectDetailsTvPage(
     // 只在 backdropResolved 之后才用它, 否则会先闪一下封面再被 TMDB 图换掉.
     val heroBackdropUrl = tmdbBackdropUrl
         ?: info.imageLarge.takeIf { backdropResolved && it.isNotBlank() }
+    // 放大转场 (TvHeroZoomHandoff.Session): 导航那一刻若判定会放大, 放大由 TvHeroZoomLayer 那一层画 —— 它挂在占位页 /
+    // 真页的切换之外, 两者切换时不重建. 本页在会话进行中: 底色透明、渐变底不画、自己的背景图组合着但不显示 (提前把
+    // 位图加载好), 只画大标题 (跟着会话进度从列表页的位置平移过来) 与侧边栏; 放大到位且自己的背景图已就位时接手 ——
+    // 同一张图同一位置, 那一层撤掉, 其余内容一次性出现 (放大的是另一张图时先淡入换图, 见 handoff). 首屏那几个几百毫秒的
+    // 组合帧因此都落在放大之后.
+    val zoomSession = TvHeroZoomHandoff.session
+        ?.takeIf { !videoBackground && it.subjectId == state.subjectId && it.detailsUrl == heroBackdropUrl }
+    val underZoom = zoomSession != null
+    val enteredWithZoom = remember { underZoom }
+    var revealed by remember { mutableStateOf(!enteredWithZoom) }
+    var ownBackdropLoaded by remember { mutableStateOf(false) }
+    // 换图接手 (放大的是列表页的单集剧照, 本页是整部背景): 自己的背景图在放大层上淡进来, 进度只在绘制里读
+    var crossFading by remember { mutableStateOf(false) }
+    val crossImageAlpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        // 会话在但对不上本页 (背景图 URL 变了等): 放弃这次放大, 本页照常画
+        val s = TvHeroZoomHandoff.session
+        if (s != null && zoomSession == null) TvHeroZoomHandoff.endSession(s)
+    }
+    // 接手: 放大到位 + 自己的背景图已加载 (以 alpha 0 组合着, 位图就在内存里; 显示与撤层落在同一帧).
+    // 会话一结束 (接手 / 放弃 / 看门狗) 就放行其余内容
+    LaunchedEffect(zoomSession) {
+        val s = zoomSession
+        if (s == null) {
+            if (enteredWithZoom) revealed = true
+            return@LaunchedEffect
+        }
+        snapshotFlow { s.t >= 1f && ownBackdropLoaded }.first { it }
+        if (s.url != s.detailsUrl) {
+            // 放大的是另一张图: 先把自己的图淡进来再撤层, 不硬换. 其余内容照旧等会话结束一次出现, 首屏以下区块那几个
+            // 重组帧因此落在淡入之后, 不卡这一段
+            s.handingOver = true
+            crossFading = true
+            crossImageAlpha.animateTo(1f, tween(TV_HERO_ZOOM_CROSS_IMAGE_FADE_MILLIS))
+        }
+        TvHeroZoomHandoff.endSession(s)
+    }
+    // 首屏信息带 (副标题 / 圆钮 / 播放按钮 / 标签 / 评分) 在放大尾段就先组合好, 显示前不画 (TvHeroBlock.bodyHidden):
+    // 显示那一帧只翻透明度, 不再现组合. 2026-09-10 追踪: 接手后现组合的那一帧 90ms, 首屏晚这么久才出来. 尾段已在减速,
+    // 这一帧停在那里几乎看不出来 (见 TV_HERO_ZOOM_TAIL_T); 与本页首次组合错开一帧, 两份重活不叠在一帧
+    var bodyEarly by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val s = zoomSession ?: return@LaunchedEffect
+        snapshotFlow { s.t >= TV_HERO_ZOOM_TAIL_T }.first { it }
+        withFrameNanos { }
+        bodyEarly = true
+    }
+    // 放大落地途中 (位移到 TV_HERO_ZOOM_REVEAL_T) 就显示首屏信息带: 停稳时按钮已在、可以直接按; 放大层照常画完最后一段.
+    // 派生状态: 进度每帧在变, 本页只在这个布尔翻转时重组一次
+    val uiEarly by remember(zoomSession) {
+        derivedStateOf { zoomSession?.let { it.t >= TV_HERO_ZOOM_REVEAL_T } == true }
+    }
+    // 接手后先只组合首屏 (hero 信息带), 首屏以下的区块推迟, 且**分三帧**放出: 1 选集页 / 2 角色 + 制作人员 / 3 作品信息 +
+    // 关联 + 评价. 2026-09-10 追踪接手那一帧 262ms, 大半是首屏看不见的区块; 只推迟一帧的话仍是一整帧 80~125ms, 正撞在
+    // "停稳后第一下按键"上 (用户要停稳即可操作). 分三帧后 UI 出现后 300ms 内最长帧 39~47ms (2026-09-13 Shield AOT).
+    // 这些区块都在首屏之下, 晚几帧出现看不见; 角色区没轮到时先放等高骨架, 布局不跳. 只在放大进来时这么做 (常规进页照旧一次组合)
+    var sectionsReady by remember { mutableStateOf(!enteredWithZoom) }
+    var sectionsStage by remember { mutableStateOf(if (enteredWithZoom) 0 else 3) }
+    LaunchedEffect(revealed) {
+        if (!revealed || sectionsReady) return@LaunchedEffect
+        withFrameNanos { }
+        sectionsReady = true
+        sectionsStage = 1
+        withFrameNanos { }
+        sectionsStage = 2
+        withFrameNanos { }
+        sectionsStage = 3
+    }
+    // 看门狗: 无论如何 (图没到 / 接手条件凑不齐) 都在限时内放行, 别让页面停在只有标题的状态
+    LaunchedEffect(Unit) {
+        if (revealed) return@LaunchedEffect
+        delay(TV_HERO_REVEAL_WATCHDOG_MILLIS)
+        zoomSession?.let { TvHeroZoomHandoff.endSession(it) }
+        revealed = true
+    }
     // TMDB 分集缩略图 (episodeId -> URL); 无图的集回退纯文字卡
     val tmdbEpisodeStills by state.tmdbEpisodeStillsFlow.collectAsStateWithLifecycle(emptyMap())
     // 各集播放进度 (episodeId -> 0..1), 选集卡片底部进度条
@@ -707,6 +834,7 @@ fun SubjectDetailsTvPage(
         // derivedStateOf: 本作用域 (BoxWithConstraints) 包住整页内容, 裸读 scrollState.value
         // 会让吸附滚动动画期间整页每帧重组; 收敛为只在 0/非0 边界失效一次
         val atPageTop by remember { derivedStateOf { scrollState.value == 0 } }
+        // 侧边栏不等放大转场 (revealed): 上一页的侧边栏在同一位置, 藏了会"先消失再出现" (用户 2026-09-10)
         if (atPageTop && !videoBackground) {
             // 遮罩颜色用主题色 (surface 向 surfaceTint 偏移, 再稍向黑压深以在海报上保证可读),
             // 随主题/动态取色变化; 压深比例按日夜主题分档 (见常量注释, 可调).
@@ -764,7 +892,7 @@ fun SubjectDetailsTvPage(
                 // 全屏 blur 是探针实测里详情页"永不静止"的主因 (2026-07-31, 常驻 13-30fps).
                 // 滚动后 backdrop 渐隐、光斑重新露出, 动画随之恢复
                 var backdropLoaded by remember(heroBackdropUrl) { mutableStateOf(false) }
-                if (colors != null) {
+                if (colors != null && !underZoom) {
                     AnimatedGradientBackground(
                         colors,
                         speed = 0.05,
@@ -777,19 +905,31 @@ fun SubjectDetailsTvPage(
                 heroBackdropUrl?.let { url ->
                     TvHeroBackdrop(
                         imageUrl = url,
+                        // 放大会话进行中: 组合着 (提前把位图加载好) 但不画, 放大那一层在下面顶着; 接手那一帧才显示
+                        // (换图接手时在放大层上淡进来)
+                        hidden = underZoom && !crossFading,
+                        fadeInAlpha = { if (underZoom) crossImageAlpha.value else 1f },
+                        // 换图淡入期间, 底缘渐隐画成页面底色的同色渐变, 不擦图: 擦掉的地方会透出下面放大层里的旧图, 淡入到头时
+                        // 底缘比接手后亮一截, 接手那一帧又暗回去 (2026-09-14 用户: 继续观看进来"底下的黑色遮罩闪一下"). 同色
+                        // 渐变下每一帧都是标准的新旧交叉淡入, 到头正好等于接手后的样子; 接手后恢复擦除 (底下换成了动态渐变)
+                        solidUnderlay = if (underZoom && crossFading) AniThemeDefaults.pageContentBackgroundColor else null,
                         scrollState = scrollState,
                         // 页面主题色从**这张背景图**取: 它就是屏幕上最大的一块颜色, 主色与它同源
                         // 才不脱节 (改用竖版封面试过, 有些条目两张图色调差很远, 观感割裂).
                         // 没有 backdrop 的条目由下面那条 hero 分支用竖版封面兜底, 见 heroBackdropUrl
                         onSuccess = {
                             backdropLoaded = true
+                            ownBackdropLoaded = true
                             onCoverImageSuccess(it)
                         },
                     )
                 }
             }
         },
-        containerColor = if (videoBackground) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
+        containerColor = if (videoBackground || underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
+        // 放大期间底色透明 (图与底由放大层画), 文字颜色仍按页面底色配: 否则没显式指定颜色的文字 (评分大数字 / 收藏统计)
+        // 在会话结束前是祖先的默认黑色, 继续观看换图接手时整整黑 250ms (2026-09-14 用户看到"从黑变白"). 视频背景照旧
+        contentColor = contentColorFor(if (videoBackground) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor),
     ) {
         Column(
             // 起始留白只加在 Hero 块内 (startPadding), 不能加在整列上:
@@ -807,6 +947,11 @@ fun SubjectDetailsTvPage(
                 onClickLogin = onClickLogin,
                 onClickOpenExternal = onClickOpenExternal,
                 horizontalPadding = pad,
+                // 放大转场 (见 zoomFrom): 标题从列表页的位置平移过来, 其余到位后一次性出现
+                titleModifier = Modifier.tvHeroZoomTitleShift(zoomSession),
+                bodyComposed = revealed || bodyEarly,
+                // lambda: 在三处 graphicsLayer 里读, uiEarly 翻转那一帧只改层属性, 不重组整个 hero 块
+                bodyHidden = { underZoom && !uiEarly },
                 // 播放按钮 = HERO_PLAY 锚点 (挂请求器 + 到位确认)
                 primaryButtonModifier = Modifier
                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.HERO_PLAY)
@@ -898,7 +1043,8 @@ fun SubjectDetailsTvPage(
                         }
                     },
             )
-            CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoViewSpec) {
+            // 放大转场: 到位前不组合 hero 之下的区块, 到位后也晚首屏一帧 (见 sectionsReady)
+            if (revealed && sectionsReady) CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoViewSpec) {
             // 水平留白不加在区块列上, 由各区块自理: 选集轮播的卡片行要一直画到屏幕右边缘
             // (出血, 停靠留边由轮播内部 contentPadding 提供), 其余区块照常留边
             Column(
@@ -1116,11 +1262,12 @@ fun SubjectDetailsTvPage(
             //   showReal      = 两块都尘埃落定 (itemCount>0 或确认为空) 且至少一块有内容 -> 真区块
             //   两边都确认为空 -> 什么都不渲染 (收缩方向不挤焦点, 有滚动锚定兜底)
             //   其余一律骨架   (含 "count 已到但 paging 未跟上" 的窗口)
-            if (relationsSkeletonVisible) {
+            // 分帧放出时 (见 sectionsStage) 角色区没轮到也先放骨架, 与真区块等高
+            if (relationsSkeletonVisible || (sectionsStage < 2 && relationsSettled && relationsAnyContent)) {
                 RelationsSkeletonSection(layoutParams.sectionSpacing, pad)
             }
             if (exposedCharacters != null && allCharacters != null && exposedStaff != null && allStaff != null &&
-                relationsSettled && relationsAnyContent
+                relationsSettled && relationsAnyContent && sectionsStage >= 2
             ) {
                 SnapOnFocusSection(
                     scrollState,
@@ -1179,7 +1326,7 @@ fun SubjectDetailsTvPage(
             // 排在区块顶, 焦点下到关联条目时区块吸顶, 信息表正好完整露出在关联条目上方.
             // 内嵌变体不放信息表 (播放器控制层已有), 评价预览也已并入介绍页 (标签墙下方),
             // 只剩关联条目, 无关联时整块不组合 (上方区块即页面终点, 下键无落点属预期).
-            if (!videoBackground || related.itemCount > 0) {
+            if ((!videoBackground || related.itemCount > 0) && sectionsStage >= 3) {
                 SnapOnFocusSection(
                     scrollState,
                     layoutParams.sectionSpacing,
@@ -2187,33 +2334,153 @@ private fun TvHeroBackdrop(
     imageUrl: String,
     scrollState: ScrollState,
     onSuccess: (AniImageLoadSuccess) -> Unit,
+    /** 放大转场的起始框 (根坐标), 见 [TvHeroZoomLayer]; null = 本页常规的全屏背景. */
+    zoomFrom: Rect? = null,
+    /** 放大进度 0..1, 绘制里读 (不进组合); 常规背景恒 1. */
+    zoomT: () -> Float = { 1f },
+    /**
+     * 放大期间的羽化要不要画, 绘制里读: 图上屏之前不画 —— 羽化不依赖图, 照常画的话透明等待期里它会按 hero 框的
+     * 位置作为一条深色带压在列表页的卡片上 (2026-09-10 录屏: 推荐行第三张往右顶上一条黑带).
+     */
+    featherOn: () -> Boolean = { false },
+    /** 组合着但不画: 放大会话进行中真页用它提前把位图加载好, 接手那一帧再显示. */
+    hidden: Boolean = false,
+    /** 额外乘上的不透明度, 绘制里读: 放大换图接手时的淡入 (见真页的 handoff). */
+    fadeInAlpha: () -> Float = { 1f },
+    /**
+     * 本层底下垫的是这个纯色时 (放大那一层), 底缘渐隐直接画成它的渐变, 不用 DstOut 擦除、**不开离屏缓冲**: 擦掉 a 露出
+     * 纯色 C 与在图上叠一层 alpha a 的 C, 逐像素相同. 离屏的代价在放大期间特别大 —— 遮罩渐入与羽化每帧都在变, 整块
+     * 全屏离屏缓冲每帧重画一遍 (2026-09-10 实测 4K 每帧 GPU 20~30ms, 交叉淡入同期 11~12ms). 顺带图少一次重采样
+     * (离屏是先放大画进全屏缓冲再缩回去), 与列表页 hero 直接画在框里的那张更一致. null = 常规 (底下是动态渐变, 必须擦).
+     */
+    solidUnderlay: Color? = null,
+    /** 放大起始时列表页盖在图上的整层压暗 (见 TvHeroZoomHandoff.Session.dim), 随进度退到 0. */
+    zoomDim: Color = Color.Transparent,
 ) {
+    // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
+    var ownBounds by remember { mutableStateOf<Rect?>(null) }
+    // 放大期间的羽化边 (见 drawWithContent): 列表页 hero 的左缘 / 底缘是渐入页面底色的, 本页只有左侧 scrim 与底缘
+    // 部分擦除, 缩放中途图的左边、下边是硬的 (用户逐帧看到). 用列表页同一套渐变 (卡片态起止) 画在同一层里, 到位后
+    // 就是本页自己的边. 颜色取本层底下垫的那个纯色 (放大层的底): 边缘要与周边**完全同色**, 浅色主题下外壳色与页面
+    // 底色并不相同. 停点只算一次, 每帧只改渐变的起止坐标 (渲染线程的渐变缓存按停点命中)
+    val featherColor = solidUnderlay ?: AniThemeDefaults.shellBackgroundColor
+    val leftFeatherStops = remember(featherColor) {
+        tvBackdropFadeFromBlackStops(
+            start = TV_BACKDROP_LEFT_FADE_START / TV_BACKDROP_LEFT_FADE_END, end = 1f, color = featherColor,
+        )
+    }
+    val bottomFeatherStops = remember(featherColor) { tvBackdropFadeToBlackStops(start = 0f, end = 1f, color = featherColor) }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
                 .fillMaxSize()
+                .then(if (zoomFrom != null) Modifier.onGloballyPositioned { ownBounds = it.boundsInRoot() } else Modifier)
                 .graphicsLayer {
+                    if (hidden) {
+                        alpha = 0f
+                        return@graphicsLayer
+                    }
                     // 向下滚动逐渐淡出, 但保留半透明而非完全消失
                     val progress = (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
-                    alpha = 1f - progress * (1f - HERO_BACKDROP_MIN_ALPHA)
-                    // 底部渐隐用 DstOut 擦除本层 alpha, 需要离屏合成
-                    compositingStrategy = CompositingStrategy.Offscreen
+                    alpha = (1f - progress * (1f - HERO_BACKDROP_MIN_ALPHA)) * fadeInAlpha()
+                    // 底部渐隐用 DstOut 擦除本层 alpha, 需要离屏合成; 垫纯色时改画同色渐变, 不必离屏 (见 solidUnderlay)
+                    compositingStrategy = if (solidUnderlay != null) CompositingStrategy.Auto else CompositingStrategy.Offscreen
+                    // 放大缩放的是**整层** (图 + 底缘擦除 + 左侧 scrim + 羽化), 不是只缩图: 遮罩跟着图一起缩, 缩放中途
+                    // 边缘才是软的 (只缩图的话遮罩留在全屏坐标, 图的四条硬边全露出来). 这层本来就是离屏的, 不多花一层
+                    val t = zoomT()
+                    val own = ownBounds
+                    if (zoomFrom != null && t < 1f && own != null && size.width > 0f && size.height > 0f) {
+                        // 两个框都是 16:9 的 Crop, 起始态 = 把全屏那层按框缩放平移过去, 与列表页那张像素级重合
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = lerp(zoomFrom.width / size.width, 1f, t)
+                        scaleY = lerp(zoomFrom.height / size.height, 1f, t)
+                        translationX = lerp(zoomFrom.left - own.left, 0f, t)
+                        translationY = lerp(zoomFrom.top - own.top, 0f, t)
+                    }
                 }
                 .drawWithContent {
                     drawContent()
-                    // 底部渐隐: 擦除图片自身的透明度, 露出下层的动态渐变背景,
-                    // 而不是画一层纯背景色盖住它 (否则浅色主题下是一片突兀的纯白).
-                    //
-                    // 起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图,
-                    // 露出的页面底色在深色主题里近乎纯黑 —— 选集卡片那一带整片发黑, 与上方还有图的
-                    // 部分界线分明 (常被当成"多压了一层黑遮罩", 其实是图被擦没了)
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0.72f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.88f),
-                        ),
-                        blendMode = BlendMode.DstOut,
-                    )
+                    // 底部渐隐: 擦除图片自身的透明度, 露出下层的动态渐变背景, 而不是画一层纯背景色盖住它 (否则浅色主题下
+                    // 是一片突兀的纯白). 起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图,
+                    // 选集卡片那一带整片发黑 (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
+                    // 放大转场中本页自己的两层遮罩**随进度渐入** (t = 0 时不画): t = 0 那一刻这一层必须与列表页 hero
+                    // 像素级一样 —— 一上来就压 0.6 黑的左 scrim 会让图"先黑一下" (用户 2026-09-10 截图).
+                    // 每条渐变都**裁到它不透明的那一段**再画 (clipRect, 渐变坐标不变): drawRect 铺满整层时, 透明的部分 GPU
+                    // 照样逐像素混合一遍. 放大期间这几条渐变每帧都要重画, 4K 下每条全屏混合约 2~3ms (2026-09-10 实测
+                    // 4K 放大每帧 GPU 30ms, 去掉离屏缓冲后几乎没降 —— 大头是六次全屏填充, 不是离屏)
+                    val t = zoomT()
+                    val own = if (zoomFrom != null) t else 1f
+                    // 列表页的整层压暗 (时间表页): 起跑那一帧与列表页一样暗, 随进度退掉, 本页自己的遮罩同时渐入
+                    if (zoomFrom != null && t < 1f && zoomDim.alpha > 0f) drawRect(zoomDim, alpha = 1f - t)
+                    if (own > 0f) clipRect(top = size.height * 0.72f) {
+                        if (solidUnderlay != null) {
+                            // 起点用同色 alpha 0 (而不是 Color.Transparent = 透明黑): 渐变按非预乘插值, 从透明黑插过去
+                            // 中段会发灰
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    0.72f to solidUnderlay.copy(alpha = 0f),
+                                    1f to solidUnderlay.copy(alpha = 0.88f),
+                                ),
+                                alpha = own,
+                            )
+                        } else {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    0.72f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = 0.88f),
+                                ),
+                                alpha = own,
+                                blendMode = BlendMode.DstOut,
+                            )
+                        }
+                    }
+                    // 左侧暗色 scrim: 保证浮在图上的标题可读; 画在同一层里, 才能按进度渐入而不多开一层
+                    if (own > 0f) clipRect(right = size.width * 0.55f) {
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                0f to Color.Black.copy(alpha = 0.6f),
+                                0.55f to Color.Transparent,
+                            ),
+                            alpha = own,
+                        )
+                    }
+                    // 放大期间的羽化: 图的左边 / 下边**每一帧都满遮盖成周边的底色**, 收掉羽化靠收窄宽度, 不降强度. 旧做法
+                    // 强度按 1 − t³ 衰减, 放大到一半边上还透出一成多原图, 周边是纯黑, 就是一条亮边 (用户 2026-09-10 截图;
+                    // 放大还画在详情页里的时候, 周边是带图色调的渐变底, 所以看不出). 羽化带在屏幕上保持列表页 hero 的宽度,
+                    // 直到图的边离屏幕边比这宽度还近, 才按剩下的距离收窄, 边碰到屏幕边那一刻正好收没: 全程连续, 到位也不跳.
+                    // 渐变矩形越过图的边再多画 TV_HERO_ZOOM_FEATHER_OUTSET_PX 个屏幕像素: 图最边上那一排是半覆盖的,
+                    // 羽化自己的边若也停在同一处, 两层半透明叠起来仍会透出原图 (实测底边那一排亮度 62, 周边 0)
+                    val box = ownBounds
+                    if (zoomFrom != null && t < 1f && featherOn() && box != null) {
+                        val sx = lerp(zoomFrom.width / size.width, 1f, t)
+                        val sy = lerp(zoomFrom.height / size.height, 1f, t)
+                        val outX = TV_HERO_ZOOM_FEATHER_OUTSET_PX / sx
+                        val outY = TV_HERO_ZOOM_FEATHER_OUTSET_PX / sy
+                        // 左边. 距离、宽度都按屏幕像素算, 画的时候除以缩放换回本层坐标
+                        val gapLeft = zoomFrom.left - box.left
+                        val bandLeft = zoomFrom.width * TV_BACKDROP_LEFT_FADE_END
+                        if (gapLeft > 0f && bandLeft > 0f) {
+                            val k = (gapLeft * (1f - t) / minOf(bandLeft, gapLeft)).coerceAtMost(1f)
+                            val end = bandLeft * k / sx
+                            if (end > 0.5f) drawRect(
+                                brush = Brush.horizontalGradient(*leftFeatherStops, startX = 0f, endX = end),
+                                topLeft = Offset(-outX, -outY),
+                                size = Size(end + outX, size.height + 2 * outY),
+                            )
+                        }
+                        // 下边
+                        val gapBottom = box.bottom - zoomFrom.bottom
+                        val bandBottom = zoomFrom.height * (1f - TV_BACKDROP_BOTTOM_FADE_START)
+                        if (gapBottom > 0f && bandBottom > 0f) {
+                            val k = (gapBottom * (1f - t) / minOf(bandBottom, gapBottom)).coerceAtMost(1f)
+                            val band = bandBottom * k / sy
+                            if (band > 0.5f) drawRect(
+                                brush = Brush.verticalGradient(*bottomFeatherStops, startY = size.height - band, endY = size.height),
+                                topLeft = Offset(-outX, size.height - band),
+                                size = Size(size.width + 2 * outX, band + outY),
+                            )
+                        }
+                    }
                 },
         ) {
             AsyncImage(
@@ -2221,20 +2488,141 @@ private fun TvHeroBackdrop(
                 contentDescription = null,
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                // 与列表页 hero 同一个缓存键 (见 tvHeroBackdropDecodeAtOriginalSize): 内存命中, 不重解码
+                decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(imageUrl),
                 onSuccess = onSuccess,
             )
             HeroBackdropSharpeningOverlay(imageUrl)
-            // 左侧暗色 scrim: 保证浮在图上的标题可读
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.horizontalGradient(
-                        0f to Color.Black.copy(alpha = 0.6f),
-                        0.55f to Color.Transparent,
-                    ),
-                ),
-            )
         }
     }
+}
+
+/**
+ * 放大转场那一层 (见 [TvHeroZoomHandoff]): 从导航后第一帧起按列表页 hero 的框画同一张图, 图一上屏就转不透明
+ * (列表页随之硬切) 并开始放大, 直到真页的背景接手. 挂在占位页 / 真页的切换之外 (SubjectDetailsPageVariant.Underlay),
+ * 两者切换时它不重建.
+ */
+@Composable
+fun TvHeroZoomLayer() {
+    // 进详情页走的是哪条转场, 每进一次页一行: 用户说"怎么没放大 / 怎么还在放大"时, 对照视觉效果档一眼看出原因
+    val visualEffects = LocalThemeSettings.current.visualEffects
+    LaunchedEffect(Unit) {
+        zoomLogger.info {
+            val s = TvHeroZoomHandoff.session
+            val kind = when {
+                s == null -> "crossfade"
+                s.url != s.detailsUrl -> "zoom (cross-image)"
+                else -> "zoom"
+            }
+            "Details entry: $kind, visual effects $visualEffects"
+        }
+    }
+    val session = TvHeroZoomHandoff.session ?: return
+    var loaded by remember(session) { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+    LaunchedEffect(session) {
+        if (!session.started) {
+            withFrameNanos { }
+            val ready = withTimeoutOrNull(TV_HERO_ZOOM_LOAD_BUDGET_MILLIS) { snapshotFlow { loaded }.first { it } }
+            if (ready == null) {
+                TvHeroZoomHandoff.endSession(session)
+                return@LaunchedEffect
+            }
+            // onSuccess 之后下一帧图才真正上屏: 在那一帧起跑 —— 底色转不透明、列表页硬切、放大开始都落在这一帧
+            session.start(withFrameNanos { it })
+        }
+        while (session.t < 1f) {
+            session.t = session.progress(withFrameNanos { it })
+        }
+        // 到位后真页照常在一两帧内接手 (见真页的 handoff). 真页迟迟不来 (条目信息慢 / 加载失败 / 背景图地址后来变了)
+        // 就由这一层自己收场: 会话一直在的话 covering 一直为真, 占位页的背景、底色和加载转圈也一直被压着, 页面像是
+        // 冻在一张图和一个标题上
+        delay(TV_HERO_ZOOM_HANDOFF_GRACE_MILLIS)
+        // 真页正在淡入换图 (见真页 handoff): 由它淡完自己结束, 这里掐掉会让淡入中途跳图
+        if (!session.handingOver) TvHeroZoomHandoff.endSession(session)
+    }
+    // 详情页离开 (返回 / 被别的页盖住) 时会话一并结束, 列表页恢复
+    DisposableEffect(session) { onDispose { TvHeroZoomHandoff.endSession(session) } }
+    Box(
+        Modifier.fillMaxSize()
+            .then(if (session.started) Modifier.background(AniThemeDefaults.pageContentBackgroundColor) else Modifier),
+    ) {
+        TvHeroBackdrop(
+            imageUrl = session.url,
+            scrollState = scrollState,
+            onSuccess = { loaded = true },
+            zoomFrom = session.bounds,
+            zoomT = { session.t },
+            featherOn = { session.started },
+            solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
+            zoomDim = session.dim,
+            // 起跑之前只加载不画: 图加载好到起跑之间那一两帧若照常画, 就是一块没有羽化、没有底缘擦除的硬边原图压在
+            // 列表页 hero 上 (2026-09-10 录屏: hero 区突然变成硬边亮矩形约 50ms). 起跑那一帧图、羽化、深色底、列表页
+            // 硬切一起出现, 与列表页 hero 像素级一样
+            hidden = !session.started,
+        )
+    }
+}
+
+/**
+ * 放大转场的快段里先不换真页 (见 SubjectDetailsPageVariant.holdPlaceholder): 本条目的会话进行中且进度未到
+ * [TV_HERO_ZOOM_TAIL_T] 时为 true. **不看是否已起跑**: 起跑前真页若先到, 起跑那一刻又扣回占位页 = 真页被销毁再重建
+ * (实测一次进页组合了两遍真页). 也不会把真页扣死: 本函数与放大层在同一个条件 (沉浸式) 下才组合, 放大层要么在加载
+ * 预算内起跑, 要么结束会话. 派生状态: 调用方只在它翻转时重组一次.
+ */
+@Composable
+fun tvHeroZoomHoldsPlaceholder(subjectId: Int): Boolean {
+    val hold by remember(subjectId) {
+        derivedStateOf {
+            TvHeroZoomHandoff.session?.let { it.subjectId == subjectId && it.t < TV_HERO_ZOOM_TAIL_T } == true
+        }
+    }
+    return hold
+}
+
+/**
+ * 大标题跟着放大会话的进度, 从列表页标题的位置平移到本页的位置 (两边都是 headlineLarge, 只差位置). 会话开始 (图上屏、
+ * 列表页硬切) 之前不画 —— 那时列表页自己的标题还在同一处; 自己的框量出来之前也不画, 免得头一帧出现在终点.
+ */
+@Composable
+private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): Modifier {
+    var own by remember { mutableStateOf<Rect?>(null) }
+    val from = session?.titleBounds
+    if (session == null || from == null) return this
+    return this
+        .onGloballyPositioned {
+            val b = it.boundsInRoot()
+            own = b
+            session.titleTarget = b
+        }
+        .graphicsLayer {
+            // 自己的框还没量到 (占位页刚换成真页的那一帧) 先用上一页量的: 两页标题同一位置
+            val o = own ?: session.titleTarget
+            if (!session.started || o == null) {
+                alpha = 0f
+                return@graphicsLayer
+            }
+            val t = session.t
+            if (t < 1f) {
+                translationX = lerp(from.left - o.left, 0f, t)
+                translationY = lerp(from.top - o.top, 0f, t)
+            }
+        }
+}
+
+/** 详情页侧边栏展开遮罩的颜色: surface 向 surfaceTint 偏移, 再按日夜主题稍向黑压深 (与真页那处同一算法). */
+@Composable
+private fun tvDetailsRailScrimColor(): Color {
+    val darken = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        TV_DETAILS_RAIL_SCRIM_DARKEN_DARK
+    } else {
+        TV_DETAILS_RAIL_SCRIM_DARKEN_LIGHT
+    }
+    return lerp(
+        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceTint, TV_DETAILS_RAIL_SCRIM_TINT),
+        Color.Black,
+        darken,
+    )
 }
 
 /**
@@ -2263,7 +2651,8 @@ private fun HeroBackdropSharpeningOverlay(imageUrl: String) {
         tmdbBackdropOriginalSizeUrl(imageUrl).takeIf { it != imageUrl }
     }
     // 裸读非快照状态: 档位在首帧就定死了 (见 AniDisplayTier), 不需要跟着它重组
-    if (originalUrl == null || !AniDisplayTier.isHighRes) return
+    // 视觉效果完整档才加清 (原图位图约 33MB, 见 TvVisualEffectsLevel.originalImages)
+    if (originalUrl == null || !AniDisplayTier.isHighRes || !LocalThemeSettings.current.visualEffects.originalImages) return
     var sharpen by remember(originalUrl) { mutableStateOf(false) }
     LaunchedEffect(originalUrl) {
         delay(TV_HERO_SHARPEN_DWELL)
@@ -2278,6 +2667,30 @@ private fun HeroBackdropSharpeningOverlay(imageUrl: String) {
         contentScale = ContentScale.Crop,
     )
 }
+
+
+
+/** 放大转场没能回调 (图迟迟不到 / 背景没组合) 时放行其余 UI 的兜底. */
+private const val TV_HERO_REVEAL_WATCHDOG_MILLIS = 1_000L
+
+private val zoomLogger = logger("TvHeroZoom")
+
+/**
+ * 放大到位后等真页接手的时限 (见 TvHeroZoomLayer): 正常一两帧内就接手 (它自己的背景图是内存命中); 过了这个时限还没
+ * 接手, 放大层自己结束会话, 占位页 / 错误页照常显示.
+ */
+private const val TV_HERO_ZOOM_HANDOFF_GRACE_MILLIS = 500L
+
+/**
+ * 放大换图接手的淡入时长 (放大的是列表页的单集剧照, 详情页是整部背景, 见 TvHeroZoomHandoff.Session.detailsUrl).
+ * 淡入期间会话还没结束: 首屏信息带 (放大到 TV_HERO_ZOOM_REVEAL_T 就显示) 已经在屏上, 页面底色仍是透明的. 所以文字颜色
+ * 要显式按页面底色配 (见 MultiColumnScaffold 的 contentColor), 真页背景的底缘渐隐这段也要画同色渐变 (见 solidUnderlay),
+ * 否则这 250ms 里文字是黑的、底缘透出旧图, 接手那一帧一起跳 (2026-09-14). 首屏以下的区块比同图放大晚这么久.
+ */
+private const val TV_HERO_ZOOM_CROSS_IMAGE_FADE_MILLIS = 250
+
+/** 放大期间羽化矩形越过图的边多画的屏幕像素: 盖住图边缘那一排半覆盖的像素 (见 TvHeroBackdrop). */
+private const val TV_HERO_ZOOM_FEATHER_OUTSET_PX = 2f
 
 /** 详情页停留超过这么久, 才把 hero 背景换成原图档加清 (见 [HeroBackdropSharpeningOverlay]). */
 private val TV_HERO_SHARPEN_DWELL = 800.milliseconds
@@ -2587,6 +3000,16 @@ private fun TvHeroBlock(
     episodeGridCapsule: @Composable () -> Unit = {},
     /** 展示用简介 (Bangumi 全外文时已替换为 TMDB 中文); 默认用原文. */
     displaySummary: String = info.summary,
+    /** 作用于大标题本体: 放大转场时从列表页的位置平移过来 (见 tvHeroZoomTitleShift). */
+    titleModifier: Modifier = Modifier,
+    /**
+     * 标题之外的东西 (副标题 / 信息带整条: 圆钮、播放按钮、标签墙、评分) 要不要组合: 放大转场到位前 false —— 标题
+     * 要第一帧就在 (从列表页的位置平移过来), 其余全部延后, 首帧只有一个 Text. 块高由外层钉死 (heroHeight), 标题
+     * 顶对齐, 信息带在不在都不挪它. 播放按钮晚组合没关系: 落点请求悬挂着, 锚点一出现就落 (TvFocusScope).
+     */
+    bodyComposed: Boolean = true,
+    /** 组合着但不画: 放大尾段提前组合、落地途中才显示 (见真页 bodyEarly / uiEarly). 只作用于 [bodyComposed] 管的那些. */
+    bodyHidden: () -> Boolean = { false },
 ) {
     Column(modifier.fillMaxWidth().padding(start = horizontalPadding)) {
         // 上半区: 左 = 标题 (有背景图时白色浮于图上); 右 = 无横版图时的竖版封面,
@@ -2608,14 +3031,16 @@ private fun TvHeroBlock(
                 } else null
                 Text(
                     info.displayName,
+                    titleModifier,
                     style = MaterialTheme.typography.headlineLarge.copy(shadow = titleShadow),
                     color = if (hasBackdrop) Color.White else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (info.name.isNotBlank() && info.name != info.displayName) {
+                if (bodyComposed && info.name.isNotBlank() && info.name != info.displayName) {
                     Text(
                         info.name,
+                        Modifier.graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
                         style = MaterialTheme.typography.bodyMedium.copy(shadow = titleShadow),
                         color = if (hasBackdrop) Color.White.copy(alpha = 0.78f)
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2623,12 +3048,13 @@ private fun TvHeroBlock(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (!hasBackdrop && displaySummary.isNotBlank()) {
+                if (bodyComposed && !hasBackdrop && displaySummary.isNotBlank()) {
                     // 无横版图时标题下方较空: 简介填进来, 放不下省略;
                     // 完整简介看"作品信息"子页面 (此时信息带入口只显示标签, 不重复文字)
                     Text(
                         displaySummary,
-                        Modifier.weight(1f, fill = false).padding(top = 8.dp, bottom = 16.dp),
+                        Modifier.weight(1f, fill = false).padding(top = 8.dp, bottom = 16.dp)
+                            .graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         overflow = TextOverflow.Ellipsis,
@@ -2654,8 +3080,8 @@ private fun TvHeroBlock(
         // 右 = 完整评分区. 三列底部对齐 (标签墙底缘与评分底缘齐平, 信息带整体贴底的延续).
         // 列间距显式控制 (不用 spacedBy): 左↔中 24; 中↔右 12 —— 标签墙右缘外扩一档,
         // FlowRow 换行的锯齿空白不至于叠上整份间距显得中右之间空一条
-        Row(
-            Modifier.fillMaxWidth().padding(end = horizontalPadding),
+        if (bodyComposed) Row(
+            Modifier.fillMaxWidth().padding(end = horizontalPadding).graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
             verticalAlignment = Alignment.Bottom,
         ) {
             // 左列整体提层: 圆钮聚焦时上方浮现的文字标签要盖在上方内容之上.

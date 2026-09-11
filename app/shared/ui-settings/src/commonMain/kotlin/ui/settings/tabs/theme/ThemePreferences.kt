@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
@@ -42,15 +43,19 @@ import me.him188.ani.app.ui.lang.settings_theme_high_contrast
 import me.him188.ani.app.ui.lang.settings_theme_high_contrast_description
 import me.him188.ani.app.ui.lang.settings_theme_palette
 import me.him188.ani.app.ui.lang.settings_theme_title
-import me.him188.ani.app.ui.lang.settings_theme_tv_full_visual_effects
-import me.him188.ani.app.ui.lang.settings_theme_tv_full_visual_effects_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_schedule
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_schedule_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
 import me.him188.ani.app.ui.settings.framework.SettingsState
+import me.him188.ani.app.ui.settings.framework.components.DropdownItem
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.SwitchItem
 import me.him188.ani.app.ui.theme.themeColorOptions
@@ -173,13 +178,24 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_immersive_schedule_description)) },
             )
 
-            SwitchItem(
-                checked = themeSettings.tvFullVisualEffects,
-                onCheckedChange = { checked ->
-                    state.update(themeSettings.copy(tvFullVisualEffects = checked))
+            // 三档 (见 TvVisualEffectsLevel). 写 tvVisualEffects 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔
+            DropdownItem(
+                selected = { themeSettings.visualEffects },
+                values = { TvVisualEffectsLevel.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                TvVisualEffectsLevel.Smooth -> Lang.settings_theme_tv_visual_effects_smooth
+                                TvVisualEffectsLevel.Balanced -> Lang.settings_theme_tv_visual_effects_balanced
+                                TvVisualEffectsLevel.Full -> Lang.settings_theme_tv_visual_effects_full
+                            },
+                        ),
+                    )
                 },
-                title = { Text(stringResource(Lang.settings_theme_tv_full_visual_effects)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_full_visual_effects_description)) },
+                onSelect = { state.update(themeSettings.copy(tvVisualEffects = it)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_visual_effects)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_visual_effects_description)) },
             )
         }
         // 「退出播放页后保留播放状态」在播放器那一类里 (见 PlayerGroup), 「界面缩放」在界面那一类里

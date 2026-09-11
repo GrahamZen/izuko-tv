@@ -133,18 +133,25 @@ class TvScrollAnimator {
  */
 fun tvAnchorBringIntoViewSpec(anchorPx: Float): BringIntoViewSpec =
     object : BringIntoViewSpec {
+        // visibilityThreshold 与 [TvScrollAnimator] 同为 0.5px: 默认 0.01px 让 spring 在肉眼已经停下之后
+        // 再拖 ~170ms 的尾巴 (2026-09-09 Shield 录屏: 卡片 2.55s 停, isScrollInProgress 2.72s 才 false),
+        // 而低特效档的 hero 文字要等它变 false 才出现, 这段尾巴全算在"按了键文字才慢慢出来"的等待里.
         @Deprecated("Animation spec customization is no longer supported.")
-        override val scrollAnimationSpec: AnimationSpec<Float> = spring(stiffness = TV_SCROLL_STIFFNESS)
+        override val scrollAnimationSpec: AnimationSpec<Float> =
+            spring(stiffness = TV_SCROLL_STIFFNESS, visibilityThreshold = 0.5f)
 
         override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
             offset - anchorPx
     }
 
 /**
- * 焦点滚动 spring 刚度: 决定"单格滚动多久". 260f ≈ 260ms 停靠 (质量 1, 临界阻尼下
- * 停靠时间 ≈ 4/√stiffness 秒). 调大更快更利落, 调小更慢更从容; Leanback 的参照区间是
- * 单格 200-250ms. 只调这里, 全部 TV 焦点滚动统一手感 —— 除本动画器 (网格吸顶/选集轮播)
- * 外, public 也给探索页那套官方 pivot 式 `BringIntoViewSpec` 的 `scrollAnimationSpec` 用,
- * 两条路径同一条曲线.
+ * 焦点滚动 spring 刚度: 决定"单格滚动多久" (质量 1, 临界阻尼下停靠时间 ≈ 4/√stiffness 秒).
+ * 调大更快更利落, 调小更慢更从容; Leanback 的参照区间是单格 200-250ms. 只调这里, 全部 TV 焦点
+ * 滚动统一手感 —— 除本动画器 (网格吸顶/选集轮播) 外, public 也给探索页那套官方 pivot 式
+ * `BringIntoViewSpec` 的 `scrollAnimationSpec` 用, 两条路径同一条曲线.
+ *
+ * 260 ≈ 肉眼停靠 ~400ms@Shield. 2026-09-10 试过 550 (~190ms, 对齐 Prime 单格 ~180ms), 用户先说可以、
+ * 用了一阵说"太快了, 会闪", 改回 260 —— **别再为了让 hero 文字早点出现去提刚度**, 文字的等待已经压到
+ * 停稳判据的最短 (TvScrollActivity), 背景图不等停稳. **用户手调过, 改前先问.**
  */
 const val TV_SCROLL_STIFFNESS = 260f
