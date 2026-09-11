@@ -42,6 +42,7 @@ import me.him188.ani.app.platform.rememberPlatformWindow
 import me.him188.ani.app.ui.exprovider.ExternalContentProviderFactory
 import me.him188.ani.app.ui.exprovider.LocalExternalContentProvider
 import me.him188.ani.app.ui.foundation.UiScaleApplier
+import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
 import me.him188.ani.app.ui.foundation.theme.SystemBarColorEffect
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -102,6 +103,10 @@ class MainActivity : AniComponentActivity() {
     }
 
     private fun handleStartIntent(intent: Intent) {
+        // TV 动效精修项的运行时开关 (A/B 录像对比用), 见 TvPolishFlags
+        TvPolishFlags.pressDim = intent.getBooleanExtra("ani_polish_press_dim", TvPolishFlags.pressDim)
+        TvPolishFlags.textStagger = intent.getBooleanExtra("ani_polish_text_stagger", TvPolishFlags.textStagger)
+        TvPolishFlags.heroZoom = intent.getBooleanExtra("ani_polish_hero_zoom", TvPolishFlags.heroZoom)
         val data = intent.data ?: return
         if (data.scheme != "ani") return
         if (data.host == "subjects") {
