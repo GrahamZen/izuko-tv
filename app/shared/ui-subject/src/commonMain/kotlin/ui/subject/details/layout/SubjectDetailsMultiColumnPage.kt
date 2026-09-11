@@ -41,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -326,6 +327,11 @@ fun MultiColumnScaffold(
     backgroundOverlay: @Composable (PaddingValues) -> Unit = {},
     /** 页面底色. TV 播放器内嵌 (视频作背景) 时传 [Color.Transparent] 让下层视频透出. */
     containerColor: Color = AniThemeDefaults.pageContentBackgroundColor,
+    /**
+     * 页面内容 (文字等) 的默认颜色, 即 Scaffold 的 contentColor. 默认按 [containerColor] 推; 底色透明而文字仍该按页面底色配色时
+     * (TV 放大转场期间底色透明, 是因为图与底由放大层画) 要显式给, 否则 contentColorFor(Transparent) 会退回祖先的默认黑色.
+     */
+    contentColor: Color = contentColorFor(containerColor),
     content: @Composable RowScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -374,6 +380,7 @@ fun MultiColumnScaffold(
             }
         },
         containerColor = containerColor,
+        contentColor = contentColor,
         contentWindowInsets = windowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { scaffoldPadding ->
         backgroundOverlay(scaffoldPadding)

@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
@@ -538,18 +539,24 @@ fun TvEpisodeScreenContent(
     //
     // 其余 (控制层/面板/详情层/弹窗) 一律不展开: 那一屏是用户自己开的, 顶掉它比不提示更糟.
     // 那时倒计时照走, 到点该连播还是连播
-    LaunchedEffect(upNext.visible, overlay.layer, overlay.episodeStripExpanded, overlay.focusRegion) {
-        if (!upNext.visible || overlay.upNextCountdown) return@LaunchedEffect
-        if (!upNextMayOpen()) return@LaunchedEffect
-        val fromVideo = overlay.layer == TvPlayerLayer.HIDDEN
-        val fromStrip = !upNextOpenedThisWindow &&
-                overlay.layer == TvPlayerLayer.CONTROLS &&
-                overlay.episodeStripExpanded &&
-                overlay.focusRegion == TvPlayerFocusRegion.EPISODES
-        if (!fromVideo && !fromStrip) return@LaunchedEffect
-        upNextOwnsStrip = true
-        // 焦点已经在选集条里那一路不再送焦 (见 enterUpNextCountdown 的 focusStrip)
-        overlay.enterUpNextCountdown(focusStrip = fromVideo)
+    // 四个条件在 snapshotFlow 里读, 不作 LaunchedEffect 的 key: key 是组合期读取, focusRegion 在控制层里每上下换一行就变,
+    // 会让这个两千行的根函数整个重跑一遍 (2026-09-13 审查). 语义不变: 四元组变一次跑一次 (含首次)
+    LaunchedEffect(upNext, overlay) {
+        snapshotFlow {
+            TvUpNextOpenTrigger(upNext.visible, overlay.layer, overlay.episodeStripExpanded, overlay.focusRegion)
+        }.collect {
+            if (!upNext.visible || overlay.upNextCountdown) return@collect
+            if (!upNextMayOpen()) return@collect
+            val fromVideo = overlay.layer == TvPlayerLayer.HIDDEN
+            val fromStrip = !upNextOpenedThisWindow &&
+                    overlay.layer == TvPlayerLayer.CONTROLS &&
+                    overlay.episodeStripExpanded &&
+                    overlay.focusRegion == TvPlayerFocusRegion.EPISODES
+            if (!fromVideo && !fromStrip) return@collect
+            upNextOwnsStrip = true
+            // 焦点已经在选集条里那一路不再送焦 (见 enterUpNextCountdown 的 focusStrip)
+            overlay.enterUpNextCountdown(focusStrip = fromVideo)
+        }
     }
     // **预告段** (见 TvUpNextState.preRoll): 倒计时开始前一秒半先把选集条摆出来, 焦点落在
      // **当前播放集**上, 装饰一概不给 —— 到点由上面那条 fromStrip 判据就地接管, 焦点挪一格到
@@ -1712,6 +1719,14 @@ private fun TvSeekFlash(
     }
 }
 
+/** 片尾「接下来播放」自动展开的触发条件 (snapshotFlow 按它去重, 见调用处). */
+private data class TvUpNextOpenTrigger(
+    val visible: Boolean,
+    val layer: TvPlayerLayer,
+    val stripExpanded: Boolean,
+    val focusRegion: TvPlayerFocusRegion,
+)
+
 /**
  * 纯画面态贴底的极细进度条 (见调用处).
  *
@@ -1727,16 +1742,23 @@ private fun TvIdleProgressBar(
     heightDp: Int,
     modifier: Modifier = Modifier,
 ) {
+    // 量化到整像素再画: 播放位置每 100ms 一变 (mediamp-exoplayer 的轮询间隔, 字节码核过), 直接读的话纯画面态整段播放
+    // 都在以 ~10fps 出帧 (关弹幕时原本是 0 帧); 而 1080p 下一集 24 分钟要 ~0.75s 才走 1 像素. derivedStateOf 只在
+    // 像素数真变了才让绘制失效. 比例仍直接取 slider 那份: 位置/时长/拖拽预览三件事它已经算过一遍,
+    // 这里再算一遍迟早会与控制层的进度条对不上
+    var widthPx by remember { mutableIntStateOf(0) }
+    val filledPx by remember(progressSliderState) {
+        derivedStateOf { (progressSliderState.displayPositionRatio.coerceIn(0f, 1f) * widthPx).toInt() }
+    }
     Box(
         modifier
             .height(heightDp.dp)
+            .onSizeChanged { widthPx = it.width }
             .drawBehind {
                 drawRect(TV_IDLE_PROGRESS_TRACK_COLOR)
-                // 比例直接取 slider 那份 (derivedStateOf): 位置/时长/拖拽预览三件事它已经算过一遍,
-                // 这里再算一遍迟早会与控制层的进度条对不上
-                val fraction = progressSliderState.displayPositionRatio.coerceIn(0f, 1f)
-                if (fraction <= 0f) return@drawBehind
-                drawRect(Color.White, size = Size(size.width * fraction, size.height))
+                val filled = filledPx
+                if (filled <= 0) return@drawBehind
+                drawRect(Color.White, size = Size(filled.toFloat(), size.height))
             },
     )
 }

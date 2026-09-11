@@ -14,6 +14,8 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.focusGroup
@@ -256,10 +258,16 @@ internal fun TvPlayerEpisodeStrip(
     // 打断**只摘掉装饰, 不收掉这一趟提示**: 用户还在这一集里, 他按返回时提示该能退回来
     // (见根路由那条"就地退回上一档"). 真正收掉只有两条路 —— 倒计时态里按返回, 或播放位置走出
     // 触发窗口
-    LaunchedEffect(countingDown, displayedEpisodeId) {
-        if (!countingDown || upNextReveal != null) return@LaunchedEffect
-        if (displayedEpisodeId != null && displayedEpisodeId != upNextEpisodeId) {
-            overlay.exitUpNextCountdown()
+    // displayedEpisodeId 在 snapshotFlow 里读, 不作 key: 轮播每移一张卡就回写一次, 作 key 是组合期读取, 会让整条选集条
+    // body 每按一格重跑 (2026-09-13 审查). 只在倒计时态里才看; upNextReveal 与原来一样只在集变化时判一次, 不订阅
+    val currentUpNextEpisodeId by rememberUpdatedState(upNextEpisodeId)
+    LaunchedEffect(countingDown) {
+        if (!countingDown) return@LaunchedEffect
+        snapshotFlow { displayedEpisodeId }.collect { displayed ->
+            if (upNextReveal != null) return@collect
+            if (displayed != null && displayed != currentUpNextEpisodeId) {
+                overlay.exitUpNextCountdown()
+            }
         }
     }
 

@@ -12,9 +12,6 @@ package me.him188.ani.app.ui.exploration
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.focusGroup
@@ -65,6 +62,8 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -112,6 +111,7 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.WeekFormatter
+import me.him188.ani.app.ui.foundation.AniDisplayTier
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
@@ -130,7 +130,16 @@ import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropLayer
+import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.tvCarouselTextTransform
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextTransform
+import me.him188.ani.app.ui.foundation.tv.tvCarouselTextEnterBaseDelay
+import me.him188.ani.app.ui.foundation.tv.tvHeroLineEnter
+import me.him188.ani.app.ui.foundation.tv.tvHeroTextEnterBaseDelay
+import me.him188.ani.app.ui.foundation.tv.tvHeroTextStaggerEnabled
+import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextSlidePx
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_MEDIA_DEBOUNCE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvNavigationSettle
@@ -148,8 +157,8 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_READY_BUDGET
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_SUMMARY_WIDTH_FRACTION
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_FADE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
@@ -253,7 +262,9 @@ fun TvExplorationPage(
     // 继续观看卡的进度条与 hero 剩余分钟都从这里取"下一集"的播放位置.
     val playHistories by playHistoryRepository.flow.collectAsStateWithLifecycle(emptyList())
 
-    val fullVisualEffects = LocalThemeSettings.current.tvFullVisualEffects
+    // 剧照原图 (停稳后升档): 视觉效果完整档且 4K 界面才要 (见 TvVisualEffectsLevel.originalImages) —— 1080p 界面上
+    // 原图看不出区别, 只白花流量与解码
+    val fullVisualEffects = LocalThemeSettings.current.visualEffects.originalImages && AniDisplayTier.isHighRes
 
     // hero 媒体流水线 (连发合并/调度器/邻居预取/图片预热/封面兜底), 四页共用的机械部分
     // 全在 host 里 —— 见 rememberTvHeroMediaPipeline. 本页只提供解析链与两个私有钩子.
@@ -327,7 +338,14 @@ fun TvExplorationPage(
     // **provider 版, 与追番/搜索/时间表三页一致**: 值版要求在这里就把 heroTarget 读出来, 而这是
     // 每格方向键都变的热状态 —— 那次读记在本函数身上, 于是每换一张卡整页重跑一遍, 连带 LazyColumn
     // 的内容 lambda 换新实例, 满屏卡片跟着重组. 读取全部下沉到 backdrop 层与 hero 覆盖层内部.
-    val heroDisplay = rememberTvSettledHeroProvider { heroTarget }
+    // null = 焦点在 hero (或从未进过卡片区). 跨导航保存: 进详情页返回后恢复到同一行.
+    var focusedRowKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // 轮播态 (焦点在 hero 上) 翻页不等方向键抬起: 那里没有按住扫过多项的手势, 等抬起只是晚起步
+    val heroDisplay = rememberTvSettledHeroProvider(awaitKeyRelease = { focusedRowKey != null }) { heroTarget }
+    // hero **文字**的展示目标, 与背景图分开: 低特效档下卡片滚动期间为 null (文字块整个不画),
+    // 停稳后才是最后聚焦那张 (读的是真实 heroTarget, 不经 300ms 换挡, 停下来那一刻就是终值);
+    // 完整档透传. 背景图照旧走上面的换挡合并. 机理与实测见 TvScrollActivity
+    val heroTextDisplay = rememberTvScrollHiddenProvider { heroTarget }
     // 单集剧照 -> 整部 backdrop -> 竖版封面居中裁切, 三级回落见 tvHeroBackdropUrl.
     // 同样是 lambda: tvHeroBackdropUrl 读的是服务层热表 (快照可观察), 在这里读的话预取一落表
     // 又是整页重跑.
@@ -474,8 +492,11 @@ fun TvExplorationPage(
     val carouselItem = {
         if (carouselSize > 0) trending[carouselIndex.coerceIn(0, carouselSize - 1)] else null
     }
+    // 这一次换页是不是自动轮播推进的: 自动换页文字用放慢的过渡, 按键翻页跟卡片行一个节奏 (用户 2026-09-10)
+    var carouselAutoAdvanced by remember { mutableStateOf(false) }
     val switchCarousel: (Int) -> Unit = { delta ->
         if (carouselSize > 0) {
+            carouselAutoAdvanced = false
             carouselIndex = ((carouselIndex + delta) % carouselSize + carouselSize) % carouselSize
             carouselInteraction++
         }
@@ -527,8 +548,6 @@ fun TvExplorationPage(
     // ------------------------------------------------------------------
     // 焦点簿记 + 两个显式落点请求
     // ------------------------------------------------------------------
-    // null = 焦点在 hero (或从未进过卡片区). 跨导航保存: 进详情页返回后恢复到同一行.
-    var focusedRowKey by rememberSaveable { mutableStateOf<String?>(null) }
     // 聚焦卡在行内的下标 (返回键分层规则 / 继续观看播放键用); 行内恢复用各行自己保存的下标
     var focusedCardIndex by remember { mutableIntStateOf(0) }
     var cardAreaHasFocus by remember { mutableStateOf(false) }
@@ -562,6 +581,8 @@ fun TvExplorationPage(
     // 卡片区纵向列表 + 两级"进组落点"请求器: columnFocusRequester = 页面外进来时先进卡片区,
     // anchorRowRequester = 进卡片区后落到上次聚焦的那一行 (挂在该行上, 见 LazyColumn 的 onEnter)
     val listState = rememberLazyListState()
+    // 纵向滚动 (换行) 期间 hero 文字块也藏起来, 见 TvScrollActivity
+    ReportTvScrollActivity(listState)
     val columnFocusRequester = remember { FocusRequester() }
     val anchorRowRequester = remember { FocusRequester() }
 
@@ -660,19 +681,25 @@ fun TvExplorationPage(
         }
     }
 
-    // TRENDING 时轮播条目驱动 hero (标题即时, 评分/连载/简介/backdrop 异步跟上)
-    LaunchedEffect(carouselIndex, heroExpanded, carouselSize) {
-        if (heroExpanded && carouselSize > 0) {
+    // TRENDING 时轮播条目驱动 hero (标题即时, 评分/连载/简介/backdrop 异步跟上).
+    // carouselIndex 在 snapshotFlow 里读, 不作 key: key 是组合期读取, 自动轮播每 6s 推进一次就让整页 body 连卡片区
+    // 重跑一遍 (理由同上面的 carouselItem; 2026-09-13 审查). 语义不变: 下标变一次跑一次 (含首次)
+    val currentTrending by rememberUpdatedState(trending)
+    val currentOnFocusItem by rememberUpdatedState(onFocusItem)
+    LaunchedEffect(heroExpanded, carouselSize) {
+        if (!heroExpanded || carouselSize <= 0) return@LaunchedEffect
+        snapshotFlow { carouselIndex }.collect { index ->
+            val pager = currentTrending
             // 下一项当作"邻居"传下去: URL 预取与图片预热共用同一条路 (见 TvHeroNeighbors).
             // 轮播是全页唯一 100% 确定的目标 —— 6 秒后必然轮到它, 提前量足足一整轮, 而且
             // 换图时用户根本没在操作, 等待全落在眼里
             val nextCarousel = if (carouselSize > 1) {
-                trending.peekOrNull((carouselIndex + 1) % carouselSize)?.bangumiId
+                pager.peekOrNull((index + 1) % carouselSize)?.bangumiId
             } else {
                 null
             }
-            trending[carouselIndex.coerceIn(0, carouselSize - 1)]?.let {
-                onFocusItem(
+            pager[index.coerceIn(0, carouselSize - 1)]?.let {
+                currentOnFocusItem(
                     it.bangumiId, it.nameCn, null, false, it.imageLarge,
                     // 轮播条目走整部 backdrop, 不是剧照
                     TvHeroNeighbors(singleStep = listOfNotNull(nextCarousel?.let(::TvHeroNeighbor))),
@@ -682,8 +709,8 @@ fun TvExplorationPage(
             // 不预取的话每次自动轮播换图都是现拉三跳, 用户什么都没做就在等图.
             // 后台槽会等当前这项的前台请求跑完才开工 (见 TvHeroPrefetch)
             if (carouselSize > 1) {
-                val nextIndex = (carouselIndex + 1) % carouselSize
-                trending.peekOrNull(nextIndex)?.let { next ->
+                val nextIndex = (index + 1) % carouselSize
+                pager.peekOrNull(nextIndex)?.let { next ->
                     TvHeroPrefetch.background(next.bangumiId) {
                         resolveTvHeroMedia(next.bangumiId, collectionRepo, tmdb)
                     }
@@ -696,6 +723,7 @@ fun TvExplorationPage(
         if (!heroExpanded || carouselSize <= 1) return@LaunchedEffect
         while (true) {
             delay(TV_CAROUSEL_AUTO_ADVANCE_MILLIS)
+            carouselAutoAdvanced = true
             carouselIndex = (carouselIndex + 1) % carouselSize
         }
     }
@@ -846,6 +874,11 @@ fun TvExplorationPage(
             underlayUrl = backdropUnderlayUrl,
             // 这张图解码完顺手算主题色, 点进详情页第一帧就是动态色 (详情页取的也是这张)
             themeSeedSubjectId = backdropSubjectId,
+            // 完整档剧照两步走: 停稳后原地升到原图
+            upgradeUrl = { heroPipeline.upgradeUrl(heroDisplay()?.toHeroMediaSpec()) },
+            // 按下即压暗: 焦点一换到新条目就暗, 等展示目标跟上再放开
+            dimTrigger = { heroTarget?.subjectId },
+            dimming = { heroTarget?.subjectId != heroDisplay()?.subjectId },
         )
 
         // ------------------------------------------------------------------
@@ -854,7 +887,7 @@ fun TvExplorationPage(
         // 左侧再留 TV_EXPLORATION_START_PAD (外层已让开侧边栏 48dp) —— 总左缘 64dp,
         // 使侧边栏按钮中心 (32dp) 恰好在屏幕左缘与内容左缘的正中间. 下同.
         TvExplorationHeroOverlay(
-            heroTarget = heroDisplay,
+            heroTarget = heroTextDisplay,
             infoCache = infoCache,
             episodeStillCache = episodeStillCache,
             summaryFallbackCache = summaryFallbackCache,
@@ -864,6 +897,7 @@ fun TvExplorationPage(
             listState = listState,
             heroPlayKeyModifier = heroPlayKeyModifier,
             carouselIndex = { carouselIndex },
+            carouselAutoAdvanced = { carouselAutoAdvanced },
             switchCarousel = switchCarousel,
             onWatchNowClick = {
                 carouselItem()?.let {
@@ -1220,7 +1254,8 @@ fun TvExplorationPage(
             ) {
                 TvCarouselIndicator(
                     count = carouselSize,
-                    selectedIndex = carouselIndex.coerceIn(0, carouselSize - 1),
+                    // lambda: carouselIndex 每 6s 自动推进一次, 在这里读会让整个页面 body 跟着重跑
+                    selectedIndex = { carouselIndex.coerceIn(0, carouselSize - 1) },
                     modifier = Modifier.padding(bottom = TV_CAROUSEL_INDICATOR_EDGE_RAISE),
                 )
             }
@@ -1290,6 +1325,8 @@ private fun TvExplorationHeroOverlay(
     listState: LazyListState,
     heroPlayKeyModifier: Modifier,
     carouselIndex: () -> Int,
+    /** 这一次换页是否由自动轮播推进 (读在 transitionSpec 里, 不在 body 读). */
+    carouselAutoAdvanced: () -> Boolean,
     switchCarousel: (Int) -> Unit,
     onWatchNowClick: () -> Unit,
     onScheduleClick: () -> Unit,
@@ -1308,17 +1345,32 @@ private fun TvExplorationHeroOverlay(
         // 信息块吃掉按钮块之外的全部高度: hero 态简介少两行给按钮, 卡片态满高 —— 覆盖层内部
         // 怎么分配都与卡片区无关. 换聚焦条目时整块文字渐隐渐现 (contentKey=条目); 块内顶对齐:
         // 标题固定在块顶, 有 info 时简介 weight(1f) 撑满至块底, info 到达不引起位置跳动.
+        val slidePx = tvScrollHiddenTextSlidePx()
+        // 分行错落进场 (完整档): 容器不整块进场, 各行自己带延迟进, 见 tvHeroLineEnter
+        val stagger = tvHeroTextStaggerEnabled()
+        // 各行进场的基准起点与时长档: 在 transitionSpec 里 (那里才知道 initialState) 算好, 内容首次组合时读走.
+        // 不能在内容里用 transition.currentState 判 —— 上一段淡出没跑完时它还是旧值, 会把从隐藏态出来的进场
+        // 当成直接切换多等 310ms (2026-09-10 录屏对比抓到)
+        val enterPlan = remember { IntArray(2) } // [0] 起点毫秒, [1] 1 = 轮播档时长
         AnimatedContent(
             targetState = heroTarget(),
             modifier = Modifier.fillMaxWidth().weight(1f),
+            // 自动轮播换页用放慢的一套; 按键翻页与卡片行同一个节奏
             transitionSpec = {
-                fadeIn(tween(TV_HERO_TEXT_FADE_MILLIS)) togetherWith
-                        fadeOut(tween(TV_HERO_TEXT_FADE_MILLIS))
+                val carousel = heroExpanded && carouselAutoAdvanced()
+                enterPlan[0] = if (carousel) tvCarouselTextEnterBaseDelay() else tvHeroTextEnterBaseDelay(initialState != null)
+                enterPlan[1] = if (carousel) 1 else 0
+                if (carousel) tvCarouselTextTransform(slidePx, childrenEnter = stagger)
+                else tvScrollHiddenTextTransform(slidePx, sequential = initialState != null, childrenEnter = stagger, hiding = targetState == null)
             },
             contentKey = { it?.subjectId },
             label = "heroInfoText",
         ) { target ->
             val info = target?.let { infoCache[it.subjectId] }
+            val lineBase = remember { enterPlan[0] }
+            val lineCarousel = remember { enterPlan[1] == 1 }
+            fun Modifier.line(index: Int) =
+                tvHeroLineEnter(this@AnimatedContent, stagger, lineBase, index, slidePx, carousel = lineCarousel)
             Column(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1328,7 +1380,10 @@ private fun TvExplorationHeroOverlay(
                     // 把介绍挤掉一行, 且不同条目间标题一行/两行来回跳
                     Text(
                         target.title,
-                        Modifier.fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
+                        Modifier.line(0)
+                            .fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
+                            // 登记标题位置, 给详情页的放大转场 (标题从这里平移过去)
+                            .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(target.subjectId, it.boundsInRoot(), target.title) }
                             .basicMarquee(iterations = tvHeroMarqueeIterations()),
                         color = tvHeroContentColor(),
                         style = MaterialTheme.typography.headlineLarge,
@@ -1339,6 +1394,7 @@ private fun TvExplorationHeroOverlay(
                 }
                 if (info != null) {
                     Row(
+                        Modifier.line(1),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -1418,7 +1474,8 @@ private fun TvExplorationHeroOverlay(
                                 } else null
                             }
                         Row(
-                            Modifier.fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION)
+                            Modifier.line(2)
+                                .fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION)
                                 // 定高使"本行 + 10dp 列间距"恰为简介两行行距 (2×20dp):
                                 // 有无此行时简介的换行网格对齐, 最后一行结束位置一致
                                 .height(TV_HERO_STATUS_ROW_HEIGHT),
@@ -1502,7 +1559,7 @@ private fun TvExplorationHeroOverlay(
                     }
                     Text(
                         summaryText,
-                        Modifier.weight(1f).fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION),
+                        Modifier.line(2).weight(1f).fillMaxWidth(TV_HERO_SUMMARY_WIDTH_FRACTION),
                         color = tvHeroContentColor(),
                         style = MaterialTheme.typography.bodyMedium,
                         overflow = TextOverflow.Ellipsis,
@@ -1622,6 +1679,8 @@ private fun TvAnchoredCardRow(
     var focusedIndex by rememberSaveable { mutableIntStateOf(-1) }
     var rowHasFocus by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    // 行内吸附滚动登记进页面级信号: 低特效档下 hero 文字块在滚动期间不画, 见 TvScrollActivity
+    ReportTvScrollActivity(listState)
     val focus = rememberTvFocusScope()
     // 从行外进入本行的落点: 挂在"上次聚焦的那张卡"上 (见 KDoc 为何不用 focusRestorer).
     // 请求失败 (那张卡还没组合出来) 时不做任何事, 让默认进组行为兜住这一帧.
@@ -1921,7 +1980,7 @@ private fun TvSectionHeader(
 @Composable
 private fun TvCarouselIndicator(
     count: Int,
-    selectedIndex: Int,
+    selectedIndex: () -> Int,
     modifier: Modifier = Modifier,
 ) {
     if (count <= 1) return
@@ -1930,8 +1989,9 @@ private fun TvCarouselIndicator(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val selected = selectedIndex()
         repeat(count) { i ->
-            val active = i == selectedIndex
+            val active = i == selected
             Box(
                 Modifier
                     .height(6.dp)

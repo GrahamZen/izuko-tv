@@ -2382,8 +2382,8 @@ fun tmdbStillCardSizeUrl(url: String): String = url.replace("/t/p/original/", "/
  * (解码位图 8-33MB), 低端盒子上每次聚焦换卡都是一记下载+解码重锤 (2026-07-31 性能整改).
  * 非 TMDB original URL 原样返回.
  *
- * [fullQuality] 为真时原样返回 (设置里开了完整视觉效果, 见
- * [ThemeSettings.tvFullVisualEffects][me.him188.ani.app.data.models.preference.ThemeSettings]).
+ * [fullQuality] 为真时原样返回 (视觉效果完整档且 4K 界面, 见
+ * [TvVisualEffectsLevel.originalImages][me.him188.ani.app.data.models.preference.TvVisualEffectsLevel]).
  * 因此**存缓存时不要降档**, 存原图档 URL, 由显示端按当前设置现降 —— 否则改设置要清缓存才生效.
  */
 fun tmdbStillHeroSizeUrl(url: String, fullQuality: Boolean = false): String =
