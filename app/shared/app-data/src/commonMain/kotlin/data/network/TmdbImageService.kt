@@ -9,7 +9,10 @@
 
 package me.him188.ani.app.data.network
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.datastore.core.DataStore
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ClientRequestException
@@ -31,7 +34,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -83,6 +89,8 @@ class TmdbImageService(
     httpClientProvider: HttpClientProvider,
     private val dataStore: DataStore<TmdbImageCache>,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 设置里的「不加载 TMDB 背景图」, 见 [disabledByUser]. */
+    disabledByUserFlow: Flow<Boolean> = flowOf(false),
 ) {
     private val client = httpClientProvider.get()
 
@@ -292,6 +300,23 @@ class TmdbImageService(
     private val resolveScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     /**
+     * 用户在设置里关掉了 TMDB 图 —— 其网络下接口或图床连不上 (如移动宽带下图床握手即被重置),
+     * 与其每张卡等 2.5 秒兜底、每张图白打七八次请求, 不如直接用封面.
+     *
+     * 为真时所有网络入口直接返回空结果, [peekBackdropResolved] 报"已确认无图", 各页于是走
+     * 「真·无图立刻上封面」那条既有路径. **不写任何缓存**: 关掉再打开, 之前取到的图照常可用.
+     * 代理设置页的两项 TMDB 连通性测试不受影响, 用户靠它判断网络是否恢复.
+     *
+     * 快照状态: TV 各页在组合里读 (经 peek 系列与 tvHeroBackdropUrl), 切换开关即重组.
+     */
+    var disabledByUser: Boolean by mutableStateOf(false)
+        private set
+
+    init {
+        resolveScope.launch { disabledByUserFlow.collect { disabledByUser = it } }
+    }
+
+    /**
      * 代理设置页的连通性探测 —— **接口那一半**.
      *
      * 接口与图片本体是两个域名 (`api.tmdb.org` / `image.tmdb.org`), 在墙内**各自独立被墙**,
@@ -412,10 +437,14 @@ class TmdbImageService(
      * @return URL; `null` = 没有图 —— 可能是已确认无图, 也可能是还没解析过,
      *   两者要区分时用 [peekBackdropResolved] (不再用空串混编在返回值里).
      */
-    fun peekBackdropUrl(subjectId: Int): String? = resolvedBackdropUrls[subjectId]
+    fun peekBackdropUrl(subjectId: Int): String? = if (disabledByUser) null else resolvedBackdropUrls[subjectId]
 
-    /** 该条目是否已解析过 (含"已确认无图"). 与 [peekBackdropUrl] 一起构成三态. */
-    fun peekBackdropResolved(subjectId: Int): Boolean = resolvedBackdropUrls.containsKey(subjectId)
+    /**
+     * 该条目是否已解析过 (含"已确认无图"). 与 [peekBackdropUrl] 一起构成三态.
+     * [disabledByUser] 时恒为真: 等下去也不会有图, 不该让任何页面干等.
+     */
+    fun peekBackdropResolved(subjectId: Int): Boolean =
+        disabledByUser || resolvedBackdropUrls.containsKey(subjectId)
 
     /**
      * 只查缓存的 backdrop: 进程内热表 → 持久缓存, **不发请求**; 没缓存或已确认无图都返回 null.
@@ -468,6 +497,7 @@ class TmdbImageService(
         // 负缓存 (值为 null) 故意不在这里短路: 它该不该重取取决于 activeAsOfDate 与重取闸门,
         // 而这张表只记结果不记时间, 短路会把"传了更近播出日期本该重取一次"的条目钉死到进程结束.
         // `map[id]` 对"值为 null"与"没解析过"都返回 null, 正好只短路正缓存.
+        if (disabledByUser) return null
         resolvedBackdropUrls[subjectId]?.let { return it }
         return resolveBackdropUrl(subjectId, originalName, activeAsOfDate, hints)
     }
@@ -602,7 +632,7 @@ class TmdbImageService(
         /** 与 [getBackdropUrl] 喂同一份条目侧输入, 少喂一项就可能算出另一个结果. */
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): List<String> = withContext(ioDispatcher) {
-        if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
+        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
 
         val cache = readCache()
         cache.allBackdrops[subjectId]?.let { cached ->
@@ -703,7 +733,7 @@ class TmdbImageService(
         subjectEpisodeNames: List<String> = emptyList(),
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): TmdbEpisodeStills? {
-        if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
+        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
             return TmdbEpisodeStills()
         }
         // 同 (subjectId, language) 的并发调用合流到同一个任务上, 见 [episodeStillsInFlight].
