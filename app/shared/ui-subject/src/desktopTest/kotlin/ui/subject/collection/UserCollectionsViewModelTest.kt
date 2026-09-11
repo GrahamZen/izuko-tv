@@ -193,6 +193,7 @@ class UserCollectionsViewModelTest {
         }
 
         override val danmakuEnabled: Settings<Boolean> by lazy { error("not implemented") }
+        override val tmdbImagesDisabled: Settings<Boolean> by lazy { error("not implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("not implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("not implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("not implemented") }
