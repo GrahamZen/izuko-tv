@@ -751,6 +751,9 @@
     <string name="settings_network_proxy_service_collection">收藏数据服务</string>
     <string name="settings_network_proxy_service_comment">评论服务</string>
     <string name="settings_network_proxy_service_tmdb">背景图接口</string>
+    <string name="settings_network_tmdb_images_group">背景图 (TMDB)</string>
+    <string name="settings_network_tmdb_images_disable">不加载 TMDB 背景图</string>
+    <string name="settings_network_tmdb_images_disable_description">你的网络连不上 TMDB 时打开：背景图与剧照直接改用条目封面，不再等待加载，也不再发请求</string>
     <string name="settings_network_proxy_service_tmdb_image">背景图 CDN</string>
     <string name="settings_network_proxy_test_success">连接成功</string>
     <string name="settings_network_proxy_test_failed">连接失败</string>
