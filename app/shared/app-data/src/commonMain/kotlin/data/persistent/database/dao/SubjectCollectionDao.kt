@@ -372,6 +372,15 @@ interface SubjectCollectionDao {
     )
     suspend fun lastFetched(type: UnifiedCollectionType?): Long
 
+    /**
+     * 改自己的评分 / 短评 / 标签 / 是否公开; 传 `null` 的项不改.
+     *
+     * @param tags 已按 [ProtoConverters.StringList] 编码好的标签 (与实体里这一列同一编码).
+     * **不能收 `List<String>`**: 字段上的 TypeConverter 管不到查询参数, Room 会把列表当 IN 列表展开成
+     * `COALESCE(?, ?, …, self_rating_tags)` —— 列里写进的是第一个标签的原文而不是 protobuf, 这一行从此一读就抛
+     * "Varint too long", 播放器信息包 / 详情页 / 收藏列表跟着坏 (2026-09-11 Web 控制台评分带上原有标签时踩到);
+     * 空列表则展开成 `COALESCE(, …)`, 直接 SQL 语法错误. 已经写坏的行由 `SelfRatingTagsRepair` 在打开数据库时修.
+     */
     @Query(
         """
     UPDATE subject_collection 
@@ -383,7 +392,7 @@ interface SubjectCollectionDao {
     WHERE subjectId = :subjectId
 """,
     )
-    suspend fun updateRating(subjectId: Int, score: Int?, comment: String?, tags: List<String>?, private: Boolean?)
+    suspend fun updateRating(subjectId: Int, score: Int?, comment: String?, tags: ByteArray?, private: Boolean?)
 
     /**
      * 只包含保存在数据库的, 可能不完整
