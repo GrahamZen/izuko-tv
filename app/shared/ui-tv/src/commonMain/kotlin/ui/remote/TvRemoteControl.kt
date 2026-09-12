@@ -34,7 +34,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.NavRoutes
@@ -143,6 +145,42 @@ object TvRemoteControl {
     /** 当前 IP 与 [knownHost] 不一致: 已扫过的手机连不上了, 面板标红提示重新扫码. */
     val hostChanged: StateFlow<Boolean> = _hostChanged.asStateFlow()
 
+    private val _phoneNeverConnected = MutableStateFlow(false)
+
+    /**
+     * 从没有手机连上过 (持久化的 [knownHost] 为空): 侧边栏「手机遥控」图标上的小红点看它, 连上一次就永久消失.
+     * [install] 读完存储之前是 false —— 否则连过的人每次启动都会看到红点闪一下.
+     */
+    val phoneNeverConnected: StateFlow<Boolean> = _phoneNeverConnected.asStateFlow()
+
+    private val _dialogVisible = MutableStateFlow(false)
+
+    /**
+     * 二维码弹窗开着没有. 侧边栏条目 / 头像菜单都只调 [showDialog], 弹窗由 TV 根组合的 [TvRemoteControlDialogHost] 画 ——
+     * 主页、搜索页、详情页的侧边栏都要能开, 不能挂在某一页里.
+     */
+    val dialogVisible: StateFlow<Boolean> = _dialogVisible.asStateFlow()
+
+    fun showDialog() {
+        _dialogVisible.value = true
+    }
+
+    fun dismissDialog() {
+        _dialogVisible.value = false
+    }
+
+    /**
+     * 改入口位置 (弹窗里「收进头像菜单」). 写设置放在本对象的作用域里: 调用方随即关掉弹窗, 用弹窗的组合作用域
+     * 写会被一起取消. 侧边栏那一项带着焦点消失时由侧边栏交给上一项 (见 TvRailIconItem).
+     */
+    fun setEntryPlacement(placement: TvRemoteEntryPlacement) {
+        scope.launch {
+            KoinPlatform.getKoin().get<SettingsRepository>().themeSettings.update {
+                copy(tvRemoteEntryPlacement = placement)
+            }
+        }
+    }
+
     /**
      * 搜索页登记的「电视当前查询」, 打开网页时用它预填关键词与筛选项 (与电视上看到的一致).
      * 页面离开组合时置回 null; 为 null 时按空查询渲染.
@@ -213,6 +251,7 @@ object TvRemoteControl {
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             fixedPort = fixedPortFor(context.packageName)
             _knownHost.value = prefs?.getString(KEY_KNOWN_HOST, null)
+            _phoneNeverConnected.value = _knownHost.value == null
         }
         scope.launch {
             synchronized(lock) { if (server == null) startLocked() }
@@ -348,6 +387,7 @@ object TvRemoteControl {
             _knownHost.value = host
             prefs?.edit()?.putString(KEY_KNOWN_HOST, host)?.apply()
         }
+        _phoneNeverConnected.value = false
         _hostChanged.value = false
     }
 
