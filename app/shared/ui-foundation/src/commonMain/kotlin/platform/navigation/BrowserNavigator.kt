@@ -10,6 +10,7 @@
 package me.him188.ani.app.platform.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.OpenBrowserResult
 import me.him188.ani.app.platform.Context
@@ -95,5 +98,36 @@ fun rememberAsyncBrowserNavigator(): BrowserNavigator {
                 return OpenBrowserResult.Success
             }
         }
+    }
+}
+
+/**
+ * 给整棵界面树换一个打不开链接也不崩的 [LocalUriHandler].
+ *
+ * 平台自带的那个拉不起浏览器时直接抛异常 (没装浏览器; 7.1 盒子上还见过把网址交给别家不对外开放的
+ * Activity, 抛 `SecurityException`), 而各处 `uriHandler.openUri` 都没接, 点个链接应用就闪退.
+ * 这里接住, 改弹与 [rememberAsyncBrowserNavigator] 相同的 [OpenLinkFallbackDialog].
+ */
+@Composable
+fun ProvideOpenLinkFallback(content: @Composable () -> Unit) {
+    val platformHandler = LocalUriHandler.current
+    var fallbackUrl by remember { mutableStateOf<String?>(null) }
+    val handler = remember(platformHandler) {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                try {
+                    platformHandler.openUri(uri)
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to open $uri, showing QR fallback" }
+                    fallbackUrl = uri
+                }
+            }
+        }
+    }
+
+    CompositionLocalProvider(LocalUriHandler provides handler, content = content)
+
+    fallbackUrl?.let { url ->
+        OpenLinkFallbackDialog(url, onDismissRequest = { fallbackUrl = null })
     }
 }
