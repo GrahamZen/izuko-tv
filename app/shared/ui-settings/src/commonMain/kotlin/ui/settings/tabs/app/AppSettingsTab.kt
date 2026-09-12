@@ -47,6 +47,7 @@ import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
 import me.him188.ani.app.data.models.preference.TvExitBehavior
 import me.him188.ani.app.data.models.preference.TvLongPressAction
+import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
@@ -153,6 +154,10 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_panel
 import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_resume
 import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press
 import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_avatar
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_rail
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_ui_scale
@@ -338,6 +343,24 @@ fun SettingsScope.AppearanceGroup(
             onSelect = { themeSettings.update(themeConfig.copy(tvPlayLongPress = it)) },
             title = { Text(stringResource(Lang.settings_theme_tv_play_long_press)) },
             description = { Text(stringResource(Lang.settings_theme_tv_play_long_press_description)) },
+        )
+        // 只有两档没有「隐藏」: 头像菜单就是最低限度的入口 (见 TvRemoteEntryPlacement)
+        DropdownItem(
+            selected = { themeConfig.tvRemoteEntryPlacement },
+            values = { TvRemoteEntryPlacement.entries },
+            itemText = {
+                Text(
+                    stringResource(
+                        when (it) {
+                            TvRemoteEntryPlacement.Rail -> Lang.settings_theme_tv_remote_entry_rail
+                            TvRemoteEntryPlacement.Avatar -> Lang.settings_theme_tv_remote_entry_avatar
+                        },
+                    ),
+                )
+            },
+            onSelect = { themeSettings.update(themeConfig.copy(tvRemoteEntryPlacement = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_remote_entry)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_remote_entry_description)) },
         )
     }
 

@@ -101,6 +101,20 @@ enum class TvVisualEffectsLevel {
     val originalImages: Boolean get() = this == Full
 }
 
+/**
+ * TV: 「手机遥控」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]).
+ *
+ * 只有两档, 没有「隐藏」: 头像菜单就是最低限度的入口, 全藏掉就再也找不回来了.
+ */
+@Serializable
+enum class TvRemoteEntryPlacement {
+    /** 侧边栏常驻一个图标 (默认): 一眼能看到这个功能. */
+    Rail,
+
+    /** 收进头像上方的浮出菜单: 焦点移到头像上才出现. */
+    Avatar,
+}
+
 @Serializable
 @Immutable
 data class ThemeSettings(
@@ -177,6 +191,12 @@ data class ThemeSettings(
      * [visualEffects], 别直接读这个字段.
      */
     val tvVisualEffects: TvVisualEffectsLevel? = null,
+    /**
+     * TV: 「手机遥控」入口放侧边栏还是头像菜单 (见 [TvRemoteEntryPlacement]).
+     *
+     * 默认侧边栏 (2026-09-11): 起初只放头像菜单, 用户认为藏着没人发现. 嫌多余的在二维码弹窗里一键收进头像菜单.
+     */
+    val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
     /**
      * TV: 界面整体缩放系数, 叠加在系统 density 之上 (1f = 跟随系统).
      *
