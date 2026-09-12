@@ -62,7 +62,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val installationRunner by lazy { UpdateInstallationRunner(updateInstaller) }
 
     private val fileDownloader by lazy { DefaultFileDownloader(clientProvider.get()) }
-    private val updateChecker: UpdateChecker = UpdateChecker()
+    private val updateChecker by lazy { UpdateChecker(clientProvider.get()) }
 
     /**
      * 最新的版本. 当 [checked] 为 `true` 时, `null` 表示没有新版本. 否则表示还没有检查过.
