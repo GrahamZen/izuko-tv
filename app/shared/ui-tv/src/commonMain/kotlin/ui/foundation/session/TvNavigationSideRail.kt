@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +76,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.getIcon
@@ -81,11 +85,14 @@ import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
+import me.him188.ani.app.ui.lang.login_sign_in
 import me.him188.ani.app.ui.lang.playback_session_now_playing
 import me.him188.ani.app.ui.lang.settings
 import me.him188.ani.app.ui.lang.tv_rail_remote_control
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import org.jetbrains.compose.resources.stringResource
 
@@ -163,6 +170,20 @@ fun buildTvRailItems(
                 label = entry.getText(),
                 defaultFocus = entry == MainScreenPage.Exploration,
                 onClick = { onNavigateToPage(entry) },
+            ),
+        )
+    }
+    // 「手机遥控」(2026-09-11): 默认常驻这里让人一眼看到; 嫌多余的在弹窗里一键收进头像菜单, 或在设置-界面里改.
+    // 排在「设置」前面与工具类放一起, 不插进页面导航那几项中间 (遥控器上位置就是肌肉记忆).
+    // 弹窗由 TV 根组合画 (TvRemoteControlDialogHost), 所以主页、搜索页、详情页的侧边栏都能开
+    if (LocalThemeSettings.current.tvRemoteEntryPlacement == TvRemoteEntryPlacement.Rail) {
+        add(
+            TvNavRailItem(
+                icon = Icons.Rounded.Smartphone,
+                label = stringResource(Lang.tv_rail_remote_control),
+                iconContent = { focused -> TvRemoteRailGlyph(focused) },
+                keepFocusOnClick = true,
+                onClick = { TvRemoteControl.showDialog() },
             ),
         )
     }
@@ -288,6 +309,29 @@ private fun TvNowPlayingRailGlyph(focused: Boolean, status: () -> PlaybackSessio
     }
 }
 
+/**
+ * 「手机遥控」条目的字形: 手机图标; 从没有手机连上过时右上角多一个小红点 (只提醒一次, 连上一次就永久消失).
+ * 状态读在这里 (条目的 iconContent 里) 而不是 [buildTvRailItems] 的 body 里, 理由同 [TvNavRailItem.iconContent].
+ */
+@Composable
+private fun TvRemoteRailGlyph(focused: Boolean) {
+    val neverConnected by TvRemoteControl.phoneNeverConnected.collectAsState()
+    Box(Modifier.size(TV_RAIL_ICON_GLYPH_SIZE)) {
+        Icon(Icons.Rounded.Smartphone, null, Modifier.align(Alignment.Center))
+        if (neverConnected) {
+            Box(
+                Modifier.align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .size(TV_RAIL_NEW_DOT_SIZE)
+                    // 聚焦时底是主题色实底, 红点换成反色 (同 TvNowPlayingRailGlyph 聚焦时不染色的理由)
+                    .background(if (focused) LocalContentColor.current else MaterialTheme.colorScheme.error, CircleShape),
+            )
+        }
+    }
+}
+
+private val TV_RAIL_NEW_DOT_SIZE = 6.dp
+
 /** [TvNowPlayingRailGlyph] 的状态分档 (与动作面板里那行状态字用同一套判据, 只是这里不需要文案). */
 private enum class TvRailStatusSeverity { Normal, Attention, Error }
 
@@ -306,8 +350,8 @@ private fun playbackSessionStatusSeverityOf(status: PlaybackSessionStatus?): TvR
 /**
  * TV 可展开左侧导航栏 (主页与详情页共用同一实现):
  * 收起态是一列图标 (头像置顶 + 若干图标条目); 焦点进入后展开为"图标 + 文字"并压一层左缘渐变遮罩,
- * 焦点离开自动收起. 头像点击做什么由 [onAvatarClick] 决定 (主页 = 打开手机控制中心), 旁边的文字已登录写昵称、
- * 未登录写「控制中心」; 未登录时头像退化成设置里那个默认人物符号 (AccountCircle), 尺寸/对齐与其他图标完全一致.
+ * 焦点离开自动收起. 头像点击做什么由 [onAvatarClick] 决定 (主页 = 编辑资料 / 登录), 旁边的文字已登录写昵称、
+ * 未登录写「登录」; 未登录时头像退化成设置里那个默认人物符号 (AccountCircle), 尺寸/对齐与其他图标完全一致.
  *
  * @param selfInfo 头像用户信息; 传 null 则不显示头像/用户名, 但仍保留头像槽位的等高占位,
  *   使其余按钮位置不变 (如详情页不需要头像).
@@ -558,12 +602,11 @@ private fun TvRailAvatar(
                 )
             }
             if (expanded) {
-                // 点头像打开的是手机控制中心 (见 TvMainScreenLayout), 没登录时就写这个; 登录入口在上方浮出的动作按钮里
                 Text(
                     if (loggedIn) {
-                        selfInfo.selfInfo?.nickname ?: stringResource(Lang.tv_rail_remote_control)
+                        selfInfo.selfInfo?.nickname ?: stringResource(Lang.login_sign_in)
                     } else {
-                        stringResource(Lang.tv_rail_remote_control)
+                        stringResource(Lang.login_sign_in)
                     },
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.labelMedium,

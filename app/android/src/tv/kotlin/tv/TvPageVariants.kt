@@ -93,6 +93,7 @@ import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
 import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
+import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -286,6 +287,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 面板打开时才现算的话, 数据晚到就会把落点挪走 —— 见 TvUpNextStore 的文档
         LaunchedEffect(Unit) { TvUpNextStore.run() }
         TvKeyLongPressHandler(playLongPress) { performLongPress(playLongPressAction) }
+        // 「手机遥控」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
+        TvRemoteControlDialogHost()
         if (showQuickMenu) {
             val context = LocalContext.current
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }
