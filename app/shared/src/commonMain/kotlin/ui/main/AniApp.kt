@@ -51,6 +51,7 @@ import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.platform.LocalContext
+import me.him188.ani.app.platform.navigation.ProvideOpenLinkFallback
 import me.him188.ani.app.tools.LocalTimeFormatter
 import me.him188.ani.app.tools.TimeFormatter
 import me.him188.ani.app.ui.foundation.AbstractViewModel
@@ -235,14 +236,17 @@ fun AniApp(
                         clearFocusOnUnhandledTap()
                     },
             ) {
-                Box {
-                    for (composable in appState.overlayComposables) {
-                        composable()
+                // 各处 uriHandler.openUri 打不开链接时不崩, 改弹二维码
+                ProvideOpenLinkFallback {
+                    Box {
+                        for (composable in appState.overlayComposables) {
+                            composable()
+                        }
                     }
-                }
 
-                Column {
-                    content()
+                    Column {
+                        content()
+                    }
                 }
             }
         }

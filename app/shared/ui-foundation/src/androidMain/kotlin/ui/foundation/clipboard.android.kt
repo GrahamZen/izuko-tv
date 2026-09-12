@@ -14,7 +14,9 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 
 actual fun textClipEntryOf(text: String): ClipEntry {
-    return ClipEntry(ClipData(text, arrayOf("text/plain"), ClipData.Item(text)))
+    // label 只是给系统看的名字, 不能放内容: 原来把整段文本也当 label, Binder 里就传两份,
+    // 复制 256KB 日志要 1MB, 超过事务上限抛 TransactionTooLargeException
+    return ClipEntry(ClipData("text", arrayOf("text/plain"), ClipData.Item(text)))
 }
 
 actual suspend fun Clipboard.getClipEntryText(): String? {
