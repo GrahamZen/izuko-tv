@@ -164,6 +164,58 @@ class SelectorMediaSourceEngineSelectMediaTest {
         assertEquals(emptyList(), selectMedia(page, episodeName = null).filteredList)
     }
 
+    private data class Case(
+        val page: List<WebSearchEpisodeInfo>,
+        val episodeSort: EpisodeSort,
+        val episodeEp: EpisodeSort?,
+        val episodeName: String?,
+        val config: SelectorSearchConfig = SelectorSearchConfig.Empty,
+    )
+
+    private fun Case.query() = SelectorSearchQuery(
+        subjectName = TONARI,
+        allSubjectNames = setOf(TONARI),
+        episodeSort = episodeSort,
+        episodeEp = episodeEp,
+        episodeName = episodeName,
+    )
+
+    /**
+     * [SelectorMediaSourceEngine.selectFilteredMedia] 只是不为注定被滤掉的剧集创建对象, 结果必须与
+     * [SelectorMediaSourceEngine.selectMedia] 的 filteredList 完全一致.
+     */
+    @Test
+    fun `selectFilteredMedia gives the same result as the filtered list of selectMedia`() {
+        val longPage = (1..40).map { numbered(it) } +
+                (1..40).map { numbered(it).copy(channel = "线路2") } +
+                listOf(labeled("HD高清国语版"), labeled("剧场版"), titleAsSort(TONARI))
+        val cases = listOf(
+            Case(longPage, EpisodeSort(25), episodeEp = null, episodeName = null),
+            Case(longPage, EpisodeSort(30), episodeEp = EpisodeSort(5), episodeName = null),
+            Case(longPage, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = TONARI),
+            Case(longPage, EpisodeSort(99), episodeEp = null, episodeName = null),
+            Case(longPage, EpisodeSort("SP1"), episodeEp = null, episodeName = "SP"),
+            Case(
+                longPage, EpisodeSort(3), episodeEp = null, episodeName = null,
+                config = SelectorSearchConfig.Empty.copy(filterByEpisodeSort = false),
+            ),
+            Case(listOf(labeled("剧场版")), EpisodeSort(1), episodeEp = null, episodeName = null),
+            Case(listOf(titleAsSort(TONARI), titleAsSort(YOGORETA)), EpisodeSort(1), EpisodeSort(1), YOGORETA),
+        )
+        for (case in cases) {
+            val expected = engine.selectMedia(case.page.asSequence(), case.config, case.query(), "test", TONARI)
+            val actual = engine.selectFilteredMedia(case.page, case.config, case.query(), "test", TONARI)
+            assertEquals(
+                expected.filteredList.map { it.mediaId },
+                actual.map { it.mediaId },
+                "episodeSort=${case.episodeSort}, episodeEp=${case.episodeEp}, episodeName=${case.episodeName}",
+            )
+        }
+
+        // 不是两边都空才相等: 长页面上请求第 25 集, 两条线路各一个
+        assertEquals(2, engine.selectFilteredMedia(longPage, cases[0].config, cases[0].query(), "test", TONARI).size)
+    }
+
     private companion object {
         private const val TONARI = "住在隔壁的她"
         private const val YOGORETA = "被玷污的她"

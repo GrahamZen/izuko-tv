@@ -88,6 +88,7 @@ class InteractiveSolveUi internal constructor(
  * @param solverEnabled 自动解决总开关 (用户设置). 每次自动 solve 前读取, 关闭时不尝试任何 [solvers];
  * 不影响 interactive 手动解决.
  * @param searchRoutes 备用取数路由.
+ * @param lowRamDevice 系统标记的低内存设备: 同时只解析一个页面 (见 [parseSemaphore]); 其他设备不限.
  */
 class WebSessionManager(
     private val browserFactory: CaptchaBrowserFactory,
@@ -104,6 +105,7 @@ class WebSessionManager(
     private val stickyWindow: Duration = 60.seconds,
     private val solveFailCooldown: Duration = 60.seconds,
     private val browserLoadTimeout: Duration = 12.seconds,
+    lowRamDevice: Boolean = false,
     private val getTimeMillis: () -> Long = { currentTimeMillis() },
     private val ioContext: CoroutineContext = Dispatchers.IO_,
 ) {
@@ -143,6 +145,12 @@ class WebSessionManager(
     private val lock = Mutex()
     private val hostStates = mutableMapOf<String, HostState>()
     private val browserCreateSemaphore = Semaphore(MAX_CONCURRENT_BROWSER_CREATIONS)
+
+    /**
+     * 低内存设备上同时只解析一个页面. 长番 (海贼/火影) 的条目页有几千集, 一页解析成 DOM 要十几 MB,
+     * 十来个在线源同时解析会把 1GB 内存左右的设备压到被系统杀掉. 下载不受限, 只有解析排队. 其他设备不限.
+     */
+    private val parseSemaphore: Semaphore? = if (lowRamDevice) Semaphore(1) else null
 
     private fun hostStateLocked(host: String): HostState = hostStates.getOrPut(host) { HostState() }
 
@@ -191,7 +199,7 @@ class WebSessionManager(
 
         if (host != null) {
             consumePendingSolvedPage(host, url)?.let { page ->
-                return evaluator.evaluate(page, expectation)
+                return evaluateLimited(page, expectation)
             }
         }
 
@@ -214,7 +222,7 @@ class WebSessionManager(
         }
 
         val page = httpFetch(url)
-        val verdict = evaluator.evaluate(page, expectation)
+        val verdict = evaluateLimited(page, expectation)
         if (verdict !is PageVerdict.Blocked || verdict.reason !is BlockReason.Captcha || host == null) {
             return verdict
         }
@@ -319,6 +327,11 @@ class WebSessionManager(
         }
         val pageHost = normalizedSessionHost(page.finalUrl) ?: return false
         return pageHost == host || pageHost.endsWith(".$host") || host.endsWith(".$pageHost")
+    }
+
+    private suspend fun <T> evaluateLimited(page: LoadedPage, expectation: PageExpectation<T>): PageVerdict<T> {
+        val semaphore = parseSemaphore ?: return evaluator.evaluate(page, expectation)
+        return semaphore.withPermit { evaluator.evaluate(page, expectation) }
     }
 
     private suspend fun httpFetch(url: String): LoadedPage = withContext(ioContext) {
