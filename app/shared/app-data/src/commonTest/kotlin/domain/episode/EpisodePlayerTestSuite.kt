@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.TestScope
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.models.subject.TestSubjectCollections
+import me.him188.ani.app.data.persistent.database.dao.WebSearchCachePageRowCount
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheDao
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheEntity
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
@@ -137,6 +138,30 @@ private object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
         requesterSubjectId: Int?,
         mediaSourceId: String,
         subjectName: String,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
+
+    override suspend fun filterForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
+
+    override suspend fun countRowsByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        now: Long,
+    ): List<WebSearchCachePageRowCount> = emptyList()
+
+    override suspend fun filterByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        subjectUrl: String,
         now: Long,
     ): List<WebSearchSessionCacheEntity> = emptyList()
 

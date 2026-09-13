@@ -51,6 +51,7 @@ import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.datasources.api.topic.SubtitleLanguage
+import me.him188.ani.datasources.api.topic.contains
 import me.him188.ani.datasources.api.topic.titles.LabelFirstRawTitleParser
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -219,12 +220,49 @@ abstract class SelectorMediaSourceEngine {
         mediaSourceId: String,
         subjectName: String,
     ): SelectMediaResult {
+        val originalMediaList = createMedia(episodes.toList(), config, query, mediaSourceId, subjectName) { true }
+        return SelectMediaResult(originalMediaList, filterMedia(originalMediaList, config, query))
+    }
+
+    /**
+     * 与 [selectMedia] 的 [SelectMediaResult.filteredList] 相同, 只是不为注定被按集号过滤掉的剧集创建 [DefaultMedia].
+     *
+     * 请求普通剧集且数据源按集号过滤时, 过滤器只看集号 ([MediaListFilters.ContainsAnyEpisodeInfo] 对普通剧集不看名称),
+     * 集号对不上的剧集可以先跳过. 长番的条目页一页上万集, 最后只留下当前这一集.
+     */
+    fun selectFilteredMedia(
+        episodes: List<WebSearchEpisodeInfo>,
+        config: SelectorSearchConfig,
+        query: SelectorSearchQuery,
+        mediaSourceId: String,
+        subjectName: String,
+    ): List<DefaultMedia> {
+        val bySortOnly = config.filterByEpisodeSort && query.episodeSort is EpisodeSort.Normal
+        val mediaList = createMedia(episodes, config, query, mediaSourceId, subjectName) { episodeSort ->
+            !bySortOnly || EpisodeRange.single(episodeSort).let { range ->
+                range.contains(query.episodeSort) || (query.episodeEp != null && range.contains(query.episodeEp))
+            }
+        }
+        return filterMedia(mediaList, config, query)
+    }
+
+    /**
+     * 把剧集转成 media. [keep] 按集号预先挑选, 不要的剧集不创建对象.
+     */
+    private fun createMedia(
+        episodeList: List<WebSearchEpisodeInfo>,
+        config: SelectorSearchConfig,
+        query: SelectorSearchQuery,
+        mediaSourceId: String,
+        subjectName: String,
+        keep: (EpisodeSort) -> Boolean,
+    ): List<DefaultMedia> {
         val parser = LabelFirstRawTitleParser()
-        val episodeList = episodes.toList()
-        val originalMediaList = episodeList.mapNotNull { info ->
-            val subtitleLanguages = guessSubtitleLanguages(info, parser)
+        return episodeList.mapNotNull { info ->
             val episodeSort = episodeList.matchingEpisodeSortOf(info, query.episodeSort, query.episodeEp, query.episodeName)
                 ?: return@mapNotNull null
+            if (!keep(episodeSort)) return@mapNotNull null
+            val subtitleLanguages = guessSubtitleLanguages(info, parser)
             DefaultMedia(
                 mediaId = buildString {
                     append(mediaSourceId)
@@ -265,15 +303,16 @@ abstract class SelectorMediaSourceEngine {
                 location = MediaSourceLocation.Online,
                 kind = MediaSourceKind.WEB,
             )
-        }.toList()
-
-        return with(query.toFilterContext()) {
-            val filters = config.createFiltersForEpisode()
-            val filteredList = originalMediaList.filter {
-                filters.applyOn(it.asCandidate())
-            }
-            SelectMediaResult(originalMediaList, filteredList)
         }
+    }
+
+    private fun filterMedia(
+        mediaList: List<DefaultMedia>,
+        config: SelectorSearchConfig,
+        query: SelectorSearchQuery,
+    ): List<DefaultMedia> = with(query.toFilterContext()) {
+        val filters = config.createFiltersForEpisode()
+        mediaList.filter { filters.applyOn(it.asCandidate()) }
     }
 
     /**
