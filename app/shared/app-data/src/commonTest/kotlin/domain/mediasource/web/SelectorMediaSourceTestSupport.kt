@@ -13,6 +13,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
+import me.him188.ani.app.data.persistent.database.dao.WebSearchCachePageRowCount
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheDao
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheEntity
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
@@ -104,6 +105,37 @@ internal class InMemoryWebSearchSessionCacheDao : WebSearchSessionCacheDao {
         it.requesterSubjectId == requesterSubjectId && it.mediaSourceId == mediaSourceId && it.expiresAt > now
     }.map { it.subjectName }.distinct()
 
+    // 与 DAO 里的 SQL 同一判据: 集号就是 sort / ep 的, 以及不是纯数字的 (没有集号、特殊剧集、解析不出的)
+    override suspend fun filterForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = filterBySubjectName(requesterSubjectId, mediaSourceId, subjectName, now).filter {
+        val episode = it.episodeSortOrEp?.toString()
+        episode == null || episode == sort || episode == ep || episode.isEmpty() || episode.any { c -> c !in '0'..'9' }
+    }
+
+    override suspend fun countRowsByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        now: Long,
+    ): List<WebSearchCachePageRowCount> = filterBySubjectName(requesterSubjectId, mediaSourceId, subjectName, now)
+        .groupingBy { it.subjectUrl }.eachCount()
+        .map { (url, count) -> WebSearchCachePageRowCount(url, count) }
+
+    override suspend fun filterByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        subjectUrl: String,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> =
+        filterBySubjectName(requesterSubjectId, mediaSourceId, subjectName, now).filter { it.subjectUrl == subjectUrl }
+
     override suspend fun deleteExpired(now: Long) {
         rows.removeAll { it.expiresAt <= now }
     }
@@ -139,6 +171,30 @@ internal object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
         mediaSourceId: String,
         now: Long,
     ): List<String> = emptyList()
+
+    override suspend fun filterForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
+
+    override suspend fun countRowsByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        now: Long,
+    ): List<WebSearchCachePageRowCount> = emptyList()
+
+    override suspend fun filterByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        subjectUrl: String,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
 
     override suspend fun deleteExpired(now: Long) {}
     override suspend fun deleteByRequestedSubject(requesterSubjectId: Int?) {}
