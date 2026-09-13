@@ -105,6 +105,8 @@ class SelectorSiteFixtureTest {
                 subjectNames = listOf("葬送的芙莉莲"),
                 episodeSort = EpisodeSort(14),
                 episodeName = "",
+                // 剧集列表已知时产出整个条目的集 (见 SelectorMediaSource.wholeSubjectEpisodeSortsOrNull); 不知道时只产出当前这一集
+                episodes = (1..28).map { MediaFetchRequest.Episode(episodeId = "$it", sort = EpisodeSort(it)) },
             ),
         ).results.toList().map { it.media }
 

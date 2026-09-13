@@ -287,4 +287,79 @@ class SelectorMediaSourceEpisodeCacheRepositoryTest {
             repository.getCache(1, mediaSourceId, subjectName).single().webEpisodeInfos.single().channel,
         )
     }
+
+    private fun namedEpisode(name: String, sort: EpisodeSort?, channel: String? = "线路1") = WebSearchEpisodeInfo(
+        channel = channel,
+        name = name,
+        episodeSortOrEp = sort,
+        playUrl = "https://example.com/play/$name",
+    )
+
+    @Test
+    fun `getCacheForEpisode 只读回请求那一集与集号不是纯数字的行`() = runRepositoryTest { _, repository ->
+        repository.addCache(
+            1, mediaSourceId, subjectName, subjectInfo(),
+            (1..20).map { episode(it) } +
+                    listOf(
+                        namedEpisode("总集篇", sort = null),
+                        namedEpisode("SP", sort = EpisodeSort("SP")),
+                        namedEpisode("第1.5集", sort = EpisodeSort("1.5")),
+                    ) +
+                    (1..20).map { episode(it, channel = "线路2") },
+            1.hours,
+        )
+
+        val caches = repository.getCacheForEpisode(1, mediaSourceId, subjectName, EpisodeSort(5), episodeEp = null)
+        assertEquals(
+            listOf("线路1 第05集", "线路1 总集篇", "线路1 SP", "线路1 第1.5集", "线路2 第05集"),
+            caches.single().webEpisodeInfos.map { "${it.channel} ${it.name}" },
+        )
+    }
+
+    @Test
+    fun `getCacheForEpisode 也按季度内集数取`() = runRepositoryTest { _, repository ->
+        repository.addCache(1, mediaSourceId, subjectName, subjectInfo(), (1..30).map { episode(it) }, 1.hours)
+
+        val caches = repository.getCacheForEpisode(1, mediaSourceId, subjectName, EpisodeSort(25), EpisodeSort(3))
+        assertEquals(
+            listOf(EpisodeSort(3), EpisodeSort(25)),
+            caches.single().webEpisodeInfos.map { it.episodeSortOrEp },
+        )
+    }
+
+    @Test
+    fun `getCacheForEpisode 筛完只剩一条没有集号的行而整页不止一条时整页读回`() = runRepositoryTest { _, repository ->
+        // 整页只有一条时匹配规则会把它当成整部作品 (第 1 集), 所以不能因为筛选让列表变成只有一条
+        repository.addCache(
+            1, mediaSourceId, subjectName, subjectInfo(),
+            listOf(episode(1), episode(2), namedEpisode("剧场版", sort = null)),
+            1.hours,
+        )
+
+        val caches = repository.getCacheForEpisode(1, mediaSourceId, subjectName, EpisodeSort(7), episodeEp = null)
+        assertEquals(3, caches.single().webEpisodeInfos.size)
+    }
+
+    @Test
+    fun `getCacheForEpisode 多个页面各自筛选, 没有相关行的页面不返回`() = runRepositoryTest { _, repository ->
+        repository.addCache(
+            1, mediaSourceId, subjectName, subjectInfo(url = "https://example.com/subject/1"),
+            listOf(episode(1), episode(2)), 1.hours,
+        )
+        repository.addCache(
+            1, mediaSourceId, subjectName, subjectInfo(url = "https://example.com/subject/2"),
+            listOf(episode(2), episode(3)), 1.hours,
+        )
+        repository.addCache(
+            1, mediaSourceId, subjectName, subjectInfo(url = "https://example.com/subject/3"),
+            listOf(episode(4), episode(5)), 1.hours,
+        )
+
+        val caches = repository.getCacheForEpisode(1, mediaSourceId, subjectName, EpisodeSort(2), episodeEp = null)
+        assertEquals(
+            listOf("https://example.com/subject/1", "https://example.com/subject/2"),
+            caches.map { it.webSubjectInfo.fullUrl },
+        )
+        assertTrue(caches.all { cache -> cache.webEpisodeInfos.map { it.episodeSortOrEp } == listOf(EpisodeSort(2)) })
+    }
 }
