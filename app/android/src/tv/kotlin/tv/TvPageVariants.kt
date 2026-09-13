@@ -298,6 +298,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvKeyLongPressHandler(playLongPress) { performLongPress(playLongPressAction) }
         // 「手机遥控」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
+        // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch
+        LaunchedEffect(Unit) { TvRemoteControl.showDialogOnLaunch() }
         if (showQuickMenu) {
             val context = LocalContext.current
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }

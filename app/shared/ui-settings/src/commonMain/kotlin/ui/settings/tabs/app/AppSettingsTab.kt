@@ -47,7 +47,6 @@ import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
 import me.him188.ani.app.data.models.preference.TvExitBehavior
 import me.him188.ani.app.data.models.preference.TvLongPressAction
-import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
@@ -154,10 +153,16 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_panel
 import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_resume
 import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press
 import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry
-import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_avatar
-import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_remote_entry_rail
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_confirm
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_description
+import me.him188.ani.app.ui.lang.search_tv_remote_reset
+import me.him188.ani.app.ui.lang.settings_mediasource_cancel
+import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_ui_scale
@@ -344,24 +349,43 @@ fun SettingsScope.AppearanceGroup(
             title = { Text(stringResource(Lang.settings_theme_tv_play_long_press)) },
             description = { Text(stringResource(Lang.settings_theme_tv_play_long_press_description)) },
         )
-        // 只有两档没有「隐藏」: 头像菜单就是最低限度的入口 (见 TvRemoteEntryPlacement)
-        DropdownItem(
-            selected = { themeConfig.tvRemoteEntryPlacement },
-            values = { TvRemoteEntryPlacement.entries },
-            itemText = {
-                Text(
-                    stringResource(
-                        when (it) {
-                            TvRemoteEntryPlacement.Rail -> Lang.settings_theme_tv_remote_entry_rail
-                            TvRemoteEntryPlacement.Avatar -> Lang.settings_theme_tv_remote_entry_avatar
-                        },
-                    ),
-                )
-            },
-            onSelect = { themeSettings.update(themeConfig.copy(tvRemoteEntryPlacement = it)) },
-            title = { Text(stringResource(Lang.settings_theme_tv_remote_entry)) },
-            description = { Text(stringResource(Lang.settings_theme_tv_remote_entry_description)) },
+        // 打开应用时弹一次二维码 (默认开); 启动弹窗里「启动时不再显示」是同一个开关. 平时的入口是动作面板右侧那块码
+        // (侧边栏 / 头像菜单的入口与「入口放哪」这一项 2026-09-12 删了)
+        SwitchItem(
+            checked = themeConfig.tvRemoteShowOnLaunch,
+            onCheckedChange = { themeSettings.update(themeConfig.copy(tvRemoteShowOnLaunch = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_remote_show_on_launch)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_remote_show_on_launch_description)) },
         )
+        // 重置手机遥控地址 (换一个新 token, 已扫过的手机与书签作废). 原先只有搜索页右侧那块面板里有一颗, 入口太偏.
+        // 设置页够不到 ui-tv 的 TvRemoteControl, 经 TvRemoteSettingsBridge; 没登记 (非 TV 包) 就不显示. 先确认再重置
+        TvRemoteSettingsBridge.resetAddress?.let { reset ->
+            var confirmingReset by remember { mutableStateOf(false) }
+            TextItem(
+                onClick = { confirmingReset = true },
+                title = { Text(stringResource(Lang.settings_theme_tv_remote_reset)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_remote_reset_description)) },
+            )
+            if (confirmingReset) {
+                AlertDialog(
+                    onDismissRequest = { confirmingReset = false },
+                    text = { Text(stringResource(Lang.settings_theme_tv_remote_reset_confirm)) },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                confirmingReset = false
+                                reset()
+                            },
+                        ) { Text(stringResource(Lang.search_tv_remote_reset)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmingReset = false }) {
+                            Text(stringResource(Lang.settings_mediasource_cancel))
+                        }
+                    },
+                )
+            }
+        }
     }
 
     LanguageSettingsPlatform(state)

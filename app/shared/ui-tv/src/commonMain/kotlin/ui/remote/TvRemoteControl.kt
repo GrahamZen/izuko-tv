@@ -19,14 +19,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -34,7 +37,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.search.SubjectSearchQuery
@@ -44,6 +46,7 @@ import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
+import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.lan.findLanAddress
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
@@ -55,6 +58,7 @@ import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -145,39 +149,54 @@ object TvRemoteControl {
     /** 当前 IP 与 [knownHost] 不一致: 已扫过的手机连不上了, 面板标红提示重新扫码. */
     val hostChanged: StateFlow<Boolean> = _hostChanged.asStateFlow()
 
-    private val _phoneNeverConnected = MutableStateFlow(false)
-
-    /**
-     * 从没有手机连上过 (持久化的 [knownHost] 为空): 侧边栏「手机遥控」图标上的小红点看它, 连上一次就永久消失.
-     * [install] 读完存储之前是 false —— 否则连过的人每次启动都会看到红点闪一下.
-     */
-    val phoneNeverConnected: StateFlow<Boolean> = _phoneNeverConnected.asStateFlow()
-
     private val _dialogVisible = MutableStateFlow(false)
 
     /**
-     * 二维码弹窗开着没有. 侧边栏条目 / 头像菜单都只调 [showDialog], 弹窗由 TV 根组合的 [TvRemoteControlDialogHost] 画 ——
-     * 主页、搜索页、详情页的侧边栏都要能开, 不能挂在某一页里.
+     * 启动时那个二维码弹窗开着没有 (见 [showDialogOnLaunch]); 弹窗由 TV 根组合的 [TvRemoteControlDialogHost] 画.
+     * 平时的入口是动作面板右侧常驻的那块码 (TvRemoteQrBlock), 不经这里.
      */
     val dialogVisible: StateFlow<Boolean> = _dialogVisible.asStateFlow()
-
-    fun showDialog() {
-        _dialogVisible.value = true
-    }
 
     fun dismissDialog() {
         _dialogVisible.value = false
     }
 
     /**
-     * 改入口位置 (弹窗里「收进头像菜单」). 写设置放在本对象的作用域里: 调用方随即关掉弹窗, 用弹窗的组合作用域
-     * 写会被一起取消. 侧边栏那一项带着焦点消失时由侧边栏交给上一项 (见 TvRailIconItem).
+     * 启动弹窗里「启动时不再显示」(同设置-界面里的开关). 写设置放在本对象的作用域里: 调用方随即关掉弹窗,
+     * 用弹窗的组合作用域写会被一起取消.
      */
-    fun setEntryPlacement(placement: TvRemoteEntryPlacement) {
+    fun setShowOnLaunch(enabled: Boolean) {
         scope.launch {
             KoinPlatform.getKoin().get<SettingsRepository>().themeSettings.update {
-                copy(tvRemoteEntryPlacement = placement)
+                copy(tvRemoteShowOnLaunch = enabled)
             }
+        }
+    }
+
+    private val launchPromptDone = AtomicBoolean(false)
+
+    /**
+     * 应用启动时 (TV 根组合) 调: 设置里开着「启动时弹出」(`ThemeSettings.tvRemoteShowOnLaunch`, 默认开) 就弹一次二维码弹窗.
+     *
+     * - 一个进程只弹一次: Activity 重建 (切到别的应用再回来) 不再弹;
+     * - 读的是**存下来的**设置, 不是组合里的 LocalThemeSettings —— 启动那一刻后者可能还是默认值, 关过的人会被弹一次;
+     * - 等服务起来、拿到地址再弹; 一直拿不到 (没连局域网) 就不弹, 否则一开应用就是一个「无法使用」的弹窗;
+     * - 拿到地址后再稍等一下, 让首页先画出来, 弹窗不跟启动画面抢.
+     */
+    fun showDialogOnLaunch() {
+        if (!launchPromptDone.compareAndSet(false, true)) return
+        scope.launch {
+            val enabled = runCatching {
+                KoinPlatform.getKoin().get<SettingsRepository>().themeSettings.flow.first().tvRemoteShowOnLaunch
+            }.getOrDefault(false)
+            if (!enabled) return@launch
+            val address = withTimeoutOrNull(LAUNCH_PROMPT_WAIT) { url.first { it != null } }
+            if (address == null) {
+                logger.info { "Skip remote control prompt on launch: no LAN address" }
+                return@launch
+            }
+            delay(LAUNCH_PROMPT_DELAY)
+            _dialogVisible.value = true
         }
     }
 
@@ -245,13 +264,14 @@ object TvRemoteControl {
      * @param navigator 搜索页不在场时把电视导航到搜索页 / 把播放器调回前台用.
      */
     fun install(context: Context, navigator: AniNavigator) {
+        // 设置-界面里的「重置手机遥控地址」(设置页够不到本对象, 经 ui-foundation 的桥)
+        TvRemoteSettingsBridge.resetAddress = ::resetAddress
         synchronized(lock) {
             this.navigator = navigator
             if (prefs != null) return
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             fixedPort = fixedPortFor(context.packageName)
             _knownHost.value = prefs?.getString(KEY_KNOWN_HOST, null)
-            _phoneNeverConnected.value = _knownHost.value == null
         }
         scope.launch {
             synchronized(lock) { if (server == null) startLocked() }
@@ -387,7 +407,6 @@ object TvRemoteControl {
             _knownHost.value = host
             prefs?.edit()?.putString(KEY_KNOWN_HOST, host)?.apply()
         }
-        _phoneNeverConnected.value = false
         _hostChanged.value = false
     }
 
@@ -897,6 +916,10 @@ object TvRemoteControl {
         packageName.endsWith(".debug2") -> DEBUG_PORT
         else -> OTHER_PORT_BASE + Math.floorMod(packageName.hashCode(), OTHER_PORT_COUNT)
     }
+
+    /** 启动时弹二维码: 最多等这么久拿地址 (服务刚起), 拿到后再等这么久让首页先画出来. 见 [showDialogOnLaunch]. */
+    private val LAUNCH_PROMPT_WAIT = 10.seconds
+    private val LAUNCH_PROMPT_DELAY = 1.seconds
 
     private const val RELEASE_PACKAGE = "me.him188.ani.tv"
     private const val RELEASE_PORT = 41892
