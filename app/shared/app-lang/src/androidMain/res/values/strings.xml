@@ -555,6 +555,15 @@
     <string name="exploration_tv_schedule_upcoming">%1$d upcoming</string>
     <string name="exploration_tv_schedule_following">%1$d followed</string>
     <string name="exploration_tv_schedule_empty">Nothing airing on this day</string>
+    <string name="exploration_tv_schedule_aired">Aired</string>
+    <string name="exploration_tv_schedule_starts_in_hours">In %1$dh %2$dm</string>
+    <string name="exploration_tv_schedule_starts_in_minutes">In %1$d min</string>
+    <string name="exploration_tv_schedule_starting">Starting soon</string>
+    <string name="exploration_tv_schedule_total_episodes">%1$d eps</string>
+    <string name="exploration_tv_schedule_not_aired">Not aired yet</string>
+    <string name="exploration_tv_schedule_no_rating">No rating</string>
+    <string name="exploration_tv_schedule_no_tags">No tags</string>
+    <string name="exploration_tv_schedule_total_episodes_unknown">Episodes TBA</string>
     <string name="collection_tv_rewatch">Rewatch</string>
     <string name="collection_tv_empty">Nothing in this list yet</string>
     <string name="tv_card_remote_hint">Play to resume · Hold select to edit collection</string>
