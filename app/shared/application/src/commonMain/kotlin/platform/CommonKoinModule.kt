@@ -245,6 +245,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             },
             searchRoutes = listOf(GirigiriSearchRoute(evaluator)),
             maxSessions = browserFactory.recommendedMaxSessions,
+            lowRamDevice = getContext().isLowRamDevice(),
         )
     }
     single<VersionExpiryService> { DefaultVersionExpiryService() }

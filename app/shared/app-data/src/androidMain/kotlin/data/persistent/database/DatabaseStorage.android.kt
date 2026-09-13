@@ -18,4 +18,7 @@ actual fun Context.createDatabaseBuilder(): RoomDatabase.Builder<AniDatabase> {
         context = applicationContext,
         name = applicationContext.getDatabasePath("ani_room_database_main.db").absolutePath,
     )
+        // Room 默认 (AUTOMATIC) 在低内存设备上用 TRUNCATE: 全库只有一个连接, 读要排在写后面.
+        // 在线源一次写上万行搜索缓存时, 切集只读几行也要等十几秒. WAL 下读写互不阻塞.
+        .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
 }
