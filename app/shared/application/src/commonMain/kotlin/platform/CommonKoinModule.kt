@@ -254,6 +254,7 @@ private fun KoinApplication.otherModules(
                 settingsRepository.mediaSelectorSettings.flow.first().enableImageCaptchaAutoSolve
             },
             maxSessions = browserFactory.recommendedMaxSessions,
+            lowRamDevice = getContext().isLowRamDevice(),
         )
     }
     single<VersionExpiryService> { DefaultVersionExpiryService() }
