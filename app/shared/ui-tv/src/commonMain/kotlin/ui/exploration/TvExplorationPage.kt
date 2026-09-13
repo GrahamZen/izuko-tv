@@ -16,6 +16,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Job
+import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -253,6 +256,24 @@ fun TvExplorationPage(
     val settingsRepository = remember { GlobalKoin.get<SettingsRepository>() }
     val playHistoryRepository = remember { GlobalKoin.get<EpisodePlayHistoryRepository>() }
     val scope = rememberCoroutineScope()
+    // 新番时间表的数据预取 (两台电视实测, 进时间表 0.73~1.08s 里 0.6~0.8s 在等它): 焦点落到 hero 按钮上就在后台拉一次, 进页时
+    // 首帧就是数据. 缓存还新鲜时是空操作; 请求挂在仓库自己的作用域上, 离开本页也会跑完、落进缓存. 落在「新番时间表」上立即拉;
+    // 落在「立即观看」上 (开屏默认就在这) 晚一点, 不跟探索页首屏的请求抢
+    val scheduleUseCase = remember { GlobalKoin.get<GetAnimeScheduleFlowUseCase>() }
+    val schedulePrefetch = remember { mutableStateOf<Job?>(null) }
+    val prefetchSchedule: (delayMillis: Long) -> Unit = { delayMillis ->
+        schedulePrefetch.value?.cancel()
+        schedulePrefetch.value = scope.launch {
+            delay(delayMillis)
+            try {
+                scheduleUseCase.prefetch()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 失败不管: 进页时自己再拉 (失败不缓存)
+            }
+        }
+    }
     val toaster = LocalToaster.current
 
     // 聚焦条目 (卡片 onFocusChanged 上报); 标题/封面来自卡片自身数据, 立即可显示.
@@ -570,6 +591,9 @@ fun TvExplorationPage(
     // hero 落点请求. **同样按实例身份比较** (见 [TvHeroFocusRequest]): 直接存枚举的话, 请求没
     // 落地时值不变 → LaunchedEffect 不重启 → 同一颗按钮再请求多少次都不会重新送焦.
     var heroFocusRequest by remember { mutableStateOf<TvHeroFocusRequest?>(null) }
+    // 焦点最后停在哪颗 hero 按钮上 (跨导航保存): 从别的页回来、页面外进来时回到它, 而不是一律回主按钮 ——
+    // 用户在「新番时间表」上进去, 回来焦点却在「立即观看」, 顺手一按确认就进了轮播那部的详情页
+    var lastHeroButton by rememberSaveable { mutableStateOf(TvHeroFocusButton.PRIMARY) }
     val focus = rememberTvFocusScope()
 
     // 卡片聚焦的簿记入口. **落点请求进行中时只认目标行写进来的**: 恢复目标的那一行还没组合出来
@@ -610,7 +634,7 @@ fun TvExplorationPage(
     }
 
     // 进页/返回的初始焦点: 曾在某行 -> 恢复该行 (cardIndex=-1: 行自己跨导航保存的聚焦卡);
-    // 首次进入或曾在 hero -> hero 主按钮. 此后页面外进来的焦点走页面根 onEnter (见下).
+    // 曾在 hero -> 上次停的那颗 hero 按钮 (首次进入 = 主按钮). 此后页面外进来的焦点走页面根 onEnter (见下).
     // 恢复请求是否已派出. 见下方返回键分层: 本效应调度前那一两帧 cardFocusRequest 还是 null,
     // 那时按返回会被放行成"退出应用确认" —— 曾在某行时用它把这一段也算作焦点在卡片区
     var entryRestoreDispatched by remember { mutableStateOf(false) }
@@ -619,7 +643,7 @@ fun TvExplorationPage(
         if (saved != null) {
             cardFocusRequest = TvCardFocusRequest(saved, cardIndex = -1)
         } else {
-            heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
+            heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
         }
         entryRestoreDispatched = true
     }
@@ -833,22 +857,22 @@ fun TvExplorationPage(
             }
             .tvFocusNavSignal(focus)
             // 页面外进来的任何焦点 (侧边栏右键/返回、全局兜底的无方向 requestFocus) 统一在此
-            // 改道: 焦点在卡片区时送进进组落点链回上次那张卡, 否则回 hero 主按钮.
+            // 改道: 焦点在卡片区时送进进组落点链回上次那张卡, 否则回上次停的那颗 hero 按钮.
             // 不改道的话默认 enter 落到"第一个可聚焦项" —— 卡片区向上出血后停靠线上方那一行
             // 始终组合着且可聚焦, 焦点会落到**上一行**去 (真机: 从详情页返回 ~1s 后跳行,
             // 1s = 导航 crossfade 时长, 详情页销毁时它身上的焦点消失触发全局兜底).
             .focusProperties {
                 onEnter = {
-                    // 焦点在卡片区 -> 进落点链 (列记行键, 行记下标); 在 hero -> 主按钮.
+                    // 焦点在卡片区 -> 进落点链 (列记行键, 行记下标); 在 hero -> 上次停的那颗按钮.
                     // requestFocus(Enter) 返回是否成功: 失败 (卡片区空 / 按钮碰巧没组合) 一律
                     // 退回 hero 落点请求 —— 它会先把按钮组合出来再等待锚点送焦, 不会让焦点悬空.
                     val target = if (focusedRowKey != null) {
                         columnFocusRequester
                     } else {
-                        focus.requesterOf(TvHeroFocusButton.PRIMARY)
+                        focus.requesterOf(lastHeroButton)
                     }
                     val ok = runCatching { target.requestFocus(FocusDirection.Enter) }.getOrDefault(false)
-                    if (!ok) heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
+                    if (!ok) heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
                 }
             }
             // onEnter 只在**焦点组**节点上生效: 不加这个的话 focusProperties 会落到下面的
@@ -927,12 +951,18 @@ fun TvExplorationPage(
             primaryFocusModifier = Modifier
                 .tvFocusAnchor(focus, TvHeroFocusButton.PRIMARY)
                 .onFocusChanged {
-                    if (it.isFocused && heroFocusRequest?.button == TvHeroFocusButton.PRIMARY) heroFocusRequest = null
+                    if (!it.isFocused) return@onFocusChanged
+                    lastHeroButton = TvHeroFocusButton.PRIMARY
+                    prefetchSchedule(TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS)
+                    if (heroFocusRequest?.button == TvHeroFocusButton.PRIMARY) heroFocusRequest = null
                 },
             scheduleFocusModifier = Modifier
                 .tvFocusAnchor(focus, TvHeroFocusButton.SCHEDULE)
                 .onFocusChanged {
-                    if (it.isFocused && heroFocusRequest?.button == TvHeroFocusButton.SCHEDULE) heroFocusRequest = null
+                    if (!it.isFocused) return@onFocusChanged
+                    lastHeroButton = TvHeroFocusButton.SCHEDULE
+                    prefetchSchedule(0)
+                    if (heroFocusRequest?.button == TvHeroFocusButton.SCHEDULE) heroFocusRequest = null
                 },
             modifier = Modifier
                 .fillMaxWidth()
@@ -1884,7 +1914,10 @@ private class TvCardFocusRequest(
     val cardIndex: Int,
 )
 
-/** hero 的两颗按钮作为焦点落点: 进页/返回键回 [PRIMARY] (立即观看); 卡片区顶行按上键回 [SCHEDULE]. */
+/**
+ * hero 的两颗按钮作为焦点落点: 返回键回 [PRIMARY] (立即观看); 卡片区顶行按上键回 [SCHEDULE];
+ * 进页 / 从别的页回来回上次停的那颗 (首次进入 = [PRIMARY]).
+ */
 private enum class TvHeroFocusButton : TvFocusKey { PRIMARY, SCHEDULE }
 
 /**
@@ -1899,6 +1932,12 @@ private enum class TvHeroFocusButton : TvFocusKey { PRIMARY, SCHEDULE }
 private class TvHeroFocusRequest(val button: TvHeroFocusButton)
 
 private data class ExplorationRowCardFocus(val index: Int) : TvFocusKey
+
+/**
+ * 焦点落到「立即观看」(开屏默认就在这) 之后多久才预取新番时间表: 开屏那一阵探索页自己的请求 (轮播、继续观看、背景图) 正忙,
+ * 让开一会儿. 落到「新番时间表」上是立即拉.
+ */
+private const val TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS = 2_000L
 
 private val TV_EXPLORATION_NAV_KEYS = setOf(
     Key.DirectionUp,
