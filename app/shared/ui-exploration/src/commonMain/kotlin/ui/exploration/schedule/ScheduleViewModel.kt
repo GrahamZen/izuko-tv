@@ -53,6 +53,8 @@ import kotlin.time.Instant
  *   ([SchedulePagePresentation.airingSchedules]) 总是由同一个 [ScheduleLoad] 生成, 所以永远一致.
  *   今天变化 (或 [refresh]) 时, 在新的响应到达之前, 先立即发出一个以新的今天为基准的占位 presentation
  *   ([SchedulePagePresentation.isPlaceholder]), 日期列和列内容一起移动, 不会出现表头是新的一天而内容还是旧的一天.
+ *   进程里有这一天还新鲜的缓存时 (见 [GetAnimeScheduleFlowUseCase.peekCached]) 不出占位, 首个 presentation 直接就是它;
+ *   [refresh] 先丢掉缓存.
  * - [pageState] 的日期列也来自 [presentationFlow] (经由 [presentationState]).
  * - [refresh] 重启整条链路: 重新读取今天并重新请求服务端.
  * - 当前时间指示器每分钟重新计算一次.
@@ -108,8 +110,11 @@ class ScheduleViewModel(
             getAnimeScheduleFlowUseCase(today, timeZone = timeZone)
                 .catching()
                 .map { ScheduleLoad(today, it) }
-                // 今天一变就先发出 "加载中", 让日期列和占位列立即移动到新的今天, 不等服务端响应
-                .onStart { emit(ScheduleLoad(today, result = null)) }
+                // 今天一变就先发出 "加载中", 让日期列和占位列立即移动到新的今天, 不等服务端响应.
+                // 进程里有这一天还新鲜的缓存时不发: use case 的第一条就是那份缓存, 不先闪一下骨架
+                .onStart {
+                    if (getAnimeScheduleFlowUseCase.peekCached(today, timeZone) == null) emit(ScheduleLoad(today, result = null))
+                }
         }
         .restartable(airingSchedulesFlowRestarter)
         .shareInBackground(started = SharingStarted.Lazily) // always cached
@@ -118,6 +123,8 @@ class ScheduleViewModel(
      * 重新读取今天并重新请求服务端. 在新的响应到达之前, [presentationFlow] 先发出占位状态.
      */
     fun refresh() {
+        // 先丢掉缓存: 不然重启后 use case 的第一条就是缓存那份, 刷新等于没刷
+        getAnimeScheduleFlowUseCase.invalidateCache()
         airingSchedulesFlowRestarter.restart()
     }
 
@@ -126,7 +133,11 @@ class ScheduleViewModel(
      * 单独镜像一份是因为 [ScheduleScreenState.days] 用 `derivedStateOf` 读取日期列, 只有 Compose snapshot state 才能触发它重新计算,
      * 直接读 [StateFlow.value] 不会.
      */
-    private val presentationState = mutableStateOf(ScheduleLoad(currentToday(), result = null).toPresentation(clock.now()))
+    private val presentationState = mutableStateOf(initialLoad(currentToday()).toPresentation(clock.now()))
+
+    /** 首个状态: 进程里有今天还新鲜的缓存就直接用它 (页面首帧就是数据), 否则是占位. */
+    private fun initialLoad(today: LocalDate): ScheduleLoad =
+        ScheduleLoad(today, getAnimeScheduleFlowUseCase.peekCached(today, timeZone)?.let { Result.success(it) })
 
     val presentationFlow: StateFlow<SchedulePagePresentation> = combine(airingSchedulesFlow, minuteTicker) { load, _ ->
         load.toPresentation(clock.now())
