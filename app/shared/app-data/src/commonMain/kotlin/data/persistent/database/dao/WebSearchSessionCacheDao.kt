@@ -144,6 +144,88 @@ interface WebSearchSessionCacheDao {
         now: Long,
     ): List<WebSearchSessionCacheEntity>
 
+    /**
+     * [filterBySubjectName] 中可能与请求的剧集相关的行: 集号就是 [sort] / [ep] 的, 以及集号不是纯数字的
+     * (没有集号、特殊剧集、解析不出的, 这些要在内存里按名称等规则判断).
+     * 纯数字的集号一定是普通剧集 ([EpisodeSort.Normal] 的 toString 只有数字), 与请求不同就不可能匹配.
+     */
+    @Query(
+        """
+        SELECT * FROM web_search_session_cache
+        WHERE requesterSubjectId IS :requesterSubjectId
+            AND mediaSourceId = :mediaSourceId
+            AND subjectName = :subjectName
+            AND expiresAt > :now
+            AND (
+                episodeSortOrEp IS NULL
+                OR episodeSortOrEp = :sort
+                OR episodeSortOrEp = :ep
+                OR episodeSortOrEp = ''
+                OR episodeSortOrEp GLOB '*[^0-9]*'
+            )
+        ORDER BY id
+        """,
+    )
+    suspend fun filterForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity>
+
+    @Query(
+        """
+        SELECT subjectUrl, COUNT(*) AS rowCount FROM web_search_session_cache
+        WHERE requesterSubjectId IS :requesterSubjectId
+            AND mediaSourceId = :mediaSourceId
+            AND subjectName = :subjectName
+            AND expiresAt > :now
+        GROUP BY subjectUrl
+        """,
+    )
+    suspend fun countRowsByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        now: Long,
+    ): List<WebSearchCachePageRowCount>
+
+    /**
+     * [filterForEpisode] 与各页面的总行数, 在同一个事务里读, 两者对得上.
+     */
+    @Transaction
+    suspend fun filterForEpisodeWithPageSizes(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): Pair<List<WebSearchSessionCacheEntity>, List<WebSearchCachePageRowCount>> =
+        filterForEpisode(requesterSubjectId, mediaSourceId, subjectName, sort, ep, now) to
+                countRowsByPage(requesterSubjectId, mediaSourceId, subjectName, now)
+
+    @Query(
+        """
+        SELECT * FROM web_search_session_cache
+        WHERE requesterSubjectId IS :requesterSubjectId
+            AND mediaSourceId = :mediaSourceId
+            AND subjectName = :subjectName
+            AND subjectUrl = :subjectUrl
+            AND expiresAt > :now
+        ORDER BY id
+        """,
+    )
+    suspend fun filterByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        subjectUrl: String,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity>
+
     @Query("DELETE FROM web_search_session_cache WHERE expiresAt <= :now")
     suspend fun deleteExpired(now: Long)
 
@@ -158,3 +240,8 @@ interface WebSearchSessionCacheDao {
     )
     suspend fun deleteByRequestedSubjectAndSource(requesterSubjectId: Int?, mediaSourceId: String)
 }
+
+data class WebSearchCachePageRowCount(
+    val subjectUrl: String,
+    val rowCount: Int,
+)

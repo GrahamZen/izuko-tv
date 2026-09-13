@@ -286,8 +286,17 @@ class SelectorMediaSource(
         mediaSourceId: String,
         subjectId: Int?,
     ): List<DefaultMedia>? {
+        // 请求普通剧集且按集号过滤时, 只有集号相符的行 (和集号不是纯数字的行) 可能出结果,
+        // 不必把长番几千集整页读回内存.
+        val narrowed = query.episodeSort is EpisodeSort.Normal && searchConfig.filterByEpisodeSort
         val caches = try {
-            repository.getCache(subjectId, mediaSourceId, query.subjectName)
+            if (narrowed) {
+                repository.getCacheForEpisode(
+                    subjectId, mediaSourceId, query.subjectName, query.episodeSort, query.episodeEp,
+                )
+            } else {
+                repository.getCache(subjectId, mediaSourceId, query.subjectName)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -305,8 +314,8 @@ class SelectorMediaSource(
                     continue
                 }
                 addAll(
-                    selectMedia(
-                        episodes.asSequence(),
+                    selectFilteredMedia(
+                        episodes,
                         searchConfig,
                         query,
                         mediaSourceId,
@@ -396,8 +405,8 @@ class SelectorMediaSource(
                     sourceCacheTtl = searchConfig.searchCacheTtl,
                 )
                 addAll(
-                    selectMedia(
-                        episodes.asSequence(),
+                    selectFilteredMedia(
+                        episodes,
                         searchConfig,
                         query,
                         mediaSourceId,
