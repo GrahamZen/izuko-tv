@@ -13,6 +13,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
+import me.him188.ani.app.data.persistent.database.dao.WebSearchCachePageRowCount
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheDao
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheEntity
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
@@ -74,6 +75,30 @@ internal object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
         requesterSubjectId: Int?,
         mediaSourceId: String,
         subjectName: String,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
+
+    override suspend fun filterForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        sort: String,
+        ep: String?,
+        now: Long,
+    ): List<WebSearchSessionCacheEntity> = emptyList()
+
+    override suspend fun countRowsByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        now: Long,
+    ): List<WebSearchCachePageRowCount> = emptyList()
+
+    override suspend fun filterByPage(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        subjectUrl: String,
         now: Long,
     ): List<WebSearchSessionCacheEntity> = emptyList()
 

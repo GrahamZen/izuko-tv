@@ -17,6 +17,7 @@ import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheEntit
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
+import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration
 
@@ -111,20 +112,63 @@ class SelectorMediaSourceEpisodeCacheRepository(
         withContext(defaultDispatcher) {
             dao.filterBySubjectName(requesterSubjectId, mediaSourceId, subjectName, currentTimeMillis())
                 .groupBy { it.subjectUrl } // preserves encounter (insertion) order
-                .map { (_, rows) ->
-                    val first = rows.first()
-                    WebSearchCache(
-                        webSubjectInfo = WebSearchSubjectInfo(
-                            internalId = first.subjectInternalId,
-                            name = first.subjectPageName,
-                            fullUrl = first.subjectUrl,
-                            partialUrl = first.subjectPartialUrl,
-                            origin = null,
-                        ),
-                        webEpisodeInfos = rows.map { it.toWebSearchEpisodeInfo() },
-                    )
-                }
+                .map { (_, rows) -> rows.toWebSearchCache() }
         }
+
+    /**
+     * 同 [getCache], 但每个页面只读回可能与请求剧集相关的行 (见 [WebSearchSessionCacheDao.filterForEpisode]).
+     * 用于切集: 长番的条目页有几千集, 整页读回内存再找当前集太重.
+     *
+     * 仅适用于请求普通剧集且按集号过滤的数据源, 此时匹配结果与 [getCache] 完全一致: 读漏的只有集号是别的数字的行,
+     * 它们既匹配不上也出不了资源. 但列表变短了, 而匹配规则里有一条看「整页只有这一条」(`matchingEpisodeSortOf`),
+     * 所以筛完只剩一条没有集号的行、整页却不止一条时, 那一页整页读回.
+     */
+    suspend fun getCacheForEpisode(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+        episodeSort: EpisodeSort,
+        episodeEp: EpisodeSort?,
+    ): List<WebSearchCache> = withContext(defaultDispatcher) {
+        val now = currentTimeMillis()
+        val (rows, pageSizes) = dao.filterForEpisodeWithPageSizes(
+            requesterSubjectId, mediaSourceId, subjectName,
+            sort = episodeSort.toString(),
+            ep = episodeEp?.toString(),
+            now = now,
+        )
+        val pageSizeByUrl = pageSizes.associate { it.subjectUrl to it.rowCount }
+        rows.groupBy { it.subjectUrl } // preserves encounter (insertion) order
+            .map { (url, pageRows) ->
+                val single = pageRows.singleOrNull()
+                val needsWholePage = single != null && (pageSizeByUrl[url] ?: 1) > 1 &&
+                        (single.episodeSortOrEp == null || single.episodeSortOrEp is EpisodeSort.Unknown)
+                if (needsWholePage) {
+                    dao.filterByPage(requesterSubjectId, mediaSourceId, subjectName, url, now)
+                        .ifEmpty { pageRows }
+                        .toWebSearchCache()
+                } else {
+                    pageRows.toWebSearchCache()
+                }
+            }
+    }
+}
+
+/**
+ * 同一页面的行 (非空, 保持页面上的顺序) 还原成一个 [WebSearchCache].
+ */
+private fun List<WebSearchSessionCacheEntity>.toWebSearchCache(): WebSearchCache {
+    val first = first()
+    return WebSearchCache(
+        webSubjectInfo = WebSearchSubjectInfo(
+            internalId = first.subjectInternalId,
+            name = first.subjectPageName,
+            fullUrl = first.subjectUrl,
+            partialUrl = first.subjectPartialUrl,
+            origin = null,
+        ),
+        webEpisodeInfos = map { it.toWebSearchEpisodeInfo() },
+    )
 }
 
 data class WebSearchCache(
