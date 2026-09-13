@@ -18,6 +18,12 @@
 
 [github-android-x86_64]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-x86_64.apk
 
+[github-android-legacy-arm64-v8a]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-legacy-arm64-v8a.apk
+
+[github-android-legacy-armeabi-v7a]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-legacy-armeabi-v7a.apk
+
+[github-android-legacy]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-legacy-universal.apk
+
 [cf-win-x64]: https://d.myani.org/$GIT_TAG/ani-$TAG_VERSION-windows-x86_64.zip
 
 [cf-linux-x64]: https://d.myani.org/$GIT_TAG/ani-$TAG_VERSION-linux-x86_64.appimage
@@ -81,34 +87,36 @@
 | armeabi-v7a   | 32 位电视与电视盒子             | [GitHub][github-android-armeabi-v7a] |
 | x86_64              | x86 电视盒子及模拟器      | [GitHub][github-android-x86_64]                |
 | universal           | 所有设备（不确定架构时选这个）   | [GitHub][github-android]                |
+| legacy arm64-v8a    | Android 7.1 ~ 8.0 的 64 位盒子 | [GitHub][github-android-legacy-arm64-v8a] |
+| legacy armeabi-v7a  | Android 7.1 ~ 8.0 的 32 位盒子 | [GitHub][github-android-legacy-armeabi-v7a] |
+| legacy universal    | Android 7.1 ~ 8.0，不确定架构时选这个 | [GitHub][github-android-legacy] |
 
 [github-android-qr]: https://github.com/GrahamZen/animeko/releases/download/$GIT_TAG/ani-$TAG_VERSION-universal.apk.github.qrcode.png
 
 ### Android 7.1 兼容包
 
-上面的安装包要求 Android 8.1 及以上。装不上并提示 `INSTALL_FAILED_OLDER_SDK` 的话，用文件名带 `legacy` 的那几个（`ani-$TAG_VERSION-legacy-arm64-v8a.apk` 等），它们支持到 Android 7.1。
+表格前四行要求 Android 8.1 及以上。装不上并提示 `INSTALL_FAILED_OLDER_SDK` 的话，改用带 `legacy` 的后三行，它们支持到 Android 7.1。
 
-兼容包和正式包功能一致，但只在少量设备上验证过；能装正式包就别用它。另外 Android 7.1 上 BT 引擎跑在应用进程内，退到后台被系统回收后下载不会保活。
+兼容包和正式包功能一致，但只在少量设备上验证过；能装正式包就别用它。另外 Android 7.1 ~ 8.0 上 BT 引擎跑在应用进程内，退到后台被系统回收后下载不会保活。
 
 ## 本次更新
 
 
-- 电视端一集快播完时自动展开选集条并选中下一集，聚焦框走成一圈倒计时，走完自动播下一集；按方向键即变回普通选集条，也可在设置里调提前时间或关掉
-- 电视端播放器的选集条去掉卡片下方的简介与时长，只留卡片，少挡画面（集名在聚焦的卡片上滚动显示，简介仍可长按卡片查看）
-- 电视端播放器的「弹幕列表」与「发送弹幕」合并成一个「弹幕」按钮，点击即发
-- 时间表支持「时间未定」的剧集，跨零点自动翻页
-- 缓存管理页显示每一集的播放进度
-- 新增 Bangumi 收藏冲突提示与合并页
-- 电视端「完整视觉效果」关闭时（默认），hero 文字与详情页的集简介在卡片滚动期间隐藏、背景图也等卡片停稳再换，滚动明显更流畅
-- 数据源搜索里改过的条目搜索名会按条目记住，下一集和下次进播放页照用；编辑框里可一键恢复 Bangumi 名称
+- 新番时间表改版：左边显示选中那一部的封面、评分、标签和简介，背景换成它的横版大图；右边按播出时间一行一部、字更大，你追的番标心形；进页直接落在今天你追的下一部，左右键直接换天
+- 「手机遥控」改名「Web 控制台」，手机、电脑的浏览器都能打开；数据源名字前显示图标
+- Web 控制台的搜索结果、播放记录和缓存列表可以左右滑出缓存、收藏、删除按钮，滑到底直接执行；播放记录和订阅可长按多选一起删除；右上角「?」可以查看各页的使用说明
+- 点卡片进详情页的放大动画改成更跟手的节奏，画面停稳前按钮就已出现，停稳即可直接操作；视觉效果选「流畅」时也有放大
+- Web 控制台可以用邮箱登录或注册 Animeko 账号，已登录时可绑定或更换邮箱
+- Web 控制台的缓存页可以直接从在看 / 想看里挑番缓存，在看的番会标出有几集更新、几集还没缓存
+- 新番时间表打开更快：在首页停一下再进，基本一打开就有内容
+- 列表页换背景、进详情页和片尾「接下来播放」更省性能，4K 界面和配置较低的电视上更流畅
 
 ----
 
-- 修复在动作面板点「在后台播放」后一直卡在「正在查找数据源」，要进播放页才开始加载
-- 修复电视端进详情页时配色先是主题色、再跳成动态色
-- 修复电视端长按方向键时焦点被拽回上一张卡
-- 自动选择数据源改为分阶段，选源更快
-- 电视端隐藏「动态渐变背景」开关，新详情页上它不生效
+- 修复从新番时间表返回首页时焦点跳到「立即观看」上，一按确认就误进了轮播那部的详情页
+- 修复内存较小的设备（如 1GB 左右的投影仪）看海贼王、火影等长番时，加载或换集闪退
+- 修复部分电视因系统里自带了同名组件，在线源全部搜不到结果或一打开播放器就闪退
+- 修复部分在线源的页面里混有无效链接时，整个源搜不到结果
 
 ### 已知问题
 
