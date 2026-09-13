@@ -102,9 +102,8 @@ enum class TvVisualEffectsLevel {
 }
 
 /**
- * TV: 「手机遥控」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]).
- *
- * 只有两档, 没有「隐藏」: 头像菜单就是最低限度的入口, 全藏掉就再也找不回来了.
+ * TV: 「手机遥控」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]). **已不再使用** (2026-09-12): 入口改成动作面板
+ * 右侧常驻的二维码, 侧边栏与头像菜单的条目都删了. 类型与字段留着只为读得懂旧设置 (设置 JSON 里存过它的人).
  */
 @Serializable
 enum class TvRemoteEntryPlacement {
@@ -191,12 +190,13 @@ data class ThemeSettings(
      * [visualEffects], 别直接读这个字段.
      */
     val tvVisualEffects: TvVisualEffectsLevel? = null,
-    /**
-     * TV: 「手机遥控」入口放侧边栏还是头像菜单 (见 [TvRemoteEntryPlacement]).
-     *
-     * 默认侧边栏 (2026-09-11): 起初只放头像菜单, 用户认为藏着没人发现. 嫌多余的在二维码弹窗里一键收进头像菜单.
-     */
+    /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
     val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
+    /**
+     * TV: 打开应用时弹一次「手机遥控」二维码 (2026-09-12, 用户要默认开). 设置-界面与弹窗里「启动时不再显示」都能关.
+     * 一个进程只弹一次, 没连局域网 (拿不到地址) 不弹, 见 `TvRemoteControl.showDialogOnLaunch`.
+     */
+    val tvRemoteShowOnLaunch: Boolean = true,
     /**
      * TV: 界面整体缩放系数, 叠加在系统 density 之上 (1f = 跟随系统).
      *

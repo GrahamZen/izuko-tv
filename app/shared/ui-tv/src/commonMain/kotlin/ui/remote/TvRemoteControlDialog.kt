@@ -9,14 +9,23 @@
 
 package me.him188.ani.app.ui.remote
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,25 +37,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import me.him188.ani.app.data.models.preference.ThemeSettings
-import me.him188.ani.app.data.models.preference.TvRemoteEntryPlacement
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.search_tv_remote_connected
-import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
 import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
-import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.tv_remote_control_close
-import me.him188.ani.app.ui.lang.tv_remote_control_desc
-import me.him188.ani.app.ui.lang.tv_remote_control_entry_hint_avatar
-import me.him188.ani.app.ui.lang.tv_remote_control_move_to_avatar
+import me.him188.ani.app.ui.lang.tv_remote_control_dont_show_on_launch
+import me.him188.ani.app.ui.lang.tv_remote_control_panel_hint
 import me.him188.ani.app.ui.lang.tv_remote_control_title
+import me.him188.ani.app.ui.lang.tv_remote_qr_connected
+import me.him188.ani.app.ui.lang.tv_remote_qr_hint
+import me.him188.ani.app.ui.lang.tv_remote_qr_ip_changed
+import me.him188.ani.app.ui.lang.tv_remote_qr_ip_changed_hint
+import me.him188.ani.app.ui.lang.tv_remote_qr_waiting
 import org.jetbrains.compose.resources.stringResource
 
-/** TV 根组合里调一次: [TvRemoteControl.showDialog] 之后在这里画弹窗, 哪一页的侧边栏都能开. */
+/** TV 根组合里调一次: 启动时 [TvRemoteControl.showDialogOnLaunch] 之后在这里画弹窗. */
 @Composable
 fun TvRemoteControlDialogHost() {
     val visible by TvRemoteControl.dialogVisible.collectAsState()
@@ -54,113 +67,197 @@ fun TvRemoteControlDialogHost() {
 }
 
 /**
- * 「手机遥控」二维码弹窗 (侧边栏那一项或头像菜单弹出, 见 [ThemeSettings.tvRemoteEntryPlacement]): 与搜索页右侧面板是
- * **同一个地址**, 只是入口不同 —— 搜索页面板只在搜索页看得到, 而播放中想换源的人是从这里扫.
+ * 动作面板开着时屏幕右上角那张「手机遥控」码卡 (见 TvActionPanelDialog; 2026-09-12 用户要: 面板照旧, 码单独放右上角,
+ * 长按播放键一开面板就能扫). 版式: 标题行 (「手机遥控」+ 右边状态点与两三个字) / 码 / 一行说明 / 地址, 字尽量少.
+ * 不吃焦点: 面板的焦点路径与标签行都不受影响.
  *
- * 地址、IP 变化提示、手机是否已连上都读 [TvRemoteControl] 的状态, 与搜索页面板一致. 打开时重算一次地址:
- * 电视换过网络的话, 服务启动时算的那个已经不对了.
+ * @param containerColor 卡片底色: 由面板传它自己的底色 (半透明玻璃), 两块透明度一致、看着是一套; 只有码自带不透明底
+ *   (透过来的图案会干扰扫码). 圆角同面板 16dp, 面板没有投影, 卡片也不加
+ */
+@Composable
+fun TvRemoteQrCard(containerColor: Color, modifier: Modifier = Modifier) {
+    val url by TvRemoteControl.url.collectAsState()
+    val hostChanged by TvRemoteControl.hostChanged.collectAsState()
+    val phoneConnected by TvRemoteControl.phoneConnected.collectAsState()
+    LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
+
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier.width(CARD_QR_SIZE + CARD_QR_QUIET_ZONE * 2 + CARD_PADDING * 2),
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        // 半透明底查不到 "on" 色, 内容色显式给 (同动作面板)
+        contentColor = scheme.onSurface,
+    ) {
+        Column(Modifier.padding(CARD_PADDING)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(Lang.tv_remote_control_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.height(12.dp))
+            RemoteQrCode(url, CARD_QR_SIZE, CARD_QR_QUIET_ZONE)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                stringResource(if (hostChanged) Lang.tv_remote_qr_ip_changed_hint else Lang.tv_remote_qr_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hostChanged) scheme.error else scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            // 最底下一行地址: 扫不了码 (相机坏了 / 用电脑) 时照着输入, 或者核对手机书签是不是这个. 地址约 36 字,
+            // 卡片这么窄会折成两行, 不省略 —— 省掉一截就输不对了
+            url?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 启动时弹一次的「手机遥控」弹窗 (设置里开着「启动时弹出」才有, 见 [TvRemoteControl.showDialogOnLaunch]).
+ * 平时的入口是动作面板开着时右上角那张码卡, 这里只做「介绍一次」.
  *
- * 入口在侧边栏时多一颗「收进头像菜单」(嫌多余的一键收起, 不用去设置里找); 已在头像菜单时改成一行字说怎么放回去.
+ * 横排: 左 = 码 (同码卡的浅底深码), 右 = 标题 / 连接状态 / 一句能干什么 / 地址 / 以后去哪找 / 两颗按钮.
+ * 原先是 AlertDialog 里码居中、字在下面, 左右两大块空白 (用户嫌空); 横排后码与说明各占一半, 高度也省下来 ——
+ * 1080p 电视约 540dp 高, AlertDialog 的文字区不滚动, 竖排一长就截断.
  */
 @Composable
 fun TvRemoteControlDialog(onDismissRequest: () -> Unit) {
     val url by TvRemoteControl.url.collectAsState()
     val hostChanged by TvRemoteControl.hostChanged.collectAsState()
-    val knownHost by TvRemoteControl.knownHost.collectAsState()
     val phoneConnected by TvRemoteControl.phoneConnected.collectAsState()
-    val inRail = LocalThemeSettings.current.tvRemoteEntryPlacement == TvRemoteEntryPlacement.Rail
     LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
     // 扫完码在手机上搜索 / 点播: 电视那边已经换了页面, 这个弹窗别再挡着
     LaunchedEffect(Unit) { TvRemoteControl.remoteNavigations.collect { onDismissRequest() } }
-    // 焦点先落「关闭」: 旁边就是「收进头像菜单」, 不定落点的话打开后按确认键可能点到它
+    // 焦点先落「关闭」: 旁边就是「启动时不再显示」, 打开后条件反射按确认键不该点到它
     val closeFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { closeFocus.requestFocus() } }
 
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = { Text(stringResource(Lang.tv_remote_control_title)) },
-        text = {
-            val currentUrl = url
-            // 横排两栏: 左 = 码 + 码下的地址与连接状态 (都是「这个码」的属性), 右 = 说明 + 入口提示.
-            // 全部竖排在 1080p 电视上超出 AlertDialog 文字区 (不滚动) 的高度, 最后一行被截掉一半
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (currentUrl != null) {
-                    // 码下方到地址那段空白是码自己的留白 (扫码器定位要用), 不能再压; 码与右栏的间距同理, 不另加
-                    Column(
-                        Modifier.width(QR_SIZE + QR_QUIET_ZONE * 2),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        QrCodeImage(currentUrl, Modifier.size(QR_SIZE), quietZone = QR_QUIET_ZONE)
-                        Text(
-                            currentUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (hostChanged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            when {
-                                hostChanged -> stringResource(Lang.search_tv_remote_host_changed, knownHost.orEmpty())
-                                phoneConnected -> stringResource(Lang.search_tv_remote_connected)
-                                else -> stringResource(Lang.search_tv_remote_waiting)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = when {
-                                hostChanged -> MaterialTheme.colorScheme.error
-                                phoneConnected -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+    val scheme = MaterialTheme.colorScheme
+    Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.width(LAUNCH_DIALOG_WIDTH),
+            shape = RoundedCornerShape(28.dp),
+            color = scheme.surfaceContainerHigh,
+            contentColor = scheme.onSurface,
+        ) {
+            Row(Modifier.padding(28.dp), verticalAlignment = Alignment.CenterVertically) {
+                RemoteQrCode(url, LAUNCH_QR_SIZE, LAUNCH_QR_QUIET_ZONE)
+                Spacer(Modifier.width(28.dp))
                 Column(Modifier.weight(1f)) {
+                    Text(stringResource(Lang.tv_remote_control_title), style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(8.dp))
+                    RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        stringResource(Lang.tv_remote_control_desc),
+                        stringResource(if (hostChanged) Lang.tv_remote_qr_ip_changed_hint else Lang.tv_remote_qr_hint),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (hostChanged) scheme.error else scheme.onSurface,
                     )
-                    if (currentUrl == null) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            stringResource(Lang.search_tv_remote_unavailable),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    url?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
                     }
-                    if (!inRail) {
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            stringResource(Lang.tv_remote_control_entry_hint_avatar),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(Lang.tv_remote_control_panel_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onDismissRequest, Modifier.focusRequester(closeFocus)) {
+                            Text(stringResource(Lang.tv_remote_control_close))
+                        }
+                        TextButton(
+                            onClick = {
+                                // 先关弹窗再改设置 (写入在 TvRemoteControl 的作用域里, 不随弹窗离场取消)
+                                onDismissRequest()
+                                TvRemoteControl.setShowOnLaunch(false)
+                            },
+                        ) { Text(stringResource(Lang.tv_remote_control_dont_show_on_launch)) }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onDismissRequest, Modifier.focusRequester(closeFocus)) {
-                Text(stringResource(Lang.tv_remote_control_close))
-            }
-        },
-        dismissButton = if (inRail) {
-            {
-                TextButton(
-                    onClick = {
-                        // 先关弹窗再改设置 (写入在 TvRemoteControl 的作用域里, 不随弹窗离场取消)
-                        onDismissRequest()
-                        TvRemoteControl.setEntryPlacement(TvRemoteEntryPlacement.Avatar)
-                    },
-                ) { Text(stringResource(Lang.tv_remote_control_move_to_avatar)) }
-            }
-        } else {
-            null
-        },
-    )
+        }
+    }
 }
 
-/** 码本体边长; 地址 36 字符 = 29 模块, 200dp 下一模块约 6.9dp. */
-private val QR_SIZE = 200.dp
+/**
+ * 码本体 (或没地址时同样大小的占位). **浅底深码** (常规极性, 老扫码器也认): 深色主题的 primary 本身是浅色 (tone 80),
+ * 直接当底、onPrimary 画码; 浅色主题的 primary 是深色, 改用 primaryContainer / onPrimaryContainer. 按主题深浅判,
+ * 不按 primary 自己的亮度判 —— tone 80 的亮度正好卡在 0.5 上下, 按它判会时对时错. 码自带不透明底:
+ * 动作面板那边背后是半透明玻璃, 透过来的图案会干扰扫码.
+ */
+@Composable
+private fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
+    val scheme = MaterialTheme.colorScheme
+    val darkTheme = scheme.surface.luminance() < 0.5f
+    if (url != null) {
+        QrCodeImage(
+            url,
+            Modifier.size(size),
+            quietZone = quietZone,
+            foreground = if (darkTheme) scheme.onPrimary else scheme.onPrimaryContainer,
+            background = if (darkTheme) scheme.primary else scheme.primaryContainer,
+        )
+    } else {
+        Box(
+            Modifier
+                .size(size + quietZone * 2)
+                .border(1.dp, scheme.outlineVariant, RoundedCornerShape(12.dp))
+                .padding(16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                stringResource(Lang.search_tv_remote_unavailable),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
 
-/** 四周留白 ≥ 4 模块. */
-private val QR_QUIET_ZONE = 28.dp
+/** 状态点 + 两三个字 (已连接 绿 / 等待连接 灰 / IP 已变 红); 没有地址时不画 (码的位置已经写着「未连接到局域网」). */
+@Composable
+private fun RemoteConnectionStatus(url: String?, hostChanged: Boolean, phoneConnected: Boolean, style: TextStyle) {
+    val scheme = MaterialTheme.colorScheme
+    val connectedColor = if (scheme.surface.luminance() < 0.5f) CONNECTED_GREEN_DARK else CONNECTED_GREEN_LIGHT
+    val (dot, label) = when {
+        url == null -> return
+        hostChanged -> scheme.error to stringResource(Lang.tv_remote_qr_ip_changed)
+        phoneConnected -> connectedColor to stringResource(Lang.tv_remote_qr_connected)
+        else -> scheme.outline to stringResource(Lang.tv_remote_qr_waiting)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(dot, CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = style, color = if (dot == scheme.outline) scheme.onSurfaceVariant else dot)
+    }
+}
+
+/** 右上角码卡: 码本体 128dp, 留白 18dp (≥ 4 模块: 29 模块时一模块 ≈ 4.4dp); 整张卡约 196dp 宽, 与居中的面板不重叠. */
+private val CARD_QR_SIZE = 128.dp
+private val CARD_QR_QUIET_ZONE = 18.dp
+private val CARD_PADDING = 16.dp
+
+/** 启动弹窗: 码 180dp + 留白 24dp (≥ 4 模块); 弹窗 600dp 宽, 右栏约 300dp, 地址折一两行. */
+private val LAUNCH_QR_SIZE = 180.dp
+private val LAUNCH_QR_QUIET_ZONE = 24.dp
+private val LAUNCH_DIALOG_WIDTH = 600.dp
+
+/** 「已连接」的绿: 深色主题上用亮一些的, 浅色主题上用深一些的, 两边与卡片底色都有足够对比. */
+private val CONNECTED_GREEN_DARK = Color(0xFF6DD58C)
+private val CONNECTED_GREEN_LIGHT = Color(0xFF1E8E3E)
