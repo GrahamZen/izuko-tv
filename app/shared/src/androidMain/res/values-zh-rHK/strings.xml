@@ -14,4 +14,6 @@
     <string name="app_service_title_text_working">正在下载 %1$d 个资源</string>
     <string name="app_service_content_text">下载：%1$s，上传：%2$s</string>
     <string name="app_service_stop_text">停止</string>
+    <string name="service_remote_keep_alive_name">Web 控制台</string>
+    <string name="service_remote_keep_alive_text">退出 Animeko 后手机仍能连接</string>
 </resources>
