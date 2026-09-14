@@ -96,7 +96,7 @@ internal object RemoteCacheList {
             }
         }.getOrElse {
             logger.warn(it) { "Remote cache list request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -175,7 +175,7 @@ internal object RemoteCacheList {
 
     private fun list(): JsonObject {
         val snapshot = runBlocking { withTimeoutOrNull(LIST_TIMEOUT) { readSnapshot() } }
-            ?: return result(false, "读取缓存失败，请重试")
+            ?: return result(false, tr("读取缓存失败，请重试"))
         val rows = snapshot.rows
         val now = System.nanoTime()
         samples.keys.retainAll(rows.mapTo(HashSet()) { it.cache.cacheId })
@@ -228,7 +228,7 @@ internal object RemoteCacheList {
                     put("title", names[g.first().subjectId] ?: subjectTitle(m))
                     val size = g.sumOf { it.totalBytes ?: 0L }
                     val done = g.count { it.state == MediaCacheState.COMPLETED }
-                    put("meta", "已完成 $done / ${g.size} 集" + if (size > 0) " · ${size.bytes}" else "")
+                    put("meta", tr("已完成 {0} / {1} 集", done, g.size) + if (size > 0) " · ${size.bytes}" else "")
                     putJsonArray("items") {
                         for (r in g.sortedBy { it.metadata.episodeSort }) addJsonObject {
                             val (st, text) = statusOf(r)
@@ -240,7 +240,7 @@ internal object RemoteCacheList {
                             sizeText(r)?.let { put("size", it) }
                             speeds[r.cache.cacheId]?.let { put("speed", "${it.bytes}/s") }
                             snapshot.sourceNames[r.cache.origin.mediaSourceId]?.let { put("source", it) }
-                            snapshot.watched[r.episodeId]?.let { put("watched", "已看 $it%") }
+                            snapshot.watched[r.episodeId]?.let { put("watched", tr("已看 {0}%", it)) }
                             if (r.isPack) {
                                 put("pack", true)
                                 val others = (packCounts[r.cache.origin.mediaId] ?: 1) - 1
@@ -256,11 +256,11 @@ internal object RemoteCacheList {
 
     /** 网页上的状态: 类别 (决定颜色与按钮) 与文案, 文案同电视缓存页. */
     private fun statusOf(r: Row): Pair<String, String> = when (r.state) {
-        null -> "loading" to "读取中"
-        MediaCacheState.COMPLETED -> "done" to "已完成"
-        MediaCacheState.FAILED -> "failed" to "下载失败"
-        MediaCacheState.PAUSED -> "paused" to "已暂停 ${r.percent}%"
-        MediaCacheState.IN_PROGRESS -> if (r.merging) ("merging" to "合并中") else ("run" to "下载中 ${r.percent}%")
+        null -> "loading" to tr("读取中")
+        MediaCacheState.COMPLETED -> "done" to tr("已完成")
+        MediaCacheState.FAILED -> "failed" to tr("下载失败")
+        MediaCacheState.PAUSED -> "paused" to tr("已暂停 {0}%", r.percent)
+        MediaCacheState.IN_PROGRESS -> if (r.merging) ("merging" to tr("合并中")) else ("run" to tr("下载中 {0}%", r.percent))
     }
 
     /** 下完了: 文件大小; 没下完: 已下 / 总共 (同电视缓存页). */
@@ -309,11 +309,11 @@ internal object RemoteCacheList {
      * 没下完的缓存不会被自动选中 (选了也播不了), 播放器照常找在线源 —— 提示里说一句.
      */
     private fun play(request: LanHttpRequest, navigator: AniNavigator?, uiScope: CoroutineScope): JsonObject {
-        val cache = findCache(request) ?: return result(false, "这条缓存已经不在了，请刷新")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val cache = findCache(request) ?: return result(false, tr("这条缓存已经不在了，请刷新"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val m = cache.metadata
-        val subjectId = m.subjectId.toIntOrNull() ?: return result(false, "这条缓存没有记录是哪部番，播不了")
-        val episodeId = m.episodeId.toIntOrNull() ?: return result(false, "这条缓存没有记录是哪一集，播不了")
+        val subjectId = m.subjectId.toIntOrNull() ?: return result(false, tr("这条缓存没有记录是哪部番，播不了"))
+        val episodeId = m.episodeId.toIntOrNull() ?: return result(false, tr("这条缓存没有记录是哪一集，播不了"))
         val done = runBlocking { withTimeoutOrNull(FLOW_TIMEOUT) { cache.state.first() } } == MediaCacheState.COMPLETED
         logger.info { "Remote cache play: subject=$subjectId ep=$episodeId cacheId=${cache.cacheId} completed=$done" }
         // 电视正在播这部番时就地换集, 不再叠一个新的播放页 (见 TvRemoteControl.playEpisode)
@@ -323,31 +323,31 @@ internal object RemoteCacheList {
         val what = "「${displayNamesOf(listOf(subjectId))[subjectId] ?: subjectTitle(m)}」${m.episodeSort}"
         // 没缓存完时电视会从别的数据源里挑一个来播 (没下完的缓存不许选), 挑到的可能是 BT 也可能是在线源, 不说死是哪种
         val msg = when (how) {
-            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> "电视正在播$what"
-            TvRemoteControl.RemotePlayResult.Switched -> "已在电视上换到$what"
-            TvRemoteControl.RemotePlayResult.Opened -> "已在电视上播放$what"
-        } + if (!done && how != TvRemoteControl.RemotePlayResult.AlreadyPlaying) "：这一集还没缓存完，先从其他数据源播" else ""
+            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> tr("电视正在播{0}", what)
+            TvRemoteControl.RemotePlayResult.Switched -> tr("已在电视上换到{0}", what)
+            TvRemoteControl.RemotePlayResult.Opened -> tr("已在电视上播放{0}", what)
+        } + if (!done && how != TvRemoteControl.RemotePlayResult.AlreadyPlaying) tr("：这一集还没缓存完，先从其他数据源播") else ""
         return result(true, msg, player = true)
     }
 
     /** 点番名 = 电视打开这部番的详情页. */
     private fun open(request: LanHttpRequest, navigator: AniNavigator?, uiScope: CoroutineScope): JsonObject {
-        val subjectId = request.formFields()["subject"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val subjectId = request.formFields()["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         TvRemoteControl.notifyRemoteNavigation()
         uiScope.launch(Dispatchers.Main) {
             runCatching { nav.navigateSubjectDetails(subjectId, placeholder = null) }
                 .onFailure { logger.warn(it) { "Failed to open subject details from remote cache list" } }
         }
-        return result(true, "已在电视上打开详情页")
+        return result(true, tr("已在电视上打开详情页"))
     }
 
     private fun subjectTitle(m: MediaCacheMetadata): String =
-        m.subjectNameCN?.takeIf { it.isNotBlank() } ?: m.subjectNames.firstOrNull() ?: "未知条目"
+        m.subjectNameCN?.takeIf { it.isNotBlank() } ?: m.subjectNames.firstOrNull() ?: tr("未知条目")
 
     /** 暂停 / 继续 (同缓存管理页). BT 的要等句柄, 放后台做; 状态随网页下一次刷新变过来. */
     private fun setPaused(request: LanHttpRequest, paused: Boolean): JsonObject {
-        val cache = findCache(request) ?: return result(false, "这条缓存已经不在了，请刷新")
+        val cache = findCache(request) ?: return result(false, tr("这条缓存已经不在了，请刷新"))
         scope.launch {
             try {
                 if (paused) cache.pause() else cache.resume()
@@ -357,7 +357,7 @@ internal object RemoteCacheList {
                 logger.warn(e) { "Remote ${if (paused) "pause" else "resume"} failed for cache ${cache.cacheId}" }
             }
         }
-        return result(true, if (paused) "已暂停" else "继续下载")
+        return result(true, if (paused) tr("已暂停") else tr("继续下载"))
     }
 
     /**
@@ -365,7 +365,7 @@ internal object RemoteCacheList {
      * 删除本身在本对象的作用域里跑, 限时等不到也不会被取消.
      */
     private fun delete(request: LanHttpRequest): JsonObject {
-        val cache = findCache(request) ?: return result(false, "这条缓存已经不在了，请刷新")
+        val cache = findCache(request) ?: return result(false, tr("这条缓存已经不在了，请刷新"))
         val m = cache.metadata
         val subjectId = m.subjectId.toIntOrNull() ?: 0
         val episodeId = m.episodeId.toIntOrNull() ?: 0
@@ -377,7 +377,7 @@ internal object RemoteCacheList {
         RemoteCache.rememberDeleted(subjectId, listOf(cache))
         val deletion = scope.async { logDeleteFailure(cache.cacheId) { deleteCacheById(subjectId, episodeId, cache.cacheId) } }
         val finished = runBlocking { withTimeoutOrNull(DELETE_TIMEOUT) { deletion.await(); true } } ?: false
-        return result(true, if (finished) "已删除「${episodeLabel(m)}」" else "正在删除，稍后刷新看看")
+        return result(true, if (finished) tr("已删除「{0}」", episodeLabel(m)) else tr("正在删除，稍后刷新看看"))
     }
 
     /**
@@ -386,7 +386,7 @@ internal object RemoteCacheList {
      */
     private fun deleteMany(request: LanHttpRequest): JsonObject {
         val ids = request.formFields()["ids"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        if (ids.isEmpty()) return result(false, "请先选择要删除的剧集。")
+        if (ids.isEmpty()) return result(false, tr("请先选择要删除的剧集。"))
         val caches = runBlocking {
             withTimeoutOrNull(OP_TIMEOUT) {
                 cacheManager.enabledStorages.first()
@@ -394,8 +394,8 @@ internal object RemoteCacheList {
                     .filter { !it.isDeleted.value && it.cacheId in ids }
                     .distinctBy { it.cacheId }
             }
-        } ?: return result(false, "缓存读取失败，请重试。")
-        if (caches.isEmpty()) return result(false, "找不到所选缓存，请刷新列表。")
+        } ?: return result(false, tr("缓存读取失败，请重试。"))
+        if (caches.isEmpty()) return result(false, tr("找不到所选缓存，请刷新列表。"))
         // 删完马上重下时自动批量要沿用它们原来的源 (见 RemoteCache.rememberDeleted)
         caches.groupBy { it.metadata.subjectId.toIntOrNull() ?: 0 }.forEach { (subjectId, list) -> RemoteCache.rememberDeleted(subjectId, list) }
         val deletion = scope.async {
@@ -411,7 +411,7 @@ internal object RemoteCacheList {
             }
         }
         val finished = runBlocking { withTimeoutOrNull(DELETE_ALL_TIMEOUT) { deletion.await(); true } } ?: false
-        return result(true, if (finished) "已删除 ${caches.size} 集缓存" else "正在删除 ${caches.size} 集，请稍后刷新。")
+        return result(true, if (finished) tr("已删除 {0} 集缓存", caches.size) else tr("正在删除 {0} 集，请稍后刷新。", caches.size))
     }
 
     /**
@@ -419,7 +419,7 @@ internal object RemoteCacheList {
      * 合集的文件要等同一个种子的集都删了才整个回收, 整部删正好一起删掉.
      */
     private fun deleteSubject(request: LanHttpRequest): JsonObject {
-        val subjectId = request.formFields()["subject"]?.toIntOrNull() ?: return result(false, "无效的条目")
+        val subjectId = request.formFields()["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
         val caches = runBlocking {
             withTimeoutOrNull(OP_TIMEOUT) {
                 cacheManager.enabledStorages.first()
@@ -427,8 +427,8 @@ internal object RemoteCacheList {
                     .filter { !it.isDeleted.value && it.metadata.subjectId.toIntOrNull() == subjectId }
                     .distinctBy { it.cacheId }
             }
-        } ?: return result(false, "读取缓存失败，请重试")
-        if (caches.isEmpty()) return result(false, "这部番已经没有缓存了，请刷新")
+        } ?: return result(false, tr("读取缓存失败，请重试"))
+        if (caches.isEmpty()) return result(false, tr("这部番已经没有缓存了，请刷新"))
         RemoteCache.rememberDeleted(subjectId, caches)
         val deletion = scope.async {
             for (cache in caches) {
@@ -444,7 +444,7 @@ internal object RemoteCacheList {
             }
         }
         val finished = runBlocking { withTimeoutOrNull(DELETE_ALL_TIMEOUT) { deletion.await(); true } } ?: false
-        return result(true, if (finished) "已删除 ${caches.size} 集缓存" else "正在删除 ${caches.size} 集，请稍后刷新。")
+        return result(true, if (finished) tr("已删除 {0} 集缓存", caches.size) else tr("正在删除 {0} 集，请稍后刷新。", caches.size))
     }
 
     /**

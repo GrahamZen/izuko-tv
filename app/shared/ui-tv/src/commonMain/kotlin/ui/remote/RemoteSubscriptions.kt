@@ -81,7 +81,7 @@ internal object RemoteSubscriptions {
             }
         }.getOrElse {
             logger.warn(it) { "Remote subscription request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -93,16 +93,16 @@ internal object RemoteSubscriptions {
                 for (sub in subs) addJsonObject {
                     put("id", sub.subscriptionId)
                     put("url", sub.url)
-                    put("period", "每 " + periodText(sub.updatePeriod) + "自动更新")
+                    put("period", tr("每 {0}自动更新", periodText(sub.updatePeriod)))
                     val last = sub.lastUpdated
                     when {
-                        last == null -> put("status", "还没有更新过")
+                        last == null -> put("status", tr("还没有更新过"))
                         last.error != null || last.mediaSourceCount == null -> {
                             put("failed", true)
-                            put("status", timeText(last.timeMillis) + " 更新失败：" + errorText(last.error))
+                            put("status", tr("{0} 更新失败：{1}", timeText(last.timeMillis), errorText(last.error)))
                         }
 
-                        else -> put("status", timeText(last.timeMillis) + " 更新成功，包含 ${last.mediaSourceCount} 个数据源")
+                        else -> put("status", tr("{0} 更新成功，包含 {1} 个数据源", timeText(last.timeMillis), last.mediaSourceCount))
                     }
                 }
             }
@@ -111,23 +111,23 @@ internal object RemoteSubscriptions {
 
     private fun add(raw: String): JsonObject {
         val url = raw.trim()
-        if (url.isEmpty()) return result(false, "请填写订阅地址")
+        if (url.isEmpty()) return result(false, tr("请填写订阅地址"))
         val uri = runCatching { URI(url) }.getOrNull()
         if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
-            return result(false, "订阅地址要以 http:// 或 https:// 开头")
+            return result(false, tr("订阅地址要以 http:// 或 https:// 开头"))
         }
         val existing = runBlocking { repository.flow.first() }
-        if (existing.any { it.url.trim() == url }) return result(false, "这个订阅已经添加过了")
+        if (existing.any { it.url.trim() == url }) return result(false, tr("这个订阅已经添加过了"))
         runBlocking { repository.add(MediaSourceSubscription(subscriptionId = UUID.randomUUID().toString(), url = url)) }
         logger.info { "Remote control added a media source subscription" }
         // 不强制: 只拉还没更新过的 (即刚加的这条) 与本来就到期的, 不必把其余订阅也重拉一遍
         startUpdate(force = false)
-        return result(true, "已添加，正在拉取订阅里的数据源")
+        return result(true, tr("已添加，正在拉取订阅里的数据源"))
     }
 
     private fun delete(ids: List<String>): JsonObject {
         val subs = runBlocking { repository.flow.first() }.filter { it.subscriptionId in ids }
-        if (subs.isEmpty()) return result(false, if (ids.size > 1) "找不到这些订阅" else "找不到这个订阅")
+        if (subs.isEmpty()) return result(false, if (ids.size > 1) tr("找不到这些订阅") else tr("找不到这个订阅"))
         runBlocking {
             for (sub in subs) {
                 // 同设置页: 先删它带来的数据源, 再删订阅本身 (仓库的 remove 不管数据源)
@@ -137,13 +137,13 @@ internal object RemoteSubscriptions {
             }
         }
         logger.info { "Remote control deleted ${subs.size} media source subscription(s)" }
-        return result(true, if (ids.size > 1) "已删除 ${subs.size} 个订阅及其数据源" else "已删除订阅及其数据源")
+        return result(true, if (ids.size > 1) tr("已删除 {0} 个订阅及其数据源", subs.size) else tr("已删除订阅及其数据源"))
     }
 
     private fun refresh(): JsonObject {
-        if (updating) return result(false, "正在更新，稍等一下")
+        if (updating) return result(false, tr("正在更新，稍等一下"))
         startUpdate(force = true)
-        return result(true, "正在更新全部订阅")
+        return result(true, tr("正在更新全部订阅"))
     }
 
     private fun startUpdate(force: Boolean) {
@@ -163,17 +163,17 @@ internal object RemoteSubscriptions {
     }
 
     private fun periodText(d: Duration): String = when {
-        d.inWholeHours >= 1 && d.inWholeMinutes % 60 == 0L -> "${d.inWholeHours} 小时"
-        else -> "${d.inWholeMinutes} 分钟"
+        d.inWholeHours >= 1 && d.inWholeMinutes % 60 == 0L -> tr("{0} 小时", d.inWholeHours)
+        else -> tr("{0} 分钟", d.inWholeMinutes)
     }
 
     private fun timeText(millis: Long): String = SimpleDateFormat("MM-dd HH:mm", Locale.ROOT).format(Date(millis))
 
     private fun errorText(error: MediaSourceSubscription.UpdateError?): String = when (error?.failure) {
-        null -> error?.message ?: "未知错误"
-        ApiFailure.Unauthorized -> "未授权"
-        ApiFailure.NetworkError -> "网络错误"
-        ApiFailure.ServiceUnavailable -> "服务不可用"
+        null -> error?.message ?: tr("未知错误")
+        ApiFailure.Unauthorized -> tr("未授权")
+        ApiFailure.NetworkError -> tr("网络错误")
+        ApiFailure.ServiceUnavailable -> tr("服务不可用")
     }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {

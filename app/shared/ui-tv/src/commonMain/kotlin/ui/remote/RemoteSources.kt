@@ -106,7 +106,7 @@ internal object RemoteSources {
             }
         }.getOrElse {
             logger.warn(it) { "Remote sources request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -234,9 +234,9 @@ internal object RemoteSources {
 
     /** 导出一个 RSS / 选择器源: 格式同设置页「导出单个」(带 factoryId 与版本号), 缩进好方便在手机上改. */
     private fun export(id: String): JsonObject {
-        val instance = instances().find { it.instanceId == id } ?: return result(false, "数据源不存在，请刷新")
+        val instance = instances().find { it.instanceId == id } ?: return result(false, tr("数据源不存在，请刷新"))
         val arguments = instance.config.serializedArguments
-        if (instance.factoryId !in JSON_FACTORIES || arguments == null) return result(false, "这个数据源不支持导出")
+        if (instance.factoryId !in JSON_FACTORIES || arguments == null) return result(false, tr("这个数据源不支持导出"))
         val data = codec.serialize(instance.factoryId, arguments)
         return buildJsonObject {
             put("ok", true)
@@ -250,7 +250,7 @@ internal object RemoteSources {
         val data = when (FactoryId(factoryId)) {
             RSS -> codec.encode(RssMediaSourceArguments.Default)
             SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
-            else -> return result(false, "这个类型没有 JSON 模板")
+            else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
             put("ok", true)
@@ -273,7 +273,7 @@ internal object RemoteSources {
         val id = request.field("id")
         val ids = instances().map { it.instanceId }.toMutableList()
         val from = ids.indexOf(id)
-        if (from < 0) return result(false, "数据源不存在，请刷新")
+        if (from < 0) return result(false, tr("数据源不存在，请刷新"))
         val to = if (request.field("dir") == "up") from - 1 else from + 1
         if (to !in ids.indices) return result(true, "")
         ids[from] = ids[to].also { ids[to] = ids[from] }
@@ -282,22 +282,22 @@ internal object RemoteSources {
     }
 
     private fun delete(request: LanHttpRequest): JsonObject {
-        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, "数据源不存在，请刷新")
+        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, tr("数据源不存在，请刷新"))
         // 订阅来的删了也会在下次更新时回来, 不给单个删; 要删就删整个订阅 (本标签顶部的订阅块, 见 RemoteSubscriptions)
-        if (instance.config.subscriptionId != null) return result(false, "订阅来的源会随订阅更新恢复，要删请在上面的「订阅」里删掉整个订阅")
+        if (instance.config.subscriptionId != null) return result(false, tr("订阅来的源会随订阅更新恢复，要删请在上面的「订阅」里删掉整个订阅"))
         runBlocking { manager.removeInstance(instance.instanceId) }
         logger.info { "Remote control removed media source ${instance.factoryId.value} ${instance.instanceId}" }
-        return result(true, "已删除")
+        return result(true, tr("已删除"))
     }
 
     /** 订阅来的源复制一份不带订阅归属的本地源, 之后就能随意编辑 (原来那个可以停用). */
     private fun copyAsLocal(request: LanHttpRequest): JsonObject {
-        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, "数据源不存在，请刷新")
-        val factory = factoryOf(instance.factoryId) ?: return result(false, "不支持的数据源类型")
-        if (!factory.allowMultipleInstances) return result(false, "这个类型只能有一个实例，无法复制")
+        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, tr("数据源不存在，请刷新"))
+        val factory = factoryOf(instance.factoryId) ?: return result(false, tr("不支持的数据源类型"))
+        if (!factory.allowMultipleInstances) return result(false, tr("这个类型只能有一个实例，无法复制"))
         val newId = UUID.randomUUID().toString()
         runBlocking { manager.addInstance(newId, newId, instance.factoryId, instance.config.copy(subscriptionId = null)) }
-        return result(true, "已复制为本地源，可以编辑它；原来的订阅源可以停用")
+        return result(true, tr("已复制为本地源，可以编辑它；原来的订阅源可以停用"))
     }
 
     /**
@@ -306,12 +306,12 @@ internal object RemoteSources {
      */
     private fun saveParams(request: LanHttpRequest): JsonObject {
         val id = request.field("id").takeIf { it.isNotEmpty() }
-        val instance = id?.let { i -> instances().find { it.instanceId == i } ?: return result(false, "数据源不存在，请刷新") }
-        if (instance?.config?.subscriptionId != null) return result(false, "订阅来的源不能编辑")
+        val instance = id?.let { i -> instances().find { it.instanceId == i } ?: return result(false, tr("数据源不存在，请刷新")) }
+        if (instance?.config?.subscriptionId != null) return result(false, tr("订阅来的源不能编辑"))
         val factoryId = instance?.factoryId ?: FactoryId(request.field("factoryId"))
-        val factory = factoryOf(factoryId) ?: return result(false, "不支持的数据源类型")
+        val factory = factoryOf(factoryId) ?: return result(false, tr("不支持的数据源类型"))
         if (instance == null && !factory.allowMultipleInstances && instances().any { it.factoryId == factoryId }) {
-            return result(false, "这个类型只能有一个实例")
+            return result(false, tr("这个类型只能有一个实例"))
         }
         val fields = request.formFieldList()
         fun raw(name: String) = fields.lastOrNull { it.first == "p:$name" }?.second
@@ -326,46 +326,46 @@ internal object RemoteSources {
             val visible = cond == null || arguments[cond.parameterName] in cond.acceptedValues
             visible && !p.validate(arguments[p.name].orEmpty())
         }
-        if (invalid.isNotEmpty()) return result(false, "请检查：" + invalid.joinToString("、") { it.name })
+        if (invalid.isNotEmpty()) return result(false, tr("请检查：") + invalid.joinToString("、") { it.name })
 
         val config = MediaSourceConfig(arguments = arguments)
         return if (instance != null) {
             runBlocking { manager.updateConfig(instance.instanceId, config) }
-            result(true, "已保存")
+            result(true, tr("已保存"))
         } else {
             val newId = UUID.randomUUID().toString()
             runBlocking { manager.addInstance(newId, newId, factoryId, config) }
             logger.info { "Remote control added media source ${factoryId.value} $newId" }
-            result(true, "已添加")
+            result(true, tr("已添加"))
         }
     }
 
     /** RSS / 选择器源的 JSON 编辑. 必须是同一类型的单个数据源; 经编解码器解码校验并升级到当前版本后写回. */
     private fun saveJson(request: LanHttpRequest): JsonObject {
-        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, "数据源不存在，请刷新")
-        if (instance.config.subscriptionId != null) return result(false, "订阅来的源不能编辑")
-        val list = parseExported(request.field("text")) ?: return result(false, "不是有效的数据源 JSON")
-        val data = list.singleOrNull() ?: return result(false, "编辑时只能粘贴一个数据源（现在有 ${list.size} 个）")
+        val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, tr("数据源不存在，请刷新"))
+        if (instance.config.subscriptionId != null) return result(false, tr("订阅来的源不能编辑"))
+        val list = parseExported(request.field("text")) ?: return result(false, tr("不是有效的数据源 JSON"))
+        val data = list.singleOrNull() ?: return result(false, tr("编辑时只能粘贴一个数据源（现在有 {0} 个）", list.size))
         if (data.factoryId != instance.factoryId) {
-            return result(false, "类型不一致：这里是 ${instance.factoryId.value}，粘贴的是 ${data.factoryId.value}")
+            return result(false, tr("类型不一致：这里是 {0}，粘贴的是 {1}", instance.factoryId.value, data.factoryId.value))
         }
         val normalized = codec.encode(codec.decode(data))
         val ok = runBlocking { manager.updateMediaSourceArguments(instance.instanceId, normalized.arguments) }
-        return if (ok) result(true, "已保存") else result(false, "保存失败")
+        return if (ok) result(true, tr("已保存")) else result(false, tr("保存失败"))
     }
 
     /** 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因. */
     private fun import(text: String): JsonObject {
-        val list = parseExported(text) ?: return result(false, "不是有效的数据源 JSON")
-        if (list.isEmpty()) return result(false, "里面没有数据源")
+        val list = parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
+        if (list.isEmpty()) return result(false, tr("里面没有数据源"))
         val existing = instances()
         var added = 0
         val errors = mutableListOf<String>()
         for (data in list) {
             runCatching {
-                val factory = factoryOf(data.factoryId) ?: error("不支持的类型 ${data.factoryId.value}")
+                val factory = factoryOf(data.factoryId) ?: error(tr("不支持的类型 {0}", data.factoryId.value))
                 if (!factory.allowMultipleInstances && existing.any { it.factoryId == data.factoryId }) {
-                    error("${factory.info.displayName} 只能有一个")
+                    error(tr("{0} 只能有一个", factory.info.displayName))
                 }
                 val normalized = codec.encode(codec.decode(data))
                 val newId = UUID.randomUUID().toString()
@@ -377,8 +377,8 @@ internal object RemoteSources {
         }
         logger.info { "Remote control imported $added media sources, ${errors.size} failed" }
         val message = buildString {
-            append(if (added > 0) "已导入 $added 个数据源" else "没有导入任何数据源")
-            if (errors.isNotEmpty()) append("；${errors.size} 个失败：").append(errors.distinct().joinToString("；"))
+            append(if (added > 0) tr("已导入 {0} 个数据源", added) else tr("没有导入任何数据源"))
+            if (errors.isNotEmpty()) append(tr("；{0} 个失败：", errors.size)).append(errors.distinct().joinToString("；"))
         }
         return result(added > 0, message)
     }
@@ -406,9 +406,9 @@ internal object RemoteSources {
     // ============================ 工具 ============================
 
     private fun kindLabel(kind: MediaSourceKind): String = when (kind) {
-        MediaSourceKind.WEB -> "在线"
+        MediaSourceKind.WEB -> tr("在线")
         MediaSourceKind.BitTorrent -> "BT"
-        MediaSourceKind.LocalCache -> "本地"
+        MediaSourceKind.LocalCache -> tr("本地")
     }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {

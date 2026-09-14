@@ -278,19 +278,19 @@ object TvRemoteControl {
         editor?.apply()
         logger.info { "Remote bring-to-front ${if (on) "enabled" else "disabled"} (granted=$granted, settingsOpened=$opened)" }
         val message = when {
-            !on -> "已关闭"
-            granted -> "已开启"
-            opened -> "授权页已打开。请允许 Animeko「显示在其他应用的上层」，然后返回 Ani。"
-            else -> "请在 30 分钟内回到电视上的 Ani，并完成授权。"
+            !on -> tr("已关闭")
+            granted -> tr("已开启")
+            opened -> tr("授权页已打开。请允许 Animeko「显示在其他应用的上层」，然后返回 Ani。")
+            else -> tr("请在 30 分钟内回到电视上的 Ani，并完成授权。")
         }
         return JsonObject(frontState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
 
     /** 网页顶上「不在前台」那一条里的「切到 Ani」. */
     private fun manualFront(): JsonObject {
-        if (tvForeground) return result(true, "Ani 已在电视上显示")
-        if (!frontGranted()) return result(false, "尚未授权。请在电视设置中为 Animeko 开启「显示在其他应用的上层」。")
-        return if (bringToFront()) result(true, "已打开 Ani") else result(false, "无法打开 Ani，请在电视上手动打开。")
+        if (tvForeground) return result(true, tr("Ani 已在电视上显示"))
+        if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Animeko 开启「显示在其他应用的上层」。"))
+        return if (bringToFront()) result(true, tr("已打开 Ani")) else result(false, tr("无法打开 Ani，请在电视上手动打开。"))
     }
 
     /** 打开系统的「显示在其他应用的上层」授权页 (本应用那一项; 有的电视是整张应用列表). Ani 在后台时系统会拦. */
@@ -363,9 +363,9 @@ object TvRemoteControl {
         logger.info { "Remote keep-alive ${if (on) "enabled" else "disabled"} (tvForeground=$tvForeground)" }
         // Ani 在后台时开: 常驻服务起不来 (Android 12 起), 要等它回到前台 —— 说清楚, 免得以为这时休眠已经不会断
         val message = when {
-            !on -> "已关闭"
-            tvForeground -> "已开启"
-            else -> "已开启。下次打开 Ani 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。"
+            !on -> tr("已关闭")
+            tvForeground -> tr("已开启")
+            else -> tr("已开启。下次打开 Ani 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
         }
         return JsonObject(keepState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
@@ -704,10 +704,12 @@ object TvRemoteControl {
             _phoneConnected.value = true
             rememberHost(findLanAddress())
         }
+        // 回给网页的文案跟着 app 当前语言 (见 RemoteI18n)
+        RemoteI18n.refresh()
         val get = request.method == "GET" || request.method == "HEAD"
         val post = request.method == "POST"
         // 要电视界面的操作进来时界面不在 (退出后保留了进程 / 被回收后常驻服务重启了监听): 先把 Ani 拉起来, 拉不起来就明说
-        if (post && path in UI_PATHS && !awaitUi()) return json(result(false, UI_GONE_MESSAGE))
+        if (post && path in UI_PATHS && !awaitUi()) return json(result(false, tr(UI_GONE_MESSAGE)))
         // 播放器上的按钮 (控制 / 换源 / 换集 / 音轨弹幕…): 电视休眠或切走时界面停着, 按了没反应 —— 先把 Ani 叫回前台
         if (post && (path in PLAYER_FRONT_PATHS || path.startsWith("api/player/danmaku/"))) awaitFront()
         return when {
@@ -740,7 +742,7 @@ object TvRemoteControl {
             (post && (path.startsWith("api/player/danmaku/") || path == "api/player/track" ||
                     path == "api/player/comment" || path.startsWith("api/player/review/"))) ||
                     (get && path == "api/player/review") ->
-                json(player?.let { RemotePlayerExtras.handle(it, request) } ?: result(false, "电视当前不在播放页"))
+                json(player?.let { RemotePlayerExtras.handle(it, request) } ?: result(false, tr("电视当前不在播放页")))
             // 不依赖播放页的收藏状态 (手机搜索结果左滑「收藏」), 见 RemotePlayerExtras.subjectCollection
             path == "api/subject/collection" -> json(RemotePlayerExtras.subjectCollection(request))
             // 缓存 (选集 / 挑资源 / 自动批量), 见 RemoteCache
@@ -793,6 +795,7 @@ object TvRemoteControl {
             searchFormHtml = searchForm,
             requestSectionHtml = requestSection,
             themeCss = RemoteTheme.css(),
+            i18nScript = RemoteI18n.pageScript(),
         )
     }
 
@@ -800,7 +803,7 @@ object TvRemoteControl {
 
     private fun deliverSearch(request: LanHttpRequest): JsonObject {
         val submission = RemoteSearchFormValues.parse(request.formFieldList()).toSubmission()
-            ?: return result(false, "请输入关键词或选择筛选项")
+            ?: return result(false, tr("请输入关键词或选择筛选项"))
         return deliver(submission)
     }
 
@@ -812,7 +815,7 @@ object TvRemoteControl {
      * 才拿最后一份结果的查询再交一次 (同手机提交搜索那条路), 从第一页重新加载.
      */
     private fun resumeSearch(): JsonObject {
-        if (searchResults != null) return result(true, "电视已经在搜索页了")
+        if (searchResults != null) return result(true, tr("电视已经在搜索页了"))
         val nav = navigator
         val existing = nav?.backStack?.lastOrNull { it is NavRoutes.SubjectSearch }
         if (nav != null && existing != null) {
@@ -822,12 +825,12 @@ object TvRemoteControl {
                 runCatching { nav.popBackStack(existing, inclusive = false) }
                     .onFailure { logger.warn(it) { "Failed to pop back to search page for remote resume" } }
             }
-            return result(true, "电视已回到刚才的搜索页")
+            return result(true, tr("电视已回到刚才的搜索页"))
         }
         val submission = lastSearchResults?.query?.let { RemoteSearchFormValues.from(it).toSubmission() }
-            ?: return result(false, "没有可以恢复的搜索，重新搜一次吧")
+            ?: return result(false, tr("没有可以恢复的搜索，重新搜一次吧"))
         logger.info { "Remote resume search: no search page in the back stack, searching again" }
-        return deliver(submission, okMessage = "刚才的搜索页已经关了，电视重新搜索")
+        return deliver(submission, okMessage = tr("刚才的搜索页已经关了，电视重新搜索"))
     }
 
     /** 把一次搜索交给电视: 搜索页在场就直接换查询, 不在就把搜索页叠上去. @param okMessage 成功时的提示, 默认「已发送到电视」 */
@@ -841,7 +844,7 @@ object TvRemoteControl {
             "Remote search received: ${submission.keywords.length} chars, sort=${submission.sort}, " +
                     "minRating=${submission.minRating}, tags=${submission.tags.size}, pageInComposition=$inPage"
         }
-        val sent = okMessage ?: if (submission.keywords.isNotEmpty()) "已发送到电视：${submission.keywords}" else "已发送到电视"
+        val sent = okMessage ?: if (submission.keywords.isNotEmpty()) tr("已发送到电视：{0}", submission.keywords) else tr("已发送到电视")
         if (inPage) {
             _submissions.tryEmit(submission)
             return result(true, sent)
@@ -855,7 +858,7 @@ object TvRemoteControl {
             runCatching { nav.navigateSubjectSearch() }
                 .onFailure { logger.warn(it) { "Failed to navigate to search page for remote input" } }
         }
-        return result(true, if (onPlayer) "已在电视上打开搜索，按返回可回到播放器" else sent)
+        return result(true, if (onPlayer) tr("已在电视上打开搜索，按返回可回到播放器") else sent)
     }
 
     /**
@@ -871,11 +874,11 @@ object TvRemoteControl {
 
     private fun deleteHistory(request: LanHttpRequest): JsonObject {
         val q = request.formFields()["q"].orEmpty()
-        if (q.isEmpty()) return result(false, "无效的记录")
+        if (q.isEmpty()) return result(false, tr("无效的记录"))
         runCatching { runBlocking { historyRepository().removeHistory(q) } }
             .onFailure {
                 logger.warn(it) { "Failed to delete search history from remote control" }
-                return result(false, "删除失败")
+                return result(false, tr("删除失败"))
             }
         return result(true, "")
     }
@@ -929,12 +932,14 @@ object TvRemoteControl {
             put("frontGranted", frontGranted())
             // 「退出 Ani 后保留」开没开: 网页记着, 断连时没开的话提示去设置里开 (见 keepAliveOnExit)
             put("keep", keepAliveOnExit())
+            // app 里换了语言: 网页发现和自己加载时的不一样就整页重载 (见 RemoteI18n)
+            put("lang", RemoteI18n.lang.tag)
         }
     }
 
     /** 手机上翻到底 / 点「加载更多」: 让电视的结果列表加载下一页. */
     private fun loadMoreResults(): JsonObject {
-        val source = searchResults ?: return result(false, "电视已离开搜索页，回到搜索页后可以继续加载")
+        val source = searchResults ?: return result(false, tr("电视已离开搜索页，回到搜索页后可以继续加载"))
         source.loadMore()
         return result(true, "")
     }
@@ -972,7 +977,7 @@ object TvRemoteControl {
                 if (upNext != null) putJsonObject("upNext") {
                     put("subjectId", upNext.subjectId)
                     put("title", upNext.subjectTitle)
-                    put("episode", if (upNext.episodeSort.isNotEmpty()) "第 ${upNext.episodeSort} 话" else "")
+                    put("episode", if (upNext.episodeSort.isNotEmpty()) tr("第 {0} 话", upNext.episodeSort) else "")
                     put("continuing", upNext.continuing)
                     put("position", upNext.positionMillis)
                     put("duration", upNext.durationMillis)
@@ -1003,22 +1008,22 @@ object TvRemoteControl {
     }
 
     private fun selectMedia(request: LanHttpRequest): JsonObject {
-        val handle = player ?: return result(false, "电视当前不在播放页")
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
         val id = request.formFields()["id"].orEmpty()
         handle.select(id)?.let { return result(false, it) }
         return result(
             true,
-            if (handle.background) "已切换，电视在后台加载，回到播放器即可播放" else "已切换，电视正在加载",
+            if (handle.background) tr("已切换，电视在后台加载，回到播放器即可播放") else tr("已切换，电视正在加载"),
         )
     }
 
     private fun updateRequest(request: LanHttpRequest): JsonObject {
-        val handle = player ?: return result(false, "电视当前不在播放页")
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
         val fields = request.formFieldList()
         fun field(name: String) = fields.lastOrNull { it.first == name }?.second.orEmpty()
         if (field("reset") == "1") {
             return handle.resetRequest()?.let { result(false, it) }
-                ?: result(true, "已恢复默认查询条件，正在重新搜索")
+                ?: result(true, tr("已恢复默认查询条件，正在重新搜索"))
         }
         val error = handle.updateRequest(
             primary = field("primary"),
@@ -1026,38 +1031,38 @@ object TvRemoteControl {
             sort = field("sort"),
             ep = field("ep"),
         )
-        return if (error != null) result(false, error) else result(true, "已保存，正在重新搜索所有数据源")
+        return if (error != null) result(false, error) else result(true, tr("已保存，正在重新搜索所有数据源"))
     }
 
     private fun control(request: LanHttpRequest): JsonObject {
-        val handle = player ?: return result(false, "电视当前不在播放页")
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
         // 后台会话被按住暂停 (见本类 KDoc), 这里放行只会被立刻按回去
-        if (handle.background) return result(false, "电视未在播放页，播放控制不可用")
-        if (!tvForeground) return result(false, "电视当前没有显示 Ani，播放控制不可用。在「设置」中开启「从手机打开 Ani」后，使用播放控制时会自动打开 Ani。")
+        if (handle.background) return result(false, tr("电视未在播放页，播放控制不可用"))
+        if (!tvForeground) return result(false, tr("电视当前没有显示 Ani，播放控制不可用。在「设置」中开启「从手机打开 Ani」后，使用播放控制时会自动打开 Ani。"))
         val fields = request.formFields()
         val action = fields["action"].orEmpty()
         // 拖进度条 / 输入时间点: 跳到 ms (服务端夹在片长以内)
         if (action == "seek") {
-            val ms = fields["ms"]?.toLongOrNull() ?: return result(false, "无效的时间")
+            val ms = fields["ms"]?.toLongOrNull() ?: return result(false, tr("无效的时间"))
             handle.seekTo(ms)
             return result(true, "")
         }
         // 拖音量条: v = 0~1 (播放器音量, 见 RemotePlayerHandle.setVolume)
         if (action == "volume") {
-            val v = fields["v"]?.toFloatOrNull()?.takeIf { !it.isNaN() } ?: return result(false, "无效的音量")
-            return if (handle.setVolume(v)) result(true, "") else result(false, "这个播放器不支持调音量")
+            val v = fields["v"]?.toFloatOrNull()?.takeIf { !it.isNaN() } ?: return result(false, tr("无效的音量"))
+            return if (handle.setVolume(v)) result(true, "") else result(false, tr("这个播放器不支持调音量"))
         }
         // 成功不给提示文案: 按钮的效果电视上看得见, 手机上的播放状态也会马上刷新
-        return if (handle.control(action)) result(true, "") else result(false, "未知操作")
+        return if (handle.control(action)) result(true, "") else result(false, tr("未知操作"))
     }
 
     private fun switchEpisode(request: LanHttpRequest): JsonObject {
-        val handle = player ?: return result(false, "电视当前不在播放页")
-        val id = request.formFields()["id"]?.toIntOrNull() ?: return result(false, "无效的剧集")
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        val id = request.formFields()["id"]?.toIntOrNull() ?: return result(false, tr("无效的剧集"))
         handle.switchEpisode(id)?.let { return result(false, it) }
         return result(
             true,
-            if (handle.background) "已切换，电视在后台加载，回到播放器即可播放" else "已切换，电视正在加载",
+            if (handle.background) tr("已切换，电视在后台加载，回到播放器即可播放") else tr("已切换，电视正在加载"),
         )
     }
 
@@ -1066,15 +1071,15 @@ object TvRemoteControl {
      * episodeId 从播放进度表续, 这里只管导航. 以电视此刻的 [TvUpNextStore.target] 为准, 不信手机页面上那份.
      */
     private fun playUpNext(): JsonObject {
-        if (player != null) return result(false, "电视已经在播放了")
-        val target = TvUpNextStore.target ?: return result(false, "没有可播放的内容")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        if (player != null) return result(false, tr("电视已经在播放了"))
+        val target = TvUpNextStore.target ?: return result(false, tr("没有可播放的内容"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         notifyRemoteNavigation()
         scope.launch(Dispatchers.Main) {
             runCatching { nav.navigateEpisodeDetails(target.subjectId, target.episodeId, force = true) }
                 .onFailure { logger.warn(it) { "Failed to start up-next playback for remote control" } }
         }
-        return result(true, "已在电视上开始播放")
+        return result(true, tr("已在电视上开始播放"))
     }
 
     /**
@@ -1083,8 +1088,8 @@ object TvRemoteControl {
      */
     private fun openDetails(request: LanHttpRequest): JsonObject {
         val fields = request.formFields()
-        val id = fields["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val id = fields["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val placeholder = SubjectDetailPlaceholder(id = id, name = fields["title"].orEmpty())
         val onPlayer = foregroundPlayer != null
         notifyRemoteNavigation()
@@ -1092,7 +1097,7 @@ object TvRemoteControl {
             runCatching { nav.navigateSubjectDetails(id, placeholder) }
                 .onFailure { logger.warn(it) { "Failed to open subject details from remote player card" } }
         }
-        return result(true, if (onPlayer) "已在电视上打开详情页，按返回可回到播放器" else "已在电视上打开详情页")
+        return result(true, if (onPlayer) tr("已在电视上打开详情页，按返回可回到播放器") else tr("已在电视上打开详情页"))
     }
 
     /** [playEpisode] 的结果: 开了播放页 / 在当前播放页里换了集 / 本来就在播这一集. */
@@ -1126,16 +1131,16 @@ object TvRemoteControl {
     }
 
     private fun openPlayer(): JsonObject {
-        if (foregroundPlayer != null) return result(true, "电视已在播放页")
-        val session = playbackSessionProvider?.invoke() ?: return result(false, "电视上没有正在播放的内容")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        if (foregroundPlayer != null) return result(true, tr("电视已在播放页"))
+        val session = playbackSessionProvider?.invoke() ?: return result(false, tr("电视上没有正在播放的内容"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         notifyRemoteNavigation()
         scope.launch(Dispatchers.Main) {
             // force: 回到已经在播的这一集, 跳过一起看跟随模式的导航守卫 (同动作面板的「回到正在播放」)
             runCatching { nav.navigateEpisodeDetails(session.subjectId, session.episodeId, force = true) }
                 .onFailure { logger.warn(it) { "Failed to bring player to front for remote control" } }
         }
-        return result(true, "已在电视上打开播放器")
+        return result(true, tr("已在电视上打开播放器"))
     }
 
     /**
@@ -1146,13 +1151,13 @@ object TvRemoteControl {
     private fun sessionStatusJson(): JsonObject? {
         val status = playbackStatusProvider?.invoke() ?: return null
         val (kind, label, text) = when (status) {
-            PlaybackSessionStatus.Ready -> Triple("ready", "已就绪", "回到播放器就能接着看")
-            PlaybackSessionStatus.Preparing -> Triple("busy", "准备中", "正在查找数据源、解析播放地址")
-            PlaybackSessionStatus.Buffering -> Triple("busy", "缓冲中", "马上就好")
-            PlaybackSessionStatus.NeedsSelection -> Triple("attention", "等你选数据源", "在下面挑一个就会开始加载")
-            PlaybackSessionStatus.NoMedia -> Triple("error", "没有可播放的资源", "可以试试修改查询条件")
-            PlaybackSessionStatus.PlayerError -> Triple("error", "播放出错", "可以在下面换一个数据源")
-            is PlaybackSessionStatus.LoadFailed -> Triple("error", "加载失败", "可以在下面换一个数据源")
+            PlaybackSessionStatus.Ready -> Triple("ready", tr("已就绪"), tr("回到播放器就能接着看"))
+            PlaybackSessionStatus.Preparing -> Triple("busy", tr("准备中"), tr("正在查找数据源、解析播放地址"))
+            PlaybackSessionStatus.Buffering -> Triple("busy", tr("缓冲中"), tr("马上就好"))
+            PlaybackSessionStatus.NeedsSelection -> Triple("attention", tr("等你选数据源"), tr("在下面挑一个就会开始加载"))
+            PlaybackSessionStatus.NoMedia -> Triple("error", tr("没有可播放的资源"), tr("可以试试修改查询条件"))
+            PlaybackSessionStatus.PlayerError -> Triple("error", tr("播放出错"), tr("可以在下面换一个数据源"))
+            is PlaybackSessionStatus.LoadFailed -> Triple("error", tr("加载失败"), tr("可以在下面换一个数据源"))
         }
         return buildJsonObject {
             put("kind", kind)
