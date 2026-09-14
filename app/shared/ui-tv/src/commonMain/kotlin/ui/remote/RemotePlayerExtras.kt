@@ -79,20 +79,20 @@ internal object RemotePlayerExtras {
                 "api/player/danmaku/enable" -> {
                     val on = f["on"] == "1"
                     handle.runOnUi { handle.vm.setDanmakuEnabled(on) }
-                    result(true, if (on) "已打开弹幕" else "已关闭弹幕")
+                    result(true, if (on) tr("已打开弹幕") else tr("已关闭弹幕"))
                 }
 
                 "api/player/danmaku/source" -> {
-                    val service = f["service"].orEmpty().ifEmpty { return result(false, "无效的弹幕源") }
+                    val service = f["service"].orEmpty().ifEmpty { return result(false, tr("无效的弹幕源")) }
                     val on = f["on"] == "1"
                     handle.runOnUi { handle.vm.setDanmakuSourceEnabled(DanmakuServiceId(service), on) }
                     result(true, "")
                 }
 
                 "api/player/danmaku/shift" -> {
-                    val service = f["service"].orEmpty().ifEmpty { return result(false, "无效的弹幕源") }
+                    val service = f["service"].orEmpty().ifEmpty { return result(false, tr("无效的弹幕源")) }
                     val ms = f["ms"]?.toLongOrNull()?.coerceIn(-MAX_SHIFT_MILLIS, MAX_SHIFT_MILLIS)
-                        ?: return result(false, "无效的偏移")
+                        ?: return result(false, tr("无效的偏移"))
                     handle.runOnUi { handle.vm.setDanmakuSourceShiftMillis(DanmakuServiceId(service), ms) }
                     result(true, "")
                 }
@@ -118,14 +118,14 @@ internal object RemotePlayerExtras {
                         "audio" -> handle.selectAudio(id)
                         else -> false
                     }
-                    if (ok) result(true, "") else result(false, "这条轨道已经不在了")
+                    if (ok) result(true, "") else result(false, tr("这条轨道已经不在了"))
                 }
 
-                else -> result(false, "未知操作")
+                else -> result(false, tr("未知操作"))
             }
         }.getOrElse {
             logger.warn(it) { "Remote player extras request failed: ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -133,10 +133,10 @@ internal object RemotePlayerExtras {
         danmakuRepository.getInteractiveDanmakuFetcherOrNull(DanmakuProviderId.Dandanplay)?.startInteractiveMatch()
 
     private fun search(q: String): JsonObject {
-        if (q.isEmpty()) return result(false, "请输入番剧名")
-        val m = matcher() ?: return result(false, "弹弹play 不可用")
+        if (q.isEmpty()) return result(false, tr("请输入番剧名"))
+        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
         val list = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchSubjectList(q) } }
-            ?: return result(false, "搜索超时，请重试")
+            ?: return result(false, tr("搜索超时，请重试"))
         return buildJsonObject {
             put("ok", true)
             putJsonArray("items") {
@@ -149,10 +149,10 @@ internal object RemotePlayerExtras {
     }
 
     private fun episodes(handle: RemotePlayerHandle, subject: DanmakuSubject): JsonObject {
-        if (subject.id.isEmpty()) return result(false, "无效的条目")
-        val m = matcher() ?: return result(false, "弹弹play 不可用")
+        if (subject.id.isEmpty()) return result(false, tr("无效的条目"))
+        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
         val list = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchEpisodeList(subject) } }
-            ?: return result(false, "加载剧集超时，请重试")
+            ?: return result(false, tr("加载剧集超时，请重试"))
         // 标出与当前这一集集号相同的那一条, 手机上自动滚过去 (弹弹play 的集名通常是「第5话 标题」)
         val sort = handle.page?.episodePresentation?.sort?.toFloatOrNull()
         val suggested = if (sort == null) -1 else list.indexOfFirst { ep ->
@@ -171,14 +171,14 @@ internal object RemotePlayerExtras {
     }
 
     private fun apply(handle: RemotePlayerHandle, subject: DanmakuSubject, episode: DanmakuEpisode): JsonObject {
-        if (subject.id.isEmpty() || episode.id.isEmpty()) return result(false, "无效的剧集")
-        val m = matcher() ?: return result(false, "弹弹play 不可用")
+        if (subject.id.isEmpty() || episode.id.isEmpty()) return result(false, tr("无效的剧集"))
+        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
         val results = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchDanmakuList(subject, episode) } }
-            ?: return result(false, "加载弹幕超时，请重试")
+            ?: return result(false, tr("加载弹幕超时，请重试"))
         val total = results.sumOf { it.list.size }
         handle.runOnUi { handle.vm.onMatchingDanmakuComplete(DanmakuProviderId.Dandanplay, results) }
         logger.info { "Remote control applied manual danmaku match: $total danmaku" }
-        return result(true, "已换成「${subject.name}」${episode.name}，共 $total 条弹幕")
+        return result(true, tr("已换成「{0}」{1}，共 {2} 条弹幕", subject.name, episode.name, total))
     }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {
@@ -194,15 +194,15 @@ internal object RemotePlayerExtras {
      */
     private fun sendDanmaku(handle: RemotePlayerHandle, raw: String): JsonObject {
         val text = raw.trim()
-        if (text.isEmpty()) return result(false, "请输入弹幕内容")
-        if (text.length > MAX_DANMAKU_LENGTH) return result(false, "弹幕太长了（最多 $MAX_DANMAKU_LENGTH 个字）")
+        if (text.isEmpty()) return result(false, tr("请输入弹幕内容"))
+        if (text.length > MAX_DANMAKU_LENGTH) return result(false, tr("弹幕太长了（最多 {0} 个字）", MAX_DANMAKU_LENGTH))
         val vm = handle.vm
         val content = DanmakuContent(vm.player.currentPositionMillis.value, WHITE_ARGB, text, DanmakuLocation.NORMAL)
         val info = runCatching { runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { vm.postDanmaku(content) } } }
-            .getOrElse { return result(false, errorText(it, "发送失败")) }
-            ?: return result(false, "发送超时，请重试")
+            .getOrElse { return result(false, errorText(it, tr("发送失败"))) }
+            ?: return result(false, tr("发送超时，请重试"))
         if (!handle.background) handle.runOnUi { vm.danmakuHostState.send(DanmakuPresentation(info, isSelf = true)) }
-        return result(true, "已发送")
+        return result(true, tr("已发送"))
     }
 
     /** 收藏状态 / 我的评分与短评 (预填手机上的表单), 以及登录与否. */
@@ -210,7 +210,7 @@ internal object RemotePlayerExtras {
         val subjectId = handle.vm.subjectId
         val info = runCatching {
             runBlocking { withTimeoutOrNull(PREFILL_TIMEOUT) { collectionRepository.subjectCollectionFlow(subjectId).first() } }
-        }.getOrNull() ?: return result(false, "读取收藏信息失败，请重试")
+        }.getOrNull() ?: return result(false, tr("读取收藏信息失败，请重试"))
         val loggedIn = runBlocking { withTimeoutOrNull(3.seconds) { sessionStateProvider.stateFlow.first() } } is SessionState.Valid
         val rating = info.selfRatingInfo
         return buildJsonObject {
@@ -221,16 +221,16 @@ internal object RemotePlayerExtras {
             put("score", rating.score)
             put("comment", rating.comment.orEmpty())
             put("private", rating.isPrivate)
-            handle.page?.episodePresentation?.let { put("episode", "第 ${it.sort} 话") }
+            handle.page?.episodePresentation?.let { put("episode", tr("第 {0} 话", it.sort)) }
         }
     }
 
     private fun setCollection(handle: RemotePlayerHandle, typeName: String): JsonObject {
-        val type = UnifiedCollectionType.entries.firstOrNull { it.name == typeName } ?: return result(false, "无效的收藏状态")
+        val type = UnifiedCollectionType.entries.firstOrNull { it.name == typeName } ?: return result(false, tr("无效的收藏状态"))
         val done = runCatching {
             runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { setCollectionType(handle.vm.subjectId, type); true } }
-        }.getOrElse { return result(false, errorText(it, "设置失败")) }
-        return if (done == true) result(true, "已设为「${COLLECTION_LABELS[type]}」") else result(false, "操作超时，请重试")
+        }.getOrElse { return result(false, errorText(it, tr("设置失败"))) }
+        return if (done == true) result(true, tr("已设为「{0}」", tr(COLLECTION_LABELS[type].orEmpty()))) else result(false, tr("操作超时，请重试"))
     }
 
     /**
@@ -242,23 +242,23 @@ internal object RemotePlayerExtras {
         val f = if (post) request.formFields() else request.query.split('&').mapNotNull { p ->
             p.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }.toMap()
-        val subjectId = f["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
+        val subjectId = f["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
         if (!post) {
             val info = runCatching {
                 runBlocking { withTimeoutOrNull(PREFILL_TIMEOUT) { collectionRepository.subjectCollectionFlow(subjectId).first() } }
-            }.getOrNull() ?: return result(false, "读取收藏状态失败，请重试")
+            }.getOrNull() ?: return result(false, tr("读取收藏状态失败，请重试"))
             return buildJsonObject {
                 put("ok", true)
                 put("title", info.subjectInfo.nameCnOrName)
                 put("collection", info.collectionType.name)
             }
         }
-        val type = UnifiedCollectionType.entries.firstOrNull { it.name == f["type"] } ?: return result(false, "无效的收藏状态")
+        val type = UnifiedCollectionType.entries.firstOrNull { it.name == f["type"] } ?: return result(false, tr("无效的收藏状态"))
         val done = runCatching {
             runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { setCollectionType(subjectId, type); true } }
-        }.getOrElse { return result(false, errorText(it, "设置失败")) }
+        }.getOrElse { return result(false, errorText(it, tr("设置失败"))) }
         logger.info { "Remote set collection: subject $subjectId -> $type" }
-        return if (done == true) result(true, "已设为「${COLLECTION_LABELS[type]}」") else result(false, "操作超时，请重试")
+        return if (done == true) result(true, tr("已设为「{0}」", tr(COLLECTION_LABELS[type].orEmpty()))) else result(false, tr("操作超时，请重试"))
     }
 
     /**
@@ -266,7 +266,7 @@ internal object RemotePlayerExtras {
      * 没收藏的条目评不了分 (同电视详情页的规则), 先提示去设收藏状态.
      */
     private fun rate(handle: RemotePlayerHandle, f: Map<String, String>): JsonObject {
-        val score = f["score"]?.toIntOrNull()?.takeIf { it in 0..10 } ?: return result(false, "评分要在 0~10 之间")
+        val score = f["score"]?.toIntOrNull()?.takeIf { it in 0..10 } ?: return result(false, tr("评分要在 0~10 之间"))
         val comment = f["comment"].orEmpty().trim()
         val isPrivate = f["private"] == "1"
         val subjectId = handle.vm.subjectId
@@ -285,33 +285,33 @@ internal object RemotePlayerExtras {
                     true
                 }
             }
-        }.getOrElse { return result(false, errorText(it, "保存失败")) }
+        }.getOrElse { return result(false, errorText(it, tr("保存失败"))) }
         return when (outcome) {
-            null -> result(false, "操作超时，请重试")
-            false -> result(false, "先设置收藏状态（想看 / 在看 / 看过…）再评分")
-            true -> result(true, if (score == 0) "已保存（不评分）" else "已保存：$score 分")
+            null -> result(false, tr("操作超时，请重试"))
+            false -> result(false, tr("先设置收藏状态（想看 / 在看 / 看过…）再评分"))
+            true -> result(true, if (score == 0) tr("已保存（不评分）") else tr("已保存：{0} 分", score))
         }
     }
 
     /** 发表本集评论 (同电视上的评论框, 不走人机验证). 失败时用例不区分「没登录」与「网络错误」, 提示里一并说. */
     private fun postComment(handle: RemotePlayerHandle, raw: String): JsonObject {
         val text = raw.trim()
-        if (text.isEmpty()) return result(false, "请输入评论内容")
-        val episodeId = handle.page?.episodePresentation?.episodeId ?: return result(false, "还不知道当前是哪一集，请稍后再试")
+        if (text.isEmpty()) return result(false, tr("请输入评论内容"))
+        val episodeId = handle.page?.episodePresentation?.episodeId ?: return result(false, tr("还不知道当前是哪一集，请稍后再试"))
         val res = runBlocking {
             withTimeoutOrNull(NETWORK_TIMEOUT) { postCommentUseCase(CommentContext.Episode(handle.vm.subjectId, episodeId.toLong()), text) }
-        } ?: return result(false, "发表超时，请重试")
+        } ?: return result(false, tr("发表超时，请重试"))
         return when (res) {
-            CommentSendResult.Ok -> result(true, "已发表到本集评论")
-            CommentSendResult.NetworkError -> result(false, "发表失败：网络错误，或者电视还没登录")
-            is CommentSendResult.UnknownError -> result(false, "发表失败：${res.message}")
+            CommentSendResult.Ok -> result(true, tr("已发表到本集评论"))
+            CommentSendResult.NetworkError -> result(false, tr("发表失败：网络错误，或者电视还没登录"))
+            is CommentSendResult.UnknownError -> result(false, tr("发表失败：{0}", res.message))
         }
     }
 
     private fun errorText(e: Throwable, prefix: String): String = when (e) {
-        is RepositoryAuthorizationException -> "需要先登录（手机上「设置」→「账号」可以直接登录）"
-        is RepositoryRateLimitedException -> "操作太频繁，稍后再试"
-        is RepositoryNetworkException -> "网络错误，请重试"
+        is RepositoryAuthorizationException -> tr("需要先登录（手机上「设置」→「账号」可以直接登录）")
+        is RepositoryRateLimitedException -> tr("操作太频繁，稍后再试")
+        is RepositoryNetworkException -> tr("网络错误，请重试")
         else -> "$prefix：${e.message ?: e::class.simpleName}"
     }
 
@@ -331,22 +331,22 @@ internal object RemotePlayerExtras {
                     put("shift", r.config.shiftMillis)
                     when (val m = r.matchInfo.method) {
                         is DanmakuMatchMethod.Exact -> {
-                            put("method", "精确匹配")
+                            put("method", tr("精确匹配"))
                             put("matched", "${m.subjectTitle} ${m.episodeTitle}".trim())
                         }
 
                         is DanmakuMatchMethod.ExactSubjectFuzzyEpisode -> {
-                            put("method", "半模糊匹配")
+                            put("method", tr("半模糊匹配"))
                             put("matched", "${m.subjectTitle} ${m.episodeTitle}".trim())
                         }
 
                         is DanmakuMatchMethod.Fuzzy -> {
-                            put("method", "模糊匹配")
+                            put("method", tr("模糊匹配"))
                             put("matched", "${m.subjectTitle} ${m.episodeTitle}".trim())
                         }
 
-                        is DanmakuMatchMethod.ExactId -> put("method", "按条目匹配")
-                        else -> put("method", "没有匹配到")
+                        is DanmakuMatchMethod.ExactId -> put("method", tr("按条目匹配"))
+                        else -> put("method", tr("没有匹配到"))
                     }
                 }
             }

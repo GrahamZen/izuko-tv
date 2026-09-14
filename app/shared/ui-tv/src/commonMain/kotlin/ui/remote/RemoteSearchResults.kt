@@ -115,7 +115,7 @@ internal object RemoteSearchResults {
 
     /** 标题下的一行筛选说明 (网页上有的那几项; 排序不写, 结果顺序本身就说明了). */
     private fun filterText(query: SubjectSearchQuery): String = buildList {
-        query.rating?.min?.let { add("$it 分以上") }
+        query.rating?.min?.let { add(tr("{0} 分以上", it)) }
         query.tags?.takeIf { it.isNotEmpty() }?.let { add(it.joinToString(" / ")) }
     }.joinToString(" · ")
 
@@ -123,7 +123,7 @@ internal object RemoteSearchResults {
     private fun ratingText(rating: RatingInfo): String = buildList {
         if (rating.total > 0 && rating.scoreFloat > 0f) add("★ " + rating.score)
         if (rating.rank > 0) add("#" + rating.rank)
-        if (rating.total > 0) add("${rating.total} 人评分")
+        if (rating.total > 0) add(tr("{0} 人评分", rating.total))
     }.joinToString(" · ")
 
     /** 手机刚提交的搜索是否已经是电视上这份结果的查询 (网页上有的字段一致即算). */
@@ -143,8 +143,8 @@ internal object RemoteSearchResults {
         scope: CoroutineScope,
         snapshot: RemoteSearchResultsSnapshot?,
     ): JsonObject {
-        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val item = snapshot?.items?.firstOrNull { it.subjectId == subjectId }
         val placeholder = item?.let { SubjectDetailPlaceholder(id = subjectId, name = it.title, coverUrl = it.imageUrl) }
         TvRemoteControl.notifyRemoteNavigation()
@@ -152,7 +152,7 @@ internal object RemoteSearchResults {
             runCatching { nav.navigateSubjectDetails(subjectId, placeholder) }
                 .onFailure { logger.warn(it) { "Failed to open subject details for remote control" } }
         }
-        return result(true, if (item != null) "已在电视上打开「${item.title}」" else "已在电视上打开详情页")
+        return result(true, if (item != null) tr("已在电视上打开「{0}」", item.title) else tr("已在电视上打开详情页"))
     }
 
     /**
@@ -160,20 +160,20 @@ internal object RemoteSearchResults {
      * (含分集), 所以要等一会儿; 没有分集信息的 (比如还没公布) 退而打开详情页.
      */
     fun play(request: LanHttpRequest, navigator: AniNavigator?, scope: CoroutineScope): JsonObject {
-        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val info = runCatching {
             runBlocking { withTimeoutOrNull(PLAY_TIMEOUT) { collectionRepository.subjectCollectionFlow(subjectId).first() } }
         }.getOrElse {
             logger.warn(it) { "Failed to load subject $subjectId for remote play" }
-            return result(false, "获取剧集信息失败：${it.message ?: it::class.simpleName}")
-        } ?: return result(false, "获取剧集信息超时，请重试")
+            return result(false, tr("获取剧集信息失败：{0}", it.message ?: it::class.simpleName))
+        } ?: return result(false, tr("获取剧集信息超时，请重试"))
 
         val title = info.subjectInfo.nameCnOrName
         val progress = info.progressInfo
         val episodes = info.episodes
         if (progress.continueWatchingStatus is ContinueWatchingStatus.NotOnAir && progress.nextEpisodeIdToPlay == null) {
-            return result(false, "「$title」还没开播")
+            return result(false, tr("「{0}」还没开播", title))
         }
         val episodeId = when (progress.continueWatchingStatus) {
             is ContinueWatchingStatus.Done -> episodes.firstOrNull()?.episodeId
@@ -185,7 +185,7 @@ internal object RemoteSearchResults {
                 runCatching { nav.navigateSubjectDetails(subjectId, placeholder = null) }
                     .onFailure { logger.warn(it) { "Failed to open subject details for remote play" } }
             }
-            return result(true, "「$title」没有剧集信息，已在电视上打开详情页")
+            return result(true, tr("「{0}」没有剧集信息，已在电视上打开详情页", title))
         }
         val sort = episodes.firstOrNull { it.episodeId == episodeId }?.episodeInfo?.sort?.toString().orEmpty()
         logger.info { "Remote play: subject $subjectId episode $episodeId" }
@@ -193,11 +193,11 @@ internal object RemoteSearchResults {
         val how = TvRemoteControl.playEpisode(nav, scope, subjectId, episodeId) {
             logger.warn(it) { "Failed to start playback for remote play" }
         }
-        val ep = if (sort.isNotEmpty()) " 第 $sort 话" else ""
+        val ep = if (sort.isNotEmpty()) tr(" 第 {0} 话", sort) else ""
         val msg = when (how) {
-            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> "电视正在播「$title」$ep"
-            TvRemoteControl.RemotePlayResult.Switched -> "已在电视上换到「$title」$ep"
-            TvRemoteControl.RemotePlayResult.Opened -> "已在电视上播放「$title」$ep"
+            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> tr("电视正在播「{0}」{1}", title, ep)
+            TvRemoteControl.RemotePlayResult.Switched -> tr("已在电视上换到「{0}」{1}", title, ep)
+            TvRemoteControl.RemotePlayResult.Opened -> tr("已在电视上播放「{0}」{1}", title, ep)
         }
         return result(true, msg, player = true)
     }

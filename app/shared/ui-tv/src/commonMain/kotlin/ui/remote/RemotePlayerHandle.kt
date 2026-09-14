@@ -141,7 +141,7 @@ internal class RemotePlayerHandle(
             if (page != null) {
                 put("title", page.subjectPresentation.title)
                 val ep = page.episodePresentation
-                put("episode", listOf("第 ${ep.sort} 话", ep.title).filter { it.isNotBlank() }.joinToString("  "))
+                put("episode", listOf(tr("第 {0} 话", ep.sort), ep.title).filter { it.isNotBlank() }.joinToString("  "))
                 // 卡片底图: 这一集的剧照 (见 RemoteEpisodeArt)
                 putEpisodeArt(vm.subjectId, ep.episodeId)
             }
@@ -223,10 +223,10 @@ internal class RemotePlayerHandle(
      * @return 出错时的提示文案; 成功为 null.
      */
     fun select(mediaId: String): String? {
-        val page = page ?: return "电视当前不在播放页"
+        val page = page ?: return tr("电视当前不在播放页")
         val entry = presentation?.filteredCandidates.orEmpty().firstOrNull { it.original.mediaId == mediaId }
-            ?: return "这个数据源已不在列表里，请刷新"
-        if (entry.exclusionReason?.blocksSelection == true) return "这个资源现在不能播放（缓存还没下完）"
+            ?: return tr("这个数据源已不在列表里，请刷新")
+        if (entry.exclusionReason?.blocksSelection == true) return tr("这个资源现在不能播放（缓存还没下完）")
         uiScope.launch { page.mediaSelectorState.select(entry.original) }
         return null
     }
@@ -239,7 +239,7 @@ internal class RemotePlayerHandle(
     fun switchEpisode(episodeId: Int): String? {
         val state = vm.episodeSelectorState
         if (page?.episodePresentation?.episodeId == episodeId) return null
-        if (state.items.none { it.episodeId == episodeId }) return "这一集不在列表里，请刷新"
+        if (state.items.none { it.episodeId == episodeId }) return tr("这一集不在列表里，请刷新")
         uiScope.launch { state.selectEpisodeId(episodeId) }
         return null
     }
@@ -250,24 +250,24 @@ internal class RemotePlayerHandle(
      * @return 出错时的提示文案; 成功为 null.
      */
     fun updateRequest(primary: String, others: List<String>, sort: String, ep: String): String? {
-        val page = page ?: return "电视当前不在播放页"
-        val current = page.fetchRequest ?: return "数据源还在加载，请稍后再试"
-        if (primary.isBlank()) return "主搜索名不能为空"
-        if (sort.isBlank() && ep.isBlank()) return "两种集数至少要填一个"
+        val page = page ?: return tr("电视当前不在播放页")
+        val current = page.fetchRequest ?: return tr("数据源还在加载，请稍后再试")
+        if (primary.isBlank()) return tr("主搜索名不能为空")
+        if (sort.isBlank() && ep.isBlank()) return tr("两种集数至少要填一个")
         val request = current.toEditingMediaFetchRequest().copy(
             primaryName = primary.trim(),
             complementaryNames = others.map { it.trim() }.filter { it.isNotEmpty() },
             episodeSort = sort.trim(),
             episodeEp = ep.trim(),
-        ).toMediaFetchRequestOrNull() ?: return "请求无效，请检查"
+        ).toMediaFetchRequestOrNull() ?: return tr("请求无效，请检查")
         uiScope.launch { vm.updateFetchRequest(request) }
         return null
     }
 
     /** 恢复默认查询条件 (Bangumi 名称与本集原本的集数); 同时清掉为本条目记住的搜索名. */
     fun resetRequest(): String? {
-        val page = page ?: return "电视当前不在播放页"
-        val default = page.defaultFetchRequest ?: return "数据源还在加载，请稍后再试"
+        val page = page ?: return tr("电视当前不在播放页")
+        val default = page.defaultFetchRequest ?: return tr("数据源还在加载，请稍后再试")
         uiScope.launch { vm.updateFetchRequest(default) }
         return null
     }
@@ -307,29 +307,29 @@ internal class RemotePlayerHandle(
 
     /** 与电视上的播放信息浮层 (PlayerStatsOverlay) 同样的几行、同样的格式. */
     private fun statsRows(s: PlayerStatsSnapshot): List<Pair<String, String>> = buildList {
-        add("播放器" to s.backend)
-        add("状态" to s.playbackState)
-        s.title?.takeIf { it.isNotBlank() }?.let { add("媒体" to it) }
-        add("进度" to "${statsDuration(s.positionMillis)} / ${statsDuration(s.durationMillis)}")
-        s.resolution?.let { add("分辨率" to it) }
-        s.frameRate?.let { add("帧率" to "${statsDecimal(it)} fps") }
-        s.videoCodec?.let { add("视频编码" to it) }
-        statsBitrate(s.videoBitrate)?.let { add("视频码率" to it) }
-        s.audioCodec?.let { add("音频编码" to it) }
-        statsBitrate(s.audioBitrate)?.let { add("音频码率" to it) }
+        add(tr("播放器") to s.backend)
+        add(tr("状态") to s.playbackState)
+        s.title?.takeIf { it.isNotBlank() }?.let { add(tr("媒体") to it) }
+        add(tr("进度") to "${statsDuration(s.positionMillis)} / ${statsDuration(s.durationMillis)}")
+        s.resolution?.let { add(tr("分辨率") to it) }
+        s.frameRate?.let { add(tr("帧率") to "${statsDecimal(it)} fps") }
+        s.videoCodec?.let { add(tr("视频编码") to it) }
+        statsBitrate(s.videoBitrate)?.let { add(tr("视频码率") to it) }
+        s.audioCodec?.let { add(tr("音频编码") to it) }
+        statsBitrate(s.audioBitrate)?.let { add(tr("音频码率") to it) }
         listOfNotNull(
             s.audioSampleRate?.takeIf { it > 0 }?.let { "$it Hz" },
             s.audioChannels?.takeIf { it > 0 }?.let { "$it ch" },
-        ).joinToString(" / ").takeIf { it.isNotBlank() }?.let { add("音频格式" to it) }
-        s.playbackSpeed?.let { add("播放速度" to "${statsDecimal(it)}x") }
-        statsBitrate(s.realtimeInputBitrate)?.let { add("实时输入" to it) }
-        statsBitrate(s.realtimeDemuxBitrate)?.let { add("实时解复用" to it) }
+        ).joinToString(" / ").takeIf { it.isNotBlank() }?.let { add(tr("音频格式") to it) }
+        s.playbackSpeed?.let { add(tr("播放速度") to "${statsDecimal(it)}x") }
+        statsBitrate(s.realtimeInputBitrate)?.let { add(tr("实时输入") to it) }
+        statsBitrate(s.realtimeDemuxBitrate)?.let { add(tr("实时解复用") to it) }
         listOfNotNull(
             s.decodedVideoFrames?.let { "V $it" },
             s.decodedAudioFrames?.let { "A $it" },
-            s.droppedVideoFrames?.takeIf { it > 0 }?.let { "丢帧 $it" },
-            s.droppedAudioBuffers?.takeIf { it > 0 }?.let { "丢音频 $it" },
-        ).joinToString(" / ").takeIf { it.isNotBlank() }?.let { add("解码" to it) }
+            s.droppedVideoFrames?.takeIf { it > 0 }?.let { tr("丢帧 {0}", it) },
+            s.droppedAudioBuffers?.takeIf { it > 0 }?.let { tr("丢音频 {0}", it) },
+        ).joinToString(" / ").takeIf { it.isNotBlank() }?.let { add(tr("解码") to it) }
     }
 
     private fun statsDuration(millis: Long?): String {
@@ -421,12 +421,12 @@ internal class RemotePlayerHandle(
         if (ep.collectionType == UnifiedCollectionType.DONE) append("✓ ")
         append(ep.sort)
         if (ep.title.isNotBlank()) append("  ").append(ep.title)
-        if (ep.isKnownNotYetAired) append("（未播出）")
+        if (ep.isKnownNotYetAired) append(tr("（未播出）"))
     }
 
     private fun sourceName(sourceId: String, sample: Media, sources: List<MediaSourceResultPresentation>): String =
         when {
-            sample.kind == MediaSourceKind.LocalCache -> "本地缓存"
+            sample.kind == MediaSourceKind.LocalCache -> tr("本地缓存")
             else -> sources.firstOrNull { it.mediaSourceId == sourceId }?.info?.displayName ?: sourceId
         }
 

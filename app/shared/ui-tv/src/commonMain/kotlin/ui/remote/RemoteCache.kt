@@ -169,7 +169,7 @@ internal object RemoteCache {
             when {
                 request.path == "api/cache" && get -> {
                     val subjectId = request.queryParam("subject")?.toIntOrNull()
-                    if (subjectId == null) result(false, "无效的条目") else episodes(subjectId)
+                    if (subjectId == null) result(false, tr("无效的条目")) else episodes(subjectId)
                 }
 
                 request.path == "api/cache/candidates" && get -> candidates(request)
@@ -186,18 +186,18 @@ internal object RemoteCache {
             }
         }.getOrElse {
             logger.warn(it) { "Remote cache request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
     // ============================ 剧集列表 ============================
 
     private fun episodes(subjectId: Int): JsonObject {
-        val info = loadSubject(subjectId) ?: return result(false, "读取剧集失败，请重试")
+        val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
         // 这部番的全部缓存; 顺带用来找已有的合集 (多集资源): 它覆盖到、还没缓存的集, 列表上给「用合集缓存」
         val caches = runBlocking {
             withTimeoutOrNull(STATUS_TIMEOUT) { cacheManager.listCacheForSubject(subjectId).first() }
-        } ?: return result(false, "读取缓存状态超时，请重试")
+        } ?: return result(false, tr("读取缓存状态超时，请重试"))
         // 只问有缓存的那几集的状态, 其余必然没缓存: 以前逐集各订一次状态流, 上千集的长番在限时内问不完时整张表落空,
         // 已缓存的集全显示成「未缓存」, 还给出重复缓存的勾选框. 超时宁可报错 (网页下一轮自己重试), 不给错的状态
         val cachedEpisodes = caches.mapTo(HashSet()) { it.metadata.episodeId }
@@ -206,7 +206,7 @@ internal object RemoteCache {
                 info.episodes.filter { it.episodeId.toString() in cachedEpisodes }
                     .associate { it.episodeId to cacheManager.cacheStatusForEpisode(subjectId, it.episodeId).first() }
             }
-        } ?: return result(false, "读取缓存状态超时，请重试")
+        } ?: return result(false, tr("读取缓存状态超时，请重试"))
         var packTitle: String? = null
         val b = batch?.takeIf { it.subjectId == subjectId }
         return buildJsonObject {
@@ -259,9 +259,9 @@ internal object RemoteCache {
     // ============================ 手动挑资源 ============================
 
     private fun candidates(request: LanHttpRequest): JsonObject {
-        val subjectId = request.queryParam("subject")?.toIntOrNull() ?: return result(false, "无效的条目")
-        val episodeId = request.queryParam("episode")?.toIntOrNull() ?: return result(false, "无效的剧集")
-        val b = ensureBrowse(subjectId, episodeId) ?: return result(false, "打开这一集失败，请重试")
+        val subjectId = request.queryParam("subject")?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val episodeId = request.queryParam("episode")?.toIntOrNull() ?: return result(false, tr("无效的剧集"))
+        val b = ensureBrowse(subjectId, episodeId) ?: return result(false, tr("打开这一集失败，请重试"))
         b.lastAccess = System.currentTimeMillis()
         val filter = RemoteMediaFilter(
             resolution = request.queryParam("res")?.takeIf { it.isNotEmpty() },
@@ -345,20 +345,20 @@ internal object RemoteCache {
 
     private fun pick(request: LanHttpRequest): JsonObject {
         val f = request.formFields()
-        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val episodeId = f["episode"]?.toIntOrNull() ?: return result(false, "无效的剧集")
+        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val episodeId = f["episode"]?.toIntOrNull() ?: return result(false, tr("无效的剧集"))
         val mediaId = f["id"].orEmpty()
         val b = synchronized(lock) { browse?.takeIf { it.subjectId == subjectId && it.episode.episodeId == episodeId } }
-            ?: return result(false, "列表已过期，请重新打开这一集")
+            ?: return result(false, tr("列表已过期，请重新打开这一集"))
         val entry = b.candidates.firstOrNull { it.original.mediaId == mediaId }
-            ?: return result(false, "这个资源已不在列表里，请刷新")
-        if (entry.exclusionReason?.blocksSelection == true) return result(false, "这个资源现在不能选")
+            ?: return result(false, tr("这个资源已不在列表里，请刷新"))
+        if (entry.exclusionReason?.blocksSelection == true) return result(false, tr("这个资源现在不能选"))
         // 先选资源, 看有哪些存储能缓存它: 一个都没有就是不支持 (比如没开 PikPak 的磁链走不了 HTTP 缓存), 当场说
         val selectStorage = runBlocking { withTimeoutOrNull(REQUEST_TIMEOUT) { b.stage.select(entry.original) } }
-            ?: return result(false, "操作超时，请重试")
+            ?: return result(false, tr("操作超时，请重试"))
         if (selectStorage.storages.isEmpty()) {
             scope.launch { runCatching { selectStorage.cancel() } }
-            return result(false, "这个资源不支持缓存，换一个试试")
+            return result(false, tr("这个资源不支持缓存，换一个试试"))
         }
         synchronized(lock) { if (browse === b) browse = null }
         b.job?.cancel()
@@ -374,26 +374,26 @@ internal object RemoteCache {
                 throw e
             } catch (e: Exception) {
                 logger.warn(e) { "Remote cache failed for subject $subjectId episode $episodeId" }
-                errors[key] = "缓存失败：${e.message ?: e::class.simpleName}"
+                errors[key] = tr("缓存失败：{0}", e.message ?: e::class.simpleName)
             }
         }
         // 合集: 缓存建好后列表上它覆盖的其它集会出现「用合集缓存」, 先说一声
         val isPack = entry.original.episodeRange?.isSingleEpisode() == false
         return result(
             true,
-            "已开始缓存「${episodeLabel(b.episode)}」" + if (isPack) "。这是合集，其它集可以在列表里直接用合集缓存" else "",
+            tr("已开始缓存「{0}」", episodeLabel(b.episode)) + if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "",
         )
     }
 
     /** 列表上的「用合集缓存」: 用已缓存的合集缓存这一集, 同电视缓存页点一集时的自动选择, 不用再挑资源. */
     private fun pack(request: LanHttpRequest): JsonObject {
         val f = request.formFields()
-        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val episodeId = f["episode"]?.toIntOrNull() ?: return result(false, "无效的剧集")
-        val info = loadSubject(subjectId) ?: return result(false, "读取剧集失败，请重试")
-        val ep = info.episodes.firstOrNull { it.episodeId == episodeId } ?: return result(false, "没有找到这一集")
+        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val episodeId = f["episode"]?.toIntOrNull() ?: return result(false, tr("无效的剧集"))
+        val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
+        val ep = info.episodes.firstOrNull { it.episodeId == episodeId } ?: return result(false, tr("没有找到这一集"))
         val done = runBlocking { withTimeoutOrNull(REQUEST_TIMEOUT) { selectFromSeasonPack(info, ep) } }
-            ?: return result(false, "已缓存的合集里没有这一集，请点「选资源」自己挑")
+            ?: return result(false, tr("已缓存的合集里没有这一集，请点「选资源」自己挑"))
         val key = subjectId to episodeId
         errors.remove(key)
         // 真正开始缓存放后台 (同手动挑)
@@ -405,10 +405,10 @@ internal object RemoteCache {
                 throw e
             } catch (e: Exception) {
                 logger.warn(e) { "Remote season-pack cache failed for subject $subjectId episode $episodeId" }
-                errors[key] = "缓存失败：${e.message ?: e::class.simpleName}"
+                errors[key] = tr("缓存失败：{0}", e.message ?: e::class.simpleName)
             }
         }
-        return result(true, "已用合集开始缓存「${episodeLabel(ep)}」")
+        return result(true, tr("已用合集开始缓存「{0}」", episodeLabel(ep)))
     }
 
     /**
@@ -428,13 +428,13 @@ internal object RemoteCache {
 
     private fun auto(request: LanHttpRequest): JsonObject {
         val f = request.formFields()
-        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, "无效的条目")
+        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
         val ids = f["episodes"].orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
-        if (ids.isEmpty()) return result(false, "先勾选要缓存的剧集")
-        if (batch?.running == true) return result(false, "上一批还在进行，稍等一下")
-        val info = loadSubject(subjectId) ?: return result(false, "读取剧集失败，请重试")
+        if (ids.isEmpty()) return result(false, tr("先勾选要缓存的剧集"))
+        if (batch?.running == true) return result(false, tr("上一批还在进行，稍等一下"))
+        val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
         val targets = info.episodes.filter { it.episodeId in ids }
-        if (targets.isEmpty()) return result(false, "没有找到这些剧集")
+        if (targets.isEmpty()) return result(false, tr("没有找到这些剧集"))
         val b = Batch(subjectId, targets.size)
         batch = b
         scope.launch {
@@ -449,7 +449,7 @@ internal object RemoteCache {
                 b.running = false
             }
         }
-        return result(true, "开始为 ${targets.size} 集自动挑资源缓存")
+        return result(true, tr("开始为 {0} 集自动挑资源缓存", targets.size))
     }
 
     /**
@@ -471,12 +471,12 @@ internal object RemoteCache {
                     stage.tryAutoSelectByCachedSeason(existing)
                         ?: if (pinned == null) {
                             (withTimeoutOrNull(AUTO_SELECT_TIMEOUT) { selectByOrder(stage, subjectId) }
-                                ?: (null to "查询超时，请点「选资源」手动选择。"))
+                                ?: (null to tr("查询超时，请点「选资源」手动选择。")))
                                 .let { (selected, reason) -> why = reason; selected }
                         } else {
                             // 整段 (等源 + 挑 + 选中) 限时: 里面有些等待没有尽头, 不能让一集卡死整批
                             (withTimeoutOrNull(AUTO_SELECT_TIMEOUT) { selectFromPinned(stage, subjectId, pinned) }
-                                ?: (null to "来源「${sourceName(pinned)}」查询超时，请点「选资源」更换。"))
+                                ?: (null to tr("来源「{0}」查询超时，请点「选资源」更换。", sourceName(pinned))))
                                 .let { (selected, reason) -> why = reason; selected }
                         }
                     ).toDone()
@@ -488,7 +488,7 @@ internal object RemoteCache {
                             stage.fetchSession.mediaSourceResults.joinToString { "${it.mediaSourceId}:${it.state.value::class.simpleName}" } + ")"
                 }
                 runCatching { requester.cancelRequest() }
-                (why ?: "没有找到可缓存的资源，请点「选资源」手动选择。").also { errors[key] = it }
+                (why ?: tr("没有找到可缓存的资源，请点「选资源」手动选择。")).also { errors[key] = it }
             } else {
                 logger.info { "Remote auto cache subject $subjectId episode ${ep.episodeId}: source ${done.media.mediaSourceId} (pinned=$pinned)" }
                 done.storage.cache(done.media, done.metadata, ep.episodeInfo.toEpisodeMetadata())
@@ -499,7 +499,7 @@ internal object RemoteCache {
             throw e
         } catch (e: Exception) {
             logger.warn(e) { "Remote auto cache failed for subject $subjectId episode ${ep.episodeId}" }
-            "缓存失败：${e.message ?: e::class.simpleName}".also { errors[key] = it }
+            tr("缓存失败：{0}", e.message ?: e::class.simpleName).also { errors[key] = it }
         }
     }
 
@@ -520,14 +520,14 @@ internal object RemoteCache {
         val name = sourceName(pinned)
         val source = stage.fetchSession.mediaSourceResults.firstOrNull { it.mediaSourceId == pinned }
         if (source == null || source.state.value is MediaSourceFetchState.Disabled) {
-            return null to "上次使用的来源「$name」已停用，请点「选资源」更换。"
+            return null to tr("上次使用的来源「{0}」已停用，请点「选资源」更换。", name)
         }
         source.awaitCompletion()
         if (source.state.value !is MediaSourceFetchState.Succeed) {
-            return null to "来源「$name」查询失败，请点「选资源」更换。"
+            return null to tr("来源「{0}」查询失败，请点「选资源」更换。", name)
         }
         return pickFrom(stage, subjectId) { it.mediaSourceId == pinned }?.let { stage.select(it) to "" }
-            ?: (null to "来源「$name」没有这一集，请点「选资源」更换。")
+            ?: (null to tr("来源「{0}」没有这一集，请点「选资源」更换。", name))
     }
 
     /**
@@ -542,7 +542,7 @@ internal object RemoteCache {
         val remote = stage.fetchSession.mediaSourceResults.filter { it.kind != MediaSourceKind.LocalCache }
         withTimeoutOrNull(NO_PIN_WAIT) { coroutineScope { remote.map { async { it.awaitCompletion() } }.awaitAll() } }
         return pickFrom(stage, subjectId) { true }?.let { stage.select(it) to "" }
-            ?: (null to "没有找到可缓存的资源，请点「选资源」手动选择。")
+            ?: (null to tr("没有找到可缓存的资源，请点「选资源」手动选择。"))
     }
 
     /**
@@ -604,11 +604,11 @@ internal object RemoteCache {
     private suspend fun autoHint(subjectId: Int, caches: List<MediaCache>): String? {
         val used = usableCaches(caches).map { it.origin.mediaSourceId }.distinct()
         return when {
-            used.size == 1 -> "否则沿用之前用的「${sourceName(used.single())}」，它没有的集不会换源"
-            used.size > 1 -> "否则每集沿用离它最近的已缓存集用的源，没有的集不会换源"
+            used.size == 1 -> tr("否则沿用之前用的「{0}」，它没有的集不会换源", sourceName(used.single()))
+            used.size > 1 -> tr("否则每集沿用离它最近的已缓存集用的源，没有的集不会换源")
             // 网页上接在「有已缓存的合集先用合集，」后面, 后面还跟「；也可以…」: 不带句号
-            else -> recent[subjectId]?.let { "否则继续使用上次缓存的来源「${sourceName(it.sourceId)}」；如果该来源没有某一集，不会自动切换到其他来源" }
-                ?: preferredSource(subjectId)?.let { "否则继续使用播放时选择的来源「${sourceName(it)}」；如果该来源没有某一集，不会自动切换到其他来源" }
+            else -> recent[subjectId]?.let { tr("否则继续使用上次缓存的来源「{0}」；如果该来源没有某一集，不会自动切换到其他来源", sourceName(it.sourceId)) }
+                ?: preferredSource(subjectId)?.let { tr("否则继续使用播放时选择的来源「{0}」；如果该来源没有某一集，不会自动切换到其他来源", sourceName(it)) }
         }
     }
 
