@@ -133,8 +133,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
-    LaunchedEffect(aniNavigator) {
+    DisposableEffect(aniNavigator) {
+        // 「退出 Ani 后保留 Web 控制台」的常驻前台服务在本模块 (见 RemoteKeepAliveService)
+        val app = appContext.applicationContext
+        TvRemoteControl.keepAliveService = { on -> RemoteKeepAliveService.set(app, on) }
         TvRemoteControl.install(appContext, aniNavigator)
+        // 界面销毁 (退出后进程留着): 旧的导航入口作废, 见 TvRemoteControl.detachNavigator
+        onDispose { TvRemoteControl.detachNavigator(aniNavigator) }
     }
     // 手机「设置」标签底部的日志下载, 与设置 → 日志 →「扫码传到手机」同一个目录
     DisposableEffect(appContext) {
@@ -155,13 +160,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 onNavigateToSearch, onLogout, modifier, pageContent,
             ->
             // 退出确认弹窗的「确定」= 真退出: AppTerminator 会先收掉 torrent 服务再退进程
-            // (Android 上光 finish Activity 的话 :torrent_service 进程还挂着)
+            // (Android 上光 finish Activity 的话 :torrent_service 进程还挂着); 开了「退出 Ani 后保留 Web 控制台」时留着进程, 见 exitTvApp
             val context = LocalContext.current
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }
             TvMainScreenLayout(
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout,
-                onExitApp = { appTerminator.exitApp(context, 0) },
+                onExitApp = { exitTvApp(context, appTerminator) },
                 modifier = modifier, pageContent = pageContent,
             )
         },
@@ -317,7 +322,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     }.getOrNull() == true
                     if (!onMain) aniNavigator.popBackOrNavigateToMain(MainScreenPage.Exploration)
                 },
-                onExitApp = { appTerminator.exitApp(context, 0) },
+                onExitApp = { exitTvApp(context, appTerminator) },
                 onDismissRequest = { showQuickMenu = false },
             )
         }
