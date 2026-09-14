@@ -216,6 +216,22 @@ class SelectorMediaSourceEngineSelectMediaTest {
         assertEquals(2, engine.selectFilteredMedia(longPage, cases[0].config, cases[0].query(), "test", TONARI).size)
     }
 
+    /**
+     * 实测异世界动漫 / MiFun / 樱之空动漫: 剧集列表里混进了 `javascript:` 占位链接, 构造 WebVideo 时抛异常, 整个源作废.
+     */
+    @Test
+    fun `episodes with non-http links are skipped instead of failing the whole page`() {
+        val fake = numbered(1).copy(channel = "线路2", playUrl = "javascript://ios.mifun.org/voddetail/void(0)")
+        val page = listOf(numbered(1), fake, numbered(2))
+        val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = null)
+
+        assertEquals(listOf("https://example.com/1"), selectMedia(page, episodeName = null).filteredList.map { it.originalUrl })
+        assertEquals(
+            listOf("https://example.com/1"),
+            engine.selectFilteredMedia(page, case.config, case.query(), "test", TONARI).map { it.originalUrl },
+        )
+    }
+
     private companion object {
         private const val TONARI = "住在隔壁的她"
         private const val YOGORETA = "被玷污的她"
