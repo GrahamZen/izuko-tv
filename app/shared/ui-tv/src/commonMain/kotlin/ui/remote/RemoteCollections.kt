@@ -59,7 +59,7 @@ internal object RemoteCollections {
         val type = if ("type=WISH" in request.query.split('&')) UnifiedCollectionType.WISH else UnifiedCollectionType.DOING
         return runCatching { list(type) }.getOrElse {
             logger.warn(it) { "Remote collections request failed" }
-            result(false, "读取失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("读取失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -70,7 +70,7 @@ internal object RemoteCollections {
             return buildJsonObject {
                 put("ok", false)
                 put("needLogin", !offline)
-                put("message", if (offline) "电视连不上 Animeko 服务器，稍后再试" else "电视还没登录，登录后才能看到在看 / 想看")
+                put("message", if (offline) tr("电视连不上 Animeko 服务器，稍后再试") else tr("电视还没登录，登录后才能看到在看 / 想看"))
             }
         }
         // 同一种收藏一分钟内同步过就不再联网 (网页上切来切去、缓存面板关上重读), 直接读本地库
@@ -111,11 +111,11 @@ internal object RemoteCollections {
         val fresh = type == UnifiedCollectionType.DOING && pending.isNotEmpty()
         val status = info.progressInfo.continueWatchingStatus
         val line = when {
-            fresh -> "有 ${pending.size} 集新的" + cacheText(uncached, pending.size)
-            type == UnifiedCollectionType.WISH && aired.isNotEmpty() -> "已播 ${aired.size} 集" + cacheText(uncached, pending.size)
-            status is ContinueWatchingStatus.NotOnAir -> "还没开播"
-            status is ContinueWatchingStatus.Done -> "已看完"
-            type == UnifiedCollectionType.DOING -> "已追到最新"
+            fresh -> tr("有 {0} 集新的", pending.size) + cacheText(uncached, pending.size)
+            type == UnifiedCollectionType.WISH && aired.isNotEmpty() -> tr("已播 {0} 集", aired.size) + cacheText(uncached, pending.size)
+            status is ContinueWatchingStatus.NotOnAir -> tr("还没开播")
+            status is ContinueWatchingStatus.Done -> tr("已看完")
+            type == UnifiedCollectionType.DOING -> tr("已追到最新")
             else -> null
         }
         val json = buildJsonObject {
@@ -130,9 +130,9 @@ internal object RemoteCollections {
     }
 
     private fun cacheText(uncached: Int, total: Int): String = when {
-        uncached == 0 -> " · 都已缓存"
-        uncached == total -> " · 都没缓存"
-        else -> " · $uncached 集没缓存"
+        uncached == 0 -> tr(" · 都已缓存")
+        uncached == total -> tr(" · 都没缓存")
+        else -> tr(" · {0} 集没缓存", uncached)
     }
 
     /** subjectId → 已缓存 (没删的, 含正在下载的) 各集 episodeId. 本地读, 不联网. */
