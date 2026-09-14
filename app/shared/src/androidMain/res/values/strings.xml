@@ -15,5 +15,7 @@
     <string name="app_service_title_text_working">Downloading %1$d resource(s)</string>
     <string name="app_service_content_text">DOWN: %1$s, UP: %2$s</string>
     <string name="app_service_stop_text">STOP</string>
+    <string name="service_remote_keep_alive_name">Web console</string>
+    <string name="service_remote_keep_alive_text">Stays reachable from your phone after Animeko is closed</string>
 
 </resources>
