@@ -1229,6 +1229,10 @@ fun FocusEpisodeCard(
                     Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                     onError = { retry.onError() },
+                    // 图一到就让渲染线程趁空闲把它传上 GPU (Android: Bitmap.prepareToDraw, 异步): 详情页的选集区在首屏之下,
+                    // 冷启动后第一次往下翻时这几张剧照要当场上传, 滚动开头那一帧 RenderThread 18~24ms、掉一帧
+                    // (2026-09-14 Shield 实测, 纹理上传占 3~8ms). 已上传过的是空操作
+                    onSuccess = { it.bitmap?.prepareToDraw() },
                     decodeAtOriginalSize = true, // 与弹窗背景/预取共用同一份解码, 见 episodeStillImageUrl
                 )
                 // 底部 scrim 保证集号/集名可读
