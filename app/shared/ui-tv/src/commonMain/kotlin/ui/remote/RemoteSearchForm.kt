@@ -122,12 +122,12 @@ internal suspend fun renderRemoteSearchForm(values: RemoteSearchFormValues): Str
     }
     return "<form id=\"search-form\">\n" +
             "<div class=\"qbox\"><input type=\"text\" id=\"q\" name=\"q\" value=\"${values.keywords.escapeHtml()}\" " +
-            "autocomplete=\"off\" enterkeyhint=\"search\" placeholder=\"想看什么？\">" +
+            "autocomplete=\"off\" enterkeyhint=\"search\" placeholder=\"${tr("想看什么？")}\">" +
             "<div class=\"sugg\" id=\"sugg\" hidden></div></div>\n" +
             "<h2>${labels.sortTitle.escapeHtml()}</h2>\n<div class=\"pills\">\n$sortHtml\n</div>\n" +
             "<h2>${labels.ratingTitle.escapeHtml()}</h2>\n<div class=\"pills\">\n$ratingHtml\n</div>\n" +
             tagSections + "\n" +
-            "<div class=\"bar\"><button type=\"submit\" class=\"primary wide\">搜索</button></div>\n" +
+            "<div class=\"bar\"><button type=\"submit\" class=\"primary wide\">${tr("搜索")}</button></div>\n" +
             "</form>"
 }
 

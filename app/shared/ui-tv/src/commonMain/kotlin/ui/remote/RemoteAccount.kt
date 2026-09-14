@@ -107,7 +107,7 @@ internal object RemoteAccount {
             }
         }.getOrElse {
             logger.warn(it) { "Remote account request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -157,7 +157,7 @@ internal object RemoteAccount {
      */
     private fun startLogin(): JsonObject {
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session is SessionState.Valid && session.bangumiConnected) return result(false, "电视已经登录了")
+        if (session is SessionState.Valid && session.bangumiConnected) return result(false, tr("电视已经登录了"))
         // 同电视登录页: 没有有效的 Ani 会话 = 用 Bangumi 注册 / 登录 (新用户、老用户重新登录都走这条); 有会话只是没连 Bangumi = 绑定
         val isRegister = session !is SessionState.Valid
         val link = CompletableDeferred<String>()
@@ -184,19 +184,19 @@ internal object RemoteAccount {
                     is OAuthConfigurator.State.Success -> {
                         update(me, Login.Idle)
                         logger.info { "Remote control login succeeded" }
-                        TvRemoteControl.postNotice("登录成功，电视已登录")
+                        TvRemoteControl.postNotice(tr("登录成功，电视已登录"))
                     }
 
                     is OAuthConfigurator.State.Failed -> {
                         val message = errorText(outcome.error)
                         update(me, Login.Failed(message))
                         // 链接已经交出去了 (手机那头正在授权): 结果只能靠提示送过去; 没交出去的由 startLogin 当场回
-                        if (handedOut) TvRemoteControl.postNotice("登录没有完成：$message")
+                        if (handedOut) TvRemoteControl.postNotice(tr("登录没有完成：{0}", message))
                     }
 
                     null -> {
-                        update(me, Login.Failed("等太久没有结果，请重新登录"))
-                        TvRemoteControl.postNotice("登录没有完成：等太久没有结果，请重新登录")
+                        update(me, Login.Failed(tr("等太久没有结果，请重新登录")))
+                        TvRemoteControl.postNotice(tr("登录没有完成：等太久没有结果，请重新登录"))
                     }
 
                     else -> {} // Idle / AwaitingResult: auth 正常返回时不会是这两种
@@ -215,15 +215,15 @@ internal object RemoteAccount {
             logger.info { "Remote control login started (${if (isRegister) "register" else "bind"}), link handed to phone" }
             return buildJsonObject {
                 put("ok", true)
-                put("message", "请在打开的 Bangumi 页面里授权")
+                put("message", tr("请在打开的 Bangumi 页面里授权"))
                 put("url", url)
             }
         }
         // 协程已经结束 = 要链接时就失败了, 原因在状态里; 否则是超时
         (login as? Login.Failed)?.let { return result(false, it.message) }
         current.cancel()
-        update(current, Login.Failed("电视连不上登录服务器，请稍后再试"))
-        return result(false, "电视连不上登录服务器，请稍后再试")
+        update(current, Login.Failed(tr("电视连不上登录服务器，请稍后再试")))
+        return result(false, tr("电视连不上登录服务器，请稍后再试"))
     }
 
     private fun cancelLogin(): JsonObject {
@@ -232,7 +232,7 @@ internal object RemoteAccount {
             job = null
             login = Login.Idle
         }
-        return result(true, "已取消")
+        return result(true, tr("已取消"))
     }
 
     /**
@@ -243,23 +243,23 @@ internal object RemoteAccount {
         cancelLogin()
         emailOtp = null
         runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.clearSelfInfo() } }
-            ?: return result(false, "退出登录超时，请重试")
+            ?: return result(false, tr("退出登录超时，请重试"))
         logger.info { "Logged out from remote control" }
-        return result(true, "电视已退出登录")
+        return result(true, tr("电视已退出登录"))
     }
 
     /** 改昵称: 规则同 App 的资料编辑 (ProfileViewModel.validateNickname): 中日文 / 字母 / 数字 / 下划线, 6~20 个字符, 非 ASCII 算 2 个. */
     private fun setNickname(request: LanHttpRequest): JsonObject {
         val nickname = request.formFields()["nickname"].orEmpty().trim()
         if (!NICKNAME.matches(nickname) || nickname.sumOf { if (it.code < 256) 1 else 2 } !in 6..20) {
-            return result(false, "昵称要 6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线")
+            return result(false, tr("昵称要 6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线"))
         }
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session !is SessionState.Valid) return result(false, "电视还没登录")
+        if (session !is SessionState.Valid) return result(false, tr("电视还没登录"))
         runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.updateProfile(nickname) } }
-            ?: return result(false, "改昵称超时，请重试")
+            ?: return result(false, tr("改昵称超时，请重试"))
         logger.info { "Nickname changed from remote control" }
-        return result(true, "昵称已改成「$nickname」")
+        return result(true, tr("昵称已改成「{0}」", nickname))
     }
 
     /** 手机上要的邮箱验证码: 发到哪个邮箱、服务器给的 otpId、什么时候发的 (30 秒内不再发, 同 App). */
@@ -274,16 +274,16 @@ internal object RemoteAccount {
      */
     private fun sendEmailOtp(request: LanHttpRequest): JsonObject {
         val email = request.formFields()["email"].orEmpty().trim()
-        if (!EMAIL.matches(email)) return result(false, "邮箱格式不对")
+        if (!EMAIL.matches(email)) return result(false, tr("邮箱格式不对"))
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
         if (session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR) {
-            return result(false, "电视连不上 Animeko 服务器，稍后再试")
+            return result(false, tr("电视连不上 Animeko 服务器，稍后再试"))
         }
         val wait = emailOtp?.let { RESEND_INTERVAL.inWholeMilliseconds - (currentTimeMillis() - it.sentAt) } ?: 0
-        if (wait > 0) return result(false, "${(wait + 999) / 1000} 秒后才能重新发送")
+        if (wait > 0) return result(false, tr("{0} 秒后才能重新发送", (wait + 999) / 1000))
         val info = try {
             runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.sendEmailOtpForLogin(email) } }
-                ?: return result(false, "发送超时，请重试")
+                ?: return result(false, tr("发送超时，请重试"))
         } catch (e: RepositoryException) {
             return result(false, repositoryErrorText(e))
         }
@@ -291,7 +291,7 @@ internal object RemoteAccount {
         logger.info { "Email OTP sent from remote control (existing user: ${info.hasExistingUser})" }
         return buildJsonObject {
             put("ok", true)
-            put("message", "验证码已发到 $email")
+            put("message", tr("验证码已发到 {0}", email))
             info.hasExistingUser?.let { put("existing", it) }
         }
     }
@@ -299,8 +299,8 @@ internal object RemoteAccount {
     /** 第二步: 交验证码. 同 EmailLoginViewModel: 没有有效会话 = 登录 (新邮箱直接注册); 已登录 = 绑定或更换邮箱. 成功后服务器给的会话直接生效. */
     private fun verifyEmailOtp(request: LanHttpRequest): JsonObject {
         val code = request.formFields()["code"].orEmpty().filterNot { it.isWhitespace() }
-        if (code.isEmpty()) return result(false, "请填写验证码")
-        val otp = emailOtp ?: return result(false, "先发送验证码")
+        if (code.isEmpty()) return result(false, tr("请填写验证码"))
+        val otp = emailOtp ?: return result(false, tr("先发送验证码"))
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
         val bind = session is SessionState.Valid
         val outcome = try {
@@ -308,7 +308,7 @@ internal object RemoteAccount {
                 withTimeoutOrNull(OP_TIMEOUT) {
                     if (bind) userRepository.bindOrReBindEmail(otp.id, code) else userRepository.registerOrLoginByEmailOtp(otp.id, code)
                 }
-            } ?: return result(false, "服务器没有回应，请重试")
+            } ?: return result(false, tr("服务器没有回应，请重试"))
         } catch (e: RepositoryException) {
             return result(false, repositoryErrorText(e))
         }
@@ -317,20 +317,20 @@ internal object RemoteAccount {
                 emailOtp = null
                 if (!bind) cancelLogin() // 手机上还挂着的 Bangumi 登录不要了
                 logger.info { "Email ${if (bind) "bind" else "login"} succeeded from remote control" }
-                result(true, if (bind) "邮箱已改成 ${otp.email}" else "登录成功，电视已登录")
+                result(true, if (bind) tr("邮箱已改成 {0}", otp.email) else tr("登录成功，电视已登录"))
             }
 
-            UserRepository.SendOtpResult.InvalidOtp -> result(false, "验证码不对或已经过期")
-            UserRepository.SendOtpResult.EmailAlreadyExist -> result(false, "这个邮箱已经绑在别的账号上了")
+            UserRepository.SendOtpResult.InvalidOtp -> result(false, tr("验证码不对或已经过期"))
+            UserRepository.SendOtpResult.EmailAlreadyExist -> result(false, tr("这个邮箱已经绑在别的账号上了"))
         }
     }
 
     private fun repositoryErrorText(e: RepositoryException): String = when (e) {
-        is RepositoryRequestError -> e.localizedMessage ?: "请求有误"
-        is RepositoryRateLimitedException -> "操作太频繁，稍后再试"
-        is RepositoryNetworkException -> "网络错误，电视连不上 Animeko 服务器"
-        is RepositoryServiceUnavailableException -> "服务器暂时不可用，稍后再试"
-        else -> "出错了：" + (e.message ?: e::class.simpleName)
+        is RepositoryRequestError -> e.localizedMessage ?: tr("请求有误")
+        is RepositoryRateLimitedException -> tr("操作太频繁，稍后再试")
+        is RepositoryNetworkException -> tr("网络错误，电视连不上 Animeko 服务器")
+        is RepositoryServiceUnavailableException -> tr("服务器暂时不可用，稍后再试")
+        else -> tr("出错了：") + (e.message ?: e::class.simpleName)
     }
 
     /** 只有还是「当前这一次」时才改状态: 被新的一次顶掉的旧协程别把新状态冲掉. */
@@ -339,13 +339,13 @@ internal object RemoteAccount {
     }
 
     private fun errorText(error: LoadError): String = when (error) {
-        LoadError.NetworkError -> "网络错误，电视连不上登录服务器"
-        LoadError.ServiceUnavailable -> "登录服务器暂时不可用，稍后再试"
-        LoadError.RateLimited -> "操作太频繁，稍后再试"
-        LoadError.RequiresLogin -> "登录状态有问题，请重试"
-        LoadError.NoResults -> "没有拿到登录结果，请重试"
+        LoadError.NetworkError -> tr("网络错误，电视连不上登录服务器")
+        LoadError.ServiceUnavailable -> tr("登录服务器暂时不可用，稍后再试")
+        LoadError.RateLimited -> tr("操作太频繁，稍后再试")
+        LoadError.RequiresLogin -> tr("登录状态有问题，请重试")
+        LoadError.NoResults -> tr("没有拿到登录结果，请重试")
         is LoadError.RequestError -> error.localized
-        is LoadError.UnknownError -> "未知错误" + (error.throwable?.message?.let { "：$it" } ?: "")
+        is LoadError.UnknownError -> tr("未知错误") + (error.throwable?.message?.let { "：$it" } ?: "")
     }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {

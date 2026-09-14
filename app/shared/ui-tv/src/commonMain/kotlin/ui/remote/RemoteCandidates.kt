@@ -173,10 +173,10 @@ internal object RemoteCandidates {
     }
 
     fun subtitleLabel(id: String): String = when (id.uppercase()) {
-        "CHS" -> "简中"
-        "CHT" -> "繁中"
-        "JPN", "JP" -> "日语"
-        "ENG", "EN" -> "英语"
+        "CHS" -> tr("简中")
+        "CHT" -> tr("繁中")
+        "JPN", "JP" -> tr("日语")
+        "ENG", "EN" -> tr("英语")
         else -> id
     }
 }

@@ -42,6 +42,8 @@ internal fun renderRemoteControlPage(
     requestSectionHtml: String,
     /** 跟电视主题色生成的配色 (见 [RemoteTheme]), 接在默认样式后面盖住默认值; 空 = 用默认的 */
     themeCss: String = "",
+    /** 当前语言的译文 (见 [RemoteI18n.pageScript]); 空 = 简体 */
+    i18nScript: String = "",
 ): String =
     """
     <!doctype html>
@@ -54,7 +56,7 @@ internal fun renderRemoteControlPage(
     <meta name="referrer" content="no-referrer">
     <title>Animeko 控制台</title>
     <script>
-    """.trimIndent() + "\n" + THEME_HEAD_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
     """.trimIndent() + "\n" + STYLE + "\n" + themeCss + """
@@ -861,6 +863,33 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 """.trimIndent()
 
 /**
+ * 多语言 (见 RemoteI18n), 放在 <head> 最前面: `T('简体原文', 参数…)` 查当前语言的译文 (I18N 由服务端按 app 语言塞进来,
+ * 没有 = 简体), `{0}` `{1}` … 依次换成参数. 静态 HTML (标签栏、面板标题、按钮的 aria-label 等) 由 SCRIPT 开头调一次
+ * translateStatic, 逐个文本节点 / 属性按同一张表整段替换.
+ */
+private val LANG_SCRIPT = """
+var I18N = window.I18N || {}, LANG = window.LANG || 'zh-CN';
+function T(s) {
+  var r = Object.prototype.hasOwnProperty.call(I18N, s) ? I18N[s] : s;
+  for (var i = 1; i < arguments.length; i++) r = r.split('{' + (i - 1) + '}').join(arguments[i]);
+  return r;
+}
+function translateStatic(root) {
+  if (LANG === 'zh-CN') return;
+  document.documentElement.lang = LANG;
+  document.title = T(document.title);
+  var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, k;
+  while ((n = w.nextNode())) {
+    k = n.nodeValue.trim();
+    if (k && Object.prototype.hasOwnProperty.call(I18N, k)) n.nodeValue = n.nodeValue.split(k).join(I18N[k]);
+  }
+  ['title', 'aria-label', 'placeholder'].forEach(function (a) {
+    root.querySelectorAll('[' + a + ']').forEach(function (el) { el.setAttribute(a, T(el.getAttribute(a))); });
+  });
+}
+""".trimIndent()
+
+/**
  * 深浅色: 手机上存 `remote.theme` = auto / light / dark, 默认 auto = 跟着手机系统的深色模式 (prefers-color-scheme,
  * 系统一切换当场跟着变). 放在 <head> 里、样式之前先把 data-theme 定下来, 深色下不会先闪一下白.
  * 设置标签的「外观」卡片 (LOOK_SCRIPT) 经 window.remoteTheme 读写; 存不进 localStorage (无痕模式) 时只在本页生效.
@@ -897,22 +926,22 @@ private val THEME_HEAD_SCRIPT = """
 private val LOOK_SCRIPT = """
 (function () {
   var box = document.getElementById('set-look');
-  var OPTS = [['auto', '自动'], ['light', '浅色'], ['dark', '深色']];
+  var OPTS = [['auto', T('自动')], ['light', T('浅色')], ['dark', T('深色')]];
   // 缓存面板「全选」/「全部用合集缓存」的范围 (同 CACHE_SCRIPT 的 pickAllSp; 电视上没有全选, 所以只在网页上设)
-  var PICK_SCOPE_KEY = 'ani-cache-pick-scope', PICK_SCOPES = [['main', '仅正片'], ['all', '正片和特别篇']];
+  var PICK_SCOPE_KEY = 'ani-cache-pick-scope', PICK_SCOPES = [['main', T('仅正片')], ['all', T('正片和特别篇')]];
   function pickScopeNow() { try { return localStorage.getItem(PICK_SCOPE_KEY) === 'all' ? 'all' : 'main'; } catch (e) { return 'main'; } }
   function paint() {
     var t = window.remoteTheme.get();
-    box.innerHTML = '<div class="card set-card"><div class="set-title">本机偏好<small>只影响这台手机</small></div>' +
+    box.innerHTML = '<div class="card set-card"><div class="set-title">' + T('本机偏好') + '<small>' + T('只影响这台手机') + '</small></div>' +
       '<div class="seg">' + OPTS.map(function (o) {
         return '<button type="button" data-look="' + o[0] + '"' + (o[0] === t ? ' class="on"' : '') + '>' + o[1] + '</button>';
-      }).join('') + '</div><p class="hint">自动：跟着手机系统的深色模式切换。</p>' +
+      }).join('') + '</div><p class="hint">' + T('自动：跟着手机系统的深色模式切换。') + '</p>' +
       // 同顶上「电视上的二维码弹窗还开着」那一条里的「以后」下拉框 (见 SCRIPT 的 ldSetMode)
-      (window.LD_OPTS ? '<label class="look-ld"><span>打开网页时，电视上的二维码</span><select data-ld-mode>' +
+      (window.LD_OPTS ? '<label class="look-ld"><span>' + T('打开网页时，电视上的二维码') + '</span><select data-ld-mode>' +
         window.LD_OPTS.map(function (o) {
           return '<option value="' + o[0] + '"' + (o[0] === window.ldMode() ? ' selected' : '') + '>' + o[1] + '</option>';
         }).join('') + '</select></label>' : '') +
-      '<label class="look-ld"><span>「全选」包含哪些剧集</span><select data-pick-scope>' +
+      '<label class="look-ld"><span>' + T('「全选」包含哪些剧集') + '</span><select data-pick-scope>' +
       PICK_SCOPES.map(function (o) {
         return '<option value="' + o[0] + '"' + (o[0] === pickScopeNow() ? ' selected' : '') + '>' + o[1] + '</option>';
       }).join('') + '</select></label></div>';
@@ -949,19 +978,21 @@ private val LOGS_SCRIPT = """
   window.loadLogs = load;
   function render(d) {
     if (!d.supported) { box.innerHTML = ''; return; }
-    box.innerHTML = '<div class="card set-card"><div class="set-title">日志</div>' +
-      '<p class="hint">遇到问题时下载下来发给开发者。app.log 是今天的，其余按天保存。</p>' +
+    box.innerHTML = '<div class="card set-card"><div class="set-title">' + T('日志') + '</div>' +
+      '<p class="hint">' + T('遇到问题时下载下来发给开发者。app.log 是今天的，其余按天保存。') + '</p>' +
       (d.items.length ? '<div class="log-list">' + d.items.map(function (x) {
         return '<a class="log-item" href="api/logs/' + encodeURIComponent(x.name) + '" download="' + esc(x.name) + '">' +
           '<span class="log-name">' + esc(x.name) + '</span><span class="log-meta">' + esc(x.size) + ' · ' + esc(x.time) + '</span></a>';
-      }).join('') + '</div>' : '<p class="hint">还没有日志文件</p>') +
-      '<p class="hint">点了没开始下载的话，换系统浏览器打开本页再试。</p></div>';
+      }).join('') + '</div>' : '<p class="hint">' + T('还没有日志文件') + '</p>') +
+      '<p class="hint">' + T('点了没开始下载的话，换系统浏览器打开本页再试。') + '</p></div>';
   }
 })();
 """.trimIndent()
 
 private val SCRIPT = """
 (function () {
+  // 静态 HTML 按当前语言翻一遍 (见 LANG_SCRIPT)
+  translateStatic(document.body);
   // sub: 搜索标签里当前是「搜索」(form) 还是「结果」(results) 那一页; setSub: 设置标签里是「常规」(general) 还是「数据源」(sources)
   var cur = null, sub = 'form', setSub = 'general', ver = '', busy = false;
   // 数据源胶囊的筛选 (null = 全部) 与最近一次完整状态: 点胶囊时就地重画, 不等下一次轮询
@@ -980,7 +1011,7 @@ private val SCRIPT = """
   // 播放卡标题行右边的「缓存」小按钮, 点开这部番的缓存面板 (类名 cache-entry 留给测试脚本认)
   function cacheEntry(id, title) {
     return id ? '<button type="button" class="now-cache cache-entry" data-cache="' + id + '" data-title="' + esc(title || '') +
-      '" aria-label="缓存这部番的剧集">' + window.ICONS.download + '缓存</button>' : '';
+      '" aria-label="' + T('缓存这部番的剧集') + '">' + window.ICONS.download + T('缓存') + '</button>' : '';
   }
   // 后台会话进行到哪一步了 (服务端给 kind / label / text): 已就绪是绿色, 要处理的是黄色, 出错是红色
   function sessionChip(x) {
@@ -1021,11 +1052,11 @@ private val SCRIPT = """
   // 请求没回应: 分不清是电视休眠了 (没开「后台常驻」时 Shield 一休眠就把 Ani 收掉)、Ani 没在运行, 还是不在同一个网络, 都说上;
   // 上次连上时「后台常驻」没开 (lastKeep, 见 pollNotice) 就顺带说去哪开
   function fail() {
-    toast('无法连接电视。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。' +
-      (lastKeep === false ? '想在电视休眠或离开 Ani 后继续连接，请在网页的「设置」中开启「后台保持连接」。' : ''), 6000);
+    toast(T('无法连接电视。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
+      (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请在网页的「设置」中开启「后台保持连接」。') : ''), 6000);
   }
   window.fail = fail;
-  function failRead() { toast('读取失败，请确认手机与电视在同一网络'); }
+  function failRead() { toast(T('读取失败，请确认手机与电视在同一网络')); }
   window.failRead = failRead;
   /** 内容 (生成它的 HTML) 没变就不重画; 上次写进去的记在节点上, 出错提示也走这里, 不会出现「记着旧的、画着别的」 */
   function setHtml(el, h) {
@@ -1067,7 +1098,7 @@ private val SCRIPT = """
   // btn: 「不在前台」那一条里的入口 (切到电视前台, 见 TvRemoteControl.manualFront; 设置里有同一个开关, 可以提前开或撤销):
   // 'enable' = 还没开, 点了先确认再开 / 'how' = 开了还没授权, 点了说怎么授权 / 'go' = 开了且授了权, 点了直接切.
   // 内容没变不重画: 每 2 秒一轮, 重画会把正要点的按钮换掉
-  var FRONT_HOW = '在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Animeko 开启权限。只需授权一次，仅用于从手机打开 Ani。';
+  var FRONT_HOW = T('在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Animeko 开启权限。只需授权一次，仅用于从手机打开 Ani。');
   function setTvState(kind, text, btn) {
     var key = (kind || '') + '|' + (text || '') + '|' + (btn || '');
     if (tvState._k === key) return;
@@ -1076,7 +1107,7 @@ private val SCRIPT = """
     tvState.className = 'tv-state' + (kind ? ' ' + kind : '');
     tvState.textContent = text || '';
     if (btn) tvState.insertAdjacentHTML('beforeend', '<button type="button" class="tv-front" data-tv-front="' + btn + '">' +
-      (btn === 'how' ? '查看授权方法' : '打开 Ani') + '</button>');
+      (btn === 'how' ? T('查看授权方法') : T('打开 Ani')) + '</button>');
   }
   function frontNow(b) {
     b.disabled = true;
@@ -1088,14 +1119,14 @@ private val SCRIPT = """
     var k = b.getAttribute('data-tv-front');
     if (k === 'go') { frontNow(b); return; }
     if (k === 'how') { alert(FRONT_HOW); return; }
-    if (!confirm('允许从手机打开电视上的 Ani？开启后，在手机上搜索或点播时，电视会自动打开 Ani。' +
-      '首次使用需要在电视上授权，可随时在设置中关闭。')) return;
+    if (!confirm(T('允许从手机打开电视上的 Ani？开启后，在手机上搜索或点播时，电视会自动打开 Ani。') +
+      T('首次使用需要在电视上授权，可随时在设置中关闭。'))) return;
     b.disabled = true;
     post('api/settings/front', { on: '1' }).then(function (r) {
       tvState._k = null; // 下一轮按新状态重画这一条
       if (r.granted) frontNow(b);
       // 电视回的话里说了下一步 (Ani 在后台: 回到 Ani 时会直接打开授权页, 30 分钟内有效)
-      else { b.disabled = false; alert(r.message || ('已打开。还差一步：' + FRONT_HOW)); }
+      else { b.disabled = false; alert(r.message || (T('已打开。还差一步：') + FRONT_HOW)); }
       pollNotice();
     }).catch(function () { b.disabled = false; fail(); });
   });
@@ -1116,18 +1147,20 @@ private val SCRIPT = """
         noticeFails = 0;
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
-        if (n.away && n.frontOn && n.frontGranted) setTvState('away', '电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。', 'go');
-        else if (n.away && n.frontOn) setTvState('away', '电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。', 'how');
-        else if (n.away) setTvState('away', '电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。', 'enable');
+        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。'), 'go');
+        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。'), 'how');
+        else if (n.away) setTvState('away', T('电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。'), 'enable');
         else setTvState('');
         ldShow(!!n.launchDialog);
         lastKeep = !!n.keep;
+        // app 里换了语言 (见 RemoteI18n): 整页重载拿新的译文
+        if (n.lang && n.lang !== LANG) location.reload();
       })
       .catch(function (e) {
         noticeBusy = false;
-        if (e && e.message === 'gone') { setTvState('off', '这个地址已失效（电视上重置过地址），请在电视上重新扫码'); return; }
-        if (++noticeFails >= 2) setTvState('off', '电视已断开。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。' +
-          (lastKeep === false ? '想在电视休眠或离开 Ani 后继续连接，请先在电视上打开 Ani，再到网页的「设置」中开启「后台保持连接」。' : ''));
+        if (e && e.message === 'gone') { setTvState('off', T('这个地址已失效（电视上重置过地址），请在电视上重新扫码')); return; }
+        if (++noticeFails >= 2) setTvState('off', T('电视已断开。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
+          (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请先在电视上打开 Ani，再到网页的「设置」中开启「后台保持连接」。') : ''));
         noticeSkip = Math.min(noticeFails - 1, 4);
       });
   }
@@ -1137,7 +1170,7 @@ private val SCRIPT = """
   // 自动关掉 = 打开网页直接关; 不提示也不关 = 什么都不出现. 遥控器关掉后下一轮提示轮询就收起.
   // 关掉之后提示一句以后去哪找码 —— 弹窗里写着的那句随它关掉就看不到了
   var LD_KEY = 'ani-launch-dialog-mode', LD_OLD_KEY = 'ani-launch-dialog-auto';
-  var LD_OPTS = [['ask', '每次询问'], ['auto', '自动关闭'], ['off', '保持显示']];
+  var LD_OPTS = [['ask', T('每次询问')], ['auto', T('自动关闭')], ['off', T('保持显示')]];
   var ldBar = document.getElementById('ld-bar'), ldSel = ldBar.querySelector('select');
   var ldAutoClosing = false, ldDismissed = false, ldOpen = false;
   // 旧版的勾选框「以后这台手机打开就自动关闭」勾过的, 算「自动关掉」
@@ -1168,8 +1201,8 @@ private val SCRIPT = """
   }
   function ldClose(auto) {
     return post('api/launch-dialog/close', auto ? { auto: '1' } : {}).then(function (r) {
-      if (r && r.closed) toast(auto ? '已自动关闭电视上的二维码。可在「设置 → 本机偏好」中更改。需要重新扫码时，长按遥控器播放键。'
-        : '已关闭电视上的二维码。需要重新扫码时，长按遥控器播放键，在动作面板右上角扫码。', 6000);
+      if (r && r.closed) toast(auto ? T('已自动关闭电视上的二维码。可在「设置 → 本机偏好」中更改。需要重新扫码时，长按遥控器播放键。')
+        : T('已关闭电视上的二维码。需要重新扫码时，长按遥控器播放键，在动作面板右上角扫码。'), 6000);
       return r;
     });
   }
@@ -1185,7 +1218,7 @@ private val SCRIPT = """
     var m = ldSel.value;
     ldSetMode(m);
     if (m === 'auto') ldAutoClose();
-    else if (m === 'off') toast('以后不再提醒。请用遥控器关闭电视上的二维码；可在「设置 → 本机偏好」中重新开启提醒。', 5000);
+    else if (m === 'off') toast(T('以后不再提醒。请用遥控器关闭电视上的二维码；可在「设置 → 本机偏好」中重新开启提醒。'), 5000);
   });
   ldBar.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ld]');
@@ -1275,7 +1308,7 @@ private val SCRIPT = """
     if (!list.length) { sugg.hidden = true; return; }
     sugg.innerHTML = list.map(function (h) {
       return '<div class="srow"><button type="button" class="h" data-q="' + esc(h) + '">' + esc(h) + '</button>' +
-        '<button type="button" class="x" data-del="' + esc(h) + '" aria-label="删除这条记录" title="删除这条记录">' + window.ICONS.close + '</button></div>';
+        '<button type="button" class="x" data-del="' + esc(h) + '" aria-label="' + T('删除这条记录') + '" title="' + T('删除这条记录') + '">' + window.ICONS.close + '</button></div>';
     }).join('');
     sugg.hidden = false;
   }
@@ -1692,7 +1725,7 @@ private val SCRIPT = """
     sel = { o: o, ids: {} };
     if (first) sel.ids[first] = true;
     o.box.classList.add('selecting');
-    selBar.querySelector('.sel-del').innerHTML = window.ICONS.trash + '删除';
+    selBar.querySelector('.sel-del').innerHTML = window.ICONS.trash + T('删除');
     selBar.hidden = false;
     document.body.classList.add('sel-on');
     selSync(o.box);
@@ -1716,8 +1749,8 @@ private val SCRIPT = """
       r.classList.toggle('picked', on);
     });
     sel.ids = live;
-    selBar.querySelector('.sel-n').textContent = n ? '已选 ' + n + ' 项' : '点选要删除的项';
-    selBar.querySelector('[data-sel="all"]').textContent = n === rows.length ? '全不选' : '全选';
+    selBar.querySelector('.sel-n').textContent = n ? T('已选 {0} 项', n) : T('点选要删除的项');
+    selBar.querySelector('[data-sel="all"]').textContent = n === rows.length ? T('全不选') : T('全选');
     selBar.querySelector('[data-sel="del"]').disabled = !n;
   }
   window.selStart = selStart;
@@ -1781,43 +1814,43 @@ private val SCRIPT = """
     // 「结果」分段按钮上带条数, 在「搜索」页也看得到结果回来了没有
     document.getElementById('res-count').textContent =
       s.available && !s.pending && s.items && s.items.length ? ' ' + s.items.length : '';
-    if (s.pending) { resEmpty('正在电视上搜索…'); return; }
+    if (s.pending) { resEmpty(T('正在电视上搜索…')); return; }
     if (!s.available) {
-      resEmpty('还没有搜索结果', '在「搜索」里搜一下，电视上的结果会列在这里：点条目在电视上打开详情页，点 ▶ 直接播放');
+      resEmpty(T('还没有搜索结果'), T('在「搜索」里搜一下，电视上的结果会列在这里：点条目在电视上打开详情页，点 ▶ 直接播放'));
       return;
     }
     var items = s.items || [];
     // 关键词一行, 条数右对齐在同一行 (标题折行时条数贴着第一行); 筛选条件有才另起一行
-    resHead.innerHTML = '<div class="res-top"><div class="res-q">' + (s.keywords ? '「' + esc(s.keywords) + '」' : '筛选结果') + '</div>' +
-      '<span class="res-n">' + (s.refreshing ? '搜索中' : items.length + ' 条') + '</span></div>' +
+    resHead.innerHTML = '<div class="res-top"><div class="res-q">' + (s.keywords ? T('「{0}」', esc(s.keywords)) : T('筛选结果')) + '</div>' +
+      '<span class="res-n">' + (s.refreshing ? T('搜索中') : T('{0} 条', items.length)) + '</span></div>' +
       (s.filters ? '<div class="res-sub">' + esc(s.filters) + '</div>' : '');
     if (!items.length) {
-      resList.innerHTML = '<div class="empty"><p>' + (s.refreshing ? '正在电视上搜索…'
-        : s.error ? '搜索失败：' + esc(s.error) : '没有找到相关条目') + '</p></div>';
+      resList.innerHTML = '<div class="empty"><p>' + (s.refreshing ? T('正在电视上搜索…')
+        : s.error ? T('搜索失败：') + esc(s.error) : T('没有找到相关条目')) + '</p></div>';
     } else {
       patchList(resList, items.map(function (x) {
         // 点主体 = 电视打开详情页; 点右边的封面 (没封面的是 ▶) = 直接播放.
         // 右滑露出「缓存」(打开这部番的缓存面板), 左滑露出「收藏」(设收藏状态)
         return swRow(
           '<button type="button" class="sw-btn cache" data-cache="' + x.id + '" data-title="' + esc(x.title) + '">' +
-            window.ICONS.download + '缓存</button>',
-          '<button type="button" class="sw-btn coll" data-coll="' + x.id + '">' + window.ICONS.star + '收藏</button>',
+            window.ICONS.download + T('缓存') + '</button>',
+          '<button type="button" class="sw-btn coll" data-coll="' + x.id + '">' + window.ICONS.star + T('收藏') + '</button>',
           '<div class="item res-item' + (x.cover ? ' cv' : '') + (x.blur ? ' nsfw-blur' : '') + '" data-sid="' + x.id + '">' +
           (x.cover ? coverLayers(x.cover) : '') +
           '<span class="t">' + esc(x.title) + (x.nsfw ? '<span class="res-r18">R18</span>' : '') + '</span>' +
           (x.info ? '<span class="m">' + esc(x.info) + '</span>' : '') +
           (x.rating ? '<span class="res-rate">' + esc(x.rating) + '</span>' : '') +
-          '<button type="button" class="res-play" aria-label="播放"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
+          '<button type="button" class="res-play" aria-label="' + T('播放') + '"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
       }));
     }
     var foot = '';
     if (items.length) {
-      if (s.appending) foot = '<p class="hint res-end">正在加载…</p>';
-      else if (s.error) foot = '<button type="button" class="ghost wide" data-more="1">加载失败，点这里重试</button>';
-      else if (s.end) foot = '<p class="hint res-end">没有更多了</p>';
-      else if (s.live) foot = '<button type="button" class="ghost wide" data-more="1">加载更多</button>';
-      else foot = '<p class="hint res-end">电视已离开搜索页</p>' +
-        '<button type="button" class="ghost wide ic" data-resume="1">' + window.ICONS.tv + '让电视回到搜索页，继续加载</button>';
+      if (s.appending) foot = '<p class="hint res-end">' + T('正在加载…') + '</p>';
+      else if (s.error) foot = '<button type="button" class="ghost wide" data-more="1">' + T('加载失败，点这里重试') + '</button>';
+      else if (s.end) foot = '<p class="hint res-end">' + T('没有更多了') + '</p>';
+      else if (s.live) foot = '<button type="button" class="ghost wide" data-more="1">' + T('加载更多') + '</button>';
+      else foot = '<p class="hint res-end">' + T('电视已离开搜索页') + '</p>' +
+        '<button type="button" class="ghost wide ic" data-resume="1">' + window.ICONS.tv + T('让电视回到搜索页，继续加载') + '</button>';
     }
     resFoot.innerHTML = foot;
     observeMore();
@@ -1872,8 +1905,8 @@ private val SCRIPT = """
 
   // 搜索结果左滑「收藏」: 先读这部番现在的收藏状态, 弹一个同选集列表样式的小菜单 (当前那项打 ✓), 点一项就设;
   // 菜单关掉时那一行收回去
-  var COLL_TYPES = [['WISH', '想看'], ['DOING', '在看'], ['DONE', '看过'], ['ON_HOLD', '搁置'], ['DROPPED', '抛弃'],
-    ['NOT_COLLECTED', '取消收藏']];
+  var COLL_TYPES = [['WISH', T('想看')], ['DOING', T('在看')], ['DONE', T('看过')], ['ON_HOLD', T('搁置')], ['DROPPED', T('抛弃')],
+    ['NOT_COLLECTED', T('取消收藏')]];
   var collMenu = null;
   function closeCollMenu() {
     if (!collMenu) return;
@@ -1888,7 +1921,7 @@ private val SCRIPT = """
     var id = b.getAttribute('data-coll');
     if (collMenu) closeCollMenu();
     fetch('api/subject/collection?id=' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (d) {
-      if (!d.ok) { toast(d.message || '读取收藏状态失败'); swClose(b.closest('.sw')); return; }
+      if (!d.ok) { toast(d.message || T('读取收藏状态失败')); swClose(b.closest('.sw')); return; }
       var m = document.createElement('div');
       m.className = 'ep-menu coll-menu';
       m.id = 'coll-menu';
@@ -1898,7 +1931,7 @@ private val SCRIPT = """
         // 属性名别用 data-ctype: 「评论与评分」那排收藏按钮用的就是它
         return '<button type="button" role="option" class="ep-opt' + (cur ? ' cur' : '') + '" data-colltype="' + c[0] + '">' +
           '<span class="ep-mark">' + (cur ? '✓' : '') + '</span><span class="ep-name">' +
-          (c[0] === 'NOT_COLLECTED' && cur ? '未收藏' : c[1]) + '</span></button>';
+          (c[0] === 'NOT_COLLECTED' && cur ? T('未收藏') : c[1]) + '</span></button>';
       }).join('');
       document.body.appendChild(m);
       // 右对齐在按钮下面; 下面放不下 (离底栏太近) 就开在上面
@@ -1997,9 +2030,9 @@ private val SCRIPT = """
     // 看过没有: 电视选集列表的标签以「✓ 」开头 (见 RemotePlayerHandle.episodeLabel). 当前集换成这一行的写法时把 ✓ 带上,
     // 否则下拉框里恰恰只有当前这集没有标记
     var seen = !!(cur && /^✓/.test(cur.label));
-    return '<button type="button" class="now-ep now-ep-pick" id="ep-pick" aria-haspopup="listbox" aria-label="选集"><span class="now-ep-t">' +
-      (seen && text ? '<span class="now-ep-seen" title="看过">✓</span>' : '') +
-      esc(text || (cur ? cur.label.replace(/^✓\s*/, '') : '选集')) + '</span>' +
+    return '<button type="button" class="now-ep now-ep-pick" id="ep-pick" aria-haspopup="listbox" aria-label="' + T('选集') + '"><span class="now-ep-t">' +
+      (seen && text ? '<span class="now-ep-seen" title="' + T('看过') + '">✓</span>' : '') +
+      esc(text || (cur ? cur.label.replace(/^✓\s*/, '') : T('选集'))) + '</span>' +
       '<span class="now-ep-caret" aria-hidden="true"></span></button>';
   }
 
@@ -2010,23 +2043,23 @@ private val SCRIPT = """
     if (!s.available) {
       closeEpMenu();
       var msg = s.reason === 'background'
-        ? '电视当前不在播放页' + (s.title ? '：' + esc(s.title) : '')
-        : '电视上没有正在播放的内容';
+        ? T('电视当前不在播放页') + (s.title ? T('：') + esc(s.title) : '')
+        : T('电视上没有正在播放的内容');
       if (s.upNext) {
         // 什么都没在播: 同动作面板那张「接下来播放」卡, 点一下电视直接进播放页
         var u = s.upNext;
         // 复用播放时那张卡的结构与样式: 剧名 / 副标题 / 进度 / 按钮排, 只是按钮只有一颗
         paintNow(now, '<div class="card now-card"><div class="now-head"><div class="now-title now-link" data-subject="' + u.subjectId +
           '" data-title="' + esc(u.title) + '">' + esc(u.title) + '</div>' + cacheEntry(u.subjectId, u.title) + '</div>' +
-          '<div class="now-src">' + (u.continuing ? '继续播放' : '接下来播放') + (u.episode ? '：' + esc(u.episode) : '') + '</div>' +
+          '<div class="now-src">' + (u.continuing ? T('继续播放') : T('接下来播放')) + (u.episode ? T('：') + esc(u.episode) : '') + '</div>' +
           (u.continuing && u.duration
             ? '<div class="progress"><div class="track"><div style="width:' + Math.min(100, u.position * 100 / u.duration) +
               '%"></div></div><div class="time">' + mmss(u.position) + ' / ' + mmss(u.duration) + '</div></div>'
             : '') +
-          '<div class="ctrls"><button class="main ic" id="play-upnext">' + window.ICONS.play + '在电视上播放</button></div></div>', u.art);
+          '<div class="ctrls"><button class="main ic" id="play-upnext">' + window.ICONS.play + T('在电视上播放') + '</button></div></div>', u.art);
       } else {
         paintNow(now, '<div class="empty"><p>' + msg + '</p>' + sessionChip(s.session) +
-          (s.reason === 'background' ? '<button class="primary ic" id="open-player">' + window.ICONS.tv + '在电视上打开播放器</button>' : '') + '</div>', null);
+          (s.reason === 'background' ? '<button class="primary ic" id="open-player">' + window.ICONS.tv + T('在电视上打开播放器') + '</button>' : '') + '</div>', null);
       }
       chips.innerHTML = '';
       document.getElementById('player-filters').innerHTML = '';
@@ -2040,15 +2073,15 @@ private val SCRIPT = """
       '" data-title="' + esc(s.title) + '">' + esc(s.title) + '</div>' + cacheEntry(s.subjectId, s.title) + '</div>' +
       // 第几集单独一行 (资源名常常看不出来: BT / 缓存的整季合集就叫「[01-12 合集]」), 这一行本身就是选集下拉框, 见 epLine
       epLine(s) +
-      '<div class="now-pick"><span class="now-label' + (s.background ? '' : ' live') + '">' + (s.background ? '当前数据源' : '正在播放') + '</span>' +
+      '<div class="now-pick"><span class="now-label' + (s.background ? '' : ' live') + '">' + (s.background ? T('当前数据源') : T('正在播放')) + '</span>' +
       (s.selectedSource
         ? '<span class="now-srcname">' + esc(s.selectedSource) + '</span>' +
           (s.selectedMeta ? '<span class="now-meta">' + esc(s.selectedMeta) + '</span>' : '')
-        : '<span class="now-meta">尚未选择数据源</span>') + '</div>' +
+        : '<span class="now-meta">' + T('尚未选择数据源') + '</span>') + '</div>' +
       (s.selectedTitle ? '<div class="now-src" title="' + esc(s.selectedTitle) + '">' + esc(s.selectedTitle) + '</div>' : '') +
       (s.background
-        ? sessionChip(s.session) + '<p class="hint">电视未在播放页：可以照常换源和修改查询条件，新数据源会在后台加载，回到播放器即可继续播放。</p>' +
-          '<button class="primary wide ic" id="open-player">' + window.ICONS.tv + '在电视上打开播放器</button>'
+        ? sessionChip(s.session) + '<p class="hint">' + T('电视未在播放页：可以照常换源和修改查询条件，新数据源会在后台加载，回到播放器即可继续播放。') + '</p>' +
+          '<button class="primary wide ic" id="open-player">' + window.ICONS.tv + T('在电视上打开播放器') + '</button>'
         : '<div id="player-controls"></div>') +
       '</div>', s.art);
     lastState = s;
@@ -2062,9 +2095,9 @@ private val SCRIPT = """
     // 选中的源已经不在了 (比如改了查询条件后被禁用), 筛选自动回到「全部」
     if (srcFilter && !s.sources.some(function (x) { return x.id === srcFilter; }) &&
         !s.groups.some(function (g) { return g.id === srcFilter; })) srcFilter = null;
-    var h = '<div class="chips"><button class="chip' + (srcFilter ? '' : ' on') + '" data-src="">全部</button>';
+    var h = '<div class="chips"><button class="chip' + (srcFilter ? '' : ' on') + '" data-src="">' + T('全部') + '</button>';
     s.sources.forEach(function (x) {
-      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? '需验证' : x.state === 'failed' ? '失败' : x.state === 'limited' ? '限流' : x.count;
+      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       // cur = 正在播的就是这个源 (描边 + ▶), 与筛选选中的 on (实心) 是两回事, 可以同时成立
       var cur = x.id === s.selectedSourceId;
       h += '<button class="chip ' + x.state + (srcFilter === x.id ? ' on' : '') + (cur ? ' cur' : '') + '" data-src="' + esc(x.id) + '">' +
@@ -2133,15 +2166,15 @@ private val SCRIPT = """
   // 下拉框只在内容真的变了时才重画: 每秒一次的轮询若无条件重画, 手机上正打开的选择器会被关掉
   var lastFiltersHtml = '';
   function dropdown(key, label, list, cur) {
-    var h = '<label class="sel"><span>' + label + '</span><select data-f="' + key + '"><option value="">全部</option>';
+    var h = '<label class="sel"><span>' + label + '</span><select data-f="' + key + '"><option value="">' + T('全部') + '</option>';
     var has = false;
     (list || []).forEach(function (o) {
       if (o.value === cur) has = true;
       h += '<option value="' + esc(o.value) + '"' + (o.value === cur ? ' selected' : '') + '>' +
-        esc(o.label) + '（' + o.count + '）</option>';
+        esc(o.label) + T('（{0}）', o.count) + '</option>';
     });
     // 选着的那一项在新结果里没有了: 仍然留在框里, 让人看得出为什么列表是空的
-    if (cur && !has) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '（0）</option>';
+    if (cur && !has) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + T('（{0}）', 0) + '</option>';
     return h + '</select></label>';
   }
   // 「显示全部 N 条」: 只在点了某个数据源胶囊、而且这个源确实没列全时出现 (勾着的时候一直显示, 好取消)
@@ -2149,17 +2182,17 @@ private val SCRIPT = """
     if (!srcFilter) return '';
     var g = s.groups.filter(function (x) { return x.id === srcFilter; })[0];
     if (!g || (!fFull && !(g.more > 0))) return '';
-    return '<label class="toggle"><input type="checkbox" data-f="full"' + (fFull ? ' checked' : '') + '>显示全部 ' +
-      g.total + ' 条</label>';
+    return '<label class="toggle"><input type="checkbox" data-f="full"' + (fFull ? ' checked' : '') + '>' + T('显示全部 {0} 条', g.total) +
+      '</label>';
   }
   function renderFilters(s) {
     var f = s.filters || {};
     var h = '<div class="filters">' +
-      dropdown('res', '分辨率', f.resolution, fRes) +
-      dropdown('sub', '字幕', f.subtitle, fSub) +
-      dropdown('all', '字幕组', f.alliance, fAll) + '</div>' +
-      '<div class="toggles"><label class="toggle"><input type="checkbox" data-f="ex"' + (fEx ? ' checked' : '') + '>显示被排除的资源' +
-      (s.excludedCount ? '（' + s.excludedCount + ' 条）' : '') + '</label>' + fullToggle(s) + '</div>';
+      dropdown('res', T('分辨率'), f.resolution, fRes) +
+      dropdown('sub', T('字幕'), f.subtitle, fSub) +
+      dropdown('all', T('字幕组'), f.alliance, fAll) + '</div>' +
+      '<div class="toggles"><label class="toggle"><input type="checkbox" data-f="ex"' + (fEx ? ' checked' : '') + '>' + T('显示被排除的资源') +
+      (s.excludedCount ? T('（{0} 条）', s.excludedCount) : '') + '</label>' + fullToggle(s) + '</div>';
     if (h !== lastFiltersHtml) {
       document.getElementById('player-filters').innerHTML = h;
       lastFiltersHtml = h;
@@ -2171,15 +2204,15 @@ private val SCRIPT = """
     var h = '';
     if (!groups.length) {
       var one = srcFilter ? s.sources.filter(function (x) { return x.id === srcFilter; })[0] : null;
-      var why = (fRes || fSub || fAll) ? '没有符合筛选条件的结果'
-        : !srcFilter ? (s.loading ? '正在搜索数据源…' : '没有找到可用的数据源，可以试试修改查询条件')
-        : !one ? '这个数据源没有匹配的结果'
-        : one.state === 'loading' ? '这个数据源还在搜索…'
-        : one.state === 'captcha' ? '这个数据源需要人机验证，请在电视上处理'
-        : one.state === 'failed' ? '这个数据源搜索失败'
-        : one.state === 'limited' ? '这个数据源被限流了，稍后再试'
-        : '这个数据源没有匹配的结果';
-      if (!fEx && s.excludedCount) why += '，可以勾选「显示被排除的资源」看看';
+      var why = (fRes || fSub || fAll) ? T('没有符合筛选条件的结果')
+        : !srcFilter ? (s.loading ? T('正在搜索数据源…') : T('没有找到可用的数据源，可以试试修改查询条件'))
+        : !one ? T('这个数据源没有匹配的结果')
+        : one.state === 'loading' ? T('这个数据源还在搜索…')
+        : one.state === 'captcha' ? T('这个数据源需要人机验证，请在电视上处理')
+        : one.state === 'failed' ? T('这个数据源搜索失败')
+        : one.state === 'limited' ? T('这个数据源被限流了，稍后再试')
+        : T('这个数据源没有匹配的结果');
+      if (!fEx && s.excludedCount) why += T('，可以勾选「显示被排除的资源」看看');
       h += '<p class="hint">' + why + '</p>';
     }
     if (srcFilter) {
@@ -2194,12 +2227,12 @@ private val SCRIPT = """
       var n = gs.reduce(function (a, g) { return a + g.total; }, 0);
       var hasSel = gs.some(function (g) { return g.items.some(function (it) { return it.id === s.selectedId; }); });
       h += '<details class="src-sec" data-sec="' + k[0] + '"' + (secOpen[k[0]] ? ' open' : '') + '><summary>' + k[1] +
-        '<small>' + gs.length + ' 个源 · ' + n + ' 条' + (hasSel ? ' · 正在播放的在这里' : '') + '</small></summary>' +
+        '<small>' + T('{0} 个源 · {1} 条', gs.length, n) + (hasSel ? ' ' + T('· 正在播放的在这里') : '') + '</small></summary>' +
         gs.map(function (g) { return groupHtml(g, s); }).join('') + '</details>';
     });
     return h;
   }
-  var SECTIONS = [['cache', '本地缓存'], ['web', '在线源'], ['bt', 'BT 源']];
+  var SECTIONS = [['cache', T('本地缓存')], ['web', T('在线源')], ['bt', T('BT 源')]];
   var secOpen = { cache: true, web: true, bt: true };
   // 某个源 (id) 在哪一段; 展开那一段, 下次重画照着画
   window.openSourceSection = function (id) {
@@ -2210,23 +2243,23 @@ private val SCRIPT = """
   window.lastPlayerState = function () { return lastState; };
   window.renderPlayerList = renderList;
   function groupHtml(g, s) {
-    var h = '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + g.total + ' 条</small></h2><div class="list">';
+    var h = '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
     // 点了播放卡的数据源胶囊后亮一下的那一条 (见那里的点击处理)
     var flashId = window.flashSel && window.flashSel.until > Date.now() ? window.flashSel.id : null;
     g.items.forEach(function (it) {
       var sel = it.id === s.selectedId;
       // 去重: 在线源的「字幕组」常就是字幕语言 (简中 · 简中)
-      var meta = [it.cached ? '已缓存' : '', it.resolution, it.subtitles, it.alliance, it.size]
+      var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size]
         .filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
       h += '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
         '" data-id="' + esc(it.id) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
         '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
-        (it.excluded ? '<span class="why">已排除：' + esc(it.reason || '') + '</span>' : '') +
-        (sel ? '<span class="badge">' + (s.background ? '当前' : '正在播放') + '</span>' : '') + '</button>';
+        (it.excluded ? '<span class="why">' + T('已排除：') + esc(it.reason || '') + '</span>' : '') +
+        (sel ? '<span class="badge">' + (s.background ? T('当前') : T('正在播放')) + '</span>' : '') + '</button>';
     });
     h += '</div>';
-    if (g.more > 0) h += '<p class="hint">还有 ' + g.more + ' 条未列出，' +
-      (srcFilter ? '可以勾选上面的「显示全部」' : '点上面这个数据源的胶囊后可以选择显示全部') + '</p>';
+    if (g.more > 0) h += '<p class="hint">' + T('还有 {0} 条未列出，', g.more) +
+      (srcFilter ? T('可以勾选上面的「显示全部」') : T('点上面这个数据源的胶囊后可以选择显示全部')) + '</p>';
     return h;
   }
 
@@ -2280,7 +2313,7 @@ private val SCRIPT = """
     if (sm) { secOpen[sm.parentNode.getAttribute('data-sec')] = !sm.parentNode.open; return; }
     var b = e.target.closest('.item');
     if (!b || b.classList.contains('sel')) return;
-    if (b.hasAttribute('data-blocked')) { toast('不能选择：' + b.getAttribute('data-blocked')); return; }
+    if (b.hasAttribute('data-blocked')) { toast(T('不能选择：') + b.getAttribute('data-blocked')); return; }
     var olds = document.querySelectorAll('.item.sel');
     for (var i = 0; i < olds.length; i++) olds[i].classList.remove('sel');
     b.classList.add('sel');
@@ -2311,7 +2344,7 @@ internal suspend fun renderPlayerRequestSection(): String {
 <summary>${t(Lang.mediafetch_request_editor_title)}<small id="req-sum"></small></summary>
 <form id="req-form">
 <label class="f"><span>${t(Lang.mediafetch_request_editor_primary_name)}</span><input type="text" name="primary" autocomplete="off"><em>${t(Lang.mediafetch_request_editor_primary_name_supporting)}</em></label>
-<label class="f"><span>${t(Lang.mediafetch_request_editor_secondary_names)}（每行一个）</span><textarea name="others" rows="3"></textarea><em>${t(Lang.mediafetch_request_editor_secondary_names_supporting)}</em></label>
+<label class="f"><span>${t(Lang.mediafetch_request_editor_secondary_names)}${tr("（每行一个）")}</span><textarea name="others" rows="3"></textarea><em>${t(Lang.mediafetch_request_editor_secondary_names_supporting)}</em></label>
 <p class="hint">${t(Lang.mediafetch_request_editor_episode_info_supporting)}</p>
 <label class="f"><span>${t(Lang.mediafetch_request_editor_episode_sort)}</span><input type="text" name="sort" inputmode="decimal" autocomplete="off"><em>${t(Lang.mediafetch_request_editor_episode_sort_supporting)}</em></label>
 <label class="f"><span>${t(Lang.mediafetch_request_editor_episode_ep)}</span><input type="text" name="ep" inputmode="decimal" autocomplete="off"><em>${t(Lang.mediafetch_request_editor_episode_ep_supporting)}</em></label>
@@ -2346,7 +2379,7 @@ private val REQUEST_SCRIPT = """
     if (key !== last && !dirty) fill(s.request);
     last = key;
     document.getElementById('req-sum').textContent =
-      '：' + s.request.primary + (s.requestIsDefault ? '' : '（已修改）');
+      T('：') + s.request.primary + (s.requestIsDefault ? '' : T('（已修改）'));
   });
   hooks.unavailable.push(function () { box.hidden = true; });
   function done(r) {
@@ -2390,13 +2423,13 @@ private val CONTROL_SCRIPT = """
     if (!box) return;
     if (!box.firstChild) {
       box.innerHTML =
-        '<div class="progress"><input type="range" id="pb-range" min="0" max="0" step="1000" value="0" aria-label="播放进度">' +
+        '<div class="progress"><input type="range" id="pb-range" min="0" max="0" step="1000" value="0" aria-label="' + T('播放进度') + '">' +
         '<div class="time pb-time-link" id="pb-time"></div></div>' +
-        '<div class="pb-ctrls"><button data-act="back" aria-label="后退 10 秒">' + window.ICONS.back10 + '</button>' +
-        '<button data-act="toggle" class="pb-main" id="pb-toggle" aria-label="播放"></button>' +
-        '<button data-act="forward" aria-label="前进 10 秒">' + window.ICONS.fwd10 + '</button></div>' +
-        '<div class="pb-vol" id="pb-volrow" hidden><button type="button" id="pb-mute" aria-label="静音"></button>' +
-        '<input type="range" id="pb-vol" min="0" max="100" step="1" value="100" aria-label="音量">' +
+        '<div class="pb-ctrls"><button data-act="back" aria-label="' + T('后退 10 秒') + '">' + window.ICONS.back10 + '</button>' +
+        '<button data-act="toggle" class="pb-main" id="pb-toggle" aria-label="' + T('播放') + '"></button>' +
+        '<button data-act="forward" aria-label="' + T('前进 10 秒') + '">' + window.ICONS.fwd10 + '</button></div>' +
+        '<div class="pb-vol" id="pb-volrow" hidden><button type="button" id="pb-mute" aria-label="' + T('静音') + '"></button>' +
+        '<input type="range" id="pb-vol" min="0" max="100" step="1" value="100" aria-label="' + T('音量') + '">' +
         '<span class="pb-vol-hi">' + window.ICONS.volUp + '</span></div>';
     }
     // 正改着时间时卡片被整张重画了: 把输入框 (连同已输入的字) 补回去
@@ -2406,7 +2439,7 @@ private val CONTROL_SCRIPT = """
     var tg = document.getElementById('pb-toggle'), icon = p.playing ? 'pause' : 'play';
     if (tg.getAttribute('data-icon') !== icon) {
       tg.setAttribute('data-icon', icon);
-      tg.setAttribute('aria-label', p.playing ? '暂停' : '播放');
+      tg.setAttribute('aria-label', p.playing ? T('暂停') : T('播放'));
       tg.innerHTML = window.ICONS[icon];
     }
     // 「正在播放」前的状态点: 播放中绿、暂停灰 (卡片每次重画后这里都会跟着再跑一次)
@@ -2428,7 +2461,7 @@ private val CONTROL_SCRIPT = """
       var mb = document.getElementById('pb-mute'), mi = p.muted ? 'volOff' : 'volLow';
       if (mb.getAttribute('data-icon') !== mi) {
         mb.setAttribute('data-icon', mi);
-        mb.setAttribute('aria-label', p.muted ? '取消静音' : '静音');
+        mb.setAttribute('aria-label', p.muted ? T('取消静音') : T('静音'));
         mb.innerHTML = window.ICONS[mi];
       }
     }
@@ -2480,7 +2513,7 @@ private val CONTROL_SCRIPT = """
     dragging = true;
     var d = pb && pb.duration;
     e.target.style.setProperty('--pct', (d ? Math.min(100, +e.target.value * 100 / d) : 0) + '%');
-    document.getElementById('pb-time').textContent = '跳到 ' + fmt(+e.target.value) + ' / ' + (d ? fmt(d) : '--:--');
+    document.getElementById('pb-time').textContent = T('跳到 {0}', fmt(+e.target.value)) + ' / ' + (d ? fmt(d) : '--:--');
   });
   // 音量条左边的喇叭: 静音 / 取消静音
   nowBox.addEventListener('click', function (e) {
@@ -2509,7 +2542,7 @@ private val CONTROL_SCRIPT = """
     editText = text;
     var right = t.children[1] ? t.children[1].outerHTML : '<span></span>';
     t.innerHTML = '<form class="pb-jump" id="pb-jump"><input type="text" name="t" inputmode="decimal" autocomplete="off" ' +
-      'placeholder="如 21:30" aria-label="跳到的时间"><button type="submit">跳转</button></form>' + right;
+      'placeholder="' + T('如 21:30') + '" aria-label="' + T('跳到的时间') + '"><button type="submit">' + T('跳转') + '</button></form>' + right;
     var inp = t.querySelector('input');
     inp.value = text;
     if (focus) { inp.focus(); inp.select(); }
@@ -2541,8 +2574,8 @@ private val CONTROL_SCRIPT = """
     if (e.target.id !== 'pb-jump') return;
     e.preventDefault();
     var ms = parseTime(e.target.elements.t.value);
-    if (ms == null) { toast('时间格式不对，例如 21:30 或 1:05:10'); return; }
-    if (pb && pb.duration && ms > pb.duration) { toast('超过片长了（' + fmt(pb.duration) + '）'); return; }
+    if (ms == null) { toast(T('时间格式不对，例如 21:30 或 1:05:10')); return; }
+    if (pb && pb.duration && ms > pb.duration) { toast(T('超过片长了（{0}）', fmt(pb.duration))); return; }
     editing = false;
     e.target.elements.t.blur();
     seek(ms);
@@ -2554,13 +2587,13 @@ private val CONTROL_SCRIPT = """
   try { statsBox.open = localStorage.getItem('remote.stats') === '1'; } catch (e) {}
   statsBox.addEventListener('toggle', function () {
     try { localStorage.setItem('remote.stats', statsBox.open ? '1' : ''); } catch (e) {}
-    if (statsBox.open) { statsBody.innerHTML = '<p class="hint">正在读取…</p>'; poll(true); }
+    if (statsBox.open) { statsBody.innerHTML = '<p class="hint">' + T('正在读取…') + '</p>'; poll(true); }
   });
   hooks.playback.push(function (p) {
     if (!statsBox.open || !p.stats) return;
     statsBody.innerHTML = p.stats.length ? p.stats.map(function (r) {
       return '<div class="stats-row"><span>' + esc(r.k) + '</span><b>' + esc(r.v) + '</b></div>';
-    }).join('') : '<p class="hint">正在读取…</p>';
+    }).join('') : '<p class="hint">' + T('正在读取…') + '</p>';
   });
   // 没有播放器 (只有「接下来播放」卡或什么都没有) 时不出这一区
   hooks.unavailable.push(function () { statsBox.hidden = true; });
@@ -2630,7 +2663,7 @@ private val SOURCES_SCRIPT = """
     }
   }
   function btns(cancelAct, label) {
-    return '<div class="row"><button type="button" class="ghost" data-act="' + cancelAct + '">取消</button>' +
+    return '<div class="row"><button type="button" class="ghost" data-act="' + cancelAct + '">' + T('取消') + '</button>' +
       '<button type="submit" class="primary">' + label + '</button></div>';
   }
   function copyText(ta) {
@@ -2639,20 +2672,20 @@ private val SOURCES_SCRIPT = """
     var ok = false;
     try { ok = document.execCommand('copy'); } catch (e) {}
     if (!ok && navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(ta.value); ok = true; }
-    toast(ok ? '已复制' : '请长按文本框手动复制');
+    toast(ok ? T('已复制') : T('请长按文本框手动复制'));
   }
 
   // ---- JSON 编辑器 (RSS / 选择器源): 按 JSON 结构生成表单, 随时可切到源码 ----
   // 不用任何外部库: 网页是电视在局域网里发的, 手机未必连得上 CDN
   var NL = String.fromCharCode(10);
   var JE_LABELS = {
-    name: '名称', description: '描述', iconUrl: '图标地址', tier: '层级', channelTiers: '线路层级',
-    searchConfig: '搜索配置', searchUrl: '搜索链接', searchUseOnlyFirstWord: '只用第一个词搜索',
-    searchRemoveSpecial: '去掉特殊字符', searchUseSubjectNamesCount: '使用的条目名数量', rawBaseUrl: '基础地址',
-    requestInterval: '请求间隔（毫秒）', searchCacheTtl: '搜索缓存时长（毫秒）', subjectFormatId: '条目格式',
-    channelFormatId: '线路格式', defaultResolution: '默认分辨率', defaultSubtitleLanguage: '默认字幕语言',
-    onlySupportsPlayers: '仅支持的播放器', filterByEpisodeSort: '按集数过滤', filterBySubjectName: '按条目名过滤',
-    selectMedia: '选择媒体', matchVideo: '匹配视频'
+    name: T('名称'), description: T('描述'), iconUrl: T('图标地址'), tier: T('层级'), channelTiers: T('线路层级'),
+    searchConfig: T('搜索配置'), searchUrl: T('搜索链接'), searchUseOnlyFirstWord: T('只用第一个词搜索'),
+    searchRemoveSpecial: T('去掉特殊字符'), searchUseSubjectNamesCount: T('使用的条目名数量'), rawBaseUrl: T('基础地址'),
+    requestInterval: T('请求间隔（毫秒）'), searchCacheTtl: T('搜索缓存时长（毫秒）'), subjectFormatId: T('条目格式'),
+    channelFormatId: T('线路格式'), defaultResolution: T('默认分辨率'), defaultSubtitleLanguage: T('默认字幕语言'),
+    onlySupportsPlayers: T('仅支持的播放器'), filterByEpisodeSort: T('按集数过滤'), filterBySubjectName: T('按条目名过滤'),
+    selectMedia: T('选择媒体'), matchVideo: T('匹配视频')
   };
   function jeLabel(key) {
     if (typeof key === 'number') return '#' + (key + 1);
@@ -2665,7 +2698,7 @@ private val SOURCES_SCRIPT = """
   }
   function jeFields(obj, path, depth) {
     var keys = Object.keys(obj);
-    if (!keys.length) return '<p class="hint">（空）</p>';
+    if (!keys.length) return '<p class="hint">' + T('（空）') + '</p>';
     return keys.map(function (k) { return jeField(k, obj[k], path.concat([k]), depth); }).join('');
   }
   function jeField(key, v, path, depth) {
@@ -2673,10 +2706,10 @@ private val SOURCES_SCRIPT = """
     if (Array.isArray(v)) {
       if (v.every(function (x) { return x === null || typeof x !== 'object'; })) {
         var elem = v.length && typeof v[0] === 'number' ? 'numlines' : 'lines';
-        return '<label class="je-f"><span>' + label + '（每行一个）</span><textarea rows="' + Math.max(2, v.length + 1) + '"' +
+        return '<label class="je-f"><span>' + label + T('（每行一个）') + '</span><textarea rows="' + Math.max(2, v.length + 1) + '"' +
           jeAttr(path, elem, key) + '>' + esc(v.join(NL)) + '</textarea></label>';
       }
-      return '<details class="je-group"><summary>' + label + '（' + v.length + ' 项）</summary><div class="je-body">' +
+      return '<details class="je-group"><summary>' + label + T('（{0} 项）', v.length) + '</summary><div class="je-body">' +
         v.map(function (x, i) { return jeField(i, x, path.concat([i]), depth + 1); }).join('') + '</div></details>';
     }
     if (v !== null && typeof v === 'object') {
@@ -2698,12 +2731,12 @@ private val SOURCES_SCRIPT = """
         '"' + jeAttr(path, type, key) + '>' + esc(text) + '</textarea></label>';
     }
     return '<label class="je-f"><span>' + label + '</span><input type="text" value="' + esc(text) + '"' +
-      (v === null ? ' placeholder="（空）"' : '') + jeAttr(path, type, key) + '></label>';
+      (v === null ? ' placeholder="' + T('（空）') + '"' : '') + jeAttr(path, type, key) + '></label>';
   }
   function jsonEditorHtml() {
-    return '<div class="je-tabs"><button type="button" class="je-tab on" data-je="form">表单</button>' +
-      '<button type="button" class="je-tab" data-je="raw">源码</button>' +
-      '<button type="button" class="je-fmt" data-je="fmt" hidden>整理格式</button></div>' +
+    return '<div class="je-tabs"><button type="button" class="je-tab on" data-je="form">' + T('表单') + '</button>' +
+      '<button type="button" class="je-tab" data-je="raw">' + T('源码') + '</button>' +
+      '<button type="button" class="je-fmt" data-je="fmt" hidden>' + T('整理格式') + '</button></div>' +
       '<div class="je-form"></div><textarea name="text" rows="16" spellcheck="false" class="je-raw" hidden></textarea>';
   }
   function jeRender(form, value) {
@@ -2711,10 +2744,10 @@ private val SOURCES_SCRIPT = """
     var box = form.querySelector('.je-form');
     var args = value && value.arguments;
     if (!args || typeof args !== 'object') {
-      box.innerHTML = '<p class="hint">这份 JSON 里没有 arguments，只能在源码里改</p>';
+      box.innerHTML = '<p class="hint">' + T('这份 JSON 里没有 arguments，只能在源码里改') + '</p>';
       return;
     }
-    box.innerHTML = '<p class="hint">类型 ' + esc(value.factoryId) + ' · 版本 ' + esc(value.version) + '</p>' +
+    box.innerHTML = '<p class="hint">' + T('类型 {0} · 版本 {1}', esc(value.factoryId), esc(value.version)) + '</p>' +
       jeFields(args, ['arguments'], 0);
   }
   function jeMode(form) {
@@ -2746,7 +2779,7 @@ private val SOURCES_SCRIPT = """
       else if (type === 'num') {
         var t = el.value.trim();
         v = Number(t);
-        if (t === '' || isNaN(v)) throw new Error('「' + el.getAttribute('data-label') + '」需要填数字');
+        if (t === '' || isNaN(v)) throw new Error(T('「{0}」需要填数字', el.getAttribute('data-label')));
       } else if (type === 'lines' || type === 'numlines') {
         v = el.value.split(NL).map(function (x) { return x.trim(); }).filter(function (x) { return x.length; });
         if (type === 'numlines') v = v.map(Number);
@@ -2773,7 +2806,7 @@ private val SOURCES_SCRIPT = """
     var raw = form.querySelector('.je-raw');
     if (want === 'fmt') {
       try { raw.value = JSON.stringify(JSON.parse(raw.value), null, 2); }
-      catch (err) { toast('JSON 格式有误：' + err.message); }
+      catch (err) { toast(T('JSON 格式有误：') + err.message); }
       return;
     }
     if (want === jeMode(form)) return;
@@ -2781,7 +2814,7 @@ private val SOURCES_SCRIPT = """
       if (syncJson(form)) jeShow(form, 'raw');
     } else {
       try { jeRender(form, JSON.parse(raw.value)); jeShow(form, 'form'); }
-      catch (err) { toast('JSON 格式有误，先在源码里改好：' + err.message); }
+      catch (err) { toast(T('JSON 格式有误，先在源码里改好：') + err.message); }
     }
   });
 
@@ -2793,8 +2826,8 @@ private val SOURCES_SCRIPT = """
     lastTemplates = key;
     // 「导入 JSON」作为下拉里的第一项: 原先是单独一个折叠框, 没有说明, 不容易看出是干什么的
     addBox.innerHTML =
-      '<label class="f"><span>新增数据源</span><select id="src-new"><option value="">选择类型…</option>' +
-      '<option value="import">导入 JSON（粘贴别处复制的配置）</option>' +
+      '<label class="f"><span>' + T('新增数据源') + '</span><select id="src-new"><option value="">' + T('选择类型…') + '</option>' +
+      '<option value="import">' + T('导入 JSON（粘贴别处复制的配置）') + '</option>' +
       t.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name) + '</option>'; }).join('') +
       '</select></label><div id="src-new-panel"></div>';
   }
@@ -2810,10 +2843,10 @@ private val SOURCES_SCRIPT = """
     if (e.target.value === 'import') {
       // id 沿用 src-import: 「粘贴即覆盖」认这个表单
       panel.innerHTML = '<form class="src-new-form" id="src-import" data-kind="import">' +
-        '<p class="hint">粘贴别处复制的数据源配置（JSON）：单个、列表或订阅内容都可以，每个都新建为本地源。粘贴会整段替换框里原有的内容。</p>' +
-        '<textarea name="text" rows="8" spellcheck="false" placeholder="在这里粘贴 JSON"></textarea>' +
-        '<div class="row"><button type="button" class="ghost" data-act="cancel-new">取消</button>' +
-        '<button type="button" class="ghost" data-imp="clear">清空</button><button type="submit" class="primary">导入</button></div></form>';
+        '<p class="hint">' + T('粘贴别处复制的数据源配置（JSON）：单个、列表或订阅内容都可以，每个都新建为本地源。粘贴会整段替换框里原有的内容。') + '</p>' +
+        '<textarea name="text" rows="8" spellcheck="false" placeholder="' + T('在这里粘贴 JSON') + '"></textarea>' +
+        '<div class="row"><button type="button" class="ghost" data-act="cancel-new">' + T('取消') + '</button>' +
+        '<button type="button" class="ghost" data-imp="clear">' + T('清空') + '</button><button type="submit" class="primary">' + T('导入') + '</button></div></form>';
       return;
     }
     var t = data.templates[+e.target.value];
@@ -2823,13 +2856,13 @@ private val SOURCES_SCRIPT = """
       getJson('api/sources/template?factoryId=' + encodeURIComponent(t.factoryId)).then(function (r) {
         if (!r.ok) { toast(r.message); return; }
         panel.innerHTML = '<form class="src-new-form" data-kind="json">' + hint + jsonEditorHtml() +
-          '<p class="hint">这是一份空白模板，在表单里填好即可；别处分享的配置可以切到「源码」整段粘贴。</p>' +
-          btns('cancel-new', '添加') + '</form>';
+          '<p class="hint">' + T('这是一份空白模板，在表单里填好即可；别处分享的配置可以切到「源码」整段粘贴。') + '</p>' +
+          btns('cancel-new', T('添加')) + '</form>';
         initJsonEditor(panel.querySelector('form'), r.json);
       }).catch(failRead);
     } else {
       panel.innerHTML = '<form class="src-new-form" data-kind="params">' + hint + paramForm(t.params || []) +
-        btns('cancel-new', '添加') + '</form>';
+        btns('cancel-new', T('添加')) + '</form>';
       applyVis(panel.querySelector('form'));
     }
   });
@@ -2880,28 +2913,28 @@ private val SOURCES_SCRIPT = """
     if (raw && !((a === '{' && z === '}') || (a === '[' && z === ']'))) return;
     e.preventDefault();
     ta.value = text;
-    toast('已用粘贴的内容替换原有内容');
+    toast(T('已用粘贴的内容替换原有内容'));
   });
   // ---- 列表 ----
   function renderList() {
     var list = data.sources || [];
-    if (!list.length) { box.innerHTML = '<p class="hint">还没有数据源</p>'; return; }
+    if (!list.length) { box.innerHTML = '<p class="hint">' + T('还没有数据源') + '</p>'; return; }
     box.innerHTML = list.map(function (s, i) {
       var fromSub = s.subscription != null;
-      var tags = [s.kind, fromSub ? '来自订阅' : ''].filter(Boolean).join(' · ');
+      var tags = [s.kind, fromSub ? T('来自订阅') : ''].filter(Boolean).join(' · ');
       // 上移 / 下移: 每行都有的排序箭头, 只放图标; 其余动作 图标 + 文字
       var I = window.ICONS;
-      var b = '<button data-act="up" class="icb" aria-label="上移" title="上移"' + (i === 0 ? ' disabled' : '') + '>' + I.up + '</button>' +
-        '<button data-act="down" class="icb" aria-label="下移" title="下移"' + (i === list.length - 1 ? ' disabled' : '') + '>' + I.down + '</button>';
-      if (s.editor !== 'none') b += '<button data-act="edit" class="ic">' + I.edit + '编辑</button>';
-      if (fromSub) b += '<button data-act="copy" class="ic">' + I.copy + '复制为本地源</button>';
-      if (s.exportable) b += '<button data-act="export" class="ic">' + I.share + '导出</button>';
-      if (!fromSub) b += '<button data-act="delete" class="src-danger ic">' + I.trash + '删除</button>';
+      var b = '<button data-act="up" class="icb" aria-label="' + T('上移') + '" title="' + T('上移') + '"' + (i === 0 ? ' disabled' : '') + '>' + I.up + '</button>' +
+        '<button data-act="down" class="icb" aria-label="' + T('下移') + '" title="' + T('下移') + '"' + (i === list.length - 1 ? ' disabled' : '') + '>' + I.down + '</button>';
+      if (s.editor !== 'none') b += '<button data-act="edit" class="ic">' + I.edit + T('编辑') + '</button>';
+      if (fromSub) b += '<button data-act="copy" class="ic">' + I.copy + T('复制为本地源') + '</button>';
+      if (s.exportable) b += '<button data-act="export" class="ic">' + I.share + T('导出') + '</button>';
+      if (!fromSub) b += '<button data-act="delete" class="src-danger ic">' + I.trash + T('删除') + '</button>';
       return '<div class="src-item' + (s.enabled ? '' : ' off') + '" data-i="' + i + '">' +
         '<div class="src-top"><label class="src-sw"><input type="checkbox" data-act="enable"' + (s.enabled ? ' checked' : '') + '></label>' +
         window.srcIcon(s.id, s.name) + '<div class="src-name">' + esc(s.name) + '<small>' + esc(tags) + '</small></div></div>' +
         (s.description ? '<div class="src-desc">' + esc(s.description) + '</div>' : '') +
-        (fromSub ? '<div class="src-desc">订阅来的源会随订阅更新被覆盖，所以只能启用或停用；想改的话先「复制为本地源」。</div>' : '') +
+        (fromSub ? '<div class="src-desc">' + T('订阅来的源会随订阅更新被覆盖，所以只能启用或停用；想改的话先「复制为本地源」。') + '</div>' : '') +
         '<div class="src-btns">' + b + '</div><div class="src-panel" hidden></div></div>';
     }).join('');
   }
@@ -2929,13 +2962,13 @@ private val SOURCES_SCRIPT = """
   }
   function edit(item, s) {
     if (s.editor === 'params') {
-      var p = openPanel(item, '<form class="src-form" data-kind="params">' + paramForm(s.params || []) + btns('cancel', '保存') + '</form>');
+      var p = openPanel(item, '<form class="src-form" data-kind="params">' + paramForm(s.params || []) + btns('cancel', T('保存')) + '</form>');
       applyVis(p.querySelector('form'));
     } else if (s.editor === 'json') {
       withExport(s, function (text) {
         var p = openPanel(item, '<form class="src-form" data-kind="json">' + jsonEditorHtml() +
-          '<p class="hint">可以在表单里逐项改，也可以切到「源码」整段换成别处复制来的同类型配置；保存前会校验格式。</p>' +
-          btns('cancel', '保存') + '</form>');
+          '<p class="hint">' + T('可以在表单里逐项改，也可以切到「源码」整段换成别处复制来的同类型配置；保存前会校验格式。') + '</p>' +
+          btns('cancel', T('保存')) + '</form>');
         initJsonEditor(p.querySelector('form'), text);
       });
     }
@@ -2955,14 +2988,14 @@ private val SOURCES_SCRIPT = """
     if (!x) return;
     var a = b.getAttribute('data-act');
     if (a === 'up' || a === 'down') act('api/sources/move', { id: x.s.id, dir: a });
-    else if (a === 'delete') { if (confirm('删除「' + x.s.name + '」？')) act('api/sources/delete', { id: x.s.id }); }
+    else if (a === 'delete') { if (confirm(T('删除「{0}」？', x.s.name))) act('api/sources/delete', { id: x.s.id }); }
     else if (a === 'copy') act('api/sources/copy', { id: x.s.id });
     else if (a === 'edit') edit(x.item, x.s);
     else if (a === 'export') {
       withExport(x.s, function (text) {
         var p = openPanel(x.item, '<textarea rows="10" readonly spellcheck="false"></textarea>' +
-          '<div class="row"><button type="button" class="ghost" data-act="cancel">收起</button>' +
-          '<button type="button" class="primary" data-act="copytext">复制</button></div>');
+          '<div class="row"><button type="button" class="ghost" data-act="cancel">' + T('收起') + '</button>' +
+          '<button type="button" class="primary" data-act="copytext">' + T('复制') + '</button></div>');
         p.querySelector('textarea').value = text;
       });
     }
@@ -2996,19 +3029,19 @@ private val SUBS_SCRIPT = """
   window.loadSubs = load;
   function render(d) {
     var items = d.items || [];
-    var h = '<div class="card sub-card"><div class="sub-head"><b>订阅</b><small>在线数据源都来自订阅</small>' +
+    var h = '<div class="card sub-card"><div class="sub-head"><b>' + T('订阅') + '</b><small>' + T('在线数据源都来自订阅') + '</small>' +
       '<button type="button" class="sub-refresh ic" data-sub="refresh"' + (d.updating ? ' disabled' : '') + '>' +
-      window.ICONS.refresh + (d.updating ? '更新中…' : '立即更新') + '</button></div>';
-    if (!items.length) h += '<p class="hint">还没有订阅，把订阅地址粘贴到下面添加</p>';
+      window.ICONS.refresh + (d.updating ? T('更新中…') : T('立即更新')) + '</button></div>';
+    if (!items.length) h += '<p class="hint">' + T('还没有订阅，把订阅地址粘贴到下面添加') + '</p>';
     items.forEach(function (s) {
       h += '<div class="sub-item" data-lp="' + esc(s.id) + '"><span class="sel-mark" aria-hidden="true"></span><div class="sub-url">' + esc(s.url) + '</div>' +
         '<div class="sub-status' + (s.failed ? ' bad' : '') + '">' + esc(s.status) + '</div>' +
         '<div class="sub-meta"><span>' + esc(s.period) + '</span>' +
-        '<button type="button" class="sub-del icb" data-sub="delete" data-id="' + esc(s.id) + '" aria-label="删除订阅" title="删除订阅">' +
+        '<button type="button" class="sub-del icb" data-sub="delete" data-id="' + esc(s.id) + '" aria-label="' + T('删除订阅') + '" title="' + T('删除订阅') + '">' +
         window.ICONS.trash + '</button></div></div>';
     });
     h += '<form class="sub-add"><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" ' +
-      'placeholder="粘贴订阅地址 https://…"><button type="submit" class="primary">添加</button></form></div>';
+      'placeholder="' + T('粘贴订阅地址 https://…') + '"><button type="submit" class="primary">' + T('添加') + '</button></form></div>';
     var old = box.querySelector('.sub-add input');
     var typed = old ? old.value : '', focused = old && document.activeElement === old;
     box.innerHTML = h;
@@ -3034,7 +3067,7 @@ private val SUBS_SCRIPT = """
   box.addEventListener('longpress', function (e) {
     window.selStart({
       box: box,
-      ask: function (n) { return '删除选中的 ' + n + ' 个订阅？它们带来的数据源会一起删除。'; },
+      ask: function (n) { return T('删除选中的 {0} 个订阅？它们带来的数据源会一起删除。', n); },
       del: function (ids) {
         return post('api/sources/subs/delete', { ids: ids.join(',') }).then(function (r) {
           toast(r.message);
@@ -3049,7 +3082,7 @@ private val SUBS_SCRIPT = """
     if (!b) return;
     if (b.getAttribute('data-sub') === 'refresh') {
       post('api/sources/subs/refresh', {}).then(function (r) { toast(r.message); load(); }).catch(fail);
-    } else if (confirm('删除这个订阅？它带来的数据源会一起删除。')) {
+    } else if (confirm(T('删除这个订阅？它带来的数据源会一起删除。'))) {
       post('api/sources/subs/delete', { id: b.getAttribute('data-id') }).then(function (r) {
         toast(r.message);
         if (r.ok) { load(); if (window.loadSources) window.loadSources(); }
@@ -3073,10 +3106,10 @@ private val SETTINGS_SCRIPT = """
   // 退出 Ani 后保留 Web 控制台 (见 TvRemoteControl.keepAliveOnExit): 默认关; 开着时电视上按返回退出 Ani, 手机还能连
   function renderKeep(k) {
     if (!k) { keepBox.innerHTML = ''; return; }
-    keepBox.innerHTML = '<div class="card set-card"><div class="set-title">后台保持连接</div>' +
-      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>电视休眠或离开 Ani 后仍保持连接</label>' +
-      '<p class="hint">开启后，Ani 会继续在后台运行，并占用少量内存。配合「从手机打开 Ani」，电视休眠或退出 Ani 后，也可以从手机重新打开。' +
-      '关闭后，电视休眠或退出 Ani 就会断开，需要先在电视上打开 Ani 才能连接。</p></div>';
+    keepBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('后台保持连接') + '</div>' +
+      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>' + T('电视休眠或离开 Ani 后仍保持连接') + '</label>' +
+      '<p class="hint">' + T('开启后，Ani 会继续在后台运行，并占用少量内存。配合「从手机打开 Ani」，电视休眠或退出 Ani 后，也可以从手机重新打开。') +
+      T('关闭后，电视休眠或退出 Ani 就会断开，需要先在电视上打开 Ani 才能连接。') + '</p></div>';
   }
   keepBox.addEventListener('change', function (e) {
     var i = e.target;
@@ -3087,21 +3120,21 @@ private val SETTINGS_SCRIPT = """
       renderKeep(r);
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
-  var MODES = [['DISABLED', '不使用'], ['SYSTEM', '跟随系统'], ['CUSTOM', '自定义']];
+  var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
   // 切到电视前台 (见 TvRemoteControl.frontState): 默认关; 开了还要在电视上授权一次「显示在其他应用的上层」.
   // 授权后回到本标签会重新拉一次 (load), 状态跟着更新
   function renderFront(f) {
     if (!f) { frontBox.innerHTML = ''; return; }
     // 授过权的 (以前开过又关了) 不再说「首次开启时需要授权」
-    var st = !f.needsPermission ? '无需额外授权'
-      : f.granted ? '已授权'
-      : !f.enabled ? '首次开启时，需要在电视上允许 Animeko「显示在其他应用的上层」。'
-      : '尚未授权。Ani 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Ani。' +
-        '也可在电视设置中为 Animeko 开启「显示在其他应用的上层」。';
-    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">从手机打开 Ani</div>' +
-      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>允许从手机打开电视上的 Ani</label>' +
-      '<p class="hint">开启后，在手机上搜索或点播时，电视会自动打开 Ani；同时开启「后台保持连接」时，电视休眠也会先唤醒。' +
-      '关闭后，Ani 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Ani 才能看到。</p>' +
+    var st = !f.needsPermission ? T('无需额外授权')
+      : f.granted ? T('已授权')
+      : !f.enabled ? T('首次开启时，需要在电视上允许 Animeko「显示在其他应用的上层」。')
+      : T('尚未授权。Ani 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Ani。') +
+        T('也可在电视设置中为 Animeko 开启「显示在其他应用的上层」。');
+    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Ani') + '</div>' +
+      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Ani') + '</label>' +
+      '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Ani；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
+      T('关闭后，Ani 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Ani 才能看到。') + '</p>' +
       '<p class="hint">' + st + '</p></div>';
   }
   frontBox.addEventListener('change', function (e) {
@@ -3119,23 +3152,23 @@ private val SETTINGS_SCRIPT = """
   window.loadSettings = load;
   function render(d) {
     var p = d.proxy || {};
-    proxyBox.innerHTML = '<form class="card set-card"><div class="set-title">代理</div><div class="pills">' +
+    proxyBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('代理') + '</div><div class="pills">' +
       MODES.map(function (m) {
         return '<label><input type="radio" name="mode" value="' + m[0] + '"' + (p.mode === m[0] ? ' checked' : '') + '><span>' + m[1] + '</span></label>';
       }).join('') + '</div>' +
       '<div class="set-custom"' + (p.mode === 'CUSTOM' ? '' : ' hidden') + '>' +
-      '<label class="f"><span>代理地址</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" value="' +
-      esc(p.url) + '" placeholder="http://192.168.1.2:7890"><em>支持 http:// 与 socks5://</em></label>' +
-      '<label class="f"><span>用户名（可选）</span><input type="text" name="username" autocomplete="off" value="' + esc(p.username) + '"></label>' +
-      '<label class="f"><span>密码（可选）</span><input type="password" name="password" autocomplete="new-password" placeholder="' +
-      (p.hasPassword ? '已设置，留空则不改' : '') + '"></label></div>' +
-      '<p class="hint set-sys"' + (p.mode === 'SYSTEM' ? '' : ' hidden') + '>电视上通常取不到系统代理，这一档一般等于不使用代理；要走代理请选「自定义」。</p>' +
-      '<div class="row"><button type="button" class="ghost" data-set="test">测试连接</button><button type="submit" class="primary">保存</button></div>' +
+      '<label class="f"><span>' + T('代理地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(p.url) + '" placeholder="http://192.168.1.2:7890"><em>' + T('支持 http:// 与 socks5://') + '</em></label>' +
+      '<label class="f"><span>' + T('用户名（可选）') + '</span><input type="text" name="username" autocomplete="off" value="' + esc(p.username) + '"></label>' +
+      '<label class="f"><span>' + T('密码（可选）') + '</span><input type="password" name="password" autocomplete="new-password" placeholder="' +
+      (p.hasPassword ? T('已设置，留空则不改') : '') + '"></label></div>' +
+      '<p class="hint set-sys"' + (p.mode === 'SYSTEM' ? '' : ' hidden') + '>' + T('电视上通常取不到系统代理，这一档一般等于不使用代理；要走代理请选「自定义」。') + '</p>' +
+      '<div class="row"><button type="button" class="ghost" data-set="test">' + T('测试连接') + '</button><button type="submit" class="primary">' + T('保存') + '</button></div>' +
       '<div class="set-test"></div></form>';
-    trBox.innerHTML = '<form class="card set-card"><div class="set-title">BT 额外 Tracker</div>' +
-      '<p class="hint">每行一个，BT 下载开始前与内置 tracker 一起添加。</p>' +
+    trBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('BT 额外 Tracker') + '</div>' +
+      '<p class="hint">' + T('每行一个，BT 下载开始前与内置 tracker 一起添加。') + '</p>' +
       '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
-      '<div class="row"><button type="submit" class="primary">保存</button></div></form>';
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
     renderFront(d.front);
     renderKeep(d.keep);
     renderFilters(d.dmfilter);
@@ -3146,17 +3179,17 @@ private val SETTINGS_SCRIPT = """
   }
   function renderFilters(df) {
     df = df || { enabled: true, items: [] };
-    dfBox.innerHTML = '<div class="card set-card"><div class="set-title">弹幕屏蔽词</div>' +
-      '<label class="toggle"><input type="checkbox" data-df="switch"' + (df.enabled ? ' checked' : '') + '>启用屏蔽（关掉后下面的规则都不生效）</label>' +
+    dfBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('弹幕屏蔽词') + '</div>' +
+      '<label class="toggle"><input type="checkbox" data-df="switch"' + (df.enabled ? ' checked' : '') + '>' + T('启用屏蔽（关掉后下面的规则都不生效）') + '</label>' +
       (df.items.length ? df.items.map(function (x) {
         return '<div class="df-item"><label class="src-sw"><input type="checkbox" data-df="toggle" data-id="' + esc(x.id) + '"' +
           (x.on ? ' checked' : '') + '></label><code>' + esc(x.regex) + '</code>' +
-          '<button type="button" class="sub-del icb" data-df="delete" data-id="' + esc(x.id) + '" aria-label="删除" title="删除">' +
+          '<button type="button" class="sub-del icb" data-df="delete" data-id="' + esc(x.id) + '" aria-label="' + T('删除') + '" title="' + T('删除') + '">' +
           window.ICONS.trash + '</button></div>';
-      }).join('') : '<p class="hint">还没有屏蔽词</p>') +
-      '<form class="sub-add" id="df-add"><input type="text" name="regex" autocomplete="off" placeholder="要屏蔽的词，支持正则">' +
-      '<button type="submit" class="primary">添加</button></form>' +
-      '<p class="hint">改完立即生效，正在播放的弹幕会马上按新规则重新过滤。</p></div>';
+      }).join('') : '<p class="hint">' + T('还没有屏蔽词') + '</p>') +
+      '<form class="sub-add" id="df-add"><input type="text" name="regex" autocomplete="off" placeholder="' + T('要屏蔽的词，支持正则') + '">' +
+      '<button type="submit" class="primary">' + T('添加') + '</button></form>' +
+      '<p class="hint">' + T('改完立即生效，正在播放的弹幕会马上按新规则重新过滤。') + '</p></div>';
   }
   dfBox.addEventListener('change', function (e) {
     var k = e.target.getAttribute('data-df');
@@ -3195,7 +3228,7 @@ private val SETTINGS_SCRIPT = """
     if (!b) return;
     var out = proxyBox.querySelector('.set-test');
     b.disabled = true;
-    out.innerHTML = '<p class="hint">正在测试，最多要十几秒…（按已保存的设置测）</p>';
+    out.innerHTML = '<p class="hint">' + T('正在测试，最多要十几秒…（按已保存的设置测）') + '</p>';
     post('api/settings/proxy/test', {}).then(function (r) {
       b.disabled = false;
       out.innerHTML = '<p class="hint">' + esc(r.message) + '</p>' + (r.items || []).map(function (x) {
@@ -3227,7 +3260,7 @@ private val DANMAKU_SCRIPT = """
   }
   remember(dmBox, 'remote.dm');
   remember(trBox, 'remote.tr');
-  function fmtShift(ms) { return (ms > 0 ? '+' : '') + (ms / 1000).toFixed(1) + ' 秒'; }
+  function fmtShift(ms) { return (ms > 0 ? '+' : '') + T('{0} 秒', (ms / 1000).toFixed(1)); }
   function done(r) { if (r.message) toast(r.message); poll(true); }
   function shiftBtn(sv, d, text) {
     return '<button type="button" data-dm="shift" data-sv="' + esc(sv) + '" data-d="' + d + '">' + text + '</button>';
@@ -3247,25 +3280,25 @@ private val DANMAKU_SCRIPT = """
     if (d) {
       var total = 0;
       d.sources.forEach(function (x) { if (x.on) total += x.count; shifts[x.service] = x.shift; });
-      dmSum.textContent = d.enabled ? (d.loading && !d.sources.length ? '加载中' : total + ' 条') : '已关闭';
-      var h = '<label class="toggle"><input type="checkbox" data-dm="all"' + (d.enabled ? ' checked' : '') + '>显示弹幕</label>';
-      if (!d.sources.length) h += '<p class="hint">' + (d.loading ? '正在加载弹幕…' : '这一集没有找到弹幕') + '</p>';
+      dmSum.textContent = d.enabled ? (d.loading && !d.sources.length ? T('加载中') : T('{0} 条', total)) : T('已关闭');
+      var h = '<label class="toggle"><input type="checkbox" data-dm="all"' + (d.enabled ? ' checked' : '') + '>' + T('显示弹幕') + '</label>';
+      if (!d.sources.length) h += '<p class="hint">' + (d.loading ? T('正在加载弹幕…') : T('这一集没有找到弹幕')) + '</p>';
       d.sources.forEach(function (x) {
         h += '<div class="dm-src' + (x.on ? '' : ' off') + '"><div class="dm-top">' +
           '<label class="src-sw"><input type="checkbox" data-dm="src" data-sv="' + esc(x.service) + '"' + (x.on ? ' checked' : '') + '></label>' +
-          '<div class="dm-name">' + esc(x.name) + '<small>' + x.count + ' 条</small></div></div>' +
-          '<div class="dm-how">' + esc(x.method) + (x.matched ? '：' + esc(x.matched) : '') + '</div>' +
-          '<div class="dm-shift"><span>时间偏移</span>' + shiftBtn(x.service, -1000, '-1') + shiftBtn(x.service, -500, '-0.5') +
+          '<div class="dm-name">' + esc(x.name) + '<small>' + T('{0} 条', x.count) + '</small></div></div>' +
+          '<div class="dm-how">' + esc(x.method) + (x.matched ? T('：') + esc(x.matched) : '') + '</div>' +
+          '<div class="dm-shift"><span>' + T('时间偏移') + '</span>' + shiftBtn(x.service, -1000, '-1') + shiftBtn(x.service, -500, '-0.5') +
           '<b>' + fmtShift(x.shift) + '</b>' + shiftBtn(x.service, 500, '+0.5') + shiftBtn(x.service, 1000, '+1') +
-          (x.shift ? shiftBtn(x.service, 'reset', '归零') : '') + '</div></div>';
+          (x.shift ? shiftBtn(x.service, 'reset', T('归零')) : '') + '</div></div>';
       });
-      h += '<p class="hint">偏移为正数时弹幕晚出现。各源开关与偏移只对这次播放有效。</p>';
-      if (d.canMatch) h += '<button type="button" class="ghost wide" data-dm="match">弹幕对不上？手动匹配（弹弹play）</button>';
+      h += '<p class="hint">' + T('偏移为正数时弹幕晚出现。各源开关与偏移只对这次播放有效。') + '</p>';
+      if (d.canMatch) h += '<button type="button" class="ghost wide" data-dm="match">' + T('弹幕对不上？手动匹配（弹弹play）') + '</button>';
       if (h !== lastDm) { dmBody.innerHTML = h; lastDm = h; }
     }
     var t = s.tracks || {}, th = '';
-    if (t.audio && t.audio.items.length > 1) th += trackSelect('audio', '音轨', t.audio, '自动');
-    if (t.subs && t.subs.items.length) th += trackSelect('sub', '字幕', t.subs, '关闭');
+    if (t.audio && t.audio.items.length > 1) th += trackSelect('audio', T('音轨'), t.audio, T('自动'));
+    if (t.subs && t.subs.items.length) th += trackSelect('sub', T('字幕'), t.subs, T('关闭'));
     trBox.hidden = !th;
     if (th !== lastTr) { trBody.innerHTML = th; lastTr = th; }
   });
@@ -3287,9 +3320,9 @@ private val DANMAKU_SCRIPT = """
       shifts[sv] = next;
       post('api/player/danmaku/shift', { service: sv, ms: String(next) }).then(done).catch(fail);
     } else if (k === 'match') {
-      dmMatch.innerHTML = '<form class="dm-form"><input type="text" name="q" autocomplete="off" placeholder="番剧名" value="' +
-        esc(title) + '"><button type="submit" class="primary">搜索</button></form><div class="dm-list" id="dm-results"></div>' +
-        '<div class="row"><button type="button" class="ghost" data-mt="cancel">取消手动匹配</button></div>';
+      dmMatch.innerHTML = '<form class="dm-form"><input type="text" name="q" autocomplete="off" placeholder="' + T('番剧名') + '" value="' +
+        esc(title) + '"><button type="submit" class="primary">' + T('搜索') + '</button></form><div class="dm-list" id="dm-results"></div>' +
+        '<div class="row"><button type="button" class="ghost" data-mt="cancel">' + T('取消手动匹配') + '</button></div>';
     }
   });
   function results() { return document.getElementById('dm-results'); }
@@ -3299,12 +3332,12 @@ private val DANMAKU_SCRIPT = """
     var q = e.target.elements.q.value.trim();
     if (!q) return;
     e.target.elements.q.blur();
-    hint('正在搜索…');
+    hint(T('正在搜索…'));
     post('api/player/danmaku/search', { q: q }).then(function (r) {
       if (!r.ok) { hint(esc(r.message)); return; }
-      results().innerHTML = r.items.length ? '<p class="hint">选一个条目</p>' + r.items.map(function (x) {
+      results().innerHTML = r.items.length ? '<p class="hint">' + T('选一个条目') + '</p>' + r.items.map(function (x) {
         return '<button type="button" data-mt="subject" data-id="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + esc(x.name) + '</button>';
-      }).join('') : '<p class="hint">没有搜到，换个名字试试</p>';
+      }).join('') : '<p class="hint">' + T('没有搜到，换个名字试试') + '</p>';
     }).catch(fail);
   });
   dmMatch.addEventListener('click', function (e) {
@@ -3314,10 +3347,10 @@ private val DANMAKU_SCRIPT = """
     if (k === 'cancel') { dmMatch.innerHTML = ''; return; }
     if (k === 'subject') {
       picked = { sid: b.getAttribute('data-id'), sname: b.getAttribute('data-name') };
-      hint('正在加载剧集…');
+      hint(T('正在加载剧集…'));
       post('api/player/danmaku/episodes', picked).then(function (r) {
         if (!r.ok) { hint(esc(r.message)); return; }
-        results().innerHTML = '<p class="hint">' + esc(picked.sname) + '：选一集</p>' + r.items.map(function (x, i) {
+        results().innerHTML = '<p class="hint">' + esc(picked.sname) + T('：选一集') + '</p>' + r.items.map(function (x, i) {
           return '<button type="button" data-mt="episode" data-id="' + esc(x.id) + '" data-name="' + esc(x.name) + '"' +
             (i === r.suggested ? ' class="sug"' : '') + '>' + esc(x.name) + '</button>';
         }).join('');
@@ -3325,7 +3358,7 @@ private val DANMAKU_SCRIPT = """
         if (sug) results().scrollTop = sug.offsetTop - results().offsetTop - 60;
       }).catch(fail);
     } else if (k === 'episode' && picked) {
-      hint('正在加载弹幕…');
+      hint(T('正在加载弹幕…'));
       post('api/player/danmaku/apply', {
         sid: picked.sid, sname: picked.sname, eid: b.getAttribute('data-id'), ename: b.getAttribute('data-name')
       }).then(function (r) {
@@ -3402,8 +3435,8 @@ private val CACHE_SCRIPT = """
   function showEpisodes() {
     view = 'eps';
     backBtn.hidden = true;
-    titleEl.textContent = '缓存 · ' + subjectTitle;
-    setHtml(sb, '<p class="hint">正在读取剧集…</p>');
+    titleEl.textContent = T('缓存 · {0}', subjectTitle);
+    setHtml(sb, '<p class="hint">' + T('正在读取剧集…') + '</p>');
     pollEpisodes();
   }
   function pollEpisodes() {
@@ -3419,38 +3452,38 @@ private val CACHE_SCRIPT = """
   function renderEpisodes(d) {
     lastData = d;
     if (!d.ok) { setHtml(sb, '<p class="hint">' + esc(d.message) + '</p>'); return; }
-    if (d.title) { subjectTitle = d.title; titleEl.textContent = '缓存 · ' + d.title; }
+    if (d.title) { subjectTitle = d.title; titleEl.textContent = T('缓存 · {0}', d.title); }
     var b = d.batch, running = !!(b && b.running), h = '';
     if (running) {
-      h += '<div class="now-status busy"><b>自动缓存中</b><span>' + b.done + ' / ' + b.total + (b.current ? '：' + esc(b.current) : '') + '</span></div>';
+      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>';
     } else if (b && b.failures.length) {
-      h += '<div class="now-status error"><b>' + b.failures.length + ' 集没能自动缓存</b><span>原因写在对应那一集下面，可以点「选资源」自己挑</span></div>';
+      h += '<div class="now-status error"><b>' + T('{0} 集没能自动缓存', b.failures.length) + '</b><span>' + T('原因写在对应那一集下面，可以点「选资源」自己挑') + '</span></div>';
     }
     // 已缓存的合集还覆盖着的集 (同电视缓存页: 点一集直接用合集, 不用再挑); 一次全部补上走自动批量 (它先找合集)
     var packIds = d.episodes.filter(function (x) { return x.status === 'none' && x.pack && inScope(x); }).map(function (x) { return x.id; });
     if (packIds.length && !running) {
-      h += '<div class="now-status ready"><b>合集里还有 ' + packIds.length + ' 集没缓存</b>' + (d.packTitle ? '<span>' + esc(d.packTitle) + '</span>' : '') + '</div>' +
-        '<button type="button" class="ghost wide cache-packall" data-packall="' + packIds.join(',') + '">全部用合集缓存（' + packIds.length + ' 集）</button>';
+      h += '<div class="now-status ready"><b>' + T('合集里还有 {0} 集没缓存', packIds.length) + '</b>' + (d.packTitle ? '<span>' + esc(d.packTitle) + '</span>' : '') + '</div>' +
+        '<button type="button" class="ghost wide cache-packall" data-packall="' + packIds.join(',') + '">' + T('全部用合集缓存（{0} 集）', packIds.length) + '</button>';
     }
-    h += '<p class="hint">' + (d.free ? '电视剩余空间 ' + esc(d.free) + '。' : '') +
-      '勾选几集后点最下面的按钮自动缓存：有已缓存的合集先用合集，' + esc(d.autoHint || '否则按你的数据源偏好自动挑') +
-      '；也可以对某一集点「选资源」自己挑。</p>';
+    h += '<p class="hint">' + (d.free ? T('电视剩余空间') + ' ' + esc(d.free) + T('。') : '') +
+      T('勾选几集后点最下面的按钮自动缓存：有已缓存的合集先用合集，') + esc(d.autoHint || T('否则按你的数据源偏好自动挑')) +
+      T('；也可以对某一集点「选资源」自己挑。') + '</p>';
     // 有没缓存的特别篇时才说全选的范围 (记在这台手机上, 见 inScope), 顺带说去哪改
     if (d.episodes.some(function (x) { return x.status === 'none' && x.sp; })) {
-      h += '<p class="hint">' + (pickAllSp() ? '「全选」会同时选择正片和特别篇。可在「设置 → 本机偏好」中更改。'
-        : '「全选」默认只选择正片。特别篇需要手动选择，可在「设置 → 本机偏好」中更改。') + '</p>';
+      h += '<p class="hint">' + (pickAllSp() ? T('「全选」会同时选择正片和特别篇。可在「设置 → 本机偏好」中更改。')
+        : T('「全选」默认只选择正片。特别篇需要手动选择，可在「设置 → 本机偏好」中更改。')) + '</p>';
     }
     d.episodes.forEach(function (x) {
       var size = x.size ? ' · ' + x.size : '';
-      var st = x.status === 'cached' ? ['ok', '已缓存' + size] : x.status === 'caching' ? ['run', '缓存中 ' + x.progress + '%' + size]
-        : x.error ? ['bad', x.error] : x.pack ? ['', '未缓存 · 已缓存的合集里有这一集'] : ['', '未缓存'];
+      var st = x.status === 'cached' ? ['ok', T('已缓存') + size] : x.status === 'caching' ? ['run', T('缓存中 {0}%', x.progress) + size]
+        : x.error ? ['bad', x.error] : x.pack ? ['', T('未缓存 · 已缓存的合集里有这一集')] : ['', T('未缓存')];
       var free = x.status === 'none';
       if (!free) delete picked[x.id];
       h += '<div class="cache-ep"><label class="src-sw"><input type="checkbox" data-pick="' + x.id + '"' +
         (picked[x.id] ? ' checked' : '') + (free ? '' : ' disabled') + '></label>' +
         '<div class="n">' + (x.watched ? '✓ ' : '') + esc(x.label) + '<div class="st ' + st[0] + '">' + esc(st[1]) + '</div></div>' +
-        (free && x.pack ? '<button type="button" class="cache-pack" data-pack="' + x.id + '">用合集</button>' : '') +
-        (free ? '<button type="button" data-ep="' + x.id + '" data-label="' + esc(x.label) + '">选资源</button>' : '') + '</div>';
+        (free && x.pack ? '<button type="button" class="cache-pack" data-pack="' + x.id + '">' + T('用合集') + '</button>' : '') +
+        (free ? '<button type="button" data-ep="' + x.id + '" data-label="' + esc(x.label) + '">' + T('选资源') + '</button>' : '') + '</div>';
     });
     var n = pickedIds().length;
     // 全选只管还没缓存的集 (其余的勾选框本来就是灰的), 默认只管正片 (见 inScope, 有没选上的特别篇时写明「全选正片」);
@@ -3459,9 +3492,9 @@ private val CACHE_SCRIPT = """
     var spLeft = d.episodes.some(function (x) { return x.status === 'none' && !inScope(x); });
     var allOn = freeIds.length > 0 && freeIds.every(function (id) { return picked[id]; });
     h += '<div class="cache-bar"><button type="button" class="ghost cache-all" data-pickall="' + (allOn ? '0' : '1') + '"' +
-      (freeIds.length && !running ? '' : ' disabled') + '>' + (allOn ? '取消全选' : spLeft ? '全选正片' : '全选') + '</button>' +
+      (freeIds.length && !running ? '' : ' disabled') + '>' + (allOn ? T('取消全选') : spLeft ? T('全选正片') : T('全选')) + '</button>' +
       '<button type="button" class="primary wide" id="cache-auto"' + (n && !running ? '' : ' disabled') + '>' +
-      (running ? '自动缓存进行中…' : n ? '自动挑资源缓存选中的 ' + n + ' 集' : '先勾选要缓存的剧集') + '</button></div>';
+      (running ? T('自动缓存进行中…') : n ? T('自动挑资源缓存选中的 {0} 集', n) : T('先勾选要缓存的剧集')) + '</button></div>';
     setHtml(sb, h);
   }
 
@@ -3477,7 +3510,7 @@ private val CACHE_SCRIPT = """
     ccFull = false;
     lastCands = null;
     // 三块都是新建的节点, 各自从头比
-    setHtml(sb, '<div id="cc-chips"></div><div id="cc-filters"></div><div id="cc-list"><p class="hint">正在查找资源…</p></div>');
+    setHtml(sb, '<div id="cc-chips"></div><div id="cc-filters"></div><div id="cc-list"><p class="hint">' + T('正在查找资源…') + '</p></div>');
     pollCandidates();
   }
   function pollCandidates() {
@@ -3494,20 +3527,20 @@ private val CACHE_SCRIPT = """
       }).catch(function () { timer = setTimeout(pollCandidates, 4000); });
   }
   function dropdown(key, label, list, cur) {
-    var h = '<label class="sel"><span>' + label + '</span><select data-cf="' + key + '"><option value="">全部</option>';
+    var h = '<label class="sel"><span>' + label + '</span><select data-cf="' + key + '"><option value="">' + T('全部') + '</option>';
     var has = false;
     (list || []).forEach(function (o) {
       if (o.value === cur) has = true;
-      h += '<option value="' + esc(o.value) + '"' + (o.value === cur ? ' selected' : '') + '>' + esc(o.label) + '（' + o.count + '）</option>';
+      h += '<option value="' + esc(o.value) + '"' + (o.value === cur ? ' selected' : '') + '>' + esc(o.label) + T('（{0}）', o.count) + '</option>';
     });
-    if (cur && !has) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '（0）</option>';
+    if (cur && !has) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + T('（{0}）', 0) + '</option>';
     return h + '</select></label>';
   }
   // 数据源胶囊 (同播放器标签): 点一个只看这个源, 再点一次或点「全部」取消; 纯本地筛选, 就地重画
   function ccChips(d) {
-    var h = '<div class="chips"><button type="button" class="chip' + (ccSrc ? '' : ' on') + '" data-cc="">全部</button>';
+    var h = '<div class="chips"><button type="button" class="chip' + (ccSrc ? '' : ' on') + '" data-cc="">' + T('全部') + '</button>';
     d.sources.forEach(function (x) {
-      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? '需验证' : x.state === 'failed' ? '失败' : x.state === 'limited' ? '限流' : x.count;
+      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       h += '<button type="button" class="chip ' + x.state + (ccSrc === x.id ? ' on' : '') + '" data-cc="' + esc(x.id) + '">' +
         esc(x.name) + ' ' + n + '</button>';
     });
@@ -3526,44 +3559,44 @@ private val CACHE_SCRIPT = """
     setHtml(cbox, ccChips(d));
     var f = d.filters || {};
     var one = ccSrc ? d.groups.filter(function (g) { return g.id === ccSrc; })[0] : null;
-    var fh = '<div class="filters">' + dropdown('res', '分辨率', f.resolution, fRes) + dropdown('sub', '字幕', f.subtitle, fSub) +
-      dropdown('all', '字幕组', f.alliance, fAll) + '</div>' +
-      '<div class="toggles"><label class="toggle"><input type="checkbox" data-cf="ex"' + (fEx ? ' checked' : '') + '>显示被排除的资源' +
-      (d.excludedCount ? '（' + d.excludedCount + ' 条）' : '') + '</label>' +
+    var fh = '<div class="filters">' + dropdown('res', T('分辨率'), f.resolution, fRes) + dropdown('sub', T('字幕'), f.subtitle, fSub) +
+      dropdown('all', T('字幕组'), f.alliance, fAll) + '</div>' +
+      '<div class="toggles"><label class="toggle"><input type="checkbox" data-cf="ex"' + (fEx ? ' checked' : '') + '>' + T('显示被排除的资源') +
+      (d.excludedCount ? T('（{0} 条）', d.excludedCount) : '') + '</label>' +
       // 「显示全部 N 条」: 只在点了某个胶囊、而且这个源确实没列全时出现 (勾着时一直显示, 好取消)
       (one && (ccFull || one.more > 0) ? '<label class="toggle"><input type="checkbox" data-cf="full"' + (ccFull ? ' checked' : '') +
-        '>显示全部 ' + one.total + ' 条</label>' : '') + '</div>';
+        '>' + T('显示全部 {0} 条', one.total) + '</label>' : '') + '</div>';
     setHtml(fbox, fh);
     var groups = ccSrc ? d.groups.filter(function (g) { return g.id === ccSrc; }) : d.groups;
     var total = 0;
     groups.forEach(function (g) { total += g.total; });
     var bad = d.sources.filter(function (s) { return s.state === 'failed' || s.state === 'captcha' || s.state === 'limited'; }).length;
-    var h = '<p class="hint">' + (d.loading ? '正在查找资源… 已找到 ' + total + ' 条' : '共 ' + total + ' 条') +
-      (bad && !ccSrc ? '，' + bad + ' 个数据源没查到' : '') + '。点一条开始缓存。</p>';
+    var h = '<p class="hint">' + (d.loading ? T('正在查找资源… 已找到 {0} 条', total) : T('共 {0} 条', total)) +
+      (bad && !ccSrc ? T('，{0} 个数据源没查到', bad) : '') + T('。点一条开始缓存。') + '</p>';
     if (!groups.length) {
       var src = ccSrc ? d.sources.filter(function (x) { return x.id === ccSrc; })[0] : null;
-      var why = (fRes || fSub || fAll) ? '没有符合筛选条件的资源，试试放宽筛选'
-        : !ccSrc ? (d.loading ? '' : '没有找到可以缓存的资源')
-        : !src || src.state === 'done' ? '这个数据源没有匹配的资源'
-        : src.state === 'loading' ? '这个数据源还在搜索…'
-        : src.state === 'captcha' ? '这个数据源需要人机验证，请在电视上处理'
-        : src.state === 'limited' ? '这个数据源被限流了，稍后再试'
-        : '这个数据源搜索失败';
-      if (why && !fEx && d.excludedCount) why += '，也可以勾选「显示被排除的资源」看看';
+      var why = (fRes || fSub || fAll) ? T('没有符合筛选条件的资源，试试放宽筛选')
+        : !ccSrc ? (d.loading ? '' : T('没有找到可以缓存的资源'))
+        : !src || src.state === 'done' ? T('这个数据源没有匹配的资源')
+        : src.state === 'loading' ? T('这个数据源还在搜索…')
+        : src.state === 'captcha' ? T('这个数据源需要人机验证，请在电视上处理')
+        : src.state === 'limited' ? T('这个数据源被限流了，稍后再试')
+        : T('这个数据源搜索失败');
+      if (why && !fEx && d.excludedCount) why += T('，也可以勾选「显示被排除的资源」看看');
       if (why) h += '<p class="hint">' + why + '</p>';
     }
     groups.forEach(function (g) {
-      h += '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + g.total + ' 条</small></h2><div class="list">';
+      h += '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
       g.items.forEach(function (it) {
         var meta = [it.resolution, it.subtitles, it.alliance, it.size].filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
         h += '<button type="button" class="item' + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') + '" data-mid="' + esc(it.id) +
           '" data-title="' + esc(it.title) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
           '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
-          (it.excluded ? '<span class="why">已排除：' + esc(it.reason || '') + '</span>' : '') + '</button>';
+          (it.excluded ? '<span class="why">' + T('已排除：') + esc(it.reason || '') + '</span>' : '') + '</button>';
       });
       h += '</div>';
-      if (g.more > 0) h += '<p class="hint">还有 ' + g.more + ' 条没列出，' +
-        (ccSrc ? '可以勾选上面的「显示全部」' : '点上面这个数据源的胶囊后可以选择显示全部') + '</p>';
+      if (g.more > 0) h += '<p class="hint">' + T('还有 {0} 条没列出，', g.more) +
+        (ccSrc ? T('可以勾选上面的「显示全部」') : T('点上面这个数据源的胶囊后可以选择显示全部')) + '</p>';
     });
     setHtml(list, h);
   }
@@ -3633,8 +3666,8 @@ private val CACHE_SCRIPT = """
     } else if (b.hasAttribute('data-ep')) {
       showCandidates(+b.getAttribute('data-ep'), b.getAttribute('data-label'));
     } else if (b.hasAttribute('data-mid')) {
-      if (b.hasAttribute('data-blocked')) { toast('不能选：' + b.getAttribute('data-blocked')); return; }
-      if (!confirm('缓存这个资源？\n' + b.getAttribute('data-title'))) return;
+      if (b.hasAttribute('data-blocked')) { toast(T('不能选：') + b.getAttribute('data-blocked')); return; }
+      if (!confirm(T('缓存这个资源？') + '\n' + b.getAttribute('data-title'))) return;
       post('api/cache/pick', { subject: String(subject), episode: String(ep), id: b.getAttribute('data-mid') }).then(function (r) {
         toast(r.message);
         if (r.ok) showEpisodes();
@@ -3679,17 +3712,17 @@ private val CACHE_LIST_SCRIPT = """
     if (!d.ok) {
       h = '<p class="hint">' + esc(d.message) + '</p>';
     } else {
-      s = '<div class="card"><div class="cl-free">电视剩余空间 <b>' + esc(d.free || '未知') + '</b>' +
-        (d.total ? '<small> / 共 ' + esc(d.total) + '</small>' : '') + '</div>';
-      if (d.count) s += '<div class="cl-line">' + d.count + ' 集缓存，共 ' + esc(d.used) + '</div>';
+      s = '<div class="card"><div class="cl-free">' + T('电视剩余空间') + ' <b>' + esc(d.free || T('未知')) + '</b>' +
+        (d.total ? '<small> ' + T('/ 共') + ' ' + esc(d.total) + '</small>' : '') + '</div>';
+      if (d.count) s += '<div class="cl-line">' + T('{0} 集缓存，共 {1}', d.count, esc(d.used)) + '</div>';
       var run = [];
-      if (d.downloading) run.push(d.downloading + ' 集下载中' + (d.speed ? ' ↓ ' + esc(d.speed) : ''));
-      if (d.pending) run.push('没下完的还差 ' + esc(d.pending));
+      if (d.downloading) run.push(T('{0} 集下载中', d.downloading) + (d.speed ? ' ↓ ' + esc(d.speed) : ''));
+      if (d.pending) run.push(T('没下完的还差') + ' ' + esc(d.pending));
       if (run.length) s += '<div class="cl-line">' + run.join(' · ') + '</div>';
-      if (d.lowSpace) s += '<div class="cl-warn">剩余空间不够把没下完的都下完</div>';
+      if (d.lowSpace) s += '<div class="cl-warn">' + T('剩余空间不够把没下完的都下完') + '</div>';
       s += '</div>';
       if (!d.groups.length) {
-        h = '<div class="empty"><p>电视上还没有缓存</p><p class="hint">在「播放器」卡片右上角点「缓存」开始缓存</p></div>';
+        h = '<div class="empty"><p>' + T('电视上还没有缓存') + '</p><p class="hint">' + T('在「播放器」卡片右上角点「缓存」开始缓存') + '</p></div>';
       }
       d.groups.forEach(function (g) {
         // 番名那一行右边: 整部删除 (先确认; 里面有正在播的那一集时确认框多说一句)
@@ -3710,14 +3743,14 @@ private val CACHE_LIST_SCRIPT = """
               '<div class="cl-head"><div class="cl-title"' + (g.id ? ' data-open="' + g.id + '"' : '') + '>' + esc(g.title) + '</div>' +
               '</div><div class="cl-meta">' + esc(g.meta) + '</div>' +
               // 右边封面 (没封面时同一个位置的 ▶) = 播放, 播哪一集同搜索结果 / 详情页的播放按钮 (按观看进度, 见 RemoteSearchResults.play)
-              (g.id ? '<button type="button" class="res-play" data-sid="' + g.id + '" aria-label="播放"><span class="play-glyph">' +
+              (g.id ? '<button type="button" class="res-play" data-sid="' + g.id + '" aria-label="' + T('播放') + '"><span class="play-glyph">' +
                 window.ICONS.play + '</span></button>' : '') + '</div>';
             if (!g.id) return '<div class="sw flat cl-top-sw">' + top + '</div>';
             return window.swRow(
-              '<button type="button" class="sw-btn cache" data-cache="' + g.id + '" data-title="' + esc(g.title) + '">' + window.ICONS.download + '缓存</button>',
+              '<button type="button" class="sw-btn cache" data-cache="' + g.id + '" data-title="' + esc(g.title) + '">' + window.ICONS.download + T('缓存') + '</button>',
               '<button type="button" class="sw-btn del" data-cdelall="' + g.id + '" data-title="' + esc(g.title) +
               '" data-count="' + g.items.length + '"' + (playingItem ? ' data-playing="' + esc(playingItem.label) + '"' : '') + '>' +
-              window.ICONS.trash + '全部删除</button>', top, 'flat cl-top-sw');
+              window.ICONS.trash + T('全部删除') + '</button>', top, 'flat cl-top-sw');
           })();
         g.items.forEach(function (x) { h += item(g, x); });
         h += '</div>';
@@ -3754,13 +3787,13 @@ private val CACHE_LIST_SCRIPT = """
     if (x.watched) bits.push(esc(x.watched));
     // 每一集右边的暂停 / 继续: 行行都有的通用动作, 只放图标. 删除改成左滑露出 (点了 / 滑到底仍先确认: 缓存删了要重新下)
     var I = window.ICONS;
-    var act = x.st === 'run' ? '<button type="button" class="icb" data-cact="pause" data-cid="' + esc(x.cid) + '" aria-label="暂停下载" title="暂停下载">' + I.pause + '</button>'
-      : x.st === 'paused' ? '<button type="button" class="icb" data-cact="resume" data-cid="' + esc(x.cid) + '" aria-label="继续下载" title="继续下载">' + I.play + '</button>' : '';
+    var act = x.st === 'run' ? '<button type="button" class="icb" data-cact="pause" data-cid="' + esc(x.cid) + '" aria-label="' + T('暂停下载') + '" title="' + T('暂停下载') + '">' + I.pause + '</button>'
+      : x.st === 'paused' ? '<button type="button" class="icb" data-cact="resume" data-cid="' + esc(x.cid) + '" aria-label="' + T('继续下载') + '" title="' + T('继续下载') + '">' + I.play + '</button>' : '';
     var del = '<button type="button" class="sw-btn del" data-cact="delete" data-cid="' + esc(x.cid) + '" data-label="' + esc(g.title + ' ' + x.label) + '"' +
-      (x.packShare ? ' data-share="' + x.packShare + '"' : '') + (x.playing ? ' data-playing="1"' : '') + '>' + I.trash + '删除</button>';
+      (x.packShare ? ' data-share="' + x.packShare + '"' : '') + (x.playing ? ' data-playing="1"' : '') + '>' + I.trash + T('删除') + '</button>';
     return window.swRow('', del, '<div class="cl-ep sw-row" data-play="' + esc(x.cid) + '" data-lp="' + esc(x.cid) + '">' +
       '<span class="sel-mark" aria-hidden="true"></span><div class="n"><span class="cl-go">' + I.play + '</span>' + esc(x.label) +
-      (x.playing ? '<span class="cl-tag play">正在播放</span>' : '') + (x.pack ? '<span class="cl-tag">合集</span>' : '') +
+      (x.playing ? '<span class="cl-tag play">' + T('正在播放') + '</span>' : '') + (x.pack ? '<span class="cl-tag">' + T('合集') + '</span>' : '') +
       '<div class="cl-st">' + bits.join(' · ') + '</div>' +
       (x.progress != null ? '<div class="cl-bar"><div style="width:' + x.progress + '%"></div></div>' : '') + '</div>' + act + '</div>', 'flat');
   }
@@ -3770,9 +3803,9 @@ private val CACHE_LIST_SCRIPT = """
     var all = e.target.closest('[data-cdelall]');
     if (all) {
       if (all.disabled) return;
-      var m = '删除「' + all.getAttribute('data-title') + '」的全部 ' + all.getAttribute('data-count') + ' 集缓存？';
+      var m = T('删除「{0}」的全部 {1} 集缓存？', all.getAttribute('data-title'), all.getAttribute('data-count'));
       var pl = all.getAttribute('data-playing');
-      if (pl) m += '\n\n其中「' + pl + '」正在播放，删除后需要重新选择数据源。';
+      if (pl) m += '\n\n' + T('其中「{0}」正在播放，删除后需要重新选择数据源。', pl);
       // 不删了 / 删失败: 滑到底时番名那块已经滑出去, 放回来
       if (!confirm(m)) { window.swClose(all.closest('.sw')); return; }
       all.disabled = true;
@@ -3817,12 +3850,12 @@ private val CACHE_LIST_SCRIPT = """
     if (b.disabled) return;
     var act = b.getAttribute('data-cact');
     if (act === 'delete') {
-      var msg = '删除「' + b.getAttribute('data-label') + '」的缓存？';
+      var msg = T('删除「{0}」的缓存？', b.getAttribute('data-label'));
       // 同电视缓存页的删除确认: 正在播的那条多说一句
-      if (b.getAttribute('data-playing')) msg += '\n\n这一集正在播放，删除后需要重新选择数据源。';
+      if (b.getAttribute('data-playing')) msg += '\n\n' + T('这一集正在播放，删除后需要重新选择数据源。');
       // 合集的文件要等同一个种子的集都删了才一起回收 (见 TorrentMediaCacheEngine)
       var share = b.getAttribute('data-share');
-      if (share) msg += '\n\n这一集来自合集，同一个种子还有 ' + share + ' 集缓存着：删掉它不会马上腾出空间，等这些集也都删了才一起回收。';
+      if (share) msg += '\n\n' + T('这一集来自合集，同一个种子还有 {0} 集缓存着：删掉它不会马上腾出空间，等这些集也都删了才一起回收。', share);
       // 不删了: 滑到底时行已经滑出去, 放回来
       if (!confirm(msg)) { window.swClose(b.closest('.sw')); return; }
     }
@@ -3836,7 +3869,7 @@ private val CACHE_LIST_SCRIPT = """
   listBox.addEventListener('longpress', function (e) {
     window.selStart({
       box: listBox,
-      ask: function (n) { return '删除选中的 ' + n + ' 集缓存？删除后需要重新缓存。'; },
+      ask: function (n) { return T('删除选中的 {0} 集缓存？删除后需要重新缓存。', n); },
       del: function (ids) {
         return post('api/caches/delete', { ids: ids.join(',') }).then(function (r) {
           toast(r.message);
@@ -3862,9 +3895,9 @@ private val REVIEW_SCRIPT = """
   var hooks = window.remoteHooks;
   var box = document.getElementById('cm-box'), body = document.getElementById('cm-body'), sum = document.getElementById('cm-sum');
   var subject = null, loaded = false;
-  var TYPES = [['NOT_COLLECTED', '未收藏'], ['WISH', '想看'], ['DOING', '在看'], ['DONE', '看过'], ['ON_HOLD', '搁置'], ['DROPPED', '抛弃']];
+  var TYPES = [['NOT_COLLECTED', T('未收藏')], ['WISH', T('想看')], ['DOING', T('在看')], ['DONE', T('看过')], ['ON_HOLD', T('搁置')], ['DROPPED', T('抛弃')]];
   // 评价词同 App 的评分弹窗; 1 分和 10 分带「请谨慎评价」, 也跟 App 一样标红
-  var WORDS = ['', '不忍直视（请谨慎评价）', '很差', '差', '较差', '不过不失', '还行', '推荐', '力荐', '神作', '超神作（请谨慎评价）'];
+  var WORDS = ['', T('不忍直视（请谨慎评价）'), T('很差'), T('差'), T('较差'), T('不过不失'), T('还行'), T('推荐'), T('力荐'), T('神作'), T('超神作（请谨慎评价）')];
   // 星星同 App (Material 圆角星): .o 空心 / .f 实心, 由 svg 上的 on 切换
   var STAR = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
     '<path class="o" d="M19.65 9.04l-4.84-.42-1.89-4.45c-.34-.81-1.5-.81-1.84 0L9.19 8.63l-4.83.41c-.88.07-1.24 1.17-.57 1.75l3.67 3.18-1.1 4.72c-.2.86.73 1.54 1.49 1.08l4.15-2.5 4.15 2.51c.76.46 1.69-.22 1.49-1.08l-1.1-4.73 3.67-3.18c.67-.58.32-1.68-.56-1.75zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/>' +
@@ -3898,21 +3931,21 @@ private val REVIEW_SCRIPT = """
   // quiet: 操作完重读时不先清成「正在读取」, 免得整块塌下去再撑开
   function load(quiet) {
     loaded = true;
-    if (!quiet) body.innerHTML = '<p class="hint">正在读取…</p>';
+    if (!quiet) body.innerHTML = '<p class="hint">' + T('正在读取…') + '</p>';
     window.getJson('api/player/review').then(render).catch(function () {
       // 不能停在「正在读取…」: 给出失败, 并允许收起再展开时重读
       loaded = false;
       if (quiet) failRead();
-      else body.innerHTML = '<p class="hint">读取失败，收起再展开试试</p>';
+      else body.innerHTML = '<p class="hint">' + T('读取失败，收起再展开试试') + '</p>';
     });
   }
   function render(d) {
     if (!d.ok) { body.innerHTML = '<p class="hint">' + esc(d.message) + '</p>'; return; }
-    sum.textContent = typeLabel(d.collection) + (d.score ? ' · ' + d.score + ' 分' : '');
+    sum.textContent = typeLabel(d.collection) + (d.score ? ' · ' + T('{0} 分', d.score) : '');
     // 没登录时收藏、评分、评论都做不了, 只放登录入口 (登录上以后 hooks.login 会重读)
     if (!d.loggedIn) {
-      body.innerHTML = '<div class="cm-login"><p class="hint cm-warn">还没登录：收藏、评分和评论都要先登录</p>' +
-        '<button type="button" class="primary wide" data-login="1">用手机登录 Bangumi</button></div>';
+      body.innerHTML = '<div class="cm-login"><p class="hint cm-warn">' + T('还没登录：收藏、评分和评论都要先登录') + '</p>' +
+        '<button type="button" class="primary wide" data-login="1">' + T('用手机登录 Bangumi') + '</button></div>';
       return;
     }
     // 重画会冲掉正在写的本集评论, 先存下来
@@ -3924,23 +3957,23 @@ private val REVIEW_SCRIPT = """
     }
     for (var j = 0; j < 10; j++) stars += STAR;
     body.innerHTML =
-      '<div class="cm-sec"><div class="cm-h"><span>收藏</span>' +
-        (collected ? '<button type="button" class="cm-link" data-uncollect="1">取消收藏</button>' : '') + '</div>' +
+      '<div class="cm-sec"><div class="cm-h"><span>' + T('收藏') + '</span>' +
+        (collected ? '<button type="button" class="cm-link" data-uncollect="1">' + T('取消收藏') + '</button>' : '') + '</div>' +
         '<div class="seg cm-types">' + seg + '</div></div>' +
       '<form id="cm-rate" class="cm-sec' + (collected ? '' : ' off') + '">' +
-        '<div class="cm-h"><span>我的评分</span><button type="button" class="cm-link" id="cm-clear">清除</button></div>' +
+        '<div class="cm-h"><span>' + T('我的评分') + '</span><button type="button" class="cm-link" id="cm-clear">' + T('清除') + '</button></div>' +
         '<div class="cm-score" id="cm-score"><b></b><span></span></div>' +
-        '<div class="cm-stars" id="cm-stars" role="slider" tabindex="0" aria-label="评分" aria-valuemin="0" aria-valuemax="10">' + stars + '</div>' +
+        '<div class="cm-stars" id="cm-stars" role="slider" tabindex="0" aria-label="' + T('评分') + '" aria-valuemin="0" aria-valuemax="10">' + stars + '</div>' +
         '<input type="hidden" name="score" value="0">' +
-        (collected ? '' : '<p class="hint cm-tip">先在上面选个收藏状态，才能评分</p>') +
-        '<textarea name="comment" rows="3" placeholder="写几句短评（可留空）"' + off + '>' + esc(d.comment) + '</textarea>' +
-        '<div class="cm-foot"><label class="toggle"><input type="checkbox" name="private" value="1"' + (d.private ? ' checked' : '') + off + '>仅自己可见</label>' +
-        '<button type="submit" class="primary"' + off + '>保存</button></div></form>' +
-      '<form id="cm-post" class="cm-sec"><div class="cm-h"><span>本集评论' + (d.episode ? '<small>' + esc(d.episode) + '</small>' : '') + '</span></div>' +
-        '<textarea name="text" rows="3" placeholder="说点什么"></textarea>' +
+        (collected ? '' : '<p class="hint cm-tip">' + T('先在上面选个收藏状态，才能评分') + '</p>') +
+        '<textarea name="comment" rows="3" placeholder="' + T('写几句短评（可留空）') + '"' + off + '>' + esc(d.comment) + '</textarea>' +
+        '<div class="cm-foot"><label class="toggle"><input type="checkbox" name="private" value="1"' + (d.private ? ' checked' : '') + off + '>' + T('仅自己可见') + '</label>' +
+        '<button type="submit" class="primary"' + off + '>' + T('保存') + '</button></div></form>' +
+      '<form id="cm-post" class="cm-sec"><div class="cm-h"><span>' + T('本集评论') + (d.episode ? '<small>' + esc(d.episode) + '</small>' : '') + '</span></div>' +
+        '<textarea name="text" rows="3" placeholder="' + T('说点什么') + '"></textarea>' +
         '<div class="cm-preview" id="cm-preview" hidden></div>' +
-        '<div class="cm-foot"><button type="button" class="cm-emo" data-emo="1">' + EMO_ICON + '表情</button>' +
-        '<button type="submit" class="primary">发表</button></div>' +
+        '<div class="cm-foot"><button type="button" class="cm-emo" data-emo="1">' + EMO_ICON + T('表情') + '</button>' +
+        '<button type="submit" class="primary">' + T('发表') + '</button></div>' +
         '<div class="cm-picker" id="cm-picker" hidden></div></form>';
     if (draft) body.querySelector('#cm-post textarea').value = draft;
     paintPicker();
@@ -3967,7 +4000,7 @@ private val REVIEW_SCRIPT = """
   function stickersFailed() {
     stickers = null;
     var box = document.getElementById('cm-picker');
-    if (box && emoOpen) box.innerHTML = '<p class="hint cm-pk-msg">读取表情失败，收起再打开试试</p>';
+    if (box && emoOpen) box.innerHTML = '<p class="hint cm-pk-msg">' + T('读取表情失败，收起再打开试试') + '</p>';
   }
   function reEsc(s) { return s.replace(/[.*+?^{}()|[\]\\\/]/g, function (c) { return '\\' + c; }); }
   function paintPicker() {
@@ -3977,7 +4010,7 @@ private val REVIEW_SCRIPT = """
     if (btn) btn.classList.toggle('on', emoOpen);
     if (!emoOpen) return;
     if (!stickers || !stickers.length) {
-      box.innerHTML = '<p class="hint cm-pk-msg">正在读取表情…</p>';
+      box.innerHTML = '<p class="hint cm-pk-msg">' + T('正在读取表情…') + '</p>';
       loadStickers();
       return;
     }
@@ -4006,7 +4039,7 @@ private val REVIEW_SCRIPT = """
       }
     }
     box.hidden = n === 0;
-    if (n) box.innerHTML = '<small>预览</small>' + out + esc(t.slice(last));
+    if (n) box.innerHTML = '<small>' + T('预览') + '</small>' + out + esc(t.slice(last));
   }
   // 插在光标处 (没点过输入框就是末尾). 不去聚焦输入框: 手机上一聚焦就弹键盘, 把表情面板顶走.
   // 光标位置自己记 (caret): 点表情时输入框多半已经失焦, 而失焦的输入框改过 value 之后选区读出来是 0 (Chromium 实测),
@@ -4040,7 +4073,7 @@ private val REVIEW_SCRIPT = """
     var sc = document.getElementById('cm-score');
     sc.className = 'cm-score' + (n ? (n === 1 || n === 10 ? ' warn' : '') : ' none');
     sc.firstChild.textContent = n ? String(n) : '—';
-    sc.lastChild.textContent = n ? WORDS[n] : (form.classList.contains('off') ? '' : '点星星打分，也可以按住左右滑');
+    sc.lastChild.textContent = n ? WORDS[n] : (form.classList.contains('off') ? '' : T('点星星打分，也可以按住左右滑'));
     document.getElementById('cm-clear').hidden = !n;
   }
   function scoreAt(st, x) {
@@ -4095,7 +4128,7 @@ private val REVIEW_SCRIPT = """
     if (b.hasAttribute('data-stk')) { insertSticker(b.getAttribute('data-stk')); return; }
     var type = b.getAttribute('data-ctype');
     if (b.hasAttribute('data-uncollect')) {
-      if (!confirm('取消收藏？这会清除你的观看进度和评价，无法撤销。')) return;
+      if (!confirm(T('取消收藏？这会清除你的观看进度和评价，无法撤销。'))) return;
       type = 'NOT_COLLECTED';
     } else if (!type || b.classList.contains('on')) return;
     // 选中态先挪过去, 手感跟得上; 结果回来后重读, 失败了也会被重读纠正
@@ -4141,16 +4174,16 @@ private val ACCOUNT_SCRIPT = """
     var bind = !!d.loggedIn;
     if (em.step === 'email') {
       return '<form class="acct-nick" id="acct-email"><input type="email" name="e" inputmode="email" autocomplete="email" placeholder="' +
-        (bind ? '要绑定的邮箱' : '邮箱') + '" value="' + esc(em.email || '') + '"><button type="submit">发送验证码</button></form>' +
-        '<p class="hint">' + (bind ? (d.email ? '现在绑定的是 ' + esc(d.email) + '，换成新邮箱后要用新邮箱登录。' : '绑定后也能用这个邮箱登录。')
-          : '登录 Animeko 账号，没注册过的邮箱会直接注册。要同步 Bangumi 的收藏、评分和评论，登录后再连接 Bangumi。') + '</p>' +
-        '<div class="row"><button type="button" class="ghost" data-acct="email-close">取消</button></div>';
+        (bind ? T('要绑定的邮箱') : T('邮箱')) + '" value="' + esc(em.email || '') + '"><button type="submit">' + T('发送验证码') + '</button></form>' +
+        '<p class="hint">' + (bind ? (d.email ? T('现在绑定的是 {0}，换成新邮箱后要用新邮箱登录。', esc(d.email)) : T('绑定后也能用这个邮箱登录。'))
+          : T('登录 Animeko 账号，没注册过的邮箱会直接注册。要同步 Bangumi 的收藏、评分和评论，登录后再连接 Bangumi。')) + '</p>' +
+        '<div class="row"><button type="button" class="ghost" data-acct="email-close">' + T('取消') + '</button></div>';
     }
-    return '<p class="hint">验证码已发到 <b>' + esc(em.email) + '</b>' + (em.existing === false && !bind ? '（还没注册过，验证后会注册新账号）' : '') + '。</p>' +
-      '<form class="acct-nick" id="acct-otp"><input type="text" name="c" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="验证码">' +
-      '<button type="submit">' + (bind ? '绑定' : '登录') + '</button></form>' +
-      '<div class="row"><button type="button" class="ghost" data-acct="email-resend">重新发送</button>' +
-      '<button type="button" class="ghost" data-acct="email-back">换个邮箱</button></div>';
+    return '<p class="hint">' + T('验证码已发到') + ' <b>' + esc(em.email) + '</b>' + (em.existing === false && !bind ? T('（还没注册过，验证后会注册新账号）') : '') + T('。') + '</p>' +
+      '<form class="acct-nick" id="acct-otp"><input type="text" name="c" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="' + T('验证码') + '">' +
+      '<button type="submit">' + (bind ? T('绑定') : T('登录')) + '</button></form>' +
+      '<div class="row"><button type="button" class="ghost" data-acct="email-resend">' + T('重新发送') + '</button>' +
+      '<button type="button" class="ghost" data-acct="email-back">' + T('换个邮箱') + '</button></div>';
   }
   function sendOtp(email, btn) {
     btn.disabled = true;
@@ -4187,39 +4220,39 @@ private val ACCOUNT_SCRIPT = """
     if (wasIn === false && full) hooks.login.forEach(function (h) { h(); });
     wasIn = full;
     waiting = l.state === 'waiting';
-    var h = '<div class="card set-card"><div class="set-title">账号</div>';
+    var h = '<div class="card set-card"><div class="set-title">' + T('账号') + '</div>';
     if (d.loggedIn) {
-      h += '<div class="acct" data-acct="menu">' + avatar(d) + '<div><div class="acct-name">' + esc(d.name || '已登录') + '</div><div class="acct-sub">' +
-        (d.bangumi ? '已连接 Bangumi' + (d.bgmName ? '（' + esc(d.bgmName) + '）' : '') : '还没连接 Bangumi，连接后收藏、进度和评分会同步到你的 Bangumi 账号') +
-        '</div></div><span class="acct-more">' + (menu ? '收起' : '管理') + '</span></div>';
+      h += '<div class="acct" data-acct="menu">' + avatar(d) + '<div><div class="acct-name">' + esc(d.name || T('已登录')) + '</div><div class="acct-sub">' +
+        (d.bangumi ? T('已连接 Bangumi') + (d.bgmName ? T('（{0}）', esc(d.bgmName)) : '') : T('还没连接 Bangumi，连接后收藏、进度和评分会同步到你的 Bangumi 账号')) +
+        '</div></div><span class="acct-more">' + (menu ? T('收起') : T('管理')) + '</span></div>';
       if (menu && nick) {
-        h += '<form class="acct-nick" id="acct-nick"><input type="text" name="n" maxlength="20" autocomplete="off" placeholder="新昵称" value="' +
-          esc(d.nickname || '') + '"><button type="submit">保存</button></form>' +
-          '<p class="hint">6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线</p>';
+        h += '<form class="acct-nick" id="acct-nick"><input type="text" name="n" maxlength="20" autocomplete="off" placeholder="' + T('新昵称') + '" value="' +
+          esc(d.nickname || '') + '"><button type="submit">' + T('保存') + '</button></form>' +
+          '<p class="hint">' + T('6–20 个字符（汉字、假名算 2 个），只能用中日文、字母、数字和下划线') + '</p>';
       } else if (menu && em) {
         h += emailFlow(d);
       } else if (menu) {
-        h += '<div class="acct-menu"><button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + '修改昵称</button>' +
-          '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? '更换邮箱' : '绑定邮箱') + '</button>' +
-          '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + '退出登录</button></div>';
+        h += '<div class="acct-menu"><button type="button" class="ghost ic" data-acct="nick">' + window.ICONS.edit + T('修改昵称') + '</button>' +
+          '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>' +
+          '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + T('退出登录') + '</button></div>';
       }
     } else if (d.offline) {
-      h += '<p class="hint">电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。</p>';
+      h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
     } else {
-      h += '<p class="hint">电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。</p>';
+      h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      h += '<div class="acct-wait"><div class="now-status busy"><b>等待授权</b><span>在打开的 Bangumi 页面里同意授权，完成后回到这里就行</span></div>' +
-        (l.url ? '<p class="hint">授权页没打开？<a href="' + esc(l.url) + '" target="_blank" rel="noopener">点这里打开</a></p>'
-          : '<p class="hint">正在向服务器要授权链接…</p>') +
-        '<div class="row"><button type="button" class="ghost" data-acct="cancel">取消登录</button></div></div>';
+      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' + T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行') + '</span></div>' +
+        (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
+          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>') +
+        '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!full && !d.offline) {
-      if (l.state === 'failed') h += '<div class="now-status error"><b>上次登录没有完成</b><span>' + esc(l.message) + '</span></div>';
-      h += '<div class="row"><button type="button" class="primary" data-login="1">' + (d.loggedIn ? '用手机连接 Bangumi' : '用手机登录 Bangumi') +
-        '</button></div><p class="hint">在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。</p>';
+      if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
+      h += '<div class="row"><button type="button" class="primary" data-login="1">' + (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) +
+        '</button></div><p class="hint">' + T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。') + '</p>';
       // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
       if (!d.loggedIn) {
-        h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + '用邮箱登录 / 注册</button></div>';
+        h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
       }
     }
     h += '</div>';
@@ -4288,7 +4321,7 @@ private val ACCOUNT_SCRIPT = """
       return;
     }
     if (e.target.closest('[data-acct="logout"]')) {
-      if (!confirm('退出电视上的登录？\n\n退出后收藏同步、评分和评论都要重新登录才能用。')) return;
+      if (!confirm(T('退出电视上的登录？\n\n退出后收藏同步、评分和评论都要重新登录才能用。'))) return;
       post('api/account/logout', {}).then(function (r) { toast(r.message); menu = false; load(); }).catch(fail);
     }
   });
@@ -4343,60 +4376,60 @@ private val HELP_SCRIPT = """
     return '<div class="card help-card"><div class="set-title">' + t + '</div><ul class="help-list">' +
       items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div>';
   }
-  var SEARCH = sec('搜索', [
-    '输入关键词，按需要选排序、最低评分和标签，点「在电视上搜索」，电视会跳到搜索结果。',
-    '点搜索框会列出最近搜过的词：点一条直接搜，点 × 删掉这条记录。'
-  ]) + sec('结果', [
-    '列的是电视搜索页已经加载的结果，翻到底会自动加载更多。',
-    '点右边的封面（没有封面的点 ▶）：电视直接开始播放；点标题或其他地方：电视打开详情页。',
-    '右滑一行：缓存这部番；左滑：设置收藏状态。滑过一半松手直接执行。',
-    '电视离开了搜索页时，底部可以让它回到原来的搜索结果。'
+  var SEARCH = sec(T('搜索'), [
+    T('输入关键词，按需要选排序、最低评分和标签，点「在电视上搜索」，电视会跳到搜索结果。'),
+    T('点搜索框会列出最近搜过的词：点一条直接搜，点 × 删掉这条记录。')
+  ]) + sec(T('结果'), [
+    T('列的是电视搜索页已经加载的结果，翻到底会自动加载更多。'),
+    T('点右边的封面（没有封面的点 ▶）：电视直接开始播放；点标题或其他地方：电视打开详情页。'),
+    T('右滑一行：缓存这部番；左滑：设置收藏状态。滑过一半松手直接执行。'),
+    T('电视离开了搜索页时，底部可以让它回到原来的搜索结果。')
   ]);
-  var PLAYER = sec('播放卡', [
-    '点剧名：电视打开详情页（叠在播放器上，按返回回来）。',
-    '「第几集」那一行可以点开选集，打 ✓ 的是看过的。',
-    '点数据源胶囊：跳到下面正在播的那一条；右上角「缓存」：打开这部番的缓存面板。',
-    '播放 / 暂停、后退 / 前进 10 秒；拖进度条跳转，点时间可以直接输入要跳到哪。'
-  ]) + sec('数据源', [
-    '点一条就换成它播放；上面的胶囊可以只看某个源，下拉框按分辨率、字幕、字幕组筛。',
-    '弹幕、音轨与字幕、播放信息、评论与评分在下面可以展开的卡片里。',
-    '电视退出了播放器（播放还在后台留着）时也能换源，播放控制要回到播放器才能用。'
+  var PLAYER = sec(T('播放卡'), [
+    T('点剧名：电视打开详情页（叠在播放器上，按返回回来）。'),
+    T('「第几集」那一行可以点开选集，打 ✓ 的是看过的。'),
+    T('点数据源胶囊：跳到下面正在播的那一条；右上角「缓存」：打开这部番的缓存面板。'),
+    T('播放 / 暂停、后退 / 前进 10 秒；拖进度条跳转，点时间可以直接输入要跳到哪。')
+  ]) + sec(T('数据源'), [
+    T('点一条就换成它播放；上面的胶囊可以只看某个源，下拉框按分辨率、字幕、字幕组筛。'),
+    T('弹幕、音轨与字幕、播放信息、评论与评分在下面可以展开的卡片里。'),
+    T('电视退出了播放器（播放还在后台留着）时也能换源，播放控制要回到播放器才能用。')
   ]);
-  var CACHE = sec('缓存', [
-    '列出电视上的全部缓存，按番分组，下载中的会自动刷新；顶上是电视的剩余空间。',
-    '点击番名：在电视上打开详情页。点击右侧封面或 ▶：按观看进度继续播放（同详情页的播放按钮）。',
-    '点击某一集：在电视上播放这一集。',
-    '「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。',
-    '左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。',
-    '番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。',
-    '最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存。'
+  var CACHE = sec(T('缓存'), [
+    T('列出电视上的全部缓存，按番分组，下载中的会自动刷新；顶上是电视的剩余空间。'),
+    T('点击番名：在电视上打开详情页。点击右侧封面或 ▶：按观看进度继续播放（同详情页的播放按钮）。'),
+    T('点击某一集：在电视上播放这一集。'),
+    T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。'),
+    T('左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。'),
+    T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
+    T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存。')
   ]);
-  var GENERAL = sec('账号', [
-    '没登录时可以「用手机登录 Bangumi」（在手机上授权），或用邮箱登录 / 注册 Animeko 账号。',
-    '点头像或名字：修改昵称、绑定 / 更换邮箱、退出登录。'
-  ]) + sec('播放记录', [
-    '点右边的封面（或 ▶）：在电视上接着看，看完的播下一集；点其他地方：电视打开详情页。',
-    '右滑缓存，左滑删除，滑过一半松手直接执行；长按一行可以多选，一起删除。'
-  ]) + sec('其他', [
-    '「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；最底下可以下载电视的日志。'
+  var GENERAL = sec(T('账号'), [
+    T('没登录时可以「用手机登录 Bangumi」（在手机上授权），或用邮箱登录 / 注册 Animeko 账号。'),
+    T('点头像或名字：修改昵称、绑定 / 更换邮箱、退出登录。')
+  ]) + sec(T('播放记录'), [
+    T('点右边的封面（或 ▶）：在电视上接着看，看完的播下一集；点其他地方：电视打开详情页。'),
+    T('右滑缓存，左滑删除，滑过一半松手直接执行；长按一行可以多选，一起删除。')
+  ]) + sec(T('其他'), [
+    T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；最底下可以下载电视的日志。')
   ]);
-  var SOURCES = sec('数据源', [
-    '订阅：粘贴订阅地址添加，在线数据源都来自订阅；长按订阅可以多选删除。',
-    '数据源可以启用 / 停用、上下调整顺序、编辑、复制、导入导出；订阅来的源只能启用或停用。'
+  var SOURCES = sec(T('数据源'), [
+    T('订阅：粘贴订阅地址添加，在线数据源都来自订阅；长按订阅可以多选删除。'),
+    T('数据源可以启用 / 停用、上下调整顺序、编辑、复制、导入导出；订阅来的源只能启用或停用。')
   ]);
   function content() {
     var s = document.querySelector('section.tab:not([hidden])'), tab = s ? s.id.replace('tab-', '') : 'search';
-    if (tab === 'player') return ['播放器', PLAYER];
-    if (tab === 'cache') return ['缓存', CACHE];
+    if (tab === 'player') return [T('播放器'), PLAYER];
+    if (tab === 'cache') return [T('缓存'), CACHE];
     if (tab === 'settings') {
       var src = document.getElementById('set-sources');
-      return ['设置', src && !src.hidden ? SOURCES + GENERAL : GENERAL + SOURCES];
+      return [T('设置'), src && !src.hidden ? SOURCES + GENERAL : GENERAL + SOURCES];
     }
-    return ['搜索', SEARCH];
+    return [T('搜索'), SEARCH];
   }
   function open() {
     var c = content();
-    title.textContent = '使用说明 · ' + c[0];
+    title.textContent = T('使用说明 · {0}', c[0]);
     body.innerHTML = c[1];
     body.scrollTop = 0;
     window.sheets.open(sheet);
@@ -4422,41 +4455,41 @@ private val PICK_SCRIPT = """
   var box = document.getElementById('cl-pick'), sheet = document.getElementById('pick-sheet');
   var body = document.getElementById('pick-body'), seg = document.getElementById('pick-seg');
   var type = 'DOING', data = {}, loading = {};
-  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + '挑番缓存（在看 / 想看）</button>';
+  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + T('挑番缓存（在看 / 想看）') + '</button>';
   // 两段各一个容器, 切换只是显示 / 隐藏: 画好的那段原样留着, 切回来不重画、封面不重新淡入
   body.innerHTML = '<div class="pick-pane" data-pt="DOING"></div><div class="pick-pane" data-pt="WISH" hidden></div>';
   /** 读过的一段这么久之内切回来不重新请求 (打开面板 / 改了收藏 / 缓存面板关上时照样强制重读). */
   var FRESH = 60000;
   function row(x) {
     return window.swRow(
-      '<button type="button" class="sw-btn cache" data-cache="' + x.id + '" data-title="' + esc(x.title) + '">' + window.ICONS.download + '缓存</button>',
-      '<button type="button" class="sw-btn coll" data-coll="' + x.id + '">' + window.ICONS.star + '收藏</button>',
+      '<button type="button" class="sw-btn cache" data-cache="' + x.id + '" data-title="' + esc(x.title) + '">' + window.ICONS.download + T('缓存') + '</button>',
+      '<button type="button" class="sw-btn coll" data-coll="' + x.id + '">' + window.ICONS.star + T('收藏') + '</button>',
       '<div class="item res-item pick-item' + (x.cover ? ' cv' : '') + (x.blur ? ' nsfw-blur' : '') + '" data-sid="' + x.id + '">' +
       (x.cover ? window.coverLayers(x.cover) : '') +
       '<span class="t">' + esc(x.title) + '</span>' +
       (x.line ? '<span class="m' + (x.fresh ? ' pick-new' : '') + '">' + esc(x.line) + '</span>' : '') +
-      '<button type="button" class="res-play" aria-label="播放"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
+      '<button type="button" class="res-play" aria-label="' + T('播放') + '"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
   }
   function pane(t) { return body.querySelector('.pick-pane[data-pt="' + t + '"]'); }
   function paint(t) {
     var p = pane(t), d = data[t];
     if (!d) {
-      if (!p.querySelector('.list')) p.innerHTML = '<p class="hint">正在读取…</p>';
+      if (!p.querySelector('.list')) p.innerHTML = '<p class="hint">' + T('正在读取…') + '</p>';
       return;
     }
     if (!d.ok) {
-      p.innerHTML = '<div class="empty"><p>' + esc(d.message || '读取失败') + '</p>' +
-        (d.needLogin ? '<p class="hint">在「设置」里登录后再来</p>' : '') + '</div>';
+      p.innerHTML = '<div class="empty"><p>' + esc(d.message || T('读取失败')) + '</p>' +
+        (d.needLogin ? '<p class="hint">' + T('在「设置」里登录后再来') + '</p>' : '') + '</div>';
       return;
     }
     var items = d.items || [];
     if (!items.length) {
-      p.innerHTML = '<div class="empty"><p>' + (t === 'DOING' ? '没有在看的番' : '没有想看的番') + '</p></div>';
+      p.innerHTML = '<div class="empty"><p>' + (t === 'DOING' ? T('没有在看的番') : T('没有想看的番')) + '</p></div>';
       return;
     }
     var list = p.querySelector(':scope > .list');
     if (!list) {
-      p.innerHTML = '<p class="hint pick-stale" hidden>电视没连上服务器，下面是它上次同步的列表</p><div class="list"></div>';
+      p.innerHTML = '<p class="hint pick-stale" hidden>' + T('电视没连上服务器，下面是它上次同步的列表') + '</p><div class="list"></div>';
       list = p.querySelector(':scope > .list');
     }
     p.querySelector('.pick-stale').hidden = !d.stale;
@@ -4474,7 +4507,7 @@ private val PICK_SCRIPT = """
       if (!sheet.hidden) paint(t);
     }).catch(function () {
       loading[t] = false;
-      if (!data[t]) data[t] = { ok: false, message: '读取失败，关掉再打开试试' };
+      if (!data[t]) data[t] = { ok: false, message: T('读取失败，关掉再打开试试') };
       if (!sheet.hidden) paint(t);
     });
   }
@@ -4551,19 +4584,19 @@ private val HISTORY_SCRIPT = """
       if (!sheet.hidden) paintList();
     }).catch(function () {
       loading = false;
-      if (!sheet.hidden && !items) hb.innerHTML = '<p class="hint">读取播放记录失败，关掉再打开试试</p>';
+      if (!sheet.hidden && !items) hb.innerHTML = '<p class="hint">' + T('读取播放记录失败，关掉再打开试试') + '</p>';
     });
   }
   function paintEntry(list) {
     var n = list.length;
     entry.innerHTML = '<button type="button" class="card set-card hist-entry" data-hist="1">' + ICON +
-      '<span class="hist-txt"><b>播放记录</b><small>' + (n ? n + ' 部 · 最近看了「' + esc(list[0].title) + '」' : '还没有播放记录') +
+      '<span class="hist-txt"><b>' + T('播放记录') + '</b><small>' + (n ? T('{0} 部 · 最近看了「{1}」', n, esc(list[0].title)) : T('还没有播放记录')) +
       '</small></span><span class="hist-go">›</span></button>';
   }
   function paintList() {
-    if (!items) { hb.innerHTML = '<p class="hint">正在读取…</p>'; return; }
+    if (!items) { hb.innerHTML = '<p class="hint">' + T('正在读取…') + '</p>'; return; }
     if (!items.length) {
-      hb.innerHTML = '<div class="empty"><p>还没有播放记录</p><p class="hint">在电视上看过的番会按最近看的顺序列在这里</p></div>';
+      hb.innerHTML = '<div class="empty"><p>' + T('还没有播放记录') + '</p><p class="hint">' + T('在电视上看过的番会按最近看的顺序列在这里') + '</p></div>';
       return;
     }
     // 怎么用 (点封面接着看 / 滑动 / 长按多选) 在右上角「?」里, 第一行会自动滑开一次提示 (swPeek)
@@ -4572,14 +4605,14 @@ private val HISTORY_SCRIPT = """
       // 右滑露出「缓存」(打开这部番的缓存面板), 左滑露出「删除」(删掉这部番的播放记录)
       return window.swRow(
         '<button type="button" class="sw-btn cache" data-cache="' + x.id + '" data-title="' + esc(x.title) + '">' +
-          window.ICONS.download + '缓存</button>',
-        '<button type="button" class="sw-btn del" data-hdel="' + x.id + '">' + window.ICONS.trash + '删除</button>',
+          window.ICONS.download + T('缓存') + '</button>',
+        '<button type="button" class="sw-btn del" data-hdel="' + x.id + '">' + window.ICONS.trash + T('删除') + '</button>',
         '<div class="item hist-item' + (imgs.length ? ' cv' : '') + '" data-sid="' + x.id + '" data-lp="' + x.id + '">' +
         (imgs.length ? window.coverLayers(imgs) : '') + '<span class="sel-mark" aria-hidden="true"></span>' +
         '<div class="hist-main"><span class="t">' + esc(x.title) + '</span><span class="m">' + esc(x.line) + '</span>' +
         (x.percent != null ? '<div class="hist-bar"><div style="width:' + x.percent + '%"></div></div>' : '') +
         (x.time ? '<span class="hist-time">' + esc(x.time) + '</span>' : '') + '</div>' +
-        '<button type="button" class="res-play" aria-label="播放"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
+        '<button type="button" class="res-play" aria-label="' + T('播放') + '"><span class="play-glyph">' + window.ICONS.play + '</span></button></div>');
     }).join('') + '</div>';
     window.selSync(hb);
     window.swPeek(hb, 'hist');
@@ -4617,7 +4650,7 @@ private val HISTORY_SCRIPT = """
   hb.addEventListener('longpress', function (e) {
     window.selStart({
       box: hb,
-      ask: function (n) { return '删除选中的 ' + n + ' 部番的播放记录？电视上的播放历史也会一起删掉。'; },
+      ask: function (n) { return T('删除选中的 {0} 部番的播放记录？电视上的播放历史也会一起删掉。', n); },
       del: deleteSubjects
     }, e.target.getAttribute('data-lp'));
   });

@@ -80,7 +80,7 @@ internal object RemoteSettings {
             }
         }.getOrElse {
             logger.warn(it) { "Remote settings request failed: ${request.method} ${request.path}" }
-            result(false, "操作失败：${it.message ?: it::class.simpleName}")
+            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
         }
     }
 
@@ -118,7 +118,7 @@ internal object RemoteSettings {
 
     private fun setFilterSwitch(on: Boolean): JsonObject {
         runBlocking { settingsRepository.danmakuFilterConfig.update { copy(enableRegexFilter = on) } }
-        return result(true, if (on) "已启用弹幕屏蔽" else "已关闭弹幕屏蔽")
+        return result(true, if (on) tr("已启用弹幕屏蔽") else tr("已关闭弹幕屏蔽"))
     }
 
     /**
@@ -127,40 +127,40 @@ internal object RemoteSettings {
      */
     private fun addFilter(raw: String): JsonObject {
         val regex = raw.trim()
-        if (regex.isEmpty()) return result(false, "请输入要屏蔽的词")
+        if (regex.isEmpty()) return result(false, tr("请输入要屏蔽的词"))
         runCatching { Regex(regex, RegexOption.IGNORE_CASE) }.onFailure {
-            return result(false, "正则写法有误。只想按字屏蔽的话，特殊符号 ( ) [ ] . * + ? 前面加 \\")
+            return result(false, tr("正则写法有误。只想按字屏蔽的话，特殊符号 ( ) [ ] . * + ? 前面加 \\"))
         }
         val existing = runBlocking { danmakuFilters.flow.first() }
-        if (existing.any { it.regex == regex }) return result(false, "这条已经有了")
+        if (existing.any { it.regex == regex }) return result(false, tr("这条已经有了"))
         runBlocking { danmakuFilters.add(DanmakuRegexFilter(id = UUID.randomUUID().toString(), name = "", regex = regex, enabled = true)) }
-        return result(true, "已添加，立即生效")
+        return result(true, tr("已添加，立即生效"))
     }
 
     private fun toggleFilter(request: LanHttpRequest): JsonObject {
         val fields = request.formFields()
         val id = fields["id"].orEmpty()
         val on = fields["on"] == "1"
-        val current = runBlocking { danmakuFilters.flow.first() }.find { it.id == id } ?: return result(false, "找不到这条屏蔽词")
+        val current = runBlocking { danmakuFilters.flow.first() }.find { it.id == id } ?: return result(false, tr("找不到这条屏蔽词"))
         runBlocking { danmakuFilters.update(id, current.copy(enabled = on)) }
         return result(true, "")
     }
 
     /** 仓库按整个对象相等来删, 所以用刚读出来的那份 (手机上的可能已经过时). */
     private fun deleteFilter(id: String): JsonObject {
-        val current = runBlocking { danmakuFilters.flow.first() }.find { it.id == id } ?: return result(false, "找不到这条屏蔽词")
+        val current = runBlocking { danmakuFilters.flow.first() }.find { it.id == id } ?: return result(false, tr("找不到这条屏蔽词"))
         runBlocking { danmakuFilters.remove(current) }
-        return result(true, "已删除")
+        return result(true, tr("已删除"))
     }
 
     private fun saveProxy(request: LanHttpRequest): JsonObject {
         val fields = request.formFields()
-        val mode = ProxyUIMode.entries.firstOrNull { it.name == fields["mode"] } ?: return result(false, "无效的代理模式")
+        val mode = ProxyUIMode.entries.firstOrNull { it.name == fields["mode"] } ?: return result(false, tr("无效的代理模式"))
         val url = fields["url"].orEmpty().trim()
         val username = fields["username"].orEmpty().trim()
         val password = fields["password"].orEmpty()
         if (mode == ProxyUIMode.CUSTOM && !ClientProxyConfigValidator.isValidProxy(url)) {
-            return result(false, "代理地址格式不对，例如 http://192.168.1.2:7890 或 socks5://192.168.1.2:1080")
+            return result(false, tr("代理地址格式不对，例如 http://192.168.1.2:7890 或 socks5://192.168.1.2:1080"))
         }
         runBlocking {
             val old = settingsRepository.proxySettings.flow.first().toUIConfig()
@@ -178,10 +178,10 @@ internal object RemoteSettings {
         return result(
             true,
             when (mode) {
-                ProxyUIMode.DISABLED -> "已关闭代理"
+                ProxyUIMode.DISABLED -> tr("已关闭代理")
                 // 设置页在 Android 上同样不显示「检测到的系统代理」: 这一档在电视上取不到系统代理, 等于不用
-                ProxyUIMode.SYSTEM -> "已改为跟随系统（电视上通常等于不使用代理）"
-                ProxyUIMode.CUSTOM -> "已保存，立即生效"
+                ProxyUIMode.SYSTEM -> tr("已改为跟随系统（电视上通常等于不使用代理）")
+                ProxyUIMode.CUSTOM -> tr("已保存，立即生效")
             },
         )
     }
@@ -198,13 +198,13 @@ internal object RemoteSettings {
             val results = runBlocking {
                 scope.launch { tester.testRunnerLoop() }
                 withTimeoutOrNull(TEST_TIMEOUT) { tester.testResult.first { it.allCompleted() } }
-            } ?: return result(false, "测试超时")
+            } ?: return result(false, tr("测试超时"))
             return buildJsonObject {
                 put("ok", true)
-                put("message", if (results.anyFailed()) "部分服务连不上" else "全部连接正常")
+                put("message", if (results.anyFailed()) tr("部分服务连不上") else tr("全部连接正常"))
                 putJsonArray("items") {
                     for ((id, state) in results.idToStateMap) addJsonObject {
-                        put("name", SERVICE_NAMES[id] ?: id)
+                        put("name", SERVICE_NAMES[id]?.let { tr(it) } ?: id)
                         when (state) {
                             is TestState.Success -> {
                                 put("ok", true)
@@ -213,7 +213,7 @@ internal object RemoteSettings {
 
                             else -> {
                                 put("ok", false)
-                                put("text", "连接失败")
+                                put("text", tr("连接失败"))
                             }
                         }
                     }
@@ -228,9 +228,9 @@ internal object RemoteSettings {
         // 每行一个, 去掉空行与首尾空白; 与设置页同一个字段 (BT 下载开始前与内置 tracker 一起添加)
         val text = request.formFields()["text"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
         val bad = text.firstOrNull { line -> TRACKER_SCHEMES.none { line.startsWith(it, ignoreCase = true) } }
-        if (bad != null) return result(false, "这一行不像 tracker 地址：$bad")
+        if (bad != null) return result(false, tr("这一行不像 tracker 地址：{0}", bad))
         runBlocking { settingsRepository.anitorrentConfig.update { copy(extraTrackers = text.joinToString("\n")) } }
-        return result(true, if (text.isEmpty()) "已清空额外 tracker" else "已保存 ${text.size} 个 tracker，下次开始 BT 下载时生效")
+        return result(true, if (text.isEmpty()) tr("已清空额外 tracker") else tr("已保存 {0} 个 tracker，下次开始 BT 下载时生效", text.size))
     }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {

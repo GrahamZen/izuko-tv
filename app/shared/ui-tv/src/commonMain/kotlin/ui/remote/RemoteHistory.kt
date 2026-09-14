@@ -88,7 +88,7 @@ internal object RemoteHistory {
     private fun delete(request: LanHttpRequest): JsonObject {
         val fields = request.formFields()
         val ids = (fields["ids"] ?: fields["id"]).orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.distinct()
-        if (ids.isEmpty()) return result(false, "无效的条目")
+        if (ids.isEmpty()) return result(false, tr("无效的条目"))
         var name: String? = null
         // 已经删掉的番: 删完回读墓碑时间那一步超时的话, 用它们兜底记「删到哪一刻」
         var removed: List<Int> = emptyList()
@@ -106,20 +106,20 @@ internal object RemoteHistory {
             }
         }.getOrElse {
             logger.warn(it) { "Failed to delete remote history for subjects $ids" }
-            return result(false, "删除失败，请重试")
+            return result(false, tr("删除失败，请重试"))
         } ?: run {
-            if (removed.isEmpty()) return result(false, "删除超时，请重试")
+            if (removed.isEmpty()) return result(false, tr("删除超时，请重试"))
             // 已经删了, 只是回读超时: 不记的话墓碑会以「已看完」照旧列出来. 同一台机器, 此刻不早于墓碑时间
             logger.warn { "Remote history delete: re-read timed out after removal, hiding $removed at local time" }
             val now = System.currentTimeMillis()
             removed.associateWith { now }
         }
-        if (deletedAt.isEmpty()) return result(false, "播放记录里找不到" + (if (ids.size > 1) "这些番" else "这部番") + "，刷新一下再试")
+        if (deletedAt.isEmpty()) return result(false, if (ids.size > 1) tr("播放记录里找不到这些番，刷新一下再试") else tr("播放记录里找不到这部番，刷新一下再试"))
         hide(deletedAt)
         logger.info { "Remote history delete: subjects ${deletedAt.keys}" }
         val message = when {
-            ids.size > 1 -> "已删除 ${deletedAt.size} 部番的播放记录"
-            else -> name?.let { "已删除「$it」的播放记录" } ?: "已删除播放记录"
+            ids.size > 1 -> tr("已删除 {0} 部番的播放记录", deletedAt.size)
+            else -> name?.let { tr("已删除「{0}」的播放记录", it) } ?: tr("已删除播放记录")
         }
         return buildJsonObject {
             put("ok", true)
@@ -158,7 +158,7 @@ internal object RemoteHistory {
                 latestPerSubject().forEach { h ->
                     addJsonObject {
                         put("id", h.subjectId)
-                        put("title", h.subjectName?.takeIf { it.isNotBlank() } ?: "未知条目")
+                        put("title", h.subjectName?.takeIf { it.isNotBlank() } ?: tr("未知条目"))
                         put("line", progressLine(h))
                         if (!h.isDeleted) {
                             h.durationMillis?.takeIf { it > 0 }?.let { put("percent", (h.positionMillis * 100 / it).toInt().coerceIn(0, 100)) }
@@ -175,22 +175,22 @@ internal object RemoteHistory {
     }
 
     private fun open(request: LanHttpRequest, navigator: AniNavigator?, scope: CoroutineScope): JsonObject {
-        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val h = latestPerSubject().firstOrNull { it.subjectId == subjectId }
         TvRemoteControl.notifyRemoteNavigation()
         scope.launch(Dispatchers.Main) {
             runCatching { nav.navigateSubjectDetails(subjectId, h?.placeholder(subjectId)) }
                 .onFailure { logger.warn(it) { "Failed to open subject details from remote history" } }
         }
-        return result(true, h?.subjectName?.takeIf { it.isNotBlank() }?.let { "已在电视上打开「$it」" } ?: "已在电视上打开详情页")
+        return result(true, h?.subjectName?.takeIf { it.isNotBlank() }?.let { tr("已在电视上打开「{0}」", it) } ?: tr("已在电视上打开详情页"))
     }
 
     private fun play(request: LanHttpRequest, navigator: AniNavigator?, scope: CoroutineScope): JsonObject {
-        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, "无效的条目")
-        val nav = navigator ?: return result(false, "电视还没准备好")
+        val subjectId = request.formFields()["id"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val nav = navigator ?: return result(false, tr("电视还没准备好"))
         val latest = latestPerSubject().firstOrNull { it.subjectId == subjectId }
-            ?: return result(false, "播放记录里找不到这部番，刷新一下再试")
+            ?: return result(false, tr("播放记录里找不到这部番，刷新一下再试"))
         val title = latest.subjectName.orEmpty()
         val target = runCatching { runBlocking { TvUpNextStore.resolveTarget(latest) } }
             .onFailure { logger.warn(it) { "Failed to resolve what to play for remote history, subject $subjectId" } }
@@ -202,7 +202,7 @@ internal object RemoteHistory {
                 runCatching { nav.navigateSubjectDetails(subjectId, latest.placeholder(subjectId)) }
                     .onFailure { logger.warn(it) { "Failed to open subject details from remote history" } }
             }
-            return result(true, "「$title」没有能接着播的下一集，已在电视上打开详情页")
+            return result(true, tr("「{0}」没有能接着播的下一集，已在电视上打开详情页", title))
         }
         logger.info { "Remote history play: subject $subjectId episode ${target.episodeId} continuing=${target.continuing}" }
         // 电视正在播这部番时就地换集, 不再叠一个新的播放页 (见 TvRemoteControl.playEpisode)
@@ -210,12 +210,12 @@ internal object RemoteHistory {
             logger.warn(it) { "Failed to start playback from remote history" }
         }
         val name = target.subjectTitle.ifBlank { title }
-        val ep = if (target.episodeSort.isNotEmpty()) " 第 ${target.episodeSort} 话" else ""
+        val ep = if (target.episodeSort.isNotEmpty()) tr(" 第 {0} 话", target.episodeSort) else ""
         val msg = when (how) {
-            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> "电视正在播「$name」$ep"
-            TvRemoteControl.RemotePlayResult.Switched -> "已在电视上换到「$name」$ep"
+            TvRemoteControl.RemotePlayResult.AlreadyPlaying -> tr("电视正在播「{0}」{1}", name, ep)
+            TvRemoteControl.RemotePlayResult.Switched -> tr("已在电视上换到「{0}」{1}", name, ep)
             TvRemoteControl.RemotePlayResult.Opened ->
-                (if (target.continuing) "已在电视上接着播「$name」" else "已在电视上播放「$name」") + ep
+                (if (target.continuing) tr("已在电视上接着播「{0}」", name) else tr("已在电视上播放「{0}」", name)) + ep
         }
         return result(true, msg, player = true)
     }
@@ -225,10 +225,10 @@ internal object RemoteHistory {
 
     /** 「第 7 话 · 看到 12:34 / 23:40」/「第 7 话已看完」. */
     private fun progressLine(h: EpisodeHistory): String {
-        val ep = h.episodeSort?.let { "第 ${it.renderSort()} 话" } ?: h.episodeName?.takeIf { it.isNotBlank() } ?: "上次那一集"
-        if (h.isDeleted) return "${ep}已看完"
+        val ep = h.episodeSort?.let { tr("第 {0} 话", it.renderSort()) } ?: h.episodeName?.takeIf { it.isNotBlank() } ?: tr("上次那一集")
+        if (h.isDeleted) return tr("{0}已看完", ep)
         val duration = h.durationMillis?.takeIf { it > 0 }
-        return "$ep · 看到 ${h.positionMillis.clock()}" + (duration?.let { " / ${it.clock()}" } ?: "")
+        return tr("{0} · 看到 {1}", ep, h.positionMillis.clock()) + (duration?.let { " / ${it.clock()}" } ?: "")
     }
 
     /** 今天 / 昨天写到分钟, 更早的写日期 (跨年带年份). */
@@ -238,10 +238,10 @@ internal object RemoteHistory {
         val days = ChronoUnit.DAYS.between(t.toLocalDate(), now.toLocalDate())
         val hm = "%02d:%02d".format(t.hour, t.minute)
         return when {
-            days == 0L -> "今天 $hm"
-            days == 1L -> "昨天 $hm"
-            t.year == now.year -> "${t.monthValue}月${t.dayOfMonth}日"
-            else -> "${t.year}年${t.monthValue}月${t.dayOfMonth}日"
+            days == 0L -> tr("今天 {0}", hm)
+            days == 1L -> tr("昨天 {0}", hm)
+            t.year == now.year -> tr("{0}月{1}日", t.monthValue, t.dayOfMonth)
+            else -> tr("{0}年{1}月{2}日", t.year, t.monthValue, t.dayOfMonth)
         }
     }
 

@@ -1616,6 +1616,8 @@
     <string name="image_viewer_copied">圖片已複製</string>
     <string name="image_viewer_copy_failed">複製圖片失敗</string>
     <string name="image_viewer_close">關閉</string>
+    <!-- Web 控制台按这条判断 app 当前语言 (见 ui-tv RemoteI18n), 值是语言标记, 不要翻译 -->
+    <string name="remote_web_lang" translatable="false">zh-TW</string>
 </resources>
 
 <!--@formatter:on-->
