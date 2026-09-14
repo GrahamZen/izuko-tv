@@ -42,6 +42,17 @@ import androidx.compose.runtime.Composable
  */
 
 /**
+ * 退场中的界面 (淡出 / 收起 / 被切走但还在组合里) 吞掉按键, 返回类键 (返回 / Esc / 手柄 B) 放行.
+ *
+ * 退场动画期间子树仍在组合、焦点常常还停在它的按钮上, 此时按确认会点到看不见的东西 (2026-09-14 用户: 详情页按返回、
+ * 淡出途中立刻按确认, 进了播放). 按下与抬起一起吞 —— clickable 在抬起时才触发点击. 返回放行: 退场途中连按返回照常逐层退.
+ * [leaving] 只在按键时读, 不进重组与绘制, 没有每帧开销.
+ */
+fun Modifier.tvSwallowKeysWhenLeaving(leaving: () -> Boolean): Modifier = onPreviewKeyEvent {
+    leaving() && it.key != Key.Back && it.key != Key.Escape && it.key != Key.ButtonB
+}
+
+/**
  * 标注本节点为 [key] 锚点: 挂 FocusRequester + **节点附着/脱离上报** (事件驱动送焦的
  * 核心: 悬挂中的 request 在锚点附着瞬间送达, 见 [TvFocusScope]) + 焦点得失上报.
  *
