@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -1592,6 +1593,8 @@ fun TvEpisodeScreenContent(
                                         // 确认键 (控制层那条 `if (!isKeyDown) return false` 会把所有 KeyUp
                                         // 放行给持焦控件), 少一条就漏
                                         .consumeHeldConfirmKey()
+                                        // 提示已经没了、按钮还在淡出: 吞掉按键, 免得用旧内容再取消 / 跳过一次 (2026-09-14 审查)
+                                        .tvSwallowKeysWhenLeaving { vm.playerSkipOpEdState.currentTip == null }
                                         .tvFocusAnchor(focus, TvEpisodeFocus.SKIP_TIP)
                                         .onFocusChanged {
                                             skipTipFocused = it.hasFocus
@@ -1636,7 +1639,9 @@ fun TvEpisodeScreenContent(
                             onClose = { overlay.hideAll() },
                             onExitUpToStrip = { overlay.returnToEpisodeStrip() },
                             onContentComposedChanged = { overlay.detailsContentComposed = it },
-                            modifier = Modifier.matchParentSize(),
+                            // 层已切走、还在淡出时吞掉按键: 选集条接到焦点前的一两帧里, 确认键会点中淡出中的简介块等 (2026-09-14 审查)
+                            modifier = Modifier.matchParentSize()
+                                .tvSwallowKeysWhenLeaving { overlay.layer != TvPlayerLayer.DETAILS },
                         )
                     }
                 }
