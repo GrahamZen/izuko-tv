@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -76,7 +77,11 @@ fun <T : Any> rememberPageForegroundNavEntryDecorator(backStack: List<T>): NavEn
                         val covered = TvHeroZoomHandoff.covering ||
                                 TvHeroZoomHandoff.coverEntryKey?.let { it == topKey.value } == true
                         alpha = if (covered && !isForeground.value) 0f else 1f
-                    },
+                    }
+                        // 不在栈顶的页 (退场淡出中 / 刚被新页盖住) 吞掉按键, 返回类键除外: 转场期间它还在组合里, 焦点常常还停在
+                        // 它的按钮上, 按确认会点到看不见的东西 (2026-09-14 用户: 详情页按返回、淡出途中立刻按确认, 进了播放).
+                        // 返回 / Esc / 手柄 B 放行: 转场中连按返回照常逐层退 (见 tvSwallowKeysWhenLeaving)
+                        .tvSwallowKeysWhenLeaving { !isForeground.value },
                     propagateMinConstraints = true,
                 ) {
                     entry.Content()

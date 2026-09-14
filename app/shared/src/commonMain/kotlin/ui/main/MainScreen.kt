@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.material3.LocalContentColor
@@ -281,6 +282,9 @@ private fun MainScreenNavigationLayout(
             // 向左出血到侧边栏底下, 默认裁剪会把出血切掉; 三个 tab 都是 fillMaxSize 等大,
             // 不依赖尺寸过渡裁剪. 非沉浸壳 (手机/桌面) 保持默认.
             val immersiveShell = LocalAniUiBehavior.current.immersiveShell
+            // 切走的 tab 还要淡出一会儿, 期间焦点常还在它的卡片上 (新 tab 首帧组合重, 送焦要等几帧): 吞掉按键,
+            // 免得返回后立刻按确认点开一张看不见的卡片 (2026-09-14 审查). 按键时读最新的当前页
+            val currentPage by rememberUpdatedState(page)
             AnimatedContent(
                 page,
                 Modifier.fillMaxSize(),
@@ -292,6 +296,7 @@ private fun MainScreenNavigationLayout(
                     }
                 },
             ) { page ->
+                Box(Modifier.tvSwallowKeysWhenLeaving { page != currentPage }, propagateMinConstraints = true) {
                 when (page) {
                     MainScreenPage.Exploration -> {
                         ExplorationScreen(
@@ -340,6 +345,7 @@ private fun MainScreenNavigationLayout(
                             windowInsets = pageWindowInsets,
                         )
                     }
+                }
                 }
             }
         }

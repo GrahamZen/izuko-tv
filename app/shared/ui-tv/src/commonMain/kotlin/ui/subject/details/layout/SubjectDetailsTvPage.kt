@@ -1780,7 +1780,9 @@ private fun TvHeroTagsWall(
             }
         }
         TvTagsMenu(
-            expanded = browseMode,
+            // 只在本页是栈顶时展开: 点菜单里的标签跳搜索页后 browseMode 仍为真 (返回要照原样恢复), 而菜单是独立的可聚焦
+            // 窗口, 不关的话一直盖在搜索页上吃按键, 按确认又点一个标签 (2026-09-14 审查). 返回后本页回到栈顶, 菜单照原样展开
+            expanded = browseMode && LocalPageIsForeground.current.value,
             tags = tags,
             onClickTag = onClickTag,
             initialFocusIndex = if (restorePending && focusedTagIndex >= 0) focusedTagIndex else 0,

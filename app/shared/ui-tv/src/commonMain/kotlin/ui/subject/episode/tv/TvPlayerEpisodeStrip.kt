@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -303,6 +304,8 @@ internal fun TvPlayerEpisodeStrip(
             .fillMaxWidth()
             .padding(top = 14.dp)
             .onFocusChanged { if (it.hasFocus) overlay.focusRegion = TvPlayerFocusRegion.EPISODES }
+            // 收起滑出的 250ms 里焦点可能还在卡片上 (图标行要等重组才接焦): 吞掉按键, 免得短按换集 (2026-09-14 审查)
+            .tvSwallowKeysWhenLeaving { !stripVisible.targetState }
             .focusGroup(),
     ) {
         // 卡宽由屏宽反推: 左右各留页面边距, 一行正好 TV_STRIP_VISIBLE_CARDS 张完整卡
