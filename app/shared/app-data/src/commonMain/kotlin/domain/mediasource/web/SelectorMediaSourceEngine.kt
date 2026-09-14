@@ -259,6 +259,8 @@ abstract class SelectorMediaSourceEngine {
     ): List<DefaultMedia> {
         val parser = LabelFirstRawTitleParser()
         return episodeList.mapNotNull { info ->
+            // 有的站点把 `javascript:` 占位按钮也列进剧集里. WebVideo 只收 http/https, 否则抛异常让整个源作废: 只跳过这一集.
+            if (!info.playUrl.startsWith("https://") && !info.playUrl.startsWith("http://")) return@mapNotNull null
             val episodeSort = episodeList.matchingEpisodeSortOf(info, query.episodeSort, query.episodeEp, query.episodeName)
                 ?: return@mapNotNull null
             if (!keep(episodeSort)) return@mapNotNull null
