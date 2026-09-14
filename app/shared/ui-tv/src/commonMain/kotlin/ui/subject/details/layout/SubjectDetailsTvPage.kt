@@ -540,8 +540,10 @@ fun SubjectDetailsTvPage(
     // 关联 + 评价. 2026-09-10 追踪接手那一帧 262ms, 大半是首屏看不见的区块; 只推迟一帧的话仍是一整帧 80~125ms, 正撞在
     // "停稳后第一下按键"上 (用户要停稳即可操作). 分三帧后 UI 出现后 300ms 内最长帧 39~47ms (2026-09-13 Shield AOT).
     // 这些区块都在首屏之下, 晚几帧出现看不见; 角色区没轮到时先放等高骨架, 布局不跳. 只在放大进来时这么做 (常规进页照旧一次组合)
+    // 区块组合出来之前按的下键由首屏信息带扣住, 选集页出来再把焦点送过去 (focusEpisodesWhenReady)
     var sectionsReady by remember { mutableStateOf(!enteredWithZoom) }
     var sectionsStage by remember { mutableStateOf(if (enteredWithZoom) 0 else 3) }
+    var focusEpisodesWhenReady by remember { mutableStateOf(false) }
     LaunchedEffect(revealed) {
         if (!revealed || sectionsReady) return@LaunchedEffect
         withFrameNanos { }
@@ -798,6 +800,32 @@ fun SubjectDetailsTvPage(
     // 网格菜单关闭后轮播要跳到的集 (菜单里最后聚焦的那格)
     var revealEpisodeId by remember { mutableStateOf<Int?>(null) }
 
+    // 区块没组合时按的那一下下键 (见 sectionsReady): 选集页组合出来后把焦点送过去. 走锚点调度 (等目标附着再送), 不是直接 requestFocus
+    val latestEpisodesEmpty by rememberUpdatedState(episodes.isEmpty())
+    LaunchedEffect(Unit) {
+        snapshotFlow { focusEpisodesWhenReady && sectionsStage >= 1 }.first { it }
+        focusEpisodesWhenReady = false
+        anchors.request(
+            if (videoBackground || latestEpisodesEmpty) TvDetailsFocusAnchor.EPISODES_SUMMARY
+            else TvDetailsFocusAnchor.EPISODES_CAROUSEL,
+        )
+    }
+    // 选集页预画: 区块都组合完、再静一会儿 (TV_DETAILS_PREWARM_DELAY_MILLIS) 且页面还停在首屏时, 把选集页在可见范围里以 1% 不透明度画两帧.
+    // 屏外的区块 HWUI 整块跳过, 从没画过; 冷启动后第一次往下翻时, 录制绘制命令与 GPU 第一次提交都挤在滚动开头 (2026-09-14 Sony 实测
+    // 每轮停 1~2 次, 主线程每帧 14~18ms + 渲染线程提交 8~17ms). 预画把这笔挪到画面静止、没人按键的时候
+    var episodesPrewarm by remember { mutableStateOf(false) }
+    var episodesTopInRoot by remember { mutableFloatStateOf(Float.NaN) }
+    LaunchedEffect(Unit) {
+        if (videoBackground) return@LaunchedEffect
+        snapshotFlow { revealed && sectionsStage >= 3 }.first { it }
+        delay(TV_DETAILS_PREWARM_DELAY_MILLIS)
+        if (scrollState.value != 0 || scrollState.isScrollInProgress) return@LaunchedEffect // 用户已经往下走了, 用不着
+        episodesPrewarm = true
+        withFrameNanos { }
+        withFrameNanos { }
+        episodesPrewarm = false
+    }
+
     BoxWithConstraints(
         modifier.tvImageZoomKeys(imageZoom).tvFocusNavSignal(anchors)
             // 见上方"整页焦点丢了就立刻自己补"
@@ -1035,6 +1063,13 @@ fun SubjectDetailsTvPage(
                 },
                 // 占满首屏, 信息带贴底
                 modifier = Modifier.height(heroHeight)
+                    // 首屏以下区块还没组合 (见 sectionsReady) 时按下键: 扣住这一下, 选集页组合出来再送焦点过去 ——
+                    // sectionNav 往下送焦点是直接 requestFocus, 目标还不存在时这一下会被静默吞掉
+                    .onPreviewKeyEvent {
+                        if (sectionsReady || it.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                        if (it.type == KeyEventType.KeyDown) focusEpisodesWhenReady = true
+                        true
+                    }
                     // 焦点回到 Hero 信息带时滚回页面顶部, 否则标题永远滚不回来
                     // (滚动仅由焦点元素的 BringIntoView 驱动, 而标题不可聚焦)
                     .onFocusChanged {
@@ -1103,6 +1138,17 @@ fun SubjectDetailsTvPage(
                 scrollState,
                 EPISODES_PAGE_VERTICAL_MARGIN,
                 onFocused = { backLevelOrdinal = TvDetailsSection.EPISODES.ordinal },
+                modifier = Modifier
+                    .onGloballyPositioned { episodesTopInRoot = it.positionInRoot().y }
+                    // 预画 (见 episodesPrewarm): 绘制阶段把整块挪进可见范围、1% 不透明度. 只动图层属性, 不触发布局, 焦点与测量不受影响;
+                    // ModulateAlpha 不开离屏, 与正常显示时是同一套绘制指令 (预热的正是它们)
+                    .graphicsLayer {
+                        if (episodesPrewarm && !episodesTopInRoot.isNaN()) {
+                            translationY = -episodesTopInRoot
+                            alpha = 0.01f
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                        }
+                    },
             ) {
             // 选集整页: 上半 = 完整标题 + 简介 (截断, 占满剩余高度) + 右侧竖版封面,
             // 下半 = 选集轮播; 合起来正好一屏 (上下留 EPISODES_PAGE_VERTICAL_MARGIN).
@@ -1181,6 +1227,8 @@ fun SubjectDetailsTvPage(
                             .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                             .clip(RoundedCornerShape(16.dp)),
                         contentScale = ContentScale.Crop,
+                        // 选集页在首屏之下: 图一到就预传 GPU, 免得冷启动后第一次往下翻时当场上传 (同选集卡剧照)
+                        onSuccess = { it.bitmap?.prepareToDraw() },
                     )
                 }
             }
@@ -2056,6 +2104,7 @@ private fun SnapOnFocusSection(
      * 焦点"不在页面任何地方"是一个独立状态 (弹窗是独立窗口), 现读会把它误判成"在别的层".
      */
     onFocused: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     // 区块顶在滚动内容坐标系中的 y: 实测屏幕位置 + 当前滚动量 (NaN = 尚未测过)
@@ -2130,7 +2179,7 @@ private fun SnapOnFocusSection(
         }
     }
     Box(
-        Modifier
+        modifier
             .onGloballyPositioned {
                 // 前提: 滚动视口顶 == root y0 (TV 全屏无顶栏/insets, 成立).
                 // 若将来给页面加顶部 padding, 此处需改为减去实测的视口顶 y
@@ -2691,6 +2740,9 @@ private const val TV_HERO_ZOOM_HANDOFF_GRACE_MILLIS = 500L
  * 否则这 250ms 里文字是黑的、底缘透出旧图, 接手那一帧一起跳 (2026-09-14). 首屏以下的区块比同图放大晚这么久.
  */
 private const val TV_HERO_ZOOM_CROSS_IMAGE_FADE_MILLIS = 250
+
+/** 首屏以下区块组合完后再等这么久才预画选集页 (见真页 episodesPrewarm): 让首批数据到达的那几次重组先过去, 挑画面真正静止的时候. */
+private const val TV_DETAILS_PREWARM_DELAY_MILLIS = 400L
 
 /** 放大期间羽化矩形越过图的边多画的屏幕像素: 盖住图边缘那一排半覆盖的像素 (见 TvHeroBackdrop). */
 private const val TV_HERO_ZOOM_FEATHER_OUTSET_PX = 2f
