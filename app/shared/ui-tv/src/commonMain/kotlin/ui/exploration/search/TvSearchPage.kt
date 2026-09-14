@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.exploration.search
 
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedContent
 import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import androidx.compose.animation.core.tween
@@ -464,6 +465,9 @@ fun TvSearchPage(
                 },
                 label = "searchMode",
             ) { results ->
+                // 切走的那一面淡出 500ms 期间焦点常还在它上面 (结果面板要等首页数据才送焦): 吞掉按键, 免得在看不见的候选 /
+                // 历史上按确认又提交一次、在搜索框上按确认弹出输入法 (2026-09-14 审查)
+                Box(Modifier.tvSwallowKeysWhenLeaving { results != showResults }, propagateMinConstraints = true) {
                 if (results) {
                     TvSearchResultsPane(
                         state = state,
@@ -495,6 +499,7 @@ fun TvSearchPage(
                         onRemoveHistory = { onIntent(SearchPageIntent.RemoveHistory(it)) },
                         onClearHistory = { onIntent(SearchPageIntent.ClearHistory) },
                     )
+                }
                 }
             }
         }
