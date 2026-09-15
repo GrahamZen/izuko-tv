@@ -9,6 +9,10 @@
 
 package me.him188.ani.app.ui.remote
 
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -57,6 +62,8 @@ import me.him188.ani.app.ui.lang.tv_remote_qr_hint
 import me.him188.ani.app.ui.lang.tv_remote_qr_ip_changed
 import me.him188.ani.app.ui.lang.tv_remote_qr_ip_changed_hint
 import me.him188.ani.app.ui.lang.tv_remote_qr_waiting
+import me.him188.ani.app.ui.lang.tv_remote_qr_troubleshoot
+import me.him188.ani.app.ui.lang.tv_remote_qr_troubleshoot_vpn
 import org.jetbrains.compose.resources.stringResource
 
 /** TV 根组合里调一次: 启动时 [TvRemoteControl.showDialogOnLaunch] 之后在这里画弹窗. */
@@ -108,6 +115,10 @@ fun TvRemoteQrCard(containerColor: Color, modifier: Modifier = Modifier) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (url != null && !phoneConnected && !hostChanged) {
+                Spacer(Modifier.height(4.dp))
+                RemoteTroubleshootHint(MaterialTheme.typography.labelSmall, TextAlign.Center)
+            }
             // 最底下一行地址: 扫不了码 (相机坏了 / 用电脑) 时照着输入, 或者核对手机书签是不是这个. 地址约 36 字,
             // 卡片这么窄会折成两行, 不省略 —— 省掉一截就输不对了
             url?.let {
@@ -175,6 +186,10 @@ fun TvRemoteControlDialog(onDismissRequest: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                     )
+                    if (url != null && !phoneConnected && !hostChanged) {
+                        Spacer(Modifier.height(8.dp))
+                        RemoteTroubleshootHint(MaterialTheme.typography.bodySmall)
+                    }
                     Spacer(Modifier.height(20.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onDismissRequest, Modifier.focusRequester(closeFocus)) {
@@ -230,6 +245,28 @@ private fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
     }
 }
 
+/**
+ * 还没有手机连上时码下面的排障一句: 扫了码打不开, 最常见是手机没连同一个 Wi-Fi, 或手机开着 VPN 没「绕过局域网」
+ * (请求被收进隧道, 到不了电视). 电视自己开着 VPN (用户多半手机也开着) 时换成更具体、更醒目的一句. 几秒查一次, VPN 开关随时跟上.
+ */
+@Composable
+private fun RemoteTroubleshootHint(style: TextStyle, textAlign: TextAlign? = null) {
+    val vpn by produceState(false) {
+        while (true) {
+            value = withContext(Dispatchers.IO) { TvRemoteControl.tvVpnActive() }
+            delay(3.seconds)
+        }
+    }
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        stringResource(if (vpn) Lang.tv_remote_qr_troubleshoot_vpn else Lang.tv_remote_qr_troubleshoot),
+        style = style,
+        color = if (vpn) scheme.tertiary else scheme.onSurfaceVariant,
+        textAlign = textAlign,
+        modifier = if (textAlign != null) Modifier.fillMaxWidth() else Modifier,
+    )
+}
+
 /** 状态点 + 两三个字 (已连接 绿 / 等待连接 灰 / IP 已变 红); 没有地址时不画 (码的位置已经写着「未连接到局域网」). */
 @Composable
 private fun RemoteConnectionStatus(url: String?, hostChanged: Boolean, phoneConnected: Boolean, style: TextStyle) {
@@ -253,10 +290,16 @@ private val CARD_QR_SIZE = 128.dp
 private val CARD_QR_QUIET_ZONE = 18.dp
 private val CARD_PADDING = 16.dp
 
-/** 启动弹窗: 码 180dp + 留白 24dp (≥ 4 模块); 弹窗 600dp 宽, 右栏约 300dp, 地址折一两行. */
-private val LAUNCH_QR_SIZE = 180.dp
+/**
+ * 启动弹窗: 码 210dp + 留白 24dp (≥ 4 模块); 弹窗 700dp 宽, 右栏约 360dp.
+ *
+ * 右栏太窄会把说明折成五六段, 那一列比码高出一大截 —— 码在 Row 里垂直居中, 于是上下空隙明显大过左右的
+ * 28dp padding, 看着不齐. 所以宽度按"右栏够放下地址和说明"定, 不是按码的大小定; 但也不能一味加宽,
+ * 弹窗本身在电视上会显得空 (720dp 试过, 太宽).
+ */
+private val LAUNCH_QR_SIZE = 210.dp
 private val LAUNCH_QR_QUIET_ZONE = 24.dp
-private val LAUNCH_DIALOG_WIDTH = 600.dp
+private val LAUNCH_DIALOG_WIDTH = 650.dp
 
 /** 「已连接」的绿: 深色主题上用亮一些的, 浅色主题上用深一些的, 两边与卡片底色都有足够对比. */
 private val CONNECTED_GREEN_DARK = Color(0xFF6DD58C)
