@@ -1324,6 +1324,8 @@
     <string name="tv_remote_qr_waiting">等待連接</string>
     <string name="tv_remote_qr_ip_changed">IP 已變</string>
     <string name="tv_remote_qr_hint">手機掃碼，或在電腦瀏覽器開啟下方地址</string>
+    <string name="tv_remote_qr_troubleshoot">打不開？手機要和電視連同一個 Wi-Fi；手機開著 VPN 的話，請在 VPN 裡開啟「繞過局域網」或先關閉</string>
+    <string name="tv_remote_qr_troubleshoot_vpn">檢測到電視開著 VPN。掃碼後打不開的話，先在手機 VPN 裡開啟「繞過局域網」（或關掉手機 VPN）；仍不行再關掉電視上的 VPN</string>
     <string name="tv_remote_qr_ip_changed_hint">電視 IP 變了，請重新掃碼</string>
     <string name="settings_theme_tv_remote_reset">重設 Web 控制台地址</string>
     <string name="settings_theme_tv_remote_reset_description">換一個新地址，之前掃碼開啟的頁面和書籤都會失效，要重新掃碼</string>

@@ -74,7 +74,20 @@ class LanHttpServer(
     val token: String = token ?: generateToken()
 
     // 接受循环只管收, 不会被处理拖住; 队列留些余量: 手机网页同时有两路轮询 + 提交, 浏览器还会预连接
-    private val serverSocket = ServerSocket(port, BACKLOG)
+    // 先开 SO_REUSEADDR 再绑: 「重置地址」关掉旧服务后马上重开同一个固定端口, 不开的话旧连接还挂在 TIME_WAIT 时绑不上,
+    // 只能退到随机端口, 手机上存的书签随之失效 (用户日志里连按几次重置, 端口变成 39105 / 38541)
+    private val serverSocket = ServerSocket().also { s ->
+        try {
+            s.reuseAddress = true
+            s.bind(InetSocketAddress(port), BACKLOG)
+        } catch (e: IOException) {
+            runCatching { s.close() }
+            throw e
+        }
+    }
+
+    /** 连过来过的对端 IP: 每个第一次来时记一行 (扫码连不上时分得清「根本没到」还是「从别的网段来的」). */
+    private val seenClients: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private val clients: MutableSet<Socket> = Collections.synchronizedSet(HashSet())
 
@@ -163,6 +176,9 @@ class LanHttpServer(
     }
 
     private fun dispatch(client: Socket) {
+        client.inetAddress?.hostAddress?.let { ip ->
+            if (seenClients.add(ip)) logger.info { "LAN http port $port: first connection from $ip" }
+        }
         val record = InFlight(requestSeq.incrementAndGet(), System.nanoTime())
         clients += client
         inFlight[record.id] = record
@@ -585,7 +601,8 @@ fun String.escapeHtml(): String = buildString(length) {
  *
  * 优先私网段 (家用路由器分的就是这种) 且 wlan / eth 排前面: 有的盒子还挂着 VPN、热点、虚拟接口
  * 的地址, 拿到那种手机连不上. 链路本地 (169.254.x.x) 是没拿到 DHCP 的兜底地址, 也不算.
- * IPv6-only 网络不考虑.
+ * VPN / 隧道 / 移动数据 / Wi-Fi 直连这类网卡 ([isVirtualInterface]) 直接跳过: VPN 的虚拟地址常是 172.19.x / 10.x 这种私网段,
+ * 而有的电视的 Wi-Fi 网卡不叫 wlan (排不到前面), 电视一开 VPN 就可能把它写进二维码. IPv6-only 网络不考虑.
  */
 fun findLanAddress(): String? {
     val interfaces = try {
@@ -594,7 +611,7 @@ fun findLanAddress(): String? {
         return null
     } ?: return null
     return interfaces
-        .filter { it.isUp && !it.isLoopback }
+        .filter { it.isUp && !it.isLoopback && !isVirtualInterface(it.name) }
         .flatMap { nif -> nif.inetAddresses.toList().filterIsInstance<Inet4Address>().map { nif.name to it } }
         .filter { (_, address) -> !address.isLinkLocalAddress && !address.isLoopbackAddress }
         .sortedWith(compareBy({ (_, address) -> !address.isSiteLocalAddress }, { (name, _) -> interfacePriority(name) }))
@@ -602,6 +619,24 @@ fun findLanAddress(): String? {
         ?.second
         ?.hostAddress
 }
+
+/** 日志用: 在用的 IPv4 网卡一览 (`wlan0=192.168.31.174, tun0=172.19.0.1 (skipped)`), 排查扫码连不上时看选的是哪张. */
+fun lanInterfacesSummary(): String = runCatching {
+    NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+        .filter { it.isUp && !it.isLoopback }
+        .flatMap { nif ->
+            nif.inetAddresses.toList().filterIsInstance<Inet4Address>()
+                .map { nif.name + "=" + it.hostAddress + if (isVirtualInterface(nif.name)) " (skipped)" else "" }
+        }
+        .joinToString(", ")
+        .ifEmpty { "none" }
+}.getOrElse { "unavailable: $it" }
+
+/** VPN / 隧道 (tun / ppp / WireGuard / IPsec)、移动数据 (rmnet / ccmni)、464XLAT (clat / v4-)、Wi-Fi 直连 (p2p) 等手机连不到的网卡. */
+private fun isVirtualInterface(name: String): Boolean =
+    VIRTUAL_INTERFACE_PREFIXES.any { name.startsWith(it) }
+
+private val VIRTUAL_INTERFACE_PREFIXES = listOf("tun", "tap", "ppp", "wg", "ipsec", "utun", "clat", "v4-", "dummy", "rmnet", "ccmni", "p2p")
 
 private fun interfacePriority(name: String): Int = when {
     name.startsWith("wlan") -> 0
