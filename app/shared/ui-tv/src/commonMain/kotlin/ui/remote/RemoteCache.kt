@@ -36,6 +36,8 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.data.repository.media.rememberSearchNames
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
@@ -48,6 +50,7 @@ import me.him188.ani.app.domain.media.cache.requester.trySelectSingle
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.awaitCompletion
+import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.resolver.toEpisodeMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
@@ -55,9 +58,12 @@ import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.tools.getOrZero
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
+import me.him188.ani.app.ui.mediafetch.request.toEditingMediaFetchRequest
+import me.him188.ani.app.ui.mediafetch.request.toMediaFetchRequestOrNull
 import me.him188.ani.app.ui.remote.RemoteCandidates.putCandidates
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -103,6 +109,7 @@ internal object RemoteCache {
     private val cacheManager: MediaCacheManager get() = KoinPlatform.getKoin().get()
     private val sourceManager: MediaSourceManager get() = KoinPlatform.getKoin().get()
     private val episodePreferences: EpisodePreferencesRepository get() = KoinPlatform.getKoin().get()
+    private val selectorCache: SelectorMediaSourceEpisodeCacheRepository get() = KoinPlatform.getKoin().get()
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
 
     /** 手机上正在挑资源的那一集. */
@@ -177,6 +184,7 @@ internal object RemoteCache {
                 request.path == "api/cache/pick" -> pick(request)
                 request.path == "api/cache/pack" -> pack(request)
                 request.path == "api/cache/auto" -> auto(request)
+                request.path == "api/cache/names" -> names(request)
                 request.path == "api/cache/close" -> {
                     close()
                     result(true, "")
@@ -280,6 +288,16 @@ internal object RemoteCache {
         return buildJsonObject {
             put("ok", true)
             put("loading", sources.any { it.state.value.let { st -> st == MediaSourceFetchState.Working || st == MediaSourceFetchState.Idle } })
+            // 选资源页的「搜索名」(见 names): 当前这次查询用的条目名, 与 Bangumi 名字不同就是改过的
+            runBlocking { withTimeoutOrNull(STATUS_TIMEOUT) { b.stage.fetchSession.request.first() } }?.let { req ->
+                val editing = req.toEditingMediaFetchRequest()
+                put("primary", editing.primaryName)
+                putJsonArray("others") { editing.complementaryNames.forEach { add(it) } }
+                put("sort", editing.episodeSort)
+                put("ep", editing.episodeEp)
+                val d = defaultRequest(b)
+                put("edited", req.subjectNames != d.subjectNames || req.episodeSort != d.episodeSort || req.episodeEp != d.episodeEp)
+            }
             putJsonArray("sources") {
                 for (s in sources) addJsonObject {
                     put("id", s.mediaSourceId)
@@ -321,6 +339,60 @@ internal object RemoteCache {
         synchronized(lock) { browse = b }
         startWatchdog()
         return b
+    }
+
+    /** 这一集由 Bangumi 信息生成、未套用改过的搜索名的请求 (「恢复 Bangumi 名称」回到它). */
+    private fun defaultRequest(b: Browse) = MediaFetchRequest.create(b.stage.request.subjectInfo, b.stage.request.episodeInfo)
+
+    /**
+     * 选资源页的「搜索名与集数」: 改数据源搜索用的条目名 (主搜索名 + 次要名), 按条目记住 —— 同播放器的编辑查询请求, 这部番以后
+     * 缓存和播放都用; 集数 (系列内序号 / 条目内序号) 只作用于这一集这次查询, 不记. 缓存记录按剧集 ID 挂在这一集上, 集数只决定
+     * 搜什么、以及 BT 合集里挑哪个文件 (TorrentMediaCacheEngine 按记录里的集数挑), 合集编号与 Bangumi 不同 (第二季从 13 开始)
+     * 时要改它. 当前这一集立刻重搜. `reset=1` = 名字与集数都回到 Bangumi 的 (删掉名字记录).
+     */
+    private fun names(request: LanHttpRequest): JsonObject {
+        val f = request.formFields()
+        val subjectId = f["subject"]?.toIntOrNull() ?: return result(false, tr("无效的条目"))
+        val episodeId = f["episode"]?.toIntOrNull() ?: return result(false, tr("无效的剧集"))
+        val b = synchronized(lock) { browse }?.takeIf { it.subjectId == subjectId && it.episode.episodeId == episodeId }
+            ?: return result(false, tr("列表已过期，请重新打开这一集"))
+        val reset = f["reset"] == "1"
+        val default = defaultRequest(b)
+        val current = runBlocking { withTimeoutOrNull(STATUS_TIMEOUT) { b.stage.fetchSession.request.first() } }
+            ?: return result(false, tr("操作超时，请重试"))
+        val edited = if (reset) {
+            default
+        } else {
+            val primary = f["primary"].orEmpty().trim()
+            val sort = f["sort"].orEmpty().trim()
+            val ep = f["ep"].orEmpty().trim()
+            if (primary.isEmpty()) return result(false, tr("主搜索名不能为空"))
+            if (sort.isEmpty() && ep.isEmpty()) return result(false, tr("两种集数至少要填一个"))
+            current.toEditingMediaFetchRequest().copy(
+                primaryName = primary,
+                complementaryNames = f["others"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() },
+                episodeSort = sort,
+                episodeEp = ep,
+            ).toMediaFetchRequestOrNull() ?: return result(false, tr("请求无效，请检查"))
+        }
+        runBlocking {
+            withTimeoutOrNull(STATUS_TIMEOUT) {
+                episodePreferences.rememberSearchNames(subjectId, edited, default)
+                // 同播放页: 各源要按新名字重搜, 本条目旧的在线源搜索缓存作废
+                selectorCache.clearByRequestedSubject(subjectId)
+            }
+        } ?: return result(false, tr("操作超时，请重试"))
+        b.stage.fetchSession.setFetchRequest(edited)
+        logger.info {
+            "Remote cache search request for subject $subjectId episode $episodeId: names=${edited.subjectNames}, " +
+                "sort=${edited.episodeSort}, ep=${edited.episodeEp} (reset=$reset)"
+        }
+        val message = when {
+            reset -> tr("已恢复 Bangumi 名称和集数，正在重新搜索")
+            edited.subjectNames != default.subjectNames -> tr("已保存，这部番以后缓存和播放都用这个搜索名，正在重新搜索")
+            else -> tr("已按新的集数重新搜索（只影响这一集）")
+        }
+        return result(true, message)
     }
 
     private fun close() {
