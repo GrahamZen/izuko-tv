@@ -796,6 +796,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .acct-wait .now-status { margin-top: 0; }
 .acct-wait a { color: var(--p); }
 #cc-chips .chips { margin-top: 4px; }
+/* 选资源页顶上的「搜索名与集数」卡 (见 CACHE_SCRIPT 的 ccNames): 与下面的数据源胶囊拉开, 别贴着 */
+#cc-names .req { margin: 4px 0 12px; }
 .cache-ep > button.cache-pack { background: var(--p); color: var(--on-p); }
 .cache-packall { margin: 8px 0 2px; }
 .cl-free { font-size: 15px; }
@@ -3510,7 +3512,7 @@ private val CACHE_SCRIPT = """
     ccFull = false;
     lastCands = null;
     // 三块都是新建的节点, 各自从头比
-    setHtml(sb, '<div id="cc-chips"></div><div id="cc-filters"></div><div id="cc-list"><p class="hint">' + T('正在查找资源…') + '</p></div>');
+    setHtml(sb, '<div id="cc-names"></div><div id="cc-chips"></div><div id="cc-filters"></div><div id="cc-list"><p class="hint">' + T('正在查找资源…') + '</p></div>');
     pollCandidates();
   }
   function pollCandidates() {
@@ -3546,11 +3548,63 @@ private val CACHE_SCRIPT = """
     });
     return h + '</div>';
   }
+  // 「搜索名」(见 RemoteCache.names): 数据源按这些名字搜, 改了按番记住 (同播放器的编辑查询请求). 动过表单就不再跟着轮询重画,
+  // 免得打字时被冲掉; 保存 / 恢复成功后清掉标记重画
+  function ccNames(d) {
+    var box = document.getElementById('cc-names');
+    if (!box || d.primary == null || box.getAttribute('data-dirty') === '1') return;
+    var key = JSON.stringify([d.primary, d.others, d.sort, d.ep, d.edited]);
+    if (box.getAttribute('data-key') === key) return;
+    box.setAttribute('data-key', key);
+    var open = !!box.querySelector('details[open]');
+    box.innerHTML = '<details class="card req"' + (open ? ' open' : '') + '><summary>' + T('搜索名与集数') + '<small>' + esc(d.primary) +
+      (d.edited ? T('（已修改）') : '') + '</small></summary><form id="cc-names-form">' +
+      '<label class="f"><span>' + T('主搜索名') + '</span><input type="text" name="primary" autocomplete="off" value="' + esc(d.primary) + '"></label>' +
+      '<label class="f"><span>' + T('次要搜索名（每行一个）') + '</span><textarea name="others" rows="3">' + esc((d.others || []).join('\n')) + '</textarea></label>' +
+      '<p class="hint">' + T('数据源按这些名字搜索。改过的名字会记住，这部番以后缓存和播放都用它。') + '</p>' +
+      '<label class="f"><span>' + T('系列内剧集序号') + '</span><input type="text" name="sort" inputmode="decimal" autocomplete="off" value="' +
+      esc(d.sort || '') + '"><em>' + T('假设有两季，分别有 12 集，则第二季的第一集为 13') + '</em></label>' +
+      '<label class="f"><span>' + T('条目内序号') + '</span><input type="text" name="ep" inputmode="decimal" autocomplete="off" value="' +
+      esc(d.ep || '') + '"><em>' + T('在当前季度内的序号，例如第二季的第一集为 01') + '</em></label>' +
+      '<p class="hint">' + T('资源必须至少匹配以上两种集数中的一种。集数只影响这一集、不会记住；BT 合集里的文件编号和 Bangumi 不同时（比如第二季从 13 开始），要改这里才能下对文件。') + '</p>' +
+      '<div class="row"><button type="button" class="ghost" data-names="reset"' + (d.edited ? '' : ' disabled') + '>' + T('恢复默认') + '</button>' +
+      '<button type="submit" class="primary">' + T('保存并刷新') + '</button></div></form></details>';
+  }
+  function saveNames(data, btn) {
+    btn.disabled = true;
+    data.subject = String(subject);
+    data.episode = String(ep);
+    post('api/cache/names', data).then(function (r) {
+      btn.disabled = false;
+      toast(r.message);
+      var box = document.getElementById('cc-names');
+      if (!r.ok || !box) return;
+      box.removeAttribute('data-dirty');
+      box.removeAttribute('data-key');
+      pollCandidates();
+    }).catch(function () { btn.disabled = false; window.fail(); });
+  }
+  sb.addEventListener('input', function (e) {
+    var box = document.getElementById('cc-names');
+    if (box && e.target.closest('#cc-names-form')) box.setAttribute('data-dirty', '1');
+  });
+  sb.addEventListener('submit', function (e) {
+    var form = e.target.closest('#cc-names-form');
+    if (!form) return;
+    e.preventDefault();
+    saveNames({ primary: form.elements.primary.value, others: form.elements.others.value, sort: form.elements.sort.value, ep: form.elements.ep.value },
+      form.querySelector('button[type="submit"]'));
+  });
+  sb.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-names="reset"]');
+    if (b && !b.disabled) saveNames({ reset: '1' }, b);
+  });
   function renderCandidates(d) {
     var list = document.getElementById('cc-list'), fbox = document.getElementById('cc-filters'), cbox = document.getElementById('cc-chips');
     if (!list) return;
     if (!d.ok) { setHtml(list, '<p class="hint">' + esc(d.message) + '</p>'); return; }
     lastCands = d;
+    ccNames(d);
     // 选中的源已经不在了 (比如被停用): 回到「全部」
     if (ccSrc && !d.sources.some(function (x) { return x.id === ccSrc; }) && !d.groups.some(function (g) { return g.id === ccSrc; })) {
       ccSrc = null;
@@ -4399,6 +4453,7 @@ private val HELP_SCRIPT = """
     T('列出电视上的全部缓存，按番分组，下载中的会自动刷新；顶上是电视的剩余空间。'),
     T('点击番名：在电视上打开详情页。点击右侧封面或 ▶：按观看进度继续播放（同详情页的播放按钮）。'),
     T('点击某一集：在电视上播放这一集。'),
+    T('选资源时可以展开「搜索名与集数」：改过的搜索名会记住，这部番以后缓存和播放都用它；集数只影响这一集，BT 合集编号和 Bangumi 不同时改这里才能下对文件。'),
     T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。'),
     T('左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。'),
     T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
