@@ -22,10 +22,19 @@ import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSource
 import me.him188.ani.app.data.persistent.database.dao.PreferredWebMediaSourceDao
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.component.KoinComponent
 import org.koin.mp.KoinPlatform
+
+/**
+ * 编辑查询请求后按条目记住搜索名 (主搜索名 + 次要名): 与 Bangumi 名字 ([default], 由 Bangumi 信息生成、未套用改动的请求)
+ * 一致时删掉记录. 分集字段每集不同, 不记. 缓存页选资源与 Web 控制台缓存面板共用, 规则同播放页 (`EpisodeViewModel.updateFetchRequest`).
+ */
+suspend fun EpisodePreferencesRepository.rememberSearchNames(subjectId: Int, edited: MediaFetchRequest, default: MediaFetchRequest) {
+    setSearchKeywords(subjectId, SubjectSearchKeywords(edited.subjectNames).takeIf { edited.subjectNames != default.subjectNames })
+}
 
 interface EpisodePreferencesRepository : KoinComponent {
     /**

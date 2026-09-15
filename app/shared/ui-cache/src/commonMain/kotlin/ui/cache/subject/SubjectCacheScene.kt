@@ -34,6 +34,8 @@ import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.subject.nameCnOrName
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.data.repository.media.rememberSearchNames
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
@@ -117,6 +119,7 @@ class SubjectCacheViewModelImpl(
     private val cacheManager: MediaCacheManager by inject()
     private val mediaSourceManager: MediaSourceManager by inject()
     private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
+    private val selectorEpisodeCacheRepository: SelectorMediaSourceEpisodeCacheRepository by inject()
     private val subjectRelationsRepository: SubjectRelationsRepository by inject()
     private val danmakuRepository: DanmakuRepository by inject()
     private val deleteCacheByEpisodeIdUseCase: DeleteCacheByEpisodeIdUseCase by inject()
@@ -240,6 +243,11 @@ class SubjectCacheViewModelImpl(
         },
         onDeleteCache = { episode ->
             deleteCacheByEpisodeIdUseCase(subjectId, episode.episodeId)
+        },
+        onFetchRequestEdited = { edited, default ->
+            // 同播放页: 搜索名按条目记住, 各源要按新名字重搜, 本条目旧的在线源搜索缓存作废
+            episodePreferencesRepository.rememberSearchNames(subjectId, edited, default)
+            selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
         },
     )
     override val mediaSourceInfoProvider: MediaSourceInfoProvider = MediaSourceInfoProvider(
