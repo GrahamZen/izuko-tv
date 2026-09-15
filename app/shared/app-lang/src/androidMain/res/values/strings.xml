@@ -605,6 +605,8 @@
     <string name="tv_remote_qr_waiting">Waiting</string>
     <string name="tv_remote_qr_ip_changed">IP changed</string>
     <string name="tv_remote_qr_hint">Scan with your phone, or open the address below in a computer browser</string>
+    <string name="tv_remote_qr_troubleshoot">Page not opening? Connect your phone to the same Wi-Fi as the TV. If your phone uses a VPN, turn on its LAN bypass or turn the VPN off.</string>
+    <string name="tv_remote_qr_troubleshoot_vpn">This TV is using a VPN. If the page does not open, turn on LAN bypass in your phone VPN (or turn it off). If it still fails, turn off the VPN on the TV.</string>
     <string name="tv_remote_qr_ip_changed_hint">The TV IP changed. Scan again.</string>
     <string name="settings_theme_tv_remote_reset">Reset web console address</string>
     <string name="settings_theme_tv_remote_reset_description">Switch to a new address. Pages opened from the old code and saved bookmarks stop working and need to scan again.</string>

@@ -13,6 +13,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -53,6 +55,7 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.lan.findLanAddress
+import me.him188.ani.app.ui.foundation.lan.lanInterfacesSummary
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
@@ -208,6 +211,18 @@ object TvRemoteControl {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
         val ctx = appContext ?: return false
         return Settings.canDrawOverlays(ctx)
+    }
+
+    /**
+     * 电视上开着 VPN 没有 (任一网络带 VPN 传输). 只用来在二维码下面给更具体的排障提示、写日志: 电视的 VPN 一般只接管电视
+     * 自己往外发的流量, 手机连进来的连接照常从 Wi-Fi 回, 连不上多半是手机的 VPN 没开「绕过局域网」.
+     */
+    internal fun tvVpnActive(): Boolean {
+        val cm = appContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        @Suppress("DEPRECATION") // allNetworks: 要看的是有没有 VPN 在, 不只是默认网络
+        return runCatching {
+            cm.allNetworks.any { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+        }.getOrDefault(false)
     }
 
     private fun bringToFront(): Boolean {
@@ -678,8 +693,9 @@ object TvRemoteControl {
         _hostChanged.value = host != null && known != null && known != host
         // 地址 (含 token) 写进日志: 排查/自动化测试从这里拿完整地址
         logger.info {
-            if (url != null) "Remote control reachable at $url (known host: $known)"
-            else "Remote control: no LAN address, QR code hidden"
+            (if (url != null) "Remote control reachable at $url (known host: $known)"
+            else "Remote control: no LAN address, QR code hidden") +
+                "; interfaces: ${lanInterfacesSummary()}; TV VPN: ${tvVpnActive()}"
         }
         return host
     }
