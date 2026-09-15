@@ -645,6 +645,8 @@
     <string name="tv_remote_qr_waiting">等待连接</string>
     <string name="tv_remote_qr_ip_changed">IP 已变</string>
     <string name="tv_remote_qr_hint">手机扫码，或在电脑浏览器打开下方地址</string>
+    <string name="tv_remote_qr_troubleshoot">打不开？手机要和电视连同一个 Wi-Fi；手机开着 VPN 的话，请在 VPN 里开启「绕过局域网」或先关闭</string>
+    <string name="tv_remote_qr_troubleshoot_vpn">检测到电视开着 VPN。扫码后打不开的话，先在手机 VPN 里开启「绕过局域网」（或关掉手机 VPN）；仍不行再关掉电视上的 VPN</string>
     <string name="tv_remote_qr_ip_changed_hint">电视 IP 变了，请重新扫码</string>
     <string name="settings_theme_tv_remote_reset">重置 Web 控制台地址</string>
     <string name="settings_theme_tv_remote_reset_description">换一个新地址，之前扫码打开的页面和书签都会失效，要重新扫码</string>
