@@ -19,8 +19,10 @@ import me.him188.ani.app.domain.media.cache.requester.CacheRequestStage
 import me.him188.ani.app.domain.media.cache.requester.EpisodeCacheRequester
 import me.him188.ani.app.domain.media.cache.requester.trySelectSingle
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
+import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 
 @Stable
 interface EpisodeCacheListState {
@@ -46,6 +48,18 @@ interface EpisodeCacheListState {
     val currentSelectMediaTask: SelectMediaTask?
     fun selectMedia(media: Media)
     fun cancelMediaSelector(task: SelectMediaTask)
+
+    /**
+     * 选资源时编辑了查询请求: 这次查询换上新请求 (各源重搜). 默认实现只作用于这一次.
+     */
+    suspend fun updateFetchRequest(task: SelectMediaTask, request: MediaFetchRequest) {
+        task.fetchSession.setFetchRequest(request)
+    }
+
+    /**
+     * 由 Bangumi 信息生成、未套用用户改动的请求, 供编辑框里「恢复 Bangumi 名称」用. 拿不到时为 `null`.
+     */
+    fun defaultFetchRequest(task: SelectMediaTask): MediaFetchRequest? = null
 
 
     /**
@@ -90,6 +104,9 @@ interface EpisodeCacheListState {
  * 通常操作 [MediaCacheEngine] 开始缓存.
  *
  * @param onDeleteCache 当需要删除一个剧集的现有缓存时调用.
+ *
+ * @param onFetchRequestEdited 选资源时改了查询请求, 在换上新请求之前调用 (`default` 见 [defaultFetchRequest]).
+ * 通常按条目记住搜索名、清掉本条目的旧搜索缓存 (同播放页).
  */ // See 连续缓存季度全集剧集 #376
 @Stable
 class EpisodeCacheListStateImpl(
@@ -99,6 +116,7 @@ class EpisodeCacheListStateImpl(
     private val onRequestCache: suspend (episode: EpisodeCacheState, autoSelectByCached: Boolean) -> CacheRequestStage?,
     private val onRequestCacheComplete: suspend (episode: EpisodeCacheTargetInfo) -> Unit,
     private val onDeleteCache: suspend (episode: EpisodeCacheState) -> Unit,
+    private val onFetchRequestEdited: suspend (edited: MediaFetchRequest, default: MediaFetchRequest) -> Unit = { _, _ -> },
 ) : EpisodeCacheListState {
     override val episodes: List<EpisodeCacheState> by episodes
 
@@ -138,6 +156,15 @@ class EpisodeCacheListStateImpl(
         }
     }
 
+    override fun defaultFetchRequest(task: SelectMediaTask): MediaFetchRequest? =
+        (task.episode.cacheRequester.stage.value as? CacheRequestStage.Working)?.request
+            ?.let { MediaFetchRequest.create(it.subjectInfo, it.episodeInfo) }
+
+    override suspend fun updateFetchRequest(task: SelectMediaTask, request: MediaFetchRequest) {
+        defaultFetchRequest(task)?.let { onFetchRequestEdited(request, it) }
+        task.fetchSession.setFetchRequest(request)
+    }
+
     override val currentSelectStorageTask: SelectStorageTask? by derivedStateOf {
         val current = this.currentEpisode
         val stage = current?.currentStage
@@ -165,7 +192,7 @@ class EpisodeCacheListStateImpl(
         episode.actionTasker.launch {
             (episode.cacheRequester.stage.value as? CacheRequestStage.SelectStorage)
                 ?.cancel()
-                ?.mediaSelector?.unselect() // 取消选中曾经选中的 Media, 否则那个 Media 会一直显示进度条 
+                ?.mediaSelector?.unselect() // 取消选中曾经选中的 Media, 否则那个 Media 会一直显示进度条
         }
     }
 
@@ -184,7 +211,7 @@ class EpisodeCacheListStateImpl(
                 ?.takeIf { it !== episode }
                 ?.cacheRequester
                 ?.cancelRequest()
-            // TODO: 处理错误 
+            // TODO: 处理错误
             onRequestCache(episode, autoSelectCached)?.let {
                 if (it is CacheRequestStage.Done) {
                     callComplete(episode, it)

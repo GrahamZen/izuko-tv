@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.restart
@@ -119,6 +120,7 @@ fun EpisodeCacheRequesterDialogs(
 
                 // todo: shit
                 val fetchRequest by task.fetchSession.request.collectAsState(null)
+                val defaultFetchRequest = remember(task) { state.defaultFetchRequest(task) }
 
                 MediaSelectorView(
                     selectorPresentation,
@@ -126,7 +128,8 @@ fun EpisodeCacheRequesterDialogs(
                     onViewKindChange,
                     fetchRequest,
                     {
-                        task.fetchSession.setFetchRequest(it)
+                        // 改的搜索名按条目记住 (同播放页), 这部番以后缓存和播放都用; 见 EpisodeCacheListState.updateFetchRequest
+                        scope.launch { state.updateFetchRequest(task, it) }
                     },
                     sourceResults,
                     onRestartSource = {
@@ -141,6 +144,7 @@ fun EpisodeCacheRequesterDialogs(
                     onClickItem = {
                         state.selectMedia(it)
                     },
+                    defaultFetchRequest = defaultFetchRequest,
                 )
             }
         }
