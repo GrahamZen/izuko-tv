@@ -33,6 +33,8 @@ import me.him188.ani.app.domain.media.cache.DeleteCacheByCacheIdUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheManager
 import me.him188.ani.app.domain.media.cache.MediaCacheState
+import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.navigation.AniNavigator
@@ -47,6 +49,9 @@ import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -71,9 +76,13 @@ internal object RemoteCacheList {
     private val saveDirProvider: MediaSaveDirProvider get() = KoinPlatform.getKoin().get()
     private val deleteCacheById: DeleteCacheByCacheIdUseCase get() = KoinPlatform.getKoin().get()
     private val subjectRepo: SubjectCollectionRepository get() = KoinPlatform.getKoin().get()
+    private val engineAccess: TorrentEngineAccess get() = KoinPlatform.getKoin().get()
 
-    /** 一条缓存上次被读到时的已下载字节数、时刻, 与那时算出的速度. */
-    private class Sample(val bytes: Long, val nanos: Long, val speed: Long?)
+    /**
+     * 一条缓存上次被读到时的已下载字节数、时刻, 与那时算出的速度.
+     * [zeroStreak] = 连着几次采样一个字节都没进 (判「暂无来源」用).
+     */
+    private class Sample(val bytes: Long, val nanos: Long, val speed: Long?, val zeroStreak: Int = 0)
 
     /** cacheId → 上一次的样本, 算下载速度用; 已经不在列表里的每次请求时清掉. */
     private val samples = ConcurrentHashMap<String, Sample>()
@@ -88,8 +97,13 @@ internal object RemoteCacheList {
                 !post -> null
                 request.path == "api/caches/play" -> play(request, navigator, uiScope)
                 request.path == "api/caches/open" -> open(request, navigator, uiScope)
-                request.path == "api/caches/pause" -> setPaused(request, paused = true)
-                request.path == "api/caches/resume" -> setPaused(request, paused = false)
+                request.path == "api/caches/pause" ->
+                    if (request.formFields().containsKey("ids")) setPausedMany(request, paused = true)
+                    else setPaused(request, paused = true)
+
+                request.path == "api/caches/resume" ->
+                    if (request.formFields().containsKey("ids")) setPausedMany(request, paused = false)
+                    else setPaused(request, paused = false)
                 request.path == "api/caches/delete" -> if (request.formFields().containsKey("ids")) deleteMany(request) else delete(request)
                 request.path == "api/caches/delete-subject" -> deleteSubject(request)
                 else -> null
@@ -108,6 +122,8 @@ internal object RemoteCacheList {
         val state: MediaCacheState?,
         val stats: MediaCache.FileStats,
         val merging: Boolean,
+        /** 非 null = 这条的状态压根没去读, 网页上显示这句 (原因见 [torrentSkipReason]). */
+        val offlineText: String? = null,
     ) {
         val metadata: MediaCacheMetadata get() = cache.metadata
         val subjectId = metadata.subjectId.toIntOrNull() ?: 0
@@ -118,6 +134,20 @@ internal object RemoteCacheList {
         /** 一个资源包含多集 (常见于 BT 的季度全集); 各集的缓存共用同一个 origin.mediaId. */
         val isPack = cache.origin.episodeRange?.isSingleEpisode() == false
         val percent get() = (stats.downloadProgress.getOrZero() * 100).toInt().coerceIn(0, 100)
+
+        /**
+         * 进度文字: 不足 1% 时给一位小数. 取整的话冷种子下了半天还是「0%」, 看着跟卡死一样
+         * (2026-09-15 用户报: 实测在以 12 KB/s 爬, 显示一直是 0%).
+         */
+        val percentText: String
+            get() {
+                val p = stats.downloadProgress.getOrZero() * 100
+                return when {
+                    p <= 0f -> "0"
+                    p < 1f -> "0." + (p * 10).toInt().coerceAtLeast(1)
+                    else -> p.toInt().coerceAtMost(100).toString()
+                }
+            }
     }
 
     private class Snapshot(
@@ -134,14 +164,23 @@ internal object RemoteCacheList {
             .filter { !it.isDeleted.value }
             .distinctBy { it.cacheId }
         // 各条并发读、各自限时: 某一条的流迟迟不出值, 不拖住整张表
+        val skipReason = torrentSkipReason()
+        val torrentTimedOut = AtomicBoolean(false)
         val rows = caches.map { cache ->
             async {
+                if (cache.needsTorrentService && skipReason != null) {
+                    return@async Row(cache, null, MediaCache.FileStats.Unspecified, false, offlineText = skipReason)
+                }
                 val state = async { withTimeoutOrNull(FLOW_TIMEOUT) { cache.state.first() } }
                 val stats = async { withTimeoutOrNull(FLOW_TIMEOUT) { cache.fileStats.first() } }
                 val merging = async { withTimeoutOrNull(FLOW_TIMEOUT) { cache.isMerging.first() } }
-                Row(cache, state.await(), stats.await() ?: MediaCache.FileStats.Unspecified, merging.await() ?: false)
+                val stateValue = state.await()
+                val statsValue = stats.await()
+                if (cache.needsTorrentService && (stateValue == null || statsValue == null)) torrentTimedOut.set(true)
+                Row(cache, stateValue, statsValue ?: MediaCache.FileStats.Unspecified, merging.await() ?: false)
             }
         }.awaitAll()
+        if (skipReason == null) noteTorrentRead(torrentTimedOut.get())
         val sourceNames = rows.map { it.cache.origin.mediaSourceId }.distinct().map { id ->
             async { id to withTimeoutOrNull(FLOW_TIMEOUT) { sourceManager.infoFlowByMediaSourceId(id).first()?.displayName } }
         }.awaitAll().mapNotNull { (id, name) -> name?.let { id to it } }.toMap()
@@ -151,6 +190,66 @@ internal object RemoteCacheList {
             else h.episodeId to (h.positionMillis * 100 / duration).toInt().coerceIn(0, 100)
         }.toMap()
         Snapshot(rows, sourceNames, watched)
+    }
+
+    /**
+     * 这条缓存的状态要问 torrent 服务才知道. 下完的 BT 缓存在恢复时已经变成本地文件缓存 (`LocalFileMediaCache`),
+     * 读到的是常量, 不受服务影响, 所以只有还没下完的算.
+     */
+    private val MediaCache.needsTorrentService: Boolean get() = this is TorrentMediaCacheEngine.TorrentMediaCache
+
+    /** 熔断到什么时候 (见 [noteTorrentRead]); 连续读超时的次数. */
+    private val torrentStuckUntil = AtomicLong(0)
+    private val torrentTimeoutStrikes = AtomicInteger(0)
+
+    /**
+     * 现在不该读 BT 缓存状态流的话, 返回一句给网页显示的原因; 可以读就返回 null.
+     *
+     * 服务没连上时读这些流会**永久**占住一个线程: 流的上游 (`RemoteTorrentFileEntry` 等) 在等服务的通信对象,
+     * 等待是阻塞式的 (`RetryRemoteObject` 里的 runBlocking), [withTimeoutOrNull] 取消不掉已经阻塞的线程。
+     * 而网页停在缓存标签时每 2 秒拉一次, 每次每条都堵一个, 很快把 `Dispatchers.Default` 占满 ——
+     * 之后连跟 BT 无关的请求 (读条目信息也在这个池子上) 都跑不动, 整个控制台卡死。
+     */
+    private fun torrentSkipReason(): String? = when {
+        // BT 服务只有 Ani 在电视前台时才会起 (上游的省电策略): 在前台就是正在冷启动 (十几秒), 不在前台则是
+        // 根本没开始 —— 这两种说法不能混, 后者说"正在启动"是骗人的 (2026-09-15 用户报"后台点下载没反应")
+        !engineAccess.isServiceConnected.value ->
+            if (TvRemoteControl.isTvForeground()) tr("正在启动 BT 服务…") else tr("电视上没打开 Ani，暂时不会下载")
+        System.nanoTime() < torrentStuckUntil.get() -> tr("读取超时，正在重试")
+        else -> null
+    }
+
+    private fun torrentReadable(): Boolean = torrentSkipReason() == null
+
+    /** BT 服务还没连上 (多半正在冷启动, 十几秒): 缓存面板与缓存列表顶上会说一句, 见 [RemoteCache]. */
+    internal fun torrentStarting(): Boolean = !engineAccess.isServiceConnected.value
+
+    /**
+     * 还有没下完的 BT 缓存. 网页顶上「电视没显示 Ani」那条据此加一句 —— BT 服务只在 Ani 前台时才起, 所以这时候
+     * 缓存也是停着的, 不说的话用户只当是"电视没显示"而已 (见 TvRemoteControl.noticeState).
+     * 只看列表的当前值, 不读各条的状态流 (那些要跨进程问服务), 所以每 2 秒问一次也不贵.
+     */
+    internal fun hasPendingTorrentCache(): Boolean = runBlocking {
+        withTimeoutOrNull(FLOW_TIMEOUT) {
+            cacheManager.enabledStorages.first()
+                .flatMap { it.listFlow.first() }
+                .any { !it.isDeleted.value && it.needsTorrentService }
+        }
+    } ?: false
+
+    /**
+     * 记一次 BT 状态读取的结果: 连着 [STUCK_STRIKES] 次都有读不出来的才歇 [TORRENT_STUCK_BACKOFF] (服务在线却卡住的兜底)。
+     * 电视忙的时候偶尔一次超时很正常, 一次就歇的话进度会莫名空掉一片 (2026-09-15 真机实测误触发过)。
+     */
+    private fun noteTorrentRead(timedOut: Boolean) {
+        if (!timedOut) {
+            torrentTimeoutStrikes.set(0)
+            return
+        }
+        if (torrentTimeoutStrikes.incrementAndGet() < STUCK_STRIKES) return
+        torrentTimeoutStrikes.set(0)
+        torrentStuckUntil.set(System.nanoTime() + TORRENT_STUCK_BACKOFF.inWholeNanoseconds)
+        logger.warn { "Reading torrent cache state timed out $STUCK_STRIKES times in a row, skipping torrent caches for $TORRENT_STUCK_BACKOFF." }
     }
 
     /**
@@ -208,6 +307,10 @@ internal object RemoteCacheList {
         return buildJsonObject {
             put("ok", true)
             put("count", rows.size)
+            // 顶上说清楚现在是哪种情况: 服务正在冷启动 (十几秒), 还是电视上压根没打开 Ani (那就不会开始下)
+            if (torrentStarting() && rows.any { it.cache.needsTorrentService }) {
+                if (TvRemoteControl.isTvForeground()) put("btStarting", true) else put("tvBackground", true)
+            }
             if (space != null) {
                 put("free", space.first.bytes.toString())
                 put("total", space.second.bytes.toString())
@@ -255,12 +358,21 @@ internal object RemoteCacheList {
     }
 
     /** 网页上的状态: 类别 (决定颜色与按钮) 与文案, 文案同电视缓存页. */
-    private fun statusOf(r: Row): Pair<String, String> = when (r.state) {
+    private fun statusOf(r: Row): Pair<String, String> = if (r.offlineText != null) {
+        "loading" to r.offlineText
+    } else when (r.state) {
         null -> "loading" to tr("读取中")
         MediaCacheState.COMPLETED -> "done" to tr("已完成")
         MediaCacheState.FAILED -> "failed" to tr("下载失败")
-        MediaCacheState.PAUSED -> "paused" to tr("已暂停 {0}%", r.percent)
-        MediaCacheState.IN_PROGRESS -> if (r.merging) ("merging" to tr("合并中")) else ("run" to tr("下载中 {0}%", r.percent))
+        MediaCacheState.PAUSED -> "paused" to tr("已暂停 {0}%", r.percentText)
+        MediaCacheState.IN_PROGRESS -> when {
+            r.merging -> "merging" to tr("合并中")
+            // 连着几次一个字节都没进: 多半是种子没人做种, 说一句, 免得以为是卡住了
+            (samples[r.cache.cacheId]?.zeroStreak ?: 0) >= NO_SOURCE_STRIKES ->
+                "run" to tr("下载中 {0}%·暂无来源", r.percentText)
+
+            else -> "run" to tr("下载中 {0}%", r.percentText)
+        }
     }
 
     /** 下完了: 文件大小; 没下完: 已下 / 总共 (同电视缓存页). */
@@ -285,7 +397,9 @@ internal object RemoteCacheList {
             if (gap < MIN_SAMPLE_GAP_NANOS) return prev.speed
             if (gap <= MAX_SAMPLE_GAP_NANOS) {
                 val speed = (maxOf(bytes - prev.bytes, 0L).toDouble() * 1_000_000_000L / gap).toLong()
-                samples[cacheId] = Sample(bytes, now, speed)
+                // 连着几次一个字节都没进: 多半是没有可用来源 (种子冷), 不是卡住 —— 列表上说一句
+                val zeroStreak = if (speed <= 0) prev.zeroStreak + 1 else 0
+                samples[cacheId] = Sample(bytes, now, speed, zeroStreak)
                 return speed
             }
         }
@@ -314,8 +428,15 @@ internal object RemoteCacheList {
         val m = cache.metadata
         val subjectId = m.subjectId.toIntOrNull() ?: return result(false, tr("这条缓存没有记录是哪部番，播不了"))
         val episodeId = m.episodeId.toIntOrNull() ?: return result(false, tr("这条缓存没有记录是哪一集，播不了"))
-        val done = runBlocking { withTimeoutOrNull(FLOW_TIMEOUT) { cache.state.first() } } == MediaCacheState.COMPLETED
-        logger.info { "Remote cache play: subject=$subjectId ep=$episodeId cacheId=${cache.cacheId} completed=$done" }
+        // 读不到就都当未知 (BT 服务没连上时不读, 会永久占住线程, 见 torrentSkipReason), 未知就不多说那一句
+        val readable = !cache.needsTorrentService || torrentReadable()
+        val state = if (!readable) null else runBlocking { withTimeoutOrNull(FLOW_TIMEOUT) { cache.state.first() } }
+        // 能不能直接拿这条缓存播, 判据同选源器 (MediaCache.canPlay): BT 缓存没下完也能边下边播, 只有 web (m3u8)
+        // 缓存下载中不能播 —— 那种会被选源器排除掉 (CacheNotReady), 于是改从别的数据源找
+        val canPlay = if (!readable) null else runBlocking { withTimeoutOrNull(FLOW_TIMEOUT) { cache.canPlay.first() } }
+        logger.info {
+            "Remote cache play: subject=$subjectId ep=$episodeId cacheId=${cache.cacheId} state=$state canPlay=$canPlay"
+        }
         // 电视正在播这部番时就地换集, 不再叠一个新的播放页 (见 TvRemoteControl.playEpisode)
         val how = TvRemoteControl.playEpisode(nav, uiScope, subjectId, episodeId) {
             logger.warn(it) { "Failed to start playback from remote cache list" }
@@ -326,7 +447,14 @@ internal object RemoteCacheList {
             TvRemoteControl.RemotePlayResult.AlreadyPlaying -> tr("电视正在播{0}", what)
             TvRemoteControl.RemotePlayResult.Switched -> tr("已在电视上换到{0}", what)
             TvRemoteControl.RemotePlayResult.Opened -> tr("已在电视上播放{0}", what)
-        } + if (!done && how != TvRemoteControl.RemotePlayResult.AlreadyPlaying) tr("：这一集还没缓存完，先从其他数据源播") else ""
+        } + when {
+            how == TvRemoteControl.RemotePlayResult.AlreadyPlaying -> ""
+            // 这一条播不了 (下载中的 web 缓存), 电视会去别的源找
+            canPlay == false -> tr("：这一集的缓存还不能播，先从其他数据源播")
+            // 能播但没下完: 用的还是这条缓存, 边下边看
+            state != null && state != MediaCacheState.COMPLETED -> tr("：这一集还没下完，边下边看")
+            else -> ""
+        }
         return result(true, msg, player = true)
     }
 
@@ -348,6 +476,8 @@ internal object RemoteCacheList {
     /** 暂停 / 继续 (同缓存管理页). BT 的要等句柄, 放后台做; 状态随网页下一次刷新变过来. */
     private fun setPaused(request: LanHttpRequest, paused: Boolean): JsonObject {
         val cache = findCache(request) ?: return result(false, tr("这条缓存已经不在了，请刷新"))
+        // 服务没连上时这个调用会一直阻塞 (见 torrentReadable), 直接告诉用户, 别又堵一个线程
+        if (cache.needsTorrentService && !torrentReadable()) return result(false, tr("BT 服务未连接，请稍后再试"))
         scope.launch {
             try {
                 if (paused) cache.pause() else cache.resume()
@@ -358,6 +488,40 @@ internal object RemoteCacheList {
             }
         }
         return result(true, if (paused) tr("已暂停") else tr("继续下载"))
+    }
+
+    /**
+     * 长按多选后一次暂停 / 继续 (`ids` = 逗号分隔的 cacheId, 可以跨番; 同多选删除). 逐条做, 一条失败不耽误后面的;
+     * 都放后台, 状态随网页下一次刷新变过来 (同单条 [setPaused]).
+     */
+    private fun setPausedMany(request: LanHttpRequest, paused: Boolean): JsonObject {
+        val ids = request.formFields()["ids"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (ids.isEmpty()) return result(false, tr("请先选择要操作的剧集。"))
+        val caches = runBlocking {
+            withTimeoutOrNull(OP_TIMEOUT) {
+                cacheManager.enabledStorages.first()
+                    .flatMap { it.listFlow.first() }
+                    .filter { !it.isDeleted.value && it.cacheId in ids }
+                    .distinctBy { it.cacheId }
+            }
+        } ?: return result(false, tr("缓存读取失败，请重试。"))
+        if (caches.isEmpty()) return result(false, tr("找不到所选缓存，请刷新列表。"))
+        // 服务没连上时这些调用会一直阻塞 (见 torrentReadable), 同单条
+        if (caches.any { it.needsTorrentService } && !torrentReadable()) {
+            return result(false, tr("BT 服务未连接，请稍后再试"))
+        }
+        scope.launch {
+            for (cache in caches) {
+                try {
+                    if (paused) cache.pause() else cache.resume()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(e) { "Remote multi ${if (paused) "pause" else "resume"} failed for cache ${cache.cacheId}" }
+                }
+            }
+        }
+        return result(true, if (paused) tr("已暂停 {0} 集", caches.size) else tr("继续下载 {0} 集", caches.size))
     }
 
     /**
@@ -387,15 +551,27 @@ internal object RemoteCacheList {
     private fun deleteMany(request: LanHttpRequest): JsonObject {
         val ids = request.formFields()["ids"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         if (ids.isEmpty()) return result(false, tr("请先选择要删除的剧集。"))
-        val caches = runBlocking {
-            withTimeoutOrNull(OP_TIMEOUT) {
-                cacheManager.enabledStorages.first()
-                    .flatMap { it.listFlow.first() }
-                    .filter { !it.isDeleted.value && it.cacheId in ids }
-                    .distinctBy { it.cacheId }
-            }
-        } ?: return result(false, tr("缓存读取失败，请重试。"))
+        val caches = findCaches(ids) ?: return result(false, tr("缓存读取失败，请重试。"))
         if (caches.isEmpty()) return result(false, tr("找不到所选缓存，请刷新列表。"))
+        val finished = deleteAll(caches, "multi-select")
+        return result(true, if (finished) tr("已删除 {0} 集缓存", caches.size) else tr("正在删除 {0} 集，请稍后刷新。", caches.size))
+    }
+
+    /** 按 cacheId 找还在的缓存; 读不出来返回 null (同多选删除的超时口径). */
+    private fun findCaches(ids: Set<String>): List<MediaCache>? = runBlocking {
+        withTimeoutOrNull(OP_TIMEOUT) {
+            cacheManager.enabledStorages.first()
+                .flatMap { it.listFlow.first() }
+                .filter { !it.isDeleted.value && it.cacheId in ids }
+                .distinctBy { it.cacheId }
+        }
+    }
+
+    /**
+     * 逐条删除, 取证日志同单集删除; 一条失败不耽误后面的. 限时等不到也不会被取消 (同 [delete]).
+     * @return 是否在限时内删完 (没删完也在后台继续)
+     */
+    private fun deleteAll(caches: List<MediaCache>, why: String): Boolean {
         // 删完马上重下时自动批量要沿用它们原来的源 (见 RemoteCache.rememberDeleted)
         caches.groupBy { it.metadata.subjectId.toIntOrNull() ?: 0 }.forEach { (subjectId, list) -> RemoteCache.rememberDeleted(subjectId, list) }
         val deletion = scope.async {
@@ -404,14 +580,21 @@ internal object RemoteCacheList {
                 val subjectId = m.subjectId.toIntOrNull() ?: 0
                 val episodeId = m.episodeId.toIntOrNull() ?: 0
                 logger.info {
-                    "Delete cache requested from remote control (multi-select): subject=$subjectId ep=$episodeId " +
+                    "Delete cache requested from remote control ($why): subject=$subjectId ep=$episodeId " +
                             "sort=${m.episodeSort} cacheId=${cache.cacheId}"
                 }
                 logDeleteFailure(cache.cacheId) { deleteCacheById(subjectId, episodeId, cache.cacheId) }
             }
         }
-        val finished = runBlocking { withTimeoutOrNull(DELETE_ALL_TIMEOUT) { deletion.await(); true } } ?: false
-        return result(true, if (finished) tr("已删除 {0} 集缓存", caches.size) else tr("正在删除 {0} 集，请稍后刷新。", caches.size))
+        return runBlocking { withTimeoutOrNull(DELETE_ALL_TIMEOUT) { deletion.await(); true } } ?: false
+    }
+
+    /** 取消自动批量时撤掉这一批已经建起来的缓存 (见 [RemoteCache]); 返回真正删掉了几条. */
+    internal fun deleteByCacheIds(ids: Collection<String>): Int {
+        val caches = findCaches(ids.toSet()).orEmpty()
+        if (caches.isEmpty()) return 0
+        deleteAll(caches, "auto batch cancelled")
+        return caches.size
     }
 
     /**
@@ -476,9 +659,19 @@ internal object RemoteCacheList {
 
     private val LIST_TIMEOUT = 8.seconds
     private val FLOW_TIMEOUT = 2.seconds
+
+    /** 连着这么多次快照都有读不出来的, 才歇 [TORRENT_STUCK_BACKOFF] 不读 (见 [noteTorrentRead]). */
+    private const val STUCK_STRIKES = 3
+    private val TORRENT_STUCK_BACKOFF = 30.seconds
     private val OP_TIMEOUT = 5.seconds
     private val DELETE_TIMEOUT = 10.seconds
     private val DELETE_ALL_TIMEOUT = 30.seconds
+    /**
+     * 连着这么多次采样 (网页 2 秒一次) 一个字节都没进, 才说「暂无来源」. 给够时间: 刚建的缓存要先连 tracker / DHT,
+     * 头十几秒没速度很正常, 太早说会吓人.
+     */
+    private const val NO_SOURCE_STRIKES = 6
+
     private const val MIN_SAMPLE_GAP_NANOS = 500_000_000L
     private const val MAX_SAMPLE_GAP_NANOS = 30_000_000_000L
 }

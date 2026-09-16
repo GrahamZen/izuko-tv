@@ -12,8 +12,10 @@ package me.him188.ani.app.ui.remote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -22,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -43,6 +46,8 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.UnsafeTorrentEngineAccessApi
 import me.him188.ani.app.domain.media.cache.requester.CacheRequestStage
 import me.him188.ani.app.domain.media.cache.requester.EpisodeCacheRequest
 import me.him188.ani.app.domain.media.cache.requester.EpisodeCacheRequester
@@ -110,6 +115,7 @@ internal object RemoteCache {
     private val sourceManager: MediaSourceManager get() = KoinPlatform.getKoin().get()
     private val episodePreferences: EpisodePreferencesRepository get() = KoinPlatform.getKoin().get()
     private val selectorCache: SelectorMediaSourceEpisodeCacheRepository get() = KoinPlatform.getKoin().get()
+    private val engineAccess: TorrentEngineAccess get() = KoinPlatform.getKoin().get()
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
 
     /** 手机上正在挑资源的那一集. */
@@ -141,6 +147,13 @@ internal object RemoteCache {
 
         @Volatile
         var running = true
+
+        /** 这一批的协程, 取消用 (误触「全部用合集缓存」时要能停下). */
+        @Volatile
+        var job: Job? = null
+
+        /** 这一批已经建起来的缓存 id: 取消时可以连它们一起撤掉. */
+        val created = CopyOnWriteArrayList<String>()
 
         val failures = CopyOnWriteArrayList<String>()
     }
@@ -184,6 +197,7 @@ internal object RemoteCache {
                 request.path == "api/cache/pick" -> pick(request)
                 request.path == "api/cache/pack" -> pack(request)
                 request.path == "api/cache/auto" -> auto(request)
+                request.path == "api/cache/auto-cancel" -> autoCancel(request)
                 request.path == "api/cache/names" -> names(request)
                 request.path == "api/cache/close" -> {
                     close()
@@ -201,6 +215,10 @@ internal object RemoteCache {
     // ============================ 剧集列表 ============================
 
     private fun episodes(subjectId: Int): JsonObject {
+        // 面板开着 = 多半马上要缓存: 趁他挑资源先把 BT 服务热起来 (见 prewarm)
+        lastPanelAccess = System.currentTimeMillis()
+        prewarm(true)
+        startWatchdog()
         val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
         // 这部番的全部缓存; 顺带用来找已有的合集 (多集资源): 它覆盖到、还没缓存的集, 列表上给「用合集缓存」
         val caches = runBlocking {
@@ -251,6 +269,11 @@ internal object RemoteCache {
                 }
             }
             packTitle?.let { put("packTitle", it) }
+            // 刚点完缓存最常撞上的两种情况: 服务在冷启动 (十几秒), 或者电视上没打开 Ani (那就根本不会开始下)
+            // 批量刚点下去还在挑资源、一条缓存都没建出来的那几十秒也要说, 否则那段是彻底的静默
+            if ((caches.isNotEmpty() || b?.running == true) && RemoteCacheList.torrentStarting()) {
+                if (TvRemoteControl.isTvForeground()) put("btStarting", true) else put("tvBackground", true)
+            }
             runBlocking { autoHint(subjectId, caches) }?.let { put("autoHint", it) }
             // 挑几集之前心里有数 (合集按集只下那一集的文件, 但删掉一集要等同一个种子的都删了才回收)
             RemoteCacheList.freeSpace()?.let { put("free", it.first.bytes.toString()) }
@@ -258,6 +281,8 @@ internal object RemoteCache {
                 put("running", b.running)
                 put("done", b.done)
                 put("total", b.total)
+                // 已经建起来的集数: 网页问"取消时要不要连这些一起删"时用
+                put("created", b.created.size)
                 b.current?.let { put("current", it) }
                 putJsonArray("failures") { b.failures.forEach { add(it) } }
             }
@@ -406,12 +431,48 @@ internal object RemoteCache {
         scope.launch {
             while (true) {
                 delay(30.seconds)
+                // 面板不看了就把服务放掉, 别让它白白常驻 (耗电)
+                if (System.currentTimeMillis() - lastPanelAccess > PANEL_IDLE.inWholeMilliseconds) prewarm(false)
                 val b = synchronized(lock) { browse } ?: continue
                 if (System.currentTimeMillis() - b.lastAccess > BROWSE_IDLE.inWholeMilliseconds) {
                     logger.info { "Closing idle remote cache browse for episode ${b.episode.episodeId}" }
                     close()
                 }
             }
+        }
+    }
+
+    /** 缓存面板最后一次被拉取的时刻 (网页开着这个面板时每 2 秒一次). */
+    @Volatile
+    private var lastPanelAccess = 0L
+    private val prewarming = AtomicBoolean(false)
+
+    /**
+     * 缓存面板开着的时候先把 BT 服务热起来: 它冷启动要 5~10 秒 (独立进程, 见日志 `[1/4]`→`[2/4]`), 而用户在面板上
+     * 挑资源、勾集数正好要花这些时间 —— 等他点下去, 服务已经就绪, 不用干等一轮. 面板不看了 ([PANEL_IDLE]) 就释放.
+     */
+    @OptIn(UnsafeTorrentEngineAccessApi::class)
+    private fun prewarm(on: Boolean) {
+        if (!prewarming.compareAndSet(!on, on)) return
+        engineAccess.requestService(PREWARM_TOKEN, on)
+        logger.info {
+            if (on) "Cache panel opened, prewarming torrent service" else "Cache panel idle, releasing torrent service"
+        }
+    }
+
+    /**
+     * 电视上没打开 Ani 时 BT 服务根本不会起 (上游的省电策略), 点了缓存只会排队. 面板上那条提示要等下一轮轮询,
+     * 所以点下去的那一刻先在 toast 里说一句 —— 否则只看到「已开始缓存」, 然后什么都不动.
+     */
+    private fun tvBackgroundNote(kind: MediaSourceKind?): String {
+        if (TvRemoteControl.isTvForeground()) return ""
+        return when (kind) {
+            // 只有 BT 会被挡住: 服务跑在独立进程里, 而上游只在 Ani 前台时才起它
+            MediaSourceKind.BitTorrent -> tr("。电视上没有打开 Ani，要打开后才会开始下载")
+            // 自动挑资源时还不知道会挑到什么, 挑到在线源就不受影响, 所以说得留余地
+            null -> tr("。电视上没有打开 Ani，挑到 BT 资源的话要打开后才会开始下载")
+            // 在线源走 HTTP 引擎, 在主进程里下, 电视回不回前台都一样
+            else -> ""
         }
     }
 
@@ -453,7 +514,8 @@ internal object RemoteCache {
         val isPack = entry.original.episodeRange?.isSingleEpisode() == false
         return result(
             true,
-            tr("已开始缓存「{0}」", episodeLabel(b.episode)) + if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "",
+            tr("已开始缓存「{0}」", episodeLabel(b.episode)) +
+                (if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "") + tvBackgroundNote(entry.original.kind),
         )
     }
 
@@ -480,7 +542,7 @@ internal object RemoteCache {
                 errors[key] = tr("缓存失败：{0}", e.message ?: e::class.simpleName)
             }
         }
-        return result(true, tr("已用合集开始缓存「{0}」", episodeLabel(ep)))
+        return result(true, tr("已用合集开始缓存「{0}」", episodeLabel(ep)) + tvBackgroundNote(done.media.kind))
     }
 
     /**
@@ -509,11 +571,12 @@ internal object RemoteCache {
         if (targets.isEmpty()) return result(false, tr("没有找到这些剧集"))
         val b = Batch(subjectId, targets.size)
         batch = b
-        scope.launch {
+        // LAZY + 先存 job 再启动: 否则一批很快跑完时 job 还没赋上, 取消就找不到它
+        b.job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 for (ep in targets) {
                     b.current = episodeLabel(ep)
-                    autoCacheOne(info, ep)?.let { b.failures += "${episodeLabel(ep)}：$it" }
+                    autoCacheOne(info, ep, b)?.let { b.failures += "${episodeLabel(ep)}：$it" }
                     b.done++
                 }
             } finally {
@@ -521,14 +584,35 @@ internal object RemoteCache {
                 b.running = false
             }
         }
-        return result(true, tr("开始为 {0} 集自动挑资源缓存", targets.size))
+        b.job?.start()
+        return result(true, tr("开始为 {0} 集自动挑资源缓存", targets.size) + tvBackgroundNote(null))
+    }
+
+    /**
+     * 取消正在进行的自动批量 (误触「全部用合集缓存」之类): 停掉还没开始的那些; `remove=1` 时把这一批**已经建起来的**
+     * 也删掉 —— 误触时用户要的是整批撤销, 否则只能一条条去缓存列表里删.
+     */
+    private fun autoCancel(request: LanHttpRequest): JsonObject {
+        val b = batch?.takeIf { it.running } ?: return result(false, tr("现在没有正在进行的自动缓存"))
+        b.job?.cancel()
+        b.running = false
+        b.current = null
+        val remaining = (b.total - b.done).coerceAtLeast(0)
+        val created = b.created.toList()
+        logger.info { "Remote auto cache cancelled: subject=${b.subjectId} done=${b.done}/${b.total} created=${created.size}" }
+        if (request.formFields()["remove"] != "1" || created.isEmpty()) {
+            return result(true, tr("已取消，还没开始的 {0} 集不再缓存", remaining))
+        }
+        val removed = RemoteCacheList.deleteByCacheIds(created)
+        b.created.clear()
+        return result(true, tr("已取消，并删除了这一批已经开始的 {0} 集", removed))
     }
 
     /**
      * 一集: 复用已缓存的季度包; 否则沿用之前选过的源 ([pinnedSourceFor]), 一次都没选过才按偏好自动选.
      * @return 失败原因; 成功 (或本来就缓存了) 为 null
      */
-    private suspend fun autoCacheOne(info: SubjectCollectionInfo, ep: EpisodeCollectionInfo): String? {
+    private suspend fun autoCacheOne(info: SubjectCollectionInfo, ep: EpisodeCollectionInfo, batch: Batch? = null): String? {
         val subjectId = info.subjectInfo.subjectId
         val key = subjectId to ep.episodeId
         return try {
@@ -563,7 +647,11 @@ internal object RemoteCache {
                 (why ?: tr("没有找到可缓存的资源，请点「选资源」手动选择。")).also { errors[key] = it }
             } else {
                 logger.info { "Remote auto cache subject $subjectId episode ${ep.episodeId}: source ${done.media.mediaSourceId} (pinned=$pinned)" }
-                done.storage.cache(done.media, done.metadata, ep.episodeInfo.toEpisodeMetadata())
+                // 建缓存与记下它的 id 必须一起完成: 取消正好落在两者之间的话, 这一集就建起来了却撤不掉
+                withContext(NonCancellable) {
+                    val cache = done.storage.cache(done.media, done.metadata, ep.episodeInfo.toEpisodeMetadata())
+                    batch?.created?.add(cache.cacheId)
+                }
                 errors.remove(key)
                 null
             }
@@ -746,4 +834,8 @@ internal object RemoteCache {
 
     /** 手机上打开的那一集多久没人看就关掉请求 (停止查询). */
     private val BROWSE_IDLE = 3.minutes
+
+    /** 面板多久没人拉就把预热的 BT 服务放掉 (watchdog 30 秒一轮, 所以实际 1~1.5 分钟). */
+    private val PANEL_IDLE = 1.minutes
+    private const val PREWARM_TOKEN = "RemoteCache#panel"
 }
