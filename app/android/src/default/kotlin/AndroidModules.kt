@@ -169,6 +169,7 @@ fun getAndroidModules(
                         get<MediaSourceManager>().webVideoMatcherLoader,
                         get<SettingsRepository>(),
                         get<WebSessionManager>(),
+                        get<ProxyProvider>(),
                     ),
                 ),
         )
