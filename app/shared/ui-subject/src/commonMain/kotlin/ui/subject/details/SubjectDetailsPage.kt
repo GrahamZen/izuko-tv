@@ -421,7 +421,9 @@ private fun SubjectDetailsPage(
         if (layoutParams.isMultiColumn && (state.info != null || useTvImmersive)) {
             // 双栏 / 三栏: 全新自适应布局 (复用现有 SubjectDetailsState 数据).
             // 桌面无"评价" tab, 完整评论流与"写评价"从评价预览/热门评价卡进入.
-            var showComments by rememberSaveable { mutableStateOf(false) }
+            // -1 = 关着; >= 0 = 开着并落在第几条评论 (TV 详情页每张评论卡进的是它自己那一条)
+            var showCommentsAt by rememberSaveable { mutableStateOf(-1) }
+            val showComments = showCommentsAt >= 0
             EditableRatingDialogsHost(state.editableRatingState)
             if (showComments) {
                 // 标记这次评分是从本 sheet 里的"写评价"打开的: 关闭后只有它收回焦点,
@@ -432,7 +434,8 @@ private fun SubjectDetailsPage(
                     onClickUrl = onClickCommentUrl,
                     onClickImage = onClickCommentImage,
                     onClickWriteReview = { state.editableRatingState.requestEdit(writeReviewSource) },
-                    onDismissRequest = { showComments = false },
+                    onDismissRequest = { showCommentsAt = -1 },
+                    initialFocusIndex = showCommentsAt.coerceAtLeast(0),
                     reportState = state.subjectCommentReportState,
                     onOpenOriginal = onOpenCommentOriginal,
                     ratingDialogVisible = state.editableRatingState.isEditingFrom(writeReviewSource),
@@ -449,7 +452,7 @@ private fun SubjectDetailsPage(
                         onPlay = onPlay,
                         onClickTag = onClickTag,
                         onClickLogin = onClickLogin,
-                        onShowComments = { showComments = true },
+                        onShowComments = { index -> showCommentsAt = index.coerceAtLeast(0) },
                         modifier = modifier,
                         showTopBar = showTopBar,
                         windowInsets = windowInsets,
@@ -470,7 +473,7 @@ private fun SubjectDetailsPage(
                         onEpisodeLongClick = onEpisodeLongClick,
                         onClickTag = onClickTag,
                         onClickLogin = onClickLogin,
-                        onShowComments = { showComments = true },
+                        onShowComments = { showCommentsAt = 0 },
                         onClickCache = { navigator.navigateSubjectCaches(presentation.subjectId) },
                         modifier = modifier,
                         showTopBar = showTopBar,

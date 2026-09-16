@@ -169,6 +169,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_NAV_READY_BUDGET
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_SUMMARY_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
@@ -432,6 +433,14 @@ fun TvExplorationPage(
             navLocked = false
         }
     }
+    // 门控中 (按了确认、导航还没发出) 的那次进入; 期间按返回 = 反悔, 取消它 (见下方 BackHandler)
+    var pendingNav by remember { mutableStateOf<Job?>(null) }
+    // 进了详情页马上又退回来: 转场还没走完, 本页没被移出组合, 锁也还没到期 —— 回到栈顶就解锁, 不然回来后一时点不动卡片.
+    // 导航发出后本页收到的确认键由条目装饰器吞掉 (不在栈顶), 锁在那之后本来就不再起作用
+    val pageForeground = LocalPageIsForeground.current
+    LaunchedEffect(pageForeground) {
+        snapshotFlow { pageForeground.value }.collect { if (it && pendingNav == null) navLocked = false }
+    }
     val navigateToSubject: (subjectId: Int, name: String, cover: String, source: String) -> Unit =
         { subjectId, name, cover, source ->
             if (!navLocked) {
@@ -440,13 +449,14 @@ fun TvExplorationPage(
                     put("subject_id", subjectId)
                 }
                 lockNavigationForTransition()
-                scope.launch {
+                pendingNav = scope.launch {
                     withTimeoutOrNull(TV_NAV_READY_BUDGET) {
                         // tvHeroBackdropReady 读的是服务层热表 (快照可观察), 预取一落表这里就放行
                         snapshotFlow {
                             infoCache[subjectId] != null && tmdb.tvHeroBackdropReady(subjectId)
                         }.first { it }
                     }
+                    pendingNav = null
                     navigator.navigateSubjectDetails(
                         subjectId = subjectId,
                         placeholder = SubjectDetailPlaceholder(id = subjectId, name = name, coverUrl = cover),
@@ -752,10 +762,16 @@ fun TvExplorationPage(
     // 自动轮播: 仅在 hero 态推进; carouselInteraction 变化 (手动切换) 会重启本效果, 重置计时
     LaunchedEffect(carouselSize, heroExpanded, carouselInteraction) {
         if (!heroExpanded || carouselSize <= 1) return@LaunchedEffect
-        while (true) {
-            delay(TV_CAROUSEL_AUTO_ADVANCE_MILLIS)
-            carouselAutoAdvanced = true
-            carouselIndex = (carouselIndex + 1) % carouselSize
+        // 本页被放大进来的详情页盖着 (列表页常驻组合、不画, 见 TvZoomStackScene) 时不计时: 换图会连带 hero 媒体解析 / 预取 / 重组, 全是白做.
+        // 回到前台后**重新计时** —— 不能"等满 6 秒再等前台", 那样停久了一回来就立刻换图: 缩回刚落地画面就跳, hero 地址也对不上缩回那张
+        // (撤层要等到就绪超时). 2026-09-15 审查
+        snapshotFlow { pageForeground.value }.collectLatest { foreground ->
+            if (!foreground) return@collectLatest
+            while (true) {
+                delay(TV_CAROUSEL_AUTO_ADVANCE_MILLIS)
+                carouselAutoAdvanced = true
+                carouselIndex = (carouselIndex + 1) % carouselSize
+            }
         }
     }
 
@@ -780,12 +796,15 @@ fun TvExplorationPage(
             else -> heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
         }
     }
-    // **转场窗口内吞掉返回键** (navLocked 的另一半; 原先它只挡前进的确认键). 必须注册在上面
-    // 那条之后 —— BackHandler 走 OnBackPressedDispatcher, 后注册的先拿到.
-    // 不挡的话: 导航发出后本页还在转场里活着并继续收按键, 这一下返回会被本页或主壳吃掉
-    // (主壳那条是 `page != Exploration -> 切回探索页`), 表现为"返回默默生效 / 像返回了两次".
-    // 语义是"这一下不算": 到了目标页再按一下就是正常返回.
-    BackHandler(enabled = navLocked) { /* 吞掉 */ }
+    // 按了确认、导航还没发出 (门控在等首屏材料, 最多 TV_NAV_READY_BUDGET) 时按返回 = 反悔: 取消这次进入, 留在本页.
+    // 必须注册在上面那条之后 —— BackHandler 走 OnBackPressedDispatcher, 后注册的先拿到.
+    // 导航发出之后本页不在栈顶, 本页与主壳的返回处理都不生效 (见 BackHandler), 返回直接交给导航, 退掉正在进入的详情页.
+    // (原先这里在整个转场窗口吞掉返回, 防它被本页或主壳吃掉, 代价是进详情页后要等 ~1s 才退得出去)
+    BackHandler(enabled = pendingNav != null) {
+        pendingNav?.cancel()
+        pendingNav = null
+        navLocked = false
+    }
     // 长按返回在本页不再单独注册: 根部兜底统一弹快捷菜单 (回到主界面 / 回到·关闭正在播放 /
     // 刷新本页 / 退出应用, 见 TvQuickActionMenu). 菜单的「回到主界面」落地后把焦点送上轮播
     // 主按钮 —— 发起方可能在别的 tab / 别的目的地 (那一刻本页还没组合出来), 只能留一个标志,
@@ -1448,7 +1467,19 @@ private fun TvExplorationHeroOverlay(
                             .fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
                             // 登记标题位置, 给详情页的放大转场 (标题从这里平移过去)
                             .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(target.subjectId, it.boundsInRoot(), target.title) }
-                            .basicMarquee(iterations = tvHeroMarqueeIterations()),
+                            // 返回缩回时反向平移回来 (见 TvHeroZoomHandoff.shrinkTitleOffset). 必须挂在
+                            // onGloballyPositioned **之内**: 图层变换会进 positionInRoot, 挂外面登记的框会自激
+                            .graphicsLayer {
+                                val o = TvHeroZoomHandoff.shrinkTitleOffset(target.subjectId)
+                                translationX = o?.x ?: 0f
+                                translationY = o?.y ?: 0f
+                            }
+                            // 缩回期间停掉走马灯 (停掉即回到行首) 再平移: 滚到中间时被拉去平移, 落位那一刻
+                            // 走马灯重新开始又跳回行首, 看起来闪一下 (见 TvHeroZoomHandoff.titleSettling)
+                            .then(
+                                if (TvHeroZoomHandoff.titleSettling(target.subjectId)) Modifier
+                                else Modifier.basicMarquee(iterations = tvHeroMarqueeIterations()),
+                            ),
                         color = tvHeroContentColor(),
                         style = MaterialTheme.typography.headlineLarge,
                         maxLines = 1,

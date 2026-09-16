@@ -147,14 +147,15 @@ fun RelatedSubjectCard(
                 maxLines = 1,
                 overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
             )
-            info.relation?.let { relation ->
-                Text(
-                    renderSubjectRelation(relation),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
+            // 关系标签**恒占一行**, 没有就留空: 塌掉的话同一排里有标签 / 没标签的卡高度差一行,
+            // 电视上焦点横向移过去页面会跟着上下动 (详情页按焦点元素下缘算页内露出量, 见 TvDetailsPager),
+            // 手机端则是卡片下缘参差. 同「状态位恒在、换条目不跳」的排版规则.
+            Text(
+                info.relation?.let { renderSubjectRelation(it) } ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }

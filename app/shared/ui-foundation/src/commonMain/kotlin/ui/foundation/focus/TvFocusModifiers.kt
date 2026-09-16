@@ -19,6 +19,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.type
 import me.him188.ani.app.ui.foundation.isAutoRepeat
 import me.him188.ani.app.ui.foundation.tv.tvTouchPressSignal
@@ -50,6 +52,24 @@ import androidx.compose.runtime.Composable
  */
 fun Modifier.tvSwallowKeysWhenLeaving(leaving: () -> Boolean): Modifier = onPreviewKeyEvent {
     leaving() && it.key != Key.Back && it.key != Key.Escape && it.key != Key.ButtonB
+}
+
+/**
+ * [tvSwallowKeysWhenLeaving] 的指针版: [leaving] 为真时把本子树的**触摸 / 鼠标**事件在 Initial 阶段全部吃掉.
+ *
+ * 遥控器那半原本就有 (按键版), 指针这半一直缺: 返回缩回的快速路径只是把详情页**藏起来**(alpha 0, 组合与
+ * 命中测试都还在), 于是触屏 / 鼠标设备上那两三百毫秒里点到看不见的播放按钮就真能点进去 (2026-09-15 审查).
+ * 与按键版用同一个判据挂在同一处, 免得日后两边再走偏.
+ *
+ * [leaving] 会在每个事件上重新求值; 它应当读全局 / remember 出来的状态对象, 不要闭包捕获每帧新建的值.
+ */
+fun Modifier.tvSwallowPointerWhenLeaving(leaving: () -> Boolean): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (leaving()) event.changes.forEach { it.consume() }
+        }
+    }
 }
 
 /**
