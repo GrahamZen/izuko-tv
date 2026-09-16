@@ -505,6 +505,12 @@ object TvRemoteControl {
     @Volatile
     private var tvForeground = true
 
+    /**
+     * 电视上 Ani 在不在前台. 缓存那边要用: BT 服务只有在前台才会启动 (上游的省电策略), 所以后台点缓存只会排队等着,
+     * 缓存面板与缓存列表据此说明白是"在启动服务"还是"要等打开 Ani" (见 [RemoteCacheList]).
+     */
+    internal fun isTvForeground(): Boolean = tvForeground
+
     /** 最近一次回到前台的时刻, 见 [awaitFront] */
     @Volatile
     private var foregroundSince = 0L
@@ -959,6 +965,9 @@ object TvRemoteControl {
             put("seq", seq)
             if (after != null && after < seq && text != null) put("text", text)
             put("away", !tvForeground)
+            // 有没下完的 BT 缓存时, 上面那条要说清楚缓存也停着: BT 服务只在 Ani 前台时才起 (见 RemoteCacheList),
+            // 不说的话用户只当是"电视没显示 Ani"而已, 不会想到下载也不动了
+            if (!tvForeground && RemoteCacheList.hasPendingTorrentCache()) put("cachePending", true)
             // 启动时的二维码弹窗还开着: 网页顶上给一条「还开着 [关闭]」, 遥控器关掉后下一轮就收起, 见 closeLaunchDialog
             put("launchDialog", _dialogVisible.value)
             // 「不在前台」那一条里的入口按这两个分三态: 没开 → 「切到 Ani」(先确认开启) / 开了没授权 → 「怎么授权」/
