@@ -364,9 +364,28 @@ object TvRemoteControl {
     fun keepAliveEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_KEEP_ALIVE, false)
 
-    /** 开着就趁 Ani 在前台起常驻服务 (Android 12 起后台起不了前台服务); 重复起无副作用. */
+    /** 进程起来的时刻: 启动风暴期间不碰常驻服务, 见 [syncKeepAlive]. */
+    private val processStart = System.currentTimeMillis()
+
+    /**
+     * 开着就趁 Ani 在前台起常驻服务 (Android 12 起后台起不了前台服务); 重复起无副作用.
+     *
+     * **刚启动的一段时间内要等**: 前台服务必须在 `startForegroundService` 之后 10 秒内 `startForeground`,
+     * 而它的 `onStartCommand` 是在主线程排队的 —— 冷启动 (尤其刚装完、还没 AOT 的包) 主线程能忙十几秒, 排不上
+     * 就被系统按 `RemoteServiceException` 杀掉, 而 START_STICKY 又会把它拉起来接着崩
+     * (2026-09-15 真机: 装完包第一次启动连崩三次). 用户在网页上主动开这个开关时进程早就起来了, 不受影响.
+     */
     private fun syncKeepAlive() {
-        if (keepAliveOnExit() && tvForeground) keepAliveService?.invoke(true)
+        if (!keepAliveOnExit() || !tvForeground) return
+        val since = System.currentTimeMillis() - processStart
+        if (since < KEEP_ALIVE_START_DELAY.inWholeMilliseconds) {
+            scope.launch {
+                delay(KEEP_ALIVE_START_DELAY.inWholeMilliseconds - since)
+                if (keepAliveOnExit() && tvForeground) keepAliveService?.invoke(true)
+            }
+            return
+        }
+        keepAliveService?.invoke(true)
     }
 
     /** 网页设置里那张卡片的状态, 见 RemoteSettings.state. */
@@ -1249,6 +1268,9 @@ object TvRemoteControl {
     /** 播放器操作叫 Ani 回前台时最多等多久; 刚从休眠叫醒的要在前台连续待这么久才算站稳 */
     private val FRONT_WAIT = 5.seconds
     private val FRONT_STABLE = 1.seconds
+
+    /** 进程起来后多久才允许起常驻服务 (避开冷启动的主线程排队, 见 syncKeepAlive). */
+    private val KEEP_ALIVE_START_DELAY = 20.seconds
 
     private const val UI_GONE_MESSAGE = "Ani 已退出，无法从手机打开。请先在电视上重新打开 Ani。开启「从手机打开 Ani」并完成授权后，下次可直接从手机打开。"
 
