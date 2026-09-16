@@ -226,6 +226,14 @@ private fun AniNavigator.navigateSingleInstance(route: NavRoutes) {
 
 fun AniNavigator(): AniNavigator = AniNavigatorImpl()
 
+/**
+ * [AniNavigator.navigate] 入栈之前的钩子 (UI 入口设置). TV 在这里判定"这一跳会不会放大" (TvHeroZoomHandoff.decideZoomEntry):
+ * 放在发起导航的那一刻做, 导航库计算布局 (会反复算、也会算历史布局) 时只读结果, 不带副作用 (2026-09-15 审查).
+ */
+object NavigationHooks {
+    var beforePush: ((NavRoutes) -> Unit)? = null
+}
+
 private class AniNavigatorImpl : AniNavigator {
     private val _backStack: MutableStateFlow<SnapshotStateList<NavRoutes>?> = MutableStateFlow(null)
 
@@ -247,6 +255,7 @@ private class AniNavigatorImpl : AniNavigator {
         val stack = currentBackStack
         // 见接口文档: 与栈顶一模一样的路由不入栈
         if (stack.lastOrNull() == route) return
+        NavigationHooks.beforePush?.invoke(route)
         stack.add(route)
     }
 

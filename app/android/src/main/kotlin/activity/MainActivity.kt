@@ -107,6 +107,12 @@ class MainActivity : AniComponentActivity() {
         TvPolishFlags.pressDim = intent.getBooleanExtra("ani_polish_press_dim", TvPolishFlags.pressDim)
         TvPolishFlags.textStagger = intent.getBooleanExtra("ani_polish_text_stagger", TvPolishFlags.textStagger)
         TvPolishFlags.heroZoom = intent.getBooleanExtra("ani_polish_hero_zoom", TvPolishFlags.heroZoom)
+        TvPolishFlags.shrinkPopFirst = intent.getBooleanExtra("ani_polish_shrink_pop_first", TvPolishFlags.shrinkPopFirst)
+        TvPolishFlags.shrinkKeep = intent.getIntExtra("ani_polish_shrink_keep", TvPolishFlags.shrinkKeep)
+        TvPolishFlags.shrinkCurve = intent.getIntExtra("ani_polish_shrink_curve", TvPolishFlags.shrinkCurve)
+        TvPolishFlags.zoomScrimT = intent.getFloatExtra("ani_polish_zoom_scrim_t", TvPolishFlags.zoomScrimT)
+        TvPolishFlags.shrinkScrimT = intent.getFloatExtra("ani_polish_shrink_scrim_t", TvPolishFlags.shrinkScrimT)
+        TvPolishFlags.zoomSoftEdge = intent.getBooleanExtra("ani_polish_zoom_soft_edge", TvPolishFlags.zoomSoftEdge)
         val data = intent.data ?: return
         if (data.scheme != "ani") return
         if (data.host == "subjects") {

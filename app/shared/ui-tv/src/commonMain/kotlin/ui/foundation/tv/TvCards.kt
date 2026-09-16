@@ -10,20 +10,12 @@
 package me.him188.ani.app.ui.foundation.tv
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -48,13 +40,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.graphics.ImageBitmap
-import me.him188.ani.app.ui.foundation.resize
-import me.him188.ani.app.ui.foundation.themeColor
-import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
-import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,37 +55,50 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import kotlin.math.pow
+import kotlin.time.TimeSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.external.placeholder.PlaceholderHighlight
 import me.him188.ani.app.ui.external.placeholder.fade
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
 import me.him188.ani.app.ui.foundation.rememberImageCompletionGrace
+import me.him188.ani.app.ui.foundation.resize
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
+import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
+import me.him188.ani.app.ui.foundation.themeColor
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
-import kotlin.time.TimeSource
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.pow
 
 /**
  * TV 竖版封面卡片 (探索页 / 追番页共用): 聚焦时主题主色外圈 (外圈与封面之间留一圈空隙,
@@ -439,10 +442,11 @@ fun tvBackdropFadeToBlackStops(
     power: Float = 2.5f,
     samples: Int = 20,
     color: Color = Color.Black,
+    maxAlpha: Float = 1f,
 ): Array<Pair<Float, Color>> = Array(samples + 1) { i ->
     val f = i / samples.toFloat()
     val s5 = f * f * f * (f * (f * 6f - 15f) + 10f)
-    (start + (end - start) * f) to color.copy(alpha = 1f - (1f - s5).pow(power))
+    (start + (end - start) * f) to color.copy(alpha = maxAlpha * (1f - (1f - s5).pow(power)))
 }
 
 /**
@@ -560,45 +564,14 @@ fun TvPageBackdropLayer(
                 // 停点由平滑曲线采样生成 (无折点, 避免暗色端可见的马赫带分界线); 渐变带端点在 hero / 卡片两态间插值,
                 // 曲线形状两态共用. 停点与画笔只在尺寸 / 两态插值变化时重建 (cardness 只有探索页 hero ↔ 卡片切换那一段在变);
                 // 每条渐变只画它不透明的那一段 —— 停点之外是 alpha 0, 整张图面积地走一遍混合纯属白付 (渐变坐标仍按整张图, 逐像素不变)
-                val t = cardness()
-                val w = size.width
-                val h = size.height
-                // 顶缘轻度压暗 (非全遮): 给悬浮在 backdrop 上的顶部文字一层可读性 scrim
-                val topBrush = if (topScrim) {
-                    Brush.verticalGradient(
-                        *tvBackdropFadeFromBlackStops(
-                            start = 0f, end = TV_BACKDROP_TOP_SCRIM_END,
-                            maxAlpha = TV_BACKDROP_TOP_SCRIM_ALPHA,
-                            color = fadeColor,
-                        ),
-                        startY = 0f, endY = h,
-                    )
-                } else {
-                    null
-                }
-                val leftEnd = lerp(TV_BACKDROP_LEFT_FADE_END_HERO, TV_BACKDROP_LEFT_FADE_END, t)
-                val leftBrush = Brush.horizontalGradient(
-                    *tvBackdropFadeFromBlackStops(
-                        start = lerp(0f, TV_BACKDROP_LEFT_FADE_START, t),
-                        end = leftEnd,
-                        color = fadeColor,
-                    ),
-                    startX = 0f, endX = w,
-                )
-                // 下缘渐隐: 零斜率极缓起步 + 指数级长尾渐近全遮, 一直渐变到图底
-                val bottomStart = lerp(TV_BACKDROP_BOTTOM_FADE_START_HERO, TV_BACKDROP_BOTTOM_FADE_START, t)
-                val bottomBrush = Brush.verticalGradient(
-                    *tvBackdropFadeToBlackStops(start = bottomStart, end = 1f, color = fadeColor),
-                    startY = 0f, endY = h,
-                )
+                val painter = tvBackdropTreatmentPainter(size, tvPageBackdropTreatment(cardness(), topScrim, fadeColor))
                 onDrawWithContent {
                     drawContent()
-                    // 按下即压暗 (见 dimming 参数): 压在图上、渐变带之下
+                    // 按下即压暗 (见 dimming 参数): 压在图上、渐变带之下. 不进声明: 它是逐帧动画值, 而声明是登记给
+                    // 放大转场的"这张图长什么样", 按下那一下的临时压暗不该被带进转场
                     val dimAlpha = dim.value
                     if (dimAlpha > 0f) drawRect(fadeColor.copy(alpha = dimAlpha))
-                    if (topBrush != null) drawRect(topBrush, size = Size(w, h * TV_BACKDROP_TOP_SCRIM_END))
-                    drawRect(leftBrush, size = Size(w * leftEnd, h))
-                    drawRect(bottomBrush, topLeft = Offset(0f, h * bottomStart), size = Size(w, h * (1f - bottomStart)))
+                    with(painter) { draw(1f) }
                 }
             },
             isEmpty = { it == null },
@@ -625,7 +598,10 @@ fun TvPageBackdropLayer(
                 }
                 // 交叉淡入期间新旧两张图共存: 条目 id 必须在**这张图开始加载那一刻**取
                 // (remember(url)), 否则旧图加载完时读到的是新条目的 id, 色就串了
-                TvBackdropImage(url, remember(url) { themeSeedSubjectId() }, upgradeUrl = upgradeUrl(), obscure = obscured)
+                TvBackdropImage(
+                    url, remember(url) { themeSeedSubjectId() }, upgradeUrl = upgradeUrl(), obscure = obscured,
+                    zoomTreatment = { tvPageBackdropTreatment(cardness(), topScrim, fadeColor) },
+                )
             }
         }
     }
@@ -716,6 +692,12 @@ private fun TvBackdropImage(
     obscure: Boolean = false,
     /** 本页盖在这张图上的整层压暗 (全屏背景层有), 随登记交给放大转场, 见 TvHeroZoomHandoff.Session.dim. */
     zoomDim: Color = Color.Transparent,
+    /**
+     * 本页压在这张图上的那套遮罩 (见 [TvBackdropTreatment]), 随登记交给放大转场: 转场画的是"本页这份"与
+     * "详情页那份"的插值, 于是起点逐像素等于本页. **在 onGloballyPositioned 里取**, 不在组合里读 ——
+     * 里面的 cardness 在探索页 hero ↔ 卡片切换那一段每帧都在变, 读进组合会把整层背景拖进逐帧重组.
+     */
+    zoomTreatment: () -> TvBackdropTreatment? = { null },
 ) {
     // 接管在途预热 (见 TV_BACKDROP_PREFETCH_HANDOFF_MILLIS): 这张图正被预热时先等它.
     // 在组合里取一次, 没有在途的常规情形一帧都不耽误
@@ -730,13 +712,17 @@ private fun TvBackdropImage(
     }
     if (waitingPrefetch) return
     val scope = rememberCoroutineScope()
-    // 登记"这张图此刻在屏幕哪个框里", 给详情页的放大转场 (TvHeroZoomHandoff); 离开组合即撤销
-    DisposableEffect(url) { onDispose { TvHeroZoomHandoff.retract(url) } }
+    // 登记"这张图此刻在屏幕哪个框里", 给详情页的放大转场 (TvHeroZoomHandoff); 离开组合即撤销.
+    // 撤销按**本组件这一枚标记**对认, 不按 URL: 两个页面同时显示同一张图时 (换 tab 那几帧), 按 URL 会互相抹掉
+    val zoomSourceOwner = remember { Any() }
+    DisposableEffect(zoomSourceOwner) { onDispose { TvHeroZoomHandoff.retract(zoomSourceOwner) } }
     AsyncImage(
         url,
         contentDescription = null,
         Modifier.fillMaxSize().onGloballyPositioned { coords ->
-            themeSeedSubjectId?.let { TvHeroZoomHandoff.publish(it, url, coords.boundsInRoot(), zoomDim) }
+            themeSeedSubjectId?.let {
+                TvHeroZoomHandoff.publish(zoomSourceOwner, it, url, coords.boundsInRoot(), zoomDim, zoomTreatment())
+            }
         },
         contentScale = ContentScale.Crop,
         // 与详情页同一个缓存键 (见 tvHeroBackdropDecodeAtOriginalSize), 进详情页首帧就有图.
@@ -744,6 +730,8 @@ private fun TvBackdropImage(
         decodeAtOriginalSize = !obscure && tvHeroBackdropDecodeAtOriginalSize(url),
         downsampleLongEdgePx = if (obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
         onSuccess = { success ->
+            // 返回缩回撤层前要等列表页 hero 这张图画得出来 (见 TvHeroZoomHandoff.listReady)
+            themeSeedSubjectId?.let { TvHeroZoomHandoff.markSourceLoaded(it, url) }
             if (obscure) return@AsyncImage
             // 提前取色: 已经算过的条目直接跳过; 取色本身在后台线程 (与详情页同一条 themeColor)
             val subjectId = themeSeedSubjectId ?: return@AsyncImage
@@ -824,7 +812,10 @@ fun TvFullScreenBackdropLayer(
             // 屏幕中段, 是图与背景之间的过渡, 不是一条贴着屏底的边)
             Box(Modifier.fillMaxSize()) {
                 // 条目 id 在这张图开始加载那一刻取 (理由同 TvPageBackdropLayer: 交叉淡入期间新旧两张共存)
-                TvBackdropImage(url, remember(url) { themeSeedSubjectId() }, zoomDim = dim)
+                TvBackdropImage(
+                    url, remember(url) { themeSeedSubjectId() },
+                    zoomDim = dim, zoomTreatment = { TvBackdropTreatment(dim = dim) },
+                )
                 // 整屏基础压暗: 亮部海报上压不住灰色小字. 这是唯一一层压暗 —— 左缘不再额外补
                 // scrim: 任何"从左缘衰减到透明"的横向渐变都会在收尾处留下一条肉眼可见的边界,
                 // 而侧边栏图标压在这层整屏压暗上本来就足够清楚 (白图标 + 深底)
@@ -833,6 +824,121 @@ fun TvFullScreenBackdropLayer(
         }
     }
 }
+
+/**
+ * 把一份 [TvBackdropTreatment] 画到 backdrop 上 —— **列表页与详情页共用这一个画法**, 放大转场画的是两份声明的插值.
+ *
+ * 保住原有的三项优化 (都有实测账, 别推翻):
+ * - 每条渐变**只画它不透明的那一段** (clipRect / 定尺寸 drawRect, 渐变坐标仍按整层): 铺满整层时透明部分 GPU
+ *   照样逐像素混合一遍, 4K 下每条全屏混合约 2~3ms;
+ * - 停点由平滑曲线采样生成, 没有折点 (暗端的马赫带分界线);
+ * - 下缘在有纯色垫底时画同色渐变、不用 DstOut, 不必开离屏缓冲 (见 [TvBackdropTreatment.bottomDstOut]).
+ *
+ * 画笔按尺寸 + 声明预备 (调用方用 drawWithCache / remember 缓存), 画的时候再乘一个总 alpha.
+ */
+class TvBackdropTreatmentPainter internal constructor(
+    private val size: Size,
+    private val dim: Color,
+    private val top: Brush?,
+    private val topEnd: Float,
+    private val left: Brush?,
+    private val leftEnd: Float,
+    private val bottom: Brush?,
+    private val bottomStart: Float,
+    private val bottomDstOut: Boolean,
+) {
+    fun DrawScope.draw(alpha: Float = 1f) {
+        if (alpha <= 0f) return
+        val w = size.width
+        val h = size.height
+        if (dim.alpha > 0f) drawRect(dim, alpha = alpha)
+        // 只画到不透明段的边界: 之后停点已全透明, 再画就是整层面积白走一遍混合
+        if (top != null) drawRect(top, size = Size(w, h * topEnd), alpha = alpha)
+        if (left != null) drawRect(left, size = Size(w * leftEnd, h), alpha = alpha)
+        if (bottom != null) {
+            drawRect(
+                bottom,
+                topLeft = Offset(0f, h * bottomStart),
+                size = Size(w, h * (1f - bottomStart)),
+                alpha = alpha,
+                blendMode = if (bottomDstOut) BlendMode.DstOut else DrawScope.DefaultBlendMode,
+            )
+        }
+    }
+}
+
+/**
+ * 停点的**透明度剖面**按形状缓存 (与颜色无关): 曲线形状是固定的, 每个采样点一次 `pow` 才是贵的那部分,
+ * `Color.copy(alpha = )` 很便宜. 于是跨颜色复用同一份剖面, 缓存不会因为插值出来的中间色无限增长
+ * (2026-09-16 审查指出的风险: 遮罩色现在是连续插值的, 按 Color 做键会每帧攒一个新条目).
+ */
+private val fadeOutProfile: FloatArray by lazy {
+    FloatArray(15) { i -> val f = i / 14f; val sm = f * f * (3f - 2f * f); 1f - sm }
+}
+private val fadeInProfile: FloatArray by lazy {
+    FloatArray(21) { i ->
+        val f = i / 20f
+        val s5 = f * f * f * (f * (f * 6f - 15f) + 10f)
+        1f - (1f - s5).pow(2.5f)
+    }
+}
+
+private fun stopsOf(profile: FloatArray, color: Color, maxAlpha: Float): Array<Pair<Float, Color>> =
+    Array(profile.size) { i -> (i / (profile.size - 1).toFloat()) to color.copy(alpha = maxAlpha * profile[i]) }
+
+/**
+ * 按尺寸与声明预备画笔, 见 [TvBackdropTreatmentPainter].
+ *
+ * **画笔在这里就建好**, 不放到 `draw()` 里: 列表页那条静态路径用 `drawWithCache` 缓存的是本对象, 画笔建在 draw 里
+ * 等于缓存白做 (2026-09-16 审查). 转场途中声明每帧都在变, 本来就要重建, 不吃亏.
+ */
+fun tvBackdropTreatmentPainter(size: Size, tr: TvBackdropTreatment): TvBackdropTreatmentPainter {
+    val h = size.height
+    val w = size.width
+    val top = tr.top?.takeIf { it.maxAlpha > 0f }?.let {
+        Brush.verticalGradient(*stopsOf(fadeOutProfile, it.color, it.maxAlpha), startY = h * it.start, endY = h * it.end)
+    }
+    val left = tr.left?.takeIf { it.maxAlpha > 0f }?.let {
+        Brush.horizontalGradient(*stopsOf(fadeOutProfile, it.color, it.maxAlpha), startX = w * it.start, endX = w * it.end)
+    }
+    val bottom = tr.bottom?.takeIf { it.maxAlpha > 0f }?.let {
+        Brush.verticalGradient(*stopsOf(fadeInProfile, it.color, it.maxAlpha), startY = h * it.start, endY = h * it.end)
+    }
+    return TvBackdropTreatmentPainter(
+        size, tr.dim,
+        top, tr.top?.end ?: 0f,
+        left, tr.left?.end ?: 0f,
+        bottom, tr.bottom?.start ?: 1f,
+        tr.bottomDstOut,
+    )
+}
+
+/**
+ * 列表页 backdrop 那套遮罩的声明 (顶缘 scrim / 左缘 / 下缘). 渐变带端点在 hero / 卡片两态间按 [cardness] 插值,
+ * 曲线形状两态共用. 详情页那份见 `tvHeroBackdropTreatment`, 放大转场画的是两者的插值.
+ */
+fun tvPageBackdropTreatment(cardness: Float, topScrim: Boolean, fadeColor: Color): TvBackdropTreatment =
+    TvBackdropTreatment(
+        top = if (topScrim) {
+            TvBackdropFade(0f, TV_BACKDROP_TOP_SCRIM_END, TV_BACKDROP_TOP_SCRIM_ALPHA, fadeColor)
+        } else {
+            null
+        },
+        left = TvBackdropFade(
+            start = lerp(0f, TV_BACKDROP_LEFT_FADE_START, cardness),
+            end = lerp(TV_BACKDROP_LEFT_FADE_END_HERO, TV_BACKDROP_LEFT_FADE_END, cardness),
+            maxAlpha = 1f,
+            color = fadeColor,
+        ),
+        // 下缘渐隐: 零斜率极缓起步 + 指数级长尾渐近全遮, 一直渐变到图底
+        bottom = TvBackdropFade(
+            start = lerp(TV_BACKDROP_BOTTOM_FADE_START_HERO, TV_BACKDROP_BOTTOM_FADE_START, cardness),
+            end = 1f,
+            maxAlpha = 1f,
+            color = fadeColor,
+            toEdge = true,
+        ),
+    )
 
 // ============ TV 沉浸式页面 (探索/追番/搜索) 共享调参 ============
 // 探索页轮播 (hero) 态的参数不在此列, 单独放在 TvExplorationPage 里.

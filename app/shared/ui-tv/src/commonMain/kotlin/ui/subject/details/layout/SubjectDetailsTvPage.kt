@@ -14,10 +14,22 @@ import androidx.compose.animation.core.tween
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
+import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
+import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomEasing
+import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
+import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SWAP_AT
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_READY_TIMEOUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
@@ -28,6 +40,11 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import kotlinx.coroutines.CoroutineScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -53,6 +70,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -111,6 +129,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
+import me.him188.ani.app.ui.foundation.navigation.LocalNavEntryContentKey
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import androidx.compose.ui.graphics.BlendMode
@@ -120,6 +140,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.contentColorFor
@@ -132,6 +153,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -150,10 +172,17 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
@@ -200,11 +229,13 @@ import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.subject_details_air_date_format
+import me.him188.ani.app.ui.lang.subject_details_aliases
+import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_episodes
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
-import me.him188.ani.app.ui.lang.subject_details_info
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import me.him188.ani.app.ui.lang.subject_details_related_subjects
 import me.him188.ani.app.ui.lang.subject_details_show_more
@@ -227,10 +258,11 @@ import me.him188.ani.app.ui.subject.details.components.RelatedSubjectsLazyRow
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.subject.details.sections.CharactersSection
-import me.him188.ani.app.ui.subject.details.sections.ReviewsPreviewSection
+import me.him188.ani.app.data.models.subject.RatingInfo
+import me.him188.ani.app.ui.subject.details.sections.ReviewsSummarySection
+import me.him188.ani.app.ui.subject.details.sections.TV_REVIEW_HEADER_GAP
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.StaffSection
-import me.him188.ani.app.ui.subject.details.sections.SubjectInfoTable
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_CONTENT_PADDING
@@ -243,6 +275,7 @@ import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.stringResource
 
@@ -297,6 +330,7 @@ fun SubjectDetailsTvLoadingPlaceholder(
     // 加载转圈, 但标题和侧边栏不能跟着消失 —— 标题此时只有导航时从列表页带来的那一份, 侧边栏本来就在同一位置
     val enteredWithZoom = remember { underZoom }
     val navTitle = remember { zoomSession?.title }
+    val abortFade = rememberTvZoomAbortFade(zoomPathChosen = enteredWithZoom, zoomSession = zoomSession)
 
     var slowLoad by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -306,7 +340,7 @@ fun SubjectDetailsTvLoadingPlaceholder(
 
     val pad = layoutParams.contentHorizontalPadding
     val scrollState = rememberScrollState()
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().graphicsLayer { alpha = abortFade.value }) {
         MultiColumnScaffold(
             layoutParams.copy(
                 contentHorizontalPadding = 0.dp,
@@ -361,6 +395,9 @@ fun SubjectDetailsTvLoadingPlaceholder(
         if (enteredWithZoom) {
             Box(
                 Modifier.align(Alignment.CenterStart).zIndex(1f)
+                    // 跟着整屏底色一起渐入: 按确认到图上屏之间 (scrimAlpha = 0) 本来会直接蹦在列表页上, 而同页的大标题
+                    // 早就有"会话起跑前不画"的保护 (见 tvHeroZoomTitleShift), 这一处漏了
+                    .graphicsLayer { alpha = zoomSession?.scrimAlpha ?: 1f }
                     .focusGroup()
                     .focusProperties { onEnter = { cancelFocusChange() } },
             ) {
@@ -368,6 +405,28 @@ fun SubjectDetailsTvLoadingPlaceholder(
             }
         }
     }
+}
+
+/**
+ * 导航那一刻按"会放大"选了**不淡入**的转场, 放大却没起跑就放弃了 —— 放大层等图超出加载预算 (长按快速翻卡后立刻按确认常见),
+ * 或会话对不上真页 (背景图地址变了): 本页从 0 淡入, 否则整页硬切出来像闪一下 (2026-09-15 用户). 返回的 alpha 在绘制里读.
+ * 放弃那一次组合里就换成从 0 起的动画, 整页露出来的第一帧已是 0. 起跑过的会话不算 (放大层的图已在屏上, 接手照旧).
+ */
+@Composable
+private fun rememberTvZoomAbortFade(
+    zoomPathChosen: Boolean,
+    zoomSession: TvHeroZoomHandoff.Session?,
+): Animatable<Float, AnimationVector1D> {
+    var sawStart by remember { mutableStateOf(false) }
+    LaunchedEffect(zoomSession) {
+        val s = zoomSession ?: return@LaunchedEffect
+        snapshotFlow { s.started }.first { it }
+        sawStart = true
+    }
+    val aborted = zoomPathChosen && zoomSession == null && !sawStart
+    val fade = remember(aborted) { Animatable(if (aborted) 0f else 1f) }
+    LaunchedEffect(fade) { fade.animateTo(1f, tween(TV_DETAILS_ABORT_FADE_MILLIS)) }
+    return fade
 }
 
 /** 首屏占位里补出加载转圈的等待阈值: 短等待放转圈反而更显慢. */
@@ -391,7 +450,8 @@ fun SubjectDetailsTvPage(
     onPlay: (episodeId: Int) -> Unit,
     onClickTag: (Tag) -> Unit,
     onClickLogin: () -> Unit,
-    onShowComments: () -> Unit,
+    /** 参数 = 打开后落在第几条评论. */
+    onShowComments: (initialFocusIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
     onEpisodeCollectionUpdate: (SetEpisodeCollectionTypeRequest) -> Unit = {},
     showTopBar: Boolean = true,
@@ -493,6 +553,10 @@ fun SubjectDetailsTvPage(
         ?.takeIf { !videoBackground && it.subjectId == state.subjectId && it.detailsUrl == heroBackdropUrl }
     val underZoom = zoomSession != null
     val enteredWithZoom = remember { underZoom }
+    val abortFade = rememberTvZoomAbortFade(
+        zoomPathChosen = remember { TvHeroZoomHandoff.session?.subjectId == state.subjectId },
+        zoomSession = zoomSession,
+    )
     var revealed by remember { mutableStateOf(!enteredWithZoom) }
     var ownBackdropLoaded by remember { mutableStateOf(false) }
     // 换图接手 (放大的是列表页的单集剧照, 本页是整部背景): 自己的背景图在放大层上淡进来, 进度只在绘制里读
@@ -501,7 +565,10 @@ fun SubjectDetailsTvPage(
     LaunchedEffect(Unit) {
         // 会话在但对不上本页 (背景图 URL 变了等): 放弃这次放大, 本页照常画
         val s = TvHeroZoomHandoff.session
-        if (s != null && zoomSession == null) TvHeroZoomHandoff.endSession(s)
+        if (s != null && zoomSession == null) {
+            zoomLogger.info { "Details entry: zoom abandoned (session doesn't match details page), fade in" }
+            TvHeroZoomHandoff.endSession(s)
+        }
     }
     // 接手: 放大到位 + 自己的背景图已加载 (以 alpha 0 组合着, 位图就在内存里; 显示与撤层落在同一帧).
     // 会话一结束 (接手 / 放弃 / 看门狗) 就放行其余内容
@@ -512,13 +579,17 @@ fun SubjectDetailsTvPage(
             return@LaunchedEffect
         }
         snapshotFlow { s.t >= 1f && ownBackdropLoaded }.first { it }
-        if (s.url != s.detailsUrl) {
-            // 放大的是另一张图: 先把自己的图淡进来再撤层, 不硬换. 其余内容照旧等会话结束一次出现, 首屏以下区块那几个
+        if (s.url != s.detailsUrl && !s.swapped) {
+            // 放大的是另一张图、途中没压暗换过来 (起跑时详情页那张还没加载好): 先把自己的图淡进来再撤层, 不硬换. 其余内容照旧等会话结束一次出现, 首屏以下区块那几个
             // 重组帧因此落在淡入之后, 不卡这一段
             s.handingOver = true
             crossFading = true
             crossImageAlpha.animateTo(1f, tween(TV_HERO_ZOOM_CROSS_IMAGE_FADE_MILLIS))
         }
+        // 缩回已经开始 (放大到位那一刻按了返回): **不结束会话** —— 会话一结束 covering 就为假, 而缩回层还在等图
+        // 与帧头 (最多 150ms), 这段窗口里本页会整页露出来 (首屏按钮都在), 随即被缩回层盖掉 = 闪一下
+        // (用户 2026-09-16). 会话改由缩回层上屏那一刻结束 (见 TvHeroZoomHandoff.armShrink).
+        if (TvHeroZoomHandoff.shrink?.fromSession === s) return@LaunchedEffect
         TvHeroZoomHandoff.endSession(s)
     }
     // 首屏信息带 (副标题 / 圆钮 / 播放按钮 / 标签 / 评分) 在放大尾段就先组合好, 显示前不画 (TvHeroBlock.bodyHidden):
@@ -546,12 +617,19 @@ fun SubjectDetailsTvPage(
     var focusEpisodesWhenReady by remember { mutableStateOf(false) }
     LaunchedEffect(revealed) {
         if (!revealed || sectionsReady) return@LaunchedEffect
+        // 缩回已经开始: 本页正在离场 (快速路径下只是藏着, 组合还在), 这三帧的区块组合全是白干, 而且恰好落在缩回起步的
+        // 那几帧上 —— "刚放大完成就立刻返回"正是这条路 (2026-09-16 审查). 预画早就有同一道闸, 这里补齐
+        // **每一阶段都重查**: 只在开头查一次的话, 查过之后用户才按返回, 后面两帧的区块组合照样跑进缩回动画里
+        // (快速路径保留详情页组合, 这些重活是实打实的) —— 2026-09-16 审查
+        if (TvHeroZoomHandoff.shrinking) return@LaunchedEffect
         withFrameNanos { }
         sectionsReady = true
         sectionsStage = 1
         withFrameNanos { }
+        if (TvHeroZoomHandoff.shrinking) return@LaunchedEffect
         sectionsStage = 2
         withFrameNanos { }
+        if (TvHeroZoomHandoff.shrinking) return@LaunchedEffect
         sectionsStage = 3
     }
     // 看门狗: 无论如何 (图没到 / 接手条件凑不齐) 都在限时内放行, 别让页面停在只有标题的状态
@@ -584,7 +662,13 @@ fun SubjectDetailsTvPage(
         else -> bangumiSummaryFallback.orEmpty()
     }
     val scrollState = rememberScrollState()
-    val scope = rememberCoroutineScope()
+    // 分页驱动器: 滚动量是"当前页起点 + 页内露出"的派生值, 整页只有它一个写者 (见 TvDetailsPager).
+    // 换页照 Prime Video 淡入淡出 + 短距离滑动.
+    val backdropFadePx = with(LocalDensity.current) { HERO_BACKDROP_FADE_DISTANCE.toPx() }
+    val pager = remember(scrollState, backdropFadePx, videoBackground) {
+        TvDetailsPager(scrollState, backdropFadePx, transitions = !videoBackground)
+    }
+    LaunchedEffect(pager) { pager.run() }
 
     // Hero 标签墙的状态: rememberSaveable 跨"点击标签→搜索→返回"保留 —
     // 返回本页时浏览模式不变, 焦点直接恢复到最后聚焦的那个标签上 (restorePending 标记)
@@ -629,6 +713,7 @@ fun SubjectDetailsTvPage(
     sectionNav.register(TvDetailsSection.CHARACTERS, anchors.charactersSection)
     sectionNav.register(TvDetailsSection.STAFF, anchors.staffSection)
     sectionNav.register(TvDetailsSection.BELOW, anchors.belowSection)
+    sectionNav.register(TvDetailsSection.REVIEWS, anchors.reviewsSection)
     sectionNav.setPresent(TvDetailsSection.HERO, true)
     sectionNav.setPresent(TvDetailsSection.EPISODES, !videoBackground)
     // 角色/制作人员区块自身在空数据时不渲染 (Section 内部 early return), 存在性同步该条件
@@ -642,9 +727,48 @@ fun SubjectDetailsTvPage(
     )
     sectionNav.setPresent(
         TvDetailsSection.BELOW,
-        // 与该区块的组合条件一致 (无内容不组合)
-        related.itemCount > 0 || (!videoBackground && comments.itemCount > 0),
+        // 与该区块的组合条件一致 (无内容不组合). 评价已挪到自己那一页, 不再算进这里
+        related.itemCount > 0,
     )
+    sectionNav.setPresent(TvDetailsSection.REVIEWS, !videoBackground && comments.itemCount > 0)
+    // 区块 -> 进入落点锚点. **唯一一份**: 进页恢复、焦点补救、跨区块方向键三处共用 (原来抄了两份).
+    val anchorFor: (TvDetailsSection) -> TvDetailsFocusAnchor = { section ->
+        when (section) {
+            // 选集页: 有轮播就回轮播 (行内 focusRestorer 落到上次那张卡), 否则回简介块
+            TvDetailsSection.EPISODES ->
+                if (videoBackground || episodes.isEmpty()) TvDetailsFocusAnchor.EPISODES_SUMMARY
+                else TvDetailsFocusAnchor.EPISODES_CAROUSEL
+
+            TvDetailsSection.CHARACTERS -> TvDetailsFocusAnchor.CHARACTERS_SECTION
+            TvDetailsSection.STAFF -> TvDetailsFocusAnchor.STAFF_SECTION
+            TvDetailsSection.BELOW -> TvDetailsFocusAnchor.BELOW_SECTION
+            TvDetailsSection.REVIEWS -> TvDetailsFocusAnchor.REVIEWS_SECTION
+            TvDetailsSection.HERO ->
+                if (videoBackground) TvDetailsFocusAnchor.EPISODES_SUMMARY else TvDetailsFocusAnchor.HERO_PLAY
+        }
+    }
+    // 跨区块方向键的送焦也走调度器 (见 TvDetailsSectionNav.send)
+    sectionNav.send = { section -> anchors.request(anchorFor(section)) }
+    sectionNav.stepping = { pager.isStepping }
+    sectionNav.page = { pager.displayedPage ?: -1 }
+    // 换页闸期间按的那一下**推迟**到闸开再跑 (见 TvDetailsSectionNav.defer), 只保留最后一次:
+    // 闸是为了"一页一页地走", 不是吃掉输入 (用户 2026-09-16 "连按两下第二下都被吞")
+    val stepScope = rememberCoroutineScope()
+    val pendingStep = remember { mutableStateOf<Job?>(null) }
+    val deferStep = remember(pager) {
+        { block: () -> Unit ->
+            pendingStep.value?.cancel()
+            pendingStep.value = stepScope.launch {
+                delay(pager.stepRemaining)
+                block()
+            }
+        }
+    }
+    sectionNav.defer = deferStep
+    // 返回键的一步 (闸推迟后要原样重跑, 故做成可重入的 lambda; 内容在下面两个 BackHandler 都声明完之后填,
+    // 它要用到那边的缩回 / 导航状态). 键到达时组合早已跑完, 不会读到占位值
+    val backStep = remember { mutableStateOf({}) }
+
     // 标签墙跨页恢复目标 (进页那一刻的快照; -1 = 无). 菜单开着离开的情形由菜单自理.
     val tagRestoreIndex = remember {
         if (tagsRestorePending && !tagsBrowseMode && focusedTagIndex >= 0) focusedTagIndex else -1
@@ -672,6 +796,7 @@ fun SubjectDetailsTvPage(
                 TvDetailsSection.CHARACTERS -> TvDetailsFocusAnchor.CHARACTERS_SECTION
                 TvDetailsSection.STAFF -> TvDetailsFocusAnchor.STAFF_SECTION
                 TvDetailsSection.BELOW -> TvDetailsFocusAnchor.BELOW_SECTION
+                TvDetailsSection.REVIEWS -> TvDetailsFocusAnchor.REVIEWS_SECTION
                 TvDetailsSection.HERO -> TvDetailsFocusAnchor.HERO_PLAY // takeIf 已排除, 仅穷举
             }
 
@@ -711,6 +836,7 @@ fun SubjectDetailsTvPage(
                 TvDetailsSection.CHARACTERS -> TvDetailsFocusAnchor.CHARACTERS_SECTION
                 TvDetailsSection.STAFF -> TvDetailsFocusAnchor.STAFF_SECTION
                 TvDetailsSection.BELOW -> TvDetailsFocusAnchor.BELOW_SECTION
+                TvDetailsSection.REVIEWS -> TvDetailsFocusAnchor.REVIEWS_SECTION
                 TvDetailsSection.HERO ->
                     if (videoBackground) TvDetailsFocusAnchor.EPISODES_SUMMARY
                     else TvDetailsFocusAnchor.HERO_PLAY
@@ -763,7 +889,7 @@ fun SubjectDetailsTvPage(
 
     // 返回键分层, 三级: 选集页之下的区域 (角色/制作人员/关联条目...)
     // 按返回先回到选集卡片; 选集页内按返回回到最顶上的海报页 (焦点回播放按钮);
-    // 海报页再按返回才真正退出详情页. 纵向滚动均由聚焦驱动 (SnapOnFocusSection 吸附).
+    // 海报页再按返回才真正退出详情页. 纵向滚动均由聚焦驱动 (焦点进入哪一页, 见 TvDetailsPager).
     // 弹窗/阅读模式等自行消费返回键的场景优先级更高, 不会走到这里.
     //
     // 层级用"最后一个真正持有过焦点的区块"记忆 (各区块 onFocused 上报), 不读瞬时焦点, 也不读
@@ -774,18 +900,75 @@ fun SubjectDetailsTvPage(
     //  - 滚动是动画量, 一次返回按下后仍 > 0 好几百毫秒, 而焦点已经落到上一层, 期间再按返回
     //    就会读到"层级在下方"这种不存在的组合, 表现为连按两次又回到原地.
     // (簿记本体 backLevelOrdinal 声明在页面顶部, 进页 effect 要读它)
-    val backLevel = TvDetailsSection.entries[backLevelOrdinal]
+    // 层级同样以**显示页**为准, 理由与方向键那处一样 (见 TvDetailsSectionNav.originOf): 返回键自己那句
+    // `pager.goTo(HERO.page)` 只改页不改层级, 而层级要等焦点落到 hero、它的 onFocusChanged 才更新 ——
+    // 中间这一段画面已在第一页而层级还说"在选集页", 于是再按一下返回又走一遍"回第一页"(原地不动),
+    // 得按第三下才退得出去. 用 derivedStateOf 收窄: 换页每次都写 current, 但只有层级真的变了才重组本页
+    val backLevel by remember(pager) {
+        derivedStateOf {
+            val remembered = TvDetailsSection.entries[backLevelOrdinal]
+            val shown = pager.displayedPage
+            if (shown == null || remembered.page == shown) remembered
+            else TvDetailsSection.entries.first { it.page == shown }
+        }
+    }
     // 选集整页的简介是否渲染了展开按钮 (即简介被截断了): 决定卡片上键要不要指向它
     var summaryExpandPresent by remember { mutableStateOf(false) }
     BackHandler(enabled = backLevel != TvDetailsSection.HERO) {
-        if (backLevel == TvDetailsSection.EPISODES) {
-            scope.launch { scrollState.animateScrollTo(0) }
-            anchors.request(TvDetailsFocusAnchor.HERO_PLAY)
+        // 上一层还没走完就吞掉这一下: 与方向键同一道闸 (见 TvDetailsPager.isStepping). 返回键走的是自己的分层
+        // 逻辑, 不经过 TvDetailsSectionNav, 所以那边的闸管不到它 —— 连按返回照样一路盖掉过渡, 中间层看不见
+        // (用户 2026-09-16: "返回键似乎没有限流"). 这里只管**节奏**, 分层规则一行没动.
+        if (pager.isStepping) deferStep { backStep.value() } else backStep.value()
+    }
+    // 放大进来、列表页还没被移出组合时按返回: 缩回列表页 hero 框再回去 (TvHeroZoomHandoff.Shrink, 由 TvHeroShrinkLayer 等图
+    // 上屏后出栈); 缩不了 (列表页已离场 / 换过图) 就照常出栈淡出. 只在首屏层级, 与上一条互斥
+    val navigator = LocalNavigator.current
+    // 放大进来的这个导航条目 (记在条目上, 见 TvHeroZoomHandoff.isZoomEntry): 进播放器 / 别的页再回来, 本页组合是新的
+    // (enteredWithZoom 为假), 按返回照样缩回. enteredWithZoom 本身不改 —— 它管的是进页那一次的揭幕节奏
+    val entryKey = LocalNavEntryContentKey.current
+    val stackedEntry = TvHeroZoomHandoff.isZoomEntry(entryKey)
+    val backScope = rememberCoroutineScope()
+    val backForeground = LocalPageIsForeground.current
+    var fadingOut by remember { mutableStateOf(false) }
+    // 首屏再按返回 = 退出本页 (缩回 / 淡出 / 硬出栈). 抽成 lambda: [backStep] 在闸推迟后重跑时也要能走到这一支
+    val exitPage: () -> Unit = exitPage@{
+        // 翻页过渡里按返回 (从第二页回首屏、焦点已落 hero, 但背景还在 450ms 变亮途中): 把此刻的实际亮度交过去,
+        // 缩回从它续着走, 不然缩回层会先跳到全亮再缩 (见 Shrink.startFade)
+        if (TvHeroZoomHandoff.beginShrink(state.subjectId, entryKey, pager.backdropFadeNow()) { navigator.popBackStack() }) {
+            zoomLogger.info { "Details back: shrink begin" }
+        } else if (stackedEntry) {
+            // 叠放布局里出栈没有导航转场 (列表页那个布局不换), 直接出栈是硬切: 本页先淡出 (列表页此时照常画在下面) 再出栈.
+            // 走到这里 = 放大没起跑就放弃了
+            if (fadingOut) return@exitPage
+            fadingOut = true
+            zoomLogger.info { "Details back: fade out (cannot shrink, stacked)" }
+            // 淡出期间本页吞掉非返回键 (见根节点 tvSwallowKeysWhenLeaving): 否则途中按确认进了播放器, 淡完那一下会把播放器退掉.
+            // 出栈前再确认本页仍在栈顶, 只出一次 (2026-09-15 审查)
+            backScope.launch {
+                abortFade.animateTo(0f, tween(TV_DETAILS_ABORT_FADE_MILLIS))
+                if (backForeground.value) navigator.popBackStack()
+                else zoomLogger.info { "Details back: fade out finished but page no longer on top, not popping" }
+            }
         } else {
+            zoomLogger.info { "Details back: fade (cannot shrink)" }
+            navigator.popBackStack()
+        }
+    }
+    BackHandler(enabled = (enteredWithZoom || stackedEntry) && backLevel == TvDetailsSection.HERO) { exitPage() }
+
+    // 返回键一步的实际内容 (声明见上面 backStep). **每次都重读 backLevel** —— 被闸推迟后跑时层级可能已经变了:
+    // 在第二页连按两下返回, 第一下把页翻回首屏 (层级随之变 HERO), 推迟的第二下就该退出本页而不是原地再翻一次
+    backStep.value = {
+        when (backLevel) {
+            TvDetailsSection.HERO -> exitPage()
+            TvDetailsSection.EPISODES -> {
+                pager.goTo(TvDetailsSection.HERO.page)
+                anchors.request(TvDetailsFocusAnchor.HERO_PLAY)
+            }
             // 聚焦轮播行 (focusRestorer 恢复到上次聚焦的卡片), 选集页随焦点吸附滚入.
             // 没有轮播可聚焦时 (内嵌变体的选集条在播放器控制层; 未开播条目连分集都没有)
             // 退而聚焦简介块 ("暂无信息"兜底保证它恒可聚焦), 返回键不至于无效
-            anchors.request(
+            else -> anchors.request(
                 if (videoBackground || episodes.isEmpty()) TvDetailsFocusAnchor.EPISODES_SUMMARY
                 else TvDetailsFocusAnchor.EPISODES_CAROUSEL,
             )
@@ -820,6 +1003,9 @@ fun SubjectDetailsTvPage(
         snapshotFlow { revealed && sectionsStage >= 3 }.first { it }
         delay(TV_DETAILS_PREWARM_DELAY_MILLIS)
         if (scrollState.value != 0 || scrollState.isScrollInProgress) return@LaunchedEffect // 用户已经往下走了, 用不着
+        // 返回缩回正在跑: 本页这时只是藏着 (快速路径不销毁), 预画仍会在主线程录一遍整页绘制命令 ——
+        // 恰好落在缩回那几帧里 (延时到点与按返回撞上就会发生, 2026-09-15 审查). 等下一次机会
+        if (TvHeroZoomHandoff.shrinking) return@LaunchedEffect
         episodesPrewarm = true
         withFrameNanos { }
         withFrameNanos { }
@@ -827,7 +1013,7 @@ fun SubjectDetailsTvPage(
     }
 
     BoxWithConstraints(
-        modifier.tvImageZoomKeys(imageZoom).tvFocusNavSignal(anchors)
+        modifier.graphicsLayer { alpha = abortFade.value }.tvSwallowKeysWhenLeaving { fadingOut }.tvImageZoomKeys(imageZoom).tvFocusNavSignal(anchors)
             // 见上方"整页焦点丢了就立刻自己补"
             .onFocusChanged { pageHasFocus = it.hasFocus },
     ) {
@@ -839,11 +1025,16 @@ fun SubjectDetailsTvPage(
         // Hero 区块占满首屏: 标题在顶, 信息带锚定在画面最底部.
         // 信息带底缘正好贴屏幕下边界, 下一区块完全在折叠线以下.
         val heroHeight = maxHeight - contentTopPad - 16.dp
-        // 区块吸附位置不再解析推算: SnapOnFocusSection 内部实测区块在滚动内容中的位置
+        // 页起点不再解析推算: PageSection 内部实测本页在滚动内容中的位置
         // (屏幕位置 + 已滚距离), 脚手架顶部留白/insets 等全部自动包含, 无固定偏差.
         // 选集区自成完整一屏 (标题+简介+封面+轮播): 吸附后整页占满屏幕,
         // 上下各留 EPISODES_PAGE_VERTICAL_MARGIN 的空隙.
         val episodesPageHeight = maxHeight - EPISODES_PAGE_VERTICAL_MARGIN * 2
+        // 一屏高度, 留给页面末尾的收尾留白 (深层嵌套的内容 lambda 里取不到 BoxWithConstraints 的接收者)
+        val viewportHeight = maxHeight
+        // 首屏以下的区块**不定高、不等距** (用户 2026-09-15 推翻了上一版的"整数页"): 每个区块只定义自己的**起点**
+        // (第三页 = 作品信息, 第四页 = 评价), 往下翻就吸附到那个起点, 上一页露不露得出来无所谓 —— 区块切换动画按
+        // 实际滚动差值走 (见 TvDetailsPager), 距离不等也不用分情况. 定高那版把内容挤裁 (关联卡标题被切) 且留白怪异
         // 画面纵向运动全部由"分区吸附"显式驱动: 焦点在 Hero 区 (顶栏/信息带)
         // 内移动画面固定在顶部; 焦点进入某个区块则滚动到该区块顶部. 为此禁用纵向滚动容器的
         // 默认 BringIntoView (否则它与吸附动画互相打架, 造成跳动); 区块列内部重新提供默认
@@ -943,6 +1134,8 @@ fun SubjectDetailsTvPage(
                         // 渐变下每一帧都是标准的新旧交叉淡入, 到头正好等于接手后的样子; 接手后恢复擦除 (底下换成了动态渐变)
                         solidUnderlay = if (underZoom && crossFading) AniThemeDefaults.pageContentBackgroundColor else null,
                         scrollState = scrollState,
+                        // 换页的滚动是跳的: 背景淡出进度改由 TvDetailsPager 按时长走, 不随滚动量一下子到底
+                        scrollFade = { pager.backdropProgress() },
                         // 页面主题色从**这张背景图**取: 它就是屏幕上最大的一块颜色, 主色与它同源
                         // 才不脱节 (改用竖版封面试过, 有些条目两张图色调差很远, 观感割裂).
                         // 没有 backdrop 的条目由下面那条 hero 分支用竖版封面兜底, 见 heroBackdropUrl
@@ -983,6 +1176,15 @@ fun SubjectDetailsTvPage(
                 bodyHidden = { underZoom && !uiEarly },
                 // 播放按钮 = HERO_PLAY 锚点 (挂请求器 + 到位确认)
                 primaryButtonModifier = Modifier
+                    // **hero 下缘接线**. 独立页的 hero 不是 [PageSection] (它是整屏的 Box), 纵向离场一直没人接管,
+                    // 从这里按下走的是二维空间搜索: 目标那一刻可能在屏幕外 / 子项被回收, 于是越过整整一页落到第三页
+                    // (用户 2026-09-16; 更早的"冷进入往下翻直接到第三页"同因). 埋点确认过 —— 那几下按键 moveDown
+                    // 一条日志都没有, 根本没进路由.
+                    //
+                    // 接在**播放按钮自己**身上而不是 hero 外层: 外层挂 focusProperties.onExit 要配 focusGroup, 而 focusGroup
+                    // 会把搜索先圈在 hero 内部, 于是"开始观看"按下变成跳去标签 (2026-09-16 试过, 当场回归). 播放按钮是
+                    // hero 最下缘那个可聚焦元素, 只接它这一下, hero 内部 (图标簇 -> 播放按钮) 的纵向移动照常走空间搜索.
+                    .tvSectionEdge(sectionNav, TvDetailsSection.HERO, down = true)
                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.HERO_PLAY)
                     .onFocusChanged {
                         if (it.isFocused) anchors.notifyFocusFallbackSettled()
@@ -1063,6 +1265,8 @@ fun SubjectDetailsTvPage(
                 },
                 // 占满首屏, 信息带贴底
                 modifier = Modifier.height(heroHeight)
+                    // 换页时 hero (第 0 页) 原地淡出 / 淡入 (滚动是跳的, 见 TvDetailsPager)
+                    .graphicsLayer { pager.apply(TvDetailsSection.HERO.page, this) }
                     // 首屏以下区块还没组合 (见 sectionsReady) 时按下键: 扣住这一下, 选集页组合出来再送焦点过去 ——
                     // sectionNav 往下送焦点是直接 requestFocus, 目标还不存在时这一下会被静默吞掉
                     .onPreviewKeyEvent {
@@ -1075,7 +1279,7 @@ fun SubjectDetailsTvPage(
                     .onFocusChanged {
                         if (it.hasFocus) {
                             backLevelOrdinal = TvDetailsSection.HERO.ordinal
-                            scope.launch { scrollState.animateScrollTo(0) }
+                            pager.goTo(TvDetailsSection.HERO.page)
                         }
                     },
             )
@@ -1102,9 +1306,12 @@ fun SubjectDetailsTvPage(
                 // 选集条已移入播放器控制层 (图标行下方, Prime 形态), 不在本页.
                 // 介绍页: 整屏吸附区块, 无操作按钮 (播放/选集/收藏/缓存/外链全部由
                 // 播放器控制栏承担), 只有 标题 / 简介+封面 / 单排信息带
-                SnapOnFocusSection(
+                PageSection(
+                    pager,
+                    page = TvDetailsSection.HERO.page,
                     scrollState,
                     layoutParams.sectionSpacing,
+                    nav = sectionNav,
                     // 内嵌变体的介绍页就是本页最顶层 (对应独立页的海报页)
                     onFocused = { backLevelOrdinal = TvDetailsSection.HERO.ordinal },
                 ) {
@@ -1115,6 +1322,7 @@ fun SubjectDetailsTvPage(
                         comments = comments,
                         commentCount = commentCount,
                         onShowComments = onShowComments,
+                        mainEpisodeCount = mainEpisodes.size.takeIf { it > 0 },
                         // 上/下边缘接线 (上回播放器选集条, 下到关联条目区) 全走路由
                         sectionNav = sectionNav,
                         // 点击标签跳转搜索: 标记返回时要把焦点恢复到该标签
@@ -1134,9 +1342,12 @@ fun SubjectDetailsTvPage(
                         modifier = Modifier.height(heroHeight),
                     )
                 }
-            } else SnapOnFocusSection(
+            } else PageSection(
+                pager,
+                page = TvDetailsSection.EPISODES.page,
                 scrollState,
                 EPISODES_PAGE_VERTICAL_MARGIN,
+                nav = sectionNav,
                 onFocused = { backLevelOrdinal = TvDetailsSection.EPISODES.ordinal },
                 modifier = Modifier
                     .onGloballyPositioned { episodesTopInRoot = it.positionInRoot().y }
@@ -1187,6 +1398,10 @@ fun SubjectDetailsTvPage(
                     Modifier.fillMaxHeight().padding(end = episodesTextEndReserve),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    // 撤掉的「作品信息」块并到简介全文弹窗里: 别名进正文末尾, 放送日期与话数进底行.
+                    // 先算出来, 下面的 alwaysShowExpand 要据此决定按钮渲不渲染
+                    val summaryExtra = subjectAliasesText(info)
+                    val summaryMeta = subjectMetaLine(info, mainEpisodes.size.takeIf { it > 0 })
                     Text(
                         info.displayName,
                         style = MaterialTheme.typography.headlineLarge,
@@ -1200,9 +1415,18 @@ fun SubjectDetailsTvPage(
                     TvTruncatedSummary(
                         displaySummary.ifBlank { stringResource(Lang.subject_details_no_summary) },
                         dialogTitle = info.displayName,
+                        // 撤掉的"作品信息"块并到这里: 别名进正文末尾, 放送日期与话数进底行元信息
+                        dialogExtra = summaryExtra,
+                        dialogMeta = summaryMeta,
+                        // 本块下面紧接着选集卡, 展开按钮排到正文末行右边 (见该参数的说明)
+                        expandOnLastLine = true,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                        // 无分集 (未开播条目) 时展开按钮是整页唯一的焦点目标, 简介不长也要渲染
-                        alwaysShowExpand = episodes.isEmpty(),
+                        // 展开按钮默认只在简介被截断时出现, 这里还有两种情况必须强制渲染:
+                        // 1. 无分集 (未开播条目) 时它是整页唯一的焦点目标;
+                        // 2. **弹窗里还有简介之外的内容** (别名 / 放送日期, 见 dialogExtra / dialogMeta) ——
+                        //    「作品信息」块撤掉后这些只在弹窗里, 简介短的条目没有按钮的话就彻底够不到了
+                        //    (用户 2026-09-15: "现在有的动画没有显示更多按钮")
+                        alwaysShowExpand = episodes.isEmpty() || summaryExtra != null || summaryMeta != null,
                         // 上报按钮有没有渲染: 卡片的上键只在它存在时才指过去 (见 upFocus)
                         onExpandButtonPresenceChange = { summaryExpandPresent = it },
                         // EPISODES_SUMMARY 锚点挂在按钮上 (到位确认由外层 Column 的 onFocusChanged 做)
@@ -1276,12 +1500,15 @@ fun SubjectDetailsTvPage(
                     anchors,
                     TvDetailsFocusAnchor.EPISODES_CAROUSEL,
                 ),
-                // 卡片按下键显式送往下一区块 (关联条目/评价); 无下一区块时为 null 不接线.
+                // **跨页的下键不在这里接线**: 这里只能给一枚裸 FocusRequester, 目标那一刻没附着 (下一页还没组合 /
+                // 子项被回收) 就静默失败 —— 于是按键被吃掉或退回空间搜索, 表现为"第二页往下有概率直接进第四页"
+                // (用户 2026-09-16). 跨页统一由 PageSection 的 focusProperties.onExit 接住, 走调度器等附着.
+                // 下面这段注释保留原委, 参数已改为 null.
                 // 骨架期不拦 (曾用 FocusRequester.Cancel 锁住"下方未定型"的窗口, 但慢条目
                 // relations 要 1.5~3 秒, 用户按下键几秒没反应更难受; 高度已由骨架钉死、
                 // 交接与真区块同帧, 提前翻下去也不会晃) —— 落到关联条目区, 人物区就绪后
                 // 原地填充, 上键随时回去.
-                downFocus = sectionNav.downTargetFrom(TvDetailsSection.EPISODES),
+                downFocus = null,
                 // 卡片按上键落到简介的展开按钮: 不能交给空间焦点搜索 —— 简介正文已不可聚焦,
                 // 上方唯一的目标是贴右缘的小按钮, 从左侧卡片往上找不到几何上方的候选.
                 // 按钮没渲染 (简介没被截断) 时传 null: 指向未附着的请求器会变成"按了没反应",
@@ -1311,19 +1538,35 @@ fun SubjectDetailsTvPage(
             //   showReal      = 两块都尘埃落定 (itemCount>0 或确认为空) 且至少一块有内容 -> 真区块
             //   两边都确认为空 -> 什么都不渲染 (收缩方向不挤焦点, 有滚动锚定兜底)
             //   其余一律骨架   (含 "count 已到但 paging 未跟上" 的窗口)
+            // 选集页之后多留一段空白: 选集页是刻意铺满一屏的整页, 底下再露出半个"角色"标题就显得挤
+            // (用户 2026-09-15). 实测标题原本落在 524..540 (露出 16dp), 推 32dp 后到 556 完全出屏.
+            //
+            // 与末页那段 (TV_LAST_PAGE_LEAD_GAP) 方向相反: 那边**要**露出标题作为"下面还有"的提示,
+            // 这边一点都不要露. 同样加在页与页之间, 在第三页上看不见 (页起点是从角色区块量的).
+            if (!videoBackground && sectionsStage >= 2) {
+                Spacer(Modifier.height(TV_EPISODES_PAGE_TRAIL_GAP))
+            }
             // 分帧放出时 (见 sectionsStage) 角色区没轮到也先放骨架, 与真区块等高
             if (relationsSkeletonVisible || (sectionsStage < 2 && relationsSettled && relationsAnyContent)) {
-                RelationsSkeletonSection(layoutParams.sectionSpacing, pad)
+                // 骨架与真角色区同页号 (2): 换页时跟着同一组位移 / 淡入淡出 (见 TvDetailsPager)
+                Box(Modifier.graphicsLayer { pager.apply(TvDetailsSection.CHARACTERS.page, this) }) {
+                    RelationsSkeletonSection(layoutParams.sectionSpacing, pad)
+                }
             }
             if (exposedCharacters != null && allCharacters != null && exposedStaff != null && allStaff != null &&
                 relationsSettled && relationsAnyContent && sectionsStage >= 2
             ) {
-                SnapOnFocusSection(
+                PageSection(
+                    pager,
+                    page = TvDetailsSection.CHARACTERS.page,
                     scrollState,
                     layoutParams.sectionSpacing,
+                    nav = sectionNav,
                     onFocused = { backLevelOrdinal = TvDetailsSection.CHARACTERS.ordinal },
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing)) {
+                    // 两排之间比常规区块间距窄 8dp: 这一页要在 540dp 里装下两排 130dp 的圆头像,
+                    // 还要把下一页的"评价"标题留在视口里 (见 TV_LAST_PAGE_LEAD_GAP 的标定)
+                    Column(verticalArrangement = Arrangement.spacedBy(TV_PEOPLE_ROW_GAP)) {
                         CharactersSection(
                             exposedCharacters, allCharacters, totalCharactersCount,
                             modifier = Modifier
@@ -1342,9 +1585,14 @@ fun SubjectDetailsTvPage(
                             // 保持全宽出血, 外层 padding 会把行的左边界一起右移, 于是向左滑过
                             // 停靠位的卡片正好在停靠线上被硬裁出一条边 (同选集轮播, 见本页
                             // 顶部 Column 的注释). 标题由区块内部按同一留白对齐.
+                            // 两侧都留白: 只留起始侧的话, 滑到行末时行再也滚不动, 最后一格 ("查看全部")
+                            // 就贴着屏幕右缘被裁掉 (用户 2026-09-15). 滚动途中的出血观感不受影响 ——
+                            // LazyRow 按自身边界裁, 中间的格照样铺到屏幕边
                             contentPadding = PaddingValues(horizontal = pad),
                             // 卡片下键显式送往下一区块 (跨区块空间搜索不可靠)
-                            downFocus = sectionNav.downTargetFrom(TvDetailsSection.CHARACTERS),
+                            // 只接同页的制作人员; 没有制作人员数据时给 null, 下键交给 PageSection.onExit 走路由
+                            // (否则静态落点会直接跳到第四页, 绕过换页闸与送焦)
+                            downFocus = sectionNav.samePageDownTargetFrom(TvDetailsSection.CHARACTERS),
                             // 长按卡片放大看头像 (短按仍是人物预览)
                             imageZoom = imageZoom,
                         )
@@ -1356,58 +1604,84 @@ fun SubjectDetailsTvPage(
                                         backLevelOrdinal = TvDetailsSection.STAFF.ordinal
                                     }
                                 }
-                                .focusGroup()
-                                .padding(horizontal = pad),
+                                .focusGroup(),
                         ) {
                             StaffSection(
                                 exposedStaff,
                                 allStaff,
                                 totalStaffCount,
                                 gridColumns = layoutParams.staffGridColumns,
-                                downFocus = sectionNav.downTargetFrom(TvDetailsSection.STAFF),
+                                // 跨页下键交给 PageSection.onExit 的路由 (同选集卡, 见那里的注释)
+                                downFocus = null,
                                 imageZoom = imageZoom,
+                                contentPadding = PaddingValues(horizontal = pad),
                             )
                         }
                     }
                 }
             }
-            // 作品信息 + 关联条目 + 评价 (独立页): 同一个吸附区块 —— 信息表不可聚焦且
-            // 排在区块顶, 焦点下到关联条目时区块吸顶, 信息表正好完整露出在关联条目上方.
-            // 内嵌变体不放信息表 (播放器控制层已有), 评价预览也已并入介绍页 (标签墙下方),
-            // 只剩关联条目, 无关联时整块不组合 (上方区块即页面终点, 下键无落点属预期).
+            // 末页之前多留一段空白: 上一页 (角色 + 制作人员) 到底之后, 视口里还剩几十 dp, 本页的开头会
+            // 顺着露出来 —— 只露"评价"两个字是想要的提示, 露出半截评论卡就难看 (实测卡片探出 36dp,
+            // 用户 2026-09-15). 这段空白**加在页与页之间而不是块内**: 页起点是从"评价"标题算的
+            // (见 TvDetailsPager), 所以它在本页上完全看不见, 只决定上一页底部露多少.
+            //
+            // 注意这只对"上一页内容够高"成立: 某个条目若没有制作人员那一排, 上一页变矮, 露出来的自然更多 ——
+            // 连续布局的固有性质, 不为此给页面定高 (定高那版把内容挤裁过, 见 2026-09-15 的改版记录).
+            if (!videoBackground && sectionsStage >= 3) {
+                Spacer(Modifier.height(TV_LAST_PAGE_LEAD_GAP))
+            }
+            // 末页: 关联条目 + 评价 (2026-09-15 重排). 「作品信息」块已撤销 (内容与 hero 信息带重复,
+            // 别名与精确日期并进了选集页简介的全文弹窗). 内嵌变体的评价在介绍页里, 这里只剩关联条目,
+            // 无关联时整块不组合 (上方区块即页面终点, 下键无落点属预期).
             if ((!videoBackground || related.itemCount > 0) && sectionsStage >= 3) {
-                SnapOnFocusSection(
+                PageSection(
+                    pager,
+                    page = TvDetailsSection.BELOW.page,
                     scrollState,
                     layoutParams.sectionSpacing,
+                    nav = sectionNav,
                     onFocused = { backLevelOrdinal = TvDetailsSection.BELOW.ordinal },
                 ) {
                     Column(
-                        // 区块进入落点挂在根焦点组上: requestFocus 经 enter 落到
-                        // 第一个可聚焦子项 (关联卡片; 无关联时是评价区), 不必按内容分情况挂
-                        Modifier
-                            .tvFocusAnchor(anchors, TvDetailsFocusAnchor.BELOW_SECTION)
-                            .focusGroup(),
-                        verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
+                        // 进入落点**不挂在这儿**: 本页现在装着评价 + 关联条目两块, 挂根上的话 requestFocus
+                        // 经 enter 落到第一个可聚焦子项 = 评价卡, 于是评价按下键路由到 BELOW 又落回自己
+                        // (用户 2026-09-15: "评价往下导航下不去到关联条目"). 锚点挂在关联条目那一列上.
+                        Modifier.focusGroup(),
+                        // 不用区块间距 (24dp) 而用评价块内部的标题→卡片间距: 评价卡上下两侧的留白就一样大了,
+                        // 否则卡片夹在 16 与 24 之间看着偏上 (用户 2026-09-15); 顺带把关联条目提上来 8dp
+                        verticalArrangement = Arrangement.spacedBy(TV_REVIEW_HEADER_GAP),
                     ) {
-                        if (!videoBackground) {
-                            Column(
-                                Modifier.padding(horizontal = pad),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                            ) {
-                                // 收藏统计与标签已上移到 Hero 信息带中列
-                                SectionHeader(stringResource(Lang.subject_details_info))
-                                // 集数只算正片 (episodes 含特别篇)
-                                SubjectInfoTable(info, mainEpisodeCount = mainEpisodes.size.takeIf { it > 0 })
-                            }
+                        // 「作品信息」块 (放送开始 / 话数 / 别名) 2026-09-15 撤掉: 放送时间与话数 hero 的信息带上
+                        // 已经写着 ("已完结 · 全 28 话 · 2023年9月"), 这个块**基本是重复的**, 只多出精确到日的日期
+                        // 和别名 —— 为这点内容占掉半页不值当. 两样都并进选集页简介的全文弹窗 (见 dialogExtra / dialogMeta).
+                        // 评价排在关联条目**之前**: 它是本页的起点, 于是"评价在屏幕上的位置"与有没有关联条目无关
+                        // (用户 2026-09-15). 上一页底部也因此恒定露出"评价"两个字, 而不是有时露评价有时露关联条目.
+                        //
+                        // 两块必须在同一个 PageSection 里 —— 两个 PageSection 用同一个页序号会各自上报这一页的
+                        // 起点, 互相覆盖. 没有关联条目时这里就是本页的全部内容, 页起点由实测得出 (见 TvDetailsPager),
+                        // 不用分情况写死.
+                        if (!videoBackground && comments.itemCount > 0) {
+                            TvReviewsPage(
+                                comments = comments,
+                                totalCount = commentCount,
+                                onShowAll = onShowComments,
+                                horizontalPadding = pad,
+                                anchors = anchors,
+                                sectionNav = sectionNav,
+                            )
                         }
                         if (related.itemCount > 0) {
                             // TV 上用横向单行 rail 而非多行网格 (锚位条: 聚焦卡停在停靠位)
                             Column(
                                 Modifier
-                                    // 独立页: 关联卡片上键回制作人员 (中间隔着不可聚焦的
-                                    // 信息表, 空间搜索不可靠). 内嵌变体维持原空间搜索行为
+                                    // BELOW 的进入落点 (上一块按下键、跨页返回都送到这儿): 必须挂在
+                                    // 关联条目这一列, 不能挂末页根上 (见上面那条注释)
+                                    .tvFocusAnchor(anchors, TvDetailsFocusAnchor.BELOW_SECTION)
+                                    .focusGroup()
+                                    // 独立页: 关联卡片上键回评价, 下键就地消费 (本页是页面终点, 防斜跳).
+                                    // 内嵌变体维持原空间搜索行为
                                     .ifThen(!videoBackground) {
-                                        tvSectionEdge(sectionNav, TvDetailsSection.BELOW, up = true)
+                                        tvSectionEdge(sectionNav, TvDetailsSection.BELOW, up = true, down = true)
                                     },
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
@@ -1420,21 +1694,22 @@ fun SubjectDetailsTvPage(
                                 RelatedSubjectsLazyRow(
                                     related,
                                     onClick = rememberNavigateToRelatedSubject(),
+                                    // 150dp: 本页还要装评价块, 能装下是靠评价块瘦身 (标题间距退回 16dp + 卡 124dp).
+                                    // 页面内容 476dp, 分页器按 24(页顶) + 476 + 24(露出余量) = 524 < 540 判定不需要滚;
+                                    // 余量只有 16dp, 再往这一页加东西就会让焦点下到本行时页面动起来 (2026-09-15 踩过)
                                     itemWidth = 150.dp,
                                     spacing = 20.dp,
                                     contentPadding = PaddingValues(horizontal = pad),
                                 )
                             }
                         }
-                        if (!videoBackground) {
-                            ReviewsPreviewSection(
-                                comments, commentCount, onShowAll = onShowComments,
-                                modifier = Modifier.padding(horizontal = pad),
-                            )
-                        }
                     }
                 }
             }
+            // 收尾留白: 最后一个区块 (评价) 比一屏矮时, 滚动量会被内容总高卡住 —— 它的**起点**永远到不了屏幕上方
+            // (2026-09-15 截图: 评价标题停在屏幕 26% 处, 上面还挂着关联卡的尾巴). 补一屏的空白让每一页都滚得到自己的起点.
+            // 本页的滚动只由焦点吸附驱动 (用户不能自由滚), 这段空白不会被滚进视野
+            Spacer(Modifier.height(viewportHeight))
             }
             }
         }
@@ -1483,6 +1758,70 @@ private fun TvDetailsSideRail(
  * 即 M3 extra-small icon button 规格 (20dp icon / 32dp container).
  */
 
+/**
+ * 详情页 backdrop 那套遮罩的声明: 左侧可读性 scrim + 下缘渐隐. 列表页那份见 `tvPageBackdropTreatment`,
+ * 放大转场画的是两者的插值 (见 [TvBackdropTreatment]).
+ *
+ * 下缘的起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图, 选集卡片那一带整片发黑
+ * (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
+ */
+private fun tvHeroBackdropTreatment(solidUnderlay: Color?) = TvBackdropTreatment(
+    // 左侧暗色 scrim: 保证浮在图上的标题可读
+    left = TvBackdropFade(start = 0f, end = 0.55f, maxAlpha = 0.6f, color = Color.Black),
+    // 有纯色垫底时画同色渐变 (擦掉 a 露出纯色 C 与在图上叠一层 alpha a 的 C 逐像素相同), 不必开离屏缓冲
+    bottom = TvBackdropFade(
+        start = 0.72f, end = 1f, maxAlpha = 0.88f,
+        color = solidUnderlay ?: Color.Black, toEdge = true,
+    ),
+    bottomDstOut = solidUnderlay == null,
+)
+
+/** 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放. */
+private fun tvHeroSoftEdgeBand(gap: Float, base: Float, remaining: Float, scale: Float): Float {
+    if (gap <= 0f || base <= 0f || scale <= 0f) return 0f
+    return base * (gap * remaining / minOf(base, gap)).coerceAtMost(1f) / scale
+}
+
+/**
+ * 这一帧还画不画得出软边 —— **按真实几何算**, 与绘制处同源.
+ *
+ * 原来写成 `(1-t)^曲线 × 比例 > 0.001`, 等价于 `t < 0.734`, 既没用源框尺寸也没用边距和缩放: 按探索页
+ * 0.66 屏高 / 1920×1080 算, 在那个切换点左边还有 3.26 个屏幕像素、下边 1.84 个, 于是放大时突然撤掉、
+ * 缩小时突然出现, 4K 下更宽 (2026-09-16 审查).
+ *
+ * 两处 (离屏判据 / 绘制判据) 必须共用它: 分开写就会出现"离屏关了却还在 DstOut 擦穿底层"那种错误.
+ */
+private fun tvHeroSoftEdgeVisible(zoomFrom: Rect, box: Rect, size: Size, t: Float): Boolean {
+    if (t >= 1f || size.width <= 0f || size.height <= 0f) return false
+    val sx = lerp(zoomFrom.width / size.width, 1f, t)
+    val sy = lerp(zoomFrom.height / size.height, 1f, t)
+    val short = minOf(zoomFrom.width, zoomFrom.height)
+    val remaining = (1f - t).coerceAtLeast(0f).pow(TV_HERO_SOFT_EDGE_CURVE)
+    val base = short * TV_HERO_SOFT_EDGE_FRACTION
+    val baseBottom = short * TV_HERO_SOFT_EDGE_BOTTOM_FRACTION
+    return tvHeroSoftEdgeBand(zoomFrom.left - box.left, base, remaining, sx) > 0.5f ||
+            tvHeroSoftEdgeBand(box.right - zoomFrom.right, base, remaining, sx) > 0.5f ||
+            tvHeroSoftEdgeBand(zoomFrom.top - box.top, base, remaining, sy) > 0.5f ||
+            tvHeroSoftEdgeBand(box.bottom - zoomFrom.bottom, baseBottom, remaining, sy) > 0.5f
+}
+
+/**
+ * 软边最宽时占源框短边的比例 (左 / 右 / 上), 见 [TvPolishFlags.zoomSoftEdge].
+ * 半径随"离满屏还有多远"长: 满屏为 0, 贴回 hero 框时取这个值. 2026-09-16 用户逐帧调定.
+ */
+private const val TV_HERO_SOFT_EDGE_FRACTION = 0.20f
+
+/** 下缘软边的比例, 与其余三边分开: 下缘本来就压着一条宽渐隐带 (占层高的后 28%, 见 tvHeroBackdropTreatment). */
+private const val TV_HERO_SOFT_EDGE_BOTTOM_FRACTION = 0.20f
+
+/**
+ * 软边半径随进度生长的曲线指数: 半径 = 最大值 × (离满屏的距离)^指数.
+ *
+ * 1 = 线性, **> 1 = 前段慢、末段快**. 线性时落位前那一小段看得出突变 —— 羽化要在很短的时间里从"还很窄"接上
+ * 列表页本身很宽的那条渐隐带; 指数拉大等于把生长推到末尾集中完成. 4.0 是 2026-09-16 用户逐帧比对定的.
+ */
+private const val TV_HERO_SOFT_EDGE_CURVE = 4.0f
+
 /** 详情页侧边栏遮罩: surface 向 surfaceTint (封面取色动态主色) 的偏移比例, 调大主题色更浓. */
 private const val TV_DETAILS_RAIL_SCRIM_TINT = 0.35f
 
@@ -1512,6 +1851,39 @@ private const val TV_SUMMARY_EXPAND_GLASS_ALPHA = 0.4f
 
 /** 选集信息行里剧集简介的行数上限 (全文在长按卡片的本集详情弹窗里). */
 private const val TV_EPISODE_DESC_MAX_LINES = 3
+
+/**
+ * 别名段落, 进简介全文弹窗的正文末尾. 没有别名就返回 null (弹窗里不多出一个空标题).
+ *
+ * 原本有个独立的「作品信息」区块 (放送开始 / 话数 / 别名), 2026-09-15 撤掉了: 放送时间与话数
+ * hero 的信息带上已经写着 ("已完结 · 全 28 话 · 2023年9月"), 那个块**基本是重复的**, 只多出
+ * 精确到日的日期和别名 —— 为这点内容占掉半页不值当.
+ */
+@Composable
+private fun subjectAliasesText(info: SubjectInfo): String? =
+    info.aliases.takeIf { it.isNotEmpty() }
+        ?.let { stringResource(Lang.subject_details_aliases) + "\n" + it.joinToString(" / ") }
+
+/** 简介全文弹窗底行的一行元信息: 精确到日的放送日期 + 正片话数 (见 [subjectAliasesText]). */
+@Composable
+private fun subjectMetaLine(info: SubjectInfo, mainEpisodeCount: Int?): String? {
+    val parts = buildList {
+        if (info.airDate.isValid) {
+            add(
+                stringResource(
+                    Lang.subject_details_air_date_format,
+                    info.airDate.year.toString(),
+                    info.airDate.month.toString(),
+                    info.airDate.day.toString(),
+                ),
+            )
+        }
+        if (mainEpisodeCount != null) {
+            add(stringResource(Lang.subject_details_total_episodes) + " " + mainEpisodeCount)
+        }
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
 
 /**
  * 截断简介: 正文**不可聚焦**, 溢出时右下角出现展开按钮, 按下开纯文字弹窗读全文.
@@ -1557,6 +1929,24 @@ private fun TvTruncatedSummary(
      * 按钮不存在时那个请求器未附着, 指过去会变成"按了没反应".
      */
     onExpandButtonPresenceChange: ((Boolean) -> Unit)? = null,
+    /**
+     * 只在全文弹窗里出现、不进块内截断文字的补充段落 (条目详情页用它放别名).
+     *
+     * 原本有个独立的"作品信息"区块 (放送开始 / 话数 / 别名), 2026-09-15 撤掉了: 放送时间与话数
+     * hero 的信息带上已经写着 ("已完结 · 全 28 话 · 2023年9月"), 那个块**基本是重复的**, 只多出
+     * 精确到日的日期和别名 —— 为这点内容占掉半页不值当. 日期进 [dialogMeta], 别名进这里.
+     */
+    dialogExtra: String? = null,
+    /** 全文弹窗底行右端的一行元信息 (见 AniScrollableTextDialog 的 meta). */
+    dialogMeta: String? = null,
+    /**
+     * 展开按钮坐在**正文末行右边** (参照 Prime Video 的"更多"), 正文相应不留底内边距 ——
+     * 那一截原本就是给贴在块底的按钮让位的.
+     *
+     * 只有独立详情页的选集页这么排: 它下面紧接着选集卡, 按钮贴块底时正文与卡片之间白空一行.
+     * 内嵌介绍页下面接的是标签墙, 间距另有标定 (见 TV_EMBEDDED_SUMMARY_HEIGHT), 保持原样.
+     */
+    expandOnLastLine: Boolean = false,
 ) {
     val textStyle = style ?: MaterialTheme.typography.bodyMedium
     // summary 变化 (切集 / 兜底简介到达) 时重新判定截断
@@ -1567,6 +1957,10 @@ private fun TvTruncatedSummary(
     // 几十 ms 后 episodes 到位, alwaysShowExpand 翻 false, 简介不长 -> 按钮销毁把焦点带走,
     // 全局兜底把焦点塞给最左的侧边栏 -> "进详情页侧边栏自己弹开". 持焦期间粘住, 失焦后再收.
     var expandFocused by remember { mutableStateOf(false) }
+    // 展开按钮的落位: 正文末行的中线与按钮自身高度 (都是排版后才知道的量, 见按钮那里的说明)
+    var lastLineCenterPx by remember { mutableFloatStateOf(0f) }
+    var expandHeightPx by remember { mutableIntStateOf(0) }
+    val contentPaddingPx = with(LocalDensity.current) { contentPadding.toPx() }
     val showExpand = dialogTitle != null && (truncated || alwaysShowExpand || expandFocused)
     LaunchedEffect(showExpand) { onExpandButtonPresenceChange?.invoke(showExpand) }
     Box(modifier) {
@@ -1577,7 +1971,14 @@ private fun TvTruncatedSummary(
             Text(
                 summary,
                 Modifier.fillMaxWidth()
-                    .padding(contentPadding)
+                    .padding(
+                        start = contentPadding,
+                        top = contentPadding,
+                        end = contentPadding,
+                        // 见 [expandOnLastLine]: 那一截原本是给贴在块底的按钮让位的, 按钮挪到末行
+                        // 右边之后还给正文, 正好多排一行
+                        bottom = if (expandOnLastLine) 0.dp else contentPadding,
+                    )
                     // 只有可能出按钮时才在这里留位: 没有展开入口的正文块 (集简介, 全文在长按
                     // 弹窗里) 由调用方自己按同一个常量留 —— 那截预留归时长/日期用
                     .ifThen(dialogTitle != null) { padding(end = DETAILS_TEXT_END_RESERVE) },
@@ -1586,15 +1987,35 @@ private fun TvTruncatedSummary(
                 maxLines = maxLines ?: Int.MAX_VALUE,
                 minLines = minLines ?: 1,
                 overflow = TextOverflow.Ellipsis,
-                onTextLayout = { truncated = it.hasVisualOverflow },
+                onTextLayout = { result ->
+                    truncated = result.hasVisualOverflow
+                    // 末行的墨迹带 (相对本 Box: 正文自己还内缩了 contentPadding), 给按钮定位用
+                    val last = (result.lineCount - 1).coerceAtLeast(0)
+                    lastLineCenterPx = contentPaddingPx +
+                            (result.getLineTop(last) + result.getLineBottom(last)) / 2f
+                },
             )
             if (showExpand) {
                 TvSummaryExpandButton(
                     onClick = { showDialog = true },
                     onNavigateUp = onNavigateUp,
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        // 与正文同一内边距: 按钮下边界与正文末行下边界齐平
-                        .padding(contentPadding)
+                    modifier = (
+                            if (expandOnLastLine) {
+                                // **垂直居中对齐到正文末行**. 按钮 (~28dp) 比一行正文 (~20dp) 高, 而正文块
+                                // 的下边界还含着末行的行距下半段 —— 底边对齐会把整个按钮压到末行下面去,
+                                // 看着就像正文后面多空了一行. 按内容坐标算而不是靠对齐: 末行位置只有排版
+                                // 完才知道.
+                                Modifier.align(Alignment.TopEnd)
+                                    .padding(end = contentPadding)
+                                    .offset {
+                                        IntOffset(0, (lastLineCenterPx - expandHeightPx / 2f).roundToInt())
+                                    }
+                                    .onSizeChanged { expandHeightPx = it.height }
+                            } else {
+                                // 与正文同一内边距: 按钮下边界与正文末行下边界齐平
+                                Modifier.align(Alignment.BottomEnd).padding(contentPadding)
+                            }
+                            )
                         .onFocusChanged { expandFocused = it.hasFocus } // 见 showExpand: 持焦时粘住
                         .restoreFocusAfter(showDialog)
                         .then(expandModifier),
@@ -1605,10 +2026,11 @@ private fun TvTruncatedSummary(
     if (showDialog && dialogTitle != null) {
         AniScrollableTextDialog(
             title = dialogTitle,
-            text = summary,
+            text = if (dialogExtra.isNullOrBlank()) summary else summary + "\n\n" + dialogExtra,
             onDismissRequest = {
                 showDialog = false
             },
+            meta = dialogMeta,
         )
     }
 }
@@ -2033,20 +2455,12 @@ private fun TvShowMoreTagsButton(
 }
 
 /**
- * 区块级导航控制:
- * - 焦点从区块外进入 -> 区块顶吸附到屏幕上方 ([snapTopMargin] 处);
- * - 区块内自由导航: 焦点仍在可见范围内则页面完全不动; 焦点会越出可见范围时
- *   最小滚动露出焦点 (边缘留 [SECTION_ITEM_REVEAL_MARGIN] 余量);
- * - 区块内向上滚动的下限是吸附位 —— 永不越过区块顶, 不会露出上一个区块;
- * - 焦点落到区块最上排 (顶缘距区块顶 < [TV_SECTION_TOPMOST_THRESHOLD]) 时,
- *   区块整体回吸到屏幕顶部.
+ * 页面级纵向 BringIntoView 已禁用 (见 [SubjectDetailsTvPage]): focusable 获得焦点时总会发起 bringIntoView
+ * 请求, 请求自带焦点元素在本页内的精确边界, 是唯一可靠的"焦点位置"来源 —— 本组件接住它, 但**不滚任何东西**,
+ * 只把位置换算成页内露出量交给 [TvDetailsPager] (边缘留 [SECTION_ITEM_REVEAL_MARGIN] 余量).
  *
- * 页面级纵向 BringIntoView 已禁用 (见 [SubjectDetailsTvPage]), 纵向滚动全部由本组件
- * 通过 bringIntoViewResponder 显式驱动: focusable 获得焦点时总会发起 bringIntoView
- * 请求, 请求自带焦点元素在本区块内的精确边界, 是唯一可靠的"焦点位置"来源.
- *
- * 区块在滚动内容中的位置是实测的 (屏幕位置 + 已滚距离, 该和在滚动中恒定),
- * 而非按布局参数解析推算 —— 脚手架的顶部留白/insets 等全部自动包含, 不会有固定偏差.
+ * 页在滚动内容中的位置是实测的 (屏幕位置 + 已滚距离, 该和在滚动中恒定), 而非按布局参数解析推算 ——
+ * 脚手架的顶部留白/insets 等全部自动包含, 不会有固定偏差.
  */
 @OptIn(ExperimentalFoundationApi::class)
 /**
@@ -2056,6 +2470,34 @@ private fun TvShowMoreTagsButton(
  * 卡行 = FocusHighlightCard 内边距 10dp x2 + PersonCard 头像 48dp = 68dp;
  * 角色一行, 制作人员两行 (STAFF_GRID_ROWS). 差个位数 dp 由滚动锚定兜底, 不追求逐 dp 精确.
  */
+/**
+ * 评价页 (独立页第四页): 三张评论卡 + 行末"查看全部", 都可聚焦, 确认键进全量弹窗里对应的那一条.
+ *
+ * 左右键在行内走, 上/下键换页 (见下面的 tvSectionEdge). 排版与"一张卡对一条结果"的理由见
+ * [ReviewsSummarySection] 的 KDoc.
+ */
+@Composable
+private fun TvReviewsPage(
+    comments: LazyPagingItems<UIComment>,
+    totalCount: Int?,
+    onShowAll: (initialFocusIndex: Int) -> Unit,
+    horizontalPadding: Dp,
+    anchors: TvFocusScope,
+    sectionNav: TvDetailsSectionNav,
+) {
+    ReviewsSummarySection(
+        comments = comments,
+        totalCount = totalCount,
+        onShowAll = onShowAll,
+        modifier = Modifier
+            .padding(horizontal = horizontalPadding)
+            .tvFocusAnchor(anchors, TvDetailsFocusAnchor.REVIEWS_SECTION)
+            // 上键回上一页 (中间隔着不可聚焦的标题/汇总/摘要, 空间搜索不可靠); 下键就地消费 (本页是页面终点, 防斜跳)
+            .tvSectionEdge(sectionNav, TvDetailsSection.REVIEWS, up = true, down = true)
+            .focusGroup(),
+    )
+}
+
 @Composable
 private fun RelationsSkeletonSection(sectionSpacing: Dp, horizontalPadding: Dp) {
     val cardColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f) // 同 TV_CARD_CONTAINER_ALPHA
@@ -2088,15 +2530,31 @@ private fun RelationsSkeletonSection(sectionSpacing: Dp, horizontalPadding: Dp) 
     }
 }
 
+/**
+ * 详情页的一页. 它只做三件事, 都不碰滚动量:
+ *
+ * 1. 把自己的**起点**报给 [TvDetailsPager.reportStart] (实测屏幕位置 + 当前滚动量 = 内容坐标系 y, 再减去要留的顶部空隙).
+ *    页与页之间因此不定高、不等距 —— 每页只定义自己从哪儿开始 (用户 2026-09-15 拍板).
+ * 2. 焦点从页外进来时 [TvDetailsPager.goTo].
+ * 3. 本页比一屏高时, 把焦点元素的下缘位置报给 [TvDetailsPager.reveal].
+ *
+ * 滚动量由 [TvDetailsPager.run] 一个协程按 `起点 + 露出` 独占写入, 所以这里不需要吸附动画、不需要锚定补偿、
+ * 也不需要"过渡进行中暂停滚动"的闸 —— 没有第二个写者要防.
+ */
 @Composable
-private fun SnapOnFocusSection(
+private fun PageSection(
+    pager: TvDetailsPager,
+    /** 本页序号 (hero 0, 选集 1, 往下递增), 见 [TV_DETAILS_PAGE_COUNT]. */
+    page: Int,
     scrollState: ScrollState,
     /**
-     * 吸附后区块顶距屏幕顶的留白. 普通区块传区块间距 (layoutParams.sectionSpacing):
-     * 吸附后区块上方只剩区块间的纯空隙, 上一个区块的底边正好压在屏幕顶上, 不露出.
+     * 本页起点距屏幕顶的留白. 普通页传区块间距 (layoutParams.sectionSpacing):
+     * 到位后页上方只剩纯空隙, 上一页的底边正好压在屏幕顶上, 不露出.
      * 选集整页传 [EPISODES_PAGE_VERTICAL_MARGIN] (整页上下各留同样空隙).
      */
     snapTopMargin: Dp,
+    /** 跨区块纵向路由 (见下面 focusProperties.onExit); null = 不接管纵向离场. */
+    nav: TvDetailsSectionNav? = null,
     /**
      * 焦点从区块外进入本区块时回调一次 (区块内部移动不重复触发).
      *
@@ -2107,119 +2565,88 @@ private fun SnapOnFocusSection(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    // 区块顶在滚动内容坐标系中的 y: 实测屏幕位置 + 当前滚动量 (NaN = 尚未测过)
-    var sectionContentY by remember { mutableFloatStateOf(Float.NaN) }
     val density = LocalDensity.current
     val snapMarginPx = with(density) { snapTopMargin.toPx() }
     val revealMarginPx = with(density) { SECTION_ITEM_REVEAL_MARGIN.toPx() }
-    val topmostThresholdPx = with(density) { TV_SECTION_TOPMOST_THRESHOLD.toPx() }
     var sectionFocused by remember { mutableStateOf(false) }
-    // 焦点刚从区块外进入, 下一个 bringIntoView 请求执行吸顶 (焦点回调在请求前同步触发)
-    var pendingEntrySnap by remember { mutableStateOf(false) }
 
-    // **不变量守卫: 聚焦期间滚动值永远不低于本区块的吸附位** —— 低于 = 上一个区块被露出,
-    // 在本组件的吸附设计里任何来源都是违规 (bringChildIntoView 的向上滚有
-    // coerceAtLeast(snapTarget) 下界, 正常路径到不了那里). 实际踩到的来源: 角色/制作人员
-    // 区块从骨架换成真区块的交接帧附近进入, 吸附以尚未落定的位置结算, 停下来时选集卡还露着.
-    // 与其逐一追时序, 直接把不变量执行起来: **静止状态** (isScrollInProgress=false, 不打断
-    // 入场吸附/露出滚动的动画过程态) 下发现违规, 平滑滚回吸附位. 区块在页面底部、滚到底也够
-    // 不着吸附位的 (maxValue < snapTarget, BELOW 区块常见) 以 maxValue 为准, 不反复空滚.
-    //
-    // 真机日志显示它不只是兜底: 进区块的 entry 吸附 (bringChildIntoView) 常常缺勤 (rect 未
-    // 就绪/时序竞争), 守卫实际承担了大量常规吸附 —— 预期内的职责重叠, 两边目标一致
-    // (都不低于吸附位), 谁先到位谁算数.
-    LaunchedEffect(scrollState) {
-        // 判定整个放进 snapshotFlow 的追踪集里 —— 尤其 isScrollInProgress: 第一版把它放在
-        // collect 里读, 于是"错位由一次动画结算出来"的情形守卫会永远睡过去 (违规发生时正在
-        // 滚动被 return, 动画停在错位上之后再没有任何状态变化来唤醒它). 现在"滚动结束"本身
-        // 就是一次发射.
-        snapshotFlow {
-            val y = sectionContentY
-            if (!sectionFocused || y.isNaN() || scrollState.isScrollInProgress) return@snapshotFlow -1
-            val snapTarget = (y - snapMarginPx).coerceAtLeast(0f).roundToInt()
-                .coerceAtMost(scrollState.maxValue)
-            if (scrollState.value < snapTarget) snapTarget else -1
-        }.collect { target ->
-            if (target >= 0) scrollState.animateScrollTo(target)
-        }
-    }
-    val responder = remember(scrollState) {
+    val responder = remember(pager, page, snapMarginPx, revealMarginPx) {
         object : BringIntoViewResponder {
             override fun calculateRectForParent(localRect: Rect): Rect = localRect
 
+            // 不滚任何东西, 只把"焦点元素下缘相对本页起点的位置"报上去. 页起点在屏幕顶留了
+            // snapMarginPx, 所以下缘在屏幕上的 y = snapMarginPx + rect.bottom; 再留一点余量.
             override suspend fun bringChildIntoView(localRect: () -> Rect?) {
                 val rect = localRect() ?: return
-                val sectionTop = sectionContentY
-                if (sectionTop.isNaN()) return // 尚未测过位 (理论上焦点到达前必已测过)
-                val snapTarget = (sectionTop - snapMarginPx).coerceAtLeast(0f)
-                val itemTop = sectionTop + rect.top
-                val itemBottom = sectionTop + rect.bottom
-                val viewport = scrollState.viewportSize
-                val current = scrollState.value.toFloat()
-                val entry = pendingEntrySnap
-                pendingEntrySnap = false
-                val target = when {
-                    // 进入区块 / 焦点在区块最上排: 区块顶吸附到屏幕上方.
-                    // 焦点元素上方有大段不可聚焦内容 (如关联条目区顶部的作品信息表) 时
-                    // 吸顶可能把焦点推出屏幕下缘, 保底继续下滚到焦点下缘可见
-                    entry || rect.top < topmostThresholdPx ->
-                        maxOf(snapTarget, itemBottom - viewport + revealMarginPx)
-                    // 焦点上缘越出可见范围: 上滚露出, 但不越过区块顶 (不露出上一个区块)
-                    itemTop < current + revealMarginPx ->
-                        (itemTop - revealMarginPx).coerceAtLeast(snapTarget)
-                    // 焦点下缘越出可见范围: 下滚露出
-                    itemBottom > current + viewport - revealMarginPx ->
-                        itemBottom - viewport + revealMarginPx
-                    // 完全可见: 页面不动
-                    else -> return
-                }
-                val rounded = target.roundToInt().coerceAtLeast(0)
-                if (rounded != scrollState.value) scrollState.animateScrollTo(rounded)
+                pager.reveal(page, snapMarginPx + rect.bottom + revealMarginPx)
             }
         }
     }
     Box(
-        modifier
+        // 起点测量排在**调用方的 modifier 之前** (即最外层): 调用方可能在自己那段挂 graphicsLayer
+        // (选集页的预画就是, 它把整块 translationY 挪进可见范围), 而图层变换会进 positionInRoot ——
+        // 测量排在图层内侧的话读到的是被挪过的位置, 起点是假的 (同 tailfix29: 当年换页图层挂在测量
+        // 外面, 角色区每帧被推着横扫过屏幕).
+        Modifier
             .onGloballyPositioned {
-                // 前提: 滚动视口顶 == root y0 (TV 全屏无顶栏/insets, 成立).
-                // 若将来给页面加顶部 padding, 此处需改为减去实测的视口顶 y
-                val newY = it.positionInRoot().y + scrollState.value
-                val oldY = sectionContentY
-                sectionContentY = newY
-                // **滚动锚定** (同浏览器 scroll anchoring): 焦点在本区块时, 上方内容长高/收缩
-                // (角色/制作人员区块在 relations 数据 1.5~3 秒后到位才渲染, 一插入就是几百 dp)
-                // 会把本区块连同焦点元素一起挤出屏幕 —— 焦点还在元素上, 人却看不见了.
-                // 区块在**内容坐标系**里的 y 只随上方内容尺寸变化而变 (用户滚动不改它),
-                // 聚焦期间把差值同步补给滚动量, 本区块在视口里纹丝不动, 插入发生在屏幕外.
-                // dispatchRawDelta 是同步的, 不给这一帧留出"先挤走再滚回"的闪变.
-                // (吸附动画进行中的插入会与动画竞争, 罕见且下一次按键即自愈, 不处理.)
-                if (sectionFocused && !oldY.isNaN() && newY != oldY) {
-                    scrollState.dispatchRawDelta(newY - oldY)
-                }
+                // 本页起点 = 屏幕位置 + 当前滚动量 - 顶部留白, 即**内容坐标系**里的 y (用户滚动不改它,
+                // 只随上方内容尺寸变化而变). 前提: 滚动视口顶 == root y0 (TV 全屏无顶栏/insets, 成立);
+                // 若将来给页面加顶部 padding, 此处需改为减去实测的视口顶 y.
+                // 上方内容长高 (角色/制作人员在 relations 数据 1.5~3 秒后到位才渲染, 一插入就是几百 dp)
+                // 时这个值自己变, 驱动器随即把滚动量对齐过去 —— 本页在视口里纹丝不动, 插入发生在屏幕外.
+                // 旧版为此专门写了"滚动锚定"去补差值, 现在不需要: 滚动量本来就是从它派生的.
+                pager.reportStart(
+                    page,
+                    it.positionInRoot().y + scrollState.value - snapMarginPx,
+                    snapMarginPx + it.size.height,
+                )
             }
+            .then(modifier)
             .onFocusChanged { state ->
                 if (state.hasFocus && !sectionFocused) {
-                    pendingEntrySnap = true
+                    pager.goTo(page)
                     onFocused?.invoke()
                 }
                 sectionFocused = state.hasFocus
             }
             .bringIntoViewResponder(responder)
-            // 区块焦点围栏: 左右键锁定在区块内 —— 边缘元素按左右时空间搜索找不到同区块目标,
-            // 会斜跳到上/下一个区块的元素, 页面跟着滚走, 观感是"按左右跳到了上一页". 这里
-            // 统一取消横向离组 (上下键照常跨区块; 程序化 requestFocus 不走此钩子, 返回键
-            // 分层的跨区块送焦点不受影响). 区块内部的显式 focusProperties 指路仍然有效.
+            // 页内焦点围栏 + **纵向离场一律走路由**.
+            //
+            // 左右: 取消离组 —— 边缘元素按左右时空间搜索找不到同页目标, 会斜跳到上/下一页, 页面跟着走.
+            //
+            // 上下: **不再交给空间搜索**. 原来只有一部分区块挂了显式接线 (tvSectionEdge / downFocus / upFocus),
+            // 没挂的地方 (首屏下键、角色与制作人员的上键) 靠二维搜索找邻居 —— 而目标那一刻可能在屏幕外、
+            // 子项被回收, 于是"有概率"越过整整一页落到别处: 冷进入往下翻直接到第三页、第三页往上翻回到第一页
+            // (用户 2026-09-16). 在这里统一接住: 任何方向的纵向离组都取消掉, 改由 [TvDetailsSectionNav] 显式送焦
+            // (它再走 TvFocusScope, 目标未附着就挂起等附着). 区块**内部**的上下移动不触发 onExit, 不受影响.
+            //
+            // 同一页上有两个区块时 (角色 / 制作人员): 往上按本页第一个区块算, 往下按最后一个算 —— 它们之间的
+            // 移动是页内移动, 走不到这里.
             .focusProperties {
                 onExit = {
-                    if (requestedFocusDirection == FocusDirection.Left ||
-                        requestedFocusDirection == FocusDirection.Right
-                    ) {
-                        cancelFocusChange()
+                    when (requestedFocusDirection) {
+                        FocusDirection.Left, FocusDirection.Right -> cancelFocusChange()
+
+                        FocusDirection.Up -> if (nav != null) {
+                            cancelFocusChange()
+                            nav.moveUp(TvDetailsSection.entries.first { it.page == page })
+                        }
+
+                        FocusDirection.Down -> if (nav != null) {
+                            cancelFocusChange()
+                            nav.moveDown(TvDetailsSection.entries.last { it.page == page })
+                        }
+
+                        else -> {}
                     }
                 }
             }
             .focusGroup(),
-    ) { content() }
+    ) {
+        // 换页过渡的图层 (见 TvDetailsPager): 挂在起点测量 (上面的 onGloballyPositioned) 之**内** ——
+        // 挂外面的话图层位移会进 positionInRoot, 起点每帧都在变, 页面会自己横扫过屏幕 (tailfix29 踩过)
+        Box(Modifier.graphicsLayer { pager.apply(page, this) }) { content() }
+    }
 }
 
 /** 页面内的固定焦点锚点, 由页面级 [TvFocusScope] 统一调度. */
@@ -2245,6 +2672,9 @@ private enum class TvDetailsFocusAnchor : TvFocusKey {
     /** 关联条目/评价区块 (同上). */
     BELOW_SECTION,
 
+    /** 评价整页 (独立页第四页) 的进入落点. */
+    REVIEWS_SECTION,
+
     /** 标签墙上的恢复目标标签 (点标签进搜索页返回时). */
     TAG_WALL,
 
@@ -2258,26 +2688,39 @@ private val TvFocusScope.episodesSummary get() = requesterOf(TvDetailsFocusAncho
 private val TvFocusScope.charactersSection get() = requesterOf(TvDetailsFocusAnchor.CHARACTERS_SECTION)
 private val TvFocusScope.staffSection get() = requesterOf(TvDetailsFocusAnchor.STAFF_SECTION)
 private val TvFocusScope.belowSection get() = requesterOf(TvDetailsFocusAnchor.BELOW_SECTION)
+private val TvFocusScope.reviewsSection get() = requesterOf(TvDetailsFocusAnchor.REVIEWS_SECTION)
 
-/** 页面纵向区块, 按导航顺序排列 (跨区块 上/下 键的路由依据, 见 [TvDetailsSectionNav]). */
-private enum class TvDetailsSection {
+/**
+ * 页面纵向区块, 按导航顺序排列 (跨区块 上/下 键的路由依据, 见 [TvDetailsSectionNav]).
+ *
+ * [page] 是它所属的页 (见 [TvDetailsPager]). 区块比页多一个: 角色与制作人员在**同一页**上,
+ * 它们之间的上下键只是页内移动, 不换页 —— 页号在这里定义一次, 别在调用处写数字.
+ */
+private enum class TvDetailsSection(val page: Int) {
     /** 首屏: 独立页 = Hero (标题/简介/信息带); 内嵌变体 = 介绍页 (海报/简介/标签墙/评价). */
-    HERO,
+    HERO(0),
 
     /** 选集整页 (仅独立页; 内嵌变体的选集条在播放器控制层, 不在本页). */
-    EPISODES,
+    EPISODES(1),
 
     /** 角色区块 (仅独立页; 内嵌变体由播放器胶囊面板承担). 无数据不组合. */
-    CHARACTERS,
+    CHARACTERS(2),
 
-    /** 制作人员 (仅独立页; 与角色共用一个吸附区块, 进入区域时角色行吸顶). 无数据不组合. */
-    STAFF,
+    /** 制作人员 (仅独立页; 与角色同页, 进入该页时角色行在页首). 无数据不组合. */
+    STAFF(2),
 
     /**
-     * 关联条目 + 独立页的 作品信息表/评价 (信息表不可聚焦, 排区块顶 —— 焦点下到
-     * 关联条目时区块吸顶, 信息表正好露出). 无可聚焦内容时上一区块即页面终点.
+     * 评价整页 (仅独立页, 见 TvReviewsPage): 评论卡铺满一屏, 上一页底部只露出它的标题
+     * (用户 2026-09-15). 内嵌变体的评价仍在介绍页里, 不单独成页.
      */
-    BELOW,
+    REVIEWS(3),
+
+    /**
+     * 关联条目 + 独立页的作品信息表 (信息表不可聚焦, 排在页首 —— 焦点下到
+     * 关联条目时本页到位, 信息表正好露出). 无可聚焦内容时上一页即页面终点.
+     */
+    BELOW(3),
+
 }
 
 /**
@@ -2288,15 +2731,15 @@ private enum class TvDetailsSection {
  * - 每个区块经 [register]/[entry] 提供进入落点 (焦点组容器, requestFocus 经 enter
  *   落到第一个可聚焦子项), 经 [setPresent] 报告当前是否存在 (无内容的区块被跳过);
  * - 边缘元素只声明"我在区块 X 的 上/下 边缘" ([tvSectionEdge] 修饰符, 或把
- *   [downTargetFrom] 挂到 focusProperties), 落点解析 (下一个存在的区块) 全在本类;
+ *   [samePageDownTargetFrom] 挂到 focusProperties), 落点解析 (下一个存在的区块) 全在本类;
  * - 最顶区块再按上走 [onExitTop] 出口 (内嵌变体回播放器选集条);
  *   最底区块按下消费按键 (页面终点, 防空间搜索斜跳到别的区块).
  *
  * 与页面级 [TvFocusScope] 分工: scope 管程序化送焦; 这里管方向键驱动的相邻区块移动.
- * 纵向滚动仍由 [SnapOnFocusSection] 随焦点吸附, 与两者正交.
+ * 纵向滚动仍由 [TvDetailsPager] 按当前页派生, 与两者正交.
  *
  * [present] 与 [onExitTop] 是普通字段, 每次组合从头赋值: 事件处理只在按键时读取;
- * 组合期唯一的读者 ([downTargetFrom] 给选集轮播传落点) 与写入同处一个重组作用域
+ * 组合期唯一的读者 ([samePageDownTargetFrom] 给角色行传落点) 与写入同处一个重组作用域
  * (该作用域本就读 paging itemCount, 数量变化必然整体重组), 不需要快照状态.
  */
 @Stable
@@ -2321,9 +2764,17 @@ private class TvDetailsSectionNav {
         if (value) present.add(section) else present.remove(section)
     }
 
-    /** [from] 之下第一个存在区块的进入落点; null = [from] 已是最底 (可挂 focusProperties.down). */
-    fun downTargetFrom(from: TvDetailsSection): FocusRequester? =
+    /**
+     * [from] 之下第一个存在区块的进入落点, **仅当它与 [from] 同页**; 跨页或已是最底时 null.
+     *
+     * 跨页**不能**走静态落点: 它绕过 [moveDown] 的三样东西 —— 换页闸 (长按会一口气连跳两页)、以显示页为准的起点
+     * 钳制、以及经 [send] 的 TvFocusScope 送焦 (裸 FocusRequester 在目标未附着时静默失败, 按键被消费而焦点没动,
+     * 正是"往上翻有概率回到第一页"那一类). 同页移动不经过 [PageSection] 的 onExit (它只在离开区块时触发),
+     * 所以同页这一档仍需要静态落点: 角色行 -> 制作人员就是它.
+     */
+    fun samePageDownTargetFrom(from: TvDetailsSection): FocusRequester? =
         TvDetailsSection.entries.firstOrNull { it.ordinal > from.ordinal && it in present }
+            ?.takeIf { it.page == from.page }
             ?.let { entry(it) }
 
     private fun prevPresent(from: TvDetailsSection): TvDetailsSection? =
@@ -2333,18 +2784,78 @@ private class TvDetailsSectionNav {
         prevPresent(from) != null || onExitTop != null
 
     /**
+     * 送焦到某个区块. 由页面注入 (走 [TvFocusScope]: 未附着则请求悬挂、锚点一附着即送、并确认真的到位).
+     *
+     * **不能用裸 `FocusRequester.requestFocus()`**: 目标那一刻没附着时它直接抛异常, 原来外面包着 `runCatching`
+     * 吞掉 —— 于是按键被消费、焦点却没动, 最后被页面/全局兜底塞到别处 (实测就是首屏的播放按钮, 表现为
+     * "从第三页往上翻有概率回到第一页"). 真机日志里那行 `FocusRequester is not initialized` 就是它
+     * (2026-09-16, 冷进入时选集区块刚组合 23ms 后).
+     */
+    var send: ((TvDetailsSection) -> Unit)? = null
+
+    /** 上一次换页还没走够 (见 TvDetailsPager.isStepping): 长按时据此一页一页地走, 不让后面的换页盖掉前面的. */
+    var stepping: (() -> Boolean)? = null
+
+    /**
+     * 闸期间按的那一下**推迟执行**而不是丢掉 (页面注入; 只保留最后一次).
+     *
+     * 闸的目的是"一页一页地走", 不是"吃掉输入" —— 原来直接 return 把按键丢了, 于是连按两下第二下没反应
+     * (用户 2026-09-16). 推迟之后: 长按连发 (167ms 一次) 期间反复覆盖同一个待办, 闸一开走一页, 节奏与原来一样;
+     * 而刻意的连按两下两下都算数. 待办里**重新走一遍** moveDown/moveUp, 按闸开那一刻的显示页重算路线, 不用旧目标.
+     */
+    var defer: ((() -> Unit) -> Unit)? = null
+
+    /** 屏幕上正显示第几页 (见 TvDetailsPager.current). */
+    var page: (() -> Int)? = null
+
+    /**
+     * 方向键真正的起点区块 —— **焦点所在的页与屏幕上显示的页可能不是同一页**.
+     *
+     * 返回键是特例: 它直接改页 ([TvDetailsPager.goTo] 同步写 current), 焦点却走异步送焦 (锚点附着才送).
+     * 这中间画面已经在新页上、焦点还留在旧页, 按方向键就会按**旧页**算路线: 在第二页按返回再按下,
+     * 得到的是 `moveDown(EPISODES)` = 第三页 (用户 2026-09-16). [stepping] 那道闸只盖住换页时长的
+     * 一部分, 按得比它晚就必现 —— 不是竞态, 是两个量本来就会不一致.
+     *
+     * 纵向移动的语义是"从**看得见的**那一页往下 / 往上", 所以不一致时一律以页为准: 往下取该页最后一个
+     * 区块, 往上取第一个 (与 [PageSection] 交给本类的口径相同).
+     */
+    private fun originOf(from: TvDetailsSection, down: Boolean): TvDetailsSection {
+        val p = page?.invoke() ?: return from
+        if (p < 0 || from.page == p) return from // p < 0 = 翻页器还没接管 (见 TvDetailsPager.displayedPage)
+        return (if (down) TvDetailsSection.entries.lastOrNull { it.page == p }
+        else TvDetailsSection.entries.firstOrNull { it.page == p }) ?: from
+    }
+
+    /** [from] 之下第一个存在的区块; null = 已是最底. */
+    private fun nextPresent(from: TvDetailsSection): TvDetailsSection? =
+        TvDetailsSection.entries.firstOrNull { it.ordinal > from.ordinal && it in present }
+
+    /**
      * 从 [from] 的下缘向下: 焦点送往下一个存在的区块. 恒返回 true ——
      * 没有下一区块时也消费按键 (页面底缘, 防斜跳; "无关联条目时下键无落点"属预期).
      */
     fun moveDown(from: TvDetailsSection): Boolean {
-        downTargetFrom(from)?.let { runCatching { it.requestFocus() } }
+        val origin = originOf(from, down = true)
+        val target = nextPresent(origin) ?: return true
+        // 闸只管**换页**: 同一页内的区块移动 (评价 -> 关联条目) 被闸住的话, 换页后紧接着按的那一下会被吞掉,
+        // 观感是"最后这一下焦点运动有延迟" (用户 2026-09-16); 而已经停稳再按就正常 —— 那时窗口早过了
+        if (target.page != origin.page && stepping?.invoke() == true) {
+            defer?.invoke { moveDown(from) }
+            return true
+        }
+        send?.invoke(target) ?: runCatching { entry(target).requestFocus() }
         return true
     }
 
     /** 从 [from] 的上缘向上: 焦点送往上一个存在的区块, 页顶走 [onExitTop]; 返回是否消费. */
     fun moveUp(from: TvDetailsSection): Boolean {
-        prevPresent(from)?.let {
-            runCatching { entry(it).requestFocus() }
+        val origin = originOf(from, down = false)
+        prevPresent(origin)?.let { target ->
+            if (target.page != origin.page && stepping?.invoke() == true) {
+                defer?.invoke { moveUp(from) } // 同 [moveDown]: 闸只管换页, 且推迟而不是丢掉
+                return true
+            }
+            send?.invoke(target) ?: runCatching { entry(target).requestFocus() }
             return true
         }
         onExitTop?.let {
@@ -2399,6 +2910,15 @@ private fun TvHeroBackdrop(
     hidden: Boolean = false,
     /** 额外乘上的不透明度, 绘制里读: 放大换图接手时的淡入 (见真页的 handoff). */
     fadeInAlpha: () -> Float = { 1f },
+    /** 盖在图上的一层黑的不透明度, 绘制里读: 放大 / 缩回换图时的压暗 (见 tvHeroSwapDim). 只画在图这一层 (随缩放), 不开离屏. */
+    extraDim: () -> Float = { 0f },
+    /**
+     * 列表页压在这张图上的那套遮罩 (见 [TvBackdropTreatment]): 转场画的是它与本页那份的**插值**.
+     *
+     * 原来是两套各画各的再交叉淡入 —— 中途"两套各有一部分同时存在", 不等于形状从 A 连续变到 B, 两端各留一个台阶
+     * (2026-09-16 逐帧实测: 起跑那一帧右半区亮度掉 16%, 观感是"背景提前变成详情页的样子", 连补三轮没补住).
+     */
+    sourceTreatment: TvBackdropTreatment? = null,
     /**
      * 本层底下垫的是这个纯色时 (放大那一层), 底缘渐隐直接画成它的渐变, 不用 DstOut 擦除、**不开离屏缓冲**: 擦掉 a 露出
      * 纯色 C 与在图上叠一层 alpha a 的 C, 逐像素相同. 离屏的代价在放大期间特别大 —— 遮罩渐入与羽化每帧都在变, 整块
@@ -2406,8 +2926,19 @@ private fun TvHeroBackdrop(
      * (离屏是先放大画进全屏缓冲再缩回去), 与列表页 hero 直接画在框里的那张更一致. null = 常规 (底下是动态渐变, 必须擦).
      */
     solidUnderlay: Color? = null,
-    /** 放大起始时列表页盖在图上的整层压暗 (见 TvHeroZoomHandoff.Session.dim), 随进度退到 0. */
-    zoomDim: Color = Color.Transparent,
+    /**
+     * 本层是**缩回**而不是放大.
+     *
+     * 软边半径两个方向的走势**相同**: 都是"图铺满全屏时为 0, 贴回 hero 框时最宽" —— 放大是从宽收到 0, 缩回是从 0 长到宽.
+     * 用 `1 - t` 表达对两者都成立 (t = 1 恒为满屏). 2026-09-16 一度把缩回改成按 t 算, 于是落位那一刻羽化突然收没、
+     * 黑边一下子不见了, 正好在缩小结束那一帧跳一下 (用户逐帧: 相邻两帧逐像素相同后猛跳一步). 本参数现在只用于注释
+     * 与将来可能的分向调参, 不再改变走势.
+     */
+    shrinking: Boolean = false,
+    /** 停留够久后换原图档加清 (见 [HeroBackdropSharpeningOverlay]). 缩回备用层传 false: 它常驻组合、平时不画, 加清只会白占一张原图位图. */
+    sharpen: Boolean = true,
+    /** 向下滚动的淡出进度 (0..1) 由调用方给, 绘制里读; 返回 null 时照常按滚动量算. 见真页的 TvDetailsPager (换页的滚动是跳的). */
+    scrollFade: () -> Float? = { null },
 ) {
     // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
     var ownBounds by remember { mutableStateOf<Rect?>(null) }
@@ -2422,6 +2953,8 @@ private fun TvHeroBackdrop(
         )
     }
     val bottomFeatherStops = remember(featherColor) { tvBackdropFadeToBlackStops(start = 0f, end = 1f, color = featherColor) }
+    // 软边实验 (见 TvPolishFlags.zoomSoftEdge): DstOut 只看 alpha, 色无关. 外缘全擦 -> 内侧不擦
+    val eraseStops = remember { tvBackdropFadeFromBlackStops(start = 0f, end = 1f, maxAlpha = 1f, color = Color.Black) }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -2433,10 +2966,23 @@ private fun TvHeroBackdrop(
                         return@graphicsLayer
                     }
                     // 向下滚动逐渐淡出, 但保留半透明而非完全消失
-                    val progress = (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
+                    val progress = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
                     alpha = (1f - progress * (1f - HERO_BACKDROP_MIN_ALPHA)) * fadeInAlpha()
                     // 底部渐隐用 DstOut 擦除本层 alpha, 需要离屏合成; 垫纯色时改画同色渐变, 不必离屏 (见 solidUnderlay)
-                    compositingStrategy = if (solidUnderlay != null) CompositingStrategy.Auto else CompositingStrategy.Offscreen
+                    // 软边要擦本层已画好的 alpha, 必须离屏; 其余情形照旧 (见 solidUnderlay).
+                    //
+                    // **只在真会画软边的那几帧开**: 带宽走 (1 - t)^4, 接近满屏时很快掉到半个像素以下就不画了,
+                    // 而原来的判据只是 `软边开 && t < 1`, 于是整整 250ms 都白开着离屏 (2026-09-16 审查).
+                    // 不画软边的帧里本层是不透明的, 离屏与否逐像素相同, 关掉不改观感
+                    compositingStrategy = when {
+                        // ownBounds 还没量到时保守地开着: 宁可多开一两帧, 不要在动画中间来回换缓冲
+                        TvPolishFlags.zoomSoftEdge && zoomFrom != null && zoomT() < 1f &&
+                                ownBounds?.let { tvHeroSoftEdgeVisible(zoomFrom, it, size, zoomT()) } != false ->
+                            CompositingStrategy.Offscreen
+
+                        solidUnderlay != null -> CompositingStrategy.Auto
+                        else -> CompositingStrategy.Offscreen
+                    }
                     // 放大缩放的是**整层** (图 + 底缘擦除 + 左侧 scrim + 羽化), 不是只缩图: 遮罩跟着图一起缩, 缩放中途
                     // 边缘才是软的 (只缩图的话遮罩留在全屏坐标, 图的四条硬边全露出来). 这层本来就是离屏的, 不多花一层
                     val t = zoomT()
@@ -2452,6 +2998,8 @@ private fun TvHeroBackdrop(
                 }
                 .drawWithContent {
                     drawContent()
+                    val swapDim = extraDim()
+                    if (swapDim > 0f) drawRect(Color.Black, alpha = swapDim)
                     // 底部渐隐: 擦除图片自身的透明度, 露出下层的动态渐变背景, 而不是画一层纯背景色盖住它 (否则浅色主题下
                     // 是一片突兀的纯白). 起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图,
                     // 选集卡片那一带整片发黑 (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
@@ -2460,42 +3008,20 @@ private fun TvHeroBackdrop(
                     // 每条渐变都**裁到它不透明的那一段**再画 (clipRect, 渐变坐标不变): drawRect 铺满整层时, 透明的部分 GPU
                     // 照样逐像素混合一遍. 放大期间这几条渐变每帧都要重画, 4K 下每条全屏混合约 2~3ms (2026-09-10 实测
                     // 4K 放大每帧 GPU 30ms, 去掉离屏缓冲后几乎没降 —— 大头是六次全屏填充, 不是离屏)
+                    // **一份声明 + 插值**, 不再是"两套各画各的再交叉淡入" (见 [TvBackdropTreatment]):
+                    // 画的是 lerp(列表页那份, 本页这份, t) —— t = 0 逐像素等于列表页, t = 1 逐像素等于本页,
+                    // 中间是渐变带的位置与浓淡在连续变形, 结构上不会有台阶.
+                    //
+                    // 每条渐变仍只画它不透明的那一段 (见 tvBackdropTreatmentPainter): 铺满整层时透明部分 GPU 照样
+                    // 逐像素混合一遍, 4K 下每条全屏混合约 2~3ms (2026-09-10 实测: 放大每帧 GPU 30ms, 大头是全屏填充次数)
                     val t = zoomT()
-                    val own = if (zoomFrom != null) t else 1f
-                    // 列表页的整层压暗 (时间表页): 起跑那一帧与列表页一样暗, 随进度退掉, 本页自己的遮罩同时渐入
-                    if (zoomFrom != null && t < 1f && zoomDim.alpha > 0f) drawRect(zoomDim, alpha = 1f - t)
-                    if (own > 0f) clipRect(top = size.height * 0.72f) {
-                        if (solidUnderlay != null) {
-                            // 起点用同色 alpha 0 (而不是 Color.Transparent = 透明黑): 渐变按非预乘插值, 从透明黑插过去
-                            // 中段会发灰
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0.72f to solidUnderlay.copy(alpha = 0f),
-                                    1f to solidUnderlay.copy(alpha = 0.88f),
-                                ),
-                                alpha = own,
-                            )
-                        } else {
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0.72f to Color.Transparent,
-                                    1f to Color.Black.copy(alpha = 0.88f),
-                                ),
-                                alpha = own,
-                                blendMode = BlendMode.DstOut,
-                            )
-                        }
+                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay)
+                    val treatment = if (zoomFrom != null && t < 1f) {
+                        lerpTvBackdropTreatment(sourceTreatment ?: TvBackdropTreatment(), ownTreatment, t)
+                    } else {
+                        ownTreatment
                     }
-                    // 左侧暗色 scrim: 保证浮在图上的标题可读; 画在同一层里, 才能按进度渐入而不多开一层
-                    if (own > 0f) clipRect(right = size.width * 0.55f) {
-                        drawRect(
-                            brush = Brush.horizontalGradient(
-                                0f to Color.Black.copy(alpha = 0.6f),
-                                0.55f to Color.Transparent,
-                            ),
-                            alpha = own,
-                        )
-                    }
+                    with(tvBackdropTreatmentPainter(size, treatment)) { draw(1f) }
                     // 放大期间的羽化: 图的左边 / 下边**每一帧都满遮盖成周边的底色**, 收掉羽化靠收窄宽度, 不降强度. 旧做法
                     // 强度按 1 − t³ 衰减, 放大到一半边上还透出一成多原图, 周边是纯黑, 就是一条亮边 (用户 2026-09-10 截图;
                     // 放大还画在详情页里的时候, 周边是带图色调的渐变底, 所以看不出). 羽化带在屏幕上保持列表页 hero 的宽度,
@@ -2503,7 +3029,55 @@ private fun TvHeroBackdrop(
                     // 渐变矩形越过图的边再多画 TV_HERO_ZOOM_FEATHER_OUTSET_PX 个屏幕像素: 图最边上那一排是半覆盖的,
                     // 羽化自己的边若也停在同一处, 两层半透明叠起来仍会透出原图 (实测底边那一排亮度 62, 周边 0)
                     val box = ownBounds
-                    if (zoomFrom != null && t < 1f && featherOn() && box != null) {
+                    val softEdge = TvPolishFlags.zoomSoftEdge
+                    if (softEdge && zoomFrom != null && box != null && featherOn() &&
+                        tvHeroSoftEdgeVisible(zoomFrom, box, size, t)
+                    ) {
+                        // 真透明软边: 四条边各擦一条窄带, 带宽随"图越出源框的距离"生长、落地收没, 四角两带相乘自然连续
+                        val sx = lerp(zoomFrom.width / size.width, 1f, t)
+                        val sy = lerp(zoomFrom.height / size.height, 1f, t)
+                        val short = minOf(zoomFrom.width, zoomFrom.height)
+                        val base = short * TV_HERO_SOFT_EDGE_FRACTION
+                        // 下缘单独一档: 它本来就压着一条宽渐隐带, 需要的化开宽度与两侧不是一回事
+                        val baseBottom = short * TV_HERO_SOFT_EDGE_BOTTOM_FRACTION
+                        // 半径随"离满屏还有多远"长: 满屏时 0, 贴回 hero 框时最宽 —— 放大缩回同一条式子, 见 [shrinking].
+                        // 过一条指数曲线 (前段慢、末段快): 线性时落位前那一小段仍看得出突变, 因为羽化要在很短的时间里
+                        // 接上列表页本身很宽的那条渐隐带 (见 TvPolishFlags.zoomSoftEdgeCurve)
+                        val remaining = (1f - t).coerceAtLeast(0f).pow(TV_HERO_SOFT_EDGE_CURVE)
+                        fun bandFor(gap: Float, b: Float = base, scale: Float = sx) =
+                            tvHeroSoftEdgeBand(gap, b, remaining, scale)
+                        val w = size.width
+                        val h = size.height
+                        bandFor(zoomFrom.left - box.left).let { if (it > 0.5f) {
+                            val e = it
+                            drawRect(
+                                Brush.horizontalGradient(*eraseStops, startX = 0f, endX = e),
+                                size = Size(e, h), blendMode = BlendMode.DstOut,
+                            )
+                        } }
+                        bandFor(box.right - zoomFrom.right).let { if (it > 0.5f) {
+                            val e = it
+                            drawRect(
+                                Brush.horizontalGradient(*eraseStops, startX = w, endX = w - e),
+                                topLeft = Offset(w - e, 0f), size = Size(e, h), blendMode = BlendMode.DstOut,
+                            )
+                        } }
+                        bandFor(zoomFrom.top - box.top, scale = sy).let { if (it > 0.5f) {
+                            val e = it
+                            drawRect(
+                                Brush.verticalGradient(*eraseStops, startY = 0f, endY = e),
+                                size = Size(w, e), blendMode = BlendMode.DstOut,
+                            )
+                        } }
+                        bandFor(box.bottom - zoomFrom.bottom, baseBottom, sy).let { if (it > 0.5f) {
+                            val e = it
+                            drawRect(
+                                Brush.verticalGradient(*eraseStops, startY = h, endY = h - e),
+                                topLeft = Offset(0f, h - e), size = Size(w, e), blendMode = BlendMode.DstOut,
+                            )
+                        } }
+                    }
+                    if (!softEdge && zoomFrom != null && t < 1f && featherOn() && box != null) {
                         val sx = lerp(zoomFrom.width / size.width, 1f, t)
                         val sy = lerp(zoomFrom.height / size.height, 1f, t)
                         val outX = TV_HERO_ZOOM_FEATHER_OUTSET_PX / sx
@@ -2544,10 +3118,27 @@ private fun TvHeroBackdrop(
                 decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(imageUrl),
                 onSuccess = onSuccess,
             )
-            HeroBackdropSharpeningOverlay(imageUrl)
+            if (sharpen) HeroBackdropSharpeningOverlay(imageUrl)
         }
     }
 }
+
+/**
+ * **试过并撤回: "让图的放大跑在窗口前面"** (2026-09-16).
+ *
+ * 动机: hero -> 全屏只有 1.515 倍 (列表页 hero 是 `fillMaxHeight(0.66)` + 16:9 = 634x356dp, 详情页 960x540),
+ * 这个比例落在"最难看的区间" —— 源已占屏幕 62% 宽, 等比放大读起来像整个画面往前顿一下, 不像"这个东西打开了"
+ * (用户: "直接按比例放大, 似乎不常见"; Apple 对自家 zoom 转场也劝阻"源几乎占满窗口"时用它).
+ * 做法是照 Material 容器变形把"遮罩"与"内容缩放"分成两条曲线, 让图先到位、多出来的部分裁掉.
+ *
+ * **为什么撤回**: 两端共享**同一张图**且都要铺满各自的框, 于是三种情况互斥 ——
+ * 内容缩放 = 窗口 ⇒ 等比放大 (一点不裁); 内容 > 窗口 ⇒ 必然裁掉一圈 (用户: "变大的画面超出画面");
+ * 内容 < 窗口 ⇒ 填不满露底。"放大感更小"和"一点不裁"在这个前提下**不可兼得**, 不是调参能解决的.
+ *
+ * 想两全只有改变前提: 让两端显示的**不是同一张图** —— 即 Apple TV 的做法 (从聚焦卡片长出一个圆角容器,
+ * 详情页内容在容器里淡入, 浏览页留在下面压暗不动; 2026-09-16 在 Shield 上逐帧录到). 那是另一套转场,
+ * 顺带把比例从 1.5 倍变成 6~9 倍 —— zoom 在那个区间才读得出"打开". 见 memory project-tv-details-nav-stability.
+ */
 
 /**
  * 放大转场那一层 (见 [TvHeroZoomHandoff]): 从导航后第一帧起按列表页 hero 的框画同一张图, 图一上屏就转不透明
@@ -2572,19 +3163,34 @@ fun TvHeroZoomLayer() {
     val session = TvHeroZoomHandoff.session ?: return
     var loaded by remember(session) { mutableStateOf(false) }
     val scrollState = rememberScrollState()
+    // 换图的放大 (继续观看: 列表页是单集剧照, 详情页是整部背景): 详情页那张也在这一层组合着 (不画); 起跑时它已加载好, 就在放大途中
+    // 压暗、最暗时换过去 (tvHeroSwapDim), 落地即是详情页的图、直接接手. 半路才加载好就不换 (半路才开始压暗会一下子暗下去), 照旧落地后淡入
+    val crossImage = session.url != session.detailsUrl
+    var detailsLoaded by remember(session) { mutableStateOf(false) }
+    var swapPlanned by remember(session) { mutableStateOf(false) }
     LaunchedEffect(session) {
         if (!session.started) {
             withFrameNanos { }
             val ready = withTimeoutOrNull(TV_HERO_ZOOM_LOAD_BUDGET_MILLIS) { snapshotFlow { loaded }.first { it } }
             if (ready == null) {
+                // 页面自己补淡入 (见 rememberTvZoomAbortFade), 否则硬切出来像闪一下
+                zoomLogger.info { "Details entry: zoom abandoned (image not ready in ${TV_HERO_ZOOM_LOAD_BUDGET_MILLIS}ms), fade in" }
                 TvHeroZoomHandoff.endSession(session)
                 return@LaunchedEffect
             }
             // onSuccess 之后下一帧图才真正上屏: 在那一帧起跑 —— 底色转不透明、列表页硬切、放大开始都落在这一帧
             session.start(withFrameNanos { it })
         }
+        swapPlanned = crossImage && detailsLoaded
         while (session.t < 1f) {
-            session.t = session.progress(withFrameNanos { it })
+            val now = withFrameNanos { it }
+            // 放大途中按了返回、缩回已开始 (TvHeroZoomHandoff.shrink): 停在当前进度等出栈 —— 缩回从这里起, 不先涨满再缩;
+            // 本页也走不到接手 (进页转场中途出栈时 Nav3 会倒着把它走完, 本页还要在组合里留一阵, 见 shrinkHiddenKey)
+            // 只认从**本次**放大缩回的那一个: 缩回后马上又进来的新一次放大不能被它停住 (2026-09-15 索尼: 新的放大停在起点,
+            // 列表页已藏、放大层只画了起点那一小块, 整屏黑到看门狗收场 ~1.2s)
+            if (TvHeroZoomHandoff.shrink?.fromSession === session) awaitCancellation()
+            session.t = session.progress(now)
+            if (swapPlanned && !session.swapped && session.t >= TV_HERO_SWAP_AT) session.swapped = true
         }
         // 到位后真页照常在一两帧内接手 (见真页的 handoff). 真页迟迟不来 (条目信息慢 / 加载失败 / 背景图地址后来变了)
         // 就由这一层自己收场: 会话一直在的话 covering 一直为真, 占位页的背景、底色和加载转圈也一直被压着, 页面像是
@@ -2595,10 +3201,29 @@ fun TvHeroZoomLayer() {
     }
     // 详情页离开 (返回 / 被别的页盖住) 时会话一并结束, 列表页恢复
     DisposableEffect(session) { onDispose { TvHeroZoomHandoff.endSession(session) } }
+    // 放大途中按返回: 快段里真页还扣着没组合 (holdPlaceholder), 它那条缩回处理还不在, 由这一层接 —— 同样缩回列表页 hero 框.
+    // 起跑前 (图还在加载) 列表页还照常画着, 不拦, 照常出栈淡出
+    val navigator = LocalNavigator.current
+    BackHandler(enabled = session.started) {
+        if (TvHeroZoomHandoff.beginShrink(session.subjectId, session.entryKey) { navigator.popBackStack() }) {
+            zoomLogger.info { "Details back: shrink begin (during zoom)" }
+        } else {
+            zoomLogger.info { "Details back: fade (during zoom, cannot shrink)" }
+            navigator.popBackStack()
+        }
+    }
+    // 整屏底色**渐入**而不是起跑那一帧铺满: 图是从 hero 框长起来的, 底色瞬间铺满的话按确认那一下就是"详情页的遮罩
+    // 整个出现"(用户 2026-09-16), 只有中间一小块在动. 渐入这一段列表页还画在下面 (见 TvHeroZoomHandoff.scrimOpaque),
+    // 于是读起来是列表页被这一层压住、图同时长大 —— 容器变形的常规做法. 比例见 TvPolishFlags.zoomScrimT (0 = 原行为)
+    val scrimColor = AniThemeDefaults.pageContentBackgroundColor
     Box(
         Modifier.fillMaxSize()
-            .then(if (session.started) Modifier.background(AniThemeDefaults.pageContentBackgroundColor) else Modifier),
+            .drawBehind {
+                val a = session.scrimAlpha
+                if (a > 0f) drawRect(scrimColor, alpha = a)
+            },
     ) {
+        val swapDim = { if (swapPlanned) tvHeroSwapDim(session.t) else 0f }
         TvHeroBackdrop(
             imageUrl = session.url,
             scrollState = scrollState,
@@ -2607,12 +3232,193 @@ fun TvHeroZoomLayer() {
             zoomT = { session.t },
             featherOn = { session.started },
             solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
-            zoomDim = session.dim,
+            sourceTreatment = session.treatment,
             // 起跑之前只加载不画: 图加载好到起跑之间那一两帧若照常画, 就是一块没有羽化、没有底缘擦除的硬边原图压在
             // 列表页 hero 上 (2026-09-10 录屏: hero 区突然变成硬边亮矩形约 50ms). 起跑那一帧图、羽化、深色底、列表页
             // 硬切一起出现, 与列表页 hero 像素级一样
-            hidden = !session.started,
+            hidden = !session.started || session.swapped,
+            extraDim = swapDim,
         )
+        if (crossImage) {
+            TvHeroBackdrop(
+                imageUrl = session.detailsUrl,
+                scrollState = scrollState,
+                onSuccess = { detailsLoaded = true },
+                zoomFrom = session.bounds,
+                zoomT = { session.t },
+                featherOn = { session.started },
+                solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
+                sourceTreatment = session.treatment,
+                hidden = !(session.started && session.swapped),
+                extraDim = swapDim,
+            )
+        }
+    }
+}
+
+/**
+ * 返回缩回那一层 (见 TvHeroZoomHandoff.Shrink), 挂在导航之上 (SubjectDetailsPageVariant.Overlay).
+ *
+ * 平时 (没在缩回) 就把最近一次放大的那张图组合着、不画 (standby): 按返回时图已加载好, 下一帧开头就上屏 —— 不等请求状态 / 回调 /
+ * 新节点首绘, 也不要求列表页还在组合里. 上屏那一帧两页一起不画、详情页移出组合 (它的活随之停下, 移出的开销落在运动之前的静止帧),
+ * 然后只剩这一层在动, 按放大同一条曲线缩回列表页 hero 框. **缩到位之后才出栈** (新顺序): 列表页的恢复 / 重建 / 焦点落位都在不动的
+ * 画面下做, 等它 hero 那张图就绪 (或超时) 再撤层硬切回去 —— 以前"出栈后等一帧就开缩", 那些活全撞进运动 (2026-09-15 索尼一帧 176ms,
+ * 重组 131ms). 代价是弱设备在落点多停几十到一百多毫秒. [TvPolishFlags.shrinkPopFirst] 保留旧顺序给 A/B.
+ */
+@Composable
+fun TvHeroShrinkLayer() {
+    val shrink = TvHeroZoomHandoff.shrink
+    // 缩到的那张 (列表页 hero 那张) 与起始那张 (缩回开始时屏幕上那张; 换图的情形 = 详情页的整部背景). standby 时两张都组合着 (不画)
+    val url = shrink?.url ?: TvHeroZoomHandoff.standbyUrl ?: return
+    val startUrl = shrink?.startUrl ?: TvHeroZoomHandoff.standbyDetailsUrl ?: url
+    val crossImage = startUrl != url
+    // 按 URL 记: standby 与随后的缩回是同一张图、同一个节点, 缩回一开始就是已加载
+    var loaded by remember(url) { mutableStateOf(false) }
+    var startLoaded by remember(startUrl) { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+    if (shrink != null) {
+        LaunchedEffect(shrink) {
+            val ready = withTimeoutOrNull(TV_HERO_ZOOM_LOAD_BUDGET_MILLIS) {
+                snapshotFlow { loaded && (!crossImage || startLoaded) }.first { it }
+            }
+            if (ready == null) {
+                zoomLogger.info { "Details back: shrink abandoned (image not ready), fade" }
+                TvHeroZoomHandoff.endShrink(shrink)
+                shrink.pop()
+                return@LaunchedEffect
+            }
+            // 在一帧的开头 (动画阶段, 组合之前) 上屏: 两页不画是绘制阶段读的, 本层显示是组合里读的 —— 不对齐帧头的话, 那一帧两页已藏、
+            // 本层还没出来, 整屏黑一两帧 (2026-09-14 录像)
+            val armNanos = withFrameNanos { it }
+            // 出栈时机: 列表页还在组合里, 就在上屏这一帧出栈 —— 导航转场改指向列表页, 它不会在缩回途中按时被移出 (移出一整页索尼上
+            // 近百毫秒, 正落在运动中间: 2026-09-15 tailfix20 x0.6, 运动里 50~58ms 空档); 运动中它不画、不算前台, 落地后才恢复.
+            // 列表页已离场就缩到位、静止后再出栈, 让它在层下重建. TvPolishFlags.shrinkPopFirst = 旧顺序 (上屏就出栈、落地即撤层), A/B 用
+            val popFirst = TvPolishFlags.shrinkPopFirst
+            val listAlive = TvHeroZoomHandoff.listAlive(shrink)
+            // 快速路径 (TvPolishFlags.shrinkKeep): 放大早已接手 (详情页已稳定, 藏着不干活)、来源列表页常驻时, 详情页**只藏不销毁**, 缩回不等它 ——
+            // 起步前那一帧不再有整页移出组合 (索尼起步前 ~110ms 静止的大头), 销毁挪到落地之后. 放大途中返回 (详情页还在分帧组合) 照旧先移出
+            val keepMode = TvPolishFlags.shrinkKeep
+            val keep = keepMode != 0 && !popFirst && listAlive && TvHeroZoomHandoff.session == null &&
+                    TvHeroZoomHandoff.isZoomEntry(shrink.fromSession?.entryKey)
+            val popAtArm = !keep && (popFirst || listAlive)
+            TvHeroZoomHandoff.armShrink(shrink, keepDetails = keep)
+            zoomLogger.info {
+                "Details back: shrink moving from t=${shrink.fromT} (popFirst=$popFirst, popAtArm=$popAtArm, keep=${if (keep) keepMode else 0})"
+            }
+            if (popAtArm) shrink.pop()
+            // 上屏这一帧 (详情页移出组合, 索尼上重组 30~50ms; 旧顺序还有出栈) 不计入缩回时长: 先等它过去, 再取起点 ——
+            // 在它开头取起点的话, 它的耗时算进第一步, 一出来就跳一截 (2026-09-15 tailfix19 追踪).
+            // 快速路径这一帧没有重活: 计时直接从上屏那一帧算起. 再等一帧取起点的话, 那一帧进度仍是 0、画面不变, 没东西可画 ——
+            // 上屏与第一次动之间空一帧 (两台都是 33ms 一跳, 2026-09-15 用户: "缩小的开始似乎有掉帧"; tailfix26 追踪)
+            val start = if (keep) {
+                armNanos
+            } else {
+                withFrameNanos { }
+                withFrameNanos { it }
+            }
+            val millis = (TV_HERO_SHRINK_MILLIS * shrink.fromT).coerceAtLeast(16f)
+            val easing = tvHeroShrinkEasing()
+            var lastNanos = start
+            while (true) {
+                lastNanos = withFrameNanos { it }
+                val p = ((lastNanos - start) / 1_000_000f / millis).coerceIn(0f, 1f)
+                shrink.linear = p // 底色渐出按**时间**走, 不跟已缓动的 t (见 Shrink.scrimAlpha)
+                shrink.t = shrink.fromT * (1f - easing.transform(p))
+                // 换图的缩回: 缩到一半 (压暗最深) 换回列表页那张
+                if (crossImage && !shrink.swapped && 1f - shrink.t / shrink.fromT >= TV_HERO_SWAP_AT) shrink.swapped = true
+                if (p >= 1f) break
+            }
+            if (popFirst) {
+                zoomLogger.info { "Details back: shrink done (popFirst)" }
+                TvHeroZoomHandoff.endShrink(shrink)
+                return@LaunchedEffect
+            }
+            if (keep && keepMode == 2) {
+                // 先露列表页 (缩回层不再画; 详情页仍藏着、仍在栈顶, 按键由缩回期间的吞键挡住), 下一帧再出栈 —— 详情页销毁那一帧落在列表页
+                // 已上屏、还没回前台 (没有聚焦动画) 的静止画面上, 卡片不用等它
+                shrink.moving = false
+                shrink.revealed = true
+                val shown = withFrameNanos { it }
+                shrink.pop()
+                withFrameNanos { }
+                val torn = withFrameNanos { it }
+                zoomLogger.info { "Details back: shrink done (keep, teardown ${(torn - shown) / 1_000_000}ms)" }
+                TvHeroZoomHandoff.endShrink(shrink)
+                return@LaunchedEffect
+            }
+            // 同一步里出栈并结束运动: 下一帧组合时栈顶已是列表页, 详情页不会因"不在运动了"又被当成前台重新组合
+            if (!popAtArm) shrink.pop()
+            shrink.moving = false
+            val isReady = withTimeoutOrNull(TV_HERO_SHRINK_READY_TIMEOUT_MILLIS) {
+                while (!TvHeroZoomHandoff.listReady(shrink)) withFrameNanos { }
+                true
+            } != null
+            // 列表页在层下先画一帧, 撤层那一帧只是翻透明度
+            val doneNanos = withFrameNanos { it }
+            zoomLogger.info { "Details back: shrink done (${if (isReady) "ready" else "timeout"}) +${(doneNanos - armNanos) / 1_000_000}ms" }
+            // 超时 = 白盖住画面 800ms, 从外面看就是"返回后黑了一秒". 把对不上的那一项记下来 (见 sourceDebug)
+            if (!isReady) {
+                zoomLogger.warn {
+                    "Details back: listReady timeout, want=${shrink.subjectId}:${shrink.url.takeLast(32)} got ${TvHeroZoomHandoff.sourceDebug()}"
+                }
+            }
+            TvHeroZoomHandoff.endShrink(shrink)
+        }
+        DisposableEffect(shrink) { onDispose { TvHeroZoomHandoff.endShrink(shrink) } }
+        // 缩回期间再按返回: 吞掉. 运动中没有哪一页算在前台 (见 PageForegroundNavEntryDecorator), 放行就落到 NavDisplay / 系统 ——
+        // 栈里只剩主页时等于直接退出应用
+        BackHandler { }
+    }
+    // 整屏底色**渐出**而不是撤层那一下才消失: 原来从上屏到撤层一直不透明地盖着, 最后突然不见
+    // (用户 2026-09-16). 化开这一段列表页接着画在下面 (见 TvHeroZoomHandoff.shrinkRevealing), 与放大那头对称
+    val shrinkScrimColor = AniThemeDefaults.pageContentBackgroundColor
+    Box(
+        Modifier.fillMaxSize()
+            .drawBehind {
+                val a = shrink?.scrimAlpha ?: 0f
+                if (a > 0f) drawRect(shrinkScrimColor, alpha = a)
+            },
+    ) {
+        // 上屏且还没把画面交还列表页 (快速路径落地后 revealed: 本层不再画)
+        val armed = shrink?.let { it.armed && !it.revealed } == true
+        val swapped = shrink?.swapped == true
+        val swapDim = { if (crossImage && shrink != null) tvHeroSwapDim(1f - shrink.t / shrink.fromT) else 0f }
+        // 背景亮度接着屏幕上那一刻走, 随进度化到 0 (= 列表页 hero 的全亮). 起点为 0 (绝大多数情形) 时返回 null,
+        // 走 TvHeroBackdrop 的默认口径, 与改之前逐像素一致
+        val startFade = { shrink?.takeIf { it.startFade > 0f }?.let { it.startFade * (it.t / it.fromT) } }
+        TvHeroBackdrop(
+            imageUrl = url,
+            scrollState = scrollState,
+            onSuccess = { loaded = true },
+            // standby 时也给框: 本层的全屏框 (ownBounds) 平时就量好, 缩回第一帧就能按进度摆位
+            zoomFrom = shrink?.bounds ?: TvHeroZoomHandoff.standbyBounds,
+            zoomT = { shrink?.t ?: 1f },
+            featherOn = { armed },
+            solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
+            sourceTreatment = shrink?.treatment,
+            shrinking = true,
+            hidden = !armed || (crossImage && !swapped),
+            scrollFade = startFade,
+            extraDim = swapDim,
+            sharpen = false,
+        )
+        if (crossImage) {
+            TvHeroBackdrop(
+                imageUrl = startUrl,
+                scrollState = scrollState,
+                onSuccess = { startLoaded = true },
+                zoomFrom = shrink?.bounds ?: TvHeroZoomHandoff.standbyBounds,
+                zoomT = { shrink?.t ?: 1f },
+                featherOn = { armed },
+                solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
+                sourceTreatment = shrink?.treatment,
+                shrinking = true,
+                hidden = !armed || swapped,
+                scrollFade = startFade,
+                extraDim = swapDim,
+                sharpen = false,
+            )
+        }
     }
 }
 
@@ -2708,6 +3514,9 @@ private fun HeroBackdropSharpeningOverlay(imageUrl: String) {
     var sharpen by remember(originalUrl) { mutableStateOf(false) }
     LaunchedEffect(originalUrl) {
         delay(TV_HERO_SHARPEN_DWELL)
+        // 停留门槛到点那一下正撞上返回: 原图约 33MB, 下载 + 解码全落在缩回那几帧里, 而缩回层画的本来就不是这一层
+        // (它 sharpen = false) —— 纯白干. 本页要么随缩回销毁, 要么藏到出栈, 都不必再升档
+        if (TvHeroZoomHandoff.shrinking) return@LaunchedEffect
         sharpen = true
     }
     if (!sharpen) return
@@ -2743,6 +3552,422 @@ private const val TV_HERO_ZOOM_CROSS_IMAGE_FADE_MILLIS = 250
 
 /** 首屏以下区块组合完后再等这么久才预画选集页 (见真页 episodesPrewarm): 让首批数据到达的那几次重组先过去, 挑画面真正静止的时候. */
 private const val TV_DETAILS_PREWARM_DELAY_MILLIS = 400L
+
+/** 放大没起跑就放弃时页面补的淡入 (见 rememberTvZoomAbortFade): 与常规进页的交叉淡入同量级. */
+private const val TV_DETAILS_ABORT_FADE_MILLIS = 250
+
+/**
+ * 详情页纵向滚动 (页内露出 / 内嵌变体的换页): 照 Prime Video 详情页往下翻的实测 (2026-09-15 Shield 录屏逐帧相位相关,
+ * scroll_fit.py): 跨区块整屏 ~300ms, 50%@67~102 / 90%@184~219ms, 头 30~50ms 先加速、减速尾巴长; 小幅 (~130px@1080p) ~150ms.
+ * 原来是 animateScrollTo 的默认弹簧, 实测我们整屏 50%@51~66 / 90%@101~119ms, 快一倍, 大距离看着像瞬移 (用户 2026-09-15).
+ * 时长按距离 (折算到 1080p) 在 [TV_DETAILS_SCROLL_MIN_MILLIS, TV_DETAILS_SCROLL_MAX_MILLIS] 间线性取.
+ */
+private suspend fun ScrollState.tvDetailsScrollTo(target: Int) {
+    if (target == value) return
+    val distance1080 = kotlin.math.abs(target - value) * 1080f / viewportSize.coerceAtLeast(1)
+    val f = ((distance1080 - 150f) / 300f).coerceIn(0f, 1f)
+    val millis = (TV_DETAILS_SCROLL_MIN_MILLIS + (TV_DETAILS_SCROLL_MAX_MILLIS - TV_DETAILS_SCROLL_MIN_MILLIS) * f).roundToInt()
+    animateScrollTo(target, tween(millis, easing = TvDetailsScrollEasing))
+}
+
+/** Prime Video 详情页往下翻的拟合曲线 (见 [tvDetailsScrollTo]; 均方根误差 0.8%). */
+private val TvDetailsScrollEasing = CubicBezierEasing(0.30f, 0.20f, 0.00f, 0.80f)
+private const val TV_DETAILS_SCROLL_MIN_MILLIS = 160
+private const val TV_DETAILS_SCROLL_MAX_MILLIS = 300
+
+/**
+ * hero ⇄ 选集页的切换, 照 Prime Video 详情页 (2026-09-15 用户: "不是整个页面滚上去, 按钮往上一段就淡出了, 包括返回的时候").
+ * 录屏逐帧 (scratchpad rec/pv_updown.mp4, 《日本三国》): 离开 hero = hero 内容原地淡出 (~120ms), 下面那一行只上移一小段 (~屏高 20%,
+ * ~250ms 到位), 新内容随后淡入, 背景的压暗慢慢加深 (~450ms); 回 hero = 行往下滑一小段并淡出, hero 标题 / 按钮淡入 (~220ms 到位),
+ * 压暗 ~450ms 退掉. 我们原来是整页滚一屏 (hero 整块滑出顶部, 选集页整页从底部滑上来).
+ *
+ * 做法: 滚动位置**直接跳** (scrollTo), 画面由图层属性画出过渡 —— 各页先补回"跳之前 / 之后在屏幕上的位置", 再做短位移 +
+ * 淡入淡出; 背景的淡出进度改由 [backdropProgress] 单独按时长走 (不跟滚动量, 否则跳的那一下就全变暗). 进度与滚动量都在绘制阶段读, 不重组.
+ * 进到第 k 页时以 k 为界分两组 —— 往下翻: 序号 < k 的是离开方 (补回跳前位置, 上移一点, 早早淡出), ≥ k 的是进入方 (落在跳后位置,
+ * 从下方一小段滑上来, 稍晚淡入); 往上翻反过来. 同组的页一起动, 所以同屏露着的下一页跟着新页走.
+ *
+ * **滚动量是派生值, 不是被写的状态**: 被写的只有 [current] (焦点进入某页时写) 和 [within] (页内露出, 换页归零), 各自单一写者;
+ * 滚动量恒等于 `起点[current] + within`, 由 [run] 一个协程独占写入. 于是没有滚动锚定、没有不变量守卫、没有进入吸附的位置计算 ——
+ * 上方内容长高时起点自己变, 滚动量跟着变. (这一条是重写的全部理由, 来龙去脉见 memory `project-tv-details-page`.)
+ */
+@Stable
+private class TvDetailsPager(
+    private val scrollState: ScrollState,
+    /** 背景按滚动量淡出的距离 (px), 同 TvHeroBackdrop 的 HERO_BACKDROP_FADE_DISTANCE: 过渡里按跳前 / 跳后两个滚动量插值. */
+    private val backdropFadePx: Float,
+    /** 换页是否走淡入淡出过渡. 播放器内嵌变体传 false = 照常整页滚 (那边 hero 是播放画面, 淡出没有意义). */
+    private val transitions: Boolean = true,
+) {
+    /**
+     * 各页起点在**内容坐标系**里的 y (已扣掉该页要留的顶部空隙); NaN = 该页还没测过 / 不在场.
+     *
+     * 第 0 页 (hero) 的起点恒为 0, 不用实测: 它就是页面顶. 独立页变体的 hero 不是 [PageSection]
+     * (它是整屏的 Box), 没人报起点, 所以这里先种上.
+     */
+    private val starts = List(TV_DETAILS_PAGE_COUNT) { mutableFloatStateOf(if (it == 0) 0f else Float.NaN) }
+
+    /** 当前在第几页. **唯一写者是"焦点进入某页"** ([goTo]). */
+    var current by mutableIntStateOf(0)
+        private set
+
+    /**
+     * 屏幕上**看得见**的是第几页; 还没接管滚动 ([engaged]) 时为 null.
+     *
+     * 那之前 [current] 恒为 0 而页面可能停在恢复出来的位置 (从播放器返回本页, rememberScrollState 把滚动量还原到
+     * 离开时那一页) —— 这时拿 0 当"显示页"会把方向键和返回键全判到第一页去. 判据与 [engaged] 完全一致:
+     * 第一次 [goTo] 之后, current 才真的等于屏幕上那一页.
+     */
+    val displayedPage: Int? get() = if (engaged) current else null
+
+    /** 页内露出偏移: 本页比一屏高时, 焦点往下移要露出来的那点距离. 只由 [reveal] 写, 换页归零. */
+    private var within by mutableFloatStateOf(0f)
+
+    /**
+     * 第一次 [goTo] 之前不碰滚动量.
+     *
+     * 进页 / 返回本页的初始位置由页面自己定 (`rememberScrollState` 恢复离开时的位置, 或进页 effect 归零),
+     * 而 [current] 不跨导航保存、一律从 0 起 —— 没有这道闸, 返回本页时驱动器会立刻把页面拽回顶部,
+     * 把恢复出来的位置覆盖掉. 焦点恢复到哪一页, 那一页的 [goTo] 自然会把闸打开.
+     */
+    private var engaged by mutableStateOf(false)
+
+    /**
+     * 各页"从视口顶算起需要多高" (页起点留白 + 本页实测高度); NaN = 没测过 (如独立页的 hero, 它不是 PageSection).
+     * 只用来判"这一页装不装得下", 见 [reveal].
+     */
+    private val extents = List(TV_DETAILS_PAGE_COUNT) { mutableFloatStateOf(Float.NaN) }
+
+    /** 第 [page] 页实测到自己的起点 (内容坐标系) 与所需高度. 上方内容长高时起点自己会变, 滚动量随之跟上, 不需要"锚定补偿". */
+    fun reportStart(page: Int, contentY: Float, extentPx: Float) {
+        starts[page].floatValue = contentY
+        extents[page].floatValue = extentPx
+    }
+
+    /**
+     * 进入某页后**还没收到第一次露出**. 焦点落进新页后 `bringIntoView` 必定报一次, 报的是入场落点本身,
+     * 不是页内导航 —— 见 [reveal]: 这一次要丢掉, 否则入场就不停在页起点上了.
+     */
+    private var entryReveal = false
+
+    /** 焦点进入第 [page] 页. */
+    fun goTo(page: Int) {
+        engaged = true
+        if (page == current) return
+        current = page
+        within = 0f
+        entryReveal = true
+    }
+
+    /**
+     * 本页内焦点落在 [itemBottom] (相对本页起点) 处, 据此算露出偏移.
+     *
+     * 是**纯函数**: 同一个焦点位置永远得同一个偏移, 不存在"往下滚过再往上滚回来"的路径依赖 ——
+     * 旧版按"越出上缘就上滚 / 越出下缘就下滚"分支写, 于是同一个焦点在不同来路上停在不同位置.
+     */
+    fun reveal(page: Int, itemBottom: Float) {
+        if (page != current) return
+        // **入场恒定停在页起点**: 焦点落进新页后的第一次 bringIntoView 不产生露出.
+        // 旧版在这里做"焦点元素在折叠线以下就继续往下滚露出它", 代价正是把本页的起点滚出屏幕 ——
+        // 第三页停下来时"作品信息"在屏幕外, 第二页停在多滚一段之后 (用户 2026-09-15).
+        // 起点就是落点, 没有例外; 装不下是那一页的排版问题, 不该用滚动去补.
+        if (entryReveal) {
+            entryReveal = false
+            return
+        }
+        // **装得下的页面永不滚**: 页内露出只为"本页比一屏高"而存在. 末页 (评价 + 关联条目) 实测 496dp,
+        // 加页顶留白 520, 视口 540 —— 余量只有 20dp; 而聚焦卡的包围盒会因示焦形变变大, 且 bringIntoView 报的是
+        // **变换后**的框 (同 tailfix29), 一越过视口就触发露出, 把页顶的"评价"顶出屏幕
+        // (用户 2026-09-16: 长按翻到关联条目时"评价最上面一点会跑到画面外"). 同一个余量也曾让关联条目行左右移动时画面乱动.
+        // 判据用**实测高度**而不是逐项算: 排版一改就自动跟上, 不用再维护那串加法.
+        val extent = extents[page].floatValue
+        if (!extent.isNaN() && extent <= scrollState.viewportSize) {
+            within = 0f
+            return
+        }
+        within = (itemBottom - scrollState.viewportSize).coerceAtLeast(0f)
+    }
+
+    /** 滚动量的**唯一真值**: 当前页起点 + 页内露出. 起点没测到时返回 -1 (什么都别做). */
+    private fun targetScroll(): Int {
+        if (!engaged) return -1
+        val s = starts[current].floatValue
+        if (s.isNaN()) return -1
+        return (s + within).roundToInt().coerceIn(0, scrollState.maxValue)
+    }
+
+    /**
+     * 驱动器: 整页**只有这里写 scrollState**. 挂在页面作用域上跑 (见调用处的 LaunchedEffect).
+     *
+     * 分成两条收集是必须的, 不能合成一条: 换页的图层过渡要跑满 320ms, 而这期间起点重测、页内露出都会发射 ——
+     * 合成一条 `collectLatest` 的话过渡会被这些无关发射取消, [active] 卡在 true, 图层冻在进度 0 上,
+     * 表现是"滚动量跳了、画面却纹丝不动"(离开方正好补回跳前位置, 进入方透明度还是 0).
+     *
+     * 于是: 换页那条自己管一个 [Job] (**同向连按只改目标、不重开**, 见下), 反向或过渡已结束才起新一轮;
+     * 位置校正那条不碰过渡, 只负责把滚动量
+     * 对到目标上 —— 起点自己移动了 (骨架换成真区块 / 关联条目晚到, 上方内容长高) 就瞬时对齐, 画面上本页
+     * 纹丝不动, 这一条取代了旧版的滚动锚定; 页内露出则平滑滚过去.
+     */
+    suspend fun run() = coroutineScope {
+        launch {
+            val scope = this
+            var lastPage = current
+            var swap: Job? = null
+            snapshotFlow { current }.collect { page ->
+                if (page == lastPage) return@collect
+                lastPage = page
+                // 该页可能刚组合、起点还没测到: 等它, 别退化成没有过渡的瞬跳
+                val target = snapshotFlow { targetScroll() }.first { it >= 0 }
+                if (target == scrollState.value) return@collect
+                // **同向连按不重开一轮过渡, 只把边界与落点改到新的一页** (进度照旧跑完那一轮).
+                // 重开的代价不只是时长被一次次延长: 每重开一轮就多一页停在中间透明度上 (见 alphaFrom),
+                // 于是同时存在三四个整屏离屏层 —— 索尼上实测连按 26ms GPU / 正常 13ms (2026-09-15 逐帧).
+                // 中间被跳过的那几页在本轮里算离开方, 位置钉回跳前的滚动量 (见 apply), 正好落在屏外, 看不见.
+                // 只在**本轮还剩足够时间**时合并: 合并不重开进度, 剩余时长就是新页淡入的全部时间 ——
+                // 连按三下上键时第三下常常落在进度 0.8 之后, 第二页只剩几十毫秒淡入, 观感是"闪现"
+                // (用户 2026-09-16). 剩得太少就走下面的重开分支 (它带透明度续接, 不会闪回).
+                if (transitions && active && swap?.isActive == true &&
+                    progress.value <= TV_HERO_SWAP_MERGE_MAX_PROGRESS &&
+                    (target > scrollState.value) == forward
+                ) {
+                    boundary = page
+                    toScroll = target
+                    scrollState.scrollTo(target)
+                    return@collect
+                }
+                swap?.cancelAndJoin()
+                swap = scope.launch { swapTo(page, scrollState.value, target) }
+            }
+        }
+        launch {
+            var lastPage = current
+            var lastWithin = within
+            snapshotFlow { Triple(current, within, targetScroll()) }
+                .collectLatest { (page, w, target) ->
+                    val pageChanged = page != lastPage
+                    val withinChanged = w != lastWithin
+                    lastPage = page
+                    lastWithin = w
+                    // 换页交给上面那条 (它要先读到跳之前的滚动量, 这里抢跑会让过渡的起终点重合)
+                    if (pageChanged || target < 0 || target == scrollState.value) return@collectLatest
+                    when {
+                        // 过渡进行中: 连落点一起改, 画面上什么都不动
+                        active -> alignDuringTransition(target)
+                        // 页内导航的露出: 平滑滚
+                        withinChanged -> scrollState.tvDetailsScrollTo(target)
+                        // 起点自己移动了 (上方内容长高): 瞬时对齐, 本页在视口里纹丝不动
+                        else -> scrollState.scrollTo(target)
+                    }
+                }
+        }
+    }
+    /**
+     * 过渡进行中改滚动量: 把落点 [toScroll] 一起改掉, 画面上什么都不会动.
+     *
+     * 进入方的图层画在 `layoutY - toScroll` 上 (见 [apply]), 两者同步变就等于纹丝不动; 离开方本来就钉在
+     * `layoutY - fromScroll`, 与滚动量无关. 用处: 焦点落进新页后 `bringIntoView` 报回来的页内露出量总比换页
+     * 晚一拍 —— 不这么做的话它会变成换页之后的第二次滚动, 观感是"翻过去以后又自己多滚了一段"(用户 2026-09-15).
+     * 于是露出量只决定最终停在哪, 过程中看不见.
+     */
+    private suspend fun alignDuringTransition(target: Int) {
+        toScroll = target
+        scrollState.scrollTo(target)
+    }
+
+    /** 过渡的时间进度 0..1 (线性; 各组按自己的曲线换算). */
+    private val progress = Animatable(0f)
+    private val backdrop = Animatable(0f)
+    private var active by mutableStateOf(false)
+    private var backdropActive by mutableStateOf(false)
+    private var forward = true
+    private var boundary = 0
+    private var fromScroll = 0
+    private var toScroll = 0
+
+    /**
+     * 被打断那一刻各页的实际透明度 (下标 = 页序号, NaN = 无续接值).
+     *
+     * 长按连续翻页时上一轮还没走完就重来, 而新一轮会把进度归零并**重新分配角色**: 一个正在淡入到 0.1 的页
+     * 会变成新一轮的"离开方", 而离开方在进度 0 处的透明度是 1 —— 于是它先闪回全不透明再淡出. 背景层早就
+     * 从当前值续上 (见 backdropFrom), 页图层这里补同一件事: 离开方只准变淡、进入方只准变浓 (见 [apply]).
+     */
+    private val alphaFrom = FloatArray(TV_DETAILS_PAGE_COUNT) { Float.NaN }
+
+    /** 过渡进行中 (快照状态). */
+    val isActive: Boolean get() = active
+
+    /** 本轮换页的"步进闸"起点与时长: 闸没过之前不接受下一次换页, 见 [isStepping]. */
+    private var stepMark: TimeSource.Monotonic.ValueTimeMark? = null
+    private var stepWindow: Duration = Duration.ZERO
+
+    /** 距本轮闸开还有多久 (已开 = 0). 闸期间按的那一下据此**推迟**, 而不是丢掉, 见页面的 deferStep. */
+    val stepRemaining: Duration
+        get() = stepMark?.let { (stepWindow - it.elapsedNow()).coerceAtLeast(Duration.ZERO) } ?: Duration.ZERO
+
+    /**
+     * 本轮换页还没走够, 不该接受下一次 —— 长按时"一页一页地走".
+     *
+     * 长按的连发是 6 次/秒 (167ms 一次), 而一次换页过渡 [TV_HERO_SWAP_LEAVE_MILLIS] 要 360ms: 不设闸的话后面的
+     * 换页不断盖掉前面的, **中间几页一帧都没露出来**, 观感是从第一页"直接跳到"评价页 (用户 2026-09-16).
+     * 闸按时长的 [TV_HERO_SWAP_STEP_GATE] 算, 于是长按 ≈ 每 (360 × 本值) ms 走一页, 每一页都真的停一下.
+     *
+     * **按时间而不是按 [active] 判**: active 在取消路径上不清 (见 [swapTo] 的注释), 拿它当闸一旦漏清就永久卡死导航.
+     * 时间只会前进, 自愈.
+     */
+    val isStepping: Boolean get() = stepMark?.let { it.elapsedNow() < stepWindow } == true
+
+    /**
+     * 换页: 滚动量**直接跳**到 [target], 画面由图层补出过渡. 只由 [run] 调用 (单一写者).
+     *
+     * 被打断时不用 token 记账 —— [run] 用 collectLatest, 上一次的整个调用连同它的动画一起被取消.
+     * 正因如此 [active] / [backdropActive] **只在正常走完时才清**: 取消路径上不清, 新一轮紧接着又置 true,
+     * 中间不会漏出"一帧没有图层"的原位画面.
+     */
+    private suspend fun swapTo(page: Int, from: Int, target: Int) = coroutineScope {
+        if (!transitions) {
+            scrollState.tvDetailsScrollTo(target)
+            return@coroutineScope
+        }
+        // 背景从此刻屏幕上的样子起 (上一次过渡还没走完就接着它的当前值)
+        val backdropFrom = if (backdropActive) backdrop.value else backdropFor(from)
+        // 页透明度同理: 进度停在中途 = 上一轮被打断, 记下此刻每页的实际值让新一轮续 (见 alphaFrom)
+        val u0 = progress.value
+        if (u0 > 0f && u0 < 1f) {
+            for (i in alphaFrom.indices) alphaFrom[i] = alphaAt(i, u0)
+        } else {
+            alphaFrom.fill(Float.NaN)
+        }
+        // 先同步把进度归零, 再跳: 跳与"按进度画"在同一帧生效
+        progress.snapTo(0f)
+        backdrop.snapTo(backdropFrom)
+        forward = target > from
+        boundary = page
+        fromScroll = from
+        toScroll = target
+        active = true
+        backdropActive = true
+        stepMark = TimeSource.Monotonic.markNow()
+        stepWindow = ((if (forward) TV_HERO_SWAP_LEAVE_MILLIS else TV_HERO_SWAP_RETURN_MILLIS) *
+                TV_HERO_SWAP_STEP_GATE).toInt().milliseconds
+        scrollState.scrollTo(target)
+        launch {
+            val to = backdropFor(target)
+            // **变亮比变暗快**: 变暗 (往下翻) 慢一点是刻意的 —— 滚动量是跳的, 骤暗会很突兀; 但变亮 (往上翻回首屏)
+            // 用同样的 450ms 就比页面本身还长, 页面早停了背景还在慢慢亮, 观感是"黑遮罩赖着不走"
+            // (用户 2026-09-16: 长按一路翻回第一页, 全屏黑遮罩要等一会才消失). 变亮跟换页同步收尾.
+            val millis = if (to < backdrop.value) {
+                if (forward) TV_HERO_SWAP_LEAVE_MILLIS else TV_HERO_SWAP_RETURN_MILLIS
+            } else {
+                TV_HERO_SWAP_BACKDROP_MILLIS
+            }
+            backdrop.animateTo(to, tween(millis, easing = LinearOutSlowInEasing))
+            backdropActive = false
+        }
+        progress.animateTo(1f, tween(if (forward) TV_HERO_SWAP_LEAVE_MILLIS else TV_HERO_SWAP_RETURN_MILLIS, easing = LinearEasing))
+        active = false
+    }
+
+    /** 第 [index] 页的图层 (graphicsLayer 里调). 过渡没在跑时不动. */
+    fun apply(index: Int, layer: GraphicsLayerScope) = with(layer) {
+        if (!active || index < 0) return@with
+        val u = progress.value
+        val e = TvDetailsScrollEasing.transform(u)
+        val value = scrollState.value
+        val outgoing = isOutgoing(index)
+        val slide = scrollState.viewportSize * TV_HERO_SWAP_SLIDE_FRACTION
+        val rise = TV_HERO_SWAP_RISE.toPx()
+        translationY = if (outgoing) {
+            // 补回跳前的位置, 往下翻时上移一点 / 往上翻时下滑一小段
+            (value - fromScroll) + if (forward) -rise * e else slide * e
+        } else {
+            // 落在跳后的位置, 往下翻时从下方一小段滑上来 / 往上翻时从上方一点落下
+            (value - toScroll) + if (forward) slide * (1f - e) else -rise * (1f - e)
+        }
+        // 本轮曲线给出的透明度 (离开方早早淡出 / 进入方稍晚淡入); 有续接值时按单调方向取,
+        // 离开方只准更淡、进入方只准更浓, 连按时不会闪回 (见 alphaFrom)
+        //
+        // **两边都要淡, 不能只淡画在上面的那一层**: 2026-09-16 试过"只给上层 alpha, 下层恒 1"以省掉一个
+        // 整屏离屏缓冲 (索尼上每层约 13ms GPU), 前提是"上层盖住下层" —— 而每一页的**背景是透明的**
+        // (内容浮在共享的 backdrop 上), 上层盖不住下层. 结果: 离场页在进入页淡入的整段里一直全不透明地
+        // 留着, 两页内容同时可见 (用户 2026-09-16: "上一页的还没消失下一页的就出现了"; release / debug 都有).
+        // 已撤回 —— 省 GPU 的路子得另找, 不能靠"底下那层反正看不见"这个不成立的前提.
+        val curve = alphaAt(index, u)
+        val prev = alphaFrom.getOrElse(index) { Float.NaN }
+        alpha = when {
+            prev.isNaN() -> curve
+            outgoing -> minOf(prev, curve)
+            else -> maxOf(prev, curve)
+        }
+    }
+
+
+    /** 第 [index] 页在本轮里是不是"离开方" (往下翻时边界以上的走, 往上翻时边界以下的走). */
+    private fun isOutgoing(index: Int): Boolean =
+        (if (forward) index < boundary else index <= boundary) == forward
+
+    /** 本轮曲线在进度 [u] 处给第 [index] 页的透明度 (不含续接修正). */
+    private fun alphaAt(index: Int, u: Float): Float =
+        // 进入方的淡入铺满整段 (原来 0.2~0.7 在 70% 处就到顶, 后面近百毫秒画面不变, 观感是"过渡提前结束了",
+        // 用户 2026-09-16: "几乎看不出过渡"). 离开方仍早早淡出, 两者重叠的那段保证中途不露底
+        if (isOutgoing(index)) 1f - fadeSegment(u, 0f, if (forward) 0.45f else 0.5f)
+        else if (forward) fadeSegment(u, 0.15f, 0.9f) else fadeSegment(u, 0.2f, 0.9f)
+
+    /** 背景图的淡出进度 (覆盖按滚动量算的那份); 过渡没在跑时 null. */
+    fun backdropProgress(): Float? = if (backdropActive) backdrop.value else null
+
+    /**
+     * 此刻**屏幕上**背景的淡出程度 —— 与 [backdropProgress] 的区别是没有过渡时回落到按滚动量算 (即 TvHeroBackdrop 的
+     * 默认口径), 于是任何时刻都给得出一个真值. 缩回层拿它当起点, 见 `TvHeroZoomHandoff.Shrink.startFade`.
+     */
+    fun backdropFadeNow(): Float = if (backdropActive) backdrop.value else backdropFor(scrollState.value)
+
+    private fun backdropFor(scroll: Int): Float = (scroll / backdropFadePx).coerceIn(0f, 1f)
+
+    private fun fadeSegment(u: Float, from: Float, to: Float): Float =
+        FastOutSlowInEasing.transform(((u - from) / (to - from)).coerceIn(0f, 1f))
+}
+
+/** 页数: hero 0 / 选集 1 / 角色制作 2 / 作品信息 + 关联 3 / 评价 4. */
+private val TV_DETAILS_PAGE_COUNT = TvDetailsSection.entries.maxOf { it.page } + 1
+
+/**
+ * 换页过渡时长. 2026-09-16 重新对了一次 Prime Video 详情页往下导航 (60fps 逐帧相位相关):
+ * 它整段 **~283ms**, 50%@66ms / 90%@175ms, 总位移 **188dp**.
+ *
+ * 我们原来是 320ms —— **比它还长**, 但观感上"几乎看不出过渡" (用户 2026-09-16), 原因是另外两件事:
+ * 滑动距离只有视口的 18% (97dp, 不到它一半), 且进入方的淡入在进度 70% 处就到顶, 后面近百毫秒画面不再变化.
+ * 所以这里只小幅加长, 主要改的是 [TV_HERO_SWAP_SLIDE_FRACTION] 与 [alphaAt] 的淡入区间.
+ */
+private const val TV_HERO_SWAP_LEAVE_MILLIS = 360
+private const val TV_HERO_SWAP_RETURN_MILLIS = 340
+private const val TV_HERO_SWAP_BACKDROP_MILLIS = 450
+
+/**
+ * 同向连按时"只改目标、不重开过渡"的进度上限.
+ *
+ * 合并省的是开销 (每重开一轮就多一页停在中间透明度, 同时存在的整屏离屏层更多), 但它**不延长时长** ——
+ * 本轮剩多少, 就是新页淡入的全部时间. 超过这个进度还来新的一页就重开一轮, 保证新页有至少 (1 - 本值) 的
+ * 时长淡入, 不会"啪"地出现.
+ */
+private const val TV_HERO_SWAP_MERGE_MAX_PROGRESS = 0.45f
+
+/**
+ * 长按连翻时每一页至少要走完本轮时长的多少 (见 TvDetailsPager.isStepping).
+ *
+ * 0.75 => 每页约 270ms, 长按约 3.7 页/秒: 每一页都真的露出来, 又不至于按住半天不动.
+ * 调大更"一页一页", 调小更接近原来的连续跳. 取 1 就是"必须完整走完才接受下一次".
+ */
+private const val TV_HERO_SWAP_STEP_GATE = 0.75f
+
+/** hero 内容离开时上移的距离 (Prime 几乎原地淡出, 只带一点方向感). */
+private val TV_HERO_SWAP_RISE = 24.dp
+
+/**
+ * 换页时内容滑入 / 滑出的距离 (占视口高度).
+ *
+ * 0.18 = 97dp, 实测 Prime Video 同一个动作真滚了 **188dp** (2026-09-16) —— 不到它一半, 是"看不出过渡"的主因.
+ * 取 0.30 = 162dp: 往它靠但不追平 (我们是跳+淡入淡出, 位移只起方向暗示作用, 给满反而像整页在滚).
+ */
+private const val TV_HERO_SWAP_SLIDE_FRACTION = 0.30f
 
 /** 放大期间羽化矩形越过图的边多画的屏幕像素: 盖住图边缘那一排半覆盖的像素 (见 TvHeroBackdrop). */
 private const val TV_HERO_ZOOM_FEATHER_OUTSET_PX = 2f
@@ -2821,23 +4046,56 @@ private val HERO_BACKDROP_FADE_DISTANCE = 300.dp
  */
 private const val HERO_BACKDROP_MIN_ALPHA = 0.42f
 
-/** 区块内导航时焦点边缘距屏幕上/下缘的最小可见余量: 焦点越出才滚动, 滚动后留出该余量. */
+/** 页内导航时焦点下缘距屏幕下缘的最小可见余量: 露出后留出该余量. */
 private val SECTION_ITEM_REVEAL_MARGIN = 24.dp
 
 /**
- * 焦点元素顶缘距区块顶小于此值视为"区块最上排", 聚焦时区块整体回吸到屏幕顶部
- * (须大于区块标题行高度, 小于第二排可聚焦元素的顶缘位置).
+ * 选集页之后额外留的空白: 让第二页底部不露出"角色"标题.
+ *
+ * 同 [TV_LAST_PAGE_LEAD_GAP], 它**不是**实际推动的量: Spacer 进 Column 后两侧各摊一份区块间距,
+ * 所以实际推动 = 本值 + 24, 最小推动量就是 24dp (本值取 0 时).
+ * 实测"角色"标题原本在 524..540 (露出 16dp), 取 8 => 推 32 => 落到 556, 留 16dp 余地.
  */
-private val TV_SECTION_TOPMOST_THRESHOLD = 100.dp
+private val TV_EPISODES_PAGE_TRAIL_GAP = 8.dp
 
-/** 选集整页 (标题+简介+封面+轮播) 吸附后距屏幕上/下边缘的空隙. */
+/**
+ * 末页之前额外留的空白: 让上一页底部只露出"评价"标题, 既不露半截评论卡, 也不让标题贴死在屏幕底缘.
+ *
+ * 注意它**不是**标题实际下移的量: Spacer 是 Column 的子项, 两侧各自还摊到一份区块间距 (24dp),
+ * 所以实际下移 = 本值 + 24.
+ *
+ * 标定 (2026-09-15 实测, 圆头像 112dp 那一版: 标题原位 452dp, 标题高 24, 标题到卡片 TV_REVIEW_HEADER_GAP = 16):
+ * 取 24 => 实际下移 48 => 标题落在 500..524.
+ *
+ * **圆头像换回 Apple 的 130dp 之后重新标定**: 两排各高 18dp, 原位被推到 488; 两排之间收窄 8dp
+ * (TV_PEOPLE_ROW_GAP) 抵回来一点 => 原位 480. 于是本值取 0 (只剩 Spacer 摊到的那份 24dp):
+ * 标题落在 504..528, 下方留 12dp; 评论卡上沿在 504 + 24 + 16 = 544, 仍在 540dp 视口之外, 一条边不露.
+ * 再往这一页加东西就会把标题挤出屏幕 (用户 2026-09-15: "第三页的评价的字不见了").
+ */
+private val TV_LAST_PAGE_LEAD_GAP = 0.dp
+
+/**
+ * 角色排与制作人员排之间的间距 (只在独立页的第三页用, 比常规区块间距 24dp 窄).
+ *
+ * 这一页是整个详情页最挤的一页: 两排 lockup 各 130 + 40 = 170dp, 加两个标题行与间距已经 432dp,
+ * 还要给下一页的"评价"标题留出露头的位置. 见 [TV_LAST_PAGE_LEAD_GAP] 的标定.
+ */
+private val TV_PEOPLE_ROW_GAP = 16.dp
+
+/** 选集整页 (标题+简介+封面+轮播) 到位后距屏幕上/下边缘的空隙. */
 private val EPISODES_PAGE_VERTICAL_MARGIN = 24.dp
+
 
 /**
  * 选集整页"上半简介 + 轮播"这层相对整页高度的收窄量: 收窄吃掉简介文字下方留白 (文字顶对齐
  * 不动), 把轮播及其后区块整体上移. 调大上移更多, 0 则恢复占满整页. 不影响封面 (按原整页高算).
+ *
+ * 16 -> 28dp (用户 2026-09-17: 简介文字离选集卡太远). 同一轮里展开按钮挪到了正文末行右边
+ * (见 TvTruncatedSummary 的 expandOnLastLine), 正文底内边距那 8dp 也还给了文字 —— 两处合起来
+ * 文字与卡片之间收掉约一行. **这是这一页唯一该动的旋钮**: 内嵌介绍页的简介与标签之间是另一套
+ * 标定 (TV_EMBEDDED_SUMMARY_HEIGHT), 别跟着一起改.
  */
-private val EPISODES_PAGE_CONTENT_LIFT = 16.dp
+private val EPISODES_PAGE_CONTENT_LIFT = 28.dp
 
 /**
  * 选集整页右侧竖版封面高度占整页高度的比例. 封面锚定右上, 超出"标题+简介"区的部分
@@ -3230,7 +4488,9 @@ private fun TvEmbeddedHeroPage(
     displaySummary: String,
     comments: LazyPagingItems<UIComment>,
     commentCount: Int?,
-    onShowComments: () -> Unit,
+    onShowComments: (initialFocusIndex: Int) -> Unit,
+    /** 正片话数, 进简介全文弹窗的底行元信息; 没有分集时为 null. */
+    mainEpisodeCount: Int?,
     /** 跨区块导航路由: 本页上缘 (回播放器选集条) 与下缘 (关联条目区) 的按键接线全走它. */
     sectionNav: TvDetailsSectionNav,
     onClickTag: (Tag) -> Unit,
@@ -3351,7 +4611,11 @@ private fun TvEmbeddedHeroPage(
             TvTruncatedSummary(
                 displaySummary.ifBlank { stringResource(Lang.subject_details_no_summary) },
                 dialogTitle = info.displayName,
-                Modifier.height(TV_EMBEDDED_SUMMARY_HEIGHT).fillMaxWidth(),
+                // 与独立页的简介弹窗同样带上撤掉的「作品信息」(别名进正文末尾, 放送日期与话数进底行):
+                // 这些内容现在**只在这个弹窗里**, 内嵌变体不给的话就彻底够不到了 (用户 2026-09-17)
+                dialogExtra = subjectAliasesText(info),
+                dialogMeta = subjectMetaLine(info, mainEpisodeCount),
+                modifier = Modifier.height(TV_EMBEDDED_SUMMARY_HEIGHT).fillMaxWidth(),
                 // 展开按钮是本页顶部唯一焦点目标 (HERO 段落的落点 + 进页初始焦点):
                 // 简介短到不截断也必须渲染, 否则内嵌介绍页进去没有焦点
                 alwaysShowExpand = true,
@@ -3382,17 +4646,29 @@ private fun TvEmbeddedHeroPage(
                 flowModifier = Modifier.fillMaxWidth()
                     .wrapContentHeight(align = Alignment.Top, unbounded = true),
             )
-            // 评论预览: 贴介绍页底部 (标签墙 weight 把它压到最下), 与下边界留正常空隙.
-            // 下缘接线只挂在卡片行 —— 挂整个区块会把标题行"查看全部"按钮的
-            // 下键也吃掉 (导航不到卡片)
-            ReviewsPreviewSection(
-                comments, commentCount, onShowAll = onShowComments,
-                modifier = Modifier.fillMaxWidth()
-                    .padding(bottom = TV_EMBEDDED_BOTTOM_MARGIN),
-                cardsModifier = Modifier.tvSectionEdge(sectionNav, TvDetailsSection.HERO, down = true),
-                // 本页整个浮在视频画面上: 评论卡改半透明黑底, 否则页底是两块不透明的黑砖
-                videoBackground = true,
-            )
+            // 评价: 贴介绍页底部 (标签墙 weight 把它压到最下), 与下边界留正常空隙.
+            //
+            // **与独立页第四页同一个组件** ([ReviewsSummarySection]). 先前这里用的是手机端那份
+            // `ReviewsPreviewSection`, 于是三处都不一样 (用户 2026-09-17): 卡片样式 (聚焦了没有框)、
+            // "查看全部"的形态 (标题行右边一个文字按钮 vs 行末一张同形卡)、确认键的去处 (每张卡都落在
+            // 第一条 vs 落在它自己那一条). 右列比整屏窄, 组件按可用宽度自己少排一张卡.
+            //
+            // 下缘接线挂整块即可: 标题行不再有可聚焦的"查看全部"按钮, 没有"把它的下键吃掉"的问题.
+            if (comments.itemCount > 0) {
+                ReviewsSummarySection(
+                    comments = comments,
+                    totalCount = commentCount,
+                    onShowAll = onShowComments,
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(bottom = TV_EMBEDDED_BOTTOM_MARGIN)
+                        .tvSectionEdge(sectionNav, TvDetailsSection.HERO, down = true),
+                    // **不定高**: 独立页那边卡是 124dp 定高 (整页就那一个区块), 这里评价是页底最后一块,
+                    // 上面压着标签墙 —— 定高会把标签挡掉 (用户 2026-09-17). 按内容收, 正文回到 1 行,
+                    // 与改版前同一个高度; 变的只是卡片样式 (两行头部 / 聚焦框) 与点击去处.
+                    cardHeight = null,
+                    cardTextLines = TV_EMBEDDED_REVIEW_TEXT_LINES,
+                )
+            }
         }
     }
 }
@@ -3402,6 +4678,9 @@ private val TV_EMBEDDED_LEFT_COLUMN_WIDTH = 200.dp
 
 /** 内嵌介绍页简介块高度 (其下全部剩余空间给标签墙). */
 private val TV_EMBEDDED_SUMMARY_HEIGHT = 150.dp
+
+/** 内嵌介绍页评论卡的正文行数: 卡不定高, 靠它把卡收到改版前的高度. */
+private const val TV_EMBEDDED_REVIEW_TEXT_LINES = 1
 
 /** 内嵌介绍页标签墙最大行数 (空间比独立页信息带大, 多显示几行). */
 private const val TV_EMBEDDED_TAGS_MAX_LINES = 6

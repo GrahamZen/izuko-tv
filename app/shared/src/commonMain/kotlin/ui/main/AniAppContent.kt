@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.main
 
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
@@ -51,6 +52,9 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.scene.SceneStrategy
+import androidx.navigation3.scene.SinglePaneSceneStrategy
 import androidx.navigation3.ui.NavDisplay
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -87,6 +91,7 @@ import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
 import me.him188.ani.app.ui.foundation.animation.ProvideAniMotionCompositionLocals
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
+import me.him188.ani.app.navigation.NavigationHooks
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import androidx.compose.ui.graphics.Color
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -124,6 +129,7 @@ import me.him188.ani.app.ui.settings.mediasource.selector.EditSelectorMediaSourc
 import me.him188.ani.app.ui.settings.mediasource.selector.EditSelectorMediaSourceViewModel
 import me.him188.ani.app.ui.settings.tabs.media.torrent.peer.PeerFilterSettingsScreen
 import me.him188.ani.app.ui.settings.tabs.media.torrent.peer.PeerFilterSettingsViewModel
+import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.SubjectDetailsScreen
 import me.him188.ani.app.ui.subject.details.SubjectDetailsViewModel
 import me.him188.ani.app.ui.subject.episode.EpisodeScreen
@@ -245,6 +251,8 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                     playbackSessionHolder,
                     Modifier.fillMaxSize(),
                 )
+                // 盖在导航之上的一层 (TV: 详情页返回缩回列表页 hero, 见 TvHeroZoomHandoff.Shrink)
+                LocalSubjectDetailsPageVariant.current?.Overlay()
                 BangumiSessionExpiredPromptHost(
                     viewModel = aniAppViewModel,
                     enabled = appState.initialNavRoute is NavRoutes.Main,
@@ -343,10 +351,29 @@ private fun AniAppContentImpl(
     // 否则会话建了却没人起跑, 详情页照样不淡入, 直接硬切出来. 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与
     // 静止之后, 淡入则边淡边组合), 流畅档反而更该用它 (见 TvVisualEffectsLevel)
     val tvHeroZoomAllowed = LocalThemeSettings.current.tvImmersiveDetails
+    // TV: 放大进来的详情页叠在来源列表页上, 列表页常驻组合, 返回缩回落地即回 (见 TvZoomStackScene). 只在 TV 上 (有 TV 详情页变体时)
+    val tvZoomStack = tvHeroZoomAllowed && LocalSubjectDetailsPageVariant.current != null
+    val sceneStrategies = remember(tvZoomStack) {
+        listOf<SceneStrategy<NavRoutes>>(if (tvZoomStack) TvZoomStackSceneStrategy() else SinglePaneSceneStrategy())
+    }
+    // "这一跳会不会放大"在发起导航那一刻判定 (入栈前), 布局规则只读结果 (见 NavigationHooks)
+    DisposableEffect(tvZoomStack) {
+        NavigationHooks.beforePush = if (tvZoomStack) {
+            { route ->
+                if (route is NavRoutes.SubjectDetail) {
+                    TvHeroZoomHandoff.decideZoomEntry(NavEntry(route) {}.contentKey, route.subjectId)
+                }
+            }
+        } else {
+            null
+        }
+        onDispose { NavigationHooks.beforePush = null }
+    }
     NavDisplay(
         backStack = backStack,
         modifier = navDisplayModifier,
         onBack = { aniNavigator.popBackStack() },
+        sceneStrategies = sceneStrategies,
         entryDecorators = listOf(
             // 让每个页面各自持有 rememberSaveable 状态和 ViewModel, 出栈时一并销毁
             rememberSaveableStateHolderNavEntryDecorator(),
@@ -360,14 +387,19 @@ private fun AniAppContentImpl(
             // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
             rememberPageForegroundNavEntryDecorator(backStack),
         ),
+        // TV 详情页返回缩回列表页 hero (TvHeroZoomHandoff.Shrink): 两页都不做转场 —— 缩回那一层画在导航之上, 两页都不画,
+        // 详情页立刻移出组合 (那一帧落在缩回起步前的静止图上). 三条都判: 进页转场中途出栈时 Nav3 不一定按 pop 算
         transitionSpec = {
-            navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
+            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+            else navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
         },
         popTransitionSpec = {
-            navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
+            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+            else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
         },
         predictivePopTransitionSpec = {
-            navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
+            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+            else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
         },
         entryProvider = entryProvider {
             entry<NavRoutes.EmailLoginStart> {
@@ -494,11 +526,11 @@ private fun AniAppContentImpl(
                 // hero 背景本来就是不透明的, 放大过程不该有半透明的时候. 旧页照常按时长保留在下面.
                 // 其余情形与别的页面一样交叉淡入
                 metadata = NavDisplay.transitionSpec {
-                    // contentKey 不一定是路由对象本身 (Nav3 默认是它的 toString), 两种都认
                     val contentKey = targetState.entries.lastOrNull()?.contentKey
-                    val target = (contentKey as? NavRoutes.SubjectDetail)?.subjectId
-                        ?: contentKey?.toString()?.let { Regex("subjectId=(\\d+)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
-                    val zoom = target != null && tvHeroZoomAllowed && TvHeroZoomHandoff.willZoom(target)
+                    val target = contentKey?.let { subjectDetailTarget(it) }
+                    // TV 叠放布局下判定已在入栈前做过 (放大的那种根本不走转场), 这里只看会话在不在, 不再新建
+                    val zoom = target != null && tvHeroZoomAllowed &&
+                            (if (tvZoomStack) TvHeroZoomHandoff.session?.subjectId == target else TvHeroZoomHandoff.willZoom(target))
                     if (zoom) {
                         // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
                         TvHeroZoomHandoff.noteEntryKey(target, contentKey)
@@ -861,6 +893,16 @@ private fun AniAppContentImpl(
         },
     )
 }
+
+/**
+ * 详情页条目的条目 ID; 别的条目 null. contentKey 不一定是路由对象本身 (Nav3 默认是它的 toString), 两种都认.
+ * 字符串只认 `SubjectDetail(` 开头: 播放器等路由的 toString 里也有 subjectId=, 不能被当成详情页.
+ */
+private fun subjectDetailTarget(contentKey: Any): Int? =
+    (contentKey as? NavRoutes.SubjectDetail)?.subjectId
+        ?: SubjectDetailKeyRegex.find(contentKey.toString())?.groupValues?.get(1)?.toIntOrNull()
+
+private val SubjectDetailKeyRegex = Regex("^SubjectDetail\\(subjectId=(\\d+)")
 
 private fun NavRoutes.SubjectSearch.toQuery(): SubjectSearchQuery {
     return SubjectSearchQuery(

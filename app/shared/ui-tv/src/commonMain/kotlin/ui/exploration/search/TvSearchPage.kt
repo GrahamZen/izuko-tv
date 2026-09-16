@@ -100,6 +100,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1756,7 +1757,13 @@ private fun TvSearchHeroInfoBlock(
                     hero.title,
                     Modifier.line(0).fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
                         // 登记标题位置, 给详情页的放大转场 (标题从这里平移过去)
-                        .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(hero.subjectId, it.boundsInRoot(), hero.title) },
+                        .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(hero.subjectId, it.boundsInRoot(), hero.title) }
+                        // 返回缩回时反向平移回来 (见 TvHeroZoomHandoff.shrinkTitleOffset)
+                        .graphicsLayer {
+                            val o = TvHeroZoomHandoff.shrinkTitleOffset(hero.subjectId)
+                            translationX = o?.x ?: 0f
+                            translationY = o?.y ?: 0f
+                        },
                     color = tvHeroContentColor(),
                     style = MaterialTheme.typography.headlineLarge,
                     // 超长换行, 至多两行 (与探索页/追番页统一); 简介 weight 自动让出空间
