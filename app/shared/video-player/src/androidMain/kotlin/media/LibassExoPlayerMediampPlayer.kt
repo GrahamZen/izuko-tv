@@ -22,7 +22,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ExoTimeoutException
@@ -113,7 +112,8 @@ class LibassExoPlayerMediampPlayer private constructor(
         parentCoroutineContext: CoroutineContext,
         audioTimeStretch: ExoPlayerAudioTimeStretch = ExoPlayerAudioTimeStretch.HighQualityWsola,
         configurePlayerBuilder: ((ExoPlayer.Builder) -> Unit)? = null,
-    ) : this(context, parentCoroutineContext, audioTimeStretch, configurePlayerBuilder, LibassMediaSourcePipeline(context))
+        proxyConfig: () -> PlaybackProxyConfig? = { null },
+    ) : this(context, parentCoroutineContext, audioTimeStretch, configurePlayerBuilder, LibassMediaSourcePipeline(context, proxyConfig))
 
     private constructor(
         context: Context,
@@ -552,6 +552,7 @@ internal fun Throwable.isVideoOutputDetachTimeout(): Boolean =
 @AndroidxOptIn(UnstableApi::class)
 private class LibassMediaSourcePipeline(
     private val context: Context,
+    private val proxyConfig: () -> PlaybackProxyConfig?,
 ) {
     val assHandler = AssHandler(
         renderType = AssRenderType.OVERLAY_OPEN_GL,
@@ -574,10 +575,12 @@ private class LibassMediaSourcePipeline(
 
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
         val dataSourceFactory = when (data) {
-            is UriMediaData -> DefaultHttpDataSource.Factory()
-                .setUserAgent(data.headers["User-Agent"] ?: DEFAULT_USER_AGENT)
-                .setDefaultRequestProperties(data.headers)
-                .setConnectTimeoutMs(CONNECT_TIMEOUT_MILLIS)
+            is UriMediaData -> createPlaybackHttpDataSourceFactory(
+                proxyConfig = proxyConfig(),
+                userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
+                headers = data.headers,
+                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+            )
 
             is SeekableInputMediaData -> {
                 if (data.uri.startsWith("file://")) {
@@ -727,6 +730,7 @@ private class RoutingDataSource(
 
 class LibassExoPlayerMediampPlayerFactory(
     private val enableHighQualityAudioTimeStretch: () -> Boolean = { true },
+    private val proxyConfig: () -> PlaybackProxyConfig? = { null },
 ) : MediampPlayerFactory<LibassExoPlayerMediampPlayer> {
     override val forClass: KClass<LibassExoPlayerMediampPlayer>
         get() = LibassExoPlayerMediampPlayer::class
@@ -748,6 +752,7 @@ class LibassExoPlayerMediampPlayerFactory(
             configurePlayerBuilder = { builder ->
                 builder.setLoadControl(aniExoPlayerLoadControl())
             },
+            proxyConfig = proxyConfig,
         )
     }
 }

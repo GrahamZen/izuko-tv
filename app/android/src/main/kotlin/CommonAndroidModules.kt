@@ -10,14 +10,20 @@
 package me.him188.ani.android
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.media.fetch.toHeader
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
 import me.him188.ani.app.domain.media.hls.PlatformHlsPlaybackPreparer
+import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.platform.AndroidPermissionManager
 import me.him188.ani.app.platform.PermissionManager
 import me.him188.ani.app.videoplayer.media.LibassExoPlayerMediampPlayerFactory
+import me.him188.ani.app.videoplayer.media.PlaybackProxyConfig
 import org.koin.dsl.module
 import org.openani.mediamp.MediampPlayerFactory
 import org.openani.mediamp.MediampPlayerFactoryLoader
@@ -42,12 +48,19 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
 
     single<MediampPlayerFactory<*>> {
         val videoScaffoldConfig = get<SettingsRepository>().videoScaffoldConfig
+        // 播放器不走 Ktor, 代理要自己接上来: 在线源的视频地址跟数据源接口一样常常需要代理才连得上
+        val playbackProxy = get<ProxyProvider>().proxy
+            .map { config -> config?.let { PlaybackProxyConfig.parse(it.url, it.authorization?.toHeader()) } }
+            .stateIn(coroutineScope, SharingStarted.Eagerly, null)
         MediampPlayerFactoryLoader.register(
-            LibassExoPlayerMediampPlayerFactory {
-                // 音频处理链在 ExoPlayer 构造时确定, 无法在已创建的播放器上切换.
-                // 工厂接口是同步的, 因此每次创建播放器时在此读取 DataStore 中的当前值.
-                runBlocking { videoScaffoldConfig.flow.first().enableHighQualityAudioTimeStretch }
-            },
+            LibassExoPlayerMediampPlayerFactory(
+                enableHighQualityAudioTimeStretch = {
+                    // 音频处理链在 ExoPlayer 构造时确定, 无法在已创建的播放器上切换.
+                    // 工厂接口是同步的, 因此每次创建播放器时在此读取 DataStore 中的当前值.
+                    runBlocking { videoScaffoldConfig.flow.first().enableHighQualityAudioTimeStretch }
+                },
+                proxyConfig = { playbackProxy.value },
+            ),
         )
         MediampPlayerSurfaceProviderLoader.register(ExoPlayerMediampPlayerSurfaceProvider())
         MediampPlayerFactoryLoader.first()
