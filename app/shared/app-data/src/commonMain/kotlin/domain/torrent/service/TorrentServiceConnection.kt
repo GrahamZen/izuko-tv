@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -97,9 +98,13 @@ class LifecycleAwareTorrentServiceConnection<T : Any>(
     }
 
     private suspend fun lifecycleLoop() = lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+        // 「点了缓存, 过了几十秒才开始启动服务」要能分段定位: 这一行是"收到该起服务了", 下一行是"开始起".
+        // 两行都紧跟在 TorrentServiceConnectionManager 的 "Use torrent engine: true" 之后才算正常.
+        logger.info { "Service lifecycle is RESUMED, will connect when not connected." }
         try {
             // 每当 app 在前台 (lifecycle state = RESUMED) 并且未连接服务时都会尝试连接
             isServiceConnected.filter { !it }.collect {
+                logger.info { "Service is not connected, starting it now." }
                 val currentDeferred = binderDeferred.value
                 if (currentDeferred.isActive) {
                     currentDeferred.cancel(CancellationException("Service disconnected."))
