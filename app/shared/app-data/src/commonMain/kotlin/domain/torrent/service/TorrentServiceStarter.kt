@@ -51,4 +51,9 @@ sealed class ServiceStartException : Exception() {
      * 服务在等待通信对象的时候意外断开了连接. 详情查看 `android.content.ServiceConnection` 中的 `onServiceDisconnected`.
      */
     class DisconnectedUnexpectedly : ServiceStartException()
+
+    /**
+     * 绑定成功, 但在限时内没等到通信对象. 重试 (会先解绑再重新绑定) 而不是一直等.
+     */
+    class BinderTimeout : ServiceStartException()
 }

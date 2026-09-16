@@ -151,6 +151,9 @@ class TorrentServiceConnectionManager(
                 removeAll { it == token }
             }
         }
+        // 这是"要用 BT 引擎"的最早时刻. 它到下面那行 "Use torrent engine: true" 之间如果差了很久,
+        // 说明是本 scope (Dispatchers.Default) 排不上队, 而不是服务本身慢
+        if (use) logger.info { "Torrent engine requested by $token" }
         return true
     }
 
