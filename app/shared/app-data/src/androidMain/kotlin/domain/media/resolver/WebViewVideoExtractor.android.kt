@@ -17,7 +17,9 @@ actual fun WebViewVideoExtractor(
     proxyConfig: ProxyConfig?,
     videoResolverSettings: VideoResolverSettings,
 ): WebViewVideoExtractor {
+    // WebView 读不到我们的代理配置, 只能按进程级设 (见 WebViewProxy)
+    WebViewProxy.apply(proxyConfig)
     return AndroidWebViewVideoExtractor(
         videoResolverSettings.effectiveResourceExtractionTimeoutMillis,
-    ) // does not support proxy
+    )
 }
