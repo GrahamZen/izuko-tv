@@ -102,6 +102,7 @@ kotlin {
     }
     sourceSets.androidMain.dependencies {
         implementation(libs.androidx.browser)
+        implementation(libs.androidx.webkit)
         implementation(libs.onnxruntime.android)
         api(libs.androidx.lifecycle.runtime.ktx)
         api(libs.androidx.lifecycle.service)
