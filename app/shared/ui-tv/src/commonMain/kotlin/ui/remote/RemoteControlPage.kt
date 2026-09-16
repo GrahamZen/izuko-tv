@@ -135,7 +135,7 @@ internal fun renderRemoteControlPage(
     <div class="sheet-body" id="help-body"></div>
     </div>
     <div id="toast"></div>
-    <div id="sel-bar" hidden><button type="button" data-sel="cancel">取消</button><span class="sel-n"></span><button type="button" data-sel="all">全选</button><button type="button" class="ic sel-del" data-sel="del">删除</button></div>
+    <div id="sel-bar" hidden><button type="button" data-sel="cancel">取消</button><span class="sel-n"></span><button type="button" data-sel="all">全选</button><button type="button" class="sel-pause" data-sel="pause" hidden></button><button type="button" class="sel-pause" data-sel="resume" hidden></button><button type="button" class="ic sel-del" data-sel="del">删除</button></div>
     <nav class="tabbar">
     <button data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span class="tl">搜索</span></button>
     <button data-tab="player"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="o" d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path class="f" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg><span class="tl">播放器</span></button>
@@ -551,10 +551,13 @@ button { font: inherit; border: 0; cursor: pointer; }
   padding: 0 12px env(safe-area-inset-bottom); display: flex; align-items: center; gap: 8px; background: var(--card);
   border-top: 1px solid var(--line2); box-shadow: 0 -2px 10px var(--shadow); }
 #sel-bar[hidden] { display: none; }
-#sel-bar .sel-n { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600; }
+#sel-bar .sel-n { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sel-bar .sel-pause { padding: 0 10px; }
 #sel-bar button { flex: none; box-sizing: border-box; height: 38px; padding: 0 14px; border-radius: 10px; background: var(--chip); color: var(--on-chip); font-size: 14px; }
 #sel-bar .sel-del { background: var(--err-bg); color: var(--err-fg); }
 #sel-bar button:disabled { opacity: .45; }
+#sel-bar button[hidden] { display: none; }
 #sel-bar svg { width: 18px; height: 18px; fill: currentColor; }
 body.sel-on .sheet-body { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 /* 列表项的封面底图 (播放记录 / 搜索结果, window.coverLayers): 整张卡片先铺一层放大虚化的封面当底色 (染色), 右边再叠一张清楚的
@@ -671,7 +674,10 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .dm-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-height: 340px; overflow-y: auto; }
 .dm-list button { text-align: left; background: var(--soft); color: var(--fg); padding: 10px 12px; border-radius: 10px; font-size: 14px; flex: none; }
 .dm-list button.sug { outline: 2px solid var(--p); }
-#toast { position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--toast-bg); color: var(--toast-fg); padding: 10px 16px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 86%; text-align: center; }
+/* 气泡里的话不短 (最长的那条 40 多字, 手机上要折三行): 行距必须给够, 不然中文几行挤成一块;
+   宽屏上再宽就成一长条了, 所以另给一个绝对上限 */
+#toast { position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--toast-bg); color: var(--toast-fg); padding: 12px 18px; border-radius: 16px; font-size: 14px; line-height: 1.55; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 86%; width: max-content; box-sizing: border-box; text-align: center; }
+@media (min-width: 560px) { #toast { max-width: 30rem; } }
 #toast.on { opacity: 1; }
 #toast { z-index: 60; }
 /* 播放卡标题行: 剧名 + 右边的「缓存」小按钮 (仿 iOS 播放卡右上角的小圆钮) */
@@ -1149,9 +1155,11 @@ private val SCRIPT = """
         noticeFails = 0;
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
-        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。'), 'go');
-        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。'), 'how');
-        else if (n.away) setTvState('away', T('电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。'), 'enable');
+        // 有没下完的缓存时补一句: BT 服务只在 Ani 前台时才起, 这会儿下载也是停着的 (见 TvRemoteControl.noticeState)
+        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Ani 才会继续。') : '';
+        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。') + cacheHalted, 'go');
+        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。') + cacheHalted, 'how');
+        else if (n.away) setTvState('away', T('电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。') + cacheHalted, 'enable');
         else setTvState('');
         ldShow(!!n.launchDialog);
         lastKeep = !!n.keep;
@@ -1203,8 +1211,8 @@ private val SCRIPT = """
   }
   function ldClose(auto) {
     return post('api/launch-dialog/close', auto ? { auto: '1' } : {}).then(function (r) {
-      if (r && r.closed) toast(auto ? T('已自动关闭电视上的二维码。可在「设置 → 本机偏好」中更改。需要重新扫码时，长按遥控器播放键。')
-        : T('已关闭电视上的二维码。需要重新扫码时，长按遥控器播放键，在动作面板右上角扫码。'), 6000);
+      if (r && r.closed) toast(auto ? T('已自动关闭二维码。需要时长按遥控器播放键，右上角可重新扫码。')
+        : T('已关闭二维码。需要时长按遥控器播放键，右上角可重新扫码。'), 5000);
       return r;
     });
   }
@@ -1721,13 +1729,24 @@ private val SCRIPT = """
   // 安卓长按会弹系统菜单 (图片另存为之类)
   document.addEventListener('contextmenu', function (e) { if (e.target.closest && e.target.closest('[data-lp]')) e.preventDefault(); });
   function selRows() { return [].slice.call(sel.o.box.querySelectorAll('[data-lp]')); }
-  /** 进入多选. o = { box: 列表容器, ask(n): 确认删除的话, del(ids): Promise<是否删成> }; first = 长按的那一行, 先勾上 */
+  /**
+   * 进入多选. o = { box: 列表容器, ask(n): 确认删除的话, del(ids): Promise<是否删成>,
+   * setPaused(ids, paused): 可选, 有就多出「暂停 / 继续」两个键 (缓存标签) }; first = 长按的那一行, 先勾上
+   */
   function selStart(o, first) {
     selEnd();
     sel = { o: o, ids: {} };
     if (first) sel.ids[first] = true;
     o.box.classList.add('selecting');
     selBar.querySelector('.sel-del').innerHTML = window.ICONS.trash + T('删除');
+    // 暂停 / 继续只放图标: 底栏在手机上排不下第五、六个带字的键
+    [].forEach.call(selBar.querySelectorAll('.sel-pause'), function (x) {
+      x.hidden = !o.setPaused;
+      var isPause = x.getAttribute('data-sel') === 'pause', label = isPause ? T('暂停') : T('继续');
+      x.innerHTML = isPause ? window.ICONS.pause : window.ICONS.play;
+      x.setAttribute('aria-label', label);
+      x.setAttribute('title', label);
+    });
     selBar.hidden = false;
     document.body.classList.add('sel-on');
     selSync(o.box);
@@ -1751,9 +1770,11 @@ private val SCRIPT = """
       r.classList.toggle('picked', on);
     });
     sel.ids = live;
-    selBar.querySelector('.sel-n').textContent = n ? T('已选 {0} 项', n) : T('点选要删除的项');
+    selBar.querySelector('.sel-n').textContent = n ? T('已选 {0} 项', n)
+      : (sel.o.setPaused ? T('点选要操作的项') : T('点选要删除的项'));
     selBar.querySelector('[data-sel="all"]').textContent = n === rows.length ? T('全不选') : T('全选');
     selBar.querySelector('[data-sel="del"]').disabled = !n;
+    [].forEach.call(selBar.querySelectorAll('.sel-pause'), function (x) { x.disabled = !n; });
   }
   window.selStart = selStart;
   window.selEnd = selEnd;
@@ -1784,6 +1805,16 @@ private val SCRIPT = """
       sel.ids = {};
       if (!all) rows.forEach(function (r) { sel.ids[r.getAttribute('data-lp')] = true; });
       selSync(o.box);
+      return;
+    }
+    // 暂停 / 继续: 可逆, 不用确认; 做完退出多选 (状态随列表下一次刷新变过来)
+    if (k === 'pause' || k === 'resume') {
+      var pids = Object.keys(sel.ids);
+      if (!pids.length || !o.setPaused) return;
+      b.disabled = true;
+      o.setPaused(pids, k === 'pause').then(function (ok) {
+        if (ok) selEnd(); else b.disabled = false;
+      }, function () { b.disabled = false; fail(); });
       return;
     }
     var ids = Object.keys(sel.ids);
@@ -3399,7 +3430,7 @@ private val CACHE_SCRIPT = """
 (function () {
   var sheet = document.getElementById('cache-sheet'), sb = document.getElementById('cache-body');
   var titleEl = document.getElementById('cache-title'), backBtn = document.getElementById('cache-back');
-  var subject = null, subjectTitle = '', view = 'eps', ep = null, timer = null, lastData = null;
+  var subject = null, subjectTitle = '', view = 'eps', ep = null, timer = null, lastData = null, epFails = 0;
   var picked = {}, fRes = '', fSub = '', fAll = '', fEx = false;
   // 资源页的数据源胶囊 (null = 全部) 与「显示全部」, 同播放器标签; lastCands: 点胶囊时就地重画用
   var ccSrc = null, ccFull = false, lastCands = null;
@@ -3437,6 +3468,8 @@ private val CACHE_SCRIPT = """
   function showEpisodes() {
     view = 'eps';
     backBtn.hidden = true;
+    epFails = 0;
+    lastData = null;
     titleEl.textContent = T('缓存 · {0}', subjectTitle);
     setHtml(sb, '<p class="hint">' + T('正在读取剧集…') + '</p>');
     pollEpisodes();
@@ -3446,9 +3479,15 @@ private val CACHE_SCRIPT = """
     if (sheet.hidden || view !== 'eps') return;
     window.getJson('api/cache?subject=' + subject).then(function (d) {
       if (view !== 'eps') return;
+      epFails = 0;
       renderEpisodes(d);
       timer = setTimeout(pollEpisodes, 2000);
-    }).catch(function () { timer = setTimeout(pollEpisodes, 4000); });
+    }).catch(function () {
+      // 电视没回应时别一直停在「正在读取剧集…」: 连着两次都没读到就说一声, 后台照旧重试
+      epFails++;
+      if (epFails >= 2 && view === 'eps' && !lastData) setHtml(sb, '<p class="hint">' + T('电视没有响应，正在重试…') + '</p>');
+      timer = setTimeout(pollEpisodes, 4000);
+    });
   }
   function pickedIds() { return Object.keys(picked).filter(function (k) { return picked[k]; }); }
   function renderEpisodes(d) {
@@ -3456,8 +3495,15 @@ private val CACHE_SCRIPT = """
     if (!d.ok) { setHtml(sb, '<p class="hint">' + esc(d.message) + '</p>'); return; }
     if (d.title) { subjectTitle = d.title; titleEl.textContent = T('缓存 · {0}', d.title); }
     var b = d.batch, running = !!(b && b.running), h = '';
+    // BT 服务冷启动要十几秒, 这期间每一集的状态都不会动 —— 不说一句会以为点了没反应
+    if (d.btStarting) h += '<div class="now-status busy"><b>' + T('正在启动 BT 服务') + '</b><span>' + T('第一次要十几秒，之后会自动开始下载') + '</span></div>';
+    // 电视上没打开 Ani 时 BT 服务根本不会起 (上游的省电策略), 缓存会一直排队 —— 必须说明白, 否则就是"点了没反应"
+    // 顶上那条「不在前台」被这个全屏面板盖住了, 所以这里再给一个入口 (同 api/tv/front, 没开 / 没授权时电视会在回话里说清楚)
+    else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Ani') + '</b><span>' + T('已经记下了，要在电视上打开 Ani 才会开始下载') + '</span></div>' +
+      '<button type="button" class="ghost wide cache-front">' + T('打开 Ani') + '</button>';
     if (running) {
-      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>';
+      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>' +
+        '<button type="button" class="ghost wide cache-cancel">' + T('取消自动缓存') + '</button>';
     } else if (b && b.failures.length) {
       h += '<div class="now-status error"><b>' + T('{0} 集没能自动缓存', b.failures.length) + '</b><span>' + T('原因写在对应那一集下面，可以点「选资源」自己挑') + '</span></div>';
     }
@@ -3717,6 +3763,24 @@ private val CACHE_SCRIPT = """
         if (!r.ok) b.disabled = false;
         pollEpisodes();
       }).catch(function () { b.disabled = false; fail(); });
+    } else if (b.classList.contains('cache-front')) {
+      b.disabled = true;
+      post('api/tv/front', {}).then(function (r) {
+        toast(r.message);
+        b.disabled = false;
+        pollEpisodes();
+      }).catch(function () { b.disabled = false; fail(); });
+    } else if (b.classList.contains('cache-cancel')) {
+      // 误触了自动缓存: 停掉还没开始的; 已经建起来的那几集问一声要不要一起删 (否则只能一条条去缓存列表删)
+      var bt = lastData && lastData.batch, made = bt && bt.created ? bt.created : 0;
+      if (!confirm(made ? T('取消自动缓存？已经开始的 {0} 集会一并删除。', made) : T('取消自动缓存？'))) return;
+      b.disabled = true;
+      post('api/cache/auto-cancel', { remove: made ? '1' : '0' }).then(function (r) {
+        toast(r.message);
+        b.disabled = false;
+        pollEpisodes();
+        if (window.loadCaches) window.loadCaches();
+      }).catch(function () { b.disabled = false; fail(); });
     } else if (b.hasAttribute('data-ep')) {
       showCandidates(+b.getAttribute('data-ep'), b.getAttribute('data-label'));
     } else if (b.hasAttribute('data-mid')) {
@@ -3740,7 +3804,7 @@ private val CACHE_LIST_SCRIPT = """
 (function () {
   var tab = document.getElementById('tab-cache');
   var sumBox = document.getElementById('cl-sum'), listBox = document.getElementById('cl-list');
-  var timer = null, busy = false, lastSum = '', lastList = '';
+  var timer = null, busy = false, lastSum = '', lastList = '', fails = 0;
   // 任何全屏面板盖着 (缓存面板、挑番、使用说明) 都不刷新; 面板关上时 (sheetclose) 刷新一次
   function active() { return !tab.hidden && !window.sheets.any() && !document.hidden; }
   function load() {
@@ -3750,11 +3814,15 @@ private val CACHE_LIST_SCRIPT = """
     busy = true;
     fetch('api/caches').then(function (r) { return r.json(); }).then(function (d) {
       busy = false;
+      fails = 0;
       render(d);
       if (active()) timer = setTimeout(load, 2000);
     }).catch(function (e) {
       busy = false;
       console.error(e);
+      // 电视忙不过来 (服务端满负荷时直接回 503) 或连不上: 连着两次都没读到才说, 免得偶尔一次抖动就闪一下
+      fails++;
+      if (fails >= 2) setHtml(listBox, '<p class="hint">' + T('电视没有响应，正在重试…') + '</p>');
       if (active()) timer = setTimeout(load, 4000);
     });
   }
@@ -3773,6 +3841,8 @@ private val CACHE_LIST_SCRIPT = """
       if (d.downloading) run.push(T('{0} 集下载中', d.downloading) + (d.speed ? ' ↓ ' + esc(d.speed) : ''));
       if (d.pending) run.push(T('没下完的还差') + ' ' + esc(d.pending));
       if (run.length) s += '<div class="cl-line">' + run.join(' · ') + '</div>';
+      if (d.btStarting) s += '<div class="cl-line">' + T('正在启动 BT 服务，第一次要十几秒…') + '</div>';
+      else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Ani，要打开后才会开始下载') + '</div>';
       if (d.lowSpace) s += '<div class="cl-warn">' + T('剩余空间不够把没下完的都下完') + '</div>';
       s += '</div>';
       if (!d.groups.length) {
@@ -3919,13 +3989,20 @@ private val CACHE_LIST_SCRIPT = """
       load();
     }).catch(function () { b.disabled = false; window.swClose(b.closest('.sw')); fail(); });
   });
-  // 长按一集: 进多选 (那一集先勾上), 底部操作栏一次删几集 (同播放记录 / 订阅); 可以跨番勾
+  // 长按一集: 进多选 (那一集先勾上), 底部操作栏一次删几集 / 一次暂停或继续几集; 可以跨番勾
   listBox.addEventListener('longpress', function (e) {
     window.selStart({
       box: listBox,
       ask: function (n) { return T('删除选中的 {0} 集缓存？删除后需要重新缓存。', n); },
       del: function (ids) {
         return post('api/caches/delete', { ids: ids.join(',') }).then(function (r) {
+          toast(r.message);
+          load();
+          return !!r.ok;
+        });
+      },
+      setPaused: function (ids, paused) {
+        return post('api/caches/' + (paused ? 'pause' : 'resume'), { ids: ids.join(',') }).then(function (r) {
           toast(r.message);
           load();
           return !!r.ok;
