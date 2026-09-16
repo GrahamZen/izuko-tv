@@ -20,11 +20,14 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * @param onServiceDisconnected optional callback when service disconnected.
@@ -55,6 +58,9 @@ class AniTorrentServiceStarter(
     }
 
     override suspend fun start(): IRemoteAniTorrentEngine {
+        // 与连接循环那两行一起用: 这行到 [1/4] 之间只有注册广播接收器与 startService 调用,
+        // 如果这一段耗了几十秒, 那就是系统侧 (主线程 / binder) 卡住, 而不是我们没去启动
+        logger.debug { "[0/4] Starting service: registering receiver." }
         suspendCancellableCoroutine { cont ->
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context?, intent: Intent?) {
@@ -99,6 +105,11 @@ class AniTorrentServiceStarter(
             }
         }
     
+        // 上一轮的绑定还在的话先解绑. 服务进程死掉时绑定不会自动断开: 系统会在服务重启后用**旧的**绑定回调
+        // onServiceConnected, 那时 binderDeferred 还是上一轮的 (完成了也没人等); 而对已经绑着的 conn 再次
+        // bindService 不会再回调一次, 于是 [3/4] 之后永远等不到 [4/4]. 解绑后重新绑定才能拿到新的回调.
+        unbind()
+
         val newDeferred = CompletableDeferred<IRemoteAniTorrentEngine>()
         binderDeferred.value = newDeferred
 
@@ -108,10 +119,35 @@ class AniTorrentServiceStarter(
             Context.BIND_ABOVE_CLIENT,
         )
         if (!bindResult) throw ServiceStartException.BindServiceFailed()
+        bound = true
         logger.debug { "[3/4] Bound service successfully." }
 
-        val result = newDeferred.await()
+        // 限时等待: 等不到就解绑重来, 而不是永远挂着 —— 挂着的话所有 torrent 调用都会一直阻塞 (它们等的就是这个 binder)
+        val result = withTimeoutOrNull(BIND_TIMEOUT) { newDeferred.await() } ?: run {
+            logger.warn { "Timed out waiting for service binder after $BIND_TIMEOUT, will unbind and retry." }
+            unbind()
+            throw ServiceStartException.BinderTimeout()
+        }
         logger.debug { "[4/4] Got service binder: $result" }
         return result
+    }
+
+    /** 已经 [bindService][Context.bindService] 过、还没解绑. 只在 [start] 里读写, 而 [start] 由连接循环单线程调用. */
+    private var bound = false
+
+    private fun unbind() {
+        if (!bound) return
+        bound = false
+        try {
+            context.unbindService(conn)
+        } catch (e: IllegalArgumentException) {
+            // 没绑过或已经解绑, 忽略
+            logger.warn(e) { "Failed to unbind service." }
+        }
+    }
+
+    private companion object {
+        /** 绑定成功到拿到通信对象的限时. 服务进程这时已经起来了 (广播已收到), 正常是毫秒级. */
+        private val BIND_TIMEOUT = 15.seconds
     }
 }
