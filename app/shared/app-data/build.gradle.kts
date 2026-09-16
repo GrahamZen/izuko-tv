@@ -109,6 +109,7 @@ kotlin {
     }
     sourceSets.androidMain.dependencies {
         implementation(libs.androidx.browser)
+        implementation(libs.androidx.webkit)
         implementation(libs.onnxruntime.android)
         api(libs.datastore) // PlatformDataStoreManagerAndroid (data/persistent, 自 :app:shared 搬迁)
         api(libs.datastore.preferences)

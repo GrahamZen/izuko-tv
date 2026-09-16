@@ -38,6 +38,7 @@ kotlin {
         implementation(libs.androidx.media3.exoplayer)
         implementation(libs.androidx.media3.exoplayer.dash)
         implementation(libs.androidx.media3.exoplayer.hls)
+        implementation(libs.androidx.media3.datasource.okhttp)
         implementation(libs.libass.media)
         implementation(libs.androidx.core.ktx)
         api(libs.mediamp.exoplayer)
