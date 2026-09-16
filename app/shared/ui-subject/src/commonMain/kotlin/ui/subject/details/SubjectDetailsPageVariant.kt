@@ -44,7 +44,8 @@ fun interface SubjectDetailsPageVariant {
         onPlay: (episodeId: Int) -> Unit,
         onClickTag: (Tag) -> Unit,
         onClickLogin: () -> Unit,
-        onShowComments: () -> Unit,
+        /** 参数 = 打开后落在第几条评论 (详情页评价卡点进来时是那一条). */
+        onShowComments: (initialFocusIndex: Int) -> Unit,
         modifier: Modifier,
         onEpisodeCollectionUpdate: (SetEpisodeCollectionTypeRequest) -> Unit,
         showTopBar: Boolean,
@@ -99,6 +100,14 @@ fun interface SubjectDetailsPageVariant {
      */
     @Composable
     fun holdPlaceholder(subjectId: Int): Boolean = false
+
+    /**
+     * 盖在整个导航之上、不属于任何页面的一层 (AniAppContent 根部). TV 的返回缩回用它: 详情页出栈即移出组合,
+     * 缩回去的那张图得画在导航之外. 默认什么都不画.
+     */
+    @Composable
+    fun Overlay() {
+    }
 }
 
 val LocalSubjectDetailsPageVariant = staticCompositionLocalOf<SubjectDetailsPageVariant?> { null }

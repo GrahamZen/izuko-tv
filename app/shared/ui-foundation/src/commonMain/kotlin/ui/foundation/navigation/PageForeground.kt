@@ -40,6 +40,13 @@ import me.him188.ani.utils.logging.logger
 val LocalPageIsForeground: ProvidableCompositionLocal<State<Boolean>> =
     staticCompositionLocalOf { AlwaysForeground }
 
+/**
+ * 本页这个导航条目的 contentKey (由 `rememberPageForegroundNavEntryDecorator` 下发; 没有下发的场合为 null).
+ * 用于把"这一次导航的性质"记在条目上, 不靠页面组合是否还记得 —— 例如 TV 放大进来的详情页, 进播放器回来后组合是新的,
+ * 按返回照样要缩回 (见 TvHeroZoomHandoff.isZoomEntry).
+ */
+val LocalNavEntryContentKey: ProvidableCompositionLocal<Any?> = staticCompositionLocalOf { null }
+
 private val AlwaysForeground = object : State<Boolean> {
     override val value: Boolean get() = true
 }
