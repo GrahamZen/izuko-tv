@@ -73,8 +73,8 @@ import me.him188.ani.app.ui.rating.FiveRatingStars
  * "查看全部"类内容的 TV 大弹窗: 标题 (+可选右侧动作) + 自适应卡片网格 (方向键导航,
  * 默认 BringIntoView 滚动, 返回键关闭). 替代移动端的 ModalBottomSheet.
  *
- * 打开时自动聚焦第一格 (Dialog 独立焦点域, 不聚焦则方向键无处可去; 等分页数据与
- * 卡片组合出来再请求): [itemContent] 的 modifier 参数在首格带焦点请求器, 必须应用
+ * 打开时自动聚焦 [initialFocusIndex] 那一格 (Dialog 独立焦点域, 不聚焦则方向键无处可去; 等分页数据与
+ * 卡片组合出来再请求): [itemContent] 的 modifier 参数在那一格带焦点请求器, 必须应用
  * 到条目根 (或可聚焦的容器) 上.
  */
 @Composable
@@ -85,6 +85,12 @@ internal fun <T : Any> ViewAllGridDialog(
     cellMinWidth: Dp = 280.dp,
     /** 非 null 时固定列数 (卡宽 = 网格均分); null 按 [cellMinWidth] 自适应分列. */
     columns: Int? = null,
+    /**
+     * 打开时聚焦第几格 (默认首格): 从详情页某一张评论卡进来时是那一条的序号, 落点要跟进来的那张对上.
+     *
+     * **只搬焦点, 不搬滚动位置** (原因见网格那处注释).
+     */
+    initialFocusIndex: Int = 0,
     /** 非 null 时条目可长按放大看图: 大图画在本窗口内 (见 [TvImageZoomState]), 焦点不动. */
     imageZoom: TvImageZoomState? = null,
     headerAction: @Composable () -> Unit = {},
@@ -129,6 +135,11 @@ internal fun <T : Any> ViewAllGridDialog(
                         )
                         headerAction()
                     }
+                    // **不要自己动滚动位置**: 试过用 initialFirstVisibleItemIndex 把目标那一条顶到最上面,
+                    // 真机上是"第三条先跑到顶上, 立刻又闪回中间" (用户 2026-09-15) —— 分页刚到的那几条
+                    // 不够铺满一屏, LazyGrid 测量时会自己回滚把内容填满视口, 把顶上去的那条拉回来.
+                    // 详情页预览的那几条 ([TV_REVIEW_PREVIEW_COUNT]) 本来就都在首屏里, 焦点直接落上去,
+                    // 默认 BringIntoViewSpec 算出的滚动量就是 0, 一帧都不动. 真在屏外时它也只做最小滚动.
                     LazyVerticalGrid(
                         if (columns != null) GridCells.Fixed(columns) else GridCells.Adaptive(minSize = cellMinWidth),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -142,7 +153,7 @@ internal fun <T : Any> ViewAllGridDialog(
                             items[index]?.let { item ->
                                 itemContent(
                                     item,
-                                    Modifier.ifThen(index == 0) {
+                                    Modifier.ifThen(index == initialFocusIndex) {
                                         tvFocusAnchor(focus, ViewAllGridFirstItemFocus)
                                     },
                                 )
@@ -216,6 +227,8 @@ internal fun CommentsGridDialog(
     onDismissRequest: () -> Unit,
     showRating: Boolean,
     headerAction: @Composable () -> Unit = {},
+    /** 打开时落在第几条 (从详情页的某张评论卡进来时是那一条). */
+    initialFocusIndex: Int = 0,
 ) {
     ViewAllGridDialog(
         title = title,
@@ -223,6 +236,7 @@ internal fun CommentsGridDialog(
         onDismissRequest = onDismissRequest,
         cellMinWidth = COMMENT_GRID_CARD_MIN_WIDTH,
         headerAction = headerAction,
+        initialFocusIndex = initialFocusIndex,
     ) { comment, modifier ->
         CommentGridCard(comment, showRating = showRating, modifier = modifier)
     }
@@ -301,8 +315,16 @@ internal val FOCUS_HIGHLIGHT_CARD_PADDING = 10.dp
 internal const val TV_CARD_CONTAINER_ALPHA = 0.45f
 internal const val TV_CARD_CONTAINER_FOCUSED_ALPHA = 0.75f
 
-/** 评论卡最小宽度 (自适应分列, 通常两列). */
-private val COMMENT_GRID_CARD_MIN_WIDTH = 420.dp
+/**
+ * 评论卡最小宽度 (自适应分列).
+ *
+ * 取 360dp 是为了在 TV 的弹窗里**分成两列**: 弹窗宽 0.85 屏 = 816dp, 去掉 24dp 内边距剩 768dp,
+ * `(768 + 12) / (360 + 12) = 2` 列, 每列 378dp. 420dp 时只有一列 —— 一屏整好放得下 2 张卡,
+ * 详情页预览的第 3 张 (见 TV_REVIEW_PREVIEW_COUNT) 只露半截, 从它进来时焦点落上去会触发
+ * "最小滚动把它补全", 观感是开窗之后自己滚一下 (用户 2026-09-15: "第三个评价会在下面然后跑到中间").
+ * 两列之后三张卡分占两行, 全在首屏里, 滚动量恒为 0 —— 不靠压掉动画去遮掩, 而是不让它需要滚.
+ */
+private val COMMENT_GRID_CARD_MIN_WIDTH = 360.dp
 
 /** 评论卡折叠态正文最大行数 (确认键展开全文). */
 private const val TV_COMMENT_COLLAPSED_MAX_LINES = 5

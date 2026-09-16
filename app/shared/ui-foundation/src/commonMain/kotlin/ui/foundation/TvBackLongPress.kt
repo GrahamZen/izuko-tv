@@ -24,6 +24,13 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
@@ -60,7 +67,15 @@ import kotlin.time.TimeSource
  * 长按语义一律交给根部注册.
  */
 @Stable
-open class TvKeyLongPressHost(private val keys: Set<Key>) {
+open class TvKeyLongPressHost(
+    private val keys: Set<Key>,
+    /**
+     * 计时器作用域 (主线程): 给了就**按住满 [TV_LONG_PRESS_HOLD] 当场触发**, 不必等系统连发 ——
+     * 安卓的第一发连发在按下约 400ms 之后, 那是"长按多久出面板"的地板 (用户 2026-09-15: 动作面板反应一直很慢).
+     * null = 只按连发计数 (旧行为, 供测试 / 非 TV 用).
+     */
+    private val scope: CoroutineScope? = null,
+) {
     private class Entry(val handler: () -> Boolean)
 
     // 注册栈与跟踪器状态都只在主线程的组合效应/按键回调里读写, 不需要同步, 也刻意不用
@@ -71,6 +86,27 @@ open class TvKeyLongPressHost(private val keys: Set<Key>) {
     private var claimed = false // 已认领: 余下连发与 KeyUp 全部消费
     private var downCount = 0
     private var downMark: TimeMark? = null
+    private var holdJob: Job? = null
+
+    /** 按住计时: 到点还没松手 (也没被连发抢先) 就当场问处理器. */
+    private fun startHoldTimer() {
+        val s = scope ?: return
+        holdJob?.cancel()
+        holdJob = s.launch {
+            delay(TV_LONG_PRESS_HOLD)
+            if (!live || fired) return@launch
+            fired = true
+            claimed = fireLongPress()
+            longPressLogger.info {
+                "Long press fired by hold timer after ${TV_LONG_PRESS_HOLD.inWholeMilliseconds}ms, claimed=$claimed"
+            }
+        }
+    }
+
+    private fun cancelHoldTimer() {
+        holdJob?.cancel()
+        holdJob = null
+    }
 
     /** 注册一个长按处理器 (后注册的先问). 返回注销函数. */
     fun register(handler: () -> Boolean): () -> Unit {
@@ -99,6 +135,7 @@ open class TvKeyLongPressHost(private val keys: Set<Key>) {
                     claimed = false
                     downCount = 1
                     downMark = TimeSource.Monotonic.markNow()
+                    startHoldTimer()
                     return false // 全新按下不消费: 短按语义 (各层的分层返回/直达播放) 不受影响
                 }
                 if (!live) return false // 残余连发: 手势不是从本窗口起手, 不数也不吞
@@ -107,6 +144,7 @@ open class TvKeyLongPressHost(private val keys: Set<Key>) {
                 downCount++
                 val heldLongEnough = downMark?.let { it.elapsedNow() >= LONG_PRESS_MIN_HOLD } == true
                 if (downCount >= LONG_PRESS_KEY_DOWN_COUNT && heldLongEnough) {
+                    cancelHoldTimer()
                     fired = true
                     claimed = fireLongPress()
                     return claimed
@@ -115,6 +153,7 @@ open class TvKeyLongPressHost(private val keys: Set<Key>) {
             }
 
             KeyEventType.KeyUp -> {
+                cancelHoldTimer()
                 val consume = claimed
                 live = false
                 fired = false
@@ -139,12 +178,21 @@ open class TvKeyLongPressHost(private val keys: Set<Key>) {
  * 本标志, 就把焦点送上轮播主按钮并清零. 用标志而不是直接请求: 置位那一刻探索页可能还没组合.
  */
 @Stable
-class TvBackLongPressHost : TvKeyLongPressHost(TV_BACK_KEYS) {
+class TvBackLongPressHost(scope: CoroutineScope? = null) : TvKeyLongPressHost(TV_BACK_KEYS, scope) {
     var pendingHomeFocus: Boolean by mutableStateOf(false)
 }
 
 /** 返回键. internal: 长按放大层 ([me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys]) 也要认这两个键. */
 internal val TV_BACK_KEYS = setOf(Key.Back, Key.Escape)
+
+/**
+ * 根部长按宿主"按住多久算长按" (见 [TvKeyLongPressHost] 的 scope): 按住到点当场触发, 不等系统连发.
+ * 280ms —— 比系统第一发连发 (~400ms) 早一大截, 又远长于正常短按的按住时长 (~100ms), 不会把"按一下返回"误判成长按.
+ * 节点级的 [tvLongPressKey] 仍按连发计数 ([LONG_PRESS_KEY_DOWN_COUNT] + [LONG_PRESS_MIN_HOLD]), 两套并存规则见类文档.
+ */
+val TV_LONG_PRESS_HOLD = 280.milliseconds
+
+private val longPressLogger = logger("TvLongPress")
 
 /**
  * 由应用根部 (TV 形态装配处) 提供; 其余形态为 null, [TvBackLongPressHandler] 与

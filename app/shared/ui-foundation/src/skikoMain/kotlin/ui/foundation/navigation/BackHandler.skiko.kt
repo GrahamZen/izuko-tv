@@ -18,7 +18,8 @@ import me.him188.ani.utils.platform.annotations.TestOnly
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     val onBackUpdated by rememberUpdatedState(onBack)
-    val enabledUpdated = rememberUpdatedState(enabled)
+    // 不在返回栈栈顶的页面不拦返回 (理由见 android 版)
+    val enabledUpdated = rememberUpdatedState(enabled && LocalPageIsForeground.current.value)
     val owner = LocalOnBackPressedDispatcherOwner.current ?: return
     DisposableEffect(true, owner) {
         val handler = object : OnBackPressedHandler {

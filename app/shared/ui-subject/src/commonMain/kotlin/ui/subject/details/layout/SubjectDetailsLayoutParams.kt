@@ -124,7 +124,7 @@ data class SubjectDetailsLayoutParams(
             railWidth = 0.dp,
             railItemSpacing = 0.dp,
             columnSpacing = 24.dp,
-            contentHorizontalPadding = 48.dp,
+            contentHorizontalPadding = 40.dp,
             contentTopPadding = 12.dp,
             contentBottomPadding = 24.dp,
             sectionSpacing = 24.dp,

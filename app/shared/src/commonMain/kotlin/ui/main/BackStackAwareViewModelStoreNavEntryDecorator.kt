@@ -12,8 +12,10 @@ package me.him188.ani.app.ui.main
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -61,6 +63,15 @@ fun <T : Any> rememberBackStackAwareViewModelStoreNavEntryDecorator(
 ): NavEntryDecorator<T> {
     val currentBackStack = rememberUpdatedState(backStack)
     val stores = remember { mutableMapOf<Any, ViewModelStore>() }
+    // 此刻在组合里的条目. 被盖住、已离开组合的条目之后被整批移出栈 (例如回主页) 时, 它不会再有一次内容销毁, 上面那条判据
+    // 永远轮不到它 —— store 一直挂到整个宿主销毁 (2026-09-15 审查). 所以返回栈每变一次也扫一遍: 不在栈里、也不在组合里的清掉;
+    // 还在组合里的 (退场动画中) 留给它自己的销毁去判
+    val composed = remember { mutableSetOf<Any>() }
+    LaunchedEffect(Unit) {
+        snapshotFlow { currentBackStack.value.map { NavEntry(it) {}.contentKey }.toSet() }.collect { keys ->
+            stores.keys.filter { it !in keys && it !in composed }.forEach { stores.remove(it)?.clear() }
+        }
+    }
     DisposableEffect(Unit) {
         onDispose {
             stores.values.forEach { it.clear() }
@@ -76,7 +87,9 @@ fun <T : Any> rememberBackStackAwareViewModelStoreNavEntryDecorator(
                 }
             }
             DisposableEffect(key) {
+                composed += key
                 onDispose {
+                    composed -= key
                     val stillInBackStack = currentBackStack.value.any { route ->
                         NavEntry(route) {}.contentKey == key
                     }

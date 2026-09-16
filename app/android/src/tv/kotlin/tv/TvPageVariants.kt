@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -87,6 +88,7 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsLayoutParams
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsTvLoadingPlaceholder
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsTvPage
+import me.him188.ani.app.ui.subject.details.layout.TvHeroShrinkLayer
 import me.him188.ani.app.ui.subject.details.layout.TvHeroZoomLayer
 import me.him188.ani.app.ui.subject.details.layout.tvHeroZoomHoldsPlaceholder
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
@@ -117,8 +119,10 @@ fun MaybeInstallTvPageVariants(isTv: Boolean, aniNavigator: AniNavigator, conten
 fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () -> Unit) {
     // 遥控器全局长按手势 (机制与分层见 TvKeyLongPressHost 的 KDoc): 每个键集一份跟踪器,
     // 挂在下方根 Box 上; "长按之后干什么"由在场的界面注册 (播放器收叠层在栈顶, 这里只有兜底)
-    val backLongPress = remember { TvBackLongPressHost() }
-    val playLongPress = remember { TvKeyLongPressHost(TV_PLAY_KEYS) }
+    // 作用域给宿主跑"按住计时": 按住到 TV_LONG_PRESS_HOLD 当场触发, 不等系统第一发连发 (~400ms)
+    val longPressScope = rememberCoroutineScope()
+    val backLongPress = remember(longPressScope) { TvBackLongPressHost(longPressScope) }
+    val playLongPress = remember(longPressScope) { TvKeyLongPressHost(TV_PLAY_KEYS, longPressScope) }
     // 方向键按住的真信号 (hero 文字 / 背景图 / 集信息行按住期间不换), 见 TvNavKeyTracker
     val navKeys = rememberTvNavKeyTracker()
     // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
@@ -358,7 +362,8 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
         onPlay: (episodeId: Int) -> Unit,
         onClickTag: (Tag) -> Unit,
         onClickLogin: () -> Unit,
-        onShowComments: () -> Unit,
+        /** 参数 = 打开后落在第几条评论 (详情页评价卡点进来时是那一条). */
+        onShowComments: (initialFocusIndex: Int) -> Unit,
         modifier: Modifier,
         onEpisodeCollectionUpdate: (SetEpisodeCollectionTypeRequest) -> Unit,
         showTopBar: Boolean,
@@ -410,4 +415,9 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
 
     @Composable
     override fun holdPlaceholder(subjectId: Int): Boolean = tvHeroZoomHoldsPlaceholder(subjectId)
+
+    @Composable
+    override fun Overlay() {
+        TvHeroShrinkLayer()
+    }
 }

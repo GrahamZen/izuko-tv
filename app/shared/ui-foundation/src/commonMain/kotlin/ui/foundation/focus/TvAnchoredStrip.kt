@@ -71,6 +71,15 @@ fun TvAnchoredStrip(
     itemSpacing: Dp = 12.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     state: LazyListState = rememberLazyListState(),
+    /**
+     * 长按左右键时每秒移动几格; 默认取全局上限 [TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL].
+     *
+     * **格子明显小于默认卡片的行要调高**: 限流限的是"格数"而不是距离, 格变窄之后同样的格数/秒
+     * 在画面上滚过的距离就变少了. 2026-09-15 逐帧量 Apple TV 的演职人员行 (相位相关, 取匀速段中位数):
+     * 每帧 126.4px @27.18fps = 3435px/秒 = **1717 dp/秒**, 按它 150dp 的步距是 11.4 格/秒;
+     * 我们的圆头像行步距 128dp, 要达到同样的 dp/秒需要约 13.4 格/秒.
+     */
+    horizontalMoveRate: Int = TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL,
     itemContent: @Composable (index: Int, itemModifier: Modifier) -> Unit,
 ) {
     if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
@@ -112,7 +121,7 @@ fun TvAnchoredStrip(
             modifier
                 // 长按方向键的移动频率上限 (同探索页/选集轮播): 系统连发 ~20 次/秒, 每发都换卡
                 // 的话滑动动画不断被打断, 卡片是闪过去而不是滑过去
-                .tvFocusMoveRateLimit()
+                .tvFocusMoveRateLimit(horizontalMaxPerSecond = horizontalMoveRate)
                 // onEnter 只在**焦点组**节点上生效, 少一个 focusGroup 就完全不触发 (真机踩过)
                 .focusProperties { onEnter = { runCatching { enterRequester.requestFocus() } } }
                 .focusGroup(),

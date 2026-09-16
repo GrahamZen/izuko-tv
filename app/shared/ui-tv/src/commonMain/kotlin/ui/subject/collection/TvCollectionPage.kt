@@ -68,6 +68,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -152,6 +153,7 @@ import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
@@ -425,15 +427,16 @@ fun TvCollectionPage(
     )
 
     // 前进导航的转场闸门 (与探索页同款, 见 TvExplorationPage 里那段长注释): 导航发出之后本页
-    // 还要在转场动画里活一小会儿, 期间它**仍在组合、仍在收按键**. 不锁的话:
-    // - 再按一次确认键 -> 连进两层, 返回要按两下;
-    // - 按返回 -> 被本页或主壳的 BackHandler 吃掉 (它们此刻都还注册着), 而主壳那条是
-    //   `enabled = page != Exploration -> 切到探索页`, 于是详情页退出后落在探索页顶部,
-    //   不是打开时的追番页. 真机复现 (2026-08-22): 点卡片进详情页时快速按返回, 现象正是
-    //   "返回默默生效 / 像返回了两次 / 有概率弹出侧边栏".
+    // 还要在转场动画里活一小会儿, 期间它**仍在组合、仍在收按键**. 不锁的话再按一次确认键 -> 连进两层,
+    // 返回要按两下. (转场里按返回原先会被本页或主壳的 BackHandler 吃掉 —— 2026-08-22 真机: 详情页退出后
+    // 落在探索页顶部 / 弹出侧边栏; 现在不在栈顶的页面返回处理一律不生效, 见 BackHandler, 这里不必再吞)
     // 定时解锁而非永不解锁: 本页正常随导航退出组合, remember 一并丢弃; 万一没退出 (导航被拒)
-    // 也能自愈.
+    // 也能自愈. 进去马上又退回来 (本页还没被移出组合) 时回到栈顶就解锁
     var navLocked by remember { mutableStateOf(false) }
+    val pageForeground = LocalPageIsForeground.current
+    LaunchedEffect(pageForeground) {
+        snapshotFlow { pageForeground.value }.collect { if (it) navLocked = false }
+    }
     fun lockNavigationForTransition() {
         navLocked = true
         scope.launch {
@@ -598,11 +601,6 @@ fun TvCollectionPage(
     BackHandler(enabled = !navLocked && backToFirstCard) {
         gridFocus.focusItem(0)
     }
-    // **转场窗口内吞掉返回键**, 且必须注册在上面那条之后 (BackHandler 走
-    // OnBackPressedDispatcher, 后注册的先拿到). 语义是"这一下不算": 用户在转场里按的返回
-    // 既不该被本页当成"回网格首卡", 也不该被主壳当成"切回探索页" —— 到了详情页再按一下就是
-    // 正常返回. 理由与取证同 [lockNavigationForTransition].
-    BackHandler(enabled = navLocked) { /* 吞掉 */ }
 
     // 卡片长按弹出的收藏下拉 (与探索页一致); 打开后短暂吞掉长按残余的确认键, 避免误触第一项.
     // remember: 工厂被网格 items 内容 lambda 捕获, 每次新实例都会让所有可见卡片跟着重组
@@ -1277,7 +1275,13 @@ private fun ColumnScope.TvCollectionHeroInfo(
         info.subjectInfo.displayName,
         lineModifier(0).fillMaxWidth(TV_HERO_TITLE_WIDTH_FRACTION)
             // 登记标题位置, 给详情页的放大转场 (标题从这里平移过去)
-            .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(info.subjectInfo.subjectId, it.boundsInRoot(), info.subjectInfo.displayName) },
+            .onGloballyPositioned { TvHeroZoomHandoff.publishTitle(info.subjectInfo.subjectId, it.boundsInRoot(), info.subjectInfo.displayName) }
+            // 返回缩回时反向平移回来 (见 TvHeroZoomHandoff.shrinkTitleOffset)
+            .graphicsLayer {
+                val o = TvHeroZoomHandoff.shrinkTitleOffset(info.subjectInfo.subjectId)
+                translationX = o?.x ?: 0f
+                translationY = o?.y ?: 0f
+            },
         color = tvHeroContentColor(),
         style = MaterialTheme.typography.headlineLarge,
         // 超长换行, 至多两行 (与探索页/搜索页统一); 简介 weight 自动让出空间
