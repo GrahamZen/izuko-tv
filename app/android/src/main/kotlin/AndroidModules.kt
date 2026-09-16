@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.toHeader
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
 import me.him188.ani.app.domain.media.hls.PlatformHlsPlaybackPreparer
 import me.him188.ani.app.domain.media.resolver.AndroidWebMediaResolver
@@ -72,6 +73,7 @@ import me.him188.ani.app.tools.update.AndroidUpdateInstaller
 import me.him188.ani.app.tools.update.UpdateInstaller
 import me.him188.ani.app.ui.exprovider.ExternalContentProviderFactory
 import me.him188.ani.app.videoplayer.media.LibassExoPlayerMediampPlayerFactory
+import me.him188.ani.app.videoplayer.media.PlaybackProxyConfig
 import me.him188.ani.torrent.offline.OfflineDownloadEngine
 import me.him188.ani.torrent.pikpak.PikPakCredentials
 import me.him188.ani.torrent.pikpak.PikPakOfflineDownloadEngine
@@ -206,12 +208,19 @@ fun getAndroidModules(
 
     single<MediampPlayerFactory<*>> {
         val videoScaffoldConfig = get<SettingsRepository>().videoScaffoldConfig
+        // 播放器不走 Ktor, 代理要自己接上来: 在线源的视频地址跟数据源接口一样常常需要代理才连得上
+        val playbackProxy = get<ProxyProvider>().proxy
+            .map { config -> config?.let { PlaybackProxyConfig.parse(it.url, it.authorization?.toHeader()) } }
+            .stateIn(coroutineScope, SharingStarted.Eagerly, null)
         MediampPlayerFactoryLoader.register(
-            LibassExoPlayerMediampPlayerFactory {
-                // 音频处理链在 ExoPlayer 构造时确定, 无法在已创建的播放器上切换.
-                // 工厂接口是同步的, 因此每次创建播放器时在此读取 DataStore 中的当前值.
-                runBlocking { videoScaffoldConfig.flow.first().enableHighQualityAudioTimeStretch }
-            },
+            LibassExoPlayerMediampPlayerFactory(
+                enableHighQualityAudioTimeStretch = {
+                    // 音频处理链在 ExoPlayer 构造时确定, 无法在已创建的播放器上切换.
+                    // 工厂接口是同步的, 因此每次创建播放器时在此读取 DataStore 中的当前值.
+                    runBlocking { videoScaffoldConfig.flow.first().enableHighQualityAudioTimeStretch }
+                },
+                proxyConfig = { playbackProxy.value },
+            ),
         )
         MediampPlayerSurfaceProviderLoader.register(ExoPlayerMediampPlayerSurfaceProvider())
         MediampPlayerFactoryLoader.first()
@@ -267,6 +276,7 @@ fun getAndroidModules(
                         get<MediaSourceManager>().webVideoMatcherLoader,
                         get<SettingsRepository>(),
                         get<WebSessionManager>(),
+                        get<ProxyProvider>(),
                     ),
                 ),
         )

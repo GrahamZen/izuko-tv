@@ -276,6 +276,7 @@ androidx-appcompat = { module = "androidx.appcompat:appcompat", version = "1.7.0
 androidx-material = { module = "com.google.android.material:material", version = "1.12.0" }
 #androidx-material3-window-size-class0 = { module = "androidx.compose.material3:material3-window-size-class", version = "1.2.1" }
 androidx-browser = { module = "androidx.browser:browser", version = "1.8.0" }
+androidx-webkit = { module = "androidx.webkit:webkit", version = "1.13.0" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 androidx-media = { module = "androidx.media:media", version = "1.7.0" }
@@ -298,6 +299,7 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidx-media3" }
 androidx-media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "androidx-media3" }
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "androidx-media3" }
+androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "androidx-media3" }
 # 取帧 (ExperimentalFrameExtractor): 内部起一个 ExoPlayer 把帧解到 GL 纹理再读回,
 # 因此支持 ExoPlayer 能播的一切 (含 HLS) —— 平台的 MediaMetadataRetriever 不支持 HLS
 androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidx-media3" }
