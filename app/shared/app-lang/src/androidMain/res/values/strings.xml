@@ -614,6 +614,8 @@
     <string name="search_tv_remote_input_caption">Scan to type on your phone</string>
     <string name="search_tv_filter_sort">Sort</string>
     <string name="search_tv_filter_rating_min">Minimum rating</string>
+    <string name="search_tv_filter_year">Year</string>
+    <string name="search_tv_filter_season">Season</string>
     <string name="search_tv_filter_any">Any</string>
     <string name="search_tv_filter_confirm">Apply</string>
     <string name="search_tv_filter_cancel">Cancel</string>

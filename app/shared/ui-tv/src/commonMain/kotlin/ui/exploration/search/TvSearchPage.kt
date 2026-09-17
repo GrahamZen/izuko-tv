@@ -126,6 +126,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -133,6 +134,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.models.schedule.AnimeSeason
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
@@ -219,10 +221,12 @@ import me.him188.ani.app.ui.lang.exploration_search_filter_emotion
 import me.him188.ani.app.ui.lang.exploration_search_filter_genre
 import me.him188.ani.app.ui.lang.exploration_search_filter_rating
 import me.him188.ani.app.ui.lang.exploration_search_filter_region
+import me.him188.ani.app.ui.lang.exploration_search_filter_season_all
 import me.him188.ani.app.ui.lang.exploration_search_filter_series
 import me.him188.ani.app.ui.lang.exploration_search_filter_setting
 import me.him188.ani.app.ui.lang.exploration_search_filter_source
 import me.him188.ani.app.ui.lang.exploration_search_filter_technology
+import me.him188.ani.app.ui.lang.exploration_search_filter_year_all
 import me.him188.ani.app.ui.lang.exploration_search_sort_collection
 import me.him188.ani.app.ui.lang.exploration_search_sort_date
 import me.him188.ani.app.ui.lang.exploration_search_sort_match
@@ -240,7 +244,9 @@ import me.him188.ani.app.ui.lang.search_tv_remote_reset
 import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_filter_rating_min
+import me.him188.ani.app.ui.lang.search_tv_filter_season
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
+import me.him188.ani.app.ui.lang.search_tv_filter_year
 import me.him188.ani.app.ui.lang.search_tv_input_hint
 import me.him188.ani.app.ui.lang.search_tv_remote_hint
 import me.him188.ani.app.ui.lang.search_tv_results_all
@@ -416,6 +422,7 @@ fun TvSearchPage(
             // 输入态: 把还没提交的输入框文字一并带进去, 于是"关键词 + 标签"能一次确认
             query = if (showResults) state.query else state.query.copy(keywords = query.text.trim()),
             filterState = state.searchFilterState,
+            years = remember(state.seasons) { state.seasons.map { it.year }.distinct().sortedDescending() },
             onConfirm = { newQuery ->
                 showFilterDialog = false
                 if (showResults) {
@@ -533,7 +540,7 @@ fun TvSearchPage(
  * `SubjectSearchRepository.toSubjectSearchFilters`), 单选它就是全站排行榜.
  */
 private fun SubjectSearchQuery.willTriggerSearch(): Boolean =
-    keywords.isNotEmpty() || !tags.isNullOrEmpty() || season != null || rating != null ||
+    keywords.isNotEmpty() || !tags.isNullOrEmpty() || year != null || season != null || rating != null ||
             nsfw != null || sort == SearchSort.RANK
 
 // ============================ 输入态 ============================
@@ -2066,12 +2073,18 @@ private fun TvSearchActiveFilterChip(
 private fun TvSearchFilterDialog(
     query: SubjectSearchQuery,
     filterState: SearchFilterState,
+    /** 可选年份 (上游的番剧索引季度表, 见 SearchPageState.seasons); 空表示这一节不显示. */
+    years: List<Int>,
     onConfirm: (SubjectSearchQuery) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val selectedTags = remember { mutableStateMapOf<String, Boolean>().apply { query.tags.orEmpty().forEach { put(it, true) } } }
     var sort by remember { mutableStateOf(query.sort) }
     var minRating by remember { mutableStateOf(query.rating?.min) }
+    // 年份 / 季度: 上游在手机端做成了两个下拉 (SearchFilter.kt 的 YearFilterChip / SeasonFilterChip),
+    // 电视这边按本弹窗一贯的做法摊成胶囊分区 —— 下拉在遥控器上要多一层焦点, 而这里本来就是一屏可选项
+    var year by remember { mutableStateOf(query.year) }
+    var season by remember { mutableStateOf(query.season) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -2095,13 +2108,28 @@ private fun TvSearchFilterDialog(
                 )
                 val listState = rememberLazyListState()
                 val scope = rememberCoroutineScope()
-                // 焦点进入某分区时该分区吸附到列表顶 (分区标题与胶囊行同属一个 item,
-                // 默认 BringIntoView 只保证聚焦的胶囊可见, 上移导航时标题会留在视口外
-                // 永远露不出来; 吸附后标题总是完整可见, 同详情页区块吸附的行为)
+                // 焦点进入某分区时该分区吸附到列表顶: 分区标题与胶囊行同属一个 item, 默认 BringIntoView 只保证聚焦的
+                // 胶囊可见, 上移导航时标题会留在视口外永远露不出来; 吸附后标题总是完整可见 (同详情页区块吸附的行为).
+                // 吸附本身有三条约束, 都是踩出来的:
+                //
+                // 1. **只保留最后一次**: 连按向下时上一次的 animateScrollToItem 还没跑完又起一个, 两个动画抢同一个
+                //    滚动位置, 画面往回跳一下;
+                // 2. **已经贴在顶上就不动**: 省掉一次没必要的动画;
+                // 3. **比视口还高的分区不吸附**: 年份那一节胶囊多, FlowRow 折成好几行, 整节高过视口 —— 这时"把它的顶
+                //    拉到视口顶"与 Compose 自己的 bringIntoView (把焦点滚进视野) 方向相反, 你往下走到它的后几行,
+                //    吸附又把画面拽回这一节的开头, 就是"往下滚画面却跑上去". 快按必现、慢按看不出来, 因为慢按时
+                //    上一个动画已经跑完 (用户 2026-09-16). 这种分区交给默认的 bringIntoView 就好.
+                var snapJob by remember { mutableStateOf<Job?>(null) }
                 val sectionSnap: (index: Int) -> Modifier = { index ->
                     Modifier.onFocusChanged {
                         if (it.hasFocus) {
-                            scope.launch { runCatching { listState.animateScrollToItem(index) } }
+                            val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { v -> v.index == index }
+                            val viewport = listState.layoutInfo.viewportSize.height
+                            val tooTall = info != null && viewport > 0 && info.size > viewport
+                            if (!tooTall && (info == null || info.offset != 0)) {
+                                snapJob?.cancel()
+                                snapJob = scope.launch { runCatching { listState.animateScrollToItem(index) } }
+                            }
                         }
                     }
                 }
@@ -2140,6 +2168,55 @@ private fun TvSearchFilterDialog(
                             }
                         }
                     }
+                    if (years.isNotEmpty()) {
+                        item(key = "year") {
+                            TvSearchFilterSection(
+                                stringResource(Lang.search_tv_filter_year),
+                                modifier = sectionSnap(2),
+                            ) {
+                                TvSearchFilterChip(
+                                    text = stringResource(Lang.exploration_search_filter_year_all),
+                                    selected = year == null,
+                                    // 清年份连带清季度: 季度从属于年份 (同上游 withYearFilter)
+                                    onClick = { year = null; season = null },
+                                )
+                                years.forEach { y ->
+                                    TvSearchFilterChip(
+                                        text = y.toString(),
+                                        selected = year == y,
+                                        onClick = { if (year != y) season = null; year = y },
+                                    )
+                                }
+                            }
+                        }
+                        // 季度只在选了年份之后才出现: 没有年份时它整节都是无效选项, 在遥控器上是白占焦点位
+                        if (year != null) {
+                            item(key = "season") {
+                                TvSearchFilterSection(
+                                    stringResource(Lang.search_tv_filter_season),
+                                    modifier = sectionSnap(3),
+                                ) {
+                                    TvSearchFilterChip(
+                                        text = stringResource(Lang.exploration_search_filter_season_all),
+                                        selected = season == null,
+                                        onClick = { season = null },
+                                    )
+                                    AnimeSeason.entries.forEach { s ->
+                                        TvSearchFilterChip(
+                                            text = "Q${s.quarterNumber}",
+                                            selected = season == s,
+                                            onClick = { season = s },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    val tagSectionBase = when {
+                        years.isEmpty() -> 2
+                        year == null -> 3
+                        else -> 4
+                    }
                     items(
                         filterState.chips.size,
                         key = { "chip-$it" },
@@ -2147,7 +2224,7 @@ private fun TvSearchFilterDialog(
                         val chip = filterState.chips[chipIndex]
                         TvSearchFilterSection(
                             tvSearchFilterKindLabel(chip.kind),
-                            modifier = sectionSnap(2 + chipIndex),
+                            modifier = sectionSnap(tagSectionBase + chipIndex),
                         ) {
                             chip.values.forEach { value ->
                                 TvSearchFilterChip(
@@ -2175,6 +2252,8 @@ private fun TvSearchFilterDialog(
                                     tags = selectedTags.filterValues { it }.keys.toList().ifEmpty { null },
                                     sort = sort,
                                     rating = minRating?.let { RatingRange(it, null) },
+                                    year = year,
+                                    season = year?.let { season },
                                 ),
                             )
                         },
@@ -2357,8 +2436,9 @@ private val TV_SEARCH_HERO_TO_GRID_GAP = 16.dp
 
 
 /** 筛选弹窗宽/高占屏比例. */
-private const val TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION = 0.62f
-private const val TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION = 0.8f
+// 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行 (整节比视口还高, 见 sectionSnap 那里的说明)
+private const val TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION = 0.78f
+private const val TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION = 0.88f
 
 /**
  * 交给共享流水线/展示层的最小描述, 见 [TvHeroMediaSpec]. 封面兜底的隐藏门控在这里:
