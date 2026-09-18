@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.Icon
@@ -109,6 +110,8 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.TopAppBarActionButton
+import me.him188.ani.app.ui.foundation.focus.rememberTvEntryScrollGuard
+import me.him188.ani.app.ui.foundation.focus.tvEntryScrollGuard
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.main_network_check_failed
 import me.him188.ani.app.ui.login.EmailLoginStartScreen
@@ -311,7 +314,14 @@ private fun AniAppContentImpl(
     // 播放器画面) 优先: 已有焦点时这里不动作.
     // 弹窗/对话框 (独立窗口) 打开期间本窗口失去窗口焦点, 兜底自动暂停 ——
     // 不会与弹窗关闭后的焦点恢复逻辑竞争.
-    val navDisplayModifier = modifier.ifThen(LocalAniUiBehavior.current.focusDrivenNavigation) {
+    // 兜底送焦挑中的元素在首屏之外时, 焦点自带的 bring-into-view 会把画面拉走 —— 掐掉这条副作用,
+    // 见 [TvEntryScrollGuard]. 只在页面刚进来、用户还没按键之前生效.
+    val entryScrollGuard = rememberTvEntryScrollGuard(
+        entryKey = backStack.lastOrNull(),
+        enabled = LocalAniUiBehavior.current.focusDrivenNavigation,
+    )
+    val navDisplayModifier = modifier.tvEntryScrollGuard(entryScrollGuard)
+        .ifThen(LocalAniUiBehavior.current.focusDrivenNavigation) {
         val focusRequester = remember { FocusRequester() }
         var hasFocusInside by remember { mutableStateOf(false) }
         val windowInfo = LocalWindowInfo.current
@@ -369,456 +379,300 @@ private fun AniAppContentImpl(
         }
         onDispose { NavigationHooks.beforePush = null }
     }
-    NavDisplay(
-        backStack = backStack,
-        modifier = navDisplayModifier,
-        onBack = { aniNavigator.popBackStack() },
-        sceneStrategies = sceneStrategies,
-        entryDecorators = listOf(
-            // 让每个页面各自持有 rememberSaveable 状态和 ViewModel, 出栈时一并销毁
-            rememberSaveableStateHolderNavEntryDecorator(),
-            // **不能用库的 rememberViewModelStoreNavEntryDecorator**: 它在"条目内容离开组合"时就
-            // 销毁 per-entry 的 ViewModelStore, 而 Nav3 里被别的页面盖住同样会离开组合 —— 于是从
-            // 详情页返回时下层页面的 VM 全是新的: 搜索词丢了 (顶部空词 + "没有找到相关条目")、
-            // 追番页 tab 回默认、焦点落点对不上、主屏的启动/更新检查每次返回都重跑 (更新气泡反复弹)。
-            // 换成按返回栈判定的实现: 只有 key 真的不在栈里了才 clear。取证与判据见那个文件。
-            rememberBackStackAwareViewModelStoreNavEntryDecorator(backStack),
-            // 下发"本页是不是栈顶": 页面靠它在返回时补焦点落点. **不能用页面自己的 lifecycle** ——
-            // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
-            rememberPageForegroundNavEntryDecorator(backStack),
-        ),
-        // TV 详情页返回缩回列表页 hero (TvHeroZoomHandoff.Shrink): 两页都不做转场 —— 缩回那一层画在导航之上, 两页都不画,
-        // 详情页立刻移出组合 (那一帧落在缩回起步前的静止图上). 三条都判: 进页转场中途出栈时 Nav3 不一定按 pop 算
-        transitionSpec = {
-            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
-            else navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
-        },
-        popTransitionSpec = {
-            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
-            else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
-        },
-        predictivePopTransitionSpec = {
-            if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
-            else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
-        },
-        entryProvider = entryProvider {
-            entry<NavRoutes.EmailLoginStart> {
-                EmailLoginStartScreen(
-                    onOtpSent = {
-                        aniNavigator.navigateEmailLoginVerify()
-                    },
-                    onBangumiLoginClick = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
-                    onNavigateSettings = {
-                        aniNavigator.navigateSettings()
-                    },
-                    onNavigateBack = {
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
-                    },
-                    vm = emailLoginViewModel,
-                )
-            }
-            entry<NavRoutes.EmailLoginVerify> {
-                EmailLoginVerifyScreen(
-                    onSuccess = {
-                        aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
-                    },
-                    onBangumiLoginClick = {
-                        aniNavigator.navigateBangumiAuthorize()
-                    },
-                    onNavigateSettings = {
-                        aniNavigator.navigateSettings()
-                    },
-                    onNavigateBack = {
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                    },
-                    vm = emailLoginViewModel,
-                )
-            }
-            entry<NavRoutes.BangumiAuthorize> {
-                val vm = viewModel<BangumiAuthorizeViewModel> { BangumiAuthorizeViewModel() }
-                BangumiAuthorizeScreen(
-                    vm,
-                    onNavigateBack = {
-                        aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
-                    },
-                    onNavigateSettings = {
-                        aniNavigator.navigateSettings()
-                    },
-                    contactActions = {
-                        AniContactList()
-                    },
-                    onAuthorizeSuccess = {
-                        aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
-                        aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
-                    },
-                )
-            }
-            entry<NavRoutes.Main> { route ->
-                val navigationLayoutType =
-                    AniNavigationSuiteDefaults.calculateLayoutType(
-                        currentWindowAdaptiveInfo1(),
+    CompositionLocalProvider(
+        LocalBringIntoViewSpec provides (entryScrollGuard?.spec ?: LocalBringIntoViewSpec.current),
+    ) {
+        NavDisplay(
+            backStack = backStack,
+            modifier = navDisplayModifier,
+            onBack = { aniNavigator.popBackStack() },
+            sceneStrategies = sceneStrategies,
+            entryDecorators = listOf(
+                // 让每个页面各自持有 rememberSaveable 状态和 ViewModel, 出栈时一并销毁
+                rememberSaveableStateHolderNavEntryDecorator(),
+                // **不能用库的 rememberViewModelStoreNavEntryDecorator**: 它在"条目内容离开组合"时就
+                // 销毁 per-entry 的 ViewModelStore, 而 Nav3 里被别的页面盖住同样会离开组合 —— 于是从
+                // 详情页返回时下层页面的 VM 全是新的: 搜索词丢了 (顶部空词 + "没有找到相关条目")、
+                // 追番页 tab 回默认、焦点落点对不上、主屏的启动/更新检查每次返回都重跑 (更新气泡反复弹)。
+                // 换成按返回栈判定的实现: 只有 key 真的不在栈里了才 clear。取证与判据见那个文件。
+                rememberBackStackAwareViewModelStoreNavEntryDecorator(backStack),
+                // 下发"本页是不是栈顶": 页面靠它在返回时补焦点落点. **不能用页面自己的 lifecycle** ——
+                // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
+                rememberPageForegroundNavEntryDecorator(backStack),
+            ),
+            // TV 详情页返回缩回列表页 hero (TvHeroZoomHandoff.Shrink): 两页都不做转场 —— 缩回那一层画在导航之上, 两页都不画,
+            // 详情页立刻移出组合 (那一帧落在缩回起步前的静止图上). 三条都判: 进页转场中途出栈时 Nav3 不一定按 pop 算
+            transitionSpec = {
+                if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+                else navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
+            },
+            popTransitionSpec = {
+                if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+                else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
+            },
+            predictivePopTransitionSpec = {
+                if (TvHeroZoomHandoff.shrinking) EnterTransition.None togetherWith ExitTransition.None
+                else navMotionScheme.popEnterTransition togetherWith navMotionScheme.popExitTransition
+            },
+            entryProvider = entryProvider {
+                entry<NavRoutes.EmailLoginStart> {
+                    EmailLoginStartScreen(
+                        onOtpSent = {
+                            aniNavigator.navigateEmailLoginVerify()
+                        },
+                        onBangumiLoginClick = {
+                            aniNavigator.navigateBangumiAuthorize()
+                        },
+                        onNavigateSettings = {
+                            aniNavigator.navigateSettings()
+                        },
+                        onNavigateBack = {
+                            aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
+                        },
+                        vm = emailLoginViewModel,
                     )
-
-                val vm = viewModel { MainScreenSharedViewModel() }
-                var currentPage by rememberSaveable { mutableStateOf(route.initialPage) }
-
-                // 从其他页面 (如详情页侧边栏、遥控器的「回到主界面」) 弹回主页时切到指定 tab:
-                // 弹回不会重建 Main, route.initialPage 不会重新生效, 故经进程级信标传递
-                // (Nav3 的栈里没有可挂东西的 entry, 见 MainPageRequest)
-                val requestedPage = MainPageRequest.pending
-                LaunchedEffect(requestedPage) {
-                    val page = requestedPage ?: return@LaunchedEffect
-                    currentPage = page
-                    MainPageRequest.pending = null
                 }
+                entry<NavRoutes.EmailLoginVerify> {
+                    EmailLoginVerifyScreen(
+                        onSuccess = {
+                            aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
+                        },
+                        onBangumiLoginClick = {
+                            aniNavigator.navigateBangumiAuthorize()
+                        },
+                        onNavigateSettings = {
+                            aniNavigator.navigateSettings()
+                        },
+                        onNavigateBack = {
+                            aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
+                        },
+                        vm = emailLoginViewModel,
+                    )
+                }
+                entry<NavRoutes.BangumiAuthorize> {
+                    val vm = viewModel<BangumiAuthorizeViewModel> { BangumiAuthorizeViewModel() }
+                    BangumiAuthorizeScreen(
+                        vm,
+                        onNavigateBack = {
+                            aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
+                        },
+                        onNavigateSettings = {
+                            aniNavigator.navigateSettings()
+                        },
+                        contactActions = {
+                            AniContactList()
+                        },
+                        onAuthorizeSuccess = {
+                            aniNavigator.popBackStack(NavRoutes.BangumiAuthorize, true)
+                            aniNavigator.popBackStack(NavRoutes.EmailLoginVerify, true)
+                            aniNavigator.popBackStack(NavRoutes.EmailLoginStart, true)
+                        },
+                    )
+                }
+                entry<NavRoutes.Main> { route ->
+                    val navigationLayoutType =
+                        AniNavigationSuiteDefaults.calculateLayoutType(
+                            currentWindowAdaptiveInfo1(),
+                        )
 
-                val toaster = LocalToaster.current
-                val networkCheckFailedMessage = stringResource(Lang.main_network_check_failed)
-                LaunchedEffect(vm) {
-                    vm.networkCheckFailed.collect {
-                        toaster.toast(networkCheckFailedMessage)
+                    val vm = viewModel { MainScreenSharedViewModel() }
+                    var currentPage by rememberSaveable { mutableStateOf(route.initialPage) }
+
+                    // 从其他页面 (如详情页侧边栏、遥控器的「回到主界面」) 弹回主页时切到指定 tab:
+                    // 弹回不会重建 Main, route.initialPage 不会重新生效, 故经进程级信标传递
+                    // (Nav3 的栈里没有可挂东西的 entry, 见 MainPageRequest)
+                    val requestedPage = MainPageRequest.pending
+                    LaunchedEffect(requestedPage) {
+                        val page = requestedPage ?: return@LaunchedEffect
+                        currentPage = page
+                        MainPageRequest.pending = null
                     }
-                }
 
-                OverrideNavigation(
-                    {
-                        object : AniNavigator by it {
-                            override fun navigateMain(page: MainScreenPage, popUpTargetInclusive: NavRoutes?) {
-                                currentPage = page
-                            }
+                    val toaster = LocalToaster.current
+                    val networkCheckFailedMessage = stringResource(Lang.main_network_check_failed)
+                    LaunchedEffect(vm) {
+                        vm.networkCheckFailed.collect {
+                            toaster.toast(networkCheckFailedMessage)
                         }
-                    },
-                ) {
-                    val selfInfo by vm.selfInfo.collectAsState() // not -WithLifecycle
-                    MainScreen(
-                        page = currentPage,
-                        selfInfo = selfInfo,
-                        onNavigateToPage = { currentPage = it },
-                        onNavigateToSettings = { aniNavigator.navigateSettings(it) },
-                        onNavigateToSearch = { aniNavigator.navigateSubjectSearch() },
-                        navigationLayoutType = navigationLayoutType,
-                    )
-                }
-            }
-            entry<NavRoutes.SubjectSearch> { route ->
-                val navigator = LocalNavigator.current
-                val vm = viewModel(key = route.toString()) { SearchViewModel(route.toQuery()) }
+                    }
 
-                SearchScreen(
-                    vm,
-                    onNavigateBack = {
-                        aniNavigator.popBackStack()
-                    },
-                    onNavigateToSubjectDetails = { subjectId, placeholder ->
-                        navigator.navigateSubjectDetails(subjectId, placeholder)
-                    },
-                    onNavigateToEpisodeDetails = { subjectId, episodeId ->
-                        navigator.navigateEpisodeDetails(subjectId, episodeId)
-                    },
-                    windowInsets = windowInsets,
-                )
-            }
-            entry<NavRoutes.SubjectDetail>(
-                // TV 的放大转场 (TvHeroZoomHandoff): 列表页正画着目标条目的同一张图时, 详情页**不淡入** ——
-                // hero 背景本来就是不透明的, 放大过程不该有半透明的时候. 旧页照常按时长保留在下面.
-                // 其余情形与别的页面一样交叉淡入
-                metadata = NavDisplay.transitionSpec {
-                    val contentKey = targetState.entries.lastOrNull()?.contentKey
-                    val target = contentKey?.let { subjectDetailTarget(it) }
-                    // TV 叠放布局下判定已在入栈前做过 (放大的那种根本不走转场), 这里只看会话在不在, 不再新建
-                    val zoom = target != null && tvHeroZoomAllowed &&
-                            (if (tvZoomStack) TvHeroZoomHandoff.session?.subjectId == target else TvHeroZoomHandoff.willZoom(target))
-                    if (zoom) {
-                        // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
-                        TvHeroZoomHandoff.noteEntryKey(target, contentKey)
-                        // 不淡入 (详情页第一帧就满不透明). 但**不能用 EnterTransition.None**: 旧页那条 exit 是 alpha
-                        // 1 → 1 的"时长占位", 起止相同的动画 Compose 当作已完成, 撑不住转场 —— 原来是靠新页的淡入把
-                        // 转场撑满, 淡入一去掉, 转场下一帧就结束、旧页被移出组合 (2026-09-10 探针: 导航后 +171ms 列表页
-                        // hero retract), 而详情页的图 +357ms 才上屏, 中间两百毫秒整屏黑. 换成一条肉眼看不见、却真在跑的
-                        // scaleIn (0.9999 → 1, 纯变换不开离屏层) 撑住转场, 旧页一直留到详情页的图就位
-                        // 缓动恒为 1: 起止值不同, 转场照样按时长跑满; 而每一帧算出来的缩放恰好是 1f (插值在 fraction = 1
-                        // 时就是终点值), 整页全程是单位矩阵. 默认缓动下 700ms 里每帧一个 ≠1 的缩放, 整页每帧都要重画
-                        // (2026-09-13 Shield A/B, 按键后 250~1100ms: GPU 合计 1080p 255 → 192ms、4K 352 → 263ms, 少画 ~8 帧)
-                        scaleIn(tween(TV_HERO_ZOOM_NAV_HOLD_MILLIS, easing = { 1f }), initialScale = 0.9999f) togetherWith
-                            navMotionScheme.exitTransition
-                    } else {
-                        navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
-                    }
-                },
-            ) { route ->
-                val vm = viewModel<SubjectDetailsViewModel>(key = route.subjectId.toString()) {
-                    val placeholder = route.placeholder?.run {
-                        SubjectInfo.createPlaceholder(id, name, coverUrl, nameCN)
-                    }
-                    SubjectDetailsViewModel(route.subjectId, placeholder)
-                }
-                SubjectDetailsScreen(
-                    vm,
-                    onPlay = { aniNavigator.navigateEpisodeDetails(route.subjectId, it) },
-                    onLoadErrorRetry = { vm.reload() },
-                    onClickTag = {
-                        aniNavigator.navigateSubjectSearch(NavRoutes.SubjectSearch(tags = listOf(it.name)))
-                    },
-                    windowInsets = windowInsets,
-                    navigationIcon = {
-                        // 有硬件返回键的设备上不显示返回/主页按钮: 连按返回即可回到主页
-                        if (LocalAniUiBehavior.current.showBackNavigationButton) {
-                            Row {
-                                BackNavigationIconButton(
-                                    {
-                                        aniNavigator.popBackStack(route, inclusive = true)
-                                    },
-                                )
-                                TopAppBarActionButton(
-                                    {
-                                        aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
-                                    },
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.Home,
-                                        contentDescription = null,
-                                    )
+                    OverrideNavigation(
+                        {
+                            object : AniNavigator by it {
+                                override fun navigateMain(page: MainScreenPage, popUpTargetInclusive: NavRoutes?) {
+                                    currentPage = page
                                 }
                             }
-                        }
-                    },
-                )
-            }
-            entry<NavRoutes.EpisodeDetail> { route ->
-                val context = LocalContext.current
-                // route 里的 episodeId 是**进这一页时**那一集, 之后不会再变: 播放器内换集 (选集条 /
-                // 详情层 / 播完自动连播) 一律是就地 switchEpisode, 根本不导航.
-                //
-                // 而本页从更深的页面 (播放器里的"缓存"入口 -> 缓存管理) 返回时是整个重新组合的,
-                // 按 route 去认会话就与保留着的会话对不上 -> 热会话被销毁重建, 播放器**倒退回进来
-                // 那一集** (那一集的缓存要是刚在缓存页删掉, 紧接着还会报一次播放失败).
-                //
-                // 用 rememberSaveable 记"这一页此刻在播哪一集": 它随返回栈条目存活, 正好是"页面
-                // 实例"这个粒度 —— 从更深页面返回时恢复, 而换一集重新导航是新的条目, 不会串.
-                var pageEpisodeId by rememberSaveable { mutableIntStateOf(route.episodeId) }
-                val initializer: CreationExtras.() -> EpisodeViewModel = {
-                    EpisodeViewModel(
-                        subjectId = route.subjectId,
-                        initialEpisodeId = pageEpisodeId,
-                        initialIsFullscreen = false,
-                        context,
+                        },
+                    ) {
+                        val selfInfo by vm.selfInfo.collectAsState() // not -WithLifecycle
+                        MainScreen(
+                            page = currentPage,
+                            selfInfo = selfInfo,
+                            onNavigateToPage = { currentPage = it },
+                            onNavigateToSettings = { aniNavigator.navigateSettings(it) },
+                            onNavigateToSearch = { aniNavigator.navigateSubjectSearch() },
+                            navigationLayoutType = navigationLayoutType,
+                        )
+                    }
+                }
+                entry<NavRoutes.SubjectSearch> { route ->
+                    val navigator = LocalNavigator.current
+                    val vm = viewModel(key = route.toString()) { SearchViewModel(route.toQuery()) }
+
+                    SearchScreen(
+                        vm,
+                        onNavigateBack = {
+                            aniNavigator.popBackStack()
+                        },
+                        onNavigateToSubjectDetails = { subjectId, placeholder ->
+                            navigator.navigateSubjectDetails(subjectId, placeholder)
+                        },
+                        onNavigateToEpisodeDetails = { subjectId, episodeId ->
+                            navigator.navigateEpisodeDetails(subjectId, episodeId)
+                        },
+                        windowInsets = windowInsets,
                     )
                 }
-                val vm = if (playbackSessionHolder != null) {
-                    // 保留会话形态: VM 挂在应用级 holder 的会话上, 退出本页不销毁; 回到同一集
-                    // 拿回同一个会话 (状态自然接上), 换集则先销毁旧会话再建新的 —— 先销后建,
-                    // 不让两个播放器同时在场. 这些都在 openSession 里, 见该函数.
-                    //
-                    // 会话必须 remember 住而不是每次重组重新问 holder 要:
-                    // viewModel(viewModelStoreOwner = …) 自己没有 remember, 每次重组都会重新读一遍
-                    // owner 的 store. 本页退场动画期间 holder 的当前会话可能已经是下一集了, 那时
-                    // 重组一次就会在新会话的空 store 里凭空建出第二个 EpisodeViewModel (第二个播放器).
-                    // 一个会话的 store 里恒定只有一个 VM, 所以这里也不需要 key.
-                    val session = remember(playbackSessionHolder, route) {
-                        playbackSessionHolder.openSession(route.subjectId, pageEpisodeId)
-                    }
-                    // 会话换集后同步回本页: 下次重新组合 (从缓存页返回) 才认得回同一个会话.
-                    // session.info 是 snapshot state, snapshotFlow 在这里是成立的
-                    LaunchedEffect(session) {
-                        snapshotFlow { session.info.episodeId }
-                            .collect { if (it > 0) pageEpisodeId = it }
-                    }
-                    viewModel<EpisodeViewModel>(
-                        viewModelStoreOwner = session,
-                        initializer = initializer,
-                    ).also { vm ->
-                        // 上报本页组合的存活: holder 据此决定当前会话是哪一个, 以及被替换掉的
-                        // 那个能不能销毁 (它的界面还在退场动画里时不能, 见 RetainedPlaybackSessionHolder)
-                        DisposableEffect(session, vm) {
-                            playbackSessionHolder.onPageComposed(session, vm)
-                            onDispose { playbackSessionHolder.onPageDisposed(session) }
-                        }
-                    }
-                } else {
-                    viewModel<EpisodeViewModel>(key = route.toString(), initializer = initializer)
-                }
-                EpisodeScreen(vm, Modifier.fillMaxSize(), windowInsets)
-            }
-            entry<NavRoutes.Settings> { route ->
-                SettingsScreen(
-                    viewModel {
-                        SettingsViewModel()
-                    },
-                    onNavigateToEmailLogin = { aniNavigator.navigateEmailLoginStart() },
-                    onNavigateToBangumiOAuth = { aniNavigator.navigateBangumiAuthorize() },
-                    loadOpenSourceLibrariesJsons = {
-                        listOf(
-                            Res.readBytes("files/aboutlibraries.json"),
-                            Res.readBytes("files/additional_libraries.json"),
-                        )
-                    },
-                    // 本页可以被**长按**开出来 (遥控器动作面板里长按服务连通那一行 → 代理设置),
-                    // 那时用户的手还没松: 残余的连发 KeyDown + KeyUp 会落在刚拿到焦点的第一项设置上,
-                    // 表现成"页面刚开就自己点了一下". 短按进来挂着它同样安全 (见该 modifier 的文档).
-                    Modifier.fillMaxSize().consumeHeldConfirmKey(),
-                    route.tab,
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                )
-            }
-            entry<NavRoutes.PlaybackHistory> { route ->
-                PlaybackHistoryScreen(
-                    vm = viewModel { PlaybackHistoryViewModel() },
-                    onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
-                    onOpenHistory = { history ->
-                        val subjectId = history.subjectId
-                        if (subjectId != null) {
-                            aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
+                entry<NavRoutes.SubjectDetail>(
+                    // TV 的放大转场 (TvHeroZoomHandoff): 列表页正画着目标条目的同一张图时, 详情页**不淡入** ——
+                    // hero 背景本来就是不透明的, 放大过程不该有半透明的时候. 旧页照常按时长保留在下面.
+                    // 其余情形与别的页面一样交叉淡入
+                    metadata = NavDisplay.transitionSpec {
+                        val contentKey = targetState.entries.lastOrNull()?.contentKey
+                        val target = contentKey?.let { subjectDetailTarget(it) }
+                        // TV 叠放布局下判定已在入栈前做过 (放大的那种根本不走转场), 这里只看会话在不在, 不再新建
+                        val zoom = target != null && tvHeroZoomAllowed &&
+                                (if (tvZoomStack) TvHeroZoomHandoff.session?.subjectId == target else TvHeroZoomHandoff.willZoom(target))
+                        if (zoom) {
+                            // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)
+                            TvHeroZoomHandoff.noteEntryKey(target, contentKey)
+                            // 不淡入 (详情页第一帧就满不透明). 但**不能用 EnterTransition.None**: 旧页那条 exit 是 alpha
+                            // 1 → 1 的"时长占位", 起止相同的动画 Compose 当作已完成, 撑不住转场 —— 原来是靠新页的淡入把
+                            // 转场撑满, 淡入一去掉, 转场下一帧就结束、旧页被移出组合 (2026-09-10 探针: 导航后 +171ms 列表页
+                            // hero retract), 而详情页的图 +357ms 才上屏, 中间两百毫秒整屏黑. 换成一条肉眼看不见、却真在跑的
+                            // scaleIn (0.9999 → 1, 纯变换不开离屏层) 撑住转场, 旧页一直留到详情页的图就位
+                            // 缓动恒为 1: 起止值不同, 转场照样按时长跑满; 而每一帧算出来的缩放恰好是 1f (插值在 fraction = 1
+                            // 时就是终点值), 整页全程是单位矩阵. 默认缓动下 700ms 里每帧一个 ≠1 的缩放, 整页每帧都要重画
+                            // (2026-09-13 Shield A/B, 按键后 250~1100ms: GPU 合计 1080p 255 → 192ms、4K 352 → 263ms, 少画 ~8 帧)
+                            scaleIn(tween(TV_HERO_ZOOM_NAV_HOLD_MILLIS, easing = { 1f }), initialScale = 0.9999f) togetherWith
+                                navMotionScheme.exitTransition
+                        } else {
+                            navMotionScheme.enterTransition togetherWith navMotionScheme.exitTransition
                         }
                     },
-                    onOpenSyncStatus = {
-                        aniNavigator.navigatePlaybackHistorySyncStatus()
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    windowInsets = windowInsetsWithoutTitleBar,
-                )
-            }
-            entry<NavRoutes.PlaybackHistorySyncStatus> { route ->
-                PlaybackHistorySyncStatusScreen(
-                    vm = viewModel { PlaybackHistoryViewModel() },
-                    onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    windowInsets = windowInsetsWithoutTitleBar,
-                )
-            }
-            entry<NavRoutes.BangumiMerge> { route ->
-                BangumiMergeScreen(
-                    vm = viewModel { BangumiMergeViewModel() },
-                    onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    windowInsets = windowInsetsWithoutTitleBar,
-                )
-            }
-            entry<NavRoutes.Caches> { route ->
-                val selfInfo by remember { SelfInfoStateProducer() }.flow.collectAsState(null)
-                CacheManagementScreen(
-                    vm = viewModel { CacheManagementViewModel() },
-                    selfInfo = selfInfo,
-                    onPlay = {
-                        aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId)
-                    },
-                    onClickLogin = { },
-                    onNavigateCacheDetail = { aniNavigator.navigateCacheDetails(it) },
-                    modifier = Modifier.fillMaxSize(),
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                )
-            }
-            entry<NavRoutes.CacheDetail> { route ->
-                MediaCacheDetailsScreen(
-                    viewModel(key = route.toString()) { MediaCacheDetailsPageViewModel(route.cacheId) },
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    Modifier.fillMaxSize(),
-                    windowInsets = windowInsets,
-                )
-            }
-            entry<NavRoutes.PersonDetail> { route ->
-                val vm = viewModel<PersonDetailsViewModel>(key = "person-${route.personId}") {
-                    PersonDetailsViewModel(route.personId)
-                }
-                PersonDetailsScreen(
-                    vm,
-                    Modifier.fillMaxSize(),
-                    windowInsets = windowInsets,
-                    navigationIcon = {
-                        BackNavigationIconButton({ aniNavigator.popBackStack(route, inclusive = true) })
-                    },
-                )
-            }
-            entry<NavRoutes.CharacterDetail> { route ->
-                val vm = viewModel<CharacterDetailsViewModel>(key = "character-${route.characterId}") {
-                    CharacterDetailsViewModel(route.characterId)
-                }
-                CharacterDetailsScreen(
-                    vm,
-                    Modifier.fillMaxSize(),
-                    windowInsets = windowInsets,
-                    navigationIcon = {
-                        BackNavigationIconButton({ aniNavigator.popBackStack(route, inclusive = true) })
-                    },
-                )
-            }
-            entry<NavRoutes.SubjectCaches> { route ->
-                // Don't use rememberViewModel to save memory
-                // 采纳上游的组合级作用域 (它这次刻意收紧, 避免 detail pane 累积后台 collector).
-                val vm = rememberSubjectCacheViewModel(route.subjectId)
-                SubjectCacheScreen(
-                    vm,
-                    onPlay = { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId) },
-                    onNavigateCacheDetail = { aniNavigator.navigateCacheDetails(it) },
-                    modifier = Modifier.fillMaxSize(),
-                    windowInsets = windowInsets,
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                )
-            }
-            entry<NavRoutes.EditMediaSource> { route ->
-                val factoryId = FactoryId(route.factoryId)
-                val mediaSourceInstanceId = route.mediaSourceInstanceId
-                when (factoryId) {
-                    RssMediaSource.FactoryId -> EditRssMediaSourceScreen(
-                        viewModel<EditRssMediaSourceViewModel>(key = mediaSourceInstanceId) {
-                            EditRssMediaSourceViewModel(mediaSourceInstanceId)
+                ) { route ->
+                    val vm = viewModel<SubjectDetailsViewModel>(key = route.subjectId.toString()) {
+                        val placeholder = route.placeholder?.run {
+                            SubjectInfo.createPlaceholder(id, name, coverUrl, nameCN)
+                        }
+                        SubjectDetailsViewModel(route.subjectId, placeholder)
+                    }
+                    SubjectDetailsScreen(
+                        vm,
+                        onPlay = { aniNavigator.navigateEpisodeDetails(route.subjectId, it) },
+                        onLoadErrorRetry = { vm.reload() },
+                        onClickTag = {
+                            aniNavigator.navigateSubjectSearch(NavRoutes.SubjectSearch(tags = listOf(it.name)))
                         },
-                        mediaDetailsColumn = { media ->
-                            MediaDetailsLazyGrid(
-                                MediaDetails.from(media, null, null),
-                                Modifier.fillMaxSize(),
-                                showSourceInfo = false,
+                        windowInsets = windowInsets,
+                        navigationIcon = {
+                            // 有硬件返回键的设备上不显示返回/主页按钮: 连按返回即可回到主页
+                            if (LocalAniUiBehavior.current.showBackNavigationButton) {
+                                Row {
+                                    BackNavigationIconButton(
+                                        {
+                                            aniNavigator.popBackStack(route, inclusive = true)
+                                        },
+                                    )
+                                    TopAppBarActionButton(
+                                        {
+                                            aniNavigator.popBackOrNavigateToMain(mainSceneInitialPage)
+                                        },
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Home,
+                                            contentDescription = null,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+                entry<NavRoutes.EpisodeDetail> { route ->
+                    val context = LocalContext.current
+                    // route 里的 episodeId 是**进这一页时**那一集, 之后不会再变: 播放器内换集 (选集条 /
+                    // 详情层 / 播完自动连播) 一律是就地 switchEpisode, 根本不导航.
+                    //
+                    // 而本页从更深的页面 (播放器里的"缓存"入口 -> 缓存管理) 返回时是整个重新组合的,
+                    // 按 route 去认会话就与保留着的会话对不上 -> 热会话被销毁重建, 播放器**倒退回进来
+                    // 那一集** (那一集的缓存要是刚在缓存页删掉, 紧接着还会报一次播放失败).
+                    //
+                    // 用 rememberSaveable 记"这一页此刻在播哪一集": 它随返回栈条目存活, 正好是"页面
+                    // 实例"这个粒度 —— 从更深页面返回时恢复, 而换一集重新导航是新的条目, 不会串.
+                    var pageEpisodeId by rememberSaveable { mutableIntStateOf(route.episodeId) }
+                    val initializer: CreationExtras.() -> EpisodeViewModel = {
+                        EpisodeViewModel(
+                            subjectId = route.subjectId,
+                            initialEpisodeId = pageEpisodeId,
+                            initialIsFullscreen = false,
+                            context,
+                        )
+                    }
+                    val vm = if (playbackSessionHolder != null) {
+                        // 保留会话形态: VM 挂在应用级 holder 的会话上, 退出本页不销毁; 回到同一集
+                        // 拿回同一个会话 (状态自然接上), 换集则先销毁旧会话再建新的 —— 先销后建,
+                        // 不让两个播放器同时在场. 这些都在 openSession 里, 见该函数.
+                        //
+                        // 会话必须 remember 住而不是每次重组重新问 holder 要:
+                        // viewModel(viewModelStoreOwner = …) 自己没有 remember, 每次重组都会重新读一遍
+                        // owner 的 store. 本页退场动画期间 holder 的当前会话可能已经是下一集了, 那时
+                        // 重组一次就会在新会话的空 store 里凭空建出第二个 EpisodeViewModel (第二个播放器).
+                        // 一个会话的 store 里恒定只有一个 VM, 所以这里也不需要 key.
+                        val session = remember(playbackSessionHolder, route) {
+                            playbackSessionHolder.openSession(route.subjectId, pageEpisodeId)
+                        }
+                        // 会话换集后同步回本页: 下次重新组合 (从缓存页返回) 才认得回同一个会话.
+                        // session.info 是 snapshot state, snapshotFlow 在这里是成立的
+                        LaunchedEffect(session) {
+                            snapshotFlow { session.info.episodeId }
+                                .collect { if (it > 0) pageEpisodeId = it }
+                        }
+                        viewModel<EpisodeViewModel>(
+                            viewModelStoreOwner = session,
+                            initializer = initializer,
+                        ).also { vm ->
+                            // 上报本页组合的存活: holder 据此决定当前会话是哪一个, 以及被替换掉的
+                            // 那个能不能销毁 (它的界面还在退场动画里时不能, 见 RetainedPlaybackSessionHolder)
+                            DisposableEffect(session, vm) {
+                                playbackSessionHolder.onPageComposed(session, vm)
+                                onDispose { playbackSessionHolder.onPageDisposed(session) }
+                            }
+                        }
+                    } else {
+                        viewModel<EpisodeViewModel>(key = route.toString(), initializer = initializer)
+                    }
+                    EpisodeScreen(vm, Modifier.fillMaxSize(), windowInsets)
+                }
+                entry<NavRoutes.Settings> { route ->
+                    SettingsScreen(
+                        viewModel {
+                            SettingsViewModel()
+                        },
+                        onNavigateToEmailLogin = { aniNavigator.navigateEmailLoginStart() },
+                        onNavigateToBangumiOAuth = { aniNavigator.navigateBangumiAuthorize() },
+                        loadOpenSourceLibrariesJsons = {
+                            listOf(
+                                Res.readBytes("files/aboutlibraries.json"),
+                                Res.readBytes("files/additional_libraries.json"),
                             )
                         },
-                        Modifier,
-                        windowInsets,
+                        // 本页可以被**长按**开出来 (遥控器动作面板里长按服务连通那一行 → 代理设置),
+                        // 那时用户的手还没松: 残余的连发 KeyDown + KeyUp 会落在刚拿到焦点的第一项设置上,
+                        // 表现成"页面刚开就自己点了一下". 短按进来挂着它同样安全 (见该 modifier 的文档).
+                        Modifier.fillMaxSize().consumeHeldConfirmKey(),
+                        route.tab,
                         navigationIcon = {
                             BackNavigationIconButton(
                                 {
@@ -827,15 +681,157 @@ private fun AniAppContentImpl(
                             )
                         },
                     )
-
-                    SelectorMediaSource.FactoryId -> {
-                        val context = LocalContext.current
-                        EditSelectorMediaSourceScreen(
-                            viewModel<EditSelectorMediaSourceViewModel>(key = mediaSourceInstanceId) {
-                                EditSelectorMediaSourceViewModel(mediaSourceInstanceId, context)
+                }
+                entry<NavRoutes.PlaybackHistory> { route ->
+                    PlaybackHistoryScreen(
+                        vm = viewModel { PlaybackHistoryViewModel() },
+                        onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
+                        onOpenHistory = { history ->
+                            val subjectId = history.subjectId
+                            if (subjectId != null) {
+                                aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
+                            }
+                        },
+                        onOpenSyncStatus = {
+                            aniNavigator.navigatePlaybackHistorySyncStatus()
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                        windowInsets = windowInsetsWithoutTitleBar,
+                    )
+                }
+                entry<NavRoutes.PlaybackHistorySyncStatus> { route ->
+                    PlaybackHistorySyncStatusScreen(
+                        vm = viewModel { PlaybackHistoryViewModel() },
+                        onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
+                        modifier = Modifier.fillMaxSize(),
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                        windowInsets = windowInsetsWithoutTitleBar,
+                    )
+                }
+                entry<NavRoutes.BangumiMerge> { route ->
+                    BangumiMergeScreen(
+                        vm = viewModel { BangumiMergeViewModel() },
+                        onNavigateBack = { aniNavigator.popBackStack(route, inclusive = true) },
+                        modifier = Modifier.fillMaxSize(),
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                        windowInsets = windowInsetsWithoutTitleBar,
+                    )
+                }
+                entry<NavRoutes.Caches> { route ->
+                    val selfInfo by remember { SelfInfoStateProducer() }.flow.collectAsState(null)
+                    CacheManagementScreen(
+                        vm = viewModel { CacheManagementViewModel() },
+                        selfInfo = selfInfo,
+                        onPlay = {
+                            aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId)
+                        },
+                        onClickLogin = { },
+                        onNavigateCacheDetail = { aniNavigator.navigateCacheDetails(it) },
+                        modifier = Modifier.fillMaxSize(),
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                    )
+                }
+                entry<NavRoutes.CacheDetail> { route ->
+                    MediaCacheDetailsScreen(
+                        viewModel(key = route.toString()) { MediaCacheDetailsPageViewModel(route.cacheId) },
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                        Modifier.fillMaxSize(),
+                        windowInsets = windowInsets,
+                    )
+                }
+                entry<NavRoutes.PersonDetail> { route ->
+                    val vm = viewModel<PersonDetailsViewModel>(key = "person-${route.personId}") {
+                        PersonDetailsViewModel(route.personId)
+                    }
+                    PersonDetailsScreen(
+                        vm,
+                        Modifier.fillMaxSize(),
+                        windowInsets = windowInsets,
+                        navigationIcon = {
+                            BackNavigationIconButton({ aniNavigator.popBackStack(route, inclusive = true) })
+                        },
+                    )
+                }
+                entry<NavRoutes.CharacterDetail> { route ->
+                    val vm = viewModel<CharacterDetailsViewModel>(key = "character-${route.characterId}") {
+                        CharacterDetailsViewModel(route.characterId)
+                    }
+                    CharacterDetailsScreen(
+                        vm,
+                        Modifier.fillMaxSize(),
+                        windowInsets = windowInsets,
+                        navigationIcon = {
+                            BackNavigationIconButton({ aniNavigator.popBackStack(route, inclusive = true) })
+                        },
+                    )
+                }
+                entry<NavRoutes.SubjectCaches> { route ->
+                    // Don't use rememberViewModel to save memory
+                    // 采纳上游的组合级作用域 (它这次刻意收紧, 避免 detail pane 累积后台 collector).
+                    val vm = rememberSubjectCacheViewModel(route.subjectId)
+                    SubjectCacheScreen(
+                        vm,
+                        onPlay = { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId) },
+                        onNavigateCacheDetail = { aniNavigator.navigateCacheDetails(it) },
+                        modifier = Modifier.fillMaxSize(),
+                        windowInsets = windowInsets,
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                    )
+                }
+                entry<NavRoutes.EditMediaSource> { route ->
+                    val factoryId = FactoryId(route.factoryId)
+                    val mediaSourceInstanceId = route.mediaSourceInstanceId
+                    when (factoryId) {
+                        RssMediaSource.FactoryId -> EditRssMediaSourceScreen(
+                            viewModel<EditRssMediaSourceViewModel>(key = mediaSourceInstanceId) {
+                                EditRssMediaSourceViewModel(mediaSourceInstanceId)
+                            },
+                            mediaDetailsColumn = { media ->
+                                MediaDetailsLazyGrid(
+                                    MediaDetails.from(media, null, null),
+                                    Modifier.fillMaxSize(),
+                                    showSourceInfo = false,
+                                )
                             },
                             Modifier,
-                            windowInsets = windowInsets,
+                            windowInsets,
                             navigationIcon = {
                                 BackNavigationIconButton(
                                     {
@@ -844,54 +840,72 @@ private fun AniAppContentImpl(
                                 )
                             },
                         )
-                    }
 
-                    else -> error("Unknown factoryId: $factoryId")
+                        SelectorMediaSource.FactoryId -> {
+                            val context = LocalContext.current
+                            EditSelectorMediaSourceScreen(
+                                viewModel<EditSelectorMediaSourceViewModel>(key = mediaSourceInstanceId) {
+                                    EditSelectorMediaSourceViewModel(mediaSourceInstanceId, context)
+                                },
+                                Modifier,
+                                windowInsets = windowInsets,
+                                navigationIcon = {
+                                    BackNavigationIconButton(
+                                        {
+                                            aniNavigator.popBackStack(route, inclusive = true)
+                                        },
+                                    )
+                                },
+                            )
+                        }
+
+                        else -> error("Unknown factoryId: $factoryId")
+                    }
                 }
-            }
-            entry<NavRoutes.TorrentPeerSettings> { route ->
-                val viewModel = viewModel { PeerFilterSettingsViewModel() }
-                PeerFilterSettingsScreen(
-                    viewModel.state,
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                )
-            }
-            entry<NavRoutes.Schedule> { route ->
-                val vm = viewModel { ScheduleViewModel() }
-                val presentation by vm.presentationFlow.collectAsStateWithLifecycle()
-                ScheduleScreen(
-                    presentation,
-                    onRetry = { vm.refresh() },
-                    onClickItem = {
-                        aniNavigator.navigateSubjectDetails(
-                            it.subjectId,
-                            placeholder = SubjectDetailPlaceholder(
-                                id = it.subjectId,
-                                nameCN = it.subjectTitle,
-                                coverUrl = it.imageUrl,
-                            ),
-                        )
-                    },
-                    Modifier.fillMaxSize(),
-                    windowInsets = windowInsets,
-                    navigationIcon = {
-                        BackNavigationIconButton(
-                            {
-                                aniNavigator.popBackStack(route, inclusive = true)
-                            },
-                        )
-                    },
-                    state = vm.pageState,
-                )
-            }
-        },
-    )
+                entry<NavRoutes.TorrentPeerSettings> { route ->
+                    val viewModel = viewModel { PeerFilterSettingsViewModel() }
+                    PeerFilterSettingsScreen(
+                        viewModel.state,
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                    )
+                }
+                entry<NavRoutes.Schedule> { route ->
+                    val vm = viewModel { ScheduleViewModel() }
+                    val presentation by vm.presentationFlow.collectAsStateWithLifecycle()
+                    ScheduleScreen(
+                        presentation,
+                        onRetry = { vm.refresh() },
+                        onClickItem = {
+                            aniNavigator.navigateSubjectDetails(
+                                it.subjectId,
+                                placeholder = SubjectDetailPlaceholder(
+                                    id = it.subjectId,
+                                    nameCN = it.subjectTitle,
+                                    coverUrl = it.imageUrl,
+                                ),
+                            )
+                        },
+                        Modifier.fillMaxSize(),
+                        windowInsets = windowInsets,
+                        navigationIcon = {
+                            BackNavigationIconButton(
+                                {
+                                    aniNavigator.popBackStack(route, inclusive = true)
+                                },
+                            )
+                        },
+                        state = vm.pageState,
+                    )
+                }
+            },
+        )
+    }
 }
 
 /**
