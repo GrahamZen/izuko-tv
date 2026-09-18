@@ -329,11 +329,18 @@ fun TvSearchPage(
     val currentQuery by rememberUpdatedState(
         if (showResults) state.query else state.query.copy(keywords = query.text.trim()),
     )
+    // 季度表是 SearchViewModel 在 init 里异步拉的, 注册那一刻多半还是空的 —— 必须跟着重组更新,
+    // 直接在 DisposableEffect 里捕获 state 会把空列表钉死 (网页上年份那一节就永远不出现)
+    val currentYears by rememberUpdatedState(
+        state.seasons.map { it.year }.distinct().sortedDescending(),
+    )
     DisposableEffect(Unit) {
         TvRemoteControl.acquire()
         TvRemoteControl.currentQueryProvider = { currentQuery }
+        TvRemoteControl.currentYearsProvider = { currentYears }
         onDispose {
             TvRemoteControl.currentQueryProvider = null
+            TvRemoteControl.currentYearsProvider = null
             TvRemoteControl.release()
         }
     }

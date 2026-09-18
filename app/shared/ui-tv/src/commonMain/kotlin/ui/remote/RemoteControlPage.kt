@@ -1300,6 +1300,23 @@ private val SCRIPT = """
   var qInput = document.getElementById('q');
   var sugg = document.getElementById('sugg');
   var searchHistory = [];
+  // 季度从属年份, 跟电视筛选弹窗一致: 没选年份时整节藏起来 (首次渲染时服务端已按当前值定过一次)
+  function syncSeasonSection() {
+    var sec = document.getElementById('season-section');
+    if (!sec || !searchForm) return;
+    var picked = searchForm.querySelector('input[name=year]:checked');
+    var on = !!(picked && picked.value);
+    sec.hidden = !on;
+    if (!on) {
+      var none = searchForm.querySelector('input[name=season][value=""]');
+      if (none) none.checked = true;
+    }
+  }
+  if (searchForm) {
+    searchForm.addEventListener('change', function (e) {
+      if (e.target && e.target.name === 'year') syncSeasonSection();
+    });
+  }
   function loadHistory() {
     fetch('api/search/history')
       .then(function (r) { return r.json(); })
