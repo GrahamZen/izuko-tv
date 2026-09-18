@@ -63,6 +63,7 @@ import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.IOException
@@ -482,6 +483,40 @@ object TvRemoteControl {
     @Volatile
     var currentQueryProvider: (() -> SubjectSearchQuery)? = null
 
+    /**
+     * 搜索筛选里可选的年份, 由电视搜索页在场时注册 (同 [currentQueryProvider]).
+     *
+     * 年份表来自上游的番剧索引 (SearchPageState.seasons), 是异步取来的运行时数据, 手机这边
+     * 自己造一串年份没法保证跟电视一致 —— 取不到就不显示这一节.
+     */
+    var currentYearsProvider: (() -> List<Int>)? = null
+
+    /** 自己拉来的年份表; 季度一年才变四次, 拉到就整个进程复用. */
+    private var cachedSearchYears: List<Int>? = null
+
+    /**
+     * 搜索表单里可选的年份.
+     *
+     * 电视正在搜索页时直接用它那份 (ViewModel 已经拉好); 否则自己拉一次 —— 年份表原本**只有**搜索页的
+     * ViewModel 会在 init 里异步取, 而手机通常先于电视进搜索页打开控制台, 那一节就空着, 要等用户提交
+     * 一次搜索、电视进了搜索页、请求回来、再刷新网页才突然冒出来 (2026-09-17 用户实测约一分钟).
+     */
+    private suspend fun searchYears(): List<Int> {
+        currentYearsProvider?.invoke()?.takeIf { it.isNotEmpty() }?.let { return it }
+        cachedSearchYears?.let { return it }
+        val loaded = try {
+            // 首屏不能为它干等: 接口本身只要三四百毫秒, 超时就这次不显示, 下次请求再拿
+            withTimeoutOrNull(SEARCH_YEARS_TIMEOUT) {
+                KoinPlatform.getKoin().get<GetAnimeSeasonIdsFlowUseCase>()()
+                    .first().map { it.year }.distinct().sortedDescending()
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to load season ids for the web search form" }
+            null
+        }
+        return loaded?.also { cachedSearchYears = it }.orEmpty()
+    }
+
     /** 保留的播放会话 (播放页不在前台时, 网页上给「在电视上打开播放器」用); TV 根组合登记. */
     @Volatile
     var playbackSessionProvider: (() -> RetainedPlaybackSessionInfo?)? = null
@@ -827,7 +862,10 @@ object TvRemoteControl {
     private fun renderPage(): String {
         val base = currentQueryProvider?.invoke() ?: SubjectSearchQuery("")
         val (searchForm, requestSection) = runBlocking {
-            renderRemoteSearchForm(RemoteSearchFormValues.from(base)) to renderPlayerRequestSection()
+            renderRemoteSearchForm(
+                RemoteSearchFormValues.from(base),
+                searchYears(),
+            ) to renderPlayerRequestSection()
         }
         // 电视在播放页时默认打开「播放器」, 否则「搜索」; 网页地址里的 #player / #search 优先
         val initialTab = if (player != null) "player" else "search"
@@ -1279,6 +1317,9 @@ object TvRemoteControl {
     private val FRONT_STABLE = 1.seconds
 
     /** 进程起来后多久才允许起常驻服务 (避开冷启动的主线程排队, 见 syncKeepAlive). */
+    /** 首屏渲染最多为年份表等这么久, 见 searchYears; 接口本身只要三四百毫秒. */
+    private val SEARCH_YEARS_TIMEOUT = 3.seconds
+
     private val KEEP_ALIVE_START_DELAY = 20.seconds
 
     private const val UI_GONE_MESSAGE = "Ani 已退出，无法从手机打开。请先在电视上重新打开 Ani。开启「从手机打开 Ani」并完成授权后，下次可直接从手机打开。"
