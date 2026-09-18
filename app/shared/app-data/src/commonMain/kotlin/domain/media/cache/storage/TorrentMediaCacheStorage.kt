@@ -44,7 +44,6 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.time.Duration.Companion.minutes
 
 class TorrentMediaCacheStorage(
     override val mediaSourceId: String,
@@ -91,48 +90,27 @@ class TorrentMediaCacheStorage(
             while (true) {
                 select<Unit> {
                     // 如果在 APP 启动时 serviceConnected 状态变了, 忽略处理
-                    serviceConnected.onReceive { connected ->
+                    serviceConnected.onReceive {
                         if (!startupRestored.isCompleted) {
                             logger.warn { "Startup torrent cache restoration is not completed, skip restore on service connected." }
                             return@onReceive
                         }
-                        // 连上 = 服务刚重新起来, 会话随旧进程一起没了 —— 这是除启动外唯一能安全清扫的时机, 顺手把
-                        // 上一轮删剩的垃圾收掉 (删除当时目录常被同种子的别的集占着, 回收会被跳过, 以前只能等下次启动;
-                        // 开着「退出后保留」时进程不退, 就一直等不到).
-                        //
-                        // connected 会变 false 的三种情况:
-                        // 1. `onServiceDisconnected` —— 服务进程真的没了;
-                        // 2. Android 15+ 的前台服务超时 —— 服务在 `onTimeout` 里发广播的同时就 `stopSelf()` 了;
-                        // 3. 主进程被回收后由常驻服务拉起来 (新进程初始就是 false), 这时**服务进程可能还活着**.
-                        // 前两种旧会话确实没了; 第三种旧会话还在, 但它们对应的缓存记录也都还在 (记录是持久化的),
-                        // 于是都落在白名单里, 不会被删 —— 真正危险的"记录已删、会话还活着"在启动清扫里同样存在,
-                        // 不是这条路径独有的.
-                        if (connected) {
-                            try {
-                                // 启动那次刚扫完, 服务随即连上又来一次 —— 后一次必然什么都扫不到, 白白多一次遍历与删目录的机会
-                                if (System.currentTimeMillis() - lastSweepAtMillis < SWEEP_DEBOUNCE.inWholeMilliseconds) {
-                                    logger.debug { "Refreshing torrent caches on service connected (swept just now, skipping sweep)." }
-                                    refreshCache()
-                                } else {
-                                    refreshAndSweep("service restarted")
-                                }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                logger.error(e) { "Failed to sweep unused torrent caches after service restart" }
-                            }
-                        } else {
-                            logger.debug { "Refreshing torrent caches on service connection changed, connected: false." }
-                            refreshCache()
-                        }
+                        logger.debug { "Refreshing torrent caches on service connection changed, connected: $it." }
+                        refreshCache()
                     }
 
                     requestStartupRestore.onReceive {
+                        logger.debug { "Restoring persisted torrent caches on startup." }
                         // 启动恢复失败不能拖垮本循环: 异常逃出去会让这个协程直接死掉, 之后服务
                         // 重连也不再刷新缓存列表 (整个进程内缓存页都不会再更新). 也必须放行
                         // startupRestored —— 否则后续 refreshCache 会被永久挡住, 连重试的机会都没有.
                         try {
-                            refreshAndSweep("startup")
+                            lock.withLock {
+                                val allRecovered = refreshCacheLocked()
+                                // allRecovered 是恢复完成时的冻结快照. 清扫期间继续持 storage 锁,
+                                // 防止 cache() 在快照之后创建目录又被本次清扫当作垃圾删除.
+                                torrentEngine.deleteUnusedCaches(allRecovered)
+                            }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -149,29 +127,6 @@ class TorrentMediaCacheStorage(
     override suspend fun restorePersistedCaches() {
         requestStartupRestore.send(Unit)
     }
-
-    /**
-     * 恢复缓存列表, 顺带把磁盘上没人认领的种子目录收掉.
-     *
-     * **只能在"没有任何活跃会话引用那些目录"时调**. 现在只有两个这样的时机: app 启动, 和 torrent 服务进程重启后
-     * (会话随旧进程一起消失). 运行中随便扫会把活会话正在用的目录删掉, 会话随后把文件与 fastresume 重建成稀疏的,
-     * 之后重新缓存按内存里的 piece 状态秒判完成, 交出一个"显示已完成、一播就报 Source error"的坏文件
-     * —— 2026-09-15 真机踩过, 起因见 [TorrentMediaCacheEngine] `closeHandleAndReclaimDir` 的注释.
-     *
-     * 恢复出来的 `allRecovered` 是清扫的白名单 (冻结快照); 整段持 storage 锁, 防止 `cache()` 在快照之后新建的目录
-     * 被本次清扫当成垃圾删掉.
-     */
-    private suspend fun refreshAndSweep(reason: String) {
-        logger.debug { "Restoring torrent caches and sweeping unused ones ($reason)." }
-        lock.withLock {
-            val allRecovered = refreshCacheLocked()
-            torrentEngine.deleteUnusedCaches(allRecovered)
-            lastSweepAtMillis = System.currentTimeMillis()
-        }
-    }
-
-    /** 上次清扫的时刻, 见 [SWEEP_DEBOUNCE]. */
-    private var lastSweepAtMillis = 0L
 
     private suspend fun refreshCacheLocked(): List<MediaCache> {
         statSubscriptionScope.restart()
@@ -281,11 +236,6 @@ class TorrentMediaCacheStorage(
         torrentEngine.close()
         statSubscriptionScope.close()
         super.close()
-    }
-
-    private companion object {
-        /** 这么短的时间内不重复清扫: app 启动扫一次, 紧接着服务连上会再来一次, 后一次必然是空跑. */
-        private val SWEEP_DEBOUNCE = 2.minutes
     }
 
 }
