@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -42,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.ui.foundation.OutlinedTag
+import me.him188.ani.app.ui.foundation.AniSelectionContainer
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
@@ -155,7 +155,10 @@ fun SubjectSummarySection(
     var expanded by rememberSaveable { mutableStateOf(false) }
     var hasOverflow by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
-        SelectionContainer {
+        // AniSelectionContainer 而不是裸 SelectionContainer: 后者的 modifier 里带着 .focusable(),
+        // 遥控器上每一块可选文本都成了一个焦点停靠点 —— 而"选文本"这件事在遥控器上根本做不到.
+        // 焦点驱动形态下它退化成普通 Box, 手机/桌面不变.
+        AniSelectionContainer {
             Text(
                 summary,
                 Modifier.fillMaxWidth().clickable { expanded = !expanded },

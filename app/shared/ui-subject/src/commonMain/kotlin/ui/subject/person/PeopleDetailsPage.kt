@@ -77,6 +77,7 @@ import me.him188.ani.app.ui.foundation.theme.LocalAppChromeHazeState
 import me.him188.ani.app.ui.foundation.theme.appChromeFrostedGlass
 import me.him188.ani.app.ui.foundation.theme.appChromeHazeSource
 import me.him188.ani.app.ui.foundation.theme.isAppChromeFrostedGlassActive
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.person_details_basic_info
 import me.him188.ani.app.ui.lang.person_details_casts
@@ -204,6 +205,10 @@ private fun PeopleDetailsScaffold(
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val layoutParams = SubjectDetailsLayoutParams.calculate(maxWidth)
+        // 简介为空的人物 (冷门条目常见) 中栏顶部仍然没有焦点目标, 那就退而落在左栏大图上 —— 它同样在
+        // 首屏顶部, 而且本来就可点 (放大看图). 两处只能有一个, 否则两个请求互相抢.
+        val entryFocusOnSidebarImage =
+            LocalAniUiBehavior.current.focusDrivenNavigation && summary.isBlank()
         val scrollState = rememberScrollState()
         val density = LocalDensity.current
         // 页内标题滚出可视区后切换到粘性标题栏 (M3), 与条目详情多栏一致.
@@ -321,6 +326,10 @@ private fun PeopleDetailsScaffold(
                                             Modifier
                                         },
                                     )
+                                    // 没有简介时这张图就是进页落点 (见中栏顶部块那处的说明)
+                                    .ifThen(entryFocusOnSidebarImage && onClickSidebarImage != null) {
+                                        tvWindowInitialFocus()
+                                    }
                                     .placeholder(isPlaceholder),
                             ) {
                                 AsyncImage(
@@ -366,7 +375,20 @@ private fun PeopleDetailsScaffold(
                             ) {
                                 titleBlock(isPlaceholder)
                                 if (summary.isNotBlank()) {
-                                    SubjectSummarySection(summary)
+                                    // **进页落点**. 本页是从移动端迁过来的, 原先没有落点, 焦点由 AniAppContent
+                                    // 的全局兜底按几何挑一个送进来 —— 而这一页在数据到达前中栏**一个焦点目标都
+                                    // 没有** (标题块是纯文字; 出演 / 作品两条在 `itemCount == 0` 时整块 return),
+                                    // 只有页底的评论区恒有一个"查看全部". 于是兜底只能挑它, 表现就是"进页看不到
+                                    // 焦点框 (它在视口外), 一按下键画面瞬间跳到最底下" (用户 2026-09-17).
+                                    //
+                                    // 落点挂在**简介**上而不是外层那个 Column: 请求悬挂到锚点附着事件, 挂在恒在的
+                                    // 容器上会在数据到达前就被消化掉 (那一刻它进不去任何子节点, 失败且不会重来),
+                                    // 挂在"数据到了才组合"的节点上才正好赶上. 简介落焦还会触发上面那个
+                                    // animateScrollTo(0), 画面一并回到顶部.
+                                    SubjectSummarySection(
+                                        summary,
+                                        Modifier.ifThen(focusDriven) { tvWindowInitialFocus() },
+                                    )
                                 }
                             }
                             centerStrips()
