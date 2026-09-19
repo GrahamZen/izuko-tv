@@ -220,6 +220,7 @@ fun EpisodeDetails(
     loadError: EpisodePageLoadError?,
     onRetryLoad: () -> Unit,
     modifier: Modifier = Modifier,
+    defaultFetchRequest: MediaFetchRequest? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
     danmakuListState: DanmakuListState? = null,
     /**
