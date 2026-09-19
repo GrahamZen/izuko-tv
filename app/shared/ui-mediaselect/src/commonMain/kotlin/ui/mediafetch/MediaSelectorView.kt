@@ -126,6 +126,10 @@ fun MediaSelectorView(
     onClickItem: (Media) -> Unit = { state.select(it) },
     singleLineFilter: Boolean = false,
     scrollable: Boolean = true,
+    /**
+     * 由 Bangumi 信息生成、未套用用户改动的请求, 供编辑对话框里「恢复 Bangumi 名称」用.
+     */
+    defaultFetchRequest: MediaFetchRequest? = null,
 ) {
     val bringIntoViewRequesters = remember { mutableStateMapOf<Media, BringIntoViewRequester>() }
     val presentation by state.presentationFlow.collectAsStateWithLifecycle()
@@ -148,6 +152,7 @@ fun MediaSelectorView(
                     onFetchRequestChange(it)
                     showEditRequest = false
                 },
+                defaultFetchRequest = defaultFetchRequest,
             )
         }
 
