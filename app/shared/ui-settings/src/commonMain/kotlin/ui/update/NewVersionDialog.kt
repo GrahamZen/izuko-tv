@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.lang.Lang
@@ -107,7 +108,13 @@ fun NewVersionPopupCard(
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = change,
+                            // 卡片没有高度上限也不滚动 (见 BasicNotificationPopupCard), 一条长文案能排出
+                            // 十几行, 把下面的按钮整个顶出屏幕 (用户 2026-09-18)。气泡本来就是摘要 ——
+                            // 完整内容在"查看详情"弹窗里, 这里截断正好
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyLarge,
+                            maxLines = UPDATE_POPUP_CHANGE_MAX_LINES,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -117,12 +124,23 @@ fun NewVersionPopupCard(
                         text = stringResource(Lang.settings_update_popup_feedback_group_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = UPDATE_POPUP_CHANGE_MAX_LINES,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
         },
     )
 }
+
+/**
+ * 气泡里每条更新说明的行数上限.
+ *
+ * 气泡宽 280~380dp ([BasicNotificationPopupCard] 的 widthIn), 一条带括号补充的长文案能排十几行;
+ * 而卡片是 Column 直接摞 标题 / 说明 / 按钮, **没有高度上限也不滚动**, 于是按钮被顶出屏幕。
+ * 取 2 行: 380dp 下约三十个汉字, 够说清是什么改动, 细节交给"查看详情"。
+ */
+private const val UPDATE_POPUP_CHANGE_MAX_LINES = 2
 
 @Composable
 fun BasicNotificationPopupCard(
