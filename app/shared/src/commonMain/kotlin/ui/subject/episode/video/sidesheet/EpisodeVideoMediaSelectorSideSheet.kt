@@ -57,7 +57,12 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
     onRefresh: () -> Unit,
     onRestartSource: (instanceId: String) -> Unit,
     modifier: Modifier = Modifier,
-    /** 选中一个数据源后是否顺手关掉本面板, 见 `VideoScaffoldConfig.hideSelectorOnSelect`. */
+    defaultFetchRequest: MediaFetchRequest? = null,
+    /**
+     * 选中一个数据源后是否顺手关掉本面板, 见 `VideoScaffoldConfig.hideSelectorOnSelect`.
+     *
+     * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
+     */
     hideOnSelect: Boolean = false,
 ) {
     val selectMediaSourceText = stringResource(Lang.subject_episode_select_media_source)
@@ -82,7 +87,8 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
             mediaSourceResultListPresentation,
             onRestartSource = onRestartSource,
             onRefresh,
-            modifier.padding(horizontal = 16.dp)
+            defaultFetchRequest = defaultFetchRequest,
+            modifier = modifier.padding(horizontal = 16.dp)
                 .fillMaxWidth()
                 .navigationBarsPadding(),
             stickyHeaderBackgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh,

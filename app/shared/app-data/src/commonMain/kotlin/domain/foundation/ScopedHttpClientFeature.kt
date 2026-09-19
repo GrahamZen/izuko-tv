@@ -25,8 +25,10 @@ import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.plugin
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
+import io.ktor.util.AttributeKey
 import io.ktor.util.appendIfNameAbsent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -121,7 +123,30 @@ object UserAgentFeatureHandler :
             ScopedHttpClientUserAgent.BROWSER -> config.BrowserUserAgent()
         }
     }
+
+    /**
+     * 让单个请求能覆盖 client 的 UA (见 [RequestUserAgentAttribute]).
+     *
+     * 必须在发送阶段做: client 的 UA 是 `append` 上去的, 在请求构造时写只会得到两个值用逗号连起来
+     * (`设备UA,固定UA`) —— 既没去掉固定值, 又多了一个更扎眼的特征.
+     */
+    override fun applyToClient(client: HttpClient, value: ScopedHttpClientUserAgent) {
+        client.plugin(HttpSend).intercept { request ->
+            request.attributes.getOrNull(RequestUserAgentAttribute)?.let { ua ->
+                request.headers[HttpHeaders.UserAgent] = ua
+            }
+            execute(request)
+        }
+    }
 }
+
+/**
+ * 单个请求指定的 User-Agent, 覆盖 client 默认值.
+ *
+ * client 默认的浏览器 UA 是写死的常量, 每台设备一模一样, 站点按它就能认出这个应用的全部用户.
+ * 打接口 (而不是解析页面) 的数据源可以借此换成本机浏览器的真实 UA.
+ */
+val RequestUserAgentAttribute = AttributeKey<String>("AniRequestUserAgent")
 
 enum class ScopedHttpClientUserAgent {
     ANI,

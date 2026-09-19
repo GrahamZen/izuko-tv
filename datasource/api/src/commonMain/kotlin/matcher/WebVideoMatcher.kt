@@ -35,6 +35,24 @@ fun interface WebVideoMatcher { // SPI service load
     fun patchConfig(config: WebViewConfig): WebViewConfig = config
 }
 
+/**
+ * 可选能力: 不开浏览器, 直接请求站点自己的取流接口拿到视频地址.
+ *
+ * 由 [WebVideoMatcher] 的实现顺带实现 (`matcher as? WebVideoDirectResolver`). 之所以不加进
+ * [WebVideoMatcher] 本体: 它是 `fun interface`, 还通过 SPI (`ServiceLoader`) 加载 classpath 里的实现,
+ * 加方法会把那些实现全打挂.
+ *
+ * 解析器先试这个, 返回 `null` 再退回 WebView —— 没配置的源一律返回 `null`, 行为不变.
+ * 动机与配置方式见 `SelectorSearchConfig.ResolveVideoConfig`.
+ */
+interface WebVideoDirectResolver {
+    /**
+     * @param pageUrl 播放页地址 (即 `media.download.uri`)
+     * @return 取到的视频地址; `null` = 没配置 / 这个源用不了这条路, 调用方应退回 WebView
+     */
+    suspend fun resolveDirectly(pageUrl: String, context: WebVideoMatcherContext): WebVideo?
+}
+
 data class WebViewConfig(
     val cookies: List<String> = emptyList(),
 ) {
