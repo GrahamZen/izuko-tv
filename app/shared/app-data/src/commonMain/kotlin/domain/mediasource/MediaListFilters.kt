@@ -44,6 +44,17 @@ object MediaListFilters {
 
             fun fuzzyMatches() = StringMatcher.calculateMatchRate(originalTitle, subjectName) >= 80
 
+            // 季号在名字里的位置各家不同: bangumi 是 "无职转生 第三季 ～到了异世界就拿出真本事～",
+            // 而不少站点与发布组是 "无职转生～到了异世界就拿出真本事～第三季". 字一样只是顺序不同,
+            // 直接比会被当成两个番 (上面那对的编辑距离 6/18, 匹配率只有 66). 两边都把季号挪到末尾再比一次.
+            fun seasonAgnosticMatches(): Boolean {
+                val movedTitle = moveSeasonMarkerToEnd(originalTitle)
+                val movedSubjectName = moveSeasonMarkerToEnd(subjectName)
+                if (movedTitle == originalTitle && movedSubjectName == subjectName) return false
+                return movedTitle.contains(movedSubjectName, ignoreCase = true) ||
+                        StringMatcher.calculateMatchRate(movedTitle, movedSubjectName) >= 80
+            }
+
 //            println(
 //                when {
 //                    exactlyContains() -> "'$originalTitle' included because exactlyContains()"
@@ -55,9 +66,22 @@ object MediaListFilters {
 //                    else -> {}
 //                },
 //            )
-            exactlyContains() || fuzzyMatches()
+            exactlyContains() || fuzzyMatches() || seasonAgnosticMatches()
         }
     }
+
+    /**
+     * 把 "第3季" 这类季号挪到名字末尾, 消除各站命名顺序的差异. 没有季号或季号已在末尾时原样返回.
+     *
+     * 名字在这一步之前已经过 [removeSpecials] (replaceNumbers = true), 所以中文数字已经是阿拉伯数字.
+     */
+    internal fun moveSeasonMarkerToEnd(name: String): String {
+        val match = SEASON_MARKER.find(name) ?: return name
+        if (match.range.last == name.lastIndex) return name
+        return name.removeRange(match.range) + match.value
+    }
+
+    private val SEASON_MARKER = Regex("第[0-9]+[季期部]")
 
     val ContainsEpisodeSort = BasicMediaListFilter { media ->
         val range = media.episodeRange ?: return@BasicMediaListFilter false
