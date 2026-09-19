@@ -64,6 +64,7 @@ import me.him188.ani.app.data.models.episode.nameOrNameCn
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
 import me.him188.ani.app.data.models.player.playProgressByEpisodeId
 import me.him188.ani.app.data.models.preference.SkipOpEdMode
+import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.parseMpvOptions
@@ -78,6 +79,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCommentRepository
 import me.him188.ani.app.data.repository.media.ManualBrowseMemory
 import me.him188.ani.app.data.repository.media.ManualBrowseMemoryRepository
+import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
@@ -107,6 +109,7 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
+import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
@@ -265,6 +268,10 @@ data class EpisodePageState(
     val matchingDanmakuPresenter: MatchingDanmakuPresenter?,
     val matchingDanmakuUiState: MatchingDanmakuUiState?,
     val fetchRequest: MediaFetchRequest?,
+    /**
+     * 由 Bangumi 信息直接生成、未套用用户改动的请求; 编辑对话框用它做「恢复 Bangumi 名称」.
+     */
+    val defaultFetchRequest: MediaFetchRequest?,
     val shareData: MediaShareData,
 )
 
@@ -326,6 +333,7 @@ open class EpisodeViewModel(
     private val getMediaSelectorSettings: GetMediaSelectorSettingsUseCase by inject()
     private val getMediaSourceInstances: GetMediaSourceInstancesUseCase by inject()
     private val selectorEpisodeCacheRepository: SelectorMediaSourceEpisodeCacheRepository by inject()
+    private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
     val setEpisodeCollectionType: SetEpisodeCollectionTypeUseCase by inject()
     private val getSubjectRecommendations: GetSubjectRecommendationUseCase by inject()
     private val getDanmakuRegexFilterListFlowUseCase: GetDanmakuRegexFilterListFlowUseCase by inject()
@@ -1197,6 +1205,9 @@ open class EpisodeViewModel(
                 fetchRequest = fetchSelect?.mediaFetchSession?.latestRequest?.first()?.let { request ->
                     subjectEpisodeBundle?.episodeInfo?.let { request.withCurrentEpisode(it) } ?: request
                 },
+                defaultFetchRequest = subjectEpisodeBundle?.let {
+                    MediaFetchRequest.create(it.subjectCollectionInfo.subjectInfo, it.episodeCollectionInfo.episodeInfo)
+                },
                 shareData = shareData,
             )
         }
@@ -1564,6 +1575,15 @@ open class EpisodeViewModel(
 
     fun updateFetchRequest(request: MediaFetchRequest) {
         launchInBackground {
+            // 条目级的搜索名按条目记住, 下一集与下次进页都用它; 与 Bangumi 名字一致时清掉记录.
+            // 分集字段每集不同, 只作用于本次会话
+            pageState.value?.defaultFetchRequest?.let { default ->
+                episodePreferencesRepository.setSearchKeywords(
+                    subjectId,
+                    SubjectSearchKeywords(request.subjectNames)
+                        .takeIf { request.subjectNames != default.subjectNames },
+                )
+            }
             // 编辑查询条件后会重启所有源的搜索, 同样清除本条目的 web 源搜索缓存
             selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
             fetchPlayState.episodeSessionFlow
