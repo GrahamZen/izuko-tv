@@ -98,6 +98,7 @@ import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
 import me.him188.ani.app.domain.foundation.DefaultVersionExpiryService
+import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
 import me.him188.ani.app.domain.foundation.DistributionChannelFeatureHandler
 import me.him188.ani.app.domain.foundation.GlobalHttpEventBus
 import me.him188.ani.app.domain.foundation.GlobalHttpEvents
@@ -193,6 +194,9 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             coroutineScope,
         )
     }
+    // 数据源发请求时用得到本机浏览器 UA; 数据源由工厂创建拿不到 Context, 在这里装进去
+    DeviceBrowserUserAgentHolder.install { getContext().deviceBrowserUserAgent() }
+
     single<HttpClientProvider> {
         val sessionManager by inject<SessionManager>()
         DefaultHttpClientProvider(
