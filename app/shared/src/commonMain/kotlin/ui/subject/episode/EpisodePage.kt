@@ -534,6 +534,7 @@ private fun EpisodeScreenBody(
     setShowEditCommentSheet: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
+    defaultFetchRequest: MediaFetchRequest? = null,
 ) {
     val compactWindowInsets = windowInsets
         .union(WindowInsets.desktopTitleBar)
@@ -849,6 +850,7 @@ private fun EpisodeScreenPhoneDetails(
                     page.mediaSelectorState,
                     { page.mediaSourceResultListPresentation },
                     page.selfInfo,
+                    defaultFetchRequest = page.defaultFetchRequest,
                     onSwitchEpisode = { episodeId ->
                         if (!vm.episodeSelectorState.selectEpisodeId(episodeId)) {
                             navigator.navigateEpisodeDetails(vm.subjectId, episodeId)

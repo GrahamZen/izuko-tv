@@ -1245,6 +1245,7 @@
     <string name="media_selector_item_season_mismatch">Season mismatch</string>
     <string name="media_selector_item_subject_title_mismatch">Title mismatch</string>
     <string name="media_selector_item_episode_mismatch">Episode mismatch</string>
+    <string name="mediafetch_request_editor_primary_name_supporting">Most data sources only use this name. Changes are remembered for this subject</string>
     <string name="media_selector_web_waiting_captcha">Waiting for captcha handling</string>
     <string name="media_selector_web_rate_limited">Rate limited · auto retry in %1$d s</string>
     <string name="media_selector_web_captcha_unsupported">Web verification required. Not supported on this platform; please use the desktop or Android app, or switch sources.</string>
