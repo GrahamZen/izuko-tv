@@ -113,6 +113,10 @@ data class SelectorSearchConfig(
     // When playing a media:
     val selectMedia: SelectMediaConfig = SelectMediaConfig(),
     val matchVideo: MatchVideoConfig = MatchVideoConfig(),
+    /**
+     * 不开浏览器, 直接请求站点自己的取流接口. 默认关闭, 关闭时取流行为与不配置本项时完全一致.
+     */
+    val resolveVideo: ResolveVideoConfig = ResolveVideoConfig(),
 ) { // TODO: add Engine version capabilities
     val finalBaseUrl by lazy(LazyThreadSafetyMode.PUBLICATION) {
         rawBaseUrl.ifBlank { guessBaseUrl(searchUrl) }
@@ -134,6 +138,70 @@ data class SelectorSearchConfig(
         }
         val matchVideoUrlRegex by lazy {
             Regex.parseOrNull(matchVideoUrl)
+        }
+    }
+
+    /**
+     * **直连取流**: 不开 WebView, 按配置请求站点自己的取流接口, 从响应里取出视频地址.
+     *
+     * 为什么要有这个: 现代站点 (Next.js / Astro 这类) 的播放页是客户端渲染的, 地址要跑完 JS 才拿得到,
+     * 于是只能开 WebView. 但那些站点的 chunk 里有 `?.` / `??`, 要 Chrome 80+ —— 系统 WebView 低于 M74
+     * 的电视上解析就是 SyntaxError, 页面根本起不来, 表现为「搜得到但一播就失败」(等满超时后
+     * `NO_MATCHING_RESOURCE`), 而同一个源在手机上正常. 见 memory `project-old-webview-source-fail`.
+     *
+     * 很多这类站点的地址其实来自一个普通接口. 配上之后走 Ktor 直接要, 绕开 WebView, 老机器也能播.
+     *
+     * 用法 (以稀饭动漫 Next 为例, 播放页 `https://next.xifanacg.com/anime/1360/play/21094?source=xfy2`):
+     * ```
+     * matchPageUrl      = /play/(?<episodeId>\d+)
+     * requestUrl        = https://xxx.supabase.co/functions/v1/issue-web-playback
+     * method            = POST
+     * requestHeaders    = Content-Type: application/json
+     * requestBody       = {"action":"fallback","episode_id":{episodeId}}
+     * selectUrlJsonPath = $.url
+     * ```
+     *
+     * [requestUrl] 为空 = 不启用, 照旧走 WebView.
+     */
+    @Serializable
+    data class ResolveVideoConfig(
+        /**
+         * 取流接口地址. 空 = 不启用整个直连取流.
+         *
+         * 可以用 `{名字}` 引用 [matchPageUrl] 抽出的变量, 以及内置的 `{pageUrl}` (播放页完整地址).
+         */
+        val requestUrl: String = "",
+        /**
+         * 从播放页地址里抽变量, **命名分组的名字就是变量名**. 为空时只有内置的 `{pageUrl}` 可用.
+         *
+         * 用 find 而不是 matchEntire, 所以只写要抽的那一小段就行.
+         */
+        @param:Language("regexp")
+        val matchPageUrl: String = "",
+        /** `GET` 或 `POST`. */
+        val method: String = "GET",
+        /** 每行一个 `Name: value`; 同样支持 `{名字}`. */
+        val requestHeaders: String = "",
+        /** 请求体 (仅 POST); 同样支持 `{名字}`. */
+        val requestBody: String = "",
+        /**
+         * 从响应 JSON 里取视频地址. 与 [selectUrlRegex] 二选一, 两个都填时先试这个.
+         */
+        @param:Language("jsonpath")
+        val selectUrlJsonPath: String = "",
+        /**
+         * 从响应文本里取视频地址 (响应不是 JSON 时用). 有命名分组 `<v>` 时取它, 否则取整个匹配.
+         */
+        @param:Language("regexp")
+        val selectUrlRegex: String = "",
+    ) {
+        val enabled: Boolean get() = requestUrl.isNotBlank()
+
+        val matchPageUrlRegex by lazy {
+            if (matchPageUrl.isBlank()) null else Regex.parseOrNull(matchPageUrl)
+        }
+        val selectUrlRegexCompiled by lazy {
+            if (selectUrlRegex.isBlank()) null else Regex.parseOrNull(selectUrlRegex)
         }
     }
 

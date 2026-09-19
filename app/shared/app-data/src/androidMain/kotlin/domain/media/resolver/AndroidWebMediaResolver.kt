@@ -35,6 +35,7 @@ import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.MediaSourceWebVideoMatcherLoader
+import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebViewConfig
@@ -112,6 +113,20 @@ class AndroidWebMediaResolver(
                     matcher.match(url, context)
                 }
                 .firstOrNull { it !is WebVideoMatcher.MatchResult.Continue }
+        }
+
+        // 先试直连取流: 配了的源根本不用开 WebView.
+        // 必须赶在下面碰 WebView 之前 —— WebViewProxy.apply 取 ProxyController 就会初始化 WebView,
+        // 而这条路存在的意义正是给那些系统 WebView 跑不动现代站点 JS 的机器用的.
+        for (matcher in allMatchers) {
+            if (matcher !is WebVideoDirectResolver) continue
+            val direct = matcher.resolveDirectly(media.download.uri, context) ?: continue
+            return HttpStreamingMediaDataProvider(
+                direct.m3u8Url,
+                media.originalTitle,
+                direct.headers,
+                media.extraFiles.toMediampMediaExtraFiles(),
+            )
         }
 
         val config = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->

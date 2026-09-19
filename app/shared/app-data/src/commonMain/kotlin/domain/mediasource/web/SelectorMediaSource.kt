@@ -35,6 +35,8 @@ import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
+import me.him188.ani.datasources.api.matcher.WebVideo
+import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherProvider
@@ -483,11 +485,18 @@ class SelectorMediaSource(
     }
 
     override val matcher: WebVideoMatcher by lazy {
-        object : WebVideoMatcher {
+        object : WebVideoMatcher, WebVideoDirectResolver {
             override fun match(
                 url: String,
                 context: WebVideoMatcherContext
             ): WebVideoMatcher.MatchResult = engine.matchWebVideo(url, arguments.searchConfig.matchVideo)
+
+            override suspend fun resolveDirectly(pageUrl: String, context: WebVideoMatcherContext): WebVideo? =
+                engine.resolveVideoDirectly(
+                    pageUrl,
+                    arguments.searchConfig.resolveVideo,
+                    arguments.searchConfig.matchVideo,
+                )
 
             override fun patchConfig(config: WebViewConfig): WebViewConfig {
                 val configuredCookies = arguments.searchConfig.matchVideo.cookies

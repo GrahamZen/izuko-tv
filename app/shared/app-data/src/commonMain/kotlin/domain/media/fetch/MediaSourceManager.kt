@@ -35,6 +35,7 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.download.MediaDownloadManager.Companion.LOCAL_FS_MEDIA_SOURCE_ID
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.codec.getArgumentOrNull
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
@@ -244,6 +245,7 @@ class MediaSourceManagerImpl(
         add(JellyfinMediaSource.Factory())
         add(EmbyMediaSource.Factory())
         add(IkarosMediaSource.Factory())
+        add(DirectApiMediaSource.Factory())
         add(SelectorMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
     }.toList()
 

@@ -17,7 +17,9 @@ import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.ResourceLocation
-import me.him188.ani.datasources.api.topic.guessTorrentFromUrl
+import me.him188.ani.datasources.api.topic.guessFromUrl
+import me.him188.ani.datasources.api.topic.isVideoFileName
+import me.him188.ani.datasources.api.topic.isVideoMimeType
 import me.him188.ani.utils.xml.Element
 
 
@@ -53,7 +55,14 @@ data class RssItem(
 
 fun RssItem.guessResourceLocation(): ResourceLocation? {
     val url = this.enclosure?.url ?: this.link.takeIf { it.isNotBlank() } ?: return null
-    return ResourceLocation.guessTorrentFromUrl(url)
+    ResourceLocation.guessFromUrl(url)?.let { return it }
+    // 有的源的视频直链不带扩展名 (例如 ".../foo?d=mp4"), 用 MIME 和标题里的文件名兜底
+    if (!url.startsWith("http", ignoreCase = true)) return null
+    this.enclosure?.type?.let { mimeType ->
+        if (isVideoMimeType(mimeType)) return ResourceLocation.HttpStreamingFile(url)
+    }
+    if (isVideoFileName(this.title)) return ResourceLocation.HttpStreamingFile(url)
+    return null
 }
 
 fun RssItem.getMediaSize(): FileSize {

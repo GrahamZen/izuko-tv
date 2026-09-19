@@ -36,6 +36,7 @@ import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.topic.Resolution
+import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.datasources.api.topic.titles.RawTitleParser
 import me.him188.ani.datasources.api.topic.titles.parse
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -128,17 +129,29 @@ abstract class RssMediaSourceEngine {
             mediaSourceId: String,
         ): Media? {
             val details = RawTitleParser.getDefault().parse(item.title, null)
+            val download = item.guessResourceLocation() ?: return null
+            // 同一个 RSS 源里可能既有种子也有直链, 按资源类型逐条判定.
+            // 这会影响"完结番隐藏单集资源"等过滤规则, 不能一律当作 BT.
+            val kind = when (download) {
+                is ResourceLocation.HttpStreamingFile,
+                is ResourceLocation.WebVideo,
+                    -> MediaSourceKind.WEB
+
+                else -> MediaSourceKind.BitTorrent
+            }
 
             return DefaultMedia(
                 mediaId = "$mediaSourceId.${item.guid}",
                 mediaSourceId = mediaSourceId,
                 originalUrl = item.link.takeIf { it.isNotBlank() } ?: item.guid,
-                download = item.guessResourceLocation() ?: return null,
+                download = download,
                 originalTitle = item.title,
                 publishedTime = item.pubDate?.toInstant(TimeZone.currentSystemDefault())
                     ?.toEpochMilliseconds() ?: 0,
                 properties = MediaProperties(
-                    subjectName = null,
+                    // 在线源会拿条目名去匹配 bangumi 条目, 条目名为空时拿的是整条标题, 而发布组格式的标题
+                    // 带着一堆标签, 匹配必定失败 (见 MediaSelectorFilterSortAlgorithm). 种子源不做这个检查, 保持原样.
+                    subjectName = if (kind == MediaSourceKind.WEB) guessSubjectNameFromTitle(item.title) else null,
                     episodeName = null,
                     subtitleLanguageIds = details.subtitleLanguages.map { it.id },
                     resolution = details.resolution?.toString() ?: Resolution.R1080P.toString(),
@@ -148,7 +161,7 @@ abstract class RssMediaSourceEngine {
                     subtitleKind = details.subtitleKind,
                 ),
                 episodeRange = details.episodeRange,
-                kind = MediaSourceKind.BitTorrent,
+                kind = kind,
                 location = MediaSourceLocation.Online,
             )
         }
@@ -279,4 +292,28 @@ class DefaultRssMediaSourceEngine(
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
     }
+}
+
+/**
+ * 从发布组格式的标题里猜番名, 例如
+ * `[ANi] 無職轉生～到了異世界就拿出真本事～第三季 - 12 [1080P][Baha][CHT].mp4` 猜出 `無職轉生～到了異世界就拿出真本事～第三季`.
+ *
+ * 做法: 去掉开头的字幕组括号, 再截到集数 (" - ") 或标签 ("[") 之前. 猜不出来时返回 `null`, 行为与以前一致.
+ */
+internal fun guessSubjectNameFromTitle(title: String): String? {
+    var rest = title.trim()
+    while (true) {
+        val closing = when {
+            rest.startsWith("[") -> rest.indexOf(']')
+            rest.startsWith("【") -> rest.indexOf('】')
+            else -> -1
+        }
+        if (closing < 0) break
+        rest = rest.substring(closing + 1).trimStart()
+    }
+    rest = rest.substringBefore(" - ")
+        .substringBefore('[')
+        .substringBefore('【')
+        .trim()
+    return rest.takeIf { it.length >= 2 }
 }

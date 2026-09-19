@@ -11,10 +11,17 @@ package me.him188.ani.app.domain.mediasource.web
 
 import io.ktor.client.call.body
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.accept
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.prepareGet
+import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
@@ -26,6 +33,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.readString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
@@ -54,7 +66,12 @@ import me.him188.ani.datasources.api.topic.SubtitleLanguage
 import me.him188.ani.datasources.api.topic.contains
 import me.him188.ani.datasources.api.topic.titles.LabelFirstRawTitleParser
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.jsonpath.JsonPath
+import me.him188.ani.utils.jsonpath.compileOrNull
+import me.him188.ani.utils.jsonpath.resolveOrNull
 import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.xml.Document
 import me.him188.ani.utils.xml.Element
 import me.him188.ani.utils.xml.Html
@@ -122,6 +139,8 @@ abstract class SelectorMediaSourceEngine {
 
         // single instance to save memory
         private val defaultSubtitleLanguages = listOf(SubtitleLanguage.ChineseSimplified.id)
+
+        internal val logger = logger<SelectorMediaSourceEngine>()
     }
 
     data class SearchSubjectResult(
@@ -386,24 +405,188 @@ abstract class SelectorMediaSourceEngine {
             url
         }
 
-        return WebVideoMatcher.MatchResult.Matched(
-            WebVideo(
-                videoUrl,
-                mapOf(
-                    "User-Agent" to searchConfig.addHeadersToVideo.userAgent,
-                    "Referer" to searchConfig.addHeadersToVideo.referer,
-                    "Sec-Ch-Ua-Mobile" to "?0",
-                    "Sec-Ch-Ua-Platform" to "macOS",
-                    "Sec-Fetch-Dest" to "video",
-                    "Sec-Fetch-Mode" to "no-cors",
-                    "Sec-Fetch-Site" to "cross-site",
-                ),
-            ),
-        )
+        return WebVideoMatcher.MatchResult.Matched(WebVideo(videoUrl, videoHeaders(searchConfig)))
     }
+
+    private fun videoHeaders(searchConfig: SelectorSearchConfig.MatchVideoConfig) = mapOf(
+        "User-Agent" to searchConfig.addHeadersToVideo.userAgent,
+        "Referer" to searchConfig.addHeadersToVideo.referer,
+        "Sec-Ch-Ua-Mobile" to "?0",
+        "Sec-Ch-Ua-Platform" to "macOS",
+        "Sec-Fetch-Dest" to "video",
+        "Sec-Fetch-Mode" to "no-cors",
+        "Sec-Fetch-Site" to "cross-site",
+    )
+
+    /**
+     * 直连取流: 不开 WebView, 按 [config] 请求站点自己的取流接口, 从响应里取出视频地址.
+     *
+     * 见 [SelectorSearchConfig.ResolveVideoConfig]. 没配置 / 取不到时返回 `null`, 调用方退回 WebView ——
+     * **这条路只做加法, 失败一律不抛**, 免得把原本能用 WebView 播的源拖下水.
+     */
+    suspend fun resolveVideoDirectly(
+        pageUrl: String,
+        config: SelectorSearchConfig.ResolveVideoConfig,
+        matchVideoConfig: SelectorSearchConfig.MatchVideoConfig,
+    ): WebVideo? {
+        if (!config.enabled) return null
+
+        val variables = buildMap {
+            put("pageUrl", pageUrl)
+            val regex = config.matchPageUrlRegex
+            if (regex != null) {
+                val result = regex.find(pageUrl)
+                if (result == null) {
+                    logger.info { "resolveVideoDirectly: matchPageUrl did not match $pageUrl" }
+                    return null
+                }
+                // 命名分组的名字就是变量名; 名字只能从 pattern 里数 (MatchResult 不暴露分组名),
+                // 顺便也避开了 API 26 以下 groups[name] 抛 NoSuchMethodError 的坑
+                for (name in namedGroupNames(regex.pattern)) {
+                    result.namedGroup(regex, name)?.value?.let { put(name, it) }
+                }
+            }
+        }
+
+        val url = substituteVariables(config.requestUrl, variables)
+        val body = substituteVariables(config.requestBody, variables)
+        val headers = config.requestHeaders.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.contains(':') }
+            .map { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
+            .map { (name, value) -> name to substituteVariables(value, variables) }
+            .toList()
+
+        val text = try {
+            doHttpText(config.method.uppercase(), url, headers, body)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.info { "resolveVideoDirectly: request failed for $url: $e" }
+            return null
+        } ?: return null
+
+        val videoUrl = extractVideoUrl(text, config)
+        if (videoUrl.isNullOrBlank()) {
+            logger.info { "resolveVideoDirectly: no url extracted from response of $url" }
+            return null
+        }
+        logger.info { "resolveVideoDirectly: $pageUrl -> $videoUrl" }
+        return WebVideo(videoUrl, videoHeaders(matchVideoConfig))
+    }
+
+    private fun extractVideoUrl(text: String, config: SelectorSearchConfig.ResolveVideoConfig): String? {
+        if (config.selectUrlJsonPath.isNotBlank()) {
+            val path = JsonPath.compileOrNull(config.selectUrlJsonPath)
+            if (path != null) {
+                val json = try {
+                    Json.parseToJsonElement(text)
+                } catch (e: Exception) {
+                    logger.info { "resolveVideoDirectly: response is not JSON: $e" }
+                    null
+                }
+                json?.resolveOrNull(path)?.let { firstStringOrNull(it) }
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return it }
+            }
+        }
+        val regex = config.selectUrlRegexCompiled ?: return null
+        val result = regex.find(text) ?: return null
+        return try {
+            result.namedGroup(regex, "v")?.value ?: result.value
+        } catch (_: IllegalArgumentException) { // no group named v
+            result.value
+        }
+    }
+
+    /**
+     * JSONPath 解出来的可能是字符串本身 (`$.url`), 也可能是数组或对象 (`$..url`), 都取第一个字符串.
+     */
+    private fun firstStringOrNull(element: JsonElement): String? = when (element) {
+        is JsonPrimitive -> element.contentOrNull
+        is JsonArray -> element.firstNotNullOfOrNull { firstStringOrNull(it) }
+        is JsonObject -> element.values.firstNotNullOfOrNull { firstStringOrNull(it) }
+    }
+
+    /**
+     * 把 `{名字}` 换成变量值. 没有对应变量的 `{...}` 原样保留 (可能是 JSON 里本来就有的花括号).
+     */
+    private fun substituteVariables(template: String, variables: Map<String, String>): String {
+        if (template.isEmpty() || !template.contains('{')) return template
+        return buildString(template.length) {
+            var i = 0
+            while (i < template.length) {
+                val open = template.indexOf('{', i)
+                if (open < 0) {
+                    append(template, i, template.length)
+                    break
+                }
+                val close = template.indexOf('}', open + 1)
+                val name = if (close < 0) null else template.substring(open + 1, close)
+                val value = name?.let { variables[it] }
+                if (value == null) {
+                    append(template, i, open + 1)
+                    i = open + 1
+                } else {
+                    append(template, i, open)
+                    append(value)
+                    i = close + 1
+                }
+            }
+        }
+    }
+
+    /**
+     * 发一个请求并拿到响应文本. 默认不支持 (返回 `null`), 由 [DefaultSelectorMediaSourceEngine] 实现.
+     *
+     * 故意给默认实现而不是 abstract: 测试与工具里还有别的 [SelectorMediaSourceEngine] 子类, 不该被迫实现它.
+     */
+    protected open suspend fun doHttpText(
+        method: String,
+        url: String,
+        headers: List<Pair<String, String>>,
+        body: String,
+    ): String? = null
 
     @Throws(RepositoryException::class, CancellationException::class)
     protected abstract suspend fun doHttpGet(uri: String): Document
+}
+
+/**
+ * 正则 pattern 里所有命名分组 `(?<name>...)` 的名字, 按出现顺序.
+ *
+ * Kotlin/JVM 的 [MatchResult] 不暴露分组名, 只能从 pattern 里数.
+ */
+internal fun namedGroupNames(pattern: String): List<String> {
+    val names = mutableListOf<String>()
+    var i = 0
+    var classDepth = 0
+    while (i < pattern.length) {
+        val c = pattern[i]
+        if (c == '\\') {
+            i += 2
+            continue
+        }
+        if (classDepth > 0) {
+            when (c) {
+                '[' -> classDepth++
+                ']' -> classDepth--
+            }
+        } else if (c == '[') {
+            classDepth = 1
+            if (pattern.getOrNull(i + 1) == '^') i++
+            if (pattern.getOrNull(i + 1) == ']') i++
+        } else if (c == '(' &&
+            pattern.getOrNull(i + 1) == '?' &&
+            pattern.getOrNull(i + 2) == '<' &&
+            pattern.getOrNull(i + 3)?.isLetter() == true
+        ) {
+            val end = pattern.indexOf('>', startIndex = i + 3)
+            if (end > 0) names.add(pattern.substring(i + 3, end))
+        }
+        i++
+    }
+    return names
 }
 
 /**
@@ -545,6 +728,31 @@ class DefaultSelectorMediaSourceEngine(
         }
     }
 
+
+    override suspend fun doHttpText(
+        method: String,
+        url: String,
+        headers: List<Pair<String, String>>,
+        body: String,
+    ): String = withContext(ioDispatcher) {
+        // Content-Type 是 Ktor 托管的内容头: 用 header() 设会被 body 转换覆盖掉 (配了 application/json
+        // 也发不出去, 实际发的是 text/plain), 必须连同 body 一起用 TextContent 给
+        val contentType = headers.firstOrNull { it.first.equals(HttpHeaders.ContentType, ignoreCase = true) }
+            ?.second?.let { runCatching { ContentType.parse(it) }.getOrNull() }
+            ?: ContentType.Text.Plain
+
+        client.use {
+            // 响应体必须在 use 块内读完: ScopedHttpClient 不允许把 HttpResponse 带出去
+            val builder: HttpRequestBuilder.() -> Unit = {
+                for ((name, value) in headers) {
+                    if (name.equals(HttpHeaders.ContentType, ignoreCase = true)) continue
+                    header(name, value)
+                }
+                if (body.isNotEmpty()) setBody(TextContent(body, contentType))
+            }
+            if (method == "POST") post(url, builder).bodyAsText() else get(url, builder).bodyAsText()
+        }
+    }
 
     @Throws(RepositoryException::class, CancellationException::class)
     public override suspend fun doHttpGet(uri: String): Document = withContext(ioDispatcher) {

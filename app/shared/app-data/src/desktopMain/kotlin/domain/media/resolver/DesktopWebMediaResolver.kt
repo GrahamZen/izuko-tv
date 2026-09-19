@@ -34,6 +34,7 @@ import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.DesktopContext
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.MediaSourceWebVideoMatcherLoader
+import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebViewConfig
@@ -84,13 +85,26 @@ class DesktopWebMediaResolver(
             val matchersFromMediaSource = matcherLoader.loadMatchers(media.mediaSourceId)
             val allMatchers = matchersFromMediaSource + matchersFromClasspath
 
+            val context = WebVideoMatcherContext(media)
+
+            // 先试直连取流: 配了的源不用开浏览器 (见 SelectorSearchConfig.ResolveVideoConfig)
+            for (matcher in allMatchers) {
+                if (matcher !is WebVideoDirectResolver) continue
+                val direct = matcher.resolveDirectly(media.download.uri, context) ?: continue
+                return@withContext HttpStreamingMediaDataProvider(
+                    direct.m3u8Url,
+                    media.originalTitle,
+                    direct.headers,
+                    media.extraFiles.toMediampMediaExtraFiles(),
+                )
+            }
+
             val webViewConfig = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
                 matcher.patchConfig(acc)
             }
             logger.info { "Final config: $webViewConfig" }
 
 
-            val context = WebVideoMatcherContext(media)
             fun match(url: String): WebVideoMatcher.MatchResult? {
                 return allMatchers
                     .asSequence()
