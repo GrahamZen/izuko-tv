@@ -103,6 +103,7 @@ internal fun TvPlayerSideSheets(
                         page.fetchRequest,
                         { vm.updateFetchRequest(it) },
                         page.mediaSourceResultListPresentation,
+                        defaultFetchRequest = page.defaultFetchRequest,
                         onRestartSource = { vm.restartSource(it) },
                         onRefresh = { vm.refreshFetch() },
                         // 固定占满弹窗高度: 筛选后条目变少时布局不跳动

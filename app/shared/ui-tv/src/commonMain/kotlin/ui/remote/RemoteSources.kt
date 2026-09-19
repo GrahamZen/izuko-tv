@@ -30,6 +30,8 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.updateMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
+import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceArguments
@@ -75,10 +77,11 @@ internal object RemoteSources {
     private val subscriptions: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val repository: MediaSourceInstanceRepository get() = KoinPlatform.getKoin().get()
 
-    /** 用 JSON 编辑的两类 (编解码器只认它们). */
+    /** 用 JSON 编辑的三类 (编解码器只认它们). */
     private val RSS = FactoryId("rss")
     private val SELECTOR = FactoryId("web-selector")
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR)
+    private val DIRECT_API = DirectApiMediaSource.FactoryId
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API)
 
     private val pretty = Json {
         prettyPrint = true
@@ -252,6 +255,8 @@ internal object RemoteSources {
         val data = when (FactoryId(factoryId)) {
             RSS -> codec.encode(RssMediaSourceArguments.Default)
             SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
+            // 给一份结构完整的示例, 比空模板好改
+            DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
