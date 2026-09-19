@@ -21,6 +21,7 @@ import io.ktor.client.plugins.Sender
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
+import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.plugin
 import io.ktor.client.request.HttpRequestBuilder
@@ -182,13 +183,30 @@ abstract class AbstractDistributionChannelHandler(
     private val defaultProvider: () -> String,
 ) : ScopedHttpClientFeatureHandler<DistributionChannelProvider>(key) {
     override fun applyToConfig(config: HttpClientConfig<*>, value: DistributionChannelProvider) {
-        config.defaultRequest {
-            headers.appendIfNameAbsent(HEADER_DISTRO_CHANNEL, value.invoke() ?: defaultProvider())
-        }
+        // 不能挂在 defaultRequest 上: 那里拿到的 url 是"默认值"而不是本次请求的地址, 没法按 host 区分
+        config.install(
+            createClientPlugin(PLUGIN_NAME) {
+                onRequest { request, _ ->
+                    if (isAniServerHost(request.url.host)) {
+                        request.headers.appendIfNameAbsent(HEADER_DISTRO_CHANNEL, value.invoke() ?: defaultProvider())
+                    }
+                }
+            },
+        )
     }
 
     companion object {
         const val HEADER_DISTRO_CHANNEL = "X-Ani-Distro-Channel"
+        private const val PLUGIN_NAME = "AniDistributionChannel"
+
+        /**
+         * 这个头只对 Ani 自己的服务器有意义. 数据源、TMDB、弹幕站等第三方用的是同一批 client,
+         * 带上它等于在每个请求里自报家门: 对方一条规则就能把所有用户挡掉, 而且请求本身并不需要它.
+         */
+        private fun isAniServerHost(host: String): Boolean =
+            host == ServerListFeatureConfig.MAGIC_ANI_SERVER_HOST ||
+                    host == "myani.org" || host.endsWith(".myani.org") ||
+                    host == "openani.org" || host.endsWith(".openani.org")
     }
 }
 
