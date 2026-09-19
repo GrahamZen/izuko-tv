@@ -36,7 +36,11 @@ android {
     namespace = "me.him188.ani.android"
     compileSdk = getIntProperty("android.compile.sdk")
     defaultConfig {
-        applicationId = "me.him188.ani"
+        // 加后缀就能出一个**与正式包共存**的包 (`-Pani.android.appIdSuffix=perfbase`):
+        // A/B 对比时两个包各装各的、各 AOT 一次, 不用来回覆盖安装 (每轮省五到八分钟);
+        // 数据也各自独立, 想要"全新安装"的冷启动场景直接 pm clear 那个包, 不碰正式包的登录与设置.
+        // 默认空 = 正式包不受影响.
+        applicationId = "me.him188.ani" + (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
         minSdk = androidMinSdk
         targetSdk = getIntProperty("android.compile.sdk")
         versionCode = getIntProperty("android.version.code")
