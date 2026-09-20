@@ -562,8 +562,19 @@ private class RoutingDataSource(
         activeDataSource?.responseHeaders.orEmpty()
 
     override fun close() {
-        activeDataSource?.close()
+        val source = activeDataSource ?: return
+        // **必须先置空再关**: ExoPlayer 关这个源走的是
+        // `DataSourceUtil.closeQuietly` —— 它吃掉 IOException 就不再管这个实例了。而底层
+        // (尤其是在线源走的 HTTP DataSource) 在拖动进度条取消请求时 close() 抛 IOException
+        // 是常态, 不是意外。原先写法是 `activeDataSource?.close(); activeDataSource = null`,
+        // 异常一抛后一行就不执行 —— 脏状态留到下一次 open, 撞上
+        // `check(activeDataSource == null)` 变成 Loader 的 UnexpectedLoaderException → Source error,
+        // 界面上就是"加载失败"并自动切下一个源。
+        // 2026-09-20 真机: 在线源反复拖进度条必现。
+        //
+        // 异常照旧往上抛 (不吞), 只是状态先复位。
         activeDataSource = null
+        source.close()
     }
 }
 
