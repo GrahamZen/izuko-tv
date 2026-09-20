@@ -164,9 +164,9 @@ fun <T> SettingsScope.SorterItem(
                             Text(stringResource(Lang.settings_media_source_save_button))
                         }
                     },
-                    dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel)) {
+                    dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel), {
                         showDialog = false
-                    },
+                    }),
                 )
             }
         },
