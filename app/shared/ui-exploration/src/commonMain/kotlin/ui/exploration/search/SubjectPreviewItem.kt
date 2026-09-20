@@ -25,6 +25,8 @@ import me.him188.ani.app.data.models.subject.CanonicalTagKind
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SubjectAiringInfo
+import me.him188.ani.app.data.models.subject.toTmdbMatchHints
+import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.models.subject.SubjectAiringKind
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.kind
@@ -61,6 +63,19 @@ class SubjectPreviewItemInfo(
      * 隐藏此条目. 用于 workaround bangumi 搜出来不满足条件的条目
      */
     val hide: Boolean = false,
+    /**
+     * 原名 (日文). 用于 TMDB 等外部源按名字匹配 ([title] 通常是中文译名, 匹配成功率低,
+     * 且失败结果会被写成持久负缓存); 展示一律用 [title].
+     */
+    val originalName: String = "",
+    /**
+     * 条目侧参与 TMDB 匹配的附加信息 (中文名 / 条目年份 / 是否剧场版).
+     *
+     * **年份是这里最要紧的一项**: 搜索结果没有分集数据, 调用方拿不到"最新已播集日期", 于是
+     * TMDB 匹配的年份判据整个失效 —— 实测「攻殻機動隊」(1995 剧场版) 会拿到同系列 2026 年
+     * 新剧的背景图, 还会写进正缓存污染其它页面. 见 [TmdbMatchHints.airYear].
+     */
+    val tmdbHints: TmdbMatchHints = TmdbMatchHints.Empty,
 ) {
     companion object {
         /**
@@ -152,6 +167,8 @@ class SubjectPreviewItemInfo(
                 nsfw = subjectInfo.nsfw,
                 nsfwMode = if (subjectInfo.nsfw) nsfwModeSettings else NsfwMode.DISPLAY,
                 hide = hide,
+                originalName = subjectInfo.name,
+                tmdbHints = subjectInfo.toTmdbMatchHints(),
             )
         }
 

@@ -346,7 +346,7 @@
     <string name="settings_player_auto_play_next">自動連播</string>
     <string name="settings_player_audio_time_stretch">高品質音訊變速（WSOLA）</string>
     <string name="settings_player_audio_time_stretch_description">變速時提供更好的音質；如遇爆音或音訊損壞可關閉</string>
-    <string name="settings_player_auto_skip_op_ed">自動跳過 OP 和 ED</string>
+    <string name="settings_player_auto_skip_op_ed">跳過 OP 和 ED</string>
     <string name="settings_player_auto_skip_op_ed_description">只對 BT 數據源的部分資源有效</string>
     <string name="settings_player_op_ed_skip_duration">OP/ED 跳過時長</string>
     <string name="settings_player_op_ed_skip_duration_seconds">%1$d 秒</string>

@@ -44,6 +44,7 @@ import org.koin.dsl.module
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -151,9 +152,11 @@ class ScheduleViewModelTest {
     }
 
     /**
-     * 记录每次调用的 `today`; 返回 [handler] 生成的 flow.
+     * 记录每次调用的 `today`; 返回 [handler] 生成的 flow. [cache] 是进程缓存的替身: 非 null 时 peekCached 返回它
+     * (不看日期), invalidateCache 把它清掉.
      */
     private class FakeGetAnimeScheduleFlowUseCase(
+        val cache: MutableStateFlow<List<AiringScheduleForDate>?> = MutableStateFlow(null),
         private val handler: (today: LocalDate, callIndex: Int) -> Flow<List<AiringScheduleForDate>>,
     ) : GetAnimeScheduleFlowUseCase {
         val calls = MutableStateFlow<List<LocalDate>>(emptyList())
@@ -162,6 +165,12 @@ class ScheduleViewModelTest {
             val index = calls.value.size
             calls.update { it + today }
             return handler(today, index)
+        }
+
+        override fun peekCached(today: LocalDate, timeZone: TimeZone): List<AiringScheduleForDate>? = cache.value
+
+        override fun invalidateCache() {
+            cache.value = null
         }
     }
 
@@ -460,6 +469,66 @@ class ScheduleViewModelTest {
         vm.refresh()
         val loaded = awaitReal { vm.presentationFlow.first { !it.isPlaceholder && it.error == null } }
         assertEquals(listOf(today, today), useCase.calls.value)
+        assertEquals(15, loaded.airingSchedules.size)
+
+        subscription.cancel()
+    }
+
+    @Test
+    fun `a fresh cached schedule is the very first presentation and no loading placeholder follows`() = runTest {
+        val today = LocalDate(2026, 9, 4)
+        // 网络那份每天只有一部 (缓存那份两部), 用来认出"已经换成网络那份了"
+        val useCase = FakeGetAnimeScheduleFlowUseCase(cache = MutableStateFlow(scheduleFor(today))) { day, _ ->
+            flow { emit(scheduleFor(day).map { it.copy(list = it.list.take(1)) }) }
+        }
+        val clock = OffsetClock(LocalDateTime(2026, 9, 4, 12, 0).toInstant(timeZone))
+        val vm = newViewModel(useCase, clock)
+
+        val initial = vm.presentationFlow.value
+        assertFalse(initial.isPlaceholder)
+        assertNull(initial.error)
+        assertEquals(15, initial.airingSchedules.size)
+        assertEquals(2, initial.airingSchedules.first().episodes.size)
+        assertColumnsMatchDays(initial)
+        assertEquals(initial.days, vm.pageState.days)
+
+        val observed = MutableStateFlow<List<SchedulePagePresentation>>(emptyList())
+        val subscription = fixtureScope.launch {
+            vm.presentationFlow.collect { presentation -> observed.update { it + presentation } }
+        }
+        awaitReal { observed.first { list -> list.any { it.airingSchedules.firstOrNull()?.episodes?.size == 1 } } }
+        // 订阅之后也没有退回过占位
+        assertTrue(observed.value.none { it.isPlaceholder })
+
+        subscription.cancel()
+    }
+
+    @Test
+    fun `refresh drops the cached schedule and shows a loading placeholder until the new response arrives`() = runTest {
+        val today = LocalDate(2026, 9, 4)
+        val secondResponse = CompletableDeferred<Unit>()
+        val useCase = FakeGetAnimeScheduleFlowUseCase(cache = MutableStateFlow(scheduleFor(today))) { day, callIndex ->
+            flow {
+                if (callIndex >= 1) secondResponse.await()
+                emit(scheduleFor(day))
+            }
+        }
+        val clock = OffsetClock(LocalDateTime(2026, 9, 4, 12, 0).toInstant(timeZone))
+        val vm = newViewModel(useCase, clock)
+        val subscription = fixtureScope.launch { vm.presentationFlow.collect {} }
+        assertFalse(vm.presentationFlow.value.isPlaceholder)
+        // 等订阅真的开始 (首个状态来自缓存, 看 isPlaceholder 等不出来): 否则 refresh 落在订阅之前, 第一次请求的响应立刻盖掉占位
+        awaitReal { useCase.calls.first { it.isNotEmpty() } }
+
+        vm.refresh()
+        assertNull(useCase.cache.value)
+        val loading = awaitReal { vm.presentationFlow.first { it.isPlaceholder } }
+        assertNull(loading.error)
+        assertColumnsMatchDays(loading)
+
+        secondResponse.complete(Unit)
+        val loaded = awaitReal { vm.presentationFlow.first { !it.isPlaceholder } }
+        assertNull(loaded.error)
         assertEquals(15, loaded.airingSchedules.size)
 
         subscription.cancel()

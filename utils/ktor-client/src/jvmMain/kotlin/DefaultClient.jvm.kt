@@ -21,8 +21,8 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.charsets.decode
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.utils.io.streams.asInput
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
+import me.him188.ani.shaded.jsoup.Jsoup
+import me.him188.ani.shaded.jsoup.nodes.Document
 
 actual fun getPlatformKtorEngine(): HttpClientEngineFactory<*> = OkHttp
 

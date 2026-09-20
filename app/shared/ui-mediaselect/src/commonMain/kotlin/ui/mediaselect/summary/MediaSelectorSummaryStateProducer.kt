@@ -101,6 +101,7 @@ class MediaSelectorSummaryStateProducer(
                                 ),
                             selected.original.originalTitle,
                             isPerfectMatch = selected.isPerfectMatch(),
+                            exclusionReason = selected.exclusionReason,
                         )
                     }
 

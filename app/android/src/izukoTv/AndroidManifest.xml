@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ Copyright (C) 2024-2026 OpenAni and contributors.
+  ~
+  ~ 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+  ~ Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+  ~
+  ~ https://github.com/open-ani/ani/blob/main/LICENSE
+  -->
+
+<!--
+  ~ Android TV (tv flavor) 专属清单. AGP 会把本文件合并进 tv 变体, phone 变体完全不受影响.
+  -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 主屏预览频道 (热门动画 / 继续观看) 写入系统 TvProvider -->
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
+    <!-- Web 控制台「切到电视前台」(网页设置里的开关, 默认关): Android 10 起后台应用不能自己起界面, 这是唯一的通用豁免.
+         只声明不会生效, 要用户在电视设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层 里授权; 见 TvRemoteControl.frontGranted -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Web 控制台「退出 Ani 后保留」(网页设置里的开关, 默认关) 的常驻前台服务, 见 RemoteKeepAliveService -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- 不声明为必需: 同一个包也允许装在带触摸屏的设备上 -->
+    <uses-feature
+            android:name="android.software.leanback"
+            android:required="false" />
+    <uses-feature
+            android:name="android.hardware.touchscreen"
+            android:required="false" />
+
+    <application android:banner="@drawable/tv_banner">
+
+        <!-- 电视主屏启动器入口 -->
+        <activity
+                android:name=".activity.MainActivity"
+                android:exported="true"
+                tools:node="merge"
+                android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 系统屏保: 轮播在看/热门动画的 TMDB 剧照, 确定键跳详情页.
+             需用户在系统设置 → 屏保 里手动选择 Animeko -->
+        <service
+                android:name=".tv.AniDreamService"
+                android:exported="true"
+                android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- Web 控制台「退出 Ani 后保留」: 抬高进程优先级, 被回收后重启时顺带把网页服务起起来 -->
+        <service
+                android:name=".tv.RemoteKeepAliveService"
+                android:exported="false"
+                android:foregroundServiceType="specialUse">
+            <property
+                    android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                    android:value="Keeps the LAN web remote control reachable after the TV app is closed (user opt-in)." />
+        </service>
+
+    </application>
+</manifest>

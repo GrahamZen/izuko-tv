@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material3.Icon
@@ -28,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.intl.Locale
@@ -40,6 +43,10 @@ import me.him188.ani.app.data.models.preference.EpisodeListProgressTheme
 import me.him188.ani.app.data.models.preference.FullscreenSwitchMode
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
+import me.him188.ani.app.data.models.preference.SkipOpEdMode
+import me.him188.ani.app.data.models.preference.NoticeSoundKind
+import me.him188.ani.app.data.models.preference.TvExitBehavior
+import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
@@ -51,11 +58,17 @@ import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.getIcon
 import me.him188.ani.app.navigation.getText
 import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.SteppedSlider
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.quantizeSliderValue
+import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.lang.settings_player_tv_chrome
+import me.him188.ani.app.ui.lang.settings_player_tv_chrome_description
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_app_close_behavior
 import me.him188.ani.app.ui.lang.settings_app_close_behavior_exit
@@ -102,7 +115,20 @@ import me.him188.ani.app.ui.lang.settings_player_fullscreen_only_in_controller
 import me.him188.ani.app.ui.lang.settings_player_hide_selector_on_select
 import me.him188.ani.app.ui.lang.settings_player_long_press_fast_forward_speed
 import me.him188.ani.app.ui.lang.settings_player_long_press_fast_forward_speed_description
+import me.him188.ani.app.ui.lang.settings_player_notice_sound
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_alert
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_confirm
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_delete
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_description
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_none
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_space
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_standard
+import me.him188.ani.app.ui.lang.settings_player_notice_sound_tick
 import me.him188.ani.app.ui.lang.settings_player_op_ed_skip_duration
+import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto
+import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto_then_manual
+import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_manual
+import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_off
 import me.him188.ani.app.ui.lang.settings_player_op_ed_skip_duration_seconds
 import me.him188.ani.app.ui.lang.settings_player_pause_on_edit_danmaku
 import me.him188.ani.app.ui.lang.settings_player_playback_speed_range
@@ -111,9 +137,42 @@ import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
 import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
+import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_off
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
+import me.him188.ani.app.ui.lang.settings_player_up_next_tip_seconds
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
+import me.him188.ani.app.ui.lang.settings_theme_tv_back_long_press
+import me.him188.ani.app.ui.lang.settings_theme_tv_back_long_press_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_exit_behavior
+import me.him188.ani.app.ui.lang.settings_theme_tv_exit_behavior_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_exit_direct
+import me.him188.ani.app.ui.lang.settings_theme_tv_exit_double
+import me.him188.ani.app.ui.lang.settings_theme_tv_exit_panel
+import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_none
+import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_panel
+import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_resume
+import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press
+import me.him188.ani.app.ui.lang.settings_theme_tv_play_long_press_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_confirm
+import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_description
+import me.him188.ani.app.ui.lang.search_tv_remote_reset
+import me.him188.ani.app.ui.lang.settings_mediasource_cancel
+import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
+import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_ui_scale
+import me.him188.ani.app.ui.lang.settings_theme_tv_ui_scale_description
 import me.him188.ani.app.ui.lang.settings_update_auto_check
 import me.him188.ani.app.ui.lang.settings_update_auto_check_description
 import me.him188.ani.app.ui.lang.settings_update_auto_download
@@ -137,6 +196,7 @@ import me.him188.ani.app.ui.lang.settings_update_type_stable_short
 import me.him188.ani.app.ui.lang.settings_update_up_to_date
 import me.him188.ani.app.ui.lang.settings_update_view_changelog
 import me.him188.ani.app.ui.lang.settings_watch_together_description
+import me.him188.ani.app.ui.lang.settings_watch_together_entry_hint_tv
 import me.him188.ani.app.ui.lang.settings_watch_together_social
 import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.settings.SettingsTab
@@ -160,13 +220,15 @@ import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.AppUpdateViewModel
 import me.him188.ani.app.ui.update.NewVersion
-import me.him188.ani.app.ui.update.UpdateNotifier
+import me.him188.ani.app.ui.update.UpdateSettingsNotifier
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.isAndroid
 import me.him188.ani.utils.platform.isDesktop
 import me.him188.ani.utils.platform.isIos
 import me.him188.ani.utils.platform.isMobile
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
 
 sealed class CheckVersionResult {
@@ -195,7 +257,7 @@ fun AppSettingsTab(
 ) {
     SettingsTab(modifier) {
         SoftwareUpdateGroup(softwareUpdateGroupState)
-        AppearanceGroup(uiSettings)
+        AppearanceGroup(uiSettings, themeSettings)
         ThemeGroup(themeSettings)
         PlayerGroup(
             videoScaffoldConfig,
@@ -203,6 +265,7 @@ fun AppSettingsTab(
             danmakuFilterConfig,
             danmakuRegexFilterState,
             showDebug,
+            themeSettings,
         )
         WatchTogetherGroup(watchTogetherSettings)
         AppSettingsTabPlatform()
@@ -217,16 +280,119 @@ fun SettingsScope.WatchTogetherGroup(state: SettingsState<WatchTogetherSettings>
             checked = config.enabled,
             onCheckedChange = { state.update(config.copy(enabled = it)) },
             title = { Text(stringResource(Lang.watch_together_title)) },
-            description = { Text(stringResource(Lang.settings_watch_together_description)) },
+            description = {
+                // 遥控器形态补一句入口在哪: 那里没有悬浮气泡, 入口是长按返回那个面板里的一颗图标,
+                // 平时不在视野里 —— 开着却找不到, 等于没开
+                Text(
+                    if (LocalAniUiBehavior.current.immersiveShell) {
+                        stringResource(Lang.settings_watch_together_description) +
+                                stringResource(Lang.settings_watch_together_entry_hint_tv)
+                    } else {
+                        stringResource(Lang.settings_watch_together_description)
+                    },
+                )
+            },
         )
     }
+}
+
+/** 两个长按设置共用的选项文案 (见 [TvLongPressAction]). */
+private fun tvLongPressActionLabel(action: TvLongPressAction): StringResource = when (action) {
+    TvLongPressAction.Panel -> Lang.settings_theme_tv_long_press_panel
+    TvLongPressAction.Resume -> Lang.settings_theme_tv_long_press_resume
+    TvLongPressAction.None -> Lang.settings_theme_tv_long_press_none
 }
 
 @Composable
 fun SettingsScope.AppearanceGroup(
     state: SettingsState<UISettings>,
+    themeSettings: SettingsState<ThemeSettings>,
 ) {
     val uiSettings by state
+
+    // 放在整页最前: 调整缩放会让整页按新 density 重新布局, 条目越靠上位移越小 ——
+    // 排在后面的话, 上方那些条目的高度变化会叠加起来把它推出屏幕
+    if (LocalAniUiBehavior.current.immersiveShell) {
+        UiScaleSliderItem(themeSettings)
+
+        // 以下三条都是遥控器形态专属 (只有那里有"一路退到底就退出应用"和长按手势).
+        // 存在 ThemeSettings 里只是存储位置 (同界面缩放/保留播放会话)
+        val themeConfig by themeSettings
+        DropdownItem(
+            selected = { themeConfig.exitBehavior },
+            values = { TvExitBehavior.entries },
+            itemText = {
+                Text(
+                    stringResource(
+                        when (it) {
+                            TvExitBehavior.Direct -> Lang.settings_theme_tv_exit_direct
+                            TvExitBehavior.Panel -> Lang.settings_theme_tv_exit_panel
+                            TvExitBehavior.DoubleBack -> Lang.settings_theme_tv_exit_double
+                        },
+                    ),
+                )
+            },
+            // 写 tvExitBehavior 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔 (见 exitBehavior)
+            onSelect = { themeSettings.update(themeConfig.copy(tvExitBehavior = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_exit_behavior)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_exit_behavior_description)) },
+        )
+        DropdownItem(
+            selected = { themeConfig.tvBackLongPress },
+            // 返回键是精简遥控器唯一够得到面板的入口, 所以三档全给 (含"不做任何事")
+            values = { TvLongPressAction.entries },
+            itemText = { Text(stringResource(tvLongPressActionLabel(it))) },
+            onSelect = { themeSettings.update(themeConfig.copy(tvBackLongPress = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_back_long_press)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_back_long_press_description)) },
+        )
+        DropdownItem(
+            selected = { themeConfig.tvPlayLongPress },
+            // 播放键不给"不做任何事": 那样这个手势就彻底空了, 没有意义
+            values = { TvLongPressAction.entries.filter { it != TvLongPressAction.None } },
+            itemText = { Text(stringResource(tvLongPressActionLabel(it))) },
+            onSelect = { themeSettings.update(themeConfig.copy(tvPlayLongPress = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_play_long_press)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_play_long_press_description)) },
+        )
+        // 打开应用时弹一次二维码 (默认开); 启动弹窗里「启动时不再显示」是同一个开关. 平时的入口是动作面板右侧那块码
+        // (侧边栏 / 头像菜单的入口与「入口放哪」这一项 2026-09-12 删了)
+        SwitchItem(
+            checked = themeConfig.tvRemoteShowOnLaunch,
+            onCheckedChange = { themeSettings.update(themeConfig.copy(tvRemoteShowOnLaunch = it)) },
+            title = { Text(stringResource(Lang.settings_theme_tv_remote_show_on_launch)) },
+            description = { Text(stringResource(Lang.settings_theme_tv_remote_show_on_launch_description)) },
+        )
+        // 重置 Web 控制台地址 (换一个新 token, 已扫过的手机与书签作废). 原先只有搜索页右侧那块面板里有一颗, 入口太偏.
+        // 设置页够不到 ui-tv 的 TvRemoteControl, 经 TvRemoteSettingsBridge; 没登记 (非 TV 包) 就不显示. 先确认再重置
+        TvRemoteSettingsBridge.resetAddress?.let { reset ->
+            var confirmingReset by remember { mutableStateOf(false) }
+            TextItem(
+                onClick = { confirmingReset = true },
+                title = { Text(stringResource(Lang.settings_theme_tv_remote_reset)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_remote_reset_description)) },
+            )
+            if (confirmingReset) {
+                AlertDialog(
+                    onDismissRequest = { confirmingReset = false },
+                    text = { Text(stringResource(Lang.settings_theme_tv_remote_reset_confirm)) },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                confirmingReset = false
+                                reset()
+                            },
+                        ) { Text(stringResource(Lang.search_tv_remote_reset)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmingReset = false }) {
+                            Text(stringResource(Lang.settings_mediasource_cancel))
+                        }
+                    },
+                )
+            }
+        }
+    }
 
     LanguageSettingsPlatform(state)
 
@@ -335,6 +501,50 @@ fun SettingsScope.AppearanceGroup(
             description = { Text(stringResource(Lang.settings_app_episode_images_description)) },
         )
     }
+}
+
+/**
+ * 界面缩放滑块. 每格 [ThemeSettings.UI_SCALE_STEP], 实时生效 (整个应用的 `LocalDensity` 立刻跟随),
+ * 用户可以边调边看效果 —— 这也是它必须实时提交、而不是松手才写的原因.
+ *
+ * 值存在 [ThemeSettings] 里 (与深色模式同一份配置), 但它是界面尺寸而不是配色, 所以摆在"界面"这一页.
+ */
+@Composable
+private fun SettingsScope.UiScaleSliderItem(
+    state: SettingsState<ThemeSettings>,
+) {
+    val themeSettings by state
+    val range = ThemeSettings.UI_SCALE_RANGE
+    val step = ThemeSettings.UI_SCALE_STEP
+    val current = themeSettings.effectiveUiScale
+
+    // 改一格缩放, 整页就按新 density 重排, 滑块自己也跟着上下挪 —— 很容易挪出可视区.
+    // 焦点其实还在滑块上 (按左右仍在调值), 但人看不见它, 只能靠上下键把它导航回来.
+    // 所以每次值变化后主动把它拉回视野.
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(current) {
+        // 必须等一帧: LaunchedEffect 在重组提交后就跑, 而此时新 density 下的布局还没落定,
+        // 立刻请求会按旧坐标滚动. withFrameNanos 挂起到下一帧开始, 那时上一帧的布局已完成.
+        withFrameNanos { }
+        bringIntoViewRequester.bringIntoView()
+    }
+
+    SliderItem(
+        modifier = Modifier.bringIntoViewRequester(bringIntoViewRequester),
+        value = current,
+        onValueChange = { raw ->
+            // Slider 的 steps 吸附后仍带浮点误差, 量化到步进网格再写, 否则会存进 0.7000001 这种值
+            val quantized = ((raw / step).roundToInt() * step).coerceIn(range)
+            if (quantized != current) {
+                state.update(themeSettings.copy(uiScale = quantized))
+            }
+        },
+        valueRange = range,
+        steps = ((range.endInclusive - range.start) / step).roundToInt() - 1,
+        title = { Text(stringResource(Lang.settings_theme_tv_ui_scale)) },
+        description = { Text(stringResource(Lang.settings_theme_tv_ui_scale_description)) },
+        valueLabel = { Text("${(current * 100).roundToInt()}%") },
+    )
 }
 
 @Stable
@@ -468,7 +678,7 @@ fun SettingsScope.SoftwareUpdateGroup(
             },
         )
         Box(Modifier.fillMaxWidth()) {
-            UpdateNotifier(autoUpdate)
+            UpdateSettingsNotifier(autoUpdate)
         }
     }
 }
@@ -479,7 +689,8 @@ fun SettingsScope.PlayerGroup(
     playerKernelConfig: SettingsState<PlayerKernelConfig>,
     danmakuFilterConfig: SettingsState<DanmakuFilterConfig>,
     danmakuRegexFilterState: DanmakuRegexFilterState,
-    showDebug: Boolean
+    showDebug: Boolean,
+    themeSettings: SettingsState<ThemeSettings>,
 ) {
     Group(title = { Text(stringResource(Lang.settings_player)) }) {
         val config by videoScaffoldConfig
@@ -529,6 +740,59 @@ fun SettingsScope.PlayerGroup(
             },
         )
         HorizontalDividerItem()
+
+        // 「自定义播放器按钮」: 页面实现在 ui-tv, 装了变体才有这个功能 (见 LocalTvPlayerChromeEditorVariant).
+        // 点进去是一个不播放任何东西的播放器, 在上面直接排两行按钮 —— 那一页自己就是说明, 所以这里
+        // 不摆开关也不摆预览
+        val chromeEditor = LocalTvPlayerChromeEditorVariant.current
+        if (chromeEditor != null) {
+            val navigator = LocalNavigator.current
+            TextItem(
+                title = { Text(stringResource(Lang.settings_player_tv_chrome)) },
+                description = { Text(stringResource(Lang.settings_player_tv_chrome_description)) },
+                onClick = { navigator.navigateTvPlayerChrome() },
+            )
+            HorizontalDividerItem()
+        }
+
+        // 「退出播放页后保留播放状态」: 只有自带"回到会话"入口的形态才给这条 (见 AniUiBehavior
+        // .retainPlaybackSession), 否则关不掉也回不去. 存在 ThemeSettings 里只是存储位置.
+        if (LocalAniUiBehavior.current.retainPlaybackSession) {
+            val themeConfig by themeSettings
+            SwitchItem(
+                checked = themeConfig.tvRetainPlaybackSession,
+                onCheckedChange = { checked ->
+                    themeSettings.update(themeConfig.copy(tvRetainPlaybackSession = checked))
+                },
+                title = { Text(stringResource(Lang.settings_theme_tv_retain_playback_session)) },
+                description = {
+                    Text(stringResource(Lang.settings_theme_tv_retain_playback_session_description))
+                },
+            )
+            HorizontalDividerItem()
+        }
+        // 恒为全屏的设备没有窗口/全屏切换, 该"全屏按钮"设置无意义, 隐藏
+        if (LocalAniUiBehavior.current.supportsWindowedPlayback) {
+            DropdownItem(
+                selected = { config.fullscreenSwitchMode },
+                values = { FullscreenSwitchMode.entries },
+                itemText = {
+                    Text(
+                        when (it) {
+                            FullscreenSwitchMode.ALWAYS_SHOW_FLOATING -> stringResource(Lang.settings_player_fullscreen_always_show)
+                            FullscreenSwitchMode.AUTO_HIDE_FLOATING -> stringResource(Lang.settings_player_fullscreen_auto_hide)
+                            FullscreenSwitchMode.ONLY_IN_CONTROLLER -> stringResource(Lang.settings_player_fullscreen_only_in_controller)
+                        },
+                    )
+                },
+                onSelect = {
+                    videoScaffoldConfig.update(config.copy(fullscreenSwitchMode = it))
+                },
+                title = { Text(stringResource(Lang.settings_player_fullscreen_button)) },
+                description = { Text(stringResource(Lang.settings_player_fullscreen_button_description)) },
+            )
+            HorizontalDividerItem()
+        }
         SwitchItem(
             danmakuFilterConfig.value.enableRegexFilter,
             onCheckedChange = {
@@ -564,7 +828,9 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_hide_selector_on_select)) },
         )
-        if (LocalPlatform.current.isMobile()) {
+        // isMobile() 在 Android TV 上也是真, 但恒为全屏的设备既不会旋转也没有"非全屏"可回,
+        // 这条开关在那儿没有任何效果
+        if (LocalPlatform.current.isMobile() && LocalAniUiBehavior.current.supportsWindowedPlayback) {
             HorizontalDividerItem()
             SwitchItem(
                 checked = config.autoFullscreenOnLandscapeMode,
@@ -582,11 +848,89 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
+        // 以下两项只有遥控器形态有: 手机端播完直接连播, 也没有"组件全隐藏"这个常态
+        if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            // 一个滑块兼管开关与粗细: 最左一格 = 不显示, 往右依次 2~8dp (用户 2026-09-11 要求并成一项).
+            //
+            // 滑块值用**档位下标**而不是 dp: 1dp 刻意不给 (见 IDLE_PROGRESS_BAR_HEIGHT_RANGE), 直接拿 dp
+            // 当值的话 0 与 2 之间空着一格, 遥控器上会有一下"按了没反应"
+            val thicknessRange = VideoScaffoldConfig.IDLE_PROGRESS_BAR_HEIGHT_RANGE
+            val barDp = config.effectiveIdleProgressBarHeightDp
+            val lastStop = thicknessRange.last - thicknessRange.first + 1
+            SliderItem(
+                value = (if (barDp <= 0) 0 else barDp - thicknessRange.first + 1).toFloat(),
+                onValueChange = { raw ->
+                    val stop = raw.roundToInt().coerceIn(0, lastStop)
+                    val dp = if (stop == 0) 0 else thicknessRange.first + stop - 1
+                    if (dp != barDp) {
+                        // 顺手把旧开关置真: 从这一下起滑块 (含 0 档) 是唯一的真相
+                        videoScaffoldConfig.update(
+                            config.copy(showIdleProgressBar = true, idleProgressBarHeightDp = dp),
+                        )
+                    }
+                },
+                valueRange = 0f..lastStop.toFloat(),
+                steps = lastStop - 1,
+                title = { Text(stringResource(Lang.settings_player_idle_progress_bar)) },
+                description = { Text(stringResource(Lang.settings_player_idle_progress_bar_description)) },
+                valueLabel = {
+                    Text(
+                        if (barDp <= 0) {
+                            stringResource(Lang.settings_player_idle_progress_bar_off)
+                        } else {
+                            "$barDp dp"
+                        },
+                    )
+                },
+            )
+            HorizontalDividerItem()
+            val leadRange = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
+            val leadStep = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP
+            SliderItem(
+                value = config.upNextTipLeadSeconds.toFloat(),
+                onValueChange = { raw ->
+                    // 吸附后仍带浮点误差, 量化到步进网格再写 (同界面缩放那个滑块)
+                    val seconds = (raw / leadStep).roundToInt() * leadStep
+                    val clamped = seconds.coerceIn(leadRange)
+                    if (clamped != config.upNextTipLeadSeconds) {
+                        videoScaffoldConfig.update(config.copy(upNextTipLeadSeconds = clamped))
+                    }
+                },
+                valueRange = leadRange.first.toFloat()..leadRange.last.toFloat(),
+                steps = (leadRange.last - leadRange.first) / leadStep - 1,
+                title = { Text(stringResource(Lang.settings_player_up_next_tip)) },
+                description = { Text(stringResource(Lang.settings_player_up_next_tip_description)) },
+                // 最左一格 = 关掉这一档提示 (0 秒的"倒计时"没有意义)
+                valueLabel = {
+                    Text(
+                        if (config.upNextTipLeadSeconds <= 0) {
+                            stringResource(Lang.settings_player_up_next_tip_off)
+                        } else {
+                            stringResource(Lang.settings_player_up_next_tip_seconds, config.upNextTipLeadSeconds)
+                        },
+                    )
+                },
+            )
+        }
         HorizontalDividerItem()
-        SwitchItem(
-            checked = config.autoSkipOpEd,
-            onCheckedChange = {
-                videoScaffoldConfig.update(config.copy(autoSkipOpEd = it))
+        DropdownItem(
+            selected = { config.effectiveSkipOpEdMode },
+            values = { SkipOpEdMode.entries },
+            itemText = {
+                Text(
+                    stringResource(
+                        when (it) {
+                            SkipOpEdMode.AUTO -> Lang.settings_player_skip_op_ed_auto
+                            SkipOpEdMode.AUTO_THEN_MANUAL -> Lang.settings_player_skip_op_ed_auto_then_manual
+                            SkipOpEdMode.MANUAL -> Lang.settings_player_skip_op_ed_manual
+                            SkipOpEdMode.OFF -> Lang.settings_player_skip_op_ed_off
+                        },
+                    ),
+                )
+            },
+            onSelect = {
+                videoScaffoldConfig.update(config.copy(skipOpEdMode = it))
             },
             title = { Text(stringResource(Lang.settings_player_auto_skip_op_ed)) },
             description = { Text(stringResource(Lang.settings_player_auto_skip_op_ed_description)) },
@@ -646,6 +990,40 @@ fun SettingsScope.PlayerGroup(
         HorizontalDividerItem()
         PlaybackSpeedItems(config, videoScaffoldConfig)
         PlayerGroupPlatform(videoScaffoldConfig, playerKernelConfig)
+        // 「后台就绪提示音」与上面那条"保留播放状态"是同一个功能的两个参数: 没有回到会话的入口就
+        // 不会有后台提示, 这条也就无从谈起. 所以用同一个门控.
+        if (LocalAniUiBehavior.current.retainPlaybackSession) {
+            val themeConfig by themeSettings
+            val playNoticeSound = rememberNoticeSoundPlayer()
+            HorizontalDividerItem()
+            DropdownItem(
+                selected = { themeConfig.tvNoticeSound },
+                values = { NoticeSoundKind.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                NoticeSoundKind.None -> Lang.settings_player_notice_sound_none
+                                NoticeSoundKind.Confirm -> Lang.settings_player_notice_sound_confirm
+                                NoticeSoundKind.Standard -> Lang.settings_player_notice_sound_standard
+                                NoticeSoundKind.Alert -> Lang.settings_player_notice_sound_alert
+                                NoticeSoundKind.Tick -> Lang.settings_player_notice_sound_tick
+                                NoticeSoundKind.Delete -> Lang.settings_player_notice_sound_delete
+                                NoticeSoundKind.Space -> Lang.settings_player_notice_sound_space
+                            },
+                        ),
+                    )
+                },
+                onSelect = { kind ->
+                    themeSettings.update(themeConfig.copy(tvNoticeSound = kind))
+                    // 选完立刻响一次: 这些都是系统按键音, 光看名字听不出是什么, 不试听没法选.
+                    // 传新值而不是等设置写回去再读 —— 写回是异步的, 那时候响的还是旧音色.
+                    playNoticeSound(kind)
+                },
+                title = { Text(stringResource(Lang.settings_player_notice_sound)) },
+                description = { Text(stringResource(Lang.settings_player_notice_sound_description)) },
+            )
+        }
     }
 }
 
@@ -660,7 +1038,19 @@ private fun SettingsScope.PlaybackSpeedItems(
     config: VideoScaffoldConfig,
     videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
 ) {
-    val persistedRange = config.minPlaybackSpeed..config.maxPlaybackSpeed
+    // 遥控器形态下不提供"倍速范围": RangeSlider 的两个 thumb 在遥控器上没有明确的切换语义,
+    // 根本调不动; 而它偏偏是唯一会**顺带改掉**常驻倍速与长按倍速的入口 —— withPlaybackSpeedRange
+    // 会把这两个值一起夹进新范围, 而范围调回来它们不还原, 于是配置里可能留下一个用户在界面上
+    // 看不见、也改不掉的倍速 (「记住播放倍速」开着时默认倍速那条滑块是隐藏的).
+    //
+    // 此时范围固定用播放器支持的全范围 (0.25x–4x), 并且**不读**配置里的 min/max: 既然这条设置
+    // 已经不给了, 就别再替用户收窄, 而且以前被改窄过的配置也不该永远生效.
+    val rangeConfigurable = !LocalAniUiBehavior.current.focusDrivenNavigation
+    val persistedRange = if (rangeConfigurable) {
+        config.minPlaybackSpeed..config.maxPlaybackSpeed
+    } else {
+        VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED
+    }
 
     // 范围拖动期间的瞬态值, 提交后清空; 拖动期间下方长按倍速 Slider 实时使用该范围
     var rangeDragOverride by remember { mutableStateOf<ClosedFloatingPointRange<Float>?>(null) }
@@ -672,29 +1062,31 @@ private fun SettingsScope.PlaybackSpeedItems(
         }
     }
 
-    RangeSliderItem(
-        value = effectiveRange,
-        onValueChange = {
-            rangeDragging = true
-            rangeDragOverride = VideoScaffoldConfig.normalizePlaybackSpeedRange(it, effectiveRange)
-        },
-        onValueChangeFinished = {
-            val finalRange = rangeDragOverride ?: return@RangeSliderItem
-            // 缩小范围时把相关值一并 clamp 进新区间；保留最终范围直到配置写回，避免短暂回跳
-            val committedConfig = config.withPlaybackSpeedRange(finalRange)
-            rangeDragging = false
-            rangeDragOverride = committedConfig.minPlaybackSpeed..committedConfig.maxPlaybackSpeed
-            videoScaffoldConfig.update(committedConfig)
-        },
-        valueRange = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED,
-        steps = 14,
-        valueIndicator = { Text(it.formatSpeedValue()) },
-        valueLabel = {
-            Text("${effectiveRange.start.formatSpeedValue()}x–${effectiveRange.endInclusive.formatSpeedValue()}x")
-        },
-        title = { Text(stringResource(Lang.settings_player_playback_speed_range)) },
-        description = { Text(stringResource(Lang.settings_player_playback_speed_range_description)) },
-    )
+    if (rangeConfigurable) {
+        RangeSliderItem(
+            value = effectiveRange,
+            onValueChange = {
+                rangeDragging = true
+                rangeDragOverride = VideoScaffoldConfig.normalizePlaybackSpeedRange(it, effectiveRange)
+            },
+            onValueChangeFinished = {
+                val finalRange = rangeDragOverride ?: return@RangeSliderItem
+                // 缩小范围时把相关值一并 clamp 进新区间；保留最终范围直到配置写回，避免短暂回跳
+                val committedConfig = config.withPlaybackSpeedRange(finalRange)
+                rangeDragging = false
+                rangeDragOverride = committedConfig.minPlaybackSpeed..committedConfig.maxPlaybackSpeed
+                videoScaffoldConfig.update(committedConfig)
+            },
+            valueRange = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED,
+            steps = 14,
+            valueIndicator = { Text(it.formatSpeedValue()) },
+            valueLabel = {
+                Text("${effectiveRange.start.formatSpeedValue()}x–${effectiveRange.endInclusive.formatSpeedValue()}x")
+            },
+            title = { Text(stringResource(Lang.settings_player_playback_speed_range)) },
+            description = { Text(stringResource(Lang.settings_player_playback_speed_range_description)) },
+        )
+    }
 
     // 范围变化以动画过渡, 避免 thumb 映射位置瞬移
     val animatedRangeStart by animateFloatAsState(effectiveRange.start, label = "playbackSpeedRangeStart")
@@ -702,7 +1094,10 @@ private fun SettingsScope.PlaybackSpeedItems(
     val displayRange =
         if (animatedRangeStart < animatedRangeEnd) animatedRangeStart..animatedRangeEnd else effectiveRange
 
-    HorizontalDividerItem()
+    // 上一条被隐藏时这里就是本组的第一条, 不能再画一道分隔线 (调用方已经画过一道)
+    if (rangeConfigurable) {
+        HorizontalDividerItem()
+    }
 
     SwitchItem(
         checked = config.rememberPlaybackSpeed,

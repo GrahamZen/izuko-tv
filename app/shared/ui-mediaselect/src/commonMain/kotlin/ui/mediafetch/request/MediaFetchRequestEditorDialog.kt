@@ -25,6 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import me.him188.ani.app.ui.foundation.saveable.mutableStateSaver
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_continue_editing
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_discard
@@ -72,6 +75,8 @@ fun MediaFetchRequestEditorDialog(
 
     AlertDialog(
         onDismissRequestWrapped,
+        // 独立窗口: 遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
+        modifier = Modifier.tvOverlayWindowKeys(onDismissRequestWrapped),
         confirmButton = {
             TextButton(
                 {
@@ -85,11 +90,7 @@ fun MediaFetchRequestEditorDialog(
                 Text(saveAndRefreshText)
             }
         },
-        dismissButton = {
-            TextButton(onDismissRequestWrapped) {
-                Text(cancelText)
-            }
-        },
+        dismissButton = dismissDialogButton(cancelText, onDismissRequestWrapped),
         title = {
             Text(editRequestTitle)
         },
@@ -100,6 +101,7 @@ fun MediaFetchRequestEditorDialog(
                 Modifier.fillMaxWidth(),
             )
         },
+        containerColor = aniDialogContainerColor(),
     )
 
     if (showConfirmDiscard) {
@@ -107,6 +109,7 @@ fun MediaFetchRequestEditorDialog(
             onDismissRequest = {
                 showConfirmDiscard = false
             },
+            modifier = Modifier.tvOverlayWindowKeys { showConfirmDiscard = false },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -117,15 +120,7 @@ fun MediaFetchRequestEditorDialog(
                     Text(discardText, color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showConfirmDiscard = false
-                    },
-                ) {
-                    Text(continueEditingText)
-                }
-            },
+            dismissButton = dismissDialogButton(continueEditingText) { showConfirmDiscard = false },
             icon = {
                 Icon(
                     Icons.Rounded.Delete, null,
@@ -135,6 +130,7 @@ fun MediaFetchRequestEditorDialog(
             text = {
                 Text(discardConfirmationText)
             },
+            containerColor = aniDialogContainerColor(),
         )
     }
 }

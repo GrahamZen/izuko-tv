@@ -255,6 +255,12 @@ class HttpMediaCacheEngine(
                 it.status == DownloadStatus.COMPLETED
             }
 
+        // 同样必须 distinctUntilChanged, 理由见上面 canPlay
+        override val isMerging: Flow<Boolean>
+            get() = downloader.getProgressFlow(downloadId).map {
+                it.status == DownloadStatus.MERGING
+            }.distinctUntilChanged()
+
         override val fileStats: Flow<MediaCache.FileStats> = downloader.getProgressFlow(downloadId).map {
             val totalSize = it.totalBytes
             val downloadedBytes = it.downloadedBytes

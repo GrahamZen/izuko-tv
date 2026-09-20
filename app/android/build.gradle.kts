@@ -104,11 +104,32 @@ android {
         }
     }
     flavorDimensions += "distribution"
+    flavorDimensions += "formFactor"
     productFlavors {
         create("default") {
             dimension = "distribution"
         }
+        /*
+         * 形态维度: 手机/平板 与 Android TV 出两个独立 APK.
+         *
+         * TV 变体多出的东西全部按 flavor 隔离, phone 变体一行不受影响:
+         * - src/izukoTv/AndroidManifest.xml: LEANBACK 启动器入口 / banner / 屏保服务 / EPG 权限
+         * - src/izukoTv/kotlin: 形态接缝实现 + 主屏频道 + 屏保 (见 src/phone 下的同名接缝)
+         * - tvImplementation: 只有 TV 变体打包遥控器界面与 tvprovider
+         */
+        create("phone") {
+            dimension = "formFactor"
+        }
+        create("tv") {
+            isDefault = true
+            dimension = "formFactor"
+            applicationIdSuffix = ".tv"
+            versionNameSuffix = "-tv"
+        }
     }
+    // tv 形态的源码根目录是 src/izukoTv 而不是默认的 src/tv: 上游的 Android TV 客户端也有一个同名的 tv flavor,
+    // 它的入口 (MainActivity / TvAniApplication) 放在 src/tv, 同名目录会被这里的 tv 变体一起编译
+    sourceSets.named("tv") { setRoot("src/izukoTv") }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -118,6 +139,9 @@ android {
 dependencies {
     implementation(projects.app.shared)
     implementation(projects.app.shared.application)
+    // TV (遥控器) 专属界面与主屏频道 API: 只进 tv 变体, phone 包里一个类都没有
+    "tvImplementation"(projects.app.shared.uiTv)
+    "tvImplementation"(libs.androidx.tvprovider)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

@@ -218,7 +218,17 @@ class DefaultFileDownloader(
         return try {
             // The server should serve the checksum as plain text
             // Checksum sidecars may have no line ending, LF, or CRLF; trim all surrounding whitespace.
-            client.use { get("$url.sha1").body<String>().trim() }
+            // 短超时: 它同时是"这个下载源能不能用"的探测. GitHub 接口通、下载却不通的网络 (国内常见) 上,
+            // 默认的 30 秒读超时会让用户白等半分钟才轮到镜像
+            client.use {
+                get("$url.sha1") {
+                    timeout {
+                        connectTimeoutMillis = 8_000
+                        socketTimeoutMillis = 8_000
+                        requestTimeoutMillis = 10_000
+                    }
+                }.body<String>().trim()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ClientRequestException) {

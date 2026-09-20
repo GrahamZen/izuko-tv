@@ -19,9 +19,14 @@ import java.util.WeakHashMap
 private val videoSurfaces = WeakHashMap<MediampPlayer, WeakReference<SurfaceView>>()
 
 internal fun registerAndroidVideoSurface(player: MediampPlayer, surfaceView: SurfaceView) {
-    synchronized(videoSurfaces) {
+    val replaced = synchronized(videoSurfaces) {
+        val previous = videoSurfaces[player]?.get()
         videoSurfaces[player] = WeakReference(surfaceView)
+        previous !== surfaceView
     }
+    // 换了一块 view = 输出面换代, 新的这一代上还没有画面 (见 VideoSurfaceFrameSignal)。
+    // 只在**真的换了**的时候清: 本函数会随组合重跑, 每次都清会让标记再也回不到 true
+    if (replaced) (player as? LibassExoPlayerMediampPlayer)?.onVideoSurfaceReplaced()
     // Surface 重建时 sticky dataspace 会丢, 由这里补写; 见 SurfaceDataSpace.kt。
     // holder 不会主动放手回调, 所以回调只弱引用播放器 (存活的播放器由其持有者引住),
     // 播放器 close 或被回收后在下一次事件里自我注销 (写入本身另有 closed 门控挡住)

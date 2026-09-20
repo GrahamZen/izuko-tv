@@ -298,6 +298,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val updateSettings: Settings<UpdateSettings> get() = error("Not used")
     override val videoScaffoldConfig: Settings<VideoScaffoldConfig> get() = error("Not used")
     override val playerKernelConfig: Settings<PlayerKernelConfig> get() = error("Not used")
+    override val tmdbImagesDisabled: Settings<Boolean> get() = error("Not used")
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")

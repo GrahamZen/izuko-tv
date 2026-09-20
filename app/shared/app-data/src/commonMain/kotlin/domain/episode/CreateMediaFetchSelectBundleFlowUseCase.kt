@@ -24,6 +24,7 @@ import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.createFetchFetchSession
@@ -73,6 +74,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
     private val mediaSourceManager: MediaSourceManager by inject()
     private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
     private val settingsRepository: SettingsRepository by inject()
+    private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>
@@ -135,8 +137,11 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     episodes = bundle.subjectCollectionInfo.episodes.map { it.episodeInfo },
                 )
             }
+            // 「重新搜索(含新数据源)」按一下就 +1: 会话创建时对数据源列表取快照, 改完数据源 / 更新订阅要让新源
+            // 参与就只能重建会话 (见 MediaFetchSessionRefresh)。请求本身没变时, 它是唯一能放行的东西。
+            .combine(fetchSessionRefresh.ticks) { req, tick -> req to tick }
             .distinctUntilChanged() // very important to avoid re-query
-            .mapLatest { req ->
+            .mapLatest { (req, _) ->
                 logger.info { "MediaFetchRequest changed. Creating MediaFetchSession for reqeust: $req" }
                 createFetchSession(req)
             }

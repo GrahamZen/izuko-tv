@@ -15,6 +15,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.analytics.analytics
@@ -217,18 +218,51 @@ class AniApplication : Application() {
         }
     }
 
+    /**
+     * 启动 BT 服务进程.
+     *
+     * **前台时刻意用 `startService` 而不是 `startForegroundService`**: 后者会武装系统的
+     * `SERVICE_START_FOREGROUND_TIMEOUT`(AOSP 为 10 秒) —— 从这里调用起算, 服务必须在 10 秒内
+     * 调到 `startForeground()`, 否则系统抛 RemoteServiceException 把进程杀掉, 表现为"BT 一直不下载"
+     * (2026-08-11 真机复现两次).
+     *
+     * 而这 10 秒里绝大部分不在我们手上: `:torrent_service` 是独立进程, `startForeground()` 在
+     * [AniTorrentService.onStartCommand] 里, 必须先等进程创建 + 类加载 + `Application.onCreate`
+     * 返回. 实测这段在 Shield 的 debug 包上要 **6~10 秒**(跨 4 天日志, 与任何一次改动无关),
+     * 本来就贴着死线; 主进程同时在跑 web 源搜索这类重活时就会顶过去.
+     *
+     * `startService` 没有这个死线 (AOSP 只在 `fgRequired` 时才挂 `SERVICE_START_FOREGROUND_TIMEOUT_MSG`),
+     * 服务照旧在 `onStartCommand` 里 `startForeground()` 变成前台服务, 只是头上不再有秒表.
+     * 代价是它只在应用处于前台时可用 —— 后台调 `startService` 会抛 IllegalStateException
+     * (API 26 起的后台服务启动限制), 所以后台仍走 `startForegroundService`, 并额外留一层 catch 兜底.
+     *
+     * 这是绕开症状, 不是治本. 治本要让服务进程启动快起来 (那 6~10 秒在进程创建与日志配置上,
+     * 全是上游代码), 值得另开一条给上游.
+     */
     private fun startAniTorrentService(): ComponentName? {
-        return startForegroundService(
-            Intent(this, AniTorrentService.actualServiceClass).apply {
-                putExtra("app_name", me.him188.ani.R.string.app_name)
-                putExtra("app_service_title_text_idle", me.him188.ani.R.string.app_service_title_text_idle)
-                putExtra("app_service_title_text_working", me.him188.ani.R.string.app_service_title_text_working)
-                putExtra("app_service_content_text", me.him188.ani.R.string.app_service_content_text)
-                putExtra("app_service_stop_text", me.him188.ani.R.string.app_service_stop_text)
-                putExtra("app_icon", me.him188.ani.R.mipmap.ic_launcher)
-                putExtra("open_activity_intent", Intent(this@AniApplication, MainActivity::class.java))
-            },
-        )
+        val intent = buildAniTorrentServiceIntent()
+        // STARTED = 至少有一个 Activity 可见, 正是后台启动限制放行的那个状态
+        if (ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            try {
+                return startService(intent)
+            } catch (e: IllegalStateException) {
+                // 理论上到不了 (刚判过前台), 真到了就退回带死线的那条路, 别把启动整个丢掉
+                logger<AniApplication>().error(e) { "startService for torrent service rejected, falling back" }
+            }
+        }
+        return startForegroundService(intent)
+    }
+
+    private fun buildAniTorrentServiceIntent(): Intent {
+        return Intent(this, AniTorrentService.actualServiceClass).apply {
+            putExtra("app_name", me.him188.ani.R.string.app_name)
+            putExtra("app_service_title_text_idle", me.him188.ani.R.string.app_service_title_text_idle)
+            putExtra("app_service_title_text_working", me.him188.ani.R.string.app_service_title_text_working)
+            putExtra("app_service_content_text", me.him188.ani.R.string.app_service_content_text)
+            putExtra("app_service_stop_text", me.him188.ani.R.string.app_service_stop_text)
+            putExtra("app_icon", me.him188.ani.R.mipmap.ic_launcher)
+            putExtra("open_activity_intent", Intent(this@AniApplication, MainActivity::class.java))
+        }
     }
 
     private fun stopService() {

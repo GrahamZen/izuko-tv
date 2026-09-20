@@ -21,18 +21,242 @@ enum class DarkMode {
     AUTO, LIGHT, DARK,
 }
 
+/** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
+/**
+ * TV 新番时间表的版式. 三版都留着, 设置里可选 —— 改版换掉的东西未必人人都想要
+ * (用户 2026-09-18)。
+ *
+ * 旧的布尔 `tvImmersiveSchedule` 已撤: 存储层是 `ignoreUnknownKeys = true` (见 DataStoreMP),
+ * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认的 [Timeline],
+ * 再选一次即可。
+ */
+@Serializable
+enum class TvScheduleLayout {
+    /** 上游原布局: 15 天并排的纵向列表. */
+    Upstream,
+
+    /** 日期胶囊行 + **全竖版卡片网格** (2026-09-13 改版之前的 TV 版式). */
+    Grid,
+
+    /** 左侧焦点详情大图大字 + 右侧单列时间线 (改版后, 默认). */
+    Timeline,
+}
+
+@Serializable
+enum class TvExitBehavior {
+    /** 直接退出应用 —— 加确认之前的老行为. */
+    Direct,
+
+    /** 弹出动作面板 (焦点落「退出应用」), 顺带能看到后台在播什么. */
+    Panel,
+
+    /** 连按两次: 第一次只提示"再按一次退出", 窗口内再按一下才真退. */
+    DoubleBack,
+}
+
+/**
+ * TV: 某个键**长按**时做什么.
+ *
+ * 两个键各配各的 (见 [ThemeSettings.tvBackLongPress] / [ThemeSettings.tvPlayLongPress]), 而不是
+ * 一个"哪些键能开面板"的三选一 —— 后者有个空档: 选"只有返回键开面板"时, 长按播放键就闲置了,
+ * 而那个手势本身是有用的 (它原先就是"一步回到正在播放").
+ */
+@Serializable
+enum class TvLongPressAction {
+    /** 打开动作面板. */
+    Panel,
+
+    /** 直接回到后台正在播的那一集 (没有会话时什么都不做). */
+    Resume,
+
+    /**
+     * 不认领, 保持这个键的普通语义.
+     *
+     * 只给返回键用: 播放键长按不认领的话那个手势就彻底空了, 没有意义.
+     * 注意选它之后, 若遥控器又没有播放键 (Chromecast 那类精简遥控器), 动作面板就没有入口了 ——
+     * 设置项的说明里写着这句.
+     */
+    None,
+}
+
+/**
+ * TV: 视觉效果三档 (见 [ThemeSettings.tvVisualEffects]; 读取走 [ThemeSettings.visualEffects]).
+ *
+ * 按**开销的性质**分, 不是按"好看的程度":
+ * - 按一下动一次的转场 (追番页换分类卡片滑动、hero 文字分行错落): 只在操作那一刻花, 看得见, 性能好的机器值得开 ——
+ *   均衡档起;
+ * - 一直在动的装饰 (加载占位脉动、hero 长标题一直滚): 用户不按也在重画, 页面进不了静止态, 远看收益又小 —— 只给完整档;
+ * - 高清原图 ("继续观看"剧照停稳后升原图、详情页停留后加清): 同时花流量、解码内存 (原图位图约 33MB, w1280 约 3.7MB)
+ *   与 GPU 上传, 且只有 4K 界面看得出 —— 只给完整档, 调用方另外要求 4K 界面.
+ *
+ * 设备 × 网络的四种组合落到三档: 性能好网络好 = 完整; 性能好网络差 = 均衡; 性能差 (不论网络) = 流畅. 原图的解码
+ * 对弱机本身就是负担, 网络再快也不该升, 所以"性能差"那两格是同一档.
+ *
+ * **不分档** (三档相同): 滚动与连发期间藏起 hero 文字、背景图停稳再换 (ui-foundation 的 TvScrollActivity, Shield 上
+ * 不做就 janky 8~10%, 强机也要); 网络相关的等待 (封面兜底 / 重发 / 预热并发, 按实测网速自动, 见 TvImageNetworkTier);
+ * 按键时背景压暗; **进详情页的背景放大** —— 它比流畅档原来用的交叉淡入还顺 (2026-09-13 同包同条目对照: 淡入期间三帧
+ * 39~56ms 落在透明度变化最快的一段, 放大运动中每帧 3~6ms, 重活挪到落地尾段与静止之后), 弱机更该用它.
+ *
+ * 默认均衡: 转场实测与交叉淡入同价 (放大转场 Shield 上无长帧), 真正的常驻开销 (装饰 / 原图) 只在完整档;
+ * 弱机仍卡的用户在设置里降一档.
+ */
+@Serializable
+enum class TvVisualEffectsLevel {
+    /**
+     * 流畅: 只保留进详情页的背景放大 (三档都有); 没有转场、没有常驻装饰、不用原图,
+     * **焦点滚动也不带动画** (瞬时跳位, 见 [animatedScroll])。给主线程吃紧的弱机。
+     */
+    Smooth,
+
+    /** 均衡: 在流畅之上开其余转场 (卡片滑动 / 文字错落). */
+    Balanced,
+
+    /** 完整: 在均衡之上开常驻装饰 (占位脉动 / 长标题一直滚) 与 4K 界面上的原图. */
+    Full,
+    ;
+
+    /**
+     * 按一下动一次的转场: 均衡档起. 除了页面之间的切换, 还包含**导航期间的内容替换** ——
+     * hero 文字进出、行压暗与两态渐变的插值、图片加载淡入 (见 `tvContentSwapAnimated`).
+     * 流畅档一律直接换到终态, 静止画面逐像素一致.
+     *
+     * **背景图的交叉淡入不在内**: 它还兼着"旧图撑到新图就位", 砍掉会空一段, 理由见 `tvContentSwapAnimated`.
+     */
+    val transitions: Boolean get() = this >= Balanced
+
+    /**
+     * 焦点滚动带不带动画 (吸顶 / 锚位条的 spring): 均衡档起; **流畅档瞬时跳位**。
+     *
+     * 这是流畅档上最要紧的一条, 理由是弱机的瓶颈不在绘制而在主线程: 报告者那台投影仪
+     * (mt5877 / Mali-G57, 1080p) 上下切卡片时 GPU 只有 3~15ms, 而"等主线程 80~140ms + 重组 40~73ms",
+     * 按住时 11~14fps、主线程近乎满核 (2026-09-14 诊断日志)。spring 滚动会把**一次按键摊成二十几帧**,
+     * 每帧都重新测量新进入的项 + 重组 —— 瞬时跳位之后一次按键只有一帧有内容变化, 其余帧无事可做。
+     * 静止画面完全一致, 只是没有了滑动过程。
+     */
+    val animatedScroll: Boolean get() = this >= Balanced
+
+    /**
+     * 跑马灯挂不挂 (完整档无限滚, 均衡档滚几趟就停, **流畅档根本不挂**)。
+     *
+     * 不是"滚得少一点"的问题: `basicMarquee` 为了判断要不要滚, 每次测量都要把整串文字按**不换行**
+     * 量一遍 (`getMaxIntrinsicWidth`) —— 弱机诊断里"文字测宽与断行"占主线程卡顿采样的 19%, 仅次于
+     * 重组。流畅档干脆不挂这个 modifier, 长标题直接截断。
+     */
+    val marquee: Boolean get() = this >= Balanced
+
+    /** 一直在动的装饰动画: 只有完整档. */
+    val ambient: Boolean get() = this == Full
+
+    /** 高清原图: 只有完整档 (调用方另外要求 4K 界面, 见 AniDisplayTier). */
+    val originalImages: Boolean get() = this == Full
+}
+
+/**
+ * TV: 「Web 控制台」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]). **已不再使用** (2026-09-12): 入口改成动作面板
+ * 右侧常驻的二维码, 侧边栏与头像菜单的条目都删了. 类型与字段留着只为读得懂旧设置 (设置 JSON 里存过它的人).
+ */
+@Serializable
+enum class TvRemoteEntryPlacement {
+    /** 侧边栏常驻一个图标 (默认): 一眼能看到这个功能. */
+    Rail,
+
+    /** 收进头像上方的浮出菜单: 焦点移到头像上才出现. */
+    Avatar,
+}
+
 @Serializable
 @Immutable
 data class ThemeSettings(
-    val darkMode: DarkMode = DarkMode.AUTO,
+    val darkMode: DarkMode = DarkMode.DARK,
     val useDynamicTheme: Boolean = false, // only supported on Android with Build.VERSION.SDK_INT >= 31
-    // TODO: Default "true" if supported (on Android, Build.VERSION.SDK_INT >= 31)
-    val useBlackBackground: Boolean = false,
+    /** 高对比度 (纯黑背景), 只在深色主题下生效. */
+    val useBlackBackground: Boolean = true,
     val alwaysDarkInEpisodePage: Boolean = false,
     val useDynamicSubjectPageTheme: Boolean = false,
     val seedColorValue: ULong = DefaultSeedColor.value,
     val enableAnimatedGradientSubjectPage: Boolean = false,
     val enableFrostedGlassEffect: Boolean = false,
+    /** TV: 探索页使用沉浸式布局 (Hero 轮播); 关闭则回退上游原布局 (低端机可关以降低开销). */
+    val tvImmersiveExploration: Boolean = true,
+    /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
+    val tvImmersiveDetails: Boolean = true,
+    /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
+    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Timeline,
+    /**
+     * TV: 退出播放页后保留播放会话 (播放器与整条"搜索数据源 → 选源 → 起播"的流水线),
+     * 由侧边栏"正在播放"条目回去; 数据源在后台就绪时弹一次提示.
+     *
+     * 默认开: 它解决的是"等数据源要十几秒"这个真实痛点 —— 退出去干别的, 加载好了再回来.
+     * 关掉则回到上游行为: 退出即销毁, 每次进来从头搜索. 想省内存 (保留的会话占着一个
+     * 暂停中的解码器与缓冲区) 或觉得"退出了还占着资源"不放心的用户可以关.
+     */
+    val tvRetainPlaybackSession: Boolean = true,
+    /**
+     * TV: [tvRetainPlaybackSession] 的后台提示响哪一声 ([NoticeSoundKind.None] = 只弹 toast 不出声).
+     *
+     * 存在这里而不是 `VideoScaffoldConfig`: 它跟着上面那条开关走, 同一个功能的两个参数放一起.
+     */
+    val tvNoticeSound: NoticeSoundKind = NoticeSoundKind.Default,
+    /**
+     * **已被 [tvExitBehavior] 取代, 只留着做迁移** —— 判断行为一律用 [exitBehavior], 别读这个.
+     *
+     * 它原先是个布尔: 开 = 在主页按返回先弹确认框, 关 = 直接退出. 升级成三选一之后不能直接删:
+     * 这套设置的 JSON 是 `encodeDefaults = false`, 显式关过它的人存着 `{"tvExitConfirmation":false}`,
+     * 字段一没这份选择就丢了 (表现为"我明明关了确认, 更新完又回来了").
+     */
+    val tvExitConfirmation: Boolean = true,
+    /**
+     * TV: 在主页按返回键那一下的行为 (三选一, 见 [TvExitBehavior]).
+     *
+     * **`null` = 还没显式选过**, 这时按老的布尔开关 [tvExitConfirmation] 推导 —— 读取一律走
+     * [exitBehavior], 别直接读这个字段. 这套设置的 JSON 是 `encodeDefaults = false`, 显式关过
+     * 旧开关的人存着 `{"tvExitConfirmation":false}`, 直接换字段会把他们的选择丢掉.
+     */
+    val tvExitBehavior: TvExitBehavior? = null,
+    /**
+     * TV: **长按返回键**做什么 (见 [TvLongPressAction]).
+     *
+     * 默认开面板. 它是精简遥控器 (没有播放键) 唯一够得到面板的入口, 所以三档里唯独它允许 [TvLongPressAction.None].
+     */
+    val tvBackLongPress: TvLongPressAction = TvLongPressAction.Panel,
+    /**
+     * TV: **长按播放键**做什么 (见 [TvLongPressAction]).
+     *
+     * 默认开面板. 选 [TvLongPressAction.Resume] 就是旧行为"一步跳回正在播放" —— 与返回键配成
+     * "返回开面板 / 播放直接回去"的分工, 两个手势各司其职而不是重复.
+     */
+    val tvPlayLongPress: TvLongPressAction = TvLongPressAction.Panel,
+    /**
+     * **已被 [tvVisualEffects] 取代, 只留着做迁移** —— 判断一律用 [visualEffects], 别读这个.
+     *
+     * 它原先是个两档开关 (开 = 完整视觉效果, 关 = 为低端设备让步). 升级成三档之后不能直接删: 这套设置的 JSON 是
+     * `encodeDefaults = false`, 开过它的人存着 `{"tvFullVisualEffects":true}`, 字段一没这份选择就丢了.
+     */
+    val tvFullVisualEffects: Boolean = false,
+    /**
+     * TV: 视觉效果档 (见 [TvVisualEffectsLevel]).
+     *
+     * **`null` = 还没显式选过**, 这时按老开关 [tvFullVisualEffects] 推导 (开过 = 完整, 否则均衡) —— 读取一律走
+     * [visualEffects], 别直接读这个字段.
+     */
+    val tvVisualEffects: TvVisualEffectsLevel? = null,
+    /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
+    val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
+    /**
+     * TV: 打开应用时弹一次「Web 控制台」二维码 (2026-09-12, 用户要默认开). 设置-界面与弹窗里「启动时不再显示」都能关.
+     * 一个进程只弹一次, 没连局域网 (拿不到地址) 不弹, 见 `TvRemoteControl.showDialogOnLaunch`.
+     */
+    val tvRemoteShowOnLaunch: Boolean = true,
+    /**
+     * TV: 界面整体缩放系数, 叠加在系统 density 之上 (1f = 跟随系统).
+     *
+     * 不少电视 / 盒子上报的 densityDpi 与实际面板不匹配 (常见于强制 4K UI、厂商魔改 ROM),
+     * 导致界面整体偏大或偏小, 而这在系统设置里无从调整. 这里给用户一个纯客户端的补偿系数.
+     *
+     * 缩放的是 density 而非 fontScale: `sp -> px` 本身就要乘 density, 所以只改 density
+     * 就能让文字和布局等比缩放; 两个都改会导致文字被缩放两次.
+     */
+    val uiScale: Float = 1f,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient
@@ -41,8 +265,58 @@ data class ThemeSettings(
         if (it == Color.Unspecified) DefaultSeedColor else it
     }
 
+    /**
+     * 已 clamp 的 [uiScale], 供渲染直接使用: 持久化的值可能来自旧版本或损坏的配置.
+     *
+     * clamp 用的是 [UI_SCALE_MIN] / [UI_SCALE_MAX] 这两个 `const` 而不是 [UI_SCALE_RANGE]:
+     * `const` 在编译期就内联成字面量, 而 companion 里的 `val` 是运行期字段 —— 构造函数若去读它,
+     * 就会和同一个 companion 里的 [Default] 抢初始化顺序 (`Default` 先初始化 → range 还是 null → NPE).
+     */
+    @Transient
+    val effectiveUiScale: Float =
+        if (uiScale.isFinite()) uiScale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX) else 1f
+
+    /**
+     * 实际生效的"主页按返回"行为 —— **读这个, 别读 [tvExitBehavior]**.
+     *
+     * 没显式选过时 (`null`) 由老的布尔开关推导: 显式关过确认的人继续得到"直接退出", 其余人得到
+     * 新的默认 [TvExitBehavior.DoubleBack]. 之所以默认从"弹面板"改成"连按两次": 它比直接退出安全
+     * (挡住单次误按), 又比面板快 (不用看、不用挪焦点), 而面板本身并没有因此失去 —— 长按随时能开.
+     */
+    @Transient
+    val exitBehavior: TvExitBehavior =
+        tvExitBehavior ?: if (tvExitConfirmation) TvExitBehavior.DoubleBack else TvExitBehavior.Direct
+
+    /**
+     * 实际生效的视觉效果档 —— **读这个, 别读 [tvVisualEffects] / [tvFullVisualEffects]**. 没显式选过时由老开关推导:
+     * 开过完整视觉效果的人得到完整档, 其余人得到默认的均衡档.
+     */
+    @Transient
+    val visualEffects: TvVisualEffectsLevel =
+        tvVisualEffects ?: if (tvFullVisualEffects) TvVisualEffectsLevel.Full else TvVisualEffectsLevel.Balanced
+
     companion object {
         @Stable
         val Default = ThemeSettings()
+
+        /**
+         * [uiScale] 的下界. 够小到能救回"全是巨型卡片"的机器.
+         */
+        const val UI_SCALE_MIN = 0.5f
+
+        /**
+         * [uiScale] 的上界.
+         *
+         * 2.5 是留了余量的 2.0: 最典型的故障是 4K 面板仍上报 1080p 的 densityDpi (320 而非 640),
+         * 需要的补偿恰好是 2.0 —— 若把上界就设成 2.0, 这类设备只能顶着满档用, 想再大一点都没有余地.
+         */
+        const val UI_SCALE_MAX = 2.5f
+
+        /** [uiScale] 的步进, 即一次方向键 / 一格刻度的变化量. */
+        const val UI_SCALE_STEP = 0.1f
+
+        /** [UI_SCALE_MIN]..[UI_SCALE_MAX], 供 Slider 之类需要 range 的调用方使用. */
+        @Stable
+        val UI_SCALE_RANGE = UI_SCALE_MIN..UI_SCALE_MAX
     }
 }

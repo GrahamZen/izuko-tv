@@ -36,6 +36,37 @@ enum class FullscreenSwitchMode {
     ONLY_IN_CONTROLLER
 }
 
+/**
+ * 拿 OP/ED 怎么办 (见 [VideoScaffoldConfig.effectiveSkipOpEdMode]).
+ *
+ * @since 6.0.5
+ */
+@Immutable
+@Serializable
+enum class SkipOpEdMode {
+    /** 到点自动跳过; 跳之前给一颗"取消跳过"的按钮, 来得及反悔. */
+    AUTO,
+
+    /**
+     * 到点自动跳过, 但**取消之后仍然给一颗"跳过"按钮**, 直到这一段 OP/ED 放完.
+     *
+     * 与 [AUTO] 的差别只在取消之后: [AUTO] 按了取消这一段就彻底没声了, 想跳只能自己拖进度条;
+     * 本档相当于"取消一次就临时退回 [MANUAL]", 听了两句想起来这首歌其实听过了, 还能补跳。
+     *
+     * 顺带覆盖另一种"没跳成": 倍速播放时位置采样窗口可能被整段迈过去 (见 PlayerSkipOpEdState
+     * 里的 SKIP_TRIGGER_OVERSHOOT_MILLIS), 自动跳不成的那一次, 本档也还有按钮兜着.
+     *
+     * @since 6.0.5
+     */
+    AUTO_THEN_MANUAL,
+
+    /** 不自动跳, 只在 OP/ED 期间给一颗"跳过"的按钮, 按不按由人决定. */
+    MANUAL,
+
+    /** 两种按钮都不出现, 也不会自动跳. */
+    OFF,
+}
+
 @Serializable
 enum class VideoEnhancementDefaultMode {
     OFF,
@@ -79,13 +110,58 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val autoPlayNext: Boolean = true,
     /**
-     * 跳过 OP 和 ED
+     * 跳过 OP 和 ED.
+     *
+     * 6.0.5 起由三档的 [skipOpEdMode] 取代, 本字段只为**读旧配置**保留 (见 [effectiveSkipOpEdMode]);
+     * 新代码一律读 [effectiveSkipOpEdMode], 写 [skipOpEdMode].
      */
     val autoSkipOpEd: Boolean = true,
+    /**
+     * 拿 OP/ED 怎么办; null = 还没选过新选项, 按旧开关 [autoSkipOpEd] 换算 (见 [effectiveSkipOpEdMode]).
+     *
+     * 不直接把 [autoSkipOpEd] 改成枚举: 配置是 JSON 存的, 改类型会让老配置里那个布尔值读不出来,
+     * 关掉过自动跳过的人升级后会被悄悄打开.
+     *
+     * @since 6.0.5
+     */
+    val skipOpEdMode: SkipOpEdMode? = null,
     /**
      * 跳过 OP 和 ED 的时长. UI 仅提供 80, 85 和 90 秒三个选项.
      */
     val opEdSkipDuration: Duration = 85.seconds,
+    /**
+     * 播放器组件全部隐藏时, 在屏幕最底缘显示一条极细的播放进度. 电视端专有.
+     *
+     * 纯画面态下没有任何东西告诉用户"播到哪儿了", 而唤出控制层就会遮住画面 —— 这一条贴在边缘
+     * 上, 不占画面也不用按键. 与 Netflix / B 站电视端同一个做法.
+     *
+     * 6.0.6-alpha02 起开关并进了 [idleProgressBarHeightDp] 的 0 档, 本字段只为**读旧配置**保留
+     * (关过它的人升级后仍是关的, 见 [effectiveIdleProgressBarHeightDp]); 新代码一律读那个.
+     *
+     * @since 6.0.6
+     */
+    val showIdleProgressBar: Boolean = true,
+    /**
+     * 上面那条进度条的粗细 (dp), 见 [IDLE_PROGRESS_BAR_HEIGHT_RANGE]; **0 = 不显示**. 电视端专有.
+     *
+     * 做成可调是因为"看得见"与"不打扰"的那条线**由屏幕尺寸与观看距离决定**, 开发时定不了:
+     * 55 寸三米开外看 2dp 已经很淡, 而近距离小屏上它就够明显了.
+     *
+     * @since 6.0.6
+     */
+    val idleProgressBarHeightDp: Int = IDLE_PROGRESS_BAR_HEIGHT_RANGE.first,
+    /**
+     * 片尾「接下来播放」提前多少秒进入倒计时; 0 = 不提示. 电视端专有.
+     *
+     * 提示本身在**片尾 (ED) 放完**那一刻就出现 (有 ED 标记时), 但在最后这些秒之前不倒计时 ——
+     * 还想看次回预告的人不该被催, 想直接走的人按一下确认就走. 没有 ED 标记的集数则到点才
+     * 出现, 出现即倒计时.
+     *
+     * 取 20 秒: Netflix 15 / Kodi 30 之间.
+     *
+     * @since 6.0.5
+     */
+    val upNextTipLeadSeconds: Int = 20,
     /**
      * 在播放器错误时自动切换视频源
      */
@@ -153,6 +229,17 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * @since 4.11
      */
     val playerVolume: PlayerVolume = PlayerVolume(1f, false),
+    /**
+     * TV: 播放器控制层两行 (胶囊行 / 图标行) 的自定义版式 —— 顺序与显隐. 电视端专有.
+     *
+     * 那两行上摆着十几个功能, 而各人用得上的完全不是同一批: 不看弹幕的人嫌前几颗碍事,
+     * 常换源的人希望它排在第一颗. 默认版式 (见 [TvPlayerChromeItem] 的声明顺序) 只是个合理的起点,
+     * 这里让用户自己排, 而且可以排**几套**换着用 (见 [TvPlayerChromePresets]); 改的地方是
+     * 设置 - 播放器 - 「自定义播放器按钮」那一页 (`TvPlayerChromeLayoutPage`).
+     *
+     * @since 6.0.7
+     */
+    val tvPlayerChrome: TvPlayerChromePresets = TvPlayerChromePresets.Default,
     // WARNING: if you add new property here, review Companion properties.
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
@@ -217,6 +304,28 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             }
         }
 
+        /**
+         * 纯画面态那条贴底进度条**显示时**的粗细可选范围 (dp), 见 [idleProgressBarHeightDp];
+         * 不显示是另外的 0 档, 1dp 刻意不给.
+         *
+         * 下限 2dp = 1080p 电视上 4px: 再细 (1dp) 在亮画面上基本看不出来, 等于白给一档.
+         * 上限 8dp: 到这儿它已经是"屏幕底下有条进度条"而不是"画面边缘的一道刻度"了,
+         * 再粗就开始吃画面 —— 而这条东西存在的前提就是不打扰观看.
+         */
+        val IDLE_PROGRESS_BAR_HEIGHT_RANGE = 2..8
+
+        /**
+         * 片尾倒计时可选的秒数范围, 见 [upNextTipLeadSeconds]. 0 = 关掉这一档提示.
+         *
+         * 上限 30 秒: 对齐同类应用的最长档 —— 商业流媒体 (Netflix/Disney+/Prime) 一律 10~15 秒,
+         * 自建那一类 (Jellyfin/Emby, Kodi 的 Up Next 插件) 才到 30 秒. 再往上就没有参照物了,
+         * 而且倒数太久本身就是在催人.
+         */
+        val UP_NEXT_TIP_LEAD_SECONDS_RANGE = 0..30
+
+        /** 倒计时秒数的步进: 遥控器上一次左右键跳一格, 太细会按到手酸. */
+        const val UP_NEXT_TIP_LEAD_SECONDS_STEP = 5
+
         @OptIn(SerializationOnly::class)
         @Stable
         val Default = VideoScaffoldConfig()
@@ -232,11 +341,31 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             autoFullscreenOnLandscapeMode = false,
             autoPlayNext = false,
             autoSkipOpEd = false,
+            skipOpEdMode = SkipOpEdMode.OFF,
+            upNextTipLeadSeconds = 0,
+            showIdleProgressBar = false,
             autoSwitchMediaOnPlayerError = false,
             enableHighQualityAudioTimeStretch = false,
             enableExperimentalHlsSegmentFiltering = false,
         )
     }
+
+    /**
+     * 实际生效的 OP/ED 处理方式: 选过新选项就用它, 没选过则按旧版那个布尔开关换算.
+     *
+     * 计算属性而不是构造参数: 它不参与序列化, 也就不会把"没选过"这个信息写没了.
+     */
+    val effectiveSkipOpEdMode: SkipOpEdMode
+        get() = skipOpEdMode ?: if (autoSkipOpEd) SkipOpEdMode.AUTO else SkipOpEdMode.OFF
+
+    /**
+     * 纯画面态那条贴底进度条实际的粗细 (dp); 0 = 不显示.
+     *
+     * 旧开关 [showIdleProgressBar] 关着就是 0 —— 否则 6.0.5 / 6.0.6-alpha01 里关掉过它的人升级后
+     * 会被悄悄打开. 设置页一动滑块就把旧开关置真, 从那以后 [idleProgressBarHeightDp] (含 0 档) 说了算.
+     */
+    val effectiveIdleProgressBarHeightDp: Int
+        get() = if (showIdleProgressBar) idleProgressBarHeightDp else 0
 
     @Serializable
     data class PlayerVolume(val level: Float, val mute: Boolean)

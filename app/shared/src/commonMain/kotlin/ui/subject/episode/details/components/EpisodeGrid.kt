@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import me.him188.ani.app.ui.foundation.aniCombinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -208,8 +209,8 @@ private fun EpisodeGridItem(
         border = if (still != null && isPlaying) BorderStroke(stillBorder, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp)
-            .combinedClickable(
+            .height(72.dp)
+            .aniCombinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onClick,
