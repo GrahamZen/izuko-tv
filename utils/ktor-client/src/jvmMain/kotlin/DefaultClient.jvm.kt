@@ -25,9 +25,9 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.charsets.decode
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.utils.io.streams.asInput
+import me.him188.ani.shaded.jsoup.Jsoup
+import me.him188.ani.shaded.jsoup.nodes.Document
 import okhttp3.Dispatcher
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
 import kotlin.math.max
 
 actual fun getPlatformKtorEngine(): HttpClientEngineFactory<*> = OkHttp

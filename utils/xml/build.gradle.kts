@@ -22,7 +22,7 @@ kotlin {
     }
 
     sourceSets.getByName("jvmMain").dependencies {
-        api(libs.jsoup)
+        api(projects.utils.jsoupShaded)
     }
 
     sourceSets.nativeMain.dependencies {

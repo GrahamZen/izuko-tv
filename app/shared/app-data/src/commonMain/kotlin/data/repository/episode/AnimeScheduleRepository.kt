@@ -9,11 +9,11 @@
 
 package me.him188.ani.app.data.repository.episode
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.schedule.AnimeSeasonId
@@ -37,6 +37,7 @@ import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.serialization.BigNum
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
@@ -45,12 +46,16 @@ class AnimeScheduleRepository(
     private val animeScheduleService: AnimeScheduleService,
     private val updatePeriod: Duration = 1.hours,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
+    clock: Clock = Clock.System,
 ) : Repository(defaultDispatcher) {
-    private val refreshTicker = flow {
-        while (true) {
-            emit(Unit)
-            kotlinx.coroutines.delay(updatePeriod)
-        }
+    private val recentSchedules = RecentAiringScheduleCache(
+        scope = CoroutineScope(SupervisorJob() + defaultDispatcher),
+        maxAge = updatePeriod,
+        clock = clock,
+    ) { today, timeZone ->
+        animeScheduleService.getLatestAiringSchedule(today.toString(), timeZone.id)
+            .list
+            .map { it.toAiringScheduleForDate() }
     }
 
     /**
@@ -73,13 +78,18 @@ class AnimeScheduleRepository(
         return animeScheduleService.batchGetSubjectRecurrences(subjectIds)
     }
 
-    fun recentAiringSchedulesFlow(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> {
-        return refreshTicker.mapLatest {
-            animeScheduleService.getLatestAiringSchedule(today.toString(), timeZone.id)
-                .list
-                .map { it.toAiringScheduleForDate() }
-        }.flowOn(defaultDispatcher)
-    }
+    /**
+     * [today] 前后一周的时间表: 进程里有还新鲜的那份就先出它 (见 [RecentAiringScheduleCache]), 之后每 [updatePeriod] 拉一次.
+     */
+    fun recentAiringSchedulesFlow(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> =
+        recentSchedules.flow(today, timeZone).flowOn(defaultDispatcher)
+
+    /** 进程里还新鲜的那份时间表; 没有或已过期 = `null`. */
+    fun peekRecentAiringSchedules(today: LocalDate, timeZone: TimeZone): List<AiringScheduleForDate>? =
+        recentSchedules.peek(today, timeZone)
+
+    /** 丢掉缓存的时间表: 用户要求刷新时, 下一次必定走网络. */
+    fun invalidateRecentAiringSchedules() = recentSchedules.invalidate()
 }
 
 private fun AniAiringScheduleForDate.toAiringScheduleForDate(): AiringScheduleForDate {

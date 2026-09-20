@@ -57,9 +57,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
-import me.him188.ani.app.data.models.subject.SubjectTmdbArt
 import me.him188.ani.app.data.models.subject.Tag
-import me.him188.ani.app.data.models.subject.TmdbImage
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.ProtoConverters
@@ -87,12 +85,11 @@ import me.him188.ani.client.models.AniEpisodeCollection
 import me.him188.ani.client.models.AniEpisodeCollectionType
 import me.him188.ani.client.models.AniEpisodeType
 import me.him188.ani.client.models.AniFavourite
+import me.him188.ani.client.models.AniInfobox
 import me.him188.ani.client.models.AniSelfRatingInfo
 import me.him188.ani.client.models.AniSubjectCollection
 import me.him188.ani.client.models.AniSubjectRelations
 import me.him188.ani.client.models.AniTag
-import me.him188.ani.client.models.AniTmdbImage
-import me.him188.ani.client.models.AniTmdbSubjectArt
 import me.him188.ani.client.models.AniUpdateSubjectCollectionRequest
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
@@ -132,9 +129,20 @@ abstract class SubjectCollectionRepository(
 
     abstract fun subjectCollectionsPager(
         query: CollectionsFilterQuery = CollectionsFilterQuery.Empty,
+        /**
+         * 这套 pager 是 Room + RemoteMediator: 每次 mediator 写库都会让 PagingSource 失效,
+         * 新 generation 只重载锚点附近 [PagingConfig.initialLoadSize] 的窗口, **窗口外的已加载
+         * 条目全部退回 placeholder**. 窗口必须盖住最大的视口 —— 4K 原生 density 的 TV 网格一屏
+         * 可见 60+ 张卡, 默认 30 (pageSize×3) 会让屏内卡片在每次 append 写库后变灰闪烁,
+         * 聚焦卡的 key 从 subjectId 换成 placeholder key 时节点还会被销毁 (焦点逃逸).
+         *
+         * pageSize 同时是 mediator 每批网络请求的 limit (见 [calculateIndexBasedLoadInfo]):
+         * REFRESH 会先清表再按这个批量回填, 批量越小回填波数越多, 每波都是一次全网格 invalidate.
+         */
         pagingConfig: PagingConfig = PagingConfig(
             pageSize = 30,
-            prefetchDistance = 30,
+            prefetchDistance = 60,
+            initialLoadSize = 120,
         ),
     ): Flow<PagingData<SubjectCollectionInfo>>
 
@@ -683,7 +691,6 @@ class SubjectCollectionRepositoryImpl(
                     subjectId = this.subjectId,
                     displayName = nameCn.ifEmpty { name },
                     imageLarge = imageLarge,
-                    imageThumb = imageThumb.ifEmpty { imageLarge },
                     totalEpisodes = totalEpisodes,
                 )
             }
@@ -810,7 +817,6 @@ private fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
         summary = summary,
         nsfw = nsfw,
         imageLarge = imageLarge,
-        imageThumb = imageThumb,
         totalEpisodes = totalEpisodes,
         airDate = airDate,
         tags = tags,
@@ -818,7 +824,8 @@ private fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
         ratingInfo = ratingInfo,
         collectionStats = collectionStats,
         completeDate = completeDate,
-        tmdbArt = tmdbArt,
+        screeningYear = screeningYear,
+        theatrical = theatrical,
     )
 }
 
@@ -949,8 +956,7 @@ fun AniSubjectCollection.toEntity(
         nameCn = nameCn,
         summary = summary,
         nsfw = nsfw,
-        imageLarge = imageLarge,
-        imageThumb = imageThumb,
+        imageLarge = staticSubjectImageLargeUrl(id.toInt()),
         totalEpisodes = episodes.size,
         airDate = PackedDate.parseFromDate(airDate),
         aliases = buildList {
@@ -971,7 +977,8 @@ fun AniSubjectCollection.toEntity(
         collectionType = collectionType.toUnifiedCollectionType(),
         recurrence = airingInfo?.recurrence?.toSubjectRecurrence(),
         relations = relations.toSubjectRelationsEntity(),
-        tmdbArt = tmdbArt?.toSubjectTmdbArt(),
+        screeningYear = infobox?.screeningYearOrNull(PackedDate.parseFromDate(airDate).year),
+        theatrical = infobox?.isTheatricalOnly() == true,
         lastUpdated = updatedAt?.let { Instant.parse(it) }?.toEpochMilliseconds() ?: 0,
         lastFetched = lastFetched,
         cachedStaffUpdated = 0,
@@ -979,13 +986,41 @@ fun AniSubjectCollection.toEntity(
     )
 }
 
-private fun AniTmdbSubjectArt.toSubjectTmdbArt(): SubjectTmdbArt = SubjectTmdbArt(
-    backdrops = backdrops.map { it.toTmdbImage() },
-    posters = posters.mapValues { it.value.toTmdbImage() },
-    logos = logos.mapValues { it.value.toTmdbImage() },
-)
+/** infobox 里表示"影院上映日期"的字段名. */
+private val SCREENING_DATE_KEYS = setOf("上映年度", "上映日期", "其他上映日期", "其他上映年度")
 
-private fun AniTmdbImage.toTmdbImage(): TmdbImage = TmdbImage(medium = medium, large = large, vector = vector)
+private val YEAR_REGEX = Regex("""(?:19|20)\d{2}""")
+
+/**
+ * infobox 「上映年度」里**最早**的那个年份; 没有该字段, **或 [airYear] 本来就在这些年份里**,
+ * 都返回 `null` —— 后者说明 `airDate` 记的就是上映日, 没必要换个年份去判.
+ *
+ * 只取最早那个: 老片的 infobox 会把重映年也列上 (攻殻機動隊 是 `[1995, 2025]`, 2025 是 4K 重映),
+ * 全盘接受会让 2026 年的新片「The Ghost in the Shell」也过年份判据、顶掉 1995 那部正解.
+ */
+private fun AniInfobox.screeningYearOrNull(airYear: Int?): Int? {
+    val years = fields.asSequence()
+        .filter { it.key in SCREENING_DATE_KEYS }
+        .flatMap { item -> item.propertyValues.asSequence().map { it.v } }
+        .mapNotNull { YEAR_REGEX.find(it)?.value?.toIntOrNull() }
+        .toList()
+    if (years.isEmpty() || airYear in years) return null
+    return years.min()
+}
+
+/**
+ * 是否**只在影院放映**: 有上映日期而没有「放送开始」. 见 [SubjectCollectionEntity.theatrical].
+ */
+private fun AniInfobox.isTheatricalOnly(): Boolean {
+    val keys = fields.mapTo(mutableSetOf()) { it.key }
+    return keys.any { it in SCREENING_DATE_KEYS } && "放送开始" !in keys
+}
+
+/**
+ * 条目大封面的静态 CDN 地址. 不依赖本地数据库, 可用于本地无记录时的兜底展示.
+ */
+fun staticSubjectImageLargeUrl(subjectId: Int): String =
+    "https://static.myani.org/bangumi/subjects/$subjectId/large"
 
 /**
  * 本地数据库中缓存的条目展示信息.
@@ -995,8 +1030,6 @@ data class OfflineSubjectDisplayInfo(
     val subjectId: Int,
     val displayName: String,
     val imageLarge: String,
-    /** 列表用封面, 没有缩略图时与 [imageLarge] 相同. */
-    val imageThumb: String,
     val totalEpisodes: Int,
 )
 
