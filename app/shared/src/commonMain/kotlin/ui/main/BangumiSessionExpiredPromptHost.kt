@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
+import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.bangumi_session_expired
 import me.him188.ani.app.ui.lang.bangumi_session_expired_login
@@ -161,6 +162,7 @@ private fun BangumiSessionExpiredDialog(
                 )
             }
         },
+        containerColor = aniDialogContainerColor(),
     )
 }
 

@@ -155,7 +155,13 @@ class CefCaptchaBrowser private constructor(
     }
 
     @Composable
-    override fun View(modifier: Modifier) {
+    override fun View(
+        modifier: Modifier,
+        onExitRequest: (() -> Unit)?,
+        onConfirmRequest: (() -> Unit)?,
+        tvInputMode: TvWebInputMode, // 桌面有鼠标键盘, 忽略
+    ) {
+        // 桌面有鼠标, 不需要 TV 虚拟光标; 忽略遥控器回调
         SwingPanel(
             background = Color.Transparent,
             factory = { browser.uiComponent },

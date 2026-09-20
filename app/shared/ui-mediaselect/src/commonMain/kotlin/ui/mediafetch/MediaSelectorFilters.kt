@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_bt_filter_any
@@ -67,6 +68,8 @@ fun MediaSelectorFilters(
     availableAlliances: List<String>,
     modifier: Modifier = Modifier,
     singleLine: Boolean = false,
+    /** 追加在字幕组筛选之后的尾部内容 (焦点驱动形态的"显示已被排除"胶囊); null 无. */
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val mediaDetailsStrings = rememberMediaDetailsStrings()
@@ -105,6 +108,7 @@ fun MediaSelectorFilters(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             content()
+            trailingContent?.invoke()
         }
     } else {
         FlowRow(
@@ -113,6 +117,7 @@ fun MediaSelectorFilters(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             content()
+            trailingContent?.invoke()
         }
     }
 }
@@ -132,6 +137,21 @@ private fun MediaSelectorFilterChip(
     modifier: Modifier = Modifier,
     label: (String) -> String = { it },
 ) {
+    // 焦点驱动形态: 胶囊按钮 + 居中网格弹窗 (InputChip 无聚焦视觉, DropdownMenu 焦点交接
+    // 不可靠且长列表难翻), 见 FocusMediaSelectorFilterChip
+    if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+        FocusMediaSelectorFilterChip(
+            selected = selected,
+            allValues = allValues,
+            onSelect = onSelect,
+            onDeselect = onDeselect,
+            name = name,
+            modifier = modifier,
+            label = label,
+        )
+        return
+    }
+
     var showDropdown by remember { mutableStateOf(false) }
     val expandText = stringResource(Lang.media_selector_filter_expand)
     val selectedText = stringResource(Lang.media_selector_filter_selected)

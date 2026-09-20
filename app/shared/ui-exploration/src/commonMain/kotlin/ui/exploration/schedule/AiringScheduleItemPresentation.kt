@@ -33,6 +33,11 @@ data class AiringScheduleItemPresentation(
     val subjectTitle: String,
     /** 条目原名 (通常为日文), 供"显示原名"设置开启时使用; 关闭时忽略, 显示 [subjectTitle]. */
     val subjectOriginalTitle: String = subjectTitle,
+    /**
+     * 条目原名 (通常是日文). 展示一律用 [subjectTitle]; 本字段供按原名检索外部服务用
+     * (TMDB 的搜索对原名命中率远高于中文译名, 见 TV 时间表的 backdrop 取图).
+     */
+    val subjectName: String,
     val imageUrl: String,
     val episodeId: Int,
     val episodeSort: EpisodeSort,
@@ -108,6 +113,7 @@ val TestAiringScheduleItemPresentations
                         subjectId = ++id,
                         subjectTitle = "Subject $id",
                         subjectOriginalTitle = "オリジナル $id",
+                        subjectName = "Subject $id",
                         imageUrl = "https://example.com/image.jpg",
                         episodeId = id,
                         episodeSort = EpisodeSort(if (i % 3 == 0) 13 else 1),
@@ -167,6 +173,7 @@ fun EpisodeWithAiringTime.toPresentation(timeZone: TimeZone): AiringScheduleItem
         subjectId = subject.subjectId,
         subjectTitle = subject.displayName,
         subjectOriginalTitle = subject.nameOrNameCn,
+        subjectName = subject.name,
         imageUrl = subject.imageLarge,
         episodeId = episode.episodeId,
         episodeSort = episode.sort,

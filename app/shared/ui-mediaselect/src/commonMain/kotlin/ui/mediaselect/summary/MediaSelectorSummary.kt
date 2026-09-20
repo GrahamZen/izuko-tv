@@ -63,6 +63,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
@@ -106,6 +107,15 @@ sealed class MediaSelectorSummary {
         val source: MediaSelectorSourceSummary,
         val mediaTitle: String,
         val isPerfectMatch: Boolean,
+        /**
+         * 这条资源被选中时**带着的排除原因** (`null` = 没有被排除).
+         *
+         * 选中一条已被排除的资源是可能的: 自动选择的快速通道与用户手选都能越过排除表. 而排除
+         * 原因里最要紧的是 [MediaExclusionReason.SubjectNameMismatch] —— 它意味着数据源给的
+         * 这条资源根本不是当前条目 (web 源搜不到本番时会返回泛列表, 里面任何一条带「第01集」的
+         * 都能过集号校验). 界面上不摆出来的话, 用户只会觉得"这番怎么不对".
+         */
+        val exclusionReason: MediaExclusionReason? = null,
     ) : MediaSelectorSummary() {
         override val typeId get() = 3
     }
