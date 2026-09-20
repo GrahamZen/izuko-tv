@@ -119,7 +119,6 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
     private val setSubjectCollectionTypeOrDeleteUseCase: SetSubjectCollectionTypeOrDeleteUseCase by inject()
     private val tmdbImageService: TmdbImageService by inject()
     private val bangumiSummaryService: BangumiSummaryService by inject()
-    private val episodePlayHistoryRepository: EpisodePlayHistoryRepository by inject()
 
     override fun create(
         subjectInfoFlow: Flow<SubjectInfo>

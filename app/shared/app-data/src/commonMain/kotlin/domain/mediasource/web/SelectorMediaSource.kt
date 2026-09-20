@@ -310,7 +310,7 @@ class SelectorMediaSource(
         // 只读回当前集的话, 这一页在切集之后产不出任何资源. 窄读因此只留给长番 —— 那时
         // `subjectEpisodeSorts` 本来就是 null.
         val narrowed = query.subjectEpisodeSorts == null &&
-                query.episodeSort is EpisodeSort.Normal && searchConfig.filterByEpisodeSort
+                query.episodeSort is EpisodeSort.Normal && searchConfig.autoMatch.filterByEpisodeSort
         val caches = try {
             if (narrowed) {
                 repository.getCacheForEpisode(
@@ -342,7 +342,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = cache.webSubjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }.takeIf(List<DefaultMedia>::isNotEmpty)
@@ -430,7 +430,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = subjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }
