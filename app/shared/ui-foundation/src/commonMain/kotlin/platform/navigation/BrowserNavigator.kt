@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2025 OpenAni and contributors.
+ * Copyright (C) 2024-2026 OpenAni and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
@@ -11,7 +11,10 @@ package me.him188.ani.app.platform.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalClipboard
 import me.him188.ani.app.navigation.BrowserNavigator
@@ -19,12 +22,9 @@ import me.him188.ani.app.navigation.OpenBrowserResult
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.setClipEntryText
-import me.him188.ani.app.ui.foundation.widgets.LocalToaster
-import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.foundation_browser_open_failed_copied
+import me.him188.ani.app.ui.foundation.widgets.OpenLinkFallbackDialog
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.logger
-import org.jetbrains.compose.resources.stringResource
 
 /**
  * Please use [rememberAsyncBrowserNavigator] instead of this directly.
@@ -39,24 +39,28 @@ private val logger = logger<BrowserNavigator>()
  * Get [BrowserNavigator] which handles opening URLs asynchronously.
  * That means calling any of its methods always returns [OpenBrowserResult.Success] whether succeeded or failed.
  *
- * If operation failed, the URL will be copied to clipboard, and a toast will be shown.
+ * 打开失败时 (设备没有浏览器 —— 电视上很常见) 弹 [OpenLinkFallbackDialog]: 链接画成二维码让手机扫,
+ * 同时印出链接文字; 顺手也复制进剪贴板 (桌面端好粘). 弹窗挂在调用本函数的那个组合里, 调用方离开
+ * 组合弹窗就跟着没了, 不需要全局宿主.
  */
 @Composable
-@Suppress("DEPRECATION")
 fun rememberAsyncBrowserNavigator(): BrowserNavigator {
     val navigator = LocalBrowserNavigator.current
-    val toaster = LocalToaster.current
     val clipboard = LocalClipboard.current
     val scope = rememberAsyncHandler()
-    val openFailedCopiedText = stringResource(Lang.foundation_browser_open_failed_copied)
+    var fallbackUrl by remember { mutableStateOf<String?>(null) }
 
     val failureAction: suspend (OpenBrowserResult.Failure) -> Unit =
-        remember(clipboard, toaster, openFailedCopiedText) {
-        { failure ->
-            clipboard.setClipEntryText(failure.dest)
-            toaster.toast(openFailedCopiedText)
-            logger.error(failure.throwable) { "Failed to open ${failure.dest}" }
+        remember(clipboard) {
+            { failure ->
+                logger.error(failure.throwable) { "Failed to open ${failure.dest}, showing QR fallback" }
+                runCatching { clipboard.setClipEntryText(failure.dest) }
+                fallbackUrl = failure.dest
+            }
         }
+
+    fallbackUrl?.let { url ->
+        OpenLinkFallbackDialog(url, onDismissRequest = { fallbackUrl = null })
     }
 
     return remember(navigator) {

@@ -92,19 +92,21 @@ fun DanmakuSourceChips(
     onManualMatch: (DanmakuServiceId) -> Unit,
     onAdjustShift: (DanmakuServiceId) -> Unit,
     modifier: Modifier = Modifier,
+    firstItemModifier: Modifier = Modifier,
 ) {
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        sourceItems.forEach { sourceItem ->
+        sourceItems.forEachIndexed { index, sourceItem ->
             key(sourceItem.serviceId) {
                 DanmakuSourceMenuAnchor(
                     sourceItem = sourceItem,
                     onToggle = { onToggleSource(sourceItem.serviceId, !sourceItem.enabled) },
                     onManualMatch = { onManualMatch(sourceItem.serviceId) },
                     onAdjustShift = { onAdjustShift(sourceItem.serviceId) },
+                    modifier = if (index == 0) firstItemModifier else Modifier,
                 )
             }
         }
@@ -117,6 +119,7 @@ private fun DanmakuSourceMenuAnchor(
     onToggle: () -> Unit,
     onManualMatch: () -> Unit,
     onAdjustShift: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var showDropdown by rememberSaveable { mutableStateOf(false) }
     val isAnimeko = sourceItem.serviceId == DanmakuServiceId.Animeko
@@ -125,7 +128,7 @@ private fun DanmakuSourceMenuAnchor(
         FilterChip(
             selected = sourceItem.enabled,
             onClick = onToggle,
-            modifier = Modifier
+            modifier = modifier
                 .testTag("danmaku-source-${sourceItem.serviceId.value}"),
             label = {
                 Row(

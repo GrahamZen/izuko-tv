@@ -610,7 +610,12 @@ private class FakeCaptchaBrowser(
     }
 
     @Composable
-    override fun View(modifier: Modifier) {
+    override fun View(
+        modifier: Modifier,
+        onExitRequest: (() -> Unit)?,
+        onConfirmRequest: (() -> Unit)?,
+        tvInputMode: TvWebInputMode,
+    ) {
     }
 
     override fun close() {

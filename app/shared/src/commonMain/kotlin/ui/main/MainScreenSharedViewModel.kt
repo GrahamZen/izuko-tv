@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
@@ -40,6 +41,9 @@ open class MainScreenSharedViewModel : AbstractViewModel(), KoinComponent {
     val selfInfo = SelfInfoStateProducer(koin = getKoin()).flow
 
     private val clientProvider: HttpClientProvider by inject()
+
+    // 只探 ID_ANI, 但 createDefault 要构造全部五项, TMDB 那两项拿它建 (见 ServiceConnectionTesters)
+    private val tmdbImageService: TmdbImageService by inject()
 
     private val networkCheckFailedChannel = Channel<Unit>(Channel.BUFFERED)
 
@@ -73,6 +77,7 @@ open class MainScreenSharedViewModel : AbstractViewModel(), KoinComponent {
             val tester = ServiceConnectionTesters.createDefault(
                 bangumiClient = BangumiClientImpl(client),
                 aniClient = client,
+                tmdbImageService = tmdbImageService,
                 serviceIds = setOf(ServiceConnectionTesters.ID_ANI),
             )
             coroutineScope {

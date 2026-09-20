@@ -226,7 +226,9 @@ fun KoinApplication.repositoryModules(
 
     single<EpisodeScreenshotRepository> { WhatslinkEpisodeScreenshotRepository() }
 
-    single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
+    single<EpisodeCommentRepository> {
+        EpisodeCommentRepository(aniCommentService = get(), replyRelationService = get())
+    }
 
     single<PersonCommentRepository> { PersonCommentRepository(aniCommentService = get()) }
 

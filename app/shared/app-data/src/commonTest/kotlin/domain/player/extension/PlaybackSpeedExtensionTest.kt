@@ -70,22 +70,32 @@ class PlaybackSpeedExtensionTest : AbstractPlayerExtensionTest() {
             testScope.cancel()
         }
     }
-
     /**
-     * 播放器在媒体加载完成后可能把速度重置回 1x, 扩展需要在媒体就绪时重新应用.
+     * **同一 session 内**媒体重载 (换片源 / 引擎自己重新 prepare) 把速度重置回 1x 时也要补回来 ——
+     * 与上面那条的区别是**不换 session**: 那条走 switchEpisode, 扩展的 onStart 会重跑,
+     * 靠的是第一个任务重新收到倍速; 这条只有第二个任务 (mediaData -> 起播 -> 强制补发) 能救.
+     *
+     * 用例取自上游 f512cf7 (open-ani#3323), 但**上游那份实现没有采纳**: 它在 isMediaLoaded 翻转时
+     * 直接 set(speed), 而补发时播放器层面早就是那个值了 —— ExoPlayer 对'设成当前值'直接 return,
+     * mediamp 0.3.0 的 set 还另有一道 isPlaying 闸门 (isMediaLoaded 早于它), 两道都过不去.
+     *
+     * **resume() 不能省**: fork 的契约是'真的开始播了才补'(见 PlaybackSpeedExtension.onStart) ——
+     * 会话开始时音频管线还不存在, 那时下发只改得动播放器参数, 声音仍是原速, 正是'假倍速'的成因.
+     * 上游那份用例不 resume 就断言, 对 fork 是红的, 那是契约差异不是缺陷.
      */
     @Test
-    fun `reapplies the speed when media becomes loaded`() = runTest {
+    fun `reapplies the speed after media reloads within the same session`() = runTest {
         val speed = MutableStateFlow(1.75f)
         val (testScope, suite, _) = createCase(speed)
         try {
             advanceUntilIdle()
             assertEquals(1.75f, suite.playerSpeed)
 
-            // 模拟新媒体加载过程中底层重置倍速为 1x
+            // 模拟新媒体加载过程中底层把倍速重置回 1x
             suite.player.loadMedia(100_000L)
             suite.player.features[PlaybackSpeed]?.set(1f)
             suite.setMediaDuration(100_000L)
+            suite.player.resume()
             advanceUntilIdle()
 
             assertEquals(1.75f, suite.playerSpeed)
@@ -93,4 +103,5 @@ class PlaybackSpeedExtensionTest : AbstractPlayerExtensionTest() {
             testScope.cancel()
         }
     }
+
 }

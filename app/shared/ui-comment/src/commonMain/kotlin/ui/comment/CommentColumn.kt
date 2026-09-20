@@ -35,9 +35,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
+import me.him188.ani.app.ui.foundation.LocalPlatform
+import me.him188.ani.app.ui.foundation.focus.LocalCommentTabFocusRequester
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
@@ -47,6 +54,7 @@ import me.him188.ani.app.ui.foundation.layout.ConnectedScrollState
 import me.him188.ani.app.ui.foundation.theme.stronglyWeaken
 import me.him188.ani.app.ui.foundation.thenNotNull
 import me.him188.ani.app.ui.foundation.widgets.PullToRefreshBox
+import me.him188.ani.utils.platform.isMobile
 import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.SearchResultLazyVerticalGrid
 import me.him188.ani.app.ui.search.isFinishedAndEmpty
@@ -95,6 +103,7 @@ fun CommentColumn(
     pullToRefreshEnabled: Boolean = true,
     commentItem: @Composable LazyGridItemScope.(index: Int, item: UIComment) -> Unit
 ) {
+    val commentTabFocusRequester = LocalCommentTabFocusRequester.current
     val emptyContentModifier = Modifier
         .thenNotNull(
             connectedScrollState?.let {
@@ -112,8 +121,19 @@ fun CommentColumn(
     PullToRefreshBox(
         isRefreshing = items.isLoadingFirstPageOrRefreshing,
         onRefresh = { items.refresh() },
-        modifier = modifier,
-        enabled = pullToRefreshEnabled,
+        modifier = modifier
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.key == Key.Back &&
+                    commentTabFocusRequester != null
+                ) {
+                    commentTabFocusRequester.requestFocus()
+                    true
+                } else {
+                    false
+                }
+            },
+        enabled = pullToRefreshEnabled && LocalPlatform.current.isMobile(),
         touchOnly = true,
         contentAlignment = Alignment.TopCenter,
     ) {

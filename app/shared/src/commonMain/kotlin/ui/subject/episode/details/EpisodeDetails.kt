@@ -101,6 +101,7 @@ import me.him188.ani.app.ui.episode.danmaku.DanmakuTimeShiftDialog
 import me.him188.ani.app.ui.episode.danmaku.renderDanmakuServiceId
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniBottomSheetDefaults
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
@@ -249,6 +250,7 @@ fun EpisodeDetails(
             ModalBottomSheet(
                 { showSubjectDetails = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = currentWindowAdaptiveInfo1().isWidthAtLeastMedium),
+                sheetMaxWidth = AniBottomSheetDefaults.sheetMaxWidth(),
                 modifier = Modifier.desktopTitleBarPadding().statusBarsPadding(),
                 contentWindowInsets = {
                     BottomSheetDefaults.windowInsets
@@ -715,6 +717,7 @@ fun EpisodeDetails(
         ModalBottomSheet(
             { showDanmakuInfoSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+            sheetMaxWidth = AniBottomSheetDefaults.sheetMaxWidth(),
             modifier = Modifier.desktopTitleBarPadding().statusBarsPadding(),
             contentWindowInsets = {
                 BottomSheetDefaults.windowInsets

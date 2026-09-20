@@ -37,6 +37,7 @@ plugins {
     alias(libs.plugins.sentry.kotlin.multiplatform) apply false
     alias(libs.plugins.undercouch.download) apply false
     alias(libs.plugins.compose.stability.analyzer) apply false
+    alias(libs.plugins.shadow) apply false
     idea
 }
 
