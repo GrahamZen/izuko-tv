@@ -53,6 +53,7 @@ import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.MIGRATION_19_20
 import me.him188.ani.app.data.persistent.database.MIGRATION_21_22
+import me.him188.ani.app.data.persistent.database.MIGRATION_24_25
 import me.him188.ani.app.data.persistent.database.SelfRatingTagsRepair
 import me.him188.ani.app.data.persistent.database.createDatabaseBuilder
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
@@ -364,7 +365,7 @@ private fun KoinApplication.otherModules(
                     addAll(1..15) // 16 is destructive
                 }.toIntArray(),
             )
-            .addMigrations(MIGRATION_19_20, MIGRATION_21_22)
+            .addMigrations(MIGRATION_19_20, MIGRATION_21_22, MIGRATION_24_25)
             // 旧版评分把标签列写成了纯文本, 那样的行一读就抛异常: 打开时修掉 (见 SelfRatingTagsRepair)
             .addCallback(SelfRatingTagsRepair)
             .setDriver(BundledSQLiteDriver())
