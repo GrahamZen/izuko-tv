@@ -31,7 +31,7 @@ kotlin {
                 implementation(libs.ktor.client.logging)
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.kotlinx.serialization.json)
-                implementation(libs.jsoup)
+                implementation(projects.utils.jsoupShaded)
                 implementation(libs.slf4j.api)
 
                 implementation(projects.utils.logging)

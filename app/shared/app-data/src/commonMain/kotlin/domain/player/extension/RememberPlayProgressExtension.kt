@@ -95,6 +95,47 @@ class RememberPlayProgressExtension(
             // 已经恢复过记忆进度的媒体. 播放器在原位置重新打开同一个 MediaData 时 (Android 上视频输出超时后恢复播放),
             // 保留播放器打开时的位置, 不跳回记忆的进度.
             var resumedMediaData: MediaData? = null
+
+            /**
+             * 恢复历史进度, 至多一次.
+             *
+             * **不要求播放器正在播**: 能不能 seek 的真正前提是"时长已知"(下面 `first` 等的就是它),
+             * `isPlaying` 只是个凑巧同时成立的代理条件. 而在电视的保留会话里它恰恰不成立 ——
+             * 退出播放页会把播放器按成暂停, 后台于是永远到不了 isPlaying, 进度也就永远不恢复:
+             * 用户回到页面才开播、才 seek、才二次缓冲, "后台就绪"的提示因此必然说谎
+             * (2026-08-11 真机确认: 本地文件已就绪 1 分 43 秒, 播放器一直没动, 回页面那一秒才开播).
+             * 见 `RetainedPlaybackSessionHolder` 的第 3 条.
+             */
+            suspend fun restoreSavedPositionOnce() {
+                val mediaData = player.mediaData.value
+                if (mediaData != null && mediaData === resumedMediaData) {
+                    haveResumedOnce = true
+                }
+                if (haveResumedOnce) return
+                if (automationGate.suppressed.value) {
+                    // 一起看跟随模式: 位置由房主说了算, 本地不恢复
+                    haveResumedOnce = true
+                    resumedMediaData = mediaData
+                    return
+                }
+                val positionMillis = playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
+                if (positionMillis == null) {
+                    logger.info { "Did not find saved position" }
+                    haveResumedOnce = true
+                    resumedMediaData = mediaData
+                    return
+                }
+                logger.info { "Loaded saved position: $positionMillis, waiting for video properties" }
+                player.mediaProperties.first { (it?.durationMillis ?: 0L) > 0L }
+                withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
+                    logger.info { "Video properties ready, seeking to saved position: $positionMillis" }
+                    player.seekTo(positionMillis)
+                    // seek 引起的状态变化会取消本次收集, 标记必须在 NonCancellable 内完成
+                    haveResumedOnce = true
+                    resumedMediaData = mediaData
+                }
+            }
+
             player.state.collectLatest { state ->
                 when {
                     state.mediaStatus == MediaStatus.Opening -> {
@@ -103,40 +144,9 @@ class RememberPlayProgressExtension(
                     }
 
                     state.isPlaying -> {
-                        val mediaData = player.mediaData.value
-                        if (mediaData != null && mediaData === resumedMediaData) {
-                            haveResumedOnce = true
-                        }
                         // Some backends (notably desktop mpv) report playing before the loaded file accepts seeks.
                         // Restore once metadata is ready, but only report after playback remains active for 5 seconds.
-                        if (!haveResumedOnce) {
-                            if (automationGate.suppressed.value) {
-                                haveResumedOnce = true
-                                resumedMediaData = mediaData
-                            } else {
-                                val positionMillis =
-                                    playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
-                                if (positionMillis == null) {
-                                    logger.info { "Did not find saved position" }
-                                    haveResumedOnce = true
-                                    resumedMediaData = mediaData
-                                } else {
-                                    logger.info {
-                                        "Loaded saved position: $positionMillis, waiting for video properties"
-                                    }
-                                    player.mediaProperties.first { (it?.durationMillis ?: 0L) > 0L }
-                                    withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
-                                        logger.info {
-                                            "Video properties ready, seeking to saved position: $positionMillis"
-                                        }
-                                        player.seekTo(positionMillis)
-                                        // seek 引起的状态变化会取消本次收集, 标记必须在 NonCancellable 内完成
-                                        haveResumedOnce = true
-                                        resumedMediaData = mediaData
-                                    }
-                                }
-                            }
-                        }
+                        restoreSavedPositionOnce()
 
                         delay(initialReportDelay)
                         savePlayProgressOrRemove(episodeSession, allowZeroPosition = true)
@@ -150,6 +160,10 @@ class RememberPlayProgressExtension(
                     }
 
                     state.mediaStatus == MediaStatus.Ready && !state.playWhenReady -> { // 暂停
+                        // 媒体已经打开就可以恢复进度了, 不必等它真的播起来 —— 电视的保留会话
+                        // 在后台就一直停在这个状态 (见 restoreSavedPositionOnce).
+                        // 放在 await 之前: 下面那句会一直挂到播放器至少播过一次为止.
+                        restoreSavedPositionOnce()
                         mediaLoaded.await() // 播放器开始播放了一次之后再保存状态
                         savePlayProgressOrRemove(episodeSession)
                     }

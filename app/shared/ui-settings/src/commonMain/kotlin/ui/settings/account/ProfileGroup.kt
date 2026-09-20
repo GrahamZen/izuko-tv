@@ -70,6 +70,7 @@ import io.github.vinceglb.filekit.readBytes
 import me.him188.ani.app.domain.session.auth.OAuthPlatform
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.CropRect
+import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.DragAndDropContent
 import me.him188.ani.app.ui.foundation.DragAndDropHoverState
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -608,11 +609,7 @@ private fun UnbindBangumiDialog(
                 Text(stringResource(Lang.settings_account_profile_unbind), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = {
-            TextButton(onCancel) {
-                Text(stringResource(Lang.subject_collection_cancel))
-            }
-        },
+        dismissButton = dismissDialogButton(stringResource(Lang.subject_collection_cancel), onCancel),
     )
 }
 
@@ -824,9 +821,7 @@ private fun CropAvatarDialog(
                 Text(stringResource(Lang.settings_account_profile_crop_and_upload))
             }
         },
-        dismissButton = {
-            TextButton(onDismissRequest) { Text(stringResource(Lang.subject_collection_cancel)) }
-        },
+        dismissButton = dismissDialogButton(stringResource(Lang.subject_collection_cancel), onDismissRequest),
         title = { Text(stringResource(Lang.settings_account_profile_crop_avatar)) },
         text = {
             Column(Modifier.fillMaxWidth()) {

@@ -38,9 +38,11 @@ import me.him188.ani.app.data.network.AniSubjectRelationIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.AnimeScheduleService
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
+import me.him188.ani.app.data.network.BangumiReplyRelationService
 import me.him188.ani.app.data.network.DefaultWatchTogetherApiService
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
@@ -300,6 +302,10 @@ private fun KoinApplication.otherModules(
     single<BangumiCommentService> { BangumiBangumiCommentServiceImpl(get<AniApiProvider>().subjectApi) }
     single<AniEpisodeCommentService> { AniEpisodeCommentService(get<AniApiProvider>().episodesApi) }
     single<AniCommentReportService> { AniCommentReportService(get<AniApiProvider>().commentsApi) }
+    // 匿名客户端 (与 BangumiClient 同一个): 只读公开的评论关系, 不带任何 token
+    single<BangumiReplyRelationService> {
+        BangumiReplyRelationService(get<HttpClientProvider>().get(userAgent = ScopedHttpClientUserAgent.ANI))
+    }
     single<AniPersonCommentService> {
         AniPersonCommentService(
             personsApi = get<AniApiProvider>().personsApi,
@@ -329,6 +335,13 @@ private fun KoinApplication.otherModules(
 
     single<AnimeScheduleService> { AnimeScheduleService(get<AniApiProvider>().scheduleApi) }
     // TV 横版 backdrop / 分集剧照; 未配置 ani.tmdb.api.token 时自动关闭
+    single<TmdbImageService> {
+        TmdbImageService(
+            get(),
+            getContext().dataStores.tmdbImageCacheStore,
+            disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
+        )
+    }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
 
     single<UpdateManager> {
