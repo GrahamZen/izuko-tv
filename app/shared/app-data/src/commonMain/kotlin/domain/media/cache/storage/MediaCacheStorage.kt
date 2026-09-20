@@ -205,7 +205,15 @@ class MediaCacheStorageSource(
                     logger.warn(e) { "Failed to get cached media for ${cache.cacheId}, skipping it" }
                     return@mapNotNull null
                 }
-                MediaMatch(media, kind)
+                // **forRecord 不能丢** (2026-09-20 rebase 事故): 它把这条记录的 episodeRange 收窄到单集,
+                // 并填上 cacheEpisodeId —— 而 MediaSelectorFilterSortAlgorithm 正是靠 cacheEpisodeId 判断
+                // "这条缓存属不属于当前这一集", 为空时那道过滤直接跳过。
+                // 合集资源里每一集的 CachedMedia 又共用同一个 mediaId (见 CachedMedia.mediaId), 于是播任意
+                // 一集都可能被交出另一集的文件; 碰上残缺的那一份就是 IO_READ_POSITION_OUT_OF_RANGE, 表现为
+                // "缓存显示已完成却播不了", 然后自动切到在线源。
+                // 丢失的原因: 上游在这一行加了 .forRecord(cache.metadata), 而 fork 在同一行包了 try/catch
+                // (下面那段注释), 合并时取了 fork 侧, 把上游的新增吃掉了.
+                MediaMatch(media.forRecord(cache.metadata), kind)
             }.asFlow()
         }
     }

@@ -33,9 +33,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.io.IOException
-import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.Path
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoDao
@@ -75,6 +75,7 @@ import me.him188.ani.utils.io.deleteRecursively
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.isDirectory
+import me.him188.ani.utils.io.length
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
@@ -268,6 +269,31 @@ class TorrentMediaCacheEngine(
 
         override val isDeleted: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
+        private val rowDeletionLock = Mutex()
+        private var rowsDeleted = false
+
+        /**
+         * 删除的阶段 1 (契约见 [MediaCache.deletePersistedRows]): 只动本地数据库, 立即完成, 幂等.
+         *
+         * **原先 TorrentMediaCache 没有实现这个方法**, 走的是基类的空实现 —— 于是种子缓存的 DAO 行
+         * 完全押在阶段 2 ([closeAndDeleteFiles]) 的后台清理上。而
+         * [me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage.deleteFirst] 的注释里
+         * 防的正是这一点: 后台要等服务冷启动 (真机数十秒), 期间进程退出或 storage 关闭就会把
+         * `completed = true` 的孤儿行永久留下, 之后重新缓存同一集会被旧行判成"已完成"而交出不完整文件。
+         *
+         * 2026-09-20 真机实证: 某一集界面显示已完成却播不了, 文件比种子里的应有长度短 4,863,353 字节。
+         */
+        override suspend fun deletePersistedRows() = rowDeletionLock.withLock {
+            ensureRowsDeletedLocked()
+        }
+
+        private suspend fun ensureRowsDeletedLocked() {
+            if (rowsDeleted) return
+            deleteEpisodeRecord(origin, metadata)
+            // 置位放在成功之后: 提前置位会让失败后的重试直接短路
+            rowsDeleted = true
+        }
+
         override suspend fun closeAndDeleteFiles() {
             logger.info { "closeAndDeleteFiles is called" }
             if (isDeleted.value) return
@@ -276,45 +302,42 @@ class TorrentMediaCacheEngine(
                 isDeleted.value = true
             }
 
+            // 阶段 1 先做完: 下面的物理清理要等服务冷启动, 中途被打断也不能留下孤儿行
+            deletePersistedRows()
+
             // 只需要在删除缓存的时候 torrent engine 可用, 不需要保证一直可用
             @OptIn(EnsureTorrentEngineIsAccessible::class)
-            val handle =
-                engineAccess.withServiceRequest("TorrentMediaCache#$this-closeAndDeleteFiles:${origin.mediaId}") {
-                    logger.info { "Getting handle" }
-                    val handle = fileHandle.handle.first() ?: kotlin.run {
-                        // did not even selected a file
-                        logger.info { "Deleting torrent cache: No file selected" }
-                        close()
-                        return
-                    }
-
-                    logger.info { "Closing TorrentCache" }
+            engineAccess.withServiceRequest("TorrentMediaCache#$this-closeAndDeleteFiles:${origin.mediaId}") {
+                logger.info { "Getting handle" }
+                val handle = fileHandle.handle.first()
+                if (handle == null) {
+                    // 从没选中过文件, 没有可删的磁盘内容.
+                    // **这里原先是 `?: kotlin.run { ...; return }`** —— withServiceRequest 是 inline,
+                    // 那个 return 是非局部返回, 直接退出 closeAndDeleteFiles, 把末尾的记录清理整个跳过,
+                    // 按集记录和种子行就永远留在库里了 (孤儿行的来源之一)。
+                    logger.info { "Deleting torrent cache: No file selected" }
                     close()
-
-                    logger.info { "Closing torrent file handle" }
-                    handle.closeAndDelete()
-
-                    handle
+                    return@withServiceRequest
                 }
 
-            withContext(Dispatchers.IO_) {
-                val file = handle.entry.resolveFileMaybeEmptyOrNull() ?: kotlin.run {
-                    logger.warn { "No file resolved for torrent entry '${handle.entry.fileName}'" }
-                    return@withContext
-                }
-                if (file.exists()) {
-                    logger.info { "Deleting torrent cache: $file" }
-                    try {
-                        file.delete()
-                    } catch (_: FileNotFoundException) {
-                    } catch (e: IOException) {
-                        logger.warn("Failed to delete cache file $file", e)
-                    }
-                } else {
-                    logger.info { "Torrent cache does not exist, ignoring: $file" }
-                }
+                logger.info { "Closing TorrentCache" }
+                close()
+
+                // **不能在这里单删这一集的文件** (2026-09-20 回归, 从 v6.0.6 退化):
+                // 同一个种子的其他集还在时, 会话不会被移除, libtorrent 那份 piece 完成状态
+                // 跟磁盘无关 —— 绕过会话直接 delete() 文件, 它仍认为那些 piece 都在。于是重新
+                // 缓存这一集时 isDownloadFinished 立刻为 true (界面秒显"下载完成"), 它也就不去下载、
+                // 不创建文件, 播放时卡在 resolveDownloadingFile 的 "Still waiting to get file..." 上。
+                // 真机复现: 2026-09-20 删掉第六集重新缓存, 引擎报 progress=1.0 而磁盘上根本没那个文件。
+                //
+                // 所以只关句柄: 物理空间的回收全权交给会话侧的 deleteEntireTorrentIfNotInUse ——
+                // 整个种子没人引用了就整目录 reclaim (先失效 fastresume 再删数据), 还有其他集在就
+                // 跳过并打 warn。代价是"删了其中几集空间不立即回收", 这是 v6.0.6 就做过的取舍:
+                // 宁可晚点回收, 不能交出一个永远下不完的稀疏文件。彻底修法需要 anitorrent 补上
+                // force_recheck 绑定, 另行立项。
+                logger.info { "Closing torrent file handle" }
+                handle.closeAndDelete()
             }
-            deleteEpisodeRecord(origin, metadata)
         }
 
         /**
@@ -353,7 +376,15 @@ class TorrentMediaCacheEngine(
                         entity.copy(
                             completed = finished,
                             pathInTorrent = fileEntry.pathInTorrent,
-                            downloadSize = entryFileStats.downloadedBytes,
+                            // **已完成的记录不许把这个数改小**: 重新挂上种子的那一刻 downloadedBytes 是从
+                            // 零开始爬的 (2026-09-20 真机: 一条已完成记录被改写成 8,388,608 = 一个 piece),
+                            // 而 completed 是粘性的, 于是 downloadSize 永远停在那个残值上 ——
+                            // resolveCompletedFile 拿它当"文件应有多大"去比, 就再也对不上了.
+                            downloadSize = if (entity.completed) {
+                                maxOf(entity.downloadSize, entryFileStats.downloadedBytes)
+                            } else {
+                                entryFileStats.downloadedBytes
+                            },
                             uploadSize = sessionStats.uploadedBytes,
                         ),
                     )
@@ -403,6 +434,15 @@ class TorrentMediaCacheEngine(
                                 // 如果距离上次上传活动大于 10 分钟, 直接更新 metadata
                             }
 
+                            // 把判定依据留下来: 2026-09-20 出过"标记说下完了、磁盘上却少了小半个 piece"
+                            // 的情况 (见 resolveCompletedFile 的大小校验). 真要再遇到, 这一行能直接说清
+                            // 是引擎报的 isDownloadFinished 不实, 还是文件后来被动过.
+                            logger.info {
+                                "Marking episode ${metadata.episodeId} of ${origin.mediaId} completed: " +
+                                        "downloadFinished=${fileStats.isDownloadFinished}, " +
+                                        "downloaded=${fileStats.downloadedBytes}, progress=${fileStats.downloadProgress}, " +
+                                        "path=${fileEntry.pathInTorrent}"
+                            }
                             dao.upsertEpisode(
                                 entity.copy(
                                     completed = true,
@@ -696,13 +736,52 @@ class TorrentMediaCacheEngine(
         torrentEngine.close()
     }
 
-    private fun resolveCompletedFile(torrent: TorrentCacheInfoEntity, record: TorrentCacheEpisodeEntity): SystemPath? {
+    private suspend fun resolveCompletedFile(torrent: TorrentCacheInfoEntity, record: TorrentCacheEpisodeEntity): SystemPath? {
         if (!record.completed) return null
         val pathInTorrent = record.pathInTorrent.takeIf { it.isNotEmpty() } ?: return null
 
         val file = Path(baseSaveDirProvider.saveDir, torrent.relativeDir).resolve(pathInTorrent).inSystem
         if (!file.exists() || file.isDirectory()) {
             return null
+        }
+
+        /*
+         * 标记说"下完了"还不够, 文件本身也得对得上。
+         *
+         * 走到这里就会把它包成 [LocalFileMediaCache] —— 那个类的 `state` 是写死的 COMPLETED、`fileStats`
+         * 拿当前文件长度**同时**当已下载和总大小, 进度恒等于 1。于是标记一旦是错的, 界面上显示"已完成",
+         * 播放器却打开一个残缺文件, 表现为"已完成但播不了", 而且 `completed` 在上游是粘性的
+         * (`finished = entity.completed || ...`), 错了永远不会自我纠正。
+         *
+         * 2026-09-20 真机实证: 某一集记录 `completed=1`, `downloadSize` 与种子里该文件的长度一致
+         * (323,630,457), 磁盘上却只有 318,767,104 —— 少了不到一个 piece 的尾巴, 点开就是播不了。
+         *
+         * 这里只比 [TorrentCacheEpisodeEntity.downloadSize]: 它在标记完成时记的就是这个文件下完的字节数,
+         * 实测与种子里的应有长度逐字节相等。**不去解种子**, 因为本地文件这条路的意义正是不必启动种子引擎。
+         * 老记录可能没有这个数 (为 0), 那就无从校验, 照旧放行, 不制造新的回归。
+         *
+         * 对不上时返回 null = 回落到正常的种子缓存路径, 由引擎重新校验分片、把缺的补上。
+         */
+        val expectedSize = record.downloadSize
+        if (expectedSize > 0) {
+            val actualSize = file.length()
+            if (actualSize != expectedSize) {
+                logger.warn {
+                    "Episode ${record.episodeId} of ${record.mediaId} is marked completed but the file is " +
+                            "$actualSize bytes instead of $expectedSize; clearing the flag and falling back to " +
+                            "the torrent so the missing pieces get downloaded: ${file.absolutePath}"
+                }
+                /*
+                 * 顺手把这个不可信的标记清掉。`completed` 在上游是粘性的
+                 * (`finished = entity.completed || ...`), 不清的话 [subscribeStats] 会以"早就完成了"为由
+                 * 直接跳过订阅, 这条记录既不会被修正、也再没机会重新标成完成 —— 于是每次恢复都白白回落到
+                 * 种子路径, 永远好不了。清掉之后走的是正常流程: 引擎重新校验分片, 真下完了再标记。
+                 *
+                 * 清标记只会让状态更保守 (已完成 -> 缓存中), 不动任何文件.
+                 */
+                dao.upsertEpisode(record.copy(completed = false))
+                return null
+            }
         }
 
         return file
