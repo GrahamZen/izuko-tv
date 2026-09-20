@@ -113,6 +113,11 @@ class VideoDataDataSource(
         if (ENABLE_TRACE_LOG) logger.info { "Closing VideoDataDataSource" }
         uri = null
         if (opened) {
+            // 必须先置回 false: ExoPlayer 会对同一个源关两次 (取消加载任务那条路, 和 load() 的 finally
+            // 各来一次), 而 transferEnded() 把 BaseDataSource 里那份 dataSpec 清成了 null —— 再调一次
+            // 就会拿 null 去问 DefaultBandwidthMeter.isTransferAtFullNetworkSpeed, 当场 NPE, 一路变成
+            // ExoPlayer 的 Source error, 界面上显示「加载失败」。反复拖进度条时很容易撞上。
+            opened = false
             transferEnded()
         }
     }
