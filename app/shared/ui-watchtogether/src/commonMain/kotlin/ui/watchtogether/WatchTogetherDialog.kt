@@ -322,9 +322,9 @@ private fun WatchTogetherDialogBody(
                     )
                 }
             },
-            dismissButton = dismissDialogButton(stringResource(Lang.watch_together_cancel)) {
+            dismissButton = dismissDialogButton(stringResource(Lang.watch_together_cancel), {
                 confirmDisband = false
-            },
+            }),
         )
     }
 
@@ -346,9 +346,9 @@ private fun WatchTogetherDialogBody(
                     )
                 }
             },
-            dismissButton = dismissDialogButton(stringResource(Lang.watch_together_cancel)) {
+            dismissButton = dismissDialogButton(stringResource(Lang.watch_together_cancel), {
                 confirmDisable = false
-            },
+            }),
         )
     }
 }

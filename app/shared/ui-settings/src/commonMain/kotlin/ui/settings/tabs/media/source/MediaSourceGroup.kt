@@ -422,7 +422,7 @@ internal fun SettingsScope.MediaSourceGroup(
                             },
                             dismissButton = dismissDialogButton(
                                 stringResource(Lang.settings_media_source_cancel),
-                            ) { showConfirmDeletionDialog = false },
+                            { showConfirmDeletionDialog = false }),
                         )
                     }
 

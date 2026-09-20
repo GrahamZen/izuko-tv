@@ -157,9 +157,9 @@ fun <T> SettingsScope.SingleSelectionItem(
                     },
                 ) { Text(stringResource(Lang.settings_danmaku_confirm)) }
             },
-            dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel)) {
+            dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel), {
                 showDialog = false
-            },
+            }),
             text = {
                 Column {
                     dialogDescription?.let {

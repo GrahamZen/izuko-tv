@@ -223,7 +223,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                 },
                 dismissButton = dismissDialogButton(
                     stringResource(Lang.settings_media_source_subscription_cancel),
-                ) { showAddDialog = false },
+                { showAddDialog = false }),
                 title = {
                     Text(stringResource(Lang.settings_media_source_subscription_add_dialog))
                 },
@@ -366,7 +366,7 @@ private fun SettingsScope.SubscriptionItem(
             },
             dismissButton = dismissDialogButton(
                 stringResource(Lang.settings_media_source_cancel),
-            ) { showConfirmDelete = false },
+            { showConfirmDelete = false }),
         )
 
     }
