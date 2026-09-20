@@ -109,7 +109,6 @@ fun EpisodeGridCell(
     val isWatched = item.isDoneOrDropped
     val isDone = item.collectionType == UnifiedCollectionType.DONE
     val playProgress = item.playProgress
-    val interactionSource = remember { MutableInteractionSource() }
     val still = item.imageMedium?.takeIf { showImage }
     // 播放中且有剧照时的描边宽度, 进度条按它内缩
     val stillBorder = if (still != null && isPlaying) 2.dp else 0.dp

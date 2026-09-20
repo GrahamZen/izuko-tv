@@ -336,7 +336,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = cache.webSubjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }.takeIf(List<DefaultMedia>::isNotEmpty)
@@ -427,7 +427,7 @@ class SelectorMediaSource(
                         query,
                         mediaSourceId,
                         subjectName = subjectInfo.name,
-                    ).originalList,
+                    ),
                 )
             }
         }

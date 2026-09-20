@@ -67,10 +67,10 @@ import me.him188.ani.app.ui.lang.cache_management_invalid_cache_info
 import me.him188.ani.app.ui.lang.cache_management_more_actions
 import me.him188.ani.app.ui.lang.cache_management_play
 import me.him188.ani.app.ui.lang.cache_management_streaming_not_supported
-import me.him188.ani.app.ui.cache.subject.CacheRowRefocus
-import me.him188.ani.app.ui.cache.subject.LocalCachePopupOpen
-import me.him188.ani.app.ui.cache.subject.REFOCUS_FRAMES
-import me.him188.ani.app.ui.cache.subject.LocalCacheRowRefocus
+import me.him188.ani.app.ui.download.CacheRowRefocus
+import me.him188.ani.app.ui.download.LocalCachePopupOpen
+import me.him188.ani.app.ui.download.REFOCUS_FRAMES
+import me.him188.ani.app.ui.download.LocalCacheRowRefocus
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.mediafetch.MediaSourceInfoProvider
 import org.jetbrains.compose.resources.stringResource

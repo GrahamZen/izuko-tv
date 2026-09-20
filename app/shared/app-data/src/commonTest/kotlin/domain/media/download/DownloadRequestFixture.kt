@@ -74,6 +74,7 @@ import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.platform.annotations.TestOnly
+import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 
 /**
  * 第 [id] 集: episodeId、sort、ep 均为 [id].
@@ -315,6 +316,12 @@ internal class DownloadRequestFixture(
     }
 
     private inner class Preferences : EpisodePreferencesRepository {
+        // fork 往这个接口上加过"数据源搜索名按条目记住", 本 fixture 不涉及
+        override fun searchKeywordsFlow(subjectId: Int): Flow<SubjectSearchKeywords?> = flowOf(null)
+
+        override suspend fun setSearchKeywords(subjectId: Int, keywords: SubjectSearchKeywords?) =
+            throw UnsupportedOperationException()
+
         override fun mediaPreferenceFlow(subjectId: Int): Flow<MediaPreference> = flowOf(MediaPreference.Empty)
 
         override suspend fun setMediaPreference(subjectId: Int, mediaPreference: MediaPreference) {
