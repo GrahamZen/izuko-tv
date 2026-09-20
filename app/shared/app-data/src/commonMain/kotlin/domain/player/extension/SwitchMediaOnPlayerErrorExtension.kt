@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
@@ -63,7 +64,7 @@ class SwitchMediaOnPlayerErrorExtension(
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSelectorSettingsFlowUseCase: GetMediaSelectorSettingsFlowUseCase by koin.inject()
     private val getSourceTiersUseCase: GetMediaSelectorSourceTiersUseCase by koin.inject()
-    private val mediaCacheManager: MediaCacheManager by koin.inject()
+    private val mediaCacheManager: MediaDownloadManager by koin.inject()
 
 
     override fun onStart(
@@ -169,8 +170,8 @@ class SwitchMediaOnPlayerErrorExtension(
                     // 去停用户的播放 (只有 DummyMediaCacheEngine 之类不带 cacheId).
                         ?: return@select
 
-                    mediaCacheManager.listCacheForSubject(context.subjectId)
-                        .map { caches -> caches.any { it.cacheId == trackedCacheId } }
+                    mediaCacheManager.downloadsForSubject(context.subjectId)
+                        .map { downloads -> downloads.any { it.cache.cacheId == trackedCacheId } }
                         // 缓存列表在启动恢复/服务重连时会整体重建, 中途可能短暂查不到 —— 稳定消失才算删除
                         .debounce(CACHE_DELETION_SETTLE_DELAY)
                         .distinctUntilChanged()
@@ -362,7 +363,6 @@ internal class PlayerLoadErrorHandler(
         }
 
         // 将当前播放的 mediaId 加入黑名单
-        val failedMedia = mediaSelector.selected.value
         failedMedia?.let { blacklist(it.mediaId) }
 
         delay(1.seconds) // 稍等让用户看到播放出错

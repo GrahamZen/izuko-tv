@@ -141,7 +141,7 @@ fun MediaFetchRequestEditorDialog(
                     Text(discardText, color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = dismissDialogButton(continueEditingText) { showConfirmDiscard = false },
+            dismissButton = dismissDialogButton(continueEditingText, { showConfirmDiscard = false }),
             icon = {
                 Icon(
                     Icons.Rounded.Delete, null,
