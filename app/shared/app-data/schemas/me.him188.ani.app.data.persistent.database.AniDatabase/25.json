@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 22,
-    "identityHash": "72ca4f848629b9bc6e35e355feb93398",
+    "version": 25,
+    "identityHash": "b942cc1e3206f007c67d42e34cb5740c",
     "entities": [
       {
         "tableName": "search_history",
@@ -82,7 +82,7 @@
       },
       {
         "tableName": "subject_collection",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `summary` TEXT NOT NULL, `nsfw` INTEGER NOT NULL, `imageLarge` TEXT NOT NULL, `totalEpisodes` INTEGER NOT NULL, `airDate` INTEGER NOT NULL, `aliases` BLOB NOT NULL, `tags` BLOB NOT NULL, `completeDate` INTEGER NOT NULL, `collectionType` TEXT NOT NULL, `lastUpdated` INTEGER NOT NULL DEFAULT 0, `lastFetched` INTEGER NOT NULL DEFAULT 0, `cachedStaffUpdated` INTEGER NOT NULL DEFAULT 0, `cachedCharactersUpdated` INTEGER NOT NULL DEFAULT 0, `collection_stats_wish` INTEGER NOT NULL, `collection_stats_doing` INTEGER NOT NULL, `collection_stats_done` INTEGER NOT NULL, `collection_stats_onHold` INTEGER NOT NULL, `collection_stats_dropped` INTEGER NOT NULL, `rating_rank` INTEGER NOT NULL, `rating_total` INTEGER NOT NULL, `rating_score` TEXT NOT NULL, `rating_count_s1` INTEGER NOT NULL, `rating_count_s2` INTEGER NOT NULL, `rating_count_s3` INTEGER NOT NULL, `rating_count_s4` INTEGER NOT NULL, `rating_count_s5` INTEGER NOT NULL, `rating_count_s6` INTEGER NOT NULL, `rating_count_s7` INTEGER NOT NULL, `rating_count_s8` INTEGER NOT NULL, `rating_count_s9` INTEGER NOT NULL, `rating_count_s10` INTEGER NOT NULL, `self_rating_score` INTEGER NOT NULL, `self_rating_comment` TEXT, `self_rating_tags` BLOB NOT NULL, `self_rating_isPrivate` INTEGER NOT NULL, `recurrence_startTime` INTEGER, `recurrence_interval` TEXT, `relations_seriesMainSubjectIds` BLOB NOT NULL DEFAULT '[]', `relations_seriesMainSubjectNames` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjects` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjectNames` BLOB NOT NULL DEFAULT '[]', PRIMARY KEY(`subjectId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `summary` TEXT NOT NULL, `nsfw` INTEGER NOT NULL, `imageLarge` TEXT NOT NULL, `totalEpisodes` INTEGER NOT NULL, `airDate` INTEGER NOT NULL, `aliases` BLOB NOT NULL, `tags` BLOB NOT NULL, `completeDate` INTEGER NOT NULL, `collectionType` TEXT NOT NULL, `screeningYear` INTEGER DEFAULT NULL, `theatrical` INTEGER NOT NULL DEFAULT 0, `lastUpdated` INTEGER NOT NULL DEFAULT 0, `lastFetched` INTEGER NOT NULL DEFAULT 0, `cachedStaffUpdated` INTEGER NOT NULL DEFAULT 0, `cachedCharactersUpdated` INTEGER NOT NULL DEFAULT 0, `collection_stats_wish` INTEGER NOT NULL, `collection_stats_doing` INTEGER NOT NULL, `collection_stats_done` INTEGER NOT NULL, `collection_stats_onHold` INTEGER NOT NULL, `collection_stats_dropped` INTEGER NOT NULL, `rating_rank` INTEGER NOT NULL, `rating_total` INTEGER NOT NULL, `rating_score` TEXT NOT NULL, `rating_count_s1` INTEGER NOT NULL, `rating_count_s2` INTEGER NOT NULL, `rating_count_s3` INTEGER NOT NULL, `rating_count_s4` INTEGER NOT NULL, `rating_count_s5` INTEGER NOT NULL, `rating_count_s6` INTEGER NOT NULL, `rating_count_s7` INTEGER NOT NULL, `rating_count_s8` INTEGER NOT NULL, `rating_count_s9` INTEGER NOT NULL, `rating_count_s10` INTEGER NOT NULL, `self_rating_score` INTEGER NOT NULL, `self_rating_comment` TEXT, `self_rating_tags` BLOB NOT NULL, `self_rating_isPrivate` INTEGER NOT NULL, `recurrence_startTime` INTEGER, `recurrence_interval` TEXT, `relations_seriesMainSubjectIds` BLOB NOT NULL DEFAULT '[]', `relations_seriesMainSubjectNames` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjects` BLOB NOT NULL DEFAULT '[]', `relations_sequelSubjectNames` BLOB NOT NULL DEFAULT '[]', PRIMARY KEY(`subjectId`))",
         "fields": [
           {
             "fieldPath": "subjectId",
@@ -155,6 +155,19 @@
             "columnName": "collectionType",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "screeningYear",
+            "columnName": "screeningYear",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "theatrical",
+            "columnName": "theatrical",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "lastUpdated",
@@ -376,7 +389,7 @@
       },
       {
         "tableName": "episode_collection",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `episodeType` TEXT, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `airDate` INTEGER NOT NULL, `comment` INTEGER NOT NULL, `desc` TEXT NOT NULL, `sort` TEXT NOT NULL, `sortNumber` REAL NOT NULL DEFAULT 3.4028235e38, `ep` TEXT, `selfCollectionType` TEXT NOT NULL, `lastFetched` INTEGER NOT NULL, PRIMARY KEY(`episodeId`), FOREIGN KEY(`subjectId`) REFERENCES `subject_collection`(`subjectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `episodeType` TEXT, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `airDate` INTEGER NOT NULL, `comment` INTEGER NOT NULL, `desc` TEXT NOT NULL, `sort` TEXT NOT NULL, `sortNumber` REAL NOT NULL DEFAULT 3.4028235e38, `ep` TEXT, `imageMedium` TEXT, `imageLarge` TEXT, `selfCollectionType` TEXT NOT NULL, `lastFetched` INTEGER NOT NULL, PRIMARY KEY(`episodeId`), FOREIGN KEY(`subjectId`) REFERENCES `subject_collection`(`subjectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "subjectId",
@@ -441,6 +454,16 @@
           {
             "fieldPath": "ep",
             "columnName": "ep",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imageMedium",
+            "columnName": "imageMedium",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imageLarge",
+            "columnName": "imageLarge",
             "affinity": "TEXT"
           },
           {
@@ -1054,14 +1077,19 @@
         ]
       },
       {
-        "tableName": "web_search_subject",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaSourceId` TEXT NOT NULL, `subjectName` TEXT NOT NULL, `internalId` TEXT NOT NULL, `name` TEXT NOT NULL, `fullUrl` TEXT NOT NULL, `partialUrl` TEXT NOT NULL)",
+        "tableName": "web_search_session_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `requesterSubjectId` INTEGER, `mediaSourceId` TEXT NOT NULL, `subjectName` TEXT NOT NULL, `subjectPageName` TEXT NOT NULL, `subjectInternalId` TEXT NOT NULL, `subjectUrl` TEXT NOT NULL, `subjectPartialUrl` TEXT NOT NULL, `channel` TEXT NOT NULL, `episodeName` TEXT NOT NULL, `episodeSortOrEp` TEXT, `playUrl` TEXT NOT NULL, `cachedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "requesterSubjectId",
+            "columnName": "requesterSubjectId",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "mediaSourceId",
@@ -1076,67 +1104,38 @@
             "notNull": true
           },
           {
-            "fieldPath": "internalId",
-            "columnName": "internalId",
+            "fieldPath": "subjectPageName",
+            "columnName": "subjectPageName",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "name",
-            "columnName": "name",
+            "fieldPath": "subjectInternalId",
+            "columnName": "subjectInternalId",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "fullUrl",
-            "columnName": "fullUrl",
+            "fieldPath": "subjectUrl",
+            "columnName": "subjectUrl",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "partialUrl",
-            "columnName": "partialUrl",
+            "fieldPath": "subjectPartialUrl",
+            "columnName": "subjectPartialUrl",
             "affinity": "TEXT",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": true,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_web_search_subject_mediaSourceId_subjectName",
-            "unique": true,
-            "columnNames": [
-              "mediaSourceId",
-              "subjectName"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_subject_mediaSourceId_subjectName` ON `${TABLE_NAME}` (`mediaSourceId`, `subjectName`)"
-          }
-        ]
-      },
-      {
-        "tableName": "web_search_episode",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `channel` TEXT, `name` TEXT NOT NULL, `episodeSortOrEp` TEXT, `playUrl` TEXT NOT NULL, `parentId` INTEGER NOT NULL, FOREIGN KEY(`parentId`) REFERENCES `web_search_subject`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
             "notNull": true
           },
           {
             "fieldPath": "channel",
             "columnName": "channel",
-            "affinity": "TEXT"
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "name",
-            "columnName": "name",
+            "fieldPath": "episodeName",
+            "columnName": "episodeName",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -1152,8 +1151,14 @@
             "notNull": true
           },
           {
-            "fieldPath": "parentId",
-            "columnName": "parentId",
+            "fieldPath": "cachedAt",
+            "columnName": "cachedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -1166,43 +1171,35 @@
         },
         "indices": [
           {
-            "name": "index_web_search_episode_parentId",
-            "unique": false,
-            "columnNames": [
-              "parentId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_web_search_episode_parentId` ON `${TABLE_NAME}` (`parentId`)"
-          },
-          {
-            "name": "index_web_search_episode_channel_name_parentId",
+            "name": "index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName_subjectUrl_channel_episodeName",
             "unique": true,
             "columnNames": [
+              "requesterSubjectId",
+              "mediaSourceId",
+              "subjectName",
+              "subjectUrl",
               "channel",
-              "name",
-              "parentId"
+              "episodeName"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_episode_channel_name_parentId` ON `${TABLE_NAME}` (`channel`, `name`, `parentId`)"
-          }
-        ],
-        "foreignKeys": [
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName_subjectUrl_channel_episodeName` ON `${TABLE_NAME}` (`requesterSubjectId`, `mediaSourceId`, `subjectName`, `subjectUrl`, `channel`, `episodeName`)"
+          },
           {
-            "table": "web_search_subject",
-            "onDelete": "CASCADE",
-            "onUpdate": "NO ACTION",
-            "columns": [
-              "parentId"
+            "name": "index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName",
+            "unique": false,
+            "columnNames": [
+              "requesterSubjectId",
+              "mediaSourceId",
+              "subjectName"
             ],
-            "referencedColumns": [
-              "id"
-            ]
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_web_search_session_cache_requesterSubjectId_mediaSourceId_subjectName` ON `${TABLE_NAME}` (`requesterSubjectId`, `mediaSourceId`, `subjectName`)"
           }
         ]
       },
       {
         "tableName": "torrent_cache",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, PRIMARY KEY(`mediaId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, `completed` INTEGER NOT NULL DEFAULT 0, `pathInTorrent` TEXT NOT NULL DEFAULT '', `downloadSize` INTEGER NOT NULL DEFAULT 0, `uploadSize` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`mediaId`))",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -1221,6 +1218,34 @@
             "columnName": "relativeDir",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "completed",
+            "columnName": "completed",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "pathInTorrent",
+            "columnName": "pathInTorrent",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "downloadSize",
+            "columnName": "downloadSize",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "uploadSize",
+            "columnName": "uploadSize",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1242,18 +1267,12 @@
         ]
       },
       {
-        "tableName": "torrent_cache_file",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `subjectId` TEXT NOT NULL, `episodeId` TEXT NOT NULL, `pathInTorrent` TEXT NOT NULL, `completed` INTEGER NOT NULL, `downloadSize` INTEGER NOT NULL, `uploadSize` INTEGER NOT NULL, PRIMARY KEY(`mediaId`, `subjectId`, `episodeId`))",
+        "tableName": "torrent_cache_episode",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `episodeId` TEXT NOT NULL, `completed` INTEGER NOT NULL, `pathInTorrent` TEXT NOT NULL, `downloadSize` INTEGER NOT NULL, `uploadSize` INTEGER NOT NULL, PRIMARY KEY(`mediaId`, `episodeId`))",
         "fields": [
           {
             "fieldPath": "mediaId",
             "columnName": "mediaId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "subjectId",
-            "columnName": "subjectId",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -1264,15 +1283,15 @@
             "notNull": true
           },
           {
-            "fieldPath": "pathInTorrent",
-            "columnName": "pathInTorrent",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
             "fieldPath": "completed",
             "columnName": "completed",
             "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pathInTorrent",
+            "columnName": "pathInTorrent",
+            "affinity": "TEXT",
             "notNull": true
           },
           {
@@ -1292,7 +1311,6 @@
           "autoGenerate": false,
           "columnNames": [
             "mediaId",
-            "subjectId",
             "episodeId"
           ]
         }
@@ -1764,7 +1782,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '72ca4f848629b9bc6e35e355feb93398')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b942cc1e3206f007c67d42e34cb5740c')"
     ]
   }
 }

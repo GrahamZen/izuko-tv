@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 23,
-    "identityHash": "419ef2d9531e2a1cd65a54763e6fd607",
+    "identityHash": "2674d46b2b0c9878d40aac8e6b5e525c",
     "entities": [
       {
         "tableName": "search_history",
@@ -376,7 +376,7 @@
       },
       {
         "tableName": "episode_collection",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `episodeType` TEXT, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `airDate` INTEGER NOT NULL, `comment` INTEGER NOT NULL, `desc` TEXT NOT NULL, `sort` TEXT NOT NULL, `sortNumber` REAL NOT NULL DEFAULT 3.4028235e38, `ep` TEXT, `imageMedium` TEXT, `imageLarge` TEXT, `selfCollectionType` TEXT NOT NULL, `lastFetched` INTEGER NOT NULL, PRIMARY KEY(`episodeId`), FOREIGN KEY(`subjectId`) REFERENCES `subject_collection`(`subjectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `episodeType` TEXT, `name` TEXT NOT NULL, `nameCn` TEXT NOT NULL, `airDate` INTEGER NOT NULL, `comment` INTEGER NOT NULL, `desc` TEXT NOT NULL, `sort` TEXT NOT NULL, `sortNumber` REAL NOT NULL DEFAULT 3.4028235e38, `ep` TEXT, `selfCollectionType` TEXT NOT NULL, `lastFetched` INTEGER NOT NULL, PRIMARY KEY(`episodeId`), FOREIGN KEY(`subjectId`) REFERENCES `subject_collection`(`subjectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "subjectId",
@@ -441,16 +441,6 @@
           {
             "fieldPath": "ep",
             "columnName": "ep",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "imageMedium",
-            "columnName": "imageMedium",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "imageLarge",
-            "columnName": "imageLarge",
             "affinity": "TEXT"
           },
           {
@@ -1186,7 +1176,7 @@
       },
       {
         "tableName": "torrent_cache",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, `completed` INTEGER NOT NULL, `pathInTorrent` TEXT NOT NULL, `downloadSize` INTEGER NOT NULL, `uploadSize` INTEGER NOT NULL, PRIMARY KEY(`mediaId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `torrentData` BLOB NOT NULL, `relativeDir` TEXT NOT NULL, PRIMARY KEY(`mediaId`))",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -1204,30 +1194,6 @@
             "fieldPath": "relativeDir",
             "columnName": "relativeDir",
             "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "completed",
-            "columnName": "completed",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "pathInTorrent",
-            "columnName": "pathInTorrent",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "downloadSize",
-            "columnName": "downloadSize",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "uploadSize",
-            "columnName": "uploadSize",
-            "affinity": "INTEGER",
             "notNull": true
           }
         ],
@@ -1248,6 +1214,62 @@
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_torrent_cache_mediaId` ON `${TABLE_NAME}` (`mediaId`)"
           }
         ]
+      },
+      {
+        "tableName": "torrent_cache_file",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `subjectId` TEXT NOT NULL, `episodeId` TEXT NOT NULL, `pathInTorrent` TEXT NOT NULL, `completed` INTEGER NOT NULL, `downloadSize` INTEGER NOT NULL, `uploadSize` INTEGER NOT NULL, PRIMARY KEY(`mediaId`, `subjectId`, `episodeId`))",
+        "fields": [
+          {
+            "fieldPath": "mediaId",
+            "columnName": "mediaId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pathInTorrent",
+            "columnName": "pathInTorrent",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completed",
+            "columnName": "completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadSize",
+            "columnName": "downloadSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadSize",
+            "columnName": "uploadSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "mediaId",
+            "subjectId",
+            "episodeId"
+          ]
+        }
       },
       {
         "tableName": "http_cache_download_state",
@@ -1716,7 +1738,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '419ef2d9531e2a1cd65a54763e6fd607')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2674d46b2b0c9878d40aac8e6b5e525c')"
     ]
   }
 }
