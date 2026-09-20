@@ -14,16 +14,15 @@ import me.him188.ani.buildconfig.AndroidBuildConfig
 
 internal actual fun currentPlatformImpl(): Platform {
     val isTv = AndroidBuildConfig.DISTRO_CHANNEL == "tv"
-    if (Build.SUPPORTED_ABIS == null) {
-        // unit testing
-        return Platform.Android(Arch.ARMV8A, isTv)
+    val abis = Build.SUPPORTED_ABIS?.toList()
+        ?: return Platform.Android(Arch.ARMV8A, isTv) // unit testing
+    // arch 只是首选 ABI, 且只能取 Arch 里的值 (x86 这类不认识的一律记成 ARMV8A);
+    // 完整列表一并带上, 判断"装得上哪个包"必须用它, 见 Platform.Android.supportedAbis
+    val arch = when (abis.firstOrNull()?.lowercase()) {
+        "armeabi-v7a" -> Arch.ARMV7A
+        "arm64-v8a" -> Arch.ARMV8A
+        "x86_64" -> Arch.X86_64
+        else -> Arch.ARMV8A
     }
-    return Build.SUPPORTED_ABIS.getOrNull(0)?.let { abi ->
-        when (abi.lowercase()) {
-            "armeabi-v7a" -> Platform.Android(Arch.ARMV7A, isTv)
-            "arm64-v8a" -> Platform.Android(Arch.ARMV8A, isTv)
-            "x86_64" -> Platform.Android(Arch.X86_64, isTv)
-            else -> Platform.Android(Arch.ARMV8A, isTv)
-        }
-    } ?: Platform.Android(Arch.ARMV8A, isTv)
+    return Platform.Android(arch, isTv, supportedAbis = abis)
 }

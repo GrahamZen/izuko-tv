@@ -186,6 +186,21 @@ class UIComment(
      * 评论所属的剧集 ID. 仅剧集评论有值; 提交投票/举报时应优先用它而不是当前播放的剧集.
      */
     val episodeId: Long? = null,
+
+    /**
+     * 本条回复所针对的同层回复. 非空表示"回复某条回复", 需要在 UI 上指明回复关系;
+     * 直接回复主楼 (紧邻主楼下方, 缩进已足够表达) 或数据源不提供时为 `null`.
+     */
+    val replyTo: UICommentReplyTarget? = null,
+)
+
+/**
+ * 被回复的那一条回复. [authorName] 已在映射时解析好, UI 层不再查表.
+ */
+@Immutable
+class UICommentReplyTarget(
+    val commentId: String,
+    val authorName: String,
 )
 
 /**
@@ -221,6 +236,7 @@ private fun UIComment.copyWithReactions(reactions: List<UICommentReaction>): UIC
         selfVote = selfVote,
         rawContent = rawContent,
         episodeId = episodeId,
+        replyTo = replyTo,
     )
 }
 
@@ -242,6 +258,7 @@ private fun UIComment.copyWithVote(likeCount: Int, selfVote: UICommentVote?): UI
         selfVote = selfVote,
         rawContent = rawContent,
         episodeId = episodeId,
+        replyTo = replyTo,
     )
 }
 

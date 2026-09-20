@@ -44,12 +44,14 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -101,7 +103,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     parentCoroutineContext: CoroutineContext,
     private val pipeline: LibassMediaSourcePipeline,
     internal val exoMediampPlayer: ExoPlayerMediampPlayer,
-) : MediampPlayer by exoMediampPlayer {
+) : MediampPlayer by exoMediampPlayer, VideoSurfaceFrameSignal {
     /**
      * @param configurePlayerBuilder 在 [ExoPlayer.Builder] 构建前调用, 用于自定义原生播放器 (如缓冲策略).
      *   见 [ExoPlayerMediampPlayer] 的同名参数.
@@ -206,6 +208,23 @@ class LibassExoPlayerMediampPlayer private constructor(
     @Volatile
     private var nvidiaVideoDecoderActive: Boolean = false
 
+    private val _hasFrameOnCurrentSurface = MutableStateFlow(false)
+
+    /** 见 [VideoSurfaceFrameSignal]: 换过输出面之后, 这一代上出过画面了没有。 */
+    override val hasFrameOnCurrentSurface: StateFlow<Boolean> get() = _hasFrameOnCurrentSurface
+
+    /**
+     * 视频输出面换了一代 (新 SurfaceView 接上): 新 Surface 上还没有任何画面 ——
+     * 解码器要把输出重定向过去, 就地改不了的芯片还得释放重建、从关键帧重解。
+     *
+     * 由 [registerAndroidVideoSurface] 在**确认换了 view** 时调用: 那个函数会随组合重跑,
+     * 每次都清的话标记会在播放中被清成 false 再也回不去 ([onRenderedFirstFrame] 只在换面/
+     * 重置时才发), 于是每次恢复都白等一个超时。
+     */
+    internal fun onVideoSurfaceReplaced() {
+        _hasFrameOnCurrentSurface.value = false
+    }
+
     init {
         assHandler.init(exoPlayer)
         exoPlayer.addAnalyticsListener(videoOutputTimeoutListener)
@@ -228,6 +247,15 @@ class LibassExoPlayerMediampPlayer private constructor(
                         }
                     }
                     if (isNvidia) applyVideoDataSpace()
+                }
+
+                override fun onRenderedFirstFrame(
+                    eventTime: AnalyticsListener.EventTime,
+                    output: Any,
+                    renderTimeMs: Long,
+                ) {
+                    // media3 的语义正是我们要的: "自设置输出面 / 渲染器重置 / 换流以来的第一帧"
+                    _hasFrameOnCurrentSurface.value = true
                 }
 
                 override fun onVideoDecoderReleased(
@@ -394,6 +422,11 @@ class LibassExoPlayerMediampPlayer private constructor(
     internal fun onVideoSurfaceDestroyed(surfaceView: SurfaceView) {
         if (dataSpaceWrittenTo?.get() === surfaceView) {
             releaseDataSpaceOwnership()
+        }
+        // 当前那一块没了 = 这一代输出面上再没有画面。**只认当前那一块**: 页面切换时新 view
+        // 先注册、旧 view 的 surfaceDestroyed 后到, 不加这个判断会把新一代刚出的帧标记抹掉
+        if (findAndroidVideoSurface() === surfaceView) {
+            _hasFrameOnCurrentSurface.value = false
         }
     }
 

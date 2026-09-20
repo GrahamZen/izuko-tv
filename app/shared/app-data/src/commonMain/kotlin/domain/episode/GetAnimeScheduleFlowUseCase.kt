@@ -12,14 +12,17 @@ package me.him188.ani.app.domain.episode
 import androidx.compose.ui.util.packInts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.data.models.subject.LightEpisodeInfo
 import me.him188.ani.app.data.models.subject.LightSubjectInfo
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.domain.usecase.UseCase
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Clock
 import kotlin.time.Instant
 
 data class AiringScheduleForDate(
@@ -43,6 +46,23 @@ data class EpisodeWithAiringTime(
 fun interface GetAnimeScheduleFlowUseCase : UseCase {
     operator fun invoke(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>>
 
+    /**
+     * 进程里还新鲜的那份时间表 (没有或已过期 = `null`): 页面首帧直接用它, 不先出骨架.
+     * 见 [AnimeScheduleRepository.peekRecentAiringSchedules].
+     */
+    fun peekCached(today: LocalDate, timeZone: TimeZone): List<AiringScheduleForDate>? = null
+
+    /** 丢掉缓存的时间表: 用户要求刷新时, 下一次必定走网络. */
+    fun invalidateCache() {}
+
+    /**
+     * 预取今天的时间表 (如 TV 探索页焦点落到「新番时间表」上): 缓存还新鲜时是空操作; 请求在仓库自己的作用域里跑,
+     * 调用方取消了也会跑完、落进缓存.
+     */
+    suspend fun prefetch(timeZone: TimeZone = TimeZone.currentSystemDefault(), clock: Clock = Clock.System) {
+        invoke(clock.now().toLocalDateTime(timeZone).date, timeZone).first()
+    }
+
     companion object {
         val OFFSET_DAYS_RANGE = (-7..7)
     }
@@ -55,4 +75,9 @@ class GetAnimeScheduleFlowUseCaseImpl(
     override fun invoke(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> =
         animeScheduleRepository.recentAiringSchedulesFlow(today, timeZone)
             .flowOn(defaultDispatcher)
+
+    override fun peekCached(today: LocalDate, timeZone: TimeZone): List<AiringScheduleForDate>? =
+        animeScheduleRepository.peekRecentAiringSchedules(today, timeZone)
+
+    override fun invalidateCache() = animeScheduleRepository.invalidateRecentAiringSchedules()
 }

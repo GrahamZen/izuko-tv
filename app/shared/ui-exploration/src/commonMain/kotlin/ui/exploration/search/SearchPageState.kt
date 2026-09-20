@@ -56,6 +56,7 @@ sealed interface SearchPageIntent {
 
     data object StartInitialSearch : SearchPageIntent
     data class RemoveHistory(val text: String) : SearchPageIntent
+    data object ClearHistory : SearchPageIntent
     data class ChangeSort(val sort: SearchSort) : SearchPageIntent
 
     /**

@@ -136,6 +136,16 @@ sealed class VideoSideSheetsController<P : PageTypeUpperBound<P>> {
             backStack.removeAt(backStack.lastIndex)
         }
     }
+
+    /**
+     * Closes the currently open side sheet.
+     *
+     * 与 [goBack] 同义, 只是给模块外用 (遥控器形态在播放器根部统一路由返回键, 见 TvEpisodeScreen):
+     * 那里只知道"有 sheet 开着, 返回键该关掉它", 够不到 internal 的那两个.
+     */
+    fun close() {
+        goBack()
+    }
 }
 
 /**

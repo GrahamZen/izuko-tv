@@ -14,8 +14,13 @@ package me.him188.ani.app.ui.foundation.navigation
 import androidx.compose.runtime.Composable
 import me.him188.ani.utils.platform.annotations.TestOnly
 
+/**
+ * 不在返回栈栈顶的页面 (被新页盖住 / 正在退场) 的返回处理一律不生效 (见 [LocalPageIsForeground]): 转场期间它们还在组合里,
+ * 又注册得比 NavDisplay 晚, 会抢先把这一下返回吃掉 —— 进详情页后要等列表页离场才退得出去 (2026-09-14 用户).
+ */
 @Composable
-actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) = androidx.activity.compose.BackHandler(enabled, onBack)
+actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
+    androidx.activity.compose.BackHandler(enabled && LocalPageIsForeground.current.value, onBack)
 
 actual typealias LocalOnBackPressedDispatcherOwner = androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 

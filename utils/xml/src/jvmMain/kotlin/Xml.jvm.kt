@@ -11,11 +11,11 @@ package me.him188.ani.utils.xml
 
 import kotlinx.io.Source
 import kotlinx.io.asInputStream
-import org.jsoup.Jsoup
-import org.jsoup.parser.Parser
+import me.him188.ani.shaded.jsoup.Jsoup
+import me.him188.ani.shaded.jsoup.parser.Parser
 
 actual object Xml {
-    actual fun parse(string: String, baseUrl: String): org.jsoup.nodes.Document =
+    actual fun parse(string: String, baseUrl: String): Document =
         Jsoup.parse(string, baseUrl, Parser.xmlParser())
 
     actual fun parse(source: Source, baseUrl: String): Document =
@@ -32,9 +32,8 @@ actual object Xml {
 
 actual object QueryParser {
     @Throws(IllegalStateException::class)
-    actual fun parseSelector(selector: String): Evaluator {
-        return org.jsoup.select.QueryParser.parse(selector)
-    }
+    actual fun parseSelector(selector: String): Evaluator =
+        me.him188.ani.shaded.jsoup.select.QueryParser.parse(selector)
 }
 
 actual object Html {

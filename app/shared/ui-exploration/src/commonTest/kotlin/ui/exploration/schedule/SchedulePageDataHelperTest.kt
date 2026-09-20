@@ -39,6 +39,7 @@ class SchedulePageDataHelperTest {
     ) = AiringScheduleItemPresentation(
         subjectId = id,
         subjectTitle = title,
+        subjectName = title,
         imageUrl = "",
         episodeId = id,
         episodeSort = EpisodeSort(1),

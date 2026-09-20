@@ -57,6 +57,7 @@ import me.him188.ani.app.tools.rememberUiMonoTasker
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.login_sign_in
 import me.him188.ani.app.ui.lang.notification_has_unread
@@ -260,11 +261,7 @@ private fun SelfAvatarMenus(
                     Text(logoutText, color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = {
-                TextButton({ showLogoutConfirmation = false }) {
-                    Text(cancelText)
-                }
-            },
+            dismissButton = dismissDialogButton(cancelText) { showLogoutConfirmation = false },
         )
     }
 }
