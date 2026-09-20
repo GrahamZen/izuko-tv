@@ -26,6 +26,7 @@ import me.him188.ani.app.domain.media.createTestMediaProperties
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.torrent.api.TorrentHandleState
 import me.him188.ani.datasources.api.DefaultMedia
+import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.MediaCacheMetadata
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -38,6 +39,7 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -327,6 +329,44 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
             ).results.toList().single().media.unwrapCached(),
         )
         assertNotNull(torrentInfoDatabase.get(cache.origin.mediaId))
+    }
+
+    /**
+     * 合集资源里每一集的 [CachedMedia] 共用同一个 `origin.mediaId`, 只有 [CachedMedia.cacheEpisodeId]
+     * 能把它们分开 —— `MediaSelectorFilterSortAlgorithm` 正是靠它判断"这条缓存属不属于当前这一集",
+     * 为空时那道过滤会被整个跳过, 于是播任意一集都可能被交出另一集的文件; 碰上残缺的那一份就是
+     * `IO_READ_POSITION_OUT_OF_RANGE`, 表现为"缓存显示已完成却播不了", 然后自动切到在线源。
+     *
+     * 2026-09-20 的上游 rebase 正好把 `.forRecord(cache.metadata)` 这个调用吃掉过 (上游在这一行加它,
+     * fork 在同一行包了 try/catch, 合并取了 fork 侧), 所以专门钉在这里。
+     * 注意不能用 `unwrapCached()` 比较 —— 那会退回 origin, 两边都一样, 正好漏掉这个回归。
+     */
+    @Test
+    fun `cacheMediaSource narrows each record to its own episode`() = runTest {
+        val storage = createStorage(
+            createEngine(
+                onDownloadStarted = {
+                    it.onTorrentChecked()
+                },
+            ),
+        )
+
+        val metadata = mediaCacheMetadata()
+        storage.cache(testMedia, metadata, resume = false)
+
+        val media = storage.cacheMediaSource.fetch(
+            MediaFetchRequest(
+                subjectId = "1",
+                episodeId = "1",
+                subjectNames = metadata.subjectNames,
+                episodeSort = metadata.episodeSort,
+                episodeName = metadata.episodeName,
+            ),
+        ).results.toList().single().media
+
+        val cached = assertIs<CachedMedia>(media)
+        assertEquals(metadata.episodeId, cached.cacheEpisodeId)
+        assertEquals(EpisodeRange.single(metadata.episodeSort), cached.episodeRange)
     }
 
     ///////////////////////////////////////////////////////////////////////////
