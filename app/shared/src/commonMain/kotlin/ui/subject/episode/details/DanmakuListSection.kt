@@ -250,24 +250,26 @@ fun DanmakuListContent(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DanmakuSourceChips(
+fun DanmakuSourceChips( // public: 播放页变体 (遥控器形态) 的弹幕列表面板复用
     sourceItems: List<DanmakuSourceItem>,
     onToggleSource: (DanmakuServiceId, Boolean) -> Unit,
     onManualMatch: (DanmakuServiceId) -> Unit,
     onAdjustShift: (DanmakuServiceId) -> Unit,
     modifier: Modifier = Modifier,
+    firstItemModifier: Modifier = Modifier,
 ) {
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        sourceItems.forEach { sourceItem ->
+        sourceItems.forEachIndexed { index, sourceItem ->
             DanmakuSourceChip(
                 sourceItem = sourceItem,
                 onToggle = { onToggleSource(sourceItem.serviceId, !sourceItem.enabled) },
                 onManualMatch = { onManualMatch(sourceItem.serviceId) },
                 onAdjustShift = { onAdjustShift(sourceItem.serviceId) },
+                modifier = if (index == 0) firstItemModifier else Modifier,
             )
         }
     }
@@ -282,6 +284,7 @@ private fun DanmakuSourceChip(
     onToggle: () -> Unit,
     onManualMatch: () -> Unit,
     onAdjustShift: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var showDropdown by rememberSaveable { mutableStateOf(false) }
     val isAnimeko = sourceItem.serviceId == DanmakuServiceId.Animeko
@@ -298,6 +301,7 @@ private fun DanmakuSourceChip(
         FilterChip(
             selected = sourceItem.enabled,
             onClick = onToggle,
+            modifier = modifier,
             label = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

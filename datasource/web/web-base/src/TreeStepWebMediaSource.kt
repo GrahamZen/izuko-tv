@@ -29,10 +29,10 @@ import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.ResourceLocation
+import me.him188.ani.shaded.jsoup.nodes.Document
 import me.him188.ani.utils.ktor.bodyAsDocument
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
-import org.jsoup.nodes.Document
 
 abstract class ThreeStepWebMediaSource : WebMediaSource() {
     data class Bangumi(

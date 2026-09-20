@@ -1,0 +1,3339 @@
+{
+  "cases": [
+    {
+      "subjectId": 583729,
+      "name": "BanG Dream! ゆめ∞みた",
+      "nameCn": "BanG Dream! YUME∞MITA",
+      "date": "2026-07-02",
+      "eps": 13,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2026-07-02"
+      ],
+      "minWithStill": 10,
+      "why": "tentative (原名命中 tv/300112 但 TMDB 收录名是バンドリ！写法) 不被削字候选 BanG Dream! 挤到 39 集本传 (第 29 节)"
+    },
+    {
+      "subjectId": 18882,
+      "name": "カーニバル・ファンタズム",
+      "nameCn": "幻想嘉年华",
+      "date": "2011-08-14",
+      "eps": 12,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2011-08-12"
+      ],
+      "minWithStill": 12,
+      "why": "bgm 记 ep1-4 为 08-14 而 TMDB 记 08-12 (±1 容差外), 靠集号轴三明治; 特别篇不占轴上的位置"
+    },
+    {
+      "subjectId": 633354,
+      "name": "同じゼミの染谷さんがセクシー女優だった話。",
+      "nameCn": "同一个研讨会的染谷同学是AV女优的事",
+      "date": "2026-07-05",
+      "eps": 8,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2026-07-05"
+      ],
+      "minWithStill": 4,
+      "why": "TMDB 上这部有**三条重复记录**, 判据是\"别挑到空壳\": tv/331481 同名同日但只有 1 集 0 图, tv/331216 同名同日 8 集 4 图, tv/325473 英文名差一天 8 集 7 图. 2026-09-06 全真打发现 TMDB 新长出 tv/331216, looksLikeStubSeason 按集数判它不是空壳, 于是命中它 —— 同名同日, 身份上比差一天的英文名条目更像正主, 只是图少 3 张. (此前期望值指向 tv/325473 的 2026-07-06/7 图; 那是 tv/331216 还不存在时的结果.)"
+    },
+    {
+      "subjectId": 27832,
+      "name": "機動戦士ガンダムSEED HDリマスター",
+      "nameCn": "机动战士高达SEED HD重制版",
+      "date": "2012-01-01",
+      "eps": 48,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2002-10-05"
+      ],
+      "minWithStill": 40,
+      "why": "版本条目直搜命中 TMDB 空壳 tv/332355 (48 集全无图), 排除后剥版本后缀命中原作 tv/20111"
+    },
+    {
+      "subjectId": 4213,
+      "name": "機動戦士ガンダムΖΖ",
+      "nameCn": "机动战士高达ZZ",
+      "date": "1986-03-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1986-03-01"
+      ],
+      "minWithStill": 34,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 同形字折叠: 希腊 Ζ 的 ΖΖ 要命中自己"
+    },
+    {
+      "subjectId": 237,
+      "name": "GHOST IN THE SHELL / 攻殻機動隊",
+      "nameCn": "攻壳机动队",
+      "date": "1995-11-18",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "1995-11-18"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 年份否决: 1995 剧场版不能拿 2026 新剧"
+    },
+    {
+      "subjectId": 217300,
+      "name": "進撃の巨人 Season 3",
+      "nameCn": "进击的巨人 第三季",
+      "date": "2018-07-22",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-04-07"
+      ],
+      "minWithStill": 86,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 季号命中电影先扣住: Season 3 要落到 tv/1429"
+    },
+    {
+      "subjectId": 291171,
+      "name": "デート・ア・バレット デッド・オア・バレット",
+      "nameCn": "约会大作战 赤黑新章：虚或实",
+      "date": "2021-03-24",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-12-06"
+      ],
+      "minWithStill": 3,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 衍生作有独立条目时必须命中自己",
+      "screeningYear": 2020
+    },
+    {
+      "subjectId": 311,
+      "name": "千と千尋の神隠し",
+      "nameCn": "千与千寻",
+      "date": "2001-07-20",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2001-07-20"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 无 genre 的舞台剧纪录片不能抢在 movie 前"
+    },
+    {
+      "subjectId": 975,
+      "name": "ONE PIECE",
+      "nameCn": "航海王",
+      "date": "1999-10-20",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1999-10-20"
+      ],
+      "minWithStill": 850,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 动画过滤: ONE PIECE 不能拿真人剧"
+    },
+    {
+      "subjectId": 2903,
+      "name": "巖窟王",
+      "nameCn": "岩窟王",
+      "date": "2004-10-05",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2004-10-06"
+      ],
+      "minWithStill": 5,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 中文候选: 巖窟王 -> 巌窟王 (异体字)"
+    },
+    {
+      "subjectId": 534,
+      "name": "彼女と彼女の猫",
+      "nameCn": "她和她的猫",
+      "date": "2002-04-19",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1999-10-01"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 上映年度: bgm 记的是发售日",
+      "screeningYear": 2000
+    },
+    {
+      "subjectId": 1077,
+      "name": "Kanon",
+      "nameCn": "",
+      "date": "2002-01-30",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2002-01-31"
+      ],
+      "minWithStill": 9,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 海报兜底: Kanon 2002 东映版只有 poster"
+    },
+    {
+      "subjectId": 302572,
+      "name": "Fate/Grand Order -終局特異点 冠位時間神殿ソロモン-",
+      "nameCn": "Fate/Grand Order -终局特异点 冠位时间神殿所罗门-",
+      "date": "2021-07-30",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2021-07-30"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 剧场版优先 movie: FGO 終局特異点 命中自己"
+    },
+    {
+      "subjectId": 243431,
+      "name": "機動戦士ガンダム 閃光のハサウェイ 第3部",
+      "nameCn": "机动战士高达 闪光的哈萨维 第3部",
+      "date": "",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2026-01-06"
+      ],
+      "minWithStill": 2,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: 閃光のハサウェイ 第3部 命中自己的 movie"
+    },
+    {
+      "subjectId": 50017,
+      "name": "Batman: The Dark Knight Returns, Part 1",
+      "nameCn": "蝙蝠侠 黑暗骑士归来（上）",
+      "date": "2012-09-25",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2012-09-25"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Batman Part 1 命中自己那一部"
+    },
+    {
+      "subjectId": 31525,
+      "name": "うらおん!",
+      "nameCn": "K-On!:Ura-On!",
+      "date": "2009-07-29",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2009-06-26"
+      ],
+      "minWithStill": 14,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root: Ani 给的是自己的中文名, 要回落 Bangumi"
+    },
+    {
+      "subjectId": 31531,
+      "name": "うらおん!!",
+      "nameCn": "K-On!!:Ura-On!!",
+      "date": "2010-07-30",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2009-06-26"
+      ],
+      "minWithStill": 14,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root: 同上, 续集方向"
+    },
+    {
+      "subjectId": 177998,
+      "name": "Re:ゼロから始める休憩時間",
+      "nameCn": "Re：从零开始的休息时间",
+      "date": "2016-04-08",
+      "eps": 11,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2016-04-05"
+      ],
+      "minWithStill": 72,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)",
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "WORLD 1 - 1",
+        "WORLD 1 - 4 SIDE A",
+        "WORLD 1 - 4 EPILOGUE",
+        "WORLD 2 - 1",
+        "WORLD 2 - 2",
+        "WORLD 2 - 3",
+        "WORLD 2 - 4",
+        "WORLD 2 - 5 SIDE A",
+        "WORLD 2 - 5 SIDE B",
+        "WORLD 2 - 5 - 3 SIDE C",
+        "WORLD 2 - 5 EPILOGUE"
+      ]
+    },
+    {
+      "subjectId": 497594,
+      "name": "ef - a tale of memories. ~prologue~",
+      "nameCn": "悠久之翼Prologue",
+      "date": "2007-08-24",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2007-08-24"
+      ],
+      "minWithStill": 19,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root: prologue 的本传在 sequelSubjectNames 里, 不能排掉"
+    },
+    {
+      "subjectId": 223268,
+      "name": "THE IDOLM@STER Prologue SideM -Episode of Jupiter-",
+      "nameCn": "偶像大师 SideM 序章 -Episode of Jupiter-",
+      "date": "2017-09-30",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2017-10-01"
+      ],
+      "minWithStill": 10,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root: 同上, SideM"
+    },
+    {
+      "subjectId": 602449,
+      "name": "苺ましまろプロローグ",
+      "nameCn": "草莓棉花糖 序章",
+      "date": "2005-06-08",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2005-06-08"
+      ],
+      "minWithStill": 12,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 软边: 本传挂在「其他」关系上"
+    },
+    {
+      "subjectId": 279048,
+      "name": "荒野のコトブキ飛行隊外伝 大空のハルカゼ飛行隊",
+      "nameCn": "荒野的寿飞行队外传 天空的春风飞行队",
+      "date": "2019-04-10",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2019-01-13"
+      ],
+      "minWithStill": 18,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 软边: 「相同世界观」"
+    },
+    {
+      "subjectId": 9622,
+      "name": "機動戦士Ζガンダム",
+      "nameCn": "机动战士Z高达",
+      "date": "1985-03-02",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1985-03-02"
+      ],
+      "minWithStill": 35,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 希腊字母 Z 高达命中自己"
+    },
+    {
+      "subjectId": 50,
+      "name": "機動戦士ガンダム",
+      "nameCn": "机动战士高达",
+      "date": "1979-04-07",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1979-04-07"
+      ],
+      "minWithStill": 30,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 初代高达命中 1979"
+    },
+    {
+      "subjectId": 4583,
+      "name": "機動戦士ガンダム 逆襲のシャア",
+      "nameCn": "机动战士高达 逆袭的夏亚",
+      "date": "1988-03-12",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "1988-03-12"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 逆襲のシャア 剧场版命中自己的 movie"
+    },
+    {
+      "subjectId": 3113,
+      "name": "機動戦士ガンダムUC",
+      "nameCn": "机动战士高达UC",
+      "date": "2010-03-12",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2010-02-20"
+      ],
+      "minWithStill": 5,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: UC 命中自己"
+    },
+    {
+      "subjectId": 10291,
+      "name": "GHOST IN THE SHELL / 攻殻機動隊2.0",
+      "nameCn": "攻壳机动队2.0",
+      "date": "2008-07-12",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2008-07-12"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 攻壳 2.0 重制版命中自己的 movie, 不与 1995 原版混"
+    },
+    {
+      "subjectId": 238,
+      "name": "イノセンス",
+      "nameCn": "攻壳机动队2 无罪",
+      "date": "2004-03-06",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2004-03-06"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: イノセンス 命中自己的 movie"
+    },
+    {
+      "subjectId": 324,
+      "name": "攻殻機動隊 STAND ALONE COMPLEX",
+      "nameCn": "攻壳机动队 STAND ALONE COMPLEX",
+      "date": "2002-10-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2002-10-01"
+      ],
+      "minWithStill": 37,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 攻壳 SAC 命中自己"
+    },
+    {
+      "subjectId": 112770,
+      "name": "攻殻機動隊 新劇場版",
+      "nameCn": "攻壳机动队 新剧场版",
+      "date": "2015-06-20",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2015-06-20"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 攻壳新剧场版命中自己"
+    },
+    {
+      "subjectId": 212610,
+      "name": "攻殻機動隊 SAC_2045",
+      "nameCn": "攻壳机动队 SAC_2045",
+      "date": "2020-04-23",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2020-04-23"
+      ],
+      "minWithStill": 16,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: SAC_2045 命中自己"
+    },
+    {
+      "subjectId": 341383,
+      "name": "攻殻機動隊 SAC_2045 持続可能戦争",
+      "nameCn": "攻壳机动队 SAC_2045 永续战争",
+      "date": "2021-11-12",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2021-12-21"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: SAC_2045 持続可能戦争 命中自己的 movie"
+    },
+    {
+      "subjectId": 55770,
+      "name": "進撃の巨人",
+      "nameCn": "进击的巨人",
+      "date": "2013-04-06",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-04-07"
+      ],
+      "minWithStill": 86,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 進撃の巨人 S1 命中 tv/1429"
+    },
+    {
+      "subjectId": 285666,
+      "name": "進撃の巨人 The Final Season",
+      "nameCn": "进击的巨人 最终季",
+      "date": "2020-12-06",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-04-07"
+      ],
+      "minWithStill": 86,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: The Final Season 命中 tv/1429, 不能扣到拆分的完結編单集条目 (v17)"
+    },
+    {
+      "subjectId": 110049,
+      "name": "進撃の巨人 悔いなき選択 OAD",
+      "nameCn": "进击的巨人 无悔的选择 OAD",
+      "date": "2014-12-09",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-04-07"
+      ],
+      "minWithStill": 86,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 悔いなき選択 OAD 挂母番"
+    },
+    {
+      "subjectId": 325585,
+      "name": "無職転生 ～異世界行ったら本気だす～ 第2クール",
+      "nameCn": "无职转生～到了异世界就拿出真本事～ 第2部分",
+      "date": "2021-10-03",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2021-01-11"
+      ],
+      "minWithStill": 42,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 第2クール 削季标命中母剧 (v3)"
+    },
+    {
+      "subjectId": 793,
+      "name": "コードギアス 反逆のルルーシュ",
+      "nameCn": "Code Geass 反叛的鲁路修",
+      "date": "2006-10-05",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2006-10-05"
+      ],
+      "minWithStill": 60,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: コードギアス 命中自己"
+    },
+    {
+      "subjectId": 1671,
+      "name": "化物語",
+      "nameCn": "化物语",
+      "date": "2009-07-03",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2009-07-03"
+      ],
+      "minWithStill": 84,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 化物語 命中自己"
+    },
+    {
+      "subjectId": 245665,
+      "name": "鬼滅の刃",
+      "nameCn": "鬼灭之刃",
+      "date": "2019-04-06",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2019-04-06"
+      ],
+      "minWithStill": 49,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 鬼滅の刃 命中自己"
+    },
+    {
+      "subjectId": 193042,
+      "name": "有頂天家族2",
+      "nameCn": "有顶天家族 第二季",
+      "date": "2017-04-09",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-07-07"
+      ],
+      "minWithStill": 17,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 尾部裸数字季号 有頂天家族2 (v6)"
+    },
+    {
+      "subjectId": 491,
+      "name": "灼眼のシャナII",
+      "nameCn": "灼眼的夏娜II",
+      "date": "2007-10-04",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2005-10-06"
+      ],
+      "minWithStill": 78,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 罗马数字季号 灼眼のシャナII (v7)"
+    },
+    {
+      "subjectId": 116287,
+      "name": "ダンジョンに出会いを求めるのは間違っているだろうか",
+      "nameCn": "在地下城寻求邂逅是否搞错了什么",
+      "date": "2015-04-03",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2015-04-04"
+      ],
+      "minWithStill": 55,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: DanMachi 正传不被外传 ソード・オラトリア 抢 (v12)"
+    },
+    {
+      "subjectId": 160209,
+      "name": "君の名は。",
+      "nameCn": "你的名字。",
+      "date": "2016-08-26",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2016-07-01"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 君の名は。命中自己的 movie"
+    },
+    {
+      "subjectId": 359980,
+      "name": "乙女ゲー世界はモブに厳しい世界です",
+      "nameCn": "恋爱游戏世界对路人角色很不友好",
+      "date": "2022-04-03",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2022-04-03"
+      ],
+      "minWithStill": 14,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 康熙部首 Unicode 兼容折叠 (v18)"
+    },
+    {
+      "subjectId": 239816,
+      "name": "転生したらスライムだった件",
+      "nameCn": "关于我转生变成史莱姆这档事",
+      "date": "2018-10-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2018-10-02"
+      ],
+      "minWithStill": 74,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 転スラ 命中自己"
+    },
+    {
+      "subjectId": 158316,
+      "name": "モブサイコ100",
+      "nameCn": "灵能百分百",
+      "date": "2016-07-11",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2016-07-12"
+      ],
+      "minWithStill": 32,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: モブサイコ100 命中自己"
+    },
+    {
+      "subjectId": 129807,
+      "name": "シュタインズ・ゲート ゼロ",
+      "nameCn": "命运石之门 0",
+      "date": "2018-04-11",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2018-04-12"
+      ],
+      "minWithStill": 16,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: シュタゲゼロ 命中自己"
+    },
+    {
+      "subjectId": 696,
+      "name": "剣風伝奇ベルセルク",
+      "nameCn": "剑风传奇",
+      "date": "1997-10-07",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1997-10-08"
+      ],
+      "minWithStill": 17,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 1997 剑风传奇命中老版"
+    },
+    {
+      "subjectId": 162040,
+      "name": "ベルセルク",
+      "nameCn": "剑风传奇",
+      "date": "2016-07-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2016-07-01"
+      ],
+      "minWithStill": 18,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 2016 ベルセルク 命中新版, 年份区分"
+    },
+    {
+      "subjectId": 2504,
+      "name": "劇場版 マクロスF 虚空歌姫〜イツワリノウタヒメ〜",
+      "nameCn": "剧场版 超时空要塞F 虚空歌姬",
+      "date": "2009-11-21",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2009-11-21"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 剧场版マクロスF 命中自己的 movie"
+    },
+    {
+      "subjectId": 236,
+      "name": "マクロスFrontier",
+      "nameCn": "超时空要塞Frontier",
+      "date": "2008-04-03",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2007-12-23"
+      ],
+      "minWithStill": 20,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: マクロスF 命中自己"
+    },
+    {
+      "subjectId": 1856,
+      "name": "十二国記",
+      "nameCn": "十二国记",
+      "date": "2002-04-09",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2002-04-09"
+      ],
+      "minWithStill": 31,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 十二国記 命中自己"
+    },
+    {
+      "subjectId": 331559,
+      "name": "劇場版 呪術廻戦 0",
+      "nameCn": "剧场版 咒术回战 0",
+      "date": "2021-12-24",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2021-12-24"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 呪術廻戦 0 命中自己的 movie"
+    },
+    {
+      "subjectId": 176478,
+      "name": "けものフレンズ",
+      "nameCn": "兽娘动物园",
+      "date": "2017-01-10",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2017-01-10"
+      ],
+      "minWithStill": 21,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: けものフレンズ 命中自己"
+    },
+    {
+      "subjectId": 10639,
+      "name": "Fate/Zero",
+      "nameCn": "Fate/Zero",
+      "date": "2011-10-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2011-10-02"
+      ],
+      "minWithStill": 23,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: Fate/Zero 命中自己"
+    },
+    {
+      "subjectId": 77552,
+      "name": "Fate/ゼロカフェ",
+      "nameCn": "Fate/Zero cafe",
+      "date": "2013-07-13",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2012-03-07"
+      ],
+      "minWithStill": 5,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: Fate/ゼロカフェ 母番兜底"
+    },
+    {
+      "subjectId": 43951,
+      "name": "Fate/kaleid liner プリズマ☆イリヤ",
+      "nameCn": "Fate/kaleid liner 魔法少女☆伊莉雅",
+      "date": "2013-07-12",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-07-06"
+      ],
+      "minWithStill": 45,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: プリズマ☆イリヤ 命中自己"
+    },
+    {
+      "subjectId": 3484,
+      "name": "Fate/stay night UNLIMITED BLADE WORKS",
+      "nameCn": "Fate/stay night UNLIMITED BLADE WORKS",
+      "date": "2010-01-23",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2010-01-23"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: UBW 剧场版 (2010) 命中自己的 movie, 不拿 2014 TV 版 (v19 年份否决)"
+    },
+    {
+      "subjectId": 244,
+      "name": "神霊狩/GHOST HOUND",
+      "nameCn": "神灵狩",
+      "date": "2007-10-18",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2007-10-18"
+      ],
+      "minWithStill": 15,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: 神霊狩 斜杠名命中自己"
+    },
+    {
+      "subjectId": 328032,
+      "name": "BLUE REFLECTION RAY/澪",
+      "nameCn": "蔚蓝反射 澪",
+      "date": "2021-04-09",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2021-04-10"
+      ],
+      "minWithStill": 17,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: BLUE REFLECTION RAY/澪 斜杠名"
+    },
+    {
+      "subjectId": 563563,
+      "name": "ghost／夜の果て",
+      "nameCn": "ghost",
+      "date": "2027-02-11",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2027-02-11"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: ghost／夜の果て 全角斜杠"
+    },
+    {
+      "subjectId": 548133,
+      "name": "BanG Dream! It's MyGO!!!!! / Ave Mujica 続編",
+      "nameCn": "BanG Dream! It's MyGO!!!!! / Ave Mujica 续篇",
+      "date": "",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2023-06-29"
+      ],
+      "minWithStill": 11,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: MyGO 续篇斜杠双名"
+    },
+    {
+      "subjectId": 109386,
+      "name": "Fate/stay night [Unlimited Blade Works] 2ndシーズン",
+      "nameCn": "Fate/stay night [Unlimited Blade Works] 第二季",
+      "date": "2015-04-04",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2014-10-05"
+      ],
+      "minWithStill": 18,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): 主语料: UBW 2ndシーズン 削季标命中 2014 TV"
+    },
+    {
+      "subjectId": 228407,
+      "name": "劇場版 進撃の巨人 Season2〜覚醒の咆哮〜",
+      "nameCn": "剧场版 进击的巨人 Season2～觉醒的咆哮～",
+      "date": "2018-01-13",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2018-01-13"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: 劇場版進撃 覚醒の咆哮 是合集 movie 自己"
+    },
+    {
+      "subjectId": 605215,
+      "name": "Baahubali - The Eternal War - Part 1",
+      "nameCn": "",
+      "date": "",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "2027-06-10"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Baahubali Part 命中自己那部"
+    },
+    {
+      "subjectId": 663253,
+      "name": "Batman: Knightfall Part 1: Knightfall",
+      "nameCn": "",
+      "date": "2026-08-25",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2026-06-23"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Batman Knightfall Part 1 命中自己那部"
+    },
+    {
+      "subjectId": 61275,
+      "name": "Batman: The Dark Knight Returns, Part 2",
+      "nameCn": "蝙蝠侠：黑暗骑士归来（下）",
+      "date": "2013-01-29",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-01-03"
+      ],
+      "minWithStill": 1,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Dark Knight Returns Part 2 命中自己那部"
+    },
+    {
+      "subjectId": 508737,
+      "name": "Rick and Morty: Samurai & Shogun Part 2",
+      "nameCn": "瑞克和莫蒂：武士与将军  第二部分",
+      "date": "2021-11-13",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-12-02"
+      ],
+      "minWithStill": 89,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Rick and Morty 特别篇挂母剧"
+    },
+    {
+      "subjectId": 476540,
+      "name": "South Park The Streaming Wars Part 2",
+      "nameCn": "南方公园：流量大战2",
+      "date": "2022-07-13",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1992-12-08"
+      ],
+      "minWithStill": 242,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: South Park Streaming Wars 命中自己的 movie"
+    },
+    {
+      "subjectId": 10356,
+      "name": "HUNTER×HUNTER OVA 第1期 ヨークシンシティー完結編",
+      "nameCn": "猎人 OVA1 友客鑫市完结篇",
+      "date": "2002-01-17",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1999-10-16"
+      ],
+      "minWithStill": 64,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: HxH OVA 挂 1999 母番"
+    },
+    {
+      "subjectId": 455677,
+      "name": "ケンガンアシュラ Season2 Part 2",
+      "nameCn": "拳愿阿修罗 第二季 第2部分",
+      "date": "2024-08-15",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2019-07-31"
+      ],
+      "minWithStill": 36,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: ケンガンアシュラ Season2 Part 2 挂母剧"
+    },
+    {
+      "subjectId": 354026,
+      "name": "Inside Job Season 1 Part.1",
+      "nameCn": "阴谋办公室 第一季 Part.1",
+      "date": "2021-10-22",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2021-10-22"
+      ],
+      "minWithStill": 12,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Inside Job Part.1 挂母剧"
+    },
+    {
+      "subjectId": 406514,
+      "name": "Inside Job Season 1 Part.2",
+      "nameCn": "阴谋办公室 第一季 Part.2",
+      "date": "2022-11-18",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2021-10-22"
+      ],
+      "minWithStill": 12,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Inside Job Part.2 挂母剧"
+    },
+    {
+      "subjectId": 460503,
+      "name": "聖闘士星矢：Knights of the Zodiac バトル・サンクチュアリ Part 2",
+      "nameCn": "圣斗士星矢：黄道十二宫战士 战斗圣域 Part 2",
+      "date": "2024-04-01",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2019-07-19"
+      ],
+      "minWithStill": 25,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: 聖闘士星矢 Knights of the Zodiac 挂 2019 版"
+    },
+    {
+      "subjectId": 314041,
+      "name": "Star Trek: Lower Decks Season 1",
+      "nameCn": "星际迷航：下层舰员 第一季",
+      "date": "2020-08-06",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2020-07-23"
+      ],
+      "minWithStill": 65,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: Lower Decks Season 4 挂母剧"
+    },
+    {
+      "subjectId": 293421,
+      "name": "7SEEDS 第2期",
+      "nameCn": "幻海奇情 第2期",
+      "date": "2020-03-26",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2019-06-28"
+      ],
+      "minWithStill": 16,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: 7SEEDS 第2期 挂母剧"
+    },
+    {
+      "subjectId": 1741,
+      "name": "ヘタリア Axis Powers 第2期",
+      "nameCn": "黑塔利亚 第2期",
+      "date": "2009-07-27",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2009-01-24"
+      ],
+      "minWithStill": 28,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: ヘタリア 第2期 挂母剧"
+    },
+    {
+      "subjectId": 4450,
+      "name": "ヘタリア World Series 第3期",
+      "nameCn": "黑塔利亚 第3期",
+      "date": "2010-03-26",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2009-01-24"
+      ],
+      "minWithStill": 28,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: ヘタリア World Series 挂母剧"
+    },
+    {
+      "subjectId": 638498,
+      "name": "刃牙道 第2クール",
+      "nameCn": "刃牙道 第2部分",
+      "date": "2026-06-18",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2026-02-26"
+      ],
+      "minWithStill": 17,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: 刃牙道 第2クール 挂母剧"
+    },
+    {
+      "subjectId": 173691,
+      "name": "モンスターストライク 第2クール",
+      "nameCn": "怪物弹珠 第2期",
+      "date": "2016-03-26",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2015-10-10"
+      ],
+      "minWithStill": 62,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): RISK: モンスト 第2クール 挂母剧"
+    },
+    {
+      "subjectId": 461545,
+      "name": "プロフェッショナル 仕事の流儀 エレン・イェーガー スペシャル",
+      "nameCn": "Professional 行家本色 艾伦·耶格尔特辑",
+      "date": "2023-10-23",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2013-07-07"
+      ],
+      "minWithStill": 25,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: エレン特辑 -> 進撃の巨人, 不能是 Dr. Katz"
+    },
+    {
+      "subjectId": 536595,
+      "name": "美少女戦士セーラームーン・ザ・ミラクル 4-D",
+      "nameCn": "美少女战士 THE MIRACLE 4D",
+      "date": "2018-03-16",
+      "eps": null,
+      "theatrical": true,
+      "expectAirDateKeys": [
+        "1995-04-08"
+      ],
+      "minWithStill": 2,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: セーラームーン 4-D -> 1992 初代, 不是 Crystal"
+    },
+    {
+      "subjectId": 558831,
+      "name": "つれづれポピパ",
+      "nameCn": "徒然POPIPA",
+      "date": "2025-04-28",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2025-04-28"
+      ],
+      "minWithStill": 7,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: つれづれポピパ -> BanG Dream!, 不能是徒然チルドレン"
+    },
+    {
+      "subjectId": 21233,
+      "name": "知世のカードキャプターさくら活躍ビデオ日記!",
+      "nameCn": "魔卡少女樱 知世的活跃日记",
+      "date": "2000-05-25",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "1998-09-25"
+      ],
+      "minWithStill": 3,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: 知世のビデオ日記 -> CCS 本篇"
+    },
+    {
+      "subjectId": 513599,
+      "name": "ef - a tale of melodies. ~prologue~",
+      "nameCn": "悠久之翼2Prologue",
+      "date": "2008-05-10",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2007-08-24"
+      ],
+      "minWithStill": 19,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/ani: ef melodies ~prologue~ 本传在 sequel 名单里不能排掉"
+    },
+    {
+      "subjectId": 304631,
+      "name": "ちはやふる番外編「新に会いにあわらへいこっさ！」",
+      "nameCn": "歌牌情缘 番外篇",
+      "date": "2020-01-28",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2011-10-05"
+      ],
+      "minWithStill": 53,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: ちはやふる番外編 -> 本篇"
+    },
+    {
+      "subjectId": 628278,
+      "name": "【アニメ】【ミリオンライブ！】アニメプロローグイメージMV「セブンカウント」【アイドルマスター】",
+      "nameCn": "【动画】【百万现场！】动画序章印象MV「セブンカウント」【偶像大师】",
+      "date": "2022-03-27",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2023-10-01"
+      ],
+      "minWithStill": 9,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: ミリオンライブ MV -> 本篇"
+    },
+    {
+      "subjectId": 304819,
+      "name": "白テニミニアニメ劇場～今日もどこかでミューエンマ～",
+      "nameCn": "",
+      "date": "2019-07-19",
+      "eps": null,
+      "theatrical": false,
+      "expectAirDateKeys": [
+        "2020-04-06"
+      ],
+      "minWithStill": 8,
+      "why": "自 backdrop 锚点批量生成 (2026-08-26 当前实现输出人工复核): root/bgm: 白テニミニアニメ -> 白猫プロジェクト"
+    },
+    {
+      "subjectId": 286,
+      "name": "機動戦士ガンダム00",
+      "nameCn": "机动战士高达00",
+      "date": "2007-10-06",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2007-10-06"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 804,
+      "name": "機動戦士ガンダム0083 STARDUST MEMORY",
+      "nameCn": "机动战士高达0083 星尘的回忆",
+      "date": "1991-05-22",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "1991-05-23"
+      ],
+      "minWithStill": 10,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 985,
+      "name": "機動戦士Vガンダム",
+      "nameCn": "机动战士V高达",
+      "date": "1993-04-02",
+      "eps": 51,
+      "expectAirDateKeys": [
+        "1993-04-02"
+      ],
+      "minWithStill": 35,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1010,
+      "name": "機動戦士ガンダム00 セカンドシーズン",
+      "nameCn": "机动战士高达00 第二季",
+      "date": "2008-10-05",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2007-10-06"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1015,
+      "name": "機動戦士ガンダム0080 ポケットの中の戦争",
+      "nameCn": "机动战士高达0080 口袋里的战争",
+      "date": "1989-03-25",
+      "eps": 6,
+      "expectAirDateKeys": [
+        "1989-03-25"
+      ],
+      "minWithStill": 4,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1860,
+      "name": "機動戦士ガンダムSEED",
+      "nameCn": "机动战士高达SEED",
+      "date": "2002-10-05",
+      "eps": 50,
+      "expectAirDateKeys": [
+        "2002-10-05"
+      ],
+      "minWithStill": 73,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1861,
+      "name": "機動戦士ガンダムSEED DESTINY",
+      "nameCn": "机动战士高达SEED DESTINY",
+      "date": "2004-10-09",
+      "eps": 50,
+      "expectAirDateKeys": [
+        "2002-10-05"
+      ],
+      "minWithStill": 73,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2664,
+      "name": "機動戦士ガンダム 第08MS小隊",
+      "nameCn": "机动战士高达 第08MS小队",
+      "date": "1996-01-25",
+      "eps": 11,
+      "expectAirDateKeys": [
+        "1996-01-25"
+      ],
+      "minWithStill": 16,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2690,
+      "name": "機動戦士ガンダム MS IGLOO 1年戦争秘録",
+      "nameCn": "机动战士高达MS IGLOO 一年战争秘录",
+      "date": "2004-07-19",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2004-07-19"
+      ],
+      "minWithStill": 6,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2691,
+      "name": "機動戦士ガンダム MS IGLOO 黙示録0079",
+      "nameCn": "机动战士高达 MS IGLOO 默示录0079",
+      "date": "2006-04-26",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2006-04-26"
+      ],
+      "minWithStill": 2,
+      "why": "削字降暂定修复后中文档命中独立条目 tv/282823: 3 集与条目集数一致且全有图"
+    },
+    {
+      "subjectId": 2772,
+      "name": "新機動戦記ガンダムW Endless Waltz 特別篇",
+      "nameCn": "新机动战记高达W 无尽的华尔兹 剧场版",
+      "date": "1998-08-01",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1998-08-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 2774,
+      "name": "新機動戦記ガンダムW",
+      "nameCn": "新机动战记高达W",
+      "date": "1995-04-07",
+      "eps": 49,
+      "expectAirDateKeys": [
+        "1995-04-07"
+      ],
+      "minWithStill": 39,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 3553,
+      "name": "∀ガンダム",
+      "nameCn": "∀高达",
+      "date": "1999-04-09",
+      "eps": 50,
+      "expectAirDateKeys": [
+        "1999-04-09"
+      ],
+      "minWithStill": 35,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 3633,
+      "name": "機動新世紀ガンダムX",
+      "nameCn": "机动新世纪高达X",
+      "date": "1996-04-05",
+      "eps": 39,
+      "expectAirDateKeys": [
+        "1996-04-05"
+      ],
+      "minWithStill": 27,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 4212,
+      "name": "機動武闘伝Gガンダム",
+      "nameCn": "机动武斗传G高达",
+      "date": "1994-04-01",
+      "eps": 49,
+      "expectAirDateKeys": [
+        "1994-04-22"
+      ],
+      "minWithStill": 34,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; 2026-09-06 漂移: TMDB 把首播日改成 1994-04-22 (带图 49 未变)"
+    },
+    {
+      "subjectId": 4294,
+      "name": "SDガンダム三国伝 Brave Battle Warriors",
+      "nameCn": "SD高达三国传",
+      "date": "2010-04-03",
+      "eps": 51,
+      "expectAirDateKeys": [
+        "2010-04-03"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 4482,
+      "name": "機動戦士ガンダムF91",
+      "nameCn": "机动战士高达F91",
+      "date": "1991-03-16",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1991-03-16"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 5378,
+      "name": "機動戦士Zガンダム -星を継ぐ者-",
+      "nameCn": "机动战士Z高达 A New Translation -星之继承者-",
+      "date": "2005-05-28",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2005-05-28"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 5972,
+      "name": "劇場版 機動戦士ガンダム00 -A wakening of the Trailblazer-",
+      "nameCn": "机动战士高达00 先驱者的觉醒",
+      "date": "2010-09-18",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2010-09-18"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 10797,
+      "name": "模型戦士ガンプラビルダーズ ビギニングG",
+      "nameCn": "模型战士高达模型制作家 起始G",
+      "date": "2010-08-15",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2010-08-15"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 15154,
+      "name": "SDガンダムフォース",
+      "nameCn": "SD高达FORCE",
+      "date": "2004-01-07",
+      "eps": 52,
+      "expectAirDateKeys": [
+        "2003-09-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 17758,
+      "name": "機動戦士ガンダム MS IGLOO2 重力戦線",
+      "nameCn": "机动战士高达MS IGLOO 2 重力战线",
+      "date": "2008-10-24",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2008-10-24"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 18709,
+      "name": "機動戦士ガンダムAGE",
+      "nameCn": "机动战士高达AGE",
+      "date": "2011-10-09",
+      "eps": 49,
+      "expectAirDateKeys": [
+        "2011-10-09"
+      ],
+      "minWithStill": 35,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 18778,
+      "name": "機動戦士ZガンダムⅡ -恋人たち-",
+      "nameCn": "机动战士Z高达Ⅱ A New Translation -恋人们-",
+      "date": "2005-10-29",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2005-10-29"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 18779,
+      "name": "機動戦士ZガンダムⅢ -星の鼓動は愛-",
+      "nameCn": "机动战士Z高达Ⅲ A New Translation -星辰的鼓动是爱-",
+      "date": "2006-03-04",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2006-03-04"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 36358,
+      "name": "機動戦士ガンダム 第08MS小隊 特別編 ラスト・リゾート",
+      "nameCn": "机动战士高达 第08MS小队 最后的休憩",
+      "date": "1999-07-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1999-07-25"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 38435,
+      "name": "機動戦士ガンダム",
+      "nameCn": "机动战士高达 剧场版",
+      "date": "1981-03-14",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1981-03-14"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 38436,
+      "name": "機動戦士ガンダムⅡ 哀・戦士編",
+      "nameCn": "机动战士高达 剧场版Ⅱ 哀·战士",
+      "date": "1981-07-11",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1981-07-11"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 38437,
+      "name": "機動戦士ガンダムⅢ めぐりあい宇宙編",
+      "nameCn": "机动战士高达 剧场版Ⅲ 相逢在宇宙",
+      "date": "1982-03-13",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1982-03-13"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 39530,
+      "name": "新機動戦記ガンダムW Endless Waltz",
+      "nameCn": "新机动战记高达W 无尽的华尔兹",
+      "date": "1997-01-25",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "1995-04-07"
+      ],
+      "minWithStill": 39,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 41742,
+      "name": "機動戦士ガンダム0083 ジオンの残光",
+      "nameCn": "机动战士高达0083 吉翁的残光",
+      "date": "1992-08-29",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1992-08-29"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 41743,
+      "name": "機動戦士ガンダム 第08MS小隊 ミラーズ・リポート",
+      "nameCn": "机动战士高达 第08MS小队 米娜的报告",
+      "date": "1998-08-01",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1998-08-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 43982,
+      "name": "機動戦士ガンダムSEED MSV ASTRAY",
+      "nameCn": "机动战士高达SEED MSV ASTRAY",
+      "date": "2004-03-01",
+      "eps": 2,
+      "expectAirDateKeys": [
+        "2004-03-01"
+      ],
+      "minWithStill": 3,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 54277,
+      "name": "機動戦士ガンダムSEED DESTINY HDリマスター",
+      "nameCn": "机动战士高达SEED DESTINY HD重制版",
+      "date": "2013-04-07",
+      "eps": 50,
+      "expectAirDateKeys": [
+        "2002-10-05"
+      ],
+      "minWithStill": 73,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 54551,
+      "name": "ガンダム Gのレコンギスタ",
+      "nameCn": "高达Reconguista in G",
+      "date": "2014-10-02",
+      "eps": 26,
+      "expectAirDateKeys": [
+        "2014-10-02"
+      ],
+      "minWithStill": 18,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 65601,
+      "name": "機動戦士ガンダムAGE MEMORY OF EDEN",
+      "nameCn": "机动战士高达AGE MEMORY OF EDEN",
+      "date": "2013-07-26",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2013-07-26"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 65871,
+      "name": "機動戦士ガンダム戦記 アバンタイトル",
+      "nameCn": "机动战士高达战记 OVA",
+      "date": "2009-09-03",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2009-09-03"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 65970,
+      "name": "機動戦士ガンダム 第08MS小隊 三次元との戦い",
+      "nameCn": "机动战士高达 第08MS小队 三次元的战斗",
+      "date": "2013-02-22",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1996-01-25"
+      ],
+      "minWithStill": 16,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 66444,
+      "name": "赤の肖像 ～シャア、そしてフロンタルへ～",
+      "nameCn": "赤色彗星的肖像",
+      "date": "2010-08-13",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2010-08-13"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 77171,
+      "name": "ガンダムビルドファイターズ",
+      "nameCn": "高达创战者",
+      "date": "2013-10-07",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2013-10-07"
+      ],
+      "minWithStill": 42,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 90068,
+      "name": "GUNDAM Mission to the Rise",
+      "nameCn": "高达 Mission to the Rise",
+      "date": "1998-08-01",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1998-08-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 90369,
+      "name": "ガンダム新体験 -0087- グリーンダイバーズ",
+      "nameCn": "高达新体验0087 绿色传动器",
+      "date": "2001-08-10",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2001-08-10"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 101737,
+      "name": "リング・オブ・ガンダム",
+      "nameCn": "高达之环",
+      "date": "2009-08-21",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2009-08-21"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 105875,
+      "name": "ガンダムビルドファイターズトライ",
+      "nameCn": "高达创战者TRY",
+      "date": "2014-10-08",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2013-10-07"
+      ],
+      "minWithStill": 42,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 106834,
+      "name": "機動戦士ガンダムさん",
+      "nameCn": "机动战士高达桑",
+      "date": "2014-07-06",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2014-07-06"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 117898,
+      "name": "機動戦士ガンダムSEED スペシャルエディション",
+      "nameCn": "机动战士高达SEED Special Edition",
+      "date": "2004-03-22",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2023-08-25"
+      ],
+      "minWithStill": 2,
+      "why": "削字合集+集名认领 (2026-08-27, 用户点名): 合集 802636 ja 名剥「シリーズ」后与削字候选逐字, parts 原语言标题含全部 3 个 bgm 集名; 修复前挂本传而 bgm 分集无日期, 选集卡全空",
+      "episodeNames": [
+        "虚空の戦場",
+        "遥かなる暁",
+        "鳴動の宇宙"
+      ]
+    },
+    {
+      "subjectId": 117899,
+      "name": "機動戦士ガンダムSEED DESTINY スペシャルエディション",
+      "nameCn": "机动战士高达SEED DESTINY Special Edition",
+      "date": "2006-05-26",
+      "eps": 4,
+      "expectAirDateKeys": [
+        "2023-10-06"
+      ],
+      "minWithStill": 2,
+      "why": "同 117898; 另守**注音括号剥除**: parts 标题「運命（さだめ）の業火」不剥括号段就含不住集名「運命の業火」, 4 集里 2 集认领失败整体放弃",
+      "episodeNames": [
+        "砕かれた世界",
+        "それぞれの剣",
+        "運命の業火",
+        "自由の代償"
+      ]
+    },
+    {
+      "subjectId": 124969,
+      "name": "機動戦士ガンダム00 スペシャルエディション",
+      "nameCn": "机动战士高达00 Special Edition",
+      "date": "2009-10-27",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2007-10-06"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 131171,
+      "name": "SDガンダム外伝",
+      "nameCn": "SD高达外传",
+      "date": "1990-04-25",
+      "eps": 4,
+      "expectAirDateKeys": [
+        "1990-04-25"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 139324,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯",
+      "date": "2015-10-04",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2015-10-04"
+      ],
+      "minWithStill": 35,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 145739,
+      "name": "ガンダム Gのレコンギスタ FROM THE PAST TO THE FUTURE",
+      "nameCn": "高达G之复国运动 FROM THE PAST TO THE FUTURE",
+      "date": "2015-07-16",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2015-03-21"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 151345,
+      "name": "機動戦士ガンダム サンダーボルト",
+      "nameCn": "机动战士高达 雷霆宙域",
+      "date": "2015-12-25",
+      "eps": 4,
+      "expectAirDateKeys": [
+        "2015-12-25"
+      ],
+      "minWithStill": 5,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 152365,
+      "name": "劇場版 Gのレコンギスタ I 行け！コア・ファイター",
+      "nameCn": "剧场版 高达Reconguista in G I 去吧！核心战机",
+      "date": "2019-11-29",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2019-11-29"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 169917,
+      "name": "機動戦士ガンダムユニコーン RE:0096",
+      "nameCn": "机动战士高达独角兽 RE:0096",
+      "date": "2016-04-03",
+      "eps": 22,
+      "expectAirDateKeys": [
+        "2016-04-03"
+      ],
+      "minWithStill": 15,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 170191,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ 弐",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 第二季",
+      "date": "2016-10-02",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2015-10-04"
+      ],
+      "minWithStill": 35,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 182406,
+      "name": "ガンダムビルドファイターズトライ アイランド・ウォーズ",
+      "nameCn": "高达创战者TRY 岛上战争",
+      "date": "2016-08-21",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2016-08-21"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 186515,
+      "name": "BanG Dream!",
+      "nameCn": "",
+      "date": "2017-01-21",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2017-01-21"
+      ],
+      "minWithStill": 28,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 198380,
+      "name": "機動戦士ガンダム サンダーボルト 第2シーズン",
+      "nameCn": "机动战士高达 雷霆宙域 第二季",
+      "date": "2017-03-24",
+      "eps": 4,
+      "expectAirDateKeys": [
+        "2015-12-25"
+      ],
+      "minWithStill": 5,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 211841,
+      "name": "機動戦士ガンダム Twilight AXIS",
+      "nameCn": "机动战士高达 暮光的阿克西斯",
+      "date": "2017-06-23",
+      "eps": 6,
+      "expectAirDateKeys": [
+        "2017-06-23"
+      ],
+      "minWithStill": 4,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 213532,
+      "name": "ガンダムビルドファイターズ GMの逆襲",
+      "nameCn": "高达创战者 GM的逆袭",
+      "date": "2017-08-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2014-03-26"
+      ],
+      "minWithStill": 7,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 214710,
+      "name": "ガンダムビルドファイターズ バトローグ",
+      "nameCn": "高达创战者 Battlogue",
+      "date": "2017-08-04",
+      "eps": 5,
+      "expectAirDateKeys": [
+        "2017-08-03"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 236790,
+      "name": "ガンダムビルドダイバーズ",
+      "nameCn": "高达创形者",
+      "date": "2018-04-03",
+      "eps": 25,
+      "expectAirDateKeys": [
+        "2018-02-02"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 243428,
+      "name": "機動戦士ガンダムNT",
+      "nameCn": "机动战士高达NT",
+      "date": "2018-11-30",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2018-11-30"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 243429,
+      "name": "機動戦士ガンダム 閃光のハサウェイ",
+      "nameCn": "机动战士高达 闪光的哈萨维",
+      "date": "2021-06-11",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-06-11"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 243430,
+      "name": "機動戦士ガンダム 閃光のハサウェイ キルケーの魔女",
+      "nameCn": "机动战士高达 闪光的哈萨维 喀耳刻的魔女",
+      "date": "2026-01-30",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2026-01-30"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 246429,
+      "name": "BanG Dream! 2nd Season",
+      "nameCn": "BanG Dream! 第二季",
+      "date": "2019-01-03",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2017-01-21"
+      ],
+      "minWithStill": 28,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 246430,
+      "name": "BanG Dream! 3rd Season",
+      "nameCn": "BanG Dream! 第三季",
+      "date": "2020-01-23",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2017-01-21"
+      ],
+      "minWithStill": 28,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 246431,
+      "name": "BanG Dream! ガルパ☆ピコ",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO",
+      "date": "2018-07-05",
+      "eps": 26,
+      "expectAirDateKeys": [
+        "2018-07-05"
+      ],
+      "minWithStill": 54,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 267432,
+      "name": "SDガンダムワールド 三国創傑伝",
+      "nameCn": "SD高达世界 三国创杰传",
+      "date": "2019-07-26",
+      "eps": 10,
+      "expectAirDateKeys": [
+        "2019-07-26"
+      ],
+      "minWithStill": 7,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 279219,
+      "name": "BanG Dream! FILM LIVE",
+      "nameCn": "",
+      "date": "2019-09-13",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2019-09-13"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286123,
+      "name": "ガンダムビルドダイバーズRe:RISE",
+      "nameCn": "高达创形者 再起",
+      "date": "2019-10-10",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2018-02-02"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 286124,
+      "name": "劇場版 Gのレコンギスタ II ベルリ 撃進",
+      "nameCn": "剧场版 高达Reconguista in G Ⅱ 贝尔利出击",
+      "date": "2020-02-21",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2020-02-21"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286125,
+      "name": "劇場版 Gのレコンギスタ III 宇宙からの遺産",
+      "nameCn": "剧场版 高达Reconguista in G Ⅲ 来自宇宙的遗产",
+      "date": "2021-07-22",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-07-22"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286126,
+      "name": "劇場版 Gのレコンギスタ Ⅳ 激闘に叫ぶ愛",
+      "nameCn": "剧场版 高达Reconguista in G Ⅳ 在激斗中呼唤爱",
+      "date": "2022-07-22",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2022-07-22"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286127,
+      "name": "劇場版 Gのレコンギスタ Ⅴ 死線を越えて",
+      "nameCn": "剧场版 高达Reconguista in G Ⅴ 越过死线",
+      "date": "2022-08-05",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2022-08-05"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 294202,
+      "name": "アルゴナビス from BanG Dream! ANIMATION",
+      "nameCn": "ARGONAVIS from BanG Dream! ANIMATION",
+      "date": "2020-04-10",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2020-04-11"
+      ],
+      "minWithStill": 9,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 296295,
+      "name": "BanG Dream! ガルパ☆ピコ～大盛り～",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO～大份～",
+      "date": "2020-05-07",
+      "eps": 26,
+      "expectAirDateKeys": [
+        "2018-07-05"
+      ],
+      "minWithStill": 54,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 297261,
+      "name": "ガンダムビルドダイバーズRe:RISE 2nd Season",
+      "nameCn": "高达创形者 再起 2nd Season",
+      "date": "2020-04-09",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2018-02-02"
+      ],
+      "minWithStill": 37,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 298572,
+      "name": "機動戦士SDガンダム",
+      "nameCn": "机动战士SD高达 剧场版",
+      "date": "1988-03-12",
+      "eps": 2,
+      "expectAirDateKeys": [
+        "1988-03-12"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 298573,
+      "name": "機動戦士SDガンダム",
+      "nameCn": "机动战士SD高达",
+      "date": "1988-05-25",
+      "eps": 17,
+      "expectAirDateKeys": [
+        "1988-03-12"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 302228,
+      "name": "BanG Dream! FILM LIVE 2nd Stage",
+      "nameCn": "",
+      "date": "2021-08-20",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-08-20"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 304642,
+      "name": "超合金 ガンダム★ハローキティ ショートアニメーション",
+      "nameCn": "超合金 高达★凯蒂猫 短片动画",
+      "date": "2020-01-29",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1997-10-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 305058,
+      "name": "BanG Dream! Episode of Roselia Ⅰ : 約束",
+      "nameCn": "BanG Dream! Episode of Roselia Ⅰ : 约定",
+      "date": "2021-04-23",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-04-23"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 305059,
+      "name": "BanG Dream! ぽっぴん'どりーむ！",
+      "nameCn": "剧场版 BanG Dream! Poppin'Dream！",
+      "date": "2022-01-01",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2022-01-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 314196,
+      "name": "ALL THAT GUNDAM",
+      "nameCn": "",
+      "date": "1989-08-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1989-01-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 315490,
+      "name": "BanG Dream! Episode of Roselia Ⅱ : Song I am.",
+      "nameCn": "",
+      "date": "2021-06-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-06-25"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 319448,
+      "name": "ガンダムビルドダイバーズ バトローグ",
+      "nameCn": "高达创形者 Battlogue",
+      "date": "2020-11-13",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2018-02-02"
+      ],
+      "minWithStill": 1,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 324786,
+      "name": "SDガンダムワールド ヒーローズ",
+      "nameCn": "SD高达世界 群英集",
+      "date": "2021-04-08",
+      "eps": 24,
+      "expectAirDateKeys": [
+        "2021-04-08"
+      ],
+      "minWithStill": 16,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 337274,
+      "name": "劇場版アルゴナビス 流星のオブリガート",
+      "nameCn": "剧场版 ARGONAVIS 流星的obbligato",
+      "date": "2021-11-19",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2021-11-19"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 337586,
+      "name": "機動戦士ガンダムSEED FREEDOM",
+      "nameCn": "机动战士高达SEED FREEDOM",
+      "date": "2024-01-26",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2024-01-26"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 338400,
+      "name": "BanG Dream! ガルパ☆ピコ ふぃーばー！",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO FEVER！",
+      "date": "2021-10-07",
+      "eps": 26,
+      "expectAirDateKeys": [
+        "2018-07-05"
+      ],
+      "minWithStill": 54,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 339095,
+      "name": "ガンダムブレイカー バトローグ",
+      "nameCn": "高达破坏者 对战记录",
+      "date": "2021-10-19",
+      "eps": 6,
+      "expectAirDateKeys": [
+        "2021-10-19"
+      ],
+      "minWithStill": 4,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 348384,
+      "name": "劇場版アルゴナビス AXIA",
+      "nameCn": "剧场版ARGONAVIS AXIA",
+      "date": "2023-03-24",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2023-03-24"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 349441,
+      "name": "機動戦士ガンダム 水星の魔女",
+      "nameCn": "机动战士高达 水星的魔女",
+      "date": "2022-10-02",
+      "eps": 12,
+      "expectAirDateKeys": [
+        "2022-07-14"
+      ],
+      "minWithStill": 19,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 349442,
+      "name": "機動戦士ガンダム ククルス・ドアンの島",
+      "nameCn": "机动战士高达 库库鲁斯·杜安之岛",
+      "date": "2022-06-03",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2022-06-03"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 373931,
+      "name": "バンドリ！ガールズバンドパーティ！5th Anniversary Animation -CiRCLE THANKS PARTY！-",
+      "nameCn": "BanG Dream! 少女乐团派对！5周年纪念动画 -CiRCLE THANKS PARTY!-",
+      "date": "2022-03-10",
+      "eps": 2,
+      "expectAirDateKeys": [
+        "2022-03-10"
+      ],
+      "minWithStill": 1,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 385928,
+      "name": "BanG Dream! Morfonication",
+      "nameCn": "",
+      "date": "2022-07-28",
+      "eps": 2,
+      "expectAirDateKeys": [
+        "2022-07-28"
+      ],
+      "minWithStill": 1,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 387327,
+      "name": "30th GUNDAM PERFECT MISSION",
+      "nameCn": "高达：完美任务",
+      "date": "2009-08-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2009-08-25"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 391706,
+      "name": "機動戦士ガンダム 水星の魔女 PROLOGUE",
+      "nameCn": "机动战士高达 水星的魔女 PROLOGUE",
+      "date": "2022-09-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2022-07-14"
+      ],
+      "minWithStill": 19,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 403238,
+      "name": "機動戦士ガンダム 水星の魔女 Season2",
+      "nameCn": "机动战士高达 水星的魔女 第二季",
+      "date": "2023-04-09",
+      "eps": 12,
+      "expectAirDateKeys": [
+        "2022-07-14"
+      ],
+      "minWithStill": 19,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 415485,
+      "name": "モビルスーツ学園「Ｇ-レコ甲子園」",
+      "nameCn": "机动战士学园 G-reco甲子园",
+      "date": "2020-01-18",
+      "eps": 26,
+      "expectAirDateKeys": [
+        "2015-03-21"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 427942,
+      "name": "The Impression of First GUNDAM",
+      "nameCn": "",
+      "date": "1998-08-01",
+      "eps": null,
+      "expectAirDateKeys": [
+        "1998-08-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 428735,
+      "name": "BanG Dream! It's MyGO!!!!!",
+      "nameCn": "",
+      "date": "2023-06-29",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2023-06-29"
+      ],
+      "minWithStill": 11,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 434818,
+      "name": "ガンダムビルドメタバース",
+      "nameCn": "高达创战元宇宙",
+      "date": "2023-10-06",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2023-10-06"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 443929,
+      "name": "Gundam: Requiem for Vengeance",
+      "nameCn": "机动战士高达 复仇的安魂曲",
+      "date": "2024-10-17",
+      "eps": 6,
+      "expectAirDateKeys": [
+        "2024-10-17"
+      ],
+      "minWithStill": 4,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 448391,
+      "name": "MyGO!!!!!メンバーの日常",
+      "nameCn": "MyGO!!!!!成员的日常生活",
+      "date": "2022-08-24",
+      "eps": null,
+      "expectAirDateKeys": [
+        "2023-09-07"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 454684,
+      "name": "BanG Dream! Ave Mujica",
+      "nameCn": "",
+      "date": "2025-01-02",
+      "eps": 13,
+      "expectAirDateKeys": [
+        "2025-01-02"
+      ],
+      "minWithStill": 9,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 464293,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ ウルズハント -小さな挑戦者の軌跡-",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 猎杀兀尔德 小挑战者的踪迹",
+      "date": "2025-10-31",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2025-10-31"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 466165,
+      "name": "機動戦士ガンダム: 銀灰の幻影",
+      "nameCn": "机动战士高达：银灰的幻影",
+      "date": "2024-10-03",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1979-04-07"
+      ],
+      "minWithStill": 30,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 520710,
+      "name": "機動戦士ガンダムSEED FREEDOM 特別版",
+      "nameCn": "机动战士高达SEED FREEDOM 特別版",
+      "date": "2024-09-20",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2002-10-05"
+      ],
+      "minWithStill": 73,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 526816,
+      "name": "機動戦士Gundam GQuuuuuuX",
+      "nameCn": "机动战士高达 GQuuuuuuX",
+      "date": "2025-04-08",
+      "eps": 12,
+      "expectAirDateKeys": [
+        "2025-04-09"
+      ],
+      "minWithStill": 8,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 526817,
+      "name": "機動戦士Gundam GQuuuuuuX -Beginning-",
+      "nameCn": "机动战士高达 跨时之战",
+      "date": "2025-01-17",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2025-01-17"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 540449,
+      "name": "元祖！バンドリちゃん",
+      "nameCn": "元祖！BanG Dream Chan",
+      "date": "2025-10-02",
+      "eps": 52,
+      "expectAirDateKeys": [
+        "2025-10-02"
+      ],
+      "minWithStill": 32,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 555191,
+      "name": "機動戦士ガンダムG40",
+      "nameCn": "机动战士高达G40",
+      "date": "2020-01-01",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2020-01-01"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 555522,
+      "name": "ガンダムvsハローキティ",
+      "nameCn": "高达vs凯蒂猫",
+      "date": "2019-03-29",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2019-03-29"
+      ],
+      "minWithStill": 2,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 560216,
+      "name": "機動戦士ガンダム 光る命 Chronicle U.C.",
+      "nameCn": "机动战士高达：生命光辉 编年史U.C.",
+      "date": "2019-09-26",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2019-09-26"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 573465,
+      "name": "新機動戦記ガンダムW -Operation 30th-",
+      "nameCn": "新机动战记高达W -Operation 30th-",
+      "date": "2025-07-25",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1995-04-07"
+      ],
+      "minWithStill": 39,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 608990,
+      "name": "機動戦士ガンダム 劇場3部作／特別版",
+      "nameCn": "机动战士高达 剧场3部作／特别版",
+      "date": "2000-12-21",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "1979-04-07"
+      ],
+      "minWithStill": 30,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 614207,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ 幕間の楔",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 幕间之楔",
+      "date": "2025-10-31",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2025-10-31"
+      ],
+      "minWithStill": 0,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 620109,
+      "name": "機動戦士ガンダムF91 完全版",
+      "nameCn": "机动战士高达F91 完全版",
+      "date": "1991-12-19",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1979-04-07"
+      ],
+      "minWithStill": 30,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 636546,
+      "name": "『機動武闘伝Gガンダム』30周年記念ファイティングムービー",
+      "nameCn": "《机动武斗传G高达》30周年纪念影片",
+      "date": "2026-03-20",
+      "eps": 1,
+      "expectAirDateKeys": [
+        "1994-04-22"
+      ],
+      "minWithStill": 34,
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; 2026-09-06 漂移: TMDB 把首播日改成 1994-04-22 (带图 49 未变)",
+      "theatrical": true
+    },
+    {
+      "subjectId": 21065,
+      "name": "機動戦士ガンダムSEED C.E.73 STARGAZER",
+      "nameCn": "机动战士高达SEED C.E.73 观星者",
+      "date": "2006-07-14",
+      "eps": 3,
+      "expectAirDateKeys": [
+        "2006-07-14"
+      ],
+      "minWithStill": 3,
+      "why": "削字降暂定修复 (2026-08-26) 的正主: 原名 0 结果, 削出「機動戦士ガンダムSEED」逐字命中本传当场定案, 逐字同名的中文档从来轮不到; 修后中文档命中 tv/43142 (中文名/首播日/集数逐项吻合)"
+    },
+    {
+      "subjectId": 42789,
+      "name": "GUNDAM EVOLVE",
+      "nameCn": "高达 EVOLVE",
+      "date": "2001-05-17",
+      "eps": 15,
+      "aliases": [
+        "机动战士高达 进化",
+        "ガンダムEVOLVE"
+      ],
+      "expectAirDateKeys": [
+        "2003-09-06"
+      ],
+      "minWithStill": 10,
+      "why": "别名档修复 (2026-08-26): tv/101719 genres 空+首播晚 2 年, 只有别名+空genre放行+对称容差够得到; 15 集全图"
+    },
+    {
+      "subjectId": 62680,
+      "name": "機動戦士ガンダム THE ORIGIN",
+      "nameCn": "机动战士高达 THE ORIGIN",
+      "date": "2015-04-24",
+      "eps": 6,
+      "aliases": [
+        "機動戦士ガンダム ジ・オリジン",
+        "GTO",
+        "高达 起源",
+        "機動戦士ガンダム THE ORIGIN シャア・セイラ編",
+        "机动战士高达 THE ORIGIN 夏亚·塞拉篇"
+      ],
+      "expectAirDateKeys": [
+        "2015-02-28"
+      ],
+      "minWithStill": 4,
+      "why": "合集档修复 (2026-08-26): TMDB 无 tv 本体, 6 部 movie 合集逐字命中 (剥「（系列）」后缀), parts 按上映日当集表; 修复前错挂 0080 (6 集形状一模一样, 全错)"
+    },
+    {
+      "subjectId": 473832,
+      "name": "劇場版 BanG Dream! It's MyGO!!!!! 前編 春の陽だまり、迷い猫",
+      "nameCn": "剧场版 BanG Dream! It's MyGO!!!!! 前篇 春日向阳，迷途之猫",
+      "date": "2024-09-27",
+      "theatrical": true,
+      "aliases": [
+        "劇場版「BanG Dream! It's MyGO!!!!! 前編 : 春の陽だまり、迷い猫」"
+      ],
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2024-09-27"
+      ],
+      "minWithStill": 1,
+      "why": "MyGO 剧场版前篇: movie/1231799; 与后篇同守「前后篇不可互串」(削字撞到另一篇被日期闸门拦是正确行为)"
+    },
+    {
+      "subjectId": 473833,
+      "name": "劇場版 BanG Dream! It's MyGO!!!!! 後編 うたう、僕らになれるうた & FILM LIVE",
+      "nameCn": "剧场版 BanG Dream! It's MyGO!!!!! 后篇 歌唱着，由我们唱响的歌 & FILM LIVE",
+      "date": "2024-11-08",
+      "theatrical": true,
+      "eps": 1,
+      "expectAirDateKeys": [
+        "2024-11-08"
+      ],
+      "minWithStill": 1,
+      "why": "「劇場版」前缀剥除修复 (2026-08-27): TMDB 原题不带该前缀, 带着搜过不了逐词校验, 削字一路撞前篇被日期闸门拦后全链空手; 剥前缀作 primary 同义变体后命中 movie/1233186"
+    },
+    {
+      "subjectId": 140001,
+      "name": "Re:ゼロから始める異世界生活",
+      "nameCn": "Re：从零开始的异世界生活",
+      "date": "2016-04-03",
+      "eps": 26,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "rezero",
+        "Re0",
+        "Re: Life a Different World from Zero"
+      ],
+      "episodeNames": [
+        "始まりの終わりと終わりの始まり",
+        "再会の魔女",
+        "ゼロから始まる異世界生活",
+        "ロズワール邸の団欒",
+        "約束した朝は遠く",
+        "鎖の音",
+        "ナツキ・スバルのリスタート",
+        "泣いて泣き喚いて泣き止んだから",
+        "勇気の意味",
+        "鬼がかったやり方",
+        "レム",
+        "再来の王都",
+        "自称騎士ナツキ・スバル",
+        "絶望という病",
+        "狂気の外側",
+        "豚の欲望",
+        "醜態の果てに",
+        "ゼロから",
+        "白鯨攻略戦",
+        "ヴィルヘルム・ヴァン・アストレア",
+        "絶望に抗う賭け",
+        "怠惰一閃",
+        "悪辣なる怠惰",
+        "自称騎士と最優の騎士",
+        "ただそれだけの物語",
+        "特番「Re:ゼロから始める異世界体験」"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 185837,
+      "name": "Re:プチから始める異世界生活",
+      "nameCn": "Re：从迷你开始的异世界生活",
+      "date": "2016-06-24",
+      "eps": 14,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Isekai Shokudou"
+      ],
+      "episodeNames": [
+        "ぷち①再来の学校",
+        "ぷち②自称先生、ベアトリス",
+        "ぷち③ご主人様と、そのメイドたち",
+        "ぷち④そのメニューはー",
+        "ぷち⑤天然",
+        "ぷち⑥豚でない欲望",
+        "ぷち⑦ゼロから",
+        "ぷち⑧決戦当日",
+        "ぷち⑨スイカ攻略戦",
+        "ぷち⑩煩悩に抗うだけ",
+        "ぷち⑪アレとアレと(以下略)の精算",
+        "ぷち⑫買え",
+        "ぷち⑬獅子王のみた本",
+        "ぷち⑭ただそれだけの宣伝"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 225462,
+      "name": "Re:ゼロから始める異世界生活 Memory Snow",
+      "nameCn": "Re：从零开始的异世界生活 雪之回忆",
+      "date": "2019-06-07",
+      "eps": 1,
+      "theatrical": true,
+      "screeningYear": 2018,
+      "aliases": [
+        "Re：从零开始的异世界生活 Memory Snow",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2018)",
+        "Re:Zero - Starting Life in Another World (2018)"
+      ],
+      "episodeNames": [
+        "Re:ゼロから始める異世界生活 Memory Snow"
+      ],
+      "expectAirDateKeys": [
+        "2018-10-06"
+      ],
+      "minWithStill": 0,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "subjectId": 261805,
+      "name": "Re:ゼロから始める異世界生活 氷結の絆",
+      "nameCn": "Re：从零开始的异世界生活 冰结之绊",
+      "date": "2019-11-08",
+      "eps": 1,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "Re:ゼロから始める異世界生活 氷結の絆"
+      ],
+      "expectAirDateKeys": [
+        "2019-11-08"
+      ],
+      "minWithStill": 0,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "subjectId": 262865,
+      "name": "異世界かるてっと",
+      "nameCn": "异世界四重奏",
+      "date": "2019-04-09",
+      "eps": 12,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "集結！かるてっと",
+        "緊迫！じこしょうかい",
+        "膠着！くらすめいと",
+        "邂逅！くらすめいと",
+        "炸裂！こんしんかい",
+        "決定！いいんかい",
+        "遂行！いいんかい",
+        "準備！りんかいがっこう",
+        "満喫！りんかいがっこう",
+        "参戦！らいばるたち",
+        "協力！たいいくさい",
+        "団結！かるてっと"
+      ],
+      "expectAirDateKeys": [
+        "2019-04-10"
+      ],
+      "minWithStill": 31,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "subjectId": 278826,
+      "name": "Re:ゼロから始める異世界生活 2nd season",
+      "nameCn": "Re：从零开始的异世界生活 第二季",
+      "date": "2020-07-08",
+      "eps": 13,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2020)",
+        "Re0 第二季",
+        "Re:ゼロから始める異世界生活2"
+      ],
+      "episodeNames": [
+        "それぞれの誓い",
+        "次なる場所",
+        "待ちかねた再会",
+        "親子",
+        "踏み出した一歩",
+        "少女の福音",
+        "ユージン",
+        "命の価値",
+        "らぶらぶらぶらぶらぶらぶゆー",
+        "地獄なら知っている",
+        "死の味",
+        "魔女たちの茶会",
+        "泣きたくなる音"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 285422,
+      "name": "異世界かるてっと２",
+      "nameCn": "异世界四重奏 第二季",
+      "date": "2020-01-14",
+      "eps": 12,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "参戦！てんこうせい",
+        "潜入！こうちょうしつ",
+        "反省！しどうしつ",
+        "窮地！がくりょくてすと",
+        "勤勉！ばれんたいんでー",
+        "激突！どっじぼーる",
+        "興奮！しんたいそくてい",
+        "挑戦！あるばいと",
+        "調査！はじめてのおつかい",
+        "決起！がくえんさい",
+        "開幕！がくえんさい",
+        "開演！しょーたいむ"
+      ],
+      "expectAirDateKeys": [
+        "2019-04-10"
+      ],
+      "minWithStill": 31,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "subjectId": 296195,
+      "name": "Re:ゼロから始める異世界生活 新編集版",
+      "nameCn": "Re：从零开始的异世界生活 新编集版",
+      "date": "2020-01-01",
+      "eps": 26,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "始まりの終わりと 終わりの始まり",
+        "再会の魔女",
+        "ゼロから始まる異世界生活",
+        "ロズワール邸の団欒",
+        "約束した朝は遠く",
+        "鎖の音",
+        "ナツキ・スバルのリスタート",
+        "泣いて泣き喚いて泣き止んだから",
+        "勇気の意味",
+        "鬼がかったやり方",
+        "レム",
+        "再来の王都",
+        "自称騎士ナツキ・スバル",
+        "絶望という病",
+        "狂気の外側",
+        "豚の欲望",
+        "醜態の果てに",
+        "ゼロから",
+        "白鯨攻略戦",
+        "ヴィルヘルム・ヴァン・アストレア",
+        "絶望に抗う賭け",
+        "怠惰一閃",
+        "悪辣なる怠惰",
+        "自称騎士と最優の騎士",
+        "ただそれだけの物語",
+        "Memory Snow"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 303126,
+      "name": "劇場版 異世界かるてっと ～あなざーわーるど～",
+      "nameCn": "剧场版 异世界四重奏 ～Another World～",
+      "date": "2022-06-10",
+      "eps": 1,
+      "theatrical": true,
+      "screeningYear": null,
+      "aliases": [
+        "异世界四重奏 另一个世界",
+        "Isekai Quartet: Another World"
+      ],
+      "episodeNames": [
+        ""
+      ],
+      "expectAirDateKeys": [
+        "2022-06-10"
+      ],
+      "minWithStill": 0,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "subjectId": 310194,
+      "name": "Re:ゼロから始める休憩時間 2nd Season",
+      "nameCn": "Re：从零开始的休息时间2",
+      "date": "2020-07-10",
+      "eps": 25,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re:Zero kara Hajimeru Break Time 2nd Season"
+      ],
+      "episodeNames": [
+        "オットー日記",
+        "オットー日記",
+        "オットー日記",
+        "ペトラのメイド奮闘記",
+        "オットー日記",
+        "オットー日記",
+        "オットー日記",
+        "メイドさんデイズ",
+        "鉄の牙報告書",
+        "メイドさんデイズ",
+        "裏稼業姉妹暗躍日報",
+        "メイドさんデイズ",
+        "オットー日記",
+        "",
+        "鉄の牙報告書",
+        "オットー日記",
+        "魔女のお茶菓子",
+        "福音を待つ日々",
+        "オットー日記",
+        "裏稼業姉妹暗躍日報",
+        "オットー日記",
+        "奇跡へのキセキ",
+        "魔女のお茶会",
+        "",
+        "オットー日記"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 316247,
+      "name": "Re:ゼロから始める異世界生活 2nd season 後半クール",
+      "nameCn": "Re：从零开始的异世界生活 第二季 后半部分",
+      "date": "2021-01-06",
+      "eps": 12,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2021)",
+        "Re0 第二季后半"
+      ],
+      "episodeNames": [
+        "STRAIGHT BET",
+        "オットー・スーウェン／信じる理由",
+        "クウェインの石は一人じゃ上がらない",
+        "記憶の旅路",
+        "平家星の笑った日",
+        "エリオール大森林の永久凍土",
+        "聖域の始まりと、崩壊の始まり",
+        "咆哮の再会",
+        "水面に映る幸せ",
+        "血と臓物まで愛して",
+        "俺を選べ",
+        "月下、出鱈目なステップ"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 425998,
+      "name": "Re:ゼロから始める異世界生活 3rd season 襲擊編",
+      "nameCn": "Re：从零开始的异世界生活 第三季 袭击篇",
+      "date": "2024-10-02",
+      "eps": 8,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re：從零開始的異世界生活 第三季 襲擊篇",
+        "Re0 第三季",
+        "Re0 3",
+        "rezero s3",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2024)",
+        "Re:ゼロから始める異世界生活 (2024)",
+        "Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season Shuugeki Hen",
+        "Re:ZERO -Starting Life in Another World- Season 3 Shuugeki Hen"
+      ],
+      "episodeNames": [
+        "劇場型悪意",
+        "氷炎の結末",
+        "ゴージャス・タイガー",
+        "都市庁舎奪還作戦",
+        "濁流",
+        "騎士の条件",
+        "最も新しい英雄と最も古い英雄",
+        "いつか好きになる人"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 510728,
+      "name": "Re:ゼロから始める異世界生活 3rd season 反擊編",
+      "nameCn": "Re：从零开始的异世界生活 第三季 反击篇",
+      "date": "2025-02-05",
+      "eps": 8,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re：從零開始的異世界生活 第三季 反擊篇",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2025)",
+        "Re:Zero - Starting Life in Another World (2025)",
+        "re0 第三季 反击篇",
+        "re0 第三季 反擊篇"
+      ],
+      "episodeNames": [
+        "混戦都市",
+        "強欲攻略戦",
+        "リリアナ・マスカレード",
+        "レグルス・コルニアス",
+        "戦士の称賛",
+        "テレシア・ヴァン・アストレア",
+        "醜悪なる晩餐会",
+        "プリステラ攻防戦リザルト"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 516311,
+      "name": "Re:ゼロから始める休憩時間 3rd season",
+      "nameCn": "Re：从零开始的休息时间3",
+      "date": "2024-10-02",
+      "eps": 16,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "眠れる鬼の夜話",
+        "エミリア陣営奮闘記",
+        "アイとジョーネツのガブリ",
+        "ドキドキ王選懇親会",
+        "大瀑布フォロワーズ",
+        "大瀑布フォロワーズ",
+        "ドキドキ王選懇親会",
+        "ドキドキ王選懇親会",
+        "エミリア陣営奮闘記",
+        "劇場前悪意",
+        "緋色浪漫譚",
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 547888,
+      "name": "Re:ゼロから始める異世界生活 4th season 喪失編",
+      "nameCn": "Re：从零开始的异世界生活 第四季 丧失篇",
+      "date": "2026-04-08",
+      "eps": 11,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season",
+        "Re:ZERO -Starting Life in Another World- Season 4",
+        "Re Zero kara Hajimeru Isekai Seikatsu 4th Season",
+        "Re：從零開始的異世界生活 第四季 喪失篇",
+        "re0 第四季 丧失篇",
+        "re0 第四季 喪失篇"
+      ],
+      "episodeNames": [
+        "君を連れ出す理由／ゴージャス・タイガー・リローデッド",
+        "砂時間を越えろ",
+        "監視塔の番人",
+        "白い星空のアステリズム",
+        "棒振り",
+        "ユリウス・ユークリウス",
+        "コンビニを出ると、そこは不思議の世界でした",
+        "オマエハダレダ",
+        "残骸",
+        "殺人は癖になる",
+        "Re:ゼロから始まる異世界生活"
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 564421,
+      "name": "異世界かるてっと3",
+      "nameCn": "异世界四重奏 第三季",
+      "date": "2025-10-13",
+      "eps": 11,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Isekai Quartet 3"
+      ],
+      "episodeNames": [
+        "結集！がくえんせいかつ",
+        "潜伏！じつりょくしゃ",
+        "協調！あさがおしいく",
+        "混乱！ちょうりじっしゅう",
+        "襲来！やりのゆうしゃ",
+        "詮索！かげとあくま",
+        "滑走！すきーがっしゅく！",
+        "流行！おんらいんげーむ",
+        "結束！おんがくさい",
+        "戦慄！おんがくさい",
+        "旋律！おんがくさい"
+      ],
+      "expectAirDateKeys": [
+        "2019-04-10"
+      ],
+      "minWithStill": 31,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "subjectId": 633836,
+      "name": "Re:ゼロから始める異世界生活 4th season 奪還編",
+      "nameCn": "Re：从零开始的异世界生活 第四季 夺还篇",
+      "date": "2026-08-12",
+      "eps": 8,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [
+        "Re：從零開始的異世界生活 第四季 奪還篇",
+        "re0 第四季 夺还篇",
+        "re0 第四季 奪還篇"
+      ],
+      "episodeNames": [
+        "これからの話",
+        "立ちなさい",
+        "五つの障害",
+        "一途な星",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "subjectId": 638494,
+      "name": "Re:ゼロから始める休憩時間 4th season",
+      "nameCn": "Re：从零开始的休息时间4",
+      "date": "2026-04-08",
+      "eps": 19,
+      "theatrical": false,
+      "screeningYear": null,
+      "aliases": [],
+      "episodeNames": [
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記",
+        "みんな困ったもんかしら",
+        "みんな困ったもんかしら",
+        "有言実行備忘録",
+        "有言実行備忘録",
+        "有言実行備忘録",
+        "カララギ細腕繁盛期",
+        "エミリア陣営奮闘記",
+        "エミリア陣営奮闘記",
+        "金獅子と剣聖",
+        "裏稼業姉妹暗躍日報",
+        "金獅子と剣聖",
+        "金獅子と剣聖",
+        "妾バンザイ",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expectAirDateKeys": [
+        "2016-04-04"
+      ],
+      "minWithStill": 145,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    }
+  ]
+}

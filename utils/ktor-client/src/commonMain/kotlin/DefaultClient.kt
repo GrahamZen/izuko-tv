@@ -150,11 +150,18 @@ object HttpLogger {
                 onSuccess = {
                     append(it.toString()) // "404 Not Found"
                 },
-                onFailure = {
-                    when (it) {
+                onFailure = { exception ->
+                    when (exception) {
                         is CancellationException -> append("CANCELLED")
                         is IOException -> append("IO_EXCEPTION")
                         else -> append("FAILED")
+                    }
+                    if (exception !is CancellationException) {
+                        // 光一个 "IO_EXCEPTION" 区分不出 DNS 解析失败 / 连接超时 / TLS 失败 / 代理拒绝,
+                        // 用户导出的日志里就无从定位, 所以带上原因摘要.
+                        append(" (")
+                        append(exception.summarizeForLog())
+                        append(")")
                     }
                 },
             )
@@ -163,6 +170,17 @@ object HttpLogger {
             append(duration.toString())
         }
     }
+
+    /**
+     * `java.net.UnknownHostException: Unable to resolve host "x"`, 必要时附上根因.
+     */
+    private fun Throwable.summarizeForLog(): String {
+        val root = generateSequence(this) { current -> current.cause?.takeIf { it !== current } }.last()
+        val self = toString().take(MAX_EXCEPTION_LOG_LENGTH)
+        return if (root === this) self else "$self, cause: ${root.toString().take(MAX_EXCEPTION_LOG_LENGTH)}"
+    }
+
+    private const val MAX_EXCEPTION_LOG_LENGTH = 200
 }
 
 

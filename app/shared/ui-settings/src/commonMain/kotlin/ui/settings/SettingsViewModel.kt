@@ -44,6 +44,7 @@ import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.WatchTogetherSettings
+import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.danmaku.AniBangumiSeverBaseUrls
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
@@ -108,6 +109,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val mediaSourceSubscriptionUpdater: MediaSourceSubscriptionUpdater by inject()
     private val mediaSourceCodecManager: MediaSourceCodecManager by inject()
     private val clientProvider: HttpClientProvider by inject()
+    private val tmdbImageService: TmdbImageService by inject()
     private val tokenRepository: TokenRepository by inject()
 
     private val proxyProvider = ProxySettingsFlowProxyProvider(settingsRepository.proxySettings.flow, backgroundScope)
@@ -123,6 +125,9 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val themeSettings: SettingsState<ThemeSettings> =
         settingsRepository.themeSettings.stateInBackground(ThemeSettings.Default.copy(_placeholder = -1))
+
+    /** 代理页底部「不加载 TMDB 背景图」. */
+    val tmdbImagesDisabled: SettingsState<Boolean> = settingsRepository.tmdbImagesDisabled.stateInBackground(false)
 
     val videoScaffoldConfig: SettingsState<VideoScaffoldConfig> =
         settingsRepository.videoScaffoldConfig.stateInBackground(VideoScaffoldConfig.Default.copy(_placeholder = -1))
@@ -211,6 +216,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val proxyTester = ProxyTester(
         clientProvider = clientProvider,
         flowScope = backgroundScope,
+        tmdbImageService = tmdbImageService,
     )
 
     private val configureProxyUiState = combine(
@@ -427,6 +433,8 @@ private fun Map<String, ServiceConnectionTester.TestState>.toUIState(): List<Pro
                 ServiceConnectionTesters.ID_ANI -> ProxyTestCase.AniDanmakuApi
                 ServiceConnectionTesters.ID_BANGUMI -> ProxyTestCase.BangumiApi
                 ServiceConnectionTesters.ID_BANGUMI_NEXT -> ProxyTestCase.BangumiNextApi
+                ServiceConnectionTesters.ID_TMDB -> ProxyTestCase.TmdbApi
+                ServiceConnectionTesters.ID_TMDB_IMAGE -> ProxyTestCase.TmdbImage
                 else -> return@forEach
             }
             val result = when (state) {
@@ -436,7 +444,7 @@ private fun Map<String, ServiceConnectionTester.TestState>.toUIState(): List<Pro
                 is ServiceConnectionTester.TestState.Failed -> ProxyTestCaseState.FAILED
                 is ServiceConnectionTester.TestState.Error -> ProxyTestCaseState.FAILED // todo
             }
-            add(ProxyTestItem(case, result))
+            add(ProxyTestItem(case, result, (state as? ServiceConnectionTester.TestState.Success)?.time))
         }
     }
 }

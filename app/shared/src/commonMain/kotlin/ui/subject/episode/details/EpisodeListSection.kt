@@ -17,6 +17,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import me.him188.ani.app.ui.foundation.aniCombinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,6 +82,7 @@ import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.ui.foundation.LocalEpisodeProgressSettings
 import me.him188.ani.app.ui.foundation.LongClickProgressFill
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniBottomSheetDefaults
 import me.him188.ani.app.ui.foundation.icons.PlayingIcon
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
@@ -265,7 +267,7 @@ private fun WideEpisodeListSection(
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent,
                 ),
-                modifier = Modifier.combinedClickable { onToggleExpanded() },
+                modifier = Modifier.aniCombinedClickable { onToggleExpanded() },
             )
         }
     }
@@ -305,7 +307,7 @@ private fun NarrowEpisodeListSection(
                 Text(
                     episodeListText,
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.combinedClickable(
+                    modifier = Modifier.aniCombinedClickable(
                         onClick = {},
                         onDoubleClick = {
                             val playingIndex = episodeCarouselState.episodes.indexOfFirst {
@@ -396,6 +398,7 @@ private fun NarrowEpisodeListSection(
         ModalBottomSheet(
             onDismissRequest = { showBottomSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetMaxWidth = AniBottomSheetDefaults.sheetMaxWidth(),
             contentWindowInsets = { BottomSheetDefaults.windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal) },
             modifier = modifier,
         ) {
@@ -472,7 +475,7 @@ private fun EpisodeCard(
         modifier = modifier
             .height(72.dp)
             .aspectRatio(16f / 9)
-            .combinedClickable(
+            .aniCombinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onClick,
@@ -552,7 +555,7 @@ private fun EpisodeListSectionItem(
             .fillMaxWidth()
             .clip(shape)
             .background(containerColor)
-            .combinedClickable(
+            .aniCombinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onClick,

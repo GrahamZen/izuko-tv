@@ -80,6 +80,7 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
@@ -723,9 +724,7 @@ private fun PlaybackHistoryDeleteDialog(
                 Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = {
-            TextButton(onDismiss) { Text(stringResource(Lang.cache_subject_cancel)) }
-        },
+        dismissButton = dismissDialogButton(stringResource(Lang.cache_subject_cancel), onDismiss),
     )
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2026 OpenAni and contributors.
+ * Copyright (C) 2024 OpenAni and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
@@ -381,25 +381,13 @@ object RichTextDefaults {
         modifier: Modifier = Modifier,
         onClick: () -> Unit
     ) {
-        var state by rememberSaveable { mutableIntStateOf(0) } // 0: loading, 1: success, 2: failed
-
-        AsyncImage(
-            model = element.imageUrl,
-            contentDescription = null,
-            modifier = modifier
-                .padding(4.dp)
-                .ifThen(state != 1) {
-                    sizeIn(minWidth = 80.dp, minHeight = 80.dp)
-                }
-                .animateContentSize()
-                .placeholder(state == 0)
-                .clip(RoundedCornerShape(8.dp))
-                .then(Modifier.clickable { onClick() }),
-            contentScale = ContentScale.Fit,
-            crossfade = false,
-            onSuccess = {
-                if (state != 1) state = 1
-            },
+        // 失败不给 errorContent: 那个 80dp 的空框留着 —— 原帖确实有张图, 完全塌掉会让人
+        // 以为解析漏了内容. 三态与防跳位见 CommentAsyncImage
+        CommentAsyncImage(
+            element.imageUrl,
+            modifier.padding(4.dp),
+            unloadedModifier = Modifier.sizeIn(minWidth = 80.dp, minHeight = 80.dp),
+            onClick = onClick,
         )
     }
 

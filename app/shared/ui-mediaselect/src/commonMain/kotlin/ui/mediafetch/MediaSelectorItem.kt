@@ -96,29 +96,9 @@ internal fun MediaSelectorItem(
     val clipboard = LocalClipboard.current
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
-    val noSubtitleText = stringResource(Lang.media_selector_item_no_subtitle)
-    val singleEpisodeResourceText = stringResource(Lang.media_selector_item_single_episode_resource)
-    val unsupportedPlaybackText = stringResource(Lang.media_selector_item_unsupported_playback)
-    val seasonMismatchText = stringResource(Lang.media_selector_item_season_mismatch)
-    val subjectTitleMismatchText = stringResource(Lang.media_selector_item_subject_title_mismatch)
-    val episodeMismatchText = stringResource(Lang.media_selector_item_episode_mismatch)
 
     // Determine the reason text, if any
-    val reasonText = group.exclusionReason?.let { reason ->
-        if (currentAniBuildConfig.isDebug) {
-            reason.toString()
-        } else {
-            when (reason) {
-                is MediaExclusionReason.EpisodeMismatch -> episodeMismatchText
-                MediaExclusionReason.MediaWithoutSubtitle -> noSubtitleText
-                is MediaExclusionReason.SingleEpisodeForCompleteSubject -> singleEpisodeResourceText
-                MediaExclusionReason.UnsupportedByPlatformPlayer -> unsupportedPlaybackText
-                MediaExclusionReason.FromSequelSeason -> seasonMismatchText
-                MediaExclusionReason.FromSeriesSeason -> seasonMismatchText
-                MediaExclusionReason.SubjectNameMismatch -> subjectTitleMismatchText
-            }
-        }
-    }
+    val reasonText = mediaExclusionReasonText(group.exclusionReason)
 
     // Now we call the stateless layout, passing only the data and callbacks
     MediaSelectorItemLayout(
@@ -203,6 +183,24 @@ internal fun MediaSelectorItem(
         },
         modifier = modifier,
     )
+}
+
+/** 资源被过滤的原因文案; null = 未被过滤. 移动端 chip 与 TV 卡片共用. */
+@Composable
+internal fun mediaExclusionReasonText(reason: MediaExclusionReason?): String? {
+    if (reason == null) return null
+    if (currentAniBuildConfig.isDebug) return reason.toString()
+    return when (reason) {
+        is MediaExclusionReason.EpisodeMismatch -> stringResource(Lang.media_selector_item_episode_mismatch)
+        MediaExclusionReason.MediaWithoutSubtitle -> stringResource(Lang.media_selector_item_no_subtitle)
+        is MediaExclusionReason.SingleEpisodeForCompleteSubject ->
+            stringResource(Lang.media_selector_item_single_episode_resource)
+
+        MediaExclusionReason.UnsupportedByPlatformPlayer -> stringResource(Lang.media_selector_item_unsupported_playback)
+        MediaExclusionReason.FromSequelSeason -> stringResource(Lang.media_selector_item_season_mismatch)
+        MediaExclusionReason.FromSeriesSeason -> stringResource(Lang.media_selector_item_season_mismatch)
+        MediaExclusionReason.SubjectNameMismatch -> stringResource(Lang.media_selector_item_subject_title_mismatch)
+    }
 }
 
 /**

@@ -12,6 +12,16 @@ package me.him188.ani.app.ui.subject.details.state
 import androidx.compose.runtime.Stable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.flow.Flow
+import me.him188.ani.app.data.repository.RepositoryNetworkException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -62,7 +72,8 @@ class SubjectDetailsStateLoader(
                 emit(SubjectDetailsUIState.Placeholder(req.subjectId, req.placeholder))
                 emitAll(
                     subjectDetailsStateFactory.create(req.subjectId, req.placeholder)
-                        .map { SubjectDetailsUIState.Ok(it.subjectId, it) },
+                        .map { SubjectDetailsUIState.Ok(it.subjectId, it) }
+                        .retryUntilFirstEmission(FIRST_LOAD_TIMEOUT, MAX_LOAD_ATTEMPTS),
                 )
             }.catch { e ->
                 emit(SubjectDetailsUIState.Err(req.subjectId, req.placeholder, LoadError.fromException(e)))
@@ -103,6 +114,52 @@ class SubjectDetailsStateLoader(
     }
 
     private fun nextAttempt(): Int = (request.value?.attempt ?: 0) + 1
+
+    private companion object {
+        /**
+         * 首屏内容 (第一次发射) 的最长等待时间.
+         *
+         * 首屏依赖一次 Bangumi 请求, 而它挂住时全局 ktor 超时长达 5 分钟 —— 页面就那么一直转圈.
+         * 超过这个时间就重新订阅一次, 比干等有效得多.
+         */
+        private val FIRST_LOAD_TIMEOUT = 5.seconds
+
+        /** 首屏加载总尝试次数 (含第一次), 全部超时后交给外层 catch 变成错误页. */
+        private const val MAX_LOAD_ATTEMPTS = 5
+    }
+}
+
+/**
+ * 只给**第一次发射**限时: 超过 [timeout] 还没有第一个元素就取消这次订阅重来, 最多 [maxAttempts] 次;
+ * 第一个元素到了之后不再限时, 后续更新照常流过 (详情页要靠它持续收数据库的变化).
+ *
+ * 全部尝试都超时则抛 [RepositoryNetworkException], 由调用方的 catch 转成错误页.
+ */
+private fun <T> Flow<T>.retryUntilFirstEmission(
+    timeout: Duration,
+    maxAttempts: Int,
+): Flow<T> = channelFlow {
+    var attempts = 0
+    while (true) {
+        attempts++
+        val firstEmission = CompletableDeferred<Unit>()
+        val job = launch {
+            this@retryUntilFirstEmission.collect {
+                firstEmission.complete(Unit)
+                send(it)
+            }
+        }
+        try {
+            withTimeout(timeout) { firstEmission.await() }
+            job.join() // 首屏已到, 剩下的持续收到上游自己结束
+            return@channelFlow
+        } catch (e: TimeoutCancellationException) {
+            job.cancelAndJoin()
+            if (attempts >= maxAttempts) {
+                throw RepositoryNetworkException("加载超时", e)
+            }
+        }
+    }
 }
 
 @TestOnly

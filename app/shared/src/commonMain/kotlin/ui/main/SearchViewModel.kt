@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -73,19 +72,27 @@ class SearchViewModel(
     private val hasInitialSearchQuery = initialQuery.shouldTriggerSearch()
     private val queryFlow = MutableStateFlow(initialQuery)
 
+    // Eagerly: 建 pager 时要拿 .value 当快照 (见下), Lazily 的话首次搜索读到的永远是默认值 HIDE
     private val nsfwSettingFlow = settingsRepository.uiSettings.flow
         .map { it.searchSettings.nsfwMode }
-        .stateIn(backgroundScope, SharingStarted.Lazily, NsfwMode.HIDE)
+        .stateIn(backgroundScope, SharingStarted.Eagerly, NsfwMode.HIDE)
 
     private val searchHistoryPager = searchHistoryRepository.getHistoryPager().cachedIn(backgroundScope)
     private val searchState = PagingSearchState(
         createPager = { scope ->
             val rawQuery = queryFlow.value.normalized()
             val explicitR18 = rawQuery.tags?.contains("R18") == true
+            // NSFW 模式按建 pager 那刻取快照, 不再与设置流 combine: combine 在设置流每次发射时都会
+            // 把**同一份** PagingData 再 map 一遍, 下游切到新的 PagingData 就等于把同一个分页快照收集
+            // 第二次 -> "Attempt to collect twice from pageEventFlow", 整个 pager scope 随之报废, 请求
+            // 被取消, 结果页永远转圈. 设置流是 stateIn 的, 首次被订阅时先吐初始值再吐真实值, 所以每个
+            // ViewModel 实例的第一次搜索几乎必中 (2026-09-10 真机日志坐实). 代价是搜索中途改 NSFW 设置
+            // 要重新搜一次才生效.
+            val nsfwMode = nsfwSettingFlow.value
             val query = rawQuery.copy(
                 nsfw = when {
                     explicitR18 -> true
-                    nsfwSettingFlow.value == NsfwMode.HIDE -> false
+                    nsfwMode == NsfwMode.HIDE -> false
                     else -> null
                 },
             )
@@ -97,7 +104,7 @@ class SearchViewModel(
                         it.searchSettings.ignoreDoneAndDroppedSubjects
                     }.first()
                 },
-            ).combine(nsfwSettingFlow) { data, nsfwMode ->
+            ).map { data ->
                 data.map { subject ->
                     SubjectPreviewItemInfo.compute(
                         subject.subjectInfo,
@@ -222,6 +229,10 @@ class SearchViewModel(
                         }
                     }
                 }
+            }
+
+            SearchPageIntent.ClearHistory -> {
+                launchInBackground { searchHistoryRepository.clearHistory() }
             }
 
             is SearchPageIntent.SelectResult -> {

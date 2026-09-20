@@ -115,6 +115,13 @@ sealed class NavRoutes : NavKey {
      */
     @Serializable
     data object BangumiMerge : NavRoutes()
+
+    /**
+     * TV: 自定义播放器按钮 (一个不播放东西的播放器, 在上面排两行按钮的顺序与显隐).
+     * 页面实现在 ui-tv, 经 `LocalTvPlayerChromeEditorVariant` 注入; 入口只在遥控器形态的设置里.
+     */
+    @Serializable
+    data object TvPlayerChrome : NavRoutes()
 }
 
 @Serializable
