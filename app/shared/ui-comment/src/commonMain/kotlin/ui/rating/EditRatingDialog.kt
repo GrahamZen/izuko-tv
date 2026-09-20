@@ -168,7 +168,7 @@ fun RatingEditorDialog(
                 }
             },
             // "继续编辑" = 关掉这个确认框回去接着写, 遥控器上返回键就是这个意思
-            dismissButton = dismissDialogButton(continueEditingText) { showConfirmCancelDialog = false },
+            dismissButton = dismissDialogButton(continueEditingText, { showConfirmCancelDialog = false }),
             containerColor = aniDialogContainerColor(),
         )
     }

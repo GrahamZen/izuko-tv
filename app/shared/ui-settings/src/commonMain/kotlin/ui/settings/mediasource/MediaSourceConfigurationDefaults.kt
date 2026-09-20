@@ -204,9 +204,9 @@ fun <T : MediaSourceArguments> MediaSourceConfigurationDefaults.DropdownMenuImpo
                     Text(stringResource(Lang.settings_mediasource_override), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = dismissDialogButton(stringResource(Lang.settings_mediasource_cancel)) {
+            dismissButton = dismissDialogButton(stringResource(Lang.settings_mediasource_cancel), {
                 state.cancelOverride()
-            },
+            }),
         )
     }
     val error = state.error

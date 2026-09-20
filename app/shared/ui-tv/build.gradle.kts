@@ -87,7 +87,7 @@ kotlin {
         api(projects.app.shared.uiExploration)
         api(projects.app.shared.uiMediaselect)
         api(projects.app.shared.uiSettings)
-        api(projects.app.shared.uiCache)
+        api(projects.app.shared.uiDownload)
         api(projects.app.shared.uiComment)
         api(projects.app.shared.appData)
         api(projects.app.shared.videoPlayer)

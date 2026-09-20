@@ -806,6 +806,9 @@ class DefaultMediaSelector(
         }
     }
 
+    // 这里**刻意**看 original 而不是筛选后的结果: 大部分排除原因不妨碍"已经缓存了就直接播",
+    // 硬性不可用的那档单独判 (见 firstSelectableCache).
+    @OptIn(UnsafeOriginalMediaAccess::class)
     override suspend fun trySelectCached(): Media? {
         if (selected.value != null) return null
         // 剧集信息未加载时不筛剧集, 整个条目的缓存都在候选中, 不能选.
@@ -813,7 +816,7 @@ class DefaultMediaSelector(
         // 先等"缓存可播性"这一项到位再决定.
         //
         // MediaSelectorContextFlowProducer 按设计先发一个 null (未知), 真集合要等
-        // MediaCacheManager 把每个缓存的 canPlay 都发过一次 (combine 语义) 才出来. 自动选缓存
+        // MediaDownloadManager 把每个缓存的 canPlay 都发过一次 (combine 语义) 才出来. 自动选缓存
         // 跑得比它快时, 没下完的缓存会被当成可选直接选中, 随即 FileNotFoundException ——
         // 最终文件要等下载完成合并后才存在 (真机复现: 缓存中途退出重进这一集).
         //

@@ -131,7 +131,7 @@ sealed class MediaExclusionReason {
      *
      * 与其他原因不同, 这一条是**硬**的: 它不表示"按偏好过滤掉了", 而是"选了也放不出来",
      * 所以界面上不允许手动选中 (见 [blocksSelection]). 下完之后判据自动翻转、警告即刻消失 ——
-     * 数据来自 MediaCacheManager.unplayableCacheMediaIds 这条实时流.
+     * 数据来自 MediaDownloadManager.unplayableCacheMediaIds 这条实时流.
      */
     data object CacheNotReady : MediaExclusionReason()
 }

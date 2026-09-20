@@ -198,9 +198,9 @@ object RefreshIndicationDefaults {
                         Text(stringResource(Lang.settings_mediasource_retry))
                     }
                 },
-                dismissButton = dismissDialogButton(stringResource(Lang.settings_mediasource_cancel)) {
+                dismissButton = dismissDialogButton(stringResource(Lang.settings_mediasource_cancel), {
                     showErrorDialog = false
-                },
+                }),
             )
         }
     }

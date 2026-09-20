@@ -183,7 +183,7 @@ private fun SelfAvatarMenus(
                     Text(logoutText, color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = dismissDialogButton(cancelText) { showLogoutConfirmation = false },
+            dismissButton = dismissDialogButton(cancelText, { showLogoutConfirmation = false }),
         )
     }
 }

@@ -1295,9 +1295,11 @@ class EpisodeViewModel(
                     // 重启一次纯属空转 —— 批量缓存一整季时那是每建一条都空转一轮.
                     // 空 episodeId 的缓存留着: 那种走的是模糊匹配 (按集名/集号), 可能命中本集.
                     val episodeIdString = episodeId.toString()
-                    mediaCacheManager.listCacheForSubject(subjectId)
-                        .map { caches ->
-                            caches.filter {
+                    // 上游把 MediaCacheManager 改名 MediaDownloadManager 并换了接口:
+                    // listCacheForSubject -> downloadsForSubject, 元素从 MediaCache 变成 MediaDownload.
+                    downloadManager.downloadsForSubject(subjectId)
+                        .map { downloads ->
+                            downloads.map { it.cache }.filter {
                                 it.metadata.episodeId == episodeIdString || it.metadata.episodeId.isEmpty()
                             }
                         }

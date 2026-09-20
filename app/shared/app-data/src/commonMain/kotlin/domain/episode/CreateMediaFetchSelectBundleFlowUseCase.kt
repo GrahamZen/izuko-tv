@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.onStart
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
-import me.him188.ani.app.domain.media.cache.MediaCacheManager
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -76,8 +76,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
     private val mediaSourceManager: MediaSourceManager by inject()
     private val episodePreferencesRepository: EpisodePreferencesRepository by inject()
     private val settingsRepository: SettingsRepository by inject()
+    private val mediaCacheManager: MediaDownloadManager by inject()
     private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
-    private val mediaCacheManager: MediaCacheManager by inject()
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>

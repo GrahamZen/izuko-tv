@@ -133,9 +133,9 @@ internal fun SettingsScope.DanmakuRegexFilterGroup(
                     Text(stringResource(Lang.settings_danmaku_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel)) {
+            dismissButton = dismissDialogButton(stringResource(Lang.settings_danmaku_cancel), {
                 showImportDialog = false
-            },
+            }),
         )
     }
 

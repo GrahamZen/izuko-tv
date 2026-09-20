@@ -70,6 +70,8 @@ interface MediaCache {
      */
     val downloaderStatus: Flow<DownloaderStatus?>
         get() = flowOf(null)
+
+    /**
      * 正处在"下完了但还在合并"的阶段. 只有 web (m3u8) 缓存有这一步, 其余恒为 false.
      *
      * **纯展示用**: [state] 在这期间仍是 [MediaCacheState.IN_PROGRESS], 进度也已经是 100% ——

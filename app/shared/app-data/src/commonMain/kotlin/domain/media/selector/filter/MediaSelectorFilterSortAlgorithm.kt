@@ -128,6 +128,40 @@ class MediaSelectorFilterSortAlgorithm {
     }
 
     @Suppress("PrivatePropertyName")
+    /**
+     * 当前剧集的匹配条件: 剧集范围包含 sort 或 ep; 特别篇等非正片的资源常常解析不出序号, 标题包含剧集名也算匹配 (#1738).
+     * 数据源的资源允许特别篇按序号匹配同号的正片 (站点常把特别篇按正片连续编号);
+     * 本地缓存记录的剧集是确定的: 记录了剧集 ID 就按 ID 匹配, 否则只按记录的那一集精确匹配, 免得看 SP01 时自动选中第 01 话的缓存.
+     */
+    private class EpisodeMatch(
+        private val episodeId: Int,
+        private val sort: EpisodeSort,
+        private val ep: EpisodeSort?,
+        name: String,
+        private val acceptOva: Boolean,
+    ) {
+        // 太短的名字 (如 "OP", "ED") 会匹配到所有含 NCOP 之类字样的资源, 不用
+        private val nameForSpecial: String? = name.trim().takeIf { sort !is EpisodeSort.Normal && it.length >= MIN_SPECIAL_NAME_LENGTH }
+
+        fun matches(media: Media): Boolean {
+            val range = media.episodeRange
+            if (media.isLocalCache()) {
+                val cacheEpisodeId = (media as? CachedMedia)?.cacheEpisodeId
+                if (!cacheEpisodeId.isNullOrEmpty() && episodeId != 0) return cacheEpisodeId == episodeId.toString()
+                return range != null && (
+                        range.contains(sort, allowSeason = false, allowSpecial = false) ||
+                                (ep != null && range.contains(ep, allowSeason = false, allowSpecial = false)))
+            }
+            if (range != null) {
+                if (range.contains(sort)) return true
+                if (ep != null && range.contains(ep)) return true
+                if (acceptOva && range.knownSorts.any { it is EpisodeSort.Special && it.type == EpisodeType.OVA }) return true
+            }
+            if (nameForSpecial != null && MediaListFilters.specialContains(media.originalTitle, nameForSpecial)) return true
+            return false
+        }
+    }
+
     private val SEASON_TAILING = Regex("""第\s*(?<season>.+)\s*[部季]""")
 
     @Suppress("PrivatePropertyName")

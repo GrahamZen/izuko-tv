@@ -343,6 +343,8 @@ fun DownloadManagementScreen(
             confirmEnabled = state.groups.flatMap { it.entries }.none { current ->
                 current.isBusy && entries.any { it.id == current.id }
             },
+            summary = rememberCacheDeleteSummary(entries),
+            warning = rememberPlayingCacheWarning(entries),
             onConfirm = {
                 entries.forEach(onDelete)
                 pendingDeleteEntries = null
@@ -836,6 +838,10 @@ internal fun DeleteActionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     confirmEnabled: Boolean = true,
+    /** 批量删除时按作品分行的明细, 见 [rememberCacheDeleteSummary]. */
+    summary: String? = null,
+    /** 要删的里面有正在播的那条时的提示, 见 [rememberPlayingCacheWarning]. */
+    warning: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -991,7 +997,7 @@ private fun PreviewDownloadManagementScreen() {
  * 加省略号 (真到那个量级, "跨了很多部"这个事实已经传达到了).
  */
 @Composable
-internal fun rememberCacheDeleteSummary(entries: List<CacheEpisodeState>): String? {
+internal fun rememberCacheDeleteSummary(entries: List<DownloadItem>): String? {
     if (entries.isEmpty()) return null
     val header = stringResource(Lang.cache_management_delete_summary, entries.size)
     val byTitle = entries.groupBy { it.subjectName }
@@ -1016,7 +1022,7 @@ private const val MAX_DELETE_SUMMARY_TITLES = 4
  * 删除本身照旧允许: 删完播放会自动换到别的源 (见 `SwitchMediaOnPlayerErrorExtension`).
  */
 @Composable
-internal fun rememberPlayingCacheWarning(entries: List<CacheEpisodeState>): String? {
+internal fun rememberPlayingCacheWarning(entries: List<DownloadItem>): String? {
     val playing = LocalPlaybackSessionEntry.current.playingCache ?: return null
     val hit = remember(entries, playing) {
         entries.any { playing.matches(it.subjectId, it.episodeId, it.originMediaId) }
