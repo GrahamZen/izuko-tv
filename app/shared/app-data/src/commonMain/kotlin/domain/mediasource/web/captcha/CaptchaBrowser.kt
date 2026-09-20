@@ -94,9 +94,52 @@ interface CaptchaBrowser : AutoCloseable {
 
     /**
      * 浏览器视图 (desktop `SwingPanel` / android `AndroidView`).
+     *
+     * TV (fork): Android 实现会在视图上叠一层遥控器虚拟光标 (方向键移动 / 确认键点击 /
+     * 长按确认键完成 / 返回键退出), 通过下面两个回调把"退出/完成"通知给宿主对话框
+     * (返回键会被 WebView 抢去做历史后退, 系统返回分发不到 Dialog, 只能在此层拦截).
+     * 其余平台忽略这两个回调.
      */
     @Composable
-    fun View(modifier: Modifier)
+    fun View(
+        modifier: Modifier,
+        onExitRequest: (() -> Unit)? = null,
+        onConfirmRequest: (() -> Unit)? = null,
+        tvInputMode: TvWebInputMode = TvWebInputMode.Cursor,
+    )
+}
+
+/**
+ * 电视上怎么操作这个网页. 只有 Android 实现认它 (桌面有鼠标键盘).
+ */
+enum class TvWebInputMode {
+    /**
+     * 虚拟光标: 方向键移动一个圆点, 确认键在圆点处注入触摸点击.
+     * 光标走到视口边缘时带着页面滚动 (否则折叠线以下的按钮永远够不着).
+     *
+     * **默认就用它**. 理由是[焦点遍历][NativeFocus]**给不出保证**:
+     * 方向键只能到达标准可聚焦元素 (`a[href]` / `button` / `input` / 带 tabindex 的), 页面用
+     * `<div onclick>` 挂点击处理时它永远碰不到 —— 而验证码的滑块图块正是这种. 光标是注入触摸事件,
+     * 页面上任何东西都点得到.
+     *
+     * 按键在 **tunnel 阶段**就被截走 (见 Android 实现的 onPreviewKeyEvent), 不依赖 WebView
+     * 吐不吐这一键, 所以行为在各家 ROM 上一致.
+     */
+    Cursor,
+
+    /**
+     * 网页自己的方向键焦点遍历: 焦点在链接/输入框/按钮之间跳, 移动时页面自动滚到可见,
+     * 选中输入框弹出系统输入法. 页面加载完还会自动把焦点放到第一个可见的可操作元素上
+     * (不这么做的话 DOM 里一个焦点都没有, 方向键第一下不知道从哪儿开始).
+     *
+     * **够不到 `<div onclick>` 这类非可聚焦元素**, 所以不当默认, 只作为顶栏那个钮的另一档:
+     * 表单页想用输入法时切过来更顺手.
+     *
+     * 曾经试过"网页优先, 光标兜底"(WebView 没吃下这一键才动光标), **在真机上不成立** ——
+     * Android WebView 一律吃掉方向键, 不管焦点有没有真的移动, 冒泡兜底从不触发
+     * (2026-09-06 用户实测: 光标推不动).
+     */
+    NativeFocus,
 }
 
 interface CaptchaBrowserFactory {

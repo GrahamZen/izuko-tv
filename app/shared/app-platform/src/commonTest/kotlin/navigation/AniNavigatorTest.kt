@@ -34,6 +34,43 @@ class AniNavigatorTest {
     }
 
     @Test
+    fun `navigate ignores a route identical to the top`() {
+        val navigator = navigatorWith(main, NavRoutes.Caches)
+        navigator.navigateCaches()
+
+        assertEquals(listOf(main, NavRoutes.Caches), navigator.backStack)
+    }
+
+    @Test
+    fun `settings is single instance`() {
+        val navigator = navigatorWith(main, NavRoutes.Settings(SettingsTab.PLAYER), NavRoutes.Caches)
+        navigator.navigateSettings(SettingsTab.PROXY)
+
+        // 老的那份连同它之上的页面一起弹掉, 栈里只剩一个设置页
+        assertEquals(listOf(main, NavRoutes.Settings(SettingsTab.PROXY)), navigator.backStack)
+    }
+
+    @Test
+    fun `utility pages are single instance`() {
+        val navigator = navigatorWith(main, NavRoutes.Caches, NavRoutes.SubjectCaches(1))
+        navigator.navigateCaches()
+
+        assertEquals(listOf(main, NavRoutes.Caches), navigator.backStack)
+    }
+
+    @Test
+    fun `content pages may repeat`() {
+        val navigator = navigatorWith(main, NavRoutes.SubjectDetail(1, null), NavRoutes.PersonDetail(2))
+        navigator.navigateSubjectDetails(1, null)
+
+        // 甲 -> 人物 -> 甲 是正常浏览路径, 不该被去重吃掉
+        assertEquals(
+            listOf(main, NavRoutes.SubjectDetail(1, null), NavRoutes.PersonDetail(2), NavRoutes.SubjectDetail(1, null)),
+            navigator.backStack,
+        )
+    }
+
+    @Test
     fun `searching the same tag twice opens two separate pages`() {
         val navigator = navigatorWith(main)
         navigator.navigateSubjectSearch("高达")

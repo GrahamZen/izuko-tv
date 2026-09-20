@@ -33,14 +33,19 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.plus
+import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 
 /**
  * "查看全部" 的全量列表 sheet: 标题 + 自适应网格 (按 [cellMinWidth] 自动分列).
  *
  * 用于角色/制作人员 (全量 pager, 行卡) 与关联作品 (封面卡, 传较小 [cellMinWidth]).
+ *
+ * TV 上改为大号居中弹窗 (底部抽屉遥控器不好用): 条目包一层聚焦高亮卡容器,
+ * 方向键导航, 返回键关闭.
  */
 @Composable
 internal fun <T : Any> ViewAllSheet(
@@ -49,8 +54,29 @@ internal fun <T : Any> ViewAllSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     cellMinWidth: Dp = 240.dp,
+    /** 居中弹窗形态下的固定列数 (卡宽 = 网格均分); null 按 [cellMinWidth] 自适应. */
+    gridColumns: Int? = null,
+    /**
+     * TV: 长按条目放大看图的那一层. **只有居中弹窗形态用得上** —— 它是独立窗口, 大图必须画在
+     * 窗口自己里面才盖得住网格 (页面级的层在窗口之下). 手机的底部抽屉形态忽略本参数:
+     * 那边点头像走的是页面级 `ImageViewer` (见 `onClickImage`).
+     */
+    imageZoom: TvImageZoomState? = null,
     itemContent: @Composable (T) -> Unit,
 ) {
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        ViewAllGridDialog(
+            title = title,
+            items = items,
+            onDismissRequest = onDismissRequest,
+            cellMinWidth = cellMinWidth,
+            columns = gridColumns,
+            imageZoom = imageZoom,
+        ) { item, cellModifier ->
+            FocusHighlightCard(cellModifier) { itemContent(item) }
+        }
+        return
+    }
     ModalBottomSheet(
         onDismissRequest,
         modifier = modifier.desktopTitleBarPadding().statusBarsPadding(),

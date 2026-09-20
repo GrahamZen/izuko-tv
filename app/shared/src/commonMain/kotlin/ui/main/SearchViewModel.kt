@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -77,9 +76,10 @@ open class SearchViewModel(
     private val hasInitialSearchQuery = initialQuery.shouldTriggerSearch()
     private val queryFlow = MutableStateFlow(initialQuery)
 
+    // Eagerly: 建 pager 时要拿 .value 当快照 (见下), Lazily 的话首次搜索读到的永远是默认值 HIDE
     private val nsfwSettingFlow = settingsRepository.uiSettings.flow
         .map { it.searchSettings.nsfwMode }
-        .stateIn(backgroundScope, SharingStarted.Lazily, NsfwMode.HIDE)
+        .stateIn(backgroundScope, SharingStarted.Eagerly, NsfwMode.HIDE)
 
     private val searchHistoryPager = searchHistoryRepository.getHistoryPager().cachedIn(backgroundScope)
     private val searchState = PagingSearchState(
@@ -94,7 +94,7 @@ open class SearchViewModel(
                         it.searchSettings.ignoreDoneAndDroppedSubjects
                     }.first()
                 },
-            ).combine(nsfwSettingFlow) { data, nsfwMode ->
+            ).map { data ->
                 data.map { subject ->
                     SubjectPreviewItemInfo.compute(
                         subject.subjectInfo,
@@ -228,6 +228,10 @@ open class SearchViewModel(
                         }
                     }
                 }
+            }
+
+            SearchPageIntent.ClearHistory -> {
+                launchInBackground { searchHistoryRepository.clearHistory() }
             }
 
             is SearchPageIntent.SelectResult -> {

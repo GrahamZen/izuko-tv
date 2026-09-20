@@ -1,0 +1,2663 @@
+{
+  "cases": [
+    {
+      "date": "1986-03-01",
+      "expectPath": "/7CxsP8ThaLpLeyF9rma73dJAzjC.jpg",
+      "hit": "tv/5660",
+      "layer": "name",
+      "name": "機動戦士ガンダムΖΖ",
+      "nameCn": "机动战士高达ZZ",
+      "screeningYear": null,
+      "subjectId": 4213,
+      "theatrical": false,
+      "why": "同形字折叠: 希腊 Ζ 的 ΖΖ 要命中自己"
+    },
+    {
+      "date": "1995-11-18",
+      "expectPath": "/jIpagj2Dud9g3ZVJFvaWikEWsYz.jpg",
+      "hit": "movie/9323",
+      "layer": "name",
+      "name": "GHOST IN THE SHELL / 攻殻機動隊",
+      "nameCn": "攻壳机动队",
+      "screeningYear": null,
+      "subjectId": 237,
+      "theatrical": true,
+      "why": "年份否决: 1995 剧场版不能拿 2026 新剧"
+    },
+    {
+      "date": "2018-07-22",
+      "expectPath": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "hit": "tv/1429",
+      "layer": "derived",
+      "name": "進撃の巨人 Season 3",
+      "nameCn": "进击的巨人 第三季",
+      "screeningYear": null,
+      "subjectId": 217300,
+      "theatrical": false,
+      "why": "季号命中电影先扣住: Season 3 要落到 tv/1429"
+    },
+    {
+      "date": "2021-03-24",
+      "expectPath": "/5UahgzPgL4F8LXd7cfX3ch1zh7j.jpg",
+      "hit": "movie/685099",
+      "layer": "name",
+      "name": "デート・ア・バレット デッド・オア・バレット",
+      "nameCn": "约会大作战 赤黑新章：虚或实",
+      "screeningYear": 2020,
+      "subjectId": 291171,
+      "theatrical": false,
+      "why": "衍生作有独立条目时必须命中自己"
+    },
+    {
+      "date": "2001-07-20",
+      "expectPath": "/dyJvKsNs2KP8qQnAXbRwDjblViy.jpg",
+      "hit": "movie/129",
+      "layer": "name",
+      "name": "千と千尋の神隠し",
+      "nameCn": "千与千寻",
+      "screeningYear": null,
+      "subjectId": 311,
+      "theatrical": true,
+      "why": "无 genre 的舞台剧纪录片不能抢在 movie 前"
+    },
+    {
+      "date": "1999-10-20",
+      "expectPath": "/2rmK7mnchw9Xr3XdiTFSxTTLXqv.jpg",
+      "hit": "tv/37854",
+      "layer": "name",
+      "name": "ONE PIECE",
+      "nameCn": "航海王",
+      "screeningYear": null,
+      "subjectId": 975,
+      "theatrical": false,
+      "why": "动画过滤: ONE PIECE 不能拿真人剧"
+    },
+    {
+      "date": "2004-10-05",
+      "expectPath": "/mQhWdm3GRJ6VZKRcXDTcil5fak5.jpg",
+      "hit": "tv/9543",
+      "layer": "cn",
+      "name": "巖窟王",
+      "nameCn": "岩窟王",
+      "screeningYear": null,
+      "subjectId": 2903,
+      "theatrical": false,
+      "why": "中文候选: 巖窟王 -> 巌窟王 (异体字)"
+    },
+    {
+      "date": "2002-04-19",
+      "expectPath": "/m7gw5jZrzyA6n81iOPxilPOYjNg.jpg",
+      "hit": "movie/18143",
+      "layer": "name",
+      "name": "彼女と彼女の猫",
+      "nameCn": "她和她的猫",
+      "screeningYear": 2000,
+      "subjectId": 534,
+      "theatrical": false,
+      "why": "上映年度: bgm 记的是发售日"
+    },
+    {
+      "date": "2002-01-30",
+      "expectPath": "/xBsnYlwK4odmaejQEW6PJm1lHWP.jpg",
+      "hit": "tv/72540",
+      "layer": "poster/name",
+      "name": "Kanon",
+      "nameCn": "",
+      "screeningYear": null,
+      "subjectId": 1077,
+      "theatrical": false,
+      "why": "海报兜底: Kanon 2002 东映版只有 poster"
+    },
+    {
+      "date": "2021-07-30",
+      "expectPath": "/e3FcsFvnf5g04kvlokN2qu1e3zf.jpg",
+      "hit": "movie/829920",
+      "layer": "cn",
+      "name": "Fate/Grand Order -終局特異点 冠位時間神殿ソロモン-",
+      "nameCn": "Fate/Grand Order -终局特异点 冠位时间神殿所罗门-",
+      "screeningYear": null,
+      "subjectId": 302572,
+      "theatrical": true,
+      "why": "剧场版优先 movie: FGO 終局特異点 命中自己"
+    },
+    {
+      "date": "",
+      "expectPath": null,
+      "hit": null,
+      "layer": null,
+      "name": "ANGEL VOICE",
+      "nameCn": "天使之声",
+      "screeningYear": null,
+      "subjectId": 281523,
+      "theatrical": true,
+      "why": "海报档也要守逐字同名: ANGEL 不能拿 Angel Beats!"
+    },
+    {
+      "date": "",
+      "expectPath": null,
+      "hit": null,
+      "layer": null,
+      "name": "Kong — The Origin",
+      "nameCn": "悟空",
+      "screeningYear": null,
+      "subjectId": 96633,
+      "theatrical": true,
+      "why": "不能顺着中文名'悟空'错配"
+    },
+    {
+      "date": "",
+      "expectPath": "/lkQ3p3zLVY9mfLPEJ1mdIbfSLmk.jpg",
+      "hit": "movie/685274",
+      "layer": "derived",
+      "name": "機動戦士ガンダム 閃光のハサウェイ 第3部",
+      "nameCn": "机动战士高达 闪光的哈萨维 第3部",
+      "screeningYear": null,
+      "subjectId": 243431,
+      "theatrical": true,
+      "why": "RISK: 閃光のハサウェイ 第3部 命中自己的 movie"
+    },
+    {
+      "date": "2012-09-25",
+      "expectPath": "/bNLLjc6NT80FmFknvHn8demDHhl.jpg",
+      "hit": "movie/123025",
+      "layer": "name",
+      "name": "Batman: The Dark Knight Returns, Part 1",
+      "nameCn": "蝙蝠侠 黑暗骑士归来（上）",
+      "screeningYear": null,
+      "subjectId": 50017,
+      "theatrical": false,
+      "why": "RISK: Batman Part 1 命中自己那一部"
+    },
+    {
+      "date": "2009-07-29",
+      "expectPath": "/pYa81GUfKspR81chpcyVuTDqPCC.jpg",
+      "hit": "tv/42253",
+      "layer": "root/bgm(けいおん！)",
+      "name": "うらおん!",
+      "nameCn": "K-On!:Ura-On!",
+      "screeningYear": null,
+      "subjectId": 31525,
+      "theatrical": false,
+      "why": "root: Ani 给的是自己的中文名, 要回落 Bangumi"
+    },
+    {
+      "date": "2010-07-30",
+      "expectPath": "/pYa81GUfKspR81chpcyVuTDqPCC.jpg",
+      "hit": "tv/42253",
+      "layer": "root/bgm(けいおん！)",
+      "name": "うらおん!!",
+      "nameCn": "K-On!!:Ura-On!!",
+      "screeningYear": null,
+      "subjectId": 31531,
+      "theatrical": false,
+      "why": "root: 同上, 续集方向"
+    },
+    {
+      "date": "2016-04-08",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める休憩時間",
+      "nameCn": "Re：从零开始的休息时间",
+      "screeningYear": null,
+      "subjectId": 177998,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)",
+      "aliases": []
+    },
+    {
+      "date": "2022-03-04",
+      "expectPath": "/bFKKyCI89Xq98Gul8cGox8K3sZa.jpg",
+      "hit": "tv/46298",
+      "layer": "root/bgm(HUNTER×HUNTER)",
+      "name": "ハンター×ハンター・ザ・リアル 4-D",
+      "nameCn": "猎人 THE REAL 4D",
+      "screeningYear": null,
+      "subjectId": 537723,
+      "theatrical": true,
+      "why": "root: 4-D 体感要落到本传, 不能是《魔晶猎人》"
+    },
+    {
+      "date": "2007-08-24",
+      "expectPath": "/scChY3VVpHXXfX9kXEWBtSiHDWM.jpg",
+      "hit": "tv/27866",
+      "layer": "root/ani(ef - a tale of memories.)",
+      "name": "ef - a tale of memories. ~prologue~",
+      "nameCn": "悠久之翼Prologue",
+      "screeningYear": null,
+      "subjectId": 497594,
+      "theatrical": false,
+      "why": "root: prologue 的本传在 sequelSubjectNames 里, 不能排掉"
+    },
+    {
+      "date": "2017-09-30",
+      "expectPath": "/AkOr6zM4n7XH1qwdh6djR0bW5ye.jpg",
+      "hit": "tv/74186",
+      "layer": "root/ani(アイドルマスター SideM)",
+      "name": "THE IDOLM@STER Prologue SideM -Episode of Jupiter-",
+      "nameCn": "偶像大师 SideM 序章 -Episode of Jupiter-",
+      "screeningYear": null,
+      "subjectId": 223268,
+      "theatrical": false,
+      "why": "root: 同上, SideM"
+    },
+    {
+      "date": "1993-05-07",
+      "expectPath": "/9sPoi9saPFYNIriUZNqGjgP1Q6B.jpg",
+      "hit": "tv/103336",
+      "layer": "poster/name",
+      "name": "ドラゴンリーグ",
+      "nameCn": "侏罗纪足球传说",
+      "screeningYear": null,
+      "subjectId": 82994,
+      "theatrical": false,
+      "why": "海报兜底档: genre 空 + 日语原声"
+    },
+    {
+      "date": "2005-06-08",
+      "expectPath": "/bTO61qEQpOyBeOjnMaCqpQf6Rss.jpg",
+      "hit": "tv/35730",
+      "layer": "root/bgm(苺ましまろ)",
+      "name": "苺ましまろプロローグ",
+      "nameCn": "草莓棉花糖 序章",
+      "screeningYear": null,
+      "subjectId": 602449,
+      "theatrical": false,
+      "why": "软边: 本传挂在「其他」关系上"
+    },
+    {
+      "date": "2019-04-10",
+      "expectPath": "/6tA9W3BFanbXHyp7XlzyxsUOCMp.jpg",
+      "hit": "tv/83454",
+      "layer": "root/bgm(荒野のコトブキ飛行隊)",
+      "name": "荒野のコトブキ飛行隊外伝 大空のハルカゼ飛行隊",
+      "nameCn": "荒野的寿飞行队外传 天空的春风飞行队",
+      "screeningYear": null,
+      "subjectId": 279048,
+      "theatrical": false,
+      "why": "软边: 「相同世界观」"
+    },
+    {
+      "date": "1966-09-10",
+      "expectPath": "/q9IvhT8WF3vryjJYbn1JrDnex40.jpg",
+      "hit": "tv/15126",
+      "layer": "poster/name",
+      "name": "King Kong",
+      "nameCn": "金刚",
+      "screeningYear": null,
+      "subjectId": 508351,
+      "theatrical": false,
+      "why": "软边守卫: 不能顺着同档节目变成猫和老鼠"
+    },
+    {
+      "date": "1998-07-26",
+      "expectPath": "/d9eVaZLvBAn2TdBOZi1i6LEXB67.jpg",
+      "hit": "movie/1655011",
+      "layer": "poster/name",
+      "name": "世紀末リーダー外伝たけし!",
+      "nameCn": "世纪末领袖外传",
+      "screeningYear": null,
+      "subjectId": 420594,
+      "theatrical": false,
+      "why": "软边守卫: 不能顺着同场上映变成海贼王剧场版"
+    },
+    {
+      "subjectId": 9622,
+      "name": "機動戦士Ζガンダム",
+      "nameCn": "机动战士Z高达",
+      "date": "1985-03-02",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/zK1OaOHgl7dNAE1sKEMXatu2I1s.jpg",
+      "layer": "name",
+      "why": "主语料: 希腊字母 Z 高达命中自己"
+    },
+    {
+      "subjectId": 50,
+      "name": "機動戦士ガンダム",
+      "nameCn": "机动战士高达",
+      "date": "1979-04-07",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "name",
+      "why": "主语料: 初代高达命中 1979"
+    },
+    {
+      "subjectId": 4583,
+      "name": "機動戦士ガンダム 逆襲のシャア",
+      "nameCn": "机动战士高达 逆袭的夏亚",
+      "date": "1988-03-12",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/n3EkptNDWc72UunXcTz7H26bTZ4.jpg",
+      "layer": "name",
+      "why": "主语料: 逆襲のシャア 剧场版命中自己的 movie"
+    },
+    {
+      "subjectId": 3113,
+      "name": "機動戦士ガンダムUC",
+      "nameCn": "机动战士高达UC",
+      "date": "2010-03-12",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/qpAwEOyajTvZpHO3c6GZQcBzhrJ.jpg",
+      "layer": "name",
+      "why": "主语料: UC 命中自己"
+    },
+    {
+      "subjectId": 462900,
+      "name": "GUNDAM FRAG.",
+      "nameCn": "机动战士高达ZZ：数据碎片",
+      "date": "2009-09-25",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "root/bgm(機動戦士ガンダム)",
+      "why": "root/bgm: GUNDAM FRAG. 母番兜底"
+    },
+    {
+      "subjectId": 10291,
+      "name": "GHOST IN THE SHELL / 攻殻機動隊2.0",
+      "nameCn": "攻壳机动队2.0",
+      "date": "2008-07-12",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/f7EQtjydqW0F76fUpBvxqxKskjd.jpg",
+      "layer": "name",
+      "why": "主语料: 攻壳 2.0 重制版命中自己的 movie, 不与 1995 原版混"
+    },
+    {
+      "subjectId": 238,
+      "name": "イノセンス",
+      "nameCn": "攻壳机动队2 无罪",
+      "date": "2004-03-06",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/8Cbzx17QdJ6xBx2uDkdlpWsemGg.jpg",
+      "layer": "name",
+      "why": "主语料: イノセンス 命中自己的 movie"
+    },
+    {
+      "subjectId": 324,
+      "name": "攻殻機動隊 STAND ALONE COMPLEX",
+      "nameCn": "攻壳机动队 STAND ALONE COMPLEX",
+      "date": "2002-10-01",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/2rvFW70UeOMCTXGmYHij1bwHCiu.jpg",
+      "layer": "name",
+      "why": "主语料: 攻壳 SAC 命中自己"
+    },
+    {
+      "subjectId": 112770,
+      "name": "攻殻機動隊 新劇場版",
+      "nameCn": "攻壳机动队 新剧场版",
+      "date": "2015-06-20",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/m2qvBj43KuC67plFDTHbNWyxuew.jpg",
+      "layer": "name",
+      "why": "主语料: 攻壳新剧场版命中自己"
+    },
+    {
+      "subjectId": 212610,
+      "name": "攻殻機動隊 SAC_2045",
+      "nameCn": "攻壳机动队 SAC_2045",
+      "date": "2020-04-23",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/2L4ob76e1tp6fgMXgMD2BC2hSUT.jpg",
+      "layer": "name",
+      "why": "主语料: SAC_2045 命中自己"
+    },
+    {
+      "subjectId": 341383,
+      "name": "攻殻機動隊 SAC_2045 持続可能戦争",
+      "nameCn": "攻壳机动队 SAC_2045 永续战争",
+      "date": "2021-11-12",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/htLu9YpLJCXk56GAHuFDnj8oadV.jpg",
+      "layer": "name",
+      "why": "主语料: SAC_2045 持続可能戦争 命中自己的 movie"
+    },
+    {
+      "subjectId": 55770,
+      "name": "進撃の巨人",
+      "nameCn": "进击的巨人",
+      "date": "2013-04-06",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "layer": "name",
+      "why": "主语料: 進撃の巨人 S1 命中 tv/1429"
+    },
+    {
+      "subjectId": 285666,
+      "name": "進撃の巨人 The Final Season",
+      "nameCn": "进击的巨人 最终季",
+      "date": "2020-12-06",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "layer": "name",
+      "why": "主语料: The Final Season 命中 tv/1429, 不能扣到拆分的完結編单集条目 (v17)"
+    },
+    {
+      "subjectId": 110049,
+      "name": "進撃の巨人 悔いなき選択 OAD",
+      "nameCn": "进击的巨人 无悔的选择 OAD",
+      "date": "2014-12-09",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "layer": "name",
+      "why": "主语料: 悔いなき選択 OAD 挂母番"
+    },
+    {
+      "subjectId": 325585,
+      "name": "無職転生 ～異世界行ったら本気だす～ 第2クール",
+      "nameCn": "无职转生～到了异世界就拿出真本事～ 第2部分",
+      "date": "2021-10-03",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/j9fRIimor0AMFJR9kjZubXcABzZ.jpg",
+      "layer": "derived",
+      "why": "主语料: 第2クール 削季标命中母剧 (v3)"
+    },
+    {
+      "subjectId": 793,
+      "name": "コードギアス 反逆のルルーシュ",
+      "nameCn": "Code Geass 反叛的鲁路修",
+      "date": "2006-10-05",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/5hS2OIuZSKGkR8R5l3bY5zh04Ce.jpg",
+      "layer": "name",
+      "why": "主语料: コードギアス 命中自己"
+    },
+    {
+      "subjectId": 1671,
+      "name": "化物語",
+      "nameCn": "化物语",
+      "date": "2009-07-03",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/cHII6sQ91q8H5EMONKCwCQMauCP.jpg",
+      "layer": "name",
+      "why": "主语料: 化物語 命中自己"
+    },
+    {
+      "subjectId": 245665,
+      "name": "鬼滅の刃",
+      "nameCn": "鬼灭之刃",
+      "date": "2019-04-06",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/3GQKYh6Trm8pxd2AypovoYQf4Ay.jpg",
+      "layer": "name",
+      "why": "主语料: 鬼滅の刃 命中自己"
+    },
+    {
+      "subjectId": 193042,
+      "name": "有頂天家族2",
+      "nameCn": "有顶天家族 第二季",
+      "date": "2017-04-09",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/cNZT0ELbKlLQqu0qANyI6c8yS3J.jpg",
+      "layer": "derived",
+      "why": "主语料: 尾部裸数字季号 有頂天家族2 (v6)"
+    },
+    {
+      "subjectId": 491,
+      "name": "灼眼のシャナII",
+      "nameCn": "灼眼的夏娜II",
+      "date": "2007-10-04",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/5bOYtdiBKBnrbfPTwZaAEJOfDmW.jpg",
+      "layer": "derived",
+      "why": "主语料: 罗马数字季号 灼眼のシャナII (v7)"
+    },
+    {
+      "subjectId": 116287,
+      "name": "ダンジョンに出会いを求めるのは間違っているだろうか",
+      "nameCn": "在地下城寻求邂逅是否搞错了什么",
+      "date": "2015-04-03",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/xHzLhMzsAg3OcrfyZlYMmRTfCJC.jpg",
+      "layer": "name",
+      "why": "主语料: DanMachi 正传不被外传 ソード・オラトリア 抢 (v12)"
+    },
+    {
+      "subjectId": 160209,
+      "name": "君の名は。",
+      "nameCn": "你的名字。",
+      "date": "2016-08-26",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/mMtUybQ6hL24FXo0F3Z4j2KG7kZ.jpg",
+      "layer": "name",
+      "why": "主语料: 君の名は。命中自己的 movie"
+    },
+    {
+      "subjectId": 583729,
+      "name": "BanG Dream! ゆめ∞みた",
+      "nameCn": "BanG Dream! YUME∞MITA",
+      "date": "2026-07-02",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/4ZqDVtJAG1NK7tWTUETlxE973Fl.jpg",
+      "layer": "name",
+      "why": "主语料: 混写名跨标题并集+别名兜底 (v10), 与剧照锚点同源"
+    },
+    {
+      "subjectId": 359980,
+      "name": "乙女ゲー世界はモブに厳しい世界です",
+      "nameCn": "恋爱游戏世界对路人角色很不友好",
+      "date": "2022-04-03",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/c0oFoz7PttzMLsQOQn54Lcu8V9d.jpg",
+      "layer": "name",
+      "why": "主语料: 康熙部首 Unicode 兼容折叠 (v18)"
+    },
+    {
+      "subjectId": 239816,
+      "name": "転生したらスライムだった件",
+      "nameCn": "关于我转生变成史莱姆这档事",
+      "date": "2018-10-01",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/eJOy7YWAHgOS3V477sdTsq4v9jp.jpg",
+      "layer": "name",
+      "why": "主语料: 転スラ 命中自己"
+    },
+    {
+      "subjectId": 158316,
+      "name": "モブサイコ100",
+      "nameCn": "灵能百分百",
+      "date": "2016-07-11",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/kP5duNJEbTfXpBs6CITsaZ88pQi.jpg",
+      "layer": "name",
+      "why": "主语料: モブサイコ100 命中自己"
+    },
+    {
+      "subjectId": 129807,
+      "name": "シュタインズ・ゲート ゼロ",
+      "nameCn": "命运石之门 0",
+      "date": "2018-04-11",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/7B4PGxWt9NrcFCEAegLSEuSyAeS.jpg",
+      "layer": "name",
+      "why": "主语料: シュタゲゼロ 命中自己"
+    },
+    {
+      "subjectId": 696,
+      "name": "剣風伝奇ベルセルク",
+      "nameCn": "剑风传奇",
+      "date": "1997-10-07",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/99Y64VK0KwyRWfaW6VdpDfPKNMo.jpg",
+      "layer": "name",
+      "why": "主语料: 1997 剑风传奇命中老版"
+    },
+    {
+      "subjectId": 162040,
+      "name": "ベルセルク",
+      "nameCn": "剑风传奇",
+      "date": "2016-07-01",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/fjCymH4xdWonDJEXBqLRLKsmKCs.jpg",
+      "layer": "name",
+      "why": "主语料: 2016 ベルセルク 命中新版, 年份区分"
+    },
+    {
+      "subjectId": 2504,
+      "name": "劇場版 マクロスF 虚空歌姫〜イツワリノウタヒメ〜",
+      "nameCn": "剧场版 超时空要塞F 虚空歌姬",
+      "date": "2009-11-21",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/o7l2DVpFDFDmnQBfJSYo5eHSPyz.jpg",
+      "layer": "name",
+      "why": "主语料: 剧场版マクロスF 命中自己的 movie"
+    },
+    {
+      "subjectId": 236,
+      "name": "マクロスFrontier",
+      "nameCn": "超时空要塞Frontier",
+      "date": "2008-04-03",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/f5l4L9QPCleLRWBXkjhT9fedyD0.jpg",
+      "layer": "name",
+      "why": "主语料: マクロスF 命中自己"
+    },
+    {
+      "subjectId": 1856,
+      "name": "十二国記",
+      "nameCn": "十二国记",
+      "date": "2002-04-09",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/fB2k11exO93IeWnpwrY1mzE89ul.jpg",
+      "layer": "name",
+      "why": "主语料: 十二国記 命中自己"
+    },
+    {
+      "subjectId": 331559,
+      "name": "劇場版 呪術廻戦 0",
+      "nameCn": "剧场版 咒术回战 0",
+      "date": "2021-12-24",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/rcEDPOOOUTLFxLLQJggfLffbofe.jpg",
+      "layer": "name",
+      "why": "主语料: 呪術廻戦 0 命中自己的 movie"
+    },
+    {
+      "subjectId": 176478,
+      "name": "けものフレンズ",
+      "nameCn": "兽娘动物园",
+      "date": "2017-01-10",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/A7pmKEOQWpJiuZpCApg7GCbGcI0.jpg",
+      "layer": "name",
+      "why": "主语料: けものフレンズ 命中自己"
+    },
+    {
+      "subjectId": 10639,
+      "name": "Fate/Zero",
+      "nameCn": "Fate/Zero",
+      "date": "2011-10-01",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/l6UO4qEHwUdjPyavbP6yGA06cS3.jpg",
+      "layer": "name",
+      "why": "主语料: Fate/Zero 命中自己"
+    },
+    {
+      "subjectId": 77552,
+      "name": "Fate/ゼロカフェ",
+      "nameCn": "Fate/Zero cafe",
+      "date": "2013-07-13",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/l6UO4qEHwUdjPyavbP6yGA06cS3.jpg",
+      "layer": "root/bgm(Fate/Zero)",
+      "why": "root/bgm: Fate/ゼロカフェ 母番兜底"
+    },
+    {
+      "subjectId": 43951,
+      "name": "Fate/kaleid liner プリズマ☆イリヤ",
+      "nameCn": "Fate/kaleid liner 魔法少女☆伊莉雅",
+      "date": "2013-07-12",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/20wA39eWjFYmV4klLNvCCOR55tW.jpg",
+      "layer": "name",
+      "why": "主语料: プリズマ☆イリヤ 命中自己"
+    },
+    {
+      "subjectId": 3484,
+      "name": "Fate/stay night UNLIMITED BLADE WORKS",
+      "nameCn": "Fate/stay night UNLIMITED BLADE WORKS",
+      "date": "2010-01-23",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/8JKc1ZJTMcSprhYtUD2IegsX77L.jpg",
+      "layer": "name",
+      "why": "主语料: UBW 剧场版 (2010) 命中自己的 movie, 不拿 2014 TV 版 (v19 年份否决)"
+    },
+    {
+      "subjectId": 244,
+      "name": "神霊狩/GHOST HOUND",
+      "nameCn": "神灵狩",
+      "date": "2007-10-18",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/aqIOOXlKuhlIbnp3cSNBVd33bNx.jpg",
+      "layer": "name",
+      "why": "主语料: 神霊狩 斜杠名命中自己"
+    },
+    {
+      "subjectId": 328032,
+      "name": "BLUE REFLECTION RAY/澪",
+      "nameCn": "蔚蓝反射 澪",
+      "date": "2021-04-09",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/lpiXgj9fWz75RsarxiGwcUURLzH.jpg",
+      "layer": "name",
+      "why": "主语料: BLUE REFLECTION RAY/澪 斜杠名"
+    },
+    {
+      "subjectId": 563563,
+      "name": "ghost／夜の果て",
+      "nameCn": "ghost",
+      "date": "2027-02-11",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/66IeuKJQxVN3jcTA8IrrMrt9FqZ.jpg",
+      "layer": "name",
+      "why": "主语料: ghost／夜の果て 全角斜杠"
+    },
+    {
+      "subjectId": 548133,
+      "name": "BanG Dream! It's MyGO!!!!! / Ave Mujica 続編",
+      "nameCn": "BanG Dream! It's MyGO!!!!! / Ave Mujica 续篇",
+      "date": "",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/vAyv2W5gXyB4K9lX9vMEqdlfZGS.jpg",
+      "layer": "derived",
+      "why": "主语料: MyGO 续篇斜杠双名"
+    },
+    {
+      "subjectId": 109386,
+      "name": "Fate/stay night [Unlimited Blade Works] 2ndシーズン",
+      "nameCn": "Fate/stay night [Unlimited Blade Works] 第二季",
+      "date": "2015-04-04",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/uqOcBHNHsmYPePmrvYhjraRxLdJ.jpg",
+      "layer": "derived",
+      "why": "主语料: UBW 2ndシーズン 削季标命中 2014 TV"
+    },
+    {
+      "subjectId": 228407,
+      "name": "劇場版 進撃の巨人 Season2〜覚醒の咆哮〜",
+      "nameCn": "剧场版 进击的巨人 Season2～觉醒的咆哮～",
+      "date": "2018-01-13",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/wTnWJITy3qHsMrQIyNn6Ev8yIxS.jpg",
+      "layer": "derived",
+      "why": "RISK: 劇場版進撃 覚醒の咆哮 是合集 movie 自己"
+    },
+    {
+      "subjectId": 605215,
+      "name": "Baahubali - The Eternal War - Part 1",
+      "nameCn": "",
+      "date": "",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/8jMMxZqYY9YBYRBgEqxLU7OuGsj.jpg",
+      "layer": "name",
+      "why": "RISK: Baahubali Part 命中自己那部"
+    },
+    {
+      "subjectId": 663253,
+      "name": "Batman: Knightfall Part 1: Knightfall",
+      "nameCn": "",
+      "date": "2026-08-25",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/caBIySpwuFi2i7ynvHIlnxJLOdN.jpg",
+      "layer": "name",
+      "why": "RISK: Batman Knightfall Part 1 命中自己那部"
+    },
+    {
+      "subjectId": 61275,
+      "name": "Batman: The Dark Knight Returns, Part 2",
+      "nameCn": "蝙蝠侠：黑暗骑士归来（下）",
+      "date": "2013-01-29",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/zHqptza1ttGa7hkYNEXP7ECIyA9.jpg",
+      "layer": "name",
+      "why": "RISK: Dark Knight Returns Part 2 命中自己那部"
+    },
+    {
+      "subjectId": 508737,
+      "name": "Rick and Morty: Samurai & Shogun Part 2",
+      "nameCn": "瑞克和莫蒂：武士与将军  第二部分",
+      "date": "2021-11-13",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/iFOkrSrJRwE27PwbyQeYLlMJXzw.jpg",
+      "layer": "derived",
+      "why": "RISK: Rick and Morty 特别篇挂母剧"
+    },
+    {
+      "subjectId": 476540,
+      "name": "South Park The Streaming Wars Part 2",
+      "nameCn": "南方公园：流量大战2",
+      "date": "2022-07-13",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/lILJHBKPllHrssoXQqHfchsyb8v.jpg",
+      "layer": "name",
+      "why": "RISK: South Park Streaming Wars 命中自己的 movie"
+    },
+    {
+      "subjectId": 10356,
+      "name": "HUNTER×HUNTER OVA 第1期 ヨークシンシティー完結編",
+      "nameCn": "猎人 OVA1 友客鑫市完结篇",
+      "date": "2002-01-17",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/575sxZXNNulSlIz7DvtWH5r4lkC.jpg",
+      "layer": "derived",
+      "why": "RISK: HxH OVA 挂 1999 母番"
+    },
+    {
+      "subjectId": 455677,
+      "name": "ケンガンアシュラ Season2 Part 2",
+      "nameCn": "拳愿阿修罗 第二季 第2部分",
+      "date": "2024-08-15",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/wJtrctuWTKgIi45zLw9tTjWQFY3.jpg",
+      "layer": "derived",
+      "why": "RISK: ケンガンアシュラ Season2 Part 2 挂母剧"
+    },
+    {
+      "subjectId": 354026,
+      "name": "Inside Job Season 1 Part.1",
+      "nameCn": "阴谋办公室 第一季 Part.1",
+      "date": "2021-10-22",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/tiLJNqQuCwIIgK30iavU6x0SFQj.jpg",
+      "layer": "derived",
+      "why": "RISK: Inside Job Part.1 挂母剧"
+    },
+    {
+      "subjectId": 406514,
+      "name": "Inside Job Season 1 Part.2",
+      "nameCn": "阴谋办公室 第一季 Part.2",
+      "date": "2022-11-18",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/tiLJNqQuCwIIgK30iavU6x0SFQj.jpg",
+      "layer": "derived",
+      "why": "RISK: Inside Job Part.2 挂母剧"
+    },
+    {
+      "subjectId": 460503,
+      "name": "聖闘士星矢：Knights of the Zodiac バトル・サンクチュアリ Part 2",
+      "nameCn": "圣斗士星矢：黄道十二宫战士 战斗圣域 Part 2",
+      "date": "2024-04-01",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/lA3MKdT3QOrYGe5dg7Uzuceu8zZ.jpg",
+      "layer": "derived",
+      "why": "RISK: 聖闘士星矢 Knights of the Zodiac 挂 2019 版"
+    },
+    {
+      "subjectId": 314041,
+      "name": "Star Trek: Lower Decks Season 1",
+      "nameCn": "星际迷航：下层舰员 第一季",
+      "date": "2020-08-06",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/kG7GwGBHpCI6lA6SaEydKHHOxkU.jpg",
+      "layer": "derived",
+      "why": "RISK: Lower Decks Season 4 挂母剧"
+    },
+    {
+      "subjectId": 293421,
+      "name": "7SEEDS 第2期",
+      "nameCn": "幻海奇情 第2期",
+      "date": "2020-03-26",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/8cc6ywx1b9F22GIx5yimd4zl4pT.jpg",
+      "layer": "derived",
+      "why": "RISK: 7SEEDS 第2期 挂母剧"
+    },
+    {
+      "subjectId": 1741,
+      "name": "ヘタリア Axis Powers 第2期",
+      "nameCn": "黑塔利亚 第2期",
+      "date": "2009-07-27",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/4Weg8hccl09H3rv9KCZz7fXSgob.jpg",
+      "layer": "derived",
+      "why": "RISK: ヘタリア 第2期 挂母剧"
+    },
+    {
+      "subjectId": 4450,
+      "name": "ヘタリア World Series 第3期",
+      "nameCn": "黑塔利亚 第3期",
+      "date": "2010-03-26",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/4Weg8hccl09H3rv9KCZz7fXSgob.jpg",
+      "layer": "derived",
+      "why": "RISK: ヘタリア World Series 挂母剧"
+    },
+    {
+      "subjectId": 638498,
+      "name": "刃牙道 第2クール",
+      "nameCn": "刃牙道 第2部分",
+      "date": "2026-06-18",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/1M8uW8o6fdDaa3zqmBD2UUKu0VZ.jpg",
+      "layer": "derived",
+      "why": "RISK: 刃牙道 第2クール 挂母剧"
+    },
+    {
+      "subjectId": 173691,
+      "name": "モンスターストライク 第2クール",
+      "nameCn": "怪物弹珠 第2期",
+      "date": "2016-03-26",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/9jPiGnf6EH7VVKm720vpk865Yqn.jpg",
+      "layer": "derived",
+      "why": "RISK: モンスト 第2クール 挂母剧"
+    },
+    {
+      "subjectId": 461545,
+      "name": "プロフェッショナル 仕事の流儀 エレン・イェーガー スペシャル",
+      "nameCn": "Professional 行家本色 艾伦·耶格尔特辑",
+      "date": "2023-10-23",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "layer": "root/bgm(進撃の巨人)",
+      "why": "root/bgm: エレン特辑 -> 進撃の巨人, 不能是 Dr. Katz"
+    },
+    {
+      "subjectId": 454807,
+      "name": "名探偵コナン コナンVSキッド SHARK ＆ JEWEL",
+      "nameCn": "名侦探柯南 柯南vs基德 鲨鱼和珠宝",
+      "date": "2005-07-29",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/z67lpMtm8YGykJO4p89meuNMvj8.jpg",
+      "layer": "root/bgm(名探偵コナン)",
+      "why": "root/bgm: コナンVSキッド -> 名探偵コナン, 不能是粤语版"
+    },
+    {
+      "subjectId": 536595,
+      "name": "美少女戦士セーラームーン・ザ・ミラクル 4-D",
+      "nameCn": "美少女战士 THE MIRACLE 4D",
+      "date": "2018-03-16",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/sNCpbcCcRadDBMTh6An1dBMakqr.jpg",
+      "layer": "root/bgm(美少女戦士セーラームーン)",
+      "why": "root/bgm: セーラームーン 4-D -> 1992 初代, 不是 Crystal"
+    },
+    {
+      "subjectId": 558831,
+      "name": "つれづれポピパ",
+      "nameCn": "徒然POPIPA",
+      "date": "2025-04-28",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/tuUr8vsN3eoSXj9Ed12Bsc8HVT7.jpg",
+      "layer": "root/bgm(BanG Dream!)",
+      "why": "root/bgm: つれづれポピパ -> BanG Dream!, 不能是徒然チルドレン"
+    },
+    {
+      "subjectId": 21233,
+      "name": "知世のカードキャプターさくら活躍ビデオ日記!",
+      "nameCn": "魔卡少女樱 知世的活跃日记",
+      "date": "2000-05-25",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/w6a3S1E5p3UfFcP3jkieXlAY5mz.jpg",
+      "layer": "root/bgm(カードキャプターさくら)",
+      "why": "root/bgm: 知世のビデオ日記 -> CCS 本篇"
+    },
+    {
+      "subjectId": 513599,
+      "name": "ef - a tale of melodies. ~prologue~",
+      "nameCn": "悠久之翼2Prologue",
+      "date": "2008-05-10",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/scChY3VVpHXXfX9kXEWBtSiHDWM.jpg",
+      "layer": "root/ani(ef - a tale of melodies.)",
+      "why": "root/ani: ef melodies ~prologue~ 本传在 sequel 名单里不能排掉"
+    },
+    {
+      "subjectId": 3780,
+      "name": "“文学少女”今日のおやつ 〜はつ恋〜",
+      "nameCn": "文学少女 今日的点心～初恋～",
+      "date": "2009-12-26",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/cYlIhEYazAWq07CgKdtt46J5saR.jpg",
+      "layer": "root/bgm(劇場版“文学少女”)",
+      "why": "root/bgm: 文学少女 今日のおやつ -> 劇場版文学少女"
+    },
+    {
+      "subjectId": 6812,
+      "name": "“文学少女”メモワールI-夢見る少女の前奏曲（プレリュード）-",
+      "nameCn": "文学少女 做梦少女的前奏曲",
+      "date": "2010-06-25",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/cYlIhEYazAWq07CgKdtt46J5saR.jpg",
+      "layer": "root/bgm(劇場版“文学少女”)",
+      "why": "root/bgm: 文学少女 メモワールI -> 劇場版文学少女"
+    },
+    {
+      "subjectId": 299802,
+      "name": "ふたりはプリキュア総集編 ～ぶっちゃけ、ありえな～い！？ 2020edition～",
+      "nameCn": "两个人是光之美少女总集篇 ～真的不可能吗！？ 2020版～",
+      "date": "2020-02-26",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/35zsaOkNtRSxonzPUB1MYV6deTL.jpg",
+      "layer": "poster/derived",
+      "why": "poster/derived: プリキュア総集編 自己的 movie"
+    },
+    {
+      "subjectId": 496281,
+      "name": "ドラえもんとさがそう 宇宙のともだち",
+      "nameCn": "哆啦A梦：寻找宇宙的朋友们",
+      "date": "1999-06-19",
+      "theatrical": true,
+      "screeningYear": null,
+      "expectPath": "/g7pqmzC9qUwl5HqtviiS28z0vy7.jpg",
+      "layer": "poster/root/bgm(2112年 ドラえもん誕生)",
+      "why": "poster/root: ドラえもんとさがそう 同系列海报兜底"
+    },
+    {
+      "subjectId": 304631,
+      "name": "ちはやふる番外編「新に会いにあわらへいこっさ！」",
+      "nameCn": "歌牌情缘 番外篇",
+      "date": "2020-01-28",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/e1R4kNrWvSfb8AVViMp0okVJfuk.jpg",
+      "layer": "root/bgm(ちはやふる3)",
+      "why": "root/bgm: ちはやふる番外編 -> 本篇"
+    },
+    {
+      "subjectId": 628278,
+      "name": "【アニメ】【ミリオンライブ！】アニメプロローグイメージMV「セブンカウント」【アイドルマスター】",
+      "nameCn": "【动画】【百万现场！】动画序章印象MV「セブンカウント」【偶像大师】",
+      "date": "2022-03-27",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/599NlZCBY0xET73HH18DcyGZtoX.jpg",
+      "layer": "root/bgm(アイドルマスター ミリオンライブ！)",
+      "why": "root/bgm: ミリオンライブ MV -> 本篇"
+    },
+    {
+      "subjectId": 571580,
+      "name": "バトルスピリッツ10周年記念スペシャルPV",
+      "nameCn": "战斗之魂10周年纪念特别PV",
+      "date": "2018-07-18",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/3RECAphny6LbKcHUEW4aj17QWcI.jpg",
+      "layer": "root/bgm(バトルスピリッツ ブレイヴ)",
+      "why": "root/bgm: バトスピ 10周年 PV -> ブレイヴ"
+    },
+    {
+      "subjectId": 304819,
+      "name": "白テニミニアニメ劇場～今日もどこかでミューエンマ～",
+      "nameCn": "",
+      "date": "2019-07-19",
+      "theatrical": false,
+      "screeningYear": null,
+      "expectPath": "/2rdO6jw3jqOTZk3xulbTcawZNkr.jpg",
+      "layer": "root/bgm(白猫プロジェクト ミニアニメ劇場)",
+      "why": "root/bgm: 白テニミニアニメ -> 白猫プロジェクト"
+    },
+    {
+      "subjectId": 286,
+      "name": "機動戦士ガンダム00",
+      "nameCn": "机动战士高达00",
+      "date": "2007-10-06",
+      "expectPath": "/vxSDDV6VxTHkrABsNa3dqhExAIk.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 804,
+      "name": "機動戦士ガンダム0083 STARDUST MEMORY",
+      "nameCn": "机动战士高达0083 星尘的回忆",
+      "date": "1991-05-22",
+      "expectPath": "/kSwCeAXb6PqaLd2KdwmVCZsW5i0.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 985,
+      "name": "機動戦士Vガンダム",
+      "nameCn": "机动战士V高达",
+      "date": "1993-04-02",
+      "expectPath": "/gYaq6dfXRfcrKjJP0zz4dm6O5Cj.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1010,
+      "name": "機動戦士ガンダム00 セカンドシーズン",
+      "nameCn": "机动战士高达00 第二季",
+      "date": "2008-10-05",
+      "expectPath": "/vxSDDV6VxTHkrABsNa3dqhExAIk.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1015,
+      "name": "機動戦士ガンダム0080 ポケットの中の戦争",
+      "nameCn": "机动战士高达0080 口袋里的战争",
+      "date": "1989-03-25",
+      "expectPath": "/21fk0W388vXQ4TpQ2iZgGzXqwru.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1860,
+      "name": "機動戦士ガンダムSEED",
+      "nameCn": "机动战士高达SEED",
+      "date": "2002-10-05",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 1861,
+      "name": "機動戦士ガンダムSEED DESTINY",
+      "nameCn": "机动战士高达SEED DESTINY",
+      "date": "2004-10-09",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2664,
+      "name": "機動戦士ガンダム 第08MS小隊",
+      "nameCn": "机动战士高达 第08MS小队",
+      "date": "1996-01-25",
+      "expectPath": "/nhpOoh7cHkxgsd58v7f55xamW3j.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2690,
+      "name": "機動戦士ガンダム MS IGLOO 1年戦争秘録",
+      "nameCn": "机动战士高达MS IGLOO 一年战争秘录",
+      "date": "2004-07-19",
+      "expectPath": "/2YWYNmdZmhyP1ecviUMAraJtqD.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 2691,
+      "name": "機動戦士ガンダム MS IGLOO 黙示録0079",
+      "nameCn": "机动战士高达 MS IGLOO 默示录0079",
+      "date": "2006-04-26",
+      "expectPath": "/m7kXB7O3EQisk1cdkAxRDNC5dV8.jpg",
+      "layer": "collected",
+      "why": "削字降暂定修复 (2026-08-26) 后由挂 MS IGLOO 一年战争秘录改为中文档逐字命中独立条目 tv/282823 (首播/集数逐项吻合, 3集全图) —— 更精确"
+    },
+    {
+      "subjectId": 2772,
+      "name": "新機動戦記ガンダムW Endless Waltz 特別篇",
+      "nameCn": "新机动战记高达W 无尽的华尔兹 剧场版",
+      "date": "1998-08-01",
+      "expectPath": "/gkeSi7vXrOvoW9mo1vLt9prgMtm.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 2774,
+      "name": "新機動戦記ガンダムW",
+      "nameCn": "新机动战记高达W",
+      "date": "1995-04-07",
+      "expectPath": "/6q1eredSOpFhzjoStR8V29BxAZC.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 3553,
+      "name": "∀ガンダム",
+      "nameCn": "∀高达",
+      "date": "1999-04-09",
+      "expectPath": "/pfUJqMtyhq9dC54ok85yBteboSc.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 3633,
+      "name": "機動新世紀ガンダムX",
+      "nameCn": "机动新世纪高达X",
+      "date": "1996-04-05",
+      "expectPath": "/xYrINplDixJZKGGmNMmqZctk4Qs.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 4212,
+      "name": "機動武闘伝Gガンダム",
+      "nameCn": "机动武斗传G高达",
+      "date": "1994-04-01",
+      "expectPath": "/17TPRG3Ys6GoLJnYaRCVGWDEAFM.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 4294,
+      "name": "SDガンダム三国伝 Brave Battle Warriors",
+      "nameCn": "SD高达三国传",
+      "date": "2010-04-03",
+      "expectPath": "/a78m4TudohvWhPy47yy1Bw8zUwG.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 4482,
+      "name": "機動戦士ガンダムF91",
+      "nameCn": "机动战士高达F91",
+      "date": "1991-03-16",
+      "expectPath": "/3m6rRRxJl7nzcLiNbA3TfQE7UZX.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 5378,
+      "name": "機動戦士Zガンダム -星を継ぐ者-",
+      "nameCn": "机动战士Z高达 A New Translation -星之继承者-",
+      "date": "2005-05-28",
+      "expectPath": "/bKrSGdpBDDL3rlvmwOsoNQwYeoU.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 5972,
+      "name": "劇場版 機動戦士ガンダム00 -A wakening of the Trailblazer-",
+      "nameCn": "机动战士高达00 先驱者的觉醒",
+      "date": "2010-09-18",
+      "expectPath": "/v7ha9Qwc5pCAvS5mMVjOPHCQVR5.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 10797,
+      "name": "模型戦士ガンプラビルダーズ ビギニングG",
+      "nameCn": "模型战士高达模型制作家 起始G",
+      "date": "2010-08-15",
+      "expectPath": "/nQfOW0uWgGLvDMtBdpeWtusMdq2.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 15154,
+      "name": "SDガンダムフォース",
+      "nameCn": "SD高达FORCE",
+      "date": "2004-01-07",
+      "expectPath": "/s6I7W3UTixb1io41QlTf2gv0rdB.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 17758,
+      "name": "機動戦士ガンダム MS IGLOO2 重力戦線",
+      "nameCn": "机动战士高达MS IGLOO 2 重力战线",
+      "date": "2008-10-24",
+      "expectPath": "/1nsC5nUuNI2DRCvntg2oOtPQTj0.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 18709,
+      "name": "機動戦士ガンダムAGE",
+      "nameCn": "机动战士高达AGE",
+      "date": "2011-10-09",
+      "expectPath": "/wWWSYvpWJAXMerWnyaOi2jVASNe.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 18778,
+      "name": "機動戦士ZガンダムⅡ -恋人たち-",
+      "nameCn": "机动战士Z高达Ⅱ A New Translation -恋人们-",
+      "date": "2005-10-29",
+      "expectPath": "/v2NJPBmhQBGI8nLmTBI94MwPT1t.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 18779,
+      "name": "機動戦士ZガンダムⅢ -星の鼓動は愛-",
+      "nameCn": "机动战士Z高达Ⅲ A New Translation -星辰的鼓动是爱-",
+      "date": "2006-03-04",
+      "expectPath": "/sufienRbPlkcFx6hQPFlnTGqGvo.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 27832,
+      "name": "機動戦士ガンダムSEED HDリマスター",
+      "nameCn": "机动战士高达SEED HD重制版",
+      "date": "2012-01-01",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 36358,
+      "name": "機動戦士ガンダム 第08MS小隊 特別編 ラスト・リゾート",
+      "nameCn": "机动战士高达 第08MS小队 最后的休憩",
+      "date": "1999-07-25",
+      "expectPath": "/nhpOoh7cHkxgsd58v7f55xamW3j.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 37632,
+      "name": "超電影版 SDガンダム三国伝 Brave Battle Warriors",
+      "nameCn": "超电影版 SD高达三国传",
+      "date": "2010-02-27",
+      "expectPath": "/a78m4TudohvWhPy47yy1Bw8zUwG.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 38435,
+      "name": "機動戦士ガンダム",
+      "nameCn": "机动战士高达 剧场版",
+      "date": "1981-03-14",
+      "expectPath": "/8t6l0IW0weM02S4NMCNcnLkzCM6.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 38436,
+      "name": "機動戦士ガンダムⅡ 哀・戦士編",
+      "nameCn": "机动战士高达 剧场版Ⅱ 哀·战士",
+      "date": "1981-07-11",
+      "expectPath": "/oWa4zximcnYE1Ofnl7t47UEqFas.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 38437,
+      "name": "機動戦士ガンダムⅢ めぐりあい宇宙編",
+      "nameCn": "机动战士高达 剧场版Ⅲ 相逢在宇宙",
+      "date": "1982-03-13",
+      "expectPath": "/wTsYCRokwwr84nIhDP13rZFhvpI.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 39530,
+      "name": "新機動戦記ガンダムW Endless Waltz",
+      "nameCn": "新机动战记高达W 无尽的华尔兹",
+      "date": "1997-01-25",
+      "expectPath": "/6q1eredSOpFhzjoStR8V29BxAZC.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 41742,
+      "name": "機動戦士ガンダム0083 ジオンの残光",
+      "nameCn": "机动战士高达0083 吉翁的残光",
+      "date": "1992-08-29",
+      "expectPath": "/iZissd8C7FslNltOf7VVUX2fxn4.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 41743,
+      "name": "機動戦士ガンダム 第08MS小隊 ミラーズ・リポート",
+      "nameCn": "机动战士高达 第08MS小队 米娜的报告",
+      "date": "1998-08-01",
+      "expectPath": "/8UJyroVyYcVgkEdpIbT0E3Vi9Lj.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 43982,
+      "name": "機動戦士ガンダムSEED MSV ASTRAY",
+      "nameCn": "机动战士高达SEED MSV ASTRAY",
+      "date": "2004-03-01",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 54277,
+      "name": "機動戦士ガンダムSEED DESTINY HDリマスター",
+      "nameCn": "机动战士高达SEED DESTINY HD重制版",
+      "date": "2013-04-07",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 54551,
+      "name": "ガンダム Gのレコンギスタ",
+      "nameCn": "高达Reconguista in G",
+      "date": "2014-10-02",
+      "expectPath": "/soxQOZ6cmQ6HhFA5gojvJsT5yru.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 65601,
+      "name": "機動戦士ガンダムAGE MEMORY OF EDEN",
+      "nameCn": "机动战士高达AGE MEMORY OF EDEN",
+      "date": "2013-07-26",
+      "expectPath": "/3H1tyw8PCAHnRAManItwmJN5hJ7.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 65871,
+      "name": "機動戦士ガンダム戦記 アバンタイトル",
+      "nameCn": "机动战士高达战记 OVA",
+      "date": "2009-09-03",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)"
+    },
+    {
+      "subjectId": 65970,
+      "name": "機動戦士ガンダム 第08MS小隊 三次元との戦い",
+      "nameCn": "机动战士高达 第08MS小队 三次元的战斗",
+      "date": "2013-02-22",
+      "expectPath": "/nhpOoh7cHkxgsd58v7f55xamW3j.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 66444,
+      "name": "赤の肖像 ～シャア、そしてフロンタルへ～",
+      "nameCn": "赤色彗星的肖像",
+      "date": "2010-08-13",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)"
+    },
+    {
+      "subjectId": 77171,
+      "name": "ガンダムビルドファイターズ",
+      "nameCn": "高达创战者",
+      "date": "2013-10-07",
+      "expectPath": "/9TCkLTsVeMLVy9vSpe6qHKLwIBK.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 90068,
+      "name": "GUNDAM Mission to the Rise",
+      "nameCn": "高达 Mission to the Rise",
+      "date": "1998-08-01",
+      "expectPath": "/A9vIAbLteE9v5eBl6cHci07OUjc.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 90369,
+      "name": "ガンダム新体験 -0087- グリーンダイバーズ",
+      "nameCn": "高达新体验0087 绿色传动器",
+      "date": "2001-08-10",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)",
+      "theatrical": true
+    },
+    {
+      "subjectId": 101737,
+      "name": "リング・オブ・ガンダム",
+      "nameCn": "高达之环",
+      "date": "2009-08-21",
+      "expectPath": "/2Vm3mGTICiAirKfNwD4JrzlRgN1.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 105875,
+      "name": "ガンダムビルドファイターズトライ",
+      "nameCn": "高达创战者TRY",
+      "date": "2014-10-08",
+      "expectPath": "/9TCkLTsVeMLVy9vSpe6qHKLwIBK.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 106834,
+      "name": "機動戦士ガンダムさん",
+      "nameCn": "机动战士高达桑",
+      "date": "2014-07-06",
+      "expectPath": "/zt69hGDZzLm6GBwv45TxIdekSZV.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 117898,
+      "name": "機動戦士ガンダムSEED スペシャルエディション",
+      "nameCn": "机动战士高达SEED Special Edition",
+      "date": "2004-03-22",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 117899,
+      "name": "機動戦士ガンダムSEED DESTINY スペシャルエディション",
+      "nameCn": "机动战士高达SEED DESTINY Special Edition",
+      "date": "2006-05-26",
+      "expectPath": "/otE9DjFrKMOv0Mkz1o7HfJGCvNF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 124969,
+      "name": "機動戦士ガンダム00 スペシャルエディション",
+      "nameCn": "机动战士高达00 Special Edition",
+      "date": "2009-10-27",
+      "expectPath": "/8WQHrPJIOk7sdhGsG7TUhIj6N7u.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 131171,
+      "name": "SDガンダム外伝",
+      "nameCn": "SD高达外传",
+      "date": "1990-04-25",
+      "expectPath": "/4AqL8NdKgFQZzN6breT9WdriK0s.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 139324,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯",
+      "date": "2015-10-04",
+      "expectPath": "/52mp7oFltDUkw3kx1ArlRZkLyr3.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 145739,
+      "name": "ガンダム Gのレコンギスタ FROM THE PAST TO THE FUTURE",
+      "nameCn": "高达G之复国运动 FROM THE PAST TO THE FUTURE",
+      "date": "2015-07-16",
+      "expectPath": "/9iPUYeyFVtstEwCn6fVrLMhB9JH.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 151345,
+      "name": "機動戦士ガンダム サンダーボルト",
+      "nameCn": "机动战士高达 雷霆宙域",
+      "date": "2015-12-25",
+      "expectPath": "/zYPdmf3YhWWTN49cWzM7fnyzuaV.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 152365,
+      "name": "劇場版 Gのレコンギスタ I 行け！コア・ファイター",
+      "nameCn": "剧场版 高达Reconguista in G I 去吧！核心战机",
+      "date": "2019-11-29",
+      "expectPath": "/9gwkQkS8J1YUE7ZfccK9rbSsKmh.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 169917,
+      "name": "機動戦士ガンダムユニコーン RE:0096",
+      "nameCn": "机动战士高达独角兽 RE:0096",
+      "date": "2016-04-03",
+      "expectPath": "/u79w2TSTlsGNUZ1Tou337B9cio2.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 170191,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ 弐",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 第二季",
+      "date": "2016-10-02",
+      "expectPath": "/52mp7oFltDUkw3kx1ArlRZkLyr3.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 182406,
+      "name": "ガンダムビルドファイターズトライ アイランド・ウォーズ",
+      "nameCn": "高达创战者TRY 岛上战争",
+      "date": "2016-08-21",
+      "expectPath": "/sz2kqIUvvlkWtQEuWS3qoYMpSm8.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 186515,
+      "name": "BanG Dream!",
+      "nameCn": "",
+      "date": "2017-01-21",
+      "expectPath": "/tuUr8vsN3eoSXj9Ed12Bsc8HVT7.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 198380,
+      "name": "機動戦士ガンダム サンダーボルト 第2シーズン",
+      "nameCn": "机动战士高达 雷霆宙域 第二季",
+      "date": "2017-03-24",
+      "expectPath": "/zYPdmf3YhWWTN49cWzM7fnyzuaV.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 211841,
+      "name": "機動戦士ガンダム Twilight AXIS",
+      "nameCn": "机动战士高达 暮光的阿克西斯",
+      "date": "2017-06-23",
+      "expectPath": "/yBHWVjGYP1WJXrgROOa5NkzZSMb.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 213532,
+      "name": "ガンダムビルドファイターズ GMの逆襲",
+      "nameCn": "高达创战者 GM的逆袭",
+      "date": "2017-08-25",
+      "expectPath": "/9TCkLTsVeMLVy9vSpe6qHKLwIBK.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 214710,
+      "name": "ガンダムビルドファイターズ バトローグ",
+      "nameCn": "高达创战者 Battlogue",
+      "date": "2017-08-04",
+      "expectPath": "/9TCkLTsVeMLVy9vSpe6qHKLwIBK.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 221364,
+      "name": "Competition of NEW GUNDAM -RED or WHITE-",
+      "nameCn": "新高达之竞争-红白-",
+      "date": "2015-11-07",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)",
+      "theatrical": true
+    },
+    {
+      "subjectId": 236790,
+      "name": "ガンダムビルドダイバーズ",
+      "nameCn": "高达创形者",
+      "date": "2018-04-03",
+      "expectPath": "/Aowf1ZztDHqRRggxR1Ll8b0BDsN.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 239320,
+      "name": "ガンダムSEED種キャラ劇場",
+      "nameCn": "高达SEED 原创角色剧场",
+      "date": "2007-06-22",
+      "expectPath": null,
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无此条目, 期望无图 (不能错配)"
+    },
+    {
+      "subjectId": 243428,
+      "name": "機動戦士ガンダムNT",
+      "nameCn": "机动战士高达NT",
+      "date": "2018-11-30",
+      "expectPath": "/sbJtRUAovUAlg3UWJ6QQIIzo8C3.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 243429,
+      "name": "機動戦士ガンダム 閃光のハサウェイ",
+      "nameCn": "机动战士高达 闪光的哈萨维",
+      "date": "2021-06-11",
+      "expectPath": "/lkQ3p3zLVY9mfLPEJ1mdIbfSLmk.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 243430,
+      "name": "機動戦士ガンダム 閃光のハサウェイ キルケーの魔女",
+      "nameCn": "机动战士高达 闪光的哈萨维 喀耳刻的魔女",
+      "date": "2026-01-30",
+      "expectPath": "/dp9FPgUwPc2XIXYct2cQ1PgFv7f.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 246429,
+      "name": "BanG Dream! 2nd Season",
+      "nameCn": "BanG Dream! 第二季",
+      "date": "2019-01-03",
+      "expectPath": "/tuUr8vsN3eoSXj9Ed12Bsc8HVT7.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 246430,
+      "name": "BanG Dream! 3rd Season",
+      "nameCn": "BanG Dream! 第三季",
+      "date": "2020-01-23",
+      "expectPath": "/tuUr8vsN3eoSXj9Ed12Bsc8HVT7.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 246431,
+      "name": "BanG Dream! ガルパ☆ピコ",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO",
+      "date": "2018-07-05",
+      "expectPath": "/nG8p1q0zh1HgV8OSr9QUWDTvXgi.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 267432,
+      "name": "SDガンダムワールド 三国創傑伝",
+      "nameCn": "SD高达世界 三国创杰传",
+      "date": "2019-07-26",
+      "expectPath": "/8yGSvKxeSnelHNCWC8ex1VNNjnF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 279219,
+      "name": "BanG Dream! FILM LIVE",
+      "nameCn": "",
+      "date": "2019-09-13",
+      "expectPath": "/x7OraIZ6CSQLW81oYP3tXj3I4Da.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286123,
+      "name": "ガンダムビルドダイバーズRe:RISE",
+      "nameCn": "高达创形者 再起",
+      "date": "2019-10-10",
+      "expectPath": "/Aowf1ZztDHqRRggxR1Ll8b0BDsN.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 286124,
+      "name": "劇場版 Gのレコンギスタ II ベルリ 撃進",
+      "nameCn": "剧场版 高达Reconguista in G Ⅱ 贝尔利出击",
+      "date": "2020-02-21",
+      "expectPath": "/edRgYjqkBvLWYo45TUASuP6jWDV.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286125,
+      "name": "劇場版 Gのレコンギスタ III 宇宙からの遺産",
+      "nameCn": "剧场版 高达Reconguista in G Ⅲ 来自宇宙的遗产",
+      "date": "2021-07-22",
+      "expectPath": "/cbt2ITyjrthe3v3LOV2UDpOsNxW.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286126,
+      "name": "劇場版 Gのレコンギスタ Ⅳ 激闘に叫ぶ愛",
+      "nameCn": "剧场版 高达Reconguista in G Ⅳ 在激斗中呼唤爱",
+      "date": "2022-07-22",
+      "expectPath": "/sKo2u2BRUdp4M7UHOW2srRwvz22.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 286127,
+      "name": "劇場版 Gのレコンギスタ Ⅴ 死線を越えて",
+      "nameCn": "剧场版 高达Reconguista in G Ⅴ 越过死线",
+      "date": "2022-08-05",
+      "expectPath": "/mjZdExUgcQEVxZfXKM1yLtBgA3A.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 294202,
+      "name": "アルゴナビス from BanG Dream! ANIMATION",
+      "nameCn": "ARGONAVIS from BanG Dream! ANIMATION",
+      "date": "2020-04-10",
+      "expectPath": "/wJMlNGohXF18slqlaJSg42YndLg.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 296295,
+      "name": "BanG Dream! ガルパ☆ピコ～大盛り～",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO～大份～",
+      "date": "2020-05-07",
+      "expectPath": "/nG8p1q0zh1HgV8OSr9QUWDTvXgi.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 297261,
+      "name": "ガンダムビルドダイバーズRe:RISE 2nd Season",
+      "nameCn": "高达创形者 再起 2nd Season",
+      "date": "2020-04-09",
+      "expectPath": "/Aowf1ZztDHqRRggxR1Ll8b0BDsN.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 298572,
+      "name": "機動戦士SDガンダム",
+      "nameCn": "机动战士SD高达 剧场版",
+      "date": "1988-03-12",
+      "expectPath": "/n3EkptNDWc72UunXcTz7H26bTZ4.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 298573,
+      "name": "機動戦士SDガンダム",
+      "nameCn": "机动战士SD高达",
+      "date": "1988-05-25",
+      "expectPath": "/ugGDsyr138U3tVg8Um8kZPlegTW.jpg",
+      "layer": "collection",
+      "why": "合集档 (2026-08-26) 逐字命中 collection/525348「机动战士SD高达（系列）」(剥「（系列）」后缀), 顶掉此前来路不明的旧图"
+    },
+    {
+      "subjectId": 302228,
+      "name": "BanG Dream! FILM LIVE 2nd Stage",
+      "nameCn": "",
+      "date": "2021-08-20",
+      "expectPath": "/dHXfZ1zLb2Xt4KGxReKQMz9thPZ.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 304642,
+      "name": "超合金 ガンダム★ハローキティ ショートアニメーション",
+      "nameCn": "超合金 高达★凯蒂猫 短片动画",
+      "date": "2020-01-29",
+      "expectPath": "/b9RL9gOO3ZiiJlzCgByU9DJtfxa.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 305058,
+      "name": "BanG Dream! Episode of Roselia Ⅰ : 約束",
+      "nameCn": "BanG Dream! Episode of Roselia Ⅰ : 约定",
+      "date": "2021-04-23",
+      "expectPath": "/4QUpdL77Tutu3KJ5YRGZM2Wy5gF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 305059,
+      "name": "BanG Dream! ぽっぴん'どりーむ！",
+      "nameCn": "剧场版 BanG Dream! Poppin'Dream！",
+      "date": "2022-01-01",
+      "expectPath": "/xL84V02VmnvcCc0t3gco1a5WkZy.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 314196,
+      "name": "ALL THAT GUNDAM",
+      "nameCn": "",
+      "date": "1989-08-25",
+      "expectPath": "/2K8HHqJi6HviS2kz57NZfBqL0ft.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 315490,
+      "name": "BanG Dream! Episode of Roselia Ⅱ : Song I am.",
+      "nameCn": "",
+      "date": "2021-06-25",
+      "expectPath": "/bbypOb2Th0ub9IUJ3jPSksvgkJb.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 319448,
+      "name": "ガンダムビルドダイバーズ バトローグ",
+      "nameCn": "高达创形者 Battlogue",
+      "date": "2020-11-13",
+      "expectPath": "/Aowf1ZztDHqRRggxR1Ll8b0BDsN.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 324786,
+      "name": "SDガンダムワールド ヒーローズ",
+      "nameCn": "SD高达世界 群英集",
+      "date": "2021-04-08",
+      "expectPath": "/dhDH1jmGPbuMwoUf1E3muSwhiFt.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 337274,
+      "name": "劇場版アルゴナビス 流星のオブリガート",
+      "nameCn": "剧场版 ARGONAVIS 流星的obbligato",
+      "date": "2021-11-19",
+      "expectPath": "/doZhxI7XTBVuQReLlvugHbIJa5a.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 337586,
+      "name": "機動戦士ガンダムSEED FREEDOM",
+      "nameCn": "机动战士高达SEED FREEDOM",
+      "date": "2024-01-26",
+      "expectPath": "/fU3oaBud5SZadw6k1ycftYedmXJ.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 338400,
+      "name": "BanG Dream! ガルパ☆ピコ ふぃーばー！",
+      "nameCn": "BanG Dream! 少女乐团派对！☆PICO FEVER！",
+      "date": "2021-10-07",
+      "expectPath": "/nG8p1q0zh1HgV8OSr9QUWDTvXgi.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 339095,
+      "name": "ガンダムブレイカー バトローグ",
+      "nameCn": "高达破坏者 对战记录",
+      "date": "2021-10-19",
+      "expectPath": "/xiJX2hdTrDn15xcMHeAFniD1Stn.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 348384,
+      "name": "劇場版アルゴナビス AXIA",
+      "nameCn": "剧场版ARGONAVIS AXIA",
+      "date": "2023-03-24",
+      "expectPath": "/wJMlNGohXF18slqlaJSg42YndLg.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 349441,
+      "name": "機動戦士ガンダム 水星の魔女",
+      "nameCn": "机动战士高达 水星的魔女",
+      "date": "2022-10-02",
+      "expectPath": "/8A5sNxppHn68k1FtEiEIBTu73yv.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 349442,
+      "name": "機動戦士ガンダム ククルス・ドアンの島",
+      "nameCn": "机动战士高达 库库鲁斯·杜安之岛",
+      "date": "2022-06-03",
+      "expectPath": "/sRUKTGQngY3XAJ0nxjvCO030Kby.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 373931,
+      "name": "バンドリ！ガールズバンドパーティ！5th Anniversary Animation -CiRCLE THANKS PARTY！-",
+      "nameCn": "BanG Dream! 少女乐团派对！5周年纪念动画 -CiRCLE THANKS PARTY!-",
+      "date": "2022-03-10",
+      "expectPath": "/a0GHHfZIxbmqpzoqgMC2ow1lHja.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 385928,
+      "name": "BanG Dream! Morfonication",
+      "nameCn": "",
+      "date": "2022-07-28",
+      "expectPath": "/jmJTiXzUcfCRCNw3cX6XOZtehgF.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 387327,
+      "name": "30th GUNDAM PERFECT MISSION",
+      "nameCn": "高达：完美任务",
+      "date": "2009-08-25",
+      "expectPath": "/ts7b5jH6XZRbtMX4weLp0HJdEBQ.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 391706,
+      "name": "機動戦士ガンダム 水星の魔女 PROLOGUE",
+      "nameCn": "机动战士高达 水星的魔女 PROLOGUE",
+      "date": "2022-09-25",
+      "expectPath": "/8A5sNxppHn68k1FtEiEIBTu73yv.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 403238,
+      "name": "機動戦士ガンダム 水星の魔女 Season2",
+      "nameCn": "机动战士高达 水星的魔女 第二季",
+      "date": "2023-04-09",
+      "expectPath": "/8A5sNxppHn68k1FtEiEIBTu73yv.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 415485,
+      "name": "モビルスーツ学園「Ｇ-レコ甲子園」",
+      "nameCn": "机动战士学园 G-reco甲子园",
+      "date": "2020-01-18",
+      "expectPath": "/soxQOZ6cmQ6HhFA5gojvJsT5yru.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 427942,
+      "name": "The Impression of First GUNDAM",
+      "nameCn": "",
+      "date": "1998-08-01",
+      "expectPath": "/j4wxgHl1DIDylYwyVfTZix6MLN0.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 428735,
+      "name": "BanG Dream! It's MyGO!!!!!",
+      "nameCn": "",
+      "date": "2023-06-29",
+      "expectPath": "/vAyv2W5gXyB4K9lX9vMEqdlfZGS.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 434818,
+      "name": "ガンダムビルドメタバース",
+      "nameCn": "高达创战元宇宙",
+      "date": "2023-10-06",
+      "expectPath": "/dscY8r8PMLEiX9CYSQpfU1XEsfx.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 443929,
+      "name": "Gundam: Requiem for Vengeance",
+      "nameCn": "机动战士高达 复仇的安魂曲",
+      "date": "2024-10-17",
+      "expectPath": "/jYq8uw7vRIDoptXMFqQblE903xn.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 448391,
+      "name": "MyGO!!!!!メンバーの日常",
+      "nameCn": "MyGO!!!!!成员的日常生活",
+      "date": "2022-08-24",
+      "expectPath": "/vAyv2W5gXyB4K9lX9vMEqdlfZGS.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 454684,
+      "name": "BanG Dream! Ave Mujica",
+      "nameCn": "",
+      "date": "2025-01-02",
+      "expectPath": "/A2d4FQhXbwTFwQwNNnIrHfLOLmf.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 464293,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ ウルズハント -小さな挑戦者の軌跡-",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 猎杀兀尔德 小挑战者的踪迹",
+      "date": "2025-10-31",
+      "expectPath": "/7v4HhIsnJVGmydehwIUG1L6he5H.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 466165,
+      "name": "機動戦士ガンダム: 銀灰の幻影",
+      "nameCn": "机动战士高达：银灰的幻影",
+      "date": "2024-10-03",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)",
+      "theatrical": true
+    },
+    {
+      "subjectId": 520710,
+      "name": "機動戦士ガンダムSEED FREEDOM 特別版",
+      "nameCn": "机动战士高达SEED FREEDOM 特別版",
+      "date": "2024-09-20",
+      "expectPath": "/fU3oaBud5SZadw6k1ycftYedmXJ.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 526816,
+      "name": "機動戦士Gundam GQuuuuuuX",
+      "nameCn": "机动战士高达 GQuuuuuuX",
+      "date": "2025-04-08",
+      "expectPath": "/7GbHu1X9lvk47YoKMpq3w8bZg5C.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 526817,
+      "name": "機動戦士Gundam GQuuuuuuX -Beginning-",
+      "nameCn": "机动战士高达 跨时之战",
+      "date": "2025-01-17",
+      "expectPath": "/tiLGwBZ499pYvgYnJA5cI2ZAEbB.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 533534,
+      "name": "SDガンダムフォース 破壊大将軍あらわる!!ザコ？",
+      "nameCn": "SD高达FORCE 毁灭大将军登场！！渣咕？",
+      "date": "2004-07-03",
+      "expectPath": "/s6I7W3UTixb1io41QlTf2gv0rdB.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 540449,
+      "name": "元祖！バンドリちゃん",
+      "nameCn": "元祖！BanG Dream Chan",
+      "date": "2025-10-02",
+      "expectPath": "/qiJs1uE06pj6XIM5KP4bLhTIiJC.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 555191,
+      "name": "機動戦士ガンダムG40",
+      "nameCn": "机动战士高达G40",
+      "date": "2020-01-01",
+      "expectPath": "/irA5ETPFN5NCHpy4NXD7ixoLe0Q.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 555522,
+      "name": "ガンダムvsハローキティ",
+      "nameCn": "高达vs凯蒂猫",
+      "date": "2019-03-29",
+      "expectPath": "/b9RL9gOO3ZiiJlzCgByU9DJtfxa.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 559135,
+      "name": "宇宙の蜉蝣2",
+      "nameCn": "宇宙的蜉蝣2",
+      "date": "2016-01-29",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)"
+    },
+    {
+      "subjectId": 560216,
+      "name": "機動戦士ガンダム 光る命 Chronicle U.C.",
+      "nameCn": "机动战士高达：生命光辉 编年史U.C.",
+      "date": "2019-09-26",
+      "expectPath": "/3MF0SFUHFgWgDbZ9UyR7ZFvohsE.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 573465,
+      "name": "新機動戦記ガンダムW -Operation 30th-",
+      "nameCn": "新机动战记高达W -Operation 30th-",
+      "date": "2025-07-25",
+      "expectPath": "/6q1eredSOpFhzjoStR8V29BxAZC.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 608990,
+      "name": "機動戦士ガンダム 劇場3部作／特別版",
+      "nameCn": "机动战士高达 剧场3部作／特别版",
+      "date": "2000-12-21",
+      "expectPath": "/484TQnWzNSm2iGj6XMY66VBDr6g.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无横图, root 兜底到初代高达 (设计内)"
+    },
+    {
+      "subjectId": 614207,
+      "name": "機動戦士ガンダム 鉄血のオルフェンズ 幕間の楔",
+      "nameCn": "机动战士高达 铁血的奥尔芬斯 幕间之楔",
+      "date": "2025-10-31",
+      "expectPath": "/52mp7oFltDUkw3kx1ArlRZkLyr3.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 620109,
+      "name": "機動戦士ガンダムF91 完全版",
+      "nameCn": "机动战士高达F91 完全版",
+      "date": "1991-12-19",
+      "expectPath": "/3m6rRRxJl7nzcLiNbA3TfQE7UZX.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出"
+    },
+    {
+      "subjectId": 636546,
+      "name": "『機動武闘伝Gガンダム』30周年記念ファイティングムービー",
+      "nameCn": "《机动武斗传G高达》30周年纪念影片",
+      "date": "2026-03-20",
+      "expectPath": "/17TPRG3Ys6GoLJnYaRCVGWDEAFM.jpg",
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出",
+      "theatrical": true
+    },
+    {
+      "subjectId": 651692,
+      "name": "少年とガンダム",
+      "nameCn": "少年与高达",
+      "date": "2026-05-15",
+      "expectPath": null,
+      "layer": "collected",
+      "why": "高达/BanG Dream 家族扩充 (2026-08-26): 家族同图聚类 + 剧照日期对齐验证当前实现输出; TMDB 无此条目, 期望无图 (不能错配)"
+    },
+    {
+      "subjectId": 21065,
+      "name": "機動戦士ガンダムSEED C.E.73 STARGAZER",
+      "nameCn": "机动战士高达SEED C.E.73 观星者",
+      "date": "2006-07-14",
+      "expectPath": "/reolfY7OnIxxRhiPMgndH6RLK6B.jpg",
+      "layer": "chinese",
+      "why": "削字降暂定修复 (2026-08-26) 的正主: 原名 0 结果, 削出「機動戦士ガンダムSEED」逐字命中本传当场定案, 逐字同名的中文档从来轮不到; 修后中文档命中 tv/43142 (中文名/首播日/集数逐项吻合)"
+    },
+    {
+      "subjectId": 42789,
+      "name": "GUNDAM EVOLVE",
+      "nameCn": "高达 EVOLVE",
+      "date": "2001-05-17",
+      "aliases": [
+        "机动战士高达 进化",
+        "ガンダムEVOLVE"
+      ],
+      "expectPath": "/nfMbAIMxwE2P2HEqAAKUDHd76D.jpg",
+      "layer": "primary/movie",
+      "why": "正主 movie/411218 (2001, 同年逐字); 剧照链靠别名档修好 (2026-08-26): TMDB 的 tv/101719 genres 为空且首播晚条目 2 年, 动画过滤+年份判据双杀, 只有别名「机动战士高达 进化」(=TMDB zh 名) 在放行空 genre + 对称容差 3 的变体档才够得到"
+    },
+    {
+      "subjectId": 62680,
+      "name": "機動戦士ガンダム THE ORIGIN",
+      "nameCn": "机动战士高达 THE ORIGIN",
+      "date": "2015-04-24",
+      "aliases": [
+        "機動戦士ガンダム ジ・オリジン",
+        "GTO",
+        "高达 起源",
+        "機動戦士ガンダム THE ORIGIN シャア・セイラ編",
+        "机动战士高达 THE ORIGIN 夏亚·塞拉篇"
+      ],
+      "expectPath": "/iyWYMZ9TFg2MeVFCdlruwRIgaio.jpg",
+      "layer": "primary/movie",
+      "why": "backdrop = 合集第一部 movie/329365 的图; 别名含缩写「GTO」—— 变体档必须用对称年份判据, 否则经 alternative_titles 逐字命中 1999 年麻辣教师动画 (2026-08-26 实测)"
+    },
+    {
+      "subjectId": 298583,
+      "name": "機動戦士SDガンダムの逆襲 SD戦国伝 暴終空城の章",
+      "nameCn": "SD战国传 暴终空城之章",
+      "date": "1989-07-15",
+      "theatrical": true,
+      "expectPath": "/gD1qQrn5z79tj7eZWiI275ovh5p.jpg",
+      "layer": "poster",
+      "why": "海报兜底命中正主 movie/513569 (機動戦士SDガンダムの逆襲, 同日 1989-07-15) 自己的 poster; 曾因只查 backdrops 没查 posters 误判归属不明 (2026-08-27 平反)"
+    },
+    {
+      "subjectId": 298584,
+      "name": "機動戦士SDガンダムの逆襲 嵐を呼ぶ学園祭",
+      "nameCn": "",
+      "date": "1989-07-15",
+      "theatrical": true,
+      "expectPath": "/gD1qQrn5z79tj7eZWiI275ovh5p.jpg",
+      "layer": "poster",
+      "why": "同 298583: 同日上映的同一部电影的另一篇章, 挂同一 movie/513569 的 poster 正确"
+    },
+    {
+      "subjectId": 279055,
+      "name": "武者・騎士・コマンド SDガンダム緊急出撃",
+      "nameCn": "",
+      "date": "1991-03-16",
+      "theatrical": true,
+      "expectPath": "/uStToahCy2wyoGEErjiZd52kOyB.jpg",
+      "layer": "poster",
+      "why": "海报兜底命中正主 movie/578763 (同日 1991-03-16) 自己的 poster"
+    },
+    {
+      "subjectId": 279060,
+      "name": "機動戦士SDガンダムまつり",
+      "nameCn": "机动战士SD高达祭",
+      "date": "1993-03-13",
+      "theatrical": true,
+      "expectPath": "/x5GXMGyLc7VUOkriYyaCHwOCvVf.jpg",
+      "layer": "poster",
+      "why": "海报兜底命中正主 movie/582488 SD Gundam Festival (同日 1993-03-13) 自己的 poster"
+    },
+    {
+      "subjectId": 473832,
+      "name": "劇場版 BanG Dream! It's MyGO!!!!! 前編 春の陽だまり、迷い猫",
+      "nameCn": "剧场版 BanG Dream! It's MyGO!!!!! 前篇 春日向阳，迷途之猫",
+      "date": "2024-09-27",
+      "theatrical": true,
+      "aliases": [
+        "劇場版「BanG Dream! It's MyGO!!!!! 前編 : 春の陽だまり、迷い猫」"
+      ],
+      "expectPath": "/kaJQ4KPTg7a9scQsspzVYj5dHJ4.jpg",
+      "layer": "movie",
+      "why": "MyGO 剧场版前篇: movie/1231799; 与后篇同守「前后篇不可互串」(削字撞到另一篇被日期闸门拦是正确行为)"
+    },
+    {
+      "subjectId": 473833,
+      "name": "劇場版 BanG Dream! It's MyGO!!!!! 後編 うたう、僕らになれるうた & FILM LIVE",
+      "nameCn": "剧场版 BanG Dream! It's MyGO!!!!! 后篇 歌唱着，由我们唱响的歌 & FILM LIVE",
+      "date": "2024-11-08",
+      "theatrical": true,
+      "expectPath": "/dtqffEWIFFaZKZSkfc7XjjSzC1J.jpg",
+      "layer": "movie",
+      "why": "「劇場版」前缀剥除修复 (2026-08-27): TMDB 原题不带该前缀, 带着搜过不了逐词校验, 削字一路撞前篇被日期闸门拦后全链空手; 剥前缀作 primary 同义变体后命中 movie/1233186"
+    },
+    {
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "rezero",
+        "Re0",
+        "Re: Life a Different World from Zero"
+      ],
+      "date": "2016-04-03",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活",
+      "nameCn": "Re：从零开始的异世界生活",
+      "screeningYear": null,
+      "subjectId": 140001,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Isekai Shokudou"
+      ],
+      "date": "2016-06-24",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:プチから始める異世界生活",
+      "nameCn": "Re：从迷你开始的异世界生活",
+      "screeningYear": null,
+      "subjectId": 185837,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Re：从零开始的异世界生活 Memory Snow",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2018)",
+        "Re:Zero - Starting Life in Another World (2018)"
+      ],
+      "date": "2019-06-07",
+      "expectPath": "/t9ifVuOtSZBvtieF9L83pnHnOcC.jpg",
+      "name": "Re:ゼロから始める異世界生活 Memory Snow",
+      "nameCn": "Re：从零开始的异世界生活 雪之回忆",
+      "screeningYear": 2018,
+      "subjectId": 225462,
+      "theatrical": true,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "aliases": [],
+      "date": "2019-11-08",
+      "expectPath": "/9K1zhrS8jZ3NFZwzc5RgtwxskLT.jpg",
+      "name": "Re:ゼロから始める異世界生活 氷結の絆",
+      "nameCn": "Re：从零开始的异世界生活 冰结之绊",
+      "screeningYear": null,
+      "subjectId": 261805,
+      "theatrical": false,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "aliases": [],
+      "date": "2019-04-09",
+      "expectPath": "/nLDxVvCnQaRRqWjvER9j5bsrre9.jpg",
+      "name": "異世界かるてっと",
+      "nameCn": "异世界四重奏",
+      "screeningYear": null,
+      "subjectId": 262865,
+      "theatrical": false,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2020)",
+        "Re0 第二季",
+        "Re:ゼロから始める異世界生活2"
+      ],
+      "date": "2020-07-08",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 2nd season",
+      "nameCn": "Re：从零开始的异世界生活 第二季",
+      "screeningYear": null,
+      "subjectId": 278826,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [],
+      "date": "2020-01-14",
+      "expectPath": "/nLDxVvCnQaRRqWjvER9j5bsrre9.jpg",
+      "name": "異世界かるてっと２",
+      "nameCn": "异世界四重奏 第二季",
+      "screeningYear": null,
+      "subjectId": 285422,
+      "theatrical": false,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "aliases": [],
+      "date": "2020-01-01",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 新編集版",
+      "nameCn": "Re：从零开始的异世界生活 新编集版",
+      "screeningYear": null,
+      "subjectId": 296195,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "异世界四重奏 另一个世界",
+        "Isekai Quartet: Another World"
+      ],
+      "date": "2022-06-10",
+      "expectPath": "/uDXI48cmsHsInx5DC7ziW4bQ3ie.jpg",
+      "name": "劇場版 異世界かるてっと ～あなざーわーるど～",
+      "nameCn": "剧场版 异世界四重奏 ～Another World～",
+      "screeningYear": null,
+      "subjectId": 303126,
+      "theatrical": true,
+      "why": "单集条目 (OVA/剧场版): TMDB 上是独立 movie, 命中自己而不是本传"
+    },
+    {
+      "aliases": [
+        "Re:Zero kara Hajimeru Break Time 2nd Season"
+      ],
+      "date": "2020-07-10",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める休憩時間 2nd Season",
+      "nameCn": "Re：从零开始的休息时间2",
+      "screeningYear": null,
+      "subjectId": 310194,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2021)",
+        "Re0 第二季后半"
+      ],
+      "date": "2021-01-06",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 2nd season 後半クール",
+      "nameCn": "Re：从零开始的异世界生活 第二季 后半部分",
+      "screeningYear": null,
+      "subjectId": 316247,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Re：從零開始的異世界生活 第三季 襲擊篇",
+        "Re0 第三季",
+        "Re0 3",
+        "rezero s3",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2024)",
+        "Re:ゼロから始める異世界生活 (2024)",
+        "Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season Shuugeki Hen",
+        "Re:ZERO -Starting Life in Another World- Season 3 Shuugeki Hen"
+      ],
+      "date": "2024-10-02",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 3rd season 襲擊編",
+      "nameCn": "Re：从零开始的异世界生活 第三季 袭击篇",
+      "screeningYear": null,
+      "subjectId": 425998,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Re：從零開始的異世界生活 第三季 反擊篇",
+        "Re:Zero kara Hajimeru Isekai Seikatsu (2025)",
+        "Re:Zero - Starting Life in Another World (2025)",
+        "re0 第三季 反击篇",
+        "re0 第三季 反擊篇"
+      ],
+      "date": "2025-02-05",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 3rd season 反擊編",
+      "nameCn": "Re：从零开始的异世界生活 第三季 反击篇",
+      "screeningYear": null,
+      "subjectId": 510728,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [],
+      "date": "2024-10-02",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める休憩時間 3rd season",
+      "nameCn": "Re：从零开始的休息时间3",
+      "screeningYear": null,
+      "subjectId": 516311,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season",
+        "Re:ZERO -Starting Life in Another World- Season 4",
+        "Re Zero kara Hajimeru Isekai Seikatsu 4th Season",
+        "Re：從零開始的異世界生活 第四季 喪失篇",
+        "re0 第四季 丧失篇",
+        "re0 第四季 喪失篇"
+      ],
+      "date": "2026-04-08",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 4th season 喪失編",
+      "nameCn": "Re：从零开始的异世界生活 第四季 丧失篇",
+      "screeningYear": null,
+      "subjectId": 547888,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [
+        "Isekai Quartet 3"
+      ],
+      "date": "2025-10-13",
+      "expectPath": "/nLDxVvCnQaRRqWjvER9j5bsrre9.jpg",
+      "name": "異世界かるてっと3",
+      "nameCn": "异世界四重奏 第三季",
+      "screeningYear": null,
+      "subjectId": 564421,
+      "theatrical": false,
+      "why": "異世界かるてっと (Re:Zero 的角色出演联动, 与本家一起入表). TMDB 三季合并成 tv/87478 的 S1 (35 集), 三个 bgm 条目都挂上去 —— 家族同图聚类: 三条 backdrop 必须同图, 分开了就是有一条错配"
+    },
+    {
+      "aliases": [
+        "Re：從零開始的異世界生活 第四季 奪還篇",
+        "re0 第四季 夺还篇",
+        "re0 第四季 奪還篇"
+      ],
+      "date": "2026-08-12",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める異世界生活 4th season 奪還編",
+      "nameCn": "Re：从零开始的异世界生活 第四季 夺还篇",
+      "screeningYear": null,
+      "subjectId": 633836,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    },
+    {
+      "aliases": [],
+      "date": "2026-04-08",
+      "expectPath": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+      "name": "Re:ゼロから始める休憩時間 4th season",
+      "nameCn": "Re：从零开始的休息时间4",
+      "screeningYear": null,
+      "subjectId": 638494,
+      "theatrical": false,
+      "why": "Re:Zero 家族 (2026-09-06 用户点名整批入表). TMDB 把全家挂在 tv/65942 一条记录下: 正片四季合并成 S1 (85 集), 四部衍生短篇混装进 S0 (81 集). 这一批守当天新加的三条规则: 别名档要过原名召回集佐证 (Re:プチ 的 bgm 别名字段写着「Isekai Shokudou」= 異世界食堂)、hero 背景取 /images 的无字幕首张 (= TMDB 网页三个语言页显示的那张, 而不是按语言各存一个的 backdrop_path)、以及集名后缀认领 (S0 的集名带作品名前缀, bgm 那边只有本集名)"
+    }
+  ]
+}

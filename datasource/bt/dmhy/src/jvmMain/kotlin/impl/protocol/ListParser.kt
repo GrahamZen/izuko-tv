@@ -29,8 +29,8 @@ import me.him188.ani.datasources.dmhy.DmhyCategory
 import me.him188.ani.datasources.dmhy.DmhyTopic
 import me.him188.ani.datasources.dmhy.impl.cache.Cache
 import me.him188.ani.datasources.dmhy.impl.cache.getOrSet
-import org.jsoup.nodes.Document
-import org.jsoup.select.Elements
+import me.him188.ani.shaded.jsoup.nodes.Document
+import me.him188.ani.shaded.jsoup.select.Elements
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
