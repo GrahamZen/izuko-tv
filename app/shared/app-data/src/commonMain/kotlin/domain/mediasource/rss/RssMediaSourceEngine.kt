@@ -79,7 +79,9 @@ abstract class RssMediaSourceEngine {
         page: Int?,
         mediaSourceId: String,
     ): Result {
-        val encodedUrl = MediaSourceEngineHelpers.encodeUrlSegment(query.subjectName)
+        val encodedUrl = MediaSourceEngineHelpers.encodeUrlSegment(
+            escapeKeywordFor(searchConfig.searchUrl, query.subjectName),
+        )
 
         val finalUrl = Url(
             searchConfig.searchUrl
@@ -89,6 +91,24 @@ abstract class RssMediaSourceEngine {
 
         return searchImpl(finalUrl, searchConfig, query, page, mediaSourceId)
     }
+
+    /**
+     * 模板里的 `{keyword}` 被双引号直接包着时, 它落在一段 JSON 字符串里
+     * (如 animes.garden 的 `feed.xml?filter=[{"type":"动画","search":["{keyword}"]}]`),
+     * 这时先按 JSON 字符串转义再交给 URL 编码。
+     *
+     * 光做 URL 编码不够: 服务端 URL 解码之后拿到的是裸引号, 会把外层 JSON 打断并直接回 400 ——
+     * 番剧名里带英文引号时 (如「孤独摇滚！」的别名 `Bocchi the "Guitar Hero" Rock Story`)
+     * 这个数据源会永远搜不出结果。见 `RssSearchUrlEscapingTest`。
+     *
+     * 普通 query 模板 (`?q={keyword}`) 不在 JSON 上下文里, 原样交出去。
+     */
+    private fun escapeKeywordFor(searchUrl: String, keyword: String): String =
+        if (searchUrl.contains(JSON_QUOTED_KEYWORD)) {
+            keyword.replace("\\", "\\\\").replace("\"", "\\\"")
+        } else {
+            keyword
+        }
 
     @Throws(RepositoryException::class, CancellationException::class)
     protected abstract suspend fun searchImpl(
@@ -100,6 +120,9 @@ abstract class RssMediaSourceEngine {
     ): Result
 
     protected companion object {
+        /** 模板里的这个形状表示 `{keyword}` 落在 JSON 字符串内, 见 [escapeKeywordFor]. */
+        private const val JSON_QUOTED_KEYWORD = "\"{keyword}\""
+
         fun convertItemToMedia(
             item: RssItem,
             mediaSourceId: String,
