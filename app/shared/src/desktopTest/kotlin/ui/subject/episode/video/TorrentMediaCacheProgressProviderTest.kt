@@ -118,20 +118,22 @@ class TorrentMediaCacheProgressProviderTest {
     // -------------------------------------------------------------------------
 
     @Test
-    fun `flow does not emit if no change and not all finished`() = runTest {
+    fun `flow emits current state on subscription then stays quiet without changes`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val cacheProgress = createProvider(flowContext = testDispatcher)
 
-        // Collect the flow with Turbine
         cacheProgress.flow.test {
-            // There's no immediate emission for non-empty pieces,
-            // unless passResult.anyChanged = true or passResult.allFinished = true.
-            // We'll advance time by 2 seconds to simulate two pass intervals.
+            // 订阅即给出当前状态: 之后每一轮只报告"与上一轮相比变了什么", 没有这一帧的话,
+            // 下载已完成 (或暂时停住) 的文件一帧都发不出来
+            val initial = awaitItem()
+            assertEquals(16, initial.chunkStates.size)
+            assertEquals(ChunkState.NONE, initial.chunkStates.first())
+            assertEquals(ChunkState.NONE, initial.chunkStates.last())
+
+            // 此后没有变化就不再发
             advanceTimeBy(2.seconds)
-            // We expect no events because no piece changed
             expectNoEvents()
 
-            // Clean up
             cancelAndConsumeRemainingEvents()
         }
     }
@@ -143,6 +145,8 @@ class TorrentMediaCacheProgressProviderTest {
 
         with(pieces) {
             cacheProgress.flow.test {
+                awaitItem() // 订阅时的当前状态
+
                 // Let one "pass" happen with no changes
                 advanceTimeBy(1.seconds)
                 expectNoEvents()
@@ -174,6 +178,8 @@ class TorrentMediaCacheProgressProviderTest {
 
         with(pieces) {
             cacheProgress.flow.test {
+                awaitItem() // 订阅时的当前状态
+
                 // Mark all as finished
                 pieces.forEach { it.state = PieceState.FINISHED }
 
@@ -198,6 +204,8 @@ class TorrentMediaCacheProgressProviderTest {
 
         with(pieces) {
             cacheProgress.flow.test {
+                awaitItem() // 订阅时的当前状态
+
                 // 1) Wait a pass, no changes => no emission
                 advanceTimeBy(1.seconds)
                 expectNoEvents()
@@ -247,6 +255,8 @@ class TorrentMediaCacheProgressProviderTest {
 
         with(pieces) {
             cacheProgress.flow.test {
+                awaitItem() // 订阅时的当前状态
+
                 // Mark first half as FINISHED
                 repeat(8) { i -> pieces[i].state = PieceState.FINISHED }
                 // Advance
