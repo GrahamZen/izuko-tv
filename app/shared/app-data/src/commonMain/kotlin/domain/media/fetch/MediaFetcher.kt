@@ -13,6 +13,7 @@ import io.ktor.client.plugins.ServerResponseException
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -291,7 +292,26 @@ class MediaSourceMediaFetcher(
                     }
                 }
             }.shareIn(
-                CoroutineScope(flowContext), replay = 1, started = SharingStarted.WhileSubscribed(),
+                // **兜底的异常处理器不能缺**: 单个数据源的失败本该被上面的 `.catch` 收成
+                // [MediaSourceFetchState.Failed], 但 `flatMapMerge` 是用 launch 并发收集各个子流的 ——
+                // 子协程里抛出的异常会绕过那个 catch 直接打到这个 scope 上。
+                // `CoroutineScope(ctx)` 在 ctx 没有 Job 时会自己补一个普通 Job, 而没有 handler 时
+                // 未捕获异常走默认处理器 = **整个进程被杀**。
+                // 2026-09-21 真机: 某个 RSS 源因为番剧名里带英文引号 (「孤独摇滚！」的别名
+                // `Bocchi the "Guitar Hero" Rock Story`) 把模板里的 JSON 打断, 服务端回 400,
+                // 异常逃到这里, app 当场挂掉。一个数据源出错不该拖垮整个应用。
+                //
+                // 只加 handler, 不动 Job 层级: 换成自建的 SupervisorJob 会把这条流从调用方的生命周期里
+                // 断开, 会话结束时搜索协程就不会被取消了。
+                CoroutineScope(
+                    flowContext + CoroutineExceptionHandler { _, throwable ->
+                        logger.error(throwable) {
+                            "Unhandled exception in media fetch session of ${sourceInfo.displayName}, " +
+                                    "its results are terminated"
+                        }
+                    },
+                ),
+                replay = 1, started = SharingStarted.WhileSubscribed(),
             ).onCompletion {
                 if (it == null)
                     logger.error { "results is completed normally, however it shouldn't" }
