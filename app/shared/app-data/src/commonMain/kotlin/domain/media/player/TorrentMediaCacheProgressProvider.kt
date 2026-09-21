@@ -52,6 +52,11 @@ class TorrentMediaCacheProgressProvider(
             return@flow
         }
 
+        // 先把当前状态发出去: [chunkStates] 在构造时就已经记下了这一刻的状态, 之后每轮只报告"与上一轮相比
+        // 变了什么". 只在有变化时才发的话, 已经下载完的文件 (以及下载停住的那段时间) 一帧都发不出来,
+        // 订阅方只能一直拿着 null.
+        emit(createInfo())
+
         while (true) {
             val passResult = runPass()
 
@@ -67,9 +72,16 @@ class TorrentMediaCacheProgressProvider(
         }
     }.shareIn(CoroutineScope(flowContext), SharingStarted.WhileSubscribed(), replay = 1)
 
+    /**
+     * 当前状态的快照.
+     *
+     * [chunkStates] 是原地更新的可变列表, 这里复制一份再交出去: 下游按结构相等判断要不要更新
+     * (Compose 的 `mutableStateOf` 默认如此), 而同一个列表实例无论内容怎么变, 前后两次都判成相等,
+     * 界面于是停在第一帧不动.
+     */
     fun createInfo() = MediaCacheProgressInfo(
         chunkWeights = chunkWeights,
-        chunkStates = chunkStates,
+        chunkStates = ArrayList(chunkStates),
     )
 
     /**
