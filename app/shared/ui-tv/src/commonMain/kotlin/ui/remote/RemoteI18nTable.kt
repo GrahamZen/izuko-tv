@@ -695,6 +695,7 @@ private fun part4() = listOf(
     RemoteText("可以在表单里逐项改，也可以切到「源码」整段换成别处复制来的同类型配置；保存前会校验格式。", "Edit fields in the form, or switch to “Source” to replace it with a config of the same type copied elsewhere. The format is checked before saving.", "可以在表單裡逐項改，也可以切到「源碼」整段換成別處複製來的同類型配置；保存前會校驗格式。", "可以在表單裡逐項改，也可以切到「原始碼」整段換成別處複製來的同類型配置；儲存前會校驗格式。"),
     RemoteText("删除「{0}」？", "Delete “{0}”?", "刪除「{0}」？", "刪除「{0}」？"),
     RemoteText("收起", "Collapse", "收起", "收起"),
+    RemoteText("更多年份", "More years", "更多年份", "更多年份"),
     RemoteText("复制", "Copy", "複製", "複製"),
     RemoteText("订阅", "Subscriptions", "訂閲", "訂閱"),
     RemoteText("在线数据源都来自订阅", "All online sources come from subscriptions", "在線數據源都來自訂閲", "線上資料源都來自訂閱"),

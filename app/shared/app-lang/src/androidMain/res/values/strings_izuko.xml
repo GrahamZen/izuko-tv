@@ -132,6 +132,8 @@
     <string name="search_tv_filter_sort">Sort</string>
     <string name="search_tv_filter_rating_min">Minimum rating</string>
     <string name="search_tv_filter_year">Year</string>
+    <string name="search_tv_filter_year_more">More years</string>
+    <string name="search_tv_filter_year_less">Collapse</string>
     <string name="search_tv_filter_season">Season</string>
     <string name="search_tv_filter_any">Any</string>
     <string name="search_tv_filter_confirm">Apply</string>

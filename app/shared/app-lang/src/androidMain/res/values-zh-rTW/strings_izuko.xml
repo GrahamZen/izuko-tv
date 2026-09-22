@@ -169,6 +169,8 @@
     <string name="search_tv_remote_reset">重設地址</string>
     <string name="search_tv_remote_host_changed">電視 IP 已變化（原 %1$s），請重新掃碼或更新書籤</string>
     <string name="search_tv_filter_year">年份</string>
+    <string name="search_tv_filter_year_more">更多年份</string>
+    <string name="search_tv_filter_year_less">收起</string>
     <string name="search_tv_filter_season">季度</string>
     <string name="tv_remote_control_title">Web 控制台</string>
     <string name="tv_remote_control_close">關閉</string>

@@ -252,6 +252,8 @@ import me.him188.ani.app.ui.lang.search_tv_filter_rating_min
 import me.him188.ani.app.ui.lang.search_tv_filter_season
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
 import me.him188.ani.app.ui.lang.search_tv_filter_year
+import me.him188.ani.app.ui.lang.search_tv_filter_year_less
+import me.him188.ani.app.ui.lang.search_tv_filter_year_more
 import me.him188.ani.app.ui.lang.search_tv_input_hint
 import me.him188.ani.app.ui.lang.search_tv_remote_hint
 import me.him188.ani.app.ui.lang.search_tv_results_all
@@ -2316,6 +2318,12 @@ private fun TvSearchFilterDialog(
                     }
                     if (years.isNotEmpty()) {
                         item(key = "year") {
+                            // 年份一路列到 1943, 全摊开是几十个胶囊、遥控器要按很久. 默认只给最近
+                            // [TV_SEARCH_RECENT_YEAR_COUNT] 年, 更早的折在「更多年份」后面.
+                            val recentYears = remember(years) { years.take(TV_SEARCH_RECENT_YEAR_COUNT) }
+                            val olderYears = remember(years) { years.drop(TV_SEARCH_RECENT_YEAR_COUNT) }
+                            // 进来时就选着老年份 (如从手机控制台设的) 就直接展开, 否则选中项看不见
+                            var yearsExpanded by remember { mutableStateOf(query.year?.let { it !in recentYears } == true) }
                             TvSearchFilterSection(
                                 stringResource(Lang.search_tv_filter_year),
                                 modifier = sectionSnap(2),
@@ -2326,12 +2334,34 @@ private fun TvSearchFilterDialog(
                                     // 清年份连带清季度: 季度从属于年份 (同上游 withYearFilter)
                                     onClick = { year = null; season = null },
                                 )
-                                years.forEach { y ->
+                                recentYears.forEach { y ->
                                     TvSearchFilterChip(
                                         text = y.toString(),
                                         selected = year == y,
                                         onClick = { if (year != y) season = null; year = y },
                                     )
+                                }
+                                // 展开/收起按钮夹在最近年份与更早年份之间, 位置不随展开状态移动 —— 遥控器按下它
+                                // 之后焦点还留在原处, 不会被挤到几行之外.
+                                // 收起会藏掉已选的老年份, 所以选着老年份时只给展开这一个方向.
+                                if (olderYears.isNotEmpty() && !(yearsExpanded && year?.let { it in olderYears } == true)) {
+                                    TvSearchFilterChip(
+                                        text = stringResource(
+                                            if (yearsExpanded) Lang.search_tv_filter_year_less
+                                            else Lang.search_tv_filter_year_more,
+                                        ),
+                                        selected = false,
+                                        onClick = { yearsExpanded = !yearsExpanded },
+                                    )
+                                }
+                                if (yearsExpanded) {
+                                    olderYears.forEach { y ->
+                                        TvSearchFilterChip(
+                                            text = y.toString(),
+                                            selected = year == y,
+                                            onClick = { if (year != y) season = null; year = y },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2580,6 +2610,13 @@ private val TV_SEARCH_FILTERS_TOP_GAP = 10.dp
 private val TV_SEARCH_HERO_TO_GRID_GAP = 16.dp
 
 
+
+/**
+ * 年份筛选默认摊开的年数, 更早的收在「更多年份」后面 (手机控制台的搜索表单同用这个值).
+ *
+ * 取 12 是因为一行大约放得下这么多个胶囊, 展开前后布局不会差太多.
+ */
+internal const val TV_SEARCH_RECENT_YEAR_COUNT = 12
 
 /** 筛选弹窗宽/高占屏比例. */
 // 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行 (整节比视口还高, 见 sectionSnap 那里的说明)

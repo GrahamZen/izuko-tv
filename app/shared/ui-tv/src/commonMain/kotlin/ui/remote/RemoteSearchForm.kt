@@ -13,6 +13,7 @@ import me.him188.ani.app.data.models.subject.CanonicalTagKind
 import me.him188.ani.app.domain.search.RatingRange
 import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
+import me.him188.ani.app.ui.exploration.search.TV_SEARCH_RECENT_YEAR_COUNT
 import me.him188.ani.app.ui.exploration.search.buildSearchFilterState
 import me.him188.ani.app.ui.foundation.lan.escapeHtml
 import me.him188.ani.app.ui.lang.Lang
@@ -139,12 +140,32 @@ internal suspend fun renderRemoteSearchForm(values: RemoteSearchFormValues, year
     // 年份与季度: 年份表由电视搜索页在场时提供 (currentYearsProvider), 拿不到就整节不出现 —— 手机上
     // 凭空给一串年份没法保证跟电视那边一致. 季度从属年份, 没选年份时整节隐藏, 由页面脚本联动.
     val yearHtml = if (years.isEmpty()) "" else buildString {
+        // 年份一路列到 1943, 默认只摊开最近这些年 (与电视筛选弹窗同一个值), 更早的折在「更多年份」后面
+        val recentYears = years.take(TV_SEARCH_RECENT_YEAR_COUNT)
+        val olderYears = years.drop(TV_SEARCH_RECENT_YEAR_COUNT)
+        // 选着折起来的老年份时直接展开, 否则选中项看不见
+        val expanded = values.year?.let { it in olderYears } == true
         append("<h2>").append(labels.yearTitle.escapeHtml()).append("</h2>\n<div class=\"pills\">\n")
         append(pill("radio", "year", "", labels.yearAll, checked = values.year == null))
-        for (y in years) {
+        for (y in recentYears) {
             append("\n").append(pill("radio", "year", y.toString(), y.toString(), checked = values.year == y))
         }
+        if (olderYears.isNotEmpty()) {
+            // 展开/收起由页面脚本切换 (见 SCRIPT 里的 syncYearMore): 选中的年份折在里面时不给收起
+            append("\n<button type=\"button\" id=\"year-more\" class=\"morebtn\"")
+            if (expanded) append(" hidden")
+            append(">").append((if (expanded) tr("收起") else tr("更多年份")).escapeHtml()).append("</button>")
+        }
         append("\n</div>\n")
+        if (olderYears.isNotEmpty()) {
+            append("<div class=\"pills\" id=\"year-rest\"").append(if (expanded) "" else " hidden").append(">\n")
+            append(
+                olderYears.joinToString("\n") { y ->
+                    pill("radio", "year", y.toString(), y.toString(), checked = values.year == y)
+                },
+            )
+            append("\n</div>\n")
+        }
         append("<div id=\"season-section\"").append(if (values.year == null) " hidden" else "").append(">\n")
         append("<h2>").append(labels.seasonTitle.escapeHtml()).append("</h2>\n<div class=\"pills\">\n")
         append(pill("radio", "season", "", labels.seasonAll, checked = values.season == null))

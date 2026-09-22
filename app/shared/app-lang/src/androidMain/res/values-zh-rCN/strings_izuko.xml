@@ -132,6 +132,8 @@
     <string name="search_tv_filter_sort">排序</string>
     <string name="search_tv_filter_rating_min">最低评分</string>
     <string name="search_tv_filter_year">年份</string>
+    <string name="search_tv_filter_year_more">更多年份</string>
+    <string name="search_tv_filter_year_less">收起</string>
     <string name="search_tv_filter_season">季度</string>
     <string name="search_tv_filter_any">不限</string>
     <string name="search_tv_filter_confirm">确认</string>
