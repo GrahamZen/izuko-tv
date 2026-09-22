@@ -76,6 +76,30 @@ class SubjectMediaFetchSessionsTest {
         assertEquals(0, created[1].subscribers)
     }
 
+    /**
+     * 「重新搜索(含新数据源)」的核心保证: 请求一模一样, 但代次变了就必须换一个会话 ——
+     * 会话在创建时对数据源列表取快照, 复用旧会话的话用户刚启用的源永远参与不进来.
+     */
+    @Test
+    fun `bumping the generation creates a new session for the same subject`() = runTest {
+        val created = mutableListOf<FakeSession>()
+        val sessions = SubjectMediaFetchSessions(backgroundScope) { FakeSession(it).also { s -> created += s } }
+
+        val first = sessions.get(request(1), generation = 0)
+        runCurrent()
+        assertSame(first, sessions.get(request(2), generation = 0)) // 同一代次内切集仍然复用
+        runCurrent()
+        assertEquals(1, created.size)
+
+        val refreshed = sessions.get(request(2), generation = 1)
+        runCurrent()
+        assertNotSame(first, refreshed)
+        assertEquals(2, created.size)
+        assertEquals(0, created[0].subscribers)
+        assertEquals(1, created[1].subscribers)
+        sessions.close()
+    }
+
     @Test
     fun `reusing restarts failed and abandoned sources only`() = runTest {
         val failed = FakeSource("failed", MediaSourceFetchState.Failed(IllegalStateException(), 0))

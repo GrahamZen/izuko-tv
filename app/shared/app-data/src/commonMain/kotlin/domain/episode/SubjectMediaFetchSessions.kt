@@ -35,14 +35,19 @@ class SubjectMediaFetchSessions(
 ) : AutoCloseable {
     private val lock = Mutex()
     private var current: Pair<MediaFetchRequest, MediaFetchSession>? = null
+    private var currentGeneration = 0
     private var subscription: Job? = null
 
     /**
-     * 取得可用于 [request] 的会话: 与当前会话查询同一条目时复用, 否则创建.
+     * 取得可用于 [request] 的会话: 与当前会话查询同一条目、且 [generation] 相同时复用, 否则创建.
+     *
+     * [generation] 是「重新搜索(含新数据源)」的计数 (见
+     * [me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh]). 会话创建时对数据源列表取快照,
+     * 因此「同一条目」不足以作为复用的唯一条件: 用户刚启用的数据源只有换一个会话才能参与查询.
      */
-    suspend fun get(request: MediaFetchRequest): MediaFetchSession = lock.withLock {
+    suspend fun get(request: MediaFetchRequest, generation: Int = 0): MediaFetchSession = lock.withLock {
         current?.let { (currentRequest, session) ->
-            if (currentRequest.isSameSubjectQuery(request)) {
+            if (currentGeneration == generation && currentRequest.isSameSubjectQuery(request)) {
                 retryFailedSources(session)
                 return@withLock session
             }
@@ -51,6 +56,7 @@ class SubjectMediaFetchSessions(
         subscription?.cancel()
         subscription = scope.launch { session.cumulativeResults.collect() }
         current = request to session
+        currentGeneration = generation
         session
     }
 
