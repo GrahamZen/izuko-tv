@@ -81,20 +81,20 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>
-    ): Flow<MediaFetchSelectBundle?> = createBundleFlow(subjectEpisodeInfoBundleFlow) { request ->
+    ): Flow<MediaFetchSelectBundle?> = createBundleFlow(subjectEpisodeInfoBundleFlow) { request, _ ->
         mediaSourceManager.createFetchFetchSession(flowOf(request))
     }
 
     override fun invoke(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>,
         fetchSessions: SubjectMediaFetchSessions,
-    ): Flow<MediaFetchSelectBundle?> = createBundleFlow(subjectEpisodeInfoBundleFlow) { request ->
-        fetchSessions.get(request)
+    ): Flow<MediaFetchSelectBundle?> = createBundleFlow(subjectEpisodeInfoBundleFlow) { request, refreshTick ->
+        fetchSessions.get(request, refreshTick)
     }
 
     private fun createBundleFlow(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>,
-        createFetchSession: suspend (MediaFetchRequest) -> MediaFetchSession,
+        createFetchSession: suspend (MediaFetchRequest, refreshTick: Int) -> MediaFetchSession,
     ): Flow<MediaFetchSelectBundle?> {
         val bundleDistinct = subjectEpisodeInfoBundleFlow
             .distinctUntilChangedBy { bundle ->
@@ -146,11 +146,13 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
             }
             // 「重新搜索(含新数据源)」按一下就 +1: 会话创建时对数据源列表取快照, 改完数据源 / 更新订阅要让新源
             // 参与就只能重建会话 (见 MediaFetchSessionRefresh)。请求本身没变时, 它是唯一能放行的东西。
+            // 计数要一路传给 createFetchSession: 条目级会话按「同一条目」复用 (见 SubjectMediaFetchSessions),
+            // 只在这里放行的话, 拿回来的仍然是持有旧数据源快照的那一个会话.
             .combine(fetchSessionRefresh.ticks) { req, tick -> req to tick }
             .distinctUntilChanged() // very important to avoid re-query
-            .mapLatest { (req, _) ->
+            .mapLatest { (req, tick) ->
                 logger.info { "MediaFetchRequest changed. Creating MediaFetchSession for reqeust: $req" }
-                createFetchSession(req)
+                createFetchSession(req, tick)
             }
             .onStart<MediaFetchSession?> { emit(null) }
 

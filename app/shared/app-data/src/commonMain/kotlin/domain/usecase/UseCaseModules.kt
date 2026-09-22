@@ -19,7 +19,9 @@ import me.him188.ani.app.domain.danmaku.SetDanmakuEnabledUseCase
 import me.him188.ani.app.domain.danmaku.SetDanmakuEnabledUseCaseImpl
 import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCase
 import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCaseImpl
+import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
+import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCaseImpl
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
@@ -75,7 +77,11 @@ fun KoinApplication.useCaseModules() = module {
     single<MediaSelectorAutoSelectUseCase> { MediaSelectorAutoSelectUseCaseImpl() }
     single<MediaSelectorEventSavePreferenceUseCase> { MediaSelectorEventSavePreferenceUseCaseImpl }
     single<GetSubjectEpisodeInfoBundleFlowUseCase> { GetSubjectEpisodeInfoBundleFlowUseCaseImpl() }
-    single { MediaFetchSessionRefresh() }
+    single {
+        MediaFetchSessionRefresh(
+            get<MediaSourceManager>().allInstances.map { list -> list.map { it.instanceId to it.isEnabled } },
+        )
+    }
     single<CreateMediaFetchSelectBundleFlowUseCase> { CreateMediaFetchSelectBundleFlowUseCaseImpl() }
     single<GetMediaSelectorSettingsFlowUseCase> { GetMediaSelectorSettingsFlowUseCaseImpl }
     single<GetVideoScaffoldConfigUseCase> { GetVideoScaffoldConfigUseCaseImpl }
