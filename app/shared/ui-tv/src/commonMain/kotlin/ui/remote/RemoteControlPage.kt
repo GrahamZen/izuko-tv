@@ -214,6 +214,11 @@ input[type=text]:focus, input[type=password]:focus, input[type=email]:focus, tex
 .pills input { position: absolute; opacity: 0; width: 0; height: 0; }
 .pills span { display: inline-block; padding: 7px 14px; border-radius: 18px; background: var(--chip); color: var(--on-chip); font-size: 14px; line-height: 1.3; user-select: none; }
 .pills input:checked + span { background: var(--p); color: var(--on-p); }
+/* 搜索筛选里「更多年份 / 收起」: 长得跟胶囊一样, 但它是按钮不是选项 */
+.morebtn { padding: 6px 13px; border-radius: 18px; background: none; border: 1px solid var(--outline); color: var(--sub); font-size: 14px; line-height: 1.3; }
+/* .pills 自己是 flex, 优先级压过 UA 样式表给 [hidden] 的 display:none, 不补这条藏不住 */
+.pills[hidden] { display: none; }
+#year-rest { margin-top: 8px; }
 button { font: inherit; border: 0; cursor: pointer; }
 .primary { background: var(--p); color: var(--on-p); font-weight: 600; padding: 13px 18px; border-radius: 14px; font-size: 16px; }
 .wide { width: 100%; }
@@ -1569,9 +1574,26 @@ private val SCRIPT = """
       if (none) none.checked = true;
     }
   }
+  // 年份从 1943 起, 默认只摊开最近十几年 (服务端渲染时就分好了), 更早的折在「更多年份」后面.
+  // 收起会藏掉已选的老年份, 所以选着折起来的年份时按钮自己隐藏, 只剩「改选别的年份」这一条路.
+  var yearMore = document.getElementById('year-more');
+  var yearRest = document.getElementById('year-rest');
+  function syncYearMore() {
+    if (!yearMore || !yearRest || !searchForm) return;
+    var picked = searchForm.querySelector('input[name=year]:checked');
+    var pickedIsHidden = !!(picked && picked.value && yearRest.contains(picked));
+    yearMore.hidden = !yearRest.hidden && pickedIsHidden;
+    yearMore.textContent = yearRest.hidden ? T('更多年份') : T('收起');
+  }
+  if (yearMore && yearRest) {
+    yearMore.addEventListener('click', function () {
+      yearRest.hidden = !yearRest.hidden;
+      syncYearMore();
+    });
+  }
   if (searchForm) {
     searchForm.addEventListener('change', function (e) {
-      if (e.target && e.target.name === 'year') syncSeasonSection();
+      if (e.target && e.target.name === 'year') { syncSeasonSection(); syncYearMore(); }
     });
   }
   function loadHistory() {
