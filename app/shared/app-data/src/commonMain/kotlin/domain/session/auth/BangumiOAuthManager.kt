@@ -22,6 +22,7 @@ import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowser
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
+import me.him188.ani.app.domain.session.AccessTokenPair
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -29,6 +30,8 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.Uuid
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 
 /**
  * bangumi 登录的唯一编排点 (进程内单例).
@@ -234,6 +237,40 @@ class BangumiOAuthManager(
                 logger.error(wrapped) { "bgm-direct: oauth 换 token 失败" }
                 _state.value = State.Failed(LoadError.fromException(wrapped))
             }
+        }
+    }
+
+    /**
+     * 用 Bangumi 个人令牌登录 (在 [BangumiOAuthConstants.PERSONAL_TOKEN_PAGE] 生成): 不打开授权页, 也不换 token,
+     * 只用令牌请求一次 API 子域确认它能用. 镜像站把 bgm.tv 主站 (授权页与换 token 都在那) 挡在反爬验证页后面,
+     * 经镜像时只能这样登录. 令牌没有 refresh token, [validDays] 天后退出登录, 需要重新生成.
+     *
+     * does not throw
+     *
+     * @return 失败原因; `null` = 登录成功
+     */
+    suspend fun loginWithPersonalToken(token: String, validDays: Int): LoadError? {
+        val trimmed = token.trim().removePrefix("Bearer ").trim()
+        return try {
+            val username = client.verifyToken(trimmed)
+            sessionManager.setSession(
+                session = AccessTokenSession(
+                    tokens = AccessTokenPair(
+                        aniAccessToken = "",
+                        expiresAtMillis = (Clock.System.now() + validDays.days).toEpochMilliseconds(),
+                        bangumiAccessToken = trimmed,
+                    ),
+                ),
+                refreshToken = null,
+            )
+            logger.info { "bgm-direct: 个人令牌登录成功 ($username), $validDays 天后到期" }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val wrapped = RepositoryException.wrapOrThrowCancellation(e)
+            logger.info { "bgm-direct: 个人令牌登录失败: $wrapped" }
+            LoadError.fromException(wrapped)
         }
     }
 

@@ -9,14 +9,18 @@
 
 package me.him188.ani.app.domain.session.auth
 
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import me.him188.ani.app.data.repository.RepositoryAuthorizationException
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.session.AccessTokenPair
 import me.him188.ani.app.platform.currentAniBuildConfig
@@ -50,6 +54,14 @@ object BangumiOAuthConstants {
 
     private const val AUTHORIZE_URL = "https://bgm.tv/oauth/authorize"
     const val TOKEN_URL = "https://bgm.tv/oauth/access_token"
+
+    /** 「我是谁」: 个人令牌登录拿它校验令牌. 在 API 子域上, 不经过授权页与换 token 的主站接口. */
+    const val ME_URL = "https://next.bgm.tv/p1/me"
+
+    /**
+     * 生成个人令牌的页面 (要先在网页上登录). 经镜像时换成镜像上对应的子域, 见 `BangumiMirrorHosts.mirrorHostOf`.
+     */
+    const val PERSONAL_TOKEN_PAGE = "https://next.bgm.tv/demo/access-token"
 
     /**
      * 授权页地址. [state] 原样回传, 用来防止串号 (同一台设备上先后开两次授权).
@@ -167,6 +179,32 @@ class BangumiOAuthClient(
             what = "refresh",
         )
 
+    /**
+     * 用 [token] 问一次「我是谁」, 确认它能用 (个人令牌登录). 只走 API 子域: 授权页与换 token 的接口在 bgm.tv
+     * 主站上, 而镜像站把主站挡在反爬验证页后面, 经镜像时只有 API 子域走得通.
+     *
+     * @return bangumi 用户名
+     * @throws RepositoryException 令牌无效或已过期时是 [RepositoryAuthorizationException]
+     */
+    suspend fun verifyToken(token: String): String {
+        val profile = try {
+            client.use {
+                val response = get(BangumiOAuthConstants.ME_URL) { bearerAuth(token) }
+                val text = response.bodyAsText()
+                if (response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden) {
+                    throw RepositoryAuthorizationException("bangumi rejected the token: ${response.status}")
+                }
+                if (!response.status.isSuccess()) {
+                    error("bangumi /p1/me failed: ${response.status}, body=$text")
+                }
+                json.decodeFromString(BangumiProfile.serializer(), text)
+            }
+        } catch (e: Exception) {
+            throw RepositoryException.wrapOrThrowCancellation(e)
+        }
+        return profile.username
+    }
+
     private suspend fun request(form: Parameters, what: String): OAuthResult {
         val resp = try {
             client.use {
@@ -188,6 +226,11 @@ class BangumiOAuthClient(
         return resp.toOAuthResult(clock)
     }
 }
+
+@Serializable
+private class BangumiProfile(
+    @SerialName("username") val username: String,
+)
 
 @Serializable
 private class BangumiTokenResponse(
