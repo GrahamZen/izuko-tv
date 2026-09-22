@@ -123,6 +123,15 @@ class SelectorMediaSource(
         val FactoryId = FactoryId("web-selector")
 
         /**
+         * 一次产出整个条目的资源时, 条目集数的上限.
+         *
+         * 超过它 (柯南、海贼这种上千集的) 就退回只产出当前这一集: 那时源站的条目页往往有同样多的剧集,
+         * 给每一集都建资源对象会把低内存设备压垮 (见 `fix(mediasource): 低内存设备看长番时加载或切集被系统杀掉`).
+         * 代价是这类条目切集后在线源要等会话换代才有结果.
+         */
+        const val MAX_WHOLE_SUBJECT_EPISODES = 300
+
+        /**
          * [matcher] 对 WebView 配置的修改: 依次合并 [config] 已有的 cookies、[matchVideo] 中配置的 cookies 和 [captchaCookies];
          * [userAgent] 非 `null` 时覆盖 [config] 的 User-Agent.
          *
@@ -306,7 +315,12 @@ class SelectorMediaSource(
     ): List<DefaultMedia>? {
         // 请求普通剧集且按集号过滤时, 只有集号相符的行 (和集号不是纯数字的行) 可能出结果,
         // 不必把长番几千集整页读回内存.
-        val narrowed = query.episodeSort is EpisodeSort.Normal && searchConfig.filterByEpisodeSort
+        //
+        // **条目级查询要整页读回** (见 [SelectorSearchQuery.subjectEpisodeSorts]): 播放页的会话按条目复用,
+        // 只读回当前集的话, 这一页在切集之后产不出任何资源. 窄读因此只留给长番 —— 那时
+        // `subjectEpisodeSorts` 本来就是 null.
+        val narrowed = query.subjectEpisodeSorts == null &&
+                query.episodeSort is EpisodeSort.Normal && searchConfig.filterByEpisodeSort
         val caches = try {
             if (narrowed) {
                 repository.getCacheForEpisode(
@@ -419,6 +433,7 @@ class SelectorMediaSource(
             SelectorEpisodeProbe(episodeSort = it.sort, episodeEp = it.ep, episodeName = it.name)
         }
         val subjectId = query.subjectId.toIntOrNull()
+        val subjectEpisodeSorts = query.wholeSubjectEpisodeSortsOrNull()
         fun searchQuery(name: String) = SelectorSearchQuery(
             subjectName = name,
             episodeSort = query.episodeSort,
@@ -426,6 +441,7 @@ class SelectorMediaSource(
             episodeEp = query.episodeEp,
             episodeName = query.episodeName,
             freshnessProbe = freshnessProbe,
+            subjectEpisodeSorts = subjectEpisodeSorts,
         )
 
         val primary = query.subjectNames.take(searchConfig.autoMatch.searchUseSubjectNamesCount.coerceAtLeast(1))
@@ -452,6 +468,16 @@ class SelectorMediaSource(
                     engine.searchOnline(searchConfig, searchQuery, mediaSourceId, subjectId)
                 }
         }.map { MediaMatch(it, MatchKind.FUZZY) }
+    }
+
+    /**
+     * 本条目的全部集号, 交给 [SelectorSearchQuery.subjectEpisodeSorts] 决定产出范围.
+     *
+     * 剧集列表未知, 或条目集数超过 [MAX_WHOLE_SUBJECT_EPISODES] 时为 `null` —— 那时退回"只产出当前这一集".
+     */
+    private fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
+        if (episodes.isEmpty() || episodes.size > MAX_WHOLE_SUBJECT_EPISODES) return null
+        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) }
     }
 
     // region 浏览: 列表模式, 不做任何自动匹配
