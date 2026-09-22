@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
@@ -53,6 +54,8 @@ import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.PlayerState
 import kotlin.time.Duration.Companion.seconds
@@ -115,7 +118,7 @@ sealed interface RetainedPlaybackNotice {
  * 侧边栏等入口只看 [PlaybackSessionEntry] 这一小片接口 (经 [LocalPlaybackSessionEntry] 拿到),
  * 不认识本类, 也就不可能自己造出第二个播放器.
  */
-class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
+class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinComponent {
     /**
      * 一个会话: 一个私有 [ViewModelStore] 加里面唯一那个 [EpisodeViewModel].
      *
@@ -220,6 +223,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         }
     }
 
+    /** 见 [openSession] 里数据源变动的处理. */
+    private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
+
     /**
      * 进播放页时调用: 拿到这一页该用的会话.
      *
@@ -232,6 +238,10 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
         // 只比身份字段: info 上还挂着随条目信息补上的展示字段 (剧名/封面/集号), 拿刚构造的
         // 空壳整体 == 必然不等 -> 每次回播放页都会把热好的会话销毁重建. 见 RetainedPlaybackSessionInfo
         sessions.firstOrNull { it.info.isSameEpisodeAs(subjectId, episodeId) }?.let { existing ->
+            // 会话在建立时对数据源列表取了快照, 接着用就等于接着用那份快照。人不在播放页的这段时间里
+            // 改过数据源 (最常见是从手机控制台停用一个源) 就让它重搜一次 —— 播放器、已选中的资源与
+            // 进度都留着, 换掉的只是搜索会话。见 MediaFetchSessionRefresh
+            viewModelScope.launch { fetchSessionRefresh.requestIfSourcesChanged() }
             makeCurrent(existing)
             return existing
         }
@@ -246,6 +256,8 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry {
             }
             destroy(it)
         }
+        // 新会话本来就用最新的数据源列表, 这里只记一笔, 好让下次回到这一集时有得比
+        viewModelScope.launch { fetchSessionRefresh.markSources() }
         return Session(RetainedPlaybackSessionInfo(subjectId, episodeId)).also {
             sessions += it
             makeCurrent(it)
