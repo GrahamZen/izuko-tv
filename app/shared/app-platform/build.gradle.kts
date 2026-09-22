@@ -30,6 +30,11 @@ val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
+// 更新时只装 release 里这个前缀的 APK (见 gradle.properties).
+val updateAssetPrefix = getProperty("ani.update.asset.prefix")
+// 检查更新、下载安装包的仓库 (见 gradle.properties). 发版前真机走一遍更新时用 -P 或 local.properties 指到测试仓库.
+val updateRepository = getProperty("ani.update.repository")
+
 kotlin {
     android {
         namespace = "me.him188.ani.app.platform"
@@ -129,6 +134,8 @@ buildConfig {
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("distroChannel", distroChannel)
+        stringField("updateAssetPrefix", updateAssetPrefix)
+        stringField("updateRepository", updateRepository)
 
         firebaseFields()
     }
@@ -144,6 +151,8 @@ buildConfig {
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("distroChannel", distroChannel)
+        stringField("updateAssetPrefix", updateAssetPrefix)
+        stringField("updateRepository", updateRepository)
 
         booleanField("analyticsEnabled", enableFirebase)
     }

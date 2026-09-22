@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -37,6 +39,7 @@ import me.him188.ani.app.tools.update.UpdateInstallationRunner
 import me.him188.ani.app.tools.update.UpdateInstallationState
 import me.him188.ani.app.tools.update.UpdateInstaller
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.inSystem
@@ -47,6 +50,7 @@ import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -79,6 +83,13 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     // Track that work separately so the UI can show installation state and cancel it safely.
     private val installationTasker = MonoTasker(backgroundScope)
     private val checkUpdateErrorFlow = MutableStateFlow<LoadError?>(null)
+
+    private val installPermissionRequestFlow = MutableStateFlow<NewVersion?>(null)
+
+    /**
+     * 等着安装授权才开始下载的版本 (见 [UpdateInstaller.canInstallNow]), 界面据此问用户要不要去授权.
+     */
+    val installPermissionRequest: StateFlow<NewVersion?> = installPermissionRequestFlow.asStateFlow()
 
     val presentationFlow = combine(
         latestVersionFlow,
@@ -182,6 +193,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     }
 
     fun startDownload(ver: NewVersion, uriHandler: UriHandler?) {
+        autoInstalledFile = null // 重新下载的包要能再自动装一次
         downloadTasker.launch {
             val settings = updateSettings.first()
             if (!settings.inAppDownload) {
@@ -194,6 +206,13 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 } ?: run {
                     logger.warn { "No download URL found, ignoring" }
                 }
+                return@launch
+            }
+
+            // 下载之前先要到安装授权: 授权那一刻 Android 11 会杀掉本应用, 下完再授权的话重新打开还得再下一遍
+            if (!updateInstaller.canInstallNow()) {
+                logger.info { "Install permission missing, asking before downloading ${ver.name}" }
+                installPermissionRequestFlow.value = ver
                 return@launch
             }
 
@@ -226,6 +245,16 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
+    /** 打开系统的授权页. 授权时 Android 11 会杀掉本应用; 重新打开后照常检查更新, 那时再下载. */
+    fun requestInstallPermission(context: ContextMP) {
+        installPermissionRequestFlow.value = null
+        updateInstaller.requestInstallPermission(context)
+    }
+
+    fun dismissInstallPermissionRequest() {
+        installPermissionRequestFlow.value = null
+    }
+
     fun restartDownload(uriHandler: UriHandler) {
         latestVersionFlow.value?.let { startDownload(it, uriHandler) }
     }
@@ -240,6 +269,27 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 context = context,
             )
         }
+    }
+
+    /** 最近一次自动安装的文件, 见 [autoInstall]. */
+    @Volatile
+    private var autoInstalledFile: SystemPath? = null
+
+    /**
+     * 下载完成后自动安装 (TV), 同一个下载好的文件只装一次.
+     *
+     * [install] 期间界面状态会经过 [AppUpdateState.Installing] 再回到 [AppUpdateState.Downloaded], 界面按"已下载"
+     * 触发的话会一遍遍重装, 直到系统安装器盖住界面、界面停止收集状态为止 (2026-09-22 真机: 一秒内拉起两次安装器).
+     * 用户手动点「安装」走 [install], 不受影响.
+     */
+    fun autoInstall(context: ContextMP) {
+        val state = presentationFlow.value.state as? AppUpdateState.Downloaded ?: return
+        if (state.file == autoInstalledFile) {
+            logger.info { "autoInstall: ${state.file} 已经自动装过, 不再拉起安装器" }
+            return
+        }
+        autoInstalledFile = state.file
+        install(context)
     }
 
     fun dismissInstallationFailure() {

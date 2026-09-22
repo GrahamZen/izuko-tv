@@ -48,6 +48,16 @@ interface UpdateInstaller {
     fun getUpdatePreparationUrls(packageUrls: List<String>): List<String> = packageUrls
 
     /**
+     * 现在能不能直接拉起安装. Android 上要先有「安装未知应用」的授权, 见 [requestInstallPermission].
+     *
+     * 要在下载之前问: 授权那一刻 Android 11 会杀掉本应用, 下完才发现没授权的话, 重新打开后还得再下一遍.
+     */
+    fun canInstallNow(): Boolean = true
+
+    /** 打开系统里给本应用授权安装应用的页面, 见 [canInstallNow]. */
+    fun requestInstallPermission(context: ContextMP) {}
+
+    /**
      * 如果 [install] 可能返回 [InstallationResult.Failed], 则需实现
      */
     suspend fun openForManualInstallation(file: SystemPath, context: ContextMP): Boolean = false

@@ -44,6 +44,9 @@
     <string name="settings_storage_image_cache_usage">海报、剧照等图片。当前占用 %1$s，超出上限自动淘汰旧图，一般无需手动清理</string>
     <string name="settings_storage_image_cache_cleared">已清理图片缓存</string>
     <string name="settings_update_popup_feedback_group_hint">点「查看详情」可扫码加入QQ交流/反馈群</string>
+    <string name="settings_update_install_permission_title">允许安装更新</string>
+    <string name="settings_update_install_permission_message">安装更新之前，需要在系统设置里允许 %1$s 安装应用。\n\n打开开关后，系统会关闭 %1$s，重新打开就会继续更新。</string>
+    <string name="settings_update_install_permission_open_settings">去设置</string>
     <string name="exploration_rec_because_you_liked">因为你喜欢《%1$s》</string>
     <string name="exploration_rec_also_watched">看过《%1$s》的人还看了</string>
     <string name="exploration_rec_similar_to">和《%1$s》相似的作品</string>

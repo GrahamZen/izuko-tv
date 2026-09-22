@@ -44,6 +44,9 @@
     <string name="settings_storage_image_cache_usage">Posters, stills and other images. Currently using %1$s; old entries are evicted automatically, so manual clearing is normally unnecessary</string>
     <string name="settings_storage_image_cache_cleared">Image cache cleared</string>
     <string name="settings_update_popup_feedback_group_hint">Tap &quot;See details&quot; to scan the QR code and join the QQ group</string>
+    <string name="settings_update_install_permission_title">Allow installing updates</string>
+    <string name="settings_update_install_permission_message">Before installing the update, %1$s needs permission to install apps. Turn it on in the system settings.\n\nAfter you turn it on, the system closes %1$s. Open it again to continue updating.</string>
+    <string name="settings_update_install_permission_open_settings">Open settings</string>
     <string name="exploration_rec_because_you_liked">Because you liked %1$s</string>
     <string name="exploration_rec_also_watched">Fans of %1$s also watched</string>
     <string name="exploration_rec_similar_to">More like %1$s</string>

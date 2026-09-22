@@ -58,6 +58,8 @@ tasks.register("uploadAndroidApk", UploadAndroidApksTask::class) {
     configureReleaseUploadInputs()
     // fork: 发布的是 formFactor=tv 变体 (上游只有 distribution 一个维度, 目录为 outputs/apk/default/release)
     apkDirectory.set(project(":app:android").layout.buildDirectory.dir("outputs/apk/defaultTv/release"))
+    // 应用检查更新时只认这个前缀的包, 见 gradle.properties
+    assetNamePrefix.set(providers.gradleProperty("ani.update.asset.prefix"))
 }
 
 val uploadAndroidApkGithubQr = tasks.register("uploadAndroidApkGithubQr", UploadReleaseAssetTask::class) {

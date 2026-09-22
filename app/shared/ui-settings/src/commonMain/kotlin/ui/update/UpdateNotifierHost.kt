@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,7 +78,7 @@ fun BoxScope.UpdateNotifier(
     val downloaded = state is AppUpdateState.Downloaded
     LaunchedEffect(autoInstall, downloaded) {
         if (autoInstall && downloaded) {
-            viewModel.install(context)
+            viewModel.autoInstall(context)
         }
     }
 
@@ -87,6 +88,15 @@ fun BoxScope.UpdateNotifier(
             message = failure.reason.toString(),
             onDismissRequest = { viewModel.dismissInstallationFailure() },
             state = state,
+        )
+    }
+
+    // 下载之前先要安装授权, 见 AppUpdateViewModel.installPermissionRequest
+    val installPermissionRequest by viewModel.installPermissionRequest.collectAsStateWithLifecycle()
+    if (installPermissionRequest != null) {
+        InstallPermissionDialog(
+            onOpenSettings = { viewModel.requestInstallPermission(context) },
+            onDismissRequest = { viewModel.dismissInstallPermissionRequest() },
         )
     }
 
@@ -101,6 +111,13 @@ fun BoxScope.UpdateNotifier(
             focus.request(UpdateNotifierFocus.AutoUpdate)
         }
     }
+    // 下载完成后焦点送到"安装"按钮: 电视上这时会自动拉起系统安装器, 那边失败或被取消回来时, 按一下确定就能重来.
+    // 不送的话焦点留在页面里, 遥控器很难走到右下角这张卡上 (2026-09-22 真机: 安装器 ANR 回来后只能重启应用)
+    LaunchedEffect(autoInstall, downloaded) {
+        if (autoInstall && downloaded) {
+            focus.request(UpdateNotifierFocus.Install)
+        }
+    }
 
     // "查看详情": 先在应用内看完整更新内容 (气泡上只放得下前几条), 弹窗底部才是跳浏览器的按钮
     var detailsVisible by remember(newVersion?.name) { mutableStateOf(false) }
@@ -108,9 +125,12 @@ fun BoxScope.UpdateNotifier(
     // 无操作自动消失: 提示卡出现一段时间后自行关闭, 不永久挡住右下角内容.
     // 开始下载后 hasUpdateCard 变 false, 本效应取消 —— 下载进度卡不受影响.
     // 详情弹窗开着时不计时: 用户正在读那几十条更新, 背后把气泡撤掉的话关掉弹窗就没有入口了
-    // (再点"自动更新"要重新等一轮检查). 关掉弹窗后重新计满 20 秒.
-    LaunchedEffect(hasUpdateCard, detailsVisible, newVersion?.name) {
-        if (hasUpdateCard && !detailsVisible) {
+    // (再点"自动更新"要重新等一轮检查). 关掉弹窗后重新计满 20 秒. 安装授权的说明开着时同理.
+    // 窗口没有焦点时也不计时: 启动时弹出的 Web 控制台二维码 (独立窗口) 正好盖在这张卡上, 计时照走的话,
+    // 用户关掉二维码时卡片往往已经没了 (2026-09-23 真机); 应用切到后台同理
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(hasUpdateCard, detailsVisible, installPermissionRequest, windowFocused, newVersion?.name) {
+        if (hasUpdateCard && !detailsVisible && installPermissionRequest == null && windowFocused) {
             delay(UPDATE_CARD_AUTO_DISMISS_MILLIS)
             dismissed = true
         }
@@ -199,13 +219,14 @@ fun BoxScope.UpdateNotifier(
                         dismissed = true
                     },
                     onRetryClick = { viewModel.restartDownload(uriHandler) },
+                    installButtonModifier = Modifier.tvFocusAnchor(focus, UpdateNotifierFocus.Install),
                 )
             }
         }
     }
 }
 
-private enum class UpdateNotifierFocus : TvFocusKey { AutoUpdate }
+private enum class UpdateNotifierFocus : TvFocusKey { AutoUpdate, Install }
 
 /**
  * 设置页中的更新提示卡片，带下载和安装按钮，永久显示直到手动关闭.
@@ -230,7 +251,7 @@ fun BoxScope.UpdateSettingsNotifier(
     val downloaded = state is AppUpdateState.Downloaded
     LaunchedEffect(autoInstall, downloaded) {
         if (autoInstall && downloaded) {
-            viewModel.install(context)
+            viewModel.autoInstall(context)
         }
     }
 
@@ -243,10 +264,18 @@ fun BoxScope.UpdateSettingsNotifier(
         )
     }
 
-    val showCard = !dismissed && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
+    // 下载之前先要安装授权, 见 AppUpdateViewModel.installPermissionRequest
+    val installPermissionRequest by viewModel.installPermissionRequest.collectAsStateWithLifecycle()
+    if (installPermissionRequest != null) {
+        InstallPermissionDialog(
+            onOpenSettings = { viewModel.requestInstallPermission(context) },
+            onDismissRequest = { viewModel.dismissInstallPermissionRequest() },
+        )
+    }
 
     // 与入口气泡一致: "查看详情"先在应用内看全文 (设置页这张卡不会自动消失, 无需暂停计时)
     var detailsVisible by remember(newVersion?.name) { mutableStateOf(false) }
+    val showCard = !dismissed && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
     newVersion?.takeIf { detailsVisible }?.let { version ->
         NewVersionDetailsDialog(
             version = version.name,

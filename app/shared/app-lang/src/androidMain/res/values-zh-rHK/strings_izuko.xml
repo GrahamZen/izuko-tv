@@ -78,6 +78,9 @@
     <string name="settings_player_tv_chrome">自訂播放器按鈕</string>
     <string name="settings_player_tv_chrome_description">排列播放器裏的按鈕，或者把用不上的藏起來；可以存幾套換着用</string>
     <string name="settings_update_popup_feedback_group_hint">點「查看詳情」可掃碼加入QQ交流/反饋群</string>
+    <string name="settings_update_install_permission_title">允許安裝更新</string>
+    <string name="settings_update_install_permission_message">安裝更新之前，需要在系統設定裡允許 %1$s 安裝應用程式。\n\n打開開關後，系統會關閉 %1$s，重新打開就會繼續更新。</string>
+    <string name="settings_update_install_permission_open_settings">去設定</string>
     <string name="exploration_rec_because_you_liked">因為你喜歡《%1$s》</string>
     <string name="exploration_rec_also_watched">看過《%1$s》的人還看了</string>
     <string name="exploration_rec_similar_to">和《%1$s》相似的作品</string>

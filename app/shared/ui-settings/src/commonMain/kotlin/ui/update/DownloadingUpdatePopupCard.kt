@@ -66,6 +66,8 @@ fun DownloadingUpdatePopupCard(
     onCancelClick: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** "安装"按钮的附加 modifier (TV 上挂焦点锚点, 下载完成后把焦点送过去). */
+    installButtonModifier: Modifier = Modifier,
 ) {
     var showConfirmCancel by rememberSaveable { mutableStateOf(false) }
     val onRequestCancel = {
@@ -135,6 +137,7 @@ fun DownloadingUpdatePopupCard(
             if (!isInstalling && fileDownloaderStats.state is FileDownloaderState.Succeed) {
                 Button(
                     onClick = onInstallClick,
+                    modifier = installButtonModifier,
                 ) {
                     Text(stringResource(Lang.settings_update_popup_restart_update))
                 }
