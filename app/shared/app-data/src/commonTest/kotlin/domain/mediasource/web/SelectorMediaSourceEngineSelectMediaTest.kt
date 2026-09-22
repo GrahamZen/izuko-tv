@@ -232,6 +232,72 @@ class SelectorMediaSourceEngineSelectMediaTest {
         )
     }
 
+    // region 条目级查询: 一次查询的产出要覆盖整个条目
+
+    private fun sorts(range: IntRange) = range.mapTo(mutableSetOf()) { EpisodeSort(it) }
+
+    /**
+     * 播放页的查询会话是**按条目**复用的 (上游 #3442 «数据源查询改为条目级»): 切集只重建选择器, 不重新查询.
+     * 所以一次查询的产出必须覆盖整个条目 —— 只给当次那一集的话, 切到别的集就一条都匹配不上,
+     * 界面上是"在线源全部没有结果, 连正在加载都不出现" (2026-09-22 真机复现: 第 1 集正常, 切到第 7 集全灭).
+     */
+    @Test
+    fun `条目级查询产出整个条目，切集之后仍能从同一批结果里拿到资源`() {
+        val page = (1..12).map { numbered(it) }
+        val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = null)
+
+        val produced = engine.selectFilteredMedia(
+            page, case.config, case.query().copy(subjectEpisodeSorts = sorts(1..12)), "test", TONARI,
+        )
+
+        assertEquals(12, produced.size)
+        // 切到第 7 集时选择器要能从这一批里找到它
+        assertEquals(
+            1,
+            produced.count { it.episodeRange == EpisodeRange.single(EpisodeSort(7)) },
+        )
+    }
+
+    /** 源站条目页比条目本身长 (多出来的集号不属于这个条目) 时, 多出来的不产出. */
+    @Test
+    fun `条目之外的集号不产出`() {
+        val page = (1..40).map { numbered(it) }
+        val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = null)
+
+        val produced = engine.selectFilteredMedia(
+            page, case.config, case.query().copy(subjectEpisodeSorts = sorts(1..12)), "test", TONARI,
+        )
+
+        assertEquals(12, produced.size)
+    }
+
+    /** 放宽到整个条目, 不等于把同一页上的另一部作品也放进来. */
+    @Test
+    fun `条目级查询仍然挡住同一页上的另一部作品`() {
+        val page = listOf(titleAsSort(TONARI), titleAsSort(YOGORETA))
+        val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = "毫不相干的作品")
+
+        val produced = engine.selectFilteredMedia(
+            page, case.config, case.query().copy(subjectEpisodeSorts = sorts(1..1)), "test", TONARI,
+        )
+
+        assertEquals(emptyList(), produced)
+    }
+
+    /** 没有条目集号 (长番, 见 SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES) 时维持老行为: 只产出当前这一集. */
+    @Test
+    fun `没有条目集号时只产出当前这一集`() {
+        val page = (1..12).map { numbered(it) }
+        val case = Case(page, EpisodeSort(7), episodeEp = EpisodeSort(7), episodeName = null)
+
+        val produced = engine.selectFilteredMedia(page, case.config, case.query(), "test", TONARI)
+
+        assertEquals(1, produced.size)
+        assertEquals(EpisodeRange.single(EpisodeSort(7)), produced.single().episodeRange)
+    }
+
+    // endregion
+
     private companion object {
         private const val TONARI = "住在隔壁的她"
         private const val YOGORETA = "被玷污的她"

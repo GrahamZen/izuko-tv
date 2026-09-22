@@ -76,6 +76,16 @@ data class SelectorSearchQuery(
      * 用于判断缓存的条目页面是否陈旧的剧集: 页面包含这一集才算命中. 为 `null` 时以当前剧集判断.
      */
     val freshnessProbe: SelectorEpisodeProbe? = null,
+    /**
+     * 本条目的全部集号 (`sort` 与 `ep` 都算). 非空时, 按集号裁剪产出的范围放宽到**整个条目**.
+     *
+     * **为什么不能只产出当次那一集**: 播放页的查询会话是按条目复用的 (见
+     * `SubjectMediaFetchSessions`), 切集只重建选择器、不重新查询. 产出里只有第一次进来那一集的话,
+     * 切到别的集就一条都匹配不上 —— 界面上表现为在线源全部没有结果, 连"正在加载"都不出现.
+     *
+     * 为 `null` 时退化成只产出 [episodeSort] 那一集 (长番, 见 `SelectorMediaSource.fetch`).
+     */
+    val subjectEpisodeSorts: Set<EpisodeSort>? = null,
 )
 
 /**
@@ -238,9 +248,23 @@ abstract class SelectorMediaSourceEngine {
         subjectName: String,
     ): List<DefaultMedia> {
         val bySortOnly = config.filterByEpisodeSort && query.episodeSort is EpisodeSort.Normal
+        // 只在按集号过滤时才谈得上"放宽到整个条目": 不按集号过滤时本来就全部产出
+        val wholeSubject = query.subjectEpisodeSorts?.takeIf { bySortOnly }
         val mediaList = createMedia(episodes, config, query, mediaSourceId, subjectName) { episodeSort ->
-            !bySortOnly || EpisodeRange.single(episodeSort).let { range ->
-                range.contains(query.episodeSort) || (query.episodeEp != null && range.contains(query.episodeEp))
+            when {
+                !bySortOnly -> true
+                // 整个条目的集号都留下, 见 [SelectorSearchQuery.subjectEpisodeSorts]
+                wholeSubject != null -> episodeSort in wholeSubject
+                else -> EpisodeRange.single(episodeSort).let { range ->
+                    range.contains(query.episodeSort) || (query.episodeEp != null && range.contains(query.episodeEp))
+                }
+            }
+        }
+        if (wholeSubject != null) {
+            // 条目级查询: 这一遍也按"集号属于本条目"筛, 而不是按当次那一集 —— 否则刚产出的别的集又被滤光.
+            // 它挡的是集号解析不出来、靠剧集名蒙混进来的行 (同一页上的另一部作品).
+            return mediaList.filter { media ->
+                media.episodeRange?.let { range -> wholeSubject.any { range.contains(it) } } == true
             }
         }
         return filterMedia(mediaList, config, query)
