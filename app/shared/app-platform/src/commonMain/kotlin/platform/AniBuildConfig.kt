@@ -90,9 +90,13 @@ internal expect val currentAniBuildConfigImpl: AniBuildConfig
 inline val currentAniBuildConfig: AniBuildConfig get() = currentAniBuildConfigImpl
 
 /**
- * 满足各个数据源建议格式的 User-Agent, 所有 HTTP 请求都应该带此 UA.
+ * 满足各个数据源建议格式的 User-Agent (`<开发者>/<应用>/<版本> (<平台>) (<项目地址>)`), 所有 HTTP 请求都应该带此 UA.
+ *
+ * 用本 fork 自己的身份. Bangumi 按 UA 认客户端与版本, 会拦掉有 bug 的老版 Animeko (`open-ani/ani/` 且版本 ≤ 4.8.1);
+ * fork 的版本号自成一条线 (新包从 1.x 起), 顶着上游的名字就会被当成那些老版本, 登录信息、收藏、剧集、角色全部 403
+ * (2026-09-22 实测).
  */
 fun getAniUserAgent(
     version: String = currentAniBuildConfig.versionName,
     platform: String = currentPlatform().nameAndArch,
-): String = "open-ani/ani/$version ($platform) (https://github.com/open-ani/ani)"
+): String = "GrahamZen/izuko-tv/$version ($platform) (https://github.com/GrahamZen/animeko)"

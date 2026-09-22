@@ -53,8 +53,8 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.Res
-import me.him188.ani.app.ui.foundation.a
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.app_icon
 import me.him188.ani.app.ui.foundation.icons.AniIcons
 import me.him188.ani.app.ui.foundation.icons.AwardStar
 import me.him188.ani.app.ui.foundation.icons.DeployedCodeAccount
@@ -230,7 +230,7 @@ fun AniHeroIconAndDescriptions(modifier: Modifier = Modifier) {
             ),
         ) {
             Icon(
-                painterResource(Res.drawable.a),
+                painterResource(Res.drawable.app_icon),
                 contentDescription = stringResource(Lang.settings_about_icon_description),
                 Modifier
                     .clip(CircleShape)

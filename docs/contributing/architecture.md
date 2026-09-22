@@ -1,6 +1,6 @@
 # 项目总体架构
 
-Animeko (简称 Ani) 现在已经是一个不小的项目，本章节将给你一个全面的了解。
+Izuko TV 是 Animeko (简称 Ani) 的 Android TV 修改版。上游 Animeko 现在已经是一个不小的项目，本章节将给你一个全面的了解。
 
 ## 项目关系
 
@@ -25,7 +25,7 @@ Ani 不只是一个客户端，还涉及弹幕服务端，Bangumi 服务等依�
 
 | 名称           | 仓库/主页地址                                  | 说明                                               |
 |--------------|------------------------------------------|--------------------------------------------------|
-| Animeko 客户端  | 当前                                       | Android/iOS/PC 客户端统一仓库                           |
+| Izuko TV 客户端 | 当前                                       | Android/iOS/PC 客户端统一仓库                           |
 | Animeko 服务端  | [GitHub][gh-ani-api-server]              | Ani 弹幕服务<br>Bangumi 最高热度排行榜等缓存服务<br>新番时间表等高级索引服务 |
 | 弹弹play       | [主站][ddplay]                             | 弹弹play 弹幕服务                                      |
 | Bangumi      | [GitHub][gh-bangumi-api] / [主站][bangumi] | 提供番剧详情、剧集信息、评论等信息功能; Bangumi OAuth               |
@@ -37,7 +37,7 @@ Ani 不只是一个客户端，还涉及弹幕服务端，Bangumi 服务等依�
 flowchart TD
     subgraph "open-ani 组织"
         direction LR
-        APP[Animeko 客户端]
+        APP[Izuko TV 客户端]
         ani-server[Animeko 服务端]
     end
 

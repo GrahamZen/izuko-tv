@@ -5,7 +5,7 @@
 
 ## 主流程
 
-Animeko 使用 Gradle 构建，就是通常的 Kotlin/Android 构建方式。如果你熟悉，可以直接 clone 导入项目就行。但是要注意必须使用 JetBrains Runtime JDK (附带 JCEF 的版本)，版本必须为 21，否则会无法构建桌面端。可以参考下文[教程](#无法构建桌面端-jdk-不兼容--找不到-cef-相关类)。
+Izuko TV 使用 Gradle 构建，就是通常的 Kotlin/Android 构建方式。如果你熟悉，可以直接 clone 导入项目就行。但是要注意必须使用 JetBrains Runtime JDK (附带 JCEF 的版本)，版本必须为 21，否则会无法构建桌面端。可以参考下文[教程](#无法构建桌面端-jdk-不兼容--找不到-cef-相关类)。
 
 若你不熟悉 Kotlin/Android 开发，可以参考以下步骤：
 
@@ -39,9 +39,9 @@ Animeko 使用 Gradle 构建，就是通常的 Kotlin/Android 构建方式。如
 建议使用 IDE clone 功能. 如果你要自己使用命令行 clone, 必须添加 `--recursive`:
 
 ```shell
-git clone --recursive git@github.com:open-ani/animeko.git
+git clone --recursive git@github.com:GrahamZen/animeko.git
 # or 
-git clone --recursive https://github.com/open-ani/animeko.git
+git clone --recursive https://github.com/GrahamZen/animeko.git
 ```
 
 > [!WARNING]
