@@ -18,6 +18,7 @@ jobs:
     outputs:
       uploadUrl: '${{ steps.step-4.outputs.upload_url }}'
       id: '${{ steps.step-4.outputs.id }}'
+      prefix: '${{ steps.prefix.outputs.prefix }}'
     steps:
       - id: 'step-0'
         uses: 'actions/checkout@v4'
@@ -30,6 +31,17 @@ jobs:
           value: '${{ steps.step-1.outputs.tag }}'
           index_of_str: 'v'
           default_return_value: '${{ steps.step-1.outputs.tag }}'
+      # 安装包文件名前缀 (gradle.properties 的 ani.update.asset.prefix): 应用检查更新时只认这个前缀的包
+      - id: 'prefix'
+        name: 'Read Asset Prefix'
+        run: |
+          set -euo pipefail
+          prefix=$(sed -n 's/^ani\.update\.asset\.prefix=//p' gradle.properties | tr -d '\r')
+          if [ -z "$prefix" ]; then
+            echo "::error::ani.update.asset.prefix missing in gradle.properties"
+            exit 1
+          fi
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
       - id: 'step-3'
         name: 'Generate Release Notes'
         run: |-
@@ -39,6 +51,7 @@ jobs:
           modified_content="${modified_content//\$GIT_TAG/${{ steps.step-1.outputs.tag }}}"
           modified_content="${modified_content//\$TAG_VERSION/${{ steps.step-2.outputs.substring }}}"
           modified_content="${modified_content//\$REPO_OWNER/${{ github.repository_owner }}}"
+          modified_content="${modified_content//\$ASSET_PREFIX/${{ steps.prefix.outputs.prefix }}}"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$modified_content" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -243,6 +256,7 @@ jobs:
         run: |
           set -euo pipefail
           version='${{ steps.step-2.outputs.substring }}'
+          prefix='${{ needs.create-release.outputs.prefix }}'
           out='app/android/build/outputs/apk/defaultTv/release'
           mkdir -p legacy-apks
           for abi in arm64-v8a armeabi-v7a universal; do
@@ -251,6 +265,6 @@ jobs:
               echo "::error::Legacy APK missing: $src"
               exit 1
             fi
-            cp "$src" "legacy-apks/ani-$version-legacy-$abi.apk"
+            cp "$src" "legacy-apks/$prefix-$version-legacy-$abi.apk"
           done
           gh release upload '${{ steps.step-1.outputs.tag }}' legacy-apks/*.apk --clobber

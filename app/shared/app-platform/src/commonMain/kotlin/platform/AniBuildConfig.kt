@@ -41,6 +41,17 @@ interface AniBuildConfig {
     val sentryDsn: String
     val distroChannel: String
 
+    /**
+     * 更新时要装的 APK 在 release 里的文件名前缀 (`<前缀>-<版本>-<架构>.apk`, 见 gradle.properties).
+     * 仓库里改分发包名之前的 release 叫 `ani-…`, 按前缀只认自己的包.
+     */
+    val updateAssetPrefix: String
+        get() = "ani"
+
+    /** 检查更新、下载安装包的 GitHub 仓库, `owner/repo` (见 gradle.properties 的 `ani.update.repository`). */
+    val updateRepository: String
+        get() = "GrahamZen/animeko"
+
     val sentryEnabled: Boolean
         get() = true
     val analyticsEnabled: Boolean

@@ -27,10 +27,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.io.buffered
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.cancellableCoroutineScope
 import me.him188.ani.utils.coroutines.withExceptionCollector
+import me.him188.ani.utils.httpdownloader.SYNC_EVERY_BYTES_DOWNLOAD
+import me.him188.ani.utils.httpdownloader.openPeriodicSyncSink
 import me.him188.ani.utils.io.DEFAULT_BUFFER_SIZE
 import me.him188.ani.utils.io.DigestAlgorithm
 import me.him188.ani.utils.io.SystemPath
@@ -273,7 +276,11 @@ class DefaultFileDownloader(
                             }
                         }
 
-                        file.bufferedSink().use { output ->
+                        // 边写边刷盘. 不刷的话几十 MB 都积在内存里, 拉起系统安装器时正好撞上内核往盘上刷: 整机读盘排队,
+                        // 安装器要多等好几秒才出来, 这期间遥控器按键被系统扣住, 按一下返回就把安装器关了 (2026-09-23 实测)
+                        val sink = openPeriodicSyncSink(file.absolutePath, SYNC_EVERY_BYTES_DOWNLOAD)?.buffered()
+                            ?: file.bufferedSink()
+                        sink.use { output ->
                             while (!input.isClosedForRead) {
                                 val read = input.readAvailable(buffer)
                                 if (read == -1) {
