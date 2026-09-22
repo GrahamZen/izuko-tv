@@ -99,7 +99,7 @@ import java.lang.Math.floorMod
  *   每个动画取全部 backdrop, 轮到它时随机放一张.
  * - 交互 (isInteractive): 确定键 → deep link 打开当前动画详情页并退出屏保;
  *   左/右键 → 手动切上一个/下一个动画; 其他任意键 → 正常退出屏保.
- * - 需要用户在系统设置 → 屏保 里选择 Animeko (代码无法自动设为默认).
+ * - 需要用户在系统设置 → 屏保 里选择 Izuko TV (代码无法自动设为默认).
  *
  * 跑在主进程, Koin/TMDB 缓存/图片磁盘缓存全部复用; ComposeView 需要手动挂
  * lifecycle owner (DreamService 不是 LifecycleOwner), 见 [DreamLifecycleOwner].

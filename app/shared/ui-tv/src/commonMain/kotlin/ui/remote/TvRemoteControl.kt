@@ -297,7 +297,7 @@ object TvRemoteControl {
         val message = when {
             !on -> tr("已关闭")
             granted -> tr("已开启")
-            opened -> tr("授权页已打开。请允许 Animeko「显示在其他应用的上层」，然后返回 Ani。")
+            opened -> tr("授权页已打开。请允许 Izuko TV「显示在其他应用的上层」，然后返回。")
             else -> tr("请在 30 分钟内回到电视上的 Ani，并完成授权。")
         }
         return JsonObject(frontState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
@@ -306,7 +306,7 @@ object TvRemoteControl {
     /** 网页顶上「不在前台」那一条里的「切到 Ani」. */
     private fun manualFront(): JsonObject {
         if (tvForeground) return result(true, tr("Ani 已在电视上显示"))
-        if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Animeko 开启「显示在其他应用的上层」。"))
+        if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。"))
         return if (bringToFront()) result(true, tr("已打开 Ani")) else result(false, tr("无法打开 Ani，请在电视上手动打开。"))
     }
 
@@ -1457,7 +1457,7 @@ object TvRemoteControl {
     /** 手机打开网页后, 启动弹窗留着显示「手机已连接」多久再自动关. */
     private val LAUNCH_DIALOG_CLOSE_DELAY = 1500.milliseconds
 
-    private const val RELEASE_PACKAGE = "me.him188.ani.tv"
+    private const val RELEASE_PACKAGE = "io.github.grahamzen.anime.tv"
     private const val RELEASE_PORT = 41892
     private const val DEBUG_PORT = 41893
     private const val OTHER_PORT_BASE = 41894

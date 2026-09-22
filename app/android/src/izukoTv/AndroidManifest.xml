@@ -47,7 +47,7 @@
         </activity>
 
         <!-- 系统屏保: 轮播在看/热门动画的 TMDB 剧照, 确定键跳详情页.
-             需用户在系统设置 → 屏保 里手动选择 Animeko -->
+             需用户在系统设置 → 屏保 里手动选择 Izuko TV -->
         <service
                 android:name=".tv.AniDreamService"
                 android:exported="true"

@@ -198,7 +198,7 @@ class ServiceNotification(
         private val logger = logger<ServiceNotification>()
 
         private val defaultNotificationAppearance = NotificationAppearance(
-            name = "Animeko BT 引擎服务",
+            name = "Izuko TV BT 引擎服务",
             titleIdle = "BT 下载服务正在运行",
             titleWorking = "正在下载 %1\$d 个资源",
             content = "下载：%1\$s，上传：%2\$s",

@@ -181,7 +181,7 @@ compose.desktop {
 
             val projectVersion = project.version.toString() // 3.0.0-beta22
             macOS {
-                dockName = "Animeko"
+                dockName = "Izuko TV"
                 pkgPackageVersion = projectVersion
                 pkgPackageBuildVersion = projectVersion
                 setDockNameSameAsPackageName = false

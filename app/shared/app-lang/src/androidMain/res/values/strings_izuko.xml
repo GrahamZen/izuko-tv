@@ -167,7 +167,7 @@
     <string name="settings_theme_tv_long_press_panel">Open the action panel</string>
     <string name="settings_theme_tv_long_press_resume">Jump back to what is playing</string>
     <string name="settings_theme_tv_long_press_none">Nothing</string>
-    <string name="tv_exit_press_again">Press Back again to quit Animeko TV</string>
+    <string name="tv_exit_press_again">Press Back again to quit Izuko TV</string>
     <string name="settings_network_bangumi_endpoint">Bangumi connection</string>
     <string name="settings_network_bangumi_endpoint_description">Bangumi is blocked in mainland China since May 2026, including its API. Setting up a proxy is recommended: the app then connects to Bangumi directly without any third party. A community reverse-proxy mirror can also restore browsing.</string>
     <string name="settings_network_bangumi_mode">How to reach Bangumi</string>

@@ -167,7 +167,7 @@
     <string name="settings_theme_tv_long_press_panel">打开动作面板</string>
     <string name="settings_theme_tv_long_press_resume">直接回到正在播放</string>
     <string name="settings_theme_tv_long_press_none">不做任何事</string>
-    <string name="tv_exit_press_again">再按一次返回键退出 Animeko TV</string>
+    <string name="tv_exit_press_again">再按一次返回键退出 Izuko TV</string>
     <string name="settings_network_bangumi_endpoint">Bangumi 连接方式</string>
     <string name="settings_network_bangumi_endpoint_description">2026 年 5 月起 Bangumi 在中国大陆被阻断, API 也一样不通。推荐优先设置「代理」：应用直连 Bangumi 官方，不经过任何第三方。社区的反代镜像也可以恢复浏览。</string>
     <string name="settings_network_bangumi_mode">怎么连 Bangumi</string>

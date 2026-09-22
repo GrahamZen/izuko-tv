@@ -78,7 +78,7 @@ private suspend fun savePlayerScreenshot(
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
         @Suppress("DEPRECATION")
         val directory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            .resolve("Animeko")
+            .resolve("Izuko TV")
         if (!directory.exists() && !directory.mkdirs()) return@withContext false
 
         val file = directory.resolve(filename)
@@ -93,7 +93,7 @@ private suspend fun savePlayerScreenshot(
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, filename)
         put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Animeko")
+        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Izuko TV")
         put(MediaStore.Images.Media.IS_PENDING, 1)
     }
     val resolver = context.contentResolver

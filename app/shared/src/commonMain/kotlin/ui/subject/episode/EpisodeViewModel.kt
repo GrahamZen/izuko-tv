@@ -1055,7 +1055,7 @@ class EpisodeViewModel(
                 fetchPlayState.getCurrentEpisodeId(),
                 danmaku,
                 // 昵称走 bangumi 的; dandanplay 那条路的昵称由应用自己指定 (见 DanmakuRepository.post)
-                userName = selfInfoFlow.first().selfInfo?.nickname?.takeIf { it.isNotBlank() } ?: "Animeko 用户",
+                userName = selfInfoFlow.first().selfInfo?.nickname?.takeIf { it.isNotBlank() } ?: "Izuko TV 用户",
             )
         }
     }

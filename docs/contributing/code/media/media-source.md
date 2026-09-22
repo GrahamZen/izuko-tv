@@ -100,7 +100,7 @@ interface MediaSource {
 
 - （最简单）编写通用的数据源的配置。可以在 APP 内“设置-数据源管理”中添加 `Selector` 和 `RSS`
   类型数据源。只需编写一些 CSS Selector 配置即可使用。
-- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Animeko
+- 实现新的 `MediaSelector`。参考 `IkarosMediaSource`（位于 `datasource/ikaros`）。通常需要为 Izuko TV
   仓库提交代码，增加一个新的模块。
 
 [Media]: ../../../../datasource/api/src/commonMain/kotlin/Media.kt

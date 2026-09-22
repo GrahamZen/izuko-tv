@@ -54,7 +54,7 @@
     <string name="settings_theme_tv_long_press_panel">開啟動作面板</string>
     <string name="settings_theme_tv_long_press_resume">直接回到正在播放</string>
     <string name="settings_theme_tv_long_press_none">不做任何事</string>
-    <string name="tv_exit_press_again">再按一次返回鍵退出 Animeko TV</string>
+    <string name="tv_exit_press_again">再按一次返回鍵退出 Izuko TV</string>
     <string name="settings_player_notice_sound">後台播放提示音</string>
     <string name="settings_player_notice_sound_description">後台播放狀態變化時的提示音，選取可試聽</string>
     <string name="settings_player_notice_sound_none">無聲音</string>

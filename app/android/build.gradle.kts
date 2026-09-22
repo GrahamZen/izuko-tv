@@ -40,7 +40,10 @@ android {
         // A/B 对比时两个包各装各的、各 AOT 一次, 不用来回覆盖安装 (每轮省五到八分钟);
         // 数据也各自独立, 想要"全新安装"的冷启动场景直接 pm clear 那个包, 不碰正式包的登录与设置.
         // 默认空 = 正式包不受影响.
-        applicationId = "me.him188.ani" + (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
+        // **分发包名与 Kotlin 的 namespace 是两回事**: namespace 仍是 me.him188.ani.android
+        // (它只决定 R 类与类的全限定名, 用户看不到). 这里换掉的是装到设备上、应用商店认的那个标识.
+        // 取的是中性词而不是产品名: 显示名 (app_name) 随时能改, applicationId 一旦发布就改不动了.
+        applicationId = "io.github.grahamzen.anime" + (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
         minSdk = androidMinSdk
         targetSdk = getIntProperty("android.compile.sdk")
         versionCode = getIntProperty("android.version.code")

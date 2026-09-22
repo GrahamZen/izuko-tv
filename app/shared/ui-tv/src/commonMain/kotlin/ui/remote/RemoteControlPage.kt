@@ -27,7 +27,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
 /**
- * Web 控制台 (网页里标题叫「Animeko 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
+ * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
  * 设置标签再分「常规 / 数据源」两页.
  *
  * 带少量脚本 (与「搜索输入」时代的纯表单页不同): 数据源结果是陆续回来的, 不刷新就看不到新结果, 所以「播放器」
@@ -56,7 +56,7 @@ internal fun renderRemoteControlPage(
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#f7f2fa">
     <meta name="referrer" content="no-referrer">
-    <title>Animeko 控制台</title>
+    <title>Izuko TV 控制台</title>
     <script>
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
@@ -65,7 +65,7 @@ internal fun renderRemoteControlPage(
     </style>
     </head>
     <body>
-    <header><span>Animeko 控制台</span><button type="button" id="help-btn" aria-label="使用说明" title="使用说明">?<span class="help-dot" hidden></span></button></header>
+    <header><span>Izuko TV 控制台</span><button type="button" id="help-btn" aria-label="使用说明" title="使用说明">?<span class="help-dot" hidden></span></button></header>
     <div id="tv-state" class="tv-state" hidden></div>
     <div id="ld-bar" class="ld-bar" hidden><div class="ld-row"><span>电视上的二维码仍在显示</span><button type="button" class="ld-x" data-ld="hide" aria-label="收起" title="收起">×</button></div><div class="ld-row ld-acts"><button type="button" class="ld-close" data-ld="close">关闭电视上的二维码</button><label class="ld-mode">以后：<select data-ld-mode></select></label></div></div>
     <section class="tab" id="tab-search" hidden>
@@ -1360,7 +1360,7 @@ private val SCRIPT = """
   // btn: 「不在前台」那一条里的入口 (切到电视前台, 见 TvRemoteControl.manualFront; 设置里有同一个开关, 可以提前开或撤销):
   // 'enable' = 还没开, 点了先确认再开 / 'how' = 开了还没授权, 点了说怎么授权 / 'go' = 开了且授了权, 点了直接切.
   // 内容没变不重画: 每 2 秒一轮, 重画会把正要点的按钮换掉
-  var FRONT_HOW = T('在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Animeko 开启权限。只需授权一次，仅用于从手机打开 Ani。');
+  var FRONT_HOW = T('在电视上完成授权：打开「设置 → 应用 → 特殊应用权限 → 显示在其他应用的上层」，然后为 Izuko TV 开启权限。只需授权一次，仅用于从手机打开 Izuko TV。');
   function setTvState(kind, text, btn) {
     var key = (kind || '') + '|' + (text || '') + '|' + (btn || '');
     if (tvState._k === key) return;
@@ -2769,7 +2769,7 @@ private val REQUEST_SCRIPT = """
 """.trimIndent()
 
 /**
- * 静音载体那一帧画面的 H.264 数据 (480x270 的深色底 + 电视图标 + Animeko 字样)。
+ * 静音载体那一帧画面的 H.264 数据 (480x270, 由 TV 横幅缩成)。
  *
  * 载体是现拼的 MP4 (见 CONTROL_SCRIPT 的 silentClipUrl): 视频轨**只有这一帧**, 靠 sample duration 撑满
  * 整集; 音频轨是 N 个一模一样的静音 AAC 帧。画面是死的 —— 想画实时内容得 canvas.captureStream() ->
@@ -2784,10 +2784,10 @@ private val REQUEST_SCRIPT = """
  * 再把 Annex B 切成 NAL, 取 type 7 / 8 / 5 分别做 SPS / PPS / IDR (type 6 的 SEI 丢掉), 各自 base64。
  * baseline + yuv420p 别改: iOS 对这一帧挑剔, 换了可能解不出来而小窗一片黑。
  */
-private const val CARRIER_SPS_BASE64 = "Z0LAHtkB4I/qEAAAAwAQAAADAyDxYuSA"
+private const val CARRIER_SPS_BASE64 = "Z0LAHtkB4I/rARAAAAMAEAAAAwMg8WLkgA=="
 private const val CARRIER_PPS_BASE64 = "aMuDyyA="
 private const val CARRIER_IDR_BASE64 =
-    "ZYiECvEYoAAoex9JycnJycnJycnJycnJycnJycnJycnJycnJycnJyddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddf+W0Ntgq5ZQE1B0nwAJHfQksDgIHnZ6PFxJgYCUoWD9gSDPo8Dx/v/hPz++93333334rXOqQQB3BGbnl4R9dI6WE6xSXONoE0ivJTUFdddddddddddddddddddcdBUhf5r9a3BXfffffff///DwKteoK66666666666666666666666/wqcOHCwKoBLcGhPpPAA/xr1f+qgupwrBI3sac+PytMFdddQVOoK666666666666666666666666/6+TuJYwFXgJBZJl5AJL6x4AKPQoUqwyadMo8B+pu3/7DxwSmb7c7s07UEtdddddddddddddddddddddddddfCN3L/hIFHATmCR/QAosLP4UtnqGsxCDp4BjVLja6666666666666666666666+H/TU4VBVwytmWXCF5P/wwCCAfjbpbffa33338P8i2wqOwR+MT3lDNQV11111111111111111118+q/+EgUbwJfI0m/wk4wof/+HvUNd5Mfj+vw4U8BNS3Ov8fw4f+F/4LABCywaUz/VvffvF//4S4RqxgEtc353Q3p9QU1111111111111111111311/AYaf2CiAj3z8kE1TW95rtX2kf/h/w/gJhnJ+f4gAf/D3wHSGkt/rD7+FIEvqZ6qiTMI8qG/6YKa7666666666666666666666646GP/wCVpPHz///+CHwAIdW3ok2v/qHwQG76rjRpX3pB///9AhBFgBFirrBcZq9QR11111111111111111111111///wQhrgBEXynzmDUpZo0XYQiheewAUfgm//BDkRCOnT9sO5wIKsPUoTeJ2nEJeY8zb4CDDftoeYHb9tCmz5lOyOe9FcB0DvgAkn2Pd+NYYPhpHnlYbuwu/XtjlT12pPiYcAA/igP3vRQW1HxXxTut0qJYrdbIh7gcpw93ca6xR2D9T6S2lI+XJh2jAAAZmh+WR//7rg5BtvfCFDbd0F95e3I3t0ATHMdiJQAAGLAD1nO6P7MtAPkRgCG9TijhOBoFzqfuEosd8L/kOdPpZ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"
 
 /**
  * 播放控制的脚本: 「正在播放」卡片里的进度条 + 后退 10 秒 / 播放暂停 / 前进 10 秒.
@@ -3318,7 +3318,7 @@ private val CONTROL_SCRIPT = """
     var metaKey = (mediaState.title || '') + '|' + (mediaState.episode || '') + '|' + list.join(',');
     if (metaKey === lastMetaKey) return;
     lastMetaKey = metaKey;
-    var title = mediaState.title || 'Animeko', artist = mediaState.episode || '';
+    var title = mediaState.title || 'Izuko TV', artist = mediaState.episode || '';
     function apply(artwork) {
       // 探测期间换集了就作废, 别把上一集的图贴到这一集上
       if (lastMetaKey !== metaKey) return;
@@ -3328,7 +3328,7 @@ private val CONTROL_SCRIPT = """
       navigator.mediaSession.metadata = new MediaMetadata({
         title: title,
         artist: artist,
-        album: 'Animeko',
+        album: 'Izuko TV',
         artwork: use
       });
     }
@@ -4997,9 +4997,9 @@ private val SETTINGS_SCRIPT = """
     // 授过权的 (以前开过又关了) 不再说「首次开启时需要授权」
     var st = !f.needsPermission ? T('无需额外授权')
       : f.granted ? T('已授权')
-      : !f.enabled ? T('首次开启时，需要在电视上允许 Animeko「显示在其他应用的上层」。')
+      : !f.enabled ? T('首次开启时，需要在电视上允许 Izuko TV「显示在其他应用的上层」。')
       : T('尚未授权。Ani 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Ani。') +
-        T('也可在电视设置中为 Animeko 开启「显示在其他应用的上层」。');
+        T('也可在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。');
     frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Ani') + '</div>' +
       '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Ani') + '</label>' +
       '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Ani；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
@@ -6512,8 +6512,8 @@ private val HELP_SCRIPT = """
     T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存。')
   ]);
   var GENERAL = sec(T('账号'), [
-    T('没登录时可以「用手机登录 Bangumi」（在手机上授权），或用邮箱登录 / 注册 Animeko 账号。'),
-    T('点头像或名字：修改昵称、绑定 / 更换邮箱、退出登录。')
+    T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
+    T('点头像或名字：退出登录。')
   ]) + sec(T('播放记录'), [
     T('点右边的封面（或 ▶）：在电视上接着看，看完的播下一集；点其他地方：电视打开详情页。'),
     T('右滑缓存，左滑删除，滑过一半松手直接执行；长按一行可以多选，一起删除。')
