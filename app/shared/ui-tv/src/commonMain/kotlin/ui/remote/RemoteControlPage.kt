@@ -6255,7 +6255,8 @@ private val REVIEW_SCRIPT = """
 
 /**
  * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是谁; 没登录时点一下发起登录 —— 直连版 (`direct`) 是让电视弹出
- * 授权页、在电视上用遥控器完成, 走 Ani 服务器的那版是把授权链接交给手机打开. 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
+ * 授权页、在电视上用遥控器完成, 走 Ani 服务器的那版是把授权链接交给手机打开. 直连版另有「用个人令牌登录」,
+ * 不经过授权页 (中国大陆经镜像时授权页走不通). 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次.
  * 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
  */
 private val ACCOUNT_SCRIPT = """
@@ -6267,6 +6268,23 @@ private val ACCOUNT_SCRIPT = """
   var menu = false, nick = false, lastData = null;
   // 邮箱登录 / 注册 (没登录时) 或绑定 / 更换邮箱 (已登录时, 在账号菜单里): null = 收着; step 'email' 填邮箱 → 'code' 填验证码
   var em = null;
+  // 个人令牌登录的表单展开着没有 (没登录时). 授权页连不上 (中国大陆经镜像) 时只能走这条
+  var tok = false;
+  var TOKEN_DAYS = [7, 30, 90, 180, 365];
+  function tokenForm(d) {
+    var pages = (d.tokenPages || []).map(function (u) {
+      return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\//, '').replace(/\/.*$/, '')) + '</a>';
+    }).join(T('、'));
+    return '<form class="acct-token" id="acct-token">' +
+      '<p class="hint">' + T('连不上 Bangumi 授权页时（例如在中国大陆经镜像）用这个：在浏览器里登录 Bangumi 网站，打开生成令牌的页面新建一个令牌，粘到下面。') + '</p>' +
+      (pages ? '<p class="hint">' + T('生成令牌的页面：{0}', pages) + '</p>' : '') +
+      '<label class="f"><span>' + T('令牌') + '</span><input type="text" name="token" autocomplete="off" spellcheck="false"></label>' +
+      '<label class="f"><span>' + T('有效期') + '</span><select name="days">' + TOKEN_DAYS.map(function (n) {
+        return '<option value="' + n + '"' + (n === 365 ? ' selected' : '') + '>' + T('{0} 天', n) + '</option>';
+      }).join('') + '</select><em>' + T('和生成令牌时选的一样。到期后电视会退出登录，再生成一个新的就行。') + '</em></label>' +
+      '<div class="row"><button type="button" class="ghost" data-acct="token-close">' + T('取消') + '</button>' +
+      '<button type="submit" class="primary">' + T('登录') + '</button></div></form>';
+  }
   var MAIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>';
   function emailFlow(d) {
     var bind = !!d.loggedIn;
@@ -6310,7 +6328,7 @@ private val ACCOUNT_SCRIPT = """
   function render(d) {
     if (!d.ok) return;
     lastData = d;
-    if (!d.loggedIn) { menu = false; nick = false; }
+    if (!d.loggedIn) { menu = false; nick = false; } else { tok = false; }
     // 登录状态变了 (邮箱登录成功 / 在电视上退出了): 这一轮的邮箱流程作废
     if (em && em.bind !== !!d.loggedIn) em = null;
     var l = d.login || { state: 'idle' }, full = !!(d.loggedIn && d.bangumi), direct = !!d.direct;
@@ -6342,18 +6360,32 @@ private val ACCOUNT_SCRIPT = """
       h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度、评分和评论都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
+      // 直连版手机授权: 授权完那一跳必然失败 (目标是电视本机的回环地址), 但地址栏里带着 code, 粘回来即可
+      var paste = direct && l.url;
       h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' +
-        (direct ? T('电视上已经打开 Bangumi 授权页，用遥控器完成登录') : T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行')) + '</span></div>' +
-        (direct ? '' : (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
-          : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>')) +
+        (paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的')
+          : direct ? T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')
+            : T('在打开的 Bangumi 页面里同意授权，完成后回到这里就行')) + '</span></div>' +
+        (paste ? '<p class="hint">' + T('把那个打不开的页面的网址整个复制，粘到下面。') + '</p>' +
+          '<form class="acct-nick" id="acct-cb"><input type="text" name="u" inputmode="url" autocomplete="off" placeholder="' +
+          T('粘贴那个网址') + '"><button type="submit">' + T('完成登录') + '</button></form>' +
+          '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
+          : direct ? ''
+            : (l.url ? '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>'
+              : '<p class="hint">' + T('正在向服务器要授权链接…') + '</p>')) +
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!full && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
       h += '<div class="row"><button type="button" class="primary" data-login="1">' +
-        (direct ? T('在电视上登录 Bangumi') : (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi'))) +
-        '</button></div><p class="hint">' +
-        (direct ? T('点一下，电视上就会弹出 Bangumi 授权页，用遥控器登录并同意授权。')
+        (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) + '</button>' +
+        (direct ? '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button>' : '') +
+        '</div><p class="hint">' +
+        (direct ? T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。')
           : T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。')) + '</p>';
+      // 个人令牌: 不经过授权页, 镜像站的授权页与换 token 走不通时只能这样登录
+      if (!d.loggedIn && direct) {
+        h += tok ? tokenForm(d) : '<div class="row"><button type="button" class="ghost" data-acct="token">' + T('用个人令牌登录') + '</button></div>';
+      }
       // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
       if (!d.loggedIn && !direct) {
         h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
@@ -6377,11 +6409,12 @@ private val ACCOUNT_SCRIPT = """
   // 登录按钮 (账号卡片、评论与评分区): 点下去当场先开一个空白页, 等电视要来链接再让它跳过去 ——
   // 等请求回来再开新页面会被浏览器当成弹窗拦掉. 开不了新页面 (有的内置浏览器) 就在本页跳, 授权完按返回回来
   function startLogin(btn) {
-    // 直连版的授权页在电视上 (回调是电视的回环地址), 手机这边不开新页面; 还不知道是哪一版时先开着, 回来没有链接再关掉
-    var direct = !!(lastData && lastData.direct), w = null;
-    if (!direct) { try { w = window.open('', '_blank'); } catch (e) {} }
+    // 点下去当场先开一个空白页, 等电视把授权链接回来再让它跳过去 —— 等请求回来再开会被当成弹窗拦掉.
+    // 「改在电视上登录」那颗不开页面: 授权页弹在电视上, 手机这边只是等
+    var onTv = btn.getAttribute('data-login') === 'tv', w = null;
+    if (!onTv) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
-    post('api/account/login', {}).then(function (r) {
+    post('api/account/login', onTv ? { where: 'tv' } : {}).then(function (r) {
       btn.disabled = false;
       if (!r.ok || !r.url) {
         if (w) w.close();
@@ -6406,6 +6439,14 @@ private val ACCOUNT_SCRIPT = """
       return;
     }
     if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; nick = false; em = null; rerender(); return; }
+    if (e.target.closest('[data-acct="token"]')) {
+      tok = true;
+      rerender();
+      var tf = document.getElementById('acct-token');
+      if (tf) tf.elements.token.focus();
+      return;
+    }
+    if (e.target.closest('[data-acct="token-close"]')) { tok = false; rerender(); return; }
     // 邮箱: 打开 / 收起 / 换个邮箱 / 重新发送
     if (e.target.closest('[data-acct="email"]')) {
       em = { step: 'email', email: '', bind: !!(lastData && lastData.loggedIn) };
@@ -6432,6 +6473,30 @@ private val ACCOUNT_SCRIPT = """
   });
   box.addEventListener('submit', function (e) {
     var f = e.target;
+    if (f.id === 'acct-cb') {
+      e.preventDefault();
+      var cb = f.querySelector('button');
+      cb.disabled = true;
+      post('api/account/login/callback', { url: f.elements.u.value.trim() }).then(function (r) {
+        cb.disabled = false;
+        toast(r.message);
+        if (r.ok) { f.elements.u.value = ''; }
+        load();
+      }).catch(function () { cb.disabled = false; fail(); });
+      return;
+    }
+    if (f.id === 'acct-token') {
+      e.preventDefault();
+      var tb = f.querySelector('button[type=submit]');
+      tb.disabled = true;
+      post('api/account/token', { token: f.elements.token.value.trim(), days: f.elements.days.value }).then(function (r) {
+        tb.disabled = false;
+        toast(r.message);
+        if (r.ok) { tok = false; f.elements.token.value = ''; }
+        load();
+      }).catch(function () { tb.disabled = false; fail(); });
+      return;
+    }
     if (f.id === 'acct-email') {
       e.preventDefault();
       sendOtp(f.elements.e.value.trim(), f.querySelector('button'));
