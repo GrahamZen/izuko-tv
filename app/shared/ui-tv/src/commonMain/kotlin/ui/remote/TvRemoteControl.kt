@@ -835,6 +835,7 @@ object TvRemoteControl {
             )
             path == PATH_PLAYER_STATE && get -> playerState(request)
             path == PATH_PLAYER_SELECT && post -> json(selectMedia(request))
+            path == PATH_PLAYER_CACHE && post -> json(cacheCandidate(request))
             path == PATH_PLAYER_OPEN && post -> json(openPlayer())
             path == PATH_PLAYER_UPNEXT && post -> json(playUpNext())
             path == PATH_PLAYER_REQUEST && post -> json(updateRequest(request))
@@ -1166,6 +1167,19 @@ object TvRemoteControl {
     }
 
     /**
+     * 播放页候选列表上右滑「缓存」: 用这一条缓存电视当前在播的这一集, 见 [RemoteCache.cacheMedia].
+     *
+     * 不进 [PLAYER_FRONT_PATHS]: 缓存不用看电视, 不必把 Ani 叫到前台 (BT 要等 Ani 回前台才开始下, 提示里会说)。
+     */
+    private fun cacheCandidate(request: LanHttpRequest): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        val episodeId = handle.currentEpisodeId ?: return result(false, tr("电视当前不在播放页"))
+        val media = handle.candidate(request.formFields()["id"].orEmpty())
+            ?: return result(false, tr("这个数据源已不在列表里，请刷新"))
+        return RemoteCache.cacheMedia(handle.vm.subjectId, episodeId, media)
+    }
+
+    /**
      * 「重新搜索（含新数据源）」: 搜索会话建立时对数据源列表取了快照, 之后改数据源 / 更新订阅都不会让新源参与
      * 这一次搜索 (见 MediaFetchSessionRefresh 的说明) —— 按一下让播放页用当前的数据源列表重建会话。
      *
@@ -1430,6 +1444,7 @@ object TvRemoteControl {
 
     private const val PATH_PLAYER_STATE = "api/player"
     private const val PATH_PLAYER_SELECT = "api/player/select"
+    private const val PATH_PLAYER_CACHE = "api/player/cache"
     private const val PATH_PLAYER_OPEN = "api/player/open"
     private const val PATH_PLAYER_UPNEXT = "api/player/upnext"
     private const val PATH_PLAYER_REQUEST = "api/player/request"

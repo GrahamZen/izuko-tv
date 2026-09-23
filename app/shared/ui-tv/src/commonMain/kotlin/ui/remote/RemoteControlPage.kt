@@ -608,6 +608,26 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn.coll { background: #e0932f; }
 .sw-btn.del { background: var(--del); }
 .sw-btn:disabled { opacity: .6; }
+/* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
+.sw-btn.link { background: #2f7bf0; }
+#link-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(0,0,0,.45); }
+.link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
+  background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
+.link-dlg-t { font-size: 17px; font-weight: 700; }
+/* 地址整条显示, 长了就在框里滚动 (小窗最高撑到接近满屏), 能选中复制 */
+.link-dlg-u { flex: 1 1 auto; min-height: 0; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--chip);
+  font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-user-select: text; user-select: text; }
+#link-dlg a.primary { text-decoration: none; text-align: center; }
+/* 播放页候选行包进 .sw 之后: 选中的描边往里收, 否则被外层的圆角裁剪整圈裁掉; 被排除 / 不可选的半透明挪到行里的内容上 ——
+   行本身半透明的话, 滑动时垫在下面的按钮会从行后面透出来 */
+.sw > .item.sel { outline-offset: -2px; }
+.sw > .item.ex, .sw > .item.blocked { opacity: 1; }
+.sw > .item.ex > * { opacity: .72; }
+.sw > .item.blocked > * { opacity: .45; }
+/* 「跳到正在播的那一条」亮一下的底色要淡入淡出: .sw > .item 的平移过渡会盖掉 .item 原来的背景过渡, 补回来; 拖动中照旧不过渡 */
+#player-sources .sw > .item:not(.dragging) { transition: transform .22s cubic-bezier(.2, .8, .2, 1), background-color .5s; }
 /* 删掉的那一行: 收起高度与间距再移除 */
 .sw.gone { height: 0 !important; opacity: 0; margin-top: -8px; transition: height .25s, opacity .2s, margin-top .25s; }
 .sub-item[data-lp] { position: relative; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -1787,7 +1807,9 @@ private val SCRIPT = """
     logout: svgIcon('M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z'),
     plus: svgIcon('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'),
     close: svgIcon('M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'),
-    star: svgIcon('M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z')
+    star: svgIcon('M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z'),
+    // 打开链接 (播放页候选行左滑): 方框右上角伸出箭头
+    openLink: svgIcon('M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z')
   };
   function svgIcon(d) { return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; }
   // 底图拉不到: 换下一个候选 (地址里没有空格, 用空格分隔); 全都拉不到就把这一层藏起来, 露出卡片本来的底色
@@ -2366,8 +2388,17 @@ private val SCRIPT = """
     if (window.mediaSessionActive && document.hidden) {
       if (++pollSkips % 4 !== 0) return;
     } else pollSkips = 0;
+    flushList();
     poll(false);
   }, 1500);
+  /** 候选列表因为有行滑开而跳过的那次重画 (见 render), 行收起后用最近一份状态补上. */
+  var listStale = false;
+  function flushList() {
+    var src = document.getElementById('player-sources');
+    if (!listStale || !lastState || window.swBusy(src)) return;
+    listStale = false;
+    src.innerHTML = renderList(lastState);
+  }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(true); });
 
   // 画「播放器」标签那张卡, art = 底图候选 (剧照 → 横屏图, 铺满卡片 + 半透明底色层, 见样式 .now-card). 轮询时卡片常整张
@@ -2430,6 +2461,7 @@ private val SCRIPT = """
       document.getElementById('player-filters').innerHTML = '';
       lastFiltersHtml = '';
       renderRefetch(false);
+      listStale = false;
       src.innerHTML = '';
       window.runHooks('unavailable', hooks.unavailable, s);
       return;
@@ -2454,7 +2486,14 @@ private val SCRIPT = """
     chips.innerHTML = renderChips(s);
     renderFilters(s);
     renderRefetch(true);
-    src.innerHTML = renderList(s);
+    // 有行正滑开 / 正在拖时先不重画 (重画会把它弹回去), 记一笔由 flushList 在收起后补画 ——
+    // 状态没变时服务端只回 same, 等不来下一次 render
+    if (window.swBusy(src)) listStale = true;
+    else {
+      listStale = false;
+      src.innerHTML = renderList(s);
+      window.swPeek(src, 'player-sources', '.sw > .item');
+    }
     window.runHooks('render', hooks.render, s);
   }
 
@@ -2625,6 +2664,36 @@ private val SCRIPT = """
   // 播放卡上的数据源胶囊 (另一段脚本) 点了要展开并重画列表
   window.lastPlayerState = function () { return lastState; };
   window.renderPlayerList = renderList;
+  /*
+   * 候选行左右滑 (见 swRow, 按钮写法同搜索结果): 右滑露出「缓存」= 用这一条缓存电视当前在播的这一集 (本地缓存那组本身就是缓存,
+   * 不给); 左滑露出「打开链接」= 在手机上打开它在数据源上的链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身).
+   * 链接只认 http(s), 服务端也只给这两种.
+   */
+  function itemSwipe(it, row) {
+    var left = it.cached ? '' :
+      '<button type="button" class="sw-btn cache" data-pcache="' + esc(it.id) + '">' + window.ICONS.download + T('缓存') + '</button>';
+    var right = it.url && /^https?:\/\//i.test(it.url)
+      ? '<button type="button" class="sw-btn link" data-plink="' + esc(it.url) + '">' + window.ICONS.openLink + T('打开链接') + '</button>'
+      : '';
+    return left || right ? window.swRow(left, right, row) : row;
+  }
+  /** 滑到底「打开链接」的小窗 (见候选列表的点击处理): 链接本身是 <a target=_blank>, 由人点才能新开标签页. */
+  function openLinkDialog(url) {
+    var old = document.getElementById('link-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'link-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('打开链接') + '</div>' +
+      '<div class="link-dlg-u">' + esc(url) + '</div><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<a class="primary" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" data-ldlg="open">' + T('在新标签页打开') + '</a>' +
+      '</div></div>';
+    // 点链接照默认行为新开标签页, 点取消或外面的空白处关掉; 关放到下一轮, 不在链接自己的点击里把它从页面上拿掉
+    d.addEventListener('click', function (e) {
+      if (e.target === d || e.target.closest('[data-ldlg]')) setTimeout(function () { d.remove(); }, 0);
+    });
+    document.body.appendChild(d);
+  }
   function groupHtml(g, s) {
     var h = '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
     // 点了播放卡的数据源胶囊后亮一下的那一条 (见那里的点击处理)
@@ -2634,11 +2703,11 @@ private val SCRIPT = """
       // 去重: 在线源的「字幕组」常就是字幕语言 (简中 · 简中)
       var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size]
         .filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
-      h += '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
+      h += itemSwipe(it, '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
         '" data-id="' + esc(it.id) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
         '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
         (it.excluded ? '<span class="why">' + T('已排除：') + esc(it.reason || '') + '</span>' : '') +
-        (sel ? '<span class="badge">' + (s.background ? T('当前') : T('正在播放')) + '</span>' : '') + '</button>';
+        (sel ? '<span class="badge">' + (s.background ? T('当前') : T('正在播放')) + '</span>' : '') + '</button>');
     });
     h += '</div>';
     if (g.more > 0) h += '<p class="hint">' + T('还有 {0} 条未列出，', g.more) +
@@ -2698,6 +2767,26 @@ private val SCRIPT = """
     else if (k === 'sub') fSub = e.target.value;
     else if (k === 'all') fAll = e.target.value;
     poll(true);
+  });
+  // 滑开露出的两颗按钮 (同搜索结果, 滑过一半松手时由 swFire 替人点):
+  // 「打开链接」: 点按钮是真的点击, 直接新标签页打开. 滑到底松手时是脚本替人点的 (isTrusted 为 false), iOS 不把拖动过的
+  // 那一下算作点击, 这时新开标签页会被静默拦掉 —— 改弹 openLinkDialog, 由人点里面的链接, 新标签页照常打开.
+  // 「缓存」用这一条缓存电视当前在播的这一集, 这一集已经在下载或已经缓存好时服务端只回一句提示
+  document.getElementById('player-sources').addEventListener('click', function (e) {
+    var l = e.target.closest('[data-plink]');
+    if (l) {
+      var url = l.getAttribute('data-plink');
+      if (e.isTrusted) window.open(url, '_blank', 'noopener,noreferrer');
+      else openLinkDialog(url);
+      return;
+    }
+    var b = e.target.closest('[data-pcache]');
+    if (!b) return;
+    b.disabled = true;
+    post('api/player/cache', { id: b.getAttribute('data-pcache') })
+      .then(function (r) { toast(r.message); })
+      .catch(fail)
+      .then(function () { b.disabled = false; });
   });
   document.getElementById('player-sources').addEventListener('click', function (e) {
     // 分段标题: 点击在 details 自己开合之前, 记下点完之后的状态
@@ -6585,6 +6674,7 @@ private val HELP_SCRIPT = """
     T('点「接入锁屏 / 控制中心」后，可用手机的系统播放控件操作电视；网页只播放无声占位音轨，不会把电视声音传到手机。')
   ]) + sec(T('数据源'), [
     T('点一条就换成它播放；上面的胶囊可以只看某个源，下拉框按分辨率、字幕、字幕组筛。'),
+    T('右滑一条：用它缓存这一集，这一集已在下载或已缓存时只提示；左滑：在手机上打开它的播放链接。滑过一半松手直接执行。'),
     T('弹幕、音轨与字幕、播放信息、评论与评分在下面可以展开的卡片里。'),
     T('电视退出了播放器（播放还在后台留着）时也能换源，播放控制要回到播放器才能用。')
   ]);
