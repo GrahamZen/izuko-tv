@@ -229,12 +229,20 @@ internal class RemotePlayerHandle(
      */
     fun select(mediaId: String): String? {
         val page = page ?: return tr("电视当前不在播放页")
-        val entry = presentation?.filteredCandidates.orEmpty().firstOrNull { it.original.mediaId == mediaId }
-            ?: return tr("这个数据源已不在列表里，请刷新")
+        val entry = findCandidate(mediaId) ?: return tr("这个数据源已不在列表里，请刷新")
         if (entry.exclusionReason?.blocksSelection == true) return tr("这个资源现在不能播放（缓存还没下完）")
         uiScope.launch { page.mediaSelectorState.select(entry.original) }
         return null
     }
+
+    /** 当前候选 (含被排除的) 里 [mediaId] 对应的资源; 手机上的列表可能已过时, 不在了为 null. */
+    fun candidate(mediaId: String): Media? = findCandidate(mediaId)?.original
+
+    /** 电视当前在播的这一集; 页面状态还没出来时为 null. */
+    val currentEpisodeId: Int? get() = page?.episodePresentation?.episodeId
+
+    private fun findCandidate(mediaId: String) =
+        presentation?.filteredCandidates.orEmpty().firstOrNull { it.original.mediaId == mediaId }
 
     /**
      * 换集: 与电视上选集条 / 选集侧边栏同一条路 ([EpisodeSelectorState.selectEpisodeId], 就地换集不导航).

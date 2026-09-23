@@ -183,6 +183,12 @@ internal object RemoteCache {
     private val errors = ConcurrentHashMap<Pair<Int, Int>, String>()
 
     /**
+     * 播放页右滑缓存正在落库的集 ((subjectId, episodeId)), 见 [cacheMedia]. 落库完成之前 (BT 要先拿种子信息, 可能要好几秒)
+     * 这一集的下载状态还读不到, 靠它把这段时间也算作「在下载」.
+     */
+    private val creating: MutableSet<Pair<Int, Int>> = ConcurrentHashMap.newKeySet()
+
+    /**
      * 这部番刚删掉的缓存原来用的源与资源, 由 [RemoteCacheList] 删之前记下. 删完马上重下时已缓存的集没了, 条目偏好又常是
      * 「本地缓存」(播过缓存的集就会记成它), 沿用源无从说起 —— 实测沿用到 LocalTorrent, 集集「没找到这一集」.
      * 有了它: 沿用同一个源、优先同一个资源 (BT 文件还在盘上的话一下就好, 同电视上重选它). 只在内存里, 重启后退回按偏好挑.
@@ -551,6 +557,54 @@ internal object RemoteCache {
             true,
             tr("已开始缓存「{0}」", episodeLabel(b.episode)) +
                 (if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "") + tvBackgroundNote(entry.original.kind),
+        )
+    }
+
+    /**
+     * 播放页候选列表上右滑「缓存」: 用 [media] 缓存 [subjectId] 的第 [episodeId] 集 (电视当前在播的那一集).
+     *
+     * 与缓存面板里手动选资源 ([pick]) 同一条路: 先确认有存储收得下, 再在后台直接落库, 失败原因记在那一集上
+     * (缓存面板的剧集列表照常显示). 这一集已经在下载 (含暂停) 或已经缓存好时只提示, 不再建记录.
+     */
+    fun cacheMedia(subjectId: Int, episodeId: Int, media: Media): JsonObject {
+        if (media.kind == MediaSourceKind.LocalCache) return result(false, tr("这一条已经是缓存了"))
+        val status = runBlocking {
+            withTimeoutOrNull(STATUS_TIMEOUT) { cacheManager.downloadStatusForEpisode(subjectId, episodeId).first() }
+        } ?: return result(false, tr("读取缓存状态超时，请重试"))
+        when (status) {
+            is EpisodeCacheStatus.Caching -> return result(false, tr("这一集已经在下载了"))
+            is EpisodeCacheStatus.Cached -> return result(false, tr("这一集已经缓存好了"))
+            EpisodeCacheStatus.NotCached -> {}
+        }
+        if (!canDownload(media)) return result(false, tr("这个资源不支持缓存，换一个试试"))
+        val info = loadSubject(subjectId) ?: return result(false, tr("读取剧集失败，请重试"))
+        val ep = info.episodes.firstOrNull { it.episodeId == episodeId } ?: return result(false, tr("没有找到这一集"))
+        val key = subjectId to episodeId
+        if (!creating.add(key)) return result(false, tr("这一集已经在下载了"))
+        errors.remove(key)
+        scope.launch {
+            try {
+                addDownload(
+                    info.subjectInfo,
+                    ep.episodeInfo,
+                    media,
+                    MediaCacheMetadata(MediaFetchRequest.create(info.subjectInfo, ep.episodeInfo)),
+                )
+                logger.info { "Remote control started caching subject $subjectId episode $episodeId from the player's candidates" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Remote cache from the player's candidates failed for subject $subjectId episode $episodeId" }
+                errors[key] = tr("缓存失败：{0}", e.message ?: e::class.simpleName)
+            } finally {
+                creating.remove(key)
+            }
+        }
+        val isPack = media.episodeRange?.isSingleEpisode() == false
+        return result(
+            true,
+            tr("已开始缓存「{0}」", episodeLabel(ep)) +
+                (if (isPack) tr("。这是合集，其它集可以在列表里直接用合集缓存") else "") + tvBackgroundNote(media.kind),
         )
     }
 

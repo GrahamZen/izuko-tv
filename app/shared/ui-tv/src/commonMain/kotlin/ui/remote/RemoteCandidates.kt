@@ -126,7 +126,13 @@ internal object RemoteCandidates {
         put("alliance", props.alliance.takeIf { it.isNotBlank() })
         put("size", props.size.takeIf { it.inBytes > 0 }?.toString())
         put("cached", media.kind == MediaSourceKind.LocalCache)
+        // 播放页左滑「打开链接」: 数据源上的原始链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身;
+        // 缓存沿用来源资源的). 只给 http(s): 链接来自数据源配置, 别的协议 (javascript: 之类) 进了 href 就是在控制台页面里跑脚本
+        put("url", media.originalUrl.takeIf { it.isHttpUrl() })
     }
+
+    private fun String.isHttpUrl(): Boolean =
+        startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
     /** 一个下拉框的选项: 取值 / 显示文字 / 条数; 空值不列. [rank] 非 null 时按它从高到低排, 否则按条数. */
     private fun JsonObjectBuilder.putOptions(
