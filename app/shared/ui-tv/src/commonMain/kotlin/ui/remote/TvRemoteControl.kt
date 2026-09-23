@@ -457,6 +457,7 @@ object TvRemoteControl {
      *
      * - 一个进程只弹一次: Activity 重建 (切到别的应用再回来) 不再弹;
      * - **不在首页就不弹** (见 [onHomePage]);
+     * - 更要紧的界面开着或马上要出来时不弹 (见 [yieldTo]);
      * - 读的是**存下来的**设置, 不是组合里的 LocalThemeSettings —— 启动那一刻后者可能还是默认值, 关过的人会被弹一次;
      * - 等服务起来、拿到地址再弹; 一直拿不到 (没连局域网) 就不弹, 否则一开应用就是一个「无法使用」的弹窗;
      * - 拿到地址后再稍等一下, 让首页先画出来, 弹窗不跟启动画面抢.
@@ -464,8 +465,10 @@ object TvRemoteControl {
     /**
      * @param onHomePage 真要弹的那一刻再问一次"现在还在首页吗"。传进来而不是自己读:
      * 本类在 ui-tv, 拿不到导航栈。
+     * @param yieldTo 同一刻问"有没有更要紧的界面正开着或马上要出来" (如换包迁移的搬运进度、卸载旧版提示),
+     * 有就这次不弹: 二维码比它们晚出来, 会整个盖在上面。
      */
-    fun showDialogOnLaunch(onHomePage: () -> Boolean = { true }) {
+    fun showDialogOnLaunch(onHomePage: () -> Boolean = { true }, yieldTo: () -> Boolean = { false }) {
         if (!launchPromptDone.compareAndSet(false, true)) return
         scope.launch {
             val enabled = runCatching {
@@ -491,6 +494,10 @@ object TvRemoteControl {
             // 不补弹: “启动时弹一次”的机会用掉就算, 码随时能从侧边栏或长按播放键调出来。
             if (!onHomePage()) {
                 logger.info { "Skip remote control prompt on launch: not on the home page" }
+                return@launch
+            }
+            if (yieldTo()) {
+                logger.info { "Skip remote control prompt on launch: another prompt comes first" }
                 return@launch
             }
             _dialogVisible.value = true
@@ -643,6 +650,7 @@ object TvRemoteControl {
     fun ensureStarted(context: Context) {
         // 设置-界面里的「重置 Web 控制台地址」(设置页够不到本对象, 经 ui-foundation 的桥)
         TvRemoteSettingsBridge.resetAddress = ::resetAddress
+        TvRemoteSettingsBridge.reloadToken = ::reloadToken
         synchronized(lock) {
             appContext = context.applicationContext
             if (prefs != null) return
@@ -738,6 +746,19 @@ object TvRemoteControl {
             val host = refreshUrl()
             rememberHost(host)
             logger.info { "Remote control address reset" }
+        }
+    }
+
+    /** 按存着的 token 重启服务, 见 [TvRemoteSettingsBridge.reloadToken]. */
+    private fun reloadToken() {
+        scope.launch {
+            synchronized(lock) {
+                if (server == null) return@launch
+                stopLocked()
+                startLocked()
+            }
+            refreshUrl()
+            logger.info { "Remote control restarted with the stored token" }
         }
     }
 
@@ -1478,9 +1499,9 @@ object TvRemoteControl {
     private const val OTHER_PORT_BASE = 41894
     private const val OTHER_PORT_COUNT = 5
 
-    // 沿用「搜索输入」时代的存储名与键: 升级后 token 不变, 手机上已加的书签照样能用
-    private const val PREFS_NAME = "tv_remote_search_input"
-    private const val KEY_TOKEN = "token"
+    // token 与其它状态同存一个文件, 名字见 TvRemoteSettingsBridge (换分发包名时迁移代码也要按它读写 token)
+    private const val PREFS_NAME = TvRemoteSettingsBridge.TOKEN_PREFS_NAME
+    private const val KEY_TOKEN = TvRemoteSettingsBridge.TOKEN_KEY
     private const val KEY_KNOWN_HOST = "known_host"
 }
 

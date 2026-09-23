@@ -58,8 +58,15 @@ tasks.register("uploadAndroidApk", UploadAndroidApksTask::class) {
     configureReleaseUploadInputs()
     // fork: 发布的是 formFactor=tv 变体 (上游只有 distribution 一个维度, 目录为 outputs/apk/default/release)
     apkDirectory.set(project(":app:android").layout.buildDirectory.dir("outputs/apk/defaultTv/release"))
-    // 应用检查更新时只认这个前缀的包, 见 gradle.properties
-    assetNamePrefix.set(providers.gradleProperty("ani.update.asset.prefix"))
+    // 跳板包必须叫 ani-…: 已发布的老包只认这个前缀 (写死在它们的代码里). 新包用 gradle.properties 里的前缀.
+    assetNamePrefix.set(
+        providers.gradleProperty("ani.android.migrationBridge")
+            .map { it.toBoolean() }
+            .orElse(false)
+            .zip(providers.gradleProperty("ani.update.asset.prefix")) { bridge, prefix ->
+                if (bridge) "ani" else prefix
+            },
+    )
 }
 
 val uploadAndroidApkGithubQr = tasks.register("uploadAndroidApkGithubQr", UploadReleaseAssetTask::class) {

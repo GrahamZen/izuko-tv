@@ -56,6 +56,24 @@ interface AniBuildConfig {
     val updateRepository: String
         get() = projectRepository
 
+    /**
+     * 本包是不是**跳板包**: 仍用旧 applicationId, 唯一的用处是把老用户引导到落地版 ([migrationLandingVersion]) 上.
+     * 它的"更新"固定是装落地版, 不找最新版 (见 `UpdateChecker`).
+     */
+    val isMigrationBridge: Boolean
+        get() = false
+
+    /**
+     * 本包是不是**落地版**: 新包名, 首次启动从旧包接管数据, 接管彻底结束后自己更新到最新版.
+     * 最新版因此不带任何迁移代码.
+     */
+    val isMigrationLanding: Boolean
+        get() = false
+
+    /** 跳板包要装的落地版版本号 (不带 `v`). */
+    val migrationLandingVersion: String
+        get() = ""
+
     val sentryEnabled: Boolean
         get() = true
     val analyticsEnabled: Boolean

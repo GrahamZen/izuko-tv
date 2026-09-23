@@ -98,7 +98,8 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
     var extraTrackers: List<String> = emptyList()
 
     companion object {
-        private const val FAST_RESUME_FILENAME = "fastresume"
+        /** 种子目录里的续传数据文件名, 见上面的目录结构. */
+        const val FAST_RESUME_FILENAME = "fastresume"
 
         /**
          * `internal` since used by [createAnitorrentTorrentDownloader]

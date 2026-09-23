@@ -9,6 +9,7 @@
 
 <resources>
     <string name="app_name">Izuko TV</string>
+    <string name="app_name_migration_bridge">Animeko (old)</string>
     <string name="app_package" translatable="false">io.github.grahamzen.anime.tv</string>
     <string name="service_torrent_engine_description">Izuko TV BT engine foreground service</string>
     <string name="app_service_title_text_idle">No download tasks</string>

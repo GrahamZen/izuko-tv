@@ -9,6 +9,7 @@
 
 package me.him188.ani.android
 
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.navigation.AniNavigator
@@ -30,3 +31,6 @@ internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composabl
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
     // no-op
 }
+
+/** 本形态首次打开要做的设置还没做完. 手机上没有首次引导. */
+internal fun isFormFactorSetupPending(context: Context): Boolean = false

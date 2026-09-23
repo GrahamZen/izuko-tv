@@ -162,11 +162,15 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         uriHandler: UriHandler?
     ) {
         autoCheckTasker.launch {
+            // 落地版等迁移与首次打开的设置都做完再检查更新: 中途装上新版本会把没搬完的东西丢在半路,
+            // 更新提示也会压在迁移与引导的界面上. 之后照用户的更新设置走
+            if (currentAniBuildConfig.isMigrationLanding) MigrationLandingGate.awaitMigrationDone()
             val updateSettings = updateSettings.first()
 
             checkUpdateErrorFlow.value = null
             val ver = try {
-                if (!updateSettings.autoCheckUpdate) {
+                // 跳板包存在的意义就是把人带到新应用上, 关着检查的话它就只是个不会再更新的旧版
+                if (!updateSettings.autoCheckUpdate && !currentAniBuildConfig.isMigrationBridge) {
                     logger.info { "autoCheckUpdate disabled" }
                     return@launch
                 }
@@ -185,7 +189,8 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
 
             latestVersionFlow.update { ver }
 
-            if (ver != null && updateSettings.autoDownloadUpdate) {
+            // 迁移不自动下载: 下完电视上会直接弹系统安装框, 用户还没看到说明就被问"要不要安装另一个应用"
+            if (ver != null && updateSettings.autoDownloadUpdate && !ver.isMigration) {
                 logger.info { "autoDownloadUpdate is true, starting download" }
                 startDownload(ver, uriHandler)
             }
@@ -196,7 +201,8 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         autoInstalledFile = null // 重新下载的包要能再自动装一次
         downloadTasker.launch {
             val settings = updateSettings.first()
-            if (!settings.inAppDownload) {
+            // 迁移 (跳板包装新应用) 固定在应用内下载: 电视上交给浏览器基本走不通, 而这一步卡住就迁不过去了
+            if (!settings.inAppDownload && !ver.isMigration) {
                 if (uriHandler == null) {
                     logger.warn { "uriHandler is null, cannot navigate to browser (may happen for auto check)" }
                     return@launch
@@ -350,6 +356,12 @@ class NewVersion(
      */
     val downloadUrlAlternatives: List<String>,
     val publishedAt: String,
+    /**
+     * 这次"更新"是从跳板包迁到新包名的应用 (见 `AniBuildConfig.isMigrationBridge`): 装上的是另一个应用,
+     * 旧的这个不会被替换. 界面要先讲清楚再动手, 所以不自动下载 (见 [AppUpdateViewModel.startCheckLatestVersion]),
+     * 点"自动更新"时先出迁移说明.
+     */
+    val isMigration: Boolean = false,
 ) {
     val majorChanges = changelogs.asSequence().flatMap { changelog ->
         changelog.changes.lineSequence()

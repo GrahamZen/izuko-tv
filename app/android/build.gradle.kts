@@ -43,7 +43,18 @@ android {
         // **分发包名与 Kotlin 的 namespace 是两回事**: namespace 仍是 me.him188.ani.android
         // (它只决定 R 类与类的全限定名, 用户看不到). 这里换掉的是装到设备上、应用商店认的那个标识.
         // 取的是中性词而不是产品名: 显示名 (app_name) 随时能改, applicationId 一旦发布就改不动了.
-        applicationId = "io.github.grahamzen.anime" + (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
+        // 迁移期的跳板包仍用旧 applicationId, 这样老用户那边才算"升级"而不是装新应用.
+        // 见 app-platform/build.gradle.kts 的 migrationBridge.
+        val bridge = (getPropertyOrNull("ani.android.migrationBridge") ?: "false").toBooleanStrict()
+        applicationId = (if (bridge) "me.him188.ani" else "io.github.grahamzen.anime") +
+                (getPropertyOrNull("ani.android.appIdSuffix") ?: "")
+        // 迁移过程中新旧两个应用会同时装着, 桌面上同名的话用户分不清该留哪个、卸哪个
+        manifestPlaceholders["appLabel"] = if (bridge) "@string/app_name_migration_bridge" else "@string/app_name"
+        // 迁移时新旧两个包要互相看得见 (AndroidManifest 的 <queries>): 按同一个后缀拼出两边的电视包名,
+        // 加了后缀的对比/测试包也能走通迁移
+        val migrationAppIdSuffix = getPropertyOrNull("ani.android.appIdSuffix") ?: ""
+        manifestPlaceholders["legacyTvPackage"] = "me.him188.ani$migrationAppIdSuffix.tv"
+        manifestPlaceholders["currentTvPackage"] = "io.github.grahamzen.anime$migrationAppIdSuffix.tv"
         minSdk = androidMinSdk
         targetSdk = getIntProperty("android.compile.sdk")
         versionCode = getIntProperty("android.version.code")

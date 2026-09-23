@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.settings_about_app_name
+import me.him188.ani.app.ui.lang.settings_update_migration_popup_title
 import me.him188.ani.app.ui.lang.settings_update_popup_auto_update
 import me.him188.ani.app.ui.lang.settings_update_popup_close
 import me.him188.ani.app.ui.lang.settings_update_popup_feedback_group_hint
@@ -67,11 +69,25 @@ fun NewVersionPopupCard(
     showFeedbackGroupHint: Boolean = false,
     /** "自动更新"按钮的附加 modifier (TV 上挂初始焦点请求器). */
     autoUpdateButtonModifier: Modifier = Modifier,
+    /**
+     * 这次是从跳板包迁到新应用 (见 [NewVersion.isMigration]): 标题说"应用改名了", 版本号前带上新应用的名字 ——
+     * 跳板包自己是 6.x, 只写一个 1.x 的版本号看起来像是降级.
+     */
+    isMigration: Boolean = false,
 ) {
     BasicNotificationPopupCard(
-        title = { Text(stringResource(Lang.settings_update_popup_new_version)) },
+        title = {
+            Text(
+                stringResource(
+                    if (isMigration) Lang.settings_update_migration_popup_title
+                    else Lang.settings_update_popup_new_version,
+                ),
+            )
+        },
         modifier,
-        subtitle = { Text(version) },
+        subtitle = {
+            Text(if (isMigration) "${stringResource(Lang.settings_about_app_name)} $version" else version)
+        },
         dismissButton = {
             onDismissRequest?.let {
                 NotificationPopupDefaults.DismissButton(it)

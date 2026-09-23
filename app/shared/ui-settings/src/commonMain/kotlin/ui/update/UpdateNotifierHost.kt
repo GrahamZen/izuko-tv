@@ -72,6 +72,8 @@ fun BoxScope.UpdateNotifier(
 
     // Per-version dismiss state
     var dismissed by rememberSaveable(newVersion?.name) { mutableStateOf(false) }
+    // 跳板包点"自动更新"先出迁移说明, 见 MigrationGuideDialog
+    var migrationGuideVisible by remember(newVersion?.name) { mutableStateOf(false) }
 
     // TV: 下载完成后自动安装 (与设置页一致), 遥控器用户不必再按一次安装
     val autoInstall = LocalAniUiBehavior.current.autoInstallUpdates
@@ -100,7 +102,9 @@ fun BoxScope.UpdateNotifier(
         )
     }
 
-    val showCard = !dismissed && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
+    // 迁移说明开着时藏起卡片: 说明是半透明的居中面板, 右下角这张卡会透出来压在正文上 (2026-09-22 真机).
+    // 关掉说明时卡片重新出现, 下面那条初始焦点效应随之重跑, 焦点回到"自动更新"
+    val showCard = !dismissed && !migrationGuideVisible && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
     val hasUpdateCard = showCard && state is AppUpdateState.HasUpdate
 
     // TV: 气泡出现时把初始焦点送到"自动更新"按钮. 卡片动画尚未组合按钮时请求会悬挂,
@@ -125,12 +129,19 @@ fun BoxScope.UpdateNotifier(
     // 无操作自动消失: 提示卡出现一段时间后自行关闭, 不永久挡住右下角内容.
     // 开始下载后 hasUpdateCard 变 false, 本效应取消 —— 下载进度卡不受影响.
     // 详情弹窗开着时不计时: 用户正在读那几十条更新, 背后把气泡撤掉的话关掉弹窗就没有入口了
-    // (再点"自动更新"要重新等一轮检查). 关掉弹窗后重新计满 20 秒. 安装授权的说明开着时同理.
+    // (再点"自动更新"要重新等一轮检查). 关掉弹窗后重新计满 20 秒. 安装授权的说明与迁移说明开着时同理.
     // 窗口没有焦点时也不计时: 启动时弹出的 Web 控制台二维码 (独立窗口) 正好盖在这张卡上, 计时照走的话,
-    // 用户关掉二维码时卡片往往已经没了 (2026-09-23 真机); 应用切到后台同理
+    // 用户关掉二维码时卡片往往已经没了 (2026-09-23 真机); 应用切到后台同理.
+    // 迁移那张卡不自动消失: 跳板包存在的意义就是它. 关闭按钮与返回键照常能关掉它.
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(hasUpdateCard, detailsVisible, installPermissionRequest, windowFocused, newVersion?.name) {
-        if (hasUpdateCard && !detailsVisible && installPermissionRequest == null && windowFocused) {
+    val autoDismiss = newVersion?.isMigration != true
+    LaunchedEffect(
+        hasUpdateCard, detailsVisible, installPermissionRequest, migrationGuideVisible, windowFocused, autoDismiss,
+        newVersion?.name,
+    ) {
+        if (hasUpdateCard && !detailsVisible && installPermissionRequest == null && !migrationGuideVisible &&
+            windowFocused && autoDismiss
+        ) {
             delay(UPDATE_CARD_AUTO_DISMISS_MILLIS)
             dismissed = true
         }
@@ -142,6 +153,15 @@ fun BoxScope.UpdateNotifier(
             changes = version.detailedChanges,
             onOpenInBrowser = { uriHandler.openUri(releaseNotesUrl(version.name)) },
             onDismissRequest = { detailsVisible = false },
+        )
+    }
+    newVersion?.takeIf { migrationGuideVisible }?.let { version ->
+        MigrationGuideDialog(
+            onStart = {
+                migrationGuideVisible = false
+                viewModel.startDownload(version, uriHandler)
+            },
+            onDismissRequest = { migrationGuideVisible = false },
         )
     }
 
@@ -169,7 +189,7 @@ fun BoxScope.UpdateNotifier(
     // 既看不出焦点在哪, 也不知道怎么把它关掉. 锁上后出口只剩三个按钮和返回键, 全是一按之遥.
     // 只锁"有更新"这张卡 (与上面返回键同理): 下载中那张要挂几分钟, 锁住等于扣着整个应用不放.
     // 20 秒无操作自动消失仍然有效, 是这个模态的兜底时限; 届时焦点由 NavHost 的兜底监视
-    // (见 AniAppContent 的 navHostModifier) 送回页面, 不会丢在根上.
+    // (见 AniAppContent 的 navHostModifier) 送回页面, 不会丢在根上. 迁移卡没有这个时限, 出口是关闭按钮与返回键.
     val trapFocus = LocalAniUiBehavior.current.focusDrivenNavigation && hasUpdateCard
 
     AniAnimatedVisibility(
@@ -195,9 +215,13 @@ fun BoxScope.UpdateNotifier(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
                     showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
+                    isMigration = newVersion?.isMigration == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
-                        newVersion?.let { viewModel.startDownload(it, uriHandler) }
+                        newVersion?.let {
+                            if (it.isMigration) migrationGuideVisible = true
+                            else viewModel.startDownload(it, uriHandler)
+                        }
                     },
                     onDismissRequest = { dismissed = true },
                     autoUpdateButtonModifier = Modifier.tvFocusAnchor(
@@ -275,13 +299,23 @@ fun BoxScope.UpdateSettingsNotifier(
 
     // 与入口气泡一致: "查看详情"先在应用内看全文 (设置页这张卡不会自动消失, 无需暂停计时)
     var detailsVisible by remember(newVersion?.name) { mutableStateOf(false) }
-    val showCard = !dismissed && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
+    var migrationGuideVisible by remember(newVersion?.name) { mutableStateOf(false) }
+    val showCard = !dismissed && !migrationGuideVisible && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
     newVersion?.takeIf { detailsVisible }?.let { version ->
         NewVersionDetailsDialog(
             version = version.name,
             changes = version.detailedChanges,
             onOpenInBrowser = { uriHandler.openUri(releaseNotesUrl(version.name)) },
             onDismissRequest = { detailsVisible = false },
+        )
+    }
+    newVersion?.takeIf { migrationGuideVisible }?.let { version ->
+        MigrationGuideDialog(
+            onStart = {
+                migrationGuideVisible = false
+                viewModel.startDownload(version, uriHandler)
+            },
+            onDismissRequest = { migrationGuideVisible = false },
         )
     }
 
@@ -298,9 +332,13 @@ fun BoxScope.UpdateSettingsNotifier(
                     version = newVersion?.name ?: "",
                     changes = newVersion?.majorChanges ?: emptyList(),
                     showFeedbackGroupHint = newVersion?.hasFeedbackGroup == true,
+                    isMigration = newVersion?.isMigration == true,
                     onDetailsClick = { detailsVisible = true },
                     onAutoUpdateClick = {
-                        newVersion?.let { viewModel.startDownload(it, uriHandler) }
+                        newVersion?.let {
+                            if (it.isMigration) migrationGuideVisible = true
+                            else viewModel.startDownload(it, uriHandler)
+                        }
                     },
                     onDismissRequest = { dismissed = true },
                 )

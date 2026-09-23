@@ -9,12 +9,14 @@
 
 package me.him188.ani.android
 
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
+import me.him188.ani.android.tv.TvOnboardingGate
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
@@ -47,3 +49,6 @@ internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
 }
 
 private const val TV_HOME_CHANNELS_DELAY_MILLIS = 10_000L
+
+/** 本形态首次打开要做的设置还没做完 (电视: 首次启动引导, 见 [TvOnboardingGate]). 落地版等它做完才更新到最新版. */
+internal fun isFormFactorSetupPending(context: Context): Boolean = TvOnboardingGate.isPending(context)
