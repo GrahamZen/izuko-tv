@@ -150,6 +150,7 @@ import me.him188.ani.app.ui.mediafetch.ViewKind
 import me.him188.ani.app.ui.mediafetch.createTestMediaSelectorState
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummaryStateProducer
+import me.him188.ani.app.ui.mediaselect.summary.orStillPlaying
 import me.him188.ani.app.ui.mediaselect.summary.selectedMaybeExcludedMediaFlow
 import me.him188.ani.app.ui.settings.danmaku.DanmakuRegexFilterState
 import me.him188.ani.app.ui.subject.AiringLabelState
@@ -184,6 +185,7 @@ import me.him188.ani.danmaku.ui.DanmakuConfig
 import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.danmaku.ui.DanmakuPresentation
 import me.him188.ani.danmaku.ui.DanmakuTrackProperties
+import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
@@ -405,6 +407,9 @@ class EpisodeViewModel(
     )
 
     val mediaResolver: MediaResolver get() = fetchPlayState.playerSession.mediaResolver
+
+    /** 当前装进播放器的资源, 见 PlayerSession.loadedMedia. */
+    val loadedMedia: StateFlow<Media?> get() = fetchPlayState.playerSession.loadedMedia
 
     // region Subject and episode data info flows
     @UnsafeEpisodeSessionApi
@@ -924,7 +929,8 @@ class EpisodeViewModel(
         val mediaSelectorSummaryStateProducer = MediaSelectorSummaryStateProducer(
             episodeSession.fetchSelectFlow.mapNotNull { it?.mediaSelector }
                 .flatMapLatest { it.selectedMaybeExcludedMediaFlow }
-                .onStart { emit(null) },
+                .onStart { emit(null) }
+                .orStillPlaying(fetchPlayState.playerSession.loadedMedia),
             filteredSourceResults,
             getMediaSelectorSettings(),
             getMediaSourceInstances.getAsMediaSourceInfoWithId(),
