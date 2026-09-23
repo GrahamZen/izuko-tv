@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.DroppedFileMedia
@@ -29,6 +30,7 @@ import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.isPerfectMatch
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_summary_dropped_file
+import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.platform.collections.tupleOf
@@ -148,6 +150,26 @@ val MediaSelector.selectedMaybeExcludedMediaFlow: Flow<MaybeExcludedMedia?>
             }
         }
     }
+
+/**
+ * 摘要里显示的选中项: 播放器在播哪个就显示哪个.
+ *
+ * 选源器选中了什么就是什么. 选源器暂时没有选中项, 而播放器 ([loadedMedia]) 还在播上一次显示的那个资源时,
+ * 沿用上一次的 (连同匹配信息) —— 播放中改了搜索名就是这样: 选源会话按新名字重建, 新的选源器一开始什么都没选,
+ * 播放器却照旧在播原来那个, 直接用选源器的结果会让界面显示成「还没选出数据源」.
+ * 播放器停了或换了别的资源, 就不再沿用.
+ */
+@OptIn(UnsafeOriginalMediaAccess::class)
+fun Flow<MaybeExcludedMedia?>.orStillPlaying(loadedMedia: Flow<Media?>): Flow<MaybeExcludedMedia?> =
+    combine(this, loadedMedia) { selected, loaded -> tupleOf(selected, loaded) }
+        .runningFold(null as MaybeExcludedMedia?) { shown, (selected, loaded) ->
+            when {
+                selected != null -> selected
+                loaded != null && shown != null && shown.original.mediaId == loaded.mediaId -> shown
+                else -> null
+            }
+        }
+        .distinctUntilChanged()
 
 private fun MediaSourceInfo.toSummary() =
     MediaSelectorSourceSummary(

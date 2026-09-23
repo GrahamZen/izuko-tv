@@ -136,7 +136,8 @@ internal class RemotePlayerHandle(
     fun stateJson(filter: RemoteMediaFilter = RemoteMediaFilter.None): JsonObject {
         val page = page
         val pres = presentation
-        val selected = pres?.selected
+        // 播的是哪个就显示哪个: 播放中改了搜索名, 选源会话重建、新的选源器暂时没有选中项, 播放器却照旧在播原来那个
+        val selected = pres?.selected ?: vm.loadedMedia.value
         return buildJsonObject {
             put("available", true)
             put("background", background)

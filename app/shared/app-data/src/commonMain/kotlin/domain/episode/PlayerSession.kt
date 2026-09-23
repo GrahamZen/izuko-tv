@@ -74,6 +74,15 @@ class PlayerSession(
      */
     val videoLoadingState: StateFlow<VideoLoadingState> get() = _videoLoadingStateFlow.asStateFlow()
 
+    private val _loadedMedia = MutableStateFlow<Media?>(null)
+
+    /**
+     * 当前装进播放器的资源, 停止播放 ([stopPlayback]) 后为 `null`.
+     *
+     * 与选源器的选中项不总是一致: 播放中改了搜索名, 选源会话会重建、新的选源器暂时什么都没选, 播放器却照旧在播原来那个.
+     */
+    val loadedMedia: StateFlow<Media?> get() = _loadedMedia.asStateFlow()
+
     /**
      * 解析 media 并开始播放这个 media.
      */
@@ -84,6 +93,7 @@ class PlayerSession(
         if (media == null) {
             return@coroutineScope
         }
+        _loadedMedia.value = media
 
         var preparedHlsPlaybackProxySession: HlsPlaybackProxySession? = null
         try {
@@ -157,6 +167,7 @@ class PlayerSession(
     }
 
     suspend fun stopPlayback() {
+        _loadedMedia.value = null
         stopPlayer()
         closeHlsPlaybackProxySession()
     }
