@@ -21,10 +21,12 @@ import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.repository.player.PlaybackHistoryPendingOp
 import me.him188.ani.utils.platform.annotations.TestOnly
 
+@Serializable // 换分发包名时整表交给新包, 见 LegacyUserData
 @Entity(
     tableName = "playback_history_record",
     indices = [
@@ -46,6 +48,7 @@ data class PlaybackHistoryRecordEntity(
     val deletedAtMillis: Long? = null,
 )
 
+@Serializable // 同上
 @Entity(
     tableName = "playback_history_pending_op",
     indices = [

@@ -206,6 +206,8 @@ class UpdateChecker(private val client: ScopedHttpClient) {
         releaseClass: ReleaseClass,
         currentVersion: String = currentAniBuildConfig.versionName,
     ): NewVersion? {
+        // 跳板包只装固定的落地版, 见 getMigrationLanding
+        if (currentAniBuildConfig.isMigrationBridge) return getMigrationLanding()
         val gitHubError = try {
             val version = getVersionFromGitHub(currentVersion, releaseClass)
             // 连选中的安装包一起打出来: 装不上的报障 (架构不符) 只凭版本号看不出问题在哪,
@@ -271,6 +273,50 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             downloadUrlAlternatives = packages.flatMap { listOf(it.browserDownloadUrl, ghfastUrl(it.browserDownloadUrl)) },
             publishedAt = latest.publishedAt,
         )
+    }
+
+    /**
+     * 跳板包要装的新应用: 固定是落地版 (`AniBuildConfig.migrationLandingVersion`), 不找最新版 ——
+     * 落地版带着接管旧包数据的代码, 接管完自己再更新到最新版, 最新版因此不用带任何迁移代码.
+     *
+     * 先问 GitHub API 那个 tag 下的资源; 不通时按 fork-release.yml 的命名规则合成地址 (版本号已知, 用不着镜像解析).
+     */
+    private suspend fun getMigrationLanding(): NewVersion? {
+        val version = currentAniBuildConfig.migrationLandingVersion
+        val release = try {
+            client.use {
+                get("https://api.github.com/repos/$FORK_OWNER/$FORK_REPO/releases/tags/v$version") {
+                    header(HttpHeaders.UserAgent, getAniUserAgent())
+                    mirrorTimeout()
+                }.bodyAsText()
+            }.let { json.decodeFromString<GitHubRelease>(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.error(e) { "Failed to get migration landing v$version from GitHub, using synthesized urls" }
+            null
+        }
+        val assets = release?.assets
+            ?.filter { it.name.endsWith(".apk") && it.name.startsWith("${currentAniBuildConfig.updateAssetPrefix}-") }
+            ?: releaseApkAssets(version)
+        val packages = assets.pickInstallableApks()
+        if (packages.isEmpty() && currentPlatform() is Platform.Android) {
+            logger.warn { "Migration landing v$version has no package installable on this device" }
+            return null
+        }
+        return NewVersion(
+            name = version,
+            changelogs = listOf(
+                Changelog(version = version, publishedAt = release?.publishedAt.orEmpty(), changes = release?.body.orEmpty()),
+            ),
+            // API 通了 GitHub 下载多半也通, 原地址在前; 不通就镜像在前
+            downloadUrlAlternatives = packages.flatMap {
+                if (release != null) listOf(it.browserDownloadUrl, ghfastUrl(it.browserDownloadUrl))
+                else listOf(ghfastUrl(it.browserDownloadUrl), it.browserDownloadUrl)
+            },
+            publishedAt = release?.publishedAt.orEmpty(),
+            isMigration = true,
+        ).also { logger.info { "Migration landing v$version, packages=${it.packageNames()}" } }
     }
 
     private class MirrorRelease(val version: String, val templateBody: String, val source: String)

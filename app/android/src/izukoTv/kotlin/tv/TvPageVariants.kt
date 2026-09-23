@@ -11,10 +11,13 @@ package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
+import me.him188.ani.android.migration.SettingsMigration
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -153,9 +156,16 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
-    // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
+    // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate.
+    // 从旧包迁移过来的先迁移再引导: 接管会整份替换设置, 先选好的连接方式会被盖掉. 所以接管、搬缓存、
+    // 卸载旧版的提示没处理完时先停在主页, 处理完再进引导 (见根部 onboardingAfterMigration 那段)
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
-    val onboarding = remember(onboardingPending) { TvOnboardingVariantImpl(onboardingPending) }
+    val onboardingAfterMigration = remember(appContext) {
+        onboardingPending && SettingsMigration.isMigrationUiPending(appContext)
+    }
+    val onboarding = remember(onboardingPending) {
+        TvOnboardingVariantImpl(pendingOnLaunch = onboardingPending && !onboardingAfterMigration)
+    }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     DisposableEffect(aniNavigator) {
@@ -345,11 +355,23 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvRemoteControlDialogHost()
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
-        // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码
+        // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码;
+        // 换包迁移的界面 (搬运进度、卸载旧版提示) 开着或马上要出来时也不弹
+        val applicationContext = appContext.applicationContext
         LaunchedEffect(Unit) {
-            TvRemoteControl.showDialogOnLaunch {
-                !onboardingPending &&
+            TvRemoteControl.showDialogOnLaunch(
+                onHomePage = {
+                    !onboardingPending &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
+                },
+                yieldTo = { SettingsMigration.isMigrationUiPending(applicationContext) },
+            )
+        }
+        if (onboardingAfterMigration) {
+            // 迁移的界面都处理完了再进引导. 引导结束时下面已经垫着主页, 它只出栈自己
+            LaunchedEffect(Unit) {
+                while (SettingsMigration.isMigrationUiPending(applicationContext)) delay(1.seconds)
+                aniNavigator.navigate(NavRoutes.TvOnboarding)
             }
         }
         if (showQuickMenu) {

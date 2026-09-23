@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.android.activity.MainActivity
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
+import me.him188.ani.android.migration.CacheMigrationImport
+import me.him188.ani.android.migration.SettingsMigration
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoDao
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -47,6 +50,7 @@ import me.him188.ani.app.platform.getCommonKoinModule
 import me.him188.ani.app.platform.startCommonKoinModule
 import me.him188.ani.app.platform.trace.recordAppStart
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
+import me.him188.ani.app.ui.update.MigrationLandingGate
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsConfig
 import me.him188.ani.utils.analytics.AnalyticsImpl
@@ -144,10 +148,37 @@ class AniApplication : Application() {
             modules(getCommonKoinModule({ this@AniApplication }, scope))
 
             modules(getAndroidModules(connectionManager, scope))
-        }.startCommonKoinModule(this@AniApplication, scope)
+        }.startCommonKoinModule(
+            this@AniApplication, scope,
+            // 从旧包搬来的缓存要在恢复缓存之前放到位, 见 CacheMigrationImport
+            beforeCacheRestore = { CacheMigrationImport.commitIfStaged(this@AniApplication, getKoin()) },
+            // 首次启动接管旧包的数据源与订阅之前, 别让启动任务按空库写数据源, 见 SettingsMigration.awaitSettled
+            beforeUserDataWrites = {
+                if (!currentAniBuildConfig.isMigrationBridge) SettingsMigration.awaitSettled()
+            },
+        )
         startupTimeMonitor.mark(StepName.Modules)
 
         val koin = getKoin()
+        // 换分发包名之后, 新包第一次启动时把旧包的设置接过来 (含登录), 再搬缓存. 见 SettingsMigration.
+        // 放在这里而不是界面里: 迁移要赶在设置被读到之前完成, 否则首屏已经按默认值画过一遍了.
+        if (!currentAniBuildConfig.isMigrationBridge) {
+            // 落地版等迁移彻底结束、首次打开的设置 (电视上的引导) 也做完, 才去更新到最新版, 见 MigrationLandingGate
+            MigrationLandingGate.migrationPending = {
+                SettingsMigration.isMigrationUiPending(this@AniApplication) ||
+                    isFormFactorSetupPending(this@AniApplication)
+            }
+            scope.launch {
+                try {
+                    if (SettingsMigration.isAvailable(this@AniApplication)) {
+                        SettingsMigration.importFromLegacy(this@AniApplication, koin)
+                    }
+                } finally {
+                    SettingsMigration.markSettled()
+                }
+                CacheMigrationImport.resumeIfNeeded(this@AniApplication, koin, scope)
+            }
+        }
         val analyticsInitializer = scope.launch {
             val settingsRepository = koin.get<SettingsRepository>()
             val userRepository = koin.get<UserRepository>()

@@ -21,4 +21,15 @@ object TvRemoteSettingsBridge {
     /** 重置地址: 换一个新 token, 已扫过的手机与书签全部作废 (见 `TvRemoteControl.resetAddress`). */
     @Volatile
     var resetAddress: (() -> Unit)? = null
+
+    /**
+     * 按 SharedPreferences 里存着的 token 重启服务 (服务没在跑就什么都不做). 换分发包名时新包接过旧包的 token 后调它,
+     * 手机上已加的书签与扫过的二维码照旧能用 (见 `TvRemoteControl.ensureStarted`).
+     */
+    @Volatile
+    var reloadToken: (() -> Unit)? = null
+
+    /** 地址里的 token 存在哪: SharedPreferences 的文件名与键. 沿用「搜索输入」时代的名字, 升级后 token 不变. */
+    const val TOKEN_PREFS_NAME = "tv_remote_search_input"
+    const val TOKEN_KEY = "token"
 }

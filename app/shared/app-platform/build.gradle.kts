@@ -32,10 +32,20 @@ val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
 // 本项目的 GitHub 仓库 (见 gradle.properties). 应用里的项目链接、UA 与镜像清单都按它拼地址.
 val projectRepository = getProperty("ani.repository")
-// 更新时只装 release 里这个前缀的 APK (见 gradle.properties).
+// 更新时只装 release 里这个前缀的 APK (见 gradle.properties). 跳板包也认它: 它的"更新"就是装落地版.
 val updateAssetPrefix = getProperty("ani.update.asset.prefix")
-// 检查更新、下载安装包的仓库, 默认就是本项目的仓库. 发版前真机走一遍更新时用 -P 或 local.properties 指到测试仓库.
-val updateRepository = getPropertyOrNull("ani.update.repository") ?: projectRepository
+
+// 迁移分支: `-Pani.android.migrationBridge=true` 出**跳板包** (旧 applicationId, 老用户像平常一样升级到它,
+// 由它引导安装落地版); 不带这个参数出的是**落地版** (新包名, 首次启动接管旧包的数据, 然后自己更新到最新版).
+// 两个包都发布在 ani.migration.repository 里 (见 gradle.properties).
+val migrationBridge = (getPropertyOrNull("ani.android.migrationBridge") ?: "false").toBooleanStrict()
+val migrationRepository = getPropertyOrNull("ani.migration.repository") ?: projectRepository
+val migrationLandingVersion = getProperty("ani.migration.landing.version")
+
+// 检查更新、下载安装包的仓库: 跳板包去放落地版的仓库, 落地版去本项目的仓库找最新版.
+// 发版前真机走一遍时用 -P 或 local.properties 的 ani.update.repository 指到测试仓库.
+val updateRepository = getPropertyOrNull("ani.update.repository")
+    ?: if (migrationBridge) migrationRepository else projectRepository
 
 kotlin {
     android {
@@ -139,6 +149,9 @@ buildConfig {
         stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
+        booleanField("isMigrationBridge", migrationBridge)
+        booleanField("isMigrationLanding", !migrationBridge)
+        stringField("migrationLandingVersion", migrationLandingVersion)
 
         firebaseFields()
     }
@@ -157,6 +170,9 @@ buildConfig {
         stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
+        booleanField("isMigrationBridge", migrationBridge)
+        booleanField("isMigrationLanding", !migrationBridge)
+        stringField("migrationLandingVersion", migrationLandingVersion)
 
         booleanField("analyticsEnabled", enableFirebase)
     }

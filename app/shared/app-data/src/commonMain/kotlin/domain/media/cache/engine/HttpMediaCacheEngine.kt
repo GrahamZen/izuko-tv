@@ -201,12 +201,8 @@ class HttpMediaCacheEngine(
     /**
      * 新建任务的标识, 由 mediaId, subjectId 与 episodeId 共同决定: 合集资源经 PikPak 下载时各集有独立的任务与文件.
      */
-    private fun httpDownloadId(media: Media, metadata: MediaCacheMetadata): DownloadId {
-        val identity = listOf(media.mediaId, metadata.subjectId, metadata.episodeId)
-            .joinToString("") { "${it.length}:$it" }
-        val digest = Buffer().apply { writeString(identity) }.readAndDigest(DigestAlgorithm.SHA256).toHexString()
-        return DownloadId("http-v2-$digest")
-    }
+    private fun httpDownloadId(media: Media, metadata: MediaCacheMetadata): DownloadId =
+        downloadIdOf(media, metadata)
 
     /**
      * 恢复记录时的任务标识: 优先 [httpDownloadId]; downloader 与 [dao] 中都没有时回退到 [toSafeDownloadId], 以匹配旧记录.
@@ -435,13 +431,26 @@ class HttpMediaCacheEngine(
     /**
      * 仅由 mediaId 派生的旧标识, 只用于 [restoredHttpDownloadId] 的回退匹配.
      */
-    private fun Media.toSafeDownloadId(): DownloadId {
-        return DownloadId(mediaId.replace(PATH_AFFECTING_CHARS_REGEX, "-"))
-    }
+    private fun Media.toSafeDownloadId(): DownloadId = legacyDownloadIdOf(this)
 
     companion object {
         private val logger = logger<HttpMediaCacheEngine>()
         private val PATH_AFFECTING_CHARS_REGEX = Regex("[\\\\/:*?\"<>|]")
+
+        /**
+         * 新建任务的标识, 由 mediaId, subjectId 与 episodeId 共同决定: 合集资源经 PikPak 下载时各集有独立的任务与文件.
+         * 换分发包名搬运缓存时也靠它把记录与下载状态对上 (见 `CacheMigrationPlanner`).
+         */
+        internal fun downloadIdOf(media: Media, metadata: MediaCacheMetadata): DownloadId {
+            val identity = listOf(media.mediaId, metadata.subjectId, metadata.episodeId)
+                .joinToString("") { "${it.length}:$it" }
+            val digest = Buffer().apply { writeString(identity) }.readAndDigest(DigestAlgorithm.SHA256).toHexString()
+            return DownloadId("http-v2-$digest")
+        }
+
+        /** 仅由 mediaId 派生的旧标识, 只用于恢复旧记录时的回退匹配. */
+        internal fun legacyDownloadIdOf(media: Media): DownloadId =
+            DownloadId(media.mediaId.replace(PATH_AFFECTING_CHARS_REGEX, "-"))
 
         @Deprecated("Use HttpMediaCacheEngine.MEDIA_CACHE_DIR instead")
         const val LEGACY_MEDIA_CACHE_DIR = "web-m3u-cache"

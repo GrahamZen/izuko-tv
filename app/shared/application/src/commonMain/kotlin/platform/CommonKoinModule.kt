@@ -83,6 +83,7 @@ import me.him188.ani.app.data.repository.subject.SubjectSearchRepository
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.PreferencesRepositoryImpl
+import me.him188.ani.app.data.repository.user.SettingsBackupService
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
@@ -505,6 +506,8 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     }
     single<SettingsRepository> { PreferencesRepositoryImpl(getContext().dataStores.preferencesStore) }
     single<DanmakuRegexFilterRepository> { DanmakuRegexFilterRepositoryImpl(getContext().dataStores.danmakuFilterStore) }
+    // 设置备份的序列化: 设置页与迁移用的 ContentProvider 共用同一份逻辑
+    single<SettingsBackupService> { SettingsBackupService(get(), get(), get()) }
     single<MikanIndexCacheRepository> { MikanIndexCacheRepositoryImpl(getContext().dataStores.mikanIndexStore) }
 
     single<AniDatabase> {
@@ -637,10 +640,19 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
 
 /**
  * 会在非 preview 环境调用. 用来初始化一些模块
+ *
+ * @param beforeCacheRestore 在恢复缓存 (以及随之清理对不上记录的缓存文件) 之前执行. Android 换分发包名时用它把
+ * 从旧包搬来的缓存文件与记录一次放到位, 见 `CacheMigrationImport` —— 放晚了, 恢复时的清理会把刚搬来的文件当成
+ * 没人认领的删掉
+ * @param beforeUserDataWrites 启动时写数据源、订阅的后台任务 (订阅更新、写入默认数据源、peer 过滤规则更新) 先等它.
+ * Android 换分发包名时新包首次启动要先接管旧包的数据源与订阅, 见 `SettingsMigration.awaitSettled` —— 不等的话,
+ * 它们按空库写下的东西会被接管进来的整份替换, 或者跟接管进来的重复
  */
 fun KoinApplication.startCommonKoinModule(
     context: Context,
     coroutineScope: CoroutineScope,
+    beforeCacheRestore: suspend () -> Unit = {},
+    beforeUserDataWrites: suspend () -> Unit = {},
 ): KoinApplication {
     // Start the proxy provider very soon (before initialization of any other components)
     runBlocking {
@@ -655,6 +667,7 @@ fun KoinApplication.startCommonKoinModule(
     // Now, the proxy settings is ready. Other components can use http clients.
 
     coroutineScope.launch {
+        beforeCacheRestore()
         koin.get<HttpDownloader>().init() // restore http download states first
         val manager = koin.get<MediaDownloadManager>()
         for (storage in manager.storages) {
@@ -663,6 +676,7 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        beforeUserDataWrites()
         val subscriptionUpdater = koin.get<MediaSourceSubscriptionUpdater>()
         while (currentCoroutineContext().isActive) {
             val nextDelay = subscriptionUpdater.updateAllOutdated()
@@ -672,6 +686,7 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        beforeUserDataWrites()
         val currentSaves = context.dataStores.mediaSourceSaveStore.data.first()
         val defaultInstanceIds = MediaSourceSaves.Default.instances.map { it.instanceId }
         // 如果当前的数据源列表的 instance ids 都在默认列表里, 说明用户没有自定义过数据源, 直接写入默认源
@@ -681,6 +696,7 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        beforeUserDataWrites()
         val peerFilterRepo = koin.get<PeerFilterSubscriptionRepository>()
         peerFilterRepo.updateOrLoadAll()
     }

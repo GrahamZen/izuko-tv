@@ -114,7 +114,8 @@ object ReleaseArtifactNames {
     private const val MAX_PATCH = 1_000_000 // patch * 100 + meta 必须能放进 Int, 留足余量
 
     /**
-     * @param prefix 文件名前缀. 应用检查更新时只认自己这个前缀的包, 见 `AniBuildConfig.updateAssetPrefix`.
+     * @param prefix 文件名前缀. 改分发包名的迁移期里, 同一个 release 同时放着跳板包 (`ani-…`)
+     *   与新包 (自己的前缀), 应用按前缀只认自己那套, 见 `AniBuildConfig.updateAssetPrefix`.
      */
     fun androidApp(fullVersion: String, arch: String, prefix: String = appName): String =
         "$prefix-$fullVersion-$arch.apk"

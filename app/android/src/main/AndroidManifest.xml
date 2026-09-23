@@ -23,6 +23,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 迁移到新包名后, 由新包提示卸载旧包 (弹系统的卸载确认框). 见 LegacyAppUninstallPrompt -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -42,13 +44,20 @@
                     android:mimeType="application/vnd.android.package-archive"
                     android:scheme="content" />
         </intent>
+        <!-- 换分发包名的迁移: 新包要看见旧包才能接过设置、提示卸载 (见 SettingsMigration);
+             跳板包要看见新包才能判断装没装、直接打开它 (见 MigrationGuideDialog).
+             Android 11 起包可见性受限, 两套包名 (含 debug 后缀) 都得列上, 包名由 build.gradle.kts 按 appIdSuffix 拼. 只发电视版, 所以只列 .tv -->
+        <package android:name="${legacyTvPackage}" />
+        <package android:name="${legacyTvPackage}.debug2" />
+        <package android:name="${currentTvPackage}" />
+        <package android:name="${currentTvPackage}.debug2" />
     </queries>
 
     <application
             android:name="AniApplication"
             android:allowBackup="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="@string/app_name"
+            android:label="${appLabel}"
             android:largeHeap="true"
             android:roundIcon="@mipmap/ic_launcher"
             android:supportsRtl="true"
@@ -104,6 +113,14 @@
                     android:name='androidx.lifecycle.ProcessLifecycleInitializer'
                     android:value='androidx.startup' />
         </provider>
+
+        <!-- 把本包的设置备份交给同签名的另一个包; 换分发包名时新旧包靠它迁移.
+             exported 是必须的 (跨应用调用), 放行与否由 call() 里的签名比对决定. -->
+        <provider
+                android:name="me.him188.ani.android.migration.SettingsMigrationProvider"
+                android:authorities="${applicationId}.migration"
+                android:exported="true"
+                android:grantUriPermissions="false" />
 
         <provider
                 android:name="androidx.core.content.FileProvider"

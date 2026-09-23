@@ -28,6 +28,8 @@ import androidx.core.view.WindowCompat
 import me.him188.ani.android.BuildConfig
 import me.him188.ani.android.InstallFormFactorUi
 import me.him188.ani.android.formFactorUiBehavior
+import me.him188.ani.android.migration.CacheMigrationOverlay
+import me.him188.ani.android.migration.LegacyAppUninstallPrompt
 import me.him188.ani.android.onFormFactorActivityCreated
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +41,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.platform.AniComponentActivity
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.platform.rememberPlatformWindow
 import me.him188.ani.app.ui.exprovider.ExternalContentProviderFactory
 import me.him188.ani.app.ui.exprovider.LocalExternalContentProvider
@@ -207,6 +210,10 @@ class MainActivity : AniComponentActivity() {
                         // 本形态特有的页面变体装配 (见各 Local*Variant 插槽)
                         InstallFormFactorUi(aniNavigator) {
                             AniAppContent(aniNavigator)
+                        }
+                        if (!currentAniBuildConfig.isMigrationBridge) {
+                            LegacyAppUninstallPrompt()
+                            CacheMigrationOverlay()
                         }
                     }
                 }
