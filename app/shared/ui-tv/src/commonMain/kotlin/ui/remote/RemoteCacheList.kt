@@ -212,7 +212,7 @@ internal object RemoteCacheList {
         // BT 服务只有 Ani 在电视前台时才会起 (上游的省电策略): 在前台就是正在冷启动 (十几秒), 不在前台则是
         // 根本没开始 —— 这两种说法不能混, 后者说"正在启动"是骗人的 (2026-09-15 用户报"后台点下载没反应")
         !engineAccess.isServiceConnected.value ->
-            if (TvRemoteControl.isTvForeground()) tr("正在启动 BT 服务…") else tr("电视上没打开 Ani，暂时不会下载")
+            if (TvRemoteControl.isTvForeground()) tr("正在启动 BT 服务…") else tr("电视上没打开 Izuko，暂时不会下载")
         System.nanoTime() < torrentStuckUntil.get() -> tr("读取超时，正在重试")
         else -> null
     }

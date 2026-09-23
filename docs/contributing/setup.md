@@ -39,9 +39,9 @@ Izuko TV 使用 Gradle 构建，就是通常的 Kotlin/Android 构建方式。�
 建议使用 IDE clone 功能. 如果你要自己使用命令行 clone, 必须添加 `--recursive`:
 
 ```shell
-git clone --recursive git@github.com:GrahamZen/animeko.git
+git clone --recursive git@github.com:GrahamZen/izuko-tv.git
 # or 
-git clone --recursive https://github.com/GrahamZen/animeko.git
+git clone --recursive https://github.com/GrahamZen/izuko-tv.git
 ```
 
 > [!WARNING]

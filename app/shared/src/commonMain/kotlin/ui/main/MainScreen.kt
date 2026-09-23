@@ -112,6 +112,7 @@ import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.account.AccountLogoutDialog
 import me.him188.ani.app.ui.settings.account.ProfilePopup
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
+import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.subject.collection.CollectionPage
 import me.him188.ani.app.ui.subject.collection.UserCollectionsViewModel
 import me.him188.ani.app.ui.update.AppUpdateViewModel
@@ -549,11 +550,11 @@ private fun BoxScope.UpdateNotifierWithVersionExpiryCheck() {
                         )
                         pushLink(
                             LinkAnnotation.Url(
-                                "https://myani.org",
+                                AniHelperDestination.RELEASES,
                                 styles = TextLinkStyles(style = SpanStyle(color = MaterialTheme.colorScheme.primary)),
                             ),
                         )
-                        append("https://myani.org")
+                        append(AniHelperDestination.RELEASES)
                     },
                     Modifier.padding(horizontal = 24.dp),
                     style = MaterialTheme.typography.titleMedium,

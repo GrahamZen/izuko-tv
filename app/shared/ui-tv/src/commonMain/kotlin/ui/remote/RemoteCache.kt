@@ -508,9 +508,9 @@ internal object RemoteCache {
         if (TvRemoteControl.isTvForeground()) return ""
         return when (kind) {
             // 只有 BT 会被挡住: 服务跑在独立进程里, 而上游只在 Ani 前台时才起它
-            MediaSourceKind.BitTorrent -> tr("。电视上没有打开 Ani，要打开后才会开始下载")
+            MediaSourceKind.BitTorrent -> tr("。电视上没有打开 Izuko，要打开后才会开始下载")
             // 自动挑资源时还不知道会挑到什么, 挑到在线源就不受影响, 所以说得留余地
-            null -> tr("。电视上没有打开 Ani，挑到 BT 资源的话要打开后才会开始下载")
+            null -> tr("。电视上没有打开 Izuko，挑到 BT 资源的话要打开后才会开始下载")
             // 在线源走 HTTP 引擎, 在主进程里下, 电视回不回前台都一样
             else -> ""
         }

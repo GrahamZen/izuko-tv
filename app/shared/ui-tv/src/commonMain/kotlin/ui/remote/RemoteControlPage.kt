@@ -1339,8 +1339,8 @@ private val SCRIPT = """
   // 请求没回应: 分不清是电视休眠了 (没开「后台常驻」时 Shield 一休眠就把 Ani 收掉)、Ani 没在运行, 还是不在同一个网络, 都说上;
   // 上次连上时「后台常驻」没开 (lastKeep, 见 pollNotice) 就顺带说去哪开
   function fail() {
-    toast(T('无法连接电视。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
-      (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请在网页的「设置」中开启「后台保持连接」。') : ''), 6000);
+    toast(T('无法连接电视。请确认电视已唤醒、Izuko 正在运行，并且手机和电视连接到同一网络。') +
+      (lastKeep === false ? T('想在电视休眠或离开 Izuko 后继续连接，请在网页的「设置」中开启「后台保持连接」。') : ''), 6000);
   }
   window.fail = fail;
   function failRead() { toast(T('读取失败，请确认手机与电视在同一网络')); }
@@ -1394,7 +1394,7 @@ private val SCRIPT = """
     tvState.className = 'tv-state' + (kind ? ' ' + kind : '');
     tvState.textContent = text || '';
     if (btn) tvState.insertAdjacentHTML('beforeend', '<button type="button" class="tv-front" data-tv-front="' + btn + '">' +
-      (btn === 'how' ? T('查看授权方法') : T('打开 Ani')) + '</button>');
+      (btn === 'how' ? T('查看授权方法') : T('打开 Izuko')) + '</button>');
   }
   function frontNow(b) {
     b.disabled = true;
@@ -1406,7 +1406,7 @@ private val SCRIPT = """
     var k = b.getAttribute('data-tv-front');
     if (k === 'go') { frontNow(b); return; }
     if (k === 'how') { alert(FRONT_HOW); return; }
-    if (!confirm(T('允许从手机打开电视上的 Ani？开启后，在手机上搜索或点播时，电视会自动打开 Ani。') +
+    if (!confirm(T('允许从手机打开电视上的 Izuko？开启后，在手机上搜索或点播时，电视会自动打开 Izuko。') +
       T('首次使用需要在电视上授权，可随时在设置中关闭。'))) return;
     b.disabled = true;
     post('api/settings/front', { on: '1' }).then(function (r) {
@@ -1435,10 +1435,10 @@ private val SCRIPT = """
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
         // 有没下完的缓存时补一句: BT 服务只在 Ani 前台时才起, 这会儿下载也是停着的 (见 TvRemoteControl.noticeState)
-        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Ani 才会继续。') : '';
-        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Ani。搜索或点播时会自动打开 Ani。') + cacheHalted, 'go');
-        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Ani。完成一次授权后，就可以从手机打开 Ani。') + cacheHalted, 'how');
-        else if (n.away) setTvState('away', T('电视当前没有显示 Ani。搜索和点播仍会发送到电视，打开 Ani 后即可看到。') + cacheHalted, 'enable');
+        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Izuko 才会继续。') : '';
+        if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Izuko。搜索或点播时会自动打开 Izuko。') + cacheHalted, 'go');
+        else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Izuko。完成一次授权后，就可以从手机打开 Izuko。') + cacheHalted, 'how');
+        else if (n.away) setTvState('away', T('电视当前没有显示 Izuko。搜索和点播仍会发送到电视，打开 Izuko 后即可看到。') + cacheHalted, 'enable');
         else setTvState('');
         ldShow(!!n.launchDialog);
         lastKeep = !!n.keep;
@@ -1448,8 +1448,8 @@ private val SCRIPT = """
       .catch(function (e) {
         noticeBusy = false;
         if (e && e.message === 'gone') { setTvState('off', T('这个地址已失效（电视上重置过地址），请在电视上重新扫码')); return; }
-        if (++noticeFails >= 2) setTvState('off', T('电视已断开。请确认电视已唤醒、Ani 正在运行，并且手机和电视连接到同一网络。') +
-          (lastKeep === false ? T('想在电视休眠或离开 Ani 后继续连接，请先在电视上打开 Ani，再到网页的「设置」中开启「后台保持连接」。') : ''));
+        if (++noticeFails >= 2) setTvState('off', T('电视已断开。请确认电视已唤醒、Izuko 正在运行，并且手机和电视连接到同一网络。') +
+          (lastKeep === false ? T('想在电视休眠或离开 Izuko 后继续连接，请先在电视上打开 Izuko，再到网页的「设置」中开启「后台保持连接」。') : ''));
         noticeSkip = Math.min(noticeFails - 1, 4);
       });
   }
@@ -5040,9 +5040,9 @@ private val SETTINGS_SCRIPT = """
   function renderKeep(k) {
     if (!k) { keepBox.innerHTML = ''; return; }
     keepBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('后台保持连接') + '</div>' +
-      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>' + T('电视休眠或离开 Ani 后仍保持连接') + '</label>' +
-      '<p class="hint">' + T('开启后，Ani 会继续在后台运行，并占用少量内存。配合「从手机打开 Ani」，电视休眠或退出 Ani 后，也可以从手机重新打开。') +
-      T('关闭后，电视休眠或退出 Ani 就会断开，需要先在电视上打开 Ani 才能连接。') + '</p></div>';
+      '<label class="toggle"><input type="checkbox" data-keep' + (k.enabled ? ' checked' : '') + '>' + T('电视休眠或离开 Izuko 后仍保持连接') + '</label>' +
+      '<p class="hint">' + T('开启后，Izuko 会继续在后台运行，并占用少量内存。配合「从手机打开 Izuko」，电视休眠或退出 Izuko 后，也可以从手机重新打开。') +
+      T('关闭后，电视休眠或退出 Izuko 就会断开，需要先在电视上打开 Izuko 才能连接。') + '</p></div>';
   }
   keepBox.addEventListener('change', function (e) {
     var i = e.target;
@@ -5109,12 +5109,12 @@ private val SETTINGS_SCRIPT = """
     var st = !f.needsPermission ? T('无需额外授权')
       : f.granted ? T('已授权')
       : !f.enabled ? T('首次开启时，需要在电视上允许 Izuko TV「显示在其他应用的上层」。')
-      : T('尚未授权。Ani 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Ani。') +
+      : T('尚未授权。Izuko 显示在电视上时会直接打开授权页；否则请在 30 分钟内回到 Izuko。') +
         T('也可在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。');
-    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Ani') + '</div>' +
-      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Ani') + '</label>' +
-      '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Ani；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
-      T('关闭后，Ani 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Ani 才能看到。') + '</p>' +
+    frontBox.innerHTML = '<div class="card set-card"><div class="set-title">' + T('从手机打开 Izuko') + '</div>' +
+      '<label class="toggle"><input type="checkbox" data-front' + (f.enabled ? ' checked' : '') + '>' + T('允许从手机打开电视上的 Izuko') + '</label>' +
+      '<p class="hint">' + T('开启后，在手机上搜索或点播时，电视会自动打开 Izuko；同时开启「后台保持连接」时，电视休眠也会先唤醒。') +
+      T('关闭后，Izuko 仍在后台时，搜索和点播仍会发送到电视，但需要手动打开 Izuko 才能看到。') + '</p>' +
       '<p class="hint">' + st + '</p></div>';
   }
   frontBox.addEventListener('change', function (e) {
@@ -5573,8 +5573,8 @@ private val CACHE_SCRIPT = """
     if (d.btStarting) h += '<div class="now-status busy"><b>' + T('正在启动 BT 服务') + '</b><span>' + T('第一次要十几秒，之后会自动开始下载') + '</span></div>';
     // 电视上没打开 Ani 时 BT 服务根本不会起 (上游的省电策略), 缓存会一直排队 —— 必须说明白, 否则就是"点了没反应"
     // 顶上那条「不在前台」被这个全屏面板盖住了, 所以这里再给一个入口 (同 api/tv/front, 没开 / 没授权时电视会在回话里说清楚)
-    else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Ani') + '</b><span>' + T('已经记下了，要在电视上打开 Ani 才会开始下载') + '</span></div>' +
-      '<button type="button" class="ghost wide cache-front">' + T('打开 Ani') + '</button>';
+    else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Izuko') + '</b><span>' + T('已经记下了，要在电视上打开 Izuko 才会开始下载') + '</span></div>' +
+      '<button type="button" class="ghost wide cache-front">' + T('打开 Izuko') + '</button>';
     if (running) {
       h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>' +
         '<button type="button" class="ghost wide cache-cancel">' + T('取消自动缓存') + '</button>';
@@ -5920,7 +5920,7 @@ private val CACHE_LIST_SCRIPT = """
       if (d.pending) run.push(T('没下完的还差') + ' ' + esc(d.pending));
       if (run.length) s += '<div class="cl-line">' + run.join(' · ') + '</div>';
       if (d.btStarting) s += '<div class="cl-line">' + T('正在启动 BT 服务，第一次要十几秒…') + '</div>';
-      else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Ani，要打开后才会开始下载') + '</div>';
+      else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Izuko，要打开后才会开始下载') + '</div>';
       if (d.lowSpace) s += '<div class="cl-warn">' + T('剩余空间不够把没下完的都下完') + '</div>';
       s += '</div>';
       if (!d.groups.length) {
