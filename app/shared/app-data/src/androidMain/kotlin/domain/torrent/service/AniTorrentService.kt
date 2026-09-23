@@ -26,6 +26,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -226,6 +228,11 @@ sealed class AniTorrentService : LifecycleService() {
             val downloader = engine.getDownloader()
             val sessions = downloader.openSessions.value
 
+            // 关之前先把进度写盘: 会话平时只在下完或上传量有变化时才写续传数据, 只下不传的不在这里写一次,
+            // 上次写入之后下的下次启动都要重下 —— 换包迁移缓存时停掉旧包的 BT 引擎也走这里
+            withTimeoutOrNull(2000L) {
+                sessions.values.map { async { it.saveResumeData() } }.awaitAll()
+            }
             withTimeoutOrNull(3000L) {
                 sessions.forEach { (_, session) -> session.close() }
             }
