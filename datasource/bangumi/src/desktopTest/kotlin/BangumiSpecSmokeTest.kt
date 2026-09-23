@@ -38,7 +38,7 @@ import kotlin.time.Duration.Companion.minutes
  */
 class BangumiSpecSmokeTest {
     private val subjectId = 302286 // 死神 千年血战篇
-    private val userAgent = "animeko-fork/1.0 (https://github.com/GrahamZen/animeko)"
+    private val userAgent = "animeko-fork/1.0 (https://github.com/GrahamZen/izuko-tv)"
 
     private fun enabled(): Boolean {
         if (System.getenv("ANI_BANGUMI_E2E") != "1") {

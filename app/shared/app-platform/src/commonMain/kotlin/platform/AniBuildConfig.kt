@@ -41,6 +41,10 @@ interface AniBuildConfig {
     val sentryDsn: String
     val distroChannel: String
 
+    /** 本项目的 GitHub 仓库, `owner/repo` (见 gradle.properties 的 `ani.repository`): 项目链接、UA 与镜像清单都按它拼地址. */
+    val projectRepository: String
+        get() = "GrahamZen/izuko-tv"
+
     /**
      * 更新时要装的 APK 在 release 里的文件名前缀 (`<前缀>-<版本>-<架构>.apk`, 见 gradle.properties).
      * 仓库里改分发包名之前的 release 叫 `ani-…`, 按前缀只认自己的包.
@@ -48,9 +52,9 @@ interface AniBuildConfig {
     val updateAssetPrefix: String
         get() = "ani"
 
-    /** 检查更新、下载安装包的 GitHub 仓库, `owner/repo` (见 gradle.properties 的 `ani.update.repository`). */
+    /** 检查更新、下载安装包的 GitHub 仓库, `owner/repo`; 默认是 [projectRepository], 发版前走真机更新时可指到测试仓库. */
     val updateRepository: String
-        get() = "GrahamZen/animeko"
+        get() = projectRepository
 
     val sentryEnabled: Boolean
         get() = true
@@ -110,4 +114,5 @@ inline val currentAniBuildConfig: AniBuildConfig get() = currentAniBuildConfigIm
 fun getAniUserAgent(
     version: String = currentAniBuildConfig.versionName,
     platform: String = currentPlatform().nameAndArch,
-): String = "GrahamZen/izuko-tv/$version ($platform) (https://github.com/GrahamZen/animeko)"
+    repository: String = currentAniBuildConfig.projectRepository,
+): String = "GrahamZen/izuko-tv/$version ($platform) (https://github.com/$repository)"

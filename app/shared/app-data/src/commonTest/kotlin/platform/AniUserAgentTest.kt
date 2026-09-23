@@ -21,8 +21,8 @@ class AniUserAgentTest {
     @Test
     fun `UA 是本 fork 的身份`() {
         assertEquals(
-            "GrahamZen/izuko-tv/1.0.3 (Android arm64-v8a) (https://github.com/GrahamZen/animeko)",
-            getAniUserAgent(version = "1.0.3", platform = "Android arm64-v8a"),
+            "GrahamZen/izuko-tv/1.0.3 (Android arm64-v8a) (https://github.com/GrahamZen/izuko-tv)",
+            getAniUserAgent(version = "1.0.3", platform = "Android arm64-v8a", repository = "GrahamZen/izuko-tv"),
         )
     }
 

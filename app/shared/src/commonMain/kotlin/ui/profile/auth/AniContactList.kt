@@ -13,8 +13,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -30,7 +28,6 @@ import me.him188.ani.app.ui.foundation.icons.QqRoundedOutline
 import me.him188.ani.app.ui.foundation.icons.Telegram
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_about_qq_group
-import me.him188.ani.app.ui.lang.settings_about_website
 import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import org.jetbrains.compose.resources.stringResource
 
@@ -42,7 +39,6 @@ fun AniContactList(
 ) {
     val browserNavigator = rememberAsyncBrowserNavigator()
     val context = LocalContext.current
-    val websiteText = stringResource(Lang.settings_about_website)
     val qqGroupText = stringResource(Lang.settings_about_qq_group)
 
     FlowRow(
@@ -55,18 +51,6 @@ fun AniContactList(
                 Icon(AniIcons.GithubMark, "Github", Modifier.size(ContactIconSize))
             },
             label = { Text("GitHub") },
-        )
-
-        SuggestionChip(
-            { browserNavigator.openBrowser(context, AniHelperDestination.ANI_WEBSITE) },
-            icon = {
-                Icon(
-                    Icons.Rounded.Public,
-                    websiteText,
-                    Modifier.size(ContactIconSize),
-                )
-            },
-            label = { Text(websiteText) },
         )
 
         SuggestionChip(

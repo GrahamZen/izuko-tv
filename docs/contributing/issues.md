@@ -1,6 +1,6 @@
 # 查找待解决的问题
 
-Izuko TV 的问题请提交到[本仓库的 GitHub Issues](https://github.com/GrahamZen/animeko/issues)。上游 Animeko 使用 [GitHub Issues](https://github.com/open-ani/animeko/issues) 追踪所有问题和新功能计划, 下面的筛选链接都指向上游。
+Izuko TV 的问题请提交到[本仓库的 GitHub Issues](https://github.com/GrahamZen/izuko-tv/issues)。上游 Animeko 使用 [GitHub Issues](https://github.com/open-ani/animeko/issues) 追踪所有问题和新功能计划, 下面的筛选链接都指向上游。
 可以根据 issue 的属性来快速筛选待解决的问题。
 
 ## 推荐的筛选方式

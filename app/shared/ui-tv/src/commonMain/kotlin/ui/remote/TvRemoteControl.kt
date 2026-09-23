@@ -298,16 +298,16 @@ object TvRemoteControl {
             !on -> tr("已关闭")
             granted -> tr("已开启")
             opened -> tr("授权页已打开。请允许 Izuko TV「显示在其他应用的上层」，然后返回。")
-            else -> tr("请在 30 分钟内回到电视上的 Ani，并完成授权。")
+            else -> tr("请在 30 分钟内回到电视上的 Izuko，并完成授权。")
         }
         return JsonObject(frontState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
 
     /** 网页顶上「不在前台」那一条里的「切到 Ani」. */
     private fun manualFront(): JsonObject {
-        if (tvForeground) return result(true, tr("Ani 已在电视上显示"))
+        if (tvForeground) return result(true, tr("Izuko 已在电视上显示"))
         if (!frontGranted()) return result(false, tr("尚未授权。请在电视设置中为 Izuko TV 开启「显示在其他应用的上层」。"))
-        return if (bringToFront()) result(true, tr("已打开 Ani")) else result(false, tr("无法打开 Ani，请在电视上手动打开。"))
+        return if (bringToFront()) result(true, tr("已打开 Izuko")) else result(false, tr("无法打开 Izuko，请在电视上手动打开。"))
     }
 
     /** 打开系统的「显示在其他应用的上层」授权页 (本应用那一项; 有的电视是整张应用列表). Ani 在后台时系统会拦. */
@@ -401,7 +401,7 @@ object TvRemoteControl {
         val message = when {
             !on -> tr("已关闭")
             tvForeground -> tr("已开启")
-            else -> tr("已开启。下次打开 Ani 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
+            else -> tr("已开启。下次打开 Izuko 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
         }
         return JsonObject(keepState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
     }
@@ -1212,7 +1212,7 @@ object TvRemoteControl {
         val handle = player ?: return result(false, tr("电视当前不在播放页"))
         // 后台会话被按住暂停 (见本类 KDoc), 这里放行只会被立刻按回去
         if (handle.background) return result(false, tr("电视未在播放页，播放控制不可用"))
-        if (!tvForeground) return result(false, tr("电视当前没有显示 Ani，播放控制不可用。在「设置」中开启「从手机打开 Ani」后，使用播放控制时会自动打开 Ani。"))
+        if (!tvForeground) return result(false, tr("电视当前没有显示 Izuko，播放控制不可用。在「设置」中开启「从手机打开 Izuko」后，使用播放控制时会自动打开 Izuko。"))
         val fields = request.formFields()
         val action = fields["action"].orEmpty()
         // 拖进度条 / 输入时间点: 跳到 ms (服务端夹在片长以内)
@@ -1426,7 +1426,7 @@ object TvRemoteControl {
 
     private val KEEP_ALIVE_START_DELAY = 20.seconds
 
-    private const val UI_GONE_MESSAGE = "Ani 已退出，无法从手机打开。请先在电视上重新打开 Ani。开启「从手机打开 Ani」并完成授权后，下次可直接从手机打开。"
+    private const val UI_GONE_MESSAGE = "Izuko 已退出，无法从手机打开。请先在电视上重新打开 Izuko。开启「从手机打开 Izuko」并完成授权后，下次可直接从手机打开。"
 
     /** 账号状态 (等授权时网页每 2 秒轮询, 不刷 knownHost), 见 RemoteAccount. */
     private const val PATH_ACCOUNT = "api/account"

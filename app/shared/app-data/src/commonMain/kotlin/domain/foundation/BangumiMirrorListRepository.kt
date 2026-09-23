@@ -20,6 +20,7 @@ import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -104,10 +105,13 @@ class BangumiMirrorListRepository(
          * jsDelivr 排前面: 它在大陆的可达性一般比 `raw.githubusercontent.com` 好.
          * 两个都不通也没关系 —— 内置清单兜着, 而且真正的逃生口是"自建地址"那一档.
          */
-        val LIST_URLS = listOf(
-            "https://cdn.jsdelivr.net/gh/GrahamZen/animeko@main/bangumi-mirrors.json",
-            "https://raw.githubusercontent.com/GrahamZen/animeko/main/bangumi-mirrors.json",
-        )
+        val LIST_URLS
+            get() = currentAniBuildConfig.projectRepository.let { repo ->
+                listOf(
+                    "https://cdn.jsdelivr.net/gh/$repo@main/bangumi-mirrors.json",
+                    "https://raw.githubusercontent.com/$repo/main/bangumi-mirrors.json",
+                )
+            }
 
         /** 多久拉一次. 镜像死得快, 但也没必要每次启动都拉. */
         val REFRESH_INTERVAL_MILLIS = 24.hours.inWholeMilliseconds
