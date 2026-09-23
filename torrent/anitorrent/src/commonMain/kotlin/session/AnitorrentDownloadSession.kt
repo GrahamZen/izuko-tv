@@ -12,6 +12,7 @@ package me.him188.ani.app.torrent.anitorrent.session
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -496,9 +498,37 @@ class AnitorrentDownloadSession(
         }
     }
 
+    /** 每写完一次续传数据发一个信号, 给 [saveResumeData] 等. */
+    private val resumeDataSaved = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     fun onSaveResumeData(data: TorrentResumeData) {
         logger.info { "[$handleId] saving resume data to: ${fastResumeFile.absolutePath}" }
         data.saveToPath(fastResumeFile.path)
+        resumeDataSaved.tryEmit(Unit)
+    }
+
+    /**
+     * 立刻把续传数据 (哪些 piece 已经下完) 写进 [fastResumeFile], 写完才返回.
+     *
+     * 平时只在种子下完、或上传量有变化时才写 (见 init). 只下不传的会话, 进度一直只在内存里 ——
+     * 关掉之前不先写一次, 上次写入之后下完的 piece 下次打开都要重下.
+     *
+     * libtorrent 不一定回应 (句柄已失效、种子出错), 调用方要自己限时.
+     *
+     * does not throw (取消除外): 服务停止时逐个调用, 一个会话出错不能让后面的都关不掉.
+     */
+    suspend fun saveResumeData() {
+        if (!handle.isValid) return
+        try {
+            resumeDataSaved.onSubscription { handle.postSaveResume() }.first()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(e) { "[$handleId] Failed to save resume data" }
+        }
     }
 
     override suspend fun getName(): String = this.actualTorrentInfo.await().name
