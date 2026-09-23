@@ -18,7 +18,7 @@ interface BrowserNavigator {
 
     fun openJoinTelegram(context: Context): OpenBrowserResult = openBrowser(
         context,
-        "https://t.me/openani",
+        "https://t.me/+FxlyUgaL5XlmZmY1",
     )
 
     // Android Intent.ACTION_VIEW
@@ -29,9 +29,8 @@ interface BrowserNavigator {
     }
 }
 
-const val QQ_GROUP_ID = "927170241"
-const val QQ_GROUP_JOIN_LINK =
-    "https://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=-6GULqAjYtA7HERBcFn9_Hz3789NUALP&authKey=Hsdzw9xBWcAaRKyt%2BmxYP%2FQElAPgOS0PY5pw2ld6YrN04YRY%2F6IWaVZn9CuhS7XR&noverify=0&group_code=927170241"
+const val QQ_GROUP_ID = "1045984894"
+const val QQ_GROUP_JOIN_LINK = "https://qm.qq.com/q/JaXFdpv3mC"
 
 sealed class OpenBrowserResult {
     data object Success : OpenBrowserResult()

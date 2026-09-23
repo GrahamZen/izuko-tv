@@ -15,23 +15,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import me.him188.ani.app.platform.LocalContext
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_help_feedback
 import me.him188.ani.app.ui.lang.settings_help_github
 import me.him188.ani.app.ui.lang.settings_help_qq
 import me.him188.ani.app.ui.lang.settings_help_telegram
-import me.him188.ani.app.ui.lang.settings_help_website
 import org.jetbrains.compose.resources.stringResource
 
 object AniHelperDestination {
-    const val GITHUB_HOME = "https://github.com/open-ani/animeko"
-    const val GITHUB_CONTRIBUTORS = "https://github.com/open-ani/animeko/graphs/contributors"
-    const val ANI_WEBSITE = "https://myani.org"
-    const val ISSUE_TRACKER = "https://github.com/open-ani/animeko/issues"
-    const val RELEASE_PREFIX = "https://github.com/open-ani/animeko/releases/tag/v"
+    val GITHUB_HOME get() = "https://github.com/${currentAniBuildConfig.projectRepository}"
+    val ISSUE_TRACKER get() = "$GITHUB_HOME/issues"
+    val RELEASES get() = "$GITHUB_HOME/releases"
+    val RELEASE_PREFIX get() = "$GITHUB_HOME/releases/tag/v"
 
-    const val GITHUB_REPO = "https://github.com/him188/ani"
     const val BANGUMI = "https://bangumi.tv"
     const val DANDANPLAY = "https://www.dandanplay.com/"
     const val DMHY = "https://dmhy.org/"
@@ -64,10 +62,6 @@ fun HelpDropdown(
         DropdownMenuItem(
             text = { Text(stringResource(Lang.settings_help_feedback)) },
             onClick = { browserNavigator.openBrowser(context, AniHelperDestination.ISSUE_TRACKER) },
-        )
-        DropdownMenuItem(
-            text = { Text(stringResource(Lang.settings_help_website)) },
-            onClick = { browserNavigator.openBrowser(context, AniHelperDestination.ANI_WEBSITE) },
         )
     }
 }

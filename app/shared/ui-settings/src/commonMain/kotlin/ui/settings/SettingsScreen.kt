@@ -321,7 +321,6 @@ fun SettingsScreen(
                                 AniHelperDestination.RELEASE_PREFIX + vm.aboutTabInfo.version,
                             )
                         },
-                        onClickWebsite = { browserNavigator.openBrowser(context, AniHelperDestination.ANI_WEBSITE) },
                         onClickFeedback = { browserNavigator.openBrowser(context, AniHelperDestination.ISSUE_TRACKER) },
                         onClickSource = { browserNavigator.openBrowser(context, AniHelperDestination.GITHUB_HOME) },
                         onClickDevelopers = {

@@ -30,10 +30,12 @@ val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
+// 本项目的 GitHub 仓库 (见 gradle.properties). 应用里的项目链接、UA 与镜像清单都按它拼地址.
+val projectRepository = getProperty("ani.repository")
 // 更新时只装 release 里这个前缀的 APK (见 gradle.properties).
 val updateAssetPrefix = getProperty("ani.update.asset.prefix")
-// 检查更新、下载安装包的仓库 (见 gradle.properties). 发版前真机走一遍更新时用 -P 或 local.properties 指到测试仓库.
-val updateRepository = getProperty("ani.update.repository")
+// 检查更新、下载安装包的仓库, 默认就是本项目的仓库. 发版前真机走一遍更新时用 -P 或 local.properties 指到测试仓库.
+val updateRepository = getPropertyOrNull("ani.update.repository") ?: projectRepository
 
 kotlin {
     android {
@@ -134,6 +136,7 @@ buildConfig {
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("distroChannel", distroChannel)
+        stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
 
@@ -151,6 +154,7 @@ buildConfig {
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("distroChannel", distroChannel)
+        stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
 

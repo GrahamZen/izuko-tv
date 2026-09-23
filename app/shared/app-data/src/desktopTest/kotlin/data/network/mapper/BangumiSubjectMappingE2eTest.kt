@@ -37,7 +37,7 @@ import kotlin.time.Duration.Companion.minutes
  */
 class BangumiSubjectMappingE2eTest {
     private val withUserAgent: (HttpClientConfig<*>) -> Unit = { config ->
-        config.install(UserAgent) { agent = "animeko-fork/1.0 (https://github.com/GrahamZen/animeko)" }
+        config.install(UserAgent) { agent = "animeko-fork/1.0 (https://github.com/GrahamZen/izuko-tv)" }
     }
 
     private fun subjectApi() = SubjectBangumiNextApi(BangumiApiProvider.NEXT_BASE_URL, null, withUserAgent)

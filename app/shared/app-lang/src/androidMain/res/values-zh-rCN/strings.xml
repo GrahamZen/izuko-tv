@@ -84,19 +84,19 @@
     <string name="settings_debug_metered_network">计费网络信息</string>
     <string name="settings_debug_others">其他</string>
     <string name="settings_debug_get_bangumi_token">获取 Bangumi access token</string>
-    <string name="settings_debug_get_ani_token">获取 Ani access token</string>
+    <string name="settings_debug_get_ani_token">获取 Bangumi access token</string>
     <string name="settings_debug_copied">已复制: %1$s</string>
     <string name="settings_debug_install_package">安装包</string>
     <string name="settings_debug_install_package_on_drop">拖拽安装包以安装</string>
-    <string name="settings_debug_install_package_on_drop_description">将安装包 (%1$s) 拖入 Ani 窗口，确认后自动安装并重启，用于试用测试版本</string>
+    <string name="settings_debug_install_package_on_drop_description">将安装包 (%1$s) 拖入 Izuko 窗口，确认后自动安装并重启，用于试用测试版本</string>
     <string name="settings_debug_install_package_confirm_title">安装这个版本？</string>
-    <string name="settings_debug_install_package_confirm_message">Ani 会立即退出，用这个安装包覆盖当前版本后自动重启。设置和数据不受影响，安装包不会被删除。</string>
+    <string name="settings_debug_install_package_confirm_message">Izuko 会立即退出，用这个安装包覆盖当前版本后自动重启。设置和数据不受影响，安装包不会被删除。</string>
     <string name="settings_debug_install_package_confirm">安装并重启</string>
     <string name="settings_debug_install_package_cancel">取消</string>
     <string name="settings_debug_install_package_unsupported">不支持的安装包，仅支持：%1$s</string>
     <string name="settings_debug_install_package_drop_title">松手以安装</string>
     <string name="settings_debug_install_package_drop_unknown_name">安装包</string>
-    <string name="settings_debug_install_package_drop_meta">Ani 将退出，覆盖当前 %1$s 后自动重启</string>
+    <string name="settings_debug_install_package_drop_meta">Izuko 将退出，覆盖当前 %1$s 后自动重启</string>
     <string name="settings_debug_install_package_drop_supported_hint">%1$s 安装包</string>
     <string name="settings_debug_install_package_drop_badge">开发者功能 · 拖拽安装包以安装</string>
     <string name="settings_debug_install_package_confirm_new_version">新版本</string>
@@ -136,7 +136,7 @@
     <string name="settings_debug_dev_builds_extracting">正在解压安装包…</string>
     <string name="settings_debug_dev_builds_installing">正在安装…</string>
     <string name="settings_debug_dev_builds_confirm_title">安装这个 commit？</string>
-    <string name="settings_debug_dev_builds_confirm_message_desktop">将下载 %1$s（%2$s）。随后 Ani 会退出，用它覆盖当前版本后自动重启。设置和数据不受影响。</string>
+    <string name="settings_debug_dev_builds_confirm_message_desktop">将下载 %1$s（%2$s）。随后 Izuko 会退出，用它覆盖当前版本后自动重启。设置和数据不受影响。</string>
     <string name="settings_debug_dev_builds_confirm_message_android">将下载 %1$s（%2$s），然后打开系统安装器。APK 使用发布密钥签名，不能覆盖安装到调试版本上。</string>
     <string name="settings_debug_dev_builds_confirm_message_manual">将下载 %1$s（%2$s）。下载完成后请手动用它替换当前的 AppImage。</string>
     <string name="settings_debug_dev_builds_confirm_install">下载并安装</string>
@@ -157,10 +157,8 @@
     <string name="settings_help_telegram">Telegram</string>
     <string name="settings_help_github">GitHub</string>
     <string name="settings_help_feedback">反馈问题</string>
-    <string name="settings_help_website">Ani 官网</string>
     <string name="settings_about_version">版本号</string>
     <string name="settings_about_release_notes">更新说明</string>
-    <string name="settings_about_website">官网</string>
     <string name="settings_about_feedback">反馈建议</string>
     <string name="settings_about_source_code">源代码</string>
     <string name="settings_about_chat_groups">交流群</string>
@@ -265,7 +263,7 @@
     <string name="settings_mediasource_selector_episodes_supporting">CSS Selector 表达式。期望返回一些元素，将会提取每个元素的 text 作为剧集名称。如果元素是 &lt;a&gt;，则还会默认读取 href 作为剧集的链接。也可以在下面的设置中用其他方式提取链接。如果元素不为&lt;a&gt;，即名称和链接不在相同元素的情况，则需配置下面的设置来提取链接</string>
     <string name="settings_mediasource_selector_episode_links_label">提取剧集链接列表 (可选)</string>
     <string name="settings_mediasource_selector_episode_links_supporting">可选的 CSS Selector 表达式。如果上一个设置中提取到的剧集元素不为&lt;a&gt;，则需要配置此项提取链接</string>
-    <string name="settings_mediasource_selector_unsupported_format">当前版本不支持该配置类型：%1$s\n\n这可能是导入了一个在更高版本编辑的配置导致的\n可升级 Ani 或切换到其他配置类型</string>
+    <string name="settings_mediasource_selector_unsupported_format">当前版本不支持该配置类型：%1$s\n\n这可能是导入了一个在更高版本编辑的配置导致的\n可升级 Izuko 或切换到其他配置类型</string>
     <string name="settings_mediasource_test_keyword">关键词</string>
     <string name="settings_mediasource_test_random">随机</string>
     <string name="settings_mediasource_test_episode_sort">剧集序号</string>
@@ -495,7 +493,7 @@
     <string name="settings_mediasource_cancel">取消</string>
     <string name="settings_mediasource_clipboard_empty">剪贴板内容为空</string>
     <string name="settings_mediasource_multiple_configs">剪贴板内容包含多个数据源配置，当前导入功能只支持单个配置</string>
-    <string name="settings_mediasource_invalid_content">剪贴板内容无效，请检查数据源类型 (Selector 还是 RSS) 以及导出时使用的 Ani 的版本</string>
+    <string name="settings_mediasource_invalid_content">剪贴板内容无效，请检查数据源类型 (Selector 还是 RSS) 以及导出时使用的 Izuko 的版本</string>
     <string name="settings_mediasource_unsupported_factory">数据源类型不受支持，请先升级软件</string>
     <string name="settings_mediasource_unsupported_version">数据源版本不受支持，请先升级软件</string>
     <string name="settings_mediasource_close">关闭</string>
@@ -765,7 +763,7 @@
 
     <!-- OAuth -->
     <string name="oauth_bangumi_authorize_title">授权 Bangumi 登录</string>
-    <string name="oauth_bangumi_description">授权 Bangumi 账号，可以同步你的观看记录到 Bangumi 或便捷登录 Ani</string>
+    <string name="oauth_bangumi_description">授权 Bangumi 账号，可以同步你的观看记录到 Bangumi 或便捷登录 Izuko</string>
     <string name="oauth_bangumi_bind_account">绑定 Bangumi 账号</string>
     <string name="oauth_bangumi_sign_in_or_sign_up">登录 / 注册</string>
     <string name="oauth_bangumi_waiting_result">正在等待结果</string>
@@ -1354,7 +1352,7 @@
     <string name="rating_summary">%1$d 人评丨#%2$d</string>
     <string name="comment_send_failed_network">发送失败：网络错误</string>
     <string name="comment_send_failed_unknown">发送失败，请附带日志反馈此问题\n%1$s</string>
-    <string name="comment_ani_only_notice">评论将发送到 Ani，Bangumi 评论为只读</string>
+    <string name="comment_ani_only_notice">评论将发送到 Bangumi</string>
     <string name="comment_send_comment">发送评论</string>
     <string name="comment_rendering">渲染中...</string>
     <string name="comment_reply">回复评论</string>
@@ -1393,7 +1391,7 @@
     <string name="comment_preview">预览</string>
     <string name="comment_send">发送</string>
     <string name="foundation_browser_open_failed_copied">无法打开链接，已将链接复制到剪贴板，请打开浏览器访问</string>
-    <string name="foundation_richtext_external_app_link_warning_prefix">此链接可能会打开其他应用，ani 将不会打开此链接：\n</string>
+    <string name="foundation_richtext_external_app_link_warning_prefix">此链接可能会打开其他应用，Izuko 将不会打开此链接：\n</string>
     <string name="foundation_richtext_open_failed_prefix">无法打开此链接：\n</string>
     <string name="foundation_nsfw_hidden">此内容不适合展示</string>
     <string name="foundation_nsfw_temporary_display">临时展示</string>

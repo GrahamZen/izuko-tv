@@ -78,7 +78,7 @@ class AndroidBrowserNavigator : BrowserNavigator {
     override fun openJoinGroup(context: Context): OpenBrowserResult {
         try {
             val browserIntent = Intent(Intent.ACTION_VIEW)
-                .apply { setData(QQ_GROUP.toUri()) }
+                .apply { setData(QQ_GROUP_JOIN_LINK.toUri()) }
             context.startActivity(browserIntent)
             return OpenBrowserResult.Success
         } catch (ex: Exception) {
@@ -87,8 +87,4 @@ class AndroidBrowserNavigator : BrowserNavigator {
         }
     }
 }
-
-// https://qun.qq.com/#/handy-tool/join-group
-private const val QQ_GROUP =
-    "mqqopensdkapi://bizAgent/qm/qr?url=http%3A%2F%2Fqm.qq.com%2Fcgi-bin%2Fqm%2Fqr%3Ffrom%3Dapp%26p%3Dandroid%26jump_from%3Dwebapi%26k%3D" + "oiWgOz87g6x4Eskej1Ja0bKWYyZR_dPO"
  

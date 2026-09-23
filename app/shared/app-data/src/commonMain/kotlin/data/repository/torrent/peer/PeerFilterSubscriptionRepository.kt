@@ -102,7 +102,7 @@ class PeerFilterSubscriptionRepository(
             // 用户自己添加的订阅 (URL) 照旧直连拉取
             if (sub.subscriptionId == PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID) {
                 sub.updateFailResult(
-                    IllegalStateException("内置规则订阅已随 Ani 服务器下线, 请改用自定义订阅"),
+                    IllegalStateException("内置规则订阅已停止提供, 请改用自定义订阅"),
                     keepLastStat = true,
                 )
             } else {
