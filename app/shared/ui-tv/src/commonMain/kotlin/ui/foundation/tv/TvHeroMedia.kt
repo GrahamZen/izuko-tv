@@ -31,6 +31,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -318,6 +320,20 @@ object TvHeroPrefetch {
             mutex.withLock {
                 if (subjectId !in running) start(subjectId, false, load)
             }
+        }
+    }
+
+    /**
+     * 后台预取并等它跑完 (已在途就等在途那份). 给「一部做完再提交下一部」的顺序预取用:
+     * 排队里始终只有它一个, 不会像一次提交一整批那样超过 [BACKGROUND_QUEUE_MAX] 把排在前面的挤掉.
+     * 任务被挤掉 (取消) 时安静返回, 调用方接着提交下一部.
+     */
+    suspend fun backgroundAndAwait(subjectId: Int, load: suspend () -> Unit) {
+        val task = mutex.withLock { running[subjectId] ?: start(subjectId, false, load) }
+        try {
+            task.job.await()
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
         }
     }
 
