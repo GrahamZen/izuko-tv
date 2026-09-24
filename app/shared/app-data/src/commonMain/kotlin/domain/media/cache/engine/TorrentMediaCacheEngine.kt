@@ -334,8 +334,11 @@ class TorrentMediaCacheEngine(
                     val currentShareRatio = sessionStats.uploadedBytes /
                             entryFileStats.downloadedBytes.coerceAtLeast(1).toFloat()
 
-                    val entity = dao.getEpisode(origin.mediaId, metadata.episodeId)
-                        ?: error("No episode record for ${origin.mediaId}/${metadata.episodeId} exists while subscribing cache.")
+                    // 删除与订阅起步撞在一起时记录已经没了: 行不存在就停写, 不重建, 也不抛 (见 TorrentMediaCacheStorage.statJobs)
+                    val entity = dao.getEpisode(origin.mediaId, metadata.episodeId) ?: run {
+                        logger.info { "No episode record for ${origin.mediaId}/${metadata.episodeId}, stop stats subscription." }
+                        return@coroutineScope
+                    }
 
                     val finished = entity.completed || // metadata 已记录 true 表示已完成
                             (entryFileStats.isDownloadFinished && currentShareRatio >= currentShareRatioLimit) // 统计判断达到条件也是完成
