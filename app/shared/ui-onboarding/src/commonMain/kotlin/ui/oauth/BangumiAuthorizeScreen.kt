@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
+import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.login.EmailLoginScreenLayout
 import me.him188.ani.app.ui.lang.*
 import org.jetbrains.compose.resources.*
@@ -85,6 +86,8 @@ internal fun BangumiAuthorizeScreen(
         onNavigateBack = onNavigateBack,
         title = { Text(stringResource(Lang.oauth_bangumi_authorize_title)) },
         showThirdPartyLogin = false,
+        // TV: 右侧放手机控制台的码 (扫码在手机上登录; 经镜像时是唯一的路)
+        sidePanel = LocalTvLoginSidePanel.current,
     ) { scrollState ->
         BangumiAuthorizeLayout(
             authorizeState = state,

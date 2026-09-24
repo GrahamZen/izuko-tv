@@ -79,6 +79,9 @@ import me.him188.ani.app.ui.exploration.search.TvSearchPage
 import me.him188.ani.app.ui.main.LocalMainScreenShellVariant
 import me.him188.ani.app.ui.main.MainScreenShellVariant
 import me.him188.ani.app.ui.main.TvMainScreenLayout
+import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
+import me.him188.ani.app.ui.onboarding.TvOnboardingLoginHost
+import me.him188.ani.app.ui.onboarding.TvOnboardingPage
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
@@ -94,7 +97,10 @@ import me.him188.ani.app.ui.subject.details.layout.tvHeroZoomHoldsPlaceholder
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
+import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
+import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvPlayerChromeLayoutPage
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
@@ -103,9 +109,11 @@ import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
 import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
+import me.him188.ani.app.ui.remote.TvRemoteLoginCard
 import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 
 /**
  * TV 页面变体装配: 把遥控器形态的页面实现注入各共享页面的变体插槽.
@@ -145,6 +153,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
+    // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
+    val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
+    val onboarding = remember(onboardingPending) { TvOnboardingVariantImpl(onboardingPending) }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     DisposableEffect(aniNavigator) {
@@ -221,6 +232,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
         LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
+        LocalTvOnboardingVariant provides onboarding,
+        // 登录页右侧的手机控制台码 (扫码在手机上登录)
+        LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
     ) {
         // 长按手势兜不兜、菜单开不开, 都要先看当前在哪个目的地:
         //  - 播放页: 长按返回归播放器自己 (收叠层, 注册在栈顶), 播放键本来就在播放器语义里;
@@ -232,7 +246,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             val route = runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull()
             route != null &&
                     route !is NavRoutes.EpisodeDetail &&
-                    route !is NavRoutes.BangumiAuthorize
+                    route !is NavRoutes.BangumiAuthorize &&
+                    route !is NavRoutes.TvOnboarding
         }
         // **两个长按各配各的** (设置-界面, 见 [TvLongPressAction]), 默认都开动作面板:
         //
@@ -321,13 +336,20 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 面板打开时才现算的话, 数据晚到就会把落点挪走 —— 见 TvUpNextStore 的文档
         LaunchedEffect(Unit) { TvUpNextStore.run() }
         TvKeyLongPressHandler(playLongPress) { performLongPress(playLongPressAction) }
+        // 首次启动引导的登录那一步: 盖在主页上, 做完 (登录或跳过) 才算引导做完; 返回 = 回到检测网络那一页
+        TvOnboardingLoginHost(
+            onFinished = { TvOnboardingGate.markDone(appContext) },
+            onBack = { aniNavigator.navigate(NavRoutes.TvOnboarding) },
+        )
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
-        // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹
+        // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
+        // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码
         LaunchedEffect(Unit) {
             TvRemoteControl.showDialogOnLaunch {
-                runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
+                !onboardingPending &&
+                        runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
             }
         }
         if (showQuickMenu) {
@@ -353,6 +375,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         }
         Box(
             Modifier
+                // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到
+                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层显示期间主页一个键都不处理
+                .onPreviewKeyEvent { TvOnboardingLogin.request.value != null }
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
                 .tvNavKeyInterceptor(navKeys)
@@ -367,6 +392,21 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 content()
             }
         }
+    }
+}
+
+/** 首次启动引导的 TV 变体: 检测网络那一页. 登录那一步做完才记下标记 (见根部的 TvOnboardingLoginHost 与 [TvOnboardingGate]). */
+private class TvOnboardingVariantImpl(override val pendingOnLaunch: Boolean) : TvOnboardingVariant {
+    @Composable
+    override fun Page(onFinished: () -> Unit, modifier: Modifier) {
+        // 选好连接方式就换成主页, 登录层 (TvOnboardingLoginHost, 装在根部) 盖在上面, 主页在下面照常加载
+        TvOnboardingPage(
+            onModeChosen = { assumeViaMirror ->
+                TvOnboardingLogin.request.value = assumeViaMirror
+                onFinished()
+            },
+            modifier = modifier,
+        )
     }
 }
 
