@@ -870,6 +870,17 @@ fun TvExplorationPage(
             }
         }
     }
+    // 整轮轮播按顺序预取 (背景图匹配有的要按十几个别名逐个搜 TMDB, 冷启动一部就是三四秒): 一部做完再提交下一部,
+    // 排队里始终只有一个, 照样给前台让路, 也不挤掉卡片导航的邻居预取. 首次启动时本页垫在引导的登录层下面
+    // 就开始跑, 用户进来时整轮多半已经就绪. 已解析过的直接命中缓存, 不发请求
+    LaunchedEffect(carouselSize) {
+        for (offset in 1 until carouselSize) {
+            val item = currentTrending.peekOrNull(offset) ?: continue
+            TvHeroPrefetch.backgroundAndAwait(item.bangumiId) {
+                resolveTvHeroMedia(item.bangumiId, collectionRepo, tmdb)
+            }
+        }
+    }
     // 自动轮播: 仅在 hero 态推进; carouselInteraction 变化 (手动切换) 会重启本效果, 重置计时
     LaunchedEffect(carouselSize, heroExpanded, carouselInteraction) {
         if (!heroExpanded || carouselSize <= 1) return@LaunchedEffect
