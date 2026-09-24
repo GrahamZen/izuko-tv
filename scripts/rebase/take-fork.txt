@@ -1,0 +1,13 @@
+# 跟进上游 (rebase) 时, 这些文件冲突了就整份取 fork 的版本 (rebase 里是 --theirs, 即正在重放的 fork 提交那一侧).
+#
+# 只收 fork **整体重写**过的文件: 上游原文只剩一两成, 上游对它的改动针对的是我们已经换掉的那套实现, 合进来也没用.
+# 取 fork 版之后, 上游新代码里引用旧实现的地方编译会报错 —— 那一步照常手工处理, 这里只省掉文本冲突.
+# 每轮 rebase 后在 range-diff 里核对一遍; 发现上游在这些文件里修了我们也需要的东西, 从清单里拿掉这一项.
+#
+# 一行一个路径 (相对仓库根); # 开头是注释.
+
+# 登录换成直连 Bangumi OAuth (上游原文保留约 14%): 上游在这里做的是 Ani 账号 / GitHub 等第三方登录
+app/shared/app-data/src/commonMain/kotlin/domain/session/auth/OAuthClient.kt
+
+# 账号设置页换成 Bangumi 账号 (上游原文保留约 16%): 上游在这里做的是 Ani 账号的邮箱换绑、GitHub 绑定
+app/shared/ui-settings/src/commonMain/kotlin/ui/settings/account/ProfileGroup.kt
