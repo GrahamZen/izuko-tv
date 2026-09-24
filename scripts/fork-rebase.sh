@@ -7,8 +7,19 @@
 # 一次就得从备份重来).
 #
 #   ./scripts/fork-rebase.sh preflight          # 探这次会在哪打架, 不动任何东西
-#   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放
+#   ./scripts/fork-rebase.sh dryrun             # 在内存里整栈重放一遍, 报告自动规则处理完还剩多少要人手 (不动任何东西)
+#   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放; 停下来时先自动处理机械冲突
+#   ./scripts/fork-rebase.sh continue           # 手工解完一处后: 再自动处理 + 继续, 直到下一处要人手的冲突
 #   ./scripts/fork-rebase.sh verify             # 逐条对照重放前后, 看哪条被上游改了
+#
+# 自动规则 (只处理结果唯一的冲突, 其余照旧停下来给人):
+#   - 目录改名 (如上游把 src/main 挪到 src/default): merge.directoryRenames=true, 跟着挪;
+#   - strings.xml: 按 key 三方合并 (scripts/rebase/merge-android-strings.py), 行挨着改不再算冲突;
+#   - fork 删掉的文件被上游改了: 保持删除;
+#   - scripts/rebase/take-fork.txt 里 fork 整体重写过的文件: 整份取 fork 版;
+#   - .kt 里每个冲突块都只是「两侧各自新增」或「两侧只动了 import」: 取并集 (scripts/rebase/union_resolve.py,
+#     需要 diff3 风格的冲突标记, 重放时带 merge.conflictStyle=diff3).
+# 驱动与属性装在本地 (.git/config 与 .git/info/attributes), 不改仓库文件; 用到它们的子命令都会先装一遍.
 #
 # fork 内部 (feat/* 追 main, 不涉及上游):
 #
@@ -28,6 +39,8 @@
 #
 # 环境变量: UPSTREAM (默认 upstream/main), TIP (默认当前分支)
 set -euo pipefail
+# git status --porcelain / diff --name-only 给的是相对仓库根的路径, 脚本里的相对路径也都按仓库根写
+cd "$(git rev-parse --show-toplevel)"
 
 UPSTREAM="${UPSTREAM:-upstream/main}"
 TIP="${TIP:-$(git rev-parse --abbrev-ref HEAD)}"
@@ -41,6 +54,44 @@ NOTE_FILE=".git/fork-rebase-$STAMP.env"
 
 hr() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+# 自动规则里需要本地配置的部分: strings.xml 的合并驱动 + 属性; rerere
+install_rules() {
+    git config merge.android-strings.name "Android strings.xml 按 key 三方合并"
+    git config merge.android-strings.driver "uv run --no-project python scripts/rebase/merge-android-strings.py %O %A %B %P"
+    local attrs; attrs="$(git rev-parse --git-common-dir)/info/attributes"
+    local rule='**/res/values*/strings.xml merge=android-strings'
+    mkdir -p "$(dirname "$attrs")"
+    grep -qsxF -- "$rule" "$attrs" || echo "$rule" >> "$attrs"
+    git config rerere.enabled true
+    git config rerere.autoUpdate true   # 认得出的冲突自动解并入暂存区
+}
+
+rebase_in_progress() {
+    [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]
+}
+
+# 按自动规则处理当前停下来的冲突; 处理不了的原样留着
+auto_resolve() {
+    local p
+    # UD = deleted by them: rebase 里 them 是正在重放的 fork 提交 —— fork 删了、上游改了, 保持删除
+    git status --porcelain=v1 | awk '$1 == "UD" { sub(/^UD /, ""); print }' | while IFS= read -r p; do
+        git rm -q -- "$p" >/dev/null && echo "  自动: fork 删掉的保持删除  $p"
+    done
+    # fork 整体重写过的文件: 整份取 fork 版 (rebase 里 fork 那一侧是 --theirs)
+    git diff --name-only --diff-filter=U | while IFS= read -r p; do
+        if grep -v '^[[:space:]]*#' scripts/rebase/take-fork.txt | grep -qxF -- "$p"; then
+            git checkout -q --theirs -- "$p" && git add -- "$p" && echo "  自动: 整份取 fork 版      $p"
+        fi
+    done
+    # 两侧只是各自新增 / 只动了 import: 取并集 (解不开的原样留着)
+    # 只处理 UU (两侧都改了); AA (两侧都新建了同名文件) 拼起来会重复定义, 留给人
+    git status --porcelain=v1 -- '*.kt' | awk '$1 == "UU" { sub(/^UU /, ""); print }' | while IFS= read -r p; do
+        if uv run --no-project python scripts/rebase/union_resolve.py "$p"; then
+            git add -- "$p" && echo "  自动: 两侧各自新增, 取并集 $p"
+        fi
+    done
+}
 
 require_clean() {
     [ -z "$(git status --porcelain --untracked-files=no)" ] || die "工作区不干净, 先提交或 stash"
@@ -119,14 +170,49 @@ $stray
     { echo "OLD_MB=$mb"; echo "OLD_TIP=$TAG_TIP"; echo "OLD_MAIN=$TAG_MAIN"; } > "$NOTE_FILE"
     echo "备份: $TAG_TIP / $TAG_MAIN  (记在 $NOTE_FILE)"
 
-    git config rerere.enabled true
-    git config rerere.autoUpdate true   # 认得出的冲突自动解并入暂存区
+    install_rules
 
     hr "一趟重放 $(git rev-list --count "$mb".."$TIP") 条到 $UPSTREAM"
-    echo "冲突时: 解完 git add, 然后 git rebase --continue; 放弃用 git rebase --abort"
-    git rebase --update-refs --onto "$UPSTREAM" "$mb" "$TIP"
+    echo "停在要人手的冲突时: 解完 git add, 然后 ./scripts/fork-rebase.sh continue; 放弃用 git rebase --abort"
+    if git -c merge.directoryRenames=true -c merge.conflictStyle=diff3 rebase --update-refs --onto "$UPSTREAM" "$mb" "$TIP"; then
+        hr "完成; 接着跑 verify"
+    else
+        rebase_in_progress || die "rebase 没有开始, 看上面 git 的报错"
+        cmd_continue
+    fi
+}
 
-    hr "完成; 接着跑 verify"
+# 自动处理 + 继续, 直到重放完或遇到要人手的冲突
+cmd_continue() {
+    rebase_in_progress || die "当前没有进行中的 rebase"
+    install_rules
+    local last=""
+    while rebase_in_progress; do
+        auto_resolve
+        local left; left=$(git diff --name-only --diff-filter=U)
+        if [ -n "$left" ]; then
+            local stopped; stopped=$(cat "$(git rev-parse --git-path rebase-merge)/stopped-sha" 2>/dev/null || echo HEAD)
+            hr "要人手的冲突 ($(git log -1 --format='%h %s' "$stopped"))"
+            echo "$left" | sed 's/^/  /'
+            echo "解完 git add, 然后再跑 ./scripts/fork-rebase.sh continue"
+            return 1
+        fi
+        local here; here=$(git rev-parse HEAD)
+        # 连着两次原地不动 (不是冲突、是别的原因停下) 就交给人, 免得死循环
+        if [ "$here" = "$last" ]; then
+            git status --short | head -20
+            die "rebase 停在 $(git log -1 --format='%h %s' HEAD) 之后且没有可自动处理的冲突, 看上面的状态手工处理"
+        fi
+        last=$here
+        GIT_EDITOR=true git -c merge.directoryRenames=true -c merge.conflictStyle=diff3 rebase --continue || true
+    done
+    hr "重放完成; 接着跑 verify"
+}
+
+cmd_dryrun() {
+    install_rules
+    git fetch upstream --quiet
+    uv run --no-project python scripts/rebase/dryrun.py --onto "$UPSTREAM" --tip "$TIP"
 }
 
 cmd_verify() {
@@ -282,11 +368,14 @@ EOF
 }
 
 case "${1:-}" in
+    install)      install_rules; echo "已装好自动规则 (strings.xml 合并驱动 / 属性 / rerere)" ;;
     preflight)    cmd_preflight ;;
+    dryrun)       cmd_dryrun ;;
     run)          cmd_run ;;
+    continue)     cmd_continue ;;
     verify)       cmd_verify ;;
     stack-preflight) cmd_stack_preflight ;;
     stack)           cmd_stack ;;
     stack-verify)    cmd_stack_verify ;;
-    *) die "用法: $0 {preflight|run|verify|stack-preflight|stack|stack-verify}" ;;
+    *) die "用法: $0 {install|preflight|dryrun|run|continue|verify|stack-preflight|stack|stack-verify}" ;;
 esac
