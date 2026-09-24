@@ -11,10 +11,12 @@ package me.him188.ani.app.ui.login
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -57,6 +59,8 @@ internal fun EmailLoginScreenLayout(
     modifier: Modifier = Modifier,
     title: @Composable () -> Unit = { Text(stringResource(Lang.login_sign_in)) },
     showThirdPartyLogin: Boolean = true,
+    /** 主栏右侧的一栏 (TV 登录页放手机控制台的码). 有它时主栏固定 480dp, 两栏一起居中. */
+    sidePanel: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.(scrollState: ScrollState) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -83,13 +87,21 @@ internal fun EmailLoginScreenLayout(
             val contentAreaHeight = availableHeight - thirdPartyLoginHeight
             val scrollState = rememberScrollState()
             
-            Column(
+            val widthAtLeastMedium = currentWindowAdaptiveInfo1().windowSizeClass.isWidthAtLeastMedium
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .wrapContentWidth(align = Alignment.CenterHorizontally)
-                    .ifThen(currentWindowAdaptiveInfo1().windowSizeClass.isWidthAtLeastMedium) {
-                        widthIn(max = 480.dp)
+                    .wrapContentWidth(align = Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+            Column(
+                Modifier
+                    .ifThen(sidePanel == null) {
+                        fillMaxWidth()
+                            .wrapContentWidth(align = Alignment.CenterHorizontally)
+                            .ifThen(widthAtLeastMedium) { widthIn(max = 480.dp) }
                     }
+                    .ifThen(sidePanel != null) { widthIn(max = 480.dp) }
                     .padding(contentPadding)
                     .padding(horizontal = 24.dp)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -110,6 +122,10 @@ internal fun EmailLoginScreenLayout(
                         Modifier.heightIn(min = 180.dp).wrapContentHeight(align = Alignment.Top),
                     )
                 }
+            }
+            if (sidePanel != null) {
+                Box(Modifier.padding(contentPadding).padding(start = 48.dp)) { sidePanel() }
+            }
             }
         }
     }

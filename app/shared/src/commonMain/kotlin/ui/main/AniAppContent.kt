@@ -87,6 +87,7 @@ import me.him188.ani.app.ui.download.details.MediaDetailsLazyGrid
 import me.him188.ani.app.ui.download.subject.SubjectDownloadsScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
+import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
 import me.him188.ani.app.ui.foundation.animation.ProvideAniMotionCompositionLocals
@@ -151,8 +152,12 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 fun AniAppContent(aniNavigator: AniNavigator) {
     val aniAppViewModel = viewModel<AniAppViewModel>()
     val appState = aniAppViewModel.appState.collectAsStateWithLifecycle(null).value ?: return
-    // 只有在 APP 首次启动的时候使用 initialNavRoute, 之后 back stack 自己维护并跨进程恢复
-    val backStack = rememberAniBackStack(appState.initialNavRoute)
+    // 只有在 APP 首次启动的时候使用 initialNavRoute, 之后 back stack 自己维护并跨进程恢复.
+    // 引导还没做过就先进引导页 (TV), 做完换成主页
+    val onboarding = LocalTvOnboardingVariant.current
+    val backStack = rememberAniBackStack(
+        if (onboarding?.pendingOnLaunch == true) NavRoutes.TvOnboarding else appState.initialNavRoute,
+    )
     aniNavigator.setBackStack(backStack)
 
     // 根底色: 页面切换过渡的淡入淡出间隙会露出它, 见 AniUiBehavior.blackRootBackground
@@ -658,6 +663,27 @@ private fun AniAppContentImpl(
                         LaunchedEffect(Unit) { onBack() }
                     } else {
                         editor.Page(onNavigateBack = onBack, modifier = Modifier.fillMaxSize())
+                    }
+                }
+                entry<NavRoutes.TvOnboarding>(
+                    // 不淡入: 从登录层按返回回到这一页时, 登录层要等本页画出来才撤 (见 TvOnboardingPage),
+                    // 淡入的那一段底下的主页会透出来
+                    metadata = NavDisplay.transitionSpec { EnterTransition.None togetherWith ExitTransition.None },
+                ) { route ->
+                    // 页面实现在 ui-tv, 共享代码只认插槽. 拿不到变体 (恢复出的返回栈里留着它, 但这次没装) 就直接去主页
+                    val onboarding = LocalTvOnboardingVariant.current
+                    // 从登录那一步按返回回来的, 下面已经垫着主页: 只出栈本页, 别再压一个主页
+                    val onFinished: () -> Unit = {
+                        if (aniNavigator.backStack.any { it is NavRoutes.Main }) {
+                            aniNavigator.popBackStack(route, inclusive = true)
+                        } else {
+                            aniNavigator.navigateMain(mainSceneInitialPage, popUpTargetInclusive = route)
+                        }
+                    }
+                    if (onboarding == null) {
+                        LaunchedEffect(Unit) { onFinished() }
+                    } else {
+                        onboarding.Page(onFinished = onFinished, modifier = Modifier.fillMaxSize())
                     }
                 }
                 entry<NavRoutes.Caches> { route ->
