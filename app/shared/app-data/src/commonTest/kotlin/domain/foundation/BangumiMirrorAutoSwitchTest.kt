@@ -31,7 +31,9 @@ import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * 「官方连不上时用镜像」确定官方连不上后自动改成「用镜像」, 之后不再先试官方.
@@ -154,6 +156,40 @@ class BangumiMirrorAutoSwitchTest {
         provider.reportSettled("bangumi.vip")
         runCurrent()
         assertNull(provider.trustedMirrorRoot.value)
+    }
+
+    @Test
+    fun `经镜像 — 用镜像这一档一直算，官方连不上时用镜像只在落到镜像上时算`() = runTest {
+        val mirror = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)))
+        assertTrue(mirror.viaThirdPartyMirror.value)
+
+        val auto = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)))
+        assertFalse(auto.viaThirdPartyMirror.value)
+        auto.reportSettled("bangumi.vip")
+        runCurrent()
+        assertTrue(auto.viaThirdPartyMirror.value)
+        auto.reportSettled(null)
+        runCurrent()
+        assertFalse(auto.viaThirdPartyMirror.value)
+    }
+
+    @Test
+    fun `经镜像 — 从用镜像切回官方连不上时用镜像，旧的落点不算数`() = runTest {
+        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR))
+        val provider = provider(settings)
+        provider.reportSettled("bangumi.vip")
+        runCurrent()
+        assertTrue(provider.viaThirdPartyMirror.value)
+
+        // 切过去之后还没有请求落地: 按原站算, 授权登录照常给
+        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)
+        runCurrent()
+        assertFalse(provider.viaThirdPartyMirror.value)
+
+        // 新路由下的请求落到了镜像上 (官方连不上)
+        provider.reportSettled("bangumi.vip")
+        runCurrent()
+        assertTrue(provider.viaThirdPartyMirror.value)
     }
 
     @Test

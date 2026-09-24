@@ -17,10 +17,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.foundation.HttpClientProvider
-import me.him188.ani.app.domain.foundation.ServerListFeature
-import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
+import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
-import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.settings.ServiceConnectionTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTesters
 import me.him188.ani.app.ui.foundation.AbstractViewModel
@@ -47,9 +45,9 @@ class MainScreenSharedViewModel : AbstractViewModel(), KoinComponent {
 
     init {
         launchInBackground {
-            val client = clientProvider.get(
-                setOf(ServerListFeature.withValue(ServerListFeatureConfig.Default)),
-            )
+            // 带镜像改写 (便捷 get 默认带): 测的是用户实际在走的那条路 —— 只测官方的话, 在大陆用镜像
+            // 一切正常时也会每次启动都提示一次连不上
+            val client = clientProvider.get(ScopedHttpClientUserAgent.ANI)
             val tester = ServiceConnectionTesters.createDefault(
                 bangumiClient = BangumiClientImpl(client),
                 aniClient = client,

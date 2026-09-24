@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.ui.remote
 
-import io.ktor.http.URLBuilder
-import io.ktor.http.Url
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,10 +25,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.app.data.models.user.calculateDisplay
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionState
@@ -71,7 +69,8 @@ internal object RemoteAccount {
     private val sessionStateProvider: SessionStateProvider get() = KoinPlatform.getKoin().get()
     private val userRepository: UserRepository get() = KoinPlatform.getKoin().get()
     private val oauthManager: BangumiOAuthManager get() = KoinPlatform.getKoin().get()
-    private val mirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
+    private val endpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
+    private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
 
     /** 手机发起的那次登录走到哪了. 成功后回到 Idle (登录状态看会话本身). */
     private sealed interface Login {
@@ -124,11 +123,7 @@ internal object RemoteAccount {
             null
         }
         val current = login
-        val mirrors = if (session is SessionState.Valid) {
-            emptyList()
-        } else {
-            withTimeoutOrNull(STATE_TIMEOUT) { mirrorList.mirrors.first() }.orEmpty()
-        }
+        val mirrorCredentials = mirrorCredentialsAllowed()
         // 挂起调用都在 buildJsonObject 外面 (它的构建块不是协程)
         buildJsonObject {
             put("ok", true)
@@ -144,8 +139,12 @@ internal object RemoteAccount {
                 put("avatar", self.avatarUrl)
                 put("bgmName", self.bangumiUsername)
             }
-            // 生成个人令牌的页面: 官方, 以及镜像清单里每个镜像上的同一个页面 (没登录时才要)
-            putJsonArray("tokenPages") { tokenPages(mirrors).forEach { add(it) } }
+            // 经第三方镜像连着: 授权登录走不通, 网页上只给个人令牌那条路 (见 BangumiEndpointProvider.viaThirdPartyMirror)
+            put("viaMirror", endpoints.viaThirdPartyMirror.value)
+            // 「登录与收藏同步也经过镜像」开没开: 经镜像时不开就登录不了, 网页上先让用户开它
+            put("mirrorCred", mirrorCredentials)
+            // 生成个人令牌的页面只有官方的: 镜像上的登录页过不了 Cloudflare 人机验证 (它只认官方域名)
+            putJsonArray("tokenPages") { add(BangumiOAuthConstants.PERSONAL_TOKEN_PAGE) }
             putJsonObject("login") {
                 when (current) {
                     Login.Idle -> put("state", "idle")
@@ -171,6 +170,10 @@ internal object RemoteAccount {
     private fun startLogin(request: LanHttpRequest): JsonObject {
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
         if (session is SessionState.Valid) return result(false, tr("电视已经登录了"))
+        // 网页上经镜像时本来就不给这个入口; 评论区那颗登录按钮之类的旧入口走到这里时说清楚
+        if (endpoints.viaThirdPartyMirror.value) {
+            return result(false, tr("现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录"))
+        }
         val manager = oauthManager
         val onTv = request.formFields()["where"] == "tv"
         if (onTv && !manager.inAppBrowserSupported) {
@@ -289,6 +292,10 @@ internal object RemoteAccount {
             ?: return result(false, tr("有效期不对"))
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
         if (session is SessionState.Valid) return result(false, tr("电视已经登录了"))
+        // 经镜像而凭证不许经过镜像: 校验请求会被留在官方 (连不上) 干等到超时, 直接说要先开哪个开关
+        if (endpoints.viaThirdPartyMirror.value && !runBlocking { mirrorCredentialsAllowed() }) {
+            return result(false, tr("经镜像连接时，要先打开「登录与收藏同步也经过镜像」才能登录"))
+        }
         cancelLogin()
         // 包一层: 登录函数成功时返回 null, 直接交给 withTimeoutOrNull 就分不清成功与超时
         val outcome = runBlocking {
@@ -308,14 +315,10 @@ internal object RemoteAccount {
 
     private class TokenLoginOutcome(val error: LoadError?)
 
-    private fun tokenPages(mirrors: List<String>): List<String> {
-        val official = Url(BangumiOAuthConstants.PERSONAL_TOKEN_PAGE)
-        return listOf(official.toString()) + mirrors.mapNotNull { root ->
-            BangumiMirrorHosts.mirrorHostOf(official.host, root)?.let { host ->
-                URLBuilder(official).apply { this.host = host }.buildString()
-            }
-        }
-    }
+    /** 「登录与收藏同步也经过镜像」开没开; 读不出来当成没开 (宁可多提示一句). */
+    private suspend fun mirrorCredentialsAllowed(): Boolean =
+        withTimeoutOrNull(STATE_TIMEOUT) { settingsRepository.bangumiEndpointSettings.flow.first() }
+            ?.allowCredentialsViaMirror == true
 
     private fun cancelLogin(): JsonObject {
         synchronized(lock) {

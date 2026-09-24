@@ -91,12 +91,23 @@ class BangumiEndpointProvider(
         return URLBuilder(parsed).apply { this.host = host }.buildString()
     }
 
-    /** [BangumiMirrorFeatureHandler] 最近落在的镜像 (`null` = 原站或还没发过请求), 见 [reportSettled]. */
-    private val activeMirror = MutableStateFlow<String?>(null)
+    /** 请求最近落在哪儿 (`mirrorRoot` 为 `null` = 原站), 连同报上来时的路由. 见 [reportSettled]. */
+    private data class Settled(val routing: BangumiRouting?, val mirrorRoot: String?)
+
+    private val settled = MutableStateFlow(Settled(routing = null, mirrorRoot = null))
+
+    /**
+     * [BangumiMirrorFeatureHandler] 最近落在的镜像 (`null` = 原站或还没发过请求), 只认按当前路由落下的:
+     * 换了设置或清单之后, 旧路由下的落点不算数, 等新路由下的请求落地再报. 不然从「用镜像」切回
+     * 「官方连不上时用镜像」后, 只要还没发新请求 (比如一直停在设置页), 就一直被当成经镜像.
+     */
+    private val activeMirror: Flow<String?> = combine(routingState, settled) { routing, settled ->
+        settled.mirrorRoot?.takeIf { settled.routing == routing }
+    }
 
     /** 由 [BangumiMirrorFeatureHandler] 在请求落到哪个目标变了时调用. */
     fun reportSettled(mirrorRoot: String?) {
-        activeMirror.value = mirrorRoot
+        settled.value = Settled(routingState.value, mirrorRoot)
     }
 
     private val switching = MutableStateFlow(false)
@@ -137,6 +148,17 @@ class BangumiEndpointProvider(
     }
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /**
+     * 现在是不是经第三方镜像连 bangumi: 「用镜像」, 或「官方连不上时用镜像」且请求已经落到镜像上.
+     * 这时授权登录走不通 —— 镜像把 bgm.tv 主站 (授权页与换 token 都在那) 挡在反爬验证后面, 只能用个人令牌登录
+     * (见 `BangumiOAuthManager.loginWithPersonalToken`). 自建地址不算: 那是用户自己的反代, 授权登录照常.
+     */
+    val viaThirdPartyMirror: StateFlow<Boolean> = combine(settings, activeMirror) { settings, active ->
+        settings.mode == BangumiEndpointMode.MIRROR || (settings.mode == BangumiEndpointMode.AUTO && active != null)
+    }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, false)
 }
 
 /**
