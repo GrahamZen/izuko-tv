@@ -107,6 +107,13 @@ sealed class NavRoutes : NavKey {
      */
     @Serializable
     data object TvPlayerChrome : NavRoutes()
+
+    /**
+     * TV: 首次启动引导 (检测连 Bangumi 的网络、选连接方式、登录). 引导还没做过时作为起始页,
+     * 做完换成 [Main]. 页面实现在 ui-tv, 经 `LocalTvOnboardingVariant` 注入.
+     */
+    @Serializable
+    data object TvOnboarding : NavRoutes()
 }
 
 @Serializable

@@ -56,6 +56,8 @@ import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.tv_remote_control_close
 import me.him188.ani.app.ui.lang.tv_remote_control_dont_show_on_launch
 import me.him188.ani.app.ui.lang.tv_remote_control_panel_hint
+import me.him188.ani.app.ui.lang.tv_remote_login_hint
+import me.him188.ani.app.ui.lang.tv_remote_login_title
 import me.him188.ani.app.ui.lang.tv_remote_control_title
 import me.him188.ani.app.ui.lang.tv_remote_qr_connected
 import me.him188.ani.app.ui.lang.tv_remote_qr_hint
@@ -210,13 +212,47 @@ fun TvRemoteControlDialog(onDismissRequest: () -> Unit) {
 }
 
 /**
+ * 登录页右侧的码卡 (经 `LocalTvLoginSidePanel` 装到登录页): 扫码到手机控制台登录 —— 遥控器输账号密码很累,
+ * 经镜像时这还是唯一能登录的路. 标题 / 码 / 连接状态 / 一句去哪登录 / 地址, 竖排居中.
+ */
+@Composable
+fun TvRemoteLoginCard(modifier: Modifier = Modifier) {
+    val url by TvRemoteControl.url.collectAsState()
+    val hostChanged by TvRemoteControl.hostChanged.collectAsState()
+    val phoneConnected by TvRemoteControl.phoneConnected.collectAsState()
+    LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier.width(LOGIN_CARD_WIDTH), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(Lang.tv_remote_login_title), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        RemoteQrCode(url, LOGIN_QR_SIZE, LOGIN_QR_QUIET_ZONE)
+        Spacer(Modifier.height(10.dp))
+        RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(Lang.tv_remote_login_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+        url?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        }
+        if (url != null && !phoneConnected && !hostChanged) {
+            Spacer(Modifier.height(6.dp))
+            RemoteTroubleshootHint(MaterialTheme.typography.bodySmall, TextAlign.Center)
+        }
+    }
+}
+
+/**
  * 码本体 (或没地址时同样大小的占位). **浅底深码** (常规极性, 老扫码器也认): 深色主题的 primary 本身是浅色 (tone 80),
  * 直接当底、onPrimary 画码; 浅色主题的 primary 是深色, 改用 primaryContainer / onPrimaryContainer. 按主题深浅判,
  * 不按 primary 自己的亮度判 —— tone 80 的亮度正好卡在 0.5 上下, 按它判会时对时错. 码自带不透明底:
  * 动作面板那边背后是半透明玻璃, 透过来的图案会干扰扫码.
  */
 @Composable
-private fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
+internal fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
     val scheme = MaterialTheme.colorScheme
     val darkTheme = scheme.surface.luminance() < 0.5f
     if (url != null) {
@@ -250,7 +286,7 @@ private fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
  * (请求被收进隧道, 到不了电视). 电视自己开着 VPN (用户多半手机也开着) 时换成更具体、更醒目的一句. 几秒查一次, VPN 开关随时跟上.
  */
 @Composable
-private fun RemoteTroubleshootHint(style: TextStyle, textAlign: TextAlign? = null) {
+internal fun RemoteTroubleshootHint(style: TextStyle, textAlign: TextAlign? = null) {
     val vpn by produceState(false) {
         while (true) {
             value = withContext(Dispatchers.IO) { TvRemoteControl.tvVpnActive() }
@@ -269,7 +305,7 @@ private fun RemoteTroubleshootHint(style: TextStyle, textAlign: TextAlign? = nul
 
 /** 状态点 + 两三个字 (已连接 绿 / 等待连接 灰 / IP 已变 红); 没有地址时不画 (码的位置已经写着「未连接到局域网」). */
 @Composable
-private fun RemoteConnectionStatus(url: String?, hostChanged: Boolean, phoneConnected: Boolean, style: TextStyle) {
+internal fun RemoteConnectionStatus(url: String?, hostChanged: Boolean, phoneConnected: Boolean, style: TextStyle) {
     val scheme = MaterialTheme.colorScheme
     val connectedColor = if (scheme.surface.luminance() < 0.5f) CONNECTED_GREEN_DARK else CONNECTED_GREEN_LIGHT
     val (dot, label) = when {
@@ -301,6 +337,11 @@ private val LAUNCH_QR_SIZE = 210.dp
 private val LAUNCH_QR_QUIET_ZONE = 24.dp
 private val LAUNCH_DIALOG_WIDTH = 650.dp
 
+/** 登录页码卡: 码 168dp + 留白 18dp, 卡宽 300dp (登录页主栏 480dp 在它左边). */
+private val LOGIN_QR_SIZE = 168.dp
+private val LOGIN_QR_QUIET_ZONE = 18.dp
+private val LOGIN_CARD_WIDTH = 300.dp
+
 /** 「已连接」的绿: 深色主题上用亮一些的, 浅色主题上用深一些的, 两边与卡片底色都有足够对比. */
-private val CONNECTED_GREEN_DARK = Color(0xFF6DD58C)
-private val CONNECTED_GREEN_LIGHT = Color(0xFF1E8E3E)
+internal val CONNECTED_GREEN_DARK = Color(0xFF6DD58C)
+internal val CONNECTED_GREEN_LIGHT = Color(0xFF1E8E3E)

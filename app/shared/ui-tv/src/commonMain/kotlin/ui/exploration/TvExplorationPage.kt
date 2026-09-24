@@ -87,6 +87,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -885,13 +886,15 @@ fun TvExplorationPage(
         }
     }
     // 自动轮播: 仅在 hero 态推进; carouselInteraction 变化 (手动切换) 会重启本效果, 重置计时
+    val windowInfo = LocalWindowInfo.current
     LaunchedEffect(carouselSize, heroExpanded, carouselInteraction) {
         if (!heroExpanded || carouselSize <= 1) return@LaunchedEffect
-        // 本页被放大进来的详情页盖着 (列表页常驻组合、不画, 见 TvZoomStackScene) 时不计时: 换图会连带 hero 媒体解析 / 预取 / 重组, 全是白做.
+        // 本页被放大进来的详情页盖着 (列表页常驻组合、不画, 见 TvZoomStackScene), 或窗口没有焦点 (首次引导的登录层、
+        // 退出面板这类对话框盖在上面, 或应用在后台) 时不计时: 换图会连带 hero 媒体解析 / 预取 / 解码大图 / 重组, 全是白做.
         // 回到前台后**重新计时** —— 不能"等满 6 秒再等前台", 那样停久了一回来就立刻换图: 缩回刚落地画面就跳, hero 地址也对不上缩回那张
         // (撤层要等到就绪超时). 2026-09-15 审查
-        snapshotFlow { pageForeground.value }.collectLatest { foreground ->
-            if (!foreground) return@collectLatest
+        snapshotFlow { pageForeground.value && windowInfo.isWindowFocused }.collectLatest { active ->
+            if (!active) return@collectLatest
             while (true) {
                 delay(TV_CAROUSEL_AUTO_ADVANCE_MILLIS)
                 carouselAutoAdvanced = true
