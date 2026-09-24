@@ -197,6 +197,7 @@
     <string name="settings_network_tmdb_images_disable">Skip TMDB backdrops</string>
     <string name="settings_network_tmdb_images_disable_description">Turn this on if TMDB is unreachable on your network. Backdrops and episode stills use the cover instead, with no waiting and no requests.</string>
     <string name="settings_network_proxy_service_tmdb_image">Backdrop image CDN</string>
+    <string name="oauth_bangumi_via_mirror">You are connected to Bangumi through a mirror, where signing in by authorization does not work. Scan the QR code with your phone to open the Web console, go to Settings → Account and tap “Sign in with a personal token”, then follow the steps: first turn on “Also send sign-in and collection sync through the mirror”, then create a token on the official Bangumi site and paste it in. Long-press the play button on the remote to show the QR code.</string>
     <string name="oauth_bangumi_authorize_external_browser">Sign in with system browser</string>
     <string name="video_player_tv_restart">Restart</string>
     <string name="video_player_tv_collection">Collection</string>

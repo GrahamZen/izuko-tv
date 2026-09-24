@@ -88,6 +88,8 @@ sealed interface AuthState {
 @Composable
 fun BangumiAuthorizeLayout(
     authorizeState: AuthState,
+    /** 经第三方镜像连着: 授权登录走不通, 不给授权按钮, 换成去手机控制台用个人令牌登录的指引. */
+    viaMirror: Boolean,
     contactActions: @Composable () -> Unit,
     onClickAuthorize: () -> Unit,
     onClickAuthorizeExternally: () -> Unit,
@@ -119,7 +121,16 @@ fun BangumiAuthorizeLayout(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                Column(
+                if (viaMirror) {
+                    Text(
+                        stringResource(Lang.oauth_bangumi_via_mirror),
+                        modifier = Modifier
+                            .padding(top = 24.dp)
+                            .widthIn(max = 720.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                } else Column(
                     modifier = Modifier
                         .padding(top = 24.dp)
                         .fillMaxWidth(),

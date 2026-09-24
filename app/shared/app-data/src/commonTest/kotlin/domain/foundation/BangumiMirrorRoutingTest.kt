@@ -12,7 +12,11 @@ package me.him188.ani.app.domain.foundation
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +58,76 @@ class BangumiMirrorRoutingTest {
         val client = HttpClient(engine) { expectSuccess = false }
         BangumiMirrorFeatureHandler(routing, clock = clock).applyToClient(client, true)
         return client
+    }
+
+    private data class Attempt(val host: String, val connect: Long?, val socket: Long?)
+
+    /** 同 [client], 另外装上 HttpTimeout (默认 30 秒, 与应用一致) 并记下每一跳实际带的超时. */
+    private fun timeoutClient(
+        routing: BangumiRouting,
+        attempts: MutableList<Attempt>,
+        origin: () -> HttpStatusCode?,
+    ): HttpClient {
+        val engine = MockEngine { req ->
+            val t = req.getCapabilityOrNull(HttpTimeoutCapability)
+            attempts += Attempt(req.url.host, t?.connectTimeoutMillis, t?.socketTimeoutMillis)
+            val status = if (req.url.host.endsWith("bgm.tv")) origin() else HttpStatusCode.OK
+            respond("", status ?: throw IOException("blocked"))
+        }
+        val client = HttpClient(engine) {
+            expectSuccess = false
+            install(HttpTimeout) {
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 30_000
+            }
+        }
+        BangumiMirrorFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
+        return client
+    }
+
+    @Test
+    fun `还不知道官方通不通时试官方用短超时，换到镜像恢复原来的`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { null }.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(
+            listOf(Attempt("api.bgm.tv", 3_000, 5_000), Attempt("api.bangumi.vip", 30_000, 30_000)),
+            attempts,
+        )
+    }
+
+    @Test
+    fun `官方成功过之后恢复默认超时，免得官方偶尔慢被当成连不上`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val client = timeoutClient(auto, attempts) { HttpStatusCode.OK }
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        assertEquals(listOf(Attempt("api.bgm.tv", 3_000, 5_000), Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `写请求试官方不缩超时，免得没等到回应就换镜像重发写两遍`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { HttpStatusCode.OK }.post("https://api.bgm.tv/v0/search/subjects")
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
+    fun `请求自己设了更短的超时就用更短的`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(auto, attempts) { HttpStatusCode.OK }.get("https://lain.bgm.tv/pic/cover/l/1.jpg") {
+            timeout {
+                connectTimeoutMillis = 2_500
+                socketTimeoutMillis = 3_000
+            }
+        }
+        assertEquals(listOf(Attempt("lain.bgm.tv", 2_500, 3_000)), attempts)
+    }
+
+    @Test
+    fun `没有镜像可退时不缩`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        timeoutClient(BangumiRouting.Direct, attempts) { HttpStatusCode.OK }.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
     }
 
     @Test

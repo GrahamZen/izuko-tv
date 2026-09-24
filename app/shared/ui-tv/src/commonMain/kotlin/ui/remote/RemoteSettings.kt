@@ -74,6 +74,7 @@ internal object RemoteSettings {
                 request.path == "api/settings/proxy" -> saveProxy(request)
                 request.path == "api/settings/proxy/test" -> testConnection()
                 request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
+                request.path == "api/settings/bangumi/cred" -> setMirrorCredentials(request)
                 request.path == "api/settings/trackers" -> saveTrackers(request)
                 // 「切到电视前台」开关, 状态与授权都在 TvRemoteControl
                 request.path == "api/settings/front" -> TvRemoteControl.setBringToFront(request.formFields()["on"] == "1")
@@ -239,6 +240,17 @@ internal object RemoteSettings {
                 BangumiEndpointMode.CUSTOM -> tr("已保存，立即生效")
             },
         )
+    }
+
+    /**
+     * 只改「登录与收藏同步也经过镜像」, 连接方式不动: 账号卡片上经镜像时那颗按钮用 (网页那边先弹风险确认).
+     * 经第三方镜像时不打开它就登录不了 —— 带凭证的请求会被留在官方, 而官方连不上.
+     */
+    private fun setMirrorCredentials(request: LanHttpRequest): JsonObject {
+        val on = request.formFields()["on"] == "1"
+        runBlocking { settingsRepository.bangumiEndpointSettings.update { copy(allowCredentialsViaMirror = on) } }
+        logger.info { "Remote control set allowCredentialsViaMirror=$on" }
+        return result(true, if (on) tr("已打开：登录与收藏同步也经过镜像") else tr("已关闭：登录与收藏同步只走官方"))
     }
 
     /**

@@ -31,6 +31,7 @@ fun BangumiAuthorizeScreen(
     contactActions: @Composable () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle(AuthState.NoAniAccount)
+    val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val browserNavigator = rememberAsyncBrowserNavigator()
     val context = LocalContext.current
@@ -43,6 +44,7 @@ fun BangumiAuthorizeScreen(
 
     BangumiAuthorizeScreen(
         state = state,
+        viaMirror = viaMirror,
         onClickAuthorize = {
             if (state !is AuthState.AwaitingResult) {
                 // 应用内浏览器优先 (电视上唯一可行的一条: 跳去外部浏览器就回不来了);
@@ -69,6 +71,7 @@ fun BangumiAuthorizeScreen(
 @Composable
 internal fun BangumiAuthorizeScreen(
     state: AuthState,
+    viaMirror: Boolean,
     onClickAuthorize: () -> Unit,
     onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
@@ -85,6 +88,7 @@ internal fun BangumiAuthorizeScreen(
     ) { scrollState ->
         BangumiAuthorizeLayout(
             authorizeState = state,
+            viaMirror = viaMirror,
             contactActions = contactActions,
             onClickAuthorize = onClickAuthorize,
             onClickAuthorizeExternally = onClickAuthorizeExternally,

@@ -114,6 +114,7 @@
     <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>
     <string name="settings_network_tmdb_images_disable_description">你的網絡連不上 TMDB 時開啟：背景圖與劇照直接改用條目封面，不再等待載入，也不再發送請求</string>
+    <string name="oauth_bangumi_via_mirror">現在經鏡像連接 Bangumi，授權登錄走不通。請用手機掃碼打開「Web 控制台」，在「設置 → 帳號」裡點「用個人令牌登錄」，按彈出的步驟做：先打開「登錄與收藏同步也經過鏡像」，再到 Bangumi 官網生成令牌貼進來。長按遙控器的播放鍵可以叫出二維碼。</string>
     <string name="oauth_bangumi_authorize_external_browser">用系統瀏覽器登入</string>
     <string name="video_player_tv_cancel_skip_segment">取消跳過 %1$s</string>
     <string name="video_player_tv_up_next_in">%1$d 秒後</string>

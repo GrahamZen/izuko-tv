@@ -197,6 +197,7 @@
     <string name="settings_network_tmdb_images_disable">不加载 TMDB 背景图</string>
     <string name="settings_network_tmdb_images_disable_description">你的网络连不上 TMDB 时打开：背景图与剧照直接改用条目封面，不再等待加载，也不再发请求</string>
     <string name="settings_network_proxy_service_tmdb_image">背景图 CDN</string>
+    <string name="oauth_bangumi_via_mirror">现在经镜像连接 Bangumi，授权登录走不通。请用手机扫码打开「Web 控制台」，在「设置 → 账号」里点「用个人令牌登录」，按弹出的步骤做：先打开「登录与收藏同步也经过镜像」，再到 Bangumi 官网生成令牌粘进来。长按遥控器的播放键可以调出二维码。</string>
     <string name="oauth_bangumi_authorize_external_browser">用系统浏览器登录</string>
     <string name="video_player_tv_restart">从头开始</string>
     <string name="video_player_tv_collection">收藏</string>

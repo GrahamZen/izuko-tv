@@ -13,10 +13,13 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.HttpClientCall
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.plugin
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.URLBuilder
 import io.ktor.http.takeFrom
 import kotlinx.atomicfu.atomic
@@ -155,6 +158,12 @@ class BangumiMirrorFeatureHandler(
                     (it.target < 0 || clock.now().toEpochMilliseconds() - it.at < MIRROR_STICKY_MILLIS)
         }
         val startIndex = current?.let { targets.indexOf(it.target) } ?: 0
+        // 官方通不通还没数 (这个进程里还没在官方上成功过) 时, 读请求试官方用短超时, 见 ORIGIN_PROBE_CONNECT_MILLIS.
+        // 写请求不缩: 超时之后会换镜像重发, 发出去了却没等到回应的写入会被写两遍
+        val probeOrigin = current?.target != -1 && request.method == HttpMethod.Get
+        val originalTimeouts = request.getCapabilityOrNull(HttpTimeoutCapability)
+            ?.let { Timeouts(it.requestTimeoutMillis, it.connectTimeoutMillis, it.socketTimeoutMillis) }
+        var timeoutsChanged = false
 
         var lastCall: HttpClientCall? = null
         var originConnectFailed = false
@@ -168,6 +177,23 @@ class BangumiMirrorFeatureHandler(
             request.url.host = host
             if (lastCall != null) {
                 logger.info { "Bangumi: retrying $originalHost on $host" }
+            }
+            // 后面还有镜像可退时才缩: 最后一站缩了只会让本来能等到的回应超时
+            if (target < 0 && probeOrigin && i < targets.size - 1) {
+                request.timeout {
+                    requestTimeoutMillis = originalTimeouts?.request
+                    connectTimeoutMillis = minOf(originalTimeouts?.connect ?: Long.MAX_VALUE, ORIGIN_PROBE_CONNECT_MILLIS)
+                    socketTimeoutMillis = minOf(originalTimeouts?.socket ?: Long.MAX_VALUE, ORIGIN_PROBE_SOCKET_MILLIS)
+                }
+                timeoutsChanged = true
+            } else if (timeoutsChanged) {
+                // 换到镜像: 恢复原来的超时 (没设过的交回 HttpTimeout 插件的默认值)
+                request.timeout {
+                    requestTimeoutMillis = originalTimeouts?.request
+                    connectTimeoutMillis = originalTimeouts?.connect
+                    socketTimeoutMillis = originalTimeouts?.socket
+                }
+                timeoutsChanged = false
             }
 
             val thisCall = try {
@@ -245,8 +271,25 @@ class BangumiMirrorFeatureHandler(
         }
     }
 
+    /** 进入本处理器时请求原本的超时; 试官方时改过之后, 换到镜像要恢复成这个. */
+    private class Timeouts(val request: Long?, val connect: Long?, val socket: Long?)
+
     private companion object {
         /** 粘在镜像上最多多久; 到期后重新先试直连. 见 [Sticky]. */
         val MIRROR_STICKY_MILLIS = 30.minutes.inWholeMilliseconds
+
+        /**
+         * 还不知道官方通不通时, 试官方的连接超时. 被墙的常见表现是 DNS 给一个不通的地址、TCP 一直连不上,
+         * 默认 30 秒的连接超时会让大陆用户第一次打开白等半分钟 (之后才换到镜像并改成「用镜像」).
+         * bgm.tv 在 Cloudflare 后面, 正常网络下连接在几百毫秒内完成, 3 秒连不上基本就是不通.
+         */
+        const val ORIGIN_PROBE_CONNECT_MILLIS = 3_000L
+
+        /**
+         * 同上, 空闲 (读) 超时. 按域名拦截的另一种表现是 TCP 连上了、TLS 握手没有回音, 这一段由读超时管,
+         * 光缩连接超时拦不住. 比连接超时留得宽: 它也管等官方的第一个字节, 官方偶尔慢一两秒不能被当成连不上
+         * (那会把能直连的用户永久切到镜像上). 只在官方还没成功过时用, 成功之后恢复默认.
+         */
+        const val ORIGIN_PROBE_SOCKET_MILLIS = 5_000L
     }
 }
