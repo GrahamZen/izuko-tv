@@ -19,7 +19,6 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -288,7 +287,10 @@ fun TvHeroButton(
     onFocusChangedExtra: ((Boolean) -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
+    // 聚焦样式直接读真实焦点 (下面的 onFocusChanged), 不用 interactionSource 的 Focus/Unfocus 事件:
+    // 那是一次性事件, 按钮刚进组合、收集还没开始时焦点就给了过来, 这一下就丢了, 样式从此停在未聚焦,
+    // 而焦点本身正常 —— 看不到焦点框却按得动
+    var focused by remember { mutableStateOf(false) }
     // 按当前主题明暗取底色 (由 surface 亮度判定, 兼容手动日夜切换):
     // 黑夜: 主按钮 rgb(49,54,61), 次按钮接近黑; 白天: 对应的浅灰两档.
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -310,6 +312,7 @@ fun TvHeroButton(
         modifier = modifier
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged {
+                focused = it.isFocused
                 if (it.isFocused) onFocused()
                 onFocusChangedExtra?.invoke(it.isFocused)
             }
