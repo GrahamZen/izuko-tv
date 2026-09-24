@@ -610,7 +610,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn:disabled { opacity: .6; }
 /* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
 .sw-btn.link { background: #2f7bf0; }
-#link-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+#link-dlg, #login-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
   background: rgba(0,0,0,.45); }
 .link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
   background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
@@ -620,6 +620,10 @@ button { font: inherit; border: 0; cursor: pointer; }
   font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; overflow-y: auto; overscroll-behavior: contain;
   -webkit-user-select: text; user-select: text; }
 #link-dlg a.primary { text-decoration: none; text-align: center; }
+/* 手机授权前的教学 (loginGuide): 三步, 第二步是重点 —— 授权完停在打不开的页面是正常的 */
+.login-steps { margin: 12px 0 4px; padding-left: 1.4em; font-size: 15px; line-height: 1.6; }
+.login-steps li + li { margin-top: 8px; }
+.login-steps .risk { display: block; margin-top: 4px; color: var(--err); }
 /* 播放页候选行包进 .sw 之后: 选中的描边往里收, 否则被外层的圆角裁剪整圈裁掉; 被排除 / 不可选的半透明挪到行里的内容上 ——
    行本身半透明的话, 滑动时垫在下面的按钮会从行后面透出来 */
 .sw > .item.sel { outline-offset: -2px; }
@@ -6382,18 +6386,18 @@ private val ACCOUNT_SCRIPT = """
   // 个人令牌登录的表单展开着没有 (没登录时). 授权页连不上 (中国大陆经镜像) 时只能走这条
   var tok = false;
   var TOKEN_DAYS = [7, 30, 90, 180, 365];
-  function tokenForm(d) {
+  function tokenForm(d, closable) {
     var pages = (d.tokenPages || []).map(function (u) {
-      return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\//, '').replace(/\/.*$/, '')) + '</a>';
+      return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\//, '')) + '</a>';
     }).join(T('、'));
     return '<form class="acct-token" id="acct-token">' +
-      '<p class="hint">' + T('连不上 Bangumi 授权页时（例如在中国大陆经镜像）用这个：在浏览器里登录 Bangumi 网站，打开生成令牌的页面新建一个令牌，粘到下面。') + '</p>' +
-      (pages ? '<p class="hint">' + T('生成令牌的页面：{0}', pages) + '</p>' : '') +
+      '<p class="hint">' + (pages ? T('生成令牌的页面：{0}', pages) + T('。') : '') +
+      '<a href="#" data-acct="token-guide">' + T('看步骤') + '</a></p>' +
       '<label class="f"><span>' + T('令牌') + '</span><input type="text" name="token" autocomplete="off" spellcheck="false"></label>' +
       '<label class="f"><span>' + T('有效期') + '</span><select name="days">' + TOKEN_DAYS.map(function (n) {
         return '<option value="' + n + '"' + (n === 365 ? ' selected' : '') + '>' + T('{0} 天', n) + '</option>';
       }).join('') + '</select><em>' + T('和生成令牌时选的一样。到期后电视会退出登录，再生成一个新的就行。') + '</em></label>' +
-      '<div class="row"><button type="button" class="ghost" data-acct="token-close">' + T('取消') + '</button>' +
+      '<div class="row">' + (closable ? '<button type="button" class="ghost" data-acct="token-close">' + T('取消') + '</button>' : '') +
       '<button type="submit" class="primary">' + T('登录') + '</button></div></form>';
   }
   var MAIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>';
@@ -6487,19 +6491,28 @@ private val ACCOUNT_SCRIPT = """
         '<div class="row"><button type="button" class="ghost" data-acct="cancel">' + T('取消登录') + '</button></div></div>';
     } else if (!full && !d.offline) {
       if (l.state === 'failed') h += '<div class="now-status error"><b>' + T('上次登录没有完成') + '</b><span>' + esc(l.message) + '</span></div>';
-      h += '<div class="row"><button type="button" class="primary" data-login="1">' +
-        (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) + '</button>' +
-        (direct ? '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button>' : '') +
-        '</div><p class="hint">' +
-        (direct ? T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。')
-          : T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。')) + '</p>';
-      // 个人令牌: 不经过授权页, 镜像站的授权页与换 token 走不通时只能这样登录
-      if (!d.loggedIn && direct) {
-        h += tok ? tokenForm(d) : '<div class="row"><button type="button" class="ghost" data-acct="token">' + T('用个人令牌登录') + '</button></div>';
-      }
-      // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
-      if (!d.loggedIn && !direct) {
-        h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
+      if (d.viaMirror && !d.loggedIn) {
+        // 经第三方镜像: 授权页与换 token 在镜像上走不通, 只剩个人令牌; 而令牌要经镜像校验, 得先许凭证经过镜像
+        // (不开的话校验请求被留在官方, 连不上, 只会等到超时)
+        h += '<div class="now-status attention"><b>' + T('现在经镜像连接 Bangumi') + '</b><span>' +
+          T('经镜像时授权登录走不通，只能用个人令牌登录。') + '</span></div>';
+        h += d.mirrorCred && tok ? tokenForm(d, false)
+          : '<div class="row"><button type="button" class="primary" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
+      } else {
+        h += '<div class="row"><button type="button" class="primary" data-login="1">' +
+          (d.loggedIn ? T('用手机连接 Bangumi') : T('用手机登录 Bangumi')) + '</button>' +
+          (direct ? '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button>' : '') +
+          '</div><p class="hint">' +
+          (direct ? T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。')
+            : T('在手机上打开 Bangumi 授权页，授权完电视就登录好了，电视上什么都不用做。')) + '</p>';
+        // 个人令牌: 不经过授权页
+        if (!d.loggedIn && direct) {
+          h += tok ? tokenForm(d, true) : '<div class="row"><button type="button" class="ghost" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
+        }
+        // 另一条路: 邮箱登录 / 注册 Animeko 账号 (同 App 登录页的邮箱登录, 不用浏览器)
+        if (!d.loggedIn && !direct) {
+          h += em ? emailFlow(d) : '<div class="row"><button type="button" class="ghost ic" data-acct="email">' + MAIL + T('用邮箱登录 / 注册') + '</button></div>';
+        }
       }
     }
     h += '</div>';
@@ -6516,6 +6529,69 @@ private val ACCOUNT_SCRIPT = """
       });
     }
     if (waiting) timer = setTimeout(load, 2000);
+  }
+  // 用手机授权之前先讲清楚: 授权完浏览器会停在一个打不开的页面 (回调是电视本机的地址, 手机上当然打不开),
+  // 不讲的话都以为登录失败了. 「知道了」那一下也是用户点的, 在里面开新页面不会被当成弹窗拦掉
+  function loginGuide(btn) {
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'login-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('用手机登录 Bangumi') + '</div><ol class="login-steps">' +
+      '<li>' + T('接下来会打开 Bangumi 的授权页：登录你的 Bangumi 账号，点「允许」。') + '</li>' +
+      '<li>' + T('授权完，浏览器会跳到一个打不开的页面（提示无法访问、连接被拒绝之类）。这是正常的，不是登录失败。') + '</li>' +
+      '<li>' + T('把那个打不开的页面的网址整个复制下来，回到这里粘贴，点「完成登录」。') + '</li></ol><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<button type="button" class="primary" data-ldlg="go">' + T('知道了，去授权') + '</button></div></div>';
+    d.addEventListener('click', function (e) {
+      if (e.target.closest('[data-ldlg="go"]')) { d.remove(); startLogin(btn); return; }
+      if (e.target === d || e.target.closest('[data-ldlg="close"]')) d.remove();
+    });
+    document.body.appendChild(d);
+  }
+  // 个人令牌登录的完整步骤. 经镜像时第一步是打开「登录与收藏同步也经过镜像」: 不开的话令牌校验被留在官方 (连不上),
+  // 只会等到超时 (测试用户实测, 打开之后就登上了). 那一步的按钮就是同意 —— 风险写在步骤里, 不再另弹确认
+  function tokenGuide(d) {
+    var needCred = !!(d.viaMirror && !d.mirrorCred);
+    var page = (d.tokenPages || [])[0] || 'https://next.bgm.tv/demo/access-token';
+    var link = '<a href="' + esc(page) + '" target="_blank" rel="noopener">' + esc(page.replace(/^https?:\/\//, '')) + '</a>';
+    var steps = [];
+    if (needCred) {
+      steps.push(T('打开「登录与收藏同步也经过镜像」，不然令牌校验发不出去。') +
+        '<span class="risk">' + T('打开后，令牌、收藏和观看进度都会经过第三方镜像，对方能看到并使用你的账号。点下面的「我了解风险，打开并继续」会直接打开这个选项，即表示你接受这个风险。') + '</span>');
+    }
+    steps.push(d.viaMirror
+      ? T('生成个人令牌：让手机临时开代理，或者换一个能打开 bgm.tv 的网络，打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。镜像网站上的登录页过不了人机验证，这一步只能在官网做。', link)
+      : T('生成个人令牌：打开 {0}，登录你的 Bangumi 账号，新建一个令牌，有效期建议选最长的。', link));
+    steps.push(T('复制生成的令牌，回到这里粘到「令牌」框，「有效期」选和刚才一样的天数，点「登录」。'));
+    steps.push(T('令牌到期后电视会退出登录，到时再生成一个新的粘进来就行。'));
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var dlg = document.createElement('div');
+    dlg.id = 'login-dlg';
+    dlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('用个人令牌登录') + '</div><ol class="login-steps">' +
+      steps.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol><div class="row">' +
+      '<button type="button" class="ghost" data-ldlg="close">' + T('取消') + '</button>' +
+      '<button type="button" class="primary" data-ldlg="go">' + (needCred ? T('我了解风险，打开并继续') : T('知道了')) + '</button></div></div>';
+    dlg.addEventListener('click', function (e) {
+      var go = e.target.closest('[data-ldlg="go"]');
+      if (go) {
+        if (!needCred) { dlg.remove(); openTokenForm(); return; }
+        go.disabled = true;
+        post('api/settings/bangumi/cred', { on: '1' }).then(function (r) {
+          toast(r.message);
+          dlg.remove();
+          if (r.ok) openTokenForm(); else load();
+        }).catch(function () { go.disabled = false; fail(); });
+        return;
+      }
+      if (e.target === dlg || e.target.closest('[data-ldlg="close"]')) dlg.remove();
+    });
+    document.body.appendChild(dlg);
+  }
+  function openTokenForm() {
+    tok = true;
+    load();
   }
   // 登录按钮 (账号卡片、评论与评分区): 点下去当场先开一个空白页, 等电视要来链接再让它跳过去 ——
   // 等请求回来再开新页面会被浏览器当成弹窗拦掉. 开不了新页面 (有的内置浏览器) 就在本页跳, 授权完按返回回来
@@ -6544,19 +6620,23 @@ private val ACCOUNT_SCRIPT = """
   }
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-login]');
-    if (b) { if (!b.disabled) startLogin(b); return; }
+    if (b) {
+      if (b.disabled) return;
+      // 经镜像时授权登录走不通 (评论与评分区的登录按钮也走这里): 指到账号卡片的个人令牌
+      if (lastData && lastData.viaMirror) { toast(T('现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录')); return; }
+      if (b.getAttribute('data-login') === 'tv') startLogin(b); else loginGuide(b);
+      return;
+    }
+    if (e.target.closest('[data-acct="token-guide"]')) {
+      e.preventDefault();
+      if (lastData) tokenGuide(lastData);
+      return;
+    }
     if (e.target.closest('[data-acct="cancel"]')) {
       post('api/account/login/cancel', {}).then(function (r) { toast(r.message); load(); }).catch(fail);
       return;
     }
     if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; nick = false; em = null; rerender(); return; }
-    if (e.target.closest('[data-acct="token"]')) {
-      tok = true;
-      rerender();
-      var tf = document.getElementById('acct-token');
-      if (tf) tf.elements.token.focus();
-      return;
-    }
     if (e.target.closest('[data-acct="token-close"]')) { tok = false; rerender(); return; }
     // 邮箱: 打开 / 收起 / 换个邮箱 / 重新发送
     if (e.target.closest('[data-acct="email"]')) {
