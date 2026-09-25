@@ -11,19 +11,23 @@ package me.him188.ani.app.domain.mediasource.web.captcha
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +61,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.domain.mediasource.web.LoadedPage
 import me.him188.ani.app.platform.Context
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import java.io.ByteArrayInputStream
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.seconds
@@ -79,17 +85,24 @@ class WebViewCaptchaBrowser private constructor(
     private val _isLoading = MutableStateFlow(false)
     override val isLoading: StateFlow<Boolean> get() = _isLoading
 
+    /** 渲染进程没了之后 [webView] 已被销毁, 下面各处都先看它, 不再碰那个 WebView. */
+    private val _isDead = MutableStateFlow(false)
+    override val isDead: StateFlow<Boolean> get() = _isDead
+
     private val interceptor = atomic<((String) -> InterceptDecision)?>(null)
     private val navigationInterceptor = atomic<((String) -> Boolean)?>(null)
 
-    override val userAgent: String
-        get() = webView.settings.userAgentString ?: WebSettings.getDefaultUserAgent(webView.context)
+    // 构造时 (Main 线程) 取一次: WebView 销毁后就不能再读它的设置
+    override val userAgent: String =
+        webView.settings.userAgentString ?: WebSettings.getDefaultUserAgent(webView.context)
 
     override suspend fun navigate(url: String) = withContext(Dispatchers.Main.immediate) {
+        if (_isDead.value) return@withContext
         webView.loadUrl(url)
     }
 
     override suspend fun currentPage(): LoadedPage? = withContext(Dispatchers.Main.immediate) {
+        if (_isDead.value) return@withContext null
         val currentUrl = webView.url ?: return@withContext null
         withTimeoutOrNull(2.seconds) {
             suspendCancellableCoroutine { cont ->
@@ -103,6 +116,7 @@ class WebViewCaptchaBrowser private constructor(
     }
 
     override suspend fun executeJavaScript(script: String) = withContext(Dispatchers.Main.immediate) {
+        if (_isDead.value) return@withContext
         webView.evaluateJavascript(script, null)
     }
 
@@ -158,6 +172,7 @@ class WebViewCaptchaBrowser private constructor(
         var viewWidth by remember { mutableFloatStateOf(0f) }
         var viewHeight by remember { mutableFloatStateOf(0f) }
         val density = LocalDensity.current
+        val isDead by _isDead.collectAsState()
         Box(
             modifier
                 .onSizeChanged { size ->
@@ -206,26 +221,29 @@ class WebViewCaptchaBrowser private constructor(
                     },
                 ),
         ) {
-            AndroidView(
-                factory = {
-                    webView.also { view ->
-                        (view.parent as? ViewGroup)?.removeView(view)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    autoFocusOnLoad = tvInputMode == TvWebInputMode.NativeFocus
-                    if (tvInputMode == TvWebInputMode.NativeFocus) {
-                        // 网页要能拿到焦点才谈得上方向键遍历与输入法
-                        view.isFocusable = true
-                        view.isFocusableInTouchMode = true
-                        view.requestFocus()
-                    }
-                },
-            )
-            // 只有光标这一档才画: 焦点遍历档下方向键全被 WebView 吃掉, 光标推不动
-            if (isTv && cursorX >= 0f && tvInputMode == TvWebInputMode.Cursor) {
-                TvCursorCanvas(cursorX, cursorY)
+            // 渲染进程没了: WebView 已从界面摘掉并销毁, 这里只剩空白, 由持有方 (见 isDead) 收场
+            if (!isDead) {
+                AndroidView(
+                    factory = {
+                        webView.also { view ->
+                            (view.parent as? ViewGroup)?.removeView(view)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { view ->
+                        autoFocusOnLoad = tvInputMode == TvWebInputMode.NativeFocus
+                        if (tvInputMode == TvWebInputMode.NativeFocus) {
+                            // 网页要能拿到焦点才谈得上方向键遍历与输入法
+                            view.isFocusable = true
+                            view.isFocusableInTouchMode = true
+                            view.requestFocus()
+                        }
+                    },
+                )
+                // 只有光标这一档才画: 焦点遍历档下方向键全被 WebView 吃掉, 光标推不动
+                if (isTv && cursorX >= 0f && tvInputMode == TvWebInputMode.Cursor) {
+                    TvCursorCanvas(cursorX, cursorY)
+                }
             }
         }
     }
@@ -252,7 +270,7 @@ class WebViewCaptchaBrowser private constructor(
             onExitRequest?.invoke()
             return true
         }
-        if (keyEvent.type != KeyEventType.KeyDown) return false
+        if (keyEvent.type != KeyEventType.KeyDown || _isDead.value) return false
 
         val repeatCount = (keyEvent.nativeKeyEvent as? android.view.KeyEvent)?.repeatCount ?: 0
         val baseStep = with(density) { 20.dp.toPx() }
@@ -345,12 +363,14 @@ class WebViewCaptchaBrowser private constructor(
      * 两个都发一次是不行的: 都生效时页面滚两倍, 然后被上面那条归位打回来.
      */
     private fun scrollPage(dx: Float, dy: Float) {
+        if (_isDead.value) return
         webView.evaluateJavascript(scrollScript(dx.toInt(), dy.toInt())) { scrolled ->
             if (scrolled?.trim('"') != "1") webView.scrollBy(dx.toInt(), dy.toInt())
         }
     }
 
     override fun close() {
+        if (_isDead.value) return // 已经销毁过
         webView.post {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
@@ -359,6 +379,20 @@ class WebViewCaptchaBrowser private constructor(
 
     private fun setup() {
         webView.webViewClient = object : WebViewClient() {
+            /**
+             * 不处理的话, 渲染进程一没 (系统为腾内存把它杀掉, 或它自己崩溃) WebView 会把整个应用一起结束.
+             * 这个 WebView 已经不能再用: 从界面上摘掉并销毁, 标记失效, 由持有方关掉或重建.
+             */
+            @RequiresApi(Build.VERSION_CODES.O)
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                logger.warn { "WebView render process gone (crashed=${detail.didCrash()}), dropping this browser" }
+                _isLoading.value = false
+                _isDead.value = true
+                (view.parent as? ViewGroup)?.removeView(view)
+                view.destroy()
+                return true
+            }
+
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 _isLoading.value = true
                 super.onPageStarted(view, url, favicon)
@@ -431,6 +465,8 @@ class WebViewCaptchaBrowser private constructor(
     }
 
     companion object {
+        private val logger = logger<WebViewCaptchaBrowser>()
+
         /**
          * 从视口中心那个元素往上找**最近的可滚祖先**并滚它; 找不到就滚文档.
          *
