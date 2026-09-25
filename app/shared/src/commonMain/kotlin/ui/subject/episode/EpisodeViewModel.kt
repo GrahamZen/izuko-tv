@@ -1325,8 +1325,13 @@ class EpisodeViewModel(
         matchingDanmakuProviderId.value = null
     }
 
+    @OptIn(UnsafeEpisodeSessionApi::class)
     fun onMatchingDanmakuComplete(provider: DanmakuProviderId, result: List<DanmakuFetchResult>) {
         episodeDanmakuLoader.overrideResults(provider, result)
+        // 之后在这一集发的弹幕也发到手动选的库, 见 DanmakuRepository.rememberManualMatch
+        backgroundScope.launch {
+            danmakuRepository.rememberManualMatch(fetchPlayState.getCurrentEpisodeId(), result)
+        }
         cancelMatchingDanmaku()
     }
 

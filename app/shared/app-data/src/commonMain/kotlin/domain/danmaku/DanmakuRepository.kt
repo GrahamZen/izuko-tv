@@ -57,6 +57,12 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 /**
+ * 这一集还没匹配到 dandanplay 的弹幕库, 发不了弹幕 (见 [DanmakuRepository.post]): 弹幕加载出来 (或手动匹配) 之后才知道发到哪个库.
+ */
+class DanmakuNotMatchedException(episodeId: Int) :
+    IllegalStateException("尚未匹配到弹幕库, 无法发送弹幕 (episodeId=$episodeId)")
+
+/**
  * 管理多个弹幕源 [DanmakuProvider]
  */
 class DanmakuRepository(
@@ -77,6 +83,14 @@ class DanmakuRepository(
      * 在匹配成功时顺手记账。没记到就发不了 (界面提示"先等弹幕加载完")。
      */
     private val dandanplayEpisodeIds = mutableMapOf<Int, Long>()
+
+    /**
+     * 手动匹配选定的弹幕库 (见 [rememberManualMatch]), 发弹幕时优先于 [dandanplayEpisodeIds].
+     *
+     * 单独记: 播放页重新订阅弹幕 (切全屏、调弹幕源开关) 会再跑一遍自动匹配, 把 [dandanplayEpisodeIds] 写回自动选的库,
+     * 而屏幕上显示的仍是手动选的那个.
+     */
+    private val manualEpisodeIds = mutableMapOf<Int, Long>()
 
     /**
      * 远程弹幕源. Ani 自己的弹幕池 (以及往里发弹幕) 随 Ani 服务器一起没了, 现在只剩 dandanplay.
@@ -100,6 +114,14 @@ class DanmakuRepository(
         return remoteProviders
             .firstOrNull { it is MatchingDanmakuProvider && it.providerId == providerId }
             ?.let { DanmakuFetcher(it) }
+    }
+
+    /**
+     * 用户为 [episodeId] 手动匹配了弹幕库: 之后在这一集发的弹幕发到这个库, 而不是自动匹配的那个 ——
+     * 用户正是嫌自动匹配的不对才去手动匹配的.
+     */
+    fun rememberManualMatch(episodeId: Int, results: List<DanmakuFetchResult>) {
+        results.firstNotNullOfOrNull { it.matchInfo.sourceEpisodeId }?.let { manualEpisodeIds[episodeId] = it }
     }
 
     fun fetchFromAllRemotes(request: DanmakuFetchRequest): Flow<List<DanmakuFetchResult>> {
@@ -201,8 +223,8 @@ class DanmakuRepository(
     ): DanmakuInfo {
         val provider = remoteProviders.filterIsInstance<DandanplayDanmakuProvider>().firstOrNull()
             ?: throw UnsupportedOperationException("No danmaku provider that supports sending")
-        val sourceEpisodeId = dandanplayEpisodeIds[episodeId]
-            ?: throw IllegalStateException("尚未匹配到弹幕库, 无法发送弹幕 (episodeId=$episodeId)")
+        val sourceEpisodeId = manualEpisodeIds[episodeId] ?: dandanplayEpisodeIds[episodeId]
+            ?: throw DanmakuNotMatchedException(episodeId)
         return try {
             provider.postDanmaku(sourceEpisodeId, danmaku, userName).also {
                 logger.info { "Posted danmaku to dandanplay library $sourceEpisodeId (episodeId=$episodeId)" }

@@ -245,6 +245,8 @@ private fun part2() = listOf(
     RemoteText("弹幕太长了（最多 {0} 个字）", "Danmaku is too long (max {0} characters)", "彈幕太長了（最多 {0} 個字）", "彈幕太長了（最多 {0} 個字）"),
     RemoteText("发送失败", "Couldn't send", "發送失敗", "傳送失敗"),
     RemoteText("已发送", "Sent", "已發送", "已傳送"),
+    RemoteText("这一集还没匹配到弹幕库，等电视上的弹幕加载出来再发", "This episode has no danmaku library matched yet. Wait for the danmaku to load on the TV, then send.", "這一集還沒匹配到彈幕庫，等電視上的彈幕載入出來再發", "這一集還沒匹配到彈幕庫，等電視上的彈幕載入出來再傳送"),
+    RemoteText("弹弹play 拒绝了这次发送，稍后再试", "dandanplay rejected this danmaku. Try again later.", "彈彈play 拒絕了這次發送，稍後再試", "彈彈play 拒絕了這次傳送，稍後再試"),
     RemoteText("读取收藏信息失败，请重试", "Couldn't load collection info. Please try again.", "讀取收藏信息失敗，請重試", "讀取收藏資訊失敗，請重試"),
     RemoteText("无效的收藏状态", "Invalid collection status", "無效的收藏狀態", "無效的收藏狀態"),
     RemoteText("设置失败", "Couldn't update", "設置失敗", "設定失敗"),
