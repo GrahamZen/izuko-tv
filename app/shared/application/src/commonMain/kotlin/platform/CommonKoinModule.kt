@@ -31,7 +31,9 @@ import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
@@ -91,6 +93,8 @@ import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
+import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
 import me.him188.ani.app.domain.foundation.BangumiMirrorFeature
@@ -215,6 +219,16 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             scope = coroutineScope,
         )
     }
+    single<TmdbImageEndpoints> {
+        val settings = get<SettingsRepository>()
+        TmdbImageEndpoints(
+            selection = settings.tmdbImageEndpoint,
+            listCache = settings.tmdbImageHostCache,
+            // 惰性: HttpClientProvider 反过来要装经本对象换入口的处理器, 见 RepoHostedList 的构造参数
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     single<BangumiEndpointProvider> {
         val settings = get<SettingsRepository>().bangumiEndpointSettings
@@ -245,6 +259,8 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                 get<BangumiEndpointProvider>().let {
                     BangumiMirrorFeatureHandler(it.routing, it::reportSettled, it::reportOriginUnreachable)
                 },
+                // 可换入口的服务 (TMDB 图片…): 请求时换到选定 / 连得上的入口
+                AlternativeEndpointsFeatureHandler(listOf(get<TmdbImageEndpoints>())),
                 UseBangumiTokenFeatureHandler(
                     sessionManager.sessionFlow.map {
                         (it as? AccessTokenSession)?.tokens?.bangumiAccessToken
@@ -450,6 +466,15 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
+    single<TmdbSubjectMapRepository> {
+        TmdbSubjectMapRepository(
+            cache = getContext().dataStores.tmdbSubjectMapStore,
+            mapFile = getContext().files.dataDir.resolve("tmdb-subject-map.tsv"),
+            client = { get<HttpClientProvider>().get() },
+            enabled = get<SettingsRepository>().tmdbImagesDisabled.flow.map { !it },
+            scope = coroutineScope,
+        )
+    }
     single<TmdbImageService> {
         // 系列索引传单例: 各建一份的话同一条目的 BFS 会算两遍, 见 TmdbImageService.seriesIndexService
         TmdbImageService(
@@ -457,6 +482,9 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             getContext().dataStores.tmdbImageCacheStore,
             disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
             injectedSeriesIndexService = get(),
+            subjectMap = get(),
+            // 用时再取: 构造时就要 BangumiEndpointProvider 会与 HttpClientProvider 绕成环
+            bangumiRouting = { get<BangumiEndpointProvider>().currentRouting },
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
@@ -687,6 +715,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                     UserAgentFeature.withValue(userAgent),
                     ServerListFeature.withValue(ServerListFeatureConfig.Default),
                     BangumiMirrorFeature.withValue(true),
+                    AlternativeEndpointsFeature.withValue(true),
                     ConvertSendCountExceedExceptionFeature.withValue(true),
                 ),
             ),
@@ -699,6 +728,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                 UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
                 ServerListFeature.withValue(ServerListFeatureConfig.Default),
                 BangumiMirrorFeature.withValue(true),
+                AlternativeEndpointsFeature.withValue(true),
                 ConvertSendCountExceedExceptionFeature.withValue(true),
             ),
         ),

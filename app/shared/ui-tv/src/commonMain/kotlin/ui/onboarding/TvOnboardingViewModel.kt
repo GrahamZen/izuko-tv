@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.onboarding
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,11 +22,16 @@ import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.EndpointSelectionMode
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.CandidatesCheck
 import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.Reachability
+import me.him188.ani.app.domain.foundation.ReachabilityProbe
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.withValue
@@ -38,73 +44,125 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 /**
- * 首次启动引导的第一步: 检测连 Bangumi 的网络并选连接方式 (必须做).
+ * 首次启动引导的第一步: 检测网络并选择怎么连 (必须做). 两页 —— Bangumi 连接方式、TMDB 图片 —— 共用**同一次检测**:
+ * 一建就把两项一起测上 (那时还在欢迎页, 主页没加载, 不抢带宽), 翻到哪一页都已经有结果.
  */
 class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     private val settingsRepository: SettingsRepository by inject()
     private val httpClientProvider: HttpClientProvider by inject()
     private val mirrorListRepository: BangumiMirrorListRepository by inject()
+    private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
 
     /**
-     * 检测用的客户端**不带镜像改写** (只给 UA): 带着的话测镜像会被换回原站. 代理照常生效 ——
-     * 每次借用都取当前的代理设置, 所以同一个实例在用户改了代理之后也会用上新代理.
+     * 检测用的客户端**不带任何地址改写** (只给 UA): 带着的话测镜像会被换回原站, 测图片入口会被换成选定的那个.
+     * 代理照常生效 —— 每次借用都取当前的代理设置, 所以同一个实例在用户改了代理之后也会用上新代理.
      */
     private val probeClient = httpClientProvider.get(setOf(UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI)))
-    private val probe = BangumiConnectivityProbe({ probeClient }, mirrorListRepository.mirrors)
+    private val bangumiProbe = BangumiConnectivityProbe({ probeClient }, mirrorListRepository.mirrors)
+    private val reachabilityProbe = ReachabilityProbe({ probeClient })
 
-    // 从登录那一步返回时本页是新建的: 先摆上这次启动已经测完的结果 (选项不用再锁一遍), 后台照常重测
-    private val _probeResult = MutableStateFlow(lastCompleted ?: BangumiConnectivityProbe.Result())
-    val probeResult: StateFlow<BangumiConnectivityProbe.Result> = _probeResult.asStateFlow()
-    private var probeJob: Job? = null
+    /** Bangumi 那一页: 官方与镜像. */
+    val bangumi = OnboardingCheck(
+        backgroundScope, BangumiConnectivityProbe.Result(), { it.completed }, bangumiProbe::run, rememberedBangumi,
+    )
 
-    /**
-     * 连接方式要等**第一次**测完才能选 (检测不能跳过). 之后的重测 (按了重新检测 / 改了代理) 期间照样能选:
-     * 那时焦点可能正停在某个选项上, 临时禁用会让它当场丢焦点.
-     */
-    val optionsUnlocked: StateFlow<Boolean> = _probeResult
-        .map { it.completed }
-        .runningFold(lastCompleted != null) { unlocked, completed -> unlocked || completed }
-        .stateIn(backgroundScope, SharingStarted.Eagerly, lastCompleted != null)
+    /** TMDB 图片那一页: 清单里的每个入口. */
+    val tmdbImages = OnboardingCheck(
+        backgroundScope, CandidatesCheck(), { it.completed },
+        { reachabilityProbe.checkCandidates(tmdbImageEndpoints) }, rememberedTmdbImages,
+    )
 
     /** 代理设置变了 (用户在手机或电视设置里存了代理). 除了自动重测, 页面还据此关掉「设置代理」弹窗. */
     val proxyChanges: Flow<Any?> get() = httpClientProvider.configurationFlow.drop(1)
 
     init {
-        recheck(quiet = lastCompleted != null)
+        // 从登录那一步返回时本页是新建的: 先摆上这次启动已经测完的结果 (选项不用再锁一遍), 后台静默重测
+        bangumi.restart(quiet = bangumi.hasRemembered)
+        tmdbImages.restart(quiet = tmdbImages.hasRemembered)
         // 用户在手机上 (或电视设置里) 改了代理: 自动重测, 不用回来再按一次
         backgroundScope.launch {
             proxyChanges.collect { recheck() }
         }
     }
 
-    /** @param quiet 只在测完那一刻更新 (已经摆着上次的结果时, 不让它中途变回「检测中」). */
-    fun recheck(quiet: Boolean = false) {
-        probeJob?.cancel()
-        probeJob = backgroundScope.launch {
-            probe.run().collect {
-                if (quiet && !it.completed) return@collect
-                _probeResult.value = it
-                if (it.completed) lastCompleted = it
-            }
-        }
+    /** 重新检测: 两项一起重测 (两页的「重新检测」是同一次检测). */
+    fun recheck() {
+        bangumi.restart(quiet = false)
+        tmdbImages.restart(quiet = false)
     }
 
     private companion object {
         /** 这个进程里最近一次测完的结果. */
-        var lastCompleted: BangumiConnectivityProbe.Result? = null
+        val rememberedBangumi = OnboardingCheck.Remembered<BangumiConnectivityProbe.Result>()
+        val rememberedTmdbImages = OnboardingCheck.Remembered<CandidatesCheck>()
     }
 
     /**
      * 存下选的连接方式, 返回登录那一步要不要按「经镜像」处理: 选了用镜像, 或选了官方连不上时用镜像
      * 而刚才测出来官方连不上 —— 后者还没有请求落到镜像上, 但授权登录注定失败.
-     * 存完才返回: 调用方接着就换主页, 主页的请求要按新设置走.
+     * 存完才返回: 调用方接着就换页, 之后的请求要按新设置走.
      */
     suspend fun chooseMode(mode: BangumiEndpointMode): Boolean {
         settingsRepository.bangumiEndpointSettings.update { copy(mode = mode) }
-        val result = _probeResult.value
+        val result = bangumi.result.value
         return mode == BangumiEndpointMode.MIRROR || (mode == BangumiEndpointMode.AUTO &&
-                result.origin == BangumiConnectivityProbe.Reachability.Unreachable &&
-                result.mirrorReachability is BangumiConnectivityProbe.Reachability.Reachable)
+                result.origin == Reachability.Unreachable &&
+                result.mirrorReachability is Reachability.Reachable)
+    }
+
+    /**
+     * TMDB 图片: [load] = 自动选择入口 (按清单顺序用第一个连得上的), 否则不加载 (背景图改用条目封面).
+     * 存完才返回, 理由同 [chooseMode].
+     */
+    suspend fun chooseTmdbImages(load: Boolean) {
+        if (load) {
+            settingsRepository.tmdbImageEndpoint.update { copy(mode = EndpointSelectionMode.AUTO) }
+        }
+        settingsRepository.tmdbImagesDisabled.set(!load)
+    }
+}
+
+/**
+ * 引导里的一项检测: 结果、「第一次测完才能选」, 以及这个进程里上次测完的结果 ([Remembered]) ——
+ * 从登录层返回、本页重建时先摆上它, 后台静默重测.
+ */
+class OnboardingCheck<R>(
+    private val scope: CoroutineScope,
+    initial: R,
+    private val completed: (R) -> Boolean,
+    private val run: () -> Flow<R>,
+    private val remembered: Remembered<R>,
+) {
+    class Remembered<R> {
+        var value: R? = null
+    }
+
+    private val _result = MutableStateFlow(remembered.value ?: initial)
+    val result: StateFlow<R> = _result.asStateFlow()
+
+    val hasRemembered: Boolean get() = remembered.value != null
+
+    /**
+     * 选项要等**第一次**测完才能按 (检测不能跳过). 之后的重测 (按了重新检测 / 改了代理) 期间照样能选:
+     * 那时焦点可能正停在某个选项上, 临时禁用会让它当场丢焦点.
+     */
+    val unlocked: StateFlow<Boolean> = _result
+        .map(completed)
+        .runningFold(hasRemembered) { unlocked, completed -> unlocked || completed }
+        .stateIn(scope, SharingStarted.Eagerly, hasRemembered)
+
+    private var job: Job? = null
+
+    /** @param quiet 只在测完那一刻更新 (已经摆着上次的结果时, 不让它中途变回「检测中」). */
+    fun restart(quiet: Boolean) {
+        job?.cancel()
+        job = scope.launch {
+            run().collect {
+                if (quiet && !completed(it)) return@collect
+                _result.value = it
+                if (completed(it)) remembered.value = it
+            }
+        }
     }
 }
 

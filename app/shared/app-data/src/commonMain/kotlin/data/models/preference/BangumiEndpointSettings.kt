@@ -51,24 +51,6 @@ data class BangumiEndpointSettings(
     }
 }
 
-/**
- * 远程拉到的镜像清单的本地缓存.
- *
- * 与 [BangumiEndpointSettings] 分开存: 那是用户的选择, 这是缓存 —— 混在一起会让"备份/恢复设置"
- * 把一份过期的清单也搬过去.
- */
-@Serializable
-data class BangumiMirrorCache(
-    /** 已归一化的镜像根域名, 按优先级排. 空 = 还没拉到过, 用内置那份. */
-    val mirrors: List<String> = emptyList(),
-    val updatedAt: Long = 0,
-    @Suppress("PropertyName") @Transient val _placeHolder: Int = 0,
-) {
-    companion object {
-        val Default = BangumiMirrorCache()
-    }
-}
-
 enum class BangumiEndpointMode {
     /** 只连 bangumi 官方地址, 不通就是不通. */
     DIRECT,

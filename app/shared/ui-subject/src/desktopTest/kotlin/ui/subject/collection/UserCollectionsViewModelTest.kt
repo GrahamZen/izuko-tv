@@ -36,7 +36,6 @@ import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
-import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -53,6 +52,8 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.data.models.preference.EndpointSelection
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.network.EpisodeServiceImpl
@@ -188,6 +189,8 @@ class UserCollectionsViewModelTest {
 
         override val danmakuEnabled: Settings<Boolean> by lazy { error("not implemented") }
         override val tmdbImagesDisabled: Settings<Boolean> by lazy { error("not implemented") }
+        override val tmdbImageEndpoint: Settings<EndpointSelection> by lazy { error("not implemented") }
+        override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("not implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("not implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("not implemented") }
@@ -195,7 +198,7 @@ class UserCollectionsViewModelTest {
         override val profileSettings: Settings<ProfileSettings> by lazy { error("not implemented") }
         override val proxySettings: Settings<ProxySettings> by lazy { error("not implemented") }
         override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("not implemented") }
-        override val bangumiMirrorCache: Settings<BangumiMirrorCache> by lazy { error("not implemented") }
+        override val bangumiMirrorCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val mediaCacheSettings: Settings<MediaCacheSettings> by lazy { error("not implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("not implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("not implemented") }
