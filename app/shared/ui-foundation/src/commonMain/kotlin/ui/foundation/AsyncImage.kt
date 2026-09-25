@@ -41,6 +41,7 @@ import com.github.panpf.sketch.asBitmapOrNull
 import com.github.panpf.sketch.cache.CachePolicy
 import com.github.panpf.sketch.cache.DiskCache
 import com.github.panpf.sketch.cache.MemoryCache
+import com.github.panpf.sketch.cache.internal.LruMemoryCache
 import com.github.panpf.sketch.decode.supportSvg
 import com.github.panpf.sketch.painter.asEquitable
 import com.github.panpf.sketch.rememberAsyncImagePainter
@@ -118,7 +119,11 @@ fun rememberAniSketchInstance(client: ScopedHttpClient): Sketch {
         createDefaultSketch(context, client, appCacheRoot.resolve(ANI_IMAGE_CACHE_DIRECTORY))
     }
     DisposableEffect(sketch) {
-        onDispose(sketch::shutdown)
+        val stopWatchingMemory = sketch.clearMemoryCacheOnCriticalMemory(context)
+        onDispose {
+            stopWatchingMemory()
+            sketch.shutdown()
+        }
     }
     return sketch
 }
@@ -554,11 +559,9 @@ internal fun createDefaultSketch(
     cacheDirectory: Path? = null,
 ): Sketch = Sketch.Builder(context).apply {
     componentLoaderEnabled(false)
-    // 内存缓存**保留** (走 sketch 默认的 LRU: Android 上占堆的 25~33%), 与上游不同 ——
-    // 上游换成了 DisabledMemoryCache, 理由是"别让请求把解码后的位图留在内存里".
-    // 但电视上这个代价太大: 一张全屏 backdrop/剧照解一次要几十毫秒, 而遥控器导航天然是"来回走"
-    // (A→B→A 极常见), 没有内存缓存就每次都从磁盘字节重解码 —— 网格滚动与 hero 换图肉眼可见地卡.
-    // fork 在 coil 时代就是显式开着的 (maxSizePercent), 那条注释记的是同一件事.
+    // 遥控器导航天然是"来回走" (A→B→A 极常见), 没有内存缓存就每次都从磁盘字节重解码 —— 网格滚动与 hero
+    // 换图肉眼可见地卡. 上限按设备总内存定, 见 aniImageMemoryCacheSize
+    aniImageMemoryCacheSize(context)?.let { memoryCache(LruMemoryCache(it)) }
     downloadCacheOptions(
         DiskCache.Options(
             directory = cacheDirectory?.resolve("download"),
@@ -573,7 +576,7 @@ internal fun createDefaultSketch(
     globalImageOptions(
         ImageOptions {
             downloadCachePolicy(CachePolicy.ENABLED)
-            memoryCachePolicy(CachePolicy.ENABLED) // 见上: fork 保留内存缓存
+            memoryCachePolicy(CachePolicy.ENABLED)
 
             // Result cache re-encodes transformed images. Keep the original bytes in the LRU
             // download cache instead so disk caching cannot reduce image quality.
