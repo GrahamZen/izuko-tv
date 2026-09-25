@@ -11,8 +11,10 @@ package me.him188.ani.app.domain.mediasource.web.captcha
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import me.him188.ani.app.domain.mediasource.web.LoadedPage
 
 /**
@@ -64,6 +66,12 @@ interface CaptchaBrowser : AutoCloseable {
      * 是否正在加载页面. 供交互对话框显示进度条.
      */
     val isLoading: StateFlow<Boolean>
+
+    /**
+     * 浏览器已经不能再用了 (Android: WebView 的渲染进程被系统回收或崩溃). 之后的导航与脚本都是空操作,
+     * 持有方应当关掉它, 需要时重建.
+     */
+    val isDead: StateFlow<Boolean> get() = NeverDead
 
     suspend fun navigate(url: String)
 
@@ -158,6 +166,8 @@ enum class TvWebInputMode {
      */
     NativeFocus,
 }
+
+private val NeverDead: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
 
 interface CaptchaBrowserFactory {
     /**
