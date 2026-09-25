@@ -348,8 +348,8 @@ class TmdbImageService(
     /**
      * 代理设置页的连通性探测 —— **接口那一半**.
      *
-     * 接口与图片本体是两个域名 (`api.tmdb.org` / `image.tmdb.org`), 在墙内**各自独立被墙**,
-     * 而且方向常常相反: `api.themoviedb.org` 对大陆默认不通, 图床走 CDN 却正常 (issue #7 定论).
+     * 接口与图片本体是两个域名 (`api.tmdb.org` / `image.tmdb.org`), 在墙内**各自独立被墙**:
+     * `api.themoviedb.org` 对大陆默认不通 (issue #7 定论), 图床则按运营商不同 (见 [TmdbImageEndpoints]).
      * 所以这两半**分成两项各自出结果** —— 合成一个红叉的话, 用户分不清"挂代理只需覆盖接口"
      * 和"整个 TMDB 都不通", 而电视上导不出日志, 设置页那一行是唯一的自助反馈途径.
      *
@@ -407,20 +407,21 @@ class TmdbImageService(
     /**
      * 代理设置页的连通性探测 —— **图片 CDN 那一半**, 与 [testApiConnection] 各自独立出结果.
      *
-     * 只看能否拿到 HTTP 响应, 不看状态码 (见 [IMAGE_PROBE_URL]); 被墙的表现是连不上或超时.
+     * 只看能否拿到 HTTP 响应, 不看状态码 (见 [TmdbImageEndpoints.PROBE_PATH]); 被墙的表现是连不上或超时.
+     * 测的是**应用此刻取图走的路**: 请求照常经过入口改写与回落 (见 [TmdbImageEndpoints]), 日志里记下实际落到哪个入口.
      * 不检查 token: 图床是公开 CDN, 没 token 也该照常通 —— 这样"没配 token"就只让接口那项变红,
      * 两项一对照就能看出是配置问题而不是网络问题.
      */
     suspend fun testImageConnection(): Boolean = withContext(ioDispatcher) {
         val mark = TimeSource.Monotonic.markNow()
         try {
-            client.use {
+            val host = client.use {
                 head(IMAGE_PROBE_URL) {
                     shortConnectTimeout()
                     expectSuccess = false
-                }
+                }.call.request.url.host
             }
-            logger.info { "TMDB image CDN test: ok in ${mark.elapsedNow().inWholeMilliseconds}ms" }
+            logger.info { "TMDB image CDN test: ok via $host in ${mark.elapsedNow().inWholeMilliseconds}ms" }
             true
         } catch (e: CancellationException) {
             throw e
@@ -2509,8 +2510,7 @@ class TmdbImageService(
          *
          * 主用别名的原因: `api.themoviedb.org` 在中国大陆基本连不上 (TCP 超时, 不是 DNS
          * 投毒 —— 报告者开了加密 DNS 也救不回来, 家宽和移动流量都一样), 而封锁按 SNI 域名
-         * 粒度做, 换个域名就绕开了. 图床 `image.tmdb.org` 一直是通的, 所以只要 API 能通,
-         * 图就能出来 (issue #7).
+         * 粒度做, 换个域名就绕开了 (issue #7). 图床同理, 见 [TmdbImageEndpoints].
          *
          * 不删掉 `api.themoviedb.org`: 别名是官方不宣传的历史域名, 可能下线或以后也被墙,
          * 留作回退. 见 [getApi].
@@ -2519,20 +2519,10 @@ class TmdbImageService(
             "https://api.tmdb.org/3",
             "https://api.themoviedb.org/3",
         )
-        private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w1280"
+        private const val IMAGE_BASE_URL = TmdbImageEndpoints.CANONICAL_BASE_URL + "/t/p/w1280"
 
-        /**
-         * 图床连通性探测用的真实图片 (w92 档, 约 9 KB).
-         *
-         * 不探裸目录 `t/p/w1280`: 那个路径边缘不缓存, 每次都回源, 实测要 2.5 秒才吐一个 404,
-         * 还偶发 `Connection reset` —— 一次探测两个请求就占掉 5 秒, 探测本身成了设置页
-         * 那一行慢的主因 (issue #7 报告者日志). 真实图片命中边缘缓存, 快且稳, 顺带验证了
-         * 图片确实下得下来.
-         *
-         * 这张图哪天被换掉也不影响判定: 这里只看能否拿到 HTTP 响应, 不看状态码 —— 404
-         * 同样说明域名是通的, 被墙才会连不上或超时.
-         */
-        private const val IMAGE_PROBE_URL = "https://image.tmdb.org/t/p/w92/rBOnrVlck7BIlGeWVlzYiZeg4l2.jpg"
+        /** 图床连通性探测用的真实图片, 见 [TmdbImageEndpoints.PROBE_PATH]. */
+        private const val IMAGE_PROBE_URL = TmdbImageEndpoints.CANONICAL_BASE_URL + TmdbImageEndpoints.PROBE_PATH
         private const val GENRE_ANIMATION = 16
         private const val BANGUMI_API_BASE_URL = "https://api.bgm.tv"
         private const val BGM_SUBJECT_TYPE_ANIME = 2
@@ -2584,7 +2574,7 @@ class TmdbImageService(
          * 消费端按用途降档: 选集卡片 [tmdbStillCardSizeUrl] (w780), 全屏 hero 背景
          * [tmdbStillHeroSizeUrl] (w1280) —— 都不直接解码原图.
          */
-        private const val STILL_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
+        private const val STILL_IMAGE_BASE_URL = TmdbImageEndpoints.CANONICAL_BASE_URL + "/t/p/original"
     }
 }
 

@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,7 +73,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
-import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe.Reachability
+import me.him188.ani.app.data.models.preference.EndpointUrls
+import me.him188.ani.app.domain.foundation.Reachability
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
@@ -90,6 +92,18 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_network_bangumi_auto
 import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
+import me.him188.ani.app.ui.lang.settings_network_endpoint_auto
+import me.him188.ani.app.ui.lang.settings_network_tmdb_images_disable
+import me.him188.ani.app.ui.lang.tv_onboarding_images_auto_description
+import me.him188.ani.app.ui.lang.tv_onboarding_images_choose
+import me.him188.ani.app.ui.lang.tv_onboarding_images_description
+import me.him188.ani.app.ui.lang.tv_onboarding_images_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_images_off_description
+import me.him188.ani.app.ui.lang.tv_onboarding_images_summary_checking
+import me.him188.ani.app.ui.lang.tv_onboarding_images_summary_none
+import me.him188.ani.app.ui.lang.tv_onboarding_images_summary_offline
+import me.him188.ani.app.ui.lang.tv_onboarding_images_summary_ok
+import me.him188.ani.app.ui.lang.tv_onboarding_images_title
 import me.him188.ani.app.ui.lang.tv_onboarding_login_description
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done_plain
@@ -158,8 +172,9 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 /**
  * 首次启动引导 (没做过才出现, 做完不再出现, 见 `TvOnboardingGate`): 先是欢迎页 (图标 + 接下来要做哪三步), 然后三步:
  *
- * 1. **检测网络** (本页, 导航里的一页): 官方与镜像各连一次, 按结果推荐连接方式. 第一次测完之前选项不能按 ——
- *    这一步不能跳过; 测完必须选一个才往下走. 用户在手机上存了代理会自动重测.
+ * 1. **检测网络** (本页, 导航里的一页): 分两页 —— Bangumi 连接方式、TMDB 图片 —— 共用同一次检测 (见 [TvOnboardingViewModel]),
+ *    按结果推荐怎么连. 每一页第一次测完之前选项不能按 —— 这一步不能跳过; 测完必须选一个才往下走.
+ *    用户在手机上存了代理会自动重测.
  * 2. **手机遥控** 与 3. **登录** ([TvOnboardingLoginHost], 盖在主页上的全屏层): 选好连接方式就换成主页, 主页在这一层下面
  *    照常加载, 做完 (或跳过登录) 出来就是加载好的探索页. 检测那一步不提前加载主页: 那一波请求会和检测抢带宽, 把好网络测成连不上.
  *    手机遥控单独一页讲清楚扫码能干什么 —— 只在登录那步给码的话, 不登录的人不知道还有控制台.
@@ -178,8 +193,13 @@ fun TvOnboardingPage(
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf(false) }
     var showProxyDialog by remember { mutableStateOf(false) }
-    // 从登录层按返回回来的不再看欢迎页
+    // 从登录层按返回回来的不再看欢迎页, 直接回到检测网络的最后一页 (登录层这时还盖着, request 非空)
     var welcome by rememberSaveable { mutableStateOf(!TvOnboardingLogin.welcomeSeen) }
+    var page by rememberSaveable {
+        mutableStateOf(if (TvOnboardingLogin.request.value != null) NetworkPage.Images else NetworkPage.Bangumi)
+    }
+    // 选 Bangumi 连接方式时判定的「经镜像」(见 TvOnboardingViewModel.chooseMode), 图片那一页选完一起交出去
+    var assumeViaMirror by rememberSaveable { mutableStateOf(TvOnboardingLogin.request.value ?: false) }
     // 用户在手机 / 电视设置里存了代理: 关掉弹窗, 让他看到重测
     LaunchedEffect(vm) { vm.proxyChanges.collect { showProxyDialog = false } }
     // 从登录层按返回回来的: 本页回到栈顶后先画出一帧再撤登录层, 不然两者之间会露出底下的主页.
@@ -217,25 +237,54 @@ fun TvOnboardingPage(
             )
             return@OnboardingSurface
         }
-        NetworkStep(
-            vm,
-            focus,
-            onChoose = { mode ->
-                // 存设置要一小会儿, 连按两下别换两次页
-                if (!choosing) {
-                    choosing = true
-                    scope.launch { onModeChosen(vm.chooseMode(mode)) }
-                }
-            },
-            onOpenProxy = { showProxyDialog = true },
-        )
+        // 两页各自一份组合: 换页时焦点按新一页的规矩重新送 (见 CheckStep)
+        key(page) {
+            when (page) {
+                NetworkPage.Bangumi -> BangumiStep(
+                    vm,
+                    focus,
+                    onChoose = { mode ->
+                        // 存设置要一小会儿, 连按两下别存两次
+                        if (!choosing) {
+                            choosing = true
+                            scope.launch {
+                                assumeViaMirror = vm.chooseMode(mode)
+                                page = NetworkPage.Images
+                                choosing = false
+                            }
+                        }
+                    },
+                    onOpenProxy = { showProxyDialog = true },
+                )
+
+                NetworkPage.Images -> TmdbImagesStep(
+                    vm,
+                    focus,
+                    onChoose = { load ->
+                        if (!choosing) {
+                            choosing = true
+                            scope.launch {
+                                vm.chooseTmdbImages(load)
+                                onModeChosen(assumeViaMirror)
+                            }
+                        }
+                    },
+                    onOpenProxy = { showProxyDialog = true },
+                )
+            }
+        }
     }
 
-    // 检测那一步按返回回欢迎页. 欢迎页: 从登录层返回来的, 本页下面压着主页, 返回键吞掉 —— 不然弹出本页就露出主页,
-    // 连接方式都没选就离开了引导; 全新启动时下面没有别的页, 不接, 照常退出应用 (下次打开还是从引导开始)
+    // 检测网络的第二页按返回回第一页, 第一页回欢迎页. 欢迎页: 从登录层返回来的, 本页下面压着主页, 返回键吞掉 ——
+    // 不然弹出本页就露出主页, 连接方式都没选就离开了引导; 全新启动时下面没有别的页, 不接, 照常退出应用
+    // (下次打开还是从引导开始)
     val navigator = LocalNavigator.current
     BackHandler(enabled = !welcome || navigator.backStack.size > 1) {
-        if (!welcome) welcome = true
+        when {
+            welcome -> {}
+            page == NetworkPage.Images -> page = NetworkPage.Bangumi
+            else -> welcome = true
+        }
     }
 
     if (showProxyDialog) {
@@ -423,88 +472,199 @@ private fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content: 
     }
 }
 
-private enum class OnboardingFocus : TvFocusKey { Welcome, Next, Auto, Mirror, Direct, Proxy, Recheck, TvLogin, Skip, Start }
+private enum class OnboardingFocus : TvFocusKey {
+    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Start
+}
 
+/** 检测网络那一步的两页, 共用同一次检测 (见 [TvOnboardingViewModel]). */
+private enum class NetworkPage { Bangumi, Images }
+
+/** 第一页: Bangumi 走官方还是镜像. */
 @Composable
-private fun NetworkStep(
+private fun BangumiStep(
     vm: TvOnboardingViewModel,
     focus: TvFocusScope,
     onChoose: (BangumiEndpointMode) -> Unit,
     onOpenProxy: () -> Unit,
 ) {
-    val result by vm.probeResult.collectAsStateWithLifecycle()
-    val unlocked by vm.optionsUnlocked.collectAsStateWithLifecycle()
+    val result by vm.bangumi.result.collectAsStateWithLifecycle()
+    val unlocked by vm.bangumi.unlocked.collectAsStateWithLifecycle()
     val recommended = result.recommendedMode
-    val scheme = MaterialTheme.colorScheme
+    CheckStep(
+        focus,
+        title = stringResource(Lang.tv_onboarding_network_title),
+        description = stringResource(Lang.tv_onboarding_network_description),
+        rows = listOf(
+            CheckRow(stringResource(Lang.tv_onboarding_network_origin), ORIGIN_DISPLAY_HOST, result.origin),
+            CheckRow(stringResource(Lang.tv_onboarding_network_mirror), result.mirror ?: "—", result.mirrorReachability),
+        ),
+        completed = result.completed,
+        summary = stringResource(
+            when {
+                !result.completed -> Lang.tv_onboarding_network_summary_checking
+                recommended == BangumiEndpointMode.AUTO -> Lang.tv_onboarding_network_summary_origin
+                recommended == BangumiEndpointMode.MIRROR -> Lang.tv_onboarding_network_summary_mirror
+                else -> Lang.tv_onboarding_network_summary_none
+            },
+        ),
+        summaryIsError = result.completed && recommended == null,
+        chooseTitle = stringResource(Lang.tv_onboarding_network_choose),
+        options = listOf(
+            CheckOption(
+                OnboardingFocus.Auto,
+                stringResource(Lang.settings_network_bangumi_auto),
+                stringResource(Lang.tv_onboarding_mode_auto_description),
+            ) { onChoose(BangumiEndpointMode.AUTO) },
+            CheckOption(
+                OnboardingFocus.Mirror,
+                stringResource(Lang.settings_network_bangumi_mirror),
+                stringResource(Lang.tv_onboarding_mode_mirror_description),
+            ) { onChoose(BangumiEndpointMode.MIRROR) },
+            CheckOption(
+                OnboardingFocus.Direct,
+                stringResource(Lang.settings_network_bangumi_direct),
+                stringResource(Lang.tv_onboarding_mode_direct_description),
+            ) { onChoose(BangumiEndpointMode.DIRECT) },
+        ),
+        recommended = when (recommended) {
+            BangumiEndpointMode.AUTO -> OnboardingFocus.Auto
+            BangumiEndpointMode.MIRROR -> OnboardingFocus.Mirror
+            else -> null
+        },
+        unlocked = unlocked,
+        hint = stringResource(Lang.tv_onboarding_network_custom_hint),
+        onOpenProxy = onOpenProxy,
+        onRecheck = { vm.recheck() },
+    )
+}
 
+/** 第二页: TMDB 图片 (背景图、剧照) 自动选入口, 还是不加载. */
+@Composable
+private fun TmdbImagesStep(
+    vm: TvOnboardingViewModel,
+    focus: TvFocusScope,
+    onChoose: (load: Boolean) -> Unit,
+    onOpenProxy: () -> Unit,
+) {
+    val result by vm.tmdbImages.result.collectAsStateWithLifecycle()
+    val bangumi by vm.bangumi.result.collectAsStateWithLifecycle()
+    val unlocked by vm.tmdbImages.unlocked.collectAsStateWithLifecycle()
+    val reachable = result.firstReachable
+    val recommended = when {
+        !result.completed -> null
+        reachable != null -> OnboardingFocus.ImagesAuto
+        // 入口都连不上而 Bangumi 连得上: 本机联着网, 是 TMDB 被封了 —— 不加载, 省得每张图都白等一轮
+        bangumi.online -> OnboardingFocus.ImagesOff
+        else -> null
+    }
+    CheckStep(
+        focus,
+        title = stringResource(Lang.tv_onboarding_images_title),
+        description = stringResource(Lang.tv_onboarding_images_description),
+        rows = result.candidates.take(MAX_ENDPOINT_ROWS).map { (baseUrl, reachability) ->
+            CheckRow(EndpointUrls.displayName(baseUrl), null, reachability)
+        },
+        completed = result.completed,
+        summary = when {
+            !result.completed -> stringResource(Lang.tv_onboarding_images_summary_checking)
+            reachable != null -> stringResource(Lang.tv_onboarding_images_summary_ok, EndpointUrls.displayName(reachable))
+            bangumi.online -> stringResource(Lang.tv_onboarding_images_summary_none)
+            else -> stringResource(Lang.tv_onboarding_images_summary_offline)
+        },
+        summaryIsError = result.completed && reachable == null,
+        chooseTitle = stringResource(Lang.tv_onboarding_images_choose),
+        options = listOf(
+            CheckOption(
+                OnboardingFocus.ImagesAuto,
+                stringResource(Lang.settings_network_endpoint_auto),
+                stringResource(Lang.tv_onboarding_images_auto_description),
+            ) { onChoose(true) },
+            CheckOption(
+                OnboardingFocus.ImagesOff,
+                stringResource(Lang.settings_network_tmdb_images_disable),
+                stringResource(Lang.tv_onboarding_images_off_description),
+            ) { onChoose(false) },
+        ),
+        recommended = recommended,
+        unlocked = unlocked,
+        hint = stringResource(Lang.tv_onboarding_images_hint),
+        onOpenProxy = onOpenProxy,
+        onRecheck = { vm.recheck() },
+    )
+}
+
+/** 检测结果里的一路: 名字、地址 (可以没有), 结论. */
+private class CheckRow(val name: String, val host: String?, val reachability: Reachability)
+
+/** 一个选项; [key] 同时是它的焦点锚点. */
+private class CheckOption(
+    val key: OnboardingFocus,
+    val title: String,
+    val description: String,
+    val onClick: () -> Unit,
+)
+
+/**
+ * 检测网络那一步的一页: 左边是各路的检测结果与结论, 右边是选项、「设置代理」与「重新检测」.
+ *
+ * 选项顺序固定 (位置是遥控器上的肌肉记忆), 推荐的那个带标记并在测完时拿到焦点; 第一次测完之前选项按不了.
+ */
+@Composable
+private fun CheckStep(
+    focus: TvFocusScope,
+    title: String,
+    description: String,
+    rows: List<CheckRow>,
+    completed: Boolean,
+    summary: String,
+    summaryIsError: Boolean,
+    chooseTitle: String,
+    options: List<CheckOption>,
+    recommended: OnboardingFocus?,
+    unlocked: Boolean,
+    hint: String,
+    onOpenProxy: () -> Unit,
+    onRecheck: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize()) {
-        StepHeader(
-            stringResource(Lang.tv_onboarding_network_title),
-            stringResource(Lang.tv_onboarding_network_description),
-            step = 0,
-        )
+        StepHeader(title, description, step = 0)
         Spacer(Modifier.height(SECTION_GAP))
         Row(Modifier.fillMaxWidth().weight(1f)) {
-            // 左: 测出来的情况. 两行状态位恒在 (没出结论时写「检测中」), 结论一段定高, 换状态时版面不动
+            // 左: 测出来的情况. 各路的状态位恒在 (没出结论时写「检测中」), 结论一段定高, 换状态时版面不动
             Column(Modifier.weight(1f)) {
-                ReachabilityRow(stringResource(Lang.tv_onboarding_network_origin), ORIGIN_DISPLAY_HOST, result.origin)
-                Spacer(Modifier.height(18.dp))
-                ReachabilityRow(
-                    stringResource(Lang.tv_onboarding_network_mirror),
-                    result.mirror ?: "—",
-                    result.mirrorReachability,
-                )
+                rows.forEachIndexed { index, row ->
+                    if (index > 0) Spacer(Modifier.height(18.dp))
+                    ReachabilityRow(row.name, row.host, row.reachability)
+                }
                 Spacer(Modifier.height(24.dp))
-                val none = result.completed && recommended == null
                 Text(
-                    stringResource(
-                        when {
-                            !result.completed -> Lang.tv_onboarding_network_summary_checking
-                            recommended == BangumiEndpointMode.AUTO -> Lang.tv_onboarding_network_summary_origin
-                            recommended == BangumiEndpointMode.MIRROR -> Lang.tv_onboarding_network_summary_mirror
-                            else -> Lang.tv_onboarding_network_summary_none
-                        },
-                    ),
+                    summary,
                     style = MaterialTheme.typography.bodyLarge,
                     color = when {
-                        none -> scheme.error
-                        !result.completed -> scheme.onSurfaceVariant
+                        summaryIsError -> scheme.error
+                        !completed -> scheme.onSurfaceVariant
                         else -> scheme.onSurface
                     },
                     minLines = 3,
                 )
             }
             Spacer(Modifier.width(COLUMN_GAP))
-            // 右: 选连接方式. 顺序固定 (位置是遥控器上的肌肉记忆), 推荐的那个带标记并拿初始焦点
+            // 右: 选项
             Column(Modifier.width(OPTIONS_WIDTH)) {
-                Text(stringResource(Lang.tv_onboarding_network_choose), style = MaterialTheme.typography.titleMedium)
+                Text(chooseTitle, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(10.dp))
-                ModeOption(
-                    stringResource(Lang.settings_network_bangumi_auto),
-                    stringResource(Lang.tv_onboarding_mode_auto_description),
-                    recommended = recommended == BangumiEndpointMode.AUTO,
-                    enabled = unlocked,
-                    onClick = { onChoose(BangumiEndpointMode.AUTO) },
-                    modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Auto),
-                )
-                Spacer(Modifier.height(OPTION_GAP))
-                ModeOption(
-                    stringResource(Lang.settings_network_bangumi_mirror),
-                    stringResource(Lang.tv_onboarding_mode_mirror_description),
-                    recommended = recommended == BangumiEndpointMode.MIRROR,
-                    enabled = unlocked,
-                    onClick = { onChoose(BangumiEndpointMode.MIRROR) },
-                    modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Mirror),
-                )
-                Spacer(Modifier.height(OPTION_GAP))
-                ModeOption(
-                    stringResource(Lang.settings_network_bangumi_direct),
-                    stringResource(Lang.tv_onboarding_mode_direct_description),
-                    recommended = false,
-                    enabled = unlocked,
-                    onClick = { onChoose(BangumiEndpointMode.DIRECT) },
-                    modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Direct),
-                )
+                options.forEachIndexed { index, option ->
+                    if (index > 0) Spacer(Modifier.height(OPTION_GAP))
+                    ModeOption(
+                        option.title,
+                        option.description,
+                        recommended = option.key == recommended,
+                        enabled = unlocked,
+                        onClick = option.onClick,
+                        modifier = Modifier.tvFocusAnchor(focus, option.key),
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TvHeroButton(
@@ -519,33 +679,23 @@ private fun NetworkStep(
                         stringResource(Lang.tv_onboarding_recheck),
                         Icons.Rounded.Refresh,
                         filled = false,
-                        onClick = { vm.recheck() },
+                        onClick = onRecheck,
                         onFocused = {},
                         modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Recheck),
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(
-                    stringResource(Lang.tv_onboarding_network_custom_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                )
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
             }
         }
     }
 
-    // 检测中选项按不了, 焦点先放「设置代理」(等的时候唯一有意义的事); 测完送到推荐的选项.
-    // 回到这一步 (从登录那步按返回) 时同样送到推荐的选项
+    // 检测中选项按不了, 焦点先放「设置代理」(等的时候唯一有意义的事); 测完送到推荐的选项, 没有推荐 (都连不上)
+    // 送到「重新检测」. 回到这一页 (从登录那步、或从后一页按返回) 时同样送到推荐的选项
     focus.InitialFocus(OnboardingFocus.Proxy)
-    LaunchedEffect(result.completed, recommended) {
-        if (!result.completed) return@LaunchedEffect
-        focus.request(
-            when (recommended) {
-                BangumiEndpointMode.AUTO -> OnboardingFocus.Auto
-                BangumiEndpointMode.MIRROR -> OnboardingFocus.Mirror
-                else -> OnboardingFocus.Recheck
-            },
-        )
+    LaunchedEffect(completed, recommended) {
+        if (!completed) return@LaunchedEffect
+        focus.request(recommended ?: OnboardingFocus.Recheck)
     }
 }
 
@@ -728,14 +878,16 @@ private fun StepMarker(number: Int, label: String, active: Boolean, done: Boolea
 
 /** 一路的状态: 名字 + 域名, 下面一行「检测中 / 能连上 · 耗时 / 连不上」. 三态同高. */
 @Composable
-private fun ReachabilityRow(name: String, host: String, reachability: Reachability) {
+private fun ReachabilityRow(name: String, host: String?, reachability: Reachability) {
     val scheme = MaterialTheme.colorScheme
     val green = if (scheme.surface.luminance() < 0.5f) CONNECTED_GREEN_DARK else CONNECTED_GREEN_LIGHT
     Column {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(name, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.width(10.dp))
-            Text(host, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            if (host != null) {
+                Spacer(Modifier.width(10.dp))
+                Text(host, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            }
         }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -929,6 +1081,9 @@ private val SECTION_GAP = 28.dp
 private val COLUMN_GAP = 40.dp
 private val OPTIONS_WIDTH = 420.dp
 private val OPTION_GAP = 8.dp
+
+/** TMDB 图片那一页最多列几个入口: 再多左栏就放不下了 (清单一般只有两三个). */
+private const val MAX_ENDPOINT_ROWS = 4
 private val PHONE_CARD_WIDTH = 280.dp
 private val PHONE_QR_SIZE = 168.dp
 private val PHONE_QR_QUIET_ZONE = 18.dp

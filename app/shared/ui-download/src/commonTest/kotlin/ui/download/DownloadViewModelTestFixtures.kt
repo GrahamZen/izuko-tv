@@ -30,7 +30,6 @@ import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
-import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -48,6 +47,8 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.data.models.preference.EndpointSelection
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.subject.SubjectCollectionCounts
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
@@ -290,7 +291,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val profileSettings: Settings<ProfileSettings> get() = error("Not used")
     override val proxySettings: Settings<ProxySettings> get() = error("Not used")
     override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> get() = error("Not used")
-    override val bangumiMirrorCache: Settings<BangumiMirrorCache> get() = error("Not used")
+    override val bangumiMirrorCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val mediaCacheSettings: Settings<MediaCacheSettings> get() = error("Not used")
     override val danmakuSettings: Settings<DanmakuSettings> get() = error("Not used")
     override val uiSettings: Settings<UISettings> get() = error("Not used")
@@ -299,6 +300,8 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val videoScaffoldConfig: Settings<VideoScaffoldConfig> get() = error("Not used")
     override val playerKernelConfig: Settings<PlayerKernelConfig> get() = error("Not used")
     override val tmdbImagesDisabled: Settings<Boolean> get() = error("Not used")
+    override val tmdbImageEndpoint: Settings<EndpointSelection> get() = error("Not used")
+    override val tmdbImageHostCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")

@@ -26,6 +26,7 @@ import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -34,8 +35,8 @@ import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
-import me.him188.ani.app.data.models.preference.BangumiMirrorCache
 import me.him188.ani.app.data.models.preference.ProxySettings
+import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.UISettings
@@ -59,6 +60,12 @@ interface SettingsRepository {
     /** 设置 → 代理页底部「不加载 TMDB 背景图」, 见 `TmdbImageService.disabledByUser`. */
     val tmdbImagesDisabled: Settings<Boolean>
 
+    /** TMDB 图片走哪个入口, 见 `TmdbImageEndpoints`. */
+    val tmdbImageEndpoint: Settings<EndpointSelection>
+
+    /** TMDB 图片入口清单的本地缓存, 见 `RepoHostedList`. */
+    val tmdbImageHostCache: Settings<RepoHostedListCache>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -77,8 +84,8 @@ interface SettingsRepository {
     /** bangumi 走原站还是镜像, 见 [BangumiEndpointSettings]. */
     val bangumiEndpointSettings: Settings<BangumiEndpointSettings>
 
-    /** 远程镜像清单的本地缓存, 见 [BangumiMirrorCache]. */
-    val bangumiMirrorCache: Settings<BangumiMirrorCache>
+    /** 镜像清单的本地缓存, 见 `BangumiMirrorListRepository`. */
+    val bangumiMirrorCache: Settings<RepoHostedListCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -176,6 +183,16 @@ class PreferencesRepositoryImpl(
 
     override val danmakuEnabled: Settings<Boolean> = BooleanPreference("danmaku_enabled", default = true)
     override val tmdbImagesDisabled: Settings<Boolean> = BooleanPreference("tmdb_images_disabled", default = false)
+    override val tmdbImageEndpoint: Settings<EndpointSelection> = SerializablePreference(
+        "tmdbImageEndpoint",
+        EndpointSelection.serializer(),
+        default = { EndpointSelection.Default },
+    )
+    override val tmdbImageHostCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "tmdbImageHostCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
     override val danmakuConfig: Settings<DanmakuConfig> =
         SerializablePreference("danmaku_config", DanmakuConfigSerializer, default = { DanmakuConfig.Default })
     override val danmakuFilterConfig: Settings<DanmakuFilterConfig> =
@@ -210,10 +227,10 @@ class PreferencesRepositoryImpl(
         BangumiEndpointSettings.serializer(),
         default = { BangumiEndpointSettings.Default },
     )
-    override val bangumiMirrorCache: Settings<BangumiMirrorCache> = SerializablePreference(
+    override val bangumiMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
         "bangumiMirrorCache",
-        BangumiMirrorCache.serializer(),
-        default = { BangumiMirrorCache.Default },
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
     )
     override val mediaCacheSettings: Settings<MediaCacheSettings> = SerializablePreference(
         "cachePreferences",

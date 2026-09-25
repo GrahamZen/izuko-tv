@@ -28,6 +28,9 @@ import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.app.data.models.preference.EndpointSelectionMode
+import me.him188.ani.app.data.models.preference.EndpointUrls
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -61,6 +64,7 @@ internal object RemoteSettings {
 
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
     private val bangumiMirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
+    private val tmdbImageEndpoints: TmdbImageEndpoints get() = KoinPlatform.getKoin().get()
     private val danmakuFilters: DanmakuRegexFilterRepository get() = KoinPlatform.getKoin().get()
 
     /** 处理 `api/settings` 下的请求; 路径或方法不认识返回 null. */
@@ -75,6 +79,7 @@ internal object RemoteSettings {
                 request.path == "api/settings/proxy/test" -> testConnection()
                 request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
                 request.path == "api/settings/bangumi/cred" -> setMirrorCredentials(request)
+                request.path == "api/settings/tmdb-images" -> saveTmdbImages(request)
                 request.path == "api/settings/trackers" -> saveTrackers(request)
                 // 「切到电视前台」开关, 状态与授权都在 TvRemoteControl
                 request.path == "api/settings/front" -> TvRemoteControl.setBringToFront(request.formFields()["on"] == "1")
@@ -100,6 +105,9 @@ internal object RemoteSettings {
         val filters = danmakuFilters.flow.first()
         val bangumi = settingsRepository.bangumiEndpointSettings.flow.first()
         val mirrors = bangumiMirrorList.mirrors.first()
+        val tmdbImagesDisabled = settingsRepository.tmdbImagesDisabled.flow.first()
+        val tmdbImageEndpoint = tmdbImageEndpoints.selection.flow.first()
+        val tmdbImageHosts = tmdbImageEndpoints.candidates.first()
         buildJsonObject {
             putJsonObject("proxy") {
                 put("mode", proxy.mode.name)
@@ -112,6 +120,13 @@ internal object RemoteSettings {
                 put("custom", bangumi.customBaseUrl)
                 putJsonArray("mirrors") { mirrors.forEach { add(it) } }
                 put("allowCredentials", bangumi.allowCredentialsViaMirror)
+            }
+            putJsonObject("tmdbImages") {
+                put("disabled", tmdbImagesDisabled)
+                put("mode", tmdbImageEndpoint.mode.name)
+                put("fixed", tmdbImageEndpoint.fixedBaseUrl)
+                put("custom", tmdbImageEndpoint.customBaseUrl)
+                putJsonArray("hosts") { tmdbImageHosts.forEach { add(it) } }
             }
             put("trackers", torrent.extraTrackers)
             put("front", TvRemoteControl.frontState())
@@ -240,6 +255,56 @@ internal object RemoteSettings {
                 BangumiEndpointMode.CUSTOM -> tr("已保存，立即生效")
             },
         )
+    }
+
+    /**
+     * TMDB 图片 (同设置页「背景图 (TMDB)」那一组): `choice` = `auto` (自动选择入口) / `off` (不加载) / `custom` (用 `custom`
+     * 字段里的地址) / 清单里某个入口的地址 (只用它). 自定义地址认不出来的当场拒绝 —— 存进去也会被当成没填、按自动走,
+     * 用户看不出是自己填错了.
+     */
+    private fun saveTmdbImages(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val choice = fields["choice"].orEmpty()
+        val custom = fields["custom"].orEmpty().trim()
+        val message = runBlocking {
+            val endpoint = tmdbImageEndpoints.selection
+            when (choice) {
+                "off" -> {
+                    settingsRepository.tmdbImagesDisabled.set(true)
+                    tr("已改为不加载 TMDB 背景图")
+                }
+
+                "auto" -> {
+                    endpoint.update { copy(mode = EndpointSelectionMode.AUTO) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已改为自动选择图片地址")
+                }
+
+                "custom" -> {
+                    if (EndpointUrls.normalizeBaseUrl(custom) == null) {
+                        return@runBlocking null
+                    }
+                    endpoint.update { copy(mode = EndpointSelectionMode.CUSTOM, customBaseUrl = custom) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已保存，立即生效")
+                }
+
+                else -> {
+                    // 只接清单里有的, 或者本来就选着的那个 (清单后来去掉了它)
+                    val known = tmdbImageEndpoints.candidates.first() + endpoint.flow.first().fixedBaseUrl
+                    if (choice.isEmpty() || choice !in known) return@runBlocking ""
+                    endpoint.update { copy(mode = EndpointSelectionMode.FIXED, fixedBaseUrl = choice) }
+                    settingsRepository.tmdbImagesDisabled.set(false)
+                    tr("已改为只用 {0}", EndpointUrls.displayName(choice))
+                }
+            }
+        }
+        logger.info { "Remote control saved TMDB images: choice=$choice, ok=${!message.isNullOrEmpty()}" }
+        return when (message) {
+            null -> result(false, tr("认不出这个地址：请填 https://域名（可以带路径），或含 {path} 的模板"))
+            "" -> result(false, tr("无效的选项"))
+            else -> result(true, message)
+        }
     }
 
     /**
