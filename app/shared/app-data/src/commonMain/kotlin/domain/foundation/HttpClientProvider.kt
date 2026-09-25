@@ -109,6 +109,8 @@ fun HttpClientProvider.get(
         add(ServerListFeature.withValue(serverListConfig))
         // 所有 client 都要: bangumi 的地址遍布 API/图床/OAuth 换 token, 而图片也走 ScopedHttpClient
         add(BangumiMirrorFeature.withValue(true))
+        // 同理: TMDB 图片等可换入口的服务 (见 AlternativeEndpoints), 图片加载与网页控制台转发图片都要经过它
+        add(AlternativeEndpointsFeature.withValue(true))
         add(ConvertSendCountExceedExceptionFeature.withValue(true))
         add(UseAniTokenFeature.withValue(useAniToken))
         add(UseBangumiTokenFeature.withValue(useBangumiToken))

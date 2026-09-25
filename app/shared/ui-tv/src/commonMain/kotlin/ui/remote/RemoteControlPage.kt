@@ -110,6 +110,7 @@ internal fun renderRemoteControlPage(
     <p class="hint">下面只放要打字的设置，开关类的请在电视上改。</p>
     <div id="set-proxy"></div>
     <div id="set-bangumi"></div>
+    <div id="set-tmdb"></div>
     <div id="set-trackers"></div>
     <div id="set-dmfilter"></div>
     <div id="set-logs"></div>
@@ -5036,6 +5037,7 @@ private val SETTINGS_SCRIPT = """
 (function () {
   var proxyBox = document.getElementById('set-proxy');
   var bgmBox = document.getElementById('set-bangumi');
+  var tmdbBox = document.getElementById('set-tmdb');
   var trBox = document.getElementById('set-trackers');
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
@@ -5105,6 +5107,53 @@ private val SETTINGS_SCRIPT = """
     e.preventDefault();
     post('api/settings/bangumi', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
   });
+  // TMDB 图片 (同设置页「背景图 (TMDB)」那一组): 自动选择 / 清单里的某个地址 / 自定义 / 不加载.
+  // 清单在项目仓库里维护, 电视每天拉一次; 自定义才要输入
+  function tmdbChoice(t) {
+    return t.disabled ? 'off' : t.mode === 'FIXED' ? t.fixed : t.mode === 'CUSTOM' ? 'custom' : 'auto';
+  }
+  // 入口地址去掉 https://; 含 {path} 的模板只显示域名 (同 EndpointUrls.displayName)
+  function tmdbHost(u) {
+    var h = String(u).replace('https://', '');
+    return String(u).indexOf('{path}') < 0 ? h : h.split('/')[0].split('?')[0];
+  }
+  function tmdbShow(f, c) {
+    f.querySelector('.tmdb-auto').hidden = c !== 'auto';
+    f.querySelector('.tmdb-fixed').hidden = c === 'auto' || c === 'custom' || c === 'off';
+    f.querySelector('.tmdb-custom').hidden = c !== 'custom';
+    f.querySelector('.tmdb-off').hidden = c !== 'off';
+  }
+  function renderTmdb(t) {
+    t = t || { disabled: false, mode: 'AUTO', fixed: '', custom: '', hosts: [] };
+    var hosts = t.hosts || [];
+    var cur = tmdbChoice(t);
+    var opts = [['auto', T('自动选择')]].concat(hosts.map(function (h) { return [h, tmdbHost(h)]; }));
+    // 选定的那个后来被清单去掉了: 照样列出来
+    if (t.mode === 'FIXED' && t.fixed && hosts.indexOf(t.fixed) < 0) opts.push([t.fixed, tmdbHost(t.fixed)]);
+    opts.push(['custom', T('自定义')], ['off', T('不加载')]);
+    tmdbBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('TMDB 图片') + '</div>' +
+      '<p class="hint">' + T('背景图与剧照来自 TMDB。原站连不上时（例如中国移动的网络），自动选择会换到能用的地址。') + '</p><div class="pills">' +
+      opts.map(function (o) {
+        return '<label><input type="radio" name="choice" value="' + esc(o[0]) + '"' + (cur === o[0] ? ' checked' : '') + '><span>' + esc(o[1]) + '</span></label>';
+      }).join('') + '</div>' +
+      '<p class="hint tmdb-auto">' + T('按顺序用第一个连得上的：{0}（清单每天从项目仓库更新）', hosts.map(tmdbHost).map(esc).join(T('、'))) + '</p>' +
+      '<p class="hint tmdb-fixed">' + T('只用这一个地址，连不上也不换') + '</p>' +
+      '<p class="hint tmdb-off">' + T('背景图与剧照改用条目封面，不再请求 TMDB。') + '</p>' +
+      '<div class="tmdb-custom"><label class="f"><span>' + T('自定义地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
+      esc(t.custom) + '" placeholder="https://img.example.com"><em>' +
+      esc(T('与原站内容相同的地址，图片路径会接在后面；要把路径放进参数的代理，写成含 {path} 的模板，如 {0}', 'https://wsrv.nl/?url=image.tmdb.org{path}')) +
+      '</em></label></div>' +
+      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    tmdbShow(tmdbBox.querySelector('form'), cur);
+  }
+  tmdbBox.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.name === 'choice') tmdbShow(t.form, t.value);
+  });
+  tmdbBox.addEventListener('submit', function (e) {
+    e.preventDefault();
+    post('api/settings/tmdb-images', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+  });
   // 切到电视前台 (见 TvRemoteControl.frontState): 默认关; 开了还要在电视上授权一次「显示在其他应用的上层」.
   // 授权后回到本标签会重新拉一次 (load), 状态跟着更新
   function renderFront(f) {
@@ -5154,6 +5203,7 @@ private val SETTINGS_SCRIPT = """
       '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
       '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
     renderBangumi(d.bangumi);
+    renderTmdb(d.tmdbImages);
     renderFront(d.front);
     renderKeep(d.keep);
     renderFilters(d.dmfilter);

@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -163,14 +164,8 @@ class TmdbSubjectMapRepository(
         const val PATH = "map/bgm-tmdb.tsv"
         const val HEADER_PREFIX = "# bangumi-tmdb-map v1"
 
-        /**
-         * 下载入口, 按顺序试, 最后才是 raw.githubusercontent.com. 表每天更新一次, 推送后会主动刷新 jsDelivr 的缓存:
-         * testingcf 与 cdn 刷新即生效, gcore 不认主动刷新, 边缘缓存最长 12 小时才过期, 所以 testingcf 在前
-         * (大陆真机上 testingcf 与 gcore 一样快, cdn 时好时坏, 见更新检查的 `JSDELIVR_HOSTS`).
-         */
-        val MAP_URLS = listOf("testingcf.jsdelivr.net", "gcore.jsdelivr.net", "cdn.jsdelivr.net")
-            .map { "https://$it/gh/$REPOSITORY@main/$PATH" } +
-                "https://raw.githubusercontent.com/$REPOSITORY/main/$PATH"
+        /** 下载入口, 按顺序试. 表每天更新一次, 推送后会主动刷新 jsDelivr 的缓存, 顺序的理由见 [GitHubFileSources]. */
+        val MAP_URLS = GitHubFileSources.urls(REPOSITORY, PATH)
 
         /** 多久重新检查一次. 表每天更新, 电视上 app 常常一开几天, 所以运行中也按这个间隔再看. */
         val REFRESH_INTERVAL = 20.hours

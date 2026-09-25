@@ -24,7 +24,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
-import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe.Reachability
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals

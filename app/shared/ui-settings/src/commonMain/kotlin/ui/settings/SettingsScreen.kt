@@ -382,7 +382,8 @@ fun SettingsScreen(
                                     state = vm.configureProxyState,
                                     onStartProxyTestLoop = { vm.startProxyTesterLoop() },
                                 )
-                                TmdbImagesGroup(vm.tmdbImagesDisabled)
+                                val tmdbImageHosts by vm.tmdbImageHosts.collectAsStateWithLifecycle()
+                                TmdbImagesGroup(vm.tmdbImagesDisabled, vm.tmdbImageEndpoint, tmdbImageHosts)
                                 // 与代理同一页: 用户为"连不上 bangumi"来这里, 两条路都在这儿
                                 val bangumiMirrors by vm.bangumiMirrors.collectAsStateWithLifecycle()
                                 BangumiEndpointGroup(vm.bangumiEndpointSettings, bangumiMirrors)

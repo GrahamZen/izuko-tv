@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
+import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -46,6 +47,7 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
@@ -113,6 +115,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val mediaSourceCodecManager: MediaSourceCodecManager by inject()
     private val clientProvider: HttpClientProvider by inject()
     private val tmdbImageService: TmdbImageService by inject()
+    private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
     private val tokenRepository: TokenRepository by inject()
 
     private val proxyProvider = ProxySettingsFlowProxyProvider(settingsRepository.proxySettings.flow, backgroundScope)
@@ -140,6 +143,14 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     /** 代理页底部「不加载 TMDB 背景图」. */
     val tmdbImagesDisabled: SettingsState<Boolean> = settingsRepository.tmdbImagesDisabled.stateInBackground(false)
+
+    /** TMDB 图片走哪个入口. */
+    val tmdbImageEndpoint: SettingsState<EndpointSelection> =
+        settingsRepository.tmdbImageEndpoint.stateInBackground(EndpointSelection.Default.copy(_placeHolder = -1))
+
+    /** TMDB 图片的入口清单 (每天从仓库拉一次, 拉不到用内置的). */
+    val tmdbImageHosts: StateFlow<List<String>> =
+        tmdbImageEndpoints.candidates.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val videoScaffoldConfig: SettingsState<VideoScaffoldConfig> =
         settingsRepository.videoScaffoldConfig.stateInBackground(VideoScaffoldConfig.Default.copy(_placeholder = -1))
