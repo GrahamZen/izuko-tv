@@ -91,8 +91,7 @@ fun KoinApplication.useCaseModules() = module {
     single<GetEpisodeCollectionTypeUseCase> { GetEpisodeCollectionTypeUseCaseImpl(koin) }
     single<GetAnimeScheduleFlowUseCase> { GetAnimeScheduleFlowUseCaseImpl(get()) }
     single<GetAnimeSeasonIdsFlowUseCase> { GetAnimeSeasonIdsFlowUseCaseImpl() }
-    // 上游(人物评论服务)将 PostCommentUseCase 改为双依赖,保留上游版本
-    single<PostCommentUseCase> { PostCommentUseCaseImpl(get(), get()) }
+    single<PostCommentUseCase> { PostCommentUseCaseImpl(get()) }
     single<GetPreferredMediaSourceSortingUseCase> { GetPreferredMediaSourceSortingUseCaseImpl(get()) }
     single<GetMediaSelectorSourceTiersUseCase> { GetMediaSelectorSourceTiersUseCaseImpl(get()) }
     single<GetEpisodeTypeFiltersUseCase> { GetEpisodeTypeFiltersUseCaseImpl(get()) }

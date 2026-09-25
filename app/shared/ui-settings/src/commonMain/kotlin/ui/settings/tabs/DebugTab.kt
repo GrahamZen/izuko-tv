@@ -154,10 +154,11 @@ fun DebugTab(
                 title = { Text(stringResource(Lang.settings_debug_get_ani_token)) },
                 onClick = {
                     scope.launch {
-                        val value =
-                            (GlobalKoin.get<SessionManager>().sessionFlow.value as? AccessTokenSession)?.tokens?.aniAccessToken
-                        toaster.toast(getString(Lang.settings_debug_copied, value.toString()))
-                        clipboard.setClipEntryText(value.toString())
+                        val value = (GlobalKoin.get<SessionManager>().sessionFlow.value as? AccessTokenSession)
+                            ?.tokens?.bangumiAccessToken.orEmpty()
+                        // 屏幕上只露开头几位, 能确认复制到了什么又不把令牌整个亮在电视上
+                        toaster.toast(getString(Lang.settings_debug_copied, value.take(6) + if (value.length > 6) "…" else ""))
+                        clipboard.setClipEntryText(value)
                     }
                 },
             )

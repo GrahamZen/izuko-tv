@@ -107,19 +107,22 @@ fun rememberAsyncBrowserNavigator(): BrowserNavigator {
  * 平台自带的那个拉不起浏览器时直接抛异常 (没装浏览器; 7.1 盒子上还见过把网址交给别家不对外开放的
  * Activity, 抛 `SecurityException`), 而各处 `uriHandler.openUri` 都没接, 点个链接应用就闪退.
  * 这里接住, 改弹与 [rememberAsyncBrowserNavigator] 相同的 [OpenLinkFallbackDialog].
+ *
+ * @param rewriteUrl 打开 (或画成二维码) 之前先换一遍地址, 例如 Bangumi 网页按当前线路换站
  */
 @Composable
-fun ProvideOpenLinkFallback(content: @Composable () -> Unit) {
+fun ProvideOpenLinkFallback(rewriteUrl: (String) -> String = { it }, content: @Composable () -> Unit) {
     val platformHandler = LocalUriHandler.current
     var fallbackUrl by remember { mutableStateOf<String?>(null) }
-    val handler = remember(platformHandler) {
+    val handler = remember(platformHandler, rewriteUrl) {
         object : UriHandler {
             override fun openUri(uri: String) {
+                val target = rewriteUrl(uri)
                 try {
-                    platformHandler.openUri(uri)
+                    platformHandler.openUri(target)
                 } catch (e: Exception) {
-                    logger.error(e) { "Failed to open $uri, showing QR fallback" }
-                    fallbackUrl = uri
+                    logger.error(e) { "Failed to open $target, showing QR fallback" }
+                    fallbackUrl = target
                 }
             }
         }

@@ -55,6 +55,8 @@ import kotlin.time.Duration.Companion.minutes
  *
  * 可信的镜像 ([BangumiRouting.trusted]) 不受此限: 用户自建的服务器, 或者用户在弹窗里了解风险后
  * 自己允许凭证经过的第三方镜像 (见 `BangumiEndpointSettings.allowCredentialsViaMirror`).
+ * 换 token 与续期 (`/oauth/`) 另有一条: 只发给代理得了 bgm.tv 主站的自建地址 ([BangumiRouting.servesMainSite]),
+ * 第三方镜像即使可信也不给.
  */
 val BangumiMirrorFeature = ScopedHttpClientFeatureKey<Boolean>("BangumiMirror")
 
@@ -73,6 +75,11 @@ data class BangumiRouting(
      * 请求它们时先换回原站域名, 再按本路由决定打哪儿 —— 不然切回官方之后它们还一直走镜像, 镜像下线就全挂.
      */
     val knownMirrors: List<String> = mirrors,
+    /**
+     * 这些镜像代理得了 bgm.tv 主站吗 (换 token 与续期都在主站的 `/oauth/` 上). 用户自建的反代能;
+     * 第三方镜像把主站挡在反爬验证页后面, 这类请求发过去只会拿回一张验证网页 —— 一律留在原站.
+     */
+    val servesMainSite: Boolean = false,
 ) {
     companion object {
         /** 只直连. */
@@ -82,13 +89,15 @@ data class BangumiRouting(
 
 class BangumiMirrorFeatureHandler(
     private val routing: Flow<BangumiRouting>,
-    /** 请求落到的目标变了时回报: 镜像根域名, `null` = 原站. 见 `BangumiEndpointProvider.reportSettled`. */
-    private val onSettled: (mirrorRoot: String?) -> Unit = {},
     /**
-     * 确定官方连不上时回报: 同一个请求在官方那一跳**连接失败** (不是 5xx —— 那是官方在回答), 换到镜像成功.
-     * 见 `BangumiEndpointProvider.reportOriginUnreachable`.
+     * 请求落到的目标变了时回报: 这个请求用的路由, 以及镜像根域名 (`null` = 原站). 见 `BangumiEndpointProvider.reportSettled`.
      */
-    private val onOriginUnreachable: () -> Unit = {},
+    private val onSettled: (routing: BangumiRouting, mirrorRoot: String?) -> Unit = { _, _ -> },
+    /**
+     * 确定官方连不上时回报 (连同这个请求用的路由): 同一个请求在官方那一跳**连接失败** (不是 5xx —— 那是官方在回答),
+     * 换到镜像成功, 而且这个进程里官方在这套路由下从没回应过 (见 [originAnswered]). 见 `BangumiEndpointProvider.reportOriginUnreachable`.
+     */
+    private val onOriginUnreachable: (routing: BangumiRouting) -> Unit = {},
     private val clock: Clock = Clock.System,
 ) : ScopedHttpClientFeatureHandler<Boolean>(BangumiMirrorFeature) {
     private val logger = logger<BangumiMirrorFeatureHandler>()
@@ -106,6 +115,15 @@ class BangumiMirrorFeatureHandler(
     private data class Sticky(val signature: Int, val target: Int, val at: Long)
 
     private val sticky = atomic<Sticky?>(null)
+
+    /**
+     * 这个进程里官方回应过 (任何 HTTP 响应, 5xx 也算) 的那套路由的签名.
+     *
+     * 回应过之后, 某个请求在官方那一跳又连不上, 多半是网络卡了一下 (启动时请求扎堆常见), 不是官方被阻断:
+     * 照常换到镜像拿结果、粘性照走, 但**不回报** [onOriginUnreachable] —— 否则一次卡顿就会把「官方连不上时用镜像」
+     * 永久改成「用镜像」(没登录时不问就改), 登录着的人则看到误报的「连不上官方」.
+     */
+    private val originAnswered = atomic<Int?>(null)
 
     override fun applyToClient(client: HttpClient, value: Boolean) {
         if (!value) return
@@ -142,6 +160,12 @@ class BangumiMirrorFeatureHandler(
 
         if (!routing.trusted && carriesCredentials(request)) {
             logger.debug { "Bangumi request to $originalHost carries credentials, keeping it on the origin" }
+            return null
+        }
+        // 换 token / 续期: 用户允许凭证经过第三方镜像也不给它 —— 它代理不了主站 (见 BangumiRouting.servesMainSite),
+        // 发过去必失败, 还白把 client_secret 与续期令牌交了出去
+        if (!routing.servesMainSite && "oauth" in request.url.pathSegments) {
+            logger.debug { "Bangumi OAuth request to $originalHost, keeping it on the origin" }
             return null
         }
 
@@ -210,6 +234,7 @@ class BangumiMirrorFeatureHandler(
                 continue
             }
             lastCall = thisCall
+            if (target < 0) originAnswered.value = signature
 
             val status = thisCall.response.status.value
             if (target >= 0 && status in 300..399) {
@@ -220,15 +245,19 @@ class BangumiMirrorFeatureHandler(
                     logger.info {
                         "Bangumi endpoint settled on ${if (target < 0) "origin" else routing.mirrors[target]}"
                     }
-                    onSettled(if (target < 0) null else routing.mirrors[target])
+                    onSettled(routing, if (target < 0) null else routing.mirrors[target])
                 }
                 // 只在换了目标 (或原来那个已过期) 时记时刻: 每次成功都刷新的话, 一直有请求的人永远粘在镜像上
                 if (current?.target != target) {
                     sticky.value = Sticky(signature, target, clock.now().toEpochMilliseconds())
                 }
                 if (target >= 0 && originConnectFailed) {
-                    logger.info { "Bangumi origin is unreachable while ${routing.mirrors[target]} works" }
-                    onOriginUnreachable()
+                    if (originAnswered.value == signature) {
+                        logger.info { "Bangumi origin failed for $originalHost after answering earlier in this process; not treating it as unreachable" }
+                    } else {
+                        logger.info { "Bangumi origin is unreachable while ${routing.mirrors[target]} works" }
+                        onOriginUnreachable(routing)
+                    }
                 }
                 return thisCall
             }
@@ -244,7 +273,8 @@ class BangumiMirrorFeatureHandler(
         }
         // 全都不通: 把最后一次的失败交出去, 让上层看到真实的错误
         return lastCall ?: throw IOException(
-            "All bangumi endpoints failed for $originalHost. Tried: origin, ${routing.mirrors}",
+            "All bangumi endpoints failed for $originalHost. Tried: " +
+                    targets.joinToString { if (it < 0) "origin" else routing.mirrors[it] },
         )
     }
 

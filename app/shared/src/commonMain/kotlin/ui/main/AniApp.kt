@@ -41,6 +41,7 @@ import me.him188.ani.app.data.models.preference.EpisodeProgressSettings
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
@@ -52,6 +53,7 @@ import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.navigation.BrowserNavigator
+import me.him188.ani.app.navigation.rewritingUrls
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.platform.LocalContext
@@ -125,7 +127,13 @@ class AniAppViewModel : AbstractViewModel(), KoinComponent {
         downloadManager.storages.map { @Composable { it.engine.ComposeContent() } },
     )
 
-    val browserNavigator by inject<BrowserNavigator>()
+    private val platformBrowserNavigator: BrowserNavigator by inject()
+    private val bangumiEndpoints: BangumiEndpointProvider by inject()
+
+    /** 交给浏览器的地址: Bangumi 网页按当前线路换站 (见 [BangumiEndpointProvider.webLink]), 其余原样. */
+    fun openLinkRewrite(url: String): String = bangumiEndpoints.webLink(url)
+
+    val browserNavigator: BrowserNavigator by lazy { platformBrowserNavigator.rewritingUrls(::openLinkRewrite) }
 
     val appState: Flow<AniAppState?> = combine(
         settings.themeSettings.flow,
@@ -267,8 +275,8 @@ fun AniApp(
                         clearFocusOnUnhandledTap()
                     },
             ) {
-                // 各处 uriHandler.openUri 打不开链接时不崩, 改弹二维码
-                ProvideOpenLinkFallback {
+                // 各处 uriHandler.openUri 打不开链接时不崩, 改弹二维码; Bangumi 网页按当前线路换站
+                ProvideOpenLinkFallback(rewriteUrl = viewModel::openLinkRewrite) {
                     Box {
                         for (composable in appState.overlayComposables) {
                             composable()

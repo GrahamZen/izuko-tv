@@ -26,7 +26,7 @@
     <string name="playback_history_select_all">全选</string>
     <string name="playback_history_delete_selected">删除所选播放记录</string>
     <string name="playback_history_delete_title">删除播放记录？</string>
-    <string name="playback_history_delete_confirmation">所选记录将从此设备移除，并同步到你的账号。</string>
+    <string name="playback_history_delete_confirmation">所选记录将从此设备移除。</string>
     <string name="playback_history_sync_status_synced">播放记录已同步</string>
     <string name="playback_history_sync_status_pending">有 %1$d 项待同步</string>
     <string name="playback_history_sync_status_title">同步状态</string>
@@ -696,8 +696,8 @@
     <string name="settings_network_proxy_password">密码</string>
     <string name="settings_network_proxy_retest">重新测试</string>
     <string name="settings_network_proxy_service_danmaku">弹幕服务</string>
-    <string name="settings_network_proxy_service_collection">收藏数据服务</string>
-    <string name="settings_network_proxy_service_comment">评论服务</string>
+    <string name="settings_network_proxy_service_collection">搜索与分集</string>
+    <string name="settings_network_proxy_service_comment">条目与收藏</string>
     <string name="settings_network_proxy_test_success">连接成功</string>
     <string name="settings_network_proxy_test_failed">连接失败</string>
     <string name="settings_network_proxy_current_disabled">未启用代理</string>
@@ -764,7 +764,7 @@
     <!-- OAuth -->
     <string name="oauth_bangumi_authorize_title">授权 Bangumi 登录</string>
     <string name="oauth_bangumi_description">授权 Bangumi 账号，可以同步你的观看记录到 Bangumi 或便捷登录 Izuko</string>
-    <string name="oauth_bangumi_bind_account">绑定 Bangumi 账号</string>
+    <string name="oauth_bangumi_bind_account">重新登录 Bangumi</string>
     <string name="oauth_bangumi_sign_in_or_sign_up">登录 / 注册</string>
     <string name="oauth_bangumi_waiting_result">正在等待结果</string>
     <string name="oauth_bangumi_authorized">已授权</string>
