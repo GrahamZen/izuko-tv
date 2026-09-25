@@ -72,7 +72,17 @@ private const val JSDELIVR_UPDATE_LINE_RANGE = "%3C$UPDATE_LINE_MAJOR_EXCLUSIVE"
 internal val JSDELIVR_HOSTS = listOf("gcore.jsdelivr.net", "testingcf.jsdelivr.net", "cdn.jsdelivr.net")
 
 /** ghfast.top: 公共的 GitHub 下载代理, release 资源 / raw / releases/latest 跳转都能代理, API 与 atom 不行 (403). */
-internal fun ghfastUrl(gitHubUrl: String) = "https://ghfast.top/$gitHubUrl"
+internal fun ghfastUrl(gitHubUrl: String) = "$GHFAST_PREFIX$gitHubUrl"
+
+private const val GHFAST_PREFIX = "https://ghfast.top/"
+
+/**
+ * 下载地址里 ghfast 代理的排到 GitHub 原地址前面, 两组各自保持原来的顺序.
+ *
+ * 国内常见「api.github.com 通、release 下载不通或极慢」: 原地址在前时下载器先在它的 .sha1 上等十来秒才换镜像,
+ * .sha1 这种小文件取到了的话大文件还会一直卡在原地址上慢慢下.
+ */
+internal fun List<String>.mirrorFirst(): List<String> = sortedBy { !it.startsWith(GHFAST_PREFIX) }
 
 /** 镜像回落时拿不到资源列表, 按 fork-release.yml 的命名规则合成; 不存在的那个下载时 404, 下载器接着试下一个. */
 internal val RELEASE_APK_SUFFIXES = listOf(
@@ -269,7 +279,7 @@ class UpdateChecker(private val client: ScopedHttpClient) {
                     changes = latest.body,
                 ),
             ),
-            // API 通了, GitHub 下载多半也通: 原地址在前, 镜像兜底
+            // 原地址在前, 镜像兜底; 下载时 Bangumi 在走镜像 (多半在大陆) 会把镜像挪到前面, 见 AppUpdateViewModel.downloadUrlsOf
             downloadUrlAlternatives = packages.flatMap { listOf(it.browserDownloadUrl, ghfastUrl(it.browserDownloadUrl)) },
             publishedAt = latest.publishedAt,
         )

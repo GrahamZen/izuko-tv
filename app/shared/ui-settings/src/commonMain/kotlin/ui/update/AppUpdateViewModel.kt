@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.foundation.get
@@ -65,8 +66,18 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val updateInstaller: UpdateInstaller by inject()
     private val installationRunner by lazy { UpdateInstallationRunner(updateInstaller) }
 
+    private val bangumiEndpointProvider: BangumiEndpointProvider by inject()
+
     private val fileDownloader by lazy { DefaultFileDownloader(clientProvider.get()) }
     private val updateChecker by lazy { UpdateChecker(clientProvider.get()) }
+
+    /**
+     * 这次下载按什么顺序试地址. Bangumi 正走镜像或自建反代 (官方连不上, 多半在大陆) 时 GitHub 的 release 下载多半也不通,
+     * 镜像地址排前面; 在下载那一刻判断, 这时启动时的 Bangumi 请求早已落定线路.
+     */
+    private fun downloadUrlsOf(ver: NewVersion): List<String> =
+        if (bangumiEndpointProvider.webMirrorRoot.value != null) ver.downloadUrlAlternatives.mirrorFirst()
+        else ver.downloadUrlAlternatives
 
     /**
      * 最新的版本. 当 [checked] 为 `true` 时, `null` 表示没有新版本. 否则表示还没有检查过.
@@ -207,7 +218,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                     logger.warn { "uriHandler is null, cannot navigate to browser (may happen for auto check)" }
                     return@launch
                 }
-                ver.downloadUrlAlternatives.firstOrNull()?.let {
+                downloadUrlsOf(ver).firstOrNull()?.let {
                     uriHandler.openUri(it)
                 } ?: run {
                     logger.warn { "No download URL found, ignoring" }
@@ -223,7 +234,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
             }
 
             // Linux prepares a small zsync file; other platforms prepare the package URL unchanged.
-            val preparationUrls = updateInstaller.getUpdatePreparationUrls(ver.downloadUrlAlternatives)
+            val preparationUrls = updateInstaller.getUpdatePreparationUrls(downloadUrlsOf(ver))
             val dir = updateManager.saveDir
             if (dir.exists()) {
                 // 删除旧的文件
