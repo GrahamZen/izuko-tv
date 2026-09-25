@@ -54,6 +54,7 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -706,20 +707,12 @@ class WebSessionManager(
 
     private suspend fun acquireSession(host: String): BrowserSession {
         lock.withLock {
-            hostStates[host]?.session?.let {
-                it.refCount++
-                it.lastUsedAtMillis = getTimeMillis()
-                return it
-            }
+            takeLiveSessionLocked(host)?.let { return it }
         }
         return browserCreateSemaphore.withPermit {
             // double-check: 等待信号量期间可能已有人创建
             lock.withLock {
-                hostStates[host]?.session?.let {
-                    it.refCount++
-                    it.lastUsedAtMillis = getTimeMillis()
-                    return it
-                }
+                takeLiveSessionLocked(host)?.let { return it }
             }
             val browser = withContext(ioContext) { browserFactory.create() }
             val session = BrowserSession(browser).apply {
@@ -747,6 +740,24 @@ class WebSessionManager(
             evicted.forEach { closeSession(it) }
             result
         }
+    }
+
+    /**
+     * 取 [host] 已有的会话并加一次引用. 浏览器已失效 (见 [CaptchaBrowser.isDead]) 的会话从注册表摘掉并关闭,
+     * 返回 null 让调用方重建 —— 不摘的话这个站点要一直失败到会话闲置过期. 必须在 [lock] 内调用.
+     */
+    private fun takeLiveSessionLocked(host: String): BrowserSession? {
+        val state = hostStates[host] ?: return null
+        val session = state.session ?: return null
+        if (session.browser.isDead.value) {
+            logger.warn { "WebSessionManager: browser for $host is dead, recreating" }
+            state.session = null
+            runCatching { session.browser.close() }
+            return null
+        }
+        session.refCount++
+        session.lastUsedAtMillis = getTimeMillis()
+        return session
     }
 
     private suspend fun releaseSession(session: BrowserSession) {

@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,6 +28,7 @@ import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.Uuid
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
@@ -154,6 +156,12 @@ class BangumiOAuthManager(
             _state.value = State.Authorizing(url, browser)
             logger.info { "bgm-direct: oauth 打开授权页 (应用内浏览器)" }
             browser.navigate(url)
+            // 网页进程被系统回收后浏览器就废了, 界面上只剩空白: 转成失败让用户重来.
+            // 授权成功或取消时 closeBrowser 会取消本协程, 不会一直挂着
+            browser.isDead.first { it }
+            logger.warn { "bgm-direct: oauth 应用内浏览器的网页进程没了" }
+            _state.value = State.Failed(LoadError.UnknownError(IllegalStateException("WebView render process gone")))
+            closeBrowser()
         }
     }
 
