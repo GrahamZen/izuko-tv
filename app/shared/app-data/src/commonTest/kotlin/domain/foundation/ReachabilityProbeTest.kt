@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -76,9 +78,11 @@ class ReachabilityProbeTest {
     )
 
     private fun probe(requested: MutableList<String> = mutableListOf(), status: (host: String) -> HttpStatusCode?): ReachabilityProbe {
+        // 各入口并行探测, 跑在多线程调度器上: 不加锁的话两条同时 add 会丢一条
+        val requestedLock = Mutex()
         val client = HttpClient(
             MockEngine { request ->
-                requested += request.url.toString()
+                requestedLock.withLock { requested += request.url.toString() }
                 respond("", status(request.url.host) ?: throw IOException("blocked"))
             },
         ) {

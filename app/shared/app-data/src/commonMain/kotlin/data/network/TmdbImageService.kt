@@ -45,10 +45,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
-import kotlinx.datetime.todayIn
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -69,10 +67,7 @@ import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.CoroutineContext
 import kotlin.math.absoluteValue
-import kotlin.time.Clock
 import kotlin.time.TimeSource
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.days
 
 /**
  * 从 TMDB 获取条目的横版背景图 (backdrop), 用于 TV 详情页 Hero 背景等.
@@ -99,6 +94,8 @@ class TmdbImageService(
      * 生产由 Koin 注入; 测试与离线跑表的匹配器留 null —— 后者就是生成这张表的, 不能反过来查它.
      */
     private val subjectMap: TmdbSubjectMapRepository? = null,
+    /** 当前的 Bangumi 路由 (见 `BangumiEndpointProvider.currentRouting`), 只拿来比对变没变, 见 [lineageDisabled]. */
+    private val bangumiRouting: () -> Any? = { null },
 ) {
     /**
      * TMDB 与 bangumi 两边的请求共用. **带 bangumi token**: 这个 client 也会去打
@@ -243,7 +240,8 @@ class TmdbImageService(
      * 拿新名字重搜), 于是**每个**直搜未命中的条目都要白等这 10 秒 (issue #7 报告者日志实测).
      *
      * 这种不通是持续状态而不是偶发, 一直重试没有意义. 成功一次就清零 —— 临时抖动不该永久
-     * 关掉这条兜底路径; 冷启动也重新计数, 免得用户换了网络还被上次的判定卡着.
+     * 关掉这条兜底路径; 冷启动与改了 Bangumi 的连接方式 (见 [lineageDisabled]) 也重新计数, 免得用户换了网络或线路
+     * 还被上次的判定卡着.
      *
      * **原子量而不是普通 `var`**: 不同条目的解析是并发的 (只有同条目才合流, 见
      * [backdropInFlight]), 两个并发失败各读到 0 各写回 1 就丢掉一次计数, 熔断要多等一轮失败
@@ -252,6 +250,21 @@ class TmdbImageService(
      */
     @OptIn(ExperimentalAtomicApi::class)
     private val lineageFailureStreak = AtomicInt(0)
+
+    /** [lineageFailureStreak] 数的是哪条路由上的失败 ([bangumiRouting]). */
+    @Volatile
+    private var lineageFailureRouting: Any? = null
+
+    /** 关联回溯是否已熔断; 路由变了 (用户改了 Bangumi 的连接方式) 先清零, 按新路线重新试. */
+    @OptIn(ExperimentalAtomicApi::class)
+    private fun lineageDisabled(): Boolean {
+        val routing = bangumiRouting()
+        if (routing != lineageFailureRouting) {
+            lineageFailureRouting = routing
+            lineageFailureStreak.store(0)
+        }
+        return lineageFailureStreak.load() >= LINEAGE_FAILURE_LIMIT
+    }
 
     /**
      * 在途的 backdrop 解析, **精确按 subjectId 合流** (single-flight).
@@ -456,6 +469,24 @@ class TmdbImageService(
     private val resolvedInsertionOrder = ArrayDeque<Int>()
 
     /**
+     * 对应表里没有、本机搜过背景图也没找到的条目, 值 = 那次有没有带 [TmdbMatchHints]; 只在 [resolvedLock] 里碰.
+     *
+     * **只在本次运行里记, 不存盘**: 表覆盖 Bangumi 每周导出的全部动画, 表里没有的多半是还没进导出的新番,
+     * 一周左右就会进表 —— 存盘的「没有」会在那之后继续挡着. 列表页只有名字 (没带 hints) 查空的,
+     * 之后带着 hints 再查一次.
+     */
+    private val localBackdropMisses = mutableMapOf<Int, Boolean>()
+
+    /** 同 [localBackdropMisses], 对应屏保的全量剧照 ([getAllBackdropUrls]). */
+    private val localAllBackdropsMisses = mutableSetOf<Int>()
+
+    /** 表里有的条目的全量剧照: 按表里那个 TMDB 条目取来的, 只在本次运行里记 (表更新了下次运行就按新的取). */
+    private val allBackdropsFromMap = mutableMapOf<Int, List<String>>()
+
+    /** 同 [localBackdropMisses], 对应分集剧照 ([getEpisodeStills]); 元素 = 条目 id 与语言. */
+    private val localStillsMisses = mutableSetOf<Pair<Int, String>>()
+
+    /**
      * 同步读取本进程**已经解析过**的 backdrop URL, 不发请求也不读盘.
      *
      * 给"上一个页面早就查过同一条目"的场景做首帧初值用 (TV 探索/搜索/时间表页聚焦时会预取
@@ -486,10 +517,17 @@ class TmdbImageService(
         return withContext(ioDispatcher) { readCache().backdropUrls[subjectId]?.takeIf { it.isNotEmpty() } }
     }
 
-    /** 只查持久缓存的分集剧照, **不发请求**; 没缓存或缓存的语言不同返回 null. 用途同 [peekCachedBackdropUrl]. */
+    /**
+     * 只查持久缓存的分集剧照, **不发请求**; 没缓存、缓存的语言不同、或不是照对应表当前这一版建的 (同 [getEpisodeStills])
+     * 返回 null. 用途同 [peekCachedBackdropUrl].
+     */
     suspend fun peekCachedEpisodeStills(subjectId: Int, language: String): TmdbEpisodeStills? {
         if (disabledByUser) return null
-        return withContext(ioDispatcher) { readCache().episodeStills[subjectId]?.takeIf { it.language == language } }
+        val mapEntry = subjectMap?.peek(subjectId)
+        return withContext(ioDispatcher) {
+            readCache().episodeStills[subjectId]?.takeIf { it.language == language }
+                ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
+        }
     }
 
     private fun rememberResolvedBackdrop(subjectId: Int, url: String?) {
@@ -511,8 +549,7 @@ class TmdbImageService(
      * 获取条目横版背景图 URL (w1280). [originalName] 为日文原名 (SubjectInfo.name).
      * 找不到或未配置 token 时返回 null.
      *
-     * @param activeAsOfDate 该条目最新已播集的日期 (`YYYY-MM-DD`), 拿不到分集时可传开播日期.
-     *   决定负缓存的有效期 (见 [negativeCacheTtl]); 不传则负缓存永久有效 (旧行为).
+     * @param activeAsOfDate 该条目最新已播集的日期 (`YYYY-MM-DD`), 拿不到分集时可传开播日期. 用作年份判据的基准年.
      * @param hints 条目侧的附加信息 (中文名 / 上映年度 / 是否影院放映), 见 [TmdbMatchHints].
      */
     suspend fun getBackdropUrl(
@@ -563,6 +600,9 @@ class TmdbImageService(
             if (fromMap.settled) rememberResolvedBackdrop(subjectId, fromMap.url)
             return fromMap.url
         }
+        // 表里没有: 这次运行里搜过没找到的不再搜 (见 [localBackdropMisses])
+        val missHadHints = synchronized(resolvedLock) { localBackdropMisses[subjectId] }
+        if (missHadHints != null && (missHadHints || hints == TmdbMatchHints.Empty)) return null
         if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return null
         val task = backdropInFlightLock.withLock {
             backdropInFlight[subjectId] ?: resolveScope.async {
@@ -632,25 +672,10 @@ class TmdbImageService(
             // 合流等待期间前一个任务可能已经把这条解析完了, 再看一眼热表, 命中就连读盘都省了
             resolvedBackdropUrls[subjectId]?.let { return@withContext it }
 
-            val cache = readCache()
-            cache.backdropUrls[subjectId]?.let { cached ->
-                if (cached.isNotEmpty()) {
-                    // 正缓存永久有效: URL 拿到就不会变
-                    rememberResolvedBackdrop(subjectId, cached)
-                    return@withContext cached
-                }
-                // 负缓存: 过期才重取, 且闸门保证进程内每条目只放行一次 ——
-                // TMDB 侧确实没图时, 反复进出详情页不会反复空拉
-                // 上次是列表页 (没有条目信息) 查空的, 这次带着 hints —— 无视 TTL 重查一次,
-                // 见 [TmdbImageCache.backdropMissWithoutHints]
-                val retryWithHints = hints != TmdbMatchHints.Empty &&
-                        subjectId in cache.backdropMissWithoutHints
-                val stale = negativeCacheStale(cache.backdropMissAt[subjectId], activeAsOfDate)
-                if (!retryWithHints && !backdropRefreshGate.shouldRefresh(subjectId) { stale }) {
-                    rememberResolvedBackdrop(subjectId, null)
-                    return@withContext null
-                }
-                logger.info { "Retrying TMDB backdrop for subject $subjectId (negative cache expired)" }
+            // 本机只存找到的 (正缓存永久有效: URL 拿到就不会变); 没找到只在本次运行里记, 见 [localBackdropMisses]
+            readCache().backdropUrls[subjectId]?.let { cached ->
+                rememberResolvedBackdrop(subjectId, cached)
+                return@withContext cached
             }
 
             // 年份否决用的基准年 (见 yearPlausible). activeAsOfDate 的语义是"最新已播集的
@@ -712,8 +737,10 @@ class TmdbImageService(
                     ?: ""
                 "TMDB backdrop for subject $subjectId: ${url ?: "not found"} (${elapsed}ms$lineage)"
             }
-            dataStore.updateData {
-                it.withBackdropResult(subjectId, url, hadHints = hints != TmdbMatchHints.Empty)
+            if (url != null) {
+                dataStore.updateData { it.withBackdropResult(subjectId, url) }
+            } else {
+                synchronized(resolvedLock) { localBackdropMisses[subjectId] = hints != TmdbMatchHints.Empty }
             }
             rememberResolvedBackdrop(subjectId, url)
             url
@@ -723,10 +750,11 @@ class TmdbImageService(
     /**
      * 获取条目在 TMDB 上的全部横版剧照 (backdrop) URL (w1280), 用于 TV 屏保轮播.
      *
-     * 条目匹配与 [getBackdropUrl] 同一套三层搜索; 命中后再拉 `/images` 一次取全量
+     * 对应表里有这个条目就用它定下的那个 TMDB 条目 (与 hero 背景同一个), 本机缓存不参与, 取来的只在本次运行里记;
+     * 表里没有才按 [getBackdropUrl] 同一套三层搜索. 命中后再拉 `/images` 一次取全量
      * (不带 language 参数, backdrop 基本都是无语言图, 过滤反而会漏).
      * 找不到条目或未配置 token 时返回空列表, 调用方跳过该动画.
-     * 结果按 subjectId 持久缓存 (空列表 = 已确认无图的负缓存); 网络错误不缓存.
+     * 自己搜到的按 subjectId 持久缓存; 没找到只在本次运行里记 (见 [localBackdropMisses]); 网络错误不记.
      */
     suspend fun getAllBackdropUrls(
         subjectId: Int,
@@ -735,55 +763,62 @@ class TmdbImageService(
         /** 与 [getBackdropUrl] 喂同一份条目侧输入, 少喂一项就可能算出另一个结果. */
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): List<String> = withContext(ioDispatcher) {
-        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
+        if (disabledByUser) return@withContext emptyList()
 
-        val cache = readCache()
-        cache.allBackdrops[subjectId]?.let { cached ->
-            if (cached.isNotEmpty()) return@withContext cached
-            val stale = negativeCacheStale(cache.allBackdropsMissAt[subjectId], activeAsOfDate)
-            if (!allBackdropsRefreshGate.shouldRefresh(subjectId) { stale }) return@withContext cached
-            logger.info { "Retrying TMDB backdrops for subject $subjectId (negative cache expired)" }
+        val mapEntry = subjectMap?.lookup(subjectId)
+        if (mapEntry != null) {
+            synchronized(resolvedLock) { allBackdropsFromMap[subjectId] }?.let { return@withContext it }
+            // 表里确认没有对应: 不要 token 也知道没有
+            val ref = mapEntry.backdrop ?: return@withContext emptyList()
+            if (currentAniBuildConfig.tmdbApiToken.isBlank()) return@withContext emptyList()
+            val urls = try {
+                fetchAllBackdropUrls(TmdbMediaRef(ref.type, ref.id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to fetch TMDB backdrops for subject $subjectId (from map), will retry next time" }
+                return@withContext emptyList() // 网络错误不记, 下次重试
+            }
+            logger.info { "TMDB backdrops for subject $subjectId from map: ${urls.size}" }
+            synchronized(resolvedLock) { allBackdropsFromMap[subjectId] = urls }
+            return@withContext urls
         }
+
+        if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
+        // 表里没有: 本机只存找到的; 这次运行里搜过没找到的不再搜 (见 [localBackdropMisses])
+        readCache().allBackdrops[subjectId]?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+        if (synchronized(resolvedLock) { subjectId in localAllBackdropsMisses }) return@withContext emptyList()
 
         // 见 doResolveBackdropUrl 里同名变量的说明
         val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
-        val mapEntry = subjectMap?.lookup(subjectId)
         val urls = try {
-            val ref = if (mapEntry != null) {
-                // 对应表里有这个条目: 用它定下的那个 TMDB 条目 (与 hero 背景同一个), 不再搜
-                mapEntry.backdrop?.let { TmdbMediaRef(it.type, it.id) }
-            } else {
-                searchLayered(
-                    originalName,
-                    rootNameResolver(subjectId, originalName, hints.nameCn),
-                ) { query, _ ->
-                    searchAnimeRef(query, subjectYear)
-                }
-            }
-            ref?.let { fetchBackdropPaths(it) }
-                .orEmpty()
-                .take(MAX_BACKDROPS_PER_SUBJECT)
-                .map { "$IMAGE_BASE_URL$it" }
+            searchLayered(
+                originalName,
+                rootNameResolver(subjectId, originalName, hints.nameCn),
+            ) { query, _ ->
+                searchAnimeRef(query, subjectYear)
+            }?.let { fetchAllBackdropUrls(it) }.orEmpty()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logger.warn(e) { "Failed to fetch TMDB backdrops for subject $subjectId, will retry next time" }
-            return@withContext emptyList() // 网络错误不写缓存, 下次重试
+            return@withContext emptyList() // 网络错误不记, 下次重试
         }
 
         logger.info { "TMDB backdrops for subject $subjectId: ${urls.size}" }
-        dataStore.updateData {
-            it.copy(
-                allBackdrops = it.allBackdrops + (subjectId to urls),
-                allBackdropsMissAt = if (urls.isNotEmpty()) {
-                    it.allBackdropsMissAt - subjectId
-                } else {
-                    it.allBackdropsMissAt + (subjectId to currentTimeMillis())
-                },
-            )
+        if (urls.isNotEmpty()) {
+            dataStore.updateData { it.copy(allBackdrops = it.allBackdrops + (subjectId to urls)) }
+        } else {
+            synchronized(resolvedLock) { localAllBackdropsMisses += subjectId }
         }
         urls
     }
+
+    /** [ref] 的全部横版剧照 (前 [MAX_BACKDROPS_PER_SUBJECT] 张, w1280). */
+    private suspend fun fetchAllBackdropUrls(ref: TmdbMediaRef): List<String> =
+        fetchBackdropPaths(ref)
+            .take(MAX_BACKDROPS_PER_SUBJECT)
+            .map { "$IMAGE_BASE_URL$it" }
 
     /** 跨类型取匹配条目的引用 (type + id), 档次顺序与 [searchBackdropPath] 一致. */
     private suspend fun searchAnimeRef(query: String, subjectYear: Int?): LayeredHit<TmdbMediaRef>? {
@@ -878,15 +913,20 @@ class TmdbImageService(
         withContext(ioDispatcher) {
             val mapEntry = subjectMap?.lookup(subjectId)
             val cached = readCache().episodeStills[subjectId]?.takeIf { it.language == language }
-                // 人工修正过的条目: 缓存得是照这一版修正建的, 否则作废重建
-                ?.takeIf { mapEntry?.manual != true || it.mapRef == mapEntry.stillsBuildKey }
+                // 表里有这个条目: 缓存得是照表里这一版建的 (见 [TmdbEpisodeStills.mapRef]) —— 查表之前自己搜的、
+                // 或表后来改过 (人工修正) 的都作废重建
+                ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
             if (cached != null) {
                 val refresh = newestWantedAirDate != null &&
                     stillsRefreshGate.shouldRefresh(subjectId) { !cached.coversAirDate(newestWantedAirDate) }
                 if (!refresh) return@withContext cached
             }
+            // 表里没有: 这次运行里搜过没找到的不再搜 (见 [localStillsMisses])
+            if (mapEntry == null && synchronized(resolvedLock) { (subjectId to language) in localStillsMisses }) {
+                return@withContext TmdbEpisodeStills()
+            }
 
-            val stills = try {
+            val fetched = try {
                 fetchEpisodeStills(
                     subjectId, originalName, language,
                     subjectYear = tmdbSubjectYear(
@@ -908,11 +948,23 @@ class TmdbImageService(
                 // 网络错误不写缓存; 陈旧重取失败时继续用旧缓存, 首次拉取失败返回 null (见 KDoc)
                 return@withContext cached
             }
+            // 表里有的条目, 表没给出处 (合集, 或自动匹配时剧照链没找到) 时是自己搜的: 同样记上表的版本,
+            // 下次照样用, 表改了才重建
+            val stills = if (mapEntry != null && fetched.mapRef == null) {
+                fetched.copy(mapRef = mapEntry.stillsBuildKey)
+            } else {
+                fetched
+            }
 
             // 陈旧重取拿到空结果 (如 TMDB 瞬时搜索不中) 时保留旧缓存, 不用坏数据覆盖好数据
             if (cached != null && stills.isEmpty() && !cached.isEmpty()) {
                 logger.info { "TMDB episode stills refresh for subject $subjectId returned empty, keeping cached" }
                 return@withContext cached
+            }
+            // 表里没有的条目: 没找到不存盘, 只在本次运行里记 (见 [localStillsMisses])
+            if (mapEntry == null && stills.isEmpty()) {
+                synchronized(resolvedLock) { localStillsMisses += subjectId to language }
+                return@withContext stills
             }
 
             logger.info {
@@ -1086,50 +1138,6 @@ class TmdbImageService(
 
     /** 分集缓存的陈旧重取闸门: 进程内每条目最多放行一次, 见 [getEpisodeStills]. */
     private val stillsRefreshGate = StaleRefreshGate<Int>()
-
-    /** backdrop 负缓存的重取闸门 (与 [allBackdropsRefreshGate] 分开计次), 见 [negativeCacheStale]. */
-    private val backdropRefreshGate = StaleRefreshGate<Int>()
-
-    /** 全量剧照负缓存的重取闸门. */
-    private val allBackdropsRefreshGate = StaleRefreshGate<Int>()
-
-    /**
-     * 负缓存 ("TMDB 上没有这张图") 还能不能相信.
-     *
-     * 图和标题都是 TMDB 社区在开播后陆续补的, 所以新番的"没有"往往只是"还没有" ——
-     * 一次空结果被永久缓存的后果是: 之后 TMDB 补了图, 这个条目也永远不会再查一次
-     * (表现为"别人有图我没有", 而代理测试里 TMDB 全绿, 因为压根没发请求).
-     *
-     * @param missAt 负缓存写入时刻; null = 旧缓存没记时间, 给一次重取机会
-     *   (这样就不必像匹配算法变更那样 bump [TmdbImageCache.CURRENT_VERSION] 作废整个缓存,
-     *   代价从"所有条目重新搜索"降到"只重取负缓存那几条")
-     */
-    private fun negativeCacheStale(missAt: Long?, activeAsOfDate: String?): Boolean {
-        if (missAt == null) return true
-        val ttl = negativeCacheTtl(activeAsOfDate) ?: return false
-        // 相减而非比较绝对值: 时钟回拨得到负数, 自然判为未过期, 不会因为系统时间乱跳而反复重取
-        return currentTimeMillis() - missAt >= ttl.inWholeMilliseconds
-    }
-
-    /**
-     * 负缓存有效期; null = 永久.
-     *
-     * 判据是"这部番有多活"而非"开播多久": 两年前开播但仍在连载的长番, 按开播日期会被误判成
-     * 老番而拿到永久负缓存. 因此 [activeAsOfDate] 取最新已播集的日期 (口径同
-     * [getEpisodeStills] 的 `newestWantedAirDate`), 调用方拿不到分集时退化为开播日期.
-     */
-    private fun negativeCacheTtl(activeAsOfDate: String?): Duration? {
-        val aired = activeAsOfDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
-        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-        return when (aired.daysUntil(today)) {
-            // 还在播或刚完结: TMDB 正在陆续补图, 最坏等三天
-            in Int.MIN_VALUE..NEGATIVE_CACHE_AIRING_DAYS -> NEGATIVE_CACHE_TTL_AIRING
-            // 补图概率已低, 但不能说没有
-            in (NEGATIVE_CACHE_AIRING_DAYS + 1)..NEGATIVE_CACHE_RECENT_DAYS -> NEGATIVE_CACHE_TTL_RECENT
-            // 一年都没人补, 基本不会再有; 屏保轮播会扫全部收藏, 老番参与重试会明显放大请求
-            else -> null
-        }
-    }
 
     private suspend fun fetchEpisodeStills(
         subjectId: Int,
@@ -1860,7 +1868,7 @@ class TmdbImageService(
     /** [resolveLineageOrNull] 的 Bangumi 逐跳回溯那半, 单独拿出来给 [rootNameResolver] 再试一次用. */
     @OptIn(ExperimentalAtomicApi::class)
     private suspend fun resolveLineageViaBgm(subjectId: Int, originalName: String): BgmLineage? {
-        if (lineageFailureStreak.load() >= LINEAGE_FAILURE_LIMIT) return null
+        if (lineageDisabled()) return null
         return try {
             var currentId = subjectId
             var rootName: String? = null
@@ -1916,7 +1924,7 @@ class TmdbImageService(
                     "($streak/$LINEAGE_FAILURE_LIMIT consecutive failures)"
             }
             if (streak >= LINEAGE_FAILURE_LIMIT) {
-                logger.warn { "Bangumi relation lookups disabled for this session (api.bgm.tv unreachable)" }
+                logger.warn { "Bangumi relation lookups disabled until the Bangumi route changes or the app restarts (api.bgm.tv unreachable)" }
             }
             null
         }
@@ -2551,15 +2559,6 @@ class TmdbImageService(
         /** 超限时一次淘汰的条数 (均摊淘汰开销, 不必每次写入都动表). */
         private const val RESOLVED_HOT_CACHE_EVICT_BATCH = 100
 
-        /** 最新已播集在此天数内 = 还在播或刚完结, 负缓存按 [NEGATIVE_CACHE_TTL_AIRING] 失效. */
-        private const val NEGATIVE_CACHE_AIRING_DAYS = 60
-
-        /** 最新已播集在此天数内 = 近作, 负缓存按 [NEGATIVE_CACHE_TTL_RECENT] 失效; 更早则永久. */
-        private const val NEGATIVE_CACHE_RECENT_DAYS = 365
-
-        private val NEGATIVE_CACHE_TTL_AIRING = 3.days
-        private val NEGATIVE_CACHE_TTL_RECENT = 30.days
-
         /** 单条目剧照上限 (屏保轮播用不到更多, 控制缓存体积). */
         private const val MAX_BACKDROPS_PER_SUBJECT = 20
 
@@ -2645,8 +2644,7 @@ internal fun Char.isCjkOrKana(): Boolean =
  * ## 为什么必须有上限
  *
  * `dataStore.updateData { it.copy(backdropUrls = map + entry) }` 是**整表复制 + 整个缓存重新
- * 序列化落盘**, 所以每解析一个新条目的写盘成本是 `O(已缓存条目数)`. 这张表原先没有任何上限
- * (旁边 [TmdbImageCache.backdropMissAt] 那句"免得随收藏量无限增长"说的是时间戳表, 主表漏了),
+ * 序列化落盘**, 所以每解析一个新条目的写盘成本是 `O(已缓存条目数)`. 这张表原先没有任何上限,
  * 于是成本随使用**单调上升且持久化** —— 重装前不会自愈.
  *
  * 从前增长速度是"用户真正聚焦过的条目", 一天几十条还能忍; 加了邻居预取之后每移动一格要解析
@@ -2661,34 +2659,12 @@ internal fun Char.isCjkOrKana(): Boolean =
  * 淘汰按批 ([PERSISTED_BACKDROP_EVICT_BATCH]) 而不是每次挤掉一条, 免得到达上限之后每一次
  * 写入都要重算淘汰集。被淘汰的条目下次聚焦时重新走一次 TMDB, 只是慢一点, 不会出错。
  */
-internal fun TmdbImageCache.withBackdropResult(
-    subjectId: Int,
-    url: String?,
-    hadHints: Boolean = true,
-): TmdbImageCache {
-    val urls = backdropUrls + (subjectId to (url ?: ""))
-    // 拿到图就清掉时间戳, 免得这个 map 随收藏量无限增长
-    val missAt = if (url != null) {
-        backdropMissAt - subjectId
-    } else {
-        backdropMissAt + (subjectId to currentTimeMillis())
-    }
-    // 只有"没带 hints 又没拿到图"才留记号; 带着 hints 查过一次之后就摘掉, 不再重查
-    val noHints = if (url == null && !hadHints) {
-        backdropMissWithoutHints + subjectId
-    } else {
-        backdropMissWithoutHints - subjectId
-    }
-    if (urls.size <= PERSISTED_BACKDROP_MAX) {
-        return copy(backdropUrls = urls, backdropMissAt = missAt, backdropMissWithoutHints = noHints)
-    }
+internal fun TmdbImageCache.withBackdropResult(subjectId: Int, url: String): TmdbImageCache {
+    val urls = backdropUrls + (subjectId to url)
+    if (urls.size <= PERSISTED_BACKDROP_MAX) return copy(backdropUrls = urls)
     // Map.plus 返回 LinkedHashMap, 反序列化出来的也是 —— keys 的迭代顺序就是写入顺序
     val dropped = urls.keys.take(urls.size - PERSISTED_BACKDROP_MAX + PERSISTED_BACKDROP_EVICT_BATCH).toSet()
-    return copy(
-        backdropUrls = urls - dropped,
-        backdropMissAt = missAt - dropped,
-        backdropMissWithoutHints = noHints - dropped,
-    )
+    return copy(backdropUrls = urls - dropped)
 }
 
 /**
@@ -2700,37 +2676,21 @@ private const val PERSISTED_BACKDROP_MAX = 2000
 /** 到达上限后一次淘汰多少条 (均摊重算淘汰集的开销). */
 private const val PERSISTED_BACKDROP_EVICT_BATCH = 200
 
+/**
+ * 本机的 TMDB 结果缓存. **只存找到的**: 「没找到」只在本次运行里记 (见 TmdbImageService 的 localBackdropMisses 等),
+ * 对应表里有的条目以表为准 —— 背景图与全量剧照不进这里, 分集剧照记着建它时表的版本 ([TmdbEpisodeStills.mapRef]).
+ */
 @Serializable
 data class TmdbImageCache(
-    /** subjectId -> backdrop URL; 空串表示已确认 TMDB 无此条目图 (负缓存). */
+    /** subjectId -> backdrop URL (对应表里没有、自己搜到的). */
     val backdropUrls: Map<Int, String> = emptyMap(),
-    /** subjectId -> 分集缩略图 (按播出日期索引); 存在但为空 = 已确认无图 (负缓存). */
+    /**
+     * subjectId -> 分集缩略图 (按播出日期索引). 空的只可能出自对应表 (表确认没有, 或表没给出处、照表那一版自己搜也没有),
+     * 表一改就作废.
+     */
     val episodeStills: Map<Int, TmdbEpisodeStills> = emptyMap(),
-    /** subjectId -> 全部横版剧照 URL (屏保轮播用); 空列表 = 已确认无图 (负缓存). 新字段有默认值, 不影响旧缓存. */
+    /** subjectId -> 全部横版剧照 URL (屏保轮播用; 对应表里没有、自己搜到的). */
     val allBackdrops: Map<Int, List<String>> = emptyMap(),
-    /**
-     * subjectId -> [backdropUrls] 负缓存的写入时刻 (epoch millis), 决定它何时失效.
-     * 新番的"没有 backdrop"通常只是"还没有" (TMDB 的图由社区在开播后陆续补), 见 [negativeCacheTtl].
-     * 缺失 (旧缓存写下的负缓存) 视为已过期, 下次访问重取一次. 新字段有默认值, 不影响旧缓存.
-     */
-    val backdropMissAt: Map<Int, Long> = emptyMap(),
-    /**
-     * 负结果是**没带 [TmdbMatchHints] 时写下**的条目.
-     *
-     * TV 的时间表/搜索页只有 `subjectId + 名字`, 拿不到"是不是影院放映"与"上映年度",
-     * 于是剧场版闸门与上映年度那两档在它们那里不生效. 老条目的负缓存又是**永久**的
-     * (见 [negativeCacheTtl]), 列表页先解析失败的话, 之后带着完整信息进详情页也不会再查 ——
-     * 那 9 条老剧场版 (エースをねらえ! / UP / 銀河鉄道999 映画版 / 彼女と彼女の猫 …) 就此钉死.
-     * 记一笔, 让**第一次带着 hints 的调用**无视 TTL 重查一次; 重查后无论结果如何都会移出这张表,
-     * 所以每个条目最多多查一次.
-     */
-    val backdropMissWithoutHints: Set<Int> = emptySet(),
-    /**
-     * 同 [backdropMissAt], 对应 [allBackdrops].
-     * 必须与前者分开存: 共用一份时间戳会让"单图重取成功后清除时间戳"把全量剧照的负缓存
-     * 变成永久有效, 屏保轮播从此不再重试.
-     */
-    val allBackdropsMissAt: Map<Int, Long> = emptyMap(),
     /** 匹配算法版本, 与 [CURRENT_VERSION] 不符时整个缓存作废 (旧算法结果可能有误). */
     val version: Int = 0,
 ) {
@@ -2797,8 +2757,10 @@ data class TmdbImageCache(
          *      bgm 的 infobox「别名」是自由文本, 写着别的作品时整条链路跟着错图 ——
          *      `Re:プチから始める異世界生活` (185837) 的别名字段是「Isekai Shokudou」(異世界食堂),
          *      hero 背景与整排选集卡都存成了那部的图 (2026-09-06 用户报的).
+         * v23: 对应表上线后本机不再存「没找到」, 表里有的条目一律以表为准. 查表之前留下的负缓存 (一年以上不活跃的老番是
+         *      永久的) 会一直挡着屏保全量剧照与分集剧照走表, 连同自己搜的旧结果整表作废.
          */
-        const val CURRENT_VERSION = 22
+        const val CURRENT_VERSION = 23
     }
 }
 
@@ -2847,8 +2809,9 @@ data class TmdbEpisodeStills(
      */
     val byAirDateOrigin: Map<String, List<TmdbEpisodeOrigin>> = emptyMap(),
     /**
-     * 照对应表建的 ([TmdbSubjectMapEntry.stillsBuildKey]); 自己搜出来的为 null.
-     * 人工修正改了剧照出处时, 靠它认出旧缓存该作废, 见 `TmdbImageService.getEpisodeStills`.
+     * 建这份数据时对应表里这个条目的版本 ([TmdbSubjectMapEntry.stillsBuildKey]); 表里没有的条目为 null.
+     * 表里有的条目只认这一项与表当前一致的缓存 (表没给出处、自己搜的也记上), 查表之前自己搜的与人工修正改过出处的
+     * 都靠它认出该作废, 见 `TmdbImageService.getEpisodeStills`.
      */
     val mapRef: String? = null,
     /**

@@ -71,17 +71,17 @@ class TmdbEpisodeMapTest {
 
     @Test
     fun `对应表第 6 列 - 认不出就当没有，不连累整行`() {
-        val map = parseTmdbSubjectMap(
+        val map = TmdbSubjectMapIndex.parse(
             listOf(
                 "1\ttv/1\t/a.jpg\ttv/1\tauto\tS1E1",
                 "2\ttv/2\t/b.jpg\ttv/2\tauto\t???",
                 "3\ttv/3\t/c.jpg\ttv/3\tauto",
-            ).joinToString("\n"),
+            ).joinToString("\n").encodeToByteArray(),
         )
-        assertEquals("S1E1", map.getValue(1).episodes)
-        assertNull(map.getValue(2).episodes)
-        assertEquals("/b.jpg", map.getValue(2).backdropPath)
-        assertNull(map.getValue(3).episodes)
+        assertEquals("S1E1", map[1]?.episodes)
+        assertNull(map[2]?.episodes)
+        assertEquals("/b.jpg", map[2]?.backdropPath)
+        assertNull(map[3]?.episodes)
     }
 
     @Test

@@ -98,7 +98,7 @@ abstract class PlatformDataStoreManager {
         )
     }
 
-    /** 对应表 (bangumi-tmdb-map) 的本地缓存, 一两 MB 的原文; 单独一个文件, 不挤在偏好设置里. */
+    /** 对应表 (bangumi-tmdb-map) 的下载元数据; 表的原文在单独的文件里, 见 TmdbSubjectMapRepository. */
     val tmdbSubjectMapStore by lazy {
         DataStoreFactory.create(
             serializer = TmdbSubjectMapCache.serializer()

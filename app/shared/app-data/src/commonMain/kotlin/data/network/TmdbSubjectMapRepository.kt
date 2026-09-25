@@ -13,21 +13,31 @@ import androidx.datastore.core.DataStore
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.exists
+import me.him188.ani.utils.io.moveTo
+import me.him188.ani.utils.io.name
+import me.him188.ani.utils.io.readBytes
+import me.him188.ani.utils.io.resolveSibling
+import me.him188.ani.utils.io.writeBytes
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -46,9 +56,14 @@ import kotlin.time.TimeSource
  * 好几秒) 与为拿别名先请求的 bgm 条目详情; 背景图连 TMDB 接口都不用请求, 大陆接口不通时只要图床通就能出图.
  *
  * 查不到的条目 (新条目还没算到、TMDB 上没有、表没下载成功) 照旧由 [TmdbImageService] 自己搜.
+ *
+ * 表的原文 (两万多行, 一两 MB) 存在 [mapFile], 内存里只放原文字节与按条目 id 排序的行索引, 查到哪条再解析哪一行
+ * (见 [TmdbSubjectMapIndex]); [cache] 里只有下载元数据. 这就是远端数据的缓存: 本地没有表文件 (刚安装、存法换过)
+ * 就不管元数据, 重新下整份.
  */
 class TmdbSubjectMapRepository(
     private val cache: DataStore<TmdbSubjectMapCache>,
+    private val mapFile: SystemPath,
     /** 惰性取, 与 [me.him188.ani.app.domain.foundation.BangumiMirrorListRepository] 同理: 构造期不碰 HttpClientProvider. */
     private val client: () -> ScopedHttpClient,
     /** 设置里关了 TMDB 图片就不下载 */
@@ -57,8 +72,8 @@ class TmdbSubjectMapRepository(
 ) {
     private val logger = logger<TmdbSubjectMapRepository>()
 
-    /** 解析好的表; null = 还没从本地读出来. */
-    private val entries = MutableStateFlow<Map<Int, TmdbSubjectMapEntry>?>(null)
+    /** 读进来的表; null = 还没从本地读出来. */
+    private val entries = MutableStateFlow<TmdbSubjectMapIndex?>(null)
 
     /**
      * 第一轮检查 (下载或确认不用下载) 结束. 本地还没有表 (刚安装) 时, [lookup] 会等它一小会儿,
@@ -69,11 +84,10 @@ class TmdbSubjectMapRepository(
     init {
         scope.launch {
             val start = TimeSource.Monotonic.markNow()
-            val cached = cache.data.first()
-            val parsed = parseTmdbSubjectMap(cached.tsv)
-            entries.value = parsed
-            logger.info { "tmdb subject map loaded: ${parsed.size} entries in ${start.elapsedNow().inWholeMilliseconds}ms" }
-            if (cached.tsv.isNotEmpty()) firstCheckDone.complete(Unit)
+            val loaded = loadLocal()
+            entries.value = loaded
+            logger.info { "tmdb subject map loaded: ${loaded.size} entries in ${start.elapsedNow().inWholeMilliseconds}ms" }
+            if (loaded.size > 0) firstCheckDone.complete(Unit)
             while (true) {
                 if (enabled.first()) refreshIfStale()
                 firstCheckDone.complete(Unit)
@@ -88,16 +102,32 @@ class TmdbSubjectMapRepository(
     /** 表里这个条目的结果; 表里没有返回 null. */
     suspend fun lookup(subjectId: Int): TmdbSubjectMapEntry? {
         val map = entries.value ?: entries.filterNotNull().first()
-        if (map.isEmpty() && !firstCheckDone.isCompleted) {
+        if (map.size == 0 && !firstCheckDone.isCompleted) {
             withTimeoutOrNull(FIRST_DOWNLOAD_WAIT) { firstCheckDone.await() }
             return entries.value?.get(subjectId)
         }
         return map[subjectId]
     }
 
+    private suspend fun loadLocal(): TmdbSubjectMapIndex {
+        val bytes = withContext(Dispatchers.IO_) {
+            if (mapFile.exists()) mapFile.readBytes() else null
+        } ?: return TmdbSubjectMapIndex.Empty
+        return TmdbSubjectMapIndex.parse(bytes)
+    }
+
+    /** 先写到旁边的临时文件再换过去, 写一半被杀不会留下半张表. */
+    private suspend fun writeMapFile(bytes: ByteArray) = withContext(Dispatchers.IO_) {
+        val temp = mapFile.resolveSibling(mapFile.name + ".tmp")
+        temp.writeBytes(bytes)
+        temp.moveTo(mapFile)
+    }
+
     private suspend fun refreshIfStale() {
         val cached = cache.data.first()
-        if (cached.tsv.isNotEmpty() && currentTimeMillis() - cached.checkedAt < REFRESH_INTERVAL.inWholeMilliseconds) {
+        val current = entries.value
+        val hasLocal = current != null && current.size > 0
+        if (hasLocal && currentTimeMillis() - cached.checkedAt < REFRESH_INTERVAL.inWholeMilliseconds) {
             return
         }
         for (url in MAP_URLS) {
@@ -105,12 +135,14 @@ class TmdbSubjectMapRepository(
                 client().use {
                     val response = get(url) {
                         expectSuccess = false
-                        // ETag 各个 CDN 各算各的, 只对上次成功的那个入口带
-                        if (cached.etag != null && cached.source == url) header(HttpHeaders.IfNoneMatch, cached.etag)
+                        // ETag 各个 CDN 各算各的, 只对上次成功的那个入口带; 本地没有表时要整份, 不带
+                        if (hasLocal && cached.etag != null && cached.source == url) {
+                            header(HttpHeaders.IfNoneMatch, cached.etag)
+                        }
                     }
                     when {
                         response.status == HttpStatusCode.NotModified -> Fetched.NotModified
-                        response.status.isSuccess() -> Fetched.Body(response.bodyAsText(), response.headers[HttpHeaders.ETag])
+                        response.status.isSuccess() -> Fetched.Body(response.readRawBytes(), response.headers[HttpHeaders.ETag])
                         else -> Fetched.Failed(response.status.toString())
                     }
                 }
@@ -119,7 +151,7 @@ class TmdbSubjectMapRepository(
             } catch (e: Exception) {
                 Fetched.Failed(e::class.simpleName.orEmpty())
             }
-            val (tsv, etag) = when (fetched) {
+            val (bytes, etag) = when (fetched) {
                 is Fetched.Failed -> {
                     logger.info { "tmdb subject map: $url unreachable (${fetched.reason})" }
                     continue
@@ -131,21 +163,21 @@ class TmdbSubjectMapRepository(
                     return
                 }
 
-                is Fetched.Body -> fetched.tsv to fetched.etag
+                is Fetched.Body -> fetched.bytes to fetched.etag
             }
             // 远程内容, 认不出格式就不用 (例如 CDN 回了一张错误页)
-            val parsed = parseTmdbSubjectMap(tsv)
-            if (!tsv.startsWith(HEADER_PREFIX) || parsed.isEmpty()) {
+            val parsed = TmdbSubjectMapIndex.parse(bytes)
+            if (!bytes.startsWith(HEADER_PREFIX) || parsed.size == 0) {
                 logger.warn { "tmdb subject map from $url is not a map file, ignoring" }
                 continue
             }
             // CDN 的边缘缓存可能还是很早的一版 (gcore 不认主动刷新, 最长 12 小时): 条目数不到本机这份的一半就当它过时, 换下一个入口
-            val current = entries.value
             if (current != null && parsed.size < current.size / 2) {
                 logger.warn { "tmdb subject map from $url has ${parsed.size} entries, cached one has ${current.size}; looks stale, ignoring" }
                 continue
             }
-            cache.updateData { TmdbSubjectMapCache(tsv = tsv, etag = etag, source = url, checkedAt = currentTimeMillis()) }
+            writeMapFile(bytes)
+            cache.updateData { TmdbSubjectMapCache(etag = etag, source = url, checkedAt = currentTimeMillis()) }
             entries.value = parsed
             logger.info { "tmdb subject map updated from $url: ${parsed.size} entries" }
             return
@@ -155,14 +187,14 @@ class TmdbSubjectMapRepository(
 
     private sealed interface Fetched {
         data object NotModified : Fetched
-        class Body(val tsv: String, val etag: String?) : Fetched
+        class Body(val bytes: ByteArray, val etag: String?) : Fetched
         class Failed(val reason: String) : Fetched
     }
 
     private companion object {
         const val REPOSITORY = "GrahamZen/bangumi-tmdb-map"
         const val PATH = "map/bgm-tmdb.tsv"
-        const val HEADER_PREFIX = "# bangumi-tmdb-map v1"
+        val HEADER_PREFIX = "# bangumi-tmdb-map v1".encodeToByteArray()
 
         /** 下载入口, 按顺序试. 表每天更新一次, 推送后会主动刷新 jsDelivr 的缓存, 顺序的理由见 [GitHubFileSources]. */
         val MAP_URLS = GitHubFileSources.urls(REPOSITORY, PATH)
@@ -176,10 +208,15 @@ class TmdbSubjectMapRepository(
     }
 }
 
-/** 对应表的本地缓存: 原文照存, 读出来再解析. */
+private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
+    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
+
+/**
+ * 对应表的下载元数据. 表的原文在 [TmdbSubjectMapRepository] 的单独文件里; 1.0.1 把原文也存在这份数据里,
+ * 那个字段读的时候直接忽略 (DataStore 的 JSON 忽略未知字段), 下次下载成功时整份重写就没了.
+ */
 @Serializable
 data class TmdbSubjectMapCache(
-    val tsv: String = "",
     val etag: String? = null,
     /** 这份表是从哪个地址下的 (ETag 只对同一个入口有效) */
     val source: String? = null,
@@ -234,23 +271,108 @@ data class TmdbSubjectMapEntry(
     private fun TmdbSubjectMapRef.text() = "$type/$id" + (season?.let { "/season/$it" } ?: "")
 }
 
-/** 解析对应表 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes). 认不出的行跳过. */
-internal fun parseTmdbSubjectMap(tsv: String): Map<Int, TmdbSubjectMapEntry> {
-    val out = HashMap<Int, TmdbSubjectMapEntry>()
-    for (line in tsv.lineSequence()) {
-        if (line.isEmpty() || line[0] == '#') continue
-        val cols = line.split('\t')
-        val id = cols[0].toIntOrNull() ?: continue
-        val backdropText = cols.getOrNull(1).orEmpty()
-        val backdrop = if (backdropText.isEmpty()) null else TmdbSubjectMapRef.parse(backdropText)
-        if (backdropText.isNotEmpty() && (backdrop == null || backdrop.season != null)) continue
-        val path = cols.getOrNull(2)?.takeIf { backdrop != null && it.startsWith("/") && '/' !in it.substring(1) }
-        val stillTexts = cols.getOrNull(3).orEmpty().split(',').filter { it.isNotEmpty() }
-        val stills = stillTexts.mapNotNull { TmdbSubjectMapRef.parse(it) }
-        if (stills.size != stillTexts.size) continue
-        // 逐集对位认不出就当没有 (照旧全量索引), 不连累整行
-        val episodes = cols.getOrNull(5)?.takeIf { it.isNotBlank() && TmdbEpisodeMap.parse(it) != null }
-        out[id] = TmdbSubjectMapEntry(backdrop, path, stills, manual = cols.getOrNull(4) == "manual", episodes = episodes)
+/**
+ * 对应表的紧凑索引: 原文字节 + 按条目 id 升序排好的行首偏移, 查到哪条才解析哪一行 (见 [parseTmdbSubjectMapLine]).
+ * 整表解析成对象要十来 MB 的堆, 弱电视上启动时要解析好几秒; 这样只多两个与行数等长的 IntArray.
+ *
+ * 同一个 id 出现多行时认最后一行; 行首认不出 id 的行 (注释、空行) 不进索引; 其余列认不出的行照样进索引,
+ * 查到时解析失败按"表里没有"处理.
+ */
+internal class TmdbSubjectMapIndex private constructor(
+    private val bytes: ByteArray,
+    /** 升序, 无重复 */
+    private val ids: IntArray,
+    /** 与 [ids] 一一对应的行首偏移 */
+    private val lineStarts: IntArray,
+) {
+    val size: Int get() = ids.size
+
+    operator fun get(subjectId: Int): TmdbSubjectMapEntry? {
+        val index = ids.binarySearch(subjectId)
+        if (index < 0) return null
+        val start = lineStarts[index]
+        var end = start
+        while (end < bytes.size && bytes[end] != NEWLINE) end++
+        if (end > start && bytes[end - 1] == CARRIAGE_RETURN) end--
+        return parseTmdbSubjectMapLine(bytes.decodeToString(start, end))?.second
     }
-    return out
+
+    companion object {
+        val Empty = TmdbSubjectMapIndex(ByteArray(0), IntArray(0), IntArray(0))
+
+        private const val NEWLINE = '\n'.code.toByte()
+        private const val CARRIAGE_RETURN = '\r'.code.toByte()
+        private const val TAB = '\t'.code.toByte()
+
+        fun parse(bytes: ByteArray): TmdbSubjectMapIndex {
+            // 高 32 位 id, 低 32 位行号: 按 id 排序后同 id 的行保持原来的先后, 取最后一行
+            var keys = LongArray(1024)
+            var starts = IntArray(1024)
+            var count = 0
+            var pos = 0
+            while (pos < bytes.size) {
+                val lineStart = pos
+                while (pos < bytes.size && bytes[pos] != NEWLINE) pos++
+                val id = parseLeadingId(bytes, lineStart, pos)
+                pos++ // 跳过换行
+                if (id < 0) continue
+                if (count == keys.size) {
+                    keys = keys.copyOf(count * 2)
+                    starts = starts.copyOf(count * 2)
+                }
+                keys[count] = (id.toLong() shl 32) or count.toLong()
+                starts[count] = lineStart
+                count++
+            }
+            keys.sort(0, count)
+            val ids = IntArray(count)
+            val lineStarts = IntArray(count)
+            var size = 0
+            for (i in 0 until count) {
+                val id = (keys[i] ushr 32).toInt()
+                val start = starts[(keys[i] and 0xFFFFFFFFL).toInt()]
+                if (size > 0 && ids[size - 1] == id) {
+                    lineStarts[size - 1] = start // 同一个 id 认后出现的那行
+                } else {
+                    ids[size] = id
+                    lineStarts[size] = start
+                    size++
+                }
+            }
+            return TmdbSubjectMapIndex(bytes, ids.copyOf(size), lineStarts.copyOf(size))
+        }
+
+        /** 行首第一列是非负十进制整数 (到制表符或行尾为止) 就返回它, 否则 -1. */
+        private fun parseLeadingId(bytes: ByteArray, start: Int, end: Int): Int {
+            var value = 0L
+            var i = start
+            while (i < end && bytes[i] != TAB && bytes[i] != CARRIAGE_RETURN) {
+                val digit = bytes[i] - '0'.code.toByte()
+                if (digit !in 0..9) return -1
+                value = value * 10 + digit
+                if (value > Int.MAX_VALUE) return -1
+                i++
+            }
+            return if (i == start) -1 else value.toInt()
+        }
+    }
+}
+
+/**
+ * 解析对应表的一行 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes). 认不出返回 null.
+ */
+internal fun parseTmdbSubjectMapLine(line: String): Pair<Int, TmdbSubjectMapEntry>? {
+    if (line.isEmpty() || line[0] == '#') return null
+    val cols = line.split('\t')
+    val id = cols[0].toIntOrNull() ?: return null
+    val backdropText = cols.getOrNull(1).orEmpty()
+    val backdrop = if (backdropText.isEmpty()) null else TmdbSubjectMapRef.parse(backdropText)
+    if (backdropText.isNotEmpty() && (backdrop == null || backdrop.season != null)) return null
+    val path = cols.getOrNull(2)?.takeIf { backdrop != null && it.startsWith("/") && '/' !in it.substring(1) }
+    val stillTexts = cols.getOrNull(3).orEmpty().split(',').filter { it.isNotEmpty() }
+    val stills = stillTexts.mapNotNull { TmdbSubjectMapRef.parse(it) }
+    if (stills.size != stillTexts.size) return null
+    // 逐集对位认不出就当没有 (照旧全量索引), 不连累整行
+    val episodes = cols.getOrNull(5)?.takeIf { it.isNotBlank() && TmdbEpisodeMap.parse(it) != null }
+    return id to TmdbSubjectMapEntry(backdrop, path, stills, manual = cols.getOrNull(4) == "manual", episodes = episodes)
 }
