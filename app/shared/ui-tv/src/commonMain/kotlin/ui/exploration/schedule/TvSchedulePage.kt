@@ -751,7 +751,7 @@ private fun TvScheduleFocusFrame(top: Dp, visible: () -> Boolean, ring: Boolean)
 
 /**
  * 上下各多量一段页面留白 ([TV_SCHEDULE_EDGE_PAD]) 的高度, 放置时上移同样的距离, 汇报给父布局的仍是原高度 —— 多出来
- * 那两段画进上下留白, 一直到屏幕边 (外面几层布局都不裁剪). 时间线靠它把裁切线放到屏幕边上. 同 tvGridTopBleed 的做法.
+ * 那两段画进上下留白, 一直到屏幕边 (外面几层布局都不裁剪). 时间线靠它把裁切线放到屏幕边上. 同 tvGridBleed 的做法.
  */
 private fun Modifier.tvScheduleBleedToScreenEdges(): Modifier = layout { measurable, constraints ->
     if (!constraints.hasBoundedHeight) {

@@ -288,9 +288,7 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
                         gridState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.column }
                     }.first { it != null }!! + 1
                     pendingRowEdge = null
-                    pendingIndex = (row * columns + if (direction > 0) 0 else columns - 1)
-                        .coerceAtMost(itemCount() - 1)
-                        .coerceAtLeast(0)
+                    pendingIndex = resolveTvGridRowEdge(row, direction, columns, itemCount())
                 }
                 // **双向钳制 + 重新确认非空** (fork 加的; 上面 rowEdge 那条路本来就 coerceAtLeast(0),
                 // 这条路原先只钳上界, 双标就摆在同一个函数里).
@@ -362,6 +360,24 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
             }
         }
     }
+}
+
+/**
+ * 边缘切换的落点 (见 [TvGridFocusState.focusRowEdge]): 目标网格第 [row] 行的行首 ([direction] > 0, 从左边进来)
+ * 或行尾 ([direction] < 0, 从右边进来).
+ *
+ * **目标网格没有这么多行时落在它的最后一行**, 不能先按行列算出下标再钳到末项: 从源网格第 4 行行末按右, 进到只有
+ * 2 张卡的 tab, 按下标算是 3 × 2 = 6, 钳到末项就成了第 2 张 —— 从左边进来却落在行尾. 先把行钳进目标网格, 再取
+ * 那一行的行首 / 行尾; 最后一行不满时行尾取该行最后一张.
+ *
+ * [columns] 取自目标网格的布局 (见调用处). 卡片不满一行时它等于卡片数 —— 那时只有一行, 结果照样对.
+ */
+internal fun resolveTvGridRowEdge(row: Int, direction: Int, columns: Int, itemCount: Int): Int {
+    if (itemCount <= 0 || columns <= 0) return 0
+    val lastRow = (itemCount - 1) / columns
+    val r = row.coerceIn(0, lastRow)
+    val index = if (direction > 0) r * columns else r * columns + columns - 1
+    return index.coerceIn(0, itemCount - 1)
 }
 
 /**

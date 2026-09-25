@@ -152,6 +152,27 @@ enum class TvVisualEffectsLevel {
 }
 
 /**
+ * TV: 网格页 (追番 / 搜索 / 时间表网格版) 的竖版卡片聚焦时怎么突出 (见 [ThemeSettings.tvCardFocusStyle]).
+ * 设置里按声明顺序列出.
+ *
+ * 探索页卡片区与选集轮播不受它影响: 那里是钉在锚位的固定聚焦框, 卡片在框下滑动, 本身就有运动提示.
+ * 网格页的焦点是在一屏几十张封面之间瞬移的, 细描边在封面颜色接近主题色时容易看丢 —— 放大同时给出
+ * 尺寸差与"变大那一下"的运动, 两样都能把视线拉过去. 两种放大样式的框与放大都按"聚焦格"画, 上下翻页时框不动
+ * (见 ui-tv 的 `TvGridFocusSlot`).
+ */
+@Serializable
+enum class TvCardFocusStyle {
+    /** 原版: 主题色描边画在聚焦的卡片上、跟着焦点走, 不放大. */
+    Ring,
+
+    /** 放大 + 主题色描边 (默认). */
+    ScaleAndRing,
+
+    /** 只放大不描边 (Apple TV / Infuse 式), 倍数比 [ScaleAndRing] 大一档, 补上没有描边的那份醒目. */
+    Scale,
+}
+
+/**
  * TV: 「Web 控制台」入口放哪 (见 [ThemeSettings.tvRemoteEntryPlacement]). **已不再使用** (2026-09-12): 入口改成动作面板
  * 右侧常驻的二维码, 侧边栏与头像菜单的条目都删了. 类型与字段留着只为读得懂旧设置 (设置 JSON 里存过它的人).
  */
@@ -240,6 +261,8 @@ data class ThemeSettings(
      * [visualEffects], 别直接读这个字段.
      */
     val tvVisualEffects: TvVisualEffectsLevel? = null,
+    /** TV: 网格页竖版卡片的聚焦样式, 见 [TvCardFocusStyle]. */
+    val tvCardFocusStyle: TvCardFocusStyle = TvCardFocusStyle.ScaleAndRing,
     /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
     val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
     /**

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -118,10 +119,17 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
 import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TvGridFocusSlot
+import me.him188.ani.app.ui.foundation.tv.TvGridFocusSlotRing
+import me.him188.ani.app.ui.foundation.tv.rememberTvGridFocusSlot
+import me.him188.ani.app.ui.foundation.tv.tvGridFocusSlotScale
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_COLUMN_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_ROW_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TvFullScreenBackdropLayer
 import me.him188.ani.app.ui.foundation.tv.TvPortraitCard
@@ -737,7 +745,9 @@ fun TvScheduleGridPage(
 
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth()
-                    .padding(top = TV_SCHEDULE_SUMMARY_TO_GRID_GAP)
+                    // 向左出血: 首列卡聚焦放大不被左边界切掉 (见 tvGridBleed). 概况行到网格的间距在网格的
+                    // contentPadding 里 (见 TV_SCHEDULE_SUMMARY_TO_GRID_GAP), 不在这一层
+                    .tvGridBleed(start = TV_GRID_START_BLEED)
                     // 换天时整块淡出/淡入 (含空态提示). **必须 ModulateAlpha**: 默认 Auto 档遇
                     // alpha < 1 会把整块先画进离屏缓冲再合成, 而这块是整个视口大小 (4K UI 下
                     // 约 8MP/帧); 网格内卡片互不重叠, 逐绘制指令调制的结果一致
@@ -753,24 +763,28 @@ fun TvScheduleGridPage(
                 // 右缘与左缘同宽 (都用 [TV_SCHEDULE_START_PAD]), 不用主壳内页面那套 48dp 的
                 // TV_PAGE_END_PAD: 本页是独立目的地, 左边没有侧边栏顶着, 沿用 48 就成了左 16 右 48,
                 // 最右那张卡明显离边界更远. 两边取齐顺带把省下的 32dp 摊给卡片
-                val gridContentWidth = this@BoxWithConstraints.maxWidth - TV_SCHEDULE_START_PAD
-                // 本页没有右下角提示, 视口整高都归网格 —— VISIBLE_ROWS 行按整高反推, 铺满为止
-                val gridAvailableHeight = this@BoxWithConstraints.maxHeight.coerceAtLeast(1.dp)
+                val gridContentWidth = this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_SCHEDULE_START_PAD
+                // 本页没有右下角提示, 视口整高都归网格 (除去顶上的间距与底下给放大留的余量) ——
+                // VISIBLE_ROWS 行按它反推, 铺满为止
+                val gridAvailableHeight = (
+                        this@BoxWithConstraints.maxHeight - TV_SCHEDULE_SUMMARY_TO_GRID_GAP -
+                                TV_SCHEDULE_GRID_BOTTOM_RESERVE
+                        ).coerceAtLeast(1.dp)
                 // 卡宽上限: 放得下 VISIBLE_ROWS 行所允许的最大值.
                 // 上限用本页自己的 [TV_SCHEDULE_CARD_MAX_WIDTH] 而不是横排卡的 TV_PAGE_CARD_WIDTH:
                 // 后者只有 112dp, 而按整高反推出来的值恰好在它上下浮动 —— 被夹掉半个 dp 就会
                 // 多算一列, 卡片整体缩水一圈, 屏幕底下白留一条
                 val maxCardWidth = run {
                     val rows = TV_SCHEDULE_GRID_VISIBLE_ROWS
-                    val wantedRowHeight = (gridAvailableHeight - TV_SCHEDULE_GRID_ROW_SPACING * (rows - 1)) / rows
+                    val wantedRowHeight = (gridAvailableHeight - TV_GRID_CARD_ROW_SPACING * (rows - 1)) / rows
                     ((wantedRowHeight - TV_SCHEDULE_CARD_LABEL_HEIGHT) * TV_PORTRAIT_CARD_COVER_RATIO)
                         .coerceIn(TV_SCHEDULE_CARD_MIN_WIDTH, TV_SCHEDULE_CARD_MAX_WIDTH)
                 }
                 // 列数取"卡片铺满整行时仍不超过上限"的最少列数, 横向余量摊进卡片宽度而不是留在行尾 ——
                 // 否则行尾会空出小半张卡的宽度, 看着像右边被一条边界挡住了
-                val widthFor = { n: Int -> (gridContentWidth - TV_PAGE_CARD_SPACING * (n - 1)) / n }
+                val widthFor = { n: Int -> (gridContentWidth - TV_GRID_CARD_COLUMN_SPACING * (n - 1)) / n }
                 val gridColumns = run {
-                    var n = ((gridContentWidth + TV_PAGE_CARD_SPACING) / (maxCardWidth + TV_PAGE_CARD_SPACING))
+                    var n = ((gridContentWidth + TV_GRID_CARD_COLUMN_SPACING) / (maxCardWidth + TV_GRID_CARD_COLUMN_SPACING))
                         .toInt().coerceAtLeast(1)
                     // 容差: 差半个 dp 不值得多要一列 (多一列会让卡片明显变小)
                     if (widthFor(n) > maxCardWidth + 0.5.dp) n += 1
@@ -785,8 +799,8 @@ fun TvScheduleGridPage(
                 // 一行, 表现为"只有两行时第二行也被吸顶".
                 // 容差不会让它多算一行: 多一行要求行高再小三成, 差得远
                 val visibleRows = (
-                        (gridAvailableHeight + TV_SCHEDULE_GRID_ROW_SPACING + TV_SCHEDULE_GRID_ROW_TOLERANCE) /
-                                (rowHeight + TV_SCHEDULE_GRID_ROW_SPACING)
+                        (gridAvailableHeight + TV_GRID_CARD_ROW_SPACING + TV_SCHEDULE_GRID_ROW_TOLERANCE) /
+                                (rowHeight + TV_GRID_CARD_ROW_SPACING)
                         ).toInt().coerceAtLeast(1)
                 // 底部补白 = 视口高 - 恰好 visibleRows 行占的高度. 这段零头 (行高只能取"列数
                 // 整数化之后"的那一档, 与视口高除以行数总差着几个 dp) 就留在末行下面当页面底部
@@ -794,8 +808,8 @@ fun TvScheduleGridPage(
                 // 它同时是滚动所必需的: 少了这段, 内容总高不足以让最后几行滚到整行边界上,
                 // animateScrollToItem 会停在能滚到的极限处, 最后一屏又变成"某行露出一点点"
                 val gridBottomPad = (
-                        this@BoxWithConstraints.maxHeight -
-                                (rowHeight * visibleRows + TV_SCHEDULE_GRID_ROW_SPACING * (visibleRows - 1))
+                        this@BoxWithConstraints.maxHeight - TV_SCHEDULE_SUMMARY_TO_GRID_GAP -
+                                (rowHeight * visibleRows + TV_GRID_CARD_ROW_SPACING * (visibleRows - 1))
                         ).coerceAtLeast(0.dp)
                 val cards = dayItems.cards
                 // 占位期间对送焦报"还没有数据" (0 条): 骨架卡不可聚焦, 送焦要等真实数据到达.
@@ -817,6 +831,12 @@ fun TvScheduleGridPage(
                 // 会把上一行切成露出一点点的样子; 这里每次都落在整行边界上.
                 // [topRow] 是网格顶部当前对齐到的行号, 每次都显式滚到它 —— 落点解析为了让目标卡
                 // 组合出来会自己 scrollToItem, 这一步顺带把那种临时滚动纠回整行.
+                // 聚焦框 + 放大 (见 TvGridFocusSlot). 本页整行翻页而不是吸顶: 在可见的几行之间上下时框跟着换行,
+                // 翻页时 (聚焦行与顶行一起挪一行) 框不动
+                val focusSlot = rememberTvGridFocusSlot()
+                LaunchedEffect(focusSlot) {
+                    snapshotFlow { gridHasFocus }.collect { focusSlot.setGridFocused(it) }
+                }
                 val animatedScroll = tvAnimatedScroll()
                 LaunchedEffect(gridState, gridColumns, visibleRows, cards.size, animatedScroll) {
                     // collectLatest + TvScrollAnimator: 连发按键取消进行中的滚动并继承速度
@@ -833,6 +853,7 @@ fun TvScheduleGridPage(
                         }
                         target = target.coerceIn(0, maxTop)
                         topRow = target
+                        focusSlot.moveTo(column = focused % gridColumns, row = row - target)
                         runCatching { scrollAnimator.animateScrollToItem(gridState, target * gridColumns) }
                     }
                 }
@@ -901,11 +922,16 @@ fun TvScheduleGridPage(
                                 },
                             ),
                         state = gridState,
-                        horizontalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(TV_SCHEDULE_GRID_ROW_SPACING),
+                        horizontalArrangement = Arrangement.spacedBy(TV_GRID_CARD_COLUMN_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(TV_GRID_CARD_ROW_SPACING),
                         // 底部补白让内容够长, 每一行都能真的吸到视口顶 (见 gridBottomPad);
                         // 滚到最后一屏时它就是末尾那 visibleRows 行下面的空白
-                        contentPadding = PaddingValues(end = TV_SCHEDULE_START_PAD, bottom = gridBottomPad),
+                        contentPadding = PaddingValues(
+                            start = TV_GRID_START_BLEED,
+                            top = TV_SCHEDULE_SUMMARY_TO_GRID_GAP,
+                            end = TV_SCHEDULE_START_PAD,
+                            bottom = gridBottomPad,
+                        ),
                     ) {
                         items(
                             count = cards.size,
@@ -918,6 +944,9 @@ fun TvScheduleGridPage(
                             val item = card.item
                             TvScheduleCard(
                                 card = card,
+                                focusSlot = focusSlot,
+                                gridState = gridState,
+                                index = index,
                                 followed = item?.subjectId
                                     ?.let { collectionTypes[it] in TV_SCHEDULE_FOLLOWED_TYPES } == true,
                                 onClick = { item?.let(navigateToSubject) },
@@ -942,6 +971,7 @@ fun TvScheduleGridPage(
                                     // 不加这层判断会把别人正开着的窥视态清掉
                                     if (expanded) menuExpandedCard = index
                                     else if (menuExpandedCard == index) menuExpandedCard = -1
+                                    focusSlot.setHeld(expanded)
                                 },
                                 modifier = Modifier.tvGridFocusItem(gridFocus, index = index, itemCount = cards.size)
                                     // 窥视态: 被长按那张淡一档 (仍看得清, 但透出点 backdrop),
@@ -958,10 +988,23 @@ fun TvScheduleGridPage(
                         }
                     }
                 }
+                TvGridFocusSlotRing(
+                    focusSlot,
+                    gridState,
+                    contentStart = TV_GRID_START_BLEED,
+                    contentTop = TV_SCHEDULE_SUMMARY_TO_GRID_GAP,
+                    rowSpacing = TV_GRID_CARD_ROW_SPACING,
+                    // 长按窥视态里被长按那张卡淡到半透明 (见卡片的 graphicsLayer), 框跟着一起淡, 不悬在半透明的卡上
+                    modifier = Modifier.graphicsLayer {
+                        alpha = 1f + (TV_SCHEDULE_PEEK_SELF_ALPHA - 1f) * peekProgress.value
+                    },
+                )
                 // 空态: 这一天确实没有新番 (占位/出错各有自己的表现)
                 if (cards.isEmpty() && !presentation.isPlaceholder && error == null) {
                     Box(
-                        Modifier.fillMaxSize().offset(y = -TV_SCHEDULE_EMPTY_HINT_RAISE),
+                        // 补回向左出血 (见 tvGridBleed), 否则居中的是含出血的整块, 看上去偏左
+                        Modifier.fillMaxSize().padding(start = TV_GRID_START_BLEED)
+                            .offset(y = -TV_SCHEDULE_EMPTY_HINT_RAISE),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -1222,19 +1265,26 @@ private fun TvScheduleCard(
     followed: Boolean,
     onClick: () -> Unit,
     onFocused: () -> Unit,
+    focusSlot: TvGridFocusSlot,
+    gridState: LazyGridState,
+    index: Int,
     modifier: Modifier = Modifier,
     menu: (@Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit)? = null,
     onMenuExpandedChange: ((Boolean) -> Unit)? = null,
 ) {
     val item = card.item
     Column(modifier) {
-        Box {
+        // 聚焦放大 (见 TvGridFocusSlot) 挂在"封面 + 在追角标"这一层, 角标跟着一起放大;
+        // 下面的文字不放大, 往下让出封面多出来的那截
+        Box(Modifier.tvGridFocusSlotScale(focusSlot, gridState, index, TV_GRID_CARD_ROW_SPACING)) {
             TvPortraitCard(
                 imageUrl = item?.imageUrl,
                 contentDescription = item?.subjectTitle,
                 onClick = onClick,
                 onFocused = onFocused,
                 modifier = Modifier.fillMaxWidth(),
+                // 聚焦框由 focusSlot 画在聚焦格上; 原版样式才由卡片自己画
+                showFocusRing = focusSlot.usesCardRing,
                 menu = menu,
                 onMenuExpandedChange = onMenuExpandedChange,
             )
@@ -1265,6 +1315,12 @@ private fun TvScheduleCard(
             // 尺寸反推的输入, 必须精确
             Column(
                 Modifier.height(TV_SCHEDULE_CARD_LABEL_HEIGHT)
+                    // 放大后封面下缘多伸出 (倍数 − 1) × 封面高 / 2; 封面高 = 本块宽 (与卡同宽) / 封面宽高比.
+                    // 只挪绘制, 行高不变
+                    .graphicsLayer {
+                        val s = focusSlot.scaleOf(gridState, index, TV_GRID_CARD_ROW_SPACING.toPx())
+                        translationY = (s - 1f) * (size.width / TV_PORTRAIT_CARD_COVER_RATIO) / 2f
+                    }
                     .padding(top = TV_SCHEDULE_CARD_LABEL_TOP_GAP),
             ) {
                 Text(
@@ -1402,8 +1458,17 @@ private val TV_SCHEDULE_RAIL_TO_SUMMARY_GAP = 8.dp
 /** 概况行的固定高度: 占位期间不显示文字但保留高度, 数据到达时网格不跳. */
 private val TV_SCHEDULE_SUMMARY_HEIGHT = 18.dp
 
-/** 概况行到网格的间距. */
-private val TV_SCHEDULE_SUMMARY_TO_GRID_GAP = 8.dp
+/**
+ * 概况行到网格第一行的间距. 网格用它当 contentPadding top 而不是在网格外面留: 聚焦卡放大时顶边向上伸出
+ * 7.6~9dp, 这一截得落在网格自己的裁剪范围之内.
+ */
+private val TV_SCHEDULE_SUMMARY_TO_GRID_GAP = 16.dp
+
+/**
+ * 网格底部给聚焦放大留的余量: 末行聚焦时封面放大、下方标题跟着下移 7.6~9dp, 不留就被屏幕底边切掉.
+ * 从"两行铺满整屏"的可用高度里扣掉, 卡片随之略小.
+ */
+private val TV_SCHEDULE_GRID_BOTTOM_RESERVE = 10.dp
 
 /**
  * 日期胶囊的**最小**宽度 (容得下 "上周三" 三字 + 左右内边距 24dp).
@@ -1449,9 +1514,6 @@ private val TV_SCHEDULE_CARD_LABEL_TOP_GAP = 6.dp
  * 该块**定高**: 网格行高 = 海报高 + 本值, 是"两行正好放进视口"那套尺寸反推的输入.
  */
 private val TV_SCHEDULE_CARD_LABEL_HEIGHT = 54.dp
-
-/** 网格行间距. */
-private val TV_SCHEDULE_GRID_ROW_SPACING = 12.dp
 
 /**
  * 视口内要放下的完整行数. 卡片宽度按这个值从可用高度反推 —— 调成 3 则卡片更小、每行更多.

@@ -162,6 +162,11 @@
     <string name="settings_theme_tv_visual_effects_smooth">Smooth</string>
     <string name="settings_theme_tv_visual_effects_balanced">Balanced</string>
     <string name="settings_theme_tv_visual_effects_full">Full</string>
+    <string name="settings_theme_tv_card_focus_style">Card focus style</string>
+    <string name="settings_theme_tv_card_focus_style_description">How the focused poster stands out in Collection, Search and the poster-grid schedule. Explore and episode rows keep their fixed focus frame.</string>
+    <string name="settings_theme_tv_card_focus_ring">Classic (outline only)</string>
+    <string name="settings_theme_tv_card_focus_scale_and_ring">Enlarge + outline</string>
+    <string name="settings_theme_tv_card_focus_scale">Enlarge only</string>
     <string name="settings_theme_tv_exit_behavior">Back on the Explore carousel</string>
     <string name="settings_theme_tv_exit_behavior_description">What the last Back press on the home screen does</string>
     <string name="settings_theme_tv_exit_direct">Quit immediately</string>

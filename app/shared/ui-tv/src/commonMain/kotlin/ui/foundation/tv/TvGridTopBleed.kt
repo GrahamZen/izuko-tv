@@ -19,24 +19,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 网格页 (追番 / 搜索) 卡片区向上出血, 与探索页同一种观感: 离场的行越过网格顶边继续上移、边移边淡
- * ([tvGridItemTopFade]), 而不是在网格顶边被 90 度硬切 (用户 2026-09-11: 追番页 / 搜索页往上滑的卡片运动和探索页不一样).
+ * 网格页 (追番 / 搜索 / 时间表网格) 卡片区的出血.
  *
- * 做法同探索页卡片区: 布局上仍按原尺寸参与排版, 只在测量时向上多要 [bleed]、放置时上移同样的距离. 网格的
- * contentPadding top 也要加 [bleed] —— 聚焦行吸顶停在内边距之后那条线上 (TvScrollAnimator 按条目 offset 算,
- * offset 0 = 内边距之后), 于是停位与出血前完全一样. 出血必须做在 Lazy 容器外面的测量层: LazyVerticalGrid 自带
- * 主轴裁剪, 在它里面做不到. 容器里其余按顶部定位的东西 (空结果提示之类) 要自己补回 [bleed].
+ * **向上 ([top])**: 与探索页同一种观感, 离场的行越过网格顶边继续上移、边移边淡 ([tvGridItemTopFade]), 而不是在
+ * 网格顶边被 90 度硬切 (用户 2026-09-11: 追番页 / 搜索页往上滑的卡片运动和探索页不一样).
+ *
+ * **向左 ([start])**: 首列卡聚焦放大时向左伸出几 dp, 网格自己 clipToBounds, 不出血就被左边界切掉 (见 [TV_GRID_START_BLEED]).
+ *
+ * 做法同探索页卡片区: 布局上仍按原尺寸参与排版, 只在测量时多要出血量、放置时反向挪同样的距离. 网格的
+ * contentPadding 也要在对应一侧加上出血量 —— 聚焦行吸顶停在内边距之后那条线上 (TvScrollAnimator 按条目 offset 算,
+ * offset 0 = 内边距之后), 于是停位与出血前完全一样; 按宽度算列数的地方也要先减掉 [start]. 出血必须做在 Lazy 容器
+ * 外面的测量层: LazyVerticalGrid 自带主轴裁剪, 在它里面做不到. 容器里其余按边定位的东西 (空结果提示之类) 要自己补回.
  */
-fun Modifier.tvGridTopBleed(bleed: Dp = TV_GRID_TOP_BLEED): Modifier = layout { measurable, constraints ->
-    if (!constraints.hasBoundedHeight) {
-        val placeable = measurable.measure(constraints)
-        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-    }
-    val b = bleed.roundToPx()
+fun Modifier.tvGridBleed(top: Dp = 0.dp, start: Dp = 0.dp): Modifier = layout { measurable, constraints ->
+    val b = if (constraints.hasBoundedHeight) top.roundToPx() else 0
+    val s = if (constraints.hasBoundedWidth) start.roundToPx() else 0
     val placeable = measurable.measure(
-        constraints.copy(minHeight = constraints.maxHeight + b, maxHeight = constraints.maxHeight + b),
+        constraints.copy(
+            minWidth = if (s > 0) constraints.maxWidth + s else constraints.minWidth,
+            maxWidth = if (s > 0) constraints.maxWidth + s else constraints.maxWidth,
+            minHeight = if (b > 0) constraints.maxHeight + b else constraints.minHeight,
+            maxHeight = if (b > 0) constraints.maxHeight + b else constraints.maxHeight,
+        ),
     )
-    layout(placeable.width, placeable.height - b) { placeable.place(0, -b) }
+    // placeRelative: 从右往左的布局里 start 在右边, 出血跟着翻到右侧
+    layout(placeable.width - s, placeable.height - b) { placeable.placeRelative(-s, -b) }
 }
 
 /**
