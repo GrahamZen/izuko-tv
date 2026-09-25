@@ -26,7 +26,7 @@
     <string name="playback_history_select_all">Select all</string>
     <string name="playback_history_delete_selected">Delete selected playback records</string>
     <string name="playback_history_delete_title">Delete playback records?</string>
-    <string name="playback_history_delete_confirmation">Selected records will be removed from this device and synced to your account.</string>
+    <string name="playback_history_delete_confirmation">Selected records will be removed from this device.</string>
     <string name="playback_history_sync_status_synced">Playback history synced</string>
     <string name="playback_history_sync_status_pending">%1$d pending sync items</string>
     <string name="playback_history_sync_status_title">Sync Status</string>
@@ -656,8 +656,8 @@
     <string name="settings_network_proxy_password">Password</string>
     <string name="settings_network_proxy_retest">Retest</string>
     <string name="settings_network_proxy_service_danmaku">Danmaku service</string>
-    <string name="settings_network_proxy_service_collection">Collection data service</string>
-    <string name="settings_network_proxy_service_comment">Comment service</string>
+    <string name="settings_network_proxy_service_collection">Search &amp; episodes</string>
+    <string name="settings_network_proxy_service_comment">Titles &amp; collections</string>
     <string name="settings_network_proxy_test_success">Connection successful</string>
     <string name="settings_network_proxy_test_failed">Connection failed</string>
     <string name="settings_network_proxy_current_disabled">Proxy disabled</string>
@@ -724,7 +724,7 @@
     <!-- OAuth -->
     <string name="oauth_bangumi_authorize_title">Authorize Bangumi Sign-In</string>
     <string name="oauth_bangumi_description">Authorize your Bangumi account to sync your watch history to Bangumi or sign in to Izuko more conveniently.</string>
-    <string name="oauth_bangumi_bind_account">Bind Bangumi Account</string>
+    <string name="oauth_bangumi_bind_account">Sign in to Bangumi again</string>
     <string name="oauth_bangumi_sign_in_or_sign_up">Sign In / Sign Up</string>
     <string name="oauth_bangumi_waiting_result">Waiting for result</string>
     <string name="oauth_bangumi_authorized">Authorized</string>

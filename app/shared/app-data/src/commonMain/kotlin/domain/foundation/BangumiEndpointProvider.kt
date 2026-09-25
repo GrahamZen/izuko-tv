@@ -70,13 +70,18 @@ class BangumiEndpointProvider(
             // 地址填得不成样子时退回直连, 而不是拿一个错地址去打 (那会让所有请求都失败,
             // 用户更难看出是自己填错了)
             BangumiEndpointMode.CUSTOM ->
-                custom?.let { BangumiRouting(listOf(it), trusted = true, preferDirect = false, knownMirrors = known) }
+                custom?.let {
+                    BangumiRouting(listOf(it), trusted = true, preferDirect = false, knownMirrors = known, servesMainSite = true)
+                }
                     ?: BangumiRouting.Direct.copy(knownMirrors = known)
         }
     }.distinctUntilChanged()
         .stateIn<BangumiRouting?>(scope, SharingStarted.Eagerly, null)
 
     val routing: Flow<BangumiRouting> = routingState.filterNotNull()
+
+    /** 当前的路由 (设置与清单读出来之前为 `null`). 给按路由记状态、路由一变就作废的地方比对用. */
+    val currentRouting: BangumiRouting? get() = routingState.value
 
     /**
      * 把镜像上的地址换回原站的 (镜像改写过的响应、以及随之存下来的数据里都有这种地址), 其他地址原样返回.
@@ -91,8 +96,11 @@ class BangumiEndpointProvider(
         return URLBuilder(parsed).apply { this.host = host }.buildString()
     }
 
-    /** 请求最近落在哪儿 (`mirrorRoot` 为 `null` = 原站), 连同报上来时的路由. 见 [reportSettled]. */
-    private data class Settled(val routing: BangumiRouting?, val mirrorRoot: String?)
+    /**
+     * 请求最近落在哪儿 (`mirrorRoot` 为 `null` = 原站), 连同那个请求用的路由. 见 [reportSettled].
+     * 不是 data class: 路由按身份比 (见 [activeMirror]), 内容相同的新旧两份回报不能被 StateFlow 当成重复吞掉.
+     */
+    private class Settled(val routing: BangumiRouting?, val mirrorRoot: String?)
 
     private val settled = MutableStateFlow(Settled(routing = null, mirrorRoot = null))
 
@@ -100,14 +108,17 @@ class BangumiEndpointProvider(
      * [BangumiMirrorFeatureHandler] 最近落在的镜像 (`null` = 原站或还没发过请求), 只认按当前路由落下的:
      * 换了设置或清单之后, 旧路由下的落点不算数, 等新路由下的请求落地再报. 不然从「用镜像」切回
      * 「官方连不上时用镜像」后, 只要还没发新请求 (比如一直停在设置页), 就一直被当成经镜像.
+     *
+     * **按对象身份比**: 设置每真变一次, [routingState] 换一个新对象 (相同的不重发). 按相等比的话, 「官方连不上时用镜像」
+     * → 「用镜像」→ 又改回来, 头一次那个路由下还在途的请求落地时会被当成新路由的落点.
      */
     private val activeMirror: Flow<String?> = combine(routingState, settled) { routing, settled ->
-        settled.mirrorRoot?.takeIf { settled.routing == routing }
+        settled.mirrorRoot?.takeIf { settled.routing === routing }
     }
 
-    /** 由 [BangumiMirrorFeatureHandler] 在请求落到哪个目标变了时调用. */
-    fun reportSettled(mirrorRoot: String?) {
-        settled.value = Settled(routingState.value, mirrorRoot)
+    /** 由 [BangumiMirrorFeatureHandler] 在请求落到哪个目标变了时调用; [routing] 是这个请求用的路由, 见 [activeMirror]. */
+    fun reportSettled(routing: BangumiRouting, mirrorRoot: String?) {
+        settled.value = Settled(routing, mirrorRoot)
     }
 
     private val switching = MutableStateFlow(false)
@@ -115,8 +126,12 @@ class BangumiEndpointProvider(
     /**
      * 由 [BangumiMirrorFeatureHandler] 在「官方那一跳连接失败、镜像成功」时调用: 「官方连不上时用镜像」这一档
      * 据此改成「用镜像」并保存, 之后的请求不再先吃一次官方的连接超时. 同一时刻只改一次 (启动时并发的请求会一起报).
+     *
+     * [routing] 是这个请求用的路由, 不是当前的就不算数 (同样按对象身份比, 见 [activeMirror]): 用户刚把「用镜像」改回
+     * 「官方连不上时用镜像」时, 旧设置下还在途的请求不能替他改回去.
      */
-    fun reportOriginUnreachable() {
+    fun reportOriginUnreachable(routing: BangumiRouting) {
+        if (routing !== routingState.value) return
         if (!switching.compareAndSet(expect = false, update = true)) return
         scope.launch {
             try {
@@ -148,6 +163,30 @@ class BangumiEndpointProvider(
     }
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /**
+     * 交给浏览器打开的 Bangumi 网页 (条目页、分集页、人物页、评论里的链接…) 用哪个站: 应用正经镜像 (或自建地址) 浏览就用那个,
+     * `null` = 官方. 与 [trustedMirrorRoot] 不同, 不看「登录也经过镜像」开没开 —— 看网页不带应用的登录凭证;
+     * 要用户在网页上登录的地方 (授权页、发表评论) 仍用 [trustedMirrorRoot].
+     */
+    val webMirrorRoot: StateFlow<String?> = combine(routing, activeMirror) { routing, active ->
+        val settled = active?.takeIf { it in routing.mirrors }
+        if (routing.preferDirect) settled else settled ?: routing.mirrors.firstOrNull()
+    }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /**
+     * 交给浏览器之前把地址换到当前线路上 (见 [webMirrorRoot]): 存下来的镜像地址先换回原站, 再按现在的设置换站.
+     * 不是 Bangumi 的地址原样返回.
+     */
+    fun webLink(url: String): String {
+        val canonical = canonicalUrl(url)
+        val root = webMirrorRoot.value ?: return canonical
+        val parsed = runCatching { Url(canonical) }.getOrNull() ?: return canonical
+        val host = BangumiMirrorHosts.mirrorHostOf(parsed.host, root) ?: return canonical
+        return URLBuilder(parsed).apply { this.host = host }.buildString()
+    }
 
     /**
      * 现在是不是经第三方镜像连 bangumi: 「用镜像」, 或「官方连不上时用镜像」且请求已经落到镜像上.

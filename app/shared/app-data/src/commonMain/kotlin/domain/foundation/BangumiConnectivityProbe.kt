@@ -67,12 +67,12 @@ class BangumiConnectivityProbe(
         }
         send(result)
         launch {
-            val origin = probe.probe("https://$ORIGIN_PROBE_HOST/")
+            val origin = probe.probe("https://$ORIGIN_PROBE_HOST$PROBE_PATH")
             update { it.copy(origin = origin) }
         }
         if (mirrorList.isNotEmpty()) launch {
             val targets = mirrorList.mapNotNull { mirror ->
-                BangumiMirrorHosts.mirrorHostOf(ORIGIN_PROBE_HOST, mirror)?.let { mirror to "https://$it/" }
+                BangumiMirrorHosts.mirrorHostOf(ORIGIN_PROBE_HOST, mirror)?.let { mirror to "https://$it$PROBE_PATH" }
             }
             val hit = probe.firstReachable(targets.map { it.second })
             update {
@@ -85,7 +85,14 @@ class BangumiConnectivityProbe(
     }
 
     private companion object {
-        /** 官方那一路测的域名: 根路径回几十字节的欢迎语, 不跳转 (2026-09-24 实测, 镜像上同一路径也一样). */
+        /** 官方那一路测的域名. */
         const val ORIGIN_PROBE_HOST = "api.bgm.tv"
+
+        /**
+         * 测的路径: 不带令牌取「我」, 立刻回 401 (对方在回答, 算连得上), 不查数据 (官方约 0.2 秒, 镜像约 0.6 秒).
+         * 不用根路径: 根路径走「找不到」那条处理, 2026-09-25 实测 3~8 秒才回 (正常接口 0.1~0.2 秒), 5 秒的读超时下
+         * 官方和镜像 (镜像只是转发) 会一起被判成连不上.
+         */
+        const val PROBE_PATH = "/v0/me"
     }
 }
