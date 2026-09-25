@@ -34,6 +34,7 @@ import kotlin.test.assertNull
 /**
  * 带凭证的请求什么时候可以经过镜像: 默认只走原站; 用户在弹窗里确认风险、打开
  * [BangumiEndpointSettings.allowCredentialsViaMirror] 后, 与匿名请求一样在原站不通时回落到镜像.
+ * 换 token 与续期例外: 只有自建地址代理得了 bgm.tv 主站, 第三方镜像一律不给.
  */
 class BangumiMirrorCredentialsTest {
     private class Sent(val host: String, val authorized: Boolean)
@@ -42,7 +43,7 @@ class BangumiMirrorCredentialsTest {
     private fun blockedOriginClient(
         routing: BangumiRouting,
         sent: MutableList<Sent>,
-        onSettled: (String?) -> Unit = {},
+        onSettled: (BangumiRouting, String?) -> Unit = { _, _ -> },
     ): HttpClient {
         val engine = MockEngine { req ->
             sent += Sent(req.url.host, req.headers.contains(HttpHeaders.Authorization))
@@ -91,19 +92,31 @@ class BangumiMirrorCredentialsTest {
     }
 
     @Test
-    fun `用户允许后 - 换 token 也走镜像`() = runTest {
+    fun `用户允许后 - 换 token 与续期仍只打原站`() = runTest {
+        // 第三方镜像把主站挡在反爬验证页后面, 发过去只会拿回验证网页, 还把 client_secret 交了出去
         val sent = mutableListOf<Sent>()
         val client = blockedOriginClient(autoRouting(allowCredentials = true), sent)
+        assertFailsWith<IOException> {
+            client.submitForm("https://bgm.tv/oauth/access_token", parameters { append("grant_type", "refresh_token") })
+        }
+        assertEquals(listOf("bgm.tv"), sent.map { it.host })
+    }
+
+    @Test
+    fun `自建地址 - 换 token 走自建地址`() = runTest {
+        val sent = mutableListOf<Sent>()
+        val routing = BangumiRouting(listOf("my.example"), trusted = true, preferDirect = false, servesMainSite = true)
+        val client = blockedOriginClient(routing, sent)
         val status = client.submitForm("https://bgm.tv/oauth/access_token", parameters { append("code", "c") }).status
         assertEquals(HttpStatusCode.OK, status)
-        assertEquals(listOf("bgm.tv", "bangumi.pro"), sent.map { it.host })
+        assertEquals(listOf("my.example"), sent.map { it.host })
     }
 
     @Test
     fun `落到哪个镜像会回报出去`() = runTest {
         val sent = mutableListOf<Sent>()
         val settled = mutableListOf<String?>()
-        val client = blockedOriginClient(autoRouting(allowCredentials = false), sent) { settled += it }
+        val client = blockedOriginClient(autoRouting(allowCredentials = false), sent) { _, root -> settled += root }
         client.get("https://api.bgm.tv/v0/subjects/1")
         client.get("https://api.bgm.tv/v0/subjects/2")
         // 只在目标变化时回报一次
@@ -119,7 +132,7 @@ class BangumiMirrorCredentialsTest {
             respond("", HttpStatusCode.OK)
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(routing, onSettled = { settled += it }).applyToClient(client, true)
+        BangumiMirrorFeatureHandler(routing, onSettled = { _, root -> settled += root }).applyToClient(client, true)
 
         client.get("https://api.bgm.tv/v0/subjects/1")
         routing.value = BangumiRouting(listOf("b.example"), trusted = false, preferDirect = true)
@@ -138,7 +151,7 @@ class BangumiMirrorCredentialsTest {
     @Test
     fun `授权页 - 默认不允许时即使落在镜像上也用原站`() = runTest {
         val provider = provider(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO))
-        provider.reportSettled("bangumi.pro")
+        provider.reportSettled(provider.currentRouting!!, "bangumi.pro")
         runCurrent()
         assertNull(provider.trustedMirrorRoot.value)
     }
@@ -151,11 +164,11 @@ class BangumiMirrorCredentialsTest {
         // 还没发过请求 / 原站能连: 用原站
         assertNull(provider.trustedMirrorRoot.value)
 
-        provider.reportSettled("bangumi.pro")
+        provider.reportSettled(provider.currentRouting!!, "bangumi.pro")
         runCurrent()
         assertEquals("bangumi.pro", provider.trustedMirrorRoot.value)
 
-        provider.reportSettled(null)
+        provider.reportSettled(provider.currentRouting!!, null)
         runCurrent()
         assertNull(provider.trustedMirrorRoot.value)
     }
@@ -165,7 +178,7 @@ class BangumiMirrorCredentialsTest {
         val provider = provider(
             BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO, allowCredentialsViaMirror = true),
         )
-        provider.reportSettled("gone.example")
+        provider.reportSettled(provider.currentRouting!!, "gone.example")
         runCurrent()
         assertNull(provider.trustedMirrorRoot.value)
     }

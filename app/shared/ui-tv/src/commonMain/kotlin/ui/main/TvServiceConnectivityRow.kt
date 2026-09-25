@@ -57,7 +57,6 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.tv_service_check_hint_never
 import me.him188.ani.app.ui.lang.tv_service_check_hint_stale
-import me.him188.ani.app.ui.lang.tv_service_probe_ani
 import me.him188.ani.app.ui.lang.tv_service_probe_bangumi
 import me.him188.ani.app.ui.lang.tv_service_probe_bangumi_next
 import me.him188.ani.app.ui.lang.tv_service_probe_tmdb
@@ -72,20 +71,18 @@ import kotlin.time.Duration.Companion.minutes
 /**
  * 一项探测挂了之后, 用户实际会遇到什么.
  *
- * 分档的唯一目的是**不制造假警报**: 五项里有两项 (Bangumi 主站与 Bangumi Next) 在大陆网络下
- * 长期就是连不上的, 而它们不通完全不影响看番 —— 若与"连不上 Animeko 服务器"同色同权重地报红,
- * 那么绝大多数国内用户会看到一行永久的红叉, 于是这一行的信息量归零: 真出问题时没人会注意到它.
- *
- * 所以颜色按本枚举给, 而不是按"成功/失败"给.
+ * 颜色按本枚举给, 而不是按"成功/失败"给: 真影响看番的才报错误色, 不然一行长期亮着的红叉会让人不再看它,
+ * 真出问题时没人注意到. Bangumi 两项是必需 (条目、收藏、搜索与分集全从那里来); 探测走的是应用自己的客户端,
+ * 经镜像连 Bangumi 时测的就是镜像 (实际在用的线路), 中国大陆用户不会因为官方被墙而看到永久红叉.
  */
 enum class TvServiceTier {
-    /** 挂了就用不了: 搜索、条目数据、弹幕全走这里. 报错误色. */
+    /** 挂了就用不了: 条目、收藏、搜索与分集都从这里来. 报错误色. */
     Required,
 
     /** 挂了掉一块功能, 但番照样能看 (背景图与剧照). 报警示色, 不用错误色. */
     Degraded,
 
-    /** 挂了只掉锦上添花的东西 (条目简介、评论回复关系). **失败也保持次要色**, 不报警. */
+    /** 挂了只掉锦上添花的东西. **失败也保持次要色**, 不报警. */
     Optional,
 }
 
@@ -116,10 +113,10 @@ enum class TvServiceProbeResult {
  * 同一个域名分两项探 (接口与图床) 时, 只有按功能命名才能让两行看起来是两件事.
  */
 private val TV_SERVICE_PROBES = listOf(
+    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI_NEXT, TvServiceTier.Required),
+    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI, TvServiceTier.Required),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB, TvServiceTier.Degraded),
     TvServiceProbe(ServiceConnectionTesters.ID_TMDB_IMAGE, TvServiceTier.Degraded),
-    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI, TvServiceTier.Optional),
-    TvServiceProbe(ServiceConnectionTesters.ID_BANGUMI_NEXT, TvServiceTier.Optional),
 )
 
 /**
@@ -461,7 +458,7 @@ private fun TvServiceProbeChip(item: TvServiceProbeState) {
 
 @Composable
 private fun probeLabel(id: String): String = when (id) {
-    // api.bgm.tv: fork 里条目数据已经走 Animeko 服务器, 这个域名只剩"补条目简介"与登录
+    // api.bgm.tv 是 v0 接口 (搜索、分集与看过进度), next.bgm.tv 是 p1 (条目、收藏、评论)
     ServiceConnectionTesters.ID_BANGUMI -> stringResource(Lang.tv_service_probe_bangumi)
     ServiceConnectionTesters.ID_BANGUMI_NEXT -> stringResource(Lang.tv_service_probe_bangumi_next)
     ServiceConnectionTesters.ID_TMDB -> stringResource(Lang.tv_service_probe_tmdb)

@@ -16,17 +16,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
+import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.CandidatesCheck
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -49,6 +57,8 @@ import org.koin.core.component.inject
  */
 class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     private val settingsRepository: SettingsRepository by inject()
+    private val tokenRepository: TokenRepository by inject()
+    private val userRepository: UserRepository by inject()
     private val httpClientProvider: HttpClientProvider by inject()
     private val mirrorListRepository: BangumiMirrorListRepository by inject()
     private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
@@ -98,12 +108,28 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     }
 
     /**
+     * 选 [mode] 之前要不要先问 (已登录的人改用镜像, 见 [BangumiMirrorConsent]; 从旧版迁移过来的用户是登录着进引导的).
+     */
+    suspend fun mirrorConsentNeeded(mode: BangumiEndpointMode): Boolean {
+        val current = settingsRepository.bangumiEndpointSettings.flow.first()
+        val loggedIn = tokenRepository.session.first() is AccessTokenSession
+        return BangumiMirrorConsent.check(current, current.copy(mode = mode), loggedIn) != null
+    }
+
+    /** 「退出登录并改用镜像」里的退出登录. */
+    suspend fun logout() = userRepository.clearSelfInfo()
+
+    /**
      * 存下选的连接方式, 返回登录那一步要不要按「经镜像」处理: 选了用镜像, 或选了官方连不上时用镜像
      * 而刚才测出来官方连不上 —— 后者还没有请求落到镜像上, 但授权登录注定失败.
      * 存完才返回: 调用方接着就换页, 之后的请求要按新设置走.
+     *
+     * @param allowCredentialsViaMirror 同时改「登录与收藏同步也经过镜像」(用户在询问里选了允许); `null` = 不动
      */
-    suspend fun chooseMode(mode: BangumiEndpointMode): Boolean {
-        settingsRepository.bangumiEndpointSettings.update { copy(mode = mode) }
+    suspend fun chooseMode(mode: BangumiEndpointMode, allowCredentialsViaMirror: Boolean? = null): Boolean {
+        settingsRepository.bangumiEndpointSettings.update {
+            copy(mode = mode, allowCredentialsViaMirror = allowCredentialsViaMirror ?: this.allowCredentialsViaMirror)
+        }
         val result = bangumi.result.value
         return mode == BangumiEndpointMode.MIRROR || (mode == BangumiEndpointMode.AUTO &&
                 result.origin == Reachability.Unreachable &&
@@ -169,10 +195,12 @@ class OnboardingCheck<R>(
 /**
  * 首次启动引导的第二步: 登录 (可以跳过). 盖在主页上面显示, 主页在下面照常加载.
  *
- * @param assumeViaMirror 第一步判定的「经镜像」(见 [TvOnboardingViewModel.chooseMode]); 与实际经镜像取或.
+ * @param assumeViaMirror 第一步判定的「经镜像」(见 [TvOnboardingViewModel.chooseMode]); 与实际经镜像取或,
+ *   只在连接方式还是第一步选的那一档时算数 (见 [viaMirror]).
  */
 class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel(), KoinComponent {
     private val endpoints: BangumiEndpointProvider by inject()
+    private val settingsRepository: SettingsRepository by inject()
     private val oauthManager: BangumiOAuthManager by inject()
     private val sessionStateProvider: SessionStateProvider by inject()
 
@@ -188,9 +216,16 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
     /** 电视上能不能授权登录 (应用内浏览器; 电视上跳出去就回不来). */
     val tvLoginSupported: Boolean get() = oauthManager.inAppBrowserSupported
 
-    /** 按「经镜像」处理: 授权登录走不通, 只给个人令牌那条路 (手机控制台). */
-    val viaMirror: StateFlow<Boolean> = endpoints.viaThirdPartyMirror
-        .map { it || assumeViaMirror }
+    /**
+     * 按「经镜像」处理: 授权登录走不通, 只给个人令牌那条路 (手机控制台).
+     *
+     * 第一步的判定只在连接方式没再变过时算数: 第一步存完设置才进这一步, 读到的头一个值就是那时选的; 之后用户在手机控制台
+     * 改了连接方式 (码就在这一步上), 只看实际是否经镜像.
+     */
+    val viaMirror: StateFlow<Boolean> = combine(
+        endpoints.viaThirdPartyMirror,
+        settingsRepository.bangumiEndpointSettings.flow.map { it.mode }.distinctUntilChanged().withIndex(),
+    ) { via, mode -> via || (assumeViaMirror && mode.index == 0) }
         .stateIn(backgroundScope, SharingStarted.Eagerly, assumeViaMirror)
 
     init {

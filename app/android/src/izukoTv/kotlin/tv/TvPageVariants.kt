@@ -63,6 +63,7 @@ import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
+import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
@@ -343,6 +344,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         )
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
+        // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
+        TvMirrorConsentHost()
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
         // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码

@@ -59,7 +59,7 @@ object BangumiOAuthConstants {
     const val ME_URL = "https://next.bgm.tv/p1/me"
 
     /**
-     * 生成个人令牌的页面 (要先在网页上登录). 经镜像时换成镜像上对应的子域, 见 `BangumiMirrorHosts.mirrorHostOf`.
+     * 生成个人令牌的页面 (要先在网页上登录). 恒为官方: 镜像站上的登录页过不了人机验证, 经镜像的用户要临时开代理来这里生成.
      */
     const val PERSONAL_TOKEN_PAGE = "https://next.bgm.tv/demo/access-token"
 

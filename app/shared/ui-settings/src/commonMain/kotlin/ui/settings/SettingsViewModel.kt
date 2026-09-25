@@ -52,9 +52,11 @@ import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
+import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.TokenSave
+import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
@@ -117,6 +119,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val tmdbImageService: TmdbImageService by inject()
     private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
     private val tokenRepository: TokenRepository by inject()
+    private val userRepository: UserRepository by inject()
 
     private val proxyProvider = ProxySettingsFlowProxyProvider(settingsRepository.proxySettings.flow, backgroundScope)
 
@@ -137,6 +140,13 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     /** 自带的镜像清单 (每天从仓库拉一次, 拉不到用内置的), 「官方连不上时用镜像」那一档按顺序试. */
     val bangumiMirrors: StateFlow<List<String>> =
         bangumiMirrorListRepository.mirrors.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 是否登录着 Bangumi (有令牌, 不管现在连不连得上): 登录着改用镜像要先问, 见 BangumiEndpointGroup. */
+    val bangumiLoggedIn: StateFlow<Boolean> =
+        tokenRepository.session.map { it is AccessTokenSession }.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** 「退出登录并改用镜像」里的退出登录. */
+    suspend fun logoutBangumi() = userRepository.clearSelfInfo()
 
     val themeSettings: SettingsState<ThemeSettings> =
         settingsRepository.themeSettings.stateInBackground(ThemeSettings.Default.copy(_placeholder = -1))
