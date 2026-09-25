@@ -33,7 +33,9 @@ import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
+import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.settings.ProxyTester
@@ -64,6 +66,7 @@ internal object RemoteSettings {
 
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
     private val bangumiMirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
+    private val tokenRepository: TokenRepository get() = KoinPlatform.getKoin().get()
     private val tmdbImageEndpoints: TmdbImageEndpoints get() = KoinPlatform.getKoin().get()
     private val danmakuFilters: DanmakuRegexFilterRepository get() = KoinPlatform.getKoin().get()
 
@@ -104,6 +107,7 @@ internal object RemoteSettings {
         val filterConfig = settingsRepository.danmakuFilterConfig.flow.first()
         val filters = danmakuFilters.flow.first()
         val bangumi = settingsRepository.bangumiEndpointSettings.flow.first()
+        val loggedIn = tokenRepository.session.first() is AccessTokenSession
         val mirrors = bangumiMirrorList.mirrors.first()
         val tmdbImagesDisabled = settingsRepository.tmdbImagesDisabled.flow.first()
         val tmdbImageEndpoint = tmdbImageEndpoints.selection.flow.first()
@@ -120,6 +124,8 @@ internal object RemoteSettings {
                 put("custom", bangumi.customBaseUrl)
                 putJsonArray("mirrors") { mirrors.forEach { add(it) } }
                 put("allowCredentials", bangumi.allowCredentialsViaMirror)
+                // 登录着改用镜像要先问 (见 BangumiMirrorConsent), 网页在保存前判断
+                put("loggedIn", loggedIn)
             }
             putJsonObject("tmdbImages") {
                 put("disabled", tmdbImagesDisabled)

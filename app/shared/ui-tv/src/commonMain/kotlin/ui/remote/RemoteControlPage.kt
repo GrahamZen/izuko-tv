@@ -625,6 +625,10 @@ button { font: inherit; border: 0; cursor: pointer; }
 .login-steps { margin: 12px 0 4px; padding-left: 1.4em; font-size: 15px; line-height: 1.6; }
 .login-steps li + li { margin-top: 8px; }
 .login-steps .risk { display: block; margin-top: 4px; color: var(--err); }
+/* 设置里「已登录改用镜像」的询问 (bgmAsk): 说明两段 (第二段是风险, 红字), 三个选择竖排 —— 一行放不下 */
+.dlg-p { margin: 12px 0 0; font-size: 15px; line-height: 1.6; }
+.dlg-p.risk { color: var(--err); }
+.dlg-acts { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 /* 播放页候选行包进 .sw 之后: 选中的描边往里收, 否则被外层的圆角裁剪整圈裁掉; 被排除 / 不可选的半透明挪到行里的内容上 ——
    行本身半透明的话, 滑动时垫在下面的按钮会从行后面透出来 */
 .sw > .item.sel { outline-offset: -2px; }
@@ -5069,8 +5073,11 @@ private val SETTINGS_SCRIPT = """
     return on ? T('你的登录凭证与收藏数据会经过镜像，风险由你自行承担。')
       : T('镜像不带登录：登录与收藏同步仍只走官方地址，第三方镜像看不到你的账号。');
   }
+  // 上次读到的 Bangumi 连接方式 (含电视是否登录着), 保存前判断要不要先问
+  var bgmSaved = null;
   function renderBangumi(b) {
     b = b || { mode: 'AUTO', custom: '', mirrors: [], allowCredentials: false };
+    bgmSaved = b;
     var mirrors = (b.mirrors || []).map(esc).join(T('、'));
     bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
       '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。也可以经镜像浏览。') + '</p><div class="pills">' +
@@ -5105,8 +5112,50 @@ private val SETTINGS_SCRIPT = """
   });
   bgmBox.addEventListener('submit', function (e) {
     e.preventDefault();
-    post('api/settings/bangumi', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+    var f = e.target, m = f.querySelector('input[name="mode"]:checked'), cred = !!(f.elements.cred && f.elements.cred.checked);
+    function save() {
+      post('api/settings/bangumi', new FormData(f)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
+    }
+    // 电视登录着 (同设置页, 见 BangumiMirrorConsent): 改成「用镜像」而凭证不经过镜像先问; 用着镜像时关掉凭证先提醒
+    if (bgmSaved && bgmSaved.loggedIn && m && m.value === 'MIRROR' && !cred) {
+      if (bgmSaved.mode !== 'MIRROR') { bgmAsk(f, save); return; }
+      if (bgmSaved.allowCredentials &&
+          !confirm(T('现在用的是镜像。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）只走官方，官方连不上时都会失败。'))) return;
+    }
+    save();
   });
+  // 已登录改用镜像的三个选择: 允许凭证经过镜像 / 退出登录再切 / 不切. 登录后连浏览都带着令牌, 凭证不经过镜像时
+  // 官方一连不上就什么都用不了, 所以不能不问就切
+  function bgmAsk(f, save) {
+    var old = document.getElementById('login-dlg');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'login-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('已登录，改用镜像？') + '</div>' +
+      '<p class="dlg-p">' + T('你已登录 Bangumi。登录后的请求（收藏、进度、评分，以及登录后浏览条目）默认只走官方，不经过第三方镜像，官方连不上时都会失败。') + '</p>' +
+      '<p class="dlg-p risk">' + T('选「允许并改用镜像」后，你的 Bangumi 登录凭证、收藏与观看进度都会经过镜像服务器，对方可以看到并使用你的账号，由此产生的风险由你自行承担。不想交出账号的话，可以退出登录，只用镜像浏览。') + '</p>' +
+      '<div class="dlg-acts"><button type="button" class="ghost" data-bgm-ask="allow">' + T('允许并改用镜像') + '</button>' +
+      '<button type="button" class="ghost" data-bgm-ask="logout">' + T('退出登录并改用镜像') + '</button>' +
+      '<button type="button" class="primary" data-bgm-ask="cancel">' + T('取消') + '</button></div></div>';
+    d.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-bgm-ask]');
+      if (!b && e.target !== d) return;
+      var a = b ? b.getAttribute('data-bgm-ask') : 'cancel';
+      d.remove();
+      if (a === 'allow') {
+        f.elements.cred.checked = true;
+        f.querySelector('.bgm-cred').textContent = bgmCredHint(true);
+        save();
+      } else if (a === 'logout') {
+        post('api/account/logout', {}).then(function (r) {
+          if (!r.ok) { toast(r.message); return; }
+          save();
+          if (window.loadAccount) window.loadAccount();
+        }).catch(fail);
+      }
+    });
+    document.body.appendChild(d);
+  }
   // TMDB 图片 (同设置页「背景图 (TMDB)」那一组): 自动选择 / 清单里的某个地址 / 自定义 / 不加载.
   // 清单在项目仓库里维护, 电视每天拉一次; 自定义才要输入
   function tmdbChoice(t) {
