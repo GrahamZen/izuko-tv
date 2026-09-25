@@ -70,6 +70,8 @@ fun DownloadingUpdatePopupCard(
     modifier: Modifier = Modifier,
     /** "安装"按钮的附加 modifier (TV 上挂焦点锚点, 下载完成后把焦点送过去). */
     installButtonModifier: Modifier = Modifier,
+    /** "重试"按钮的附加 modifier (TV 上挂焦点锚点, 下载失败后把焦点送过去). */
+    retryButtonModifier: Modifier = Modifier,
 ) {
     var showConfirmCancel by rememberSaveable { mutableStateOf(false) }
     val onRequestCancel = {
@@ -177,6 +179,7 @@ fun DownloadingUpdatePopupCard(
                     error,
                     onRetry = onRetryClick,
                     elevation = CardDefaults.cardElevation(),
+                    retryButtonModifier = retryButtonModifier,
                 )
 //                ListItem(
 //                    headlineContent = {
