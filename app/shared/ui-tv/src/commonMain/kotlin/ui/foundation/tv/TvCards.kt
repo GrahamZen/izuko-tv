@@ -105,8 +105,9 @@ import me.him188.ani.app.ui.foundation.themeColor
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 
 /**
- * TV 竖版封面卡片 (探索页 / 追番页共用): 聚焦时主题主色外圈 (外圈与封面之间留一圈空隙,
- * 不需要动态取色). [imageUrl] 为 null 时显示加载占位. 长按 (遥控器确定键长按 / 触屏长按)
+ * TV 竖版封面卡片 (探索 / 追番 / 搜索 / 时间表网格共用): 聚焦时主题主色外圈 (外圈与封面之间留一圈空隙,
+ * 不需要动态取色); 网格页放大样式下聚焦框与放大由 [TvGridFocusSlot] 统一画, 卡片这里关掉 ([showFocusRing] = false).
+ * [imageUrl] 为 null 时显示加载占位. 长按 (遥控器确定键长按 / 触屏长按)
  * 弹出 [menu] (用于承载与详情页收藏按钮一致的收藏状态下拉).
  *
  * 焦点请求也可通过 [modifier] 挂 [FocusRequester]: 请求会委托给子树里第一个焦点目标
@@ -130,9 +131,9 @@ fun TvPortraitCard(
      */
     onMenuExpandedChange: ((Boolean) -> Unit)? = null,
     /**
-     * false 时聚焦不自绘外圈 —— 固定锚点轮播行 (探索页) 用: 聚焦框由行叠放的
-     * [TvPortraitCardFocusRing] 钉在锚位统一画, 卡片只在框下滑动 (Prime Video 式).
-     * 网格页 (追番/搜索/时间表) 焦点在二维空间移动, 保持默认自绘.
+     * false 时聚焦不自绘外圈 —— 聚焦框由容器统一画: 探索页固定锚点轮播行叠放 [TvPortraitCardFocusRing]
+     * 钉在锚位, 卡片只在框下滑动 (Prime Video 式); 网格页 (追番/搜索/时间表) 的放大样式由 [TvGridFocusSlot]
+     * 画在聚焦格上, 上下翻页时框不动 (原版样式仍由卡片自己画, 见 [TvGridFocusSlot.usesCardRing]).
      */
     showFocusRing: Boolean = true,
     /** 给封面打码 (NSFW 模糊模式): 降采样成一张糊图, 见 AsyncImage 的 downsampleLongEdgePx. */
@@ -150,7 +151,7 @@ fun TvPortraitCard(
         modifier
             .aspectRatio(TV_PORTRAIT_CARD_COVER_RATIO)
             // 自绘外圈 (焦点态只在绘制阶段读, 不牵动整卡重组, 见 tvFocusRing);
-            // 固定框模式下由行叠放的 TvPortraitCardFocusRing 统一画, 这里整条跳过
+            // 由容器统一画框时 (探索页锚位框 / 网格页 TvGridFocusSlot) 整条跳过
             .tvFocusRing(TV_PORTRAIT_CARD_CORNER + TvFocusRing.Gap, enabled = showFocusRing),
     ) {
         Surface(
@@ -1169,8 +1170,44 @@ const val TV_NAV_LOCK_MILLIS = 800L
 /** 竖版海报卡片宽度 (Adaptive 网格按此为最小宽度自动决定列数). */
 val TV_PAGE_CARD_WIDTH: Dp = 112.dp
 
-/** 卡片间距. */
+/** 卡片间距 (探索页横排卡). 网格页另有一套, 见 [TV_GRID_CARD_COLUMN_SPACING] / [TV_GRID_CARD_ROW_SPACING]. */
 val TV_PAGE_CARD_SPACING = 10.dp
+
+/**
+ * 网格页 (追番 / 搜索) 卡片的**最小**宽度: Adaptive 网格按它定列数, 实际宽度由铺满整行决定.
+ *
+ * 比横排卡 [TV_PAGE_CARD_WIDTH] 小, 是为了给聚焦放大让出更宽的列距之后, 1080p 电视 (960dp 宽) 上一行
+ * 仍是 7 张 —— 实际宽约 109dp, 与横排卡只差 3dp. 取 104 而不是刚好够的 108: 列数算式卡在边界上时,
+ * 某台机器可用宽度少几 dp 就会掉成 6 列, 留点余量.
+ */
+val TV_GRID_CARD_MIN_WIDTH: Dp = 104.dp
+
+/**
+ * 网格页 (追番 / 搜索 / 时间表网格) 卡片列距. 聚焦放大后卡片左右各伸出 (倍数 − 1) × 卡宽 / 2
+ * (1.12 倍约 6.5dp), 列距要留够, 放大后与邻卡之间仍有一道看得见的缝.
+ */
+val TV_GRID_CARD_COLUMN_SPACING = 14.dp
+
+/** 网格页卡片行距. 同上: 放大后上下各伸出 7.6~9dp, 离下一行仍留约 10dp. */
+val TV_GRID_CARD_ROW_SPACING = 18.dp
+
+/**
+ * 网格页卡片区的向左出血 (见 [tvGridBleed]): 首列卡放大时向左伸出的那几 dp 不被网格左边界裁掉 ——
+ * 网格 clipToBounds, 追番页换 tab 的滑动过渡也按这条边裁.
+ */
+val TV_GRID_START_BLEED = 16.dp
+
+/** 聚焦放大倍数 ("放大 + 描边"样式). Compose for TV 的卡片与 Leanback 的中号卡都是 1.1. */
+const val TV_CARD_FOCUS_SCALE = 1.10f
+
+/** "仅放大"样式的倍数: 没有描边, 大一档补足醒目程度. */
+const val TV_CARD_FOCUS_SCALE_WITHOUT_RING = 1.12f
+
+/**
+ * 聚焦格淡入淡出 / 卡片放大缩回的时长, 同 Leanback 放大的默认值 (也是 Material 小部件状态变化的短时长档).
+ * 焦点反馈要跟手, 不跟 hero 文字的节奏走 (文字是停稳后的信息更新, 按键后 +510ms 才到位). 流畅档不做过渡.
+ */
+const val TV_CARD_FOCUS_TRANSITION_MILLIS = 150
 
 // ---- 底部遮罩 / 右下角提示 / 页面留白 ----
 
@@ -1193,7 +1230,7 @@ val TV_PAGE_END_PAD = 48.dp
 const val TV_PORTRAIT_CARD_COVER_RATIO = 0.72f
 
 /** 卡片圆角. */
-private val TV_PORTRAIT_CARD_CORNER = 8.dp
+internal val TV_PORTRAIT_CARD_CORNER = 8.dp
 
 // 聚焦外圈的描边宽度与空隙全仓唯一一份, 见 [TvFocusRing].
 //

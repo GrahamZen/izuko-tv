@@ -151,7 +151,10 @@ import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.tvGridItemTopFade
-import me.him188.ani.app.ui.foundation.tv.tvGridTopBleed
+import me.him188.ani.app.ui.foundation.tv.TvGridFocusSlotRing
+import me.him188.ani.app.ui.foundation.tv.rememberTvGridFocusSlot
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
+import me.him188.ani.app.ui.foundation.tv.tvGridFocusSlotScale
 import me.him188.ani.app.ui.foundation.tv.firstItemBelowTopLine
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.ifThen
@@ -193,8 +196,10 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_WIDTH
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_COLUMN_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_MIN_WIDTH
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_ROW_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_BOTTOM_PAD
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_ICON_SIZE
@@ -1710,22 +1715,23 @@ private fun TvSearchResultsPane(
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth()
                     .padding(top = TV_SEARCH_HERO_TO_GRID_GAP)
-                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页 (见 tvGridTopBleed)
-                    .tvGridTopBleed()
+                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页; 向左出血: 首列卡聚焦放大
+                    // 不被左边界切掉 (见 tvGridBleed)
+                    .tvGridBleed(top = TV_GRID_TOP_BLEED, start = TV_GRID_START_BLEED)
                     .onFocusChanged { gridHasFocus = it.hasFocus },
             ) {
                 // 复刻 GridCells.Adaptive 的列数算法 (整数 px 运算), 供行列换算
                 val density = LocalDensity.current
                 gridColumns = with(density) {
-                    val available = (this@BoxWithConstraints.maxWidth - TV_PAGE_END_PAD).roundToPx()
-                    val spacing = TV_PAGE_CARD_SPACING.roundToPx()
-                    maxOf(1, (available + spacing) / (TV_PAGE_CARD_WIDTH.roundToPx() + spacing))
+                    val available = (this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD).roundToPx()
+                    val spacing = TV_GRID_CARD_COLUMN_SPACING.roundToPx()
+                    maxOf(1, (available + spacing) / (TV_GRID_CARD_MIN_WIDTH.roundToPx() + spacing))
                 }
                 // 底部补白 = 视口高 - 一行卡高: 让最后一行也能吸到网格顶部
                 // (内容不足一屏时 animateScrollToItem 滚不动, 接近底部的行会失去吸顶)
                 val gridBottomPad = run {
-                    val available = this@BoxWithConstraints.maxWidth - TV_PAGE_END_PAD
-                    val cardWidth = (available - TV_PAGE_CARD_SPACING * (gridColumns - 1)) / gridColumns
+                    val available = this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
+                    val cardWidth = (available - TV_GRID_CARD_COLUMN_SPACING * (gridColumns - 1)) / gridColumns
                     val cardHeight = cardWidth / TV_PORTRAIT_CARD_COVER_RATIO
                     // maxHeight 含向上出血, 先减掉
                     (this@BoxWithConstraints.maxHeight - TV_GRID_TOP_BLEED - cardHeight).coerceAtLeast(24.dp)
@@ -1740,6 +1746,11 @@ private fun TvSearchResultsPane(
                         ): Float = 0f
                     }
                 }
+                // 聚焦框 + 放大 (见 TvGridFocusSlot). 聚焦行吸顶, 格恒在顶线上 (row 0), 上下翻页时框不动
+                val focusSlot = rememberTvGridFocusSlot()
+                LaunchedEffect(focusSlot) {
+                    snapshotFlow { gridHasFocus }.collect { focusSlot.setGridFocused(it) }
+                }
                 val animatedScroll = tvAnimatedScroll()
                 LaunchedEffect(gridState, animatedScroll) {
                     // collectLatest + TvScrollAnimator: 连发按键取消进行中的滚动并继承速度,
@@ -1747,6 +1758,7 @@ private fun TvSearchResultsPane(
                     val scrollAnimator = TvScrollAnimator(animated = animatedScroll)
                     snapshotFlow { lastFocusedCard.intValue }.collectLatest { focused ->
                         if (focused >= 0) {
+                            focusSlot.moveTo(column = focused % gridColumns, row = 0)
                             runCatching {
                                 scrollAnimator.animateScrollToItem(gridState, (focused / gridColumns) * gridColumns)
                             }
@@ -1755,7 +1767,7 @@ private fun TvSearchResultsPane(
                 }
                 CompositionLocalProvider(LocalBringIntoViewSpec provides noBringIntoView) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(TV_PAGE_CARD_WIDTH),
+                        columns = GridCells.Adaptive(TV_GRID_CARD_MIN_WIDTH),
                         modifier = Modifier
                             .fillMaxSize()
                             .clipToBounds()
@@ -1776,9 +1788,14 @@ private fun TvSearchResultsPane(
                                 },
                             ),
                         state = gridState,
-                        horizontalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                        contentPadding = PaddingValues(top = TV_GRID_TOP_BLEED, end = TV_PAGE_END_PAD, bottom = gridBottomPad),
+                        horizontalArrangement = Arrangement.spacedBy(TV_GRID_CARD_COLUMN_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(TV_GRID_CARD_ROW_SPACING),
+                        contentPadding = PaddingValues(
+                            start = TV_GRID_START_BLEED,
+                            top = TV_GRID_TOP_BLEED,
+                            end = TV_PAGE_END_PAD,
+                            bottom = gridBottomPad,
+                        ),
                     ) {
                         items(
                             count = items.itemCount,
@@ -1819,17 +1836,31 @@ private fun TvSearchResultsPane(
                                 },
                                 modifier = Modifier
                                     // 越过吸顶线的行边上移边淡出 (同探索页, 见 tvGridItemTopFade)
-                                    .tvGridItemTopFade(gridState, index, TV_PAGE_CARD_SPACING)
+                                    .tvGridItemTopFade(gridState, index, TV_GRID_CARD_ROW_SPACING)
+                                    .tvGridFocusSlotScale(focusSlot, gridState, index, TV_GRID_CARD_ROW_SPACING)
                                     .tvGridFocusItem(gridFocus, index = index, itemCount = items.itemCount),
+                                // 聚焦框由 focusSlot 画在聚焦格上; 原版样式才由卡片自己画
+                                showFocusRing = focusSlot.usesCardRing,
                                 menu = info?.let { collectionMenuFor(it.subjectId) },
+                                onMenuExpandedChange = { focusSlot.setHeld(it) },
                             )
                         }
                     }
                 }
+                TvGridFocusSlotRing(
+                    focusSlot,
+                    gridState,
+                    contentStart = TV_GRID_START_BLEED,
+                    contentTop = TV_GRID_TOP_BLEED,
+                    rowSpacing = TV_GRID_CARD_ROW_SPACING,
+                )
                 // 空结果提示 / 首屏加载指示
                 if (items.itemCount == 0 && !items.loadState.hasError) {
-                    // 补回向上出血 (见 tvGridTopBleed), 否则提示居中的是含出血的整块, 看上去偏上
-                    Box(Modifier.fillMaxSize().padding(top = TV_GRID_TOP_BLEED), contentAlignment = Alignment.Center) {
+                    // 补回出血 (见 tvGridBleed), 否则提示居中的是含出血的整块, 看上去偏左上
+                    Box(
+                        Modifier.fillMaxSize().padding(start = TV_GRID_START_BLEED, top = TV_GRID_TOP_BLEED),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         if (items.isLoadingFirstPageOrRefreshing) {
                             CircularProgressIndicator()
                         } else {
@@ -2606,7 +2637,10 @@ private val TV_SEARCH_FILTERS_ROW_HEIGHT = 30.dp
 /** 结果态: 已选筛选项行与顶部行的间距. */
 private val TV_SEARCH_FILTERS_TOP_GAP = 10.dp
 
-/** Hero 信息块 (简介底部) 到网格的间距. */
+/**
+ * Hero 信息块 (简介底部) 到网格的间距. 聚焦卡放大时顶边向上伸出 7.6~9dp, 这段要盖得住,
+ * 否则第一行放大的卡会顶到简介最后一行.
+ */
 private val TV_SEARCH_HERO_TO_GRID_GAP = 16.dp
 
 

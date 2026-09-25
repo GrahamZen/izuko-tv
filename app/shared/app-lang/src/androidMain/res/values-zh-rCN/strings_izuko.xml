@@ -162,6 +162,11 @@
     <string name="settings_theme_tv_visual_effects_smooth">流畅</string>
     <string name="settings_theme_tv_visual_effects_balanced">均衡</string>
     <string name="settings_theme_tv_visual_effects_full">完整</string>
+    <string name="settings_theme_tv_card_focus_style">卡片聚焦样式</string>
+    <string name="settings_theme_tv_card_focus_style_description">追番、搜索和时间表卡片网格里，聚焦的封面怎么突出。探索页和选集条是固定聚焦框，不受影响</string>
+    <string name="settings_theme_tv_card_focus_ring">原版（仅描边）</string>
+    <string name="settings_theme_tv_card_focus_scale_and_ring">放大 + 描边</string>
+    <string name="settings_theme_tv_card_focus_scale">仅放大</string>
     <string name="settings_theme_tv_exit_behavior">在探索页轮播区按返回</string>
     <string name="settings_theme_tv_exit_behavior_description">主页上最后一次按返回执行的操作</string>
     <string name="settings_theme_tv_exit_direct">直接退出</string>

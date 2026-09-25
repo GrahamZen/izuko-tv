@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.data.models.preference.TvCardFocusStyle
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -44,6 +45,11 @@ import me.him188.ani.app.ui.lang.settings_theme_high_contrast
 import me.him188.ani.app.ui.lang.settings_theme_high_contrast_description
 import me.him188.ani.app.ui.lang.settings_theme_palette
 import me.him188.ani.app.ui.lang.settings_theme_title
+import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_ring
+import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale
+import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale_and_ring
+import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style
+import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
@@ -213,6 +219,26 @@ fun SettingsScope.ThemeGroup(
                 onSelect = { state.update(themeSettings.copy(tvVisualEffects = it)) },
                 title = { Text(stringResource(Lang.settings_theme_tv_visual_effects)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_visual_effects_description)) },
+            )
+
+            // 网格页竖版卡片怎么示焦 (见 TvCardFocusStyle); 探索页与选集条是固定锚位框, 不受它影响
+            DropdownItem(
+                selected = { themeSettings.tvCardFocusStyle },
+                values = { TvCardFocusStyle.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                TvCardFocusStyle.Ring -> Lang.settings_theme_tv_card_focus_ring
+                                TvCardFocusStyle.ScaleAndRing -> Lang.settings_theme_tv_card_focus_scale_and_ring
+                                TvCardFocusStyle.Scale -> Lang.settings_theme_tv_card_focus_scale
+                            },
+                        ),
+                    )
+                },
+                onSelect = { state.update(themeSettings.copy(tvCardFocusStyle = it)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_card_focus_style)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_card_focus_style_description)) },
             )
         }
         // 「退出播放页后保留播放状态」在播放器那一类里 (见 PlayerGroup), 「界面缩放」在界面那一类里

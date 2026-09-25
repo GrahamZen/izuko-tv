@@ -236,6 +236,39 @@ fun Modifier.tvFocusRingCountdownBorder(
 }
 
 /**
+ * 在**任意矩形**上画一圈示焦描边, 几何与 [tvFocusRing] 相同 (描边在矩形内侧, 线宽取整到整像素).
+ *
+ * 给不附着在某个节点上的框用: 网格页的聚焦框 (ui-tv 的 `TvGridFocusSlot`) 钉在"聚焦格"上, 卡片从框下滑过,
+ * 位置与尺寸是绘制阶段现算的. [scale] 以矩形中心放大整圈 (连线宽与圆角一起), 与"卡片在 graphicsLayer 里放大、
+ * 自己的描边跟着放大"画出来一致.
+ */
+fun DrawScope.drawTvFocusRingAt(
+    topLeft: Offset,
+    size: Size,
+    cornerRadius: Dp,
+    brush: Brush,
+    width: Dp = TvFocusRing.Width,
+    scale: Float = 1f,
+    alpha: Float = 1f,
+) {
+    val widthPx = ringStrokeWidthPx(width, size) * scale
+    val radiusPx = cornerRadius.resolveRingRadiusPx(this, size) * scale
+    val w = size.width * scale
+    val h = size.height * scale
+    val left = topLeft.x - (w - size.width) / 2f
+    val top = topLeft.y - (h - size.height) / 2f
+    val half = widthPx / 2f
+    drawRoundRect(
+        brush = brush,
+        topLeft = Offset(left + half, top + half),
+        size = Size(w - widthPx, h - widthPx),
+        cornerRadius = CornerRadius((radiusPx - half).coerceAtLeast(0f)),
+        alpha = alpha,
+        style = Stroke(widthPx),
+    )
+}
+
+/**
  * 一圈圆角矩形描边的路径, **起点在顶边左端 (左上圆角结束处)、顺时针**闭合.
  *
  * 不用 `Path.addRoundRect`: 它的起点由实现决定, 各平台不保证一致, 而"从哪儿开始长"是这一圈的

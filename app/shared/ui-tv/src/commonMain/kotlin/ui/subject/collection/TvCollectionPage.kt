@@ -126,7 +126,10 @@ import me.him188.ani.app.ui.foundation.tv.TvPageBackdropLayer
 import me.him188.ani.app.ui.foundation.tv.TvPortraitCard
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.tv.tvGridItemTopFade
-import me.him188.ani.app.ui.foundation.tv.tvGridTopBleed
+import me.him188.ani.app.ui.foundation.tv.TvGridFocusSlotRing
+import me.him188.ani.app.ui.foundation.tv.rememberTvGridFocusSlot
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
+import me.him188.ani.app.ui.foundation.tv.tvGridFocusSlotScale
 import me.him188.ani.app.ui.foundation.tv.firstItemBelowTopLine
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
@@ -156,8 +159,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_TITLE_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_BOTTOM_SCRIM_MAX_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_SPACING
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_CARD_WIDTH
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_COLUMN_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_MIN_WIDTH
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_CARD_ROW_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_BOTTOM_PAD
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_HINT_ICON_SIZE
@@ -822,8 +827,9 @@ fun TvCollectionPage(
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth()
                     .padding(top = TV_COLLECTION_HERO_TO_GRID_GAP)
-                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页 (见 tvGridTopBleed)
-                    .tvGridTopBleed()
+                    // 向上出血: 离场的行越过网格顶边继续上移、边移边淡, 同探索页; 向左出血: 首列卡聚焦放大
+                    // 不被左边界切掉 (见 tvGridBleed)
+                    .tvGridBleed(top = TV_GRID_TOP_BLEED, start = TV_GRID_START_BLEED)
                     // 左右方向搜索不许从外面进网格: 网格的正当入口都是程序送焦 (标签行下键 / 跨 tab 落地 / 进页恢复,
                     // 方向为 Enter) 或内容区进组, 标签在网格上方, 从标签按左右不可能是想进网格. 不挡的话, 换 tab 滑动
                     // 过渡里新网格从左侧滑入, 卡片正好在首个标签的左边, 首标签按左本该进侧边栏却被方向搜索拽进网格
@@ -844,16 +850,16 @@ fun TvCollectionPage(
                 // 复刻 GridCells.Adaptive 的列数算法 (整数 px 运算), 供跨 tab 导航的行列换算
                 val density = LocalDensity.current
                 val gridColumns = with(density) {
-                    val available = (this@BoxWithConstraints.maxWidth - TV_PAGE_END_PAD).roundToPx()
-                    val spacing = TV_PAGE_CARD_SPACING.roundToPx()
-                    maxOf(1, (available + spacing) / (TV_PAGE_CARD_WIDTH.roundToPx() + spacing))
+                    val available = (this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD).roundToPx()
+                    val spacing = TV_GRID_CARD_COLUMN_SPACING.roundToPx()
+                    maxOf(1, (available + spacing) / (TV_GRID_CARD_MIN_WIDTH.roundToPx() + spacing))
                 }
                 // 底部补白 = 视口高 - 一行卡高: 让最后一行也能吸到网格顶部 (maxHeight 含向上出血, 先减掉)
                 // (内容不足一屏时 animateScrollToItem 滚不动, 接近底部的行会失去吸顶)
                 val gridBottomPad = run {
-                    val available = this@BoxWithConstraints.maxWidth - TV_PAGE_END_PAD
+                    val available = this@BoxWithConstraints.maxWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
                     val cardWidth =
-                        (available - TV_PAGE_CARD_SPACING * (gridColumns - 1)) / gridColumns
+                        (available - TV_GRID_CARD_COLUMN_SPACING * (gridColumns - 1)) / gridColumns
                     val cardHeight = cardWidth / TV_PORTRAIT_CARD_COVER_RATIO
                     (this@BoxWithConstraints.maxHeight - TV_GRID_TOP_BLEED - cardHeight).coerceAtLeast(24.dp)
                 }
@@ -899,6 +905,12 @@ fun TvCollectionPage(
                     // 网格换行滚动登记进页面级信号: 低特效档下 hero 文字块在滚动期间不画, 见 TvScrollActivity
                     ReportTvScrollActivity(gridState)
                     val isActiveTab = tabIndex == state.selectedTypeIndex
+                    // 聚焦框 + 放大 (见 TvGridFocusSlot): 每个网格实例一份, 换 tab 时各自随网格滑入滑出.
+                    // 聚焦行吸顶, 所以格恒在顶线上 (row 0), 上下翻页时框不动
+                    val focusSlot = rememberTvGridFocusSlot()
+                    LaunchedEffect(focusSlot, isActiveTab) {
+                        snapshotFlow { isActiveTab && gridHasFocus }.collect { focusSlot.setGridFocused(it) }
+                    }
                     // 统一落点解析 (跨 tab / 同列导航 / 回首卡 / 进页恢复只是目标参数不同,
                     // 机制见 [TvGridFocusState]): 整个 tab 一张卡都没有 (且不在
                     // 加载) 则聚焦 tab 标签. 只在选中 tab 的网格实例上运行; 跨 tab 时目标先于
@@ -976,7 +988,7 @@ fun TvCollectionPage(
                         }
                     }
                     // 聚焦行吸顶 (同探索页): 关闭默认"刚好露出"式的自动滚动, 聚焦行直接滚到
-                    // 网格顶部, 上方的行越过顶边继续上移、边移边淡 (向上出血, 见 tvGridTopBleed)
+                    // 网格顶部, 上方的行越过顶边继续上移、边移边淡 (向上出血, 见 tvGridBleed)
                     val noBringIntoView = remember {
                         object : BringIntoViewSpec {
                             override fun calculateScrollDistance(
@@ -994,6 +1006,7 @@ fun TvCollectionPage(
                             val scrollAnimator = TvScrollAnimator(animated = animatedScroll)
                             snapshotFlow { lastFocusedCard }.collectLatest { focused ->
                                 if (focused >= 0) {
+                                    focusSlot.moveTo(column = focused % gridColumns, row = 0)
                                     runCatching {
                                         scrollAnimator.animateScrollToItem(gridState, (focused / gridColumns) * gridColumns)
                                     }
@@ -1003,7 +1016,7 @@ fun TvCollectionPage(
                     }
                     CompositionLocalProvider(LocalBringIntoViewSpec provides noBringIntoView) {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(TV_PAGE_CARD_WIDTH),
+                            columns = GridCells.Adaptive(TV_GRID_CARD_MIN_WIDTH),
                             modifier = Modifier
                                 .fillMaxSize()
                                 // 长按方向键的移动频率上限 (同探索页卡片区/时间表日期行). 必须挂在
@@ -1067,9 +1080,14 @@ fun TvCollectionPage(
                                     },
                                 ),
                             state = gridState,
-                            horizontalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                            verticalArrangement = Arrangement.spacedBy(TV_PAGE_CARD_SPACING),
-                            contentPadding = PaddingValues(top = TV_GRID_TOP_BLEED, end = TV_PAGE_END_PAD, bottom = gridBottomPad),
+                            horizontalArrangement = Arrangement.spacedBy(TV_GRID_CARD_COLUMN_SPACING),
+                            verticalArrangement = Arrangement.spacedBy(TV_GRID_CARD_ROW_SPACING),
+                            contentPadding = PaddingValues(
+                                start = TV_GRID_START_BLEED,
+                                top = TV_GRID_TOP_BLEED,
+                                end = TV_PAGE_END_PAD,
+                                bottom = gridBottomPad,
+                            ),
                         ) {
                             items(
                                 tabItems.itemCount,
@@ -1108,7 +1126,8 @@ fun TvCollectionPage(
                                     // (滑动过渡), 让它们也挂锚点会与选中 tab 抢同一个 key
                                     modifier = Modifier
                                         // 越过吸顶线的行边上移边淡出 (同探索页, 见 tvGridItemTopFade)
-                                        .tvGridItemTopFade(gridState, index, TV_PAGE_CARD_SPACING)
+                                        .tvGridItemTopFade(gridState, index, TV_GRID_CARD_ROW_SPACING)
+                                        .tvGridFocusSlotScale(focusSlot, gridState, index, TV_GRID_CARD_ROW_SPACING)
                                         .ifThen(isActiveTab) {
                                             tvGridFocusItem(
                                                 gridFocus,
@@ -1116,7 +1135,10 @@ fun TvCollectionPage(
                                                 itemCount = tabItems.itemCount,
                                             )
                                         },
+                                    // 聚焦框由 focusSlot 画在聚焦格上; 原版样式才由卡片自己画
+                                    showFocusRing = focusSlot.usesCardRing,
                                     menu = info?.let { collectionMenuFor(it) },
+                                    onMenuExpandedChange = { focusSlot.setHeld(it) },
                                     // 下一集播放进度 (语义同探索页继续观看卡): 看到一半按播放位置;
                                     // 追平连载 (Watched) 满条; 其余 (想看/看完/未开始) 不显示
                                     progress = info?.progressInfo?.let { progressInfo ->
@@ -1138,11 +1160,20 @@ fun TvCollectionPage(
                             }
                         }
                     }
+                    TvGridFocusSlotRing(
+                        focusSlot,
+                        gridState,
+                        contentStart = TV_GRID_START_BLEED,
+                        contentTop = TV_GRID_TOP_BLEED,
+                        rowSpacing = TV_GRID_CARD_ROW_SPACING,
+                    )
                     // 空分类提示: 在内容区 (侧边栏右侧) 居中; 网格区偏页面下半,
                     // 上移一段让它视觉上接近整页居中
                     if (tabItems.itemCount == 0 && !tabItems.isLoadingFirstPageOrRefreshing && !tabItems.loadState.hasError) {
                         Box(
-                            Modifier.fillMaxSize().offset(y = -TV_COLLECTION_EMPTY_HINT_RAISE),
+                            // 补回向左出血 (见 tvGridBleed), 否则居中的是含出血的整块, 看上去偏左
+                            Modifier.fillMaxSize().padding(start = TV_GRID_START_BLEED)
+                                .offset(y = -TV_COLLECTION_EMPTY_HINT_RAISE),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -1627,8 +1658,11 @@ private val TV_COLLECTION_TABS_TO_HERO_GAP = 10.dp
  */
 private val TV_COLLECTION_HERO_INFO_HEIGHT = 240.dp
 
-/** Hero 信息块 (简介底部) 到网格的间距. */
-private val TV_COLLECTION_HERO_TO_GRID_GAP = 8.dp
+/**
+ * Hero 信息块 (简介底部) 到网格的间距. 聚焦卡放大时顶边向上伸出 7.6~9dp, 这段要盖得住,
+ * 否则第一行放大的卡会顶到简介最后一行.
+ */
+private val TV_COLLECTION_HERO_TO_GRID_GAP = 16.dp
 
 /**
  * 本页的诊断日志: 只在"焦点被塞到了不该去的地方、由页面自愈改派"时打一条 —— 那是偶发的
