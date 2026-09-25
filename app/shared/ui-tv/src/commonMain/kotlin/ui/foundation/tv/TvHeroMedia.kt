@@ -31,6 +31,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -672,8 +673,12 @@ object TvHeroImagePrefetch {
  * 聚焦路径与预取路径**必须走同一个入口**, [TvHeroPrefetch] 的在途去重才能把两者合流 ——
  * 各写各的话, "预取正卡在第一跳、用户走过去"就会从第一跳重新开始.
  *
- * 三跳是串行的, 省不掉: TMDB 只能按**日文原名**匹配 (中文译名命中率低且失败写持久负缓存),
- * 而原名要先拉条目信息才有。搜索页是例外 —— 它的列表项自带 `originalName`, 只有两跳.
+ * 三跳是串行的: TMDB 只能按**日文原名**匹配 (中文译名命中率低且失败写持久负缓存), 而原名要先拉条目信息才有。
+ * 搜索页是例外 —— 它的列表项自带 `originalName`, 只有两跳.
+ *
+ * **对应表里有的条目不等第一跳**: 对应表按条目 id 就能查, 与第一跳同时进行 ([TmdbImageService.prefetchBackdropFromMap]),
+ * 查到就落进热表, 背景图与条目信息一起出来 —— 经镜像时第一跳单个请求要几百毫秒, 启动那一波里要一两秒.
+ * 「继续观看」的条目除外: 那一行的 hero 先要单集剧照 (第二跳), 整部背景图先到会先显示再被剧照换掉.
  *
  * @param preferNextEpisodeStill 该条目在"继续观看"行 (hero 背景用单集剧照而非整部 backdrop).
  * @param settingsRepository 取剧照要用; 传 null 则跳过剧照那一跳 (预取邻居时不必).
@@ -685,6 +690,28 @@ suspend fun resolveTvHeroMedia(
     tmdb: TmdbImageService,
     preferNextEpisodeStill: Boolean = false,
     settingsRepository: SettingsRepository? = null,
+): SubjectCollectionInfo? = coroutineScope {
+    if (!preferNextEpisodeStill) {
+        launch {
+            // 查不到不影响主链: 第三跳还会再查一次对应表
+            try {
+                tmdb.prefetchBackdropFromMap(subjectId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+    resolveTvHeroMediaChain(subjectId, collectionRepo, tmdb, preferNextEpisodeStill, settingsRepository)
+}
+
+/** [resolveTvHeroMedia] 的三跳, 依次进行. */
+private suspend fun resolveTvHeroMediaChain(
+    subjectId: Int,
+    collectionRepo: SubjectCollectionRepository,
+    tmdb: TmdbImageService,
+    preferNextEpisodeStill: Boolean,
+    settingsRepository: SettingsRepository?,
 ): SubjectCollectionInfo? {
     // 第一跳: 条目信息. 进程级普通缓存命中就不走网络 (见 TvHeroMediaCache.peekSubjectInfo).
     // 取消异常必须重抛 —— runCatching 会吞掉它, 让已取消的协程继续往下跑

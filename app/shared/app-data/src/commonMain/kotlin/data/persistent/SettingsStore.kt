@@ -20,6 +20,7 @@ import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.network.TmdbImageCache
+import me.him188.ani.app.data.network.TmdbSubjectMapCache
 import me.him188.ani.app.data.repository.SavedWindowState
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionsSaveData
@@ -93,6 +94,18 @@ abstract class PlatformDataStoreManager {
             produceFile = { resolveDataStoreFile("tmdbImageCache") },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 TmdbImageCache.Empty
+            },
+        )
+    }
+
+    /** 对应表 (bangumi-tmdb-map) 的本地缓存, 一两 MB 的原文; 单独一个文件, 不挤在偏好设置里. */
+    val tmdbSubjectMapStore by lazy {
+        DataStoreFactory.create(
+            serializer = TmdbSubjectMapCache.serializer()
+                .asDataStoreSerializer({ TmdbSubjectMapCache.Empty }),
+            produceFile = { resolveDataStoreFile("tmdbSubjectMap") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                TmdbSubjectMapCache.Empty
             },
         )
     }
