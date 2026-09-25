@@ -47,6 +47,12 @@ fun TmdbEpisodeStills.matchToEpisodes(
     episodes: List<EpisodeCollectionInfo>,
     subjectAirDate: String? = null,
 ): Map<Int, TmdbEpisodeMedia> {
+    // 对应表给了逐集对位: 离线已按下面同一套规则对过 (全量索引), 这里只照编号取
+    episodeMap?.let { TmdbEpisodeMap.parse(it) }?.let { map ->
+        return map.resolve(episodes).mapNotNull { (episodeId, se) ->
+            bySeasonEpisode["${se.first}:${se.second}"]?.let { episodeId to it }
+        }.toMap()
+    }
     val result = mutableMapOf<Int, TmdbEpisodeMedia>()
 
     // **单集条目**(剧场版/OVA/特别篇) 的那一集没有播出日期时, 用**条目自己的开播日**当它的日期.

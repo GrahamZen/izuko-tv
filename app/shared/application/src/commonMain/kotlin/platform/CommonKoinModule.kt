@@ -32,6 +32,7 @@ import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
@@ -438,6 +439,14 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
+    single<TmdbSubjectMapRepository> {
+        TmdbSubjectMapRepository(
+            cache = getContext().dataStores.tmdbSubjectMapStore,
+            client = { get<HttpClientProvider>().get() },
+            enabled = get<SettingsRepository>().tmdbImagesDisabled.flow.map { !it },
+            scope = coroutineScope,
+        )
+    }
     single<TmdbImageService> {
         // 系列索引传单例: 各建一份的话同一条目的 BFS 会算两遍, 见 TmdbImageService.seriesIndexService
         TmdbImageService(
@@ -445,6 +454,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             getContext().dataStores.tmdbImageCacheStore,
             disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
             injectedSeriesIndexService = get(),
+            subjectMap = get(),
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }

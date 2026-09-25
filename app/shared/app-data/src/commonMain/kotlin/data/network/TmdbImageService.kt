@@ -34,6 +34,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -92,6 +94,11 @@ class TmdbImageService(
     disabledByUserFlow: Flow<Boolean> = flowOf(false),
     /** 见 [seriesIndexService]; 生产由 Koin 注入单例, 测试留 null 自建. */
     private val injectedSeriesIndexService: SubjectSeriesIndexService? = null,
+    /**
+     * 预先算好的对应表 (见 [TmdbSubjectMapRepository]): 表里有的条目直接用表里的结果, 不再搜.
+     * 生产由 Koin 注入; 测试与离线跑表的匹配器留 null —— 后者就是生成这张表的, 不能反过来查它.
+     */
+    private val subjectMap: TmdbSubjectMapRepository? = null,
 ) {
     /**
      * TMDB 与 bangumi 两边的请求共用. **带 bangumi token**: 这个 client 也会去打
@@ -521,7 +528,22 @@ class TmdbImageService(
         // `map[id]` 对"值为 null"与"没解析过"都返回 null, 正好只短路正缓存.
         if (disabledByUser) return null
         resolvedBackdropUrls[subjectId]?.let { return it }
+        // 对应表定论的"没有背景图"与搜索得来的负缓存不同, 不随播出日期过期: 记过一次就不再查
+        if (resolvedBackdropUrls.containsKey(subjectId) && subjectMap?.peek(subjectId) != null) return null
         return resolveBackdropUrl(subjectId, originalName, activeAsOfDate, hints)
+    }
+
+    /**
+     * 只查对应表: 表里有定论 (有图, 或确认没有) 就记进进程内热表, [peekBackdropUrl] 随即可读; 表里没有这个条目
+     * 什么都不做, 照旧由 [getBackdropUrl] 按名字搜.
+     *
+     * 与 [getBackdropUrl] 的区别是**不要条目名**: 对应表按条目 id 查, 调用方不必先等条目信息 (hero 解析链的
+     * 第一跳, 经镜像时要几百毫秒), 两者可以同时进行.
+     */
+    suspend fun prefetchBackdropFromMap(subjectId: Int) {
+        if (disabledByUser || resolvedBackdropUrls.containsKey(subjectId)) return
+        val fromMap = backdropFromMap(subjectId) ?: return
+        if (fromMap.settled) rememberResolvedBackdrop(subjectId, fromMap.url)
     }
 
     /**
@@ -534,6 +556,12 @@ class TmdbImageService(
         activeAsOfDate: String?,
         hints: TmdbMatchHints,
     ): String? {
+        // 对应表先于本机缓存与搜索: 表里的结果按详情页口径算好 (人工修正过的更不用说), 比本机任何一个
+        // 页面自己搜的都可靠; 背景图路径是现成的, 连 TMDB 接口都不用请求, 所以也不要求有 token
+        backdropFromMap(subjectId)?.let { fromMap ->
+            if (fromMap.settled) rememberResolvedBackdrop(subjectId, fromMap.url)
+            return fromMap.url
+        }
         if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return null
         val task = backdropInFlightLock.withLock {
             backdropInFlight[subjectId] ?: resolveScope.async {
@@ -545,6 +573,48 @@ class TmdbImageService(
             }.also { backdropInFlight[subjectId] = it }
         }
         return task.await()
+    }
+
+    /**
+     * [backdropFromMap] 的结果. [url] 为 null 且 [settled] = 表里这个条目没有整部背景图;
+     * [settled] 为 false = 这次没取到 (网络), 不记进进程内热表, 下次再试.
+     */
+    private class MapBackdrop(val url: String?, val settled: Boolean = true)
+
+    /** 对应表给的背景图; 表里没有这个条目返回 null (照旧搜索). */
+    private suspend fun backdropFromMap(subjectId: Int): MapBackdrop? {
+        val entry = subjectMap?.lookup(subjectId) ?: return null
+        val ref = entry.backdrop
+        val result = when {
+            entry.backdropPath != null -> MapBackdrop("$IMAGE_BASE_URL${entry.backdropPath}")
+            ref == null -> MapBackdrop(null)
+            // 人工修正只给了条目没给图: 要请求一次那个条目的图片列表
+            currentAniBuildConfig.tmdbApiToken.isBlank() -> return null
+            else -> try {
+                MapBackdrop(heroBackdropPathOf(TmdbMediaRef(ref.type, ref.id))?.let { "$IMAGE_BASE_URL$it" })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to fetch TMDB images of ${ref.type}/${ref.id} for subject $subjectId (from map)" }
+                MapBackdrop(null, settled = false)
+            }
+        }
+        logger.info {
+            "TMDB backdrop for subject $subjectId from map: ${result.url ?: "none"}" +
+                if (entry.manual) " (manual)" else ""
+        }
+        return result
+    }
+
+    /** 选图规则同 [heroBackdropPath]: 票数最高的无字幕那张; 一张无字幕的都没有就取第一张. */
+    private suspend fun heroBackdropPathOf(ref: TmdbMediaRef): String? = client.use {
+        val body = getApi("/${ref.type}/${ref.id}/images") {
+            bearerAuth(currentAniBuildConfig.tmdbApiToken)
+            shortConnectTimeout()
+        }.bodyAsText()
+        val backdrops = json.decodeFromString(TmdbImagesResponse.serializer(), body).backdrops
+            .filter { !it.filePath.isNullOrBlank() }
+        (backdrops.firstOrNull { it.language.isNullOrBlank() } ?: backdrops.firstOrNull())?.filePath
     }
 
     private suspend fun doResolveBackdropUrl(
@@ -676,13 +746,20 @@ class TmdbImageService(
 
         // 见 doResolveBackdropUrl 里同名变量的说明
         val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
+        val mapEntry = subjectMap?.lookup(subjectId)
         val urls = try {
-            searchLayered(
-                originalName,
-                rootNameResolver(subjectId, originalName, hints.nameCn),
-            ) { query, _ ->
-                searchAnimeRef(query, subjectYear)
-            }?.let { fetchBackdropPaths(it) }
+            val ref = if (mapEntry != null) {
+                // 对应表里有这个条目: 用它定下的那个 TMDB 条目 (与 hero 背景同一个), 不再搜
+                mapEntry.backdrop?.let { TmdbMediaRef(it.type, it.id) }
+            } else {
+                searchLayered(
+                    originalName,
+                    rootNameResolver(subjectId, originalName, hints.nameCn),
+                ) { query, _ ->
+                    searchAnimeRef(query, subjectYear)
+                }
+            }
+            ref?.let { fetchBackdropPaths(it) }
                 .orEmpty()
                 .take(MAX_BACKDROPS_PER_SUBJECT)
                 .map { "$IMAGE_BASE_URL$it" }
@@ -798,7 +875,10 @@ class TmdbImageService(
         hints: TmdbMatchHints,
     ): TmdbEpisodeStills? =
         withContext(ioDispatcher) {
+            val mapEntry = subjectMap?.lookup(subjectId)
             val cached = readCache().episodeStills[subjectId]?.takeIf { it.language == language }
+                // 人工修正过的条目: 缓存得是照这一版修正建的, 否则作废重建
+                ?.takeIf { mapEntry?.manual != true || it.mapRef == mapEntry.stillsBuildKey }
             if (cached != null) {
                 val refresh = newestWantedAirDate != null &&
                     stillsRefreshGate.shouldRefresh(subjectId) { !cached.coversAirDate(newestWantedAirDate) }
@@ -817,6 +897,7 @@ class TmdbImageService(
                     subjectEpisodeCount = subjectEpisodeCount,
                     subjectEpisodeNames = subjectEpisodeNames,
                     hints = hints,
+                    mapEntry = mapEntry,
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -1058,8 +1139,13 @@ class TmdbImageService(
         subjectEpisodeCount: Int?,
         subjectEpisodeNames: List<String>,
         hints: TmdbMatchHints,
+        mapEntry: TmdbSubjectMapEntry?,
     ): TmdbEpisodeStills = client.use {
         val token = currentAniBuildConfig.tmdbApiToken
+        if (mapEntry != null) {
+            stillsFromMap(subjectId, originalName, language, token, subjectYear, subjectAirDate, hints, mapEntry)
+                ?.let { return@use it }
+        }
         // 血统判定在搜索前主动做 (搜索层只在直搜落空时才需要根条目名):
         // 建索引时要用"是否衍生作"决定 season 0 的取舍, 见下方季循环.
         val lineage = resolveLineageOrNull(subjectId, originalName, hints.nameCn)
@@ -1328,10 +1414,63 @@ class TmdbImageService(
     }
 
     /**
+     * 对应表给的分集数据: 表里记着剧照链当时最后用的是哪部剧 (以及是不是只索引了 S0) 或哪部电影,
+     * 直接照同样的规则建, 跳过搜索 —— 建出来与自己搜的逐项相同 (bangumi-tmdb-map 的锚点核对).
+     * 返回 null = 表里没有可直接用的出处 (合集, 或自动匹配时剧照链什么都没找到), 照旧搜索.
+     */
+    private suspend fun HttpClient.stillsFromMap(
+        subjectId: Int,
+        originalName: String,
+        language: String,
+        token: String,
+        subjectYear: Int?,
+        subjectAirDate: String?,
+        hints: TmdbMatchHints,
+        entry: TmdbSubjectMapEntry,
+    ): TmdbEpisodeStills? {
+        suspend fun tv(tvId: Int, specialsOnly: Boolean): TmdbEpisodeStills {
+            // 只索引 S0 时季的先后无所谓; 否则要看是不是衍生作 (见 buildEpisodeStills 的 specialsLast)
+            val lineage = if (specialsOnly) null else resolveLineageOrNull(subjectId, originalName, hints.nameCn)
+            return buildEpisodeStills(
+                tvId, null, subjectId, originalName, language, token,
+                subjectYear, subjectAirDate, lineage, ownMovie = null,
+                seasonFilter = if (specialsOnly) setOf(0) else null,
+            )
+        }
+
+        val source = entry.stills.singleOrNull()
+        val backdrop = entry.backdrop
+        val episodeMap = entry.episodes?.let { TmdbEpisodeMap.parse(it) }
+        val built = when {
+            // 逐集对位: 只取用到的那几季, 连同剧集详情一起并行取; 对集照编号, 不必认季也不必取原语言集名
+            source?.type == "tv" && episodeMap != null -> buildEpisodeStills(
+                source.id, null, subjectId, originalName, language, token,
+                subjectYear, subjectAirDate, lineage = null, ownMovie = null,
+                seasonFilter = episodeMap.seasons, mapped = true,
+            ).copy(episodeMap = entry.episodes)
+
+            // 人工修正只给了背景图的条目: 分集跟着同一个条目走
+            entry.stills.isEmpty() && entry.manual && backdrop?.type == "tv" -> tv(backdrop.id, specialsOnly = false)
+            entry.stills.isEmpty() && entry.manual && backdrop?.type == "movie" -> buildMovieAsSingleEpisode(backdrop.id, language)
+            // 人工确认没有对应
+            entry.stills.isEmpty() && entry.manual -> TmdbEpisodeStills()
+            source?.type == "tv" && source.season == null -> tv(source.id, specialsOnly = false)
+            source?.type == "tv" && source.season == 0 -> tv(source.id, specialsOnly = true)
+            source?.type == "movie" -> buildMovieAsSingleEpisode(source.id, language)
+            else -> return null
+        }
+        logger.info { "TMDB episode stills for subject $subjectId from map: ${entry.stillsBuildKey}" }
+        return built.copy(mapRef = entry.stillsBuildKey)
+    }
+
+    /**
      * 拉取并索引 [tvId] 这部剧的全部分集数据.
      *
      * @param matchedQuery 命中这部剧的候选词, 用于判定衍生条目该不该只索引 season 0.
      * @param ownMovie 已拉到的"本条目作为 movie"的数据 (没拉过为 null), 供剧集装不下本条目时改用.
+     * @param seasonFilter 只索引这几季 (对应表说只取 S0、或逐集对位用到的季, 见 [stillsFromMap]); null = 按下面的规则全部索引.
+     * @param mapped 照对应表的逐集对位建 (见 [TmdbEpisodeMap]): 对集离线做过, 不需要认季、电影回退与原语言集名,
+     *   只收 [TmdbEpisodeStills.bySeasonEpisode]; 剧集详情与各季同时取.
      */
     private suspend fun HttpClient.buildEpisodeStills(
         tvId: Int,
@@ -1344,7 +1483,21 @@ class TmdbImageService(
         subjectAirDate: String?,
         lineage: BgmLineage?,
         ownMovie: TmdbEpisodeStills?,
-    ): TmdbEpisodeStills {
+        seasonFilter: Set<Int>? = null,
+        mapped: Boolean = false,
+    ): TmdbEpisodeStills = coroutineScope {
+        suspend fun seasonBody(seasonNumber: Int, lang: String) = getApi("/tv/$tvId/season/$seasonNumber") {
+            parameter("language", lang)
+            bearerAuth(token)
+            shortConnectTimeout()
+        }.bodyAsText()
+
+        // 照逐集对位建时要哪几季事先就知道, 与剧集详情一起发
+        val prefetched = if (mapped && seasonFilter != null) {
+            seasonFilter.associateWith { async { seasonBody(it, language) } }
+        } else {
+            emptyMap()
+        }
         // language: 顺带取整部剧的本地化简介 (Bangumi 简介为日文原文时整段替换用);
         // TMDB 无该语言翻译时 overview 为空串, 存 null 由 Bangumi 简介兜底
         val detailBody = getApi("/tv/$tvId") {
@@ -1364,7 +1517,7 @@ class TmdbImageService(
         // 但只有 movie 的**上映日与条目开播日相差 ≤1 天**才真的改用它: 单纯"年份相近"会误伤
         // 涼宮ハルヒの憂鬱 (2009 版) —— TMDB 只有一个条目、单季 28 集横跨 2006→2009,
         // tv 才是对的, 而同系列 2010 年的剧场版按年份看也"相近".
-        if (subjectAirDate != null && seasons.isNotEmpty()) {
+        if (!mapped && subjectAirDate != null && seasons.isNotEmpty()) {
             val seasonYears = seasons.mapNotNull { it.airDate.yearOrNull() }
             val subjectYearOrNull = subjectAirDate.yearOrNull()
             val plausible = subjectYearOrNull == null || seasonYears.isEmpty() ||
@@ -1376,7 +1529,7 @@ class TmdbImageService(
                     logger.info {
                         "TMDB tv/$tvId has no season near $subjectAirDate for subject $subjectId, using movie instead"
                     }
-                    return byMovie
+                    return@coroutineScope byMovie
                 }
             }
         }
@@ -1386,9 +1539,13 @@ class TmdbImageService(
         // 来再按季名 (见 claimSeasonByName); 都认不出来时退回旧口径 —— 单季剧的第 1 季. 这个索引
         // 只在 Bangumi 分集**没有播出日期**时才被用到 (见 TmdbEpisodeMatcher), 但它同时决定
         // 下方**集名索引覆盖哪一季**, 所以认不出季的多季剧连集名兜底都没有.
-        val numberedSeason = tmdbOwnSeasonNumber(seasons.map { it.seasonNumber to it.airDate }, subjectAirDate)
-            ?: claimSeasonByName(tvId, detail, originalName, language, token)
-            ?: 1.takeIf { singleSeason }
+        val numberedSeason = if (mapped) {
+            null
+        } else {
+            tmdbOwnSeasonNumber(seasons.map { it.seasonNumber to it.airDate }, subjectAirDate)
+                ?: claimSeasonByName(tvId, detail, originalName, language, token)
+                ?: 1.takeIf { singleSeason }
+        }
 
         // 确认正传的条目把 season 0 (特别篇) 排在正片之后入索引: TMDB 常把同期放送的
         // 衍生短篇挂在正传条目的特别篇下, 且与正片同日播出 (如 Re:ゼロ休憩時間 4th 与
@@ -1409,21 +1566,20 @@ class TmdbImageService(
             specialsOnly -> seasons.filter { it.seasonNumber == 0 }
             specialsLast -> seasons.sortedBy { if (it.seasonNumber == 0) 1 else 0 }
             else -> seasons
-        }
+        }.filter { seasonFilter == null || it.seasonNumber in seasonFilter }
         val byAirDate = mutableMapOf<String, MutableList<TmdbEpisodeMedia>>()
         // 与 [byAirDate] 逐项对位的 (季号, 集号); 原语言集名要等下面那轮请求才拿到, 所以先记出处,
         // 最后再合成 [TmdbEpisodeStills.byAirDateOrigin].
         val airDateSlots = mutableMapOf<String, MutableList<Pair<Int, Int?>>>()
         val byEpisodeNumber = mutableMapOf<Int, TmdbEpisodeMedia>()
         val specialsByNumber = mutableMapOf<Int, TmdbEpisodeMedia>()
-        for (season in indexedSeasons) {
-            // language: 分集简介取该语言的翻译 (无翻译时 overview 为空, 由 Bangumi 简介兜底);
-            // still/时长/日期与语言无关.
-            val seasonBody = getApi("/tv/$tvId/season/${season.seasonNumber}") {
-                parameter("language", language)
-                bearerAuth(token)
-                shortConnectTimeout()
-            }.bodyAsText()
+        val bySeasonEpisode = mutableMapOf<String, TmdbEpisodeMedia>()
+        // language: 分集简介取该语言的翻译 (无翻译时 overview 为空, 由 Bangumi 简介兜底);
+        // still/时长/日期与语言无关. 各季互不依赖, 同时取; 处理仍按 indexedSeasons 的先后
+        val seasonBodies = indexedSeasons.map { season ->
+            prefetched[season.seasonNumber] ?: async { seasonBody(season.seasonNumber, language) }
+        }.awaitAll()
+        for ((season, seasonBody) in indexedSeasons.zip(seasonBodies)) {
             for (ep in json.decodeFromString(TmdbSeasonDetail.serializer(), seasonBody).episodes) {
                 val media = TmdbEpisodeMedia(
                     stillUrl = ep.stillPath?.let { "$STILL_IMAGE_BASE_URL$it" },
@@ -1441,6 +1597,9 @@ class TmdbImageService(
                 }
                 if (season.seasonNumber == 0) {
                     ep.episodeNumber?.let { specialsByNumber[it] = media }
+                }
+                if (mapped) {
+                    ep.episodeNumber?.let { bySeasonEpisode["${season.seasonNumber}:$it"] = media }
                 }
             }
         }
@@ -1467,14 +1626,11 @@ class TmdbImageService(
                 put(numberedSeason, byEpisodeNumber)
             }
         }
-        if (nameIndexedSeasons.isNotEmpty()) {
+        if (!mapped && nameIndexedSeasons.isNotEmpty()) {
             val originalLanguage = detail.originalLanguage?.takeIf { it.isNotBlank() } ?: "ja"
-            for ((seasonNumber, mediaByNumber) in nameIndexedSeasons) {
-                val nameBody = getApi("/tv/$tvId/season/$seasonNumber") {
-                    parameter("language", originalLanguage)
-                    bearerAuth(token)
-                    shortConnectTimeout()
-                }.bodyAsText()
+            val nameBodies = nameIndexedSeasons.keys.map { async { seasonBody(it, originalLanguage) } }.awaitAll()
+            for ((entry, nameBody) in nameIndexedSeasons.entries.zip(nameBodies)) {
+                val (seasonNumber, mediaByNumber) = entry
                 for (ep in json.decodeFromString(TmdbSeasonDetail.serializer(), nameBody).episodes) {
                     val number = ep.episodeNumber ?: continue
                     val name = ep.name ?: continue
@@ -1500,13 +1656,14 @@ class TmdbImageService(
                 }
             }
 
-        return TmdbEpisodeStills(
+        TmdbEpisodeStills(
             byAirDate,
             byEpisodeNumber,
             language,
             showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
             byEpisodeName = byName.mapNotNull { (k, v) -> v?.let { k to it } }.toMap(),
             byAirDateOrigin = byAirDateOrigin,
+            bySeasonEpisode = bySeasonEpisode,
         )
     }
 
@@ -2699,6 +2856,18 @@ data class TmdbEpisodeStills(
      * 旧缓存没有这份数据 (默认空) —— 投票拿不到票就退回"当日第几集"的原口径.
      */
     val byAirDateOrigin: Map<String, List<TmdbEpisodeOrigin>> = emptyMap(),
+    /**
+     * 照对应表建的 ([TmdbSubjectMapEntry.stillsBuildKey]); 自己搜出来的为 null.
+     * 人工修正改了剧照出处时, 靠它认出旧缓存该作废, 见 `TmdbImageService.getEpisodeStills`.
+     */
+    val mapRef: String? = null,
+    /**
+     * 对应表给的逐集对位 (编码见 [TmdbEpisodeMap]). 非 null 时 [matchToEpisodes] 直接照它在
+     * [bySeasonEpisode] 里取, 不再按日期/集名对 —— 那一步离线做过, 结果与本机对的逐集一致.
+     */
+    val episodeMap: String? = null,
+    /** 照 [episodeMap] 建时收的 `季号:集号` → 分集数据, 只含编码里提到的那几季. */
+    val bySeasonEpisode: Map<String, TmdbEpisodeMedia> = emptyMap(),
 ) {
     /**
      * 按集名 (原名/中文名等, 依次尝试) 匹配; 名字归一化后比较, 见 [tmdbEpisodeNameKey].
