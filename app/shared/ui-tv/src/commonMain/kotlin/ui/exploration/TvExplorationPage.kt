@@ -774,14 +774,17 @@ fun TvExplorationPage(
     // 滚一半就断、断了又从新位置重算 —— 表现为行停不到锚位, 而固定框钉死, 看着就是框比卡片高出一截.
     // **用 itemIndexOfRowKey 而不是 rowIndexOfKey**: 前者是 LazyColumn 的 item 下标 (标题项也占位).
     val rowScrollAnimator = remember(animatedScroll) { TvScrollAnimator(animated = animatedScroll) }
-    val focusedRowItem = focusedRowKey?.let(itemIndexOfRowKey) ?: -1
-    // **key 必须带 cardAreaHasFocus**: focusedRowKey 是"记住的焦点行", 焦点退回 hero 按钮时
-    // 它不清空. 只以行号做 key 的话, "进第一行 → 返回按钮 (hero 把列表滚回顶部, 位置被改了)
-    // → 再按下回第一行" 这条路上 key 自始至终没变过, effect 不重跑, 那一行就补不回锚位.
-    // 横向那条 (rowHasFocus) 一直带着这个条件.
-    LaunchedEffect(focusedRowItem, cardAreaHasFocus) {
-        if (cardAreaHasFocus && focusedRowItem >= 0) {
-            rowScrollAnimator.animateScrollToItem(listState, focusedRowItem)
+    // **落点在 snapshotFlow 里算, 不在 body 里读**: focusedRowKey 换行就变, 在 body 里读会把整页记成
+    // 它的订阅者, 每换一行整页重跑 —— 上下翻明显比左右翻卡 (同 heroExpanded 处的说明).
+    // 值里并进 cardAreaHasFocus: focusedRowKey 是"记住的焦点行", 焦点退回 hero 按钮时它不清空; 只看行号
+    // 的话, "进第一行 → 返回按钮 (hero 把列表滚回顶部) → 再按下回第一行" 这条路上值不变, 那一行就补不回
+    // 锚位. 离开卡片区时值变 -1, collectLatest 顺带取消还在跑的那段滚动, 新落点同理取消上一段.
+    val currentItemIndexOfRowKey by rememberUpdatedState(itemIndexOfRowKey)
+    LaunchedEffect(rowScrollAnimator) {
+        snapshotFlow {
+            if (cardAreaHasFocus) focusedRowKey?.let(currentItemIndexOfRowKey) ?: -1 else -1
+        }.collectLatest { item ->
+            if (item >= 0) rowScrollAnimator.animateScrollToItem(listState, item)
         }
     }
     LaunchedEffect(heroExpanded) {
