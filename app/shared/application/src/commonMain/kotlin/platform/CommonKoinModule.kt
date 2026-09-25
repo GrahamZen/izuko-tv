@@ -95,6 +95,8 @@ import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInst
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
+import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
 import me.him188.ani.app.domain.foundation.BangumiMirrorFeature
 import me.him188.ani.app.domain.foundation.BangumiMirrorFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
@@ -227,13 +229,23 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             scope = coroutineScope,
         )
     }
+    single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     single<BangumiEndpointProvider> {
         val settings = get<SettingsRepository>().bangumiEndpointSettings
         BangumiEndpointProvider(
             settings = settings.flow,
             mirrors = get<BangumiMirrorListRepository>().mirrors,
             scope = coroutineScope,
-            switchToMirror = { settings.update { afterOriginUnreachable() } },
+            switchToMirror = {
+                val current = settings.flow.first()
+                val loggedIn = get<TokenRepository>().session.first() is AccessTokenSession
+                // 已登录而凭证不经过镜像: 不替用户改, 请界面问他 (见 BangumiMirrorConsent)
+                if (BangumiMirrorConsent.check(current, current.afterOriginUnreachable(), loggedIn) != null) {
+                    get<BangumiMirrorConsentRequests>().request()
+                } else {
+                    settings.update { afterOriginUnreachable() }
+                }
+            },
         )
     }
     single<HttpClientProvider> {

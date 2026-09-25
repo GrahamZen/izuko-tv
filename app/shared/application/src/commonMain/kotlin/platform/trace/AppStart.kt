@@ -15,8 +15,10 @@ import io.ktor.http.appendPathSegments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
+import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.settings.ServiceConnectionTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.Service
@@ -30,8 +32,13 @@ import me.him188.ani.utils.analytics.recordEvent
 
 // 统计连接各个服务器的速度
 suspend fun IAnalytics.recordAppStart(startupTimeMonitor: StartupTimeMonitor) {
+    // 测官方直连, 不装镜像特性 (只列 UA 与服务器清单, 其余特性不装): 装上的话启动高峰里这两个探测一超时,
+    // 就会换到镜像并被当成「官方连不上」, 驱动「官方连不上时用镜像」自动切换 —— 统计不该左右线路.
     val client = GlobalKoin.get<HttpClientProvider>().get(
-        setOf(ServerListFeature.withValue(ServerListFeatureConfig.Default)),
+        setOf(
+            UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
+            ServerListFeature.withValue(ServerListFeatureConfig.Default),
+        ),
     )
 
     val bangumiClient = BangumiClientImpl(client)

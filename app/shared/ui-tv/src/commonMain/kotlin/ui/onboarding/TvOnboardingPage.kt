@@ -73,6 +73,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
@@ -200,6 +201,26 @@ fun TvOnboardingPage(
     }
     // 选 Bangumi 连接方式时判定的「经镜像」(见 TvOnboardingViewModel.chooseMode), 图片那一页选完一起交出去
     var assumeViaMirror by rememberSaveable { mutableStateOf(TvOnboardingLogin.request.value ?: false) }
+    // 已登录的人选了用镜像, 等他在询问里回答 (见 BangumiMirrorConsent)
+    var askMirror by remember { mutableStateOf<BangumiEndpointMode?>(null) }
+    askMirror?.let { mode ->
+        fun choose(allowCredentials: Boolean?, logoutFirst: Boolean) {
+            askMirror = null
+            choosing = true
+            scope.launch {
+                if (logoutFirst) vm.logout()
+                assumeViaMirror = vm.chooseMode(mode, allowCredentials)
+                page = NetworkPage.Images
+                choosing = false
+            }
+        }
+        MirrorSwitchConsentDialog(
+            automatic = false,
+            onAllow = { choose(allowCredentials = true, logoutFirst = false) },
+            onLogoutAndSwitch = { choose(allowCredentials = null, logoutFirst = true) },
+            onDismissRequest = { askMirror = null },
+        )
+    }
     // 用户在手机 / 电视设置里存了代理: 关掉弹窗, 让他看到重测
     LaunchedEffect(vm) { vm.proxyChanges.collect { showProxyDialog = false } }
     // 从登录层按返回回来的: 本页回到栈顶后先画出一帧再撤登录层, 不然两者之间会露出底下的主页.
@@ -248,8 +269,13 @@ fun TvOnboardingPage(
                         if (!choosing) {
                             choosing = true
                             scope.launch {
-                                assumeViaMirror = vm.chooseMode(mode)
-                                page = NetworkPage.Images
+                                // 已登录的人改用镜像: 先问 (见 BangumiMirrorConsent), 答完再存
+                                if (vm.mirrorConsentNeeded(mode)) {
+                                    askMirror = mode
+                                } else {
+                                    assumeViaMirror = vm.chooseMode(mode)
+                                    page = NetworkPage.Images
+                                }
                                 choosing = false
                             }
                         }
