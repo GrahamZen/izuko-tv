@@ -65,6 +65,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.IOException
@@ -845,7 +846,7 @@ object TvRemoteControl {
             path == PATH_PLAYER_DETAILS && post -> json(openDetails(request))
             // 弹幕 (开关 / 偏移 / 手动匹配) 与音轨字幕轨, 见 RemotePlayerExtras
             (post && (path.startsWith("api/player/danmaku/") || path == "api/player/track" ||
-                    path == "api/player/comment" || path.startsWith("api/player/review/"))) ||
+                    path.startsWith("api/player/review/"))) ||
                     (get && path == "api/player/review") ->
                 json(player?.let { RemotePlayerExtras.handle(it, request) } ?: result(false, tr("电视当前不在播放页")))
             // 不依赖播放页的收藏状态 (手机搜索结果左滑「收藏」), 见 RemotePlayerExtras.subjectCollection
@@ -871,8 +872,6 @@ object TvRemoteControl {
             // 「设置」标签底部的日志 (列表 / 下载), 见 RemoteLogs
             path == "api/logs" || path.startsWith("api/logs/") ->
                 RemoteLogs.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
-            // 「本集评论」表情面板的表情目录, 见 RemoteStickers
-            path == "api/stickers" && get -> json(RemoteStickers.catalog)
             // 「设置」里的播放记录 (列表 / 打开详情 / 接着播), 见 RemoteHistory
             path == "api/history" || path.startsWith("api/history/") ->
                 RemoteHistory.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
@@ -1000,6 +999,8 @@ object TvRemoteControl {
 
     private fun historyRepository(): SubjectSearchHistoryRepository = KoinPlatform.getKoin().get()
 
+    private val bangumiEndpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
+
     /**
      * 「结果」标签的状态: 电视搜索页结果面板的快照 (离场后用最后一份). 网页每秒轮询, 带版本号, 没变只回 same.
      */
@@ -1052,6 +1053,13 @@ object TvRemoteControl {
             put("keep", keepAliveOnExit())
             // app 里换了语言: 网页发现和自己加载时的不一样就整页重载 (见 RemoteI18n)
             put("lang", RemoteI18n.lang.tag)
+            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 经镜像时只给个人令牌登录
+            val endpoints = bangumiEndpoints
+            put(
+                "bgm",
+                listOf(endpoints.currentRouting?.hashCode(), endpoints.viaThirdPartyMirror.value, endpoints.trustedMirrorRoot.value)
+                    .joinToString("|"),
+            )
         }
     }
 
