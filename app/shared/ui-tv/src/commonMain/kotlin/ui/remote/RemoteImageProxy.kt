@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiRouting
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -38,7 +39,8 @@ import kotlin.time.Duration.Companion.seconds
  * 手机网页上的图经电视转发: `api/img?u=<图片地址>`, **原样转, 不重新压缩**. 原则是**手机只需连得上电视**: 电视在用户配好的网络
  * (代理) 下拉得到的图, 手机就看得到 —— 走应用自己的 HTTP 客户端, 跟着代理设置走. 网页把它当某一级候选:
  * - TMDB (播放卡的剧照 / 横屏图): `image.tmdb.org` 在大陆移动网络常被阻断, 这是第一候选;
- * - 竖版封面 (搜索结果 / 播放记录, 见 [remoteCoverCandidates]): 手机先直连 Ani 镜像站原图, 连不上才走这里.
+ * - Bangumi 竖版封面 (搜索结果 / 播放记录等, 见 [remoteCoverCandidates]) 与账号头像: 也是第一候选 —— 电视按自己的
+ *   Bangumi 连接方式取 (经镜像时走镜像), 手机直连官方在大陆连不上.
  *
  * **不缩图**: 试过电视把镜像站原图缩到「封面框 × 屏幕倍数 × 1.6」再给, 真机上比直连原图明显发虚 (浏览器画大 JPEG 时在解码阶段按
  * 1/2、1/4 取样, 线条很利; 缩过的图再被浏览器二次缩放就软了, 锐度只剩四到七成), 达不到「清晰度不明显降低」, 撤掉了.
@@ -50,9 +52,10 @@ import kotlin.time.Duration.Companion.seconds
  *   这个图床没缓存的一律当场回 503, 网页随即换下一个候选 —— 连不上 TMDB 不连带别的图床.
  *
  * 其余:
- * - **只转发 [ALLOWED_PREFIXES] 这几个图床**: 这是开在局域网上的口子 (虽然有 token), 不能变成随便拉任意地址的通用代理.
- * - 内存里留最近的 [MAX_CACHE_BYTES]; 单张超过 [MAX_IMAGE_BYTES] 不转 (镜像站原图常见几百 KB, 最大见过近 1MB).
- * - 单个地址拉不到记 [FAILURE_TTL_MILLIS], 期间直接回 502.
+ * - **只转发 [ALLOWED_PREFIXES] 这几个图床与 Bangumi 的封面重定向端点 ([BANGUMI_COVER_ENDPOINT])**: 这是开在局域网上的口子
+ *   (虽然有 token), 不能变成随便拉任意地址的通用代理.
+ * - 内存里留最近的 [MAX_CACHE_BYTES]; 单张超过 [MAX_IMAGE_BYTES] 不转 (封面原图常见几百 KB, 最大见过近 1MB).
+ * - 单个地址拉不到记 [FAILURE_TTL_MILLIS], 期间直接回 502. 熔断与这份记录在 Bangumi 的连接方式变了时清空, 按新路线重新试.
  * - 回给手机的带 `private, max-age`: 同一个页面里重开面板浏览器自己有, 不再来要.
  */
 internal object RemoteImageProxy {
@@ -96,9 +99,22 @@ internal object RemoteImageProxy {
             ?.let { runCatching { URLDecoder.decode(it.substring(2), Charsets.UTF_8.name()) }.getOrNull() }
             // 经镜像拿到的数据里图片是镜像域名 (lain.<镜像>), 先换回原站再过白名单; 真正去取时再按设置决定打哪儿
             ?.let { endpoints.canonicalUrl(it) }
-            ?.takeIf { u -> ".." !in u && ALLOWED_PREFIXES.any { u.startsWith(it) } }
+            ?.takeIf { u -> ".." !in u && (ALLOWED_PREFIXES.any { u.startsWith(it) } || BANGUMI_COVER_ENDPOINT.matches(u)) }
             ?: return LanHttpResponse.status(400, "Bad Request")
         return serve(url)
+    }
+
+    /** 上次取图时的 Bangumi 路由, 见 [resetIfRoutingChanged]. */
+    @Volatile
+    private var lastRouting: BangumiRouting? = null
+
+    /** 用户改了 Bangumi 的连接方式 (或镜像清单更新了): 旧路线上记下的熔断与失败不再算数. */
+    private fun resetIfRoutingChanged() {
+        val routing = endpoints.currentRouting
+        if (routing == lastRouting) return
+        lastRouting = routing
+        breakers.clear()
+        synchronized(lock) { failures.clear() }
     }
 
     /**
@@ -109,6 +125,7 @@ internal object RemoteImageProxy {
 
     private fun serve(url: String): LanHttpResponse {
         cached(url)?.let { return ok(it) }
+        resetIfRoutingChanged()
         val breaker =breakers.getOrPut(runCatching { URI(url).host }.getOrNull().orEmpty()) { Breaker() }
         if (System.currentTimeMillis() < breaker.openUntil) return LanHttpResponse.status(503, "Service Unavailable")
         val failedAt = synchronized(lock) { failures[url] }
@@ -197,8 +214,13 @@ internal object RemoteImageProxy {
     private val ALLOWED_PREFIXES = listOf(
         "https://image.tmdb.org/t/p/",
         "https://lain.bgm.tv/",
-        "https://static.myani.org/bangumi/",
     )
+
+    /**
+     * Bangumi 的封面重定向端点 (见 `staticSubjectImageLargeUrl`): 跳到图床上的原图. 经镜像时镜像把跳转地址改成它自己的图床,
+     * 所以跟着跳就还在同一条线路上.
+     */
+    private val BANGUMI_COVER_ENDPOINT = Regex("""https://api\.bgm\.tv/v0/subjects/\d+/image\?type=(?:small|grid|large|medium|common)""")
     private const val MAX_CACHE_BYTES = 24L * 1024 * 1024
     private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
     private const val MAX_FAILURES = 200
