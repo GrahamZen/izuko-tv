@@ -457,6 +457,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<TmdbSubjectMapRepository> {
         TmdbSubjectMapRepository(
             cache = getContext().dataStores.tmdbSubjectMapStore,
+            mapFile = getContext().files.dataDir.resolve("tmdb-subject-map.tsv"),
             client = { get<HttpClientProvider>().get() },
             enabled = get<SettingsRepository>().tmdbImagesDisabled.flow.map { !it },
             scope = coroutineScope,
@@ -470,6 +471,8 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             disabledByUserFlow = get<SettingsRepository>().tmdbImagesDisabled.flow,
             injectedSeriesIndexService = get(),
             subjectMap = get(),
+            // 用时再取: 构造时就要 BangumiEndpointProvider 会与 HttpClientProvider 绕成环
+            bangumiRouting = { get<BangumiEndpointProvider>().currentRouting },
         )
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
