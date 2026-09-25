@@ -49,6 +49,7 @@ import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.app.ui.remote.RemotePlayerExtras.putCommentLink
 import me.him188.ani.app.ui.remote.RemotePlayerExtras.putDanmakuState
 import me.him188.ani.app.ui.remote.RemotePlayerExtras.putTrackState
 import me.him188.ani.app.ui.remote.RemoteCandidates.putCandidates
@@ -133,6 +134,10 @@ internal class RemotePlayerHandle(
     @Volatile
     var presentation: MediaSelectorState.Presentation? = null
 
+    /** 这部番自己的收藏状态 (`null` = 还没取到). 由 [RegisterTvRemotePlayer] 持续收集. */
+    @Volatile
+    var selfCollectionType: UnifiedCollectionType? = null
+
     fun stateJson(filter: RemoteMediaFilter = RemoteMediaFilter.None): JsonObject {
         val page = page
         val pres = presentation
@@ -143,6 +148,9 @@ internal class RemotePlayerHandle(
             put("background", background)
             // 手机上点卡片的剧名 = 电视打开这部的详情页
             put("subjectId", vm.subjectId)
+            // 这部番自己的收藏与评分: 手机上「评论与评分」看到它变了 (电视上改了收藏、登录后取回了真实状态) 就重读
+            selfCollectionType?.let { put("collection", it.name) }
+            page?.playingEpisodeSummary?.selfRatingInfo?.let { put("score", it.score) }
             if (page != null) {
                 put("title", page.subjectPresentation.title)
                 val ep = page.episodePresentation
@@ -163,8 +171,11 @@ internal class RemotePlayerHandle(
                 }
             }
 
-            // 弹幕与音轨 / 字幕轨 (手机上两个可收起的区), 见 RemotePlayerExtras
-            if (page != null) putDanmakuState(page)
+            // 弹幕与音轨 / 字幕轨 (手机上两个可收起的区), 以及本集评论的网页地址, 见 RemotePlayerExtras
+            if (page != null) {
+                putDanmakuState(page)
+                putCommentLink(page)
+            }
             putTrackState(this@RemotePlayerHandle)
 
             // 当前查询条件 (「编辑查询请求」那几项), 手机上的表单用它预填
@@ -500,6 +511,12 @@ fun RegisterTvRemotePlayer(vm: EpisodeViewModel, page: EpisodePageState, backgro
     LaunchedEffect(handle, selectorState) {
         // presentationFlow 是 WhileSubscribed 的: 电视上数据源弹窗没开时没人订阅, 这里订着让它保持最新
         selectorState.presentationFlow.collect { handle.presentation = it }
+    }
+    LaunchedEffect(handle) {
+        // 同上, 也是 WhileSubscribed: 电视上收藏按钮不在屏幕上时没人订阅
+        vm.editableSubjectCollectionTypeState.presentationFlow.collect {
+            handle.selfCollectionType = if (it.isPlaceholder) null else it.selfCollectionType
+        }
     }
     // 音轨 / 字幕轨的候选与选中缓存到把手上, HTTP 线程只读缓存 (candidates 是 Flow, 不在请求里阻塞地取)
     LaunchedEffect(handle) {
