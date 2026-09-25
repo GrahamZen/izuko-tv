@@ -56,8 +56,8 @@ class AniImageLoaderConfigurationTest {
         )
 
         try {
-            // fork 保留内存缓存 (上游禁用): 电视上遥控器来回走会反复重解码同一张全屏图.
-            // 仍然是有界的 —— sketch 默认 LRU 按可用堆的比例封顶.
+            // 内存缓存开着且有界: 电视上遥控器来回走会反复重解码同一张全屏图. 桌面端用 sketch 默认的 LRU,
+            // Android 按设备总内存定上限 (见 imageMemoryCacheSizeForTotalMemory)
             assertTrue(sketch.memoryCache.maxSize > 0L)
             assertEquals(0L, sketch.memoryCache.size) // 刚建好, 还没装东西
             // fork 把下载缓存从上游的 100 MiB 提到 300 MiB (电视上还要缓存 backdrop 与分集剧照)
@@ -67,7 +67,7 @@ class AniImageLoaderConfigurationTest {
 
             val options = requireNotNull(sketch.globalImageOptions)
             assertEquals(CachePolicy.ENABLED, options.downloadCachePolicy)
-            assertEquals(CachePolicy.ENABLED, options.memoryCachePolicy) // fork 与上游不同, 见上
+            assertEquals(CachePolicy.ENABLED, options.memoryCachePolicy)
 
             assertEquals(CachePolicy.DISABLED, options.resultCachePolicy)
             assertIs<CrossfadeTransition.Factory>(options.transitionFactory)
@@ -85,6 +85,17 @@ class AniImageLoaderConfigurationTest {
             client.close()
             tempDirectory.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `memory cache limit follows total memory`() {
+        val mib = 1024L * 1024L
+        assertEquals(32 * mib, imageMemoryCacheSizeForTotalMemory(512 * mib))
+        assertEquals(32 * mib, imageMemoryCacheSizeForTotalMemory(1024 * mib))
+        assertEquals(48 * mib, imageMemoryCacheSizeForTotalMemory(1536 * mib))
+        assertEquals(64 * mib, imageMemoryCacheSizeForTotalMemory(2048 * mib))
+        assertEquals(96 * mib, imageMemoryCacheSizeForTotalMemory(3072 * mib))
+        assertEquals(128 * mib, imageMemoryCacheSizeForTotalMemory(8192 * mib))
     }
 
     @Test
