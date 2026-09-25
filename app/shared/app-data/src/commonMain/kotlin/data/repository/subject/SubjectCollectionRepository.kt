@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -78,6 +80,7 @@ import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.repository.shouldRetry
 import me.him188.ani.app.domain.search.SubjectType
+import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.checkAccessAniApiNow
 import me.him188.ani.app.domain.session.restartOnNewLogin
@@ -262,6 +265,22 @@ class SubjectCollectionRepositoryImpl(
     private val subjectFetcher = StaleKeyedFetcher<Int>(scope)
 
     /**
+     * 本进程里新登录的次数 ([SessionEvent.NewLogin]). 取一个条目时先记下, 落库前变了 = 这次取数开始于登录生效之前.
+     *
+     * 登录时先把取数时刻清零、再写会话 (SessionManager 的 `beforeNewLogin`); 清零让正在订阅这个条目的页面马上重取,
+     * 而那一刻 token 还没写进去, 这次取数是匿名的 (收藏状态一律「未收藏」). 它的结果照写, 但取数时刻记 0 (过期),
+     * 否则登录后带着 token 的重取都会被当成重复跳过 —— 同一条目的取数是串行的 ([StaleKeyedFetcher]), 带 token 的那次
+     * 一定排在它之后落库.
+     */
+    private val loginGeneration = atomic(0)
+
+    init {
+        scope.launch {
+            sessionManager.eventFlow.filterIsInstance<SessionEvent.NewLogin>().collect { loginGeneration.incrementAndGet() }
+        }
+    }
+
+    /**
      * **同一条目的重取只做一次**.
      *
      * [subjectCollectionFlow] 在仓库里有十几个调用点 (详情页状态工厂 / EpisodeCollectionRepository /
@@ -351,6 +370,7 @@ class SubjectCollectionRepositoryImpl(
         forceEpisodes: Boolean = false,
     ): Boolean = coroutineScope {
         val lastFetched = currentTimeMillis()
+        val generation = loginGeneration.value
         // 分集单独按 cacheExpiry 判: 强制刷新会连着重取条目, 每次都跟着把分集也拉一遍不值当
         // —— 分集变化远比收藏状态慢
         val fetchEpisodes = forceEpisodes || episodesExpired(subjectId)
@@ -375,13 +395,20 @@ class SubjectCollectionRepositoryImpl(
                 ?: animeScheduleRepository.getSubjectRecurrence(subjectId, subject.airtime.date),
             relations = existing?.relations ?: SubjectRelations.Empty,
         )
-        if (episodesDeferred != null) {
-            val episodeEntities = episodesDeferred.await()
+        val episodeEntities = episodesDeferred?.await()
+        // 取数期间有新登录: 结果照写, 取数时刻记 0, 见 [loginGeneration]
+        val staleByLogin = loginGeneration.value != generation
+        if (staleByLogin) logger.info { "bgm-direct: subject $subjectId was fetched across a new login, saved as stale" }
+        val savedSubject = if (staleByLogin) subjectEntity.copy(lastFetched = 0) else subjectEntity
+        if (episodeEntities != null) {
             // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
-            subjectCollectionDao.upsertSubjectWithEpisodes(subjectEntity, episodeEntities)
+            subjectCollectionDao.upsertSubjectWithEpisodes(
+                savedSubject,
+                if (staleByLogin) episodeEntities.map { it.copy(lastFetched = 0) } else episodeEntities,
+            )
             logger.info { "bgm-direct: fetched subject $subjectId with ${episodeEntities.size} episodes" }
         } else {
-            subjectCollectionDao.upsert(subjectEntity)
+            subjectCollectionDao.upsert(savedSubject)
             logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
         }
         true
