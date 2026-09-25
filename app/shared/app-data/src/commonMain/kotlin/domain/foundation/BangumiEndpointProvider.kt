@@ -150,17 +150,6 @@ class BangumiEndpointProvider(
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     /**
-     * Bangumi 经镜像或自建地址连时那个站的根域名, `null` = 官方. 判定与 [trustedMirrorRoot] 相同,
-     * 只是不看「登录也经过镜像」开没开. 下载更新时据此判断用户多半在大陆, 把镜像下载地址排前面.
-     */
-    val webMirrorRoot: StateFlow<String?> = combine(routing, activeMirror) { routing, active ->
-        val settled = active?.takeIf { it in routing.mirrors }
-        if (routing.preferDirect) settled else settled ?: routing.mirrors.firstOrNull()
-    }
-        .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, null)
-
-    /**
      * 现在是不是经第三方镜像连 bangumi: 「用镜像」, 或「官方连不上时用镜像」且请求已经落到镜像上.
      * 这时授权登录走不通 —— 镜像把 bgm.tv 主站 (授权页与换 token 都在那) 挡在反爬验证后面, 只能用个人令牌登录
      * (见 `BangumiOAuthManager.loginWithPersonalToken`). 自建地址不算: 那是用户自己的反代, 授权登录照常.
