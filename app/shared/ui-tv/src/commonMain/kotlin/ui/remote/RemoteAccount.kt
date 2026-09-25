@@ -127,16 +127,18 @@ internal object RemoteAccount {
         // 挂起调用都在 buildJsonObject 外面 (它的构建块不是协程)
         buildJsonObject {
             put("ok", true)
-            // 账号就是 Bangumi 账号: 网页上不要出现改昵称 / 邮箱登录这些只有 Ani 账号体系才有的入口
-            put("direct", true)
             put("loggedIn", session is SessionState.Valid)
-            put("bangumi", session is SessionState.Valid)
             // 连不上 bangumi 而判成无效 (不是真的没登录): 单独说, 别让人以为被登出了
             put("offline", session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR)
             if (self != null) {
                 put("name", self.calculateDisplay().title)
-                put("nickname", self.nickname)
-                put("avatar", self.avatarUrl)
+                // 头像候选: 经电视转发 (按电视的 Bangumi 连接方式取, 存下的镜像地址也能换回来) → 手机直连
+                self.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                    putJsonArray("avatar") {
+                        add(RemoteImageProxy.proxied(url))
+                        add(url)
+                    }
+                }
                 put("bgmName", self.bangumiUsername)
             }
             // 经第三方镜像连着: 授权登录走不通, 网页上只给个人令牌那条路 (见 BangumiEndpointProvider.viaThirdPartyMirror)

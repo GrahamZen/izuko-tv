@@ -25,12 +25,10 @@ import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.domain.comment.CommentContext
-import me.him188.ani.app.domain.comment.CommentSendResult
-import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.danmaku.DanmakuNotMatchedException
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.danmaku.api.DanmakuContent
@@ -110,7 +108,6 @@ internal object RemotePlayerExtras {
                 "api/player/review" -> reviewState(handle)
                 "api/player/review/collect" -> setCollection(handle, f["type"].orEmpty())
                 "api/player/review/rate" -> rate(handle, f)
-                "api/player/comment" -> postComment(handle, f["text"].orEmpty())
 
                 "api/player/track" -> {
                     val id = f["id"].orEmpty()
@@ -216,7 +213,9 @@ internal object RemotePlayerExtras {
         return result(true, tr("已发送"))
     }
 
-    /** 收藏状态 / 我的评分与短评 (预填手机上的表单), 以及登录与否. */
+    /**
+     * 收藏状态 / 我的评分与短评 (预填手机上的表单), 以及登录与否. 本集评论的网页地址不在这里, 见 [putCommentLink].
+     */
     private fun reviewState(handle: RemotePlayerHandle): JsonObject {
         val subjectId = handle.vm.subjectId
         val info = runCatching {
@@ -232,12 +231,12 @@ internal object RemotePlayerExtras {
             put("score", rating.score)
             put("comment", rating.comment.orEmpty())
             put("private", rating.isPrivate)
-            handle.page?.episodePresentation?.let { put("episode", tr("第 {0} 话", it.sort)) }
         }
     }
 
     private fun setCollection(handle: RemotePlayerHandle, typeName: String): JsonObject {
         val type = UnifiedCollectionType.entries.firstOrNull { it.name == typeName } ?: return result(false, tr("无效的收藏状态"))
+        if (type == UnifiedCollectionType.NOT_COLLECTED) return result(false, tr(UNCOLLECT_UNSUPPORTED))
         val done = runCatching {
             runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { setCollectionType(handle.vm.subjectId, type); true } }
         }.getOrElse { return result(false, errorText(it, tr("设置失败"))) }
@@ -265,6 +264,7 @@ internal object RemotePlayerExtras {
             }
         }
         val type = UnifiedCollectionType.entries.firstOrNull { it.name == f["type"] } ?: return result(false, tr("无效的收藏状态"))
+        if (type == UnifiedCollectionType.NOT_COLLECTED) return result(false, tr(UNCOLLECT_UNSUPPORTED))
         val done = runCatching {
             runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { setCollectionType(subjectId, type); true } }
         }.getOrElse { return result(false, errorText(it, tr("设置失败"))) }
@@ -301,21 +301,6 @@ internal object RemotePlayerExtras {
             null -> result(false, tr("操作超时，请重试"))
             false -> result(false, tr("先设置收藏状态（想看 / 在看 / 看过…）再评分"))
             true -> result(true, if (score == 0) tr("已保存（不评分）") else tr("已保存：{0} 分", score))
-        }
-    }
-
-    /** 发表本集评论 (同电视上的评论框, 不走人机验证). 失败时用例不区分「没登录」与「网络错误」, 提示里一并说. */
-    private fun postComment(handle: RemotePlayerHandle, raw: String): JsonObject {
-        val text = raw.trim()
-        if (text.isEmpty()) return result(false, tr("请输入评论内容"))
-        val episodeId = handle.page?.episodePresentation?.episodeId ?: return result(false, tr("还不知道当前是哪一集，请稍后再试"))
-        val res = runBlocking {
-            withTimeoutOrNull(NETWORK_TIMEOUT) { postCommentUseCase(CommentContext.Episode(handle.vm.subjectId, episodeId.toLong()), text) }
-        } ?: return result(false, tr("发表超时，请重试"))
-        return when (res) {
-            CommentSendResult.Ok -> result(true, tr("已发表到本集评论"))
-            CommentSendResult.NetworkError -> result(false, tr("发表失败：网络错误，或者电视还没登录"))
-            is CommentSendResult.UnknownError -> result(false, tr("发表失败：{0}", res.message))
         }
     }
 
@@ -364,6 +349,24 @@ internal object RemotePlayerExtras {
         }
     }
 
+    /**
+     * 本集在 Bangumi 网页上的地址, 放进播放器状态 JSON: 手机上从那里发表评论 —— Bangumi 发表评论要过人机验证,
+     * 只有它自己的网页过得去. 随轮询走, 换了集或改了连接方式, 网页上的链接跟着变.
+     *
+     * 站点同登录授权页 ([BangumiEndpointProvider.trustedMirrorRoot]): 用户允许了凭证经过的镜像 (或自建地址) 用镜像站,
+     * 在那里登录与写评论是用户自己认可过的; 其余用官方站, 电视正经第三方镜像连着时 `viaMirror` 提醒手机可能要开代理.
+     */
+    fun JsonObjectBuilder.putCommentLink(page: EpisodePageState) {
+        val ep = page.episodePresentation
+        if (ep.episodeId <= 0) return
+        val mirrorRoot = endpoints.trustedMirrorRoot.value
+        putJsonObject("commentLink") {
+            put("url", "https://${mirrorRoot ?: BANGUMI_WEB_HOST}/ep/${ep.episodeId}")
+            put("episode", tr("第 {0} 话", ep.sort))
+            put("viaMirror", mirrorRoot == null && endpoints.viaThirdPartyMirror.value)
+        }
+    }
+
     /** 音轨 / 字幕轨, 放进播放器状态 JSON. `sel` 为 null = 自动 (音轨) / 关闭 (字幕). */
     fun JsonObjectBuilder.putTrackState(handle: RemotePlayerHandle) {
         putJsonObject("tracks") {
@@ -401,7 +404,7 @@ internal object RemotePlayerExtras {
 
     private val collectionRepository: SubjectCollectionRepository get() = KoinPlatform.getKoin().get()
     private val setCollectionType: SetSubjectCollectionTypeOrDeleteUseCase get() = KoinPlatform.getKoin().get()
-    private val postCommentUseCase: PostCommentUseCase get() = KoinPlatform.getKoin().get()
+    private val endpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
     private val sessionStateProvider: SessionStateProvider get() = KoinPlatform.getKoin().get()
 
     private val COLLECTION_LABELS = mapOf(
@@ -412,6 +415,15 @@ internal object RemotePlayerExtras {
         UnifiedCollectionType.DROPPED to "抛弃",
         UnifiedCollectionType.NOT_COLLECTED to "未收藏",
     )
+
+    /**
+     * Bangumi 没有取消收藏的接口 (官方建议改成「抛弃」). 网页上已经不给这个选项; 手机上开着的旧页面仍可能发来, 拦下并说明,
+     * 不然走到底层只会报一句笼统的「设置失败」.
+     */
+    private const val UNCOLLECT_UNSUPPORTED = "Bangumi 不支持取消收藏，不想看了可以改成「抛弃」"
+
+    /** 官方站: 本集评论页 `https://bgm.tv/ep/<分集 id>`. */
+    private const val BANGUMI_WEB_HOST = "bgm.tv"
 
     /** 偏移上限: 电视上的偏移对话框是 ±30 秒, 这里放宽一倍, 防手机上连点跑飞. */
     private const val MAX_SHIFT_MILLIS = 60_000L
