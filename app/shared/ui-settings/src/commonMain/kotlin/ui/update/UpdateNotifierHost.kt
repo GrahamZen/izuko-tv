@@ -122,6 +122,14 @@ fun BoxScope.UpdateNotifier(
             focus.request(UpdateNotifierFocus.Install)
         }
     }
+    // 下载失败后焦点送到"重试"按钮: 按下"自动更新"后那颗按钮随即消失, 焦点被兜底送回页面,
+    // 用户不会知道要从哪一排按下去才能走到右下角的卡片 (2026-09-26 真机)
+    val downloadFailed = showCard && state is AppUpdateState.DownloadFailed
+    LaunchedEffect(autoInstall, downloadFailed) {
+        if (autoInstall && downloadFailed) {
+            focus.request(UpdateNotifierFocus.Retry)
+        }
+    }
 
     // "查看详情": 先在应用内看完整更新内容 (气泡上只放得下前几条), 弹窗底部才是跳浏览器的按钮
     var detailsVisible by remember(newVersion?.name) { mutableStateOf(false) }
@@ -244,13 +252,14 @@ fun BoxScope.UpdateNotifier(
                     },
                     onRetryClick = { viewModel.restartDownload(uriHandler) },
                     installButtonModifier = Modifier.tvFocusAnchor(focus, UpdateNotifierFocus.Install),
+                    retryButtonModifier = Modifier.tvFocusAnchor(focus, UpdateNotifierFocus.Retry),
                 )
             }
         }
     }
 }
 
-private enum class UpdateNotifierFocus : TvFocusKey { AutoUpdate, Install }
+private enum class UpdateNotifierFocus : TvFocusKey { AutoUpdate, Install, Retry }
 
 /**
  * 设置页中的更新提示卡片，带下载和安装按钮，永久显示直到手动关闭.

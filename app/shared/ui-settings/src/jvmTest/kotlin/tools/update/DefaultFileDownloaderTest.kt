@@ -17,6 +17,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
@@ -29,6 +30,7 @@ import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -288,6 +290,63 @@ class DefaultFileDownloaderTest {
 
         // Clean up
         targetFile.delete()
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `falling back to the next url does not report failure in between`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        val states = mutableListOf<FileDownloaderState>()
+        coroutineScope {
+            val job = launch(Dispatchers.Unconfined) { downloader.state.collect { states += it } }
+            val downloaded = downloader.download(
+                alternativeUrls = listOf("/unavailable", "/file"),
+                filenameProvider = { "fallback-file.txt" },
+                saveDir = tempDir.toKtPath().inSystem,
+            )
+            job.cancel()
+            assertNotNull(downloaded)
+        }
+        assertTrue(states.none { it is FileDownloaderState.Failed }, "States: $states")
+        assertTrue(states.last() is FileDownloaderState.Succeed, "States: $states")
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `failure is reported once after every url failed`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        val states = mutableListOf<FileDownloaderState>()
+        coroutineScope {
+            val job = launch(Dispatchers.Unconfined) { downloader.state.collect { states += it } }
+            assertFails {
+                downloader.download(
+                    alternativeUrls = listOf("/unavailable", "/unavailable"),
+                    filenameProvider = { "unavailable-file.txt" },
+                    saveDir = tempDir.toKtPath().inSystem,
+                )
+            }
+            job.cancel()
+        }
+        assertEquals(1, states.count { it is FileDownloaderState.Failed }, "States: $states")
+        assertTrue(states.last() is FileDownloaderState.Failed, "States: $states")
+
         tempDir.deleteRecursively()
     }
 
