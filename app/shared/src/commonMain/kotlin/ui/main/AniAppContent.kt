@@ -87,6 +87,7 @@ import me.him188.ani.app.ui.download.details.MediaDetailsLazyGrid
 import me.him188.ani.app.ui.download.subject.SubjectDownloadsScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleScreen
 import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
+import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
@@ -653,6 +654,16 @@ private fun AniAppContentImpl(
                         },
                         windowInsets = windowInsetsWithoutTitleBar,
                     )
+                }
+                entry<NavRoutes.TvCollectionTabOrder> { route ->
+                    // 同 TvPlayerChrome: 页面实现在 ui-tv, 共享代码只认插槽
+                    val editor = LocalTvCollectionTabOrderEditorVariant.current
+                    val onBack: () -> Unit = { aniNavigator.popBackStack(route, inclusive = true) }
+                    if (editor == null) {
+                        LaunchedEffect(Unit) { onBack() }
+                    } else {
+                        editor.Page(onNavigateBack = onBack, modifier = Modifier.fillMaxSize())
+                    }
                 }
                 entry<NavRoutes.TvPlayerChrome> { route ->
                     // 页面实现在 ui-tv, 共享代码只认插槽. 入口只在遥控器形态的设置里摆,

@@ -345,4 +345,12 @@
     <string name="settings_watch_together_entry_hint_tv">. Long-press Back to open the action panel, where it lives</string>
     <!-- Web 控制台按这条判断 app 当前语言 (见 ui-tv RemoteI18n), 值是语言标记, 不要翻译 -->
     <string name="remote_web_lang" translatable="false">en</string>
+    <!-- 追番页: 自定义分类标签顺序 -->
+    <string name="settings_appearance_tv_collection_tab_order">Reorder the collection tabs</string>
+    <string name="settings_appearance_tv_collection_tab_order_description">Set the order of Plan to Watch / Watching / On Hold / Watched / Dropped on the collection page</string>
+    <string name="collection_tv_tab_order_title">Reorder the tabs</string>
+    <string name="collection_tv_tab_order_subtitle">The row above is the tab row of the collection page. However you arrange it here is how it looks there.</string>
+    <string name="collection_tv_tab_order_hint">OK to pick up  ·  Back to leave</string>
+    <string name="collection_tv_tab_order_hint_grabbed">Left / Right to move  ·  OK to drop  ·  Back to undo</string>
+    <string name="collection_tv_tab_order_reset">Reset to default order</string>
 </resources>

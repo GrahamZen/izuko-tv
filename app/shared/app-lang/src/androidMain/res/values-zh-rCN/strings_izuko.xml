@@ -345,4 +345,12 @@
     <string name="settings_watch_together_entry_hint_tv">。入口在长按返回键弹出的菜单里</string>
     <!-- Web 控制台按这条判断 app 当前语言 (见 ui-tv RemoteI18n), 值是语言标记, 不要翻译 -->
     <string name="remote_web_lang" translatable="false">zh-CN</string>
+    <!-- 追番页: 自定义分类标签顺序 -->
+    <string name="settings_appearance_tv_collection_tab_order">自定义追番页标签顺序</string>
+    <string name="settings_appearance_tv_collection_tab_order_description">排「想看 / 在看 / 搁置 / 看过 / 抛弃」的先后；进页会落在第一个非空的标签上</string>
+    <string name="collection_tv_tab_order_title">自定义标签顺序</string>
+    <string name="collection_tv_tab_order_subtitle">上面这排就是追番页顶部的标签。这里排成什么样，进去就是什么样。</string>
+    <string name="collection_tv_tab_order_hint">确认键 拿起  ·  返回键 退出</string>
+    <string name="collection_tv_tab_order_hint_grabbed">左 / 右 移动  ·  确认键 放下  ·  返回键 撤销</string>
+    <string name="collection_tv_tab_order_reset">恢复默认顺序</string>
 </resources>
