@@ -93,9 +93,11 @@ fun BoxScope.UpdateNotifier(
 
     // 下载之前先要安装授权, 见 AppUpdateViewModel.installPermissionRequest
     val installPermissionRequest by viewModel.installPermissionRequest.collectAsStateWithLifecycle()
-    if (installPermissionRequest != null) {
+    installPermissionRequest?.let { request ->
         InstallPermissionDialog(
+            offerInstallWithoutPermission = request.offerInstallWithoutPermission,
             onOpenSettings = { viewModel.requestInstallPermission(context) },
+            onInstallWithoutPermission = { viewModel.startDownloadWithoutPermission() },
             onDismissRequest = { viewModel.dismissInstallPermissionRequest() },
         )
     }
@@ -266,9 +268,11 @@ fun BoxScope.UpdateSettingsNotifier(
 
     // 下载之前先要安装授权, 见 AppUpdateViewModel.installPermissionRequest
     val installPermissionRequest by viewModel.installPermissionRequest.collectAsStateWithLifecycle()
-    if (installPermissionRequest != null) {
+    installPermissionRequest?.let { request ->
         InstallPermissionDialog(
+            offerInstallWithoutPermission = request.offerInstallWithoutPermission,
             onOpenSettings = { viewModel.requestInstallPermission(context) },
+            onInstallWithoutPermission = { viewModel.startDownloadWithoutPermission() },
             onDismissRequest = { viewModel.dismissInstallPermissionRequest() },
         )
     }

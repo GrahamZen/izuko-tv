@@ -47,6 +47,8 @@
     <string name="settings_update_install_permission_title">Allow installing updates</string>
     <string name="settings_update_install_permission_message">Before installing the update, %1$s needs permission to install apps. Turn it on in the system settings.\n\nAfter you turn it on, the system closes %1$s. Open it again to continue updating.</string>
     <string name="settings_update_install_permission_open_settings">Open settings</string>
+    <string name="settings_update_install_permission_install_anyway">Install anyway</string>
+    <string name="settings_update_install_permission_retry_message">%1$s still does not have permission to install apps.\n\nIf the system settings have no such switch, choose Install anyway: after the download, the system installer asks whether to allow it.</string>
     <string name="exploration_rec_because_you_liked">Because you liked %1$s</string>
     <string name="exploration_rec_also_watched">Fans of %1$s also watched</string>
     <string name="exploration_rec_similar_to">More like %1$s</string>
