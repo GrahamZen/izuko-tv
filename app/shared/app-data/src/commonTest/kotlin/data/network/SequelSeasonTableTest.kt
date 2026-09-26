@@ -61,7 +61,7 @@ class SequelSeasonTableTest {
     }
 
     @Test
-    fun `查表 - 有这一行给候选, 覆盖到却没有给空, 比表新的给 null`() {
+    fun `查表 - 有这一行给候选，覆盖到却没有给空，比表新的给 null`() {
         val table = assertNotNull(SequelSeasonTable.parse(tsv()))
         assertEquals(SEQUEL_SEASON_RULES, table.rules)
         assertEquals(500000, table.maxId)
@@ -94,7 +94,7 @@ class SequelSeasonTableTest {
 
     /** 真实时间跑: 等首轮下载的那 3 秒超时在虚拟时间里会立刻到点. */
     @Test
-    fun `本地没有表文件 - 下整份, 不带下载元数据里的 ETag`() = runTest {
+    fun `本地没有表文件 - 下整份，不带下载元数据里的 ETag`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
         val client = HttpClient(
             MockEngine { request ->

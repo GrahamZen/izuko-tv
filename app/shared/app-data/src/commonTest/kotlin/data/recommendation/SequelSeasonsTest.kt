@@ -58,7 +58,7 @@ class SequelSeasonsTest {
         sequelSeasonCandidates(walkPrequelChain(id, MAX_PREQUEL_HOPS, ::isSeasonFormat) { edges(it) }).map { it.id }
 
     @Test
-    fun `按播出早的在前, 不是前传链的先后`() = runTest {
+    fun `按播出早的在前，不是前传链的先后`() = runTest {
         // Re:Zero: 第三季 → 第二季后半 → 第二季 → 第一季
         val graph = Graph(
             node(140001, "2016-04-03"), node(278826, "2020-07-08"),
@@ -76,7 +76,7 @@ class SequelSeasonsTest {
     }
 
     @Test
-    fun `剧场版、短篇与 nsfw 不当一季, 岔路先走能当一季的`() = runTest {
+    fun `剧场版、短篇与 nsfw 不当一季，岔路先走能当一季的`() = runTest {
         val graph = Graph(
             node(10, "2017-07-07"), node(11, "2020-01-17", episodes = 1, format = "剧场版"),
             node(12, "2022-07-06"), node(13, "2019-01-01", episodes = 2, format = "WEB"),
@@ -88,7 +88,7 @@ class SequelSeasonsTest {
     }
 
     @Test
-    fun `没写形态和集数的当不知道, 放行`() = runTest {
+    fun `没写形态和集数的当不知道，放行`() = runTest {
         val graph = Graph(node(1, "2010-01-01", episodes = null, format = null), node(2, "2012-01-01"))
             .prequel(2, 1)
         assertEquals(listOf(1), graph.candidates(2))
