@@ -24,7 +24,6 @@ import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.mapper.toEntity
-import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectType
 import me.him188.ani.datasources.api.PackedDate
@@ -111,21 +110,6 @@ class AniSubjectSearchService(
         // 服务端没报总数时只知道有这一页
         SubjectSearchPage(list, result.total ?: list.size)
     }
-
-    companion object {
-        fun sanitizeKeyword(keyword: String): String {
-            return buildString(keyword.length) {
-                for (c in keyword) {
-                    if (MediaListFilters.charsToDeleteForSearch.contains(c.code)) {
-                        append(' ')
-                    } else {
-                        append(c)
-                    }
-                }
-            }
-        }
-    }
-}
 
     private fun BangumiSubject.toBatchSubjectDetails(): BatchSubjectDetails {
         return BatchSubjectDetails(
