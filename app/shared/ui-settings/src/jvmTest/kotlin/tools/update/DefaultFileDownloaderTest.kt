@@ -19,6 +19,7 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.job
@@ -27,12 +28,12 @@ import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.toKtPath
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import java.io.File
+import java.security.MessageDigest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -167,6 +168,12 @@ class DefaultFileDownloaderTest {
             get("/unavailable") {
                 call.respond(HttpStatusCode.InternalServerError, "Internal Server Error")
             }
+
+            // 与 /file 内容相同, 但要等一会儿才回 (慢的来源)
+            get("/slow-file") {
+                delay(3000)
+                call.respondText(fileContent, ContentType.Text.Plain)
+            }
         }
     }
 
@@ -267,20 +274,15 @@ class DefaultFileDownloaderTest {
         val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
         val targetFile = File(tempDir, "corrupted-file.txt")
 
-        // Provide the route which is guaranteed to fail the checksum check
-        val succeeded = downloader.download(
-            alternativeUrls = listOf("/corrupted-file"),
-            filenameProvider = { "corrupted-file.txt" },
-            saveDir = tempDir.toKtPath().inSystem,
-        )
-
-        // The call might return true only if there's a fallback that eventually succeeds,
-        // but here we only provide one URL => must fail. Or it might bubble an exception.
-        // In this implementation, if no fallback is found, it ends in "Failed" and returns false.
-        // Depending on how you wrote your code, you might see `true` or `false` here.
-        // For the posted code: it will eventually throw the last collected exception, so it's never returning normally.
-        // We can verify the final state directly.
-        assertNull(succeeded, "Should fail because the file's checksum won't match.")
+        // Provide the route which is guaranteed to fail the checksum check.
+        // 校验不过算这个来源失败; 没有别的来源了, 整个下载失败, 抛出最后一个错误
+        assertFails {
+            downloader.download(
+                alternativeUrls = listOf("/corrupted-file"),
+                filenameProvider = { "corrupted-file.txt" },
+                saveDir = tempDir.toKtPath().inSystem,
+            )
+        }
 
         val finalState = downloader.state.first { it is FileDownloaderState.Completed }
         assertTrue(finalState is FileDownloaderState.Failed, "Expected final state to be Failed.")
@@ -349,6 +351,87 @@ class DefaultFileDownloaderTest {
 
         tempDir.deleteRecursively()
     }
+
+    @Test
+    fun `the faster source is used`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        val downloaded = downloader.download(
+            listOf(DownloadPackage("race-file.txt", sources = listOf("/slow-file", "/file"))),
+            saveDir = tempDir.toKtPath().inSystem,
+        )
+        assertNotNull(downloaded)
+        val finalState = downloader.state.value
+        assertTrue(finalState is FileDownloaderState.Succeed && finalState.url == "/file", "State: $finalState")
+        assertEquals(fileContent, File(tempDir, "race-file.txt").readText())
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `a source failing the trusted sha256 is dropped for the next one`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        // /corrupted-file 更快, 探测排第一; 它旁边的 .sha1 是乱写的, 有可信的 SHA-256 时不该去看它
+        val downloaded = downloader.download(
+            listOf(
+                DownloadPackage(
+                    "trusted-file.txt",
+                    sources = listOf("/corrupted-file", "/slow-file"),
+                    sha256 = sha256Hex(fileContent),
+                ),
+            ),
+            saveDir = tempDir.toKtPath().inSystem,
+        )
+        assertNotNull(downloaded)
+        val finalState = downloader.state.value
+        assertTrue(finalState is FileDownloaderState.Succeed && finalState.url == "/slow-file", "State: $finalState")
+        assertTrue(finalState.checked)
+        assertEquals(fileContent, File(tempDir, "trusted-file.txt").readText())
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `an existing file matching the trusted sha256 is used without any request`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+        File(tempDir, "existing-file.txt").writeText(fileContent)
+
+        // 来源是个必然失败的地址: 发了请求就会失败
+        val downloaded = downloader.download(
+            listOf(DownloadPackage("existing-file.txt", sources = listOf("/unavailable"), sha256 = sha256Hex(fileContent))),
+            saveDir = tempDir.toKtPath().inSystem,
+        )
+        assertNotNull(downloaded)
+        val finalState = downloader.state.value
+        assertTrue(finalState is FileDownloaderState.Succeed && finalState.checked, "State: $finalState")
+
+        tempDir.deleteRecursively()
+    }
+
+    private fun sha256Hex(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
     @Test
     fun `progress reporter does not outlive download attempt`() = testApplication {
