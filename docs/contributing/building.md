@@ -27,6 +27,28 @@ ani.dandanplay.app.secret=aaaaaaaaaaaaaaa
 
 在 IDE 上也可以选择 `Build -> Build Bundle(s) / APK(s) -> Build APK(s)` 来构建 APK。
 
+### Baseline profile
+
+`app/android/src/main/baseline-prof.txt` 列出我们自己代码里需要提前编译（AOT）的类，打包时与 Compose 等库自带的规则
+一起合并进 APK（`assets/dexopt/baseline.prof`）。侧载安装的应用装完是未编译状态（`adb shell dumpsys package dexopt`
+里是 `verify`），解释执行比编译后慢 3~5 倍；应用第一次启动时 `profileinstaller` 把这些规则交给系统，系统下一次后台编译
+（设备空闲时的 bg-dexopt）就会编译整套启动、浏览和播放的代码，而不只是用户恰好用过的那部分。
+
+规则按包和类写通配，日常改代码不需要重新生成。页面结构大改之后可以在真机上重新录制一次：
+
+1. 在测试机上装 release 包，执行 `adb shell cmd package compile -m verify -f <包名>` 回到未编译状态。
+   ART 只在解释执行时记录用到的方法，所以一定要先回到 `verify`。
+2. 冷启动，把首页、详情页、新番时间表、搜索、播放页（包括换源）都走一遍。
+3. 执行 `adb shell cmd package dump-profiles <包名>`，再 `adb pull /data/misc/profman/<包名>-primary.prof.txt`。
+4. 执行 `uv run python scripts/baseline-profile/gen-rules.py <导出的记录> <测试机上装的那个 APK>`，脚本直接改写
+   `baseline-prof.txt`。
+
+生成规则时，一个包里用到过的字节码超过三成就整包收录，否则只收录用到过的类（连同内部类）；类名以 `Tv` 开头的 TV
+界面全部收录。打包时通配规则先按混淆前的类名展开，R8 生成的合成类（`me.him188.ani.r8`）由 R8 按规则里的原方法自动带上。
+
+验证：装包后冷启动一次（logcat 有 `ProfileInstaller: Installing profile`），`adb shell cmd package dump-profiles <包名>`
+导出的记录里应当已经有没打开过的页面的类；`adb shell cmd package compile -m speed-profile -f <包名>` 可以模拟系统的后台编译。
+
 ## 打包 iOS APP
 
 默认不启用 iOS 构建。打包之前，请先在 `local.properties` 中加入：
