@@ -41,6 +41,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.player.SecondaryDecoderActivity
+import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.videoplayer.ui.progress.MediaProgressFramePreviewState
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -205,11 +207,15 @@ internal fun rememberTvFramePreviewState(
             }
         }
     }
-    // 主播放器的解码器被系统收回过: 这台机器上不再用系统取帧 (见 TvDecoderConcurrency)
-    LaunchedEffect(player, context) {
+    // 主播放器的解码器被抢走 (见 isDecoderPreempted): 这台机器上不再为缩略图另开解码器 (见 TvDecoderConcurrency),
+    // 手上的取帧会话立刻放掉, 别让它在主播放器原地重载时接着占着解码器
+    LaunchedEffect(player, context, source) {
         player.state.collect { playerState ->
             val error = (playerState.mediaStatus as? MediaStatus.Error)?.error ?: return@collect
-            if (error.isDecoderReclaimed()) TvDecoderConcurrency.onDecoderReclaimed(context)
+            if (isDecoderPreempted(error)) {
+                TvDecoderConcurrency.onDecoderPreempted(context)
+                source.release()
+            }
         }
     }
     return state
@@ -327,6 +333,9 @@ private class TvFramePreviewSource(
         if (maxWidthPx <= 0 || maxHeightPx <= 0) return null
         val data = currentMedia ?: return null
         return when {
+            // 这台机器上出过主播放器的解码器被抢走: 不再另开解码器 (见 TvDecoderConcurrency)
+            !TvDecoderConcurrency.allowsThumbnailDecoding(context) -> null
+
             // 带 Cookie 的地址 (网盘直链): media3 取帧器只收 MediaItem 加不了请求头, 不带 Cookie 会被拒 (夸克回 412),
             // 只能走退路 MediaMetadataRetriever. 它在 mediaserver 进程里解码, 优先级比应用高, 硬解只能开一个的机器上会把
             // 主播放器正在用的解码器收回 (ERROR_CODE_DECODING_RESOURCES_RECLAIMED), 所以只在检测过能同时开两个的机器上用
@@ -361,6 +370,8 @@ private class TvFramePreviewSource(
             // NonCancellable: 取消只是让上层丢弃结果, 而 getFrame 已经推动了内部播放器去 seek ——
             // 半路撤掉会让会话状态和我们的认知不一致, 下一次请求反而更慢. 靠防抖控制启动次数即可
             withContext(NonCancellable) {
+                // 另开的解码器开工、收工都记下: 这期间主播放器报解码失败, 多半是被它抢走了解码器 (见 SecondaryDecoderActivity)
+                SecondaryDecoderActivity.markUsed()
                 val extractor = obtainLocked(data, maxWidthPx, maxHeightPx) ?: return@withContext null
                 val firstOfSession = sessionFrameCount == 0
                 val timeout = if (firstOfSession) FRAME_FIRST_TIMEOUT else FRAME_TIMEOUT
@@ -374,6 +385,8 @@ private class TvFramePreviewSource(
                     logger.warn(e) { "Frame extraction failed at $positionMillis ms" }
                     releaseLocked()
                     return@withContext null
+                } finally {
+                    SecondaryDecoderActivity.markUsed()
                 }
                 if (frame == null) {
                     consecutiveFailures++
@@ -455,7 +468,13 @@ private class TvFramePreviewSource(
     }
 
     private suspend fun fallbackFrame(positionMillis: Long, maxWidthPx: Int, maxHeightPx: Int): ImageBitmap? {
-        val frame = fallback?.getPreviewFrame(positionMillis, maxWidthPx, maxHeightPx) ?: return null
+        // MediaMetadataRetriever 在 mediaserver 里另开解码器, 同样记下开工与收工 (见 SecondaryDecoderActivity)
+        SecondaryDecoderActivity.markUsed()
+        val frame = try {
+            fallback?.getPreviewFrame(positionMillis, maxWidthPx, maxHeightPx)
+        } finally {
+            SecondaryDecoderActivity.markUsed()
+        } ?: return null
         return Bitmap
             .createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
             .asImageBitmap()
@@ -463,10 +482,6 @@ private class TvFramePreviewSource(
 }
 
 private fun UriMediaData.requiresCookie(): Boolean = headers.keys.any { it.equals("Cookie", ignoreCase = true) }
-
-/** ExoPlayer 的 `ERROR_CODE_DECODING_RESOURCES_RECLAIMED`: 错误码名在 mediamp 的异常消息里, 按消息认. */
-private fun Throwable.isDecoderReclaimed(): Boolean =
-    generateSequence(this) { it.cause }.take(8).any { it.message.orEmpty().contains("RESOURCES_RECLAIMED") }
 
 private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { continuation ->
     addListener(

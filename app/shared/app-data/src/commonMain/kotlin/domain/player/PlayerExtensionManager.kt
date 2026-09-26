@@ -61,6 +61,10 @@ class PlayerExtensionManager(
         override suspend fun broadcast(event: PlayerExtensionEvent) {
             broadcastEvent.emit(event)
         }
+
+        override suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
+            return state.reloadCurrentMedia(positionMillis)
+        }
     }
 
     val extensions: List<PlayerExtension> by lazy {
