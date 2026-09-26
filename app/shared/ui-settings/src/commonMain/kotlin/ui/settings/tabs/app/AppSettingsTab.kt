@@ -65,7 +65,10 @@ import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order
+import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order_description
 import me.him188.ani.app.ui.lang.settings_player_tv_chrome
 import me.him188.ani.app.ui.lang.settings_player_tv_chrome_description
 import me.him188.ani.app.ui.lang.Lang
@@ -283,6 +286,22 @@ fun SettingsScope.AppearanceGroup(
     // 排在后面的话, 上方那些条目的高度变化会叠加起来把它推出屏幕
     if (LocalAniUiBehavior.current.immersiveShell) {
         UiScaleSliderItem(themeSettings)
+
+        // 「自定义追番页标签顺序」: 页面实现在 ui-tv, 装了变体才有这个功能
+        // (见 LocalTvCollectionTabOrderEditorVariant). 点进去就是追番页那排标签本身, 在上面直接排,
+        // 所以这里不摆预览也不摆开关
+        val tabOrderEditor = LocalTvCollectionTabOrderEditorVariant.current
+        if (tabOrderEditor != null) {
+            val tabOrderNavigator = LocalNavigator.current
+            TextItem(
+                title = { Text(stringResource(Lang.settings_appearance_tv_collection_tab_order)) },
+                description = {
+                    Text(stringResource(Lang.settings_appearance_tv_collection_tab_order_description))
+                },
+                onClick = { tabOrderNavigator.navigateTvCollectionTabOrder() },
+            )
+            HorizontalDividerItem()
+        }
 
         // 以下三条都是遥控器形态专属 (只有那里有"一路退到底就退出应用"和长按手势).
         // 存在 ThemeSettings 里只是存储位置 (同界面缩放/保留播放会话)

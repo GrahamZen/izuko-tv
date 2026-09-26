@@ -109,6 +109,13 @@ sealed class NavRoutes : NavKey {
     data object TvPlayerChrome : NavRoutes()
 
     /**
+     * TV: 自定义追番页顶部那排分类标签的顺序.
+     * 页面实现在 ui-tv, 经 `LocalTvCollectionTabOrderEditorVariant` 注入; 入口只在遥控器形态的设置里.
+     */
+    @Serializable
+    data object TvCollectionTabOrder : NavRoutes()
+
+    /**
      * TV: 首次启动引导 (检测连 Bangumi 的网络、选连接方式、登录). 引导还没做过时作为起始页,
      * 做完换成 [Main]. 页面实现在 ui-tv, 经 `LocalTvOnboardingVariant` 注入.
      */

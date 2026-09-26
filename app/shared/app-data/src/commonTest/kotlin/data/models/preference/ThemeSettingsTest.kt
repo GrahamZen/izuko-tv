@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.models.preference
 
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -43,4 +44,54 @@ class ThemeSettingsTest {
         assertTrue(ThemeSettings.UI_SCALE_MAX > 2f)
         assertEquals(ThemeSettings.UI_SCALE_MIN..ThemeSettings.UI_SCALE_MAX, ThemeSettings.UI_SCALE_RANGE)
     }
+
+    /**
+     * 追番页那排分类标签的顺序: 页面里每一处都是 `tabOrder.indexOf(type)` / `tabOrder[i ± 1]`,
+     * 全靠"解析结果永远是全集的一个排列"才不会越界. 这几条钉住这个前提.
+     */
+    @Test
+    fun `tab order is always a permutation of the defaults`() {
+        val defaults = COLLECTION_TABS
+        // 用户排过的乱序
+        assertEquals(defaults.size, resolveSavedOrder(defaults.reversed(), defaults).size)
+        assertEquals(defaults.toSet(), resolveSavedOrder(defaults.reversed(), defaults).toSet())
+        // 只存了一部分 (旧版本存的, 或者存坏了)
+        val partial = resolveSavedOrder(listOf(UnifiedCollectionType.DONE), defaults)
+        assertEquals(defaults.size, partial.size)
+        assertEquals(defaults.toSet(), partial.toSet())
+        // 重复项与不属于这一排的分类
+        val dirty = resolveSavedOrder(
+            listOf(
+                UnifiedCollectionType.DONE, UnifiedCollectionType.DONE,
+                UnifiedCollectionType.NOT_COLLECTED,
+            ),
+            defaults,
+        )
+        assertEquals(defaults.size, dirty.size)
+        assertEquals(defaults.toSet(), dirty.toSet())
+    }
+
+    @Test
+    fun `never sorted means the default order`() {
+        assertEquals(emptyList(), ThemeSettings.Default.tvCollectionTabOrder)
+        assertEquals(COLLECTION_TABS, resolveSavedOrder(ThemeSettings.Default.tvCollectionTabOrder, COLLECTION_TABS))
+    }
+
+    @Test
+    fun `user order is kept as is`() {
+        val mine = listOf(
+            UnifiedCollectionType.DOING, UnifiedCollectionType.WISH,
+            UnifiedCollectionType.ON_HOLD, UnifiedCollectionType.DONE, UnifiedCollectionType.DROPPED,
+        )
+        assertEquals(mine, resolveSavedOrder(mine, COLLECTION_TABS))
+    }
 }
+
+/** 追番页标签行的默认顺序 (与 `TvCollectionPage` 的 `TV_COLLECTION_TABS` 一致; 那份在 ui-tv, 这里够不到). */
+private val COLLECTION_TABS = listOf(
+    UnifiedCollectionType.WISH,
+    UnifiedCollectionType.DOING,
+    UnifiedCollectionType.ON_HOLD,
+    UnifiedCollectionType.DONE,
+    UnifiedCollectionType.DROPPED,
+)

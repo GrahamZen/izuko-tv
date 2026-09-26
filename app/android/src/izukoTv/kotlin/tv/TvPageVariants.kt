@@ -10,6 +10,7 @@
 package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
+import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -49,6 +50,7 @@ import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
@@ -66,6 +68,7 @@ import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.TvUpNextStore
+import me.him188.ani.app.ui.subject.collection.TvCollectionTabOrderPage
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.exploration.ExplorationPageVariant
@@ -226,6 +229,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         },
         LocalCollectionPageVariant provides CollectionPageVariant { state, modifier ->
             ProvideTvScrollActivity { TvCollectionPage(state, modifier) }
+        },
+        // 「自定义追番页标签顺序」页 (设置 - 界面里的入口据此决定出不出现)
+        LocalTvCollectionTabOrderEditorVariant provides TvCollectionTabOrderEditorVariant { onNavigateBack, modifier ->
+            TvCollectionTabOrderPage(onNavigateBack, modifier)
         },
         // 「自定义播放器按钮」页 (设置 - 播放器里的入口据此决定出不出现)
         LocalTvPlayerChromeEditorVariant provides TvPlayerChromeEditorVariant { onNavigateBack, modifier ->
