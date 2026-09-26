@@ -33,6 +33,7 @@ import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.SequelSeasonTableRepository
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
@@ -466,6 +467,14 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         )
     }
     // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
+    single<SequelSeasonTableRepository> {
+        SequelSeasonTableRepository(
+            cache = getContext().dataStores.sequelSeasonTableStore,
+            tableFile = getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv"),
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
     single<TmdbSubjectMapRepository> {
         TmdbSubjectMapRepository(
             cache = getContext().dataStores.tmdbSubjectMapStore,
@@ -498,6 +507,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             get(),
             get(),
             seriesIndexService = get(),
+            sequelSeasonTable = get(),
             sessionStateProvider = get(),
             scope = coroutineScope,
         )
