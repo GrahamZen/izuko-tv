@@ -84,12 +84,12 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val installationTasker = MonoTasker(backgroundScope)
     private val checkUpdateErrorFlow = MutableStateFlow<LoadError?>(null)
 
-    private val installPermissionRequestFlow = MutableStateFlow<NewVersion?>(null)
+    private val installPermissionRequestFlow = MutableStateFlow<InstallPermissionRequest?>(null)
 
     /**
      * 等着安装授权才开始下载的版本 (见 [UpdateInstaller.canInstallNow]), 界面据此问用户要不要去授权.
      */
-    val installPermissionRequest: StateFlow<NewVersion?> = installPermissionRequestFlow.asStateFlow()
+    val installPermissionRequest: StateFlow<InstallPermissionRequest?> = installPermissionRequestFlow.asStateFlow()
 
     val presentationFlow = combine(
         latestVersionFlow,
@@ -211,44 +211,80 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
 
             // 下载之前先要到安装授权: 授权那一刻 Android 11 会杀掉本应用, 下完再授权的话重新打开还得再下一遍
             if (!updateInstaller.canInstallNow()) {
-                logger.info { "Install permission missing, asking before downloading ${ver.name}" }
-                installPermissionRequestFlow.value = ver
+                logger.info {
+                    "Install permission missing, asking before downloading ${ver.name}, " +
+                            "settingsOpened=$installPermissionSettingsOpened"
+                }
+                installPermissionRequestFlow.value = InstallPermissionRequest(
+                    version = ver,
+                    offerInstallWithoutPermission = installPermissionSettingsOpened,
+                )
                 return@launch
             }
 
-            // Linux prepares a small zsync file; other platforms prepare the package URL unchanged.
-            val preparationUrls = updateInstaller.getUpdatePreparationUrls(ver.downloadUrlAlternatives)
-            val dir = updateManager.saveDir
-            if (dir.exists()) {
-                // 删除旧的文件
-                val allowedFilenames = preparationUrls.map {
-                    it.substringAfterLast("/", "")
-                }.let { list ->
-                    list + list.map { "$it.sha1" }
-                }
-                for (file in dir.list()) {
-                    if (file.name == ".DS_Store") continue
-
-                    if (allowedFilenames.none { file.name.contains(it) }) {
-                        logger.info { "Deleting old installer: $file" }
-                        updateManager.deleteInstaller(file.inSystem)
-                    }
-                }
-            }
-
-            withContext(Dispatchers.IO) { dir.createDirectories() }
-            fileDownloader.download(
-                alternativeUrls = preparationUrls,
-                filenameProvider = { it.substringAfterLast("/", "") },
-                saveDir = dir,
-            )
+            downloadInApp(ver)
         }
     }
 
-    /** 打开系统的授权页. 授权时 Android 11 会杀掉本应用; 重新打开后照常检查更新, 那时再下载. */
+    private fun startInAppDownload(ver: NewVersion) {
+        autoInstalledFile = null
+        downloadTasker.launch { downloadInApp(ver) }
+    }
+
+    private suspend fun downloadInApp(ver: NewVersion) {
+        // Linux prepares a small zsync file; other platforms prepare the package URL unchanged.
+        val preparationUrls = updateInstaller.getUpdatePreparationUrls(ver.downloadUrlAlternatives)
+        val dir = updateManager.saveDir
+        if (dir.exists()) {
+            // 删除旧的文件
+            val allowedFilenames = preparationUrls.map {
+                it.substringAfterLast("/", "")
+            }.let { list ->
+                list + list.map { "$it.sha1" }
+            }
+            for (file in dir.list()) {
+                if (file.name == ".DS_Store") continue
+
+                if (allowedFilenames.none { file.name.contains(it) }) {
+                    logger.info { "Deleting old installer: $file" }
+                    updateManager.deleteInstaller(file.inSystem)
+                }
+            }
+        }
+
+        withContext(Dispatchers.IO) { dir.createDirectories() }
+        fileDownloader.download(
+            alternativeUrls = preparationUrls,
+            filenameProvider = { it.substringAfterLast("/", "") },
+            saveDir = dir,
+        )
+    }
+
+    /**
+     * 打开系统的授权页. 授权时 Android 11 会杀掉本应用; 重新打开后照常检查更新, 那时再下载.
+     *
+     * 这台电视打不开授权页的话直接开始下载, 下完由系统安装器询问授权, 见 [startDownloadWithoutPermission].
+     */
     fun requestInstallPermission(context: ContextMP) {
+        val request = installPermissionRequestFlow.value ?: return
         installPermissionRequestFlow.value = null
-        updateInstaller.requestInstallPermission(context)
+        if (updateInstaller.requestInstallPermission(context)) {
+            installPermissionSettingsOpened = true
+        } else {
+            logger.info { "Install permission settings unavailable, downloading ${request.version.name} for the system installer" }
+            startInAppDownload(request.version)
+        }
+    }
+
+    /**
+     * 不等授权直接下载, 下完照常拉起系统安装器, 由它询问授权 (厂商安装器也可能按全局「未知来源」开关直接装).
+     * 给授权页不起作用的电视用, 见 [InstallPermissionRequest.offerInstallWithoutPermission].
+     */
+    fun startDownloadWithoutPermission() {
+        val request = installPermissionRequestFlow.value ?: return
+        installPermissionRequestFlow.value = null
+        logger.info { "Downloading ${request.version.name} without install permission, the system installer will ask" }
+        startInAppDownload(request.version)
     }
 
     fun dismissInstallPermissionRequest() {
@@ -304,6 +340,27 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 }
+
+/**
+ * 本进程里已经把用户送去过授权页. Android 11 起授权成功会杀掉本应用, 这个进程还在又没有授权,
+ * 说明那个页面没起作用 (没列出本应用、开关不管用, 或者用户没开), 再问时给出「直接安装」.
+ *
+ * 按进程记而不是按 [AppUpdateViewModel] 记: 首页气泡与设置页各有一个 ViewModel, 从哪边去的授权页都算.
+ */
+@Volatile
+private var installPermissionSettingsOpened = false
+
+/**
+ * 下载之前要的安装授权, 见 [AppUpdateViewModel.installPermissionRequest].
+ *
+ * @param offerInstallWithoutPermission 去过授权页回来仍然没有授权, 那个页面在这台电视上多半不起作用:
+ * 给出「直接安装」(下完交给系统安装器询问), 不然只能一遍遍去设置.
+ */
+@Immutable
+class InstallPermissionRequest(
+    val version: NewVersion,
+    val offerInstallWithoutPermission: Boolean,
+)
 
 @Immutable
 data class AppUpdatePresentation(
