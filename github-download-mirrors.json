@@ -1,0 +1,9 @@
+{
+  "_comment": "应用内更新下载安装包用的 GitHub 加速镜像. 应用每天拉一次这个文件 (见 GitHubDownloadMirrors), 下载时原地址与这里每个镜像一起试, 用最快的那个; 某个站死了或被墙就改这里, 不用发版. 两种写法: 前缀 (如 https://gh-proxy.com), GitHub 原地址整个接在后面, 即 https://gh-proxy.com/https://github.com/...; 或含 {url} 的模板, 原地址换进去, 给把地址放在参数里的站用. 条目只能是完整镜像了 github.com 下载内容的站: 下完会按 GitHub 接口给的 sha256 校验, 对不上就丢掉换下一个.",
+  "mirrors": [
+    "https://gh.xxooo.cf",
+    "https://gh-proxy.com",
+    "https://gh-proxy.org",
+    "https://ghfast.top"
+  ]
+}
