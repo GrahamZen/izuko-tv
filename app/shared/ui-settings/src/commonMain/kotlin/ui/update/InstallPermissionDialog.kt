@@ -31,8 +31,10 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_about_app_name
+import me.him188.ani.app.ui.lang.settings_update_install_permission_install_anyway
 import me.him188.ani.app.ui.lang.settings_update_install_permission_message
 import me.him188.ani.app.ui.lang.settings_update_install_permission_open_settings
+import me.him188.ani.app.ui.lang.settings_update_install_permission_retry_message
 import me.him188.ani.app.ui.lang.settings_update_install_permission_title
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel
 import org.jetbrains.compose.resources.stringResource
@@ -43,17 +45,27 @@ import org.jetbrains.compose.resources.stringResource
  * 讲清楚两件事: 要去系统设置里打开一个开关; 打开之后系统会把本应用关掉 (Android 11 的做法), 重新打开就会继续更新.
  * 不讲的话, 应用在设置页里突然没了, 用户会以为是崩了.
  *
+ * [offerInstallWithoutPermission] 时 (去过授权页回来仍没有授权) 换一段说明, 多给「直接安装」并把焦点放在它上面:
+ * 有的电视授权页不起作用, 只剩系统安装器自己询问这一条路.
+ *
  * 遥控器形态用居中大面板 (与其余面板同一形态), 指针设备用普通对话框.
  */
 @Composable
 fun InstallPermissionDialog(
+    offerInstallWithoutPermission: Boolean,
     onOpenSettings: () -> Unit,
+    onInstallWithoutPermission: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
     val appName = stringResource(Lang.settings_about_app_name)
     val title = stringResource(Lang.settings_update_install_permission_title)
-    val message = stringResource(Lang.settings_update_install_permission_message, appName)
+    val message = if (offerInstallWithoutPermission) {
+        stringResource(Lang.settings_update_install_permission_retry_message, appName)
+    } else {
+        stringResource(Lang.settings_update_install_permission_message, appName)
+    }
     val openSettings = stringResource(Lang.settings_update_install_permission_open_settings)
+    val installAnyway = stringResource(Lang.settings_update_install_permission_install_anyway)
     val cancel = stringResource(Lang.settings_update_popup_cancel)
 
     if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
@@ -74,7 +86,17 @@ fun InstallPermissionDialog(
                     TextButton(onClick = onDismissRequest) { Text(cancel) }
                     Spacer(Modifier.width(8.dp))
                     // 弹窗是独立窗口, 不指定的话遥控器上焦点不在任何按钮上
-                    Button(onClick = onOpenSettings, modifier = Modifier.tvWindowInitialFocus()) { Text(openSettings) }
+                    if (offerInstallWithoutPermission) {
+                        TextButton(onClick = onOpenSettings) { Text(openSettings) }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = onInstallWithoutPermission, modifier = Modifier.tvWindowInitialFocus()) {
+                            Text(installAnyway)
+                        }
+                    } else {
+                        Button(onClick = onOpenSettings, modifier = Modifier.tvWindowInitialFocus()) {
+                            Text(openSettings)
+                        }
+                    }
                 }
             }
         }
@@ -83,8 +105,21 @@ fun InstallPermissionDialog(
             onDismissRequest = onDismissRequest,
             title = { Text(title) },
             text = { Text(message) },
-            confirmButton = { Button(onClick = onOpenSettings) { Text(openSettings) } },
-            dismissButton = { TextButton(onClick = onDismissRequest) { Text(cancel) } },
+            confirmButton = {
+                if (offerInstallWithoutPermission) {
+                    Button(onClick = onInstallWithoutPermission) { Text(installAnyway) }
+                } else {
+                    Button(onClick = onOpenSettings) { Text(openSettings) }
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = onDismissRequest) { Text(cancel) }
+                    if (offerInstallWithoutPermission) {
+                        TextButton(onClick = onOpenSettings) { Text(openSettings) }
+                    }
+                }
+            },
         )
     }
 }

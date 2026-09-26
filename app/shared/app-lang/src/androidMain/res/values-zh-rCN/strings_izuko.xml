@@ -47,6 +47,8 @@
     <string name="settings_update_install_permission_title">允许安装更新</string>
     <string name="settings_update_install_permission_message">安装更新之前，需要在系统设置里允许 %1$s 安装应用。\n\n打开开关后，系统会关闭 %1$s，重新打开就会继续更新。</string>
     <string name="settings_update_install_permission_open_settings">去设置</string>
+    <string name="settings_update_install_permission_install_anyway">直接安装</string>
+    <string name="settings_update_install_permission_retry_message">%1$s 还没有拿到安装应用的授权。\n\n如果系统设置里找不到这个开关，可以选「直接安装」：下载完成后交给系统安装器，由它询问是否允许。</string>
     <string name="exploration_rec_because_you_liked">因为你喜欢《%1$s》</string>
     <string name="exploration_rec_also_watched">看过《%1$s》的人还看了</string>
     <string name="exploration_rec_similar_to">和《%1$s》相似的作品</string>
