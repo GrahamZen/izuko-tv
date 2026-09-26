@@ -31,6 +31,7 @@ import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.SequelSeasonTableRepository
@@ -226,6 +227,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             selection = settings.tmdbImageEndpoint,
             listCache = settings.tmdbImageHostCache,
             // 惰性: HttpClientProvider 反过来要装经本对象换入口的处理器, 见 RepoHostedList 的构造参数
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    single<GitHubDownloadMirrors> {
+        GitHubDownloadMirrors(
+            listCache = get<SettingsRepository>().githubDownloadMirrorCache,
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
         )

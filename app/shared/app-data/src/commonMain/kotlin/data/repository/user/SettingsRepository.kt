@@ -66,6 +66,9 @@ interface SettingsRepository {
     /** TMDB 图片入口清单的本地缓存, 见 `RepoHostedList`. */
     val tmdbImageHostCache: Settings<RepoHostedListCache>
 
+    /** 更新包下载镜像清单的本地缓存, 见 `GitHubDownloadMirrors`. */
+    val githubDownloadMirrorCache: Settings<RepoHostedListCache>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -190,6 +193,11 @@ class PreferencesRepositoryImpl(
     )
     override val tmdbImageHostCache: Settings<RepoHostedListCache> = SerializablePreference(
         "tmdbImageHostCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val githubDownloadMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "githubDownloadMirrorCache",
         RepoHostedListCache.serializer(),
         default = { RepoHostedListCache.Default },
     )

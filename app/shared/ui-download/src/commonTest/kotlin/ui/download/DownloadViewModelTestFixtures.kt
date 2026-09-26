@@ -302,6 +302,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val tmdbImagesDisabled: Settings<Boolean> get() = error("Not used")
     override val tmdbImageEndpoint: Settings<EndpointSelection> get() = error("Not used")
     override val tmdbImageHostCache: Settings<RepoHostedListCache> get() = error("Not used")
+    override val githubDownloadMirrorCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")

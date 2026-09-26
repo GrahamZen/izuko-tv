@@ -252,6 +252,7 @@ class DanmakuCacheTest {
         override val tmdbImagesDisabled: Settings<Boolean> by lazy { error("no implemented") }
         override val tmdbImageEndpoint: Settings<EndpointSelection> by lazy { error("no implemented") }
         override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val githubDownloadMirrorCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("no implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("no implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("no implemented") }
