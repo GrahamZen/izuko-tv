@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
 import com.kmpalette.palette.graphics.Palette
+import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
@@ -36,6 +37,7 @@ import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -107,6 +109,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvPlayerChromeLayoutPage
+import me.him188.ani.app.ui.subject.episode.tv.TvDecoderConcurrency
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
@@ -177,6 +180,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     }
     // Ani 退到后台 (屏保 / 别的应用 / 息屏) 时 Web 控制台顶上一条提示: 操作照样生效, 只是电视上看不到
     TrackTvRemoteForeground()
+    // 登录了夸克才检测: 带 Cookie 的网盘直链只能靠系统取帧出缩略图, 能不能用要看硬件解码器能不能同时开两个.
+    // 刚启动还不可能在播放, 正好检测 (见 TvDecoderConcurrency)
+    LaunchedEffect(appContext) {
+        if (GlobalKoin.get<SettingsRepository>().quarkConfig.flow.first().isLoggedIn) {
+            TvDecoderConcurrency.probeIfNeeded(appContext)
+        }
+    }
     CompositionLocalProvider(
         LocalTvBackLongPressHost provides backLongPress,
         // 下发播放键宿主只为让独立窗口的桥接够得着 (处理器仍只有下面那一个)

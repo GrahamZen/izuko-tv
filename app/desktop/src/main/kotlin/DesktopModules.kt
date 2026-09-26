@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.OfflineDownloadMediaResolver
+import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
 import me.him188.ani.app.domain.mediasource.web.DesktopOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
@@ -208,7 +209,7 @@ fun getDesktopModules(getContext: () -> DesktopContext, scope: CoroutineScope) =
         // PikPak-disabled case.
         val btFallback = MediaResolver.from(torrentResolvers)
         MediaResolver.from(
-            listOf<MediaResolver>(OfflineDownloadMediaResolver(get(), fallback = btFallback))
+            listOf<MediaResolver>(QuarkMediaResolver(get()), OfflineDownloadMediaResolver(get(), fallback = btFallback))
                 .plus(torrentResolvers)
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())

@@ -118,6 +118,7 @@ internal fun renderRemoteControlPage(
     <div id="set-sources" hidden>
     <p class="hint">修改立即保存。正在播放的这一集不受影响，下一集或重新进入播放器时生效。订阅来的源只能启用或停用。</p>
     <div id="src-subs"></div>
+    <div id="src-quark"></div>
     <div id="src-add"></div>
     <div id="src-list"></div>
     </div>
@@ -149,7 +150,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -558,6 +559,11 @@ button { font: inherit; border: 0; cursor: pointer; }
 .set-card { margin-top: 12px; }
 .set-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
 .set-title small { font-size: 12px; font-weight: 400; color: var(--mute); margin-left: 6px; }
+/* 数据源页的夸克网盘卡片 (QUARK_SCRIPT): 二维码白底黑码, 在深色主题下也好扫 */
+.qk-qr { display: flex; justify-content: center; margin: 12px 0 4px; }
+.qk-qr img { width: 200px; height: 200px; border-radius: 12px; }
+#src-quark a.primary { text-decoration: none; text-align: center; }
+#src-quark textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .log-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .log-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--soft); text-decoration: none; }
 .log-name { min-width: 0; font-size: 15px; font-weight: 600; color: var(--p); word-break: break-all; }
@@ -1565,6 +1571,7 @@ private val SCRIPT = """
     if (which === 'sources') {
       if (window.loadSources) window.loadSources();
       if (window.loadSubs) window.loadSubs();
+      if (window.loadQuark) window.loadQuark();
     } else {
       if (window.loadSettings) window.loadSettings();
       if (window.loadAccount) window.loadAccount();
@@ -5057,6 +5064,130 @@ private val SUBS_SCRIPT = """
         if (r.ok) { load(); if (window.loadSources) window.loadSources(); }
       }).catch(fail);
     }
+  });
+})();
+""".trimIndent()
+
+/**
+ * 「数据源」页的夸克网盘卡片 (见 RemoteQuark): 登录状态、扫码登录 (手机上点按钮唤起夸克 App 确认, 或另一台设备扫码)、
+ * 填 Cookie、转码开关、添加数据源、退出. 扫码进行中每 2 秒拉一次状态, 切回本页时立即拉一次.
+ */
+private val QUARK_SCRIPT = """
+(function () {
+  var box = document.getElementById('src-quark');
+  var timer = null, last = '', checked = false, polling = false;
+  // 手机上点按钮让夸克 App 用内置浏览器打开二维码里的确认页 (带这次登录的 token), 在 App 里确认即登录.
+  // 直接打开二维码链接不行: 确认页只在夸克 App 内可用, 在别的浏览器里会转到夸克网盘的下载页, 也不带 token.
+  // 链接格式与 appkey 取自夸克官方网页的唤起代码; 本页就开在夸克 App 里时直接打开确认页.
+  var ua = navigator.userAgent;
+  var inQuark = /quark\//i.test(ua);
+  var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var phone = ios || /Android|HarmonyOS|OpenHarmony/i.test(ua);
+  // 微信、QQ 等 App 的内置浏览器拦截跳转到其他 App 的链接
+  var walled = !inQuark && /MicroMessenger|\sQQ\/|DingTalk|Weibo/i.test(ua);
+  function quarkAppLink(link) {
+    if (inQuark) return link;
+    var appkey = ios ? '656bdcddd4758b39206a8181c91a7d14' : 'b20b84fd735a8dd3f7541129bacc4e9a';
+    return 'qklink://www.uc.cn/' + appkey + '?action=open_url&url=' + encodeURIComponent(link);
+  }
+  function load() {
+    clearTimeout(timer);
+    fetch('api/quark').then(function (r) { return r.json(); }).then(render).catch(function () {});
+    // 每次打开页面向夸克核对一次登录是否还有效 (顺便更新昵称与会员)
+    if (!checked) {
+      checked = true;
+      post('api/quark/check', {}).then(render).catch(function () {});
+    }
+  }
+  window.loadQuark = load;
+  function act(path, data) {
+    return post(path, data || {}).then(function (r) {
+      if (r.message) toast(r.message);
+      // 出错时回的只有 ok / message, 重新拉一次状态
+      if (r.loggedIn === undefined) load(); else render(r);
+      if (window.loadSources) window.loadSources();
+      return r;
+    }).catch(fail);
+  }
+  function render(d) {
+    if (!d || d.loggedIn === undefined) return;
+    var q = d.qr || null;
+    var h = '<div class="card set-card"><div class="set-title">' + T('夸克网盘') + '<small>' + T('在你自己的夸克网盘里找番') + '</small></div>';
+    if (d.loggedIn) {
+      var who = [d.nickname, d.member].filter(Boolean).join(' · ');
+      h += d.expired
+        ? '<div class="now-status error"><b>' + T('登录已失效') + '</b><span>' + T('重新扫码或填 Cookie 登录') + '</span></div>'
+        : '<div class="now-status ready"><b>' + T('已登录') + '</b><span>' + esc(who) + '</span></div>';
+      if (!d.added) {
+        h += '<div class="now-status attention"><b>' + T('还没有添加「夸克网盘」数据源') + '</b></div>' +
+          '<div class="row"><button type="button" class="primary" data-qk="add">' + T('添加到数据源') + '</button></div>';
+      }
+      h += '<label class="toggle"><input type="checkbox" data-qk="transcode"' + (d.transcode ? ' checked' : '') + '>' + T('转码播放') + '</label>' +
+        '<p class="hint">' + T('关闭时播放原文件。非会员播放原文件会被限速，转码只有最低清晰度') + '</p>';
+    } else {
+      h += '<p class="hint">' + T('登录后，播放时会按番名在你的夸克网盘里找视频，找到的出现在选源列表的「夸克网盘」里。登录后自动添加这个数据源。') + '</p>';
+    }
+    if (!d.loggedIn || d.expired) {
+      if (q && q.state === 'waiting') {
+        var canOpen = phone && !walled;
+        h += '<div class="qk-qr"><img src="api/quark/qr.svg?k=' + encodeURIComponent(q.link.slice(-12)) + '" alt=""></div>' +
+          '<p class="hint">' + (canOpen ? T('用装了夸克 App 的另一台手机扫码；或者在这台手机上点下面的按钮，跳到夸克 App 里确认登录。')
+            : walled ? T('在微信、QQ 里打开的页面不能跳转到夸克 App：点右上角菜单选「在浏览器打开」，或者用另一台手机扫码。')
+            : T('用手机上的夸克 App 扫码登录。')) + '</p>' +
+          '<div class="row">' +
+          (canOpen ? '<a class="primary" href="' + esc(quarkAppLink(q.link)) + '"' + (inQuark ? ' target="_blank" rel="noopener"' : '') + '>' + T('在夸克 App 中确认') + '</a>' : '') +
+          '<button type="button" class="ghost" data-qk="qr-cancel">' + T('取消') + '</button></div>';
+        if (canOpen && !inQuark) h += '<p class="hint">' + T('在夸克 App 里确认后回到这里。点了没反应的话，确认这台手机装了夸克 App。') + '</p>';
+      } else if (q && q.state === 'loading') {
+        h += '<div class="now-status"><b>' + T('正在获取二维码…') + '</b></div>';
+      } else {
+        if (q && q.state === 'expired') h += '<div class="now-status attention"><b>' + T('二维码已过期') + '</b></div>';
+        if (q && q.state === 'failed') h += '<div class="now-status error"><b>' + T('登录失败') + '</b><span>' + esc(q.message || '') + '</span></div>';
+        h += '<div class="row"><button type="button" class="primary" data-qk="qr">' + T('扫码登录') + '</button></div>';
+      }
+      h += '<form id="qk-cookie"><label class="f"><span>' + T('或者填写 Cookie') + '</span>' +
+        '<textarea name="cookie" rows="3" spellcheck="false" autocomplete="off" placeholder="' + T('粘贴 Cookie') + '"></textarea>' +
+        '<em>' + T('在电脑浏览器登录 pan.quark.cn，打开开发者工具，复制任意一个请求里的整段 Cookie') + '</em></label>' +
+        '<div class="row"><button type="submit" class="ghost">' + T('用 Cookie 登录') + '</button></div></form>';
+    }
+    if (d.loggedIn) h += '<div class="row"><button type="button" class="ghost" data-qk="logout">' + T('退出登录') + '</button></div>';
+    h += '</div>';
+    if (h !== last) {
+      // 重画保住正在填的 Cookie 与焦点
+      var old = box.querySelector('#qk-cookie textarea');
+      var typed = old ? old.value : '', focused = old && document.activeElement === old;
+      box.innerHTML = h;
+      last = h;
+      var ta = box.querySelector('#qk-cookie textarea');
+      if (ta) { ta.value = typed; if (focused) ta.focus(); }
+    }
+    clearTimeout(timer);
+    polling = !!(q && (q.state === 'waiting' || q.state === 'loading'));
+    if (polling) timer = setTimeout(load, 2000);
+  }
+  // 从夸克 App 确认完切回来时马上刷新, 不等下一轮 (后台页的定时器会被浏览器暂停)
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && polling) load();
+  });
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-qk]');
+    if (!b || b.tagName === 'INPUT') return;
+    var a = b.getAttribute('data-qk');
+    if (a === 'qr') act('api/quark/qr/start');
+    else if (a === 'qr-cancel') act('api/quark/qr/cancel');
+    else if (a === 'add') act('api/quark/add');
+    else if (a === 'logout') { if (confirm(T('退出夸克网盘登录？'))) act('api/quark/logout'); }
+  });
+  box.addEventListener('change', function (e) {
+    if (e.target.getAttribute('data-qk') === 'transcode') act('api/quark/transcode', { on: e.target.checked ? '1' : '0' });
+  });
+  box.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (form.id !== 'qk-cookie') return;
+    e.preventDefault();
+    var cookie = form.elements.cookie.value.trim();
+    if (!cookie) { toast(T('先把 Cookie 粘到框里')); return; }
+    act('api/quark/cookie', { cookie: cookie }).then(function (r) { if (r && r.ok) form.elements.cookie.value = ''; });
   });
 })();
 """.trimIndent()

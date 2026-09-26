@@ -46,6 +46,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.FramePreview
 import org.openani.mediamp.source.MediaData
@@ -76,7 +77,8 @@ import kotlin.time.TimeSource
  *   多花的三成买的是"图和圆点对得上".
  *
  * BT 源走不了这条路 ([ExperimentalFrameExtractor] 只收 MediaItem, 没法注入 DataSource), 仍退回
- * mediamp 的实现 —— 那条路在 BT 已下载区域本来就能用.
+ * mediamp 的实现 —— 那条路在 BT 已下载区域本来就能用. 带 Cookie 的网盘直链同样只能退回, 且只在硬件解码器能同时开两个的
+ * 机器上用 (见 [TvFramePreviewSource.getFrame] 与 [TvDecoderConcurrency]).
  */
 
 private val logger = logger("TvFramePreviewSource")
@@ -202,6 +204,13 @@ internal fun rememberTvFramePreviewState(
             }
         }
     }
+    // 主播放器的解码器被系统收回过: 这台机器上不再用系统取帧 (见 TvDecoderConcurrency)
+    LaunchedEffect(player, context) {
+        player.state.collect { playerState ->
+            val error = (playerState.mediaStatus as? MediaStatus.Error)?.error ?: return@collect
+            if (error.isDecoderReclaimed()) TvDecoderConcurrency.onDecoderReclaimed(context)
+        }
+    }
     return state
 }
 
@@ -316,8 +325,20 @@ private class TvFramePreviewSource(
     suspend fun getFrame(positionMillis: Long, maxWidthPx: Int, maxHeightPx: Int): ImageBitmap? {
         if (maxWidthPx <= 0 || maxHeightPx <= 0) return null
         val data = currentMedia ?: return null
-        return when (data) {
-            is UriMediaData -> extractFrame(data, positionMillis, maxWidthPx, maxHeightPx)
+        return when {
+            // 带 Cookie 的地址 (网盘直链): media3 取帧器只收 MediaItem 加不了请求头, 不带 Cookie 会被拒 (夸克回 412),
+            // 只能走退路 MediaMetadataRetriever. 它在 mediaserver 进程里解码, 优先级比应用高, 硬解只能开一个的机器上会把
+            // 主播放器正在用的解码器收回 (ERROR_CODE_DECODING_RESOURCES_RECLAIMED), 所以只在检测过能同时开两个的机器上用
+            data is UriMediaData && data.requiresCookie() -> {
+                val properties = player.mediaProperties.value
+                if (TvDecoderConcurrency.allowsSystemFrameExtraction(context, properties?.videoWidth, properties?.videoHeight)) {
+                    fallbackFrame(positionMillis, maxWidthPx, maxHeightPx)
+                } else {
+                    null
+                }
+            }
+
+            data is UriMediaData -> extractFrame(data, positionMillis, maxWidthPx, maxHeightPx)
             else -> fallbackFrame(positionMillis, maxWidthPx, maxHeightPx)
         }
     }
@@ -439,6 +460,12 @@ private class TvFramePreviewSource(
             .asImageBitmap()
     }
 }
+
+private fun UriMediaData.requiresCookie(): Boolean = headers.keys.any { it.equals("Cookie", ignoreCase = true) }
+
+/** ExoPlayer 的 `ERROR_CODE_DECODING_RESOURCES_RECLAIMED`: 错误码名在 mediamp 的异常消息里, 按消息认. */
+private fun Throwable.isDecoderReclaimed(): Boolean =
+    generateSequence(this) { it.cause }.take(8).any { it.message.orEmpty().contains("RESOURCES_RECLAIMED") }
 
 private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { continuation ->
     addListener(
