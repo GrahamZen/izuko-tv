@@ -15,6 +15,7 @@ import androidx.paging.PagingData
 import androidx.paging.map
 import kotlinx.atomicfu.AtomicInt
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -53,11 +54,14 @@ import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.data.recommendation.InterestProfile
+import me.him188.ani.app.data.recommendation.MAX_PREQUEL_HOPS
 import me.him188.ani.app.data.recommendation.RecommendationGroup
 import me.him188.ani.app.data.recommendation.RecommendationGroupKind
 import me.him188.ani.app.data.recommendation.computeInterestProfile
 import me.him188.ani.app.data.recommendation.isInterestTag
+import me.him188.ani.app.data.recommendation.isSeasonFormat
 import me.him188.ani.app.data.recommendation.sequelHint
+import me.him188.ani.app.data.recommendation.sequelSeasonCandidates
 import me.him188.ani.app.data.recommendation.seriesKeyOf
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.domain.search.SearchSort
@@ -103,8 +107,10 @@ class RecommendationRepository(
     private val feedDao: RecommendationFeedDao,
     private val trendsRepository: TrendsRepository,
     private val searchService: AniSubjectSearchService,
-    /** 续作换成最早一季时顺前传回溯用 (见 [SequelBatch]); 与 TMDB 匹配、详情页共用节点缓存. */
+    /** 续作换季时顺前传回溯、取换成的那一季的条目信息 (见 [SequelBatch]); 与 TMDB 匹配、详情页共用节点缓存. */
     private val seriesIndexService: SubjectSeriesIndexService,
+    /** 离线算好的「续作 → 候选季」表, 换季先查它 (见 [SequelBatch]). */
+    private val sequelSeasonTable: SequelSeasonTableRepository,
     /** 没登录时本地收藏缓存不算数 (见 [refreshOnce]). */
     private val sessionStateProvider: SessionStateProvider,
     /**
@@ -114,6 +120,12 @@ class RecommendationRepository(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
 ) : Repository() {
+    /** 重算的请求同时最多 [NETWORK_PARALLELISM] 个 (续作回溯另有 [SEQUEL_WALK_PARALLELISM]), 见 [limited]. */
+    private val networkPermits = Semaphore(NETWORK_PARALLELISM)
+
+    /** 包单个请求, 不能嵌套 (信号量不可重入, 嵌套会在名额用完时卡死). */
+    private suspend fun <T> limited(block: suspend () -> T): T = networkPermits.withPermit { block() }
+
     /** 分好组的推荐, 只读缓存表, 零请求. */
     fun recommendationGroups(): Flow<List<RecommendationGroup>> =
         feedDao.allFlow().map { rows ->
@@ -305,8 +317,13 @@ class RecommendationRepository(
         sequelJob?.cancel()
         val batchJob = SupervisorJob(scope.coroutineContext[Job])
         sequelJob = batchJob
-        val sequels = SequelBatch(CoroutineScope(scope.coroutineContext + ioDispatcher + batchJob))
         val allCollections = (extra + collections).distinctBy { it.subjectId }
+        // 换季只在分组推荐里做 (没收藏时那一组是全站两张榜, 不换), 表也只在这时才要
+        val sequels = SequelBatch(
+            CoroutineScope(scope.coroutineContext + ioDispatcher + batchJob),
+            table = if (allCollections.isEmpty()) null else sequelSeasonTable.current(),
+            collected = allCollections.mapTo(HashSet()) { it.subjectId },
+        )
         val computed = withContext(ioDispatcher) {
             if (allCollections.isEmpty()) {
                 // 没登录 / 一部收藏都没有: 没有口味可依, 各组里能个性化的一组都出不来
@@ -333,7 +350,7 @@ class RecommendationRepository(
             return
         }
         // 已经回溯完的续作当场换成最早一季 (不等没查完的, 那些落库后再换)
-        val groups = sequels.applyReady(computed.groups, computed.collected, computed.onCarousel)
+        val groups = sequels.applyReady(computed.groups, computed.onCarousel)
 
         val computedAt = currentTimeMillis()
         var orderIndex = 0
@@ -371,7 +388,7 @@ class RecommendationRepository(
                     }
         }
         // 先出后改: 页面已经拿到这一批了, 剩下没查完的续作查完再原地换
-        sequels.convertAfterShown(groupRows, computed.collected)
+        sequels.convertAfterShown(groupRows)
     }
 
     /**
@@ -415,11 +432,13 @@ class RecommendationRepository(
     private suspend fun fetchAllCollections(): List<SubjectCollectionEntity> = runCatching {
         // **所有类型**, 不只「看过」: 抛弃的更不该推, 想看的也不该伪装成新发现;
         // 顺带画像也不再取决于"用户逛过哪个 tab"了 (本地只有逛过的那些).
-        suspend fun page(offset: Int, limit: Int) = subjectService.getSubjectCollectionsPage(
-            type = null,
-            offset = offset,
-            limit = limit,
-        )
+        suspend fun page(offset: Int, limit: Int) = limited {
+            subjectService.getSubjectCollectionsPage(
+                type = null,
+                offset = offset,
+                limit = limit,
+            )
+        }
 
         // 第一页总是要取: 它同时回答两件事 —— 一共多少条, 以及跟上次比变没变.
         // 每轮都要付这一次, 而多数轮次取完它就复用快照了, 所以它单独取得很小 (见 COLLECTION_HEAD_PAGE)
@@ -509,8 +528,6 @@ class RecommendationRepository(
         val groups: List<RecommendationGroup>,
         /** 这次发了多少个请求 (日志用). */
         val requests: Int,
-        /** 已收藏的条目 id. */
-        val collected: Set<Int>,
         /** 顶上轮播在放的条目 id (全组躲开的那一批). */
         val onCarousel: Set<Int>,
     )
@@ -917,7 +934,7 @@ class RecommendationRepository(
             )
         }
 
-        Computed(groups, requests.value, collected, onCarousel)
+        Computed(groups, requests.value, onCarousel)
     }
 
     /**
@@ -929,7 +946,7 @@ class RecommendationRepository(
      * 只取这么多就够: 「大家最近在看」走的是搜索 (见 [searchRecentHot]), 榜的后半截用不上.
      */
     private suspend fun fetchCarouselIds(requests: AtomicInt): Set<Int> =
-        runCatching { trendsRepository.getTrendsInfo(limit = TrendsRepository.TRENDING_LIMIT) }
+        runCatching { limited { trendsRepository.getTrendsInfo(limit = TrendsRepository.TRENDING_LIMIT) } }
             .onFailure { logger.warn(it) { "bgm-direct: recommendations 热门失败" } }
             .getOrNull()
             ?.subjects
@@ -982,7 +999,7 @@ class RecommendationRepository(
         // 哪条榜没取到就当这次没算成 (保留旧缓存, 下次进页再算): 只剩半边的结果会顶着过完整个缓存期
         if (classics.isEmpty() || recent.isEmpty()) {
             logger.warn { "bgm-direct: recommendations 老番或新番那条榜没取到, 这次不算数" }
-            return@coroutineScope Computed(emptyList(), requests.value, emptySet(), onCarousel)
+            return@coroutineScope Computed(emptyList(), requests.value, onCarousel)
         }
         val items = ArrayList<RecommendedSubjectInfo>(classics.size + recent.size)
         var nextClassic = 0
@@ -999,7 +1016,6 @@ class RecommendationRepository(
         Computed(
             listOf(RecommendationGroup(RecommendationGroupKind.FEED, titleArg = null, items = items)),
             requests.value,
-            emptySet(),
             onCarousel,
         )
     }
@@ -1077,25 +1093,33 @@ class RecommendationRepository(
      * 一批推荐里「续作换成用户没看过的最早一季」的活儿. 只管种子那几行与「换换口味」 ——
      * 「本季」「大家最近在看」卖的就是当下在播的那一季, 不换.
      *
-     * **组装出一行就开始回溯** ([track]), 不等整批算完: 回溯打的是 next.bgm.tv 的关系接口, 召回那些
-     * 搜索打的是 api.bgm.tv, 两边不抢同一个 host 的并发名额.
+     * 换成哪一季先查表 ([table], 见 [SequelSeasonTableRepository]): 表覆盖到的条目当场就知道换不换、换成谁,
+     * 要换的才取一次那一季的条目信息 (名字和封面画卡片), 不用换的一个请求都不发. 表答不了的 (比表新的条目、
+     * 表没下到) 照旧顺前传回溯 ([SubjectSeriesIndexService.prequelChain]), 每个条目的邻居与 TMDB 匹配、
+     * 详情页的系列索引共用一份缓存. 两条路挑季的判据是同一份 ([sequelSeasonCandidates]).
+     *
+     * **组装出一行就开始查** ([track]), 不等整批算完: 这些请求打的是 next.bgm.tv, 召回那些搜索打的是
+     * api.bgm.tv, 两边不抢同一个 host 的并发名额.
      *
      * 分两段换, 都不让出卡多等:
-     * 1. **落库前** ([applyReady]): 已经回溯完的格子当场换好 —— 多数格子这时已经查完, 关系命中缓存时是全部;
+     * 1. **落库前** ([applyReady]): 已经有结果的格子当场换好 —— 查表的格子这时多半已经齐了;
      * 2. **落库后** ([convertAfterShown]): 还没查完的等查完再原地改格子. 行结构不变, 卡片按下标组合
      *    (见 TvExplorationPage), 焦点不受影响. 这些格子排在行尾 (电视一屏露七张左右), 大多是在屏外换的.
-     *
-     * 回溯只顺前传走 ([SubjectSeriesIndexService.prequelChain]), 每个条目的邻居与 TMDB 匹配、详情页的
-     * 系列索引共用一份缓存: 同一个条目谁先问谁发请求, 后来的直接拿.
      */
-    private inner class SequelBatch(private val batchScope: CoroutineScope) {
+    private inner class SequelBatch(
+        private val batchScope: CoroutineScope,
+        /** 离线算好的「续作 → 候选季」表; null = 没有能用的表, 全部回溯. */
+        private val table: SequelSeasonTable?,
+        /** 用户收藏过的条目: 换成的那一季不能是看过的. */
+        private val collected: Set<Int>,
+    ) {
         private inner class Row(val groupIndex: Int, val reserves: ArrayDeque<RecommendedSubjectInfo>) {
             /** 落库时还没定下来、留给 [convertAfterShown] 的格子 (条目 id). */
             val pending = HashSet<Int>()
         }
 
         private val rows = mutableListOf<Row>()
-        private val chains = HashMap<Int, Deferred<PrequelChain?>>()
+        private val targets = HashMap<Int, Deferred<SeriesNode?>>()
         private val permits = Semaphore(SEQUEL_WALK_PARALLELISM)
         private val fetched = atomic(0)
 
@@ -1104,35 +1128,47 @@ class RecommendationRepository(
         private val changes = mutableListOf<String>()
         private var changedBeforeShown = 0
 
-        /** 第 [groupIndex] 组要换季: 行里的条目当场开始回溯, 名字越像续作越先查. */
+        /** 第 [groupIndex] 组要换季: 行里的条目当场开始查, 名字越像续作越先查. */
         fun track(groupIndex: Int, items: List<RecommendedSubjectInfo>, reserves: List<RecommendedSubjectInfo>) {
             rows += Row(groupIndex, ArrayDeque(reserves))
-            items.sortedByDescending { sequelHint(it.nameCn) }.forEach { chainOf(it.bangumiId) }
+            items.sortedByDescending { sequelHint(it.nameCn) }.forEach { targetOf(it.bangumiId) }
         }
 
-        /** 回溯结果; 失败时为 `null`, 那一格不换. */
-        private fun chainOf(subjectId: Int): Deferred<PrequelChain?> = chains.getOrPut(subjectId) {
-            batchScope.async {
-                permits.withPermit {
-                    try {
-                        seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn(e) { "bgm-direct: recommendations 回溯 $subjectId 的前传失败, 这一格不换" }
-                        null
+        /** 这一格该换成的那一季: 候选季里第一个没收藏过的. `null` = 不换 (没有可换的季、都收藏过了, 或者查失败). */
+        private fun targetOf(subjectId: Int): Deferred<SeriesNode?> = targets.getOrPut(subjectId) {
+            val candidates = table?.candidates(subjectId)
+            if (candidates != null) {
+                // 带参数名: 只传一个 null 会被当成 CompletableDeferred(parent = null), 得到一个永远不完成的
+                val target = candidates.firstOrNull { it !in collected }
+                    ?: return@getOrPut CompletableDeferred<SeriesNode?>(value = null)
+                batchScope.async { query(subjectId) { seriesIndexService.nodeOf(target, fetched) } }
+            } else {
+                batchScope.async {
+                    query(subjectId) {
+                        val chain = seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
+                        sequelSeasonCandidates(chain).firstOrNull { it.id !in collected }
                     }
                 }
             }
         }
 
+        private suspend fun query(subjectId: Int, block: suspend () -> SeriesNode?): SeriesNode? = permits.withPermit {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "bgm-direct: recommendations 查 $subjectId 该换成哪一季失败, 这一格不换" }
+                null
+            }
+        }
+
         /**
-         * 落库前调: 已经回溯完的格子当场换好, 行排成「定下来的在前, 还没定的在后」. 还没定的 (没查完, 或者
+         * 落库前调: 已经查完的格子当场换好, 行排成「定下来的在前, 还没定的在后」. 还没定的 (没查完, 或者
          * 最早那季撞了车、要等候补查完) 按名字里的续作迹象排, 越像越靠后, 落库后由 [convertAfterShown] 接着换.
          */
         suspend fun applyReady(
             groups: List<RecommendationGroup>,
-            collected: Set<Int>,
             onCarousel: Set<Int>,
         ): List<RecommendationGroup> {
             groups.forEach { group -> group.items.mapTo(shown) { it.bangumiId } }
@@ -1144,13 +1180,13 @@ class RecommendationRepository(
                 val settled = mutableListOf<RecommendedSubjectInfo>()
                 val pending = mutableListOf<RecommendedSubjectInfo>()
                 for (item in group.items) {
-                    val chain = chains[item.bangumiId]
-                    if (chain == null || !chain.isCompleted) {
+                    val deferred = targets[item.bangumiId]
+                    if (deferred == null || !deferred.isCompleted) {
                         pending += item
                         continue
                     }
                     // 已经完成, await 不会挂起
-                    val target = earliestUnwatched(chain.await(), collected)
+                    val target = deferred.await()
                     when {
                         target == null -> settled += item
                         target.id !in shown && !isLongRunningNode(target) -> settled += replace(item, target.toInfo())
@@ -1173,7 +1209,7 @@ class RecommendationRepository(
          *
          * @param groupRows 刚落库的表, 按组分好 (下标与 [track] 的 groupIndex 一致)
          */
-        fun convertAfterShown(groupRows: List<List<RecommendationFeedEntity>>, collected: Set<Int>) {
+        fun convertAfterShown(groupRows: List<List<RecommendationFeedEntity>>) {
             if (rows.isEmpty()) return
             batchScope.launch {
                 val startMillis = currentTimeMillis()
@@ -1183,13 +1219,13 @@ class RecommendationRepository(
                     val updates = mutableListOf<RecommendationFeedEntity>()
                     for (entity in entities.asReversed()) {
                         if (entity.subjectId !in row.pending) continue
-                        val target = earliestUnwatched(chains[entity.subjectId]?.await(), collected) ?: continue
+                        val target = targetOf(entity.subjectId).await() ?: continue
                         val to = if (target.id !in shown && !isLongRunningNode(target)) {
                             target.toInfo()
                         } else {
                             // 那一季已经在页面上了 (比如两部续作回到了同一个第一季), 或者它是超长篇 (犬夜叉完结篇
                             // 回到 167 集的犬夜叉 —— 续篇本身也不该推): 这一格换个候补
-                            nextReserve(row.reserves, collected) ?: continue
+                            nextReserve(row.reserves) ?: continue
                         }
                         replace(RecommendedSubjectInfo(entity.subjectId, entity.nameCn, entity.imageLarge), to)
                         updates += entity.copy(subjectId = to.bangumiId, nameCn = to.nameCn, imageLarge = to.imageLarge)
@@ -1198,7 +1234,7 @@ class RecommendationRepository(
                 }
                 logger.info {
                     "bgm-direct: recommendations 续作换季 ${changes.size} 格 (出卡前 $changedBeforeShown, " +
-                            "出卡后 ${changes.size - changedBeforeShown}) $changes, 回溯共 ${fetched.value} 个请求, " +
+                            "出卡后 ${changes.size - changedBeforeShown}) $changes, 共 ${fetched.value} 个请求, " +
                             "落库后 ${currentTimeMillis() - startMillis}ms 换完"
                 }
             }
@@ -1212,42 +1248,18 @@ class RecommendationRepository(
         }
 
         /** 候补里下一个能用的: 不在页面上; 它自己是续作的话同样换成最早一季. */
-        private suspend fun nextReserve(
-            reserves: ArrayDeque<RecommendedSubjectInfo>,
-            collected: Set<Int>,
-        ): RecommendedSubjectInfo? {
+        private suspend fun nextReserve(reserves: ArrayDeque<RecommendedSubjectInfo>): RecommendedSubjectInfo? {
             while (reserves.isNotEmpty()) {
                 val reserve = reserves.removeFirst()
                 if (reserve.bangumiId in shown) continue
-                val target = earliestUnwatched(chainOf(reserve.bangumiId).await(), collected) ?: return reserve
+                val target = targetOf(reserve.bangumiId).await() ?: return reserve
                 if (target.id !in shown && !isLongRunningNode(target)) return target.toInfo()
             }
             return null
         }
     }
 
-    /**
-     * 这一格该换成的那一季: 比它**播得早**、没收藏过的 TV/WEB 前传里**播出最早**的那个.
-     * `null` = 不换 (没有前传、前面几季都收藏了, 或者回溯失败).
-     *
-     * 按播出日期挑, 不按前传链走到头: bangumi 的「前传」是故事时间线上的, 后来才做的前传会挂在第一季
-     * 前面 (苍穹之法芙娜 2004 年 TV 版的前传是 2005 年的特别篇 RIGHT OF LEFT), 走到头就换成了它.
-     * 前面几季看过、中间某季没看的, 挑出来的就是中间那季: 推荐的意思是"接下来看什么".
-     * 日期缺的排在有日期的后面, 都缺时按前传链上更远的算.
-     */
-    private fun earliestUnwatched(chain: PrequelChain?, collected: Set<Int>): SeriesNode? {
-        if (chain == null) return null
-        val selfDate = chain.self?.airDate ?: PackedDate.Invalid
-        return chain.prequels.withIndex()
-            .filter { (_, node) ->
-                node.id !in collected && !node.nsfw && isSeasonFormat(node) &&
-                        !(node.airDate.isValid && selfDate.isValid && node.airDate >= selfDate)
-            }
-            .minWithOrNull(compareBy<IndexedValue<SeriesNode>>({ it.value.airDate }, { -it.index }))
-            ?.value
-    }
-
-    /** 回溯到的那一季是不是超长篇, 判据同 [Sampling.isLongRunning]. */
+    /** 换成的那一季是不是超长篇, 判据同 [Sampling.isLongRunning]. */
     private fun isLongRunningNode(node: SeriesNode): Boolean {
         val episodes = node.episodes
         return if (episodes != null) {
@@ -1256,18 +1268,6 @@ class RecommendationRepository(
             node.airDate.isValid && PackedDate.now().year - node.airDate.year >= ONGOING_LONG_YEARS
         }
     }
-
-    /**
-     * 能当「一季」的: 形态是 TV / WEB, 且至少 [MIN_SEASON_EPISODES] 集. 剧场版、OVA、总集篇不算 —— 续作前面常夹着
-     * 一部剧场版 (来自深渊第二季的前传是剧场版「深沉灵魂的黎明」), 换成它不是用户要的"从头看"; 一两集的特别篇、
-     * 前导短篇也不算 (苍穹之法芙娜的 RIGHT OF LEFT 标的是 TV、1 话; 普罗米亚的前日谭是 WEB、2 话).
-     * 官方标签里没写形态、没写集数的当不知道, 放行.
-     */
-    private fun isSeasonFormat(node: SeriesNode): Boolean =
-        when (node.metaTags.firstOrNull { it in CanonicalTagKind.Category.values }) {
-            null, "TV", "WEB" -> node.episodes.let { it == null || it >= MIN_SEASON_EPISODES }
-            else -> false
-        }
 
     private fun SeriesNode.toInfo() = RecommendedSubjectInfo(
         bangumiId = id,
@@ -1461,8 +1461,10 @@ class RecommendationRepository(
     }
 
     private suspend fun fetchRecs(subjectId: Int): List<Candidate> = runCatching {
-        bangumiSubjectApi {
-            coroutineScope { getSubjectRecs(subjectId, limit = RECS_PER_SEED).body().data }
+        limited {
+            bangumiSubjectApi {
+                coroutineScope { getSubjectRecs(subjectId, limit = RECS_PER_SEED).body().data }
+            }
         }
     }.getOrElse {
         logger.warn(it) { "bgm-direct: recommendations 取 $subjectId 的 recs 失败" }
@@ -1687,13 +1689,15 @@ class RecommendationRepository(
         what: String,
         offset: Int,
     ): SubjectSearchPage? = runCatching {
-        searchService.searchSubjectsPage(
-            keyword = "",
-            offset = offset,
-            limit = SEARCH_PAGE_SIZE,
-            sort = sort,
-            filters = filters,
-        )
+        limited {
+            searchService.searchSubjectsPage(
+                keyword = "",
+                offset = offset,
+                limit = SEARCH_PAGE_SIZE,
+                sort = sort,
+                filters = filters,
+            )
+        }
     }.onFailure {
         logger.warn(it) { "bgm-direct: recommendations 搜索 $what 失败" }
     }.getOrNull()
@@ -2310,17 +2314,8 @@ class RecommendationRepository(
         /** `/recs` 的 limit 上限是 10. */
         const val RECS_PER_SEED = 10
 
-        /**
-         * 续作换季时顺前传最多走几跳 (见 [SequelBatch]). 一般 1~2 跳就到头, 长的 (水星领航员、
-         * 黑塔利亚) 4 跳; 再往上多半是走进了长寿系列的外传网.
-         */
-        const val MAX_PREQUEL_HOPS = 6
-
         /** 换季那几行每行留几个候补: 两格换到同一季时补位用. */
         const val SEQUEL_RESERVES = 4
-
-        /** 换季时能当「一季」的最少集数 (见 [isSeasonFormat]): 6 集的网络番还算, 一两集的特别篇不算. */
-        const val MIN_SEASON_EPISODES = 6
 
         /** 连着「换一批」时躲开最近几批 (见 [recentBatches]). */
         const val RECENT_BATCHES_TO_AVOID = 3
@@ -2330,6 +2325,12 @@ class RecommendationRepository(
          * 给它留一个名额, 不让换季把页面的请求压在队尾.
          */
         const val SEQUEL_WALK_PARALLELISM = 4
+
+        /**
+         * 重算时其余请求 (收藏分页、各池的搜索、recs、热门) 同时在跑的上限. 一轮重算几十个请求, 不限的话 api.bgm.tv
+         * 的 5 个名额全被它占着, 用户这时点的「看过」要排在后面等好几秒 (2026-09-26 Shield 实测 4 秒). 重算在后台, 慢点不要紧.
+         */
+        const val NETWORK_PARALLELISM = 2
 
         /** 算画像时往回看多少条收藏. 全表拉出来只为算个画像不值当. */
         const val PROFILE_LOOKBACK = 500
