@@ -272,7 +272,7 @@ class ObserveWebMediaSourcePreferenceExtensionTest : AbstractPlayerExtensionTest
     }
 
     @Test
-    fun `with BT preferred, playing an automatically selected web media is not remembered`() = runTest {
+    fun `with BT preferred - playing an automatically selected web media is not remembered`() = runTest {
         val web1: CompletableDeferred<List<Media>>
         val (testScope, suite, state) = createCase { _, suite ->
             web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)

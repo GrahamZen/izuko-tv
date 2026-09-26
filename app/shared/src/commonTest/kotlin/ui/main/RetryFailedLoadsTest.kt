@@ -45,7 +45,7 @@ class RetryFailedLoadsTest {
     }
 
     @Test
-    fun `退避时间 - 5 秒起翻倍, 最长 5 分钟`() {
+    fun `退避时间 - 5 秒起翻倍，最长 5 分钟`() {
         assertEquals(
             listOf(5, 10, 20, 40, 80, 160, 300, 300).map { it.seconds },
             (1..8).map { trendingRetryDelay(it) },
@@ -53,7 +53,7 @@ class RetryFailedLoadsTest {
     }
 
     @Test
-    fun `出错后等退避时间再重试, 连续失败越等越久`() = runTest {
+    fun `出错后等退避时间再重试，连续失败越等越久`() = runTest {
         startRetrying()
         fail()
         advance(4.seconds)
