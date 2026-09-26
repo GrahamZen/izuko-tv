@@ -209,25 +209,7 @@ data class TvPlayerChromeLayout(
         fun resolveOrder(
             saved: List<TvPlayerChromeItem>,
             defaults: List<TvPlayerChromeItem>,
-        ): List<TvPlayerChromeItem> {
-            if (saved.isEmpty()) return defaults
-            val result = saved.distinct().filterTo(mutableListOf()) { it in defaults }
-            if (result.size == defaults.size) return result
-            for ((index, item) in defaults.withIndex()) {
-                if (item in result) continue
-                // 默认版式里它前面最近的、已经落位的那个条目 —— 插到它后面
-                var anchor = -1
-                for (i in index - 1 downTo 0) {
-                    val at = result.indexOf(defaults[i])
-                    if (at >= 0) {
-                        anchor = at
-                        break
-                    }
-                }
-                result.add(anchor + 1, item)
-            }
-            return result
-        }
+        ): List<TvPlayerChromeItem> = resolveSavedOrder(saved, defaults)
     }
 }
 

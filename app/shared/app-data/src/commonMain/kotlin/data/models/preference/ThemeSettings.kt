@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.him188.ani.app.ui.theme.DefaultSeedColor
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 
 @Serializable
 enum class DarkMode {
@@ -203,6 +204,19 @@ data class ThemeSettings(
     val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
     val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Timeline,
+    /**
+     * TV: 追番页顶部那排收藏分类标签的先后顺序 (想看 / 在看 / 搁置 / 看过 / 抛弃).
+     *
+     * **空 = 没排过**, 用页面自己的默认顺序; 排过之后存的也只是一份"用户排出来的顺序", 与当前版本的
+     * 分类集合未必一致 —— 读取一律走 [resolveSavedOrder] 对齐 (缺的按默认位置补回, 不认识的丢掉).
+     *
+     * 为什么值得让用户排: 各人常用的分类差得远 —— 只看在追的那几部的人希望「在看」在最左 (进页焦点
+     * 落第一个非空标签), 补旧番的人则更常开「想看」. 顺序只影响这一页的展示与左右导航, 选中项仍按
+     * 类型存取, 重排不会把内容切走.
+     *
+     * @since 1.0.2
+     */
+    val tvCollectionTabOrder: List<UnifiedCollectionType> = emptyList(),
     /**
      * TV: 退出播放页后保留播放会话 (播放器与整条"搜索数据源 → 选源 → 起播"的流水线),
      * 由侧边栏"正在播放"条目回去; 数据源在后台就绪时弹一次提示.

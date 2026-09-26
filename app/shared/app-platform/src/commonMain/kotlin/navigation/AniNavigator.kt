@@ -190,6 +190,11 @@ interface AniNavigator {
     fun navigateTvPlayerChrome() {
         navigateSingleInstance(NavRoutes.TvPlayerChrome)
     }
+
+    /** TV: 自定义追番页标签顺序 (见 [NavRoutes.TvCollectionTabOrder]). */
+    fun navigateTvCollectionTabOrder() {
+        navigateSingleInstance(NavRoutes.TvCollectionTabOrder)
+    }
 }
 
 /**

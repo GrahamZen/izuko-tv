@@ -95,6 +95,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.resolveSavedOrder
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.toNavPlaceholder
@@ -260,12 +261,16 @@ fun TvCollectionPage(
     // (见下方 restoreCardIndex), 不能复位.
     var enteredBefore by rememberSaveable { mutableStateOf(false) }
     val freshEntry = remember { !enteredBefore }
+    // 分类标签的显示顺序 —— 用户可以自己排 (设置 - 界面 -「自定义追番页标签顺序」).
+    // 选中项仍按类型存取 (state 内部是 COLLECTION_TABS_SORTED 的下标), 所以重排只换展示与左右
+    // 导航次序, 不会把内容切走
+    val tabOrder = rememberTvCollectionTabOrder()
     // 收藏计数是异步来的, 冷启动进页时往往还是 null: 全按 0 算 -> 落到第一个标签, 计数到达后
     // 由下方效应再定一次
     val firstNonEmptyTabIndex: () -> Int = {
         val counts = state.collectionCounts
-        val type = TV_COLLECTION_TABS.firstOrNull { (counts?.getCount(it) ?: 0) > 0 }
-            ?: TV_COLLECTION_TABS.first()
+        val type = tabOrder.firstOrNull { (counts?.getCount(it) ?: 0) > 0 }
+            ?: tabOrder.first()
         COLLECTION_TABS_SORTED.indexOf(type)
     }
     if (freshEntry && !enteredBefore) {
@@ -497,9 +502,9 @@ fun TvCollectionPage(
     // 该 tab 后面的焦点节点就会被重建; 焦点恰好在这个 tab 上时会被丢掉, 焦点系统随即把默认
     // 焦点发回第一个可聚焦元素 (第一个 tab). 而"聚焦即选中"意味着每次焦点落到新 tab 都会触发
     // 一次选中态变化, 于是按住方向键快速移动时偶发被拉回最左标签.
-    val tabFocusKeys = remember { List(TV_COLLECTION_TABS.size) { CollectionTabFocusKey(it) } }
+    val tabFocusKeys = remember { List(tabOrder.size) { CollectionTabFocusKey(it) } }
     // 选中标签在本页显示顺序里的下标. 用函数而非捕获值: 效应/按键回调里调用时要读到最新选中项
-    val selectedTabTvIndex: () -> Int = { TV_COLLECTION_TABS.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex]) }
+    val selectedTabTvIndex: () -> Int = { tabOrder.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex]) }
     // 当前持有焦点的标签下标 (按本页显示顺序); -1 = 焦点不在标签行上
     var focusedTabTvIndex by remember { mutableIntStateOf(-1) }
     // 空 tab 的网格落点放弃后, 必须等“选中的标签真实获焦”才能重新开放标签行导航. 真机上
@@ -702,6 +707,7 @@ fun TvCollectionPage(
         ) {
             // 悬浮分类 Tab (透明底浮于 backdrop 上)
             TvCollectionTabRow(
+                tabs = tabOrder,
                 selectedType = selectedType,
                 counts = { type -> state.collectionCounts?.getCount(type) },
                 // 跨 tab 落点解析期间与进页恢复焦点期间抑制 tab 的"聚焦即选中" (兜底: 万一
@@ -874,8 +880,8 @@ fun TvCollectionPage(
                     modifier = Modifier.fillMaxSize().clipToBounds(),
                     transitionSpec = {
                         if (fullTransitions) {
-                            val forward = TV_COLLECTION_TABS.indexOf(COLLECTION_TABS_SORTED[targetState]) >
-                                    TV_COLLECTION_TABS.indexOf(COLLECTION_TABS_SORTED[initialState])
+                            val forward = tabOrder.indexOf(COLLECTION_TABS_SORTED[targetState]) >
+                                    tabOrder.indexOf(COLLECTION_TABS_SORTED[initialState])
                             slideInHorizontally(tween(TV_COLLECTION_TAB_SLIDE_MILLIS)) { width ->
                                 if (forward) width else -width
                             } togetherWith slideOutHorizontally(tween(TV_COLLECTION_TAB_SLIDE_MILLIS)) { width ->
@@ -1039,18 +1045,18 @@ fun TvCollectionPage(
                                     },
                                     enabled = { isActiveTab },
                                     extraKeys = { event, focused, cols, count ->
-                                        val tvIndex = TV_COLLECTION_TABS.indexOf(selectedType)
+                                        val tvIndex = tabOrder.indexOf(selectedType)
                                         when (event.key) {
                                             Key.DirectionRight -> {
                                                 val rowEnd = focused % cols == cols - 1 ||
                                                         focused == count - 1
-                                                if (rowEnd && tvIndex in 0..<TV_COLLECTION_TABS.size - 1) {
+                                                if (rowEnd && tvIndex in 0..<tabOrder.size - 1) {
                                                     gridFocus.focusRowEdge(focused / cols, direction = 1)
                                                     // 切 tab 前把焦点钉到隐形锚点: 原卡片随分页替换销毁后焦点
                                                     // 悬空会被系统重分配 (可能落到第一个 tab 标签, 其"聚焦即
                                                     // 选中"会把选择拽回去); 锚点不可见, 不产生聚焦样式闪烁
                                                     runCatching { transitAnchor.requestFocus() }
-                                                    selectType(TV_COLLECTION_TABS[tvIndex + 1])
+                                                    selectType(tabOrder[tvIndex + 1])
                                                     true
                                                 } else if (rowEnd) {
                                                     // 末 tab 的行末按右: 消费掉. 不消费会落到默认方向搜索,
@@ -1068,7 +1074,7 @@ fun TvCollectionPage(
                                                     gridFocus.focusRowEdge(focused / cols, direction = -1)
                                                     // 同右键分支: 防止焦点悬空被系统重分配
                                                     runCatching { transitAnchor.requestFocus() }
-                                                    selectType(TV_COLLECTION_TABS[tvIndex - 1])
+                                                    selectType(tabOrder[tvIndex - 1])
                                                     true
                                                 } else {
                                                     false
@@ -1459,6 +1465,8 @@ private fun ColumnScope.TvCollectionHeroInfo(
  */
 @Composable
 private fun TvCollectionTabRow(
+    /** 本行要摆的分类, 按显示顺序 (见 [rememberTvCollectionTabOrder]). */
+    tabs: List<UnifiedCollectionType>,
     selectedType: UnifiedCollectionType,
     counts: (UnifiedCollectionType) -> Int?,
     onSelect: (UnifiedCollectionType) -> Unit,
@@ -1473,8 +1481,8 @@ private fun TvCollectionTabRow(
 ) {
     val density = LocalDensity.current
     // 各 tab 在行内的 (x 偏移, 宽度), 驱动下方滑动指示条
-    val tabBounds = remember {
-        mutableStateListOf(*Array(TV_COLLECTION_TABS.size) { 0.dp to 0.dp })
+    val tabBounds = remember(tabs.size) {
+        mutableStateListOf(*Array(tabs.size) { 0.dp to 0.dp })
     }
     // 焦点下标记账 / "聚焦即选中"封印 / 左右键显式移动 / 连发守卫都在共享原语里 (见 TvFocusRail.kt).
     // 标签恒在屏且必然可聚焦, 所以送焦直接 requestFocus, 不用走 scope 请求 + 悬挂.
@@ -1487,7 +1495,7 @@ private fun TvCollectionTabRow(
         Row(
             Modifier.tvFocusRailKeys(
                 state = rail,
-                itemCount = { TV_COLLECTION_TABS.size },
+                itemCount = { tabs.size },
                 onUserNavigation = onUserNavigation,
                 onNavigateDown = onNavigateDown,
                 // 第一个标签按左要放行, 靠焦点系统进侧边栏 —— 本页唯一的左出口
@@ -1499,7 +1507,7 @@ private fun TvCollectionTabRow(
             horizontalArrangement = Arrangement.spacedBy(TV_COLLECTION_TAB_SPACING),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TV_COLLECTION_TABS.forEachIndexed { index, type ->
+            tabs.forEachIndexed { index, type ->
                 val interactionSource = remember { MutableInteractionSource() }
                 val focused by interactionSource.collectIsFocusedAsState()
                 val selected = type == selectedType
@@ -1548,7 +1556,7 @@ private fun TvCollectionTabRow(
             }
         }
         // 平滑滑动的选中指示条
-        val (targetX, targetWidth) = tabBounds[TV_COLLECTION_TABS.indexOf(selectedType).coerceAtLeast(0)]
+        val (targetX, targetWidth) = tabBounds[tabs.indexOf(selectedType).coerceAtLeast(0)]
         // **量出来之前不画**: tabBounds 初值是 (0,0), 由 onGloballyPositioned 事后填。若那一帧就
         // 组合出指示条, animateDpAsState 会把 0 当成初值, 等真实位置到达再动画 —— 于是返回本页时
         // 肉眼可见竖线从最左侧滑/跳到选中标签 (2026-08-23 实测)。等真实位置到了再首次组合,
@@ -1585,8 +1593,20 @@ private fun TvCollectionTabIndicator(
     )
 }
 
+/**
+ * 本页分类标签的显示顺序: 用户排过的那份 ([ThemeSettings.tvCollectionTabOrder]) 对齐到当前全集.
+ *
+ * 排过之后集合仍可能变 (以后加/删分类), 所以一律经 [resolveSavedOrder]: 缺的按默认位置补回,
+ * 不认识的丢掉 —— 自定义页与本页共用这一个函数, 两边才不会排出两个样子.
+ */
 @Composable
-private fun UnifiedCollectionType.displayTextTv(): String {
+internal fun rememberTvCollectionTabOrder(): List<UnifiedCollectionType> {
+    val saved = LocalThemeSettings.current.tvCollectionTabOrder
+    return remember(saved) { resolveSavedOrder(saved, TV_COLLECTION_TABS) }
+}
+
+@Composable
+internal fun UnifiedCollectionType.displayTextTv(): String {
     return when (this) {
         UnifiedCollectionType.WISH -> stringResource(Lang.subject_collection_wish)
         UnifiedCollectionType.DOING -> stringResource(Lang.subject_collection_doing)
@@ -1598,10 +1618,13 @@ private fun UnifiedCollectionType.displayTextTv(): String {
 }
 
 /**
- * TV 追番页的分类 tab 顺序: 想看 在看 搁置 看过 抛弃. 仅影响本页展示与左右导航次序;
- * [UserCollectionsState] 内部仍按 [COLLECTION_TABS_SORTED] 的下标存取, 使用处经类型换算.
+ * TV 追番页分类 tab 的**默认**顺序: 想看 在看 搁置 看过 抛弃. 用户排过之后以他排的为准
+ * (见 [rememberTvCollectionTabOrder]); 这份仍是"全集"与补位基准, 加新分类时按它该在的位置插.
+ *
+ * 仅影响本页展示与左右导航次序; [UserCollectionsState] 内部仍按 [COLLECTION_TABS_SORTED] 的下标
+ * 存取, 使用处经类型换算.
  */
-private val TV_COLLECTION_TABS = listOf(
+internal val TV_COLLECTION_TABS = listOf(
     UnifiedCollectionType.WISH,
     UnifiedCollectionType.DOING,
     UnifiedCollectionType.ON_HOLD,
@@ -1634,19 +1657,19 @@ private const val TV_COLLECTION_TAB_FADE_MILLIS = 500
 private val TV_COLLECTION_EMPTY_HINT_RAISE = 200.dp
 
 /** 内容左侧留白 (外层主壳已让开侧边栏 48dp, 总左缘 = 48 + 此值, 与探索页一致). */
-private val TV_COLLECTION_START_PAD = 16.dp
+internal val TV_COLLECTION_START_PAD = 16.dp
 
 /** 页面顶部留白 (tab 行之上). */
-private val TV_COLLECTION_TOP_PAD = 24.dp
+internal val TV_COLLECTION_TOP_PAD = 24.dp
 
 /** Tab 之间的间距. */
-private val TV_COLLECTION_TAB_SPACING = 28.dp
+internal val TV_COLLECTION_TAB_SPACING = 28.dp
 
 /** 未选中 Tab 的文字不透明度. */
-private const val TV_COLLECTION_TAB_UNSELECTED_ALPHA = 0.5f
+internal const val TV_COLLECTION_TAB_UNSELECTED_ALPHA = 0.5f
 
 /** Tab 选中指示条厚度. */
-private val TV_COLLECTION_TAB_INDICATOR_HEIGHT = 3.dp
+internal val TV_COLLECTION_TAB_INDICATOR_HEIGHT = 3.dp
 
 /** Tab 行到 Hero 信息块 (标题) 的间距. */
 private val TV_COLLECTION_TABS_TO_HERO_GAP = 10.dp
