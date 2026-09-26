@@ -16,6 +16,8 @@ import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Relation
@@ -155,6 +157,10 @@ data class SubjectRelations(
 interface SubjectCollectionDao {
     @Upsert
     suspend fun upsert(item: SubjectCollectionEntity)
+
+    /** 表里还没有这个条目才写进去; 已有的一行一概不动. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(item: SubjectCollectionEntity)
 
     @Upsert
     @Transaction

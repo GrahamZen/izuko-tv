@@ -42,12 +42,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
+import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
+import me.him188.ani.app.data.models.subject.RatingInfo
+import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
+import me.him188.ani.app.data.persistent.JsonFileCache
 import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedDao
 import me.him188.ani.app.data.persistent.database.dao.RecommendationFeedEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
@@ -73,6 +77,8 @@ import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
@@ -107,7 +113,7 @@ class RecommendationRepository(
     private val feedDao: RecommendationFeedDao,
     private val trendsRepository: TrendsRepository,
     private val searchService: AniSubjectSearchService,
-    /** 续作换季时顺前传回溯、取换成的那一季的条目信息 (见 [SequelBatch]); 与 TMDB 匹配、详情页共用节点缓存. */
+    /** 续作换季查不到表时顺前传回溯 (见 [SequelBatch]); 与 TMDB 匹配、详情页共用邻居缓存. */
     private val seriesIndexService: SubjectSeriesIndexService,
     /** 离线算好的「续作 → 候选季」表, 换季先查它 (见 [SequelBatch]). */
     private val sequelSeasonTable: SequelSeasonTableRepository,
@@ -119,7 +125,28 @@ class RecommendationRepository(
      */
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /**
+     * 跨进程接着用的东西放在这里 (收藏快照与几个召回池, 见 [collectionsDiskCache] 与 [poolsDiskCache]);
+     * `null` = 只在进程内复用.
+     */
+    cacheDir: SystemPath? = null,
 ) : Repository() {
+    /**
+     * 上次取全的收藏 ([lastCollections]) 落盘的那份: 冷启动后第一次重算照样先取第一页比对, 没变就直接用它,
+     * 不必把几百条收藏从头翻一遍. 只在取全之后写.
+     */
+    private val collectionsDiskCache = cacheDir?.let {
+        JsonFileCache(it.resolve("recommendation-collections.json"), SavedCollections.serializer(), ioDispatcher)
+    }
+
+    /**
+     * 本季池、近半年热门与高分池取过的页 (见 [seasonPool]、[highRatedPages]) 落盘的那份: 算完一轮、池子有新取的
+     * 就写 ([savePools]), 下个进程第一次重算时读回来 ([restorePools]).
+     */
+    private val poolsDiskCache = cacheDir?.let {
+        JsonFileCache(it.resolve("recommendation-pools.json"), SavedPools.serializer(), ioDispatcher)
+    }
+
     /** 重算的请求同时最多 [NETWORK_PARALLELISM] 个 (续作回溯另有 [SEQUEL_WALK_PARALLELISM]), 见 [limited]. */
     private val networkPermits = Semaphore(NETWORK_PARALLELISM)
 
@@ -164,7 +191,7 @@ class RecommendationRepository(
     init {
         // 登录之后收藏是**异步同步下来的**: 进页那一刻画像还是空的, 判"没变"就跳过了, 而收藏
         // 落库时又没有人再问一次 —— 表现就是"登录了但推荐没变"(2026-09-06 用户实测).
-        // 盯住真收藏条数这个便宜信号; 真正要不要重算仍由画像身份串决定.
+        // 盯住真收藏条数这个便宜信号; 真正要不要重算看画像身份串, 身份串变了还要拿服务端收藏核对一下 (见 refreshOnce).
         scope.launch {
             subjectCollectionDao.realCollectionCountFlow()
                 .distinctUntilChanged()
@@ -243,26 +270,39 @@ class RecommendationRepository(
             emptyList()
         }
         val profile = computeInterestProfile(collections, currentTimeMillis())
+        // 身份串带上登录态: 刚登录那一刻本地收藏还没同步下来, 画像跟没登录时一样是空的, 只看画像的话
+        // 登录前算的那组会被当成还新鲜, 要等收藏同步完 (半分钟上下) 才重算
+        val profileKey = (if (loggedIn) LOGGED_IN_KEY_PREFIX else ANONYMOUS_KEY_PREFIX) + profile.key
 
         if (!force) {
             // 先判新鲜度再等 —— 反过来的话, 绝大多数进页都要白白挂几秒才发现无事可做
             val computedAt = feedDao.computedAt()
             val staleAlgo = (feedDao.algoVersion() ?: 0) != RecommendationFeedEntity.CURRENT_ALGO_VERSION
-            val staleProfile = feedDao.profileKey() != profile.key
-            if (!staleAlgo && !staleProfile && computedAt != null &&
-                currentTimeMillis() - computedAt < TTL_MILLIS
-            ) {
+            val storedKey = feedDao.profileKey()
+            val staleProfile = storedKey != profileKey
+            val loginChanged = storedKey != null && storedKey.startsWith(LOGGED_IN_KEY_PREFIX) != loggedIn
+            val fresh = !staleAlgo && computedAt != null && currentTimeMillis() - computedAt < TTL_MILLIS
+            if (fresh && !staleProfile) {
                 logger.info { "bgm-direct: recommendations 缓存仍新鲜, 跳过重算" }
                 return
             }
-            if (staleProfile && computedAt != null) {
+            // 本地画像变了、登录态没变: 多半是已有的收藏被顺手存进了本地 (追番页分页、hero 预取、进详情页都会写),
+            // 不是用户改了收藏. 拿服务端收藏第一页核对, 没变就只记下新的身份串 —— 重算用的本来就是服务端那份全量收藏,
+            // 算出来不会更准, 却会让推荐在用户眼前换一批
+            if (fresh && loggedIn && !loginChanged && collectionsUnchanged()) {
+                feedDao.updateProfileKey(profileKey)
+                logger.info { "bgm-direct: recommendations 本地画像变了但服务端收藏没变, 不重算" }
+                return
+            }
+            if (loginChanged) {
+                logger.info { "bgm-direct: recommendations 登录态变了 (登录=$loggedIn), 缓存作废重算" }
+            } else if (staleProfile && computedAt != null) {
                 logger.info { "bgm-direct: recommendations 画像变了, 缓存作废重算" }
             }
             // 首帧宽限: 进页那一两秒在布局、拉封面与 hero 背景, 重算这时候插进去只会让首屏更慢,
             // 而它的结果本来就要等**下次**进页才用得上, 一点都不急.
-            // **缓存空的时候不能这么等**: 那是装完/升级完第一次进页, 推荐区正空着, 等几秒
-            // 就是干瞪眼几秒 —— 那一次结果是要当场用的.
-            delay(if (computedAt == null) COLD_START_GRACE else FIRST_FRAME_GRACE)
+            // **缓存空的时候、登录态刚变的时候不能这么等**: 推荐区正空着或者放着不对的那组, 结果是要当场用的.
+            delay(if (computedAt == null || loginChanged) COLD_START_GRACE else FIRST_FRAME_GRACE)
         }
 
         // 上一批各行用的是哪部当理由 (存在 titleArg 里); 平时拿来让种子保持稳定, 「换一批」时拿来躲开
@@ -303,6 +343,10 @@ class RecommendationRepository(
         // 「换一批」才换随机种子; 其余时候 (TTL 到期、画像变了) 同一天算出来的一样, 见 Sampling
         if (force) shuffleCount++
         val today = PackedDate.now()
+        if (!poolsRestored) {
+            poolsRestored = true
+            poolsDiskCache?.read()?.let { restorePools(it, today) }
+        }
         if (highRatedPagesDate != today) {
             highRatedPages.clear()
             highRatedPagesDate = today
@@ -370,7 +414,7 @@ class RecommendationRepository(
                     computedAt = computedAt,
                     titleArg = group.titleArg,
                     algoVersion = RecommendationFeedEntity.CURRENT_ALGO_VERSION,
-                    profileKey = profile.key,
+                    profileKey = profileKey,
                 )
             }
         }
@@ -387,6 +431,7 @@ class RecommendationRepository(
                         ""
                     }
         }
+        if (poolsDirty.getAndSet(false)) savePools()
         // 先出后改: 页面已经拿到这一批了, 剩下没查完的续作查完再原地换
         sequels.convertAfterShown(groupRows)
     }
@@ -417,6 +462,41 @@ class RecommendationRepository(
         return collections
     }
 
+    private suspend fun collectionsPage(offset: Int, limit: Int) = limited {
+        subjectService.getSubjectCollectionsPage(type = null, offset = offset, limit = limit)
+    }
+
+    /**
+     * 收藏的第一页与它的指纹 (每条的条目 id 与收藏更新时间). 本进程还没取全过的话, 上个进程落盘的那份
+     * (见 [collectionsDiskCache]) 同时读回 [lastCollections], 一样拿第一页比对.
+     *
+     * 第一页同时回答两件事 —— 一共多少条, 以及跟上次比变没变, 所以它单独取得很小 (见 COLLECTION_HEAD_PAGE).
+     * **第一页没变 = 整份没变**: 列表按收藏更新时间倒序 (见 getSubjectCollectionsPage, 实测), 任何一条被新加或改过
+     * 都会被顶到第一页, 条数变了看 total —— 所以复用不会过期, 不是凭时间猜"应该还新鲜". 换了账号第一页必然不同, 也串不了.
+     */
+    private suspend fun fetchCollectionsHead(): Pair<SubjectCollectionsPage, List<Pair<Int, Int>>> {
+        val (first, saved) = coroutineScope {
+            val saved = async { if (lastCollections == null) collectionsDiskCache?.read() else null }
+            collectionsPage(0, COLLECTION_HEAD_PAGE) to saved.await()
+        }
+        saved?.let { lastCollections = CollectionsSnapshot.from(it) }
+        return first to first.items.map { it.id to (it.interest?.updatedAt ?: 0) }
+    }
+
+    /**
+     * 服务端的收藏跟上次取全时 ([lastCollections]) 比变没变, 只花一个请求 (第一页, 见 [fetchCollectionsHead]).
+     * 没有可比的快照、或者请求失败, 当变了.
+     */
+    private suspend fun collectionsUnchanged(): Boolean = try {
+        val (first, fingerprint) = fetchCollectionsHead()
+        lastCollections?.matches(first, fingerprint) == true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.warn(e) { "bgm-direct: recommendations 核对服务端收藏失败, 当变了" }
+        false
+    }
+
     /**
      * 把用户**所有类型**的收藏取下来, **不落库**, 只拿来算画像与排除集.
      *
@@ -432,28 +512,12 @@ class RecommendationRepository(
     private suspend fun fetchAllCollections(): List<SubjectCollectionEntity> = runCatching {
         // **所有类型**, 不只「看过」: 抛弃的更不该推, 想看的也不该伪装成新发现;
         // 顺带画像也不再取决于"用户逛过哪个 tab"了 (本地只有逛过的那些).
-        suspend fun page(offset: Int, limit: Int) = limited {
-            subjectService.getSubjectCollectionsPage(
-                type = null,
-                offset = offset,
-                limit = limit,
-            )
-        }
-
-        // 第一页总是要取: 它同时回答两件事 —— 一共多少条, 以及跟上次比变没变.
-        // 每轮都要付这一次, 而多数轮次取完它就复用快照了, 所以它单独取得很小 (见 COLLECTION_HEAD_PAGE)
-        val first = page(0, COLLECTION_HEAD_PAGE)
-        val fingerprint = first.items.map { it.id to (it.interest?.updatedAt ?: 0) }
-        // **第一页没变 = 整份没变**: 列表按收藏更新时间倒序 (见 getSubjectCollectionsPage, 实测),
-        // 任何一条被新加或改过都会被顶到第一页, 条数变了看 total —— 所以复用不会过期, 不是凭时间
-        // 猜"应该还新鲜". 换了账号第一页必然不同, 也串不了.
-        // 用处: 登录后收藏分批落进本地库, 每稳定一次就触发一轮重算 (本地画像身份串变了), 一次登录能
-        // 连着算好几轮, 每轮都把几百条从头翻一遍 (2026-09-22 真机: 619 条 13 页, 两轮只隔 17 秒).
-        lastCollections?.let { cached ->
-            if (cached.total == first.total && cached.fingerprint == fingerprint) {
-                logger.info { "bgm-direct: recommendations 收藏没变 (第一页与上次相同), 复用上次取的 ${cached.entities.size} 条" }
-                return@runCatching cached.entities
-            }
+        val (first, fingerprint) = fetchCollectionsHead()
+        // 用处: 同一次登录里画像身份串变了、真要重算的那几轮, 不必每轮都把几百条从头翻一遍
+        // (2026-09-22 真机: 619 条 13 页, 两轮只隔 17 秒).
+        lastCollections?.takeIf { it.matches(first, fingerprint) }?.let { cached ->
+            logger.info { "bgm-direct: recommendations 收藏没变 (第一页与上次相同), 复用上次取的 ${cached.entities.size} 条" }
+            return@runCatching cached.entities
         }
         // **按服务端报的 total 翻到底**, 而不是固定几页: 原先卡在三页 150 条, 而"看过"上百部的
         // 用户 (真机上就取满了 150) 更早的那些一条都拦不住, 于是"已看过的还出现在推荐里"
@@ -462,7 +526,7 @@ class RecommendationRepository(
         // 串了 3.9 秒, 占整次重算的一半多 (2026-09-22 真机).
         val rest = coroutineScope {
             (COLLECTION_HEAD_PAGE until minOf(first.total, COLLECTION_FETCH_MAX) step COLLECTION_FETCH_PAGE)
-                .map { offset -> async { page(offset, COLLECTION_FETCH_PAGE).items } }
+                .map { offset -> async { collectionsPage(offset, COLLECTION_FETCH_PAGE).items } }
                 .awaitAll()
                 .flatten()
         }
@@ -471,16 +535,16 @@ class RecommendationRepository(
         // 地区顺手数一下 (p1 返回的条目自带官方标签, 实体里不存): 给 Sampling.regionWeight 判"常看哪些地区"
         val regionsPerSubject = all.map { subject -> subject.metaTags.filter { it in CanonicalTagKind.Region.values } }
         val regionCounts = regionsPerSubject.flatten().groupingBy { it }.eachCount()
-        all.map { it.toEntity(lastFetched = fetchedAt) }
-            .also {
-                lastCollections = CollectionsSnapshot(
-                    first.total,
-                    fingerprint,
-                    it,
-                    regionCounts = regionCounts,
-                    regionTaggedCount = regionsPerSubject.count { regions -> regions.isNotEmpty() },
-                )
-            }
+        val snapshot = CollectionsSnapshot(
+            first.total,
+            fingerprint,
+            all.map { it.toEntity(lastFetched = fetchedAt) },
+            regionCounts = regionCounts,
+            regionTaggedCount = regionsPerSubject.count { regions -> regions.isNotEmpty() },
+        )
+        lastCollections = snapshot
+        collectionsDiskCache?.let { cache -> scope.launch { cache.write(snapshot.toSaved()) } }
+        snapshot.entities
     }.getOrElse {
         // 未登录时 getSubjectCollections 第一行的本地检查就抛了, **没发出请求** —— 别把这行
         // 读成"网络失败"
@@ -520,6 +584,63 @@ class RecommendationRepository(
         fun collectedRegions(): Set<String>? {
             if (regionTaggedCount == 0) return null
             return regionCounts.filterValues { it >= regionTaggedCount * COLLECTED_REGION_SHARE }.keys
+        }
+
+        fun matches(first: SubjectCollectionsPage, fingerprint: List<Pair<Int, Int>>) =
+            total == first.total && this.fingerprint == fingerprint
+
+        fun toSaved() = SavedCollections(
+            total, fingerprint, regionCounts, regionTaggedCount,
+            entities.map { SavedCollection.of(it) },
+        )
+
+        companion object {
+            fun from(saved: SavedCollections) = CollectionsSnapshot(
+                saved.total, saved.fingerprint, saved.items.map { it.toEntity() },
+                saved.regionCounts, saved.regionTaggedCount,
+            )
+        }
+    }
+
+    /** [CollectionsSnapshot] 落盘的样子, 见 [collectionsDiskCache]. */
+    @Serializable
+    private class SavedCollections(
+        val total: Int,
+        val fingerprint: List<Pair<Int, Int>>,
+        val regionCounts: Map<String, Int>,
+        val regionTaggedCount: Int,
+        val items: List<SavedCollection>,
+    )
+
+    /**
+     * 一条收藏落盘的样子: **只存重算读的字段** —— 画像与种子 ([computeInterestProfile]) 要的名字、标签、收藏类型、
+     * 自己的打分、评分人数、收藏时间, 排除与系列去重要的 id 与名字. 其余字段读回来是空的, 重算要读别的字段时得一起加上.
+     */
+    @Serializable
+    private class SavedCollection(
+        val id: Int,
+        val name: String,
+        val nameCn: String,
+        val type: UnifiedCollectionType,
+        val score: Int,
+        val ratingTotal: Int,
+        val lastUpdated: Long,
+        val tags: List<Tag>,
+    ) {
+        fun toEntity() = SubjectCollectionEntity(
+            subjectId = id, name = name, nameCn = nameCn, summary = "", nsfw = false, imageLarge = "",
+            totalEpisodes = 0, airDate = PackedDate.Invalid, aliases = emptyList(), tags = tags,
+            collectionStats = SubjectCollectionStats.Zero, ratingInfo = RatingInfo.Empty.copy(total = ratingTotal),
+            completeDate = PackedDate.Invalid, selfRatingInfo = SelfRatingInfo.Empty.copy(score = score),
+            collectionType = type, recurrence = null, lastUpdated = lastUpdated, lastFetched = 0,
+            cachedStaffUpdated = 0, cachedCharactersUpdated = 0,
+        )
+
+        companion object {
+            fun of(entity: SubjectCollectionEntity) = SavedCollection(
+                entity.subjectId, entity.name, entity.nameCn, entity.collectionType, entity.selfRatingInfo.score,
+                entity.ratingInfo.total, entity.lastUpdated, entity.tags,
+            )
         }
     }
 
@@ -639,8 +760,16 @@ class RecommendationRepository(
             }
         }
 
-        // ---- 3. 本季 (怎么排见第二段同名那节) ----
-        val seasonDeferred = async { searchThisSeason()?.also { requests += SEASON_POOL_PAGES } }
+        // ---- 3. 本季 (怎么排见第二段同名那节); 池子几小时内接着用, 见 CachedPool ----
+        val seasonDeferred = async {
+            val since = currentSeasonStart()
+            seasonPool?.takeIf { it.isFresh(since) }?.items
+                ?: searchThisSeason(since)?.also {
+                    requests += SEASON_POOL_PAGES
+                    seasonPool = CachedPool(since, currentTimeMillis(), it)
+                    poolsDirty.value = true
+                }
+        }
 
         // ---- 4. 换换口味 ----
         // 与最强兴趣**同一类**但用户没碰过的方向: 喜欢"治愈"就试"温情/纯爱", 有连接点又不重复
@@ -656,7 +785,15 @@ class RecommendationRepository(
         // 走搜索 (近半年 + 热度序) 而不是热度榜的第 21~50 名: 榜给的精简条目没有收藏数,
         // 这一组于是成了唯一一条既过滤不了也加不了权重的路, 真机上推出过 703 收藏 / 35 人评分
         // 的东西. 换源之后同一道地板与人气权重都用得上 (见 searchRecentHot).
-        val recentHotDeferred = async { searchRecentHot()?.also { requests += RECENT_HOT_PAGES } }
+        val recentHotDeferred = async {
+            val since = recentHotSince()
+            recentHotPool?.takeIf { it.isFresh(since) }?.items
+                ?: searchRecentHot(since)?.also {
+                    requests += RECENT_HOT_PAGES
+                    recentHotPool = CachedPool(since, currentTimeMillis(), it)
+                    poolsDirty.value = true
+                }
+        }
 
         // ======== 第二段: 组装 —— 按原来的顺序来, 跨组去重的先后由它决定 ========
 
@@ -1094,9 +1231,9 @@ class RecommendationRepository(
      * 「本季」「大家最近在看」卖的就是当下在播的那一季, 不换.
      *
      * 换成哪一季先查表 ([table], 见 [SequelSeasonTableRepository]): 表覆盖到的条目当场就知道换不换、换成谁,
-     * 要换的才取一次那一季的条目信息 (名字和封面画卡片), 不用换的一个请求都不发. 表答不了的 (比表新的条目、
-     * 表没下到) 照旧顺前传回溯 ([SubjectSeriesIndexService.prequelChain]), 每个条目的邻居与 TMDB 匹配、
-     * 详情页的系列索引共用一份缓存. 两条路挑季的判据是同一份 ([sequelSeasonCandidates]).
+     * 要换的才取一次那一季的条目信息 (名字和封面画卡片, 顺手写进本地条目表, 见 [fetchSeason]),
+     * 不用换的一个请求都不发. 表答不了的 (比表新的条目、表没下到) 照旧顺前传回溯
+     * ([SubjectSeriesIndexService.prequelChain]), 每个条目的邻居与 TMDB 匹配、详情页的系列索引共用一份缓存. 两条路挑季的判据是同一份 ([sequelSeasonCandidates]).
      *
      * **组装出一行就开始查** ([track]), 不等整批算完: 这些请求打的是 next.bgm.tv, 召回那些搜索打的是
      * api.bgm.tv, 两边不抢同一个 host 的并发名额.
@@ -1120,6 +1257,9 @@ class RecommendationRepository(
 
         private val rows = mutableListOf<Row>()
         private val targets = HashMap<Int, Deferred<SeriesNode?>>()
+
+        /** 表里定下的那一季: 同一批里几部续作可能回到同一季 (夏目友人帐 陆 与 肆 都回到 891), 同一季只取一次. */
+        private val seasons = HashMap<Int, Deferred<SeriesNode?>>()
         private val permits = Semaphore(SEQUEL_WALK_PARALLELISM)
         private val fetched = atomic(0)
 
@@ -1141,10 +1281,10 @@ class RecommendationRepository(
                 // 带参数名: 只传一个 null 会被当成 CompletableDeferred(parent = null), 得到一个永远不完成的
                 val target = candidates.firstOrNull { it !in collected }
                     ?: return@getOrPut CompletableDeferred<SeriesNode?>(value = null)
-                batchScope.async { query(subjectId) { seriesIndexService.nodeOf(target, fetched) } }
+                seasons.getOrPut(target) { batchScope.async { query("取 $target") { fetchSeason(target) } } }
             } else {
                 batchScope.async {
-                    query(subjectId) {
+                    query("查 $subjectId 该换成哪一季") {
                         val chain = seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
                         sequelSeasonCandidates(chain).firstOrNull { it.id !in collected }
                     }
@@ -1152,13 +1292,24 @@ class RecommendationRepository(
             }
         }
 
-        private suspend fun query(subjectId: Int, block: suspend () -> SeriesNode?): SeriesNode? = permits.withPermit {
+        /**
+         * 取表里定下的那一季 (卡片要它的名字和封面), 顺手写进本地条目表 (标成过期, 已有的行不动):
+         * 用户聚焦这张卡时大图区直接出, 不必为同一个条目再等一次请求; 那时照常在后台刷新.
+         */
+        private suspend fun fetchSeason(target: Int): SeriesNode? {
+            fetched.incrementAndGet()
+            val subject = subjectService.getSubjectCollection(target) ?: return null
+            subjectCollectionDao.insertIfAbsent(subject.toEntity(lastFetched = 0))
+            return subject.toSeriesNode()
+        }
+
+        private suspend fun query(what: String, block: suspend () -> SeriesNode?): SeriesNode? = permits.withPermit {
             try {
                 block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn(e) { "bgm-direct: recommendations 查 $subjectId 该换成哪一季失败, 这一格不换" }
+                logger.warn(e) { "bgm-direct: recommendations $what 失败, 这一格不换" }
                 null
             }
         }
@@ -1532,7 +1683,10 @@ class RecommendationRepository(
             requests.incrementAndGet()
             val (first, count) = searchWithTotal(filters, SearchSort.RANK, "sampled$tags#0") ?: return null
             pages[0] = first
-            cache?.total = count
+            if (cache != null) {
+                cache.total = count
+                poolsDirty.value = true
+            }
             count
         }
         // 头一页之后还有几页; 随机挑几页没取过的一起发, 按页序拼 (位次分仍按排名走)
@@ -1544,6 +1698,7 @@ class RecommendationRepository(
                 async { page to search(filters, SearchSort.RANK, "sampled$tags#$page", offset = page * SEARCH_PAGE_SIZE) }
             }.awaitAll()
         }.forEach { (page, items) -> if (items != null) pages[page] = items }
+        if (cache != null && fresh.isNotEmpty()) poolsDirty.value = true
         return pages.keys.sorted().flatMap { pages.getValue(it) }
     }
 
@@ -1574,8 +1729,7 @@ class RecommendationRepository(
      * 取好几页而不是一页: 这一路要**按口味重排**, 池子越全挑出来的越贴合 —— 一季新番里能对上
      * 某个具体口味的本来就不多, 只看热度前 20 的话常常凑不满一行.
      */
-    private suspend fun searchThisSeason(): List<Candidate>? = coroutineScope {
-        val since = currentSeasonStart()
+    private suspend fun searchThisSeason(since: String): List<Candidate>? = coroutineScope {
         // **只要连载形态的**: 「本季新番」里混进剧场版是错的 —— 那不是"从这一季开始一周追一集"
         // 的东西 (2026-09-07 实测: 本季 317 条里 62 条是剧场版, 热度第 11 就是一部).
         // 用官方 meta_tags 在**服务端**筛, 比拿 platform/集数在客户端猜干净得多 (`eps` 还常是 0).
@@ -1618,11 +1772,7 @@ class RecommendationRepository(
      *
      * 半年这个窗口与 Ani 服务端那条线是同一个意思: 再往前就不叫"最近在看"了.
      */
-    private suspend fun searchRecentHot(): List<Candidate>? {
-        val today = PackedDate.now()
-        // PackedDate 没有"减几个月", 自己按月序号算 (与 currentSeasonStart 同一套做法)
-        val months = today.year * 12 + (today.month - 1) - RECENT_HOT_MONTHS
-        val since = "${months / 12}-${(months % 12 + 1).toString().padStart(2, '0')}-01"
+    private suspend fun searchRecentHot(since: String): List<Candidate>? {
         return searchPages(
             SubjectSearchFilters(
                 airDates = listOf(">=$since"),
@@ -1744,6 +1894,14 @@ class RecommendationRepository(
         val kind = CanonicalTagKind.matchOrNull(top.name) ?: return null
         val own = profile.tags.mapTo(HashSet()) { it.name }
         return kind.values.filter { it !in own }.randomOrNull(random)
+    }
+
+    /** 「大家最近在看」从哪天起 (见 [searchRecentHot]): [RECENT_HOT_MONTHS] 个月前的那个月 1 号. */
+    private fun recentHotSince(): String {
+        val today = PackedDate.now()
+        // PackedDate 没有"减几个月", 自己按月序号算 (与 currentSeasonStart 同一套做法)
+        val months = today.year * 12 + (today.month - 1) - RECENT_HOT_MONTHS
+        return "${months / 12}-${(months % 12 + 1).toString().padStart(2, '0')}-01"
     }
 
     /** 本季开始那天, `YYYY-MM-01`. */
@@ -1971,6 +2129,116 @@ class RecommendationRepository(
     private val highRatedPages = HashMap<String, TagPages>()
     private var highRatedPagesDate = PackedDate.Invalid
 
+    /**
+     * 本季池与近半年热门 (按热度排的名单): [POOL_TTL] 内「换一批」直接用上次取的 —— 几小时里名单变不了多少,
+     * 挑哪几部照旧跟着这一批的随机数走. 各由自己那一路召回读写, 读写规矩同 [shuffleCount].
+     */
+    private var seasonPool: CachedPool? = null
+    private var recentHotPool: CachedPool? = null
+
+    /** 这一轮取回了新的池子 (本季池、近半年热门、高分池的页), 算完要落盘, 见 [savePools]. */
+    private val poolsDirty = atomic(false)
+
+    /** 上个进程落盘的池子本进程读过没有 (只读一次, 见 [restorePools]). 读写规矩同 [shuffleCount]. */
+    private var poolsRestored = false
+
+    private class CachedPool(
+        /** 起始日期: 换季、换月之后自然作废. */
+        val since: String,
+        val fetchedAt: Long,
+        val items: List<Candidate>,
+    ) {
+        fun isFresh(since: String) =
+            this.since == since && currentTimeMillis() - fetchedAt in 0 until POOL_TTL.inWholeMilliseconds
+    }
+
+    /** 读回上个进程落盘的池子: 高分池的页只认当天的, 本季池与近半年热门用的时候照旧按 [POOL_TTL] 判. */
+    private fun restorePools(saved: SavedPools, today: PackedDate) {
+        if (saved.date == today.toString()) {
+            highRatedPagesDate = today
+            saved.highRated.forEach { (tag, tagPages) ->
+                highRatedPages[tag] = TagPages(
+                    tagPages.total,
+                    tagPages.pages.mapValuesTo(HashMap()) { (_, items) -> items.map { it.toCandidate() } },
+                )
+            }
+        }
+        seasonPool = saved.season?.toPool()
+        recentHotPool = saved.recentHot?.toPool()
+    }
+
+    /** 在刷新锁里拍好快照, 写盘放后台 (见 [poolsDiskCache]). */
+    private fun savePools() {
+        val cache = poolsDiskCache ?: return
+        val saved = SavedPools(
+            date = highRatedPagesDate.toString(),
+            highRated = highRatedPages.mapValues { (_, tagPages) ->
+                SavedTagPages(tagPages.total, tagPages.pages.mapValues { (_, items) -> items.map { SavedCandidate.of(it) } })
+            },
+            season = seasonPool?.let { SavedPool.of(it) },
+            recentHot = recentHotPool?.let { SavedPool.of(it) },
+        )
+        scope.launch { cache.write(saved) }
+    }
+
+    /** 几个召回池落盘的样子, 见 [poolsDiskCache]. */
+    @Serializable
+    private class SavedPools(
+        /** [highRatedPages] 是哪一天的. */
+        val date: String,
+        val highRated: Map<String, SavedTagPages>,
+        val season: SavedPool? = null,
+        val recentHot: SavedPool? = null,
+    )
+
+    @Serializable
+    private class SavedTagPages(
+        val total: Int,
+        val pages: Map<Int, List<SavedCandidate>>,
+    )
+
+    @Serializable
+    private class SavedPool(
+        val since: String,
+        val fetchedAt: Long,
+        val items: List<SavedCandidate>,
+    ) {
+        fun toPool() = CachedPool(since, fetchedAt, items.map { it.toCandidate() })
+
+        companion object {
+            fun of(pool: CachedPool) = SavedPool(pool.since, pool.fetchedAt, pool.items.map { SavedCandidate.of(it) })
+        }
+    }
+
+    @Serializable
+    private class SavedCandidate(
+        val id: Int,
+        val nameCn: String,
+        val imageLarge: String,
+        val year: Int? = null,
+        val tags: Set<String> = emptySet(),
+        val collectionCount: Int? = null,
+        val dropRate: Double? = null,
+        val activeAudience: Int? = null,
+        val format: String? = null,
+        val regions: Set<String> = emptySet(),
+        val episodes: Int? = null,
+    ) {
+        fun toCandidate() = Candidate(
+            RecommendedSubjectInfo(id, nameCn, imageLarge),
+            year, tags, collectionCount, dropRate, activeAudience, format, regions, episodes,
+        )
+
+        companion object {
+            fun of(candidate: Candidate) = with(candidate) {
+                SavedCandidate(
+                    info.bangumiId, info.nameCn, info.imageLarge,
+                    year, tags, collectionCount, dropRate, activeAudience, format, regions, episodes,
+                )
+            }
+        }
+    }
+
     /** 由 [seed] 与条目 id 确定的 [0, 1) 均匀数 (splitmix64 的混合步): 同种子同 id 永远是同一个数. */
     private fun unitRandom(seed: Long, subjectId: Int): Double {
         var z = seed + subjectId * GOLDEN_GAMMA
@@ -2040,6 +2308,13 @@ class RecommendationRepository(
     private companion object {
         /** 缓存多久算过期. 推荐不是时效性内容, 不必勤快. */
         val TTL_MILLIS = 12.hours.inWholeMilliseconds
+
+        /** 本季池与近半年热门接着用多久, 见 [CachedPool]. 按热度排的名单几小时里变不了多少. */
+        val POOL_TTL = 6.hours
+
+        /** 画像身份串的前缀: 登录态也算身份的一部分, 见 [refreshOnce]. */
+        const val LOGGED_IN_KEY_PREFIX = "user|"
+        const val ANONYMOUS_KEY_PREFIX = "anonymous|"
 
         /** 缓存里已有结果时, 进页到开始重算之间等多久 —— 让首屏先画完. */
         val FIRST_FRAME_GRACE = 3.seconds

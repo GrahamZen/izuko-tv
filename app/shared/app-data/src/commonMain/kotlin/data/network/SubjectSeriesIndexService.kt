@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.data.network
 
-import io.ktor.client.plugins.ResponseException
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -155,11 +153,6 @@ class SubjectSeriesIndexService(
     private val edgesCache = LinkedHashMap<Int, SeriesEdges>()
     private val edgesInFlight = mutableMapOf<Int, Deferred<SeriesEdges>>()
 
-    /** 单个条目的精简信息 (一个条目一个请求; 不存在的记 null), 见 [nodeOf]. */
-    private val nodesLock = Mutex()
-    private val nodesCache = LinkedHashMap<Int, SeriesNode?>()
-    private val nodesInFlight = mutableMapOf<Int, Deferred<SeriesNode?>>()
-
     suspend fun getSubjectRelationIndex(subjectId: Int): SubjectRelationIndex {
         cacheLock.withLock { cache[subjectId] }?.let { return it }
         var created: Deferred<SubjectRelationIndex>? = null
@@ -217,52 +210,6 @@ class SubjectSeriesIndexService(
         fetched: AtomicInt? = null,
         prefer: (SeriesNode) -> Boolean = { true },
     ): PrequelChain = walkPrequelChain(subjectId, maxHops, prefer) { edgesOf(it, fetched) }
-
-    /**
-     * 单个条目的精简信息 (名字、封面、形态、首播日、集数), 取 `/p1/subjects/{id}`; 条目不存在时为 `null`.
-     *
-     * 按 subjectId 缓存, 并发问同一个条目只发一次请求. 给推荐的续作换季用: 查表定下换成哪一季之后,
-     * 要它的名字和封面画卡片 (见 SequelSeasonTableRepository).
-     *
-     * @param fetched 这次调用真的发了请求时 +1, 给日志记账用
-     */
-    suspend fun nodeOf(subjectId: Int, fetched: AtomicInt? = null): SeriesNode? {
-        nodesLock.withLock { if (subjectId in nodesCache) return nodesCache[subjectId] }
-        var created: Deferred<SeriesNode?>? = null
-        val task = nodesLock.withLock {
-            if (subjectId in nodesCache) return nodesCache[subjectId]
-            nodesInFlight[subjectId] ?: newNodeTask(subjectId).also {
-                nodesInFlight[subjectId] = it
-                created = it
-            }
-        }
-        created?.let {
-            fetched?.incrementAndGet()
-            it.start()
-        }
-        return task.await()
-    }
-
-    private fun newNodeTask(subjectId: Int): Deferred<SeriesNode?> =
-        scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
-            try {
-                val node = try {
-                    bangumiSubjectApi { getSubject(subjectId).body() }.toSeriesNode()
-                } catch (e: ResponseException) {
-                    if (e.response.status != HttpStatusCode.NotFound) throw RepositoryException.wrapOrThrowCancellation(e)
-                    null
-                } catch (e: Exception) {
-                    throw RepositoryException.wrapOrThrowCancellation(e)
-                }
-                nodesLock.withLock {
-                    nodesCache[subjectId] = node
-                    while (nodesCache.size > NODES_CACHE_SIZE) nodesCache.remove(nodesCache.keys.first())
-                }
-                node
-            } finally {
-                nodesLock.withLock { nodesInFlight.remove(subjectId) }
-            }
-        }
 
     /**
      * 一个条目的前传/续集邻居: 按 subjectId 缓存, 并发问同一个条目只发一次请求.
@@ -378,18 +325,6 @@ class SubjectSeriesIndexService(
         )
     }
 
-    /** 完整条目的首播日与集数是现成字段, 与精简条目 `info` 串里的是同一份数据. */
-    private fun BangumiNextSubject.toSeriesNode() = SeriesNode(
-        id = id,
-        name = name,
-        nameCn = nameCN,
-        imageLarge = images?.large.orBangumiPlaceholder(),
-        metaTags = metaTags,
-        nsfw = nsfw,
-        airDate = PackedDate.parseFromDate(airtime.date),
-        episodes = eps.takeIf { it > 0 },
-    )
-
     private fun BangumiNextSlimSubject.toSeriesNode() = SeriesNode(
         id = id,
         name = name,
@@ -415,9 +350,6 @@ class SubjectSeriesIndexService(
 
         /** 邻居缓存的条目数. 一条只有几个邻居, 推荐一次回溯百来个节点, 留几轮的量. */
         const val EDGES_CACHE_SIZE = 512
-
-        /** 单个条目缓存的条目数. 推荐一批要换的只有十来格. */
-        const val NODES_CACHE_SIZE = 128
 
         /** 精简条目 `info` 串里的首播日期: `2004年7月4日`, 也有只写到年月或年的. */
         val INFO_DATE = Regex("""(\d{4})年(?:(\d{1,2})月(?:(\d{1,2})日)?)?""")
@@ -475,3 +407,18 @@ internal suspend fun walkPrequelChain(
     }
     return PrequelChain(self, chain)
 }
+
+/**
+ * 完整条目转成系列节点: 首播日与集数是现成字段, 与精简条目 `info` 串里的是同一份数据.
+ * 推荐的续作换季取到换成的那一季时也用它 (见 `RecommendationRepository.fetchSeason`).
+ */
+internal fun BangumiNextSubject.toSeriesNode() = SeriesNode(
+    id = id,
+    name = name,
+    nameCn = nameCN,
+    imageLarge = images?.large.orBangumiPlaceholder(),
+    metaTags = metaTags,
+    nsfw = nsfw,
+    airDate = PackedDate.parseFromDate(airtime.date),
+    episodes = eps.takeIf { it > 0 },
+)
