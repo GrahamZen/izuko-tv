@@ -167,6 +167,18 @@ interface EpisodeCollectionDao {
         type: UnifiedCollectionType,
     )
 
+    /** 本地这一集还是 [expected] 才改成 [replacement]; 已经被改成别的 (之后又改过) 就不动. */
+    @Query(
+        """UPDATE episode_collection SET selfCollectionType = :replacement
+        WHERE subjectId = :subjectId AND episodeId = :episodeId AND selfCollectionType = :expected""",
+    )
+    suspend fun replaceSelfCollectionType(
+        subjectId: Int,
+        episodeId: Int,
+        expected: UnifiedCollectionType,
+        replacement: UnifiedCollectionType,
+    )
+
     @Query("""UPDATE episode_collection SET selfCollectionType = :type WHERE subjectId = :subjectId""")
     suspend fun setAllEpisodesWatched(
         subjectId: Int,
