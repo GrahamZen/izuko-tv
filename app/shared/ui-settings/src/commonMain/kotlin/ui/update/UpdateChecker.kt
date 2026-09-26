@@ -71,7 +71,10 @@ private const val JSDELIVR_UPDATE_LINE_RANGE = "%3C$UPDATE_LINE_MAJOR_EXCLUSIVE"
  */
 internal val JSDELIVR_HOSTS = listOf("gcore.jsdelivr.net", "testingcf.jsdelivr.net", "cdn.jsdelivr.net")
 
-/** ghfast.top: 公共的 GitHub 下载代理, release 资源 / raw / releases/latest 跳转都能代理, API 与 atom 不行 (403). */
+/**
+ * ghfast.top: 公共的 GitHub 下载代理, raw / releases/latest 跳转都能代理, API 与 atom 不行 (403).
+ * 只在检查更新的镜像回落里用; 下载安装包的镜像见 `GitHubDownloadMirrors`.
+ */
 internal fun ghfastUrl(gitHubUrl: String) = "https://ghfast.top/$gitHubUrl"
 
 /** 镜像回落时拿不到资源列表, 按 fork-release.yml 的命名规则合成; 不存在的那个下载时 404, 下载器接着试下一个. */
@@ -193,9 +196,9 @@ private fun List<GitHubAsset>.pickByAbi(abis: List<String>): List<GitHubAsset>? 
  *
  * 走应用的统一客户端: 应用内设置的代理对更新检查同样生效, 每个请求也都进日志 (以前自建客户端, 两样都没有).
  *
- * 下载地址在 GitHub 原地址之外追加 ghfast 代理地址, 下载器按顺序逐个尝试 (同一个文件的备选源,
- * 见 [NewVersion.downloadUrlAlternatives]). 经第三方下载的安全性靠两道: Android 拒绝签名不同的覆盖安装;
- * 下载器按「地址 + .sha1」校验 (ghfast 代理出来的 .sha1 与 GitHub 原站逐字一致).
+ * 结果里的下载地址只有 GitHub 原地址 ([NewVersion.downloadUrlAlternatives], 每个可装的包一个); 加速镜像在下载时
+ * 按仓库维护的清单展开 (`GitHubDownloadMirrors`), 下载器在原地址与镜像里挑最快的. 经第三方镜像下载的安全性靠两道:
+ * Android 拒绝签名不同的覆盖安装; 走 GitHub 接口时按接口给的 SHA-256 校验 (镜像回落时退回来源旁边的 .sha1).
  */
 class UpdateChecker(private val client: ScopedHttpClient) {
     /**
@@ -267,9 +270,9 @@ class UpdateChecker(private val client: ScopedHttpClient) {
                     changes = latest.body,
                 ),
             ),
-            // API 通了, GitHub 下载多半也通: 原地址在前, 镜像兜底
-            downloadUrlAlternatives = packages.flatMap { listOf(it.browserDownloadUrl, ghfastUrl(it.browserDownloadUrl)) },
+            downloadUrlAlternatives = packages.map { it.browserDownloadUrl },
             publishedAt = latest.publishedAt,
+            sha256ByFileName = packages.mapNotNull { asset -> asset.sha256?.let { asset.name to it } }.toMap(),
         )
     }
 
@@ -341,8 +344,7 @@ class UpdateChecker(private val client: ScopedHttpClient) {
         return NewVersion(
             name = versionName,
             changelogs = listOf(Changelog(version = versionName, publishedAt = "", changes = body)),
-            // 走到回落说明 GitHub API 不通, 下载多半也不通: 镜像在前, 省掉一轮注定超时的尝试
-            downloadUrlAlternatives = packages.flatMap { listOf(ghfastUrl(it.browserDownloadUrl), it.browserDownloadUrl) },
+            downloadUrlAlternatives = packages.map { it.browserDownloadUrl },
             publishedAt = "",
         )
     }
@@ -374,12 +376,12 @@ class UpdateChecker(private val client: ScopedHttpClient) {
      * 从 release 的全部 APK 里挑出本机装得上的: 本机架构的专包在前, universal 兜底在后, 其余一律不留.
      *
      * 不筛的后果是"自动更新后安装提示不兼容" (`INSTALL_FAILED_NO_MATCHING_ABIS`):
-     * [downloadUrlAlternatives] 会被 [me.him188.ani.app.tools.update.FileDownloader] 当成
-     * **同一个文件的备选下载源** (逐个尝试, 第一个成功即停), 于是永远下载 release 里的第一个 APK ——
-     * 按文件名排序就是 `arm64-v8a`. 32 位设备与 x86 设备装上去必然失败.
+     * [downloadUrlAlternatives] 里的包会被 [me.him188.ani.app.tools.update.FileDownloader] 按顺序逐个尝试,
+     * 第一个下成即停, 于是永远下载 release 里的第一个 APK —— 按文件名排序就是 `arm64-v8a`.
+     * 32 位设备与 x86 设备装上去必然失败.
      *
-     * 混入其它架构还有个更隐蔽的后果: 首选包下载中途失败时, 循环会接着下另一个架构的包并
-     * "成功" —— 那不是镜像而是另一个文件, 下完照样装不上. 所以这里是 filter 而非单纯排序.
+     * 混入其它架构还有个更隐蔽的后果: 首选包下载失败时, 下载器会接着下另一个架构的包并
+     * "成功" —— 下完照样装不上. 所以这里是 filter 而非单纯排序.
      *
      * 用设备的**完整** ABI 列表而不是只用首选 ABI ([me.him188.ani.utils.platform.Arch]):
      * 见 [Platform.Android.supportedAbis] —— 只看首选 ABI 时 x86 的电视模拟器会被当成 arm64 设备.
@@ -449,4 +451,12 @@ internal data class GitHubRelease(
 internal data class GitHubAsset(
     @SerialName("name") val name: String,
     @SerialName("browser_download_url") val browserDownloadUrl: String,
-)
+    /** GitHub 算的摘要, 形如 `sha256:<十六进制>`. 镜像回落时合成的资源没有. */
+    @SerialName("digest") val digest: String? = null,
+) {
+    /** [digest] 里的 SHA-256 (十六进制小写); 不是 SHA-256 或没有时为 `null`. */
+    val sha256: String?
+        get() = digest?.takeIf { it.startsWith(SHA256_DIGEST_PREFIX) }?.removePrefix(SHA256_DIGEST_PREFIX)?.lowercase()
+}
+
+private const val SHA256_DIGEST_PREFIX = "sha256:"

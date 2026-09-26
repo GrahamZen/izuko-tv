@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -33,6 +34,7 @@ import me.him188.ani.app.platform.ContextMP
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.tools.update.DefaultFileDownloader
+import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.FileDownloaderState
 import me.him188.ani.app.tools.update.InstallationResult
 import me.him188.ani.app.tools.update.UpdateInstallationRunner
@@ -49,6 +51,7 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.cancellation.CancellationException
@@ -64,6 +67,9 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val clientProvider: HttpClientProvider by inject()
     private val updateInstaller: UpdateInstaller by inject()
     private val installationRunner by lazy { UpdateInstallationRunner(updateInstaller) }
+
+    /** 直接取出来: 建出来就开始拉仓库里的镜像清单 (每天一次), 到用户点下载时已经是新的. */
+    private val downloadMirrors: GitHubDownloadMirrors = get()
 
     private val fileDownloader by lazy { DefaultFileDownloader(clientProvider.get()) }
     private val updateChecker by lazy { UpdateChecker(clientProvider.get()) }
@@ -253,11 +259,12 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         }
 
         withContext(Dispatchers.IO) { dir.createDirectories() }
-        fileDownloader.download(
-            alternativeUrls = preparationUrls,
-            filenameProvider = { it.substringAfterLast("/", "") },
-            saveDir = dir,
-        )
+        // 每个包的来源 = GitHub 原地址 + 清单里的各个镜像, 下载器挑最快的; 有 GitHub 接口给的 SHA-256 就按它校验
+        val packages = preparationUrls.map { url ->
+            val fileName = url.substringAfterLast("/", "")
+            DownloadPackage(fileName, downloadMirrors.sourcesOf(url), ver.sha256ByFileName[fileName])
+        }
+        fileDownloader.download(packages, dir)
     }
 
     /**
@@ -403,10 +410,13 @@ class NewVersion(
     val name: String,
     val changelogs: List<Changelog>,
     /**
-     * 所有可行的下载地址. 任意一个都可以用
+     * 本机装得上的安装包在 GitHub 上的原地址, 首选在前 (本机架构的专包, 然后 universal).
+     * 加速镜像在下载时按清单展开, 见 `GitHubDownloadMirrors`.
      */
     val downloadUrlAlternatives: List<String>,
     val publishedAt: String,
+    /** 安装包文件名 → GitHub 接口给的 SHA-256 (十六进制小写). 镜像回落时拿不到, 为空. */
+    val sha256ByFileName: Map<String, String> = emptyMap(),
 ) {
     val majorChanges = changelogs.asSequence().flatMap { changelog ->
         changelog.changes.lineSequence()
