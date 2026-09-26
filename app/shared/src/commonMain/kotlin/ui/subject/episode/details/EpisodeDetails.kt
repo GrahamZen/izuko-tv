@@ -187,7 +187,8 @@ import kotlin.math.roundToLong
 class EpisodeDetailsState(
     val subjectInfo: State<SubjectInfo>,
     val airingLabelState: AiringLabelState,
-    val recommendations: State<List<SubjectRecommendation>>,
+    /** 相关推荐. `null` = 还没拿到 (加载中或加载失败); 空列表 = 拿到了但一条都没有. */
+    val recommendations: State<List<SubjectRecommendation>?>,
     val subjectDetailsStateLoader: SubjectDetailsStateLoader,
 ) {
     private val subject by subjectInfo
@@ -612,7 +613,7 @@ fun EpisodeDetails(
                     Text(stringResource(Lang.subject_episode_related_recommendations))
                 }
             }
-            for (recommendation in subjectRecommendations) {
+            for (recommendation in subjectRecommendations.orEmpty()) {
                 item("subject_recommendation_${recommendation.uniqueId}") {
                     SubjectRecommendationCard(
                         {
