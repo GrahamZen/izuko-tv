@@ -129,6 +129,7 @@ import me.him188.ani.app.ui.foundation.TvPageShuffleHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.isAutoRepeat
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
+import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
 import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.focus.tvAnchorBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
@@ -734,13 +735,31 @@ fun TvExplorationPage(
     var entryRestoreDispatched by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val saved = focusedRowKey
-        if (saved != null) {
-            cardFocusRequest = TvCardFocusRequest(saved, cardIndex = -1)
-        } else {
+        if (saved == null) {
+            heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
+            entryRestoreDispatched = true
+            return@LaunchedEffect
+        }
+        val restore = TvCardFocusRequest(saved, cardIndex = -1)
+        cardFocusRequest = restore
+        entryRestoreDispatched = true
+        // 恢复那一行要等它的数据: 进程被回收后重开 (focusedRowKey 是 rememberSaveable), 冷启动常常好几秒都等不到,
+        // 那一行也可能已经没了. 等不来就回 hero 态、送焦到 hero 按钮 —— 不能一直悬着, 否则全局兜底一出手就按 Enter
+        // 从最左边找, 焦点落进侧边栏, 数据到了也不回来 (2026-09-26 装完直接打开复现).
+        // 期间用户按过键 / 恢复已到位时请求已被换掉或清空, 不动.
+        delay(TV_ENTRY_CARD_RESTORE_TIMEOUT)
+        if (cardFocusRequest === restore) {
+            cardFocusRequest = null
+            focusedRowKey = null
             heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
         }
-        entryRestoreDispatched = true
     }
+    // 页面自己在派落点 (进页恢复 / 返回键分层 / 回到主界面) 期间让全局兜底等一等: 它只让 15 帧就出手, 按 Enter 从最左边
+    // 找, 有侧边栏的页面上落点就是侧边栏. 兜底那边有上限 (3 秒), 这里的请求卡住也照样兜得住. 见 TvFocusRestoreGate.
+    // 只在本页在前台时登记: 那道闸是全局的, 本页被详情页盖着时挂着的旧请求不该让别的页面丢焦点时也多等.
+    // derivedStateOf: 两个请求在 body 里只读成一个布尔, 翻转才重组
+    val restoringFocus by remember { derivedStateOf { cardFocusRequest != null || heroFocusRequest != null } }
+    TvFocusRestoreClaim(active = restoringFocus && pageForeground.value)
     // 「继续观看」整行迟到 (分页) 或在详情页改过观看进度后刷新时整行短暂消失又回来: 行回来的
     // 时候, 上面那次恢复请求往往已经在空等中试满次数被清掉了, 而焦点这会儿停在推荐区. 行一
     // 出现就补发一次. 焦点本来就在这一行上时行内解析首帧即判到位, 是个空操作.
@@ -1026,7 +1045,11 @@ fun TvExplorationPage(
             // 始终组合着且可聚焦, 焦点会落到**上一行**去 (真机: 从详情页返回 ~1s 后跳行,
             // 1s = 导航 crossfade 时长, 详情页销毁时它身上的焦点消失触发全局兜底).
             .focusProperties {
-                onEnter = {
+                onEnter = onEnter@{
+                    // 页面自己正在派落点时, 无方向的进组就是那条请求本身 (hero 按钮 / 目标卡的 requestFocus): 放行 ——
+                    // 改道会把它截走 (目标行可能还在等数据, 改道去"上次那一行"就失败), 焦点留在页面外的侧边栏上.
+                    // 用户按方向键进来的照旧改道.
+                    if (requestedFocusDirection == FocusDirection.Enter && restoringFocus) return@onEnter
                     // 焦点在卡片区 -> 进落点链 (列记行键, 行记下标); 在 hero -> 上次停的那颗按钮.
                     // requestFocus(Enter) 返回是否成功: 失败 (卡片区空 / 按钮碰巧没组合) 一律
                     // 退回 hero 落点请求 —— 它会先把按钮组合出来再等待锚点送焦, 不会让焦点悬空.
@@ -1955,6 +1978,9 @@ private fun TvAnchoredCardRow(
             focusRequest != null -> focusRequest.cardIndex
             pendingEnter != null -> pendingEnter
             else -> {
+                // 页面撤回了还没到位的落点请求 (进页恢复等不来、退回 hero): 行内那一发也撤掉 ——
+                // 否则目标卡晚些附着 (或窗口重新拿到焦点) 时它照样送达, 把焦点从 hero 抢到卡上
+                if (resolvedTarget >= 0) focus.cancel(ExplorationRowCardFocus(resolvedTarget))
                 resolvedTarget = -1
                 return@LaunchedEffect
             }
@@ -2132,6 +2158,12 @@ private data class ExplorationRowCardFocus(val index: Int) : TvFocusKey
  * 让开一会儿. 落到「新番时间表」上是立即拉.
  */
 private const val TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS = 2_000L
+
+/**
+ * 进页恢复"上次那张卡"最多等多久, 等不来就回 hero 按钮 (见进页落点那个 LaunchedEffect).
+ * 比全局兜底为页面恢复让位的上限 (3 秒, `FOCUS_FALLBACK_RESTORE_CEILING`) 短一截: 退回 hero 这一发要赶在兜底出手之前落地.
+ */
+private val TV_ENTRY_CARD_RESTORE_TIMEOUT = 2.5.seconds
 
 private val TV_EXPLORATION_NAV_KEYS = setOf(
     Key.DirectionUp,
