@@ -224,6 +224,18 @@ interface SubjectCollectionDao {
         lastUpdated: Long = currentTimeMillis(),
     )
 
+    /** 本地还是 [expected] 才改成 [replacement] (连同更新时间); 已经被改成别的 (之后又改过) 就不动. */
+    @Query(
+        """UPDATE subject_collection SET collectionType = :replacement, lastUpdated = :lastUpdated
+        WHERE subjectId = :subjectId AND collectionType = :expected""",
+    )
+    suspend fun replaceType(
+        subjectId: Int,
+        expected: UnifiedCollectionType,
+        replacement: UnifiedCollectionType,
+        lastUpdated: Long,
+    )
+
     @Query("""DELETE FROM subject_collection WHERE subjectId = :subjectId""")
     suspend fun delete(subjectId: Int)
 

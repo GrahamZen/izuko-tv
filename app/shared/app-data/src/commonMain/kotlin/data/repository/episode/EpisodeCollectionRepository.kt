@@ -25,6 +25,7 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.data.repository.writeLocalFirst
 import me.him188.ani.app.domain.episode.EpisodeCollections
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
@@ -134,17 +135,21 @@ class EpisodeCollectionRepository(
     }.flowOn(defaultDispatcher)
 
     /**
-     * 设置指定条目的所有剧集为已看.
+     * 设置指定条目的所有剧集为已看. 先改本地 (每一集的进度立刻变), 见 [setAllEpisodesWatchedLocalFirst].
      */
     suspend fun setAllEpisodesWatched(subjectId: Int) = withContext(defaultDispatcher) {
         val episodeIds = subjectEpisodeCollectionInfosFlow(subjectId)
             .first()
             .map { it.episodeId }
 
-        episodeService.setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)
-        episodeCollectionDao.setAllEpisodesWatched(subjectId)
+        episodeCollectionDao.setAllEpisodesWatchedLocalFirst(subjectId) {
+            episodeService.setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)
+        }
     }
 
+    /**
+     * 改一集的看过状态. 先改本地 (看过标记与进度立刻变), 见 [setSelfCollectionTypeLocalFirst].
+     */
     suspend fun setEpisodeCollectionType(
         subjectId: Int,
         episodeId: Int,
@@ -156,8 +161,9 @@ class EpisodeCollectionRepository(
             logger.warn { "User has not yet collected subject $subjectId when we want to setEpisodeCollectionType, ignoring." }
 //            subjectCollectionRepository.setSubjectCollectionTypeOrDelete(subjectId, UnifiedCollectionType.DOING)
         }
-        episodeService.setEpisodeCollection(subjectId, listOf(episodeId), collectionType)
-        episodeCollectionDao.updateSelfCollectionType(subjectId, episodeId, collectionType)
+        episodeCollectionDao.setSelfCollectionTypeLocalFirst(subjectId, episodeId, collectionType) {
+            episodeService.setEpisodeCollection(subjectId, listOf(episodeId), collectionType)
+        }
     }
 
     /**
@@ -251,6 +257,58 @@ class EpisodeCollectionRepository(
         }
     }
 }
+
+/** 把本地这一集的看过状态改成 [type] 再 [send], 流程见 [writeLocalFirst]. */
+internal suspend fun EpisodeCollectionDao.setSelfCollectionTypeLocalFirst(
+    subjectId: Int,
+    episodeId: Int,
+    type: UnifiedCollectionType,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        findByEpisodeId(episodeId).first()?.selfCollectionType
+            .also { updateSelfCollectionType(subjectId, episodeId, type) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, previous, type)
+    },
+    revertLocal = { previous ->
+        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, type, previous)
+    },
+)
+
+/**
+ * 把本地这个条目的每一集都标成看过再 [send], 流程见 [writeLocalFirst]. 补写与改回只动原来不是看过的那些集,
+ * 而且各自按条件: 期间又改过的那一集不动.
+ */
+internal suspend fun EpisodeCollectionDao.setAllEpisodesWatchedLocalFirst(
+    subjectId: Int,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        filterBySubjectId(subjectId).first()
+            .associate { it.episodeId to it.selfCollectionType }
+            .also { setAllEpisodesWatched(subjectId) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        // 先读一遍: 通常一集都不用补, 长篇 (上千集) 也只花一次查询
+        for (episode in filterBySubjectId(subjectId).first()) {
+            val before = previous[episode.episodeId] ?: continue
+            if (before != UnifiedCollectionType.DONE && episode.selfCollectionType == before) {
+                replaceSelfCollectionType(subjectId, episode.episodeId, before, UnifiedCollectionType.DONE)
+            }
+        }
+    },
+    revertLocal = { previous ->
+        for ((episodeId, before) in previous) {
+            if (before != UnifiedCollectionType.DONE) {
+                replaceSelfCollectionType(subjectId, episodeId, UnifiedCollectionType.DONE, before)
+            }
+        }
+    },
+)
 
 suspend inline fun EpisodeCollectionRepository.setEpisodeWatched(subjectId: Int, episodeId: Int, watched: Boolean) =
     setEpisodeCollectionType(

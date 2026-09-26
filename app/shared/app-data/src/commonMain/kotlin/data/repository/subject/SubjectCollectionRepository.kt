@@ -79,6 +79,7 @@ import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.repository.shouldRetry
+import me.him188.ani.app.data.repository.writeLocalFirst
 import me.him188.ani.app.domain.search.SubjectType
 import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionStateProvider
@@ -737,10 +738,13 @@ class SubjectCollectionRepositoryImpl(
                 // 必须把当前评分一起送过去: bangumi 收到带 type 而不带 rate 的请求会把评分清零
                 val currentScore = subjectCollectionDao.findById(subjectId).first()
                     ?.selfRatingInfo?.score?.takeIf { it > 0 }
-                patchSubjectCollection(
-                    subjectId,
-                    SubjectCollectionUpdate(collectionType = type, score = currentScore),
-                )
+                // 先改本地 (界面上的收藏状态立刻变), 见 setCollectionTypeLocalFirst
+                subjectCollectionDao.setCollectionTypeLocalFirst(subjectId, type) {
+                    subjectService.patchSubjectCollection(
+                        subjectId,
+                        SubjectCollectionUpdate(collectionType = type, score = currentScore),
+                    )
+                }
             }
         }
     }
@@ -770,16 +774,6 @@ class SubjectCollectionRepositoryImpl(
         return subjectCollectionDao.subjectNamesCnByCollectionType(types).flowOn(defaultDispatcher)
     }
 
-    private suspend fun patchSubjectCollection(
-        subjectId: Int,
-        payload: SubjectCollectionUpdate,
-    ) {
-        withContext(defaultDispatcher) {
-            subjectService.patchSubjectCollection(subjectId, payload)
-            payload.collectionType?.let { subjectCollectionDao.updateType(subjectId, it) }
-        }
-    }
-
     private suspend fun deleteSubjectCollection(subjectId: Int) {
         withContext(defaultDispatcher) {
             subjectService.deleteSubjectCollection(subjectId)
@@ -795,6 +789,32 @@ class SubjectCollectionRepositoryImpl(
         private const val RECONCILE_LEFT_TYPE_LIMIT = 8
     }
 }
+
+/**
+ * 把本地的收藏类型改成 [type] 再 [send], 流程见 [writeLocalFirst]. 改回时连更新时间一起还原 (收藏列表按它排序).
+ */
+internal suspend fun SubjectCollectionDao.setCollectionTypeLocalFirst(
+    subjectId: Int,
+    type: UnifiedCollectionType,
+    send: suspend () -> Unit,
+) = writeLocalFirst(
+    writeLocal = {
+        findById(subjectId).first()
+            ?.let { it.collectionType to it.lastUpdated }
+            .also { updateType(subjectId, type) }
+    },
+    send = send,
+    reapplyLocal = { previous ->
+        if (previous != null && previous.first != type) {
+            replaceType(subjectId, previous.first, type, currentTimeMillis())
+        }
+    },
+    revertLocal = { previous ->
+        if (previous != null && previous.first != type) {
+            replaceType(subjectId, type, previous.first, previous.second)
+        }
+    },
+)
 
 data class CollectionsFilterQuery(
     val type: UnifiedCollectionType?,
