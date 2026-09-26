@@ -879,6 +879,8 @@ object TvRemoteControl {
             // 缓存标签「挑番缓存」: 在看 / 想看的番 (几集新的、几集没缓存), 见 RemoteCollections
             path == "api/collections" ->
                 RemoteCollections.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 挑番面板的「新番时间表」: 这一周每天播出的番, 见 RemoteSchedule
+            path == "api/schedule" && get -> json(RemoteSchedule.schedule(request))
             // 手机上的 TMDB 图经电视转发 (播放记录的剧照 / 横屏图), 见 RemoteImageProxy
             path == "api/img" && get -> RemoteImageProxy.handle(request)
             // 数据源名字前的图标 (内置源的打包图标 / 源自己配置的图标地址), 见 RemoteSourceIcons

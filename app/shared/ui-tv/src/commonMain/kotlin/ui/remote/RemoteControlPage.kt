@@ -133,7 +133,7 @@ internal fun renderRemoteControlPage(
     </div>
     <div id="pick-sheet" class="sheet" hidden>
     <div class="sheet-head"><div class="sheet-title">挑番缓存</div><button type="button" class="sheet-btn" id="pick-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
-    <div class="sheet-body"><div class="seg" id="pick-seg"><button type="button" data-ptype="DOING" class="on">在看</button><button type="button" data-ptype="WISH">想看</button></div><div id="pick-body"></div></div>
+    <div class="sheet-body"><div id="pick-head"><div class="seg" id="pick-seg"><button type="button" data-ptype="DOING" class="on">在看</button><button type="button" data-ptype="WISH">想看</button><button type="button" data-ptype="SCHEDULE">新番时间表</button></div><div id="pick-days" hidden></div></div><div id="pick-body"></div></div>
     </div>
     <div id="help-sheet" class="sheet" hidden>
     <div class="sheet-head"><div class="sheet-title" id="help-title">使用说明</div><button type="button" class="sheet-btn" id="help-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
@@ -195,9 +195,22 @@ header { padding: 16px 16px 4px; font-size: 20px; font-weight: 700; display: fle
   background: var(--chip); color: var(--on-chip); font-size: 17px; font-weight: 700; line-height: 32px; text-align: center; }
 .help-dot { position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--err); box-shadow: 0 0 0 2px var(--bg); }
 #help-sheet { z-index: 54; }
-/* 缓存标签最下面「挑番缓存」(见 PICK_SCRIPT): 在看 / 想看的番, 行同搜索结果; 有新集的那句用主题色 */
+/* 缓存标签最下面「挑番缓存」(见 PICK_SCRIPT): 在看 / 想看的番与新番时间表, 行同搜索结果; 有新集的那句
+   (时间表里是自己在看 / 想看的番) 用主题色 */
 #cl-pick { margin-top: 14px; }
+/* 分段 (与时间表的星期) 贴在面板顶上: 一天的列表常要往下翻, 换一天不必先滚回去. 头自带底色、左右撑满面板,
+   滚过去的行不会从两侧漏出来; flow-root 让分段、星期的下边距算在头里 (不然那一截透明).
+   粘性定位从面板的内容框算起, top 抵掉面板 8px 的上内边距才贴到顶边 (同 .cache-bar 的 bottom: -24px) */
+#pick-head { position: sticky; top: -8px; z-index: 3; display: flow-root; margin: -8px -16px 0; padding: 8px 16px 0; background: var(--bg); }
 #pick-seg { margin-bottom: 10px; }
+/* 星期: 二级标签, 比上面的分段轻一档 —— 选中的主题色加下划线, 今天没选中时字深一点 */
+#pick-days { display: flex; margin: -2px 0 10px; border-bottom: 1px solid var(--line2); }
+#pick-days[hidden] { display: none; }
+#pick-days button { position: relative; flex: 1; background: none; padding: 8px 0 10px; font-size: 15px; color: var(--mute); }
+#pick-days button[data-today] { color: var(--fg); font-weight: 600; }
+#pick-days button.on { color: var(--p); font-weight: 700; }
+#pick-days button.on::after { content: ''; position: absolute; left: 50%; bottom: -1px; width: 22px; height: 3px; margin-left: -11px;
+  border-radius: 3px 3px 0 0; background: var(--p); }
 .pick-item .m.pick-new { color: var(--p); font-weight: 600; }
 /* 左滑「收藏」的小菜单挂在 body 上: 要盖过全屏面板 (.sheet 50 / 缓存面板 52), 否则在「挑番缓存」面板里弹出来被压在下面, 看着像没反应 */
 .ep-menu.coll-menu { z-index: 58; }
@@ -6696,7 +6709,7 @@ private val HELP_SCRIPT = """
     T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。'),
     T('左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。'),
     T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
-    T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存。')
+    T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存；「新番时间表」按星期列出这一周每天更新的番，自己在看 / 想看的用主题色标出。')
   ]);
   var GENERAL = sec(T('账号'), [
     T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
@@ -6742,16 +6755,23 @@ private val HELP_SCRIPT = """
 /**
  * 缓存标签最下面的「挑番缓存」(见 RemoteCollections): 在看 / 想看的番, 想提前缓存时不用先搜名字、也不用先进一次播放器.
  * 行与搜索结果同一套 (右滑缓存 = 打开这部番的缓存面板, 左滑改收藏, 点封面播放 / 点其他地方开详情, 接口也复用搜索结果的);
- * 在看里有新集的排前面并标出几集还没缓存. 两段各读一次, 缓存面板关上时重读当前段 (刚缓存了, 「未缓存」的数跟着变).
+ * 在看里有新集的排前面并标出几集还没缓存. 各段各读一次, 缓存面板关上时重读当前段 (刚缓存了, 「未缓存」的数跟着变).
+ * 第三段「新番时间表」(见 RemoteSchedule): 分段下面一排星期, 一周一次拿回来、换一天就地换列表; 电视那边按天逐步补齐,
+ * 没补完的时候隔一会儿再要一次.
  */
 private val PICK_SCRIPT = """
 (function () {
   var box = document.getElementById('cl-pick'), sheet = document.getElementById('pick-sheet');
   var body = document.getElementById('pick-body'), seg = document.getElementById('pick-seg');
+  var days = document.getElementById('pick-days'), scroller = sheet.querySelector('.sheet-body');
   var type = 'DOING', data = {}, loading = {};
-  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + T('挑番缓存（在看 / 想看）') + '</button>';
-  // 两段各一个容器, 切换只是显示 / 隐藏: 画好的那段原样留着, 切回来不重画、封面不重新淡入
-  body.innerHTML = '<div class="pick-pane" data-pt="DOING"></div><div class="pick-pane" data-pt="WISH" hidden></div>';
+  box.innerHTML = '<button type="button" class="ghost wide ic" id="pick-open">' + window.ICONS.download + T('挑番缓存（在看 / 想看 / 新番时间表）') + '</button>';
+  // 每段一个容器, 切换只是显示 / 隐藏: 画好的那段原样留着, 切回来不重画、封面不重新淡入
+  body.innerHTML = '<div class="pick-pane" data-pt="DOING"></div><div class="pick-pane" data-pt="WISH" hidden></div>' +
+    '<div class="pick-pane" data-pt="SCHEDULE" hidden></div>';
+  // 时间表看哪一天 (1 = 周一 … 7 = 周日), 每次打开面板回到今天. 今天先按手机的算, 数据回来后按电视的
+  var WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+  var today = (new Date().getDay() + 6) % 7 + 1, day = today, dayPicked = false, retry = null;
   /** 读过的一段这么久之内切回来不重新请求 (打开面板 / 改了收藏 / 缓存面板关上时照样强制重读). */
   var FRESH = 60000;
   function row(x) {
@@ -6776,6 +6796,7 @@ private val PICK_SCRIPT = """
         (d.needLogin ? '<p class="hint">' + T('在「设置」里登录后再来') + '</p>' : '') + '</div>';
       return;
     }
+    if (t === 'SCHEDULE') { paintSchedule(p, d); return; }
     var items = d.items || [];
     if (!items.length) {
       p.innerHTML = '<div class="empty"><p>' + (t === 'DOING' ? T('没有在看的番') : T('没有想看的番')) + '</p></div>';
@@ -6790,19 +6811,60 @@ private val PICK_SCRIPT = """
     // 按行增量更新 (同搜索结果): 没变的行原样留着, 封面不重建、不闪
     window.patchList(list, items.map(row));
   }
+  /** 一排星期: 选中的是 day, 今天标出来; 没变就不重画. */
+  function paintDays() {
+    var h = WEEKDAYS.map(function (w, i) {
+      var n = i + 1;
+      return '<button type="button" data-day="' + n + '"' + (n === day ? ' class="on"' : '') + (n === today ? ' data-today' : '') + '>' +
+        T(w) + '</button>';
+    }).join('');
+    if (days._h !== h) { days.innerHTML = h; days._h = h; }
+  }
+  /** 时间表: 选中那一天的番, 行同在看 / 想看. 那天还没补完、又一部都没有时写「正在读取」而不是「没有新番」. */
+  function paintSchedule(p, d) {
+    if (d.today) {
+      today = d.today;
+      if (!dayPicked) day = today;
+    }
+    paintDays();
+    var cur = (d.days || []).filter(function (x) { return x.weekday === day; })[0] || { items: [], pending: true };
+    var items = cur.items || [];
+    if (!items.length) {
+      p.innerHTML = !cur.pending ? '<div class="empty"><p>' + T('这一天没有新番') + '</p></div>'
+        : d.failed ? '<div class="empty"><p>' + esc(d.failed) + '</p></div>' : '<p class="hint">' + T('正在读取…') + '</p>';
+      return;
+    }
+    var list = p.querySelector(':scope > .list');
+    if (!list) {
+      p.innerHTML = '<div class="list"></div>';
+      list = p.querySelector(':scope > .list');
+    }
+    window.patchList(list, items.map(row));
+  }
+  // 电视那边按天逐步补齐: 还有没补完的那天就过一会儿再要 (面板还开着、还停在这一段才要)
+  function retrySchedule() {
+    clearTimeout(retry);
+    if (!data.SCHEDULE || !data.SCHEDULE.partial) return;
+    retry = setTimeout(function () { if (!sheet.hidden && type === 'SCHEDULE') load('SCHEDULE', true); }, 2000);
+  }
   function load(t, force) {
     var old = data[t];
-    if (loading[t] || (!force && old && old.ok && Date.now() - old.at < FRESH)) return;
+    // 没补完的时间表不算新鲜, 切回来接着要
+    if (loading[t] || (!force && old && old.ok && !old.partial && Date.now() - old.at < FRESH)) return;
     loading[t] = true;
-    fetch('api/collections?type=' + t).then(function (r) { return r.json(); }).then(function (d) {
+    // 时间表带上正在看的那天: 电视补完那一天就回
+    fetch(t === 'SCHEDULE' ? 'api/schedule?day=' + day : 'api/collections?type=' + t).then(function (r) { return r.json(); }).then(function (d) {
       loading[t] = false;
       d.at = Date.now();
+      d.partial = t === 'SCHEDULE' && d.ok && !d.failed && (d.days || []).some(function (x) { return x.pending; });
       data[t] = d;
       if (!sheet.hidden) paint(t);
+      if (t === 'SCHEDULE') retrySchedule();
     }).catch(function () {
       loading[t] = false;
       if (!data[t]) data[t] = { ok: false, message: T('读取失败，关掉再打开试试') };
       if (!sheet.hidden) paint(t);
+      if (t === 'SCHEDULE') retrySchedule();
     });
   }
   // 改了收藏状态之后: 当前段就地重读 (先留着旧的不闪「正在读取」), 另一段作废, 切过去时重读
@@ -6813,6 +6875,11 @@ private val PICK_SCRIPT = """
   };
   function open() {
     window.sheets.open(sheet);
+    if (type === 'SCHEDULE' && day !== today) scroller.scrollTop = 0;
+    day = today;
+    dayPicked = false;
+    days.hidden = type !== 'SCHEDULE';
+    paintDays();
     paint(type);
     load(type, true);
   }
@@ -6825,8 +6892,21 @@ private val PICK_SCRIPT = """
     type = b.getAttribute('data-ptype');
     [].forEach.call(seg.children, function (c) { c.classList.toggle('on', c === b); });
     [].forEach.call(body.querySelectorAll('.pick-pane'), function (p) { p.hidden = p.getAttribute('data-pt') !== type; });
+    days.hidden = type !== 'SCHEDULE';
+    paintDays();
     paint(type);
     load(type, false);
+  });
+  // 换一天: 就地换列表 (一周的都在手上), 回到列表开头; 那天还没补完就马上要一次, 不等下一轮
+  days.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-day]');
+    if (!b) return;
+    day = +b.getAttribute('data-day');
+    dayPicked = true;
+    paintDays();
+    paint('SCHEDULE');
+    scroller.scrollTop = 0;
+    if (data.SCHEDULE && data.SCHEDULE.partial) load('SCHEDULE', true);
   });
   body.addEventListener('click', function (e) {
     var b = e.target.closest('.pick-item');
