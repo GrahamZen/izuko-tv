@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.TestMediaList
@@ -32,6 +33,7 @@ import me.him188.ani.app.domain.media.fetch.isCaptchaRequired
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.isDisabled
 import me.him188.ani.app.domain.media.fetch.isFailedOrAbandoned
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.fetch.isRateLimited
 import me.him188.ani.app.domain.media.fetch.isWorking
 import me.him188.ani.app.domain.mediasource.web.SolveRequest
@@ -66,6 +68,7 @@ data class MediaSourceResultPresentation(
     val isFailedOrAbandoned: Boolean get() = state.isFailedOrAbandoned
     val isCaptchaRequired: Boolean get() = state.isCaptchaRequired
     val isRateLimited: Boolean get() = state.isRateLimited
+    val isPaused: Boolean get() = state.isPaused
     val rateLimitedUntilMillis: Long? get() = (state as? MediaSourceFetchState.RateLimited)?.retryAt
     val captchaRequest: SolveRequest? get() = (state as? MediaSourceFetchState.CaptchaRequired)?.request
     val captchaMessage: String? get() = captchaRequest?.kind?.let { "需要处理${it.displayName()}" }
@@ -106,8 +109,11 @@ class MediaSourceResultListPresenter(
         }
         .flatMapLatest { (list, preferred) ->
             val flows = list.map { source ->
+                // 选择器的候选要等每个源都至少返回过一次才出第一份 (重新搜索换了会话时要等上十几秒):
+                // 计数先按 0, 数据源的状态 (搜索中 / 完成) 不跟着等
                 val countFlow = includedMediaFlow
                     ?.map { included -> included.count { it.mediaSourceId == source.mediaSourceId } }
+                    ?.onStart { emit(0) }
                     ?: source.results.map { it.size }
                 combine(source.state, countFlow) { state, count ->
                     source.toPresentation(
@@ -284,6 +290,12 @@ private class TestMediaSourceResult(
         GlobalScope.launch {
             delay(3000)
             state.value = MediaSourceFetchState.Succeed(restartCount.incrementAndGet())
+        }
+    }
+
+    override fun pause() {
+        if (state.value == MediaSourceFetchState.Idle || state.value == MediaSourceFetchState.Working) {
+            state.value = MediaSourceFetchState.Paused(restartCount.incrementAndGet())
         }
     }
 

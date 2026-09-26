@@ -322,6 +322,11 @@ class MediaSelectorState(
                 null // 查询成功, 0 条, 隐藏
             }
 
+            channels.isEmpty() && state is MediaSourceFetchState.Paused -> {
+                // 开播后被暂停、还没拿到结果: 同 0 条隐藏, 放开重查后再出现
+                null
+            }
+
             else -> {
                 WebSource(
                     instanceId = source.instanceId,

@@ -838,8 +838,9 @@ private fun selectionProblemOf(state: EpisodePageState?): SelectionProblem {
     // 已经选中了就不是选择层面的问题 (解析/播放能不能成另说, 那是 problemOf 的前两条)
     if (state.mediaSelectorSummary is MediaSelectorSummary.Selected) return SelectionProblem.None
     val results = state.mediaSourceResultListPresentation
-    // 源还没登记上来 (刚进页面) 或还有源在查 —— 等着就行, 这才是这套机制的正常用途
-    if (results.list.isEmpty() || results.anyLoading) return SelectionProblem.None
+    // 源还没登记上来 (刚进页面) 或还有源在查 —— 等着就行, 这才是这套机制的正常用途.
+    // 有源被暂停 (上一次开播后暂停的) 同样要等: 自动选源用不上已有的结果时会马上把它们放开
+    if (results.list.isEmpty() || results.anyLoading || results.list.any { it.isPaused }) return SelectionProblem.None
     return if (results.list.any { it.totalCount > 0 }) SelectionProblem.NeedsManualSelection
     else SelectionProblem.NoMedia
 }

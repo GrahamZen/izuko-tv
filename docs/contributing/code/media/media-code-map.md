@@ -79,11 +79,18 @@
    合并进 `cumulativeResults`。
 5. `DefaultMediaSelector` 对查询到的 `Media` 过滤（先按当前剧集）、排序、选择。
 6. `MediaSelectorAutoSelectUseCaseImpl` 准备配置并启用上次使用的源，调用
-   `MediaAutoSelector.select`；后者统一处理缓存、记忆源、WEB 两段超时或 BT 完成条件。
+   `MediaAutoSelector.select`；后者统一处理缓存、记忆源、WEB 两段超时或 BT 完成条件，
+   离开记忆源阶段时调用 `MediaFetchSession.resumePausedSources`（开播后被暂停的源，切集或换源时才会遇到）。
 7. `EpisodeFetchSelectPlayState.LoadMediaOnSelectExtension` 监听 `mediaSelector.selected` 并调用
    `PlayerSession.loadMedia(...)`。
 8. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`。
+9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
+   （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
+   `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
+   `EpisodeViewModel` 管选源面板开关（`onMediaSelectorShown` / `onMediaSelectorHidden`）与「完整搜索」
+   （`setFullMediaSearch`，手机控制中心经 `TvRemoteControl` 的 `api/player/full-search`）；
+   播放失败换源（`PlayerLoadErrorHandler.handleError`）也会放开暂停的数据源。
 
 ### 播放拖入的本地文件（桌面端）
 
