@@ -1523,6 +1523,9 @@ fun TvEpisodeScreenContent(
                 // 无论切换来自确认键/控制按钮/面板操作都有反馈)
                 TvPauseFlash(vm.player, Modifier.align(Alignment.Center))
 
+                // 进播放页就拉本集评论并上报加载状态 (不画任何东西), 评论胶囊据此呼吸 / 显示失败, 见 TvCommentsLoadTracker
+                TvCommentsLoadTracker(vm, overlay, page.episodePresentation.episodeId)
+
                 // 纯画面态贴底的极细进度条: 屏上什么都没有时, 它是唯一还在报"播到哪儿了"的东西.
                 //
                 // **只在纯视频态给** (用户要求): 控制层/详情层自己带着进度条, 两条同时在屏上是重复

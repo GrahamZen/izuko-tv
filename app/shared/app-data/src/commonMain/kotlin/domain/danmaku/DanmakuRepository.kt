@@ -284,6 +284,8 @@ class DanmakuFetcher(
             logger.error(it) { "Failed to fetch danmaku from service '${provider.mainServiceId}'" }
             true
         }.catch {
+            // retry 的判据只在第一次失败时调用, 重试之后的这次失败只有这里看得到
+            logger.warn(it) { "Failed to fetch danmaku from service '${provider.mainServiceId}' after retry" }
             emit(
                 listOf(
                     DanmakuFetchResult(
@@ -292,6 +294,7 @@ class DanmakuFetcher(
                             provider.mainServiceId,
                             0,
                             DanmakuMatchMethod.NoMatch,
+                            fetchFailed = true,
                         ),
                         list = emptyList(),
                     ),

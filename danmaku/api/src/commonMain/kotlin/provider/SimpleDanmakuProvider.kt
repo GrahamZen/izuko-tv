@@ -54,6 +54,13 @@ class DanmakuMatchInfo(
      * 只有 dandanplay 会填. 从本地缓存重建的结果没有 (缓存里不存它), 那时发弹幕会提示先加载弹幕.
      */
     val sourceEpisodeId: Long? = null,
+    /**
+     * 这条结果是请求失败 (网络错误、超时、服务出错) 之后补上的占位, 不是真的"没匹配到".
+     *
+     * 占位的 [method] 仍是 [DanmakuMatchMethod.NoMatch]、数量为 0, 依赖"没匹配到"的逻辑 (不覆盖本地缓存、
+     * 保留手动匹配入口) 照旧; 界面靠它区分"加载失败"与"这一集没有弹幕".
+     */
+    val fetchFailed: Boolean = false,
 ) {
     companion object
 }
