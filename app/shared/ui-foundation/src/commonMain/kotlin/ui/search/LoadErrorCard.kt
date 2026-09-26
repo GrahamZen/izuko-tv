@@ -88,6 +88,7 @@ fun <T : Any> LazyPagingItems<T>.rememberLoadErrorState(): State<LoadError?> {
  * @param error See [rememberLoadErrorState]
  * @param onRetry 当用户点击重试时调用. 只会在 [LoadError.NetworkError], [LoadError.ServiceUnavailable], [LoadError.UnknownError] 时调用.
  * @param onLogin 当用户点击登录时调用. 只会在 [LoadError.RequiresLogin] 时调用. 如果你的功能不需要登录, 可以传递一个空函数给此参数.
+ * @param retryButtonModifier 重试按钮的附加 modifier (电视上挂焦点锚点, 出错时把焦点送过去).
  *
  * @see LoadErrorCardLayout
  */ // https://www.figma.com/design/LET1n9mmDa6npDTIlUuJjU/Main?node-id=239-2230&node-type=section&t=moZBMAKgeQpptXRI-0
@@ -103,6 +104,7 @@ fun LoadErrorCard(
     shape: Shape = MaterialTheme.shapes.large, // behave like Dialogs.
     containerColor: Color = LoadErrorDefaults.containerColor,
     elevation: CardElevation? = null,
+    retryButtonModifier: Modifier = Modifier,
 ) {
     if (error == null) return
     val role = LoadErrorCardRole.from(error)
@@ -120,6 +122,7 @@ fun LoadErrorCard(
                     iconModifier,
                 )
             },
+            modifier = retryButtonModifier,
             text = { Text(retryText) },
         )
     }
