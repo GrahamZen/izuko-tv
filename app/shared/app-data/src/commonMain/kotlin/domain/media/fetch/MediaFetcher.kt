@@ -181,11 +181,14 @@ class MediaSourceMediaFetcher(
         /**
          * 为了确保线程安全, 对 [state] 的写入必须谨慎.
          *
-         * [state] 只能在 [results] 的 flow 里, 或者在 [restart] 中修改.
+         * [state] 只能在 [results] 的 flow 里, 或者在 [restart] 与 [pause] 中修改.
          */
         override val state: MutableStateFlow<MediaSourceFetchState> =
             MutableStateFlow(if (disabled) MediaSourceFetchState.Disabled else MediaSourceFetchState.Idle)
-        private val restartCount = MutableStateFlow(0) // 只能在 [restart] 内修改
+        private val restartCount = MutableStateFlow(0) // 只能在 [restart] 与 [pause] 内修改
+
+        /** 最近一次发到 [results] 的结果. 暂停的那一代不查询, 把它重新发一次 (见 [pause]). */
+        private val publishedResults = MutableStateFlow<List<Media>>(emptyList())
 
         override val results by lazy {
             restartCount.flatMapLatest { restartCount ->
@@ -202,6 +205,12 @@ class MediaSourceMediaFetcher(
                     if (restartCount == 0 && currentState is MediaSourceFetchState.Disabled)
                         return@flatMapLatest flowOf(FetchUpdate.Results(restartCount, emptyList())) // 禁用的数据源, 第一次查询给空列表, 必须要 restart 才能发起查询
 
+                    // 暂停的这一代不查询, 只把暂停前拿到的结果按本代重发一次:
+                    // 还没开始就被暂停的数据源 replay 里没有任何值, 不发的话等它的人会一直挂着
+                    if (currentState is MediaSourceFetchState.Paused && currentState.id == restartCount) {
+                        return@flatMapLatest flowOf(FetchUpdate.Results(restartCount, publishedResults.value))
+                    }
+
                     val lastRestartCount = when (currentState) {
                         is MediaSourceFetchState.Completed -> currentState.id
                         else -> -1
@@ -215,7 +224,12 @@ class MediaSourceMediaFetcher(
                 var terminalState: MediaSourceFetchState.Completed? = null
                 pagedSources
                     .onStart {
-                        state.value = MediaSourceFetchState.Working
+                        // 与 [pause] 互斥: 这一代若已经被暂停换代, 不能再把状态改回 Working
+                        synchronized(this@MediaSourceResultImpl) {
+                            if (this@MediaSourceResultImpl.restartCount.value == restartCount) {
+                                state.value = MediaSourceFetchState.Working
+                            }
+                        }
                     }
                     .flatMapMerge { sources ->
                         sources.results.map { it.media }
@@ -275,7 +289,11 @@ class MediaSourceMediaFetcher(
                 currentCoroutineContext().ensureActive()
                 if (update.generation != restartCount.value) return@transform
                 when (update) {
-                    is FetchUpdate.Results -> emit(update.results)
+                    is FetchUpdate.Results -> {
+                        publishedResults.value = update.results
+                        emit(update.results)
+                    }
+
                     is FetchUpdate.Completed -> {
                         // This transform runs on the shareIn collector side of flatMapLatest's buffer.
                         // Earlier emits have updated replay before a terminal state becomes visible.
@@ -413,6 +431,23 @@ class MediaSourceMediaFetcher(
                             break
                         }
                     }
+                }
+            }
+        }
+
+        override fun pause() {
+            synchronized(this) {
+                when (state.value) {
+                    MediaSourceFetchState.Idle,
+                    MediaSourceFetchState.Working -> {
+                        // 先写状态再换代: 新一代开始时读到的必须已经是 Paused (见 [results]).
+                        // 换代让 flatMapLatest 取消进行中的查询; 旧一代之后的结果与终态都按代号丢弃.
+                        val next = restartCount.value + 1
+                        state.value = MediaSourceFetchState.Paused(next)
+                        restartCount.value = next
+                    }
+
+                    else -> {} // 已完成、已禁用或已暂停: 没有要停的查询
                 }
             }
         }

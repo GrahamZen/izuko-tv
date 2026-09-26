@@ -296,6 +296,11 @@ internal class RemotePlayerHandle(
         return null
     }
 
+    /** 手机上点了「完整搜索」: 同电视选源面板里的开关, 放开被暂停的数据源, 本播放页之后一直查完. */
+    fun searchAllSources() {
+        vm.setFullMediaSearch(true)
+    }
+
     /**
      * 播放状态 (是否在播 / 位置 / 总长). 与 [stateJson] 分开: 位置每秒都变, 放进候选那份里的话版本号每秒都换,
      * 几百条候选就得每秒整份重发. 服务端每次轮询都附上这一小份, 不参与版本号.
@@ -487,6 +492,7 @@ internal class RemotePlayerHandle(
         isCaptchaRequired -> "captcha"
         isRateLimited -> "limited"
         isFailedOrAbandoned -> "failed"
+        isPaused -> "paused"
         else -> "done"
     }
 

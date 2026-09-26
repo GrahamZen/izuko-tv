@@ -318,6 +318,9 @@
     <string name="subject_details_relation_character">角色出演</string>
     <string name="subject_details_relation_collaboration">联动</string>
     <string name="media_selector_item_cache_not_ready">缓存未完成</string>
+    <string name="media_selector_full_search">完整搜索</string>
+    <string name="settings_media_always_full_search">始终完整搜索</string>
+    <string name="settings_media_always_full_search_description">关闭时，视频开始播放后会暂停还没搜完的数据源，减少卡顿；打开选源面板或开「完整搜索」时继续。打开后始终搜完全部数据源</string>
     <string name="mediafetch_request_editor_restore_names">恢复 Bangumi 名称</string>
     <string name="episode_danmaku">弹幕</string>
     <string name="episode_send_danmaku_failed">弹幕发送失败, 稍后再试</string>

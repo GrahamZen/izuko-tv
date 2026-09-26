@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodePlayerTestSuite
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
@@ -34,6 +35,7 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.SetPreferredWebMediaSourceUseCase
+import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.childScope
@@ -47,6 +49,7 @@ import kotlin.test.assertEquals
 class ObserveWebMediaSourcePreferenceExtensionTest : AbstractPlayerExtensionTest() {
     private val preferredWebMediaSource = MutableStateFlow<String?>(null)
     private val setPreferenceCalls = mutableListOf<Pair<Int, String>>()
+    private val mediaSelectorSettings = MutableStateFlow(MediaSelectorSettings.Default)
 
     data class Context(
         val scope: CoroutineScope,
@@ -80,10 +83,14 @@ class ObserveWebMediaSourcePreferenceExtensionTest : AbstractPlayerExtensionTest
                 preferredWebMediaSource.value = mediaSourceId
             }
         }
+        suite.registerComponent<GetMediaSelectorSettingsFlowUseCase> {
+            GetMediaSelectorSettingsFlowUseCase { mediaSelectorSettings }
+        }
 
         // Reset state
         preferredWebMediaSource.value = null
         setPreferenceCalls.clear()
+        mediaSelectorSettings.value = MediaSelectorSettings.Default
 
         config(testScope, suite)
 
@@ -236,6 +243,79 @@ class ObserveWebMediaSourcePreferenceExtensionTest : AbstractPlayerExtensionTest
         // Preference should be updated to the new source
         assertEquals(1, setPreferenceCalls.size)
         assertEquals(subjectId to "web2", setPreferenceCalls.first())
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `playing an automatically selected web media remembers its source`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val (testScope, suite, state) = createCase { _, suite ->
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
+        }
+
+        startMediaFetcher(state, testScope)
+
+        val media = suite.mediaSelectorTestBuilder.createMedia("web1", kind = MediaSourceKind.WEB)
+        web1.complete(listOf(media))
+        advanceUntilIdle()
+
+        // 自动选中不广播偏好; 真正播起来才记
+        state.mediaSelectorFlow.filterNotNull().first().selectAutomatically(media, null)
+        advanceUntilIdle()
+        suite.player.loadMedia(durationMs = 10_000L, playWhenReady = true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(subjectId to "web1"), setPreferenceCalls)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `with BT preferred, playing an automatically selected web media is not remembered`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val (testScope, suite, state) = createCase { _, suite ->
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
+        }
+        mediaSelectorSettings.value = MediaSelectorSettings.Default.copy(preferKind = MediaSourceKind.BitTorrent)
+
+        startMediaFetcher(state, testScope)
+
+        val media = suite.mediaSelectorTestBuilder.createMedia("web1", kind = MediaSourceKind.WEB)
+        web1.complete(listOf(media))
+        advanceUntilIdle()
+
+        state.mediaSelectorFlow.filterNotNull().first().selectAutomatically(media, null)
+        advanceUntilIdle()
+        suite.player.loadMedia(durationMs = 10_000L, playWhenReady = true)
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), setPreferenceCalls)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `playing a local cache does not change the remembered web source`() = runTest {
+        val cache: CompletableDeferred<List<Media>>
+        val (testScope, suite, state) = createCase { _, suite ->
+            cache = suite.mediaSelectorTestBuilder.delayedMediaSource("cache", kind = MediaSourceKind.LocalCache)
+        }
+        preferredWebMediaSource.value = "web1"
+
+        startMediaFetcher(state, testScope)
+
+        val media = suite.mediaSelectorTestBuilder.createMedia("cache", kind = MediaSourceKind.LocalCache)
+        cache.complete(listOf(media))
+        advanceUntilIdle()
+
+        state.mediaSelectorFlow.filterNotNull().first().selectAutomatically(media, null)
+        advanceUntilIdle()
+        suite.player.loadMedia(durationMs = 10_000L, playWhenReady = true)
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), setPreferenceCalls)
+        assertEquals("web1", preferredWebMediaSource.value)
 
         testScope.cancel()
     }

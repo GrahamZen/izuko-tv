@@ -38,6 +38,8 @@ import me.him188.ani.app.ui.lang.settings_media_auto_cache_all
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_none
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_partial
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_space
+import me.him188.ani.app.ui.lang.settings_media_always_full_search
+import me.him188.ani.app.ui.lang.settings_media_always_full_search_description
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last_description
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_15min
@@ -515,6 +517,19 @@ internal fun SettingsScope.MediaSelectionGroup(
                 },
                 title = { Text(stringResource(Lang.settings_media_auto_enable_last)) },
                 description = { Text(stringResource(Lang.settings_media_auto_enable_last_description)) },
+            )
+
+            HorizontalDividerItem()
+
+            SwitchItem(
+                checked = mediaSelectorSettings.alwaysFullSearch,
+                onCheckedChange = {
+                    state.mediaSelectorSettingsState.update(
+                        mediaSelectorSettings.copy(alwaysFullSearch = it),
+                    )
+                },
+                title = { Text(stringResource(Lang.settings_media_always_full_search)) },
+                description = { Text(stringResource(Lang.settings_media_always_full_search_description)) },
             )
         }
     }
