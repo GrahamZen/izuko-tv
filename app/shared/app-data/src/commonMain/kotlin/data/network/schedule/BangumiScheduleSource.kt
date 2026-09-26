@@ -170,13 +170,13 @@ class BangumiScheduleSource(
      *
      * [firstAirDate] 是条目第一集的播出日期 (`yyyy-MM-dd`), 用来定位 bangumi-data 的月文件.
      */
-    suspend fun recurrenceOf(subjectId: Int, firstAirDate: String?): SubjectRecurrence? {
-        val rule = broadcastRuleOf(subjectId, firstAirDate) ?: return null
-        return SubjectRecurrence(
-            startTime = Instant.parse(rule.startTime),
-            interval = rule.intervalDays.days,
-        )
-    }
+    suspend fun recurrenceOf(subjectId: Int, firstAirDate: String?): SubjectRecurrence? =
+        broadcastRuleOf(subjectId, firstAirDate)?.toRecurrence()
+
+    private fun BroadcastRule.toRecurrence() = SubjectRecurrence(
+        startTime = Instant.parse(startTime),
+        interval = intervalDays.days,
+    )
 
     suspend fun broadcastRuleOf(subjectId: Int, firstAirDate: String?): BroadcastRule? {
         cached { it.broadcastRules[subjectId] }?.let { return it }

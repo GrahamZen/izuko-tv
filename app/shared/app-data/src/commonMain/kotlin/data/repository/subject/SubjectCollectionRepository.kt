@@ -265,6 +265,8 @@ class SubjectCollectionRepositoryImpl(
 
     private val subjectFetcher = StaleKeyedFetcher<Int>(scope)
 
+    private val recurrenceFiller = SubjectRecurrenceFiller(animeScheduleRepository, subjectCollectionDao, scope, getCurrentDate)
+
     /**
      * 本进程里新登录的次数 ([SessionEvent.NewLogin]). 取一个条目时先记下, 落库前变了 = 这次取数开始于登录生效之前.
      *
@@ -358,13 +360,10 @@ class SubjectCollectionRepositoryImpl(
     /**
      * 条目 + 分集**并发取**, 不排队.
      *
-     * 直连之后这里原本是三个串行请求: `/p1/subjects/{id}` -> bangumi-data 的播出周期 ->
-     * `/v0/.../episodes`. 三者互不依赖 (播出周期只等条目的开播日期), 排成一队就是把三个 RTT
-     * 加起来 —— 实测最坏 1214 + 630 + 215ms. 而这条链是 TV hero 背景的第一跳: 推荐区那些
-     * **没收藏过**的条目本地没有缓存行, 每聚焦一张卡都要整条走一遍, 排队的代价直接顶在
-     * 用户眼前 (见 `resolveTvHeroMedia`).
-     *
-     * 分集要不要取只跟本地缓存有关 ([episodesExpired]), 不必等条目回来才知道, 所以先发出去.
+     * 这条链是 TV hero 背景的第一跳: 推荐区那些**没收藏过**的条目本地没有缓存行, 每聚焦一张卡都要整条走一遍,
+     * 这里的每一次等待都直接顶在用户眼前 (见 `resolveTvHeroMedia`). 所以:
+     * - 分集要不要取只跟本地缓存有关 ([episodesExpired]), 不必等条目回来才知道, 先发出去;
+     * - 播出周期不在这条链上: 库里没有的落库之后在后台补 (见 [SubjectRecurrenceFiller]).
      */
     private suspend fun fetchAndSaveSubjectCollection(
         subjectId: Int,
@@ -389,11 +388,10 @@ class SubjectCollectionRepositoryImpl(
         // p1 的条目里没有 recurrence 与 relations (那两个是 Ani 服务端自己算的). 在它们各自的替代
         // 方案接上之前, 沿用库里已有的值 —— 否则每刷新一次条目就把之前取到的抹成空.
         val existing = subjectCollectionDao.findById(subjectId).first()
+        val recurrence = existing?.recurrence
         val subjectEntity = subject.toEntity(
             lastFetched = lastFetched,
-            // 库里没有播出周期时从 bangumi-data 补一次 (它按月缓存, 同一个月的第二个条目起不发请求)
-            recurrence = existing?.recurrence
-                ?: animeScheduleRepository.getSubjectRecurrence(subjectId, subject.airtime.date),
+            recurrence = recurrence,
             relations = existing?.relations ?: SubjectRelations.Empty,
         )
         val episodeEntities = episodesDeferred?.await()
@@ -411,6 +409,13 @@ class SubjectCollectionRepositoryImpl(
         } else {
             subjectCollectionDao.upsert(savedSubject)
             logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
+        }
+        if (recurrence == null) {
+            recurrenceFiller.fillLater(
+                subjectId,
+                subject.airtime.date,
+                episodeEntities ?: episodeCollectionDao.filterBySubjectId(subjectId).first(),
+            )
         }
         true
     }
