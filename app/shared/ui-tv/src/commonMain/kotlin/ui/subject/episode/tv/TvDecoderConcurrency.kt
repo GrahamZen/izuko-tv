@@ -44,13 +44,14 @@ import kotlin.time.Duration.Companion.seconds
  *
  * 检测要在没播放时做 (播放器占着解码器, 第二个必然开不出来), 所以只在应用启动时跑 ([probeIfNeeded]).
  * 结果按系统版本 ([Build.FINGERPRINT]) 缓存; 没通过的在之后启动时复查, 累计 [MAX_FAILED_PROBES] 次才认.
- * 播放时真的遇到解码器被收回 ([onDecoderReclaimed]), 这个系统版本上就不再用系统取帧.
+ * 播放时真的遇到主播放器的解码器被抢走 ([onDecoderPreempted]), 这个系统版本上就不再为缩略图另开任何解码器
+ * (系统取帧与应用内取帧器都不用, 见 [allowsThumbnailDecoding]).
  */
 object TvDecoderConcurrency {
     private const val PREFS = "tv_decoder_concurrency"
     private const val PROBE_VERSION = 1
     private const val KEY_SYSTEM = "system"
-    private const val KEY_RECLAIMED = "reclaimed"
+    private const val KEY_PREEMPTED = "preempted"
     private const val KEY_FAILED_PROBES = "failedProbes"
 
     /** 检测进程崩溃或卡住时收不到结果, 等这么久按没通过记. */
@@ -60,13 +61,13 @@ object TvDecoderConcurrency {
 
     /**
      * 当前媒体 (视频 [videoWidth] x [videoHeight], 不知道时传 `null`) 能不能用系统取帧, 不会抢主播放器的解码器.
-     * 没检测过、检测没通过、或者这台机器上出过解码器被收回, 都是 `false`.
+     * 没检测过、检测没通过、或者这台机器上出过解码器被抢走, 都是 `false`.
      */
     fun allowsSystemFrameExtraction(context: Context, videoWidth: Int?, videoHeight: Int?): Boolean {
         val prefs = prefs(context)
         return decideSystemFrameExtraction(
             tierResults = ProbeTier.entries.associateWith { prefs.getString(it.prefKey, null) },
-            reclaimed = prefs.getBoolean(KEY_RECLAIMED, false),
+            preempted = prefs.getBoolean(KEY_PREEMPTED, false),
             videoWidth = videoWidth,
             videoHeight = videoHeight,
         )
@@ -80,7 +81,7 @@ object TvDecoderConcurrency {
         val prefs = prefs(context)
         val needed = isProbeNeeded(
             tierResults = ProbeTier.entries.associateWith { prefs.getString(it.prefKey, null) },
-            reclaimed = prefs.getBoolean(KEY_RECLAIMED, false),
+            preempted = prefs.getBoolean(KEY_PREEMPTED, false),
             failedProbes = prefs.getInt(KEY_FAILED_PROBES, 0),
         )
         if (!needed) return
@@ -120,13 +121,18 @@ object TvDecoderConcurrency {
     }
 
     /**
-     * 播放器报了解码器被收回: 这个系统版本上不再用系统取帧, 也不再检测.
+     * 还能不能为缩略图另开解码器 (系统取帧与应用内取帧器都算). 这台机器上出过主播放器的解码器被抢走就是 `false`.
      */
-    fun onDecoderReclaimed(context: Context) {
+    fun allowsThumbnailDecoding(context: Context): Boolean = !prefs(context).getBoolean(KEY_PREEMPTED, false)
+
+    /**
+     * 播放器报了解码器被抢走 (见 `isDecoderPreempted`): 这个系统版本上不再为缩略图另开解码器, 也不再检测.
+     */
+    fun onDecoderPreempted(context: Context) {
         val prefs = prefs(context)
-        if (prefs.getBoolean(KEY_RECLAIMED, false)) return
-        prefs.edit().putBoolean(KEY_RECLAIMED, true).apply()
-        logger.warn { "Decoder reclaimed during playback, system frame extraction disabled on this device" }
+        if (prefs.getBoolean(KEY_PREEMPTED, false)) return
+        prefs.edit().putBoolean(KEY_PREEMPTED, true).apply()
+        logger.warn { "Player decoder preempted during playback, thumbnail decoding disabled on this device" }
     }
 
     private fun record(context: Context, results: Map<ProbeTier, Boolean>, detail: String) {
@@ -180,11 +186,11 @@ private const val EXTRA_RECEIVER = "receiver"
  */
 internal fun decideSystemFrameExtraction(
     tierResults: Map<ProbeTier, String?>,
-    reclaimed: Boolean,
+    preempted: Boolean,
     videoWidth: Int?,
     videoHeight: Int?,
 ): Boolean {
-    if (reclaimed) return false
+    if (preempted) return false
     val tier = if (videoWidth == null || videoHeight == null || videoWidth <= 0 || videoHeight <= 0) {
         null
     } else if (max(videoWidth, videoHeight) > ProbeTier.FHD.width || min(videoWidth, videoHeight) > 1088) {
@@ -196,9 +202,9 @@ internal fun decideSystemFrameExtraction(
     return required.all { tierResults[it] == RESULT_OK }
 }
 
-/** 要不要检测: 出过解码器被收回的不测; 全部通过的不测; 没通过的复查到 [MAX_FAILED_PROBES] 次为止. */
-internal fun isProbeNeeded(tierResults: Map<ProbeTier, String?>, reclaimed: Boolean, failedProbes: Int): Boolean {
-    if (reclaimed) return false
+/** 要不要检测: 出过解码器被抢走的不测; 全部通过的不测; 没通过的复查到 [MAX_FAILED_PROBES] 次为止. */
+internal fun isProbeNeeded(tierResults: Map<ProbeTier, String?>, preempted: Boolean, failedProbes: Int): Boolean {
+    if (preempted) return false
     if (ProbeTier.entries.all { tierResults[it] == RESULT_OK }) return false
     return failedProbes < MAX_FAILED_PROBES
 }

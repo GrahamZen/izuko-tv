@@ -41,6 +41,7 @@ import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.CachedMedia
@@ -256,6 +257,9 @@ class SwitchMediaOnPlayerErrorExtension(
         mediaFetchSessionFlow.collectLatest { bundle ->
             if (bundle == null) return@collectLatest
 
+            // 因解码器被收回而原地重载过的资源, 每个只重载一次, 再出同样的错就照常换源
+            var reloadedMediaId: String? = null
+
             combine(
                 videoLoadingStateFlow, // 解析链接出错 (未匹配到链接)
                 playerStateFlow, // 解析成功, 但播放器出错 (无法链接到链接, 例如链接错误)
@@ -279,13 +283,25 @@ class SwitchMediaOnPlayerErrorExtension(
             }.distinctUntilChangedBy { it != null }
                 .collectLatest { error ->
                     if (error != null) {
-                        if (error.isPlayerLifecycleError()) {
-                            // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
-                            logger.info {
-                                "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                        val media = bundle.mediaSelector.selected.value
+                        when {
+                            error.isPlayerLifecycleError() -> {
+                                // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
+                                logger.info {
+                                    "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
+                                }
                             }
-                        } else {
-                            handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+
+                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑
+                            isDecoderPreempted(error.cause) && media != null && media.mediaId != reloadedMediaId &&
+                                    context.reloadCurrentMedia(context.player.currentPositionMillis.value) -> {
+                                reloadedMediaId = media.mediaId
+                                logger.warn(error.cause) {
+                                    "Player errored (${error.description}), decoder preempted, reloading ${media.mediaId} in place"
+                                }
+                            }
+
+                            else -> handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
                         }
                     } // else: cancel selection
                 }
