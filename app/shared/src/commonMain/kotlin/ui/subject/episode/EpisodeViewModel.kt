@@ -97,10 +97,13 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.create
+import me.him188.ani.app.domain.media.fetch.pauseSearching
+import me.him188.ani.app.domain.media.fetch.resumePausedSources
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
@@ -111,6 +114,7 @@ import me.him188.ani.app.domain.player.extension.AutoSelectExtension
 import me.him188.ani.app.domain.player.extension.CacheOnBtPlayExtension
 import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
+import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
@@ -380,6 +384,24 @@ class EpisodeViewModel(
         override ?: config.playbackSpeed
     }.distinctUntilChanged()
 
+    /** 选源面板开着: 开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
+    private val mediaSelectorShown = MutableStateFlow(false)
+
+    /** 用户开了「完整搜索」: 本播放页之后搜索一直查完, 开播、关选源面板都不再暂停. */
+    private val _fullMediaSearch = MutableStateFlow(false)
+
+    /** 设置里的「始终完整搜索」: 开着时从不暂停. */
+    private val alwaysFullMediaSearch = settingsRepository.mediaSelectorSettings.flow
+        .map { it.alwaysFullSearch }
+        .stateIn(backgroundScope, SharingStarted.Eagerly, false)
+
+    /** 选源面板里「完整搜索」开关的值; 设置里开了「始终完整搜索」时为 `null` (不显示开关). */
+    val fullMediaSearch: StateFlow<Boolean?> = combine(alwaysFullMediaSearch, _fullMediaSearch) { always, full ->
+        if (always) null else full
+    }.stateIn(backgroundScope, SharingStarted.Eagerly, false)
+
+    private fun searchesToCompletion() = _fullMediaSearch.value || alwaysFullMediaSearch.value
+
     @OptIn(UnsafeEpisodeSessionApi::class)
     private val fetchPlayState = EpisodeFetchSelectPlayState(
         subjectId, initialEpisodeId, player, backgroundScope,
@@ -394,6 +416,9 @@ class EpisodeViewModel(
             ),
             SwitchMediaOnPlayerErrorExtension,
             AutoSelectExtension,
+            PauseMediaFetchWhilePlayingExtension.Factory(
+                canPause = { !mediaSelectorShown.value && !searchesToCompletion() },
+            ),
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
         ),
@@ -1097,6 +1122,8 @@ class EpisodeViewModel(
     }
 
     fun refreshFetch() {
+        // 用户主动重新搜索就是要搜: 本播放页之后一直搜完, 同「完整搜索」 (见 PauseMediaFetchWhilePlayingExtension)
+        _fullMediaSearch.value = true
         launchInBackground {
             // 手动重新查询: 清除本条目的 web 源搜索缓存, 让所有数据源真正重新搜索
             selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
@@ -1116,6 +1143,45 @@ class EpisodeViewModel(
      */
     fun onClickSkipOpEd(currentPositionMillis: Long) {
         player.skip(videoScaffoldConfig.opEdSkipDuration.inWholeMilliseconds)
+    }
+
+    /**
+     * 选源面板打开: 开播后被暂停的数据源放开重新查, 面板里才看得到它们的结果; 开着期间不再暂停.
+     * 不清搜索缓存.
+     */
+    fun onMediaSelectorShown() {
+        mediaSelectorShown.value = true
+        withMediaFetchSession { it.resumePausedSources() }
+    }
+
+    /**
+     * 选源面板关闭: 正在播放、又没开「完整搜索」时, 暂停还没查完的数据源 (同开播时).
+     * 没在播放时照常查, 等播起来再暂停 (见 [PauseMediaFetchWhilePlayingExtension]).
+     */
+    fun onMediaSelectorHidden() {
+        mediaSelectorShown.value = false
+        if (searchesToCompletion() || !player.state.value.isPlaying) return
+        withMediaFetchSession { session ->
+            session.pauseSearching(keep = { it.kind == MediaSourceKind.LocalCache })
+        }
+    }
+
+    /**
+     * 「完整搜索」开关 (选源面板 / 手机控制中心). 打开时放开被暂停的数据源, 本播放页之后一直查完;
+     * 关上后回到默认: 播放时、选源面板关着就暂停.
+     */
+    fun setFullMediaSearch(enabled: Boolean) {
+        _fullMediaSearch.value = enabled
+        if (enabled) withMediaFetchSession { it.resumePausedSources() }
+    }
+
+    private fun withMediaFetchSession(block: (MediaFetchSession) -> Unit) {
+        launchInBackground {
+            fetchPlayState.episodeSessionFlow.flatMapLatest { it.fetchSelectFlow }
+                .mapNotNull { it?.mediaFetchSession }
+                .firstOrNull()
+                ?.let(block)
+        }
     }
 
     fun restartSource(instanceId: String) {

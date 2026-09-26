@@ -60,6 +60,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
@@ -240,6 +241,12 @@ fun EpisodeDetails(
      * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
      */
     hideSelectorOnSelect: Boolean = false,
+    /** 选源面板打开 / 关闭, 见 `EpisodeViewModel.onMediaSelectorShown` 与 `onMediaSelectorHidden`. */
+    onMediaSelectorShown: () -> Unit = {},
+    onMediaSelectorHidden: () -> Unit = {},
+    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    fullSearch: Boolean? = null,
+    onFullSearchChange: (Boolean) -> Unit = {},
 ) {
     var showSubjectDetails by rememberSaveable {
         mutableStateOf(false)
@@ -378,6 +385,10 @@ fun EpisodeDetails(
         mediaSelectorItem = { innerPadding ->
             var showMediaSelector by rememberSaveable { mutableStateOf(false) }
             if (showMediaSelector) {
+                DisposableEffect(Unit) {
+                    onMediaSelectorShown()
+                    onDispose { onMediaSelectorHidden() }
+                }
                 val windowAdaptiveInfo = currentWindowAdaptiveInfo1()
                 val (viewKind, onViewKindChange) = rememberSaveable { mutableStateOf(initialMediaSelectorViewKind) }
                 // 指针形态一律选完即关: 那个开关默认是关的, 直接读它等于把"点完源弹窗还盖着"变成默认行为,
@@ -434,6 +445,8 @@ fun EpisodeDetails(
                                     .padding(vertical = 12.dp, horizontal = 16.dp)
                                     .fillMaxWidth(),
                                 defaultFetchRequest = defaultFetchRequest,
+                                fullSearch = fullSearch,
+                                onFullSearchChange = onFullSearchChange,
                                 stickyHeaderBackgroundColor = BottomSheetDefaults.ContainerColor,
                                 onClickItem = {
                                     mediaSelectorState.select(it)
@@ -469,6 +482,8 @@ fun EpisodeDetails(
                             onRestartSource = onRestartSource,
                             onRefresh = onRefreshMediaSources,
                             defaultFetchRequest = defaultFetchRequest,
+                            fullSearch = fullSearch,
+                            onFullSearchChange = onFullSearchChange,
                             modifier = Modifier.padding(top = 12.dp)
                                 .padding(horizontal = 16.dp)
                                 .fillMaxWidth(),

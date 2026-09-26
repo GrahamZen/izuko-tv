@@ -607,6 +607,10 @@ private fun EpisodeScreenTabletVeryWide(
                                     },
                                     danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
                                     hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                                    onMediaSelectorShown = { vm.onMediaSelectorShown() },
+                                    onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
+                                    fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                                    onFullSearchChange = { vm.setFullMediaSearch(it) },
                                 )
                             }
                         }
@@ -784,6 +788,10 @@ private fun EpisodeScreenContentPhone(
                     modifier = Modifier.fillMaxSize(),
                     danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
                     hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                    onMediaSelectorShown = { vm.onMediaSelectorShown() },
+                    onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
+                    fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                    onFullSearchChange = { vm.setFullMediaSearch(it) },
                 )
             }
         },
@@ -1182,6 +1190,12 @@ private fun EpisodeVideo(
                     )
                 },
                 mediaSelectorPage = {
+                    // 面板开着期间搜索一直查完; 关面板时正在播又没开完整搜索就暂停 (见 EpisodeViewModel.onMediaSelectorHidden)
+                    DisposableEffect(Unit) {
+                        vm.onMediaSelectorShown()
+                        onDispose { vm.onMediaSelectorHidden() }
+                    }
+                    val fullSearch by vm.fullMediaSearch.collectAsStateWithLifecycle()
                     val pageState by vm.pageState.collectAsStateWithLifecycle()
                     pageState?.let { page ->
                         val (viewKind, onViewKindChange) = rememberSaveable { mutableStateOf(page.initialMediaSelectorViewKind) }
@@ -1197,6 +1211,8 @@ private fun EpisodeVideo(
                             defaultFetchRequest = page.defaultFetchRequest,
                             onRestartSource = { vm.restartSource(it) },
                             hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                            fullSearch = fullSearch,
+                            onFullSearchChange = { vm.setFullMediaSearch(it) },
                         )
                     }
                 },
