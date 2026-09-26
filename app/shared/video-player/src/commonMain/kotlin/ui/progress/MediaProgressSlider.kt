@@ -612,6 +612,7 @@ fun MediaProgressSlider(
                         val total = state.totalDurationMillis
                         if (total <= 0) return@collectLatest
                         // BT 源只预览已下载完成的区域, 避免抢占播放位置的下载优先级.
+                        // 在线源的取帧器自己取数据, 不受这个限制 (见 fetchesUncachedPositions).
                         //
                         // 副作用: 往前拖恰好就是"还没下载到"的方向, 于是 BT 源上往前拖基本
                         // 拿不到缩略图. 维护加载状态的 (TV) 在画面位上标出「还没下载」; 其余的帧

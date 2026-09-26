@@ -309,6 +309,7 @@ fun rememberMediaProgressFramePreviewState(
             fetchFrame = { positionMillis ->
                 framePreview.getPreviewFrame(positionMillis, maxWidthPx, maxHeightPx)?.toImageBitmap()
             },
+            fetchesUncachedPositions = { player.mediaData.value is UriMediaData },
         )
     }
     LaunchedEffect(state, player) {
