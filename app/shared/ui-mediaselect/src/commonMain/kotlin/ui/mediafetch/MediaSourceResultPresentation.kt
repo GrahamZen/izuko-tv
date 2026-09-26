@@ -32,6 +32,7 @@ import me.him188.ani.app.domain.media.fetch.isCaptchaRequired
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.isDisabled
 import me.him188.ani.app.domain.media.fetch.isFailedOrAbandoned
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.fetch.isRateLimited
 import me.him188.ani.app.domain.media.fetch.isWorking
 import me.him188.ani.app.domain.mediasource.web.SolveRequest
@@ -66,6 +67,7 @@ data class MediaSourceResultPresentation(
     val isFailedOrAbandoned: Boolean get() = state.isFailedOrAbandoned
     val isCaptchaRequired: Boolean get() = state.isCaptchaRequired
     val isRateLimited: Boolean get() = state.isRateLimited
+    val isPaused: Boolean get() = state.isPaused
     val rateLimitedUntilMillis: Long? get() = (state as? MediaSourceFetchState.RateLimited)?.retryAt
     val captchaRequest: SolveRequest? get() = (state as? MediaSourceFetchState.CaptchaRequired)?.request
     val captchaMessage: String? get() = captchaRequest?.kind?.let { "需要处理${it.displayName()}" }
@@ -284,6 +286,12 @@ private class TestMediaSourceResult(
         GlobalScope.launch {
             delay(3000)
             state.value = MediaSourceFetchState.Succeed(restartCount.incrementAndGet())
+        }
+    }
+
+    override fun pause() {
+        if (state.value == MediaSourceFetchState.Idle || state.value == MediaSourceFetchState.Working) {
+            state.value = MediaSourceFetchState.Paused(restartCount.incrementAndGet())
         }
     }
 

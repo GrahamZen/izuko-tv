@@ -12,6 +12,8 @@ package me.him188.ani.app.domain.player.extension
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -19,18 +21,21 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.selector.eventHandling
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.SetPreferredWebMediaSourceUseCase
+import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
 
 /**
- * 监听用户偏好的 Web 源变更
+ * 维护本条目记住的在线源: 用户手动选的、真正播起来的在线源记下来, 记住的源查询失败时删掉.
+ * 自动选源时记住的源优先 (见 MediaAutoSelector).
  */
 class ObserveWebMediaSourcePreferenceExtension(
     private val context: PlayerExtensionContext,
@@ -38,6 +43,7 @@ class ObserveWebMediaSourcePreferenceExtension(
 ) : PlayerExtension("ObserveWebMediaSourcePreference") {
     private val getPreferredWebMediaSource: GetPreferredWebMediaSourceUseCase by koin.inject()
     private val setPreferredWebMediaSource: SetPreferredWebMediaSourceUseCase by koin.inject()
+    private val getMediaSelectorSettings: GetMediaSelectorSettingsFlowUseCase by koin.inject()
 
     private val logger = logger<ObserveWebMediaSourcePreferenceExtension>()
 
@@ -58,6 +64,22 @@ class ObserveWebMediaSourcePreferenceExtension(
                                 logger.info { "Set web source preference for subject ${context.subjectId} to ${event.mediaSourceId}" }
                                 setPreferredWebMediaSource(event.subjectId, event.mediaSourceId)
                             }
+                        }
+                    }
+
+                    // 在线源真正播起来 (时钟开始走) 就记为本条目的源, 自动选中的也算:
+                    // 之后自动选源优先用它. 拖入的本地文件与缓存不算.
+                    // 只在开始走的那一刻取选中项: 换源时选中项先变、旧资源的时钟还没停, 不能把新资源当成播起来了.
+                    // 偏好 BT 时不记自动选中的: 那多半是 BT 这集没资源才兜底选上的, 记住了下次会越过 BT 直接选它
+                    // (手动选的照样由上面的事件记下).
+                    launch {
+                        context.player.state.map { it.isPlaying }.distinctUntilChanged().filter { it }.collect {
+                            val media = bundle.mediaSelector.selected.value ?: return@collect
+                            if (media.kind != MediaSourceKind.WEB || DroppedFileMedia.isDroppedFile(media)) return@collect
+                            if (getMediaSelectorSettings().first().preferKind == MediaSourceKind.BitTorrent) return@collect
+                            if (getPreferredWebMediaSource(context.subjectId).first() == media.mediaSourceId) return@collect
+                            logger.info { "Playing web source ${media.mediaSourceId}, remembering it for subject ${context.subjectId}" }
+                            setPreferredWebMediaSource(context.subjectId, media.mediaSourceId)
                         }
                     }
 

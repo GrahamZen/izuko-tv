@@ -19,17 +19,22 @@ import kotlinx.coroutines.test.runCurrent
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
+import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.selector.testFramework.FetchMediaSelectorTestSuite
+import me.him188.ani.app.domain.media.selector.testFramework.Handle
 import me.him188.ani.app.domain.media.selector.testFramework.channelTiers
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.tier
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaSourceKind.BitTorrent
 import me.him188.ani.datasources.api.source.MediaSourceKind.LocalCache
 import me.him188.ani.datasources.api.source.MediaSourceKind.WEB
 import me.him188.ani.test.DisabledOnNative
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
@@ -373,6 +378,81 @@ class MediaAutoSelectorWebTest {
         assertTrue(job.isCompleted)
         assertEquals(sources.cached.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
     }
+
+    @Test
+    fun `other sources stay paused when the remembered source has a candidate`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val remembered by web { tier = 2 }
+                val other by web { tier = 0 }
+            }
+        }
+        val rememberedId = sources.remembered.instance.mediaSourceId
+        session.pauseSearching(keep = { it.mediaSourceId == rememberedId })
+        val job = launchSelection(session, preferredSourceId = rememberedId)
+        sources.remembered.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(rememberedId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+        assertEquals(0, sources.other.fetchCount)
+        assertIs<MediaSourceFetchState.Paused>(session.stateOf(sources.other))
+    }
+
+    @Test
+    fun `paused sources resume when the remembered source has no candidate`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val remembered by web { tier = 2 }
+                val other by web { tier = 0 }
+            }
+        }
+        val rememberedId = sources.remembered.instance.mediaSourceId
+        session.pauseSearching(keep = { it.mediaSourceId == rememberedId })
+        val job = launchSelection(session, preferredSourceId = rememberedId)
+        sources.remembered.complete(emptyList<Media>())
+        testScope().runCurrent()
+        assertEquals(1, sources.other.fetchCount)
+        sources.other.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(sources.other.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `paused sources resume when the remembered web source has no candidate under BT preference`() =
+        runFetchMediaSelectorTestSuite {
+            initSubject("Example Series")
+            preferenceApi.savedUserPreference.value = MediaPreference.Any
+            preferenceApi.mediaSelectorSettings.value = MediaSelectorSettings.AllVisible.copy(
+                preferKind = BitTorrent, preferSeasons = false, hideSingleEpisodeForCompleted = false,
+            )
+            val (_, session, sources) = configureFetchSession {
+                object {
+                    val remembered by web { tier = 2 }
+                    val bt1 by bt()
+                }
+            }
+            val rememberedId = sources.remembered.instance.mediaSourceId
+            session.pauseSearching(keep = { it.mediaSourceId == rememberedId })
+            val job = testScope().launch(start = CoroutineStart.UNDISPATCHED) {
+                MediaAutoSelector(selector).select(
+                    session,
+                    MediaAutoSelector.Config(preferredSourceId = rememberedId, fallbackToOtherKinds = true),
+                )
+            }
+            sources.remembered.complete(emptyList<Media>())
+            testScope().runCurrent()
+            assertEquals(1, sources.bt1.fetchCount)
+            sources.bt1.complete(media(kind = BitTorrent, subjectName = "Example Series"))
+            testScope().runCurrent()
+            assertEquals(sources.bt1.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+            assertTrue(job.isCompleted)
+        }
+
+    private fun MediaFetchSession.stateOf(handle: Handle): MediaSourceFetchState =
+        mediaSourceResults.single { it.mediaSourceId == handle.instance.mediaSourceId }.state.value
 
     private fun FetchMediaSelectorTestSuite.initWeb() {
         initSubject("Example Series")
