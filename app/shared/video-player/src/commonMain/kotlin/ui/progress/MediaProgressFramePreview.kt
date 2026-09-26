@@ -27,6 +27,7 @@ import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.FramePreview
 import org.openani.mediamp.features.PreviewFrame
+import org.openani.mediamp.source.UriMediaData
 
 /**
  * 进度条预览帧的状态: 悬浮 (桌面) 或拖动 (触摸) 进度条时, 加载并展示目标位置的视频帧.
@@ -54,6 +55,14 @@ class MediaProgressFramePreviewState(
      * 命中场景主要是"刚扫过又扫回来", 缓存最近一小段轨迹即可.
      */
     cacheSize: Int = 8,
+    /**
+     * 当前媒体的取帧是否自己去取数据, 因而播放器还没缓冲到的位置也能预览.
+     *
+     * 为 false 时 [MediaProgressSlider] 只对已缓存完成的位置请求帧: BT 源的取帧读的是本地已下载的 piece,
+     * 去取没下完的位置会抢占播放位置的下载优先级. 在线源 (播放器自己下载的 HTTP / HLS) 的取帧器独立请求数据,
+     * 进度条上的「已缓存」只是播放器的缓冲范围, 用它拦截的话往前拖基本拿不到缩略图.
+     */
+    val fetchesUncachedPositions: () -> Boolean = { false },
 ) {
     /**
      * 当前要展示的预览帧. `null` 表示无帧可展示 (浮窗显示占位背景).
@@ -172,6 +181,7 @@ fun rememberMediaProgressFramePreviewState(
             fetchFrame = { positionMillis ->
                 framePreview.getPreviewFrame(positionMillis, maxWidthPx, maxHeightPx)?.toImageBitmap()
             },
+            fetchesUncachedPositions = { player.mediaData.value is UriMediaData },
         )
     }
     LaunchedEffect(state, player) {
