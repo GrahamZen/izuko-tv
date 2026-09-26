@@ -18,7 +18,6 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.repository.subject.toAniSubjectCollectionType
-import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectType
 import me.him188.ani.client.apis.SubjectsAniApi
@@ -72,21 +71,6 @@ class AniSubjectSearchService(
 
         result.items.map { search -> search.toBatchSubjectDetails() }
     }
-
-    companion object {
-        fun sanitizeKeyword(keyword: String): String {
-            return buildString(keyword.length) {
-                for (c in keyword) {
-                    if (MediaListFilters.charsToDeleteForSearch.contains(c.code)) {
-                        append(' ')
-                    } else {
-                        append(c)
-                    }
-                }
-            }
-        }
-    }
-}
 
 internal fun AniSubjectSearch.toBatchSubjectDetails(): BatchSubjectDetails {
     return BatchSubjectDetails(
