@@ -34,6 +34,8 @@ import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.isFinal
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
@@ -379,18 +381,29 @@ internal class PlayerLoadErrorHandler(
             return
         }
 
+        // 手上还有能换的在线资源时照旧立刻换. 已经没有了、但还有在线源没查完 (包括被暂停的, 换源时会放开重新查,
+        // 见 MediaAutoSelector) 时, 按正常的两段截止时间等它们的结果回来, 不然会在结果回来之前就判为无资源
+        val hasRemaining = mediaSelector.filteredCandidatesMedia.first()
+            .any { it.kind == MediaSourceKind.WEB && it.mediaId !in blacklistedMediaIds }
+        val waitForSearching = !hasRemaining && session.mediaSourceResults.any {
+            it.kind == MediaSourceKind.WEB && (!it.state.value.isFinal || it.state.value.isPaused)
+        }
         val result = MediaAutoSelector(mediaSelector).select(
             session,
             MediaAutoSelector.Config(
                 selectCache = false,
                 blacklist = blacklistedMediaIds,
-                web = MediaAutoSelector.Web(
-                    sourceTiers = sourceTiers,
-                    // 错误切换不需要等太长时间。
-                    exactMatchAfter = 1.seconds,
-                    fuzzyMatchAfter = 1.seconds,
-                    waitForPendingSources = false,
-                ),
+                web = if (waitForSearching) {
+                    MediaAutoSelector.Web(sourceTiers = sourceTiers)
+                } else {
+                    MediaAutoSelector.Web(
+                        sourceTiers = sourceTiers,
+                        // 错误切换不需要等太长时间。
+                        exactMatchAfter = 1.seconds,
+                        fuzzyMatchAfter = 1.seconds,
+                        waitForPendingSources = false,
+                    )
+                },
             ),
             expectedSelection = failedMedia,
         )

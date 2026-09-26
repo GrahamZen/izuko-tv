@@ -586,6 +586,8 @@ private fun part3() = listOf(
     RemoteText("重新搜索（含新数据源）", "Search again (include new sources)", "重新搜索（含新數據源）", "重新搜尋（含新資料源）"),
     RemoteText("这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。", "This search uses the source list from when the player page opened. Sources you just added, or subscriptions you just updated, only join after you tap here; you may need to pick a resource again afterwards.", "這次搜索用的是進入播放頁時的數據源列表。剛加的數據源或剛更新的訂閱要按一下才會參與，之後可能需要重新選片源。", "這次搜尋用的是進入播放頁時的資料源列表。剛加的資料源或剛更新的訂閱要按一下才會參與，之後可能需要重新選片源。"),
     RemoteText("正在用最新的数据源重新搜索", "Searching again with the latest sources", "正在用最新的數據源重新搜索", "正在用最新的資料源重新搜尋"),
+    RemoteText("完整搜索", "Full search", "完整搜索", "完整搜尋"),
+    RemoteText("已开启完整搜索，会一直搜完全部数据源", "Full search is on: every source will be searched to the end", "已開啟完整搜索，會一直搜完全部數據源", "已開啟完整搜尋，會一直搜完全部資料源"),
 )
 
 private fun part4() = listOf(

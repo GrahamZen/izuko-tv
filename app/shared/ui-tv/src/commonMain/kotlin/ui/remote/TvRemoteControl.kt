@@ -841,6 +841,7 @@ object TvRemoteControl {
             path == PATH_PLAYER_UPNEXT && post -> json(playUpNext())
             path == PATH_PLAYER_REQUEST && post -> json(updateRequest(request))
             path == PATH_PLAYER_REFETCH && post -> json(refetchSources())
+            path == PATH_PLAYER_FULL_SEARCH && post -> json(searchAllSources())
             path == PATH_PLAYER_CONTROL && post -> json(control(request))
             path == PATH_PLAYER_EPISODE && post -> json(switchEpisode(request))
             path == PATH_PLAYER_DETAILS && post -> json(openDetails(request))
@@ -1199,6 +1200,16 @@ object TvRemoteControl {
         return result(true, tr("正在用最新的数据源重新搜索"))
     }
 
+    /**
+     * 手机上点了「完整搜索」: 开播后被暂停的数据源放开重新查, 本播放页之后一直查完 (同电视选源面板里的开关).
+     * 手机上没有「打开选源面板」的时机, 暂停的数据源只能这样放开.
+     */
+    private fun searchAllSources(): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        handle.searchAllSources()
+        return result(true, tr("已开启完整搜索，会一直搜完全部数据源"))
+    }
+
     private fun updateRequest(request: LanHttpRequest): JsonObject {
         val handle = player ?: return result(false, tr("电视当前不在播放页"))
         val fields = request.formFieldList()
@@ -1457,6 +1468,7 @@ object TvRemoteControl {
     private const val PATH_PLAYER_UPNEXT = "api/player/upnext"
     private const val PATH_PLAYER_REQUEST = "api/player/request"
     private const val PATH_PLAYER_REFETCH = "api/player/refetch"
+    private const val PATH_PLAYER_FULL_SEARCH = "api/player/full-search"
     private const val PATH_PLAYER_CONTROL = "api/player/control"
     private const val PATH_PLAYER_EPISODE = "api/player/episode"
     private const val PATH_PLAYER_DETAILS = "api/player/details"

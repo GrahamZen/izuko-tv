@@ -2489,7 +2489,7 @@ private val SCRIPT = """
     lastState = s;
     chips.innerHTML = renderChips(s);
     renderFilters(s);
-    renderRefetch(true);
+    renderRefetch(true, s.sources.some(function (x) { return x.state === 'paused'; }));
     // 有行正滑开 / 正在拖时先不重画 (重画会把它弹回去), 记一笔由 flushList 在收起后补画 ——
     // 状态没变时服务端只回 same, 等不来下一次 render
     if (window.swBusy(src)) listStale = true;
@@ -2648,13 +2648,18 @@ private val SCRIPT = """
    *
    * 它在列表**上方**的独立容器里, 不跟着列表画: 点了某个数据源的胶囊时列表只剩那一段 (见 renderList
    * 的 srcFilter 分支), 跟在列表末尾的话, 正好会在「刚加的源没出现」这个要用它的场景下不见了。
+   *
+   * 有数据源被暂停时 (电视开播时还没查完的), 前面多一个「完整搜索」: 全部放开, 本播放页之后一直搜完。
    */
   var refetchShown = null;
-  function renderRefetch(on) {
-    if (on === refetchShown) return;   // 每秒一次的轮询无条件重画会把按下去的按钮换掉
-    refetchShown = on;
+  function renderRefetch(on, paused) {
+    var key = on ? (paused ? 'on+paused' : 'on') : 'off';
+    if (key === refetchShown) return;   // 每秒一次的轮询无条件重画会把按下去的按钮换掉
+    refetchShown = key;
     document.getElementById('player-refetch').innerHTML = on
-      ? '<div class="src-refetch"><button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
+      ? '<div class="src-refetch">' +
+        (paused ? '<button type="button" id="src-full">' + T('完整搜索') + '</button> ' : '') +
+        '<button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
         '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p></div>'
       : '';
   }
@@ -2754,6 +2759,14 @@ private val SCRIPT = """
     if (hadFull) poll(true);
   });
   document.getElementById('player-refetch').addEventListener('click', function (e) {
+    var r = e.target.closest('#src-full');
+    if (r) {
+      r.disabled = true;
+      post('api/player/full-search', {})
+        .then(function (x) { if (x.message) toast(x.message); poll(true); })
+        .catch(fail);
+      return;
+    }
     var b = e.target.closest('#src-refetch');
     if (!b) return;
     b.disabled = true;

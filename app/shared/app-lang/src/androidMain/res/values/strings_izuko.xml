@@ -318,6 +318,9 @@
     <string name="subject_details_relation_character">Character cameo</string>
     <string name="subject_details_relation_collaboration">Collaboration</string>
     <string name="media_selector_item_cache_not_ready">Cache incomplete</string>
+    <string name="media_selector_full_search">Full search</string>
+    <string name="settings_media_always_full_search">Always search all sources</string>
+    <string name="settings_media_always_full_search_description">When off, sources still searching are paused once the video starts playing, to reduce stutter; they continue when you open the source panel or turn on Full search. When on, every source is always searched to the end.</string>
     <string name="mediafetch_request_editor_restore_names">Restore Bangumi names</string>
     <string name="episode_danmaku">Danmaku</string>
     <string name="episode_send_danmaku_failed">Failed to send danmaku</string>
