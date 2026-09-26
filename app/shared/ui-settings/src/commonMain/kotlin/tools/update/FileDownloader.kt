@@ -202,12 +202,13 @@ class DefaultFileDownloader(
                     state.value = FileDownloaderState.Cancelled(e)
                     throw e
                 } catch (e: Throwable) {
-                    // Collect, mark as failed, and try next URL
+                    // 记下错误, 接着试下一个地址. 这时不切到失败态: 界面按失败态显示「重试」(电视上焦点也送过去),
+                    // 而后台还在试后面的地址, 用户一按就从第一个地址重来, 反而打断了回落
                     collect(e)
-                    state.value = FileDownloaderState.Failed(getLast()!!)
                 }
             }
-            // If we exhausted all URLs, throw the last error we collected
+            // 所有地址都失败才算失败, 抛出最后一个错误
+            state.value = FileDownloaderState.Failed(getLast()!!)
             throwLast()
         }
         // Unreachable in normal flow
