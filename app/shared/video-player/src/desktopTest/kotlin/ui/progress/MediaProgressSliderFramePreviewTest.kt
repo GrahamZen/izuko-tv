@@ -164,6 +164,38 @@ class MediaProgressSliderFramePreviewTest {
     }
 
     @Test
+    fun `uncached position requests frame when the preview fetches data itself`() = runAniComposeUiTest {
+        var fetchCount = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = {
+                fetchCount++
+                solidFrame(Color.Red)
+            },
+            debounceMillis = 0,
+            fetchesUncachedPositions = { true },
+        )
+        val uncachedInfo = MediaCacheProgressInfo(
+            chunkWeights = floatListOf(1f),
+            chunkStates = listOf(ChunkState.NONE),
+        )
+        setContent {
+            MediaProgressSlider(
+                createSliderState(),
+                cacheProgressInfoFlow = { uncachedInfo },
+                framePreview = framePreview,
+            )
+        }
+
+        onNodeWithTag(TAG_PROGRESS_SLIDER).performMouseInput {
+            moveTo(center)
+        }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).exists()
+        }
+        assertTrue(fetchCount > 0, "fetchFrame should be called for uncached position of online media")
+    }
+
+    @Test
     fun `no frame preview state keeps time-only popup`() = runAniComposeUiTest {
         setContent {
             MediaProgressSlider(

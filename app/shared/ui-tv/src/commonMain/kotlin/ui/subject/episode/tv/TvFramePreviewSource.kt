@@ -172,6 +172,7 @@ internal fun rememberTvFramePreviewState(
             fetchFrame = { source.getFrame(it, maxWidthPx, maxHeightPx) },
             debounceMillis = FRAME_DEBOUNCE_MILLIS,
             positionGridMillis = FRAME_POSITION_GRID_MILLIS,
+            fetchesUncachedPositions = { player.mediaData.value is UriMediaData },
         )
     }
     LaunchedEffect(state, source, player) {
