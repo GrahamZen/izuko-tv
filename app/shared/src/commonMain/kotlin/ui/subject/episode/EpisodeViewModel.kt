@@ -87,6 +87,7 @@ import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.GetSubjectRecommendationUseCase
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCase
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
+import me.him188.ani.app.domain.episode.SubjectRecommendation
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.episodeIdFlow
 import me.him188.ani.app.domain.episode.getCurrentEpisodeId
@@ -597,7 +598,10 @@ class EpisodeViewModel(
                 }
                     .produceState(null),
             ),
-            recommendations = subjectInfoFlow.map { getSubjectRecommendations(it.subjectId) }.produceState(emptyList()),
+            // 初值 null = 还没拿到: 请求失败时 produceState 停在这里, 界面据此与"拿到了但一条都没有"分开
+            recommendations = subjectInfoFlow
+                .map<SubjectInfo, List<SubjectRecommendation>?> { getSubjectRecommendations(it.subjectId) }
+                .produceState(null),
             subjectDetailsStateLoader = SubjectDetailsStateLoader(subjectDetailsStateFactory, backgroundScope),
         )
     }

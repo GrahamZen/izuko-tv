@@ -90,6 +90,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -133,6 +134,7 @@ import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
 import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
+import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
@@ -687,8 +689,24 @@ private fun TvRecommendationsPanel(
     modifier: Modifier = Modifier,
 ) {
     val navigator = LocalNavigator.current
-    val recommendations by vm.episodeDetailsState.recommendations
+    // null = 还没拿到 (加载中或失败), 面板留空; 空列表 = 拿到了但一条都没有, 显示空状态.
+    // Bangumi 的推荐 (「看过这部的人也看过」) 对 2023 年下半年起开播的条目普遍为空, 近几年的番多半走空状态
+    val loaded by vm.episodeDetailsState.recommendations
+    val recommendations = loaded.orEmpty()
     TvPanelList(listState, overlay, focusedIndex, modifier) {
+        if (loaded?.isEmpty() == true) {
+            item("recommendations_empty") {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    // 放不下就换行, 不截断
+                    Text(
+                        stringResource(Lang.subject_episode_related_recommendations_empty),
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
         items(
             count = recommendations.size,
             key = { i -> recommendations[i].uniqueId },
