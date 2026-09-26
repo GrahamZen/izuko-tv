@@ -186,7 +186,7 @@ class TvFocusScope {
     }
 
     /** 取消指定锚点仍在途的请求; 其他锚点后来发出的请求不受影响. */
-    internal fun cancel(key: TvFocusKey) {
+    fun cancel(key: TvFocusKey) {
         if (pending?.first != key) return
         pending = null
     }
