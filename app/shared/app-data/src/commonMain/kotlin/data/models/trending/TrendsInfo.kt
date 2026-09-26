@@ -9,11 +9,13 @@
 
 package me.him188.ani.app.data.models.trending
 
+import kotlinx.serialization.Serializable
 
 data class TrendsInfo(
     val subjects: List<TrendingSubjectInfo>
 )
 
+@Serializable
 data class TrendingSubjectInfo(
     val bangumiId: Int,
     val nameCn: String,

@@ -14,10 +14,14 @@ import androidx.paging.PagingData
 import androidx.paging.PagingSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.trending.TrendingSubjectInfo
 import me.him188.ani.app.data.models.trending.TrendsInfo
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
+import me.him188.ani.app.data.persistent.JsonFileCache
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 import me.him188.ani.app.tools.paging.SinglePagePagingSource
@@ -27,14 +31,24 @@ import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectType
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.error
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.hours
 
 class TrendsRepository(
     private val trendsApi: ApiInvoker<TrendingBangumiNextApi>,
-    private val ioDispatcher: CoroutineContext = Dispatchers.IO_
+    /** 热度榜头一页落盘的文件, 见 [firstPage]; `null` = 只在内存里共用. */
+    cacheFile: SystemPath? = null,
+    private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    private val clock: () -> Long = { currentTimeMillis() },
 ) : Repository() {
+    private val diskCache = cacheFile?.let { JsonFileCache(it, SavedFirstPage.serializer(), ioDispatcher) }
+    private val firstPageLock = Mutex()
+    private var firstPage: SavedFirstPage? = null
+
     /**
      * 热度榜的一页.
      *
@@ -44,12 +58,8 @@ class TrendsRepository(
      *   翻几十名依然是"大家最近在看".
      */
     suspend fun getTrendsInfo(limit: Int = TRENDING_LIMIT, offset: Int = 0): TrendsInfo {
-        return withContext(ioDispatcher) {
-            trendsApi {
-                getTrendingSubjects(BangumiNextSubjectType.Anime, limit = limit, offset = offset)
-                    .body().toTrendsInfo()
-            }
-        }
+        if (limit == TRENDING_LIMIT && offset == 0) return firstPage()
+        return fetch(limit, offset)
     }
 
     // bangumi 的每日热度榜
@@ -57,14 +67,8 @@ class TrendsRepository(
         return Pager(defaultPagingConfig) {
             SinglePagePagingSource<Unit, TrendsInfo> {
                 runWrappingExceptionAsLoadResult<Unit, TrendsInfo> {
-                    val trendsInfo = withContext(ioDispatcher) {
-                        trendsApi {
-                            getTrendingSubjects(BangumiNextSubjectType.Anime, limit = TRENDING_LIMIT).body()
-                                .toTrendsInfo()
-                        }
-                    }
                     PagingSource.LoadResult.Page(
-                        listOf(trendsInfo),
+                        listOf(firstPage()),
                         null,
                         null,
                     )
@@ -77,6 +81,35 @@ class TrendsRepository(
         }.flow
     }
 
+    /**
+     * 热度榜头一页 ([TRENDING_LIMIT] 条). 探索页轮播、推荐重算 (躲开轮播在放的)、TV 主屏频道、屏保都要它:
+     * [FIRST_PAGE_TTL] 内共用一份, 同时来问的只发一次请求; 并且落盘, 冷启动时轮播不用先等这个请求.
+     */
+    private suspend fun firstPage(): TrendsInfo = firstPageLock.withLock {
+        val cached = firstPage ?: diskCache?.read()?.also { firstPage = it }
+        if (cached != null && clock() - cached.fetchedAt in 0 until FIRST_PAGE_TTL.inWholeMilliseconds) {
+            return@withLock TrendsInfo(cached.subjects)
+        }
+        val fetched = fetch(TRENDING_LIMIT, 0)
+        val saved = SavedFirstPage(clock(), fetched.subjects)
+        firstPage = saved
+        diskCache?.write(saved)
+        fetched
+    }
+
+    private suspend fun fetch(limit: Int, offset: Int): TrendsInfo = withContext(ioDispatcher) {
+        trendsApi {
+            getTrendingSubjects(BangumiNextSubjectType.Anime, limit = limit, offset = offset)
+                .body().toTrendsInfo()
+        }
+    }
+
+    @Serializable
+    private class SavedFirstPage(
+        val fetchedAt: Long,
+        val subjects: List<TrendingSubjectInfo>,
+    )
+
     companion object {
         /**
          * 热度榜一页给多少条.
@@ -86,6 +119,9 @@ class TrendsRepository(
          * 重复就得知道这个数.
          */
         const val TRENDING_LIMIT = 20
+
+        /** 热度榜头一页共用多久, 见 [firstPage]. 榜是按天滚动的, 一小时里前二十名变不了几个. */
+        private val FIRST_PAGE_TTL = 1.hours
     }
 }
 

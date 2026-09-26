@@ -79,6 +79,10 @@ interface RecommendationFeedDao {
     @Query("""select profileKey from recommendation_feed limit 1""")
     suspend fun profileKey(): String?
 
+    /** 只换身份串, 推荐内容不动: 画像身份串变了、核对下来却不必重算的时候用. */
+    @Query("""update recommendation_feed set profileKey = :profileKey""")
+    suspend fun updateProfileKey(profileKey: String)
+
     /**
      * 上一批各行种子推荐用的作品名, 按行的先后; 给种子稳定与「换一批」轮换用.
      *
