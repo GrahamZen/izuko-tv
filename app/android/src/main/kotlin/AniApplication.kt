@@ -106,7 +106,8 @@ class AniApplication : Application() {
         }
         startupTimeMonitor.mark(StepName.UncaughtExceptionHandler)
 
-        if (processName().contains("torrent_service")) {
+        val currentProcess = processName()
+        if (currentProcess.contains("torrent_service") || currentProcess.contains("codecprobe")) {
             // In service process, we don't need any dependency which is use in app process.
             return
         }

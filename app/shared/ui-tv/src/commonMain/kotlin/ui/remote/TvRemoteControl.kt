@@ -867,6 +867,9 @@ object TvRemoteControl {
             // 「设置」标签: 代理 / BT tracker 等要打字的设置, 见 RemoteSettings
             path == "api/settings" || path.startsWith("api/settings/") ->
                 RemoteSettings.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 设置标签「数据源」页里的夸克网盘 (登录 / 添加数据源), 见 RemoteQuark
+            path == "api/quark" || path.startsWith("api/quark/") ->
+                RemoteQuark.handle(request, scope) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 设置标签的「数据源」页: 设置里数据源管理那一页的网页版, 见 RemoteSources
             path == "api/sources" || path.startsWith("api/sources/") ->
                 RemoteSources.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")

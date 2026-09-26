@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -988,4 +988,39 @@ private fun part6() = listOf(
     RemoteText("允许并改用镜像", "Allow and use the mirror", "允許並改用鏡像", "允許並改用鏡像"),
     RemoteText("退出登录并改用镜像", "Sign out and use the mirror", "退出登錄並改用鏡像", "退出登入並改用鏡像"),
     RemoteText("现在用的是镜像。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）只走官方，官方连不上时都会失败。", "You're using the mirror. After turning this off, requests made while signed in (collections, progress, and even browsing titles) go only to the official site, so they all fail when it can't be reached.", "現在用的是鏡像。關閉後，登錄後的請求（收藏、進度，以及登錄後瀏覽條目）只走官方，官方連不上時都會失敗。", "現在用的是鏡像。關閉後，登入後的請求（收藏、進度，以及登入後瀏覽條目）只走官方，官方連不上時都會失敗。"),
+)
+
+// 数据源页的夸克网盘卡片 (RemoteQuark / QUARK_SCRIPT)
+private fun part7() = listOf(
+    RemoteText("夸克网盘", "Quark Drive", "夸克網盤", "夸克網盤"),
+    RemoteText("在你自己的夸克网盘里找番", "Finds shows in your own Quark Drive", "在你自己的夸克網盤裡找番", "在你自己的夸克網盤裡找番"),
+    RemoteText("登录已失效", "Sign-in expired", "登錄已失效", "登入已失效"),
+    RemoteText("重新扫码或填 Cookie 登录", "Scan again or enter a cookie to sign in", "重新掃碼或填 Cookie 登錄", "重新掃碼或填 Cookie 登入"),
+    RemoteText("还没有添加「夸克网盘」数据源", "The Quark Drive source has not been added yet", "還沒有添加「夸克網盤」數據源", "還沒有新增「夸克網盤」資料源"),
+    RemoteText("添加到数据源", "Add as a source", "添加到數據源", "新增到資料源"),
+    RemoteText("转码播放", "Play transcoded stream", "轉碼播放", "轉碼播放"),
+    RemoteText("关闭时播放原文件。非会员播放原文件会被限速，转码只有最低清晰度", "When off, the original file is played. Without a membership the original file is throttled and the transcoded stream is lowest quality only", "關閉時播放原文件。非會員播放原文件會被限速，轉碼只有最低清晰度", "關閉時播放原始檔案。非會員播放原始檔案會被限速，轉碼只有最低畫質"),
+    RemoteText("登录后，播放时会按番名在你的夸克网盘里找视频，找到的出现在选源列表的「夸克网盘」里。登录后自动添加这个数据源。", "After signing in, the player looks for videos in your Quark Drive by the show name; matches appear under “Quark Drive” in the source list. The source is added automatically after sign-in.", "登錄後，播放時會按番名在你的夸克網盤裡找影片，找到的出現在選源列表的「夸克網盤」裡。登錄後自動添加這個數據源。", "登入後，播放時會按番名在你的夸克網盤裡找影片，找到的出現在選源列表的「夸克網盤」裡。登入後自動新增這個資料源。"),
+    RemoteText("用装了夸克 App 的另一台手机扫码；或者在这台手机上点下面的按钮，跳到夸克 App 里确认登录。", "Scan with another phone that has the Quark app, or tap the button below on this phone to confirm in the Quark app.", "用裝了夸克 App 的另一台手機掃碼；或者在這台手機上點下面的按鈕，跳到夸克 App 裡確認登錄。", "用裝了夸克 App 的另一台手機掃描；或者在這台手機上點下面的按鈕，跳到夸克 App 裡確認登入。"),
+    RemoteText("在夸克 App 中确认", "Confirm in the Quark app", "在夸克 App 中確認", "在夸克 App 中確認"),
+    RemoteText("在夸克 App 里确认后回到这里。点了没反应的话，确认这台手机装了夸克 App。", "Confirm in the Quark app, then come back here. If nothing happens, make sure the Quark app is installed on this phone.", "在夸克 App 裡確認後回到這裡。點了沒反應的話，確認這台手機裝了夸克 App。", "在夸克 App 裡確認後回到這裡。點了沒反應的話，確認這台手機裝了夸克 App。"),
+    RemoteText("在微信、QQ 里打开的页面不能跳转到夸克 App：点右上角菜单选「在浏览器打开」，或者用另一台手机扫码。", "Pages opened inside WeChat or QQ can't switch to the Quark app. Use the menu at the top right to open this page in a browser, or scan with another phone.", "在微信、QQ 裡打開的頁面不能跳轉到夸克 App：點右上角選單選「在瀏覽器打開」，或者用另一台手機掃碼。", "在微信、QQ 裡開啟的頁面不能跳轉到夸克 App：點右上角選單選「在瀏覽器開啟」，或者用另一台手機掃描。"),
+    RemoteText("用手机上的夸克 App 扫码登录。", "Scan with the Quark app on your phone to sign in.", "用手機上的夸克 App 掃碼登錄。", "用手機上的夸克 App 掃描登入。"),
+    RemoteText("正在获取二维码…", "Getting QR code…", "正在獲取二維碼…", "正在取得 QR 碼…"),
+    RemoteText("二维码已过期", "The QR code has expired", "二維碼已過期", "QR 碼已過期"),
+    RemoteText("登录失败", "Sign-in failed", "登錄失敗", "登入失敗"),
+    RemoteText("扫码登录", "Sign in with QR code", "掃碼登錄", "掃碼登入"),
+    RemoteText("或者填写 Cookie", "Or enter a cookie", "或者填寫 Cookie", "或者填寫 Cookie"),
+    RemoteText("粘贴 Cookie", "Paste the cookie", "貼上 Cookie", "貼上 Cookie"),
+    RemoteText("在电脑浏览器登录 pan.quark.cn，打开开发者工具，复制任意一个请求里的整段 Cookie", "Sign in to pan.quark.cn in a desktop browser, open the developer tools and copy the whole Cookie header of any request", "在電腦瀏覽器登錄 pan.quark.cn，打開開發者工具，複製任意一個請求裡的整段 Cookie", "在電腦瀏覽器登入 pan.quark.cn，開啟開發人員工具，複製任意一個請求裡的整段 Cookie"),
+    RemoteText("用 Cookie 登录", "Sign in with cookie", "用 Cookie 登錄", "用 Cookie 登入"),
+    RemoteText("退出夸克网盘登录？", "Sign out of Quark Drive?", "退出夸克網盤登錄？", "登出夸克網盤？"),
+    RemoteText("先把 Cookie 粘到框里", "Paste the cookie into the box first", "先把 Cookie 貼到框裡", "先把 Cookie 貼到框裡"),
+    RemoteText("已登录夸克网盘", "Signed in to Quark Drive", "已登錄夸克網盤", "已登入夸克網盤"),
+    RemoteText("已退出夸克网盘", "Signed out of Quark Drive", "已退出夸克網盤", "已登出夸克網盤"),
+    RemoteText("已经添加过了", "Already added", "已經添加過了", "已經新增過了"),
+    RemoteText("体验会员", "Trial membership", "體驗會員", "體驗會員"),
+    RemoteText("超级会员", "SVIP", "超級會員", "超級會員"),
+    RemoteText("会员", "VIP", "會員", "會員"),
+    RemoteText("普通用户", "Free", "普通用戶", "一般用戶"),
 )

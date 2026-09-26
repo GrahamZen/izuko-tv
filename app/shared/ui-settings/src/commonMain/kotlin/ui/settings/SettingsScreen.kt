@@ -172,6 +172,7 @@ import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroup
 import me.him188.ani.app.ui.settings.tabs.media.MediaSelectionGroup
 import me.him188.ani.app.ui.settings.tabs.media.TorrentEngineGroup
 import me.him188.ani.app.ui.settings.tabs.media.PikPakAcceleratorGroup
+import me.him188.ani.app.ui.settings.tabs.media.QuarkDriveGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSelectionActions
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionGroup
@@ -368,6 +369,7 @@ fun SettingsScreen(
                                 MediaSourceSubscriptionGroup(
                                     vm.mediaSourceSubscriptionGroupState,
                                 )
+                                QuarkDriveGroup(vm.quarkDriveGroupState)
                                 MediaSourceGroup(
                                     vm.mediaSourceGroupState,
                                     vm.editMediaSourceState,

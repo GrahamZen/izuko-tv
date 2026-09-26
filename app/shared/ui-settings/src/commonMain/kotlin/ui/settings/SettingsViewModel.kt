@@ -29,6 +29,7 @@ import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.EndpointSelection
@@ -63,6 +64,8 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.codec.serializeSubscriptionToString
+import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
+import me.him188.ani.app.domain.mediasource.quark.ensureQuarkMediaSourceAdded
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.settings.ProxySettingsFlowProxyProvider
 import me.him188.ani.app.domain.settings.ProxyTester
@@ -81,6 +84,7 @@ import me.him188.ani.app.ui.settings.tabs.about.AboutTabInfo
 import me.him188.ani.app.ui.settings.tabs.app.SoftwareUpdateGroupState
 import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroupState
 import me.him188.ani.app.ui.settings.tabs.media.MediaSelectionGroupState
+import me.him188.ani.app.ui.settings.tabs.media.QuarkDriveGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.EditMediaSourceState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceLoader
@@ -111,6 +115,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val bangumiMirrorListRepository: BangumiMirrorListRepository by inject()
 
     private val mediaSourceManager: MediaSourceManager by inject()
+    private val quarkDriveService: QuarkDriveService by inject()
     private val mediaSourceInstanceRepository: MediaSourceInstanceRepository by inject()
     private val mediaSourceSubscriptionRepository: MediaSourceSubscriptionRepository by inject()
     private val mediaSourceSubscriptionUpdater: MediaSourceSubscriptionUpdater by inject()
@@ -180,6 +185,13 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val pikpakSettingsState: SettingsState<PikPakConfig> =
         settingsRepository.pikpakConfig.stateInBackground(PikPakConfig.Default)
+
+    val quarkDriveGroupState = QuarkDriveGroupState(
+        config = quarkDriveService.config.stateIn(backgroundScope, SharingStarted.Eagerly, QuarkConfig.Default),
+        service = quarkDriveService,
+        onLoggedIn = { ensureQuarkMediaSourceAdded(mediaSourceManager) },
+        scope = backgroundScope,
+    )
 
     // Probes PikPak auth with the currently-displayed credentials. The engine
     // keeps the password persisted (obscured, see PikPakConfig.password) so a

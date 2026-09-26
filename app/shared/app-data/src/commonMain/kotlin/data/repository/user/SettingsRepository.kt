@@ -32,6 +32,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
@@ -106,6 +107,7 @@ interface SettingsRepository {
     val videoResolverSettings: Settings<VideoResolverSettings>
     val anitorrentConfig: Settings<AnitorrentConfig>
     val pikpakConfig: Settings<PikPakConfig>
+    val quarkConfig: Settings<QuarkConfig>
     val torrentPeerConfig: Settings<TorrentPeerConfig>
 
     val oneshotActionConfig: Settings<OneshotActionConfig>
@@ -290,6 +292,12 @@ class PreferencesRepositoryImpl(
         "pikpakConfig",
         PikPakConfig.serializer(),
         default = { PikPakConfig.Default },
+    )
+
+    override val quarkConfig: Settings<QuarkConfig> = SerializablePreference(
+        "quarkConfig",
+        QuarkConfig.serializer(),
+        default = { QuarkConfig.Default },
     )
 
     override val torrentPeerConfig: Settings<TorrentPeerConfig> = SerializablePreference(
