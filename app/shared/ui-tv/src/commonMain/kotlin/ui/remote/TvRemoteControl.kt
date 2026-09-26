@@ -440,6 +440,15 @@ object TvRemoteControl {
     }
 
     /**
+     * 网页发起的安装要在电视上打开授权页、弹系统的确认界面, 只有 Ani 在前台时打得开: 不在前台就像播放器操作那样叫回来 ([awaitFront]),
+     * 返回现在在不在前台. 会等几秒, 别在主线程调.
+     */
+    internal fun bringToFrontForInstall(): Boolean {
+        awaitFront()
+        return tvForeground
+    }
+
+    /**
      * 启动弹窗里「启动时不再显示」(同设置-界面里的开关). 写设置放在本对象的作用域里: 调用方随即关掉弹窗,
      * 用弹窗的组合作用域写会被一起取消.
      */
@@ -590,6 +599,8 @@ object TvRemoteControl {
         if (foreground) scheduleFrontAuth()
         // 「退出 Ani 后保留」开着: 常驻服务只能在前台起, 回来了就补上 (见 syncKeepAlive)
         if (foreground) syncKeepAlive()
+        // 网页发起的安装在等 Ani 回前台打开授权页 / 弹确认 (见 RemoteAppUpdate)
+        if (foreground) RemoteAppUpdate.onTvForeground()
     }
 
     // 没人收集时不走这条 (见 deliverSearch 里的分支), replay = 0
@@ -651,6 +662,7 @@ object TvRemoteControl {
             fixedPort = fixedPortFor(context.packageName)
             _knownHost.value = prefs?.getString(KEY_KNOWN_HOST, null)
         }
+        RemoteAppUpdate.attach(context)
         // 启动时的二维码弹窗关掉时, 看看有没有欠着的授权页要打开 (它开着时先不打开, 免得叠在一起; 见 scheduleFrontAuth)
         scope.launch { _dialogVisible.collect { if (!it) scheduleFrontAuth() } }
         scope.launch {
@@ -884,6 +896,9 @@ object TvRemoteControl {
                 RemoteCollections.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 挑番面板的「新番时间表」: 这一周每天播出的番, 见 RemoteSchedule
             path == "api/schedule" && get -> json(RemoteSchedule.schedule(request))
+            // 设置「应用更新」: 检查、下载或上传安装包、会话安装, 见 RemoteAppUpdate
+            path == "api/update" || path.startsWith("api/update/") ->
+                RemoteAppUpdate.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 手机上的 TMDB 图经电视转发 (播放记录的剧照 / 横屏图), 见 RemoteImageProxy
             path == "api/img" && get -> RemoteImageProxy.handle(request)
             // 数据源名字前的图标 (内置源的打包图标 / 源自己配置的图标地址), 见 RemoteSourceIcons
