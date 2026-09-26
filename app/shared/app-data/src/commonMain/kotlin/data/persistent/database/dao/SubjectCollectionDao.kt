@@ -33,7 +33,9 @@ import me.him188.ani.app.data.persistent.database.ProtoConverters
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.platform.currentTimeMillis
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /**
  * @see SubjectInfo
@@ -223,6 +225,13 @@ interface SubjectCollectionDao {
         collectionType: UnifiedCollectionType,
         lastUpdated: Long = currentTimeMillis(),
     )
+
+    /** 只写播出周期 ([SubjectCollectionEntity.recurrence]) 这两列, 同一行别的列不动. */
+    @Query(
+        """UPDATE subject_collection SET recurrence_startTime = :startTime, recurrence_interval = :interval
+        WHERE subjectId = :subjectId""",
+    )
+    suspend fun updateRecurrence(subjectId: Int, startTime: Instant, interval: Duration)
 
     /** 本地还是 [expected] 才改成 [replacement] (连同更新时间); 已经被改成别的 (之后又改过) 就不动. */
     @Query(

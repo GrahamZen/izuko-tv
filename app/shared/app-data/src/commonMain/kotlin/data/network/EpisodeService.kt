@@ -12,6 +12,11 @@ package me.him188.ani.app.data.network
 import io.ktor.client.plugins.*
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
@@ -134,17 +139,20 @@ class EpisodeServiceImpl(
 
     /**
      * v0 的 limit 上限是 100, 长番要翻页. [fetch] 返回 (总数, 本页).
+     *
+     * 第一页报出总数之后, 其余页同时取 (最多 [PAGE_PARALLELISM] 个在飞), 按页序拼回来: 一千多集的长番
+     * 一页一页翻是十几个来回, 大图区与详情页的选集都在等它落库.
      */
-    private suspend inline fun <T> fetchAllPages(fetch: (offset: Int) -> Pair<Int, List<T>>): List<T> {
-        val result = mutableListOf<T>()
-        var offset = 0
-        while (true) {
-            val (total, page) = fetch(offset)
-            result.addAll(page)
-            offset += page.size
-            if (page.isEmpty() || result.size >= total || offset >= MAX_EPISODES) break
-        }
-        return result
+    private suspend fun <T> fetchAllPages(fetch: suspend (offset: Int) -> Pair<Int, List<T>>): List<T> = coroutineScope {
+        val (total, first) = fetch(0)
+        // 按第一页的实际条数算步长: 服务端要是把每页压得比 PAGE_SIZE 小, 照样一页不漏
+        val step = first.size
+        if (step == 0 || step >= total) return@coroutineScope first
+        val permits = Semaphore(PAGE_PARALLELISM)
+        val rest = (step until minOf(total, MAX_EPISODES) step step)
+            .map { offset -> async { permits.withPermit { fetch(offset).second } } }
+            .awaitAll()
+        first + rest.flatten()
     }
 
     override suspend fun getEpisodeCollectionInfosPaged(
@@ -205,6 +213,9 @@ class EpisodeServiceImpl(
 
     private companion object {
         const val PAGE_SIZE = 100 // v0 的 limit 上限
+
+        /** 长番翻页时同时在飞的页数, 见 [fetchAllPages]. 一千多集四页一起取, 一秒多就齐了, 不必一口气全发出去. */
+        const val PAGE_PARALLELISM = 4
 
         /**
          * 长番 (海贼王一千多集) 的封顶, 防止翻页翻不完.
