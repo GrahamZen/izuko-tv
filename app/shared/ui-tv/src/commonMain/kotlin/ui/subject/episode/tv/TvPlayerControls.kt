@@ -118,6 +118,7 @@ import me.him188.ani.app.ui.foundation.animation.StandardAccelerateEasing
 import me.him188.ani.app.ui.foundation.animation.StandardDecelerateEasing
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
+import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
@@ -539,6 +540,11 @@ internal fun TvPlayerControlsOverlay(
                         overlay = overlay,
                         danmakuEditorState = danmakuEditorState,
                         vm = vm,
+                        episodeId = page.episodePresentation.episodeId,
+                        danmakuLoading = page.danmakuStatistics.isLoading(),
+                        danmakuLoadFailed = page.danmakuStatistics.isLoadFailed(),
+                        // 只剩 OP/ED 提示按钮托着本层时整层是透明的, 胶囊看不见, 不呼吸
+                        loadingPulseEnabled = chromeVisible,
                         items = pillItems,
                         pillFocusRequesters = pillFocusRequesters,
                         onViewAllPeople = { peopleViewAll = it },
@@ -760,6 +766,14 @@ private fun TvPlayerPillsRow(
     overlay: TvPlayerOverlayState,
     danmakuEditorState: DanmakuEditorState,
     vm: EpisodeViewModel,
+    /** 正在播的这一集: 评论胶囊拿它对 [TvPlayerOverlayState.commentsLoad]. */
+    episodeId: Int,
+    /** 这一集的弹幕正在加载: 弹幕胶囊呼吸. */
+    danmakuLoading: Boolean,
+    /** 这一集的弹幕没加载出来: 弹幕胶囊压暗. */
+    danmakuLoadFailed: Boolean,
+    /** 加载中的胶囊呼不呼吸: 胶囊真在屏上时才开. */
+    loadingPulseEnabled: Boolean,
     /** 本行此刻要摆的胶囊, 已排好序 (见 [rememberTvPillItems]). */
     items: List<TvPlayerChromeItem>,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
@@ -845,6 +859,10 @@ private fun TvPlayerPillsRow(
                             composingNewComment,
                             abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
                         ),
+                        // 本集评论加载中 / 加载失败 (进播放页就拉, 见 TvCommentsLoadTracker)
+                        loadFailed = overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.FAILED),
+                        loading = loadingPulseEnabled &&
+                                overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.LOADING),
                     )
 
                     // 「弹幕」一颗顶原来的两颗 (弹幕列表 + 发送弹幕): 聚焦浮出弹幕列表面板 (含源开关与
@@ -855,6 +873,8 @@ private fun TvPlayerPillsRow(
                         danmakuEditorState = danmakuEditorState,
                         vm = vm,
                         panelFocusRequester = pillFocusRequesters.getValue(TvPlayerPanel.DANMAKU_LIST),
+                        loadFailed = danmakuLoadFailed,
+                        loading = loadingPulseEnabled && danmakuLoading,
                     )
 
                     else -> Unit // 图标行的条目走不到这里 (按 row 分流过)
@@ -899,6 +919,10 @@ private fun TvPlayerPill(
     modifier: Modifier = Modifier,
     /** 默认是把焦点送进面板 (与上键一致); 另有动作的胶囊自己传 (见评论胶囊). */
     onClick: () -> Unit = { overlay.requestPanelFocus() },
+    /** 面板内容没加载出来: 图标换成警示图标、文字压暗 (见 [TvPillFailedIcon]). */
+    loadFailed: Boolean = false,
+    /** 面板内容正在加载: 胶囊呼吸 (见 [TvPillShell] 的同名参数). */
+    loading: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -907,11 +931,13 @@ private fun TvPlayerPill(
         onClick = onClick,
         interactionSource = interactionSource,
         touchTwoStep = true,
+        dimmed = loadFailed,
+        loading = loading,
         modifier = modifier
             .focusRequester(focusRequester)
             .onFocusChanged { if (it.isFocused) overlay.activePanel = panel },
     ) {
-        icon()
+        if (loadFailed) TvPillFailedIcon(highlighted = focused) else icon()
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
