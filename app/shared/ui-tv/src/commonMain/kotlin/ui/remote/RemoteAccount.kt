@@ -355,6 +355,7 @@ internal object RemoteAccount {
         LoadError.RateLimited -> tr("操作太频繁，稍后再试")
         LoadError.RequiresLogin -> tr("登录状态有问题，请重试")
         LoadError.NoResults -> tr("没有拿到登录结果，请重试")
+        LoadError.SubjectNotAccessible -> tr("这个条目当前账号看不到")
         is LoadError.RequestError -> error.localized
         is LoadError.UnknownError -> tr("未知错误") + (error.throwable?.message?.let { "：$it" } ?: "")
     }

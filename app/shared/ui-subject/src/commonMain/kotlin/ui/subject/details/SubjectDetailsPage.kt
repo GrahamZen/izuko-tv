@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
@@ -81,6 +82,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -142,6 +144,7 @@ import me.him188.ani.app.ui.lang.subject_details_coming_soon
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
 import me.him188.ani.app.ui.lang.subject_details_tab_comments
 import me.him188.ani.app.ui.lang.subject_details_tab_details
+import me.him188.ani.app.ui.lang.subject_details_tv_error_back_hint
 import me.him188.ani.app.ui.lang.subject_details_tab_discussions
 import me.him188.ani.app.ui.lang.subject_details_write_review
 import me.him188.ani.app.ui.rating.EditableRating
@@ -149,6 +152,7 @@ import me.him188.ani.app.ui.rating.EditableRatingDialogsHost
 import me.him188.ani.app.ui.rating.EditableRatingState
 import me.him188.ani.app.ui.richtext.RichTextDefaults
 import me.him188.ani.app.ui.search.LoadErrorCard
+import me.him188.ani.app.ui.search.renderLoadErrorMessage
 import me.him188.ani.app.ui.subject.AiringLabelState
 import me.him188.ani.app.ui.subject.SubjectProgressState
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeButton
@@ -717,6 +721,16 @@ private fun ErrorSubjectDetailsPage(
     navigationIcon: @Composable () -> Unit = {},
     onClickOpenExternal: () -> Unit = {},
 ) {
+    // 遥控器形态: 单栏布局是给手机竖屏做的, 搬到电视上就是一行字孤零零贴在左下角 (条目信息为空时
+    // header 还占着大半屏). 这里换成整页居中的一块, 并写明退出方式 —— 电视上没有可点的地方,
+    // 不说就只能干看着.
+    //
+    // 判据用 immersiveShell (与本页算 tenFoot 布局参数的那个一致), 不用详情页变体是否存在:
+    // 变体还要 tvImmersiveDetails 开着才生效, 关掉之后电视上照样是遥控器形态.
+    if (LocalAniUiBehavior.current.immersiveShell) {
+        TvErrorSubjectDetails(subjectInfo, error, modifier, windowInsets)
+        return
+    }
     SubjectDetailsSingleColumnPage(
         info = subjectInfo,
         seasonTags = { },
@@ -740,6 +754,56 @@ private fun ErrorSubjectDetailsPage(
                 .padding(horizontal = currentWindowAdaptiveInfo1().windowSizeClass.paneHorizontalPadding)
                 .padding(top = 12.dp),
         )
+    }
+}
+
+/**
+ * 遥控器形态的条目加载失败页: 整页居中, 一块说明.
+ *
+ * 不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
+ * 就是一次重试, 而多一个可聚焦元素就要多担一份"焦点框看不见 / 落点被抢"的风险。
+ */
+@Composable
+private fun TvErrorSubjectDetails(
+    subjectInfo: SubjectInfo?,
+    error: LoadError,
+    modifier: Modifier = Modifier,
+    windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
+) {
+    Box(
+        modifier.fillMaxSize()
+            .windowInsetsPadding(windowInsets)
+            .padding(horizontal = 96.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            subjectInfo?.displayName?.takeIf { it.isNotBlank() }?.let { name ->
+                Text(
+                    name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                renderLoadErrorMessage(error),
+                Modifier.widthIn(max = 860.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                stringResource(Lang.subject_details_tv_error_back_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

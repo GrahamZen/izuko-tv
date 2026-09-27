@@ -62,6 +62,7 @@ import me.him188.ani.app.ui.lang.foundation_load_error_rate_limited
 import me.him188.ani.app.ui.lang.foundation_load_error_request_error
 import me.him188.ani.app.ui.lang.foundation_load_error_requires_login
 import me.him188.ani.app.ui.lang.foundation_load_error_service_unavailable
+import me.him188.ani.app.ui.lang.foundation_load_error_subject_not_accessible
 import me.him188.ani.app.ui.lang.foundation_load_error_unknown_with_message
 import me.him188.ani.app.ui.lang.login_sign_in
 import me.him188.ani.app.ui.lang.settings_mediasource_copy
@@ -163,7 +164,10 @@ fun LoadErrorCard(
                 )
             }
 
-            LoadError.NoResults -> {
+            // 都是"没东西可看"而不是"出错了": 不给重试按钮, 重试也不会有别的结果
+            LoadError.NoResults,
+            LoadError.SubjectNotAccessible,
+                -> {
                 ListItem(
                     leadingContent = { Spacer(Modifier.size(24.dp)) }, // spacer
                     headlineContent = { Text(renderLoadErrorMessage(error)) },
@@ -303,6 +307,7 @@ fun renderLoadErrorMessage(error: LoadError): String {
         LoadError.ServiceUnavailable -> stringResource(Lang.foundation_load_error_service_unavailable)
         LoadError.NoResults -> stringResource(Lang.foundation_load_error_no_results)
         LoadError.RequiresLogin -> stringResource(Lang.foundation_load_error_requires_login)
+        LoadError.SubjectNotAccessible -> stringResource(Lang.foundation_load_error_subject_not_accessible)
         is LoadError.UnknownError -> {
             error.throwable?.printStackTrace()
             stringResource(

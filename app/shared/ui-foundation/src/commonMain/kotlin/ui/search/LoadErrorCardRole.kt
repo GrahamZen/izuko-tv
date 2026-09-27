@@ -172,7 +172,9 @@ sealed class LoadErrorCardRole {
                 LoadError.RateLimited -> Neural
 
                 // Unimportant message
-                LoadError.NoResults -> Unimportant
+                LoadError.NoResults,
+                LoadError.SubjectNotAccessible,
+                    -> Unimportant
             }
         }
     }
