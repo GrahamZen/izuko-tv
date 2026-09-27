@@ -66,6 +66,7 @@ import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_progress_continue_watching
 import me.him188.ani.app.ui.lang.subject_progress_start_watching
 import me.him188.ani.app.ui.lang.subject_progress_updates_on
+import me.him188.ani.app.ui.profile.rememberPendingLocalCollectionsHint
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.AiringLabelState
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
@@ -153,7 +154,8 @@ internal fun TvCollectionNativeGrid(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    stringResource(Lang.collection_tv_empty),
+                    // 改成 Bangumi 用户后还没登录: 说一声之前的本地收藏还在
+                    rememberPendingLocalCollectionsHint() ?: stringResource(Lang.collection_tv_empty),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyLarge,
                 )

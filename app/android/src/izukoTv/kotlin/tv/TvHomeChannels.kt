@@ -386,7 +386,8 @@ object TvHomeChannels {
      * TvProvider 查询只会返回本 app 写入的行, 不会误删其他 app 的数据.
      *
      * 先对一遍用户的操作 ([TvPlayNextSync]): 刚被移除的这一轮就不写了 (收藏随后改成搁置); 用户在频道卡片上「添加到接下来播放」
-     * 时系统复制进来的卡 (类型 WATCHLIST, 我们自己不写这种) 留着, 除非这部已经在要写的卡里 (标成在看后由我们按集画的那张替掉).
+     * 时系统复制进来的卡 (类型 WATCHLIST, 我们自己不写这种) 留着, 除非这部已经在要写的卡里 (标成在看后由我们按集画的那张替掉);
+     * 这一行是别的用户写的时连手动卡一起删 (那是别人加的, 留着会算成当前用户加的).
      */
     private fun writeWatchNext(context: Context, cards: List<WatchNextCard>, playNext: TvPlayNextSync) {
         val resolver = context.contentResolver
@@ -397,7 +398,7 @@ object TvHomeChannels {
         val cardSubjects = toWrite.mapTo(HashSet()) { it.entry.subjectId }
         playNext.beginRewrite()
         for (row in existing) {
-            if (row.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST &&
+            if (!changes.foreign && row.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST &&
                 subjectIdOf(row.intentUri, row.internalProviderId) !in cardSubjects
             ) {
                 continue

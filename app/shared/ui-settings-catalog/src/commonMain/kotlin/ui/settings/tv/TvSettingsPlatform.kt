@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.platform.Context
 
 /**
- * 设置清单里只有电视版才有的东西: Web 控制台、首次引导、性能诊断、经 Worker 扫码登录 Bangumi、「本版新功能」页.
+ * 设置清单里只有电视版才有的东西: Web 控制台、首次引导、性能诊断、经 Worker 扫码登录 Bangumi、「本版新功能」页、选人页.
  * 电视版 (ui-tv) 全给; 别的端没有的留默认 (null / 空), 用到它的项不显示 (控制台的二维码照样建, 由那一端换成自己的入口, 见 [TvQr.console]).
  */
 interface TvSettingsPlatform {
@@ -36,6 +36,9 @@ interface TvSettingsPlatform {
 
     /** 「本版新功能」整页 (盖在设置页上); null = 没有. */
     val whatsNewPage: (@Composable (dismiss: () -> Unit) -> Unit)? get() = null
+
+    /** 打开选人页 (切换用户, 见多用户); null = 没有. */
+    val showProfilePicker: (() -> Unit)? get() = null
 
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
