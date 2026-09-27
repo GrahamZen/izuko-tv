@@ -9,11 +9,11 @@
   ~ https://github.com/open-ani/ani/blob/main/LICENSE
   -->
 
-<!-- 交集 manifest: default (手机) 与 tv 两个 flavor 共用的声明.
-     合并方向为 flavor 增量 -> 本文件 (纯加法, 无 remove 手术).
-     手机专属 (torrent 双服务 / 前台服务权限 / oauth callback / AniApplication) 在 src/default;
-     TV 专属 (leanback / TvAniApplication / banner) 在 src/tv. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- 所有变体共用的声明. 合并方向为 flavor 增量 -> 本文件 (纯加法, 无 remove 手术).
+     default 发行渠道 (手机与电视两种形态都用) 的启动 Activity / torrent 服务 / 前台服务权限 / oauth callback 在 src/default;
+     电视形态专属 (leanback 启动器 / banner / 屏保 / EPG 权限) 在 src/izukoTv. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       只对兼容包 (-Pani.android.legacy=true, minSdk 25) 有意义, 正式包 minSdk 27 时这行不起任何作用.
@@ -47,6 +47,17 @@
             android:supportsRtl="true"
             android:theme="@style/Theme.Izuko"
             android:usesCleartextTraffic="true">
+
+        <!-- 换用户时重启应用的中转站 (独立进程) 与新进程里的落地页, 见 ProfileRestartActivity -->
+        <activity
+                android:name=".activity.ProfileRestartActivity"
+                android:exported="false"
+                android:process=":profile_restart"
+                android:theme="@style/Theme.Izuko.ProfileSwitch" />
+        <activity
+                android:name=".activity.ProfileSwitchLandingActivity"
+                android:exported="false"
+                android:theme="@style/Theme.Izuko.ProfileSwitch" />
 
         <service
                 android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"

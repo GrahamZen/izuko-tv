@@ -46,6 +46,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.NavRoutes
@@ -95,7 +96,7 @@ import kotlin.time.TimeSource
  *   [takePending]. 电视在播放页时同样直接把搜索页叠上去 (与播放器内嵌详情页点标签同一种方式), 按返回回到播放器.
  * - 结果: 电视搜索页已经加载的结果原样列到手机上, 点一条电视直接进播放页 (见 [RemoteSearchResults]).
  * - 缓存: 电视上的全部缓存按番列出 (状态 / 大小 / 暂停 / 删除) 与剩余空间, 见 [RemoteCacheList]; 给某部番挑几集缓存走 [RemoteCache].
- * - 设置: 账号与要打字的设置 (见 [RemoteSettings]), 以及「数据源」页 = 设置里数据源管理那一页的网页版
+ * - 设置: 用户 (见 [RemoteProfiles])、账号与要打字的设置 (见 [RemoteSettings]), 以及「数据源」页 = 设置里数据源管理那一页的网页版
  *   (列表 / 启停 / 排序 / 新增 / 编辑 / 导入导出), 见 [RemoteSources].
  * - 播放器: 播放页在组合里时登记一个前台 [RemotePlayerHandle]; 保留播放会话在后台时由 TV 根组合登记一个后台的,
  *   前台优先 ([registerPlayer]). 网页的读 (轮询状态) 与写 (选源 / 改查询请求) 都经它. 后台会话照常搜源、选源、
@@ -445,6 +446,15 @@ object TvRemoteControl {
      * 返回现在在不在前台. 会等几秒, 别在主线程调.
      */
     internal fun bringToFrontForInstall(): Boolean {
+        awaitFront()
+        return tvForeground
+    }
+
+    /**
+     * 网页上换用户 (见 [RemoteProfiles]) 要重启应用, 重启是起一个新界面, Ani 在后台时系统同样不许: 不在前台先叫回来 ([awaitFront]),
+     * 返回现在在不在前台. 会等几秒, 别在主线程调.
+     */
+    internal fun bringToFrontForRestart(): Boolean {
         awaitFront()
         return tvForeground
     }
@@ -874,6 +884,9 @@ object TvRemoteControl {
             // 设置标签「数据源」页里的订阅 (须排在 api/sources 通配之前), 见 RemoteSubscriptions
             path == "api/sources/subs" || path.startsWith("api/sources/subs/") ->
                 RemoteSubscriptions.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 「设置」标签顶上的用户 (添加 / 切换 / 改名 / 删除), 见 RemoteProfiles
+            path == "api/profiles" || path.startsWith("api/profiles/") ->
+                RemoteProfiles.handle(request, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签顶上的账号 (登录状态 / 用手机登录), 见 RemoteAccount
             path == PATH_ACCOUNT || path.startsWith("$PATH_ACCOUNT/") ->
                 RemoteAccount.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
@@ -929,6 +942,7 @@ object TvRemoteControl {
             // 同一次启动内不变, 重启 / 重装就变 —— 手机上那份脚本是不是新的, 看这个号就知道 (Safari 会把
             // 页面缓存下来, 装了新包不等于手机上换了脚本; 2026-09-18 有好几轮反馈其实测的是旧脚本)
             pageVersion = (processStart % 100000).toString(),
+            profileId = UserProfiles.currentId,
         )
     }
 
@@ -1072,6 +1086,8 @@ object TvRemoteControl {
             put("keep", keepAliveOnExit())
             // app 里换了语言: 网页发现和自己加载时的不一样就整页重载 (见 RemoteI18n)
             put("lang", RemoteI18n.lang.tag)
+            // 电视现在是哪个用户: 和网页加载时的不一样 (电视上或网页上换了人, 应用重启过) 就整页重载, 各标签里的数据都是按人的
+            put("user", UserProfiles.currentId)
             // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 经镜像时只给个人令牌登录
             val endpoints = bangumiEndpoints
             put(

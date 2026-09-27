@@ -94,6 +94,12 @@ interface CaptchaBrowser : AutoCloseable {
     suspend fun collectCookies(urls: List<String>): List<BrowserCookie>
 
     /**
+     * 清掉 [urls] 各自可见的 cookies. 浏览器的 cookie 是整机共用的 (所有实例一份), 所以清的是全局状态.
+     * 默认不做 (只有 Android 用得到: 多人共用电视时, 登录页不能还登着上一个人的账号).
+     */
+    suspend fun clearCookies(urls: List<String>) {}
+
+    /**
      * 设置资源请求拦截器 (视频资源嗅探). 传 `null` 清除.
      *
      * [handler] 会在浏览器网络线程被调用, 必须快速返回, 禁止阻塞.

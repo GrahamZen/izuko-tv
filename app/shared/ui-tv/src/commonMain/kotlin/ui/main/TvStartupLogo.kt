@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.platform.ProfileSwitchFrame
 import me.him188.ani.app.ui.foundation.AniStartupProgress
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.StartupProgressTracker
@@ -76,6 +78,7 @@ import kotlin.time.TimeSource
  *
  * - 进主页: 首屏在它背后照常加载, 封面出来了再撤 ([dismissWhenFirstScreenReady], 见 [StartupProgressTracker.awaitFirstScreenReady]).
  * - 走首次引导 ([onboarding]): 没有要等的, 不画进度条; 欢迎页排好后图标移到欢迎页的图标上、底色淡出露出引导页 ([handOffToWelcome]).
+ * - 打开应用先选人: 首屏同样在背后加载完, 再把选人页放出来盖在上面, 盖住了才撤 ([handOffToPicker]).
  */
 @Stable
 class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboarding: Boolean) {
@@ -114,6 +117,28 @@ class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboar
     }
 
     /**
+     * 交接给选人页 (打开应用先选人时): 首屏在背后加载完、主线程闲下来, 再 [reveal] 放出选人页 (在启动页上淡入),
+     * 选人页进场放完 (整页盖住、头像都停下) 才撤, 不淡出.
+     * 建主页的那几秒主线程很忙 (探索页第一次组合、海报墙第一次布局各要大半秒), 选人页的进场动画放在那时会卡住再跳过去;
+     * 启动页这段掉帧不碍事. 选人页本身先建好藏着 (见 TvUserProfilePicker.show), 放出来时不用再等它组合.
+     */
+    suspend fun handOffToPicker(reveal: suspend () -> Unit) {
+        val start = TimeSource.Monotonic.markNow()
+        tracker.awaitFirstScreenReady()
+        val ready = start.elapsedNow()
+        awaitMainThreadIdle()
+        val (finished, started) = tracker.coverCounts
+        logger.info {
+            "Startup logo handing off to the profile picker: first screen ready after ${ready.inWholeMilliseconds}ms, " +
+                    "idle after ${start.elapsedNow().inWholeMilliseconds}ms, covers $finished/$started"
+        }
+        val revealStart = TimeSource.Monotonic.markNow()
+        reveal()
+        logger.info { "Startup logo dismissed under the profile picker, picker entrance took ${revealStart.elapsedNow().inWholeMilliseconds}ms" }
+        dismiss(fadeOut = false)
+    }
+
+    /**
      * 交接给引导的欢迎页: 先在底色上把图标从中间移到欢迎页图标上并变成它的大小, 落地后底色再淡出露出引导页, 最后撤掉
      * (欢迎页的图标接着画, 位置大小都一样). 分两段是因为欢迎页的标题就在图标下面, 图标一路从下往上压着它走:
      * 边走边淡的话, 图标会从半透明的字上扫过去.
@@ -140,7 +165,15 @@ class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboar
         dismiss()
     }
 
-    fun dismiss() {
+    /** 撤的时候淡出 (见 [dismiss]). */
+    var fadeOutOnDismiss by mutableStateOf(true)
+        private set
+
+    /**
+     * @param fadeOut 淡出着撤. 盖在选人页底下时不淡 (看不见; 淡出的每一帧主页都要整页重画, 白占选人页也要用的渲染线程)
+     */
+    fun dismiss(fadeOut: Boolean = true) {
+        fadeOutOnDismiss = fadeOut
         visible = false
         tracker.stop()
     }
@@ -149,6 +182,7 @@ class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboar
 /**
  * 本进程的启动页: 第一次问时决定出不出 —— 冷启动 ([StartupProgressTracker.claimColdStart]) 且开关开着 ([TvPolishFlags.startupLogo]);
  * 之后问到的是同一份, 入口的占位与根部的启动页因此接得上. 撤掉之后返回 null (Activity 重建不再出).
+ * 换人重启进来的那次不出: 盖着的是换人的过场 (见 ProfileSwitchFrame.landing), 它用同一套首屏计数等首屏, 自己收尾.
  */
 object TvStartupLogoHost {
     private var state: TvStartupLogoState? = null
@@ -156,11 +190,13 @@ object TvStartupLogoHost {
     /** [onboarding]: 这次启动走首次引导. */
     fun coldStart(onboarding: Boolean): TvStartupLogoState? {
         if (AniStartupProgress.claimColdStart()) {
-            state = if (TvPolishFlags.startupLogo) {
-                TvStartupLogoState(AniStartupProgress, onboarding)
-            } else {
-                AniStartupProgress.stop()
-                null
+            state = when {
+                ProfileSwitchFrame.landing.value != null -> null
+                TvPolishFlags.startupLogo -> TvStartupLogoState(AniStartupProgress, onboarding)
+                else -> {
+                    AniStartupProgress.stop()
+                    null
+                }
             }
         }
         return state?.takeIf { it.visible }
@@ -195,7 +231,7 @@ fun TvStartupLogo(state: TvStartupLogoState, colors: TvStartupLogoColors, modifi
         state.visible,
         modifier,
         enter = EnterTransition.None,
-        exit = fadeOut(tween(STARTUP_LOGO_FADE_OUT_MILLIS)),
+        exit = if (state.fadeOutOnDismiss) fadeOut(tween(STARTUP_LOGO_FADE_OUT_MILLIS)) else ExitTransition.None,
     ) {
         Box(
             Modifier.fillMaxSize()
@@ -278,3 +314,29 @@ private const val TV_STARTUP_LOGO_HANDOFF_MILLIS = 550
 
 /** 图标落地之后底色淡出 (露出欢迎页) 的时长. */
 private const val TV_STARTUP_LOGO_REVEAL_MILLIS = 250
+
+/**
+ * 等主线程闲下来: 连续 [TV_STARTUP_LOGO_IDLE_FRAMES] 帧都按时出 (与上一帧相隔不超过 [TV_STARTUP_LOGO_IDLE_FRAME_MILLIS]),
+ * 最多等 [TV_STARTUP_LOGO_IDLE_WAIT_MILLIS]. 首屏的封面都加载完之后主页还会忙一阵 (解码好的图上屏、行内重组).
+ */
+private suspend fun awaitMainThreadIdle() {
+    val frameNanos = TV_STARTUP_LOGO_IDLE_FRAME_MILLIS * 1_000_000L
+    withTimeoutOrNull(TV_STARTUP_LOGO_IDLE_WAIT_MILLIS) {
+        var last = withFrameNanos { it }
+        var onTime = 0
+        while (onTime < TV_STARTUP_LOGO_IDLE_FRAMES) {
+            val now = withFrameNanos { it }
+            onTime = if (now - last <= frameNanos) onTime + 1 else 0
+            last = now
+        }
+    }
+}
+
+/** 连续这么多帧按时出算主线程闲下来 (60Hz 下约 130ms). */
+private const val TV_STARTUP_LOGO_IDLE_FRAMES = 8
+
+/** 一帧与上一帧最多相隔多久算按时 (60Hz 一帧 16.7ms, 掉一帧就是 33ms; 50Hz 一帧 20ms). */
+private const val TV_STARTUP_LOGO_IDLE_FRAME_MILLIS = 25
+
+/** 等主线程闲下来最多等多久, 等不到也放出选人页. */
+private const val TV_STARTUP_LOGO_IDLE_WAIT_MILLIS = 2000L
