@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.data.persistent.dataStores
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.WindowStateRepository
 import me.him188.ani.app.data.repository.WindowStateRepositoryImpl
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -134,7 +134,7 @@ fun getDesktopModules(getContext: () -> DesktopContext, scope: CoroutineScope) =
         logger<TorrentManager>().info { "HttpMediaCacheEngine base save dir: $saveDir" }
 
         HttpMediaCacheEngine(
-            dao = get<AniDatabase>().httpCacheDownloadStateDao(),
+            dao = get<DeviceAniDatabase>().database.httpCacheDownloadStateDao(),
             mediaSourceId = MediaDownloadManager.LOCAL_FS_MEDIA_SOURCE_ID,
             downloader = get<HttpDownloader>(),
             saveDir = saveDir.toKtPath(),

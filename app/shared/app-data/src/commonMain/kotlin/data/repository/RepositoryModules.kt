@@ -55,6 +55,8 @@ import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.files
 import me.him188.ani.utils.io.resolve
@@ -108,6 +110,7 @@ fun KoinApplication.repositoryModules(
             nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
             getEpisodeTypeFiltersUseCase = get(),
             scope = coroutineScope,
+            localProfile = UserProfiles.current.isLocal,
         )
     }
 
@@ -174,6 +177,7 @@ fun KoinApplication.repositoryModules(
             subjectCollectionRepository = inject(),
             getEpisodeTypeFiltersUseCase = get(),
             onDirtyChanged = { get<EpisodeCollectionSyncer>().requestSync() },
+            localProfile = UserProfiles.current.isLocal,
         )
     }
 
@@ -232,6 +236,8 @@ fun KoinApplication.repositoryModules(
             sessionStateProvider = get(),
             scope = coroutineScope,
             cacheDir = getContext().files.cacheDir,
+            collectionsCacheFileName = UserProfiles.current.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME),
+            localProfile = UserProfiles.current.isLocal,
         )
     }
 
