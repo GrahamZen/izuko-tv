@@ -33,6 +33,8 @@ import io.ktor.utils.io.cancel
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
+import me.him188.ani.app.data.network.TMDB_CDN_PROCESSING_ERROR_HEADER
+import me.him188.ani.app.data.network.tmdbBrokenRenditionFallbackUrl
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -89,13 +91,13 @@ internal class ScopedHttpClientHttpStack(
         httpHeaders: HttpHeaders?,
         extras: Extras?,
         block: suspend (HttpStack.Response) -> T,
-    ): T = request(url, httpHeaders, extras, followedPage = false, block)
+    ): T = request(url, httpHeaders, extras, refetched = false, block)
 
     private suspend fun <T> request(
         url: String,
         httpHeaders: HttpHeaders?,
         extras: Extras?,
-        followedPage: Boolean,
+        refetched: Boolean,
         block: suspend (HttpStack.Response) -> T,
     ): T {
         val outcome = scopedClient.use {
@@ -117,12 +119,13 @@ internal class ScopedHttpClientHttpStack(
                         imageLoadLogger.warn { "Slow image request: $elapsed: $url" }
                     }
 
-                    val pageImageUrl =
-                        if (!followedPage) response.resolveImageUrlFromHtmlPage(url) else null
-                    if (pageImageUrl != null) {
-                        // 交给外层重新请求: 这里还在 execute {} 里, 借来的 client 不能带着响应逃出去
-                        return@execute Outcome.FollowPage(pageImageUrl)
+                    // 交给外层重新请求: 这里还在 execute {} 里, 借来的 client 不能带着响应逃出去. 只重来一次
+                    val refetch = if (refetched) null else {
+                        response.brokenTmdbRenditionRefetch(url)
+                            ?: response.resolveImageUrlFromHtmlPage(url)
+                                ?.let { Outcome.Refetch(it, "Image URL is a web page, following og:image") }
                     }
+                    if (refetch != null) return@execute refetch
                     Outcome.Done(block(KtorResponse(response)))
                 }
             } catch (e: CancellationException) {
@@ -135,18 +138,27 @@ internal class ScopedHttpClientHttpStack(
 
         return when (outcome) {
             is Outcome.Done -> outcome.value
-            is Outcome.FollowPage -> {
-                imageLoadLogger.warn {
-                    "Image URL is a web page, following og:image: $url -> ${outcome.url}"
-                }
-                request(outcome.url, httpHeaders, extras, followedPage = true, block)
+            is Outcome.Refetch -> {
+                imageLoadLogger.warn { "${outcome.reason}: $url -> ${outcome.url}" }
+                request(outcome.url, httpHeaders, extras, refetched = true, block)
             }
         }
     }
 
     private sealed interface Outcome<out T> {
         class Done<T>(val value: T) : Outcome<T>
-        class FollowPage(val url: String) : Outcome<Nothing>
+
+        /** 换成 [url] 再请求一次; [reason] 进日志. */
+        class Refetch(val url: String, val reason: String) : Outcome<Nothing>
+    }
+
+    /** TMDB 图床节点缓存的坏图: 换一档再取, 见 [tmdbBrokenRenditionFallbackUrl]. 只看响应头, 不读 body. */
+    private fun HttpResponse.brokenTmdbRenditionRefetch(requestUrl: String): Outcome.Refetch? {
+        if (!status.isSuccess()) return null
+        val error = headers[TMDB_CDN_PROCESSING_ERROR_HEADER]
+        val length = headers[KtorHttpHeaders.ContentLength]?.toLongOrNull() ?: -1L
+        val fallback = tmdbBrokenRenditionFallbackUrl(requestUrl, error, length) ?: return null
+        return Outcome.Refetch(fallback, "TMDB CDN served a broken rendition ($TMDB_CDN_PROCESSING_ERROR_HEADER: $error, $length bytes)")
     }
 
     /**
