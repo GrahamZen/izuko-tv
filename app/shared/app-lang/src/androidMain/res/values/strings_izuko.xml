@@ -354,6 +354,8 @@
     <string name="episode_danmaku">Danmaku</string>
     <string name="episode_send_danmaku_failed">Failed to send danmaku</string>
     <string name="subject_episode_related_recommendations_empty">No related recommendations on Bangumi yet</string>
+    <string name="player_frame_preview_failed">Preview failed</string>
+    <string name="player_frame_preview_not_downloaded">Not downloaded yet</string>
     <string name="settings_log_share_failed">Failed to share the log file. This device may not support sharing; try copying the log content instead</string>
     <string name="settings_log_export_file">Export today\'s log file</string>
     <string name="settings_log_export_succeed">Log exported to %1$s</string>

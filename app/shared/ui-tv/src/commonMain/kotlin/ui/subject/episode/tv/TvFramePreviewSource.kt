@@ -175,6 +175,9 @@ internal fun rememberTvFramePreviewState(
             debounceMillis = FRAME_DEBOUNCE_MILLIS,
             positionGridMillis = FRAME_POSITION_GRID_MILLIS,
             fetchesUncachedPositions = { player.mediaData.value is UriMediaData },
+            // 一帧要取好几秒: 浮窗要分得出正在取、没取到、这里还没下载 (见 MediaProgressFramePreviewState.loadStatus)
+            reportsLoadStatus = true,
+            isSupported = { source.supportsFrames() },
         )
     }
     LaunchedEffect(state, source, player) {
@@ -329,25 +332,35 @@ private class TvFramePreviewSource(
         // 本方法在主线程的流收集里调用, 拿不到 mutex
     }
 
+    /**
+     * 这台机器上、对当前媒体会不会去取帧. false 时 [getFrame] 直接返回 null, 浮窗据此只显示时间,
+     * 不显示「加载失败」—— 不是某一次出了错.
+     */
+    fun supportsFrames(): Boolean {
+        val data = currentMedia ?: return false
+        return when {
+            // 这台机器上出过主播放器的解码器被抢走: 不再另开解码器 (见 TvDecoderConcurrency)
+            !TvDecoderConcurrency.allowsThumbnailDecoding(context) -> false
+
+            // 带 Cookie 的地址 (网盘直链) 只能走退路 MediaMetadataRetriever (见 getFrame). 它在 mediaserver 进程里解码,
+            // 优先级比应用高, 硬解只能开一个的机器上会把主播放器正在用的解码器收回
+            // (ERROR_CODE_DECODING_RESOURCES_RECLAIMED), 所以只在检测过能同时开两个的机器上用
+            data is UriMediaData && data.requiresCookie() -> {
+                val properties = player.mediaProperties.value
+                TvDecoderConcurrency.allowsSystemFrameExtraction(context, properties?.videoWidth, properties?.videoHeight)
+            }
+
+            else -> true
+        }
+    }
+
     suspend fun getFrame(positionMillis: Long, maxWidthPx: Int, maxHeightPx: Int): ImageBitmap? {
         if (maxWidthPx <= 0 || maxHeightPx <= 0) return null
         val data = currentMedia ?: return null
+        if (!supportsFrames()) return null
         return when {
-            // 这台机器上出过主播放器的解码器被抢走: 不再另开解码器 (见 TvDecoderConcurrency)
-            !TvDecoderConcurrency.allowsThumbnailDecoding(context) -> null
-
-            // 带 Cookie 的地址 (网盘直链): media3 取帧器只收 MediaItem 加不了请求头, 不带 Cookie 会被拒 (夸克回 412),
-            // 只能走退路 MediaMetadataRetriever. 它在 mediaserver 进程里解码, 优先级比应用高, 硬解只能开一个的机器上会把
-            // 主播放器正在用的解码器收回 (ERROR_CODE_DECODING_RESOURCES_RECLAIMED), 所以只在检测过能同时开两个的机器上用
-            data is UriMediaData && data.requiresCookie() -> {
-                val properties = player.mediaProperties.value
-                if (TvDecoderConcurrency.allowsSystemFrameExtraction(context, properties?.videoWidth, properties?.videoHeight)) {
-                    fallbackFrame(positionMillis, maxWidthPx, maxHeightPx)
-                } else {
-                    null
-                }
-            }
-
+            // 带 Cookie 的地址: media3 取帧器只收 MediaItem 加不了请求头, 不带 Cookie 会被拒 (夸克回 412)
+            data is UriMediaData && data.requiresCookie() -> fallbackFrame(positionMillis, maxWidthPx, maxHeightPx)
             data is UriMediaData -> extractFrame(data, positionMillis, maxWidthPx, maxHeightPx)
             else -> fallbackFrame(positionMillis, maxWidthPx, maxHeightPx)
         }
