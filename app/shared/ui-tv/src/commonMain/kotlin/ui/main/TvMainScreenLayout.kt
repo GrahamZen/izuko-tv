@@ -10,6 +10,12 @@
 package me.him188.ani.app.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
@@ -127,6 +133,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
@@ -253,22 +260,39 @@ fun TvMainScreenLayout(
             }
         }
     }
+    // 整屏底色: 不是海报墙的页铺 hero 的底 (深色近黑, 浅色是海报墙那档浅灰, 见 tvPosterWallHeroBackground); 海报墙页 (探索 / 追番
+    // 关掉「显示 hero 背景」) 卡片墙铺 Apple 灰阶的 Gray 5, 深色下 hero 态与探索页的热门轮播回到 hero 的底, 页面把自己此刻的黑度登记进来
+    // (见 TvPosterWallTone); 侧边栏展开面板同色. 换页时从上一页的值交接过去
+    val themeSettings = LocalThemeSettings.current
+    val posterWallPage = when (page) {
+        MainScreenPage.Exploration, MainScreenPage.Collection -> !themeSettings.tvHeroBackdrop
+        MainScreenPage.CacheManagement -> false
+    }
+    val shellBackground = AniThemeDefaults.shellBackgroundColor
+    val wallTone = rememberTvPosterWallTone(
+        wall = tvPosterWallBackground(),
+        hero = tvPosterWallHeroBackground(shellBackground),
+        wallPage = posterWallPage,
+    )
+    val railScrim: DrawScope.() -> Unit = remember(wallTone) { { wallTone.drawBackground(this) } }
     Box(
-        // 全屏背景由本外层 Box 统一绘制, 主壳内各页 (探索/收藏/缓存) 在 TV 上把自身 Scaffold
+        // 全屏背景由本外层 Box 统一绘制 (第一个子项), 主壳内各页 (探索/收藏/缓存) 在 TV 上把自身 Scaffold
         // 设透明透出此色 (搜索/设置是独立页面, 不受影响); 颜色与侧边栏展开面板一致.
-        modifier.fillMaxSize().background(AniThemeDefaults.shellBackgroundColor)
+        modifier.fillMaxSize()
             // 进入 Main 的焦点一律先送进内容区 (而非侧边栏); 页面对落点还有更精确的意见时
             // 在自己根上再挂一层 focusProperties.onEnter 改道 (如探索页回上次聚焦的卡)
             .focusProperties { onEnter = { contentFocus.requestFocus() } }
             .focusGroup(),
     ) {
+        // 整屏底色: 单独一层, 海报墙进出 hero 态时底色逐帧在变 (探索页热门轮播那条分界线随列表滚动), 只重录这一层
+        Spacer(Modifier.matchParentSize().graphicsLayer {}.drawBehind { wallTone.drawBackground(this) })
         Box(
             Modifier.fillMaxSize()
                 .padding(start = TvNavigationRailDefaults.CollapsedWidth)
                 .focusRequester(contentFocus)
                 .focusGroup(),
         ) {
-            CompositionLocalProvider(LocalTvRailEnter provides railEnter) {
+            CompositionLocalProvider(LocalTvRailEnter provides railEnter, LocalTvPosterWallTone provides wallTone) {
                 pageContent()
             }
         }
@@ -320,6 +344,7 @@ fun TvMainScreenLayout(
                 onSettings = { onNavigateToSettings(null) },
             ),
             modifier = Modifier.fillMaxHeight(),
+            scrimPainter = railScrim,
         )
         TvExitHintToast(state = exitHintState, text = pressAgainText)
     }

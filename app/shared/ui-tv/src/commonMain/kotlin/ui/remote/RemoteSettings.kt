@@ -362,6 +362,8 @@ internal object RemoteSettings {
         }
     }
 
+    // ---------------------------- hero 背景与文字 ----------------------------
+
     private fun saveTrackers(request: LanHttpRequest): JsonObject {
         // 每行一个, 去掉空行与首尾空白; 与设置页同一个字段 (BT 下载开始前与内置 tracker 一起添加)
         val text = request.formFields()["text"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }

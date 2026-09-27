@@ -141,8 +141,12 @@ fun TvPortraitCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     var menuExpanded by remember { mutableStateOf(false) }
+    // 菜单等第一次长按才组合, 之后一直留着 (收起动画照常): 收起的下拉菜单每张卡也要组合一份, 网格换行时新进来的一整行都得现建;
+    // 弹出层本来就只在展开时才组合, 外壳晚到第一次长按才建, 弹出层的时机不变
+    var menuComposed by remember { mutableStateOf(false) }
     val setMenuExpanded = { value: Boolean ->
         if (menuExpanded != value) {
+            if (value) menuComposed = true
             menuExpanded = value
             onMenuExpandedChange?.invoke(value)
         }
@@ -247,7 +251,7 @@ fun TvPortraitCard(
         }
         // 菜单以卡片右下角为锚点弹出 (DropdownMenu 默认从锚点向右/上下就近展开): 放一个对齐到
         // 卡片右下角的零尺寸锚点, 菜单即从右下角向右上方向弹出.
-        if (menu != null) {
+        if (menu != null && menuComposed) {
             Box(Modifier.align(Alignment.BottomEnd)) {
                 menu(menuExpanded) { setMenuExpanded(false) }
             }
@@ -294,8 +298,12 @@ fun TvHeroButton(
     var focused by remember { mutableStateOf(false) }
     // 按当前主题明暗取底色 (由 surface 亮度判定, 兼容手动日夜切换):
     // 黑夜: 主按钮 rgb(49,54,61), 次按钮接近黑; 白天: 对应的浅灰两档.
+    // 海报墙页面 (见 TvPosterWallTheme) 换成海报墙配色里 Apple 那几档灰, 主按钮仍亮一档: 深色是 Gray3 / Gray4, 浅色是 Gray6 / 白 20% 底板
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val posterWall = LocalTvPosterWallTheme.current
     val baseContainer = when {
+        posterWall && filled -> MaterialTheme.colorScheme.surfaceContainerHigh
+        posterWall -> MaterialTheme.colorScheme.surfaceContainerLow
         dark && filled -> Color(0xFF31363D)
         dark -> Color(0xFF17191C)
         filled -> Color(0xFFDBE0E6)
@@ -477,7 +485,8 @@ fun tvBackdropFadeFromBlackStops(
  * `Modifier.align(Alignment.TopEnd)`.
  *
  * [fadeColor] 必须传**图层正下方的实际页面底色** (追番页是 shellBackgroundColor, 搜索页是
- * colorScheme.background): 渐隐是直接在图上叠画该色的渐变 (SrcOver). 旧实现用
+ * colorScheme.background; 海报墙页的底色会变, 图只在底色黑透之后露面, 传 hero 态那个黑, 见 TvPosterWallTone):
+ * 渐隐是直接在图上叠画该色的渐变 (SrcOver). 旧实现用
  * DstOut 擦除露底色, 视觉等价但要求整块图层先渲染进离屏缓冲
  * (CompositingStrategy.Offscreen, 4K 下 ~14MB、每次换图重光栅化) —— 低端 GPU 上是
  * 白付的填充率 (2026-07-31 性能整改).
@@ -540,6 +549,13 @@ fun TvPageBackdropLayer(
      * **这张图开始加载那一刻**取值, 交叉淡入期间新旧两张各按各的条目.
      */
     obscure: () -> Boolean = { false },
+    /** 遮罩几何, 见 [TvPageBackdropGeometry]. */
+    geometry: TvPageBackdropGeometry = TvPageBackdropGeometry.Default,
+    /**
+     * 图的重建键: 变了就把交叉淡入整个换掉, 新图直接出现, 不与上一张交叉淡入. 调用方在图层看不见的那一刻换图、换位置时用 (如探索页
+     * 海报墙在轮播与聚焦卡之间换) —— 交叉淡入里还没褪完的上一张, 会随图层重新亮起来一起露出来.
+     */
+    imageKey: () -> Any? = { null },
 ) {
     // 按下即压暗: 值只在绘制里读, 每帧只失效绘制
     val dim = remember { Animatable(0f) }
@@ -559,53 +575,60 @@ fun TvPageBackdropLayer(
     // 约定), 遮罩是 x → x(1−g) + F·g 的仿射叠色, 与两层 alpha 合成可交换: 先淡后遮与各自遮完再淡逐像素相同
     // (2026-09-13 Shield: 静止截图与库版 Crossfade 最大差 2 灰阶, 交叉淡入中途亮度曲线一致; 4K 连按 GPU 合计 -18%)
     Box(modifier) {
-        TvModulatedCrossfade(
-            targetState = backdropUrl(),
-            modifier = Modifier
-                .fillMaxHeight(heightFraction)
-                .aspectRatio(TV_BACKDROP_ASPECT_RATIO, matchHeightConstraintsFirst = true),
-            overlay = Modifier.drawWithCache {
-                // 停点由平滑曲线采样生成 (无折点, 避免暗色端可见的马赫带分界线); 渐变带端点在 hero / 卡片两态间插值,
-                // 曲线形状两态共用. 停点与画笔只在尺寸 / 两态插值变化时重建 (cardness 只有探索页 hero ↔ 卡片切换那一段在变);
-                // 每条渐变只画它不透明的那一段 —— 停点之外是 alpha 0, 整张图面积地走一遍混合纯属白付 (渐变坐标仍按整张图, 逐像素不变)
-                val painter = tvBackdropTreatmentPainter(size, tvPageBackdropTreatment(cardness(), topScrim, fadeColor))
-                onDrawWithContent {
-                    drawContent()
-                    // 按下即压暗 (见 dimming 参数): 压在图上、渐变带之下. 不进声明: 它是逐帧动画值, 而声明是登记给
-                    // 放大转场的"这张图长什么样", 按下那一下的临时压暗不该被带进转场
-                    val dimAlpha = dim.value
-                    if (dimAlpha > 0f) drawRect(fadeColor.copy(alpha = dimAlpha))
-                    with(painter) { draw(1f) }
-                }
-            },
-            isEmpty = { it == null },
-            // 垫底图 (半透明) / 升档原图与主图重叠, 调制 alpha 会互相透出来: 有它们的那一张照旧离屏
-            strategy = {
-                if (underlayUrl() != null || upgradeUrl() != null) CompositingStrategy.Auto else CompositingStrategy.ModulateAlpha
-            },
-        ) { url ->
-            if (url != null) {
-                val obscured = remember(url) { obscure() }
-                // 应急垫底 (见参数说明): 与主图同裁切, 同受渐隐/scrim 遮罩.
-                // 半透明是刻意的: 垫的是竖版封面 Crop 进 16:9, 几倍上采样, 满不透明时糊得
-                // 一眼可辨、还会被误当成"这就是背景图". 压到这个透明度后它更像一层氛围底色,
-                // 真图一到照样盖住 —— 目的只是别让 hero 全黑, 不是冒充 backdrop
-                underlayUrl()?.let { underlay ->
-                    AsyncImage(
-                        underlay,
-                        contentDescription = null,
-                        Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        alpha = TV_BACKDROP_UNDERLAY_ALPHA,
-                        downsampleLongEdgePx = if (obscured) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
+        key(imageKey()) {
+            TvModulatedCrossfade(
+                targetState = backdropUrl(),
+                modifier = Modifier
+                    .fillMaxHeight(heightFraction)
+                    .aspectRatio(TV_BACKDROP_ASPECT_RATIO, matchHeightConstraintsFirst = true),
+                overlay = Modifier.drawWithCache {
+                    // 停点由平滑曲线采样生成 (无折点, 避免暗色端可见的马赫带分界线); 渐变带端点在 hero / 卡片两态间插值,
+                    // 曲线形状两态共用. 停点与画笔只在尺寸 / 两态插值变化时重建 (cardness 只有探索页 hero ↔ 卡片切换那一段在变);
+                    // 每条渐变只画它不透明的那一段 —— 停点之外是 alpha 0, 整张图面积地走一遍混合纯属白付 (渐变坐标仍按整张图, 逐像素不变)
+                    val painter = tvBackdropTreatmentPainter(size, tvPageBackdropTreatment(cardness(), topScrim, fadeColor, geometry))
+                    // 左缘与下缘各压一条跨在图边上的实心遮罩色: 图层按比例缩放时 (探索页海报墙在轮播与卡片两套尺寸之间) 这两条边落在半个
+                    // 像素上, 抗锯齿那一列里图自己的颜色会从渐变底下漏出来, 看着是一条细线. 两条边上的渐变本来就是满的, 压实了看不出区别
+                    val seam = TV_BACKDROP_EDGE_SEAM.toPx()
+                    onDrawWithContent {
+                        drawContent()
+                        // 按下即压暗 (见 dimming 参数): 压在图上、渐变带之下. 不进声明: 它是逐帧动画值, 而声明是登记给
+                        // 放大转场的"这张图长什么样", 按下那一下的临时压暗不该被带进转场
+                        val dimAlpha = dim.value
+                        if (dimAlpha > 0f) drawRect(fadeColor.copy(alpha = dimAlpha))
+                        with(painter) { draw(1f) }
+                        drawRect(fadeColor, Offset(-seam, 0f), Size(seam * 2, size.height + seam))
+                        drawRect(fadeColor, Offset(-seam, size.height - seam), Size(size.width + seam, seam * 2))
+                    }
+                },
+                isEmpty = { it == null },
+                // 垫底图 (半透明) / 升档原图与主图重叠, 调制 alpha 会互相透出来: 有它们的那一张照旧离屏
+                strategy = {
+                    if (underlayUrl() != null || upgradeUrl() != null) CompositingStrategy.Auto else CompositingStrategy.ModulateAlpha
+                },
+            ) { url ->
+                if (url != null) {
+                    val obscured = remember(url) { obscure() }
+                    // 应急垫底 (见参数说明): 与主图同裁切, 同受渐隐/scrim 遮罩.
+                    // 半透明是刻意的: 垫的是竖版封面 Crop 进 16:9, 几倍上采样, 满不透明时糊得
+                    // 一眼可辨、还会被误当成"这就是背景图". 压到这个透明度后它更像一层氛围底色,
+                    // 真图一到照样盖住 —— 目的只是别让 hero 全黑, 不是冒充 backdrop
+                    underlayUrl()?.let { underlay ->
+                        AsyncImage(
+                            underlay,
+                            contentDescription = null,
+                            Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            alpha = TV_BACKDROP_UNDERLAY_ALPHA,
+                            downsampleLongEdgePx = if (obscured) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
+                        )
+                    }
+                    // 交叉淡入期间新旧两张图共存: 条目 id 必须在**这张图开始加载那一刻**取
+                    // (remember(url)), 否则旧图加载完时读到的是新条目的 id, 色就串了
+                    TvBackdropImage(
+                        url, remember(url) { themeSeedSubjectId() }, upgradeUrl = upgradeUrl(), obscure = obscured,
+                        zoomTreatment = { tvPageBackdropTreatment(cardness(), topScrim, fadeColor, geometry) },
                     )
                 }
-                // 交叉淡入期间新旧两张图共存: 条目 id 必须在**这张图开始加载那一刻**取
-                // (remember(url)), 否则旧图加载完时读到的是新条目的 id, 色就串了
-                TvBackdropImage(
-                    url, remember(url) { themeSeedSubjectId() }, upgradeUrl = upgradeUrl(), obscure = obscured,
-                    zoomTreatment = { tvPageBackdropTreatment(cardness(), topScrim, fadeColor) },
-                )
             }
         }
     }
@@ -877,15 +900,26 @@ class TvBackdropTreatmentPainter internal constructor(
  * `Color.copy(alpha = )` 很便宜. 于是跨颜色复用同一份剖面, 缓存不会因为插值出来的中间色无限增长
  * (2026-09-16 审查指出的风险: 遮罩色现在是连续插值的, 按 Color 做键会每帧攒一个新条目).
  */
-private val fadeOutProfile: FloatArray by lazy {
+internal val fadeOutProfile: FloatArray by lazy {
     FloatArray(15) { i -> val f = i / 14f; val sm = f * f * (3f - 2f * f); 1f - sm }
 }
-private val fadeInProfile: FloatArray by lazy {
+internal val fadeInProfile: FloatArray by lazy {
     FloatArray(21) { i ->
         val f = i / 20f
         val s5 = f * f * f * (f * (f * 6f - 15f) + 10f)
         1f - (1f - s5).pow(2.5f)
     }
+}
+
+/** 下缘用的 smoothstep (与 [fadeOutProfile] 同一条曲线, 方向相反), 采样数同 [fadeInProfile], 两者逐点混合, 见 [TvBackdropFade.smoothness]. */
+internal val fadeInSmoothProfile: FloatArray by lazy {
+    FloatArray(21) { i -> val f = i / 20f; f * f * (3f - 2f * f) }
+}
+
+internal fun fadeInProfileOf(smoothness: Float): FloatArray = when {
+    smoothness <= 0f -> fadeInProfile
+    smoothness >= 1f -> fadeInSmoothProfile
+    else -> FloatArray(fadeInProfile.size) { i -> fadeInProfile[i] + (fadeInSmoothProfile[i] - fadeInProfile[i]) * smoothness }
 }
 
 /**
@@ -912,7 +946,11 @@ fun tvBackdropTreatmentPainter(size: Size, tr: TvBackdropTreatment): TvBackdropT
         Brush.horizontalGradient(colorsOf(fadeOutProfile, it.color, it.maxAlpha), startX = w * it.start, endX = w * it.end)
     }
     val bottom = tr.bottom?.takeIf { it.maxAlpha > 0f }?.let {
-        Brush.verticalGradient(colorsOf(fadeInProfile, it.color, it.maxAlpha), startY = h * it.start, endY = h * it.end)
+        Brush.verticalGradient(
+            colorsOf(fadeInProfileOf(it.smoothness), it.color, it.maxAlpha),
+            startY = h * it.start,
+            endY = h * it.end,
+        )
     }
     return TvBackdropTreatmentPainter(
         size, tr.dim,
@@ -924,10 +962,35 @@ fun tvBackdropTreatmentPainter(size: Size, tr: TvBackdropTreatment): TvBackdropT
 }
 
 /**
+ * 列表页 backdrop 遮罩的几何 (整层 0..1 比例): 左缘 / 下缘渐变带在 hero 态 (cardness = 0) 与卡片态 (1) 的端点, 以及下缘用哪条
+ * 曲线. 追番 / 搜索用 [Default]; 探索页的图更大, 自己换算了一份 (见 TvExplorationPage 的 TV_EXPLORATION_BACKDROP_GEOMETRY).
+ */
+@Immutable
+data class TvPageBackdropGeometry(
+    val leftStartHero: Float = 0f,
+    val leftStart: Float = TV_BACKDROP_LEFT_FADE_START,
+    val leftEndHero: Float = TV_BACKDROP_LEFT_FADE_END_HERO,
+    val leftEnd: Float = TV_BACKDROP_LEFT_FADE_END,
+    val bottomStartHero: Float = TV_BACKDROP_BOTTOM_FADE_START_HERO,
+    val bottomStart: Float = TV_BACKDROP_BOTTOM_FADE_START,
+    /** 下缘曲线, 见 [TvBackdropFade.smoothness]. */
+    val bottomSmoothness: Float = 0f,
+) {
+    companion object {
+        val Default = TvPageBackdropGeometry()
+    }
+}
+
+/**
  * 列表页 backdrop 那套遮罩的声明 (顶缘 scrim / 左缘 / 下缘). 渐变带端点在 hero / 卡片两态间按 [cardness] 插值,
  * 曲线形状两态共用. 详情页那份见 `tvHeroBackdropTreatment`, 放大转场画的是两者的插值.
  */
-fun tvPageBackdropTreatment(cardness: Float, topScrim: Boolean, fadeColor: Color): TvBackdropTreatment =
+fun tvPageBackdropTreatment(
+    cardness: Float,
+    topScrim: Boolean,
+    fadeColor: Color,
+    geometry: TvPageBackdropGeometry = TvPageBackdropGeometry.Default,
+): TvBackdropTreatment =
     TvBackdropTreatment(
         top = if (topScrim) {
             TvBackdropFade(0f, TV_BACKDROP_TOP_SCRIM_END, TV_BACKDROP_TOP_SCRIM_ALPHA, fadeColor)
@@ -935,20 +998,24 @@ fun tvPageBackdropTreatment(cardness: Float, topScrim: Boolean, fadeColor: Color
             null
         },
         left = TvBackdropFade(
-            start = lerp(0f, TV_BACKDROP_LEFT_FADE_START, cardness),
-            end = lerp(TV_BACKDROP_LEFT_FADE_END_HERO, TV_BACKDROP_LEFT_FADE_END, cardness),
+            start = lerp(geometry.leftStartHero, geometry.leftStart, cardness),
+            end = lerp(geometry.leftEndHero, geometry.leftEnd, cardness),
             maxAlpha = 1f,
             color = fadeColor,
         ),
-        // 下缘渐隐: 零斜率极缓起步 + 指数级长尾渐近全遮, 一直渐变到图底
+        // 下缘渐隐, 一直渐变到图底. 默认曲线: 零斜率极缓起步 + 指数级长尾渐近全遮
         bottom = TvBackdropFade(
-            start = lerp(TV_BACKDROP_BOTTOM_FADE_START_HERO, TV_BACKDROP_BOTTOM_FADE_START, cardness),
+            start = lerp(geometry.bottomStartHero, geometry.bottomStart, cardness),
             end = 1f,
             maxAlpha = 1f,
             color = fadeColor,
             toEdge = true,
+            smoothness = geometry.bottomSmoothness,
         ),
     )
+
+/** 背景图层左缘 / 下缘压实的那一条的半宽 (跨在图边上, 见 TvPageBackdropLayer). */
+internal val TV_BACKDROP_EDGE_SEAM = 1.dp
 
 // ============ TV 沉浸式页面 (探索/追番/搜索) 共享调参 ============
 // 探索页轮播 (hero) 态的参数不在此列, 单独放在 TvExplorationPage 里.
@@ -970,9 +1037,9 @@ const val TV_BACKDROP_CROSSFADE_MILLIS = 600
 
 /** 「按下即压暗」压到的不透明度 (页面背景色盖在图上), 与压下 / 放开的时长. 见 TvPageBackdropLayer.dimming. */
 const val TV_BACKDROP_PRESS_DIM_ALPHA = 0.55f
-private const val TV_BACKDROP_PRESS_DIM_IN_MILLIS = 180
-private const val TV_BACKDROP_PRESS_DIM_HOLD_MILLIS = 250L
-private const val TV_BACKDROP_PRESS_DIM_OUT_MILLIS = 450
+internal const val TV_BACKDROP_PRESS_DIM_IN_MILLIS = 180
+internal const val TV_BACKDROP_PRESS_DIM_HOLD_MILLIS = 250L
+internal const val TV_BACKDROP_PRESS_DIM_OUT_MILLIS = 450
 
 /** 剧照升档: 主图上屏后至少静止这么久才去取原图; 原图解码好后原地淡入的时长. */
 // 1.5s: 慢慢一格一格走 (~1s 一张) 也不该每张都去取原图 —— 0.8s 时 Shield 实测第二轮 janky 11%, 原图的解码 / 上传
@@ -1007,7 +1074,7 @@ const val TV_BACKDROP_UNDERLAY_ALPHA = 0.5f
  * 1s 这个总预算而不是两三百毫秒: 预算比预热本身还短的话, "刚开始预热"这种最该省的情形必然
  * 落空、照样双发. 预算之外还有 ktor 层的读超时与重试兜着 (见 `ScopedHttpClientHttpStack`).
  */
-private const val TV_BACKDROP_PREFETCH_HANDOFF_MILLIS = 1_000L
+internal const val TV_BACKDROP_PREFETCH_HANDOFF_MILLIS = 1_000L
 
 /**
  * backdrop 下缘渐隐起点 (图片高度坐标 0..1, 此处开始向下渐暗, 一直渐变到图底).
@@ -1134,11 +1201,98 @@ fun TvHeroSummaryText(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** TV hero 标题占屏宽比例 (右侧留给 backdrop 清晰区). */
-const val TV_HERO_TITLE_WIDTH_FRACTION = 0.5f
+/**
+ * 三个列表页 (探索 / 追番 / 搜索) hero 简介块的下沿离页面顶多远, 三页对齐在这条线上: 探索页 = hero 顶边 + 信息块高; 追番 / 搜索页
+ * 顶上还有标签行 / 搜索栏, 简介块从它们下面开始、同样止于这条线 —— 顶上的组件只让简介少几行.
+ */
+val TV_HERO_TEXT_BOTTOM: Dp = 268.dp
 
-/** TV hero 简介/状态行文字占内容列宽比例 (右边界之外留给 backdrop 清晰区). 三页共用. */
-const val TV_HERO_SUMMARY_WIDTH_FRACTION = 0.4f
+/**
+ * 海报墙 hero 态里聚焦行 (海报顶边) 离页面顶多远, 三页对齐在这条线上 —— hero 背景图三页共用一套尺寸, 行对齐了, 图压住卡片的程度才一样.
+ * 探索页: 简介块下沿 [TV_HERO_TEXT_BOTTOM] 之下是聚焦行的组标题, 行在标题下面. 追番 / 搜索没有组标题, 简介块往下长, 把这一截吃掉
+ * (下沿停在行上方, 留出简介到网格的那段间距).
+ */
+val TV_POSTER_WALL_HERO_ROW_TOP: Dp = TV_HERO_TEXT_BOTTOM + 42.dp
+
+/**
+ * hero 的背景图尺寸 / 羽化与文字宽度. 两套, 都写死: 探索页热门轮播 [TV_CAROUSEL_HERO_TUNING], 卡片 hero (探索页海报墙的 hero 态、追番、
+ * 搜索三页共用) [TV_CARD_HERO_TUNING].
+ *
+ * 背景图: 16:9 贴右上角, 下缘与左缘同一条 smoothstep 羽化 —— 下缘从 [clearLine] 软到图底, 左缘从图的左边缘起羽化下缘深度的
+ * [leftDepthRatio] 倍. 文字: 标题与简介各占内容区宽度的比例.
+ */
+@Immutable
+data class TvHeroTuning(
+    /** 背景图高占屏高. 放大进详情页的倍数 = 1 / 本值. */
+    val backdropHeight: Float,
+    /** 分界线 (占屏高): 背景图最后一条看得清的线, 下缘羽化从这里起. */
+    val clearLine: Float,
+    /** 左缘羽化深度相对下缘的倍数, 1 = 两边一样深. */
+    val leftDepthRatio: Float,
+    /** 标题宽度占内容区宽度的比例 (超出的跑马灯滚动). */
+    val titleWidth: Float,
+    /** 简介宽度占内容区宽度的比例. */
+    val summaryWidth: Float,
+)
+
+/** 探索页热门轮播: 图比卡片 hero 大一档, 下面紧跟首行预览. */
+val TV_CAROUSEL_HERO_TUNING: TvHeroTuning = TvHeroTuning(
+    backdropHeight = 0.67f,
+    clearLine = 0.48f,
+    leftDepthRatio = 2.6f,
+    titleWidth = 0.46f,
+    summaryWidth = 0.4f,
+)
+
+/** 卡片 hero: 探索页海报墙的 hero 态、追番、搜索三页共用 (三页 hero 态的聚焦行对齐在 [TV_POSTER_WALL_HERO_ROW_TOP], 图压住卡片的程度一样). */
+val TV_CARD_HERO_TUNING: TvHeroTuning = TvHeroTuning(
+    backdropHeight = 0.6f,
+    clearLine = 0.48f,
+    leftDepthRatio = 2.6f,
+    titleWidth = 0.46f,
+    summaryWidth = 0.41f,
+)
+
+/**
+ * 列表页 hero 背景图的遮罩几何, 由 [TvHeroTuning] 换算: 左缘与下缘同一条 smoothstep —— 下缘从分界线 ([TvHeroTuning.clearLine])
+ * 软到图底, 左缘从图的左边缘起羽化下缘深度的 [TvHeroTuning.leftDepthRatio] 倍; hero 与卡片两侧一样. 换算成整张图的比例:
+ * 图高 = [TvHeroTuning.backdropHeight] × 屏高, 图宽 = 图高 × 16/9.
+ */
+fun tvHeroBackdropGeometry(tuning: TvHeroTuning): TvPageBackdropGeometry {
+    val hf = tuning.backdropHeight
+    val leftDepth = ((hf - tuning.clearLine) * tuning.leftDepthRatio / (hf * TV_BACKDROP_ASPECT_RATIO)).coerceAtMost(1f)
+    val bottomStart = tuning.clearLine / hf
+    return TvPageBackdropGeometry(
+        leftStartHero = 0f,
+        leftStart = 0f,
+        leftEndHero = leftDepth,
+        leftEnd = leftDepth,
+        bottomStartHero = bottomStart,
+        bottomStart = bottomStart,
+        bottomSmoothness = 1f,
+    )
+}
+
+/**
+ * 在两套尺寸之间过渡用的遮罩几何: hero 一侧取 [hero] 的, 卡片一侧取 [card] 的, 按 cardness 插值 (探索页海报墙: 0 = 热门轮播,
+ * 1 = 聚焦卡的 hero 态). 比例都是相对整张图的, 图按图高缩放时不变.
+ */
+fun tvHeroBackdropGeometry(hero: TvHeroTuning, card: TvHeroTuning): TvPageBackdropGeometry {
+    val h = tvHeroBackdropGeometry(hero)
+    val c = tvHeroBackdropGeometry(card)
+    return TvPageBackdropGeometry(
+        leftStartHero = h.leftStartHero,
+        leftStart = c.leftStart,
+        leftEndHero = h.leftEndHero,
+        leftEnd = c.leftEnd,
+        bottomStartHero = h.bottomStartHero,
+        bottomStart = c.bottomStart,
+        bottomSmoothness = 1f,
+    )
+}
+
+/** 卡片 hero 的遮罩几何 (追番 / 搜索页, 见 [TV_CARD_HERO_TUNING]). */
+val TV_CARD_HERO_BACKDROP_GEOMETRY: TvPageBackdropGeometry = tvHeroBackdropGeometry(TV_CARD_HERO_TUNING)
 
 /** TV hero 媒体 (backdrop/简介等) 请求防抖: 焦点在卡片间快速划过时不发请求. */
 const val TV_HERO_MEDIA_DEBOUNCE_MILLIS = 300L
@@ -1240,7 +1394,7 @@ internal val TV_PORTRAIT_CARD_CORNER = 8.dp
 // (2026-08-10 探索页踩到), 见 TvExplorationPage 的 tvAnchorBringIntoViewSpec 调用处.
 
 /** 继续观看卡片底部集数进度条 (样式对齐详情页 FocusEpisodeProgressBar): 条厚, 同选集卡 3dp. */
-private val TV_CARD_PROGRESS_BAR_HEIGHT = 3.dp
+internal val TV_CARD_PROGRESS_BAR_HEIGHT = 3.dp
 
 /**
  * **进度条长度 (手调)** —— 条是定宽 + `BottomCenter` 居中放置, 左右自动等距, 改这一个数就行.
@@ -1257,7 +1411,7 @@ private val TV_CARD_PROGRESS_BAR_HEIGHT = 3.dp
  * 别改回"占卡宽百分之几"那种写法: 竖版卡封面 108dp、选集卡 240dp, 早先两边各写死绝对值
  * (10dp / 6dp), 竖版卡的条只占 81% 而选集卡 95%, 观感对不上 —— 现在两边同一条圆角规则.
  */
-private val TV_CARD_PROGRESS_BAR_LENGTH =
+internal val TV_CARD_PROGRESS_BAR_LENGTH =
     TV_PAGE_CARD_WIDTH - TvFocusRing.Gap * 2 - TV_PORTRAIT_CARD_CORNER * 2 + 2.dp
 
 /**
@@ -1267,22 +1421,22 @@ private val TV_CARD_PROGRESS_BAR_LENGTH =
  * 竖版卡上取 2dp: 5dp (选集卡那档) 用户实测"太高", Prime 的条也基本贴底 (0~1dp).
  * 选集卡不跟改 —— 它那 5dp 是为了不与聚焦描边糊在一起调出来的, 两者卡高与描边观感不同.
  */
-private val TV_CARD_PROGRESS_BAR_BOTTOM_GAP = 2.dp
+internal val TV_CARD_PROGRESS_BAR_BOTTOM_GAP = 2.dp
 
 /** 进度条轨道 (未看部分) 的白色不透明度. */
-private const val TV_CARD_PROGRESS_TRACK_ALPHA = 0.3f
+internal const val TV_CARD_PROGRESS_TRACK_ALPHA = 0.3f
 
 /**
  * NSFW 打码封面的解码长边 (px). 卡片 1080p 下长边约 320px, 缩到 24 ≈ 13 倍放大, 糊到认不出内容但
  * 还留得住主色调. sketch 的幂次采样只会落在 ≤ 请求的一档, 实际常是 12~24px.
  */
-private const val TV_OBSCURED_COVER_LONG_EDGE_PX = 24
+internal const val TV_OBSCURED_COVER_LONG_EDGE_PX = 24
 
 /**
  * NSFW 打码背景图的解码长边 (px). 1080p 下背景框长边约 1267px, 取 48 ≈ 26 倍放大: 比封面糊得狠
  * (整屏大图, 细节更容易认出来), 但不至于像 24 那样放大 50 倍成一块块色斑.
  */
-private const val TV_OBSCURED_BACKDROP_LONG_EDGE_PX = 48
+internal const val TV_OBSCURED_BACKDROP_LONG_EDGE_PX = 48
 
 /** Hero 操作按钮圆角. */
 private val TV_HERO_BUTTON_CORNER = 8.dp

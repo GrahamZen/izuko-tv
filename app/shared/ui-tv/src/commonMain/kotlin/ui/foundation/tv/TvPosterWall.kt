@@ -1,0 +1,468 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.ui.foundation.tv
+
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.TvCardFocusStyle
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+
+/*
+ * 海报墙: 探索 / 搜索 / 追番页关掉「显示 hero 背景」(ThemeSettings 的 tvHeroBackdrop) 之后的「海报 + 番名」卡片形态, 详情页的关联条目
+ * 也是这种卡. 画面是原生 View (见 nativeview 包); 这里是各页与原生视图共用的尺寸、配色与整屏底色.
+ *
+ * 尺寸照 Apple TV: 1080p 一屏 6 张 (TV App 海报行、资料库网格、官方 tvOS 示例都是一屏 6 张; 设计规范 6 列网格每张
+ * 260 pt = 130 dp, 列距 40 pt = 20 dp). 本应用左边有 48 dp 侧边栏, 内容区 848 dp 排 6 列约 124.7 dp.
+ *
+ * 底色: 卡片墙铺 Apple 系统灰阶里的 Gray 5 ([tvPosterWallBackground]) —— 深色是 Apple TV App 那种深灰, 不是纯黑; 浅色是同一档的
+ * 浅灰, 不是纯白. 深色下 hero 态与探索页的热门轮播回到原 hero 页的近黑, 浅色下不换色 (见 [TvPosterWallTone]).
+ */
+
+/**
+ * 卡片的**最小**宽度: 按它定列数 (同 GridCells.Adaptive), 实际宽度由铺满整行决定.
+ * 1080p 内容区 848 dp: (848 + 20) / (118 + 20) ≈ 6.3 → 6 列, 实宽约 124.7 dp; 「界面缩放」调大 (dp 宽度变窄) 时
+ * 列数跟着变少, 同 Apple 示例里辅助功能大字号改 4 列的做法.
+ * 取 118 而不是刚好够的 124: 列数算式卡在边界上时, 某台机器可用宽度少几 dp 就会掉成 5 列.
+ */
+val TV_POSTER_WALL_CARD_MIN_WIDTH: Dp = 118.dp
+
+/**
+ * 海报墙卡片的聚焦样式: 照 Apple TV 只放大 ([TV_CARD_FOCUS_SCALE_WITHOUT_RING] 倍) 加投影, 不画框. 「卡片聚焦样式」设置只管
+ * 显示 hero 背景的页面, 海报墙不看它.
+ */
+val TV_POSTER_WALL_CARD_FOCUS_STYLE: TvCardFocusStyle = TvCardFocusStyle.Scale
+
+/** 列距 (Apple 设计规范 40 pt). 聚焦放大 1.12 倍后卡片左右各伸出约 7.5 dp, 与邻卡之间仍有一道缝. */
+val TV_POSTER_WALL_COLUMN_SPACING: Dp = 20.dp
+
+/** 行距: 上一行番名的底到下一行海报的顶. 聚焦放大后海报顶边上伸约 10.4 dp, 仍碰不到上一行的番名. */
+val TV_POSTER_WALL_ROW_SPACING: Dp = 20.dp
+
+/** 组标题到海报的间距: 卡聚焦时海报往上放大约 10 dp, 12 dp 看着挤 (用户 09-26). */
+val TV_POSTER_WALL_HEADER_GAP: Dp = 18.dp
+
+/**
+ * 卡片区往屏幕底边外多排的一截 (网格的下出血): 屏上最下面那行之下的一行只要有一部分落进这一截就已经排好,
+ * 焦点走过去时按位置跑 spring, 送焦也不必先瞬移 (那就是"闪现").
+ * 最坏情况是屏上末行底下正好只剩一个行距 (20 dp) 的空, 下一行整个在屏外 —— 这一截要比行距大出一段, 保证它露进来.
+ */
+val TV_POSTER_WALL_BOTTOM_BLEED: Dp = 64.dp
+
+/**
+ * 滚到底时末行离视口底边留的空 (不含聚焦放大往下伸的那截, 见 [tvPosterWallEndMargin]): tvOS 的屏幕安全边距 60 pt ≈ 30 dp.
+ */
+val TV_POSTER_WALL_END_MARGIN: Dp = 30.dp
+
+/**
+ * 深色主题下海报墙页面的底色: Android TV 上 Apple TV App 的页面底色 (44, 44, 46) —— 它界面包里 `BackgroundWidget` 默认
+ * 用的 `Color.Background`, 与 Apple 深色系统灰 Gray 5 同值. 不是纯黑; 网页版 tv.apple.com 深色的 #1F1F1F 在电视上跟纯黑
+ * 分不出来.
+ */
+val TV_POSTER_WALL_BACKGROUND_DARK: Color = Color(0xFF2C2C2E)
+
+/**
+ * 浅色主题下海报墙页面的底色: Apple 浅色系统灰 Gray 5 (229, 229, 234), 与深色的 [TV_POSTER_WALL_BACKGROUND_DARK] 是 Apple 灰阶表里
+ * 同一档. 不用纯白: 电视上大片白底刺眼 (Android TV 设计指南: 除非必要不要用白底).
+ */
+val TV_POSTER_WALL_BACKGROUND_LIGHT: Color = Color(0xFFE5E5EA)
+
+/**
+ * 海报墙卡片墙的底色: 深色主题铺 [TV_POSTER_WALL_BACKGROUND_DARK], 浅色主题铺 [TV_POSTER_WALL_BACKGROUND_LIGHT].
+ * hero 态的底色与两者之间的过渡见 [TvPosterWallTone].
+ */
+@Composable
+fun tvPosterWallBackground(): Color =
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) TV_POSTER_WALL_BACKGROUND_DARK else TV_POSTER_WALL_BACKGROUND_LIGHT
+
+/**
+ * 列表页 hero 的底色, 原 hero 页 (开着「显示 hero 背景」) 与海报墙的 hero 态 / 探索页热门轮播共用: 深色是页面原来的近黑 [default] ——
+ * hero 图是按黑底羽化的; 浅色是海报墙那档浅灰 [TV_POSTER_WALL_BACKGROUND_LIGHT], 与卡片墙同色, 海报墙进出 hero 态整屏不换色 ——
+ * 浅灰压成近黑是几十倍的亮度跳变, 线性过渡拉多长都像闪一下 (tvOS、Plex、Jellyfin 的浅色主题里 hero 也都是浅底).
+ */
+@Composable
+fun tvPosterWallHeroBackground(default: Color): Color =
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) default else TV_POSTER_WALL_BACKGROUND_LIGHT
+
+/*
+ * 深色海报墙页面上比底色亮的几档灰, 取自 Android TV 版 Apple TV App 的深色主题 (app.js 的 SystemGray 表; 按钮 / 卡片底板
+ * 未聚焦是"白 10%"叠在页面底上, 聚焦加到 20%). 页面上的块一律从底色往上亮, 不出现比底色更黑的.
+ */
+/** SystemGray4 (58, 58, 60). */
+val TV_POSTER_WALL_GRAY4: Color = Color(0xFF3A3A3C)
+
+/** 白 10% 叠在 [TV_POSTER_WALL_BACKGROUND_DARK] 上: Apple 按钮 / 卡片底板未聚焦的那一档. */
+val TV_POSTER_WALL_PLATTER: Color = Color(0xFF414143)
+
+/** SystemGray3 (72, 72, 74). */
+val TV_POSTER_WALL_GRAY3: Color = Color(0xFF48484A)
+
+/** 白 20% 叠在 [TV_POSTER_WALL_BACKGROUND_DARK] 上: Apple 底板聚焦那一档. */
+val TV_POSTER_WALL_PLATTER_HIGH: Color = Color(0xFF565658)
+
+/*
+ * 浅色海报墙页面上比底色亮的几档, 取自 Apple TV App 的浅色表 (app.js 的 light 色表: SystemGray6 与白 20% 的按钮底板): 底板这几档
+ * 从底色往白走, 同深色那套从底色往上亮. 聚焦时换上的两档不在其中, 见 [tvPosterWallColorScheme].
+ */
+/** 白 20% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上: Apple 浅色按钮底板. */
+val TV_POSTER_WALL_PLATTER_LIGHT: Color = Color(0xFFEAEAEE)
+
+/** 浅色 SystemGray6 (242, 242, 247). */
+val TV_POSTER_WALL_GRAY6_LIGHT: Color = Color(0xFFF2F2F7)
+
+/**
+ * 海报墙页面的配色: 把 Material 的各档底色 (background / surface / surfaceContainer* / surfaceVariant) 换成上面那几档灰 —— 默认深色
+ * 主题里这些是近黑, 搜索框、扫码面板、卡片底、菜单与弹窗铺在深灰页面上就是一块块黑的; 浅色同理换成 Apple 浅色那几档.
+ * 主题色 (聚焦时的主色等) 与文字色不动.
+ *
+ * 浅色的 surfaceContainerHigh / surfaceContainerHighest 保留 Material 原值: 这两档是搜索候选行、评论卡聚焦时换上的底色.
+ * Material 浅色里它们一档比一档深, 与焦点态层 (浅色下是一层深色) 同向; 换成比周围更亮的灰或白, 聚焦就成了先变亮、
+ * 焦点态层晚约 0.1 秒再压暗, 每挪一次焦点新旧两块都闪一下.
+ */
+fun tvPosterWallColorScheme(base: ColorScheme): ColorScheme =
+    if (base.surface.luminance() >= 0.5f) {
+        base.copy(
+            background = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surface = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surfaceDim = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surfaceContainerLowest = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surfaceContainerLow = TV_POSTER_WALL_PLATTER_LIGHT,
+            surfaceContainer = TV_POSTER_WALL_GRAY6_LIGHT,
+            surfaceBright = TV_POSTER_WALL_GRAY6_LIGHT,
+            surfaceVariant = TV_POSTER_WALL_PLATTER_LIGHT,
+        )
+    } else {
+        base.copy(
+            background = TV_POSTER_WALL_BACKGROUND_DARK,
+            surface = TV_POSTER_WALL_BACKGROUND_DARK,
+            surfaceDim = TV_POSTER_WALL_BACKGROUND_DARK,
+            surfaceContainerLowest = TV_POSTER_WALL_BACKGROUND_DARK,
+            surfaceContainerLow = TV_POSTER_WALL_GRAY4,
+            surfaceContainer = TV_POSTER_WALL_PLATTER,
+            surfaceContainerHigh = TV_POSTER_WALL_GRAY3,
+            surfaceContainerHighest = TV_POSTER_WALL_PLATTER_HIGH,
+            surfaceBright = TV_POSTER_WALL_GRAY3,
+            surfaceVariant = TV_POSTER_WALL_GRAY4,
+        )
+    }
+
+/**
+ * [TvPosterWallTheme] 换配色之前的配色, 即原 hero 页的配色: 搜索页 hero 态的底色取它的 background (见 [TvPosterWallTone]).
+ * 不在 [TvPosterWallTheme] 里时为 null.
+ */
+val LocalTvPosterWallBaseColorScheme: ProvidableCompositionLocal<ColorScheme?> = staticCompositionLocalOf { null }
+
+/**
+ * 页面开着海报墙配色 ([TvPosterWallTheme]) 时为 true: 底色写死、不走 Material 配色的共享组件 (如 [TvHeroButton]) 据此改用海报墙
+ * 配色里的那几档.
+ */
+val LocalTvPosterWallTheme: ProvidableCompositionLocal<Boolean> = staticCompositionLocalOf { false }
+
+/**
+ * 页面开着海报墙 ([enabled]) 时换上 [tvPosterWallColorScheme]. 始终包这一层 (开关切换不重建内容); 配色对象按底色方案记住,
+ * 不每次重组都换新实例 —— 配色是静态的 CompositionLocal, 换实例会让整页重组.
+ */
+@Composable
+fun TvPosterWallTheme(enabled: Boolean, content: @Composable () -> Unit) {
+    val base = MaterialTheme.colorScheme
+    val scheme = remember(base, enabled) { if (enabled) tvPosterWallColorScheme(base) else base }
+    MaterialTheme(colorScheme = scheme) {
+        CompositionLocalProvider(
+            LocalTvPosterWallTheme provides enabled,
+            LocalTvPosterWallBaseColorScheme provides base,
+            content = content,
+        )
+    }
+}
+
+/** 海报到番名的间距. */
+internal val TV_POSTER_WALL_TITLE_TOP_GAP: Dp = 6.dp
+
+/** 番名字号: 落在 Apple TV 卡片标题 (25–29 pt ≈ 12.5–14.5 dp) 的中间. */
+internal val TV_POSTER_WALL_TITLE_FONT_SIZE = 13.sp
+
+/** 番名行高. 两行定高 = 块高的输入 (见 [tvPosterWallLabelHeight]). */
+internal val TV_POSTER_WALL_TITLE_LINE_HEIGHT = 18.sp
+
+/** 列数. [availableWidth] = 卡片区的内容宽度 (已减掉出血与两侧留白). */
+fun Density.tvPosterWallColumns(availableWidth: Dp): Int {
+    val spacing = TV_POSTER_WALL_COLUMN_SPACING.roundToPx()
+    return maxOf(1, (availableWidth.roundToPx() + spacing) / (TV_POSTER_WALL_CARD_MIN_WIDTH.roundToPx() + spacing))
+}
+
+/** 卡宽: [columns] 张铺满 [availableWidth], 行尾不留余量. */
+fun tvPosterWallCardWidth(availableWidth: Dp, columns: Int): Dp =
+    (availableWidth - TV_POSTER_WALL_COLUMN_SPACING * (columns - 1)) / columns
+
+/**
+ * 番名块的定高 (上间距 + 两行). 按 sp 换算: 电视上字高跟着系统字号走, 写死 dp 会把第二行底边裁掉.
+ * 定高是为了行高一致 —— 一行的番名也占两行高, 换焦点时排版不跳.
+ */
+@Composable
+fun tvPosterWallLabelHeight(): Dp =
+    TV_POSTER_WALL_TITLE_TOP_GAP + with(LocalDensity.current) { TV_POSTER_WALL_TITLE_LINE_HEIGHT.toDp() } * 2
+
+/**
+ * 滚到底时末行番名底边离视口底边留多少: 聚焦放大后海报底边往下伸 (倍数 − 1) × 封面高 / 2, 番名跟着下移同样多 ——
+ * 这一截加上安全边距 [TV_POSTER_WALL_END_MARGIN], 聚焦末行时番名才不会贴着屏幕底边.
+ */
+fun tvPosterWallEndMargin(coverHeight: Dp, focusScale: Float): Dp =
+    coverHeight * ((focusScale - 1f) / 2f) + TV_POSTER_WALL_END_MARGIN
+
+/**
+ * 海报墙页面的整屏底色: 卡片墙是深灰 ([tvPosterWallBackground]), hero 态与探索页的热门轮播回到原 hero 页的
+ * 近黑 ([heroColor]) —— hero 背景图是按黑底羽化的, 铺在深灰上发闷, 图边也压不住. 由画整屏底色的那一层 (主壳 / 搜索页根) 持有
+ * ([rememberTvPosterWallTone]), 页面用 [TvPosterWallToneSource] 把自己此刻的黑度登记进来. 整屏的底与侧边栏展开面板都用
+ * [drawBackground] 在绘制阶段画, 同一帧同一个值.
+ *
+ * 除了整屏的黑度, 页面还可以登记一条**分界线** (探索页的热门轮播): 线以上是 hero 的底, 往下 [TV_POSTER_WALL_HERO_SPLIT_BAND] 内渐变到
+ * 整屏底色. 分界线跟着轮播背景图的下缘走、随列表滚动 —— 焦点在第一行时线停在它的组标题上沿, 上面黑、下面灰; 再往下翻线随轮播滚出屏,
+ * 不用整屏换色.
+ *
+ * 浅色主题下两者同色 (见 [tvPosterWallHeroBackground]), 整屏不换色.
+ *
+ * 背景图只在底色黑透之后露面: hero 态靠页面自己的过渡 (见 TvNativeHeroTimeline), 热门轮播的图整个在分界线以上. 换页时底色与分界线都从
+ * 上一页的值交接到这一页的 —— 等上一页淡出之后才起步; 交接途中还没黑透, 这一页的背景图按 [heroContentGate] / [splitGate] 先挡着.
+ */
+@Stable
+class TvPosterWallTone internal constructor(
+    private val scope: CoroutineScope,
+    wall: Color,
+    hero: Color,
+    wallPage: Boolean,
+) {
+    private var wallColor by mutableStateOf(wall)
+
+    /** hero 的底色 (见 [tvPosterWallHeroBackground]): 原 hero 页与海报墙 hero 态同一个. 背景图的渐隐色用它. */
+    var heroColor: Color by mutableStateOf(hero)
+        private set
+
+    // 当前页是不是海报墙页: 不是的话恒为 hero 色 (原 hero 页的底)
+    private var wallPage by mutableStateOf(wallPage)
+
+    // 登记的页面, 同一时刻只认最后登记的那个: 主壳换页时新页先组合, 旧页淡出之后才撤
+    private var owner: Any? = null
+    private var source by mutableStateOf<(() -> Float)?>(null)
+    private var animated = true
+
+    // 页面登记的分界线 (px, 从屏顶算; 见类说明), NaN = 这一帧没有
+    private var splitSource by mutableStateOf<(() -> Float)?>(null)
+
+    // 交接途中新页没登记分界线时, 沿用旧页最后画的位置淡掉. 只在绘制里读写, 不进快照
+    private var lastSplitY = Float.NaN
+
+    // 交接: 从换之前画着的黑度 handoffFrom / 分界线那层的浓度 splitFrom 渐变到新值, handoff 0 → 1
+    private var handoffFrom by mutableFloatStateOf(1f)
+    private var splitFrom by mutableFloatStateOf(0f)
+    private var handoff by mutableFloatStateOf(1f)
+    private var handoffJob: Job? = null
+
+    /** 此刻整屏的黑度: 0 = 卡片墙的深灰, 1 = hero 的近黑. 绘制阶段读. */
+    fun amount(): Float {
+        val target = if (wallPage) source?.invoke()?.coerceIn(0f, 1f) ?: 0f else 1f
+        val h = handoff
+        return if (h >= 1f) target else lerp(handoffFrom, target, h)
+    }
+
+    /** 此刻的整屏底色 (不含分界线那层, 见 [drawBackground]). 绘制阶段读. */
+    fun color(): Color = lerp(wallColor, heroColor, amount())
+
+    /** 分界线那层的浓度: 登记了分界线的页是 1, 换页时随交接渐变. 绘制阶段读. */
+    private fun splitStrength(): Float {
+        val target = if (wallPage && splitSource != null) 1f else 0f
+        val h = handoff
+        return if (h >= 1f) target else lerp(splitFrom, target, h)
+    }
+
+    /**
+     * 画整屏的底: [color] 铺满, 登记了分界线就在它以上叠 hero 的底、往下 [TV_POSTER_WALL_HERO_SPLIT_BAND] 内渐变掉. 主壳 / 搜索页根的底色层
+     * 与侧边栏展开面板都用它, 同一帧同一个值.
+     */
+    fun drawBackground(scope: DrawScope) = with(scope) {
+        drawRect(color())
+        val strength = splitStrength()
+        if (strength <= 0f || wallColor == heroColor) return@with
+        val y = splitSource?.invoke()?.takeIf { !it.isNaN() }?.also { lastSplitY = it } ?: lastSplitY
+        if (y.isNaN()) return@with
+        val band = TV_POSTER_WALL_HERO_SPLIT_BAND.toPx()
+        val bottom = (y + band).coerceAtMost(size.height)
+        if (bottom <= 0f) return@with
+        // smoothstep 采样, 无折点 (同背景图的羽化); 线以上按第一个色标铺满
+        val stops = Array(TV_POSTER_WALL_HERO_SPLIT_STOPS + 1) { i ->
+            val f = i / TV_POSTER_WALL_HERO_SPLIT_STOPS.toFloat()
+            f to heroColor.copy(alpha = strength * (1f - f * f * (3f - 2f * f)))
+        }
+        drawRect(Brush.verticalGradient(*stops, startY = y, endY = y + band), size = Size(size.width, bottom))
+    }
+
+    /** 背景图的放行 (乘在它的透明度上): 整屏黑透了才是 1, 见类说明. 绘制阶段读. */
+    fun heroContentGate(): Float =
+        if (wallColor == heroColor) {
+            // 浅色: hero 态不换色, 没什么可等的
+            1f
+        } else {
+            ((amount() - TV_POSTER_WALL_TONE_GATE_FROM) / (1f - TV_POSTER_WALL_TONE_GATE_FROM)).coerceIn(0f, 1f)
+        }
+
+    /** 分界线以上那张图 (探索页的热门轮播) 的放行: 分界线那层到位了才是 1 (换页交接途中挡着). 绘制阶段读. */
+    fun splitGate(): Float = if (wallColor == heroColor) 1f else splitStrength()
+
+    internal fun update(wall: Color, hero: Color, wallPage: Boolean, animated: Boolean) {
+        this.animated = animated
+        wallColor = wall
+        heroColor = hero
+        if (this.wallPage != wallPage) {
+            beginHandoff()
+            this.wallPage = wallPage
+        }
+    }
+
+    internal fun attach(owner: Any, amount: () -> Float, split: (() -> Float)?) {
+        beginHandoff()
+        this.owner = owner
+        source = amount
+        splitSource = split
+    }
+
+    internal fun detach(owner: Any) {
+        if (this.owner !== owner) return
+        beginHandoff()
+        this.owner = null
+        source = null
+        splitSource = null
+    }
+
+    private fun beginHandoff() {
+        handoffJob?.cancel()
+        // 流畅档直接到位, 同其它过渡
+        if (!animated) {
+            handoff = 1f
+            return
+        }
+        handoffFrom = amount()
+        splitFrom = splitStrength()
+        handoff = 0f
+        handoffJob = scope.launch {
+            animate(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = tween(TV_POSTER_WALL_TONE_HANDOFF_MILLIS, delayMillis = TV_POSTER_WALL_TONE_HANDOFF_DELAY_MILLIS),
+            ) { value, _ -> handoff = value }
+        }
+    }
+}
+
+/**
+ * 画整屏底色的那一层 (主壳 / 搜索页根) 持有的 [TvPosterWallTone]: [wall] / [hero] 是卡片墙与 hero 态的底色, [wallPage] = 当前页开着海报墙.
+ */
+@Composable
+fun rememberTvPosterWallTone(wall: Color, hero: Color, wallPage: Boolean): TvPosterWallTone {
+    val scope = rememberCoroutineScope()
+    val animated = LocalThemeSettings.current.visualEffects.transitions
+    val tone = remember { TvPosterWallTone(scope, wall, hero, wallPage) }
+    SideEffect { tone.update(wall, hero, wallPage, animated) }
+    return tone
+}
+
+/** 主壳里的页面拿 [TvPosterWallTone] 用. 搜索页自己画底色, 直接往下传. */
+val LocalTvPosterWallTone: ProvidableCompositionLocal<TvPosterWallTone?> = staticCompositionLocalOf { null }
+
+/**
+ * 把本页此刻的黑度登记进 [tone] (null 时什么都不做): [amount] 在绘制阶段读, 0 = 卡片墙, 1 = hero 态. [heroBottom] 非 null 时再登记一条分界线
+ * (px, 从屏顶算, 绘制阶段读; NaN = 这一帧没有): 线以上是 hero 的底, 见 [TvPosterWallTone]. 离开组合时撤掉.
+ */
+@Composable
+fun TvPosterWallToneSource(tone: TvPosterWallTone?, heroBottom: (() -> Float)? = null, amount: () -> Float) {
+    if (tone == null) return
+    val latest = rememberUpdatedState(amount)
+    val latestSplit = rememberUpdatedState(heroBottom)
+    val hasSplit = heroBottom != null
+    DisposableEffect(tone, hasSplit) {
+        val owner = Any()
+        tone.attach(owner, { latest.value() }, if (hasSplit) ({ latestSplit.value?.invoke() ?: Float.NaN }) else null)
+        onDispose { tone.detach(owner) }
+    }
+}
+
+/** 换页交接等上一页淡出再起步: 主壳换页先用 50ms 淡出旧页 (见 AniMotionScheme.topLevelTransition). */
+private const val TV_POSTER_WALL_TONE_HANDOFF_DELAY_MILLIS = 50
+
+/** 换页交接的时长: 比新页淡入 (150ms) 稍长, 整屏换色不显得突兀. */
+private const val TV_POSTER_WALL_TONE_HANDOFF_MILLIS = 250
+
+/** 整屏黑度过了这里背景图才开始放行, 黑透时全放. */
+private const val TV_POSTER_WALL_TONE_GATE_FROM = 0.85f
+
+/** 分界线以下渐变到整屏底色的那一段 (见 [TvPosterWallTone.drawBackground]): 与背景图下缘的羽化带差不多长. */
+private val TV_POSTER_WALL_HERO_SPLIT_BAND = 96.dp
+
+/** 分界线渐变的采样数. */
+private const val TV_POSTER_WALL_HERO_SPLIT_STOPS = 8
+
+/**
+ * 卡片静止时的高度: 贴身一圈淡影 (Apple TV App 卡片静止阴影下移 4 pt ≈ 2 dp). 系统阴影的光源在屏幕上方中间,
+ * 屏幕中部的卡投影下移量约等于高度.
+ */
+internal val TV_POSTER_WALL_IDLE_ELEVATION = 2.dp
+
+/** 卡片聚焦时的高度: 抬起来的一大片软影 (Apple TV App 聚焦阴影下移 40 pt、模糊 50 pt; 系统阴影 20 dp 时模糊约 28 dp、下移约 10 dp). */
+internal val TV_POSTER_WALL_FOCUSED_ELEVATION = 20.dp
+
+/** 浅色档的阴影色: 浅底上投影显得重, 透明度减半 (Apple 浅色表里文字阴影也比深色轻一半以上). */
+internal val TV_POSTER_WALL_SHADOW_COLOR_LIGHT = Color.Black.copy(alpha = 0.5f)
+
+/** 玻璃边的不透明度: Apple TV App 卡片描边用的 hairline 色, 深色下是 8% 白. */
+internal const val TV_POSTER_WALL_OUTLINE_ALPHA = 0.08f
+
+/** 玻璃边的浅色档: Apple 浅色 hairline 是 10% 黑. */
+internal const val TV_POSTER_WALL_OUTLINE_ALPHA_LIGHT = 0.1f
+
+/** 没聚焦时番名的不透明度: Apple TV App 卡片标题静止用 LabelSecondary, 深色下是 50% 白 (聚焦时 LabelPrimary, 全亮). */
+internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA = 0.5f
+
+/** 没聚焦时番名的浅色档: Apple 浅色 LabelSecondary 是 60% 黑. */
+internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT = 0.6f
+
+@Composable
+internal fun tvPosterWallTitleStyle(): TextStyle = MaterialTheme.typography.bodyMedium.copy(
+    fontSize = TV_POSTER_WALL_TITLE_FONT_SIZE,
+    lineHeight = TV_POSTER_WALL_TITLE_LINE_HEIGHT,
+)

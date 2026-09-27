@@ -1,0 +1,430 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.ui.foundation.tv.nativeview
+
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
+import android.os.SystemClock
+import android.view.View
+import android.view.animation.LinearInterpolator
+import android.widget.FrameLayout
+import android.widget.ImageView
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import com.github.panpf.sketch.Sketch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.ui.foundation.TvNativeImages
+import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
+import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_CROSSFADE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PREFETCH_HANDOFF_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_HOLD_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_IN_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_UNDERLAY_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_OBSCURED_BACKDROP_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
+import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.fadeInProfileOf
+import me.him188.ani.app.ui.foundation.tv.fadeOutProfile
+
+/**
+ * 背景图要显示的内容: [url] 主图, [subjectId] 这张图属于哪个条目 (给放大转场登记、提前取色; null = 不是条目自己的图),
+ * [underlayUrl] 应急垫底 (竖版封面, 半透明, 见 TvPageBackdropLayer 的 underlayUrl), [obscure] 打码.
+ */
+data class TvNativeBackdropTarget(
+    val url: String,
+    val subjectId: Int?,
+    val underlayUrl: String? = null,
+    val obscure: Boolean = false,
+)
+
+/**
+ * 列表页 hero 的背景图层 (原生版 TvPageBackdropLayer): 16:9 图按调用方给的框铺满、中心裁剪; 换图交叉淡入
+ * [TV_BACKDROP_CROSSFADE_MILLIS] (FastOutSlowIn, 半路再换就从当前值接着走); 「按下即压暗」([triggerPressDim]); 遮罩 ([treatment]:
+ * 左缘 / 下缘渐变, 画法与停点同 Compose 版 tvBackdropTreatmentPainter, 只画不透明段) 与左缘 / 下缘跨在图边上的实心压条 (图层缩放时边落在
+ * 半个像素上, 抗锯齿那一列会漏出图色) 都在所有图之上画一次.
+ *
+ * 给详情页的放大转场登记这张图此刻在屏幕上的框 ([TvHeroZoomHandoff.publish], 调用方每次挪动 / 缩放图层后调 [publishZoom]), 图画出来后
+ * 标记 [TvHeroZoomHandoff.markSourceLoaded] 并提前取主色 ([SubjectSeedColorCache]), 同 Compose 版 TvBackdropImage.
+ */
+@SuppressLint("ViewConstructor")
+class TvNativeBackdropView(
+    context: Context,
+    private val sketch: Sketch,
+    private val scope: CoroutineScope,
+) : FrameLayout(context) {
+    private val slots = ArrayList<Slot>()
+    private val overlay = TreatmentOverlay(context)
+    private var target: TvNativeBackdropTarget? = null
+    private val windowXY = IntArray(2)
+
+    /** 刚建出来 / 刚 [rebuild] 过: 下一次 [show] 直接换 (那一刻的目标直接画, 之后再换才交叉淡入). */
+    private var showDirectlyNext = true
+
+    /** 遮罩色 = 图层正下方的底色 (hero 的底, 见 TvPosterWallTone.heroColor). */
+    var fadeColor: Int = AndroidColor.BLACK
+        set(value) {
+            if (field == value) return
+            field = value
+            overlay.invalidate()
+        }
+
+    /** 压在图上的遮罩 (见 [TvBackdropTreatment]); 探索页在轮播与卡片两套几何之间逐帧插值时每帧换. */
+    var treatment: TvBackdropTreatment? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            overlay.invalidateTreatment()
+        }
+
+    /** Compose 根视图: 放大转场的框按它的坐标登记 (null = 按窗口坐标). */
+    var composeRoot: View? = null
+    private val rootXY = IntArray(2)
+
+    /** 按下即压暗的当前值 (0..[TV_BACKDROP_PRESS_DIM_ALPHA]). */
+    private var dim = 0f
+    private var dimJob: Job? = null
+    private var dimAnimator: ValueAnimator? = null
+
+    /** 「目标已换、展示还没跟上」: 压暗放开前要等它变 false (见 [triggerPressDim]). */
+    var dimming: Boolean = false
+
+    init {
+        clipChildren = false
+        clipToPadding = false
+        addView(overlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+
+    /** 当前主图 (交叉淡入的目标); null = 没有图. */
+    val currentTarget: TvNativeBackdropTarget? get() = target
+
+    /**
+     * 换图. 交叉淡入不分视觉效果档: 淡入期间旧图一直在, 撑到新图有像素 —— 当帧撤掉旧图的话, 新图下载解码那段 hero 没有背景
+     * (见 tvContentSwapAnimated). [crossfade] = false, 或刚建出来 / 刚 [rebuild] 过的头一次调用, 直接换. 同一张图重复调用是空操作.
+     */
+    fun show(target: TvNativeBackdropTarget?, crossfade: Boolean = true) {
+        val animated = crossfade && !showDirectlyNext
+        showDirectlyNext = false
+        if (target == this.target) return
+        this.target = target
+        if (target == null) {
+            if (!animated) clearSlots() else fadeSlots { 0f }
+            overlay.visibility = if (slots.any { it.alpha > 0f }) VISIBLE else INVISIBLE
+            return
+        }
+        val existing = slots.firstOrNull { it.target.url == target.url && it.target.obscure == target.obscure }
+        val slot = existing ?: Slot(target).also { newSlot ->
+            slots.add(newSlot)
+            addView(newSlot.frame, indexOfChild(overlay), LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            newSlot.load()
+        }
+        if (!animated) {
+            slots.filter { it !== slot }.forEach { removeSlot(it) }
+            slot.fadeTo(1f, animated = false)
+        } else {
+            fadeSlots { if (it === slot) 1f else 0f }
+        }
+        overlay.visibility = VISIBLE
+        publishZoom()
+    }
+
+    /**
+     * 各格淡到 [alphaOf] 给的值. fadeTo 会取消该格在途的动画, 取消当场回调的结束监听可能把刚起步 (透明度还是 0) 的格摘掉:
+     * 按拷贝遍历, 已摘掉的跳过.
+     */
+    private inline fun fadeSlots(alphaOf: (Slot) -> Float) {
+        for (s in slots.toList()) {
+            if (s in slots) s.fadeTo(alphaOf(s), animated = true)
+        }
+    }
+
+    /**
+     * 整个重建 (同 Compose 版 imageKey 变了): 丢掉所有图, 下一次 [show] 直接出现, 不与上一张交叉淡入 —— 调用方在图层看不见的那一刻换来源、
+     * 换位置时用, 交叉淡入里没褪完的上一张会随图层重新亮起来一起露出来.
+     */
+    fun rebuild() {
+        clearSlots()
+        target = null
+        showDirectlyNext = true
+    }
+
+    /**
+     * 按下即压暗 (同 TvPageBackdropLayer 的 dimTrigger): 当前图压到 [TV_BACKDROP_PRESS_DIM_ALPHA] ([TV_BACKDROP_PRESS_DIM_IN_MILLIS], 线性),
+     * 至少保持 [TV_BACKDROP_PRESS_DIM_HOLD_MILLIS], 再等 [dimming] 变 false (新图已换上) 用 [TV_BACKDROP_PRESS_DIM_OUT_MILLIS] 放开;
+     * 再按就从当前值重新开始. 受 TvPolishFlags.pressDim 控制.
+     */
+    fun triggerPressDim() {
+        if (!TvPolishFlags.pressDim) return
+        dimJob?.cancel()
+        dimJob = scope.launch {
+            val start = SystemClock.uptimeMillis()
+            animateDim(TV_BACKDROP_PRESS_DIM_ALPHA, TV_BACKDROP_PRESS_DIM_IN_MILLIS.toLong())
+            val remaining = TV_BACKDROP_PRESS_DIM_HOLD_MILLIS - (SystemClock.uptimeMillis() - start)
+            if (remaining > 0) delay(remaining)
+            while (dimming) delay(16)
+            animateDim(0f, TV_BACKDROP_PRESS_DIM_OUT_MILLIS.toLong())
+        }
+    }
+
+    private suspend fun animateDim(to: Float, millis: Long) {
+        val from = dim
+        dimAnimator?.cancel()
+        suspendCancellableCoroutine { cont ->
+            val animator = ValueAnimator.ofFloat(from, to).apply {
+                duration = millis
+                interpolator = LinearInterpolator()
+                addUpdateListener {
+                    dim = it.animatedValue as Float
+                    overlay.invalidate()
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (cont.isActive) cont.resumeWith(Result.success(Unit))
+                    }
+                })
+            }
+            dimAnimator = animator
+            cont.invokeOnCancellation { animator.cancel() }
+            animator.start()
+        }
+    }
+
+    /**
+     * 登记放大转场的来源 (同 Compose 版在 onGloballyPositioned 里登记): 主图此刻在窗口里的框 (含本层的缩放与平移), 遮罩声明.
+     * 调用方每次改了本层的位置 / 缩放后调.
+     */
+    fun publishZoom() {
+        val t = target ?: return
+        val subjectId = t.subjectId ?: return
+        val slot = slots.lastOrNull { it.target.url == t.url } ?: return
+        if (width == 0 || height == 0 || !isAttachedToWindow) return
+        getLocationInWindow(windowXY)
+        val root = composeRoot
+        if (root != null) {
+            root.getLocationInWindow(rootXY)
+        } else {
+            rootXY[0] = 0
+            rootXY[1] = 0
+        }
+        val left = (windowXY[0] - rootXY[0]).toFloat()
+        val top = (windowXY[1] - rootXY[1]).toFloat()
+        val rect = Rect(left, top, left + width * scaleX, top + height * scaleY)
+        TvHeroZoomHandoff.publish(slot.owner, subjectId, t.url, rect, Color.Transparent, treatment)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        if (changed) publishZoom()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        slots.forEach { TvHeroZoomHandoff.retract(it.owner) }
+    }
+
+    private fun clearSlots() {
+        slots.toList().forEach { removeSlot(it) }
+    }
+
+    private fun removeSlot(slot: Slot) {
+        slot.dispose()
+        slots.remove(slot)
+        removeView(slot.frame)
+    }
+
+    /** 一张图 (连同它的应急垫底), 交叉淡入的一格. 自己的透明度在 [frame] 上 (垫底与主图重叠, 淡入淡出时走离屏层, 同 Compose 版 Auto 策略). */
+    private inner class Slot(val target: TvNativeBackdropTarget) {
+        val owner = Any()
+        val frame = FrameLayout(context)
+        private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        private val underlay: ImageView? = target.underlayUrl?.let { ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }
+        var alpha = 0f
+            private set
+        private var animator: ValueAnimator? = null
+        private var loadJob: Job? = null
+
+        init {
+            underlay?.let { frame.addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) }
+            frame.addView(image, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            frame.alpha = 0f
+        }
+
+        fun load() {
+            if (width == 0 || height == 0) {
+                // 还没量过 (刚建出来就换了图): 等第一次布局出尺寸再发请求, 请求按图层的框取整
+                addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                    override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, orr: Int, ob: Int) {
+                        if (r - l == 0 || b - t == 0) return
+                        removeOnLayoutChangeListener(this)
+                        if (slots.contains(this@Slot)) load()
+                    }
+                })
+                return
+            }
+            val obscureEdge = if (target.obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null
+            underlay?.let { view ->
+                TvNativeImages.loadBackdrop(
+                    sketch, view, target.underlayUrl!!, width, height, alpha = TV_BACKDROP_UNDERLAY_ALPHA, obscureLongEdgePx = obscureEdge,
+                )
+            }
+            loadJob = scope.launch {
+                // 接管在途预热 (同 TvBackdropImage): 这张图正被预热时先等它跑完, 最多等到预热开始后 TV_BACKDROP_PREFETCH_HANDOFF_MILLIS
+                val prefetch = TvHeroImagePrefetch.inFlight(target.url)
+                val left = TV_BACKDROP_PREFETCH_HANDOFF_MILLIS - (prefetch?.elapsedMillis ?: 0)
+                if (prefetch != null && left > 0) withTimeoutOrNull(left) { prefetch.job.join() }
+                TvNativeImages.loadBackdrop(sketch, image, target.url, width, height, obscureLongEdgePx = obscureEdge) { bitmap ->
+                    onLoaded(bitmap)
+                }
+            }
+        }
+
+        private fun onLoaded(bitmap: Bitmap) {
+            val subjectId = target.subjectId ?: return
+            // 返回缩回撤层前要等列表页 hero 这张图画得出来 (见 TvHeroZoomHandoff.listReady)
+            TvHeroZoomHandoff.markSourceLoaded(subjectId, target.url)
+            publishZoom()
+            if (target.obscure || SubjectSeedColorCache[subjectId] != null) return
+            // 提前取色: 与详情页共用同一个取色函数 (算法不一致的话进页会被重算的色顶掉, 观感是跳两次)
+            val imageBitmap = bitmap.asImageBitmap()
+            scope.launch { SubjectSeedColorCache[subjectId] = imageBitmap.subjectSeedColor() }
+        }
+
+        fun fadeTo(to: Float, animated: Boolean) {
+            animator?.cancel()
+            if (!animated || alpha == to) {
+                alpha = to
+                frame.alpha = to
+                if (to == 0f && this@Slot.target != this@TvNativeBackdropView.target) post { if (alpha == 0f) removeSlot(this) }
+                return
+            }
+            val from = alpha
+            animator = ValueAnimator.ofFloat(from, to).apply {
+                duration = TV_BACKDROP_CROSSFADE_MILLIS.toLong()
+                interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+                addUpdateListener {
+                    alpha = it.animatedValue as Float
+                    frame.alpha = alpha
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (alpha == 0f && this@Slot !== slots.lastOrNull { s -> s.target == this@TvNativeBackdropView.target }) {
+                            removeSlot(this@Slot)
+                        }
+                    }
+                })
+                start()
+            }
+        }
+
+        fun dispose() {
+            animator?.cancel()
+            loadJob?.cancel()
+            TvNativeImages.clear(image)
+            underlay?.let { TvNativeImages.clear(it) }
+            TvHeroZoomHandoff.retract(owner)
+        }
+    }
+
+    /**
+     * 遮罩层: 按下即压暗 (遮罩色的实色矩形) → 遮罩声明的顶 / 左 / 下三条渐变 (只画不透明段) → 左缘 / 下缘跨在图边上的实心压条. 画笔只在尺寸
+     * 或声明变了时重建 (同 Compose 版 drawWithCache).
+     */
+    private inner class TreatmentOverlay(context: Context) : View(context) {
+        private val dimPaint = Paint()
+        private val seamPaint = Paint()
+        private val topPaint = Paint()
+        private val leftPaint = Paint()
+        private val bottomPaint = Paint()
+        private var built: Pair<TvBackdropTreatment?, Long>? = null
+        private val seamPx = resources.displayMetrics.density * TV_NATIVE_BACKDROP_EDGE_SEAM_DP
+
+        init {
+            setWillNotDraw(false)
+        }
+
+        fun invalidateTreatment() {
+            built = null
+            invalidate()
+        }
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            built = null
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val tr = treatment
+            val key = tr to (width.toLong() shl 32 or height.toLong())
+            if (built != key) {
+                buildShaders(tr, w, h)
+                built = key
+            }
+            val color = fadeColor
+            if (dim > 0f) {
+                dimPaint.color = withAlpha(color, dim)
+                canvas.drawRect(0f, 0f, w, h, dimPaint)
+            }
+            if (tr != null) {
+                if (tr.dim.alpha > 0f) {
+                    dimPaint.color = tr.dim.toArgb()
+                    canvas.drawRect(0f, 0f, w, h, dimPaint)
+                }
+                tr.top?.takeIf { it.maxAlpha > 0f }?.let { canvas.drawRect(0f, 0f, w, h * it.end, topPaint) }
+                tr.left?.takeIf { it.maxAlpha > 0f }?.let { canvas.drawRect(0f, 0f, w * it.end, h, leftPaint) }
+                tr.bottom?.takeIf { it.maxAlpha > 0f }?.let { canvas.drawRect(0f, h * it.start, w, h, bottomPaint) }
+            }
+            seamPaint.color = color
+            canvas.drawRect(-seamPx, 0f, seamPx, h + seamPx, seamPaint)
+            canvas.drawRect(-seamPx, h - seamPx, w + seamPx, h + seamPx, seamPaint)
+        }
+
+        private fun buildShaders(tr: TvBackdropTreatment?, w: Float, h: Float) {
+            tr?.top?.let { topPaint.shader = gradient(fadeOutProfile, it, 0f, h * it.start, 0f, h * it.end) }
+            tr?.left?.let { leftPaint.shader = gradient(fadeOutProfile, it, w * it.start, 0f, w * it.end, 0f) }
+            tr?.bottom?.let { bottomPaint.shader = gradient(fadeInProfileOf(it.smoothness), it, 0f, h * it.start, 0f, h * it.end) }
+        }
+
+        /** 停点均匀分布 (同 Compose 版 Brush 的均匀重载): 第 i 个停点 = 遮罩色 × maxAlpha × profile[i]. */
+        private fun gradient(profile: FloatArray, fade: TvBackdropFade, x0: Float, y0: Float, x1: Float, y1: Float): Shader {
+            val colors = IntArray(profile.size) { i -> fade.color.copy(alpha = fade.maxAlpha * profile[i]).toArgb() }
+            return LinearGradient(x0, y0, x1, y1, colors, null, Shader.TileMode.CLAMP)
+        }
+    }
+}
+
+private fun withAlpha(color: Int, alpha: Float): Int =
+    AndroidColor.argb((alpha * 255).toInt().coerceIn(0, 255), AndroidColor.red(color), AndroidColor.green(color), AndroidColor.blue(color))
+
+/** 同 TvCards.kt 的 TV_BACKDROP_EDGE_SEAM (1dp). */
+private const val TV_NATIVE_BACKDROP_EDGE_SEAM_DP = 1f
