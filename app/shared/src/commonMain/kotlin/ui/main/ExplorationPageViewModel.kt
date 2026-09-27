@@ -92,6 +92,7 @@ class ExplorationPageViewModel : AbstractViewModel(), KoinComponent {
         recommendationGroups = recommendationRepository.recommendationGroups()
             .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList()),
         recommendationsRefreshing = recommendationRepository.isRefreshing,
+        recommendationsRefreshProgress = recommendationRepository.refreshProgress,
         horizontalScrollTipFlow = horizontalScrollTipFlow,
         onSetDisableHorizontalScrollTip = {
             backgroundScope.launch {

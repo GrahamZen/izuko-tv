@@ -64,7 +64,22 @@ class BangumiOAuthManager(
 ) {
     private val logger = logger<BangumiOAuthManager>()
 
+    /** 授权进行中的哪一步, 界面按它换说法 (见 [State.stage]). */
+    enum class Stage {
+        /** 正在打开应用内浏览器. */
+        OpeningBrowser,
+
+        /** 登录页已经打开 (应用内浏览器或系统浏览器), 等用户登录并点授权. */
+        AwaitingAuthorization,
+
+        /** 已授权, 正在用授权码换登录凭证. */
+        Exchanging,
+    }
+
     sealed interface State {
+        /** 授权进行中走到哪一步了; 不在进行中 (空闲、成功、失败) 时为 `null`. */
+        val stage: Stage? get() = null
+
         /** 没有正在进行的授权. */
         data object Idle : State
 
@@ -77,10 +92,17 @@ class BangumiOAuthManager(
         data class Authorizing(
             val url: String,
             val browser: CaptchaBrowser?,
-        ) : State
+            /** 走的是系统浏览器: 登录页开在别的应用里, 这边只等回调. */
+            val viaExternalBrowser: Boolean = false,
+        ) : State {
+            override val stage: Stage
+                get() = if (browser == null && !viaExternalBrowser) Stage.OpeningBrowser else Stage.AwaitingAuthorization
+        }
 
         /** 拿到 code, 正在换 token. */
-        data object Exchanging : State
+        data object Exchanging : State {
+            override val stage: Stage get() = Stage.Exchanging
+        }
 
         data object Success : State
 
@@ -178,7 +200,7 @@ class BangumiOAuthManager(
         val oauthState = Uuid.random(random).toString()
         pendingState = oauthState
         val url = BangumiOAuthConstants.authorizeUrl(state = oauthState, mirrorRoot = trustedMirrorRoot())
-        _state.value = State.Authorizing(url, browser = null)
+        _state.value = State.Authorizing(url, browser = null, viaExternalBrowser = true)
         // 回环监听接住浏览器里的回调 (见 OAuthLoopbackServer): 电视浏览器不把自定义 scheme
         // 交给系统, deep link 那条在那边收不到. 起不来 (端口被占/iOS) 就还是等 deep link.
         val server = OAuthLoopbackServer(BangumiOAuthConstants.CALLBACK_PORT)

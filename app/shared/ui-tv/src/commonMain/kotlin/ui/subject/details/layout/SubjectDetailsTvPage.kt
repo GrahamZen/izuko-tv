@@ -246,6 +246,7 @@ import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_episodes
 import me.him188.ani.app.ui.lang.subject_details_staff
+import me.him188.ani.app.ui.lang.subject_details_load_retrying
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import me.him188.ani.app.ui.lang.subject_details_related_subjects
@@ -262,6 +263,7 @@ import me.him188.ani.app.ui.subject.collection.components.SubjectCollectionActio
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.SubjectCollectionActionsForCollect
 import me.him188.ani.app.ui.subject.collection.components.renderCollectionTypeAsCurrent
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadAttempt
 import me.him188.ani.app.ui.subject.details.components.AnimatedGradientBackground
 import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RATIO
 import me.him188.ani.app.ui.subject.details.components.RatingHistogram
@@ -303,7 +305,8 @@ import org.jetbrains.compose.resources.stringResource
  * 则不放图), 否则两边会在切换的一瞬互相跳变.
  *
  * 冷启 (热缓存里没有) 时只有标题, 没有转圈 —— 短等待放个转圈反而更显慢; 真的久等
- * ([SLOW_LOAD_SPINNER_DELAY] 之后) 才把转圈补出来, 免得慢网络下看着像卡死.
+ * ([SLOW_LOAD_SPINNER_DELAY] 之后) 才把转圈补出来, 免得慢网络下看着像卡死. 首屏超时重来之后 ([loadAttempt])
+ * 转圈下面再写一句网络慢、第几次尝试 —— 全部超时要二十多秒才出错误页.
  */
 @Composable
 fun SubjectDetailsTvLoadingPlaceholder(
@@ -311,6 +314,7 @@ fun SubjectDetailsTvLoadingPlaceholder(
     layoutParams: SubjectDetailsLayoutParams,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
+    loadAttempt: SubjectDetailsLoadAttempt = SubjectDetailsLoadAttempt.First,
 ) {
     val tmdbImageService = remember { GlobalKoin.get<TmdbImageService>() }
     // 三态: resolved=false 还没解析过 (等), resolved=true 且 url=null 确认无图 (回退封面)
@@ -395,6 +399,17 @@ fun SubjectDetailsTvLoadingPlaceholder(
                             color = Color.White,
                             strokeWidth = 3.dp,
                         )
+                        if (loadAttempt.isRetrying) {
+                            Text(
+                                stringResource(
+                                    Lang.subject_details_load_retrying,
+                                    loadAttempt.attempt,
+                                    loadAttempt.maxAttempts,
+                                ),
+                                style = MaterialTheme.typography.titleMedium.copy(shadow = titleShadow),
+                                color = Color.White.copy(alpha = 0.85f),
+                            )
+                        }
                     }
                 }
             }

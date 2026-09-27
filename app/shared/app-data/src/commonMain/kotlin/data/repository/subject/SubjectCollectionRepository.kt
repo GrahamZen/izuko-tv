@@ -375,8 +375,12 @@ class SubjectCollectionRepositoryImpl(
         // 分集单独按 cacheExpiry 判: 强制刷新会连着重取条目, 每次都跟着把分集也拉一遍不值当
         // —— 分集变化远比收藏状态慢
         val fetchEpisodes = forceEpisodes || episodesExpired(subjectId)
+        // 分集与条目是并发取的, 分集的失败**不能**直接抛出来: 它会顺着 coroutineScope 立刻取消条目那一路,
+        // 于是"这个条目取不到"的结论变成了分集接口的那条异常 —— 同一个不存在/没权限的条目, 谁先回来就报谁,
+        // 详情页一会儿说"账号看不到这个条目"、一会儿甩出 collections/{id}/episodes 的 404 原文 (2026-09-27 真机实测).
+        // 条目本身才是结论的来源: 分集失败先收着, 等条目那边定了再说.
         val episodesDeferred = if (fetchEpisodes) {
-            async { episodeService.getEpisodeCollectionEntities(subjectId, lastFetched) }
+            async { runCatching { episodeService.getEpisodeCollectionEntities(subjectId, lastFetched) } }
         } else {
             null
         }

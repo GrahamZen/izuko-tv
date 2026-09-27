@@ -25,6 +25,7 @@ import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -154,7 +155,8 @@ class QuarkDriveService internal constructor(
             emit(QuarkQrLoginState.Failed(e.message ?: e.toString()))
             return@flow
         }
-        emit(QuarkQrLoginState.WaitingForScan(QuarkApi.qrCodeContent(token.token)))
+        // 界面上倒数用墙上时间; 下面判超时仍用单调时钟 (不受改系统时间影响), 两者从同一刻起算
+        emit(QuarkQrLoginState.WaitingForScan(QuarkApi.qrCodeContent(token.token), currentTimeMillis() + timeout.inWholeMilliseconds))
 
         val deadline = TimeSource.Monotonic.markNow() + timeout
         while (deadline.hasNotPassedNow()) {
@@ -171,6 +173,8 @@ class QuarkDriveService internal constructor(
                 QuarkQrPollResult.Waiting -> continue
                 QuarkQrPollResult.Expired -> break
                 is QuarkQrPollResult.Confirmed -> {
+                    // 手机上确认了, 还要换票、取账号信息 (几个请求, 慢的时候十几秒): 先让界面收起二维码说一声
+                    emit(QuarkQrLoginState.Confirmed)
                     try {
                         val exchange = api.exchangeServiceTicket(result.serviceTicket)
                         val cookies = token.cookies + exchange.cookies
@@ -275,8 +279,13 @@ sealed interface QuarkQrLoginState {
 
     /**
      * 显示二维码, 等用户用夸克 App 扫码并确认.
+     *
+     * @param expiresAtMillis 等到这一刻 (墙上时间, 毫秒) 还没确认就放弃, 流结束于 [Expired]; 界面据此倒数
      */
-    data class WaitingForScan(val qrContent: String) : QuarkQrLoginState
+    data class WaitingForScan(val qrContent: String, val expiresAtMillis: Long) : QuarkQrLoginState
+
+    /** 用户已在夸克 App 里确认, 正在换取登录 Cookie、读账号信息. */
+    data object Confirmed : QuarkQrLoginState
 
     data class Success(val nickname: String) : QuarkQrLoginState
 

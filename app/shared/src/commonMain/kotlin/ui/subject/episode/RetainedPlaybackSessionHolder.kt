@@ -43,14 +43,15 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
+import me.him188.ani.app.ui.foundation.playback.PlaybackPreparingStage
 import me.him188.ani.app.ui.foundation.playback.PlaybackProgress
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
-import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.datasources.api.CachedMedia
+import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -58,6 +59,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.PlayerState
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -366,7 +368,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         playingCache = null
         // 新会话的初值就是"在准备": 第 7 条要等 debounce 才发第一个值, 那段时间面板不该还写着
         // 上一个会话的状态 (更不该是空的 —— 那一行会空掉半秒)
-        status = vm?.let { PlaybackSessionStatus.Preparing }
+        status = vm?.let { PlaybackSessionStatus.Preparing() }
         logger.info { "Guarded session changed: vm=${vm?.let { "ep${currentSession?.info?.episodeId}" } ?: "none"}" }
         guardJob = vm?.let { viewModelScope.launch { guard(it) } }
     }
@@ -682,19 +684,32 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         //
         //    debounce 的理由与第 4 条一样 (自动换源必然路过 Failed), 只是短得多: 这里不打扰用户,
         //    晚两秒说实话比闪一下"加载失败"好, 但也不该像提示那样压六秒才更新.
+        //    准备中的几步 (查源 → 解析 → 打开) 是往前走的进度, 不等: 查源计数每查完一个源就变一次,
+        //    一律等稳两秒的话, 源接连查完的那一阵面板一直停在旧值上, 点进去看到的已经是下一步.
         launch {
+            var lastLogged: PlaybackSessionStatus? = null
             combine(
                 vm.videoStatisticsFlow.map { it.videoLoadingState }.distinctUntilChanged(),
                 vm.player.state,
-                vm.pageState.map { selectionProblemOf(it) }.distinctUntilChanged(),
-            ) { loading, playerState, selection -> statusOf(loading, playerState, selection) }
+                vm.pageState.map { selectionProblemOf(it) to it?.sourceSearchProgress() }.distinctUntilChanged(),
+                // 解析 BT 资源先要等 BT 服务起来, 这段时间播放画面写的是「正在启动 BT 服务」
+                combine(vm.loadedMedia, vm.btServiceConnected) { media, connected ->
+                    media?.kind == MediaSourceKind.BitTorrent && !connected
+                }.distinctUntilChanged(),
+            ) { loading, playerState, (selection, search), awaitingBtService ->
+                statusOf(loading, playerState, selection, search, awaitingBtService)
+            }
                 .distinctUntilChanged()
-                .debounce(STATUS_SETTLE_DELAY)
+                .debounce { if (it is PlaybackSessionStatus.Preparing) Duration.ZERO else STATUS_SETTLE_DELAY }
                 .collect {
-                    // 每次变化打一行: 面板上"这行字与播放页里写的不是一回事"这类问题, 事后完全
+                    // 每换一步打一行: 面板上"这行字与播放页里写的不是一回事"这类问题, 事后完全
                     // 无法从日志还原 —— 分不清是这条没跑、判据算错, 还是界面没读到 (与上面
-                    // notify 里那条日志同一个理由). 状态变化很少, 不吵
-                    logger.info { "Session status -> $it" }
+                    // notify 里那条日志同一个理由). 查源计数的变化不算换步 (上百个源就是上百行)
+                    val step = if (it is PlaybackSessionStatus.Preparing) PlaybackSessionStatus.Preparing(it.stage) else it
+                    if (step != lastLogged) {
+                        lastLogged = step
+                        logger.info { "Session status -> $it" }
+                    }
                     status = it
                 }
         }
@@ -789,7 +804,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         /** 问题状态要持续这么久才提示, 见 [guard] 第 4 条. */
         private val PROBLEM_SETTLE_DELAY = 6.seconds
 
-        /** 面板上那行状态要稳定这么久才更新, 见 [guard] 第 7 条. */
+        /** 面板上那行状态 (准备中的几步除外) 要稳定这么久才更新, 见 [guard] 第 7 条. */
         private val STATUS_SETTLE_DELAY = 2.seconds
 
         /** 解析成功后最多等这么久的"真的开播", 到点仍然提示就绪, 见 [guard] 第 3 条. */
@@ -821,30 +836,6 @@ private data class AutoPauseInput(
     val playerState: PlayerState,
 )
 
-/** 数据源搜索层面的"再等也没用". */
-private enum class SelectionProblem {
-    None,
-
-    /** 有搜到结果, 但不会自动选 (偏好不是 WEB), 在等用户挑. */
-    NeedsManualSelection,
-
-    /** 全部源都查完了, 一个可播的结果都没有. */
-    NoMedia,
-}
-
-private fun selectionProblemOf(state: EpisodePageState?): SelectionProblem {
-    // 页面状态还没算出来 (刚进页面) 或还是占位数据: 什么都判断不了
-    if (state == null || state.isPlaceholder) return SelectionProblem.None
-    // 已经选中了就不是选择层面的问题 (解析/播放能不能成另说, 那是 problemOf 的前两条)
-    if (state.mediaSelectorSummary is MediaSelectorSummary.Selected) return SelectionProblem.None
-    val results = state.mediaSourceResultListPresentation
-    // 源还没登记上来 (刚进页面) 或还有源在查 —— 等着就行, 这才是这套机制的正常用途.
-    // 有源被暂停 (上一次开播后暂停的) 同样要等: 自动选源用不上已有的结果时会马上把它们放开
-    if (results.list.isEmpty() || results.anyLoading || results.list.any { it.isPaused }) return SelectionProblem.None
-    return if (results.list.any { it.totalCount > 0 }) SelectionProblem.NeedsManualSelection
-    else SelectionProblem.NoMedia
-}
-
 /**
  * 面板那行状态. 与 [problemOf] 同一套判据 (出了问题先说问题), 只是把"没出问题"的那几步也分了
  * 出来 —— 那正是这行字的用处.
@@ -854,11 +845,17 @@ private fun selectionProblemOf(state: EpisodePageState?): SelectionProblem {
  * `mediaStatus` 报的还是**上一集**那次的 `Ready`. 按它判断的话, "换完集正在解析下一集"会被写成
  * "正在播放" —— 面板上说在播, 点进去播放页写着"正在解析资源链接", 正是 2026-08-16 实测到的那个
  * 不一致. 第 3 条等就绪时先 `filterIsInstance<Succeed>` 再看播放器, 是同一个道理.
+ *
+ * 地址交给播放器之前的 [PlaybackSessionStatus.Preparing] 按播放画面上转圈时那行字的分法分步
+ * (见 `EpisodeVideoLoadingIndicator`): 选源 → 解析地址 (BT 资源先等 BT 服务起来, [awaitingBtService]) → 打开视频.
+ * 只有选源这一步带 [search] 的计数 (面板上写「正在查找数据源 9/14」), 已经选好之后再说查了几个源就不对了.
  */
-private fun statusOf(
+internal fun statusOf(
     loading: VideoLoadingState,
     playerState: PlayerState,
     selection: SelectionProblem,
+    search: SourceSearchProgress?,
+    awaitingBtService: Boolean,
 ): PlaybackSessionStatus = when {
     // Cancelled 不是问题: 它是"换源"的中间态, 紧接着就会重新开始解析 (与 problemOf 同)
     loading is VideoLoadingState.Failed && loading != VideoLoadingState.Cancelled ->
@@ -880,7 +877,21 @@ private fun statusOf(
     selection == SelectionProblem.NeedsManualSelection -> PlaybackSessionStatus.NeedsSelection
     selection == SelectionProblem.NoMedia -> PlaybackSessionStatus.NoMedia
 
-    else -> PlaybackSessionStatus.Preparing
+    loading == VideoLoadingState.ResolvingSource -> PlaybackSessionStatus.Preparing(
+        if (awaitingBtService) PlaybackPreparingStage.StartingBtService else PlaybackPreparingStage.ResolvingSource,
+    )
+
+    loading is VideoLoadingState.DecodingData -> PlaybackSessionStatus.Preparing(
+        if (loading.isBt) PlaybackPreparingStage.FetchingTorrentInfo else PlaybackPreparingStage.PreparingVideo,
+    )
+
+    // 选源: Initial, 以及换源 / 换集时取消上一次加载留下的 Cancelled (选中下一个资源后才重新开始加载)
+    else -> PlaybackSessionStatus.Preparing(
+        PlaybackPreparingStage.SearchingSources,
+        sourcesFinished = search?.finished ?: 0,
+        sourcesTotal = search?.total ?: 0,
+        found = search?.found ?: 0,
+    )
 }
 
 private fun problemOf(

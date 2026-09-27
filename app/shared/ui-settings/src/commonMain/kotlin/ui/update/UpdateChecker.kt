@@ -71,6 +71,21 @@ private const val JSDELIVR_UPDATE_LINE_RANGE = "%3C$UPDATE_LINE_MAJOR_EXCLUSIVE"
  */
 internal val JSDELIVR_HOSTS = listOf("gcore.jsdelivr.net", "testingcf.jsdelivr.net", "cdn.jsdelivr.net")
 
+/** GitHub 连不上时依次查几个镜像: jsDelivr 的各个入口, 最后是 ghfast. */
+internal val UPDATE_CHECK_MIRROR_COUNT get() = JSDELIVR_HOSTS.size + 1
+
+/**
+ * 检查更新进行到哪一步 (见 [UpdateChecker.checkLatestVersion]): 每个来源最长 20 秒, GitHub 连不上时要一个个试镜像,
+ * 界面据此写「GitHub 连不上，正在查镜像 2/4」, 不然只能一直「检查中…」.
+ */
+sealed interface UpdateCheckProgress {
+    /** 在查 GitHub 接口. */
+    data object GitHub : UpdateCheckProgress
+
+    /** GitHub 连不上, 在查第 [index] 个镜像 (从 1 起, 共 [total] 个). */
+    data class Mirror(val index: Int, val total: Int) : UpdateCheckProgress
+}
+
 /**
  * ghfast.top: 公共的 GitHub 下载代理, raw / releases/latest 跳转都能代理, API 与 atom 不行 (403).
  * 只在检查更新的镜像回落里用; 下载安装包的镜像见 `GitHubDownloadMirrors`.
@@ -204,11 +219,15 @@ class UpdateChecker(private val client: ScopedHttpClient) {
     /**
      * 检查是否有更新的版本. 返回最新版本的信息, 或者 `null` 表示没有新版本.
      * GitHub 与所有镜像都连不上时抛出 GitHub 那次的异常.
+     *
+     * @param onProgress 开始查每个来源时调一次 (先 GitHub, 连不上再逐个镜像), 见 [UpdateCheckProgress]
      */
     suspend fun checkLatestVersion(
         releaseClass: ReleaseClass,
         currentVersion: String = currentAniBuildConfig.versionName,
+        onProgress: (UpdateCheckProgress) -> Unit = {},
     ): NewVersion? {
+        onProgress(UpdateCheckProgress.GitHub)
         val gitHubError = try {
             val version = getVersionFromGitHub(currentVersion, releaseClass)
             // 连选中的安装包一起打出来: 装不上的报障 (架构不符) 只凭版本号看不出问题在哪,
@@ -221,7 +240,7 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             logger.error(e) { "Failed to get latest version from GitHub, trying mirrors" }
             e
         }
-        val release = findLatestStableOnMirrors() ?: run {
+        val release = findLatestStableOnMirrors(onProgress) ?: run {
             logger.warn { "Mirror update check failed too" }
             throw gitHubError
         }
@@ -286,8 +305,9 @@ class UpdateChecker(private val client: ScopedHttpClient) {
      * `releases/latest` 不能指定版本线: 它指向的是仓库里被标成 Latest 的那个 release, 可能是别的版本线的.
      * 那时交给调用方按版本线丢掉, 等同于这条镜像没找到.
      */
-    private suspend fun findLatestStableOnMirrors(): MirrorRelease? {
-        for (host in JSDELIVR_HOSTS) {
+    private suspend fun findLatestStableOnMirrors(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
+        for ((index, host) in JSDELIVR_HOSTS.withIndex()) {
+            onProgress(UpdateCheckProgress.Mirror(index + 1, UPDATE_CHECK_MIRROR_COUNT))
             val release = tryMirror("jsDelivr $host") {
                 client.use {
                     val response = get(
@@ -307,6 +327,7 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             }
             if (release != null) return release
         }
+        onProgress(UpdateCheckProgress.Mirror(UPDATE_CHECK_MIRROR_COUNT, UPDATE_CHECK_MIRROR_COUNT))
         val tag = tryMirror("ghfast latest") {
             val finalUrl = client.use {
                 get(ghfastUrl("https://github.com/$FORK_OWNER/$FORK_REPO/releases/latest")) {

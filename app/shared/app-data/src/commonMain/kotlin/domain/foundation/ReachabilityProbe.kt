@@ -47,7 +47,8 @@ sealed interface Reachability {
  */
 class ReachabilityProbe(
     private val client: () -> ScopedHttpClient,
-    private val timeoutMillis: Long = PROBE_TIMEOUT_MILLIS,
+    /** 单路封顶: 过了这么久还没回应就判连不上. 各路并行时, 一轮检测最多也就这么久. */
+    val timeoutMillis: Long = PROBE_TIMEOUT_MILLIS,
 ) {
     suspend fun probe(url: String): Reachability {
         val start = TimeSource.Monotonic.markNow()

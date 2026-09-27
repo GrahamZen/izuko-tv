@@ -41,6 +41,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.media.resolver.WebResource
 import me.him188.ani.app.domain.media.resolver.WebViewVideoExtractor
+import me.him188.ani.app.domain.media.resolver.reportResolveAttempt
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.LoadedPage
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
@@ -665,6 +666,8 @@ class WebSessionManager(
                 it.lastUsedAtMillis = getTimeMillis()
             }
         } ?: return null
+        // 有暖会话才真的要等: 这一轮最多等 timeoutMillis, 加载提示据此倒数 (没有会话时上面已经直接返回)
+        reportResolveAttempt(timeoutMillis)
 
         val browser = session.browser
         val deferred = CompletableDeferred<WebResource>()

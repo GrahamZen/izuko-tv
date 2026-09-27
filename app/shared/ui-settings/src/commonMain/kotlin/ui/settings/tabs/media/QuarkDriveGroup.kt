@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -57,7 +59,9 @@ import me.him188.ani.app.ui.lang.settings_media_quark_member_normal
 import me.him188.ani.app.ui.lang.settings_media_quark_member_svip
 import me.him188.ani.app.ui.lang.settings_media_quark_member_trial
 import me.him188.ani.app.ui.lang.settings_media_quark_member_vip
+import me.him188.ani.app.ui.lang.settings_media_quark_qr_confirmed
 import me.him188.ani.app.ui.lang.settings_media_quark_qr_expired
+import me.him188.ani.app.ui.lang.settings_media_quark_qr_expires_in
 import me.him188.ani.app.ui.lang.settings_media_quark_qr_failed
 import me.him188.ani.app.ui.lang.settings_media_quark_qr_loading
 import me.him188.ani.app.ui.lang.settings_media_quark_qr_refresh
@@ -71,6 +75,7 @@ import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.SwitchItem
 import me.him188.ani.app.ui.settings.framework.components.TextFieldItem
 import me.him188.ani.app.ui.settings.framework.components.TextItem
+import me.him188.ani.utils.platform.currentTimeMillis
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -270,7 +275,7 @@ private fun QuarkQrLoginDialog(
                             background = Color.White,
                         )
 
-                        QuarkQrLoginState.Loading -> CircularProgressIndicator()
+                        QuarkQrLoginState.Loading, QuarkQrLoginState.Confirmed -> CircularProgressIndicator()
                         else -> {}
                     }
                 }
@@ -278,6 +283,7 @@ private fun QuarkQrLoginDialog(
                     when (state) {
                         QuarkQrLoginState.Loading -> stringResource(Lang.settings_media_quark_qr_loading)
                         is QuarkQrLoginState.WaitingForScan -> stringResource(Lang.settings_media_quark_qr_waiting)
+                        QuarkQrLoginState.Confirmed -> stringResource(Lang.settings_media_quark_qr_confirmed)
                         is QuarkQrLoginState.Success -> stringResource(Lang.settings_media_quark_qr_success)
                         QuarkQrLoginState.Expired -> stringResource(Lang.settings_media_quark_qr_expired)
                         is QuarkQrLoginState.Failed -> stringResource(Lang.settings_media_quark_qr_failed, state.message)
@@ -285,6 +291,9 @@ private fun QuarkQrLoginDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                 )
+                if (state is QuarkQrLoginState.WaitingForScan) {
+                    QrExpiryCountdown(state.expiresAtMillis)
+                }
             }
         },
         confirmButton = {
@@ -296,6 +305,35 @@ private fun QuarkQrLoginDialog(
             AniTextButton(onClick = onDismiss) { Text(stringResource(Lang.settings_media_quark_close)) }
         },
     )
+}
+
+/**
+ * 二维码下面的「4:12 后过期」: 每秒更新一次, 重组只落在这一行字上.
+ */
+@Composable
+private fun QrExpiryCountdown(expiresAtMillis: Long) {
+    val remaining by produceState(expiresAtMillis - currentTimeMillis(), expiresAtMillis) {
+        while (true) {
+            value = expiresAtMillis - currentTimeMillis()
+            if (value <= 0) break
+            // 对齐到整秒再跳, 数字不会一下停一秒多一下停不到一秒
+            delay(value % 1000 + 1)
+        }
+    }
+    Text(
+        stringResource(Lang.settings_media_quark_qr_expires_in, formatCountdown(remaining)),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * 倒计时文字「4:12」(分:秒): 剩余毫秒按秒向上取整, 到期那一刻正好是「0:00」; 已过期也是「0:00」.
+ */
+internal fun formatCountdown(remainingMillis: Long): String {
+    val seconds = (remainingMillis.coerceAtLeast(0) + 999) / 1000
+    val s = seconds % 60
+    return "${seconds / 60}:${if (s < 10) "0" else ""}$s"
 }
 
 @Composable

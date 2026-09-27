@@ -73,6 +73,7 @@ fun interface SubjectDetailsPageVariant {
      * 真布局到达时这些部分原地不动, 只有其余内容补上去.
      *
      * @param subjectInfo 导航占位信息 (标题/封面), 可能为 null (刚进页、还没有任何数据).
+     * @param loadAttempt 首屏第几次尝试; 上一次超时了 (见 [SubjectDetailsLoadAttempt.isRetrying]) 就说一句网络慢.
      */
     @Composable
     fun LoadingPlaceholder(
@@ -80,6 +81,7 @@ fun interface SubjectDetailsPageVariant {
         layoutParams: SubjectDetailsLayoutParams,
         modifier: Modifier,
         windowInsets: WindowInsets,
+        loadAttempt: SubjectDetailsLoadAttempt,
     ) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()

@@ -255,6 +255,8 @@ button { font: inherit; border: 0; cursor: pointer; }
 .now-link::after { content: " ›"; color: var(--mute); font-weight: 400; }
 .now-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 10px 0 2px; padding: 8px 12px; border-radius: 12px; font-size: 13px; text-align: left; background: var(--chip); color: var(--on-chip); }
 .now-status span { opacity: .8; }
+/* 状态条里另起一行的细节 (自动缓存这一集等到哪了、登录 / 扫码还剩多久) */
+.now-status .now-sub { flex-basis: 100%; }
 .now-status.ready { background: var(--ok-bg); color: var(--ok-fg); }
 .now-status.attention { background: var(--warn-bg); color: var(--warn-fg); }
 .now-status.error { background: var(--err-bg); color: var(--err-fg); }
@@ -1337,6 +1339,21 @@ private val SCRIPT = """
     var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
     return (h ? h + ':' + (m < 10 ? '0' : '') + m : String(m)) + ':' + (sec < 10 ? '0' : '') + sec;
   }
+  window.mmss = mmss;
+  // 倒计时 (还剩多少毫秒) 的「4:12」: 秒向上取整, 到期那一刻正好是 0:00
+  window.countdown = function (ms) { return mmss(Math.ceil(Math.max(0, ms) / 1000) * 1000); };
+  // 传输进度「38/79 MB · 2.1 MB/s」, 同服务端 formatTransferProgress: 单位按总量挑, 不到 10 留一位小数, 一律向下取整
+  window.fmtTransfer = function (done, total, bps) {
+    var KB = 1024, MB = KB * 1024, GB = MB * 1024, top = total > 0 ? total : done;
+    var unit = top >= GB ? GB : top >= MB ? MB : KB, name = top >= GB ? 'GB' : top >= MB ? 'MB' : 'KB';
+    function num(v, u) {
+      var tenths = Math.floor(Math.max(0, v) * 10 / u);
+      return tenths >= 100 || tenths % 10 === 0 ? String(Math.floor(tenths / 10)) : Math.floor(tenths / 10) + '.' + (tenths % 10);
+    }
+    var s = (total > 0 ? num(done, unit) + '/' + num(total, unit) : num(done, unit)) + ' ' + name;
+    if (bps != null) s += ' · ' + (bps >= MB ? num(bps, MB) + ' MB/s' : Math.floor(Math.max(0, bps) / KB) + ' KB/s');
+    return s;
+  };
   function toast(msg, ms) {
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -2518,10 +2535,11 @@ private val SCRIPT = """
           (s.selectedMeta ? '<span class="now-meta">' + esc(s.selectedMeta) + '</span>' : '')
         : '<span class="now-meta">' + T('尚未选择数据源') + '</span>') + '</div>' +
       (s.selectedTitle ? '<div class="now-src" title="' + esc(s.selectedTitle) + '">' + esc(s.selectedTitle) + '</div>' : '') +
+      // 前台播放页还没播起来时 (换了源 / 集之后在查数据源、缓冲) 服务端也给 session, 播起来就不给了
       (s.background
         ? sessionChip(s.session) + '<p class="hint">' + T('电视未在播放页：可以照常换源和修改查询条件，新数据源会在后台加载，回到播放器即可继续播放。') + '</p>' +
           '<button class="primary wide ic" id="open-player">' + window.ICONS.tv + T('在电视上打开播放器') + '</button>'
-        : '<div id="player-controls"></div>') +
+        : sessionChip(s.session) + '<div id="player-controls"></div>') +
       '</div>', s.art);
     lastState = s;
     chips.innerHTML = renderChips(s);
@@ -4490,22 +4508,26 @@ private val SOURCES_SCRIPT = """
     return chunks;
   }
 
-  /** 拆分 + 逐批发 + 汇总: 选文件与粘贴都走这条. */
-  function importSourcesJson(text) {
+  /** 拆分 + 逐批发 + 汇总: 选文件与粘贴都走这条. onBatch(第几批, 共几批) 在每一批发出前调. */
+  function importSourcesJson(text, onBatch) {
     var chunks = importChunks(text);
     if (!chunks) {
       return Promise.resolve({ ok: false, message: T('内容太大了，请按数据源拆成几份分别导入') });
     }
     if (chunks.length > 1) toast(T('内容较大，分 {0} 批导入', chunks.length));
-    return postImport(chunks);
+    return postImport(chunks, onBatch || function () {});
   }
   /** 多份时逐份发 (不并发, 电视那边只有一个线程池), 汇总服务端报回来的数量. */
-  function postImport(chunks) {
-    if (chunks.length === 1) return post('api/sources/import', { text: chunks[0] });
+  function postImport(chunks, onBatch) {
+    if (chunks.length === 1) {
+      onBatch(1, 1);
+      return post('api/sources/import', { text: chunks[0] });
+    }
     var added = 0, failed = 0, last = '';
     var chain = Promise.resolve();
-    chunks.forEach(function (body) {
+    chunks.forEach(function (body, i) {
       chain = chain.then(function () {
+        onBatch(i + 1, chunks.length);
         return post('api/sources/import', { text: body }).then(function (r) {
           if (r.ok) added += (r.added || 0); else failed++;
           if (r.message) last = r.message;
@@ -4604,11 +4626,21 @@ private val SOURCES_SCRIPT = """
     e.preventDefault();
     if (form.getAttribute('data-kind') === 'import') {
       var text = form.elements.text.value;
+      // 导入进行中再点 (或回车) 不再发一遍: 分批导入要一会儿, 重复点会把同一批源导入两次
+      var go = form.querySelector('button[type="submit"]');
+      if (form._importing) return;
       if (!text.trim()) { toast(T('先选一个 JSON 文件，或把内容粘贴到框里')); return; }
-      importSourcesJson(text).then(function (r) {
+      var label = go.textContent;
+      form._importing = true;
+      go.disabled = true;
+      var done = function () { form._importing = false; go.disabled = false; go.textContent = label; };
+      importSourcesJson(text, function (i, n) {
+        go.textContent = n > 1 ? T('导入中 {0}/{1} 批…', i, n) : T('导入中…');
+      }).then(function (r) {
+        done();
         toast(r.message);
         if (r.ok) { clearAdd(); lastTemplates = ''; load(); }
-      }).catch(fail);
+      }).catch(function () { done(); fail(); });
       return;
     }
     var t = data.templates[+document.getElementById('src-new').value];
@@ -5016,9 +5048,10 @@ private val SUBS_SCRIPT = """
   window.loadSubs = load;
   function render(d) {
     var items = d.items || [];
+    // 订阅一个个依次更新, 各要拉一次远端: 更新中写到第几个
     var h = '<div class="card sub-card"><div class="sub-head"><b>' + T('订阅') + '</b><small>' + T('在线数据源都来自订阅') + '</small>' +
       '<button type="button" class="sub-refresh ic" data-sub="refresh"' + (d.updating ? ' disabled' : '') + '>' +
-      window.ICONS.refresh + (d.updating ? T('更新中…') : T('立即更新')) + '</button></div>';
+      window.ICONS.refresh + (d.updating ? (d.total ? T('更新中 {0}/{1}…', d.current, d.total) : T('更新中…')) : T('立即更新')) + '</button></div>';
     if (!items.length) h += '<p class="hint">' + T('还没有订阅，把订阅地址粘贴到下面添加') + '</p>';
     items.forEach(function (s) {
       h += '<div class="sub-item" data-lp="' + esc(s.id) + '"><span class="sel-mark" aria-hidden="true"></span><div class="sub-url">' + esc(s.url) + '</div>' +
@@ -5087,6 +5120,12 @@ private val QUARK_SCRIPT = """
 (function () {
   var box = document.getElementById('src-quark');
   var timer = null, last = '', checked = false, polling = false;
+  // 二维码还剩多久过期: 按服务端给的剩余时长倒数, 每秒只改那一个数字 (整张卡片不跟着重画)
+  var qrDeadline = 0, qrTick = null;
+  function tickQr() {
+    var el = box.querySelector('.qk-left');
+    if (el) el.textContent = T('{0} 后过期', window.countdown(qrDeadline - Date.now()));
+  }
   // 手机上点按钮让夸克 App 用内置浏览器打开二维码里的确认页 (带这次登录的 token), 在 App 里确认即登录.
   // 直接打开二维码链接不行: 确认页只在夸克 App 内可用, 在别的浏览器里会转到夸克网盘的下载页, 也不带 token.
   // 链接格式与 appkey 取自夸克官方网页的唤起代码; 本页就开在夸克 App 里时直接打开确认页.
@@ -5141,7 +5180,9 @@ private val QUARK_SCRIPT = """
     if (!d.loggedIn || d.expired) {
       if (q && q.state === 'waiting') {
         var canOpen = phone && !walled;
+        if (q.expiresIn != null) qrDeadline = Date.now() + q.expiresIn;
         h += '<div class="qk-qr"><img src="api/quark/qr.svg?k=' + encodeURIComponent(q.link.slice(-12)) + '" alt=""></div>' +
+          (q.expiresIn != null ? '<p class="hint qk-left"></p>' : '') +
           '<p class="hint">' + (canOpen ? T('用装了夸克 App 的另一台手机扫码；或者在这台手机上点下面的按钮，跳到夸克 App 里确认登录。')
             : walled ? T('在微信、QQ 里打开的页面不能跳转到夸克 App：点右上角菜单选「在浏览器打开」，或者用另一台手机扫码。')
             : T('用手机上的夸克 App 扫码登录。')) + '</p>' +
@@ -5151,6 +5192,9 @@ private val QUARK_SCRIPT = """
         if (canOpen && !inQuark) h += '<p class="hint">' + T('在夸克 App 里确认后回到这里。点了没反应的话，确认这台手机装了夸克 App。') + '</p>';
       } else if (q && q.state === 'loading') {
         h += '<div class="now-status"><b>' + T('正在获取二维码…') + '</b></div>';
+      } else if (q && q.state === 'confirmed') {
+        // 手机上确认了, 电视还要换登录 Cookie、读账号 (几个请求), 这几秒别还挂着二维码
+        h += '<div class="now-status busy"><b>' + T('已确认，正在登录…') + '</b></div>';
       } else {
         if (q && q.state === 'expired') h += '<div class="now-status attention"><b>' + T('二维码已过期') + '</b></div>';
         if (q && q.state === 'failed') h += '<div class="now-status error"><b>' + T('登录失败') + '</b><span>' + esc(q.message || '') + '</span></div>';
@@ -5173,8 +5217,14 @@ private val QUARK_SCRIPT = """
       if (ta) { ta.value = typed; if (focused) ta.focus(); }
     }
     clearTimeout(timer);
-    polling = !!(q && (q.state === 'waiting' || q.state === 'loading'));
+    polling = !!(q && (q.state === 'waiting' || q.state === 'loading' || q.state === 'confirmed'));
     if (polling) timer = setTimeout(load, 2000);
+    clearInterval(qrTick);
+    qrTick = null;
+    if (box.querySelector('.qk-left')) {
+      tickQr();
+      qrTick = setInterval(tickQr, 1000);
+    }
   }
   // 从夸克 App 确认完切回来时马上刷新, 不等下一轮 (后台页的定时器会被浏览器暂停)
   document.addEventListener('visibilitychange', function () {
@@ -5850,7 +5900,10 @@ private val CACHE_SCRIPT = """
     else if (d.tvBackground) h += '<div class="now-status error"><b>' + T('电视上没有打开 Izuko') + '</b><span>' + T('已经记下了，要在电视上打开 Izuko 才会开始下载') + '</span></div>' +
       '<button type="button" class="ghost wide cache-front">' + T('打开 Izuko') + '</button>';
     if (running) {
-      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span></div>' +
+      // 一集最长等两分钟挑资源: 第二行写这一集查完了几个数据源、等了多久 (服务端给, 列表每 2 秒刷新)
+      h += '<div class="now-status busy"><b>' + T('自动缓存中') + '</b><span>' + b.done + ' / ' + b.total + (b.current ? T('：') + esc(b.current) : '') + '</span>' +
+        (b.sourcesTotal ? '<span class="now-sub">' + T('已查完 {0}/{1} 个数据源 · 已等 {2} / 最长 {3}', b.sourcesDone, b.sourcesTotal,
+          window.mmss(b.waited), window.mmss(b.waitLimit)) + '</span>' : '') + '</div>' +
         '<button type="button" class="ghost wide cache-cancel">' + T('取消自动缓存') + '</button>';
     } else if (b && b.failures.length) {
       h += '<div class="now-status error"><b>' + T('{0} 集没能自动缓存', b.failures.length) + '</b><span>' + T('原因写在对应那一集下面，可以点「选资源」自己挑') + '</span></div>';
@@ -5874,7 +5927,7 @@ private val CACHE_SCRIPT = """
       var st = x.status === 'cached' ? ['ok', T('已缓存') + size] : x.status === 'caching'
         // 进度满了还是 caching = 文件已经下完, 在等做种达标 (或 10 分钟没有上传活动) 才会标成已完成,
         // 见 TorrentMediaCacheEngine.subscribeStats. 这时再显示「缓存中 100%」会让人以为卡住了.
-        ? ['run', (x.progress >= 100 ? T('已下完 · 做种中') : T('缓存中 {0}%', x.progress)) + size]
+        ? ['run', (x.progress >= 100 ? T('已下完 · 做种中') : T('缓存中 {0}%', x.progressText || x.progress)) + size]
         : x.error ? ['bad', x.error] : x.pack ? ['', T('未缓存 · 已缓存的合集里有这一集')] : ['', T('未缓存')];
       var free = x.status === 'none';
       if (!free) delete picked[x.id];
@@ -6023,7 +6076,9 @@ private val CACHE_SCRIPT = """
     var total = 0;
     groups.forEach(function (g) { total += g.total; });
     var bad = d.sources.filter(function (s) { return s.state === 'failed' || s.state === 'captcha' || s.state === 'limited'; }).length;
-    var h = '<p class="hint">' + (d.loading ? T('正在查找资源… 已找到 {0} 条', total) : T('共 {0} 条', total)) +
+    // 查询中写查完了几个数据源 (慢的源要十几秒, 光写「正在查找」看不出还要等多久)
+    var searched = d.sources.filter(function (s) { return s.state !== 'loading'; }).length;
+    var h = '<p class="hint">' + (d.loading ? T('正在查找资源：已查完 {0}/{1} 个数据源，已找到 {2} 条', searched, d.sources.length, total) : T('共 {0} 条', total)) +
       (bad && !ccSrc ? T('，{0} 个数据源没查到', bad) : '') + T('。点一条开始缓存。') + '</p>';
     if (!groups.length) {
       var src = ccSrc ? d.sources.filter(function (x) { return x.id === ccSrc; })[0] : null;
@@ -6561,6 +6616,12 @@ private val ACCOUNT_SCRIPT = """
   var box = document.getElementById('set-account');
   var hooks = window.remoteHooks;
   var last = '', timer = null, waiting = false, wasIn = null;
+  // 等授权有上限 (电视那边等 10 分钟没结果就放弃): 按服务端给的剩余时长倒数, 每秒只改那一个数字
+  var loginDeadline = 0, loginTick = null;
+  function tickLogin() {
+    var el = box.querySelector('.acct-left');
+    if (el) el.textContent = T('剩 {0}', window.countdown(loginDeadline - Date.now()));
+  }
   // 点头像 / 名字展开的账号菜单 (退出登录)
   var menu = false, lastData = null;
   // 个人令牌登录的表单展开着没有 (没登录时). 授权页连不上 (中国大陆经镜像) 时只能走这条
@@ -6620,7 +6681,9 @@ private val ACCOUNT_SCRIPT = """
     if (waiting) {
       // 手机授权: 授权完那一跳必然失败 (目标是电视本机的回环地址), 但地址栏里带着 code, 粘回来即可. 没有 url = 在电视上登录
       var paste = !!l.url;
-      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b><span>' +
+      if (l.expiresIn != null) loginDeadline = Date.now() + l.expiresIn;
+      h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b>' +
+        (l.expiresIn != null ? '<span class="acct-left"></span>' : '') + '<span class="now-sub">' +
         (paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的') : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
         (paste ? '<p class="hint">' + T('把那个打不开的页面的网址整个复制，粘到下面。') + '</p>' +
           '<form class="acct-nick" id="acct-cb"><input type="text" name="u" inputmode="url" autocomplete="off" placeholder="' +
@@ -6657,7 +6720,13 @@ private val ACCOUNT_SCRIPT = """
         if (k === focus) i.focus();
       });
     }
-    if (waiting) timer = setTimeout(load, 2000);
+    clearInterval(loginTick);
+    loginTick = null;
+    if (waiting) {
+      tickLogin();
+      loginTick = setInterval(tickLogin, 1000);
+      timer = setTimeout(load, 2000);
+    }
   }
   // 用手机授权之前先讲清楚: 授权完浏览器会停在一个打不开的页面 (回调是电视本机的地址, 手机上当然打不开),
   // 不讲的话都以为登录失败了. 「知道了」那一下也是用户点的, 在里面开新页面不会被当成弹窗拦掉
@@ -6874,7 +6943,8 @@ private val UPDATE_SCRIPT = """
       '<p class="upd-line">' + T('当前版本：{0}', esc(d.current)) + '</p>';
     // 上次安装的结果: 开始上传新的就不再显示 (服务端在上传收齐、开始安装时才清掉它)
     if (d.last && !up) h += '<p class="upd-line ' + (d.last.ok ? 'upd-ok' : 'upd-bad') + '">' + esc(d.last.text) + '</p>';
-    if (d.checking) h += '<p class="hint">' + T('正在检查更新…') + '</p>';
+    // GitHub 连不上时电视逐个试镜像 (每个最长 20 秒), 服务端给「GitHub 连不上，正在查镜像 2/4」
+    if (d.checking) h += '<p class="hint">' + esc(d.checkText || T('正在检查更新…')) + '</p>';
     else if (d.checkError) h += '<p class="upd-line upd-bad">' + esc(d.checkError) + '</p>';
     else if (d.latest) {
       h += '<p class="upd-line">' + T('最新版本：{0}', esc(d.latest.name)) + '</p>';
@@ -6884,13 +6954,15 @@ private val UPDATE_SCRIPT = """
     } else if (d.checked) h += '<p class="hint">' + T('已是最新版本') + '</p>';
     var text, bad = false;
     if (waitRestart) text = T('Izuko TV 正在更新，完成后在电视上重新打开，这里会显示结果。');
-    else if (up) text = up.finishing ? T('正在核对安装包…') : T('正在上传 {0}%', pct(up.sent / up.size));
+    else if (up) text = up.finishing ? T('正在核对安装包…') : T('正在上传：{0}', window.fmtTransfer(up.sent, up.size, upRate()));
     else if (err) { text = err; bad = true; }
     else if (permAsked && needPerm) {
       text = d.permPending ? T('回到电视上的 Izuko TV 后会打开授权页。')
         : T('在电视上打开「允许」后，Izuko TV 可能会重启；重新打开后回到这里继续。');
     } else { text = j.text; bad = j.phase === 'failed'; }
-    var p = up ? (up.finishing ? null : up.sent / up.size) : (j.phase === 'downloading' && j.progress != null ? j.progress : null);
+    // 进度条: 上传 (手机这边的已发字节)、下载与写入安装会话 (电视报的, 挑线路 / 校验 / 落盘这些看不出进度的步骤不给)
+    var p = up ? (up.finishing ? null : up.sent / up.size)
+      : ((j.phase === 'downloading' || j.phase === 'preparing') && j.progress != null ? j.progress : null);
     if (text) h += '<p class="upd-line upd-status' + (bad ? ' upd-bad' : '') + '">' + esc(text) + '</p>';
     if (p != null) h += '<div class="cl-bar"><div style="width:' + pct(p) + '%"></div></div>';
     if (!d.latest || d.checking) {
@@ -6939,10 +7011,15 @@ private val UPDATE_SCRIPT = """
     var f = picker.files && picker.files[0];
     if (f) upload(f);
   });
+  // 上传速度: 最近 5 秒的平均 (只看最后一块的话一抖就大起大落); 样本不够两个时不写速度
+  function upRate() {
+    var s = up && up.samples, a = s && s[0], b = s && s[s.length - 1];
+    return s && s.length > 1 && b[0] > a[0] ? (b[1] - a[1]) * 1000 / (b[0] - a[0]) : null;
+  }
   function upload(file) {
     if (file.name.toLowerCase().slice(-4) !== '.apk' && !confirm(T('「{0}」看起来不是安装包（.apk），仍要上传吗？', file.name))) return;
     err = null;
-    up = { size: file.size || 1, sent: 0 };
+    up = { size: file.size || 1, sent: 0, samples: [[Date.now(), 0]], painted: 0 };
     render(last);
     post('api/update/upload/start', { size: String(file.size), name: file.name, anyway: permSkip ? '1' : '' }).then(function (r) {
       if (!r.ok) throw r;
@@ -6965,9 +7042,15 @@ private val UPDATE_SCRIPT = """
   function sendFrom(file, id, chunk, offset) {
     if (offset >= file.size) return Promise.resolve();
     return sendChunk(file.slice(offset, Math.min(file.size, offset + chunk)), id, offset, 3).then(function (received) {
-      var before = pct(up.sent / up.size);
+      var before = pct(up.sent / up.size), now = Date.now();
       up.sent = received;
-      if (pct(up.sent / up.size) !== before) render(last);
+      up.samples.push([now, received]);
+      while (up.samples.length > 2 && now - up.samples[1][0] >= 5000) up.samples.shift();
+      // 百分比变了就重画; 不变时也每秒刷一次已传多少与速度
+      if (pct(up.sent / up.size) !== before || now - up.painted >= 1000) {
+        up.painted = now;
+        render(last);
+      }
       return sendFrom(file, id, chunk, received);
     });
   }
@@ -7160,17 +7243,26 @@ private val PICK_SCRIPT = """
       if (!dayPicked) day = today;
     }
     paintDays();
-    var cur = (d.days || []).filter(function (x) { return x.weekday === day; })[0] || { items: [], pending: true };
+    var all = d.days || [];
+    var cur = all.filter(function (x) { return x.weekday === day; })[0] || { items: [], pending: true };
     var items = cur.items || [];
+    // 电视那边一天天补齐 (第一次没有落盘缓存时要逐部去拿分集): 说读完了几天
+    var loaded = all.filter(function (x) { return !x.pending; }).length;
     if (!items.length) {
       p.innerHTML = !cur.pending ? '<div class="empty"><p>' + T('这一天没有新番') + '</p></div>'
-        : d.failed ? '<div class="empty"><p>' + esc(d.failed) + '</p></div>' : '<p class="hint">' + T('正在读取…') + '</p>';
+        : d.failed ? '<div class="empty"><p>' + esc(d.failed) + '</p></div>'
+        : '<p class="hint">' + (all.length ? T('正在读取… 已读完 {0}/{1} 天', loaded, all.length) : T('正在读取…')) + '</p>';
       return;
     }
     var list = p.querySelector(':scope > .list');
     if (!list) {
-      p.innerHTML = '<div class="list"></div>';
+      p.innerHTML = '<p class="hint pick-prog" hidden></p><div class="list"></div>';
       list = p.querySelector(':scope > .list');
+    }
+    var prog = p.querySelector(':scope > .pick-prog');
+    if (prog) {
+      prog.hidden = !d.partial;
+      if (d.partial) prog.textContent = T('已读完 {0}/{1} 天', loaded, all.length);
     }
     window.patchList(list, items.map(row));
   }

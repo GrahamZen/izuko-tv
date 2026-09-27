@@ -61,7 +61,8 @@ class BangumiAuthorizeViewModel : AbstractViewModel(), KoinComponent {
                     AuthState.Failed(LoadError.UnknownError(null), loggedIn)
 
                 is BangumiOAuthManager.State.Authorizing,
-                is BangumiOAuthManager.State.Exchanging -> AuthState.AwaitingResult
+                is BangumiOAuthManager.State.Exchanging ->
+                    AuthState.AwaitingResult(authState.stage ?: BangumiOAuthManager.Stage.AwaitingAuthorization)
 
                 // 只有"确实还登录着"才算已授权: 退出登录之后这个单例仍停在 Success,
                 // 照搬会让界面显示"已授权"而按钮禁用

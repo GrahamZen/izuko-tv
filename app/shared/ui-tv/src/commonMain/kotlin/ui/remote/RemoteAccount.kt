@@ -79,8 +79,9 @@ internal object RemoteAccount {
         /**
          * 等授权完成.
          * @param url 交给手机打开的授权链接; `null` = 授权页开在电视上, 手机只需要等
+         * @param deadline 等到这一刻 (毫秒) 还没结果就放弃, 见 [LOGIN_TIMEOUT]; 网页上倒数给用户看
          */
-        class Waiting(val url: String?) : Login
+        class Waiting(val url: String?, val deadline: Long) : Login
 
         class Failed(val message: String) : Login
     }
@@ -154,6 +155,8 @@ internal object RemoteAccount {
                         put("state", "waiting")
                         // 非空 = 手机授权那条路, 网页要把链接打开并让用户把回调地址粘回来
                         put("url", current.url)
+                        // 还剩多久放弃 (毫秒): 给剩余时长而不是时刻, 手机与电视的钟不一定对得上
+                        put("expiresIn", (current.deadline - System.currentTimeMillis()).coerceAtLeast(0))
                     }
                     is Login.Failed -> {
                         put("state", "failed")
@@ -195,7 +198,7 @@ internal object RemoteAccount {
                 configured = url != null
             }
             if (configured) {
-                login = Login.Waiting(url)
+                login = Login.Waiting(url, System.currentTimeMillis() + LOGIN_TIMEOUT.inWholeMilliseconds)
                 scope.launch { awaitResult(coroutineContext.job, manager) }.also { job = it }
             }
         }

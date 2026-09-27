@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,6 +65,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -89,6 +91,9 @@ import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.oauth_bangumi_stage_authorizing
+import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
+import me.him188.ani.app.ui.lang.oauth_bangumi_stage_opening
 import me.him188.ani.app.ui.lang.settings_network_bangumi_auto
 import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
@@ -114,7 +119,6 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_phone_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_login_skip
 import me.him188.ani.app.ui.lang.tv_onboarding_login_title
 import me.him188.ani.app.ui.lang.tv_onboarding_login_via_mirror
-import me.him188.ani.app.ui.lang.tv_onboarding_login_waiting
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_auto_description
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_direct_description
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_mirror_description
@@ -163,6 +167,7 @@ import me.him188.ani.app.ui.remote.RemoteConnectionStatus
 import me.him188.ani.app.ui.remote.RemoteQrCode
 import me.him188.ani.app.ui.remote.RemoteTroubleshootHint
 import me.him188.ani.app.ui.remote.TvRemoteControl
+import me.him188.ani.utils.platform.currentTimeMillis
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.snapshotFlow
@@ -514,6 +519,8 @@ private fun BangumiStep(
 ) {
     val result by vm.bangumi.result.collectAsStateWithLifecycle()
     val unlocked by vm.bangumi.unlocked.collectAsStateWithLifecycle()
+    val deadline by vm.bangumi.deadlineMillis.collectAsStateWithLifecycle()
+    val secondsLeft = rememberSecondsLeft(deadline, counting = !result.completed)
     val recommended = result.recommendedMode
     CheckStep(
         focus,
@@ -524,14 +531,17 @@ private fun BangumiStep(
             CheckRow(stringResource(Lang.tv_onboarding_network_mirror), result.mirror ?: "—", result.mirrorReachability),
         ),
         completed = result.completed,
-        summary = stringResource(
-            when {
-                !result.completed -> Lang.tv_onboarding_network_summary_checking
-                recommended == BangumiEndpointMode.AUTO -> Lang.tv_onboarding_network_summary_origin
-                recommended == BangumiEndpointMode.MIRROR -> Lang.tv_onboarding_network_summary_mirror
-                else -> Lang.tv_onboarding_network_summary_none
-            },
-        ),
+        summary = if (!result.completed) {
+            stringResource(Lang.tv_onboarding_network_summary_checking, secondsLeft)
+        } else {
+            stringResource(
+                when (recommended) {
+                    BangumiEndpointMode.AUTO -> Lang.tv_onboarding_network_summary_origin
+                    BangumiEndpointMode.MIRROR -> Lang.tv_onboarding_network_summary_mirror
+                    else -> Lang.tv_onboarding_network_summary_none
+                },
+            )
+        },
         summaryIsError = result.completed && recommended == null,
         chooseTitle = stringResource(Lang.tv_onboarding_network_choose),
         options = listOf(
@@ -574,6 +584,8 @@ private fun TmdbImagesStep(
     val result by vm.tmdbImages.result.collectAsStateWithLifecycle()
     val bangumi by vm.bangumi.result.collectAsStateWithLifecycle()
     val unlocked by vm.tmdbImages.unlocked.collectAsStateWithLifecycle()
+    val deadline by vm.tmdbImages.deadlineMillis.collectAsStateWithLifecycle()
+    val secondsLeft = rememberSecondsLeft(deadline, counting = !result.completed)
     val reachable = result.firstReachable
     val recommended = when {
         !result.completed -> null
@@ -591,7 +603,7 @@ private fun TmdbImagesStep(
         },
         completed = result.completed,
         summary = when {
-            !result.completed -> stringResource(Lang.tv_onboarding_images_summary_checking)
+            !result.completed -> stringResource(Lang.tv_onboarding_images_summary_checking, secondsLeft)
             reachable != null -> stringResource(Lang.tv_onboarding_images_summary_ok, EndpointUrls.displayName(reachable))
             bangumi.online -> stringResource(Lang.tv_onboarding_images_summary_none)
             else -> stringResource(Lang.tv_onboarding_images_summary_offline)
@@ -617,6 +629,29 @@ private fun TmdbImagesStep(
         onRecheck = { vm.recheck() },
     )
 }
+
+/**
+ * 离 [deadlineMillis] 还有几秒 (见 [onboardingSecondsLeft]); [counting] 时每跨过一个整秒刷新一次.
+ * 检测各路并行、各自封顶, 这个数就是「最多再等多久」.
+ */
+@Composable
+private fun rememberSecondsLeft(deadlineMillis: Long, counting: Boolean): Int {
+    var now by remember { mutableLongStateOf(currentTimeMillis()) }
+    LaunchedEffect(deadlineMillis, counting) {
+        if (!counting) return@LaunchedEffect
+        while (true) {
+            now = currentTimeMillis()
+            // 等到显示的秒数该变的那一刻再刷新
+            val untilNextSecond = (deadlineMillis - now) % 1000
+            delay(if (untilNextSecond <= 0) 1000 else untilNextSecond)
+        }
+    }
+    return onboardingSecondsLeft(deadlineMillis, now)
+}
+
+/** 向上取整到秒, 最少 1 (到点还没出结论时显示「1 秒」, 不显示 0 或负数). */
+internal fun onboardingSecondsLeft(deadlineMillis: Long, nowMillis: Long): Int =
+    ((deadlineMillis - nowMillis + 999) / 1000).coerceAtLeast(1).toInt()
 
 /** 检测结果里的一路: 名字、地址 (可以没有), 结论. */
 private class CheckRow(val name: String, val host: String?, val reachability: Reachability)
@@ -786,15 +821,18 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
                                 modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.TvLogin),
                             )
                             Spacer(Modifier.height(8.dp))
-                            // 同一个位置三态: 说明 / 等待结果 / 没成功
+                            // 同一个位置三态: 说明 / 授权进行到哪一步 (打开登录页 / 等授权 / 换凭证) / 没成功
                             Text(
                                 stringResource(
-                                    when (oauth) {
-                                        is BangumiOAuthManager.State.Authorizing,
-                                        is BangumiOAuthManager.State.Exchanging -> Lang.tv_onboarding_login_waiting
-
-                                        is BangumiOAuthManager.State.Failed -> Lang.tv_onboarding_login_failed
-                                        else -> Lang.tv_onboarding_login_on_tv_hint
+                                    when (oauth.stage) {
+                                        BangumiOAuthManager.Stage.OpeningBrowser -> Lang.oauth_bangumi_stage_opening
+                                        BangumiOAuthManager.Stage.AwaitingAuthorization -> Lang.oauth_bangumi_stage_authorizing
+                                        BangumiOAuthManager.Stage.Exchanging -> Lang.oauth_bangumi_stage_exchanging
+                                        null -> if (oauth is BangumiOAuthManager.State.Failed) {
+                                            Lang.tv_onboarding_login_failed
+                                        } else {
+                                            Lang.tv_onboarding_login_on_tv_hint
+                                        }
                                     },
                                 ),
                                 style = MaterialTheme.typography.bodyMedium,

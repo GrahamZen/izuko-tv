@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
@@ -24,8 +27,10 @@ import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.player.data.TorrentMediaData
 import me.him188.ani.app.domain.torrent.TorrentEngine
 import me.him188.ani.app.torrent.api.FetchTorrentTimeoutException
+import me.him188.ani.app.torrent.api.TorrentSession
 import me.him188.ani.app.torrent.api.files.EncodedTorrentInfo
 import me.him188.ani.app.torrent.api.files.FilePriority
+import me.him188.ani.app.torrent.api.files.TorrentFileEntry
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.ResourceLocation
@@ -36,6 +41,8 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 class TorrentMediaResolver(
     private val engine: TorrentEngine,
@@ -229,7 +236,7 @@ class TorrentMediaDataProvider(
                     "TorrentVideoSource '${episodeMetadata.title}' waiting for files"
                 }
                 val files = downloader.startDownload(encodedTorrentInfo)
-                    .getFiles()
+                    .getFilesReportingPeers()
 
                 TorrentMediaResolver.selectVideoFileEntry(
                     files,
@@ -284,3 +291,28 @@ class TorrentMediaDataProvider(
         private val logger = logger<TorrentMediaDataProvider>()
     }
 }
+
+/**
+ * 等种子信息 (元数据) 拿到文件列表; 调用方放了 [TorrentOpenProgressReporter] 时, 等的期间每秒报一次连上了几个节点.
+ * 元数据不来就一直等 (没有超时), 加载提示只能靠节点数告诉用户有没有希望.
+ */
+private suspend fun TorrentSession.getFilesReportingPeers(): List<TorrentFileEntry> {
+    val reporter = currentCoroutineContext()[TorrentOpenProgressReporter] ?: return getFiles()
+    val startedAt = TimeSource.Monotonic.markNow()
+    return coroutineScope {
+        val polling = launch {
+            while (true) {
+                // 远程引擎 (BT 服务进程) 上是一次跨进程调用, 查不到就按 0 报, 不影响取文件
+                reporter.report(TorrentOpenProgress(startedAt, runCatching { getPeers().size }.getOrDefault(0)))
+                delay(TORRENT_PEERS_POLL_INTERVAL)
+            }
+        }
+        try {
+            getFiles()
+        } finally {
+            polling.cancel()
+        }
+    }
+}
+
+private val TORRENT_PEERS_POLL_INTERVAL = 1.seconds

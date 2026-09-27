@@ -141,6 +141,7 @@ import me.him188.ani.app.ui.lang.subject_episode_external_links
 import me.him188.ani.app.ui.lang.subject_episode_fast_forward_seconds
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations
 import me.him188.ani.app.ui.lang.subject_episode_select_media_source
+import me.him188.ani.app.ui.lang.subject_episode_strip_loading
 import me.him188.ani.app.ui.lang.video_player_disable_danmaku
 import me.him188.ani.app.ui.lang.video_player_enable_danmaku
 import me.him188.ani.app.ui.lang.video_player_next_episode
@@ -617,9 +618,33 @@ internal fun TvPlayerControlsOverlay(
                 // 同 TvPlayerPanelHost: 卡片行要整层合成
                 modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth(),
             )
+            TvEpisodeStripLoadingHint(
+                overlay,
+                chrome.align(Alignment.BottomStart)
+                    .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = TV_EPISODE_STRIP_LOADING_HINT_BOTTOM),
+            )
         }
     }
 }
+
+/**
+ * 图标行按了下键、选集条还在加载 (长番要一两秒): 在选集条的位置先说一声. 意图已经记下, 就绪后照样自动展开
+ * (见 [TvPlayerOverlayState.expandStripWhenReady]), 但这一两秒里画面没有任何变化的话, 用户会以为没按到而重复按.
+ * 状态在本组件里读, 不连带控制层重组.
+ */
+@Composable
+private fun TvEpisodeStripLoadingHint(overlay: TvPlayerOverlayState, modifier: Modifier = Modifier) {
+    if (!overlay.expandStripWhenReady || overlay.episodeStrip != TvEpisodeStripState.LOADING) return
+    Text(
+        stringResource(Lang.subject_episode_strip_loading),
+        modifier,
+        color = Color.White.copy(alpha = 0.8f),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+/** 选集加载提示离屏幕底边的距离 (大致是选集条卡片行所在的高度). */
+private val TV_EPISODE_STRIP_LOADING_HINT_BOTTOM = 40.dp
 
 /** 顶部信息: 左上大标题 + 集号副标题 (Prime 风格), 右上系统时钟. */
 @Composable

@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.AniMotionScheme
 import me.him188.ani.app.ui.foundation.animation.AnimatedVisibilityMotionScheme
@@ -79,7 +80,8 @@ sealed interface AuthState {
 
     sealed interface Idle : AuthState
 
-    data object AwaitingResult : AuthState
+    /** 授权进行中, [stage] 是走到哪一步了 (按钮上的字跟着换). */
+    data class AwaitingResult(val stage: BangumiOAuthManager.Stage) : AuthState
 
     data object Success : AuthState
     class Failed(val error: LoadError, val loggedIn: Boolean) : AuthState
@@ -204,7 +206,9 @@ private fun AuthorizeButton(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 3.dp,
                             )
-                            Text(stringResource(Lang.oauth_bangumi_waiting_result))
+                            // 打开登录页 / 等授权 / 换凭证三步分开说: 最后一步卡住 (换 token 请求挂着) 与
+                            // 还没授权是两回事, 合成一句「正在等待结果」分不出来
+                            Text(stringResource(renderAwaitingStage(it.stage)))
                         }
                     }
 
@@ -249,6 +253,12 @@ private fun AuthorizeButton(
             )
         }
     }
+}
+
+private fun renderAwaitingStage(stage: BangumiOAuthManager.Stage): StringResource = when (stage) {
+    BangumiOAuthManager.Stage.OpeningBrowser -> Lang.oauth_bangumi_stage_opening
+    BangumiOAuthManager.Stage.AwaitingAuthorization -> Lang.oauth_bangumi_stage_authorizing
+    BangumiOAuthManager.Stage.Exchanging -> Lang.oauth_bangumi_stage_exchanging
 }
 
 @Composable

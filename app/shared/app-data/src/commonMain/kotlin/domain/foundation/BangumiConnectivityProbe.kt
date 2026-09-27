@@ -26,7 +26,8 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 class BangumiConnectivityProbe(
     client: () -> ScopedHttpClient,
     private val mirrors: Flow<List<String>>,
-    timeoutMillis: Long = 8_000L,
+    /** 每一路的封顶; 官方与各镜像并行测, 一轮最多也就这么久. */
+    val timeoutMillis: Long = 8_000L,
 ) {
     private val probe = ReachabilityProbe(client, timeoutMillis)
 

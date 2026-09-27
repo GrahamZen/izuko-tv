@@ -90,6 +90,9 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val installationTasker = MonoTasker(backgroundScope)
     private val checkUpdateErrorFlow = MutableStateFlow<LoadError?>(null)
 
+    /** 正在检查的那一次查到哪个来源了, 见 [UpdateCheckProgress]; 没在检查时为 null. */
+    private val checkProgressFlow = MutableStateFlow<UpdateCheckProgress?>(null)
+
     private val installPermissionRequestFlow = MutableStateFlow<InstallPermissionRequest?>(null)
 
     /**
@@ -102,8 +105,8 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
         fileDownloaderPresenter.flow,
         autoCheckTasker.isRunning,
         installationRunner.state,
-        checkUpdateErrorFlow,
-    ) { latestVersion, fileDownloaderStats, isCheckingUpdate, installationState, checkUpdateError ->
+        combine(checkUpdateErrorFlow, checkProgressFlow, ::Pair),
+    ) { latestVersion, fileDownloaderStats, isCheckingUpdate, installationState, (checkUpdateError, checkProgress) ->
         val latestVersion = latestVersion
         val state = when {
             // 还没检查过
@@ -136,6 +139,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
             fileDownloaderStats = fileDownloaderStats,
             isCheckingUpdate = isCheckingUpdate,
             checkUpdateError = checkUpdateError,
+            checkProgress = checkProgress.takeIf { isCheckingUpdate },
             installationFailure = (installationState as? UpdateInstallationState.Failed)?.result,
             isPlaceholder = latestVersion == null && fileDownloaderStats.isPlaceholder,
         )
@@ -178,7 +182,10 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 }
                 logger.info { "Checking latest version, updateSettings=${updateSettings}" }
 
-                updateChecker.checkLatestVersion(updateSettings.releaseClass)
+                updateChecker.checkLatestVersion(
+                    updateSettings.releaseClass,
+                    onProgress = { checkProgressFlow.value = it },
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -186,6 +193,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                 logger.info { "Auto update checking failed due to IOException: $e" } // 故意不打印堆栈
                 return@launch
             } finally {
+                checkProgressFlow.value = null
                 lastCheckTime.value = currentTimeMillis()
             }
 
@@ -376,6 +384,8 @@ data class AppUpdatePresentation(
     val fileDownloaderStats: FileDownloaderStats,
     val isCheckingUpdate: Boolean,
     val checkUpdateError: LoadError? = null,
+    /** 检查进行到哪一步 (见 [UpdateCheckProgress]); 没在检查时为 null. */
+    val checkProgress: UpdateCheckProgress? = null,
     val installationFailure: InstallationResult.Failed? = null,
     val currentVersion: String = currentAniBuildConfig.versionName,
     val isPlaceholder: Boolean = false,

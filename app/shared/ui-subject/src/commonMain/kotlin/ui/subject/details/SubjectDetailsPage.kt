@@ -304,6 +304,8 @@ fun SubjectDetailsScreen(
                     windowInsets,
                     navigationIcon,
                     onClickOpenExternal,
+                    loadAttempt = (state as? SubjectDetailsUIState.Placeholder)?.loadAttempt
+                        ?: SubjectDetailsLoadAttempt.First,
                 )
 
             is SubjectDetailsUIState.Err -> ErrorSubjectDetailsPage(
@@ -631,12 +633,13 @@ private fun PlaceholderSubjectDetailsPage(
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     navigationIcon: @Composable () -> Unit = {},
     onClickOpenExternal: () -> Unit = {},
+    loadAttempt: SubjectDetailsLoadAttempt = SubjectDetailsLoadAttempt.First,
 ) {
     val variant = LocalSubjectDetailsPageVariant.current
     if (variant != null && LocalThemeSettings.current.tvImmersiveDetails) {
         // 沉浸式变体自绘首屏占位, 避免先闪多栏骨架再整页切换到变体布局.
         // 关闭沉浸式时走下方通用多栏骨架.
-        variant.LoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets)
+        variant.LoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets, loadAttempt)
         return
     }
 
@@ -1274,7 +1277,8 @@ sealed interface SubjectDetailsUIState {
      */
     data class Placeholder(
         override val subjectId: Int,
-        val subjectInfo: SubjectInfo? = null
+        val subjectInfo: SubjectInfo? = null,
+        val loadAttempt: SubjectDetailsLoadAttempt = SubjectDetailsLoadAttempt.First,
     ) : SubjectDetailsUIState
 
     /**
@@ -1293,6 +1297,23 @@ sealed interface SubjectDetailsUIState {
         val placeholder: SubjectInfo?,
         val error: LoadError
     ) : SubjectDetailsUIState
+}
+
+/**
+ * 首屏加载的第几次尝试: 首屏每次最多等几秒, 超时就重来, 次数有上限, 全部超时才出错误页
+ * (见 [me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateLoader]).
+ * [isRetrying] 说明上一次已经超时, 占位页据此说网络慢, 别让人对着转圈干等二十多秒.
+ */
+@Immutable
+data class SubjectDetailsLoadAttempt(
+    val attempt: Int,
+    val maxAttempts: Int,
+) {
+    val isRetrying: Boolean get() = attempt > 1
+
+    companion object {
+        val First = SubjectDetailsLoadAttempt(attempt = 1, maxAttempts = 1)
+    }
 }
 
 @Stable

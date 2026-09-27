@@ -107,8 +107,12 @@ internal object RemoteQuark {
                         is QuarkQrLoginState.WaitingForScan -> {
                             put("state", "waiting")
                             put("link", state.qrContent)
+                            // 还剩多久过期 (毫秒): 给剩余时长而不是时刻, 手机与电视的钟不一定对得上
+                            put("expiresIn", (state.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(0))
                         }
 
+                        // 手机上确认了, 电视在换登录 Cookie
+                        QuarkQrLoginState.Confirmed -> put("state", "confirmed")
                         is QuarkQrLoginState.Success -> put("state", "success")
                         QuarkQrLoginState.Expired -> put("state", "expired")
                         is QuarkQrLoginState.Failed -> {

@@ -55,9 +55,14 @@ class MediaSourceSubscriptionUpdater(
 
     /**
      * @param force to ignore lastUpdated time
+     * @param onProgress 这一轮要更新几个 ([total]), 开始更新第 [updating] 个 (从 1 起) 时调一次; 订阅是一个个依次拉的,
+     *   界面据此写「更新中 1/3」
      * @return delay duration to check next time
      */
-    suspend fun updateAllOutdated(force: Boolean = false): Duration {
+    suspend fun updateAllOutdated(
+        force: Boolean = false,
+        onProgress: (updating: Int, total: Int) -> Unit = { _, _ -> },
+    ): Duration {
         logger.info { "MediaSourceSubscriptionUpdater.updateAllOutdated" }
         val subscriptions = subscriptions.flow.first()
         val currentTimeMillis = getCurrentTimeMillis()
@@ -67,24 +72,32 @@ class MediaSourceSubscriptionUpdater(
             nextDelay = nextDelay?.coerceAtMost(duration) ?: duration
         }
 
+        // 上次更新失败时用一个短得多的重试间隔. 冷启动时设备网络还没就绪是常态 (电视盒子尤其明显),
+        // 若按正常的 updatePeriod (默认 1 小时) 等待, 这期间用户一个订阅数据源都没有, 只剩 BT 源可用.
+        fun periodOf(subscription: MediaSourceSubscription): Duration =
+            failureRetryPeriodOrNull(subscription) ?: subscription.updatePeriod
+
+        fun shouldUpdate(subscription: MediaSourceSubscription, period: Duration): Boolean {
+            if (force) return true
+            if (subscription.lastUpdated == null) return true
+            return (currentTimeMillis - subscription.lastUpdated.timeMillis).milliseconds > period
+        }
+
+        // 失败计数只在更新完那一个之后才变, 先数一遍与下面逐个判的结果一致
+        val total = subscriptions.count { shouldUpdate(it, periodOf(it)) }
+        var started = 0
+
         for (subscription in subscriptions) {
-            // 上次更新失败时用一个短得多的重试间隔. 冷启动时设备网络还没就绪是常态 (电视盒子尤其明显),
-            // 若按正常的 updatePeriod (默认 1 小时) 等待, 这期间用户一个订阅数据源都没有, 只剩 BT 源可用.
-            val period = failureRetryPeriodOrNull(subscription) ?: subscription.updatePeriod
+            val period = periodOf(subscription)
 
-            fun shouldUpdate(): Boolean {
-                if (force) return true
-                if (subscription.lastUpdated == null) return true
-                return (currentTimeMillis - subscription.lastUpdated.timeMillis).milliseconds > period
-            }
-
-            if (!shouldUpdate()) {
+            if (!shouldUpdate(subscription, period)) {
                 val elapsed = (currentTimeMillis - (subscription.lastUpdated?.timeMillis ?: currentTimeMillis))
                     .milliseconds
                 proposeNextDelay((period - elapsed).coerceAtLeast(Duration.ZERO))
                 continue
             }
 
+            onProgress(++started, total)
             logger.info { "Updating subscription: ${subscription.url}" }
 
             suspend fun setResult(count: Int?, error: UpdateError? = null) {

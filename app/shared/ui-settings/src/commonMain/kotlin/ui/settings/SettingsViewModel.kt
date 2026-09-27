@@ -359,7 +359,7 @@ class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val subscriptionsState = mediaSourceSubscriptionRepository.flow.produceState(emptyList())
     val mediaSourceSubscriptionGroupState = MediaSourceSubscriptionGroupState(
         subscriptionsState = subscriptionsState,
-        onUpdateAll = { mediaSourceSubscriptionUpdater.updateAllOutdated(force = true) },
+        onUpdateAll = { onProgress -> mediaSourceSubscriptionUpdater.updateAllOutdated(force = true, onProgress = onProgress) },
         onAdd = { mediaSourceSubscriptionRepository.add(it) },
         onDelete = {
             launchInBackground {

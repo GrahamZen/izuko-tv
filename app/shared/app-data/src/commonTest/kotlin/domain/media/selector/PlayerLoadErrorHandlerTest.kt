@@ -26,6 +26,9 @@ import me.him188.ani.app.domain.media.selector.testFramework.collectEvents
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.runSimpleMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.tier
+import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
+import me.him188.ani.app.domain.player.extension.PlayerLoadError
 import me.him188.ani.app.domain.player.extension.PlayerLoadErrorHandler
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceKind.WEB
@@ -87,6 +90,46 @@ class PlayerLoadErrorHandlerTest {
         assertTrue(job.isCompleted)
         assertEquals(mediaB.mediaId, selector.selected.value?.mediaId)
         assertEquals(setOf(mediaA.mediaId), handler.blacklist)
+    }
+
+    @Test
+    fun `自动换源后报告试到第几个与还剩几个`() = runFetchMediaSelectorTestSuite {
+        initSubject("test")
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val webA by web { tier = 0 }
+                val webB by web { tier = 0 }
+                val webC by web { tier = 0 }
+            }
+        }
+        val mediaA = media(kind = WEB, subjectName = initApi.subjectName)
+        val mediaB = media(kind = WEB, subjectName = initApi.subjectName)
+        val mediaC = media(kind = WEB, subjectName = initApi.subjectName)
+        sources.webA.complete(mediaA)
+        sources.webB.complete(mediaB)
+        sources.webC.complete(mediaC)
+        testScope().runCurrent()
+
+        selector.select(selector.filteredCandidatesMedia.first().single { it.mediaId == mediaA.mediaId })
+
+        val reported = mutableListOf<MediaAutoSwitchStatus>()
+        val handler = PlayerLoadErrorHandler(
+            getPreferKind = { MediaSourceKind.WEB },
+            getSourceTiers = { preferenceApi.sourceTiers!! },
+            onSwitched = { reported += it },
+        )
+        val error = PlayerLoadError("timed out", null, failure = VideoLoadingState.ResolutionTimedOut)
+        val job = testScope().launch { handler.handleError(session, selector, error) }
+        testScope().advanceTimeBy(1.5.seconds)
+        testScope().runCurrent()
+
+        assertTrue(job.isCompleted)
+        assertTrue(selector.selected.value?.mediaId != mediaA.mediaId)
+        // A 失败被换掉 → 正在试第 2 个; 三个里除了 A 与正在试的, 还剩 1 个
+        assertEquals(
+            listOf(MediaAutoSwitchStatus(VideoLoadingState.ResolutionTimedOut, attempt = 2, remaining = 1)),
+            reported,
+        )
     }
 
     @Test

@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -46,8 +49,10 @@ import me.him188.ani.app.domain.media.resolver.toEpisodeMetadata
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.player.ExtensionException
 import me.him188.ani.app.domain.player.PlayerExtensionManager
+import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.extension.EpisodePlayerExtensionFactory
 import me.him188.ani.app.domain.player.extension.ExtensionBackgroundTaskScope
+import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -56,6 +61,7 @@ import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.EpisodeSwitch
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
+import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -211,6 +217,7 @@ class EpisodeFetchSelectPlayState(
                     // 5. 创建新的 fetchSelectSession
                     logger.info { "SwitchEpisode($episodeId): Propagate newEpisodeSession" }
                     val newSession = newEpisodeSession(episodeId)
+                    _autoSwitchStatus.value = null // 上一集试到第几个与这一集无关
                     _episodeSessionFlow.value = newSession
 
                     // 6. Suspend until background tasks are started.
@@ -282,6 +289,30 @@ class EpisodeFetchSelectPlayState(
         if (reloadRequests.subscriptionCount.value == 0) return false
         reloadRequests.emit(positionMillis)
         return true
+    }
+
+    private val _autoSwitchStatus = MutableStateFlow<MediaAutoSwitchStatus?>(null)
+
+    /**
+     * 最近一次播放失败后自动换源的情况 (试到第几个、还剩几个), 加载提示据此多写一行; 换上的资源播起来、或换集之后为 `null`.
+     *
+     * @see PlayerExtensionContext.reportAutoSwitch
+     */
+    val autoSwitchStatus: StateFlow<MediaAutoSwitchStatus?> = _autoSwitchStatus.asStateFlow()
+
+    internal fun reportAutoSwitch(status: MediaAutoSwitchStatus) {
+        _autoSwitchStatus.value = status
+    }
+
+    init {
+        // 换上的资源真的播起来了, 「正在试第几个」就不用再说了
+        backgroundScope.launch {
+            combine(playerSession.videoLoadingState, player.state) { loading, state ->
+                loading is VideoLoadingState.Succeed && state.mediaStatus == MediaStatus.Ready && !state.isBuffering
+            }.distinctUntilChanged()
+                .filter { it }
+                .collect { _autoSwitchStatus.value = null }
+        }
     }
 
     private suspend fun EpisodeSession.startSessionScopeTasks() {

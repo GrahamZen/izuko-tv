@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -119,6 +121,18 @@ class TorrentMediaCacheEngine(
     }
 
     val isServiceConnected = engineAccess.isServiceConnected
+
+    /**
+     * 正停在"等 BT 服务连上"这一步的建缓存请求数, 见 [createCache].
+     */
+    private val createsAwaitingService = MutableStateFlow(0)
+
+    /**
+     * 有建缓存请求停在等 BT 服务连上 (冷启动要十几秒). 缓存页据此说明按了下载之后在等什么.
+     */
+    val isCreateAwaitingService: Flow<Boolean> =
+        combine(createsAwaitingService, isServiceConnected) { waiting, connected -> waiting > 0 && !connected }
+            .distinctUntilChanged()
 
     class FileHandle(val state: Flow<State?>) {
         val handle = state.map { it?.handle } // single emit
@@ -237,6 +251,9 @@ class TorrentMediaCacheEngine(
                         logger.warn(e) { "Failed to query downloader status of ${origin.mediaId}" }
                     }
                 }.flowOn(flowDispatcher)
+
+        // 服务没连上时引擎给不出新的统计, 进度停在原处
+        override val isAwaitingTorrentService: Flow<Boolean> = isServiceConnected.map { !it }
 
         override val state: Flow<MediaCacheState> =
             combine(desiredState, fileHandle.state, fileStats) { currentState, handleState, stats ->
@@ -671,7 +688,13 @@ class TorrentMediaCacheEngine(
         // 创建缓存需要保证 torrent engine 一直可用, 所以 getFileHandle 直接启动协程创建好缓存.
         @OptIn(EnsureTorrentEngineIsAccessible::class)
         engineAccess.withServiceRequest("TorrentMediaCacheEngine#$this-createCache:${origin.mediaId}") {
-            val downloader = torrentEngine.getDownloader()
+            // 服务没连上时 getDownloader 一直等到连上, 这段时间计入 isCreateAwaitingService
+            createsAwaitingService.update { it + 1 }
+            val downloader = try {
+                torrentEngine.getDownloader()
+            } finally {
+                createsAwaitingService.update { it - 1 }
+            }
             val data = downloader.fetchTorrent(origin.download.uri)
 
             val relativeDir = downloader.getSaveDirForTorrent(data).absolutePath.let { path ->

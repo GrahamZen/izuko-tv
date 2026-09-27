@@ -127,6 +127,7 @@ import me.him188.ani.app.ui.lang.settings_media_source_selected_count
 import me.him188.ani.app.ui.lang.settings_media_source_sort
 import me.him188.ani.app.ui.lang.settings_media_source_start_test
 import me.him188.ani.app.ui.lang.settings_media_source_stop_test
+import me.him188.ani.app.ui.lang.settings_media_source_test_progress
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterResultIndicator
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.TextButtonItem
@@ -642,6 +643,19 @@ internal fun SettingsScope.MediaSourceGroup(
         TextButtonItem(
             onClick = {
                 state.mediaSourceTesters.toggleTest()
+            },
+            // 全部数据源并发测, 进度写在左边; 右边聚焦着的按钮只在「开始 / 终止」之间切换
+            headline = {
+                state.mediaSourceTesters.progress?.let { progress ->
+                    Text(
+                        stringResource(
+                            Lang.settings_media_source_test_progress,
+                            progress.completed,
+                            progress.total,
+                            progress.failed,
+                        ),
+                    )
+                }
             },
             title = {
                 if (state.mediaSourceTesters.anyTesting) {
