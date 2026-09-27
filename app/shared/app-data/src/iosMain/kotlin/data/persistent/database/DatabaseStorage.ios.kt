@@ -13,14 +13,17 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.asIosContext
+import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.io.resolve
 
-actual fun Context.createDatabaseBuilder(): RoomDatabase.Builder<AniDatabase> {
+actual fun Context.createDatabaseBuilder(fileName: String): RoomDatabase.Builder<AniDatabase> {
     this.asIosContext()
     return Room.databaseBuilder<AniDatabase>(
-        name = files.dataDir.resolve("ani_room_database_main.db").absolutePath,
+        name = files.dataDir.resolve(fileName).absolutePath,
     ) {
         AniDatabaseConstructor.initialize()
     }
 }
+
+actual fun Context.databaseFile(fileName: String): SystemPath = files.dataDir.resolve(fileName)
