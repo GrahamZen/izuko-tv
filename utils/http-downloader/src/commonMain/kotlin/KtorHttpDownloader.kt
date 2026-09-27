@@ -196,8 +196,8 @@ open class KtorHttpDownloader(
             val currentMap = _downloadStatesFlow.value.toMutableMap()
             val existingEntry = currentMap[downloadId]
             if (existingEntry != null) {
-                // If there's already a state in COMPLETED, do nothing
-                logger.info { "Existing completed download found for $downloadId, ignoring." }
+                // A task with this id already exists (in any status): hand it back as is, callers resume it when needed
+                logger.info { "Existing download found for $downloadId (status=${existingEntry.state.status}), reusing it." }
                 return existingEntry.state
             }
             val segmentCacheDir = ("segments_" + downloadId.value)
