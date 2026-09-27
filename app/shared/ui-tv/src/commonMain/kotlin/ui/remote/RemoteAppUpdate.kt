@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -42,9 +43,11 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.tools.update.DefaultFileDownloader
 import me.him188.ani.app.tools.update.DownloadPackage
+import me.him188.ani.app.tools.update.SourceOutcome
 import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.formatTransferProgress
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
+import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.update.NewVersion
 import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
@@ -62,8 +65,10 @@ import java.net.URLDecoder
 import java.util.UUID
 
 /**
- * Web 控制台「应用更新」(`api/update/…`): 检查新版本、下载并安装, 或装手机传上来的安装包 (分块上传, 每块在
- * LanHttpServer 的 64 KiB 上限以内, 按顺序追加进临时文件).
+ * Web 控制台「应用更新」(`api/update/…`): 检查新版本、下载并安装, 或装手机传上来的安装包 (分块上传, 每块 [CHUNK_BYTES],
+ * 按顺序追加进临时文件; 只给这一个接口放宽 LanHttpServer 的请求体上限, 见 [maxBodyBytes]).
+ * 网页上一直显示最近上传的安装包名字与电视读出来的版本 ([uploaded]), 选错了文件看得出来. 上传的包没装成 (电视上误按了
+ * 取消之类) 时包留在电视上, 网页可以直接再装一次 ([retryUpload]), 不用重新上传.
  *
  * 安装前先要有「安装未知应用」的授权 ([openPermission]): 没授权就提交的话, 系统先弹「禁止安装未知应用」, 在那里点取消安装器
  * 直接退出、不回结果; 去设置里授权则 Android 11 起会结束本进程, 安装器也不接着装 (Shield 实测). 打不开授权页的电视才直接提交, 由系统询问.
@@ -140,16 +145,45 @@ internal object RemoteAppUpdate {
     @Volatile
     private var checkError: String? = null
 
+    /** 下载线路 (原地址与各镜像的域名, 原地址在前), 查到新版本时算好 */
+    @Volatile
+    private var lineHosts: List<String> = emptyList()
+
+    /** 各条线路上次测出来的速度或没下成的原因, 见 [rememberLineNotes] */
+    @Volatile
+    private var lineNotes: Map<String, String> = emptyMap()
+
     /** 上次装自己时 (进程随之被结束) 的结果, 本次启动核对出来的: 成功与否 + 一句话 */
     @Volatile
     private var lastResult: Pair<Boolean, String>? = null
 
-    private class Upload(val id: String, val file: File, val size: Long) {
+    private class Upload(val id: String, val file: File, val size: Long, val info: Uploaded) {
         var received = 0L
     }
 
+    /**
+     * 最近一次上传的安装包: 网页上一直显示它的名字与大小 (选错了文件在电视上点「安装」之前就看得出来), 电视核对过后补上
+     * 读出来的包名与版本. 新的上传替换, 下载安装开始时清掉.
+     */
+    private class Uploaded(val name: String, val size: Long) {
+        @Volatile
+        var pkg: String? = null
+
+        @Volatile
+        var version: String? = null
+    }
+
+    @Volatile
+    private var uploaded: Uploaded? = null
+
     /** 正在接收的上传, 一次只有一个; 读写都在 [lock] 里 */
     private var upload: Upload? = null
+
+    /** 从上传的包发起的安装; 没装成时网页可以用它再装一次 ([retryUpload]). 新的上传 / 下载安装开始、装成了都清掉 */
+    private class Retry(val file: File, val version: String?, val pkg: String?)
+
+    @Volatile
+    private var retry: Retry? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -178,6 +212,10 @@ internal object RemoteAppUpdate {
         }
     }
 
+    /** 给 LanHttpServer 的按路径请求体上限: 只有分块上传那个接口收一整块 (再留点余量), 其余照默认 */
+    fun maxBodyBytes(path: String): Long =
+        if (path == CHUNK_PATH) CHUNK_BYTES + 64L * 1024 else LanHttpServer.MAX_BODY_BYTES
+
     fun handle(request: LanHttpRequest): JsonObject? {
         val get = request.method == "GET" || request.method == "HEAD"
         val post = request.method == "POST"
@@ -191,11 +229,12 @@ internal object RemoteAppUpdate {
                 request.path == "api/update/upload/start" -> uploadStart(request)
                 request.path == "api/update/upload/chunk" -> uploadChunk(request)
                 request.path == "api/update/upload/finish" -> uploadFinish(request)
+                request.path == "api/update/retry" -> retryUpload(request)
                 else -> null
             }
         }.getOrElse {
             logger.warn(it) { "Remote update request failed: ${request.method} ${request.path}" }
-            result(false, tr("操作失败：{0}", it.message ?: it::class.simpleName))
+            result(false, tr("操作失败：{0}", updateErrorReason(it)))
         }
     }
 
@@ -236,6 +275,31 @@ internal object RemoteAppUpdate {
                 put("busy", s.phase in BUSY)
                 s.progress?.let { put("progress", it) }
                 put("text", phaseText(s))
+            }
+            // 下载线路 (有新版本、线路不止一条时): 第一条是原地址; note = 上次测出来的速度或没下成的原因
+            if (latest != null && lineHosts.size > 1) {
+                putJsonArray("lines") {
+                    lineHosts.forEachIndexed { index, host ->
+                        addJsonObject {
+                            put("host", host)
+                            put("official", index == 0)
+                            lineNotes[host]?.let { put("note", it) }
+                        }
+                    }
+                }
+            }
+            // 最近上传的是哪个安装包 (核对过的带上版本; 是另一个包时带上包名)
+            uploaded?.let { u ->
+                putJsonObject("upload") {
+                    put("name", u.name)
+                    put("size", u.size)
+                    u.version?.let { put("version", it) }
+                    u.pkg?.takeIf { it != ctx?.packageName }?.let { put("otherPkg", it) }
+                }
+            }
+            // 上传的包没装成: 网页给「用这个安装包再装一次」
+            retry?.takeIf { s.phase == Phase.FAILED && it.file.exists() }?.let { r ->
+                putJsonObject("retry") { put("version", r.version.orEmpty()) }
             }
             lastResult?.let { (ok, text) ->
                 putJsonObject("last") {
@@ -297,15 +361,21 @@ internal object RemoteAppUpdate {
             try {
                 val koin = KoinPlatform.getKoin()
                 val releaseClass = koin.get<SettingsRepository>().updateSettings.flow.first().releaseClass
-                latest = UpdateChecker(koin.get<HttpClientProvider>().get())
+                val found = UpdateChecker(koin.get<HttpClientProvider>().get())
                     .checkLatestVersion(releaseClass, onProgress = { checkProgress = it })
+                // 下载线路 = 原地址与各个镜像, 按域名列给网页挑 (第一个是原地址)
+                lineHosts = found?.downloadUrlAlternatives?.firstOrNull()?.let { url ->
+                    runCatching { koin.get<GitHubDownloadMirrors>().sourcesOf(url).map(::hostOf).distinct() }.getOrNull()
+                }.orEmpty()
+                latest = found
                 checkError = null
-                logger.info { "Remote update check: latest=${latest?.name}" }
+                logger.info { "Remote update check: latest=${found?.name}, lines=$lineHosts" }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 logger.warn(e) { "Remote update check failed" }
-                checkError = tr("检查失败：{0}", e.message ?: e::class.simpleName)
+                // 抛出来的是查 GitHub 的那个错误, 这时镜像也都试过了 (见 UpdateChecker.checkLatestVersion)
+                checkError = tr("检查失败：GitHub {0}，镜像也没查到", updateErrorReason(e))
             } finally {
                 checked = true
                 checking = false
@@ -315,25 +385,30 @@ internal object RemoteAppUpdate {
         return result(true, "")
     }
 
+    /** `line` = 网页挑的下载线路 (域名); 空 = 自动 (各条一起测速, 从最快的下, 失败换下一条) */
     private fun startDownloadInstall(request: LanHttpRequest): JsonObject {
         val ver = latest ?: return result(false, tr("先检查更新"))
         val ctx = context ?: return result(false, NOT_READY)
         needPermission(ctx, request)?.let { return it }
+        val line = request.formFields()["line"].orEmpty()
+        if (line.isNotEmpty() && line !in lineHosts) return result(false, tr("这条下载线路用不了了，换一条再试"))
         synchronized(lock) {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)
             lastResult = null
+            retry = null
+            uploaded = null
             // 进度条等真的开始收数据再出来: 挑线路那几秒进度不动, 停在 0% 看着像卡住了
             state = State(Phase.DOWNLOADING, version = ver.name)
         }
         scope.launch {
             val file = try {
-                download(ver)
+                download(ver, line)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn(e) { "Remote update download failed" }
-                fail(tr("下载失败：{0}", e.message ?: e::class.simpleName))
+                logger.warn(e) { "Remote update download failed (line: ${line.ifEmpty { "auto" }})" }
+                fail(tr("下载失败：{0}", (e as? DownloadFailure)?.text ?: updateErrorReason(e)))
                 return@launch
             }
             setState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
@@ -347,16 +422,24 @@ internal object RemoteAppUpdate {
         return result(true, "")
     }
 
-    /** 同电视上的更新提示 (AppUpdateViewModel.downloadInApp): 同一个目录, 那边下好的这里直接用, 镜像与校验也一样. */
-    private suspend fun download(ver: NewVersion): File {
+    /** 下载没成: [text] 是给网页的一句话 (每条线路各自的原因, 见 [downloadFailureText]) */
+    private class DownloadFailure(val text: String, cause: Throwable?) : Exception(text, cause)
+
+    /**
+     * 同电视上的更新提示 (AppUpdateViewModel.downloadInApp): 同一个目录, 那边下好的这里直接用, 镜像与校验也一样.
+     * [line] 不空时只从这条线路下 (不测速, 也不换线路), 结果与原因都是这一条的.
+     */
+    private suspend fun download(ver: NewVersion, line: String): File {
         val koin = KoinPlatform.getKoin()
         val downloader = DefaultFileDownloader(koin.get<HttpClientProvider>().get())
         val mirrors = koin.get<GitHubDownloadMirrors>()
         val dir = koin.get<UpdateManager>().saveDir
         val packages = ver.downloadUrlAlternatives.map { url ->
             val fileName = url.substringAfterLast("/", "")
-            DownloadPackage(fileName, mirrors.sourcesOf(url), ver.sha256ByFileName[fileName])
-        }
+            val sources = mirrors.sourcesOf(url).let { all -> if (line.isEmpty()) all else all.filter { hostOf(it) == line } }
+            DownloadPackage(fileName, sources, ver.sha256ByFileName[fileName])
+        }.filter { it.sources.isNotEmpty() }
+        if (packages.isEmpty()) throw DownloadFailure(tr("这条下载线路用不了了，换一条再试"), null)
         // 状态那一行写到哪一步 (挑线路 3/5、38/79 MB · 2.1 MB/s、换线路、校验); 进度条只在知道总长、真在收数据时有
         val progress = scope.launch {
             downloader.stage.collect { stage ->
@@ -367,13 +450,38 @@ internal object RemoteAppUpdate {
                 }
             }
         }
-        try {
+        val file = try {
             dir.createDirectories()
-            val file = downloader.download(packages, dir) ?: error(tr("已有别的下载在进行"))
-            return file.toFile()
+            downloader.download(packages, dir)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw DownloadFailure(downloadFailureText(e, downloader.lastOutcomes), e)
         } finally {
             progress.cancel()
+            rememberLineNotes(downloader.lastOutcomes)
         }
+        return file?.toFile() ?: throw DownloadFailure(tr("已有别的下载在进行"), null)
+    }
+
+    /**
+     * 这次各条线路的结果标在网页的线路下拉框里 (没轮到的线路保留上次的): 真从它下完的写平均速度, 没下成的写原因,
+     * 只测过速的写「能连上」. 测速那一小段折出来的速度不写 —— 时间大半花在建连接上, 比实际下载慢一二十倍, 看着像线路都很慢.
+     */
+    private fun rememberLineNotes(outcomes: List<SourceOutcome>) {
+        val notes = outcomes.groupBy { hostOf(it.url) }.mapNotNull { (host, list) ->
+            val downloaded = list.firstNotNullOfOrNull { it.downloadBytesPerSecond }
+            val error = list.firstNotNullOfOrNull { it.error }
+            val reachable = list.any { it.probeBytesPerSecond != null }
+            val note = when {
+                downloaded != null -> tr("上次 {0}", formatSpeed(downloaded))
+                error != null -> updateErrorReason(error)
+                reachable -> tr("能连上")
+                else -> null
+            }
+            note?.let { host to it }
+        }
+        if (notes.isNotEmpty()) lineNotes = lineNotes + notes
     }
 
     // ============================ 上传 ============================
@@ -389,9 +497,12 @@ internal object RemoteAppUpdate {
             val dir = File(ctx.cacheDir, UPLOAD_DIR)
             dir.deleteRecursively()
             dir.mkdirs()
-            val u = Upload(UUID.randomUUID().toString(), File(dir, "upload.apk"), size)
+            retry = null
+            val info = Uploaded(fields["name"].orEmpty().ifBlank { "upload.apk" }.take(MAX_NAME_CHARS), size)
+            val u = Upload(UUID.randomUUID().toString(), File(dir, "upload.apk"), size, info)
             u.file.createNewFile()
             upload = u
+            uploaded = info
             logger.info { "Remote update upload started: ${fields["name"]} ($size bytes)" }
             return buildJsonObject {
                 put("ok", true)
@@ -437,6 +548,8 @@ internal object RemoteAppUpdate {
         if (u.received != u.size) return result(false, tr("文件没有传完整，请重试"))
         val verified = verify(ctx, u.file, sameAppOnly = false)
         verified.error?.let { return rejectUpload(it) }
+        u.info.pkg = verified.packageName
+        u.info.version = verified.versionName
         val other = verified.packageName.takeIf { it != ctx.packageName }
         if (fields["force"] != "1") {
             val current = installedVersion(ctx)
@@ -464,9 +577,30 @@ internal object RemoteAppUpdate {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)
             lastResult = null
+            retry = Retry(u.file, verified.versionName, other)
             state = State(Phase.PREPARING, version = verified.versionName, pkg = other)
         }
         scope.launch { install(ctx, u.file, verified.versionName, other) }
+        return result(true, "")
+    }
+
+    /**
+     * 用刚才上传、没装成的包再装一次 (电视上误按了取消时不用重新上传). 上次已经核对过、问过, 这次直接装;
+     * 授权照样要先有.
+     */
+    private fun retryUpload(request: LanHttpRequest): JsonObject {
+        val ctx = context ?: return result(false, NOT_READY)
+        needPermission(ctx, request)?.let { return it }
+        val r = synchronized(lock) {
+            val r = retry?.takeIf { it.file.exists() } ?: return result(false, tr("刚才上传的安装包已经不在了，请重新选择文件"))
+            if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
+            abandonSession(ctx)
+            lastResult = null
+            state = State(Phase.PREPARING, version = r.version, pkg = r.pkg)
+            r
+        }
+        logger.info { "Remote update: installing the uploaded package again (${r.pkg ?: "this app"} ${r.version})" }
+        scope.launch { install(ctx, r.file, r.version, r.pkg) }
         return result(true, "")
     }
 
@@ -571,7 +705,7 @@ internal object RemoteAppUpdate {
             installer.createSession(params)
         } catch (e: Exception) {
             logger.warn(e) { "Remote install: cannot create session" }
-            fail(tr("系统不让创建安装会话：{0}", e.message ?: e::class.simpleName))
+            fail(tr("系统不让创建安装会话：{0}", systemErrorText(e)))
             return
         }
         sessionId = id
@@ -604,7 +738,7 @@ internal object RemoteAppUpdate {
             logger.warn(e) { "Remote install: writing session $id failed" }
             runCatching { installer.abandonSession(id) }
             clearPending(ctx)
-            fail(tr("写入安装包失败：{0}", e.message ?: e::class.simpleName))
+            fail(tr("写入安装包失败：{0}", systemErrorText(e)))
         }
     }
 
@@ -659,6 +793,7 @@ internal object RemoteAppUpdate {
             PackageInstaller.STATUS_SUCCESS -> {
                 logger.info { "Remote install: session $id installed" }
                 clearPending(ctx)
+                retry = null
                 val done = synchronized(lock) { state.copy(phase = Phase.SUCCESS, progress = null).also { state = it } }
                 // 装的是另一个包: 本应用不会被关, 电视上点完「安装」确认框一收就什么也看不出来, 弹一条系统提示 (回调在主线程)
                 if (done.pkg != null) Toast.makeText(ctx, phaseText(done), Toast.LENGTH_LONG).show()
@@ -679,7 +814,7 @@ internal object RemoteAppUpdate {
             setState(state.copy(phase = Phase.CONFIRM, progress = null))
         } catch (e: Exception) {
             logger.warn(e) { "Remote install: cannot open the confirmation" }
-            fail(tr("打不开安装确认界面：{0}", e.message ?: e::class.simpleName))
+            fail(tr("打不开安装确认界面：{0}", systemErrorText(e)))
         }
     }
 
@@ -808,9 +943,17 @@ internal object RemoteAppUpdate {
     private const val KEY_VERSION = "pending_version"
     private const val KEY_AT = "pending_at"
 
-    /** 每块字节数: 留出余量, 不碰 LanHttpServer 的 64 KiB body 上限 */
-    private const val CHUNK_BYTES = 60 * 1024
+    /**
+     * 每块字节数. 控制台一个请求一个连接、一问一答 (LanHttpServer 不做 keep-alive), 块小了时间都花在建连接和等回应上:
+     * 60 KiB 一块时 78 MB 要一千三百多个请求, 手机传到 Shield 只有 1 MB/s 上下. 1 MiB 在普通 Wi-Fi 上一块一两百毫秒,
+     * 碰不到 LanHttpServer 的慢请求 (3 秒) 与卡住 (10 秒) 报警.
+     */
+    private const val CHUNK_BYTES = 1024 * 1024
+    private const val CHUNK_PATH = "api/update/upload/chunk"
     private const val MAX_UPLOAD_BYTES = 300L * 1024 * 1024
+
+    /** 网页上显示的文件名最长多少字 (名字是手机传来的) */
+    private const val MAX_NAME_CHARS = 200
     private const val PENDING_TTL_MILLIS = 30L * 60 * 1000
 
     /** 写安装会话时每次读多少, 以及多久报一次写了多少 (网页每秒拉一次状态) */
