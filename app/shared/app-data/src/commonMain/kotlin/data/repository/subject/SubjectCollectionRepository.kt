@@ -125,6 +125,13 @@ abstract class SubjectCollectionRepository(
     abstract fun subjectCollectionFlow(subjectId: Int): Flow<SubjectCollectionInfo>
 
     /**
+     * 只读本地库里的这个条目 (连同分集), **不发请求**, 过期的也照给; 本地没有时为 `null`.
+     *
+     * 给「先把手上有的显示出来」用: 冷启动时 hero 文字不必陪着整条媒体链等. 要最新的走 [subjectCollectionFlow].
+     */
+    open suspend fun subjectCollectionOffline(subjectId: Int): SubjectCollectionInfo? = null
+
+    /**
      * **无视新鲜度**重取一个条目 (条目本身 + 分集 + 收藏状态/评分).
      *
      * 缓存按一小时算, 这期间进详情页都直接用本地那份 —— 在 bgm 网页或另一台设备上改了评分/收藏
@@ -429,6 +436,19 @@ class SubjectCollectionRepositoryImpl(
             )
         }
         true
+    }
+
+    override suspend fun subjectCollectionOffline(subjectId: Int): SubjectCollectionInfo? = withContext(defaultDispatcher) {
+        val entity = subjectCollectionDao.findById(subjectId).first() ?: return@withContext null
+        val episodes = episodeCollectionDao
+            .filterBySubjectId(subjectId, getEpisodeTypeFiltersUseCase().first())
+            .first()
+            .map { it.toEpisodeCollectionInfo() }
+        entity.toSubjectCollectionInfo(
+            episodes = episodes,
+            currentDate = getCurrentDate(),
+            nsfwModeSettings = nsfwModeSettingsFlow.first(),
+        )
     }
 
     override fun subjectCollectionFlow(

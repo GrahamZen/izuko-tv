@@ -507,7 +507,11 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     }
     single<BangumiSummaryService> { BangumiSummaryService(get()) }
     single<TrendsRepository> {
-        TrendsRepository(bangumiApiProvider.trendingApi, cacheFile = getContext().files.cacheDir.resolve("trending.json"))
+        TrendsRepository(
+            bangumiApiProvider.trendingApi,
+            cacheFile = getContext().files.cacheDir.resolve("trending.json"),
+            backgroundScope = coroutineScope,
+        )
     }
     single<RecommendationRepository> {
         RecommendationRepository(

@@ -154,6 +154,11 @@ import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreListener
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreMetrics
+import com.github.panpf.sketch.LocalPlatformContext
+import me.him188.ani.app.data.network.TrendsRepository
+import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
+import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
 
 /**
  * TV 沉浸式探索页 (海报墙): 顶上是热门轮播 (轮播条目的 TMDB 背景图 + 标题 / 评分连载 / 简介 + 「立即观看」「新番时间表」两颗按钮
@@ -179,6 +184,9 @@ fun TvExplorationPage(
     val navigator = LocalNavigator.current
     val collectionRepo = remember { GlobalKoin.get<SubjectCollectionRepository>() }
     val tmdb = remember { GlobalKoin.get<TmdbImageService>() }
+    val trendsRepository = remember { GlobalKoin.get<TrendsRepository>() }
+    val sketch = LocalSketch.current
+    val platformContext = LocalPlatformContext.current
     val bangumiSummaryService = remember { GlobalKoin.get<BangumiSummaryService>() }
     val setCollectionTypeUseCase = remember { GlobalKoin.get<SetSubjectCollectionTypeOrDeleteUseCase>() }
     val settingsRepository = remember { GlobalKoin.get<SettingsRepository>() }
@@ -677,14 +685,47 @@ fun TvExplorationPage(
             }
         }
     }
+    // 冷启动时 hero 文字不陪媒体链等: 轮播这几部在本地库里有的 (之前浏览过, 或换人时垫过的), 一拿到列表就读进进程缓存,
+    // 聚焦的那一部直接显示. 只读本地、不发请求 —— 本地没有的照旧由解析链去取
+    LaunchedEffect(carouselSize) {
+        for (offset in 0 until carouselSize) {
+            val item = currentTrending.peekOrNull(offset) ?: continue
+            if (TvHeroMediaCache.peekSubjectInfo(item.bangumiId) != null) continue
+            val info = collectionRepo.subjectCollectionOffline(item.bangumiId) ?: continue
+            TvHeroMediaCache.putSubjectInfo(item.bangumiId, info)
+            // 页面这张表只写聚焦的那一个 (理由见 afterResolve)
+            if (heroTarget?.subjectId == item.bangumiId && item.bangumiId !in infoCache) {
+                infoCache[item.bangumiId] = info
+            }
+        }
+    }
+    // 轮播条目的背景图下载进磁盘 (整机共用的图片缓存, 换人重启后也在). 原图档不投机下载, 理由同邻居预热
+    val prefetchCarouselImage: (Int) -> Unit = { subjectId ->
+        tmdb.tvHeroBackdropUrl(subjectId, fullVisualEffects = false, preferNextEpisodeStill = false)
+            ?.takeUnless { it.isOriginalSizeTmdbUrl() }
+            ?.let { TvHeroImagePrefetch.prefetch(it, sketch, platformContext) }
+    }
     // 整轮轮播按顺序预取 (背景图匹配有的要按十几个别名逐个搜 TMDB, 冷启动一部就是三四秒): 一部做完再提交下一部,
-    // 排队里始终只有一个, 照样给前台让路, 也不挤掉卡片导航的邻居预取. 首次启动时本页垫在引导的登录层下面
-    // 就开始跑, 用户进来时整轮多半已经就绪. 已解析过的直接命中缓存, 不发请求
+    // 排队里始终只有一个, 照样给前台让路, 也不挤掉卡片导航的邻居预取. 首次启动时本页垫在引导的登录层 / 选人页下面
+    // 就开始跑, 用户进来时整轮多半已经就绪. 已解析过的直接命中缓存, 不发请求. 解析完连图一起落盘
     LaunchedEffect(carouselSize) {
         for (offset in 1 until carouselSize) {
             val item = currentTrending.peekOrNull(offset) ?: continue
             TvHeroPrefetch.backgroundAndAwait(item.bangumiId) {
                 resolveTvHeroMedia(item.bangumiId, collectionRepo, tmdb)
+            }
+            prefetchCarouselImage(item.bangumiId)
+        }
+    }
+    // 热度榜过期时轮播先放手上那份 (见 TrendsRepository.firstPage), 后台取到的新一页在这里趁空闲预热: 条目信息进本地库,
+    // 背景图地址与图片进整机缓存 —— 下次打开应用时轮播直接就绪. 走同一个后台槽, 给前台让路
+    LaunchedEffect(Unit) {
+        trendsRepository.firstPageRefreshed.collect { fresh ->
+            for (item in fresh.subjects.take(TrendsRepository.HERO_CAROUSEL_SIZE)) {
+                TvHeroPrefetch.backgroundAndAwait(item.bangumiId) {
+                    resolveTvHeroMedia(item.bangumiId, collectionRepo, tmdb)
+                }
+                prefetchCarouselImage(item.bangumiId)
             }
         }
     }

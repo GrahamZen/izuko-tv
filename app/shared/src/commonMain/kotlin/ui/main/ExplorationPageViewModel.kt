@@ -66,7 +66,7 @@ class ExplorationPageViewModel : AbstractViewModel(), KoinComponent {
     val explorationPageState: ExplorationPageState = ExplorationPageState(
         trendingSubjectInfoPager = trendsRepository.trendsInfoPager()
             .map { pagingData ->
-                pagingData.flatMap { it.subjects.take(10) }
+                pagingData.flatMap { it.subjects.take(TrendsRepository.HERO_CAROUSEL_SIZE) }
             }
             .cachedIn(backgroundScope)
             .launchAsLazyPagingItemsIn(backgroundScope),
