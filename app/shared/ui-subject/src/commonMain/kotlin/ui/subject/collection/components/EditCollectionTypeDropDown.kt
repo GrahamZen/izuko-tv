@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
@@ -76,8 +77,9 @@ fun EditCollectionTypeDropDown(
     onClick: (action: SubjectCollectionAction) -> Unit,
     modifier: Modifier = Modifier,
     actions: List<SubjectCollectionAction> = SubjectCollectionActionsForEdit,
-    // bangumi 没有"取消收藏"的接口 (v0 与 p1 的 DELETE 都是 404), 这个入口整体去掉
-    showDelete: Boolean = false,
+    // bangumi 没有"取消收藏"的接口 (v0 与 p1 的 DELETE 都是 404), 登录 Bangumi 的人没有这个入口;
+    // 本地档的收藏只在本地库里, 能取消
+    showDelete: Boolean = UserProfiles.current.isLocal,
     /** 焦点导航上菜单摆在哪 (见 [AniDropdownMenu] 的同名参数); null = 贴着锚点往下. */
     positionProvider: PopupPositionProvider? = null,
 ) {
@@ -92,7 +94,12 @@ fun EditCollectionTypeDropDown(
         modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
     ) {
         for (action in actions) {
-            if (!showDelete && action == SubjectCollectionActions.DeleteCollection) continue
+            // 取消收藏只在收藏了的时候有: 它的类型就是 NOT_COLLECTED, 没收藏时会被当成当前项打上勾
+            if (action == SubjectCollectionActions.DeleteCollection &&
+                (!showDelete || currentType == null || currentType == UnifiedCollectionType.NOT_COLLECTED)
+            ) {
+                continue
+            }
 
             AniDropdownMenuItem(
                 text = { action.title() },

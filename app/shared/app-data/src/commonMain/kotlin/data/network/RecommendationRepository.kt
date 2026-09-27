@@ -138,13 +138,20 @@ class RecommendationRepository(
      * `null` = 只在进程内复用.
      */
     cacheDir: SystemPath? = null,
+    /** 收藏快照的文件名. 快照是当前用户的收藏, 每个用户一份 (见 `UserProfile.scopedFileName`). */
+    collectionsCacheFileName: String = "recommendation-collections.json",
+    /**
+     * 本地档 (见 `UserProfileKind.LOCAL`): 收藏全在本地库里, 画像直接由它算, 不向服务端取收藏或核对 ——
+     * 没有 Bangumi 登录, 那两个请求本来也发不出去.
+     */
+    private val localProfile: Boolean = false,
 ) : Repository() {
     /**
      * 上次取全的收藏 ([lastCollections]) 落盘的那份: 冷启动后第一次重算照样先取第一页比对, 没变就直接用它,
      * 不必把几百条收藏从头翻一遍. 只在取全之后写.
      */
     private val collectionsDiskCache = cacheDir?.let {
-        JsonFileCache(it.resolve("recommendation-collections.json"), SavedCollections.serializer(), ioDispatcher)
+        JsonFileCache(it.resolve(collectionsCacheFileName), SavedCollections.serializer(), ioDispatcher)
     }
 
     /**
@@ -668,8 +675,10 @@ class RecommendationRepository(
 
     private suspend fun refreshOnce(force: Boolean) {
         // 没登录时本地那份收藏不算数: 退出登录不清本地收藏缓存, 留下的是上一个账号的. 画像于是是空的,
-        // 推荐区出没登录时那一组 (见 computeFeed). 会话状态在启动刷新 token 时可能迟迟不出来, 等不到就只看收藏
-        val loggedIn = withTimeoutOrNull(SESSION_STATE_WAIT) { sessionStateProvider.canAccessAniApiNow() } ?: true
+        // 推荐区出没登录时那一组 (见 computeFeed). 会话状态在启动刷新 token 时可能迟迟不出来, 等不到就只看收藏.
+        // 本地档没有登录, 本地收藏就是它自己的, 照登录了算
+        val loggedIn = localProfile ||
+                withTimeoutOrNull(SESSION_STATE_WAIT) { sessionStateProvider.canAccessAniApiNow() } ?: true
         // 画像先算出来: 它是**纯本地的**(零请求), 而且判"要不要重算"就得看它 —— 登录之后
         // computedAt 与 algoVersion 都没变, 只有画像变了 (0 部收藏 → 上百部).
         val collections = if (loggedIn) {
@@ -698,7 +707,7 @@ class RecommendationRepository(
             // 本地画像变了、登录态没变: 多半是已有的收藏被顺手存进了本地 (追番页分页、hero 预取、进详情页都会写),
             // 不是用户改了收藏. 拿服务端收藏第一页核对, 没变就只记下新的身份串 —— 重算用的本来就是服务端那份全量收藏,
             // 算出来不会更准, 却会让推荐在用户眼前换一批
-            if (fresh && loggedIn && !loginChanged && collectionsUnchanged()) {
+            if (fresh && loggedIn && !localProfile && !loginChanged && collectionsUnchanged()) {
                 feedDao.updateProfileKey(profileKey)
                 logger.info { "bgm-direct: recommendations 本地画像变了但服务端收藏没变, 不重算" }
                 return
@@ -741,7 +750,8 @@ class RecommendationRepository(
         //     分页进来的那些 (真机: 近百部里只有 23 条), 于是看过的大量出现在推荐里;
         //  3. 画像不再取决于"逛过哪个 tab".
         _refreshProgress.value = RecommendationRefreshProgress(RecommendationRefreshProgress.Stage.Collections)
-        val extra = fetchAllCollections()
+        // 本地档的收藏本来就全在本地库里 (上面的 collections)
+        val extra = if (localProfile) emptyList() else fetchAllCollections()
         _refreshProgress.update { it?.copy(stage = RecommendationRefreshProgress.Stage.Candidates) }
         val enriched = if (extra.isEmpty()) {
             profile

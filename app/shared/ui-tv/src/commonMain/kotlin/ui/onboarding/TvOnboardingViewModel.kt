@@ -24,7 +24,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.withIndex
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
 import me.him188.ani.app.data.models.preference.ThemeSettings
@@ -44,11 +47,15 @@ import me.him188.ani.app.domain.foundation.ReachabilityProbe
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.withValue
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -220,6 +227,7 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
     private val settingsRepository: SettingsRepository by inject()
     private val oauthManager: BangumiOAuthManager by inject()
     private val sessionStateProvider: SessionStateProvider by inject()
+    private val localProfileConversion: LocalProfileConversion by inject()
 
     val loggedIn: StateFlow<Boolean> = sessionStateProvider.stateFlow
         .map { it is SessionState.Valid }
@@ -257,5 +265,34 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
     /** 最后一步「外观与操作」改主题设置: 当场生效 (这一层与下面的主页跟着变). */
     fun updateTheme(transform: ThemeSettings.() -> ThemeSettings) {
         backgroundScope.launch { settingsRepository.themeSettings.update(transform) }
+    }
+
+    /** 能选「不登录，收藏存在这台电视上」: 1 号还是 Bangumi 用户, 这台设备能重启应用 (见 [LocalProfileConversion]). */
+    val localOffered: Boolean get() = localProfileConversion.isOffered
+
+    /** 之前登录留下的收藏记录 (从老版本升级上来、登录过又退出的有). */
+    suspend fun leftoverRecords(): SelfCollectionRecords.Counts = localProfileConversion.leftoverRecords()
+
+    /** 改成本地用户没成的原因; 成了应用会重启, 不会有值. */
+    val localError = MutableStateFlow<String?>(null)
+
+    /** 改成本地用户, 应用随后重启; [defaultName] 见 [LocalProfileConversion.convert]. 没成时在主线程调 [onFailed]. */
+    fun useLocal(clearRecords: Boolean, defaultName: String, onFailed: () -> Unit) {
+        localError.value = null
+        backgroundScope.launch {
+            try {
+                localProfileConversion.convert(clearRecords, defaultName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to convert the user profile to local" }
+                localError.value = e.message ?: e::class.simpleName.orEmpty()
+                withContext(Dispatchers.Main) { onFailed() }
+            }
+        }
+    }
+
+    private companion object {
+        private val logger = logger<TvOnboardingLoginViewModel>()
     }
 }

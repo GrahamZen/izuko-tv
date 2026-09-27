@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -92,9 +93,12 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
+import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
 import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
@@ -131,6 +135,10 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_description
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done_plain
 import me.him188.ani.app.ui.lang.tv_onboarding_login_failed
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local_failed
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local_hint
+import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_login_phone_hint
@@ -367,10 +375,18 @@ fun TvOnboardingPage(
     }
 }
 
-/** 登录层要不要显示. 由选完连接方式的那一刻打开, 登录层自己关. */
+/**
+ * 登录层要不要显示. 首次引导时由选完连接方式的那一刻打开; 切进一个新建的 Bangumi 用户时也打开 (只有登录这一步, 见 [loginOnly]).
+ * 登录层自己关.
+ */
 object TvOnboardingLogin {
     /** 非 null = 显示登录层; 值是「经镜像」判定 (见 [TvOnboardingViewModel.chooseMode]). */
     val request = MutableStateFlow<Boolean?>(null)
+
+    /**
+     * 新用户的登录: 手机遥控已经介绍过 (整机的首次引导里), 只剩登录这一步, 不显示三步进度; 返回键等于跳过.
+     */
+    var loginOnly by mutableStateOf(false)
 
     /** 这个进程里看过欢迎页了 (从登录层返回检测那一步时直接到检测). */
     var welcomeSeen = false
@@ -379,21 +395,36 @@ object TvOnboardingLogin {
 /**
  * 引导的后三步 (手机遥控、登录、外观与操作): 全屏盖在主页上 (独立窗口, 焦点与按键都在它里面). 装在 TV 根部 —— 引导页那一页已经出栈了.
  *
- * [onFinished]: 外观与操作那一步按了「开始使用」. [onBack]: 返回键, 回到检测网络那一步.
+ * [onFinished]: 外观与操作那一步按了「开始使用」. [onBack]: 首次引导里的返回键, 回到检测网络那一步.
+ * [onNewUserFinished]: 新用户那一步 ([TvOnboardingLogin.loginOnly]) 登录完或跳过 (返回键也算跳过).
  */
 @Composable
-fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
+fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserFinished: () -> Unit) {
     val assumeViaMirror = TvOnboardingLogin.request.collectAsState().value ?: return
+    val loginOnly = TvOnboardingLogin.loginOnly
+    val finishNewUser = {
+        TvOnboardingLogin.request.value = null
+        TvOnboardingLogin.loginOnly = false
+        onNewUserFinished()
+    }
     // 先介绍手机遥控 (单独一页, 不然新用户会以为那个码只能拿来登录), 再登录, 最后外观与操作.
-    // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络
-    var layerStep by rememberSaveable { mutableStateOf(LayerStep.Remote) }
+    // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络. 新用户只有登录这一步 (外观与操作是整机的设置, 首次引导时选过), 返回键等于跳过
+    var layerStep by rememberSaveable { mutableStateOf(if (loginOnly) LayerStep.Login else LayerStep.Remote) }
+    // 登录那一步选了「不登录，收藏存在这台电视上」(值 = 要不要清掉之前登录留下的记录): 改成本地用户要重启应用, 等外观与操作走完再改
+    var pendingLocal by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    // 首次引导里只有 1 号
+    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfile.PRIMARY_ID)
     Dialog(
         onDismissRequest = {
-            when (layerStep) {
-                LayerStep.Theme -> layerStep = LayerStep.Login
-                LayerStep.Login -> layerStep = LayerStep.Remote
+            when {
+                loginOnly -> finishNewUser()
+                layerStep == LayerStep.Theme -> {
+                    pendingLocal = null
+                    layerStep = LayerStep.Login
+                }
+                layerStep == LayerStep.Login -> layerStep = LayerStep.Remote
                 // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
-                LayerStep.Remote -> onBack()
+                else -> onBack()
             }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
@@ -403,13 +434,36 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
         OnboardingSurface(focus, Modifier) {
             when (layerStep) {
                 LayerStep.Remote -> RemoteStep(focus, onNext = { layerStep = LayerStep.Login })
-                LayerStep.Login -> LoginStep(vm, focus, onNext = { layerStep = LayerStep.Theme })
+                LayerStep.Login -> LoginStep(
+                    vm,
+                    focus,
+                    showSteps = !loginOnly,
+                    onNext = { if (loginOnly) finishNewUser() else layerStep = LayerStep.Theme },
+                    onUseLocal = if (loginOnly) {
+                        null
+                    } else {
+                        { clearRecords ->
+                            pendingLocal = clearRecords
+                            layerStep = LayerStep.Theme
+                        }
+                    },
+                )
                 LayerStep.Theme -> ThemeStep(
                     focus,
                     onUpdate = vm::updateTheme,
                     onFinished = {
-                        TvOnboardingLogin.request.value = null
-                        onFinished()
+                        val clearRecords = pendingLocal
+                        if (clearRecords == null) {
+                            TvOnboardingLogin.request.value = null
+                            onFinished()
+                        } else {
+                            // 改成本地用户会重启应用: 先记下引导走完 (不撤登录层, 免得重启前露出主页一下); 没改成就回到登录那一步看原因
+                            onFinished()
+                            vm.useLocal(clearRecords, defaultName, onFailed = {
+                                pendingLocal = null
+                                layerStep = LayerStep.Login
+                            })
+                        }
                     },
                 )
             }
@@ -552,7 +606,7 @@ internal fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content:
 }
 
 private enum class OnboardingFocus : TvFocusKey {
-    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Start,
+    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Local, Start,
     ThemeHero, ThemePlay, ThemeDetails, ThemeDone,
 }
 
@@ -810,7 +864,14 @@ private fun CheckStep(
 }
 
 @Composable
-private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNext: () -> Unit) {
+private fun LoginStep(
+    vm: TvOnboardingLoginViewModel,
+    focus: TvFocusScope,
+    showSteps: Boolean,
+    onNext: () -> Unit,
+    /** 选了「不登录，收藏存在这台电视上」(参数: 要不要清掉之前登录留下的记录); `null` = 不给这个选项. */
+    onUseLocal: ((clearRecords: Boolean) -> Unit)?,
+) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
@@ -822,7 +883,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNex
         StepHeader(
             stringResource(Lang.tv_onboarding_login_title),
             stringResource(Lang.tv_onboarding_login_description),
-            step = 2,
+            step = if (showSteps) 2 else null,
         )
         Spacer(Modifier.height(SECTION_GAP))
         Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -857,7 +918,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNex
                             color = scheme.error,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onNext)
+                        SkipOrLocal(vm, focus, onNext, onUseLocal)
                     }
 
                     else -> {
@@ -895,7 +956,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNex
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onNext)
+                        SkipOrLocal(vm, focus, onNext, onUseLocal)
                     }
                 }
             }
@@ -911,6 +972,61 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNex
         else -> OnboardingFocus.TvLogin
     }
     LaunchedEffect(target) { focus.request(target) }
+}
+
+/**
+ * 「跳过」(先不登录, 和原来一样匿名浏览, 以后可以再登录), 旁边是「不登录，收藏存在这台电视上」: 选了交给 [onUseLocal], 引导走完
+ * 再把 1 号改成本地用户 (见 [me.him188.ani.app.domain.profile.LocalProfileConversion], 应用随后重启). 从老版本升级上来的库里可能
+ * 留着之前登录的收藏记录, 有就先问留不留 (同设置里改成本地用户). 默认焦点不变 (还在登录或跳过上).
+ */
+@Composable
+private fun SkipOrLocal(
+    vm: TvOnboardingLoginViewModel,
+    focus: TvFocusScope,
+    onSkip: () -> Unit,
+    onUseLocal: ((clearRecords: Boolean) -> Unit)?,
+) {
+    val localShown = onUseLocal != null && vm.localOffered
+    val scope = rememberCoroutineScope()
+    var leftover by remember { mutableStateOf<SelfCollectionRecords.Counts?>(null) }
+    val useLocal = { clearRecords: Boolean -> onUseLocal?.invoke(clearRecords) }
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        SkipButton(focus, onSkip)
+        if (localShown) {
+            TvHeroButton(
+                stringResource(Lang.tv_onboarding_login_local),
+                Icons.Rounded.Tv,
+                filled = false,
+                onClick = {
+                    scope.launch {
+                        val records = vm.leftoverRecords()
+                        if (records.isEmpty) useLocal(false) else leftover = records
+                    }
+                },
+                onFocused = {},
+                modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Local),
+            )
+        }
+    }
+    if (localShown) {
+        Spacer(Modifier.height(8.dp))
+        val error by vm.localError.collectAsStateWithLifecycle()
+        Text(
+            error?.let { stringResource(Lang.tv_onboarding_login_local_failed, it) } ?: stringResource(Lang.tv_onboarding_login_local_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    leftover?.let { records ->
+        ConvertToLocalProfileDialog(
+            records,
+            onConvert = { clearRecords ->
+                leftover = null
+                useLocal(clearRecords)
+            },
+            onDismissRequest = { leftover = null },
+        )
+    }
 }
 
 @Composable
@@ -1252,9 +1368,9 @@ private fun ChoiceChip(text: String, selected: Boolean, enabled: Boolean, onClic
     }
 }
 
-/** 标题 (左) 与四步的进度 (右, [step] 从 0 起), 下面一行说明占满整宽. */
+/** 标题 (左) 与四步的进度 (右, [step] 从 0 起; `null` = 不显示进度), 下面一行说明占满整宽. */
 @Composable
-private fun StepHeader(title: String, description: String, step: Int) {
+private fun StepHeader(title: String, description: String, step: Int?) {
     val labels = listOf(
         stringResource(Lang.tv_onboarding_step_network),
         stringResource(Lang.tv_onboarding_step_remote),
@@ -1265,7 +1381,7 @@ private fun StepHeader(title: String, description: String, step: Int) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.width(COLUMN_GAP))
-            labels.forEachIndexed { index, label ->
+            if (step != null) labels.forEachIndexed { index, label ->
                 if (index > 0) {
                     Box(
                         Modifier

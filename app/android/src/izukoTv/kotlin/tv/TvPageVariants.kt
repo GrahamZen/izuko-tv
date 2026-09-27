@@ -130,6 +130,14 @@ import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.ui.profile.TvProfileSwitchLandingHost
+import me.him188.ani.app.ui.profile.TvUserProfilePicker
+import me.him188.ani.app.ui.profile.TvUserProfilePickerHost
 
 /**
  * TV 页面变体装配: 把遥控器形态的页面实现注入各共享页面的变体插槽.
@@ -179,6 +187,38 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 冷启动的启动页 (应用图标 + 进度条): 一打开应用就由入口的占位先画上 (见 FormFactorStartupPlaceholder), 这里接着盖同一份,
     // 首屏的封面出来了再撤; 走引导时交接给欢迎页的图标. 只在进程第一次建界面时出 (Activity 重建时图都在内存里, 没有可等的)
     val startupLogo = remember { TvStartupLogoHost.coldStart(onboarding = onboardingPending) }
+    // 多用户 (见 UserProfiles): 两个以上用户时每次打开应用先选人 (设置的账号页里能关, 见 UserProfilesSave.chooseOnLaunch).
+    // 刚在选人页选过、重启进来的不弹; 首次引导期间不弹 (那时只有一个用户). rememberSaveable: 休眠后进程重建恢复界面时也不再弹
+    val profileManager = remember { GlobalKoin.get<UserProfileManager>() }
+    var launchPickerHandled by rememberSaveable { mutableStateOf(false) }
+    // 应用为换人 / 改成本地用户自己重启进来的 (见 ProfileRestartActivity)
+    val profileRestart = UserProfiles.launchedBySwitch
+    val pickerOnLaunch = remember(appContext) {
+        val profiles = profileManager.state.value
+        !launchPickerHandled && !onboardingPending && profileManager.isSupported &&
+                profiles.profiles.size >= 2 && profiles.chooseOnLaunch && !profileRestart
+    }
+    // 新建的 Bangumi 用户第一次进来: 先弹登录那一步 (登录或跳过), 见 TvOnboardingLogin.loginOnly
+    val newUserLoginPending = remember { !onboardingPending && UserProfiles.current.pendingLogin }
+    val rootScope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        launchPickerHandled = true
+        if (pickerOnLaunch) {
+            if (startupLogo != null) {
+                // 主页在启动页背后加载完再放出选人页 (那几秒主线程很忙, 进场动画会掉帧); 选人页先建好藏着, 放出来时不用再等它组合
+                TvUserProfilePicker.show(held = true)
+                startupLogo.handOffToPicker { TvUserProfilePicker.reveal() }
+            } else {
+                TvUserProfilePicker.show()
+            }
+            // 选了别人会重启; 选的还是自己时选人页关掉, 再接着往下
+            TvUserProfilePicker.visible.first { !it }
+        }
+        if (newUserLoginPending) {
+            TvOnboardingLogin.loginOnly = true
+            TvOnboardingLogin.request.value = false
+        }
+    }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     DisposableEffect(aniNavigator) {
@@ -380,19 +420,23 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvOnboardingLoginHost(
             onFinished = { TvOnboardingGate.markDone(appContext) },
             onBack = { aniNavigator.navigate(NavRoutes.TvOnboarding) },
+            onNewUserFinished = { rootScope.launch { profileManager.finishPendingLogin() } },
         )
+        // 选人页 (启动时或侧边栏头像的「切换用户」打开)
+        TvUserProfilePickerHost()
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
         // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
         TvMirrorConsentHost()
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
-        // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码
+        // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码; 先选人或新用户先登录时同理;
+        // 应用为换人 / 改成本地用户自己重启进来的也不弹 —— 那不是用户打开应用
         LaunchedEffect(Unit) {
             // 启动页盖着的时候先不弹, 等它撤了再说
             if (startupLogo != null) snapshotFlow { startupLogo.visible }.first { !it }
             TvRemoteControl.showDialogOnLaunch {
-                !onboardingPending &&
+                !onboardingPending && !pickerOnLaunch && !newUserLoginPending && !profileRestart &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
             }
         }
@@ -424,8 +468,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         Box(
             Modifier
                 // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到
-                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层显示期间主页一个键都不处理; 启动页盖着时同理
-                .onPreviewKeyEvent { TvOnboardingLogin.request.value != null || startupLogo?.visible == true }
+                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层与选人页显示期间主页一个键都不处理; 启动页盖着时同理
+                .onPreviewKeyEvent {
+                    TvOnboardingLogin.request.value != null || TvUserProfilePicker.visible.value || startupLogo?.visible == true
+                }
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
                 .tvNavKeyInterceptor(navKeys)
@@ -447,13 +493,16 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     // 返回栈要等应用状态读出来才有 (见 AniAppContent), 在那之前下面是空的, 先盖着.
                     // 进程重建恢复到播放器、详情页这些页时没有首屏封面可等, 栈一就位就撤
                     when (aniNavigator.awaitBackStack().lastOrNull()) {
-                        is NavRoutes.Main -> startupLogo.dismissWhenFirstScreenReady()
+                        // 打开应用先选人时由选人页那边撤 (见上面 pickerOnLaunch 那段)
+                        is NavRoutes.Main -> if (!pickerOnLaunch) startupLogo.dismissWhenFirstScreenReady()
                         is NavRoutes.TvOnboarding -> startupLogo.handOffToWelcome()
                         else -> startupLogo.dismiss()
                     }
                 }
                 TvStartupLogo(startupLogo, tvStartupLogoColors())
             }
+            // 换人重启进来时盖在最上面的那一帧 (与重启途中显示的是同一张), 首页封面加载好了再淡出
+            TvProfileSwitchLandingHost()
         }
     }
 }

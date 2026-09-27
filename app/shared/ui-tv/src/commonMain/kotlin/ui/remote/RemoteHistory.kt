@@ -38,6 +38,8 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
 
 /**
  * 手机「设置」里的**播放记录**: 电视本地播放进度表按番合并 (每部只留最近动过的那一集, 最近的在上). 点一部 = 电视打开详情页;
@@ -128,13 +130,16 @@ internal object RemoteHistory {
         }
     }
 
-    /** 手机上删掉的番: subjectId → 删到哪一刻 (那时它记录里最新的 versionMillis). 存在电视本地, 重启还在. */
+    /**
+     * 手机上删掉的番: subjectId → 删到哪一刻 (那时它记录里最新的 versionMillis). 存在电视本地, 重启还在.
+     * 播放记录是按人的, 这份也按人: 每个用户一个键 (见 [UserProfile.scopedFileName]).
+     */
     private val prefs: SharedPreferences by lazy {
         KoinPlatform.getKoin().get<Context>().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
     private fun hiddenAt(): Map<Int, Long> =
-        prefs.getStringSet(KEY_HIDDEN, emptySet()).orEmpty().mapNotNull { e ->
+        prefs.getStringSet(hiddenKey, emptySet()).orEmpty().mapNotNull { e ->
             val parts = e.split(':')
             val id = parts.getOrNull(0)?.toIntOrNull()
             val at = parts.getOrNull(1)?.toLongOrNull()
@@ -143,11 +148,12 @@ internal object RemoteHistory {
 
     private fun hide(subjects: Map<Int, Long>) {
         val all = hiddenAt() + subjects
-        prefs.edit().putStringSet(KEY_HIDDEN, all.map { (id, t) -> "$id:$t" }.toSet()).apply()
+        prefs.edit().putStringSet(hiddenKey, all.map { (id, t) -> "$id:$t" }.toSet()).apply()
     }
 
     private const val PREFS_NAME = "tv_remote_history"
     private const val KEY_HIDDEN = "hidden_subjects"
+    private val hiddenKey get() = UserProfiles.current.scopedFileName(KEY_HIDDEN)
 
     /** @param lite 设置里的入口卡片: 只要条数和最近那部, 不带图 */
     private fun list(lite: Boolean): JsonObject {
