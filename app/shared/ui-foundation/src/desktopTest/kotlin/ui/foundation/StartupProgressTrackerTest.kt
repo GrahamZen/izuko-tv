@@ -66,6 +66,33 @@ class StartupProgressTrackerTest {
     }
 
     @Test
+    fun `stops waiting shortly after the page says no covers are coming`() = runTest {
+        val tracker = StartupProgressTracker()
+        val ready = async { tracker.awaitFirstScreenReady() }
+        advanceTimeBy(300)
+        tracker.expectNoCovers()
+        advanceTimeBy(499)
+        assertFalse(ready.isCompleted)
+        advanceTimeBy(2)
+        assertTrue(ready.isCompleted)
+        assertEquals(801, currentTime)
+    }
+
+    @Test
+    fun `still waits for covers that start right after the page says none are coming`() = runTest {
+        val tracker = StartupProgressTracker()
+        val ready = async { tracker.awaitFirstScreenReady() }
+        tracker.expectNoCovers()
+        advanceTimeBy(200)
+        tracker.coverStarted()
+        advanceTimeBy(1_000)
+        assertFalse(ready.isCompleted)
+        tracker.coverFinished()
+        advanceTimeBy(251)
+        assertTrue(ready.isCompleted)
+    }
+
+    @Test
     fun `never waits longer than the timeout`() = runTest {
         val tracker = StartupProgressTracker()
         tracker.coverStarted() // 一张都加载不出来

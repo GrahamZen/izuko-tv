@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.android.activity.MainActivity
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoDao
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
@@ -68,6 +68,11 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import kotlin.time.TimeSource
 import kotlin.uuid.ExperimentalUuidApi
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.android.activity.ProfileRestartActivity
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.toKtPath
 
 
 class AniApplication : Application() {
@@ -98,6 +103,9 @@ class AniApplication : Application() {
     @OptIn(ExperimentalUuidApi::class)
     override fun onCreate() {
         super.onCreate()
+        val currentProcess = processName()
+        // 换人重启的中转进程只画一帧、结束主进程再拉起主界面, 连日志都不配: 越早画出那一帧越好 (见 ProfileRestartActivity)
+        if (currentProcess.contains(ProfileRestartActivity.PROCESS_SUFFIX)) return
         val startupTimeMonitor = StartupTimeMonitor()
 
         val logsDir = applicationContext.getLogsDir().absolutePath
@@ -113,11 +121,17 @@ class AniApplication : Application() {
         }
         startupTimeMonitor.mark(StepName.UncaughtExceptionHandler)
 
-        val currentProcess = processName()
-        if (currentProcess.contains("torrent_service") || currentProcess.contains("codecprobe")) {
+        if (currentProcess.contains("torrent_service") ||
+            currentProcess.contains("codecprobe")
+        ) {
             // In service process, we don't need any dependency which is use in app process.
             return
         }
+
+        // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
+        UserProfiles.install(
+            UserProfileRegistry.load(filesDir.resolve(UserProfileRegistry.FILE_NAME).toKtPath().inSystem),
+        )
 
         instance = Instance() // set instance
 
@@ -198,7 +212,7 @@ class AniApplication : Application() {
             }
         }
 
-        torrentCacheDao.value = koin.get<AniDatabase>().torrentCacheInfoDao()
+        torrentCacheDao.value = koin.get<DeviceAniDatabase>().database.torrentCacheInfoDao()
         mediaCacheBaseSaveDir.value = File(koin.get<MediaSaveDirProvider>().saveDir)
         // 27 以下 BT 引擎跑在应用进程内, 没有独立进程服务可连, 不启动这个循环 (否则它会去起服务).
         if (supportsTorrentServiceProcess) {

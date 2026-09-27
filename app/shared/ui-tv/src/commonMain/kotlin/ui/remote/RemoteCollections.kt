@@ -23,6 +23,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
@@ -64,13 +65,16 @@ internal object RemoteCollections {
     }
 
     private fun list(type: UnifiedCollectionType): JsonObject {
-        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
-        if (session !is SessionState.Valid) {
-            val offline = session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR
-            return buildJsonObject {
-                put("ok", false)
-                put("needLogin", !offline)
-                put("message", if (offline) tr("电视连不上 Bangumi，稍后再试") else tr("电视还没登录，登录后才能看到在看 / 想看"))
+        // 本地档没有登录可言: 收藏就在本地库里 (下面的同步对它直接返回)
+        if (!UserProfiles.current.isLocal) {
+            val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
+            if (session !is SessionState.Valid) {
+                val offline = session is SessionState.Invalid && session.reason == InvalidSessionReason.NETWORK_ERROR
+                return buildJsonObject {
+                    put("ok", false)
+                    put("needLogin", !offline)
+                    put("message", if (offline) tr("电视连不上 Bangumi，稍后再试") else tr("电视还没登录，登录后才能看到在看 / 想看"))
+                }
             }
         }
         // 同一种收藏一分钟内同步过就不再联网 (网页上切来切去、缓存面板关上重读), 直接读本地库

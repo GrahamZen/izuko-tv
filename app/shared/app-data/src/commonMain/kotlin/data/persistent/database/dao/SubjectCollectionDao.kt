@@ -215,6 +215,71 @@ interface SubjectCollectionDao {
         if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
     }
 
+    @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
+    suspend fun getById(subjectId: Int): SubjectCollectionEntity?
+
+    @Query("""SELECT episodeId, selfCollectionType FROM episode_collection WHERE subjectId = :subjectId""")
+    suspend fun episodeSelfStatesOf(subjectId: Int): List<EpisodeSelfState>
+
+    /**
+     * 本地档的单条目落库 (见 `UserProfileKind.LOCAL`): 同 [upsertSubjectWithEpisodes], 但收藏类型、自己的评分、收藏更新时间
+     * 与每集的看过状态**保留库里的** —— 本地档取到的是匿名结果, 这几项一律是空的, 而这个人的收藏只存在本地.
+     * 读与写在同一个事务里: 取数途中用户改了收藏 (那也是写这张表), 不会被这次落库盖回去.
+     *
+     * @param episodes `null` = 分集这次没取 (还新鲜), 只写条目
+     */
+    @Transaction
+    suspend fun upsertSubjectKeepingSelfState(
+        subject: SubjectCollectionEntity,
+        episodes: List<EpisodeCollectionEntity>?,
+    ) {
+        val kept = getById(subject.subjectId)?.let { local ->
+            subject.copy(
+                collectionType = local.collectionType,
+                selfRatingInfo = local.selfRatingInfo,
+                lastUpdated = local.lastUpdated,
+            )
+        } ?: subject
+        upsert(listOf(kept).preservingRelationsFreshness().single())
+        if (episodes == null) return
+        val watched = episodeSelfStatesOf(subject.subjectId).associate { it.episodeId to it.selfCollectionType }
+        val keptEpisodes = episodes.map { episode ->
+            watched[episode.episodeId]?.let { episode.copy(selfCollectionType = it) } ?: episode
+        }
+        val newIds = keptEpisodes.mapTo(HashSet()) { it.episodeId }
+        val staleIds = watched.keys.filter { it !in newIds }
+        upsertEpisodesInternal(keptEpisodes)
+        if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
+    }
+
+    /** 收藏了的条目数 (浏览过而没收藏的不算). */
+    @Query("""SELECT COUNT(*) FROM subject_collection WHERE collectionType != :notCollected""")
+    suspend fun countSelfCollected(notCollected: UnifiedCollectionType = UnifiedCollectionType.NOT_COLLECTED): Int
+
+    /** 标成 [type] 的集数. */
+    @Query("""SELECT COUNT(*) FROM episode_collection WHERE selfCollectionType = :type""")
+    suspend fun countEpisodesBySelfType(type: UnifiedCollectionType): Int
+
+    /**
+     * 清掉这个库里所有自己的记录: 收藏类型改回没收藏, 评分 / 短评 / 标签 / 私密清空, 每集的看过状态清掉; 条目与分集信息留着.
+     *
+     * @param emptyTags 按 [ProtoConverters.StringList] 编码好的空标签列表 (见 [updateRating] 上的说明)
+     */
+    @Transaction
+    suspend fun clearAllSelfStates(emptyTags: ByteArray) {
+        resetAllSubjectSelfStates(UnifiedCollectionType.NOT_COLLECTED, emptyTags)
+        resetAllEpisodeSelfTypes(UnifiedCollectionType.NOT_COLLECTED)
+    }
+
+    @Query(
+        """UPDATE subject_collection SET collectionType = :notCollected, self_rating_score = 0, self_rating_comment = NULL,
+        self_rating_tags = :emptyTags, self_rating_isPrivate = 0""",
+    )
+    suspend fun resetAllSubjectSelfStates(notCollected: UnifiedCollectionType, emptyTags: ByteArray)
+
+    @Query("""UPDATE episode_collection SET selfCollectionType = :notCollected""")
+    suspend fun resetAllEpisodeSelfTypes(notCollected: UnifiedCollectionType)
+
     /** 批量版 (收藏列表分页): 同样保留盖章 + 条目与分集同事务; 不做差集删除 (与原行为一致). */
     @Transaction
     suspend fun upsertSubjectsWithEpisodes(
@@ -520,4 +585,10 @@ data class RelationsFreshness(
     val subjectId: Int,
     val cachedStaffUpdated: Long,
     val cachedCharactersUpdated: Long,
+)
+
+/** [SubjectCollectionDao.episodeSelfStatesOf] 的投影: 一集的看过状态, 本地档落库时保留用. */
+data class EpisodeSelfState(
+    val episodeId: Int,
+    val selfCollectionType: UnifiedCollectionType,
 )

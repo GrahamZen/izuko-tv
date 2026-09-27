@@ -30,6 +30,8 @@ import me.him188.ani.app.data.repository.player.EpisodeHistories
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionsSaveData
 import me.him188.ani.app.data.repository.user.TokenSave
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.utils.httpdownloader.DownloadState
 import me.him188.ani.utils.io.SystemPath
 
@@ -70,7 +72,7 @@ abstract class PlatformDataStoreManager {
         DataStoreFactory.create(
             serializer = EpisodeHistories.serializer()
                 .asDataStoreSerializer({ EpisodeHistories.Empty }),
-            produceFile = { resolveDataStoreFile("episodeHistories") },
+            produceFile = { resolveDataStoreFile(profileScoped("episodeHistories")) },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 EpisodeHistories.Empty
             },
@@ -173,7 +175,7 @@ abstract class PlatformDataStoreManager {
     val tokenStore by lazy {
         DataStoreFactory.create(
             serializer = TokenSave.serializer().asDataStoreSerializer({ TokenSave.Initial }),
-            produceFile = { resolveDataStoreFile("authSession") },
+            produceFile = { resolveDataStoreFile(profileScoped("authSession")) },
             corruptionHandler = ReplaceFileCorruptionHandler { TokenSave.Initial },
         )
     }
@@ -181,7 +183,7 @@ abstract class PlatformDataStoreManager {
     val selfInfoStore by lazy {
         DataStoreFactory.create(
             serializer = SelfInfo.serializer().nullable.asDataStoreSerializer({ null }),
-            produceFile = { resolveDataStoreFile("selfInfo") },
+            produceFile = { resolveDataStoreFile(profileScoped("selfInfo")) },
             corruptionHandler = ReplaceFileCorruptionHandler { null },
         )
     }
@@ -196,6 +198,15 @@ abstract class PlatformDataStoreManager {
     abstract val mediaCacheMetadataStore: DataStore<List<MediaCacheSave>>
 
     abstract fun resolveDataStoreFile(name: String): SystemPath
+
+    /**
+     * 按人的配置文件名 (登录会话、个人信息、旧的播放进度存储): 每个用户一份, 见 [UserProfile.scopedFileName].
+     * 其余配置 (设置、数据源、缓存清单…) 整机共用.
+     */
+    private fun profileScoped(name: String): String {
+        check(name in UserProfile.SCOPED_DATASTORE_NAMES) { "$name is not a per-user data store" }
+        return UserProfiles.current.scopedFileName(name)
+    }
 
     protected val replaceFileCorruptionHandlerForPreferences: ReplaceFileCorruptionHandler<Preferences> =
         ReplaceFileCorruptionHandler { mutablePreferencesOf() }

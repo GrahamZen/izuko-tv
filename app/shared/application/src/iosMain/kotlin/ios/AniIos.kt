@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.models.preference.PikPakConfig
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -300,7 +300,7 @@ fun getIosModules(
     single<HttpMediaCacheEngine> {
         @Suppress("DEPRECATION")
         HttpMediaCacheEngine(
-            dao = get<AniDatabase>().httpCacheDownloadStateDao(),
+            dao = get<DeviceAniDatabase>().database.httpCacheDownloadStateDao(),
             mediaSourceId = MediaDownloadManager.LOCAL_FS_MEDIA_SOURCE_ID,
             downloader = get<HttpDownloader>(),
             saveDir = context.files.defaultMediaCacheBaseDir
