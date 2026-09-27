@@ -67,8 +67,11 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.ModalSideSheet
+import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.foundation.widgets.rememberModalSideSheetState
 import me.him188.ani.app.ui.lang.Lang
@@ -217,13 +220,16 @@ private fun PeoplePreviewSideSheet(
                     Modifier.align(Alignment.Center)
                         .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
                         .width(TV_PEOPLE_PREVIEW_WIDTH),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = CENTERED_PANEL_SHAPE,
                     color = centeredPanelColor,
                     // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    // 居中形态没有退场动画, 关闭就是直接清空目标
-                    PeoplePreviewBody(target, imageViewer, onClose = onDismissRequest, onDismissImmediately = onDismissRequest)
+                    // 弹窗里的控件约定 (按钮画成动作按钮), 见 ProvidePopupControlStyle
+                    ProvidePopupControlStyle {
+                        // 居中形态没有退场动画, 关闭就是直接清空目标
+                        PeoplePreviewBody(target, imageViewer, onClose = onDismissRequest, onDismissImmediately = onDismissRequest)
+                    }
                 }
             }
         }
@@ -388,7 +394,7 @@ private fun PreviewSheetHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
+        AniFocusIconButton(onOpenFullPage, Modifier.ifThen(focusDriven) { focusRequester(initialFocus) }) {
             Icon(
                 Icons.Rounded.OpenInFull,
                 contentDescription = stringResource(Lang.person_details_open_full_page),

@@ -54,13 +54,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.Button
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
+import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -553,7 +557,7 @@ fun FocusEpisodeCarousel(
                     // 否则弹窗尺寸会随 TMDB 有没有图而变
                     aspectRatio = EPISODE_STILL_ASPECT_RATIO,
                     action = { modifier ->
-                        Button(
+                        AniFocusActionButton(
                             onClick = {
                                 onSetEpisodeCollectionType.invoke(
                                     target,
@@ -575,6 +579,7 @@ fun FocusEpisodeCarousel(
                                         Lang.subject_episode_mark_watched
                                     },
                                 ),
+                                style = MaterialTheme.typography.labelLarge,
                             )
                         }
                     },
@@ -1069,9 +1074,6 @@ val DETAILS_TEXT_CONTENT_PADDING = 8.dp
  */
 val DETAILS_TEXT_END_RESERVE = 88.dp
 
-/** TV 详情页弹出菜单容器的不透明度: 半透明, 隐约透出下层内容 (全部菜单统一用此值). */
-const val MENU_CONTAINER_ALPHA = 0.95f
-
 /**
  * TV 选集卡片 (大卡): 有 TMDB 分集缩略图时图占满卡片, 集号/集名压在
  * 底部 scrim 上; 无图时回退 [EpisodeGridCell] 的纯文字样式, 尺寸一致. 聚焦时集名跑马灯.
@@ -1536,6 +1538,7 @@ private fun formatAirDate(date: PackedDate): String? {
  *
  * 用裸 [Popup] 而非 material3 DropdownMenu: 后者的内容列带 width(IntrinsicSize.Max),
  * 内在尺寸测量会穿透到 LazyVerticalGrid (SubcomposeLayout 不支持内在测量, 直接崩溃).
+ * 外观照其他弹窗与菜单 (半透明面板色、统一圆角与内边距、标题 titleLarge).
  *
  * 需组合在锚点 (入口圆钮) 所在的 Box 内, 菜单弹出位置跟随锚点.
  */
@@ -1613,13 +1616,13 @@ fun FocusEpisodeGridDropdown(
             // Popup 是独立窗口, 按键到不了播放页的根路由 —— 播放器选集条长按开的这个网格
             // 盖在画面上, 遥控器播放暂停键仍该管用. 播放页之外为空操作
             Modifier.tvOverlayWindowKeys(onDismissRequest).width(560.dp).heightIn(max = 480.dp),
-            shape = RoundedCornerShape(16.dp),
-            // 半透明容器 (详情页所有弹出菜单统一), 隐约透出下层内容
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = MENU_CONTAINER_ALPHA),
-            shadowElevation = 8.dp,
+            shape = CENTERED_PANEL_SHAPE,
+            color = centeredPanelColor,
+            // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Column(
-                Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
             Row(
@@ -1629,10 +1632,10 @@ fun FocusEpisodeGridDropdown(
                 Text(
                     stringResource(Lang.subject_details_episodes),
                     Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                 )
                 if (onCacheClick != null) {
-                    IconButton(onCacheClick) {
+                    AniFocusIconButton(onCacheClick) {
                         Icon(
                             rememberVectorPainter(Icons.Rounded.Download),
                             contentDescription = stringResource(Lang.subject_episode_cache),
@@ -1841,7 +1844,8 @@ private fun FocusEpisodeGridHeaderLine(
 }
 
 /**
- * [FocusEpisodeGridDropdown] 里的数字方块. 着色沿用 [EpisodeGridCell] 规则, 未开播的集置灰.
+ * [FocusEpisodeGridDropdown] 里的数字方块. 三态同弹窗里的其他选项 ([AniFocusSelectableSurface]): 聚焦主题色实底,
+ * 当前集是选中色; 看过的与未开播的比面板低一档 (未开播的字再置灰), 其余比面板高一档.
  * [onLongClick] 非 null 时支持长按确认键 (按住 OK) 触发: 检测方式同 [FocusEpisodeCard],
  * 但按住计数一到阈值就立即触发 (不等松开) —— 跳转类操作即时反馈更顺手.
  */
@@ -1864,32 +1868,33 @@ private fun FocusEpisodeSortCell(
         )
     }
     val isWatched = item.isDoneOrDropped
-    val containerColor = when {
-        isPlaying -> MaterialTheme.colorScheme.primaryContainer
-        isWatched || !item.isBroadcast -> MaterialTheme.colorScheme.surfaceContainerLow
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
-    }
+    val dimmed = isWatched || !item.isBroadcast
+    // 未开播 / 看过的字色; 聚焦与当前集用底座给的内容色
     val sortColor = when {
-        isPlaying -> MaterialTheme.colorScheme.primary
         !item.isBroadcast -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         isWatched -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        else -> MaterialTheme.colorScheme.onSurface
+        else -> Color.Unspecified
     }
     // 按住确认键的视觉反馈: 按住期间方块轻微缩小; 达到长按阈值后恢复原状 —
     // "缩下去又弹回来" = 长按已经触发
     val pressing = onLongClick != null && longPressState.pressing
     val pressScale by animateFloatAsState(if (pressing) 0.88f else 1f)
-    Surface(
+    AniFocusSelectableSurface(
         onClick = onClick,
+        selected = isPlaying,
+        shape = RoundedCornerShape(8.dp),
         // scale 放链最外层: 调用方 modifier 里可能带描边/底色, 按住缩小时一起缩
         modifier = Modifier.scale(pressScale).then(modifier).height(48.dp).then(longPressModifier),
-        shape = RoundedCornerShape(8.dp),
-        color = containerColor,
-    ) {
+        unselectedColor = if (dimmed) {
+            MaterialTheme.colorScheme.surfaceContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+    ) { focused ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 item.sort.toString(),
-                color = sortColor,
+                color = if (focused || isPlaying) Color.Unspecified else sortColor,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
             )

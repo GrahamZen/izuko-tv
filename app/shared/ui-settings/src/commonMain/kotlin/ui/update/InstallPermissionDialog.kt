@@ -17,18 +17,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_about_app_name
 import me.him188.ani.app.ui.lang.settings_update_install_permission_install_anyway
@@ -83,17 +83,17 @@ fun InstallPermissionDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onDismissRequest) { Text(cancel) }
+                    AniTextButton(onClick = onDismissRequest) { Text(cancel) }
                     Spacer(Modifier.width(8.dp))
                     // 弹窗是独立窗口, 不指定的话遥控器上焦点不在任何按钮上
                     if (offerInstallWithoutPermission) {
-                        TextButton(onClick = onOpenSettings) { Text(openSettings) }
+                        AniTextButton(onClick = onOpenSettings) { Text(openSettings) }
                         Spacer(Modifier.width(8.dp))
-                        Button(onClick = onInstallWithoutPermission, modifier = Modifier.tvWindowInitialFocus()) {
+                        AniButton(onClick = onInstallWithoutPermission, modifier = Modifier.tvWindowInitialFocus()) {
                             Text(installAnyway)
                         }
                     } else {
-                        Button(onClick = onOpenSettings, modifier = Modifier.tvWindowInitialFocus()) {
+                        AniButton(onClick = onOpenSettings, modifier = Modifier.tvWindowInitialFocus()) {
                             Text(openSettings)
                         }
                     }
@@ -101,22 +101,22 @@ fun InstallPermissionDialog(
             }
         }
     } else {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = onDismissRequest,
             title = { Text(title) },
             text = { Text(message) },
             confirmButton = {
                 if (offerInstallWithoutPermission) {
-                    Button(onClick = onInstallWithoutPermission) { Text(installAnyway) }
+                    AniButton(onClick = onInstallWithoutPermission) { Text(installAnyway) }
                 } else {
-                    Button(onClick = onOpenSettings) { Text(openSettings) }
+                    AniButton(onClick = onOpenSettings) { Text(openSettings) }
                 }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = onDismissRequest) { Text(cancel) }
+                    AniTextButton(onClick = onDismissRequest) { Text(cancel) }
                     if (offerInstallWithoutPermission) {
-                        TextButton(onClick = onOpenSettings) { Text(openSettings) }
+                        AniTextButton(onClick = onOpenSettings) { Text(openSettings) }
                     }
                 }
             },

@@ -21,16 +21,12 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -59,6 +55,10 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.getClipEntryText
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -204,7 +204,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                 state.addNew(state.editingUrl)
             }
             val isAddInProgressState = state.isAddInProgress.collectAsStateWithLifecycle()
-            AlertDialog(
+            AniAlertDialog(
                 { showAddDialog = false },
                 confirmButton = {
                     AnimatedContent(
@@ -215,7 +215,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                         if (it) {
                             CircularProgressIndicator(Modifier.size(24.dp))
                         } else {
-                            TextButton(confirmAdd) {
+                            AniTextButton(confirmAdd) {
                                 Text(stringResource(Lang.settings_media_source_subscription_add_confirm))
                             }
                         }
@@ -289,12 +289,12 @@ private fun SettingsScope.SubscriptionItem(
             IconButton({ showDropdown = true }) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = null)
             }
-            DropdownMenu(showDropdown, { showDropdown = false }) {
+            AniDropdownMenu(showDropdown, { showDropdown = false }) {
                 val uiScope = rememberCoroutineScope()
                 val clipboard = LocalClipboard.current
                 val toaster = LocalToaster.current
 
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Share, null) },
                     text = { Text(stringResource(Lang.settings_media_source_subscription_copy_link)) },
                     onClick = {
@@ -307,7 +307,7 @@ private fun SettingsScope.SubscriptionItem(
                 )
 
                 val enableActions = !state.isExportInProgress.collectAsStateWithLifecycle().value
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Share, null) },
                     text = { Text(stringResource(Lang.settings_media_source_subscription_export_all)) },
                     onClick = {
@@ -321,7 +321,7 @@ private fun SettingsScope.SubscriptionItem(
                     enabled = enableActions,
                 )
 
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     text = {
                         Text(
@@ -339,7 +339,7 @@ private fun SettingsScope.SubscriptionItem(
         },
     )
     if (showConfirmDelete) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showConfirmDelete = false },
             icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(stringResource(Lang.settings_media_source_subscription_delete_dialog)) },
@@ -352,7 +352,7 @@ private fun SettingsScope.SubscriptionItem(
                 )
             },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     {
                         state.delete(subscription)
                         showConfirmDelete = false

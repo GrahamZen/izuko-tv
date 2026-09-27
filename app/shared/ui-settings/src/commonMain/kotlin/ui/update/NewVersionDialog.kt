@@ -25,14 +25,12 @@ import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Launch
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,6 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.widgets.AniButton
+import me.him188.ani.app.ui.foundation.widgets.AniOutlinedButton
+import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
+import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_update_popup_auto_update
 import me.him188.ani.app.ui.lang.settings_update_popup_close
@@ -78,7 +80,7 @@ fun NewVersionPopupCard(
             }
         },
         actions = {
-            OutlinedButton(
+            AniOutlinedButton(
                 onClick = onDetailsClick,
                 modifier = Modifier,
             ) {
@@ -90,7 +92,7 @@ fun NewVersionPopupCard(
                 Text(stringResource(Lang.settings_update_popup_see_details))
             }
             Spacer(Modifier.width(16.dp))
-            Button(
+            AniButton(
                 onClick = onAutoUpdateClick,
                 modifier = autoUpdateButtonModifier,
             ) {
@@ -151,8 +153,10 @@ fun BasicNotificationPopupCard(
     actions: @Composable RowScope.() -> Unit = {},
     secondaryActions: @Composable RowScope.() -> Unit = {},
     shape: CornerBasedShape = MaterialTheme.shapes.extraLarge,
+    // 容器色取弹窗那一档 (TV 上半透明, 其余平台 surfaceContainerHigh); 半透明底查不到 "on" 色, 内容色显式给
     colors: CardColors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = aniDialogContainerColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ),
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -161,50 +165,53 @@ fun BasicNotificationPopupCard(
         shape = shape,
         colors = colors,
     ) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-                .widthIn(min = 280.dp, max = 380.dp),
-        ) {
-            /* ─── Title + Dismiss ─────────────────────────────────────────────── */
-            Row(
-                verticalAlignment = Alignment.Top,
-                modifier = Modifier.fillMaxWidth(),
+        // 卡上的按钮画成弹窗动作按钮 (TV), 见 ProvidePopupControlStyle
+        ProvidePopupControlStyle {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                    .widthIn(min = 280.dp, max = 380.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                        title()
+                /* ─── Title + Dismiss ─────────────────────────────────────────────── */
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        ProvideTextStyle(MaterialTheme.typography.titleLarge) {
+                            title()
+                        }
+
+                        ProvideTextStyleContentColor(
+                            MaterialTheme.typography.bodyMedium,
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        ) {
+                            subtitle()
+                        }
                     }
+                    dismissButton()
+                }
 
-                    ProvideTextStyleContentColor(
-                        MaterialTheme.typography.bodyMedium,
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    ) {
-                        subtitle()
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Release Notes ──────────────────────────────────────────────── */
+                Column {
+                    content()
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Action Buttons ────────────────────────────────────────────── */
+                Row(
+    //                horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.End),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FlowRow(Modifier.weight(1f), verticalArrangement = Arrangement.aligned(Alignment.CenterVertically)) {
+                        secondaryActions()
                     }
+                    actions()
                 }
-                dismissButton()
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            /* ─── Release Notes ──────────────────────────────────────────────── */
-            Column {
-                content()
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            /* ─── Action Buttons ────────────────────────────────────────────── */
-            Row(
-//                horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.End),
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FlowRow(Modifier.weight(1f), verticalArrangement = Arrangement.aligned(Alignment.CenterVertically)) {
-                    secondaryActions()
-                }
-                actions()
             }
         }
     }

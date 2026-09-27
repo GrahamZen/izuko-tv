@@ -10,9 +10,7 @@
 package me.him188.ani.app.ui.settings.tabs.media
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +22,8 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_pikpak_description
 import me.him188.ani.app.ui.lang.settings_pikpak_download_concurrency_description
@@ -203,12 +203,12 @@ internal fun SettingsScope.PikPakAcceleratorGroup(
     }
 
     if (showRecommendDialog) {
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { showRecommendDialog = false },
             title = { Text(stringResource(Lang.settings_pikpak_recommend_title)) },
             text = { Text(stringResource(Lang.settings_pikpak_recommend_message)) },
             confirmButton = {
-                TextButton(
+                AniTextButton(
                     onClick = {
                         mediaSelectorSettings.update(
                             mediaSelectorSettings.value.copy(preferKind = MediaSourceKind.BitTorrent),
@@ -220,7 +220,7 @@ internal fun SettingsScope.PikPakAcceleratorGroup(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRecommendDialog = false }) {
+                AniTextButton(onClick = { showRecommendDialog = false }) {
                     Text(stringResource(Lang.settings_pikpak_recommend_dismiss))
                 }
             },

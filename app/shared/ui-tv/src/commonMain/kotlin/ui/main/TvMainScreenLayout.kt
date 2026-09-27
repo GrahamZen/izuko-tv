@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
@@ -134,6 +135,8 @@ import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
@@ -680,6 +683,8 @@ private fun TvActionPanelDialog(
     // 不用 Popup 挂码卡: 它挂在应用窗口上, 在弹窗窗口里的定位与层级都靠不住
     val showRemoteQr = defaultFocus != TvActionPanelDefaultFocus.EXIT
     Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // 窗外压暗与其他弹窗同一档 (系统默认 0.6 会把背后的页面压成一片黑)
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         var panelBounds by remember { mutableStateOf<Rect?>(null) }
         var qrBounds by remember { mutableStateOf<Rect?>(null) }
         Box(
@@ -696,7 +701,7 @@ private fun TvActionPanelDialog(
                 .align(Alignment.Center)
                 .onGloballyPositioned { panelBounds = it.boundsInParent() }
                 .width(TV_ACTION_PANEL_WIDTH),
-            shape = RoundedCornerShape(16.dp),
+            shape = CENTERED_PANEL_SHAPE,
             // 与其他 TV 弹窗同一底色 (半透明玻璃), 内容色显式给 —— 半透明底查不到 "on" 色,
             // 不给会退回 LocalContentColor 的默认纯黑 (见 AniCenteredPanelDialog 的注释)
             color = centeredPanelColor,

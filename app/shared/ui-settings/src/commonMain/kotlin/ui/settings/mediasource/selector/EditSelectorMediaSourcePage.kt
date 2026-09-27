@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -62,6 +61,7 @@ import me.him188.ani.app.ui.foundation.layout.isWidthCompact
 import me.him188.ani.app.ui.foundation.layout.materialWindowMarginPadding
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_more
@@ -252,7 +252,7 @@ fun EditSelectorMediaSourceScreen(
                                         stringResource(Lang.settings_mediasource_selector_more),
                                     )
                                 }
-                                DropdownMenu(showDropdown, { showDropdown = false }) {
+                                AniDropdownMenu(showDropdown, { showDropdown = false }) {
                                     MediaSourceConfigurationDefaults.DropdownMenuImport(
                                         state = state.importState,
                                         onImported = { showDropdown = false },

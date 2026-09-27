@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -47,6 +45,8 @@ import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.mediasource.test.RefreshResult
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
@@ -119,7 +119,7 @@ object RefreshIndicationDefaults {
     ) {
         if (result !is RefreshResult.Failed) return
         var showErrorDialog by remember { mutableStateOf(false) }
-        TextButton(
+        AniTextButton(
             onClick = {
                 if (result is RefreshResult.UnknownError) {
                     showErrorDialog = true
@@ -161,7 +161,7 @@ object RefreshIndicationDefaults {
             )
         }
         if (showErrorDialog) {
-            AlertDialog(
+            AniAlertDialog(
                 { showErrorDialog = false },
                 title = { Text(stringResource(Lang.settings_mediasource_error_title)) },
                 text = {
@@ -194,7 +194,7 @@ object RefreshIndicationDefaults {
                     )
                 },
                 confirmButton = {
-                    TextButton(onRefresh) {
+                    AniTextButton(onRefresh) {
                         Text(stringResource(Lang.settings_mediasource_retry))
                     }
                 },

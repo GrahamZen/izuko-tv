@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -41,6 +39,8 @@ import me.him188.ani.app.domain.mediasource.quark.QuarkAuthException
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
 import me.him188.ani.app.domain.mediasource.quark.QuarkQrLoginState
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_quark_account
 import me.him188.ani.app.ui.lang.settings_media_quark_close
@@ -250,7 +250,7 @@ private fun QuarkQrLoginDialog(
     onDismiss: () -> Unit,
 ) {
     val canRefresh = state is QuarkQrLoginState.Expired || state is QuarkQrLoginState.Failed
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Lang.settings_media_quark_qr_title)) },
         text = {
@@ -289,11 +289,11 @@ private fun QuarkQrLoginDialog(
         },
         confirmButton = {
             if (canRefresh) {
-                TextButton(onClick = onRefresh) { Text(stringResource(Lang.settings_media_quark_qr_refresh)) }
+                AniTextButton(onClick = onRefresh) { Text(stringResource(Lang.settings_media_quark_qr_refresh)) }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Lang.settings_media_quark_close)) }
+            AniTextButton(onClick = onDismiss) { Text(stringResource(Lang.settings_media_quark_close)) }
         },
     )
 }

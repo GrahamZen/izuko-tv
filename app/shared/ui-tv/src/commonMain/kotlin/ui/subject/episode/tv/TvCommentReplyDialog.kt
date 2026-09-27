@@ -185,14 +185,6 @@ private val TV_REPLY_REACTION_GAP = 10.dp
 /** 回应里表情图的边长 (与正文行内表情差不多大, 一眼能认出是哪一枚). */
 private val TV_REPLY_REACTION_STICKER_SIZE = 22.dp
 
-/**
- * 弹窗外的压暗层: 这层要的就是"把下面的画面按下去", 与主题无关, 用黑.
- *
- * 别只看这个数: 弹窗开着时控制层与评论面板都留在下面 (见调用处), 它自己的上/下渐变 scrim
- * 还要再叠一层, 屏幕上下缘的实际暗度是 `1-(1-本值)(1-那层)`. 所以这层给得比一般弹窗遮罩松.
- */
-/** 弹窗内容内边距: 比面板默认那档宽一些, 这里内容多且有输入框. */
-private val TV_REPLY_DIALOG_PADDING = 28.dp
 
 /**
  * 弹窗内取色一律走配色表, 与其他弹窗 (更换弹幕、评分等) 同一套语言:
@@ -302,7 +294,6 @@ internal fun TvCommentReplyDialog(
         modifier = modifier.tvFocusNavSignal(focus),
         // 没有引用区就按内容收高: 撑满屏高的话输入框和发送按钮会吊在一大片空白下面
         heightFraction = if (quoted != null) TV_REPLY_DIALOG_HEIGHT_FRACTION else null,
-        contentPadding = TV_REPLY_DIALOG_PADDING,
         overlay = {
             // 表情选择器: 盖在本弹窗之上 (同一个全屏 Box 里的第二个孩子). 返回键先关它再关本弹窗,
             // 由根路由处理 (见 TvEpisodeScreen) —— 它在弹窗之上, 但按键仍走那唯一一条路由

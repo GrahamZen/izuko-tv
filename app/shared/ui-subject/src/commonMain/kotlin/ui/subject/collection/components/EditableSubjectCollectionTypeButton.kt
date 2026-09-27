@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -44,6 +42,8 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.external.placeholder.placeholder
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -215,12 +215,12 @@ private fun SetAllEpisodeDoneDialog(
             runCatching { confirmFocus.requestFocus() }
         }
     }
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         icon = { Icon(Icons.Rounded.TaskAlt, null) },
         text = { Text(stringResource(Lang.subject_collection_set_all_episodes_watched)) },
         confirmButton = {
-            TextButton(onConfirm, Modifier.focusRequester(confirmFocus)) {
+            AniTextButton(onConfirm, Modifier.focusRequester(confirmFocus)) {
                 Text(stringResource(Lang.subject_collection_set))
             }
 
@@ -228,7 +228,7 @@ private fun SetAllEpisodeDoneDialog(
                 CircularProgressIndicator(Modifier.padding(start = 8.dp).size(24.dp))
             }
         },
-        dismissButton = { TextButton(onDismissRequest) { Text(stringResource(Lang.subject_collection_ignore)) } },
+        dismissButton = { AniTextButton(onDismissRequest) { Text(stringResource(Lang.subject_collection_ignore)) } },
         // 对话框是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器内嵌详情页设"看过"时会弹出它,
         // 画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
         modifier = modifier.tvOverlayWindowKeys(onDismissRequest),

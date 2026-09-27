@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.exploration.search
 
+import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
 import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedContent
@@ -176,6 +177,13 @@ import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
@@ -2436,6 +2444,9 @@ private fun TvSearchActiveFilterChip(
 /**
  * 筛选弹窗: 排序 / 最低评分 / 各标签维度的胶囊选项. 改动先存本地, 确认才应用
  * (避免每碰一个选项就触发一次搜索), 取消/返回丢弃.
+ *
+ * 外观同其他弹窗 (半透明面板色、压暗、内边距取 AniCenteredPanelDialog 的公共值); 不直接套它是因为
+ * 初始焦点与分区吸附要在 Dialog 内容里自己建.
  */
 @Composable
 private fun TvSearchFilterDialog(
@@ -2457,6 +2468,7 @@ private fun TvSearchFilterDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         // 必须在 Dialog 内容里建: 窗口初始焦点的私有 scope 按 LocalWindowInfo 判窗口焦点来重试,
         // 建在外面读到的是主窗口 (见 ViewAllGridDialog 同一处注释)
         val firstChipModifier = Modifier.tvWindowInitialFocus()
@@ -2465,10 +2477,12 @@ private fun TvSearchFilterDialog(
             Modifier.tvOverlayWindowKeys(onDismiss)
                 .fillMaxWidth(TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeight(TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = CENTERED_PANEL_SHAPE,
+            color = centeredPanelColor,
+            // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Column(Modifier.padding(24.dp)) {
+            Column(Modifier.padding(CENTERED_PANEL_CONTENT_PADDING)) {
                 Text(
                     stringResource(Lang.search_tv_filter),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -2502,7 +2516,7 @@ private fun TvSearchFilterDialog(
                     }
                 }
                 LazyColumn(
-                    Modifier.weight(1f).padding(top = 16.dp),
+                    Modifier.weight(1f).padding(top = CENTERED_PANEL_TITLE_GAP),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
@@ -2512,7 +2526,7 @@ private fun TvSearchFilterDialog(
                             modifier = sectionSnap(0),
                         ) {
                             SearchSort.entries.forEachIndexed { index, entry ->
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = tvSearchSortLabel(entry),
                                     selected = sort == entry,
                                     onClick = { sort = entry },
@@ -2527,7 +2541,7 @@ private fun TvSearchFilterDialog(
                             modifier = sectionSnap(1),
                         ) {
                             listOf(null, 7, 8, 9).forEach { min ->
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = min?.let { "$it+" }
                                         ?: stringResource(Lang.search_tv_filter_any),
                                     selected = minRating == min,
@@ -2548,14 +2562,14 @@ private fun TvSearchFilterDialog(
                                 stringResource(Lang.search_tv_filter_year),
                                 modifier = sectionSnap(2),
                             ) {
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = stringResource(Lang.exploration_search_filter_year_all),
                                     selected = year == null,
                                     // 清年份连带清季度: 季度从属于年份 (同上游 withYearFilter)
                                     onClick = { year = null; season = null },
                                 )
                                 recentYears.forEach { y ->
-                                    TvSearchFilterChip(
+                                    AniFocusChip(
                                         text = y.toString(),
                                         selected = year == y,
                                         onClick = { if (year != y) season = null; year = y },
@@ -2565,7 +2579,7 @@ private fun TvSearchFilterDialog(
                                 // 之后焦点还留在原处, 不会被挤到几行之外.
                                 // 收起会藏掉已选的老年份, 所以选着老年份时只给展开这一个方向.
                                 if (olderYears.isNotEmpty() && !(yearsExpanded && year?.let { it in olderYears } == true)) {
-                                    TvSearchFilterChip(
+                                    AniFocusChip(
                                         text = stringResource(
                                             if (yearsExpanded) Lang.search_tv_filter_year_less
                                             else Lang.search_tv_filter_year_more,
@@ -2576,7 +2590,7 @@ private fun TvSearchFilterDialog(
                                 }
                                 if (yearsExpanded) {
                                     olderYears.forEach { y ->
-                                        TvSearchFilterChip(
+                                        AniFocusChip(
                                             text = y.toString(),
                                             selected = year == y,
                                             onClick = { if (year != y) season = null; year = y },
@@ -2592,13 +2606,13 @@ private fun TvSearchFilterDialog(
                                     stringResource(Lang.search_tv_filter_season),
                                     modifier = sectionSnap(3),
                                 ) {
-                                    TvSearchFilterChip(
+                                    AniFocusChip(
                                         text = stringResource(Lang.exploration_search_filter_season_all),
                                         selected = season == null,
                                         onClick = { season = null },
                                     )
                                     AnimeSeason.entries.forEach { s ->
-                                        TvSearchFilterChip(
+                                        AniFocusChip(
                                             text = "Q${s.quarterNumber}",
                                             selected = season == s,
                                             onClick = { season = s },
@@ -2623,7 +2637,7 @@ private fun TvSearchFilterDialog(
                             modifier = sectionSnap(tagSectionBase + chipIndex),
                         ) {
                             chip.values.forEach { value ->
-                                TvSearchFilterChip(
+                                AniFocusChip(
                                     text = value,
                                     selected = selectedTags[value] == true,
                                     onClick = {
@@ -2639,9 +2653,7 @@ private fun TvSearchFilterDialog(
                     Modifier.fillMaxWidth().padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    TvSearchFilterChip(
-                        text = stringResource(Lang.search_tv_filter_confirm),
-                        selected = true,
+                    AniFocusActionButton(
                         onClick = {
                             onConfirm(
                                 query.copy(
@@ -2653,7 +2665,9 @@ private fun TvSearchFilterDialog(
                                 ),
                             )
                         },
-                    )
+                    ) {
+                        Text(stringResource(Lang.search_tv_filter_confirm), style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         }
@@ -2678,42 +2692,6 @@ private fun TvSearchFilterSection(
         ) {
             content()
         }
-    }
-}
-
-@Composable
-private fun TvSearchFilterChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val container = when {
-        focused -> MaterialTheme.colorScheme.primary
-        selected -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val content = when {
-        focused -> MaterialTheme.colorScheme.onPrimary
-        selected -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = CircleShape,
-        color = container,
-        interactionSource = interactionSource,
-    ) {
-        Text(
-            text,
-            Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-            color = content,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-        )
     }
 }
 

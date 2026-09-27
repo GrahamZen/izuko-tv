@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,7 +46,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -77,6 +75,8 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
@@ -478,13 +478,13 @@ private fun PlaybackHistoryDeleteDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(stringResource(Lang.playback_history_delete_title)) },
         text = { Text(stringResource(Lang.playback_history_delete_confirmation)) },
         confirmButton = {
-            TextButton(onConfirm) {
+            AniTextButton(onConfirm) {
                 Text(stringResource(Lang.cache_subject_delete), color = MaterialTheme.colorScheme.error)
             }
         },

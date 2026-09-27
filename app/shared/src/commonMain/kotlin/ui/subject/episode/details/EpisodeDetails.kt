@@ -39,7 +39,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -48,13 +47,11 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
@@ -109,7 +106,10 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniBottomSheetDefaults
+import me.him188.ani.app.ui.foundation.widgets.AniOutlinedButton
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
@@ -755,10 +755,10 @@ fun DanmakuTimeShiftDialog( // public: 播放页变体 (遥控器形态) 的弹�
     val resetText = stringResource(Lang.subject_episode_danmaku_time_shift_reset)
     val restoreText = stringResource(Lang.subject_episode_danmaku_time_shift_restore)
 
-    AlertDialog(
+    AniAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            TextButton(onClick = { onConfirm(shift.roundToLong()) }) {
+            AniTextButton(onClick = { onConfirm(shift.roundToLong()) }) {
                 Text(confirmText)
             }
         },
@@ -801,19 +801,19 @@ fun DanmakuTimeShiftDialog( // public: 播放页变体 (遥控器形态) 的弹�
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    TextButton(onClick = { adjust(-500f) }) { Text("-0.5 s") }
-                    TextButton(onClick = { adjust(-100f) }) { Text("-0.1 s") }
-                    TextButton(onClick = { adjust(100f) }) { Text("+0.1 s") }
-                    TextButton(onClick = { adjust(500f) }) { Text("+0.5 s") }
+                    AniTextButton(onClick = { adjust(-500f) }) { Text("-0.5 s") }
+                    AniTextButton(onClick = { adjust(-100f) }) { Text("-0.1 s") }
+                    AniTextButton(onClick = { adjust(100f) }) { Text("+0.1 s") }
+                    AniTextButton(onClick = { adjust(500f) }) { Text("+0.5 s") }
                 }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedButton(onClick = { shift = 0f }) {
+                    AniOutlinedButton(onClick = { shift = 0f }) {
                         Text(resetText)
                     }
-                    OutlinedButton(
+                    AniOutlinedButton(
                         onClick = {
                             shift = currentShiftMillis.toFloat().coerceIn(sliderRange.start, sliderRange.endInclusive)
                         },

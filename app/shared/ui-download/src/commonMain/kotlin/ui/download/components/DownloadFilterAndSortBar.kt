@@ -19,9 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_filter_cache_type
 import me.him188.ani.app.ui.lang.cache_filter_collection_doing
@@ -228,12 +227,13 @@ private fun CollectionFilterChip(
         },
     ) { onDismiss ->
         UnifiedCollectionType.entries.forEach { option ->
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(renderCollectionType(option)) },
                 onClick = {
                     onChange(option)
                     onDismiss()
                 },
+                selected = option == selected,
             )
         }
     }
@@ -255,12 +255,13 @@ private fun EngineFilterChip(
         },
     ) { onDismiss ->
         options.forEach { option ->
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(renderEngineKey(option)) },
                 onClick = {
                     onChange(option)
                     onDismiss()
                 },
+                selected = option == selected,
             )
         }
     }
@@ -280,12 +281,13 @@ private fun StatusFilterChip(
         },
     ) { onDismiss ->
         DownloadStatusFilter.entries.forEach { option ->
-            DropdownMenuItem(
+            AniDropdownMenuItem(
                 text = { Text(renderStatusFilter(option)) },
                 onClick = {
                     onChange(option)
                     onDismiss()
                 },
+                selected = option == selected,
             )
         }
     }
@@ -323,7 +325,7 @@ private fun FilterPill(
             colors = FilterChipDefaults.filterChipColors(),
             enabled = enabled,
         )
-        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+        AniDropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
             dropdownContent { showMenu = false }
         }
     }
@@ -344,19 +346,15 @@ private fun SortMenuButton(
         ) {
             Icon(Icons.AutoMirrored.Rounded.Sort, stringResource(Lang.cache_filter_sort))
         }
-        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+        AniDropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
             DownloadSortOption.entries.forEach { option ->
-                DropdownMenuItem(
+                AniDropdownMenuItem(
                     text = { Text(renderSortOption(option)) },
-                    trailingIcon = {
-                        if (option == sortOption) {
-                            Icon(Icons.Rounded.Check, null)
-                        }
-                    },
                     onClick = {
                         onSortOptionChange(option)
                         showSortMenu = false
                     },
+                    selected = option == sortOption,
                 )
             }
         }
