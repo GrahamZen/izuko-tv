@@ -26,6 +26,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.episode.EpisodeLink
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.ui.main.TvPlayNextChanges
+import me.him188.ani.app.ui.main.TvPlayNextRecord
+import me.him188.ani.app.ui.main.TvPlayNextRow
+import me.him188.ani.app.ui.main.detectPlayNextChanges
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -44,6 +50,9 @@ import kotlin.time.Duration.Companion.seconds
  * 系统不给应用发 `ACTION_PREVIEW_PROGRAM_ADDED_TO_WATCH_NEXT` / `ACTION_WATCH_NEXT_PROGRAM_BROWSABLE_DISABLED` 广播 (Shield 的
  * tvlauncher 与 TvProvider 里都没有发它们的代码), 只能自己看行: 记住上次写进去的行 id (落盘, 进程被杀后下次接着认),
  * 不见了又不是我们删的 = 用户移除. 进程在时监听这张表当场处理 ([watch]), 每次重写前也对一遍 ([detect]).
+ *
+ * 多用户: 这一行整台电视一份, 是最后一个退到后台的用户写的; 记录里连同写它的人一起记 ([TvPlayNextRecord]),
+ * 只有当前用户就是写的人时才认主屏上的操作, 换了人就只重写、不改谁的收藏 (见 [detectPlayNextChanges]).
  *
  * 读写都要在 [TvHomeChannels] 的同一把锁里: 我们自己重写时删掉的行, 记录同时换成新写的, 不会被当成用户移除.
  */
@@ -65,32 +74,31 @@ internal class TvPlayNextSync(context: Context, private val koin: Koin) {
      * 记着的行 (两张以上) 一下子全没了不算用户移除: 主屏上只能一张张删, 进程在时每删一张就对一次; 整表清空是系统那边的事
      * (比如清了 TvProvider 的数据), 不该把这些番全标成搁置. 进程不在时用户一张张删光的也因此认不出, 宁可漏标.
      */
-    fun detect(existing: List<WatchNextProgram>): Changes {
-        val ids = existing.mapTo(HashSet()) { it.id }
-        val written = written()
-        var removed = written.filterKeys { it !in ids }
-        if (removed.isNotEmpty()) record(written - removed.keys)
-        if (written.size >= 2 && removed.size == written.size) {
-            logger.info { "Play Next: all ${written.size} recorded rows are gone at once, treated as an external reset" }
-            removed = emptyMap()
+    fun detect(existing: List<WatchNextProgram>): TvPlayNextChanges {
+        val record = readRecord()
+        val detection = detectPlayNextChanges(
+            record,
+            currentProfileId = UserProfiles.currentId,
+            existing = existing.map { row ->
+                TvPlayNextRow(
+                    id = row.id,
+                    manuallyAdded = row.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST,
+                    subjectId = subjectIdOf(row.intentUri, row.internalProviderId),
+                )
+            },
+        ) { it in settledWatchlistRows || it in pendingWatchlistRows }
+        detection.remainingRows?.let(::record)
+        if (detection.externalReset) {
+            logger.info { "Play Next: all ${record.rows.size} recorded rows are gone at once, treated as an external reset" }
         }
-        val added = existing
-            .filter {
-                it.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST &&
-                    it.id !in settledWatchlistRows && it.id !in pendingWatchlistRows
-            }
-            .mapNotNull { row -> subjectIdOf(row.intentUri, row.internalProviderId)?.let { row.id to it } }
-            .toMap()
-        return Changes(removed = removed.values.toSet(), added = added)
-    }
-
-    /** 用户的操作: [removed] 被移除的条目, [added] 手动加进来的卡 (行 id -> 条目). */
-    class Changes(val removed: Set<Int>, val added: Map<Long, Int>) {
-        val isEmpty get() = removed.isEmpty() && added.isEmpty()
+        if (detection.changes.foreign && existing.isNotEmpty()) {
+            logger.info { "Play Next: the row was written by user profile ${record.writerProfileId}, not ${UserProfiles.currentId}; not applying changes" }
+        }
+        return detection.changes
     }
 
     /** 把用户的操作写成收藏 (先写本地再发 Bangumi); 在本对象自己的作用域里跑, 重写被新数据打断也照样写完. */
-    fun apply(changes: Changes) {
+    fun apply(changes: TvPlayNextChanges) {
         if (changes.isEmpty) return
         // 在调用方的锁里当场记下, 下一次 detect 就看得到
         pendingWatchlistRows += changes.added.keys
@@ -150,14 +158,22 @@ internal class TvPlayNextSync(context: Context, private val koin: Koin) {
         null
     }
 
-    private fun written(): Map<Long, Int> = prefs.getStringSet(KEY_WRITTEN, null).orEmpty().mapNotNull { entry ->
-        val rowId = entry.substringBefore(':').toLongOrNull() ?: return@mapNotNull null
-        val subjectId = entry.substringAfter(':').toIntOrNull() ?: return@mapNotNull null
-        rowId to subjectId
-    }.toMap()
+    private fun readRecord(): TvPlayNextRecord {
+        val rows = prefs.getStringSet(KEY_WRITTEN, null).orEmpty().mapNotNull { entry ->
+            val rowId = entry.substringBefore(':').toLongOrNull() ?: return@mapNotNull null
+            val subjectId = entry.substringAfter(':').toIntOrNull() ?: return@mapNotNull null
+            rowId to subjectId
+        }.toMap()
+        val writer = if (prefs.contains(KEY_WRITER)) prefs.getInt(KEY_WRITER, UserProfile.PRIMARY_ID) else null
+        return TvPlayNextRecord(writer, rows)
+    }
 
+    /** 记下这一行现在的样子, 写的人是当前用户. */
     private fun record(rows: Map<Long, Int>) {
-        prefs.edit().putStringSet(KEY_WRITTEN, rows.mapTo(HashSet()) { (rowId, subjectId) -> "$rowId:$subjectId" }).commit()
+        prefs.edit()
+            .putStringSet(KEY_WRITTEN, rows.mapTo(HashSet()) { (rowId, subjectId) -> "$rowId:$subjectId" })
+            .putInt(KEY_WRITER, UserProfiles.currentId)
+            .commit()
     }
 
     private companion object {
@@ -165,6 +181,7 @@ internal class TvPlayNextSync(context: Context, private val koin: Koin) {
 
         const val PREFS_NAME = "tv_home_channels"
         const val KEY_WRITTEN = "watch_next_written_rows"
+        const val KEY_WRITER = "watch_next_written_profile"
 
         val WRITE_TIMEOUT = 30.seconds
 

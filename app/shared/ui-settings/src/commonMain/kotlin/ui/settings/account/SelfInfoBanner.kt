@@ -34,6 +34,7 @@ import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.settings_account_local_title
 import me.him188.ani.app.ui.lang.settings_account_login_register
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.user.TestSelfInfoUiState
@@ -77,7 +78,9 @@ internal fun SelfInfoBanner(
                 )
 
                 Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val (title, subtitle) = state.selfInfo.calculateDisplay()
+                    val (title, accountSubtitle) = state.selfInfo.calculateDisplay()
+                    // 本地档没有账号可写, 标一句是本地用户
+                    val subtitle = if (state.isLocalProfile) stringResource(Lang.settings_account_local_title) else accountSubtitle
                     ProvideTextStyleContentColor(
                         MaterialTheme.typography.titleMedium,
                         MaterialTheme.colorScheme.onSurface,

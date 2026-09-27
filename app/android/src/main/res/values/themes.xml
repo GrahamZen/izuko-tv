@@ -8,4 +8,12 @@
     <style name="Theme.Izuko" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
+
+    <!--
+      换人重启途中接力显示同一帧的两页 (ProfileRestartActivity / ProfileSwitchLandingActivity): 透明, 系统就不给它们画启动窗口,
+      下面那一页定格的画面一直露着, 直到本页把同一帧画上屏; 也不要进出场动画.
+    -->
+    <style name="Theme.Izuko.ProfileSwitch" parent="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

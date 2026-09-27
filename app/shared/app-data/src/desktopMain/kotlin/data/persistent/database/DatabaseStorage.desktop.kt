@@ -13,8 +13,11 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.DesktopContext
+import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.toKtPath
 
-actual fun Context.createDatabaseBuilder(): RoomDatabase.Builder<AniDatabase> {
+actual fun Context.createDatabaseBuilder(fileName: String): RoomDatabase.Builder<AniDatabase> {
     this as DesktopContext
     // Do not remove: this is what makes constraint 1 in BundledSqliteInterpositionGuard structural
     // rather than a convention about where main() calls install(). Because it sits here, no
@@ -23,6 +26,11 @@ actual fun Context.createDatabaseBuilder(): RoomDatabase.Builder<AniDatabase> {
     // Idempotent, so the earlier call from main() (which additionally covers constraint 2) wins.
     BundledSqliteInterpositionGuard.install(cacheDir.toPath())
     return Room.databaseBuilder<AniDatabase>(
-        name = dataDir.resolve("ani_room_database_main.db").absolutePath,
+        name = dataDir.resolve(fileName).absolutePath,
     )
+}
+
+actual fun Context.databaseFile(fileName: String): SystemPath {
+    this as DesktopContext
+    return dataDir.resolve(fileName).toKtPath().inSystem
 }
