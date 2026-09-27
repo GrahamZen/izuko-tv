@@ -152,6 +152,25 @@ sealed class FileDownloaderState {
 }
 
 /**
+ * 下好的文件校验和对不上 (来源给的内容不对). 界面据此说「校验不对」, 不必去认错误文字.
+ */
+class ChecksumMismatchException(message: String) : IllegalStateException(message)
+
+/**
+ * 一次 [DefaultFileDownloader.download] 里某个来源 [url] 的结果:
+ * - [probeBytesPerSecond]: 挑线路时下开头一小段折出来的速度 (没测、没测完或测失败为 `null`). 这一小段的时间大半花在建连接与跳转上,
+ *   只能拿来比谁快、说明连得上, **不是**这条线路的下载速度;
+ * - [downloadBytesPerSecond]: 真从它下完时整个文件的平均速度 (没从它下完为 `null`);
+ * - [error]: 没下成时的错误 (测速就失败的也算; 下成了或没轮到为 `null`).
+ */
+class SourceOutcome(
+    val url: String,
+    val probeBytesPerSecond: Long?,
+    val error: Throwable?,
+    val downloadBytesPerSecond: Long? = null,
+)
+
+/**
  * 下载进行到哪一步, 见 [FileDownloader.stage].
  */
 sealed interface FileDownloadStage {
@@ -271,6 +290,29 @@ class DefaultFileDownloader(
     private val _stage = MutableStateFlow<FileDownloadStage?>(null)
     override val stage: StateFlow<FileDownloadStage?> get() = _stage
 
+    private val outcomes = LinkedHashMap<String, SourceOutcome>()
+
+    /**
+     * 最近一次 [download] 里各来源的结果, 按来源出现的顺序. 下载失败时往外抛的只是最后一个错误, 要说清每条线路怎么了
+     * (以及挑线路时各自多快) 就看这里.
+     */
+    val lastOutcomes: List<SourceOutcome> get() = synchronized(outcomes) { outcomes.values.toList() }
+
+    private fun record(
+        url: String,
+        bytesPerSecond: Long? = null,
+        error: Throwable? = null,
+        downloadBytesPerSecond: Long? = null,
+    ) = synchronized(outcomes) {
+        val old = outcomes[url]
+        outcomes[url] = SourceOutcome(
+            url,
+            bytesPerSecond ?: old?.probeBytesPerSecond,
+            error ?: old?.error,
+            downloadBytesPerSecond ?: old?.downloadBytesPerSecond,
+        )
+    }
+
     override suspend fun download(packages: List<DownloadPackage>, saveDir: SystemPath): SystemPath? {
         require(packages.isNotEmpty() && packages.all { it.sources.isNotEmpty() }) { "No URLs provided." }
 
@@ -284,6 +326,10 @@ class DefaultFileDownloader(
 
         _progress.value = 0f
         _stage.value = null
+        synchronized(outcomes) {
+            outcomes.clear()
+            packages.flatMap { it.sources }.forEach { outcomes[it] = SourceOutcome(it, null, null) }
+        }
         try {
             withExceptionCollector {
                 try {
@@ -314,6 +360,7 @@ class DefaultFileDownloader(
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Throwable) {
+                                record(url, error = e)
                                 // 记下错误, 接着试下一个来源. 这时不切到失败态: 界面按失败态显示「重试」(电视上焦点也送过去),
                                 // 而后台还在试后面的来源, 用户一按就从头重来, 反而打断了回落
                                 collect(e)
@@ -357,7 +404,9 @@ class DefaultFileDownloader(
             }
         }
 
+        val transferStart = TimeSource.Monotonic.markNow()
         tryDownload(client, url, targetFile, line, lines)
+        val transferMillis = transferStart.elapsedNow().inWholeMilliseconds.coerceAtLeast(1)
 
         val expected = pkg.sha256?.let { DigestAlgorithm.SHA256 to it } ?: remoteSha1?.let { DigestAlgorithm.SHA1 to it }
         if (expected != null) {
@@ -367,9 +416,10 @@ class DefaultFileDownloader(
             if (computeLocalChecksum(targetFile, algorithm) != value) {
                 logger.info { "File ${pkg.fileName} $algorithm mismatch after downloading from $url. Deleting file..." }
                 withContext(Dispatchers.IO_) { targetFile.delete() }
-                throw IllegalStateException("Downloaded file ${pkg.fileName} $algorithm mismatch (from $url).")
+                throw ChecksumMismatchException("Downloaded file ${pkg.fileName} $algorithm mismatch (from $url).")
             }
         }
+        record(url, downloadBytesPerSecond = targetFile.length() * 1000 / transferMillis)
         state.value = FileDownloaderState.Succeed(url, targetFile, checked = expected != null)
         return targetFile
     }
@@ -409,9 +459,11 @@ class DefaultFileDownloader(
                 _stage.value = FileDownloadStage.Probing(received, sources.size)
                 result.onSuccess {
                     succeeded += url to it
+                    record(url, bytesPerSecond = PROBE_BYTES * 1000L / it.inWholeMilliseconds.coerceAtLeast(1))
                     logger.info { "Probe $url: ${PROBE_BYTES / 1024} KiB in ${it.inWholeMilliseconds} ms" }
                 }.onFailure {
                     failed[url] = it
+                    record(url, error = it)
                     logger.info { "Probe $url failed: ${it::class.simpleName}: ${it.message}" }
                 }
             }

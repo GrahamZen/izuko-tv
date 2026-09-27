@@ -761,11 +761,11 @@ object TvRemoteControl {
             p.edit().putString(KEY_TOKEN, it).apply()
         }
         val s = try {
-            LanHttpServer(::handle, port = fixedPort, token = token)
+            LanHttpServer(::handle, port = fixedPort, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
         } catch (e: IOException) {
             logger.warn(e) { "Fixed port $fixedPort unavailable for remote control, falling back to a random port" }
             try {
-                LanHttpServer(::handle, port = 0, token = token)
+                LanHttpServer(::handle, port = 0, token = token, maxBodyBytes = RemoteAppUpdate::maxBodyBytes)
             } catch (e2: IOException) {
                 logger.warn(e2) { "Failed to start remote control server" }
                 return

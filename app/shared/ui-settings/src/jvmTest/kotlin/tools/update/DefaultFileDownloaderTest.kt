@@ -34,6 +34,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -402,6 +403,42 @@ class DefaultFileDownloaderTest {
         assertTrue(finalState is FileDownloaderState.Succeed && finalState.url == "/slow-file", "State: $finalState")
         assertTrue(finalState.checked)
         assertEquals(fileContent, File(tempDir, "trusted-file.txt").readText())
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `every source's outcome is kept - probe speed and the error of each failed one`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        // /corrupted-file 探测最快排第一, 校验不对; /unavailable 探测就失败; /slow-file 探测没等完, 排在后面, 最后从它下成
+        val downloaded = downloader.download(
+            listOf(
+                DownloadPackage(
+                    "outcome-file.txt",
+                    sources = listOf("/corrupted-file", "/unavailable", "/slow-file"),
+                    sha256 = sha256Hex(fileContent),
+                ),
+            ),
+            saveDir = tempDir.toKtPath().inSystem,
+        )
+        assertNotNull(downloaded)
+        val outcomes = downloader.lastOutcomes
+        assertEquals(listOf("/corrupted-file", "/unavailable", "/slow-file"), outcomes.map { it.url })
+        val byUrl = outcomes.associateBy { it.url }
+        assertTrue(byUrl.getValue("/corrupted-file").error is ChecksumMismatchException, "Outcome: ${byUrl["/corrupted-file"]?.error}")
+        assertNotNull(byUrl.getValue("/corrupted-file").probeBytesPerSecond)
+        assertNotNull(byUrl.getValue("/unavailable").error)
+        assertNull(byUrl.getValue("/slow-file").error)
+        assertNotNull(byUrl.getValue("/slow-file").downloadBytesPerSecond, "真从它下完的记平均速度")
+        assertNull(byUrl.getValue("/corrupted-file").downloadBytesPerSecond, "校验没过的不算下完")
 
         tempDir.deleteRecursively()
     }

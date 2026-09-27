@@ -6881,8 +6881,9 @@ private val ACCOUNT_SCRIPT = """
  * 从没打开过时按钮上带小红点 (记在这台手机的浏览器里). 手势另有列表里的一次性滑开提示 (swPeek), 不指望用户先来读说明.
  */
 /**
- * 「设置 → 常规」的「应用更新」(见 RemoteAppUpdate): 检查新版本、下载并安装, 或用手机上的安装包更新 (分块上传, 每块在服务端
- * 64 KiB 的请求上限以内). 安装由电视上的系统确认框确认, 结果 (失败原因) 回到这里. 下载 / 等确认时每秒刷新一次, 其余只在切到设置时读.
+ * 「设置 → 常规」的「应用更新」(见 RemoteAppUpdate): 检查新版本、下载并安装, 或用手机上的安装包更新 (分块上传, 块大小由服务端给,
+ * 按顺序一块一块发). 安装由电视上的系统确认框确认, 结果 (失败原因) 回到这里; 上传的包没装成时可以直接用它再装一次.
+ * 下载 / 等确认时每秒刷新一次, 其余只在切到设置时读.
  * 确认安装后 Izuko 会被系统关掉, 这期间连不上是正常的: 隔两秒再来, 重新打开后显示上次安装的结果.
  */
 private val UPDATE_SCRIPT = """
@@ -6898,10 +6899,11 @@ private val UPDATE_SCRIPT = """
   picker.hidden = true;
   document.body.appendChild(picker);
   // up: 正在上传 { size, sent, finishing }; err: 卡片上的操作 (检查、下载安装、上传、授权) 没成的原因, 不弹 toast,
-  // 像安装失败一样用红字留在状态 / 进度条那一行, 直到下一次操作; waitRestart: 确认安装后电视上的 Izuko 被系统关掉了, 等它重新打开.
+  // 像安装失败一样用红字留在状态 / 进度条那一行, 直到下一次操作; waitRestart: 等确认安装时电视上的 Izuko 关掉了 (点了「更新」会这样, 内存紧张时确认框一弹出系统也会回收它, 网页分不出是哪种), 等它重新打开.
   // 安装前要先有「安装未知应用」的授权: permAsked = 已请电视打开授权页, 等授权 (Android 11 起授权会让 Izuko 重启;
   // Izuko 在后台时授权页等它回到前台才打开, 期间 permPending); permSkip = 这台电视打不开授权页, 直接装 (anyway=1), 由系统询问
-  var last = null, timer = null, up = null, err = null, waitRestart = false, permAsked = false, permSkip = false;
+  // line: 挑的下载线路 (域名), 空 = 自动; 只在这个网页里记着, 下次打开还是自动
+  var last = null, timer = null, up = null, err = null, waitRestart = false, permAsked = false, permSkip = false, line = '';
   function visible() { return !document.hidden && !!box.offsetParent; }
   function later(ms) {
     clearTimeout(timer);
@@ -6952,8 +6954,17 @@ private val UPDATE_SCRIPT = """
         h += '<ul class="upd-notes">' + d.latest.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>';
       }
     } else if (d.checked) h += '<p class="hint">' + T('已是最新版本') + '</p>';
+    // 传的是哪个安装包: 名字与大小一直显示 (新的上传替换), 选错了文件在电视上点「安装」之前就看得出来; 电视核对过后补上读出来的版本
+    var pk = up ? { name: up.name, size: up.size } : d.upload;
+    if (pk) {
+      h += '<p class="upd-line">' + T('安装包：{0}（{1}）', esc(pk.name), window.fmtTransfer(pk.size, 0)) + '</p>';
+      if (!up && pk.version) {
+        h += '<p class="hint">' + (pk.otherPkg ? T('版本 {0}，是另一个 Izuko TV：{1}', esc(pk.version), esc(pk.otherPkg))
+          : T('版本 {0}，装在这个 Izuko TV 上', esc(pk.version))) + '</p>';
+      }
+    }
     var text, bad = false;
-    if (waitRestart) text = T('Izuko TV 正在更新，完成后在电视上重新打开，这里会显示结果。');
+    if (waitRestart) text = T('电视上的 Izuko TV 已关闭，重新打开后这里会显示结果。');
     else if (up) text = up.finishing ? T('正在核对安装包…') : T('正在上传：{0}', window.fmtTransfer(up.sent, up.size, upRate()));
     else if (err) { text = err; bad = true; }
     else if (permAsked && needPerm) {
@@ -6965,16 +6976,33 @@ private val UPDATE_SCRIPT = """
       : ((j.phase === 'downloading' || j.phase === 'preparing') && j.progress != null ? j.progress : null);
     if (text) h += '<p class="upd-line upd-status' + (bad ? ' upd-bad' : '') + '">' + esc(text) + '</p>';
     if (p != null) h += '<div class="cl-bar"><div style="width:' + pct(p) + '%"></div></div>';
+    // 上传的包没装成 (电视上误按了取消之类): 包还在电视上, 直接再装一次, 不用重新上传
+    if (d.retry && !up) {
+      h += '<div class="row"><button type="button" class="primary" data-upd="retry"' + (busy ? ' disabled' : '') + '>' +
+        T('用这个安装包再装一次') + '</button></div>';
+    }
     if (!d.latest || d.checking) {
       h += '<div class="row"><button type="button" class="ghost" data-upd="check"' + (d.checking || busy ? ' disabled' : '') + '>' + T('检查更新') + '</button></div>';
     } else if (!needPerm) {
+      // 下载线路: 默认自动 (各条一起测速, 从最快的下, 失败换下一条); 挑了哪条就只从哪条下.
+      // 每条后面是服务端给的一句: 上次从它下完的平均速度、没下成的原因, 或只测过速时的「能连上」
+      if (d.lines && d.lines.length > 1) {
+        if (!d.lines.some(function (l) { return l.host === line; })) line = '';
+        h += '<label class="look-ld"><span>' + T('下载线路') + '</span><select data-upd-line' + (busy ? ' disabled' : '') + '>' +
+          '<option value="">' + T('自动（选最快的）') + '</option>' +
+          d.lines.map(function (l) {
+            var name = l.official ? T('{0}（官方）', esc(l.host)) : esc(l.host);
+            return '<option value="' + esc(l.host) + '"' + (l.host === line ? ' selected' : '') + '>' +
+              name + (l.note ? ' · ' + esc(l.note) : '') + '</option>';
+          }).join('') + '</select></label>';
+      }
       h += '<div class="row"><button type="button" class="primary" data-upd="install"' + (busy ? ' disabled' : '') + '>' +
         T('下载并安装 {0}', esc(d.latest.name)) + '</button></div>';
     }
     h += needPerm
       ? '<div class="row"><button type="button" class="primary" data-upd="perm"' + (busy ? ' disabled' : '') + '>' + T('在电视上允许安装应用') + '</button></div>' +
         '<p class="hint">' + T('电视还没允许 Izuko TV 安装应用，要先允许一次：在电视上打开的授权页里，把 Izuko TV 的「允许」打开。') + '</p>'
-      : '<div class="row"><button type="button" class="ghost" data-upd="pick"' + (busy ? ' disabled' : '') + '>' + T('用手机上的安装包更新') + '</button></div>';
+      : '<div class="row"><button type="button" class="ghost" data-upd="pick"' + (busy ? ' disabled' : '') + '>' + T('上传安装包') + '</button></div>';
     h += '<p class="hint">' + T('安装时电视上会弹出系统的确认框，用遥控器点「安装」或「更新」。装完 Izuko TV 会关闭，在电视上重新打开即可。') + '</p></div>';
     setHtml(box, h);
   }
@@ -7002,10 +7030,15 @@ private val UPDATE_SCRIPT = """
       }).catch(function () { b.disabled = false; showErr(netErr()); });
       return;
     }
-    post(a === 'install' ? 'api/update/install' : 'api/update/check', { anyway: permSkip ? '1' : '' }).then(function (r) {
+    var api = a === 'install' ? 'api/update/install' : a === 'retry' ? 'api/update/retry' : 'api/update/check';
+    post(api, { anyway: permSkip ? '1' : '', line: a === 'install' ? line : '' }).then(function (r) {
       if (!r.ok && r.message) showErr(r.message);
       load();
     }).catch(function () { b.disabled = false; showErr(netErr()); });
+  });
+  box.addEventListener('change', function (e) {
+    var s = e.target.closest('[data-upd-line]');
+    if (s) line = s.value;
   });
   picker.addEventListener('change', function () {
     var f = picker.files && picker.files[0];
@@ -7019,7 +7052,7 @@ private val UPDATE_SCRIPT = """
   function upload(file) {
     if (file.name.toLowerCase().slice(-4) !== '.apk' && !confirm(T('「{0}」看起来不是安装包（.apk），仍要上传吗？', file.name))) return;
     err = null;
-    up = { size: file.size || 1, sent: 0, samples: [[Date.now(), 0]], painted: 0 };
+    up = { name: file.name, size: file.size || 1, sent: 0, samples: [[Date.now(), 0]], painted: 0 };
     render(last);
     post('api/update/upload/start', { size: String(file.size), name: file.name, anyway: permSkip ? '1' : '' }).then(function (r) {
       if (!r.ok) throw r;
@@ -7056,7 +7089,7 @@ private val UPDATE_SCRIPT = """
   }
   function sendChunk(blob, id, offset, retries) {
     return fetchT('api/update/upload/chunk?id=' + encodeURIComponent(id) + '&offset=' + offset,
-      { method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream' } }, 20000)
+      { method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream' } }, 60000)
       .then(function (r) { return r.json(); })
       .then(function (r) {
         if (!r.ok) { r.fatal = true; throw r; }
@@ -7131,7 +7164,7 @@ private val HELP_SCRIPT = """
     T('点右边的封面（或 ▶）：在电视上接着看，看完的播下一集；点其他地方：电视打开详情页。'),
     T('右滑缓存，左滑删除，滑过一半松手直接执行；长按一行可以多选，一起删除。')
   ]) + sec(T('应用更新'), [
-    T('「检查更新」后可以直接下载并安装新版本，也可以用手机上下好的安装包更新，或者装 Izuko TV 的测试版。'),
+    T('「检查更新」后可以直接下载并安装新版本；也可以「上传安装包」，用手机上下好的安装包更新或装测试版，卡片上会显示传的是哪个包。'),
     T('安装时电视上会弹出确认框，用遥控器点「安装」或「更新」；装不上时这里会显示原因。')
   ]) + sec(T('其他'), [
     T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；最底下可以下载电视的日志。')
