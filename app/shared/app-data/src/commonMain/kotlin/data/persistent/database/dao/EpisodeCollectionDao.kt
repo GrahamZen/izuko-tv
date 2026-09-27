@@ -201,23 +201,27 @@ interface EpisodeCollectionDao {
     )
     suspend fun reapplyPendingCollectionTypes()
 
+    @Query("""SELECT * FROM episode_collection WHERE episodeId = :episodeId LIMIT 1""")
+    suspend fun getByEpisodeId(episodeId: Int): EpisodeCollectionEntity?
+
+    /**
+     * 本地档的单集落库 (见 `UserProfileKind.LOCAL`): 同 [upsert], 但看过状态**保留库里的** —— 本地档取到的是匿名结果,
+     * 看过状态一律是空的. 读与写在同一个事务里, 不会盖掉取数途中用户刚标的看过.
+     *
+     * @return 实际写进去的那一行
+     */
+    @Transaction
+    suspend fun upsertKeepingSelfState(item: EpisodeCollectionEntity): EpisodeCollectionEntity {
+        val kept = getByEpisodeId(item.episodeId)?.let { item.copy(selfCollectionType = it.selfCollectionType) } ?: item
+        upsert(kept)
+        return kept
+    }
+
     @Query("""UPDATE episode_collection SET selfCollectionType = :type WHERE subjectId = :subjectId AND episodeId = :episodeId""")
     suspend fun updateSelfCollectionType(
         subjectId: Int,
         episodeId: Int,
         type: UnifiedCollectionType,
-    )
-
-    /** 本地这一集还是 [expected] 才改成 [replacement]; 已经被改成别的 (之后又改过) 就不动. */
-    @Query(
-        """UPDATE episode_collection SET selfCollectionType = :replacement
-        WHERE subjectId = :subjectId AND episodeId = :episodeId AND selfCollectionType = :expected""",
-    )
-    suspend fun replaceSelfCollectionType(
-        subjectId: Int,
-        episodeId: Int,
-        expected: UnifiedCollectionType,
-        replacement: UnifiedCollectionType,
     )
 
     @Query("""UPDATE episode_collection SET selfCollectionType = :type WHERE subjectId = :subjectId""")
