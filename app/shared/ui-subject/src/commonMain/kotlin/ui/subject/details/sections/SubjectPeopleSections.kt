@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.animation.core.Spring
@@ -33,11 +34,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,6 +73,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TV_SCROLL_STIFFNESS
 import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
+import me.him188.ani.app.ui.foundation.focus.TvStripScroll
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
@@ -223,12 +227,12 @@ fun CharactersSection(
         )
         val onClickCharacter = rememberPeopleClickHandler()
         if (focusDrivenChars) {
-            // 焦点驱动形态: 卡片形态 (与"查看全部"弹窗同款 PersonCard + 聚焦高亮容器), 锚位横滑条
-            // (聚焦卡停在行首, 整行滑动; 入场不动 —— 见 TvAnchoredStrip 的 KDoc).
+            // 焦点驱动形态: 卡片形态 (与"查看全部"弹窗同款 PersonCard + 聚焦高亮容器), 按需挪动的横滑条
+            // (一屏 6 个之内左右移动整行不动, 走到边上才一格一格地挪; 入场不动 —— 见 TvAnchoredStrip 的 KDoc).
             // 格宽是**定值** (见 TV_MONOGRAM_SIZE), 不按视口均分: 均分会让"减不减留白""留白算一侧还是两侧"
             // 各处算出不同的宽度 (角色行 136dp / 制作人员行 143dp 就是这么来的), 而 Apple 的圆是恒定 130dp,
             // 一屏放得下几个、第几个被裁是自然结果
-            // 长按闸门要读"卡片是否还在滑向锚位", 所以 listState 提到外面自己建
+            // 长按闸门要读"行是否还在滚动", 所以 listState 提到外面自己建
             val stripState = rememberLazyListState()
             run {
                 val cardWidth = TV_MONOGRAM_SIZE
@@ -240,6 +244,7 @@ fun CharactersSection(
                     contentPadding = contentPadding,
                     state = stripState,
                     horizontalMoveRate = TV_MONOGRAM_MOVE_RATE,
+                    scroll = TvStripScroll.OnDemand,
                 ) { i, itemModifier ->
                     // 圆几乎撑满格宽 (tvOS 的比例), 而不是小圆浮在宽格子中央
                     val circle = cardWidth
@@ -278,11 +283,11 @@ fun CharactersSection(
                                     onShortPress = {
                                         onClickCharacter(PeoplePreviewTarget.Character(item.character.id))
                                     },
-                                    // 卡片还在滑向锚位时先不触发 (同选集轮播的理由)
+                                    // 行还在滚动时先不触发 (同选集轮播的理由)
                                     readyToFire = { !stripState.isScrollInProgress },
                                 )
                             },
-                        // 点击与焦点都在格容器上 (不在内部的格内容上): 锚位滚动按焦点目标矩形算
+                        // 点击与焦点都在格容器上 (不在内部的格内容上): 滚动按焦点目标矩形算
                         onClick = { onClickCharacter(PeoplePreviewTarget.Character(item.character.id)) },
                     ) { focused, progress ->
                         PersonMonogramCell(
@@ -653,6 +658,65 @@ private fun ViewAllMonogramCell(
 }
 
 /**
+ * TV 演职人员行的占位 (数据在路上): 与 [CharactersSection] / [StaffSection] 焦点驱动形态同一套几何 —— 同一个标题行,
+ * 同样大小与步距的圆, 圆下两行字的位置 —— 数据到位时原地填充, 页面不跳. 行同样往右出血, 最后一个圆被屏幕边缘裁掉一截.
+ */
+@Composable
+fun TvPeopleStripPlaceholder(
+    title: String,
+    modifier: Modifier = Modifier,
+    /** 同 [CharactersSection] 的同名参数: 标题按它两侧留白, 圆从起始侧留白处排起. */
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+    val start = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(title, modifier = Modifier.padding(contentPadding))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val count = ((maxWidth - start) / (TV_MONOGRAM_SIZE + TV_MONOGRAM_SPACING)).toInt() + 1
+            Row(
+                Modifier
+                    .padding(start = start)
+                    .wrapContentWidth(Alignment.Start, unbounded = true),
+                horizontalArrangement = Arrangement.spacedBy(TV_MONOGRAM_SPACING),
+            ) {
+                repeat(count) {
+                    Column(
+                        Modifier.width(TV_MONOGRAM_SIZE),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(TV_MONOGRAM_TEXT_GAP),
+                    ) {
+                        Box(Modifier.size(TV_MONOGRAM_SIZE).clip(CircleShape).background(color))
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(TV_MONOGRAM_LINE_GAP),
+                        ) {
+                            TextLinePlaceholder(MaterialTheme.typography.titleSmall, TV_MONOGRAM_SIZE * 0.6f, color)
+                            TextLinePlaceholder(MaterialTheme.typography.bodySmall, TV_MONOGRAM_SIZE * 0.4f, color)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 一行字的占位条: 行高取 [style] 的真实行高 (字本身不画), 条在行内上下各让出一点. */
+@Composable
+private fun TextLinePlaceholder(style: TextStyle, width: Dp, color: Color) {
+    Box(contentAlignment = Alignment.Center) {
+        Text(" ", Modifier.width(width), style = style, maxLines = 1, color = Color.Transparent)
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(vertical = 3.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(color),
+        )
+    }
+}
+
+/**
  * 制作人员区块: 标题行 (+"查看全部" -> 全量列表 sheet) + 内容.
  *
  * 内容形态 (对齐定稿):
@@ -705,6 +769,7 @@ fun StaffSection(
                         contentPadding = contentPadding,
                         state = stripState,
                         horizontalMoveRate = TV_MONOGRAM_MOVE_RATE,
+                        scroll = TvStripScroll.OnDemand,
                     ) { i, itemModifier ->
                         val circle = cardWidth
                         if (hasMore && i == exposedStaff.itemCount) {
