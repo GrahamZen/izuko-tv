@@ -50,6 +50,7 @@ import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.web.BlockReason
@@ -378,6 +379,10 @@ class MediaSourceMediaFetcher(
 
                         is RepositoryRequestError -> {
                             logger.warn { "Failed to fetch media from ${sourceInfo.displayName} due to request error: ${exception.localizedMessage}" }
+                        }
+
+                        is RepositorySubjectNotAccessibleException -> {
+                            logger.warn { "Failed to fetch media from ${sourceInfo.displayName}: subject ${exception.subjectId} is not accessible" }
                         }
                     }
                 }

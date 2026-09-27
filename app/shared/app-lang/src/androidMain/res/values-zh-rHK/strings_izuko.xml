@@ -317,6 +317,8 @@
     <string name="comment_view_comment">查看評論</string>
     <string name="comment_reply_unsupported">此評論不支援回覆，僅可查看</string>
     <string name="comment_image_unavailable">圖片已失效或無法存取</string>
+    <string name="subject_details_tv_error_back_hint">按返回鍵退出</string>
+    <string name="foundation_load_error_subject_not_accessible">目前 Bangumi 帳號看不到這個條目。成人條目需要帳號註冊滿 60 天，也可能是條目已被刪除。</string>
     <string name="foundation_browser_open_failed_title">無法打開連結</string>
     <string name="foundation_browser_open_failed_scan_hint">目前裝置沒有可用的瀏覽器，請用手機掃碼打開，或手動輸入下方連結</string>
     <string name="foundation_browser_open_failed_close">關閉</string>

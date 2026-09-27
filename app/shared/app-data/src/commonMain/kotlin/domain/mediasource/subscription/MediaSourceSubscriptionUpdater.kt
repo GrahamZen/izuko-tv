@@ -17,6 +17,7 @@ import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -126,6 +127,10 @@ class MediaSourceSubscriptionUpdater(
 
                     is RepositoryRequestError ->
                         setResult(null, UpdateError(e.localizedMessage, null))
+
+                    // 订阅更新不碰条目, 这个分支只是为了穷尽
+                    is RepositorySubjectNotAccessibleException ->
+                        setResult(null, UpdateError(e.toString(), null))
                 }
                 false
             } catch (e: Exception) {

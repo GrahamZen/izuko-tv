@@ -80,6 +80,7 @@ private fun part1() = listOf(
     RemoteText("网络错误，电视连不上 Bangumi", "Network error: the TV can't reach Bangumi", "網絡錯誤，電視連不上 Bangumi", "網路錯誤，電視連不上 Bangumi"),
     RemoteText("登录状态有问题，请重试", "Login state is invalid. Please try again.", "登錄狀態有問題，請重試", "登入狀態有問題，請重試"),
     RemoteText("没有拿到登录结果，请重试", "Didn't get a login result. Please try again.", "沒有拿到登錄結果，請重試", "沒有拿到登入結果，請重試"),
+    RemoteText("这个条目当前账号看不到", "The current account cannot see this entry", "這個條目目前帳號看不到", "這個項目目前帳號看不到"),
     RemoteText("未知错误", "Unknown error", "未知錯誤", "未知錯誤"),
     RemoteText("无效的条目", "Invalid title", "無效的條目", "無效的條目"),
     RemoteText("读取剧集失败，请重试", "Couldn't load episodes. Please try again.", "讀取劇集失敗，請重試", "讀取劇集失敗，請重試"),

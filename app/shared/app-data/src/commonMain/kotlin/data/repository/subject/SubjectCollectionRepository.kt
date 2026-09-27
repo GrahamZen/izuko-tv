@@ -76,6 +76,7 @@ import me.him188.ani.app.data.persistent.database.dao.deleteAll
 import me.him188.ani.app.data.persistent.database.dao.filterMostRecentUpdatedWithEpisodes
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.episode.AnimeScheduleRepository
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.repository.shouldRetry
@@ -394,7 +395,13 @@ class SubjectCollectionRepositoryImpl(
             recurrence = recurrence,
             relations = existing?.relations ?: SubjectRelations.Empty,
         )
-        val episodeEntities = episodesDeferred?.await()
+        // 条目取到了而分集没取到: 条目照存, 分集这次留空 (本进程内不会因此反复重取, 见 episodesFetchAttempted).
+        // 整次取数不因此失败 —— 页面至少能显示条目信息, 比整页报错强.
+        val episodeEntities = episodesDeferred?.await()?.getOrElse { e ->
+            if (e is CancellationException) throw e
+            logger.warn(e) { "Failed to fetch episodes of subject $subjectId, keeping the subject without them" }
+            null
+        }
         // 取数期间有新登录: 结果照写, 取数时刻记 0, 见 [loginGeneration]
         val staleByLogin = loginGeneration.value != generation
         if (staleByLogin) logger.info { "bgm-direct: subject $subjectId was fetched across a new login, saved as stale" }
@@ -434,6 +441,12 @@ class SubjectCollectionRepositoryImpl(
                 // 没有缓存, 过期, 或者条目行在但分集没有 (见 needsEpisodes) 都要取一次
                 if (existing == null || existing.isExpired() || needsEpisodes(subjectId)) {
                     fetchSubjectCollectionIfStale(subjectId)
+                    // 取过一轮库里还是没有这一行 = 服务端不给这个条目 (404: NSFW 无权限或已被删除).
+                    // 不抛的话这条流一个值都发不出来 —— 下游 `subjectCollectionInfoFlow.stateIn` 会一直
+                    // 挂着, 详情页只能靠首屏超时兜底 (5 秒 x 5 次), 转 25 秒圈再报一句不相干的"加载超时".
+                    if (existing == null && subjectCollectionDao.findById(subjectId).first() == null) {
+                        throw RepositorySubjectNotAccessibleException(subjectId)
+                    }
                 }
             }
             .filterNotNull()

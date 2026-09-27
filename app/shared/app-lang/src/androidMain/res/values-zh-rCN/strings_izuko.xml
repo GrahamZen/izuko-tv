@@ -369,6 +369,8 @@
     <string name="comment_view_comment">查看评论</string>
     <string name="comment_reply_unsupported">该评论不支持回复，仅可查看</string>
     <string name="comment_image_unavailable">图片已失效或无法访问</string>
+    <string name="subject_details_tv_error_back_hint">按返回键退出</string>
+    <string name="foundation_load_error_subject_not_accessible">当前 Bangumi 账号看不到这个条目。成人条目需要账号注册满 60 天，也可能是条目已被删除。</string>
     <string name="foundation_browser_open_failed_title">无法打开链接</string>
     <string name="foundation_browser_open_failed_scan_hint">当前设备没有可用的浏览器，请用手机扫码打开，或手动输入下方链接</string>
     <string name="foundation_browser_open_failed_close">关闭</string>

@@ -41,6 +41,7 @@ import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.mediasource.test.RefreshResult
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -147,6 +148,8 @@ object RefreshIndicationDefaults {
                             )
 
                             is RepositoryRequestError -> ex.localizedMessage
+                            // 数据源刷新不碰条目, 这个分支只是为了穷尽
+                            is RepositorySubjectNotAccessibleException -> ex.toString()
                         }
                     }
 
