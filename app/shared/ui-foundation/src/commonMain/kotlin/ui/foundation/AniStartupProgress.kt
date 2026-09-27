@@ -41,6 +41,7 @@ class StartupProgressTracker {
     private val tracking = atomic(true)
     private val coldStartClaimed = atomic(false)
     private val covers = MutableStateFlow(Covers())
+    private val noCoversExpected = MutableStateFlow(false)
     private val imageCacheOpenProgress = MutableStateFlow<StateFlow<Float>?>(null)
 
     /** 本进程第一次问返回 true. 启动页只在冷启动出现: Activity 重建时图片都在内存里, 没有可等的. */
@@ -62,6 +63,14 @@ class StartupProgressTracker {
     /** 一张封面加载结束 (成功、失败或取消). */
     fun coverFinished() {
         if (tracking.value) covers.update { it.copy(finished = it.finished + 1) }
+    }
+
+    /**
+     * 首屏这会儿没有封面要加载 (比如新用户的推荐还在现算, 要十几秒): 等首屏的一方不必干等到 noCoversTimeout,
+     * 再给一小会儿就算好了 (见 [awaitFirstScreenReady]).
+     */
+    fun expectNoCovers() {
+        noCoversExpected.value = true
     }
 
     /** 已加载完 / 已开始的封面数 (日志用). */
@@ -95,18 +104,25 @@ class StartupProgressTracker {
      *  - 已经开始的封面都加载完、且 [settle] 内没有新的封面开始 (后面的行可能晚一拍才有数据); 或者加载完过几张之后 [quiet] 内再没有
      *    新的加载完 —— 剩下的在等网络, 不值得让整屏陪着等.
      *
-     * 一张封面都没开始 (首屏没有封面、数据还在算) 最多等 [noCoversTimeout]; 总共最多等 [timeout].
+     * 一张封面都没开始 (首屏没有封面、数据还在算) 最多等 [noCoversTimeout]; 页面说了暂时没有封面要加载 ([expectNoCovers]) 就只再等
+     * [noCoversGrace], 这期间开始加载的照常等. 总共最多等 [timeout].
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun awaitFirstScreenReady(
         timeout: Duration = 8.seconds,
         noCoversTimeout: Duration = 4.seconds,
+        noCoversGrace: Duration = 500.milliseconds,
         settle: Duration = 250.milliseconds,
         quiet: Duration = 500.milliseconds,
     ) {
         withTimeoutOrNull(timeout) {
             cacheOpen.first { it >= 1f }
-            withTimeoutOrNull(noCoversTimeout) { covers.first { it.started > 0 } } ?: return@withTimeoutOrNull
+            withTimeoutOrNull(noCoversTimeout) {
+                combine(covers, noCoversExpected) { loaded, none -> loaded.started > 0 || none }.first { it }
+            } ?: return@withTimeoutOrNull
+            if (covers.value.started == 0) {
+                withTimeoutOrNull(noCoversGrace) { covers.first { it.started > 0 } } ?: return@withTimeoutOrNull
+            }
             covers.transformLatest { loaded ->
                 when {
                     loaded.finished >= loaded.started -> {
