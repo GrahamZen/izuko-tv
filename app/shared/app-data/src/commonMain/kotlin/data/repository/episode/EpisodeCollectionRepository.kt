@@ -27,7 +27,6 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import me.him188.ani.app.data.repository.writeLocalFirst
 import me.him188.ani.app.domain.episode.EpisodeCollections
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
@@ -82,6 +81,8 @@ class EpisodeCollectionRepository(
     private val nowMillis: () -> Long = { currentTimeMillis() },
     /** 有新的待同步操作时调用, 由 syncer 决定何时推送. */
     private val onDirtyChanged: () -> Unit = {},
+    /** 本地档: 看过状态只存在本地库, 不入同步队列、不推 Bangumi, 见 SubjectCollectionRepositoryImpl 的同名参数. */
+    private val localProfile: Boolean = false,
 ) : Repository(defaultDispatcher), EpisodeCollectionPendingOpSource {
 
     private val subjectCollectionRepository by subjectCollectionRepository
@@ -102,11 +103,15 @@ class EpisodeCollectionRepository(
             entity?.takeIf { !it.isExpired() }
                 ?.toEpisodeCollectionInfo()
                 ?: kotlin.run {
-                    episodeService.getEpisodeCollectionById(subjectId, episodeId)
-                        ?.also {
-                            episodeCollectionDao.upsert(it.toEntity(subjectId))
-                        }
+                    val remote = episodeService.getEpisodeCollectionById(subjectId, episodeId)
                         ?: throw NoSuchElementException("Episode $episodeId not found")
+                    if (localProfile) {
+                        // 本地档取到的是匿名结果: 看过状态以库里的为准
+                        episodeCollectionDao.upsertKeepingSelfState(remote.toEntity(subjectId)).toEpisodeCollectionInfo()
+                    } else {
+                        episodeCollectionDao.upsert(remote.toEntity(subjectId))
+                        remote
+                    }
                 }
         }.flowOn(defaultDispatcher)
     }
@@ -181,6 +186,8 @@ class EpisodeCollectionRepository(
 
         val now = nowMillis()
         episodeCollectionDao.setAllEpisodesWatched(subjectId)
+        // 本地档只改本地, 不入同步队列
+        if (localProfile) return@withContext
         pendingOpDao.replacePendingOps(
             episodeIds.map { episodeId ->
                 EpisodeCollectionPendingOpEntity(
@@ -207,6 +214,8 @@ class EpisodeCollectionRepository(
             logger.warn { "User has not yet collected subject $subjectId when we want to setEpisodeCollectionType, ignoring." }
         }
         episodeCollectionDao.updateSelfCollectionType(subjectId, episodeId, collectionType)
+        // 本地档只改本地, 不入同步队列
+        if (localProfile) return@withContext
         pendingOpDao.replacePendingOps(
             listOf(
                 EpisodeCollectionPendingOpEntity(
@@ -273,6 +282,8 @@ class EpisodeCollectionRepository(
     ): UnifiedCollectionType? = withContext(defaultDispatcher) {
         try {
             val local = episodeCollectionDao.findByEpisodeId(episodeId).first()
+            // 本地档的看过状态只在本地库里, 服务端那份是匿名的
+            if (localProfile) return@withContext local?.selfCollectionType
 
             if (local != null && (!local.isExpired() || !allowNetwork)) {
                 return@withContext local.selfCollectionType
@@ -351,58 +362,6 @@ class EpisodeCollectionRepository(
         }
     }
 }
-
-/** 把本地这一集的看过状态改成 [type] 再 [send], 流程见 [writeLocalFirst]. */
-internal suspend fun EpisodeCollectionDao.setSelfCollectionTypeLocalFirst(
-    subjectId: Int,
-    episodeId: Int,
-    type: UnifiedCollectionType,
-    send: suspend () -> Unit,
-) = writeLocalFirst(
-    writeLocal = {
-        findByEpisodeId(episodeId).first()?.selfCollectionType
-            .also { updateSelfCollectionType(subjectId, episodeId, type) }
-    },
-    send = send,
-    reapplyLocal = { previous ->
-        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, previous, type)
-    },
-    revertLocal = { previous ->
-        if (previous != null && previous != type) replaceSelfCollectionType(subjectId, episodeId, type, previous)
-    },
-)
-
-/**
- * 把本地这个条目的每一集都标成看过再 [send], 流程见 [writeLocalFirst]. 补写与改回只动原来不是看过的那些集,
- * 而且各自按条件: 期间又改过的那一集不动.
- */
-internal suspend fun EpisodeCollectionDao.setAllEpisodesWatchedLocalFirst(
-    subjectId: Int,
-    send: suspend () -> Unit,
-) = writeLocalFirst(
-    writeLocal = {
-        filterBySubjectId(subjectId).first()
-            .associate { it.episodeId to it.selfCollectionType }
-            .also { setAllEpisodesWatched(subjectId) }
-    },
-    send = send,
-    reapplyLocal = { previous ->
-        // 先读一遍: 通常一集都不用补, 长篇 (上千集) 也只花一次查询
-        for (episode in filterBySubjectId(subjectId).first()) {
-            val before = previous[episode.episodeId] ?: continue
-            if (before != UnifiedCollectionType.DONE && episode.selfCollectionType == before) {
-                replaceSelfCollectionType(subjectId, episode.episodeId, before, UnifiedCollectionType.DONE)
-            }
-        }
-    },
-    revertLocal = { previous ->
-        for ((episodeId, before) in previous) {
-            if (before != UnifiedCollectionType.DONE) {
-                replaceSelfCollectionType(subjectId, episodeId, UnifiedCollectionType.DONE, before)
-            }
-        }
-    },
-)
 
 suspend inline fun EpisodeCollectionRepository.setEpisodeWatched(subjectId: Int, episodeId: Int, watched: Boolean) =
     setEpisodeCollectionType(
