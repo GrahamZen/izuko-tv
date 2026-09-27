@@ -10,16 +10,16 @@
 package me.him188.ani.app.ui.settings.tabs.app
 
 import android.os.Build
-import androidx.appcompat.app.AppCompatDelegate
+import android.os.LocaleList
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.intl.Locale
-import androidx.core.os.LocaleListCompat
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.platform.AppLocales
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.SupportedLocales
@@ -40,11 +40,12 @@ import kotlin.math.roundToInt
 internal actual fun SettingsScope.LanguageSettingsPlatform(
     state: SettingsState<UISettings>,
 ) {
+    val context = LocalContext.current
     val supportedLocales = remember { listOf<Locale?>(null) + SupportedLocales }
 
     DropdownItem(
         selected = {
-            val languageTag = AppCompatDelegate.getApplicationLocales()
+            val languageTag = AppLocales.get(context)
                 .toLanguageTags()
                 .substringBefore(',')
                 .takeUnless { it.isBlank() }
@@ -55,10 +56,10 @@ internal actual fun SettingsScope.LanguageSettingsPlatform(
         values = { supportedLocales },
         itemText = { Text(renderLocale(it)) },
         onSelect = { locale ->
-            val locales = locale?.let { LocaleListCompat.forLanguageTags(it.toLanguageTag()) }
-                ?: LocaleListCompat.getEmptyLocaleList()
-            if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != locales.toLanguageTags()) {
-                AppCompatDelegate.setApplicationLocales(locales)
+            val locales = locale?.let { LocaleList.forLanguageTags(it.toLanguageTag()) }
+                ?: LocaleList.getEmptyLocaleList()
+            if (AppLocales.get(context).toLanguageTags() != locales.toLanguageTags()) {
+                AppLocales.set(context, locales)
             }
         },
         title = { Text(stringResource(Lang.settings_app_language)) },
