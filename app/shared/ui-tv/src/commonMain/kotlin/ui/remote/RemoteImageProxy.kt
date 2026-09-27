@@ -12,10 +12,13 @@ package me.him188.ani.app.ui.remote
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.network.TMDB_CDN_PROCESSING_ERROR_HEADER
+import me.him188.ani.app.data.network.tmdbBrokenRenditionFallbackUrl
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiRouting
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -181,7 +184,16 @@ internal object RemoteImageProxy {
             runBlocking {
                 withTimeoutOrNull(FETCH_TIMEOUT) {
                     client.use {
-                        val response = get(url)
+                        var response = get(url)
+                        val fallback = tmdbBrokenRenditionFallbackUrl(
+                            url,
+                            response.headers[TMDB_CDN_PROCESSING_ERROR_HEADER],
+                            response.contentLength() ?: -1L,
+                        )
+                        if (fallback != null) {
+                            logger.info { "Remote image proxy: broken TMDB rendition, refetching $fallback" }
+                            response = get(fallback)
+                        }
                         if (!response.status.isSuccess()) {
                             logger.warn { "Remote image proxy: ${response.status} for $url" }
                             return@use Fetched.Failed

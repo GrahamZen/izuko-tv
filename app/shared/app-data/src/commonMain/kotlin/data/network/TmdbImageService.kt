@@ -2632,6 +2632,32 @@ fun tmdbStillHeroSizeUrl(url: String, fullQuality: Boolean = false): String =
  */
 fun tmdbBackdropOriginalSizeUrl(url: String): String = url.replace("/t/p/w1280/", "/t/p/original/")
 
+/**
+ * TMDB 图床某个节点缓存着**坏掉的缩放图**时, 换哪一档重新取; 不是这种情况返回 `null`.
+ *
+ * 图床 (BunnyCDN; `image.tmdb.org` 与 `images.tmdb.org` 是同一个拉取区) 缩放失败时不报错, 而是回 200 + 一张同尺寸的
+ * 纯黑图 (w1280 那档是 5684 字节), 带响应头 [TMDB_CDN_PROCESSING_ERROR_HEADER], 并照常按一年缓存在那个节点上:
+ * 匹配和地址都对, 界面上却是整块黑, 封面兜底也不会触发 (如 bgm 400215 那张). 回源重新缩放的结果是好的, 但带查询参数
+ * 绕不过节点缓存 (节点忽略参数), 只能换一档.
+ *
+ * 两条判据缺一不可: 这个响应头单独不算数 (正常图约一成也带它, 只是没能再压缩一遍), 体积单独也不算数 (浅色、低对比度的
+ * 正常 w1280 有 12KB 的). 正常的 w1280 背景图中位约 170KB, 坏图只有几 KB.
+ *
+ * w1280 换 w780 而不是原图: hero 按源图尺寸解码 (见 `tvHeroBackdropDecodeAtOriginalSize`), 原图档偶有 3840×2160,
+ * 解出来 33MB. 其余缩放档换 w1280; 原图档不经过缩放, 不在此列.
+ */
+fun tmdbBrokenRenditionFallbackUrl(url: String, processingError: String?, contentLength: Long): String? {
+    if (processingError == null || contentLength !in 0 until TMDB_BROKEN_RENDITION_MAX_BYTES) return null
+    val size = TMDB_SIZED_PATH.find(url)?.groupValues?.get(1) ?: return null
+    return url.replaceFirst("/t/p/$size/", if (size == "w1280") "/t/p/w780/" else "/t/p/w1280/")
+}
+
+/** TMDB 图床处理图片出错时带的响应头, 见 [tmdbBrokenRenditionFallbackUrl]. */
+const val TMDB_CDN_PROCESSING_ERROR_HEADER = "X-BO-Processing-Error"
+
+private const val TMDB_BROKEN_RENDITION_MAX_BYTES = 10L * 1024
+private val TMDB_SIZED_PATH = Regex("""/t/p/(w\d+)/""")
+
 /** 日文假名/汉字 (含中文): 候选名末尾回退时视为名字本体, 到此为止不再往前剥. */
 internal fun Char.isCjkOrKana(): Boolean =
     this in '぀'..'ヿ' || // 平假名 + 片假名 (含长音符 ー)
