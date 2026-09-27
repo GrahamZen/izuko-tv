@@ -96,8 +96,8 @@ fun RelatedSubjectsGrid(
 }
 
 /**
- * 手机横滑变体, 见 [RelatedSubjectsGrid]. TV 也用它 (卡片区块) —— 那边是锚位条:
- * 聚焦卡停在行首, 入场不横跳, 见 [TvAnchoredStrip].
+ * 手机横滑变体, 见 [RelatedSubjectsGrid]. 焦点驱动形态下是锚位条: 聚焦卡停在行首, 入场不横跳, 见 [TvAnchoredStrip].
+ * TV 详情页不用它, 用海报墙同款的原生横滑行 (ui-tv 的 TvNativePosterStrip).
  */
 @Composable
 fun RelatedSubjectsLazyRow(
@@ -188,8 +188,9 @@ fun rememberNavigateToRelatedSubject(): (RelatedSubjectInfo) -> Unit {
     }
 }
 
+/** 关联作品与本作的关系文案 (「续集」「前传」…). */
 @Composable
-private fun renderSubjectRelation(relation: SubjectRelation): String = when (relation) {
+fun renderSubjectRelation(relation: SubjectRelation): String = when (relation) {
     SubjectRelation.PREQUEL -> stringResource(Lang.subject_details_relation_prequel)
     SubjectRelation.SEQUEL -> stringResource(Lang.subject_details_relation_sequel)
     SubjectRelation.DERIVED -> stringResource(Lang.subject_details_relation_derived)

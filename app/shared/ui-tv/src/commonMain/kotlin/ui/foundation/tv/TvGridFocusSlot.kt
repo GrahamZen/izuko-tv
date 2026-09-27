@@ -53,8 +53,9 @@ import kotlin.math.roundToInt
  *
  * [TvCardFocusStyle.Ring] (原版) 不经过这里: 卡片自己画描边、不放大 (见 [usesCardRing]).
  *
- * 坐标: 格 = (列号, 相对"内容区顶线"的行数). 顶线即 contentPadding 之后那条线 (`LazyGridItemInfo.offset.y == 0`);
- * 追番 / 搜索吸顶, 行恒为 0; 时间表网格 = 聚焦行 − 顶行. 行高按条目实测 (条目高 + 行距), 时间表卡连下方标题一起算.
+ * 坐标: 格 = (列号, 纵向位置). 纵向位置是相对"内容区顶线"的行数: 顶线即 contentPadding 之后那条线
+ * (`LazyGridItemInfo.offset.y == 0`); 追番 / 搜索吸顶, 行恒为 0; 时间表网格 = 聚焦行 − 顶行. 行高按条目实测
+ * (条目高 + 行距), 时间表卡连下方标题一起算.
  *
  * 全部在绘制阶段读 (卡片的 graphicsLayer / 框的 drawBehind): 焦点移动、淡入淡出与滚动都不触发重组.
  */
@@ -77,7 +78,8 @@ class TvGridFocusSlot internal constructor() {
     private var targetColumn = Int.MIN_VALUE
     private var targetRow = Int.MIN_VALUE
 
-    internal class Cell(val column: Int, val row: Int, val fade: Animatable<Float, AnimationVector1D>)
+    /** [line] = 纵向位置: 相对顶线的行数. */
+    internal class Cell(val column: Int, val line: Int, val fade: Animatable<Float, AnimationVector1D>)
 
     /** 聚焦格上那张卡的放大倍数 (随设置的样式; 1 = 不放大). */
     val focusScale: Float get() = style.focusScale
@@ -101,14 +103,14 @@ class TvGridFocusSlot internal constructor() {
             cells.add(Cell(column, row, Animatable(1f)))
             return
         }
-        val target = cells.firstOrNull { it.column == column && it.row == row }
+        val target = cells.firstOrNull { it.column == column && it.line == row }
             ?: Cell(column, row, Animatable(0f)).also { cells.add(it) }
         for (cell in cells.toList()) {
             val isTarget = cell === target
             s.launch {
                 // 新的一次 animateTo 抢走锁, 取消还在跑的上一段 (连按时从当前值接着走)
                 cell.fade.animateTo(if (isTarget) 1f else 0f, FADE_SPEC)
-                if (!isTarget && cell.fade.value == 0f && !(cell.column == targetColumn && cell.row == targetRow)) {
+                if (!isTarget && cell.fade.value == 0f && !(cell.column == targetColumn && cell.line == targetRow)) {
                     cells.remove(cell)
                 }
             }
@@ -153,7 +155,7 @@ class TvGridFocusSlot internal constructor() {
             if (cell.column != info.column) continue
             val f = cell.fade.value
             if (f <= 0f) continue
-            val wy = 1f - abs(info.offset.y - cell.row * pitch) / pitch
+            val wy = 1f - abs(info.offset.y - cell.line * pitch) / pitch
             if (wy > 0f) w += f * wy
         }
         return p * w.coerceAtMost(1f)
@@ -182,16 +184,19 @@ internal val TvCardFocusStyle.focusScale: Float
         TvCardFocusStyle.Ring -> 1f
     }
 
-/** 每个网格实例一份 (追番页换 tab 时新旧两个网格各一份, 各自随网格滑入滑出). */
+/**
+ * 每个网格实例一份 (追番页换 tab 时新旧两个网格各一份, 各自随网格滑入滑出). 样式跟「卡片聚焦样式」设置.
+ */
 @Composable
 fun rememberTvGridFocusSlot(): TvGridFocusSlot {
     val settings = LocalThemeSettings.current
+    val focusStyle = settings.tvCardFocusStyle
     // 样式在创建时就定下来: 首帧卡片要按它决定自己画不画描边 (见 usesCardRing), 等 SideEffect 就晚了一帧
-    val slot = remember { TvGridFocusSlot().apply { style = settings.tvCardFocusStyle } }
+    val slot = remember { TvGridFocusSlot().apply { style = focusStyle } }
     val scope = rememberCoroutineScope()
     SideEffect {
         slot.scope = scope
-        slot.style = settings.tvCardFocusStyle
+        slot.style = focusStyle
         // 流畅档不做过渡, 直接到位 (与该档其它瞬切一致)
         slot.animated = settings.visualEffects.transitions
     }
@@ -240,9 +245,9 @@ fun TvGridFocusSlotRing(
                 val ref = items.firstOrNull { it.column == cell.column } ?: continue
                 val w = ref.size.width
                 val h = (w / TV_PORTRAIT_CARD_COVER_RATIO).roundToInt()
-                val pitch = ref.size.height + rowSpacing.toPx()
+                val lineTop = cell.line * (ref.size.height + rowSpacing.toPx())
                 drawTvFocusRingAt(
-                    topLeft = Offset(contentStart.toPx() + ref.offset.x, contentTop.toPx() + cell.row * pitch),
+                    topLeft = Offset(contentStart.toPx() + ref.offset.x, contentTop.toPx() + lineTop),
                     size = Size(w.toFloat(), h.toFloat()),
                     cornerRadius = TV_PORTRAIT_CARD_CORNER + TvFocusRing.Gap,
                     brush = brush,

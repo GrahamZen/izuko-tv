@@ -30,20 +30,25 @@ import androidx.compose.ui.unit.dp
  * contentPadding 也要在对应一侧加上出血量 —— 聚焦行吸顶停在内边距之后那条线上 (TvScrollAnimator 按条目 offset 算,
  * offset 0 = 内边距之后), 于是停位与出血前完全一样; 按宽度算列数的地方也要先减掉 [start]. 出血必须做在 Lazy 容器
  * 外面的测量层: LazyVerticalGrid 自带主轴裁剪, 在它里面做不到. 容器里其余按边定位的东西 (空结果提示之类) 要自己补回.
+ *
+ * **向下 ([bottom])**: 海报墙 (见 TvPosterWall.kt) 用. 网格往屏幕底边外多排一截, 屏外的下一行就一直是组合好、排好的 ——
+ * 焦点走过去时滚动器能按它的位置跑 spring; 否则目标没组合, 送焦会先 `scrollToItem` 瞬移、滚动器也退回自带的快动画,
+ * 看着就是"闪现". 底部补白要把这一截加回去, 否则末行滚不到位.
  */
-fun Modifier.tvGridBleed(top: Dp = 0.dp, start: Dp = 0.dp): Modifier = layout { measurable, constraints ->
+fun Modifier.tvGridBleed(top: Dp = 0.dp, start: Dp = 0.dp, bottom: Dp = 0.dp): Modifier = layout { measurable, constraints ->
     val b = if (constraints.hasBoundedHeight) top.roundToPx() else 0
+    val e = if (constraints.hasBoundedHeight) bottom.roundToPx() else 0
     val s = if (constraints.hasBoundedWidth) start.roundToPx() else 0
     val placeable = measurable.measure(
         constraints.copy(
             minWidth = if (s > 0) constraints.maxWidth + s else constraints.minWidth,
             maxWidth = if (s > 0) constraints.maxWidth + s else constraints.maxWidth,
-            minHeight = if (b > 0) constraints.maxHeight + b else constraints.minHeight,
-            maxHeight = if (b > 0) constraints.maxHeight + b else constraints.maxHeight,
+            minHeight = if (b + e > 0) constraints.maxHeight + b + e else constraints.minHeight,
+            maxHeight = if (b + e > 0) constraints.maxHeight + b + e else constraints.maxHeight,
         ),
     )
     // placeRelative: 从右往左的布局里 start 在右边, 出血跟着翻到右侧
-    layout(placeable.width - s, placeable.height - b) { placeable.placeRelative(-s, -b) }
+    layout(placeable.width - s, placeable.height - b - e) { placeable.placeRelative(-s, -b) }
 }
 
 /**
@@ -59,6 +64,18 @@ fun Modifier.tvGridItemTopFade(state: LazyGridState, index: Int, rowSpacing: Dp)
     val top = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset?.y ?: 0
     alpha = if (top >= 0) 1f else (1f + top / (size.height / 2f + rowSpacing.toPx())).coerceIn(0f, 1f)
 }
+
+/**
+ * 卡片越过停靠线后的压暗渐变距离: 在此距离内从全亮渐变到 [TV_CARD_PAST_DIM_ALPHA] 并保持. 探索页锚位行 (越过锚位线,
+ * 直到滑出屏幕左缘) 与海报墙 (横滑行越过行首、网格越过顶线, 见原生视图) 共用.
+ */
+internal val TV_CARD_FADE_DISTANCE = 64.dp
+
+/**
+ * 越过停靠线的离场卡片的压暗亮度 (Prime 式暗区, 同选集轮播的左侧压暗): 探索页锚位行滑过左侧出血区 (侧边栏底下)、
+ * 网格海报墙滑到标签行 / 搜索栏底下时压暗可见, 不是硬切消失.
+ */
+internal const val TV_CARD_PAST_DIM_ALPHA = 0.45f
 
 /**
  * 吸顶线以下的第一个可见条目 (中线在线下; 滚动途中也取对). "从上方进网格落到看得见的第一行"必须用它,

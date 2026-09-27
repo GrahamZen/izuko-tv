@@ -228,6 +228,9 @@ import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
@@ -258,8 +261,8 @@ import me.him188.ani.app.ui.subject.collection.components.renderCollectionTypeAs
 import me.him188.ani.app.ui.subject.details.components.AnimatedGradientBackground
 import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RATIO
 import me.him188.ani.app.ui.subject.details.components.RatingHistogram
-import me.him188.ani.app.ui.subject.details.components.RelatedSubjectsLazyRow
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
+import me.him188.ani.app.ui.subject.details.components.renderSubjectRelation
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.subject.details.sections.CharactersSection
 import me.him188.ani.app.data.models.subject.RatingInfo
@@ -1692,7 +1695,7 @@ fun SubjectDetailsTvPage(
                             )
                         }
                         if (related.itemCount > 0) {
-                            // TV 上用横向单行 rail 而非多行网格 (锚位条: 聚焦卡停在停靠位)
+                            // 海报墙同款的横滑行 (见 TvNativePosterStrip): 一屏六张, 按需挪, 聚焦只放大加投影、不画框
                             Column(
                                 Modifier
                                     // BELOW 的进入落点 (上一块按下键、跨页返回都送到这儿): 必须挂在
@@ -1704,7 +1707,8 @@ fun SubjectDetailsTvPage(
                                     .ifThen(!videoBackground) {
                                         tvSectionEdge(sectionNav, TvDetailsSection.BELOW, up = true, down = true)
                                     },
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                // 标题到海报的间距同海报墙: 卡聚焦时往上放大
+                                verticalArrangement = Arrangement.spacedBy(TV_POSTER_WALL_HEADER_GAP),
                             ) {
                                 // 留白只加在标题上; 卡片行全宽出血, 停靠留边由行内
                                 // contentPadding 提供 (外层 padding 会在停靠线上硬裁离场卡)
@@ -1712,15 +1716,25 @@ fun SubjectDetailsTvPage(
                                     stringResource(Lang.subject_details_related_subjects),
                                     modifier = Modifier.padding(horizontal = pad),
                                 )
-                                RelatedSubjectsLazyRow(
-                                    related,
-                                    onClick = rememberNavigateToRelatedSubject(),
-                                    // 150dp: 本页还要装评价块, 能装下是靠评价块瘦身 (标题间距退回 16dp + 卡 124dp).
-                                    // 页面内容 476dp, 分页器按 24(页顶) + 476 + 24(露出余量) = 524 < 540 判定不需要滚;
-                                    // 余量只有 16dp, 再往这一页加东西就会让焦点下到本行时页面动起来 (2026-09-15 踩过)
-                                    itemWidth = 150.dp,
-                                    spacing = 20.dp,
-                                    contentPadding = PaddingValues(horizontal = pad),
+                                val navigateToRelated = rememberNavigateToRelatedSubject()
+                                // 本页还装着评价块, 分页器按内容高判定焦点下到本行时页面要不要滚 (见 TvDetailsPager);
+                                // 海报墙的卡 (1080p 卡宽约 127dp, 海报 + 两行字约 219dp) 比原先 150dp 宽的关联卡矮一截
+                                val relatedSnapshot = related.itemSnapshotList
+                                val relationLabels = relatedSnapshot.map { info ->
+                                    info?.relation?.let { renderSubjectRelation(it) }.orEmpty()
+                                }
+                                val relatedCards = remember(relatedSnapshot, relationLabels) {
+                                    relatedSnapshot.mapIndexed { i, info ->
+                                        info?.let {
+                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i])
+                                        }
+                                    }
+                                }
+                                TvNativePosterStrip(
+                                    relatedCards,
+                                    onClick = { index -> related.peek(index)?.let(navigateToRelated) },
+                                    startPadding = pad,
+                                    endPadding = pad,
                                 )
                             }
                         }

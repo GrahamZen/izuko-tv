@@ -157,6 +157,7 @@ enum class TvVisualEffectsLevel {
  * 设置里按声明顺序列出.
  *
  * 探索页卡片区与选集轮播不受它影响: 那里是钉在锚位的固定聚焦框, 卡片在框下滑动, 本身就有运动提示.
+ * 海报墙 (关掉「显示 hero 背景」后的探索 / 搜索 / 追番) 也不受它影响: 照 Apple TV 固定只放大、不画框.
  * 网格页的焦点是在一屏几十张封面之间瞬移的, 细描边在封面颜色接近主题色时容易看丢 —— 放大同时给出
  * 尺寸差与"变大那一下"的运动, 两样都能把视线拉过去. 两种放大样式的框与放大都按"聚焦格"画, 上下翻页时框不动
  * (见 ui-tv 的 `TvGridFocusSlot`).
@@ -200,6 +201,14 @@ data class ThemeSettings(
     val enableFrostedGlassEffect: Boolean = false,
     /** TV: 探索页使用沉浸式布局 (Hero 轮播); 关闭则回退上游原布局 (低端机可关以降低开销). */
     val tvImmersiveExploration: Boolean = true,
+    /**
+     * TV: 探索 / 搜索 / 追番三页显示 hero 背景 (聚焦卡片的背景大图与简介). 关掉 = 海报墙: 海报下面写番名, 卡片上按确定先切成
+     * hero 的样子、再按确定进详情页; 探索页轮播照旧, 焦点一进卡片区背景退场. 三页共用一个开关, 导航方式始终一致.
+     * 只在 [tvImmersiveExploration] 开着时有意义.
+     *
+     * @since 1.0.4
+     */
+    val tvHeroBackdrop: Boolean = true,
     /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
     val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */

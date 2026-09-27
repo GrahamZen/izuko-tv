@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -144,6 +145,29 @@ fun ReportTvScrollActivity(state: ScrollableState, layoutOffset: () -> Int) {
             if (reported) activity.report(false)
         }
     }
+}
+
+/**
+ * 原生滚动容器 (电视原生页面的 RecyclerView) 的登记口: 容器自己按同一条判据 (开始滚动即算在滚, 连续两帧每帧挪动不超过 3 像素算停稳)
+ * 判好, 翻转时调 [setScrolling]. 同一个登记口只算一个容器.
+ */
+class TvScrollActivityReporter internal constructor(private val activity: TvScrollActivity) {
+    private var reported = false
+
+    fun setScrolling(scrolling: Boolean) {
+        if (scrolling == reported) return
+        reported = scrolling
+        activity.report(scrolling)
+    }
+}
+
+/** 当前页面 [TvScrollActivity] 的原生登记口 (没装信号时 null); 离开组合时自动撤销 (滚到一半被销毁也不会把计数卡住). */
+@Composable
+fun rememberTvScrollActivityReporter(): TvScrollActivityReporter? {
+    val activity = LocalTvScrollActivity.current ?: return null
+    val reporter = remember(activity) { TvScrollActivityReporter(activity) }
+    DisposableEffect(reporter) { onDispose { reporter.setScrolling(false) } }
+    return reporter
 }
 
 /** 布局偏移连续多少帧都没怎么挪就算停稳: 2 帧 ≈ 33ms, 再少会把 60fps 下偶尔的等值帧误判成停. */

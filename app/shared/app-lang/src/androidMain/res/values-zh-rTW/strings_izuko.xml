@@ -41,8 +41,10 @@
     <string name="settings_theme_tv_visual_effects_smooth">流暢</string>
     <string name="settings_theme_tv_visual_effects_balanced">均衡</string>
     <string name="settings_theme_tv_visual_effects_full">完整</string>
+    <string name="settings_theme_tv_hero_backdrop">顯示 hero 背景</string>
+    <string name="settings_theme_tv_hero_backdrop_description">關閉後探索、搜尋、追番三頁都換成海報牆：海報下面寫番名，卡片上按確定先顯示 hero 背景，再按確定進入詳情</string>
     <string name="settings_theme_tv_card_focus_style">卡片聚焦樣式</string>
-    <string name="settings_theme_tv_card_focus_style_description">追番、搜尋和時間表卡片網格裡，聚焦的封面怎麼突出。探索頁和選集條是固定聚焦框，不受影響</string>
+    <string name="settings_theme_tv_card_focus_style_description">追番、搜尋和時間表卡片網格裡，聚焦的封面怎麼突出。海報牆照 Apple TV 一律只放大；顯示背景的探索頁和選集條是固定聚焦框，也不受影響</string>
     <string name="settings_theme_tv_card_focus_ring">原版（僅描邊）</string>
     <string name="settings_theme_tv_card_focus_scale_and_ring">放大 + 描邊</string>
     <string name="settings_theme_tv_card_focus_scale">僅放大</string>

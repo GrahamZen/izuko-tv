@@ -10,6 +10,12 @@
 package me.him188.ani.app.ui.foundation.session
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.lang.tv_rail_action_panel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.material.icons.rounded.Apps
@@ -74,6 +80,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
@@ -314,6 +321,15 @@ private fun TvNowPlayingRailGlyph(focused: Boolean, status: () -> PlaybackSessio
     }
 }
 
+/** 展开面板的右缘羽化: 前 ~82% 纯色实心, 末段用多色标近似缓动曲线羽化到透明, 消除竖向明暗切线. */
+private fun tvRailScrimFeather(color: Color): Brush = Brush.horizontalGradient(
+    0.00f to color,
+    0.82f to color,
+    0.90f to color.copy(alpha = 0.82f),
+    0.96f to color.copy(alpha = 0.38f),
+    1.00f to color.copy(alpha = 0f),
+)
+
 /** [TvNowPlayingRailGlyph] 的状态分档 (与动作面板里那行状态字用同一套判据, 只是这里不需要文案). */
 private enum class TvRailStatusSeverity { Normal, Attention, Error }
 
@@ -353,6 +369,13 @@ fun TvNavigationSideRail(
     avatarActions: List<TvRailAvatarAction> = emptyList(),
     /** 展开遮罩面板底色覆盖 (如详情页按封面调色板取色, 使遮罩跟随背景/主题); null 用默认 surface. */
     scrimColor: Color? = null,
+    /** 同 [scrimColor], 在绘制阶段取, 优先于它: 页面底色逐帧在变 (海报墙进出 hero 态, 见 TvPosterWallTone) 时用. */
+    scrimColorProvider: (() -> Color)? = null,
+    /**
+     * 面板的底由调用方画 (铺满面板, 绘制阶段), 优先于上面两个: 页面底色不是一个颜色时用 (海报墙探索页的上半截是 hero 的底, 见
+     * TvPosterWallTone.drawBackground), 右缘照常羽化.
+     */
+    scrimPainter: (DrawScope.() -> Unit)? = null,
 ) {
     // hasFocus (含子节点): 任一条目聚焦即展开
     var expanded by remember { mutableStateOf(false) }
@@ -375,16 +398,17 @@ fun TvNavigationSideRail(
             // 现在浅色是干净的白/浅灰面板, 深色是干净的深色面板, 都与主背景无缝衔接.
             val panelColor = scrimColor ?: AniThemeDefaults.shellBackgroundColor
             Box(
-                Modifier.fillMaxHeight().width(TV_RAIL_SCRIM_WIDTH).background(
-                    // 前 ~82% 纯色实心, 末段用多色标近似缓动曲线羽化到透明, 消除竖向明暗切线
-                    Brush.horizontalGradient(
-                        0.00f to panelColor,
-                        0.82f to panelColor,
-                        0.90f to panelColor.copy(alpha = 0.82f),
-                        0.96f to panelColor.copy(alpha = 0.38f),
-                        1.00f to panelColor.copy(alpha = 0f),
-                    ),
-                ),
+                Modifier.fillMaxHeight().width(TV_RAIL_SCRIM_WIDTH)
+                    // 调用方画的底要按右缘羽化擦掉一截 (DstIn), 得先画进自己的缓冲; 面板只在展开时在
+                    .ifThen(scrimPainter != null) { graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } }
+                    .drawBehind {
+                        if (scrimPainter != null) {
+                            scrimPainter()
+                            drawRect(tvRailScrimFeather(Color.Black), blendMode = BlendMode.DstIn)
+                        } else {
+                            drawRect(tvRailScrimFeather(scrimColorProvider?.invoke() ?: panelColor))
+                        }
+                    },
             )
         }
         // 进入门控: 只有"按左"才能把焦点移进侧边栏 (从上/下/右方向的空间焦点搜索一律取消,
@@ -402,6 +426,7 @@ fun TvNavigationSideRail(
         // 条目的落点身份. (侧边栏条目的 label 两两不同, 可以当稳定标识用.)
         val itemAnchorCache = remember { mutableMapOf<String, FocusRequester>() }
         val itemAnchors = items.map { itemAnchorCache.getOrPut(it.label) { FocusRequester() } }
+        val railFocusManager = LocalFocusManager.current
         Column(
             Modifier
                 // 居中, 但上端给头像那簇浮出按钮留够高度: 居中位置放不下时整列往下让, 让到还是
@@ -421,6 +446,17 @@ fun TvNavigationSideRail(
                     layout(placeable.width, placeable.height) { placeable.place(0, y) }
                 }
                 .onFocusChanged { expanded = it.hasFocus }
+                // 上下键在栏里自己走, 走到头也吞掉: 竖向离栏在下面的 onExit 里取消了, 但取消后这一下没人消费, 会交还给 Android 的
+                // 焦点查找, 照样按几何挑到出血到栏底下的原生视图
+                .onKeyEvent { event ->
+                    val direction = when (event.key) {
+                        Key.DirectionUp -> FocusDirection.Up
+                        Key.DirectionDown -> FocusDirection.Down
+                        else -> return@onKeyEvent false
+                    }
+                    if (event.type == KeyEventType.KeyDown) railFocusManager.moveFocus(direction)
+                    true
+                }
                 .focusProperties {
                     onEnter = {
                         when (requestedFocusDirection) {
@@ -434,6 +470,13 @@ fun TvNavigationSideRail(
                             FocusDirection.Enter -> if (hasDefaultFocusItem) enterFocus.requestFocus()
                             // 上/下/右的空间搜索一律取消, 否则详情页最上方按钮按上也会误入
                             else -> cancelFocusChange()
+                        }
+                    }
+                    // 竖向到头 (最上面的头像按上 / 最下面的设置按下) 就停在栏里, 回内容区只走右键 / 返回键. 放给空间搜索的话会按
+                    // 几何挑到内容区 —— 原生页的视图往左出血到本栏底下, 正好在它的正下方
+                    onExit = {
+                        if (requestedFocusDirection == FocusDirection.Up || requestedFocusDirection == FocusDirection.Down) {
+                            cancelFocusChange()
                         }
                     }
                 }

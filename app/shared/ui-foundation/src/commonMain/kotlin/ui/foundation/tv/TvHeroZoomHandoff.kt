@@ -819,6 +819,11 @@ data class TvBackdropFade(
     val color: Color,
     /** true = 由透明加深到 [maxAlpha] (下缘那种); false = 由 [maxAlpha] 衰减到透明 (顶缘 / 左缘那种). */
     val toEdge: Boolean = false,
+    /**
+     * 只对 [toEdge] 的渐变有效: 0 = 前段较快压暗、尾段长长地渐近全遮; 1 = 与顶缘 / 左缘同一条 smoothstep (两头都缓).
+     * 连续量, 放大转场插值时曲线形状跟着连续变, 不在半路换一条.
+     */
+    val smoothness: Float = 0f,
 )
 
 /** 按角色对齐插值; 见 [TvBackdropTreatment] 的说明. */
@@ -855,6 +860,7 @@ private fun lerpFade(a: TvBackdropFade?, b: TvBackdropFade?, t: Float): TvBackdr
         color = androidx.compose.ui.graphics.lerp(a.color, b.color, t),
         // 方向是离散量 (从边缘衰减 / 向边缘加深), 插不了; 两端一致时无歧义, 不一致时取占比大的那侧
         toEdge = if (t < 0.5f) a.toEdge else b.toEdge,
+        smoothness = f(a.smoothness, b.smoothness),
     )
 }
 
