@@ -1800,12 +1800,16 @@ private fun TvDetailsSideRail(
  * 下缘的起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图, 选集卡片那一带整片发黑
  * (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
  */
-private fun tvHeroBackdropTreatment(solidUnderlay: Color?) = TvBackdropTreatment(
+private fun tvHeroBackdropTreatment(
+    solidUnderlay: Color?,
+    /** 下缘渐隐的强度 (0..1): 只属于首屏, 翻离首屏时随背景淡出一起收掉 (见 [TvHeroBackdrop]). */
+    bottomStrength: Float = 1f,
+) = TvBackdropTreatment(
     // 左侧暗色 scrim: 保证浮在图上的标题可读
     left = TvBackdropFade(start = 0f, end = 0.55f, maxAlpha = 0.6f, color = Color.Black),
     // 有纯色垫底时画同色渐变 (擦掉 a 露出纯色 C 与在图上叠一层 alpha a 的 C 逐像素相同), 不必开离屏缓冲
     bottom = TvBackdropFade(
-        start = 0.72f, end = 1f, maxAlpha = 0.88f,
+        start = 0.72f, end = 1f, maxAlpha = 0.88f * bottomStrength.coerceIn(0f, 1f),
         color = solidUnderlay ?: Color.Black, toEdge = true,
     ),
     bottomDstOut = solidUnderlay == null,
@@ -2928,7 +2932,7 @@ private fun Modifier.tvSectionEdge(
 
 /**
  * Hero 全屏背景图 (页面背景层, 不随内容滚动): 贴顶/贴右出血, 左缘与底缘渐变入页面背景色,
- * 随滚动淡出以免与滚上来的内容争夺可读性.
+ * 随滚动淡出以免与滚上来的内容争夺可读性; 底缘渐变只在首屏, 翻离首屏时一起收掉.
  */
 @Composable
 private fun TvHeroBackdrop(
@@ -3053,7 +3057,10 @@ private fun TvHeroBackdrop(
                     // 每条渐变仍只画它不透明的那一段 (见 tvBackdropTreatmentPainter): 铺满整层时透明部分 GPU 照样
                     // 逐像素混合一遍, 4K 下每条全屏混合约 2~3ms (2026-09-10 实测: 放大每帧 GPU 30ms, 大头是全屏填充次数)
                     val t = zoomT()
-                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay)
+                    // 下缘渐隐只属于首屏 (托住首屏下半的信息带与选集): 翻离首屏时与背景淡出同一个进度收掉, 第二页起背景图整屏均匀地
+                    // 淡在 HERO_BACKDROP_MIN_ALPHA, 底下不再单独压一道黑. 缩回层按按返回那一刻的进度起步 (见 scrollFade)
+                    val scrolled = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
+                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled)
                     val treatment = if (zoomFrom != null && t < 1f) {
                         lerpTvBackdropTreatment(sourceTreatment ?: TvBackdropTreatment(), ownTreatment, t)
                     } else {
