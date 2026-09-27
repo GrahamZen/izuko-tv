@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import kotlin.random.Random
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -170,12 +171,18 @@ interface AniNavigator {
         navigateSingleInstance(NavRoutes.Settings(tab))
     }
 
+    /**
+     * 打开搜索页, 每次都是新的一页 ([NavRoutes.SubjectSearch.instance] 换新), 不与栈里已有的同一个搜索共用页面状态.
+     * 栈顶已经是同一个搜索时 (连按) 什么都不做.
+     */
     fun navigateSubjectSearch(search: NavRoutes.SubjectSearch = NavRoutes.SubjectSearch()) {
-        navigate(search)
+        val top = backStack.lastOrNull()
+        if (top is NavRoutes.SubjectSearch && top.keyword == search.keyword && top.tags == search.tags) return
+        navigate(search.copy(instance = Random.nextLong()))
     }
 
     fun navigateSubjectSearch(tag: String) {
-        navigate(NavRoutes.SubjectSearch(tags = listOf(tag)))
+        navigateSubjectSearch(NavRoutes.SubjectSearch(tags = listOf(tag)))
     }
 
     fun navigateEditMediaSource(
