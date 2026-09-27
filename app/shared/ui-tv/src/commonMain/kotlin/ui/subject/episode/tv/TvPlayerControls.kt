@@ -1070,7 +1070,8 @@ private fun TvPlayerProgressRow(
     } else {
         val player = vm.player
         val isPlaying = remember(player) { { player.state.value.playWhenReady } }
-        val pause = remember(player) { { player.pause() } }
+        // 拖动时暂不暂停与遥控器同一个设置 (见 TvScrubPlayback); 松手后恢复按下前的状态由 tvProgressTouchSeek 自己做
+        val pause = remember(vm, player) { { if (vm.videoScaffoldConfig.pauseVideoOnScrub) player.pause() } }
         val play = remember(player) { { player.play() } }
         val onInteraction = remember(overlay) { { overlay.markInteraction() } }
         Modifier
@@ -1690,9 +1691,9 @@ private class TvProgressTrackGeometry {
  * "整行是一个焦点节点"的进度条行里再嵌一个焦点节点 —— 平板配遥控器时就是"可聚焦容器套可聚焦子节点"
  * 那个坑, 而且它还会接管方向键. 这里只接指针, 焦点结构与遥控器路由一个字不动.
  *
- * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂停 (画面跑着
- * 而圆点停在别处会对不上, 取帧也更稳), 落地后恢复**按下之前**的播放状态 —— 不像遥控器那样一律续播,
- * 触屏上拖进度条从来不改变播放/暂停. 被别处抢走 (手势取消) = 丢弃预览位置.
+ * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂不暂停看同一个设置
+ * ([pause] 由调用方按设置决定是否真的暂停, 见 TvScrubPlayback), 落地后恢复**按下之前**的播放状态 —— 不像遥控器
+ * 那样确认即播, 触屏上拖进度条从来不改变播放/暂停. 被别处抢走 (手势取消) = 丢弃预览位置.
  */
 private fun Modifier.tvProgressTouchSeek(
     geometry: TvProgressTrackGeometry,
