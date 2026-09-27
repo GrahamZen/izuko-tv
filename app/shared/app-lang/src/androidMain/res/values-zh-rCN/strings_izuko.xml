@@ -316,6 +316,25 @@
     <string name="tv_onboarding_theme_off">关</string>
     <string name="tv_onboarding_phone_title">用手机操作</string>
     <string name="settings_network_proxy_overall_detecting_progress">正在检测连接 · 已完成 %1$d/%2$d</string>
+    <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->
+    <string name="tv_profile_picker_title">谁在看？</string>
+    <string name="tv_profile_picker_hint">长按一个用户可以改名或删除</string>
+    <string name="tv_profile_switching">正在切换…</string>
+    <string name="tv_profile_current">当前</string>
+    <string name="tv_profile_default_name">用户 %1$d</string>
+    <string name="tv_profile_switch">切换用户</string>
+    <string name="tv_profile_add">添加用户</string>
+    <string name="tv_profile_add_description">每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台设备上大家共用的。</string>
+    <string name="tv_profile_name_placeholder">名字</string>
+    <string name="tv_profile_create">创建并切换</string>
+    <string name="tv_profile_rename">改名</string>
+    <string name="tv_profile_save">保存</string>
+    <string name="tv_profile_cancel">取消</string>
+    <string name="tv_profile_delete">删除</string>
+    <string name="tv_profile_delete_title">删除「%1$s」？</string>
+    <string name="tv_profile_delete_description">这个用户的收藏、播放记录和登录都会从这台设备上删掉。缓存的视频是大家共用的，不会删。</string>
+    <string name="tv_profile_delete_primary">第一个用户只能改名，不能删除</string>
+    <string name="tv_profile_delete_current">要删除正在用的用户，先切换到别人</string>
     <string name="settings_network_proxy_service_tmdb">背景图接口</string>
     <string name="settings_network_tmdb_images_group">背景图 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不加载 TMDB 背景图</string>

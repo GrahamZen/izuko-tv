@@ -164,6 +164,8 @@ import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
 import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
+import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
+import me.him188.ani.app.ui.profile.TvUserProfilePicker
 
 /**
  * TV 沉浸式探索页 (海报墙): 顶上是热门轮播 (轮播条目的 TMDB 背景图 + 标题 / 评分连载 / 简介 + 「立即观看」「新番时间表」两颗按钮
@@ -538,8 +540,12 @@ private fun TvExplorationPageContent(
     val recRefreshing by state.recommendationsRefreshing.collectAsStateWithLifecycle()
     val recLoadingHint = stringResource(Lang.exploration_rec_loading)
     var recEmptyHintShown by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(recRefreshing, recGroups.isEmpty()) {
-        if (recRefreshing && recGroups.isEmpty() && !recEmptyHintShown) {
+    // 选人页、登录层盖在主页上时不提示 (系统 toast 会浮在它们上面), 露出主页时还空着再说
+    val pickerVisible by TvUserProfilePicker.visible.collectAsStateWithLifecycle()
+    val loginLayerVisible = TvOnboardingLogin.request.collectAsStateWithLifecycle().value != null
+    val pageCovered = pickerVisible || loginLayerVisible
+    LaunchedEffect(recRefreshing, recGroups.isEmpty(), pageCovered) {
+        if (recRefreshing && recGroups.isEmpty() && !recEmptyHintShown && !pageCovered) {
             recEmptyHintShown = true
             toaster.toast(recLoadingHint)
         }

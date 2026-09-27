@@ -170,9 +170,25 @@ import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
+import me.him188.ani.app.data.persistent.database.databaseFile
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.platform.AppRestarter
+import me.him188.ani.utils.io.delete
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.distinctUntilChanged
+import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.profile.UserProfileSeeder
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
+/** 缓存索引那几张表只从整机库取, 见 [DeviceAniDatabase]. */
+private val Scope.deviceDatabase get() = get<DeviceAniDatabase>().database
 private val Scope.settingsRepository get() = get<SettingsRepository>()
 private val Scope.bangumiApiProvider get() = get<BangumiApiProvider>()
 
@@ -206,6 +222,8 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             browserFactory = get(),
             scope = coroutineScope,
             trustedMirrorRoot = { get<BangumiEndpointProvider>().trustedMirrorRoot.value },
+            // 多人共用时内置浏览器里可能还登着上一个人的 bgm 账号
+            clearWebLoginBeforeInAppBrowser = { UserProfiles.registry.state.value.profiles.size > 1 },
         )
     }
     single<SessionStateProvider> {
@@ -526,6 +544,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             sessionStateProvider = get(),
             scope = coroutineScope,
             cacheDir = getContext().files.cacheDir,
+            collectionsCacheFileName = UserProfiles.current.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME),
         )
     }
 
@@ -548,26 +567,43 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<DanmakuRegexFilterRepository> { DanmakuRegexFilterRepositoryImpl(getContext().dataStores.danmakuFilterStore) }
     single<MikanIndexCacheRepository> { MikanIndexCacheRepositoryImpl(getContext().dataStores.mikanIndexStore) }
 
-    single<AniDatabase> {
-        getContext().createDatabaseBuilder()
-            .fallbackToDestructiveMigrationOnDowngrade(true)
-            .fallbackToDestructiveMigrationFrom(
-                dropAllTables = true,
-                startVersions = buildList {
-                    addAll(1..15) // 16 is destructive
-                }.toIntArray(),
-            )
-            .addMigrations(MIGRATION_19_20, MIGRATION_21_22, MIGRATION_24_25)
-            // 旧版评分把标签列写成了纯文本, 那样的行一读就抛异常: 打开时修掉 (见 SelfRatingTagsRepair)
-            .addCallback(SelfRatingTagsRepair)
-            .setDriver(BundledSQLiteDriver())
-            .setQueryCoroutineContext(Dispatchers.IO_)
-            .build()
+    // 当前用户的库; 缓存索引那几张表另从整机库取 (1 号用户在用时两者是同一个实例)
+    single<AniDatabase> { buildAniDatabase(getContext(), UserProfiles.current.databaseFileName) }
+    single<DeviceAniDatabase> {
+        if (UserProfiles.current.isPrimary) {
+            DeviceAniDatabase(get<AniDatabase>())
+        } else {
+            DeviceAniDatabase(buildAniDatabase(getContext(), UserProfile.PRIMARY_DATABASE_FILE_NAME))
+        }
+    }
+    single<UserProfileRegistry> { UserProfiles.registry }
+    single<UserProfileManager> {
+        UserProfileManager(
+            registry = get(),
+            restarter = getOrNull<AppRestarter>() ?: AppRestarter.Unsupported,
+            deleteFiles = { profile -> deleteUserProfileFiles(getContext(), profile) },
+            beforeSwitch = { target -> get<UserProfileSeeder>().seed(target) },
+        )
+    }
+    // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)
+    single<UserProfileSeeder> {
+        UserProfileSeeder(
+            currentDatabase = get(),
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            subjectIds = {
+                withTimeoutOrNull(500.milliseconds) {
+                    get<TrendsRepository>().getTrendsInfo().subjects
+                        .take(TrendsRepository.HERO_CAROUSEL_SIZE)
+                        .map { it.bangumiId }
+                }.orEmpty()
+            },
+        )
     }
 
     single<HttpDownloader> {
         KtorPersistentHttpDownloader(
-            dao = database.httpCacheDownloadStateDao(),
+            dao = deviceDatabase.httpCacheDownloadStateDao(),
             get<HttpClientProvider>().get(),
             fileSystem = SystemFileSystem,
             baseSaveDir = get<MediaSaveDirProvider>().saveDir
@@ -617,7 +653,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                                 engineKey = MediaCacheEngineKey(engine.type.id),
                                 torrentEngine = engine,
                                 engineAccess = get(),
-                                dao = database.torrentCacheInfoDao(),
+                                dao = deviceDatabase.torrentCacheInfoDao(),
                                 baseSaveDirProvider = get(),
                             ),
                             displayName = "LocalTorrent",
@@ -632,7 +668,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                     HttpMediaCacheStorage(
                         mediaSourceId = id,
                         store = metadataStore,
-                        dao = database.httpCacheDownloadStateDao(),
+                        dao = deviceDatabase.httpCacheDownloadStateDao(),
                         httpEngine = get<HttpMediaCacheEngine>(),
                         displayName = "LocalWebM3u",
                         coroutineScope.childScopeContext(),
@@ -727,8 +763,44 @@ fun KoinApplication.startCommonKoinModule(
         peerFilterRepo.updateOrLoadAll()
     }
 
+    // 选人页上显示各人的 Bangumi 头像: 本进程的用户登录状态一变就记下来
+    coroutineScope.launch {
+        val profiles = koin.get<UserProfileManager>()
+        koin.get<UserRepository>().selfInfoFlow
+            .map { it?.avatarUrl }
+            .distinctUntilChanged()
+            .collect { profiles.updateAvatar(it) }
+    }
+
     koin.get<SessionManager>().startBackgroundJob()
     return this
+}
+
+private fun buildAniDatabase(context: Context, fileName: String): AniDatabase =
+    context.createDatabaseBuilder(fileName)
+        .fallbackToDestructiveMigrationOnDowngrade(true)
+        .fallbackToDestructiveMigrationFrom(
+            dropAllTables = true,
+            startVersions = buildList {
+                addAll(1..15) // 16 is destructive
+            }.toIntArray(),
+        )
+        .addMigrations(MIGRATION_19_20, MIGRATION_21_22, MIGRATION_24_25)
+        // 旧版评分把标签列写成了纯文本, 那样的行一读就抛异常: 打开时修掉 (见 SelfRatingTagsRepair)
+        .addCallback(SelfRatingTagsRepair)
+        .setDriver(BundledSQLiteDriver())
+        .setQueryCoroutineContext(Dispatchers.IO_)
+        .build()
+
+/** 删用户: 他的库 (连同 SQLite 旁边的几个文件与 Room 的文件锁)、按人的配置、推荐快照. */
+private suspend fun deleteUserProfileFiles(context: Context, profile: UserProfile) = withContext(Dispatchers.IO_) {
+    for (suffix in listOf("", "-wal", "-shm", "-journal", ".lck")) {
+        context.databaseFile(profile.databaseFileName + suffix).delete()
+    }
+    for (name in UserProfile.SCOPED_DATASTORE_NAMES) {
+        context.dataStores.resolveDataStoreFile(profile.scopedFileName(name)).delete()
+    }
+    context.files.cacheDir.resolve(profile.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME)).delete()
 }
 
 /**

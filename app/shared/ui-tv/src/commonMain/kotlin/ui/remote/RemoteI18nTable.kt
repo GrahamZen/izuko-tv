@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1141,4 +1141,34 @@ private fun part9() = listOf(
     RemoteText("正在读取… 已读完 {0}/{1} 天", "Loading… {0} of {1} days loaded", "正在讀取… 已讀完 {0}/{1} 天", "正在讀取… 已讀完 {0}/{1} 天"),
     RemoteText("更新中 {0}/{1}…", "Updating {0}/{1}…", "更新中 {0}/{1}…", "更新中 {0}/{1}…"),
     RemoteText("剩 {0}", "{0} left", "剩 {0}", "剩 {0}"),
+)
+
+// 设置里的用户卡片 (添加 / 切换 / 改名 / 删除) 与切换时的等待, 见 RemoteProfiles
+private fun part10() = listOf(
+    RemoteText("用户", "Users", "用戶", "使用者"),
+    RemoteText("用户 {0}", "User {0}", "用戶 {0}", "使用者 {0}"),
+    RemoteText("切换", "Switch", "切換", "切換"),
+    RemoteText("改名", "Rename", "改名", "改名"),
+    RemoteText("名字", "Name", "名字", "名稱"),
+    RemoteText("添加用户", "Add user", "添加用戶", "新增使用者"),
+    RemoteText("已添加「{0}」", "Added “{0}”", "已添加「{0}」", "已新增「{0}」"),
+    RemoteText("添加超时，请重试", "Adding timed out. Please try again.", "添加超時，請重試", "新增超時，請重試"),
+    RemoteText("保存超时，请重试", "Saving timed out. Please try again.", "保存超時，請重試", "儲存超時，請重試"),
+    RemoteText("每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。", "Each user has their own collections, watch history and Bangumi login. Settings, sources and cached videos are shared by everyone on this TV.", "每個用戶有自己的收藏、播放記錄和 Bangumi 登錄；設置、數據源和緩存的視頻是這台電視上大家共用的。", "每位使用者有自己的收藏、播放記錄和 Bangumi 登入；設定、資料源和快取的影片是這台電視上大家共用的。"),
+    RemoteText("第一个用户只能改名，不能删除", "The first user can only be renamed, not deleted", "第一個用戶只能改名，不能刪除", "第一位使用者只能改名，不能刪除"),
+    RemoteText("要删除正在用的用户，先切换到别人", "To delete the user in use, switch to someone else first", "要刪除正在用的用戶，先切換到別人", "要刪除正在使用的使用者，請先切換到其他人"),
+    RemoteText("删除「{0}」？\n\n这个用户的收藏、播放记录和登录都会从这台电视上删掉。缓存的视频是大家共用的，不会删。", "Delete “{0}”?\n\nTheir collections, watch history and login will be removed from this TV. Cached videos are shared and stay.", "刪除「{0}」？\n\n這個用戶的收藏、播放記錄和登錄都會從這台電視上刪掉。緩存的視頻是大家共用的，不會刪。", "刪除「{0}」？\n\n這位使用者的收藏、播放記錄和登入都會從這台電視上刪除。快取的影片是大家共用的，不會刪除。"),
+    RemoteText("切换到「{0}」？\n\n电视上的 Izuko 会重新打开，正在播放的会停下。", "Switch to “{0}”?\n\nIzuko on the TV will restart, and anything playing will stop.", "切換到「{0}」？\n\n電視上的 Izuko 會重新打開，正在播放的會停下。", "切換到「{0}」？\n\n電視上的 Izuko 會重新開啟，正在播放的會停下。"),
+    RemoteText("电视现在就是「{0}」", "The TV is already on “{0}”", "電視現在就是「{0}」", "電視現在就是「{0}」"),
+    RemoteText("电视上没有显示 Izuko，切换不了。先在电视上打开 Izuko 再试", "Izuko isn't showing on the TV, so it can't switch. Open Izuko on the TV and try again.", "電視上沒有顯示 Izuko，切換不了。先在電視上打開 Izuko 再試", "電視上沒有顯示 Izuko，切換不了。先在電視上開啟 Izuko 再試"),
+    RemoteText("正在切换到「{0}」", "Switching to “{0}”", "正在切換到「{0}」", "正在切換到「{0}」"),
+    RemoteText("电视上的 Izuko 正在重新打开，好了之后这个页面会自动刷新。", "Izuko is restarting on the TV. This page refreshes by itself once it is back.", "電視上的 Izuko 正在重新打開，好了之後這個頁面會自動刷新。", "電視上的 Izuko 正在重新開啟，好了之後這個頁面會自動重新整理。"),
+    RemoteText("电视还没有切换好", "The TV hasn't finished switching", "電視還沒有切換好", "電視還沒有切換好"),
+    RemoteText("看看电视上的 Izuko 有没有重新打开。打开了就刷新这个页面；没打开的话，在电视上打开 Izuko 再刷新。", "Check whether Izuko reopened on the TV. If it did, refresh this page; if not, open Izuko on the TV and then refresh.", "看看電視上的 Izuko 有沒有重新打開。打開了就刷新這個頁面；沒打開的話，在電視上打開 Izuko 再刷新。", "看看電視上的 Izuko 有沒有重新開啟。開啟了就重新整理這個頁面；沒開啟的話，在電視上開啟 Izuko 再重新整理。"),
+    RemoteText("刷新", "Refresh", "刷新", "重新整理"),
+    RemoteText("已切换到「{0}」", "Switched to “{0}”", "已切換到「{0}」", "已切換到「{0}」"),
+    RemoteText("这台设备不支持多用户", "This device doesn't support multiple users", "這台設備不支持多用戶", "這台裝置不支援多使用者"),
+    RemoteText("没有这个用户了，刷新页面再看看", "That user no longer exists. Refresh the page.", "沒有這個用戶了，刷新頁面再看看", "沒有這位使用者了，重新整理頁面再看看"),
+    RemoteText("「添加用户」只新建，不会切过去；要用时点那个人右边的「切换」，电视上的 Izuko 会重新打开，这个页面随后自动刷新。", "“Add user” only creates the user without switching. To use it, tap “Switch” next to that person: Izuko on the TV restarts and this page then refreshes by itself.", "「添加用戶」只新建，不會切過去；要用時點那個人右邊的「切換」，電視上的 Izuko 會重新打開，這個頁面隨後自動刷新。", "「新增使用者」只新建，不會切過去；要用時點那個人右邊的「切換」，電視上的 Izuko 會重新開啟，這個頁面隨後自動重新整理。"),
+    RemoteText("点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。", "Tap an avatar or name to rename or delete. The first user and the user in use can't be deleted.", "點頭像或名字：改名或刪除。第一個用戶和正在用的用戶不能刪除。", "點頭像或名稱：改名或刪除。第一位使用者和正在使用的使用者不能刪除。"),
 )

@@ -316,6 +316,25 @@
     <string name="tv_onboarding_theme_off">Off</string>
     <string name="tv_onboarding_phone_title">Use your phone</string>
     <string name="settings_network_proxy_overall_detecting_progress">Checking connections · %1$d/%2$d done</string>
+    <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->
+    <string name="tv_profile_picker_title">Who is watching?</string>
+    <string name="tv_profile_picker_hint">Long press a user to rename or delete</string>
+    <string name="tv_profile_switching">Switching…</string>
+    <string name="tv_profile_current">Current</string>
+    <string name="tv_profile_default_name">User %1$d</string>
+    <string name="tv_profile_switch">Switch user</string>
+    <string name="tv_profile_add">Add user</string>
+    <string name="tv_profile_add_description">Each user has their own collections, watch history and Bangumi login. Settings, sources and cached videos are shared by everyone on this device.</string>
+    <string name="tv_profile_name_placeholder">Name</string>
+    <string name="tv_profile_create">Create and switch</string>
+    <string name="tv_profile_rename">Rename</string>
+    <string name="tv_profile_save">Save</string>
+    <string name="tv_profile_cancel">Cancel</string>
+    <string name="tv_profile_delete">Delete</string>
+    <string name="tv_profile_delete_title">Delete %1$s?</string>
+    <string name="tv_profile_delete_description">Their collections, watch history and login will be removed from this device. Cached videos are shared and stay.</string>
+    <string name="tv_profile_delete_primary">The first user can only be renamed</string>
+    <string name="tv_profile_delete_current">Switch to another user to delete this one</string>
     <string name="settings_network_proxy_service_tmdb">Backdrop metadata API</string>
     <string name="settings_network_tmdb_images_group">Backdrops (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">Skip TMDB backdrops</string>

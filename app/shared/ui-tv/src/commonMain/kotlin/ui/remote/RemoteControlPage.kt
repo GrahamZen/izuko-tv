@@ -46,6 +46,8 @@ internal fun renderRemoteControlPage(
     i18nScript: String = "",
     /** 这份脚本的版本号, 显示在设置页底部: 手机上刷没刷新、拿到的是不是新脚本, 对一下这个号就知道 */
     pageVersion: String = "",
+    /** 生成页面时电视是哪个用户 (见 RemoteProfiles); 提示轮询报的和它不一样就整页重载. 0 = 不比 */
+    profileId: Int = 0,
 ): String =
     """
     <!doctype html>
@@ -58,7 +60,7 @@ internal fun renderRemoteControlPage(
     <meta name="referrer" content="no-referrer">
     <title>Izuko TV 控制台</title>
     <script>
-    """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
     """.trimIndent() + "\n" + STYLE + "\n" + themeCss + """
@@ -102,6 +104,7 @@ internal fun renderRemoteControlPage(
     <section class="tab" id="tab-settings" hidden>
     <div class="seg" id="set-seg"><button type="button" data-ssub="general" class="on">常规</button><button type="button" data-ssub="sources">数据源</button></div>
     <div id="set-general">
+    <div id="set-profiles"></div>
     <div id="set-account"></div>
     <div id="set-history"></div>
     <div id="set-look"></div>
@@ -151,7 +154,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -645,7 +648,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn:disabled { opacity: .6; }
 /* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
 .sw-btn.link { background: #2f7bf0; }
-#link-dlg, #login-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+#link-dlg, #login-dlg, #pf-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
   background: rgba(0,0,0,.45); }
 .link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
   background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
@@ -980,6 +983,18 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .acct-nick button:disabled { opacity: .5; }
 .acct-wait .now-status { margin-top: 0; }
 .acct-wait a { color: var(--p); }
+/* 用户卡片 (见 PROFILES_SCRIPT): 一人一行, 头像 + 名字 (点开改名 / 删除), 右边「当前」或「切换」; 展开的菜单 / 改名框跟在那一行下面 */
+.pf-user + .pf-user { border-top: 1px solid var(--line); }
+.pf-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.pf-who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; background: none; color: var(--fg); text-align: left; }
+.pf-av { flex: none; width: 40px; height: 40px; border-radius: 20px; object-fit: cover; background: var(--chip); }
+.pf-ph { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 17px; font-weight: 700; }
+.pf-name { min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-cur { flex: none; font-size: 13px; color: var(--mute); }
+.pf-go { flex: none; padding: 8px 16px; border-radius: 999px; background: var(--p-soft); color: var(--p); font-size: 14px; font-weight: 600; }
+.pf-go:disabled { opacity: .5; }
+.pf-user .acct-menu, .pf-user .acct-nick { margin: 0 0 10px; }
+.pf-user p.hint { margin: -2px 0 10px; }
 #cc-chips .chips { margin-top: 4px; }
 /* 选资源页顶上的「搜索名与集数」卡 (见 CACHE_SCRIPT 的 ccNames): 与下面的数据源胶囊拉开, 别贴着 */
 #cc-names .req { margin: 4px 0 12px; }
@@ -1488,6 +1503,10 @@ private val SCRIPT = """
         lastKeep = !!n.keep;
         // app 里换了语言 (见 RemoteI18n): 整页重载拿新的译文
         if (n.lang && n.lang !== LANG) location.reload();
+        // 电视换了用户 (电视上或网页上换的, 应用重启过): 各标签里的数据都是按人的, 整页重载 (见 PROFILES_SCRIPT)
+        if (n.user && window.profileId && n.user !== window.profileId) {
+          if (window.reloadForUser) window.reloadForUser(); else location.reload();
+        }
         // Bangumi 的线路变了 (电视上改了连接方式、自动改成用镜像、或刚在网页上改的): 账号卡片按新状态重读
         if (n.bgm !== lastBgm) {
           if (lastBgm !== null && window.loadAccount) window.loadAccount();
@@ -1601,6 +1620,7 @@ private val SCRIPT = """
       if (window.loadQuark) window.loadQuark();
     } else {
       if (window.loadSettings) window.loadSettings();
+      if (window.loadProfiles) window.loadProfiles();
       if (window.loadAccount) window.loadAccount();
       if (window.loadUpdate) window.loadUpdate();
     }
@@ -6607,6 +6627,181 @@ private val REVIEW_SCRIPT = """
 """.trimIndent()
 
 /**
+ * 「设置」标签顶上的用户卡片 (见 RemoteProfiles): 电视上有哪几个人、现在是谁. 点头像 / 名字展开改名、删除; 别人那一行右边「切换」,
+ * 正在用的标「当前」; 最下面「添加用户」只新建, 不切过去. 切换会重启电视上的应用: 挡住页面等电视回来, 确认换成了那个人就整页重载
+ * (各标签里的数据都是按人的); 电视上自己换了人也会重载 (SCRIPT 的 pollNotice 比对 window.profileId). 切到设置标签时读一次.
+ */
+private val PROFILES_SCRIPT = """
+(function () {
+  var box = document.getElementById('set-profiles');
+  // 同电视选人页的头像底色, 按编号取 (同一个人每次一样)
+  var COLORS = ['#5E81AC', '#BF616A', '#A3BE8C', '#D08770', '#B48EAD', '#88C0D0', '#EBCB8B'];
+  var data = null, last = '';
+  // 展开了谁的菜单 (改名 / 删除)、正在改谁的名字 (编号), 添加用户的表单开着没有
+  var menu = null, renaming = null, adding = false;
+  // 换了用户要整页重载时经这里: 记一笔, 重载后提示现在是谁
+  var RELOADED = 'ani-user-reload';
+  window.reloadForUser = function () {
+    try { sessionStorage.setItem(RELOADED, '1'); } catch (e) {}
+    location.reload();
+  };
+  function load() {
+    return getJson('api/profiles').then(function (d) {
+      if (d.ok) { data = d; render(); }
+      return d;
+    }).catch(function () {});
+  }
+  window.loadProfiles = load;
+  var reloaded = false;
+  try { reloaded = !!sessionStorage.getItem(RELOADED); sessionStorage.removeItem(RELOADED); } catch (e) {}
+  if (reloaded) {
+    load().then(function () {
+      var me = (data && data.users || []).filter(function (u) { return u.current; })[0];
+      if (me) toast(T('已切换到「{0}」', me.name));
+    });
+  }
+  function avatar(u) {
+    // 候选依次试 (经电视转发 → 手机直连), 拉不到换下一张, 见 SCRIPT 里的 error 监听
+    var list = (u.avatar || []).filter(Boolean);
+    if (list.length) {
+      return '<img class="pf-av alt-src" src="' + esc(list[0]) + '" data-alt="' + esc(list.slice(1).join(' ')) + '" alt="" referrerpolicy="no-referrer">';
+    }
+    return '<span class="pf-av pf-ph" style="background:' + COLORS[(u.id - 1) % COLORS.length] + '">' + esc(u.name.charAt(0).toUpperCase()) + '</span>';
+  }
+  function byId(id) {
+    return (data && data.users || []).filter(function (u) { return u.id === id; })[0] || null;
+  }
+  function render() {
+    var d = data;
+    if (!d || !d.supported) { box.innerHTML = ''; last = ''; return; }
+    var h = '<div class="card set-card"><div class="set-title">' + T('用户') + '</div>';
+    (d.users || []).forEach(function (u) {
+      h += '<div class="pf-user"><div class="pf-row"><button type="button" class="pf-who" data-pf="menu" data-id="' + u.id + '">' + avatar(u) +
+        '<span class="pf-name">' + esc(u.name) + '</span></button>' +
+        (u.current ? '<span class="pf-cur">' + T('当前') + '</span>'
+          : '<button type="button" class="pf-go" data-pf="switch" data-id="' + u.id + '">' + T('切换') + '</button>') + '</div>';
+      if (renaming === u.id) {
+        h += '<form class="acct-nick" id="pf-rename" data-id="' + u.id + '"><input type="text" name="name" maxlength="20" autocomplete="off" value="' +
+          esc(u.raw) + '" placeholder="' + esc(T('用户 {0}', u.id)) + '"><button type="submit">' + T('保存') + '</button></form>';
+      } else if (menu === u.id) {
+        // 删不了的 (第一个用户 / 正在用的) 不给按钮, 写明为什么 (同电视的长按菜单)
+        h += '<div class="acct-menu"><button type="button" class="ghost" data-pf="rename" data-id="' + u.id + '">' + T('改名') + '</button>' +
+          (u.primary || u.current ? '' : '<button type="button" class="ghost acct-danger" data-pf="delete" data-id="' + u.id + '">' + T('删除') + '</button>') +
+          '</div>' + (u.primary ? '<p class="hint">' + T('第一个用户只能改名，不能删除') + '</p>'
+            : u.current ? '<p class="hint">' + T('要删除正在用的用户，先切换到别人') + '</p>' : '');
+      }
+      h += '</div>';
+    });
+    if (adding) {
+      h += '<form id="pf-add"><label class="f"><span>' + T('名字') + '</span><input type="text" name="name" maxlength="20" autocomplete="off" placeholder="' +
+        esc(d.nextName || '') + '"></label><p class="hint">' +
+        T('每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。') + '</p><div class="row">' +
+        '<button type="button" class="ghost" data-pf="add-cancel">' + T('取消') + '</button><button type="submit" class="primary">' + T('添加') + '</button></div></form>';
+    } else {
+      h += '<div class="row"><button type="button" class="ghost" data-pf="add">' + T('添加用户') + '</button></div>';
+    }
+    h += '</div>';
+    if (h === last) return;
+    // 重画保住正在填的名字与焦点 (同账号卡片)
+    var typed = {}, act = document.activeElement, focus = act && box.contains(act) && act.form ? act.form.id + '.' + act.name : null;
+    [].forEach.call(box.querySelectorAll('form[id] input[name]'), function (i) { typed[i.form.id + '.' + i.name] = i.value; });
+    box.innerHTML = h;
+    last = h;
+    [].forEach.call(box.querySelectorAll('form[id] input[name]'), function (i) {
+      var k = i.form.id + '.' + i.name;
+      if (typed[k] != null) i.value = typed[k];
+      if (k === focus) i.focus();
+    });
+  }
+  // 刚展开的输入框直接聚焦 (在点击里调, 手机上才会弹出键盘)
+  function focusField(sel) {
+    var i = box.querySelector(sel + ' input');
+    if (i) { i.focus(); i.select(); }
+  }
+  // 切换: 先问一句 (电视上的应用会重启, 正在播的停下); 电视答应了就挡住页面等它回来
+  function startSwitch(u, b) {
+    if (!confirm(T('切换到「{0}」？\n\n电视上的 Izuko 会重新打开，正在播放的会停下。', u.name))) return;
+    b.disabled = true;
+    post('api/profiles/switch', { id: u.id }).then(function (r) {
+      b.disabled = false;
+      if (!r.ok) { toast(r.message); load(); return; }
+      waitSwitch(r.id, r.name || u.name);
+    }).catch(function () { b.disabled = false; fail(); });
+  }
+  // 电视重启要几秒到十几秒: 每秒问一次现在是谁, 换成了就整页重载. 等太久 (电视上没能重新打开) 就说明白, 让人去看电视
+  var SWITCH_WAIT = 60000;
+  function waitSwitch(id, name) {
+    var dlg = document.createElement('div');
+    dlg.id = 'pf-dlg';
+    dlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + esc(T('正在切换到「{0}」', name)) + '</div><p class="dlg-p">' +
+      T('电视上的 Izuko 正在重新打开，好了之后这个页面会自动刷新。') + '</p></div>';
+    document.body.appendChild(dlg);
+    var started = Date.now();
+    function next() {
+      if (Date.now() - started < SWITCH_WAIT) { setTimeout(tick, 1000); return; }
+      dlg.querySelector('.link-dlg-box').innerHTML = '<div class="link-dlg-t">' + T('电视还没有切换好') + '</div><p class="dlg-p">' +
+        T('看看电视上的 Izuko 有没有重新打开。打开了就刷新这个页面；没打开的话，在电视上打开 Izuko 再刷新。') + '</p><div class="row">' +
+        '<button type="button" class="ghost" data-pfd="close">' + T('知道了') + '</button><button type="button" class="primary" data-pfd="reload">' + T('刷新') + '</button></div>';
+    }
+    function tick() {
+      getJson('api/profiles', 3000).then(function (d) {
+        if (d.ok && d.currentId === id) window.reloadForUser(); else next();
+      }).catch(next);
+    }
+    dlg.addEventListener('click', function (e) {
+      if (e.target.closest('[data-pfd="reload"]')) location.reload();
+      else if (e.target.closest('[data-pfd="close"]')) dlg.remove();
+    });
+    setTimeout(tick, 1500);
+  }
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pf]');
+    if (!b || b.disabled) return;
+    var act = b.getAttribute('data-pf');
+    if (act === 'add') { adding = true; render(); focusField('#pf-add'); return; }
+    if (act === 'add-cancel') { adding = false; render(); return; }
+    var u = byId(+b.getAttribute('data-id'));
+    if (!u) return;
+    if (act === 'menu') {
+      var open = menu === u.id || renaming === u.id;
+      menu = open ? null : u.id;
+      renaming = null;
+      render();
+      return;
+    }
+    if (act === 'rename') { renaming = u.id; menu = null; render(); focusField('#pf-rename'); return; }
+    if (act === 'switch') { startSwitch(u, b); return; }
+    if (act === 'delete') {
+      if (!confirm(T('删除「{0}」？\n\n这个用户的收藏、播放记录和登录都会从这台电视上删掉。缓存的视频是大家共用的，不会删。', u.name))) return;
+      b.disabled = true;
+      post('api/profiles/delete', { id: u.id }).then(function (r) {
+        toast(r.message);
+        if (r.ok) menu = null; else b.disabled = false;
+        load();
+      }).catch(function () { b.disabled = false; fail(); });
+    }
+  });
+  box.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (f.id !== 'pf-add' && f.id !== 'pf-rename') return;
+    e.preventDefault();
+    var btn = f.querySelector('button[type=submit]'), name = f.elements.name.value.trim();
+    btn.disabled = true;
+    var req = f.id === 'pf-add' ? post('api/profiles/add', { name: name }) : post('api/profiles/rename', { id: f.getAttribute('data-id'), name: name });
+    req.then(function (r) {
+      btn.disabled = false;
+      toast(r.message);
+      if (r.ok) {
+        if (f.id === 'pf-add') adding = false; else renaming = null;
+        f.elements.name.value = '';
+      }
+      load();
+    }).catch(function () { btn.disabled = false; fail(); });
+  });
+})();
+""".trimIndent()
+
+/**
  * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是哪个 Bangumi 账号; 没登录时点一下发起登录 —— 默认在手机上授权
  * (授权完把浏览器跳到的网址粘回来), 也可以改在电视上登录; 另有「用个人令牌登录」, 不经过授权页 (中国大陆经镜像时授权页走不通).
  * 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次. 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
@@ -7157,7 +7352,11 @@ private val HELP_SCRIPT = """
     T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
     T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存；「新番时间表」按星期列出这一周每天更新的番，自己在看 / 想看的用主题色标出。')
   ]);
-  var GENERAL = sec(T('账号'), [
+  var GENERAL = sec(T('用户'), [
+    T('每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。'),
+    T('「添加用户」只新建，不会切过去；要用时点那个人右边的「切换」，电视上的 Izuko 会重新打开，这个页面随后自动刷新。'),
+    T('点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。')
+  ]) + sec(T('账号'), [
     T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
     T('点头像或名字：退出登录。')
   ]) + sec(T('播放记录'), [

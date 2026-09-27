@@ -367,10 +367,18 @@ fun TvOnboardingPage(
     }
 }
 
-/** 登录层要不要显示. 由选完连接方式的那一刻打开, 登录层自己关. */
+/**
+ * 登录层要不要显示. 首次引导时由选完连接方式的那一刻打开; 切进一个新建的 Bangumi 用户时也打开 (只有登录这一步, 见 [loginOnly]).
+ * 登录层自己关.
+ */
 object TvOnboardingLogin {
     /** 非 null = 显示登录层; 值是「经镜像」判定 (见 [TvOnboardingViewModel.chooseMode]). */
     val request = MutableStateFlow<Boolean?>(null)
+
+    /**
+     * 新用户的登录: 手机遥控已经介绍过 (整机的首次引导里), 只剩登录这一步, 不显示三步进度; 返回键等于跳过.
+     */
+    var loginOnly by mutableStateOf(false)
 
     /** 这个进程里看过欢迎页了 (从登录层返回检测那一步时直接到检测). */
     var welcomeSeen = false
@@ -379,21 +387,29 @@ object TvOnboardingLogin {
 /**
  * 引导的后三步 (手机遥控、登录、外观与操作): 全屏盖在主页上 (独立窗口, 焦点与按键都在它里面). 装在 TV 根部 —— 引导页那一页已经出栈了.
  *
- * [onFinished]: 外观与操作那一步按了「开始使用」. [onBack]: 返回键, 回到检测网络那一步.
+ * [onFinished]: 外观与操作那一步按了「开始使用」. [onBack]: 首次引导里的返回键, 回到检测网络那一步.
+ * [onNewUserFinished]: 新用户那一步 ([TvOnboardingLogin.loginOnly]) 登录完或跳过 (返回键也算跳过).
  */
 @Composable
-fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
+fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserFinished: () -> Unit) {
     val assumeViaMirror = TvOnboardingLogin.request.collectAsState().value ?: return
+    val loginOnly = TvOnboardingLogin.loginOnly
+    val finishNewUser = {
+        TvOnboardingLogin.request.value = null
+        TvOnboardingLogin.loginOnly = false
+        onNewUserFinished()
+    }
     // 先介绍手机遥控 (单独一页, 不然新用户会以为那个码只能拿来登录), 再登录, 最后外观与操作.
-    // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络
-    var layerStep by rememberSaveable { mutableStateOf(LayerStep.Remote) }
+    // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络. 新用户只有登录这一步 (外观与操作是整机的设置, 首次引导时选过), 返回键等于跳过
+    var layerStep by rememberSaveable { mutableStateOf(if (loginOnly) LayerStep.Login else LayerStep.Remote) }
     Dialog(
         onDismissRequest = {
-            when (layerStep) {
-                LayerStep.Theme -> layerStep = LayerStep.Login
-                LayerStep.Login -> layerStep = LayerStep.Remote
+            when {
+                loginOnly -> finishNewUser()
+                layerStep == LayerStep.Theme -> layerStep = LayerStep.Login
+                layerStep == LayerStep.Login -> layerStep = LayerStep.Remote
                 // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
-                LayerStep.Remote -> onBack()
+                else -> onBack()
             }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
@@ -403,7 +419,12 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
         OnboardingSurface(focus, Modifier) {
             when (layerStep) {
                 LayerStep.Remote -> RemoteStep(focus, onNext = { layerStep = LayerStep.Login })
-                LayerStep.Login -> LoginStep(vm, focus, onNext = { layerStep = LayerStep.Theme })
+                LayerStep.Login -> LoginStep(
+                    vm,
+                    focus,
+                    showSteps = !loginOnly,
+                    onNext = { if (loginOnly) finishNewUser() else layerStep = LayerStep.Theme },
+                )
                 LayerStep.Theme -> ThemeStep(
                     focus,
                     onUpdate = vm::updateTheme,
@@ -810,7 +831,7 @@ private fun CheckStep(
 }
 
 @Composable
-private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNext: () -> Unit) {
+private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, showSteps: Boolean, onNext: () -> Unit) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
@@ -822,7 +843,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNex
         StepHeader(
             stringResource(Lang.tv_onboarding_login_title),
             stringResource(Lang.tv_onboarding_login_description),
-            step = 2,
+            step = if (showSteps) 2 else null,
         )
         Spacer(Modifier.height(SECTION_GAP))
         Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -1252,9 +1273,9 @@ private fun ChoiceChip(text: String, selected: Boolean, enabled: Boolean, onClic
     }
 }
 
-/** 标题 (左) 与四步的进度 (右, [step] 从 0 起), 下面一行说明占满整宽. */
+/** 标题 (左) 与四步的进度 (右, [step] 从 0 起; `null` = 不显示进度), 下面一行说明占满整宽. */
 @Composable
-private fun StepHeader(title: String, description: String, step: Int) {
+private fun StepHeader(title: String, description: String, step: Int?) {
     val labels = listOf(
         stringResource(Lang.tv_onboarding_step_network),
         stringResource(Lang.tv_onboarding_step_remote),
@@ -1265,7 +1286,7 @@ private fun StepHeader(title: String, description: String, step: Int) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.width(COLUMN_GAP))
-            labels.forEachIndexed { index, label ->
+            if (step != null) labels.forEachIndexed { index, label ->
                 if (index > 0) {
                     Box(
                         Modifier

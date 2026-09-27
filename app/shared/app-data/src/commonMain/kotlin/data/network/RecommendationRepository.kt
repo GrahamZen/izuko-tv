@@ -138,13 +138,15 @@ class RecommendationRepository(
      * `null` = 只在进程内复用.
      */
     cacheDir: SystemPath? = null,
+    /** 收藏快照的文件名. 快照是当前用户的收藏, 每个用户一份 (见 `UserProfile.scopedFileName`). */
+    collectionsCacheFileName: String = "recommendation-collections.json",
 ) : Repository() {
     /**
      * 上次取全的收藏 ([lastCollections]) 落盘的那份: 冷启动后第一次重算照样先取第一页比对, 没变就直接用它,
      * 不必把几百条收藏从头翻一遍. 只在取全之后写.
      */
     private val collectionsDiskCache = cacheDir?.let {
-        JsonFileCache(it.resolve("recommendation-collections.json"), SavedCollections.serializer(), ioDispatcher)
+        JsonFileCache(it.resolve(collectionsCacheFileName), SavedCollections.serializer(), ioDispatcher)
     }
 
     /**

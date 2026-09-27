@@ -171,6 +171,11 @@ import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteQrCard
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.outlined.SwitchAccount
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.ui.lang.tv_profile_switch
+import me.him188.ani.app.ui.profile.TvUserProfilePicker
+import org.koin.mp.KoinPlatform
 
 /**
  * TV 主页外壳: 可展开左侧边栏 (头像置顶 → 用户信息页, 搜索/探索/收藏/缓存/设置),
@@ -310,6 +315,8 @@ fun TvMainScreenLayout(
         // 头像关联动作 (焦点在头像上时于其上方浮现): 按登录态切换
         val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
         // 编辑资料 / 登录与点头像本身重复, 不占浮出按钮
+        val canSwitchUser = remember { runCatching { KoinPlatform.getKoin().get<UserProfileManager>().isSupported }.getOrDefault(false) }
+        val switchUserText = stringResource(Lang.tv_profile_switch)
         val avatarActions = buildList {
             if (loggedIn) {
                 add(
@@ -337,6 +344,10 @@ fun TvMainScreenLayout(
                         stringResource(Lang.playback_history_title),
                     ) { navigator.navigatePlaybackHistory() },
                 )
+            }
+            // 多用户: 打开选人页 (只有一个用户时也在, 那里能添加用户)
+            if (canSwitchUser) {
+                add(TvRailAvatarAction(Icons.Outlined.SwitchAccount, switchUserText) { TvUserProfilePicker.show() })
             }
         }
         TvNavigationSideRail(

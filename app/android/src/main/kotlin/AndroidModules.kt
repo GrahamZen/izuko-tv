@@ -25,7 +25,7 @@ import kotlinx.io.files.Path
 import me.him188.ani.android.navigation.AndroidBrowserNavigator
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
 import me.him188.ani.app.data.models.preference.PikPakConfig
-import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
@@ -99,6 +99,8 @@ import org.openani.mediamp.exoplayer.compose.ExoPlayerMediampPlayerSurfaceProvid
 import java.io.File
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
+import me.him188.ani.android.activity.AndroidAppRestarter
+import me.him188.ani.app.platform.AppRestarter
 
 /**
  * BT 引擎是否跑在 `:torrent_service` 独立进程里.
@@ -198,7 +200,7 @@ fun getAndroidModules(
         logger.info { "HttpMediaCacheEngine base save directory: $saveDir" }
 
         HttpMediaCacheEngine(
-            dao = get<AniDatabase>().httpCacheDownloadStateDao(),
+            dao = get<DeviceAniDatabase>().database.httpCacheDownloadStateDao(),
             mediaSourceId = MediaDownloadManager.LOCAL_FS_MEDIA_SOURCE_ID,
             downloader = get<HttpDownloader>(),
             saveDir = saveDir,
@@ -284,6 +286,8 @@ fun getAndroidModules(
     }
     single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
+    // 换用户 = 重启进程 (见 UserProfiles)
+    single<AppRestarter> { AndroidAppRestarter(androidContext()) }
     single<AppTerminator> {
         object : AppTerminator {
             override fun exitApp(context: ContextMP, status: Int): Nothing {
