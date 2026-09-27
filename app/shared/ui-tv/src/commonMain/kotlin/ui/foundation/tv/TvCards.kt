@@ -425,18 +425,21 @@ fun <T> rememberTvSettledHeroProvider(
 }
 
 /**
- * TV hero 区标题/正文文字色 (对齐 Prime 实测): 黑夜 #F1F1F1 —— 亮中性白, 无色相、无投影
- * (实测字形边缘无暗晕, 可读性靠文字够亮 + backdrop 渐隐压暗). M3 的 onSurface/onSurfaceVariant
- * 偏暗且带紫色相, 在深色 backdrop 上显得发糊. 白天用等效中性深灰.
+ * TV hero 区标题/正文文字色: 深色 #F1F1F1 (对齐 Prime 实测) —— 亮中性白, 无色相、无投影 (实测字形边缘无暗晕, 可读性靠文字够亮 +
+ * backdrop 渐隐压暗). M3 的 onSurface/onSurfaceVariant 偏暗且带紫色相, 在深色 backdrop 上显得发糊. 浅色照 Apple TV App 浅色表的
+ * LabelPrimary, 纯黑.
  */
 @Composable
 fun tvHeroContentColor(): Color =
-    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFF1F1F1) else Color(0xFF1A1C1E)
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFF1F1F1) else Color.Black
 
-/** TV hero 区次要信息文字色 (连载信息/日期等, 对齐 Prime 实测): 黑夜 #B4B5B7 中性灰; 白天等效. */
+/**
+ * TV hero 区次要信息文字色 (连载信息/日期等): 深色 #B4B5B7 中性灰 (对齐 Prime 实测); 浅色照 Apple 浅色表的 LabelSecondary
+ * (黑 60%), 取它叠在浅色页面底上的实色 [TV_POSTER_WALL_SECONDARY_LABEL_LIGHT].
+ */
 @Composable
 fun tvHeroSecondaryContentColor(): Color =
-    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFB4B5B7) else Color(0xFF5B5D60)
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFB4B5B7) else TV_POSTER_WALL_SECONDARY_LABEL_LIGHT
 
 /**
  * TV backdrop 下缘渐隐的渐变停点: 遮盖 alpha 在 [start]..[end] (绘制坐标 0..1)

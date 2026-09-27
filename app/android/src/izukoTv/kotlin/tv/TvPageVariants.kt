@@ -72,6 +72,7 @@ import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.collection.TvCollectionTabOrderPage
+import me.him188.ani.app.ui.subject.details.layout.TvDetailsTheme
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.exploration.ExplorationPageVariant
@@ -444,6 +445,9 @@ private class TvOnboardingVariantImpl(override val pendingOnLaunch: Boolean) : T
 /**
  * 条目详情页的 TV 变体. 与其他插槽不同, 它有两个方法 (页面本体 + 首屏占位),
  * 不能用 SAM lambda 写法.
+ *
+ * 页面本体、加载占位、放大与缩回那两层都在 [TvDetailsTheme] 里 (本体经 [Theme] 由调用方包): 浅色主题下底色换成电视的浅灰阶,
+ * 几处必须同一个底色.
  */
 private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
     @Composable
@@ -498,12 +502,14 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
         windowInsets: WindowInsets,
         loadAttempt: SubjectDetailsLoadAttempt,
     ) {
-        SubjectDetailsTvLoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets, loadAttempt)
+        TvDetailsTheme {
+            SubjectDetailsTvLoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets, loadAttempt)
+        }
     }
 
     @Composable
     override fun Underlay() {
-        TvHeroZoomLayer()
+        TvDetailsTheme { TvHeroZoomLayer() }
     }
 
     @Composable
@@ -511,6 +517,11 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
 
     @Composable
     override fun Overlay() {
-        TvHeroShrinkLayer()
+        TvDetailsTheme { TvHeroShrinkLayer() }
+    }
+
+    @Composable
+    override fun Theme(content: @Composable () -> Unit) {
+        TvDetailsTheme(content)
     }
 }
