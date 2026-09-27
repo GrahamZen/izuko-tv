@@ -15,12 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
-import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
@@ -38,6 +38,7 @@ import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.account.AccountLogoutDialog
 import me.him188.ani.app.ui.settings.account.ClearSelfRecordsDialog
+import me.him188.ani.app.ui.settings.account.ConvertToBangumiProfileDialog
 import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
 import me.him188.ani.app.ui.update.AppUpdateState
@@ -114,31 +115,62 @@ fun TvPikPakLegacyNoticeHost(vm: SettingsViewModel) {
     )
 }
 
+/**
+ * 弹窗里确认之后的操作跑在设置页 ViewModel 的作用域里 (主线程): 弹窗先关再做, 弹窗自己的作用域随它离开组合就取消,
+ * 放在那里的操作会被半路打断.
+ */
+private fun ProfileViewModel.launchAfterDialog(block: suspend () -> Unit) {
+    backgroundScope.launch(Dispatchers.Main) { block() }
+}
+
 /** 退出 Bangumi 登录 (同账号页). */
 @Composable
 internal fun TvLogoutDialog(profile: ProfileViewModel, dismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
     AccountLogoutDialog(
         onConfirm = {
             dismiss()
-            scope.launch { profile.logout() }
+            profile.launchAfterDialog { profile.logout() }
         },
         onCancel = dismiss,
     )
 }
 
-/** 改成本地用户: 先数一下收藏记录 (对话框里写着有多少), 再问. 成功时应用重启. */
+/**
+ * 改成本地用户: 先数一下收藏 (登录着数账号里的, 否则数库里存着的; 对话框里写着有多少), 再问; 登录着的写明会先退出.
+ * 选了之后对话框开着显示进度 (登录着、留下记录时要先取账号里的收藏), 成功时应用重启, 失败时写明原因.
+ */
 @Composable
 internal fun TvConvertToLocalDialog(profile: ProfileViewModel, dismiss: () -> Unit) {
     val counts by produceState<SelfCollectionRecords.Counts?>(null) { value = profile.selfRecordCounts() }
-    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfile.PRIMARY_ID)
-    val scope = rememberCoroutineScope()
+    val state by profile.stateFlow.collectAsStateWithLifecycle()
+    val loggedIn = state.selfInfo.isSessionValid == true
+    val accountCollections by produceState<Int?>(null, loggedIn) { value = if (loggedIn) profile.accountCollectionCount() else null }
+    val progress by profile.convertToLocalProgress.collectAsStateWithLifecycle()
+    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfiles.currentId)
     val leftover = counts ?: return
     ConvertToLocalProfileDialog(
         leftover,
-        onConvert = { clearRecords ->
+        onConvert = { clearRecords -> profile.startConvertToLocal(clearRecords, defaultName) },
+        onDismissRequest = {
+            profile.resetConvertToLocal()
             dismiss()
-            scope.launch { profile.convertToLocal(clearRecords, defaultName) }
+        },
+        loggedIn = loggedIn,
+        accountCollections = accountCollections,
+        progress = progress,
+    )
+}
+
+/** 本地用户改成 Bangumi 用户: 先数一下收藏 (对话框里写着会留下多少), 再问. 成功时应用重启. */
+@Composable
+internal fun TvConvertToBangumiDialog(profile: ProfileViewModel, dismiss: () -> Unit) {
+    val counts by produceState<SelfCollectionRecords.Counts?>(null) { value = profile.selfRecordCounts() }
+    val records = counts ?: return
+    ConvertToBangumiProfileDialog(
+        records,
+        onConvert = {
+            dismiss()
+            profile.launchAfterDialog { profile.convertToBangumi() }
         },
         onDismissRequest = dismiss,
     )
@@ -148,7 +180,6 @@ internal fun TvConvertToLocalDialog(profile: ProfileViewModel, dismiss: () -> Un
 @Composable
 internal fun TvClearRecordsDialog(profile: ProfileViewModel, dismiss: () -> Unit) {
     val toaster = LocalToaster.current
-    val scope = rememberCoroutineScope()
     val counts by produceState<SelfCollectionRecords.Counts?>(null) { value = profile.selfRecordCounts() }
     val loaded = counts ?: return
     if (loaded.isEmpty) {
@@ -162,7 +193,7 @@ internal fun TvClearRecordsDialog(profile: ProfileViewModel, dismiss: () -> Unit
         loaded,
         onConfirm = {
             dismiss()
-            scope.launch {
+            profile.launchAfterDialog {
                 profile.clearSelfRecords()
                 toaster.toast(getString(Lang.profile_clear_records_done))
             }
