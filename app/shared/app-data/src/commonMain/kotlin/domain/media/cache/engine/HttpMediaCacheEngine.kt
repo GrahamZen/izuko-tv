@@ -169,7 +169,13 @@ class HttpMediaCacheEngine(
                     downloadId = downloadId,
                     mediaData.uri,
                     options = options,
-                ) ?: throw UnsupportedOperationException("Failed to create download job of $downloadId, state is null.")
+                )
+                if (state == null) {
+                    // Segment creation failed: the downloader keeps a FAILED task (and its segment directory) that no cache
+                    // will own. Remove it, so that the next attempt for the same URL fails the same way instead of reusing it.
+                    downloader.remove(downloadId)
+                    throw UnsupportedOperationException("Failed to create download job of $downloadId, state is null.")
+                }
 
                 return HttpMediaCache(
                     origin,
