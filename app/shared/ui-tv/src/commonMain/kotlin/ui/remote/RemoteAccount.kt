@@ -30,6 +30,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
@@ -102,6 +103,8 @@ internal object RemoteAccount {
             when {
                 request.path == "api/account" && get -> state()
                 !post -> null
+                // 本地档不能登录 (收藏只在本地库, 登录了也不会同步), 网页上本来就不给入口
+                UserProfiles.current.isLocal -> result(false, tr("本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户"))
                 request.path == "api/account/login" -> startLogin(request)
                 request.path == "api/account/login/callback" -> submitCallback(request)
                 request.path == "api/account/login/cancel" -> cancelLogin()
@@ -116,6 +119,14 @@ internal object RemoteAccount {
     }
 
     private fun state(): JsonObject = runBlocking {
+        // 本地档: 没有账号, 网页上只说明一句 (见 ACCOUNT_SCRIPT)
+        if (UserProfiles.current.isLocal) {
+            return@runBlocking buildJsonObject {
+                put("ok", true)
+                put("local", true)
+                put("loggedIn", false)
+            }
+        }
         val session = withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() }
         // selfInfoFlow 的第一个值是本地缓存的那份, 不走网络 (等授权时每 2 秒轮询也无妨); 刚登录完可能还是 null, 下一次就有了
         val self = if (session is SessionState.Valid) {
