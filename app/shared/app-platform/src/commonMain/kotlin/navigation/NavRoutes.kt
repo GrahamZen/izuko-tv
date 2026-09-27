@@ -68,6 +68,12 @@ sealed class NavRoutes : NavKey {
     data class SubjectSearch(
         val keyword: String? = null,
         val tags: List<String>? = null,
+        /**
+         * 这一次打开的编号, [AniNavigator.navigateSubjectSearch] 每次换一个. Navigation 3 按路由给每页存 rememberSaveable 状态与
+         * ViewModel, 栈里两条相等的路由共用一份: 同一个标签点第二次时, 新开的那页拿到的是第一次那页此刻的状态 —— 包括用户在那页里
+         * 换过的搜索词, 看起来就是点了标签却回到了别的搜索结果.
+         */
+        val instance: Long = 0,
     ) : NavRoutes()
 
     @Serializable
