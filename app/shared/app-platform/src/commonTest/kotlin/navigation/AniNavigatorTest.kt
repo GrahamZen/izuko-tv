@@ -12,6 +12,7 @@ package me.him188.ani.app.navigation
 import androidx.compose.runtime.mutableStateListOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 /**
@@ -67,6 +68,30 @@ class AniNavigatorTest {
             listOf(main, NavRoutes.SubjectDetail(1, null), NavRoutes.PersonDetail(2), NavRoutes.SubjectDetail(1, null)),
             navigator.backStack,
         )
+    }
+
+    @Test
+    fun `searching the same tag twice opens two separate pages`() {
+        val navigator = navigatorWith(main)
+        navigator.navigateSubjectSearch("高达")
+        navigator.navigateSubjectDetails(1, null)
+        navigator.navigateSubjectSearch("高达")
+
+        // 两页的路由不相等: Navigation 3 按路由存页面状态与 ViewModel, 相等就会共用一份
+        val searches = navigator.backStack.filterIsInstance<NavRoutes.SubjectSearch>()
+        assertEquals(2, searches.size)
+        assertNotEquals(searches[0], searches[1])
+        assertEquals(listOf("高达"), searches[1].tags)
+        assertEquals(NavRoutes.SubjectSearch::class, navigator.backStack.last()::class)
+    }
+
+    @Test
+    fun `searching again on top of the same search is ignored`() {
+        val navigator = navigatorWith(main)
+        navigator.navigateSubjectSearch()
+        navigator.navigateSubjectSearch()
+
+        assertEquals(2, navigator.backStack.size)
     }
 
     @Test
