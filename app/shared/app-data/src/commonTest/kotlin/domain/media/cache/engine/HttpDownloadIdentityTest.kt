@@ -36,6 +36,7 @@ import org.openani.mediamp.source.MediaExtraFiles
 import org.openani.mediamp.source.UriMediaData
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -63,6 +64,20 @@ class HttpDownloadIdentityTest {
         assertEquals(setOf(secondId), downloader.states.keys)
         secondCache.resume()
         assertEquals(secondId, downloader.resumed.last())
+    }
+
+    @Test
+    fun `failed segment creation leaves no task behind`() = runTest {
+        val downloader = FakeDownloader().apply { failCreation = true }
+        val media = TestMediaList.first().copy(
+            kind = MediaSourceKind.BitTorrent,
+            download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:unreachable"),
+        )
+        assertFailsWith<UnsupportedOperationException> {
+            engine(downloader).createCache(media, testMetadata(1), testEpisodeMetadata(1), backgroundScope.coroutineContext)
+        }
+        // 下载器留下的那条 FAILED 任务没有缓存认领, 要一起删掉: 否则下次同一地址会直接复用它
+        assertTrue(downloader.states.isEmpty())
     }
 
     @Test
@@ -181,6 +196,9 @@ private class FakeDownloader : HttpDownloader {
     val recreated = mutableListOf<DownloadId>()
     val persistedOnly = mutableSetOf<DownloadId>()
 
+    /** 模拟建分段失败 (地址打不开): 同真实实现, 留下一条 FAILED 任务并返回 null. */
+    var failCreation = false
+
     /** dao 视角下的全部记录, 包含 downloader 已丢失但仍持久化的任务. */
     val persisted: Map<DownloadId, DownloadState> get() = states
 
@@ -189,8 +207,16 @@ private class FakeDownloader : HttpDownloader {
     override fun getProgressFlow(downloadId: DownloadId): Flow<DownloadProgress> = flowOf()
     override suspend fun init() = Unit
     override suspend fun download(url: String, options: DownloadOptions): DownloadId = error("unused")
-    override suspend fun downloadWithId(downloadId: DownloadId, url: String, options: DownloadOptions): DownloadState {
+    override suspend fun downloadWithId(downloadId: DownloadId, url: String, options: DownloadOptions): DownloadState? {
         if (persistedOnly.remove(downloadId)) recreated += downloadId
+        if (failCreation) {
+            states[downloadId] = DownloadState(
+                downloadId, url, "${downloadId.value}.mp4", emptyList(), 0, 0, 0,
+                DownloadStatus.FAILED, relativeSegmentCacheDir = "segments_${downloadId.value}",
+                requestHeaders = options.headers, mediaType = MediaType.MP4,
+            )
+            return null
+        }
         return states.getOrPut(downloadId) {
             DownloadState(
                 downloadId, url, "${downloadId.value}.mp4", emptyList(), 0, 0, 0,
