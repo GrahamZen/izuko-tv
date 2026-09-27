@@ -101,6 +101,7 @@ class SwitchMediaOnPlayerErrorExtension(
         val handler = PlayerLoadErrorHandler(
             getPreferKind = { getMediaSelectorSettingsFlowUseCase().first().preferKind },
             getSourceTiers = { getSourceTiersUseCase().first() },
+            onSwitched = { context.reportAutoSwitch(it) },
         )
 
         coroutineScope {
@@ -271,6 +272,7 @@ class SwitchMediaOnPlayerErrorExtension(
                     videoLoadingState is VideoLoadingState.Failed -> PlayerLoadError(
                         videoLoadingState.toString(),
                         (videoLoadingState as? VideoLoadingState.UnknownError)?.cause,
+                        failure = videoLoadingState,
                     )
 
                     mediaStatus is MediaStatus.Error -> PlayerLoadError(
@@ -326,11 +328,15 @@ class SwitchMediaOnPlayerErrorExtension(
 internal class PlayerLoadError(
     val description: String,
     val cause: Throwable?,
+    /** 解析这一步失败时是哪一种 (界面上说「上一个源解析超时」); 播放器报错、缓存被删为 `null`. */
+    val failure: VideoLoadingState.Failed? = null,
 )
 
 internal class PlayerLoadErrorHandler(
     private val getPreferKind: suspend () -> MediaSourceKind?,
     private val getSourceTiers: suspend () -> MediaSelectorSourceTiers,
+    /** 自动换到了下一个资源, 交给界面显示试到第几个 (见 [MediaAutoSwitchStatus]). */
+    private val onSwitched: (MediaAutoSwitchStatus) -> Unit = {},
 ) {
     /**
      * 不可变集合本身可以安全共享, 但 `x = x.add(...)` 是读-改-写三步, 而拉黑来自三条并发的路
@@ -424,6 +430,21 @@ internal class PlayerLoadErrorHandler(
             expectedSelection = failedMedia,
         )
         logger.info { "Player errored, automatically switched to next media: $result" }
+
+        val switchedTo = mediaSelector.selected.value
+        if (switchedTo != null && switchedTo != failedMedia) {
+            // 本集的在线候选里: 拉黑过的都试过了 (含刚失败的那个), 没拉黑的除了正在试的这个都还能换
+            val webCandidates = mediaSelector.filteredCandidatesMedia.first().filter { it.kind == MediaSourceKind.WEB }
+            onSwitched(
+                MediaAutoSwitchStatus(
+                    previousFailure = error?.failure,
+                    attempt = webCandidates.count { it.mediaId in blacklistedMediaIds } + 1,
+                    remaining = webCandidates.count {
+                        it.mediaId !in blacklistedMediaIds && it.mediaId != switchedTo.mediaId
+                    },
+                ),
+            )
+        }
     }
 
     companion object {

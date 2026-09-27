@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -383,7 +383,11 @@ private fun part3() = listOf(
     RemoteText("已就绪", "Ready", "已就緒", "已就緒"),
     RemoteText("回到播放器就能接着看", "Go back to the player to keep watching", "回到播放器就能接著看", "回到播放器就能接著看"),
     RemoteText("准备中", "Preparing", "準備中", "準備中"),
-    RemoteText("正在查找数据源、解析播放地址", "Finding sources and resolving the stream", "正在查找數據源、解析播放地址", "正在查詢資料源、解析播放地址"),
+    RemoteText("正在查找数据源", "Finding sources", "正在查找數據源", "正在查詢資料源"),
+    RemoteText("正在解析资源链接", "Resolving resource link", "正在解析資源連結", "正在解析資源連結"),
+    RemoteText("资源解析成功，正在准备视频", "Stream resolved, preparing the video", "資源解析成功，正在準備影片", "資源解析成功，正在準備影片"),
+    RemoteText("正在获取种子信息", "Fetching torrent metadata", "正在獲取種子資訊", "正在取得種子資訊"),
+    RemoteText("已查完 {0}/{1} 个数据源，找到 {2} 条", "Searched {0} of {1} sources, {2} found", "已查完 {0}/{1} 個數據源，找到 {2} 條", "已查完 {0}/{1} 個資料源，找到 {2} 條"),
     RemoteText("缓冲中", "Buffering", "緩衝中", "緩衝中"),
     RemoteText("马上就好", "Almost there", "馬上就好", "馬上就好"),
     RemoteText("等你选数据源", "Choose a source", "等你選數據源", "等你選資料源"),
@@ -768,7 +772,7 @@ private fun part5() = listOf(
     RemoteText("自动挑资源缓存选中的 {0} 集", "Auto-cache {0} selected episodes", "自動挑資源緩存選中的 {0} 集", "自動挑資源快取選中的 {0} 集"),
     RemoteText("先勾选要缓存的剧集", "Tick the episodes to cache first", "先勾選要緩存的劇集", "先勾選要快取的劇集"),
     RemoteText("正在查找资源…", "Finding resources…", "正在查找資源…", "正在查詢資源…"),
-    RemoteText("正在查找资源… 已找到 {0} 条", "Finding resources… {0} found", "正在查找資源… 已找到 {0} 條", "正在查詢資源… 已找到 {0} 條"),
+    RemoteText("正在查找资源：已查完 {0}/{1} 个数据源，已找到 {2} 条", "Finding resources: {0} of {1} sources searched, {2} found", "正在查找資源：已查完 {0}/{1} 個數據源，已找到 {2} 條", "正在查詢資源：已查完 {0}/{1} 個資料源，已找到 {2} 條"),
     RemoteText("共 {0} 条", "{0} total", "共 {0} 條", "共 {0} 條"),
     RemoteText("，{0} 个数据源没查到", ", {0} sources failed", "，{0} 個數據源沒查到", "，{0} 個數據源沒查到"),
     RemoteText("。点一条开始缓存。", ". Tap one to start caching.", "。點一條開始緩存。", "。點一條開始快取。"),
@@ -1034,7 +1038,7 @@ private fun part8() = listOf(
     RemoteText("最新版本：{0}", "Latest version: {0}", "最新版本：{0}", "最新版本：{0}"),
     RemoteText("已是最新版本", "Already up to date", "已是最新版本", "已是最新版本"),
     RemoteText("Izuko TV 正在更新，完成后在电视上重新打开，这里会显示结果。", "Izuko TV is updating. Open it again on the TV when it is done, and the result will show here.", "Izuko TV 正在更新，完成後在電視上重新打開，這裡會顯示結果。", "Izuko TV 正在更新，完成後在電視上重新開啟，這裡會顯示結果。"),
-    RemoteText("正在上传 {0}%", "Uploading {0}%", "正在上傳 {0}%", "正在上傳 {0}%"),
+    RemoteText("正在上传：{0}", "Uploading: {0}", "正在上傳：{0}", "正在上傳：{0}"),
     RemoteText("下载并安装 {0}", "Download and install {0}", "下載並安裝 {0}", "下載並安裝 {0}"),
     RemoteText("检查更新", "Check for updates", "檢查更新", "檢查更新"),
     RemoteText("用手机上的安装包更新", "Update with an installer from your phone", "用手機上的安裝包更新", "用手機上的安裝包更新"),
@@ -1091,4 +1095,24 @@ private fun part8() = listOf(
     RemoteText("已更新到 {0}", "Updated to {0}", "已更新到 {0}", "已更新到 {0}"),
     RemoteText("上次的安装没有完成（{0}）：电视上取消了，或者安装失败了。", "The last installation ({0}) did not finish: it was cancelled on the TV, or it failed.", "上次的安裝沒有完成（{0}）：電視上取消了，或者安裝失敗了。", "上次的安裝沒有完成（{0}）：電視上取消了，或者安裝失敗了。"),
     RemoteText("电视上的 Izuko TV 还没准备好，稍后再试", "Izuko TV on the TV is not ready yet. Try again shortly.", "電視上的 Izuko TV 還沒準備好，稍後再試", "電視上的 Izuko TV 還沒準備好，稍後再試"),
+)
+
+// 各处等待时的进度: 应用更新 (下载 / 写入 / 检查), 自动缓存, 夸克扫码, 导入, 时间表, 订阅更新, 登录倒计时
+private fun part9() = listOf(
+    RemoteText("正在挑选下载线路 {0}/{1}", "Choosing a download line {0}/{1}", "正在挑選下載線路 {0}/{1}", "正在挑選下載線路 {0}/{1}"),
+    RemoteText("上一条线路失败，换第 {0} 条线路", "The previous line failed, switching to line {0}", "上一條線路失敗，換第 {0} 條線路", "上一條線路失敗，換第 {0} 條線路"),
+    RemoteText("正在下载 {0}：{1}", "Downloading {0}: {1}", "正在下載 {0}：{1}", "正在下載 {0}：{1}"),
+    RemoteText("正在校验安装包…", "Verifying the installer…", "正在校驗安裝包…", "正在校驗安裝包…"),
+    RemoteText("正在写入安装包：{0}", "Writing the installer: {0}", "正在寫入安裝包：{0}", "正在寫入安裝包：{0}"),
+    RemoteText("正在同步到存储…", "Syncing to storage…", "正在同步到存儲…", "正在同步到儲存空間…"),
+    RemoteText("GitHub 连不上，正在查镜像 {0}/{1}", "GitHub unreachable, trying mirror {0}/{1}", "GitHub 連不上，正在查鏡像 {0}/{1}", "GitHub 連不上，正在查鏡像 {0}/{1}"),
+    RemoteText("已查完 {0}/{1} 个数据源 · 已等 {2} / 最长 {3}", "Searched {0} of {1} sources · waited {2} of up to {3}", "已查完 {0}/{1} 個數據源 · 已等 {2} / 最長 {3}", "已查完 {0}/{1} 個資料源 · 已等 {2} / 最長 {3}"),
+    RemoteText("{0} 后过期", "Expires in {0}", "{0} 後過期", "{0} 後過期"),
+    RemoteText("已确认，正在登录…", "Confirmed, signing in…", "已確認，正在登錄…", "已確認，正在登入…"),
+    RemoteText("导入中 {0}/{1} 批…", "Importing batch {0} of {1}…", "導入中 {0}/{1} 批…", "匯入中 {0}/{1} 批…"),
+    RemoteText("导入中…", "Importing…", "導入中…", "匯入中…"),
+    RemoteText("已读完 {0}/{1} 天", "{0} of {1} days loaded", "已讀完 {0}/{1} 天", "已讀完 {0}/{1} 天"),
+    RemoteText("正在读取… 已读完 {0}/{1} 天", "Loading… {0} of {1} days loaded", "正在讀取… 已讀完 {0}/{1} 天", "正在讀取… 已讀完 {0}/{1} 天"),
+    RemoteText("更新中 {0}/{1}…", "Updating {0}/{1}…", "更新中 {0}/{1}…", "更新中 {0}/{1}…"),
+    RemoteText("剩 {0}", "{0} left", "剩 {0}", "剩 {0}"),
 )

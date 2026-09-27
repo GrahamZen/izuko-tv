@@ -184,6 +184,7 @@ import me.him188.ani.app.ui.lang.settings_update_auto_download_description
 import me.him188.ani.app.ui.lang.settings_update_check
 import me.him188.ani.app.ui.lang.settings_update_check_failed
 import me.him188.ani.app.ui.lang.settings_update_checking
+import me.him188.ani.app.ui.lang.settings_update_checking_mirror
 import me.him188.ani.app.ui.lang.settings_update_current_version
 import me.him188.ani.app.ui.lang.settings_update_in_app_download
 import me.him188.ani.app.ui.lang.settings_update_in_app_download_disabled
@@ -220,6 +221,7 @@ import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.AppUpdateViewModel
 import me.him188.ani.app.ui.update.NewVersion
+import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateSettingsNotifier
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.isAndroid
@@ -645,7 +647,15 @@ fun SettingsScope.SoftwareUpdateGroup(
             title = {
                 when {
                     updatePresentation.isCheckingUpdate -> {
-                        Text(stringResource(Lang.settings_update_checking))
+                        // GitHub 连不上时要逐个试镜像, 每个最长 20 秒: 说清查到第几个, 别只写「检查中…」让人干等
+                        val step = updatePresentation.checkProgress
+                        Text(
+                            if (step is UpdateCheckProgress.Mirror) {
+                                stringResource(Lang.settings_update_checking_mirror, step.index, step.total)
+                            } else {
+                                stringResource(Lang.settings_update_checking)
+                            },
+                        )
                     }
 
                     updatePresentation.checkUpdateError != null -> {

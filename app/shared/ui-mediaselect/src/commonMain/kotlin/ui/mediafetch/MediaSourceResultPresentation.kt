@@ -33,6 +33,7 @@ import me.him188.ani.app.domain.media.fetch.isCaptchaRequired
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.isDisabled
 import me.him188.ani.app.domain.media.fetch.isFailedOrAbandoned
+import me.him188.ani.app.domain.media.fetch.isFinal
 import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.fetch.isRateLimited
 import me.him188.ani.app.domain.media.fetch.isWorking
@@ -87,6 +88,11 @@ data class MediaSourceResultListPresentation(
     val webSources: List<MediaSourceResultPresentation> = list.filter { it.kind == MediaSourceKind.WEB }
     val btSources: List<MediaSourceResultPresentation> = list.filter { it.kind == MediaSourceKind.BitTorrent }
     val enabledSourceCount: Int = list.count { !it.isDisabled && it.kind != MediaSourceKind.LocalCache }
+
+    /** 启用的源里已经查完的 (暂停的算没查完, 放开后要重查), 查询中的标题据此写「正在查询 9/14」. */
+    val finishedSourceCount: Int = list.count {
+        !it.isDisabled && it.kind != MediaSourceKind.LocalCache && it.state.isFinal && !it.isPaused
+    }
     val totalSourceCount: Int = list.count { it.kind != MediaSourceKind.LocalCache } // 缓存数据源属于内部的, 用户应当无感
 
     companion object {

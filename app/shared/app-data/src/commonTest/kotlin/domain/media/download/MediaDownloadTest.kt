@@ -17,6 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -26,6 +27,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
+import me.him188.ani.app.domain.media.cache.TestMediaCache
+import me.him188.ani.app.tools.Progress
+import me.him188.ani.app.tools.toProgress
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 
 class MediaDownloadTest {
@@ -165,6 +169,54 @@ class MediaDownloadTest {
             assertFalse(it.isBusy)
             assertEquals(MediaCacheState.PAUSED, it.status)
         }
+    }
+
+    @Test
+    fun `snapshot reflects merge progress and waiting for the torrent service without sampling`() = runTest {
+        val cache = testDownload(1)
+        val download = download(cache)
+        val received = mutableListOf<DownloadSnapshot>()
+        backgroundScope.launch { download.snapshot.collect { received += it } }
+        runCurrent()
+        received.last().let {
+            assertNull(it.mergeProgress)
+            assertFalse(it.isMerging)
+            assertFalse(it.awaitingTorrentService)
+        }
+
+        cache.isAwaitingTorrentService.value = true
+        runCurrent()
+        assertTrue(received.last().awaitingTorrentService)
+
+        // 合并开始但还估不出进度
+        cache.isAwaitingTorrentService.value = false
+        cache.mergeProgress.value = Progress.Unspecified
+        runCurrent()
+        received.last().let {
+            assertTrue(it.isMerging)
+            assertEquals(Progress.Unspecified, it.mergeProgress)
+            assertFalse(it.awaitingTorrentService)
+        }
+
+        cache.mergeProgress.value = 0.4f.toProgress()
+        runCurrent()
+        assertEquals(0.4f.toProgress(), received.last().mergeProgress)
+
+        cache.mergeProgress.value = null
+        runCurrent()
+        assertFalse(received.last().isMerging)
+    }
+
+    @Test
+    fun `default merge progress follows isMerging without an estimate`() = runTest {
+        val merging = MutableStateFlow(false)
+        val base = testDownload(1)
+        val cache = object : TestMediaCache(base.media, base.metadata) {
+            override val isMerging = merging
+        }
+        assertNull(cache.mergeProgress.first())
+        merging.value = true
+        assertEquals(Progress.Unspecified, cache.mergeProgress.first())
     }
 
     @Test

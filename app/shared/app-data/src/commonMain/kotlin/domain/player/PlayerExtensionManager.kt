@@ -18,6 +18,7 @@ import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.getCurrentEpisodeId
 import me.him188.ani.app.domain.episode.player
 import me.him188.ani.app.domain.player.extension.EpisodePlayerExtensionFactory
+import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionContext
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
@@ -64,6 +65,10 @@ class PlayerExtensionManager(
 
         override suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
             return state.reloadCurrentMedia(positionMillis)
+        }
+
+        override fun reportAutoSwitch(status: MediaAutoSwitchStatus) {
+            state.reportAutoSwitch(status)
         }
     }
 

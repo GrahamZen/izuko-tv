@@ -156,12 +156,16 @@ class AndroidWebMediaResolver(
                 pageUrl = media.download.uri,
                 timeoutMillis = timeoutMillis,
                 resourceMatcher = resourceMatcher,
-            ) ?: AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
-                attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
-                media.download.uri,
-                config,
-                resourceMatcher,
-            )
+            ) ?: run {
+                // 新开 WebView 嗅探这一轮最多等 timeoutMillis, 加载提示据此倒数
+                reportResolveAttempt(timeoutMillis)
+                AndroidWebViewVideoExtractor(timeoutMillis).getVideoResourceUrl(
+                    attached ?: throw IllegalStateException("WebVideoSourceResolver not attached"),
+                    media.download.uri,
+                    config,
+                    resourceMatcher,
+                )
+            }
             )?.let { resource ->
             allMatchers.firstNotNullOfOrNull { matcher ->
                 matcher.match(resource.url, context).videoOrNull

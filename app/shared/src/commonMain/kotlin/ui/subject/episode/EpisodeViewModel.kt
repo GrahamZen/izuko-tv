@@ -19,9 +19,9 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
@@ -57,8 +57,10 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
+import me.him188.ani.app.data.models.player.playProgressByEpisodeId
 import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
@@ -67,7 +69,6 @@ import me.him188.ani.app.data.models.preference.parseMpvOptions
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
-import me.him188.ani.app.data.models.player.playProgressByEpisodeId
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCommentRepository
@@ -97,6 +98,7 @@ import me.him188.ani.app.domain.episode.mediaSelectorFlow
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
+import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
@@ -105,7 +107,9 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
+import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
@@ -114,6 +118,7 @@ import me.him188.ani.app.domain.player.extension.AnalyticsExtension
 import me.him188.ani.app.domain.player.extension.AutoSelectExtension
 import me.him188.ani.app.domain.player.extension.CacheOnBtPlayExtension
 import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
+import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
@@ -218,7 +223,6 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import me.him188.ani.app.data.models.episode.EpisodeInfo
 
 
 private const val OP_ED_AUTO_SKIP_BASE_SAMPLE_INTERVAL_MILLIS = 1_000L
@@ -436,6 +440,29 @@ class EpisodeViewModel(
 
     /** 当前装进播放器的资源, 见 PlayerSession.loadedMedia. */
     val loadedMedia: StateFlow<Media?> get() = fetchPlayState.playerSession.loadedMedia
+
+    /** 正在解析的这一轮最多等到什么时候 (网页嗅探才有), 加载提示据此倒数. 见 PlayerSession.resolveDeadline. */
+    val resolveDeadline: StateFlow<MediaResolveDeadline?> get() = fetchPlayState.playerSession.resolveDeadline
+
+    /** 最近一次播放失败后自动换源试到第几个, 见 [MediaAutoSwitchStatus]. */
+    val autoSwitchStatus: StateFlow<MediaAutoSwitchStatus?> get() = fetchPlayState.autoSwitchStatus
+
+    /** 打开 BT 资源时等种子信息的进展 (连上几个节点), 见 PlayerSession.torrentOpenProgress. */
+    val torrentOpenProgress: StateFlow<TorrentOpenProgress?> get() = fetchPlayState.playerSession.torrentOpenProgress
+
+    private val torrentEngineAccess: TorrentEngineAccess by inject()
+
+    /** BT 服务是否已经起来. 没起来时解析 BT 资源其实是在等它 (第一次要十几秒). */
+    val btServiceConnected: StateFlow<Boolean> get() = torrentEngineAccess.isServiceConnected
+
+    /**
+     * 播放失败时会不会自动换下一个源: 设置开着, 且优先类型是在线 (其余情况 SwitchMediaOnPlayerErrorExtension 不换).
+     * 加载提示据此决定要不要说「超时自动换源」.
+     */
+    val autoSwitchesOnFailure: Flow<Boolean> = combine(
+        settingsRepository.videoScaffoldConfig.flow.map { it.autoSwitchMediaOnPlayerError },
+        settingsRepository.mediaSelectorSettings.flow.map { it.preferKind == MediaSourceKind.WEB },
+    ) { enabled, preferWeb -> enabled && preferWeb }.distinctUntilChanged()
 
     // region Subject and episode data info flows
     @UnsafeEpisodeSessionApi

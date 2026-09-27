@@ -63,6 +63,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import me.him188.ani.app.data.network.RecommendationRefreshProgress
 import me.him188.ani.app.data.recommendation.RecommendationGroup
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -161,6 +162,8 @@ class ExplorationPageState(
      * 期间那块是全空的); 已经有内容时的后台重算不该打扰人.
      */
     val recommendationsRefreshing: StateFlow<Boolean> = MutableStateFlow(false),
+    /** 真在重算时进行到哪了 (读收藏第几页 / 已完成几个请求), 同样只在推荐区空着时显示. */
+    val recommendationsRefreshProgress: StateFlow<RecommendationRefreshProgress?> = MutableStateFlow(null),
 ) {
     val trendingSubjectsCarouselState = CarouselState(
         itemCount = {

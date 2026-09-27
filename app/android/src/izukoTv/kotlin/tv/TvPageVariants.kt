@@ -94,6 +94,7 @@ import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadAttempt
 import me.him188.ani.app.ui.subject.details.SubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsLayoutParams
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsTvLoadingPlaceholder
@@ -495,8 +496,9 @@ private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
         layoutParams: SubjectDetailsLayoutParams,
         modifier: Modifier,
         windowInsets: WindowInsets,
+        loadAttempt: SubjectDetailsLoadAttempt,
     ) {
-        SubjectDetailsTvLoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets)
+        SubjectDetailsTvLoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets, loadAttempt)
     }
 
     @Composable

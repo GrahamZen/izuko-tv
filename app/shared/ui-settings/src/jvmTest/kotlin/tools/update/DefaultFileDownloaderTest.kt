@@ -434,6 +434,81 @@ class DefaultFileDownloaderTest {
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
     @Test
+    fun `stages go from probing to transferring to verifying`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        val stages = mutableListOf<FileDownloadStage?>()
+        coroutineScope {
+            val job = launch(Dispatchers.Unconfined) { downloader.stage.collect { stages += it } }
+            val downloaded = downloader.download(
+                listOf(DownloadPackage("stage-file.txt", sources = listOf("/file", "/slow-file"), sha256 = sha256Hex(fileContent))),
+                saveDir = tempDir.toKtPath().inSystem,
+            )
+            job.cancel()
+            assertNotNull(downloaded)
+        }
+
+        // 挑线路: 从「0 个来源有结果」开始数
+        assertEquals(FileDownloadStage.Probing(0, 2), stages.filterIsInstance<FileDownloadStage.Probing>().first(), "Stages: $stages")
+        // 快的那条排第一, 慢的没来得及回应排在后面: 共两条线路, 从第一条下
+        val transferring = stages.indexOfFirst {
+            it is FileDownloadStage.Transferring && it.line == 1 && it.lines == 2 && it.totalBytes == fileContent.length.toLong()
+        }
+        assertTrue(transferring > stages.indexOfFirst { it is FileDownloadStage.Probing }, "Stages: $stages")
+        // 下完再校验, 结束后没有阶段
+        assertTrue(stages.indexOf(FileDownloadStage.Verifying) > transferring, "Stages: $stages")
+        assertEquals(null, stages.last(), "Stages: $stages")
+        assertEquals(null, downloader.stage.value)
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun `switching to the next line is reported`() = testApplication {
+        setupRouting()
+        val downloader = DefaultFileDownloader(
+            createClient {
+                expectSuccess = true
+                install(HttpTimeout)
+            }.asScopedHttpClient(),
+        )
+        val tempDir = createTempDirectory(prefix = "file-downloader-test").toFile()
+
+        val stages = mutableListOf<FileDownloadStage?>()
+        coroutineScope {
+            val job = launch(Dispatchers.Unconfined) { downloader.stage.collect { stages += it } }
+            // /corrupted-file 更快、排第一, 校验不过; 换第二条 /slow-file
+            val downloaded = downloader.download(
+                listOf(
+                    DownloadPackage(
+                        "switch-file.txt",
+                        sources = listOf("/corrupted-file", "/slow-file"),
+                        sha256 = sha256Hex(fileContent),
+                    ),
+                ),
+                saveDir = tempDir.toKtPath().inSystem,
+            )
+            job.cancel()
+            assertNotNull(downloaded)
+        }
+
+        val switching = stages.indexOf(FileDownloadStage.Switching(2, 2))
+        assertTrue(switching >= 0, "Stages: $stages")
+        assertTrue(stages.indexOfFirst { it is FileDownloadStage.Transferring && it.line == 1 } in 0 until switching, "Stages: $stages")
+        assertTrue(stages.indexOfFirst { it is FileDownloadStage.Transferring && it.line == 2 } > switching, "Stages: $stages")
+        assertEquals(null, stages.last(), "Stages: $stages")
+
+        tempDir.deleteRecursively()
+    }
+
+    @Test
     fun `progress reporter does not outlive download attempt`() = testApplication {
         setupRouting()
         val client = createClient {

@@ -27,6 +27,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -150,8 +151,17 @@ class RecommendationRepository(
     /** 重算的请求同时最多 [NETWORK_PARALLELISM] 个 (续作回溯另有 [SEQUEL_WALK_PARALLELISM]), 见 [limited]. */
     private val networkPermits = Semaphore(NETWORK_PARALLELISM)
 
-    /** 包单个请求, 不能嵌套 (信号量不可重入, 嵌套会在名额用完时卡死). */
-    private suspend fun <T> limited(block: suspend () -> T): T = networkPermits.withPermit { block() }
+    /**
+     * 包单个请求, 不能嵌套 (信号量不可重入, 嵌套会在名额用完时卡死).
+     * 顺带数一下: 重算进度里「已完成几个请求」就是在这里记的 (成败都算).
+     */
+    private suspend fun <T> limited(block: suspend () -> T): T = networkPermits.withPermit {
+        try {
+            block()
+        } finally {
+            _refreshProgress.update { it?.copy(requestsDone = it.requestsDone + 1) }
+        }
+    }
 
     /** 分好组的推荐, 只读缓存表, 零请求. */
     fun recommendationGroups(): Flow<List<RecommendationGroup>> =
@@ -233,6 +243,14 @@ class RecommendationRepository(
      */
     val isRefreshing: StateFlow<Boolean> get() = _isRefreshing
 
+    private val _refreshProgress = MutableStateFlow<RecommendationRefreshProgress?>(null)
+
+    /**
+     * 真的在重算时进行到哪了 (缓存还新鲜、判完就返回的那几轮不报), 其余时候为 `null`.
+     * 与 [isRefreshing] 一样, 只该在推荐区空着时给人看.
+     */
+    val refreshProgress: StateFlow<RecommendationRefreshProgress?> get() = _refreshProgress
+
     /**
      * 请求重算一次. 缓存还新鲜就什么都不做; 同时只会有一次在跑.
      *
@@ -252,6 +270,7 @@ class RecommendationRepository(
                 logger.warn(e) { "bgm-direct: recommendations 重算失败, 保留旧缓存" }
             } finally {
                 _isRefreshing.value = false
+                _refreshProgress.value = null
                 refreshMutex.unlock()
             }
         }
@@ -331,7 +350,9 @@ class RecommendationRepository(
         //  2. **排除已收藏的** —— 用户最能感知的那一项: 排除集原先只由本地收藏建, 而本地只有
         //     分页进来的那些 (真机: 近百部里只有 23 条), 于是看过的大量出现在推荐里;
         //  3. 画像不再取决于"逛过哪个 tab".
+        _refreshProgress.value = RecommendationRefreshProgress(RecommendationRefreshProgress.Stage.Collections)
         val extra = fetchAllCollections()
+        _refreshProgress.update { it?.copy(stage = RecommendationRefreshProgress.Stage.Candidates) }
         val enriched = if (extra.isEmpty()) {
             profile
         } else {
@@ -524,9 +545,17 @@ class RecommendationRepository(
         // (2026-09-07 用户实测).
         // **其余页一起发**: 页与页之间没有依赖 (偏移量按页长算好), 原先一页等一页, 619 条 13 页
         // 串了 3.9 秒, 占整次重算的一半多 (2026-09-22 真机).
+        val restOffsets = (COLLECTION_HEAD_PAGE until minOf(first.total, COLLECTION_FETCH_MAX) step COLLECTION_FETCH_PAGE).toList()
+        _refreshProgress.update { it?.copy(collectionPagesDone = 1, collectionPagesTotal = 1 + restOffsets.size) }
         val rest = coroutineScope {
-            (COLLECTION_HEAD_PAGE until minOf(first.total, COLLECTION_FETCH_MAX) step COLLECTION_FETCH_PAGE)
-                .map { offset -> async { collectionsPage(offset, COLLECTION_FETCH_PAGE).items } }
+            restOffsets
+                .map { offset ->
+                    async {
+                        collectionsPage(offset, COLLECTION_FETCH_PAGE).items.also {
+                            _refreshProgress.update { it?.copy(collectionPagesDone = it.collectionPagesDone + 1) }
+                        }
+                    }
+                }
                 .awaitAll()
                 .flatten()
         }

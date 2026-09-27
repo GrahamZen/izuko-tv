@@ -31,11 +31,13 @@ import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.EpisodeRange
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class QuarkDriveServiceTest {
@@ -190,11 +192,16 @@ class QuarkDriveServiceTest {
             }
         }
 
-        val states = service.qrLogin(pollInterval = 1.seconds).toList()
+        val before = currentTimeMillis()
+        val states = service.qrLogin(pollInterval = 1.seconds, timeout = 5.minutes).toList()
         assertIs<QuarkQrLoginState.Loading>(states[0])
         val waiting = assertIs<QuarkQrLoginState.WaitingForScan>(states[1])
         assertTrue(waiting.qrContent.startsWith("https://su.quark.cn/4_eMHBJ?token=tok&"))
-        assertEquals(QuarkQrLoginState.Success("浅眠一梦"), states[2])
+        // 过期时刻 = 出码那一刻 + 等待上限, 界面按它倒数
+        assertTrue(waiting.expiresAtMillis in before + 5.minutes.inWholeMilliseconds..currentTimeMillis() + 5.minutes.inWholeMilliseconds)
+        // 手机上确认之后、换到 Cookie 之前先报「已确认」, 界面收起二维码
+        assertEquals(QuarkQrLoginState.Confirmed, states[2])
+        assertEquals(QuarkQrLoginState.Success("浅眠一梦"), states[3])
 
         val config = settings.state.value
         assertEquals("_UP_D_=d1; __pus=p9; __uid=7", config.cookie)
@@ -213,6 +220,8 @@ class QuarkDriveServiceTest {
         }
         val states = service.qrLogin(pollInterval = 1.seconds).toList()
         assertEquals(QuarkQrLoginState.Expired, states.last())
+        // 没确认过就不报「已确认」
+        assertTrue(QuarkQrLoginState.Confirmed !in states)
         assertEquals(QuarkConfig.Default, settings.state.value)
     }
 

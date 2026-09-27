@@ -174,6 +174,17 @@ internal object RemoteCache {
         val created = CopyOnWriteArrayList<String>()
 
         val failures = CopyOnWriteArrayList<String>()
+
+        /**
+         * 当前这一集等着挑资源的那次查询 (见 [autoCacheOne]); 不在挑资源时为 null.
+         * 一集最长等 [AUTO_SELECT_TIMEOUT], 手机上据此写「已查完 8/14 个数据源 · 已等 0:42 / 最长 2:00」.
+         */
+        @Volatile
+        var fetchSession: MediaFetchSession? = null
+
+        /** 当前这一集开始等挑资源的时刻 (毫秒), [AUTO_SELECT_TIMEOUT] 从这里起算. */
+        @Volatile
+        var waitSince = 0L
     }
 
     @Volatile
@@ -277,7 +288,10 @@ internal object RemoteCache {
 
                         is EpisodeCacheStatus.Caching -> {
                             put("status", "caching")
-                            put("progress", (st.progress.getOrZero() * 100).toInt())
+                            val percent = st.progress.getOrZero() * 100
+                            put("progress", percent.toInt())
+                            // 不足 1% 给一位小数 (同「缓存」标签, 见 RemoteCacheList): 取整的话冷种子下了半天还是「0%」
+                            put("progressText", percentText(percent))
                             if (!st.totalSize.isUnspecified) put("size", st.totalSize.toString())
                         }
 
@@ -309,6 +323,15 @@ internal object RemoteCache {
                 put("created", b.created.size)
                 b.current?.let { put("current", it) }
                 putJsonArray("failures") { b.failures.forEach { add(it) } }
+                // 当前这一集在等哪些数据源 (一集最长等两分钟, 不说的话这段时间列表上什么都不动)
+                b.fetchSession?.takeIf { b.running }?.let { session ->
+                    val sources = session.mediaSourceResults
+                        .filter { it.kind != MediaSourceKind.LocalCache && it.state.value != MediaSourceFetchState.Disabled }
+                    put("sourcesDone", sources.count { !it.state.value.isStillSearching() })
+                    put("sourcesTotal", sources.size)
+                    put("waited", (System.currentTimeMillis() - b.waitSince).coerceAtLeast(0))
+                    put("waitLimit", AUTO_SELECT_TIMEOUT.inWholeMilliseconds)
+                }
             }
         }
     }
@@ -741,6 +764,8 @@ internal object RemoteCache {
                 return null
             }
             val awaiting = state as DownloadRequestState.AwaitingSelection
+            batch?.waitSince = System.currentTimeMillis()
+            batch?.fetchSession = awaiting.fetchSession
             var why: String? = null
             val media = if (pinned == null) {
                 (withTimeoutOrNull(AUTO_SELECT_TIMEOUT) { selectByOrder(awaiting, subjectId) }
@@ -776,6 +801,8 @@ internal object RemoteCache {
         } catch (e: Exception) {
             logger.warn(e) { "Remote auto cache failed for subject $subjectId episode ${ep.episodeId}" }
             tr("缓存失败：{0}", e.message ?: e::class.simpleName).also { errors[key] = it }
+        } finally {
+            batch?.fetchSession = null
         }
     }
 
@@ -977,6 +1004,17 @@ internal object RemoteCache {
         append(ep.episodeInfo.sort.toString())
         val name = ep.episodeInfo.nameCn.ifBlank { ep.episodeInfo.name }
         if (name.isNotBlank()) append("  ").append(name)
+    }
+
+    /** 还在查 (没开始或查询中); 其余 (查完、失败、要验证、限流、暂停) 都算查完了这一轮. */
+    private fun MediaSourceFetchState.isStillSearching(): Boolean =
+        this == MediaSourceFetchState.Idle || this == MediaSourceFetchState.Working
+
+    /** 缓存进度的百分数文字: 不足 1% 时给一位小数 (最少 0.1), 否则取整; 同 `RemoteCacheList.Row.percentText`. */
+    private fun percentText(percent: Float): String = when {
+        percent <= 0f -> "0"
+        percent < 1f -> "0." + (percent * 10).toInt().coerceAtLeast(1)
+        else -> percent.toInt().coerceAtMost(100).toString()
     }
 
     private fun stateLabel(st: MediaSourceFetchState): String = when (st) {

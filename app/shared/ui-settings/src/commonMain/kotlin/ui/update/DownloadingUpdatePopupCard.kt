@@ -36,12 +36,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastRoundToInt
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.FileDownloaderState
+import me.him188.ani.app.tools.update.formatTransferProgress
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.settings_update_download_probing
+import me.him188.ani.app.ui.lang.settings_update_download_switching
+import me.him188.ani.app.ui.lang.settings_update_download_verifying
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel_download
 import me.him188.ani.app.ui.lang.settings_update_popup_cancel_install
@@ -190,7 +195,13 @@ fun DownloadingUpdatePopupCard(
             }
 
             else -> {
-                val progress = if (isInstalling) null else fileDownloaderStats.progress
+                val stage = if (isInstalling) null else fileDownloaderStats.stage
+                // 有字节进度 (知道总长) 才画确定的进度条; 挑线路、换线路、校验时进度不动, 画不确定的, 下面一行字说在等什么
+                val progress = if (stage is FileDownloadStage.Transferring && stage.totalBytes != null) {
+                    fileDownloaderStats.progress
+                } else {
+                    null
+                }
                 val indicatorModifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 8.dp)
@@ -202,6 +213,9 @@ fun DownloadingUpdatePopupCard(
                         } else {
                             LinearProgressIndicator(progress = { progress }, modifier = indicatorModifier)
                         }
+                    },
+                    supportingContent = stage?.let {
+                        { Text(downloadStageText(it)) }
                     },
                     trailingContent = progress?.let {
                         {
@@ -224,6 +238,15 @@ fun DownloadingUpdatePopupCard(
             }
         }
     }
+}
+
+/** 下载卡片进度条下面那行字: 「挑选下载线路 3/5」「38/79 MB · 2.1 MB/s」「上一条线路失败，换第 2 条线路」「正在校验…」. */
+@Composable
+private fun downloadStageText(stage: FileDownloadStage): String = when (stage) {
+    is FileDownloadStage.Probing -> stringResource(Lang.settings_update_download_probing, stage.finished, stage.total)
+    is FileDownloadStage.Transferring -> formatTransferProgress(stage.downloadedBytes, stage.totalBytes, stage.bytesPerSecond)
+    is FileDownloadStage.Switching -> stringResource(Lang.settings_update_download_switching, stage.line)
+    FileDownloadStage.Verifying -> stringResource(Lang.settings_update_download_verifying)
 }
 
 @OptIn(TestOnly::class)

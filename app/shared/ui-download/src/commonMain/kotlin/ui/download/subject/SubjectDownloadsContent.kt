@@ -45,6 +45,7 @@ import me.him188.ani.app.ui.download.components.DownloadRow
 import me.him188.ani.app.ui.download.components.DownloadSelectionState
 import me.him188.ani.app.ui.foundation.theme.stronglyWeaken
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
 import me.him188.ani.app.ui.lang.cache_filter_collection_done
 import me.him188.ani.app.ui.lang.cache_filter_collection_dropped
 import me.him188.ani.app.ui.lang.cache_management_episode_label
@@ -127,6 +128,7 @@ fun SubjectDownloadsContent(
                     // 会话正在准备或持久化时, 其他剧集的请求会被忽略, 因此它们的下载按钮置灰.
                     enabled = !selection.inSelection && !(state.request.busy && item.episode.episodeId !in state.request.episodeIds),
                     busy = state.request.busy && item.episode.episodeId in state.request.episodeIds,
+                    awaitingTorrentService = state.request.awaitingTorrentService,
                     canCancel = state.request.canCancel,
                     onDownload = { actions.download(item.episode.episodeId) },
                     onCancel = actions.cancelRequest,
@@ -153,6 +155,9 @@ fun SubjectDownloadsContent(
     }
 }
 
+/**
+ * @param awaitingTorrentService [busy] 时转圈其实是在等 BT 服务启动, 转圈旁边说一句.
+ */
 @Composable
 fun EpisodeDownloadRow(
     episode: EpisodeDownloadItem,
@@ -162,6 +167,7 @@ fun EpisodeDownloadRow(
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    awaitingTorrentService: Boolean = false,
 ) {
     Row(
         modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -182,6 +188,14 @@ fun EpisodeDownloadRow(
             else -> Unit
         }
         if (busy) {
+            if (awaitingTorrentService) {
+                Text(
+                    stringResource(Lang.cache_episode_status_awaiting_bt_service),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             if (canCancel) IconButton(onClick = onCancel, enabled = enabled) { Icon(Icons.Rounded.Close, stringResource(Lang.cache_subject_cancel)) }
         } else {

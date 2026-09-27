@@ -115,9 +115,11 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import me.him188.ani.app.ui.subject.episode.sourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
+import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeLoadingDetails
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
 import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
@@ -128,6 +130,7 @@ import me.him188.ani.app.videoplayer.ui.progress.rememberMediaProgressSliderStat
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.app.videoplayer.ui.rememberVideoSideSheetsController
 import me.him188.ani.danmaku.ui.DanmakuHostState
+import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
@@ -1717,11 +1720,33 @@ private fun TvPlayerLoadingLayer(
 ) {
     val videoLoadingStateFlow = remember(vm) { vm.videoStatisticsFlow.map { it.videoLoadingState } }
     val videoLoadingState by videoLoadingStateFlow.collectAsStateWithLifecycle(VideoLoadingState.Initial)
+    // 选源时查了几个源. 页面状态随弹幕统计等刷得很勤: 先收成几个数再去重, 且只在选源这一步订阅
+    val sourceSearch = if (videoLoadingState == VideoLoadingState.Initial) {
+        val sourceSearchFlow = remember(vm) { vm.pageState.map { it?.sourceSearchProgress() }.distinctUntilChanged() }
+        sourceSearchFlow.collectAsStateWithLifecycle(null).value
+    } else {
+        null
+    }
+    val resolveDeadline by vm.resolveDeadline.collectAsStateWithLifecycle()
+    val autoSwitch by vm.autoSwitchStatus.collectAsStateWithLifecycle()
+    val autoSwitchesOnFailure by vm.autoSwitchesOnFailure.collectAsStateWithLifecycle(false)
+    val loadedMedia by vm.loadedMedia.collectAsStateWithLifecycle()
+    val btServiceConnected by vm.btServiceConnected.collectAsStateWithLifecycle()
+    val torrentOpen by vm.torrentOpenProgress.collectAsStateWithLifecycle()
     Box(modifier) {
         EpisodeVideoLoadingIndicator(
             vm.player,
             videoLoadingState,
             optimizeForFullscreen = true,
+            details = EpisodeLoadingDetails(
+                sourceSearch = sourceSearch,
+                resolveDeadline = resolveDeadline,
+                autoSwitchesOnFailure = autoSwitchesOnFailure,
+                autoSwitch = autoSwitch,
+                loadingBt = loadedMedia?.kind == MediaSourceKind.BitTorrent,
+                btServiceConnected = btServiceConnected,
+                torrentOpen = torrentOpen,
+            ),
         )
     }
 }

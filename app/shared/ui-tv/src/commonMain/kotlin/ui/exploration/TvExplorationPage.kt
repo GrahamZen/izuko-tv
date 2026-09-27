@@ -19,6 +19,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
+import me.him188.ani.app.data.network.RecommendationRefreshProgress
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
@@ -207,6 +208,9 @@ import me.him188.ani.app.ui.lang.exploration_rec_because_you_liked
 import me.him188.ani.app.ui.lang.exploration_rec_change_taste
 import me.him188.ani.app.ui.lang.exploration_rec_for_you_high_rated
 import me.him188.ani.app.ui.lang.exploration_rec_loading
+import me.him188.ani.app.ui.lang.exploration_rec_progress_candidates
+import me.him188.ani.app.ui.lang.exploration_rec_progress_collections
+import me.him188.ani.app.ui.lang.exploration_rec_progress_collections_start
 import me.him188.ani.app.ui.lang.exploration_rec_similar_to
 import me.him188.ani.app.ui.lang.exploration_rec_this_season
 import me.him188.ani.app.ui.lang.exploration_rec_this_season_new
@@ -1909,7 +1913,45 @@ fun TvExplorationPage(
             }
         }
 
+        // 推荐区空着、又真的在重算时, 左下角说进行到哪了 (与右下角提示同一条底线); 已经有内容时的后台重算不打扰人
+        val recProgress by state.recommendationsRefreshProgress.collectAsStateWithLifecycle()
+        recProgress?.takeIf { recGroups.isEmpty() }?.let { progress ->
+            TvRecommendationRefreshProgress(
+                progress,
+                Modifier.align(Alignment.BottomStart)
+                    .padding(start = TV_EXPLORATION_START_PAD, bottom = TV_PAGE_HINT_BOTTOM_PAD),
+            )
+        }
     }
+}
+
+/**
+ * 推荐第一次重算时读到第几页收藏、完成了几个请求: 一次要十几秒, 只说一句「需要十几秒」的话看不出是在动还是卡住了.
+ * 不进列表、不可聚焦 (页面的行号换算与焦点簿记都不受影响).
+ */
+@Composable
+private fun TvRecommendationRefreshProgress(
+    progress: RecommendationRefreshProgress,
+    modifier: Modifier = Modifier,
+) {
+    val text = when {
+        progress.stage == RecommendationRefreshProgress.Stage.Candidates ->
+            stringResource(Lang.exploration_rec_progress_candidates, progress.requestsDone)
+
+        progress.collectionPagesTotal > 0 -> stringResource(
+            Lang.exploration_rec_progress_collections,
+            progress.collectionPagesDone,
+            progress.collectionPagesTotal,
+        )
+
+        else -> stringResource(Lang.exploration_rec_progress_collections_start)
+    }
+    Text(
+        text,
+        modifier,
+        color = tvHeroSecondaryContentColor(),
+        style = MaterialTheme.typography.labelMedium,
+    )
 }
 
 /**

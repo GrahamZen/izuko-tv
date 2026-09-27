@@ -42,8 +42,11 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.tools.update.DefaultFileDownloader
 import me.him188.ani.app.tools.update.DownloadPackage
+import me.him188.ani.app.tools.update.FileDownloadStage
+import me.him188.ani.app.tools.update.formatTransferProgress
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.update.NewVersion
+import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.toFile
@@ -53,6 +56,8 @@ import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.URLDecoder
 import java.util.UUID
 
@@ -84,14 +89,23 @@ internal object RemoteAppUpdate {
     /** 下载 / 核对 / 写入安装会话时不接新的安装; 等确认的那一次可以被新的替换 (旧会话作废). */
     private val BUSY = setOf(Phase.DOWNLOADING, Phase.VERIFYING, Phase.PREPARING)
 
-    /** [pkg]: 装的是另一个包时它的包名, null = 装本应用自己 */
+    /**
+     * [pkg]: 装的是另一个包时它的包名, null = 装本应用自己.
+     * [download]: 下载进行到哪一步 (挑线路 / 已下多少 / 换线路 / 校验), 只在 [Phase.DOWNLOADING] 时有;
+     * [writing]: 写安装会话写到哪了, 只在 [Phase.PREPARING] 时有. 状态那一行按它们写细节, 见 [phaseText].
+     */
     private data class State(
         val phase: Phase = Phase.IDLE,
         val progress: Float? = null,
         val version: String? = null,
         val error: String? = null,
         val pkg: String? = null,
+        val download: FileDownloadStage? = null,
+        val writing: Writing? = null,
     )
+
+    /** 安装包往安装会话里写了 [written] / [total] 字节; [syncing] = 写完了, 在等系统把它落到存储上 (fsync). */
+    private data class Writing(val written: Long, val total: Long, val syncing: Boolean = false)
 
     @Volatile
     private var context: Context? = null
@@ -112,6 +126,10 @@ internal object RemoteAppUpdate {
 
     @Volatile
     private var checking = false
+
+    /** 正在检查的那一次查到哪个来源了 (GitHub 连不上时逐个试镜像, 每个最长 20 秒) */
+    @Volatile
+    private var checkProgress: UpdateCheckProgress? = null
 
     @Volatile
     private var checked = false
@@ -202,6 +220,9 @@ internal object RemoteAppUpdate {
             put("canInstall", ctx != null && canInstall(ctx))
             put("permPending", pendingPermission)
             put("checking", checking)
+            (checkProgress as? UpdateCheckProgress.Mirror)?.takeIf { checking }?.let {
+                put("checkText", tr("GitHub 连不上，正在查镜像 {0}/{1}", it.index, it.total))
+            }
             put("checked", checked)
             checkError?.let { put("checkError", it) }
             latest?.let { v ->
@@ -227,9 +248,25 @@ internal object RemoteAppUpdate {
 
     private fun phaseText(s: State): String = when (s.phase) {
         Phase.IDLE -> ""
-        Phase.DOWNLOADING -> tr("正在下载 {0}", s.version.orEmpty())
+        Phase.DOWNLOADING -> when (val stage = s.download) {
+            null -> tr("正在下载 {0}", s.version.orEmpty())
+            is FileDownloadStage.Probing -> tr("正在挑选下载线路 {0}/{1}", stage.finished, stage.total)
+            is FileDownloadStage.Transferring -> tr(
+                "正在下载 {0}：{1}",
+                s.version.orEmpty(),
+                formatTransferProgress(stage.downloadedBytes, stage.totalBytes, stage.bytesPerSecond),
+            )
+
+            is FileDownloadStage.Switching -> tr("上一条线路失败，换第 {0} 条线路", stage.line)
+            FileDownloadStage.Verifying -> tr("正在校验安装包…")
+        }
+
         Phase.VERIFYING -> tr("正在核对安装包…")
-        Phase.PREPARING -> tr("正在准备安装…")
+        Phase.PREPARING -> when (val w = s.writing) {
+            null -> tr("正在准备安装…")
+            else -> if (w.syncing) tr("正在同步到存储…") else tr("正在写入安装包：{0}", formatTransferProgress(w.written, w.total))
+        }
+
         Phase.CONFIRM -> if (s.pkg != null) {
             tr("请在电视上确认安装 {0}。", s.pkg)
         } else {
@@ -246,7 +283,7 @@ internal object RemoteAppUpdate {
     }
 
     private fun fail(message: String) {
-        setState(state.copy(phase = Phase.FAILED, progress = null, error = message))
+        setState(state.copy(phase = Phase.FAILED, progress = null, error = message, download = null, writing = null))
     }
 
     // ============================ 检查与下载 ============================
@@ -260,7 +297,8 @@ internal object RemoteAppUpdate {
             try {
                 val koin = KoinPlatform.getKoin()
                 val releaseClass = koin.get<SettingsRepository>().updateSettings.flow.first().releaseClass
-                latest = UpdateChecker(koin.get<HttpClientProvider>().get()).checkLatestVersion(releaseClass)
+                latest = UpdateChecker(koin.get<HttpClientProvider>().get())
+                    .checkLatestVersion(releaseClass, onProgress = { checkProgress = it })
                 checkError = null
                 logger.info { "Remote update check: latest=${latest?.name}" }
             } catch (e: CancellationException) {
@@ -271,6 +309,7 @@ internal object RemoteAppUpdate {
             } finally {
                 checked = true
                 checking = false
+                checkProgress = null
             }
         }
         return result(true, "")
@@ -284,7 +323,8 @@ internal object RemoteAppUpdate {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)
             lastResult = null
-            state = State(Phase.DOWNLOADING, progress = 0f, version = ver.name)
+            // 进度条等真的开始收数据再出来: 挑线路那几秒进度不动, 停在 0% 看着像卡住了
+            state = State(Phase.DOWNLOADING, version = ver.name)
         }
         scope.launch {
             val file = try {
@@ -296,7 +336,7 @@ internal object RemoteAppUpdate {
                 fail(tr("下载失败：{0}", e.message ?: e::class.simpleName))
                 return@launch
             }
-            setState(state.copy(phase = Phase.VERIFYING, progress = null))
+            setState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
             val verified = verify(ctx, file, sameAppOnly = true)
             if (verified.error != null) {
                 fail(verified.error)
@@ -317,9 +357,14 @@ internal object RemoteAppUpdate {
             val fileName = url.substringAfterLast("/", "")
             DownloadPackage(fileName, mirrors.sourcesOf(url), ver.sha256ByFileName[fileName])
         }
+        // 状态那一行写到哪一步 (挑线路 3/5、38/79 MB · 2.1 MB/s、换线路、校验); 进度条只在知道总长、真在收数据时有
         val progress = scope.launch {
-            downloader.progress.collect { p ->
-                synchronized(lock) { if (state.phase == Phase.DOWNLOADING) state = state.copy(progress = p) }
+            downloader.stage.collect { stage ->
+                val transferring = stage as? FileDownloadStage.Transferring
+                val fraction = transferring?.totalBytes?.let { total -> transferring.downloadedBytes.toFloat() / total }
+                synchronized(lock) {
+                    if (state.phase == Phase.DOWNLOADING) state = state.copy(progress = fraction, download = stage)
+                }
             }
         }
         try {
@@ -532,9 +577,16 @@ internal object RemoteAppUpdate {
         sessionId = id
         try {
             installer.openSession(id).use { session ->
+                val total = file.length()
                 file.inputStream().use { input ->
-                    session.openWrite("base.apk", 0, file.length()).use { out ->
-                        input.copyTo(out)
+                    session.openWrite("base.apk", 0, total).use { out ->
+                        // 七八十 MB 在电视上要写 6~15 秒 (Shield / 索尼实测), 网页上照实报写了多少, 落盘时另说一句
+                        copyReportingProgress(input, out, total)
+                        synchronized(lock) {
+                            if (state.phase == Phase.PREPARING) {
+                                state = state.copy(progress = null, writing = Writing(total, total, syncing = true))
+                            }
+                        }
                         session.fsync(out)
                     }
                 }
@@ -553,6 +605,32 @@ internal object RemoteAppUpdate {
             runCatching { installer.abandonSession(id) }
             clearPending(ctx)
             fail(tr("写入安装包失败：{0}", e.message ?: e::class.simpleName))
+        }
+    }
+
+    /** 把安装包写进安装会话, 边写边更新 [State.writing] (最多每 [WRITE_REPORT_INTERVAL_MILLIS] 一次). */
+    private fun copyReportingProgress(input: InputStream, out: OutputStream, total: Long) {
+        val buffer = ByteArray(WRITE_BUFFER_BYTES)
+        var written = 0L
+        var reportedAt = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            out.write(buffer, 0, n)
+            written += n
+            val now = System.currentTimeMillis()
+            if (now - reportedAt >= WRITE_REPORT_INTERVAL_MILLIS) {
+                reportedAt = now
+                val done = written
+                synchronized(lock) {
+                    if (state.phase == Phase.PREPARING) {
+                        state = state.copy(
+                            progress = if (total > 0) (done.toFloat() / total).coerceAtMost(1f) else null,
+                            writing = Writing(done, total),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -734,4 +812,8 @@ internal object RemoteAppUpdate {
     private const val CHUNK_BYTES = 60 * 1024
     private const val MAX_UPLOAD_BYTES = 300L * 1024 * 1024
     private const val PENDING_TTL_MILLIS = 30L * 60 * 1000
+
+    /** 写安装会话时每次读多少, 以及多久报一次写了多少 (网页每秒拉一次状态) */
+    private const val WRITE_BUFFER_BYTES = 256 * 1024
+    private const val WRITE_REPORT_INTERVAL_MILLIS = 250L
 }

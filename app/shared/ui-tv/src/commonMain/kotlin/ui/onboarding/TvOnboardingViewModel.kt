@@ -48,6 +48,7 @@ import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
+import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -74,12 +75,14 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     /** Bangumi 那一页: 官方与镜像. */
     val bangumi = OnboardingCheck(
         backgroundScope, BangumiConnectivityProbe.Result(), { it.completed }, bangumiProbe::run, rememberedBangumi,
+        maxDurationMillis = bangumiProbe.timeoutMillis,
     )
 
     /** TMDB 图片那一页: 清单里的每个入口. */
     val tmdbImages = OnboardingCheck(
         backgroundScope, CandidatesCheck(), { it.completed },
         { reachabilityProbe.checkCandidates(tmdbImageEndpoints) }, rememberedTmdbImages,
+        maxDurationMillis = reachabilityProbe.timeoutMillis,
     )
 
     /** 代理设置变了 (用户在手机或电视设置里存了代理). 除了自动重测, 页面还据此关掉「设置代理」弹窗. */
@@ -151,6 +154,8 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
 /**
  * 引导里的一项检测: 结果、「第一次测完才能选」, 以及这个进程里上次测完的结果 ([Remembered]) ——
  * 从登录层返回、本页重建时先摆上它, 后台静默重测.
+ *
+ * @param maxDurationMillis 一轮最多多久出结论 (各路并行测、各自封顶), 见 [deadlineMillis].
  */
 class OnboardingCheck<R>(
     private val scope: CoroutineScope,
@@ -158,6 +163,8 @@ class OnboardingCheck<R>(
     private val completed: (R) -> Boolean,
     private val run: () -> Flow<R>,
     private val remembered: Remembered<R>,
+    private val maxDurationMillis: Long,
+    private val clock: () -> Long = { currentTimeMillis() },
 ) {
     class Remembered<R> {
         var value: R? = null
@@ -177,11 +184,20 @@ class OnboardingCheck<R>(
         .runningFold(hasRemembered) { unlocked, completed -> unlocked || completed }
         .stateIn(scope, SharingStarted.Eagerly, hasRemembered)
 
+    private val _deadlineMillis = MutableStateFlow(0L)
+
+    /**
+     * 这一轮最晚什么时候出结论 (时间戳, 毫秒); 页面据此写「最多再等 N 秒」, 免得人对着「检测中」干等.
+     * 静默重测不改它 (那时摆着的是上次的结论, 不显示检测中).
+     */
+    val deadlineMillis: StateFlow<Long> = _deadlineMillis.asStateFlow()
+
     private var job: Job? = null
 
     /** @param quiet 只在测完那一刻更新 (已经摆着上次的结果时, 不让它中途变回「检测中」). */
     fun restart(quiet: Boolean) {
         job?.cancel()
+        if (!quiet) _deadlineMillis.value = clock() + maxDurationMillis
         job = scope.launch {
             run().collect {
                 if (quiet && !completed(it)) return@collect

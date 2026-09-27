@@ -56,6 +56,7 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.lan.findLanAddress
 import me.him188.ani.app.ui.foundation.lan.lanInterfacesSummary
+import me.him188.ani.app.ui.foundation.playback.PlaybackPreparingStage
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
@@ -1139,8 +1140,9 @@ object TvRemoteControl {
                 fullSource = request.queryParam("full")?.takeIf { it.isNotEmpty() },
             )
             val base = handle.stateJson(filter)
-            // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来
-            val session = if (handle.background) sessionStatusJson() else null
+            // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来.
+            // 前台播放页只在还没播起来时附 (手机上换了源 / 集, 卡片上看得到「准备中 · 已查完 9/14 个数据源」→「缓冲中」)
+            val session = if (handle.background) sessionStatusJson() else foregroundSessionStatusJson(handle)
             if (session != null) JsonObject(base + ("session" to session)) else base
         } else {
             val session = playbackSessionProvider?.invoke()
@@ -1368,11 +1370,26 @@ object TvRemoteControl {
      * `text` 是跟在后面的一句说明. 判据与电视侧边栏图标、动作面板顶行同一套 ([PlaybackSessionStatus]);
      * 失败的具体原因在电视画面上看, 这里只说下一步能做什么.
      */
-    private fun sessionStatusJson(): JsonObject? {
-        val status = playbackStatusProvider?.invoke() ?: return null
+    private fun sessionStatusJson(status: PlaybackSessionStatus? = playbackStatusProvider?.invoke()): JsonObject? {
+        status ?: return null
         val (kind, label, text) = when (status) {
             PlaybackSessionStatus.Ready -> Triple("ready", tr("已就绪"), tr("回到播放器就能接着看"))
-            PlaybackSessionStatus.Preparing -> Triple("busy", tr("准备中"), tr("正在查找数据源、解析播放地址"))
+            is PlaybackSessionStatus.Preparing -> Triple(
+                "busy",
+                tr("准备中"),
+                when (status.stage) {
+                    PlaybackPreparingStage.SearchingSources -> if (status.sourcesTotal > 0) {
+                        tr("已查完 {0}/{1} 个数据源，找到 {2} 条", status.sourcesFinished, status.sourcesTotal, status.found)
+                    } else {
+                        tr("正在查找数据源")
+                    }
+
+                    PlaybackPreparingStage.StartingBtService -> tr("正在启动 BT 服务，第一次要十几秒…")
+                    PlaybackPreparingStage.ResolvingSource -> tr("正在解析资源链接")
+                    PlaybackPreparingStage.PreparingVideo -> tr("资源解析成功，正在准备视频")
+                    PlaybackPreparingStage.FetchingTorrentInfo -> tr("正在获取种子信息")
+                },
+            )
             PlaybackSessionStatus.Buffering -> Triple("busy", tr("缓冲中"), tr("马上就好"))
             PlaybackSessionStatus.NeedsSelection -> Triple("attention", tr("等你选数据源"), tr("在下面挑一个就会开始加载"))
             PlaybackSessionStatus.NoMedia -> Triple("error", tr("没有可播放的资源"), tr("可以试试修改查询条件"))
@@ -1384,6 +1401,21 @@ object TvRemoteControl {
             put("label", label)
             put("text", text)
         }
+    }
+
+    /**
+     * 前台播放页的那一条状态: 只在还没播起来 (不是已就绪) 时给, 播起来之后手机卡片上不再挂这一行.
+     *
+     * 状态取自保留会话 (同 [sessionStatusJson], 前台后台都在更新), 所以先核对保留会话正是前台在播的这一集;
+     * 没开保留会话时拿不到状态, 不给.
+     */
+    private fun foregroundSessionStatusJson(handle: RemotePlayerHandle): JsonObject? {
+        val info = playbackSessionProvider?.invoke() ?: return null
+        val episodeId = handle.currentEpisodeId ?: return null
+        if (!info.isSameEpisodeAs(handle.vm.subjectId, episodeId)) return null
+        val status = playbackStatusProvider?.invoke() ?: return null
+        if (status == PlaybackSessionStatus.Ready) return null
+        return sessionStatusJson(status)
     }
 
     // ---------------------------- 工具 ----------------------------

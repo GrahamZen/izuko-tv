@@ -22,11 +22,15 @@ import me.him188.ani.app.domain.media.hls.HlsPlaybackProxySession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.MediaResolutionException
+import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
+import me.him188.ani.app.domain.media.resolver.MediaResolveDeadlineReporter
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaSourceOpenException
 import me.him188.ani.app.domain.media.resolver.OpenFailures
 import me.him188.ani.app.domain.media.resolver.ResolutionFailures
 import me.him188.ani.app.domain.media.resolver.TorrentBackedMediaDataProvider
+import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
+import me.him188.ani.app.domain.media.resolver.TorrentOpenProgressReporter
 import me.him188.ani.app.domain.media.resolver.UnsupportedMediaException
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -74,6 +78,22 @@ class PlayerSession(
      */
     val videoLoadingState: StateFlow<VideoLoadingState> get() = _videoLoadingStateFlow.asStateFlow()
 
+    private val _resolveDeadline = MutableStateFlow<MediaResolveDeadline?>(null)
+
+    /**
+     * 正在解析 ([VideoLoadingState.ResolvingSource]) 的这一轮最多等到什么时候; 不在解析、或解析器不按超时等时为 `null`.
+     * 由解析器经 [MediaResolveDeadlineReporter] 报来 (见 [reportResolveAttempt]).
+     */
+    val resolveDeadline: StateFlow<MediaResolveDeadline?> get() = _resolveDeadline.asStateFlow()
+
+    private val _torrentOpenProgress = MutableStateFlow<TorrentOpenProgress?>(null)
+
+    /**
+     * 打开 BT 资源、在等种子信息时连上了几个节点; 不在这一步时为 `null`.
+     * 由 `TorrentMediaDataProvider.open` 经 [TorrentOpenProgressReporter] 报来.
+     */
+    val torrentOpenProgress: StateFlow<TorrentOpenProgress?> get() = _torrentOpenProgress.asStateFlow()
+
     private val _loadedMedia = MutableStateFlow<Media?>(null)
 
     /**
@@ -98,16 +118,28 @@ class PlayerSession(
         var preparedHlsPlaybackProxySession: HlsPlaybackProxySession? = null
         try {
             _videoLoadingStateFlow.value = VideoLoadingState.ResolvingSource
-            val source = mediaResolver.resolve(
-                media,
-                episodeInfo,
-            )
+            val source = try {
+                withContext(MediaResolveDeadlineReporter { _resolveDeadline.value = it }) {
+                    mediaResolver.resolve(
+                        media,
+                        episodeInfo,
+                    )
+                }
+            } finally {
+                _resolveDeadline.value = null
+            }
             _videoLoadingStateFlow.compareAndSet(
                 VideoLoadingState.ResolvingSource,
                 VideoLoadingState.DecodingData(isBt = media.kind == MediaSourceKind.BitTorrent),
             )
 
-            val data = source.open(scopeForCleanup = backgroundScope) // may throw MediaSourceOpenException
+            val data = try {
+                withContext(TorrentOpenProgressReporter { _torrentOpenProgress.value = it }) {
+                    source.open(scopeForCleanup = backgroundScope) // may throw MediaSourceOpenException
+                }
+            } finally {
+                _torrentOpenProgress.value = null
+            }
             val preparedData = prepareHlsPlaybackIfEnabled(data).also {
                 preparedHlsPlaybackProxySession = it.session
             }.data
