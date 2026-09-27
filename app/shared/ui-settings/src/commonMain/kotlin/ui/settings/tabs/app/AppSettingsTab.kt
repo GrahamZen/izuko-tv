@@ -135,6 +135,8 @@ import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_manual
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_off
 import me.him188.ani.app.ui.lang.settings_player_op_ed_skip_duration_seconds
 import me.him188.ani.app.ui.lang.settings_player_pause_on_edit_danmaku
+import me.him188.ani.app.ui.lang.settings_player_pause_on_scrub
+import me.him188.ani.app.ui.lang.settings_player_pause_on_scrub_description
 import me.him188.ani.app.ui.lang.settings_player_playback_speed_range
 import me.him188.ani.app.ui.lang.settings_player_playback_speed_range_description
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
@@ -975,6 +977,18 @@ fun SettingsScope.PlayerGroup(
             title = { Text(stringResource(Lang.settings_player_frame_preview)) },
             description = { Text(stringResource(Lang.settings_player_frame_preview_description)) },
         )
+        // 只管电视播放器的拖拽预览 (遥控器, 以及装了电视包的平板触屏); 手机与桌面拖进度条是另一套交互
+        if (LocalAniUiBehavior.current.focusDrivenNavigation) {
+            HorizontalDividerItem()
+            SwitchItem(
+                checked = config.pauseVideoOnScrub,
+                onCheckedChange = {
+                    videoScaffoldConfig.update(config.copy(pauseVideoOnScrub = it))
+                },
+                title = { Text(stringResource(Lang.settings_player_pause_on_scrub)) },
+                description = { Text(stringResource(Lang.settings_player_pause_on_scrub_description)) },
+            )
+        }
         HorizontalDividerItem()
         PlaybackSpeedItems(config, videoScaffoldConfig)
         PlayerGroupPlatform(videoScaffoldConfig, playerKernelConfig)

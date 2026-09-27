@@ -30,6 +30,8 @@
     <string name="settings_player_idle_progress_bar">Bottom progress bar when idle</string>
     <string name="settings_player_idle_progress_bar_description">Shown at the very bottom edge while all player controls are hidden. Slide all the way left to hide it; further right is thicker</string>
     <string name="settings_player_idle_progress_bar_off">Off</string>
+    <string name="settings_player_pause_on_scrub">Pause while scrubbing</string>
+    <string name="settings_player_pause_on_scrub_description">Pause the picture while choosing a position with the remote, and play from there when you press OK. Turn off to keep playing while choosing</string>
     <string name="settings_player_up_next_tip">Next episode tip</string>
     <string name="settings_player_up_next_tip_description">Near the end, the episode strip opens with the next episode selected; OK plays it now, Back closes it</string>
     <string name="settings_player_up_next_tip_off">Off</string>

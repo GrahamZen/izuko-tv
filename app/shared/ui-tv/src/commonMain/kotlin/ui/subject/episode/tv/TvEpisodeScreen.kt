@@ -382,12 +382,13 @@ fun TvEpisodeScreenContent(
     // ---- 拖拽预览态 (Prime 行为) ----
     //
     // "态"没有新字段: 它就是 `progressSliderState.isPreviewing` —— 小圆点脱离播放位置,
-    // 画面停着不动, 圆点上方浮缩略图. 进入方式两种, 语义完全一致:
-    //   - 纯视频态连按两次左右键 (第二次落在中央反馈还没消失的窗口里)
+    // 圆点上方浮缩略图; 画面停不停看设置 (拖动时暂停 / 边播边选, 见 [TvScrubPlayback]).
+    // 进入方式两种, 语义完全一致:
+    //   - 纯视频态长按, 或连按两次左右键 (第二次落在中央反馈还没消失的窗口里)
     //   - 控制层里焦点已在进度条, 直接按左右键
     // 出口只有两个, 与 Prime 一致:
-    //   - 播放/确认键: 提交 (seek 到圆点) + 继续播放 + 收 UI
-    //   - 返回键: **不提交**, 画面留在原位置 (取消), 只收 UI 并保持暂停
+    //   - 播放/确认键: 提交 (seek 到圆点) + 播放
+    //   - 返回键: **不提交**, 画面留在原位置 (取消), 收 UI, 播放状态恢复成进来之前的样子
     // 上下键在这个态里一律吞掉不做事: 拖拽时能做的只有挪圆点和决定去不去, 换焦点区域只会
     // 让圆点位置和界面对不上 (而且高亮段/缩略图都是围绕进度条的, 换了区域就没意义了).
 
@@ -408,12 +409,27 @@ fun TvEpisodeScreenContent(
         progressSliderState.previewPositionRatio((from + step).coerceIn(0L, total).toFloat() / total)
     }
 
-    /** 纯视频态连按第二次: 升级成拖拽预览态. */
+    // 拖拽预览期间的播放状态: 进来按设置暂停、确认播放、取消恢复进来之前的状态
+    val scrubPlayback = remember(vm) {
+        TvScrubPlayback(
+            pauseOnScrub = { vm.videoScaffoldConfig.pauseVideoOnScrub },
+            isPlaying = { vm.player.state.value.playWhenReady },
+            pause = { vm.player.pause() },
+            play = { vm.player.play() },
+        )
+    }
+
+    /** 进入拖拽预览 (已经在预览中就什么都不做): 暂停与否交给 [TvScrubPlayback]. */
+    fun beginScrub() {
+        if (!progressSliderState.isPreviewing) scrubPlayback.onEnter()
+    }
+
+    /** 纯视频态长按或连按第二次: 升级成拖拽预览态. */
     fun enterScrub(forward: Boolean, repeats: Int) {
-        // 中央箭头让位: 接下来的反馈是暂停图标 + 进度条, 三个叠在一起没法看
+        // 中央箭头让位: 接下来的反馈是进度条 (拖动时暂停的话还有暂停图标), 叠在一起没法看
         seekFlash.cancel()
         // 暂停反馈不用手动触发, TvPauseFlash 监听状态流自己会闪
-        vm.player.pause()
+        beginScrub()
         overlay.showControls() // 焦点落进度条
         scrubStep(forward, repeats)
     }
@@ -421,17 +437,17 @@ fun TvEpisodeScreenContent(
     /**
      * 退出拖拽预览.
      *
-     * [commit] = true 时跳到圆点并继续播放 (播放/确认键), **控制层留着** —— 落地之后正是要看
-     * 一眼跳到哪儿了, 之后按 5 秒自动隐藏照常收. false 时丢弃圆点位置, 画面留在原处且保持暂停,
-     * 并收起全部组件 (返回键 = 取消, 那就一并退出去).
+     * [commit] = true 时跳到圆点并播放 (播放/确认键), **控制层留着** —— 落地之后正是要看
+     * 一眼跳到哪儿了, 之后按 5 秒自动隐藏照常收. false 时丢弃圆点位置, 画面留在原处, 播放状态
+     * 恢复成进来之前的样子, 并收起全部组件 (返回键 = 取消, 那就一并退出去). 不在预览中时
+     * (控制层里按返回也走这里) 只收起.
      *
      * 提交路径原本也 hideAll, 但紧接着的确认键 KeyUp 落在已经变成 HIDDEN 的层上, 又被那边的
      * 分支 showControls() 唤了回来 —— 净效果本来就是"留着", 中间那趟往返却看得见: 焦点会先被
      * 甩到 OP/ED 提示按钮上 (纯视频态屏上只剩它) 再弹回进度条. 索性不收.
      *
-     * 提交路径用 `play()` 而不是 `togglePlayWhenReady()`, **无条件**变成播放态: 进入拖拽必然先暂停
-     * (见 [enterScrub]), 所以"确认"在这个态里只可能是"从圆点这儿开始播" —— 与进入之前是播放
-     * 还是暂停无关. 换成 toggle 的话从暂停进来的那次会把播放器又切回暂停.
+     * 提交路径**无条件**播放而不是 toggle: "确认"在这个态里只可能是"从圆点这儿开始播" —— 与进入
+     * 之前是播放还是暂停无关 (见 [TvScrubPlayback]). 换成 toggle 的话从暂停进来的那次会把播放器又切回暂停.
      */
     fun exitScrub(commit: Boolean) {
         if (commit) {
@@ -441,9 +457,12 @@ fun TvEpisodeScreenContent(
             //
             // v2 的 `play()` 只是置播放意图 (playWhenReady), 不再被状态门控, 顺序上已经不敏感;
             // 这里保留"先置意图再 seek"是因为它语义更直白: 落地即续播, 中间不会出现一帧暂停态.
-            vm.player.play()
+            scrubPlayback.onCommit()
             progressSliderState.finishPreview() // 内部走 onPreviewFinished -> player.seekTo
         } else {
+            // 只在真的有预览时撤销: 焦点被别处挪走时预览已经就地取消 (见 focusRegion 那段兜底), 之后
+            // 按返回收控制层也走到这里, 那时不能再去恢复播放
+            if (progressSliderState.isPreviewing) scrubPlayback.onCancel()
             progressSliderState.cancelPreview()
             overlay.hideAll()
         }
@@ -1046,7 +1065,7 @@ fun TvEpisodeScreenContent(
                 if (isBack) {
                     if (isKeyUp) {
                         // 面板条目上: 返回回进度条 (面板随焦点区域变化收起); 其余: 全部隐藏.
-                        // 拖拽预览中: 丢弃圆点位置, 画面留在原处并保持暂停 (返回 = 取消)
+                        // 拖拽预览中: 丢弃圆点位置, 画面留在原处, 播放状态恢复成进来之前的样子 (返回 = 取消)
                         if (overlay.focusRegion == TvPlayerFocusRegion.PANEL) {
                             overlay.focusProgress()
                         } else {
@@ -1106,9 +1125,9 @@ fun TvEpisodeScreenContent(
                             false
                         }
 
-                    // 进度条行的左右键 = 拖拽预览 (圆点走, 画面不走), 与纯视频态连按两次进来的
+                    // 进度条行的左右键 = 拖拽预览 (圆点走, 画面不跟着跳), 与纯视频态连按两次进来的
                     // 是同一个态: 焦点已经在进度条上, 就不必再要求"连按"作为意图确认了.
-                    // 首次进入顺手暂停 —— 画面继续跑而圆点停在别处, 两个位置对不上
+                    // 首次进入由 beginScrub 按设置决定暂不暂停 (见 TvScrubPlayback)
                     // 拖拽预览中不看 focusRegion: 那会儿屏上唯一有意义的就是圆点, 焦点在哪儿
                     // 不重要 —— 而纯视频态长按进来的那一瞬, 焦点还没从别处 (OP/ED 提示按钮)
                     // 挪到进度条上, 卡着判据的话这几发会被当成焦点导航
@@ -1116,7 +1135,7 @@ fun TvEpisodeScreenContent(
                         if (progressSliderState.isPreviewing ||
                             overlay.focusRegion == TvPlayerFocusRegion.PROGRESS
                         ) {
-                            if (!progressSliderState.isPreviewing) vm.player.pause()
+                            beginScrub()
                             scrubStep(forward = key == Key.DirectionRight, repeats = scrubHoldRepeats)
                             true
                         } else {
@@ -1134,8 +1153,8 @@ fun TvEpisodeScreenContent(
                         }
 
                     Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
-                        // 播放键在拖拽预览中与确认键同义 (遥控器上播放/暂停通常是同一个物理键,
-                        // 拖拽态本来就是暂停的, 按它的意思只可能是"从这儿开始播")
+                        // 播放键在拖拽预览中与确认键同义 (遥控器上播放/暂停通常是同一个物理键;
+                        // 拖拽态里按它的意思只可能是"从这儿开始播", 边播边选时也一样)
                         if (progressSliderState.isPreviewing) exitScrub(commit = true)
                         else vm.player.togglePlayWhenReady()
                         true
@@ -1360,6 +1379,9 @@ fun TvEpisodeScreenContent(
     // **播放意图 (playWhenReady) 也是键**: 暂停着就不计时; 从别处恢复播放 (Web 控制台 / 一起看同步) 不经按键、
     // interactionTick 不动, 原来到点查到暂停就作罢、之后再没人重新计时, 控制层一直挂着. 现在恢复播放本身
     // 就重新数 5 秒, 与从哪儿恢复无关. combine 之后不能去重: 每次按键都要把计时重置
+    //
+    // **拖拽预览中也不隐藏**: 边播边选时播放意图一直为真, 5 秒一到控制层连同圆点一起收掉, 选到一半的
+    // 位置就没了 (拖动时暂停的话, 本来就因为暂停不收)
     LaunchedEffect(Unit) {
         combine(
             snapshotFlow {
@@ -1367,7 +1389,7 @@ fun TvEpisodeScreenContent(
                     overlay.layer, overlay.interactionTick, overlay.activePanel,
                     overlay.openPopupCount, overlay.danmakuInputExpanded, anySheetVisible,
                     overlay.replyingComment != null, pageForeground.value,
-                    overlay.episodeStripExpanded,
+                    overlay.episodeStripExpanded, progressSliderState.isPreviewing,
                 )
             },
             vm.player.state.map { it.playWhenReady }.distinctUntilChanged(),
@@ -1376,7 +1398,7 @@ fun TvEpisodeScreenContent(
             if (overlay.activePanel != null || overlay.openPopupCount > 0 ||
                 overlay.danmakuInputExpanded || anySheetVisible ||
                 overlay.replyingComment != null || !pageForeground.value ||
-                overlay.episodeStripExpanded
+                overlay.episodeStripExpanded || progressSliderState.isPreviewing
             ) {
                 return@collectLatest
             }
@@ -1449,9 +1471,9 @@ fun TvEpisodeScreenContent(
             } else {
                 progressSliderState.currentPositionMillis
             }
-            // 与 enterScrub 同一套: 中央箭头让位, 暂停 (画面跑着而圆点停在别处会对不上), 唤出进度条
+            // 与 enterScrub 同一套: 中央箭头让位, 按设置暂停 (见 TvScrubPlayback), 唤出进度条
             seekFlash.cancel()
-            vm.player.pause()
+            beginScrub()
             if (overlay.layer == TvPlayerLayer.HIDDEN) overlay.showControls()
         },
         onScrub = { widthFraction ->

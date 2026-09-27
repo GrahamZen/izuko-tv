@@ -94,6 +94,11 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val pauseVideoOnEditDanmaku: Boolean = true,
     /**
+     * 电视上拖动进度条选位置 (遥控器长按左右键 / 进度条上按左右, 或触屏拖动) 时暂停播放.
+     * 关掉则边播边选, 按确认键才跳过去. 规则见 ui-tv 的 `TvScrubPlayback`.
+     */
+    val pauseVideoOnScrub: Boolean = true,
+    /**
      * 在观看到 90% 进度后, 自动标记看过
      */
     val autoMarkDone: Boolean = true,
@@ -336,6 +341,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             enableFramePreview = false,
             videoEnhancementDefaultMode = VideoEnhancementDefaultMode.OFF,
             pauseVideoOnEditDanmaku = false,
+            pauseVideoOnScrub = false,
             autoMarkDone = false,
             hideSelectorOnSelect = false,
             autoFullscreenOnLandscapeMode = false,

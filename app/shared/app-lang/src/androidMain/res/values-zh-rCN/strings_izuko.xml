@@ -30,6 +30,8 @@
     <string name="settings_player_idle_progress_bar">纯画面时的底部进度条</string>
     <string name="settings_player_idle_progress_bar_description">播放器组件全部隐藏时，在屏幕最底缘显示播放进度；拉到最左不显示，越往右越粗</string>
     <string name="settings_player_idle_progress_bar_off">不显示</string>
+    <string name="settings_player_pause_on_scrub">拖动进度条时暂停播放</string>
+    <string name="settings_player_pause_on_scrub_description">用遥控器选位置时先暂停画面，按确认键从选中处播放；关闭后边播边选</string>
     <string name="settings_player_up_next_tip">片尾提示下一集</string>
     <string name="settings_player_up_next_tip_description">快播完时自动展开选集条并选中下一集，按确认键立刻播、按返回键关掉</string>
     <string name="settings_player_up_next_tip_off">不提示</string>
