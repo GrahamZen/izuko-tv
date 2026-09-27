@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -103,7 +104,9 @@ fun BoxScope.UpdateNotifier(
         )
     }
 
-    val showCard = !dismissed && (state is AppUpdateState.HasUpdate || presentation.isDownloading)
+    // 换人时应用自己重启进来的这次不提示有新版本 (用户没有「打开应用」, 刚才那个进程多半已经提示过); 下载中的卡照常显示
+    val hasUpdatePrompt = state is AppUpdateState.HasUpdate && !UserProfiles.launchedBySwitch
+    val showCard = !dismissed && (hasUpdatePrompt || presentation.isDownloading)
     val hasUpdateCard = showCard && state is AppUpdateState.HasUpdate
 
     // TV: 气泡出现时把初始焦点送到"自动更新"按钮. 卡片动画尚未组合按钮时请求会悬挂,
