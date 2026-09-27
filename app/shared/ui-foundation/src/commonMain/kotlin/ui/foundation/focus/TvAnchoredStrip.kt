@@ -13,6 +13,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -61,8 +62,12 @@ import me.him188.ani.app.ui.foundation.tv.tvAnimatedScroll
  * 末尾几张卡够不到锚位 (滚动到底了) 时框架自然停在边界, 焦点框继续往右走 —— 这些卡各自画自己的
  * 焦点框, 不像探索页那样有个钉死的框, 所以不需要给末项留一整屏空白.
  *
+ * 一屏放得下好几格的小格子行 (演职人员的圆头像) 可以改用 [TvStripScroll.OnDemand]: 规则 1 换成"按需挪动"
+ * (见 [tvOnDemandBringIntoViewSpec]), 一屏之内左右移动整行不动, 走到边上才一格一格地挪; 规则 2 照旧.
+ *
  * @param itemSpacing 卡片间距.
- * @param contentPadding 行内留白; 其**起始值即锚位** (聚焦卡的停靠线).
+ * @param contentPadding 行内留白; 其**起始值即锚位** (聚焦卡的停靠线). 按需挪动时两端就是停靠的两条边.
+ * @param scroll 横向滚动方式, 见 [TvStripScroll].
  * @param itemContent 第二个参数必须挂到该卡的**可聚焦节点**上 (落点请求器 + 聚焦簿记都在里面).
  */
 @Composable
@@ -81,6 +86,7 @@ fun TvAnchoredStrip(
      * 我们的圆头像行步距 128dp, 要达到同样的 dp/秒需要约 13.4 格/秒.
      */
     horizontalMoveRate: Int = TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL,
+    scroll: TvStripScroll = TvStripScroll.Anchored,
     itemContent: @Composable (index: Int, itemModifier: Modifier) -> Unit,
 ) {
     if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
@@ -96,10 +102,17 @@ fun TvAnchoredStrip(
     }
 
     val density = LocalDensity.current
-    val startPadding = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val layoutDirection = LocalLayoutDirection.current
+    val startPadding = contentPadding.calculateStartPadding(layoutDirection)
+    val endPadding = contentPadding.calculateEndPadding(layoutDirection)
     val animatedScroll = tvAnimatedScroll()
-    val bringIntoViewSpec = remember(density, startPadding, animatedScroll) {
-        tvAnchorBringIntoViewSpec(with(density) { startPadding.toPx() }, animated = animatedScroll)
+    val bringIntoViewSpec = remember(density, startPadding, endPadding, animatedScroll, scroll) {
+        with(density) {
+            when (scroll) {
+                TvStripScroll.Anchored -> tvAnchorBringIntoViewSpec(startPadding.toPx(), animated = animatedScroll)
+                TvStripScroll.OnDemand -> tvOnDemandBringIntoViewSpec(startPadding.toPx(), endPadding.toPx())
+            }
+        }
     }
     // 上次聚焦的下标 (进行落点).
     //
@@ -144,4 +157,13 @@ fun TvAnchoredStrip(
             }
         }
     }
+}
+
+/** [TvAnchoredStrip] 的横向滚动方式. */
+enum class TvStripScroll {
+    /** 聚焦卡一律停在行首锚位, 整行滑动 (与探索页卡片区、选集轮播同一套手感). */
+    Anchored,
+
+    /** 按需挪动: 聚焦卡还在两端留白之间就不动, 越过哪边才滚到刚好贴着那边 (见 [tvOnDemandBringIntoViewSpec]). */
+    OnDemand,
 }

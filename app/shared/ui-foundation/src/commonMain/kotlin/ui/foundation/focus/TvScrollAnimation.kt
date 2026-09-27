@@ -224,6 +224,26 @@ fun tvAnchorBringIntoViewSpec(anchorPx: Float, animated: Boolean = true): BringI
     }
 
 /**
+ * 按需滚动的 [BringIntoViewSpec]: 聚焦项整个落在 `[startPx, 容器宽 - endPx]` 这一段里就不动; 越过哪一边,
+ * 只滚到它刚好贴着那一边 (比这一段还宽的项对齐起始边).
+ *
+ * 与框架默认的"最小滚动到可见"相比, 两端各留一段: 默认贴着容器边停, 聚焦放大 / 描边会被容器裁掉, 下一项也
+ * 露不出来. 两个留白通常取行内 `contentPadding` 的两端 —— 静止时首项本就停在起始留白上, 于是在一屏之内
+ * 左右移动整行不动, 走到边上才一格一格地挪.
+ */
+fun tvOnDemandBringIntoViewSpec(startPx: Float, endPx: Float): BringIntoViewSpec = object : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val leading = startPx
+        val trailing = containerSize - endPx
+        return when {
+            offset < leading -> offset - leading
+            offset + size > trailing -> minOf(offset + size - trailing, offset - leading)
+            else -> 0f
+        }
+    }
+}
+
+/**
  * 焦点滚动 spring 刚度: 决定"单格滚动多久" (质量 1, 临界阻尼下停靠时间 ≈ 4/√stiffness 秒).
  * 调大更快更利落, 调小更慢更从容; Leanback 的参照区间是单格 200-250ms. 只调这里, 全部 TV 焦点
  * 滚动统一手感 —— 除本动画器 (网格吸顶/选集轮播) 外, public 也给探索页那套官方 pivot 式
