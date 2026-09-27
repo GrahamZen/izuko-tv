@@ -9,26 +9,30 @@
 
 package me.him188.ani.app.data.repository.episode
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
-import me.him188.ani.app.data.network.AnimeScheduleService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
+import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
+import me.him188.ani.app.data.persistent.MemoryDataStore
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.createTestAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
-import me.him188.ani.client.apis.ScheduleAniApi
-import me.him188.ani.client.apis.SubjectsAniApi
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.utils.ktor.ApiInvoker
+import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -37,13 +41,14 @@ import kotlin.test.assertTrue
  * 剧集看过状态的本地 outbox: 写本地、入队、被服务端刷新覆盖时保留.
  */
 class EpisodeCollectionRepositoryPendingOpsTest {
-    private object UnusedSubjectsApi : ApiInvoker<SubjectsAniApi> {
-        override suspend fun <R> invoke(action: suspend SubjectsAniApi.() -> R): R = error("ApiInvoker not expected")
+    private object UnusedBangumiApi : ApiInvoker<DefaultApi> {
+        override suspend fun <R> invoke(action: suspend DefaultApi.() -> R): R = error("ApiInvoker not expected")
     }
 
-    private object UnusedScheduleApi : ApiInvoker<ScheduleAniApi> {
-        override suspend fun <R> invoke(action: suspend ScheduleAniApi.() -> R): R = error("ApiInvoker not expected")
-    }
+    private val unusedScheduleSource = BangumiScheduleSource(
+        HttpClient(MockEngine { error("HTTP not expected") }).asScopedHttpClient(),
+        MemoryDataStore(AnimeScheduleCache()),
+    )
 
     private class Fixture(val database: AniDatabase, val repository: EpisodeCollectionRepository, val dirtyCalls: () -> Int)
 
@@ -55,8 +60,8 @@ class EpisodeCollectionRepositoryPendingOpsTest {
                 subjectDao = database.subjectCollection(),
                 episodeCollectionDao = database.episodeCollection(),
                 pendingOpDao = database.episodeCollectionPendingOpDao(),
-                episodeService = EpisodeServiceImpl(UnusedSubjectsApi),
-                animeScheduleRepository = AnimeScheduleRepository(AnimeScheduleService(UnusedScheduleApi)),
+                episodeService = EpisodeServiceImpl(UnusedBangumiApi),
+                animeScheduleRepository = AnimeScheduleRepository(unusedScheduleSource),
                 subjectCollectionRepository = lazy { error("SubjectCollectionRepository not expected") },
                 getEpisodeTypeFiltersUseCase = GetEpisodeTypeFiltersUseCase { flowOf(EpisodeType.entries) },
                 nowMillis = { now },
