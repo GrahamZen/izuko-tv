@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
@@ -141,6 +142,32 @@ class WebViewCaptchaBrowser private constructor(
                     .orEmpty()
             }
         }
+
+    override suspend fun clearCookies(urls: List<String>) = withContext(Dispatchers.Main.immediate) {
+        val manager = CookieManager.getInstance()
+        for (url in urls) {
+            val host = Uri.parse(url).host ?: continue
+            val names = manager.getCookie(url)
+                ?.split(";")
+                ?.map { it.substringBefore("=").trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+            for (name in names) {
+                // WebView 只给 name=value, 不知道当初设的 Domain / Path: 几种写法各过期一遍, 总有一种对得上
+                for (domain in listOf(null, host, ".$host")) {
+                    for (path in listOf("/", null)) {
+                        val attributes = buildString {
+                            append("$name=; Max-Age=0")
+                            if (domain != null) append("; Domain=$domain")
+                            if (path != null) append("; Path=$path")
+                        }
+                        manager.setCookie(url, attributes)
+                    }
+                }
+            }
+        }
+        manager.flush()
+    }
 
     override fun setResourceInterceptor(handler: ((String) -> InterceptDecision)?) {
         interceptor.value = handler

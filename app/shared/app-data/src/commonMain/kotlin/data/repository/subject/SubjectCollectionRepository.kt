@@ -237,8 +237,14 @@ class SubjectCollectionRepositoryImpl(
     scope: CoroutineScope,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val cacheExpiry: Duration = 1.hours,
+    /**
+     * 本地档 (见 [me.him188.ani.app.domain.profile.UserProfileKind.LOCAL]): 收藏、自己的评分与看过只存在本地库, 不同步 Bangumi,
+     * 网络只拿来取条目与分集的公开信息. 一个进程只属于一个用户, 构造时定下.
+     */
+    private val localProfile: Boolean = false,
 ) : SubjectCollectionRepository(defaultDispatcher) {
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> {
+        if (localProfile) return localCollectionCountsFlow()
         return (subjectService.subjectCollectionCountsFlow() as Flow<SubjectCollectionCounts?>)
             .restartOnNewLogin(sessionManager)
             .retry(2) { e ->
@@ -249,23 +255,28 @@ class SubjectCollectionRepositoryImpl(
                 emit(null)
             }
             .flowOn(defaultDispatcher)
-//        return combine(
-//            subjectCollectionDao.countCollected(UnifiedCollectionType.WISH),
-//            subjectCollectionDao.countCollected(UnifiedCollectionType.DOING),
-//            subjectCollectionDao.countCollected(UnifiedCollectionType.DONE),
-//            subjectCollectionDao.countCollected(UnifiedCollectionType.ON_HOLD),
-//            subjectCollectionDao.countCollected(UnifiedCollectionType.DROPPED),
-//        ) { wish, doing, done, onHold, dropped ->
-//            SubjectCollectionCounts(
-//                wish = wish,
-//                doing = doing,
-//                done = done,
-//                onHold = onHold,
-//                dropped = dropped,
-//                total = wish + doing + done + onHold + dropped,
-//            )
-//        }
     }
+
+    /**
+     * 本地档的收藏数: 收藏全在库里, 按类型数就是准的 (只是浏览过的条目是 NOT_COLLECTED, 不在这五类里).
+     * 登录了 Bangumi 的人库里只有分页进来的那些, 所以走服务端的计数.
+     */
+    private fun localCollectionCountsFlow(): Flow<SubjectCollectionCounts?> = combine(
+        subjectCollectionDao.countCollected(UnifiedCollectionType.WISH),
+        subjectCollectionDao.countCollected(UnifiedCollectionType.DOING),
+        subjectCollectionDao.countCollected(UnifiedCollectionType.DONE),
+        subjectCollectionDao.countCollected(UnifiedCollectionType.ON_HOLD),
+        subjectCollectionDao.countCollected(UnifiedCollectionType.DROPPED),
+    ) { wish, doing, done, onHold, dropped ->
+        SubjectCollectionCounts(
+            wish = wish,
+            doing = doing,
+            done = done,
+            onHold = onHold,
+            dropped = dropped,
+            total = wish + doing + done + onHold + dropped,
+        )
+    }.flowOn(defaultDispatcher)
 
     private fun SubjectCollectionEntity.isExpired(): Boolean {
         return (currentTimeMillis() - lastFetched).milliseconds > cacheExpiry
@@ -417,7 +428,11 @@ class SubjectCollectionRepositoryImpl(
         val staleByLogin = loginGeneration.value != generation
         if (staleByLogin) logger.info { "bgm-direct: subject $subjectId was fetched across a new login, saved as stale" }
         val savedSubject = if (staleByLogin) subjectEntity.copy(lastFetched = 0) else subjectEntity
-        if (episodeEntities != null) {
+        if (localProfile) {
+            // 本地档取到的是匿名结果: 收藏、评分与看过保留库里的, 同样单个事务 (见该方法 KDoc)
+            subjectCollectionDao.upsertSubjectKeepingSelfState(savedSubject, episodeEntities)
+            logger.info { "bgm-direct: fetched subject $subjectId for local profile (${episodeEntities?.size ?: "no"} episodes)" }
+        } else if (episodeEntities != null) {
             // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
             subjectCollectionDao.upsertSubjectWithEpisodes(
                 savedSubject,
@@ -533,7 +548,8 @@ class SubjectCollectionRepositoryImpl(
             Pager(
                 config = pagingConfig,
                 initialKey = 0,
-                remoteMediator = SubjectCollectionRemoteMediator(query),
+                // 本地档的收藏全在库里, 没有服务端那份可以同步
+                remoteMediator = if (localProfile) null else SubjectCollectionRemoteMediator(query),
                 pagingSourceFactory = {
                     subjectCollectionDao.filterByCollectionTypePaging(
                         query.type,
@@ -555,6 +571,8 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
         offset: Int
     ) {
+        // 本地档的收藏就在库里, 没有服务端的可取
+        if (localProfile) return
         try {
             withContext(defaultDispatcher) {
                 // 只允许同时一个请求. 防止多个请求浪费带宽.
@@ -699,15 +717,18 @@ class SubjectCollectionRepositoryImpl(
         withContext(defaultDispatcher) {
             // 每个字段原样透传: null = 不动它. 用 orEmpty()/?: false 去顶会把用户在 bangumi 上
             // 的标签清空、把"仅自己可见"改掉 —— 详情页改评分时 tags 就是 null.
-            subjectService.patchSubjectCollection(
-                subjectId,
-                SubjectCollectionUpdate(
-                    score = score,
-                    comment = comment,
-                    tags = tags,
-                    isPrivate = isPrivate,
-                ),
-            )
+            // 本地档只改本地
+            if (!localProfile) {
+                subjectService.patchSubjectCollection(
+                    subjectId,
+                    SubjectCollectionUpdate(
+                        score = score,
+                        comment = comment,
+                        tags = tags,
+                        isPrivate = isPrivate,
+                    ),
+                )
+            }
 
             subjectCollectionDao.updateRating(
                 subjectId,
@@ -773,6 +794,10 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
     ) {
         return withContext(defaultDispatcher) {
+            if (localProfile) {
+                setLocalCollectionType(subjectId, type ?: UnifiedCollectionType.NOT_COLLECTED)
+                return@withContext
+            }
             sessionManager.checkAccessAniApiNow()
             if (type == null || type == UnifiedCollectionType.NOT_COLLECTED) {
                 deleteSubjectCollection(subjectId)
@@ -821,6 +846,18 @@ class SubjectCollectionRepositoryImpl(
             subjectService.deleteSubjectCollection(subjectId)
             subjectCollectionDao.delete(subjectId)
         }
+    }
+
+    /**
+     * 本地档改收藏, 只写本地库. 取消收藏 = 改回 [UnifiedCollectionType.NOT_COLLECTED], 条目那一行留着
+     * (看过的集也留着, 再收藏时进度还在). 库里还没有这个条目 (没打开过它) 就先取一次公开信息, 否则没有行可改.
+     */
+    private suspend fun setLocalCollectionType(subjectId: Int, type: UnifiedCollectionType) {
+        if (subjectCollectionDao.getById(subjectId) == null) {
+            fetchSubjectCollectionIfStale(subjectId)
+            if (subjectCollectionDao.getById(subjectId) == null) throw RepositorySubjectNotAccessibleException(subjectId)
+        }
+        subjectCollectionDao.updateType(subjectId, type)
     }
 
 

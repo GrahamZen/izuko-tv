@@ -60,6 +60,11 @@ class BangumiOAuthManager(
      * **只接可信镜像** (用户自建, 或用户允许凭证经过的): 那个页面上用户要输 bangumi 的账号密码, 第三方反代原样看得到.
      */
     private val trustedMirrorRoot: () -> String? = { null },
+    /**
+     * 「在电视上登录」打开授权页之前要不要先清掉内置浏览器里 bgm 的登录状态. 浏览器的 cookie 整机共用,
+     * 多人共用这台设备时, 不清的话新用户打开授权页看到的可能是上一个人的账号 (见 `UserProfile`).
+     */
+    private val clearWebLoginBeforeInAppBrowser: () -> Boolean = { false },
     private val random: Random = Random.Default,
 ) {
     private val logger = logger<BangumiOAuthManager>()
@@ -175,6 +180,10 @@ class BangumiOAuthManager(
                 }
             }
             currentBrowser = browser
+            if (clearWebLoginBeforeInAppBrowser()) {
+                browser.clearCookies(BangumiOAuthConstants.webLoginUrls(url))
+                logger.info { "bgm-direct: oauth 清掉了内置浏览器里 bgm 的登录状态" }
+            }
             _state.value = State.Authorizing(url, browser)
             logger.info { "bgm-direct: oauth 打开授权页 (应用内浏览器)" }
             browser.navigate(url)
