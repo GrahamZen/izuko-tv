@@ -84,6 +84,11 @@ object BangumiOAuthConstants {
     private fun authorizeUrlBase(mirrorRoot: String?): String =
         if (mirrorRoot == null) AUTHORIZE_URL else "https://$mirrorRoot/oauth/authorize"
 
+    /** 网页登录状态可能落在的站点: bgm 的几个域名, 加上授权页 [authorizeUrl] 自己所在的站 (可能是可信镜像). */
+    fun webLoginUrls(authorizeUrl: String): List<String> =
+        (listOf("https://bgm.tv/", "https://bangumi.tv/", "https://chii.in/", "https://next.bgm.tv/") +
+                (authorizeUrl.substringBefore("/oauth/") + "/")).distinct()
+
     /**
      * 这个地址是不是 OAuth 回调 (WebView 拦截判据). bangumi 会带上 `?code=...&state=...`.
      *
