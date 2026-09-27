@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.rating
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -29,6 +28,7 @@ import me.him188.ani.app.data.models.subject.TestSelfRatingInfo
 import me.him188.ani.app.data.models.subject.TestSubjectInfo
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.DismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
 import me.him188.ani.app.ui.lang.Lang
@@ -148,7 +148,7 @@ fun EditableRating(
 @Composable
 fun EditableRatingDialogsHost(state: EditableRatingState) {
     if (state.showRatingRequiresCollectionDialog) {
-        AlertDialog(
+        AniAlertDialog(
             { state.dismissRatingRequiresCollectionDialog() },
             // 独立窗口: 遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
             modifier = Modifier.tvOverlayWindowKeys { state.dismissRatingRequiresCollectionDialog() },

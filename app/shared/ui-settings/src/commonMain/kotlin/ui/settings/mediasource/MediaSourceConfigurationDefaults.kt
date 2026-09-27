@@ -13,12 +13,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
@@ -39,6 +36,9 @@ import me.him188.ani.app.domain.mediasource.codec.serializeToString
 import me.him188.ani.app.ui.foundation.getClipEntryText
 import me.him188.ani.app.ui.foundation.isInDebugMode
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.DismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.setClipEntryText
@@ -174,7 +174,7 @@ fun <T : MediaSourceArguments> MediaSourceConfigurationDefaults.DropdownMenuImpo
 ) {
     val clipboard = LocalClipboard.current
     val asyncHandler = rememberAsyncHandler()
-    DropdownMenuItem(
+    AniDropdownMenuItem(
         text = { Text(stringResource(Lang.settings_mediasource_import_from_clipboard)) },
         onClick = {
             asyncHandler.launch {
@@ -187,14 +187,14 @@ fun <T : MediaSourceArguments> MediaSourceConfigurationDefaults.DropdownMenuImpo
     )
     if (state.showOverrideDialog) {
         val toaster = LocalToaster.current
-        AlertDialog(
+        AniAlertDialog(
             onDismissRequest = { state.cancelOverride() },
             icon = { Icon(Icons.Rounded.ContentPaste, null) },
             title = { Text(stringResource(Lang.settings_mediasource_import_title)) },
             text = { Text(stringResource(Lang.settings_mediasource_import_warning)) },
             confirmButton = {
                 val copied = stringResource(Lang.settings_mediasource_copied_to_clipboard)
-                TextButton(
+                AniTextButton(
                     {
                         state.confirmImport()
                         toaster.toast(copied)
@@ -211,7 +211,7 @@ fun <T : MediaSourceArguments> MediaSourceConfigurationDefaults.DropdownMenuImpo
     }
     val error = state.error
     if (error != null) {
-        AlertDialog(
+        AniAlertDialog(
             { state.dismissError() },
             icon = { Icon(Icons.Rounded.Error, null) },
             title = {
@@ -261,7 +261,7 @@ fun MediaSourceConfigurationDefaults.DropdownMenuExport(
     val copiedToClipboard = stringResource(Lang.settings_mediasource_copied_to_clipboard)
     val cannotExport = stringResource(Lang.settings_mediasource_export_failed)
     val asyncHandler = rememberAsyncHandler()
-    DropdownMenuItem(
+    AniDropdownMenuItem(
         text = { Text(stringResource(Lang.settings_mediasource_export)) },
         onClick = {
             asyncHandler.launch {
@@ -280,7 +280,7 @@ fun MediaSourceConfigurationDefaults.DropdownMenuExport(
         enabled = enabled,
     )
     if (isInDebugMode()) {
-        DropdownMenuItem(
+        AniDropdownMenuItem(
             text = { Text(stringResource(Lang.settings_mediasource_export_single)) },
             onClick = {
                 asyncHandler.launch {

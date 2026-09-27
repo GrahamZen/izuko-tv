@@ -74,6 +74,7 @@ import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_hot_reviews
 import me.him188.ani.app.ui.lang.subject_details_reviews_count
@@ -511,7 +512,7 @@ fun SubjectCommentsSheet(
             headerAction = {
                 // 评分弹窗关掉之后焦点还回本按钮 (它自己是另一个弹窗窗口里的元素,
                 // 上面那层关掉时不保证把焦点还回来, 遥控器会当场失去焦点)
-                TextButton(onClickWriteReview, Modifier.restoreFocusAfter(ratingDialogVisible)) {
+                AniTextButton(onClickWriteReview, Modifier.restoreFocusAfter(ratingDialogVisible)) {
                     Icon(Icons.Rounded.AddComment, contentDescription = null, Modifier.size(18.dp))
                     Text(
                         stringResource(Lang.subject_details_write_review),

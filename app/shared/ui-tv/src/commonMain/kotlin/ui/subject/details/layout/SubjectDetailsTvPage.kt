@@ -97,6 +97,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -235,6 +236,9 @@ import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
 import me.him188.ani.app.ui.lang.subject_details_aliases
@@ -274,7 +278,6 @@ import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_CONTENT_PADDING
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_END_RESERVE
-import me.him188.ani.app.ui.subject.details.sections.MENU_CONTAINER_ALPHA
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeCarousel
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeGridDropdown
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
@@ -2313,6 +2316,9 @@ private val TV_TAGS_WALL_GAP = 4.dp
  * 放不下时纵向移动焦点自动滚动 (菜单内恢复默认 BringIntoView), 可导航到所有标签.
  * Popup 独立于页面滚动容器, 页面不会跟着动. 返回键/点击外部关闭.
  *
+ * 外观同其他弹窗与菜单 (半透明面板色、统一圆角), 标签是弹窗里的胶囊 ([AniFocusChip]) —— 与搜索页筛选弹窗
+ * 里的标签长得一样; 页面上标签墙那种玻璃小标签是给背景图上用的.
+ *
  * 需组合在锚点 (标签墙) 所在的 Box 内.
  */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -2359,30 +2365,31 @@ private fun TvTagsMenu(
             Surface(
                 // Popup 是独立窗口, 按键到不了播放页的根路由 (播放器内嵌详情页也开得出这个菜单)
                 Modifier.tvOverlayWindowKeys(onDismissRequest).width(560.dp).heightIn(max = 400.dp),
-                shape = RoundedCornerShape(16.dp),
-                // 半透明容器 (详情页所有弹出菜单统一), 隐约透出下层内容
-                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = MENU_CONTAINER_ALPHA),
-                shadowElevation = 8.dp,
+                shape = CENTERED_PANEL_SHAPE,
+                color = centeredPanelColor,
+                // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 FlowRow(
                     Modifier
-                        .padding(20.dp)
+                        .padding(CENTERED_PANEL_CONTENT_PADDING)
                         .verticalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     tags.forEachIndexed { i, tag ->
-                        TvTagChip(
-                            tag.name,
-                            Modifier
+                        AniFocusChip(
+                            text = tag.name,
+                            selected = false,
+                            onClick = { onClickTag(tag) },
+                            modifier = Modifier
                                 .then(if (i == initialIndex) initialModifier else Modifier)
                                 .onFocusChanged {
                                     if (it.isFocused) {
                                         onTagFocused(i)
                                         if (i == initialIndex) onRestoreConsumed()
                                     }
-                                }
-                                .clickable { onClickTag(tag) },
+                                },
                         )
                     }
                 }
@@ -4274,8 +4281,6 @@ private fun TvCollectionCapsule(
             state,
             expanded = dropdownExpanded,
             onDismissRequest = { dropdownExpanded = false },
-            // 半透明容器 (详情页所有弹出菜单统一)
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = MENU_CONTAINER_ALPHA),
         )
     }
 }

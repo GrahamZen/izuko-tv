@@ -33,14 +33,12 @@ import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.VpnKey
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,8 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -73,6 +69,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
@@ -1049,47 +1048,47 @@ private fun PhoneCard(modifier: Modifier = Modifier) {
     }
 }
 
-/** 「设置代理」: 扫码到手机控制台填 (电视上打字难), 或者去电视的设置页. 存了代理之后调用方会关掉它并重测. */
+/**
+ * 「设置代理」: 扫码到手机控制台填 (电视上打字难), 或者去电视的设置页. 存了代理之后调用方会关掉它并重测.
+ * 版式同 Web 控制台的启动弹窗 (TvRemoteControlDialog): 左码右字, 外壳是 [AniCenteredPanelDialog].
+ */
 @Composable
 private fun ProxyDialog(onOpenTvSettings: () -> Unit, onDismissRequest: () -> Unit) {
     val url by TvRemoteControl.url.collectAsState()
     val hostChanged by TvRemoteControl.hostChanged.collectAsState()
     val phoneConnected by TvRemoteControl.phoneConnected.collectAsState()
     LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
-    val closeFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { closeFocus.requestFocus() } }
 
     val scheme = MaterialTheme.colorScheme
-    Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            Modifier.width(PROXY_DIALOG_WIDTH),
-            shape = RoundedCornerShape(28.dp),
-            color = scheme.surfaceContainerHigh,
-            contentColor = scheme.onSurface,
-        ) {
-            Row(Modifier.padding(28.dp), verticalAlignment = Alignment.CenterVertically) {
-                RemoteQrCode(url, PHONE_QR_SIZE, PHONE_QR_QUIET_ZONE)
-                Spacer(Modifier.width(28.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Lang.tv_onboarding_proxy), style = MaterialTheme.typography.headlineSmall)
+    AniCenteredPanelDialog(
+        onDismissRequest = onDismissRequest,
+        heightFraction = null,
+        maxWidth = PROXY_DIALOG_WIDTH,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RemoteQrCode(url, PHONE_QR_SIZE, PHONE_QR_QUIET_ZONE)
+            Spacer(Modifier.width(24.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(Lang.tv_onboarding_proxy), style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(14.dp))
+                Text(stringResource(Lang.tv_onboarding_proxy_description), style = MaterialTheme.typography.bodyMedium)
+                url?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                }
+                if (url != null && !phoneConnected && !hostChanged) {
                     Spacer(Modifier.height(8.dp))
-                    RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(14.dp))
-                    Text(stringResource(Lang.tv_onboarding_proxy_description), style = MaterialTheme.typography.bodyMedium)
-                    url?.let {
-                        Spacer(Modifier.height(6.dp))
-                        Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                    RemoteTroubleshootHint(MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AniFocusActionButton(onDismissRequest, Modifier.tvWindowInitialFocus()) {
+                        Text(stringResource(Lang.tv_remote_control_close), style = MaterialTheme.typography.labelLarge)
                     }
-                    if (url != null && !phoneConnected && !hostChanged) {
-                        Spacer(Modifier.height(8.dp))
-                        RemoteTroubleshootHint(MaterialTheme.typography.bodySmall)
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onDismissRequest, Modifier.focusRequester(closeFocus)) {
-                            Text(stringResource(Lang.tv_remote_control_close))
-                        }
-                        TextButton(onOpenTvSettings) { Text(stringResource(Lang.tv_onboarding_proxy_on_tv)) }
+                    AniFocusActionButton(onOpenTvSettings) {
+                        Text(stringResource(Lang.tv_onboarding_proxy_on_tv), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

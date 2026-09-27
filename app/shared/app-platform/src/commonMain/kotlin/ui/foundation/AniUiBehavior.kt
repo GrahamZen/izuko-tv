@@ -103,6 +103,7 @@ data class AniUiBehavior(
      * 贴边侧栏/抽屉是否改为居中弹窗形态.
      *
      * 大屏上贴边面板离视线中心远, 且焦点从内容跳到屏幕边缘的过程难以看清.
+     * 开启时 M3 对话框的圆角也改成居中面板那一档 (见 `withPanelDialogShapes`).
      */
     val panelsAsCenteredDialogs: Boolean = false,
     /**
@@ -117,6 +118,13 @@ data class AniUiBehavior(
      * 背景恒为视频画面的形态下, 浅色配色的文字压在画面上不可读.
      */
     val forceDarkInPlayer: Boolean = false,
+    /**
+     * 选中态的容器色 (配色的 `secondaryContainer`: 选中的筛选胶囊、`FilterChip`、`FilledTonalButton` 等) 是否加深.
+     *
+     * 远距离看电视时 Material 默认的 secondaryContainer 太淡 —— 浅色主题下与没选中的几乎一样, 深色下也只亮一点点, 看不出选没选中.
+     * 开启时换成主题主色掺进面板底色, 比聚焦 (主色实底) 弱一档、比没选中的明显 (见 `withStrongSelectionColors`).
+     */
+    val strongSelectionColors: Boolean = false,
     /**
      * 退出播放页后是否保留播放会话 (播放器实例与整条"搜索数据源 → 选源 → 起播"的流水线),
      * 使再次进入时接着之前的状态, 而不是从头重来.

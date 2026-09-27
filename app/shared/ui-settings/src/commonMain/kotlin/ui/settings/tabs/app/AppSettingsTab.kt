@@ -67,6 +67,8 @@ import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order
 import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order_description
 import me.him188.ani.app.ui.lang.settings_player_tv_chrome
@@ -169,8 +171,6 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_description
 import me.him188.ani.app.ui.lang.search_tv_remote_reset
 import me.him188.ani.app.ui.lang.settings_mediasource_cancel
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_ui_scale
@@ -361,11 +361,11 @@ fun SettingsScope.AppearanceGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_remote_reset_description)) },
             )
             if (confirmingReset) {
-                AlertDialog(
+                AniAlertDialog(
                     onDismissRequest = { confirmingReset = false },
                     text = { Text(stringResource(Lang.settings_theme_tv_remote_reset_confirm)) },
                     confirmButton = {
-                        TextButton(
+                        AniTextButton(
                             onClick = {
                                 confirmingReset = false
                                 reset()
@@ -373,7 +373,7 @@ fun SettingsScope.AppearanceGroup(
                         ) { Text(stringResource(Lang.search_tv_remote_reset)) }
                     },
                     dismissButton = {
-                        TextButton(onClick = { confirmingReset = false }) {
+                        AniTextButton(onClick = { confirmingReset = false }) {
                             Text(stringResource(Lang.settings_mediasource_cancel))
                         }
                     },

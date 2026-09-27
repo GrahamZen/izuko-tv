@@ -91,6 +91,8 @@ import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.icons.EditSquare
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.FOCUS_REQ_DELAY_MILLIS
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_full_search
 import me.him188.ani.app.ui.lang.media_selector_view_detailed_mode
@@ -270,6 +272,41 @@ private fun ViewKindAndMoreRow(
             kotlinx.coroutines.delay(FOCUS_REQ_DELAY_MILLIS) // Wait for layout to complete
             firstButtonFocusRequester.requestFocus()
         }
+    }
+
+    if (focusDriven) {
+        // TV: 与面板里其他胶囊同一套 (AniFocusChip / AniFocusIconButton) —— M3 分段按钮、FilterChip、IconButton
+        // 的聚焦只有一层淡态层, 而面板一打开焦点就落在这一行
+        Row(
+            modifier,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AniFocusChip(
+                text = simpleModeText,
+                selected = viewKind == ViewKind.WEB,
+                onClick = { onViewKindChange(ViewKind.WEB) },
+                modifier = Modifier.focusRequester(firstButtonFocusRequester),
+            )
+            AniFocusChip(
+                text = detailedModeText,
+                selected = viewKind == ViewKind.BT,
+                onClick = { onViewKindChange(ViewKind.BT) },
+            )
+            Spacer(Modifier.weight(1f))
+            // 开关常驻 (只变选中态): 遥控器焦点停在上面时不会因为它消失而丢焦点
+            if (fullSearch != null) {
+                AniFocusChip(
+                    text = stringResource(Lang.media_selector_full_search),
+                    selected = fullSearch,
+                    onClick = { onFullSearchChange(!fullSearch) },
+                )
+            }
+            AniFocusIconButton(onRequestFetchRequestEdit) {
+                Icon(Icons.Rounded.EditSquare, contentDescription = stringResource(Lang.settings_media_source_more))
+            }
+        }
+        return
     }
 
     Row(

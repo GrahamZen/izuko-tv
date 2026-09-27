@@ -13,13 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Reorder
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -33,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_danmaku_cancel
@@ -82,7 +82,7 @@ fun <T> SettingsScope.SorterItem(
             val valuesState by remember {
                 derivedStateOf { values() }
             }
-            TextButton(onClick = { showDialog = true }, Modifier.widthIn(max = 128.dp)) {
+            AniTextButton(onClick = { showDialog = true }, Modifier.widthIn(max = 128.dp)) {
                 exposed(valuesState)
             }
 
@@ -97,7 +97,7 @@ fun <T> SettingsScope.SorterItem(
                         }
                     },
                 )
-                AlertDialog(
+                AniAlertDialog(
                     onDismissRequest = { showDialog = false },
                     title = { title() },
                     text = {
@@ -154,7 +154,7 @@ fun <T> SettingsScope.SorterItem(
                         }
                     },
                     confirmButton = {
-                        TextButton(
+                        AniTextButton(
                             onClick = {
                                 showDialog = false
                                 onConfirm?.invoke()
