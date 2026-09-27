@@ -28,6 +28,8 @@ import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.FramePreview
 import org.openani.mediamp.features.PreviewFrame
 import org.openani.mediamp.source.UriMediaData
+import kotlin.math.exp
+import kotlin.time.TimeSource
 
 /**
  * 进度条预览帧的状态: 悬浮 (桌面) 或拖动 (触摸) 进度条时, 加载并展示目标位置的视频帧.
@@ -63,12 +65,52 @@ class MediaProgressFramePreviewState(
      * 进度条上的「已缓存」只是播放器的缓冲范围, 用它拦截的话往前拖基本拿不到缩略图.
      */
     val fetchesUncachedPositions: () -> Boolean = { false },
+    /**
+     * 为 true 时维护 [loadStatus], 浮窗据此区分「正在取」「这次没取到」「这里还没下载」; 取帧失败只记在
+     * [loadStatus] 上, 不把 [framesAvailable] 置 false (那会把整个画面位收掉, 看起来和没开画面预览一样).
+     *
+     * 为 false 时失败即退化成只显示时间. TV 用 true: 一帧要取好几秒, 不给状态的话只看得见一块灰底.
+     */
+    private val reportsLoadStatus: Boolean = false,
+    /**
+     * 这台设备 / 当前媒体会不会去取帧 (取帧源自己知道, 比如这台机器上关掉了第二路解码器).
+     * 为 false 时浮窗只显示时间, 不显示「加载失败」: 那不是某一次出了错. 只在 [reportsLoadStatus] 为 true 时使用.
+     */
+    private val isSupported: () -> Boolean = { true },
 ) {
     /**
      * 当前要展示的预览帧. `null` 表示无帧可展示 (浮窗显示占位背景).
      */
     var frame: ImageBitmap? by mutableStateOf(null)
         private set
+
+    /**
+     * 当前预览位置的取帧进展. 只在 [reportsLoadStatus] 为 true 时维护, 否则恒为 [FramePreviewLoadStatus.Idle].
+     */
+    var loadStatus: FramePreviewLoadStatus by mutableStateOf(FramePreviewLoadStatus.Idle)
+        private set
+
+    /** 本次进入 [FramePreviewLoadStatus.Loading] 的时刻, 供浮窗估算进度. 每换一个位置重新计. */
+    var loadingSince: TimeSource.Monotonic.ValueTimeMark? by mutableStateOf(null)
+        private set
+
+    /**
+     * 估算进度的基准: 最近几次取帧 (从进入 Loading 到出帧, 含防抖与排队) 耗时的指数平均.
+     *
+     * 取帧器报不出真实进度 (media3 的取帧器与 MediaMetadataRetriever 都只给结果), 只能按这个视频
+     * 最近的实际耗时估个大概.
+     */
+    private var expectedLoadMillis: Long = DEFAULT_EXPECTED_LOAD_MILLIS
+
+    /**
+     * 本次取帧已等了 [elapsedMillis] 时的估算进度: 基准耗时之前匀速走到 80%, 之后越走越慢, 最多到 99%.
+     * 停在某个百分比不动看起来像卡死, 走满了又像已经好了 (会话里第一帧最长要等 30 秒).
+     */
+    fun estimatedLoadProgress(elapsedMillis: Long): Float {
+        val x = elapsedMillis.toDouble() / expectedLoadMillis
+        val progress = if (x <= 1) 0.8 * x else 0.8 + 0.19 * (1 - exp(-(x - 1)))
+        return progress.toFloat()
+    }
 
     /**
      * 本媒体能否取到帧. 取帧失败置 false, 成功置 true, 换媒体时复位.
@@ -83,6 +125,8 @@ class MediaProgressFramePreviewState(
      *
      * 起播时的 [prewarm] 顺带就是一次能力探测: 用户第一次唤出进度条之前这个值就已经定下来了,
      * 所以不会出现"先给一块黑底, 过一会儿才发现取不到"的闪动.
+     *
+     * [reportsLoadStatus] 为 true 时只由 [isSupported] 决定: 失败记在 [loadStatus] 上, 画面位留着显示失败.
      */
     var framesAvailable: Boolean by mutableStateOf(true)
         private set
@@ -98,12 +142,23 @@ class MediaProgressFramePreviewState(
      * 缓存命中立即显示; 加载成功前保留上一帧, 避免闪烁.
      */
     internal suspend fun requestFrame(positionMillis: Long) {
+        if (reportsLoadStatus && !checkSupported()) return
         val key = gridKeyOf(positionMillis)
-        if (key == frameGridKey && frame != null) return
+        if (key == frameGridKey && frame != null) {
+            loadStatus = FramePreviewLoadStatus.Idle
+            return
+        }
         cache[key]?.let {
             frame = it
             frameGridKey = key
+            loadStatus = FramePreviewLoadStatus.Idle
             return
+        }
+        val startedAt = TimeSource.Monotonic.markNow()
+        if (reportsLoadStatus) {
+            // 此刻画面位上若还留着帧, 那是上一个位置的 (浮窗会把它压暗, 见 Loading 的说明)
+            loadingSince = startedAt
+            loadStatus = FramePreviewLoadStatus.Loading
         }
         delay(debounceMillis) // debounce: 快速滑动时, 更新的位置会取消本次请求
         val newFrame = fetchFrame(alignToGrid(key, positionMillis))
@@ -111,13 +166,52 @@ class MediaProgressFramePreviewState(
             // 底层实现把所有异常都吞了 (见 mediamp 的 ExoFramePreview), 这里至少留一行,
             // 否则"取不到帧"在日志里完全没有痕迹
             logger.warn { "Frame preview unavailable at $positionMillis ms (decoder returned null)" }
-            framesAvailable = false
+            if (reportsLoadStatus) {
+                // 画面位留着显示失败; 旧帧是上一个位置的, 不能让它冒充这里的画面
+                frame = null
+                frameGridKey = Long.MIN_VALUE
+                loadStatus = FramePreviewLoadStatus.Failed
+            } else {
+                framesAvailable = false
+            }
             return
         }
+        if (reportsLoadStatus) recordLoadDuration(startedAt.elapsedNow().inWholeMilliseconds)
         cache.put(key, newFrame)
         frame = newFrame
         frameGridKey = key
         framesAvailable = true
+        loadStatus = FramePreviewLoadStatus.Idle
+    }
+
+    /**
+     * 当前预览位置还没下载, 调用方因此不发起请求 (BT 源, 见 [fetchesUncachedPositions]). 不标出来的话,
+     * 画面位里留着的是上一个位置的旧帧, 或者一块一直不变的灰底.
+     */
+    internal fun onPositionNotDownloaded() {
+        if (!reportsLoadStatus || !checkSupported()) return
+        frame = null
+        frameGridKey = Long.MIN_VALUE
+        loadStatus = FramePreviewLoadStatus.NotDownloaded
+    }
+
+    /** [isSupported] 为 false 时收起画面位 (浮窗只显示时间) 并返回 false. */
+    private fun checkSupported(): Boolean {
+        if (isSupported()) {
+            framesAvailable = true
+            return true
+        }
+        framesAvailable = false
+        frame = null
+        frameGridKey = Long.MIN_VALUE
+        loadStatus = FramePreviewLoadStatus.Idle
+        return false
+    }
+
+    private fun recordLoadDuration(millis: Long) {
+        expectedLoadMillis = (expectedLoadMillis * (1 - LOAD_DURATION_WEIGHT) + millis * LOAD_DURATION_WEIGHT)
+            .toLong()
+            .coerceAtLeast(MIN_EXPECTED_LOAD_MILLIS)
     }
 
     /**
@@ -129,6 +223,11 @@ class MediaProgressFramePreviewState(
         if (cache[key] != null) return
         val newFrame = fetchFrame(alignToGrid(key, positionMillis))
         if (newFrame == null) {
+            if (reportsLoadStatus) {
+                // 画面位不收: 拖动时照常去取, 取不到再显示失败 —— 预热失败也可能只是那一下网络不好
+                logger.warn { "Frame preview prewarm failed at $positionMillis ms" }
+                return
+            }
             // 预热位置一定是当前播放点 (数据必然可用), 这里失败就是取帧器打不开这个媒体
             logger.warn { "Frame preview prewarm failed at $positionMillis ms; frame preview disabled for this media" }
             framesAvailable = false
@@ -148,6 +247,8 @@ class MediaProgressFramePreviewState(
     internal fun onPreviewFinished() {
         frame = null
         frameGridKey = Long.MIN_VALUE
+        loadStatus = FramePreviewLoadStatus.Idle
+        loadingSince = null
     }
 
     /**
@@ -158,8 +259,35 @@ class MediaProgressFramePreviewState(
         frame = null
         frameGridKey = Long.MIN_VALUE
         framesAvailable = true // 新媒体重新探测, 上一个不能取帧不代表这个也不能
+        loadStatus = FramePreviewLoadStatus.Idle
+        loadingSince = null
+        expectedLoadMillis = DEFAULT_EXPECTED_LOAD_MILLIS
     }
 }
+
+/** 预览浮窗里画面位的状态, 见 [MediaProgressFramePreviewState.loadStatus]. */
+enum class FramePreviewLoadStatus {
+    /** 没有在取: 画面位显示的就是当前位置的帧, 或者还没开始预览. */
+    Idle,
+
+    /** 正在取当前位置的帧. 此时 [MediaProgressFramePreviewState.frame] 若不为 null, 是上一个位置留下的旧帧. */
+    Loading,
+
+    /** 当前位置这次没取到 (超时 / 取帧器出错). 挪开再挪回来会重新取. */
+    Failed,
+
+    /** 当前位置还没下载, 不去取 (BT 源只预览已下载的部分, 见 [MediaProgressFramePreviewState.fetchesUncachedPositions]). */
+    NotDownloaded,
+}
+
+/** 还没有实测耗时时的估算基准: TV 上稳定态取一帧 1.3~4.5 秒, 加 200ms 防抖. */
+private const val DEFAULT_EXPECTED_LOAD_MILLIS = 3_000L
+
+/** 估算基准的下限: 连着命中很快的几次 (BT 已下载区域的关键帧) 之后, 进度环也别一下就跑满. */
+private const val MIN_EXPECTED_LOAD_MILLIS = 500L
+
+/** 新一次耗时在指数平均里的权重. */
+private const val LOAD_DURATION_WEIGHT = 0.4
 
 /**
  * 从 [player] 的 [FramePreview] feature 创建 [MediaProgressFramePreviewState].
