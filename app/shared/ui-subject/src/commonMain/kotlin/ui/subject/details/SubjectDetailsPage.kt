@@ -428,69 +428,72 @@ private fun SubjectDetailsPage(
         if (layoutParams.isMultiColumn && (state.info != null || useTvImmersive)) {
             // 双栏 / 三栏: 全新自适应布局 (复用现有 SubjectDetailsState 数据).
             // 桌面无"评价" tab, 完整评论流与"写评价"从评价预览/热门评价卡进入.
-            // -1 = 关着; >= 0 = 开着并落在第几条评论 (TV 详情页每张评论卡进的是它自己那一条)
-            var showCommentsAt by rememberSaveable { mutableStateOf(-1) }
-            val showComments = showCommentsAt >= 0
-            EditableRatingDialogsHost(state.editableRatingState)
-            if (showComments) {
-                // 标记这次评分是从本 sheet 里的"写评价"打开的: 关闭后只有它收回焦点,
-                // 详情页里那个评分组件 (同一个 state) 不跟着抢 (见 EditableRatingState.isEditingFrom)
-                val writeReviewSource = remember { Any() }
-                SubjectCommentsSheet(
-                    state = state.subjectCommentState,
-                    onClickUrl = onClickCommentUrl,
-                    onClickImage = onClickCommentImage,
-                    onClickWriteReview = { state.editableRatingState.requestEdit(writeReviewSource) },
-                    onDismissRequest = { showCommentsAt = -1 },
-                    initialFocusIndex = showCommentsAt.coerceAtLeast(0),
-                    reportState = state.subjectCommentReportState,
-                    onOpenOriginal = onOpenCommentOriginal,
-                    ratingDialogVisible = state.editableRatingState.isEditingFrom(writeReviewSource),
-                )
-            }
-            // 中大屏点击人物/角色先打开右侧预览 (方案C), 手机上则直接导航到全页
-            PeoplePreviewHost {
-                if (useTvImmersive && pageVariant != null) {
-                    // 沉浸式变体: 单列信息流 (Hero 首屏 + 横向区块)
-                    pageVariant.Page(
-                        state = state,
-                        selfInfo = selfInfo,
-                        layoutParams = layoutParams,
-                        onPlay = onPlay,
-                        onClickTag = onClickTag,
-                        onClickLogin = onClickLogin,
-                        onShowComments = { index -> showCommentsAt = index.coerceAtLeast(0) },
-                        modifier = modifier,
-                        showTopBar = showTopBar,
-                        windowInsets = windowInsets,
-                        backgroundPalette = if (themeSettings.enableAnimatedGradientSubjectPage) paletteState.palette else null,
-                        onClickOpenExternal = onClickOpenExternal,
-                        onCoverImageSuccess = onCoverImageSuccess,
-                        onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
-                        onClickCache = { navigator.navigateSubjectCaches(presentation.subjectId) },
-                        videoBackground = videoBackground,
-                        onVideoBackgroundExitUp = onVideoBackgroundExitUp,
+            // 变体的主题层 (TV 浅色主题换底色) 连评论、评分弹窗一起包住: 弹窗与页面同一套底色
+            SubjectDetailsVariantTheme(if (useTvImmersive) pageVariant else null) {
+                // -1 = 关着; >= 0 = 开着并落在第几条评论 (TV 详情页每张评论卡进的是它自己那一条)
+                var showCommentsAt by rememberSaveable { mutableStateOf(-1) }
+                val showComments = showCommentsAt >= 0
+                EditableRatingDialogsHost(state.editableRatingState)
+                if (showComments) {
+                    // 标记这次评分是从本 sheet 里的"写评价"打开的: 关闭后只有它收回焦点,
+                    // 详情页里那个评分组件 (同一个 state) 不跟着抢 (见 EditableRatingState.isEditingFrom)
+                    val writeReviewSource = remember { Any() }
+                    SubjectCommentsSheet(
+                        state = state.subjectCommentState,
+                        onClickUrl = onClickCommentUrl,
+                        onClickImage = onClickCommentImage,
+                        onClickWriteReview = { state.editableRatingState.requestEdit(writeReviewSource) },
+                        onDismissRequest = { showCommentsAt = -1 },
+                        initialFocusIndex = showCommentsAt.coerceAtLeast(0),
+                        reportState = state.subjectCommentReportState,
+                        onOpenOriginal = onOpenCommentOriginal,
+                        ratingDialogVisible = state.editableRatingState.isEditingFrom(writeReviewSource),
                     )
-                } else {
-                    SubjectDetailsMultiColumnPage(
-                        state = state,
-                        selfInfo = selfInfo,
-                        layoutParams = layoutParams,
-                        onPlay = onPlay,
-                        onEpisodeLongClick = onEpisodeLongClick,
-                        onClickTag = onClickTag,
-                        onClickLogin = onClickLogin,
-                        onShowComments = { showCommentsAt = 0 },
-                        onClickCache = { navigator.navigateSubjectCaches(presentation.subjectId) },
-                        modifier = modifier,
-                        showTopBar = showTopBar,
-                        windowInsets = windowInsets,
-                        backgroundPalette = if (themeSettings.enableAnimatedGradientSubjectPage) paletteState.palette else null,
-                        navigationIcon = navigationIcon,
-                        onClickOpenExternal = onClickOpenExternal,
-                        onCoverImageSuccess = onCoverImageSuccess,
-                        onClickCover = onClickCover,
-                    )
+                }
+                // 中大屏点击人物/角色先打开右侧预览 (方案C), 手机上则直接导航到全页
+                PeoplePreviewHost {
+                    if (useTvImmersive && pageVariant != null) {
+                        // 沉浸式变体: 单列信息流 (Hero 首屏 + 横向区块)
+                        pageVariant.Page(
+                            state = state,
+                            selfInfo = selfInfo,
+                            layoutParams = layoutParams,
+                            onPlay = onPlay,
+                            onClickTag = onClickTag,
+                            onClickLogin = onClickLogin,
+                            onShowComments = { index -> showCommentsAt = index.coerceAtLeast(0) },
+                            modifier = modifier,
+                            showTopBar = showTopBar,
+                            windowInsets = windowInsets,
+                            backgroundPalette = if (themeSettings.enableAnimatedGradientSubjectPage) paletteState.palette else null,
+                            onClickOpenExternal = onClickOpenExternal,
+                            onCoverImageSuccess = onCoverImageSuccess,
+                            onEpisodeCollectionUpdate = onEpisodeCollectionUpdate,
+                            onClickCache = { navigator.navigateSubjectCaches(presentation.subjectId) },
+                            videoBackground = videoBackground,
+                            onVideoBackgroundExitUp = onVideoBackgroundExitUp,
+                        )
+                    } else {
+                        SubjectDetailsMultiColumnPage(
+                            state = state,
+                            selfInfo = selfInfo,
+                            layoutParams = layoutParams,
+                            onPlay = onPlay,
+                            onEpisodeLongClick = onEpisodeLongClick,
+                            onClickTag = onClickTag,
+                            onClickLogin = onClickLogin,
+                            onShowComments = { showCommentsAt = 0 },
+                            onClickCache = { navigator.navigateSubjectCaches(presentation.subjectId) },
+                            modifier = modifier,
+                            showTopBar = showTopBar,
+                            windowInsets = windowInsets,
+                            backgroundPalette = if (themeSettings.enableAnimatedGradientSubjectPage) paletteState.palette else null,
+                            navigationIcon = navigationIcon,
+                            onClickOpenExternal = onClickOpenExternal,
+                            onCoverImageSuccess = onCoverImageSuccess,
+                            onClickCover = onClickCover,
+                        )
+                    }
                 }
             }
             return@MaterialThemeFromPaletteAndImage
@@ -1384,4 +1387,10 @@ private fun PreviewSubjectDetailsScreen(
         modifier = modifier,
         navigationIcon = { BackNavigationIconButton({}) },
     )
+}
+
+/** [variant] 非 null 时套上它的 [SubjectDetailsPageVariant.Theme], 否则原样组合. */
+@Composable
+private fun SubjectDetailsVariantTheme(variant: SubjectDetailsPageVariant?, content: @Composable () -> Unit) {
+    if (variant != null) variant.Theme(content) else content()
 }

@@ -110,6 +110,15 @@ fun interface SubjectDetailsPageVariant {
     @Composable
     fun Overlay() {
     }
+
+    /**
+     * 包在 [Page] 连同它的评论、评分弹窗外面的一层主题, 在条目取色主题之内. TV 用它把浅色主题下的底色换成电视上的
+     * 浅灰阶. 默认原样组合.
+     */
+    @Composable
+    fun Theme(content: @Composable () -> Unit) {
+        content()
+    }
 }
 
 val LocalSubjectDetailsPageVariant = staticCompositionLocalOf<SubjectDetailsPageVariant?> { null }

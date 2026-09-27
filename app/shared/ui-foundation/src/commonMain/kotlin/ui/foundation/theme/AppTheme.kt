@@ -138,13 +138,18 @@ object AniThemeDefaults {
         }
 
     /**
-     * 默认的 [TopAppBarColors], 期望用于 [pageContentBackgroundColor] 的容器之内
+     * 默认的 [TopAppBarColors], 期望用于 [pageContentBackgroundColor] 的容器之内.
+     * 沉浸式外壳下内容滚到顶栏底下时也不换色: 顶栏与整屏背景同底, 换成 surfaceContainer 就是压在上面的一条色带 (浅色下是白的).
      */
     @Composable
     fun topAppBarColors(containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest): TopAppBarColors =
         TopAppBarDefaults.topAppBarColors(
             containerColor = containerColor,
-            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            scrolledContainerColor = if (LocalAniUiBehavior.current.immersiveShell) {
+                containerColor
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
         )
 
     /**

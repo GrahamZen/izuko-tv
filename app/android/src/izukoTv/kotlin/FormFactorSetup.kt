@@ -18,6 +18,7 @@ import me.him188.ani.android.tv.InstallTvPageVariants
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
+import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import org.koin.android.ext.android.getKoin
 
@@ -29,10 +30,13 @@ import org.koin.android.ext.android.getKoin
 /** 遥控器设备的界面行为. */
 internal val formFactorUiBehavior: AniUiBehavior get() = TvAniUiBehavior
 
-/** 把遥控器形态的页面实现注入共享页面的变体插槽. [aniNavigator] 供「长按返回回主页」兜底用. */
+/**
+ * 把遥控器形态的页面实现注入共享页面的变体插槽, 并换上电视端的页面底色 (浅色下整屏同海报墙的浅灰, 见 [TvPageBackgroundTheme]).
+ * [aniNavigator] 供「长按返回回主页」兜底用.
+ */
 @Composable
 internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composable () -> Unit) =
-    InstallTvPageVariants(aniNavigator, content)
+    TvPageBackgroundTheme { InstallTvPageVariants(aniNavigator, content) }
 
 /**
  * 主屏预览频道 (热门动画 / 继续观看): 延迟到启动高峰之后开始, 之后"继续观看"行一直跟着收藏库变化重写

@@ -100,10 +100,11 @@ val TV_POSTER_WALL_END_MARGIN: Dp = 30.dp
 val TV_POSTER_WALL_BACKGROUND_DARK: Color = Color(0xFF2C2C2E)
 
 /**
- * 浅色主题下海报墙页面的底色: Apple 浅色系统灰 Gray 5 (229, 229, 234), 与深色的 [TV_POSTER_WALL_BACKGROUND_DARK] 是 Apple 灰阶表里
- * 同一档. 不用纯白: 电视上大片白底刺眼 (Android TV 设计指南: 除非必要不要用白底).
+ * 浅色主题下海报墙页面的底色 (191, 196, 199): Apple TV App 关掉透明效果时浅色主题的实色页面底 (app.js 的
+ * `AccessibilityReduceTransparencyBackground`), 同一张表里深色那一档正是 [TV_POSTER_WALL_BACKGROUND_DARK]. tvOS 平时的页面是半透明
+ * 材质叠在画面上, 这是它的实色等价. 不用纯白或更浅的灰: 电视上大片亮底刺眼 (Android TV 设计指南: 除非必要不要用白底).
  */
-val TV_POSTER_WALL_BACKGROUND_LIGHT: Color = Color(0xFFE5E5EA)
+val TV_POSTER_WALL_BACKGROUND_LIGHT: Color = Color(0xFFBFC4C7)
 
 /**
  * 海报墙卡片墙的底色: 深色主题铺 [TV_POSTER_WALL_BACKGROUND_DARK], 浅色主题铺 [TV_POSTER_WALL_BACKGROUND_LIGHT].
@@ -139,23 +140,32 @@ val TV_POSTER_WALL_GRAY3: Color = Color(0xFF48484A)
 val TV_POSTER_WALL_PLATTER_HIGH: Color = Color(0xFF565658)
 
 /*
- * 浅色海报墙页面上比底色亮的几档, 取自 Apple TV App 的浅色表 (app.js 的 light 色表: SystemGray6 与白 20% 的按钮底板): 底板这几档
- * 从底色往白走, 同深色那套从底色往上亮. 聚焦时换上的两档不在其中, 见 [tvPosterWallColorScheme].
+ * 浅色海报墙页面上的几档, 都是白 / 黑按比例叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上 (Apple TV App 浅色表里按钮底板是"白 20%"叠在页面底上):
+ * 底板这几档从底色往白走, 同深色那套从底色往上亮. 聚焦时换上的两档见 [tvPosterWallColorScheme].
  */
-/** 白 20% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上: Apple 浅色按钮底板. */
-val TV_POSTER_WALL_PLATTER_LIGHT: Color = Color(0xFFEAEAEE)
+/** 白 10% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上. */
+val TV_POSTER_WALL_PLATTER_LIGHT: Color = Color(0xFFC5CACD)
 
-/** 浅色 SystemGray6 (242, 242, 247). */
-val TV_POSTER_WALL_GRAY6_LIGHT: Color = Color(0xFFF2F2F7)
+/** 白 20% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上: Apple 浅色按钮底板. */
+val TV_POSTER_WALL_GRAY6_LIGHT: Color = Color(0xFFCCD0D2)
+
+/** 白 5% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上: 聚焦时换上的底 (surfaceContainerHigh), 只比页面亮一丝. */
+private val TV_POSTER_WALL_FOCUS_LIGHT: Color = Color(0xFFC2C7CA)
+
+/** 黑 3% 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上 (surfaceContainerHighest). */
+private val TV_POSTER_WALL_SUNKEN_LIGHT: Color = Color(0xFFB9BEC1)
+
+/** 浅色次要文字: Apple 浅色表的 LabelSecondary (黑 60%) 叠在 [TV_POSTER_WALL_BACKGROUND_LIGHT] 上的实色. */
+val TV_POSTER_WALL_SECONDARY_LABEL_LIGHT: Color = Color(0xFF4C4E50)
 
 /**
  * 海报墙页面的配色: 把 Material 的各档底色 (background / surface / surfaceContainer* / surfaceVariant) 换成上面那几档灰 —— 默认深色
  * 主题里这些是近黑, 搜索框、扫码面板、卡片底、菜单与弹窗铺在深灰页面上就是一块块黑的; 浅色同理换成 Apple 浅色那几档.
- * 主题色 (聚焦时的主色等) 与文字色不动.
+ * 主题色 (聚焦时的主色等) 不动; 浅色的文字色照 Apple 浅色表: 正文纯黑 (LabelPrimary), 次要文字黑 60% (LabelSecondary).
  *
- * 浅色的 surfaceContainerHigh / surfaceContainerHighest 保留 Material 原值: 这两档是搜索候选行、评论卡聚焦时换上的底色.
- * Material 浅色里它们一档比一档深, 与焦点态层 (浅色下是一层深色) 同向; 换成比周围更亮的灰或白, 聚焦就成了先变亮、
- * 焦点态层晚约 0.1 秒再压暗, 每挪一次焦点新旧两块都闪一下.
+ * 浅色的 surfaceContainerHigh 只比页面亮一丝、surfaceContainerHighest 比页面暗一丝: High 是搜索候选行聚焦时换上的底色, 焦点态层
+ * (浅色下是一层深色) 叠上去整体仍比页面暗, 与底色变化同向; 聚焦底明显比周围亮的话, 就成了先变亮、焦点态层晚约 0.1 秒再压暗,
+ * 每挪一次焦点新旧两块都闪一下.
  */
 fun tvPosterWallColorScheme(base: ColorScheme): ColorScheme =
     if (base.surface.luminance() >= 0.5f) {
@@ -166,8 +176,13 @@ fun tvPosterWallColorScheme(base: ColorScheme): ColorScheme =
             surfaceContainerLowest = TV_POSTER_WALL_BACKGROUND_LIGHT,
             surfaceContainerLow = TV_POSTER_WALL_PLATTER_LIGHT,
             surfaceContainer = TV_POSTER_WALL_GRAY6_LIGHT,
+            surfaceContainerHigh = TV_POSTER_WALL_FOCUS_LIGHT,
+            surfaceContainerHighest = TV_POSTER_WALL_SUNKEN_LIGHT,
             surfaceBright = TV_POSTER_WALL_GRAY6_LIGHT,
             surfaceVariant = TV_POSTER_WALL_PLATTER_LIGHT,
+            onBackground = Color.Black,
+            onSurface = Color.Black,
+            onSurfaceVariant = TV_POSTER_WALL_SECONDARY_LABEL_LIGHT,
         )
     } else {
         base.copy(
@@ -197,13 +212,16 @@ val LocalTvPosterWallBaseColorScheme: ProvidableCompositionLocal<ColorScheme?> =
 val LocalTvPosterWallTheme: ProvidableCompositionLocal<Boolean> = staticCompositionLocalOf { false }
 
 /**
- * 页面开着海报墙 ([enabled]) 时换上 [tvPosterWallColorScheme]. 始终包这一层 (开关切换不重建内容); 配色对象按底色方案记住,
- * 不每次重组都换新实例 —— 配色是静态的 CompositionLocal, 换实例会让整页重组.
+ * 页面开着海报墙 ([enabled]) 时换上 [tvPosterWallColorScheme]; 浅色主题不论开没开都换 —— 浅色下列表页的 hero 底色本来就是海报墙那档
+ * ([tvPosterWallHeroBackground]), 页面上的块也得是同一套灰, 否则是一块块 Material 近白压在灰底上. 始终包这一层 (开关切换不重建内容);
+ * 配色对象按底色方案记住, 不每次重组都换新实例 —— 配色是静态的 CompositionLocal, 换实例会让整页重组.
  */
 @Composable
 fun TvPosterWallTheme(enabled: Boolean, content: @Composable () -> Unit) {
     val base = MaterialTheme.colorScheme
-    val scheme = remember(base, enabled) { if (enabled) tvPosterWallColorScheme(base) else base }
+    val scheme = remember(base, enabled) {
+        if (enabled || base.surface.luminance() >= 0.5f) tvPosterWallColorScheme(base) else base
+    }
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(
             LocalTvPosterWallTheme provides enabled,
@@ -211,6 +229,30 @@ fun TvPosterWallTheme(enabled: Boolean, content: @Composable () -> Unit) {
             content = content,
         )
     }
+}
+
+/**
+ * 电视端所有页面的整屏底色: 浅色主题下把页面底那几档 (background / surface / surfaceContainerLowest) 换成海报墙那档浅灰
+ * [TV_POSTER_WALL_BACKGROUND_LIGHT] —— Material 浅色的页面底近白, 设置、缓存这些页面压在主壳的浅灰上就是一块块白的. 只换页面底,
+ * 底板、弹窗、菜单与文字色仍是应用主题的; 深色原样.
+ */
+fun tvPageBackgroundColorScheme(base: ColorScheme): ColorScheme =
+    if (base.surface.luminance() >= 0.5f) {
+        base.copy(
+            background = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surface = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surfaceContainerLowest = TV_POSTER_WALL_BACKGROUND_LIGHT,
+        )
+    } else {
+        base
+    }
+
+/** 换上 [tvPageBackgroundColorScheme], 套在电视端所有页面外面 (见 InstallFormFactorUi). 配色对象按底色方案记住, 同 [TvPosterWallTheme]. */
+@Composable
+fun TvPageBackgroundTheme(content: @Composable () -> Unit) {
+    val base = MaterialTheme.colorScheme
+    val scheme = remember(base) { tvPageBackgroundColorScheme(base) }
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 /** 海报到番名的间距. */

@@ -229,6 +229,7 @@ import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
@@ -372,15 +373,9 @@ fun SubjectDetailsTvLoadingPlaceholder(
             containerColor = if (underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         ) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(start = pad)) {
-                // 与 TvHeroBlock 的标题列逐项对齐 (top 8dp / headlineLarge / 白字 + 柔和黑影 /
+                // 与 TvHeroBlock 的标题列逐项对齐 (top 8dp / headlineLarge / 同一套字色与阴影 (见 rememberTvDetailsHeroTextStyle) /
                 // 两行截断), 真布局到达时标题不位移
-                val titleShadow = with(LocalDensity.current) {
-                    Shadow(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        offset = Offset(0f, 1.dp.toPx()),
-                        blurRadius = 6.dp.toPx(),
-                    )
-                }
+                val heroText = rememberTvDetailsHeroTextStyle()
                 Column(
                     Modifier.padding(top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -388,15 +383,15 @@ fun SubjectDetailsTvLoadingPlaceholder(
                     Text(
                         subjectInfo?.displayName ?: navTitle.orEmpty(),
                         Modifier.tvHeroZoomTitleShift(zoomSession),
-                        style = MaterialTheme.typography.headlineLarge.copy(shadow = titleShadow),
-                        color = Color.White,
+                        style = MaterialTheme.typography.headlineLarge.copy(shadow = heroText.shadow),
+                        color = heroText.title,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (slowLoad && !underZoom) {
                         CircularProgressIndicator(
                             Modifier.padding(top = 16.dp).size(28.dp),
-                            color = Color.White,
+                            color = heroText.title,
                             strokeWidth = 3.dp,
                         )
                         if (loadAttempt.isRetrying) {
@@ -406,8 +401,8 @@ fun SubjectDetailsTvLoadingPlaceholder(
                                     loadAttempt.attempt,
                                     loadAttempt.maxAttempts,
                                 ),
-                                style = MaterialTheme.typography.titleMedium.copy(shadow = titleShadow),
-                                color = Color.White.copy(alpha = 0.85f),
+                                style = MaterialTheme.typography.titleMedium.copy(shadow = heroText.shadow),
+                                color = heroText.note,
                             )
                         }
                     }
@@ -1815,6 +1810,9 @@ private fun TvDetailsSideRail(
  * 详情页 backdrop 那套遮罩的声明: 左侧可读性 scrim + 下缘渐隐. 列表页那份见 `tvPageBackdropTreatment`,
  * 放大转场画的是两者的插值 (见 [TvBackdropTreatment]).
  *
+ * 左侧的 scrim 只有深色主题有 (托住白字); 浅色主题的标题是黑字, 靠字自己的白色光晕托住 (见 [rememberTvDetailsHeroTextStyle]), 图左不压 ——
+ * 压一层黑的话, 从浅灰底的列表页放大进来左边会由浅变深.
+ *
  * 下缘的起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图, 选集卡片那一带整片发黑
  * (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
  */
@@ -1822,9 +1820,11 @@ private fun tvHeroBackdropTreatment(
     solidUnderlay: Color?,
     /** 下缘渐隐的强度 (0..1): 只属于首屏, 翻离首屏时随背景淡出一起收掉 (见 [TvHeroBackdrop]). */
     bottomStrength: Float = 1f,
+    /** 浅色主题 (左侧不压暗). */
+    light: Boolean = false,
 ) = TvBackdropTreatment(
-    // 左侧暗色 scrim: 保证浮在图上的标题可读
-    left = TvBackdropFade(start = 0f, end = 0.55f, maxAlpha = 0.6f, color = Color.Black),
+    // 左侧暗色 scrim: 保证浮在图上的白色标题可读
+    left = if (light) null else TvBackdropFade(start = 0f, end = 0.55f, maxAlpha = 0.6f, color = Color.Black),
     // 有纯色垫底时画同色渐变 (擦掉 a 露出纯色 C 与在图上叠一层 alpha a 的 C 逐像素相同), 不必开离屏缓冲
     bottom = TvBackdropFade(
         start = 0.72f, end = 1f, maxAlpha = 0.88f * bottomStrength.coerceIn(0f, 1f),
@@ -1832,6 +1832,46 @@ private fun tvHeroBackdropTreatment(
     ),
     bottomDstOut = solidUnderlay == null,
 )
+
+/**
+ * 详情页首屏压在背景图上的字 (大标题 / 副标题 / 加载占位的转圈与提示): 深色白字 + 柔和黑影 (图左另压一层黑, 见 [tvHeroBackdropTreatment]);
+ * 浅色与列表页 hero 同色 —— 黑字、次要字黑 60%, 阴影换成一圈淡白光晕托住字 (图左不压). 放大进来标题不换色; 缩回那一层画的标题用同一个阴影,
+ * 起步那一帧对得上.
+ */
+private class TvDetailsHeroTextStyle(
+    val title: Color,
+    val subtitle: Color,
+    /** 加载占位里"网络慢, 第几次尝试"那一行. */
+    val note: Color,
+    val shadow: Shadow,
+)
+
+@Composable
+private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
+    val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
+    val density = LocalDensity.current
+    val title = tvHeroContentColor()
+    val secondary = tvHeroSecondaryContentColor()
+    return remember(light, density, title, secondary) {
+        with(density) {
+            if (light) {
+                TvDetailsHeroTextStyle(
+                    title = title,
+                    subtitle = secondary,
+                    note = secondary,
+                    shadow = Shadow(color = Color.White.copy(alpha = 0.6f), offset = Offset.Zero, blurRadius = 6.dp.toPx()),
+                )
+            } else {
+                TvDetailsHeroTextStyle(
+                    title = Color.White,
+                    subtitle = Color.White.copy(alpha = 0.78f),
+                    note = Color.White.copy(alpha = 0.85f),
+                    shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1.dp.toPx()), blurRadius = 6.dp.toPx()),
+                )
+            }
+        }
+    }
+}
 
 /** 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放. */
 private fun tvHeroSoftEdgeBand(gap: Float, base: Float, remaining: Float, scale: Float): Float {
@@ -3004,6 +3044,9 @@ private fun TvHeroBackdrop(
     /** 向下滚动的淡出进度 (0..1) 由调用方给, 绘制里读; 返回 null 时照常按滚动量算. 见真页的 TvDetailsPager (换页的滚动是跳的). */
     scrollFade: () -> Float? = { null },
 ) {
+    val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
+    // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
+    val minAlpha = if (light) HERO_BACKDROP_MIN_ALPHA_LIGHT else HERO_BACKDROP_MIN_ALPHA
     // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
     var ownBounds by remember { mutableStateOf<Rect?>(null) }
     // 放大期间的羽化边 (见 drawWithContent): 列表页 hero 的左缘 / 底缘是渐入页面底色的, 本页只有左侧 scrim 与底缘
@@ -3031,7 +3074,7 @@ private fun TvHeroBackdrop(
                     }
                     // 向下滚动逐渐淡出, 但保留半透明而非完全消失
                     val progress = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
-                    alpha = (1f - progress * (1f - HERO_BACKDROP_MIN_ALPHA)) * fadeInAlpha()
+                    alpha = (1f - progress * (1f - minAlpha)) * fadeInAlpha()
                     // 底部渐隐用 DstOut 擦除本层 alpha, 需要离屏合成; 垫纯色时改画同色渐变, 不必离屏 (见 solidUnderlay)
                     // 软边要擦本层已画好的 alpha, 必须离屏; 其余情形照旧 (见 solidUnderlay).
                     //
@@ -3082,7 +3125,7 @@ private fun TvHeroBackdrop(
                     // 下缘渐隐只属于首屏 (托住首屏下半的信息带与选集): 翻离首屏时与背景淡出同一个进度收掉, 第二页起背景图整屏均匀地
                     // 淡在 HERO_BACKDROP_MIN_ALPHA, 底下不再单独压一道黑. 缩回层按按返回那一刻的进度起步 (见 scrollFade)
                     val scrolled = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
-                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled)
+                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled, light = light)
                     val treatment = if (zoomFrom != null && t < 1f) {
                         lerpTvBackdropTreatment(sourceTreatment ?: TvBackdropTreatment(), ownTreatment, t)
                     } else {
@@ -3496,16 +3539,10 @@ fun TvHeroShrinkLayer() {
         // (用户 2026-09-18)。两份都在场、同一份状态决定谁画, 所以没有重影。
         TvHeroZoomHandoff.shrinkTitleSpec()?.let { spec ->
             val density = LocalDensity.current
-            // 起点那一帧要跟详情页标题长得一样: 那边是白字 + 柔和黑影 (压在全屏大图上), 不带阴影的话
+            // 起点那一帧要跟详情页标题长得一样: 阴影同详情页标题 (见 rememberTvDetailsHeroTextStyle), 不带阴影的话
             // 缩回第一帧阴影凭空消失, 亮背景上看着像闪了一下 (2026-09-18 审查)。落地交回列表页标题时
             // 图已经缩回卡片大小、标题也压在列表页 backdrop 上, 那边本来就不带阴影
-            val transitionShadow = with(density) {
-                Shadow(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    offset = Offset(0f, 1.dp.toPx()),
-                    blurRadius = 6.dp.toPx(),
-                )
-            }
+            val heroText = rememberTvDetailsHeroTextStyle()
             // 上一帧的位置: 位置算不出来时**绝不退回 (0,0)** —— 那会让标题当场跳到屏幕左上角,
             // 比短暂消失还显眼。spec 与 position 现在同出会话快照, 正常不会走到这里
             var lastPos by remember { mutableStateOf<Offset?>(null) }
@@ -3522,7 +3559,7 @@ fun TvHeroShrinkLayer() {
                     // **定宽照抄源标题**: 折行位置由宽度决定, 差一点两行标题的断行就不同, 落位那帧会跳
                     .width(with(density) { spec.widthPx.toDp() }),
                 color = tvHeroContentColor(),
-                style = MaterialTheme.typography.headlineLarge.copy(shadow = transitionShadow),
+                style = MaterialTheme.typography.headlineLarge.copy(shadow = heroText.shadow),
                 maxLines = spec.maxLines,
                 overflow = if (spec.clipOverflow) TextOverflow.Clip else TextOverflow.Ellipsis,
             )
@@ -4157,6 +4194,11 @@ private val HERO_BACKDROP_FADE_DISTANCE = 300.dp
  */
 private const val HERO_BACKDROP_MIN_ALPHA = 0.42f
 
+/**
+ * 浅色主题下的 [HERO_BACKDROP_MIN_ALPHA]. 图淡在浅灰底上时, 图里的暗部成了中灰, 正好是深色字最难读的那一档亮度, 所以比深色淡.
+ */
+private const val HERO_BACKDROP_MIN_ALPHA_LIGHT = 0.3f
+
 /** 页内导航时焦点下缘距屏幕下缘的最小可见余量: 露出后留出该余量. */
 private val SECTION_ITEM_REVEAL_MARGIN = 24.dp
 
@@ -4395,7 +4437,7 @@ private fun TvPlayButton(
 }
 
 /**
- * Hero 首屏内容 (滚动列内): 标题浮于背景图上 (白色, 图左有暗色 scrim 保证对比);
+ * Hero 首屏内容 (滚动列内): 标题浮于背景图上 (字色与图左的遮罩按主题分, 见 [rememberTvDetailsHeroTextStyle]);
  * 其余 (元数据 / 评分 / 简介 / 主操作) 下沉到图的底部渐变区自成一段. 背景图见 [TvHeroBackdrop].
  */
 @Composable
@@ -4435,28 +4477,21 @@ private fun TvHeroBlock(
     bodyHidden: () -> Boolean = { false },
 ) {
     Column(modifier.fillMaxWidth().padding(start = horizontalPadding)) {
-        // 上半区: 左 = 标题 (有背景图时白色浮于图上); 右 = 无横版图时的竖版封面,
+        // 上半区: 左 = 标题 (有背景图时浮于图上); 右 = 无横版图时的竖版封面,
         // 高度正好撑满 "顶栏按钮之下、信息带之上", 随内容滚出屏幕
         Row(Modifier.weight(1f).fillMaxWidth().padding(end = horizontalPadding)) {
             Column(
                 Modifier.weight(1f).padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // 白色标题浮于背景图上, 图亮部会看不清: 加柔和黑色阴影兜底
-                val titleShadow = if (hasBackdrop) {
-                    with(LocalDensity.current) {
-                        Shadow(
-                            color = Color.Black.copy(alpha = 0.6f),
-                            offset = Offset(0f, 1.dp.toPx()),
-                            blurRadius = 6.dp.toPx(),
-                        )
-                    }
-                } else null
+                // 标题浮于背景图上, 图里与字色相近的地方会看不清: 深色加柔和黑影、浅色加淡白光晕兜底
+                val heroText = rememberTvDetailsHeroTextStyle()
+                val titleShadow = if (hasBackdrop) heroText.shadow else null
                 Text(
                     info.displayName,
                     titleModifier,
                     style = MaterialTheme.typography.headlineLarge.copy(shadow = titleShadow),
-                    color = if (hasBackdrop) Color.White else MaterialTheme.colorScheme.onSurface,
+                    color = if (hasBackdrop) heroText.title else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -4465,8 +4500,7 @@ private fun TvHeroBlock(
                         info.name,
                         Modifier.graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
                         style = MaterialTheme.typography.bodyMedium.copy(shadow = titleShadow),
-                        color = if (hasBackdrop) Color.White.copy(alpha = 0.78f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (hasBackdrop) heroText.subtitle else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
