@@ -101,7 +101,7 @@ internal fun TvSearchNativeGrid(
         menuFor = { info -> menuFor(info.subjectId) },
         modifier = modifier,
     ) {
-        // 空结果提示 / 首屏加载指示 (同 Compose 版), 在网格可见的那一段里居中
+        // 空结果提示 / 首屏加载指示, 在网格可见的那一段里居中
         if (items.itemCount == 0 && !items.loadState.hasError) {
             Box(
                 Modifier.fillMaxSize().padding(
@@ -157,7 +157,7 @@ private fun TvSearchNativeSource(
     SideEffect { view?.setSource(source) }
 }
 
-/** hero 文字 (同 Compose 版 TvSearchHeroInfoBlock): 标题 (至多两行); ★评分 + 标签行 (开播季度 · 话数 · 类型); 简介 (Bangumi 兜底表). */
+/** hero 文字: 标题 (至多两行); ★评分 + 标签行 (开播季度 · 话数 · 类型); 简介 (Bangumi 兜底表). */
 @Composable
 private fun tvSearchNativeHeroText(hero: SubjectPreviewItemInfo, summaryCache: Map<Int, String>): TvNativeHeroText {
     val secondary = tvHeroSecondaryContentColor().toArgb()

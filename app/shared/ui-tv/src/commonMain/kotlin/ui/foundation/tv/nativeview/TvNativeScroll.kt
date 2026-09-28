@@ -20,12 +20,12 @@ import kotlin.math.sign
 import kotlin.math.sqrt
 
 /**
- * 原生页面的平滑滚动曲线: 与 Compose 版页面同一组 spring ([TvScrollSpring], 质量 1), 连按时接上一段的速度 (同 TvScrollAnimator: 同方向
- * 才接, 反方向从静止起).
+ * 原生页面的平滑滚动曲线: 与 Compose 页面的 TvScrollAnimator 同一组 spring ([TvScrollSpring], 质量 1), 连按时接上一段的速度 (同
+ * TvScrollAnimator: 同方向才接, 反方向从静止起).
  *
  * 所有焦点滚动最后都落到 `RecyclerView.smoothScrollBy(dx, dy, interpolator, duration)`: 位置 = 插值器(已过时间 / 时长) × 距离. 这里把
  * spring 的位移曲线 (初位移 = 这一段的距离, 初速度 = 上一段此刻的速度) 归一化成插值器, 时长取到剩余位移不足半像素、速度不足每帧半像素
- * 为止 —— 再往后每帧都不到一个像素, Compose 版在那之后也不再出新帧. 带着初速起步时可能越过目标一点再回来, 同 Compose 版.
+ * 为止 —— 再往后每帧都不到一个像素, TvScrollAnimator 在那之后也不再出新帧. 带着初速起步时可能越过目标一点再回来, 同 TvScrollAnimator.
  *
  * leanback 的 VerticalGridView / HorizontalGridView 经 [BaseGridView.SmoothScrollByBehavior] 取插值器与时长; 自己算距离的列表
  * (探索页的纵向列表) 用 [plan]. [animated] = false (视觉效果流畅档) 时时长为 0, RecyclerView 当场一步滚到位.
@@ -124,9 +124,6 @@ internal fun tvSpringVelocity(spring: TvScrollSpring, seconds: Float, v0n: Float
         a * r1 * exp(r1 * t) + b * r2 * exp(r2 * t)
     }
 }
-
-/** 从静止出发走完单位位移时 [seconds] 秒后的进度 (0..1). */
-fun tvSpringProgress(spring: TvScrollSpring, seconds: Float): Float = 1f + tvSpringDisplacement(spring, seconds)
 
 /**
  * 走 [distancePx] 像素 (初速度 [v0n], 段长 / 秒) 时, 剩余位移不足半像素、速度不足每帧半像素所需的时长 (ms), 至少一帧, 最多 2 秒.

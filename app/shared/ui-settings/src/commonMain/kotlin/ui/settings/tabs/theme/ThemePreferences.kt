@@ -50,8 +50,6 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale_and_ring
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_hero_backdrop
-import me.him188.ani.app.ui.lang.settings_theme_tv_hero_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
@@ -174,18 +172,6 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_immersive_exploration_description)) },
             )
 
-            // 「显示 hero 背景」: 关掉 = 探索 / 搜索 / 追番三页一起换成海报墙 (海报 + 番名). 只对沉浸布局有效, 沉浸式关掉时不显示
-            if (themeSettings.tvImmersiveExploration) {
-                SwitchItem(
-                    checked = themeSettings.tvHeroBackdrop,
-                    onCheckedChange = { checked ->
-                        state.update(themeSettings.copy(tvHeroBackdrop = checked))
-                    },
-                    title = { Text(stringResource(Lang.settings_theme_tv_hero_backdrop)) },
-                    description = { Text(stringResource(Lang.settings_theme_tv_hero_backdrop_description)) },
-                )
-            }
-
             SwitchItem(
                 checked = themeSettings.tvImmersiveDetails,
                 onCheckedChange = { checked ->
@@ -235,7 +221,7 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_visual_effects_description)) },
             )
 
-            // 网格页竖版卡片怎么示焦 (见 TvCardFocusStyle); 探索页与选集条是固定锚位框, 海报墙固定只放大, 都不受它影响
+            // 竖版卡片网格 (时间表网格版) 怎么示焦 (见 TvCardFocusStyle); 选集条是固定锚位框, 海报墙固定只放大, 都不受它影响
             DropdownItem(
                 selected = { themeSettings.tvCardFocusStyle },
                 values = { TvCardFocusStyle.entries },

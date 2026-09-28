@@ -48,7 +48,7 @@ class RemoteUpdateErrorsTest {
     }
 
     @Test
-    fun `anything else shows only the type, never the message with the address`() {
+    fun `anything else shows only the type and never the message with the address`() {
         val reason = updateErrorReason(IllegalArgumentException("bad url https://api.github.com/repos/x/y/releases?per_page=20"))
         assertEquals("出错了（IllegalArgumentException）", reason)
     }
@@ -79,7 +79,7 @@ class RemoteUpdateErrorsTest {
     }
 
     @Test
-    fun `without per-line results the error's own reason is used`() {
+    fun `without per-line results the own reason of the error is used`() {
         assertEquals("电视存储空间不够", downloadFailureText(IOException("No space left on device"), emptyList()))
     }
 

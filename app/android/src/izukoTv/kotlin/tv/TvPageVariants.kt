@@ -224,10 +224,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         },
         // ProvideTvScrollActivity: 每个带卡片的 TV 页一份"有卡片在滚动"的信号, 低特效档下
         // hero 文字 / 集信息行据此在滚动期间隐藏, 背景图也等停稳才换 (时间表页只有后一项).
-        // TvPosterWallTheme: 关掉「显示 hero 背景」(海报墙) 的页面换上 Apple TV 那套灰阶底色, 不留近黑的块 (探索 / 搜索 / 追番三页)
+        // TvPosterWallTheme: 海报墙页面 (探索 / 搜索 / 追番三页) 换上 Apple TV 那套灰阶底色, 不留近黑的块
         LocalExplorationPageVariant provides ExplorationPageVariant { state, modifier ->
             ProvideTvScrollActivity {
-                TvPosterWallTheme(!LocalThemeSettings.current.tvHeroBackdrop) { TvExplorationPage(state, modifier) }
+                TvPosterWallTheme { TvExplorationPage(state, modifier) }
             }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
@@ -242,14 +242,14 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->
             ProvideTvScrollActivity {
-                TvPosterWallTheme(!LocalThemeSettings.current.tvHeroBackdrop) {
+                TvPosterWallTheme {
                     TvSearchPage(state, onIntent, suggestionsPager, modifier)
                 }
             }
         },
         LocalCollectionPageVariant provides CollectionPageVariant { state, modifier ->
             ProvideTvScrollActivity {
-                TvPosterWallTheme(!LocalThemeSettings.current.tvHeroBackdrop) { TvCollectionPage(state, modifier) }
+                TvPosterWallTheme { TvCollectionPage(state, modifier) }
             }
         },
         // 「自定义追番页标签顺序」页 (设置 - 界面里的入口据此决定出不出现)

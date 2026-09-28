@@ -263,12 +263,11 @@ fun TvMainScreenLayout(
             }
         }
     }
-    // 整屏底色: 不是海报墙的页铺 hero 的底 (深色近黑, 浅色是海报墙那档浅灰, 见 tvPosterWallHeroBackground); 海报墙页 (探索 / 追番
-    // 关掉「显示 hero 背景」) 卡片墙铺 Apple 灰阶的 Gray 5, 深色下 hero 态与探索页的热门轮播回到 hero 的底, 页面把自己此刻的黑度登记进来
+    // 整屏底色: 不是海报墙的页铺 hero 的底 (深色近黑, 浅色是海报墙那档浅灰, 见 tvPosterWallHeroBackground); 海报墙页 (探索 / 追番)
+    // 卡片墙铺 Apple 灰阶的 Gray 5, 深色下 hero 态与探索页的热门轮播回到 hero 的底, 页面把自己此刻的黑度登记进来
     // (见 TvPosterWallTone); 侧边栏展开面板同色. 换页时从上一页的值交接过去
-    val themeSettings = LocalThemeSettings.current
     val posterWallPage = when (page) {
-        MainScreenPage.Exploration, MainScreenPage.Collection -> !themeSettings.tvHeroBackdrop
+        MainScreenPage.Exploration, MainScreenPage.Collection -> true
         MainScreenPage.CacheManagement -> false
     }
     val shellBackground = AniThemeDefaults.shellBackgroundColor

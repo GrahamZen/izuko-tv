@@ -46,7 +46,7 @@ class TvNativeExploreListTest {
         rowGapPx = 20,
         viewportPx = 516,
         endMarginPx = 40,
-        // 原 hero 页固定标签线离卡片区顶线的距离: 268 − 24
+        // hero 线 (hero 简介块下沿 TV_HERO_TEXT_BOTTOM) 离卡片区顶线的距离: 268 − 24
         heroHeaderTopPx = 244,
         rowStartPx = 0,
         endPadPx = 0,
@@ -70,6 +70,7 @@ class TvNativeExploreListTest {
         dotPx = 0f,
         dotSelectedWidthPx = 0f,
         dotGapPx = 0f,
+        dotInactiveAlpha = 0.4f,
     )
 
     @Test
@@ -111,7 +112,7 @@ class TvNativeExploreListTest {
     }
 
     @Test
-    fun `hero state puts the focused row header on the fixed label line`() {
+    fun `hero state puts the focused row header on the hero line`() {
         // 首行: 组标题 (280) 往上挪到线上, 占位还露着一截
         assertEquals(316 - 36 - 244, metrics.heroScroll(items, 2))
         // 第二组的首行: 组标题 (786) 落到线上

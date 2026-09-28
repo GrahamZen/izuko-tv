@@ -25,7 +25,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * 网格海报墙 (追番 / 搜索页) 的几何 (px). 视图本身往上下出血 [topBleedPx] / [bottomBleedPx] (同 Compose 版 tvGridBleed), 网格顶线在视图里
+ * 网格海报墙 (追番 / 搜索页) 的几何 (px). 视图本身往上下出血 [topBleedPx] / [bottomBleedPx], 网格顶线在视图里
  * [topBleedPx] 处, 视口 = 视图高 − 上下出血. [endMarginPx] = 滚到底时末行底边离视口底边的空 (tvPosterWallEndMargin).
  * [heroLinePx] = hero 态聚焦行行顶停在网格顶线下方多远 (TV_POSTER_WALL_HERO_ROW_TOP 换算到网格坐标).
  */
@@ -135,6 +135,12 @@ class TvNativeGridView(
     private var pendingFocus = -1
     private var farJumpTarget = -1
 
+    /** 远跳途中按了确认 (见 [handleFarJumpKey]): 落到目标时点它. */
+    private var farJumpConfirmQueued = false
+
+    /** 落地后要点的那张 (远跳落地时目标还没排出来, 等它拿到焦点), -1 = 没有. */
+    private var clickAfterFocus = -1
+
     /** hero 态: 停位换成 hero 线. */
     var heroActive: Boolean = false
         private set
@@ -188,6 +194,7 @@ class TvNativeGridView(
             cards.refreshDim(this)
             val pending = pendingFocus
             if (pending >= 0 && focusItemNow(pending)) pendingFocus = -1
+            if (pendingFocus < 0) clickIfFocused()
         }
         applyMetrics()
     }
@@ -307,8 +314,8 @@ class TvNativeGridView(
     }
 
     /**
-     * 网格顶线以下第一张 (中线不高于顶线; 出血区里正在淡出的上一行不算), 同 Compose 版 firstItemBelowTopLine: 顶栏按下时落到它所在的那一行.
-     * 还没排出来时 null.
+     * 网格顶线以下第一张 (中线不高于顶线): 顶栏按下时落到它所在的那一行. 出血区里越过顶线 (压暗着) 的上一行也排在网格里,
+     * 不能取第一个排出来的 —— 落到它上面, 网格就往回翻一行. 还没排出来时 null.
      */
     fun firstIndexBelowTopLine(): Int? {
         var best: Int? = null
@@ -324,6 +331,9 @@ class TvNativeGridView(
 
     /** 送焦到第 [index] 张 (进页恢复 / 程序化落点): 已经排出来就当场给, 否则先选中 (直接到位) 等布局完成再给. */
     fun focusItem(index: Int) {
+        // 新的落点请求: 远跳途中排队的确认作废
+        farJumpConfirmQueued = false
+        clickAfterFocus = -1
         val count = cards.itemCount
         if (count == 0) {
             pendingFocus = index.coerceAtLeast(0)
@@ -351,22 +361,19 @@ class TvNativeGridView(
         val count = cards.itemCount
         if (count == 0) return
         val target = index.coerceIn(0, count - 1)
-        val first = (0 until childCount).map { getChildAt(it) }
-            .filter { getChildAdapterPosition(it) >= 0 }
-            .minByOrNull { getChildAdapterPosition(it) }
-        if (first == null) {
+        val dy = scrollToStopOf(target)
+        if (dy == null) {
             focusItem(target)
             return
         }
-        val cols = metrics.columns.coerceAtLeast(1)
-        // 各行定高: 目标行此刻的顶 (视图坐标) 由第一张排出来的卡的顶按行数推出来
-        val targetTop = first.top + (target / cols - getChildAdapterPosition(first) / cols) * pitchPx
-        val dy = targetTop - stopTopFor(target, heroActive)
         if (dy == 0 || !scroll.animated) {
             if (dy != 0) scrollBy(0, dy)
             focusItem(target)
             return
         }
+        // 新的远跳: 上一次排队的确认作废
+        farJumpConfirmQueued = false
+        clickAfterFocus = -1
         farJumpTarget = target
         setFocusEffectSuppressed(true)
         scroll.pace = TvScrollSpring.Far
@@ -374,34 +381,85 @@ class TvNativeGridView(
         scroll.pace = TvScrollSpring.Step
     }
 
+    /** 第 [target] 张所在行离它的停位还差多少 (各行定高, 由第一张排出来的卡的顶按行数推出来); 一张都没排出来时 null. */
+    private fun scrollToStopOf(target: Int): Int? {
+        val first = (0 until childCount).map { getChildAt(it) }
+            .filter { getChildAdapterPosition(it) >= 0 }
+            .minByOrNull { getChildAdapterPosition(it) } ?: return null
+        val cols = metrics.columns.coerceAtLeast(1)
+        val targetTop = first.top + (target / cols - getChildAdapterPosition(first) / cols) * pitchPx
+        return targetTop - stopTopFor(target, heroActive)
+    }
+
     private fun finishFarJump() {
         val target = farJumpTarget
         if (target < 0) return
         farJumpTarget = -1
+        val confirm = farJumpConfirmQueued
         focusItem(target)
         setFocusEffectSuppressed(false)
+        if (confirm) {
+            clickAfterFocus = target
+            clickIfFocused()
+        }
+    }
+
+    /** 远跳途中按了方向键: 当场落到目标 (排队的确认作废), 这一下吞掉, 之后的按键从目标接着走 (同探索页). */
+    private fun landFarJumpNow() {
+        val target = farJumpTarget
+        if (target < 0) return
+        farJumpConfirmQueued = false
+        // 先摘掉远跳再停: 停下的回调 (SCROLL_STATE_IDLE) 会去落地
+        farJumpTarget = -1
+        stopScroll()
+        scrollToStopOf(target)?.let { if (it != 0) scrollBy(0, it) }
+        focusItem(target)
+        setFocusEffectSuppressed(false)
+    }
+
+    /** 落地后要点的那张 ([clickAfterFocus]) 已经拿到焦点就点它 (走卡自己的点击, 同按一下确认). */
+    private fun clickIfFocused() {
+        val index = clickAfterFocus
+        if (index < 0) return
+        val view = findViewHolderForAdapterPosition(index)?.itemView ?: return
+        if (!view.isFocused) return
+        clickAfterFocus = -1
+        view.performClick()
     }
 
     /** 远跳途中所有卡都画成未聚焦 (一路滚过的卡不挨个放大), 到位再按焦点恢复. */
     private fun setFocusEffectSuppressed(suppressed: Boolean) = cards.setFocusEffectSuppressed(this, suppressed)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        val vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+        val horizontal = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+        if (farJumpTarget >= 0 && handleFarJumpKey(event, vertical || horizontal)) return true
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (event.repeatCount == 0) {
-                // 按了新键: 挂着的程序化落点 (含远跳) 作废, 从此刻的焦点接着走
+                // 按了新键: 挂着的程序化落点作废, 从此刻的焦点接着走
                 pendingFocus = -1
-                if (farJumpTarget >= 0) {
-                    farJumpTarget = -1
-                    setFocusEffectSuppressed(false)
-                }
+                clickAfterFocus = -1
             }
-            val code = event.keyCode
-            val vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
-            val horizontal = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
             val focused = focusedChild
             if ((vertical || horizontal) && focused != null) return navigate(code, getChildAdapterPosition(focused), event.repeatCount)
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * 远跳途中 (返回键回首卡) 的按键算作用在目标上 (同 Apple TV: 滚动途中的输入作用在目的地): 确认键记下 (按下与抬起都吞掉, 出发那张
+     * 还持着焦点, 交给它就会打开返回前那张), 滚到位落焦后点目标; 方向键当场落到目标, 排队的确认作废. 其余按键 (返回等) 不管, 交给页面.
+     * 返回是否吞掉这一下.
+     */
+    private fun handleFarJumpKey(event: KeyEvent, direction: Boolean): Boolean {
+        if (tvNativeIsConfirmKey(event.keyCode)) {
+            if (event.action == KeyEvent.ACTION_DOWN) farJumpConfirmQueued = true
+            return true
+        }
+        if (!direction) return false
+        if (event.action == KeyEvent.ACTION_DOWN) landFarJumpNow()
+        return true
     }
 
     /**

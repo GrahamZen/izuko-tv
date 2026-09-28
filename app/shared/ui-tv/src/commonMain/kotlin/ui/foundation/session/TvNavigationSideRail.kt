@@ -113,9 +113,9 @@ object TvNavigationRailDefaults {
 /**
  * 主壳侧边栏的入口: 按左进入侧边栏时的落点 (defaultFocus 标记的条目); 不在主壳里时为 null.
  *
- * 给内容区里「左边还有可聚焦的东西, 这一下却该直接进侧边栏」的地方用 —— 如探索页推荐行在第二轮起
- * 每一轮的首卡上按左 (见 TvExplorationPage 的 TvAnchoredCardRow): 在 `focusProperties { left = … }`
- * 里指向它, 焦点照常按方向移动, 侧边栏接住后与空间搜索进来的一样落到默认条目.
+ * 给内容区里「这一下该直接进侧边栏」的地方用 —— 如原生海报墙的行首按左 (原生视图报给页面, 页面对它
+ * requestFocus); Compose 里也可以在 `focusProperties { left = … }` 里指向它, 焦点照常按方向移动.
+ * 侧边栏接住后与空间搜索进来的一样落到默认条目.
  */
 val LocalTvRailEnter = staticCompositionLocalOf<FocusRequester?> { null }
 

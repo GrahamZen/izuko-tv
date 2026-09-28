@@ -161,6 +161,15 @@ fun <T : Any> TvNativeGridPageHost(
     val snapshot = items.itemSnapshotList
     val cards = remember(snapshot, cardsKey) { snapshot.map { it?.let(currentCardOf) } }
 
+    // 焦点停放在网格页上 (换标签途中, 见 TvNativeGridPageView): 送焦请求没了 (新标签是空的被取消 / 超时) 就落不了地, 当场交给页面回顶栏
+    // (追番页 = 选中的标签). 不然焦点一直停在网格页自己身上, 画面上哪儿都不亮, 要再按一下才回到标签
+    var nativeParked by remember { mutableStateOf(false) }
+    LaunchedEffect(gridFocus) {
+        snapshotFlow { nativeParked && !gridFocus.switching }.collect { stranded ->
+            if (stranded) currentCallbacks.onTopRowUp()
+        }
+    }
+
     var pagePosition by remember { mutableStateOf(Offset.Zero) }
     Box(modifier.fillMaxSize().onGloballyPositioned { pagePosition = it.positionInWindow() }) {
         TvNativeHost(
@@ -207,8 +216,13 @@ fun <T : Any> TvNativeGridPageHost(
                     }
 
                     override fun onGridFocusChanged(hasFocus: Boolean) = currentCallbacks.onGridFocusChanged(hasFocus)
+
+                    override fun onFocusParkedChanged(parked: Boolean) {
+                        gridFocus.onNativeFocusParked(parked)
+                        nativeParked = parked
+                    }
                 }
-                // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (同 Compose 版 items 里的 items[index])
+                // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
                 view.onBindCard = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] }
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
@@ -217,10 +231,10 @@ fun <T : Any> TvNativeGridPageHost(
                 view.treatment = treatment
                 view.update(style, metrics, textStyle)
             },
-            bleedLeft = 0.dp,
+            bleedLeft = with(LocalDensity.current) { metrics.bleedLeftPx.toDp() },
         )
         emptyContent()
-        // 长按卡片的收藏菜单: 锚在那张卡的封面上 (同 Compose 版菜单锚在卡片框里)
+        // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         state.menu?.let { (item, rect) ->
             @Suppress("UNCHECKED_CAST")
             val menu = remember(item) { menuFor(item as T) }
@@ -272,7 +286,7 @@ fun <T : Any> TvNativeGridPageHost(
         },
     )
 
-    // 放大转场缩回期间的标题 (绘制权交给转场层 / 让位平移 / 停跑马灯), 同 Compose 版 tvHeroTitleHandoff
+    // 放大转场缩回期间的标题: 绘制权交给转场层时隐藏, 否则按缩回让位平移; 缩回途中停跑马灯 (见 TvNativeHeroTextView.setTitleHandoff)
     LaunchedEffect(state) {
         snapshotFlow {
             val id = state.titleSubjectId

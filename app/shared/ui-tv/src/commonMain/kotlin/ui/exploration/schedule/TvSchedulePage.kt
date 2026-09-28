@@ -764,10 +764,10 @@ private fun Modifier.tvScheduleBleedToScreenEdges(): Modifier = layout { measura
 }
 
 /**
- * 越过第一格顶线往上走的那几部边走边淡 (同追番 / 搜索网格的 tvGridItemTopFade, 只是线不在内边距之后 —— 那里是固定
- * 焦点框 —— 而在第一格的顶上): 越线多远就多淡, 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个
- * 淡掉, 顶上不露半截; 滚动时往上走的那部也不会在哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层,
- * 零重组; ModulateAlpha 理由同 tvGridItemTopFade (默认 Auto 在 alpha < 1 时整行先画进离屏缓冲).
+ * 越过第一格顶线往上走的那几部边走边淡 (线不在内边距之后 —— 那里是固定焦点框 —— 而在第一格的顶上): 越线多远就多淡,
+ * 越过"一部的一半 + 行距"时完全看不见. 停下来时第一格上面那部正好整个淡掉, 顶上不露半截; 滚动时往上走的那部也不会在
+ * 哪条看不见的线上被硬切. 全读在 graphicsLayer 里, 滚动时每帧只失效图层, 零重组; ModulateAlpha: 默认 Auto 在 alpha < 1 时
+ * 整行先画进离屏缓冲.
  */
 private fun Modifier.tvScheduleTopFade(state: LazyGridState, index: Int): Modifier = graphicsLayer {
     compositingStrategy = CompositingStrategy.ModulateAlpha

@@ -54,8 +54,8 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallTitleStyle
 import kotlin.math.ceil
 
 /**
- * TextView 用的字体参数 (px / em / 字重 / 颜色), 由 Compose 的 [TextStyle] 换算 ([toTvNativeTextStyle]): 原生文字与 Compose 版同字号、
- * 同行高、同字距、同字重. 字体家族跟系统 (应用在 Android 上本来就不换字体).
+ * TextView 用的字体参数 (px / em / 字重 / 颜色), 由 Compose 的 [TextStyle] 换算 ([toTvNativeTextStyle]): 原生文字与按同一 [TextStyle] 画的
+ * Compose 文字同字号、同行高、同字距、同字重. 字体家族跟系统 (应用在 Android 上本来就不换字体).
  */
 @Immutable
 data class TvNativeTextStyle(
@@ -156,9 +156,6 @@ data class TvNativeWallStyle(
 
     /** 一行卡的项高: 海报 + 番名 (不含行距). */
     val cardBlockHeightPx: Int get() = cardHeightPx + labelHeightPx
-
-    /** 横向相邻两张卡的间隔. */
-    val columnPitchPx: Int get() = cardWidthPx + columnSpacingPx
 
     fun applyTitleText(view: TextView) = title.applyTo(view)
 }

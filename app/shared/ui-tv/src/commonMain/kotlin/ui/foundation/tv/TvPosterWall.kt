@@ -47,14 +47,14 @@ import me.him188.ani.app.data.models.preference.TvCardFocusStyle
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 
 /*
- * 海报墙: 探索 / 搜索 / 追番页关掉「显示 hero 背景」(ThemeSettings 的 tvHeroBackdrop) 之后的「海报 + 番名」卡片形态, 详情页的关联条目
- * 也是这种卡. 画面是原生 View (见 nativeview 包); 这里是各页与原生视图共用的尺寸、配色与整屏底色.
+ * 海报墙: 探索 / 搜索 / 追番页的「海报 + 番名」卡片形态, 详情页的关联条目也是这种卡. 画面是原生 View (见 nativeview 包);
+ * 这里是各页与原生视图共用的尺寸、配色与整屏底色.
  *
  * 尺寸照 Apple TV: 1080p 一屏 6 张 (TV App 海报行、资料库网格、官方 tvOS 示例都是一屏 6 张; 设计规范 6 列网格每张
  * 260 pt = 130 dp, 列距 40 pt = 20 dp). 本应用左边有 48 dp 侧边栏, 内容区 848 dp 排 6 列约 124.7 dp.
  *
  * 底色: 卡片墙铺 Apple 系统灰阶里的 Gray 5 ([tvPosterWallBackground]) —— 深色是 Apple TV App 那种深灰, 不是纯黑; 浅色是同一档的
- * 浅灰, 不是纯白. 深色下 hero 态与探索页的热门轮播回到原 hero 页的近黑, 浅色下不换色 (见 [TvPosterWallTone]).
+ * 浅灰, 不是纯白. 深色下 hero 态与探索页的热门轮播换成近黑 (hero 背景图按黑底羽化), 浅色下不换色 (见 [TvPosterWallTone]).
  */
 
 /**
@@ -67,7 +67,7 @@ val TV_POSTER_WALL_CARD_MIN_WIDTH: Dp = 118.dp
 
 /**
  * 海报墙卡片的聚焦样式: 照 Apple TV 只放大 ([TV_CARD_FOCUS_SCALE_WITHOUT_RING] 倍) 加投影, 不画框. 「卡片聚焦样式」设置只管
- * 显示 hero 背景的页面, 海报墙不看它.
+ * 时间表网格 (见 TvGridFocusSlot), 海报墙不看它.
  */
 val TV_POSTER_WALL_CARD_FOCUS_STYLE: TvCardFocusStyle = TvCardFocusStyle.Scale
 
@@ -115,7 +115,7 @@ fun tvPosterWallBackground(): Color =
     if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) TV_POSTER_WALL_BACKGROUND_DARK else TV_POSTER_WALL_BACKGROUND_LIGHT
 
 /**
- * 列表页 hero 的底色, 原 hero 页 (开着「显示 hero 背景」) 与海报墙的 hero 态 / 探索页热门轮播共用: 深色是页面原来的近黑 [default] ——
+ * 列表页 hero 的底色, 海报墙的 hero 态与探索页热门轮播共用: 深色是页面换海报墙配色之前的近黑底色 [default] ——
  * hero 图是按黑底羽化的; 浅色是海报墙那档浅灰 [TV_POSTER_WALL_BACKGROUND_LIGHT], 与卡片墙同色, 海报墙进出 hero 态整屏不换色 ——
  * 浅灰压成近黑是几十倍的亮度跳变, 线性过渡拉多长都像闪一下 (tvOS、Plex、Jellyfin 的浅色主题里 hero 也都是浅底).
  */
@@ -200,7 +200,7 @@ fun tvPosterWallColorScheme(base: ColorScheme): ColorScheme =
     }
 
 /**
- * [TvPosterWallTheme] 换配色之前的配色, 即原 hero 页的配色: 搜索页 hero 态的底色取它的 background (见 [TvPosterWallTone]).
+ * [TvPosterWallTheme] 换配色之前的配色 (应用主题本身的配色): 搜索页 hero 态的底色取它的 background (见 [TvPosterWallTone]).
  * 不在 [TvPosterWallTheme] 里时为 null.
  */
 val LocalTvPosterWallBaseColorScheme: ProvidableCompositionLocal<ColorScheme?> = staticCompositionLocalOf { null }
@@ -212,19 +212,16 @@ val LocalTvPosterWallBaseColorScheme: ProvidableCompositionLocal<ColorScheme?> =
 val LocalTvPosterWallTheme: ProvidableCompositionLocal<Boolean> = staticCompositionLocalOf { false }
 
 /**
- * 页面开着海报墙 ([enabled]) 时换上 [tvPosterWallColorScheme]; 浅色主题不论开没开都换 —— 浅色下列表页的 hero 底色本来就是海报墙那档
- * ([tvPosterWallHeroBackground]), 页面上的块也得是同一套灰, 否则是一块块 Material 近白压在灰底上. 始终包这一层 (开关切换不重建内容);
- * 配色对象按底色方案记住, 不每次重组都换新实例 —— 配色是静态的 CompositionLocal, 换实例会让整页重组.
+ * 海报墙页面 (探索 / 搜索 / 追番) 换上 [tvPosterWallColorScheme]. 配色对象按底色方案记住, 不每次重组都换新实例 —— 配色是静态的
+ * CompositionLocal, 换实例会让整页重组.
  */
 @Composable
-fun TvPosterWallTheme(enabled: Boolean, content: @Composable () -> Unit) {
+fun TvPosterWallTheme(content: @Composable () -> Unit) {
     val base = MaterialTheme.colorScheme
-    val scheme = remember(base, enabled) {
-        if (enabled || base.surface.luminance() >= 0.5f) tvPosterWallColorScheme(base) else base
-    }
+    val scheme = remember(base) { tvPosterWallColorScheme(base) }
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(
-            LocalTvPosterWallTheme provides enabled,
+            LocalTvPosterWallTheme provides true,
             LocalTvPosterWallBaseColorScheme provides base,
             content = content,
         )
@@ -266,7 +263,7 @@ fun tvPosterWallEndMargin(coverHeight: Dp, focusScale: Float): Dp =
     coverHeight * ((focusScale - 1f) / 2f) + TV_POSTER_WALL_END_MARGIN
 
 /**
- * 海报墙页面的整屏底色: 卡片墙是深灰 ([tvPosterWallBackground]), hero 态与探索页的热门轮播回到原 hero 页的
+ * 海报墙页面的整屏底色: 卡片墙是深灰 ([tvPosterWallBackground]), hero 态与探索页的热门轮播是
  * 近黑 ([heroColor]) —— hero 背景图是按黑底羽化的, 铺在深灰上发闷, 图边也压不住. 由画整屏底色的那一层 (主壳 / 搜索页根) 持有
  * ([rememberTvPosterWallTone]), 页面用 [TvPosterWallToneSource] 把自己此刻的黑度登记进来. 整屏的底与侧边栏展开面板都用
  * [drawBackground] 在绘制阶段画, 同一帧同一个值.
@@ -278,7 +275,7 @@ fun tvPosterWallEndMargin(coverHeight: Dp, focusScale: Float): Dp =
  * 浅色主题下两者同色 (见 [tvPosterWallHeroBackground]), 整屏不换色.
  *
  * 背景图只在底色黑透之后露面: hero 态靠页面自己的过渡 (见 TvNativeHeroTimeline), 热门轮播的图整个在分界线以上. 换页时底色与分界线都从
- * 上一页的值交接到这一页的 —— 等上一页淡出之后才起步; 交接途中还没黑透, 这一页的背景图按 [heroContentGate] / [splitGate] 先挡着.
+ * 上一页的值交接到这一页的 —— 等上一页淡出之后才起步; 交接途中还没黑透, 这一页的背景图按 [tvPosterWallToneGate] / [splitGate] 先挡着.
  */
 @Stable
 class TvPosterWallTone internal constructor(
@@ -289,11 +286,11 @@ class TvPosterWallTone internal constructor(
 ) {
     private var wallColor by mutableStateOf(wall)
 
-    /** hero 的底色 (见 [tvPosterWallHeroBackground]): 原 hero 页与海报墙 hero 态同一个. 背景图的渐隐色用它. */
+    /** hero 的底色 (见 [tvPosterWallHeroBackground]): 海报墙 hero 态、探索页热门轮播与非海报墙页的整屏底色, 背景图的渐隐色也用它. */
     var heroColor: Color by mutableStateOf(hero)
         private set
 
-    // 当前页是不是海报墙页: 不是的话恒为 hero 色 (原 hero 页的底)
+    // 当前页是不是海报墙页: 不是的话恒为 hero 色 (页面本来的底色)
     private var wallPage by mutableStateOf(wallPage)
 
     // 登记的页面, 同一时刻只认最后登记的那个: 主壳换页时新页先组合, 旧页淡出之后才撤
@@ -351,14 +348,6 @@ class TvPosterWallTone internal constructor(
         drawRect(Brush.verticalGradient(*stops, startY = y, endY = y + band), size = Size(size.width, bottom))
     }
 
-    /** 背景图的放行 (乘在它的透明度上): 整屏黑透了才是 1, 见类说明. 绘制阶段读. */
-    fun heroContentGate(): Float =
-        if (wallColor == heroColor) {
-            // 浅色: hero 态不换色, 没什么可等的
-            1f
-        } else {
-            ((amount() - TV_POSTER_WALL_TONE_GATE_FROM) / (1f - TV_POSTER_WALL_TONE_GATE_FROM)).coerceIn(0f, 1f)
-        }
 
     /** 分界线以上那张图 (探索页的热门轮播) 的放行: 分界线那层到位了才是 1 (换页交接途中挡着). 绘制阶段读. */
     fun splitGate(): Float = if (wallColor == heroColor) 1f else splitStrength()
@@ -409,7 +398,7 @@ class TvPosterWallTone internal constructor(
 }
 
 /**
- * 画整屏底色的那一层 (主壳 / 搜索页根) 持有的 [TvPosterWallTone]: [wall] / [hero] 是卡片墙与 hero 态的底色, [wallPage] = 当前页开着海报墙.
+ * 画整屏底色的那一层 (主壳 / 搜索页根) 持有的 [TvPosterWallTone]: [wall] / [hero] 是卡片墙与 hero 态的底色, [wallPage] = 当前页是海报墙页.
  */
 @Composable
 fun rememberTvPosterWallTone(wall: Color, hero: Color, wallPage: Boolean): TvPosterWallTone {
@@ -445,6 +434,13 @@ private const val TV_POSTER_WALL_TONE_HANDOFF_DELAY_MILLIS = 50
 
 /** 换页交接的时长: 比新页淡入 (150ms) 稍长, 整屏换色不显得突兀. */
 private const val TV_POSTER_WALL_TONE_HANDOFF_MILLIS = 250
+
+/**
+ * 整屏黑度 [tone] (0..1) 下 hero 背景图的放行: 过了 [TV_POSTER_WALL_TONE_GATE_FROM] 才开始放, 黑透时全放. 原生页面按同一条线放行
+ * (浅色主题不换色, 调用方直接放行).
+ */
+internal fun tvPosterWallToneGate(tone: Float): Float =
+    ((tone - TV_POSTER_WALL_TONE_GATE_FROM) / (1f - TV_POSTER_WALL_TONE_GATE_FROM)).coerceIn(0f, 1f)
 
 /** 整屏黑度过了这里背景图才开始放行, 黑透时全放. */
 private const val TV_POSTER_WALL_TONE_GATE_FROM = 0.85f

@@ -188,7 +188,7 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 
 /**
  * 原生海报墙的列表项 (结构见 TvNativeExploreList.kt): hero 占位 + 继续观看 (标题 + 一行) + 各组推荐 (标题 + 行).
- * 继续观看行按分页快照给 (没到的是占位), 进度条同原 hero 页的继续观看卡.
+ * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress).
  */
 @Composable
 internal fun rememberTvExplorationNativeItems(
@@ -315,7 +315,7 @@ internal fun TvExplorationNativeWall(
             bleedLeft = with(density) { metrics.bleedLeftPx.toDp() },
             modifier = Modifier.focusRequester(state.focusRequester),
         )
-        // 长按卡片的收藏菜单: 锚在那张卡的封面上 (同 Compose 版菜单锚在卡片框里)
+        // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         state.menu?.let { (subjectId, rect) ->
             val menu = remember(subjectId) { menuFor(subjectId) }
             Box(
@@ -345,7 +345,7 @@ internal fun TvExplorationNativeWall(
             if (view != null && req != null) view.focusHeroButton(req.button.ordinal)
         }
     }
-    // 放大转场缩回期间的标题 (绘制权交给转场层 / 让位平移 / 停跑马灯), 同 Compose 版 tvHeroTitleHandoff
+    // 放大转场缩回期间的标题: 绘制权交给转场层时隐藏, 否则按缩回让位平移; 缩回途中停跑马灯 (见 TvNativeHeroTextView.setTitleHandoff)
     LaunchedEffect(state) {
         snapshotFlow {
             val id = state.titleSubjectId
@@ -374,8 +374,8 @@ private data class TvNativeTitleHandoff(
 )
 
 /**
- * 两路 hero 内容 (热门轮播 / 聚焦卡) 交给原生: 背景图 (停稳后的展示目标, 同 Compose 版 heroDisplay)、真实目标 (按下即压暗)、文字 (滚动 / 连发中为
- * null, 同 Compose 版 heroTextDisplay). 单独一个小组合: 这些都是每换一张卡就变的热状态, 只让这一块重组.
+ * 两路 hero 内容 (热门轮播 / 聚焦卡) 交给原生: 背景图 (停稳后的展示目标, 见 rememberTvSettledHeroProvider)、真实目标 (按下即压暗)、
+ * 文字 (滚动 / 连发中为 null, 见 rememberTvScrollHiddenProvider). 单独一个小组合: 这些都是每换一张卡就变的热状态, 只让这一块重组.
  */
 @Composable
 internal fun TvExplorationNativeSources(
@@ -430,7 +430,7 @@ private fun tvExplorationNativeSource(
 }
 
 /**
- * hero 文字 (同 Compose 版 TvExplorationHeroOverlay 的信息块): 标题; 条目信息到了才有 ★评分、开播状态 · 总集数 (总集数用正文色)、开播年月;
+ * hero 文字: 标题; 条目信息到了才有 ★评分、开播状态 · 总集数 (总集数用正文色)、开播年月;
  * 继续观看的条目多一行下一集 (集号 · 集名 · 剩余分钟 / 已看完); 简介优先下一集的 TMDB 单集简介, 再整部简介, 再 Bangumi 兜底.
  */
 @Composable
@@ -480,7 +480,7 @@ private fun tvExplorationNativeHeroText(
     )
 }
 
-/** 继续观看的下一集行 (同 Compose 版三态: 已看完最新一集 / 看到一半剩几分钟 / 下一集). */
+/** 继续观看的下一集行, 三态: 已看完最新一集 / 看到一半剩几分钟 / 下一集. */
 @Composable
 private fun tvExplorationNativeStatus(
     info: SubjectCollectionInfo,

@@ -17,13 +17,15 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
+import me.him188.ani.app.ui.foundation.LONG_PRESS_KEY_DOWN_COUNT
+import me.him188.ani.app.ui.foundation.LONG_PRESS_MIN_HOLD
 
 /**
  * 原生海报墙卡片的事件. [index] 是卡在这一组 (一行 / 一个网格) 里的下标.
  *
  * - [onFocused]: 卡拿到焦点 (页面据此记焦点、喂 hero 媒体流水线);
  * - [onClick]: 确定键短按 (抬起时);
- * - [onLongPress]: 确定键按住到阈值 (弹收藏菜单, 同 Compose 版 tvLongPressKey: 至少两次按下且按住 [TV_NATIVE_LONG_PRESS_MILLIS]),
+ * - [onLongPress]: 确定键按住到阈值 (弹收藏菜单, 判定参数同 tvLongPressKey: 至少 [LONG_PRESS_KEY_DOWN_COUNT] 次按下且按住 [LONG_PRESS_MIN_HOLD]),
  *   [anchor] 是卡片封面在窗口里的框 (菜单锚点).
  */
 interface TvNativeCardListener {
@@ -148,15 +150,12 @@ class TvNativeCardAdapter(
     }
 }
 
-/** 确定键按住多久算长按 (同 Compose 版 tvLongPressKey 的阈值). */
-internal const val TV_NATIVE_LONG_PRESS_MILLIS = 350L
-
 internal const val TV_NATIVE_CARD_VIEW_TYPE = 0x7a11
 
 private val TV_NATIVE_PLACEHOLDER_CARD = TvNativeCard(imageUrl = null, title = "")
 
 /**
- * 确定键的长按判定 (同 Compose 版 tvLongPressKey): 按下后至少再来一次按下 (自动重复) 且按住满 [TV_NATIVE_LONG_PRESS_MILLIS] 就当场触发长按,
+ * 确定键的长按判定 (参数同 tvLongPressKey): 按下后再来够 [LONG_PRESS_KEY_DOWN_COUNT] 次按下 (自动重复) 且按住满 [LONG_PRESS_MIN_HOLD] 就当场触发长按,
  * 之后到抬起的确定键全部吞掉 (不再算点击); 没到阈值就抬起 = 点击. 返回 true = 这次按键已处理.
  */
 internal class TvNativeConfirmKey {
@@ -165,7 +164,7 @@ internal class TvNativeConfirmKey {
     private var fired = false
 
     fun onKey(view: View, event: KeyEvent, onLongPress: (() -> Unit)?): Boolean {
-        if (!isConfirm(event.keyCode)) return false
+        if (!tvNativeIsConfirmKey(event.keyCode)) return false
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount == 0) {
@@ -176,8 +175,8 @@ internal class TvNativeConfirmKey {
                 } else {
                     downCount++
                 }
-                if (!fired && onLongPress != null && downCount >= 2 &&
-                    SystemClock.uptimeMillis() - downAt >= TV_NATIVE_LONG_PRESS_MILLIS
+                if (!fired && onLongPress != null && downCount >= LONG_PRESS_KEY_DOWN_COUNT &&
+                    SystemClock.uptimeMillis() - downAt >= LONG_PRESS_MIN_HOLD.inWholeMilliseconds
                 ) {
                     fired = true
                     view.isPressed = false
@@ -197,7 +196,8 @@ internal class TvNativeConfirmKey {
         }
         return false
     }
-
-    private fun isConfirm(keyCode: Int) =
-        keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 }
+
+/** 确定键 (遥控器中键 / 回车 / 小键盘回车). */
+internal fun tvNativeIsConfirmKey(keyCode: Int): Boolean =
+    keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER

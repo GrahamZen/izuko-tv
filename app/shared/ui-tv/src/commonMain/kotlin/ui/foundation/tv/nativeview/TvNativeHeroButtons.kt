@@ -131,8 +131,8 @@ class TvNativeHeroButton(
 private const val TV_NATIVE_FOCUS_STATE_LAYER_ALPHA = 0.1f
 
 /**
- * 轮播指示器 (原生版 TvCarouselIndicator): 横排小圆点, 当前项为 [selectedWidthPx] 宽的胶囊, 其余 [dotPx] 见方的圆点, 间距 [gapPx];
- * 当前项 [color], 其余 [color] 40%. 在自身宽度内水平居中, 竖直居中. 不可聚焦, 少于 2 项不画.
+ * 轮播指示器: 横排小圆点, 当前项为 [selectedWidthPx] 宽的胶囊, 其余 [dotPx] 见方的圆点, 间距 [gapPx];
+ * 当前项 [color], 其余 [color] 乘 [inactiveAlpha]. 在自身宽度内水平居中, 竖直居中. 不可聚焦, 少于 2 项不画.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeCarouselDotsView(
@@ -140,6 +140,7 @@ class TvNativeCarouselDotsView(
     private val dotPx: Float,
     private val selectedWidthPx: Float,
     private val gapPx: Float,
+    private val inactiveAlpha: Float,
 ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
@@ -180,12 +181,10 @@ class TvNativeCarouselDotsView(
         for (i in 0 until n) {
             val active = i == selectedIndex
             val w = if (active) selectedWidthPx else dotPx
-            paint.color = if (active) color else tvNativeWithAlpha(color, TV_NATIVE_DOT_INACTIVE_ALPHA)
+            paint.color = if (active) color else tvNativeWithAlpha(color, inactiveAlpha)
             rect.set(x, top, x + w, top + dotPx)
             canvas.drawRoundRect(rect, radius, radius, paint)
             x += w + gapPx
         }
     }
 }
-
-private const val TV_NATIVE_DOT_INACTIVE_ALPHA = 0.4f
