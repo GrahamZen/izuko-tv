@@ -27,11 +27,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -137,6 +145,7 @@ fun TvAnchoredStrip(
                 // 长按方向键的移动频率上限 (同探索页/选集轮播): 系统连发 ~20 次/秒, 每发都换卡
                 // 的话滑动动画不断被打断, 卡片是闪过去而不是滑过去
                 .tvFocusMoveRateLimit(horizontalMaxPerSecond = horizontalMoveRate)
+                .tvRowEndKeys(itemCount = { itemCount }, focusedIndex = { lastFocusedIndex })
                 // onEnter 只在**焦点组**节点上生效, 少一个 focusGroup 就完全不触发 (真机踩过)
                 .focusProperties { onEnter = { runCatching { enterRequester.requestFocus() } } }
                 .focusGroup(),
@@ -156,6 +165,27 @@ fun TvAnchoredStrip(
                 )
             }
         }
+    }
+}
+
+/**
+ * 横向一行的两端: 末项按右 / 首项按左时照常让 Compose 往那边找, 找不到也吞掉这一下 (挂在行容器上, 按键从聚焦的卡冒上来). 不吞的话
+ * 按键交还给 Android 的 FocusFinder, 它在整个窗口里按屏幕几何挑可聚焦的 View —— 同页的原生视图 (详情页的关联条目行) 会被挑中,
+ * 长按右键跑到头就跳进那一行接着滚.
+ *
+ * @param focusedIndex 此刻聚焦的下标 (事件只在焦点在本行里时才到这里)
+ */
+fun Modifier.tvRowEndKeys(itemCount: () -> Int, focusedIndex: () -> Int): Modifier = composed {
+    val focusManager = LocalFocusManager.current
+    onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+        val direction = when {
+            event.key == Key.DirectionRight && focusedIndex() == itemCount() - 1 -> FocusDirection.Right
+            event.key == Key.DirectionLeft && focusedIndex() == 0 -> FocusDirection.Left
+            else -> return@onKeyEvent false
+        }
+        focusManager.moveFocus(direction)
+        true
     }
 }
 
