@@ -57,6 +57,7 @@ import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
@@ -262,54 +263,56 @@ private fun CommentGridCard(
     var expanded by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    Surface(
-        onClick = { expanded = !expanded },
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = if (focused) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
-        },
-        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        interactionSource = interactionSource,
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AvatarImage(
-                    comment.author?.avatarUrl,
-                    Modifier.size(24.dp).clip(CircleShape),
-                )
-                Text(
-                    comment.author?.nickname ?: comment.author?.id?.toString() ?: "",
-                    Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    formatDateTime(comment.createdAt, showTime = false),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-                if (showRating) {
-                    comment.rating?.takeIf { it > 0 }?.let { rating ->
-                        FiveRatingStars(rating, starSize = 12.dp)
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = { expanded = !expanded },
+            modifier = modifier,
+            shape = RoundedCornerShape(12.dp),
+            color = if (focused) {
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+            },
+            border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            interactionSource = interactionSource,
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AvatarImage(
+                        comment.author?.avatarUrl,
+                        Modifier.size(24.dp).clip(CircleShape),
+                    )
+                    Text(
+                        comment.author?.nickname ?: comment.author?.id?.toString() ?: "",
+                        Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        formatDateTime(comment.createdAt, showTime = false),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                    if (showRating) {
+                        comment.rating?.takeIf { it > 0 }?.let { rating ->
+                            FiveRatingStars(rating, starSize = 12.dp)
+                        }
                     }
                 }
+                Text(
+                    remember(comment) { comment.content.toPlainText() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) Int.MAX_VALUE else TV_COMMENT_COLLAPSED_MAX_LINES,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                remember(comment) { comment.content.toPlainText() },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (expanded) Int.MAX_VALUE else TV_COMMENT_COLLAPSED_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

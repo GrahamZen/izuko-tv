@@ -74,6 +74,7 @@ import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_hot_reviews
@@ -228,39 +229,41 @@ private fun ReviewsMoreCell(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    Surface(
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.hasFocus },
-        shape = MaterialTheme.shapes.medium,
-        // 与同排的评论卡同一套底色与示焦 (见 ReviewPreviewCard): 一排卡里只有它换个颜色很跳
-        color = if (focused) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
-        },
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-    ) {
-        Column(
-            Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.onFocusChanged { focused = it.hasFocus },
+            shape = MaterialTheme.shapes.medium,
+            // 与同排的评论卡同一套底色与示焦 (见 ReviewPreviewCard): 一排卡里只有它换个颜色很跳
+            color = if (focused) {
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+            },
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         ) {
-            if (remaining != null && remaining > 0) {
+            Column(
+                Modifier.padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            ) {
+                if (remaining != null && remaining > 0) {
+                    Text(
+                        "+$remaining",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                }
                 Text(
-                    "+$remaining",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    stringResource(Lang.subject_details_view_all),
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
-            Text(
-                stringResource(Lang.subject_details_view_all),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }
@@ -301,7 +304,7 @@ private fun ReviewPreviewCard(
     modifier: Modifier = Modifier,
     /** 正文行数上限: 预览行里一行, 评价块的大卡多几行. */
     maxTextLines: Int = 1,
-    /** TV 详情页评价块的大卡: 两行头部 + 半透明底 + 聚焦泛白高亮 (与全量弹窗里的评论卡同一套示焦). */
+    /** TV 详情页评价块的大卡: 两行头部 + 半透明底 + 聚焦换一档底色并描边 (与全量弹窗里的评论卡同一套示焦). */
     tvCard: Boolean = false,
 ) {
     val shape = MaterialTheme.shapes.medium
@@ -331,12 +334,16 @@ private fun ReviewPreviewCard(
     if (onClick == null) {
         Surface(modifier, shape, color, contentColor, content = body)
     } else {
-        Surface(
-            onClick, modifier, shape = shape, color = color, contentColor = contentColor,
-            border = if (tvCard && focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-            interactionSource = interactionSource,
-            content = body,
-        )
+        val card: @Composable () -> Unit = {
+            Surface(
+                onClick, modifier, shape = shape, color = color, contentColor = contentColor,
+                border = if (tvCard && focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                interactionSource = interactionSource,
+                content = body,
+            )
+        }
+        // 只有大卡画描边; 其余形态没有描边, 示焦还靠焦点态层
+        if (tvCard) ProvideRingOnlyFocus(card) else card()
     }
 }
 
