@@ -40,7 +40,21 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_CORNER
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_ICON_GAP
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_ICON_SIZE
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_OUTLINE_WIDTH
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_PADDING_HORIZONTAL
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_PADDING_VERTICAL
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_SCALE
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_META_GAP
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_RATING_STAR_GAP
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_RATING_STAR_SIZE
+import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.tvHeroButtonContainerColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroButtonOutlineColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 
@@ -127,7 +141,7 @@ fun rememberTvNativeIcon(icon: ImageVector, size: Dp, tint: Color = Color.White)
 }
 
 /**
- * hero 文字块的排版参数 (同 Compose 版三页的 hero 覆盖层): 标题 headlineLarge、评分 titleMedium (主色)、信息行与下一集行 labelLarge、
+ * hero 文字块的排版参数: 标题 headlineLarge、评分 titleMedium (主色)、信息行与下一集行 labelLarge、
  * 简介 bodyMedium; 颜色取 hero 前景 / 次要色. [statusPrimary] = 下一集行用主色 (追番页), 否则次要色 (探索页).
  */
 @Composable
@@ -142,7 +156,7 @@ fun rememberTvNativeHeroTextStyle(
     val content = tvHeroContentColor()
     val secondary = tvHeroSecondaryContentColor()
     val visualEffects = LocalThemeSettings.current.visualEffects
-    val star = rememberTvNativeIcon(Icons.Rounded.Star, TV_NATIVE_STAR_SIZE, colors.primary)
+    val star = rememberTvNativeIcon(Icons.Rounded.Star, TV_HERO_RATING_STAR_SIZE, colors.primary)
     val stagger = visualEffects.transitions && TvPolishFlags.textStagger
     return remember(density, typography, colors, content, secondary, visualEffects, star, stagger, titleMaxLines, lineSpacing, statusHeight) {
         with(density) {
@@ -154,18 +168,18 @@ fun rememberTvNativeHeroTextStyle(
                 status = typography.labelLarge.toTvNativeTextStyle(density, secondary),
                 summary = typography.bodyMedium.toTvNativeTextStyle(density, content),
                 star = star,
-                starSizePx = TV_NATIVE_STAR_SIZE.roundToPx(),
-                starGapPx = 4.dp.roundToPx(),
-                metaGapPx = 16.dp.roundToPx(),
+                starSizePx = TV_HERO_RATING_STAR_SIZE.roundToPx(),
+                starGapPx = TV_HERO_RATING_STAR_GAP.roundToPx(),
+                metaGapPx = TV_HERO_META_GAP.roundToPx(),
                 lineSpacingPx = lineSpacing.roundToPx(),
                 statusHeightPx = statusHeight.roundToPx(),
-                slidePx = TV_NATIVE_TEXT_SLIDE.roundToPx(),
+                slidePx = TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE.roundToPx(),
                 stagger = stagger,
                 animated = visualEffects.transitions,
                 marqueeRepeat = when {
                     !visualEffects.marquee -> 0
                     visualEffects.ambient -> -1
-                    else -> TV_NATIVE_REDUCED_MARQUEE_ITERATIONS
+                    else -> TV_REDUCED_MARQUEE_ITERATIONS
                 },
             )
         }
@@ -173,7 +187,7 @@ fun rememberTvNativeHeroTextStyle(
 }
 
 /**
- * hero 操作按钮的外观 (同 Compose 版 TvHeroButton 在海报墙主题下的取值: 按 0.9 缩放的内边距 / 图标 / titleSmall 字号).
+ * hero 操作按钮的外观: 取值同 TvHeroButton 在海报墙主题下 (按 [TV_HERO_BUTTON_SCALE] 缩放的内边距 / 图标 / titleSmall 字号, 底板与描边色).
  */
 @Composable
 fun rememberTvNativeHeroButtonStyle(): TvNativeHeroButtonStyle {
@@ -183,19 +197,19 @@ fun rememberTvNativeHeroButtonStyle(): TvNativeHeroButtonStyle {
     val dark = colors.surface.luminance() < 0.5f
     return remember(density, colors, typography, dark) {
         with(density) {
-            val scale = TV_NATIVE_HERO_BUTTON_SCALE
+            val scale = TV_HERO_BUTTON_SCALE
             val text = typography.titleSmall.let { it.copy(fontSize = it.fontSize * scale, lineHeight = it.lineHeight * scale) }
             TvNativeHeroButtonStyle(
                 text = text.toTvNativeTextStyle(density, colors.onSurface),
-                iconSizePx = (20.dp * scale).roundToPx(),
-                iconGapPx = (8.dp * scale).roundToPx(),
-                paddingHorizontalPx = (14.dp * scale).roundToPx(),
-                paddingVerticalPx = (8.dp * scale).roundToPx(),
-                cornerPx = 8.dp.toPx(),
-                outlineWidthPx = 0.5.dp.toPx(),
-                outlineColor = (if (dark) Color.White else Color.Black).copy(alpha = 0.16f).toArgb(),
-                filledColor = (if (dark) colors.surfaceContainerHigh else colors.surfaceContainer).toArgb(),
-                unfilledColor = colors.surfaceContainerLow.toArgb(),
+                iconSizePx = (TV_HERO_BUTTON_ICON_SIZE * scale).roundToPx(),
+                iconGapPx = (TV_HERO_BUTTON_ICON_GAP * scale).roundToPx(),
+                paddingHorizontalPx = (TV_HERO_BUTTON_PADDING_HORIZONTAL * scale).roundToPx(),
+                paddingVerticalPx = (TV_HERO_BUTTON_PADDING_VERTICAL * scale).roundToPx(),
+                cornerPx = TV_HERO_BUTTON_CORNER.toPx(),
+                outlineWidthPx = TV_HERO_BUTTON_OUTLINE_WIDTH.toPx(),
+                outlineColor = tvHeroButtonOutlineColor(dark).toArgb(),
+                filledColor = tvHeroButtonContainerColor(colors, filled = true, posterWall = true).toArgb(),
+                unfilledColor = tvHeroButtonContainerColor(colors, filled = false, posterWall = true).toArgb(),
                 focusedColor = colors.primary.toArgb(),
                 contentColor = colors.onSurface.toArgb(),
                 focusedContentColor = colors.onPrimary.toArgb(),
@@ -204,14 +218,4 @@ fun rememberTvNativeHeroButtonStyle(): TvNativeHeroButtonStyle {
     }
 }
 
-/** 同 TvCards.kt 的 TvHeroRatingBadge 星标尺寸. */
-private val TV_NATIVE_STAR_SIZE = 18.dp
 
-/** 同 TvScrollActivity.kt 的 TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE. */
-private val TV_NATIVE_TEXT_SLIDE = 14.dp
-
-/** 同 TvVisualEffects.kt 的 TV_REDUCED_MARQUEE_ITERATIONS. */
-private const val TV_NATIVE_REDUCED_MARQUEE_ITERATIONS = 3
-
-/** 同 TvCards.kt 的 TV_HERO_BUTTON_SCALE. */
-private const val TV_NATIVE_HERO_BUTTON_SCALE = 0.9f

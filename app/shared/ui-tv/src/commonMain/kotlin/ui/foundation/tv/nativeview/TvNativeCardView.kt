@@ -126,7 +126,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     init {
         layoutParams = LayoutParams(style.cardWidthPx, style.cardHeightPx + style.labelHeightPx)
-        // 触摸模式下也可聚焦 (同 Compose 版卡片): 窗口进了触摸模式时卡照样拿得到焦点, 焦点不会因此停到行 / 网格上或丢掉
+        // 触摸模式下也可聚焦: 窗口进了触摸模式时卡照样拿得到焦点, 焦点不会因此停到行 / 网格上或丢掉
         isFocusableInTouchMode = true
         // 系统默认的聚焦高亮 (API 26 起给没有聚焦态背景的 View 叠一层) 不要: 聚焦只由放大与投影表达
         if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
@@ -141,7 +141,6 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         )
         label.orientation = LinearLayout.VERTICAL
         // 番名排在海报之后画: 系统阴影在外框的 Z 排序区里按 Z 画, 番名的 Z 高于海报才压在海报投影上面
-        // (同 Compose 版番名层画在放大层之后)
         label.translationZ = style.focusedElevationPx + 1f
         label.addView(title, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         label.addView(subtitle, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -191,7 +190,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
         confirmKey.onKey(this, event, null) || super.onKeyUp(keyCode, event)
 
-    /** 封面此刻在窗口里的框 (未放大时的位置, 同 Compose 版菜单锚在卡片右下角那一类用法的参照). */
+    /** 封面此刻在窗口里的框 (未放大时的位置): 长按菜单锚在这里. */
     fun coverRectInWindow(): Rect {
         cover.getLocationInWindow(windowXY)
         return Rect(windowXY[0], windowXY[1], windowXY[0] + cover.width, windowXY[1] + cover.height)
@@ -238,7 +237,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
 /**
  * 海报. 圆角靠 outline 裁剪 (同 Google TV 桌面卡片), 系统阴影按同一个 outline 投; 加载前露出占位底色. 集数进度条画在图上
- * (贴封面底缘居中, 同 TvPortraitCard), 玻璃边是前景里一圈 1 像素描边 (圆角减半像素, 画在封面边缘以内, 同 Compose 版玻璃边).
+ * (贴封面底缘居中, 同 TvPortraitCard), 玻璃边是前景里一圈 1 像素描边 (圆角减半像素, 画在封面边缘以内).
  * 尺寸由布局参数定死: 换图时 ImageView 会按图片尺寸 requestLayout, 那会冒泡到 Compose 让整棵原生树重新测量 —— 量过一次之后挡掉,
  * 图片矩阵由 setImageDrawable 自己重算.
  */

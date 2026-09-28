@@ -21,16 +21,16 @@ import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 
 /*
- * 探索页海报墙 (ThemeSettings.tvHeroBackdrop 关掉): 轮播照旧; 焦点一进卡片区, 整页往上滚, 第一行也停在屏幕正中, 轮播跟着上移、
+ * 探索页海报墙: 顶上是热门轮播; 焦点一进卡片区, 整页往上滚, 第一行也停在屏幕正中, 轮播跟着上移、
  * 还露着一截 (照 Apple TV 首页, 见 [tvNativeCarouselShift]) —— 卡片区是按组分段的「海报 + 番名」行: 继续观看一行, 每组推荐一行 (12 张; 没登录时
  * 那一组「推荐」两百条按屏上完整放得下的张数切成几行, 不横滑), 组间一行标题. 行横滑不循环, 按需挪 ([tvStripLeftIndex]): 焦点在屏上完整露出的
  * 几张之间走时不动, 走到右边露一截的那张才整行往左挪. 纵向聚焦行尽量停在视口垂直正中 ([centeredScroll]).
  *
  * 列表结构: [hero 占位] + [继续观看标题, 继续观看行] + [各组: 标题, 行]. hero 占位是一段透明的空白, 轮播态列表停在顶上时它正好垫在轮播下面,
- * 第一组标题落在原 hero 页固定标签的位置; 进卡片区时它随列表滚上去, 轮播的文字与背景图跟着上移 (不变透明、不模糊、不压暗; 背景图多挪一截,
+ * 第一组标题落在 hero 文字块 (连同轮播按钮) 下面; 进卡片区时它随列表滚上去, 轮播的文字与背景图跟着上移 (不变透明、不模糊、不压暗; 背景图多挪一截,
  * 见 [tvNativeCarouselShift]) —— 轮播的进退就是一次列表滚动, 与卡片同一条 spring.
  *
- * hero 态 (卡片上按确定): 背景与轮播文字换成聚焦卡、回到 hero 的位置, 聚焦行的组标题落到原 hero 页固定标签那条线上 ([heroScroll]),
+ * hero 态 (卡片上按确定): 背景与轮播文字换成聚焦卡、回到 hero 的位置, 聚焦行的组标题落到 hero 简介块下沿那条线上 ([heroScroll]),
  * 上面的项越线淡出; 再按确定放大进详情页.
  */
 
@@ -86,8 +86,8 @@ internal fun TvNativeExploreMetrics.centeredScroll(items: List<TvNativeExploreIt
 }
 
 /**
- * hero 态聚焦第 [index] 行时列表该滚到哪: 这一行的组标题位置落在 hero 线 [TvNativeExploreMetrics.heroHeaderTopPx] 上 (原 hero 页焦点在
- * 卡片区时固定标签那条线, 即 hero 简介块下沿), 行紧跟在下面; 没有组标题的行 (同组第二行起) 上一行越线淡出. 开头滚不到 (负数) 就停在顶.
+ * hero 态聚焦第 [index] 行时列表该滚到哪: 这一行的组标题位置落在 hero 线 [TvNativeExploreMetrics.heroHeaderTopPx] 上 (hero 简介块下沿),
+ * 行紧跟在下面; 没有组标题的行 (同组第二行起) 上一行越线淡出. 开头滚不到 (负数) 就停在顶.
  */
 internal fun TvNativeExploreMetrics.heroScroll(items: List<TvNativeExploreItem>, index: Int): Int =
     (itemTop(items, index) - headerPx - heroHeaderTopPx).coerceAtLeast(0)

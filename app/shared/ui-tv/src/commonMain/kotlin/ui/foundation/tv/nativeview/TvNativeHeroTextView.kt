@@ -28,6 +28,13 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Rect
+import me.him188.ani.app.ui.foundation.tv.TV_CAROUSEL_TEXT_IN_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_CAROUSEL_TEXT_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_STAGGER_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_ENTER_AT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_HIDE_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import kotlin.math.max
 
@@ -48,11 +55,11 @@ data class TvNativeHeroStatus(
 )
 
 /**
- * hero 文字块要显示的内容. 字符串由页面在 Compose 里按字符串资源排好 (与 Compose 版同一套取值), 原生只管排版与过渡.
+ * hero 文字块要显示的内容. 字符串由页面在 Compose 里按字符串资源排好, 原生只管排版与过渡.
  *
  * @param rating 评分数字 (如 "8.7"), 画成「★ 8.7/10」; null 不画.
  * @param meta 评分之后的那一串 (开播状态 · 总集数 / 标签 / 开播年月), 按段着色.
- * @param infoReady 条目信息到了: 信息行、下一集行、简介才出现 (同 Compose 版 `info != null`).
+ * @param infoReady 条目信息到了: 信息行、下一集行、简介才出现 (没到时只有标题).
  */
 @Immutable
 data class TvNativeHeroText(
@@ -106,15 +113,15 @@ enum class TvNativeTextTransition {
 }
 
 /**
- * hero 文字块 (原生版, 探索 / 追番 / 搜索三页共用): 标题 → 信息行 (★评分 + 分段着色的一串) → 下一集行 → 简介 (占满剩余高度, 最后一行
+ * hero 文字块 (探索 / 追番 / 搜索三页共用): 标题 → 信息行 (★评分 + 分段着色的一串) → 下一集行 → 简介 (占满剩余高度, 最后一行
  * 省略号), 纵向排, 行距 [TvNativeHeroTextStyle.lineSpacingPx]. 宽度: 标题 [titleWidthPx], 下一集行与简介 [summaryWidthPx].
  *
- * 换条目的过渡同 Compose 版: 旧字整块原地线性淡出, 新字按行错开 40ms 从右 14dp 处边滑边淡入 (见 [TvNativeTextTransition]), 两段先后不重叠;
+ * 换条目的过渡: 旧字整块原地线性淡出, 新字按行错开 40ms 从右 14dp 处边滑边淡入 (见 [TvNativeTextTransition]), 两段先后不重叠;
  * 同一条目的内容变了 (条目信息晚到) 原地换, 不过渡; 淡出途中目标又回到正在淡出的那一部, 原地淡回来. [setText] 传 null = 藏起来
  * (滚动 / 连发中).
  *
  * 放大转场: 标题每次挪动都把它在 Compose 根坐标里的框登记给 [TvHeroZoomHandoff.publishTitle] (不含缩回让位平移与进场滑入), 缩回期间
- * 由 [setTitleHandoff] 按转场层的判定隐藏或平移, 同 Compose 版 tvHeroTitleHandoff.
+ * 由 [setTitleHandoff] 按转场层的判定隐藏或平移, 并停掉跑马灯.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeHeroTextView(
@@ -198,7 +205,7 @@ class TvNativeHeroTextView(
         val s = style
         s.title.applyTo(title)
         if (s.titleMaxLines == 1) {
-            // 定宽一行, 放不下跑马灯滚全文 (不省略号); 不跑时硬裁 (同 Compose 版 softWrap = false + Clip)
+            // 定宽一行, 放不下跑马灯滚全文 (不省略号); 不跑时硬裁 (登记给放大转场的 clipOverflow 跟着这里, 转场标题同样硬裁)
             title.setSingleLine(true)
             title.setHorizontallyScrolling(true)
         } else {
@@ -431,8 +438,9 @@ class TvNativeHeroTextView(
     // ---- 放大转场的标题 ----
 
     /**
-     * 标题要不要跑马灯 (页面判: 探索页标题随文字块移出屏幕上缘就停, 见 TvExplorationPage 的 wallTitleOnScreen). 缩回期间
-     * ([setTitleHandoff] 的 settling) 一律不跑.
+     * 标题要不要跑马灯 (调用方判: 探索页轮播标题随文字块移出屏幕上缘就停, 见 TvNativeExploreView). 缩回期间
+     * ([setTitleHandoff] 的 settling) 一律不跑: 停掉即回到行首, 否则标题正滚到中间被拉去平移, 落位那一刻跑马灯重新开始又跳回行首,
+     * 看着闪一下.
      */
     fun setTitleMarquee(enabled: Boolean) {
         if (titleMarquee == enabled) return
@@ -478,7 +486,7 @@ class TvNativeHeroTextView(
     }
 
     /**
-     * 登记标题此刻在 Compose 根坐标里的框 (不含缩回让位平移与进场滑入, 同 Compose 版在 graphicsLayer 之前的 onGloballyPositioned).
+     * 登记标题此刻在 Compose 根坐标里的框 (不含缩回让位平移与进场滑入: 详情页按登记的框算平移起点, 框里算上平移就被自己的平移改写, 自激).
      * 本块或祖先挪动 / 缩放后调 (页面在滚动联动里调, 布局完成时自己调).
      */
     fun publishTitle() {
@@ -534,7 +542,7 @@ class TvNativeHeroTextView(
             count++
         }
         if (summary.visibility != GONE) {
-            // 简介占满剩余高度: 放得下几行就几行, 最后一行省略号 (同 Compose 版定高 + Ellipsis)
+            // 简介占满剩余高度: 放得下几行就几行, 最后一行省略号
             val remaining = (height - used - gap()).coerceAtLeast(0)
             val lineHeight = max(1, s.summary.lineHeightPx.takeIf { it > 0 } ?: summary.lineHeight)
             val maxLines = remaining / lineHeight
@@ -562,7 +570,7 @@ class TvNativeHeroTextView(
 }
 
 /**
- * 下一集那一行: 集号 → 集名 (占剩下的宽度, 放不下跑马灯) → 尾段, 集号与尾段永不截断 (同 Compose 版 weight(1f, fill = false)).
+ * 下一集那一行: 集号 → 集名 (占剩下的宽度, 放不下跑马灯) → 尾段, 集号与尾段永不截断.
  */
 @SuppressLint("ViewConstructor")
 private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
@@ -630,11 +638,11 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
     override fun hasOverlappingRendering(): Boolean = false
 }
 
-// 时长同 TvScrollActivity.kt (tvScrollHiddenTextTransform / tvCarouselTextTransform / tvHeroLineEnter)
-private const val TV_NATIVE_TEXT_OUT_MILLIS = 300L
-private const val TV_NATIVE_TEXT_HIDE_OUT_MILLIS = 400L
-private const val TV_NATIVE_TEXT_IN_MILLIS = 200L
-private const val TV_NATIVE_TEXT_ENTER_AT_MILLIS = 310L
-private const val TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS = 350L
-private const val TV_NATIVE_CAROUSEL_TEXT_IN_MILLIS = 450L
-private const val TV_NATIVE_TEXT_STAGGER_MILLIS = 40L
+// 时长与 Compose 页面的 hero 文字过渡同一份 (TvScrollActivity.kt: tvScrollHiddenTextTransform / tvCarouselTextTransform / tvHeroLineEnter)
+private const val TV_NATIVE_TEXT_OUT_MILLIS = TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS.toLong()
+private const val TV_NATIVE_TEXT_HIDE_OUT_MILLIS = TV_SCROLL_HIDDEN_TEXT_HIDE_OUT_MILLIS.toLong()
+private const val TV_NATIVE_TEXT_IN_MILLIS = TV_SCROLL_HIDDEN_TEXT_IN_MILLIS.toLong()
+private const val TV_NATIVE_TEXT_ENTER_AT_MILLIS = TV_SCROLL_HIDDEN_TEXT_ENTER_AT_MILLIS
+private const val TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS = TV_CAROUSEL_TEXT_OUT_MILLIS.toLong()
+private const val TV_NATIVE_CAROUSEL_TEXT_IN_MILLIS = TV_CAROUSEL_TEXT_IN_MILLIS.toLong()
+private const val TV_NATIVE_TEXT_STAGGER_MILLIS = TV_HERO_TEXT_STAGGER_MILLIS.toLong()

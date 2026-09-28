@@ -253,6 +253,14 @@ class TvGridFocusState internal constructor(internal val scope: TvFocusScope) {
         }
     }
 
+    /**
+     * 原生网格页把焦点停放在自己身上 / 解除 (换标签时焦点还在换下去的那份网格上, 新那份的卡还没到): 同焦点驻留在 [TvFocusTransitAnchor] 上,
+     * 这期间的按键被原生那边吞掉, 不算用户接管 (见 [TvFocusScope.onUserKeyDown]), 在途的换标签送焦照常落地.
+     */
+    fun onNativeFocusParked(parked: Boolean) {
+        scope.focusParkedOnTransit = parked
+    }
+
     internal fun installedGridsForNative(delta: Int) {
         installedGrids += delta
     }

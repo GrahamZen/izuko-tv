@@ -15,6 +15,8 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
+import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
@@ -22,13 +24,18 @@ import androidx.compose.runtime.Immutable
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
+import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 
 /**
  * 网格页 (追番 / 搜索) 原生海报墙的几何 (px, 页面坐标; 页面 = 主壳里让开侧边栏之后的那块, 搜索页是整页减去侧边栏).
  *
  * @param gridTopPx 网格顶线离页面顶 (顶栏 / 标签行 / 筛选条之下).
  * @param heroLeftPx / [heroTopPx] / [heroWidthPx] / [heroHeightPx] hero 文字块 (不占布局, 画在网格底下).
+ * @param bleedLeftPx 原生视图比页面往左多画的一截 (收起的侧边栏宽, 同探索页): 网格从侧边栏底下画过, 最左一列的放大与投影、换标签时滑出的
+ *   网格不在页面左缘被裁掉. 横坐标 (网格起点、hero 文字) 仍按页面坐标给, 本视图自己加上这一截.
  */
 @Immutable
 data class TvNativeGridPageMetrics(
@@ -44,6 +51,7 @@ data class TvNativeGridPageMetrics(
     val heroHeightPx: Int,
     val titleWidthPx: Int,
     val summaryWidthPx: Int,
+    val bleedLeftPx: Int = 0,
 )
 
 /** 网格页原生海报墙的事件 (页面实现). */
@@ -59,15 +67,22 @@ interface TvNativeGridPageListener : TvNativeGridListener {
 
     /** 焦点进出网格. */
     fun onGridFocusChanged(hasFocus: Boolean)
+
+    /** 焦点停放在本视图上 / 解除 (换标签时新那份网格的卡还没到, 见 TvNativeGridPageView 类说明): 停放期间的按键不算用户接管. */
+    fun onFocusParkedChanged(parked: Boolean)
 }
 
 /**
  * 网格页 (追番 / 搜索) 的原生海报墙: 背景图 (hero 态, 贴右上角) < hero 文字 (hero 态, 在网格底下) < 网格 ([TvNativeGridView]).
  * 顶栏 (标签行 / 搜索栏 / 筛选条) 留在 Compose 里, 画在本视图上面 (越过网格顶线的卡压暗着从它底下滑过).
  *
- * 追番页的换标签: 网格按标签分几份 ([showGrid] 的 key), 换的时候新旧两份整体水平滑过 (TV_COLLECTION_TAB_SLIDE_MILLIS), 各自保留自己的
+ * 追番页的换标签: 网格按标签分几份 ([showGrid] 的 key), 换的时候新旧两份整体水平滑过 ([TV_TAB_CONTENT_SLIDE_MILLIS]), 各自保留自己的
  * 滚动位置; 视觉效果流畅档直接换. hero 态时间线 ([TvNativeHeroTimeline]) 驱动背景图 / 文字 / 整屏黑度 / 越线行淡没, 与探索页
  * 同一套时长.
+ *
+ * 换标签那一刻焦点还在换下去的那份网格上 (行末按右 / 行首按左跨标签, 新那份的卡要等数据): 焦点先停放在本视图自己身上, 新那份的卡
+ * 拿到焦点就解除 (见 [parkFocus]). 不停放的话焦点留在滑出去的网格里 —— 长按的连发在它的行末卡上接着报行缘, 一路连跨标签;
+ * 那份网格被收起 / 复用时焦点随之丢掉, 全局兜底把它塞给首个标签, 连发接着在标签行上往右走.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeGridPageView(
@@ -136,13 +151,16 @@ class TvNativeGridPageView(
     private var lastDimSubject: Int? = null
     private var gridHasFocus = false
 
+    /** 焦点停放在本视图上的那一刻 (见 [parkFocus]), -1 = 没停放. */
+    private var parkedAt = -1L
+
     init {
         clipChildren = false
         clipToPadding = false
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
         addView(backdrop)
         addView(heroText)
-        // 网格只在出血后的框里画 (换标签滑动时滑出框的部分裁掉, 同 Compose 版 clipToBounds)
+        // 网格只在出血后的框里画 (换标签滑动时滑出框的部分裁掉)
         gridBox.clipChildren = true
         gridBox.clipToPadding = true
         addView(gridBox)
@@ -160,7 +178,7 @@ class TvNativeGridPageView(
         heroText.titleWidthPx = metrics.titleWidthPx
         heroText.summaryWidthPx = metrics.summaryWidthPx
         if (changed) {
-            grids.forEach { it.metrics = metrics.grid }
+            grids.forEach { it.metrics = gridMetrics() }
             requestLayout()
         }
     }
@@ -172,6 +190,9 @@ class TvNativeGridPageView(
     /** 此刻显示的那份网格. */
     val grid: TvNativeGridView? get() = current
 
+    /** 网格的几何: 起点加上往左出血的那一截 (见 [TvNativeGridPageMetrics.bleedLeftPx]). */
+    private fun gridMetrics(): TvNativeGridMetrics = metrics.grid.let { it.copy(startPx = it.startPx + metrics.bleedLeftPx) }
+
     /** 此刻显示的那份网格的 key. */
     val currentKey: Any? get() = current?.let { gridKeys[it] }
 
@@ -182,6 +203,8 @@ class TvNativeGridPageView(
     fun showGrid(key: Any, direction: Int, animated: Boolean) {
         val cur = current
         if (cur != null && gridKeys[cur] == key) return
+        // 焦点还在要换下去的网格上: 先停放 (见类说明)
+        if (gridBox.hasFocus()) parkFocus()
         cur?.let { savedPosition[gridKeys[it] ?: return@let] = it.selectedPosition }
         slideAnimator?.end()
         val next = grids.firstOrNull { it !== cur } ?: newGrid()
@@ -202,7 +225,7 @@ class TvNativeGridPageView(
         }
         next.translationX = width * direction
         slideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = TV_NATIVE_TAB_SLIDE_MILLIS
+            duration = TV_TAB_CONTENT_SLIDE_MILLIS.toLong()
             interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
             addUpdateListener {
                 val f = it.animatedValue as Float
@@ -221,6 +244,8 @@ class TvNativeGridPageView(
 
     /** 退场的网格: 不画、不收焦点, 下次换标签时拿来复用. */
     private fun retire(grid: TvNativeGridView) {
+        // 还持着焦点就先停放: 收起时系统会清掉焦点, 全局兜底把它塞给首个标签
+        if (grid.hasFocus()) parkFocus()
         grid.visibility = INVISIBLE
         grid.translationX = 0f
     }
@@ -232,7 +257,7 @@ class TvNativeGridPageView(
     }
 
     private fun newGrid(): TvNativeGridView {
-        val grid = TvNativeGridView(context, style, sketch, metrics.grid)
+        val grid = TvNativeGridView(context, style, sketch, gridMetrics())
         grid.animatedScroll = animatedScroll
         grid.listener = GridListener(grid)
         grid.cards.onBind = { index -> if (grid === current) onBindCard?.invoke(index) }
@@ -267,7 +292,9 @@ class TvNativeGridPageView(
 
         override fun onTopRowUp(): Boolean = listener?.onTopRowUp() ?: false
 
-        override fun onRowEdge(direction: Int, row: Int): Boolean = listener?.onRowEdge(direction, row) ?: false
+        // 换下去的那份网格不再报行缘 (焦点还没交出去时的连发): 否则一路连跨标签
+        override fun onRowEdge(direction: Int, row: Int): Boolean =
+            if (grid !== current) true else listener?.onRowEdge(direction, row) ?: false
     }
 
     /** 送焦到此刻那份网格的第 [index] 张 (排出来之前记下, 布局完成再送). */
@@ -303,6 +330,8 @@ class TvNativeGridPageView(
 
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
+        // 停放的焦点落地了 (新那份网格的卡拿到焦点)
+        unparkFocus()
         setGridFocus(child === gridBox)
     }
 
@@ -313,9 +342,59 @@ class TvNativeGridPageView(
 
     /**
      * 焦点换到网格以外 (标签行 / 搜索栏等 Compose 控件): 这条路上祖先只经 unFocus 清掉旧焦点, 不回调 [clearChildFocus], 按窗口的焦点变化判.
+     * 停放在本视图自己身上仍算在网格里.
      */
     private val focusWatcher = ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
-        if (!tvNativeIsInside(newFocus, gridBox)) setGridFocus(false)
+        if (newFocus !== this && !tvNativeIsInside(newFocus, gridBox)) {
+            unparkFocus()
+            setGridFocus(false)
+        }
+    }
+
+    /**
+     * 把焦点停放在本视图自己身上 (见类说明): 停放期间只让自己先拿焦点 (FOCUS_BEFORE_DESCENDANTS), 子视图拿到焦点就解除 (见
+     * [requestChildFocus]). 同探索页远跳的停放.
+     */
+    private fun parkFocus() {
+        if (isFocused) return
+        descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+        // 连触摸模式一起 (同卡片): 停放不因窗口进了触摸模式而落空
+        isFocusableInTouchMode = true
+        if (!requestFocus()) {
+            unparkFocus()
+            return
+        }
+        parkedAt = SystemClock.uptimeMillis()
+        listener?.onFocusParkedChanged(true)
+    }
+
+    private fun unparkFocus() {
+        if (!isFocusable) return
+        // 先让子视图能拿焦点再撤掉自己的可聚焦 (自己还持焦时撤掉会 clearFocus, 系统又去塞给第一个可聚焦的)
+        descendantFocusability = FOCUS_AFTER_DESCENDANTS
+        if (!isFocused) isFocusable = false
+        if (parkedAt >= 0) {
+            parkedAt = -1L
+            listener?.onFocusParkedChanged(false)
+        }
+    }
+
+    /**
+     * 停放期间 (焦点在本视图自己身上) 的方向键与确认键一律吞掉, 新那份网格的卡一到焦点就落过去 —— 交给系统找焦点的话会按宿主里的几何
+     * 落到滑动中的网格或标签行上. 两个出口交给页面回标签行: 按上; 停放过了 [TV_TRANSIT_PARK_KEY_GRACE_MILLIS] 之后新按下的一下 (那时
+     * 页面已把它当成用户接管、取消了在途送焦, 新标签是空的或数据迟迟不到, 焦点不会一直停在这里吞键). 连发不走出口: 在途送焦还在, 数据
+     * 到了照常落地.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        val direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
+            code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+        if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
+        if (direction && event.action == KeyEvent.ACTION_DOWN) {
+            val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
+            if (code == KeyEvent.KEYCODE_DPAD_UP || (expired && event.repeatCount == 0)) listener?.onTopRowUp()
+        }
+        return true
     }
 
     override fun onAttachedToWindow() {
@@ -343,7 +422,7 @@ class TvNativeGridPageView(
         listener?.onHeroActiveChanged(active)
     }
 
-    /** hero 的内容 (停稳后的背景图、文字; 同 Compose 版 heroDisplay / heroTextDisplay). */
+    /** hero 的内容 (停稳后的背景图、文字; 页面按 rememberTvSettledHeroProvider / rememberTvScrollHiddenProvider 算好). */
     fun setSource(source: TvNativeHeroSource) {
         this.source = source
         applySource()
@@ -378,7 +457,7 @@ class TvNativeGridPageView(
             backdrop.rebuild()
             heroText.setText(null, TvNativeTextTransition.Reset)
         }
-        val contentGate = if (dark) ((timeline.tone - TV_NATIVE_GRID_TONE_GATE_FROM) / (1f - TV_NATIVE_GRID_TONE_GATE_FROM)).coerceIn(0f, 1f) else 1f
+        val contentGate = if (dark) tvPosterWallToneGate(timeline.tone) else 1f
         backdrop.alpha = timeline.content * contentGate
         heroText.alpha = timeline.text
         backdrop.publishZoom()
@@ -400,15 +479,16 @@ class TvNativeGridPageView(
         heroText.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
         val g = m.grid
         val gridHeight = m.pageHeightPx - m.gridTopPx + g.topBleedPx + g.bottomBleedPx
-        gridBox.measure(exactly(m.pageWidthPx), exactly(gridHeight))
-        setMeasuredDimension(m.pageWidthPx, m.pageHeightPx)
+        gridBox.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(gridHeight))
+        setMeasuredDimension(m.bleedLeftPx + m.pageWidthPx, m.pageHeightPx)
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         val m = metrics
-        val bx = m.pageWidthPx - backdrop.measuredWidth
+        val bx = m.bleedLeftPx + m.pageWidthPx - backdrop.measuredWidth
         backdrop.layout(bx, 0, bx + backdrop.measuredWidth, backdrop.measuredHeight)
-        heroText.layout(m.heroLeftPx, m.heroTopPx, m.heroLeftPx + heroText.measuredWidth, m.heroTopPx + heroText.measuredHeight)
+        val hx = m.bleedLeftPx + m.heroLeftPx
+        heroText.layout(hx, m.heroTopPx, hx + heroText.measuredWidth, m.heroTopPx + heroText.measuredHeight)
         val gy = m.gridTopPx - m.grid.topBleedPx
         gridBox.layout(0, gy, gridBox.measuredWidth, gy + gridBox.measuredHeight)
         backdrop.publishZoom()
@@ -418,11 +498,10 @@ class TvNativeGridPageView(
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
         super.onDetachedFromWindow()
         scrollTracker.stop()
+        // 停放中离开页面: 收回停放标记, 不然页面的焦点域一直当焦点驻留着, 之后的按键再也取消不了在途送焦
+        if (parkedAt >= 0) {
+            parkedAt = -1L
+            listener?.onFocusParkedChanged(false)
+        }
     }
 }
-
-/** 同 TvCollectionPage 的 TV_COLLECTION_TAB_SLIDE_MILLIS. */
-private const val TV_NATIVE_TAB_SLIDE_MILLIS = 560L
-
-/** 同 TvPosterWallTone 的 TV_POSTER_WALL_TONE_GATE_FROM. */
-private const val TV_NATIVE_GRID_TONE_GATE_FROM = 0.85f

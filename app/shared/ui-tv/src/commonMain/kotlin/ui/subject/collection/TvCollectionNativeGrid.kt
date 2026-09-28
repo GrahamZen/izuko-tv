@@ -74,7 +74,7 @@ import org.jetbrains.compose.resources.stringResource
  */
 
 /**
- * 追番页的原生海报墙: 选中标签 [selectedTab] (存储下标) 的网格显示 [items] (本页唯一的收集者: Compose 版网格不组合时由这里收), 换标签时
+ * 追番页的原生海报墙: 选中标签 [selectedTab] (存储下标) 的网格显示 [items] (本页唯一的收集者), 换标签时
  * 新旧两份按显示顺序 ([tabOrderIndex]) 水平滑过.
  */
 @Composable
@@ -131,7 +131,7 @@ internal fun TvCollectionNativeGrid(
         menuFor = menuFor,
         modifier = modifier,
     ) {
-        // 空分类提示: 在网格可见的那一段里居中 (同 Compose 版)
+        // 空分类提示: 在网格可见的那一段里居中
         if (tabItems.itemCount == 0 && !tabItems.isLoadingFirstPageOrRefreshing && !tabItems.loadState.hasError) {
             Box(
                 Modifier.fillMaxSize().padding(
@@ -148,7 +148,7 @@ internal fun TvCollectionNativeGrid(
             }
         }
     }
-    // 数据到了但这个标签是空的, 目标卡永远不会出现: 取消在途的送焦请求 (同 Compose 版)
+    // 数据到了但这个标签是空的, 目标卡永远不会出现: 取消在途的送焦请求
     LaunchedEffect(tabItems.itemCount, tabItems.isLoadingFirstPageOrRefreshing, countSaysEmpty, gridFocus.switching) {
         if (tabItems.itemCount == 0 && (countSaysEmpty || !tabItems.isLoadingFirstPageOrRefreshing) && gridFocus.switching) {
             gridFocus.cancel()
@@ -196,7 +196,7 @@ private fun TvCollectionNativeSource(
 }
 
 /**
- * hero 文字 (同 Compose 版 TvCollectionHeroInfo): 标题 (至多两行); ★评分、开播状态 · 总集数、开播年月; 个人观看状态行 (主题色: 继续观看 /
+ * hero 文字: 标题 (至多两行); ★评分、开播状态 · 总集数、开播年月; 个人观看状态行 (主题色: 继续观看 /
  * 开始观看 / 下一集 + 集号 · 集名 · 剩余分钟 / 已看完); 简介优先下一集的 TMDB 单集简介, 再整部简介, 再 Bangumi 兜底.
  */
 @Composable
@@ -243,7 +243,7 @@ private fun tvCollectionNativeHeroText(
     )
 }
 
-/** 个人观看状态行 (三态语义同 Compose 版; 未开播不显示). */
+/** 个人观看状态行: 继续观看 / 开始观看 / 下一集, 追平时集号后标已看完; 未开播不显示. */
 @Composable
 private fun tvCollectionNativeStatus(
     info: SubjectCollectionInfo,
@@ -295,7 +295,7 @@ private fun tvCollectionNativeStatus(
     return TvNativeHeroStatus(lead = head, name = epName.ifBlank { null }, tail = tail, color = color)
 }
 
-/** 收藏卡的进度条 (同网格卡): 看到一半按播放位置, 追平连载满条, 其余不画. */
+/** 收藏卡的进度条: 看到一半按播放位置, 追平连载满条, 其余不画. */
 internal fun tvCollectionCardProgress(info: SubjectCollectionInfo, playHistories: List<EpisodeHistory>): Float? {
     val progressInfo = info.progressInfo
     return when (progressInfo.continueWatchingStatus) {

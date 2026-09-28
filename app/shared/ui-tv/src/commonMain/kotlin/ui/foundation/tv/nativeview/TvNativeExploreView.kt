@@ -25,8 +25,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_FADE_IN_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_FADE_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import kotlin.math.abs
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 
 /**
  * 探索页原生海报墙的几何 (px). 原生根视图从屏幕左缘画起 (比页面往左多 [bleedLeftPx], 横滑行从侧边栏底下滑过), 纵坐标 = 页面坐标.
@@ -78,6 +83,8 @@ data class TvNativeExploreMetrics(
     val dotPx: Float,
     val dotSelectedWidthPx: Float,
     val dotGapPx: Float,
+    /** 非当前项的不透明度 (乘在当前项的颜色上). */
+    val dotInactiveAlpha: Float,
 )
 
 /**
@@ -94,7 +101,7 @@ data class TvNativeHeroSource(
     val autoAdvanced: Boolean = false,
 )
 
-/** 探索页原生海报墙的事件 (页面实现). 行键与 Compose 版相同 (TV_FOLLOWED_ROW_KEY / tvRecRowKey). */
+/** 探索页原生海报墙的事件 (页面实现). 行键就是页面焦点簿记用的那套 (TV_FOLLOWED_ROW_KEY / tvRecRowKey). */
 interface TvNativeExploreListener {
     /** 卡片拿到焦点: [column] = 行按需挪之后它落在屏上第几列. */
     fun onCardFocused(rowKey: String, index: Int, column: Int)
@@ -181,7 +188,7 @@ class TvNativeExploreView(
     private val primaryButton = TvNativeHeroButton(context, buttonStyle, filled = true)
     private val scheduleButton = TvNativeHeroButton(context, buttonStyle, filled = false)
     private val list = TvNativeExploreList(context, sketch, style, metrics, headerStyle)
-    private val dots = TvNativeCarouselDotsView(context, metrics.dotPx, metrics.dotSelectedWidthPx, metrics.dotGapPx)
+    private val dots = TvNativeCarouselDotsView(context, metrics.dotPx, metrics.dotSelectedWidthPx, metrics.dotGapPx, metrics.dotInactiveAlpha)
 
     private val timeline = TvNativeHeroTimeline { onTimeline() }
     private val scrollTracker = TvNativeScrollTracker { listener?.onScrollingChanged(it) }
@@ -207,6 +214,12 @@ class TvNativeExploreView(
     /** 目标行已在平滑滚向挂着的落点: 重试只在那张排出来 / 滚动停下时送焦, 不再发起滚动 (见 [resolvePending]). */
     private var pendingSmooth = false
     private var farJumpRow: String? = null
+
+    /** 远跳途中按了确认: 落到目标时点它 (见 [dispatchKeyEvent]). */
+    private var farJumpConfirmQueued = false
+
+    /** 远跳已落地、在等目标那一行的卡拿到焦点再点 (见 [onCardFocused]); null = 没有. */
+    private var clickOnLandingRow: String? = null
     private var lastVerticalRepeat = 0L
     private var lastHorizontalRepeat = 0L
     private var pendingScrollPx = -1
@@ -384,7 +397,13 @@ class TvNativeExploreView(
             return false
         }
         pendingHeroButton = -1
-        return (if (button == 1) scheduleButton else primaryButton).requestFocus()
+        val target = if (button == 1) scheduleButton else primaryButton
+        if (target.isFocused) {
+            // 已经持着焦点: requestFocus 不会再回调, 当场按到位报上去 (页面据此清掉挂着的落点请求)
+            onHeroButtonFocused(button)
+            return true
+        }
+        return target.requestFocus()
     }
 
 
@@ -394,6 +413,9 @@ class TvNativeExploreView(
      */
     fun focusCard(rowKey: String, index: Int, far: Boolean = false): Boolean {
         pendingHeroButton = -1
+        // 新的落点请求: 远跳途中排队的确认作废
+        farJumpConfirmQueued = false
+        clickOnLandingRow = null
         val item = list.indexOfKey(rowKey)
         pendingRow = rowKey
         pendingIndex = index
@@ -418,6 +440,8 @@ class TvNativeExploreView(
 
     private fun cancelPending() {
         pendingRow = null
+        farJumpConfirmQueued = false
+        clickOnLandingRow = null
         if (farJumpRow != null) {
             farJumpRow = null
             setFocusEffectSuppressed(false)
@@ -450,6 +474,7 @@ class TvNativeExploreView(
     private fun landFarJumpNow() {
         val rowKey = farJumpRow ?: return
         farJumpRow = null
+        farJumpConfirmQueued = false
         setFocusEffectSuppressed(false)
         val item = list.indexOfKey(rowKey)
         if (item >= 0) list.jumpTo(if (timeline.active) metrics.heroScroll(list.items, item) else metrics.centeredScroll(list.items, item))
@@ -485,6 +510,11 @@ class TvNativeExploreView(
             else -> rememberedIndex(rowKey, left)
         }.coerceIn(0, count - 1)
         pendingRow = null
+        if (row.findViewHolderForAdapterPosition(target)?.itemView?.isFocused == true) {
+            // 目标已经持着焦点: requestFocus 不会再回调聚焦, 当场按到位报上去 (页面据此清掉挂着的落点请求)
+            onCardFocused(rowKey, target)
+            return true
+        }
         if (row.focusCardIfLaidOut(target)) return true
         // 目标卡没排出来: 记着落点, 让行滚过去
         pendingRow = rowKey
@@ -514,6 +544,10 @@ class TvNativeExploreView(
     private fun finishFarJump() {
         val rowKey = farJumpRow ?: return
         farJumpRow = null
+        if (farJumpConfirmQueued) {
+            farJumpConfirmQueued = false
+            clickOnLandingRow = rowKey
+        }
         setFocusEffectSuppressed(false)
         pendingRow = rowKey
         pendingSmooth = false
@@ -547,6 +581,11 @@ class TvNativeExploreView(
     // ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 远跳途中的确认键算作用在目标上 (同 Apple TV: 滚动途中的输入作用在目的地): 记下 (按下与抬起都吞掉), 落到目标时点它
+        if (farJumpRow != null && tvNativeIsConfirmKey(event.keyCode)) {
+            if (event.action == KeyEvent.ACTION_DOWN) farJumpConfirmQueued = true
+            return true
+        }
         if (event.action == KeyEvent.ACTION_DOWN && handleKeyDown(event)) return true
         return super.dispatchKeyEvent(event)
     }
@@ -561,7 +600,7 @@ class TvNativeExploreView(
             return true
         }
         if (event.repeatCount == 0) {
-            // 用户按了新方向: 挂着的程序化落点 (含远跳) 作废, 从此刻的焦点接着走 (同 Compose 版页面根的按键预览)
+            // 用户按了新方向: 挂着的程序化落点 (含远跳) 作废, 从此刻的焦点接着走 (同 Compose 页面根的按键预览)
             cancelPending()
         }
         val focused = findFocus()
@@ -728,6 +767,12 @@ class TvNativeExploreView(
         if (pendingRow == rowKey || farJumpRow == null) pendingRow = null
         setCardAreaFocus(true)
         listener?.onCardFocused(rowKey, index, focusedColumn)
+        if (clickOnLandingRow != null) {
+            // 远跳落地: 途中按的确认点在目标上 (走卡自己的点击, 同按一下确认; 放到这次焦点回调之后)
+            val card = if (clickOnLandingRow == rowKey) row?.findViewHolderForAdapterPosition(index)?.itemView else null
+            clickOnLandingRow = null
+            card?.let { post { if (it.isFocused) it.performClick() } }
+        }
         updateStop(heroToggled = false)
         applyFrame()
     }
@@ -846,7 +891,7 @@ class TvNativeExploreView(
         }
         val md = mode
         val carouselA = carouselAlpha()
-        val contentGate = if (dark) ((timeline.tone - TV_NATIVE_TONE_GATE_FROM) / (1f - TV_NATIVE_TONE_GATE_FROM)).coerceIn(0f, 1f) else 1f
+        val contentGate = if (dark) tvPosterWallToneGate(timeline.tone) else 1f
         backdrop.alpha = if (showsCard) timeline.content * contentGate else carouselA * splitGate
         val scale = 1f + (m.cardBackdropScale - 1f) * md
         backdrop.scaleX = scale
@@ -870,7 +915,7 @@ class TvNativeExploreView(
     }
 
     /**
-     * hero 态里越过 hero 线的项在 [TvNativeExploreMetrics.fadeDistancePx] 内淡没 (同原 hero 页越过锚位线的行), 卡片番名跟着 above 淡.
+     * hero 态里越过 hero 线的项在 [TvNativeExploreMetrics.fadeDistancePx] 内淡没, 卡片番名跟着 above 淡.
      * 卡片墙上不淡 (上面的行大半还在屏上). 进出途中 (hero 态还没停稳) 不按位置淡: 聚焦行连同它的组标题及以下不淡 —— 卡片墙上聚焦行停在正中,
      * 在 hero 线之上, 途中按位置淡就是整行先暗一下再亮回来; 上面的项整项跟着 above 淡 —— 退场时它们随列表往下挪、从 hero 线上方经过,
      * 按位置淡就在背景图还没淡完时先露出来.
@@ -973,7 +1018,7 @@ class TvNativeExploreView(
         }
         buttons.alpha = 0f
         buttonsAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = TV_NATIVE_HERO_BUTTON_FADE_IN_MILLIS
+            duration = TV_HERO_BUTTON_FADE_IN_MILLIS.toLong()
             interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
             addUpdateListener { buttons.alpha = it.animatedValue as Float }
             start()
@@ -991,7 +1036,7 @@ class TvNativeExploreView(
         }
         val from = dotsFade
         dotsAnimator = ValueAnimator.ofFloat(from, if (visible) 1f else 0f).apply {
-            duration = if (visible) TV_NATIVE_HERO_BUTTON_FADE_IN_MILLIS else TV_NATIVE_HERO_BUTTON_FADE_OUT_MILLIS
+            duration = (if (visible) TV_HERO_BUTTON_FADE_IN_MILLIS else TV_HERO_BUTTON_FADE_OUT_MILLIS).toLong()
             interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
             addUpdateListener {
                 dotsFade = it.animatedValue as Float
@@ -1047,7 +1092,7 @@ class TvNativeExploreView(
     }
 
     /**
-     * hero 文字块 + 轮播按钮块 (同 Compose 版 TvExplorationHeroOverlay 的 Column): 块高两档 (有按钮 264dp / 没按钮 240dp), 文字吃掉按钮块之外的
+     * hero 文字块 + 轮播按钮块, 纵向排: 块高两档 (有按钮 264dp / 没按钮 240dp), 文字吃掉按钮块之外的
      * 全部高度.
      */
     private inner class HeroBox(context: Context) : TvNativeBoundaryLayout(context) {
@@ -1095,8 +1140,8 @@ class TvNativeExploreView(
 }
 
 /**
- * 滚动容器在不在挪 (同 Compose 版 ReportTvScrollActivity): 开始滚动 (拖动 / 平滑滚动) 即算在滚; 之后连续 [TV_NATIVE_SCROLL_STILL_FRAMES]
- * 帧每帧挪动不超过 [TV_NATIVE_SCROLL_STILL_PX] 就算停稳 (spring 尾巴每帧挪一两像素时肉眼已经停了), 滚动结束也算停.
+ * 滚动容器在不在挪 (判据同 ReportTvScrollActivity): 开始滚动 (拖动 / 平滑滚动) 即算在滚; 之后连续 [TV_SCROLL_STILL_FRAMES]
+ * 帧每帧挪动不超过 [TV_SCROLL_STILL_PX] 就算停稳 (spring 尾巴每帧挪一两像素时肉眼已经停了), 滚动结束也算停.
  */
 internal class TvNativeScrollTracker(private val onChanged: (Boolean) -> Unit) {
     private var scrolling = false
@@ -1106,12 +1151,12 @@ internal class TvNativeScrollTracker(private val onChanged: (Boolean) -> Unit) {
     private val frame = object : Runnable {
         override fun run() {
             val h = host ?: return
-            if (frameDelta > TV_NATIVE_SCROLL_STILL_PX) {
+            if (frameDelta > TV_SCROLL_STILL_PX) {
                 stillFrames = 0
                 set(true)
             } else {
                 stillFrames++
-                if (stillFrames >= TV_NATIVE_SCROLL_STILL_FRAMES) {
+                if (stillFrames >= TV_SCROLL_STILL_FRAMES) {
                     set(false)
                     host = null
                     return
@@ -1155,15 +1200,5 @@ internal class TvNativeScrollTracker(private val onChanged: (Boolean) -> Unit) {
     }
 }
 
-private const val TV_NATIVE_SCROLL_STILL_FRAMES = 2
-private const val TV_NATIVE_SCROLL_STILL_PX = 3
-
-/** 同 TvPosterWallTone 的 TV_POSTER_WALL_TONE_GATE_FROM: 整屏黑度过了这里背景图才开始放行. */
-private const val TV_NATIVE_TONE_GATE_FROM = 0.85f
-
-/** 同 TvExplorationPage 的 TV_WALL_BACKDROP_RESIZE_MILLIS. */
+/** 海报墙背景图在轮播与聚焦卡两套尺寸之间缩放的时长 (hero 态里在首行按上回到轮播), 同 hero 背景图淡入. */
 private const val TV_NATIVE_WALL_BACKDROP_RESIZE_MILLIS = 400L
-
-/** 同 TvExplorationPage 的 TV_HERO_BUTTON_FADE_IN_MILLIS / FADE_OUT. */
-private const val TV_NATIVE_HERO_BUTTON_FADE_IN_MILLIS = 150L
-private const val TV_NATIVE_HERO_BUTTON_FADE_OUT_MILLIS = 90L

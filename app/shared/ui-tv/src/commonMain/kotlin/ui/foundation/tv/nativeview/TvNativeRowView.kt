@@ -20,6 +20,8 @@ import androidx.leanback.widget.GridLayoutManager
 import androidx.leanback.widget.HorizontalGridView
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
+import me.him188.ani.app.ui.foundation.focus.TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL
+import me.him188.ani.app.ui.foundation.focus.TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
 import kotlin.math.abs
 
@@ -32,7 +34,7 @@ import kotlin.math.abs
  * 左右键行自己走 (同一行上一张 / 下一张), 不交给系统找焦点: 行首按左 (只认新按下的那一下) 放出去, 由外面接 (详情页交给页面, 探索页的
  * 按键在 TvNativeExploreView 里就接住了, 到不了这里); 行尾按右吞掉. 上下键不管. 行本身不可聚焦, 焦点只落在卡上.
  *
- * 滑过行首的卡压暗着出屏 (越线 [fadeDistancePx] 内压到 [TV_CARD_PAST_DIM_ALPHA], 同原 hero 页的横滑行). 长按方向键的
+ * 滑过行首的卡压暗着出屏 (越线 [fadeDistancePx] 内压到 [TV_CARD_PAST_DIM_ALPHA]). 长按方向键的
  * 连发限速同 tvFocusMoveRateLimit (横向 8 次 / 秒).
  */
 @SuppressLint("ViewConstructor")
@@ -77,6 +79,10 @@ class TvNativeRowView(
         @SuppressLint("RestrictedApi")
         val strategy = BaseGridView.FOCUS_SCROLL_ITEM
         setFocusScrollStrategy(strategy)
+        // 行外左右各多排一张: 长按连发时下一张最多领先行尾 (或行首) 零点几张, 总是已经排好, 每一步都经 requestFocus 走行自己的 spring
+        // 并接上一段的速度. 没排出来就只能走 leanback 的 setSelectedPositionSmooth —— 它先掐掉在走的 spring, 再按每英寸 25ms 找过去、
+        // 到了急刹, 长按时看着是一下平滑一下瞬移
+        setExtraLayoutSpace(style.cardWidthPx + style.columnSpacingPx)
         pool?.let { setRecycledViewPool(it) }
         initialPrefetchItemCount = style.prefetchItems
         // leanback 默认关掉 GapWorker 预取 (注释说低端芯片上回退); 这里的卡在空闲帧里先建好, 换行那一帧不现建
@@ -254,11 +260,11 @@ class TvNativeRowView(
     }
 }
 
-/** 长按方向键时横向最快多久挪一次 (同 Compose 版 tvFocusMoveRateLimit: 8 次 / 秒). */
-internal const val TV_NATIVE_HORIZONTAL_REPEAT_MILLIS = 125L
+/** 长按方向键时横向最快多久挪一次 (上限同 tvFocusMoveRateLimit, [TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL]). */
+internal const val TV_NATIVE_HORIZONTAL_REPEAT_MILLIS = 1000L / TV_FOCUS_MOVE_MAX_PER_SECOND_HORIZONTAL
 
-/** 纵向 (同上: 6 次 / 秒). */
-internal const val TV_NATIVE_VERTICAL_REPEAT_MILLIS = 166L
+/** 纵向 ([TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL]). */
+internal const val TV_NATIVE_VERTICAL_REPEAT_MILLIS = 1000L / TV_FOCUS_MOVE_MAX_PER_SECOND_VERTICAL
 
 /**
  * 横滑行按需挪: 焦点走到第 [target] 张 (整行 [count] 张, 屏上完整放得下 [columns] 张) 后, 行首该是第几张. 在屏上完整露出的

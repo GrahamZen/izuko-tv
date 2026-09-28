@@ -51,9 +51,9 @@ const val LONG_PRESS_KEY_DOWN_COUNT = 2
  *
  * 略小于系统首个连发的间隔: 免得在连发首发偏早的设备上把正常长按推迟到第二发.
  *
- * internal: 返回键长按 ([TvBackLongPressHost]) 与本文件同一套判定参数.
+ * 返回键长按 ([TvBackLongPressHost]) 与电视原生页面的卡片 (ui-tv 的 TvNativeConfirmKey) 与本文件同一套判定参数.
  */
-internal val LONG_PRESS_MIN_HOLD = 350.milliseconds
+val LONG_PRESS_MIN_HOLD = 350.milliseconds
 
 /** 确认键: 遥控器 OK / 键盘回车. */
 val TV_CONFIRM_KEYS = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)

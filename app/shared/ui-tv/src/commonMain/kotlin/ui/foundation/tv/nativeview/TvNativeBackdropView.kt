@@ -40,6 +40,7 @@ import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
 import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_CROSSFADE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_EDGE_SEAM
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PREFETCH_HANDOFF_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_HOLD_MILLIS
@@ -57,7 +58,7 @@ import me.him188.ani.app.ui.foundation.tv.fadeOutProfile
 
 /**
  * 背景图要显示的内容: [url] 主图, [subjectId] 这张图属于哪个条目 (给放大转场登记、提前取色; null = 不是条目自己的图),
- * [underlayUrl] 应急垫底 (竖版封面, 半透明, 见 TvPageBackdropLayer 的 underlayUrl), [obscure] 打码.
+ * [underlayUrl] 应急垫底 (主图下载卡住时垫在下面的竖版封面, 半透明, 见 TvHeroMediaPipelineState.underlayUrl), [obscure] 打码.
  */
 data class TvNativeBackdropTarget(
     val url: String,
@@ -67,13 +68,13 @@ data class TvNativeBackdropTarget(
 )
 
 /**
- * 列表页 hero 的背景图层 (原生版 TvPageBackdropLayer): 16:9 图按调用方给的框铺满、中心裁剪; 换图交叉淡入
+ * 列表页 hero 的背景图层: 16:9 图按调用方给的框铺满、中心裁剪; 换图交叉淡入
  * [TV_BACKDROP_CROSSFADE_MILLIS] (FastOutSlowIn, 半路再换就从当前值接着走); 「按下即压暗」([triggerPressDim]); 遮罩 ([treatment]:
- * 左缘 / 下缘渐变, 画法与停点同 Compose 版 tvBackdropTreatmentPainter, 只画不透明段) 与左缘 / 下缘跨在图边上的实心压条 (图层缩放时边落在
+ * 左缘 / 下缘渐变, 画法与停点同放大转场用的 tvBackdropTreatmentPainter, 只画不透明段) 与左缘 / 下缘跨在图边上的实心压条 (图层缩放时边落在
  * 半个像素上, 抗锯齿那一列会漏出图色) 都在所有图之上画一次.
  *
  * 给详情页的放大转场登记这张图此刻在屏幕上的框 ([TvHeroZoomHandoff.publish], 调用方每次挪动 / 缩放图层后调 [publishZoom]), 图画出来后
- * 标记 [TvHeroZoomHandoff.markSourceLoaded] 并提前取主色 ([SubjectSeedColorCache]), 同 Compose 版 TvBackdropImage.
+ * 标记 [TvHeroZoomHandoff.markSourceLoaded] 并提前取主色 ([SubjectSeedColorCache]).
  */
 @SuppressLint("ViewConstructor")
 class TvNativeBackdropView(
@@ -167,7 +168,7 @@ class TvNativeBackdropView(
     }
 
     /**
-     * 整个重建 (同 Compose 版 imageKey 变了): 丢掉所有图, 下一次 [show] 直接出现, 不与上一张交叉淡入 —— 调用方在图层看不见的那一刻换来源、
+     * 整个重建: 丢掉所有图, 下一次 [show] 直接出现, 不与上一张交叉淡入 —— 调用方在图层看不见的那一刻换来源、
      * 换位置时用, 交叉淡入里没褪完的上一张会随图层重新亮起来一起露出来.
      */
     fun rebuild() {
@@ -177,7 +178,7 @@ class TvNativeBackdropView(
     }
 
     /**
-     * 按下即压暗 (同 TvPageBackdropLayer 的 dimTrigger): 当前图压到 [TV_BACKDROP_PRESS_DIM_ALPHA] ([TV_BACKDROP_PRESS_DIM_IN_MILLIS], 线性),
+     * 按下即压暗 (调用方在真实目标换了时调, Prime Video 式的即时反馈): 当前图压到 [TV_BACKDROP_PRESS_DIM_ALPHA] ([TV_BACKDROP_PRESS_DIM_IN_MILLIS], 线性),
      * 至少保持 [TV_BACKDROP_PRESS_DIM_HOLD_MILLIS], 再等 [dimming] 变 false (新图已换上) 用 [TV_BACKDROP_PRESS_DIM_OUT_MILLIS] 放开;
      * 再按就从当前值重新开始. 受 TvPolishFlags.pressDim 控制.
      */
@@ -218,7 +219,7 @@ class TvNativeBackdropView(
     }
 
     /**
-     * 登记放大转场的来源 (同 Compose 版在 onGloballyPositioned 里登记): 主图此刻在窗口里的框 (含本层的缩放与平移), 遮罩声明.
+     * 登记放大转场的来源: 主图此刻在窗口里的框 (含本层的缩放与平移), 遮罩声明.
      * 调用方每次改了本层的位置 / 缩放后调.
      */
     fun publishZoom() {
@@ -260,7 +261,7 @@ class TvNativeBackdropView(
         removeView(slot.frame)
     }
 
-    /** 一张图 (连同它的应急垫底), 交叉淡入的一格. 自己的透明度在 [frame] 上 (垫底与主图重叠, 淡入淡出时走离屏层, 同 Compose 版 Auto 策略). */
+    /** 一张图 (连同它的应急垫底), 交叉淡入的一格. 自己的透明度在 [frame] 上 (垫底与主图重叠, 淡入淡出时走离屏层, 两张各按透明度叠会互相透出来). */
     private inner class Slot(val target: TvNativeBackdropTarget) {
         val owner = Any()
         val frame = FrameLayout(context)
@@ -355,7 +356,7 @@ class TvNativeBackdropView(
 
     /**
      * 遮罩层: 按下即压暗 (遮罩色的实色矩形) → 遮罩声明的顶 / 左 / 下三条渐变 (只画不透明段) → 左缘 / 下缘跨在图边上的实心压条. 画笔只在尺寸
-     * 或声明变了时重建 (同 Compose 版 drawWithCache).
+     * 或声明变了时重建.
      */
     private inner class TreatmentOverlay(context: Context) : View(context) {
         private val dimPaint = Paint()
@@ -364,7 +365,7 @@ class TvNativeBackdropView(
         private val leftPaint = Paint()
         private val bottomPaint = Paint()
         private var built: Pair<TvBackdropTreatment?, Long>? = null
-        private val seamPx = resources.displayMetrics.density * TV_NATIVE_BACKDROP_EDGE_SEAM_DP
+        private val seamPx = resources.displayMetrics.density * TV_BACKDROP_EDGE_SEAM.value
 
         init {
             setWillNotDraw(false)
@@ -415,7 +416,7 @@ class TvNativeBackdropView(
             tr?.bottom?.let { bottomPaint.shader = gradient(fadeInProfileOf(it.smoothness), it, 0f, h * it.start, 0f, h * it.end) }
         }
 
-        /** 停点均匀分布 (同 Compose 版 Brush 的均匀重载): 第 i 个停点 = 遮罩色 × maxAlpha × profile[i]. */
+        /** 停点均匀分布 (同 tvBackdropTreatmentPainter 里 Brush 的均匀重载): 第 i 个停点 = 遮罩色 × maxAlpha × profile[i]. */
         private fun gradient(profile: FloatArray, fade: TvBackdropFade, x0: Float, y0: Float, x1: Float, y1: Float): Shader {
             val colors = IntArray(profile.size) { i -> fade.color.copy(alpha = fade.maxAlpha * profile[i]).toArgb() }
             return LinearGradient(x0, y0, x1, y1, colors, null, Shader.TileMode.CLAMP)
@@ -425,6 +426,3 @@ class TvNativeBackdropView(
 
 private fun withAlpha(color: Int, alpha: Float): Int =
     AndroidColor.argb((alpha * 255).toInt().coerceIn(0, 255), AndroidColor.red(color), AndroidColor.green(color), AndroidColor.blue(color))
-
-/** 同 TvCards.kt 的 TV_BACKDROP_EDGE_SEAM (1dp). */
-private const val TV_NATIVE_BACKDROP_EDGE_SEAM_DP = 1f
