@@ -39,6 +39,11 @@ data class TvNativeGridMetrics(
     val heroLinePx: Int,
     /** 越过网格顶线的卡在这段距离内压暗到 [TV_CARD_PAST_DIM_ALPHA] 并保持 (TV_CARD_FADE_DISTANCE). */
     val fadeDistancePx: Float,
+    /**
+     * 卡片墙上越过网格顶线的卡压不压暗. 追番页不压 (同探索页, 卡照常从标签行底下滑过, 标签字自带投影, 见 tvTextOverCardsShadow);
+     * 搜索页压着 (顶栏里有图标, 压暗保证它们读得清). hero 态越过 hero 线的行照旧淡没.
+     */
+    val dimPastTopLine: Boolean = true,
 )
 
 /**
@@ -97,7 +102,8 @@ interface TvNativeGridListener : TvNativeCardListener {
  *   这一跳先用反向平移抵掉, 再让平移按 [TvScrollSpring.Far] 走到位 (聚焦卡一路跟着走, 不闪); hero 态里换行, 平移跟着滚动同一档 spring 走.
  * 方向键网格自己走 (见 [navigate]): 上下落在同一列, 下面没有同列的卡时落到最后一张, 末行按下吞掉; 长按连发限速同 tvFocusMoveRateLimit.
  * 网格本身不可聚焦, 焦点只落在卡上.
- * 越过网格顶线的卡压暗到 [TV_CARD_PAST_DIM_ALPHA] (顶栏画在网格上面, 卡压暗着从它底下滑过); hero 态里越过 hero 线的行淡没 (见 [heroDim]).
+ * 越过网格顶线的卡压暗到 [TV_CARD_PAST_DIM_ALPHA] (顶栏画在网格上面, 卡压暗着从它底下滑过; 按页可关, 见 [TvNativeGridMetrics.dimPastTopLine]);
+ * hero 态里越过 hero 线的行淡没 (见 [heroDim]).
  * 上下各多排一屏 (setExtraLayoutSpace): 平移、连按时露出来的行都已经排好.
  */
 @SuppressLint("ViewConstructor", "RestrictedApi")
@@ -528,7 +534,7 @@ class TvNativeGridView(
     private fun topLineDim(index: Int, view: View): Float {
         val m = metrics
         val top = view.top + translationY - m.topBleedPx
-        val wall = if (top >= 0) 1f else 1f - ((-top) / m.fadeDistancePx).coerceIn(0f, 1f) * (1f - TV_CARD_PAST_DIM_ALPHA)
+        val wall = if (!m.dimPastTopLine || top >= 0) 1f else 1f - ((-top) / m.fadeDistancePx).coerceIn(0f, 1f) * (1f - TV_CARD_PAST_DIM_ALPHA)
         val p = heroAbove
         if (p <= 0f) return wall
         val hero = heroDim(index, view)
