@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.exploration.schedule
 
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -1392,7 +1391,8 @@ private fun TvScheduleRow(
                     .tvTouchFocusOnTap()
                     .combinedClickable(
                         interactionSource = interactionSource,
-                        indication = LocalIndication.current,
+                        // 不要 indication: 聚焦由外面的聚焦框表达, 涟漪的焦点态层比框晚到一拍 (同 TvPortraitCard)
+                        indication = null,
                         onClick = onClick,
                         onLongClick = menu?.let { { menuExpanded = true } },
                     )

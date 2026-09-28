@@ -123,6 +123,7 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
@@ -499,25 +500,27 @@ private fun TvPanelItem(
             if (current == index) itemFocus.register(selfFocusRequester)
         }
     }
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .focusRequester(selfFocusRequester)
-            .onFocusChanged {
-                if (it.isFocused) {
-                    focusedIndex.intValue = index
-                    itemFocus.register(selfFocusRequester)
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier
+                .fillMaxWidth()
+                .focusRequester(selfFocusRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        focusedIndex.intValue = index
+                        itemFocus.register(selfFocusRequester)
+                    }
                 }
-            }
-            .tvTouchFocusOnTap(),
-        shape = RoundedCornerShape(12.dp),
-        color = if (focused) TV_PANEL_ITEM_FOCUSED_COLOR else TV_PANEL_ITEM_COLOR,
-        contentColor = Color.White,
-        border = if (focused) BorderStroke(2.dp, Color.White) else null,
-        interactionSource = interactionSource,
-    ) {
-        content(focused)
+                .tvTouchFocusOnTap(),
+            shape = RoundedCornerShape(12.dp),
+            color = if (focused) TV_PANEL_ITEM_FOCUSED_COLOR else TV_PANEL_ITEM_COLOR,
+            contentColor = Color.White,
+            border = if (focused) BorderStroke(2.dp, Color.White) else null,
+            interactionSource = interactionSource,
+        ) {
+            content(focused)
+        }
     }
 }
 

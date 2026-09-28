@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 
 /*
  * 焦点导航 (遥控器) 上的示焦约定, 集中在这一处.
@@ -213,7 +214,7 @@ fun AniFocusSelectableSurface(
 }
 
 /**
- * 弹窗里的大块可点内容 (资源卡片这类多行图文): 聚焦 2dp 主题色描边, 底色不变 —— 整块铺主题色太重,
+ * 弹窗里的大块可点内容 (资源卡片这类多行图文): 聚焦 2dp 主题色描边, 底色不变, 不叠焦点态层 ([ProvideRingOnlyFocus]) —— 整块铺主题色太重,
  * 卡里的次要文字 (灰字、红字) 压在主色上也读不清. 选中 secondaryContainer, 其余 [unselectedColor].
  */
 @Composable
@@ -227,15 +228,17 @@ fun AniFocusRingSurface(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    Surface(
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.isFocused },
-        shape = shape,
-        color = if (selected) colorScheme.secondaryContainer else unselectedColor,
-        contentColor = if (selected) colorScheme.onSecondaryContainer else colorScheme.onSurface,
-        border = if (focused) BorderStroke(FOCUS_RING_WIDTH, colorScheme.primary) else null,
-        content = content,
-    )
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.onFocusChanged { focused = it.isFocused },
+            shape = shape,
+            color = if (selected) colorScheme.secondaryContainer else unselectedColor,
+            contentColor = if (selected) colorScheme.onSecondaryContainer else colorScheme.onSurface,
+            border = if (focused) BorderStroke(FOCUS_RING_WIDTH, colorScheme.primary) else null,
+            content = content,
+        )
+    }
 }
 
 /** 大块内容的聚焦描边宽度. */

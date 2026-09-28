@@ -12,8 +12,10 @@ package me.him188.ani.app.ui.foundation.tv
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -168,6 +171,22 @@ fun Modifier.tvFocusRing(
                 if (focused.value) drawTvFocusRing(brush, widthPx, radiusPx)
             }
         }
+}
+
+/**
+ * 用描边示焦、本身又是 M3 可点容器 (`Surface(onClick)` 这类) 的控件包在这里面: 焦点导航形态下不画 M3 的焦点态层, 示焦只由描边
+ * (连同与它同一帧换上的底色) 承担, 同 [tvFocusableCard] 关 indication 的道理.
+ *
+ * 描边在焦点变化后的下一帧就画上, 焦点态层却要先收到交互事件再淡入 45ms (离开时淡出 150ms): 两者叠在一起, 看起来就是框先到、
+ * 高亮后到. 包住的整棵子树都不画涟漪, 只用在内容里没有别的可点控件的卡片 / 列表项上. 其余形态原样组合 [content].
+ */
+@Composable
+fun ProvideRingOnlyFocus(content: @Composable () -> Unit) {
+    if (!LocalAniUiBehavior.current.focusDrivenNavigation) {
+        content()
+        return
+    }
+    CompositionLocalProvider(LocalRippleConfiguration provides null, content = content)
 }
 
 /**
