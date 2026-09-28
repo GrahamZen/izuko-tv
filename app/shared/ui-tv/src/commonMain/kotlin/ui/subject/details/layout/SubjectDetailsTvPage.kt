@@ -635,8 +635,22 @@ fun SubjectDetailsTvPage(
     // **不分档, 也不分进入方式**: 放大那条路本来就一直这么做 (默认均衡档的既有行为), 常规进页没有
     // 理由一次组合整页 —— 那正是进详情页最长的那一帧 (索尼实测: 关掉放大后整帧 >=53ms 从 29 涨到 39,
     // 涨的就是这一下; 分帧后 >=100ms 的帧 25 → 17). 推迟的都在首屏之下, 晚三帧看不见. 2026-09-19
-    var sectionsReady by remember { mutableStateOf(false) }
-    var sectionsStage by remember { mutableStateOf(0) }
+    // 最后一个真正持有过焦点的区块 (各区块 onFocused 上报). 两个用途: 返回键三级分层 (见下方
+    // BackHandler 处的长注释) + **跨页返回时的落点恢复** (见下方进页 effect).
+    // rememberSaveable 存 ordinal: 跳到全屏页时本页被 NavHost 销毁, 枚举本体在 commonMain 里
+    // 没有默认 Saver.
+    var backLevelOrdinal by rememberSaveable { mutableIntStateOf(TvDetailsSection.HERO.ordinal) }
+    // 进页那一刻的快照: 非 HERO = 这是"返回本页"且离开前焦点在海报页以外的区块.
+    // null = 新进本页 (或离开前就在海报页), 走原来的"落在海报页"路径
+    val restoreSection = remember {
+        TvDetailsSection.entries[backLevelOrdinal].takeIf { it != TvDetailsSection.HERO }
+    }
+
+    // 返回本页 (离开前在首屏以外的区块, 见 restoreSection) 时不分帧, 首屏以下一次组合完: 分帧的头几帧只有首屏, 内容不够高,
+    // rememberScrollState 恢复的滚动量被压进首屏 (离开时在末页, 回来实测只剩 16px), 于是先画出第一页, 焦点落定后再翻回去
+    // (用户 2026-09-28: 关联条目返回一瞬间显示第一页). 返回时首屏本来就不该露出来, 分帧省下的那点首帧开销换来的是一次闪屏加一次换页过渡
+    var sectionsReady by remember { mutableStateOf(restoreSection != null) }
+    var sectionsStage by remember { mutableStateOf(if (restoreSection != null) SECTIONS_STAGE_LAST else 0) }
     var focusEpisodesWhenReady by remember { mutableStateOf(false) }
     LaunchedEffect(revealed) {
         if (!revealed) return@LaunchedEffect
@@ -712,17 +726,6 @@ fun SubjectDetailsTvPage(
     var tagsBrowseMode by rememberSaveable { mutableStateOf(false) }
     var focusedTagIndex by rememberSaveable { mutableStateOf(-1) }
     var tagsRestorePending by rememberSaveable { mutableStateOf(false) }
-
-    // 最后一个真正持有过焦点的区块 (各区块 onFocused 上报). 两个用途: 返回键三级分层 (见下方
-    // BackHandler 处的长注释) + **跨页返回时的落点恢复** (见下方进页 effect).
-    // rememberSaveable 存 ordinal: 跳到全屏页时本页被 NavHost 销毁, 枚举本体在 commonMain 里
-    // 没有默认 Saver.
-    var backLevelOrdinal by rememberSaveable { mutableIntStateOf(TvDetailsSection.HERO.ordinal) }
-    // 进页那一刻的快照: 非 HERO = 这是"返回本页"且离开前焦点在海报页以外的区块.
-    // null = 新进本页 (或离开前就在海报页), 走原来的"落在海报页"路径
-    val restoreSection = remember {
-        TvDetailsSection.entries[backLevelOrdinal].takeIf { it != TvDetailsSection.HERO }
-    }
 
     // 统一事件式焦点调度器: 进页 / 返回分层 / 弹层关闭 / 跨页恢复都只登记目标 key;
     // 节点未组合时请求悬挂到锚点 attach, 用户导航则在页面根取消在途请求.
