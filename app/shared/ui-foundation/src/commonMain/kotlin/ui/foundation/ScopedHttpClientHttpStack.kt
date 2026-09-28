@@ -119,6 +119,13 @@ internal class ScopedHttpClientHttpStack(
                         imageLoadLogger.warn { "Slow image request: $elapsed: $url" }
                     }
 
+                    // Bangumi 封面的缩略图 (见 bangumiCoverThumbnailUrl) 取不到: 当场改取原图, 别让卡片空着
+                    val originalCover = bangumiCoverOriginalUrl(url)
+                    if (originalCover != null) {
+                        if (!response.status.isSuccess()) return@execute Outcome.FallbackToOriginal(originalCover)
+                        noteBangumiCoverThumbnailFallback(thumbnailFailedButOriginalWorked = false)
+                    }
+
                     // 交给外层重新请求: 这里还在 execute {} 里, 借来的 client 不能带着响应逃出去. 只重来一次
                     val refetch = if (refetched) null else {
                         response.brokenTmdbRenditionRefetch(url)
@@ -142,6 +149,14 @@ internal class ScopedHttpClientHttpStack(
                 imageLoadLogger.warn { "${outcome.reason}: $url -> ${outcome.url}" }
                 request(outcome.url, httpHeaders, extras, refetched = true, block)
             }
+
+            is Outcome.FallbackToOriginal -> {
+                imageLoadLogger.warn { "Bangumi cover thumbnail failed, falling back to original: $url -> ${outcome.url}" }
+                // 原图也取不到时 block 会抛, 走不到计数那一行 —— 那是图本身的问题, 不算这条线路不支持缩略图
+                request(outcome.url, httpHeaders, extras, refetched, block).also {
+                    noteBangumiCoverThumbnailFallback(thumbnailFailedButOriginalWorked = true)
+                }
+            }
         }
     }
 
@@ -150,6 +165,9 @@ internal class ScopedHttpClientHttpStack(
 
         /** 换成 [url] 再请求一次; [reason] 进日志. */
         class Refetch(val url: String, val reason: String) : Outcome<Nothing>
+
+        /** Bangumi 封面缩略图没取到, 改取 [url] (原图). */
+        class FallbackToOriginal(val url: String) : Outcome<Nothing>
     }
 
     /** TMDB 图床节点缓存的坏图: 换一档再取, 见 [tmdbBrokenRenditionFallbackUrl]. 只看响应头, 不读 body. */

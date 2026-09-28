@@ -1473,14 +1473,14 @@ private fun TvScheduleRowSkeleton(modifier: Modifier = Modifier) {
 @Composable
 private fun TvScheduleCoverImage(url: String, contentDescription: String?) {
     val retry = rememberAsyncImageRetryState(url)
-    val loaded = rememberImageCompletionGrace(url)
+    val completionGrace = rememberImageCompletionGrace(url)
     AsyncImage(
         if (retry.suppressed) null else url,
         contentDescription = contentDescription,
         Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
-        onSuccess = { loaded.value = true },
         onError = { retry.onError() },
+        completionGrace = completionGrace,
     )
 }
 
