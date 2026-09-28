@@ -730,6 +730,8 @@ private fun TvSearchInputPane(
     var editing by remember { mutableStateOf(false) }
     var everEdited by remember { mutableStateOf(false) }
     var boxFocused by remember { mutableStateOf(false) }
+    // 输入框是否真持焦: 进编辑态时框等它接住焦点才让位, 见框上的 canFocus
+    var editorFocused by remember { mutableStateOf(false) }
     val editorFocus = remember { FocusRequester() }
     // 进/出编辑态的焦点交接必须放在效应里: `canFocus` 是组合期读的, 在按键回调里当场
     // requestFocus 时对方还不可聚焦, 请求会被静默拒绝
@@ -839,10 +841,12 @@ private fun TvSearchInputPane(
                             )
                         }
                         // 非编辑态: 框自己是焦点目标 (页面级 requester 指向这里, 见 inputFieldFocus);
-                        // 编辑态: 让位给里面的输入框
+                        // 编辑态: 让位给里面的输入框. **让位要等输入框接住焦点之后**: 持焦的框当场变成不可聚焦时
+                        // Compose 清空整窗焦点, 整页兜底按默认进组落到第一条候选, 交接效应随后才把焦点送进输入框 ——
+                        // 按确认时焦点在候选上闪一下
                         .focusRequester(fieldFocusRequester)
                         .focusProperties {
-                            canFocus = !editing
+                            canFocus = !editing || !editorFocused
                             // 下键直落第一条候选 (显式指定, 不靠空间搜索猜)
                             if (values.itemCount > 0) down = firstRowFocus
                         }
@@ -892,6 +896,7 @@ private fun TvSearchInputPane(
                                 .focusRequester(editorFocus)
                                 .focusProperties { canFocus = editing }
                                 .onFocusChanged {
+                                    editorFocused = it.isFocused
                                     // 焦点被方向键带走 (走到候选项) 也算退出编辑
                                     if (!it.isFocused && editing) editing = false
                                 },
