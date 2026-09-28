@@ -87,6 +87,7 @@ internal fun TvSearchNativeGrid(
                 imageUrl = info.takeIf { !it.hide }?.imageUrl,
                 title = info.title,
                 obscure = info.nsfwMode == NsfwMode.BLUR,
+                subjectId = info.subjectId,
             )
         },
         source = null,

@@ -532,6 +532,9 @@ internal fun Modifier.tvGlassFocusLift(focused: Boolean, shape: Shape): Modifier
 /** 顶栏控件换底色、抬起的时长. */
 internal const val TV_GLASS_FOCUS_MILLIS = 150
 
+/** 聚焦抬起伸出控件外的余量 (放大多出来的那截 + 投影): 装在会裁切的容器 (LazyRow 按主轴边界裁) 里时, 两头要让出这么多. */
+internal val TV_GLASS_FOCUS_BLEED = 16.dp
+
 private val TV_GLASS_EDGE_WIDTH = 1.dp
 private const val TV_GLASS_FOCUS_SCALE = 1.08f
 private val TV_GLASS_FOCUS_ELEVATION = 10.dp

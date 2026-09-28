@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -160,6 +161,7 @@ import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
@@ -190,6 +192,7 @@ import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
 import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
@@ -1981,15 +1984,20 @@ private fun TvSearchActiveFiltersRow(
         LocalMinimumInteractiveComponentSize provides 0.dp,
     ) {
         LazyRow(
-            modifier.tvFocusNavSignal(focus).onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.DirectionUp -> onNavigateUp()
-                    Key.DirectionDown -> onNavigateDown()
-                    else -> false
-                }
-            },
+            modifier
+                // 聚焦的胶囊放大、投影伸出胶囊外 (见 tvGlassFocusLift), 而 LazyRow 按主轴边界裁切: 往左出血、两头留内边距
+                // 让出这一截, 行首位置不变
+                .tvGridBleed(start = TV_GLASS_FOCUS_BLEED)
+                .tvFocusNavSignal(focus).onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionUp -> onNavigateUp()
+                        Key.DirectionDown -> onNavigateDown()
+                        else -> false
+                    }
+                },
             state = listState,
+            contentPadding = PaddingValues(horizontal = TV_GLASS_FOCUS_BLEED),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

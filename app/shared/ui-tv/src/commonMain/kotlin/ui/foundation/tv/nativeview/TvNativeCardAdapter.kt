@@ -74,6 +74,9 @@ class TvNativeCardAdapter(
 
     val items: List<TvNativeCard?> get() = cards
 
+    /** 第 [index] 张是哪个条目 (见 [TvNativeCard.subjectId]); 越界 / 占位 / 没给时 null. */
+    fun subjectIdAt(index: Int): Int? = cards.getOrNull(index)?.subjectId
+
     /** 换数据. 内容没变就不动 (稳定 id 让持焦的卡原样留着). */
     fun submit(cards: List<TvNativeCard?>, keyOf: (Int) -> Long) {
         if (cards == this.cards) return

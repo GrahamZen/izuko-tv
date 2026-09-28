@@ -139,7 +139,18 @@ class TvNativeGridPageView(
 
     private val backdrop = TvNativeBackdropView(context, sketch, scope)
     val heroText = TvNativeHeroTextView(context, heroTextStyle)
+
+    /**
+     * 装 hero 文字的一层, hero 时间线的显隐 ([TvNativeHeroTimeline.text]) 调它的透明度: 文字块换字时自己也调自己的透明度 (旧字淡出、新字进场),
+     * 两边写同一个属性就是谁后写谁算 —— 进 hero 态途中内容晚到、退出途中换了条目, 字都会以满透明度露出来.
+     */
+    private val heroBox = object : FrameLayout(context) {
+        override fun hasOverlappingRendering(): Boolean = false
+    }
     private val gridBox = FrameLayout(context)
+
+    /** 网格框的裁剪框 (框自己的坐标, 见 init). */
+    private val gridClip = Rect()
     private val grids = ArrayList<TvNativeGridView>(2)
     private val gridKeys = HashMap<TvNativeGridView, Any>()
     private var current: TvNativeGridView? = null
@@ -151,6 +162,9 @@ class TvNativeGridPageView(
     private var lastDimSubject: Int? = null
     private var gridHasFocus = false
 
+    /** 进了 hero 态、背景图与文字还没换上: 等页面给的内容跟上聚焦的那张 (见 [showEnteringContent]). */
+    private var enteringPending = false
+
     /** 焦点停放在本视图上的那一刻 (见 [parkFocus]), -1 = 没停放. */
     private var parkedAt = -1L
 
@@ -159,13 +173,18 @@ class TvNativeGridPageView(
         clipToPadding = false
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
         addView(backdrop)
-        addView(heroText)
-        // 网格只在出血后的框里画 (换标签滑动时滑出框的部分裁掉)
-        gridBox.clipChildren = true
-        gridBox.clipToPadding = true
+        heroBox.clipChildren = false
+        heroBox.clipToPadding = false
+        heroBox.addView(heroText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(heroBox)
+        // 网格只在出血后的框里画 (换标签滑动时滑出框的部分裁掉): 裁的是框本身 (clipBounds, 见 onLayout). 不能用 clipChildren —— 它按
+        // 每份网格自己的边界裁, 边界跟着网格平移走: 进出 hero 态时网格整片平移 (见 TvNativeGridView.setHeroActive), 往上抬的那一截
+        // 会把下面几排卡从半截裁掉
+        gridBox.clipChildren = false
+        gridBox.clipToPadding = false
         addView(gridBox)
         backdrop.alpha = 0f
-        heroText.alpha = 0f
+        heroBox.alpha = 0f
         timeline.dark = dark
         applyHero()
     }
@@ -426,6 +445,8 @@ class TvNativeGridPageView(
         timeline.setActive(active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
         listener?.onHeroActiveChanged(active)
+        // 退出途中又进来 (内容还在屏上): 退出时内容定格没跟着导航换 (见 applySource), 这里对上此刻的
+        if (active) applySource()
     }
 
     /** hero 的内容 (停稳后的背景图、文字; 页面按 rememberTvSettledHeroProvider / rememberTvScrollHiddenProvider 算好). */
@@ -440,11 +461,30 @@ class TvNativeGridPageView(
         if (lastDimSubject != null && lastDimSubject != src.rawSubjectId) backdrop.triggerPressDim()
         lastDimSubject = src.rawSubjectId
         backdrop.dimming = src.dimming
-        // 背景图与文字只在 hero 态画 (底色黑透之后淡入); 离开 hero 态淡完就撤
-        if (timeline.visible) {
+        // 背景图与文字只在 hero 态画 (底色黑透之后淡入); 离开 hero 态淡完就撤. 退出途中内容定格, 不跟着导航换 (正在淡出的图与字换一张
+        // 只会晃一下)
+        if (!timeline.visible || !timeline.active) return
+        if (enteringPending) {
+            showEnteringContent()
+        } else {
             backdrop.show(src.backdrop)
             heroText.setText(src.text, TvNativeTextTransition.Key)
         }
+    }
+
+    /**
+     * 进 hero 态时换上内容 (不交叉淡入, 图层这时还是透明的). 只认聚焦那张卡的: 页面的内容在 Compose 里算, 比原生晚一两帧 ——
+     * 远跳途中按的确认在落到首卡时当场进 hero 态, 那一刻手里的还是出发那张的背景图与文字, 换上就是先露出它、再换成首卡. 真实目标
+     * 不是聚焦的那张、或展示还没跟上 (按下即压暗的等待里) 就先空着, 页面的内容一跟上 ([setSource]) 再换.
+     */
+    private fun showEnteringContent() {
+        val src = source ?: return
+        val grid = current
+        val focusedSubject = grid?.cards?.subjectIdAt(grid.selectedPosition)
+        if (focusedSubject != null && (src.rawSubjectId != focusedSubject || src.dimming)) return
+        enteringPending = false
+        backdrop.show(src.backdrop, crossfade = false)
+        heroText.setText(src.text, TvNativeTextTransition.Reset)
     }
 
     private fun onTimeline() {
@@ -454,18 +494,18 @@ class TvNativeGridPageView(
 
     private fun applyHero() {
         val visible = timeline.visible
-        if (visible && source != null && backdrop.currentTarget == null && heroText.shownSubjectId == null) {
-            // 进 hero 态: 当场换上当前条目 (不交叉淡入, 图层这时还是透明的)
-            val src = source!!
-            backdrop.show(src.backdrop, crossfade = false)
-            heroText.setText(src.text, TvNativeTextTransition.Reset)
-        } else if (!visible && (backdrop.currentTarget != null || heroText.shownSubjectId != null)) {
+        if (visible && !enteringPending && backdrop.currentTarget == null && heroText.shownSubjectId == null) {
+            // 进 hero 态: 换上聚焦那张的内容 (见 showEnteringContent)
+            enteringPending = true
+            showEnteringContent()
+        } else if (!visible && (enteringPending || backdrop.currentTarget != null || heroText.shownSubjectId != null)) {
+            enteringPending = false
             backdrop.rebuild()
             heroText.setText(null, TvNativeTextTransition.Reset)
         }
         val contentGate = if (dark) tvPosterWallToneGate(timeline.tone) else 1f
         backdrop.alpha = timeline.content * contentGate
-        heroText.alpha = timeline.text
+        heroBox.alpha = timeline.text
         backdrop.publishZoom()
         current?.let { g ->
             g.heroAbove = timeline.above
@@ -482,7 +522,7 @@ class TvNativeGridPageView(
         val m = metrics
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
         backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
-        heroText.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
+        heroBox.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
         val g = m.grid
         val gridHeight = m.pageHeightPx - m.gridTopPx + g.topBleedPx + g.bottomBleedPx
         gridBox.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(gridHeight))
@@ -494,9 +534,11 @@ class TvNativeGridPageView(
         val bx = m.bleedLeftPx + m.pageWidthPx - backdrop.measuredWidth
         backdrop.layout(bx, 0, bx + backdrop.measuredWidth, backdrop.measuredHeight)
         val hx = m.bleedLeftPx + m.heroLeftPx
-        heroText.layout(hx, m.heroTopPx, hx + heroText.measuredWidth, m.heroTopPx + heroText.measuredHeight)
+        heroBox.layout(hx, m.heroTopPx, hx + heroBox.measuredWidth, m.heroTopPx + heroBox.measuredHeight)
         val gy = m.gridTopPx - m.grid.topBleedPx
         gridBox.layout(0, gy, gridBox.measuredWidth, gy + gridBox.measuredHeight)
+        gridClip.set(0, 0, gridBox.measuredWidth, gridBox.measuredHeight)
+        gridBox.clipBounds = gridClip
         backdrop.publishZoom()
     }
 
