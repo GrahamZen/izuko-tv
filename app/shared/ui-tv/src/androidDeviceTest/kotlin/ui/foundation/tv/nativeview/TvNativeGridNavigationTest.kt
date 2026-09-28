@@ -10,8 +10,10 @@
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.KeyEvent
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -132,6 +134,67 @@ class TvNativeGridNavigationTest {
         focus(30)
         host.onMain { grid.farJumpTo(0) }
         host.waitUntil("远跳落到第 0 张") { focusedIndex() == 0 }
+    }
+
+    @Test
+    fun `the card a far jump leaves is not drawn focused when the jump lands`() {
+        // 聚焦动画要有时长才看得出来 (测试样式默认 0, 状态动画当场到终点)
+        host.onMain {
+            host.root.removeView(grid)
+            val metrics = TvNativeGridMetrics(
+                columns = 6, startPx = 128, endPx = 48, topBleedPx = 0, bottomBleedPx = 0, endMarginPx = 60,
+                heroLinePx = 400, fadeDistancePx = 128f,
+            )
+            grid = TvNativeGridView(host.activity, testWallStyle().copy(focusMillis = 300L), host.sketch, metrics)
+            grid.animatedScroll = true
+            grid.listener = listener
+            host.root.addView(grid, FrameLayout.LayoutParams(1920, 1080))
+            grid.cards.submit(testCards(40)) { it.toLong() }
+        }
+        host.waitUntil("卡片排出来") { grid.childCount > 0 }
+        focus(12)
+        host.waitUntil("滚到第 12 张的停位") { grid.scrollState == RecyclerView.SCROLL_STATE_IDLE }
+        var leftProgress: Float? = null
+        val suppressedOnTheWay = host.onMain {
+            val left = grid.findViewHolderForAdapterPosition(12)!!.itemView as TvNativeCardView
+            grid.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+                if (newFocus != null && newFocus.parent === grid && grid.getChildAdapterPosition(newFocus) == 0) {
+                    // 落地 (焦点给到目标、放开聚焦效果) 之后的第一帧: 出发那张按它此刻的进度画
+                    Choreographer.getInstance().postFrameCallback { leftProgress = left.focusProgress }
+                }
+            }
+            grid.farJumpTo(0)
+            left.focusEffectSuppressed
+        }
+        // 走的是一路滚上去的远跳 (途中压住聚焦效果), 不是就地落点
+        assertTrue(suppressedOnTheWay)
+        host.waitUntil("远跳落到第 0 张") { focusedIndex() == 0 }
+        host.waitUntil("落地后第一帧记下了") { leftProgress != null }
+        // 出发那张直接是失焦的样子, 不先按放大态画一帧再缩回
+        assertEquals(0f, leftProgress)
+    }
+
+    @Test
+    fun `a focus request before the target is laid out holds its focused look until it lands`() {
+        // 返回本页重建时: 网格刚建出来、焦点在别处, 页面把焦点送回上次那张
+        lateinit var fresh: TvNativeGridView
+        val held = host.onMain {
+            host.root.removeView(grid)
+            val metrics = TvNativeGridMetrics(
+                columns = 6, startPx = 128, endPx = 48, topBleedPx = 0, bottomBleedPx = 0, endMarginPx = 60,
+                heroLinePx = 400, fadeDistancePx = 128f,
+            )
+            fresh = TvNativeGridView(host.activity, testWallStyle(), host.sketch, metrics)
+            fresh.animatedScroll = false
+            host.root.addView(fresh, FrameLayout.LayoutParams(1920, 1080))
+            fresh.cards.submit(testCards(40)) { it.toLong() }
+            fresh.focusItem(20)
+            fresh.cards.heldFocusIndex
+        }
+        // 排出来之前就按住了: 第一帧就是放大的
+        assertEquals(20, held)
+        host.waitUntil("落到第 20 张") { fresh.focusedChild?.let { fresh.getChildAdapterPosition(it) } == 20 }
+        assertEquals(-1, host.onMain { fresh.cards.heldFocusIndex })
     }
 
     @Test

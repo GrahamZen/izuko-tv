@@ -14,6 +14,7 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -121,8 +122,9 @@ class TvNativeExploreNavigationTest {
 
     @AfterTest
     fun tearDown() {
+        // 在主线程上取消: 原生视图的动画在取消回调里停 ValueAnimator, 只能在主线程上停
+        host.onMain { scope.cancel() }
         host.close()
-        scope.cancel()
     }
 
     private fun card(): Pair<String?, Int> = host.onMain { (if (view.cardAreaHasFocus) view.focusedRowKey else null) to view.focusedCardIndex }
@@ -219,6 +221,34 @@ class TvNativeExploreNavigationTest {
         waitCard(REC2, 3)
         host.onMain { view.focusCard(FOLLOWED, 0, far = true) }
         waitCard(FOLLOWED, 0)
+    }
+
+    @Test
+    fun `the card opened from the hero state keeps its focused look after the focus leaves`() {
+        host.onMain { view.focusCard(REC0, 2) }
+        waitCard(REC0, 2)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("进 hero 态") { listener.heroActive == listOf(true) }
+        // hero 态里再按确认 = 进详情页; 焦点交给详情页 (这里用页面外的视图代替)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(listOf(REC0 to 2), listener.cardClicks)
+        host.onMain { outside.requestFocus() }
+        host.waitUntil("焦点离开页面") { outside.isFocused }
+        assertTrue(host.onMain { cardView(REC0, 2)?.focusLookHeld == true }, "焦点走了那张卡仍画成聚焦态")
+        // 返回后焦点交还: 放开
+        host.onMain { view.focusCard(REC0, 2) }
+        waitCard(REC0, 2)
+        assertEquals(false, host.onMain { cardView(REC0, 2)?.focusLookHeld })
+    }
+
+    /** [rowKey] 行第 [index] 张卡的视图 (行视图的 tag 是行键). */
+    private fun cardView(rowKey: String, index: Int): TvNativeCardView? {
+        fun find(v: View): TvNativeRowView? = when {
+            v is TvNativeRowView && v.tag == rowKey -> v
+            v is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
+            else -> null
+        }
+        return find(view)?.findViewHolderForAdapterPosition(index)?.itemView as? TvNativeCardView
     }
 
     @Test

@@ -40,8 +40,9 @@ class TvNativeBackdropViewTest {
 
     @AfterTest
     fun tearDown() {
+        // 在主线程上取消: 原生视图的动画在取消回调里停 ValueAnimator, 只能在主线程上停
+        host.onMain { scope.cancel() }
         host.close()
-        scope.cancel()
     }
 
     @Test

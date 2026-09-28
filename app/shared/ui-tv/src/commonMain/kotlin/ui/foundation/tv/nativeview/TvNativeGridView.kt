@@ -337,13 +337,23 @@ class TvNativeGridView(
         val count = cards.itemCount
         if (count == 0) {
             pendingFocus = index.coerceAtLeast(0)
+            holdLandingLook(pendingFocus)
             return
         }
         val target = index.coerceIn(0, count - 1)
         if (!focusItemNow(target)) {
+            holdLandingLook(target)
             pendingFocus = target
             selectedPosition = target
         }
+    }
+
+    /**
+     * 焦点从网格以外送进来 (返回本页重建 / 换标签落地) 而目标卡还没排出来: 先按住它的聚焦态, 排出来的第一帧就是放大的, 焦点到位时画面
+     * 不变 (见 [TvNativeCardAdapter.setFocusLookHeld], 任何一张卡拿到焦点就放开). 网格里已有焦点 (连按超前) 时不按住.
+     */
+    private fun holdLandingLook(index: Int) {
+        if (!hasFocus()) cards.setFocusLookHeld(this, index)
     }
 
     private fun focusItemNow(index: Int): Boolean {

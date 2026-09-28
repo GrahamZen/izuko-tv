@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.StateListAnimator
@@ -124,6 +125,38 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             applyFocus()
         }
 
+    /**
+     * 没有焦点也画成聚焦态: 进详情页交出焦点之后、返回后焦点交还之前, 那张卡一直放大着, 不先缩回去再放大. 改用 [setFocusLookHeld].
+     */
+    var focusLookHeld: Boolean = false
+        private set
+    private var releaseAnimator: Animator? = null
+
+    /**
+     * 按住 / 放开聚焦态 ([focusLookHeld]). 放开时状态动画跳到当前状态的终点: 真焦点已在这张上就停在聚焦态, 画面不变 (不跳到动画中途);
+     * 没焦点时 [animate] 就照失焦的动画缩回, 否则当场按未聚焦画 (换绑别的条目).
+     */
+    fun setFocusLookHeld(held: Boolean, animate: Boolean) {
+        if (focusLookHeld == held) return
+        focusLookHeld = held
+        releaseAnimator?.cancel()
+        releaseAnimator = null
+        if (!held) {
+            // 放开常发生在拿到焦点的回调里 (适配器的焦点监听): View 在 onFocusChanged 之后才按新焦点 refreshDrawableState, 这时
+            // 状态动画还停在失焦态, 跳到的终点是缩回的样子, 随后再从 0 放大一遍. 先按真实焦点刷新一次, 跳到的就是聚焦态
+            refreshDrawableState()
+            stateListAnimator?.jumpToCurrentState()
+            if (animate && !isFocused) {
+                releaseAnimator = ObjectAnimator.ofFloat(this, TV_NATIVE_FOCUS_PROGRESS, 1f, 0f).apply {
+                    duration = style.focusMillis
+                    interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+                    start()
+                }
+            }
+        }
+        applyFocus()
+    }
+
     init {
         layoutParams = LayoutParams(style.cardWidthPx, style.cardHeightPx + style.labelHeightPx)
         // 触摸模式下也可聚焦: 窗口进了触摸模式时卡照样拿得到焦点, 焦点不会因此停到行 / 网格上或丢掉
@@ -198,6 +231,9 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        // 放开时的缩回动画还在走又拿到焦点: 交给状态动画从当前值接着走
+        releaseAnimator?.cancel()
+        releaseAnimator = null
         updateMarquee()
     }
 
@@ -209,7 +245,11 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
     }
 
     private fun applyFocus() {
-        val p = if (focusEffectSuppressed) 0f else focusProgress
+        val p = when {
+            focusEffectSuppressed -> 0f
+            focusLookHeld -> 1f
+            else -> focusProgress
+        }
         val s = 1f + (style.focusScale - 1f) * p
         cover.scaleX = s
         cover.scaleY = s

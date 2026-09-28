@@ -421,6 +421,7 @@ class TvNativeExploreView(
         pendingIndex = index
         pendingColumn = -1
         pendingSmooth = false
+        if (!far && !cardAreaHasFocus) holdLandingLook(rowKey, index)
         if (item < 0 || !isLaidOut) return false
         if (far) {
             farJumpRow = rowKey
@@ -433,6 +434,19 @@ class TvNativeExploreView(
             return true
         }
         return resolvePending(scrollIfMissing = true)
+    }
+
+    /**
+     * 焦点从本页以外送进来 (返回本页 / 回到前台) 而目标卡还没排出来: 先按住它的聚焦态, 排出来的第一帧就是放大的, 焦点到位时画面不变
+     * (见 [TvNativeExploreList.heldFocus]). 目标已在屏上就不按住, 照常走聚焦的放大动画. 任何一张卡 / hero 按钮拿到焦点就放开.
+     */
+    private fun holdLandingLook(rowKey: String, index: Int) {
+        val item = list.indexOfKey(rowKey)
+        val row = if (item >= 0) list.rowAt(item) else null
+        val left = list.rowLeftIndex[rowKey] ?: row?.leftIndex() ?: 0
+        val target = if (index >= 0) index else rememberedIndex(rowKey, left)
+        if (row?.findViewHolderForAdapterPosition(target) != null) return
+        list.heldFocus = rowKey to target
     }
 
     /** 程序化落点还挂着 (目标行没排出来 / 远跳途中): 页面的返回键分层按它的目标算. */
@@ -742,6 +756,8 @@ class TvNativeExploreView(
             if (!timeline.active) {
                 setHeroActive(true)
             } else {
+                // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)
+                list.heldFocus = rowKey to index
                 listener?.onCardClick(rowKey, index)
             }
         }
@@ -752,6 +768,8 @@ class TvNativeExploreView(
     }
 
     private fun onCardFocused(rowKey: String, index: Int) {
+        // 真焦点到了: 按住的聚焦态放开 (落在它自己身上画面不变, 落在别处它照失焦缩回)
+        list.heldFocus = null
         val item = list.indexOfKey(rowKey)
         val row = if (item >= 0) list.rowAt(item) else null
         // 按需挪之后的行首: 走到行尾留白里那张才挪, 挪到它刚好完整露出
@@ -778,6 +796,7 @@ class TvNativeExploreView(
     }
 
     private fun onHeroButtonFocused(button: Int) {
+        list.heldFocus = null
         lastHeroButton = button
         cancelPending()
         focusedRowKey = null

@@ -154,6 +154,22 @@ class TvNativeExploreList(
             for (i in 0 until childCount) (getChildAt(i) as? TvNativeRowView)?.let { it.cards.setFocusEffectSuppressed(it, value) }
         }
 
+    /**
+     * 没有焦点也画成聚焦态的那张 (行键, 下标; 见 [TvNativeCardAdapter.setFocusLookHeld]), null = 没有. 屏上的行当场改, 之后排出来 / 重新上屏的
+     * 行绑定时补上.
+     */
+    var heldFocus: Pair<String, Int>? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            for (i in 0 until childCount) (getChildAt(i) as? TvNativeRowView)?.let { applyHeldFocus(it) }
+        }
+
+    private fun applyHeldFocus(row: TvNativeRowView) {
+        val held = heldFocus
+        row.cards.setFocusLookHeld(row, if (held != null && held.first == row.tag) held.second else -1)
+    }
+
     private val adapterImpl = Adapter()
 
     init {
@@ -348,6 +364,7 @@ class TvNativeExploreList(
                     row.tag = item.key
                     row.animatedScroll = scroll.animated
                     row.cards.setFocusEffectSuppressed(row, focusEffectSuppressed)
+                    applyHeldFocus(row)
                     row.cards.listener = cardListener?.invoke(item.key)
                     row.cards.onBind = { index -> onBindCard?.invoke(item.key, index) }
                     if (previousKey != item.key) {
@@ -369,6 +386,7 @@ class TvNativeExploreList(
             // 回收缓存里原样拿回同一位置的行不重绑 (见 focusEffectSuppressed)
             val row = holder.itemView as? TvNativeRowView ?: return
             row.cards.setFocusEffectSuppressed(row, focusEffectSuppressed)
+            applyHeldFocus(row)
         }
     }
 

@@ -61,6 +61,13 @@ class TvNativeCardAdapter(
     /** 第几张卡被绑定 (分页的访问提示: 页面据此让分页往后取). */
     var onBind: ((index: Int) -> Unit)? = null
 
+    /**
+     * 没有焦点也画成聚焦态的那张 (见 [TvNativeCardView.setFocusLookHeld]), -1 = 没有; 改用 [setFocusLookHeld]. 这一组任何一张拿到真焦点
+     * 就放开 (落在它自己身上画面不变, 落在别处它照失焦缩回).
+     */
+    var heldFocusIndex: Int = -1
+        private set
+
     init {
         setHasStableIds(true)
     }
@@ -86,7 +93,12 @@ class TvNativeCardAdapter(
         // 事件按此刻绑定这张卡的适配器派发, 不按建它的这个: 探索页各行共用回收池, 卡会换到别的行 (别的适配器) 里去
         holder.card.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
             val index = holder.bindingAdapterPosition
-            if (hasFocus && index != RecyclerView.NO_POSITION) holder.owner?.listener?.onFocused(index)
+            if (hasFocus && index != RecyclerView.NO_POSITION) {
+                holder.owner?.let { owner ->
+                    (holder.card.parent as? RecyclerView)?.let { owner.setFocusLookHeld(it, -1) }
+                    owner.listener?.onFocused(index)
+                }
+            }
         }
         holder.card.setOnClickListener {
             val index = holder.bindingAdapterPosition
@@ -108,6 +120,7 @@ class TvNativeCardAdapter(
         }
         holder.card.titleVisibility = titleVisibility
         holder.card.focusEffectSuppressed = focusEffectSuppressed
+        holder.card.setFocusLookHeld(position == heldFocusIndex, animate = false)
         holder.card.dim = dimOf?.invoke(position, holder.card) ?: 1f
         onBind?.invoke(position)
     }
@@ -116,6 +129,14 @@ class TvNativeCardAdapter(
         // 回收缓存里原样拿回同一位置的卡不重绑: 按组统一的状态在重新上屏时补上 (离屏期间改的只落到了当时屏上那些卡)
         holder.card.titleVisibility = titleVisibility
         holder.card.focusEffectSuppressed = focusEffectSuppressed
+        holder.card.setFocusLookHeld(holder.bindingAdapterPosition == heldFocusIndex && heldFocusIndex >= 0, animate = false)
+    }
+
+    /** 让第 [index] 张 (-1 = 没有) 没有焦点也画成聚焦态, 屏上的当场改 (放开的那张照失焦缩回), 离屏的绑定 / 重新上屏时补. */
+    fun setFocusLookHeld(recycler: RecyclerView, index: Int) {
+        if (heldFocusIndex == index) return
+        heldFocusIndex = index
+        forEachCard(recycler) { i, card -> card.setFocusLookHeld(i == index, animate = true) }
     }
 
     fun setTitleVisibility(recycler: RecyclerView, value: Float) {
