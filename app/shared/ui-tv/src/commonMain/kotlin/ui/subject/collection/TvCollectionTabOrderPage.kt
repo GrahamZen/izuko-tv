@@ -9,22 +9,16 @@
 
 package me.him188.ani.app.ui.subject.collection
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,29 +26,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -64,6 +52,10 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
+import me.him188.ani.app.ui.foundation.tv.tvGlassColors
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint_grabbed
@@ -76,8 +68,8 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * 「自定义追番页标签顺序」页: 把追番页顶部那排分类标签原样摆出来, 在上面直接排先后.
  *
- * 标签行用的是与 `TvCollectionTabRow` 同一套样式与间距常量, 位置也取同一组页面留白 —— 这里排成
- * 什么样, 进追番页就是什么样. 区别只在按键语义:
+ * 标签行用的是与 `TvCollectionTabRow` 同一个玻璃标签栏 ([TvCollectionGlassTabBar] / [TvCollectionGlassTab]), 位置也取同一组
+ * 页面留白 —— 这里排成什么样, 进追番页就是什么样. 区别只在按键语义:
  *
  * - **确认键 = 拿起 / 放下**; 拿起之后左右键把它挪到想要的位置, 再按确认放下, 按返回撤销这一次移动.
  * - 返回键 (手上没拿东西时) = 离开本页.
@@ -237,8 +229,8 @@ private val TV_TAB_ORDER_MOVE_KEYS = setOf(
 )
 
 /**
- * 编辑用的标签行: 样式与间距全取追番页那几个常量, 指示条也照画 —— 差别只在"选中"这里等于"聚焦"
- * (追番页上本来就是聚焦即选中), 以及拿起的那个会浮起来.
+ * 编辑用的标签行: 与追番页同一个玻璃标签栏 —— 差别只在"选中"这里等于"聚焦" (追番页上本来就是聚焦即选中),
+ * 以及拿起的那个在聚焦的抬起之上再浮起一截.
  */
 @Composable
 private fun TvCollectionTabOrderRow(
@@ -250,68 +242,32 @@ private fun TvCollectionTabOrderRow(
     onToggleGrab: (UnifiedCollectionType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val tabBounds = remember(tabs.size) { mutableStateListOf(*Array(tabs.size) { 0.dp to 0.dp }) }
-    Column(modifier) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(TV_COLLECTION_TAB_SPACING),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEachIndexed { index, type ->
+    TvCollectionGlassTabBar(modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT)) {
+        tabs.forEach { type ->
+            // 按分类记状态: 挪位置时状态 (聚焦、浮起) 跟着标签走, 不留在原来的格子上
+            key(type) {
                 val interactionSource = remember { MutableInteractionSource() }
-                val focused by interactionSource.collectIsFocusedAsState()
-                val isGrabbed = grabbed == type
-                // 拿起的那个浮起来一点并放大 —— 这一行只有文字, 描边反而糊
-                val lift by animateFloatAsState(if (isGrabbed) 1f else 0f, label = "tabLift")
-                Row(
-                    Modifier
-                        .onGloballyPositioned { coords ->
-                            tabBounds[index] = with(density) {
-                                coords.positionInParent().x.toDp() to coords.size.width.toDp()
-                            }
-                        }
+                // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
+                var focused by remember { mutableStateOf(false) }
+                val lift by animateFloatAsState(if (grabbed == type) 1f else 0f, label = "tabLift")
+                TvCollectionGlassTab(
+                    label = type.displayTextTv(),
+                    selected = focusedType == type,
+                    focused = focused,
+                    modifier = Modifier
                         .graphicsLayer {
                             translationY = -lift * TV_TAB_ORDER_GRAB_LIFT.toPx()
                             scaleX = 1f + lift * (TV_TAB_ORDER_GRAB_SCALE - 1f)
                             scaleY = scaleX
                         }
                         .focusRequester(requesters.getValue(type))
-                        .onFocusChanged { if (it.isFocused) onFocused(type) }
-                        .clickable(interactionSource, indication = null) { onToggleGrab(type) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val selected = focusedType == type
-                    Text(
-                        type.displayTextTv(),
-                        color = when {
-                            isGrabbed || focused -> MaterialTheme.colorScheme.primary
-                            selected -> MaterialTheme.colorScheme.onSurface
-                            else -> MaterialTheme.colorScheme.onSurface
-                                .copy(alpha = TV_COLLECTION_TAB_UNSELECTED_ALPHA)
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (isGrabbed || selected) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                }
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) onFocused(type)
+                        }
+                        .clickable(interactionSource, indication = null) { onToggleGrab(type) },
+                )
             }
-        }
-        // 指示条跟着焦点走 (= 追番页上的选中态). 量出来之前不画, 否则它会从最左滑过来
-        val (targetX, targetWidth) = tabBounds[tabs.indexOf(focusedType).coerceAtLeast(0)]
-        if (targetWidth > 0.dp) {
-            val indicatorX by animateDpAsState(targetX, label = "tabOrderIndicatorX")
-            val indicatorWidth by animateDpAsState(targetWidth, label = "tabOrderIndicatorWidth")
-            Box(
-                Modifier
-                    .padding(top = 4.dp)
-                    .offset { IntOffset(indicatorX.roundToPx(), 0) }
-                    .width(indicatorWidth)
-                    .height(TV_COLLECTION_TAB_INDICATOR_HEIGHT)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-            )
         }
     }
 }
@@ -323,30 +279,34 @@ private fun TvCollectionTabOrderResetButton(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
+    var focused by remember { mutableStateOf(false) }
+    val glass = tvGlassColors()
+    // 同顶栏的玻璃按钮: 常态玻璃胶囊, 聚焦换成浅色实底配黑字并抬起; 不叠 M3 焦点态层 (见 TvGlassColors).
     // 已经是默认顺序时不禁用, 只压暗: 禁用即不可聚焦, 焦点会当场丢在这一页上
-    Surface(
-        onClick = { if (enabled) onClick() },
-        modifier = modifier,
-        shape = CircleShape,
-        color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (focused) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.5f)
-        },
-        interactionSource = interactionSource,
-    ) {
-        Text(
-            stringResource(Lang.collection_tv_tab_order_reset),
-            Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.labelLarge,
-        )
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = { if (enabled) onClick() },
+            modifier = modifier
+                .onFocusChanged { focused = it.isFocused }
+                .tvGlassFocusLift(focused, CircleShape)
+                .tvGlassBackground(CircleShape),
+            shape = CircleShape,
+            color = if (focused) glass.focusedPlatter else Color.Transparent,
+            contentColor = (if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface)
+                .copy(alpha = if (enabled) 1f else 0.5f),
+            interactionSource = interactionSource,
+        ) {
+            Text(
+                stringResource(Lang.collection_tv_tab_order_reset),
+                Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
     }
 }
 
 /** 拿起时标签浮起的高度. */
 private val TV_TAB_ORDER_GRAB_LIFT: Dp = 6.dp
 
-/** 拿起时标签放大的倍数. */
-private const val TV_TAB_ORDER_GRAB_SCALE = 1.08f
+/** 拿起时标签在聚焦的放大之上再放大的倍数. */
+private const val TV_TAB_ORDER_GRAB_SCALE = 1.04f

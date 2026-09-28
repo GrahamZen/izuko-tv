@@ -9,27 +9,16 @@
 
 package me.him188.ani.app.ui.exploration.search
 
-import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
-import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
-import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.AnimatedContent
-import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallBaseColorScheme
-import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
-import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
-import me.him188.ani.app.ui.foundation.tv.TvPosterWallTone
-import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
-import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
-import me.him188.ani.app.ui.foundation.tv.tvTouchTap
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,21 +26,21 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -73,42 +62,44 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -123,6 +114,8 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -141,59 +134,80 @@ import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
+import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.focus.TvFocusKey
+import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
+import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
+import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
+import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
+import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
+import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.lan.QrCodeImage
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
+import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
+import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
+import me.him188.ani.app.ui.foundation.session.buildTvRailItems
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallBaseColorScheme
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
+import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
+import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
+import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
-import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
+import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
+import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
+import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
+import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
 import me.him188.ani.app.ui.foundation.tv.focusScale
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
+import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
+import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
+import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
+import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
+import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
+import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
+import me.him188.ani.app.ui.foundation.tv.tvGlassColors
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
+import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
-import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.lan.QrCodeImage
-import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
-import me.him188.ani.app.ui.foundation.navigation.BackHandler
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
-import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
-import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
-import me.him188.ani.app.ui.foundation.session.buildTvRailItems
-import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
-import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
-import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
-import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
-import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
-import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
-import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
-import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
-import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
-import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
-import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
-import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
-import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
-import me.him188.ani.app.ui.foundation.focus.TvFocusKey
-import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
-import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
-import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
-import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
-import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
-import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
@@ -215,17 +229,10 @@ import me.him188.ani.app.ui.lang.exploration_search_sort_collection
 import me.him188.ani.app.ui.lang.exploration_search_sort_date
 import me.him188.ani.app.ui.lang.exploration_search_sort_match
 import me.him188.ani.app.ui.lang.exploration_search_sort_rank
+import me.him188.ani.app.ui.lang.search_tv_clear_history
 import me.him188.ani.app.ui.lang.search_tv_filter
-import me.him188.ani.app.ui.lang.search_tv_remote_input_caption
 import me.him188.ani.app.ui.lang.search_tv_filter_any
 import me.him188.ani.app.ui.lang.search_tv_filter_confirm
-import me.him188.ani.app.ui.lang.search_tv_clear_history
-import me.him188.ani.app.ui.lang.search_tv_remote_connected
-import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
-import me.him188.ani.app.ui.lang.search_tv_remote_panel_desc
-import me.him188.ani.app.ui.lang.search_tv_remote_reset
-import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
-import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_filter_rating_min
 import me.him188.ani.app.ui.lang.search_tv_filter_season
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
@@ -233,29 +240,26 @@ import me.him188.ani.app.ui.lang.search_tv_filter_year
 import me.him188.ani.app.ui.lang.search_tv_filter_year_less
 import me.him188.ani.app.ui.lang.search_tv_filter_year_more
 import me.him188.ani.app.ui.lang.search_tv_input_hint
+import me.him188.ani.app.ui.lang.search_tv_remote_connected
+import me.him188.ani.app.ui.lang.search_tv_remote_host_changed
+import me.him188.ani.app.ui.lang.search_tv_remote_input_caption
+import me.him188.ani.app.ui.lang.search_tv_remote_panel_desc
+import me.him188.ani.app.ui.lang.search_tv_remote_reset
+import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
+import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_results_all
 import me.him188.ani.app.ui.lang.search_tv_results_title
-import me.him188.ani.app.ui.search.LoadErrorCard
-import me.him188.ani.app.ui.search.collectItemsWithLifecycle
-import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
-import androidx.compose.ui.platform.LocalWindowInfo
-import kotlin.math.roundToInt
-import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
-import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
-import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
-import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
-import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
-import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.remote.RemoteSearchResultsSnapshot
 import me.him188.ani.app.ui.remote.RemoteSearchResultsSource
 import me.him188.ani.app.ui.remote.TvRemoteControl
+import me.him188.ani.app.ui.search.LoadErrorCard
+import me.him188.ani.app.ui.search.collectItemsWithLifecycle
+import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
+import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.stringResource
-import kotlin.time.Duration.Companion.seconds
-import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
 
 /**
  * `railExitRestore` 的结果. 布尔不够用: "没送成"要分成**两种**, 否则调用方只能一律退到搜索框 ——
@@ -1831,8 +1835,9 @@ private fun TvSearchTopRow(
     onFallbackFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 关掉 48dp 最小交互尺寸 (TV 无触摸), 搜索词/筛选钮按真实内容高度排
+    // 关掉 48dp 最小交互尺寸 (TV 无触摸), 搜索词/筛选钮按真实内容高度排; 不叠 M3 焦点态层 (见 TvGlassColors)
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+    ProvideRingOnlyFocus {
     Row(
         modifier.onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
@@ -1844,30 +1849,30 @@ private fun TvSearchTopRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // 搜索词: 聚焦时填充主题色圆角块. 只换字色在沉浸背景 (hero 大图) 上几乎看不出来,
-        // 需要一个有面积的形状; 未聚焦时底透明, 不占视觉重量.
+        // 搜索词: 常态垫一块玻璃胶囊 (卡片从顶栏底下滑过), 聚焦时换成浅色实底配黑字并抬起 (配色见 TvGlassColors)
+        val glass = tvGlassColors()
         run {
             val interactionSource = remember { MutableInteractionSource() }
-            val focused by interactionSource.collectIsFocusedAsState()
-            val color = if (focused) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
+            // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
+            var focused by remember { mutableStateOf(false) }
+            val color = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface
             Surface(
                 onClick = onEditQuery,
                 modifier = Modifier.focusRequester(titleFocusRequester)
                     .onFocusChanged {
+                        focused = it.isFocused
                         if (it.isFocused) {
                             onFallbackFocused()
                         }
-                    },
-                shape = RoundedCornerShape(8.dp),
-                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    }
+                    .tvGlassFocusLift(focused, CircleShape)
+                    .tvGlassBackground(CircleShape),
+                shape = CircleShape,
+                color = if (focused) glass.focusedPlatter else Color.Transparent,
                 interactionSource = interactionSource,
             ) {
                 Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -1891,27 +1896,25 @@ private fun TvSearchTopRow(
                 }
             }
         }
-        // 筛选圆钮
+        // 筛选圆钮: 常态玻璃圆底 (与搜索词一致), 聚焦时换成浅色实底并抬起
         run {
             val interactionSource = remember { MutableInteractionSource() }
-            val focused by interactionSource.collectIsFocusedAsState()
+            var focused by remember { mutableStateOf(false) }
             Box {
                 Surface(
                     onClick = onOpenFilter,
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused }
+                        .tvGlassFocusLift(focused, CircleShape)
+                        .tvGlassBackground(CircleShape),
                     shape = CircleShape,
-                    // 常态不画圆底 (与搜索词一致, 只留图标), 聚焦时才填充主题色示焦
-                    color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    color = if (focused) glass.focusedPlatter else Color.Transparent,
                     interactionSource = interactionSource,
                 ) {
                     Icon(
                         Icons.Rounded.Tune,
                         contentDescription = stringResource(Lang.search_tv_filter),
                         Modifier.padding(7.dp).size(18.dp),
-                        tint = if (focused) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
+                        tint = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 if (hasFilters) {
@@ -1923,6 +1926,7 @@ private fun TvSearchTopRow(
                 }
             }
         }
+    }
     }
     }
 }
@@ -2020,41 +2024,43 @@ private fun TvSearchActiveFilterChip(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val container = if (focused) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val content = if (focused) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { if (it.isFocused) onFocused() },
-        shape = CircleShape,
-        color = container,
-        interactionSource = interactionSource,
-    ) {
-        Row(
-            Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+    var focused by remember { mutableStateOf(false) }
+    // 常态玻璃胶囊 (同顶栏其余控件), 聚焦时换成浅色实底配黑字并抬起; 不叠 M3 焦点态层 (配色见 TvGlassColors)
+    val glass = tvGlassColors()
+    val container = if (focused) glass.focusedPlatter else Color.Transparent
+    val content = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface
+    ProvideRingOnlyFocus {
+        Surface(
+            onClick = onClick,
+            modifier = modifier
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocused()
+                }
+                .tvGlassFocusLift(focused, CircleShape)
+                .tvGlassBackground(CircleShape),
+            shape = CircleShape,
+            color = container,
+            interactionSource = interactionSource,
         ) {
-            Text(
-                label,
-                color = content,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-            )
-            Icon(
-                Icons.Rounded.Close,
-                contentDescription = null,
-                Modifier.size(14.dp),
-                tint = content,
-            )
+            Row(
+                Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    label,
+                    color = content,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                )
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = null,
+                    Modifier.size(14.dp),
+                    tint = content,
+                )
+            }
         }
     }
 }
