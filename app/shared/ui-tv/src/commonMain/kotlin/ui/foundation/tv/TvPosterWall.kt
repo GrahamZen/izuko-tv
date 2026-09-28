@@ -10,12 +10,16 @@
 package me.him188.ani.app.ui.foundation.tv
 
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -27,12 +31,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -502,28 +508,77 @@ internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA = 0.5f
 internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT = 0.6f
 
 /**
- * 压在海报墙卡片上的顶栏文字 (追番页的标签行: 卡片墙上越过网格顶线的卡不压暗, 照常从它底下滑过) 的投影: 字色的反色、柔和一圈,
- * 压在亮 / 花的封面上也读得清. 深色主题字是浅色、投影是黑; 浅色主题反过来.
+ * 浮在海报墙卡片上的顶栏控件 (追番页的标签行、搜索页的搜索词 / 筛选钮 / 已选筛选项) 的配色, 照 tvOS 顶部标签栏 (HIG Tab bars 与
+ * tvOS 18 设计套件的取值): 整条是中性色的半透明玻璃胶囊加一圈细亮边 ([fill] / [edge]), 卡片从底下透出来; 没选中的标签字降到七成
+ * ([idleContent]); 选中而没聚焦的垫一块半透明浅灰片、字全亮 ([selectedPlatter] / [selectedContent]); 聚焦的换成浅色实底配黑字
+ * ([focusedPlatter] / [focusedContent]), 抬起一层投影、略放大 (见 [tvGlassFocusLift]). Compose 模糊不了底下的原生网格, 玻璃底取的是
+ * 没有模糊时的那一档. 顶栏控件不叠 M3 焦点态层 (见 ProvideRingOnlyFocus): 浅色实底上晚到的一层叠色会闪.
+ */
+@Immutable
+internal class TvGlassColors(
+    val fill: Color,
+    val edge: Color,
+    val idleContent: Color,
+    val selectedPlatter: Color,
+    val selectedContent: Color,
+    val focusedPlatter: Color,
+    val focusedContent: Color,
+)
+
+/** 当前主题的顶栏玻璃配色 (见 [TvGlassColors]). */
+@Composable
+internal fun tvGlassColors(): TvGlassColors =
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) TV_GLASS_COLORS_DARK else TV_GLASS_COLORS_LIGHT
+
+/** 顶栏控件的玻璃底 (见 [TvGlassColors]). 只管常态: 聚焦时各控件自己换成 [TvGlassColors.focusedPlatter]. */
+internal fun Modifier.tvGlassBackground(shape: Shape): Modifier = composed {
+    val colors = tvGlassColors()
+    background(colors.fill, shape).border(TV_GLASS_EDGE_WIDTH, colors.edge, shape)
+}
+
+/**
+ * 顶栏玻璃控件聚焦时抬起: 略放大 ([TV_GLASS_FOCUS_SCALE]) 并投下一层影 (照 tvOS 聚焦的标签). 挂在控件底色之前, 投影画在底色下面;
+ * 只动图层属性, 不重排.
  */
 @Composable
-internal fun tvTextOverCardsShadow(): Shadow {
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val density = LocalDensity.current
-    return remember(dark, density) {
-        with(density) {
-            Shadow(
-                color = if (dark) Color.Black.copy(alpha = TV_TEXT_OVER_CARDS_SHADOW_ALPHA) else Color.White.copy(alpha = TV_TEXT_OVER_CARDS_SHADOW_ALPHA_LIGHT),
-                offset = Offset(0f, TV_TEXT_OVER_CARDS_SHADOW_OFFSET.toPx()),
-                blurRadius = TV_TEXT_OVER_CARDS_SHADOW_BLUR.toPx(),
-            )
-        }
+internal fun Modifier.tvGlassFocusLift(focused: Boolean, shape: Shape): Modifier {
+    val lift by animateFloatAsState(if (focused) 1f else 0f, tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)), label = "glassLift")
+    return graphicsLayer {
+        val scale = 1f + (TV_GLASS_FOCUS_SCALE - 1f) * lift
+        scaleX = scale
+        scaleY = scale
+        shadowElevation = TV_GLASS_FOCUS_ELEVATION.toPx() * lift
+        this.shape = shape
+        clip = false
     }
 }
 
-private const val TV_TEXT_OVER_CARDS_SHADOW_ALPHA = 0.8f
-private const val TV_TEXT_OVER_CARDS_SHADOW_ALPHA_LIGHT = 0.9f
-private val TV_TEXT_OVER_CARDS_SHADOW_OFFSET = 1.dp
-private val TV_TEXT_OVER_CARDS_SHADOW_BLUR = 6.dp
+/** 顶栏控件换底色、抬起的时长. */
+internal const val TV_GLASS_FOCUS_MILLIS = 150
+
+private val TV_GLASS_EDGE_WIDTH = 1.dp
+private const val TV_GLASS_FOCUS_SCALE = 1.08f
+private val TV_GLASS_FOCUS_ELEVATION = 10.dp
+
+private val TV_GLASS_COLORS_DARK = TvGlassColors(
+    fill = Color(0xFF1E1E1E).copy(alpha = 0.5f),
+    edge = Color.White.copy(alpha = 0.1f),
+    idleContent = Color.White.copy(alpha = 0.7f),
+    selectedPlatter = Color(0xFFD0D1D3).copy(alpha = 0.5f),
+    selectedContent = Color.White,
+    focusedPlatter = Color(0xFFD0D1D3),
+    focusedContent = Color.Black,
+)
+
+private val TV_GLASS_COLORS_LIGHT = TvGlassColors(
+    fill = Color(0xFF828282).copy(alpha = 0.5f),
+    edge = Color.White.copy(alpha = 0.2f),
+    idleContent = Color.Black.copy(alpha = 0.7f),
+    selectedPlatter = Color.Black.copy(alpha = 0.37f),
+    selectedContent = Color.White,
+    focusedPlatter = Color.White,
+    focusedContent = Color.Black,
+)
 
 @Composable
 internal fun tvPosterWallTitleStyle(): TextStyle = MaterialTheme.typography.bodyMedium.copy(

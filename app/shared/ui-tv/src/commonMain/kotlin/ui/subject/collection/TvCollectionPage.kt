@@ -9,20 +9,18 @@
 
 package me.him188.ani.app.ui.subject.collection
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -33,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,37 +42,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalWindowInfo
 import kotlin.math.roundToInt
-import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
-import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_ANCHOR_SIZE
-import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
-import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
-import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
-import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
-import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.resolveSavedOrder
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
@@ -90,56 +74,67 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.AniDisplayTier
-import me.him188.ani.app.ui.foundation.navigation.BackHandler
-import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
+import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
-import me.him188.ani.app.ui.foundation.isAutoRepeat
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_ANCHOR_SIZE
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
+import me.him188.ani.app.ui.foundation.focus.TvFocusTransitAnchor
+import me.him188.ani.app.ui.foundation.focus.rememberTvFocusRail
+import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
+import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
+import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.focus.tvFocusRailItem
+import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
+import me.him188.ani.app.ui.foundation.isAutoRepeat
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
+import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
+import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
+import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
+import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
-import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
-import me.him188.ani.app.ui.foundation.tv.focusScale
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
-import me.him188.ani.app.ui.foundation.tv.tvTextOverCardsShadow
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
-import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
-import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
-import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
-import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
-import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
-import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
-import me.him188.ani.app.ui.foundation.tv.resolveTvHeroMedia
-import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
+import me.him188.ani.app.ui.foundation.tv.focusScale
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
-import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
-import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
-import me.him188.ani.app.ui.foundation.focus.TvFocusTransitAnchor
-import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
-import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
-import me.him188.ani.app.ui.foundation.focus.rememberTvFocusRail
-import me.him188.ani.app.ui.foundation.focus.tvFocusRailItem
-import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
-import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
+import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
+import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
+import me.him188.ani.app.ui.foundation.tv.resolveTvHeroMedia
+import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
+import me.him188.ani.app.ui.foundation.tv.tvGlassColors
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
+import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvSwapSpec
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_collection_doing
 import me.him188.ani.app.ui.lang.subject_collection_done
@@ -154,6 +149,8 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
 import me.him188.ani.utils.analytics.recordEvent
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -680,8 +677,6 @@ fun TvCollectionPage(
                     endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
                     heroLinePx = wallHeroLinePx,
                     fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
-                    // 卡照常从标签行底下滑过 (同探索页), 标签字自带投影 (见 TvCollectionTabRow)
-                    dimPastTopLine = false,
                 ),
                 backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
                 backdropHeightPx = backdropHeightPx,
@@ -770,7 +765,7 @@ fun TvCollectionPage(
             Modifier.fillMaxSize()
                 .padding(start = TV_COLLECTION_START_PAD, top = TV_COLLECTION_TOP_PAD),
         ) {
-            // 悬浮分类 Tab (透明底浮于 backdrop 上)
+            // 悬浮分类标签 (玻璃胶囊浮于卡片上), 靠左: 居中会压住 hero 背景图, 左边的标题上方也会空出一块
             TvCollectionTabRow(
                 modifier = Modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT),
                 tabs = tabOrder,
@@ -897,8 +892,8 @@ internal fun SubjectCollectionInfo.toHeroMediaSpec(neighbors: TvHeroNeighbors = 
     )
 
 /**
- * 悬浮分类 Tab 行: 透明底, 未选中降透明度, 选中加粗 + 底部平滑滑动的主题色指示条; 聚焦即切换.
- * 数字统计以小号淡色跟在标签后. 按下键把焦点送入下方网格 (没有卡时送进错误横幅).
+ * 悬浮分类标签行: 一整条浮在卡片上的玻璃胶囊 (照 tvOS 顶部标签栏, 配色见 TvGlassColors), 没选中的字降透明度, 选中的垫一块半透明
+ * 浅灰片并加粗, 聚焦的换成浅色实底配黑字并抬起; 聚焦即切换. 数字统计以小号淡色跟在标签后. 按下键把焦点送入下方网格 (没有卡时送进错误横幅).
  */
 @Composable
 private fun TvCollectionTabRow(
@@ -916,23 +911,17 @@ private fun TvCollectionTabRow(
     onNavigateDown: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    // 各 tab 在行内的 (x 偏移, 宽度), 驱动下方滑动指示条
-    val tabBounds = remember(tabs.size) {
-        mutableStateListOf(*Array(tabs.size) { 0.dp to 0.dp })
-    }
     // 焦点下标记账 / "聚焦即选中"封印 / 左右键显式移动 / 连发守卫都在共享原语里 (见 TvFocusRail.kt).
     // 标签恒在屏且必然可聚焦, 所以送焦直接 requestFocus, 不用走 scope 请求 + 悬挂.
-    // 卡片墙上越过网格顶线的卡不压暗, 照常从本行底下滑过: 字靠投影压在封面上读得清
-    val labelShadow = tvTextOverCardsShadow()
     val rail = rememberTvFocusRail(
         scope = focusScope,
         keyAt = { index -> tabFocusKeys[index] },
         onMove = { index -> runCatching { focusScope.requesterOf(tabFocusKeys[index]).requestFocus() } },
     )
-    Column(modifier) {
-        Row(
-            Modifier.tvFocusRailKeys(
+    // 卡片墙上越过网格顶线的卡照常从标签行底下滑过 (不压暗)
+    TvCollectionGlassTabBar(
+        modifier
+            .tvFocusRailKeys(
                 state = rail,
                 itemCount = { tabs.size },
                 onUserNavigation = onUserNavigation,
@@ -943,93 +932,108 @@ private fun TvCollectionTabRow(
                 // 程序化落点并正常导航, 避免极端情况下目标始终拒焦时把标签行永久锁住.
                 preSwallow = { event -> navigationLocked() && event.isAutoRepeat == true },
             ),
-            horizontalArrangement = Arrangement.spacedBy(TV_COLLECTION_TAB_SPACING),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEachIndexed { index, type ->
-                val interactionSource = remember { MutableInteractionSource() }
-                val focused by interactionSource.collectIsFocusedAsState()
-                val selected = type == selectedType
-                Row(
-                    Modifier
-                        .onGloballyPositioned { coords ->
-                            tabBounds[index] = with(density) {
-                                coords.positionInParent().x.toDp() to coords.size.width.toDp()
-                            }
-                        }
-                        // 无条件挂: 链上元素个数恒定, 选中态变化不会重建其后的焦点节点
-                        .tvFocusRailItem(
-                            state = rail,
-                            index = index,
-                            onFocusChanged = { focused -> onTabFocusChanged(index, focused) },
-                            onSelectByFocus = { onSelect(type) },
-                        )
-                        .clickable(interactionSource, indication = null) { onSelect(type) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    // 聚焦 (即选中) 时主题色示焦; 未选中降透明度
-                    val labelColor = when {
-                        focused -> MaterialTheme.colorScheme.primary
-                        selected -> MaterialTheme.colorScheme.onSurface
-                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = TV_COLLECTION_TAB_UNSELECTED_ALPHA)
-                    }
-                    Text(
-                        type.displayTextTv(),
-                        color = labelColor,
-                        style = MaterialTheme.typography.titleMedium.copy(shadow = labelShadow),
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
-                        softWrap = false,
+    ) {
+        tabs.forEachIndexed { index, type ->
+            val interactionSource = remember { MutableInteractionSource() }
+            // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
+            var focused by remember { mutableStateOf(false) }
+            TvCollectionGlassTab(
+                label = type.displayTextTv(),
+                selected = type == selectedType,
+                focused = focused,
+                count = counts(type),
+                modifier = Modifier
+                    // 无条件挂: 链上元素个数恒定, 选中态变化不会重建其后的焦点节点
+                    .tvFocusRailItem(
+                        state = rail,
+                        index = index,
+                        onFocusChanged = { f ->
+                            focused = f
+                            onTabFocusChanged(index, f)
+                        },
+                        onSelectByFocus = { onSelect(type) },
                     )
-                    counts(type)?.let { count ->
-                        Text(
-                            count.toString(),
-                            color = labelColor.copy(alpha = labelColor.alpha * 0.7f),
-                            style = MaterialTheme.typography.labelMedium.copy(shadow = labelShadow),
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-        }
-        // 平滑滑动的选中指示条
-        val (targetX, targetWidth) = tabBounds[tabs.indexOf(selectedType).coerceAtLeast(0)]
-        // **量出来之前不画**: tabBounds 初值是 (0,0), 由 onGloballyPositioned 事后填。若那一帧就
-        // 组合出指示条, animateDpAsState 会把 0 当成初值, 等真实位置到达再动画 —— 于是返回本页时
-        // 肉眼可见竖线从最左侧滑/跳到选中标签 (2026-08-23 实测)。等真实位置到了再首次组合,
-        // animateDpAsState 直接以它为初值落位; 之后切 tab 仍照常动画 (组件一直在组合里)。
-        if (targetWidth > 0.dp) {
-            TvCollectionTabIndicator(targetX, targetWidth)
+                    .clickable(interactionSource, indication = null) { onSelect(type) },
+            )
         }
     }
 }
 
 /**
- * tab 行的选中指示条, 单独成组件: 动画值的组合期读收在这里 —— 切 tab 的几百毫秒里
- * 每帧重组的只有这一个 Box, 不殃及整条 tab 行 (5 个 tab 的文字/计数); X 用 offset
- * 的布局期 lambda 读, 滑动过程连本组件的重组都省掉 (宽度动画仍会重组, 半径 = 1 Box).
+ * 玻璃标签栏 (照 tvOS 顶部标签栏, 配色见 TvGlassColors): 一整条玻璃胶囊, 里面横排 [TvCollectionGlassTab]. 追番页的分类标签行与
+ * 标签排序页共用, 两边长得一样; 高度由调用方给 ([TV_COLLECTION_TAB_ROW_HEIGHT]).
  */
 @Composable
-private fun TvCollectionTabIndicator(
-    targetX: Dp,
-    targetWidth: Dp,
+internal fun TvCollectionGlassTabBar(
     modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
 ) {
-    // 流畅档直接到位 (见 tvContentSwapAnimated): 默认弹簧一跑就是二十来帧, 而它只是一条小横线
-    val spec = tvSwapSpec<Dp>(spring(visibilityThreshold = Dp.VisibilityThreshold))
-    val indicatorX by animateDpAsState(targetX, spec, label = "tabIndicatorX")
-    val indicatorWidth by animateDpAsState(targetWidth, spec, label = "tabIndicatorWidth")
-    Box(
+    Row(
         modifier
-            .padding(top = 4.dp)
-            .offset { IntOffset(indicatorX.roundToPx(), 0) }
-            .width(indicatorWidth)
-            .height(TV_COLLECTION_TAB_INDICATOR_HEIGHT)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary),
+            .tvGlassBackground(CircleShape)
+            .padding(horizontal = TV_COLLECTION_TAB_BAR_PADDING),
+        horizontalArrangement = Arrangement.spacedBy(TV_COLLECTION_TAB_GAP),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
     )
+}
+
+/**
+ * 玻璃标签栏里的一个标签: 没选中的字降透明度, 选中的垫一块半透明浅灰片并加粗, 聚焦的换成浅色实底配黑字并抬起 (配色见 TvGlassColors);
+ * [count] 以小号淡色跟在后面. 焦点与点击挂在 [modifier] 上, [focused] 由调用方按 onFocusChanged 记好传进来.
+ */
+@Composable
+internal fun TvCollectionGlassTab(
+    label: String,
+    selected: Boolean,
+    focused: Boolean,
+    modifier: Modifier = Modifier,
+    count: Int? = null,
+) {
+    val glass = tvGlassColors()
+    val platter by animateColorAsState(
+        when {
+            focused -> glass.focusedPlatter
+            selected -> glass.selectedPlatter
+            else -> Color.Transparent
+        },
+        tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)),
+        label = "tabPlatter",
+    )
+    val labelColor by animateColorAsState(
+        when {
+            focused -> glass.focusedContent
+            selected -> glass.selectedContent
+            else -> glass.idleContent
+        },
+        tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)),
+        label = "tabLabel",
+    )
+    Row(
+        modifier
+            .tvGlassFocusLift(focused, CircleShape)
+            .background(platter, CircleShape)
+            .padding(horizontal = TV_COLLECTION_TAB_PADDING_HORIZONTAL, vertical = TV_COLLECTION_TAB_PADDING_VERTICAL),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            label,
+            color = labelColor,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            softWrap = false,
+        )
+        count?.let {
+            Text(
+                it.toString(),
+                color = labelColor.copy(alpha = labelColor.alpha * 0.7f),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 /**
@@ -1092,20 +1096,17 @@ internal val TV_COLLECTION_START_PAD = 16.dp
 /** 页面顶部留白 (tab 行之上). */
 internal val TV_COLLECTION_TOP_PAD = 24.dp
 
-/** Tab 之间的间距. */
-internal val TV_COLLECTION_TAB_SPACING = 28.dp
-
-/** 未选中 Tab 的文字不透明度. */
-internal const val TV_COLLECTION_TAB_UNSELECTED_ALPHA = 0.5f
-
-/** Tab 选中指示条厚度. */
-internal val TV_COLLECTION_TAB_INDICATOR_HEIGHT = 3.dp
+/** 玻璃标签栏里: 两端离胶囊边的留白、标签之间的空、每个标签的片的内边距. */
+private val TV_COLLECTION_TAB_BAR_PADDING = 4.dp
+private val TV_COLLECTION_TAB_GAP = 2.dp
+private val TV_COLLECTION_TAB_PADDING_HORIZONTAL = 14.dp
+private val TV_COLLECTION_TAB_PADDING_VERTICAL = 4.dp
 
 /** Tab 行到 Hero 信息块 (标题) 的间距. */
 private val TV_COLLECTION_TABS_TO_HERO_GAP = 10.dp
 
-/** Tab 行定高 (一行字 24 + 上下各 4 + 指示条上间距 4 与厚度 3): 网格顶线与 Hero 信息块的高度由它倒推, 见 [TV_COLLECTION_WALL_HERO_INFO_HEIGHT]. */
-private val TV_COLLECTION_TAB_ROW_HEIGHT = 39.dp
+/** 玻璃标签栏的定高 (标签的片 = 一行字 24 + 上下各 4, 胶囊比它高一截): 网格顶线与 Hero 信息块的高度由它倒推, 见 [TV_COLLECTION_WALL_HERO_INFO_HEIGHT]. */
+internal val TV_COLLECTION_TAB_ROW_HEIGHT = 39.dp
 
 /**
  * 网格上方的间距: 卡片墙是 Tab 行 (及错误横幅) 到网格顶线, hero 态是 Hero 信息块 (简介底部) 到聚焦行.
