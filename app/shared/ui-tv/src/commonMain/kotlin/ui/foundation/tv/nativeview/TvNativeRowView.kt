@@ -161,6 +161,14 @@ class TvNativeRowView(
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
+        restorePendingLeft()
+        // 焦点先停在行上等布局 (见 onRequestFocusInDescendants): 排出来了交给选中的那张 (恢复的上次那张), 没排到它就交给行首那张 ——
+        // 不让焦点停在没有聚焦效果的行上
+        if (isFocused && childCount > 0 && !focusCardIfLaidOut(selectedPosition)) focusCardIfLaidOut(leftIndex())
+    }
+
+    /** [bind] 之后这一次布局完成时挪到记下的行首. */
+    private fun restorePendingLeft() {
         val left = pendingLeft
         if (left < 0 || childCount == 0) return
         pendingLeft = -1
@@ -186,6 +194,13 @@ class TvNativeRowView(
     var entryIndex: () -> Int = { -1 }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        if (childCount == 0 && cards.itemCount > 0) {
+            // 有卡但一张都还没排出来 (刚建出来 / 刚换了数据, 如详情页重建时关联条目这一行): 让行自己先接住焦点 (返回 false 后由
+            // ViewGroup.requestFocus 落到行本身), 布局完交给卡 (见 onLayout), 卡一拿到焦点行就撤回可聚焦 (见 requestChildFocus).
+            // 接不住的话 Compose 那边的送焦当场失败, 焦点被全局兜底塞到页面别处 (详情页: 先跳回首屏, 布局完再被挂着的请求拉回来)
+            isFocusableInTouchMode = true
+            return false
+        }
         val index = entryIndex()
         if (index >= 0) {
             val view = findViewHolderForAdapterPosition(index)?.itemView
@@ -197,6 +212,12 @@ class TvNativeRowView(
             }
         }
         return super.onRequestFocusInDescendants(direction, previouslyFocusedRect)
+    }
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        // 行自己接住的焦点走了 (交到卡上 / 被按到别处): 撤回可聚焦, 行只在"等布局"那一段可聚焦 (见 onRequestFocusInDescendants)
+        if (!gainFocus && isFocusable) isFocusable = false
     }
 
     /** 第 [index] 张已经排出来就送焦 (在行首停靠线外露一截的也算: 拿到焦点时按需挪把它滚进来), 返回是否送上. */

@@ -106,6 +106,23 @@ class TvNativeRowNavigationTest {
     }
 
     @Test
+    fun `a focus request before the first layout lands on the restored card`() {
+        // 详情页重建时关联条目这一行刚建出来、还没排过就被送焦 (跨导航恢复)
+        lateinit var fresh: TvNativeRowView
+        val took = host.onMain {
+            val style = testWallStyle()
+            fresh = TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f)
+            fresh.animatedScroll = false
+            host.root.addView(fresh, FrameLayout.LayoutParams(1920, style.cardBlockHeightPx + style.rowSpacingPx))
+            fresh.bind(testCards(12, "新"), { i -> i.toLong() }, leftIndex = 4, columns = 6, focusIndex = 7)
+            fresh.requestFocus()
+        }
+        assertTrue(took, "还没排过的行接住了焦点")
+        host.waitUntil("排完落到恢复的第 7 张") { fresh.focusedChild?.let { fresh.getChildAdapterPosition(it) } == 7 }
+        assertFalse(host.onMain { fresh.isFocusable }, "卡拿到焦点后行撤回不可聚焦")
+    }
+
+    @Test
     fun `holding right moves focus to the next card on every repeat while the row glides`() {
         host.onMain {
             row.animatedScroll = true
