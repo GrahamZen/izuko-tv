@@ -125,6 +125,21 @@ fun <T : View> TvNativeRowHost(
     )
 }
 
+/**
+ * 长按菜单的目标, 收起后还留着: 菜单收起时要淡出 (见 AniDropdownMenu 的定位菜单), 这期间照样组合着上一次的目标、只把展开置假.
+ * [shown] 是此刻展开的那个 (null = 收起).
+ */
+@Composable
+internal fun <T : Any> rememberTvMenuTarget(shown: T?): T? {
+    val last = remember { TvMenuTargetHolder<T>() }
+    if (shown != null) last.value = shown
+    return shown ?: last.value
+}
+
+private class TvMenuTargetHolder<T : Any> {
+    var value: T? = null
+}
+
 /** 把 Compose 的矢量图标按 [size] 画成白色位图 (原生侧用 colorFilter 着色); [tint] 给了就直接画成那个颜色. */
 @Composable
 fun rememberTvNativeIcon(icon: ImageVector, size: Dp, tint: Color = Color.White): Bitmap {

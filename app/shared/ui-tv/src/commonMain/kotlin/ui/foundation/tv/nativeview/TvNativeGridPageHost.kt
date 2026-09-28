@@ -235,7 +235,8 @@ fun <T : Any> TvNativeGridPageHost(
         )
         emptyContent()
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
-        state.menu?.let { (item, rect) ->
+        // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)
+        rememberTvMenuTarget(state.menu)?.let { (item, rect) ->
             @Suppress("UNCHECKED_CAST")
             val menu = remember(item) { menuFor(item as T) }
             Box(
@@ -243,7 +244,7 @@ fun <T : Any> TvNativeGridPageHost(
                     .offset { IntOffset((rect.left - pagePosition.x).toInt(), (rect.top - pagePosition.y).toInt()) }
                     .size(with(density) { rect.width().toDp() }, with(density) { rect.height().toDp() }),
             ) {
-                menu(true) { state.menu = null }
+                menu(state.menu != null) { state.menu = null }
             }
         }
     }

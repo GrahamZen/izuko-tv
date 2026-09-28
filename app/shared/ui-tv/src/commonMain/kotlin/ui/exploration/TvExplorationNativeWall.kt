@@ -72,6 +72,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroStatus
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvMenuTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
@@ -316,14 +317,15 @@ internal fun TvExplorationNativeWall(
             modifier = Modifier.focusRequester(state.focusRequester),
         )
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
-        state.menu?.let { (subjectId, rect) ->
+        // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)
+        rememberTvMenuTarget(state.menu)?.let { (subjectId, rect) ->
             val menu = remember(subjectId) { menuFor(subjectId) }
             Box(
                 Modifier
                     .offset { IntOffset((rect.left - pagePosition.x).toInt(), (rect.top - pagePosition.y).toInt()) }
                     .size(with(density) { rect.width().toDp() }, with(density) { rect.height().toDp() }),
             ) {
-                menu(true) { state.menu = null }
+                menu(state.menu != null) { state.menu = null }
             }
         }
     }

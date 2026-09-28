@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -77,12 +78,15 @@ fun EditCollectionTypeDropDown(
     actions: List<SubjectCollectionAction> = SubjectCollectionActionsForEdit,
     // bangumi 没有"取消收藏"的接口 (v0 与 p1 的 DELETE 都是 404), 这个入口整体去掉
     showDelete: Boolean = false,
+    /** 焦点导航上菜单摆在哪 (见 [AniDropdownMenu] 的同名参数); null = 贴着锚点往下. */
+    positionProvider: PopupPositionProvider? = null,
 ) {
     var showConfirmDeleteDialog by rememberSaveable { mutableStateOf(false) }
     AniDropdownMenu(
         expanded,
         onDismissRequest = onDismissRequest,
         offset = DpOffset(x = 0.dp, y = 4.dp),
+        positionProvider = positionProvider,
         // 菜单是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器内嵌详情页点开时,
         // 画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
         modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
