@@ -273,6 +273,7 @@ private fun part2() = listOf(
     RemoteText("（未播出）", " (not aired)", "（未播出）", "（未播出）"),
     RemoteText("想看什么？", "What do you want to watch?", "想看什麼？", "想看什麼？"),
     RemoteText("{0} 分以上", "{0}+ rating", "{0} 分以上", "{0} 分以上"),
+    RemoteText("{0} 年", "{0}", "{0} 年", "{0} 年"),
     RemoteText("{0} 人评分", "{0} ratings", "{0} 人評分", "{0} 人評分"),
     RemoteText("获取剧集信息失败：{0}", "Couldn't get episode info: {0}", "獲取劇集信息失敗：{0}", "獲取劇集資訊失敗：{0}"),
     RemoteText("获取剧集信息超时，请重试", "Getting episode info timed out. Please try again.", "獲取劇集信息超時，請重試", "獲取劇集資訊超時，請重試"),
