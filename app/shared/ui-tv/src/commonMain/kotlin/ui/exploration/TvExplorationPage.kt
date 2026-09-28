@@ -112,6 +112,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_rec_also_watched
@@ -450,6 +451,8 @@ fun TvExplorationPage(
                     },
                     // 卡片的菜单只有长按一个入口, 恒吞掉那次长按残余的确认键
                     modifier = Modifier.consumeHeldConfirmKey(),
+                    // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
+                    positionProvider = rememberTvBesideAnchorPositionProvider(),
                 )
             }
         }

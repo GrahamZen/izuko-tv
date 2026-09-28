@@ -136,6 +136,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.tv.tvSwapSpec
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -604,6 +605,8 @@ fun TvCollectionPage(
                     },
                     // 卡片的菜单只有长按一个入口, 恒吞掉那次长按残余的确认键
                     modifier = Modifier.consumeHeldConfirmKey(),
+                    // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
+                    positionProvider = rememberTvBesideAnchorPositionProvider(),
                 )
             }
         }
