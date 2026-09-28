@@ -9,6 +9,9 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
@@ -130,6 +133,28 @@ class TvNativeGridPageNavigationTest {
 
     private fun windowFocus(): View? = host.onMain { host.activity.window.decorView.findFocus() }
 
+    /** 页面给的 hero 内容: 条目 [subject] 的文字, 没有背景图. */
+    private fun heroSource(subject: Int) = TvNativeHeroSource(
+        backdrop = null,
+        dimming = false,
+        rawSubjectId = subject,
+        text = TvNativeHeroText(subjectId = subject, title = "条目 $subject", infoReady = false),
+    )
+
+    /** 12 张带条目 id (100 + 下标) 的卡. */
+    private fun subjectCards() = List(12) { TvNativeCard(imageUrl = null, title = "卡 $it", subjectId = 100 + it) }
+
+    /** hero 文字此刻画出来的不透明度, 连同装它的那几层 (到网格页为止). */
+    private fun heroTextAlpha(): Float {
+        var alpha = 1f
+        var v: View? = page.heroText
+        while (v != null && v !== page) {
+            alpha *= v.alpha
+            v = v.parent as? View
+        }
+        return alpha
+    }
+
     @Test
     fun `crossing a tab parks the focus instead of losing it and held repeats do not cross again`() {
         host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -181,6 +206,86 @@ class TvNativeGridPageNavigationTest {
         host.onMain { page.focusItem(5) }
         host.waitUntil("焦点回到第 5 张") { focusedCard() == (0 to 5) }
         assertEquals(false, host.onMain { card?.focusLookHeld })
+    }
+
+    @Test
+    fun `entering the hero state waits for the content of the focused card`() {
+        host.onMain {
+            page.setCards(0, subjectCards())
+            // 页面给的内容停在出发那张 (第 5 张)
+            page.setSource(heroSource(105))
+        }
+        // 远跳落到首卡、排队的确认当场进 hero 态: 页面的内容还没跟上 (Compose 晚一两帧)
+        host.onMain { page.focusItem(0) }
+        host.waitUntil("焦点落到首卡") { focusedCard() == (0 to 0) }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("进 hero 态") { page.heroActive }
+        assertEquals(null, host.onMain { page.heroText.shownSubjectId }, "先换上了出发那张的文字")
+        // 首卡的内容到了: 换上
+        host.onMain { page.setSource(heroSource(100)) }
+        assertEquals(100, host.onMain { page.heroText.shownSubjectId })
+    }
+
+    @Test
+    fun `hero text arriving late while entering the hero state waits for its fade in`() {
+        host.onMain {
+            page.transitions = true
+            page.setCards(0, subjectCards())
+            page.setSource(heroSource(105))
+        }
+        host.onMain { page.focusItem(0) }
+        host.waitUntil("焦点落到首卡") { focusedCard() == (0 to 0) }
+        // 带过渡进 hero 态, 页面的内容还停在出发那张; 首卡的晚一两帧才到, 换上时文字那一段还没开始 (要等整屏压黑)
+        val alpha = host.onMain {
+            page.setHeroActive(true)
+            page.setSource(heroSource(100))
+            heroTextAlpha()
+        }
+        assertEquals(100, host.onMain { page.heroText.shownSubjectId })
+        assertEquals(0f, alpha, "内容一到文字就整块露出来了")
+    }
+
+    @Test
+    fun `the hero text does not come back when the focused card changes while leaving the hero state`() {
+        host.onMain {
+            page.transitions = true
+            page.setCards(0, subjectCards())
+            page.setSource(heroSource(105))
+            page.setHeroActive(true, animated = false)
+        }
+        assertEquals(105, host.onMain { page.heroText.shownSubjectId })
+        // 按返回退出 hero 态, 没退完就往旁边走了一张: 页面给的内容换成那一张
+        host.onMain {
+            page.setHeroActive(false)
+            page.setSource(heroSource(104))
+        }
+        // 退出途中文字只会越来越淡, 不换成旁边那张重新进场
+        var last = 1f
+        val deadline = SystemClock.uptimeMillis() + 1200
+        while (SystemClock.uptimeMillis() < deadline) {
+            val (alpha, shown) = host.onMain { heroTextAlpha() to page.heroText.shownSubjectId }
+            assertTrue(shown != 104, "退出途中换上了旁边那张的文字")
+            assertTrue(alpha <= last + 1e-3f, "退出途中文字又变亮了: $last -> $alpha")
+            last = alpha
+            SystemClock.sleep(16)
+        }
+        assertEquals(0f, last)
+        assertEquals(null, host.onMain { page.heroText.shownSubjectId })
+    }
+
+    @Test
+    fun `the rows below stay painted while the grid is lifted for the hero transition`() {
+        // 进 hero 态的头一帧: 网格整片往上抬, 抵掉 leanback 按 hero 线当场重排的那一跳 (见 TvNativeGridView.setHeroActive). 抬着的时候
+        // 框底那一截照样画着下面那排卡 (抬 150 后第 3 排封面在屏上 982..1364), 不跟着网格自己的边界一起被抬上去裁掉
+        host.onMain { page.setCards(0, testCards(30)) }
+        host.waitUntil("第 3 排排出来") { page.grid?.findViewHolderForAdapterPosition(12) != null }
+        val pixel = host.onMain {
+            page.grid!!.translationY = -150f
+            val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+            page.draw(Canvas(bitmap))
+            bitmap.getPixel(256, 1040)
+        }
+        assertTrue(Color.alpha(pixel) > 0, "框底那一截的卡被裁掉了")
     }
 
     @Test

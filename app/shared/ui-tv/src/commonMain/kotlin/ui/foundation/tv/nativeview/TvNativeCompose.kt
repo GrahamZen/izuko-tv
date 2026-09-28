@@ -13,13 +13,16 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
@@ -39,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_CORNER
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_ICON_GAP
@@ -52,6 +56,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_RATING_STAR_GAP
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_RATING_STAR_SIZE
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonContainerColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonOutlineColor
@@ -62,6 +67,7 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
  * 装原生页面的 AndroidView: 铺满, 再向左出血 [bleedLeft] (页面本身让开了收起的侧边栏, 横滑行要从侧边栏底下滑过、从屏幕左缘出屏).
  * 单独一层 graphicsLayer: 原生树每次失效只重录这一层 (里面就是一条画原生 RenderNode 的指令).
  * 视图只建一次 ([factory]), 主题 / 尺寸 / 数据的变化都走 [update], 焦点与滚动位置不因重组丢.
+ * 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]).
  */
 @Composable
 fun <T : View> TvNativeHost(
@@ -70,8 +76,9 @@ fun <T : View> TvNativeHost(
     bleedLeft: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val foreground = LocalPageIsForeground.current
     AndroidView(
-        factory = factory,
+        factory = { context -> TvNativeFocusGate(context, factory(context), foreground) },
         modifier = modifier
             .fillMaxSize()
             .layout { measurable, constraints ->
@@ -81,13 +88,16 @@ fun <T : View> TvNativeHost(
                 layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
             }
             .graphicsLayer(),
-        update = update,
+        update = { gate ->
+            gate.foreground = foreground
+            update(gate.content)
+        },
     )
 }
 
 /**
  * 装一条原生卡片行的 AndroidView (详情页那种夹在 Compose 内容中间的行): 布局上只占 [height] 高, 视图本身上下各多出 [bleedVertical]
- * (聚焦卡放大、投影伸出行外, 装它的 AndroidView 会按自己的边界裁掉子视图), 宽度铺满.
+ * (聚焦卡放大、投影伸出行外, 装它的 AndroidView 会按自己的边界裁掉子视图), 宽度铺满. 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]).
  */
 @Composable
 fun <T : View> TvNativeRowHost(
@@ -97,11 +107,12 @@ fun <T : View> TvNativeRowHost(
     bleedVertical: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val foreground = LocalPageIsForeground.current
     AndroidView(
         factory = { context ->
-            factory(context).also { view ->
+            TvNativeFocusGate(context, factory(context), foreground).also { gate ->
                 // 装它的那层 (AndroidViewHolder) 默认按边界裁子视图; 出血靠布局给大, 这里只是保险
-                view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                gate.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {
                         (v.parent as? ViewGroup)?.clipChildren = false
                     }
@@ -121,8 +132,50 @@ fun <T : View> TvNativeRowHost(
                 layout(placeable.width, rowHeight) { placeable.place(0, -bleed) }
             }
             .graphicsLayer(),
-        update = update,
+        update = { gate ->
+            gate.foreground = foreground
+            update(gate.content)
+        },
     )
+}
+
+/**
+ * 包在原生页面 / 行外面的一层 (装在 AndroidView 里的就是它, [content] 铺满其中, 不裁子视图): 本页不在前台 ([LocalPageIsForeground])
+ * 时, 系统焦点进不了里面的原生视图.
+ *
+ * Compose 那侧挡焦点 (被盖住的列表页焦点组 onEnter 拒绝, 见 TvZoomStackScene) 只管 Compose 自己的焦点移动. 方向键在上层页面没被
+ * Compose 消费时, 系统按屏幕位置在整个窗口里找下一个焦点 (ViewRootImpl → FocusFinder), 垫在下面的列表页的原生卡片照样是候选;
+ * 原生视图一拿到焦点, Compose 的互操作节点直接把自己的焦点也挪过去, 不经 onEnter. 于是列表页在看不见的地方换了聚焦卡 (hero 跟着换),
+ * 返回缩回时落到那张卡上 (真机 2026-09-28: 详情页快速上下翻再连按返回, 列表页焦点落到下面一两行的首卡).
+ *
+ * 做法是被问到时现读 ([getDescendantFocusability]): 系统收集候选 (addFocusables)、子视图 requestFocus 查祖先、有新的可聚焦视图时
+ * 上报 (focusableViewAvailable)、Compose 取互操作节点的可聚焦性 (hasFocusable) 都经过它. 状态翻转那一刻不改任何属性 —— 回到前台
+ * 当帧就放开, 页面自己的焦点恢复照常成功. 两种情形照常放行:
+ * - 里面已经持着焦点 (点卡片进详情页、详情页还没接走焦点的那一段): 持焦的节点不当场变不可聚焦, 否则 Compose 重新取这个互操作
+ *   节点的可聚焦性时会把整棵树的焦点清掉;
+ * - 返回缩回运动中 ([TvHeroZoomHandoff.shrinkMoving]): 这段按键两页一起吞, 漏不过来; 详情页在缩回层上屏那一刻就出栈的那条路径上,
+ *   列表页的焦点正是在运动中落回原生卡片的.
+ *
+ * 读栈顶状态不登记快照观察: 这里会在 Compose 取可聚焦性时被调到, 登记上的话前台一翻转就会触发那次重新判定.
+ */
+private class TvNativeFocusGate<T : View>(
+    context: Context,
+    val content: T,
+    foreground: State<Boolean>,
+) : FrameLayout(context) {
+    /** 本页此刻在不在前台; 可空: 父类构造期间就可能被问到, 那时还没赋值 (当作在前台). */
+    var foreground: State<Boolean>? = foreground
+
+    init {
+        clipChildren = false
+        clipToPadding = false
+        addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+
+    override fun getDescendantFocusability(): Int =
+        if (!hasFocus() && Snapshot.withoutReadObservation { blocked() }) FOCUS_BLOCK_DESCENDANTS else super.getDescendantFocusability()
+
+    private fun blocked(): Boolean = foreground?.value == false && !TvHeroZoomHandoff.shrinkMoving
 }
 
 /**

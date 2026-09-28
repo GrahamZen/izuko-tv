@@ -48,6 +48,7 @@ import kotlin.math.ceil
  * @param subtitle 给了就番名只占一行、下面一行小字 (详情页关联条目的「续集」「前传」), 块高不变.
  * @param progress 继续观看的集数进度 (0..1), 贴封面底缘一条细进度条; null 不画.
  * @param obscure NSFW 打码: 封面只解一张很小的图, 放大成糊图.
+ * @param subjectId 这张卡是哪个条目: 网格页进 hero 态时拿它核对页面给的 hero 内容是不是这一张的 (见 TvNativeGridPageView); null = 不核对.
  */
 @Immutable
 data class TvNativeCard(
@@ -56,6 +57,7 @@ data class TvNativeCard(
     val subtitle: String? = null,
     val progress: Float? = null,
     val obscure: Boolean = false,
+    val subjectId: Int? = null,
 )
 
 /**

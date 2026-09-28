@@ -117,6 +117,7 @@ internal fun TvCollectionNativeGrid(
                 imageUrl = info.subjectInfo.imageLarge,
                 title = info.subjectInfo.displayName,
                 progress = tvCollectionCardProgress(info, histories),
+                subjectId = info.subjectId,
             )
         },
         source = null,
