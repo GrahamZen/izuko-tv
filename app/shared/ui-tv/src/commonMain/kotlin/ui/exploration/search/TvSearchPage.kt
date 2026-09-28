@@ -1624,6 +1624,13 @@ private fun TvSearchResultsPane(
     val currentSortLabel = tvSearchSortLabel(state.query.sort)
     val activeFilters = remember(state.query, currentSortLabel) {
         buildList {
+            // 年份/季度排在最前: 它最容易被忘在那儿 —— 按季度浏览完再搜作品名, 季度还挂着, 搜什么都是空,
+            // 而这一行原先只有标签/评分/排序, 屏幕上没有一处能看出年份还开着 (2026-09-28 用户实测:
+            // 同一部番换了三个名字都搜不到, 八分钟后才发现是季度筛选). 季度从属年份, 一起清.
+            state.query.year?.let { year ->
+                val label = state.query.season?.let { "$year Q${it.quarterNumber}" } ?: year.toString()
+                add(label to state.query.copy(year = null, season = null))
+            }
             state.query.tags.orEmpty().forEach { tag ->
                 add(tag to state.query.copy(tags = (state.query.tags.orEmpty() - tag).ifEmpty { null }))
             }
