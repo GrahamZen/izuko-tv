@@ -15,6 +15,8 @@ import android.animation.ObjectAnimator
 import android.animation.StateListAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
@@ -38,6 +40,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.runtime.Immutable
 import com.github.panpf.sketch.Sketch
+import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.tv.TV_OBSCURED_COVER_LONG_EDGE_PX
 import kotlin.math.ceil
@@ -62,7 +65,8 @@ data class TvNativeCard(
 
 /**
  * 原生海报墙的卡片: 可聚焦的外框 (卡宽 × (卡高 + 番名块)) 里放海报与番名. 外观取值见 [TvNativeWallStyle]: 圆角封面、1 像素玻璃边
- * (Android TV 上 Apple TV App 的卡片), 静止贴身一层淡影 / 聚焦时抬高成一大片软影 (系统阴影, 同 Google TV 桌面卡片的 elevation)、放大、
+ * (Android TV 上 Apple TV App 的卡片), 静止时底下一圈看得出的影 (照 tvOS 海报 lockup, 预先模糊好的图, 见 [TvNativeCardShadowView]) /
+ * 聚焦时换成抬高的一大片软影 (系统阴影, 同 Google TV 桌面卡片的 elevation)、放大、
  * 番名没聚焦时暗一档 (Apple TV 卡片标题的两档色)、放大时往下让开 (番名不放大, 让出海报多伸出来的那截).
  *
  * 聚焦效果照 Google TV 桌面卡片的做法由状态动画 (StateListAnimator) 驱动, 只动 RenderNode 属性、不重录卡片内容: 动画只推一个
@@ -71,6 +75,7 @@ data class TvNativeCard(
  */
 @SuppressLint("ViewConstructor")
 class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) : FrameLayout(context) {
+    private val idleShadow = TvNativeCardShadowView(context, style)
     private val cover = TvNativeCoverView(context, style)
     private val label = TvNativeLabelView(context)
     private val title = TvNativeTextView(context)
@@ -167,6 +172,16 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
         clipChildren = false
         clipToPadding = false
+        // 静止时的投影垫在海报底下 (先加 = 先画); 流畅档没有这层
+        idleShadow.shadow?.let { shadow ->
+            addView(
+                idleShadow,
+                LayoutParams(shadow.bitmap.width, shadow.bitmap.height).apply {
+                    leftMargin = style.gapPx - shadow.padPx
+                    topMargin = style.gapPx - shadow.padPx + style.idleShadowOffsetYPx.roundToInt()
+                },
+            )
+        }
         addView(
             cover,
             LayoutParams(style.coverWidthPx, style.coverHeightPx).apply {
@@ -255,7 +270,9 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         val s = 1f + (style.focusScale - 1f) * p
         cover.scaleX = s
         cover.scaleY = s
-        cover.elevation = style.idleElevationPx + (style.focusedElevationPx - style.idleElevationPx) * p
+        // 静止那圈影随聚焦淡出, 系统阴影随聚焦从 0 抬起: 两层交接, 聚焦的那张影子明显大一圈. 影子的透明度乘压暗的平方 (同系统阴影色)
+        cover.elevation = style.focusedElevationPx * p
+        idleShadow.alpha = (1f - p) * dim * dim
         cover.alpha = dim
         label.translationY = style.titleShiftPx * p
         label.alpha = (style.titleIdleAlpha + (1f - style.titleIdleAlpha) * p) * titleVisibility * dim
@@ -330,6 +347,73 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
 
     override fun requestLayout() {
         if (!isLaidOut) super.requestLayout()
+    }
+}
+
+/**
+ * 海报静止时底下的那圈投影 ([TvNativeWallStyle.idleShadowColor]): 同尺寸的卡共用一张预先模糊好的图 (见 [tvNativeCardShadow]), 只画
+ * 封面四周露出来的那一圈 —— 中间被不透明的封面挡着, 不画, 省掉整张卡面积的混合. 透明度由卡按聚焦程度与压暗设 (图层属性, 不重录).
+ */
+@SuppressLint("ViewConstructor")
+private class TvNativeCardShadowView(context: Context, private val style: TvNativeWallStyle) : View(context) {
+    val shadow: TvNativeCardShadow? = tvNativeCardShadow(style)
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG).also { it.color = style.idleShadowColor }
+    private val src = Rect()
+
+    override fun onDraw(canvas: Canvas) {
+        val s = shadow ?: return
+        val w = s.bitmap.width
+        val h = s.bitmap.height
+        // 封面挡住的那块 (图里的坐标): 封面比这张图靠上 idleShadowOffsetY, 四角的圆角那一截露在外面, 照画
+        val inset = s.padPx + ceil(style.cornerPx).toInt()
+        val dy = style.idleShadowOffsetYPx.roundToInt()
+        val top = (inset - dy).coerceIn(0, h)
+        val bottom = (h - inset - dy).coerceIn(top, h)
+        val left = inset.coerceIn(0, w)
+        val right = (w - inset).coerceIn(left, w)
+        piece(canvas, s.bitmap, 0, 0, w, top)
+        piece(canvas, s.bitmap, 0, bottom, w, h)
+        piece(canvas, s.bitmap, 0, top, left, bottom)
+        piece(canvas, s.bitmap, right, top, w, bottom)
+    }
+
+    private fun piece(canvas: Canvas, bitmap: Bitmap, l: Int, t: Int, r: Int, b: Int) {
+        if (r <= l || b <= t) return
+        src.set(l, t, r, b)
+        canvas.drawBitmap(bitmap, src, src, paint)
+    }
+
+    // 四块不重叠: 透明度逐绘制指令乘, 不走离屏层
+    override fun hasOverlappingRendering(): Boolean = false
+}
+
+/** 预先模糊好的海报投影: [bitmap] 只有透明度 (颜色由画的 Paint 给), 封面在图里的 ([padPx], [padPx]) 处. */
+private class TvNativeCardShadow(val bitmap: Bitmap, val padPx: Int)
+
+private data class TvNativeCardShadowKey(val width: Int, val height: Int, val cornerPx: Float, val blurPx: Float)
+
+private val tvNativeCardShadows = HashMap<TvNativeCardShadowKey, TvNativeCardShadow>()
+
+/**
+ * 按封面尺寸、圆角与模糊半径做一张投影图, 同样的卡共用 (主线程上建卡时取). 模糊半径按 CSS / Sketch 的约定 (σ = 半径 / 2), 图四周留 3σ.
+ * 投影透明 (流畅档) 时 null.
+ */
+private fun tvNativeCardShadow(style: TvNativeWallStyle): TvNativeCardShadow? {
+    val w = style.coverWidthPx
+    val h = style.coverHeightPx
+    if (Color.alpha(style.idleShadowColor) == 0 || w <= 0 || h <= 0) return null
+    val key = TvNativeCardShadowKey(w, h, style.cornerPx, style.idleShadowBlurPx)
+    return tvNativeCardShadows.getOrPut(key) {
+        val sigma = style.idleShadowBlurPx / 2f
+        val pad = ceil(sigma * 3f).toInt()
+        val bitmap = Bitmap.createBitmap(w + pad * 2, h + pad * 2, Bitmap.Config.ALPHA_8)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            // Skia 把模糊半径换成 σ = 0.57735 × r + 0.5
+            if (sigma > 0.5f) maskFilter = BlurMaskFilter((sigma - 0.5f) / 0.57735f, BlurMaskFilter.Blur.NORMAL)
+        }
+        Canvas(bitmap).drawRoundRect(RectF(pad.toFloat(), pad.toFloat(), (pad + w).toFloat(), (pad + h).toFloat()), style.cornerPx, style.cornerPx, paint)
+        TvNativeCardShadow(bitmap, pad)
     }
 }
 
