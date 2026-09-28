@@ -16,6 +16,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -279,6 +280,10 @@ fun TvPortraitCardFocusRing(modifier: Modifier = Modifier) {
  * (参考 Prime: 主按钮略亮, 次按钮接近底色), 按白天/黑夜主题分别取色. 聚焦时整颗按钮
  * 高亮为主题主色、文字/图标反色 (onPrimary), 与侧边栏选中一致.
  * [filled] = true 为主按钮 (略亮一档). 图标 + 文字单行.
+ *
+ * 未聚焦时描一圈细边 ([TV_HERO_BUTTON_OUTLINE_WIDTH]), 照 Apple TV App 压在剧照上的按钮 (`Dark` 样式: 底板之外一圈 1 pt 白 16%):
+ * 按钮底下是剧照或它羽化出的页面底, 光靠底板与背景的明暗差, 灰底板贴着同样发灰的背景时看不出按钮在哪. 聚焦时底板换成主题色,
+ * 边界本来就清楚, 不描边 (Apple 聚焦态同样没有描边).
  */
 @Composable
 fun TvHeroButton(
@@ -298,11 +303,13 @@ fun TvHeroButton(
     var focused by remember { mutableStateOf(false) }
     // 按当前主题明暗取底色 (由 surface 亮度判定, 兼容手动日夜切换):
     // 黑夜: 主按钮 rgb(49,54,61), 次按钮接近黑; 白天: 对应的浅灰两档.
-    // 海报墙页面 (见 TvPosterWallTheme) 换成海报墙配色里 Apple 那几档灰, 主按钮仍亮一档: 深色是 Gray3 / Gray4, 浅色是 Gray6 / 白 20% 底板
+    // 海报墙页面 (见 TvPosterWallTheme) 换成海报墙配色里 Apple 那几档灰, 主按钮仍亮一档: 深色是 Gray3 / Gray4, 浅色是
+    // 白 20% (Apple 浅色按钮底板, surfaceContainer) / 白 10%
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val posterWall = LocalTvPosterWallTheme.current
     val baseContainer = when {
-        posterWall && filled -> MaterialTheme.colorScheme.surfaceContainerHigh
+        posterWall && filled && dark -> MaterialTheme.colorScheme.surfaceContainerHigh
+        posterWall && filled -> MaterialTheme.colorScheme.surfaceContainer
         posterWall -> MaterialTheme.colorScheme.surfaceContainerLow
         dark && filled -> Color(0xFF31363D)
         dark -> Color(0xFF17191C)
@@ -311,6 +318,7 @@ fun TvHeroButton(
     }
     val container = if (focused) MaterialTheme.colorScheme.primary else baseContainer
     val content = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val outline = if (focused) null else BorderStroke(TV_HERO_BUTTON_OUTLINE_WIDTH, tvHeroButtonOutlineColor(dark))
     // 按 TV_HERO_BUTTON_SCALE 整体缩放内边距/图标/字号
     val scale = TV_HERO_BUTTON_SCALE
     val textStyle = MaterialTheme.typography.titleSmall.let {
@@ -328,6 +336,7 @@ fun TvHeroButton(
             .tvTouchFocusOnTap(),
         shape = RoundedCornerShape(TV_HERO_BUTTON_CORNER),
         color = container,
+        border = outline,
         interactionSource = interactionSource,
     ) {
         Row(
@@ -1443,6 +1452,16 @@ internal const val TV_OBSCURED_BACKDROP_LONG_EDGE_PX = 48
 
 /** Hero 操作按钮圆角. */
 private val TV_HERO_BUTTON_CORNER = 8.dp
+
+/** hero 按钮未聚焦时的描边宽度: Apple 的 1 pt (1080p 坐标, 本应用 1 pt = 0.5 dp). */
+private val TV_HERO_BUTTON_OUTLINE_WIDTH = 0.5.dp
+
+/**
+ * hero 按钮未聚焦时的描边色: 深色照 Apple TV App `Dark` 按钮样式的白 16%; 浅色取对称的黑 16% (Apple 的按钮样式不分主题, 浅色表里
+ * 通用描边 hairline 是黑 10%, 这里压在剧照羽化出的灰底上要比通用描边清楚一档).
+ */
+private fun tvHeroButtonOutlineColor(dark: Boolean): Color =
+    if (dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.16f)
 
 /** 操作按钮整体缩放比例 (内边距/图标/字号统一乘此值). 调小让按钮更紧凑. */
 private const val TV_HERO_BUTTON_SCALE = 0.9f
