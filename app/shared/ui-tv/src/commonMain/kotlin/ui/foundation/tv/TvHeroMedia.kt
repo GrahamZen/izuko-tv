@@ -15,13 +15,11 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.text.intl.Locale
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
-import com.github.panpf.sketch.cache.CachePolicy
-import com.github.panpf.sketch.request.ImageRequest
-import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.source.DataFrom
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
+import me.him188.ani.app.ui.foundation.downloadToCache
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.platform.currentTimeMillis
@@ -463,10 +461,9 @@ object TvHeroPrefetch {
  * 落空都是这么来的). 但并行度必须压住 —— 与显示中的主图共用同一 host 的连接额度, 见
  * [MAX_INFLIGHT].
  *
- * **只落磁盘不进内存**: `memoryCachePolicy(DISABLED)` + 1×1 的目标尺寸 —— 下载缓存存的是网络
- * 原始字节 (按 URL 索引, 与显示时的请求同一条记录), 所以显示端照样能拿到全尺寸图, 而预热本身
- * 不解码出可用位图. 一张 w1280 解码后是 1280×720×4 ≈ 3.7MB, 预热几张就把 4K UI 下本就紧张的
- * 内存吃掉了.
+ * **只落磁盘、不解码** ([downloadToCache]) —— 下载缓存存的是网络原始字节 (按 URL 索引, 与显示时的请求同一条记录),
+ * 所以显示端照样能拿到全尺寸图. 解码进内存的话一张 w1280 是 1280×720×4 ≈ 3.7MB, 预热几张就把 4K UI 下本就紧张的
+ * 内存吃掉了; 1×1 的普通请求也不行, 照样要把整张熵解码一遍 (w1280 一张约 30ms), 还占着屏上卡片的解码队列.
  *
  * 曾经有个"最可能的那一个目标预解码进内存"的档 (实测省 ~70ms), 迁到 sketch 后删掉了: 它依赖
  * **coil 的内存缓存键只按 URL、对任何请求尺寸都判有效**, 而 sketch 的键含请求尺寸, 显示端是按
@@ -604,16 +601,9 @@ object TvHeroImagePrefetch {
         val startedAt = TimeSource.Monotonic.markNow()
         val job = scope.launch {
             try {
-                val result = sketch.execute(
-                    ImageRequest(context, url) {
-                        // 一律只落磁盘: 下载缓存按 URL 存网络原始字节, 与解码尺寸无关, 所以显示端
-                        // 无论按什么尺寸请求都能命中. 1×1 让这次几乎不解码 —— 预解码进内存对显示端
-                        // 没用 (sketch 的内存缓存键含请求尺寸), 详见类文档.
-                        downloadCachePolicy(CachePolicy.ENABLED)
-                        memoryCachePolicy(CachePolicy.DISABLED)
-                        size(1, 1)
-                    },
-                )
+                // 一律只落磁盘、不解码: 下载缓存按 URL 存网络原始字节, 与解码尺寸无关, 所以显示端
+                // 无论按什么尺寸请求都能命中, 详见类文档
+                val dataFrom = sketch.downloadToCache(context, url)
                 val elapsed = startedAt.elapsedNow().inWholeMilliseconds
                 // 冷启动未知期到此为止 (见 tvHeroImagePrefetchConcurrency). 缓存命中不进 EWMA
                 // 却照样算"跑完了" —— 磁盘全热时它是唯一能结束未知期的信号
@@ -621,13 +611,8 @@ object TvHeroImagePrefetch {
                 // 网络档位的信号源 (见 TvImageNetworkTier). 成功只记**真正走了网络的**:
                 // 磁盘/内存命中是 20~140ms, 图一热起来就会把慢网读成快网.
                 // 失败也要记 —— 否则最该进慢档的网络 (连续超时/重置) 一个样本都产生不了,
-                // 系统会一直停在快档, 继续开 3 条投机请求, 正好在坏网络上加剧竞争
-                when {
-                    result is ImageResult.Success && result.dataFrom == DataFrom.NETWORK ->
-                        TvImageNetworkSpeed.record(elapsed)
-
-                    result is ImageResult.Error -> TvImageNetworkSpeed.recordFailure(elapsed)
-                }
+                // 系统会一直停在快档, 继续开 3 条投机请求, 正好在坏网络上加剧竞争 (失败走下面的 catch)
+                if (dataFrom == DataFrom.NETWORK) TvImageNetworkSpeed.record(elapsed)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

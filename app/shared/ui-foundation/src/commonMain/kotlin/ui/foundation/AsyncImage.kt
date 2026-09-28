@@ -15,6 +15,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -163,6 +164,8 @@ fun AsyncImage(
      * RenderEffect, 那条路只能退化成纯色块), 也不花 GPU 模糊的开销.
      */
     downsampleLongEdgePx: Int? = null,
+    /** 离场时没下完就交给后台补下 (见 [rememberImageCompletionGrace]); 这里记下实际发出的地址、上屏时置位. */
+    completionGrace: ImageCompletionGrace? = null,
 ) {
     val state = rememberAsyncImageState()
     AniAsyncImage(
@@ -186,6 +189,7 @@ fun AsyncImage(
         crossfadeDurationMillis = crossfadeDurationMillis,
         decodeAtOriginalSize = decodeAtOriginalSize,
         downsampleLongEdgePx = downsampleLongEdgePx,
+        completionGrace = completionGrace,
     )
 }
 
@@ -211,6 +215,7 @@ internal fun AniAsyncImage(
     crossfadeDurationMillis: Int? = null,
     decodeAtOriginalSize: Boolean = false,
     downsampleLongEdgePx: Int? = null,
+    completionGrace: ImageCompletionGrace? = null,
 ) {
     var requestSize by remember { mutableStateOf<IntSize?>(null) }
 
@@ -234,7 +239,17 @@ internal fun AniAsyncImage(
     val errorStateImage = rememberStateImage(error, "error")
     val fallbackStateImage = rememberStateImage(fallback, "fallback")
 
-    val request = ComposableImageRequest(model) {
+    // Bangumi 封面按显示宽度换成图床的缩略图 (见 bangumiCoverThumbnailUrl). 原尺寸解码那条路与尺寸无关, 不换
+    val requestModel = if (decodeAtOriginalSize || model == null) {
+        model
+    } else {
+        requestSize?.let { bangumiCoverThumbnailUrl(model, it.width) } ?: model
+    }
+    if (completionGrace != null && requestModel != null) {
+        SideEffect { completionGrace.requestUrl = requestModel }
+    }
+
+    val request = ComposableImageRequest(requestModel) {
         if (placeholderStateImage != null) placeholder(placeholderStateImage)
         if (errorStateImage != null) error(errorStateImage)
         if (fallbackStateImage != null) fallback(fallbackStateImage)
@@ -256,7 +271,15 @@ internal fun AniAsyncImage(
         }
     }
 
-    ImageLoadStateEffect(state, onLoading, onSuccess, onError)
+    val onSuccessWithGrace: ((AniImageLoadSuccess) -> Unit)? = if (completionGrace == null) {
+        onSuccess
+    } else {
+        { success ->
+            completionGrace.loaded = true
+            onSuccess?.invoke(success)
+        }
+    }
+    ImageLoadStateEffect(state, onLoading, onSuccessWithGrace, onError)
     SketchAsyncImage(
         request = request,
         sketch = LocalSketch.current,
