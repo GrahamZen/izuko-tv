@@ -37,7 +37,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_FOCUSED_ELEVATION
-import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_ELEVATION
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_SHADOW
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_SHADOW_BLUR
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_SHADOW_LIGHT
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_SHADOW_OFFSET_Y
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_OUTLINE_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_OUTLINE_ALPHA_LIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_ROW_SPACING
@@ -130,7 +133,11 @@ data class TvNativeWallStyle(
     val rowSpacingPx: Int,
     val columnSpacingPx: Int,
     val focusScale: Float,
-    val idleElevationPx: Float,
+    /** 静止时海报底下那圈投影 (见 TvNativeCardShadowView): 颜色 (含透明度; 透明 = 不画), 下移, 模糊半径 (CSS 的约定, σ = 半径 / 2). */
+    val idleShadowColor: Int,
+    val idleShadowOffsetYPx: Float,
+    val idleShadowBlurPx: Float,
+    /** 聚焦时海报的系统阴影高度 (静止时为 0, 那时的影是上面那圈). */
     val focusedElevationPx: Float,
     /** 聚焦时番名往下让开多少: 放大后海报下缘多伸出 (倍数 − 1) × 卡高 / 2. */
     val titleShiftPx: Float,
@@ -192,8 +199,14 @@ fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int): TvNativeWallStyle {
                 rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
                 columnSpacingPx = TV_POSTER_WALL_COLUMN_SPACING.roundToPx(),
                 focusScale = focusScale,
-                // 流畅档静止不抬高 (不画那层淡影)
-                idleElevationPx = if (visualEffects.transitions) TV_POSTER_WALL_IDLE_ELEVATION.toPx() else 0f,
+                // 流畅档静止不画那圈影
+                idleShadowColor = when {
+                    !visualEffects.transitions -> Color.Transparent
+                    light -> TV_POSTER_WALL_IDLE_SHADOW_LIGHT
+                    else -> TV_POSTER_WALL_IDLE_SHADOW
+                }.toArgb(),
+                idleShadowOffsetYPx = TV_POSTER_WALL_IDLE_SHADOW_OFFSET_Y.toPx(),
+                idleShadowBlurPx = TV_POSTER_WALL_IDLE_SHADOW_BLUR.toPx(),
                 focusedElevationPx = TV_POSTER_WALL_FOCUSED_ELEVATION.toPx(),
                 titleShiftPx = (focusScale - 1f) * cardHeightPx / 2f,
                 titleIdleAlpha = if (light) TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT else TV_POSTER_WALL_TITLE_IDLE_ALPHA,

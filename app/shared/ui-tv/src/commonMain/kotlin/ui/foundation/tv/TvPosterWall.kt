@@ -484,10 +484,14 @@ private val TV_POSTER_WALL_HERO_SPLIT_BAND = 96.dp
 private const val TV_POSTER_WALL_HERO_SPLIT_STOPS = 8
 
 /**
- * 卡片静止时的高度: 贴身一圈淡影 (Apple TV App 卡片静止阴影下移 4 pt ≈ 2 dp). 系统阴影的光源在屏幕上方中间,
- * 屏幕中部的卡投影下移量约等于高度.
+ * 卡片静止时的投影, 照 tvOS 18 设计套件的海报 lockup (未聚焦: 黑 40%、下移 4 pt、模糊 12 pt; 1 pt = 0.5 dp): 每张卡底下都有一圈
+ * 看得出的影, 聚焦的那张换成系统阴影的一大片软影 ([TV_POSTER_WALL_FOCUSED_ELEVATION]). 系统阴影的浓度被主题限死 (投射阴影约 19%),
+ * 深色底上几乎看不出, 所以静止这层按这组值预先模糊好贴在海报底下 (见 TvNativeCardShadow). 浅色档透明度减半 (同 [TV_POSTER_WALL_SHADOW_COLOR_LIGHT]).
  */
-internal val TV_POSTER_WALL_IDLE_ELEVATION = 2.dp
+internal val TV_POSTER_WALL_IDLE_SHADOW = Color.Black.copy(alpha = 0.4f)
+internal val TV_POSTER_WALL_IDLE_SHADOW_LIGHT = Color.Black.copy(alpha = 0.2f)
+internal val TV_POSTER_WALL_IDLE_SHADOW_OFFSET_Y = 2.dp
+internal val TV_POSTER_WALL_IDLE_SHADOW_BLUR = 6.dp
 
 /** 卡片聚焦时的高度: 抬起来的一大片软影 (Apple TV App 聚焦阴影下移 40 pt、模糊 50 pt; 系统阴影 20 dp 时模糊约 28 dp、下移约 10 dp). */
 internal val TV_POSTER_WALL_FOCUSED_ELEVATION = 20.dp
