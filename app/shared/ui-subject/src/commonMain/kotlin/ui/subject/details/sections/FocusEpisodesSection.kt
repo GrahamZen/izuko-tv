@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -793,6 +794,9 @@ private fun FocusEpisodeAnchorRing(
                     val gap = TvFocusRing.Gap.roundToPx()
                     IntOffset(-gap, -gap)
                 }
+                // 不受父约束截断: 行的高度锁在卡片高 (见 LazyRow 外那层 BoxWithConstraints), 直接 size 的话框高被截成
+                // cellHeight, 上沿外扩了、下沿没有 —— 卡片下沿露出框外一个空隙宽 (浅色底上看得很清楚)
+                .wrapContentSize(Alignment.TopStart, unbounded = true)
                 .size(cellWidth + TvFocusRing.Gap * 2, cellHeight + TvFocusRing.Gap * 2)
                 // 定尺寸之后缩放 = 绕框自身中心缩, 与卡片 (绕卡中心缩) 同心
                 .scale(pressScale)
