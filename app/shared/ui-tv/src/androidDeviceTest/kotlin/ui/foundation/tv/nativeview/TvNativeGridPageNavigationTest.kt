@@ -116,8 +116,9 @@ class TvNativeGridPageNavigationTest {
 
     @AfterTest
     fun tearDown() {
+        // 在主线程上取消: 原生视图的动画在取消回调里停 ValueAnimator, 只能在主线程上停
+        host.onMain { scope.cancel() }
         host.close()
-        scope.cancel()
     }
 
     /** 焦点所在的 (网格 key, 下标); 不在卡上时 null. */
@@ -164,6 +165,22 @@ class TvNativeGridPageNavigationTest {
         assertEquals(1, listener.topRowUp)
         assertTrue(windowFocus() === outside, "焦点回到页面给的落点")
         assertEquals(listOf(true, false), listener.parked)
+    }
+
+    @Test
+    fun `the card opened from the hero state keeps its focused look after the focus leaves`() {
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("进 hero 态") { page.heroActive }
+        // hero 态里再按确认 = 进详情页; 焦点交给详情页 (这里用页面外的视图代替)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.onMain { outside.requestFocus() }
+        host.waitUntil("焦点离开网格") { outside.isFocused }
+        val card = host.onMain { page.grid?.findViewHolderForAdapterPosition(5)?.itemView as? TvNativeCardView }
+        assertTrue(host.onMain { card?.focusLookHeld == true }, "焦点走了那张卡仍画成聚焦态")
+        // 返回后焦点交还: 放开
+        host.onMain { page.focusItem(5) }
+        host.waitUntil("焦点回到第 5 张") { focusedCard() == (0 to 5) }
+        assertEquals(false, host.onMain { card?.focusLookHeld })
     }
 
     @Test

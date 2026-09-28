@@ -283,7 +283,13 @@ class TvNativeGridPageView(
         override fun onClick(index: Int) {
             if (grid !== current) return
             // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场)
-            if (!timeline.active) setHeroActive(true) else listener?.onClick(index)
+            if (!timeline.active) {
+                setHeroActive(true)
+            } else {
+                // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
+                grid.cards.setFocusLookHeld(grid, index)
+                listener?.onClick(index)
+            }
         }
 
         override fun onLongPress(index: Int, anchor: Rect) {
