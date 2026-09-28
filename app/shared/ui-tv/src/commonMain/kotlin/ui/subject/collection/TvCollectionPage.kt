@@ -108,6 +108,7 @@ import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
 import me.him188.ani.app.ui.foundation.tv.focusScale
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
+import me.him188.ani.app.ui.foundation.tv.tvTextOverCardsShadow
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
@@ -676,6 +677,8 @@ fun TvCollectionPage(
                     endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
                     heroLinePx = wallHeroLinePx,
                     fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
+                    // 卡照常从标签行底下滑过 (同探索页), 标签字自带投影 (见 TvCollectionTabRow)
+                    dimPastTopLine = false,
                 ),
                 backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
                 backdropHeightPx = backdropHeightPx,
@@ -917,6 +920,8 @@ private fun TvCollectionTabRow(
     }
     // 焦点下标记账 / "聚焦即选中"封印 / 左右键显式移动 / 连发守卫都在共享原语里 (见 TvFocusRail.kt).
     // 标签恒在屏且必然可聚焦, 所以送焦直接 requestFocus, 不用走 scope 请求 + 悬挂.
+    // 卡片墙上越过网格顶线的卡不压暗, 照常从本行底下滑过: 字靠投影压在封面上读得清
+    val labelShadow = tvTextOverCardsShadow()
     val rail = rememberTvFocusRail(
         scope = focusScope,
         keyAt = { index -> tabFocusKeys[index] },
@@ -970,7 +975,7 @@ private fun TvCollectionTabRow(
                     Text(
                         type.displayTextTv(),
                         color = labelColor,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(shadow = labelShadow),
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         maxLines = 1,
                         softWrap = false,
@@ -979,7 +984,7 @@ private fun TvCollectionTabRow(
                         Text(
                             count.toString(),
                             color = labelColor.copy(alpha = labelColor.alpha * 0.7f),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.copy(shadow = labelShadow),
                             maxLines = 1,
                         )
                     }

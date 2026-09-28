@@ -27,9 +27,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -474,6 +476,30 @@ internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA = 0.5f
 
 /** 没聚焦时番名的浅色档: Apple 浅色 LabelSecondary 是 60% 黑. */
 internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT = 0.6f
+
+/**
+ * 压在海报墙卡片上的顶栏文字 (追番页的标签行: 卡片墙上越过网格顶线的卡不压暗, 照常从它底下滑过) 的投影: 字色的反色、柔和一圈,
+ * 压在亮 / 花的封面上也读得清. 深色主题字是浅色、投影是黑; 浅色主题反过来.
+ */
+@Composable
+internal fun tvTextOverCardsShadow(): Shadow {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val density = LocalDensity.current
+    return remember(dark, density) {
+        with(density) {
+            Shadow(
+                color = if (dark) Color.Black.copy(alpha = TV_TEXT_OVER_CARDS_SHADOW_ALPHA) else Color.White.copy(alpha = TV_TEXT_OVER_CARDS_SHADOW_ALPHA_LIGHT),
+                offset = Offset(0f, TV_TEXT_OVER_CARDS_SHADOW_OFFSET.toPx()),
+                blurRadius = TV_TEXT_OVER_CARDS_SHADOW_BLUR.toPx(),
+            )
+        }
+    }
+}
+
+private const val TV_TEXT_OVER_CARDS_SHADOW_ALPHA = 0.8f
+private const val TV_TEXT_OVER_CARDS_SHADOW_ALPHA_LIGHT = 0.9f
+private val TV_TEXT_OVER_CARDS_SHADOW_OFFSET = 1.dp
+private val TV_TEXT_OVER_CARDS_SHADOW_BLUR = 6.dp
 
 @Composable
 internal fun tvPosterWallTitleStyle(): TextStyle = MaterialTheme.typography.bodyMedium.copy(
