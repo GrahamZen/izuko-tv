@@ -184,9 +184,17 @@ data class TvNativeCardBadgeStyle(
 /**
  * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙): 探索 / 追番 / 搜索页是 tvPosterWallCardWidth 按内容区算的,
  * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
+ * [columnSpacing] = 卡格之间的距离 (不含卡格里的聚焦框空隙). [cardHeight] = 卡格高 (含聚焦框空隙); null = 按卡宽与封面比例
+ * [TV_PORTRAIT_CARD_COVER_RATIO] 算.
  */
 @Composable
-fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int, badge: TvNativeCardBadgeStyle? = null): TvNativeWallStyle {
+fun rememberTvNativeWallStyle(
+    cardWidth: Dp,
+    columns: Int,
+    badge: TvNativeCardBadgeStyle? = null,
+    columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
+    cardHeight: Dp? = null,
+): TvNativeWallStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
     val light = colors.surface.luminance() >= 0.5f
@@ -196,10 +204,10 @@ fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int, badge: TvNativeCardBa
     val subtitleColor = tvHeroSecondaryContentColor()
     val titleStyle = tvPosterWallTitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
-    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge) {
+    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight) {
         with(density) {
             val cardWidthPx = cardWidth.roundToPx()
-            val cardHeightPx = (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO).roundToPx()
+            val cardHeightPx = (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx()
             val focusScale = TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale
             TvNativeWallStyle(
                 cardWidthPx = cardWidthPx,
@@ -211,7 +219,7 @@ fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int, badge: TvNativeCardBa
                 title = titleStyle.toTvNativeTextStyle(density, titleColor),
                 subtitleColor = subtitleColor.toArgb(),
                 rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
-                columnSpacingPx = TV_POSTER_WALL_COLUMN_SPACING.roundToPx(),
+                columnSpacingPx = columnSpacing.roundToPx(),
                 focusScale = focusScale,
                 // 流畅档静止不画那圈影
                 idleShadowColor = when {

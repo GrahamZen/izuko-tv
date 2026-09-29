@@ -52,6 +52,7 @@ import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
@@ -204,7 +205,8 @@ fun <T : Any> TvNativeGridPageHost(
         // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
         onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
         heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
-        wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, emptyContent,
+        wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
+        cardHeight = null, emptyContent,
     )
 }
 
@@ -213,7 +215,7 @@ fun <T : Any> TvNativeGridPageHost(
  * 前 [focusableCount] 张 (占位期间给 0: 占位卡不收落点, 等真数据). [heroEnabled] = false 时没有 hero 态: 卡片墙上按确定直接进详情页
  * ([TvNativeGridPageCallbacks.onCardClick]). [badge] 给了就按卡片的 [TvNativeCard.badge] 在封面右上角画角标.
  * [topBarScrollAwayPx] > 0 时逐帧报告网格内容往上滚了多少 ([TvNativeGridPageState.contentScroll], 夹在 0..它), 页面让顶栏跟着一起滚走.
- * 其余同分页那一版.
+ * [columnSpacing] = 卡格之间的距离, [cardHeight] = 卡格高 (null = 按卡宽与封面比例算), 见 [rememberTvNativeWallStyle]. 其余同分页那一版.
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -238,6 +240,8 @@ fun <T : Any> TvNativeGridPageHost(
     modifier: Modifier = Modifier,
     landingIndex: Int = -1,
     topBarScrollAwayPx: Int = 0,
+    columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
+    cardHeight: Dp? = null,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -247,7 +251,7 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = focusableCount,
         onBind = {},
         heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, emptyContent,
+        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, emptyContent,
     )
 }
 
@@ -277,13 +281,15 @@ private fun <T : Any> TvNativeGridPageHostContent(
     modifier: Modifier,
     landingIndex: Int,
     topBarScrollAwayPx: Int,
+    columnSpacing: Dp,
+    cardHeight: Dp?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
     val visualEffects = LocalThemeSettings.current.visualEffects
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f

@@ -110,11 +110,12 @@ import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
-import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_ROW_SPACING
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.focusScale
@@ -142,6 +143,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -567,14 +569,30 @@ fun TvScheduleGridPage(
         }
     }
 
-    // ---- 几何: 整屏是本页 (没有侧边栏), 两侧同宽; 卡宽与列数同追番页 (tvPosterWallColumns) ----
+    // ---- 几何: 整屏是本页 (没有侧边栏), 照 tvOS 网格 (HIG Layout): 左右安全区 80pt、列距 40pt, 6 列时封面 260pt (1080p 下 40dp / 20dp / 130dp),
+    // 顶上的日期行不影响横向排版. 列数的规则同追番页 (tvPosterWallColumns). 这几个量的都是封面: 卡格四周另有聚焦框空隙 (TvFocusRing.Gap),
+    // 所以卡格比封面宽两份空隙、格距比列距窄两份空隙、网格起点往外让一份空隙 ----
     val windowSize = LocalWindowInfo.current.containerSize
     val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp }
     val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
-    val gridContentWidth = pageWidth - TV_SCHEDULE_SIDE_PAD * 2
-    val columns = with(density) { tvPosterWallColumns(gridContentWidth) }
-    val cardWidth = tvPosterWallCardWidth(gridContentWidth, columns)
-    val cardHeight = cardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+    val coverContentWidth = pageWidth - TV_SCHEDULE_SIDE_PAD * 2
+    val columns = with(density) { tvPosterWallColumns(coverContentWidth) }
+    val coverWidth = tvPosterWallCardWidth(coverContentWidth, columns)
+    val cardWidth = coverWidth + TvFocusRing.Gap * 2
+    // 卡格高: 首屏上两行卡块加一个行距正好铺满网格顶线以下, 第二行番名的第二行底边落在屏幕底、整个露出来 (露出下一行, 但不把一行字切成两半).
+    // 番名块定高随系统字号, 现算; 封面宽高比夹在 [TV_SCHEDULE_COVER_RATIO_NARROWEST] 与 [TV_SCHEDULE_COVER_RATIO_WIDEST] 之间 (界面缩放调小时
+    // 页面变高, 不让封面拉得太长; 调大时放不下两行就照这个上限)
+    val labelHeight = tvPosterWallLabelHeight()
+    val cardHeight = with(density) {
+        val gridTopPx = (TV_SCHEDULE_TOP_PAD + TV_SCHEDULE_DATE_RAIL_HEIGHT + TV_SCHEDULE_DATES_TO_GRID_GAP).roundToPx()
+        val fitPx = (pageHeight.roundToPx() - gridTopPx - TV_POSTER_WALL_ROW_SPACING.roundToPx()) / 2 - labelHeight.roundToPx()
+        val gapPx = (TvFocusRing.Gap * 2).roundToPx()
+        val coverPx = coverWidth.toPx()
+        fitPx.coerceIn(
+            (coverPx / TV_SCHEDULE_COVER_RATIO_WIDEST).roundToInt() + gapPx,
+            (coverPx / TV_SCHEDULE_COVER_RATIO_NARROWEST).roundToInt() + gapPx,
+        ).toDp()
+    }
     // 错误横幅的高度 (含上间距): 海报墙的顶线跟着它往下让
     var errorCardHeightPx by remember { mutableIntStateOf(0) }
     val metrics = with(density) {
@@ -585,8 +603,8 @@ fun TvScheduleGridPage(
                 if (presentation.error != null) errorCardHeightPx else 0,
             grid = TvNativeGridMetrics(
                 columns = columns,
-                startPx = TV_SCHEDULE_SIDE_PAD.roundToPx(),
-                endPx = TV_SCHEDULE_SIDE_PAD.roundToPx(),
+                startPx = (TV_SCHEDULE_SIDE_PAD - TvFocusRing.Gap).roundToPx(),
+                endPx = (TV_SCHEDULE_SIDE_PAD - TvFocusRing.Gap).roundToPx(),
                 topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
                 bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
                 endMarginPx = tvPosterWallEndMargin(cardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
@@ -675,6 +693,8 @@ fun TvScheduleGridPage(
             landingIndex = restoreCardIndex,
             // 日期行 (连同错误横幅) 跟着海报墙一起滚走, 整块滚出屏幕为止
             topBarScrollAwayPx = metrics.gridTopPx,
+            columnSpacing = TV_POSTER_WALL_COLUMN_SPACING - TvFocusRing.Gap * 2,
+            cardHeight = cardHeight,
         ) {
             // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
             if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {
@@ -894,8 +914,15 @@ private val TV_SCHEDULE_COLLECTION_TYPES = listOf(
 /** 卡片角标计入的收藏类型. */
 private val TV_SCHEDULE_FOLLOWED_TYPES = setOf(UnifiedCollectionType.DOING, UnifiedCollectionType.WISH)
 
-/** 页面两侧留白: 本页没有侧边栏, 两侧同宽 (同其余页面的右侧留白). 日期行从这里排起, 滚动时两头都铺到屏幕边缘. */
-private val TV_SCHEDULE_SIDE_PAD = TV_PAGE_END_PAD
+/**
+ * 页面两侧留白 (到封面边): 本页没有侧边栏, 照 tvOS 安全区左右 80pt (HIG Layout; 1080p 下 1pt = 0.5dp). 日期行从这里排起, 与封面左缘对齐;
+ * 滚动时两头都铺到屏幕边缘.
+ */
+private val TV_SCHEDULE_SIDE_PAD = 40.dp
+
+/** 封面宽高比的上下限 (卡格高按首屏放下两行现算, 见几何那一段): 最窄 2:3 (tvOS 海报), 最宽 3:4. */
+private const val TV_SCHEDULE_COVER_RATIO_NARROWEST = 2f / 3f
+private const val TV_SCHEDULE_COVER_RATIO_WIDEST = 0.75f
 
 /** 页顶到日期行: 照 tvOS 标签栏, 顶边离屏幕顶 46pt (HIG Tab bars 的 tvOS 一节; 1080p 下 1pt = 0.5dp). */
 private val TV_SCHEDULE_TOP_PAD = 23.dp
