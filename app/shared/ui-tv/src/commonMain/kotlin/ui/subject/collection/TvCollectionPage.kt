@@ -10,8 +10,7 @@
 package me.him188.ani.app.ui.subject.collection
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +39,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -98,7 +98,6 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
-import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
@@ -126,12 +125,12 @@ import me.him188.ani.app.ui.foundation.tv.resolveTvHeroMedia
 import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusSpec
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
-import me.him188.ani.app.ui.foundation.tv.tvSwapSpec
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -991,14 +990,14 @@ internal fun TvCollectionGlassTab(
     count: Int? = null,
 ) {
     val glass = tvGlassColors()
-    val platter by animateColorAsState(
-        when {
-            focused -> glass.focusedPlatter
-            selected -> glass.selectedPlatter
-            else -> Color.Transparent
-        },
-        tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)),
-        label = "tabPlatter",
+    // 选中片与聚焦片各是一层, 只动透明度 (照 tvOS: 聚焦的白片淡入淡出): 按颜色插值的话"没有片"得写成 Color.Transparent,
+    // 那是 alpha 0 的**黑** —— 淡入途中先经过半透明深灰, 浅色主题下到达的标签先黑一下再变白. 选中片只在没聚焦时露出,
+    // 与聚焦片同一时长交叉淡入淡出. 两层的进度只在绘制里读
+    val focusLayer by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused), label = "tabFocusPlatter")
+    val selectLayer by animateFloatAsState(
+        if (selected && !focused) 1f else 0f,
+        tvGlassFocusSpec(focused),
+        label = "tabSelectPlatter",
     )
     val labelColor by animateColorAsState(
         when {
@@ -1006,13 +1005,17 @@ internal fun TvCollectionGlassTab(
             selected -> glass.selectedContent
             else -> glass.idleContent
         },
-        tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)),
+        tvGlassFocusSpec(focused),
         label = "tabLabel",
     )
     Row(
         modifier
             .tvGlassFocusLift(focused, CircleShape)
-            .background(platter, CircleShape)
+            .drawBehind {
+                val outline = CircleShape.createOutline(size, layoutDirection, this)
+                if (selectLayer > 0f) drawOutline(outline, glass.selectedPlatter, alpha = selectLayer)
+                if (focusLayer > 0f) drawOutline(outline, glass.focusedPlatter, alpha = focusLayer)
+            }
             .padding(horizontal = TV_COLLECTION_TAB_PADDING_HORIZONTAL, vertical = TV_COLLECTION_TAB_PADDING_VERTICAL),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
