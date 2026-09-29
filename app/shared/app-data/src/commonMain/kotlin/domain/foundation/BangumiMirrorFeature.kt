@@ -18,9 +18,11 @@ import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.plugin
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLBuilder
+import io.ktor.http.contentType
 import io.ktor.http.takeFrom
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.flow.Flow
@@ -240,6 +242,14 @@ class BangumiMirrorFeatureHandler(
             if (target >= 0 && status in 300..399) {
                 warnIfMirrorMoved(request, routing.mirrors[target], thisCall)
             }
+            // API 地址回了网页 = 没回答这个请求: 镜像前面挂着反机器人验证页, 状态码照样是 200.
+            // 当这一家不通, 接着试下一家, 也不粘住 —— 否则调用方拿网页去解析, 整个会话停在只回网页的那家上
+            if (status < 400 && isApiHost(originalHost) &&
+                thisCall.response.contentType()?.match(ContentType.Text.Html) == true
+            ) {
+                logger.info { "Bangumi: $host answered an API request with a web page, trying the next endpoint" }
+                continue
+            }
             if (status < 400) {
                 if (sticky.value?.let { it.signature == signature && it.target == target } != true) {
                     logger.info {
@@ -277,6 +287,10 @@ class BangumiMirrorFeatureHandler(
                     targets.joinToString { if (it < 0) "origin" else routing.mirrors[it] },
         )
     }
+
+    /** 只回 JSON 的 API 子域 (不含主站与图床). */
+    private fun isApiHost(host: String): Boolean =
+        host == "api.${BangumiMirrorHosts.ORIGIN_ROOT}" || host == "next.${BangumiMirrorHosts.ORIGIN_ROOT}"
 
     /** 已经提示过「搬家了」的镜像, 每个只提示一次. */
     private val warnedMovedMirrors = MutableStateFlow(emptySet<String>())
