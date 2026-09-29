@@ -103,7 +103,7 @@ class TvNativeGridPageView(
     style: TvNativeWallStyle,
     metrics: TvNativeGridPageMetrics,
     heroTextStyle: TvNativeHeroTextStyle,
-) : FrameLayout(context) {
+) : FrameLayout(context), TvNativeAmbientAnimations {
     var listener: TvNativeGridPageListener? = null
 
     /** 第几张卡被绑定 (此刻显示的那份网格; 分页的访问提示). */
@@ -206,6 +206,10 @@ class TvNativeGridPageView(
         heroBox.alpha = 0f
         timeline.dark = dark
         applyHero()
+    }
+
+    override fun setAmbientAnimationsPaused(paused: Boolean) {
+        heroText.marqueePaused = paused
     }
 
     fun update(style: TvNativeWallStyle, metrics: TvNativeGridPageMetrics, heroTextStyle: TvNativeHeroTextStyle) {

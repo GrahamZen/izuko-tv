@@ -155,6 +155,19 @@ class TvNativeHeroTextView(
     /** 标题显示的条目变了 (页面据此观察放大转场的缩回, 见 [setTitleHandoff]). */
     var onShownSubjectChanged: ((Int?) -> Unit)? = null
 
+    /**
+     * 跑马灯 (标题、下一集集名) 暂停: 页面不在前台 (被放大进来的详情页盖着, 视图仍附着) 时由页面置位. 跑马灯按选中态跑、不看焦点,
+     * 不停的话盖着的这几行每帧失效, 整个窗口跟着逐帧重画. 只收回选中态: 文字回到行首, 省略方式不变 (不重新排版);
+     * 回前台照常先停一拍再滚.
+     */
+    var marqueePaused: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            updateTitleMarquee()
+            status.setMarqueePaused(value)
+        }
+
     private val title = TvNativeTextView(context)
     private val metaRow = LinearLayout(context)
     private val star = ImageView(context)
@@ -483,7 +496,7 @@ class TvNativeHeroTextView(
             oneLine -> null
             else -> TextUtils.TruncateAt.END
         }
-        title.isSelected = run
+        title.isSelected = run && !marqueePaused
     }
 
     /**
@@ -581,6 +594,8 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
     private val name = TvNativeTextView(context)
     private val tail = TvNativeTextView(context)
     private val parts = listOf(lead, name, tail)
+    private var marqueeRepeat = 0
+    private var marqueePaused = false
 
     init {
         for (v in parts) {
@@ -593,9 +608,16 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
 
     fun applyStyle(style: TvNativeTextStyle, marqueeRepeat: Int) {
         for (v in parts) style.applyTo(v)
+        this.marqueeRepeat = marqueeRepeat
         name.marqueeRepeatLimit = marqueeRepeat
         name.ellipsize = if (marqueeRepeat != 0) TextUtils.TruncateAt.MARQUEE else null
-        name.isSelected = marqueeRepeat != 0
+        name.isSelected = marqueeRepeat != 0 && !marqueePaused
+    }
+
+    /** 见 [TvNativeHeroTextView.marqueePaused]. */
+    fun setMarqueePaused(paused: Boolean) {
+        marqueePaused = paused
+        name.isSelected = marqueeRepeat != 0 && !paused
     }
 
     fun bind(status: TvNativeHeroStatus) {
