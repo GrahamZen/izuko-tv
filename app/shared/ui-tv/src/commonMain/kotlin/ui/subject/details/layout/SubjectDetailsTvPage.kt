@@ -1896,10 +1896,16 @@ private class TvHeroTitleLocator {
 /** 标题排版后报给 [locator]. 挂在放大平移 (tvHeroZoomTitleShift) 外面: 记的是标题落定的位置. */
 private fun Modifier.tvHeroTitleLocator(locator: TvHeroTitleLocator): Modifier = onGloballyPositioned { locator.update(it) }
 
-/** 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放. */
+/**
+ * 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放.
+ *
+ * 带宽不超过 [gap] × [remaining]: 贴着屏幕边的边 (探索 / 追番 / 搜索页 hero 的右缘与上缘) 本该没有软边, 而源框是量出来的 (左上角取整
+ * 像素、右下角按缩放后的宽高算), 常差零点几个像素. 不按距离封顶的话, 这零点几个像素会长出一条 [base] 宽的软边, 擦出下面垫着的底色,
+ * 浅色主题下是右缘一道白色羽化, 撤层那一下又突然没了.
+ */
 private fun tvHeroSoftEdgeBand(gap: Float, base: Float, remaining: Float, scale: Float): Float {
     if (gap <= 0f || base <= 0f || scale <= 0f) return 0f
-    return base * (gap * remaining / minOf(base, gap)).coerceAtMost(1f) / scale
+    return minOf(base, gap * remaining) / scale
 }
 
 /**
@@ -3451,9 +3457,11 @@ fun TvHeroShrinkLayer() {
             val keep = keepMode != 0 && !popFirst && listAlive && TvHeroZoomHandoff.session == null &&
                     TvHeroZoomHandoff.isZoomEntry(shrink.fromSession?.entryKey)
             val popAtArm = !keep && (popFirst || listAlive)
-            TvHeroZoomHandoff.armShrink(shrink, keepDetails = keep)
+            // 不在上屏这一帧出栈、也不走快速路径 = 列表页不在组合里, 落地后在层下重建: 底色一直盖到它就绪 (见 Shrink.holdScrim)
+            TvHeroZoomHandoff.armShrink(shrink, keepDetails = keep, rebuildList = !keep && !popAtArm)
             zoomLogger.info {
-                "Details back: shrink moving from t=${shrink.fromT} (popFirst=$popFirst, popAtArm=$popAtArm, keep=${if (keep) keepMode else 0})"
+                "Details back: shrink moving from t=${shrink.fromT} (popFirst=$popFirst, popAtArm=$popAtArm, keep=${if (keep) keepMode else 0}), " +
+                        "to=${shrink.bounds.left},${shrink.bounds.top},${shrink.bounds.right},${shrink.bounds.bottom}"
             }
             if (popAtArm) shrink.pop()
             // 上屏这一帧 (详情页移出组合, 索尼上重组 30~50ms; 旧顺序还有出栈) 不计入缩回时长: 先等它过去, 再取起点 ——
@@ -3503,15 +3511,24 @@ fun TvHeroShrinkLayer() {
                 while (!TvHeroZoomHandoff.listReady(shrink)) withFrameNanos { }
                 true
             } != null
-            // 列表页在层下先画一帧, 撤层那一帧只是翻透明度
-            val doneNanos = withFrameNanos { it }
-            zoomLogger.info { "Details back: shrink done (${if (isReady) "ready" else "timeout"}) +${(doneNanos - armNanos) / 1_000_000}ms" }
-            // 超时 = 白盖住画面 800ms, 从外面看就是"返回后黑了一秒". 把对不上的那一项记下来 (见 sourceDebug)
+            // 超时 = 列表页没按时就绪, 撤层时它的 hero 图 / 标题可能还没画出来. 把对不上的那一项记下来 (见 sourceDebug)
             if (!isReady) {
                 zoomLogger.warn {
                     "Details back: listReady timeout, want=${shrink.subjectId}:${shrink.url.takeLast(32)} got ${TvHeroZoomHandoff.sourceDebug()}"
                 }
             }
+            // 列表页在层下先画一帧, 撤层那一帧只是翻透明度
+            var doneNanos = withFrameNanos { it }
+            // 列表页在层下重建的路径上底色这时还不透明地盖着 (见 Shrink.holdScrim): 列表页已画在下面, 按缩回尾段同样的时长化开再撤层
+            val revealMillis = TV_HERO_SHRINK_MILLIS * TvPolishFlags.shrinkScrimT
+            if (shrink.holdScrim && revealMillis > 0f) {
+                val revealStart = doneNanos
+                while (shrink.landedReveal < 1f) {
+                    doneNanos = withFrameNanos { it }
+                    shrink.landedReveal = ((doneNanos - revealStart) / 1_000_000f / revealMillis).coerceIn(0f, 1f)
+                }
+            }
+            zoomLogger.info { "Details back: shrink done (${if (isReady) "ready" else "timeout"}) +${(doneNanos - armNanos) / 1_000_000}ms" }
             TvHeroZoomHandoff.endShrink(shrink)
         }
         DisposableEffect(shrink) { onDispose { TvHeroZoomHandoff.endShrink(shrink) } }
