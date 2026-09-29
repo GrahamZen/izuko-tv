@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv
 
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -542,23 +543,35 @@ internal fun Modifier.tvGlassBackground(shape: Shape): Modifier = composed {
 
 /**
  * 顶栏玻璃控件聚焦时抬起: 略放大 ([TV_GLASS_FOCUS_SCALE]) 并投下一层影 (照 tvOS 聚焦的标签). 挂在控件底色之前, 投影画在底色下面;
- * 只动图层属性, 不重排.
+ * 只动图层属性, 不重排. 失焦时投影当场撤掉, 放大按更短的时长缩回 (见 [tvGlassFocusSpec]): 系统阴影要降到 0 才完全没有, 跟着缩回的
+ * 曲线拖尾, 看着就是焦点走了、原地还留着一圈影子.
  */
 @Composable
 internal fun Modifier.tvGlassFocusLift(focused: Boolean, shape: Shape): Modifier {
-    val lift by animateFloatAsState(if (focused) 1f else 0f, tvSwapSpec(tween(TV_GLASS_FOCUS_MILLIS)), label = "glassLift")
+    val lift by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused), label = "glassLift")
     return graphicsLayer {
         val scale = 1f + (TV_GLASS_FOCUS_SCALE - 1f) * lift
         scaleX = scale
         scaleY = scale
-        shadowElevation = TV_GLASS_FOCUS_ELEVATION.toPx() * lift
+        shadowElevation = if (focused) TV_GLASS_FOCUS_ELEVATION.toPx() * lift else 0f
         this.shape = shape
         clip = false
     }
 }
 
-/** 顶栏控件换底色、抬起的时长. */
+/**
+ * 顶栏控件聚焦态过渡 (换底色、字色、抬起) 的规格: 得焦按 [TV_GLASS_FOCUS_MILLIS], 失焦按更短的 [TV_GLASS_UNFOCUS_MILLIS] ——
+ * 照 tvOS 的焦点引擎, 焦点离开的那个比新拿到焦点的那个先落回去. 流畅档直接到位.
+ */
+@Composable
+internal fun <T> tvGlassFocusSpec(focused: Boolean): FiniteAnimationSpec<T> =
+    tvSwapSpec(tween(if (focused) TV_GLASS_FOCUS_MILLIS else TV_GLASS_UNFOCUS_MILLIS))
+
+/** 顶栏控件得焦时换底色、抬起的时长. */
 internal const val TV_GLASS_FOCUS_MILLIS = 150
+
+/** 顶栏控件失焦时落回去的时长 (见 [tvGlassFocusSpec]). */
+internal const val TV_GLASS_UNFOCUS_MILLIS = 90
 
 /** 聚焦抬起伸出控件外的余量 (放大多出来的那截 + 投影): 装在会裁切的容器 (LazyRow 按主轴边界裁) 里时, 两头要让出这么多. */
 internal val TV_GLASS_FOCUS_BLEED = 16.dp
