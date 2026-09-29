@@ -1273,7 +1273,7 @@ internal fun tvRecGroupTitle(group: RecommendationGroup): String = when (group.k
  * [header] = 这一行上方要不要放区块标题.
  *
  * 一组一行、各带标题; 只有 [RecommendationGroupKind.FEED] (未登录时的整份推荐) 例外 —— 那一组两百条, 按屏上完整放得下的张数
- * 切成多行 (不横滑, 见 [tvRecRowsOf]), 标题只在首行上方放一次.
+ * 切成多行 (不横滑, 只排满行, 见 [tvRecRowsOf]), 标题只在首行上方放一次.
  */
 @Immutable
 internal class TvRecRow(
@@ -1283,16 +1283,19 @@ internal class TvRecRow(
     val header: Boolean,
 )
 
-private fun tvRecRowsOf(groups: List<RecommendationGroup>, feedRowSize: Int): List<TvRecRow> {
+internal fun tvRecRowsOf(groups: List<RecommendationGroup>, feedRowSize: Int): List<TvRecRow> {
     val rows = mutableListOf<TvRecRow>()
     var groupStart = 0
     for (group in groups) {
-        val rowSize = if (group.kind == RecommendationGroupKind.FEED) feedRowSize else group.items.size
-        for (offset in group.items.indices step rowSize.coerceAtLeast(1)) {
+        val feed = group.kind == RecommendationGroupKind.FEED
+        val rowSize = if (feed) feedRowSize.coerceAtLeast(1) else group.items.size
+        // FEED 只排满行: 条数不一定是列数的整数倍, 末尾凑不满一行的几条不放; 整组不到一行时照放
+        val shown = if (feed && group.items.size >= rowSize) group.items.size / rowSize * rowSize else group.items.size
+        for (offset in 0 until shown step rowSize.coerceAtLeast(1)) {
             rows += TvRecRow(
                 group,
                 start = groupStart + offset,
-                size = minOf(rowSize, group.items.size - offset),
+                size = minOf(rowSize, shown - offset),
                 header = offset == 0,
             )
         }
