@@ -35,6 +35,7 @@ import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.models.subject.PersonType
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.app.data.network.mapper.sortedByOriginalCast
 import me.him188.ani.app.data.network.mapper.toPersonInfo
 import me.him188.ani.datasources.bangumi.next.apis.CharacterBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.apis.PersonBangumiNextApi
@@ -101,8 +102,10 @@ class PersonDetailsRepository(
         } catch (e: Exception) {
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
+        // 各条目的原版声优排在前面 (见 sortedByOriginalCast), 同一个人只留第一次
         val actors = casts.data
             .flatMap { it.casts }
+            .sortedByOriginalCast()
             .map { it.person }
             .distinctBy { it.id }
             .map { it.toPersonInfo() }
@@ -170,7 +173,7 @@ class PersonDetailsRepository(
                         CharacterSubjectInfo(
                             subject = it.subject.toSummary(),
                             role = CharacterRole(it.type),
-                            actors = it.casts.map { cast -> cast.person.toPersonInfo() },
+                            actors = it.casts.sortedByOriginalCast().map { cast -> cast.person.toPersonInfo() },
                         )
                     },
                 )
