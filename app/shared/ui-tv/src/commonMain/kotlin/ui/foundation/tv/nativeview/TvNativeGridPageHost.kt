@@ -22,6 +22,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,9 +44,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
@@ -57,12 +62,13 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
 /**
  * 网格页原生海报墙在页面这一侧的状态: 视图引用、hero 态 (跨导航保存, 返回本页时停在 hero 态)、整屏黑度、各份网格的位置 (页面重建时恢复)、
- * 长按菜单锚点.
+ * 长按菜单锚点、整屏背景的点开 (新番时间表, 跨导航保存: 返回时页面重建也从清晰图起).
  */
 @Stable
 class TvNativeGridPageState internal constructor(
     heroActive: Boolean,
     internal val savedPositions: HashMap<Int, Int>,
+    wallOpenIndex: Int,
 ) {
     var view: TvNativeGridPageView? by mutableStateOf(null)
         internal set
@@ -79,6 +85,19 @@ class TvNativeGridPageState internal constructor(
     /** 长按菜单的锚点: 那一项 (页面的列表项), 封面在窗口里的框. */
     internal var menu: Pair<Any, AndroidRect>? by mutableStateOf(null)
 
+    /** 整屏背景点开途中 (对焦还没到位、还没进详情页): 返回键取消点开. */
+    internal var wallOpening: Boolean by mutableStateOf(false)
+
+    /** 整屏背景点开进了详情页的那张 (-1 = 没有): 回到本页倒放. */
+    internal var wallOpenIndex: Int by mutableIntStateOf(wallOpenIndex)
+
+    /** 点开之后本页离开过前台 (真进了详情页); 恢复出来的状态算离开过. */
+    internal var wallOpenLeft: Boolean = wallOpenIndex >= 0
+
+    /** 点开时顶栏等 Compose 部件跟着卡片淡没的程度 (0..1), 页面在绘制里读. */
+    var wallFade: Float by mutableFloatStateOf(0f)
+        internal set
+
     /** 退出 hero 态 (返回键). */
     fun exitHero() {
         view?.setHeroActive(false)
@@ -94,12 +113,14 @@ class TvNativeGridPageState internal constructor(
 
 @Composable
 fun rememberTvNativeGridPageState(): TvNativeGridPageState =
-    rememberSaveable(saver = TvNativeGridPageStateSaver) { TvNativeGridPageState(heroActive = false, savedPositions = HashMap()) }
+    rememberSaveable(saver = TvNativeGridPageStateSaver) {
+        TvNativeGridPageState(heroActive = false, savedPositions = HashMap(), wallOpenIndex = -1)
+    }
 
 private val TvNativeGridPageStateSaver = Saver<TvNativeGridPageState, ArrayList<Any>>(
     save = { state ->
         state.capture()
-        arrayListOf(state.heroActive, ArrayList(state.savedPositions.keys), ArrayList(state.savedPositions.values))
+        arrayListOf(state.heroActive, ArrayList(state.savedPositions.keys), ArrayList(state.savedPositions.values), state.wallOpenIndex)
     },
     restore = { list ->
         @Suppress("UNCHECKED_CAST")
@@ -107,8 +128,21 @@ private val TvNativeGridPageStateSaver = Saver<TvNativeGridPageState, ArrayList<
 
         @Suppress("UNCHECKED_CAST")
         val values = list[2] as List<Int>
-        TvNativeGridPageState(heroActive = list[0] as Boolean, savedPositions = HashMap(keys.zip(values).toMap()))
+        TvNativeGridPageState(
+            heroActive = list[0] as Boolean,
+            savedPositions = HashMap(keys.zip(values).toMap()),
+            wallOpenIndex = list.getOrNull(3) as? Int ?: -1,
+        )
     },
+)
+
+/**
+ * 网格页海报墙底下的整屏背景 (新番时间表, 见 TvNativeWallBackdropView 与 TvNativeGridPageView 的对焦一节): [target] = 此刻该铺哪张
+ * (页面按停稳后的聚焦条目算; 在协程里读, 读到的快照状态变了就换), [maskColor] = 烘进模糊图里的整屏压暗 (页面底色 + 透明度).
+ */
+class TvNativeWallBackdropSpec(
+    val target: () -> TvNativeWallBackdropTarget?,
+    val maskColor: Color,
 )
 
 /** 原生网格的事件, 由页面给 (焦点簿记、hero、导航). [T] = 列表项. */
@@ -147,19 +181,99 @@ fun <T : Any> TvNativeGridPageHost(
     modifier: Modifier = Modifier,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
-    val sketch = LocalSketch.current
-    val scope = rememberCoroutineScope()
-    val composeRoot = LocalView.current
-    val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns)
-    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
-    val visualEffects = LocalThemeSettings.current.visualEffects
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val currentCallbacks by rememberUpdatedState(callbacks)
     val currentItems by rememberUpdatedState(items)
     val currentCardOf by rememberUpdatedState(cardOf)
     val snapshot = items.itemSnapshotList
     val cards = remember(snapshot, cardsKey) { snapshot.map { it?.let(currentCardOf) } }
+    TvNativeGridPageHostContent(
+        state, metrics, cardWidth, gridKey, slideDirection, cards,
+        itemAt = { index -> currentItems.peekAt(index) },
+        itemCount = { currentItems.itemCount },
+        // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
+        onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
+        heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
+        wallBackdrop = null, modifier, emptyContent,
+    )
+}
+
+/**
+ * 网格页的原生海报墙, 数据是一份现成的列表 (新番时间表的一天): [items] 与 [cards] 一一对应, null 是还没到的占位. 页面的网格送焦请求只认
+ * 前 [focusableCount] 张 (占位期间给 0: 占位卡不收落点, 等真数据). [heroEnabled] = false 时没有 hero 态: 卡片墙上按确定直接进详情页
+ * ([TvNativeGridPageCallbacks.onCardClick]). [badge] 给了就按卡片的 [TvNativeCard.badge] 在封面右上角画角标.
+ * 其余同分页那一版.
+ */
+@Composable
+fun <T : Any> TvNativeGridPageHost(
+    state: TvNativeGridPageState,
+    metrics: TvNativeGridPageMetrics,
+    cardWidth: Dp,
+    gridKey: Int,
+    slideDirection: (from: Int, to: Int) -> Int,
+    items: List<T?>,
+    cards: List<TvNativeCard?>,
+    focusableCount: () -> Int,
+    heroEnabled: Boolean,
+    badge: TvNativeCardBadgeStyle?,
+    fadeColor: Color,
+    treatment: TvBackdropTreatment,
+    gridFocus: TvGridFocusState,
+    farJump: () -> Boolean,
+    onFarJumpConsumed: () -> Unit,
+    callbacks: TvNativeGridPageCallbacks<T>,
+    menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
+    wallBackdrop: TvNativeWallBackdropSpec? = null,
+    modifier: Modifier = Modifier,
+    emptyContent: @Composable BoxScope.() -> Unit = {},
+) {
+    val currentItems by rememberUpdatedState(items)
+    TvNativeGridPageHostContent(
+        state, metrics, cardWidth, gridKey, slideDirection, cards,
+        itemAt = { index -> currentItems.getOrNull(index) },
+        itemCount = focusableCount,
+        onBind = {},
+        heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
+        menuFor, wallBackdrop, modifier, emptyContent,
+    )
+}
+
+/** 两个入口共用的接线: [itemAt] 取第几项 (越界 / 占位为 null), [itemCount] 是送焦认的张数, [onBind] 是绑卡时的访问提示. */
+@Composable
+private fun <T : Any> TvNativeGridPageHostContent(
+    state: TvNativeGridPageState,
+    metrics: TvNativeGridPageMetrics,
+    cardWidth: Dp,
+    gridKey: Int,
+    slideDirection: (from: Int, to: Int) -> Int,
+    cards: List<TvNativeCard?>,
+    itemAt: (Int) -> T?,
+    itemCount: () -> Int,
+    onBind: (Int) -> Unit,
+    heroEnabled: Boolean,
+    badge: TvNativeCardBadgeStyle?,
+    source: TvNativeHeroSource?,
+    fadeColor: Color,
+    treatment: TvBackdropTreatment,
+    gridFocus: TvGridFocusState,
+    farJump: () -> Boolean,
+    onFarJumpConsumed: () -> Unit,
+    callbacks: TvNativeGridPageCallbacks<T>,
+    menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
+    wallBackdrop: TvNativeWallBackdropSpec?,
+    modifier: Modifier,
+    emptyContent: @Composable BoxScope.() -> Unit,
+) {
+    val sketch = LocalSketch.current
+    val scope = rememberCoroutineScope()
+    val composeRoot = LocalView.current
+    val density = LocalDensity.current
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge)
+    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
+    val visualEffects = LocalThemeSettings.current.visualEffects
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val currentCallbacks by rememberUpdatedState(callbacks)
+    val currentItemAt by rememberUpdatedState(itemAt)
+    val currentItemCount by rememberUpdatedState(itemCount)
+    val currentOnBind by rememberUpdatedState(onBind)
 
     // 焦点停放在网格页上 (换标签途中, 见 TvNativeGridPageView): 送焦请求没了 (新标签是空的被取消 / 超时) 就落不了地, 当场交给页面回顶栏
     // (追番页 = 选中的标签). 不然焦点一直停在网格页自己身上, 画面上哪儿都不亮, 要再按一下才回到标签
@@ -175,6 +289,7 @@ fun <T : Any> TvNativeGridPageHost(
         TvNativeHost(
             factory = { context ->
                 TvNativeGridPageView(context, sketch, scope, style, metrics, textStyle).also { view ->
+                    if (wallBackdrop != null) view.enableWallBackdrop()
                     view.composeRoot = composeRoot
                     view.restorePositions(state.savedPositions)
                     view.heroText.onShownSubjectChanged = { state.titleSubjectId = it }
@@ -184,17 +299,19 @@ fun <T : Any> TvNativeGridPageHost(
             update = { view ->
                 view.listener = object : TvNativeGridPageListener {
                     override fun onFocused(index: Int) {
-                        currentCallbacks.onCardFocused(index, currentItems.peekAt(index))
+                        currentCallbacks.onCardFocused(index, currentItemAt(index))
                         gridFocus.onNativeItemFocused(index)
                         state.capture()
                     }
 
                     override fun onClick(index: Int) {
-                        currentItems.peekAt(index)?.let { currentCallbacks.onCardClick(index, it) }
+                        currentItemAt(index)?.let { currentCallbacks.onCardClick(index, it) }
                     }
 
                     override fun onLongPress(index: Int, anchor: AndroidRect) {
-                        currentItems.peekAt(index)?.let { state.menu = it to anchor }
+                        val item = currentItemAt(index)
+                        // 弹不出菜单: 原生那边已经进了长按的对焦, 当场倒放
+                        if (item != null) state.menu = item to anchor else view.endWallPeek()
                     }
 
                     override fun onTopRowUp(): Boolean = currentCallbacks.onTopRowUp()
@@ -221,14 +338,34 @@ fun <T : Any> TvNativeGridPageHost(
                         gridFocus.onNativeFocusParked(parked)
                         nativeParked = parked
                     }
+
+                    override fun onWallOpeningChanged(opening: Boolean) {
+                        state.wallOpening = opening
+                    }
+
+                    override fun onWallOpened(index: Int) {
+                        state.wallOpenIndex = index
+                        state.wallOpenLeft = false
+                    }
+
+                    override fun onWallFade(fade: Float) {
+                        // 顶栏与卡片同一帧淡: 写完当场派发
+                        if (state.wallFade != fade) tvNativeWriteSnapshot { state.wallFade = fade }
+                    }
                 }
-                // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
-                view.onBindCard = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] }
+                view.onBindCard = { index -> currentOnBind(index) }
+                view.heroEnabled = heroEnabled
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatment = treatment
+                view.wallBackdrop?.let { wb ->
+                    wallBackdrop?.let { wb.maskColor = it.maskColor.toArgb() }
+                    wb.coverWidthPx = style.coverWidthPx
+                    wb.coverHeightPx = style.coverHeightPx
+                    wb.crossfade = visualEffects.transitions
+                }
                 view.update(style, metrics, textStyle)
             },
             bleedLeft = with(LocalDensity.current) { metrics.bleedLeftPx.toDp() },
@@ -264,10 +401,12 @@ fun <T : Any> TvNativeGridPageHost(
         if (view != null && state.heroActive && !view.heroActive) view.setHeroActive(true, animated = false)
     }
 
+    if (wallBackdrop != null) TvNativeWallBackdropEffects(state, view, wallBackdrop)
+
     // 页面的网格送焦请求 (进页恢复 / 顶栏下键 / 换标签落点 / 返回键回首卡) 交给原生送焦
     gridFocus.NativeSendFocusEffect(
         columns = { metrics.grid.columns },
-        itemCount = { currentItems.itemCount },
+        itemCount = { currentItemCount() },
         focusNative = { index ->
             val v = state.view
             when {
@@ -308,6 +447,48 @@ fun <T : Any> TvNativeGridPageHost(
         }
     }
 }
+
+/**
+ * 整屏背景 (新番时间表) 在 Compose 这一侧的接线: 停稳后的聚焦条目换图; 长按的菜单关了倒放; 点开进了详情页, 回到本页 (栈顶) 且缩回层
+ * 撤掉之后倒放 (返回时页面重建先恢复成点开的样子, 缩回落地时列表页与缩回层是同一张清晰图); 点开途中按返回取消.
+ */
+@Composable
+private fun TvNativeWallBackdropEffects(state: TvNativeGridPageState, view: TvNativeGridPageView?, spec: TvNativeWallBackdropSpec) {
+    val currentSpec by rememberUpdatedState(spec)
+    val pageForeground = LocalPageIsForeground.current
+    LaunchedEffect(view) {
+        if (view == null) return@LaunchedEffect
+        snapshotFlow { currentSpec.target() }.collect { view.setWallTarget(it) }
+    }
+    LaunchedEffect(view) {
+        if (view == null) return@LaunchedEffect
+        snapshotFlow { state.menu == null }.collect { closed -> if (closed) view.endWallPeek() }
+    }
+    LaunchedEffect(view) {
+        if (view == null) return@LaunchedEffect
+        if (state.wallOpenIndex >= 0) view.restoreWallOpen()
+        snapshotFlow { TvNativeWallOpenSignal(state.wallOpenIndex >= 0, pageForeground.value, TvHeroZoomHandoff.shrinking) }
+            .collectLatest { s ->
+                if (!s.opened) return@collectLatest
+                if (!s.foreground) {
+                    state.wallOpenLeft = true
+                    return@collectLatest
+                }
+                if (s.shrinking) return@collectLatest
+                // 点开之后一直没离开前台: 导航没发出去 (前进导航的转场闸门挡了), 过一会儿还在就当没进
+                if (!state.wallOpenLeft) delay(TV_WALL_OPEN_LEAVE_TIMEOUT_MILLIS)
+                state.wallOpenIndex = -1
+                state.wallOpenLeft = false
+                view.endWallOpen()
+            }
+    }
+    BackHandler(enabled = state.wallOpening) { state.view?.cancelWallOpen() }
+}
+
+private data class TvNativeWallOpenSignal(val opened: Boolean, val foreground: Boolean, val shrinking: Boolean)
+
+/** 整屏背景点开之后多久还没离开前台就当导航没发出去 (倒放回卡片墙). */
+private const val TV_WALL_OPEN_LEAVE_TIMEOUT_MILLIS = 1_000L
 
 private data class TvNativeGridTitleHandoff(
     val view: TvNativeGridPageView,

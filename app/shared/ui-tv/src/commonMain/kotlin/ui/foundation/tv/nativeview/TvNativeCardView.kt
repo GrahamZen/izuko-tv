@@ -52,6 +52,8 @@ import kotlin.math.ceil
  * @param progress 继续观看的集数进度 (0..1), 贴封面底缘一条细进度条; null 不画.
  * @param obscure NSFW 打码: 封面只解一张很小的图, 放大成糊图.
  * @param subjectId 这张卡是哪个条目: 网格页进 hero 态时拿它核对页面给的 hero 内容是不是这一张的 (见 TvNativeGridPageView); null = 不核对.
+ * @param subtitleColor [subtitle] 的颜色 (ARGB); null = 样式里的次要色 ([TvNativeWallStyle.subtitleColor]).
+ * @param badge 封面右上角画角标 (样式给了 [TvNativeWallStyle.badge] 才画; 新番时间表的「在追」).
  */
 @Immutable
 data class TvNativeCard(
@@ -61,6 +63,8 @@ data class TvNativeCard(
     val progress: Float? = null,
     val obscure: Boolean = false,
     val subjectId: Int? = null,
+    val subtitleColor: Int? = null,
+    val badge: Boolean = false,
 )
 
 /**
@@ -220,6 +224,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         if (sub != null) {
             title.maxLines = 1
             subtitle.text = sub
+            subtitle.setTextColor(card.subtitleColor ?: style.subtitleColor)
             subtitle.visibility = VISIBLE
         } else {
             title.maxLines = 2
@@ -228,6 +233,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         marquee = hasSubtitle && style.marquee
         updateMarquee()
         cover.progress = card.progress
+        cover.badge = card.badge
         TvNativeImages.loadCover(
             sketch, cover, card.imageUrl, style.coverWidthPx, style.coverHeightPx, style.crossfade,
             obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
@@ -309,10 +315,20 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
             invalidate()
         }
 
+    /** 右上角画角标 ([TvNativeWallStyle.badge]). */
+    var badge: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     // 不在 Paint 的 apply 里读 style: Paint 自己也有 style 属性, 会被它遮住
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.progressTrackColor }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.progressFillColor }
     private val barRect = RectF()
+    private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.badge?.backgroundColor ?: 0 }
+    private val badgeIconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     init {
         scaleType = ScaleType.CENTER_CROP
@@ -334,6 +350,14 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val b = style.badge
+        if (badge && b != null) {
+            val r = b.sizePx / 2f
+            val cx = width - b.insetPx - r
+            val cy = b.insetPx + r
+            canvas.drawCircle(cx, cy, r, badgePaint)
+            canvas.drawBitmap(b.icon, cx - b.icon.width / 2f, cy - b.icon.height / 2f, badgeIconPaint)
+        }
         val p = progress ?: return
         if (p <= 0f) return
         val h = style.progressBarHeightPx

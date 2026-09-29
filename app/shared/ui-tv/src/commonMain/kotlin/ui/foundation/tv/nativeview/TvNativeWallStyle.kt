@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.os.Build
 import android.widget.TextView
@@ -157,6 +158,8 @@ data class TvNativeWallStyle(
     val marquee: Boolean,
     /** 行 / 网格被外层列表预取时一起预取几张 (屏上一排放得下的张数 + 露一截的那张). */
     val prefetchItems: Int,
+    /** 封面右上角的角标 (卡片的 [TvNativeCard.badge]); null = 这一组卡不画. */
+    val badge: TvNativeCardBadgeStyle? = null,
 ) {
     val coverWidthPx: Int get() = cardWidthPx - gapPx * 2
     val coverHeightPx: Int get() = cardHeightPx - gapPx * 2
@@ -168,11 +171,22 @@ data class TvNativeWallStyle(
 }
 
 /**
+ * 封面右上角的圆形角标: 直径 [sizePx]、离封面上缘与右缘 [insetPx], 底色 [backgroundColor], 中间一枚已着色的图标 [icon] (按它自己的尺寸画).
+ */
+@Immutable
+data class TvNativeCardBadgeStyle(
+    val icon: Bitmap,
+    val sizePx: Float,
+    val insetPx: Float,
+    val backgroundColor: Int,
+)
+
+/**
  * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙): 探索 / 追番 / 搜索页是 tvPosterWallCardWidth 按内容区算的,
- * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用).
+ * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
  */
 @Composable
-fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int): TvNativeWallStyle {
+fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int, badge: TvNativeCardBadgeStyle? = null): TvNativeWallStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
     val light = colors.surface.luminance() >= 0.5f
@@ -182,7 +196,7 @@ fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int): TvNativeWallStyle {
     val subtitleColor = tvHeroSecondaryContentColor()
     val titleStyle = tvPosterWallTitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
-    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns) {
+    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge) {
         with(density) {
             val cardWidthPx = cardWidth.roundToPx()
             val cardHeightPx = (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO).roundToPx()
@@ -224,6 +238,7 @@ fun rememberTvNativeWallStyle(cardWidth: Dp, columns: Int): TvNativeWallStyle {
                 crossfade = crossfade,
                 marquee = visualEffects.marquee,
                 prefetchItems = columns + 1,
+                badge = badge,
             )
         }
     }

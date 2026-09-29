@@ -181,7 +181,7 @@
     <string name="settings_theme_tv_schedule_layout">Airing schedule layout (TV)</string>
     <string name="settings_theme_tv_schedule_layout_description">Pick how the airing schedule is laid out on TV.</string>
     <string name="settings_theme_tv_schedule_upstream">Classic list</string>
-    <string name="settings_theme_tv_schedule_grid">Poster grid</string>
+    <string name="settings_theme_tv_schedule_grid">Poster wall</string>
     <string name="settings_theme_tv_schedule_timeline">Detail panel + timeline</string>
     <string name="settings_theme_tv_ui_scale">Interface scale</string>
     <string name="settings_theme_tv_ui_scale_description">Scale the whole interface up or down. Use this when your TV or box reports a wrong screen density and everything looks too large or too small. 100% follows the system. The interface reloads once when you leave settings so that dialogs and menus match</string>

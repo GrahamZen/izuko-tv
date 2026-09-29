@@ -181,7 +181,7 @@
     <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
     <string name="settings_theme_tv_schedule_layout_description">选择电视上新番时间表的版式。</string>
     <string name="settings_theme_tv_schedule_upstream">经典列表</string>
-    <string name="settings_theme_tv_schedule_grid">竖版卡片网格</string>
+    <string name="settings_theme_tv_schedule_grid">海报墙</string>
     <string name="settings_theme_tv_schedule_timeline">左侧详情 + 单列时间线</string>
     <string name="settings_theme_tv_ui_scale">界面缩放</string>
     <string name="settings_theme_tv_ui_scale_description">整体放大或缩小界面。电视 / 盒子上报的屏幕密度不准、导致界面过大或过小时可用此项校正，100% 为跟随系统。离开设置页时界面会重载一次，使弹窗与菜单一并生效</string>
