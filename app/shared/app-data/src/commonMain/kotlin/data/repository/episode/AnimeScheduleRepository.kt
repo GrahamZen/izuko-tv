@@ -10,9 +10,11 @@
 package me.him188.ani.app.data.repository.episode
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -51,7 +53,7 @@ import kotlin.time.Instant
  * 三样都在 [BangumiScheduleSource] 里做了落盘缓存.
  *
  * **按天懒加载**: 一屏只看得到一天, 而一天只要那个星期几的十来个条目. flow 先按缓存把整屏发出去,
- * 再从今天开始往两边一天一天补, 每补完一天重发一次 —— 页面会一格格填上, 不会整屏空等.
+ * 再从今天开始往两边补 (缺的条目按远近排队并发取), 取到一部重发一次 —— 页面会一格格填上, 不会整屏空等.
  * 还没补到的那些天带 [AiringScheduleForDate.pending] 标记, 界面据此画骨架而不是"这一天没有新番".
  */
 class AnimeScheduleRepository(
@@ -64,7 +66,7 @@ class AnimeScheduleRepository(
         return source.recurrenceOf(subjectId, firstAirDate)
     }
 
-    fun recentAiringSchedulesFlow(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> = flow {
+    fun recentAiringSchedulesFlow(today: LocalDate, timeZone: TimeZone): Flow<List<AiringScheduleForDate>> = channelFlow {
         val dates = OFFSET_DAYS_RANGE.map { today.plus(DatePeriod(days = it)) }
         val calendar = source.calendar()
         logger.info { "bgm-direct: schedule 名册 ${calendar.values.sumOf { it.size }} 部 (7 天), 窗口 ${dates.first()}..${dates.last()}" }
@@ -74,11 +76,12 @@ class AnimeScheduleRepository(
             calendar[date.dayOfWeek.isoDayNumber].orEmpty()
         }
 
+        // 下面两份只在这个协程里读写; 取分集的那些协程只经 arrivals 交结果
         val episodes = mutableMapOf<Int, List<ScheduleEpisode>>()
         val rules = mutableMapOf<Int, String?>() // subjectId -> 播出时刻 (ISO), null = 没有
 
-        suspend fun emitCurrent() {
-            emit(
+        suspend fun sendCurrent() {
+            send(
                 dates.map { date ->
                     val roster = subjectsByDate.getValue(date)
                     AiringScheduleForDate(
@@ -94,36 +97,64 @@ class AnimeScheduleRepository(
             )
         }
 
+        suspend fun resolveRule(subjectId: Int) {
+            if (subjectId in rules) return
+            rules[subjectId] = source.broadcastRuleOf(subjectId, episodes[subjectId]?.firstOrNull()?.airDate)?.startTime
+        }
+
         // 先把缓存里已有的画出来, 一个请求都不发: 一天内来过第二次时整屏当场就是全的
         val cached = source.cachedEpisodesAndRules(subjectsByDate.values.flatten().map { it.id })
         episodes.putAll(cached.episodes)
         for ((id, rule) in cached.rules) rules[id] = rule.startTime
-        emitCurrent()
+        sendCurrent()
 
-        // 从今天往两边补, 先看到的先补
-        for (date in dates.sortedBy { (it.toEpochDays() - today.toEpochDays()).let { d -> if (d < 0) -d * 2 else d * 2 - 1 } }) {
-            val roster = subjectsByDate.getValue(date)
-            val missing = roster.filter { it.id !in episodes }
-            if (missing.isNotEmpty()) {
-                // 整天一批并发取 (见 episodesOfMany): 逐个串行要十几个来回, 一天要等好几秒
-                val fetched = source.episodesOfMany(missing.map { it.id })
-                for (subject in missing) episodes[subject.id] = fetched[subject.id].orEmpty()
+        // 从今天往两边补, 先看到的先补: 各天缺的条目按这个先后一起排队并发取 (见 episodesOfMany), 取到一部放进来一部.
+        // bgm 偶尔有请求挂到超时 —— 一部卡住只晚它自己, 不挡同一天的其余几部, 也不挡后面几天
+        val order = dates.sortedBy { (it.toEpochDays() - today.toEpochDays()).let { d -> if (d < 0) -d * 2 else d * 2 - 1 } }
+        val orderedIds = order.flatMap { subjectsByDate.getValue(it) }.map { it.id }.distinct()
+        val missing = orderedIds.filterTo(LinkedHashSet()) { it !in episodes }
+        val arrivals = Channel<Pair<Int, List<ScheduleEpisode>>>(Channel.UNLIMITED)
+        if (missing.isNotEmpty()) {
+            launch {
+                try {
+                    source.episodesOfMany(missing) { id, list -> arrivals.send(id to list) }
+                } finally {
+                    arrivals.close()
+                }
             }
-            var changed = missing.isNotEmpty()
-            for (subject in roster) {
-                if (subject.id in rules) continue
-                rules[subject.id] = source.broadcastRuleOf(
-                    subject.id,
-                    episodes[subject.id]?.firstOrNull()?.airDate,
-                )?.startTime
-                changed = true
+        } else {
+            arrivals.close()
+        }
+
+        // 分集已在缓存里、播出时刻还没查过的, 趁等第一批回来时补上 (多半也在缓存里)
+        var rulesChanged = false
+        for (id in orderedIds) {
+            if (id in episodes && id !in rules) {
+                resolveRule(id)
+                rulesChanged = true
             }
-            if (changed) {
+        }
+        if (rulesChanged) sendCurrent()
+
+        val completedDates = order.filterTo(HashSet()) { date -> subjectsByDate.getValue(date).none { it.id in missing } }
+        for (first in arrivals) {
+            // 前后脚回来的合成一次发出去
+            var next: Pair<Int, List<ScheduleEpisode>>? = first
+            while (next != null) {
+                val (id, list) = next
+                episodes[id] = list
+                resolveRule(id)
+                next = arrivals.tryReceive().getOrNull()
+            }
+            sendCurrent()
+            for (date in order) {
+                val roster = subjectsByDate.getValue(date)
+                if (date in completedDates || roster.any { it.id !in episodes }) continue
+                completedDates += date
                 logger.info {
                     val items = roster.count { episodes[it.id]?.any { e -> e.airDate == date.toString() } == true }
-                    "bgm-direct: schedule $date 补完: 名册 ${roster.size} 部 (回源 ${missing.size}), 当天有更新 $items 条"
+                    "bgm-direct: schedule $date 补完: 名册 ${roster.size} 部 (回源 ${roster.count { it.id in missing }}), 当天有更新 $items 条"
                 }
-                emitCurrent()
             }
         }
     }.flowOn(defaultDispatcher)
