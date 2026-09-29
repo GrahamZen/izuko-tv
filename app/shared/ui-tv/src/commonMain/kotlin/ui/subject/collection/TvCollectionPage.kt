@@ -106,6 +106,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
+import me.him188.ani.app.ui.foundation.tv.tvHeroScaleShift
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaSpec
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
@@ -662,6 +663,8 @@ fun TvCollectionPage(
         val heroWidth = pageWidth - TV_COLLECTION_START_PAD - TV_PAGE_END_PAD
         val nativeMetrics = with(density) {
             val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
+            // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
+            val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
             TvNativeGridPageMetrics(
                 pageWidthPx = pageWidth.roundToPx(),
                 pageHeightPx = pageHeight.roundToPx(),
@@ -675,7 +678,7 @@ fun TvCollectionPage(
                     topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
                     bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
                     endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
-                    heroLinePx = wallHeroLinePx,
+                    heroLinePx = wallHeroLinePx + heroShiftPx,
                     fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
                 ),
                 backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
@@ -683,7 +686,7 @@ fun TvCollectionPage(
                 heroLeftPx = TV_COLLECTION_START_PAD.roundToPx(),
                 heroTopPx = (TV_COLLECTION_TOP_PAD + TV_COLLECTION_TAB_ROW_HEIGHT + TV_COLLECTION_TABS_TO_HERO_GAP).roundToPx(),
                 heroWidthPx = heroWidth.roundToPx(),
-                heroHeightPx = TV_COLLECTION_WALL_HERO_INFO_HEIGHT.roundToPx(),
+                heroHeightPx = TV_COLLECTION_WALL_HERO_INFO_HEIGHT.roundToPx() + heroShiftPx,
                 titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
                 summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
                 // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉

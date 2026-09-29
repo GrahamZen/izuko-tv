@@ -88,6 +88,8 @@ import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
 import me.him188.ani.app.ui.foundation.tv.TV_CAROUSEL_HERO_TUNING
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_REFERENCE_PAGE_HEIGHT
+import me.him188.ani.app.ui.foundation.tv.tvHeroScaleShift
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
@@ -971,10 +973,18 @@ fun TvExplorationPage(
             val heroContentWidth = pageWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
             val backdropHeightPx = (pageWindowSize.height * TV_WALL_BACKDROP_HEIGHT).roundToPx()
             val cardHeight = wallCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+            // 页面比参照高高 (界面缩放调小) 时背景图跟着变大, 图下面的东西一起下移 (见 tvHeroScaleShift), 挪出来的高度给简介, 100% 时都是 0:
+            // 轮播态 = 首组标题、卡片、轮播按钮与指示器, 首行海报顶边落在背景图的同一处; hero 态 = 聚焦行 (三页对齐的那条线) 与简介块下沿
+            val carouselShiftPx =
+                tvHeroScaleShift(pageWindowSize.height, TV_EXPLORATION_CARD_TOP + TV_WALL_SECTION_LABEL_BLOCK).roundToPx()
+            val heroShiftPx = tvHeroScaleShift(pageWindowSize.height, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
             val spacerHeight = TV_EXPLORATION_CARD_TOP - TV_EXPLORATION_WALL_TOP
             // 轮播背景图的下缘离屏顶多远, 与它比 hero 占位长出去的那一截 (压在第一组标题与海报上面, 见 tvNativeCarouselShift)
             val carouselBottomPx = (pageWindowSize.height * TV_CAROUSEL_HERO_TUNING.backdropHeight).toPx()
-            val overhangPx = (carouselBottomPx - (TV_EXPLORATION_WALL_TOP + spacerHeight).toPx()).roundToInt().coerceAtLeast(0)
+            val overhangPx = (carouselBottomPx - (TV_EXPLORATION_WALL_TOP + spacerHeight).toPx() - carouselShiftPx)
+                .roundToInt().coerceAtLeast(0)
+            // 指示器挨着首组标题: 下移时从参照高下的位置跟着挪, 不下移时照旧按页面高算
+            val dotsLineHeight = if (carouselShiftPx > 0) TV_HERO_REFERENCE_PAGE_HEIGHT else pageWindowSize.height
             TvNativeExploreMetrics(
                 pageWidthPx = pageWidth.roundToPx(),
                 pageHeightPx = pageWindowSize.height.roundToPx(),
@@ -983,7 +993,7 @@ fun TvExplorationPage(
                 listTopPx = TV_EXPLORATION_WALL_TOP.roundToPx(),
                 listTopBleedPx = TV_EXPLORATION_WALL_TOP_BLEED.roundToPx(),
                 listBottomBleedPx = TV_EXPLORATION_WALL_BOTTOM_BLEED.roundToPx(),
-                spacerPx = spacerHeight.roundToPx(),
+                spacerPx = spacerHeight.roundToPx() + carouselShiftPx,
                 headerPx = TV_WALL_SECTION_LABEL_BLOCK.roundToPx(),
                 rowPx = (cardHeight + wallLabelHeight + TV_POSTER_WALL_ROW_SPACING).roundToPx(),
                 rowGapPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
@@ -992,7 +1002,8 @@ fun TvExplorationPage(
                 endMarginPx = tvPosterWallEndMargin(cardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
                 // hero 态聚焦行的组标题停在哪 (从卡片区顶线算): 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP,
                 // 组标题在它上面, 即简介块下沿那条线
-                heroHeaderTopPx = (TV_POSTER_WALL_HERO_ROW_TOP - TV_WALL_SECTION_LABEL_BLOCK - TV_EXPLORATION_WALL_TOP).roundToPx(),
+                heroHeaderTopPx = (TV_POSTER_WALL_HERO_ROW_TOP - TV_WALL_SECTION_LABEL_BLOCK - TV_EXPLORATION_WALL_TOP).roundToPx() +
+                    heroShiftPx,
                 rowStartPx = TV_EXPLORATION_ROW_START_BLEED.roundToPx(),
                 endPadPx = TV_PAGE_END_PAD.roundToPx(),
                 fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
@@ -1004,15 +1015,15 @@ fun TvExplorationPage(
                 heroStartPx = TV_EXPLORATION_START_PAD.roundToPx(),
                 heroTopPx = TV_EXPLORATION_HERO_TOP.roundToPx(),
                 heroEndPadPx = TV_PAGE_END_PAD.roundToPx(),
-                heroBlockPx = TV_HERO_BLOCK_HEIGHT.roundToPx(),
-                heroBlockExpandedPx = TV_HERO_BLOCK_HEIGHT_EXPANDED.roundToPx(),
+                heroBlockPx = TV_HERO_BLOCK_HEIGHT.roundToPx() + heroShiftPx,
+                heroBlockExpandedPx = TV_HERO_BLOCK_HEIGHT_EXPANDED.roundToPx() + carouselShiftPx,
                 titleWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.titleWidth).roundToPx(),
                 carouselSummaryWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.summaryWidth).roundToPx(),
                 cardSummaryWidthPx = (heroContentWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
                 buttonsTopGapPx = TV_HERO_INFO_TO_BUTTONS_GAP.roundToPx(),
                 buttonGapPx = TV_HERO_BUTTON_GAP.roundToPx(),
-                dotsCenterYPx = (pageWindowSize.height * TV_CAROUSEL_HERO_TUNING.clearLine).roundToPx() +
-                    TV_CAROUSEL_INDICATOR_OFFSET.roundToPx(),
+                dotsCenterYPx = (dotsLineHeight * TV_CAROUSEL_HERO_TUNING.clearLine).roundToPx() +
+                    TV_CAROUSEL_INDICATOR_OFFSET.roundToPx() + carouselShiftPx,
                 dotPx = TV_CAROUSEL_DOT_SIZE.toPx(),
                 dotSelectedWidthPx = TV_CAROUSEL_DOT_SELECTED_WIDTH.toPx(),
                 dotGapPx = TV_CAROUSEL_DOT_GAP.toPx(),

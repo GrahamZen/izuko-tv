@@ -1120,8 +1120,8 @@ class TvNativeExploreView(
     }
 
     /**
-     * hero 文字块 + 轮播按钮块, 纵向排: 块高两档 (有按钮 264dp / 没按钮 240dp), 文字吃掉按钮块之外的
-     * 全部高度.
+     * hero 文字块 + 轮播按钮块, 纵向排: 块高两档 (有按钮 [TvNativeExploreMetrics.heroBlockExpandedPx] / 没按钮
+     * [TvNativeExploreMetrics.heroBlockPx], 1080p 电视 100% 缩放时 264 / 240dp), 文字吃掉按钮块之外的全部高度.
      */
     private inner class HeroBox(context: Context) : TvNativeBoundaryLayout(context) {
         var buttonsPresent = true
