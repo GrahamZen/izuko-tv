@@ -94,4 +94,11 @@ object TvPolishFlags {
     /** 点卡片进详情页时背景从列表页 hero 的框放大到全屏 (两页同一张图时才做, 见 TvHeroZoomHandoff). 两档都生效. */
     @Volatile
     var heroZoom: Boolean = true
+
+    /**
+     * 详情页换页时, 整轮都在屏外的页不做透明度过渡、只露出一截的页不建离屏层 (见 SubjectDetailsTvPage 的 TvDetailsPager.apply).
+     * 关掉 = 边界两侧每一页都按整页离屏层淡入淡出 (A/B 用). extra: `ani_polish_pager_skip_offscreen`.
+     */
+    @Volatile
+    var pagerSkipOffscreen: Boolean = true
 }

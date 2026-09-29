@@ -579,7 +579,8 @@ class TvNativeEpisodeAdapter(
  * 行尾留一整行空白, 末集也停得进框里. 行首按左与行尾按右都吞掉 (两头没有目标, 放出去会被系统按屏幕位置挑进同页别的原生行).
  *
  * 行外进来落到 [entryIndex] 那张 (展示中的集): 排出来了就给它, 由对齐滚动把它滑进框里; 没排出来先选中它、行自己接住焦点, 布局完交给它.
- * 行里第一次有焦点时才往两边多排两张: 建行那一帧只排屏上那几张, 长按连发总在拿到焦点之后.
+ * 行里有焦点之后才往两边多排两张 (见 TvNativeStripView 的 aheadLayoutPx): 长按连发时平滑滚动落后焦点一格上下 (临界阻尼 spring
+ * 追匀速目标落后 2v / ω), 往回走时左边那两张也得排着.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeEpisodeRowView(
@@ -599,10 +600,9 @@ class TvNativeEpisodeRowView(
     endPx = 0,
     topPx = topPx,
     bottomPx = bottomPx,
+    aheadLayoutPx = (style.cardWidthPx + style.spacingPx) * 2,
 ) {
     val cards = TvNativeEpisodeAdapter(style, sketch)
-    private val stepPx = style.cardWidthPx + style.spacingPx
-    private var aheadLaidOut = false
 
     init {
         startLeftExits = false
@@ -635,15 +635,6 @@ class TvNativeEpisodeRowView(
         val view = findViewHolderForAdapterPosition(selectedPosition)?.itemView ?: return
         val delta = view.left - paddingLeft
         if (delta != 0) scrollBy(delta, 0)
-    }
-
-    override fun requestChildFocus(child: View?, focused: View?) {
-        super.requestChildFocus(child, focused)
-        if (!aheadLaidOut) {
-            aheadLaidOut = true
-            // 长按连发时平滑滚动落后焦点一格上下 (临界阻尼 spring 追匀速目标落后 2v / ω), 往回走时左边那两张也得排着
-            setExtraLayoutSpace(stepPx * 2)
-        }
     }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
