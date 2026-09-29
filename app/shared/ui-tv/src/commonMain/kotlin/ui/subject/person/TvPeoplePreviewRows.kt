@@ -12,8 +12,11 @@ package me.him188.ani.app.ui.subject.person
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceAtMost
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
@@ -25,9 +28,10 @@ import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_MOVE_RATE
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
 
 /**
- * 人物 / 角色预览弹窗的原生横滑行 (见 [PeoplePreviewRows]): 圆头像行同详情页的角色行 ([TvNativeMonogramStrip]), 海报行同关联条目
- * ([TvNativePosterStrip]), 格子按弹窗的宽度缩小 (见 [TV_PEOPLE_PREVIEW_CELL]). 行往两侧出血到弹窗边上 (滑过行首的格从弹窗边出屏,
- * 不在内容留白线上被硬裁), 左右两头吞掉, 上下键交给弹窗. 弹窗里没有放大看图, 按住确定键只算点击.
+ * 人物 / 角色预览弹窗与整页 (中栏) 的原生横滑行 (见 [PeoplePreviewRows]): 圆头像行同详情页的角色行 ([TvNativeMonogramStrip]), 海报行同
+ * 关联条目 ([TvNativePosterStrip]), 格子按弹窗的宽度缩小 (见 [TV_PEOPLE_PREVIEW_CELL]). 行往两侧出血 contentPadding (弹窗: 到弹窗边上;
+ * 整页: 一个栏距), 往左不超过格间距 (见 [startBleed]); 滑过行首的格从出血的边上出屏, 不在内容留白线上被硬裁, 也不画进整页的侧栏
+ * (见 [horizontalBleed]). 左右两头吞掉, 上下键交给弹窗 / 整页. 没有放大看图, 按住确定键只算点击.
  */
 object TvPeoplePreviewRows : PeoplePreviewRows {
     @Composable
@@ -49,8 +53,8 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
             onClick = onClick,
             onLongPress = null,
             repeatMillis = 1000L / TV_MONOGRAM_MOVE_RATE,
-            modifier = modifier.horizontalBleed(contentPadding),
-            startPadding = contentPadding,
+            modifier = modifier.horizontalBleed(start = startBleed(contentPadding), end = contentPadding),
+            startPadding = startBleed(contentPadding),
             endPadding = contentPadding,
             onBind = onBind,
         )
@@ -70,8 +74,8 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
         TvNativePosterStrip(
             cards = cards,
             onClick = onClick,
-            modifier = modifier.horizontalBleed(contentPadding),
-            startPadding = contentPadding,
+            modifier = modifier.horizontalBleed(start = startBleed(contentPadding), end = contentPadding),
+            startPadding = startBleed(contentPadding),
             endPadding = contentPadding,
             cardWidth = TV_PEOPLE_PREVIEW_CELL,
             onBind = onBind,
@@ -81,16 +85,29 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
     }
 }
 
-/** 往左右两侧各多占 [bleed] (父布局给的宽度加两份), 布局上仍只占父布局给的宽度. */
-private fun Modifier.horizontalBleed(bleed: Dp): Modifier = layout { measurable, constraints ->
-    val px = bleed.roundToPx()
-    if (px == 0 || !constraints.hasBoundedWidth) {
+/**
+ * 行往左出血多少: 调用方给的留白, 但不超过格间距. 停稳时行首左边那格的右缘离行首停靠线一个格间距, 正好落在出血的边上, 整格裁掉;
+ * 出血比格间距宽的话它在边上露一窄条 (整页的栏距 24dp 比格间距宽 4dp, 那一条贴在左栏的图边上).
+ */
+private fun startBleed(contentPadding: Dp): Dp = contentPadding.coerceAtMost(TV_PEOPLE_PREVIEW_CELL_SPACING)
+
+/**
+ * 往左右两侧各多占 [start] / [end] (父布局给的宽度加上这两份), 布局上仍只占父布局给的宽度; 横向按多占之后的宽度裁. 原生行两头排着
+ * 伸出行外的格 (滑过行首的、行尾露一截的、行外多排的那格), 装原生行的那层不裁子视图, 不裁的话整页里它们会一直画进侧栏. 竖向不裁:
+ * 行上下各多出一截画聚焦放大与投影, 不占布局.
+ */
+private fun Modifier.horizontalBleed(start: Dp, end: Dp): Modifier = layout { measurable, constraints ->
+    val startPx = start.roundToPx()
+    val endPx = end.roundToPx()
+    if (startPx + endPx == 0 || !constraints.hasBoundedWidth) {
         val placeable = measurable.measure(constraints)
         return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
     }
-    val width = constraints.maxWidth + px * 2
+    val width = constraints.maxWidth + startPx + endPx
     val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
-    layout(constraints.maxWidth, placeable.height) { placeable.place(-px, 0) }
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-startPx, 0) }
+}.drawWithContent {
+    clipRect(top = -size.height, bottom = size.height * 2) { this@drawWithContent.drawContent() }
 }
 
 /**

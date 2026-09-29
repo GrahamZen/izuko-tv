@@ -17,8 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 
 /**
- * 人物 / 角色预览弹窗里横滑行的另一套实现: 电视应用入口提供原生版 (ui-tv 的 TvPeoplePreviewRows), 没提供时 (手机 / 桌面)
- * 弹窗照旧用 Compose 的行. 只管预览弹窗, 人物 / 角色整页不用它.
+ * 人物 / 角色预览弹窗与整页 (中栏) 里横滑行的另一套实现: 电视应用入口提供原生版 (ui-tv 的 TvPeoplePreviewRows), 没提供时
+ * (手机 / 桌面) 照旧用 Compose 的行.
  *
  * 两种行: 圆头像 ([PeopleRow], 声优、出演角色) 与海报 ([PosterRow], 参与作品、出演作品). 行只画卡片, 标题行与「查看全部」由调用方画.
  * 上下键行不接 (交给弹窗), 左右键两头吞掉.

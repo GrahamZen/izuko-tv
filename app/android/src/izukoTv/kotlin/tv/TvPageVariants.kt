@@ -268,7 +268,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvOnboardingVariant provides onboarding,
         // 登录页右侧的手机控制台码 (扫码在手机上登录)
         LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
-        // 人物 / 角色预览弹窗里的横滑行用原生实现 (长按左右连发不卡)
+        // 人物 / 角色预览弹窗与整页里的横滑行用原生实现 (长按左右连发不卡)
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
     ) {
         // 长按手势兜不兜、菜单开不开, 都要先看当前在哪个目的地:

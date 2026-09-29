@@ -125,7 +125,10 @@ fun PersonDetailsScreen(
             )
         },
         summary = details?.person?.summary.orEmpty(),
-        centerStrips = { PersonStrips(casts, works) },
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        centerStrips = { rowsPadding ->
+            PersonStrips(casts, works, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+        },
         commentState = vm.commentState,
         originalCommentsUrl = vm.originalCommentsUrl,
         compactContent = { imageViewer ->
@@ -168,7 +171,10 @@ fun CharacterDetailsScreen(
             )
         },
         summary = details?.summary.orEmpty(),
-        centerStrips = { CharacterStrips(details, subjects) },
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        centerStrips = { rowsPadding ->
+            CharacterStrips(details, subjects, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+        },
         commentState = vm.commentState,
         originalCommentsUrl = vm.originalCommentsUrl,
         compactContent = { imageViewer ->
@@ -200,7 +206,11 @@ internal fun PeopleDetailsScaffold(
     sidebarInfo: List<InfoboxRowInfo>,
     titleBlock: @Composable (isPlaceholder: Boolean) -> Unit,
     summary: String,
-    centerStrips: @Composable () -> Unit,
+    /**
+     * 中栏的横滑条; 参数 = 横滑行 (原生行) 最多往两侧出血多少: 中栏与侧栏之间的栏距. 最左一张聚焦放大时不在中栏边上被裁, 滑过行首的
+     * 卡不画进侧栏.
+     */
+    centerStrips: @Composable (rowsPadding: Dp) -> Unit,
     commentState: CommentState,
     compactContent: @Composable (imageViewer: ImageViewerHandler) -> Unit,
     modifier: Modifier = Modifier,
@@ -398,7 +408,7 @@ internal fun PeopleDetailsScaffold(
                                 )
                             }
                         }
-                        centerStrips()
+                        centerStrips(layoutParams.columnSpacing)
                         if (!layoutParams.showRail) {
                             PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
                         }
@@ -519,7 +529,7 @@ internal fun PersonDetailsContentColumn(
 }
 
 /**
- * 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). [previewRows] 非 null 时 (TV 预览弹窗) 两条都换成原生行:
+ * 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). [previewRows] 非 null 时 (电视: 预览弹窗与整页) 两条都换成原生行:
  * 出演角色是圆头像 (角色头像 + 名字 + 作品名), 参与作品是海报 (作品 + 职位).
  */
 @Composable
@@ -688,7 +698,7 @@ internal fun CharacterDetailsContentColumn(
 }
 
 /**
- * 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). [previewRows] 非 null 时 (TV 预览弹窗) 两条都换成原生行:
+ * 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). [previewRows] 非 null 时 (电视: 预览弹窗与整页) 两条都换成原生行:
  * 声优是圆头像 (原版在前, 见 sortedByOriginalCast), 出演作品是海报 (作品 + 主角 / 配角).
  */
 @Composable

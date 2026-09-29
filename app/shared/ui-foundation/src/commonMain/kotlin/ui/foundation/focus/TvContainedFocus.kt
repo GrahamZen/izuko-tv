@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.focus
 
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.remember
@@ -16,11 +17,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import kotlinx.coroutines.launch
@@ -57,4 +61,39 @@ fun Modifier.tvBringIntoViewOnFocus(): Modifier = composed {
     bringIntoViewRequester(requester).onFocusChanged {
         if (it.hasFocus) scope.launch { requester.bringIntoView() }
     }
+}
+
+/**
+ * 区块标题行右边的按钮 ([action], 如「查看全部」) 夹在上一块与这一块的内容之间: 方向键按几何找焦点时它不在内容的正上 / 正下方, 总被整排卡
+ * (正对着的候选优先) 抢掉, 焦点够不着它. 挂在这一块的内容上: 从上面按下进来 (不是从这颗按钮自己按下来的) 先落到按钮; [upFromContent] 时
+ * 在内容里按上也先回到按钮 (内容只有一排时用, 如原生横滑行; 多行的内容让第一行自己指过去) —— 照从上往下的顺序: 上一块 → 按钮 → 内容.
+ * 程序化送焦 (进页恢复等) 不改道. [actionFocused] = 按钮此刻有没有焦点 (按钮上 onFocusChanged 记着).
+ */
+fun Modifier.tvHeaderActionFirst(
+    action: FocusRequester,
+    actionFocused: () -> Boolean,
+    upFromContent: Boolean = true,
+): Modifier {
+    val up = if (upFromContent) {
+        Modifier.onPreviewKeyEvent { event ->
+            // 按下挪焦点, 抬起跟着吞掉 (同 tvContainDirectionalKeys: KeyUp 与 KeyDown 同进退)
+            event.key == Key.DirectionUp &&
+                (event.type != KeyEventType.KeyDown || runCatching { action.requestFocus() }.isSuccess)
+        }
+    } else {
+        Modifier
+    }
+    return this
+        .then(up)
+        .focusProperties {
+            onEnter = {
+                if (requestedFocusDirection == FocusDirection.Down && !actionFocused() &&
+                    runCatching { action.requestFocus() }.isSuccess
+                ) {
+                    cancelFocusChange()
+                }
+            }
+        }
+        // onEnter 只在焦点组节点上生效
+        .focusGroup()
 }
