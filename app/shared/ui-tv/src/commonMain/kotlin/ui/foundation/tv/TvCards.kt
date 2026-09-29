@@ -802,9 +802,23 @@ val TV_HERO_TEXT_BOTTOM: Dp = 268.dp
 /**
  * 海报墙 hero 态里聚焦行 (海报顶边) 离页面顶多远, 三页对齐在这条线上 —— hero 背景图三页共用一套尺寸, 行对齐了, 图压住卡片的程度才一样.
  * 探索页: 简介块下沿 [TV_HERO_TEXT_BOTTOM] 之下是聚焦行的组标题, 行在标题下面. 追番 / 搜索没有组标题, 简介块往下长, 把这一截吃掉
- * (下沿停在行上方, 留出简介到网格的那段间距).
+ * (下沿停在行上方, 留出简介到网格的那段间距). 这是参照页面高下的值, 页面更高时三页一起按 [tvHeroScaleShift] 下移.
  */
 val TV_POSTER_WALL_HERO_ROW_TOP: Dp = TV_HERO_TEXT_BOTTOM + 42.dp
+
+/**
+ * hero 几何的参照页面高: 1080p 电视 100% 界面缩放时的页面高. hero 背景图按页面高的比例画, 图下面的行、组标题、按钮与简介块是按这个
+ * 高度定的 dp 值, 页面更高时由 [tvHeroScaleShift] 跟着背景图下移.
+ */
+val TV_HERO_REFERENCE_PAGE_HEIGHT: Dp = 540.dp
+
+/**
+ * 页面高 [pageHeight] 超过参照高 [TV_HERO_REFERENCE_PAGE_HEIGHT] 时 (界面缩放调小, 或设备上报的界面尺寸偏大), hero 背景图下面的东西
+ * 往下挪多少: 背景图随页面高按比例变大, 参照高下落在 [line] 的那条线 (行的海报顶边) 按同一比例下移, 始终落在背景图的同一处, 行不压住图;
+ * 挪出来的高度给简介. 页面不高于参照高 (100% 及更大的缩放) 时为 0, 排版不变.
+ */
+fun tvHeroScaleShift(pageHeight: Dp, line: Dp): Dp =
+    if (pageHeight > TV_HERO_REFERENCE_PAGE_HEIGHT) line * (pageHeight / TV_HERO_REFERENCE_PAGE_HEIGHT - 1f) else 0.dp
 
 /**
  * hero 的背景图尺寸 / 羽化与文字宽度. 两套, 都写死: 探索页热门轮播 [TV_CAROUSEL_HERO_TUNING], 卡片 hero (探索页海报墙的 hero 态、追番、
