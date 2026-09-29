@@ -35,7 +35,11 @@ internal class TvNativeTestHost {
         private set
     lateinit var root: FrameLayout
         private set
-    val sketch: Sketch by lazy { Sketch.Builder(instrumentation.targetContext).build() }
+    /**
+     * 整个测试进程共用一个: Sketch 每建一个就向 ConnectivityManager 注册一个网络回调、不注销, 一个应用最多 100 个 —— 每条测试各建一个的话,
+     * 整包跑到后面建 Sketch 就抛 TooManyRequestsException (在组合里抛就是整个测试进程崩掉).
+     */
+    val sketch: Sketch get() = sharedSketch
 
     fun launch() {
         instrumentation.setInTouchMode(false)
@@ -90,6 +94,8 @@ internal class TvNativeTestHost {
         }
     }
 }
+
+private val sharedSketch: Sketch by lazy { Sketch.Builder(InstrumentationRegistry.getInstrumentation().targetContext).build() }
 
 internal fun testTextStyle(sizePx: Float, lineHeightPx: Int): TvNativeTextStyle =
     TvNativeTextStyle(sizePx = sizePx, lineHeightPx = lineHeightPx, letterSpacingEm = 0f, weight = 400, color = Color.WHITE)
