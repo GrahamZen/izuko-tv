@@ -51,21 +51,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import android.graphics.Bitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import kotlin.math.ceil
+import kotlin.math.max
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -572,6 +583,8 @@ fun TvFullScreenBackdropLayer(
  * - 停点由平滑曲线采样生成, 没有折点 (暗端的马赫带分界线);
  * - 下缘在有纯色垫底时画同色渐变、不用 DstOut, 不必开离屏缓冲 (见 [TvBackdropTreatment.bottomDstOut]).
  *
+ * 左上角那块遮罩 ([TvBackdropTreatment.patch]) 画一张生成好的蒙版图 (见 [tvBackdropPatchImage]), 一次绘制.
+ *
  * 画笔按尺寸 + 声明预备 (调用方用 drawWithCache / remember 缓存), 画的时候再乘一个总 alpha.
  */
 class TvBackdropTreatmentPainter internal constructor(
@@ -581,6 +594,7 @@ class TvBackdropTreatmentPainter internal constructor(
     private val topEnd: Float,
     private val left: Brush?,
     private val leftEnd: Float,
+    private val patch: TvBackdropPatchDraw?,
     private val bottom: Brush?,
     private val bottomStart: Float,
     private val bottomDstOut: Boolean,
@@ -593,6 +607,20 @@ class TvBackdropTreatmentPainter internal constructor(
         // 只画到不透明段的边界: 之后停点已全透明, 再画就是整层面积白走一遍混合
         if (top != null) drawRect(top, size = Size(w, h * topEnd), alpha = alpha)
         if (left != null) drawRect(left, size = Size(w * leftEnd, h), alpha = alpha)
+        if (patch != null) {
+            // 裁到本层: 放大 / 缩回途中本层缩在 hero 框里, 羽化伸出层外的那截不能画到框外去
+            clipRect(0f, 0f, w, h) {
+                drawImage(
+                    patch.image,
+                    dstOffset = patch.offset,
+                    dstSize = patch.size,
+                    alpha = alpha * patch.alpha,
+                    colorFilter = if (bottomDstOut) null else ColorFilter.tint(patch.color),
+                    blendMode = if (bottomDstOut) BlendMode.DstOut else DrawScope.DefaultBlendMode,
+                    filterQuality = FilterQuality.Low,
+                )
+            }
+        }
         if (bottom != null) {
             drawRect(
                 bottom,
@@ -640,6 +668,63 @@ internal fun fadeInProfileOf(smoothness: Float): FloatArray = when {
 private fun colorsOf(profile: FloatArray, color: Color, maxAlpha: Float): List<Color> =
     List(profile.size) { i -> color.copy(alpha = maxAlpha * profile[i]) }
 
+/** 左上角那块遮罩 ([TvBackdropPatch]) 这一帧怎么画: 蒙版图、目标框 (本层像素)、浓度、颜色. */
+internal class TvBackdropPatchDraw(
+    val image: ImageBitmap,
+    val offset: IntOffset,
+    val size: IntSize,
+    val alpha: Float,
+    val color: Color,
+)
+
+/**
+ * 左上角那块遮罩的蒙版图, 盖住层的 [0, [right] + [feather]] × [0, [bottom] + [feather]] (px): 白色, 透明度就是遮罩的形状 —— 横竖各一条
+ * 曲线相乘 (见 [tvBackdropPatchAxis]), 每个像素只做一次乘法. 形状是平滑的, 采样间距跟羽化宽度走 (羽化那一段固定
+ * [TV_BACKDROP_PATCH_FEATHER_SAMPLES] 个采样, 不随界面分辨率变大), 画的时候放大 (双线性) 看不出. 不用两个渐变叠成 ComposeShader:
+ * Android 9 以下硬件加速不支持同类着色器组合. 同尺寸共用, 只留最近几张.
+ */
+internal fun tvBackdropPatchImage(right: Int, bottom: Int, feather: Int): ImageBitmap {
+    val key = (right.toLong() shl 42) or (bottom.toLong() shl 21) or feather.toLong()
+    return patchImages.getOrPut(key) {
+        val step = feather.toFloat() / TV_BACKDROP_PATCH_FEATHER_SAMPLES
+        val w = max(1, ceil((right + feather) / step).toInt())
+        val h = max(1, ceil((bottom + feather) / step).toInt())
+        val xs = tvBackdropPatchAxis(w, step, right.toFloat(), feather.toFloat())
+        val ys = tvBackdropPatchAxis(h, step, bottom.toFloat(), feather.toFloat())
+        val pixels = IntArray(w * h)
+        for (y in 0 until h) {
+            val ay = ys[y]
+            for (x in 0 until w) {
+                pixels[y * w + x] = ((xs[x] * ay * 255f).roundToInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
+            }
+        }
+        Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+}
+
+/**
+ * 蒙版图一个方向上的浓度 (0..1): 第 i 个采样在 (i + 0.5) × [step] px 处; [center] − [feather] 之前满, 之后按下缘那条曲线 ([fadeInProfile]
+ * 的原式) 淡, 到 [center] + [feather] 为 0. [center] 处约八成.
+ */
+internal fun tvBackdropPatchAxis(n: Int, step: Float, center: Float, feather: Float): FloatArray = FloatArray(n) { i ->
+    val p = (i + 0.5f) * step
+    if (p <= center - feather) 1f else fadeInCurve((center + feather - p) / (2f * feather))
+}
+
+/** [fadeInProfile] 的原式: quintic smootherstep 经 1-(1-s)^2.5 反变换, 0 处零斜率起步、靠 1 一侧长长地渐近. */
+private fun fadeInCurve(s: Float): Float {
+    val c = s.coerceIn(0f, 1f)
+    val s5 = c * c * c * (c * (c * 6f - 15f) + 10f)
+    return 1f - (1f - s5).coerceIn(0f, 1f).pow(2.5f)
+}
+
+/** 蒙版图羽化那一段的采样数 (见 [tvBackdropPatchImage]). */
+private const val TV_BACKDROP_PATCH_FEATHER_SAMPLES = 32f
+
+private val patchImages = object : LinkedHashMap<Long, ImageBitmap>(8, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, ImageBitmap>?): Boolean = size > 4
+}
+
 /**
  * 按尺寸与声明预备画笔, 见 [TvBackdropTreatmentPainter].
  *
@@ -655,6 +740,22 @@ fun tvBackdropTreatmentPainter(size: Size, tr: TvBackdropTreatment): TvBackdropT
     val left = tr.left?.takeIf { it.maxAlpha > 0f }?.let {
         Brush.horizontalGradient(colorsOf(fadeOutProfile, it.color, it.maxAlpha), startX = w * it.start, endX = w * it.end)
     }
+    val patch = tr.patch?.takeIf { it.maxAlpha > 0f }?.let { p ->
+        val f = (p.feather * h).roundToInt()
+        val r = (p.right * w).roundToInt()
+        val b = (p.bottom * h).roundToInt()
+        if (f < 1 || r + f <= 0 || b + f <= 0) {
+            null
+        } else {
+            TvBackdropPatchDraw(
+                tvBackdropPatchImage(r, b, f),
+                IntOffset.Zero,
+                IntSize(r + f, b + f),
+                p.maxAlpha,
+                p.color,
+            )
+        }
+    }
     val bottom = tr.bottom?.takeIf { it.maxAlpha > 0f }?.let {
         Brush.verticalGradient(
             colorsOf(fadeInProfileOf(it.smoothness), it.color, it.maxAlpha),
@@ -666,6 +767,7 @@ fun tvBackdropTreatmentPainter(size: Size, tr: TvBackdropTreatment): TvBackdropT
         size, tr.dim,
         top, tr.top?.end ?: 0f,
         left, tr.left?.end ?: 0f,
+        patch,
         bottom, tr.bottom?.start ?: 1f,
         tr.bottomDstOut,
     )

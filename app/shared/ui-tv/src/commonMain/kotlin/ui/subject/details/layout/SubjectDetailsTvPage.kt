@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
+import me.him188.ani.app.ui.foundation.tv.TvBackdropPatch
 import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
@@ -141,6 +142,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -152,6 +154,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -357,6 +360,8 @@ fun SubjectDetailsTvLoadingPlaceholder(
 
     val pad = layoutParams.contentHorizontalPadding
     val scrollState = rememberScrollState()
+    // 大标题的位置, 背景图按它画浅色主题的标题区遮罩 (见 TvHeroBackdrop 的 titleArea)
+    val placeholderTitle = remember { TvHeroTitleLocator() }
     Box(modifier.fillMaxSize().graphicsLayer { alpha = abortFade.value }) {
         MultiColumnScaffold(
             layoutParams.copy(
@@ -370,7 +375,9 @@ fun SubjectDetailsTvLoadingPlaceholder(
             backgroundOverlay = {
                 // 放大会话进行中背景由放大那一层画 (见 TvHeroZoomLayer), 这里组合着但不画: 会话结束那一帧直接显示 ——
                 // 新图片实例头一两帧是空的, 到那时才组合会闪一下
-                heroBackdropUrl?.let { url -> TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom) }
+                heroBackdropUrl?.let { url ->
+                    TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom, titleArea = { placeholderTitle.current() })
+                }
             },
             containerColor = if (underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         ) {
@@ -384,7 +391,7 @@ fun SubjectDetailsTvLoadingPlaceholder(
                 ) {
                     Text(
                         subjectInfo?.displayName ?: navTitle.orEmpty(),
-                        Modifier.tvHeroZoomTitleShift(zoomSession),
+                        Modifier.tvHeroTitleLocator(placeholderTitle).tvHeroZoomTitleShift(zoomSession),
                         style = MaterialTheme.typography.headlineLarge.copy(shadow = heroText.shadow),
                         color = heroText.title,
                         maxLines = 2,
@@ -706,6 +713,8 @@ fun SubjectDetailsTvPage(
     // 分页驱动器: 滚动量是"当前页起点 + 页内露出"的派生值, 整页只有它一个写者 (见 TvDetailsPager).
     // 换页照 Prime Video 淡入淡出 + 短距离滑动.
     val backdropFadePx = with(LocalDensity.current) { HERO_BACKDROP_FADE_DISTANCE.toPx() }
+    // 首屏大标题的位置, 背景图按它画浅色主题的标题区遮罩 (见 TvHeroBackdrop 的 titleArea)
+    val heroTitle = remember { TvHeroTitleLocator() }
     val pager = remember(scrollState, backdropFadePx, videoBackground) {
         TvDetailsPager(scrollState, backdropFadePx, transitions = !videoBackground)
     }
@@ -1178,6 +1187,7 @@ fun SubjectDetailsTvPage(
                         scrollState = scrollState,
                         // 换页的滚动是跳的: 背景淡出进度改由 TvDetailsPager 按时长走, 不随滚动量一下子到底
                         scrollFade = { pager.backdropProgress() },
+                        titleArea = { heroTitle.current() },
                         // 页面主题色从**这张背景图**取: 它就是屏幕上最大的一块颜色, 主色与它同源
                         // 才不脱节 (改用竖版封面试过, 有些条目两张图色调差很远, 观感割裂).
                         // 没有 backdrop 的条目由下面那条 hero 分支用竖版封面兜底, 见 heroBackdropUrl
@@ -1212,7 +1222,7 @@ fun SubjectDetailsTvPage(
                 onClickOpenExternal = onClickOpenExternal,
                 horizontalPadding = pad,
                 // 放大转场 (见 zoomFrom): 标题从列表页的位置平移过来, 其余到位后一次性出现
-                titleModifier = Modifier.tvHeroZoomTitleShift(zoomSession),
+                titleModifier = Modifier.tvHeroTitleLocator(heroTitle).tvHeroZoomTitleShift(zoomSession),
                 bodyComposed = revealed || bodyEarly,
                 // lambda: 在三处 graphicsLayer 里读, uiEarly 翻转那一帧只改层属性, 不重组整个 hero 块
                 bodyHidden = { underZoom && !uiEarly },
@@ -1815,8 +1825,8 @@ private fun TvDetailsSideRail(
  * 详情页 backdrop 那套遮罩的声明: 左侧可读性 scrim + 下缘渐隐. 列表页那份见 `tvPageBackdropTreatment`,
  * 放大转场画的是两者的插值 (见 [TvBackdropTreatment]).
  *
- * 左侧的 scrim 只有深色主题有 (托住白字); 浅色主题的标题是黑字, 靠字自己的白色光晕托住 (见 [rememberTvDetailsHeroTextStyle]), 图左不压 ——
- * 压一层黑的话, 从浅灰底的列表页放大进来左边会由浅变深.
+ * 左侧的 scrim 只有深色主题有 (托住白字); 浅色主题的标题是黑字, 图左不压 (压一层黑的话, 从浅灰底的列表页放大进来左边会由浅变深),
+ * 只让左上角长出一块遮罩托住大标题 ([titlePatch], 淡进页面底色), 再加字自己的白色光晕 (见 [rememberTvDetailsHeroTextStyle]).
  *
  * 下缘的起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图, 选集卡片那一带整片发黑
  * (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
@@ -1827,9 +1837,12 @@ private fun tvHeroBackdropTreatment(
     bottomStrength: Float = 1f,
     /** 浅色主题 (左侧不压暗). */
     light: Boolean = false,
+    /** 浅色主题托住大标题的那块遮罩 (见 [tvHeroTitlePatch]). */
+    titlePatch: TvBackdropPatch? = null,
 ) = TvBackdropTreatment(
     // 左侧暗色 scrim: 保证浮在图上的白色标题可读
     left = if (light) null else TvBackdropFade(start = 0f, end = 0.55f, maxAlpha = 0.6f, color = Color.Black),
+    patch = titlePatch,
     // 有纯色垫底时画同色渐变 (擦掉 a 露出纯色 C 与在图上叠一层 alpha a 的 C 逐像素相同), 不必开离屏缓冲
     bottom = TvBackdropFade(
         start = 0.72f, end = 1f, maxAlpha = 0.88f * bottomStrength.coerceIn(0f, 1f),
@@ -1840,7 +1853,7 @@ private fun tvHeroBackdropTreatment(
 
 /**
  * 详情页首屏压在背景图上的字 (大标题 / 副标题 / 加载占位的转圈与提示): 深色白字 + 柔和黑影 (图左另压一层黑, 见 [tvHeroBackdropTreatment]);
- * 浅色与列表页 hero 同色 —— 黑字、次要字黑 60%, 阴影换成一圈淡白光晕托住字 (图左不压). 放大进来标题不换色; 缩回那一层画的标题用同一个阴影,
+ * 浅色与列表页 hero 同色 —— 黑字、次要字黑 60%, 阴影换成一圈淡白光晕托住字 (图左不压, 只从左上角长出一块遮罩托住标题). 放大进来标题不换色; 缩回那一层画的标题用同一个阴影,
  * 起步那一帧对得上.
  */
 private class TvDetailsHeroTextStyle(
@@ -1877,6 +1890,47 @@ private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
         }
     }
 }
+
+/**
+ * 浅色主题托住大标题的那块遮罩 (整层比例, 见 [TvBackdropPatch]): 从左上角长出来, 左缘与上缘最浓, 往右 / 往下变浅; 标题的右端与副标题的
+ * 下沿落在变浅那一段的中点 (约八成浓), 再往外 [TV_DETAILS_TITLE_PATCH_FEATHER] 淡到 0. 标题的框 = [area] (根坐标; [origin] = 本层在
+ * 根坐标里的左上角), 副标题按 [TV_DETAILS_TITLE_PATCH_SUBTITLE] 算 (放大那一层只知道标题的框; 没有副标题时遮罩照样这么大, 两边对得上).
+ * 浓度同下缘; [strength] = 翻离首屏时收掉 (同下缘). [color] 同下缘: 擦图时不看, 盖色时是垫底的纯色.
+ */
+private fun DrawScope.tvHeroTitlePatch(area: Rect?, origin: Offset, strength: Float, color: Color): TvBackdropPatch? {
+    if (area == null || strength <= 0f || size.width <= 0f || size.height <= 0f) return null
+    return TvBackdropPatch(
+        right = (area.right - origin.x) / size.width,
+        bottom = (area.bottom - origin.y + TV_DETAILS_TITLE_PATCH_SUBTITLE.toPx()) / size.height,
+        feather = TV_DETAILS_TITLE_PATCH_FEATHER.toPx() / size.height,
+        maxAlpha = TV_DETAILS_TITLE_PATCH_ALPHA * strength,
+        color = color,
+    )
+}
+
+/**
+ * 首屏大标题在根坐标里的框, 供背景图画标题区遮罩 (见 TvHeroBackdrop 的 titleArea). 标题每次排版记下自己的坐标; 背景图绘制时按坐标现算 ——
+ * 翻页过渡里首屏块有自己的图层位移 (不触发重新排版), 现算才跟得上. 排版变了背景图跟着重画 (读 [bounds]).
+ */
+@Stable
+private class TvHeroTitleLocator {
+    private var coordinates: LayoutCoordinates? = null
+    private var bounds by mutableStateOf<Rect?>(null)
+
+    fun update(c: LayoutCoordinates) {
+        coordinates = c
+        bounds = c.boundsInRoot()
+    }
+
+    /** 此刻的框; 标题离开组合之后是最后记下的那个. */
+    fun current(): Rect? {
+        val last = bounds
+        return coordinates?.takeIf { it.isAttached }?.boundsInRoot() ?: last
+    }
+}
+
+/** 标题排版后报给 [locator]. 挂在放大平移 (tvHeroZoomTitleShift) 外面: 记的是标题落定的位置. */
+private fun Modifier.tvHeroTitleLocator(locator: TvHeroTitleLocator): Modifier = onGloballyPositioned { locator.update(it) }
 
 /** 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放. */
 private fun tvHeroSoftEdgeBand(gap: Float, base: Float, remaining: Float, scale: Float): Float {
@@ -3048,6 +3102,11 @@ private fun TvHeroBackdrop(
     sharpen: Boolean = true,
     /** 向下滚动的淡出进度 (0..1) 由调用方给, 绘制里读; 返回 null 时照常按滚动量算. 见真页的 TvDetailsPager (换页的滚动是跳的). */
     scrollFade: () -> Float? = { null },
+    /**
+     * 大标题的框 (根坐标, 不含放大转场里标题自己的平移), 绘制里读: 浅色主题从左上角长出一块遮罩托住它 (见 [tvHeroTitlePatch]), 随翻离首屏收掉.
+     * null = 不画.
+     */
+    titleArea: () -> Rect? = { null },
 ) {
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
@@ -3071,7 +3130,8 @@ private fun TvHeroBackdrop(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (zoomFrom != null) Modifier.onGloballyPositioned { ownBounds = it.boundsInRoot() } else Modifier)
+                // 放大时与起始框相减得到位移; 标题区遮罩按它把标题的根坐标换成本层坐标
+                .onGloballyPositioned { ownBounds = it.boundsInRoot() }
                 .graphicsLayer {
                     if (hidden) {
                         alpha = 0f
@@ -3130,7 +3190,12 @@ private fun TvHeroBackdrop(
                     // 下缘渐隐只属于首屏 (托住首屏下半的信息带与选集): 翻离首屏时与背景淡出同一个进度收掉, 第二页起背景图整屏均匀地
                     // 淡在 HERO_BACKDROP_MIN_ALPHA, 底下不再单独压一道黑. 缩回层按按返回那一刻的进度起步 (见 scrollFade)
                     val scrolled = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
-                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled, light = light)
+                    val titlePatch = if (light) {
+                        tvHeroTitlePatch(titleArea(), ownBounds?.topLeft ?: Offset.Zero, 1f - scrolled, solidUnderlay ?: Color.Black)
+                    } else {
+                        null
+                    }
+                    val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled, light = light, titlePatch = titlePatch)
                     val treatment = if (zoomFrom != null && t < 1f) {
                         lerpTvBackdropTreatment(sourceTreatment ?: TvBackdropTreatment(), ownTreatment, t)
                     } else {
@@ -3348,6 +3413,7 @@ fun TvHeroZoomLayer() {
             featherOn = { session.started },
             solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
             sourceTreatment = session.treatment,
+            titleArea = { session.titleTarget },
             // 起跑之前只加载不画: 图加载好到起跑之间那一两帧若照常画, 就是一块没有羽化、没有底缘擦除的硬边原图压在
             // 列表页 hero 上 (2026-09-10 录屏: hero 区突然变成硬边亮矩形约 50ms). 起跑那一帧图、羽化、深色底、列表页
             // 硬切一起出现, 与列表页 hero 像素级一样
@@ -3364,6 +3430,7 @@ fun TvHeroZoomLayer() {
                 featherOn = { session.started },
                 solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
                 sourceTreatment = session.treatment,
+                titleArea = { session.titleTarget },
                 hidden = !(session.started && session.swapped),
                 extraDim = swapDim,
             )
@@ -3511,6 +3578,7 @@ fun TvHeroShrinkLayer() {
             featherOn = { armed },
             solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
             sourceTreatment = shrink?.treatment,
+            titleArea = { shrink?.fromSession?.titleTarget },
             shrinking = true,
             hidden = !armed || (crossImage && !swapped),
             scrollFade = startFade,
@@ -3527,6 +3595,7 @@ fun TvHeroShrinkLayer() {
                 featherOn = { armed },
                 solidUnderlay = AniThemeDefaults.pageContentBackgroundColor,
                 sourceTreatment = shrink?.treatment,
+                titleArea = { shrink?.fromSession?.titleTarget },
                 shrinking = true,
                 hidden = !armed || swapped,
                 scrollFade = startFade,
@@ -3599,7 +3668,7 @@ private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): 
     // 自己首行基线离框顶多远 (px), 测量时读 Text 报的 FirstBaseline
     var ownBaseline by remember { mutableFloatStateOf(Float.NaN) }
     val from = session?.titleBounds
-    if (session == null || from == null) return this
+    if (session == null) return this
     return this
         .onGloballyPositioned {
             val b = it.boundsInRoot()
@@ -3607,6 +3676,8 @@ private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): 
             session.titleTarget = b
         }
         .graphicsLayer {
+            // 列表页没登记标题框: 不平移、照常画 (框照样记下: 放大 / 缩回那一层按它画标题区遮罩)
+            if (from == null) return@graphicsLayer
             // 自己的框还没量到 (占位页刚换成真页的那一帧) 先用上一页量的: 两页标题同一位置
             val o = own ?: session.titleTarget
             if (!session.started || o == null) {
@@ -4217,6 +4288,13 @@ private const val HERO_BACKDROP_MIN_ALPHA = 0.42f
  * 浅色主题下的 [HERO_BACKDROP_MIN_ALPHA]. 图淡在浅灰底上时, 图里的暗部成了中灰, 正好是深色字最难读的那一档亮度, 所以比深色淡.
  */
 private const val HERO_BACKDROP_MIN_ALPHA_LIGHT = 0.3f
+
+/** 浅色主题托住大标题那块遮罩变浅那一段的半宽与浓度 (见 [tvHeroTitlePatch]). 浓度同下缘, 留一成图不擦. */
+private val TV_DETAILS_TITLE_PATCH_FEATHER = 72.dp
+private const val TV_DETAILS_TITLE_PATCH_ALPHA = 0.88f
+
+/** 标题下面副标题那一行 (间距 6dp + bodyMedium 行高 20sp), 见 [tvHeroTitlePatch]. */
+private val TV_DETAILS_TITLE_PATCH_SUBTITLE = 26.dp
 
 /** 页内导航时焦点下缘距屏幕下缘的最小可见余量: 露出后留出该余量. */
 private val SECTION_ITEM_REVEAL_MARGIN = 24.dp

@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import kotlin.concurrent.Volatile
 import kotlin.math.PI
 import kotlin.math.sin
@@ -811,7 +812,7 @@ fun tvHeroShrinkEasing(): Easing =
     TvHeroShrinkEasingLifted.getOrNull(TvPolishFlags.shrinkCurve - 1) ?: TvHeroShrinkEasing
 
 /**
- * 压在 backdrop 上的那套遮罩的**声明**: 一层均匀压暗 + 三条固定角色的有向渐变 (顶缘 / 左缘 / 下缘).
+ * 压在 backdrop 上的那套遮罩的**声明**: 一层均匀压暗 + 三条固定角色的有向渐变 (顶缘 / 左缘 / 下缘) + 左上角长出来的一块遮罩.
  *
  * **为什么要一份声明而不是各画各的**: 列表页与详情页原来各写各的一套 (列表页 4 层, 详情页 7~8 层), 放大转场靠
  * "旧那套按 1-t 退、新那套按 t 进"的交叉淡入把两边接起来 —— 而交叉淡入在中途是"两套各有一部分同时存在",
@@ -821,7 +822,7 @@ fun tvHeroShrinkEasing(): Easing =
  * 换成声明 + 插值之后: 转场画的是 `lerp(列表页那份, 详情页那份, t)` —— t=0 逐像素等于列表页, t=1 逐像素等于详情页,
  * 中间是**渐变带的位置与强度在连续变形**, 结构上不可能有台阶.
  *
- * 角色固定成三个槽 (而不是一个 List) 就是为了能按角色对齐插值; 某一侧没有某个角色时, **沿用另一侧的几何、强度从 0 起**,
+ * 角色固定成几个槽 (而不是一个 List) 就是为了能按角色对齐插值; 某一侧没有某个角色时, **沿用另一侧的几何、强度从 0 起**,
  * 于是渐变带的位置不跳, 只是浓淡在变.
  */
 @Immutable
@@ -832,10 +833,12 @@ data class TvBackdropTreatment(
     val top: TvBackdropFade? = null,
     /** 左缘渐隐: 从左缘起衰减到透明. */
     val left: TvBackdropFade? = null,
+    /** 左上角长出来的一块遮罩 (详情页浅色主题托住大标题), 见 [TvBackdropPatch]. 与下缘一样按 [bottomDstOut] 擦图或盖色. */
+    val patch: TvBackdropPatch? = null,
     /** 下缘渐隐: 从 [TvBackdropFade.start] 起加深到下缘. */
     val bottom: TvBackdropFade? = null,
     /**
-     * 下缘用 DstOut **擦掉图自身的透明度**而不是盖一层色: 详情页静止态用它露出下层的动态渐变背景 (盖纯色的话浅色主题
+     * 下缘 (连同 [patch]) 用 DstOut **擦掉图自身的透明度**而不是盖一层色: 详情页静止态用它露出下层的动态渐变背景 (盖纯色的话浅色主题
      * 下是一片突兀的纯白). 有纯色垫底时 (放大 / 缩回那一层) 改画同色渐变, 逐像素相同却不必开离屏缓冲, 所以转场途中恒 false.
      */
     val bottomDstOut: Boolean = false,
@@ -861,15 +864,45 @@ data class TvBackdropFade(
     val smoothness: Float = 0f,
 )
 
+/**
+ * 从层的左上角长出来的一块遮罩: 左缘与上缘处是 [maxAlpha] 的 [color], 往右 / 往下变浅. 横向以 [right] (层宽的比例) 为中点, 前后各
+ * [feather] (层高的比例, 横竖同一个像素宽) 这一段按详情页下缘那条曲线淡掉 —— 之前是满的, 之后为 0; 纵向以 [bottom] 为中点同理;
+ * 两个方向相乘, 右下那个角自然圆滑.
+ */
+@Immutable
+data class TvBackdropPatch(
+    val right: Float,
+    val bottom: Float,
+    val feather: Float,
+    val maxAlpha: Float,
+    val color: Color,
+)
+
 /** 按角色对齐插值; 见 [TvBackdropTreatment] 的说明. */
 fun lerpTvBackdropTreatment(a: TvBackdropTreatment, b: TvBackdropTreatment, t: Float): TvBackdropTreatment =
     TvBackdropTreatment(
         dim = lerpDimColor(a.dim, b.dim, t),
         top = lerpFade(a.top, b.top, t),
         left = lerpFade(a.left, b.left, t),
+        patch = lerpPatch(a.patch, b.patch, t),
         bottom = lerpFade(a.bottom, b.bottom, t),
         bottomDstOut = if (t < 0.5f) a.bottomDstOut else b.bottomDstOut,
     )
+
+private fun lerpPatch(a: TvBackdropPatch?, b: TvBackdropPatch?, t: Float): TvBackdropPatch? {
+    // 一侧没有: 沿用另一侧的范围, 浓度从 0 起 (同 lerpFade)
+    if (a == null && b == null) return null
+    if (a == null) return b!!.copy(maxAlpha = b.maxAlpha * t)
+    if (b == null) return a.copy(maxAlpha = a.maxAlpha * (1f - t))
+    fun f(x: Float, y: Float) = x + (y - x) * t
+    return TvBackdropPatch(
+        right = f(a.right, b.right),
+        bottom = f(a.bottom, b.bottom),
+        feather = f(a.feather, b.feather),
+        maxAlpha = f(a.maxAlpha, b.maxAlpha),
+        color = lerp(a.color, b.color, t),
+    )
+}
 
 /** 色与不透明度都连续插值: 只有一侧有压暗时, 用另一侧的同色 alpha 0 当对端, 免得从"透明黑"插过去中段发灰. */
 private fun lerpDimColor(a: Color, b: Color, t: Float): Color {
