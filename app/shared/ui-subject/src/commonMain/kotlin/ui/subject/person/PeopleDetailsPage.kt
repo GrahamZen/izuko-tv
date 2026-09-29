@@ -191,7 +191,7 @@ fun CharacterDetailsScreen(
  * 整页一起滚动, 与条目详情多栏布局一致.
  */
 @Composable
-private fun PeopleDetailsScaffold(
+internal fun PeopleDetailsScaffold(
     topBarTitle: String,
     navigationIcon: @Composable () -> Unit,
     windowInsets: WindowInsets,
@@ -320,96 +320,44 @@ private fun PeopleDetailsScaffold(
                     ) {
                         // 定稿: 固定宽度, 高按原图比例自适应 (加载前用 340:482 占位)
                         var coverAspect by remember(sidebarImageUrl) { mutableStateOf(340f / 482f) }
+                        val onClickSidebarImage = imageViewer.viewImageOrNull(sidebarImageUrl)
                         Box(
                             Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(coverAspect.coerceIn(0.4f, 1.6f))
                                 .clip(MaterialTheme.shapes.medium)
-                                .placeholder(isPlaceholder),
-                        ) {
-                            // 定稿: 固定宽度, 高按原图比例自适应 (加载前用 340:482 占位)
-                            var coverAspect by remember(sidebarImageUrl) { mutableStateOf(340f / 482f) }
-                            val onClickSidebarImage = imageViewer.viewImageOrNull(sidebarImageUrl)
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(coverAspect.coerceIn(0.4f, 1.6f))
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .then(
-                                        if (onClickSidebarImage != null) {
-                                            Modifier.clickable(onClick = onClickSidebarImage)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    // 没有简介时这张图就是进页落点 (见中栏顶部块那处的说明)
-                                    .ifThen(entryFocusOnSidebarImage && onClickSidebarImage != null) {
-                                        tvWindowInitialFocus()
-                                    }
-                                    .placeholder(isPlaceholder),
-                            ) {
-                                AsyncImage(
-                                    model = sidebarImageUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier.matchParentSize(),
-                                    contentScale = ContentScale.Fit,
-                                    onSuccess = { result ->
-                                        if (result.width > 0 && result.height > 0) {
-                                            coverAspect = result.width.toFloat() / result.height
-                                        }
+                                .then(
+                                    if (onClickSidebarImage != null) {
+                                        Modifier.clickable(onClick = onClickSidebarImage)
+                                    } else {
+                                        Modifier
                                     },
                                 )
-                            }
-                            if (sidebarInfo.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text(
-                                        stringResource(Lang.person_details_basic_info),
-                                        style = MaterialTheme.typography.titleSmall,
-                                    )
-                                    PeopleInfoTable(sidebarInfo)
+                                // 没有简介时这张图就是进页落点 (见中栏顶部块那处的说明)
+                                .ifThen(entryFocusOnSidebarImage && onClickSidebarImage != null) {
+                                    tvWindowInitialFocus()
                                 }
-                            }
-                        }
-
-                        // 中栏
-                        Column(
-                            Modifier.weight(1f).widthIn(max = 840.dp),
-                            verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
+                                .placeholder(isPlaceholder),
                         ) {
-                            // 焦点驱动形态: 顶部内容块 (标题/简介) 获得焦点时滚动归零, 露出左栏大图与
-                            // 标题顶部 (滚动纯靠焦点驱动, 到不了不可聚焦的图片/标题; 同人物预览弹窗的处理).
-                            // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部
-                            val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
-                            val scope = rememberCoroutineScope()
-                            Column(
-                                Modifier.ifThen(focusDriven) {
-                                    onFocusChanged {
-                                        if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                            AsyncImage(
+                                model = sidebarImageUrl,
+                                contentDescription = null,
+                                modifier = Modifier.matchParentSize(),
+                                contentScale = ContentScale.Fit,
+                                onSuccess = { result ->
+                                    if (result.width > 0 && result.height > 0) {
+                                        coverAspect = result.width.toFloat() / result.height
                                     }
                                 },
-                                verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
-                            ) {
-                                titleBlock(isPlaceholder)
-                                if (summary.isNotBlank()) {
-                                    // **进页落点**. 本页是从移动端迁过来的, 原先没有落点, 焦点由 AniAppContent
-                                    // 的全局兜底按几何挑一个送进来 —— 而这一页在数据到达前中栏**一个焦点目标都
-                                    // 没有** (标题块是纯文字; 出演 / 作品两条在 `itemCount == 0` 时整块 return),
-                                    // 只有页底的评论区恒有一个"查看全部". 于是兜底只能挑它, 表现就是"进页看不到
-                                    // 焦点框 (它在视口外), 一按下键画面瞬间跳到最底下" (用户 2026-09-17).
-                                    //
-                                    // 落点挂在**简介**上而不是外层那个 Column: 请求悬挂到锚点附着事件, 挂在恒在的
-                                    // 容器上会在数据到达前就被消化掉 (那一刻它进不去任何子节点, 失败且不会重来),
-                                    // 挂在"数据到了才组合"的节点上才正好赶上. 简介落焦还会触发上面那个
-                                    // animateScrollTo(0), 画面一并回到顶部.
-                                    SubjectSummarySection(
-                                        summary,
-                                        Modifier.ifThen(focusDriven) { tvWindowInitialFocus() },
-                                    )
-                                }
-                            }
-                            centerStrips()
-                            if (!layoutParams.showRail) {
-                                PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
+                            )
+                        }
+                        if (sidebarInfo.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(
+                                    stringResource(Lang.person_details_basic_info),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                PeopleInfoTable(sidebarInfo)
                             }
                         }
                     }
@@ -434,7 +382,20 @@ private fun PeopleDetailsScaffold(
                         ) {
                             titleBlock(isPlaceholder)
                             if (summary.isNotBlank()) {
-                                SubjectSummarySection(summary)
+                                // **进页落点**. 本页是从移动端迁过来的, 原先没有落点, 焦点由 AniAppContent
+                                // 的全局兜底按几何挑一个送进来 —— 而这一页在数据到达前中栏**一个焦点目标都
+                                // 没有** (标题块是纯文字; 出演 / 作品两条在 `itemCount == 0` 时整块 return),
+                                // 只有页底的评论区恒有一个"查看全部". 于是兜底只能挑它, 表现就是"进页看不到
+                                // 焦点框 (它在视口外), 一按下键画面瞬间跳到最底下" (用户 2026-09-17).
+                                //
+                                // 落点挂在**简介**上而不是外层那个 Column: 请求悬挂到锚点附着事件, 挂在恒在的
+                                // 容器上会在数据到达前就被消化掉 (那一刻它进不去任何子节点, 失败且不会重来),
+                                // 挂在"数据到了才组合"的节点上才正好赶上. 简介落焦还会触发上面那个
+                                // animateScrollTo(0), 画面一并回到顶部.
+                                SubjectSummarySection(
+                                    summary,
+                                    Modifier.ifThen(focusDriven) { tvWindowInitialFocus() },
+                                )
                             }
                         }
                         centerStrips()
