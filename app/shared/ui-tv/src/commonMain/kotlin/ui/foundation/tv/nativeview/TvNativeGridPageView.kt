@@ -28,6 +28,7 @@ import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
+import kotlin.math.roundToInt
 
 /**
  * 网格页 (追番 / 搜索) 原生海报墙的几何 (px, 页面坐标; 页面 = 主壳里让开侧边栏之后的那块, 搜索页是整页减去侧边栏).
@@ -79,6 +80,9 @@ interface TvNativeGridPageListener : TvNativeGridListener {
 
     /** 点开时顶栏等 Compose 部件跟着卡片淡没的程度 (0..1). */
     fun onWallFade(fade: Float) {}
+
+    /** 网格内容从页顶往上滚了多少 (px, 见 [TvNativeGridPageView.contentScrollLimitPx]): 页面让顶栏跟着一起滚走. */
+    fun onContentScrolled(offsetPx: Int) {}
 }
 
 /**
@@ -263,12 +267,19 @@ class TvNativeGridPageView(
         next.cards.setTitleVisibility(next, 1f - timeline.above)
         next.pullFade = cardsFade
         next.pullKeepIndex = wallKeep
-        savedPosition[key]?.let { next.selectedPosition = it }
+        // 没记过位置的 (头一回显示 / 被 forgetPosition 忘掉的) 从第一张排起: 复用的那份网格还停在上一个 key 的位置上
+        next.selectedPosition = savedPosition[key] ?: 0
         current = next
+        val width = gridBox.width.toFloat()
+        val slide = cur != null && direction != 0 && animated && transitions && width > 0f
+        // 顶栏跟着滚走的量 (见 emitContentScroll): 滑动的话从换之前报出去的值起步, 跟着滑动进度滑到新那份网格的; 不滑动当场换
+        contentScrollFrom = reportedContentScroll
+        contentScrollProgress = 0f
+        contentScrollSliding = slide
+        reportContentScroll()
         // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
         if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
-        val width = gridBox.width.toFloat()
-        if (cur == null || direction == 0 || !animated || !transitions || width <= 0f) {
+        if (cur == null || !slide) {
             cur?.let { retire(it) }
             return
         }
@@ -280,10 +291,14 @@ class TvNativeGridPageView(
                 val f = it.animatedValue as Float
                 next.translationX = width * direction * (1f - f)
                 cur.translationX = -width * direction * f
+                contentScrollProgress = f
+                emitContentScroll()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     slideAnimator = null
+                    contentScrollSliding = false
+                    emitContentScroll()
                     if (current !== cur) retire(cur)
                 }
             })
@@ -316,7 +331,10 @@ class TvNativeGridPageView(
             }
 
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (recyclerView === current) scrollTracker.onMoved(dy)
+                if (recyclerView === current) {
+                    scrollTracker.onMoved(dy)
+                    reportContentScroll()
+                }
             }
         })
         grids.add(grid)
@@ -388,6 +406,59 @@ class TvNativeGridPageView(
 
     fun restorePositions(positions: Map<out Any, Int>) {
         savedPosition.putAll(positions)
+    }
+
+    /** 忘掉 [key] 那份网格的位置: 下次显示从第一行排起 (新番时间表在日期行上换天, 换过去的那天从头看). */
+    fun forgetPosition(key: Any) {
+        savedPosition.remove(key)
+    }
+
+    // ------------------------------------------------------------------
+    // 内容滚动 (顶栏跟着滚走)
+    // ------------------------------------------------------------------
+
+    /**
+     * 报告网格内容从页顶往上滚了多少 ([TvNativeGridPageListener.onContentScrolled]), 夹在 0..此值: 页面让顶栏跟着内容一起滚走 (新番时间表的
+     * 日期行, 照 tvOS 标签栏的默认行为: 内容只有一个主视图时标签栏随内容滚出屏幕). 量的是第一行离开它停在页顶时的位置 (行顶 = 网格的上内边距);
+     * 第一行已滚出排版范围 = 此值, 没有卡 = 0. 换网格 (时间表跨天) 时报的值跟着网格滑动一起滑到新那份的, 不在换的那一刻跳. 0 = 不报 (追番 / 搜索).
+     */
+    var contentScrollLimitPx: Int = 0
+
+    private var reportedContentScroll = -1
+
+    /** 此刻那份网格实际滚了多少 (换网格滑动途中是滑向的终点; 新那份网格排出来、自己滚动时跟着变). */
+    private var contentScrollTarget = 0
+
+    /** 换网格的滑动途中 (见 [showGrid]): 报的值从换之前报出去的 [contentScrollFrom] 按滑动进度 [contentScrollProgress] 插到 [contentScrollTarget]. */
+    private var contentScrollSliding = false
+    private var contentScrollFrom = -1
+    private var contentScrollProgress = 0f
+
+    /** 排版完成 (换数据、换标签后的第一次排版) 也补报一次: 滚动回调只管挪动. */
+    private val layoutWatcher = ViewTreeObserver.OnGlobalLayoutListener { reportContentScroll() }
+
+    private fun reportContentScroll() {
+        val limit = contentScrollLimitPx
+        val grid = current
+        if (limit <= 0 || grid == null) return
+        contentScrollTarget = if (grid.cards.itemCount == 0) {
+            0
+        } else {
+            val first = grid.findViewHolderForAdapterPosition(0)?.itemView
+            if (first == null) limit else (grid.paddingTop - first.top).coerceIn(0, limit)
+        }
+        emitContentScroll()
+    }
+
+    /** 报出去: 平时就是网格实际滚的量 (跟着滚动 1:1); 换网格滑动途中按滑动进度插值, 顶栏与网格一起滑到位. */
+    private fun emitContentScroll() {
+        if (contentScrollLimitPx <= 0) return
+        val target = contentScrollTarget
+        val from = contentScrollFrom
+        val value = if (contentScrollSliding && from >= 0) (from + (target - from) * contentScrollProgress).roundToInt() else target
+        if (value == reportedContentScroll) return
+        reportedContentScroll = value
+        listener?.onContentScrolled(value)
     }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
@@ -474,6 +545,7 @@ class TvNativeGridPageView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
+        viewTreeObserver.addOnGlobalLayoutListener(layoutWatcher)
     }
 
     private fun setGridFocus(has: Boolean) {
@@ -840,6 +912,7 @@ class TvNativeGridPageView(
 
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
+        viewTreeObserver.removeOnGlobalLayoutListener(layoutWatcher)
         super.onDetachedFromWindow()
         scrollTracker.stop()
         cancelWallWait()
