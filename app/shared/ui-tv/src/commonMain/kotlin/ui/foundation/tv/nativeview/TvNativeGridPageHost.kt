@@ -52,6 +52,7 @@ import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
@@ -97,6 +98,16 @@ class TvNativeGridPageState internal constructor(
     /** 点开时顶栏等 Compose 部件跟着卡片淡没的程度 (0..1), 页面在绘制里读. */
     var wallFade: Float by mutableFloatStateOf(0f)
         internal set
+
+    /** 网格内容从页顶往上滚了多少 (px, 夹在 0..topBarScrollAwayPx, 见 TvNativeGridPageView.contentScrollLimitPx): 页面在绘制里读, 让顶栏跟着滚走. */
+    var contentScroll: Int by mutableIntStateOf(0)
+        internal set
+
+    /** 忘掉 [key] 那份网格的位置: 下次显示从第一行排起. */
+    fun forgetPosition(key: Int) {
+        savedPositions.remove(key)
+        view?.forgetPosition(key)
+    }
 
     /** 退出 hero 态 (返回键). */
     fun exitHero() {
@@ -194,7 +205,8 @@ fun <T : Any> TvNativeGridPageHost(
         // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
         onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
         heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
-        wallBackdrop = null, modifier, landingIndex, emptyContent,
+        wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
+        cardHeight = null, emptyContent,
     )
 }
 
@@ -202,7 +214,8 @@ fun <T : Any> TvNativeGridPageHost(
  * 网格页的原生海报墙, 数据是一份现成的列表 (新番时间表的一天): [items] 与 [cards] 一一对应, null 是还没到的占位. 页面的网格送焦请求只认
  * 前 [focusableCount] 张 (占位期间给 0: 占位卡不收落点, 等真数据). [heroEnabled] = false 时没有 hero 态: 卡片墙上按确定直接进详情页
  * ([TvNativeGridPageCallbacks.onCardClick]). [badge] 给了就按卡片的 [TvNativeCard.badge] 在封面右上角画角标.
- * 其余同分页那一版.
+ * [topBarScrollAwayPx] > 0 时逐帧报告网格内容往上滚了多少 ([TvNativeGridPageState.contentScroll], 夹在 0..它), 页面让顶栏跟着一起滚走.
+ * [columnSpacing] = 卡格之间的距离, [cardHeight] = 卡格高 (null = 按卡宽与封面比例算), 见 [rememberTvNativeWallStyle]. 其余同分页那一版.
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -226,6 +239,9 @@ fun <T : Any> TvNativeGridPageHost(
     wallBackdrop: TvNativeWallBackdropSpec? = null,
     modifier: Modifier = Modifier,
     landingIndex: Int = -1,
+    topBarScrollAwayPx: Int = 0,
+    columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
+    cardHeight: Dp? = null,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -235,7 +251,7 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = focusableCount,
         onBind = {},
         heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, landingIndex, emptyContent,
+        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, emptyContent,
     )
 }
 
@@ -264,13 +280,16 @@ private fun <T : Any> TvNativeGridPageHostContent(
     wallBackdrop: TvNativeWallBackdropSpec?,
     modifier: Modifier,
     landingIndex: Int,
+    topBarScrollAwayPx: Int,
+    columnSpacing: Dp,
+    cardHeight: Dp?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
     val visualEffects = LocalThemeSettings.current.visualEffects
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -358,9 +377,15 @@ private fun <T : Any> TvNativeGridPageHostContent(
                         // 顶栏与卡片同一帧淡: 写完当场派发
                         if (state.wallFade != fade) tvNativeWriteSnapshot { state.wallFade = fade }
                     }
+
+                    override fun onContentScrolled(offsetPx: Int) {
+                        // 顶栏与网格同一帧挪: 写完当场派发
+                        if (state.contentScroll != offsetPx) tvNativeWriteSnapshot { state.contentScroll = offsetPx }
+                    }
                 }
                 view.onBindCard = { index -> currentOnBind(index) }
                 view.heroEnabled = heroEnabled
+                view.contentScrollLimitPx = topBarScrollAwayPx
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
                 view.dark = dark
