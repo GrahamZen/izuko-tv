@@ -72,7 +72,7 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
     private val downloadMirrors: GitHubDownloadMirrors = get()
 
     private val fileDownloader by lazy { DefaultFileDownloader(clientProvider.get()) }
-    private val updateChecker by lazy { UpdateChecker(clientProvider.get()) }
+    private val updateChecker by lazy { UpdateChecker(clientProvider.get(), downloadMirrors::sourcesOf) }
 
     /**
      * 最新的版本. 当 [checked] 为 `true` 时, `null` 表示没有新版本. 否则表示还没有检查过.

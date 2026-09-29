@@ -29,8 +29,10 @@ import kotlin.test.assertNull
  * 检查更新时逐个来源报进度 ([UpdateCheckProgress]): 设置页与 Web 控制台据此写「GitHub 连不上，正在查镜像 2/4」.
  */
 class UpdateCheckerProgressTest {
-    private fun checker(handler: MockRequestHandler) =
-        UpdateChecker(HttpClient(MockEngine(handler)) { install(HttpTimeout) }.asScopedHttpClient())
+    private fun checker(handler: MockRequestHandler) = UpdateChecker(
+        HttpClient(MockEngine(handler)) { install(HttpTimeout) }.asScopedHttpClient(),
+        downloadSources = { listOf(it) },
+    )
 
     private val mirrors = JSDELIVR_HOSTS.size + 1
 

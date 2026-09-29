@@ -15,10 +15,18 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import kotlinx.io.readByteArray
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -207,15 +215,24 @@ private fun List<GitHubAsset>.pickByAbi(abis: List<String>): List<GitHubAsset>? 
 
 /**
  * 检查更新. 首选 GitHub API; 它连不上 (国内常见, 另有未认证 60 次/小时/IP 的限流, 移动网络共用出口 IP 会撞上)
- * 时回落到国内大多可达的镜像, 见 [findLatestStableOnMirrors]. 镜像回落**只查正式版**.
+ * 时回落到国内大多可达的镜像, 见 [latestOnJsDelivr] 与 [latestOnGhfast]. 镜像回落**只查正式版**.
+ *
+ * 镜像只回答"最新版是哪个", 回答的版本要确认确实发布了 ([isPublished]) 才提示: jsDelivr 按 tag 解析版本,
+ * 推了 tag 还没发布的草稿、发布后又删掉的 release 都会被它当成最新版, 而它们的安装包在原地址与各个下载镜像上都是 404.
  *
  * 走应用的统一客户端: 应用内设置的代理对更新检查同样生效, 每个请求也都进日志 (以前自建客户端, 两样都没有).
  *
  * 结果里的下载地址只有 GitHub 原地址 ([NewVersion.downloadUrlAlternatives], 每个可装的包一个); 加速镜像在下载时
  * 按仓库维护的清单展开 (`GitHubDownloadMirrors`), 下载器在原地址与镜像里挑最快的. 经第三方镜像下载的安全性靠两道:
  * Android 拒绝签名不同的覆盖安装; 走 GitHub 接口时按接口给的 SHA-256 校验 (镜像回落时退回来源旁边的 .sha1).
+ *
+ * @param downloadSources 安装包原地址的全部下载来源: 原地址在前, 然后是各个加速镜像 (`GitHubDownloadMirrors.sourcesOf`).
+ * 镜像回落时用它确认安装包在不在, 与下载时用的是同一套来源
  */
-class UpdateChecker(private val client: ScopedHttpClient) {
+class UpdateChecker(
+    private val client: ScopedHttpClient,
+    private val downloadSources: suspend (packageUrl: String) -> List<String>,
+) {
     /**
      * 检查是否有更新的版本. 返回最新版本的信息, 或者 `null` 表示没有新版本.
      * GitHub 与所有镜像都连不上时抛出 GitHub 那次的异常.
@@ -240,16 +257,28 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             logger.error(e) { "Failed to get latest version from GitHub, trying mirrors" }
             e
         }
-        val release = findLatestStableOnMirrors(onProgress) ?: run {
-            logger.warn { "Mirror update check failed too" }
-            throw gitHubError
-        }
-        return newVersionFromMirror(release, currentVersion).also { version ->
+
+        fun offered(release: MirrorRelease) = newVersionFromMirror(release, currentVersion).also { version ->
             logger.info {
                 "Got latest version from mirror (${release.source}): latest=${release.version}, " +
                     "new=${version?.name}, packages=${version?.packageNames()}"
             }
         }
+
+        val fromJsDelivr = latestOnJsDelivr(onProgress)
+        if (fromJsDelivr != null) {
+            val version = offered(fromJsDelivr) ?: return null
+            if (isPublished(version)) return version
+        }
+        // jsDelivr 都不通, 或者它说的那一版没发布: releases/latest 只指向已发布的 release
+        val fromGhfast = latestOnGhfast(onProgress) ?: run {
+            if (fromJsDelivr != null) return null
+            logger.warn { "Mirror update check failed too" }
+            throw gitHubError
+        }
+        if (fromGhfast.version == fromJsDelivr?.version) return null
+        val version = offered(fromGhfast) ?: return null
+        return version.takeIf { isPublished(it) }
     }
 
     private suspend fun getVersionFromGitHub(
@@ -298,14 +327,10 @@ class UpdateChecker(private val client: ScopedHttpClient) {
     private class MirrorRelease(val version: String, val templateBody: String, val source: String)
 
     /**
-     * 在镜像上找本版本线 ([UPDATE_LINE_MAJOR_EXCLUSIVE]) 的最新正式版. 先 jsDelivr (一个请求同时拿到版本号与
-     * 那一版的更新说明模板), 都不通再用 ghfast 代理 `releases/latest` 的跳转取 tag, 更新说明再经 ghfast 代理
-     * raw 取. `null` = 全部不通.
-     *
-     * `releases/latest` 不能指定版本线: 它指向的是仓库里被标成 Latest 的那个 release, 可能是别的版本线的.
-     * 那时交给调用方按版本线丢掉, 等同于这条镜像没找到.
+     * 在 jsDelivr 上找本版本线 ([UPDATE_LINE_MAJOR_EXCLUSIVE]) 的最新正式版: 一个请求同时拿到版本号与那一版的更新说明模板.
+     * 各个入口按顺序试, 第一个回答的为准; `null` = 都不通.
      */
-    private suspend fun findLatestStableOnMirrors(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
+    private suspend fun latestOnJsDelivr(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
         for ((index, host) in JSDELIVR_HOSTS.withIndex()) {
             onProgress(UpdateCheckProgress.Mirror(index + 1, UPDATE_CHECK_MIRROR_COUNT))
             val release = tryMirror("jsDelivr $host") {
@@ -327,6 +352,16 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             }
             if (release != null) return release
         }
+        return null
+    }
+
+    /**
+     * 用 ghfast 代理 `releases/latest` 的跳转取 tag, 更新说明再经 ghfast 代理 raw 取. `null` = 不通.
+     *
+     * `releases/latest` 只指向已发布的 release, 但不能指定版本线: 它指向的是仓库里被标成 Latest 的那个 release,
+     * 可能是别的版本线的. 那时交给调用方按版本线丢掉, 等同于没找到.
+     */
+    private suspend fun latestOnGhfast(onProgress: (UpdateCheckProgress) -> Unit): MirrorRelease? {
         onProgress(UpdateCheckProgress.Mirror(UPDATE_CHECK_MIRROR_COUNT, UPDATE_CHECK_MIRROR_COUNT))
         val tag = tryMirror("ghfast latest") {
             val finalUrl = client.use {
@@ -369,6 +404,72 @@ class UpdateChecker(private val client: ScopedHttpClient) {
             publishedAt = "",
         )
     }
+
+    /** 一个来源对安装包的回答, 见 [probePackage]. */
+    private enum class PackageAnswer {
+        /** 回了安装包. */
+        SERVED,
+
+        /** 回 404: 没有这个文件. 草稿与删掉的 release 的资源在原地址与各个下载镜像上都是这样. */
+        MISSING,
+
+        /** 连不上、别的状态码、回的不是安装包: 看不出有没有. */
+        UNKNOWN,
+    }
+
+    /**
+     * 镜像回落查到的 [version] 是不是真发布了: 每个包的全部来源 ([downloadSources]) 同时各取开头几个字节 ([probePackage]).
+     * - 有来源回了安装包: 是;
+     * - 没有, 而有来源回 404: 不是 (草稿或删掉的 release), 不提示;
+     * - 都没有明确回答: 看不出来, 照样提示. 这时本来就下不成, 下载时会说清每条线路的原因.
+     */
+    private suspend fun isPublished(version: NewVersion): Boolean {
+        val sources = version.downloadUrlAlternatives.flatMap { downloadSources(it) }.distinct()
+        var missing = false
+        val served = channelFlow {
+            for (url in sources) launch { send(url to probePackage(url)) }
+        }.firstOrNull { (_, answer) ->
+            if (answer == PackageAnswer.MISSING) missing = true
+            answer == PackageAnswer.SERVED
+        }
+        if (served != null) {
+            logger.info { "Mirror: package of ${version.name} served by ${served.first}" }
+            return true
+        }
+        if (missing) {
+            logger.warn { "Mirror: packages of ${version.name} not found (draft or deleted release?), not offering it" }
+            return false
+        }
+        logger.warn { "Mirror: no source answered for the packages of ${version.name}, offering it anyway" }
+        return true
+    }
+
+    /**
+     * 从 [url] 取安装包开头几个字节. 回 2xx 还要看内容是不是以 APK 的文件头 ([APK_MAGIC]) 开始: 加速站出错时可能回 200 的网页.
+     * 不认 Range 的来源会发整个文件, 读够就断开.
+     */
+    private suspend fun probePackage(url: String): PackageAnswer = tryMirror("package $url") {
+        client.use {
+            prepareGet(url) {
+                header(HttpHeaders.Range, "bytes=0-${APK_MAGIC.size - 1}")
+                expectSuccess = false
+                mirrorTimeout()
+            }.execute { response ->
+                val answer = when {
+                    response.status == HttpStatusCode.NotFound -> PackageAnswer.MISSING
+                    !response.status.isSuccess() -> PackageAnswer.UNKNOWN
+                    response.bodyAsChannel().readRemaining(APK_MAGIC.size.toLong()).readByteArray()
+                        .contentEquals(APK_MAGIC) -> PackageAnswer.SERVED
+
+                    else -> PackageAnswer.UNKNOWN
+                }
+                if (answer != PackageAnswer.SERVED) {
+                    logger.info { "Mirror package $url: status=${response.status.value}, $answer" }
+                }
+                answer
+            }
+        }
+    } ?: PackageAnswer.UNKNOWN
 
     /** 单个镜像请求: 失败只记一行 (不打栈, 回落链本来就预期会有失败) 并返回 null, 取消照常抛出. */
     private suspend fun <T> tryMirror(name: String, block: suspend () -> T?): T? = try {
@@ -455,6 +556,9 @@ class UpdateChecker(private val client: ScopedHttpClient) {
     private companion object {
         private val logger = logger<UpdateChecker>()
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** APK (zip) 开头的本地文件头 `PK\u0003\u0004`. */
+        private val APK_MAGIC = byteArrayOf(0x50, 0x4B, 0x03, 0x04)
     }
 }
 

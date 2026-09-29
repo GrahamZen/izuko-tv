@@ -361,11 +361,12 @@ internal object RemoteAppUpdate {
             try {
                 val koin = KoinPlatform.getKoin()
                 val releaseClass = koin.get<SettingsRepository>().updateSettings.flow.first().releaseClass
-                val found = UpdateChecker(koin.get<HttpClientProvider>().get())
+                val mirrors = koin.get<GitHubDownloadMirrors>()
+                val found = UpdateChecker(koin.get<HttpClientProvider>().get(), mirrors::sourcesOf)
                     .checkLatestVersion(releaseClass, onProgress = { checkProgress = it })
                 // 下载线路 = 原地址与各个镜像, 按域名列给网页挑 (第一个是原地址)
                 lineHosts = found?.downloadUrlAlternatives?.firstOrNull()?.let { url ->
-                    runCatching { koin.get<GitHubDownloadMirrors>().sourcesOf(url).map(::hostOf).distinct() }.getOrNull()
+                    runCatching { mirrors.sourcesOf(url).map(::hostOf).distinct() }.getOrNull()
                 }.orEmpty()
                 latest = found
                 checkError = null
