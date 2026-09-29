@@ -175,6 +175,9 @@ class TvNativeGridPageView(
     private var current: TvNativeGridView? = null
     private var slideAnimator: ValueAnimator? = null
     private val savedPosition = HashMap<Any, Int>()
+
+    /** 返回本页时焦点要回的那张 (见 [holdLandingLook]), -1 = 没有. */
+    private var landingHeld = -1
     private val timeline = TvNativeHeroTimeline { onTimeline() }
     private val scrollTracker = TvNativeScrollTracker { listener?.onScrollingChanged(it) }
     private var source: TvNativeHeroSource? = null
@@ -262,6 +265,8 @@ class TvNativeGridPageView(
         next.pullKeepIndex = wallKeep
         savedPosition[key]?.let { next.selectedPosition = it }
         current = next
+        // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
+        if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
         val width = gridBox.width.toFloat()
         if (cur == null || direction == 0 || !animated || !transitions || width <= 0f) {
             cur?.let { retire(it) }
@@ -321,6 +326,7 @@ class TvNativeGridPageView(
 
     private inner class GridListener(private val grid: TvNativeGridView) : TvNativeGridListener {
         override fun onFocused(index: Int) {
+            landingHeld = -1
             if (grid === current) listener?.onFocused(index)
         }
 
@@ -354,6 +360,16 @@ class TvNativeGridPageView(
     /** 送焦到此刻那份网格的第 [index] 张 (排出来之前记下, 布局完成再送). */
     fun focusItem(index: Int) {
         current?.focusItem(index)
+    }
+
+    /**
+     * 返回本页 (页面重建, 如从播放器回来) 时焦点会回到第 [index] 张 (页面的进页落点): 从排出来的第一帧起就按住它的聚焦态, 焦点到了画面不变.
+     * 等落点请求送到再按住就晚了 —— 那时它多半已经按未聚焦画过一帧, 焦点到了再放大一遍. 建视图时网格还没建出来, 先记下, 第一份网格建出来时补上;
+     * 任何一张卡拿到焦点 (适配器随之放开) 就作废.
+     */
+    fun holdLandingLook(index: Int) {
+        landingHeld = index
+        current?.let { if (!it.hasFocus()) it.cards.setFocusLookHeld(it, index) }
     }
 
     /** 此刻那份网格顶线以下第一张 (见 [TvNativeGridView.firstIndexBelowTopLine]). */

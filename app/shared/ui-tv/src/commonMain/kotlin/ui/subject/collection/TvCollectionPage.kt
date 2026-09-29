@@ -131,6 +131,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
+import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -758,6 +759,8 @@ fun TvCollectionPage(
                 onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
             ),
             menuFor = collectionMenuFor,
+            // 返回本页恢复的那张 (见上方进页恢复): 建网格时就按住聚焦态
+            landingIndex = restoreCardIndex,
         )
 
         Column(
@@ -991,13 +994,15 @@ internal fun TvCollectionGlassTab(
     detail: String? = count?.toString(),
 ) {
     val glass = tvGlassColors()
+    // 进页 / 返回本页的落点落在这个标签上 (标签栏常驻, 组合出来的头几帧里拿到焦点): 聚焦态当场到位, 不先按未聚焦画出来再抬一遍
+    val landing by rememberTvFocusLandingWindow()
     // 选中片与聚焦片各是一层, 只动透明度 (照 tvOS: 聚焦的白片淡入淡出): 按颜色插值的话"没有片"得写成 Color.Transparent,
     // 那是 alpha 0 的**黑** —— 淡入途中先经过半透明深灰, 浅色主题下到达的标签先黑一下再变白. 选中片只在没聚焦时露出,
     // 与聚焦片同一时长交叉淡入淡出. 两层的进度只在绘制里读
-    val focusLayer by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused), label = "tabFocusPlatter")
+    val focusLayer by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused, landing), label = "tabFocusPlatter")
     val selectLayer by animateFloatAsState(
         if (selected && !focused) 1f else 0f,
-        tvGlassFocusSpec(focused),
+        tvGlassFocusSpec(focused, landing),
         label = "tabSelectPlatter",
     )
     val labelColor by animateColorAsState(
@@ -1006,12 +1011,12 @@ internal fun TvCollectionGlassTab(
             selected -> glass.selectedContent
             else -> glass.idleContent
         },
-        tvGlassFocusSpec(focused),
+        tvGlassFocusSpec(focused, landing),
         label = "tabLabel",
     )
     Row(
         modifier
-            .tvGlassFocusLift(focused, CircleShape)
+            .tvGlassFocusLift(focused, CircleShape, snap = landing)
             .drawBehind {
                 val outline = CircleShape.createOutline(size, layoutDirection, this)
                 if (selectLayer > 0f) drawOutline(outline, glass.selectedPlatter, alpha = selectLayer)

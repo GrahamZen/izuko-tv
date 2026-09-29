@@ -78,6 +78,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -308,7 +309,9 @@ fun FocusEpisodeCarousel(
     //
     // 直接记下标而不经 episodes 映射: 映射 lambda 会被 item 的 remember 缓存住旧实例,
     // 见 [FocusEpisodeAnchorRing] 的教训.
-    var dimPivotIndex by remember { mutableIntStateOf(-1) }
+    //
+    // 跨导航保存: 从播放器返回时本页重建, 从 -1 起步的话分界线左边的卡先全亮、焦点落回来再暗下去一遍
+    var dimPivotIndex by rememberSaveable { mutableIntStateOf(-1) }
     // 聚焦卡是否正被按住 (长按确认键): 固定聚焦框读它跟着缩放
     var pressingCard by remember { mutableStateOf(false) }
 

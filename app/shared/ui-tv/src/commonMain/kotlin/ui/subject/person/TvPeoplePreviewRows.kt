@@ -79,6 +79,8 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
             endPadding = contentPadding,
             cardWidth = TV_PEOPLE_PREVIEW_CELL,
             onBind = onBind,
+            // 点作品先关掉弹窗再跳转, 返回时焦点不回这一行
+            holdFocusLookOnClick = false,
         )
     }
 }

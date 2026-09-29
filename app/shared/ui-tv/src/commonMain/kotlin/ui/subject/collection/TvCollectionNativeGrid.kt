@@ -75,7 +75,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 追番页的原生海报墙: 选中标签 [selectedTab] (存储下标) 的网格显示 [items] (本页唯一的收集者), 换标签时
- * 新旧两份按显示顺序 ([tabOrderIndex]) 水平滑过.
+ * 新旧两份按显示顺序 ([tabOrderIndex]) 水平滑过. [landingIndex] 见 [TvNativeGridPageHost].
  */
 @Composable
 internal fun TvCollectionNativeGrid(
@@ -100,6 +100,7 @@ internal fun TvCollectionNativeGrid(
     callbacks: TvNativeGridPageCallbacks<SubjectCollectionInfo>,
     menuFor: (SubjectCollectionInfo) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
+    landingIndex: Int = -1,
 ) {
     val density = LocalDensity.current
     val tabItems = items.collectWithLifecycle()
@@ -131,6 +132,7 @@ internal fun TvCollectionNativeGrid(
         callbacks = callbacks,
         menuFor = menuFor,
         modifier = modifier,
+        landingIndex = landingIndex,
     ) {
         // 空分类提示: 在网格可见的那一段里居中
         if (tabItems.itemCount == 0 && !tabItems.isLoadingFirstPageOrRefreshing && !tabItems.loadState.hasError) {

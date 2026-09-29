@@ -158,7 +158,8 @@ class TvNativeGridPageCallbacks<T : Any>(
 /**
  * 网格页的原生海报墙: [gridKey] 那份网格显示 [items] (分页快照, 用 [cardOf] 换成卡片), 换 [gridKey] 时新旧两份按 [slideDirection] 水平滑过
  * (追番页换标签; 搜索页恒一份). 页面的网格送焦请求 ([gridFocus]) 转给原生送焦 ([farJump] 为 true 的那一发是返回键回首卡的远跳).
- * [emptyContent] 画在网格上面 (空列表提示 / 首屏加载), 由页面决定何时出现.
+ * [emptyContent] 画在网格上面 (空列表提示 / 首屏加载), 由页面决定何时出现. [landingIndex] = 返回本页 (页面重建) 时进页落点要回的那张 (-1 = 不回网格):
+ * 建视图时就按住它的聚焦态, 焦点到了不再放大一遍 (只在建视图那一次读).
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -179,6 +180,7 @@ fun <T : Any> TvNativeGridPageHost(
     callbacks: TvNativeGridPageCallbacks<T>,
     menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
+    landingIndex: Int = -1,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -192,7 +194,7 @@ fun <T : Any> TvNativeGridPageHost(
         // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
         onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
         heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
-        wallBackdrop = null, modifier, emptyContent,
+        wallBackdrop = null, modifier, landingIndex, emptyContent,
     )
 }
 
@@ -223,6 +225,7 @@ fun <T : Any> TvNativeGridPageHost(
     menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     wallBackdrop: TvNativeWallBackdropSpec? = null,
     modifier: Modifier = Modifier,
+    landingIndex: Int = -1,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -232,7 +235,7 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = focusableCount,
         onBind = {},
         heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, emptyContent,
+        menuFor, wallBackdrop, modifier, landingIndex, emptyContent,
     )
 }
 
@@ -260,6 +263,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
     menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     wallBackdrop: TvNativeWallBackdropSpec?,
     modifier: Modifier,
+    landingIndex: Int,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
@@ -292,6 +296,8 @@ private fun <T : Any> TvNativeGridPageHostContent(
                     if (wallBackdrop != null) view.enableWallBackdrop()
                     view.composeRoot = composeRoot
                     view.restorePositions(state.savedPositions)
+                    // 返回本页 (重建) 时焦点要回的那张: 排出来就按住聚焦态 (见 TvNativeGridPageView.holdLandingLook)
+                    if (landingIndex >= 0) view.holdLandingLook(landingIndex)
                     view.heroText.onShownSubjectChanged = { state.titleSubjectId = it }
                     state.view = view
                 }

@@ -639,6 +639,8 @@ fun TvScheduleGridPage(
             ),
             menuFor = collectionMenuFor,
             wallBackdrop = wallBackdrop,
+            // 返回本页恢复的那张 (见上方进页恢复): 建网格时就按住聚焦态
+            landingIndex = restoreCardIndex,
         ) {
             // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
             if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {

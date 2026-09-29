@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.StateListAnimator
@@ -125,6 +126,37 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
             applyFocus()
         }
 
+    /**
+     * 没有焦点也画成聚焦态 (同海报卡的 [TvNativeCardView.focusLookHeld]): 返回本页 (页面重建) 时焦点要回的那格, 排出来的第一帧就是放大的,
+     * 焦点到了画面不变. 改用 [setFocusLookHeld].
+     */
+    var focusLookHeld: Boolean = false
+        private set
+    private var releaseAnimator: Animator? = null
+
+    /** 按住 / 放开聚焦态 ([focusLookHeld]), 同 [TvNativeCardView.setFocusLookHeld]. */
+    fun setFocusLookHeld(held: Boolean, animate: Boolean) {
+        if (focusLookHeld == held) return
+        focusLookHeld = held
+        releaseAnimator?.cancel()
+        releaseAnimator = null
+        if (!held) {
+            // 放开常发生在拿到焦点的回调里 (适配器的焦点监听): View 在 onFocusChanged 之后才按新焦点 refreshDrawableState, 这时
+            // 状态动画还停在失焦态, 跳到的终点是缩回的样子. 先按真实焦点刷新一次, 跳到的就是聚焦态
+            refreshDrawableState()
+            stateListAnimator?.jumpToCurrentState()
+            if (animate && !isFocused) {
+                releaseAnimator = ObjectAnimator.ofFloat(this, TV_NATIVE_MONOGRAM_FOCUS_PROGRESS, 1f, 0f).apply {
+                    duration = style.focusMillis
+                    interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+                    start()
+                }
+            }
+        }
+        applyFocus()
+        applySubtitleAlpha()
+    }
+
     init {
         layoutParams = ViewGroup.LayoutParams(style.sizePx, style.cellHeightPx)
         // 触摸模式下也可聚焦 (同海报卡)
@@ -203,16 +235,19 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        // 放开时的缩回动画还在走又拿到焦点: 交给状态动画从当前值接着走
+        releaseAnimator?.cancel()
+        releaseAnimator = null
         applySubtitleAlpha()
     }
 
     /** 副标题聚焦时当场提亮 (同 Compose 版: 按焦点翻, 不跟放大的进度走). */
     private fun applySubtitleAlpha() {
-        subtitle.alpha = if (isFocused) 1f else style.subtitleIdleAlpha
+        subtitle.alpha = if (isFocused || focusLookHeld) 1f else style.subtitleIdleAlpha
     }
 
     private fun applyFocus() {
-        val p = focusProgress
+        val p = if (focusLookHeld) 1f else focusProgress
         val s = 1f + (style.focusScale - 1f) * p
         circle.scaleX = s
         circle.scaleY = s
@@ -373,8 +408,26 @@ class TvNativeMonogramAdapter(
             if (items == null) notifyDataSetChanged()
         }
 
+    /**
+     * 没有焦点也画成聚焦态的那格 (见 [TvNativeMonogramCardView.setFocusLookHeld]), -1 = 没有; 改用 [setFocusLookHeld]. 这一行任何一格拿到真焦点
+     * 就放开 (落在它自己身上画面不变, 落在别处它照失焦缩回).
+     */
+    var heldFocusIndex: Int = -1
+        private set
+
     init {
         setHasStableIds(true)
+    }
+
+    /** 让第 [index] 格 (-1 = 没有) 没有焦点也画成聚焦态, 屏上的当场改 (放开的那格照失焦缩回), 之后绑定 / 重新上屏的补上. */
+    fun setFocusLookHeld(recycler: RecyclerView, index: Int) {
+        if (heldFocusIndex == index) return
+        heldFocusIndex = index
+        for (i in 0 until recycler.childCount) {
+            val cell = recycler.getChildAt(i) as? TvNativeMonogramCardView ?: continue
+            val position = recycler.getChildAdapterPosition(cell)
+            if (position != RecyclerView.NO_POSITION) cell.setFocusLookHeld(position == index, animate = true)
+        }
     }
 
     /** 数据还没到 (放着占位). */
@@ -419,7 +472,11 @@ class TvNativeMonogramAdapter(
         val holder = Holder(TvNativeMonogramCardView(parent.context, style))
         holder.card.onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
             val index = holder.bindingAdapterPosition
-            if (hasFocus && index != RecyclerView.NO_POSITION) listener?.onFocused(index)
+            if (hasFocus && index != RecyclerView.NO_POSITION) {
+                // 真焦点到了: 按住的聚焦态放开
+                (holder.card.parent as? RecyclerView)?.let { setFocusLookHeld(it, -1) }
+                listener?.onFocused(index)
+            }
         }
         holder.card.setOnClickListener {
             val index = holder.bindingAdapterPosition
@@ -439,7 +496,13 @@ class TvNativeMonogramAdapter(
         } else {
             null
         }
+        holder.card.setFocusLookHeld(position == heldFocusIndex, animate = false)
         if (item != null) onBind?.invoke(position)
+    }
+
+    override fun onViewAttachedToWindow(holder: Holder) {
+        // 回收缓存里原样拿回同一位置的格不重绑: 按住的聚焦态在重新上屏时补上
+        holder.card.setFocusLookHeld(heldFocusIndex >= 0 && holder.bindingAdapterPosition == heldFocusIndex, animate = false)
     }
 
     class Holder(val card: TvNativeMonogramCardView) : RecyclerView.ViewHolder(card)
