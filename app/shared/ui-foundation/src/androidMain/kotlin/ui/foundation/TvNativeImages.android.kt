@@ -63,6 +63,26 @@ object TvNativeImages {
         sketch.enqueue(request)
     }
 
+    /**
+     * 圆头像 (演职人员行): [sizePx] 见方的框, 裁剪顶部对齐 (立绘顶部是脸), 请求参数同 Compose 版 AvatarImage (Crop + TopCenter):
+     * 同一张头像在两边是同一个缓存键. 解码时就按顶部对齐裁成正方形 ([configureAniImageRequest] 的 SAME_ASPECT_RATIO), ImageView
+     * 照常居中裁剪即可.
+     */
+    fun loadAvatar(sketch: Sketch, view: ImageView, url: String, sizePx: Int, crossfade: Boolean) {
+        val requestSize = IntSize(sizePx, sizePx).toAniImageRequestSize()
+        val model = bangumiCoverThumbnailUrl(url, requestSize.width) ?: url
+        val request = ImageRequest(view, model) {
+            configureAniImageRequest(
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
+                requestSize = requestSize,
+            )
+            crossfade(crossfade)
+            allowNullImage(true)
+        }
+        sketch.enqueue(request)
+    }
+
     /** 取消 [view] 上在途的请求并清掉图 (图层整个撤掉时用). */
     fun clear(view: ImageView) {
         view.disposeLoad()

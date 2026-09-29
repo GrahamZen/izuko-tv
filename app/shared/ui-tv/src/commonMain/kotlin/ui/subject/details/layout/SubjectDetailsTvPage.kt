@@ -278,12 +278,11 @@ import me.him188.ani.app.ui.subject.details.components.RatingHistogram
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
 import me.him188.ani.app.ui.subject.details.components.renderSubjectRelation
 import me.him188.ani.app.ui.comment.UIComment
-import me.him188.ani.app.ui.subject.details.sections.CharactersSection
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.ui.subject.details.sections.ReviewsSummarySection
 import me.him188.ani.app.ui.subject.details.sections.TV_REVIEW_HEADER_GAP
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
-import me.him188.ani.app.ui.subject.details.sections.StaffSection
+import me.him188.ani.app.ui.subject.details.sections.TvPeopleStripPlaceholder
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_CONTENT_PADDING
@@ -769,15 +768,16 @@ fun SubjectDetailsTvPage(
     sectionNav.register(TvDetailsSection.REVIEWS, anchors.reviewsSection)
     sectionNav.setPresent(TvDetailsSection.HERO, true)
     sectionNav.setPresent(TvDetailsSection.EPISODES, !videoBackground)
-    // 角色/制作人员区块自身在空数据时不渲染 (Section 内部 early return), 存在性同步该条件
-    sectionNav.setPresent(
-        TvDetailsSection.CHARACTERS,
-        exposedCharacters != null && exposedCharacters.itemCount > 0,
-    )
-    sectionNav.setPresent(
-        TvDetailsSection.STAFF,
-        exposedStaff != null && exposedStaff.itemCount > 0,
-    )
+    // 人物页 (角色 / 制作人员) 两排各自的数据状态 (见 TvPeopleRowState). 还在路上的那一排照样算存在: 它这时是一排占位格,
+    // 接得住焦点 —— 数据在路上的那零点几秒 (慢网络上几秒) 若把它当成不存在, 选集页按下会越过人物页直接落到评价.
+    // 确认没有的那一排不组合 (持着焦点时例外, 见下面的交接), 存在性同它
+    val charactersRowState = tvPeopleRowState(exposedCharacters?.itemCount ?: 0, totalCharactersCount)
+    val staffRowState = tvPeopleRowState(exposedStaff?.itemCount ?: 0, totalStaffCount)
+    sectionNav.setPresent(TvDetailsSection.CHARACTERS, !videoBackground && charactersRowState != TvPeopleRowState.EMPTY)
+    sectionNav.setPresent(TvDetailsSection.STAFF, !videoBackground && staffRowState != TvPeopleRowState.EMPTY)
+    // 两排此刻是否持焦 (各自的焦点组上报)
+    var charactersRowFocused by remember { mutableStateOf(false) }
+    var staffRowFocused by remember { mutableStateOf(false) }
     sectionNav.setPresent(
         TvDetailsSection.BELOW,
         // 与该区块的组合条件一致 (无内容不组合). 评价已挪到自己那一页, 不再算进这里
@@ -799,6 +799,11 @@ fun SubjectDetailsTvPage(
             TvDetailsSection.HERO ->
                 if (videoBackground) TvDetailsFocusAnchor.EPISODES_SUMMARY else TvDetailsFocusAnchor.HERO_PLAY
         }
+    }
+    // 恢复落点 (进页 / 焦点补救): 人物页的区块会变 —— 某一排确认没有时不组合, 两排都没有时整页没了, 照记住的区块送会悬挂到
+    // 被全局兜底抢先 (侧边栏). 按此刻还在的算 (同页的另一排, 再往下, 再往上)
+    val restoreAnchorFor: (TvDetailsSection) -> TvDetailsFocusAnchor = { section ->
+        anchorFor(if (section.page == TvDetailsSection.CHARACTERS.page) sectionNav.presentOrNearest(section) else section)
     }
     // 跨区块方向键的送焦也走调度器 (见 TvDetailsSectionNav.send)
     sectionNav.send = { section -> anchors.request(anchorFor(section)) }
@@ -840,18 +845,7 @@ fun SubjectDetailsTvPage(
             // 区块入口请求器与 sectionNav 共用 (见上方 register), 送焦点走事件驱动的锚点调度器 ——
             // 返回时区块的存在性还取决于分页数据 (那几帧可能还没 present 出来), 单发 requestFocus
             // 会静默失败
-            restoreSection != null -> when (restoreSection) {
-                // 选集页: 有轮播就回轮播 (行内 focusRestorer 落到上次那张卡), 否则回简介块
-                TvDetailsSection.EPISODES ->
-                    if (videoBackground || episodes.isEmpty()) TvDetailsFocusAnchor.EPISODES_SUMMARY
-                    else TvDetailsFocusAnchor.EPISODES_CAROUSEL
-
-                TvDetailsSection.CHARACTERS -> TvDetailsFocusAnchor.CHARACTERS_SECTION
-                TvDetailsSection.STAFF -> TvDetailsFocusAnchor.STAFF_SECTION
-                TvDetailsSection.BELOW -> TvDetailsFocusAnchor.BELOW_SECTION
-                TvDetailsSection.REVIEWS -> TvDetailsFocusAnchor.REVIEWS_SECTION
-                TvDetailsSection.HERO -> TvDetailsFocusAnchor.HERO_PLAY // takeIf 已排除, 仅穷举
-            }
+            restoreSection != null -> restoreAnchorFor(restoreSection)
 
             // 播放器内嵌变体: 首屏是介绍页 (选集条已移入播放器控制层, 不在本页),
             // 进入焦点给简介块 ("暂无信息"兜底保证恒可聚焦)
@@ -881,19 +875,7 @@ fun SubjectDetailsTvPage(
             tagRestoreIndex >= 0 && backLevelOrdinal == TvDetailsSection.HERO.ordinal ->
                 TvDetailsFocusAnchor.TAG_WALL
 
-            else -> when (TvDetailsSection.entries[backLevelOrdinal]) {
-                TvDetailsSection.EPISODES ->
-                    if (videoBackground || episodes.isEmpty()) TvDetailsFocusAnchor.EPISODES_SUMMARY
-                    else TvDetailsFocusAnchor.EPISODES_CAROUSEL
-
-                TvDetailsSection.CHARACTERS -> TvDetailsFocusAnchor.CHARACTERS_SECTION
-                TvDetailsSection.STAFF -> TvDetailsFocusAnchor.STAFF_SECTION
-                TvDetailsSection.BELOW -> TvDetailsFocusAnchor.BELOW_SECTION
-                TvDetailsSection.REVIEWS -> TvDetailsFocusAnchor.REVIEWS_SECTION
-                TvDetailsSection.HERO ->
-                    if (videoBackground) TvDetailsFocusAnchor.EPISODES_SUMMARY
-                    else TvDetailsFocusAnchor.HERO_PLAY
-            }
+            else -> restoreAnchorFor(TvDetailsSection.entries[backLevelOrdinal])
         }
     }
 
@@ -937,6 +919,26 @@ fun SubjectDetailsTvPage(
             // 还没进过焦点: 那是进页那一次, 落点归进页效应管, 不是"丢了"
             if (!pageHadFocus || !pageIsForeground.value || tagsBrowseMode) return@collect
             anchors.request(currentFocusAnchor())
+        }
+    }
+
+    // 人物页某一排确认没有 (总数为 0) 时先把焦点交出去, 这一排再撤: 焦点停在它的占位格上 (数据在路上时从选集页按下来的),
+    // 或本页还没有焦点、记着的正是这一排 (跨页返回的落点请求在等它附着, 而它不会再组合了). 送往还在的那一排, 两排都没有就是
+    // 最近的区块 (评价 / 关联条目, 再没有就回选集页). 持焦的节点直接拆掉时系统会把焦点改派到页面别处 (模拟器实测落进末页的
+    // 关联条目), 不经本页的补救
+    val peopleRowAwaited: (TvDetailsSection) -> Boolean = { section ->
+        !pageHasFocus && pageIsForeground.value && backLevelOrdinal == section.ordinal
+    }
+    val charactersRowEmpty = !videoBackground && charactersRowState == TvPeopleRowState.EMPTY
+    LaunchedEffect(charactersRowEmpty, charactersRowFocused) {
+        if (charactersRowEmpty && (charactersRowFocused || peopleRowAwaited(TvDetailsSection.CHARACTERS))) {
+            anchors.request(anchorFor(sectionNav.presentOrNearest(TvDetailsSection.CHARACTERS)))
+        }
+    }
+    val staffRowEmpty = !videoBackground && staffRowState == TvPeopleRowState.EMPTY
+    LaunchedEffect(staffRowEmpty, staffRowFocused) {
+        if (staffRowEmpty && (staffRowFocused || peopleRowAwaited(TvDetailsSection.STAFF))) {
+            anchors.request(anchorFor(sectionNav.presentOrNearest(TvDetailsSection.STAFF)))
         }
     }
 
@@ -1344,17 +1346,6 @@ fun SubjectDetailsTvPage(
             Column(
                 verticalArrangement = Arrangement.spacedBy(layoutParams.sectionSpacing),
             ) {
-            // 角色/制作人员区块的三态 (提前算, 选集区的下键闸门要读; 判据注释见骨架调用处)
-            val relationsSettled = exposedCharacters != null && exposedStaff != null &&
-                    (exposedCharacters.itemCount > 0 || totalCharactersCount == 0) &&
-                    (exposedStaff.itemCount > 0 || totalStaffCount == 0)
-            val relationsAnyContent = exposedCharacters != null && exposedStaff != null &&
-                    (exposedCharacters.itemCount > 0 || exposedStaff.itemCount > 0)
-            val relationsConfirmedEmpty = totalCharactersCount == 0 && totalStaffCount == 0
-            // 骨架还挂着 = 选集之下的布局尚未定型
-            val relationsSkeletonVisible = exposedCharacters != null && exposedStaff != null &&
-                    !(relationsSettled && relationsAnyContent) && !relationsConfirmedEmpty
-
             if (videoBackground) {
                 // ---- 播放器内嵌变体: 页序为 介绍页 -> 其余区块 ----
                 // 选集条已移入播放器控制层 (图标行下方, Prime 形态), 不在本页.
@@ -1573,25 +1564,12 @@ fun SubjectDetailsTvPage(
             )
             }
             }
-            // ---- 角色 / 制作人员 (仅独立页; 内嵌变体是精简版, 这两类内容由播放器
-            // 胶囊面板承担). "查看全部"与人物点击均为 TV 居中弹窗形态
-            // (ViewAllSheet/PeoplePreview 已按平台分支). 两块共用一个吸附区块:
-            // 焦点从区块外进入时角色行吸顶, 在角色/制作人员之间移动不再重新吸附
-            // (最小滚动逐步露出). 空数据时区块自身不渲染 (Section 内部 early return),
-            // sectionNav 的存在性与之同步, 跨区块下键自动跳过.
-            // 数据还在路上 (relations 取数要 1.5~3 秒, 远晚于首屏) 时渲染**等高骨架**:
-            // 这两块原先"没数据就整个不渲染", 数据一到几百 dp 突然插进滚动列中间 —— 已经翻到
-            // 下方区块的用户被整体推走 (滚动锚定接得住焦点, 但插入那一帧的抖动接不住).
-            // 骨架把位置先钉死, 数据到位时只是原地填充.
+            // ---- 角色 / 制作人员 (仅独立页; 内嵌变体是精简版, 这两类内容由播放器胶囊面板承担). "查看全部"与人物点击均为
+            // TV 居中弹窗形态. 两排共用一页: 焦点从页外进来时角色行吸顶, 两排之间移动不换页.
+            // 每一排是一条原生圆头像横滑行 (见 TvDetailsCharactersRow): 数据在路上 (relations 取数要 1.5~3 秒, 远晚于首屏) 时是一排
+            // 同样几何的占位格, 到了原地填充 —— 布局不跳, 焦点停在占位格上的也不丢. 确认没有的那一排不组合 (持着焦点时先交出去再撤,
+            // 见上面的交接), 两排都没有时整页不组合; sectionNav 的存在性与之同步, 跨区块下键自动跳过.
             //
-            // **骨架与真区块必须无缝交接** (2026-08-26 第一版按 "count 非 null 就收骨架" 踩过):
-            // count 由 repository flow 的 onEach 设置, 而 itemCount 要等 LazyPagingItems 的
-            // paging 查询刷新 —— 两件事不同步, count 先到的那一拍里骨架已收、真区块未出,
-            // 塌下去几百 dp 再弹回来, 抖动比不加骨架还难看. 两个 count (角色/制作人员两条独立流)
-            // 还会一先一后. 所以骨架一直撑到**真区块出现的同一帧**才让位:
-            //   showReal      = 两块都尘埃落定 (itemCount>0 或确认为空) 且至少一块有内容 -> 真区块
-            //   两边都确认为空 -> 什么都不渲染 (收缩方向不挤焦点, 有滚动锚定兜底)
-            //   其余一律骨架   (含 "count 已到但 paging 未跟上" 的窗口)
             // 选集页之后多留一段空白: 选集页是刻意铺满一屏的整页, 底下再露出半个"角色"标题就显得挤
             // (用户 2026-09-15). 实测标题原本落在 524..540 (露出 16dp), 推 32dp 后到 556 完全出屏.
             //
@@ -1600,75 +1578,59 @@ fun SubjectDetailsTvPage(
             if (!videoBackground && sectionsStage >= 2) {
                 Spacer(Modifier.height(TV_EPISODES_PAGE_TRAIL_GAP))
             }
-            // 分帧放出时 (见 sectionsStage) 角色区没轮到也先放骨架, 与真区块等高
-            if (relationsSkeletonVisible || (sectionsStage < 2 && relationsSettled && relationsAnyContent)) {
-                // 骨架与真角色区同页号 (2): 换页时跟着同一组位移 / 淡入淡出 (见 TvDetailsPager)
+            val charactersRowShown = charactersRowState != TvPeopleRowState.EMPTY || charactersRowFocused
+            val staffRowShown = staffRowState != TvPeopleRowState.EMPTY || staffRowFocused
+            // 分帧放出时 (见 sectionsStage) 人物页没轮到的那一两帧先放同样几何的占位 (不可聚焦: 这期间按下来的那一下由 TvFocusScope
+            // 挂着, 行一附着就送)
+            if (!videoBackground && sectionsStage < 2 && (charactersRowShown || staffRowShown)) {
+                // 与人物页同页号 (2): 换页时跟着同一组位移 / 淡入淡出 (见 TvDetailsPager)
                 Box(Modifier.graphicsLayer { pager.apply(TvDetailsSection.CHARACTERS.page, this) }) {
-                    RelationsSkeletonSection(layoutParams.sectionSpacing, pad)
+                    RelationsSkeletonSection(pad, characters = charactersRowShown, staff = staffRowShown)
                 }
             }
             if (exposedCharacters != null && allCharacters != null && exposedStaff != null && allStaff != null &&
-                relationsSettled && relationsAnyContent && sectionsStage >= 2
+                sectionsStage >= 2 && (charactersRowShown || staffRowShown)
             ) {
+                // 返回层级只由两排各自上报 (不挂这一页的 onFocused): 焦点在两条原生行之间挪时, Compose 的互操作层先把焦点交给宿主
+                // 视图再进另一条, 这一页的焦点组会短暂失焦再进来 —— 挂在页上的上报会在这一下把记下的那一排改回角色
                 PageSection(
                     pager,
                     page = TvDetailsSection.CHARACTERS.page,
                     scrollState,
                     layoutParams.sectionSpacing,
                     nav = sectionNav,
-                    onFocused = { backLevelOrdinal = TvDetailsSection.CHARACTERS.ordinal },
                 ) {
                     // 两排之间比常规区块间距窄 8dp: 这一页要在 540dp 里装下两排 130dp 的圆头像,
-                    // 还要把下一页的"评价"标题留在视口里 (见 TV_LAST_PAGE_LEAD_GAP 的标定)
+                    // 还要把下一页的"评价"标题留在视口里 (见 TV_LAST_PAGE_LEAD_GAP 的标定).
+                    // 两排之间的上下键是页内移动 (Compose 按位置找到另一排), 出页由 PageSection 交给路由
                     Column(verticalArrangement = Arrangement.spacedBy(TV_PEOPLE_ROW_GAP)) {
-                        CharactersSection(
-                            exposedCharacters, allCharacters, totalCharactersCount,
-                            modifier = Modifier
-                                // 区块进入落点 (上方选集卡片下键经路由落到第一个头像)
-                                .tvFocusAnchor(anchors, TvDetailsFocusAnchor.CHARACTERS_SECTION)
-                                // 跨页返回恢复的到位确认 (焦点落进本区块子树即算到位) + 区块记账.
-                                // 角色行与制作人员共用一个吸附区块 (那层 onFocused 只报得出
-                                // CHARACTERS), 两行各自再报一次才能恢复到"离开前那一行"
-                                .onFocusChanged {
-                                    if (it.hasFocus) {
-                                        backLevelOrdinal = TvDetailsSection.CHARACTERS.ordinal
+                        if (charactersRowShown) {
+                            TvDetailsCharactersRow(
+                                exposedCharacters, allCharacters, totalCharactersCount, imageZoom,
+                                horizontalPadding = pad,
+                                modifier = Modifier
+                                    // 区块进入落点 (选集页下键经路由送到这里, 跨页返回也是), 焦点落进这一排即算到位
+                                    .tvFocusAnchor(anchors, TvDetailsFocusAnchor.CHARACTERS_SECTION)
+                                    // 区块记账: 两排共用一页 (那层 onFocused 只报得出 CHARACTERS), 各自再报一次才能恢复到
+                                    // "离开前那一排"
+                                    .onFocusChanged {
+                                        charactersRowFocused = it.hasFocus
+                                        if (it.hasFocus) backLevelOrdinal = TvDetailsSection.CHARACTERS.ordinal
                                     }
-                                }
-                                .focusGroup(),
-                            // 水平留白走行内 contentPadding 而**不是**外层 padding: 卡片行要
-                            // 保持全宽出血, 外层 padding 会把行的左边界一起右移, 于是向左滑过
-                            // 停靠位的卡片正好在停靠线上被硬裁出一条边 (同选集轮播, 见本页
-                            // 顶部 Column 的注释). 标题由区块内部按同一留白对齐.
-                            // 两侧都留白: 只留起始侧的话, 滑到行末时行再也滚不动, 最后一格 ("查看全部")
-                            // 就贴着屏幕右缘被裁掉 (用户 2026-09-15). 滚动途中的出血观感不受影响 ——
-                            // LazyRow 按自身边界裁, 中间的格照样铺到屏幕边
-                            contentPadding = PaddingValues(horizontal = pad),
-                            // 卡片下键显式送往下一区块 (跨区块空间搜索不可靠)
-                            // 只接同页的制作人员; 没有制作人员数据时给 null, 下键交给 PageSection.onExit 走路由
-                            // (否则静态落点会直接跳到第四页, 绕过换页闸与送焦)
-                            downFocus = sectionNav.samePageDownTargetFrom(TvDetailsSection.CHARACTERS),
-                            // 长按卡片放大看头像 (短按仍是人物预览)
-                            imageZoom = imageZoom,
-                        )
-                        Box(
-                            Modifier
-                                .tvFocusAnchor(anchors, TvDetailsFocusAnchor.STAFF_SECTION)
-                                .onFocusChanged {
-                                    if (it.hasFocus) {
-                                        backLevelOrdinal = TvDetailsSection.STAFF.ordinal
+                                    .focusGroup(),
+                            )
+                        }
+                        if (staffRowShown) {
+                            TvDetailsStaffRow(
+                                exposedStaff, allStaff, totalStaffCount, imageZoom,
+                                horizontalPadding = pad,
+                                modifier = Modifier
+                                    .tvFocusAnchor(anchors, TvDetailsFocusAnchor.STAFF_SECTION)
+                                    .onFocusChanged {
+                                        staffRowFocused = it.hasFocus
+                                        if (it.hasFocus) backLevelOrdinal = TvDetailsSection.STAFF.ordinal
                                     }
-                                }
-                                .focusGroup(),
-                        ) {
-                            StaffSection(
-                                exposedStaff,
-                                allStaff,
-                                totalStaffCount,
-                                gridColumns = layoutParams.staffGridColumns,
-                                // 跨页下键交给 PageSection.onExit 的路由 (同选集卡, 见那里的注释)
-                                downFocus = null,
-                                imageZoom = imageZoom,
-                                contentPadding = PaddingValues(horizontal = pad),
+                                    .focusGroup(),
                             )
                         }
                     }
@@ -2663,35 +2625,16 @@ private fun TvReviewsPage(
     )
 }
 
+/**
+ * 人物页在分帧放出时还没轮到的那一两帧: 与原生圆头像行同一套几何 (见 TvPeopleStripPlaceholder), 不可聚焦.
+ * [characters] / [staff] = 放不放那一排 (确认没有的那一排不放, 同人物页本身).
+ */
 @Composable
-private fun RelationsSkeletonSection(sectionSpacing: Dp, horizontalPadding: Dp) {
-    val cardColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f) // 同 TV_CARD_CONTAINER_ALPHA
-    val cardShape = RoundedCornerShape(12.dp)
-
-    @Composable
-    fun SkeletonBlock(title: String, rows: Int) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.CenterStart) {
-                SectionHeader(title)
-            }
-            repeat(rows) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(68.dp)
-                        .clip(cardShape)
-                        .background(cardColor),
-                )
-            }
-        }
-    }
-
-    Column(
-        Modifier.padding(horizontal = horizontalPadding),
-        verticalArrangement = Arrangement.spacedBy(sectionSpacing),
-    ) {
-        SkeletonBlock(stringResource(Lang.subject_details_characters), rows = 1)
-        SkeletonBlock(stringResource(Lang.subject_details_staff), rows = 2)
+private fun RelationsSkeletonSection(horizontalPadding: Dp, characters: Boolean, staff: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(TV_PEOPLE_ROW_GAP)) {
+        val padding = PaddingValues(horizontal = horizontalPadding)
+        if (characters) TvPeopleStripPlaceholder(stringResource(Lang.subject_details_characters), contentPadding = padding)
+        if (staff) TvPeopleStripPlaceholder(stringResource(Lang.subject_details_staff), contentPadding = padding)
     }
 }
 
@@ -2921,17 +2864,16 @@ private enum class TvDetailsSection(val page: Int) {
  *
  * - 每个区块经 [register]/[entry] 提供进入落点 (焦点组容器, requestFocus 经 enter
  *   落到第一个可聚焦子项), 经 [setPresent] 报告当前是否存在 (无内容的区块被跳过);
- * - 边缘元素只声明"我在区块 X 的 上/下 边缘" ([tvSectionEdge] 修饰符, 或把
- *   [samePageDownTargetFrom] 挂到 focusProperties), 落点解析 (下一个存在的区块) 全在本类;
+ * - 边缘元素只声明"我在区块 X 的 上/下 边缘" ([tvSectionEdge] 修饰符, 或由 [PageSection] 统一接住纵向离场),
+ *   落点解析 (下一个存在的区块) 全在本类;
  * - 最顶区块再按上走 [onExitTop] 出口 (内嵌变体回播放器选集条);
  *   最底区块按下消费按键 (页面终点, 防空间搜索斜跳到别的区块).
  *
  * 与页面级 [TvFocusScope] 分工: scope 管程序化送焦; 这里管方向键驱动的相邻区块移动.
  * 纵向滚动仍由 [TvDetailsPager] 按当前页派生, 与两者正交.
  *
- * [present] 与 [onExitTop] 是普通字段, 每次组合从头赋值: 事件处理只在按键时读取;
- * 组合期唯一的读者 ([samePageDownTargetFrom] 给角色行传落点) 与写入同处一个重组作用域
- * (该作用域本就读 paging itemCount, 数量变化必然整体重组), 不需要快照状态.
+ * [present] 与 [onExitTop] 是普通字段, 每次组合从头赋值: 只在按键与送焦时读取 (那时组合早已跑完),
+ * 写入所在的重组作用域本就读 paging itemCount, 数量变化必然整体重组, 不需要快照状态.
  */
 @Stable
 private class TvDetailsSectionNav {
@@ -2956,17 +2898,15 @@ private class TvDetailsSectionNav {
     }
 
     /**
-     * [from] 之下第一个存在区块的进入落点, **仅当它与 [from] 同页**; 跨页或已是最底时 null.
-     *
-     * 跨页**不能**走静态落点: 它绕过 [moveDown] 的三样东西 —— 换页闸 (长按会一口气连跳两页)、以显示页为准的起点
-     * 钳制、以及经 [send] 的 TvFocusScope 送焦 (裸 FocusRequester 在目标未附着时静默失败, 按键被消费而焦点没动,
-     * 正是"往上翻有概率回到第一页"那一类). 同页移动不经过 [PageSection] 的 onExit (它只在离开区块时触发),
-     * 所以同页这一档仍需要静态落点: 角色行 -> 制作人员就是它.
+     * [section] 不在时的替身: 同页的另一个区块, 再往下, 再往上; 都没有就原样返回. 用于焦点恢复与人物页某一排撤掉时的交接
+     * (见页面的 restoreAnchorFor): 人物页可能只剩一排, 甚至整页没了.
      */
-    fun samePageDownTargetFrom(from: TvDetailsSection): FocusRequester? =
-        TvDetailsSection.entries.firstOrNull { it.ordinal > from.ordinal && it in present }
-            ?.takeIf { it.page == from.page }
-            ?.let { entry(it) }
+    fun presentOrNearest(section: TvDetailsSection): TvDetailsSection =
+        section.takeIf { it in present }
+            ?: TvDetailsSection.entries.firstOrNull { it.page == section.page && it in present }
+            ?: nextPresent(section)
+            ?: prevPresent(section)
+            ?: section
 
     private fun prevPresent(from: TvDetailsSection): TvDetailsSection? =
         TvDetailsSection.entries.lastOrNull { it.ordinal < from.ordinal && it in present }

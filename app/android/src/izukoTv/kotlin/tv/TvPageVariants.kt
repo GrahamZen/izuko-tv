@@ -41,6 +41,8 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewRows
+import me.him188.ani.app.ui.subject.person.TvPeoplePreviewRows
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
 import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
@@ -265,6 +267,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvOnboardingVariant provides onboarding,
         // 登录页右侧的手机控制台码 (扫码在手机上登录)
         LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
+        // 人物 / 角色预览弹窗里的横滑行用原生实现 (长按左右连发不卡)
+        LocalPeoplePreviewRows provides TvPeoplePreviewRows,
     ) {
         // 长按手势兜不兜、菜单开不开, 都要先看当前在哪个目的地:
         //  - 播放页: 长按返回归播放器自己 (收叠层, 注册在栈顶), 播放键本来就在播放器语义里;

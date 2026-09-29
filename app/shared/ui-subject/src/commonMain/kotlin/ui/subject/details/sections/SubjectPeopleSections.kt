@@ -532,8 +532,8 @@ private fun PersonMonogramCell(
  */
 private fun isMissingAvatar(url: String?): Boolean = url.isNullOrBlank()
 
-/** 姓名首字 (CJK 取第一个字, 拉丁取首字母, 最多两个). */
-private fun monogramInitials(name: String): String {
+/** 姓名首字 (CJK 取第一个字, 拉丁取首字母, 最多两个): 没有照片时圆里写它. */
+fun monogramInitials(name: String): String {
     val trimmed = name.trim()
     if (trimmed.isEmpty()) return ""
     val first = trimmed.first()
@@ -668,7 +668,7 @@ fun TvPeopleStripPlaceholder(
     /** 同 [CharactersSection] 的同名参数: 标题按它两侧留白, 圆从起始侧留白处排起. */
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+    val color = tvPeoplePlaceholderColor()
     val start = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(title, modifier = Modifier.padding(contentPadding))
@@ -691,8 +691,8 @@ fun TvPeopleStripPlaceholder(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(TV_MONOGRAM_LINE_GAP),
                         ) {
-                            TextLinePlaceholder(MaterialTheme.typography.titleSmall, TV_MONOGRAM_SIZE * 0.6f, color)
-                            TextLinePlaceholder(MaterialTheme.typography.bodySmall, TV_MONOGRAM_SIZE * 0.4f, color)
+                            TextLinePlaceholder(MaterialTheme.typography.titleSmall, TV_MONOGRAM_PLACEHOLDER_NAME_WIDTH, color)
+                            TextLinePlaceholder(MaterialTheme.typography.bodySmall, TV_MONOGRAM_PLACEHOLDER_SUBTITLE_WIDTH, color)
                         }
                     }
                 }
@@ -709,12 +709,16 @@ private fun TextLinePlaceholder(style: TextStyle, width: Dp, color: Color) {
         Box(
             Modifier
                 .matchParentSize()
-                .padding(vertical = 3.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .padding(vertical = TV_MONOGRAM_PLACEHOLDER_BAR_INSET)
+                .clip(RoundedCornerShape(TV_MONOGRAM_PLACEHOLDER_BAR_CORNER))
                 .background(color),
         )
     }
 }
+
+/** 演职人员行占位 (圆与字条) 的颜色, 同 TV 卡片的半透明底板. */
+@Composable
+fun tvPeoplePlaceholderColor(): Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
 
 /**
  * 制作人员区块: 标题行 (+"查看全部" -> 全量列表 sheet) + 内容.
@@ -1004,7 +1008,7 @@ private const val VIEW_ALL_GRID_COLUMNS = 3
  * 分页重排之后这一页只剩这两排: 24(标题) + 12 + 166(圆 130 + 字 36) 两遍 + 24(排间距) = 428dp,
  * 而一页能给到 540 - 24(页顶) - 24(露出余量) = 492dp, 余 64dp —— 装得下, 于是换回 Apple 的原值.
  */
-private val TV_MONOGRAM_SIZE = 130.dp
+val TV_MONOGRAM_SIZE = 130.dp
 
 /**
  * 长按左右键时每秒移动几格 (圆头像行专用, 不动全局上限).
@@ -1014,10 +1018,10 @@ private val TV_MONOGRAM_SIZE = 130.dp
  * 匀速段 3435 px/秒 = **1717 dp/秒**; 我们 128dp 步距要达到同样速度需 13.4 格/秒, 取 13
  * (13×128 = 1664 dp/秒, 差 3%).
  */
-private const val TV_MONOGRAM_MOVE_RATE = 25
+const val TV_MONOGRAM_MOVE_RATE = 25
 
 /** 格间距: Apple 的 40pt (圆心步距 300pt - 圆 260pt), 与 [TV_MONOGRAM_SIZE] 一起铺满一屏 6 个. */
-private val TV_MONOGRAM_SPACING = 20.dp
+val TV_MONOGRAM_SPACING = 20.dp
 
 /**
  * 聚焦时整个 lockup 放大到多少 / 圆上那圈高光多粗.
@@ -1033,14 +1037,14 @@ private val TV_MONOGRAM_SPACING = 20.dp
  * 实心部分约 1dp, 两侧各半格抗锯齿. Apple TV 则**完全不画环**, 只放大 —— 两家不一致, 所以这是
  * 自选项而非规范. 我们取 Plex 的粗细, 颜色用主题色 (用户 2026-09-15 定).
  */
-private val TV_MONOGRAM_FOCUS_RING = 1.dp
+val TV_MONOGRAM_FOCUS_RING = 1.dp
 
-private const val TV_MONOGRAM_FOCUS_SCALE = 1.115f
+const val TV_MONOGRAM_FOCUS_SCALE = 1.115f
 /** 圆下缘到姓名的间距: 实测 Apple TV 为 21px = 10.5dp (聚焦与否都一样). */
-private val TV_MONOGRAM_TEXT_GAP = 2.dp
+val TV_MONOGRAM_TEXT_GAP = 2.dp
 
 /** 姓名与职位两行之间: 实测行距 39px = 19.5dp, 扣掉字号自带的行高后余下这点. */
-private val TV_MONOGRAM_LINE_GAP = 2.dp
+val TV_MONOGRAM_LINE_GAP = 2.dp
 
 /**
  * 未聚焦时第二行 (职位 / 声优) 的不透明度.
@@ -1049,4 +1053,12 @@ private val TV_MONOGRAM_LINE_GAP = 2.dp
  * 其余是 148~170**, 约白色的 0.63; 扣掉背景本身的亮度反推约 0.6. 主题里的 onSurfaceVariant 在这套
  * 深色配色下是 252, 跟纯白几乎分不出来 (用户 2026-09-15 指出"文字颜色不一致"), 所以这里按透明度给.
  */
-private const val TV_MONOGRAM_SUBTITLE_ALPHA = 0.6f
+const val TV_MONOGRAM_SUBTITLE_ALPHA = 0.6f
+
+/** 占位格里姓名 / 副标题那两条字位的宽度. */
+val TV_MONOGRAM_PLACEHOLDER_NAME_WIDTH = TV_MONOGRAM_SIZE * 0.6f
+val TV_MONOGRAM_PLACEHOLDER_SUBTITLE_WIDTH = TV_MONOGRAM_SIZE * 0.4f
+
+/** 占位字条在一行里上下各让出多少 / 圆角. */
+val TV_MONOGRAM_PLACEHOLDER_BAR_INSET = 3.dp
+val TV_MONOGRAM_PLACEHOLDER_BAR_CORNER = 4.dp

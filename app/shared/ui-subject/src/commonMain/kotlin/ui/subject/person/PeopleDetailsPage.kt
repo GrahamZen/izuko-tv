@@ -53,6 +53,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -71,6 +72,7 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
@@ -511,6 +513,10 @@ internal fun PersonDetailsContentColumn(
      * 顶部, 头图只露出一截 (与详情页"焦点回 Hero 滚回顶部"同一处理).
      */
     onTopContentFocused: (() -> Unit)? = null,
+    /** 预览弹窗 (TV) 的原生横滑行, 见 [PeoplePreviewRows]; null = Compose 的行. */
+    previewRows: PeoplePreviewRows? = null,
+    /** 调用方给这一列的水平留白: [previewRows] 的行往两侧出血这么多, 到弹窗边上. */
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllComments by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -539,7 +545,7 @@ internal fun PersonDetailsContentColumn(
                 PeopleInfoTable(rows)
             }
         }
-        PersonStrips(casts, works, navigation)
+        PersonStrips(casts, works, navigation, previewRows, previewRowsPadding)
         PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
     }
     if (showAllComments) {
@@ -551,12 +557,17 @@ internal fun PersonDetailsContentColumn(
     }
 }
 
-/** 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). */
+/**
+ * 人物详情的两个横滑条: 出演角色 / 参与作品 (+ 各自的查看全部 sheet). [previewRows] 非 null 时 (TV 预览弹窗) 两条都换成原生行:
+ * 出演角色是圆头像 (角色头像 + 名字 + 作品名), 参与作品是海报 (作品 + 职位).
+ */
 @Composable
 private fun PersonStrips(
     casts: LazyPagingItems<PersonCastInfo>,
     works: LazyPagingItems<PersonWorkInfo>,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllCasts by rememberSaveable { mutableStateOf(false) }
     var showAllWorks by rememberSaveable { mutableStateOf(false) }
@@ -565,6 +576,23 @@ private fun PersonStrips(
         stringResource(Lang.person_details_casts),
         casts,
         onViewAll = { showAllCasts = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = casts.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { cast ->
+                        cast?.let { PeopleRowItem(it.character.imageMedium, it.character.displayName, it.subject.displayName) }
+                    }
+                }
+                rows.PeopleRow(
+                    items,
+                    onClick = { i -> casts.peek(i)?.let { navigation.onClickCharacter(it.character.id) } },
+                    onBind = { i -> if (i < casts.itemCount) casts[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { cast, itemModifier ->
         PeoplePortraitCard(
             imageUrl = cast.character.imageMedium,
@@ -578,6 +606,25 @@ private fun PersonStrips(
         stringResource(Lang.person_details_works),
         works,
         onViewAll = { showAllWorks = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = works.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { work ->
+                        work?.let {
+                            PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.positions.firstNotNullOfOrNull { p -> p.nameCn })
+                        }
+                    }
+                }
+                rows.PosterRow(
+                    items,
+                    onClick = { i -> works.peek(i)?.let { navigation.onClickSubject(it.subject) } },
+                    onBind = { i -> if (i < works.itemCount) works[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { work, itemModifier ->
         PeopleSubjectCard(
             subject = work.subject,
@@ -636,6 +683,9 @@ internal fun CharacterDetailsContentColumn(
     imageViewer: ImageViewerHandler? = null,
     /** 顶部内容块获得焦点时回调, 语义见 [PersonDetailsContentColumn]. */
     onTopContentFocused: (() -> Unit)? = null,
+    /** 同 [PersonDetailsContentColumn] 的同名参数. */
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllComments by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -664,7 +714,7 @@ internal fun CharacterDetailsContentColumn(
                 PeopleInfoTable(rows)
             }
         }
-        CharacterStrips(details, subjects, navigation)
+        CharacterStrips(details, subjects, navigation, previewRows, previewRowsPadding)
         PersonCommentsSection(commentState, onShowAll = { showAllComments = true })
     }
     if (showAllComments) {
@@ -676,29 +726,48 @@ internal fun CharacterDetailsContentColumn(
     }
 }
 
-/** 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). */
+/**
+ * 角色详情的两个横滑条: 声优 / 出演作品 (+ 查看全部 sheet). [previewRows] 非 null 时 (TV 预览弹窗) 两条都换成原生行:
+ * 声优是圆头像 (原版在前, 见 sortedByOriginalCast), 出演作品是海报 (作品 + 主角 / 配角).
+ */
 @Composable
 private fun CharacterStrips(
     details: CharacterDetailsInfo?,
     subjects: LazyPagingItems<CharacterSubjectInfo>,
     navigation: PeopleDetailsNavigation = rememberPeopleDetailsNavigation(),
+    previewRows: PeoplePreviewRows? = null,
+    previewRowsPadding: Dp = 0.dp,
 ) {
     var showAllSubjects by rememberSaveable { mutableStateOf(false) }
 
     val actors = details?.character?.actors.orEmpty()
     if (actors.isNotEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.ifThen(previewRows != null) { tvBringIntoViewOnFocus() },
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             SectionHeader(stringResource(Lang.person_details_voice_actors))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (actor in actors) {
-                    PeoplePortraitCard(
-                        imageUrl = actor.imageMedium,
-                        name = actor.displayName,
-                        caption = null,
-                        onClick = { navigation.onClickPerson(actor.id) },
-                        width = 76.dp,
-                        circleCrop = true,
-                    )
+            if (previewRows != null) {
+                val items = remember(actors) { actors.map { PeopleRowItem(it.imageMedium, it.displayName, "") } }
+                previewRows.PeopleRow(
+                    items,
+                    onClick = { i -> actors.getOrNull(i)?.let { navigation.onClickPerson(it.id) } },
+                    onBind = {},
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (actor in actors) {
+                        PeoplePortraitCard(
+                            imageUrl = actor.imageMedium,
+                            name = actor.displayName,
+                            caption = null,
+                            onClick = { navigation.onClickPerson(actor.id) },
+                            width = 76.dp,
+                            circleCrop = true,
+                        )
+                    }
                 }
             }
         }
@@ -707,6 +776,21 @@ private fun CharacterStrips(
         stringResource(Lang.person_details_character_subjects),
         subjects,
         onViewAll = { showAllSubjects = true },
+        nativeRow = previewRows?.let { rows ->
+            {
+                val snapshot = subjects.itemSnapshotList
+                val items = remember(snapshot) {
+                    snapshot.map { item -> item?.let { PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.role.nameCn) } }
+                }
+                rows.PosterRow(
+                    items,
+                    onClick = { i -> subjects.peek(i)?.let { navigation.onClickSubject(it.subject) } },
+                    onBind = { i -> if (i < subjects.itemCount) subjects[i] },
+                    contentPadding = previewRowsPadding,
+                    modifier = Modifier,
+                )
+            }
+        },
     ) { item, itemModifier ->
         PeopleSubjectCard(
             subject = item.subject,

@@ -52,6 +52,8 @@ import me.him188.ani.app.ui.foundation.ImageViewer
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
+import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
@@ -423,18 +425,30 @@ internal fun <T : Any> PeopleStripSection(
     modifier: Modifier = Modifier,
     onViewAll: (() -> Unit)? = null,
     itemSpacing: Dp = 12.dp,
+    /**
+     * 非 null 时横滑内容换成这一行 (预览弹窗的原生行, 见 [PeoplePreviewRows]), [itemContent] 不用. 焦点进到原生行里时 Compose 不替它滚,
+     * 整块在焦点进来时自己滚进可见范围.
+     */
+    nativeRow: (@Composable () -> Unit)? = null,
     itemContent: @Composable (T, Modifier) -> Unit,
 ) {
     if (items.itemCount == 0) return
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier.fillMaxWidth().ifThen(nativeRow != null) { tvBringIntoViewOnFocus() },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (onViewAll != null) {
             SectionHeader(title, actionLabel = stringResource(Lang.subject_details_view_all), onAction = onViewAll)
         } else {
             SectionHeader(title)
         }
-        TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
-            val item = items[i] ?: return@TvAnchoredStrip
-            itemContent(item, itemModifier)
+        if (nativeRow != null) {
+            nativeRow()
+        } else {
+            TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
+                val item = items[i] ?: return@TvAnchoredStrip
+                itemContent(item, itemModifier)
+            }
         }
     }
 }
