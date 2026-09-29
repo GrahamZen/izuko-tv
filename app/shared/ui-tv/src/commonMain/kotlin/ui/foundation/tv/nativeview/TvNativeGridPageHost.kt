@@ -287,7 +287,8 @@ fun <T : Any> TvNativeGridPageHost(
         },
     )
 
-    // 放大转场缩回期间的标题: 绘制权交给转场层时隐藏, 否则按缩回让位平移; 缩回途中停跑马灯 (见 TvNativeHeroTextView.setTitleHandoff)
+    // 放大 / 缩回期间的标题: 绘制权在详情页那份 (放大) 或转场层 (缩回) 手里时隐藏, 否则按缩回让位平移; 缩回途中停跑马灯
+    // (见 TvNativeHeroTextView.setTitleHandoff)
     LaunchedEffect(state) {
         snapshotFlow {
             val id = state.titleSubjectId
@@ -297,7 +298,7 @@ fun <T : Any> TvNativeGridPageHost(
             } else {
                 TvNativeGridTitleHandoff(
                     v,
-                    TvHeroZoomHandoff.titleOwnedByOverlay(id),
+                    TvHeroZoomHandoff.titleOwnedByOverlay(id) || TvHeroZoomHandoff.titleOwnedByDetails(id),
                     TvHeroZoomHandoff.shrinkTitleOffset(id),
                     TvHeroZoomHandoff.titleSettling(id),
                 )

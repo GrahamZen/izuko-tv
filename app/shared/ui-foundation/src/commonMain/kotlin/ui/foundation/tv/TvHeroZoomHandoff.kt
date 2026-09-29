@@ -68,6 +68,8 @@ object TvHeroZoomHandoff {
         /** 行数上限与溢出处理: 转场标题要照抄, 否则折行位置不同, 交接那一帧会跳. */
         val maxLines: Int,
         val clipOverflow: Boolean,
+        /** 首行基线离框顶多远 (px, NaN = 不知道), 见 [publishTitle]. */
+        val baseline: Float,
     )
 
     /** 缩回期间根级转场标题的固定部分 (文字 / 定宽 / 样式); 位置每帧变, 见 [shrinkTitlePosition]. */
@@ -121,6 +123,8 @@ object TvHeroZoomHandoff {
         val dim: Color,
         /** 列表页那张图上压着的三条渐变 (见 [TvBackdropTreatment]): 起跑那一帧照它复现, 随进度退掉. */
         val treatment: TvBackdropTreatment?,
+        /** 列表页大标题首行基线离框顶多远 (px, NaN = 不知道), 与 [titleBounds] 一起快照. 见 [publishTitle]. */
+        val titleBaseline: Float = Float.NaN,
     ) {
         private var startNanos by mutableLongStateOf(0L)
 
@@ -153,6 +157,9 @@ object TvHeroZoomHandoff {
          * (两页标题同一位置), 否则那一帧只能不画标题.
          */
         var titleTarget: Rect? = null
+
+        /** 详情页大标题首行基线离框顶多远 (px, NaN = 还没量到), 与 [titleTarget] 一起量. 见 [titleBaselineShift]. */
+        var titleTargetBaseline: Float = Float.NaN
 
         /** 详情页正在淡入换图 (见 [detailsUrl]): 放大层的收场兜底不许中途结束会话, 否则淡到一半跳图. */
         var handingOver: Boolean = false
@@ -299,6 +306,7 @@ object TvHeroZoomHandoff {
                 subjectId, s.url, detailsUrl, s.bounds, ts?.bounds,
                 ts?.maxLines ?: 2, ts?.clipOverflow ?: false,
                 ts?.text, s.dim, s.treatment,
+                titleBaseline = ts?.baseline ?: Float.NaN,
             )
         } else {
             null
@@ -451,10 +459,13 @@ object TvHeroZoomHandoff {
     fun shrinkTitleOffset(subjectId: Int): Offset? {
         val s = shrink ?: return null
         if (s.subjectId != subjectId || !s.armed || s.revealed) return null
-        val from = s.fromSession?.titleTarget ?: return null
-        val own = titleSource?.takeIf { it.subjectId == subjectId }?.bounds ?: return null
+        val z = s.fromSession ?: return null
+        val from = z.titleTarget ?: return null
+        val source = titleSource?.takeIf { it.subjectId == subjectId } ?: return null
+        val own = source.bounds
+        val shift = titleBaselineShift(source.baseline, z.titleTargetBaseline)
         val p = (1f - s.t / s.fromT.coerceAtLeast(1e-3f)).coerceIn(0f, 1f) // 0 = 刚起步, 1 = 落位
-        return Offset((from.left - own.left) * (1f - p), (from.top - own.top) * (1f - p))
+        return Offset((from.left - own.left) * (1f - p), (from.top - own.top - shift) * (1f - p))
     }
 
     /**
@@ -481,6 +492,15 @@ object TvHeroZoomHandoff {
         return from.titleTarget != null && from.title != null && from.titleBounds != null
     }
 
+    /**
+     * 放大期间大标题的绘制权是不是在**详情页那一份**手里: 图上屏 ([Session.started]) 起, 占位页 / 真页的大标题从列表页标题的位置
+     * 平移过去 (见 SubjectDetailsTvPage 的 tvHeroZoomTitleShift), 列表页自己那份这时要隐掉 —— 列表页要等整屏底色盖满才硬切
+     * ([scrimOpaque]), 底色渐入那一段它还画着, 标题一开始平移就成了两个. 两边读同一份快照状态, 同一帧一个隐一个显 (同
+     * [titleOwnedByOverlay]). 列表页没登记标题框时详情页那份不平移, 不交权.
+     */
+    fun titleOwnedByDetails(subjectId: Int): Boolean =
+        session?.let { it.subjectId == subjectId && it.started && it.titleBounds != null } == true
+
     /** 转场标题的固定部分; null = 此刻不该画 (没在缩回 / 没有登记过标题). */
     fun shrinkTitleSpec(): ShrinkTitleSpec? {
         val s = shrink ?: return null
@@ -505,15 +525,19 @@ object TvHeroZoomHandoff {
     fun shrinkTitlePosition(): Offset? {
         val s = shrink ?: return null
         if (!s.armed || s.revealed) return null
-        val from = s.fromSession?.titleTarget ?: return null
+        val z = s.fromSession ?: return null
+        val from = z.titleTarget ?: return null
         // 终点优先用列表页**此刻**那份登记 (重建后滚动位置可能变, 落点要准), 但**只在背景也对得上时** ——
         // 背景与标题是两个组件各自登记的, 两个页面同时显示同一条目时可能一个来自 A 一个来自 B。
         // 拿不到就退回进入时的快照; **绝不回退 (0,0)**, 那会让标题当场跳到屏幕左上角。
-        val own = titleSource?.takeIf { it.subjectId == s.subjectId && listAlive(s) }?.bounds
-            ?: s.fromSession?.titleBounds
-            ?: return null
+        val current = titleSource?.takeIf { it.subjectId == s.subjectId && listAlive(s) }
+        val own = current?.bounds ?: z.titleBounds ?: return null
+        val ownBaseline = current?.baseline ?: z.titleBaseline
+        // 落点按基线对齐: 转场标题与详情页标题同一套排字, 首行基线离框顶的距离就是详情页量到的那个
+        val shift = titleBaselineShift(ownBaseline, z.titleTargetBaseline)
         val p = (1f - s.t / s.fromT.coerceAtLeast(1e-3f)).coerceIn(0f, 1f)
-        return Offset(own.left + (from.left - own.left) * (1f - p), own.top + (from.top - own.top) * (1f - p))
+        val endTop = own.top + shift
+        return Offset(own.left + (from.left - own.left) * (1f - p), endTop + (from.top - endTop) * (1f - p))
     }
 
     fun titleSettling(subjectId: Int): Boolean {
@@ -705,6 +729,9 @@ object TvHeroZoomHandoff {
     /**
      * 列表页 hero 大标题每次定位时登记. 详情页标题从这个框平移到自己的位置, 与放大同步 —— 标题"不消失而是变过去"
      * (用户 2026-09-10). 两边都是 headlineLarge, 只差位置, 不缩放.
+     *
+     * [baseline] = 首行基线离框顶多远 (px): 列表页标题是原生 TextView, 详情页与转场层的是 Compose Text, 两套排字把字放在框里的高度
+     * 不一样 (取的字体度量不同, 系统版本之间也不同), 框对齐了字还差几像素, 交接那一帧跳一下. 平移按基线对齐 (见 [titleBaselineShift]).
      */
     fun publishTitle(
         owner: Any,
@@ -713,9 +740,17 @@ object TvHeroZoomHandoff {
         text: String,
         maxLines: Int = 2,
         clipOverflow: Boolean = false,
+        baseline: Float = Float.NaN,
     ) {
-        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow)
+        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow, baseline)
     }
+
+    /**
+     * 列表页标题 (首行基线离框顶 [listBaseline]) 与详情页标题 (离框顶 [detailsBaseline]) 按基线对齐时, 列表页那个框要比详情页的框多往下
+     * 挪多少 (px): 框顶对齐时两边的字差这么多. 有一边不知道时为 0 (退回按框对齐).
+     */
+    fun titleBaselineShift(listBaseline: Float, detailsBaseline: Float): Float =
+        if (listBaseline.isNaN() || detailsBaseline.isNaN()) 0f else listBaseline - detailsBaseline
 
     /** 标题离开组合时撤销; **只撤自己登记的那份** (理由同 [retract])。 */
     fun retractTitle(owner: Any) {
