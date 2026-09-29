@@ -449,8 +449,9 @@ class TvNativeHeroTextView(
     }
 
     /**
-     * 缩回转场期间的标题: [hidden] = 绘制权在转场层 (TvHeroZoomHandoff.titleOwnedByOverlay), [offsetX] / [offsetY] = 让位平移
-     * (shrinkTitleOffset, 退路), [settling] = 缩回中 (停跑马灯, titleSettling). 由页面按当前条目观察 TvHeroZoomHandoff 后调.
+     * 放大 / 缩回转场期间的标题: [hidden] = 绘制权在详情页那份或转场层 (TvHeroZoomHandoff.titleOwnedByDetails / titleOwnedByOverlay),
+     * [offsetX] / [offsetY] = 让位平移 (shrinkTitleOffset, 退路), [settling] = 缩回中 (停跑马灯, titleSettling). 由页面按当前条目观察
+     * TvHeroZoomHandoff 后调.
      */
     fun setTitleHandoff(hidden: Boolean, offsetX: Float, offsetY: Float, settling: Boolean) {
         titleHidden = hidden
@@ -502,9 +503,11 @@ class TvNativeHeroTextView(
         }
         val left = xy[0] - rootXY[0] + title.left * scaleX
         val top = xy[1] - rootXY[1] + title.top * scaleY
+        val baseline = title.baseline
         TvHeroZoomHandoff.publishTitle(
             titleOwner, text.subjectId, Rect(left, top, left + title.width * scaleX, top + title.height * scaleY), text.title,
             maxLines = style.titleMaxLines, clipOverflow = style.titleMaxLines == 1,
+            baseline = if (baseline >= 0) baseline * scaleY else Float.NaN,
         )
     }
 

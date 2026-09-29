@@ -152,6 +152,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
@@ -3589,10 +3591,13 @@ fun tvHeroZoomHoldsPlaceholder(subjectId: Int): Boolean {
 /**
  * 大标题跟着放大会话的进度, 从列表页标题的位置平移到本页的位置 (两边都是 headlineLarge, 只差位置). 会话开始 (图上屏、
  * 列表页硬切) 之前不画 —— 那时列表页自己的标题还在同一处; 自己的框量出来之前也不画, 免得头一帧出现在终点.
+ * 起点按首行基线对齐列表页标题 (那边是原生 TextView, 字在框里的高度与这边不同, 见 TvHeroZoomHandoff.publishTitle), 起步那一帧字不跳.
  */
 @Composable
 private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): Modifier {
     var own by remember { mutableStateOf<Rect?>(null) }
+    // 自己首行基线离框顶多远 (px), 测量时读 Text 报的 FirstBaseline
+    var ownBaseline by remember { mutableFloatStateOf(Float.NaN) }
     val from = session?.titleBounds
     if (session == null || from == null) return this
     return this
@@ -3610,9 +3615,20 @@ private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): 
             }
             val t = session.t
             if (t < 1f) {
+                val base = if (ownBaseline.isNaN()) session.titleTargetBaseline else ownBaseline
+                val shift = TvHeroZoomHandoff.titleBaselineShift(session.titleBaseline, base)
                 translationX = lerp(from.left - o.left, 0f, t)
-                translationY = lerp(from.top - o.top, 0f, t)
+                translationY = lerp(from.top + shift - o.top, 0f, t)
             }
+        }
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val baseline = placeable[FirstBaseline]
+            if (baseline != AlignmentLine.Unspecified) {
+                ownBaseline = baseline.toFloat()
+                session.titleTargetBaseline = baseline.toFloat()
+            }
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
         }
 }
 
