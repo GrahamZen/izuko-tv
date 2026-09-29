@@ -81,6 +81,28 @@ object MediaListFilters {
         return name.removeRange(match.range) + match.value
     }
 
+    /**
+     * [name] 去掉 "第3季" 这类季号后的比较形式, 本身不含季号时返回 `null`.
+     *
+     * 用于识别"站点把整个系列放在一个不带季号的条目下"的情况: 本条目 "凡人修仙传 第四季" 由此得到
+     * "凡人修仙传", 与站内条目名相同. 名字本身不含季号时按常规的包含与相似度规则判断即可,
+     * 不需要这条通道, 所以返回 `null`.
+     *
+     * @see nameForSeasonlessCompare
+     */
+    internal fun removeSeasonMarkerOrNull(name: String): String? {
+        val normalized = nameForSeasonlessCompare(name)
+        val withoutSeason = SEASON_MARKER.replace(normalized, "")
+        if (withoutSeason == normalized || withoutSeason.isEmpty()) return null
+        return withoutSeason
+    }
+
+    /**
+     * 与 [removeSeasonMarkerOrNull] 的结果比较时, 另一侧的名字要经过这一步.
+     */
+    internal fun nameForSeasonlessCompare(name: String): String =
+        removeSpecials(name, removeWhitespace = true, replaceNumbers = true).lowercase()
+
     private val SEASON_MARKER = Regex("第[0-9]+[季期部]")
 
     val ContainsEpisodeSort = BasicMediaListFilter { media ->
