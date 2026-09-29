@@ -382,11 +382,31 @@ class TvNativeMonogramAdapter(
 
     fun itemAt(index: Int): TvNativeMonogram? = items?.getOrNull(index)
 
-    /** 换数据 (null = 占位). 内容没变就不动. */
+    /**
+     * 换数据 (null = 占位). 内容没变就不动. 占位与数据互换整排刷新 (稳定 id 按下标, 持焦的那格原地重绑); 数据之间只通知变了的格
+     * (分页追加、个别格晚到), 没变的格不重绑, 头像不再走一遍加载入口.
+     */
     fun submit(items: List<TvNativeMonogram?>?) {
-        if (items == this.items) return
+        val old = this.items
+        if (items == old) return
         this.items = items
-        notifyDataSetChanged()
+        if (old == null || items == null) {
+            notifyDataSetChanged()
+            return
+        }
+        val common = minOf(old.size, items.size)
+        var i = 0
+        while (i < common) {
+            if (old[i] == items[i]) {
+                i++
+                continue
+            }
+            val start = i
+            while (i < common && old[i] != items[i]) i++
+            notifyItemRangeChanged(start, i - start)
+        }
+        if (items.size > common) notifyItemRangeInserted(common, items.size - common)
+        if (old.size > common) notifyItemRangeRemoved(common, old.size - common)
     }
 
     override fun getItemCount(): Int = items?.size ?: placeholderCount
@@ -430,7 +450,8 @@ class TvNativeMonogramAdapter(
  * 上下键不管. 占位时 (数据没到) 左右键也吞掉: 焦点停在第一格等数据.
  *
  * 长按连发按 [repeatMillis] (Compose 版同一个上限, 调用方给). 行外左右各多排三格: 圆头像格步距小、连发快, 平滑滚动落后焦点两格多
- * (临界阻尼 spring 追匀速目标落后 2v / ω: 1080p 上每秒 20 格 × 300px, ω = √260), 这段都得排着.
+ * (临界阻尼 spring 追匀速目标落后 2v / ω: 1080p 上每秒 20 格 × 300px, ω = √260), 这段都得排着. 行里第一次有焦点时才多排:
+ * 详情页建人物页那一帧只排屏上那几格 (建卡、绑定都在那一帧里), 连发总在拿到焦点之后.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeMonogramRowView(
@@ -445,7 +466,7 @@ class TvNativeMonogramRowView(
     context,
     stepPx = style.stepPx,
     spacingPx = style.spacingPx,
-    extraLayoutPx = style.stepPx * 3,
+    extraLayoutPx = 0,
     prefetchItems = 0,
     startPx = startPx,
     endPx = endPx,
@@ -453,10 +474,19 @@ class TvNativeMonogramRowView(
     bottomPx = bottomPx,
 ) {
     val cells = TvNativeMonogramAdapter(style, sketch)
+    private var aheadLaidOut = false
 
     init {
         startLeftExits = false
         adapter = cells
+    }
+
+    override fun requestChildFocus(child: View?, focused: View?) {
+        super.requestChildFocus(child, focused)
+        if (!aheadLaidOut) {
+            aheadLaidOut = true
+            setExtraLayoutSpace(style.stepPx * 3)
+        }
     }
 
     override fun canMoveTo(index: Int): Boolean = !cells.loading
