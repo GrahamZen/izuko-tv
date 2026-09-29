@@ -38,6 +38,9 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
  * @param cardWidth 给了就用这个卡宽 (行比海报墙窄时, 如预览弹窗), 一屏放得下几张是自然结果, 行尾留白至少 [endPadding]、按整数张补齐;
  *   null = 按 tvPosterWallColumns 铺满.
  * @param onBind 第几张被绑定 (分页的访问提示).
+ * @param holdFocusLookOnClick 点卡 (导航出去) 时按住这张的聚焦态 ([TvNativeCardAdapter.setFocusLookHeld]) 并跨导航记住: 返回时页面重建,
+ *   这张排出来的第一帧就是放大的, 焦点送回来时画面不变 (同探索页, 不先按未聚焦画出来再放大一遍). 返回后焦点不回这一行的 (如人物预览弹窗:
+ *   点作品先关掉弹窗再跳转) 传 false, 否则这张会一直放大着.
  */
 @Composable
 fun TvNativePosterStrip(
@@ -49,11 +52,14 @@ fun TvNativePosterStrip(
     onFocused: (index: Int) -> Unit = {},
     cardWidth: Dp? = null,
     onBind: (index: Int) -> Unit = {},
+    holdFocusLookOnClick: Boolean = true,
 ) {
     val sketch = LocalSketch.current
     val animatedScroll = LocalThemeSettings.current.visualEffects.animatedScroll
     var focusedIndex by rememberSaveable { mutableIntStateOf(-1) }
     var leftIndex by rememberSaveable { mutableIntStateOf(0) }
+    // 点卡导航出去时按住的那张 (见 holdFocusLookOnClick), -1 = 没有; 焦点回到这一行就清掉
+    var heldIndex by rememberSaveable { mutableIntStateOf(-1) }
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnFocused by rememberUpdatedState(onFocused)
     val currentOnBind by rememberUpdatedState(onBind)
@@ -98,18 +104,29 @@ fun TvNativePosterStrip(
                 // 跨导航恢复行首与上次聚焦那张: 等数据到了才做 (返回时页面重建, 这一行先建出来、条目后到; 空列表上定行首会落回 0)
                 if (row.tag == null && cards.isNotEmpty()) {
                     row.tag = TV_NATIVE_STRIP_RESTORED
+                    // 离开时按住的那张: 排出来就画成聚焦态, 焦点送回来 (适配器在它拿到焦点时放开) 画面不变
+                    if (heldIndex >= 0) row.cards.setFocusLookHeld(row, heldIndex)
                     row.bind(cards, { it.toLong() }, leftIndex, columns, focusIndex = focusedIndex)
                 }
                 row.animatedScroll = animatedScroll
                 row.cards.listener = object : TvNativeCardListener {
                     override fun onFocused(index: Int) {
+                        heldIndex = -1
                         focusedIndex = index
                         // 按需挪之后的行首
                         leftIndex = tvStripLeftIndex(leftIndex, index, cards.size, columns)
                         currentOnFocused(index)
                     }
 
-                    override fun onClick(index: Int) = currentOnClick(index)
+                    override fun onClick(index: Int) {
+                        // 占位卡点了不会导航出去, 不按住
+                        if (holdFocusLookOnClick && cards.getOrNull(index) != null) {
+                            // 焦点交出去之后这张仍画成聚焦态, 返回重建时也按住 (见上)
+                            heldIndex = index
+                            row.cards.setFocusLookHeld(row, index)
+                        }
+                        currentOnClick(index)
+                    }
 
                     override fun onLongPress(index: Int, anchor: Rect) = Unit
                 }
@@ -133,6 +150,8 @@ fun TvNativePosterStrip(
  * @param onLongPress 确定键按住到阈值 (放大看照片); null = 没有长按, 按住也只算点击.
  * @param repeatMillis 长按左右键时最快多久挪一格.
  * @param onBind 第几格被绑定 (分页的访问提示).
+ * @param restoreFocus 页面的进页落点会回这一行 (返回本页, 页面重建): 上次聚焦那格排出来就画成聚焦态, 焦点送回来时画面不变,
+ *   不先按未聚焦画出来再放大一遍. 点圆头像开的是预览弹窗、页面不离开, 所以不能照海报行那样点击时按住; 只在建行时读.
  */
 @Composable
 fun TvNativeMonogramStrip(
@@ -145,6 +164,7 @@ fun TvNativeMonogramStrip(
     startPadding: Dp = 0.dp,
     endPadding: Dp = 0.dp,
     onBind: (index: Int) -> Unit = {},
+    restoreFocus: Boolean = false,
 ) {
     val sketch = LocalSketch.current
     val animatedScroll = LocalThemeSettings.current.visualEffects.animatedScroll
@@ -198,6 +218,8 @@ fun TvNativeMonogramStrip(
                 // 跨导航恢复行首与上次聚焦那格: 等真数据到了才做 (返回时页面重建, 这一行先建出来、数据后到)
                 if (items != null && row.tag == null) {
                     row.tag = TV_NATIVE_STRIP_RESTORED
+                    // 焦点要回这一行: 上次聚焦那格排出来就画成聚焦态 (适配器在它拿到焦点时放开). 落点先到了 (停在占位格上) 就不用了
+                    if (restoreFocus && focusedIndex >= 0 && !row.hasFocus()) row.cells.setFocusLookHeld(row, focusedIndex)
                     row.bind(items, leftIndex, columns, focusIndex = focusedIndex)
                 } else {
                     row.cells.submit(items)

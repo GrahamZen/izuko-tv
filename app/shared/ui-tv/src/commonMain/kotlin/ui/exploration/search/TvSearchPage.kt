@@ -1764,6 +1764,8 @@ private fun TvSearchResultsPane(
                 onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
             ),
             menuFor = collectionMenuFor,
+            // 从详情 / 播放器返回时恢复的那张 (见下方初始焦点): 建网格时就按住聚焦态
+            landingIndex = restoreCardIndex,
         )
 
         Column(

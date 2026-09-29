@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.subject.details.layout
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
@@ -234,6 +236,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
+import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
@@ -1625,6 +1628,8 @@ fun SubjectDetailsTvPage(
                             TvDetailsCharactersRow(
                                 exposedCharacters, allCharacters, totalCharactersCount, imageZoom,
                                 horizontalPadding = pad,
+                                // 返回本页焦点回这一排 (进页恢复): 上次那格一排出来就是聚焦态
+                                restoreFocus = restoreSection == TvDetailsSection.CHARACTERS,
                                 modifier = Modifier
                                     // 区块进入落点 (选集页下键经路由送到这里, 跨页返回也是), 焦点落进这一排即算到位
                                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.CHARACTERS_SECTION)
@@ -1647,6 +1652,7 @@ fun SubjectDetailsTvPage(
                             TvDetailsStaffRow(
                                 exposedStaff, allStaff, totalStaffCount, imageZoom,
                                 horizontalPadding = pad,
+                                restoreFocus = restoreSection == TvDetailsSection.STAFF,
                                 modifier = Modifier
                                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.STAFF_SECTION)
                                     .onFocusChanged {
@@ -4500,12 +4506,16 @@ private fun TvPlayButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val onSurface = MaterialTheme.colorScheme.onSurface
+    // 返回本页 (如从播放器回来) 的落点多半就是它: 组合出来的头几帧里拿到焦点时当场填色, 不先画成玻璃底再渐变过去
+    val landing by rememberTvFocusLandingWindow()
     val containerColor by animateColorAsState(
         if (focused) MaterialTheme.colorScheme.primary.copy(alpha = TV_FOCUSED_CONTAINER_ALPHA)
         else tvGlassColor(),
+        if (landing) snap() else spring(),
     )
     val contentColor by animateColorAsState(
         if (focused) MaterialTheme.colorScheme.onPrimary else onSurface,
+        if (landing) snap() else spring(),
     )
     // 长按 (同选集网格/排序格, 共用实现见 tvLongPressKey): 按住到阈值立即触发跳转 (不等松开),
     // 残余按键由目标卡片吞掉 (不是从它起手的手势, 它的 tvLongPressKey 不计数不派发).

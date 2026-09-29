@@ -71,6 +71,7 @@ internal fun TvSearchNativeGrid(
     callbacks: TvNativeGridPageCallbacks<SubjectPreviewItemInfo>,
     menuFor: (subjectId: Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
+    landingIndex: Int = -1,
 ) {
     val density = LocalDensity.current
     TvNativeGridPageHost(
@@ -101,6 +102,7 @@ internal fun TvSearchNativeGrid(
         callbacks = callbacks,
         menuFor = { info -> menuFor(info.subjectId) },
         modifier = modifier,
+        landingIndex = landingIndex,
     ) {
         // 空结果提示 / 首屏加载指示, 在网格可见的那一段里居中
         if (items.itemCount == 0 && !items.loadState.hasError) {

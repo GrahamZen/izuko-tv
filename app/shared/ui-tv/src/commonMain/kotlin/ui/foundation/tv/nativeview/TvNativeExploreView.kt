@@ -378,6 +378,11 @@ class TvNativeExploreView(
         this.rowFocusedIndex.putAll(rowFocusedIndex)
         this.focusedRowKey = focusedRowKey
         this.focusedCardIndex = focusedCardIndex
+        // 返回本页 (页面重建, 如从播放器回来) 时焦点会回这一行上次停的那张 (见页面的进页恢复): 从排出来的第一帧起就按住它的聚焦态.
+        // 等落点请求送到再按住就晚了 —— 那时它多半已经按未聚焦画过一帧, 焦点到了再放大一遍
+        if (focusedRowKey != null) {
+            list.heldFocus = focusedRowKey to rememberedIndex(focusedRowKey, list.rowLeftIndex[focusedRowKey] ?: 0)
+        }
         if (heroActive) timeline.setActive(true, animated = false)
         // 列表停位等数据到了再定 (空列表定不了位)
         if (list.items.isNotEmpty()) list.jumpTo(scrollPx) else pendingScrollPx = scrollPx

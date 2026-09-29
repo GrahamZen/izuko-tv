@@ -85,6 +85,7 @@ internal fun tvPeopleRowState(itemCount: Int, totalCount: Int?): TvPeopleRowStat
  * 短按人物预览, 长按放大看图 ([imageZoom], 大图层与按键拦截挂在页面根上). 上下键交给页面 (行不接).
  *
  * @param horizontalPadding 标题两侧与行两端的留白 (行本身全宽出血, 滑过行首的格从屏幕左缘出屏).
+ * @param restoreFocus 返回本页时进页落点回这一行 (见 [TvNativeMonogramStrip] 的同名参数).
  */
 @Composable
 internal fun TvDetailsCharactersRow(
@@ -94,6 +95,7 @@ internal fun TvDetailsCharactersRow(
     imageZoom: TvImageZoomState,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    restoreFocus: Boolean = false,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickCharacter = rememberPeopleClickHandler()
@@ -127,6 +129,7 @@ internal fun TvDetailsCharactersRow(
         onBind = { index -> if (index < exposed.itemCount) exposed[index] },
         horizontalPadding = horizontalPadding,
         modifier = modifier,
+        restoreFocus = restoreFocus,
     )
     if (showAll) {
         CharactersViewAllDialog(all, totalCount, onDismissRequest = { showAll = false })
@@ -142,6 +145,7 @@ internal fun TvDetailsStaffRow(
     imageZoom: TvImageZoomState,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    restoreFocus: Boolean = false,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickPerson = rememberPeopleClickHandler()
@@ -175,6 +179,7 @@ internal fun TvDetailsStaffRow(
         onBind = { index -> if (index < exposed.itemCount) exposed[index] },
         horizontalPadding = horizontalPadding,
         modifier = modifier,
+        restoreFocus = restoreFocus,
     )
     if (showAll) {
         StaffViewAllDialog(all, totalCount, onDismissRequest = { showAll = false })
@@ -195,6 +200,7 @@ private fun TvDetailsPeopleRow(
     onBind: (index: Int) -> Unit,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    restoreFocus: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(title, modifier = Modifier.padding(horizontal = horizontalPadding))
@@ -207,6 +213,7 @@ private fun TvDetailsPeopleRow(
             startPadding = horizontalPadding,
             endPadding = horizontalPadding,
             onBind = onBind,
+            restoreFocus = restoreFocus,
         )
     }
 }
