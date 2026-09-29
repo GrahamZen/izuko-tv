@@ -13,7 +13,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.get
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
@@ -104,6 +106,57 @@ class BangumiMirrorFallbackTest {
         val outcome = request(originStatus = null, times = 2)
         // 第一次: 原站 -> 镜像; 第二次: 粘性直接从镜像开始, 不再吃一次直连超时
         assertEquals(listOf("api.bgm.tv", "api.bangumi.pro", "api.bangumi.pro"), outcome.hosts)
+        assertEquals(HttpStatusCode.OK, outcome.status)
+    }
+
+    /**
+     * 镜像前面的反机器人验证页: 200 + 网页. 拿它当成功的话, 调用方解析 JSON 全失败, 而粘性把之后的请求全送到这家.
+     *
+     * @param originUp 每次请求时原站通不通
+     */
+    private suspend fun requestWithWebPageMirror(
+        vararg originUp: Boolean,
+        mirrorServesWebPage: (requestIndex: Int) -> Boolean = { true },
+        onOriginUnreachable: () -> Unit = {},
+    ): Outcome {
+        val hosts = mutableListOf<String>()
+        var index = 0
+        val engine = MockEngine { req ->
+            hosts += req.url.host
+            if (req.url.host.endsWith("bgm.tv")) {
+                if (!originUp[index]) throw IOException("blocked")
+                respond("{}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            } else if (mirrorServesWebPage(index)) {
+                respond("<!doctype html>", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/html; charset=utf-8"))
+            } else {
+                respond("{}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiMirrorFeatureHandler(flowOf(routing), onOriginUnreachable = { onOriginUnreachable() })
+            .applyToClient(client, true)
+        var status = HttpStatusCode.OK
+        for (i in originUp.indices) {
+            index = i
+            status = client.get("https://api.bgm.tv/v0/me").status
+        }
+        return Outcome(hosts, status)
+    }
+
+    @Test
+    fun `镜像回网页不算回答 - 不粘住也不算原站连不上`() = runTest {
+        var reported = false
+        val outcome = requestWithWebPageMirror(false, false, onOriginUnreachable = { reported = true })
+        // 第二次照样先试原站: 只回网页的镜像没有被粘住
+        assertEquals(listOf("api.bgm.tv", "api.bangumi.pro", "api.bgm.tv", "api.bangumi.pro"), outcome.hosts)
+        assertEquals(false, reported)
+    }
+
+    @Test
+    fun `粘住的镜像开始回网页 - 换回原站`() = runTest {
+        // 第一次原站不通、镜像正常 -> 粘在镜像; 第二次镜像只回网页, 原站已经通了
+        val outcome = requestWithWebPageMirror(false, true, mirrorServesWebPage = { it == 1 })
+        assertEquals(listOf("api.bgm.tv", "api.bangumi.pro", "api.bangumi.pro", "api.bgm.tv"), outcome.hosts)
         assertEquals(HttpStatusCode.OK, outcome.status)
     }
 }
