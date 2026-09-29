@@ -137,6 +137,16 @@ Sealed class [`MaybeExcludedMedia`][MaybeExcludedMedia] 表示一个可能被排
 [BT 资源页](media-selector-ui.md#bt-资源页)把集数不符作为一种排除原因展示在已被排除的资源里，
 取消按集筛选后列表基于不含第 0 条规则的条目级候选，没有这一原因。
 
+**条目名匹配**：资源的条目名精确等于系列中其他季度的名称时，以
+`MediaExclusionReason.FromSeriesSeason` / `FromSequelSeason` 排除；WEB 资源还要求条目名包含条目的某个名称，
+或与之足够相似（把季号挪到末尾后再比一次），否则以 `MediaExclusionReason.SubjectNameMismatch` 排除。
+
+站点把整个系列放在一个不带季号的条目下、按系列内序号连续编集时（站内“凡人修仙传”的第 159 集即
+“凡人修仙传 第四季”的第 35 集），资源的条目名比不出季度，此时以**系列内序号**认领：当前剧集的
+`sort` 与 `ep` 不同、且资源的 `episodeRange` 包含 `sort` 时，视为本条目的资源，上面两类排除都不适用。
+`sort` 在整个系列中唯一，两者不同即说明本条目不是第一季，因此这个条件挡得住系列内其他季度的资源；
+WEB 的条目名检查还额外要求条目名去掉季号后与资源的条目名相同，以免无关长篇因为同样有这个序号而混入。
+
 `MediaSelector.subjectCandidates` 跳过第 0 条规则、保留其余规则与排序，
 提供整个条目的候选，供[批量下载](media-downloads.md#添加下载)按线路规划各集的资源，
 以及 BT 资源页取消按集筛选时展示。
