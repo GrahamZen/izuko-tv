@@ -153,7 +153,7 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
                     fetchRelationsIfStaleOrNull(subjectId)
                 }
 
@@ -171,7 +171,7 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if ((currentTimeMillis() - cachedCharactersUpdated).milliseconds > cacheExpiry) {
+                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
                     fetchRelationsIfStaleOrNull(subjectId)
                 }
 
@@ -259,7 +259,7 @@ class DefaultSubjectRelationsRepository(
             key = subjectId,
             isFresh = {
                 val updated = subjectCollectionDao.findById(subjectId).first()?.cachedCharactersUpdated ?: 0L
-                (currentTimeMillis() - updated).milliseconds <= cacheExpiry
+                relationsFresh(updated, currentTimeMillis(), cacheExpiry)
             },
         ) {
             fetchAndSaveSubjectRelations(subjectId)
@@ -371,12 +371,31 @@ private fun PersonEntity.toPersonInfo(): PersonInfo {
 }
 
 
-private fun BatchSubjectRelations.characterActorRelations() =
-    relatedCharacterInfoList.asSequence().flatMap { relatedCharacterInfo ->
-        relatedCharacterInfo.character.actors.asSequence().map { person ->
+/**
+ * 每个角色落一行声优: character_actor 表的主键只有角色, 一个角色只存得下一位 —— 全写进去的话后写的覆盖先写的,
+ * 存下的就成了接口顺序里的最后那位 (常常是中配 / 日配, 不是原版). 存排第一的那位 (原版优先, 见 sortedByOriginalCast).
+ */
+internal fun BatchSubjectRelations.characterActorRelations(): Sequence<CharacterActorEntity> =
+    relatedCharacterInfoList.asSequence().mapNotNull { relatedCharacterInfo ->
+        relatedCharacterInfo.character.actors.firstOrNull()?.let { person ->
             CharacterActorEntity(relatedCharacterInfo.character.id, person.id)
         }
     }
+
+/**
+ * 条目的关联数据 (角色 / 制作人员 / 声优) 在 [now] 还算不算新鲜: [updated] 是上次取完的时刻, 过了 [expiry] 就重取.
+ *
+ * [RELATIONS_VALID_SINCE_MILLIS] 之前取的一律当过期: 那时每个角色存下的声优是接口顺序里的最后一位, 常常是配音而不是原版
+ * (见 [characterActorRelations]), 已看过的条目下次进详情页就重取. 设备时钟早于它时不看这条 —— 否则取完盖的章总早于它,
+ * 每次都判过期、反复重取.
+ */
+internal fun relationsFresh(updated: Long, now: Long, expiry: Duration): Boolean {
+    if (now >= RELATIONS_VALID_SINCE_MILLIS && updated < RELATIONS_VALID_SINCE_MILLIS) return false
+    return (now - updated).milliseconds <= expiry
+}
+
+/** 2026-09-29T03:40:00Z, 声优改成原版优先、每个角色只存一位 (见 [relationsFresh]). */
+internal const val RELATIONS_VALID_SINCE_MILLIS = 1_790_653_200_000L
 
 private fun CharacterInfo.toEntity(): CharacterEntity {
     return CharacterEntity(
