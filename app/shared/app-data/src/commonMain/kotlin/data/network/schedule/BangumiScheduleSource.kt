@@ -12,6 +12,10 @@ package me.him188.ani.app.data.network.schedule
 import androidx.datastore.core.DataStore
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -20,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -106,35 +111,57 @@ class BangumiScheduleSource(
     }
 
     /**
-     * 一批条目的分集. 缓存命中的直接给, 其余**并发**回源 ([FETCH_CONCURRENCY] 条并行) 再**一次性**落盘.
+     * 一批条目的分集. 缓存命中的直接给, 其余**并发**回源 ([FETCH_CONCURRENCY] 条并行, 按 [subjectIds] 的先后排队)
+     * 再**一次性**落盘; 中途被取消 (离开了页面) 时, 已经取到的照样落盘.
+     *
+     * 每一部定下来 (缓存命中、取到、取失败退回旧缓存) 就交给 [onEach], 不等整批: bgm 偶尔有请求挂到超时,
+     * 等整批的话, 早就回来的那些也要陪着它等.
      *
      * 一天的名册有十几部, 逐个串行取要十几个来回 (电视上够看见一天一天慢慢填); 而逐个落盘意味着
      * 每取一部就把整份缓存重写一遍 —— 一次冷加载写上百次, 全在 TV 那块慢闪存上.
+     *
+     * @param onEach 会在多个协程里同时调用
      */
-    suspend fun episodesOfMany(subjectIds: Collection<Int>): Map<Int, List<ScheduleEpisode>> = coroutineScope {
+    suspend fun episodesOfMany(
+        subjectIds: Collection<Int>,
+        onEach: suspend (subjectId: Int, episodes: List<ScheduleEpisode>) -> Unit = { _, _ -> },
+    ): Map<Int, List<ScheduleEpisode>> = coroutineScope {
         val cache = store.data.first()
         val result = mutableMapOf<Int, List<ScheduleEpisode>>()
         val missing = mutableListOf<Int>()
         for (id in subjectIds.toSet()) {
             val hit = cache.episodes[id]?.takeIf { !it.fetchedAt.isStale(EPISODES_TTL) }
-            if (hit != null) result[id] = hit.list else missing += id
+            if (hit != null) {
+                result[id] = hit.list
+                onEach(id, hit.list)
+            } else {
+                missing += id
+            }
         }
         if (missing.isEmpty()) return@coroutineScope result
 
         val semaphore = Semaphore(FETCH_CONCURRENCY)
-        val fetched = missing
-            .map { id -> async { id to semaphore.withPermit { fetchEpisodes(id) } } }
-            .awaitAll()
-
-        val now = currentTimeMillis()
-        val toStore = fetched.mapNotNull { (id, list) -> list?.let { id to CachedEpisodes(it, now) } }.toMap()
-        if (toStore.isNotEmpty()) {
-            logger.info { "bgm-direct: schedule 分集回源 ${toStore.size} 部 (并发 $FETCH_CONCURRENCY)" }
-            update { it.copy(episodes = it.episodes + toStore) }
-        }
-        for ((id, list) in fetched) {
-            // 取失败的退回旧缓存 (哪怕过期), 总比这一部整天不出现强
-            result[id] = list ?: cache.episodes[id]?.list.orEmpty()
+        val toStore = atomic(emptyMap<Int, CachedEpisodes>())
+        try {
+            val fetched = missing.map { id ->
+                async {
+                    val list = semaphore.withPermit { fetchEpisodes(id) }
+                    if (list != null) toStore.update { it + (id to CachedEpisodes(list, currentTimeMillis())) }
+                    // 取失败的退回旧缓存 (哪怕过期), 总比这一部整天不出现强
+                    val settled = list ?: cache.episodes[id]?.list.orEmpty()
+                    onEach(id, settled)
+                    id to settled
+                }
+            }.awaitAll()
+            result.putAll(fetched)
+        } finally {
+            val stored = toStore.value
+            if (stored.isNotEmpty()) {
+                withContext(NonCancellable) {
+                    logger.info { "bgm-direct: schedule 分集回源 ${stored.size} 部 (并发 $FETCH_CONCURRENCY)" }
+                    update { it.copy(episodes = it.episodes + stored) }
+                }
+            }
         }
         result
     }
@@ -159,6 +186,8 @@ class BangumiScheduleSource(
                     airDate = it.airdate,
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.warn(e) { "Failed to fetch episodes of subject $subjectId for schedule" }
             null
