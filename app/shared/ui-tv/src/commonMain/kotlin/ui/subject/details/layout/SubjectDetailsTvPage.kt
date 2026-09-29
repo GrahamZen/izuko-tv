@@ -150,6 +150,7 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
@@ -161,6 +162,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -2732,6 +2734,9 @@ private fun PageSection(
     val snapMarginPx = with(density) { snapTopMargin.toPx() }
     val revealMarginPx = with(density) { SECTION_ITEM_REVEAL_MARGIN.toPx() }
     var sectionFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    // 这一下按键的纵向离组已经由 onExit 交给路由了 (见下面的 onKeyEvent: 它据此判断还要不要自己再送一次)
+    val exitRouted = remember { BooleanArray(1) }
 
     val responder = remember(pager, page, snapMarginPx, revealMarginPx) {
         object : BringIntoViewResponder {
@@ -2773,6 +2778,27 @@ private fun PageSection(
                 sectionFocused = state.hasFocus
             }
             .bringIntoViewResponder(responder)
+            // 上下键由本页**自己走完并消费**, 不留给系统的默认处理: 页内有候选时照常 moveFocus (离组时经下面的 onExit 改走路由);
+            // 一个候选都找不到时 moveFocus 失败, 默认处理下这一下就没人接了 —— 按键漏出 Compose, 由 Android 自己的焦点查找按屏幕位置
+            // 找, 直接跳进原生视图 (末页的关联条目行). 换页过渡里正是这样: 离开方的几页图层还画在跳之前的位置上, 往下搜什么也找不到.
+            // 真机 (2026-09-28): 在第四页按返回、滑回选集页的途中按下键, 焦点越过人物页直接落进关联条目. 找不到候选时照样交给路由
+            .onKeyEvent { event ->
+                val down = when (event.key) {
+                    Key.DirectionDown -> true
+                    Key.DirectionUp -> false
+                    else -> return@onKeyEvent false
+                }
+                if (nav == null) return@onKeyEvent false
+                if (event.type == KeyEventType.KeyDown) {
+                    exitRouted[0] = false
+                    val moved = focusManager.moveFocus(if (down) FocusDirection.Down else FocusDirection.Up)
+                    if (!moved && !exitRouted[0]) {
+                        if (down) nav.moveDown(TvDetailsSection.entries.last { it.page == page })
+                        else nav.moveUp(TvDetailsSection.entries.first { it.page == page })
+                    }
+                }
+                true
+            }
             // 页内焦点围栏 + **纵向离场一律走路由**.
             //
             // 左右: 取消离组 —— 边缘元素按左右时空间搜索找不到同页目标, 会斜跳到上/下一页, 页面跟着走.
@@ -2792,11 +2818,13 @@ private fun PageSection(
 
                         FocusDirection.Up -> if (nav != null) {
                             cancelFocusChange()
+                            exitRouted[0] = true
                             nav.moveUp(TvDetailsSection.entries.first { it.page == page })
                         }
 
                         FocusDirection.Down -> if (nav != null) {
                             cancelFocusChange()
+                            exitRouted[0] = true
                             nav.moveDown(TvDetailsSection.entries.last { it.page == page })
                         }
 
