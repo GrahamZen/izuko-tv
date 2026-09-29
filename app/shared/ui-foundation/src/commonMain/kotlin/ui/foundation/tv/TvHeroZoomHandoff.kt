@@ -385,7 +385,8 @@ object TvHeroZoomHandoff {
         var linear: Float by mutableFloatStateOf(0f)
 
         /**
-         * 整屏底色此刻的不透明度: 前段恒 1, **最后** [TvPolishFlags.zoomScrimT] 段时间里化到 0 —— 与放大那头对称.
+         * 整屏底色此刻的不透明度: 前段恒 1, **最后** [TvPolishFlags.shrinkScrimT] 段时间里化到 0 —— 与放大那头对称.
+         * [holdScrim] 时不跟运动走, 由 [landedReveal] 决定.
          *
          * 原来是从上屏到撤层一直不透明地盖着, 最后一下子消失 (用户 2026-09-16: "缩小的时候也是一直在, 最后突然消失").
          * 化开这一段下面的列表页要**接着画** (见 [shrinkRevealing]), 否则化开的是"底色盖在黑上", 与硬切没区别.
@@ -393,9 +394,21 @@ object TvHeroZoomHandoff {
         val scrimAlpha: Float
             get() {
                 if (!armed || revealed) return 0f
+                if (holdScrim) return 1f - landedReveal
                 val seg = TvPolishFlags.shrinkScrimT
                 return if (seg <= 0f) 1f else ((1f - linear) / seg).coerceAtMost(1f)
             }
+
+        /**
+         * 列表页要在缩回层下**重建**: 上屏那一刻它不在组合里 (进过播放器 / 别的页再回到详情页, 见 TvZoomStackScene), 落地后才出栈.
+         * 运动途中下面没有页面可露, 跟着运动化开露出来的是根底色 (黑), 落地后整页重建那几百毫秒缩回图四周也是黑的. 所以底色一直
+         * 不透明地盖着, 落地后列表页就绪 (或等满 [TV_HERO_SHRINK_READY_TIMEOUT_MILLIS]) 再按 [landedReveal] 化开. 上屏时 ([armShrink]) 定下.
+         */
+        var holdScrim: Boolean = false
+            internal set
+
+        /** [holdScrim] 时落地之后底色化开的线性进度 0..1, 缩回层每帧写; 化开这一段列表页已画在下面. */
+        var landedReveal: Float by mutableFloatStateOf(0f)
 
         /** 快速路径 ([TvPolishFlags.shrinkKeep] = 2) 落地后: 缩回层不再画, 下面的列表页露出来; 出栈与撤层随后. */
         var revealed: Boolean by mutableStateOf(false)
@@ -599,8 +612,11 @@ object TvHeroZoomHandoff {
     private fun zoomRecordFor(subjectId: Int, entryKey: Any?): Session? =
         (if (entryKey != null) zoomRecords[entryKey] else lastZoom)?.takeIf { it.subjectId == subjectId }
 
-    /** 缩回的图上屏那一帧调 (两页随即不画). [keepDetails] = 快速路径: 详情页只藏不销毁 (见 [shrinkHideKey]). */
-    fun armShrink(s: Shrink, keepDetails: Boolean = false) {
+    /**
+     * 缩回的图上屏那一帧调 (两页随即不画). [keepDetails] = 快速路径: 详情页只藏不销毁 (见 [shrinkHideKey]);
+     * [rebuildList] = 列表页不在组合里, 落地后才出栈、在层下重建 (见 [Shrink.holdScrim]).
+     */
+    fun armShrink(s: Shrink, keepDetails: Boolean = false, rebuildList: Boolean = false) {
         // 用这次缩回绑定的那一次放大, 不再读全局最近一次
         val z = s.fromSession
         s.fromT = if (z != null && session === z) z.t else 1f
@@ -612,6 +628,7 @@ object TvHeroZoomHandoff {
         } else {
             shrinkHiddenKey = z?.entryKey
         }
+        s.holdScrim = rebuildList
         s.moving = true
         s.armed = true
         // **缩回层上屏这一刻才结束那次放大的会话**: [covering] 的两项是"放大已起跑"与"缩回已上屏", 中间那段
@@ -700,13 +717,13 @@ object TvHeroZoomHandoff {
     /**
      * 诊断用: [listReady] 等超时那一刻, 把"缩回要的"与"列表页实际登记的"都打出来.
      *
-     * 超时 = 缩回层要多盖住画面 800ms (一整秒的黑, 用户 2026-09-16 实测), 而从外面完全看不出是哪一项对不上 ——
-     * 条目对不上 / URL 对不上 / 登记还在但图没报加载好, 三种的修法完全不同. 留这一行, 下次不用再录屏猜.
+     * 超时 = 列表页没按时就绪, 撤层时它的 hero 图 / 标题可能还没画出来, 而从外面完全看不出是哪一项对不上 ——
+     * 条目对不上 / URL 对不上 / 登记还在但图没报加载好 / 标题没登记, 几种的修法完全不同. 留这一行, 下次不用再录屏猜.
      */
     fun sourceDebug(): String {
         fun String?.tail() = this?.takeLast(32) ?: "null"
         val loaded = sourceLoaded.toList()
-        return "source=${source?.subjectId}:${source?.url.tail()} " +
+        return "source=${source?.subjectId}:${source?.url.tail()} title=${titleSource?.subjectId} " +
                 "loaded(${loaded.size})=${loaded.takeLast(4).joinToString { "${it.first}:${it.second.tail()}" }}"
     }
 
