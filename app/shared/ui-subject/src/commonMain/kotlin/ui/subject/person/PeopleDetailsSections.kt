@@ -28,10 +28,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +59,9 @@ import me.him188.ani.app.ui.foundation.ImageViewer
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
+import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
+import me.him188.ani.app.ui.foundation.focus.tvHeaderActionFirst
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
@@ -423,18 +433,40 @@ internal fun <T : Any> PeopleStripSection(
     modifier: Modifier = Modifier,
     onViewAll: (() -> Unit)? = null,
     itemSpacing: Dp = 12.dp,
+    /**
+     * 非 null 时横滑内容换成这一行 (预览弹窗的原生行, 见 [PeoplePreviewRows]), [itemContent] 不用. 焦点进到原生行里时 Compose 不替它滚,
+     * 整块在焦点进来时自己滚进可见范围.
+     */
+    nativeRow: (@Composable () -> Unit)? = null,
     itemContent: @Composable (T, Modifier) -> Unit,
 ) {
     if (items.itemCount == 0) return
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // 标题行的「查看全部」夹在上一块与原生行之间, 上下键按几何挑不中它 (见 tvHeaderActionFirst): 原生行上下键先经过它
+    val viewAll = remember { FocusRequester() }
+    var viewAllFocused by remember { mutableStateOf(false) }
+    Column(
+        modifier.fillMaxWidth().ifThen(nativeRow != null) { tvBringIntoViewOnFocus() },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (onViewAll != null) {
-            SectionHeader(title, actionLabel = stringResource(Lang.subject_details_view_all), onAction = onViewAll)
+            SectionHeader(
+                title,
+                actionLabel = stringResource(Lang.subject_details_view_all),
+                onAction = onViewAll,
+                actionModifier = Modifier.focusRequester(viewAll).onFocusChanged { viewAllFocused = it.isFocused },
+            )
         } else {
             SectionHeader(title)
         }
-        TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
-            val item = items[i] ?: return@TvAnchoredStrip
-            itemContent(item, itemModifier)
+        if (nativeRow != null) {
+            Box(Modifier.ifThen(onViewAll != null) { tvHeaderActionFirst(viewAll, { viewAllFocused }) }) {
+                nativeRow()
+            }
+        } else {
+            TvAnchoredStrip(items.itemCount, itemSpacing = itemSpacing) { i, itemModifier ->
+                val item = items[i] ?: return@TvAnchoredStrip
+                itemContent(item, itemModifier)
+            }
         }
     }
 }
@@ -450,6 +482,10 @@ internal fun PersonCommentsSection(
     maxPreviewItems: Int = 3,
 ) {
     val comments = state.list.collectAsLazyPagingItemsWithLifecycle()
+    // 标题行右边的「N 条」夹在上一块 (出演作品等横滑行) 与评论之间, 上下键按几何挑不中它 (见 tvHeaderActionFirst):
+    // 从上面下来先落到它, 第一条评论按上回到它
+    val showAll = remember { FocusRequester() }
+    var showAllFocused by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(
             stringResource(Lang.person_details_comments),
@@ -457,6 +493,7 @@ internal fun PersonCommentsSection(
                 ?.let { stringResource(Lang.person_details_comments_count, remember(it) { groupThousands(it) }) }
                 ?: stringResource(Lang.subject_details_view_all),
             onAction = onShowAll,
+            actionModifier = Modifier.focusRequester(showAll).onFocusChanged { showAllFocused = it.isFocused },
         )
         val previewCount = minOf(comments.itemCount, maxPreviewItems)
         if (previewCount == 0) {
@@ -465,14 +502,23 @@ internal fun PersonCommentsSection(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        for (i in 0 until previewCount) {
-            val comment = comments[i] ?: continue
-            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            PersonCommentPreviewItem(
-                comment,
-                Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onShowAll),
-            )
+        } else {
+            Column(
+                Modifier.tvHeaderActionFirst(showAll, { showAllFocused }, upFromContent = false),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                for (i in 0 until previewCount) {
+                    val comment = comments[i] ?: continue
+                    if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    PersonCommentPreviewItem(
+                        comment,
+                        Modifier
+                            .ifThen(i == 0) { focusProperties { up = showAll } }
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable(onClick = onShowAll),
+                    )
+                }
+            }
         }
     }
 }
