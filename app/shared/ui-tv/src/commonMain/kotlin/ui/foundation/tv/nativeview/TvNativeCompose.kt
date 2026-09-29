@@ -20,8 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -64,10 +66,18 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 
 /**
+ * 原生页面里只为观感跑、不承载交互的循环动画 (跑马灯). 页面不在前台 ([LocalPageIsForeground]) 时由 [TvNativeHost] 暂停, 回前台恢复:
+ * 放大进来的详情页盖着列表页时, 列表页的视图仍附着, 这类动画不停就每帧失效, 整个窗口跟着逐帧重画.
+ */
+interface TvNativeAmbientAnimations {
+    fun setAmbientAnimationsPaused(paused: Boolean)
+}
+
+/**
  * 装原生页面的 AndroidView: 铺满, 再向左出血 [bleedLeft] (页面本身让开了收起的侧边栏, 横滑行要从侧边栏底下滑过、从屏幕左缘出屏).
  * 单独一层 graphicsLayer: 原生树每次失效只重录这一层 (里面就是一条画原生 RenderNode 的指令).
  * 视图只建一次 ([factory]), 主题 / 尺寸 / 数据的变化都走 [update], 焦点与滚动位置不因重组丢.
- * 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]).
+ * 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]), 页面实现了 [TvNativeAmbientAnimations] 的话环境动画同时暂停.
  */
 @Composable
 fun <T : View> TvNativeHost(
@@ -77,8 +87,16 @@ fun <T : View> TvNativeHost(
     modifier: Modifier = Modifier,
 ) {
     val foreground = LocalPageIsForeground.current
+    val ambient = remember { arrayOfNulls<TvNativeAmbientAnimations>(1) }
+    LaunchedEffect(foreground) {
+        snapshotFlow { foreground.value }.collect { ambient[0]?.setAmbientAnimationsPaused(!it) }
+    }
     AndroidView(
-        factory = { context -> TvNativeFocusGate(context, factory(context), foreground) },
+        factory = { context ->
+            val content = factory(context)
+            ambient[0] = content as? TvNativeAmbientAnimations
+            TvNativeFocusGate(context, content, foreground)
+        },
         modifier = modifier
             .fillMaxSize()
             .layout { measurable, constraints ->

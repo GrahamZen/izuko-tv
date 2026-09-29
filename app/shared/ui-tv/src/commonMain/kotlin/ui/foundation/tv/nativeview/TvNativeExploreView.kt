@@ -157,7 +157,7 @@ class TvNativeExploreView(
     heroTextStyle: TvNativeHeroTextStyle,
     buttonStyle: TvNativeHeroButtonStyle,
     headerStyle: TvNativeTextStyle,
-) : FrameLayout(context) {
+) : FrameLayout(context), TvNativeAmbientAnimations {
     var listener: TvNativeExploreListener? = null
 
     var style: TvNativeWallStyle = style
@@ -192,6 +192,10 @@ class TvNativeExploreView(
 
     private val timeline = TvNativeHeroTimeline { onTimeline() }
     private val scrollTracker = TvNativeScrollTracker { listener?.onScrollingChanged(it) }
+
+    override fun setAmbientAnimationsPaused(paused: Boolean) {
+        heroText.marqueePaused = paused
+    }
 
     // ---- 焦点簿记 ----
     /** 上次聚焦的行 (null = 焦点在 hero 按钮上, 或从未进过卡片区). 焦点去侧边栏时不清. */
