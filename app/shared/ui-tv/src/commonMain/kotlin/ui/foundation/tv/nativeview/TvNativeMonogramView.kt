@@ -514,8 +514,8 @@ class TvNativeMonogramAdapter(
  * 上下键不管. 占位时 (数据没到) 左右键也吞掉: 焦点停在第一格等数据.
  *
  * 长按连发按 [repeatMillis] (Compose 版同一个上限, 调用方给). 行外左右各多排三格: 圆头像格步距小、连发快, 平滑滚动落后焦点两格多
- * (临界阻尼 spring 追匀速目标落后 2v / ω: 1080p 上每秒 20 格 × 300px, ω = √260), 这段都得排着. 行里第一次有焦点时才多排:
- * 详情页建人物页那一帧只排屏上那几格 (建卡、绑定都在那一帧里), 连发总在拿到焦点之后.
+ * (临界阻尼 spring 追匀速目标落后 2v / ω: 1080p 上每秒 20 格 × 300px, ω = √260), 这段都得排着. 行里有焦点之后才多排
+ * (见 TvNativeStripView 的 aheadLayoutPx): 详情页建人物页那一帧只排屏上那几格.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeMonogramRowView(
@@ -536,21 +536,13 @@ class TvNativeMonogramRowView(
     endPx = endPx,
     topPx = topPx,
     bottomPx = bottomPx,
+    aheadLayoutPx = style.stepPx * 3,
 ) {
     val cells = TvNativeMonogramAdapter(style, sketch)
-    private var aheadLaidOut = false
 
     init {
         startLeftExits = false
         adapter = cells
-    }
-
-    override fun requestChildFocus(child: View?, focused: View?) {
-        super.requestChildFocus(child, focused)
-        if (!aheadLaidOut) {
-            aheadLaidOut = true
-            setExtraLayoutSpace(style.stepPx * 3)
-        }
     }
 
     override fun canMoveTo(index: Int): Boolean = !cells.loading

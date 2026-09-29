@@ -115,6 +115,7 @@ class MainActivity : AniComponentActivity() {
         TvPolishFlags.zoomScrimT = intent.getFloatExtra("ani_polish_zoom_scrim_t", TvPolishFlags.zoomScrimT)
         TvPolishFlags.shrinkScrimT = intent.getFloatExtra("ani_polish_shrink_scrim_t", TvPolishFlags.shrinkScrimT)
         TvPolishFlags.zoomSoftEdge = intent.getBooleanExtra("ani_polish_zoom_soft_edge", TvPolishFlags.zoomSoftEdge)
+        TvPolishFlags.pagerSkipOffscreen = intent.getBooleanExtra("ani_polish_pager_skip_offscreen", TvPolishFlags.pagerSkipOffscreen)
         val data = intent.data ?: return
         if (data.scheme != "ani") return
         if (data.host == "bangumi-oauth-callback") {

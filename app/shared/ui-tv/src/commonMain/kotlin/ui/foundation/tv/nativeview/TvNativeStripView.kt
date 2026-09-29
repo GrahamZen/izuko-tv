@@ -39,21 +39,27 @@ import kotlin.math.abs
  *   没排出来就只能走 leanback 的 setSelectedPositionSmooth —— 它先掐掉在走的 spring, 再按每英寸 25ms 找过去、到了急刹, 长按时看着是
  *   一下平滑一下瞬移. 要多宽看连发多快: 平滑滚动跟不上焦点的那段落差 (临界阻尼 spring 追匀速目标, 落后 2v / ω) 都得排着.
  * @param prefetchItems 被外层列表预取时一起预取几张.
+ * @param aheadLayoutPx 行里有焦点之后才在 [extraLayoutPx] 之外再多排的宽度 (单独成行的详情页各行: 建行那一帧只排屏上那几张).
+ *   拿到焦点那一下常常是详情页换页的第一帧, 多排的建卡、绑定等 [TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS] 再做 (焦点那时还在行里才做);
+ *   等不到就在第一次按左右键时当场排, 长按连发总在这之后.
  */
 @SuppressLint("ViewConstructor")
 abstract class TvNativeStripView(
     context: Context,
     private val stepPx: Int,
     spacingPx: Int,
-    extraLayoutPx: Int,
+    private val extraLayoutPx: Int,
     prefetchItems: Int,
     startPx: Int,
     endPx: Int,
     topPx: Int,
     bottomPx: Int,
+    private val aheadLayoutPx: Int = 0,
 ) : HorizontalGridView(context) {
     private val scroll = TvNativeSpringScroll()
     private var lastRepeatMove = 0L
+    private var aheadLaidOut = aheadLayoutPx <= 0
+    private val layoutAheadWhileFocused = Runnable { if (hasFocus()) layoutAhead() }
 
     /** 动画滚动 (视觉效果流畅档关: 一步到位). */
     var animatedScroll: Boolean
@@ -122,6 +128,27 @@ abstract class TvNativeStripView(
         super.onAttachedToWindow()
         // 回收缓存里拿回来的行: 离屏那一刻 (RecyclerView 摘下时停掉滚动) 可能停在半路
         post { alignWhenIdle() }
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(layoutAheadWhileFocused)
+        super.onDetachedFromWindow()
+    }
+
+    override fun requestChildFocus(child: View?, focused: View?) {
+        super.requestChildFocus(child, focused)
+        if (!aheadLaidOut) {
+            removeCallbacks(layoutAheadWhileFocused)
+            postDelayed(layoutAheadWhileFocused, TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS)
+        }
+    }
+
+    /** 两侧多排 [aheadLayoutPx] (见类说明). */
+    private fun layoutAhead() {
+        if (aheadLaidOut) return
+        aheadLaidOut = true
+        removeCallbacks(layoutAheadWhileFocused)
+        setExtraLayoutSpace(extraLayoutPx + aheadLayoutPx)
     }
 
     /**
@@ -286,6 +313,8 @@ abstract class TvNativeStripView(
             return super.dispatchKeyEvent(event)
         }
         val focused = focusedChild ?: return super.dispatchKeyEvent(event)
+        // 长按连发要两侧排好 (见 aheadLayoutPx): 还没到延时就在第一次按左右键时排
+        layoutAhead()
         val index = getChildAdapterPosition(focused)
         // 焦点所在的卡正被换掉 (数据刷新途中): 这一下吞掉, 不交给系统找焦点
         if (index == NO_POSITION) return true
@@ -304,3 +333,6 @@ abstract class TvNativeStripView(
         return true
     }
 }
+
+/** 行里有焦点之后等这么久再两侧多排 (见 [TvNativeStripView] 的 aheadLayoutPx): 比详情页换页过渡 (360ms) 略长, 建卡、绑定落在过渡之后. */
+internal const val TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS = 450L

@@ -1881,9 +1881,13 @@ private fun FocusEpisodeInfoRow(
     horizontalPadding: Dp,
     endPadding: Dp,
 ) {
-    val displayed = episodes.firstOrNull { it.episodeId == (focusedEpisodeId() ?: currentEpisodeId) }
-        ?: episodes.firstOrNull()
-        ?: return
+    // 派生状态: 展示的集真变了才重组本行. 焦点刚进轮播时 (详情页翻进选集页) 聚焦集多半就是当前集, 本行不必动
+    val displayedState = remember(episodes, currentEpisodeId, focusedEpisodeId) {
+        derivedStateOf {
+            episodes.firstOrNull { it.episodeId == (focusedEpisodeId() ?: currentEpisodeId) } ?: episodes.firstOrNull()
+        }
+    }
+    val displayed = displayedState.value ?: return
     // 流畅档直接换字 (见 tvContentSwapAnimated); 滚动隐藏本身不分档
     val fade = tvScrollHiddenTextEnabled() && tvContentSwapAnimated()
     AnimatedContent(
