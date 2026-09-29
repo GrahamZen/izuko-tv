@@ -13,6 +13,8 @@ import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.PersonCareer
 import me.him188.ani.app.data.models.subject.PersonInfo
 import me.him188.ani.app.data.models.subject.PersonType
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCharacterCast
+import me.him188.ani.datasources.bangumi.next.models.BangumiNextCharacterCastType
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimCharacter
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimPerson
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubjectCharacter
@@ -61,7 +63,30 @@ internal fun BangumiNextSlimCharacter.toCharacterInfo(actors: List<PersonInfo>):
 )
 
 internal fun BangumiNextSubjectCharacter.toCharacterInfo(): CharacterInfo =
-    character.toCharacterInfo(casts.map { it.person.toPersonInfo() })
+    character.toCharacterInfo(casts.sortedByOriginalCast().map { it.person.toPersonInfo() })
+
+/**
+ * 一个角色的配音按「原版优先」排, 排第一的就是界面上写的那一位 (角色格下面那行、人物卡、播放器的角色面板).
+ *
+ * Bangumi 把**作品原语种**的配音标成 CV: 日本动画是日语声优, 国产动画是中文声优, 欧美动画是英语演员; 其他语种标成中配 / 日配 /
+ * 英配等 (2026-09-28 查过孤独摇滚、罗小黑战记、魔道祖师、天官赐福、双城之战). 所以原版优先就是各国作品按自己的原语种优先.
+ * 接口给的先后没有意义: 同一个条目分页参数不同 (limit 8 / 100), 同一个角色的配音顺序就不一样.
+ *
+ * 原版没有记录的角色 (双城之战的杰斯只录了日配和中配) 才用配音: 先中配 (国内平台上多半听到的是它), 再日配, 再其他.
+ * 同一档里保持接口给的先后.
+ */
+internal fun List<BangumiNextCharacterCast>.sortedByOriginalCast(): List<BangumiNextCharacterCast> =
+    sortedBy { it.relation.originalCastRank() }
+
+private fun BangumiNextCharacterCastType.originalCastRank(): Int = when (this) {
+    BangumiNextCharacterCastType.CV -> 0
+    BangumiNextCharacterCastType.Actor -> 1
+    BangumiNextCharacterCastType.ChineseDub -> 2
+    BangumiNextCharacterCastType.JapaneseDub -> 3
+    BangumiNextCharacterCastType.Dub -> 4
+    BangumiNextCharacterCastType.EnglishDub -> 5
+    BangumiNextCharacterCastType.KoreanDub -> 6
+}
 
 fun String?.orBangumiPlaceholder(): String =
     if (isNullOrBlank()) BANGUMI_NO_ICON_IMAGE else this
