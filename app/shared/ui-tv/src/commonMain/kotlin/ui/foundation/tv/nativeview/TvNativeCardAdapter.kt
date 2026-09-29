@@ -181,26 +181,46 @@ private val TV_NATIVE_PLACEHOLDER_CARD = TvNativeCard(imageUrl = null, title = "
 /**
  * 确定键的长按判定 (参数同 tvLongPressKey): 按下后再来够 [LONG_PRESS_KEY_DOWN_COUNT] 次按下 (自动重复) 且按住满 [LONG_PRESS_MIN_HOLD] 就当场触发长按,
  * 之后到抬起的确定键全部吞掉 (不再算点击); 没到阈值就抬起 = 点击. 返回 true = 这次按键已处理.
+ *
+ * 只认从本视图起手的手势 (同 tvLongPressKey): 没见过这次按下就收到的连发 (别处的长按把焦点送过来时还没松开的那次按住) 吞掉不计数;
+ * 失焦时调 [reset]. 按压态 (View.isPressed) 从按下到首个连发 —— "按下即缩小、到阈值弹回"的反馈读它, 弹回那一刻正好是长按触发.
  */
 internal class TvNativeConfirmKey {
     private var downAt = -1L
     private var downCount = 0
     private var fired = false
 
+    /**
+     * 长按的触发闸门 (同 tvLongPressKey 的 readyToFire): 返回 false 时先不触发, 下一发连发再问; 计时照常从按下算.
+     * 按下那一刻闸门就关着的那次按住不出按压态 (目标还在赶路, 缩放反馈跟不上位置). null = 不设闸.
+     */
+    var readyToFire: (() -> Boolean)? = null
+
+    /** 放掉这次按住 (失焦时调): 之后同一次按住的连发与抬起都不再算. */
+    fun reset() {
+        downAt = -1
+        downCount = 0
+        fired = false
+    }
+
     fun onKey(view: View, event: KeyEvent, onLongPress: (() -> Unit)?): Boolean {
         if (!tvNativeIsConfirmKey(event.keyCode)) return false
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
+                val ready = readyToFire?.invoke() ?: true
                 if (event.repeatCount == 0) {
                     downAt = SystemClock.uptimeMillis()
                     downCount = 1
                     fired = false
-                    view.isPressed = true
-                } else {
+                    view.isPressed = ready
+                } else if (downAt >= 0) {
                     downCount++
+                    if (downCount >= LONG_PRESS_KEY_DOWN_COUNT) view.isPressed = false
+                } else {
+                    return true
                 }
                 if (!fired && onLongPress != null && downCount >= LONG_PRESS_KEY_DOWN_COUNT &&
-                    SystemClock.uptimeMillis() - downAt >= LONG_PRESS_MIN_HOLD.inWholeMilliseconds
+                    SystemClock.uptimeMillis() - downAt >= LONG_PRESS_MIN_HOLD.inWholeMilliseconds && ready
                 ) {
                     fired = true
                     view.isPressed = false

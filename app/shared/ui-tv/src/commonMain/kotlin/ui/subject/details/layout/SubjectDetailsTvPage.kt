@@ -242,6 +242,7 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
@@ -1581,6 +1582,8 @@ fun SubjectDetailsTvPage(
                 upFocus = anchors.episodesSummary.takeIf { summaryExpandPresent },
                 // 不再有"选集"标题行: 该位置改放聚焦集的小标题 (见 FocusEpisodeCarousel),
                 // "看过/全X话"连载进度与 Hero 重复已去掉
+                // 卡片行换原生 View (轮播的其余部分照旧是 Compose)
+                rowContent = { TvNativeEpisodeRow(it) },
             )
             }
             }

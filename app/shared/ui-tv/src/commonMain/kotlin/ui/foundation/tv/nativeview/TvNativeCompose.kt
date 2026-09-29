@@ -115,7 +115,8 @@ fun <T : View> TvNativeHost(
 
 /**
  * 装一条原生卡片行的 AndroidView (详情页那种夹在 Compose 内容中间的行): 布局上只占 [height] 高, 视图本身上下各多出 [bleedVertical]
- * (聚焦卡放大、投影伸出行外, 装它的 AndroidView 会按自己的边界裁掉子视图), 宽度铺满. 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]).
+ * (聚焦卡放大、投影伸出行外, 装它的 AndroidView 会按自己的边界裁掉子视图), 宽度铺满. 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]),
+ * 行实现了 [TvNativeAmbientAnimations] 的话环境动画同时暂停 (同 [TvNativeHost]).
  */
 @Composable
 fun <T : View> TvNativeRowHost(
@@ -126,9 +127,15 @@ fun <T : View> TvNativeRowHost(
     modifier: Modifier = Modifier,
 ) {
     val foreground = LocalPageIsForeground.current
+    val ambient = remember { arrayOfNulls<TvNativeAmbientAnimations>(1) }
+    LaunchedEffect(foreground) {
+        snapshotFlow { foreground.value }.collect { ambient[0]?.setAmbientAnimationsPaused(!it) }
+    }
     AndroidView(
         factory = { context ->
-            TvNativeFocusGate(context, factory(context), foreground).also { gate ->
+            val content = factory(context)
+            ambient[0] = content as? TvNativeAmbientAnimations
+            TvNativeFocusGate(context, content, foreground).also { gate ->
                 // 装它的那层 (AndroidViewHolder) 默认按边界裁子视图; 出血靠布局给大, 这里只是保险
                 gate.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {

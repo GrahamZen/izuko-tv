@@ -51,6 +51,7 @@ import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
@@ -396,6 +397,8 @@ internal fun TvPlayerEpisodeStrip(
                 // 卡片浮在视频画面上, 与进度条旁的胶囊按钮同一套黑白配色 (聚焦即白底黑字)
                 monochrome = true,
                 rowFocusModifier = rowFocusModifier,
+                // 卡片行换原生 View (同详情页选集轮播)
+                rowContent = { TvNativeEpisodeRow(it) },
             )
         }
     }

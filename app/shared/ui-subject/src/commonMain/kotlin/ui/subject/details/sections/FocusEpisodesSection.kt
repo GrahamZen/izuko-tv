@@ -70,6 +70,7 @@ import me.him188.ani.app.ui.lang.subject_details_no_summary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -88,6 +89,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -279,6 +285,11 @@ fun FocusEpisodeCarousel(
     rowFocusRequester: FocusRequester? = null,
     /** 直接挂到卡片行焦点组的额外修饰符 (页面级事件焦点锚点用). */
     rowFocusModifier: Modifier = Modifier,
+    /**
+     * 卡片行 (连同固定锚位聚焦框) 换一种实现: 给了就把 [FocusEpisodeRowSpec] 交给它画, 不组合 LazyRow. 电视端传原生 View 的行
+     * (ui-tv 的 TvNativeEpisodeRow); null = LazyRow. 数据、落点、送焦通道、信息行与长按弹窗两种实现共用本函数里这一份.
+     */
+    rowContent: (@Composable (FocusEpisodeRowSpec) -> Unit)? = null,
 ) {
     // 进入选集区时记一行"数据侧到手了多少": 剧照不显示时, 这一行把两种完全不同的病分开 ——
     // stills=0 是数据侧 (URL 表空/解析失败), stills=N 却整屏无图就是显示侧 (解码/转场).
@@ -359,8 +370,11 @@ fun FocusEpisodeCarousel(
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = landingIndex.coerceAtLeast(0),
     )
-    // 吸附滚动登记进页面级信号 (TV 详情页装了, 手机布局/播放器选集条没装 = 无操作), 见 TvScrollActivity
-    ReportTvScrollActivity(listState)
+    // 自定义卡片行 (见 rowContent) 的指令口: 焦点不在卡片上时的滚动与送焦经它下给行; LazyRow 那条路不用
+    val rowController = remember { FocusEpisodeRowController() }
+    // 吸附滚动登记进页面级信号 (TV 详情页装了, 手机布局/播放器选集条没装 = 无操作), 见 TvScrollActivity.
+    // 自定义卡片行自己登记
+    if (rowContent == null) ReportTvScrollActivity(listState)
     // 停靠一律 scrollToItem(index, 0): 每张卡 (含首卡) 停靠后左边缘都在 horizontalPadding,
     // 聚焦框恒定不动; 非首卡停靠时上一张卡在屏幕左缘自然露出 horizontalPadding - cellSpacing
     // 宽的切边. 详情页与播放器选集条完全同一套几何, 没有任何按调用方分叉的停靠逻辑.
@@ -384,7 +398,7 @@ fun FocusEpisodeCarousel(
     // [focusedEpisodeId] 只在效应体内读, 不作 key, 不会让本函数 body 订阅热状态
     LaunchedEffect(landingIndex) {
         if (landingIndex >= 0 && focusedEpisodeId == null) {
-            listState.scrollToItem(landingIndex)
+            if (rowContent == null) listState.scrollToItem(landingIndex) else rowController.scrollTo(landingIndex, animated = false)
         }
     }
 
@@ -409,8 +423,12 @@ fun FocusEpisodeCarousel(
         focusedEpisodeId = target
         // 目标卡不在视口里就先跳到位, 让它进入组合 (远距离 reveal); 已经在组合里的
         // (换集跟焦的常态 = 相邻那张) 不瞬移, 聚焦后交给 pivot 吸附平滑滑过去
-        if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
-            listState.scrollToItem(index)
+        if (rowContent == null) {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                listState.scrollToItem(index)
+            }
+        } else if (!rowController.isOnScreen(index)) {
+            rowController.scrollTo(index, animated = false)
         }
         // 独立窗口 (长按弹窗) 关闭后必须先等宿主窗口真正回焦, 否则焦点事务会被拒;
         // 其余入口窗口本来就有焦点, 这一句立即返回
@@ -423,7 +441,8 @@ fun FocusEpisodeCarousel(
             // 用户自己按了方向/确认键: 焦点归他, 立刻收手 (框架同一条规矩)
             if (focusScope.userNavGeneration != generation) return@LaunchedEffect
             if (activeFocusEpisodeId == target) return@LaunchedEffect
-            runCatching { restoreFocus.requestFocus() }
+            // 自定义卡片行直接给那张卡送焦: 焦点已在行里别的卡上时 (换集跟焦), 对整行 requestFocus 是空操作
+            if (rowContent == null) runCatching { restoreFocus.requestFocus() } else rowController.focusCard(index)
         }
     }
 
@@ -441,7 +460,11 @@ fun FocusEpisodeCarousel(
         val target = index + delta
         if (target !in episodes.indices) return@moveDisplayed
         focusedEpisodeId = episodes[target].episodeId
-        scope.launch { scrollAnimator.animateScrollToItem(listState, target) }
+        if (rowContent == null) {
+            scope.launch { scrollAnimator.animateScrollToItem(listState, target) }
+        } else {
+            rowController.scrollTo(target, animated = true)
+        }
     }
 
     // 跳到指定集 (选集网格菜单关闭后): 滚动与聚焦都交给上面那条唯一的送焦通道.
@@ -548,7 +571,11 @@ fun FocusEpisodeCarousel(
                             val nextEpisode = episodes[next]
                             actionTarget = nextEpisode
                             focusedEpisodeId = nextEpisode.episodeId
-                            scope.launch { scrollAnimator.animateScrollToItem(listState, next) }
+                            if (rowContent == null) {
+                                scope.launch { scrollAnimator.animateScrollToItem(listState, next) }
+                            } else {
+                                rowController.scrollTo(next, animated = true)
+                            }
                         }
                     },
                     background = stillBackground,
@@ -629,6 +656,49 @@ fun FocusEpisodeCarousel(
         //
         // 焦点没在卡片上的两条路 (简介块左右键 / 数据到达后对齐当前集) 仍显式滚动, 见
         // moveDisplayedBy 与上面的 LaunchedEffect(currentIndex).
+        if (rowContent != null) {
+            rowContent(
+                FocusEpisodeRowSpec(
+                    episodes = episodes,
+                    currentEpisodeId = currentEpisodeId,
+                    episodeStills = episodeStills,
+                    playProgress = playProgress,
+                    cellWidth = cellWidth,
+                    cellHeight = cellHeight,
+                    cellSpacing = cellSpacing,
+                    horizontalPadding = horizontalPadding,
+                    monochrome = monochrome,
+                    glass = glass,
+                    longPressEnabled = onSetEpisodeCollectionType != null,
+                    entryIndex = { fallbackIndexState.value },
+                    dimPivotIndex = { dimPivotIndex },
+                    cardAlpha = cardAlpha,
+                    anchorCountdown = anchorCountdown,
+                    modifier = Modifier
+                        .then(rowFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                        .then(rowFocusModifier)
+                        .then(episodeRowVerticalKeys(upFocus, downFocus)),
+                    controller = rowController,
+                    // 同 LazyRow 那条路里卡片的 onFocusChanged
+                    onCardFocused = { index ->
+                        episodes.getOrNull(index)?.let { item ->
+                            focusedEpisodeId = item.episodeId
+                            activeFocusEpisodeId = item.episodeId
+                            dimPivotIndex = index
+                        }
+                    },
+                    onCardFocusLost = { index ->
+                        val id = episodes.getOrNull(index)?.episodeId
+                        if (id != null && activeFocusEpisodeId == id) activeFocusEpisodeId = null
+                    },
+                    onClick = { index -> episodes.getOrNull(index)?.let(onEpisodeClick) },
+                    onLongClick = { index ->
+                        if (onSetEpisodeCollectionType != null) episodes.getOrNull(index)?.let { actionTarget = it }
+                    },
+                ),
+            )
+            return@Column
+        }
         val density = LocalDensity.current
         // 锚位 = 停靠位, 无需补偏差: 卡片的可聚焦节点就是卡片外框本身 (聚焦框是行层的
         // overlay, 向外探出而不内缩卡片), 焦点目标矩形与卡片外框一致
@@ -831,10 +901,27 @@ private fun FocusEpisodeAnchorRing(
 }
 
 /**
- * 按住确认键时卡片与固定聚焦框的缩放比例 ("缩下去又弹回来"= 长按已触发).
- * 两者必须同值同曲线, 否则按住时框与卡脱开一圈.
+ * 自定义卡片行 (见 [FocusEpisodeRowSpec]) 的上 / 下键固定去向: LazyRow 那条路挂在每张卡的 focusProperties 上, 自定义行里的卡不是
+ * Compose 焦点节点, 改在装行的节点上按键预览接住. 没给目标的方向照常往下传 (交给页面).
  */
-private const val EPISODE_CARD_PRESS_SCALE = 0.94f
+private fun episodeRowVerticalKeys(upFocus: FocusRequester?, downFocus: FocusRequester?): Modifier {
+    if (upFocus == null && downFocus == null) return Modifier
+    return Modifier.onPreviewKeyEvent { event ->
+        val target = when (event.key) {
+            Key.DirectionUp -> upFocus
+            Key.DirectionDown -> downFocus
+            else -> null
+        } ?: return@onPreviewKeyEvent false
+        if (event.type == KeyEventType.KeyDown) runCatching { target.requestFocus() }
+        true
+    }
+}
+
+/**
+ * 按住确认键时卡片与固定聚焦框的缩放比例 ("缩下去又弹回来"= 长按已触发).
+ * 两者必须同值同曲线, 否则按住时框与卡脱开一圈. 电视端原生选集行 (ui-tv 的 TvNativeEpisodeRow) 用同一个值.
+ */
+const val EPISODE_CARD_PRESS_SCALE = 0.94f
 
 /**
  * 送焦到某一集的卡 (轮播里唯一那条送焦通道) 的按帧重试次数.
@@ -880,10 +967,10 @@ private const val FOCUS_EPISODE_REQUEST_FRAMES = 8
  * 声明必须在进度条那几个常量**之前**: 顶层 val 的初始化器不能前向引用 (编译期报
  * "must be initialized"), 而 [EPISODE_PROGRESS_BAR_SIDE_INSET] 就是按它算的.
  */
-internal val EPISODE_CARD_CORNER = 6.dp
+val EPISODE_CARD_CORNER = 6.dp
 
 /** 进度条厚度 (Prime 实测 3dp). */
-private val EPISODE_PROGRESS_BAR_HEIGHT = 3.dp
+val EPISODE_PROGRESS_BAR_HEIGHT = 3.dp
 
 /**
  * 进度条左右内缩 = **卡片圆角半径** [EPISODE_CARD_CORNER], 于是条长恰好是底边的直线段长度
@@ -892,7 +979,7 @@ private val EPISODE_PROGRESS_BAR_HEIGHT = 3.dp
  * 竖版卡 (`TV_CARD_PROGRESS_BAR_INSET`) 用同一条规则 —— 两种卡宽度差一倍, 绝对值不可能同时
  * 成立, 而"内缩取圆角半径"顺带保证条永远不会被圆角啃掉 (圆角的横向内切量最大值就是半径).
  */
-private val EPISODE_PROGRESS_BAR_SIDE_INSET = EPISODE_CARD_CORNER
+val EPISODE_PROGRESS_BAR_SIDE_INSET = EPISODE_CARD_CORNER
 
 /**
  * 进度条下缘距卡底 —— **整条底部组一起上下移的那个数值**, 文字位置由它推出, 调它就够.
@@ -904,7 +991,7 @@ private val EPISODE_PROGRESS_BAR_SIDE_INSET = EPISODE_CARD_CORNER
  * - **实测 1.5dp 太贴**: 描边内缘只在卡片轮廓外 0.25dp (见 [TvFocusRing.Gap]), 真机上条与描边
  *   看着连成一体. Prime 能贴底是因为它描边更淡、卡片圆角也更大. 现取 5dp (真机调出来的).
  */
-private val EPISODE_PROGRESS_BOTTOM_INSET = 5.dp
+val EPISODE_PROGRESS_BOTTOM_INSET = 5.dp
 
 /**
  * 文字盒底缘到进度条顶缘的**几何**间距 —— "字压在条上"就调大这一个.
@@ -928,7 +1015,7 @@ private val EPISODE_TEXT_TO_BAR_GAP = 0.dp
  * 纯文字态那一档 (无图卡) 的内容是**顶对齐**的 Column (竖向 12dp), 不受进度条存亡影响;
  * 但它的**横向**与本档共用 [EPISODE_IMAGE_TEXT_SIDE_PADDING], 见那里.
  */
-private val EPISODE_IMAGE_TEXT_BOTTOM_PADDING =
+val EPISODE_IMAGE_TEXT_BOTTOM_PADDING =
     EPISODE_PROGRESS_BOTTOM_INSET + EPISODE_PROGRESS_BAR_HEIGHT + EPISODE_TEXT_TO_BAR_GAP
 
 /**
@@ -938,7 +1025,7 @@ private val EPISODE_IMAGE_TEXT_BOTTOM_PADDING =
  * 必须写成减法而不是"某几个量相加": 之前写的是 `INSET + BAR_HEIGHT`, 只让出了 [EPISODE_TEXT_TO_BAR_GAP]
  * 那点空隙, 一旦把该间距手调成 0, 两档就塌成同一个值 —— 表现就是"没进度条的字跟有进度条的一样高".
  */
-private val EPISODE_TEXT_BOTTOM_PADDING_NO_BAR =
+val EPISODE_TEXT_BOTTOM_PADDING_NO_BAR =
     EPISODE_IMAGE_TEXT_BOTTOM_PADDING - EPISODE_PROGRESS_BAR_HEIGHT - EPISODE_TEXT_TO_BAR_GAP
 
 /**
@@ -952,14 +1039,14 @@ private val EPISODE_TEXT_BOTTOM_PADDING_NO_BAR =
  * 图标声明一条位于"墨迹中心下方半个 cap height"的对齐线, 与集号的 FirstBaseline 对齐, 于是
  * 图标墨迹中心恒等于 `基线 − cap height / 2` = 数字的视觉中心, 与行高/字号缩放无关.
  */
-private const val EPISODE_SORT_CAP_HEIGHT_FRACTION = 0.71f
+const val EPISODE_SORT_CAP_HEIGHT_FRACTION = 0.71f
 
 /**
  * **行首图标相对集号的竖向微调 (手调)** —— 正=图标下移, 负=上移, 0 = 纯按上面那条几何对齐.
  *
  * 只在真机上仍看得出偏差时才动它 (三角是实心块、数字是笔画, 观感重心可能与几何中心差一点点).
  */
-private val EPISODE_LEADING_ICON_NUDGE = 0.dp
+val EPISODE_LEADING_ICON_NUDGE = 0.dp
 
 /**
  * **无图 (纯文字态) 选集卡文字的上边距 (手调)** —— 调小=字更贴卡片上缘.
@@ -973,7 +1060,7 @@ private val EPISODE_LEADING_ICON_NUDGE = 0.dp
  *
  * 只管纯文字态: 有图态的文字是底部对齐、压在 scrim 上, 顶部由 8dp 固定, 与本值无关.
  */
-private val EPISODE_TEXT_CARD_TOP_PADDING = 5.dp
+val EPISODE_TEXT_CARD_TOP_PADDING = 5.dp
 
 /**
  * **文字盒左缘相对进度条左端的偏移** —— 想让文字比条更靠右就调大, 更靠左给负值 (条的左端由
@@ -992,10 +1079,10 @@ private val EPISODE_TEXT_LEFT_OFFSET_FROM_BAR = -3.dp
  * 与"没三角的卡", **墨迹左线**差出 17dp × 8/24 ≈ 5.7dp. 整行左移是补不对的 (那会把没三角的
  * 一起拖左), 只能按状态补差值, 见 `FocusEpisodeCard` 里的 `leadingInkInset`.
  */
-private const val PLAY_ICON_INK_LEFT_FRACTION = 8f / 24f
+const val PLAY_ICON_INK_LEFT_FRACTION = 8f / 24f
 
 /** 同上, `GraphicEq`(正在播放的未聚焦卡) 的图形从 24 视口的 x=3 起. */
-private const val PLAYING_ICON_INK_LEFT_FRACTION = 3f / 24f
+const val PLAYING_ICON_INK_LEFT_FRACTION = 3f / 24f
 
 /**
  * 卡片文字的左右内边距 = 条左端 + [EPISODE_TEXT_LEFT_OFFSET_FROM_BAR].
@@ -1006,17 +1093,17 @@ private const val PLAYING_ICON_INK_LEFT_FRACTION = 3f / 24f
  * **有图态与纯文字态共用**: 同一条轮播里两种卡混排 (有的集有剧照有的没有), 各用一套横向内边距
  * 就会出现"左缘随卡片跳"; 两者的进度条本来就是同一个组件、左端在同一条线上.
  */
-private val EPISODE_IMAGE_TEXT_SIDE_PADDING =
+val EPISODE_IMAGE_TEXT_SIDE_PADDING =
     EPISODE_PROGRESS_BAR_SIDE_INSET + EPISODE_TEXT_LEFT_OFFSET_FROM_BAR
 
 /**
  * 聚焦卡左侧卡片的压暗亮度 (Prime Video 逐帧实测约四成亮): 左侧切边是"已经过去的内容",
  * 压暗与聚焦卡拉开主次; 离场卡滑进暗区时随 [EPISODE_DIM_FADE_MILLIS] 渐暗.
  */
-private const val EPISODE_PAST_CARD_DIM_ALPHA = 0.45f
+const val EPISODE_PAST_CARD_DIM_ALPHA = 0.45f
 
 /** 左侧压暗的渐变时长 (与单格滚动 260ms 大致同步, 边滑边暗). */
-private const val EPISODE_DIM_FADE_MILLIS = 200
+const val EPISODE_DIM_FADE_MILLIS = 200
 
 // 聚焦框盒相对卡片轮廓向外探出的量 (框圆角 = 卡片圆角 + 此值) 用 [TvFocusRing.Gap],
 // 全仓一份. 本文件的进度条几何按它算, 见 [EPISODE_PROGRESS_BOTTOM_INSET] 一带的说明.
@@ -1027,11 +1114,11 @@ private const val EPISODE_DIM_FADE_MILLIS = 200
  * 比同页标签/按钮那档 ([GLASS_CONTAINER_ALPHA]) 略浓: 卡片面积大得多, 太淡就跟背景糊在一起,
  * 一排卡片看不出边界. 看过的再减一档, 与不透明那套里 `surfaceContainerLow` 的"退到后面"同义.
  */
-private const val GLASS_CARD_ALPHA = 0.14f
-private const val GLASS_CARD_WATCHED_ALPHA = 0.07f
+const val GLASS_CARD_ALPHA = 0.14f
+const val GLASS_CARD_WATCHED_ALPHA = 0.07f
 
 /** 玻璃态"正在播放"卡片的底色不透明度: 比墨色档高, 主色调要压得住背景图才认得出是在播的那集. */
-private const val GLASS_CARD_PLAYING_ALPHA = 0.55f
+const val GLASS_CARD_PLAYING_ALPHA = 0.55f
 
 
 /** 剧照宽高比 (TMDB still 均为 16:9), 也是本集详情弹窗的面板比例. */
@@ -1088,6 +1175,100 @@ val DETAILS_TEXT_CONTENT_PADDING = 8.dp
 val DETAILS_TEXT_END_RESERVE = 88.dp
 
 /**
+ * 行首播放三角 / 声浪图标的尺寸: 用 sp (跟随字体缩放), 并按矢量内部留白补偿, 使可见图形高度 ≈ 集号数字 (titleSmall 14sp) 的大写高度
+ * ~10sp —— PlayArrow 三角占 24 视口的 14 (58%) → 17sp; GraphicEq 占 16/24 (67%) → 15sp.
+ */
+val EPISODE_PLAY_ICON_SIZE = 17.sp
+val EPISODE_PLAYING_ICON_SIZE = 15.sp
+
+/** 卡内文字行里各元素之间、无图态两行之间的间距. */
+val EPISODE_CARD_TEXT_GAP = 4.dp
+
+/** 有图态压在 scrim 上的集名不透明度 (集号与行首图标纯白). */
+const val EPISODE_IMAGE_NAME_ALPHA = 0.85f
+
+/** 有图态进度条轨道 (白) 的不透明度. */
+const val EPISODE_IMAGE_TRACK_ALPHA = 0.3f
+
+/** 剧照底部的 scrim: 从卡高的这个比例处全透明, 渐变到卡底 [EPISODE_STILL_SCRIM_ALPHA] 的黑, 保证集号 / 集名可读. */
+const val EPISODE_STILL_SCRIM_START = 0.5f
+const val EPISODE_STILL_SCRIM_ALPHA = 0.85f
+
+/**
+ * 选集卡随集的状态变的那几种颜色 ([focusEpisodeCardColors]), [FocusEpisodeCard] 与电视端原生选集卡 (ui-tv 的 TvNativeEpisodeRow) 共用.
+ *
+ * @property container 卡片底色 (有图时垫在图下).
+ * @property sort 无图态的集号与行首图标色 (有图态一律白, 压在 scrim 上).
+ * @property name 无图态的集名色 (有图态见 [EPISODE_IMAGE_NAME_ALPHA]).
+ * @property progress 进度条填充色 (两态相同).
+ * @property track 无图态的进度条轨道色 (有图态见 [EPISODE_IMAGE_TRACK_ALPHA]).
+ */
+@Immutable
+class FocusEpisodeCardColors(
+    val container: Color,
+    val sort: Color,
+    val name: Color,
+    val progress: Color,
+    val track: Color,
+)
+
+/**
+ * 选集卡的配色. [monochrome] / [glass] 见 [FocusEpisodeCard] 的同名参数; 集号在"其余"一档用调用处的 [LocalContentColor]
+ * (卡片外的内容色, 不是卡片 Surface 给的).
+ */
+@Composable
+fun focusEpisodeCardColors(isPlaying: Boolean, isWatched: Boolean, monochrome: Boolean, glass: Boolean): FocusEpisodeCardColors {
+    val colorScheme = MaterialTheme.colorScheme
+    val container = when {
+        // 黑白态: 底一律半透明白 (与胶囊按钮同一档 alpha).
+        // **聚焦不改底色**: 焦点由固定锚位的描边框表达. 早先聚焦即实心白, 而那层白跟着卡片滚、
+        // 框却钉在锚位 —— 滚动期间两个焦点指示分处两地 (2026-09-20 录屏比对 Prime Video:
+        // 它只有一个固定框, 卡片自身完全不变).
+        monochrome -> when {
+            isPlaying -> Color.White.copy(alpha = 0.28f)
+            isWatched -> Color.White.copy(alpha = 0.08f)
+            else -> Color.White.copy(alpha = 0.14f)
+        }
+
+        // 玻璃态: 与不透明那套一一对应 (在播=主色调, 看过=更淡, 其余=基准), 只是都透出背景.
+        // 在播那档保留 primaryContainer 的色相 (它是"正在播放"的既有语义色), 只压透明度
+        glass -> when {
+            isPlaying -> colorScheme.primaryContainer.copy(alpha = GLASS_CARD_PLAYING_ALPHA)
+            isWatched -> glassContainerColor(GLASS_CARD_WATCHED_ALPHA)
+            else -> glassContainerColor(GLASS_CARD_ALPHA)
+        }
+
+        isPlaying -> colorScheme.primaryContainer
+        isWatched -> colorScheme.surfaceContainerLow
+        else -> colorScheme.surfaceContainerHigh
+    }
+    val dimmed = if (monochrome) {
+        Color.White.copy(alpha = 0.6f)
+    } else {
+        colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    }
+    val sort = when {
+        monochrome -> if (isWatched) dimmed else Color.White
+        isPlaying -> colorScheme.primary
+        isWatched -> dimmed
+        else -> LocalContentColor.current
+    }
+    val name = when {
+        monochrome -> if (isWatched) dimmed else Color.White.copy(alpha = 0.85f)
+        isWatched -> dimmed
+        else -> colorScheme.onSurfaceVariant
+    }
+    return FocusEpisodeCardColors(
+        container = container,
+        sort = sort,
+        name = name,
+        // 黑白态白, 否则主色
+        progress = if (monochrome) Color.White else colorScheme.primary,
+        track = if (monochrome) Color.White.copy(alpha = 0.3f) else colorScheme.onSurface.copy(alpha = 0.12f),
+    )
+}
+
+/**
  * TV 选集卡片 (大卡): 有 TMDB 分集缩略图时图占满卡片, 集号/集名压在
  * 底部 scrim 上; 无图时回退 [EpisodeGridCell] 的纯文字样式, 尺寸一致. 聚焦时集名跑马灯.
  */
@@ -1125,50 +1306,11 @@ fun FocusEpisodeCard(
     val isWatched = item.isDoneOrDropped
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val containerColor = when {
-        // 黑白态: 底一律半透明白 (与胶囊按钮同一档 alpha).
-        // **聚焦不改底色**: 焦点由固定锚位的描边框表达. 早先聚焦即实心白, 而那层白跟着卡片滚、
-        // 框却钉在锚位 —— 滚动期间两个焦点指示分处两地 (2026-09-20 录屏比对 Prime Video:
-        // 它只有一个固定框, 卡片自身完全不变).
-        monochrome -> when {
-            isPlaying -> Color.White.copy(alpha = 0.28f)
-            isWatched -> Color.White.copy(alpha = 0.08f)
-            else -> Color.White.copy(alpha = 0.14f)
-        }
-
-        // 玻璃态: 与不透明那套一一对应 (在播=主色调, 看过=更淡, 其余=基准), 只是都透出背景.
-        // 在播那档保留 primaryContainer 的色相 (它是"正在播放"的既有语义色), 只压透明度
-        glass -> when {
-            isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = GLASS_CARD_PLAYING_ALPHA)
-            isWatched -> glassContainerColor(GLASS_CARD_WATCHED_ALPHA)
-            else -> glassContainerColor(GLASS_CARD_ALPHA)
-        }
-
-        isPlaying -> MaterialTheme.colorScheme.primaryContainer
-        isWatched -> MaterialTheme.colorScheme.surfaceContainerLow
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val dimmed = if (monochrome) {
-        Color.White.copy(alpha = 0.6f)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-    }
-    val sortColor = when {
-        monochrome -> if (isWatched) dimmed else Color.White
-        isPlaying -> MaterialTheme.colorScheme.primary
-        isWatched -> dimmed
-        else -> LocalContentColor.current
-    }
-    val nameColor = when {
-        monochrome -> if (isWatched) dimmed else Color.White.copy(alpha = 0.85f)
-        isWatched -> dimmed
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    // 进度条: 黑白态下白底上用黑, 否则白 (图上) / 主色 (纯文字卡)
-    val progressColor = when {
-        monochrome -> Color.White
-        else -> MaterialTheme.colorScheme.primary
-    }
+    val colors = focusEpisodeCardColors(isPlaying = isPlaying, isWatched = isWatched, monochrome = monochrome, glass = glass)
+    val containerColor = colors.container
+    val sortColor = colors.sort
+    val nameColor = colors.name
+    val progressColor = colors.progress
     // 已看的集固定满条 ("看过"由进度条表达, 图不再压暗); 未看完的显示续播点
     val effectiveProgress = if (isWatched) 1f else progress
 
@@ -1183,11 +1325,9 @@ fun FocusEpisodeCard(
 
     val name = item.nameCn.ifBlank { item.name }
 
-    // 图标尺寸用 sp (跟随字体缩放), 并按矢量内部留白补偿, 使可见图形高度 ≈ 集号数字
-    // (titleSmall 14sp) 的大写高度 ~10sp: PlayArrow 三角占 24 视口的 14 (58%) → 17sp;
-    // GraphicEq 占 16/24 (67%) → 15sp
-    val playIconSize = with(LocalDensity.current) { 17.sp.toDp() }
-    val playingIconSize = with(LocalDensity.current) { 15.sp.toDp() }
+    // 图标尺寸见 EPISODE_PLAY_ICON_SIZE
+    val playIconSize = with(LocalDensity.current) { EPISODE_PLAY_ICON_SIZE.toDp() }
+    val playingIconSize = with(LocalDensity.current) { EPISODE_PLAYING_ICON_SIZE.toDp() }
 
     // 首元素的"墨迹左线"对齐: 图标盒比它画出来的图形宽 (见 [PLAY_ICON_INK_LEFT_FRACTION]),
     // 数字则几乎顶着字盒左缘. 以**聚焦态那个三角的墨迹**为基准线, 其余两态各补差值 —— 于是
@@ -1273,8 +1413,8 @@ fun FocusEpisodeCard(
                 Box(
                     Modifier.fillMaxSize().background(
                         Brush.verticalGradient(
-                            0.5f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.85f),
+                            EPISODE_STILL_SCRIM_START to Color.Transparent,
+                            1f to Color.Black.copy(alpha = EPISODE_STILL_SCRIM_ALPHA),
                         ),
                     ),
                 )
@@ -1288,7 +1428,7 @@ fun FocusEpisodeCard(
                         .padding(start = leadingInkInset)
                         .padding(top = 8.dp, bottom = textBottomPadding),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(EPISODE_CARD_TEXT_GAP),
                 ) {
                     // 聚焦时文字前显示播放三角; 未聚焦的播放中卡片仍显示声浪图标
                     if (focused) {
@@ -1322,7 +1462,7 @@ fun FocusEpisodeCard(
                         Modifier.alignByBaseline()
                             // 完整档以外滚几次就停: 播放器片尾自动展开选集条时焦点停在这张卡上, 无限滚会把叠在视频上的界面一直顶到 60fps
                             .tvAmbientMarquee(enabled = focused),
-                        color = Color.White.copy(alpha = 0.85f),
+                        color = Color.White.copy(alpha = EPISODE_IMAGE_NAME_ALPHA),
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
@@ -1330,10 +1470,10 @@ fun FocusEpisodeCard(
                 }
                 FocusEpisodeProgressBar(
                     effectiveProgress,
-                    trackColor = Color.White.copy(alpha = 0.3f),
+                    trackColor = Color.White.copy(alpha = EPISODE_IMAGE_TRACK_ALPHA),
                     Modifier.align(Alignment.BottomStart),
-                    // 图上一律白 (scrim 之上), 黑白态也一样
-                    progressColor = if (monochrome) Color.White else MaterialTheme.colorScheme.primary,
+                    // 图上轨道一律白 (scrim 之上), 黑白态也一样
+                    progressColor = progressColor,
                 )
             }
         } else {
@@ -1349,13 +1489,13 @@ fun FocusEpisodeCard(
                             top = EPISODE_TEXT_CARD_TOP_PADDING,
                             bottom = EPISODE_IMAGE_TEXT_BOTTOM_PADDING,
                         ),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(EPISODE_CARD_TEXT_GAP),
                 ) {
                 Row(
                     // 与有图态同样按行首状态补图标墨迹差, 见 leadingInkInset
                     Modifier.padding(start = leadingInkInset),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(EPISODE_CARD_TEXT_GAP),
                 ) {
                     // 聚焦时文字前显示播放三角; 未聚焦的播放中卡片仍显示声浪图标
                     if (focused) {
@@ -1400,11 +1540,7 @@ fun FocusEpisodeCard(
                 }
                 FocusEpisodeProgressBar(
                     effectiveProgress,
-                    trackColor = if (monochrome) {
-                        Color.White.copy(alpha = 0.3f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                    },
+                    trackColor = colors.track,
                     Modifier.align(Alignment.BottomStart),
                     progressColor = progressColor,
                 )
