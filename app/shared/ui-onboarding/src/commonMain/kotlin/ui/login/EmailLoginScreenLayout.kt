@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -42,6 +43,7 @@ import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import org.jetbrains.compose.resources.*
@@ -67,6 +69,7 @@ internal fun EmailLoginScreenLayout(
             TopAppBar(
                 title = title,
                 navigationIcon = { BackNavigationIconButton(onNavigateBack) },
+                colors = AniThemeDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onNavigateSettings) {

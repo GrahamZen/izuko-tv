@@ -238,6 +238,30 @@ fun TvPosterWallTheme(content: @Composable () -> Unit) {
     }
 }
 
+/**
+ * 电视端所有页面的整屏底色: 浅色主题下把页面底那几档 (background / surface / surfaceContainerLowest) 换成海报墙那档浅灰
+ * [TV_POSTER_WALL_BACKGROUND_LIGHT] —— Material 浅色的页面底近白, 设置、缓存这些页面压在主壳的浅灰上就是一块块白的. 只换页面底,
+ * 底板、弹窗、菜单与文字色仍是应用主题的; 深色原样.
+ */
+fun tvPageBackgroundColorScheme(base: ColorScheme): ColorScheme =
+    if (base.surface.luminance() >= 0.5f) {
+        base.copy(
+            background = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surface = TV_POSTER_WALL_BACKGROUND_LIGHT,
+            surfaceContainerLowest = TV_POSTER_WALL_BACKGROUND_LIGHT,
+        )
+    } else {
+        base
+    }
+
+/** 换上 [tvPageBackgroundColorScheme], 套在电视端所有页面外面 (见 InstallFormFactorUi). 配色对象按底色方案记住, 同 [TvPosterWallTheme]. */
+@Composable
+fun TvPageBackgroundTheme(content: @Composable () -> Unit) {
+    val base = MaterialTheme.colorScheme
+    val scheme = remember(base) { tvPageBackgroundColorScheme(base) }
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
 /** 海报到番名的间距. */
 internal val TV_POSTER_WALL_TITLE_TOP_GAP: Dp = 6.dp
 
