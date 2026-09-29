@@ -22,7 +22,8 @@ import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
 
 /**
- * 原生横滑行的公共部分 (海报行 [TvNativeRowView]、演职人员的圆头像行 [TvNativeMonogramRowView]): leanback HorizontalGridView, 卡片从行首停靠线
+ * 原生横滑行的公共部分 (海报行 [TvNativeRowView]、演职人员的圆头像行 [TvNativeMonogramRowView]; 选集行 [TvNativeEpisodeRowView] 换成固定锚点,
+ * 见它的说明): leanback HorizontalGridView, 卡片从行首停靠线
  * [startPx] 排起, 行本身铺满宽度 (行尾露一截下一张). **按需挪** ([tvStripLeftIndex]): FOCUS_SCROLL_ITEM 下焦点在完整露出的卡之间走不滚,
  * 走到伸进行尾留白 [endPx] 的那张才把它挪到留白线上 —— 行尾留白取 "行宽 − 行首 − 整数张卡" 时恰好整行挪一格; 往左同理贴回行首.
  * leanback 不回收持焦的那张, 平滑滚向远处的卡途中焦点不会丢.
@@ -94,13 +95,22 @@ abstract class TvNativeStripView(
 
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 if (newState == SCROLL_STATE_IDLE) {
-                    snapToColumns()
+                    alignWhenIdle()
                     fireSettled()
                 }
             }
         })
         addOnLayoutCompletedListener { onRowMoved() }
     }
+
+    /** 停稳时 (以及从回收缓存里拿回来重新上屏时) 把行对齐到合法的停位; 默认贴齐卡片列 ([snapToColumns]). */
+    protected open fun alignWhenIdle() = snapToColumns()
+
+    /**
+     * 从行外进来时, 已经排出来的落点那张 ([entryIndex]) 能不能直接接焦点. 默认要完整露在行首停靠线与行尾留白之间 (进来不滚); 不行就按
+     * leanback 的来.
+     */
+    protected open fun acceptsEntry(view: View): Boolean = isFullyVisible(view)
 
     /** 卡片在行里的位置变了 (滚动中每帧、每次布局完成): 按位置算的外观 (越过行首的压暗) 在这里刷新. */
     protected open fun onRowMoved() {}
@@ -111,7 +121,7 @@ abstract class TvNativeStripView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // 回收缓存里拿回来的行: 离屏那一刻 (RecyclerView 摘下时停掉滚动) 可能停在半路
-        post { snapToColumns() }
+        post { alignWhenIdle() }
     }
 
     /**
@@ -208,7 +218,7 @@ abstract class TvNativeStripView(
         if (!hasFocus()) {
             val index = entryIndex()
             val view = if (index >= 0) findViewHolderForAdapterPosition(index)?.itemView else null
-            if (view != null && isFullyVisible(view)) {
+            if (view != null && acceptsEntry(view)) {
                 view.addFocusables(views, direction, focusableMode)
                 return
             }
@@ -227,8 +237,8 @@ abstract class TvNativeStripView(
         val index = entryIndex()
         if (index >= 0) {
             val view = findViewHolderForAdapterPosition(index)?.itemView
-            // 还完整露在行首停靠线与行尾留白之间才给它 (滚出去了就按 leanback 的, 进来不滚)
-            if (view != null && isFullyVisible(view) && view.requestFocus(direction, previouslyFocusedRect)) {
+            // 还完整露在行首停靠线与行尾留白之间才给它 (滚出去了就按 leanback 的, 进来不滚; 见 acceptsEntry)
+            if (view != null && acceptsEntry(view) && view.requestFocus(direction, previouslyFocusedRect)) {
                 return true
             }
         }

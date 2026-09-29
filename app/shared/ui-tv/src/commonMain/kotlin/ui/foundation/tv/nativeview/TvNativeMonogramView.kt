@@ -235,6 +235,7 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        if (!gainFocus) confirmKey.reset()
         // 放开时的缩回动画还在走又拿到焦点: 交给状态动画从当前值接着走
         releaseAnimator?.cancel()
         releaseAnimator = null

@@ -84,6 +84,28 @@ object TvNativeImages {
         sketch.enqueue(request)
     }
 
+    /**
+     * 分集剧照 (选集卡): 请求参数同 Compose 版选集卡 (FocusEpisodeCard 的 AsyncImage, decodeAtOriginalSize) —— 按源图原尺寸解、解码时
+     * 不裁剪 (裁剪由 ImageView 的 CENTER_CROP 做), 与长按弹窗的背景、播放器的预取是同一个缓存键. 图一到就交给渲染线程预传 GPU
+     * ([Bitmap.prepareToDraw]), 同 Compose 版. [onError] 在主线程回调 (调用方按次数退避重试, 同 rememberAsyncImageRetryState).
+     */
+    fun loadStill(sketch: Sketch, view: ImageView, url: String, crossfade: Boolean, onError: () -> Unit) {
+        val request = ImageRequest(view, url) {
+            configureAniImageRequest(
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                decodeAtOriginalSize = true,
+            )
+            crossfade(crossfade)
+            allowNullImage(true)
+            addListener(
+                onError = { _, _ -> onError() },
+                onSuccess = { _, result -> result.image.asBitmapOrNull()?.prepareToDraw() },
+            )
+        }
+        sketch.enqueue(request)
+    }
+
     /** 取消 [view] 上在途的请求并清掉图 (图层整个撤掉时用). */
     fun clear(view: ImageView) {
         view.disposeLoad()

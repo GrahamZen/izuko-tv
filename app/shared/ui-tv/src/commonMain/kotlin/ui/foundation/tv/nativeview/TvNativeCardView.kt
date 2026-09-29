@@ -254,6 +254,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        if (!gainFocus) confirmKey.reset()
         // 放开时的缩回动画还在走又拿到焦点: 交给状态动画从当前值接着走
         releaseAnimator?.cancel()
         releaseAnimator = null
@@ -478,6 +479,18 @@ internal class TvNativeTextView(context: Context) : TextView(context) {
         super.setText(tvNativeWithLineHeight(text, fixedLineHeightPx), type)
     }
 
+    /**
+     * 首行的字体 (含回落字体) 比固定行高高出、被行框裁掉的上半截 (px; 不高出为 0). Compose 的 Text 在行高小于字体高度时按这个量在首行上方
+     * 补内边距, 字形照字体本来的上沿排 (见 Compose TextLayout 的 lineHeightPaddings); 这里行框定死在行高里. 自成一行的字要与 Compose 版
+     * 对齐时, 把视图往下挪这么多. 排版之后才有值.
+     */
+    val fontOverflowTopPx: Int
+        get() {
+            val laid = layout?.text as? Spanned ?: return 0
+            val span = laid.getSpans(0, laid.length, TvNativeLineHeightSpan::class.java).firstOrNull() ?: return 0
+            return span.overflowTop
+        }
+
     override fun hasOverlappingRendering(): Boolean = false
 }
 
@@ -505,6 +518,10 @@ private class TvNativeLineHeightSpan(val heightPx: Int) : LineHeightSpan {
     private var ascent = 0
     private var descent = 0
 
+    /** 首行被行框裁掉的字体上半截 (见 [TvNativeTextView.fontOverflowTopPx]). */
+    var overflowTop = 0
+        private set
+
     override fun chooseHeight(
         text: CharSequence,
         start: Int,
@@ -518,6 +535,7 @@ private class TvNativeLineHeightSpan(val heightPx: Int) : LineHeightSpan {
         if (start == 0 || ascent == descent) {
             descent = fm.descent + ceil((heightPx - current) * 0.5f).toInt()
             ascent = descent - heightPx
+            if (start == 0) overflowTop = (ascent - fm.ascent).coerceAtLeast(0)
         }
         fm.ascent = ascent
         fm.descent = descent

@@ -321,9 +321,9 @@ private fun roundRectRingPathFromTopLeft(size: Size, widthPx: Float, radiusPx: F
  * 倒计时环底轨的不透明度.
  *
  * 底轨必须始终看得出**整圈**在哪里 (那是聚焦框), 又不能与走过的那段混在一起 —— 太淡则电视上
- * 看不出边界, 太浓则读不出走到哪儿了.
+ * 看不出边界, 太浓则读不出走到哪儿了. 电视端原生选集行的倒计时环 (ui-tv 的 TvNativeEpisodeRingView) 用同一个值.
  */
-private const val TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA = 0.4f
+const val TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA = 0.4f
 
 /**
  * 线宽换算, **与 `Modifier.border` 同一套**: 向上取整到整像素, 再按尺寸钳制.
