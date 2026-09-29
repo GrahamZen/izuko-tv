@@ -103,6 +103,12 @@ class MediaSelectorFilterSortAlgorithm {
             )
         } else null
 
+        // 条目名去掉季号后的形式, 用于识别站点把整个系列放在一个不带季号的条目下的情况.
+        // 每条资源都要与它比, 所以在这里算一次.
+        val seasonlessSubjectNames = subjectInfo?.allNames
+            ?.mapNotNullTo(HashSet()) { MediaListFilters.removeSeasonMarkerOrNull(it) }
+            .orEmpty()
+
         val episodeMatch = if (matchEpisode && episodeInfo != null) {
             EpisodeMatch(
                 episodeId = episodeInfo.episodeId,
@@ -121,7 +127,7 @@ class MediaSelectorFilterSortAlgorithm {
             if (memo == null) {
                 filterMedia(
                     media, preference, settings, context, mediaListFilterContext, episodeMatch,
-                    subjectNames, seriesSubjectNames,
+                    subjectNames, seriesSubjectNames, seasonlessSubjectNames,
                 )
             } else {
                 // **键必须是 media 本身而不是 mediaId**: 同一个 mediaId 可能对应内容不同的两条
@@ -129,7 +135,7 @@ class MediaSelectorFilterSortAlgorithm {
                 memo.getOrPut(media) {
                     filterMedia(
                         media, preference, settings, context, mediaListFilterContext, episodeMatch,
-                        subjectNames, seriesSubjectNames,
+                        subjectNames, seriesSubjectNames, seasonlessSubjectNames,
                     )
                 }
             }
@@ -209,6 +215,7 @@ class MediaSelectorFilterSortAlgorithm {
         episodeMatch: EpisodeMatch?,
         subjectNames: NormalizedNames,
         seriesSubjectNames: NormalizedNames,
+        seasonlessSubjectNames: Set<String>,
     ): MaybeExcludedMedia {
         val mediaSubjectName = media.properties.subjectName
         val mediaSubjectNameOrOriginalTitle = mediaSubjectName ?: media.originalTitle
@@ -216,6 +223,23 @@ class MediaSelectorFilterSortAlgorithm {
         val normalizedMediaSubjectName by lazy(LazyThreadSafetyMode.NONE) {
             MediaListFilters.normalizeForCompare(mediaSubjectNameOrOriginalTitle)
         }
+
+        // 系列内序号 ([EpisodeInfo.sort]) 在整个系列中唯一, 与条目内序号 ([EpisodeInfo.ep]) 不同时,
+        // 命中它足以确定资源属于本条目的这一集, 即使资源的条目名是系列名而非本季的名字.
+        // 站点把整个系列放在一个不带季号的条目下、按系列内序号连续编集时就是这样: 站内 "凡人修仙传"
+        // 的第 159 集就是 "凡人修仙传 第四季" 的第 35 集.
+        val matchedBySeriesEpisodeSort = run {
+            val episodeInfo = context.episodeInfo.takeIf { context.hasEpisode } ?: return@run false
+            val ep = episodeInfo.ep ?: return@run false
+            val range = media.episodeRange ?: return@run false
+            episodeInfo.sort != ep && episodeInfo.sort in range
+        }
+
+        // 资源的条目名正是本条目去掉季号后的系列名 (站内 "凡人修仙传" 对本条目 "凡人修仙传 第四季").
+        // 只靠序号不够: 无关的长篇连载同样会有这个序号, 名字这一侧必须对上.
+        val matchedAsSeasonlessSeries = matchedBySeriesEpisodeSort
+                && seasonlessSubjectNames.isNotEmpty()
+                && MediaListFilters.nameForSeasonlessCompare(mediaSubjectNameOrOriginalTitle) in seasonlessSubjectNames
 
         // 由下面实现调用, 方便创建 MaybeExcludedMedia
         fun include(): MaybeExcludedMedia {
@@ -228,6 +252,7 @@ class MediaSelectorFilterSortAlgorithm {
                     media.episodeRange,
                     context.episodeInfo?.sort,
                     context.episodeInfo?.ep,
+                    matchedAsSeasonlessSeries,
                 ),
             )
         }
@@ -282,7 +307,8 @@ class MediaSelectorFilterSortAlgorithm {
             // 只有在条目名称不相同的情况下, 才可以考虑续集, 因为续集可能只比前传多一个特殊字符, 能通过 specialEquals.
             if (subjectNames.anyEquals(normalizedMediaSubjectName)) {
                 // contextSubjectNames 与条目名称相同, 肯定不能排除它
-            } else {
+            } else if (!matchedAsSeasonlessSeries) {
+                // 以系列内序号认领的资源就是本条目的这一集, 条目名是系列名而非本季的名字也不改变这一点.
                 // 简化数据源结果的季度名称，例如从 "Re：从零开始的休息时间 第2季" 变成 "Re：从零开始的休息时间 2"
                 // 条目名称可能是上述后者简化的形式, 但数据源的结果是前者完整版的形式
                 // 额外判断一次简化的名称可以正确地排除掉类似这种情况的其他季度的资源.
@@ -327,7 +353,7 @@ class MediaSelectorFilterSortAlgorithm {
         if (mediaListFilterContext != null) {
             val allow = when (media.kind) {
                 MediaSourceKind.WEB -> {
-                    with(MediaListFilters.ContainsSubjectName) {
+                    val nameMatches = with(MediaListFilters.ContainsSubjectName) {
                         val baseContains = mediaListFilterContext.applyOn(
                             object : MediaListFilter.Candidate by media.asCandidate() {
                                 override val subjectName: String get() = mediaSubjectNameOrOriginalTitle
@@ -346,6 +372,7 @@ class MediaSelectorFilterSortAlgorithm {
                             baseContains
                         }
                     }
+                    nameMatches || matchedAsSeasonlessSeries
                 }
 
                 MediaSourceKind.BitTorrent -> true
@@ -366,9 +393,14 @@ class MediaSelectorFilterSortAlgorithm {
         normalizedMediaSubjectName: String,
         mediaEpisodeRange: EpisodeRange?,
         contextEpisodeSort: EpisodeSort?,
-        contextEpisodeEp: EpisodeSort?
+        contextEpisodeEp: EpisodeSort?,
+        /**
+         * 资源的条目名是本条目去掉季号后的系列名, 且由系列内序号认领了本条目的这一集.
+         * 名字与本条目的名字不同, 但指向的就是本条目, 按精确匹配对待.
+         */
+        matchedAsSeasonlessSeries: Boolean,
     ) = MatchMetadata(
-        subjectMatchKind = if (contextSubjectNames.anyEquals(normalizedMediaSubjectName)) {
+        subjectMatchKind = if (matchedAsSeasonlessSeries || contextSubjectNames.anyEquals(normalizedMediaSubjectName)) {
             MatchMetadata.SubjectMatchKind.EXACT
         } else {
             MatchMetadata.SubjectMatchKind.FUZZY
