@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.danmaku.DanmakuNotMatchedException
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.danmaku.api.DanmakuContent
@@ -221,7 +222,9 @@ internal object RemotePlayerExtras {
         val info = runCatching {
             runBlocking { withTimeoutOrNull(PREFILL_TIMEOUT) { collectionRepository.subjectCollectionFlow(subjectId).first() } }
         }.getOrNull() ?: return result(false, tr("读取收藏信息失败，请重试"))
-        val loggedIn = runBlocking { withTimeoutOrNull(3.seconds) { sessionStateProvider.stateFlow.first() } } is SessionState.Valid
+        // 本地档收藏与评分都记在本地, 照登录了算
+        val loggedIn = UserProfiles.current.isLocal ||
+                runBlocking { withTimeoutOrNull(3.seconds) { sessionStateProvider.stateFlow.first() } } is SessionState.Valid
         val rating = info.selfRatingInfo
         return buildJsonObject {
             put("ok", true)

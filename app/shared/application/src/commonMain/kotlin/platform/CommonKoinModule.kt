@@ -377,6 +377,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             nsfwModeSettingsFlow = settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
             getEpisodeTypeFiltersUseCase = get(),
             scope = coroutineScope,
+            localProfile = UserProfiles.current.isLocal,
         )
     }
     single<FollowedSubjectsRepository> {
@@ -458,6 +459,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             animeScheduleRepository = get(),
             subjectCollectionRepository = inject(),
             getEpisodeTypeFiltersUseCase = get(),
+            localProfile = UserProfiles.current.isLocal,
         )
     }
     single<EpisodeProgressRepository> {
@@ -545,6 +547,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             scope = coroutineScope,
             cacheDir = getContext().files.cacheDir,
             collectionsCacheFileName = UserProfiles.current.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME),
+            localProfile = UserProfiles.current.isLocal,
         )
     }
 

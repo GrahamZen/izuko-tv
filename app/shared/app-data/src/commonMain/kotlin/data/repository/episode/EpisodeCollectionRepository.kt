@@ -47,6 +47,8 @@ class EpisodeCollectionRepository(
     private val getEpisodeTypeFiltersUseCase: GetEpisodeTypeFiltersUseCase,
     defaultDispatcher: CoroutineContext = Dispatchers.Default,
     private val cacheExpiry: Duration = 1.hours,
+    /** 本地档: 看过状态只存在本地库, 不同步 Bangumi, 见 SubjectCollectionRepositoryImpl 的同名参数. */
+    private val localProfile: Boolean = false,
 ) : Repository(defaultDispatcher) {
 
     private val subjectCollectionRepository by subjectCollectionRepository
@@ -67,11 +69,15 @@ class EpisodeCollectionRepository(
             entity?.takeIf { !it.isExpired() }
                 ?.toEpisodeCollectionInfo()
                 ?: kotlin.run {
-                    episodeService.getEpisodeCollectionById(subjectId, episodeId)
-                        ?.also {
-                            episodeCollectionDao.upsert(it.toEntity(subjectId))
-                        }
+                    val remote = episodeService.getEpisodeCollectionById(subjectId, episodeId)
                         ?: throw NoSuchElementException("Episode $episodeId not found")
+                    if (localProfile) {
+                        // 本地档取到的是匿名结果: 看过状态以库里的为准
+                        episodeCollectionDao.upsertKeepingSelfState(remote.toEntity(subjectId)).toEpisodeCollectionInfo()
+                    } else {
+                        episodeCollectionDao.upsert(remote.toEntity(subjectId))
+                        remote
+                    }
                 }
         }.flowOn(defaultDispatcher)
     }
@@ -143,7 +149,8 @@ class EpisodeCollectionRepository(
             .map { it.episodeId }
 
         episodeCollectionDao.setAllEpisodesWatchedLocalFirst(subjectId) {
-            episodeService.setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)
+            // 本地档只改本地
+            if (!localProfile) episodeService.setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)
         }
     }
 
@@ -162,7 +169,8 @@ class EpisodeCollectionRepository(
 //            subjectCollectionRepository.setSubjectCollectionTypeOrDelete(subjectId, UnifiedCollectionType.DOING)
         }
         episodeCollectionDao.setSelfCollectionTypeLocalFirst(subjectId, episodeId, collectionType) {
-            episodeService.setEpisodeCollection(subjectId, listOf(episodeId), collectionType)
+            // 本地档只改本地
+            if (!localProfile) episodeService.setEpisodeCollection(subjectId, listOf(episodeId), collectionType)
         }
     }
 
@@ -179,6 +187,8 @@ class EpisodeCollectionRepository(
     ): UnifiedCollectionType? = withContext(defaultDispatcher) {
         try {
             val local = episodeCollectionDao.findByEpisodeId(episodeId).first()
+            // 本地档的看过状态只在本地库里, 服务端那份是匿名的
+            if (localProfile) return@withContext local?.selfCollectionType
 
             if (local != null && (!local.isExpired() || !allowNetwork)) {
                 return@withContext local.selfCollectionType

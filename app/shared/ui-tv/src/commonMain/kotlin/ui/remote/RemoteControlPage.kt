@@ -990,6 +990,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .pf-av { flex: none; width: 40px; height: 40px; border-radius: 20px; object-fit: cover; background: var(--chip); }
 .pf-ph { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 17px; font-weight: 700; }
 .pf-name { min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-tag { flex: none; font-size: 12px; color: var(--mute); }
+.pf-kinds { margin-top: 12px; }
 .pf-cur { flex: none; font-size: 13px; color: var(--mute); }
 .pf-go { flex: none; padding: 8px 16px; border-radius: 999px; background: var(--p-soft); color: var(--p); font-size: 14px; font-weight: 600; }
 .pf-go:disabled { opacity: .5; }
@@ -6637,8 +6639,8 @@ private val PROFILES_SCRIPT = """
   // 同电视选人页的头像底色, 按编号取 (同一个人每次一样)
   var COLORS = ['#5E81AC', '#BF616A', '#A3BE8C', '#D08770', '#B48EAD', '#88C0D0', '#EBCB8B'];
   var data = null, last = '';
-  // 展开了谁的菜单 (改名 / 删除)、正在改谁的名字 (编号), 添加用户的表单开着没有
-  var menu = null, renaming = null, adding = false;
+  // 展开了谁的菜单 (改名 / 删除)、正在改谁的名字 (编号), 添加用户的表单开着没有, 表单里选的是哪一种
+  var menu = null, renaming = null, adding = false, addKind = 'bangumi';
   // 换了用户要整页重载时经这里: 记一笔, 重载后提示现在是谁
   var RELOADED = 'ani-user-reload';
   window.reloadForUser = function () {
@@ -6677,7 +6679,7 @@ private val PROFILES_SCRIPT = """
     var h = '<div class="card set-card"><div class="set-title">' + T('用户') + '</div>';
     (d.users || []).forEach(function (u) {
       h += '<div class="pf-user"><div class="pf-row"><button type="button" class="pf-who" data-pf="menu" data-id="' + u.id + '">' + avatar(u) +
-        '<span class="pf-name">' + esc(u.name) + '</span></button>' +
+        '<span class="pf-name">' + esc(u.name) + '</span>' + (u.local ? '<span class="pf-tag">' + T('本地') + '</span>' : '') + '</button>' +
         (u.current ? '<span class="pf-cur">' + T('当前') + '</span>'
           : '<button type="button" class="pf-go" data-pf="switch" data-id="' + u.id + '">' + T('切换') + '</button>') + '</div>';
       if (renaming === u.id) {
@@ -6693,8 +6695,14 @@ private val PROFILES_SCRIPT = """
       h += '</div>';
     });
     if (adding) {
+      // 这个人是哪一种: 登录 Bangumi (进来先弹登录, 可以跳过) / 不登录 (本地档, 收藏与看过只存在电视上)
+      var kinds = [['bangumi', T('登录 Bangumi')], ['local', T('不登录')]];
       h += '<form id="pf-add"><label class="f"><span>' + T('名字') + '</span><input type="text" name="name" maxlength="20" autocomplete="off" placeholder="' +
-        esc(d.nextName || '') + '"></label><p class="hint">' +
+        esc(d.nextName || '') + '"></label><div class="pills pf-kinds">' + kinds.map(function (k) {
+          return '<label><input type="radio" name="kind" value="' + k[0] + '"' + (addKind === k[0] ? ' checked' : '') + '><span>' + k[1] + '</span></label>';
+        }).join('') + '</div><p class="hint">' + (addKind === 'local'
+          ? T('收藏、看过和评分只记在这台电视上，适合登录不了 Bangumi 的人。')
+          : T('收藏、看过和评分同步到这个人的 Bangumi 账号；切过去时先登录，也可以跳过。')) + '</p><p class="hint">' +
         T('每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。') + '</p><div class="row">' +
         '<button type="button" class="ghost" data-pf="add-cancel">' + T('取消') + '</button><button type="submit" class="primary">' + T('添加') + '</button></div></form>';
     } else {
@@ -6702,12 +6710,12 @@ private val PROFILES_SCRIPT = """
     }
     h += '</div>';
     if (h === last) return;
-    // 重画保住正在填的名字与焦点 (同账号卡片)
+    // 重画保住正在填的名字与焦点 (同账号卡片); 单选框的选中另记在 addKind 里, 画进 h 了
     var typed = {}, act = document.activeElement, focus = act && box.contains(act) && act.form ? act.form.id + '.' + act.name : null;
-    [].forEach.call(box.querySelectorAll('form[id] input[name]'), function (i) { typed[i.form.id + '.' + i.name] = i.value; });
+    [].forEach.call(box.querySelectorAll('form[id] input[type=text][name]'), function (i) { typed[i.form.id + '.' + i.name] = i.value; });
     box.innerHTML = h;
     last = h;
-    [].forEach.call(box.querySelectorAll('form[id] input[name]'), function (i) {
+    [].forEach.call(box.querySelectorAll('form[id] input[type=text][name]'), function (i) {
       var k = i.form.id + '.' + i.name;
       if (typed[k] != null) i.value = typed[k];
       if (k === focus) i.focus();
@@ -6787,16 +6795,23 @@ private val PROFILES_SCRIPT = """
     e.preventDefault();
     var btn = f.querySelector('button[type=submit]'), name = f.elements.name.value.trim();
     btn.disabled = true;
-    var req = f.id === 'pf-add' ? post('api/profiles/add', { name: name }) : post('api/profiles/rename', { id: f.getAttribute('data-id'), name: name });
+    var req = f.id === 'pf-add' ? post('api/profiles/add', { name: name, kind: addKind })
+      : post('api/profiles/rename', { id: f.getAttribute('data-id'), name: name });
     req.then(function (r) {
       btn.disabled = false;
       toast(r.message);
       if (r.ok) {
-        if (f.id === 'pf-add') adding = false; else renaming = null;
+        if (f.id === 'pf-add') { adding = false; addKind = 'bangumi'; } else renaming = null;
         f.elements.name.value = '';
       }
       load();
     }).catch(function () { btn.disabled = false; fail(); });
+  });
+  // 添加表单里换了种类: 说明跟着换
+  box.addEventListener('change', function (e) {
+    if (e.target.name !== 'kind') return;
+    addKind = e.target.value;
+    render();
   });
 })();
 """.trimIndent()
@@ -6853,6 +6868,17 @@ private val ACCOUNT_SCRIPT = """
   function render(d) {
     if (!d.ok) return;
     lastData = d;
+    if (d.local) {
+      // 本地档: 没有 Bangumi 账号, 也不能登录 (见 RemoteAccount)
+      var lh = '<div class="card set-card"><div class="set-title">' + T('账号') + '</div><p class="hint">' +
+        T('这是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请在上面的「用户」里新建一个登录 Bangumi 的用户。') +
+        '</p></div>';
+      if (lh !== last) { box.innerHTML = lh; last = lh; }
+      waiting = false;
+      clearInterval(loginTick);
+      loginTick = null;
+      return;
+    }
     if (!d.loggedIn) menu = false; else tok = false;
     var l = d.login || { state: 'idle' };
     // 刚登录上 (手机这边发起的, 或者电视上自己登的): 让评论与评分区重新读一次
@@ -7355,7 +7381,8 @@ private val HELP_SCRIPT = """
   var GENERAL = sec(T('用户'), [
     T('每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。'),
     T('「添加用户」只新建，不会切过去；要用时点那个人右边的「切换」，电视上的 Izuko 会重新打开，这个页面随后自动刷新。'),
-    T('点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。')
+    T('点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。'),
+    T('添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。')
   ]) + sec(T('账号'), [
     T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
     T('点头像或名字：退出登录。')

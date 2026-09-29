@@ -35,6 +35,9 @@ data class UserProfile(
 ) {
     val isPrimary: Boolean get() = id == PRIMARY_ID
 
+    /** 本地档: 不登录 Bangumi, 收藏与看过只存在这台设备上, 见 [UserProfileKind.LOCAL]. */
+    val isLocal: Boolean get() = kind == UserProfileKind.LOCAL
+
     val databaseFileName: String
         get() = if (isPrimary) PRIMARY_DATABASE_FILE_NAME else "ani_room_database_user$id.db"
 

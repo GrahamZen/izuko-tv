@@ -87,6 +87,8 @@ internal object RemoteProfiles {
                         put("raw", profile.name)
                         put("current", profile.id == current)
                         put("primary", profile.isPrimary)
+                        // 本地档: 不登录 Bangumi, 收藏与看过只存在电视上
+                        put("local", profile.isLocal)
                         // 头像候选: 经电视转发 → 手机直连 (同账号卡片)
                         profile.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
                             putJsonArray("avatar") {
@@ -102,13 +104,16 @@ internal object RemoteProfiles {
         }
     }
 
+    /** 表单 `name` (空 = 默认名) + `kind` (`local` = 本地档, 其余 = 登录 Bangumi 的). */
     private fun add(request: LanHttpRequest): JsonObject {
         val manager = manager ?: return unsupported()
+        val fields = request.formFields()
         // 没填就把默认名存下来 (同电视): 名字还要显示在侧边栏等处, 那里没有编号可拼
-        val name = request.formFields()["name"].orEmpty().trim().ifEmpty { defaultName(manager.state.value.nextId) }
-        val profile = runBlocking { withTimeoutOrNull(OP_TIMEOUT) { manager.add(name, UserProfileKind.BANGUMI) } }
+        val name = fields["name"].orEmpty().trim().ifEmpty { defaultName(manager.state.value.nextId) }
+        val kind = if (fields["kind"] == "local") UserProfileKind.LOCAL else UserProfileKind.BANGUMI
+        val profile = runBlocking { withTimeoutOrNull(OP_TIMEOUT) { manager.add(name, kind) } }
             ?: return result(false, tr("添加超时，请重试"))
-        logger.info { "Remote control added user profile ${profile.id}" }
+        logger.info { "Remote control added user profile ${profile.id} (${profile.kind})" }
         return buildJsonObject {
             put("ok", true)
             put("id", profile.id)
@@ -140,7 +145,8 @@ internal object RemoteProfiles {
     private fun rename(request: LanHttpRequest): JsonObject {
         val manager = manager ?: return unsupported()
         val target = find(manager, request) ?: return notFound()
-        val name = request.formFields()["name"].orEmpty()
+        // 清空了同样存默认名 (同添加)
+        val name = request.formFields()["name"].orEmpty().trim().ifEmpty { defaultName(target.id) }
         runBlocking { withTimeoutOrNull(OP_TIMEOUT) { manager.rename(target.id, name) } }
             ?: return result(false, tr("保存超时，请重试"))
         return result(true, tr("已保存"))

@@ -215,6 +215,43 @@ interface SubjectCollectionDao {
         if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
     }
 
+    @Query("""SELECT * FROM subject_collection WHERE subjectId = :subjectId""")
+    suspend fun getById(subjectId: Int): SubjectCollectionEntity?
+
+    @Query("""SELECT episodeId, selfCollectionType FROM episode_collection WHERE subjectId = :subjectId""")
+    suspend fun episodeSelfStatesOf(subjectId: Int): List<EpisodeSelfState>
+
+    /**
+     * 本地档的单条目落库 (见 `UserProfileKind.LOCAL`): 同 [upsertSubjectWithEpisodes], 但收藏类型、自己的评分、收藏更新时间
+     * 与每集的看过状态**保留库里的** —— 本地档取到的是匿名结果, 这几项一律是空的, 而这个人的收藏只存在本地.
+     * 读与写在同一个事务里: 取数途中用户改了收藏 (那也是写这张表), 不会被这次落库盖回去.
+     *
+     * @param episodes `null` = 分集这次没取 (还新鲜), 只写条目
+     */
+    @Transaction
+    suspend fun upsertSubjectKeepingSelfState(
+        subject: SubjectCollectionEntity,
+        episodes: List<EpisodeCollectionEntity>?,
+    ) {
+        val kept = getById(subject.subjectId)?.let { local ->
+            subject.copy(
+                collectionType = local.collectionType,
+                selfRatingInfo = local.selfRatingInfo,
+                lastUpdated = local.lastUpdated,
+            )
+        } ?: subject
+        upsert(listOf(kept).preservingRelationsFreshness().single())
+        if (episodes == null) return
+        val watched = episodeSelfStatesOf(subject.subjectId).associate { it.episodeId to it.selfCollectionType }
+        val keptEpisodes = episodes.map { episode ->
+            watched[episode.episodeId]?.let { episode.copy(selfCollectionType = it) } ?: episode
+        }
+        val newIds = keptEpisodes.mapTo(HashSet()) { it.episodeId }
+        val staleIds = watched.keys.filter { it !in newIds }
+        upsertEpisodesInternal(keptEpisodes)
+        if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
+    }
+
     /** 批量版 (收藏列表分页): 同样保留盖章 + 条目与分集同事务; 不做差集删除 (与原行为一致). */
     @Transaction
     suspend fun upsertSubjectsWithEpisodes(
@@ -520,4 +557,10 @@ data class RelationsFreshness(
     val subjectId: Int,
     val cachedStaffUpdated: Long,
     val cachedCharactersUpdated: Long,
+)
+
+/** [SubjectCollectionDao.episodeSelfStatesOf] 的投影: 一集的看过状态, 本地档落库时保留用. */
+data class EpisodeSelfState(
+    val episodeId: Int,
+    val selfCollectionType: UnifiedCollectionType,
 )

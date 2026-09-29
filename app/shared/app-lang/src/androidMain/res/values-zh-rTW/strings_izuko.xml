@@ -248,6 +248,13 @@
     <string name="tv_profile_delete_description">這位使用者的收藏、播放紀錄和登入都會從這台裝置上刪除。快取的影片是大家共用的，不會刪除。</string>
     <string name="tv_profile_delete_primary">第一位使用者只能改名，不能刪除</string>
     <string name="tv_profile_delete_current">要刪除正在使用的使用者，請先切換到其他人</string>
+    <string name="tv_profile_local">本地</string>
+    <string name="tv_profile_kind_bangumi_title">登入 Bangumi</string>
+    <string name="tv_profile_kind_bangumi_description">收藏、看過和評分同步到你的 Bangumi 帳號；進來先登入，也可以跳過。</string>
+    <string name="tv_profile_kind_local_title">不登入</string>
+    <string name="tv_profile_kind_local_description">收藏、看過和評分只記在這台電視上，適合無法登入 Bangumi 的人。</string>
+    <string name="settings_account_local_title">本地使用者</string>
+    <string name="settings_account_local_description">收藏、看過和評分只記在這台電視上，無法登入 Bangumi。想同步到 Bangumi，請新增一位登入 Bangumi 的使用者。</string>
     <string name="settings_network_proxy_service_tmdb">背景圖與劇照服務</string>
     <string name="settings_network_tmdb_images_group">背景圖 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不載入 TMDB 背景圖</string>

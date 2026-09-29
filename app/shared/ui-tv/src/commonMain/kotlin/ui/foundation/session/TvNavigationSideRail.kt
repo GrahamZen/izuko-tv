@@ -594,7 +594,9 @@ private fun TvRailAvatar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (loggedIn) {
+            // 本地档 (见 SelfInfoUiState.isLocalProfile) 算登录了但没有头像照片: 同样画人物符号, 名字照常显示
+            val photoUrl = selfInfo.selfInfo?.avatarUrl?.takeIf { loggedIn && it.isNotBlank() }
+            if (photoUrl != null) {
                 // 圆形头像照片, 聚焦画圆环
                 Box(
                     Modifier.size(TV_RAIL_ITEM_SIZE)
@@ -611,12 +613,12 @@ private fun TvRailAvatar(
                 ) {
                     // 照片比高亮框 (32dp) 略小并居中, 使聚焦圆环成为其外圈, 不超出高亮尺寸
                     AvatarImage(
-                        url = selfInfo.selfInfo?.avatarUrl,
+                        url = photoUrl,
                         modifier = Modifier.size(TV_RAIL_AVATAR_IMAGE_SIZE).clip(CircleShape),
                     )
                 }
             } else {
-                // 未登录: 退化成默认人物符号图标块 (与其它条目一致的反色高亮)
+                // 未登录 / 没有照片: 退化成默认人物符号图标块 (与其它条目一致的反色高亮)
                 TvRailGlyphBox(
                     focused = avatarFocused,
                     icon = Icons.Outlined.AccountCircle,

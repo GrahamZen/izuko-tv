@@ -335,6 +335,13 @@
     <string name="tv_profile_delete_description">这个用户的收藏、播放记录和登录都会从这台设备上删掉。缓存的视频是大家共用的，不会删。</string>
     <string name="tv_profile_delete_primary">第一个用户只能改名，不能删除</string>
     <string name="tv_profile_delete_current">要删除正在用的用户，先切换到别人</string>
+    <string name="tv_profile_local">本地</string>
+    <string name="tv_profile_kind_bangumi_title">登录 Bangumi</string>
+    <string name="tv_profile_kind_bangumi_description">收藏、看过和评分同步到你的 Bangumi 账号；进来先登录，也可以跳过。</string>
+    <string name="tv_profile_kind_local_title">不登录</string>
+    <string name="tv_profile_kind_local_description">收藏、看过和评分只记在这台电视上，适合登录不了 Bangumi 的人。</string>
+    <string name="settings_account_local_title">本地用户</string>
+    <string name="settings_account_local_description">收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请新建一个登录 Bangumi 的用户。</string>
     <string name="settings_network_proxy_service_tmdb">背景图接口</string>
     <string name="settings_network_tmdb_images_group">背景图 (TMDB)</string>
     <string name="settings_network_tmdb_images_disable">不加载 TMDB 背景图</string>

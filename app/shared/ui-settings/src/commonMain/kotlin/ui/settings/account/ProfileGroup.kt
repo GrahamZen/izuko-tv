@@ -38,6 +38,8 @@ import me.him188.ani.app.ui.foundation.layout.isWidthCompact
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.settings_account_local_description
+import me.him188.ani.app.ui.lang.settings_account_local_title
 import me.him188.ani.app.ui.lang.settings_account_logout
 import me.him188.ani.app.ui.lang.settings_account_profile_nickname
 import me.him188.ani.app.ui.lang.settings_account_profile_not_set
@@ -124,34 +126,42 @@ internal fun SettingsScope.ProfileGroupImpl(
                     description = { Text(nicknameText) },
                     modifier = Modifier.placeholder(isPlaceholder),
                 )
-                TextItem(
-                    title = {
-                        SelectionContainer {
-                            Text(currentInfo?.bangumiUsername ?: notSetText)
-                        }
-                    },
-                    description = { Text("Bangumi") },
-                    modifier = Modifier.placeholder(isPlaceholder),
-                )
-                TextItem(
-                    title = {
-                        SelectionContainer {
-                            Text(currentInfo?.id?.toString() ?: notSetText)
-                        }
-                    },
-                    description = { Text(userIdText) },
-                    modifier = Modifier.placeholder(isPlaceholder),
-                )
-                if (currentState.isSessionValid == true) {
+                if (currentState.isLocalProfile) {
+                    // 本地档没有 Bangumi 账号: 没有用户名与 id 可显示, 也没有登录可退出
+                    TextItem(
+                        title = { Text(stringResource(Lang.settings_account_local_title)) },
+                        description = { Text(stringResource(Lang.settings_account_local_description)) },
+                    )
+                } else {
                     TextItem(
                         title = {
-                            Text(
-                                stringResource(Lang.settings_account_logout),
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            SelectionContainer {
+                                Text(currentInfo?.bangumiUsername ?: notSetText)
+                            }
                         },
-                        onClick = { showLogoutDialog = true },
+                        description = { Text("Bangumi") },
+                        modifier = Modifier.placeholder(isPlaceholder),
                     )
+                    TextItem(
+                        title = {
+                            SelectionContainer {
+                                Text(currentInfo?.id?.toString() ?: notSetText)
+                            }
+                        },
+                        description = { Text(userIdText) },
+                        modifier = Modifier.placeholder(isPlaceholder),
+                    )
+                    if (currentState.isSessionValid == true) {
+                        TextItem(
+                            title = {
+                                Text(
+                                    stringResource(Lang.settings_account_logout),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = { showLogoutDialog = true },
+                        )
+                    }
                 }
             }
         }

@@ -116,12 +116,24 @@ class RemoteProfilesTest {
     }
 
     @Test
-    fun `改名去掉首尾空格 清空后显示默认名`() {
+    fun `改名去掉首尾空格 清空后存默认名`() {
         post("api/profiles/add", "name" to "Bob")
         assertTrue(post("api/profiles/rename", "id" to "2", "name" to " Alice ").ok)
         assertEquals("Alice", registry.state.value.find(2)!!.name)
         post("api/profiles/rename", "id" to "2", "name" to "")
-        assertEquals("用户 2", users().last().getValue("name").jsonPrimitive.content)
+        assertEquals("用户 2", registry.state.value.find(2)!!.name)
+    }
+
+    @Test
+    fun `添加本地档 列表里标出来`() {
+        val added = post("api/profiles/add", "name" to "Carol", "kind" to "local")
+        assertTrue(added.ok)
+        val carol = registry.state.value.find(added.getValue("id").jsonPrimitive.int)!!
+        assertTrue(carol.isLocal)
+        // 本地档不弹登录
+        assertFalse(carol.pendingLogin)
+        assertTrue(users().last().getValue("local").jsonPrimitive.boolean)
+        assertFalse(users().first().getValue("local").jsonPrimitive.boolean)
     }
 
     @Test
@@ -196,6 +208,11 @@ class RemoteProfilesTest {
             "删除「{0}」？\n\n这个用户的收藏、播放记录和登录都会从这台电视上删掉。缓存的视频是大家共用的，不会删。",
             "「添加用户」只新建，不会切过去；要用时点那个人右边的「切换」，电视上的 Izuko 会重新打开，这个页面随后自动刷新。",
             "点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。",
+            "本地", "登录 Bangumi", "不登录",
+            "收藏、看过和评分只记在这台电视上，适合登录不了 Bangumi 的人。",
+            "收藏、看过和评分同步到这个人的 Bangumi 账号；切过去时先登录，也可以跳过。",
+            "添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。",
+            "这是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请在上面的「用户」里新建一个登录 Bangumi 的用户。",
         )
         for (key in webKeys) {
             // 脚本源码里的换行写作 \n
@@ -206,6 +223,7 @@ class RemoteProfilesTest {
             "用户 {0}", "操作失败：{0}", "已添加「{0}」", "添加超时，请重试", "保存超时，请重试", "已保存", "删除超时，请重试", "已删除「{0}」",
             "电视现在就是「{0}」", "电视上没有显示 Izuko，切换不了。先在电视上打开 Izuko 再试",
             "第一个用户只能改名，不能删除", "要删除正在用的用户，先切换到别人", "这台设备不支持多用户", "没有这个用户了，刷新页面再看看",
+            "本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户",
         )
         for (key in serverKeys) assertTrue(key in table, "译文表里没有「$key」")
     }

@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -108,6 +110,7 @@ import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_profile_add
 import me.him188.ani.app.ui.lang.tv_profile_add_description
@@ -120,6 +123,11 @@ import me.him188.ani.app.ui.lang.tv_profile_delete_current
 import me.him188.ani.app.ui.lang.tv_profile_delete_description
 import me.him188.ani.app.ui.lang.tv_profile_delete_primary
 import me.him188.ani.app.ui.lang.tv_profile_delete_title
+import me.him188.ani.app.ui.lang.tv_profile_kind_bangumi_description
+import me.him188.ani.app.ui.lang.tv_profile_kind_bangumi_title
+import me.him188.ani.app.ui.lang.tv_profile_kind_local_description
+import me.him188.ani.app.ui.lang.tv_profile_kind_local_title
+import me.him188.ani.app.ui.lang.tv_profile_local
 import me.him188.ani.app.ui.lang.tv_profile_name_placeholder
 import me.him188.ani.app.ui.lang.tv_profile_picker_hint
 import me.him188.ani.app.ui.lang.tv_profile_picker_title
@@ -230,11 +238,16 @@ private fun PickerContent(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 64.dp, vertical = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
             ) {
+                val currentLabel = stringResource(Lang.tv_profile_current)
+                val localLabel = stringResource(Lang.tv_profile_local)
                 state.profiles.forEachIndexed { index, profile ->
                     val name = profile.displayName()
                     ProfileTile(
                         label = name,
-                        isCurrent = profile.id == manager.currentId,
+                        sublabel = listOfNotNull(
+                            localLabel.takeIf { profile.isLocal },
+                            currentLabel.takeIf { profile.id == manager.currentId },
+                        ).joinToString(" · "),
                         focus = focus,
                         key = ProfileFocusKey(profile.id),
                         enterDelayMillis = index * ENTER_STAGGER_MILLIS,
@@ -256,7 +269,7 @@ private fun PickerContent(
                 }
                 ProfileTile(
                     label = stringResource(Lang.tv_profile_add),
-                    isCurrent = false,
+                    sublabel = "",
                     focus = focus,
                     key = AddFocusKey,
                     enterDelayMillis = state.profiles.size * ENTER_STAGGER_MILLIS,
@@ -283,6 +296,7 @@ private fun PickerContent(
         null -> {}
         is ProfileDialog.Add -> {
             val defaultName = stringResource(Lang.tv_profile_default_name, d.id)
+            var kind by remember { mutableStateOf(UserProfileKind.BANGUMI) }
             NameDialog(
                 title = stringResource(Lang.tv_profile_add),
                 description = stringResource(Lang.tv_profile_add_description),
@@ -293,24 +307,30 @@ private fun PickerContent(
                     dialog = null
                     onSwitching()
                     // 没填就把默认名存下来: 名字还要显示在侧边栏等处, 那里没有编号可拼
-                    scope.launch { manager.addAndSwitch(name.ifBlank { defaultName }, UserProfileKind.BANGUMI) }
+                    scope.launch { manager.addAndSwitch(name.ifBlank { defaultName }, kind) }
+                },
+                onDismissRequest = { dialog = null },
+                fieldDownTarget = DialogFocus.KindBangumi,
+                options = { focus -> ProfileKindOptions(kind, onKindChange = { kind = it }, focus) },
+            )
+        }
+
+        is ProfileDialog.Rename -> {
+            val defaultName = stringResource(Lang.tv_profile_default_name, d.profile.id)
+            NameDialog(
+                title = stringResource(Lang.tv_profile_rename),
+                description = null,
+                initialName = d.profile.name,
+                placeholder = defaultName,
+                confirmText = stringResource(Lang.tv_profile_save),
+                onConfirm = { name ->
+                    dialog = null
+                    // 清空了同样存默认名 (同添加)
+                    scope.launch { manager.rename(d.profile.id, name.ifBlank { defaultName }) }
                 },
                 onDismissRequest = { dialog = null },
             )
         }
-
-        is ProfileDialog.Rename -> NameDialog(
-            title = stringResource(Lang.tv_profile_rename),
-            description = null,
-            initialName = d.profile.name,
-            placeholder = stringResource(Lang.tv_profile_default_name, d.profile.id),
-            confirmText = stringResource(Lang.tv_profile_save),
-            onConfirm = { name ->
-                dialog = null
-                scope.launch { manager.rename(d.profile.id, name) }
-            },
-            onDismissRequest = { dialog = null },
-        )
 
         is ProfileDialog.Delete -> DeleteDialog(
             name = d.name,
@@ -342,7 +362,7 @@ private data object AddFocusKey : TvFocusKey
 /**
  * 一个人 (或「添加用户」): 圆形头像 + 名字, 照 Apple TV 的聚焦样式 —— 不画描边, 头像原地放大「抬起来」,
  * 身后的投影从贴身一圈淡影换成往下拖的一大片软影; 名字聚焦时变白, 其余灰.
- * 有 [menu] 时长按确认键弹出它. 名字下面一行恒占位 (当前用户在那里标「当前」), 出不出现不会让整排上下跳.
+ * 有 [menu] 时长按确认键弹出它. 名字下面一行恒占位 ([sublabel]: 本地档标「本地」、当前用户标「当前」), 出不出现不会让整排上下跳.
  *
  * @param chosen 选中了它、整页正在淡出进入应用: 再抬一点
  */
@@ -350,7 +370,7 @@ private data object AddFocusKey : TvFocusKey
 @Composable
 private fun ProfileTile(
     label: String,
-    isCurrent: Boolean,
+    sublabel: String,
     focus: TvFocusScope,
     key: TvFocusKey,
     enterDelayMillis: Int,
@@ -442,7 +462,7 @@ private fun ProfileTile(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            if (isCurrent) stringResource(Lang.tv_profile_current) else "",
+            sublabel,
             style = MaterialTheme.typography.labelMedium,
             color = SECONDARY_LABEL,
         )
@@ -512,6 +532,12 @@ private fun ProfileMenu(
     }
 }
 
+/**
+ * 起名的小弹窗 (添加用户 / 改名).
+ *
+ * @param fieldDownTarget 在名字框里按下键 (或输入法的完成) 去哪
+ * @param options 名字框与按钮之间的选项 (添加时选这个人是哪一种, 见 [ProfileKindOptions])
+ */
 @Composable
 private fun NameDialog(
     title: String,
@@ -521,6 +547,8 @@ private fun NameDialog(
     confirmText: String,
     onConfirm: (String) -> Unit,
     onDismissRequest: () -> Unit,
+    fieldDownTarget: TvFocusKey = DialogFocus.Confirm,
+    options: (@Composable (focus: TvFocusScope) -> Unit)? = null,
 ) {
     var value by remember { mutableStateOf(TextFieldValue(initialName)) }
     ProfileDialogSurface(title, onDismissRequest) { focus ->
@@ -537,8 +565,13 @@ private fun NameDialog(
             onValueChange = { value = it },
             placeholder = placeholder,
             focus = focus,
-            onDone = { focus.request(DialogFocus.Confirm) },
+            downTarget = fieldDownTarget,
+            onDone = { focus.request(fieldDownTarget) },
         )
+        if (options != null) {
+            Spacer(Modifier.height(16.dp))
+            options(focus)
+        }
         Spacer(Modifier.height(32.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             TvHeroButton(
@@ -594,7 +627,66 @@ private fun DeleteDialog(name: String, onConfirm: () -> Unit, onDismissRequest: 
     }
 }
 
-private enum class DialogFocus : TvFocusKey { Field, Confirm, Cancel }
+private enum class DialogFocus : TvFocusKey { Field, KindBangumi, KindLocal, Confirm, Cancel }
+
+/**
+ * 添加用户时选这个人是哪一种: 登录 Bangumi (默认; 进来先弹登录, 可以跳过) / 不登录 (本地档: 收藏、看过与评分只存在这台电视上).
+ * 单选, 当前项只在右端打勾, 不铺选中色 (同菜单与筛选值网格).
+ */
+@Composable
+private fun ProfileKindOptions(kind: UserProfileKind, onKindChange: (UserProfileKind) -> Unit, focus: TvFocusScope) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ProfileKindOption(
+            title = stringResource(Lang.tv_profile_kind_bangumi_title),
+            description = stringResource(Lang.tv_profile_kind_bangumi_description),
+            selected = kind == UserProfileKind.BANGUMI,
+            onClick = { onKindChange(UserProfileKind.BANGUMI) },
+            modifier = Modifier.tvFocusAnchor(focus, DialogFocus.KindBangumi),
+        )
+        ProfileKindOption(
+            title = stringResource(Lang.tv_profile_kind_local_title),
+            description = stringResource(Lang.tv_profile_kind_local_description),
+            selected = kind == UserProfileKind.LOCAL,
+            onClick = { onKindChange(UserProfileKind.LOCAL) },
+            modifier = Modifier.tvFocusAnchor(focus, DialogFocus.KindLocal),
+        )
+    }
+}
+
+@Composable
+private fun ProfileKindOption(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AniFocusSelectableSurface(
+        onClick = onClick,
+        selected = false,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) { _ ->
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                // 跟着底座给的内容色走 (聚焦时是实底上的浅色字), 只是淡一些
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalContentColor.current.copy(alpha = 0.72f),
+                )
+            }
+            if (selected) {
+                Icon(Icons.Rounded.Check, contentDescription = null, Modifier.size(20.dp))
+            }
+        }
+    }
+}
 
 /** 选人页上的小弹窗 (独立窗口). */
 @Composable
@@ -611,7 +703,8 @@ private fun ProfileDialogSurface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Column(Modifier.tvFocusNavSignal(focus).padding(32.dp)) {
+            // 可滚动兜底: 添加用户那个 (说明 + 名字 + 两个选项) 在字大的时候可能比屏幕高, 焦点走到哪滚到哪
+            Column(Modifier.tvFocusNavSignal(focus).verticalScroll(rememberScrollState()).padding(32.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(16.dp))
                 content(focus)
@@ -620,13 +713,14 @@ private fun ProfileDialogSurface(
     }
 }
 
-/** 名字输入框: 聚焦时弹出系统键盘 (电视上没有物理键盘). 下键去按钮, 上键留在原地. */
+/** 名字输入框: 聚焦时弹出系统键盘 (电视上没有物理键盘). 下键去 [downTarget], 上键留在原地. */
 @Composable
 private fun NameField(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
     focus: TvFocusScope,
+    downTarget: TvFocusKey,
     onDone: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -651,7 +745,7 @@ private fun NameField(
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
                         Key.DirectionDown -> {
-                            focus.request(DialogFocus.Confirm)
+                            focus.request(downTarget)
                             true
                         }
 

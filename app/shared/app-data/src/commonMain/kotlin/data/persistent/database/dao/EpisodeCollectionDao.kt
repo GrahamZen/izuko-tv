@@ -160,6 +160,22 @@ interface EpisodeCollectionDao {
     @Transaction
     suspend fun upsert(item: List<EpisodeCollectionEntity>)
 
+    @Query("""SELECT * FROM episode_collection WHERE episodeId = :episodeId LIMIT 1""")
+    suspend fun getByEpisodeId(episodeId: Int): EpisodeCollectionEntity?
+
+    /**
+     * 本地档的单集落库 (见 `UserProfileKind.LOCAL`): 同 [upsert], 但看过状态**保留库里的** —— 本地档取到的是匿名结果,
+     * 看过状态一律是空的. 读与写在同一个事务里, 不会盖掉取数途中用户刚标的看过.
+     *
+     * @return 实际写进去的那一行
+     */
+    @Transaction
+    suspend fun upsertKeepingSelfState(item: EpisodeCollectionEntity): EpisodeCollectionEntity {
+        val kept = getByEpisodeId(item.episodeId)?.let { item.copy(selfCollectionType = it.selfCollectionType) } ?: item
+        upsert(kept)
+        return kept
+    }
+
     @Query("""UPDATE episode_collection SET selfCollectionType = :type WHERE subjectId = :subjectId AND episodeId = :episodeId""")
     suspend fun updateSelfCollectionType(
         subjectId: Int,
