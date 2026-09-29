@@ -28,7 +28,7 @@ enum class DarkMode {
  * (用户 2026-09-18)。
  *
  * 旧的布尔 `tvImmersiveSchedule` 已撤: 存储层是 `ignoreUnknownKeys = true` (见 DataStoreMP),
- * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认的 [Timeline],
+ * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认版式,
  * 再选一次即可。
  */
 @Serializable
@@ -36,10 +36,10 @@ enum class TvScheduleLayout {
     /** 上游原布局: 15 天并排的纵向列表. */
     Upstream,
 
-    /** 日期胶囊行 + **全竖版卡片网格** (2026-09-13 改版之前的 TV 版式). */
+    /** 日期胶囊行 + 海报墙 (同追番页的卡片墙, 原生视图; 默认). 存储名沿用 2026-09-13 之前的竖版卡片网格. */
     Grid,
 
-    /** 左侧焦点详情大图大字 + 右侧单列时间线 (改版后, 默认). */
+    /** 左侧焦点详情大图大字 + 右侧单列时间线. */
     Timeline,
 }
 
@@ -211,7 +211,7 @@ data class ThemeSettings(
     /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
     val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
-    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Timeline,
+    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Grid,
     /**
      * TV: 追番页顶部那排收藏分类标签的先后顺序 (想看 / 在看 / 搁置 / 看过 / 抛弃).
      *

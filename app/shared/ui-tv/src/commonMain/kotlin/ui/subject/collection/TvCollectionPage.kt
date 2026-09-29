@@ -979,7 +979,7 @@ internal fun TvCollectionGlassTabBar(
 
 /**
  * 玻璃标签栏里的一个标签: 没选中的字降透明度, 选中的垫一块半透明浅灰片并加粗, 聚焦的换成浅色实底配黑字并抬起 (配色见 TvGlassColors);
- * [count] 以小号淡色跟在后面. 焦点与点击挂在 [modifier] 上, [focused] 由调用方按 onFocusChanged 记好传进来.
+ * [count] (或 [detail], 新番时间表的日期) 以小号淡色跟在后面. 焦点与点击挂在 [modifier] 上, [focused] 由调用方按 onFocusChanged 记好传进来.
  */
 @Composable
 internal fun TvCollectionGlassTab(
@@ -988,6 +988,7 @@ internal fun TvCollectionGlassTab(
     focused: Boolean,
     modifier: Modifier = Modifier,
     count: Int? = null,
+    detail: String? = count?.toString(),
 ) {
     val glass = tvGlassColors()
     // 选中片与聚焦片各是一层, 只动透明度 (照 tvOS: 聚焦的白片淡入淡出): 按颜色插值的话"没有片"得写成 Color.Transparent,
@@ -1028,9 +1029,9 @@ internal fun TvCollectionGlassTab(
             maxLines = 1,
             softWrap = false,
         )
-        count?.let {
+        detail?.let {
             Text(
-                it.toString(),
+                it,
                 color = labelColor.copy(alpha = labelColor.alpha * 0.7f),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,

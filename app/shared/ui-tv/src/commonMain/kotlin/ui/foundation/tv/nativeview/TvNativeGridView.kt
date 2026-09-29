@@ -161,6 +161,24 @@ class TvNativeGridView(
             cards.refreshDim(this)
         }
 
+    /**
+     * 整屏背景对焦时卡片的淡没程度 (0..1, 见 TvNativeGridPageView 的对焦一节): 除 [pullKeepIndex] 那张以外都乘 (1 − 它); 淡到 0 的卡不画.
+     */
+    var pullFade: Float = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            cards.refreshDim(this)
+        }
+
+    /** 对焦时留着不淡的那张 (长按的那张); -1 = 全部跟着 [pullFade] 淡. */
+    var pullKeepIndex: Int = -1
+        set(value) {
+            if (field == value) return
+            field = value
+            cards.refreshDim(this)
+        }
+
     /** hero 态整片平移 (px, 正 = 往下推). */
     private var shiftY = 0f
     private var shiftAnimator: ValueAnimator? = null
@@ -520,11 +538,12 @@ class TvNativeGridView(
         if (view == null || !view.requestFocus()) setSelectedPositionSmooth(index)
     }
 
-    /** 卡的淡化: 卡片墙上不淡 (越过网格顶线照常画); 进出 hero 态时按进度过渡到 [heroDim]. */
+    /** 卡的淡化: 卡片墙上不淡 (越过网格顶线照常画); 进出 hero 态时按进度过渡到 [heroDim]; 整屏背景对焦时再乘 1 − [pullFade]. */
     private fun cardDim(index: Int, view: View): Float {
+        val pull = if (index == pullKeepIndex) 1f else 1f - pullFade
         val p = heroAbove
-        if (p <= 0f) return 1f
-        return 1f + (heroDim(index, view) - 1f) * p
+        if (p <= 0f) return pull
+        return (1f + (heroDim(index, view) - 1f) * p) * pull
     }
 
     /**

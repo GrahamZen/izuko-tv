@@ -237,7 +237,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             // 改版换掉的东西未必人人都想要, 所以旧版留着可选, 见 TvScheduleLayout
             ProvideTvScrollActivity {
                 when (LocalThemeSettings.current.tvScheduleLayout) {
-                    TvScheduleLayout.Grid -> TvScheduleGridPage(presentation, onRetry, modifier)
+                    // 海报墙: 同追番页的卡片墙, 换上海报墙那套灰阶底色
+                    TvScheduleLayout.Grid -> TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
                     else -> TvSchedulePage(presentation, onRetry, modifier)
                 }
             }

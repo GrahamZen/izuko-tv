@@ -40,11 +40,14 @@ class TvNativeGridPageNavigationTest {
     private inner class PageListener : TvNativeGridPageListener {
         val rowEdges = mutableListOf<Pair<Int, Int>>()
         val parked = mutableListOf<Boolean>()
+        val clicked = mutableListOf<Int>()
         var topRowUp = 0
         var tab = 0
 
         override fun onFocused(index: Int) = Unit
-        override fun onClick(index: Int) = Unit
+        override fun onClick(index: Int) {
+            clicked += index
+        }
         override fun onTopRowUp(): Boolean {
             topRowUp++
             // 追番页: 回选中的标签 (这里用页面外的一个视图代替)
@@ -206,6 +209,19 @@ class TvNativeGridPageNavigationTest {
         host.onMain { page.focusItem(5) }
         host.waitUntil("焦点回到第 5 张") { focusedCard() == (0 to 5) }
         assertEquals(false, host.onMain { card?.focusLookHeld })
+    }
+
+    @Test
+    fun `without the hero state confirm opens the card at once and keeps its focused look`() {
+        // 新番时间表: 卡片墙上按确定直接进详情页, 不先切到 hero 态
+        host.onMain { page.heroEnabled = false }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(listOf(5), listener.clicked)
+        assertEquals(false, host.onMain { page.heroActive })
+        host.onMain { outside.requestFocus() }
+        host.waitUntil("焦点离开网格") { outside.isFocused }
+        val card = host.onMain { page.grid?.findViewHolderForAdapterPosition(5)?.itemView as? TvNativeCardView }
+        assertTrue(host.onMain { card?.focusLookHeld == true }, "进详情页时那张卡仍画成聚焦态")
     }
 
     @Test

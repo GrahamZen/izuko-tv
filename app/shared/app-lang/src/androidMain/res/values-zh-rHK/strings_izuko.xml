@@ -349,7 +349,7 @@
     <string name="settings_theme_tv_schedule_layout">新番時間表版式 (電視)</string>
     <string name="settings_theme_tv_schedule_layout_description">選擇電視上新番時間表的版式。</string>
     <string name="settings_theme_tv_schedule_upstream">經典列表</string>
-    <string name="settings_theme_tv_schedule_grid">豎版卡片網格</string>
+    <string name="settings_theme_tv_schedule_grid">海報牆</string>
     <string name="settings_theme_tv_schedule_timeline">左側詳情 + 單列時間線</string>
     <string name="comment_reply_to">回覆 %1$s</string>
     <string name="comment_new_comment">發表評論</string>
