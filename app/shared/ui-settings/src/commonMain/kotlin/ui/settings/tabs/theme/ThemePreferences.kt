@@ -50,6 +50,8 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale_and_ring
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
+import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
@@ -199,6 +201,16 @@ fun SettingsScope.ThemeGroup(
                 onSelect = { state.update(themeSettings.copy(tvScheduleLayout = it)) },
                 title = { Text(stringResource(Lang.settings_theme_tv_schedule_layout)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_schedule_layout_description)) },
+            )
+
+            // 海报墙 hero 态要不要在整页底下铺模糊背景、按确定变清晰代替放大 (见 ThemeSettings.tvHeroBlurBackdrop)
+            SwitchItem(
+                checked = themeSettings.tvHeroBlurBackdrop,
+                onCheckedChange = { checked ->
+                    state.update(themeSettings.copy(tvHeroBlurBackdrop = checked))
+                },
+                title = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop_description)) },
             )
 
             // 三档 (见 TvVisualEffectsLevel). 写 tvVisualEffects 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔

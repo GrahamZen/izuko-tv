@@ -147,6 +147,20 @@ class TvHeroMediaPipelineState internal constructor(
     }
 
     /**
+     * 整部的横版背景图 (不看单集剧照; 没有时回退竖版封面, 规则同 [backdropUrl]): 详情页铺的就是这张. 列表页 hero 态铺模糊背景时用它的
+     * 模糊版, 按确定时对焦成清晰的这一张再进详情页 (见 TvNativeWallBackdropView).
+     */
+    fun seriesBackdropUrl(spec: TvHeroMediaSpec?): String? = spec?.let { s ->
+        tmdb.tvHeroBackdropUrl(
+            s.subjectId,
+            fullVisualEffects = false,
+            preferNextEpisodeStill = false,
+            coverUrl = s.coverUrl,
+            coverFallbackNow = coverFallbackFor == s.subjectId,
+        )
+    }
+
+    /**
      * 视觉效果完整档且 4K 界面时的剧照**升档目标** (原图 URL): 只有剧照那一路有原图 (backdrop 那路服务层已是 w1280),
      * 且只在调用方传进来的 fullVisualEffects 为真时给. 显示端先用 w1280 crossfade, 停稳后原地换成它.
      */

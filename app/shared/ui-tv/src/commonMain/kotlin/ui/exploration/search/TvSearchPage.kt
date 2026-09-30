@@ -1735,7 +1735,8 @@ private fun TvSearchResultsPane(
         ) {
             // 顶部行: 搜索词 (确认回输入态改词) + 筛选按钮
             TvSearchTopRow(
-                modifier = Modifier.height(TV_SEARCH_TOP_ROW_HEIGHT),
+                // hero 态的模糊背景点开时顶部行跟着卡片淡没 (见 TvNativeGridPageState.wallFade), 在绘制里读
+                modifier = Modifier.height(TV_SEARCH_TOP_ROW_HEIGHT).graphicsLayer { alpha = 1f - nativeState.wallFade },
                 keywords = state.query.keywords,
                 hasFilters = state.query.hasFilters(),
                 titleFocusRequester = titleFocusRequester,
@@ -1763,7 +1764,8 @@ private fun TvSearchResultsPane(
                     onNavigateDown = focusGridFromAbove,
                     onEmptied = { runCatching { titleFocusRequester.requestFocus() } },
                     modifier = Modifier.padding(top = TV_SEARCH_FILTERS_TOP_GAP)
-                        .height(TV_SEARCH_FILTERS_ROW_HEIGHT),
+                        .height(TV_SEARCH_FILTERS_ROW_HEIGHT)
+                        .graphicsLayer { alpha = 1f - nativeState.wallFade },
                 )
             }
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -739,7 +740,8 @@ private fun TvCollectionPageContent(
         ) {
             // 悬浮分类标签 (玻璃胶囊浮于卡片上), 靠左: 居中会压住 hero 背景图, 左边的标题上方也会空出一块
             TvCollectionTabRow(
-                modifier = Modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT),
+                // hero 态的模糊背景点开时标签行跟着卡片淡没 (见 TvNativeGridPageState.wallFade), 在绘制里读
+                modifier = Modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT).graphicsLayer { alpha = 1f - nativeState.wallFade },
                 tabs = tabOrder,
                 selectedType = selectedType,
                 counts = { type -> state.collectionCounts?.getCount(type) },

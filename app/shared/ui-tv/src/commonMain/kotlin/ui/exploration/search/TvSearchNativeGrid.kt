@@ -40,6 +40,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.lang.Lang
@@ -149,12 +150,21 @@ private fun TvSearchNativeSource(
     } else {
         null
     }
+    // hero 态铺在整页底下的模糊背景 (设置里开了才用): 整部的横版背景图, 没有横版图时是竖版封面; 封面与打码的条目只铺模糊版, 不变清晰
+    val wall = if (display != null && spec != null) {
+        heroPipeline.seriesBackdropUrl(spec)?.let {
+            TvNativeWallBackdropTarget(it, display.subjectId, sharp = it != spec.coverUrl && display.nsfwMode != NsfwMode.BLUR)
+        }
+    } else {
+        null
+    }
     val text = heroText()?.let { tvSearchNativeHeroText(it, summaryCache) }
     val source = TvNativeHeroSource(
         backdrop = backdrop,
         dimming = raw?.subjectId != display?.subjectId,
         rawSubjectId = raw?.subjectId,
         text = text,
+        wall = wall,
     )
     val view = state.view
     SideEffect { view?.setSource(source) }

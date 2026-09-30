@@ -183,6 +183,26 @@ class TvNativeHeroTextView(
     private val summary = TvNativeTextView(context)
     private val lines: List<View> = listOf(title, metaRow, status, summary)
 
+    /** 各行自己的透明度 (进场滑入 / 重建写的那份), 标题以外的几行画的时候再乘 [detailAlpha]. */
+    private val lineAlpha = FloatArray(lines.size) { 1f }
+
+    /**
+     * 标题以外几行 (信息行 / 下一集行 / 简介) 的整体透明度 (0..1): 整屏背景点开时跟着卡片淡没 (见 TvNativeWallFocus), 标题留着 ——
+     * 进详情页时由详情页的标题从这里接着画 (放大转场的标题交接).
+     */
+    var detailAlpha: Float = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            for ((i, line) in lines.withIndex()) if (line !== title) line.alpha = lineAlpha[i] * value
+        }
+
+    /** 写第 [line] 行自己的透明度; 标题以外的乘上 [detailAlpha]. 标题的隐藏另见 [applyTitleOffset]. */
+    private fun setLineAlpha(line: View, alpha: Float) {
+        lineAlpha[lines.indexOf(line)] = alpha
+        line.alpha = if (line === title) alpha else alpha * detailAlpha
+    }
+
     private var shown: TvNativeHeroText? = null
     private var pending: TvNativeHeroText? = null
     private var hasPending = false
@@ -269,7 +289,7 @@ class TvNativeHeroTextView(
             bindContent(text)
             for (line in lines) {
                 line.translationX = 0f
-                line.alpha = 1f
+                setLineAlpha(line, 1f)
             }
             applyTitleOffset()
             return
@@ -373,7 +393,7 @@ class TvNativeHeroTextView(
             // 行号: 标题 0, 信息行 1, 下一集行与简介 2; 不错落时整块同进 (都按第 0 行)
             val lineIndex = if (s.stagger) minOf(i, 2) else 0
             val delay = (base + lineIndex * TV_NATIVE_TEXT_STAGGER_MILLIS - elapsed).coerceAtLeast(0L)
-            line.alpha = 0f
+            setLineAlpha(line, 0f)
             line.translationX = s.slidePx.toFloat()
             val animator = ValueAnimator.ofFloat(0f, 1f).apply {
                 this.duration = duration
@@ -381,7 +401,7 @@ class TvNativeHeroTextView(
                 interpolator = LinearInterpolator()
                 addUpdateListener {
                     val f = it.animatedValue as Float
-                    line.alpha = if (line === title && titleHidden) 0f else f
+                    setLineAlpha(line, if (line === title && titleHidden) 0f else f)
                     line.translationX = s.slidePx * (1f - TV_NATIVE_LINEAR_OUT_SLOW_IN.getInterpolation(f))
                 }
                 addListener(object : AnimatorListenerAdapter() {

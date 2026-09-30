@@ -25,11 +25,12 @@ import kotlin.math.roundToLong
  * 版 Apple TV App 的做法: 先背景后文字, 旧的先走, 淡入淡出一律线性 —— 缓动曲线把变化挤在中间一小段, 整屏换色看着是一闪. 背景图的羽化是
  * 在图上叠画 hero 底色的渐变, 图只在底色已经是那个色的时候露面, 图边任何时候都融得进去. 四段进度:
  * - [above]: 聚焦行上面的几行与卡片番名淡没 (探索页轮播露着的那截也随它淡);
- * - [tone]: 整屏底色压成 hero 的底 (只在深色主题下有, 浅色 hero 底与卡片墙同色);
+ * - [tone]: 整屏底色压成 hero 的底 (只在压黑时有, 见 [darkens]);
  * - [content]: 背景图; [text]: 标题与简介.
  *
- * 进: above 0→1 (150ms) 与 tone 0→1 (深 300 / 浅 150ms) 同时起, tone 走完再走 content (400ms), text 在 content 起步 100ms 后走 300ms
- * (content 已经不是 0 时不等). 出: text (150ms) 与 content (250ms) 同时收, content 收完再 above (250ms) 与 tone (深 350 / 浅 250ms) 一起回.
+ * 进: above 0→1 (150ms) 与 tone 0→1 (压黑 300 / 不压黑 150ms) 同时起, tone 走完再走 content (400ms), text 在 content 起步 100ms 后走
+ * 300ms (content 已经不是 0 时不等). 出: text (150ms) 与 content (250ms) 同时收, content 收完再 above (250ms) 与 tone (压黑 350 / 不压黑
+ * 250ms) 一起回.
  * 全部线性, 时长按剩余路程折算 (半路反向从当前值接着走). [animated] = false (视觉效果流畅档) 时直接到位.
  */
 class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit) {
@@ -44,8 +45,11 @@ class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit)
     var text = 0f
         private set
 
-    /** 深色主题 (浅色下 tone 不压黑, 时长更短). */
-    var dark: Boolean = true
+    /**
+     * hero 态把整屏底色压黑 (页面视图给: 深色主题、且没铺模糊背景). 不压黑时 (浅色 hero 底与卡片墙同色; 模糊背景盖满整屏) tone 没有可看的
+     * 变化, 时长更短.
+     */
+    var darkens: Boolean = true
 
     /** hero 态看得见 (有一段还没收完): 背景图 / hero 文字要画. */
     val visible: Boolean get() = active || tone > 0f || content > 0f || text > 0f
@@ -69,7 +73,7 @@ class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit)
         }
         if (active) {
             animate(Track.Above, 1f, TV_HERO_ABOVE_OUT_MILLIS)
-            val toneMillis = if (dark) TV_HERO_TONE_IN_MILLIS else TV_HERO_TONE_IN_MILLIS_LIGHT
+            val toneMillis = if (darkens) TV_HERO_TONE_IN_MILLIS else TV_HERO_TONE_IN_MILLIS_LIGHT
             animate(Track.Tone, 1f, toneMillis) {
                 if (seq != sequence) return@animate
                 val textDelay = if (content > 0f) 0L else TV_HERO_TEXT_DELAY_MILLIS
@@ -81,7 +85,7 @@ class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit)
             animate(Track.Content, 0f, TV_HERO_CONTENT_OUT_MILLIS) {
                 if (seq != sequence) return@animate
                 animate(Track.Above, 0f, TV_HERO_ABOVE_IN_MILLIS)
-                animate(Track.Tone, 0f, if (dark) TV_HERO_TONE_OUT_MILLIS else TV_HERO_TONE_OUT_MILLIS_LIGHT)
+                animate(Track.Tone, 0f, if (darkens) TV_HERO_TONE_OUT_MILLIS else TV_HERO_TONE_OUT_MILLIS_LIGHT)
             }
         }
     }
@@ -108,7 +112,7 @@ class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit)
         val from = get(track)
         val distance = abs(to - from).coerceIn(0f, 1f)
         val millis = (fullMillis * distance).roundToLong()
-        // 浅色主题下 tone 没有可看的变化 (同色), 照样按时长走, 后面的段按原来的先后接上
+        // 不压黑时 tone 没有可看的变化, 照样按时长走, 后面的段按原来的先后接上
         if (millis <= 0L && delay <= 0L) {
             set(track, to)
             onUpdate(this)

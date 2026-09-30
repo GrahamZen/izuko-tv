@@ -61,7 +61,7 @@ data class TvNativeWallBackdropTarget(
  * 模糊层: 同一个地址只解长边 [TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX] 的小图, 解码线程上模糊, 拉伸铺满 (见 TvNativeImages.loadBlurredBackdrop).
  * 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的常驻 GPU 开销之一. 整屏压暗 ([maskColor])
  * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha), 用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
- * 下面的; 新图没解好之前旧图一直在. 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
+ * 下面的; 新图没解好之前旧图一直在; 连着换时可以等上一张淡满再换 ([coalesceSwaps]). 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
  *
  * 清晰层: 同一张图按原尺寸解 (TMDB w1280, 与详情页同一个内存缓存键), 叠在模糊层上, 透明度 = [sharpness] (解好之前恒 0; 透明度 0 的层
  * 不画). 换图后停在这张上 [TV_WALL_BACKDROP_SHARP_DELAY_MILLIS] 才解 ([prepareSharp] 当场解), 解好先传到 GPU ([Bitmap.prepareToDraw]);
@@ -127,6 +127,16 @@ class TvNativeWallBackdropView(
     /** 模糊层换图交叉淡入; false (流畅档) = 解好当场换. */
     var crossfade: Boolean = true
 
+    /**
+     * 连着换图时整屏同时只有一张在淡入: 换图时上一张还在淡入, 就等它淡满再换, 这期间又换了只换最后那张; 没在淡入 (单次按键) 当场换.
+     * hero 态铺模糊背景时开 (hero 图也在同时交叉淡入). 目标 ([currentTarget]) 当场就换, 对焦与放大登记照常按新目标走; 按下确认键
+     * ([prepareSharp]) 时等着的当场开始换.
+     */
+    var coalesceSwaps: Boolean = false
+
+    /** 有一次换图在等上一张淡满 (见 [coalesceSwaps]): 淡满时换成那时的目标. */
+    private var swapPending = false
+
     /** 当前目标的清晰图解好了. */
     var onSharpReady: (() -> Unit)? = null
 
@@ -148,8 +158,8 @@ class TvNativeWallBackdropView(
     }
 
     /**
-     * 换图 (同一个目标重复调用是空操作). 换了地址 = 模糊层解新图淡入, 清晰图作废 (停下来再解新的); 换了条目 = 放大登记作废.
-     * null = 淡出成页面底色.
+     * 换图 (同一个目标重复调用是空操作). 换了地址 = 模糊层解新图淡入 (连着换时见 [coalesceSwaps]), 清晰图作废 (停下来再解新的);
+     * 换了条目 = 放大登记作废. null = 淡出成页面底色.
      */
     fun show(target: TvNativeWallBackdropTarget?) {
         val old = this.target
@@ -159,8 +169,14 @@ class TvNativeWallBackdropView(
         if (old?.url != target?.url || target?.sharp != true) clearSharp()
         if (old?.url != target?.url) {
             if (target == null) {
+                swapPending = false
                 for (s in slots.toList()) s.fadeOut()
+            } else if (coalesceSwaps && slots.any { it.fadingIn }) {
+                // 上一张还在淡入 (连着换): 还没露面的作废, 等它淡满再换
+                slots.lastOrNull()?.takeIf { !it.shown }?.let { removeSlot(it) }
+                swapPending = true
             } else {
+                swapPending = false
                 addSlot(target, direct = false)
             }
         }
@@ -168,8 +184,18 @@ class TvNativeWallBackdropView(
         applySharpness()
     }
 
-    /** 当场开始解清晰图 (按下确认键 / 长按 / 恢复点开的状态), 不等停留. 已解好 / 已发出请求时是空操作. */
+    /** 等着的那次换图现在开始: 换成此刻的目标 (最上面那张已经是它就不换). */
+    private fun startPendingSwap() {
+        if (!swapPending) return
+        swapPending = false
+        val t = target ?: return
+        if (slots.lastOrNull { it.shown && !it.leaving }?.target?.url == t.url) return
+        addSlot(t, direct = false)
+    }
+
+    /** 当场开始解清晰图 (按下确认键 / 长按 / 恢复点开的状态), 不等停留; 等着的换图也当场开始. 已解好 / 已发出请求时是空操作. */
     fun prepareSharp() {
+        startPendingSwap()
         val t = target ?: return
         if (!t.sharp || t.url == sharpUrl || sharpRequested) return
         sharpJob?.cancel()
@@ -228,6 +254,14 @@ class TvNativeWallBackdropView(
 
         /** 解好上过屏 (淡入中 / 满了 / 在淡出). */
         var shown = false
+            private set
+
+        /** 在淡出 (整屏背景撤掉了). */
+        var leaving = false
+            private set
+
+        /** 在淡入 (还没满). */
+        var fadingIn = false
             private set
         private var animator: ValueAnimator? = null
         private var job: Job? = null
@@ -289,7 +323,11 @@ class TvNativeWallBackdropView(
             sharpMaskAlpha = -1
             applySharpMask()
             shown = true
-            fadeTo(1f, animated = crossfade && !direct) { removeBelow(this) }
+            fadeTo(1f, animated = crossfade && !direct) {
+                removeBelow(this)
+                // 连着换时等着的那张 (见 coalesceSwaps)
+                startPendingSwap()
+            }
         }
 
         /** 解不出来: 是当前这张就连下面的一起淡掉 (不拿别的条目的图顶着), 否则旧图留着. */
@@ -302,26 +340,35 @@ class TvNativeWallBackdropView(
 
         fun fadeOut() {
             shown = true
+            leaving = true
             fadeTo(0f, animated = crossfade) { removeSlot(this) }
         }
 
         private fun fadeTo(to: Float, animated: Boolean, onEnd: () -> Unit) {
             animator?.cancel()
+            fadingIn = false
             if (!animated || image.alpha == to) {
                 image.alpha = to
                 onEnd()
                 return
             }
+            fadingIn = to == 1f
             animator = ValueAnimator.ofFloat(image.alpha, to).apply {
                 duration = TV_WALL_BACKDROP_CROSSFADE_MILLIS.toLong()
                 interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
                 addUpdateListener { image.alpha = it.animatedValue as Float }
-                addListener(tvNativeEndListener(onEnd))
+                addListener(
+                    tvNativeEndListener {
+                        fadingIn = false
+                        onEnd()
+                    },
+                )
                 start()
             }
         }
 
         fun dispose() {
+            fadingIn = false
             animator?.cancel()
             job?.cancel()
             TvNativeImages.clear(image)

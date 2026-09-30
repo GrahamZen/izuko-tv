@@ -44,19 +44,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
-import me.him188.ani.app.ui.foundation.navigation.BackHandler
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 
 /*
  * 网格页 (追番 / 搜索) 原生海报墙在 Compose 这一侧的接线, 两页共用: 建视图、换数据、把页面的网格送焦请求 (TvGridFocusState) 转给原生、
@@ -65,7 +64,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
 /**
  * 网格页原生海报墙在页面这一侧的状态: 视图引用、hero 态 (跨导航保存, 返回本页时停在 hero 态)、整屏黑度、各份网格的位置 (页面重建时恢复)、
- * 长按菜单锚点、整屏背景的点开 (新番时间表, 跨导航保存: 返回时页面重建也从清晰图起).
+ * 长按菜单锚点、整屏背景的点开 (新番时间表 / hero 态的模糊背景, 跨导航保存: 返回时页面重建也从清晰图起).
  */
 @Stable
 class TvNativeGridPageState internal constructor(
@@ -299,6 +298,12 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
     val visualEffects = LocalThemeSettings.current.visualEffects
+    // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur); 没有 hero 态的新番时间表不管它
+    val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压). 铺着模糊背景时 hero 态不压黑,
+    // 整屏底色一直是卡片墙那档 (见 TvNativeGridPageView.heroBlur)
+    val heroBlurMask = tvPosterWallBackground().copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
+    val heroBlurText = tvHeroContentColor()
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
@@ -402,10 +407,15 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatment = treatment
+                view.heroBlur = heroBlur
                 view.wallBackdrop?.let { wb ->
                     wallBackdrop?.let {
                         wb.maskColor = it.maskColor.toArgb()
                         wb.textColor = it.textColor.toArgb()
+                    }
+                    if (heroBlur) {
+                        wb.maskColor = heroBlurMask.toArgb()
+                        wb.textColor = heroBlurText.toArgb()
                     }
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
@@ -445,7 +455,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
         if (view != null && state.heroActive && !view.heroActive) view.setHeroActive(true, animated = false)
     }
 
-    if (wallBackdrop != null) TvNativeWallBackdropEffects(state, view, wallBackdrop)
+    if (wallBackdrop != null || heroBlur) TvNativeWallBackdropEffects(state, view, wallBackdrop)
 
     // 页面的网格送焦请求 (进页恢复 / 顶栏下键 / 换标签落点 / 返回键回首卡) 交给原生送焦
     gridFocus.NativeSendFocusEffect(
@@ -493,46 +503,33 @@ private fun <T : Any> TvNativeGridPageHostContent(
 }
 
 /**
- * 整屏背景 (新番时间表) 在 Compose 这一侧的接线: 停稳后的聚焦条目换图; 长按的菜单关了倒放; 点开进了详情页, 回到本页 (栈顶) 且缩回层
- * 撤掉之后倒放 (返回时页面重建先恢复成点开的样子, 缩回落地时列表页与缩回层是同一张清晰图); 点开途中按返回取消.
+ * 整屏背景 (新番时间表 / hero 态的模糊背景) 在 Compose 这一侧的接线: 新番时间表按停稳后的聚焦条目换图 ([spec]; hero 态的模糊背景由视图按
+ * hero 内容里的 TvNativeHeroSource.wall 自己换, 为 null); 长按的菜单关了倒放; 点开进了详情页、回到本页之后倒放, 点开途中按返回取消
+ * (见 [TvNativeWallOpenEffects]).
  */
 @Composable
-private fun TvNativeWallBackdropEffects(state: TvNativeGridPageState, view: TvNativeGridPageView?, spec: TvNativeWallBackdropSpec) {
+private fun TvNativeWallBackdropEffects(state: TvNativeGridPageState, view: TvNativeGridPageView?, spec: TvNativeWallBackdropSpec?) {
     val currentSpec by rememberUpdatedState(spec)
-    val pageForeground = LocalPageIsForeground.current
-    LaunchedEffect(view) {
-        if (view == null) return@LaunchedEffect
-        snapshotFlow { currentSpec.target() }.collect { view.setWallTarget(it) }
+    LaunchedEffect(view, spec != null) {
+        if (view == null || spec == null) return@LaunchedEffect
+        snapshotFlow { currentSpec?.target?.invoke() }.collect { view.setWallTarget(it) }
     }
     LaunchedEffect(view) {
         if (view == null) return@LaunchedEffect
         snapshotFlow { state.menu == null }.collect { closed -> if (closed) view.endWallPeek() }
     }
-    LaunchedEffect(view) {
-        if (view == null) return@LaunchedEffect
-        if (state.wallOpenIndex >= 0) view.restoreWallOpen()
-        snapshotFlow { TvNativeWallOpenSignal(state.wallOpenIndex >= 0, pageForeground.value, TvHeroZoomHandoff.shrinking) }
-            .collectLatest { s ->
-                if (!s.opened) return@collectLatest
-                if (!s.foreground) {
-                    state.wallOpenLeft = true
-                    return@collectLatest
-                }
-                if (s.shrinking) return@collectLatest
-                // 点开之后一直没离开前台: 导航没发出去 (前进导航的转场闸门挡了), 过一会儿还在就当没进
-                if (!state.wallOpenLeft) delay(TV_WALL_OPEN_LEAVE_TIMEOUT_MILLIS)
-                state.wallOpenIndex = -1
-                state.wallOpenLeft = false
-                view.endWallOpen()
-            }
-    }
-    BackHandler(enabled = state.wallOpening) { state.view?.cancelWallOpen() }
+    TvNativeWallOpenEffects(
+        view = view,
+        opened = { state.wallOpenIndex >= 0 },
+        opening = { state.wallOpening },
+        left = { state.wallOpenLeft },
+        markLeft = { state.wallOpenLeft = true },
+        clear = {
+            state.wallOpenIndex = -1
+            state.wallOpenLeft = false
+        },
+    )
 }
-
-private data class TvNativeWallOpenSignal(val opened: Boolean, val foreground: Boolean, val shrinking: Boolean)
-
-/** 整屏背景点开之后多久还没离开前台就当导航没发出去 (倒放回卡片墙). */
-private const val TV_WALL_OPEN_LEAVE_TIMEOUT_MILLIS = 1_000L
 
 private data class TvNativeGridTitleHandoff(
     val view: TvNativeGridPageView,

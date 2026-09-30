@@ -159,6 +159,68 @@ class TvNativeWallBackdropViewTest {
         host.onMain { backdrop.show(TvNativeWallBackdropTarget(host.testImage("other"), subjectId = 43, sharp = true)) }
         assertTrue(TvHeroZoomHandoff.sourceDebug().startsWith("source=null"), TvHeroZoomHandoff.sourceDebug())
     }
+
+    /** 整张 [color] 的图. */
+    private fun solid(name: String, color: Int, subjectId: Int) =
+        TvNativeWallBackdropTarget(host.testImage(name, left = color, right = color), subjectId, sharp = true)
+
+    /** 模糊层最上面那张图中间的颜色偏哪个通道 (主线程上调). */
+    private fun topColor(): Int? {
+        val bitmap = blurred().lastOrNull()?.let { renderDrawable(it) } ?: return null
+        val p = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+        return when (maxOf(Color.red(p), Color.green(p), Color.blue(p))) {
+            Color.red(p) -> Color.RED
+            Color.green(p) -> Color.GREEN
+            else -> Color.BLUE
+        }
+    }
+
+    /** 连着换: 先铺满红的, 再换成绿的 (单次换, 当场开始), 等绿的在淡入. */
+    private fun startGreenFadeOverRed(prefix: String) {
+        host.onMain {
+            backdrop.coalesceSwaps = true
+            backdrop.show(solid("$prefix-red", Color.RED, 1))
+        }
+        host.waitUntil("第一张淡满") { blurred().singleOrNull()?.alpha == 1f }
+        host.onMain {
+            backdrop.show(solid("$prefix-green", Color.GREEN, 2))
+            // 单次换 (上一张没在淡入): 当场加上新的一张
+            assertEquals(2, blurred().size)
+        }
+        host.waitUntil("绿的在淡入") { topColor() == Color.GREEN && blurred().last().alpha < 1f }
+    }
+
+    @Test
+    fun `with coalescing a change during a fade-in waits for it and only the last change is swapped in`() {
+        startGreenFadeOverRed("co")
+        host.onMain {
+            // 绿的还在淡入时连着换两次: 目标当场换 (对焦 / 放大登记按新目标走), 模糊层先不加新的一张
+            backdrop.show(solid("co-red2", Color.RED, 3))
+            backdrop.show(solid("co-blue", Color.BLUE, 4))
+            assertEquals(4, backdrop.currentTarget!!.subjectId)
+            assertEquals(2, blurred().size)
+        }
+        // 绿的淡满后换成最后那张 (蓝), 中间那张 (红) 不露面
+        val seen = ArrayList<Int>()
+        host.waitUntil("换成最后那张") {
+            topColor()?.let { if (seen.lastOrNull() != it) seen += it }
+            blurred().size == 1 && blurred().single().alpha == 1f && topColor() == Color.BLUE
+        }
+        assertEquals(listOf(Color.GREEN, Color.BLUE), seen)
+    }
+
+    @Test
+    fun `confirming starts a waiting swap at once`() {
+        startGreenFadeOverRed("cf")
+        host.onMain {
+            backdrop.show(solid("cf-blue", Color.BLUE, 3))
+            assertEquals(2, blurred().size)
+            // 按下确认键: 等着的当场开始换
+            backdrop.prepareSharp()
+            assertEquals(3, blurred().size)
+        }
+        host.waitUntil("换成蓝的") { blurred().size == 1 && blurred().single().alpha == 1f && topColor() == Color.BLUE }
+    }
 }
 
 /**

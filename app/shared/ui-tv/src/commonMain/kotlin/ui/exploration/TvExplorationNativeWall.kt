@@ -61,6 +61,7 @@ import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
@@ -76,6 +77,8 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMore
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallOpenEffects
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvMenuTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroTextStyle
@@ -83,8 +86,10 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
+import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
@@ -123,6 +128,7 @@ internal class TvExplorationNativeState(
     internal var savedScrollPx: Int,
     internal val savedRowLeft: HashMap<String, Int>,
     internal val savedRowFocused: HashMap<String, Int>,
+    wallOpened: Boolean = false,
 ) {
     var view: TvNativeExploreView? by mutableStateOf(null)
         internal set
@@ -143,6 +149,15 @@ internal class TvExplorationNativeState(
 
     /** 菜单锚点 (长按卡片): 条目, 封面在窗口里的框. */
     internal var menu: Pair<Int, AndroidRect>? by mutableStateOf(null)
+
+    /** hero 态模糊背景点开途中 (对焦还没到位、还没进详情页, 见 TvNativeExploreView.heroBlur): 返回键取消点开. */
+    internal var wallOpening: Boolean by mutableStateOf(false)
+
+    /** hero 态模糊背景点开进了详情页 (跨导航保存: 返回时页面重建也从清晰图起), 回到本页倒放. */
+    internal var wallOpened: Boolean by mutableStateOf(wallOpened)
+
+    /** 点开之后本页离开过前台 (真进了详情页); 恢复出来的状态算离开过. */
+    internal var wallOpenLeft: Boolean = wallOpened
 
     /** 退出 hero 态 (返回键). */
     fun exitHero() {
@@ -178,6 +193,7 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
             ArrayList(state.savedRowLeft.values),
             ArrayList(state.savedRowFocused.keys),
             ArrayList(state.savedRowFocused.values),
+            state.wallOpened,
         )
     },
     restore = { list ->
@@ -192,6 +208,7 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
             savedScrollPx = at(1),
             savedRowLeft = HashMap(leftKeys.zip(leftValues).toMap()),
             savedRowFocused = HashMap(focusedKeys.zip(focusedValues).toMap()),
+            wallOpened = list.getOrNull(6) as? Boolean ?: false,
         )
     },
 )
@@ -296,6 +313,13 @@ internal fun TvExplorationNativeWall(
     val buttonStyle = rememberTvNativeHeroButtonStyle()
     val headerStyle = MaterialTheme.typography.titleMedium.toTvNativeTextStyle(density, LocalContentColor.current)
     val visualEffects = LocalThemeSettings.current.visualEffects
+    // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
+    val heroBlur = LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 卡片墙的底色: 铺着模糊背景时 hero 态不压黑, 整屏底色一直是它 (见 TvNativeExploreView.heroBlur / wallColor)
+    val wallColor = tvPosterWallBackground()
+    // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压)
+    val heroBlurMask = wallColor.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
+    val heroBlurText = tvHeroContentColor()
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
@@ -339,6 +363,15 @@ internal fun TvExplorationNativeWall(
                         state.heroActive = active
                         currentListener.onHeroActiveChanged(active)
                     }
+
+                    override fun onWallOpeningChanged(opening: Boolean) {
+                        state.wallOpening = opening
+                    }
+
+                    override fun onWallOpened() {
+                        state.wallOpened = true
+                        state.wallOpenLeft = false
+                    }
                 }
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
@@ -346,6 +379,15 @@ internal fun TvExplorationNativeWall(
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                view.heroBlur = heroBlur
+                view.wallColor = wallColor.toArgb()
+                view.wallBackdrop?.let { wb ->
+                    wb.maskColor = heroBlurMask.toArgb()
+                    wb.textColor = heroBlurText.toArgb()
+                    wb.coverWidthPx = style.coverWidthPx
+                    wb.coverHeightPx = style.coverHeightPx
+                    wb.crossfade = visualEffects.transitions
+                }
                 view.update(style, metrics, textStyle, buttonStyle)
                 view.setButtons(watchNow, playIcon, schedule, scheduleIcon)
                 view.setItems(items)
@@ -367,6 +409,20 @@ internal fun TvExplorationNativeWall(
         }
     }
 
+    // hero 态模糊背景的点开: 进了详情页、回到本页之后倒放, 点开途中按返回取消
+    if (heroBlur) {
+        TvNativeWallOpenEffects(
+            view = state.view,
+            opened = { state.wallOpened },
+            opening = { state.wallOpening },
+            left = { state.wallOpenLeft },
+            markLeft = { state.wallOpenLeft = true },
+            clear = {
+                state.wallOpened = false
+                state.wallOpenLeft = false
+            },
+        )
+    }
     // 换页交接途中分界线那层的浓度 (TvPosterWallTone.splitGate) 乘在轮播背景图上
     LaunchedEffect(state) {
         snapshotFlow { state.view to splitGate() }.collect { (view, gate) -> view?.splitGate = gate }
@@ -465,12 +521,19 @@ private fun tvExplorationNativeSource(
     } else {
         null
     }
+    // hero 态铺在整页底下的模糊背景 (设置里开了才用): 整部的横版背景图, 没有横版图时是竖版封面 (只铺模糊版, 不变清晰)
+    val wall = if (display != null && spec != null) {
+        heroPipeline.seriesBackdropUrl(spec)?.let { TvNativeWallBackdropTarget(it, display.subjectId, sharp = it != spec.coverUrl) }
+    } else {
+        null
+    }
     val text = textTarget?.let { tvExplorationNativeHeroText(it, infoCache, episodeStillCache, summaryFallbackCache, playHistories) }
     return TvNativeHeroSource(
         backdrop = backdrop,
         dimming = raw?.subjectId != display?.subjectId,
         rawSubjectId = raw?.subjectId,
         text = text,
+        wall = wall,
     )
 }
 

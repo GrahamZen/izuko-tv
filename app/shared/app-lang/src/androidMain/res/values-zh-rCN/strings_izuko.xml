@@ -185,6 +185,8 @@
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
     <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
     <string name="settings_theme_tv_schedule_layout_description">选择电视上新番时间表的版式。</string>
+    <string name="settings_theme_tv_hero_blur_backdrop">海报墙按确定后铺模糊背景 (电视)</string>
+    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜索页在海报上按确定后，整页底下铺上这部的模糊背景图 (同新番时间表)，右上角的大图照旧；再按确定时背景变清晰再进详情页，代替放大</string>
     <string name="settings_theme_tv_schedule_upstream">经典列表</string>
     <string name="settings_theme_tv_schedule_grid">海报墙</string>
     <string name="settings_theme_tv_schedule_timeline">左侧详情 + 单列时间线</string>

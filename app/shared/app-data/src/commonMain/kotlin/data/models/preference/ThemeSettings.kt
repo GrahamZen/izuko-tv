@@ -208,6 +208,15 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvHeroBackdrop: Boolean = true,
+    /**
+     * TV: 探索 / 追番 / 搜索三页海报墙的 hero 态 (卡片上按一下确定之后) 在整页底下铺聚焦那部的模糊背景 (整部的横版背景图, 同新番时间表);
+     * 右上角的 hero 图 (继续观看的条目是单集剧照) 与文字照旧画在上面, 整屏底色不压黑 (深色主题也是, 一直是卡片墙的灰). 再按确定时卡片与
+     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. 默认开; 关 = hero 态整页是纯色底 (深色主题压成近黑), 进出详情页从 hero 图
+     * 放大 / 缩回. 轮播与卡片墙不受影响.
+     *
+     * @since 1.0.4
+     */
+    val tvHeroBlurBackdrop: Boolean = true,
     /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
     val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */

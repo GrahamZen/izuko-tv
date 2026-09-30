@@ -185,6 +185,8 @@
     <string name="settings_theme_tv_immersive_schedule_description">Show the airing schedule as a date rail plus a poster grid. Turn off to fall back to the classic side-by-side day columns</string>
     <string name="settings_theme_tv_schedule_layout">Airing schedule layout (TV)</string>
     <string name="settings_theme_tv_schedule_layout_description">Pick how the airing schedule is laid out on TV.</string>
+    <string name="settings_theme_tv_hero_blur_backdrop">Blurred background after selecting a poster (TV)</string>
+    <string name="settings_theme_tv_hero_blur_backdrop_description">On Explore, Collection and Search, selecting a poster fills the page behind the artwork with a blurred backdrop of that title (like the airing schedule). Selecting again brings the backdrop into focus before the details open, instead of zooming in</string>
     <string name="settings_theme_tv_schedule_upstream">Classic list</string>
     <string name="settings_theme_tv_schedule_grid">Poster wall</string>
     <string name="settings_theme_tv_schedule_timeline">Detail panel + timeline</string>

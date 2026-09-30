@@ -97,7 +97,8 @@ interface TvNativeGridPageListener : TvNativeGridListener {
  * 拿到焦点就解除 (见 [parkFocus]). 不停放的话焦点留在滑出去的网格里 —— 长按的连发在它的行末卡上接着报行缘, 一路连跨标签;
  * 那份网格被收起 / 复用时焦点随之丢掉, 全局兜底把它塞给首个标签, 连发接着在标签行上往右走.
  *
- * 新番时间表 (没有 hero 态) 在最底下另铺一层整屏背景 ([enableWallBackdrop]): 聚焦那部的模糊版, 点按 / 长按时对焦 (见「整屏背景的对焦」一节).
+ * 新番时间表 (没有 hero 态) 在最底下另铺一层整屏背景 ([enableWallBackdrop]): 聚焦那部的模糊版, 点按 / 长按时对焦 (见 [TvNativeWallFocus]).
+ * 开了 [heroBlur] 的追番 / 搜索页, hero 态也在底下铺这一层 (背景图与 hero 文字照旧画在它上面; 按确定对焦变清晰再进详情页).
  */
 @SuppressLint("ViewConstructor")
 class TvNativeGridPageView(
@@ -107,7 +108,7 @@ class TvNativeGridPageView(
     style: TvNativeWallStyle,
     metrics: TvNativeGridPageMetrics,
     heroTextStyle: TvNativeHeroTextStyle,
-) : FrameLayout(context), TvNativeAmbientAnimations {
+) : FrameLayout(context), TvNativeAmbientAnimations, TvNativeWallOpenable {
     var listener: TvNativeGridPageListener? = null
 
     /** 第几张卡被绑定 (此刻显示的那份网格; 分页的访问提示). */
@@ -136,13 +137,29 @@ class TvNativeGridPageView(
             wallBackdrop?.composeRoot = value
         }
 
-    /** 深色主题: hero 态整屏压黑, 背景图等黑透才露面. */
+    /** 深色主题: hero 态整屏压黑, 背景图等黑透才露面 (铺着模糊背景时不压黑, 见 [heroDarkens]). */
     var dark: Boolean = true
         set(value) {
+            if (field == value) return
             field = value
-            timeline.dark = value
-            applyHero()
+            applyHeroTone()
         }
+
+    /**
+     * hero 态把整屏底色压黑: 深色主题、且没铺模糊背景 —— 模糊背景 ([heroBlur]) 盖满整屏, 压黑只会在进出 hero 态时先闪一下黑; 浅色主题 hero
+     * 底与卡片墙同色. 不压黑时 hero 时间线按不压黑的时长走, 背景图不等底色, 报给页面的黑度恒为 0.
+     */
+    private val heroDarkens: Boolean get() = dark && !heroBlur
+
+    /** 压不压黑变了 (换主题 / 开关模糊背景): 时间线的时长、背景图的放行与报给页面的黑度跟着换. */
+    private fun applyHeroTone() {
+        timeline.darkens = heroDarkens
+        applyHero()
+        listener?.onToneChanged(heroTone())
+    }
+
+    /** 报给页面画整屏底色的黑度 (不压黑时恒 0). */
+    private fun heroTone(): Float = if (heroDarkens) timeline.tone else 0f
 
     var fadeColor: Int
         get() = backdrop.fadeColor
@@ -219,7 +236,7 @@ class TvNativeGridPageView(
         addView(gridBox)
         backdrop.alpha = 0f
         heroBox.alpha = 0f
-        timeline.dark = dark
+        timeline.darkens = heroDarkens
         applyHero()
     }
 
@@ -273,8 +290,8 @@ class TvNativeGridPageView(
         next.heroAbove = timeline.above
         next.heroTransitioning = timeline.content < 1f && timeline.above > 0f
         next.cards.setTitleVisibility(next, 1f - timeline.above)
-        next.pullFade = cardsFade
-        next.pullKeepIndex = wallKeep
+        next.pullFade = wallFocus.fade
+        next.pullKeepIndex = wallFocus.keep
         // 没记过位置的 (头一回显示 / 被 forgetPosition 忘掉的) 从第一张排起: 复用的那份网格还停在上一个 key 的位置上
         next.selectedPosition = savedPosition[key] ?: 0
         current = next
@@ -364,15 +381,15 @@ class TvNativeGridPageView(
             } else {
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
                 grid.cards.setFocusLookHeld(grid, index)
-                // 有整屏背景: 先对焦 (背景变清晰、卡片淡没) 再进, 见 openWithWallFocus
-                if (!openWithWallFocus(grid, index)) listener?.onClick(index)
+                // 有整屏背景 (新番时间表 / hero 态的模糊背景): 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
+                if (!wallFocus.open(index, wallMatches(grid, index))) listener?.onClick(index)
             }
         }
 
         override fun onLongPress(index: Int, anchor: Rect) {
             if (grid !== current) return
-            // 先进对焦再交给页面: 页面弹不出菜单时当场调 endWallPeek
-            peekWallFocus(grid, index)
+            // 新番时间表: 先进对焦再交给页面, 页面弹不出菜单时当场调 endWallPeek. hero 态的模糊背景不对焦, 只弹菜单
+            if (!heroEnabled) wallFocus.peek(index, wallMatches(grid, index))
             listener?.onLongPress(index, anchor)
         }
 
@@ -538,10 +555,8 @@ class TvNativeGridPageView(
         val code = event.keyCode
         val direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
             code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
-        // 整屏背景点开途中 (对焦还没到位): 方向键与确认键吞掉 (返回键交给页面, 见 cancelWallOpen)
-        if (wallOpening >= 0 && (direction || tvNativeIsConfirmKey(code))) return true
-        // 按下确认键: 整屏背景当场解清晰图 (点开 / 长按都要它), 不等停留; 按住到抬起 / 长按阈值的这段正好用来解
-        if (tvNativeIsConfirmKey(code) && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) wallBackdrop?.prepareSharp()
+        // 整屏背景: 点开途中吞掉方向键与确认键, 按下确认键当场解清晰图 (见 TvNativeWallFocus.handleKey)
+        if (wallFocus.handleKey(event)) return true
         if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
         if (direction && event.action == KeyEvent.ACTION_DOWN) {
             val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
@@ -590,13 +605,14 @@ class TvNativeGridPageView(
         if (lastDimSubject != null && lastDimSubject != src.rawSubjectId) backdrop.triggerPressDim()
         lastDimSubject = src.rawSubjectId
         backdrop.dimming = src.dimming
-        // 背景图与文字只在 hero 态画 (底色黑透之后淡入); 离开 hero 态淡完就撤. 退出途中内容定格, 不跟着导航换 (正在淡出的图与字换一张
+        // 背景图与文字只在 hero 态画 (压黑时底色黑透之后才淡入); 离开 hero 态淡完就撤. 退出途中内容定格, 不跟着导航换 (正在淡出的图与字换一张
         // 只会晃一下)
         if (!timeline.visible || !timeline.active) return
         if (enteringPending) {
             showEnteringContent()
         } else {
             backdrop.show(src.backdrop)
+            if (heroBlur) setWallTarget(src.wall)
             heroText.setText(src.text, TvNativeTextTransition.Key)
         }
     }
@@ -613,27 +629,29 @@ class TvNativeGridPageView(
         if (focusedSubject != null && (src.rawSubjectId != focusedSubject || src.dimming)) return
         enteringPending = false
         backdrop.show(src.backdrop, crossfade = false)
+        if (heroBlur) setWallTarget(src.wall)
         heroText.setText(src.text, TvNativeTextTransition.Reset)
     }
 
     private fun onTimeline() {
         applyHero()
-        listener?.onToneChanged(timeline.tone)
+        listener?.onToneChanged(heroTone())
     }
 
     private fun applyHero() {
         val visible = timeline.visible
+        val wallShown = heroBlur && wallBackdrop?.currentTarget != null
         if (visible && !enteringPending && backdrop.currentTarget == null && heroText.shownSubjectId == null) {
             // 进 hero 态: 换上聚焦那张的内容 (见 showEnteringContent)
             enteringPending = true
             showEnteringContent()
-        } else if (!visible && (enteringPending || backdrop.currentTarget != null || heroText.shownSubjectId != null)) {
+        } else if (!visible && (enteringPending || backdrop.currentTarget != null || wallShown || heroText.shownSubjectId != null)) {
             enteringPending = false
             backdrop.rebuild()
+            if (heroBlur) setWallTarget(null)
             heroText.setText(null, TvNativeTextTransition.Reset)
         }
-        val contentGate = if (dark) tvPosterWallToneGate(timeline.tone) else 1f
-        backdrop.alpha = timeline.content * contentGate
+        applyHeroAlpha()
         heroBox.alpha = timeline.text
         backdrop.publishZoom()
         current?.let { g ->
@@ -643,60 +661,98 @@ class TvNativeGridPageView(
         }
     }
 
+    /**
+     * 背景图与 hero 态模糊背景的透明度: 都跟着 hero 时间线 (压黑时等底色黑透才淡入); 点开时 ([wallOpenFade]) 背景图随卡片淡没, 底下的模糊背景
+     * 变清晰接上. 新番时间表的整屏背景常在, 不归时间线管.
+     */
+    private fun applyHeroAlpha() {
+        val contentGate = if (heroDarkens) tvPosterWallToneGate(timeline.tone) else 1f
+        val shown = timeline.content * contentGate
+        backdrop.alpha = shown * (1f - wallOpenFade)
+        if (heroBlur) wallBackdrop?.alpha = shown
+    }
+
     // ------------------------------------------------------------------
-    // 整屏背景的对焦 (新番时间表)
+    // 整屏背景 (新番时间表的卡片墙 / 开了 heroBlur 的 hero 态)
     // ------------------------------------------------------------------
 
     /**
-     * 整屏背景的对焦. 长按卡片 ([WallFocus.Peek]): 别的卡淡没、被长按那张留着, 背景变清晰 (收藏菜单弹在旁边), 菜单关了倒放 ([endWallPeek]).
-     * 点开 ([WallFocus.Open]): 卡片全部淡没 (顶栏跟着淡, 见 [TvNativeGridPageListener.onWallFade])、背景变清晰, 到位后才进详情页 —— 放大转场
-     * 从这张整屏清晰图起 (全屏对全屏, 图原地不动); 从详情页回来倒放 ([endWallOpen]). 卡片淡没 [TV_WALL_BACKDROP_CARDS_MILLIS], 背景变清晰更慢
-     * ([TV_WALL_BACKDROP_SHARPEN_MILLIS], 两头慢的缓动): 卡片先让开, 图再慢慢对上焦; 点开时背景走完才进.
-     *
-     * 点开时背景还不是这张卡的 (停下来之前就按了) / 没有清晰图 (竖版封面) 就当场进, 不对焦. 清晰图还没解好: 卡片照样当场开始淡 (按下的反馈),
-     * 背景等它最多 [TV_WALL_BACKDROP_OPEN_WAIT_MILLIS], 等不到就不对焦直接进 (状态照旧停在点开, 回来倒放). 流畅档 ([transitions] = false)
-     * 各段当场到位.
+     * hero 态在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero 时间线淡入,
+     * 铺的是停稳后聚焦那部的横版背景图的模糊版 ([TvNativeHeroSource.wall]: 整部的那张, 不是单集剧照); 贴右上角的背景图 ([backdrop]) 与
+     * hero 文字照旧画在它上面, 背景图的边缘擦成透明露出模糊背景 ([TvNativeBackdropView.feather]); 整屏底色不压黑 (深色主题也是, 见
+     * [heroDarkens]). hero 态里按确定: 卡片、背景图、简介淡没, 模糊背景对焦变清晰 (就是详情页的背景), 到位再进详情页 (见
+     * [TvNativeWallFocus]), 代替从背景图放大; 回来倒放. 卡片墙上 (不在 hero 态) 不铺; 长按不对焦, 照旧只弹菜单. 新番时间表
+     * ([heroEnabled] = false) 不用它.
      */
-    private enum class WallFocus { None, Peek, Open }
+    var heroBlur: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) {
+                // 连着换卡时模糊层同时只有一张在淡入 (单次按键当场换)
+                enableWallBackdrop().coalesceSwaps = true
+            } else {
+                wallFocus.reset()
+                wallBackdrop?.let { removeView(it) }
+                wallBackdrop = null
+            }
+            // 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 叠在模糊背景上时边缘擦成透明
+            backdrop.feather = value
+            backdrop.zoomSource = !value
+            applySource()
+            applyHeroTone()
+        }
 
-    private var wallFocus = WallFocus.None
+    /** 点开时背景图随卡片淡没的程度 (0..1, 见 [applyHeroAlpha]); 长按的对焦不算. */
+    private var wallOpenFade = 0f
 
-    /** 对焦时留着不淡的那张 (长按的那张); -1 = 全部淡没. */
-    private var wallKeep = -1
+    private val wallFocus = TvNativeWallFocus(
+        this,
+        object : TvNativeWallFocus.Host {
+            override val wall: TvNativeWallBackdropView? get() = wallBackdrop
+            override val transitions: Boolean get() = this@TvNativeGridPageView.transitions
 
-    /** 点开途中 (对焦还没到位, 还没进详情页) 的那张; -1 = 没有. */
-    private var wallOpening = -1
-    private var wallOpenStarted = false
-    private var wallWait: Runnable? = null
+            override fun applyFade(fade: Float, keep: Int, chrome: Boolean) {
+                current?.let { g ->
+                    g.pullKeepIndex = keep
+                    g.pullFade = fade
+                }
+                // 点开: 背景图与 hero 文字里标题以外的几行跟着卡片淡没 (标题留着, 交给详情页的标题接着画), 顶栏由页面跟着淡
+                wallOpenFade = if (chrome) fade else 0f
+                heroText.detailAlpha = 1f - wallOpenFade
+                applyHeroAlpha()
+                if (chrome) listener?.onWallFade(fade)
+            }
 
-    /** 这一次对焦是点开 (顶栏跟着卡片淡, 倒放完才撤). */
-    private var wallChrome = false
-    private var cardsFade = 0f
-    private var cardsTween: TvNativeFrameTween? = null
-    private var sharpGoal = 0f
-    private var sharpEnd: (() -> Unit)? = null
-    private var sharpTween: TvNativeFrameTween? = null
+            override fun onOpeningChanged(opening: Boolean) {
+                listener?.onWallOpeningChanged(opening)
+            }
+
+            override fun onOpened(index: Int) {
+                listener?.onWallOpened(index)
+                listener?.onClick(index)
+            }
+        },
+    )
 
     /** 建出整屏背景 (页面给了才建, 画在最底下). */
     fun enableWallBackdrop(): TvNativeWallBackdropView =
         wallBackdrop ?: TvNativeWallBackdropView(context, sketch, scope).also { view ->
             view.composeRoot = composeRoot
-            view.onSharpReady = { onWallSharpReady() }
+            view.onSharpReady = { wallFocus.onSharpReady() }
             addView(view, 0)
             wallBackdrop = view
         }
 
     /**
-     * 整屏背景换图 (页面按停稳后的聚焦条目给). 对焦期间要清晰图就当场解 (恢复点开的状态时, 目标在视图建好之后才到); 长按时背景还没换到
-     * 那张卡, 换到了就接着变清晰.
+     * 整屏背景换图 (新番时间表: 页面按停稳后的聚焦条目给; hero 态的模糊背景: 本视图按 hero 内容的 [TvNativeHeroSource.wall] 给). 对焦期间
+     * 要清晰图就当场解, 长按时背景还没换到那张卡, 换到了就接着变清晰 (见 [TvNativeWallFocus.onTargetChanged]).
      */
     fun setWallTarget(target: TvNativeWallBackdropTarget?) {
         val wb = wallBackdrop ?: return
         wb.show(target)
-        if (wallFocus == WallFocus.None) return
-        wb.prepareSharp()
         val grid = current
-        if (wallFocus == WallFocus.Peek && sharpGoal == 0f && grid != null && wallMatches(grid, wallKeep)) animateSharp(1f)
+        wallFocus.onTargetChanged(keepMatches = grid != null && wallMatches(grid, wallFocus.keep))
     }
 
     /** 背景此刻是 [grid] 第 [index] 张卡的、能变清晰. */
@@ -706,187 +762,17 @@ class TvNativeGridPageView(
         return t.sharp && t.subjectId == subject
     }
 
-    /** 点开第 [index] 张: 能对焦就开始对焦, 到位后再进 (返回 true); 否则 false, 调用方当场进. */
-    private fun openWithWallFocus(grid: TvNativeGridView, index: Int): Boolean {
-        val wb = wallBackdrop ?: return false
-        if (wallFocus != WallFocus.None || !wallMatches(grid, index)) return false
-        wallFocus = WallFocus.Open
-        wallKeep = -1
-        wallChrome = true
-        wallOpening = index
-        wallOpenStarted = false
-        applyWallKeep()
-        listener?.onWallOpeningChanged(true)
-        // 卡片与顶栏当场开始淡 (按下的反馈), 背景等清晰图就位再对焦
-        animateCardsFade(1f)
-        wb.prepareSharp()
-        if (wallOpenStarted) return true
-        if (wb.sharpReady) {
-            startWallOpen()
-        } else {
-            val wait = Runnable { if (wallOpening >= 0 && !wallOpenStarted) giveUpWallOpen() }
-            wallWait = wait
-            postDelayed(wait, TV_WALL_BACKDROP_OPEN_WAIT_MILLIS)
-        }
-        return true
-    }
-
-    private fun startWallOpen() {
-        wallOpenStarted = true
-        cancelWallWait()
-        animateSharp(1f) { finishWallOpen() }
-    }
-
-    /** 对焦到位: 进详情页. 状态停在点开 (卡片淡没、背景清晰), 回来时页面调 [endWallOpen] 倒放. */
-    private fun finishWallOpen() {
-        val index = wallOpening
-        if (index < 0) return
-        wallOpening = -1
-        listener?.onWallOpeningChanged(false)
-        listener?.onWallOpened(index)
-        listener?.onClick(index)
-    }
-
-    /** 清晰图等不到: 不对焦, 直接进. 卡片已经淡了 —— 状态照旧停在点开 (背景留在模糊版), 回来时页面调 [endWallOpen] 倒放. */
-    private fun giveUpWallOpen() {
-        val index = wallOpening
-        if (index < 0) return
-        wallOpening = -1
-        listener?.onWallOpeningChanged(false)
-        listener?.onWallOpened(index)
-        listener?.onClick(index)
-    }
-
-    private fun cancelWallWait() {
-        wallWait?.let { removeCallbacks(it) }
-        wallWait = null
-    }
-
     /** 点开途中按了返回: 不进了, 倒放. */
-    fun cancelWallOpen() {
-        if (wallOpening < 0) return
-        wallOpening = -1
-        cancelWallWait()
-        listener?.onWallOpeningChanged(false)
-        releaseWallFocus()
-    }
+    override fun cancelWallOpen() = wallFocus.cancelOpen()
 
     /** 从点开进去的详情页回来了 (页面在本页回到前台、缩回层撤掉之后调): 倒放回模糊与卡片墙. */
-    fun endWallOpen() {
-        if (wallFocus == WallFocus.Open && wallOpening < 0) releaseWallFocus()
-    }
+    override fun endWallOpen() = wallFocus.endOpen()
 
     /** 恢复点开的状态 (返回时页面重建): 卡片淡没、背景清晰 (清晰图解好就直接出现), 等页面调 [endWallOpen]. */
-    fun restoreWallOpen() {
-        val wb = wallBackdrop ?: return
-        if (wallFocus != WallFocus.None) return
-        wallFocus = WallFocus.Open
-        wallKeep = -1
-        wallChrome = true
-        applyWallKeep()
-        cardsTween?.cancel()
-        setCardsFade(1f)
-        sharpTween?.cancel()
-        sharpGoal = 1f
-        sharpEnd = null
-        wb.sharpness = 1f
-        wb.prepareSharp()
-    }
-
-    /** 长按第 [index] 张: 别的卡淡没, 背景是这张卡的就变清晰. */
-    private fun peekWallFocus(grid: TvNativeGridView, index: Int) {
-        val wb = wallBackdrop ?: return
-        if (wallFocus != WallFocus.None) return
-        wallFocus = WallFocus.Peek
-        wallKeep = index
-        applyWallKeep()
-        animateCardsFade(1f)
-        if (wallMatches(grid, index)) {
-            wb.prepareSharp()
-            animateSharp(1f)
-        }
-    }
+    override fun restoreWallOpen() = wallFocus.restoreOpen()
 
     /** 长按的菜单关了 (或没弹出来): 倒放. */
-    fun endWallPeek() {
-        if (wallFocus == WallFocus.Peek) releaseWallFocus()
-    }
-
-    private fun releaseWallFocus() {
-        wallFocus = WallFocus.None
-        animateCardsFade(0f) {
-            wallKeep = -1
-            applyWallKeep()
-            wallChrome = false
-        }
-        animateSharp(0f)
-    }
-
-    private fun applyWallKeep() {
-        current?.pullKeepIndex = wallKeep
-    }
-
-    private fun setCardsFade(value: Float) {
-        cardsFade = value
-        current?.pullFade = value
-        if (wallChrome) listener?.onWallFade(value)
-    }
-
-    /** 两段过渡都按帧推进 ([TvNativeFrameTween]): 长按时收藏菜单那个新窗口一出来主线程会卡一下, 按墙钟算进度的话背景直接跳到清晰. */
-    private fun animateCardsFade(to: Float, onEnd: (() -> Unit)? = null) {
-        cardsTween?.cancel()
-        if (!transitions || cardsFade == to) {
-            setCardsFade(to)
-            onEnd?.invoke()
-            return
-        }
-        val from = cardsFade
-        cardsTween = TvNativeFrameTween(
-            TV_WALL_BACKDROP_CARDS_MILLIS, TV_NATIVE_FAST_OUT_SLOW_IN,
-            onUpdate = { f -> setCardsFade(from + (to - from) * f) },
-            onEnd = onEnd,
-        ).also { it.start() }
-    }
-
-    /** 背景清晰层的透明度走到 [to]. 清晰图还没解好就先记下, 解好时 ([onWallSharpReady]) 接着走. */
-    private fun animateSharp(to: Float, onEnd: (() -> Unit)? = null) {
-        val wb = wallBackdrop ?: return
-        sharpGoal = to
-        sharpEnd = onEnd
-        sharpTween?.cancel()
-        if (!wb.sharpReady) {
-            // 显示不出来: 从 0 起 (解好时从 0 走过去)
-            wb.sharpness = 0f
-            return
-        }
-        runSharpAnimation(wb)
-    }
-
-    private fun runSharpAnimation(wb: TvNativeWallBackdropView) {
-        val to = sharpGoal
-        val onEnd = sharpEnd
-        sharpEnd = null
-        if (!transitions || wb.sharpness == to) {
-            wb.sharpness = to
-            onEnd?.invoke()
-            return
-        }
-        val from = wb.sharpness
-        sharpTween = TvNativeFrameTween(
-            TV_WALL_BACKDROP_SHARPEN_MILLIS, TV_WALL_BACKDROP_SHARPEN_EASING,
-            onUpdate = { f -> wb.sharpness = from + (to - from) * f },
-            onEnd = onEnd,
-        ).also { it.start() }
-    }
-
-    private fun onWallSharpReady() {
-        val wb = wallBackdrop ?: return
-        if (wallOpening >= 0 && !wallOpenStarted) {
-            startWallOpen()
-        } else if (wb.sharpness != sharpGoal && sharpTween?.running != true) {
-            runSharpAnimation(wb)
-        }
-    }
+    fun endWallPeek() = wallFocus.endPeek()
 
     // ------------------------------------------------------------------
     // 布局
@@ -923,9 +809,7 @@ class TvNativeGridPageView(
         viewTreeObserver.removeOnGlobalLayoutListener(layoutWatcher)
         super.onDetachedFromWindow()
         scrollTracker.stop()
-        cancelWallWait()
-        cardsTween?.cancel()
-        sharpTween?.cancel()
+        wallFocus.detach()
         // 停放中离开页面: 收回停放标记, 不然页面的焦点域一直当焦点驻留着, 之后的按键再也取消不了在途送焦
         if (parkedAt >= 0) {
             parkedAt = -1L

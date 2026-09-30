@@ -353,6 +353,8 @@
     <string name="settings_theme_tv_remote_reset_confirm">確定重設地址嗎？正在用目前地址的頁面和書籤都要重新掃碼。</string>
     <string name="settings_theme_tv_schedule_layout">新番時間表版式 (電視)</string>
     <string name="settings_theme_tv_schedule_layout_description">選擇電視上新番時間表的版式。</string>
+    <string name="settings_theme_tv_hero_blur_backdrop">海報牆按確定後鋪模糊背景 (電視)</string>
+    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜尋頁在海報上按確定後，整頁底下鋪上這部的模糊背景圖 (同新番時間表)，右上角的大圖照舊；再按確定時背景變清晰再進詳情頁，代替放大</string>
     <string name="settings_theme_tv_schedule_upstream">經典列表</string>
     <string name="settings_theme_tv_schedule_grid">海報牆</string>
     <string name="settings_theme_tv_schedule_timeline">左側詳情 + 單列時間線</string>

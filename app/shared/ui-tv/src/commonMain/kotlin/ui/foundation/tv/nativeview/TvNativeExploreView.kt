@@ -13,7 +13,9 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
@@ -31,6 +33,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 
 /**
@@ -91,7 +94,8 @@ data class TvNativeExploreMetrics(
 /**
  * hero 的一路展示内容 (热门轮播 / 聚焦卡各一路, 由页面在 Compose 里按换挡规则算好): [backdrop] 停稳后的背景图, [dimming] = 目标已换、
  * 展示还没跟上 (按下即压暗要等它放开), [rawSubjectId] = 此刻真实的目标 (换了就压暗), [text] = 文字 (null = 滚动 / 连发中藏起来),
- * [autoAdvanced] = 这次换页是自动轮播推进的 (文字用放慢的过渡).
+ * [autoAdvanced] = 这次换页是自动轮播推进的 (文字用放慢的过渡), [wall] = hero 态整屏模糊背景铺的图 (开了「hero 态铺模糊背景」才用,
+ * 见 [TvNativeExploreView.heroBlur]): 整部的横版背景图 —— 继续观看的条目 [backdrop] 是单集剧照时它也还是整部那张, 就是详情页的背景.
  */
 @Immutable
 data class TvNativeHeroSource(
@@ -100,6 +104,7 @@ data class TvNativeHeroSource(
     val rawSubjectId: Int?,
     val text: TvNativeHeroText?,
     val autoAdvanced: Boolean = false,
+    val wall: TvNativeWallBackdropTarget? = null,
 )
 
 /** 探索页原生海报墙的事件 (页面实现). 行键就是页面焦点簿记用的那套 (TV_FOLLOWED_ROW_KEY / tvRecRowKey). */
@@ -140,6 +145,12 @@ interface TvNativeExploreListener {
 
     /** 滚动容器在不在挪 (hero 文字滚动期间藏起来, 见 TvScrollActivity). */
     fun onScrollingChanged(scrolling: Boolean)
+
+    /** hero 态模糊背景点开途中 (对焦还没到位、还没进详情页, 见 [TvNativeExploreView.heroBlur]): 这期间返回键取消点开. */
+    fun onWallOpeningChanged(opening: Boolean) {}
+
+    /** 点开对焦到位, 这就进详情页 (紧接着是 [onCardClick]): 回到本页时页面调 [TvNativeExploreView.endWallOpen] 倒放. */
+    fun onWallOpened() {}
 }
 
 /**
@@ -155,13 +166,13 @@ interface TvNativeExploreListener {
 class TvNativeExploreView(
     context: Context,
     private val sketch: Sketch,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     style: TvNativeWallStyle,
     metrics: TvNativeExploreMetrics,
     heroTextStyle: TvNativeHeroTextStyle,
     buttonStyle: TvNativeHeroButtonStyle,
     headerStyle: TvNativeTextStyle,
-) : FrameLayout(context), TvNativeAmbientAnimations {
+) : FrameLayout(context), TvNativeAmbientAnimations, TvNativeWallOpenable {
     var listener: TvNativeExploreListener? = null
 
     var style: TvNativeWallStyle = style
@@ -183,6 +194,7 @@ class TvNativeExploreView(
             field = value
             backdrop.composeRoot = value
             heroText.composeRoot = value
+            wallBackdrop?.composeRoot = value
         }
 
     private val backdrop = TvNativeBackdropView(context, sketch, scope)
@@ -193,6 +205,85 @@ class TvNativeExploreView(
         set(value) {
             backdrop.navigating = value
         }
+
+    /**
+     * hero 态 (聚焦卡) 在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero
+     * 时间线淡入, 铺的是停稳后聚焦那部的横版背景图的模糊版 ([TvNativeHeroSource.wall]: 整部的那张, 继续观看的条目背景图是单集剧照时它也
+     * 还是整部那张); 背景图 ([backdrop]) 与 hero 文字照旧画在它上面, 背景图的边缘擦成透明露出模糊背景 ([TvNativeBackdropView.feather]);
+     * 整屏底色不压黑 (深色主题也是, 见 [heroDarkens]). hero 态里按确定: 各行、背景图、简介淡没, 模糊背景对焦变清晰 (就是详情页的背景),
+     * 到位再进详情页 (见 [TvNativeWallFocus]), 代替从背景图放大; 回来倒放. 轮播与卡片墙 (不在 hero 态) 不铺. 长按不对焦, 照旧只弹菜单.
+     */
+    var heroBlur: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) {
+                wallBackdrop = TvNativeWallBackdropView(context, sketch, scope).also { view ->
+                    view.composeRoot = composeRoot
+                    view.onSharpReady = { wallFocus.onSharpReady() }
+                    // 连着换卡时模糊层同时只有一张在淡入 (单次按键当场换)
+                    view.coalesceSwaps = true
+                    view.alpha = 0f
+                    addView(view, 0)
+                }
+            } else {
+                wallFocus.reset()
+                wallOpenRow = null
+                wallBackdrop?.let { removeView(it) }
+                wallBackdrop = null
+            }
+            applySources(reset = false)
+            applyHeroTone()
+        }
+
+    /**
+     * 卡片墙的底色 (页面给, 开了 [heroBlur] 才用). hero 态不压黑时, 底下主壳还画着热门轮播的近黑分界带 (见 TvPosterWallTone), 列表挪到
+     * hero 停位时它会滚进屏顶: 聚焦卡的 hero 态在本视图最底下铺这个色 ([heroFloor]), 跟着上面几行 (连同轮播露着的那截) 淡入淡出盖住它,
+     * 整屏只见卡片墙的灰.
+     */
+    var wallColor: Int = Color.TRANSPARENT
+        set(value) {
+            if (field == value) return
+            field = value
+            applyFrame()
+        }
+
+    /** 本视图的背景 (画在所有子视图底下), 见 [wallColor]. */
+    private val heroFloor = ColorDrawable(Color.TRANSPARENT)
+
+    /** hero 态的整屏模糊背景 (见 [heroBlur]); null = 没开. */
+    var wallBackdrop: TvNativeWallBackdropView? = null
+        private set
+
+    /** 点开的那一行 (对焦到位时交给 [TvNativeExploreListener.onCardClick]). */
+    private var wallOpenRow: String? = null
+
+    /** 点开时各行 (连同各组标题、背景图、hero 文字里标题以外的几行) 淡没的程度, 见 [TvNativeWallFocus]. */
+    private var wallFade = 0f
+
+    private val wallFocus = TvNativeWallFocus(
+        this,
+        object : TvNativeWallFocus.Host {
+            override val wall: TvNativeWallBackdropView? get() = wallBackdrop
+            override val transitions: Boolean get() = this@TvNativeExploreView.transitions
+
+            override fun applyFade(fade: Float, keep: Int, chrome: Boolean) {
+                wallFade = fade
+                heroText.detailAlpha = 1f - fade
+                applyFrame()
+            }
+
+            override fun onOpeningChanged(opening: Boolean) {
+                listener?.onWallOpeningChanged(opening)
+            }
+
+            override fun onOpened(index: Int) {
+                val rowKey = wallOpenRow ?: return
+                listener?.onWallOpened()
+                listener?.onCardClick(rowKey, index)
+            }
+        },
+    )
 
     private val heroBox = HeroBox(context)
     val heroText = TvNativeHeroTextView(context, heroTextStyle)
@@ -269,13 +360,31 @@ class TvNativeExploreView(
         }
     private var lastTreatmentMode = Float.NaN
 
-    /** 深色主题: hero 态整屏压黑, 背景图等黑透才露面 (浅色两者同色, 不等). */
+    /** 深色主题: hero 态整屏压黑, 背景图等黑透才露面 (浅色两者同色, 不等; 铺着模糊背景时不压黑, 见 [heroDarkens]). */
     var dark: Boolean = true
         set(value) {
+            if (field == value) return
             field = value
-            timeline.dark = value
-            applyFrame()
+            applyHeroTone()
         }
+
+    /**
+     * 聚焦卡的 hero 态把整屏底色压黑: 深色主题、且没铺模糊背景 —— 模糊背景 ([heroBlur]) 盖满整屏, 压黑只会在进出 hero 态时先闪一下黑;
+     * 浅色主题 hero 底与卡片墙同色. 不压黑时 hero 时间线按不压黑的时长走, 背景图不等底色, 报给页面的黑度恒为 0 (轮播的分界线照旧).
+     */
+    private val heroDarkens: Boolean get() = dark && !heroBlur
+
+    /** 压不压黑变了 (换主题 / 开关模糊背景): 时间线的时长、背景图的放行与报给页面的黑度跟着换. */
+    private fun applyHeroTone() {
+        timeline.darkens = heroDarkens
+        applyFrame()
+        reportTone()
+    }
+
+    /** 整屏黑度 (不压黑时恒 0) 与轮播分界线报给页面. */
+    private fun reportTone() {
+        listener?.onToneChanged(if (heroDarkens) timeline.tone else 0f, metrics.carouselBottomPx - carouselShift())
+    }
 
     /** 换页交接途中分界线那层的浓度 (TvPosterWallTone.splitGate), 乘在轮播背景图上. */
     var splitGate: Float = 1f
@@ -297,6 +406,7 @@ class TvNativeExploreView(
         clipToPadding = false
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
         isFocusable = false
+        background = heroFloor
         addView(backdrop)
         buttons.orientation = LinearLayout.VERTICAL
         buttons.clipChildren = false
@@ -324,7 +434,7 @@ class TvNativeExploreView(
                 scrollTracker.onMoved(dy)
             }
         })
-        timeline.dark = dark
+        timeline.darkens = heroDarkens
         applyButtons(visible = true, animated = false)
         applyFrame()
     }
@@ -608,7 +718,7 @@ class TvNativeExploreView(
 
     private fun onTimeline() {
         applyFrame()
-        listener?.onToneChanged(timeline.tone, metrics.carouselBottomPx - carouselShift())
+        reportTone()
     }
 
     // ------------------------------------------------------------------
@@ -616,6 +726,8 @@ class TvNativeExploreView(
     // ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // hero 态的模糊背景: 点开途中吞掉方向键与确认键, 按下确认键当场解清晰图 (见 TvNativeWallFocus.handleKey)
+        if (wallFocus.handleKey(event)) return true
         // 远跳途中的确认键算作用在目标上 (同 Apple TV: 滚动途中的输入作用在目的地): 记下 (按下与抬起都吞掉), 落到目标时点它
         if (farJumpRow != null && tvNativeIsConfirmKey(event.keyCode)) {
             if (event.action == KeyEvent.ACTION_DOWN) farJumpConfirmQueued = true
@@ -783,6 +895,8 @@ class TvNativeExploreView(
             } else {
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)
                 list.heldFocus = rowKey to index
+                // hero 态的模糊背景: 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
+                if (openWithWallFocus(rowKey, index)) return
                 listener?.onCardClick(rowKey, index)
             }
         }
@@ -795,6 +909,28 @@ class TvNativeExploreView(
 
     private fun isMoreCard(rowKey: String, index: Int): Boolean =
         (list.items.getOrNull(list.indexOfKey(rowKey)) as? TvNativeExploreItem.Row)?.cards?.getOrNull(index)?.more != null
+
+    /** 点开 [rowKey] 行第 [index] 张 (聚焦的那张): 背景此刻是这张卡的、能变清晰就先对焦, 到位再进 (返回 true); 否则 false, 调用方当场进. */
+    private fun openWithWallFocus(rowKey: String, index: Int): Boolean {
+        val wall = wallBackdrop ?: return false
+        val src = cardSource
+        val t = wall.currentTarget
+        val matches = showsCard && src != null && !src.dimming && t != null && t.sharp && t.subjectId != null &&
+            t.subjectId == src.rawSubjectId
+        wallOpenRow = rowKey
+        if (wallFocus.open(index, matches)) return true
+        wallOpenRow = null
+        return false
+    }
+
+    /** 点开途中按了返回: 不进了, 倒放. */
+    override fun cancelWallOpen() = wallFocus.cancelOpen()
+
+    /** 从点开进去的详情页回来了 (页面在本页回到前台、缩回层撤掉之后调): 倒放回模糊背景与卡片. */
+    override fun endWallOpen() = wallFocus.endOpen()
+
+    /** 恢复点开的状态 (返回时页面重建): 卡片淡没、背景清晰 (清晰图解好就直接出现), 等页面调 [endWallOpen]. */
+    override fun restoreWallOpen() = wallFocus.restoreOpen()
 
     private fun onCardFocused(rowKey: String, index: Int) {
         // 真焦点到了: 按住的聚焦态放开 (落在它自己身上画面不变, 落在别处它照失焦缩回)
@@ -917,7 +1053,7 @@ class TvNativeExploreView(
         // 等着的落点行排出来了就送 (不再发起滚动)
         if (pendingRow != null && farJumpRow == null) resolvePending(scrollIfMissing = false)
         applyFrame()
-        listener?.onToneChanged(timeline.tone, metrics.carouselBottomPx - carouselShift())
+        reportTone()
     }
 
     /** 按此刻的滚动量、hero 态进度、尺寸插值, 摆背景图 / 文字 / 指示器, 算各项的淡化. 只动 RenderNode 属性. */
@@ -939,8 +1075,24 @@ class TvNativeExploreView(
         }
         val md = mode
         val carouselA = carouselAlpha()
-        val contentGate = if (dark) tvPosterWallToneGate(timeline.tone) else 1f
-        backdrop.alpha = if (showsCard) timeline.content * contentGate else carouselA * splitGate
+        val contentGate = if (heroDarkens) tvPosterWallToneGate(timeline.tone) else 1f
+        val heroShown = timeline.content * contentGate
+        // 点开时 (wallFade) 聚焦卡的背景图随各行淡没, 底下的模糊背景变清晰接上
+        backdrop.alpha = if (showsCard) heroShown * (1f - wallFade) else carouselA * splitGate
+        val wall = wallBackdrop
+        if (wall != null) {
+            // hero 态的模糊背景跟着 hero 时间线显隐 (回轮播时随聚焦卡的内容一起淡没)
+            wall.alpha = heroShown
+            // 叠在模糊背景上时背景图的边缘擦成透明; 模糊背景看不见时底下就是遮罩色, 两种画法一样, 不走离屏层
+            backdrop.feather = heroShown > 0f
+        } else {
+            backdrop.feather = false
+        }
+        // 铺着模糊背景: 最底下铺卡片墙的底色盖住主壳的轮播分界带, 跟着上面几行淡入淡出 (见 wallColor)
+        val floor = if (heroBlur) (timeline.above * (wallColor ushr 24)).roundToInt() else 0
+        heroFloor.color = if (floor <= 0) Color.TRANSPARENT else (wallColor and 0xFFFFFF) or (floor shl 24)
+        // hero 态铺着模糊背景: 进详情页从整屏背景起, 背景图不登记成放大转场的来源 (轮播照旧登记)
+        backdrop.zoomSource = !(heroBlur && showsCard)
         val scale = 1f + (m.cardBackdropScale - 1f) * md
         backdrop.scaleX = scale
         backdrop.scaleY = scale
@@ -984,7 +1136,7 @@ class TvNativeExploreView(
             } else {
                 val above = m.heroHeaderTopPx - (child.top - list.paddingTop)
                 if (above <= 0) 1f else 1f - (above / m.fadeDistancePx).coerceIn(0f, 1f) * p
-            }
+            } * (1f - wallFade)
             when (child) {
                 is TvNativeRowView -> {
                     child.rowAlpha = a
@@ -1046,6 +1198,11 @@ class TvNativeExploreView(
         backdrop.dimming = src.dimming
         val target = if (!showsCard && carouselGone) null else src.backdrop
         backdrop.show(target)
+        // hero 态的模糊背景: 铺聚焦卡那一部的横版背景图 (整部的那张), 轮播不铺
+        wallBackdrop?.let { wall ->
+            wall.show(if (showsCard) src.wall else null)
+            wallFocus.onTargetChanged(keepMatches = false)
+        }
         val transition = when {
             reset -> TvNativeTextTransition.Reset
             !showsCard && src.autoAdvanced -> TvNativeTextTransition.Carousel
@@ -1103,6 +1260,7 @@ class TvNativeExploreView(
         val width = m.bleedLeftPx + m.pageWidthPx
         val height = m.pageHeightPx
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
+        wallBackdrop?.measure(exactly(width), exactly(height))
         backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
         heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
         list.measure(exactly(width), exactly(height - m.listTopPx + m.listTopBleedPx))
@@ -1112,6 +1270,7 @@ class TvNativeExploreView(
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         val m = metrics
+        wallBackdrop?.let { it.layout(0, 0, it.measuredWidth, it.measuredHeight) }
         val bx = m.bleedLeftPx + m.pageWidthPx - backdrop.measuredWidth
         backdrop.layout(bx, 0, bx + backdrop.measuredWidth, backdrop.measuredHeight)
         // 以右上角为轴缩放 (图的比例几何不变)
@@ -1137,6 +1296,7 @@ class TvNativeExploreView(
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
         super.onDetachedFromWindow()
         scrollTracker.stop()
+        wallFocus.detach()
     }
 
     /**
