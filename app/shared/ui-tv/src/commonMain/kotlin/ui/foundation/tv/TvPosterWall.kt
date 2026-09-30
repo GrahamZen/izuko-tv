@@ -559,17 +559,22 @@ internal fun Modifier.tvGlassBackground(shape: Shape): Modifier = composed {
 }
 
 /**
- * 顶栏玻璃控件聚焦时抬起: 略放大 ([TV_GLASS_FOCUS_SCALE]) 并投下一层影 (照 tvOS 聚焦的标签). 挂在控件底色之前, 投影画在底色下面;
+ * 顶栏玻璃控件聚焦时抬起: 略放大 ([scale], 默认 [TV_GLASS_FOCUS_SCALE]) 并投下一层影 (照 tvOS 聚焦的标签). 挂在控件底色之前, 投影画在底色下面;
  * 只动图层属性, 不重排. 失焦时投影当场撤掉, 放大按更短的时长缩回 (见 [tvGlassFocusSpec]): 系统阴影要降到 0 才完全没有, 跟着缩回的
- * 曲线拖尾, 看着就是焦点走了、原地还留着一圈影子. [snap] 见 [tvGlassFocusSpec].
+ * 曲线拖尾, 看着就是焦点走了、原地还留着一圈影子. [snap] 见 [tvGlassFocusSpec]. 一整行宽的控件 (搜索框) 放大得少一些, 免得顶到旁边.
  */
 @Composable
-internal fun Modifier.tvGlassFocusLift(focused: Boolean, shape: Shape, snap: Boolean = false): Modifier {
+internal fun Modifier.tvGlassFocusLift(
+    focused: Boolean,
+    shape: Shape,
+    snap: Boolean = false,
+    scale: Float = TV_GLASS_FOCUS_SCALE,
+): Modifier {
     val lift by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused, snap), label = "glassLift")
     return graphicsLayer {
-        val scale = 1f + (TV_GLASS_FOCUS_SCALE - 1f) * lift
-        scaleX = scale
-        scaleY = scale
+        val s = 1f + (scale - 1f) * lift
+        scaleX = s
+        scaleY = s
         shadowElevation = if (focused) TV_GLASS_FOCUS_ELEVATION.toPx() * lift else 0f
         this.shape = shape
         clip = false

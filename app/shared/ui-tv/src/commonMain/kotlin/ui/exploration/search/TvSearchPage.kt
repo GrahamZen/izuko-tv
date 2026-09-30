@@ -11,12 +11,13 @@ package me.him188.ani.app.ui.exploration.search
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -28,7 +29,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -91,6 +92,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -200,6 +202,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
+import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
@@ -209,6 +212,7 @@ import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
 import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGlassFocusSpec
 import me.him188.ani.app.ui.foundation.tv.tvGlassLabelStyle
 import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
@@ -795,26 +799,41 @@ internal fun TvSearchInputPane(
         horizontalArrangement = Arrangement.spacedBy(TV_SEARCH_PANEL_GAP),
     ) {
         Column(Modifier.weight(1f).fillMaxHeight().padding(top = TV_SEARCH_INPUT_TOP_PAD)) {
-            // 搜索框 (聚焦高亮描边) 与右侧筛选钮.
+            // 搜索框与右侧筛选钮.
             // **筛选入口必须在输入态也有**: 查询本来就允许"只有标签没有关键词"
             // ([SubjectSearchQuery.hasSearchRequest]), 但本页进结果态必须先提交一次搜索, 而筛选钮
             // 原先只在结果态顶部行 —— 于是"不打字直接按标签浏览"在本页够不着 (上游手机/桌面端的
             // 筛选胶囊行一直摆在搜索页上, 不需要先搜一次).
-            // 框用 weight 让出钮的宽度; height(IntrinsicSize.Min) 让钮跟着框的内容高度走, 不写死高度.
+            // 搜索框照 Apple TV 的搜索栏: 平时没有框, 只有放大镜与一行字 (输入的字半亮、提示字更暗); 聚焦 / 输入时换成白底黑字的胶囊
+            // 并略抬起, 同结果态的搜索词胶囊与追番页的标签 (配色见 TvGlassColors). 框用 weight 让出钮的宽度.
+            val glass = tvGlassColors()
+            val fieldFocused = boxFocused || editing
+            // 进页 / 回本态的落点就在搜索框上: 那几帧里白底当场到位, 不先按未聚焦画一帧再淡入 (见 rememberTvFocusLandingWindow)
+            val landing by rememberTvFocusLandingWindow()
+            val fieldLayer by animateFloatAsState(
+                if (fieldFocused) 1f else 0f,
+                tvGlassFocusSpec(fieldFocused, landing),
+                label = "searchFieldPlatter",
+            )
+            val queryAlpha by animateFloatAsState(
+                if (fieldFocused) 1f else TV_SEARCH_INPUT_IDLE_ALPHA,
+                tvGlassFocusSpec(fieldFocused, landing),
+                label = "searchFieldQueryAlpha",
+            )
+            val fieldContent by animateColorAsState(
+                if (fieldFocused) glass.focusedContent else MaterialTheme.colorScheme.onSurface,
+                tvGlassFocusSpec(fieldFocused, landing),
+                label = "searchFieldContent",
+            )
+            val queryColor = fieldContent.copy(alpha = fieldContent.alpha * queryAlpha)
+            val hintColor = fieldContent.copy(alpha = fieldContent.alpha * TV_SEARCH_INPUT_HINT_ALPHA)
             Row(
-                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TV_SEARCH_FIELD_TO_BUTTON_GAP),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
+                Row(
                     Modifier.weight(1f)
-                        .ifThen(boxFocused || editing) {
-                            border(
-                                2.5.dp,
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-                            )
-                        }
                         // 非编辑态: 框自己是焦点目标 (页面级 requester 指向这里, 见 inputFieldFocus);
                         // 编辑态: 让位给里面的输入框. **让位要等输入框接住焦点之后**: 持焦的框当场变成不可聚焦时
                         // Compose 清空整窗焦点, 整页兜底按默认进组落到第一条候选, 交接效应随后才把焦点送进输入框 ——
@@ -850,77 +869,79 @@ internal fun TvSearchInputPane(
                             // 编辑态下不认长按: 输入框里长按是选字 / 粘贴, 而长按一旦触发会吞掉这次按住剩下的事件
                             onLongPress = if (editing) null else ({ if (isHistory && values.itemCount > 0) clearArmed = true }),
                         )
-                        .focusable(),
-                    shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        val textStyle = MaterialTheme.typography.titleMedium
-                        BasicTextField(
-                            value = query,
-                            onValueChange = { onQueryChange(it.copy(text = it.text.trim('\n'))) },
-                            modifier = Modifier.weight(1f)
-                                .focusRequester(editorFocus)
-                                .focusProperties { canFocus = editing }
-                                .onFocusChanged {
-                                    editorFocused = it.isFocused
-                                    // 焦点被方向键带走 (走到候选项) 也算退出编辑
-                                    if (!it.isFocused && editing) editing = false
-                                },
-                            readOnly = !editing,
-                            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { onSubmit(query.text) }),
-                            decorationBox = { innerTextField ->
-                                Box {
-                                    if (query.text.isEmpty()) {
-                                        Text(
-                                            stringResource(Lang.search_tv_input_hint),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            style = textStyle,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            },
-                        )
-                        if (isHistory && values.itemCount > 0) {
-                            TvSearchInlineClearIcon(
-                                armed = clearArmed,
-                                focusRequester = clearIconFocus,
-                                onDisarm = { clearArmed = false },
-                                onClear = {
-                                    clearArmed = false
-                                    onClearHistory()
-                                    // 图标随最后一条历史一起消失, 焦点不会自动改派, 先送回搜索框
-                                    runCatching { fieldFocusRequester.requestFocus() }
-                                },
-                                onEscape = { runCatching { fieldFocusRequester.requestFocus() } },
-                                label = stringResource(Lang.search_tv_clear_history),
-                            )
+                        .focusable()
+                        .tvGlassFocusLift(fieldFocused, CircleShape, snap = landing, scale = TV_SEARCH_FIELD_FOCUS_SCALE)
+                        // 白底只动透明度 (同追番页标签的聚焦片): 按颜色插值的话"没有底"得写成透明黑, 淡入途中先经过一层深灰
+                        .drawBehind {
+                            if (fieldLayer > 0f) {
+                                drawOutline(CircleShape.createOutline(size, layoutDirection, this), glass.focusedPlatter, alpha = fieldLayer)
+                            }
                         }
+                        .padding(horizontal = TV_SEARCH_FIELD_PADDING_HORIZONTAL, vertical = TV_SEARCH_FIELD_PADDING_VERTICAL),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(TV_SEARCH_FIELD_ICON_GAP),
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        Modifier.size(TV_SEARCH_FIELD_ICON_SIZE),
+                        tint = if (query.text.isEmpty()) hintColor else queryColor,
+                    )
+                    val textStyle = MaterialTheme.typography.titleMedium
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { onQueryChange(it.copy(text = it.text.trim('\n'))) },
+                        modifier = Modifier.weight(1f)
+                            .focusRequester(editorFocus)
+                            .focusProperties { canFocus = editing }
+                            .onFocusChanged {
+                                editorFocused = it.isFocused
+                                // 焦点被方向键带走 (走到候选项) 也算退出编辑
+                                if (!it.isFocused && editing) editing = false
+                            },
+                        readOnly = !editing,
+                        textStyle = textStyle.copy(color = queryColor),
+                        cursorBrush = SolidColor(fieldContent),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSubmit(query.text) }),
+                        decorationBox = { innerTextField ->
+                            Box {
+                                if (query.text.isEmpty()) {
+                                    Text(
+                                        stringResource(Lang.search_tv_input_hint),
+                                        color = hintColor,
+                                        style = textStyle,
+                                        maxLines = 1,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    if (isHistory && values.itemCount > 0) {
+                        TvSearchInlineClearIcon(
+                            armed = clearArmed,
+                            focusRequester = clearIconFocus,
+                            onDisarm = { clearArmed = false },
+                            onClear = {
+                                clearArmed = false
+                                onClearHistory()
+                                // 图标随最后一条历史一起消失, 焦点不会自动改派, 先送回搜索框
+                                runCatching { fieldFocusRequester.requestFocus() }
+                            },
+                            onEscape = { runCatching { fieldFocusRequester.requestFocus() } },
+                            label = stringResource(Lang.search_tv_clear_history),
+                            tint = hintColor,
+                        )
                     }
                 }
-                // 筛选钮: 纯图标方钮 (用户 2026-09-10: 不要文字, 聚焦时文字浮在钮下方)
+                // 筛选钮: 纯图标圆钮 (用户 2026-09-10: 不要文字, 聚焦时文字浮在钮下方)
                 TvSearchIconButton(
                     icon = Icons.Rounded.Tune,
                     label = stringResource(Lang.search_tv_filter),
                     onClick = onOpenFilter,
                     badge = hasFilters,
-                    modifier = Modifier.fillMaxHeight(),
                 )
             }
 
@@ -1094,9 +1115,9 @@ private fun TvSearchPanelIconButton(
 }
 
 /**
- * 搜索框内最右的「清除历史」图标: 没有底色块, 只有图标本身 (用户 2026-09-10). 平时 `canFocus = false`,
- * 方向键导航碰不到; 只有搜索框长按把它武装起来才可聚焦并接住焦点. 聚焦 = 图标变主题色 + 文字标签浮在
- * 下方; 确认键清空历史; 方向键 / 失焦 = 退回搜索框并解除武装.
+ * 搜索框内最右的「清除历史」图标: 平时没有底色块, 只有图标本身 (用户 2026-09-10). 平时 `canFocus = false`,
+ * 方向键导航碰不到; 只有搜索框长按把它武装起来才可聚焦并接住焦点. 聚焦 = 同搜索框与筛选钮的白底黑字 (见 TvGlassColors):
+ * 图标背后一块白底圆片、图标变黑、抬起, 文字标签浮在下方; 确认键清空历史; 方向键 / 失焦 = 退回搜索框并解除武装.
  *
  * 长按武装那一刻用户的手还按着, 剩下的连发与 KeyUp 会随着焦点一起落到这里 —— [consumeHeldConfirmKeyOnFocus]
  * 把它们吞掉, 见到新的一次按下才算「按了清除」.
@@ -1109,17 +1130,24 @@ private fun TvSearchInlineClearIcon(
     onClear: () -> Unit,
     onEscape: () -> Unit,
     label: String,
+    tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
+    // 焦点按 onFocusChanged 记 (同 TvSearchIconButton)
+    var focused by remember { mutableStateOf(false) }
+    val glass = tvGlassColors()
+    val platter by animateFloatAsState(if (focused) 1f else 0f, tvGlassFocusSpec(focused), label = "clearIconPlatter")
+    val iconTint by animateColorAsState(if (focused) glass.focusedContent else tint, tvGlassFocusSpec(focused), label = "clearIconTint")
     val iconSizePx = with(LocalDensity.current) { TV_SEARCH_INLINE_ICON_SIZE.roundToPx() }
     val labelOffsetPx = with(LocalDensity.current) { TV_SEARCH_INLINE_ICON_LABEL_OFFSET.roundToPx() }
     Box(
         modifier
             .focusRequester(focusRequester)
             .focusProperties { canFocus = armed }
-            .onFocusChanged { if (!it.isFocused && armed) onDisarm() }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (!it.isFocused && armed) onDisarm()
+            }
             .consumeHeldConfirmKeyOnFocus()
             .onPreviewKeyEvent { event ->
                 when {
@@ -1137,21 +1165,27 @@ private fun TvSearchInlineClearIcon(
             }
             // 触屏: 武装后点图标 = 确认键 (清空历史). 电视上不装
             .tvTouchTap(onTap = { if (armed) onClear() })
-            .focusable(interactionSource = interactionSource),
+            .focusable()
+            .size(TV_SEARCH_INLINE_ICON_SIZE),
+        contentAlignment = Alignment.Center,
     ) {
-        // 聚焦效果: 图标背后一个主题色圆底 + 图标反白 (同面板里的重置钮). 只换图标颜色的话在深色界面上
-        // 看不出来是"选中了". 用 drawBehind 画而不是加个底块: 圆比图标大, 塞进布局会把搜索框撑高,
-        // 画出去的那一圈落在搜索框自己的内边距里, 不会被裁
-        val focusRing = MaterialTheme.colorScheme.primary
-        Icon(
-            Icons.Rounded.DeleteSweep,
-            contentDescription = label,
-            Modifier.size(TV_SEARCH_INLINE_ICON_SIZE)
+        // 白底圆片比图标大: requiredSize 让它往四周伸出去画、不进布局 (塞进布局会把搜索框撑高), 伸出去的那一圈落在搜索框自己的内边距里.
+        // 抬起挂在圆片这一层上, 投影跟着圆片的大小
+        Box(
+            Modifier.requiredSize(TV_SEARCH_INLINE_ICON_FOCUS_SIZE)
+                .tvGlassFocusLift(focused, CircleShape)
                 .drawBehind {
-                    if (focused) drawCircle(focusRing, radius = TV_SEARCH_INLINE_ICON_FOCUS_RADIUS.toPx())
+                    if (platter > 0f) drawCircle(glass.focusedPlatter, alpha = platter)
                 },
-            tint = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.DeleteSweep,
+                contentDescription = label,
+                Modifier.size(TV_SEARCH_INLINE_ICON_SIZE),
+                tint = iconTint,
+            )
+        }
         if (focused) {
             Text(
                 label,
@@ -1170,9 +1204,9 @@ private fun TvSearchInlineClearIcon(
 }
 
 /**
- * 搜索框那一行里的纯图标方钮 (筛选 / 清空历史): 与搜索框同底色同圆角, 聚焦时主题色描边, **文字标签只在
- * 聚焦时浮现在钮的正下方**, 用 0 高度的 layout 放置, 不占布局、不把候选列表往下挤 (用户 2026-09-10: 行里
- * 不要文字). [badge] 为 true 时右上角一个小圆点 (筛选钮「已有筛选」的提示, 同结果态顶部行).
+ * 搜索框右边的纯图标圆钮 (筛选): 同结果态顶部行的筛选圆钮 —— 常态玻璃圆底, 聚焦时换成白底黑图标并抬起 (配色见 TvGlassColors).
+ * **文字标签只在聚焦时浮现在钮的正下方**, 用 0 高度的 layout 放置, 不占布局、不把候选列表往下挤 (用户 2026-09-10: 行里不要文字).
+ * [badge] 为 true 时右上角一个小圆点 (筛选钮「已有筛选」的提示, 同结果态顶部行).
  */
 @Composable
 private fun TvSearchIconButton(
@@ -1183,38 +1217,34 @@ private fun TvSearchIconButton(
     badge: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
+    // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
+    var focused by remember { mutableStateOf(false) }
+    val glass = tvGlassColors()
     var heightPx by remember { mutableIntStateOf(0) }
     val labelGapPx = with(LocalDensity.current) { TV_SEARCH_ROW_BUTTON_LABEL_GAP.roundToPx() }
     Box(modifier.onSizeChanged { heightPx = it.height }) {
         Surface(
             onClick = onClick,
-            modifier = Modifier.fillMaxHeight()
-                .width(TV_SEARCH_ROW_BUTTON_WIDTH)
-                .ifThen(focused) {
-                    border(
-                        2.5.dp,
-                        MaterialTheme.colorScheme.primary,
-                        RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-                    )
-                },
-            shape = RoundedCornerShape(TV_SEARCH_INPUT_CORNER),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.size(TV_SEARCH_FILTER_BUTTON_SIZE)
+                .onFocusChanged { focused = it.isFocused }
+                .tvGlassFocusLift(focused, CircleShape)
+                .tvGlassBackground(CircleShape),
+            shape = CircleShape,
+            color = if (focused) glass.focusedPlatter else Color.Transparent,
             interactionSource = interactionSource,
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
                     icon,
                     contentDescription = label,
-                    Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    Modifier.size(TV_SEARCH_FILTER_ICON_SIZE),
+                    tint = if (focused) glass.focusedContent else MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
         if (badge) {
             Box(
                 Modifier.align(Alignment.TopEnd)
-                    .padding(6.dp)
                     .size(8.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape),
             )
@@ -2370,8 +2400,32 @@ private const val TV_SEARCH_MODE_FADE_MILLIS = 500
 /** 输入态: 搜索框距页面顶部的距离. */
 private val TV_SEARCH_INPUT_TOP_PAD = 48.dp
 
-/** 输入态: 搜索框圆角. */
-private val TV_SEARCH_INPUT_CORNER = 12.dp
+/** 输入态: 搜索框的内边距 (聚焦时白底胶囊的留白; 平时没有底, 放大镜左缘与下面候选行的图标对齐). */
+private val TV_SEARCH_FIELD_PADDING_HORIZONTAL = 16.dp
+private val TV_SEARCH_FIELD_PADDING_VERTICAL = 14.dp
+
+/** 输入态: 搜索框里放大镜的尺寸与到字的间距. */
+private val TV_SEARCH_FIELD_ICON_SIZE = 22.dp
+private val TV_SEARCH_FIELD_ICON_GAP = 12.dp
+
+/**
+ * 输入态: 搜索框聚焦时的放大倍数. 搜索框是一整行宽的胶囊, 照顶栏玻璃控件的放大倍数会顶到右边的筛选钮; 放大一点点,
+ * 抬起主要靠白底与投影.
+ */
+private const val TV_SEARCH_FIELD_FOCUS_SCALE = 1.02f
+
+/** 输入态: 搜索框与右边筛选钮的间距. */
+private val TV_SEARCH_FIELD_TO_BUTTON_GAP = 12.dp
+
+/** 输入态: 筛选圆钮的直径 (与搜索框同高: 一行字 24 + 上下内边距) 与图标尺寸. */
+private val TV_SEARCH_FILTER_BUTTON_SIZE = 52.dp
+private val TV_SEARCH_FILTER_ICON_SIZE = 22.dp
+
+/** 输入态: 搜索框空着时提示字的不透明度 (乘在正文色上): Apple TV 安卓版搜索栏的提示字约 30% 亮, 与输入的字一眼分得开. */
+private const val TV_SEARCH_INPUT_HINT_ALPHA = 0.3f
+
+/** 输入态: 焦点不在搜索框上时输入的字的不透明度: Apple TV 安卓版的搜索词在焦点落到键盘 / 结果上时约 50% 亮. */
+private const val TV_SEARCH_INPUT_IDLE_ALPHA = 0.5f
 
 /** 输入态: 补全建议的防抖时长. */
 private const val TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS = 300L
@@ -2385,14 +2439,11 @@ private val TV_SEARCH_PAGE_END_PAD = 48.dp
 /** 输入态: 搜索区与右侧面板的间距. */
 private val TV_SEARCH_PANEL_GAP = 32.dp
 
-/** 输入态: 搜索框那一行里图标方钮的宽度 (高度跟随行). */
-private val TV_SEARCH_ROW_BUTTON_WIDTH = 56.dp
-
 /** 输入态: 搜索框内「清除历史」图标的边长. */
 private val TV_SEARCH_INLINE_ICON_SIZE = 22.dp
 
-/** 输入态: 「清除历史」图标聚焦时背后圆底的半径 (直径 36dp, 落在搜索框 14dp 的内边距之内). */
-private val TV_SEARCH_INLINE_ICON_FOCUS_RADIUS = 18.dp
+/** 输入态: 「清除历史」图标聚焦时背后白底圆片的直径 (比图标两边各多 7dp, 抬起放大后仍落在搜索框 14dp 的内边距之内). */
+private val TV_SEARCH_INLINE_ICON_FOCUS_SIZE = 36.dp
 
 /** 输入态: 「清除历史」图标聚焦时浮动标签相对图标底边的下移量 (框的下内边距 14dp + 6dp 间距). */
 private val TV_SEARCH_INLINE_ICON_LABEL_OFFSET = 20.dp
