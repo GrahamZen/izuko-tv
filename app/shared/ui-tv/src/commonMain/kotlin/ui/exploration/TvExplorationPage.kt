@@ -628,7 +628,7 @@ private fun TvExplorationPageContent(
         heroBottom = { nativeState.splitY },
     )
     // 返回键的远跳走 TvScrollSpring.Far (Apple TV 页面滚动那一组, 逐格那条 spring 跳十来行一闪而过、还掉帧).
-    // wallFarJumpRow: 跳回组首行的目标行 —— 转发落点请求时据此让原生视图按远跳滚过去 (见 TvExplorationNativeWall),
+    // wallFarJumpRow: 返回键分层的目标行 (回本行首卡 / 跳回组首行) —— 转发落点请求时据此让原生视图按远跳滚过去 (见 TvExplorationNativeWall),
     // 焦点落到卡上或回到轮播按钮就清掉. 只在处理按键 / 回调 / 协程里读写, 不进组合
     var wallFarJumpRow by remember { mutableStateOf<String?>(null) }
 
@@ -800,8 +800,10 @@ private fun TvExplorationPageContent(
         }
     }
     BackHandler(enabled = backEnabled) {
-        // 上一下返回的落点请求还挂着 (远跳还在滚, 焦点没落位) 时按请求的目标算下一层: 焦点此刻还停在出发的那张,
-        // 按它算会再发一次同样的回首卡, 连按两下就回不到轮播. cardIndex -1 (行自己记的那张) 当作不在行首
+        // 上一下返回的远跳还在滚 (焦点没落位) 时又按了返回: 那一步先当场落地 (行一步挪到目标卡并照落地记下, 见
+        // TvNativeExploreView.settleFarJump), 再按它的落点走下一层 —— 同一下里做完两步. 下一层按请求的目标算: 焦点此刻还停在
+        // 出发的那张 / 停放在原生视图上, 按它算会再发一次同样的回首卡, 连按两下就回不到轮播. cardIndex -1 (行自己记的那张) 当作不在行首
+        nativeState.view?.settleFarJump()
         val pending = cardFocusRequest
         val key = pending?.rowKey ?: focusedRowKey
         val cardIndex = if (pending != null) pending.cardIndex.let { if (it < 0) 1 else it } else focusedCardIndex
@@ -811,7 +813,12 @@ private fun TvExplorationPageContent(
                 heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
             }
 
-            cardIndex > 0 -> cardFocusRequest = TvCardFocusRequest(key, cardIndex = 0)
+            // 回本行首卡同样按远跳走 (同追番页返回回首卡): 途中按方向键当场落到行首, 按确认排队, 落地后点它
+            cardIndex > 0 -> {
+                wallFarJumpRow = key
+                cardFocusRequest = TvCardFocusRequest(key, cardIndex = 0)
+            }
+
             key != sectionFirstKey -> {
                 wallFarJumpRow = sectionFirstKey
                 cardFocusRequest = TvCardFocusRequest(sectionFirstKey, cardIndex = 0)

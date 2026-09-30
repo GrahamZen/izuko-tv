@@ -26,7 +26,8 @@ import kotlin.math.abs
  * 见它的说明): leanback HorizontalGridView, 卡片从行首停靠线
  * [startPx] 排起, 行本身铺满宽度 (行尾露一截下一张). **按需挪** ([tvStripLeftIndex]): FOCUS_SCROLL_ITEM 下焦点在完整露出的卡之间走不滚,
  * 走到伸进行尾留白 [endPx] 的那张才把它挪到留白线上 —— 行尾留白取 "行宽 − 行首 − 整数张卡" 时恰好整行挪一格; 往左同理贴回行首.
- * leanback 不回收持焦的那张, 平滑滚向远处的卡途中焦点不会丢.
+ * 平滑滚向远处的卡 ([scrollToCardSmooth]) 时 leanback 当场把选中位置换成目标、按它修剪排布范围, 持焦那张滚出去照样被回收、焦点跟着丢
+ * (系统随即从窗口根上重新送焦) —— 要滚远就先把焦点停放到行外 (见探索页的远跳).
  *
  * 左右键行自己走 (同一行上一张 / 下一张), 不交给系统找焦点: 行首按左时 [startLeftExits] 就把新按下的那一下放出去 (按住的连发不出行),
  * 由外面接, 否则吞掉; 行尾按右吞掉; [canMoveTo] 不让去的卡也吞掉. 上下键不管. 行本身不可聚焦, 焦点只落在卡上 (有卡却一张都还没排出来
@@ -191,6 +192,20 @@ abstract class TvNativeStripView(
         pendingLeft = left
         // 内容没变时适配器不刷新、不会重排: 保证这一次就挪到位, 不拖到以后某次布局才跳
         requestLayout()
+        retryLayoutIfMissed(TV_NATIVE_LAYOUT_RETRIES)
+    }
+
+    /**
+     * 布局请求在别人的布局途中发出时可能丢掉: 探索页的落点在列表的布局回调里送, 而原生视图挂在 Compose 里、由 Compose 在系统那一趟布局之外排 ——
+     * 那时父视图还标着要布局, 请求传不上去, 系统也不记, 父视图排完就没了 (Shield 上落地一直等不到这一趟布局, 焦点停放着不动).
+     * 往后几帧还没排 (记下的行首 / 布局回调还在) 就再请求一次.
+     */
+    private fun retryLayoutIfMissed(retries: Int) {
+        postOnAnimation {
+            if (pendingLeft < 0 && layoutCallback == null) return@postOnAnimation
+            requestLayout()
+            if (retries > 1) retryLayoutIfMissed(retries - 1)
+        }
     }
 
     /** [placeAfterSubmit] 之后这一次布局完成时要挪到的行首, -1 = 没有. */
@@ -199,6 +214,10 @@ abstract class TvNativeStripView(
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
         restorePendingLeft()
+        layoutCallback?.let { callback ->
+            layoutCallback = null
+            callback()
+        }
         // 焦点先停在行上等布局 (见 onRequestFocusInDescendants): 排出来了交给选中的那张 (恢复的上次那张), 没排到它就交给行首那张 ——
         // 不让焦点停在没有聚焦效果的行上
         if (isFocused && childCount > 0 && !focusCardIfLaidOut(selectedPosition)) focusCardIfLaidOut(leftIndex())
@@ -292,6 +311,24 @@ abstract class TvNativeStripView(
         setSelectedPositionSmooth(index.coerceIn(0, count - 1))
     }
 
+    /**
+     * 一步挪到第 [index] 张 (远跳途中按了方向键: 当场落地): 停掉在走的滚动, 行首照按需挪的规矩 ([tvStripLeftIndex]) 定, 下一趟布局就排出来,
+     * 布局完调 [onLaidOut] (由调用方送焦). 行里没有焦点时用 (焦点停放在行外): 否则 leanback 按持焦那张重排.
+     */
+    fun jumpToCard(index: Int, columns: Int, onLaidOut: () -> Unit) {
+        val count = itemCount
+        if (count == 0) return
+        // 被停掉的平滑滚动不再回调停下
+        settledCallback = null
+        stopScroll()
+        val target = index.coerceIn(0, count - 1)
+        layoutCallback = onLaidOut
+        placeAfterSubmit(count, tvStripLeftIndex(leftIndex(), target, count, columns), columns, target)
+    }
+
+    /** [jumpToCard] 之后这一趟布局完成时调, null = 没有. */
+    private var layoutCallback: (() -> Unit)? = null
+
     /** 行刚绑定、还没排过时选中第 [index] 张: 第一次布局就排在那里. */
     fun selectCard(index: Int) {
         val count = itemCount
@@ -343,3 +380,6 @@ internal const val TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS = 450L
  * 落后 2v / ω, 系统连发约 20 张 / 秒时约两张半.
  */
 internal const val TV_NATIVE_STRIP_HOLD_LEAD_CARDS = 3
+
+/** 布局请求丢了时往后几帧补请求几次 (见 TvNativeStripView.retryLayoutIfMissed). */
+private const val TV_NATIVE_LAYOUT_RETRIES = 3

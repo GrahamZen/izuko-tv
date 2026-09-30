@@ -423,6 +423,9 @@ class TvNativeGridPageView(
         current?.farJumpTo(index)
     }
 
+    /** 此刻那份网格的远跳还在滚就当场落地, 返回是否有远跳在滚. 见 [TvNativeGridView.landFarJump]. */
+    fun landFarJump(): Boolean = current?.landFarJump() == true
+
     /** 各份网格此刻的选中位置 (页面重建时恢复用). */
     fun savedPositions(): Map<Any, Int> {
         current?.let { g -> gridKeys[g]?.let { savedPosition[it] = g.selectedPosition } }

@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.View
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.test.AfterTest
@@ -54,6 +55,30 @@ class TvNativeRowNavigationTest {
 
     private fun dispatchDown(keyCode: Int, repeatCount: Int): Boolean =
         host.onMain { row.dispatchKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, repeatCount)) }
+
+    @Test
+    fun `a jump requested while the parent is laying out still lays the row out`() {
+        // 探索页的落点在列表的布局回调里送 (onItemsMoved), 而原生视图挂在 Compose 里, 由 Compose 在系统那一趟布局之外排: 那时父视图还标着
+        // 要布局, 行的布局请求传不上去, 系统也不记 (不在 ViewRootImpl 的布局里), 父视图布局完就丢了. 这里照样在系统布局之外排一次父视图
+        var laidOut = false
+        host.onMain {
+            host.root.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View, left: Int, top: Int, right: Int, bottom: Int, oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
+                    v.removeOnLayoutChangeListener(this)
+                    row.jumpToCard(11, columns = 6) { laidOut = true }
+                }
+            })
+            val root = host.root
+            root.forceLayout()
+            root.measure(
+                View.MeasureSpec.makeMeasureSpec(root.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(root.height, View.MeasureSpec.EXACTLY),
+            )
+            root.layout(root.left, root.top, root.right, root.bottom)
+        }
+        host.waitUntil("跳过去的这一趟布局完成了", timeoutMillis = 2000) { laidOut }
+        host.waitUntil("最后一张排出来了") { row.findViewHolderForAdapterPosition(11) != null }
+    }
 
     @Test
     fun `focus moves across fully visible cards without scrolling`() {

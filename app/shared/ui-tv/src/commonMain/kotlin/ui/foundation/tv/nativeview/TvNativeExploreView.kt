@@ -320,7 +320,16 @@ class TvNativeExploreView(
 
     /** 目标行已在平滑滚向挂着的落点: 重试只在那张排出来 / 滚动停下时送焦, 不再发起滚动 (见 [resolvePending]). */
     private var pendingSmooth = false
+
+    /** 挂着的落点要一步挪过去 (远跳途中按了方向键), 不平滑滚 (见 [resolvePending]). */
+    private var pendingInstant = false
+
+    /** 远跳途中按方向键当场落地是什么时候发起的 (见 [landFarJumpNow]); 落地一直没成时按键据此重送. */
+    private var landingSince = 0L
     private var farJumpRow: String? = null
+
+    /** 远跳纵向已到位, 目标那一行正平滑滚向目标卡 (见 [finishFarJump]); 这一段仍算远跳. */
+    private var farJumpAlongRow = false
 
     /** 远跳途中按了确认: 落到目标时点它 (见 [dispatchKeyEvent]). */
     private var farJumpConfirmQueued = false
@@ -539,14 +548,18 @@ class TvNativeExploreView(
 
 
     /**
-     * 送焦到 [rowKey] 行的第 [index] 张 (-1 = 这一行上次停的那张). [far] = 远跳 (返回键跳回组首行): 按 [TvScrollSpring.Far] 滚过去,
-     * 途中不显示聚焦效果, 到位再把焦点给目标. 目标行还没排出来就记下, 排出来时再送.
+     * 送焦到 [rowKey] 行的第 [index] 张 (-1 = 这一行上次停的那张). [far] = 远跳 (返回键回本行首卡 / 跳回组首行): 列表按
+     * [TvScrollSpring.Far] 滚过去, 目标卡没排出来的话那一行接着平滑滚过去; 途中焦点停放在本视图上、不显示聚焦效果, 按方向键当场落到目标,
+     * 按确认排队 (落地后点它), 到位再把焦点给目标. 目标卡已经排出来 (在屏上或刚出屏) 时不必远跳, 同按上下键当场送焦 (见 [targetLaidOut]);
+     * 两行以内的远跳按逐格的 [TvScrollSpring.Step] 滚. 目标行还没排出来就记下, 排出来时再送.
      */
     fun focusCard(rowKey: String, index: Int, far: Boolean = false): Boolean {
         pendingHeroButton = -1
         // 新的落点请求: 远跳途中排队的确认作废
         farJumpConfirmQueued = false
         clickOnLandingRow = null
+        farJumpAlongRow = false
+        pendingInstant = false
         val item = list.indexOfKey(rowKey)
         pendingRow = rowKey
         pendingIndex = index
@@ -554,17 +567,31 @@ class TvNativeExploreView(
         pendingSmooth = false
         if (!far && !cardAreaHasFocus) holdLandingLook(rowKey, index)
         if (item < 0 || !isLaidOut) return false
-        if (far) {
+        if (far && !targetLaidOut(rowKey, item)) {
             farJumpRow = rowKey
             setFocusEffectSuppressed(true)
             parkFocus()
             val stop = if (timeline.active) metrics.heroScroll(list.items, item) else metrics.centeredScroll(list.items, item)
-            list.scrollToStop(stop, TvScrollSpring.Far, animatedScroll)
+            // 近的 (两行以内) 按逐格的节奏滚: 远跳那组 spring 是给一次跳十几行的, 起步慢、尾巴长, 跳一行也要一秒多才停稳落焦
+            val near = abs(stop - list.scrolledPx()) <= TV_NATIVE_NEAR_JUMP_ROWS * (metrics.rowPx + metrics.headerPx)
+            list.scrollToStop(stop, if (near) TvScrollSpring.Step else TvScrollSpring.Far, animatedScroll)
             // 已经在停位上 / 流畅档一步到位: 不会再有滚动停下的回调, 当场落焦
             if (list.scrollState == RecyclerView.SCROLL_STATE_IDLE) finishFarJump()
             return true
         }
         return resolvePending(scrollIfMissing = true)
+    }
+
+    /**
+     * [rowKey] 行 (列表第 [item] 项) 已经排出来、挂着的目标卡也排出来了 (在屏上或刚出屏: 组首行就在上面、行内回首卡而行首还排着): 不必远跳,
+     * 同按上下键当场送焦, 列表与行按逐格的节奏跟过去. 远跳 (停放焦点、滚停才落焦) 是给目标还没排出来的: 那时出发那张会随滚动被回收.
+     */
+    private fun targetLaidOut(rowKey: String, item: Int): Boolean {
+        val row = list.rowAt(item) ?: return false
+        val count = row.cards.itemCount
+        if (count == 0) return false
+        val left = list.rowLeftIndex[rowKey] ?: row.leftIndex()
+        return row.findViewHolderForAdapterPosition(pendingTarget(rowKey, left, count)) != null
     }
 
     /**
@@ -585,8 +612,10 @@ class TvNativeExploreView(
 
     private fun cancelPending() {
         pendingRow = null
+        pendingInstant = false
         farJumpConfirmQueued = false
         clickOnLandingRow = null
+        farJumpAlongRow = false
         if (farJumpRow != null) {
             farJumpRow = null
             setFocusEffectSuppressed(false)
@@ -615,18 +644,54 @@ class TvNativeExploreView(
         if (!isFocused) isFocusable = false
     }
 
-    /** 远跳途中按了方向键: 当场落到目标 (这一下吞掉), 之后的按键从目标接着走 —— 出发那张多半已滚出屏被回收, 从它算不出下一步. */
+    /**
+     * 远跳途中按了方向键: 当场落到目标 (这一下吞掉, 排队的确认作废), 之后的按键从目标接着走 —— 出发那张多半已滚出屏被回收, 从它算不出
+     * 下一步. 列表一步到那一行的停位, 目标卡没排出来的话那一行也一步挪过去 (见 [resolvePending]).
+     */
     private fun landFarJumpNow() {
         val rowKey = farJumpRow ?: return
         farJumpRow = null
+        farJumpAlongRow = false
         farJumpConfirmQueued = false
         setFocusEffectSuppressed(false)
         val item = list.indexOfKey(rowKey)
         if (item >= 0) list.jumpTo(if (timeline.active) metrics.heroScroll(list.items, item) else metrics.centeredScroll(list.items, item))
         pendingRow = rowKey
         pendingSmooth = false
+        pendingInstant = true
+        landingSince = SystemClock.uptimeMillis()
         // 列表按新位置排完才有那一行: 布局 / 挪动时 onListMoved 会再试, 这里补一次
         list.post { resolvePending(scrollIfMissing = false) }
+    }
+
+    /**
+     * 页面的返回分层: 上一下返回的远跳还在滚时又按了返回 —— 这一步先当场落地, 页面紧接着按它的落点发下一层的落点请求 (同一下里做完两步).
+     * 落地 = 列表一步到那一行的停位, 那一行一步挪到目标卡, 行首与上次停的那张照落在目标卡上记下 (之后回到这一行、行被回收重绑都按它);
+     * 不送焦: 焦点仍停放在本视图上, 下一层马上把它送走. 返回是否有远跳在滚.
+     */
+    fun settleFarJump(): Boolean {
+        val rowKey = farJumpRow ?: return false
+        val item = list.indexOfKey(rowKey)
+        val count = (list.items.getOrNull(item) as? TvNativeExploreItem.Row)?.cards?.size ?: 0
+        val row = if (item >= 0) list.rowAt(item) else null
+        val current = list.rowLeftIndex[rowKey] ?: row?.leftIndex() ?: 0
+        val target = if (count > 0) pendingTarget(rowKey, current, count) else -1
+        // 先摘掉远跳与挂着的落点再挪: 列表 / 行滚动停下的回调会去落地送焦
+        farJumpRow = null
+        farJumpAlongRow = false
+        farJumpConfirmQueued = false
+        clickOnLandingRow = null
+        pendingRow = null
+        pendingInstant = false
+        setFocusEffectSuppressed(false)
+        if (item < 0 || target < 0) return true
+        val columns = metrics.columns.coerceAtLeast(1)
+        list.rowLeftIndex[rowKey] = tvStripLeftIndex(current, target, count, columns)
+        rowFocusedIndex[rowKey] = target
+        list.jumpTo(if (timeline.active) metrics.heroScroll(list.items, item) else metrics.centeredScroll(list.items, item))
+        // 那一行还在就当场挪到目标卡; 已被回收的话重新排出来时按上面记下的行首排
+        if (row != null && row.findViewHolderForAdapterPosition(target) == null) row.jumpToCard(target, columns) {}
+        return true
     }
 
     /**
@@ -649,11 +714,7 @@ class TvNativeExploreView(
         val count = row.cards.itemCount
         if (count == 0) return false
         val left = list.rowLeftIndex[rowKey] ?: row.leftIndex()
-        val target = when {
-            pendingIndex >= 0 -> pendingIndex
-            pendingColumn >= 0 -> left + pendingColumn
-            else -> rememberedIndex(rowKey, left)
-        }.coerceIn(0, count - 1)
+        val target = pendingTarget(rowKey, left, count)
         pendingRow = null
         if (row.findViewHolderForAdapterPosition(target)?.itemView?.isFocused == true) {
             // 目标已经持着焦点: requestFocus 不会再回调聚焦, 当场按到位报上去 (页面据此清掉挂着的落点请求)
@@ -669,7 +730,13 @@ class TvNativeExploreView(
             // 已经在平滑滚过去: 等它排出来 / 停下 (再发一遍会把行的平滑滚动一次次重启)
             pendingSmooth -> Unit
 
-            // 行已排好、那张在屏外 (返回键回行首时行首左边好几张、左右键连按超前): 平滑滚过去, 停下再送
+            // 远跳途中按了方向键 (见 landFarJumpNow): 一步挪过去, 这一趟布局完再送
+            pendingInstant && row.childCount > 0 -> {
+                pendingSmooth = true
+                row.jumpToCard(target, metrics.columns.coerceAtLeast(1)) { if (pendingRow == rowKey) resolvePending(scrollIfMissing = false) }
+            }
+
+            // 行已排好、那张在屏外 (左右键连按超前): 平滑滚过去, 停下再送
             row.childCount > 0 -> {
                 pendingSmooth = true
                 row.scrollToCardSmooth(target) { if (pendingRow == rowKey) resolvePending(scrollIfMissing = false) }
@@ -686,9 +753,42 @@ class TvNativeExploreView(
 
     private fun rememberedIndex(rowKey: String, left: Int): Int = rowFocusedIndex[rowKey] ?: left
 
+    /** 挂着的落点在 [rowKey] 行 (行首 [left], 共 [count] 张) 里指的是第几张. */
+    private fun pendingTarget(rowKey: String, left: Int, count: Int): Int = when {
+        pendingIndex >= 0 -> pendingIndex
+        pendingColumn >= 0 -> left + pendingColumn
+        else -> rememberedIndex(rowKey, left)
+    }.coerceIn(0, count - 1)
+
+    /**
+     * 远跳的列表停下了 (纵向到位): 目标卡还没排出来 (行首左边好几张, 如行内回首卡) 就让那一行接着平滑滚过去 —— 这一段仍算远跳, 焦点
+     * 仍停放在本视图上: leanback 平滑滚向远处时当场把选中位置换成目标, 出发那张滚出排布范围就被回收, 焦点留在它身上就丢了
+     * (系统从窗口根上重新送焦, 落到轮播按钮上). 行停下再落地 ([landFarJump]).
+     */
     private fun finishFarJump() {
         val rowKey = farJumpRow ?: return
+        // 行在滚着: 列表这时的停下与它无关
+        if (farJumpAlongRow) return
+        val item = list.indexOfKey(rowKey)
+        val row = if (item >= 0) list.rowAt(item) else null
+        val count = row?.cards?.itemCount ?: 0
+        if (row != null && row.childCount > 0 && count > 0) {
+            val left = list.rowLeftIndex[rowKey] ?: row.leftIndex()
+            val target = pendingTarget(rowKey, left, count)
+            if (row.findViewHolderForAdapterPosition(target) == null) {
+                farJumpAlongRow = true
+                row.scrollToCardSmooth(target) { if (farJumpRow == rowKey) landFarJump() }
+                return
+            }
+        }
+        landFarJump()
+    }
+
+    /** 远跳落地: 途中按的确认留给目标 (拿到焦点时点它), 送焦. */
+    private fun landFarJump() {
+        val rowKey = farJumpRow ?: return
         farJumpRow = null
+        farJumpAlongRow = false
         if (farJumpConfirmQueued) {
             farJumpConfirmQueued = false
             clickOnLandingRow = rowKey
@@ -745,6 +845,22 @@ class TvNativeExploreView(
         if (farJumpRow != null) {
             landFarJumpNow()
             return true
+        }
+        if (isFocused && descendantFocusability == FOCUS_BEFORE_DESCENDANTS) {
+            // 焦点还停放在本视图上 (见 parkFocus): 远跳刚当场落地、落点要等这一趟布局 (见 landFarJumpNow) —— 紧跟着的按键 (连按 / 连发)
+            // 吞掉, 不能把落点作废; 作废了焦点就一直停在本视图上, 之后的按键由系统从整块视图里找方向, 落到随便一张卡上.
+            // 落地等了太久还没成 (那一趟布局没来): 不再干等, 按挂着的落点重新送一次. 没有挂着的落点 (停放没解开) 就送回这一行上次停的那张
+            val pending = pendingRow
+            if (pending != null) {
+                if (SystemClock.uptimeMillis() - landingSince > TV_NATIVE_LANDING_STALE_MILLIS) focusCard(pending, pendingIndex)
+                return true
+            }
+            val row = focusedRowKey
+            if (row != null) {
+                focusCard(row, -1)
+                return true
+            }
+            unparkFocus()
         }
         if (event.repeatCount == 0) {
             // 用户按了新方向: 挂着的程序化落点 (含远跳) 作废, 从此刻的焦点接着走 (同 Compose 页面根的按键预览)
@@ -950,6 +1066,7 @@ class TvNativeExploreView(
         focusedCardIndex = index
         focusedColumn = index - left
         if (pendingRow == rowKey || farJumpRow == null) pendingRow = null
+        pendingInstant = false
         setCardAreaFocus(true)
         listener?.onCardFocused(rowKey, index, focusedColumn)
         if (clickOnLandingRow != null) {
@@ -1412,3 +1529,9 @@ internal class TvNativeScrollTracker(private val onChanged: (Boolean) -> Unit) {
 
 /** 海报墙背景图在轮播与聚焦卡两套尺寸之间缩放的时长 (hero 态里在首行按上回到轮播), 同 hero 背景图淡入. */
 private const val TV_NATIVE_WALL_BACKDROP_RESIZE_MILLIS = 400L
+
+/** 远跳途中按方向键当场落地, 超过这么久焦点还停放着 (那一趟布局没来) 就当落地失败, 下一次按键按挂着的落点重送 (见 handleKeyDown). */
+private const val TV_NATIVE_LANDING_STALE_MILLIS = 400L
+
+/** 远跳的纵向距离在这么多行 (含组标题) 以内按逐格的 spring 滚 (见 TvNativeExploreView.focusCard). */
+private const val TV_NATIVE_NEAR_JUMP_ROWS = 2

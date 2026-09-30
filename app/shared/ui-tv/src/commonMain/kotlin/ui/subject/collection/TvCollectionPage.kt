@@ -575,6 +575,8 @@ private fun TvCollectionPageContent(
         snapshotFlow { gridFocus.switching }.collect { if (!it) wallFarJump = false }
     }
     BackHandler(enabled = !navLocked && backToFirstCard) {
+        // 回首卡还在滚又按了返回 (多半是嫌慢): 当场落到首卡, 同途中按方向键
+        if (nativeState.view?.landFarJump() == true) return@BackHandler
         wallFarJump = true
         gridFocus.focusItem(0)
     }

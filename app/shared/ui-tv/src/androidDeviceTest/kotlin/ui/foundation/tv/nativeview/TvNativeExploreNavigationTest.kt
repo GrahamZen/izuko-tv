@@ -12,10 +12,12 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlin.test.AfterTest
@@ -134,12 +136,18 @@ class TvNativeExploreNavigationTest {
 
     private fun press(keyCode: Int, times: Int = 1) = repeat(times) { host.press(keyCode) }
 
-    /** 换成 [rows] 行、每行 [cards] 张的列表 (行键见 [longRow]), 滚动带动画: 长按连发要看平滑滚动落后焦点的那一段. */
-    private fun useLongRows(rows: Int, cards: Int) = host.onMain {
+    /**
+     * 换成 [rows] 行、每行 [cards] 张的列表 (行键见 [longRow]), 滚动带动画: 长按连发要看平滑滚动落后焦点的那一段.
+     * [moreCard] = 每行末尾再接一张「更多」卡 (第 [cards] 张).
+     */
+    private fun useLongRows(rows: Int, cards: Int, moreCard: Boolean = false) = host.onMain {
         view.animatedScroll = true
         view.setItems(
             listOf(TvNativeExploreItem.Spacer("spacer")) +
-                (0 until rows).map { TvNativeExploreItem.Row(longRow(it), testCards(cards, "第 $it 行")) },
+                (0 until rows).map { row ->
+                    val more = if (moreCard) listOf(TvNativeCard(imageUrl = null, title = "更多", more = TvNativeMore.Idle)) else emptyList()
+                    TvNativeExploreItem.Row(longRow(row), testCards(cards, "第 $row 行") + more)
+                },
         )
     }
 
@@ -310,25 +318,375 @@ class TvNativeExploreNavigationTest {
         assertEquals(false, host.onMain { cardView(REC0, 2)?.focusLookHeld })
     }
 
-    /** [rowKey] 行第 [index] 张卡的视图 (行视图的 tag 是行键). */
-    private fun cardView(rowKey: String, index: Int): TvNativeCardView? {
+    /** [rowKey] 那一行的视图 (行视图的 tag 是行键). 在主线程上调. */
+    private fun rowView(rowKey: String): TvNativeRowView? {
         fun find(v: View): TvNativeRowView? = when {
             v is TvNativeRowView && v.tag == rowKey -> v
             v is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
             else -> null
         }
-        return find(view)?.findViewHolderForAdapterPosition(index)?.itemView as? TvNativeCardView
+        return find(view)
+    }
+
+    /** [rowKey] 行第 [index] 张卡的视图. 在主线程上调. */
+    private fun cardView(rowKey: String, index: Int): TvNativeCardView? =
+        rowView(rowKey)?.findViewHolderForAdapterPosition(index)?.itemView as? TvNativeCardView
+
+    /** 走系统的按键派发 (同遥控器) 按一下, 不等主线程空闲: 动画途中按键 (见 [press] 为什么不行). */
+    private fun pressNow(keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        host.instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        host.instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
+    /** 长行 (滚动带动画) 第 1 行停在第 [index] 张, 列表与行都停稳. */
+    private fun restOnLongRow(index: Int) {
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(1), index) }
+        waitCard(longRow(1), index)
+        SystemClock.sleep(700)
+        host.waitUntil("行停稳") { rowView(longRow(1))?.scrollState == RecyclerView.SCROLL_STATE_IDLE }
+    }
+
+    @Test
+    fun `going back to the row start from far keeps the focus in the page`() {
+        restOnLongRow(20)
+        val heroFocused = listener.heroButtonFocused.size
+        // 页面按返回回本行首卡 (远跳): 出发那张随行滚远被回收时焦点不能跟着丢 —— 丢了系统从窗口根上重新送焦, 落到轮播按钮上
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        waitCard(longRow(1), 0)
+        assertEquals(heroFocused, listener.heroButtonFocused.size, "回首卡途中焦点跑到了轮播按钮上")
+        assertEquals(0, host.onMain { rowView(longRow(1))?.leftIndex() })
+    }
+
+    @Test
+    fun `a direction key while going back to the row start lands on the first card at once`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        assertTrue(host.onMain { rowView(longRow(1))?.scrollState != RecyclerView.SCROLL_STATE_IDLE }, "行还在往回滚")
+        val frames = FrameCounter.start(host)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitCard(longRow(1), 0)
+        // 一步到位, 不等行滚完 (从第 20 张滚回来要几十帧); 这一下右键吞掉, 焦点没往右走
+        assertLandedWithinFrames(frames.stop())
+        SystemClock.sleep(200)
+        assertEquals(longRow(1) to 0, card())
+        assertEquals(0, host.onMain { rowView(longRow(1))?.leftIndex() })
+    }
+
+    @Test
+    fun `two quick direction keys while going back to the row start land and move on`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        // 第一下当场落地 (要等这一趟布局), 第二下紧跟着来 (连按两下): 落地不能被它作废, 焦点不能停在整个视图上
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.waitUntil("焦点落到第 1 行的卡上") { view.findFocus() is TvNativeCardView && view.focusedRowKey == longRow(1) }
+        SystemClock.sleep(300)
+        val (row, index) = card()
+        assertEquals(longRow(1), row)
+        assertTrue(index <= 1, "落地后跑远了: 第 $index 张")
+        assertTrue(host.onMain { view.findFocus() is TvNativeCardView }, "焦点停在整个视图上")
+    }
+
+    @Test
+    fun `a direction key once the first card is laid out off screen on the way back lands on it`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        // 行往回滚到第一张已经排出来 (在屏幕左边外面, 还没滚进来) 的那一刻按: 落点要给这张排在屏外的卡送焦
+        host.waitUntil("第一张排出来了而行还在滚", timeoutMillis = 3000) {
+            val row = rowView(longRow(1))
+            val first = row?.findViewHolderForAdapterPosition(0)?.itemView
+            row != null && first != null && row.scrollState != RecyclerView.SCROLL_STATE_IDLE && first.right <= row.paddingLeft
+        }
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(1), maxIndex = 0)
+        assertEquals(0, host.onMain { rowView(longRow(1))?.leftIndex() })
+    }
+
+    @Test
+    fun `holding a direction key while going back to the row start lands and keeps the focus on a card`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        holdNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(1), maxIndex = 4)
+    }
+
+    /** 按住一个方向键: 首次按下后紧跟着 [repeats] 次连发 (repeatCount > 0), 再抬起 (走系统派发, 同遥控器). */
+    private fun holdNow(keyCode: Int, repeats: Int = 3) {
+        val down = SystemClock.uptimeMillis()
+        for (repeat in 0..repeats) {
+            host.instrumentation.sendKeySync(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, keyCode, repeat))
+        }
+        host.instrumentation.sendKeySync(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
+    /** 焦点落在 [rowKey] 行的卡上 (不是停在整个视图上), 停稳后仍是前 [maxIndex] + 1 张之一 (没有乱跑). */
+    private fun assertLandedNear(rowKey: String, maxIndex: Int) {
+        host.waitUntil("焦点落到 $rowKey 的卡上") { view.findFocus() is TvNativeCardView && view.focusedRowKey == rowKey }
+        SystemClock.sleep(400)
+        val (row, index) = card()
+        assertEquals(rowKey, row)
+        assertTrue(index <= maxIndex, "落地后跑远了: 第 $index 张")
+        assertTrue(host.onMain { view.findFocus() is TvNativeCardView }, "焦点停在整个视图上")
+    }
+
+    /** 按下到落地画了几帧: 「当场落地」是几帧之内, 等滚完要几十帧. 数帧不数毫秒 —— 模拟器负载一高每帧都变慢, 帧数不变. */
+    private fun assertLandedWithinFrames(frames: Int) {
+        assertTrue(frames <= TV_LANDING_MAX_FRAMES, "按了方向键没有当场落地: 过了 $frames 帧")
+    }
+
+    /** 从开始到 [stop] 主线程画了几帧. */
+    private class FrameCounter private constructor() : Choreographer.FrameCallback {
+        @Volatile private var frames = 0
+
+        @Volatile private var running = true
+
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!running) return
+            frames++
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+
+        fun stop(): Int {
+            running = false
+            return frames
+        }
+
+        companion object {
+            fun start(host: TvNativeTestHost): FrameCounter = FrameCounter().also { counter ->
+                host.onMain { Choreographer.getInstance().postFrameCallback(counter) }
+            }
+        }
+    }
+
+    @Test
+    fun `going back to the row start from the more card lands on the first card even with quick direction keys`() {
+        // 行尾的「更多」卡 (第 30 张) 上按返回 = 本行回首卡 (远跳), 途中连按两下方向键
+        useLongRows(rows = 3, cards = 30, moreCard = true)
+        host.onMain { view.focusCard(longRow(1), 30) }
+        waitCard(longRow(1), 30)
+        SystemClock.sleep(700)
+        host.waitUntil("行停稳") { rowView(longRow(1))?.scrollState == RecyclerView.SCROLL_STATE_IDLE }
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(1), maxIndex = 1)
+    }
+
+    @Test
+    fun `confirm then a direction key while going back to the row start lands and drops the confirm`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        pressNow(KeyEvent.KEYCODE_DPAD_CENTER)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(1), maxIndex = 1)
+        assertEquals(emptyList(), listener.heroActive)
+    }
+
+    /**
+     * 跳组首行 (页面在非组首行的行首按返回): 第 0 行 (组首行) 先停在第 15 张, 焦点在第 1 行行首, 再远跳到第 0 行第一张
+     * (纵向滚过去, 第 0 行还要横着滚回行首). 远跳发出后约 60ms 返回, 正在途中.
+     */
+    private fun goBackToSectionFirstRow() {
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(0), 15) }
+        waitCard(longRow(0), 15)
+        SystemClock.sleep(500)
+        host.onMain { view.focusCard(longRow(1), 0) }
+        waitCard(longRow(1), 0)
+        SystemClock.sleep(700)
+        host.onMain { view.focusCard(longRow(0), 0, far = true) }
+        SystemClock.sleep(60)
+    }
+
+    @Test
+    fun `going back to the section first row whose first card is laid out moves the focus straight there`() {
+        // 组首行停在行首、就在上面一行: 第一张已经排出来, 不远跳, 同按上键当场送焦 (远跳要等滚停才落焦, 跳一行也要一秒多)
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(1), 0) }
+        waitCard(longRow(1), 0)
+        SystemClock.sleep(500)
+        val landed = host.onMain {
+            view.focusCard(longRow(0), 0, far = true)
+            view.focusedRowKey to view.focusedCardIndex
+        }
+        assertEquals(longRow(0) to 0, landed)
+        assertLandedNear(longRow(0), maxIndex = 0)
+    }
+
+    @Test
+    fun `going back to the section first row lands on its first card`() {
+        val heroFocused = listener.heroButtonFocused.size
+        goBackToSectionFirstRow()
+        waitCard(longRow(0), 0)
+        assertEquals(heroFocused, listener.heroButtonFocused.size, "途中焦点跑到了轮播按钮上")
+        assertEquals(0, host.onMain { rowView(longRow(0))?.leftIndex() })
+        assertLandedNear(longRow(0), maxIndex = 0)
+    }
+
+    @Test
+    fun `a direction key on the way to the section first row lands there at once`() {
+        goBackToSectionFirstRow()
+        val frames = FrameCounter.start(host)
+        pressNow(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitCard(longRow(0), 0)
+        assertLandedWithinFrames(frames.stop())
+        // 这一下吞掉: 没往下走到第 1 行
+        assertLandedNear(longRow(0), maxIndex = 0)
+    }
+
+    @Test
+    fun `two quick direction keys on the way to the section first row land and move on`() {
+        goBackToSectionFirstRow()
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(0), maxIndex = 1)
+    }
+
+    @Test
+    fun `holding a direction key on the way to the section first row keeps the focus on a card`() {
+        goBackToSectionFirstRow()
+        holdNow(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertLandedNear(longRow(0), maxIndex = 4)
+    }
+
+    @Test
+    fun `confirm on the way to the section first row opens its first card once it lands`() {
+        goBackToSectionFirstRow()
+        pressNow(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue(listener.heroActive.isEmpty(), "还没落地就点了")
+        waitCard(longRow(0), 0)
+        host.waitUntil("落地后点了第一张") { listener.heroActive == listOf(true) }
+        assertEquals(longRow(0) to 0, card())
+    }
+
+    @Test
+    fun `a direction key right after going back to the hero buttons moves normally`() {
+        // 组首行行首按返回 = 焦点当场到立即观看, 列表随后滚回顶; 这时按方向键照常移动 (立即观看往下是新番时间表)
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(1), 3) }
+        waitCard(longRow(1), 3)
+        SystemClock.sleep(500)
+        host.onMain { view.focusHeroButton(0) }
+        host.waitUntil("焦点在立即观看") { !view.cardAreaHasFocus && listener.heroButtonFocused.lastOrNull() == 0 }
+        pressNow(KeyEvent.KEYCODE_DPAD_DOWN)
+        host.waitUntil("焦点在新番时间表") { listener.heroButtonFocused.lastOrNull() == 1 }
+        SystemClock.sleep(400)
+        assertFalse(host.onMain { view.cardAreaHasFocus })
+        assertEquals(1, listener.heroButtonFocused.last())
+    }
+
+    @Test
+    fun `confirm while going back to the row start opens the first card once it lands`() {
+        restOnLongRow(20)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        pressNow(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue(listener.heroActive.isEmpty(), "还没落地就点了")
+        waitCard(longRow(1), 0)
+        // 卡片墙上按确认 = 这张进 hero 态: 点在落地的那张上
+        host.waitUntil("落地后点了行首那张") { listener.heroActive == listOf(true) }
+        assertEquals(longRow(1) to 0, card())
+    }
+
+    /**
+     * 页面的返回分层连按 (探索页途中再按返回 = 那一步当场落地, 再按落点进下一层): 第 0 行 (组首行) 先滑到第 15 张, 停在第 1 行第 20 张;
+     * 第一下返回 = 本行回首卡 (远跳), 行还在往回滚时第二下 = 先 [TvNativeExploreView.settleFarJump], 再跳组首行 (远跳, 第 0 行也得横着滚回行首).
+     */
+    private fun backTwiceFromDeepInRow() {
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(0), 15) }
+        waitCard(longRow(0), 15)
+        SystemClock.sleep(500)
+        host.onMain { view.focusCard(longRow(1), 20) }
+        waitCard(longRow(1), 20)
+        SystemClock.sleep(700)
+        host.onMain { view.focusCard(longRow(1), 0, far = true) }
+        SystemClock.sleep(60)
+        val settled = host.onMain {
+            val settled = view.settleFarJump()
+            view.focusCard(longRow(0), 0, far = true)
+            settled
+        }
+        assertTrue(settled, "第一下的回首卡应该还在滚")
+    }
+
+    @Test
+    fun `back again while going back to the row start settles it and moves on to the section first row`() {
+        val heroFocused = listener.heroButtonFocused.size
+        backTwiceFromDeepInRow()
+        // 第一步当场落地: 出发那一行一步回到行首 (不是接着慢慢滚), 行首与停的那张照落地记下
+        assertEquals(0, host.onMain { view.rowLeftIndex[longRow(1)] })
+        host.waitUntil("出发那一行当场回到行首", timeoutMillis = 150) { rowView(longRow(1))?.leftIndex() == 0 }
+        waitCard(longRow(0), 0)
+        assertEquals(heroFocused, listener.heroButtonFocused.size, "途中焦点跑到了轮播按钮上")
+        assertEquals(0, host.onMain { rowView(longRow(0))?.leftIndex() })
+        SystemClock.sleep(600)
+        assertEquals(longRow(0) to 0, card())
+    }
+
+    @Test
+    fun `a third back on the way to the section first row settles it and goes to the hero buttons`() {
+        backTwiceFromDeepInRow()
+        SystemClock.sleep(60)
+        // 第三下: 跳组首行这一步当场落地, 再按落点 (组首行行首) 算 = 回轮播主按钮
+        val settled = host.onMain {
+            val settled = view.settleFarJump()
+            view.focusHeroButton(0)
+            settled
+        }
+        assertTrue(settled, "跳组首行应该还在滚")
+        host.waitUntil("焦点在立即观看") { !view.cardAreaHasFocus && listener.heroButtonFocused.lastOrNull() == 0 }
+        assertEquals(0, host.onMain { view.rowLeftIndex[longRow(0)] })
+        val cardsFocused = listener.cardFocused.size
+        SystemClock.sleep(900)
+        // 落地不送焦, 半路停下的滚动也不再送焦: 焦点一直在立即观看
+        assertEquals(cardsFocused, listener.cardFocused.size, "焦点又被拉回了卡片上")
+        assertFalse(host.onMain { view.cardAreaHasFocus })
+        assertEquals(0, listener.heroButtonFocused.last())
+        assertEquals(0, host.onMain { rowView(longRow(0))?.leftIndex() })
+        // 没有远跳在滚时不做事
+        assertFalse(host.onMain { view.settleFarJump() })
+    }
+
+    @Test
+    fun `going back to the row start while the first card is still laid out moves the focus straight to it`() {
+        // 第 7 张: 行首只挪了两张, 第一张还排着 (行外多排的那几张里) —— 不必远跳, 焦点当场过去, 行自己滚回来
+        restOnLongRow(7)
+        val landed = host.onMain {
+            view.focusCard(longRow(1), 0, far = true)
+            view.focusedRowKey to view.focusedCardIndex
+        }
+        assertEquals(longRow(1) to 0, landed)
+    }
+
+    /**
+     * 在主线程上当场派发一次按下 + 抬起 (远跳途中焦点停放在本视图上, 按键正是先到这里). 远跳途中按键不能用 [press]: 它等主线程空闲才返回,
+     * 模拟器一慢就等到远跳落地之后, 这一下成了落地后按的.
+     */
+    private fun pressOnView(keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
     }
 
     @Test
     fun `confirm during a far jump acts on the target once it lands`() {
         host.onMain { view.focusCard(REC2, 3) }
         waitCard(REC2, 3)
-        host.onMain {
+        val heroOnTheWay = host.onMain {
             view.animatedScroll = true
             view.focusCard(FOLLOWED, 0, far = true)
+            pressOnView(KeyEvent.KEYCODE_DPAD_CENTER)
+            listener.heroActive.toList()
         }
-        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(emptyList(), heroOnTheWay)
         waitCard(FOLLOWED, 0)
         // 卡片墙上按确认 = 这张进 hero 态: 点在目标上, 焦点仍在目标
         host.waitUntil("落地后点了目标") { listener.heroActive == listOf(true) }
@@ -342,12 +700,14 @@ class TvNativeExploreNavigationTest {
         host.onMain {
             view.animatedScroll = true
             view.focusCard(FOLLOWED, 0, far = true)
+            pressOnView(KeyEvent.KEYCODE_DPAD_CENTER)
+            // 当场落到目标, 这一下吞掉 (不往下走), 排队的确认作废
+            pressOnView(KeyEvent.KEYCODE_DPAD_DOWN)
         }
-        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
-        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitCard(FOLLOWED, 0)
         SystemClock.sleep(300)
         assertEquals(emptyList(), listener.heroActive)
+        assertEquals(FOLLOWED to 0, card())
     }
 
     @Test
@@ -380,6 +740,9 @@ class TvNativeExploreNavigationTest {
 
     private companion object {
         const val FOLLOWED = "followed-row"
+
+        /** 「当场落地」最多几帧: 实测两三帧 (送焦要等这一行排一次), 给足余量; 等行滚完要几十帧. */
+        const val TV_LANDING_MAX_FRAMES = 8
         const val REC0 = "rec-row-0"
         const val REC1 = "rec-row-1"
         const val REC2 = "rec-row-2"

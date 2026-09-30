@@ -432,6 +432,16 @@ class TvNativeGridView(
         }
     }
 
+    /**
+     * 远跳还在滚就当场落到目标 (同途中按方向键, 排队的确认作废), 返回是否有远跳在滚. 页面在远跳途中又按了一下返回时调 (多半是嫌慢):
+     * 返回键归页面的返回分层管, 到不了 [handleFarJumpKey].
+     */
+    fun landFarJump(): Boolean {
+        if (farJumpTarget < 0) return false
+        landFarJumpNow()
+        return true
+    }
+
     /** 远跳途中按了方向键: 当场落到目标 (排队的确认作废), 这一下吞掉, 之后的按键从目标接着走 (同探索页). */
     private fun landFarJumpNow() {
         val target = farJumpTarget

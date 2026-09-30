@@ -18,6 +18,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -216,16 +217,27 @@ class TvNativeGridNavigationTest {
         assertEquals(-1, host.onMain { fresh.cards.heldFocusIndex })
     }
 
+    /**
+     * 在主线程上当场派发一次按下 + 抬起 (走网格自己的按键处理, 同出发那张持焦时的派发路径). 远跳途中按键不能用 [TvNativeTestHost.press]:
+     * 它等主线程空闲才返回, 模拟器一慢就等到远跳落地之后, 这一下成了落地后按的.
+     */
+    private fun pressOnGrid(keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        grid.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        grid.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
     @Test
     fun `confirm during a far jump opens the target once it lands`() {
         focus(30)
-        host.onMain {
+        val clickedOnTheWay = host.onMain {
             grid.animatedScroll = true
             grid.farJumpTo(0)
+            // 远跳途中按确认: 出发那张还持着焦点, 这一下却作用在目标上
+            pressOnGrid(KeyEvent.KEYCODE_DPAD_CENTER)
+            listener.clicked.toList()
         }
-        // 远跳途中按确认: 出发那张还持着焦点, 这一下却作用在目标上
-        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertEquals(emptyList(), listener.clicked)
+        assertEquals(emptyList(), clickedOnTheWay)
         host.waitUntil("远跳落到第 0 张") { focusedIndex() == 0 }
         host.waitUntil("落地后点的是第 0 张") { listener.clicked == listOf(0) }
     }
@@ -233,17 +245,81 @@ class TvNativeGridNavigationTest {
     @Test
     fun `a direction key during a far jump lands at once and drops the queued confirm`() {
         focus(30)
+        val landed = host.onMain {
+            grid.animatedScroll = true
+            grid.farJumpTo(0)
+            pressOnGrid(KeyEvent.KEYCODE_DPAD_CENTER)
+            // 当场落到目标, 这一下吞掉 (不往下走), 排队的确认作废
+            pressOnGrid(KeyEvent.KEYCODE_DPAD_DOWN)
+            focusedIndex()
+        }
+        assertEquals(0, landed)
+        SystemClock.sleep(300)
+        assertEquals(emptyList(), listener.clicked)
+        assertEquals(0, host.onMain { focusedIndex() })
+    }
+
+    @Test
+    fun `two quick direction keys during a far jump land and then move on from the target`() {
+        focus(30)
         host.onMain {
             grid.animatedScroll = true
             grid.farJumpTo(0)
         }
-        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
-        // 当场落到目标, 这一下吞掉 (不往下走), 排队的确认作废
-        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertEquals(0, host.onMain { focusedIndex() })
+        SystemClock.sleep(80)
+        // 走系统派发 (同遥控器), 两下紧挨着: 第一下当场落到第 0 张 (吞掉), 第二下从第 0 张往右
+        pressNowSystem(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNowSystem(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.waitUntil("焦点落到第 1 张") { focusedIndex() == 1 }
+        SystemClock.sleep(400)
+        assertEquals(1, host.onMain { focusedIndex() })
+    }
+
+    @Test
+    fun `holding a direction key during a far jump lands and stays near the target`() {
+        focus(30)
+        host.onMain {
+            grid.animatedScroll = true
+            grid.farJumpTo(0)
+        }
+        SystemClock.sleep(80)
+        val down = SystemClock.uptimeMillis()
+        for (repeat in 0..3) {
+            host.instrumentation.sendKeySync(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT, repeat))
+        }
+        host.instrumentation.sendKeySync(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT, 0))
+        SystemClock.sleep(500)
+        // 第一下落地, 后面的连发从第 0 张往右走 (连发有节流): 只会在第一行里
+        val index = host.onMain { focusedIndex() }
+        assertTrue(index in 0..3, "落地后跑远了: 第 $index 张")
+    }
+
+    /** 走系统的按键派发 (同遥控器) 按一下, 不等主线程空闲. */
+    private fun pressNowSystem(keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        host.instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        host.instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
+    @Test
+    fun `back pressed again during a far jump lands at once and drops the queued confirm`() {
+        focus(30)
+        host.onMain {
+            grid.animatedScroll = true
+            grid.farJumpTo(0)
+        }
+        SystemClock.sleep(80)
+        val landed = host.onMain {
+            // 途中按了确认 (排队), 嫌慢又按了一下返回: 页面的返回分层调 landFarJump, 同按方向键当场落到目标
+            pressOnGrid(KeyEvent.KEYCODE_DPAD_CENTER)
+            grid.landFarJump() to focusedIndex()
+        }
+        assertEquals(true to 0, landed)
         SystemClock.sleep(300)
         assertEquals(emptyList(), listener.clicked)
         assertEquals(0, host.onMain { focusedIndex() })
+        // 落地之后没有远跳在滚: 页面照常往下一层走
+        assertFalse(host.onMain { grid.landFarJump() })
     }
 
     @Test
