@@ -67,7 +67,6 @@ class TvNativeHostFocusGateTest {
                                 }
                             },
                             update = {},
-                            bleedLeft = 0.dp,
                         )
                     }
                     // 盖在上面的详情页: 左上角一个可聚焦的块, Compose 里它下面什么也没有 —— 下键 Compose 不消费, 交给系统

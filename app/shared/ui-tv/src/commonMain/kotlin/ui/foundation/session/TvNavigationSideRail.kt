@@ -473,7 +473,7 @@ fun TvNavigationSideRail(
                         }
                     }
                     // 竖向到头 (最上面的头像按上 / 最下面的设置按下) 就停在栏里, 回内容区只走右键 / 返回键. 放给空间搜索的话会按
-                    // 几何挑到内容区 —— 原生页的视图往左出血到本栏底下, 正好在它的正下方
+                    // 几何挑到内容区 —— 页面从屏幕左缘铺起, 原生页的视图就在本栏底下, 正好在它的正下方
                     onExit = {
                         if (requestedFocusDirection == FocusDirection.Up || requestedFocusDirection == FocusDirection.Down) {
                             cancelFocusChange()

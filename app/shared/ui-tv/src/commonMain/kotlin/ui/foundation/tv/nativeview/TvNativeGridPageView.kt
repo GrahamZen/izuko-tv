@@ -31,12 +31,12 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 import kotlin.math.roundToInt
 
 /**
- * 网格页 (追番 / 搜索) 原生海报墙的几何 (px, 页面坐标; 页面 = 主壳里让开侧边栏之后的那块, 搜索页是整页减去侧边栏).
+ * 网格页 (追番 / 搜索) 原生海报墙的几何 (px; 横坐标按让开侧边栏之后的内容区给, 纵坐标 = 页面坐标).
  *
  * @param gridTopPx 网格顶线离页面顶 (顶栏 / 标签行 / 筛选条之下).
  * @param heroLeftPx / [heroTopPx] / [heroWidthPx] / [heroHeightPx] hero 文字块 (不占布局, 画在网格底下).
- * @param bleedLeftPx 原生视图比页面往左多画的一截 (收起的侧边栏宽, 同探索页): 网格从侧边栏底下画过, 最左一列的放大与投影、换标签时滑出的
- *   网格不在页面左缘被裁掉. 横坐标 (网格起点、hero 文字) 仍按页面坐标给, 本视图自己加上这一截.
+ * @param bleedLeftPx 内容区左边、侧边栏底下那一截 (收起的侧边栏宽, 同探索页; 没有侧边栏的页为 0): 视图从屏幕左缘铺起 (页面铺满, 侧边栏
+ *   盖在上面), 网格起点、hero 文字这些横坐标由本视图加上这一截; 网格画进这一截, 最左一列的放大与投影、换标签时滑出的网格从侧边栏底下画过.
  */
 @Immutable
 data class TvNativeGridPageMetrics(
@@ -247,7 +247,7 @@ class TvNativeGridPageView(
     /** 此刻显示的那份网格. */
     val grid: TvNativeGridView? get() = current
 
-    /** 网格的几何: 起点加上往左出血的那一截 (见 [TvNativeGridPageMetrics.bleedLeftPx]). */
+    /** 网格的几何: 起点加上侧边栏底下那一截 (见 [TvNativeGridPageMetrics.bleedLeftPx]). */
     private fun gridMetrics(): TvNativeGridMetrics = metrics.grid.let { it.copy(startPx = it.startPx + metrics.bleedLeftPx) }
 
     /** 此刻显示的那份网格的 key. */

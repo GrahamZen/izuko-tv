@@ -18,7 +18,6 @@ import android.widget.TextView
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -72,7 +71,6 @@ class TvNativeAmbientPauseTest {
                             Page(context, heroText)
                         },
                         update = {},
-                        bleedLeft = 0.dp,
                     )
                 }
             }

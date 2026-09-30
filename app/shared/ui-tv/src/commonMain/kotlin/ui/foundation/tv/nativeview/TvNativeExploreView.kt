@@ -34,7 +34,8 @@ import kotlin.math.abs
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 
 /**
- * 探索页原生海报墙的几何 (px). 原生根视图从屏幕左缘画起 (比页面往左多 [bleedLeftPx], 横滑行从侧边栏底下滑过), 纵坐标 = 页面坐标.
+ * 探索页原生海报墙的几何 (px). 原生根视图从屏幕左缘铺起 (页面与主壳都铺满, 侧边栏盖在上面), [bleedLeftPx] 是侧边栏底下那一截:
+ * [pageWidthPx] 与横坐标都按让开它之后的内容区算, 横滑行从这一截里滑过、出屏; 纵坐标 = 页面坐标.
  * 由页面 (TvExplorationPage) 按窗口尺寸与各 TV_EXPLORATION_* 常量算好.
  */
 @Immutable

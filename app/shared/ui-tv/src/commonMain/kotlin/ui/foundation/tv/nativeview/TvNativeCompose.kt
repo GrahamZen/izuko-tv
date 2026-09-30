@@ -74,7 +74,8 @@ interface TvNativeAmbientAnimations {
 }
 
 /**
- * 装原生页面的 AndroidView: 铺满, 再向左出血 [bleedLeft] (页面本身让开了收起的侧边栏, 横滑行要从侧边栏底下滑过、从屏幕左缘出屏).
+ * 装原生页面的 AndroidView: 铺满. 页面从屏幕左缘铺起 (侧边栏是盖在上面的透明浮层), 原生视图自己把内容让开侧边栏,
+ * 横滑行、最左一列的放大与投影照常画进侧边栏底下.
  * 单独一层 graphicsLayer: 原生树每次失效只重录这一层 (里面就是一条画原生 RenderNode 的指令).
  * 视图只建一次 ([factory]), 主题 / 尺寸 / 数据的变化都走 [update], 焦点与滚动位置不因重组丢.
  * 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]), 页面实现了 [TvNativeAmbientAnimations] 的话环境动画同时暂停.
@@ -83,7 +84,6 @@ interface TvNativeAmbientAnimations {
 fun <T : View> TvNativeHost(
     factory: (Context) -> T,
     update: (T) -> Unit,
-    bleedLeft: Dp,
     modifier: Modifier = Modifier,
 ) {
     val foreground = LocalPageIsForeground.current
@@ -99,12 +99,6 @@ fun <T : View> TvNativeHost(
         },
         modifier = modifier
             .fillMaxSize()
-            .layout { measurable, constraints ->
-                val bleed = bleedLeft.roundToPx()
-                val width = constraints.maxWidth + bleed
-                val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
-                layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
-            }
             .graphicsLayer(),
         update = { gate ->
             gate.foreground = foreground

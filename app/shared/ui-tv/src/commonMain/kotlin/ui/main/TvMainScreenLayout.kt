@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
@@ -288,13 +289,19 @@ fun TvMainScreenLayout(
     ) {
         // 整屏底色: 单独一层, 海报墙进出 hero 态时底色逐帧在变 (探索页热门轮播那条分界线随列表滚动), 只重录这一层
         Spacer(Modifier.matchParentSize().graphicsLayer {}.drawBehind { wallTone.drawBackground(this) })
+        // 内容区从屏幕左缘铺满, 侧边栏是盖在上面的透明浮层: 各页自己把内容让开侧边栏 (LocalShellContentStartInset; 电视专属的页直接按
+        // 侧边栏收起宽度排). 内容区的边界不停在侧边栏边上, 最左一列的放大与投影、滑出屏的卡片画进侧边栏底下, 淡入淡出之类要进离屏缓冲的层
+        // 也不会在那里把它们裁掉
         Box(
             Modifier.fillMaxSize()
-                .padding(start = TvNavigationRailDefaults.CollapsedWidth)
                 .focusRequester(contentFocus)
                 .focusGroup(),
         ) {
-            CompositionLocalProvider(LocalTvRailEnter provides railEnter, LocalTvPosterWallTone provides wallTone) {
+            CompositionLocalProvider(
+                LocalTvRailEnter provides railEnter,
+                LocalTvPosterWallTone provides wallTone,
+                LocalShellContentStartInset provides TvNavigationRailDefaults.CollapsedWidth,
+            ) {
                 pageContent()
             }
         }

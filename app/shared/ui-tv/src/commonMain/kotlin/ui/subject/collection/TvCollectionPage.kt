@@ -766,9 +766,10 @@ fun TvCollectionPage(
             landingIndex = restoreCardIndex,
         )
 
+        // 页面从屏幕左缘铺起 (侧边栏盖在上面, 见 TvMainScreenLayout), 左边让开侧边栏
         Column(
             Modifier.fillMaxSize()
-                .padding(start = TV_COLLECTION_START_PAD, top = TV_COLLECTION_TOP_PAD),
+                .padding(start = TvNavigationRailDefaults.CollapsedWidth + TV_COLLECTION_START_PAD, top = TV_COLLECTION_TOP_PAD),
         ) {
             // 悬浮分类标签 (玻璃胶囊浮于卡片上), 靠左: 居中会压住 hero 背景图, 左边的标题上方也会空出一块
             TvCollectionTabRow(
@@ -1102,7 +1103,7 @@ private const val TV_COLLECTION_COUNTS_WAIT_MILLIS = 3000L
  */
 private const val TV_COLLECTION_AWAIT_REMOVAL_TIMEOUT_MILLIS = 5000L
 
-/** 内容左侧留白 (外层主壳已让开侧边栏 48dp, 总左缘 = 48 + 此值, 与探索页一致). */
+/** 内容左侧留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值, 与探索页一致. */
 internal val TV_COLLECTION_START_PAD = 16.dp
 
 /** 页面顶部留白 (tab 行之上). */

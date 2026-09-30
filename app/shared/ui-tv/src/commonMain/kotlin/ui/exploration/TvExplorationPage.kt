@@ -1112,8 +1112,9 @@ fun TvExplorationPage(
         recProgress?.takeIf { recGroups.isEmpty() }?.let { progress ->
             TvRecommendationRefreshProgress(
                 progress,
+                // 页面从屏幕左缘铺起 (侧边栏盖在上面, 见 TvMainScreenLayout), 左边让开侧边栏
                 Modifier.align(Alignment.BottomStart)
-                    .padding(start = TV_EXPLORATION_START_PAD, bottom = TV_PAGE_HINT_BOTTOM_PAD),
+                    .padding(start = TvNavigationRailDefaults.CollapsedWidth + TV_EXPLORATION_START_PAD, bottom = TV_PAGE_HINT_BOTTOM_PAD),
             )
         }
     }
@@ -1493,7 +1494,7 @@ private const val TV_CAROUSEL_AUTO_ADVANCE_MILLIS = 6000L
 
 
 /**
- * 内容左侧额外留白 (外层 MainScreen 已让开侧边栏收起宽度 48dp, 总左缘 = 48 + 此值).
+ * 内容左侧额外留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值.
  * 默认 16 使总左缘 64, 侧边栏按钮中心 (32) 恰在屏幕左缘与内容左缘的正中间.
  */
 private val TV_EXPLORATION_START_PAD = 16.dp

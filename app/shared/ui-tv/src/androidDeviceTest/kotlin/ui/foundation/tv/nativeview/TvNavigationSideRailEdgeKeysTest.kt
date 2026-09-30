@@ -38,7 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * 侧边栏竖向到头 ([TvNavigationSideRail]): 最下面的条目按下停在栏里. 原生页的视图往左出血到栏底下 (探索 / 追番 / 搜索页),
+ * 侧边栏竖向到头 ([TvNavigationSideRail]): 最下面的条目按下停在栏里. 原生页的视图从屏幕左缘铺起、就在栏底下 (探索 / 追番 / 搜索页),
  * 按几何它就在最下面那个条目的正下方 —— 放给焦点搜索 (Compose 的, 或 Compose 没接住后 Android 的) 就会跳进卡片区.
  */
 class TvNavigationSideRailEdgeKeysTest {

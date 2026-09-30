@@ -405,7 +405,6 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 }
                 view.update(style, metrics, textStyle)
             },
-            bleedLeft = with(LocalDensity.current) { metrics.bleedLeftPx.toDp() },
         )
         emptyContent()
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)

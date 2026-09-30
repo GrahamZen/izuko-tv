@@ -319,7 +319,6 @@ internal fun TvExplorationNativeWall(
                 view.setItems(items)
                 view.setCarousel(carouselCount, selected, dotColor)
             },
-            bleedLeft = with(density) { metrics.bleedLeftPx.toDp() },
             modifier = Modifier.focusRequester(state.focusRequester),
         )
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)

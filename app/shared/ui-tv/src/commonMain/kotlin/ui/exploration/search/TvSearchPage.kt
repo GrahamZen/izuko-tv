@@ -536,8 +536,8 @@ fun TvSearchPage(
         Spacer(Modifier.matchParentSize().graphicsLayer {}.drawBehind { drawRect(wallTone.color()) })
         Box(
             Modifier.fillMaxSize()
-                // 让开左缘侧边栏, 使本页内容左边界与探索/追番页一致
-                .padding(start = TvNavigationRailDefaults.CollapsedWidth)
+                // 内容区从屏幕左缘铺满, 侧边栏是盖在上面的透明浮层 (同主壳, 见 TvMainScreenLayout): 两态各自把内容让开侧边栏,
+                // 结果态网格最左一列的放大与投影画进侧边栏底下, 两态切换的淡入淡出也不会在侧边栏边上把它们裁掉
                 .focusRequester(contentFocus)
                 // **页面外/兜底进来的焦点统一在此改道** (同探索页与主壳的做法): 结果态回上次
                 // 聚焦的那张卡, 输入态回搜索框.
@@ -1771,9 +1771,10 @@ private fun TvSearchResultsPane(
             landingIndex = restoreCardIndex,
         )
 
+        // 页面从屏幕左缘铺起 (侧边栏盖在上面), 左边让开侧边栏
         Column(
             Modifier.fillMaxSize()
-                .padding(start = TV_SEARCH_START_PAD, top = TV_SEARCH_TOP_PAD),
+                .padding(start = TvNavigationRailDefaults.CollapsedWidth + TV_SEARCH_START_PAD, top = TV_SEARCH_TOP_PAD),
         ) {
             // 顶部行: 搜索词 (确认回输入态改词) + 筛选按钮
             TvSearchTopRow(
@@ -2373,7 +2374,7 @@ private val TV_SEARCH_INPUT_CORNER = 12.dp
 private const val TV_SEARCH_SUGGESTION_DEBOUNCE_MILLIS = 300L
 
 /** 输入态: 搜索区左缘与悬浮侧边栏收起宽度之间的间距. */
-private val TV_SEARCH_PAGE_START_GAP = 24.dp
+private val TV_SEARCH_PAGE_START_GAP = 72.dp
 
 /** 输入态: 右侧面板到屏幕右缘. */
 private val TV_SEARCH_PAGE_END_PAD = 48.dp
@@ -2417,7 +2418,7 @@ private val TV_SEARCH_QR_SIZE = 180.dp
 /** 二维码四周留白: 规范要求 ≥ 4 模块, 按上面的模块尺寸算 24dp. */
 private val TV_SEARCH_QR_QUIET_ZONE = 24.dp
 
-/** 结果态: 内容左侧留白 (外层已让开侧边栏 48dp, 总左缘 = 48 + 此值, 与探索/追番页一致). */
+/** 结果态: 内容左侧留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值, 与探索 / 追番页一致. */
 private val TV_SEARCH_START_PAD = 16.dp
 
 /** 结果态: 页面顶部留白. */

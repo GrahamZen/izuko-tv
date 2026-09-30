@@ -85,6 +85,7 @@ import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
+import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.desktopCaptionButton
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
@@ -280,9 +281,9 @@ private fun MainScreenNavigationLayout(
             // 毛玻璃导航栏覆盖在内容上方时, 页面内容需要额外的 bottom insets 才不会被遮挡.
             val pageWindowInsets = AniWindowInsets.forPageContent()
                 .add(LocalAppChromeOverlayInsets.current)
-            // TV 沉浸壳: 关掉 AnimatedContent 默认 SizeTransform 的裁剪 —— 探索页卡片区
-            // 向左出血到侧边栏底下, 默认裁剪会把出血切掉; 三个 tab 都是 fillMaxSize 等大,
-            // 不依赖尺寸过渡裁剪. 非沉浸壳 (手机/桌面) 保持默认.
+            // TV 沉浸壳: 关掉 AnimatedContent 默认 SizeTransform 的裁剪 —— 三个 tab 都是 fillMaxSize 等大,
+            // 不依赖尺寸过渡裁剪; 页面画进侧边栏底下与屏幕边缘的放大、投影、离场卡片不再多经过一层裁剪.
+            // 非沉浸壳 (手机/桌面) 保持默认.
             val immersiveShell = LocalAniUiBehavior.current.immersiveShell
             // 切走的 tab 还要淡出一会儿, 期间焦点常还在它的卡片上 (新 tab 首帧组合重, 送焦要等几帧): 吞掉按键,
             // 免得返回后立刻按确认点开一张看不见的卡片 (2026-09-14 审查). 按键时读最新的当前页
@@ -341,7 +342,8 @@ private fun MainScreenNavigationLayout(
                             onPlay = { navigator.navigateEpisodeDetails(it.subjectId, it.episodeId) },
                             onNavigateCacheDetail = { navigator.navigateCacheDetails(it) },
                             onClickLogin = onLogin,
-                            modifier = Modifier.fillMaxSize(),
+                            // 外壳的侧边栏盖在页面上时让开它 (见 LocalShellContentStartInset), 其余形态是 0
+                            modifier = Modifier.fillMaxSize().padding(start = LocalShellContentStartInset.current),
                             navigationIcon = { },
                             windowInsets = pageWindowInsets,
                         )
@@ -478,8 +480,8 @@ private fun TabContent(
             )
         }
     }
-    // 沉浸式外壳 (TV): 不能用 Surface —— 它对内容按 shape 硬裁剪 (透明也裁), 会把探索页
-    // 卡片区向左出血到侧边栏底下的离场卡片切掉. 改为直接提供内容色, 不裁剪不画底
+    // 沉浸式外壳 (TV): 不用 Surface —— 它对内容按 shape 硬裁剪 (透明也裁), 页面画进侧边栏底下与屏幕边缘的
+    // 放大、投影、离场卡片不再多经过一层裁剪. 改为直接提供内容色, 不裁剪不画底
     // (原本就是透明直角, 视觉不变).
     if (immersiveShell) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
