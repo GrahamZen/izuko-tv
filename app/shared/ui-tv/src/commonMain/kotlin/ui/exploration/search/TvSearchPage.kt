@@ -45,8 +45,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -117,7 +119,6 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -141,10 +142,17 @@ import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreClaim
+import me.him188.ani.app.ui.foundation.focus.TvFlowFocusScrollEffect
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
+import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
+import me.him188.ani.app.ui.foundation.focus.rememberTvFlowFocusState
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusContent
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusItem
+import me.him188.ani.app.ui.foundation.focus.tvFlowFocusViewport
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
+import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
@@ -156,6 +164,7 @@ import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
 import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
 import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallBaseColorScheme
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
@@ -2148,91 +2157,63 @@ private fun TvSearchFilterDialog(
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleLarge,
                 )
-                val listState = rememberLazyListState()
-                val scope = rememberCoroutineScope()
-                // 焦点进入某分区时该分区吸附到列表顶: 分区标题与胶囊行同属一个 item, 默认 BringIntoView 只保证聚焦的
-                // 胶囊可见, 上移导航时标题会留在视口外永远露不出来; 吸附后标题总是完整可见 (同详情页区块吸附的行为).
-                // 吸附本身有三条约束, 都是踩出来的:
-                //
-                // 1. **只保留最后一次**: 连按向下时上一次的 animateScrollToItem 还没跑完又起一个, 两个动画抢同一个
-                //    滚动位置, 画面往回跳一下;
-                // 2. **已经贴在顶上就不动**: 省掉一次没必要的动画;
-                // 3. **比视口还高的分区不吸附**: 年份那一节胶囊多, FlowRow 折成好几行, 整节高过视口 —— 这时"把它的顶
-                //    拉到视口顶"与 Compose 自己的 bringIntoView (把焦点滚进视野) 方向相反, 你往下走到它的后几行,
-                //    吸附又把画面拽回这一节的开头, 就是"往下滚画面却跑上去". 快按必现、慢按看不出来, 因为慢按时
-                //    上一个动画已经跑完 (用户 2026-09-16). 这种分区交给默认的 bringIntoView 就好.
-                var snapJob by remember { mutableStateOf<Job?>(null) }
-                val sectionSnap: (index: Int) -> Modifier = { index ->
-                    Modifier.onFocusChanged {
-                        if (it.hasFocus) {
-                            val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { v -> v.index == index }
-                            val viewport = listState.layoutInfo.viewportSize.height
-                            val tooTall = info != null && viewport > 0 && info.size > viewport
-                            if (!tooTall && (info == null || info.offset != 0)) {
-                                snapJob?.cancel()
-                                snapJob = scope.launch { runCatching { listState.animateScrollToItem(index) } }
-                            }
-                        }
-                    }
-                }
-                LazyColumn(
-                    Modifier.weight(1f).padding(top = CENTERED_PANEL_TITLE_GAP),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    item(key = "sort") {
-                        TvSearchFilterSection(
-                            stringResource(Lang.search_tv_filter_sort),
-                            modifier = sectionSnap(0),
-                        ) {
+                // 上下键照卡片列表 (见 TvFlowFocusState): 各节全部排好, 上下由它按坐标落到相邻一行、直接送焦, 焦点所在的行滚到视口中间,
+                // 框架的 bring-into-view 关掉. 不用懒加载列表: 按住方向键时焦点跑在滚动前面, 下一节还没排出来、区块吸附与 bring-into-view
+                // 又互相打断, 空间搜索找不到下一项, 焦点就停在原地.
+                val flowFocus = rememberTvFlowFocusState()
+                val scrollState = rememberScrollState()
+                TvFlowFocusScrollEffect(flowFocus, scrollState, animated = LocalThemeSettings.current.visualEffects.animatedScroll)
+                CompositionLocalProvider(LocalBringIntoViewSpec provides TvNoBringIntoViewSpec) {
+                    Column(
+                        Modifier.weight(1f).padding(top = CENTERED_PANEL_TITLE_GAP)
+                            .tvFocusMoveRateLimit()
+                            .tvFlowFocusViewport(flowFocus)
+                            .verticalScroll(scrollState)
+                            .tvFlowFocusContent(flowFocus),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        TvSearchFilterSection(stringResource(Lang.search_tv_filter_sort)) {
                             SearchSort.entries.forEachIndexed { index, entry ->
                                 AniFocusChip(
                                     text = tvSearchSortLabel(entry),
                                     selected = sort == entry,
                                     onClick = { sort = entry },
-                                    modifier = if (index == 0) firstChipModifier else Modifier,
+                                    modifier = (if (index == 0) firstChipModifier else Modifier).tvFlowFocusItem(flowFocus, "sort-$entry"),
                                 )
                             }
                         }
-                    }
-                    item(key = "rating") {
-                        TvSearchFilterSection(
-                            stringResource(Lang.search_tv_filter_rating_min),
-                            modifier = sectionSnap(1),
-                        ) {
+                        TvSearchFilterSection(stringResource(Lang.search_tv_filter_rating_min)) {
                             listOf(null, 7, 8, 9).forEach { min ->
                                 AniFocusChip(
                                     text = min?.let { "$it+" }
                                         ?: stringResource(Lang.search_tv_filter_any),
                                     selected = minRating == min,
                                     onClick = { minRating = min },
+                                    modifier = Modifier.tvFlowFocusItem(flowFocus, "rating-$min"),
                                 )
                             }
                         }
-                    }
-                    if (years.isNotEmpty()) {
-                        item(key = "year") {
+                        if (years.isNotEmpty()) {
                             // 年份一路列到 1943, 全摊开是几十个胶囊、遥控器要按很久. 默认只给最近
                             // [TV_SEARCH_RECENT_YEAR_COUNT] 年, 更早的折在「更多年份」后面.
                             val recentYears = remember(years) { years.take(TV_SEARCH_RECENT_YEAR_COUNT) }
                             val olderYears = remember(years) { years.drop(TV_SEARCH_RECENT_YEAR_COUNT) }
                             // 进来时就选着老年份 (如从手机控制台设的) 就直接展开, 否则选中项看不见
                             var yearsExpanded by remember { mutableStateOf(query.year?.let { it !in recentYears } == true) }
-                            TvSearchFilterSection(
-                                stringResource(Lang.search_tv_filter_year),
-                                modifier = sectionSnap(2),
-                            ) {
+                            TvSearchFilterSection(stringResource(Lang.search_tv_filter_year)) {
                                 AniFocusChip(
                                     text = stringResource(Lang.exploration_search_filter_year_all),
                                     selected = year == null,
                                     // 清年份连带清季度: 季度从属于年份 (同上游 withYearFilter)
                                     onClick = { year = null; season = null },
+                                    modifier = Modifier.tvFlowFocusItem(flowFocus, "year-all"),
                                 )
                                 recentYears.forEach { y ->
                                     AniFocusChip(
                                         text = y.toString(),
                                         selected = year == y,
                                         onClick = { if (year != y) season = null; year = y },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "year-$y"),
                                     )
                                 }
                                 // 展开/收起按钮夹在最近年份与更早年份之间, 位置不随展开状态移动 —— 遥控器按下它
@@ -2246,6 +2227,7 @@ private fun TvSearchFilterDialog(
                                         ),
                                         selected = false,
                                         onClick = { yearsExpanded = !yearsExpanded },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "year-toggle"),
                                     )
                                 }
                                 if (yearsExpanded) {
@@ -2254,56 +2236,43 @@ private fun TvSearchFilterDialog(
                                             text = y.toString(),
                                             selected = year == y,
                                             onClick = { if (year != y) season = null; year = y },
+                                            modifier = Modifier.tvFlowFocusItem(flowFocus, "year-$y"),
                                         )
                                     }
                                 }
                             }
-                        }
-                        // 季度只在选了年份之后才出现: 没有年份时它整节都是无效选项, 在遥控器上是白占焦点位
-                        if (year != null) {
-                            item(key = "season") {
-                                TvSearchFilterSection(
-                                    stringResource(Lang.search_tv_filter_season),
-                                    modifier = sectionSnap(3),
-                                ) {
+                            // 季度只在选了年份之后才出现: 没有年份时它整节都是无效选项, 在遥控器上是白占焦点位
+                            if (year != null) {
+                                TvSearchFilterSection(stringResource(Lang.search_tv_filter_season)) {
                                     AniFocusChip(
                                         text = stringResource(Lang.exploration_search_filter_season_all),
                                         selected = season == null,
                                         onClick = { season = null },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "season-all"),
                                     )
                                     AnimeSeason.entries.forEach { s ->
                                         AniFocusChip(
                                             text = "Q${s.quarterNumber}",
                                             selected = season == s,
                                             onClick = { season = s },
+                                            modifier = Modifier.tvFlowFocusItem(flowFocus, "season-$s"),
                                         )
                                     }
                                 }
                             }
                         }
-                    }
-                    val tagSectionBase = when {
-                        years.isEmpty() -> 2
-                        year == null -> 3
-                        else -> 4
-                    }
-                    items(
-                        filterState.chips.size,
-                        key = { "chip-$it" },
-                    ) { chipIndex ->
-                        val chip = filterState.chips[chipIndex]
-                        TvSearchFilterSection(
-                            tvSearchFilterKindLabel(chip.kind),
-                            modifier = sectionSnap(tagSectionBase + chipIndex),
-                        ) {
-                            chip.values.forEach { value ->
-                                AniFocusChip(
-                                    text = value,
-                                    selected = selectedTags[value] == true,
-                                    onClick = {
-                                        selectedTags[value] = !(selectedTags[value] == true)
-                                    },
-                                )
+                        filterState.chips.forEachIndexed { chipIndex, chip ->
+                            TvSearchFilterSection(tvSearchFilterKindLabel(chip.kind)) {
+                                chip.values.forEach { value ->
+                                    AniFocusChip(
+                                        text = value,
+                                        selected = selectedTags[value] == true,
+                                        onClick = {
+                                            selectedTags[value] = !(selectedTags[value] == true)
+                                        },
+                                        modifier = Modifier.tvFlowFocusItem(flowFocus, "tag-$chipIndex-$value"),
+                                    )
+                                }
                             }
                         }
                     }
@@ -2483,7 +2452,7 @@ private val TV_SEARCH_WALL_HERO_INFO_HEIGHT = TV_POSTER_WALL_HERO_ROW_TOP - TV_S
 internal const val TV_SEARCH_RECENT_YEAR_COUNT = 12
 
 /** 筛选弹窗宽/高占屏比例. */
-// 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行 (整节比视口还高, 见 sectionSnap 那里的说明)
+// 0.62 -> 0.78: 年份那一节胶囊多, 窄弹窗里要折成好几行
 private const val TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION = 0.78f
 private const val TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION = 0.88f
 
