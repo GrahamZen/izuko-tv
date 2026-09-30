@@ -20,6 +20,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,11 +28,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,12 +65,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -81,7 +90,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,6 +102,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.app.domain.profile.UserProfile
@@ -110,9 +119,11 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
@@ -442,6 +453,9 @@ private fun ProfileTile(
     val labelColor by animateColorAsState(if (focused) Color.White else SECONDARY_LABEL)
     Column(
         Modifier.width(TILE_WIDTH).graphicsLayer {
+            // 逐笔乘透明度, 不先画进离屏缓冲: 离屏缓冲只有这一格那么大, 淡入期间放大的头像与投影
+            // 超出格子的那截会被裁掉 (进页时聚焦那个头像顶上被横着切掉一条)
+            compositingStrategy = CompositingStrategy.ModulateAlpha
             alpha = enter.value
             translationY = (1f - enter.value) * ENTER_RISE.toPx()
         },
@@ -625,7 +639,6 @@ private fun NameDialog(
             placeholder = placeholder,
             focus = focus,
             downTarget = fieldDownTarget,
-            onDone = { focus.request(fieldDownTarget) },
         )
         if (options != null) {
             Spacer(Modifier.height(16.dp))
@@ -859,7 +872,9 @@ private fun ProfileKindOptions(kind: UserProfileKind, onKindChange: (UserProfile
             description = stringResource(Lang.tv_profile_kind_local_description),
             selected = kind == UserProfileKind.LOCAL,
             onClick = { onKindChange(UserProfileKind.LOCAL) },
-            modifier = Modifier.tvFocusAnchor(focus, DialogFocus.KindLocal),
+            // 下键去主按钮: 选项整行宽, 按几何找最近的会落到离中线更近的「取消」
+            modifier = Modifier.tvFocusAnchor(focus, DialogFocus.KindLocal)
+                .focusProperties { down = focus.requesterOf(DialogFocus.Confirm) },
         )
     }
 }
@@ -924,7 +939,16 @@ private fun ProfileDialogSurface(
     }
 }
 
-/** 名字输入框: 聚焦时弹出系统键盘 (电视上没有物理键盘). 下键去 [downTarget], 上键留在原地. */
+/**
+ * 名字输入框, 同搜索页的搜索框分两态 (见 `TvSearchInputPane`):
+ *  - 平时焦点落在**框这个整体**上 (只高亮描边), 里面的输入框不可聚焦、只读 —— Compose 的输入框一获焦就自己开输入会话、
+ *    弹出键盘, 所以打开弹窗、从下面的选项走回来都不能让它拿到焦点;
+ *  - 按确认键 (或点一下) 进编辑态: 焦点交给输入框, 键盘随之弹出. 输入法的「完成」先收起键盘再走到 [downTarget]
+ *    (焦点先走掉的话输入会话跟着结束, 再收键盘就不灵了, 键盘会一直挡在下面的选项上); 返回回到框上
+ *    (键盘开着时这一下被输入法自己吃掉; 看得到键盘收起时当场回到框上).
+ *
+ * 下键去 [downTarget], 上键留在原地 (往上没有别的可聚焦的, 放行会飘出弹窗).
+ */
 @Composable
 private fun NameField(
     value: TextFieldValue,
@@ -932,19 +956,73 @@ private fun NameField(
     placeholder: String,
     focus: TvFocusScope,
     downTarget: TvFocusKey,
-    onDone: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(focused) {
-        if (focused) keyboard?.show() else keyboard?.hide()
+    var editing by remember { mutableStateOf(false) }
+    var frameFocused by remember { mutableStateOf(false) }
+    // 输入框是否真持焦: 进编辑态时框等它接住焦点才让位 (持焦的框当场变成不可聚焦时 Compose 清空整窗焦点)
+    var editorFocused by remember { mutableStateOf(false) }
+    val editorFocus = remember { FocusRequester() }
+    // 退出编辑态回到框上: 同样先让框接住焦点 (框此刻重新可聚焦), 输入框失焦再退出编辑态, 焦点不会落空
+    var returningToFrame by remember { mutableStateOf(false) }
+    // 焦点交接放在效应里: canFocus 是组合期读的, 在按键回调里当场送焦时对方还不可聚焦, 请求会被拒
+    LaunchedEffect(editing) {
+        if (editing) {
+            runCatching { editorFocus.requestFocus() }
+            keyboard?.show()
+        }
     }
+    LaunchedEffect(returningToFrame) {
+        if (returningToFrame) focus.request(DialogFocus.Field)
+    }
+    // 键盘被收起 (编辑态里的返回多半被输入法自己吃掉) 就回到框上, 不然光标还留在框里, 要再按一次返回.
+    // 只认「先看见它弹出、再看见它消失」: 拿不到 IME insets 的形态下这里静默不生效, 编辑态里的返回键照样回到框上.
+    // 用 rememberUpdatedState 保住 state 身份, 效应里的 snapshotFlow 才观察得到变化 (同搜索框)
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    LaunchedEffect(editing) {
+        if (!editing) return@LaunchedEffect
+        snapshotFlow { imeVisible.value }.first { it }
+        snapshotFlow { imeVisible.value }.first { !it }
+        returningToFrame = true
+    }
+    // 编辑态、键盘没开着时的返回: 回到框上, 不关弹窗 (注册在弹窗自己的返回分发器上, 先于弹窗的关闭).
+    // 不拦按键事件里的返回键: 新系统上返回走系统的返回回调, 不以按键的形式送进界面
+    BackHandler(enabled = editing) { returningToFrame = true }
     val scheme = MaterialTheme.colorScheme
+    // 占位字与输入的字同一套样式: 行高不同的话一打字 (占位字消失) 框就变矮
+    val textStyle = MaterialTheme.typography.bodyLarge
     Surface(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth()
+            // 锚点、焦点属性与 onFocusChanged 都要排在 clickable (框的焦点目标) 之前, 否则认到的是里面的输入框.
+            // 锚点只认框自己持焦: 焦点在里面的输入框上时也算的话, 回到框上的请求会被当成已经到了
+            .tvFocusAnchor(focus, DialogFocus.Field, includeDescendants = false)
+            .focusProperties { canFocus = !editing || !editorFocused || returningToFrame }
+            .onFocusChanged {
+                frameFocused = it.isFocused
+                if (it.isFocused) returningToFrame = false
+            }
+            // 输入框持焦时这里也先看到按键 (preview 从外往里): 编辑态里键盘开着时方向键归键盘, 到不了这里
+            .onPreviewKeyEvent { event ->
+                when (event.key) {
+                    Key.DirectionDown -> {
+                        if (event.type == KeyEventType.KeyDown) focus.request(downTarget)
+                        true
+                    }
+
+                    Key.DirectionUp -> true
+                    else -> false
+                }
+            }
+            // 触屏 (平板装了 TV 包): 点在文字上时里面的输入框会自己吃掉这一下, 在 Initial pass 旁听. 电视上不装
+            .tvTouchTap(onTap = { if (!editing) editing = true })
+            // 确认键 (抬起时) / 点一下进编辑态; 已在编辑态 (键盘被收起了) 再按确认把键盘叫回来
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                if (editing) keyboard?.show() else editing = true
+            },
         shape = RoundedCornerShape(12.dp),
         color = scheme.surfaceContainer,
-        border = tvFieldBorderStroke(focused, scheme.outlineVariant),
+        border = tvFieldBorderStroke(frameFocused || editing, scheme.outlineVariant),
     ) {
         BasicTextField(
             value = value,
@@ -952,35 +1030,37 @@ private fun NameField(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.key) {
-                        Key.DirectionDown -> {
-                            focus.request(downTarget)
-                            true
-                        }
-
-                        // 往上没有别的可聚焦的, 放行会飘出弹窗
-                        Key.DirectionUp -> true
-                        else -> false
-                    }
-                }
-                .tvFocusAnchor(focus, DialogFocus.Field)
-                .onFocusChanged { focused = it.isFocused },
-            textStyle = TextStyle(color = scheme.onSurface, fontSize = MaterialTheme.typography.bodyLarge.fontSize),
+                .focusRequester(editorFocus)
+                .focusProperties { canFocus = editing }
+                .onFocusChanged {
+                    editorFocused = it.isFocused
+                    // 焦点被带走 (下键 / 完成 / 回到框上) 即退出编辑
+                    if (!it.isFocused && editing) editing = false
+                },
+            readOnly = !editing,
+            textStyle = textStyle.copy(color = scheme.onSurface),
             cursorBrush = SolidColor(scheme.primary),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onDone() }),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    keyboard?.hide()
+                    focus.request(downTarget)
+                },
+            ),
             decorationBox = { inner ->
-                if (value.text.isEmpty()) {
-                    Text(
-                        placeholder.ifEmpty { stringResource(Lang.tv_profile_name_placeholder) },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = scheme.onSurfaceVariant,
-                    )
+                Box {
+                    if (value.text.isEmpty()) {
+                        Text(
+                            placeholder.ifEmpty { stringResource(Lang.tv_profile_name_placeholder) },
+                            style = textStyle,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    inner()
                 }
-                inner()
             },
         )
     }
