@@ -11,17 +11,21 @@ package me.him188.ani.android.activity
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.view.WindowCompat
@@ -46,6 +50,7 @@ import me.him188.ani.app.ui.exprovider.LocalExternalContentProvider
 import me.him188.ani.app.ui.foundation.UiScaleApplier
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.SystemBarColorEffect
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.Toaster
@@ -148,6 +153,8 @@ class MainActivity : AniComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 用户主题的外壳底色先铺上: 清单主题只能是固定的纯黑, 浅色主题在第一帧之前也不该露黑
+        WindowBackgroundMirror.read(this)?.let { window.setBackgroundDrawable(ColorDrawable(it)) }
         handleStartIntent(intent)
 
         // 本形态 (phone / tv) 的附加初始化, 见各 flavor 下的 FormFactorSetup.kt

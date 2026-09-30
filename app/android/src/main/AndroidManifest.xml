@@ -52,7 +52,7 @@
             android:largeHeap="true"
             android:roundIcon="@mipmap/ic_launcher"
             android:supportsRtl="true"
-            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:theme="@style/Theme.Izuko"
             android:usesCleartextTraffic="true">
 
         <activity
