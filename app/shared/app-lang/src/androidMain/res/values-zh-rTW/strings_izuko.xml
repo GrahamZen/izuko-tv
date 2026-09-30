@@ -278,6 +278,8 @@
     <string name="settings_account_convert_local_description">無法登入 Bangumi 也能收藏：收藏、看過和評分只記在這台電視上</string>
     <string name="settings_account_clear_records">清除收藏記錄</string>
     <string name="settings_account_clear_records_description">清除這位使用者的收藏、評分和看過的集數，播放進度保留</string>
+    <string name="settings_account_choose_profile_on_launch">開啟應用時選擇使用者</string>
+    <string name="settings_account_choose_profile_on_launch_description">每次開啟應用先選擇是誰在看；關閉後直接進入上次使用的使用者，要換人請用側邊欄頭像裡的「切換使用者」</string>
     <string name="profile_convert_local_title">改成本地使用者？</string>
     <string name="profile_convert_local_text">之後收藏、看過和評分只記在這台電視上，這位使用者無法再登入 Bangumi。Izuko 會重新開啟。</string>
     <string name="profile_convert_local_leftover">這台電視上還留著之前登入 Bangumi 時的記錄：%1$d 部收藏、%2$d 集看過。要保留當作本地收藏嗎？</string>

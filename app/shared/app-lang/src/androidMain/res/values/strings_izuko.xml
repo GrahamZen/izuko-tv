@@ -365,6 +365,8 @@
     <string name="settings_account_convert_local_description">Collect without signing in: collections, watched episodes and ratings stay on this TV</string>
     <string name="settings_account_clear_records">Clear collection records</string>
     <string name="settings_account_clear_records_description">Removes this user’s collections, ratings and watched episodes. Playback positions are kept.</string>
+    <string name="settings_account_choose_profile_on_launch">Choose user on startup</string>
+    <string name="settings_account_choose_profile_on_launch_description">Ask who is watching each time the app starts. When off, the app opens as the last user; switch users from the avatar in the side bar.</string>
     <string name="profile_convert_local_title">Change to a local user?</string>
     <string name="profile_convert_local_text">From now on, collections, watched episodes and ratings stay on this TV, and this user can no longer sign in to Bangumi. Izuko will restart.</string>
     <string name="profile_convert_local_leftover">This TV still has records from an earlier Bangumi sign-in: %1$d collections and %2$d watched episodes. Keep them as local collections?</string>

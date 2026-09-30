@@ -46,6 +46,8 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.profile_clear_records_done
 import me.him188.ani.app.ui.lang.profile_clear_records_empty
+import me.him188.ani.app.ui.lang.settings_account_choose_profile_on_launch
+import me.him188.ani.app.ui.lang.settings_account_choose_profile_on_launch_description
 import me.him188.ani.app.ui.lang.settings_account_clear_records
 import me.him188.ani.app.ui.lang.settings_account_clear_records_description
 import me.him188.ani.app.ui.lang.settings_account_convert_local
@@ -58,6 +60,7 @@ import me.him188.ani.app.ui.lang.settings_account_profile_not_set
 import me.him188.ani.app.ui.lang.settings_account_profile_user_id
 import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
+import me.him188.ani.app.ui.settings.framework.components.SwitchItem
 import me.him188.ani.app.ui.settings.framework.components.TextItem
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import org.jetbrains.compose.resources.stringResource
@@ -98,6 +101,7 @@ fun SettingsScope.ProfileGroup(
                 toaster.toast(clearedText)
             }
         },
+        onChooseProfileOnLaunchChange = { asyncHandler.launch { vm.setChooseProfileOnLaunch(it) } },
         modifier = modifier,
     )
 }
@@ -111,6 +115,7 @@ internal fun SettingsScope.ProfileGroupImpl(
     loadSelfRecordCounts: suspend () -> SelfCollectionRecords.Counts = { SelfCollectionRecords.Counts(0, 0) },
     onConvertToLocal: (clearRecords: Boolean) -> Unit = {},
     onClearSelfRecords: () -> Unit = {},
+    onChooseProfileOnLaunchChange: (Boolean) -> Unit = {},
     windowSizeClass: WindowSizeClass = currentWindowAdaptiveInfo1().windowSizeClass,
 ) {
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -219,6 +224,15 @@ internal fun SettingsScope.ProfileGroupImpl(
                             onClick = { scope.launch { convertDialog = loadSelfRecordCounts() } },
                         )
                     }
+                }
+                // 整台电视一份, 不跟着当前用户; 两个以上用户时才有
+                state.chooseProfileOnLaunch?.let { checked ->
+                    SwitchItem(
+                        checked = checked,
+                        onCheckedChange = onChooseProfileOnLaunchChange,
+                        title = { Text(stringResource(Lang.settings_account_choose_profile_on_launch)) },
+                        description = { Text(stringResource(Lang.settings_account_choose_profile_on_launch_description)) },
+                    )
                 }
             }
         }

@@ -26,6 +26,8 @@ import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.profile.LocalProfileConversion
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfilesSave
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
@@ -47,6 +49,7 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     private val userRepo: UserRepository by inject()
     private val localProfileConversion: LocalProfileConversion by inject()
     private val selfRecords: SelfCollectionRecords by inject()
+    private val profileManager: UserProfileManager by inject()
 
     private val selfInfoStateProvider: SelfInfoStateProducer = SelfInfoStateProducer(koin = getKoin())
 
@@ -61,13 +64,16 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     val stateFlow = combine(
         selfInfoStateProvider.flow,
         avatarUploadState,
-    ) { selfInfoState, avatarState ->
+        profileManager.state,
+    ) { selfInfoState, avatarState, profiles ->
         AccountSettingsState(
             selfInfo = selfInfoState,
             boundBangumi = selfInfoState.isSessionValid == true && selfInfoState.bangumiConnected == true,
             avatarUploadState = avatarState,
             // 没登录的 1 号可以改成本地用户 (登录着的先退出)
             canConvertToLocal = localProfileConversion.isOffered && selfInfoState.isSessionValid == false,
+            // 只有一个用户时打开应用本来就不选人
+            chooseProfileOnLaunch = profiles.chooseOnLaunch.takeIf { profileManager.isSupported && profiles.profiles.size >= 2 },
         )
     }
         .restartable(stateRefresher)
@@ -92,6 +98,9 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     suspend fun convertToLocal(clearRecords: Boolean, defaultName: String) =
         localProfileConversion.convert(clearRecords, defaultName)
 
+    /** 见 [AccountSettingsState.chooseProfileOnLaunch]. */
+    suspend fun setChooseProfileOnLaunch(enabled: Boolean) = profileManager.setChooseOnLaunch(enabled)
+
     companion object {
         private val NICKNAME_MATCHER = Regex("^[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FFa-zA-Z\\d_]+$")
     }
@@ -104,6 +113,11 @@ class AccountSettingsState(
     val avatarUploadState: EditProfileState.UploadAvatarState,
     /** 显示「改成本地用户」, 见 [LocalProfileConversion]. */
     val canConvertToLocal: Boolean = false,
+    /**
+     * 「打开应用时选择用户」开着没有 (整机一份, 见 [UserProfilesSave.chooseOnLaunch]);
+     * `null` = 不显示这一项: 只有一个用户, 或这个平台不能换人.
+     */
+    val chooseProfileOnLaunch: Boolean? = null,
 ) {
     companion object {
         val Empty = AccountSettingsState(

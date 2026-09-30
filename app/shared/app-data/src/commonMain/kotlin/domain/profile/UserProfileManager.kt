@@ -103,6 +103,9 @@ class UserProfileManager(
         return true
     }
 
+    /** 设置账号页的「打开应用时选择用户」, 见 [UserProfilesSave.chooseOnLaunch]. */
+    suspend fun setChooseOnLaunch(enabled: Boolean) = registry.setChooseOnLaunch(enabled)
+
     /** 当前用户走过了登录那一步 (登录了或跳过了), 以后切进来不再弹. */
     suspend fun finishPendingLogin() {
         registry.update(currentId) { it.copy(pendingLogin = false) }

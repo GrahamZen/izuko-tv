@@ -105,6 +105,28 @@ class UserProfileRegistryTest {
     }
 
     @Test
+    fun `打开应用时选人默认开着 - 关掉立即写进文件`() = runTest {
+        val registry = UserProfileRegistry.load(file)
+        registry.add("", UserProfileKind.BANGUMI)
+        assertTrue(registry.state.value.chooseOnLaunch)
+
+        registry.setChooseOnLaunch(false)
+        assertFalse(UserProfileRegistry.load(file).state.value.chooseOnLaunch)
+    }
+
+    @Test
+    fun `文件里没有选人开关时当开着`() {
+        file.writeText("""{"profiles":[{"id":1},{"id":2,"name":"a"}],"currentId":2,"nextId":3}""")
+        assertTrue(UserProfileRegistry.load(file).state.value.chooseOnLaunch)
+    }
+
+    @Test
+    fun `修正文件内容时选人开关不变`() {
+        file.writeText("""{"profiles":[{"id":3,"name":"a"}],"currentId":7,"nextId":2,"chooseOnLaunch":false}""")
+        assertFalse(UserProfileRegistry.load(file).state.value.chooseOnLaunch)
+    }
+
+    @Test
     fun `1 号用户的文件名不变 - 其他人在扩展名前加后缀`() {
         val primary = UserProfile(UserProfile.PRIMARY_ID)
         assertEquals("authSession", primary.scopedFileName("authSession"))

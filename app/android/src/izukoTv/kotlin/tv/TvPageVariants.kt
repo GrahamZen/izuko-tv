@@ -187,15 +187,16 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 冷启动的启动页 (应用图标 + 进度条): 一打开应用就由入口的占位先画上 (见 FormFactorStartupPlaceholder), 这里接着盖同一份,
     // 首屏的封面出来了再撤; 走引导时交接给欢迎页的图标. 只在进程第一次建界面时出 (Activity 重建时图都在内存里, 没有可等的)
     val startupLogo = remember { TvStartupLogoHost.coldStart(onboarding = onboardingPending) }
-    // 多用户 (见 UserProfiles): 两个以上用户时每次打开应用先选人. 刚在选人页选过、重启进来的不弹;
-    // 首次引导期间不弹 (那时只有一个用户). rememberSaveable: 休眠后进程重建恢复界面时也不再弹
+    // 多用户 (见 UserProfiles): 两个以上用户时每次打开应用先选人 (设置的账号页里能关, 见 UserProfilesSave.chooseOnLaunch).
+    // 刚在选人页选过、重启进来的不弹; 首次引导期间不弹 (那时只有一个用户). rememberSaveable: 休眠后进程重建恢复界面时也不再弹
     val profileManager = remember { GlobalKoin.get<UserProfileManager>() }
     var launchPickerHandled by rememberSaveable { mutableStateOf(false) }
     // 应用为换人 / 改成本地用户自己重启进来的 (见 ProfileRestartActivity)
     val profileRestart = UserProfiles.launchedBySwitch
     val pickerOnLaunch = remember(appContext) {
+        val profiles = profileManager.state.value
         !launchPickerHandled && !onboardingPending && profileManager.isSupported &&
-                profileManager.state.value.profiles.size >= 2 && !profileRestart
+                profiles.profiles.size >= 2 && profiles.chooseOnLaunch && !profileRestart
     }
     // 新建的 Bangumi 用户第一次进来: 先弹登录那一步 (登录或跳过), 见 TvOnboardingLogin.loginOnly
     val newUserLoginPending = remember { !onboardingPending && UserProfiles.current.pendingLogin }

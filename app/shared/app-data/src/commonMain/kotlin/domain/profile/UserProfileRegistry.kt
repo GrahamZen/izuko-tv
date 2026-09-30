@@ -39,12 +39,14 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * @property currentId 下次启动进哪个用户 (选人页的默认焦点也落在他身上)
  * @property nextId 下一个新用户的编号. 编号不复用: 删掉的用户留下的文件万一没删干净, 也不会被新用户接手
+ * @property chooseOnLaunch 两个以上用户时打开应用先选人; 关掉就直接进 [currentId]. 整机一份, 设置的账号页里改
  */
 @Serializable
 data class UserProfilesSave(
     val profiles: List<UserProfile>,
     val currentId: Int,
     val nextId: Int,
+    val chooseOnLaunch: Boolean = true,
 ) {
     fun find(id: Int): UserProfile? = profiles.firstOrNull { it.id == id }
 
@@ -52,7 +54,7 @@ data class UserProfilesSave(
     internal fun normalized(): UserProfilesSave {
         val withPrimary = if (profiles.any { it.isPrimary }) profiles else listOf(UserProfile(UserProfile.PRIMARY_ID)) + profiles
         val distinct = withPrimary.distinctBy { it.id }.sortedBy { it.id }
-        return UserProfilesSave(
+        return copy(
             profiles = distinct,
             currentId = currentId.takeIf { id -> distinct.any { it.id == id } } ?: UserProfile.PRIMARY_ID,
             nextId = maxOf(nextId, distinct.maxOf { it.id } + 1),
@@ -121,6 +123,11 @@ class UserProfileRegistry private constructor(
             if (save.find(id) == null) return@mutate save to Unit
             save.copy(currentId = id) to Unit
         }
+    }
+
+    /** 见 [UserProfilesSave.chooseOnLaunch]. */
+    suspend fun setChooseOnLaunch(enabled: Boolean) {
+        mutate { save -> save.copy(chooseOnLaunch = enabled) to Unit }
     }
 
     private suspend fun <R> mutate(block: (UserProfilesSave) -> Pair<UserProfilesSave, R>): R = mutex.withLock {
