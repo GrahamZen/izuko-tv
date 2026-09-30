@@ -250,4 +250,47 @@ class RemoteProfilesTest {
         )
         for (key in serverKeys) assertTrue(key in table, "译文表里没有「$key」")
     }
+
+    @Test
+    fun `导出只给本地用户 导入只进当前的本地用户 对不上就让网页停下`() {
+        val local = post("api/profiles/add", "name" to "Carol", "kind" to "local").getValue("id").jsonPrimitive.int
+        assertEquals("只有本地用户可以导出", get("api/profiles/export?id=1")!!.message)
+        assertEquals("没有这个用户了，刷新页面再看看", get("api/profiles/export?id=99")!!.message)
+        // 当前是 1 号 (登录 Bangumi 的那种): 导不进来
+        val notLocal = post("api/profiles/restore/collection", "id" to "1", "entry" to """{"subjectId":1,"type":"DOING"}""")
+        assertFalse(notLocal.ok)
+        assertTrue(notLocal.getValue("stop").jsonPrimitive.boolean)
+        assertEquals("只能导入到本地用户", notLocal.message)
+        // 网页以为的当前用户与电视上的对不上 (电视上换过人)
+        val stale = post("api/profiles/restore/playback", "id" to local.toString(), "records" to "[]")
+        assertTrue(stale.getValue("stop").jsonPrimitive.boolean)
+        assertEquals("电视上的用户换了，刷新页面再导入", stale.message)
+        assertTrue(post("api/profiles/restore/check", "id" to "1", "subjects" to "1,2").getValue("stop").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `导出导入的文案都在译文表里`() {
+        val page = renderRemoteControlPage(initialTab = "settings", searchFormHtml = "", requestSectionHtml = "")
+        val table = REMOTE_I18N_TABLE.associateBy { it.zh }
+        val webKeys = listOf(
+            "导出收藏和播放进度", "从文件导入", "已导出：{0} 部收藏，{1} 条播放进度", "读不了这个文件", "这不是 Izuko 导出的用户文件",
+            "这个文件是新版本的 Izuko 导出的，先把电视上的 Izuko 升级到新版再导入", "从文件导入到「{0}」", "正在比对电视上已有的收藏…",
+            "没有要导入的：文件里的收藏这个用户都已经有了。", "会新加 {0} 部收藏，带上评分、短评和看过的集。", "已经收藏的 {0} 部不动。",
+            "播放进度 {0} 条，电视上更新的不会被盖掉。", "文件里的 {0} 部收藏这个用户都已经有了，不动。", "条目信息要从 Bangumi 取，收藏多的话要等一会儿；导的时候别关这个页面。",
+            "导入", "停止", "导入完成：", "已导入：", "新加 {0} 部收藏，标了 {1} 集看过，导入 {2} 条播放进度。",
+            "再导一次会接着导剩下的，导过的会跳过。", "连不上电视了。", "已停止。",
+            "本地用户可以「导出收藏和播放进度」存成文件，换电视或重装后，在新的本地用户里「从文件导入」；已经收藏的不动。",
+            "想把本地用户的收藏搬进 Bangumi：先切到登录了 Bangumi 的用户，再点那个本地用户，选「把收藏导入当前用户的 Bangumi 账号」。",
+        )
+        for (key in webKeys) {
+            assertContains(page, "T('" + key + "'")
+            assertTrue(key in table, "译文表里没有「$key」")
+        }
+        val serverKeys = listOf(
+            "只有本地用户可以导出", "导出超时，请重试", "读取超时，请重试", "这一条读不了", "从 Bangumi 取条目信息超时",
+            "Bangumi 上打不开这个条目", "取条目信息失败：{0}", "播放进度读不了", "写入超时，请重试",
+            "电视上的用户换了，刷新页面再导入", "只能导入到本地用户",
+        )
+        for (key in serverKeys) assertTrue(key in table, "译文表里没有「$key」")
+    }
 }

@@ -49,7 +49,7 @@ import kotlin.time.Duration.Companion.seconds
  * 记下了新用户却没重启, 电视和网页就对不上了.
  *
  * 当前用户登录了 Bangumi 时, 还能把某个本地用户的收藏导入这个账号 (见 [LocalProfileImporter]): 先预览要加哪些,
- * 确认了照那份预览导, 在后台跑, 网页轮询进度.
+ * 确认了照那份预览导, 在后台跑, 网页轮询进度. 本地用户导出成文件、从文件导入见 [RemoteProfileArchive].
  */
 internal object RemoteProfiles {
     private val logger = logger<RemoteProfiles>()
@@ -64,6 +64,9 @@ internal object RemoteProfiles {
 
     /** 处理 `api/profiles` 下的请求; 路径或方法不认识返回 null. */
     fun handle(request: LanHttpRequest, scope: CoroutineScope): JsonObject? {
+        if (request.path == "api/profiles/export" || request.path.startsWith("api/profiles/restore/")) {
+            return RemoteProfileArchive.handle(request)
+        }
         val get = request.method == "GET" || request.method == "HEAD"
         val post = request.method == "POST"
         return runCatching {

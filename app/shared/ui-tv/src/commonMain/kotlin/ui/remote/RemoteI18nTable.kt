@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1201,4 +1201,42 @@ private fun part10() = listOf(
     RemoteText("预览已经过期，请重新打开导入", "The preview has expired. Open the import again.", "預覽已經過期，請重新打開導入", "預覽已經過期，請重新開啟匯入"),
     RemoteText("开始导入", "Import started", "開始導入", "開始匯入"),
     RemoteText("正在导入收藏，导完再切换用户", "Collections are being imported. Switch users after it finishes.", "正在導入收藏，導完再切換用戶", "正在匯入收藏，匯入完再切換使用者"),
+)
+
+/** 本地用户导出成文件、从文件导入 (RemoteProfileArchive). */
+private fun part11() = listOf(
+    RemoteText("导出收藏和播放进度", "Export collections and playback", "導出收藏和播放進度", "匯出收藏和播放進度"),
+    RemoteText("从文件导入", "Import from file", "從文件導入", "從檔案匯入"),
+    RemoteText("已导出：{0} 部收藏，{1} 条播放进度", "Exported {0} collections and {1} playback positions", "已導出：{0} 部收藏，{1} 條播放進度", "已匯出：{0} 部收藏，{1} 筆播放進度"),
+    RemoteText("读不了这个文件", "Could not read this file", "讀不了這個文件", "讀不了這個檔案"),
+    RemoteText("这不是 Izuko 导出的用户文件", "This is not a user file exported from Izuko", "這不是 Izuko 導出的用戶文件", "這不是 Izuko 匯出的使用者檔案"),
+    RemoteText("这个文件是新版本的 Izuko 导出的，先把电视上的 Izuko 升级到新版再导入", "This file was exported by a newer Izuko. Update Izuko on the TV before importing.", "這個文件是新版本的 Izuko 導出的，先把電視上的 Izuko 升級到新版再導入", "這個檔案是新版本的 Izuko 匯出的，請先把電視上的 Izuko 更新到新版再匯入"),
+    RemoteText("从文件导入到「{0}」", "Import into “{0}”", "從文件導入到「{0}」", "從檔案匯入到「{0}」"),
+    RemoteText("正在比对电视上已有的收藏…", "Comparing with the collections on the TV…", "正在比對電視上已有的收藏…", "正在比對電視上已有的收藏…"),
+    RemoteText("没有要导入的：文件里的收藏这个用户都已经有了。", "Nothing to import: this user already has every collection in the file.", "沒有要導入的：文件裡的收藏這個用戶都已經有了。", "沒有要匯入的：檔案裡的收藏這位使用者都已經有了。"),
+    RemoteText("会新加 {0} 部收藏，带上评分、短评和看过的集。", "{0} collections will be added, with ratings, comments and watched episodes.", "會新加 {0} 部收藏，帶上評分、短評和看過的集。", "會新增 {0} 部收藏，帶上評分、短評和看過的集數。"),
+    RemoteText("已经收藏的 {0} 部不动。", " The {0} already collected stay unchanged.", "已經收藏的 {0} 部不動。", "已經收藏的 {0} 部不動。"),
+    RemoteText("播放进度 {0} 条，电视上更新的不会被盖掉。", "{0} playback positions; newer ones on the TV are kept.", "播放進度 {0} 條，電視上更新的不會被蓋掉。", "播放進度 {0} 筆，電視上較新的不會被覆蓋。"),
+    RemoteText("文件里的 {0} 部收藏这个用户都已经有了，不动。", "This user already has all {0} collections in the file; they stay unchanged.", "文件裡的 {0} 部收藏這個用戶都已經有了，不動。", "檔案裡的 {0} 部收藏這位使用者都已經有了，不動。"),
+    RemoteText("条目信息要从 Bangumi 取，收藏多的话要等一会儿；导的时候别关这个页面。", "Details are fetched from Bangumi, so a large file takes a while. Keep this page open while importing.", "條目信息要從 Bangumi 取，收藏多的話要等一會兒；導的時候別關這個頁面。", "條目資訊要從 Bangumi 取得，收藏多的話要等一下；匯入時請別關閉這個頁面。"),
+    RemoteText("停止", "Stop", "停止", "停止"),
+    RemoteText("导入完成：", "Import finished: ", "導入完成：", "匯入完成："),
+    RemoteText("新加 {0} 部收藏，标了 {1} 集看过，导入 {2} 条播放进度。", "added {0} collections, marked {1} episodes watched and imported {2} playback positions.", "新加 {0} 部收藏，標了 {1} 集看過，導入 {2} 條播放進度。", "新增 {0} 部收藏，標了 {1} 集看過，匯入 {2} 筆播放進度。"),
+    RemoteText("再导一次会接着导剩下的，导过的会跳过。", "Import again to continue with the rest; the ones already imported are skipped.", "再導一次會接著導剩下的，導過的會跳過。", "再匯入一次會接著匯入剩下的，匯入過的會略過。"),
+    RemoteText("连不上电视了。", "Lost connection to the TV.", "連不上電視了。", "連不上電視了。"),
+    RemoteText("已停止。", "Stopped.", "已停止。", "已停止。"),
+    RemoteText("只有本地用户可以导出", "Only local users can be exported", "只有本地用戶可以導出", "只有本地使用者可以匯出"),
+    RemoteText("导出超时，请重试", "Export timed out. Please try again.", "導出超時，請重試", "匯出超時，請重試"),
+    RemoteText("读取超时，请重试", "Reading timed out. Please try again.", "讀取超時，請重試", "讀取超時，請重試"),
+    RemoteText("这一条读不了", "This entry could not be read", "這一條讀不了", "這一筆讀不了"),
+    RemoteText("从 Bangumi 取条目信息超时", "Fetching details from Bangumi timed out", "從 Bangumi 取條目信息超時", "從 Bangumi 取得條目資訊超時"),
+    RemoteText("Bangumi 上打不开这个条目", "This subject cannot be opened on Bangumi", "Bangumi 上打不開這個條目", "Bangumi 上打不開這個條目"),
+    RemoteText("取条目信息失败：{0}", "Could not fetch details: {0}", "取條目信息失敗：{0}", "取得條目資訊失敗：{0}"),
+    RemoteText("播放进度读不了", "The playback positions could not be read", "播放進度讀不了", "播放進度讀不了"),
+    RemoteText("写入超时，请重试", "Saving timed out. Please try again.", "寫入超時，請重試", "寫入超時，請重試"),
+    RemoteText("电视上的用户换了，刷新页面再导入", "The user on the TV changed. Refresh the page and import again.", "電視上的用戶換了，刷新頁面再導入", "電視上的使用者換了，重新整理頁面再匯入"),
+    RemoteText("只能导入到本地用户", "You can only import into a local user", "只能導入到本地用戶", "只能匯入到本地使用者"),
+    RemoteText("已导入：", "Imported so far: ", "已導入：", "已匯入："),
+    RemoteText("本地用户可以「导出收藏和播放进度」存成文件，换电视或重装后，在新的本地用户里「从文件导入」；已经收藏的不动。", "A local user can “Export collections and playback” to a file. After changing TVs or reinstalling, use “Import from file” in a new local user; collections already there stay unchanged.", "本地用戶可以「導出收藏和播放進度」存成文件，換電視或重裝後，在新的本地用戶裡「從文件導入」；已經收藏的不動。", "本地使用者可以「匯出收藏和播放進度」存成檔案，換電視或重新安裝後，在新的本地使用者裡「從檔案匯入」；已經收藏的不動。"),
+    RemoteText("想把本地用户的收藏搬进 Bangumi：先切到登录了 Bangumi 的用户，再点那个本地用户，选「把收藏导入当前用户的 Bangumi 账号」。", "To move a local user’s collections into Bangumi: switch to a user signed in to Bangumi, tap that local user, then choose “Import collections into the current user’s Bangumi account”.", "想把本地用戶的收藏搬進 Bangumi：先切到登錄了 Bangumi 的用戶，再點那個本地用戶，選「把收藏導入當前用戶的 Bangumi 帳號」。", "想把本地使用者的收藏搬進 Bangumi：先切換到登入了 Bangumi 的使用者，再點那位本地使用者，選「把收藏匯入目前使用者的 Bangumi 帳號」。"),
 )

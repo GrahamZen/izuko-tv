@@ -174,6 +174,7 @@ import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.domain.profile.LocalProfileImporter
+import me.him188.ani.app.domain.profile.ProfileArchiver
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
@@ -615,6 +616,20 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                 database.subjectCollection().resetAllLastFetched()
                 database.episodeCollection().resetAllLastFetched()
                 get<SubjectService>().invalidateCollectionCounts()
+            },
+        )
+    }
+    // 本地用户导出成文件 / 从文件导入当前的本地用户 (Web 控制台), 见 ProfileArchiver
+    single<ProfileArchiver> {
+        ProfileArchiver(
+            currentProfile = { UserProfiles.current },
+            currentDatabase = database,
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            setLocalCollectionType = { subjectId, type ->
+                // 本地档的仓库只写本地库; 当前用户若是登录 Bangumi 的, 同一个调用会发请求改他的账号
+                check(UserProfiles.current.isLocal) { "Archives can only be restored into a local profile" }
+                get<SubjectCollectionRepository>().setSubjectCollectionTypeOrDelete(subjectId, type)
             },
         )
     }

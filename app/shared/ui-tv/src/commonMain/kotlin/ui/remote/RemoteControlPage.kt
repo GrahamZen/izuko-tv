@@ -648,7 +648,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn:disabled { opacity: .6; }
 /* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
 .sw-btn.link { background: #2f7bf0; }
-#link-dlg, #login-dlg, #pf-dlg, #pf-imp { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+#link-dlg, #login-dlg, #pf-dlg, #pf-imp, #pf-rst { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
   background: rgba(0,0,0,.45); }
 .link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
   background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
@@ -6700,6 +6700,11 @@ private val PROFILES_SCRIPT = """
           h += '<div class="row"><button type="button" class="ghost" data-pf="import" data-id="' + u.id + '">' +
             T('把收藏导入当前用户的 Bangumi 账号') + '</button></div>';
         }
+        // 本地用户能导出成文件; 当前的本地用户还能从文件导入 (见 RemoteProfileArchive)
+        if (u.local) {
+          h += '<div class="row"><button type="button" class="ghost" data-pf="export" data-id="' + u.id + '">' + T('导出收藏和播放进度') + '</button>' +
+            (u.current ? '<button type="button" class="ghost" data-pf="restore" data-id="' + u.id + '">' + T('从文件导入') + '</button>' : '') + '</div>';
+        }
       }
       h += '</div>';
     });
@@ -6850,6 +6855,176 @@ private val PROFILES_SCRIPT = """
       if (imp) impTimer = setTimeout(pollImport, 2000);
     });
   }
+  // 本地用户的导出与导入 (见 RemoteProfileArchive): 导出成 JSON 文件存在手机上, 换电视或重装后再导回来.
+  // 导入只进当前的本地用户, 逐条发 (电视要去 Bangumi 取条目信息, 一条一两秒), 已经收藏的不动; 中途停下再导一遍会接着导
+  function ymd() {
+    var d = new Date();
+    return '' + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+  }
+  function exportProfile(u, b) {
+    b.disabled = true;
+    getJson('api/profiles/export?id=' + u.id, 40000).then(function (d) {
+      b.disabled = false;
+      if (!d.ok) { toast(d.message); return; }
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(d.archive, null, 1)], { type: 'application/json' }));
+      // 文件名里不能有的字符换掉
+      a.download = 'izuko-' + u.name.replace(/[\\/:*?"<>|\s]+/g, '_') + '-' + ymd() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+      toast(T('已导出：{0} 部收藏，{1} 条播放进度', d.collections, d.playback));
+    }).catch(function () { b.disabled = false; fail(); });
+  }
+  var rst = null, rstDlg = null;
+  function rstBox(inner) {
+    if (!rstDlg) {
+      rstDlg = document.createElement('div');
+      rstDlg.id = 'pf-rst';
+      rstDlg.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-pfr]');
+        if (!b || b.disabled) return;
+        var act = b.getAttribute('data-pfr');
+        if (act === 'go') runRestore();
+        else if (act === 'stop') { if (rst) rst.stopping = true; b.disabled = true; }
+        else closeRestore();
+      });
+      document.body.appendChild(rstDlg);
+    }
+    rstDlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + esc(T('从文件导入到「{0}」', rst ? rst.name : '')) + '</div>' + inner + '</div>';
+  }
+  function rstCloseRow() {
+    return '<div class="row"><button type="button" class="primary" data-pfr="close">' + T('知道了') + '</button></div>';
+  }
+  function closeRestore() {
+    if (rst) rst.stopping = true;
+    if (rstDlg) rstDlg.remove();
+    rstDlg = null;
+    rst = null;
+  }
+  // 选文件要在点击里直接调起 (手机浏览器只认用户手势)
+  function pickRestore(u) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json,text/plain';
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () { openRestore(u, String(reader.result || '')); };
+      reader.onerror = function () { toast(T('读不了这个文件')); };
+      reader.readAsText(f);
+    });
+    input.click();
+  }
+  function openRestore(u, text) {
+    var a = null;
+    try { a = JSON.parse(text); } catch (e) { a = null; }
+    if (!a || a.format !== 'izuko-tv-profile') { toast(T('这不是 Izuko 导出的用户文件')); return; }
+    if ((a.version || 0) > 1) { toast(T('这个文件是新版本的 Izuko 导出的，先把电视上的 Izuko 升级到新版再导入')); return; }
+    var items = (a.collections || []).filter(function (x) { return x && x.subjectId > 0 && x.type; });
+    rst = { id: u.id, name: u.name, playback: (a.playback || []).filter(function (x) { return x && x.episodeId > 0; }) };
+    var s = rst, ids = items.map(function (x) { return x.subjectId; }), collected = {}, at = 0;
+    rstBox('<p class="dlg-p">' + T('正在比对电视上已有的收藏…') + '</p>');
+    // 分批问电视哪些已经收藏了 (请求体有上限)
+    function next() {
+      if (rst !== s) return;
+      if (at >= ids.length) {
+        var add = items.filter(function (x) { return !collected[x.subjectId]; });
+        planRestore(add, items.length - add.length);
+        return;
+      }
+      var batch = ids.slice(at, at + 2000);
+      at += batch.length;
+      post('api/profiles/restore/check', { id: s.id, subjects: batch.join(',') }).then(function (r) {
+        if (rst !== s) return;
+        if (!r.ok) { rstBox('<p class="dlg-p">' + esc(r.message) + '</p>' + rstCloseRow()); return; }
+        (r.collected || []).forEach(function (id) { collected[id] = true; });
+        next();
+      }).catch(function () {
+        if (rst === s) rstBox('<p class="dlg-p">' + T('读取失败，请确认手机与电视在同一网络') + '</p>' + rstCloseRow());
+      });
+    }
+    next();
+  }
+  function planRestore(add, skipped) {
+    var pb = rst.playback.length;
+    rst.add = add;
+    rst.skippedBefore = skipped;
+    if (!add.length && !pb) {
+      rstBox('<p class="dlg-p">' + T('没有要导入的：文件里的收藏这个用户都已经有了。') + '</p>' + rstCloseRow());
+      return;
+    }
+    var first = add.length
+      ? T('会新加 {0} 部收藏，带上评分、短评和看过的集。', add.length) + (skipped ? T('已经收藏的 {0} 部不动。', skipped) : '')
+      : skipped ? T('文件里的 {0} 部收藏这个用户都已经有了，不动。', skipped) : '';
+    rstBox((first ? '<p class="dlg-p">' + first + '</p>' : '') +
+      (pb ? '<p class="dlg-p">' + T('播放进度 {0} 条，电视上更新的不会被盖掉。', pb) + '</p>' : '') +
+      (add.length ? '<p class="hint">' + T('条目信息要从 Bangumi 取，收藏多的话要等一会儿；导的时候别关这个页面。') + '</p>' +
+        '<ol class="pf-imp-list">' + add.map(function (x) {
+          return '<li>' + esc(x.name || ('#' + x.subjectId)) + ' <small>' + esc(TYPE_LABELS[x.type] || x.type) + '</small></li>';
+        }).join('') + '</ol>' : '') +
+      '<div class="row"><button type="button" class="ghost" data-pfr="close">' + T('取消') + '</button>' +
+      '<button type="button" class="primary" data-pfr="go">' + T('导入') + '</button></div>');
+  }
+  function runRestore() {
+    var s = rst;
+    if (!s || s.running) return;
+    s.running = true;
+    s.i = 0;
+    s.added = 0;
+    s.skipped = s.skippedBefore;
+    s.episodes = 0;
+    s.restored = 0;
+    s.fails = [];
+    function progress() {
+      rstBox('<p class="dlg-p">' + T('正在导入 {0}/{1}…', s.i, s.add.length) + '</p><div class="row">' +
+        '<button type="button" class="ghost" data-pfr="stop"' + (s.stopping ? ' disabled' : '') + '>' + T('停止') + '</button></div>');
+    }
+    // why: 停下 / 连不上 / 电视换了人时的说明; 没有 = 都导完了
+    function finish(why) {
+      if (rst !== s) return;
+      var h = (why ? '<p class="dlg-p">' + esc(why) + '</p>' : '') + '<p class="dlg-p">' + (why ? T('已导入：') : T('导入完成：')) +
+        T('新加 {0} 部收藏，标了 {1} 集看过，导入 {2} 条播放进度。', s.added, s.episodes, s.restored) +
+        (s.skipped ? T('跳过已经有的 {0} 部。', s.skipped) : '') + '</p>';
+      if (why) h += '<p class="hint">' + T('再导一次会接着导剩下的，导过的会跳过。') + '</p>';
+      if (s.fails.length) {
+        h += '<p class="dlg-p risk">' + T('{0} 部没有导好：', s.fails.length) + '</p><ol class="pf-imp-list">' + s.fails.map(function (f) {
+          return '<li>' + esc(f.name) + ' <small>' + esc(f.message || '') + '</small></li>';
+        }).join('') + '</ol>';
+      }
+      rstBox(h + rstCloseRow());
+    }
+    function nextItem() {
+      if (rst !== s) return;
+      if (s.stopping) { finish(T('已停止。')); return; }
+      if (s.i >= s.add.length) { nextPlayback(0); return; }
+      progress();
+      var x = s.add[s.i];
+      post('api/profiles/restore/collection', { id: s.id, entry: JSON.stringify(x) }).then(function (r) {
+        if (rst !== s) return;
+        if (r.stop) { finish(r.message); return; }
+        s.i++;
+        if (!r.ok) s.fails.push({ name: x.name || ('#' + x.subjectId), message: r.message });
+        else if (r.added) { s.added++; s.episodes += r.episodes || 0; }
+        else s.skipped++;
+        nextItem();
+      }).catch(function () { finish(T('连不上电视了。')); });
+    }
+    // 播放进度一批 40 条 (只写库, 快)
+    function nextPlayback(at) {
+      if (rst !== s) return;
+      if (at >= s.playback.length) { finish(null); return; }
+      post('api/profiles/restore/playback', { id: s.id, records: JSON.stringify(s.playback.slice(at, at + 40)) }).then(function (r) {
+        if (rst !== s) return;
+        if (!r.ok) { finish(r.message); return; }
+        s.restored += r.restored || 0;
+        nextPlayback(at + 40);
+      }).catch(function () { finish(T('连不上电视了。')); });
+    }
+    nextItem();
+  }
   box.addEventListener('click', function (e) {
     var b = e.target.closest('[data-pf]');
     if (!b || b.disabled) return;
@@ -6868,6 +7043,8 @@ private val PROFILES_SCRIPT = """
     if (act === 'rename') { renaming = u.id; menu = null; render(); focusField('#pf-rename'); return; }
     if (act === 'switch') { startSwitch(u, b); return; }
     if (act === 'import') { openImport(u); return; }
+    if (act === 'export') { exportProfile(u, b); return; }
+    if (act === 'restore') { pickRestore(u); return; }
     if (act === 'delete') {
       if (!confirm(T('删除「{0}」？\n\n这个用户的收藏、播放记录和登录都会从这台电视上删掉。缓存的视频是大家共用的，不会删。', u.name))) return;
       b.disabled = true;
@@ -7471,7 +7648,9 @@ private val HELP_SCRIPT = """
     T('每个用户有自己的收藏、播放记录和 Bangumi 登录；设置、数据源和缓存的视频是这台电视上大家共用的。'),
     T('「添加用户」只新建，不会切过去；要用时点那个人右边的「切换」，电视上的 Izuko 会重新打开，这个页面随后自动刷新。'),
     T('点头像或名字：改名或删除。第一个用户和正在用的用户不能删除。'),
-    T('添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。')
+    T('添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。'),
+    T('本地用户可以「导出收藏和播放进度」存成文件，换电视或重装后，在新的本地用户里「从文件导入」；已经收藏的不动。'),
+    T('想把本地用户的收藏搬进 Bangumi：先切到登录了 Bangumi 的用户，再点那个本地用户，选「把收藏导入当前用户的 Bangumi 账号」。')
   ]) + sec(T('账号'), [
     T('没登录时点「在电视上登录 Bangumi」，电视上会弹出授权页，用遥控器完成。'),
     T('点头像或名字：退出登录。')
