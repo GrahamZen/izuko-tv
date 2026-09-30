@@ -192,6 +192,28 @@ class TvNativeExploreNavigationTest {
     }
 
     @Test
+    fun `holding left walks back to the row start and the next repeat leaves the page`() {
+        useLongRows(rows = 1, cards = 40)
+        press(KeyEvent.KEYCODE_DPAD_DOWN, 2)
+        waitCard(longRow(0), 0)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, 8)
+        waitCard(longRow(0), 8)
+        // 按住往回走: 每一发挪一张, 到了行首, 下一发出页面 (进侧边栏, 同搜索页的网格)
+        host.keyDown(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertEquals(longRow(0) to 7, card())
+        for (i in 1..7) {
+            SystemClock.sleep(50)
+            host.keyDown(KeyEvent.KEYCODE_DPAD_LEFT, repeatCount = i)
+            assertEquals(longRow(0) to 7 - i, card(), "第 $i 发连发")
+        }
+        assertEquals(0, listener.exitLeft)
+        SystemClock.sleep(50)
+        host.keyDown(KeyEvent.KEYCODE_DPAD_LEFT, repeatCount = 8)
+        host.keyUp(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertEquals(1, listener.exitLeft)
+    }
+
+    @Test
     fun `holding down moves one row per repeat while the list glides`() {
         useLongRows(rows = 16, cards = 8)
         press(KeyEvent.KEYCODE_DPAD_DOWN, 2)

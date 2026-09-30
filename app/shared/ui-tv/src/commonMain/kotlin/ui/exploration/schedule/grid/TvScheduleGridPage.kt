@@ -812,7 +812,6 @@ private fun TvScheduleDateRail(
                     itemCount = { days.size },
                     onNavigateDown = onNavigateDown,
                     onNavigateUp = { true },
-                    consumeLeftEdge = true,
                 ),
             state = listState,
             contentPadding = PaddingValues(start = TV_SCHEDULE_SIDE_PAD, end = TV_GLASS_FOCUS_BLEED),

@@ -808,6 +808,7 @@ private fun TvCollectionPageContent(
                         true
                     }
                 },
+                onExitLeft = { railEnter?.requestFocus() },
             )
 
             // 过渡期的隐形焦点驻留点 (改收藏状态让条目离开本 tab 时焦点先躲到这里,
@@ -883,6 +884,8 @@ private fun TvCollectionTabRow(
     onTabFocusChanged: (index: Int, focused: Boolean) -> Unit,
     onUserNavigation: () -> Unit,
     onNavigateDown: () -> Boolean,
+    /** 第一个标签按左: 进侧边栏. */
+    onExitLeft: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 焦点下标记账 / "聚焦即选中"封印 / 左右键显式移动 / 连发守卫都在共享原语里 (见 TvFocusRail.kt).
@@ -900,8 +903,8 @@ private fun TvCollectionTabRow(
                 itemCount = { tabs.size },
                 onUserNavigation = onUserNavigation,
                 onNavigateDown = onNavigateDown,
-                // 第一个标签按左要放行, 靠焦点系统进侧边栏 —— 本页唯一的左出口
-                consumeLeftEdge = false,
+                // 第一个标签按左进侧边栏 (按住的连发也算) —— 本页唯一的左出口
+                onLeftEdge = onExitLeft,
                 // 从空网格回落标签的那一小段窗口只吞长按残余连发. 新的一次独立按键仍可取消
                 // 程序化落点并正常导航, 避免极端情况下目标始终拒焦时把标签行永久锁住.
                 preSwallow = { event -> navigationLocked() && event.isAutoRepeat == true },

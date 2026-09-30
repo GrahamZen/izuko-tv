@@ -796,16 +796,17 @@ class TvNativeExploreView(
             if (now - lastHorizontalRepeat < TV_NATIVE_HORIZONTAL_REPEAT_MILLIS) return true
             lastHorizontalRepeat = now
         }
-        navigateHorizontal(rowKey, if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1, firstPress = event.repeatCount == 0)
+        navigateHorizontal(rowKey, if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
         return true
     }
 
     /**
      * 左右键: 同一行的上一张 / 下一张 (按需挪由横滑行在卡拿到焦点时自己滚). 不交给系统找焦点: 方向键没被原生树吃掉时由 Compose 用
      * FocusFinder 在整个宿主里按布局位置挑目标 —— 不计平移 (随列表上移出屏的 hero 按钮照样按原位参与), 行首停靠线左边露一截的那张
-     * 常被 hero 按钮或别的行的卡比下去. 行首再按左出页面 (侧边栏, 只认新按下的那一下); 行尾按右吞掉.
+     * 常被 hero 按钮或别的行的卡比下去. 行首再按左出页面 (侧边栏; 按住的连发也出去, 同搜索页的网格), 焦点真落到行首那张之后才出;
+     * 行尾按右吞掉.
      */
-    private fun navigateHorizontal(rowKey: String, direction: Int, firstPress: Boolean) {
+    private fun navigateHorizontal(rowKey: String, direction: Int) {
         // 连按时上一下还没落地 (目标卡还没排出来): 从它接着算
         val pending = pendingRow?.takeIf { pendingIndex >= 0 }
         val fromKey = pending ?: rowKey
@@ -814,7 +815,8 @@ class TvNativeExploreView(
         val row = (if (item >= 0) list.rowAt(item) else null) ?: return
         val target = from + direction
         if (target < 0) {
-            if (firstPress && pending == null) exitLeft()
+            // 上一下还没落地 (焦点还在往行首赶): 这一下不出页面
+            if (pending == null) exitLeft()
             return
         }
         if (target >= row.cards.itemCount) return
