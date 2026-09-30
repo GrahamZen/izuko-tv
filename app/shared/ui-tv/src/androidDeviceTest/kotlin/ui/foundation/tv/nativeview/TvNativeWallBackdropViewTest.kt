@@ -28,8 +28,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 海报墙底下的整屏背景 ([TvNativeWallBackdropView]): 模糊层解成小图并模糊, 换图时新图叠在旧图上淡入、满了撤掉旧图; 清晰层要解了才有、按对焦
- * 程度显示, 满了盖住模糊层; 清晰图解好就登记放大转场的整屏框, 换条目撤掉. 图是测试写进缓存目录的 PNG (左右两色, 看得出模糊).
+ * 海报墙底下的整屏背景 ([TvNativeWallBackdropView]): 模糊层解成小图并模糊, 按图的亮度压暗 (亮图压得深), 换图时新图叠在旧图上淡入、满了撤掉
+ * 旧图; 清晰层要解了才有、按对焦程度显示, 满了盖住模糊层; 清晰图解好就登记放大转场的整屏框, 换条目撤掉. 图是测试写进缓存目录的 PNG
+ * (左右两色, 看得出模糊).
  */
 class TvNativeWallBackdropViewTest {
     private val host = TvNativeTestHost()
@@ -69,9 +70,21 @@ class TvNativeWallBackdropViewTest {
             bitmap.width to bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
         }
         assertTrue(width <= TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX * 2, "解的是小图 (宽 $width)")
-        // 左白右黑的分界处糊成灰 (再压一层 25% 黑)
+        // 左白右黑的分界处糊成灰 (再按亮度压一层黑)
         val gray = Color.red(edge)
         assertTrue(gray in 40..215, "分界处应被模糊成灰, 实际 $gray")
+    }
+
+    @Test
+    fun `a bright image is masked deeper than a dark one`() {
+        host.onMain { backdrop.show(TvNativeWallBackdropTarget(host.testImage("dark", left = Color.rgb(30, 30, 30), right = Color.BLACK), subjectId = 1, sharp = false)) }
+        host.waitUntil("暗图淡满") { blurred().singleOrNull()?.alpha == 1f }
+        // 暗图上白字本来就看得清: 照起步那一份压 (25%)
+        assertEquals(0x40, host.onMain { backdrop.topMaskAlpha })
+        host.onMain { backdrop.show(TvNativeWallBackdropTarget(host.testImage("bright", left = Color.WHITE, right = Color.WHITE), subjectId = 2, sharp = false)) }
+        host.waitUntil("亮图淡满") { blurred().singleOrNull()?.alpha == 1f && backdrop.topMaskAlpha != 0x40 }
+        val bright = host.onMain { backdrop.topMaskAlpha }
+        assertTrue(bright > 0x40 && bright <= (TV_WALL_BACKDROP_MASK_ALPHA_MAX * 255).toInt() + 1, "亮图应压得更深, 实际 $bright")
     }
 
     @Test

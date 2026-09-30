@@ -151,11 +151,13 @@ private val TvNativeGridPageStateSaver = Saver<TvNativeGridPageState, ArrayList<
 
 /**
  * 网格页海报墙底下的整屏背景 (新番时间表, 见 TvNativeWallBackdropView 与 TvNativeGridPageView 的对焦一节): [target] = 此刻该铺哪张
- * (页面按停稳后的聚焦条目算; 在协程里读, 读到的快照状态变了就换), [maskColor] = 烘进模糊图里的整屏压暗 (页面底色 + 透明度).
+ * (页面按停稳后的聚焦条目算; 在协程里读, 读到的快照状态变了就换), [maskColor] = 整屏压暗 (页面底色 + 起步的透明度), [textColor] =
+ * 压在背景上的主要文字 (卡片番名) 的颜色: 每张图按自己的亮度在起步那份上加深, 保证这个颜色的字看得清.
  */
 class TvNativeWallBackdropSpec(
     val target: () -> TvNativeWallBackdropTarget?,
     val maskColor: Color,
+    val textColor: Color,
 )
 
 /** 原生网格的事件, 由页面给 (焦点簿记、hero、导航). [T] = 列表项. */
@@ -208,7 +210,7 @@ fun <T : Any> TvNativeGridPageHost(
         onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
         heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
         wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
-        cardHeight = null, emptyContent,
+        cardHeight = null, labelVibrancy = false, emptyContent,
     )
 }
 
@@ -217,7 +219,8 @@ fun <T : Any> TvNativeGridPageHost(
  * 前 [focusableCount] 张 (占位期间给 0: 占位卡不收落点, 等真数据). [heroEnabled] = false 时没有 hero 态: 卡片墙上按确定直接进详情页
  * ([TvNativeGridPageCallbacks.onCardClick]). [badge] 给了就按卡片的 [TvNativeCard.badge] 在封面右上角画角标.
  * [topBarScrollAwayPx] > 0 时逐帧报告网格内容往上滚了多少 ([TvNativeGridPageState.contentScroll], 夹在 0..它), 页面让顶栏跟着一起滚走.
- * [columnSpacing] = 卡格之间的距离, [cardHeight] = 卡格高 (null = 按卡宽与封面比例算), 见 [rememberTvNativeWallStyle]. 其余同分页那一版.
+ * [columnSpacing] = 卡格之间的距离, [cardHeight] = 卡格高 (null = 按卡宽与封面比例算), [labelVibrancy] = 番名照 tvOS 的 vibrancy 画
+ * (压在模糊背景上时), 见 [rememberTvNativeWallStyle]. 其余同分页那一版.
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -244,6 +247,7 @@ fun <T : Any> TvNativeGridPageHost(
     topBarScrollAwayPx: Int = 0,
     columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
     cardHeight: Dp? = null,
+    labelVibrancy: Boolean = false,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -253,7 +257,7 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = focusableCount,
         onBind = {},
         heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, emptyContent,
+        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, labelVibrancy, emptyContent,
     )
 }
 
@@ -285,13 +289,14 @@ private fun <T : Any> TvNativeGridPageHostContent(
     topBarScrollAwayPx: Int,
     columnSpacing: Dp,
     cardHeight: Dp?,
+    labelVibrancy: Boolean,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
     val visualEffects = LocalThemeSettings.current.visualEffects
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
@@ -398,7 +403,10 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 view.fadeColor = fadeColor.toArgb()
                 view.treatment = treatment
                 view.wallBackdrop?.let { wb ->
-                    wallBackdrop?.let { wb.maskColor = it.maskColor.toArgb() }
+                    wallBackdrop?.let {
+                        wb.maskColor = it.maskColor.toArgb()
+                        wb.textColor = it.textColor.toArgb()
+                    }
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

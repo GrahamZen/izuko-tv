@@ -160,6 +160,11 @@ data class TvNativeWallStyle(
     val prefetchItems: Int,
     /** 封面右上角的角标 (卡片的 [TvNativeCard.badge]); null = 这一组卡不画. */
     val badge: TvNativeCardBadgeStyle? = null,
+    /**
+     * 番名与副标题照 tvOS 的 vibrancy 画: 字色 (乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在模糊背景上时中等亮度的底上
+     * 也清楚 (Apple TV App 的次要文字就是白 50% 加法混合). 只用于浅色字 (深色主题); 深色字照常画.
+     */
+    val labelVibrancy: Boolean = false,
 ) {
     val coverWidthPx: Int get() = cardWidthPx - gapPx * 2
     val coverHeightPx: Int get() = cardHeightPx - gapPx * 2
@@ -185,7 +190,7 @@ data class TvNativeCardBadgeStyle(
  * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙): 探索 / 追番 / 搜索页是 tvPosterWallCardWidth 按内容区算的,
  * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
  * [columnSpacing] = 卡格之间的距离 (不含卡格里的聚焦框空隙). [cardHeight] = 卡格高 (含聚焦框空隙); null = 按卡宽与封面比例
- * [TV_PORTRAIT_CARD_COVER_RATIO] 算.
+ * [TV_PORTRAIT_CARD_COVER_RATIO] 算. [labelVibrancy] 见 [TvNativeWallStyle.labelVibrancy] (浅色主题下不生效).
  */
 @Composable
 fun rememberTvNativeWallStyle(
@@ -194,6 +199,7 @@ fun rememberTvNativeWallStyle(
     badge: TvNativeCardBadgeStyle? = null,
     columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
     cardHeight: Dp? = null,
+    labelVibrancy: Boolean = false,
 ): TvNativeWallStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
@@ -204,7 +210,7 @@ fun rememberTvNativeWallStyle(
     val subtitleColor = tvHeroSecondaryContentColor()
     val titleStyle = tvPosterWallTitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
-    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight) {
+    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
         with(density) {
             val cardWidthPx = cardWidth.roundToPx()
             val cardHeightPx = (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx()
@@ -247,6 +253,7 @@ fun rememberTvNativeWallStyle(
                 marquee = visualEffects.marquee,
                 prefetchItems = columns + 1,
                 badge = badge,
+                labelVibrancy = labelVibrancy && !light,
             )
         }
     }

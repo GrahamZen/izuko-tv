@@ -136,6 +136,7 @@ import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
+import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
@@ -623,8 +624,10 @@ fun TvScheduleGridPage(
         )
     }
     val background = tvPosterWallBackground()
-    val wallBackdrop = remember(background) {
-        TvNativeWallBackdropSpec(backdropTarget, maskColor = background.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA))
+    // 番名的颜色 (同海报墙卡片): 背景按它压到看得清
+    val titleColor = tvHeroContentColor()
+    val wallBackdrop = remember(background, titleColor) {
+        TvNativeWallBackdropSpec(backdropTarget, maskColor = background.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA), textColor = titleColor)
     }
 
     Box(
@@ -695,6 +698,8 @@ fun TvScheduleGridPage(
             topBarScrollAwayPx = metrics.gridTopPx,
             columnSpacing = TV_POSTER_WALL_COLUMN_SPACING - TvFocusRing.Gap * 2,
             cardHeight = cardHeight,
+            // 番名压在整屏模糊背景上: 照 tvOS 的 vibrancy 画
+            labelVibrancy = true,
         ) {
             // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
             if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {

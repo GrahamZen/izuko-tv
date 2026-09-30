@@ -149,10 +149,10 @@ object TvNativeImages {
 
     /**
      * 整屏背景图的模糊版 (新番时间表的海报墙底下, 同 tvOS 的模糊底): 按图层框 [widthPx] × [heightPx] 的比例只解长边 [longEdgePx] 的小图
-     * (TMDB w1280 正好 1/8 采样), 在 Sketch 的解码线程上模糊 ([blurRadiusPx], 按小图的像素算) 并把整屏压暗 [maskColor] (带透明度) 烘进图里;
-     * 放大交给 GPU 双线性 —— 模糊后的图没有细节, 拉到整屏看不出是小图, 平时每帧也只多画这一张小贴图, 不再另盖一层压暗.
+     * (TMDB w1280 正好 1/8 采样), 在 Sketch 的解码线程上模糊 ([blurRadiusPx], 按小图的像素算); 放大交给 GPU 双线性 —— 模糊后的图没有细节,
+     * 拉到整屏看不出是小图, 平时每帧也只多画这一张小贴图. 不压暗: 压多深按图的亮度定, 由调用方量了这张小图再用颜色滤镜压.
      * Bangumi 竖版封面 (没有横版图的条目) 换成与海报墙卡片同一档缩略图 ([coverWidthPx] × [coverHeightPx] = 卡片的封面框, 下载缓存命中).
-     * 不淡入 (换图的交叉淡入由调用方做); [onResult] 在主线程回调 (true = 已上屏).
+     * 不淡入 (换图的交叉淡入由调用方做); [onResult] 在主线程回调: 已上屏的那张模糊小图, 解不出来时 null.
      */
     fun loadBlurredBackdrop(
         sketch: Sketch,
@@ -162,10 +162,9 @@ object TvNativeImages {
         heightPx: Int,
         longEdgePx: Int,
         blurRadiusPx: Int,
-        maskColor: Int,
         coverWidthPx: Int,
         coverHeightPx: Int,
-        onResult: (Boolean) -> Unit,
+        onResult: (Bitmap?) -> Unit,
     ) {
         val coverRequestWidth = IntSize(coverWidthPx, coverHeightPx).toAniImageRequestSize().width
         val model = bangumiCoverThumbnailUrl(url, coverRequestWidth) ?: url
@@ -176,10 +175,10 @@ object TvNativeImages {
                 requestSize = IntSize(widthPx, heightPx).toAniImageRequestSize(),
                 downsampleLongEdgePx = longEdgePx,
             )
-            transformations(BlurTransformation(radius = blurRadiusPx, maskColor = maskColor))
+            transformations(BlurTransformation(radius = blurRadiusPx))
             crossfade(false)
             allowNullImage(true)
-            addListener(onError = { _, _ -> onResult(false) }, onSuccess = { _, _ -> onResult(true) })
+            addListener(onError = { _, _ -> onResult(null) }, onSuccess = { _, result -> onResult(result.image.asBitmapOrNull()) })
         }
         sketch.enqueue(request)
     }

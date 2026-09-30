@@ -12,11 +12,8 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -46,8 +43,6 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.subject.person.PeopleRowItem
 import me.him188.ani.app.ui.subject.person.PosterRowItem
 import me.him188.ani.app.ui.subject.person.TvPeoplePreviewRows
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -149,7 +144,7 @@ class TvPeoplePreviewRowsClipTest {
         // 滚动停下之后再画一两帧
         SystemClock.sleep(200)
         host.instrumentation.waitForIdleSync()
-        val shot = windowShot()
+        val shot = host.windowShot()
         for (row in rows()) {
             val rect = host.onMain { windowRect(row) }
             for ((i, side) in sides.withIndex()) {
@@ -159,19 +154,6 @@ class TvPeoplePreviewRowsClipTest {
                 assertSolid(shot, region, "${row.javaClass.simpleName} ${if (i == 0) "左" else "右"}边的栏")
             }
         }
-    }
-
-    /** 本窗口此刻画出来的样子 (只截这个窗口: 整包跑时别的测试留下的窗口、提示不混进来). 在测试线程上调. */
-    private fun windowShot(): Bitmap {
-        val window = host.activity.window
-        val decor = host.onMain { window.decorView.let { it.width to it.height } }
-        val bitmap = Bitmap.createBitmap(decor.first, decor.second, Bitmap.Config.ARGB_8888)
-        val done = CountDownLatch(1)
-        var result = PixelCopy.ERROR_UNKNOWN
-        PixelCopy.request(window, bitmap, { result = it; done.countDown() }, Handler(Looper.getMainLooper()))
-        assertTrue(done.await(5, TimeUnit.SECONDS), "截窗口超时")
-        assertEquals(PixelCopy.SUCCESS, result, "截窗口失败")
-        return bitmap
     }
 
     /** [region] 里全是两旁的栏的纯色 (隔一个点取一个). */

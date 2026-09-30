@@ -11,14 +11,20 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.app.Instrumentation
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.PixelCopy
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.panpf.sketch.Sketch
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.fail
 
 /**
@@ -82,6 +88,22 @@ internal class TvNativeTestHost {
         val now = SystemClock.uptimeMillis()
         instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
         instrumentation.waitForIdleSync()
+    }
+
+    /**
+     * 本窗口此刻画出来的样子 (PixelCopy 只截这个窗口: 整包跑时别的测试留下的窗口、提示不混进来; 截整屏的 uiAutomation.takeScreenshot
+     * 会混进去). 坐标是窗口坐标. 在测试线程上调.
+     */
+    fun windowShot(): Bitmap {
+        val window = activity.window
+        val size = onMain { window.decorView.let { it.width to it.height } }
+        val bitmap = Bitmap.createBitmap(size.first, size.second, Bitmap.Config.ARGB_8888)
+        val done = CountDownLatch(1)
+        var result = PixelCopy.ERROR_UNKNOWN
+        PixelCopy.request(window, bitmap, { result = it; done.countDown() }, Handler(Looper.getMainLooper()))
+        if (!done.await(5, TimeUnit.SECONDS)) fail("截窗口超时")
+        if (result != PixelCopy.SUCCESS) fail("截窗口失败: $result")
+        return bitmap
     }
 
     /** 在主线程上反复看 [condition], [timeoutMillis] 内不成立就失败. */

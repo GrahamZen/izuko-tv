@@ -19,6 +19,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.os.Build
 import android.view.Choreographer
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -57,9 +58,9 @@ data class TvNativeWallBackdropTarget(
 /**
  * 海报墙底下的整屏背景 (新番时间表): 平时铺聚焦那部背景图的**模糊版** (同 tvOS 的模糊底), 对焦时 ([sharpness]) 叠上清晰原图.
  *
- * 模糊层: 同一个地址只解长边 [TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX] 的小图, 解码线程上模糊并烘进整屏压暗 ([maskColor]), 拉伸铺满
- * (见 TvNativeImages.loadBlurredBackdrop). 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的
- * 常驻 GPU 开销之一. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
+ * 模糊层: 同一个地址只解长边 [TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX] 的小图, 解码线程上模糊, 拉伸铺满 (见 TvNativeImages.loadBlurredBackdrop).
+ * 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的常驻 GPU 开销之一. 整屏压暗 ([maskColor])
+ * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha), 用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
  * 下面的; 新图没解好之前旧图一直在. 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
  *
  * 清晰层: 同一张图按原尺寸解 (TMDB w1280, 与详情页同一个内存缓存键), 叠在模糊层上, 透明度 = [sharpness] (解好之前恒 0; 透明度 0 的层
@@ -100,14 +101,23 @@ class TvNativeWallBackdropView(
     /** Compose 根视图: 放大转场的框按它的坐标登记 (null = 按窗口坐标). */
     var composeRoot: View? = null
 
-    /** 烘进模糊图里的整屏压暗 (页面底色 + 透明度); 清晰层起步时也压这一份 (见 [applySharpMask]). 换了 (换主题) 重解. */
+    /**
+     * 整屏压暗 (页面底色 + 起步的透明度): 每张模糊图按自己的亮度在这份透明度上往深里加 (见 tvBackdropMaskAlpha); 清晰层起步时也压
+     * 同一份 (见 [applySharpMask]).
+     */
     var maskColor: Int = Color.TRANSPARENT
         set(value) {
             if (field == value) return
             field = value
-            reloadBlurred()
-            sharpMaskAlpha = -1
-            applySharpMask()
+            refreshMasks()
+        }
+
+    /** 压在背景上的主要文字 (卡片番名) 的颜色: 压暗按它与背景的对比度加深. */
+    var textColor: Int = Color.WHITE
+        set(value) {
+            if (field == value) return
+            field = value
+            refreshMasks()
         }
 
     /** 卡片的封面框: 竖版封面的模糊版取同一档缩略图 (下载缓存命中). */
@@ -195,11 +205,19 @@ class TvNativeWallBackdropView(
         for (s in slots.subList(0, i).toList()) removeSlot(s)
     }
 
-    /** 压暗色换了 (换主题): 已解的模糊图作废, 当前目标重解后直接出现. */
-    private fun reloadBlurred() {
-        for (s in slots.toList()) removeSlot(s)
-        target?.let { addSlot(it, direct = true) }
+    /** 压暗色 / 文字色换了 (换主题): 各张按量好的亮度重算压暗, 不重解. */
+    private fun refreshMasks() {
+        for (s in slots) s.applyMask()
+        sharpMaskAlpha = -1
+        applySharpMask()
     }
+
+    /** 最上面那张模糊图压着的透明度 (0..255), 还没解好是 -1 (测试看压暗的深浅). */
+    internal val topMaskAlpha: Int get() = slots.lastOrNull()?.maskAlpha ?: -1
+
+    /** 此刻清晰层对应的那张模糊图压着的透明度 (0..255); 它还没解好就按起步那一份. */
+    private fun currentMaskAlpha(): Int =
+        slots.lastOrNull { it.target.url == target?.url && it.maskAlpha >= 0 }?.maskAlpha ?: (maskColor ushr 24)
 
     /** 模糊层的一张. [direct] = 解好直接出现, 不淡入. */
     private inner class BlurSlot(val target: TvNativeWallBackdropTarget, private val direct: Boolean) {
@@ -214,6 +232,36 @@ class TvNativeWallBackdropView(
         private var animator: ValueAnimator? = null
         private var job: Job? = null
 
+        /** 这张图上浅色字 / 深色字最难看清那一处的亮度 (解好时量, 见 tvBackdropWorstLuminance); NaN = 还没量. */
+        private var worstForLightText = Float.NaN
+        private var worstForDarkText = Float.NaN
+
+        /** 此刻压着的透明度 (0..255), -1 = 还没解好. */
+        var maskAlpha = -1
+            private set
+
+        /** 按量好的亮度与此刻的压暗色 / 文字色算压多深, 设成颜色滤镜. */
+        fun applyMask() {
+            if (worstForLightText.isNaN()) return
+            val textLuminance = tvRelativeLuminance(textColor)
+            val maskLuminance = tvRelativeLuminance(maskColor)
+            val worst = if (textLuminance >= maskLuminance) worstForLightText else worstForDarkText
+            val alpha = (tvBackdropMaskAlpha(worst, maskLuminance, textLuminance, base = (maskColor ushr 24) / 255f) * 255f).roundToInt()
+            if (alpha == maskAlpha) return
+            maskAlpha = alpha
+            image.colorFilter = if (alpha <= 0) null else PorterDuffColorFilter((maskColor and 0xFFFFFF) or (alpha shl 24), PorterDuff.Mode.SRC_ATOP)
+        }
+
+        private fun measure(bitmap: Bitmap) {
+            // 硬件位图读不了像素 (模糊变换出来的是普通位图, 这里只是保险)
+            val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE
+            val source = if (hardware) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+            val pixels = IntArray(source.width * source.height)
+            source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
+            worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true)
+            worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false)
+        }
+
         fun load() {
             job = scope.launch {
                 awaitSize()
@@ -222,20 +270,24 @@ class TvNativeWallBackdropView(
                     sketch, image, target.url, width, height,
                     longEdgePx = TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX,
                     blurRadiusPx = TV_WALL_BACKDROP_BLUR_RADIUS_PX,
-                    maskColor = maskColor,
                     coverWidthPx = coverWidthPx,
                     coverHeightPx = coverHeightPx,
-                ) { ok -> if (ok) onLoaded() else onFailed() }
+                ) { bitmap -> if (bitmap != null) onLoaded(bitmap) else onFailed() }
             }
         }
 
-        private fun onLoaded() {
+        private fun onLoaded(bitmap: Bitmap) {
             if (this !in slots || shown) return
             // 上面已经有更新的一张在等: 这张不必再露面
             if (slots.last() !== this) {
                 removeSlot(this)
                 return
             }
+            // 先压好再露面 (淡入从透明度 0 起, 没压过的图不会闪一下); 清晰层起步压的那份跟着这张走
+            measure(bitmap)
+            applyMask()
+            sharpMaskAlpha = -1
+            applySharpMask()
             shown = true
             fadeTo(1f, animated = crossfade && !direct) { removeBelow(this) }
         }
@@ -339,11 +391,11 @@ class TvNativeWallBackdropView(
     private var sharpMaskAlpha = -1
 
     /**
-     * 清晰层起步时与模糊层一样暗 (同一份压暗, [maskColor]), 随对焦程度提亮, 满了不压: 叠上去的一刻亮度不跳, 看着是对焦而不是换了张亮图.
-     * 压暗用颜色滤镜画在同一次绘制里 (不另开一层); 对焦满了撤掉滤镜.
+     * 清晰层起步时与模糊层一样暗 (同一份压暗, 按这张图算过的深浅, 见 [currentMaskAlpha]), 随对焦程度提亮, 满了不压: 叠上去的一刻亮度不跳,
+     * 看着是对焦而不是换了张亮图. 压暗用颜色滤镜画在同一次绘制里 (不另开一层); 对焦满了撤掉滤镜.
      */
     private fun applySharpMask() {
-        val alpha = ((maskColor ushr 24) * (1f - sharpness.coerceIn(0f, 1f))).roundToInt()
+        val alpha = (currentMaskAlpha() * (1f - sharpness.coerceIn(0f, 1f))).roundToInt()
         if (alpha == sharpMaskAlpha) return
         sharpMaskAlpha = alpha
         sharpImage.colorFilter = if (alpha <= 0) {
