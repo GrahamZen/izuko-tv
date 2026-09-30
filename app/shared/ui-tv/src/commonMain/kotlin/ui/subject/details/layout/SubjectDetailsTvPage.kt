@@ -238,7 +238,6 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
@@ -385,22 +384,24 @@ fun SubjectDetailsTvLoadingPlaceholder(
                 // 与 TvHeroBlock 的标题列逐项对齐 (top 8dp / headlineLarge / 同一套字色与阴影 (见 rememberTvDetailsHeroTextStyle) /
                 // 两行截断), 真布局到达时标题不位移
                 val heroText = rememberTvDetailsHeroTextStyle()
+                // 没有背景图时字压在页面底色上, 用页面的字色
+                val onImage = heroBackdropUrl != null
                 Column(
                     Modifier.padding(top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
+                    TvHeroTransitionTitle(
                         subjectInfo?.displayName ?: navTitle.orEmpty(),
-                        Modifier.tvHeroZoomTitleShift(zoomSession),
-                        style = MaterialTheme.typography.headlineLarge.copy(shadow = heroText.shadow),
-                        color = heroText.title,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        color = if (onImage) heroText.title else MaterialTheme.colorScheme.onSurface,
+                        shadow = if (onImage) heroText.shadow else null,
+                        listColor = heroText.listTitle.takeIf { onImage && zoomSession?.titleBounds != null },
+                        detailsLook = { tvHeroZoomTitleLook(zoomSession) },
+                        modifier = Modifier.tvHeroZoomTitleShift(zoomSession),
                     )
                     if (slowLoad && !underZoom) {
                         CircularProgressIndicator(
                             Modifier.padding(top = 16.dp).size(28.dp),
-                            color = heroText.title,
+                            color = if (onImage) heroText.title else MaterialTheme.colorScheme.onSurface,
                             strokeWidth = 3.dp,
                         )
                         if (loadAttempt.isRetrying) {
@@ -410,8 +411,8 @@ fun SubjectDetailsTvLoadingPlaceholder(
                                     loadAttempt.attempt,
                                     loadAttempt.maxAttempts,
                                 ),
-                                style = MaterialTheme.typography.titleMedium.copy(shadow = heroText.shadow),
-                                color = heroText.note,
+                                style = MaterialTheme.typography.titleMedium.copy(shadow = if (onImage) heroText.shadow else null),
+                                color = if (onImage) heroText.note else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -1259,6 +1260,7 @@ fun SubjectDetailsTvPage(
                 horizontalPadding = pad,
                 // 放大转场 (见 zoomFrom): 标题从列表页的位置平移过来, 其余到位后一次性出现
                 titleModifier = Modifier.tvHeroZoomTitleShift(zoomSession),
+                titleSession = zoomSession,
                 bodyComposed = revealed || bodyEarly,
                 // lambda: 在三处 graphicsLayer 里读, uiEarly 翻转那一帧只改层属性, 不重组整个 hero 块
                 bodyHidden = { underZoom && !uiEarly },
@@ -1840,8 +1842,8 @@ private fun TvDetailsSideRail(
  * 详情页 backdrop 那套遮罩的声明: 左侧可读性 scrim + 下缘渐隐. 列表页那份见 `tvPageBackdropTreatment`,
  * 放大转场画的是两者的插值 (见 [TvBackdropTreatment]).
  *
- * 左侧的 scrim 只有深色主题有 (托住白字); 浅色主题的标题是黑字, 靠字自己的白色光晕托住 (见 [rememberTvDetailsHeroTextStyle]), 图左不压 ——
- * 压一层黑的话, 从浅灰底的列表页放大进来左边会由浅变深.
+ * 左侧的 scrim 只有深色主题有; 浅色主题图左不压 —— 压一层黑的话, 从浅灰底的列表页放大进来左边会由浅变深. 白色标题靠字自己的黑影托住
+ * (见 [rememberTvDetailsHeroTextStyle]).
  *
  * 下缘的起点压后 + 底缘留一成不擦: 原来从 0.62 起擦、0.98 擦光, 屏幕下四成完全没有图, 选集卡片那一带整片发黑
  * (常被当成"多压了一层黑遮罩", 其实是图被擦没了).
@@ -1864,9 +1866,9 @@ private fun tvHeroBackdropTreatment(
 )
 
 /**
- * 详情页首屏压在背景图上的字 (大标题 / 副标题 / 加载占位的转圈与提示): 深色白字 + 柔和黑影 (图左另压一层黑, 见 [tvHeroBackdropTreatment]);
- * 浅色与列表页 hero 同色 —— 黑字、次要字黑 60%, 阴影换成一圈淡白光晕托住字 (图左不压). 放大进来标题不换色; 缩回那一层画的标题用同一个阴影,
- * 起步那一帧对得上.
+ * 详情页首屏压在背景图上的字 (大标题 / 副标题 / 加载占位的转圈与提示): 白字 + 柔和黑影, 深浅色主题一样 (深色图左另压一层黑, 浅色不压,
+ * 见 [tvHeroBackdropTreatment]). 浅色主题下列表页 hero 的标题是黑字 ([listTitle]): 放大进来时标题一边平移一边由黑字淡成白字, 缩回时
+ * 反过来 (见 [TvHeroTransitionTitle]). 缩回那一层画的标题用同一个阴影, 起步那一帧对得上.
  */
 private class TvDetailsHeroTextStyle(
     val title: Color,
@@ -1874,33 +1876,87 @@ private class TvDetailsHeroTextStyle(
     /** 加载占位里"网络慢, 第几次尝试"那一行. */
     val note: Color,
     val shadow: Shadow,
+    /** 列表页 hero 标题的颜色 (不带阴影), 与本页的标题差得多时才有 (浅色主题的黑字); null = 转场途中不换 (深色). */
+    val listTitle: Color?,
 )
 
 @Composable
 private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     val density = LocalDensity.current
-    val title = tvHeroContentColor()
-    val secondary = tvHeroSecondaryContentColor()
-    return remember(light, density, title, secondary) {
+    val listTitle = tvHeroContentColor()
+    return remember(light, density, listTitle) {
         with(density) {
-            if (light) {
-                TvDetailsHeroTextStyle(
-                    title = title,
-                    subtitle = secondary,
-                    note = secondary,
-                    shadow = Shadow(color = Color.White.copy(alpha = 0.6f), offset = Offset.Zero, blurRadius = 6.dp.toPx()),
-                )
-            } else {
-                TvDetailsHeroTextStyle(
-                    title = Color.White,
-                    subtitle = Color.White.copy(alpha = 0.78f),
-                    note = Color.White.copy(alpha = 0.85f),
-                    shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1.dp.toPx()), blurRadius = 6.dp.toPx()),
-                )
-            }
+            TvDetailsHeroTextStyle(
+                title = Color.White,
+                subtitle = Color.White.copy(alpha = 0.78f),
+                note = Color.White.copy(alpha = 0.85f),
+                shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1.dp.toPx()), blurRadius = 6.dp.toPx()),
+                listTitle = if (light) listTitle else null,
+            )
         }
     }
+}
+
+/**
+ * 放大 / 缩回途中的大标题. [listColor] 非 null 时 (浅色主题: 列表页 hero 是黑字) 叠两份 —— 列表页的样子 ([listColor], 不带阴影) 与本页的
+ * 样子 ([color] + [shadow]), 按 [detailsLook] (0 = 列表页那份, 1 = 本页那份, 绘制里读) 交叉淡化, 标题一边平移一边由黑变白. 两份同一套排字
+ * (详情页的字号), 位置与缩放都在外面的 [modifier] 上. [listColor] 为 null 时就是一个 Text.
+ */
+@Composable
+private fun TvHeroTransitionTitle(
+    text: String,
+    color: Color,
+    shadow: Shadow?,
+    listColor: Color?,
+    detailsLook: () -> Float,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 2,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+) {
+    val style = MaterialTheme.typography.headlineLarge
+    if (listColor == null) {
+        Text(text, modifier, style = style.copy(shadow = shadow), color = color, maxLines = maxLines, overflow = overflow)
+        return
+    }
+    Box(modifier) {
+        // 逐绘制指令乘透明度, 不开离屏层: 字与自己的阴影叠着的那一点点透出来看不出
+        Text(
+            text,
+            Modifier.graphicsLayer {
+                alpha = 1f - detailsLook()
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
+            style = style,
+            color = listColor,
+            maxLines = maxLines,
+            overflow = overflow,
+        )
+        Text(
+            text,
+            Modifier.graphicsLayer {
+                alpha = detailsLook()
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
+            style = style.copy(shadow = shadow),
+            color = color,
+            maxLines = maxLines,
+            overflow = overflow,
+        )
+    }
+}
+
+/** 放大途中标题像本页的程度 (见 [TvHeroTransitionTitle]): 按平移的进度 (见 tvHeroZoomTitleShift) 走 [tvHeroTitleLookCurve]; 没有会话 / 到位 = 1. 绘制里读. */
+private fun tvHeroZoomTitleLook(session: TvHeroZoomHandoff.Session?): Float =
+    if (session == null) 1f else tvHeroTitleLookCurve(session.t)
+
+/**
+ * 转场几何进度 [t] (0 = 列表页 hero, 1 = 详情页, 放大 / 缩回同一套) 下标题像本页的程度: 后半段才换 (smoothstep 0.5 → 1). 前半段背景图还没铺到
+ * 标题底下, 标题压在列表页的浅底上, 早早变白 (连同黑影) 就是一团灰; 图盖过来的那一段再由黑转白, 缩回时一离开图就转回黑.
+ */
+private fun tvHeroTitleLookCurve(t: Float): Float {
+    val x = ((t - 0.5f) / 0.5f).coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
 }
 
 /**
@@ -3608,9 +3664,18 @@ fun TvHeroShrinkLayer() {
             // 上一帧的位置: 位置算不出来时**绝不退回 (0,0)** —— 那会让标题当场跳到屏幕左上角,
             // 比短暂消失还显眼。spec 与 position 现在同出会话快照, 正常不会走到这里
             var lastPos by remember { mutableStateOf<Offset?>(null) }
-            Text(
+            // 浅色主题: 从详情页的白字 + 黑影淡回列表页的黑字, 按缩回的几何进度走 (见 tvHeroTitleLookCurve); 深色照旧一份
+            val light = heroText.listTitle != null
+            TvHeroTransitionTitle(
                 spec.text,
-                Modifier
+                color = if (light) heroText.title else tvHeroContentColor(),
+                shadow = heroText.shadow,
+                listColor = heroText.listTitle,
+                detailsLook = {
+                    val s = TvHeroZoomHandoff.shrink
+                    if (s == null) 1f else tvHeroTitleLookCurve(s.t / s.fromT.coerceAtLeast(1e-3f))
+                },
+                modifier = Modifier
                     // 位置在 lambda 里读: 每帧只重新布局, 不触发重组
                     .offset {
                         val p = TvHeroZoomHandoff.shrinkTitlePosition()?.also { lastPos = it }
@@ -3620,8 +3685,6 @@ fun TvHeroShrinkLayer() {
                     }
                     // **定宽照抄源标题**: 折行位置由宽度决定, 差一点两行标题的断行就不同, 落位那帧会跳
                     .width(with(density) { spec.widthPx.toDp() }),
-                color = tvHeroContentColor(),
-                style = MaterialTheme.typography.headlineLarge.copy(shadow = heroText.shadow),
                 maxLines = spec.maxLines,
                 overflow = if (spec.clipOverflow) TextOverflow.Clip else TextOverflow.Ellipsis,
             )
@@ -4652,6 +4715,8 @@ private fun TvHeroBlock(
     displaySummary: String = info.summary,
     /** 作用于大标题本体: 放大转场时从列表页的位置平移过来 (见 tvHeroZoomTitleShift). */
     titleModifier: Modifier = Modifier,
+    /** 放大转场的会话 (与 [titleModifier] 同一个): 浅色主题下标题途中由列表页的黑字淡成白字 (见 [TvHeroTransitionTitle]). */
+    titleSession: TvHeroZoomHandoff.Session? = null,
     /**
      * 标题之外的东西 (副标题 / 信息带整条: 圆钮、播放按钮、标签墙、评分) 要不要组合: 放大转场到位前 false —— 标题
      * 要第一帧就在 (从列表页的位置平移过来), 其余全部延后, 首帧只有一个 Text. 块高由外层钉死 (heroHeight), 标题
@@ -4671,16 +4736,16 @@ private fun TvHeroBlock(
                 Modifier.weight(1f).padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // 标题浮于背景图上, 图里与字色相近的地方会看不清: 深色加柔和黑影、浅色加淡白光晕兜底
+                // 白色标题浮于背景图上, 图亮部会看不清: 加柔和黑色阴影兜底 (深色图左另压一层黑, 见 tvHeroBackdropTreatment)
                 val heroText = rememberTvDetailsHeroTextStyle()
                 val titleShadow = if (hasBackdrop) heroText.shadow else null
-                Text(
+                TvHeroTransitionTitle(
                     info.displayName,
-                    titleModifier,
-                    style = MaterialTheme.typography.headlineLarge.copy(shadow = titleShadow),
                     color = if (hasBackdrop) heroText.title else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    shadow = titleShadow,
+                    listColor = heroText.listTitle.takeIf { hasBackdrop && titleSession?.titleBounds != null },
+                    detailsLook = { tvHeroZoomTitleLook(titleSession) },
+                    modifier = titleModifier,
                 )
                 if (bodyComposed && info.name.isNotBlank() && info.name != info.displayName) {
                     Text(
