@@ -315,7 +315,7 @@ fun TvMainScreenLayout(
         // 头像关联动作 (焦点在头像上时于其上方浮现): 按登录态切换; 本地档没有 Bangumi 账号, 不给登录 / 退出
         val localProfile = selfInfo.isLocalProfile
         val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
-        // 编辑资料 / 登录与点头像本身重复, 不占浮出按钮
+        // 编辑资料就是点头像本身 (进设置的账号页), 不占浮出按钮
         val canSwitchUser = remember { runCatching { KoinPlatform.getKoin().get<UserProfileManager>().isSupported }.getOrDefault(false) }
         val switchUserText = stringResource(Lang.tv_profile_switch)
         val avatarActions = buildList {
@@ -361,14 +361,8 @@ fun TvMainScreenLayout(
         TvNavigationSideRail(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
-            onAvatarClick = {
-                when {
-                    // 本地档没有账号页: 点头像换人 (同 Apple TV 左上角的头像)
-                    localProfile -> TvUserProfilePicker.show()
-                    loggedIn -> onNavigateToSettings(SettingsTab.PROFILE)
-                    else -> navigator.navigateBangumiAuthorize()
-                }
-            },
+            // 点头像一律进设置的账号页, 不管登没登录、是不是本地用户: 登录、切换用户这些在浮出按钮里, 不重复
+            onAvatarClick = { onNavigateToSettings(SettingsTab.PROFILE) },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)
             onExitFocus = { runCatching { contentFocus.requestFocus() } },

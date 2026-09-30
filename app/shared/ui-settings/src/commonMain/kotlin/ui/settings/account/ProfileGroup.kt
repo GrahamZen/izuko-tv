@@ -35,6 +35,7 @@ import androidx.window.core.layout.WindowSizeClass
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.widgets.HeroIcon
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isHeightAtLeastExpanded
@@ -152,7 +153,7 @@ internal fun SettingsScope.ProfileGroupImpl(
 
                 TextItem(
                     title = {
-                        SelectionContainer {
+                        SelectableText {
                             Text(
                                 currentInfo?.nickname?.takeIf { it.isNotBlank() } ?: notSetText,
                                 maxLines = 1,
@@ -184,7 +185,7 @@ internal fun SettingsScope.ProfileGroupImpl(
                 } else {
                     TextItem(
                         title = {
-                            SelectionContainer {
+                            SelectableText {
                                 Text(currentInfo?.bangumiUsername ?: notSetText)
                             }
                         },
@@ -193,7 +194,7 @@ internal fun SettingsScope.ProfileGroupImpl(
                     )
                     TextItem(
                         title = {
-                            SelectionContainer {
+                            SelectableText {
                                 Text(currentInfo?.id?.toString() ?: notSetText)
                             }
                         },
@@ -252,4 +253,13 @@ internal fun SettingsScope.ProfileGroupImpl(
             onDismissRequest = { clearDialog = null },
         )
     }
+}
+
+/**
+ * 可以选中复制的文字. 遥控器上选不了字, 不包 [SelectionContainer]: 它能接焦点却不画焦点框,
+ * 方向键会先停在这几行上 (从头像进账号页时焦点就落在第一行), 看起来像整页没有焦点.
+ */
+@Composable
+private fun SelectableText(content: @Composable () -> Unit) {
+    if (LocalAniUiBehavior.current.focusDrivenNavigation) content() else SelectionContainer { content() }
 }

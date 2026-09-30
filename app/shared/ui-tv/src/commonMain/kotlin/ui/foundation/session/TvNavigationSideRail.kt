@@ -348,7 +348,7 @@ private fun playbackSessionStatusSeverityOf(status: PlaybackSessionStatus?): TvR
 /**
  * TV 可展开左侧导航栏 (主页与详情页共用同一实现):
  * 收起态是一列图标 (头像置顶 + 若干图标条目); 焦点进入后展开为"图标 + 文字"并压一层左缘渐变遮罩,
- * 焦点离开自动收起. 头像点击做什么由 [onAvatarClick] 决定 (主页 = 编辑资料 / 登录), 旁边的文字已登录写昵称、
+ * 焦点离开自动收起. 头像点击做什么由 [onAvatarClick] 决定 (主页 = 进设置的账号页), 旁边的文字已登录写昵称、
  * 未登录写「登录」; 未登录时头像退化成设置里那个默认人物符号 (AccountCircle), 尺寸/对齐与其他图标完全一致.
  *
  * @param selfInfo 头像用户信息; 传 null 则不显示头像/用户名, 但仍保留头像槽位的等高占位,
