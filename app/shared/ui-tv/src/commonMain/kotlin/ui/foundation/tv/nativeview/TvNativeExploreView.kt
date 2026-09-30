@@ -416,6 +416,13 @@ class TvNativeExploreView(
             applyFrame()
         }
 
+    /** 焦点不在那一组时组标题的不透明度 (焦点所在那一组的标题全亮, 见 [applyHeaderEmphasis]); 1 = 都不淡. */
+    var headerIdleAlpha: Float
+        get() = list.headerIdleAlpha
+        set(value) {
+            list.headerIdleAlpha = value
+        }
+
     /** 背景图遮罩色 (hero 的底). */
     var fadeColor: Int
         get() = backdrop.fadeColor
@@ -1114,7 +1121,29 @@ class TvNativeExploreView(
     private fun setCardAreaFocus(has: Boolean) {
         if (cardAreaHasFocus == has) return
         cardAreaHasFocus = has
+        applyHeaderEmphasis()
         listener?.onCardAreaFocusChanged(has)
+    }
+
+    /**
+     * 哪一组的标题全亮 (其余淡一档, 照 tvOS 的货架标题): 跟着焦点要落 / 已落的那张卡走 —— 远跳途中与落点还挂着时是落点那一行,
+     * 没有真焦点而按住聚焦态 (进页恢复) 时是那一张所在的行, 否则焦点在卡片区时的聚焦行; 焦点在轮播按钮 / 本页以外时没有.
+     */
+    private fun applyHeaderEmphasis() {
+        val rowKey = farJumpRow ?: pendingRow ?: list.heldFocus?.first ?: focusedRowKey?.takeIf { cardAreaHasFocus }
+        list.setEmphasizedHeader(rowKey?.let { headerKeyOf(it) }, animate = transitions)
+    }
+
+    /** [rowKey] 那一行所在组的标题项 (往上最近的一个标题; 一组切成几行时后面几行也算它的). */
+    private fun headerKeyOf(rowKey: String): String? {
+        val items = list.items
+        var i = list.indexOfKey(rowKey)
+        while (i > 0) {
+            i--
+            val item = items[i]
+            if (item is TvNativeExploreItem.Header) return item.key
+        }
+        return null
     }
 
     override fun requestChildFocus(child: View?, focused: View?) {
@@ -1246,6 +1275,7 @@ class TvNativeExploreView(
         val titleOnScreen = scrolled * (1f - md) < m.heroTopPx + titleHeightPx
         heroText.setTitleMarquee(showsCard || titleOnScreen)
         heroText.publishTitle()
+        applyHeaderEmphasis()
         applyItemFades()
     }
 
@@ -1278,6 +1308,7 @@ class TvNativeExploreView(
                     child.cards.setTitleVisibility(child, 1f - p)
                 }
 
+                is TvNativeExploreHeaderView -> child.fade = a
                 else -> child.alpha = a
             }
         }
@@ -1343,7 +1374,8 @@ class TvNativeExploreView(
             !showsCard && src.autoAdvanced -> TvNativeTextTransition.Carousel
             else -> TvNativeTextTransition.Key
         }
-        heroText.setText(src.text, transition)
+        // hero 态压在模糊背景上的字照 vibrancy 画 (轮播压在清晰图上, 照常)
+        heroText.setText(src.text?.copy(vibrant = heroBlur && showsCard && dark), transition)
     }
 
     private fun applyButtons(visible: Boolean, animated: Boolean) {

@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.isSpecified
@@ -32,7 +33,6 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FOCUS_TRANSITION_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_BOTTOM_GAP
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_HEIGHT
-import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_LENGTH
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_TRACK_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_CORNER
 import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
@@ -46,15 +46,15 @@ import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_IDLE_SHADOW_OFFSET_Y
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_OUTLINE_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_OUTLINE_ALPHA_LIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_ROW_SPACING
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_SECONDARY_LABEL_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_SECONDARY_LABEL_ALPHA_LIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_SHADOW_COLOR_LIGHT
-import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_TITLE_IDLE_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_TITLE_TOP_GAP
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.focusScale
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallSubtitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallTitleStyle
 import kotlin.math.ceil
 
@@ -131,7 +131,8 @@ data class TvNativeWallStyle(
     val labelHeightPx: Int,
     val titleTopGapPx: Int,
     val title: TvNativeTextStyle,
-    val subtitleColor: Int,
+    /** 番名下面那行小字 (卡片的 [TvNativeCard.subtitle]): 字号比番名小一档, 行高相同; 颜色是卡片没另给 ([TvNativeCard.subtitleColor]) 时用的. */
+    val subtitle: TvNativeTextStyle,
     val rowSpacingPx: Int,
     val columnSpacingPx: Int,
     val focusScale: Float,
@@ -143,7 +144,11 @@ data class TvNativeWallStyle(
     val focusedElevationPx: Float,
     /** 聚焦时番名往下让开多少: 放大后海报下缘多伸出 (倍数 − 1) × 卡高 / 2. */
     val titleShiftPx: Float,
-    val titleIdleAlpha: Float,
+    /**
+     * 没聚焦时番名与下面那行小字的不透明度 (聚焦时全亮): 次要那一档 ([TV_POSTER_WALL_SECONDARY_LABEL_ALPHA]). Apple TV 的卡片标题一直全亮,
+     * 靠大幅抬起与重投影示焦; 这里的抬起轻, 番名也淡一档, 一排里聚焦的那张一眼看得出.
+     */
+    val labelIdleAlpha: Float,
     val focusMillis: Long,
     val shadowColor: Int,
     val placeholderColor: Int,
@@ -162,8 +167,8 @@ data class TvNativeWallStyle(
     /** 封面右上角的角标 (卡片的 [TvNativeCard.badge]); null = 这一组卡不画. */
     val badge: TvNativeCardBadgeStyle? = null,
     /**
-     * 番名与副标题照 tvOS 的 vibrancy 画: 字色 (乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在模糊背景上时中等亮度的底上
-     * 也清楚 (Apple TV App 的次要文字就是白 50% 加法混合). 只用于浅色字 (深色主题); 深色字照常画.
+     * 番名与副标题照 tvOS 的 vibrancy 画 (见 setTvVibrancy): 字色 (副标题乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在
+     * 模糊背景上时中等亮度的底上也清楚. 新番时间表与 hero 态铺模糊背景的探索 / 追番 / 搜索页开着. 只用于浅色字 (深色主题); 深色字照常画.
      */
     val labelVibrancy: Boolean = false,
     /** 行尾「更多」卡的玻璃外观 (见 [TvNativeMoreGlassStyle]), 按主题深浅取. */
@@ -174,8 +179,6 @@ data class TvNativeWallStyle(
 
     /** 一行卡的项高: 海报 + 番名 (不含行距). */
     val cardBlockHeightPx: Int get() = cardHeightPx + labelHeightPx
-
-    fun applyTitleText(view: TextView) = title.applyTo(view)
 }
 
 /**
@@ -212,26 +215,29 @@ fun rememberTvNativeWallStyle(
     val visualEffects = LocalThemeSettings.current.visualEffects
     val crossfade = LocalImageCrossfade.current
     val titleColor = tvHeroContentColor()
-    val subtitleColor = tvHeroSecondaryContentColor()
     val titleStyle = tvPosterWallTitleStyle()
+    val subtitleStyle = tvPosterWallSubtitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
     val cardScale = LocalTvPosterWallScale.current
-    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
+    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
         val cardWidthPx = with(density) { cardWidth.roundToPx() }
         val cardHeightPx = with(density) { (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx() }
         // 卡片自己的尺寸按海报墙大小换算 (卡宽卡高已经由调用方按它算好)
         val cardDensity = if (cardScale == 1f) density else Density(density.density * cardScale, density.fontScale)
         with(cardDensity) {
             val focusScale = TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale
+            val gapPx = TvFocusRing.Gap.roundToPx()
+            val cornerPx = TV_PORTRAIT_CARD_CORNER.toPx()
             TvNativeWallStyle(
                 cardWidthPx = cardWidthPx,
                 cardHeightPx = cardHeightPx,
-                gapPx = TvFocusRing.Gap.roundToPx(),
-                cornerPx = TV_PORTRAIT_CARD_CORNER.toPx(),
+                gapPx = gapPx,
+                cornerPx = cornerPx,
                 labelHeightPx = labelHeight.roundToPx(),
                 titleTopGapPx = TV_POSTER_WALL_TITLE_TOP_GAP.roundToPx(),
                 title = titleStyle.toTvNativeTextStyle(cardDensity, titleColor),
-                subtitleColor = subtitleColor.toArgb(),
+                // 与番名同色: 「次要」由没聚焦时的透明度表达 (见 TV_POSTER_WALL_SECONDARY_LABEL_ALPHA)
+                subtitle = subtitleStyle.toTvNativeTextStyle(cardDensity, titleColor),
                 rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
                 columnSpacingPx = columnSpacing.roundToPx(),
                 focusScale = focusScale,
@@ -245,7 +251,7 @@ fun rememberTvNativeWallStyle(
                 idleShadowBlurPx = TV_POSTER_WALL_IDLE_SHADOW_BLUR.toPx(),
                 focusedElevationPx = TV_POSTER_WALL_FOCUSED_ELEVATION.toPx(),
                 titleShiftPx = (focusScale - 1f) * cardHeightPx / 2f,
-                titleIdleAlpha = if (light) TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT else TV_POSTER_WALL_TITLE_IDLE_ALPHA,
+                labelIdleAlpha = if (light) TV_POSTER_WALL_SECONDARY_LABEL_ALPHA_LIGHT else TV_POSTER_WALL_SECONDARY_LABEL_ALPHA,
                 focusMillis = TV_CARD_FOCUS_TRANSITION_MILLIS.toLong(),
                 shadowColor = (if (light) TV_POSTER_WALL_SHADOW_COLOR_LIGHT else Color.Black).toArgb(),
                 placeholderColor = colors.surfaceContainerHigh.toArgb(),
@@ -253,9 +259,13 @@ fun rememberTvNativeWallStyle(
                     alpha = if (light) TV_POSTER_WALL_OUTLINE_ALPHA_LIGHT else TV_POSTER_WALL_OUTLINE_ALPHA,
                 ).toArgb(),
                 progressBarHeightPx = TV_CARD_PROGRESS_BAR_HEIGHT.toPx(),
-                progressBarLengthPx = TV_CARD_PROGRESS_BAR_LENGTH.toPx(),
+                // 条长按**这组卡自己的封面宽**算 (海报墙的卡宽随每排张数与「海报墙大小」变), 去掉两个圆角那一截, 两端落在圆角的切点上:
+                // 写死的 TV_CARD_PROGRESS_BAR_LENGTH 是按固定 112dp 的卡算的, 卡一宽条就显得短
+                progressBarLengthPx = cardWidthPx - gapPx * 2 - cornerPx * 2 + 2.dp.toPx(),
                 progressBarBottomGapPx = TV_CARD_PROGRESS_BAR_BOTTOM_GAP.toPx(),
                 progressTrackColor = Color.White.copy(alpha = TV_CARD_PROGRESS_TRACK_ALPHA).toArgb(),
+                // 已看那段用主题色 (用户 10-01: 白的在封面上不够显眼): 它压在封面图上, 主题色两档 (深色淡紫 / 浅色深紫) 都比白更跳.
+                // 底仍是恒定淡白, 不跟主题走
                 progressFillColor = colors.primary.toArgb(),
                 crossfade = crossfade,
                 marquee = visualEffects.marquee,

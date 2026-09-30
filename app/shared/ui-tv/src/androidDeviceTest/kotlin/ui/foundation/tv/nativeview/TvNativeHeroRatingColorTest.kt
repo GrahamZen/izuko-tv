@@ -24,6 +24,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * hero 文字块里评分数字的颜色 ([rememberTvNativeHeroTextStyle]): 与标题同为主要文字色, **不用主题色** —— 主题色是中等亮度的彩色,
@@ -61,18 +62,19 @@ class TvNativeHeroRatingColorTest {
     }
 
     @Test
-    fun `the summary is one tier dimmer than the lines above it`() {
-        // 简介是次要信息: 比标题 / 评分 / 下一集行淡一档, 几行字之间才有层次
+    fun `the summary keeps the primary color and the next-episode line is bold instead`() {
+        // 简介是整屏最长的一段字, 留在最清楚的主要色上; 与它上面的下一集行靠那一行的字重分开 (tvOS 的 Emphasized)
         val style = styleIn(dark = true)
-        assertNotEquals(style.title.color, style.summary.color, "简介与标题不同色")
-        assertEquals(style.meta.color, style.summary.color, "简介与信息行同为次要色")
+        assertEquals(style.title.color, style.summary.color, "简介与标题同为主要色")
+        assertTrue(style.status.weight >= 600, "下一集行加粗, 实际字重 ${style.status.weight}")
+        assertTrue(style.summary.weight < 600, "简介不加粗, 实际字重 ${style.summary.weight}")
     }
 
     @Test
-    fun `the summary is dimmer in light mode too`() {
+    fun `the summary keeps the primary color in light mode too`() {
         val style = styleIn(dark = false)
-        assertNotEquals(style.title.color, style.summary.color, "简介与标题不同色")
-        assertEquals(style.meta.color, style.summary.color, "简介与信息行同为次要色")
+        assertEquals(style.title.color, style.summary.color, "简介与标题同为主要色")
+        assertTrue(style.status.weight >= 600, "下一集行加粗, 实际字重 ${style.status.weight}")
     }
 
     @Test

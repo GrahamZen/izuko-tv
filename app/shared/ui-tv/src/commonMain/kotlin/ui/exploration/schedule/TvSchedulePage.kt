@@ -904,7 +904,8 @@ private fun TvSchedulePanelDayLine(day: () -> TvSchedulePanelDay?, placeholder: 
                     }
                 }
             },
-            color = if (shown.day.kind == ScheduleDay.Kind.TODAY) MaterialTheme.colorScheme.primary else tvHeroContentColor(),
+            // 「今天」与别的日子靠主次两档亮度分 (照 tvOS: 文字只有主要 / 次要几档, 不用强调色)
+            color = if (shown.day.kind == ScheduleDay.Kind.TODAY) tvHeroContentColor() else tvHeroSecondaryContentColor(),
             style = TvSchedulePanelText.headline,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -915,7 +916,7 @@ private fun TvSchedulePanelDayLine(day: () -> TvSchedulePanelDay?, placeholder: 
                 shown.items,
                 shown.followedCount,
                 placeholder,
-                followedColor = MaterialTheme.colorScheme.primary,
+                followedColor = tvHeroContentColor(),
                 alwaysShowFollowed = true,
             ) ?: AnnotatedString(""),
             Modifier.padding(top = 2.dp),
@@ -951,7 +952,8 @@ private fun TvSchedulePanelSide(
         val counting = !card.aired && item.time != null && now != null
         Text(
             tvScheduleStatusText(card, now),
-            color = if (counting) MaterialTheme.colorScheme.primary else secondary,
+            // 正在倒计时的用主要那档, 其余次要
+            color = if (counting) tvHeroContentColor() else secondary,
             style = body,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1019,13 +1021,13 @@ private fun TvSchedulePanelRating(rating: RatingInfo?, loaded: Boolean, modifier
             Icons.Rounded.Star,
             contentDescription = null,
             Modifier.size(18.dp),
-            tint = if (rated) MaterialTheme.colorScheme.primary else secondary,
+            tint = if (rated) tvHeroContentColor() else secondary,
         )
         if (rating != null && rated) {
             Text(
                 rating.score,
                 Modifier.padding(start = 4.dp).alignByBaseline(),
-                color = MaterialTheme.colorScheme.primary,
+                color = tvHeroContentColor(),
                 style = TvSchedulePanelText.subhead,
                 maxLines = 1,
             )
@@ -1054,7 +1056,7 @@ private fun TvSchedulePanelRating(rating: RatingInfo?, loaded: Boolean, modifier
 @Composable
 private fun TvSchedulePanelCollectionChip(type: UnifiedCollectionType, modifier: Modifier = Modifier) {
     val followed = type in TV_SCHEDULE_FOLLOWED_TYPES
-    val chipColor = if (followed) MaterialTheme.colorScheme.primary else tvHeroSecondaryContentColor()
+    val chipColor = if (followed) tvHeroContentColor() else tvHeroSecondaryContentColor()
     Row(
         modifier
             .border(1.dp, chipColor, RoundedCornerShape(50))
@@ -1222,7 +1224,7 @@ private fun TvScheduleDayHeader(
         if (day == null) return@Row
         Text(
             tvScheduleDayTitle(day, items.cards.size, placeholder),
-            color = if (day.kind == ScheduleDay.Kind.TODAY) MaterialTheme.colorScheme.primary else tvHeroContentColor(),
+            color = if (day.kind == ScheduleDay.Kind.TODAY) tvHeroContentColor() else tvHeroSecondaryContentColor(),
             style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = TV_SCHEDULE_TABULAR_NUMS),
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -1350,8 +1352,8 @@ private fun TvScheduleRow(
                         timeUnknownText = stringResource(Lang.exploration_schedule_time_unknown),
                     ),
                     color = when {
+                        // 已播过的降到次要那档; 还没播的 (含下一个要播的) 都是主要那档
                         card.aired -> tvHeroSecondaryContentColor()
-                        isNext -> MaterialTheme.colorScheme.primary
                         else -> tvHeroContentColor()
                     },
                     // "时间未定" 是四个字, 按时刻的字号放不进时刻列
@@ -1425,7 +1427,7 @@ private fun TvScheduleRow(
                                 Icons.Rounded.Favorite,
                                 contentDescription = null,
                                 Modifier.padding(start = 8.dp).size(TV_SCHEDULE_ROW_FOLLOWED_ICON_SIZE),
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = tvHeroContentColor(),
                             )
                         }
                     }

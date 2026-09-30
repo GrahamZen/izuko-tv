@@ -54,7 +54,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
@@ -139,6 +138,7 @@ import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusSpec
+import me.him188.ani.app.ui.foundation.tv.tvGlassLabelStyle
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
@@ -1001,7 +1001,8 @@ internal fun TvCollectionGlassTabBar(
 }
 
 /**
- * 玻璃标签栏里的一个标签: 没选中的字降透明度, 选中的垫一块半透明浅灰片并加粗, 聚焦的换成浅色实底配黑字并抬起 (配色见 TvGlassColors);
+ * 玻璃标签栏里的一个标签: 没选中的字降透明度, 选中的垫一块半透明浅灰片, 聚焦的换成浅色实底配黑字并抬起 (配色见 TvGlassColors).
+ * 字在各状态下都是同一档粗体 (见 [tvGlassLabelStyle]).
  * [count] (或 [detail], 新番时间表的日期) 以小号淡色跟在后面. 焦点与点击挂在 [modifier] 上, [focused] 由调用方按 onFocusChanged 记好传进来.
  */
 @Composable
@@ -1049,8 +1050,7 @@ internal fun TvCollectionGlassTab(
         Text(
             label,
             color = labelColor,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            style = tvGlassLabelStyle(),
             maxLines = 1,
             softWrap = false,
         )

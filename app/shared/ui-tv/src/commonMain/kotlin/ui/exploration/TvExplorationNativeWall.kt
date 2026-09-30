@@ -67,6 +67,8 @@ import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_BRIGHT_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
@@ -92,6 +94,8 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
@@ -310,24 +314,27 @@ internal fun TvExplorationNativeWall(
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns)
-    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
-    val buttonStyle = rememberTvNativeHeroButtonStyle()
-    val headerStyle = MaterialTheme.typography.titleMedium.toTvNativeTextStyle(density, LocalContentColor.current)
-    val visualEffects = LocalThemeSettings.current.visualEffects
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
     // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
     val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
     val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur)
+    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
+    val buttonStyle = rememberTvNativeHeroButtonStyle()
+    val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
+    val headerIdleAlpha = tvPosterWallSecondaryLabelAlpha()
+    val visualEffects = LocalThemeSettings.current.visualEffects
     // 卡片墙的底色: 铺着模糊背景时 hero 态不压黑, 整屏底色一直是它 (见 TvNativeExploreView.heroBlur / wallColor)
     val wallColor = tvPosterWallBackground()
-    // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压)
-    val heroBlurMask = wallColor.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // 模糊背景的压暗: 深色主题照 Apple TV 分两档 (卡片墙底色 20%, 主色很亮的图 55%, 见 TV_HERO_BLUR_DIM_ALPHA); 浅色主题是卡片墙的底色 +
+    // 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压)
+    val heroBlurMask = wallColor.copy(alpha = if (dark) TV_HERO_BLUR_DIM_ALPHA else TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
     val heroBlurText = tvHeroContentColor()
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val dotColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, 18.dp)
     val scheduleIcon = rememberTvNativeIcon(Icons.Rounded.CalendarMonth, 18.dp)
@@ -381,6 +388,7 @@ internal fun TvExplorationNativeWall(
                 view.animatedScroll = visualEffects.animatedScroll
                 view.backdropNavigating = { scrollActivity?.isScrolling == true || navKeys?.held == true }
                 view.dark = dark
+                view.headerIdleAlpha = headerIdleAlpha
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
                 view.heroEnabled = heroEnabled
@@ -389,6 +397,7 @@ internal fun TvExplorationNativeWall(
                 view.wallBackdrop?.let { wb ->
                     wb.maskColor = heroBlurMask.toArgb()
                     wb.textColor = heroBlurText.toArgb()
+                    wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions
@@ -583,7 +592,8 @@ private fun tvExplorationNativeHeroText(
     val more = target.more
     val status = when {
         more != null -> tvExplorationNativeMoreStatus(more, onSurface)
-        target.fromFollowed -> tvExplorationNativeStatus(info, playHistories, secondary)
+        // 「继续观看」那一行与追番页的同为主要色 (它加粗, 与下面的简介靠字重分开, 见 rememberTvNativeHeroTextStyle)
+        target.fromFollowed -> tvExplorationNativeStatus(info, playHistories, onSurface)
         else -> null
     }
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组

@@ -630,9 +630,12 @@ class TvNativeGridPageView(
         } else {
             backdrop.show(src.backdrop)
             if (heroBlur) setWallTarget(src.wall)
-            heroText.setText(src.text, TvNativeTextTransition.Key)
+            heroText.setText(heroTextOf(src), TvNativeTextTransition.Key)
         }
     }
+
+    /** hero 文字: 铺着模糊背景时照 vibrancy 画 (深色主题). */
+    private fun heroTextOf(src: TvNativeHeroSource): TvNativeHeroText? = src.text?.copy(vibrant = heroBlur && dark)
 
     /**
      * 进 hero 态时换上内容 (不交叉淡入, 图层这时还是透明的). 只认聚焦那张卡的: 页面的内容在 Compose 里算, 比原生晚一两帧 ——
@@ -647,7 +650,7 @@ class TvNativeGridPageView(
         enteringPending = false
         backdrop.show(src.backdrop, crossfade = false)
         if (heroBlur) setWallTarget(src.wall)
-        heroText.setText(src.text, TvNativeTextTransition.Reset)
+        heroText.setText(heroTextOf(src), TvNativeTextTransition.Reset)
     }
 
     private fun onTimeline() {

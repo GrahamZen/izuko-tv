@@ -224,7 +224,8 @@ private fun tvCollectionNativeHeroText(
 ): TvNativeHeroText {
     val secondary = tvHeroSecondaryContentColor().toArgb()
     val onSurface = LocalContentColor.current.toArgb()
-    val primary = MaterialTheme.colorScheme.primary.toArgb()
+    // 「下一集」那一行与别的信息同为主要文字色 (照 tvOS: 文字不用强调色)
+    val statusColor = LocalContentColor.current.toArgb()
     val strings = rememberSubjectStatusStrings()
     val airing = remember(info) { AiringLabelState(stateOf(info.airingInfo), stateOf(info.progressInfo)) }
     val meta = buildList {
@@ -238,7 +239,7 @@ private fun tvCollectionNativeHeroText(
             add(TvNativeTextSpan("    " + stringResource(Lang.exploration_tv_air_date, airDate.year, airDate.month), secondary))
         }
     }
-    val status = tvCollectionNativeStatus(info, playHistories, primary)
+    val status = tvCollectionNativeStatus(info, playHistories, statusColor)
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组
     val summary by remember(info) {
         derivedStateOf {

@@ -136,7 +136,6 @@ import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
@@ -545,8 +544,6 @@ fun TvScheduleGridPage(
     )
 
     // ---- 卡片 ----
-    val secondary = tvHeroSecondaryContentColor().toArgb()
-    val upcoming = MaterialTheme.colorScheme.primary.toArgb()
     val timeUnknown = stringResource(Lang.exploration_schedule_time_unknown)
     val cards = dayCards.map { card ->
         card.item?.let { item ->
@@ -554,14 +551,15 @@ fun TvScheduleGridPage(
                 imageUrl = item.imageUrl,
                 title = item.subjectTitle,
                 subtitle = ScheduleItemDefaults.renderTime(null, item.time, timeUnknownText = timeUnknown) + " · " + rememberEpisodeLabel(item),
-                subtitleColor = if (card.aired) secondary else upcoming,
+                // 播没播过看那行字本身 (「15:00 · 第 3 话」/「已播出」), 不另给颜色 (照 tvOS: 卡片的字只有主次两档)
+                subtitleColor = null,
                 subjectId = item.subjectId,
                 badge = collectionTypes[item.subjectId] in TV_SCHEDULE_FOLLOWED_TYPES,
             )
         }
     }
     val density = LocalDensity.current
-    val badgeIcon = rememberTvNativeIcon(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE, MaterialTheme.colorScheme.primary)
+    val badgeIcon = rememberTvNativeIcon(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE, tvHeroContentColor())
     val badgeBackground = MaterialTheme.colorScheme.surface.copy(alpha = TV_SCHEDULE_BADGE_BACKGROUND_ALPHA).toArgb()
     val badge = remember(badgeIcon, badgeBackground, density) {
         with(density) {

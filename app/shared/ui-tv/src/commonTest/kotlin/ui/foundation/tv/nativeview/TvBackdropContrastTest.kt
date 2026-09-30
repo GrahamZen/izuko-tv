@@ -73,10 +73,37 @@ class TvBackdropContrastTest {
         assertEquals(base, alphaFor(tvBackdropWorstLuminance(pixels, lightText = false), lightPage, black))
     }
 
+    @Test
+    fun `two-level dimming keeps the base mask on an ordinary image`() {
+        // 中等亮度的彩色图 (天蓝): 主色感知亮度不到很亮那一档, 只压平时那一份
+        val pixels = IntArray(100) { rgb(150, 200, 240) }
+        val luminosity = tvBackdropLuminosity(pixels)
+        assertTrue(luminosity < TV_WALL_BACKDROP_BRIGHT_LUMINOSITY, "luminosity=$luminosity")
+        assertEquals(TV_HERO_BLUR_DIM_ALPHA, tvBackdropTwoLevelMaskAlpha(luminosity, TV_HERO_BLUR_DIM_ALPHA, TV_HERO_BLUR_BRIGHT_DIM_ALPHA))
+    }
+
+    @Test
+    fun `two-level dimming masks a near-white image deeper`() {
+        val pixels = IntArray(100) { if (it < 80) gray(245) else gray(200) }
+        val luminosity = tvBackdropLuminosity(pixels)
+        assertTrue(luminosity >= TV_WALL_BACKDROP_BRIGHT_LUMINOSITY, "luminosity=$luminosity")
+        assertEquals(TV_HERO_BLUR_BRIGHT_DIM_ALPHA, tvBackdropTwoLevelMaskAlpha(luminosity, TV_HERO_BLUR_DIM_ALPHA, TV_HERO_BLUR_BRIGHT_DIM_ALPHA))
+    }
+
+    @Test
+    fun `luminosity of the mean color follows the HSP formula`() {
+        // 一半纯红一半纯黑: 平均色 (127.5, 0, 0) / 255, HSP = √0.299 × 0.5
+        val pixels = IntArray(100) { if (it % 2 == 0) rgb(255, 0, 0) else black }
+        assertEquals(0.2734f, tvBackdropLuminosity(pixels), 0.001f)
+        assertEquals(0f, tvBackdropLuminosity(IntArray(0)))
+    }
+
     private fun alphaFor(worst: Float, mask: Int, text: Int): Float =
         tvBackdropMaskAlpha(worst, tvRelativeLuminance(mask), tvRelativeLuminance(text), base)
 
     private fun gray(v: Int): Int = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+
+    private fun rgb(r: Int, g: Int, b: Int): Int = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
 
     /** 灰 [v] 上按 [alpha] 压 [mask] (sRGB 分量上混, 同 SRC_ATOP) 之后的相对亮度. */
     private fun blend(v: Int, mask: Int, alpha: Float): Float {

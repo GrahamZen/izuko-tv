@@ -1484,12 +1484,12 @@ private val TV_EXPLORATION_LABEL_TOP = TV_EXPLORATION_HERO_TOP + TV_HERO_BLOCK_H
 /** 轮播按钮块下缘到首组标题的间距 (见 [TV_HERO_BLOCK_HEIGHT_EXPANDED]), 也算在 [TV_SECTION_LABEL_BLOCK] 里. */
 private val TV_EXPLORATION_ROW_GAP = 12.dp
 
-/** 区块标题块占位 = 标题行高 (titleMedium ≈ 24dp) + [TV_EXPLORATION_ROW_GAP]: 轮播态首组标题在 hero 文字块下缘之下多远, 见 [TV_EXPLORATION_CARD_TOP]. */
+/** 区块标题块占位 = 标题那一行 (24dp) + [TV_EXPLORATION_ROW_GAP]: 轮播态首组标题在 hero 文字块下缘之下多远, 见 [TV_EXPLORATION_CARD_TOP]. */
 private val TV_SECTION_LABEL_BLOCK = 24.dp + TV_EXPLORATION_ROW_GAP
 
 /**
- * 海报墙的组标题块: 标题行高 (titleMedium ≈ 24dp) + 标题到海报的间距 [TV_POSTER_WALL_HEADER_GAP] (卡聚焦时往上放大,
- * 间距留得比 [TV_EXPLORATION_ROW_GAP] 宽).
+ * 海报墙的组标题块: 标题那一行 (24dp; 字的行高 23sp, 见 tvPosterWallHeaderStyle) + 标题到海报的间距 [TV_POSTER_WALL_HEADER_GAP]
+ * (卡聚焦时往上放大, 间距留得比 [TV_EXPLORATION_ROW_GAP] 宽).
  */
 private val TV_WALL_SECTION_LABEL_BLOCK = 24.dp + TV_POSTER_WALL_HEADER_GAP
 

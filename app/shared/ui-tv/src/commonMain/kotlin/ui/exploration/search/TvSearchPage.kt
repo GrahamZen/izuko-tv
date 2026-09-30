@@ -209,6 +209,7 @@ import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
 import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGlassLabelStyle
 import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
@@ -1211,11 +1212,12 @@ private fun TvSearchIconButton(
             }
         }
         if (badge) {
+            // 「已有筛选」的点也是灰阶 (照 tvOS: 角标用主次两档白, 不用强调色)
             Box(
                 Modifier.align(Alignment.TopEnd)
                     .padding(6.dp)
                     .size(8.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    .background(MaterialTheme.colorScheme.onSurface, CircleShape),
             )
         }
         if (focused) {
@@ -1940,7 +1942,7 @@ internal fun TvSearchTopRow(
                             stringResource(Lang.search_tv_results_title, keywords)
                         },
                         color = color,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = tvGlassLabelStyle(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1972,7 +1974,7 @@ internal fun TvSearchTopRow(
                     Box(
                         Modifier.align(Alignment.TopEnd)
                             .size(8.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                            .background(MaterialTheme.colorScheme.onSurface, CircleShape),
                     )
                 }
             }

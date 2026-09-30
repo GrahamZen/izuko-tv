@@ -96,6 +96,6 @@ class TvNativeCardBadgeTest {
                 texts.first { it.text.toString() == "12:30" }.currentTextColor
             }
         }
-        assertEquals(listOf(Color.GREEN, testWallStyle().subtitleColor), colors)
+        assertEquals(listOf(Color.GREEN, testWallStyle().subtitle.color), colors)
     }
 }

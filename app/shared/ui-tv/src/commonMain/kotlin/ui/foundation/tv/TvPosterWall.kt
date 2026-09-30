@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -269,6 +270,19 @@ internal val TV_POSTER_WALL_TITLE_FONT_SIZE = 13.sp
 
 /** 番名行高. 两行定高 = 块高的输入 (见 [tvPosterWallLabelHeight]). */
 internal val TV_POSTER_WALL_TITLE_LINE_HEIGHT = 18.sp
+
+/**
+ * 番名下面那行小字 (放送时间与集数、关联条目的关系、人物的角色) 的字号: tvOS 的 Caption 2 (23 pt = 11.5 dp), 比番名小一档.
+ * 行高同番名 ([TV_POSTER_WALL_TITLE_LINE_HEIGHT]): 番名一行加这一行, 正好是番名块的两行定高.
+ */
+internal val TV_POSTER_WALL_SUBTITLE_FONT_SIZE = 11.5.sp
+
+/**
+ * 组标题的字号: 照 Apple TV 安卓版的货架标题 Callout (31 pt = 15.5 dp; Shield 上实测大写字母高与这一档相符). 行高 23, 标题在组标题块
+ * 那一行里的位置不变.
+ */
+internal val TV_POSTER_WALL_HEADER_FONT_SIZE = 15.5.sp
+internal val TV_POSTER_WALL_HEADER_LINE_HEIGHT = 23.sp
 
 /** 列数. [availableWidth] = 卡片区的内容宽度 (已减掉出血与两侧留白). */
 fun Density.tvPosterWallColumns(availableWidth: Dp): Int {
@@ -506,11 +520,14 @@ internal const val TV_POSTER_WALL_OUTLINE_ALPHA = 0.08f
 /** 玻璃边的浅色档: Apple 浅色 hairline 是 10% 黑. */
 internal const val TV_POSTER_WALL_OUTLINE_ALPHA_LIGHT = 0.1f
 
-/** 没聚焦时番名的不透明度: Apple TV App 卡片标题静止用 LabelSecondary, 深色下是 50% 白 (聚焦时 LabelPrimary, 全亮). */
-internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA = 0.5f
+/**
+ * 「次要」文字的不透明度 (Apple 的 LabelSecondary, 深色下 50% 白), 乘在与主要文字相同的颜色上. 用在两处: 没聚焦的卡片的番名与下面那行
+ * 小字 (聚焦时全亮, 见 TvNativeWallStyle.labelIdleAlpha); 焦点不在那一组时的组标题 (照 tvOS 的货架标题: 焦点所在那一行的全亮, 其余 50%).
+ */
+internal const val TV_POSTER_WALL_SECONDARY_LABEL_ALPHA = 0.5f
 
-/** 没聚焦时番名的浅色档: Apple 浅色 LabelSecondary 是 60% 黑. */
-internal const val TV_POSTER_WALL_TITLE_IDLE_ALPHA_LIGHT = 0.6f
+/** 浅色档: Apple 浅色 LabelSecondary 是 60% 黑. */
+internal const val TV_POSTER_WALL_SECONDARY_LABEL_ALPHA_LIGHT = 0.6f
 
 /**
  * 浮在海报墙卡片上的顶栏控件 (追番页的标签行、搜索页的搜索词 / 筛选钮 / 已选筛选项) 的配色, 照 tvOS 顶部标签栏 (HIG Tab bars 与
@@ -606,3 +623,29 @@ internal fun tvPosterWallTitleStyle(): TextStyle = MaterialTheme.typography.body
     fontSize = TV_POSTER_WALL_TITLE_FONT_SIZE,
     lineHeight = TV_POSTER_WALL_TITLE_LINE_HEIGHT,
 )
+
+/** 番名下面那行小字的排版: 同番名, 字号小一档 ([TV_POSTER_WALL_SUBTITLE_FONT_SIZE]). */
+@Composable
+internal fun tvPosterWallSubtitleStyle(): TextStyle = tvPosterWallTitleStyle().copy(fontSize = TV_POSTER_WALL_SUBTITLE_FONT_SIZE)
+
+/**
+ * 玻璃顶栏控件上的字 (追番页的标签、新番时间表的日期、搜索页结果态的搜索词): tvOS 标签栏的 Body 粗体 (29 pt = 14.5 dp), 各状态同一档
+ * 字重 —— 选中 / 聚焦只换颜色与底片, 字宽不变, 一排控件不跟着挪. 行高照 titleMedium (24), 控件的高度不随字号变.
+ */
+@Composable
+internal fun tvGlassLabelStyle(): TextStyle = MaterialTheme.typography.titleMedium.copy(
+    fontSize = 14.5.sp,
+    fontWeight = FontWeight.Bold,
+)
+
+/** 组标题的排版 ([TV_POSTER_WALL_HEADER_FONT_SIZE]), 字重同 titleMedium, 不加粗. */
+@Composable
+internal fun tvPosterWallHeaderStyle(): TextStyle = MaterialTheme.typography.titleMedium.copy(
+    fontSize = TV_POSTER_WALL_HEADER_FONT_SIZE,
+    lineHeight = TV_POSTER_WALL_HEADER_LINE_HEIGHT,
+)
+
+/** 次要文字的不透明度 ([TV_POSTER_WALL_SECONDARY_LABEL_ALPHA]), 按当前主题的深浅取. */
+@Composable
+internal fun tvPosterWallSecondaryLabelAlpha(): Float =
+    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) TV_POSTER_WALL_SECONDARY_LABEL_ALPHA else TV_POSTER_WALL_SECONDARY_LABEL_ALPHA_LIGHT

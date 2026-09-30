@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -234,8 +235,8 @@ fun rememberTvNativeIcon(icon: ImageVector, size: Dp, tint: Color = Color.White)
 }
 
 /**
- * hero 文字块的排版参数: 标题 headlineLarge、评分 titleMedium (主色)、信息行与下一集行 labelLarge、
- * 简介 bodyMedium; 颜色取 hero 前景 / 次要色. [statusPrimary] = 下一集行用主色 (追番页), 否则次要色 (探索页).
+ * hero 文字块的排版参数: 标题 headlineLarge、评分 titleMedium (同标题的主要文字色, 颜色只在星上)、信息行与下一集行 labelLarge、
+ * 简介 bodyMedium; 颜色取 hero 前景 / 次要色.
  */
 @Composable
 fun rememberTvNativeHeroTextStyle(
@@ -256,11 +257,14 @@ fun rememberTvNativeHeroTextStyle(
             TvNativeHeroTextStyle(
                 title = typography.headlineLarge.toTvNativeTextStyle(density, content),
                 titleMaxLines = titleMaxLines,
-                rating = typography.titleMedium.toTvNativeTextStyle(density, colors.primary),
+                // 评分数字用主要文字色: 主题色是中等亮度的彩色, 压在 hero 图 / 模糊背景上与它撞色 (背景是每部番自己的图, 颜色不定) ——
+                // 照 Apple TV 的评分, 颜色只留在旁边的星上 (图标形状认得出)
+                rating = typography.titleMedium.toTvNativeTextStyle(density, content),
                 meta = typography.labelLarge.toTvNativeTextStyle(density, secondary),
-                status = typography.labelLarge.toTvNativeTextStyle(density, secondary),
-                // 简介是次要信息 (照 tvOS 节目页的简介 = LabelSecondary): 比标题 / 信息行 / 下一集行淡一档, 几行字之间才有层次
-                summary = typography.bodyMedium.toTvNativeTextStyle(density, secondary),
+                // 下一集 / 开始观看那一行加粗: 它与简介同为主要信息, 靠字重 (tvOS 的 Emphasized) 分开, 简介才能留在最清楚的主要色上
+                status = typography.labelLarge.copy(fontWeight = FontWeight.Bold).toTvNativeTextStyle(density, secondary),
+                // 简介用主要色: 它是整屏最长的一段字, 淡一档读着累; 与上面的下一集行靠那一行的字重分开 (见 status)
+                summary = typography.bodyMedium.toTvNativeTextStyle(density, content),
                 star = star,
                 starSizePx = TV_HERO_RATING_STAR_SIZE.roundToPx(),
                 starGapPx = TV_HERO_RATING_STAR_GAP.roundToPx(),
