@@ -252,6 +252,34 @@ interface SubjectCollectionDao {
         if (staleIds.isNotEmpty()) deleteEpisodesByIds(subject.subjectId, staleIds)
     }
 
+    /** 收藏了的条目数 (浏览过而没收藏的不算). */
+    @Query("""SELECT COUNT(*) FROM subject_collection WHERE collectionType != :notCollected""")
+    suspend fun countSelfCollected(notCollected: UnifiedCollectionType = UnifiedCollectionType.NOT_COLLECTED): Int
+
+    /** 标成 [type] 的集数. */
+    @Query("""SELECT COUNT(*) FROM episode_collection WHERE selfCollectionType = :type""")
+    suspend fun countEpisodesBySelfType(type: UnifiedCollectionType): Int
+
+    /**
+     * 清掉这个库里所有自己的记录: 收藏类型改回没收藏, 评分 / 短评 / 标签 / 私密清空, 每集的看过状态清掉; 条目与分集信息留着.
+     *
+     * @param emptyTags 按 [ProtoConverters.StringList] 编码好的空标签列表 (见 [updateRating] 上的说明)
+     */
+    @Transaction
+    suspend fun clearAllSelfStates(emptyTags: ByteArray) {
+        resetAllSubjectSelfStates(UnifiedCollectionType.NOT_COLLECTED, emptyTags)
+        resetAllEpisodeSelfTypes(UnifiedCollectionType.NOT_COLLECTED)
+    }
+
+    @Query(
+        """UPDATE subject_collection SET collectionType = :notCollected, self_rating_score = 0, self_rating_comment = NULL,
+        self_rating_tags = :emptyTags, self_rating_isPrivate = 0""",
+    )
+    suspend fun resetAllSubjectSelfStates(notCollected: UnifiedCollectionType, emptyTags: ByteArray)
+
+    @Query("""UPDATE episode_collection SET selfCollectionType = :notCollected""")
+    suspend fun resetAllEpisodeSelfTypes(notCollected: UnifiedCollectionType)
+
     /** 批量版 (收藏列表分页): 同样保留盖章 + 条目与分集同事务; 不做差集删除 (与原行为一致). */
     @Transaction
     suspend fun upsertSubjectsWithEpisodes(

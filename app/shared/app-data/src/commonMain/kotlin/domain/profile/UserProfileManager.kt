@@ -86,6 +86,21 @@ class UserProfileManager(
         registry.update(currentId) { it.copy(pendingLogin = false) }
     }
 
+    /**
+     * 把当前用户改成本地用户 (见 [UserProfileKind.LOCAL]) 再重启进程: 各仓库的本地模式在进程启动时按当前用户定下.
+     * 登录与之前留下的收藏记录由调用方先处理, 见 [LocalProfileConversion].
+     *
+     * @param defaultName 没起过名字时存下的默认名 (本地用户的个人资料用名字当昵称, 同新建与改名时空名存默认名)
+     */
+    suspend fun convertCurrentToLocal(defaultName: String) {
+        // Bangumi 头像是之前登录时记下的, 本地用户不显示
+        registry.update(currentId) {
+            it.copy(kind = UserProfileKind.LOCAL, name = it.name.ifBlank { defaultName }, pendingLogin = false, avatarUrl = null)
+        }
+        logger.info { "Converted user profile $currentId to local, restarting" }
+        restarter.restart()
+    }
+
     /** 记下当前用户的 Bangumi 头像 (选人页用). */
     suspend fun updateAvatar(avatarUrl: String?) {
         registry.update(currentId) { it.copy(avatarUrl = avatarUrl) }

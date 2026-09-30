@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -92,9 +93,12 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
+import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
 import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
@@ -131,6 +135,10 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_description
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done
 import me.him188.ani.app.ui.lang.tv_onboarding_login_done_plain
 import me.him188.ani.app.ui.lang.tv_onboarding_login_failed
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local_failed
+import me.him188.ani.app.ui.lang.tv_onboarding_login_local_hint
+import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_login_phone_hint
@@ -402,11 +410,18 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserF
     // 先介绍手机遥控 (单独一页, 不然新用户会以为那个码只能拿来登录), 再登录, 最后外观与操作.
     // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络. 新用户只有登录这一步 (外观与操作是整机的设置, 首次引导时选过), 返回键等于跳过
     var layerStep by rememberSaveable { mutableStateOf(if (loginOnly) LayerStep.Login else LayerStep.Remote) }
+    // 登录那一步选了「不登录，收藏存在这台电视上」(值 = 要不要清掉之前登录留下的记录): 改成本地用户要重启应用, 等外观与操作走完再改
+    var pendingLocal by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    // 首次引导里只有 1 号
+    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfile.PRIMARY_ID)
     Dialog(
         onDismissRequest = {
             when {
                 loginOnly -> finishNewUser()
-                layerStep == LayerStep.Theme -> layerStep = LayerStep.Login
+                layerStep == LayerStep.Theme -> {
+                    pendingLocal = null
+                    layerStep = LayerStep.Login
+                }
                 layerStep == LayerStep.Login -> layerStep = LayerStep.Remote
                 // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
                 else -> onBack()
@@ -424,13 +439,31 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserF
                     focus,
                     showSteps = !loginOnly,
                     onNext = { if (loginOnly) finishNewUser() else layerStep = LayerStep.Theme },
+                    onUseLocal = if (loginOnly) {
+                        null
+                    } else {
+                        { clearRecords ->
+                            pendingLocal = clearRecords
+                            layerStep = LayerStep.Theme
+                        }
+                    },
                 )
                 LayerStep.Theme -> ThemeStep(
                     focus,
                     onUpdate = vm::updateTheme,
                     onFinished = {
-                        TvOnboardingLogin.request.value = null
-                        onFinished()
+                        val clearRecords = pendingLocal
+                        if (clearRecords == null) {
+                            TvOnboardingLogin.request.value = null
+                            onFinished()
+                        } else {
+                            // 改成本地用户会重启应用: 先记下引导走完 (不撤登录层, 免得重启前露出主页一下); 没改成就回到登录那一步看原因
+                            onFinished()
+                            vm.useLocal(clearRecords, defaultName, onFailed = {
+                                pendingLocal = null
+                                layerStep = LayerStep.Login
+                            })
+                        }
                     },
                 )
             }
@@ -573,7 +606,7 @@ internal fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content:
 }
 
 private enum class OnboardingFocus : TvFocusKey {
-    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Start,
+    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Local, Start,
     ThemeHero, ThemePlay, ThemeDetails, ThemeDone,
 }
 
@@ -831,7 +864,14 @@ private fun CheckStep(
 }
 
 @Composable
-private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, showSteps: Boolean, onNext: () -> Unit) {
+private fun LoginStep(
+    vm: TvOnboardingLoginViewModel,
+    focus: TvFocusScope,
+    showSteps: Boolean,
+    onNext: () -> Unit,
+    /** 选了「不登录，收藏存在这台电视上」(参数: 要不要清掉之前登录留下的记录); `null` = 不给这个选项. */
+    onUseLocal: ((clearRecords: Boolean) -> Unit)?,
+) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
@@ -878,7 +918,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, showS
                             color = scheme.error,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onNext)
+                        SkipOrLocal(vm, focus, onNext, onUseLocal)
                     }
 
                     else -> {
@@ -916,7 +956,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, showS
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onNext)
+                        SkipOrLocal(vm, focus, onNext, onUseLocal)
                     }
                 }
             }
@@ -932,6 +972,61 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, showS
         else -> OnboardingFocus.TvLogin
     }
     LaunchedEffect(target) { focus.request(target) }
+}
+
+/**
+ * 「跳过」(先不登录, 和原来一样匿名浏览, 以后可以再登录), 旁边是「不登录，收藏存在这台电视上」: 选了交给 [onUseLocal], 引导走完
+ * 再把 1 号改成本地用户 (见 [me.him188.ani.app.domain.profile.LocalProfileConversion], 应用随后重启). 从老版本升级上来的库里可能
+ * 留着之前登录的收藏记录, 有就先问留不留 (同设置里改成本地用户). 默认焦点不变 (还在登录或跳过上).
+ */
+@Composable
+private fun SkipOrLocal(
+    vm: TvOnboardingLoginViewModel,
+    focus: TvFocusScope,
+    onSkip: () -> Unit,
+    onUseLocal: ((clearRecords: Boolean) -> Unit)?,
+) {
+    val localShown = onUseLocal != null && vm.localOffered
+    val scope = rememberCoroutineScope()
+    var leftover by remember { mutableStateOf<SelfCollectionRecords.Counts?>(null) }
+    val useLocal = { clearRecords: Boolean -> onUseLocal?.invoke(clearRecords) }
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        SkipButton(focus, onSkip)
+        if (localShown) {
+            TvHeroButton(
+                stringResource(Lang.tv_onboarding_login_local),
+                Icons.Rounded.Tv,
+                filled = false,
+                onClick = {
+                    scope.launch {
+                        val records = vm.leftoverRecords()
+                        if (records.isEmpty) useLocal(false) else leftover = records
+                    }
+                },
+                onFocused = {},
+                modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Local),
+            )
+        }
+    }
+    if (localShown) {
+        Spacer(Modifier.height(8.dp))
+        val error by vm.localError.collectAsStateWithLifecycle()
+        Text(
+            error?.let { stringResource(Lang.tv_onboarding_login_local_failed, it) } ?: stringResource(Lang.tv_onboarding_login_local_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    leftover?.let { records ->
+        ConvertToLocalProfileDialog(
+            records,
+            onConvert = { clearRecords ->
+                leftover = null
+                useLocal(clearRecords)
+            },
+            onDismissRequest = { leftover = null },
+        )
+    }
 }
 
 @Composable

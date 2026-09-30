@@ -148,6 +148,7 @@ import me.him188.ani.app.domain.session.BangumiSessionRefresher
 import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionManager
+import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
@@ -174,6 +175,8 @@ import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.domain.profile.LocalProfileImporter
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.ProfileArchiver
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfileManager
@@ -631,6 +634,19 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
                 check(UserProfiles.current.isLocal) { "Archives can only be restored into a local profile" }
                 get<SubjectCollectionRepository>().setSubjectCollectionTypeOrDelete(subjectId, type)
             },
+        )
+    }
+    // 当前用户自己的收藏记录 (计数 / 清除); 没登录的 1 号改成本地用户, 见 LocalProfileConversion
+    single<SelfCollectionRecords> { SelfCollectionRecords(database) }
+    single<LocalProfileConversion> {
+        LocalProfileConversion(
+            manager = get(),
+            records = get(),
+            // 刚启动时登录状态要等刷新令牌才有; 等不到按登录着算 (不改)
+            isLoggedIn = {
+                withTimeoutOrNull(5.seconds) { get<SessionStateProvider>().stateFlow.first() is SessionState.Valid } ?: true
+            },
+            clearSession = { get<UserRepository>().clearSelfInfo() },
         )
     }
     // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)

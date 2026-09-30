@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
@@ -43,6 +45,8 @@ import org.koin.core.component.inject
 class ProfileViewModel : AbstractViewModel(), KoinComponent {
     private val subjectCollectionRepo: SubjectCollectionRepository by inject()
     private val userRepo: UserRepository by inject()
+    private val localProfileConversion: LocalProfileConversion by inject()
+    private val selfRecords: SelfCollectionRecords by inject()
 
     private val selfInfoStateProvider: SelfInfoStateProducer = SelfInfoStateProducer(koin = getKoin())
 
@@ -62,6 +66,8 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
             selfInfo = selfInfoState,
             boundBangumi = selfInfoState.isSessionValid == true && selfInfoState.bangumiConnected == true,
             avatarUploadState = avatarState,
+            // 没登录的 1 号可以改成本地用户 (登录着的先退出)
+            canConvertToLocal = localProfileConversion.isOffered && selfInfoState.isSessionValid == false,
         )
     }
         .restartable(stateRefresher)
@@ -76,6 +82,16 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
+    /** 当前用户库里自己的收藏记录有多少 (本地用户清除前、1 号改成本地用户前给人看). */
+    suspend fun selfRecordCounts(): SelfCollectionRecords.Counts = selfRecords.counts()
+
+    /** 本地用户清除自己的收藏记录. */
+    suspend fun clearSelfRecords() = selfRecords.clear()
+
+    /** 改成本地用户, 应用随后重启; [clearRecords] 为 true 时先清掉之前登录留下的收藏记录. */
+    suspend fun convertToLocal(clearRecords: Boolean, defaultName: String) =
+        localProfileConversion.convert(clearRecords, defaultName)
+
     companion object {
         private val NICKNAME_MATCHER = Regex("^[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FFa-zA-Z\\d_]+$")
     }
@@ -86,6 +102,8 @@ class AccountSettingsState(
     val selfInfo: SelfInfoUiState,
     val boundBangumi: Boolean,
     val avatarUploadState: EditProfileState.UploadAvatarState,
+    /** 显示「改成本地用户」, 见 [LocalProfileConversion]. */
+    val canConvertToLocal: Boolean = false,
 ) {
     companion object {
         val Empty = AccountSettingsState(
