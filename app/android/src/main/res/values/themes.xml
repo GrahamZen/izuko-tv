@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      应用的窗口主题, 只定窗口底色: 冷启动时系统先按它画启动窗口, 应用画出第一帧之前、界面留空的地方露出来的也是它.
+      系统 DayNight 在电视上恒为浅色 (notnight 且锁死), 而应用默认主题是深色纯黑, 所以铺黑;
+      启动后 MainActivity 换成用户主题的外壳底色 (见 WindowBackgroundMirror).
+    -->
+    <style name="Theme.Izuko" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
