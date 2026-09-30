@@ -429,4 +429,21 @@
     <string name="collection_tv_tab_order_hint">OK to pick up  ·  Back to leave</string>
     <string name="collection_tv_tab_order_hint_grabbed">Left / Right to move  ·  OK to drop  ·  Back to undo</string>
     <string name="collection_tv_tab_order_reset">Reset to default order</string>
+    <string name="settings_appearance_tv_poster_wall_scale_exploration">Poster wall size: Explore</string>
+    <string name="settings_appearance_tv_poster_wall_scale_collection">Poster wall size: Collection</string>
+    <string name="settings_appearance_tv_poster_wall_scale_search">Poster wall size: Search</string>
+    <string name="settings_appearance_tv_poster_wall_scale_description">Makes the poster cards on the Explore, Collection and Search pages bigger or smaller (the artwork, the titles under it and the gaps between cards), one value for all three pages. The title and synopsis at the top, the tabs and the side bar keep their size; Interface scale changes those. Open one to adjust it while you look at that page</string>
+    <string name="tv_wall_scale_title">Poster wall size</string>
+    <string name="tv_wall_scale_hint_adjust">Up / Down  Adjust the size</string>
+    <string name="tv_wall_scale_hint_try">Right / OK  Try it on the page</string>
+    <string name="tv_wall_scale_hint_back">Back  Leave</string>
+    <string name="tv_wall_scale_hint_preview">This page is a preview: OK opens the introduction, but no details page</string>
+    <string name="tv_wall_scale_sample_title_short">Anime title</string>
+    <string name="tv_wall_scale_sample_title_medium">A slightly longer anime title</string>
+    <string name="tv_wall_scale_sample_title_long">An anime with a title long enough to need two lines</string>
+    <string name="tv_wall_scale_sample_group">Sample row %1$d</string>
+    <string name="tv_wall_scale_sample_status">Airing</string>
+    <string name="tv_wall_scale_sample_episodes">12 eps</string>
+    <string name="tv_wall_scale_sample_summary">The synopsis goes here. Changing the size only changes the poster cards below; this text, the title above and the side bar keep their size. Everything on this page is a sample: OK opens the introduction, but no details page opens.</string>
+    <string name="tv_wall_scale_sample_query">Sample</string>
 </resources>

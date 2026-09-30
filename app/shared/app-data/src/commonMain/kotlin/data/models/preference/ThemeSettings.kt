@@ -302,6 +302,13 @@ data class ThemeSettings(
      * 就能让文字和布局等比缩放; 两个都改会导致文字被缩放两次.
      */
     val uiScale: Float = 1f,
+    /**
+     * TV: 海报墙三页 (探索 / 追番 / 搜索结果) 卡片的缩放系数, 叠在 [uiScale] 之上: 海报、番名与卡片之间的间距一起按比例变 (一排放几张随之变);
+     * hero 的标题与简介、轮播、组标题、标签行、搜索栏与侧边栏不变, 只跟 [uiScale]. 1f = 与其余界面一样大. 读取走 [effectivePosterWallScale].
+     *
+     * @since 1.0.4
+     */
+    val tvPosterWallScale: Float = 1f,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient
@@ -320,6 +327,11 @@ data class ThemeSettings(
     @Transient
     val effectiveUiScale: Float =
         if (uiScale.isFinite()) uiScale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX) else 1f
+
+    /** 已 clamp 的 [tvPosterWallScale] (理由同 [effectiveUiScale]). */
+    @Transient
+    val effectivePosterWallScale: Float =
+        if (tvPosterWallScale.isFinite()) tvPosterWallScale.coerceIn(POSTER_WALL_SCALE_MIN, POSTER_WALL_SCALE_MAX) else 1f
 
     /**
      * 实际生效的"主页按返回"行为 —— **读这个, 别读 [tvExitBehavior]**.
@@ -363,5 +375,14 @@ data class ThemeSettings(
         /** [UI_SCALE_MIN]..[UI_SCALE_MAX], 供 Slider 之类需要 range 的调用方使用. */
         @Stable
         val UI_SCALE_RANGE = UI_SCALE_MIN..UI_SCALE_MAX
+
+        /** [tvPosterWallScale] 的下界: 1080p 下一行十一二张卡. */
+        const val POSTER_WALL_SCALE_MIN = 0.5f
+
+        /** [tvPosterWallScale] 的上界: 再大首屏就只剩一行卡. */
+        const val POSTER_WALL_SCALE_MAX = 1.5f
+
+        /** [tvPosterWallScale] 的步进: 比界面缩放细一档, 好把一行的张数调到正好. */
+        const val POSTER_WALL_SCALE_STEP = 0.05f
     }
 }

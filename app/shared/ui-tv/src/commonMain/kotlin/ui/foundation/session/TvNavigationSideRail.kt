@@ -322,7 +322,7 @@ private fun TvNowPlayingRailGlyph(focused: Boolean, status: () -> PlaybackSessio
 }
 
 /** 展开面板的右缘羽化: 前 ~82% 纯色实心, 末段用多色标近似缓动曲线羽化到透明, 消除竖向明暗切线. */
-private fun tvRailScrimFeather(color: Color): Brush = Brush.horizontalGradient(
+internal fun tvRailScrimFeather(color: Color): Brush = Brush.horizontalGradient(
     0.00f to color,
     0.82f to color,
     0.90f to color.copy(alpha = 0.82f),
@@ -822,7 +822,7 @@ private val TV_RAIL_FLOATING_ACTION_SPACING = 8.dp
 private val TV_RAIL_SCRIM_WIDTH = 180.dp
 
 /** 单个图标按钮 (聚焦反色方块 / 头像) 的边长. */
-private val TV_RAIL_ITEM_SIZE = 32.dp
+internal val TV_RAIL_ITEM_SIZE = 32.dp
 
 /** 图标按钮聚焦方块的圆角 (偏方, 不要太圆). */
 private val TV_RAIL_ITEM_CORNER = 6.dp

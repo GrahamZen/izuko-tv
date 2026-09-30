@@ -163,6 +163,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
 import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
 import me.him188.ani.app.ui.foundation.tv.TV_PAGE_END_PAD
@@ -197,8 +201,6 @@ import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTouchTap
@@ -584,19 +586,22 @@ fun TvSearchPage(
                 Box(Modifier.tvSwallowKeysWhenLeaving { results != showResults }, propagateMinConstraints = true) {
                 if (results) {
                     CompositionLocalProvider(LocalTvRailEnter provides searchRailEnter) {
-                        TvSearchResultsPane(
-                            state = state,
-                            onIntent = onIntent,
-                            wallTone = wallTone,
-                            lastFocusedCard = lastFocusedCard,
-                            restoreCardIndex = if (restoreConsumed) -1 else restoreCardIndex,
-                            onRestoreConsumed = { restoreConsumed = true },
-                            onBackToInput = { showResults = false },
-                            backGoesToInput = backGoesToInput,
-                            onOpenFilter = { showFilterDialog = true },
-                            railExitRestore = railExitRestore,
-                            gridSendInFlight = gridSendInFlight,
-                        )
+                        // 海报墙大小 (设置 - 界面): 结果态的卡片按它缩放, 顶部行与 hero 的文字不变 (见 TvPosterWallScaled)
+                        TvPosterWallScaled {
+                            TvSearchResultsPane(
+                                state = state,
+                                onIntent = onIntent,
+                                wallTone = wallTone,
+                                lastFocusedCard = lastFocusedCard,
+                                restoreCardIndex = if (restoreConsumed) -1 else restoreCardIndex,
+                                onRestoreConsumed = { restoreConsumed = true },
+                                onBackToInput = { showResults = false },
+                                backGoesToInput = backGoesToInput,
+                                onOpenFilter = { showFilterDialog = true },
+                                railExitRestore = railExitRestore,
+                                gridSendInFlight = gridSendInFlight,
+                            )
+                        }
                     }
                 } else {
                     TvSearchInputPane(
@@ -1475,8 +1480,6 @@ private fun TvSearchResultsPane(
     // 错误横幅的高度 (含上间距): 原生网格的顶线跟着它往下让
     var nativeErrorCardHeightPx by remember { mutableIntStateOf(0) }
     // hero 态 (见 TvNativeGridPageState): 卡片上按确定先进 hero 态 (背景图 + hero 文字), 再按确定才放大进详情页; 同追番页.
-    // hero 态聚焦行离网格顶线多远取决于有没有筛选行, 在下面算好筛选项之后写
-    var wallHeroLinePx by remember { mutableIntStateOf(0) }
     // 进页恢复的落点流程是否已收尾 (发出 request 或放弃). 见下方 backToFirstCard: 这一段
     // "数据已到但 request 还没发出"的缝隙必须算作"焦点还在网格里", 否则返回键会误跳输入态
     var restoreSettled by remember { mutableStateOf(false) }
@@ -1597,14 +1600,6 @@ private fun TvSearchResultsPane(
             }
         }
     }
-    // hero 态聚焦行离网格顶线多远: 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP. 网格顶线在顶部行下面、隔着简介到网格的间距 (简介块
-    // 画在原生视图里, 不占布局高度), 有筛选行时再往下一截
-    wallHeroLinePx = with(LocalDensity.current) {
-        (
-            TV_POSTER_WALL_HERO_ROW_TOP - TV_SEARCH_TOP_PAD - TV_SEARCH_TOP_ROW_HEIGHT - TV_SEARCH_HERO_TO_GRID_GAP -
-                if (activeFilters.isEmpty()) 0.dp else TV_SEARCH_FILTERS_TOP_GAP + TV_SEARCH_FILTERS_ROW_HEIGHT
-            ).roundToPx()
-    }
     val chipsFocusRequester = remember { FocusRequester() }
 
     // 从上方 (顶部行/筛选行) 把焦点送进网格: 主走落点解析器聚焦当前视口首行行首 (到位
@@ -1679,54 +1674,16 @@ private fun TvSearchResultsPane(
         // 整页底色 (页面根画, 见 TvPosterWallTone): 深色下 hero 态是近黑, 卡片墙是深灰; 黑度由原生视图逐帧写进来 (见 TvNativeGridPageState)
         TvPosterWallToneSource(wallTone) { nativeState.tone }
         // 原生海报墙 (见 TvSearchNativeGrid.kt): 背景图 / hero 文字 / 网格都在原生视图里, 画在顶部行与筛选行底下
-        val density = LocalDensity.current
-        val windowSize = LocalWindowInfo.current.containerSize
-        val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } -
-            TvNavigationRailDefaults.CollapsedWidth
-        val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
-        val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
-        val nativeColumns = with(density) { tvPosterWallColumns(gridContentWidth) }
-        gridColumns = nativeColumns
-        val nativeCardWidth = tvPosterWallCardWidth(gridContentWidth, nativeColumns)
-        val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
-        val heroWidth = pageWidth - TV_SEARCH_START_PAD - TV_PAGE_END_PAD
-        val filtersBlock = if (activeFilters.isEmpty()) 0.dp else TV_SEARCH_FILTERS_TOP_GAP + TV_SEARCH_FILTERS_ROW_HEIGHT
-        val nativeMetrics = with(density) {
-            val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
-            // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
-            val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
-            TvNativeGridPageMetrics(
-                pageWidthPx = pageWidth.roundToPx(),
-                pageHeightPx = pageHeight.roundToPx(),
-                // 顶部行 + 筛选行 (有的话) + 错误横幅 (有的话) + 简介到网格的间距
-                gridTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_HERO_TO_GRID_GAP).roundToPx() +
-                    if (items.loadState.hasError) nativeErrorCardHeightPx else 0,
-                grid = TvNativeGridMetrics(
-                    columns = nativeColumns,
-                    startPx = TV_GRID_START_BLEED.roundToPx(),
-                    endPx = TV_PAGE_END_PAD.roundToPx(),
-                    topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
-                    bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
-                    endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
-                    heroLinePx = wallHeroLinePx + heroShiftPx,
-                    fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
-                ),
-                backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
-                backdropHeightPx = backdropHeightPx,
-                heroLeftPx = TV_SEARCH_START_PAD.roundToPx(),
-                heroTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_TITLE_TO_HERO_GAP).roundToPx(),
-                heroWidthPx = heroWidth.roundToPx(),
-                heroHeightPx = (TV_SEARCH_WALL_HERO_INFO_HEIGHT - filtersBlock).roundToPx() + heroShiftPx,
-                titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
-                summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
-                // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉
-                bleedLeftPx = TvNavigationRailDefaults.CollapsedWidth.roundToPx(),
-            )
-        }
+        // 筛选行 (有的话) 与错误横幅 (有的话) 的高度, 网格顶线往下让开它们
+        val wallLayout = tvSearchWallLayout(
+            hasFilters = activeFilters.isNotEmpty(),
+            errorTopPx = if (items.loadState.hasError) nativeErrorCardHeightPx else 0,
+        )
+        gridColumns = wallLayout.columns
         TvSearchNativeGrid(
             state = nativeState,
-            metrics = nativeMetrics,
-            cardWidth = nativeCardWidth,
+            metrics = wallLayout.metrics,
+            cardWidth = wallLayout.cardWidth,
             items = items,
             heroRaw = { heroItem },
             heroDisplay = heroDisplay,
@@ -1742,7 +1699,7 @@ private fun TvSearchResultsPane(
                     info?.let {
                         heroItem = it
                         // 邻居按网格几何算 (中间卡四方向); 本页无剧照链, 偏好恒 false
-                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, nativeColumns) { i ->
+                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, wallLayout.columns) { i ->
                             if (i in 0 until items.itemCount) items.peek(i)?.subjectId?.let(::TvHeroNeighbor) else null
                         }
                     }
@@ -1815,7 +1772,7 @@ private fun TvSearchResultsPane(
                 LoadErrorCard(
                     LoadError.fromCombinedLoadStates(items.loadState),
                     onRetry = { items.refresh() },
-                    // 原生网格的顶线按它的高度往下让 (见 nativeMetrics)
+                    // 原生网格的顶线按它的高度往下让 (见 tvSearchWallLayout)
                     Modifier.onSizeChanged { nativeErrorCardHeightPx = it.height }
                         .padding(top = TV_SEARCH_HERO_TO_GRID_GAP, end = TV_PAGE_END_PAD)
                         .focusRequester(errorCardFocusRequester)
@@ -1832,9 +1789,68 @@ private fun TvSearchResultsPane(
     }
 }
 
+/**
+ * 搜索结果 (海报墙) 的几何 (见 [TvNativeGridWallLayout]), 页面与「海报墙大小」的预览页共用. [hasFilters] = 顶部行下面有已选筛选项那一行,
+ * [errorTopPx] = 错误横幅的高度 (没有是 0): 网格顶线往下让开它们, 有筛选行时 hero 信息块等量压缩 (简介少两行, hero 态聚焦行不动).
+ */
+@Composable
+internal fun tvSearchWallLayout(hasFilters: Boolean, errorTopPx: Int = 0): TvNativeGridWallLayout {
+    val density = LocalDensity.current
+    val railWidth = TvNavigationRailDefaults.CollapsedWidth
+    val windowSize = LocalWindowInfo.current.containerSize
+    val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } - railWidth
+    val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
+    val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
+    // 列数与卡宽按海报墙大小算 (见 tvPosterWallGrid), 顶部行与 hero 照常
+    val nativeGrid = with(density) { tvPosterWallGrid(gridContentWidth, LocalTvPosterWallScale.current) }
+    val nativeColumns = nativeGrid.columns
+    val nativeCardWidth = nativeGrid.cardWidth
+    val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+    val heroWidth = pageWidth - TV_SEARCH_START_PAD - TV_PAGE_END_PAD
+    val filtersBlock = if (hasFilters) TV_SEARCH_FILTERS_TOP_GAP + TV_SEARCH_FILTERS_ROW_HEIGHT else 0.dp
+    // hero 态聚焦行离网格顶线多远: 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP. 网格顶线在顶部行下面、隔着简介到网格的间距 (简介块
+    // 画在原生视图里, 不占布局高度), 有筛选行时再往下一截
+    val wallHeroLinePx = with(density) {
+        (TV_POSTER_WALL_HERO_ROW_TOP - TV_SEARCH_TOP_PAD - TV_SEARCH_TOP_ROW_HEIGHT - TV_SEARCH_HERO_TO_GRID_GAP - filtersBlock).roundToPx()
+    }
+    val nativeMetrics = with(density) {
+        val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
+        // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
+        val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
+        TvNativeGridPageMetrics(
+            pageWidthPx = pageWidth.roundToPx(),
+            pageHeightPx = pageHeight.roundToPx(),
+            // 顶部行 + 筛选行 (有的话) + 错误横幅 (有的话) + 简介到网格的间距
+            gridTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_HERO_TO_GRID_GAP).roundToPx() +
+                errorTopPx,
+            grid = TvNativeGridMetrics(
+                columns = nativeColumns,
+                startPx = TV_GRID_START_BLEED.roundToPx(),
+                endPx = TV_PAGE_END_PAD.roundToPx(),
+                topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
+                bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
+                endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
+                heroLinePx = wallHeroLinePx + heroShiftPx,
+                fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
+            ),
+            backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
+            backdropHeightPx = backdropHeightPx,
+            heroLeftPx = TV_SEARCH_START_PAD.roundToPx(),
+            heroTopPx = (TV_SEARCH_TOP_PAD + TV_SEARCH_TOP_ROW_HEIGHT + filtersBlock + TV_SEARCH_TITLE_TO_HERO_GAP).roundToPx(),
+            heroWidthPx = heroWidth.roundToPx(),
+            heroHeightPx = (TV_SEARCH_WALL_HERO_INFO_HEIGHT - filtersBlock).roundToPx() + heroShiftPx,
+            titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
+            summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
+            // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉
+            bleedLeftPx = railWidth.roundToPx(),
+        )
+    }
+    return TvNativeGridWallLayout(nativeColumns, nativeCardWidth, nativeMetrics)
+}
+
 /** 顶部行: 搜索词 (可聚焦, 确认回输入态) + 筛选圆钮 (有筛选生效时角标小圆点). */
 @Composable
-private fun TvSearchTopRow(
+internal fun TvSearchTopRow(
     keywords: String,
     hasFilters: Boolean,
     titleFocusRequester: FocusRequester,
@@ -2419,16 +2435,16 @@ private val TV_SEARCH_QR_SIZE = 180.dp
 private val TV_SEARCH_QR_QUIET_ZONE = 24.dp
 
 /** 结果态: 内容左侧留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值, 与探索 / 追番页一致. */
-private val TV_SEARCH_START_PAD = 16.dp
+internal val TV_SEARCH_START_PAD = 16.dp
 
 /** 结果态: 页面顶部留白. */
-private val TV_SEARCH_TOP_PAD = 24.dp
+internal val TV_SEARCH_TOP_PAD = 24.dp
 
 /** 结果态: 顶部行到 Hero 信息块的间距. */
 private val TV_SEARCH_TITLE_TO_HERO_GAP = 4.dp
 
 /** 结果态: 顶部行定高 (搜索词胶囊与筛选圆钮都是 32): 简介块的高度由它倒推, 见 [TV_SEARCH_WALL_HERO_INFO_HEIGHT]. */
-private val TV_SEARCH_TOP_ROW_HEIGHT = 32.dp
+internal val TV_SEARCH_TOP_ROW_HEIGHT = 32.dp
 
 /**
  * 结果态: 已选筛选项行的固定行高. 与上间距 [TV_SEARCH_FILTERS_TOP_GAP] 相加恰为简介

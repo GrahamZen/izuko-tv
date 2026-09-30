@@ -122,11 +122,26 @@ sealed class NavRoutes : NavKey {
     data object TvCollectionTabOrder : NavRoutes()
 
     /**
+     * TV: 海报墙大小: [page] 那一页的假页面 (有字没图), 左边的侧边栏换成一根调大小的滑块, 边调边看. 三页调的是同一个值.
+     * 页面实现在 ui-tv, 经 `LocalTvPosterWallScaleEditorVariant` 注入; 入口只在遥控器形态的设置里.
+     */
+    @Serializable
+    data class TvPosterWallScale(val page: TvPosterWallPreviewPage) : NavRoutes()
+
+    /**
      * TV: 首次启动引导 (检测连 Bangumi 的网络、选连接方式、登录). 引导还没做过时作为起始页,
      * 做完换成 [Main]. 页面实现在 ui-tv, 经 `LocalTvOnboardingVariant` 注入.
      */
     @Serializable
     data object TvOnboarding : NavRoutes()
+}
+
+/** 「海报墙大小」预览的是哪一页 (见 [NavRoutes.TvPosterWallScale]). */
+@Serializable
+enum class TvPosterWallPreviewPage {
+    EXPLORATION,
+    COLLECTION,
+    SEARCH,
 }
 
 @Serializable

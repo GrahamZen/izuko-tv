@@ -33,6 +33,15 @@ class ThemeSettingsTest {
     }
 
     @Test
+    fun `poster wall scale is clamped and defaults to 1`() {
+        assertEquals(1f, ThemeSettings.Default.effectivePosterWallScale)
+        assertEquals(ThemeSettings.POSTER_WALL_SCALE_MAX, ThemeSettings(tvPosterWallScale = 9f).effectivePosterWallScale)
+        assertEquals(ThemeSettings.POSTER_WALL_SCALE_MIN, ThemeSettings(tvPosterWallScale = 0f).effectivePosterWallScale)
+        assertEquals(0.85f, ThemeSettings(tvPosterWallScale = 0.85f).effectivePosterWallScale)
+        assertEquals(1f, ThemeSettings(tvPosterWallScale = Float.NaN).effectivePosterWallScale)
+    }
+
+    @Test
     fun `non-finite ui scale falls back to 1`() {
         assertEquals(1f, ThemeSettings(uiScale = Float.NaN).effectiveUiScale)
         assertEquals(1f, ThemeSettings(uiScale = Float.POSITIVE_INFINITY).effectiveUiScale)

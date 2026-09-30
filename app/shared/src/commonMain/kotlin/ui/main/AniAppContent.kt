@@ -90,6 +90,7 @@ import me.him188.ani.app.ui.exploration.schedule.ScheduleViewModel
 import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScaleEditorVariant
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
 import me.him188.ani.app.ui.foundation.animation.ProvideAniMotionCompositionLocals
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
@@ -663,6 +664,16 @@ private fun AniAppContentImpl(
                         LaunchedEffect(Unit) { onBack() }
                     } else {
                         editor.Page(onNavigateBack = onBack, modifier = Modifier.fillMaxSize())
+                    }
+                }
+                entry<NavRoutes.TvPosterWallScale> { route ->
+                    // 同 TvPlayerChrome: 页面实现在 ui-tv, 共享代码只认插槽
+                    val editor = LocalTvPosterWallScaleEditorVariant.current
+                    val onBack: () -> Unit = { aniNavigator.popBackStack(route, inclusive = true) }
+                    if (editor == null) {
+                        LaunchedEffect(Unit) { onBack() }
+                    } else {
+                        editor.Page(page = route.page, onNavigateBack = onBack, modifier = Modifier.fillMaxSize())
                     }
                 }
                 entry<NavRoutes.TvPlayerChrome> { route ->

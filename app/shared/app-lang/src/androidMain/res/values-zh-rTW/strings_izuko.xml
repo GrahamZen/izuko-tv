@@ -377,4 +377,21 @@
     <string name="collection_tv_tab_order_hint">確認鍵 拿起  ·  返回鍵 離開</string>
     <string name="collection_tv_tab_order_hint_grabbed">左 / 右 移動  ·  確認鍵 放下  ·  返回鍵 復原</string>
     <string name="collection_tv_tab_order_reset">還原預設順序</string>
+    <string name="settings_appearance_tv_poster_wall_scale_exploration">海報牆大小：探索頁</string>
+    <string name="settings_appearance_tv_poster_wall_scale_collection">海報牆大小：追番頁</string>
+    <string name="settings_appearance_tv_poster_wall_scale_search">海報牆大小：搜尋頁</string>
+    <string name="settings_appearance_tv_poster_wall_scale_description">探索、追番、搜尋三頁的海報卡片（海報、番名和卡片之間的間距）一起放大縮小，三頁用同一個值；上方的標題與簡介、標籤和側邊欄不變，它們由介面縮放調整。點進去在那一頁的樣子上邊看邊調</string>
+    <string name="tv_wall_scale_title">海報牆大小</string>
+    <string name="tv_wall_scale_hint_adjust">上 / 下  調整大小</string>
+    <string name="tv_wall_scale_hint_try">右 / 確認  進入頁面試試</string>
+    <string name="tv_wall_scale_hint_back">返回  退出</string>
+    <string name="tv_wall_scale_hint_preview">這是預覽：確認鍵能展開介紹，但不會進入詳情頁</string>
+    <string name="tv_wall_scale_sample_title_short">番劇名稱</string>
+    <string name="tv_wall_scale_sample_title_medium">名字長一點的番劇</string>
+    <string name="tv_wall_scale_sample_title_long">一部名字很長、要兩行才放得下的番劇</string>
+    <string name="tv_wall_scale_sample_group">示例分組 %1$d</string>
+    <string name="tv_wall_scale_sample_status">連載中</string>
+    <string name="tv_wall_scale_sample_episodes">全 12 話</string>
+    <string name="tv_wall_scale_sample_summary">這裡是簡介。調整大小時只有下面的海報卡片會變，這段簡介、上面的標題和左邊的側邊欄保持原來的大小。這一頁的內容都是示例：按確認鍵能展開介紹，但不會進入詳情頁。</string>
+    <string name="tv_wall_scale_sample_query">示例</string>
 </resources>

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.isSpecified
 import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FOCUS_TRANSITION_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_BOTTOM_GAP
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_HEIGHT
@@ -189,10 +190,12 @@ data class TvNativeCardBadgeStyle(
 )
 
 /**
- * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙): 探索 / 追番 / 搜索页是 tvPosterWallCardWidth 按内容区算的,
+ * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙, 屏幕上的 dp): 探索 / 追番 / 搜索页是 tvPosterWallGrid 按内容区算的,
  * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
  * [columnSpacing] = 卡格之间的距离 (不含卡格里的聚焦框空隙). [cardHeight] = 卡格高 (含聚焦框空隙); null = 按卡宽与封面比例
  * [TV_PORTRAIT_CARD_COVER_RATIO] 算. [labelVibrancy] 见 [TvNativeWallStyle.labelVibrancy] (浅色主题下不生效).
+ *
+ * 在海报墙大小 ([LocalTvPosterWallScale]) 里面时, 卡宽卡高之外的卡片尺寸 (番名字号与块高、行距与列距、聚焦框空隙、圆角、投影、进度条) 一起按它缩放.
  */
 @Composable
 fun rememberTvNativeWallStyle(
@@ -212,10 +215,13 @@ fun rememberTvNativeWallStyle(
     val subtitleColor = tvHeroSecondaryContentColor()
     val titleStyle = tvPosterWallTitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
-    return remember(density, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
-        with(density) {
-            val cardWidthPx = cardWidth.roundToPx()
-            val cardHeightPx = (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx()
+    val cardScale = LocalTvPosterWallScale.current
+    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, subtitleColor, titleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
+        val cardWidthPx = with(density) { cardWidth.roundToPx() }
+        val cardHeightPx = with(density) { (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx() }
+        // 卡片自己的尺寸按海报墙大小换算 (卡宽卡高已经由调用方按它算好)
+        val cardDensity = if (cardScale == 1f) density else Density(density.density * cardScale, density.fontScale)
+        with(cardDensity) {
             val focusScale = TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale
             TvNativeWallStyle(
                 cardWidthPx = cardWidthPx,
@@ -224,7 +230,7 @@ fun rememberTvNativeWallStyle(
                 cornerPx = TV_PORTRAIT_CARD_CORNER.toPx(),
                 labelHeightPx = labelHeight.roundToPx(),
                 titleTopGapPx = TV_POSTER_WALL_TITLE_TOP_GAP.roundToPx(),
-                title = titleStyle.toTvNativeTextStyle(density, titleColor),
+                title = titleStyle.toTvNativeTextStyle(cardDensity, titleColor),
                 subtitleColor = subtitleColor.toArgb(),
                 rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
                 columnSpacingPx = columnSpacing.roundToPx(),

@@ -129,8 +129,10 @@ import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusSpec
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -173,6 +175,15 @@ import org.jetbrains.compose.resources.stringResource
 fun TvCollectionPage(
     state: UserCollectionsState,
     modifier: Modifier = Modifier,
+) {
+    // 海报墙大小 (设置 - 界面): 卡片按它缩放, 标签行与 hero 的文字不变 (见 TvPosterWallScaled)
+    TvPosterWallScaled { TvCollectionPageContent(state, modifier) }
+}
+
+@Composable
+private fun TvCollectionPageContent(
+    state: UserCollectionsState,
+    modifier: Modifier,
 ) {
     val navigator = LocalNavigator.current
     val tmdb = remember { GlobalKoin.get<TmdbImageService>() }
@@ -616,11 +627,6 @@ fun TvCollectionPage(
     TvPageRefreshHandler { state.refreshSelectedPage() }
     // hero 态 (见 TvNativeGridPageState): 卡片上按确定先切到 hero 态 (背景图与简介淡入, 聚焦行移到简介下面),
     // 再按确定才放大进详情页 (从详情页返回仍停在 hero 态); 按返回变回卡片墙.
-    // hero 态聚焦行离网格顶线多远: 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP. 网格顶线在标签行下面、隔着简介到网格的间距
-    // (简介块画在原生视图里, 不占布局高度)
-    val wallHeroLinePx = with(LocalDensity.current) {
-        (TV_POSTER_WALL_HERO_ROW_TOP - TV_COLLECTION_TOP_PAD - TV_COLLECTION_TAB_ROW_HEIGHT - TV_COLLECTION_HERO_TO_GRID_GAP).roundToPx()
-    }
     // 排在网格返回规则 (回首卡) 之后登记, 优先级更高: hero 态里按返回先回卡片墙
     BackHandler(enabled = nativeState.heroActive) {
         nativeState.exitHero()
@@ -651,52 +657,12 @@ fun TvCollectionPage(
         // 海报墙本体 (见 TvCollectionNativeGrid.kt): 背景图 / hero 文字 / 网格都在原生视图里, 画在标签行底下.
         // 背景图恒用"卡片态"渐变, 观看途中优先下一集剧照, 缺失回退整部官方主图; 三级回落 + 封面兜底/垫底 (四页同构),
         // 语义见 TvHeroMediaPipelineState
-        val density = LocalDensity.current
-        val windowSize = LocalWindowInfo.current.containerSize
-        val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } -
-            TvNavigationRailDefaults.CollapsedWidth
-        val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
-        val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
-        val nativeColumns = with(density) { tvPosterWallColumns(gridContentWidth) }
-        val nativeCardWidth = tvPosterWallCardWidth(gridContentWidth, nativeColumns)
-        val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
-        val heroWidth = pageWidth - TV_COLLECTION_START_PAD - TV_PAGE_END_PAD
-        val nativeMetrics = with(density) {
-            val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
-            // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
-            val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
-            TvNativeGridPageMetrics(
-                pageWidthPx = pageWidth.roundToPx(),
-                pageHeightPx = pageHeight.roundToPx(),
-                // 标签行 + 过渡锚点 (1dp) + 错误横幅 (有的话) + 简介到网格的间距
-                gridTopPx = (TV_COLLECTION_TOP_PAD + TV_COLLECTION_TAB_ROW_HEIGHT + TV_TRANSIT_ANCHOR_SIZE + TV_COLLECTION_HERO_TO_GRID_GAP)
-                    .roundToPx() + if (items.loadState.hasError) nativeErrorCardHeightPx else 0,
-                grid = TvNativeGridMetrics(
-                    columns = nativeColumns,
-                    startPx = TV_GRID_START_BLEED.roundToPx(),
-                    endPx = TV_PAGE_END_PAD.roundToPx(),
-                    topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
-                    bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
-                    endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
-                    heroLinePx = wallHeroLinePx + heroShiftPx,
-                    fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
-                ),
-                backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
-                backdropHeightPx = backdropHeightPx,
-                heroLeftPx = TV_COLLECTION_START_PAD.roundToPx(),
-                heroTopPx = (TV_COLLECTION_TOP_PAD + TV_COLLECTION_TAB_ROW_HEIGHT + TV_COLLECTION_TABS_TO_HERO_GAP).roundToPx(),
-                heroWidthPx = heroWidth.roundToPx(),
-                heroHeightPx = TV_COLLECTION_WALL_HERO_INFO_HEIGHT.roundToPx() + heroShiftPx,
-                titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
-                summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
-                // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉
-                bleedLeftPx = TvNavigationRailDefaults.CollapsedWidth.roundToPx(),
-            )
-        }
+        // 标签行下面错误横幅 (有的话) 的高度, 网格顶线往下让开它
+        val wallLayout = tvCollectionWallLayout(errorTopPx = if (items.loadState.hasError) nativeErrorCardHeightPx else 0)
         TvCollectionNativeGrid(
             state = nativeState,
-            metrics = nativeMetrics,
-            cardWidth = nativeCardWidth,
+            metrics = wallLayout.metrics,
+            cardWidth = wallLayout.cardWidth,
             selectedTab = state.selectedTypeIndex,
             tabOrderIndex = { tab -> tabOrder.indexOf(COLLECTION_TABS_SORTED[tab]) },
             items = items,
@@ -718,7 +684,7 @@ fun TvCollectionPage(
                         heroItem = it
                         // 邻居按网格几何算 (见 tvGridNeighborsOf): 卡片墙上不画背景图, hero 流水线也要拿它们给详情页预取.
                         // 剧照偏好按每个邻居自己的观看状态定 (网格里"在看"与其余条目是混着的, 见 TvHeroNeighbor)
-                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, nativeColumns) { i ->
+                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, wallLayout.columns) { i ->
                             if (i in 0 until items.itemCount) {
                                 items.peek(i)?.let { n -> TvHeroNeighbor(n.subjectId, n.stillEpisodeIdOrNull() != null) }
                             } else {
@@ -861,7 +827,7 @@ fun TvCollectionPage(
                 LoadErrorCard(
                     LoadError.fromCombinedLoadStates(items.loadState),
                     onRetry = { items.refresh() },
-                    // 原生网格的顶线按它的高度往下让 (见 nativeMetrics)
+                    // 原生网格的顶线按它的高度往下让 (见 tvCollectionWallLayout)
                     Modifier.onSizeChanged { nativeErrorCardHeightPx = it.height }
                         .padding(top = TV_COLLECTION_HERO_TO_GRID_GAP, end = TV_PAGE_END_PAD)
                         // 请求器挂在卡片容器上, requestFocus 委托给子树第一个焦点目标 (登录/重试按钮);
@@ -1102,6 +1068,64 @@ private const val TV_COLLECTION_COUNTS_WAIT_MILLIS = 3000L
  * 超时只是收尾兜底 (把焦点从隐形锚点送走), 正常路径远早于此.
  */
 private const val TV_COLLECTION_AWAIT_REMOVAL_TIMEOUT_MILLIS = 5000L
+
+/**
+ * 追番页海报墙的几何 (见 [TvNativeGridWallLayout]), 页面与「海报墙大小」的预览页共用. [errorTopPx] = 标签行下面错误横幅的高度 (没有是 0),
+ * 网格顶线往下让开它. 背景图恒用"卡片态"渐变 (见 TV_CARD_HERO_TUNING).
+ */
+@Composable
+internal fun tvCollectionWallLayout(errorTopPx: Int = 0): TvNativeGridWallLayout {
+    val density = LocalDensity.current
+    val railWidth = TvNavigationRailDefaults.CollapsedWidth
+    val windowSize = LocalWindowInfo.current.containerSize
+    val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } - railWidth
+    val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
+    val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
+    // 列数与卡宽按海报墙大小算 (见 tvPosterWallGrid), 标签行与 hero 照常
+    val nativeGrid = with(density) { tvPosterWallGrid(gridContentWidth, LocalTvPosterWallScale.current) }
+    val nativeColumns = nativeGrid.columns
+    val nativeCardWidth = nativeGrid.cardWidth
+    val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+    val heroWidth = pageWidth - TV_COLLECTION_START_PAD - TV_PAGE_END_PAD
+    // hero 态聚焦行离网格顶线多远: 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP. 网格顶线在标签行下面、隔着简介到网格的间距
+    // (简介块画在原生视图里, 不占布局高度)
+    val wallHeroLinePx = with(density) {
+        (TV_POSTER_WALL_HERO_ROW_TOP - TV_COLLECTION_TOP_PAD - TV_COLLECTION_TAB_ROW_HEIGHT - TV_COLLECTION_HERO_TO_GRID_GAP).roundToPx()
+    }
+    val nativeMetrics = with(density) {
+        val backdropHeightPx = (pageHeight * TV_CARD_HERO_TUNING.backdropHeight).roundToPx()
+        // 页面比参照高高 (界面缩放调小) 时背景图跟着变大: hero 态聚焦行与简介块下沿一起下移, 行落在背景图的同一处 (见 tvHeroScaleShift), 100% 时是 0
+        val heroShiftPx = tvHeroScaleShift(pageHeight, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
+        TvNativeGridPageMetrics(
+            pageWidthPx = pageWidth.roundToPx(),
+            pageHeightPx = pageHeight.roundToPx(),
+            // 标签行 + 过渡锚点 (1dp) + 错误横幅 (有的话) + 简介到网格的间距
+            gridTopPx = (TV_COLLECTION_TOP_PAD + TV_COLLECTION_TAB_ROW_HEIGHT + TV_TRANSIT_ANCHOR_SIZE + TV_COLLECTION_HERO_TO_GRID_GAP)
+                .roundToPx() + errorTopPx,
+            grid = TvNativeGridMetrics(
+                columns = nativeColumns,
+                startPx = TV_GRID_START_BLEED.roundToPx(),
+                endPx = TV_PAGE_END_PAD.roundToPx(),
+                topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
+                bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
+                endMarginPx = tvPosterWallEndMargin(nativeCardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
+                heroLinePx = wallHeroLinePx + heroShiftPx,
+                fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
+            ),
+            backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
+            backdropHeightPx = backdropHeightPx,
+            heroLeftPx = TV_COLLECTION_START_PAD.roundToPx(),
+            heroTopPx = (TV_COLLECTION_TOP_PAD + TV_COLLECTION_TAB_ROW_HEIGHT + TV_COLLECTION_TABS_TO_HERO_GAP).roundToPx(),
+            heroWidthPx = heroWidth.roundToPx(),
+            heroHeightPx = TV_COLLECTION_WALL_HERO_INFO_HEIGHT.roundToPx() + heroShiftPx,
+            titleWidthPx = (heroWidth * TV_CARD_HERO_TUNING.titleWidth).roundToPx(),
+            summaryWidthPx = (heroWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
+            // 网格从收起的侧边栏底下画过 (同探索页): 最左一列的放大与投影不在页面左缘被裁掉
+            bleedLeftPx = railWidth.roundToPx(),
+        )
+    }
+    return TvNativeGridWallLayout(nativeColumns, nativeCardWidth, nativeMetrics)
+}
 
 /** 内容左侧留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值, 与探索页一致. */
 internal val TV_COLLECTION_START_PAD = 16.dp

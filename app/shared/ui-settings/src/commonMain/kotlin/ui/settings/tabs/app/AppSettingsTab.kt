@@ -65,12 +65,18 @@ import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.navigation.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScaleEditorVariant
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order
 import me.him188.ani.app.ui.lang.settings_appearance_tv_collection_tab_order_description
+import me.him188.ani.app.ui.lang.settings_appearance_tv_poster_wall_scale_collection
+import me.him188.ani.app.ui.lang.settings_appearance_tv_poster_wall_scale_description
+import me.him188.ani.app.ui.lang.settings_appearance_tv_poster_wall_scale_exploration
+import me.him188.ani.app.ui.lang.settings_appearance_tv_poster_wall_scale_search
 import me.him188.ani.app.ui.lang.settings_player_tv_chrome
 import me.him188.ani.app.ui.lang.settings_player_tv_chrome_description
 import me.him188.ani.app.ui.lang.Lang
@@ -290,6 +296,33 @@ fun SettingsScope.AppearanceGroup(
     // 排在后面的话, 上方那些条目的高度变化会叠加起来把它推出屏幕
     if (LocalAniUiBehavior.current.immersiveShell) {
         UiScaleSliderItem(themeSettings)
+
+        // 「海报墙大小」: 页面实现在 ui-tv, 装了变体才有这个功能 (见 LocalTvPosterWallScaleEditorVariant). 探索 / 追番 / 搜索三页各有一个
+        // 假页面, 点进去在那一页的样子上边调边看; 调的是同一个值, 三页一起变. 这里不摆滑块, 只写当前值
+        val wallScaleEditor = LocalTvPosterWallScaleEditorVariant.current
+        if (wallScaleEditor != null) {
+            val wallScaleNavigator = LocalNavigator.current
+            val wallScaleText = "${(themeSettings.value.effectivePosterWallScale * 100).roundToInt()}%"
+            TextItem(
+                title = { Text(stringResource(Lang.settings_appearance_tv_poster_wall_scale_exploration)) },
+                description = { Text(stringResource(Lang.settings_appearance_tv_poster_wall_scale_description)) },
+                action = { Text(wallScaleText) },
+                onClick = { wallScaleNavigator.navigateTvPosterWallScale(TvPosterWallPreviewPage.EXPLORATION) },
+            )
+            HorizontalDividerItem()
+            TextItem(
+                title = { Text(stringResource(Lang.settings_appearance_tv_poster_wall_scale_collection)) },
+                action = { Text(wallScaleText) },
+                onClick = { wallScaleNavigator.navigateTvPosterWallScale(TvPosterWallPreviewPage.COLLECTION) },
+            )
+            HorizontalDividerItem()
+            TextItem(
+                title = { Text(stringResource(Lang.settings_appearance_tv_poster_wall_scale_search)) },
+                action = { Text(wallScaleText) },
+                onClick = { wallScaleNavigator.navigateTvPosterWallScale(TvPosterWallPreviewPage.SEARCH) },
+            )
+            HorizontalDividerItem()
+        }
 
         // 「自定义追番页标签顺序」: 页面实现在 ui-tv, 装了变体才有这个功能
         // (见 LocalTvCollectionTabOrderEditorVariant). 点进去就是追番页那排标签本身, 在上面直接排,

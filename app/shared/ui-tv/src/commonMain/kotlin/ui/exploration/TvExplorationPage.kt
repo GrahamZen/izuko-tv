@@ -90,6 +90,9 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_ROW_TOP
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_REFERENCE_PAGE_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.tvHeroScaleShift
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallToneSource
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollHiddenProvider
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
@@ -137,6 +140,7 @@ import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
 import me.him188.ani.utils.analytics.recordEvent
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import me.him188.ani.app.data.models.subject.FollowedSubjectInfo
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
@@ -145,8 +149,6 @@ import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_CARD_FOCUS_STYLE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_ROW_SPACING
 import me.him188.ani.app.ui.foundation.tv.focusScale
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
 import android.graphics.Rect as AndroidRect
@@ -180,6 +182,15 @@ import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
 fun TvExplorationPage(
     state: ExplorationPageState,
     modifier: Modifier = Modifier,
+) {
+    // 海报墙大小 (设置 - 界面): 卡片按它缩放, 轮播与 hero 的文字不变 (见 TvPosterWallScaled)
+    TvPosterWallScaled { TvExplorationPageContent(state, modifier) }
+}
+
+@Composable
+private fun TvExplorationPageContent(
+    state: ExplorationPageState,
+    modifier: Modifier,
 ) {
     val navigator = LocalNavigator.current
     val collectionRepo = remember { GlobalKoin.get<SubjectCollectionRepository>() }
@@ -220,16 +231,8 @@ fun TvExplorationPage(
     // 本页在主壳里, 左边让出收起的侧边栏, 右边留 TV_PAGE_END_PAD.
     // 窗口还没测量的那几帧尺寸是 0 (冷启动时本页正好在那会儿组合, 见 AniDisplayTier): 先按 1080p 电视的 960 × 540 dp 算,
     // 否则会先按 1 列切一遍行, 下一帧再换成 6 列
-    val pageWindowSize = with(LocalDensity.current) {
-        val size = LocalWindowInfo.current.containerSize
-        DpSize(
-            if (size.width > 0) size.width.toDp() else TV_EXPLORATION_FALLBACK_WINDOW_WIDTH,
-            if (size.height > 0) size.height.toDp() else TV_EXPLORATION_FALLBACK_WINDOW_HEIGHT,
-        )
-    }
-    val wallContentWidth =
-        pageWindowSize.width - TvNavigationRailDefaults.CollapsedWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
-    val wallColumns = with(LocalDensity.current) { tvPosterWallColumns(wallContentWidth) }
+    val wallLayout = tvExplorationWallLayout()
+    val wallColumns = wallLayout.columns
 
     // 聚焦条目 (卡片聚焦时上报, 见 nativeListener); 标题/封面来自卡片自身数据, 立即可显示.
     // 初值取上次离开时的目标 (见 TvExplorationLastHero.target): 返回本页时首帧就能算出背景图,
@@ -1050,73 +1053,7 @@ fun TvExplorationPage(
             // 每个焦点目标上而不是充当进出边界, 改道根本不触发.
             .focusGroup(),
     ) {
-        // 原生海报墙 (见 TvExplorationNativeWall.kt): 背景图 / hero 文字与按钮 / 卡片列表 / 轮播指示器都在原生视图里, 几何按本页的常量算好交给它.
-        // 列表各项一律定高: 停位按高度直接算, 不用等测量. 行 = 海报 + 两行番名 + 行距, 组标题 [TV_WALL_SECTION_LABEL_BLOCK],
-        // hero 占位 = 轮播态下卡片区顶线到首组标题的距离: 首组标题落在 [TV_EXPLORATION_CARD_TOP], 轮播按钮下缘到它恰好一个 [TV_EXPLORATION_ROW_GAP]
-        val wallCardWidth = tvPosterWallCardWidth(wallContentWidth, wallColumns)
-        val wallLabelHeight = tvPosterWallLabelHeight()
-        val nativeMetrics = with(LocalDensity.current) {
-            val pageWidth = pageWindowSize.width - TvNavigationRailDefaults.CollapsedWidth
-            val heroContentWidth = pageWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
-            val backdropHeightPx = (pageWindowSize.height * TV_WALL_BACKDROP_HEIGHT).roundToPx()
-            val cardHeight = wallCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
-            // 页面比参照高高 (界面缩放调小) 时背景图跟着变大, 图下面的东西一起下移 (见 tvHeroScaleShift), 挪出来的高度给简介, 100% 时都是 0:
-            // 轮播态 = 首组标题、卡片、轮播按钮与指示器, 首行海报顶边落在背景图的同一处; hero 态 = 聚焦行 (三页对齐的那条线) 与简介块下沿
-            val carouselShiftPx =
-                tvHeroScaleShift(pageWindowSize.height, TV_EXPLORATION_CARD_TOP + TV_WALL_SECTION_LABEL_BLOCK).roundToPx()
-            val heroShiftPx = tvHeroScaleShift(pageWindowSize.height, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
-            val spacerHeight = TV_EXPLORATION_CARD_TOP - TV_EXPLORATION_WALL_TOP
-            // 轮播背景图的下缘离屏顶多远, 与它比 hero 占位长出去的那一截 (压在第一组标题与海报上面, 见 tvNativeCarouselShift)
-            val carouselBottomPx = (pageWindowSize.height * TV_CAROUSEL_HERO_TUNING.backdropHeight).toPx()
-            val overhangPx = (carouselBottomPx - (TV_EXPLORATION_WALL_TOP + spacerHeight).toPx() - carouselShiftPx)
-                .roundToInt().coerceAtLeast(0)
-            // 指示器挨着首组标题: 下移时从参照高下的位置跟着挪, 不下移时照旧按页面高算
-            val dotsLineHeight = if (carouselShiftPx > 0) TV_HERO_REFERENCE_PAGE_HEIGHT else pageWindowSize.height
-            TvNativeExploreMetrics(
-                pageWidthPx = pageWidth.roundToPx(),
-                pageHeightPx = pageWindowSize.height.roundToPx(),
-                bleedLeftPx = TvNavigationRailDefaults.CollapsedWidth.roundToPx(),
-                columns = wallColumns,
-                listTopPx = TV_EXPLORATION_WALL_TOP.roundToPx(),
-                listTopBleedPx = TV_EXPLORATION_WALL_TOP_BLEED.roundToPx(),
-                listBottomBleedPx = TV_EXPLORATION_WALL_BOTTOM_BLEED.roundToPx(),
-                spacerPx = spacerHeight.roundToPx() + carouselShiftPx,
-                headerPx = TV_WALL_SECTION_LABEL_BLOCK.roundToPx(),
-                rowPx = (cardHeight + wallLabelHeight + TV_POSTER_WALL_ROW_SPACING).roundToPx(),
-                rowGapPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
-                // 顶线到屏幕底边
-                viewportPx = (pageWindowSize.height - TV_EXPLORATION_WALL_TOP).roundToPx(),
-                endMarginPx = tvPosterWallEndMargin(cardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
-                // hero 态聚焦行的组标题停在哪 (从卡片区顶线算): 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP,
-                // 组标题在它上面, 即简介块下沿那条线
-                heroHeaderTopPx = (TV_POSTER_WALL_HERO_ROW_TOP - TV_WALL_SECTION_LABEL_BLOCK - TV_EXPLORATION_WALL_TOP).roundToPx() +
-                    heroShiftPx,
-                rowStartPx = TV_EXPLORATION_ROW_START_BLEED.roundToPx(),
-                endPadPx = TV_PAGE_END_PAD.roundToPx(),
-                fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
-                carouselBottomPx = carouselBottomPx,
-                overhangPx = overhangPx,
-                backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
-                backdropHeightPx = backdropHeightPx,
-                cardBackdropScale = TV_CARD_HERO_TUNING.backdropHeight / TV_WALL_BACKDROP_HEIGHT,
-                heroStartPx = TV_EXPLORATION_START_PAD.roundToPx(),
-                heroTopPx = TV_EXPLORATION_HERO_TOP.roundToPx(),
-                heroEndPadPx = TV_PAGE_END_PAD.roundToPx(),
-                heroBlockPx = TV_HERO_BLOCK_HEIGHT.roundToPx() + heroShiftPx,
-                heroBlockExpandedPx = TV_HERO_BLOCK_HEIGHT_EXPANDED.roundToPx() + carouselShiftPx,
-                titleWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.titleWidth).roundToPx(),
-                carouselSummaryWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.summaryWidth).roundToPx(),
-                cardSummaryWidthPx = (heroContentWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
-                buttonsTopGapPx = TV_HERO_INFO_TO_BUTTONS_GAP.roundToPx(),
-                buttonGapPx = TV_HERO_BUTTON_GAP.roundToPx(),
-                dotsCenterYPx = (dotsLineHeight * TV_CAROUSEL_HERO_TUNING.clearLine).roundToPx() +
-                    TV_CAROUSEL_INDICATOR_OFFSET.roundToPx() + carouselShiftPx,
-                dotPx = TV_CAROUSEL_DOT_SIZE.toPx(),
-                dotSelectedWidthPx = TV_CAROUSEL_DOT_SELECTED_WIDTH.toPx(),
-                dotGapPx = TV_CAROUSEL_DOT_GAP.toPx(),
-                dotInactiveAlpha = TV_CAROUSEL_DOT_INACTIVE_ALPHA,
-            )
-        }
+        // 原生海报墙的几何见 tvExplorationWallLayout
         val nativeItems = rememberTvExplorationNativeItems(hasFollowed, followedItems, recRows, recFlat, playHistories, extendingGroups)
         TvExplorationNativeSources(
             state = nativeState,
@@ -1135,8 +1072,8 @@ fun TvExplorationPage(
         )
         TvExplorationNativeWall(
             state = nativeState,
-            metrics = nativeMetrics,
-            cardWidth = wallCardWidth,
+            metrics = wallLayout.metrics,
+            cardWidth = wallLayout.cardWidth,
             items = nativeItems,
             carouselCount = carouselSize,
             carouselIndex = { carouselIndex.coerceIn(0, (carouselSize - 1).coerceAtLeast(0)) },
@@ -1255,7 +1192,7 @@ private const val TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS = 2_000L
  */
 private val TV_ENTRY_CARD_RESTORE_TIMEOUT = 2.5.seconds
 
-private val TV_EXPLORATION_NAV_KEYS = setOf(
+internal val TV_EXPLORATION_NAV_KEYS = setOf(
     Key.DirectionUp,
     Key.DirectionDown,
     Key.DirectionLeft,
@@ -1468,7 +1405,7 @@ private val TV_HERO_BLOCK_HEIGHT = TV_HERO_TEXT_BOTTOM - TV_EXPLORATION_HERO_TOP
 private val TV_WALL_BACKDROP_HEIGHT = maxOf(TV_CAROUSEL_HERO_TUNING.backdropHeight, TV_CARD_HERO_TUNING.backdropHeight)
 
 /** 海报墙背景图在轮播与聚焦卡两套之间过渡用的遮罩几何. */
-private val TV_WALL_BACKDROP_GEOMETRY = tvHeroBackdropGeometry(hero = TV_CAROUSEL_HERO_TUNING, card = TV_CARD_HERO_TUNING)
+internal val TV_WALL_BACKDROP_GEOMETRY = tvHeroBackdropGeometry(hero = TV_CAROUSEL_HERO_TUNING, card = TV_CARD_HERO_TUNING)
 
 /** 轮播圆点的中心在背景图分界线 ([TV_CAROUSEL_HERO_TUNING] 的 clearLine) 下方多远: 压在下缘羽化带里, 挨着首行预览. */
 private val TV_CAROUSEL_INDICATOR_OFFSET = 60.dp
@@ -1545,14 +1482,110 @@ private const val TV_CAROUSEL_AUTO_ADVANCE_MILLIS = 6000L
 
 
 /**
+ * 探索页海报墙的几何: 列数、卡宽、交给原生视图的各项尺寸. 页面与「海报墙大小」的预览页共用这一份, 预览才与真页一模一样.
+ * 在 [TvPosterWallScaled] 里调用时卡片 (列数、卡宽、行高与行距) 按海报墙大小算, 轮播、hero 与组标题照常.
+ */
+internal class TvExplorationWallLayout(
+    val columns: Int,
+    val cardWidth: Dp,
+    val metrics: TvNativeExploreMetrics,
+)
+
+/**
+ * 算 [TvExplorationWallLayout]. 本页在主壳里, 左边让出收起的侧边栏, 右边留 [TV_PAGE_END_PAD].
+ * 窗口还没测量的那几帧尺寸是 0 (冷启动时本页正好在那会儿组合, 见 AniDisplayTier): 先按 1080p 电视的 960 × 540 dp 算,
+ * 否则会先按 1 列切一遍行, 下一帧再换成 6 列.
+ */
+@Composable
+internal fun tvExplorationWallLayout(): TvExplorationWallLayout {
+    val railWidth = TvNavigationRailDefaults.CollapsedWidth
+    val cardScale = LocalTvPosterWallScale.current
+    val pageWindowSize = with(LocalDensity.current) {
+        val size = LocalWindowInfo.current.containerSize
+        DpSize(
+            if (size.width > 0) size.width.toDp() else TV_EXPLORATION_FALLBACK_WINDOW_WIDTH,
+            if (size.height > 0) size.height.toDp() else TV_EXPLORATION_FALLBACK_WINDOW_HEIGHT,
+        )
+    }
+    // 海报墙的列数. 行结构 (哪张卡在哪一行) 页面各处都要用, 所以按窗口宽度算, 不等卡片区量出来
+    val wallContentWidth = pageWindowSize.width - railWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
+    val wallGrid = with(LocalDensity.current) { tvPosterWallGrid(wallContentWidth, cardScale) }
+    val wallColumns = wallGrid.columns
+    // 原生海报墙 (见 TvExplorationNativeWall.kt): 背景图 / hero 文字与按钮 / 卡片列表 / 轮播指示器都在原生视图里, 几何按本页的常量算好交给它.
+    // 列表各项一律定高: 停位按高度直接算, 不用等测量. 行 = 海报 + 两行番名 + 行距 (这三样随海报墙大小缩放), 组标题 [TV_WALL_SECTION_LABEL_BLOCK],
+    // hero 占位 = 轮播态下卡片区顶线到首组标题的距离: 首组标题落在 [TV_EXPLORATION_CARD_TOP], 轮播按钮下缘到它恰好一个 [TV_EXPLORATION_ROW_GAP]
+    val wallCardWidth = wallGrid.cardWidth
+    val wallLabelHeight = tvPosterWallLabelHeight() * cardScale
+    val wallRowSpacing = TV_POSTER_WALL_ROW_SPACING * cardScale
+    val metrics = with(LocalDensity.current) {
+        val pageWidth = pageWindowSize.width - railWidth
+        val heroContentWidth = pageWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
+        val backdropHeightPx = (pageWindowSize.height * TV_WALL_BACKDROP_HEIGHT).roundToPx()
+        val cardHeight = wallCardWidth / TV_PORTRAIT_CARD_COVER_RATIO
+        // 页面比参照高高 (界面缩放调小) 时背景图跟着变大, 图下面的东西一起下移 (见 tvHeroScaleShift), 挪出来的高度给简介, 100% 时都是 0:
+        // 轮播态 = 首组标题、卡片、轮播按钮与指示器, 首行海报顶边落在背景图的同一处; hero 态 = 聚焦行 (三页对齐的那条线) 与简介块下沿
+        val carouselShiftPx =
+            tvHeroScaleShift(pageWindowSize.height, TV_EXPLORATION_CARD_TOP + TV_WALL_SECTION_LABEL_BLOCK).roundToPx()
+        val heroShiftPx = tvHeroScaleShift(pageWindowSize.height, TV_POSTER_WALL_HERO_ROW_TOP).roundToPx()
+        val spacerHeight = TV_EXPLORATION_CARD_TOP - TV_EXPLORATION_WALL_TOP
+        // 轮播背景图的下缘离屏顶多远, 与它比 hero 占位长出去的那一截 (压在第一组标题与海报上面, 见 tvNativeCarouselShift)
+        val carouselBottomPx = (pageWindowSize.height * TV_CAROUSEL_HERO_TUNING.backdropHeight).toPx()
+        val overhangPx = (carouselBottomPx - (TV_EXPLORATION_WALL_TOP + spacerHeight).toPx() - carouselShiftPx)
+            .roundToInt().coerceAtLeast(0)
+        // 指示器挨着首组标题: 下移时从参照高下的位置跟着挪, 不下移时照旧按页面高算
+        val dotsLineHeight = if (carouselShiftPx > 0) TV_HERO_REFERENCE_PAGE_HEIGHT else pageWindowSize.height
+        TvNativeExploreMetrics(
+            pageWidthPx = pageWidth.roundToPx(),
+            pageHeightPx = pageWindowSize.height.roundToPx(),
+            bleedLeftPx = railWidth.roundToPx(),
+            columns = wallColumns,
+            listTopPx = TV_EXPLORATION_WALL_TOP.roundToPx(),
+            listTopBleedPx = TV_EXPLORATION_WALL_TOP_BLEED.roundToPx(),
+            listBottomBleedPx = TV_EXPLORATION_WALL_BOTTOM_BLEED.roundToPx(),
+            spacerPx = spacerHeight.roundToPx() + carouselShiftPx,
+            headerPx = TV_WALL_SECTION_LABEL_BLOCK.roundToPx(),
+            rowPx = (cardHeight + wallLabelHeight + wallRowSpacing).roundToPx(),
+            rowGapPx = wallRowSpacing.roundToPx(),
+            // 顶线到屏幕底边
+            viewportPx = (pageWindowSize.height - TV_EXPLORATION_WALL_TOP).roundToPx(),
+            endMarginPx = tvPosterWallEndMargin(cardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
+            // hero 态聚焦行的组标题停在哪 (从卡片区顶线算): 行落在三页对齐的 TV_POSTER_WALL_HERO_ROW_TOP,
+            // 组标题在它上面, 即简介块下沿那条线
+            heroHeaderTopPx = (TV_POSTER_WALL_HERO_ROW_TOP - TV_WALL_SECTION_LABEL_BLOCK - TV_EXPLORATION_WALL_TOP).roundToPx() +
+                heroShiftPx,
+            // 横滑行行首停靠线 = 内容区左缘: 原生视图从屏幕左缘画起, 越过停靠线的卡从侧边栏底下可见地滑出屏幕
+            rowStartPx = (railWidth + TV_EXPLORATION_START_PAD).roundToPx(),
+            endPadPx = TV_PAGE_END_PAD.roundToPx(),
+            fadeDistancePx = TV_CARD_FADE_DISTANCE.toPx(),
+            carouselBottomPx = carouselBottomPx,
+            overhangPx = overhangPx,
+            backdropWidthPx = (backdropHeightPx * TV_BACKDROP_ASPECT_RATIO).roundToInt(),
+            backdropHeightPx = backdropHeightPx,
+            cardBackdropScale = TV_CARD_HERO_TUNING.backdropHeight / TV_WALL_BACKDROP_HEIGHT,
+            heroStartPx = TV_EXPLORATION_START_PAD.roundToPx(),
+            heroTopPx = TV_EXPLORATION_HERO_TOP.roundToPx(),
+            heroEndPadPx = TV_PAGE_END_PAD.roundToPx(),
+            heroBlockPx = TV_HERO_BLOCK_HEIGHT.roundToPx() + heroShiftPx,
+            heroBlockExpandedPx = TV_HERO_BLOCK_HEIGHT_EXPANDED.roundToPx() + carouselShiftPx,
+            titleWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.titleWidth).roundToPx(),
+            carouselSummaryWidthPx = (heroContentWidth * TV_CAROUSEL_HERO_TUNING.summaryWidth).roundToPx(),
+            cardSummaryWidthPx = (heroContentWidth * TV_CARD_HERO_TUNING.summaryWidth).roundToPx(),
+            buttonsTopGapPx = TV_HERO_INFO_TO_BUTTONS_GAP.roundToPx(),
+            buttonGapPx = TV_HERO_BUTTON_GAP.roundToPx(),
+            dotsCenterYPx = (dotsLineHeight * TV_CAROUSEL_HERO_TUNING.clearLine).roundToPx() +
+                TV_CAROUSEL_INDICATOR_OFFSET.roundToPx() + carouselShiftPx,
+            dotPx = TV_CAROUSEL_DOT_SIZE.toPx(),
+            dotSelectedWidthPx = TV_CAROUSEL_DOT_SELECTED_WIDTH.toPx(),
+            dotGapPx = TV_CAROUSEL_DOT_GAP.toPx(),
+            dotInactiveAlpha = TV_CAROUSEL_DOT_INACTIVE_ALPHA,
+        )
+    }
+    return TvExplorationWallLayout(wallColumns, wallCardWidth, metrics)
+}
+
+/**
  * 内容左侧额外留白: 页面从屏幕左缘铺起 (侧边栏盖在上面), 内容左缘 = 侧边栏收起宽度 48dp + 此值.
  * 默认 16 使总左缘 64, 侧边栏按钮中心 (32) 恰在屏幕左缘与内容左缘的正中间.
  */
 private val TV_EXPLORATION_START_PAD = 16.dp
 
-/**
- * 横滑行行首停靠线离屏幕左缘的距离 = 侧边栏收起宽度 ([TvNavigationRailDefaults.CollapsedWidth])
- * + 内容列额外留白 ([TV_EXPLORATION_START_PAD]), 即内容区左缘: 原生视图从屏幕左缘画起,
- * 越过停靠线的卡从侧边栏底下可见地滑出屏幕.
- */
-private val TV_EXPLORATION_ROW_START_BLEED = TvNavigationRailDefaults.CollapsedWidth + TV_EXPLORATION_START_PAD

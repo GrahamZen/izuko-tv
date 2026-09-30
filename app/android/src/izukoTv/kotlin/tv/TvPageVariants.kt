@@ -116,6 +116,9 @@ import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScaleEditorVariant
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaleEditorVariant
+import me.him188.ani.app.ui.main.TvPosterWallScalePage
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvPlayerChromeEditorVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvPlayerChromeLayoutPage
@@ -266,6 +269,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 「自定义追番页标签顺序」页 (设置 - 界面里的入口据此决定出不出现)
         LocalTvCollectionTabOrderEditorVariant provides TvCollectionTabOrderEditorVariant { onNavigateBack, modifier ->
             TvCollectionTabOrderPage(onNavigateBack, modifier)
+        },
+        // 「海报墙大小」页 (设置 - 界面里的三个入口据此决定出不出现)
+        LocalTvPosterWallScaleEditorVariant provides TvPosterWallScaleEditorVariant { page, onNavigateBack, modifier ->
+            TvPosterWallScalePage(page, onNavigateBack, modifier)
         },
         // 「自定义播放器按钮」页 (设置 - 播放器里的入口据此决定出不出现)
         LocalTvPlayerChromeEditorVariant provides TvPlayerChromeEditorVariant { onNavigateBack, modifier ->

@@ -202,6 +202,11 @@ interface AniNavigator {
     fun navigateTvCollectionTabOrder() {
         navigateSingleInstance(NavRoutes.TvCollectionTabOrder)
     }
+
+    /** TV: 在 [page] 的假页面上调海报墙大小 (见 [NavRoutes.TvPosterWallScale]). */
+    fun navigateTvPosterWallScale(page: TvPosterWallPreviewPage) {
+        navigateSingleInstance(NavRoutes.TvPosterWallScale(page))
+    }
 }
 
 /**
