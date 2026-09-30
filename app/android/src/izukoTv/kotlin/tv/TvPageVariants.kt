@@ -133,10 +133,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import me.him188.ani.android.activity.ProfileRestartActivity
 import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.UserProfiles
-import me.him188.ani.app.platform.findActivity
+import me.him188.ani.app.ui.profile.TvProfileSwitchLandingHost
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.profile.TvUserProfilePickerHost
 
@@ -193,9 +192,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val profileManager = remember { GlobalKoin.get<UserProfileManager>() }
     var launchPickerHandled by rememberSaveable { mutableStateOf(false) }
     // 应用为换人 / 改成本地用户自己重启进来的 (见 ProfileRestartActivity)
-    val profileRestart = remember(appContext) {
-        appContext.findActivity()?.intent?.getBooleanExtra(ProfileRestartActivity.EXTRA_PROFILE_CHOSEN, false) == true
-    }
+    val profileRestart = UserProfiles.launchedBySwitch
     val pickerOnLaunch = remember(appContext) {
         !launchPickerHandled && !onboardingPending && profileManager.isSupported &&
                 profileManager.state.value.profiles.size >= 2 && !profileRestart
@@ -496,6 +493,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 }
                 TvStartupLogo(startupLogo, tvStartupLogoColors())
             }
+            // 换人重启进来时盖在最上面的那一帧 (与重启途中显示的是同一张), 首页封面加载好了再淡出
+            TvProfileSwitchLandingHost()
         }
     }
 }

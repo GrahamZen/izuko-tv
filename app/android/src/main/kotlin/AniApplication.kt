@@ -103,6 +103,9 @@ class AniApplication : Application() {
     @OptIn(ExperimentalUuidApi::class)
     override fun onCreate() {
         super.onCreate()
+        val currentProcess = processName()
+        // 换人重启的中转进程只画一帧、结束主进程再拉起主界面, 连日志都不配: 越早画出那一帧越好 (见 ProfileRestartActivity)
+        if (currentProcess.contains(ProfileRestartActivity.PROCESS_SUFFIX)) return
         val startupTimeMonitor = StartupTimeMonitor()
 
         val logsDir = applicationContext.getLogsDir().absolutePath
@@ -118,10 +121,8 @@ class AniApplication : Application() {
         }
         startupTimeMonitor.mark(StepName.UncaughtExceptionHandler)
 
-        val currentProcess = processName()
         if (currentProcess.contains("torrent_service") ||
-            currentProcess.contains("codecprobe") ||
-            currentProcess.contains(ProfileRestartActivity.PROCESS_SUFFIX)
+            currentProcess.contains("codecprobe")
         ) {
             // In service process, we don't need any dependency which is use in app process.
             return

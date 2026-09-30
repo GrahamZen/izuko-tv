@@ -9,7 +9,9 @@
 
 package me.him188.ani.app.domain.profile
 
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.utils.logging.info
@@ -21,7 +23,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 界面上管理用户的入口: 切换、新建、改名、删除.
  *
- * 切换 = 记下下次启动的用户再重启进程 ([AppRestarter]), 见 [UserProfiles].
+ * 切换 = 记下下次启动的用户再重启进程 ([AppRestarter]), 见 [UserProfiles]. 重启前界面上先放过场 ([transition]).
  */
 class UserProfileManager(
     private val registry: UserProfileRegistry,
@@ -39,20 +41,40 @@ class UserProfileManager(
     /** 平台支持换用户 (要能重启进程). 不支持时界面上不出现用户相关的入口. */
     val isSupported: Boolean get() = restarter.isSupported
 
-    /** 换成 [id] 这个用户: 就是当前用户时什么都不做, 否则重启进程. */
+    /** 重启前界面上的过场, 界面在场时装上. 限时等, 出错或超时照样重启. */
+    var transition: ProfileSwitchTransition? = null
+
+    /** 换成 [id] 这个用户: 就是当前用户时什么都不做, 否则重启进程. 垫数据与过场同时做. */
     suspend fun switchTo(id: Int) {
         if (id == currentId) return
         val target = registry.find(id) ?: return
-        try {
-            withTimeoutOrNull(BEFORE_SWITCH_TIMEOUT) { beforeSwitch(target) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to prepare user profile $id before switching, switching anyway" }
+        coroutineScope {
+            launch {
+                try {
+                    withTimeoutOrNull(BEFORE_SWITCH_TIMEOUT) { beforeSwitch(target) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to prepare user profile $id before switching, switching anyway" }
+                }
+            }
+            launch { playTransition(target) }
         }
         registry.setCurrent(id)
         logger.info { "Switching user profile $currentId -> $id, restarting" }
         restarter.restart()
+    }
+
+    private suspend fun playTransition(target: UserProfile) {
+        val transition = transition ?: return
+        try {
+            withTimeoutOrNull(TRANSITION_TIMEOUT) { transition.play(target) }
+                ?: logger.warn { "Profile switch transition timed out, restarting anyway" }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Profile switch transition failed, restarting anyway" }
+        }
     }
 
     /** 新建一个用户, 不切过去. */
@@ -97,6 +119,7 @@ class UserProfileManager(
         registry.update(currentId) {
             it.copy(kind = UserProfileKind.LOCAL, name = it.name.ifBlank { defaultName }, pendingLogin = false, avatarUrl = null)
         }
+        registry.find(currentId)?.let { playTransition(it) }
         logger.info { "Converted user profile $currentId to local, restarting" }
         restarter.restart()
     }
@@ -111,5 +134,17 @@ class UserProfileManager(
 
         /** 垫数据最多等这么久: 选了人就该马上换, 垫不完的对方进来自己取. */
         private val BEFORE_SWITCH_TIMEOUT = 2.seconds
+
+        /** 过场最多等这么久 (动画加截图写文件, 慢的电视上一秒左右). */
+        private val TRANSITION_TIMEOUT = 3.seconds
     }
+}
+
+/**
+ * 换人 / 改成本地用户重启前界面上的过场 (电视上: 选人页把要换过去的人摆到正中定格, 截下这一帧留给重启途中与新进程接着显示).
+ * [play] 在这一帧截好 (或截不了) 时返回, 之后进程马上重启.
+ */
+fun interface ProfileSwitchTransition {
+    /** @param target 重启后的用户 (改成本地用户时是改好的自己) */
+    suspend fun play(target: UserProfile)
 }

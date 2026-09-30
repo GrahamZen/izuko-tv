@@ -208,6 +208,13 @@ object UserProfiles {
     /** 本进程的用户 (名字、头像这些会变, 所以每次从列表里取). */
     val current: UserProfile get() = registry.find(currentId) ?: UserProfile(currentId)
 
+    /**
+     * 本进程是换人 / 改成本地用户时应用自己重启出来的 (不是用户打开的应用): 打开应用才弹的提示 (有新版本、Web 控制台二维码) 这次都不弹.
+     * 平台入口在主界面创建时定下 (Android: 主界面带着 `ProfileRestartActivity.EXTRA_PROFILE_CHOSEN` 打开).
+     */
+    @Volatile
+    var launchedBySwitch: Boolean = false
+
     fun install(registry: UserProfileRegistry) {
         installedRegistry = registry
         installedCurrentId = registry.state.value.currentId

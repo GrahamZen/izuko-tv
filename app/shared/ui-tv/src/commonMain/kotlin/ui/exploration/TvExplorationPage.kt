@@ -14,6 +14,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import me.him188.ani.app.data.network.RecommendationRefreshProgress
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
+import me.him188.ani.app.ui.foundation.AniStartupProgress
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
@@ -165,6 +166,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
 import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
 import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
+import me.him188.ani.app.platform.ProfileSwitchFrame
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 
 /**
@@ -540,10 +542,11 @@ private fun TvExplorationPageContent(
     val recRefreshing by state.recommendationsRefreshing.collectAsStateWithLifecycle()
     val recLoadingHint = stringResource(Lang.exploration_rec_loading)
     var recEmptyHintShown by rememberSaveable { mutableStateOf(false) }
-    // 选人页、登录层盖在主页上时不提示 (系统 toast 会浮在它们上面), 露出主页时还空着再说
+    // 选人页、登录层、换人进来的过场盖在主页上时不提示 (系统 toast 会浮在它们上面), 露出主页时还空着再说
     val pickerVisible by TvUserProfilePicker.visible.collectAsStateWithLifecycle()
     val loginLayerVisible = TvOnboardingLogin.request.collectAsStateWithLifecycle().value != null
-    val pageCovered = pickerVisible || loginLayerVisible
+    val switchLandingVisible = ProfileSwitchFrame.landing.collectAsStateWithLifecycle().value != null
+    val pageCovered = pickerVisible || loginLayerVisible || switchLandingVisible
     LaunchedEffect(recRefreshing, recGroups.isEmpty(), pageCovered) {
         if (recRefreshing && recGroups.isEmpty() && !recEmptyHintShown && !pageCovered) {
             recEmptyHintShown = true
@@ -554,6 +557,10 @@ private fun TvExplorationPageContent(
     // 登录后的分组一组一条横滑行 (见 tvRecRowsOf)
     val recRows = remember(recGroups, wallColumns) { tvRecRowsOf(recGroups, wallColumns) }
     val hasFollowed = followedItems.itemCount > 0
+    // 推荐在现算、又没有继续观看: 首屏这会儿没有封面要加载, 冷启动的启动页与换人进来的过场不必等封面 (见 AniStartupProgress)
+    LaunchedEffect(recRefreshing, recGroups.isEmpty(), hasFollowed) {
+        if (recRefreshing && recGroups.isEmpty() && !hasFollowed) AniStartupProgress.expectNoCovers()
+    }
 
     // ------------------------------------------------------------------
     // 焦点簿记 + 两个显式落点请求

@@ -12,8 +12,12 @@ package me.him188.ani.android.activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,12 +42,17 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.platform.AniComponentActivity
+import me.him188.ani.app.platform.ProfileSwitchFrame
+import me.him188.ani.app.platform.ProfileSwitchFrameDrawable
 import me.him188.ani.app.platform.rememberPlatformWindow
 import me.him188.ani.app.ui.exprovider.ExternalContentProviderFactory
 import me.him188.ani.app.ui.exprovider.LocalExternalContentProvider
@@ -59,6 +68,7 @@ import me.him188.ani.app.ui.main.AniAppContent
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.logger
 import org.koin.android.ext.android.inject
+import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : AniComponentActivity() {
     private val logger = logger<MainActivity>()
@@ -155,6 +165,18 @@ class MainActivity : AniComponentActivity() {
         super.onCreate(savedInstanceState)
         // 用户主题的外壳底色先铺上: 清单主题只能是固定的纯黑, 浅色主题在第一帧之前也不该露黑
         WindowBackgroundMirror.read(this)?.let { window.setBackgroundDrawable(ColorDrawable(it)) }
+        if (intent.getBooleanExtra(ProfileRestartActivity.EXTRA_PROFILE_CHOSEN, false)) {
+            UserProfiles.launchedBySwitch = true
+            // 换人重启进来的: 接力的那一帧先铺成窗口底 (界面组合出来之前露的就是它), 界面上的过场接着显示它, 见 ProfileSwitchFrame
+            if (savedInstanceState == null) {
+                ProfileSwitchFrame.read(this)?.let { frame ->
+                    val landing = ProfileSwitchFrameDrawable(frame, ProfileSwitchFrameDrawable.FLOOR_MAIN)
+                    ProfileSwitchFrame.showLanding(landing)
+                    window.setBackgroundDrawable(landing)
+                    holdBackWhileLanding()
+                }
+            }
+        }
         handleStartIntent(intent)
 
         // 本形态 (phone / tv) 的附加初始化, 见各 flavor 下的 FormFactorSetup.kt
@@ -232,6 +254,37 @@ class MainActivity : AniComponentActivity() {
     }
 
     /**
+     * 换人进来的过场盖着 ([ProfileSwitchFrame.landing]) 的时候主界面不接按键与返回: 按下去的会落到被盖住的首页上
+     * (比如首页的「再按一次返回退出」, 过场一撤提示就露出来). 按键在 [dispatchKeyEvent] 里吞掉; 新系统上返回不以按键送进来,
+     * 在窗口的返回回调里以浮层优先级拦下 (先于应用里所有的返回处理), 过场撤了就撤掉.
+     * 界面上的过场最多盖几秒 (见 TvProfileSwitchLandingHost); 它要是一直没撤 (界面没起来), 到点这里自己放掉, 遥控器不会一直没反应.
+     */
+    private fun holdBackWhileLanding() {
+        val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            OnBackInvokedCallback {}.also {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY, it)
+            }
+        } else {
+            null
+        }
+        lifecycleScope.launch {
+            val dismissed = withTimeoutOrNull(PROFILE_SWITCH_LANDING_MAX) {
+                ProfileSwitchFrame.landing.first { it == null }
+                true
+            }
+            if (dismissed == null) ProfileSwitchFrame.release(this@MainActivity)
+            if (callback != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
+            }
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (ProfileSwitchFrame.landing.value != null) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
      * 窗口底色跟着页面的外壳底色走, 并抄进 [WindowBackgroundMirror] 给下次启动 (与界面缩放的重建) 用.
      * 要在形态的页面配色里调用 (见 InstallFormFactorUi), 读到的才是页面实际铺的那个颜色.
      */
@@ -244,3 +297,6 @@ class MainActivity : AniComponentActivity() {
         }
     }
 }
+
+/** 换人进来的过场最多盖多久 (界面上的过场自己最多等 8 秒封面再淡出, 见 TvProfileSwitchLandingHost). */
+private val PROFILE_SWITCH_LANDING_MAX = 12.seconds

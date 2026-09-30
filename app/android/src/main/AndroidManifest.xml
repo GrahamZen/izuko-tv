@@ -87,12 +87,16 @@
             </intent-filter>
         </activity>
 
-        <!-- 换用户时重启应用的中转站 (独立进程), 见 ProfileRestartActivity -->
+        <!-- 换用户时重启应用的中转站 (独立进程) 与新进程里的落地页, 见 ProfileRestartActivity -->
         <activity
                 android:name=".activity.ProfileRestartActivity"
                 android:exported="false"
                 android:process=":profile_restart"
-                android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+                android:theme="@style/Theme.Izuko.ProfileSwitch" />
+        <activity
+                android:name=".activity.ProfileSwitchLandingActivity"
+                android:exported="false"
+                android:theme="@style/Theme.Izuko.ProfileSwitch" />
 
         <service
                 android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"

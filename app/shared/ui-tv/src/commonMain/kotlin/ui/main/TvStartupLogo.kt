@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.platform.ProfileSwitchFrame
 import me.him188.ani.app.ui.foundation.AniStartupProgress
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.StartupProgressTracker
@@ -149,6 +150,7 @@ class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboar
 /**
  * 本进程的启动页: 第一次问时决定出不出 —— 冷启动 ([StartupProgressTracker.claimColdStart]) 且开关开着 ([TvPolishFlags.startupLogo]);
  * 之后问到的是同一份, 入口的占位与根部的启动页因此接得上. 撤掉之后返回 null (Activity 重建不再出).
+ * 换人重启进来的那次不出: 盖着的是换人的过场 (见 ProfileSwitchFrame.landing), 它用同一套首屏计数等首屏, 自己收尾.
  */
 object TvStartupLogoHost {
     private var state: TvStartupLogoState? = null
@@ -156,11 +158,13 @@ object TvStartupLogoHost {
     /** [onboarding]: 这次启动走首次引导. */
     fun coldStart(onboarding: Boolean): TvStartupLogoState? {
         if (AniStartupProgress.claimColdStart()) {
-            state = if (TvPolishFlags.startupLogo) {
-                TvStartupLogoState(AniStartupProgress, onboarding)
-            } else {
-                AniStartupProgress.stop()
-                null
+            state = when {
+                ProfileSwitchFrame.landing.value != null -> null
+                TvPolishFlags.startupLogo -> TvStartupLogoState(AniStartupProgress, onboarding)
+                else -> {
+                    AniStartupProgress.stop()
+                    null
+                }
             }
         }
         return state?.takeIf { it.visible }
