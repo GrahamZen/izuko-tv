@@ -19,6 +19,13 @@ import kotlin.concurrent.Volatile
  */
 object TvPolishFlags {
     /**
+     * 冷启动的启动页 (应用图标 + 进度条, 见 TvStartupLogo): 关掉就直接露出主页, 封面在眼前一张张出来. 只在建界面时读一次.
+     * extra: `ani_polish_startup_logo`.
+     */
+    @Volatile
+    var startupLogo: Boolean = true
+
+    /**
      * 返回缩回的旧顺序 (A/B 用, 默认关): 图上屏那一帧就出栈, 列表页的恢复 / 重建与缩回运动叠在一起. 默认 (新顺序) 缩到位、静止后才出栈,
      * 列表页就绪再撤层, 见 TvHeroZoomHandoff.Shrink. extra: `ani_polish_shrink_pop_first`.
      */

@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -72,6 +73,10 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
+import me.him188.ani.app.ui.main.LocalTvStartupLogo
+import me.him188.ani.app.ui.main.TvStartupLogo
+import me.him188.ani.app.ui.main.TvStartupLogoHost
+import me.him188.ani.app.ui.main.tvStartupLogoColors
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.collection.TvCollectionTabOrderPage
 import me.him188.ani.app.ui.subject.details.layout.TvDetailsTheme
@@ -168,6 +173,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
     val onboarding = remember(onboardingPending) { TvOnboardingVariantImpl(onboardingPending) }
+    // 冷启动的启动页 (应用图标 + 进度条): 一打开应用就由入口的占位先画上 (见 FormFactorStartupPlaceholder), 这里接着盖同一份,
+    // 首屏的封面出来了再撤; 走引导时交接给欢迎页的图标. 只在进程第一次建界面时出 (Activity 重建时图都在内存里, 没有可等的)
+    val startupLogo = remember { TvStartupLogoHost.coldStart(onboarding = onboardingPending) }
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     DisposableEffect(aniNavigator) {
@@ -384,6 +392,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
         // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码
         LaunchedEffect(Unit) {
+            // 启动页盖着的时候先不弹, 等它撤了再说
+            if (startupLogo != null) snapshotFlow { startupLogo.visible }.first { !it }
             TvRemoteControl.showDialogOnLaunch {
                 !onboardingPending &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
@@ -413,20 +423,35 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         Box(
             Modifier
                 // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到
-                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层显示期间主页一个键都不处理
-                .onPreviewKeyEvent { TvOnboardingLogin.request.value != null }
+                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层显示期间主页一个键都不处理; 启动页盖着时同理
+                .onPreviewKeyEvent { TvOnboardingLogin.request.value != null || startupLogo?.visible == true }
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
                 .tvNavKeyInterceptor(navKeys)
                 .tvTouchKeyboardMode(),
         ) {
-            if (touchInput) {
-                // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
-                // 电视上不包这一层, content 原样组合
-                val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
-                CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
-            } else {
-                content()
+            // 引导的欢迎页据此报图标位置, 启动页交接给它 (见 TvStartupLogoState.handOffToWelcome)
+            CompositionLocalProvider(LocalTvStartupLogo provides startupLogo) {
+                if (touchInput) {
+                    // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
+                    // 电视上不包这一层, content 原样组合
+                    val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
+                    CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
+                } else {
+                    content()
+                }
+            }
+            if (startupLogo != null) {
+                LaunchedEffect(Unit) {
+                    // 返回栈要等应用状态读出来才有 (见 AniAppContent), 在那之前下面是空的, 先盖着.
+                    // 进程重建恢复到播放器、详情页这些页时没有首屏封面可等, 栈一就位就撤
+                    when (aniNavigator.awaitBackStack().lastOrNull()) {
+                        is NavRoutes.Main -> startupLogo.dismissWhenFirstScreenReady()
+                        is NavRoutes.TvOnboarding -> startupLogo.handOffToWelcome()
+                        else -> startupLogo.dismiss()
+                    }
+                }
+                TvStartupLogo(startupLogo, tvStartupLogoColors())
             }
         }
     }

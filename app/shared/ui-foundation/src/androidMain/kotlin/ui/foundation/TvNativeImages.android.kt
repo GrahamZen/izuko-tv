@@ -60,6 +60,15 @@ object TvNativeImages {
             )
             crossfade(crossfade)
             allowNullImage(true)
+            // 冷启动的启动页等首屏的封面加载出来才撤 (见 AniStartupProgress); 启动页撤掉之后不再挂监听
+            if (AniStartupProgress.isTracking) {
+                AniStartupProgress.coverStarted()
+                addListener(
+                    onCancel = { AniStartupProgress.coverFinished() },
+                    onError = { _, _ -> AniStartupProgress.coverFinished() },
+                    onSuccess = { _, _ -> AniStartupProgress.coverFinished() },
+                )
+            }
         }
         sketch.enqueue(request)
     }

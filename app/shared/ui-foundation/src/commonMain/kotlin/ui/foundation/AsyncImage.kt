@@ -76,6 +76,7 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.platform.currentPlatform
 import me.him188.ani.utils.platform.isDesktop
 import me.him188.ani.utils.platform.isIos
+import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
 import com.github.panpf.sketch.AsyncImage as SketchAsyncImage
@@ -585,12 +586,19 @@ internal fun createDefaultSketch(
     // 遥控器导航天然是"来回走" (A→B→A 极常见), 没有内存缓存就每次都从磁盘字节重解码 —— 网格滚动与 hero
     // 换图肉眼可见地卡. 上限按设备总内存定, 见 aniImageMemoryCacheSize
     aniImageMemoryCacheSize(context)?.let { memoryCache(LruMemoryCache(it)) }
-    downloadCacheOptions(
-        DiskCache.Options(
-            directory = cacheDirectory?.resolve("download"),
-            maxSize = IMAGE_DOWNLOAD_CACHE_SIZE,
-        ),
-    )
+    if (cacheDirectory != null) {
+        // 打开快的那个实现 (磁盘格式与 Sketch 自带的相同), 见 AniImageDiskCache
+        downloadCache {
+            AniImageDiskCache(
+                context = context,
+                fileSystem = FileSystem.SYSTEM,
+                maxSize = IMAGE_DOWNLOAD_CACHE_SIZE,
+                directory = cacheDirectory.resolve("download"),
+            )
+        }
+    } else {
+        downloadCacheOptions(DiskCache.Options(maxSize = IMAGE_DOWNLOAD_CACHE_SIZE))
+    }
     resultCacheOptions(
         DiskCache.Options(
             directory = cacheDirectory?.resolve("result"),

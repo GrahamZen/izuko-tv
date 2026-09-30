@@ -199,6 +199,11 @@ fun AniApp(
      * 缺省实现不做任何事, 此时界面缩放只在 Compose 层生效.
      */
     uiScaleApplier: UiScaleApplier = NoopUiScaleApplier,
+    /**
+     * 应用状态 (主题等设置) 读出来之前画的东西, 由应用入口决定 (电视端是启动页). 在主题之外组合, 颜色要自己带.
+     * 缺省什么都不画, 露出窗口底色.
+     */
+    loadingPlaceholder: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val viewModel = viewModel { AniAppViewModel() }
@@ -206,7 +211,11 @@ fun AniApp(
     // 之前就得定下来 —— 档位进 URL、URL 进缓存键, 首屏拿了低档这次启动就一直是低档
     TrackAniDisplayTier()
     // 主题读好再进入 APP, 防止黑白背景闪烁
-    val appState = viewModel.appState.collectAsStateWithLifecycle(null).value ?: return
+    val appState = viewModel.appState.collectAsStateWithLifecycle(null).value
+    if (appState == null) {
+        loadingPlaceholder()
+        return
+    }
 
     // 界面缩放: 补偿部分电视/盒子上报错误的 densityDpi.
     //

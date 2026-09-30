@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.view.WindowCompat
 import me.him188.ani.android.BuildConfig
+import me.him188.ani.android.FormFactorStartupPlaceholder
 import me.him188.ani.android.InstallFormFactorUi
 import me.him188.ani.android.formFactorUiBehavior
 import me.him188.ani.android.onFormFactorActivityCreated
@@ -121,6 +122,7 @@ class MainActivity : AniComponentActivity() {
         TvPolishFlags.shrinkScrimT = intent.getFloatExtra("ani_polish_shrink_scrim_t", TvPolishFlags.shrinkScrimT)
         TvPolishFlags.zoomSoftEdge = intent.getBooleanExtra("ani_polish_zoom_soft_edge", TvPolishFlags.zoomSoftEdge)
         TvPolishFlags.pagerSkipOffscreen = intent.getBooleanExtra("ani_polish_pager_skip_offscreen", TvPolishFlags.pagerSkipOffscreen)
+        TvPolishFlags.startupLogo = intent.getBooleanExtra("ani_polish_startup_logo", TvPolishFlags.startupLogo)
         val data = intent.data ?: return
         if (data.scheme != "ani") return
         if (data.host == "bangumi-oauth-callback") {
@@ -193,11 +195,15 @@ class MainActivity : AniComponentActivity() {
 
         setContent {
             // 界面行为由本形态决定, 共享界面代码不判断设备 (见 AniUiBehavior)
-            AniApp(uiBehavior = formFactorUiBehavior, uiScaleApplier = uiScaleApplier) {
+            AniApp(
+                uiBehavior = formFactorUiBehavior,
+                uiScaleApplier = uiScaleApplier,
+                // 设置读出来之前: 电视端一打开就先画启动页
+                loadingPlaceholder = { FormFactorStartupPlaceholder() },
+            ) {
                 val externalComponentProviderUpdated by rememberUpdatedState(externalContentProvider)
 
                 SystemBarColorEffect()
-                WindowBackgroundSyncEffect()
 
                 CompositionLocalProvider(
                     LocalToaster provides toaster,
@@ -215,6 +221,8 @@ class MainActivity : AniComponentActivity() {
                     Box(rootModifier) {
                         // 本形态特有的页面变体装配 (见各 Local*Variant 插槽)
                         InstallFormFactorUi(aniNavigator) {
+                            // 在形态的配色里读: 电视端浅色主题的页面底换成了海报墙那档浅灰 (见 TvPageBackgroundTheme), 窗口底色要跟页面实际铺的一致
+                            WindowBackgroundSyncEffect()
                             AniAppContent(aniNavigator)
                         }
                     }
@@ -223,7 +231,10 @@ class MainActivity : AniComponentActivity() {
         }
     }
 
-    /** 窗口底色跟着用户主题的外壳底色走, 并抄进 [WindowBackgroundMirror] 给下次启动 (与界面缩放的重建) 用. */
+    /**
+     * 窗口底色跟着页面的外壳底色走, 并抄进 [WindowBackgroundMirror] 给下次启动 (与界面缩放的重建) 用.
+     * 要在形态的页面配色里调用 (见 InstallFormFactorUi), 读到的才是页面实际铺的那个颜色.
+     */
     @Composable
     private fun WindowBackgroundSyncEffect() {
         val color = AniThemeDefaults.shellBackgroundColor.toArgb()

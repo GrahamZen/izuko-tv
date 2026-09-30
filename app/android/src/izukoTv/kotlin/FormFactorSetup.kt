@@ -11,14 +11,22 @@ package me.him188.ani.android
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
 import me.him188.ani.android.tv.TvHomeChannels
+import me.him188.ani.android.tv.TvOnboardingGate
+import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
+import me.him188.ani.app.ui.main.TvStartupLogo
+import me.him188.ani.app.ui.main.TvStartupLogoHost
+import me.him188.ani.app.ui.main.tvStartupLogoColors
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import org.koin.android.ext.android.getKoin
 
@@ -36,7 +44,25 @@ internal val formFactorUiBehavior: AniUiBehavior get() = TvAniUiBehavior
  */
 @Composable
 internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composable () -> Unit) =
-    TvPageBackgroundTheme { InstallTvPageVariants(aniNavigator, content) }
+    TvPageBackgroundTheme {
+        // 启动页的颜色抄一份, 下次冷启动主题读出来之前的占位用 (见 FormFactorStartupPlaceholder)
+        val context = LocalContext.current
+        val logoColors = tvStartupLogoColors()
+        LaunchedEffect(logoColors) { TvStartupLogoPaletteMirror.write(context, logoColors) }
+        InstallTvPageVariants(aniNavigator, content)
+    }
+
+/**
+ * 应用状态 (主题等设置) 读出来之前画的东西: 冷启动一打开应用就先画上启动页 (颜色用上次记下的, 见 [TvStartupLogoPaletteMirror]),
+ * 读出来之后根部 (InstallTvPageVariants) 接着盖同一份 (见 [TvStartupLogoHost]).
+ */
+@Composable
+internal fun FormFactorStartupPlaceholder() {
+    val context = LocalContext.current
+    val logo = remember { TvStartupLogoHost.coldStart(onboarding = TvOnboardingGate.isPending(context)) } ?: return
+    val colors = remember { TvStartupLogoPaletteMirror.read(context) }
+    TvStartupLogo(logo, colors)
+}
 
 /**
  * 主屏预览频道 (热门动画 / 继续观看): 延迟到启动高峰之后开始, 之后"继续观看"行一直跟着收藏库变化重写

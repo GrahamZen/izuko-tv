@@ -57,7 +57,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -74,6 +77,7 @@ import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.main.LocalTvStartupLogo
 import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
@@ -431,6 +435,8 @@ private fun RemoteStep(focus: TvFocusScope, onNext: () -> Unit) {
 @Composable
 private fun WelcomeStep(focus: TvFocusScope, onStart: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    // 冷启动的启动页会把它的图标移到这里再撤 (见 TvStartupLogoState.handOffToWelcome): 报位置, 它落地之前本页的图标先不画
+    val startupLogo = LocalTvStartupLogo.current
     Column(
         Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -439,7 +445,10 @@ private fun WelcomeStep(focus: TvFocusScope, onStart: () -> Unit) {
         Image(
             painterResource(Res.drawable.app_icon),
             contentDescription = null,
-            Modifier.size(WELCOME_ICON_SIZE).clip(RoundedCornerShape(28.dp)),
+            Modifier.size(WELCOME_ICON_SIZE)
+                .onGloballyPositioned { if (startupLogo != null) startupLogo.welcomeIcon = it.boundsInRoot() }
+                .graphicsLayer { alpha = if (startupLogo?.coversWelcomeIcon == true) 0f else 1f }
+                .clip(RoundedCornerShape(28.dp)),
         )
         Spacer(Modifier.height(24.dp))
         Text(stringResource(Lang.tv_onboarding_welcome_title), style = MaterialTheme.typography.headlineLarge)
