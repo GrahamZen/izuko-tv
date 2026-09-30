@@ -185,6 +185,9 @@ class TvNativeHeroTextView(
     private var fadeOut: ValueAnimator? = null
     private var fadeBack: ValueAnimator? = null
     private val lineAnimators = ArrayList<ValueAnimator>()
+
+    /** 标题那一行的进场滑入 (见 [enter]), 没在跑为 null: 在跑时标题的透明度与位移归它管, 见 [applyTitleOffset]. */
+    private var titleEnter: ValueAnimator? = null
     private var blockAlpha = 1f
 
     private val titleOwner = Any()
@@ -376,12 +379,22 @@ class TvNativeHeroTextView(
                     line.translationX = s.slidePx * (1f - TV_NATIVE_LINEAR_OUT_SLOW_IN.getInterpolation(f))
                 }
                 addListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+                    override fun onAnimationCancel(animation: Animator) {
+                        cancelled = true
+                    }
+
                     override fun onAnimationEnd(animation: Animator) {
                         lineAnimators.remove(animation)
-                        if (line === title) applyTitleOffset()
+                        if (line === title) {
+                            titleEnter = null
+                            // 被取消的 (换字 / 整块重建) 由取消方接着摆
+                            if (!cancelled) applyTitleOffset()
+                        }
                     }
                 })
             }
+            if (line === title) titleEnter = animator
             lineAnimators.add(animator)
             animator.start()
         }
@@ -478,8 +491,10 @@ class TvNativeHeroTextView(
     }
 
     private fun applyTitleOffset() {
-        if (lineAnimators.isNotEmpty()) {
-            // 进场滑入中: 位移与透明度归进场动画管, 只处理隐藏
+        if (titleEnter != null) {
+            // 标题还在滑入: 位移与透明度归进场动画管, 只处理隐藏. 只看标题自己那一行 —— 别的行错开得更晚, 按它们判的话,
+            // 标题滑完之后、别的行滑完之前放开的隐藏就丢了, 标题一直不见: 进过播放器再缩回探索页时, 列表页在缩回层下重建、
+            // 文字刚进场, 缩回化开撤层 (交还标题) 正落在这一段
             if (titleHidden) title.alpha = 0f
             return
         }
