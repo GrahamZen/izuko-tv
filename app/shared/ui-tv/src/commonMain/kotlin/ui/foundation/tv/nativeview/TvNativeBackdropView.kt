@@ -25,6 +25,7 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -33,6 +34,7 @@ import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -58,13 +60,16 @@ import me.him188.ani.app.ui.foundation.tv.fadeOutProfile
 
 /**
  * 背景图要显示的内容: [url] 主图, [subjectId] 这张图属于哪个条目 (给放大转场登记、提前取色; null = 不是条目自己的图),
- * [underlayUrl] 应急垫底 (主图下载卡住时垫在下面的竖版封面, 半透明, 见 TvHeroMediaPipelineState.underlayUrl), [obscure] 打码.
+ * [underlayUrl] 应急垫底 (主图下载卡住时垫在下面的竖版封面, 半透明, 见 TvHeroMediaPipelineState.underlayUrl), [obscure] 打码,
+ * [upgradeUrl] 剧照升档的原图 (视觉效果完整档 + 4K 界面的下一集剧照, 见 TvHeroMediaPipelineState.upgradeUrl): 主图上屏、停稳之后
+ * 原地叠上去 (见 [TvNativeBackdropView.navigating]). 同一张主图只换它时不算换图, 不交叉淡入.
  */
 data class TvNativeBackdropTarget(
     val url: String,
     val subjectId: Int?,
     val underlayUrl: String? = null,
     val obscure: Boolean = false,
+    val upgradeUrl: String? = null,
 )
 
 /**
@@ -74,7 +79,10 @@ data class TvNativeBackdropTarget(
  * 半个像素上, 抗锯齿那一列会漏出图色) 都在所有图之上画一次.
  *
  * 给详情页的放大转场登记这张图此刻在屏幕上的框 ([TvHeroZoomHandoff.publish], 调用方每次挪动 / 缩放图层后调 [publishZoom]), 图画出来后
- * 标记 [TvHeroZoomHandoff.markSourceLoaded] 并提前取主色 ([SubjectSeedColorCache]).
+ * 标记 [TvHeroZoomHandoff.markSourceLoaded] 并提前取主色 ([SubjectSeedColorCache]). 放大转场登记的始终是主图.
+ *
+ * 剧照升档 ([TvNativeBackdropTarget.upgradeUrl]): 主图上屏、停稳且不在导航 ([navigating]) 之后, 在同一格里叠上原图, 解码好后原地淡入
+ * (同一构图, 看起来只是变清楚了); 换了目标就不再去取.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeBackdropView(
@@ -118,6 +126,13 @@ class TvNativeBackdropView(
     /** 「目标已换、展示还没跟上」: 压暗放开前要等它变 false (见 [triggerPressDim]). */
     var dimming: Boolean = false
 
+    /**
+     * 此刻在不在导航 (卡片区在滚动 / 方向键按住). 剧照升档 ([TvNativeBackdropTarget.upgradeUrl]) 在主图上屏 [TV_BACKDROP_UPGRADE_SETTLE_MILLIS]
+     * 之后还要等它为 false 才去取原图: 原图首次解码 + 往 GPU 传大纹理不落在导航里. 读快照状态 (页面的 TvScrollActivity / TvNavKeyTracker),
+     * 由宿主给; 默认不导航.
+     */
+    var navigating: () -> Boolean = { false }
+
     init {
         clipChildren = false
         clipToPadding = false
@@ -137,16 +152,21 @@ class TvNativeBackdropView(
         if (target == this.target) return
         this.target = target
         if (target == null) {
+            slots.forEach { it.stopUpgrade() }
             if (!animated) clearSlots() else fadeSlots { 0f }
             overlay.visibility = if (slots.any { it.alpha > 0f }) VISIBLE else INVISIBLE
             return
         }
         val existing = slots.firstOrNull { it.target.url == target.url && it.target.obscure == target.obscure }
+        existing?.retarget(target)
         val slot = existing ?: Slot(target).also { newSlot ->
             slots.add(newSlot)
             addView(newSlot.frame, indexOfChild(overlay), LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             newSlot.load()
         }
+        // 升档只给当前这张: 被换下去的那几格不再去取原图 (已经叠上的留着, 跟着那一格淡出)
+        for (s in slots) if (s !== slot) s.stopUpgrade()
+        slot.scheduleUpgrade()
         if (!animated) {
             slots.filter { it !== slot }.forEach { removeSlot(it) }
             slot.fadeTo(1f, animated = false)
@@ -261,16 +281,39 @@ class TvNativeBackdropView(
         removeView(slot.frame)
     }
 
-    /** 一张图 (连同它的应急垫底), 交叉淡入的一格. 自己的透明度在 [frame] 上 (垫底与主图重叠, 淡入淡出时走离屏层, 两张各按透明度叠会互相透出来). */
-    private inner class Slot(val target: TvNativeBackdropTarget) {
+    /**
+     * 一张图 (连同它的应急垫底与升档原图), 交叉淡入的一格. 自己的透明度在 [frame] 上 (垫底、主图、原图三张重叠, 淡入淡出时走离屏层,
+     * 各按透明度叠会互相透出来). 同一张主图换了别的字段 (升档目标) 时这一格原地沿用 ([retarget]).
+     */
+    private inner class Slot(target: TvNativeBackdropTarget) {
+        var target: TvNativeBackdropTarget = target
+            private set
         val owner = Any()
         val frame = FrameLayout(context)
         private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        private val underlay: ImageView? = target.underlayUrl?.let { ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }
+
+        /** 垫底在建格时定下 (之后同一张主图换来的目标不再加 / 撤垫底). */
+        private val underlayUrl: String? = target.underlayUrl
+        private val underlay: ImageView? = underlayUrl?.let { ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }
         var alpha = 0f
             private set
         private var animator: ValueAnimator? = null
         private var loadJob: Job? = null
+
+        /** 主图已上屏: 剧照升档从这一刻起计静止时间. */
+        private var mainLoaded = false
+
+        /** 升档原图 (叠在主图上, 解码好了淡入); 没在升档时 null. */
+        private var upgrade: ImageView? = null
+
+        /** 已经去取 (或已叠上) 的原图地址. */
+        private var upgradeRequested: String? = null
+        private var upgradeJob: Job? = null
+        private var upgradeAnimator: ValueAnimator? = null
+
+        /** 这一格是不是背景图此刻的目标. */
+        private val isCurrent: Boolean
+            get() = this@TvNativeBackdropView.target?.let { it.url == target.url && it.obscure == target.obscure } == true
 
         init {
             underlay?.let { frame.addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) }
@@ -293,7 +336,7 @@ class TvNativeBackdropView(
             val obscureEdge = if (target.obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null
             underlay?.let { view ->
                 TvNativeImages.loadBackdrop(
-                    sketch, view, target.underlayUrl!!, width, height, alpha = TV_BACKDROP_UNDERLAY_ALPHA, obscureLongEdgePx = obscureEdge,
+                    sketch, view, underlayUrl!!, width, height, alpha = TV_BACKDROP_UNDERLAY_ALPHA, obscureLongEdgePx = obscureEdge,
                 )
             }
             loadJob = scope.launch {
@@ -303,8 +346,70 @@ class TvNativeBackdropView(
                 if (prefetch != null && left > 0) withTimeoutOrNull(left) { prefetch.job.join() }
                 TvNativeImages.loadBackdrop(sketch, image, target.url, width, height, obscureLongEdgePx = obscureEdge) { bitmap ->
                     onLoaded(bitmap)
+                    mainLoaded = true
+                    if (isCurrent) scheduleUpgrade()
                 }
             }
+        }
+
+        /** 同一张主图换来的新目标 (升档目标可能变了): 升档目标变了就撤掉旧的升档, 由 [show] 按新的重新安排. */
+        fun retarget(newTarget: TvNativeBackdropTarget) {
+            val upgradeChanged = newTarget.upgradeUrl != target.upgradeUrl
+            target = newTarget
+            if (upgradeChanged) dropUpgrade()
+        }
+
+        /**
+         * 安排剧照升档 (只给当前这张, 见 [show]): 主图已上屏、有升档目标、还没去取时, 等主图上屏后静止 [TV_BACKDROP_UPGRADE_SETTLE_MILLIS]
+         * 且 [navigating] 为 false, 再去取原图. 已经在等 / 已经取了就什么都不做.
+         */
+        fun scheduleUpgrade() {
+            val url = target.upgradeUrl?.takeIf { it != target.url && !target.obscure } ?: return
+            if (!mainLoaded || upgradeRequested == url || upgradeJob?.isActive == true) return
+            upgradeJob = scope.launch {
+                delay(TV_BACKDROP_UPGRADE_SETTLE_MILLIS)
+                snapshotFlow { navigating() }.first { !it }
+                showUpgrade(url)
+            }
+        }
+
+        /** 这一格不再是目标: 还在等的升档取消, 还没露出来的原图撤掉; 已经叠上 (在淡入 / 已满) 的留着, 跟着这一格淡出. */
+        fun stopUpgrade() {
+            upgradeJob?.cancel()
+            upgradeJob = null
+            if (upgrade != null && upgradeAnimator == null) dropUpgrade()
+        }
+
+        private fun showUpgrade(url: String) {
+            upgradeRequested = url
+            val view = upgrade ?: ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }.also {
+                upgrade = it
+                frame.addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            }
+            TvNativeImages.loadBackdrop(sketch, view, url, width, height, alpha = 0f) { bitmap ->
+                if (upgrade !== view) return@loadBackdrop
+                // 先预传 GPU: 淡入的头一帧不当场上传整张纹理
+                bitmap.prepareToDraw()
+                upgradeAnimator = ValueAnimator.ofFloat(view.alpha, 1f).apply {
+                    duration = TV_BACKDROP_UPGRADE_FADE_MILLIS.toLong()
+                    interpolator = LinearInterpolator()
+                    addUpdateListener { view.alpha = it.animatedValue as Float }
+                    start()
+                }
+            }
+        }
+
+        private fun dropUpgrade() {
+            upgradeJob?.cancel()
+            upgradeJob = null
+            upgradeAnimator?.cancel()
+            upgradeAnimator = null
+            upgrade?.let {
+                TvNativeImages.clear(it)
+                frame.removeView(it)
+            }
+            upgrade = null
+            upgradeRequested = null
         }
 
         private fun onLoaded(bitmap: Bitmap) {
@@ -348,6 +453,7 @@ class TvNativeBackdropView(
         fun dispose() {
             animator?.cancel()
             loadJob?.cancel()
+            dropUpgrade()
             TvNativeImages.clear(image)
             underlay?.let { TvNativeImages.clear(it) }
             TvHeroZoomHandoff.retract(owner)
@@ -426,3 +532,12 @@ class TvNativeBackdropView(
 
 private fun withAlpha(color: Int, alpha: Float): Int =
     AndroidColor.argb((alpha * 255).toInt().coerceIn(0, 255), AndroidColor.red(color), AndroidColor.green(color), AndroidColor.blue(color))
+
+/**
+ * 剧照升档: 主图上屏后至少静止这么久才去取原图. 一格一格慢慢走 (约 1 秒一张) 也不该每张都去取: 0.8 秒时 Shield 上实测第二轮
+ * janky 11%, 原图的解码与上传落进了下一次按键的滚动里.
+ */
+internal const val TV_BACKDROP_UPGRADE_SETTLE_MILLIS = 1_500L
+
+/** 剧照升档: 原图解码好后原地淡入的时长 (线性). */
+internal const val TV_BACKDROP_UPGRADE_FADE_MILLIS = 400

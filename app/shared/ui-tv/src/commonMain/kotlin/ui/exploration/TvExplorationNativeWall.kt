@@ -58,6 +58,8 @@ import me.him188.ani.app.tools.WeekFormatter
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
@@ -262,6 +264,9 @@ internal fun TvExplorationNativeWall(
     val buttonStyle = rememberTvNativeHeroButtonStyle()
     val headerStyle = MaterialTheme.typography.titleMedium.toTvNativeTextStyle(density, LocalContentColor.current)
     val visualEffects = LocalThemeSettings.current.visualEffects
+    // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
+    val scrollActivity = LocalTvScrollActivity.current
+    val navKeys = LocalTvNavKeyTracker.current
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val dotColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, 18.dp)
@@ -305,6 +310,7 @@ internal fun TvExplorationNativeWall(
                 }
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
+                view.backdropNavigating = { scrollActivity?.isScrolling == true || navKeys?.held == true }
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
@@ -422,7 +428,12 @@ private fun tvExplorationNativeSource(
     val spec = display?.toHeroMediaSpec()
     val url = heroPipeline.backdropUrl(spec)
     val underlay = heroPipeline.underlayUrl(spec)
-    val backdrop = if (url != null && display != null) TvNativeBackdropTarget(url, display.subjectId, underlay) else null
+    val backdrop = if (url != null && display != null) {
+        // 完整档 + 4K 界面的下一集剧照: 停稳后原地升到原图
+        TvNativeBackdropTarget(url, display.subjectId, underlay, upgradeUrl = heroPipeline.upgradeUrl(spec))
+    } else {
+        null
+    }
     val text = textTarget?.let { tvExplorationNativeHeroText(it, infoCache, episodeStillCache, summaryFallbackCache, playHistories) }
     return TvNativeHeroSource(
         backdrop = backdrop,

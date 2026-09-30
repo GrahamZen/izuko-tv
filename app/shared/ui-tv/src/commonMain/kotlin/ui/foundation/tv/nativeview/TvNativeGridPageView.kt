@@ -157,6 +157,14 @@ class TvNativeGridPageView(
         }
 
     private val backdrop = TvNativeBackdropView(context, sketch, scope)
+
+    /** 此刻在不在导航: 背景图的剧照升档等它为 false 才去取原图 (见 [TvNativeBackdropView.navigating]). */
+    var backdropNavigating: () -> Boolean
+        get() = backdrop.navigating
+        set(value) {
+            backdrop.navigating = value
+        }
+
     val heroText = TvNativeHeroTextView(context, heroTextStyle)
 
     /** 最底下的整屏背景 (新番时间表, 见 [enableWallBackdrop]); null = 没有 (追番 / 搜索). */

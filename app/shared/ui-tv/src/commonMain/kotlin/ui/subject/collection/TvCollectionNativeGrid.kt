@@ -186,7 +186,12 @@ private fun TvCollectionNativeSource(
     val spec = display?.toHeroMediaSpec()
     val url = heroPipeline.backdropUrl(spec)
     val underlay = heroPipeline.underlayUrl(spec)
-    val backdrop = if (url != null && display != null) TvNativeBackdropTarget(url, display.subjectId, underlay) else null
+    val backdrop = if (url != null && display != null) {
+        // 完整档 + 4K 界面的下一集剧照: 停稳后原地升到原图
+        TvNativeBackdropTarget(url, display.subjectId, underlay, upgradeUrl = heroPipeline.upgradeUrl(spec))
+    } else {
+        null
+    }
     val text = heroText()?.let { tvCollectionNativeHeroText(it, episodeStillCache, summaryFallbackCache, playHistories) }
     val source = TvNativeHeroSource(
         backdrop = backdrop,

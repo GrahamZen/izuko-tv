@@ -52,6 +52,8 @@ import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
@@ -292,6 +294,9 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
     val visualEffects = LocalThemeSettings.current.visualEffects
+    // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
+    val scrollActivity = LocalTvScrollActivity.current
+    val navKeys = LocalTvNavKeyTracker.current
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val currentCallbacks by rememberUpdatedState(callbacks)
     val currentItemAt by rememberUpdatedState(itemAt)
@@ -388,6 +393,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 view.contentScrollLimitPx = topBarScrollAwayPx
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
+                view.backdropNavigating = { scrollActivity?.isScrolling == true || navKeys?.held == true }
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatment = treatment
