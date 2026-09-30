@@ -369,8 +369,10 @@ class TvNativeExploreList(
                     row.cards.onBind = { index -> onBindCard?.invoke(item.key, index) }
                     if (previousKey != item.key) {
                         row.bind(item.cards, { it.toLong() }, rowLeftIndex[item.key] ?: 0, m.columns)
-                    } else {
-                        row.cards.submit(item.cards) { it.toLong() }
+                    } else if (row.cards.items != item.cards) {
+                        // 同一行换内容 (推荐重算落库、行尾「更多」接上新卡): 适配器整体刷新后 leanback 从第 0 张重新排起, 行首与选中的
+                        // 那张照原样放回 —— 不然走到行后面时换内容, 行滚回开头, 持焦的卡被甩出屏, 要再按一下方向键才回来
+                        row.bind(item.cards, { it.toLong() }, row.leftIndex(), m.columns, focusIndex = row.selectedPosition)
                     }
                 }
             }
