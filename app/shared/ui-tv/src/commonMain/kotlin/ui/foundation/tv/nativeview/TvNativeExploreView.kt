@@ -112,6 +112,9 @@ interface TvNativeExploreListener {
 
     fun onCardLongPress(rowKey: String, index: Int, anchor: Rect)
 
+    /** 行尾「更多」卡 ([TvNativeCard.more]) 上按确定: 卡片墙上与 hero 态里都直接回调, 不进 hero 态、不进详情页. */
+    fun onMoreClick(rowKey: String) {}
+
     /** 卡片被绑定 (分页的访问提示). */
     fun onBindCard(rowKey: String, index: Int)
 
@@ -770,6 +773,10 @@ class TvNativeExploreView(
         override fun onFocused(index: Int) = onCardFocused(rowKey, index)
 
         override fun onClick(index: Int) {
+            if (isMoreCard(rowKey, index)) {
+                listener?.onMoreClick(rowKey)
+                return
+            }
             // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场)
             if (!timeline.active) {
                 setHeroActive(true)
@@ -781,9 +788,13 @@ class TvNativeExploreView(
         }
 
         override fun onLongPress(index: Int, anchor: Rect) {
+            if (isMoreCard(rowKey, index)) return
             listener?.onCardLongPress(rowKey, index, anchor)
         }
     }
+
+    private fun isMoreCard(rowKey: String, index: Int): Boolean =
+        (list.items.getOrNull(list.indexOfKey(rowKey)) as? TvNativeExploreItem.Row)?.cards?.getOrNull(index)?.more != null
 
     private fun onCardFocused(rowKey: String, index: Int) {
         // 真焦点到了: 按住的聚焦态放开 (落在它自己身上画面不变, 落在别处它照失焦缩回)

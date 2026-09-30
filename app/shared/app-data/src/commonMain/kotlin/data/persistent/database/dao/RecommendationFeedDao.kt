@@ -38,7 +38,7 @@ data class RecommendationFeedEntity(
     val imageLarge: String,
     /** 什么时候算出来的; 判过期用. 全表相同. */
     val computedAt: Long,
-    /** 组标题的填充参数, 目前只有"因为你喜欢《X》"用得上. 同组各行相同. */
+    /** 组标题的填充参数: 种子行是种子的名字; 「换换口味」是出行时挑中的标签 (标题不显示, 「更多」按它接着找). 同组各行相同. */
     val titleArg: String? = null,
     /**
      * 算出这批结果的**算法版本**: 改了召回或排序就把 [CURRENT_ALGO_VERSION] +1, 旧结果当场
@@ -58,7 +58,7 @@ data class RecommendationFeedEntity(
     val profileKey: String = "",
 ) {
     companion object {
-        const val CURRENT_ALGO_VERSION = 1
+        const val CURRENT_ALGO_VERSION = 2
     }
 }
 
@@ -86,13 +86,14 @@ interface RecommendationFeedDao {
     /**
      * 上一批各行种子推荐用的作品名, 按行的先后; 给种子稳定与「换一批」轮换用.
      *
-     * **只按 titleArg 非空取**, 不按 groupKey 过滤: 只有种子组才写 titleArg, 而它的 groupKey
-     * 在同 kind 多行时带 `#序号` 后缀, 按等值匹配会漏.
+     * **按 titleArg 非空取**, 只去掉「换换口味」(它的 titleArg 是标签, 不是作品名): 种子组的 groupKey
+     * 在同 kind 多行时带 `#序号` 后缀, 按种子组的键等值匹配会漏.
      */
     @Query(
         """
         select titleArg from recommendation_feed
-        where titleArg is not null group by titleArg order by min(orderIndex)
+        where titleArg is not null and groupKey not like 'change_taste%'
+        group by titleArg order by min(orderIndex)
         """,
     )
     suspend fun seedTitleArgs(): List<String>
@@ -133,6 +134,32 @@ interface RecommendationFeedDao {
         for (item in items) {
             replaceItem(item.groupKey, item.orderIndex, item.computedAt, item.subjectId, item.nameCn, item.imageLarge)
         }
+    }
+
+    /** 同一批 ([computedAt]) 里 [groupKey] 那一组有几条. */
+    @Query("""select count(*) from recommendation_feed where groupKey = :groupKey and computedAt = :computedAt""")
+    suspend fun countInGroup(groupKey: String, computedAt: Long): Int
+
+    @Query("""select max(orderIndex) from recommendation_feed""")
+    suspend fun maxOrderIndex(): Int?
+
+    /**
+     * 往 [groupKey] 那一组末尾接上 [items] (它们的 orderIndex 在这里按全表最大值往后重排, 组内次序照传入的). **只认同一批**:
+     * 这期间整表已经被新一批替换 ([computedAt] 对不上, 那一组已不在) 就什么都不写 —— 不然接上的几条会自成一组挂在页面末尾.
+     *
+     * @return 写进去的那几条 (带重排后的 orderIndex); 没接上为 null
+     */
+    @Transaction
+    suspend fun appendToGroup(
+        groupKey: String,
+        computedAt: Long,
+        items: List<RecommendationFeedEntity>,
+    ): List<RecommendationFeedEntity>? {
+        if (countInGroup(groupKey, computedAt) == 0) return null
+        val start = (maxOrderIndex() ?: -1) + 1
+        val appended = items.mapIndexed { i, item -> item.copy(orderIndex = start + i) }
+        upsert(appended)
+        return appended
     }
 
     /**

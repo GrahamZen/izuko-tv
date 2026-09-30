@@ -82,6 +82,11 @@
     <string name="exploration_rec_this_season_new">New this season</string>
     <string name="exploration_rec_change_taste">Something different</string>
     <string name="exploration_rec_trending">What everyone is watching</string>
+    <string name="exploration_rec_more">More like this</string>
+    <string name="exploration_rec_more_generic">More</string>
+    <string name="exploration_rec_more_loading">Finding more…</string>
+    <string name="exploration_rec_more_hero_seed">Press OK for more like “%1$s”</string>
+    <string name="exploration_rec_more_hero_peek">Press OK for more from “%1$s”. This one is next</string>
     <string name="exploration_rec_loading">Picking recommendations for you, this takes a few seconds</string>
     <string name="exploration_rec_progress_collections_start">Picking recommendations: reading your collection…</string>
     <string name="exploration_rec_progress_collections">Picking recommendations: reading your collection, page %1$d of %2$d</string>

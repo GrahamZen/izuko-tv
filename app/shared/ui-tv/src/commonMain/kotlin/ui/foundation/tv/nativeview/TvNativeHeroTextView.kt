@@ -37,6 +37,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import kotlin.math.max
+import kotlin.math.min
 
 /** 一段带颜色的字 (hero 信息行里的开播状态、总集数、标签等). */
 @Immutable
@@ -44,7 +45,8 @@ data class TvNativeTextSpan(val text: String, val color: Int)
 
 /**
  * hero 信息块里的「下一集」一行 (探索页继续观看 / 追番页): [lead] 集号 (不截断), [name] 集名 (放不下跑马灯), [tail] 尾段 (剩余分钟 /
- * 已看完, 不截断). 三段同色 [color].
+ * 已看完, 不截断). 三段同色 [color]. [name] 前面接 [nameSeparator] (探索页「更多」卡那一行是一句话里嵌着名字, 不要分隔).
+ * [wrap] = 整行就是 [lead] 一段字, 放不下就折行 (不用 [name] / [tail]).
  */
 @Immutable
 data class TvNativeHeroStatus(
@@ -52,6 +54,8 @@ data class TvNativeHeroStatus(
     val name: String?,
     val tail: String?,
     val color: Int,
+    val nameSeparator: String = " · ",
+    val wrap: Boolean = false,
 )
 
 /**
@@ -60,6 +64,7 @@ data class TvNativeHeroStatus(
  * @param rating 评分数字 (如 "8.7"), 画成「★ 8.7/10」; null 不画.
  * @param meta 评分之后的那一串 (开播状态 · 总集数 / 标签 / 开播年月), 按段着色.
  * @param infoReady 条目信息到了: 信息行、下一集行、简介才出现 (没到时只有标题).
+ * @param summaryMaxLines 简介最多几行 (0 = 占满剩余高度).
  */
 @Immutable
 data class TvNativeHeroText(
@@ -70,6 +75,7 @@ data class TvNativeHeroText(
     val meta: List<TvNativeTextSpan> = emptyList(),
     val status: TvNativeHeroStatus? = null,
     val summary: String = "",
+    val summaryMaxLines: Int = 0,
 )
 
 /**
@@ -573,10 +579,11 @@ class TvNativeHeroTextView(
             count++
         }
         if (summary.visibility != GONE) {
-            // 简介占满剩余高度: 放得下几行就几行, 最后一行省略号
+            // 简介占满剩余高度: 放得下几行就几行 (内容自己限了行数的不超过它), 最后一行省略号
             val remaining = (height - used - gap()).coerceAtLeast(0)
             val lineHeight = max(1, s.summary.lineHeightPx.takeIf { it > 0 } ?: summary.lineHeight)
-            val maxLines = remaining / lineHeight
+            val cap = shown?.summaryMaxLines?.takeIf { it > 0 } ?: Int.MAX_VALUE
+            val maxLines = min(remaining / lineHeight, cap)
             if (summary.maxLines != maxLines) summary.maxLines = maxLines
             summary.measure(
                 MeasureSpec.makeMeasureSpec(summaryW, MeasureSpec.EXACTLY),
@@ -636,13 +643,21 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
     }
 
     fun bind(status: TvNativeHeroStatus) {
+        if (status.wrap != leadWraps) {
+            leadWraps = status.wrap
+            lead.setSingleLine(!status.wrap)
+            lead.setHorizontallyScrolling(!status.wrap)
+        }
         lead.text = status.lead
-        name.text = status.name?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
-        name.visibility = if (status.name.isNullOrBlank()) GONE else VISIBLE
+        name.text = status.name?.takeIf { it.isNotBlank() && !status.wrap }?.let { status.nameSeparator + it }.orEmpty()
+        name.visibility = if (status.name.isNullOrBlank() || status.wrap) GONE else VISIBLE
         tail.text = status.tail.orEmpty()
-        tail.visibility = if (status.tail.isNullOrEmpty()) GONE else VISIBLE
+        tail.visibility = if (status.tail.isNullOrEmpty() || status.wrap) GONE else VISIBLE
         for (v in parts) v.setTextColor(status.color)
     }
+
+    /** [lead] 此刻是不是可以折行的多行字 (见 [TvNativeHeroStatus.wrap]). */
+    private var leadWraps = false
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)

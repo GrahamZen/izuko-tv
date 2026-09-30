@@ -89,22 +89,50 @@ enum class RecommendationGroupKind(val key: String) {
 
     companion object {
         /**
-         * 落库的 groupKey 反解成 kind.
+         * 落库的 groupKey 反解成 kind (键的写法见 [recommendationGroupKey]).
          *
          * **同一个 kind 可以出多行** (「因为你喜欢《A》」「因为你喜欢《B》」), 落库时写成
-         * `key#序号`, 所以这里要先把 `#` 后面切掉.
+         * `key#序号`, 所以这里要先把 `#` 后面切掉; 种子行还带着 `@种子`.
          */
         fun ofKeyOrNull(key: String): RecommendationGroupKind? {
-            val base = key.substringBefore('#')
+            val base = key.substringBefore('#').substringBefore('@')
             return entries.firstOrNull { it.key == base }
         }
     }
 }
 
+/**
+ * 一组落库时的键: 同一个 kind 的第一组就是 [RecommendationGroupKind.key], 之后的带序号 (`key#序号`);
+ * 种子行再带上种子的条目 id (`…@种子`), 「更多」按它找回种子接着推荐 (见 [seedSubjectIdOfGroupKey]).
+ */
+fun recommendationGroupKey(kind: RecommendationGroupKind, ordinal: Int, seedSubjectId: Int?): String {
+    val base = if (ordinal == 0) kind.key else "${kind.key}#$ordinal"
+    return if (seedSubjectId == null) base else "$base@$seedSubjectId"
+}
+
+/** 种子行的键里带着的种子条目 id (见 [recommendationGroupKey]); 别的组为 null. */
+fun seedSubjectIdOfGroupKey(key: String): Int? = key.substringAfter('@', "").toIntOrNull()
+
 @Immutable
 class RecommendationGroup(
     val kind: RecommendationGroupKind,
-    /** 标题里的填充参数, 目前只有 [RecommendationGroupKind.BECAUSE_YOU_LIKED] 的《X》用得上. */
+    /**
+     * 标题里的填充参数: 种子行是种子的名字 (「因为你喜欢《X》」的《X》); [RecommendationGroupKind.CHANGE_TASTE] 是出行时挑中的标签
+     * (标题不显示它, 「更多」按它接着找). 别的组为 null.
+     */
     val titleArg: String?,
     val items: List<RecommendedSubjectInfo>,
+    /** 这一组落库时的键 (见 [recommendationGroupKey]): 「更多」按它找回这一组. */
+    val key: String = kind.key,
+    /** 种子行的种子条目 id; 别的组为 null. */
+    val seedSubjectId: Int? = null,
+    /** 行尾要不要放「更多」: 按出行时的来源还能接着推荐, 且没到上限 (见 `RecommendationRepository.extendGroup`). */
+    val extendable: Boolean = false,
+    /**
+     * 行尾「更多」卡的玻璃底铺哪张竖版封面: 种子行是种子的封面, 其余是这一组下次接出来的第一部 (预告, 不在 [items] 里).
+     * null = 没有 (界面用这一行最后一张).
+     */
+    val moreImageUrl: String? = null,
+    /** 预告: 这一组下次接出来的第一部 (不在 [items] 里, 焦点在「更多」卡上时 hero 显示它). 种子行与没有预告的组为 null. */
+    val peek: RecommendedSubjectInfo? = null,
 )

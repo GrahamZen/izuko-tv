@@ -27,6 +27,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
@@ -34,9 +35,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -65,6 +69,8 @@ import me.him188.ani.app.data.recommendation.RecommendationGroupKind
 import me.him188.ani.app.data.recommendation.computeInterestProfile
 import me.him188.ani.app.data.recommendation.isInterestTag
 import me.him188.ani.app.data.recommendation.isSeasonFormat
+import me.him188.ani.app.data.recommendation.recommendationGroupKey
+import me.him188.ani.app.data.recommendation.seedSubjectIdOfGroupKey
 import me.him188.ani.app.data.recommendation.sequelHint
 import me.him188.ani.app.data.recommendation.sequelSeasonCandidates
 import me.him188.ani.app.data.recommendation.seriesKeyOf
@@ -89,6 +95,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.random.Random
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -163,24 +170,407 @@ class RecommendationRepository(
         }
     }
 
-    /** 分好组的推荐, 只读缓存表, 零请求. */
+    /** 分好组的推荐, 只读缓存表, 零请求 (种子封面没记下来时读一次落盘的收藏快照, 见 [collectionCovers]). */
     fun recommendationGroups(): Flow<List<RecommendationGroup>> =
-        feedDao.allFlow().map { rows ->
+        combine(feedDao.allFlow(), exhaustedGroups, collectionCovers) { rows, exhausted, covers ->
             // 表里已经是全局有序的, 相邻同组的连在一起, 顺序扫一遍就分完
             rows.groupBy { it.groupKey }
                 .mapNotNull { (key, groupRows) ->
                     val kind = RecommendationGroupKind.ofKeyOrNull(key) ?: return@mapNotNull null
-                    kind to groupRows
+                    Triple(key, kind, groupRows)
                 }
-                .sortedBy { (_, groupRows) -> groupRows.minOf { it.orderIndex } }
-                .map { (kind, groupRows) ->
+                .sortedBy { (_, _, groupRows) -> groupRows.minOf { it.orderIndex } }
+                .map { (key, kind, groupRows) ->
+                    val seed = seedSubjectIdOfGroupKey(key)
+                    val titleArg = groupRows.firstNotNullOfOrNull { it.titleArg }
+                    val sorted = groupRows.sortedBy { it.orderIndex }
+                    // 接到 [ROW_MORE_MAX] 条就满了 (那时不留预告, 见 extendGroupNow)
+                    val extendable = canExtend(kind, seed, titleArg) && sorted.size < ROW_MORE_MAX &&
+                            RowMark(key, groupRows.first().computedAt) !in exhausted
+                    // 预告 (见 hasPeek): 还能往后接时最后一条不显示, 它的封面垫在「更多」卡底下; 接满了 / 接不出了就照常显示
+                    val peek = if (extendable && hasPeek(kind, sorted.size)) sorted.last().toInfo() else null
                     RecommendationGroup(
                         kind = kind,
-                        titleArg = groupRows.firstNotNullOfOrNull { it.titleArg },
-                        items = groupRows.sortedBy { it.orderIndex }.map { it.toInfo() },
+                        titleArg = titleArg,
+                        items = (if (peek != null) sorted.dropLast(1) else sorted).map { it.toInfo() },
+                        key = key,
+                        seedSubjectId = seed,
+                        extendable = extendable,
+                        moreImageUrl = when {
+                            peek != null -> peek.imageLarge
+                            seed != null -> covers[seed]
+                            else -> null
+                        }?.takeIf { it.isNotEmpty() },
+                        peek = peek,
                     )
                 }
+        }.onStart {
+            if (collectionCovers.value.isEmpty() && coversLoadStarted.compareAndSet(expect = false, update = true)) {
+                scope.launch(ioDispatcher) {
+                    val saved = collectionsDiskCache?.read() ?: return@launch
+                    if (collectionCovers.value.isEmpty()) collectionCovers.value = CollectionsSnapshot.from(saved).covers()
+                }
+            }
         }
+
+    /**
+     * 这一组能不能「更多」(见 [extendGroup]): 种子行要有种子 ([ROW_MORE_SEED_KINDS]); 其余几组 ([ROW_MORE_KINDS]) 各按自己的来源往后接,
+     * 其中「换换口味」要知道出行时挑中的标签 (落在 [titleArg] 里, 这之前算的那批没有).
+     */
+    private fun canExtend(kind: RecommendationGroupKind, seed: Int?, titleArg: String?): Boolean = when (kind) {
+        in ROW_MORE_SEED_KINDS -> seed != null
+        RecommendationGroupKind.CHANGE_TASTE -> titleArg != null
+        else -> kind in ROW_MORE_KINDS
+    }
+
+    /** 正在「更多」的组 (键, 见 [extendGroup]); 界面据此把行尾那张卡画成加载中. */
+    val extendingGroups: StateFlow<Set<String>> get() = _extendingGroups
+    private val _extendingGroups = MutableStateFlow(emptySet<String>())
+
+    /** 再也接不出新条目 (或接满了) 的组: 行尾不再放「更多」. 带上那一批的 computedAt, 重算之后自然作废. */
+    private val exhaustedGroups = MutableStateFlow(emptySet<RowMark>())
+
+    private data class RowMark(val groupKey: String, val computedAt: Long)
+
+    /** 各行往后接到了哪 (键 → 进度), 只在 [extendMutex] 里读写. */
+    private val rowCursors = HashMap<String, RowCursor>()
+    private val extendMutex = Mutex()
+
+    /**
+     * 一行往后接的进度: 按 [plan] 的几路料依次翻 (前一路翻完换下一路), 眼下在第 [sourceIndex] 路的第 [nextPage] 页;
+     * 上一次挑剩的候选留给下一次. 只认同一批 ([computedAt]): 重算之后从头来.
+     */
+    private class RowCursor(
+        val computedAt: Long,
+        val plan: MorePlan,
+    ) {
+        var sourceIndex = 0
+        var nextPage = 0
+        var leftovers: List<Candidate> = emptyList()
+
+        /** 每一路都翻完了, 挑剩的也用完了: 再也接不出新的. */
+        val exhausted: Boolean get() = sourceIndex >= plan.sources.size && leftovers.isEmpty()
+    }
+
+    /**
+     * 一种组怎么往后接 (见 [morePlanOf]): 依次用的几路料 [sources], 哪些候选要 ([accept], 如本季那两组的观众地板), 挑的时候怎么重排
+     * ([weightOf] / [positional], 同出行时那一组), 续作要不要换成最早一季 ([trackSequels], 同出行时的 trackSequels).
+     */
+    private class MorePlan(
+        val sources: List<MoreSource>,
+        val weightOf: (Candidate) -> Double,
+        val positional: Boolean = true,
+        val accept: (Candidate) -> Boolean = { true },
+        val trackSequels: Boolean = false,
+    )
+
+    /** 「更多」往后接的一路料: 按页取 (页从 0 数; `null` = 请求失败, 进度不动, 下次从这一页接着来). 每发一个请求记进 [requests]. */
+    private fun interface MoreSource {
+        suspend fun page(page: Int, requests: AtomicInt): MorePage?
+    }
+
+    /** [MoreSource] 的一页; [last] = 这一路没有下一页了. */
+    private class MorePage(val items: List<Candidate>, val last: Boolean)
+
+    /** 「更多」要往后翻的一个搜索: 条件 [filters], 排序 [sort], 从第 [firstPage] 页往后翻 (出行时已经取过的那几页跳过). [what] 进日志. */
+    private class MoreSearch(val filters: SubjectSearchFilters, val sort: SearchSort, val what: String, val firstPage: Int = 0)
+
+    /**
+     * 几个搜索 (「或」) 一起往后翻, 同一页号的几份交错拼成一页 (同出行时的 [interleave]); 翻完的那个不再搜, 都翻完就是最后一页.
+     * 有一个失败就整页作废: 进度不动, 下次这一页重来 (成功的那几个重搜一次, 已经上过页面的会被滤掉).
+     */
+    private fun searchSource(searches: List<MoreSearch>): MoreSource {
+        val done = BooleanArray(searches.size)
+        return MoreSource { page, requests ->
+            val results = coroutineScope {
+                searches.indices.filter { !done[it] }.map { i ->
+                    async {
+                        val search = searches[i]
+                        val p = search.firstPage + page
+                        requests.incrementAndGet()
+                        i to searchWithTotal(search.filters, search.sort, "${search.what}#$p", offset = p * SEARCH_PAGE_SIZE)
+                    }
+                }.awaitAll()
+            }
+            if (results.any { it.second == null }) return@MoreSource null
+            val pages = results.map { (i, result) ->
+                val (items, total) = checkNotNull(result)
+                val p = searches[i].firstPage + page
+                if (items.size < SEARCH_PAGE_SIZE || (p + 1) * SEARCH_PAGE_SIZE >= total) done[i] = true
+                items
+            }
+            MorePage(interleave(pages), last = done.all { it })
+        }
+    }
+
+    /** 出行时的召回池 (还新鲜就接着用, 不发请求; 过期了照出行时的取法重取) 当第一页. */
+    private fun poolSource(pool: suspend (requests: AtomicInt) -> List<Candidate>?): MoreSource =
+        MoreSource { _, requests -> pool(requests)?.let { MorePage(it, last = true) } }
+
+    /**
+     * 各组往后接的料与挑法, 与出行时同一路来源接着往下翻:
+     * - 种子行: AND 搜种子最强的几个兴趣标签 ([SEED_SIMILAR_TAGS] 个, 同出行时的补齐), 翻完放宽到前 [SEED_ROW_RELAXED_TAGS] 个再翻一轮
+     *   (`/recs` 一个条目最多 9 条、没有下一页, 而且只到 2023 年上半年左右开播的番, 出行时早就用完了);
+     * - 符合你口味的高分: 同几个口味标签 [HIGH_RATED_LINE] 以上的排行榜, 翻完放宽到 [HIGH_RATED_RELAXED_LINE] 再翻一轮; 高分经典: 全站高分榜;
+     * - 本季你可能会喜欢 / 本季新番: 本季池子, 再往后翻 TV 与 WEB 两路; 前者只要对得上口味的, 接完就收起 (不退成热度序, 否则名不副实);
+     * - 换换口味: 出行时挑中的那个标签 (落在组的 titleArg 里) 的排行榜; 大家最近在看: 近半年热度榜往后翻.
+     * 拿不出计划 (种子没有兴趣标签、画像里没有口味标签) 时返回 null.
+     */
+    private fun morePlanOf(
+        kind: RecommendationGroupKind,
+        groupKey: String,
+        titleArg: String?,
+        collections: List<SubjectCollectionEntity>,
+        sampling: Sampling,
+    ): MorePlan? {
+        val floor = { c: Candidate -> (c.activeAudience ?: 0) >= MIN_SEASON_AUDIENCE }
+        return when (kind) {
+            RecommendationGroupKind.BECAUSE_YOU_LIKED, RecommendationGroupKind.SIMILAR_TO -> {
+                val seedId = seedSubjectIdOfGroupKey(groupKey) ?: return null
+                val tags = seedInterestTags(seedId, collections).take(SEED_SIMILAR_TAGS)
+                if (tags.isEmpty()) return null
+                val minTags = if (tags.size >= SEED_SIMILAR_TAGS) SEED_ROW_RELAXED_TAGS else tags.size
+                MorePlan(
+                    sources = (tags.size downTo minTags).map { n ->
+                        searchSource(listOf(MoreSearch(rankedFilters(tags.take(n), ratings = null), SearchSort.RANK, "more${tags.take(n)}")))
+                    },
+                    weightOf = sampling::rankGroupWeight,
+                    trackSequels = true,
+                )
+            }
+
+            RecommendationGroupKind.FOR_YOU_HIGH_RATED -> {
+                val tags = tasteQueryTags(computeInterestProfile(collections, currentTimeMillis()))
+                if (tags.isEmpty()) return null
+                fun line(ratings: List<String>, what: String) =
+                    searchSource(tags.map { tag -> MoreSearch(rankedFilters(listOf(tag), ratings), SearchSort.RANK, "$what$tag") })
+                MorePlan(
+                    sources = listOf(line(HIGH_RATED_LINE, "moreHighRated"), line(HIGH_RATED_RELAXED_LINE, "moreHighRatedRelaxed")),
+                    weightOf = sampling::rankGroupWeight,
+                    positional = false,
+                )
+            }
+
+            RecommendationGroupKind.TOP_RATED -> MorePlan(
+                sources = listOf(searchSource(listOf(MoreSearch(rankedFilters(emptyList(), HIGH_SCORE), SearchSort.RANK, "moreTopRated")))),
+                weightOf = sampling::rankGroupWeight,
+                positional = false,
+            )
+
+            RecommendationGroupKind.THIS_SEASON -> {
+                val weights = computeInterestProfile(collections, currentTimeMillis()).likedTags.associate { it.name to it.weight }
+                if (weights.isEmpty()) return null
+                val score = { c: Candidate -> tasteScore(c, weights) * dropRateWeight(c.dropRate) * sampling.regionWeight(c) }
+                MorePlan(sources = seasonMoreSources(), weightOf = score, accept = { floor(it) && score(it) > 0.0 })
+            }
+
+            RecommendationGroupKind.THIS_SEASON_NEW -> MorePlan(
+                sources = seasonMoreSources(),
+                weightOf = { dropRateWeight(it.dropRate) * sampling.regionWeight(it) },
+                accept = floor,
+            )
+
+            RecommendationGroupKind.CHANGE_TASTE -> {
+                val tag = titleArg ?: return null
+                MorePlan(
+                    sources = listOf(searchSource(listOf(MoreSearch(rankedFilters(listOf(tag), CHANGE_TASTE_LINE), SearchSort.RANK, "moreChangeTaste")))),
+                    weightOf = sampling::rankGroupWeight,
+                    trackSequels = true,
+                )
+            }
+
+            RecommendationGroupKind.TRENDING -> {
+                val since = recentHotSince()
+                MorePlan(
+                    sources = listOf(
+                        poolSource { requests ->
+                            recentHotPool?.takeIf { it.isFresh(since) }?.items ?: searchRecentHot(since)?.also { requests += RECENT_HOT_PAGES }
+                        },
+                        searchSource(listOf(MoreSearch(recentHotFilters(since), SearchSort.COLLECTION, "moreRecentHot", firstPage = RECENT_HOT_PAGES))),
+                    ),
+                    weightOf = { c -> popularityWeight(c.collectionCount) * sampling.regionWeight(c) },
+                    accept = floor,
+                )
+            }
+
+            else -> null
+        }
+    }
+
+    /** 本季那两组往后接的料: 本季池子 (同 [searchThisSeason]), 再往后翻 TV 与 WEB 两路 (出行时 TV 取了 [SEASON_TV_PAGES] 页、WEB 一页). */
+    private fun seasonMoreSources(): List<MoreSource> {
+        val since = currentSeasonStart()
+        return listOf(
+            poolSource { requests ->
+                seasonPool?.takeIf { it.isFresh(since) }?.items ?: searchThisSeason(since)?.also { requests += SEASON_POOL_PAGES }
+            },
+            searchSource(
+                listOf(
+                    MoreSearch(seasonFilters(since, "TV"), SearchSort.COLLECTION, "moreSeasonTV", firstPage = SEASON_TV_PAGES),
+                    MoreSearch(seasonFilters(since, "WEB"), SearchSort.COLLECTION, "moreSeasonWeb", firstPage = 1),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 「更多」: 按 [groupKey] 那一行出行时的来源接着推荐 (各组怎么接见 [morePlanOf]), 显示的条数每次加 [ROW_MORE_STEP], 一行最多 [ROW_MORE_MAX] 条,
+     * 接不出新的就收起「更多」. 带预告卡的组 ([ROW_MORE_PEEK_KINDS]) 每次多要一条当新的预告 (不显示, 封面垫在「更多」卡底下, 下次按下去第一个露出来).
+     * 过滤照出行时的规矩 (已收藏、轮播在放的、页面上已有的、同系列的、没看过的地区、超长篇都不要), 重排照那一组出行时的权重, 续作照样换成最早一季.
+     *
+     * 接出来的写进推荐表 (离开页面再回来还在), 到下次重算为止. 同一组连按只算一次.
+     */
+    fun extendGroup(groupKey: String) {
+        var started = false
+        _extendingGroups.update { current ->
+            started = groupKey !in current
+            current + groupKey
+        }
+        if (!started) return
+        scope.launch {
+            try {
+                extendMutex.withLock { extendGroupNow(groupKey) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "bgm-direct: recommendations 「更多」$groupKey 失败" }
+            } finally {
+                _extendingGroups.update { it - groupKey }
+            }
+        }
+    }
+
+    private suspend fun extendGroupNow(groupKey: String) {
+        val rows = feedDao.allFlow().first()
+        val groupRows = rows.filter { it.groupKey == groupKey }
+        val template = groupRows.firstOrNull() ?: return
+        val kind = RecommendationGroupKind.ofKeyOrNull(groupKey) ?: return
+        val mark = RowMark(groupKey, template.computedAt)
+        // 这次接几条: 显示的条数往上加一步 (封顶); 带预告卡的组再多要一条当新的预告, 到顶了就不要 (那时原来的预告也露出来)
+        val targetShown = minOf(shownCount(kind, groupRows.size) + ROW_MORE_STEP, ROW_MORE_MAX)
+        val targetRows = targetShown + if (kind in ROW_MORE_PEEK_KINDS && targetShown < ROW_MORE_MAX) 1 else 0
+        val needed = targetRows - groupRows.size
+        if (needed <= 0) {
+            exhaustedGroups.update { it + mark }
+            return
+        }
+
+        // 收藏 (排除集、画像、种子的标签): 本进程取全过就用内存那份, 否则读上次落盘的快照, 都没有才退回本地收藏
+        val snapshot = lastCollections ?: collectionsDiskCache?.read()?.let { CollectionsSnapshot.from(it) }
+            ?.also { lastCollections = it }
+        val collections = snapshot?.entities ?: loadCollections()
+        val sampling = Sampling(
+            seed = sampleSeed(),
+            watchedRegions = snapshot?.watchedRegions()?.takeIf { it.isNotEmpty() } ?: DEFAULT_WATCHED_REGIONS,
+            collectedRegions = snapshot?.collectedRegions(),
+        )
+        val cursor = rowCursors[groupKey]?.takeIf { it.computedAt == template.computedAt }
+            ?: morePlanOf(kind, groupKey, template.titleArg, collections, sampling)
+                ?.let { plan -> RowCursor(template.computedAt, plan).also { rowCursors[groupKey] = it } }
+        if (cursor == null) {
+            logger.info { "bgm-direct: recommendations 「更多」${kind.key} 拿不出往后接的料 (种子没有兴趣标签 / 画像里没有口味标签), 收起" }
+            exhaustedGroups.update { it + mark }
+            return
+        }
+        val plan = cursor.plan
+
+        val requests = atomic(0)
+        val collected = collections.mapTo(HashSet()) { it.subjectId }
+        val onCarousel = fetchCarouselIds(requests)
+        val shown = rows.mapTo(HashSet()) { it.subjectId }
+        val seenSeries = collections.mapTo(HashSet()) { seriesKeyOf(it.nameCn.ifEmpty { it.name }) }
+        rows.mapTo(seenSeries) { seriesKeyOf(it.nameCn) }
+        fun usable(candidate: Candidate): Boolean {
+            val id = candidate.info.bangumiId
+            return id !in collected && id !in onCarousel && id !in shown && plan.accept(candidate) &&
+                    sampling.regionAllowed(candidate) && !sampling.isLongRunning(candidate) &&
+                    seriesKeyOf(candidate.info.nameCn).let { it.isEmpty() || it !in seenSeries }
+        }
+
+        // 攒到够挑一批: 上次挑剩的先用, 不够再往后翻页; 一次最多发 [ROW_MORE_REQUESTS_PER_STEP] 个请求, 免得一按就是十几个
+        val pool = LinkedHashMap<Int, Candidate>()
+        cursor.leftovers.filter(::usable).forEach { pool.putIfAbsent(it.info.bangumiId, it) }
+        val fetched = atomic(0)
+        while (pool.size < needed && fetched.value < ROW_MORE_REQUESTS_PER_STEP && cursor.sourceIndex < plan.sources.size) {
+            val page = plan.sources[cursor.sourceIndex].page(cursor.nextPage, fetched) ?: break
+            page.items.filter(::usable).forEach { pool.putIfAbsent(it.info.bangumiId, it) }
+            if (page.last) {
+                // 这一路翻完了: 换下一路从头翻 (前几页多半是刚才那些, 已在页面上的会被滤掉)
+                cursor.sourceIndex++
+                cursor.nextPage = 0
+            } else {
+                cursor.nextPage++
+            }
+        }
+
+        // 挑一批: 照出行时的权重重排, 同一批里同系列只留一个
+        val ranked = sampling.ranked(pool.values.toList(), plan.weightOf, plan.positional)
+        val takenSeries = HashSet<String>()
+        val picked = ArrayList<Candidate>(needed)
+        val rest = ArrayList<Candidate>()
+        for (candidate in ranked) {
+            val series = seriesKeyOf(candidate.info.nameCn)
+            if (picked.size < needed && (series.isEmpty() || takenSeries.add(series))) picked += candidate else rest += candidate
+        }
+        cursor.leftovers = rest
+
+        logger.info {
+            "bgm-direct: recommendations 「更多」${kind.key} 接 ${picked.size}/$needed 条 (第 ${cursor.sourceIndex + 1}/${plan.sources.size} 路, " +
+                    "下次从第 ${cursor.nextPage} 页接, 挑剩 ${rest.size} 条, ${requests.value + fetched.value} 个请求)"
+        }
+        // 接满了 (预告也露出来) 或再也接不出新的: 收起「更多」
+        if (cursor.exhausted || (picked.size >= needed && targetShown >= ROW_MORE_MAX)) exhaustedGroups.update { it + mark }
+        if (picked.isEmpty()) return
+
+        val seedId = seedSubjectIdOfGroupKey(groupKey)
+        val group = RecommendationGroup(kind, template.titleArg, picked.map { it.info }, seedSubjectId = seedId)
+        if (!plan.trackSequels) {
+            val appended = feedDao.appendToGroup(groupKey, template.computedAt, group.items.map { template.rowOf(it) }) ?: return
+            awaitGroupRows(groupKey, groupRows.size + appended.size)
+            return
+        }
+        // 续作换成最早一季 (同出行时, 见 SequelBatch): 查表那一路一般当场就好, 等一会儿再落库, 出卡后原地换的就少
+        val batchJob = SupervisorJob(scope.coroutineContext[Job])
+        val sequels = SequelBatch(
+            CoroutineScope(scope.coroutineContext + ioDispatcher + batchJob),
+            table = if (collected.isEmpty()) null else sequelSeasonTable.current(),
+            collected = collected,
+        )
+        sequels.track(groupIndex = 0, items = picked.map { it.info }, reserves = rest.take(SEQUEL_RESERVES).map { it.info })
+        sequels.awaitTracked(ROW_MORE_SEQUEL_WAIT)
+        val converted = sequels.applyReady(listOf(group), onCarousel = onCarousel + shown).single()
+        val appended = feedDao.appendToGroup(groupKey, template.computedAt, converted.items.map { template.rowOf(it) })
+        if (appended == null) {
+            // 这期间整表被新一批替换了: 这一组已经不在, 什么都不写
+            batchJob.cancel()
+            return
+        }
+        awaitGroupRows(groupKey, groupRows.size + appended.size)
+        sequels.convertAfterShown(listOf(appended))
+        // 换完就放掉这一批: 它挂在仓库的 scope 下, 不放的话每按一次「更多」留一个空 Job
+        scope.launch {
+            batchJob.children.toList().joinAll()
+            batchJob.cancel()
+        }
+    }
+
+    /** 这一组的一条新行 (组键、标题参数、这一批的 computedAt 都照 [this]). */
+    private fun RecommendationFeedEntity.rowOf(info: RecommendedSubjectInfo) =
+        copy(subjectId = info.bangumiId, nameCn = info.nameCn, imageLarge = info.imageLarge)
+
+    /** 等表把新接的推出来 ([total] = 这一组接完之后的条数) 再收起「加载中」: 反过来的话「更多」卡会先在原位置变回原样, 下一帧才被新卡挤到行尾. */
+    private suspend fun awaitGroupRows(groupKey: String, total: Int) {
+        withTimeoutOrNull(ROW_MORE_SEQUEL_WAIT) { feedDao.allFlow().first { rows -> rows.count { it.groupKey == groupKey } >= total } }
+    }
+
+    /**
+     * 预告卡: [ROW_MORE_PEEK_KINDS] 的组比显示的多存一条 (最后一条, 出行时就多要一条), 还能往后接时不显示, 它的封面垫在「更多」卡底下
+     * (见 [recommendationGroups]). 只有一行 ([GROUP_SIZE] 条) 的旧批次没有预告.
+     */
+    private fun hasPeek(kind: RecommendationGroupKind, rows: Int): Boolean = kind in ROW_MORE_PEEK_KINDS && rows > GROUP_SIZE
+
+    /** 还能往后接时这一组显示几条 (预告不算). */
+    private fun shownCount(kind: RecommendationGroupKind, rows: Int): Int = if (hasPeek(kind, rows)) rows - 1 else rows
 
     /** 拍平成一条流的推荐, 给还没按组画的界面用 (手机端竖排网格). */
     fun recommendedSubjectsPager(): Flow<PagingData<RecommendedItemInfo>> =
@@ -419,12 +809,12 @@ class RecommendationRepository(
 
         val computedAt = currentTimeMillis()
         var orderIndex = 0
-        // 同 kind 多行时给个序号, 否则读回来会被 groupBy 并成一行
+        // 同 kind 多行时给个序号, 否则读回来会被 groupBy 并成一行; 种子行另带种子 (见 recommendationGroupKey)
         val kindSeen = HashMap<RecommendationGroupKind, Int>()
         val groupRows = groups.map { group ->
             val ordinal = kindSeen.getOrElse(group.kind) { 0 }
             kindSeen[group.kind] = ordinal + 1
-            val groupKey = if (ordinal == 0) group.kind.key else "${group.kind.key}#$ordinal"
+            val groupKey = recommendationGroupKey(group.kind, ordinal, group.seedSubjectId)
             group.items.map { item ->
                 RecommendationFeedEntity(
                     groupKey = groupKey,
@@ -584,9 +974,20 @@ class RecommendationRepository(
 
     /**
      * 上一次取全的收藏, 见 [fetchAllCollections]. 只在 [refreshOnce] 里读写, 而那里有 [refreshMutex]
-     * 串着 (解锁/加锁之间有 happens-before), 不用另加同步.
+     * 串着 (解锁/加锁之间有 happens-before), 不用另加同步. 换了就顺带记下各条目的封面 ([collectionCovers]).
      */
     private var lastCollections: CollectionsSnapshot? = null
+        set(value) {
+            field = value
+            if (value != null) collectionCovers.value = value.covers()
+        }
+
+    /**
+     * 收藏里各条目的封面 (条目 id → 地址): 种子行行尾「更多」卡的玻璃底铺种子的封面 (见 [RecommendationGroup.moreImageUrl]).
+     * 取全收藏 / 读回落盘快照时顺带记下; 推荐缓存还新鲜、这一轮不重算的话, 界面开始读推荐时单独读一次落盘的快照 (见 [recommendationGroups]).
+     */
+    private val collectionCovers = MutableStateFlow(emptyMap<Int, String>())
+    private val coversLoadStarted = atomic(false)
 
     private class CollectionsSnapshot(
         val total: Int,
@@ -615,8 +1016,17 @@ class RecommendationRepository(
             return regionCounts.filterValues { it >= regionTaggedCount * COLLECTED_REGION_SHARE }.keys
         }
 
+        /** 各条目的封面 (条目 id → 地址, 没有封面的不算). */
+        fun covers(): Map<Int, String> = entities.asSequence()
+            .filter { it.imageLarge.isNotEmpty() }
+            .associate { it.subjectId to it.imageLarge }
+
+        /**
+         * 旧格式落盘的快照没存封面 (见 [SavedCollection.imageLarge]): 当它对不上, 下一次重算取一遍全的, 顺带把封面补上.
+         * 有收藏却一张封面都没有的就是这种快照.
+         */
         fun matches(first: SubjectCollectionsPage, fingerprint: List<Pair<Int, Int>>) =
-            total == first.total && this.fingerprint == fingerprint
+            total == first.total && this.fingerprint == fingerprint && (entities.isEmpty() || entities.any { it.imageLarge.isNotEmpty() })
 
         fun toSaved() = SavedCollections(
             total, fingerprint, regionCounts, regionTaggedCount,
@@ -655,9 +1065,11 @@ class RecommendationRepository(
         val ratingTotal: Int,
         val lastUpdated: Long,
         val tags: List<Tag>,
+        /** 封面 (种子行「更多」卡的玻璃底用它, 见 [collectionCovers]); 旧格式的快照没有这一项, 读回来是空的. */
+        val imageLarge: String = "",
     ) {
         fun toEntity() = SubjectCollectionEntity(
-            subjectId = id, name = name, nameCn = nameCn, summary = "", nsfw = false, imageLarge = "",
+            subjectId = id, name = name, nameCn = nameCn, summary = "", nsfw = false, imageLarge = imageLarge,
             totalEpisodes = 0, airDate = PackedDate.Invalid, aliases = emptyList(), tags = tags,
             collectionStats = SubjectCollectionStats.Zero, ratingInfo = RatingInfo.Empty.copy(total = ratingTotal),
             completeDate = PackedDate.Invalid, selfRatingInfo = SelfRatingInfo.Empty.copy(score = score),
@@ -668,7 +1080,7 @@ class RecommendationRepository(
         companion object {
             fun of(entity: SubjectCollectionEntity) = SavedCollection(
                 entity.subjectId, entity.name, entity.nameCn, entity.collectionType, entity.selfRatingInfo.score,
-                entity.ratingInfo.total, entity.lastUpdated, entity.tags,
+                entity.ratingInfo.total, entity.lastUpdated, entity.tags, entity.imageLarge,
             )
         }
     }
@@ -751,15 +1163,8 @@ class RecommendationRepository(
 
         // ---- 2. 符合你口味的高分动画 / 高分经典 ----
         // 用户的高权重标签各搜一次再合并成一组, **不是每个标签单独一行** —— "校园""恋爱""日常"
-        // 各来一行的话, 三行内容高度重复, 看着像同一行抄了三遍.
-        //
-        // **不拿「来源」类标签 (漫画改/原创…) 搜**: 那是制作来源不是口味 (打分那份画像早就排掉了它),
-        // 而且宽到单独拿它搜就是全站经典榜 —— 排行榜里 44.6% 的条目带"漫画改", 2026-09-22 真机上这一行
-        // 因此满是星际牛仔/虫师/攻壳 (总榜第 4/21/22 名), 看着就是"按排名直接给的".
-        val tasteQueryTags = profile.tags
-            .filter { CanonicalTagKind.matchOrNull(it.name) != CanonicalTagKind.Source }
-            .take(MAX_TAG_QUERIES)
-            .map { it.name }
+        // 各来一行的话, 三行内容高度重复, 看着像同一行抄了三遍. 拿哪几个标签见 tasteQueryTags (不拿「来源」类).
+        val tasteQueryTags = tasteQueryTags(profile)
         // 当天取过的页接着用 (见 highRatedPages); 各标签的那一份在这里先建好, 下面的并发协程各改各的
         val tagPages = tasteQueryTags.associateWith { highRatedPages.getOrPut(it) { TagPages() } }
         val tagPoolDeferred = async {
@@ -807,6 +1212,7 @@ class RecommendationRepository(
                 // 与高分那一组同一种取法 (头一页 + 随机一页): 宽标签 (「科幻」) 的排行榜头两页全是几十年前的
                 // 经典, 看得多的用户扣完已收藏只剩十几部, 一行 12 格照单全收, 年代权重排不开
                 searchSampledByTags(listOf(neighbor), CHANGE_TASTE_LINE, sampling.random(SALT_CHANGE_TASTE_PAGE), requests)
+                    ?.let { neighbor to it }
             }
         }
 
@@ -881,6 +1287,8 @@ class RecommendationRepository(
             trackSequels: Boolean = false,
             /** 重排时算不算位次分, 见 [Sampling.ranked]. */
             positional: Boolean = true,
+            /** 种子行的种子条目 id: 编进落库的组键, 「更多」按它接着推荐 (见 [extendGroup]). */
+            seedSubjectId: Int? = null,
         ) {
             // 用户没看过的地区直接不要 (见 Sampling.regionAllowed); 后备料在递归那一趟同样过这一道
             val pool = rawCandidates.filter { sampling.regionAllowed(it) }
@@ -891,9 +1299,11 @@ class RecommendationRepository(
             val longRunning = ranked.asSequence().filter { sampling.isLongRunning(it) }.mapTo(HashSet()) { it.info.bangumiId }
             val items = LinkedHashMap<Int, RecommendedSubjectInfo>()
             val takenSeries = HashSet<String>()
+            // 带预告的组 (「更多」卡底下铺它的封面, 见 ROW_MORE_PEEK_KINDS) 多要一条; 凑不出这一条也不算凑不满 (看 minSize)
+            val size = if (kind in ROW_MORE_PEEK_KINDS) GROUP_SIZE + 1 else GROUP_SIZE
             // 第一遍: 只要别的组没用过、系列也没出现过的
             for (candidate in candidates) {
-                if (items.size >= GROUP_SIZE) break
+                if (items.size >= size) break
                 if (candidate.bangumiId in excluded || candidate.bangumiId in seen) continue
                 if (candidate.bangumiId in longRunning) continue
                 val series = seriesKeyOf(candidate.nameCn)
@@ -901,9 +1311,9 @@ class RecommendationRepository(
                 items[candidate.bangumiId] = candidate
             }
             // 第二遍: 还没满就放宽到"允许与别的组重合"(组内仍不重复, 同系列仍只留一个)
-            if (items.size < GROUP_SIZE) {
+            if (items.size < size) {
                 for (candidate in candidates) {
-                    if (items.size >= GROUP_SIZE) break
+                    if (items.size >= size) break
                     if (candidate.bangumiId in excluded) continue
                     val series = seriesKeyOf(candidate.nameCn)
                     if (series.isNotEmpty() && !takenSeries.add(series)) continue
@@ -926,6 +1336,7 @@ class RecommendationRepository(
                     return takeGroup(
                         kind, ordered, titleArg,
                         weightOf = null, minSize = minSize, padding = null, trackSequels = trackSequels,
+                        seedSubjectId = seedSubjectId,
                     )
                 }
                 // 连最低行长都凑不出来才丢: 说明这个来源真的没料
@@ -950,7 +1361,7 @@ class RecommendationRepository(
             }
             seen += items.keys
             items.values.mapTo(seenSeries) { seriesKeyOf(it.nameCn) }
-            groups += RecommendationGroup(kind, titleArg, items.values.toList())
+            groups += RecommendationGroup(kind, titleArg, items.values.toList(), seedSubjectId = seedSubjectId)
         }
 
         // ---- 1. 因为你喜欢《X》 ----
@@ -1010,6 +1421,7 @@ class RecommendationRepository(
                 titleArg = seed.name,
                 weightOf = sampling::rankGroupWeight,
                 trackSequels = true,
+                seedSubjectId = seed.subjectId,
             )
             if (groups.size > before) {
                 seedRows++
@@ -1077,12 +1489,14 @@ class RecommendationRepository(
         }
 
         // ---- 4. 换换口味 ----
-        changeTasteDeferred.await()?.let {
+        changeTasteDeferred.await()?.let { (neighbor, pool) ->
             // 这一组只有单一来源, 挑中一个窄标签 (实测 rank>=1 且上千人评分的: 武侠 17 / 耽美 24),
-            // 或者一个用户看过大半的热门标签, 扣掉已收藏与跨组去重就凑不满一行 —— 同样拿高分榜垫
+            // 或者一个用户看过大半的热门标签, 扣掉已收藏与跨组去重就凑不满一行 —— 同样拿高分榜垫.
+            // 挑中的标签记在 titleArg 里 (标题不显示它): 「更多」按它接着翻
             takeGroup(
                 RecommendationGroupKind.CHANGE_TASTE,
-                it,
+                pool,
+                titleArg = neighbor,
                 weightOf = sampling::rankGroupWeight,
                 padding = padWithTopRated(SALT_TOP_RATED_PAD_CHANGE_TASTE),
                 trackSequels = true,
@@ -1303,6 +1717,11 @@ class RecommendationRepository(
             items.sortedByDescending { sequelHint(it.nameCn) }.forEach { targetOf(it.bangumiId) }
         }
 
+        /** 等已经在查的格子查完, 最多 [timeout]: 查表那一路一般当场就好, 这样 [applyReady] 多换掉几格, 出卡后原地换的就少. */
+        suspend fun awaitTracked(timeout: Duration) {
+            withTimeoutOrNull(timeout) { targets.values.toList().awaitAll() }
+        }
+
         /** 这一格该换成的那一季: 候选季里第一个没收藏过的. `null` = 不换 (没有可换的季、都收藏过了, 或者查失败). */
         private fun targetOf(subjectId: Int): Deferred<SeriesNode?> = targets.getOrPut(subjectId) {
             val candidates = table?.candidates(subjectId)
@@ -1378,6 +1797,7 @@ class RecommendationRepository(
                     group.kind,
                     group.titleArg,
                     settled + pending.sortedBy { sequelHint(it.nameCn) },
+                    seedSubjectId = group.seedSubjectId,
                 )
             }
             changedBeforeShown = changes.size
@@ -1698,13 +2118,7 @@ class RecommendationRepository(
          */
         cache: TagPages? = null,
     ): List<Candidate>? {
-        val filters = SubjectSearchFilters(
-            tags = tags,
-            ranks = listOf(">=1"),
-            ratingCounts = listOf(">=$MIN_RATING_COUNT"),
-            ratings = ratings,
-            nsfw = false,
-        )
+        val filters = rankedFilters(tags, ratings)
         val pages = cache?.pages ?: HashMap()
         val total = if (cache != null && 0 in pages) {
             cache.total
@@ -1730,6 +2144,24 @@ class RecommendationRepository(
         if (cache != null && fresh.isNotEmpty()) poolsDirty.value = true
         return pages.keys.sorted().flatMap { pages.getValue(it) }
     }
+
+    /** 按排名取的那几路的搜索条件: 有排名、[MIN_RATING_COUNT] 人以上评分, 带 [tags] (多个是「且」, 空 = 不限), 在分数线 [ratings] 以上 (null = 不限). */
+    private fun rankedFilters(tags: List<String>, ratings: List<String>?) = SubjectSearchFilters(
+        tags = tags.takeIf { it.isNotEmpty() },
+        ranks = listOf(">=1"),
+        ratingCounts = listOf(">=$MIN_RATING_COUNT"),
+        ratings = ratings,
+        nsfw = false,
+    )
+
+    /**
+     * 「符合你口味的高分」拿哪几个标签搜: 画像里权重最高的几个, **不拿「来源」类** (漫画改/原创…) —— 那是制作来源不是口味, 而且宽到单独拿它
+     * 搜就是全站经典榜 (排行榜里 44.6% 的条目带"漫画改", 2026-09-22 真机上这一行因此满是星际牛仔/虫师/攻壳).
+     */
+    private fun tasteQueryTags(profile: InterestProfile): List<String> = profile.tags
+        .filter { CanonicalTagKind.matchOrNull(it.name) != CanonicalTagKind.Source }
+        .take(MAX_TAG_QUERIES)
+        .map { it.name }
 
     /** 一个标签已经取过的页, 见 [searchSampledByTags] 的 cache. */
     private class TagPages(
@@ -1802,16 +2234,15 @@ class RecommendationRepository(
      * 半年这个窗口与 Ani 服务端那条线是同一个意思: 再往前就不叫"最近在看"了.
      */
     private suspend fun searchRecentHot(since: String): List<Candidate>? {
-        return searchPages(
-            SubjectSearchFilters(
-                airDates = listOf(">=$since"),
-                nsfw = false,
-            ),
-            SearchSort.COLLECTION,
-            "recentHot",
-            pages = RECENT_HOT_PAGES,
-        )?.filter { (it.activeAudience ?: 0) >= MIN_SEASON_AUDIENCE }?.takeIf { it.isNotEmpty() }
+        return searchPages(recentHotFilters(since), SearchSort.COLLECTION, "recentHot", pages = RECENT_HOT_PAGES)
+            ?.filter { (it.activeAudience ?: 0) >= MIN_SEASON_AUDIENCE }?.takeIf { it.isNotEmpty() }
     }
+
+    /** 「大家最近在看」的搜索条件: [since] 以来开播的 (按热度排由调用方定). */
+    private fun recentHotFilters(since: String) = SubjectSearchFilters(
+        airDates = listOf(">=$since"),
+        nsfw = false,
+    )
 
     /**
      * 本季那一路的筛选条件.
@@ -2491,6 +2922,43 @@ class RecommendationRepository(
          * 五行种子推荐全被丢掉. 三页六十条留够被吃的余量.
          */
         const val SEED_FILL_PAGES = 3
+
+        /**
+         * 有「更多」的种子行 (见 [extendGroup]): 它们本来就拿标签补齐, 接着翻标签搜索不改变标题的说法. 「看过《X》的人还看了」不在其中:
+         * 那一组说的就是共看, 拿标签搜来的接在后面就名不副实了.
+         */
+        val ROW_MORE_SEED_KINDS = setOf(RecommendationGroupKind.BECAUSE_YOU_LIKED, RecommendationGroupKind.SIMILAR_TO)
+
+        /** 不靠种子、各按出行时的来源往后接的几组 (怎么接见 [morePlanOf]); 它们都带预告 ([ROW_MORE_PEEK_KINDS]). */
+        val ROW_MORE_KINDS = setOf(
+            RecommendationGroupKind.FOR_YOU_HIGH_RATED,
+            RecommendationGroupKind.TOP_RATED,
+            RecommendationGroupKind.THIS_SEASON,
+            RecommendationGroupKind.THIS_SEASON_NEW,
+            RecommendationGroupKind.CHANGE_TASTE,
+            RecommendationGroupKind.TRENDING,
+        )
+
+        /** 多存一条预告的组 (见 hasPeek): 「更多」卡底下铺它的封面. 种子行铺种子的封面, 不要预告. */
+        val ROW_MORE_PEEK_KINDS = ROW_MORE_KINDS
+
+        /** 按「更多」一行最多显示几条: 出行时的 [GROUP_SIZE] 条再接 4 次. */
+        const val ROW_MORE_MAX = 60
+
+        /** 按一次「更多」多显示几条. */
+        const val ROW_MORE_STEP = 12
+
+        /** 按一次「更多」最多发几个搜索请求: 前几页多半已在页面上 (出行时用过) 或已收藏, 要往后翻; 封个顶, 一按不至于十几个请求. */
+        const val ROW_MORE_REQUESTS_PER_STEP = 4
+
+        /** 种子行三个标签的搜索翻完之后放宽到前几个标签 (只放宽这一次, 再宽就不像《X》了). */
+        const val SEED_ROW_RELAXED_TAGS = 2
+
+        /** 「符合你口味的高分」往后接时 [HIGH_RATED_LINE] 以上翻完, 放宽到这一档再翻一轮 (只放宽这一次, 同「换换口味」的分数线). */
+        val HIGH_RATED_RELAXED_LINE = listOf(">=7", "<7.5")
+
+        /** 接出来的续作等换季查完再落库, 最多等这么久; 没查完的落库后原地换. 也是等表推出新接的那几条的上限. */
+        val ROW_MORE_SEQUEL_WAIT = 1.seconds
 
         /**
          * 「高分经典」与全站高分垫料取几页 (见 [searchTopRated]): 单个来源, 一页 20 条挑 12 个等于没得挑,

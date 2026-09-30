@@ -350,6 +350,23 @@ fun TvExplorationPage(
             // 供返回本页时做初值, 见 TvExplorationLastHero.target
             TvExplorationLastHero.target = heroTarget
         }
+    // 焦点在行尾「更多」卡上时背景与文字换成按下去接着推荐的依据: 种子行是种子那部 (这一行就是按它推的), 别的组是藏在「更多」卡底下的
+    // 下一部 (按下去第一个露出来); 文字里多一行「按确定推荐更多…」(见 TvHeroTarget.more). 封面 (TMDB 横版图都没有时的背景) 是种子 / 下一部的
+    // 竖版封面. 两样都没有 (旧批次) 时背景留在刚才那张
+    val focusMoreHero: (TvRecRow) -> Unit = { row ->
+        val group = row.group
+        val seed = group.seedSubjectId
+        val peek = group.peek
+        val target = when {
+            seed != null -> TvHeroTarget(seed, group.titleArg.orEmpty(), coverUrl = group.moreImageUrl.orEmpty(), more = group)
+            peek != null -> TvHeroTarget(peek.bangumiId, peek.nameCn, coverUrl = peek.imageLarge, more = group)
+            else -> null
+        }
+        if (target != null && target != heroTarget) {
+            heroTarget = target
+            TvExplorationLastHero.target = target
+        }
+    }
     // 进详情页: 先等目标页首屏的材料备齐再跳, 备不齐则最多等 [TV_NAV_READY_BUDGET].
     //
     // 这是 Android 官方 postponeEnterTransition 的思路 —— 把等待挪到**跳转之前**.
@@ -507,6 +524,8 @@ fun TvExplorationPage(
     // 没登录 / 没有收藏时的「推荐」(FEED) 是一组两百条, 切成多行、只有首行带标题, 见 TvRecRow
     val recGroups by state.recommendationGroups.collectAsStateWithLifecycle()
     val recFlat = remember(recGroups) { recGroups.flatMap { it.items } }
+    // 正在「更多」的组: 行尾那张卡画成加载中 (见 rememberTvExplorationNativeItems)
+    val extendingGroups by state.extendingRecommendationGroups.collectAsStateWithLifecycle()
     // 装完 / 登录后第一次进页时推荐区是空的, 而一次重算要十几秒 (二十来个请求) —— 不说一声的话
     // 新用户看到的就是一片空白, 不知道这儿本来该有七行东西. 只在**真的空着**时提示:
     // 已经有内容时的后台重算 (TTL 到期、画像变了) 不该打扰人.
@@ -574,9 +593,20 @@ fun TvExplorationPage(
                 ?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull()
                 ?.takeIf { it in recRows.indices }
                 ?: return@collect
-            val item = recFlat.getOrNull(recRows[recRow].start + cardIndex) ?: return@collect
-            // 已经是它了就别动: 每次重组都重报一遍会把 hero 媒体流水线的连发合并打乱
-            if (item.bangumiId == heroTarget?.subjectId) return@collect
+            val row = recRows[recRow]
+            if (cardIndex >= row.size) {
+                if (row.group.extendable) {
+                    focusMoreHero(row)
+                } else if (row.size > 0) {
+                    // 焦点停在行尾「更多」卡上而它收起了 (再也接不出新的): 挪到这一行最后一张, 不让焦点悬空
+                    cardFocusRequest = TvCardFocusRequest(rowKey, cardIndex = row.size - 1)
+                }
+                return@collect
+            }
+            val item = recFlat.getOrNull(row.start + cardIndex) ?: return@collect
+            // 已经是它了就别动: 每次重组都重报一遍会把 hero 媒体流水线的连发合并打乱. 按「更多」接出来的第一张就是刚才 hero 上的下一部,
+            // 同一部也要重报: 去掉「按确定推荐更多」那一行
+            if (item.bangumiId == heroTarget?.subjectId && heroTarget?.more == null) return@collect
             onFocusItem(
                 item.bangumiId, item.nameCn, null, false, item.imageLarge,
                 tvRecNeighborsOf(recFlat, recRows, recRow, cardIndex),
@@ -841,9 +871,11 @@ fun TvExplorationPage(
     TvPageShuffleHandler { state.shuffleRecommendations() }
 
     // 原生海报墙的事件 (见 TvExplorationNativeWall.kt): 焦点簿记、hero 媒体、导航都走上面这一套入口
+    // 下标超出这一行 = 行尾「更多」卡, 不是条目 (往后数会数到下一组去)
     val nativeRecItemAt: (String, Int) -> RecommendedSubjectInfo? = { rowKey, index ->
         rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
             ?.let { recRows.getOrNull(it) }
+            ?.takeIf { index in 0 until it.size }
             ?.let { recFlat.getOrNull(it.start + index) }
     }
     val nativeListener = object : TvNativeExploreListener {
@@ -870,8 +902,13 @@ fun TvExplorationPage(
             } else {
                 val recRow = rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
                 if (recRow != null && recRow in recRows.indices) {
-                    recFlat.getOrNull(recRows[recRow].start + index)?.let {
-                        onFocusItem(it.bangumiId, it.nameCn, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
+                    val row = recRows[recRow]
+                    if (index >= row.size) {
+                        focusMoreHero(row)
+                    } else {
+                        recFlat.getOrNull(row.start + index)?.let {
+                            onFocusItem(it.bangumiId, it.nameCn, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
+                        }
                     }
                 }
             }
@@ -901,6 +938,15 @@ fun TvExplorationPage(
                 nativeRecItemAt(rowKey, index)?.bangumiId
             }
             if (subjectId != null) nativeState.menu = subjectId to anchor
+        }
+
+        override fun onMoreClick(rowKey: String) {
+            val group = rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
+                ?.let { recRows.getOrNull(it) }?.group
+                ?.takeIf { it.extendable }
+                ?: return
+            // 接到的几条追加在「更多」卡原来的位置上: 焦点不动就落在新接的第一张 (卡按下标绑定), 背景跟着换 (见上面按下标补报的那段)
+            state.extendRecommendationGroup(group.key)
         }
 
         override fun onBindCard(rowKey: String, index: Int) {
@@ -1071,7 +1117,7 @@ fun TvExplorationPage(
                 dotInactiveAlpha = TV_CAROUSEL_DOT_INACTIVE_ALPHA,
             )
         }
-        val nativeItems = rememberTvExplorationNativeItems(hasFollowed, followedItems, recRows, recFlat, playHistories)
+        val nativeItems = rememberTvExplorationNativeItems(hasFollowed, followedItems, recRows, recFlat, playHistories, extendingGroups)
         TvExplorationNativeSources(
             state = nativeState,
             heroPipeline = heroPipeline,
@@ -1364,6 +1410,11 @@ internal data class TvHeroTarget(
      * 变化 (都由聚焦位置决定), 不会给本数据类引入额外的相等性抖动.
      */
     val neighbors: TvHeroNeighbors = TvHeroNeighbors(),
+    /**
+     * 焦点在这一组行尾的「更多」卡上 (本条目是种子行的种子 / 别的组藏在「更多」卡底下的下一部): 文字多一行「按确定推荐更多…」, 简介只留一句
+     * (见 tvExplorationNativeHeroText). null = 普通的聚焦卡.
+     */
+    val more: RecommendationGroup? = null,
 ) {
     /** 交给共享流水线/展示层的最小描述, 见 [TvHeroMediaSpec]. */
     fun toHeroMediaSpec() = TvHeroMediaSpec(subjectId, fromFollowed, coverUrl, neighbors)

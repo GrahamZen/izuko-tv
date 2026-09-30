@@ -13,18 +13,21 @@ import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.StateListAnimator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.text.SpannableString
@@ -36,6 +39,7 @@ import android.view.KeyEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -46,6 +50,7 @@ import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.tv.TV_OBSCURED_COVER_LONG_EDGE_PX
 import kotlin.math.ceil
+import kotlin.math.min
 
 /**
  * 原生海报墙的一张卡的数据.
@@ -67,6 +72,59 @@ data class TvNativeCard(
     val subjectId: Int? = null,
     val subtitleColor: Int? = null,
     val badge: Boolean = false,
+    /**
+     * 行尾的「更多」卡 (不是条目): 封面位置是一块玻璃 (见 [TvNativeMoreGlassStyle]), 底下铺 [imageUrl] (一张竖版封面, 由页面挑) 的模糊小图,
+     * 中间一枚圆钮托着加号, 加载中换成转着的圆弧; null = 普通海报.
+     */
+    val more: TvNativeMore? = null,
+)
+
+/** 「更多」卡的两种样子, 见 [TvNativeCard.more]. */
+enum class TvNativeMore {
+    Idle,
+    Loading,
+}
+
+/**
+ * 行尾「更多」卡 ([TvNativeCard.more]) 的玻璃外观, 照 tvOS 的玻璃材质 (配色同顶栏玻璃控件那一族, 见 TvGlassColors): 底下是一张竖版封面的
+ * 模糊小图, 盖一层玻璃色 [tint], 左上角斜着一道高光 [sheen] 淡到透明, 一圈细亮边 [edge]; 中间一枚玻璃圆钮 ([buttonFill] / [buttonEdge])
+ * 托着加号 ([icon]). 卡片聚焦时圆钮随聚焦程度换成浅色实底 ([buttonFocusedFill]) 配深色加号 ([iconFocused]), 同顶栏玻璃控件聚焦时的实底.
+ * 颜色都是 ARGB.
+ */
+@Immutable
+data class TvNativeMoreGlassStyle(
+    val tint: Int,
+    val sheen: Int,
+    val edge: Int,
+    val buttonFill: Int,
+    val buttonEdge: Int,
+    val icon: Int,
+    val buttonFocusedFill: Int,
+    val iconFocused: Int,
+)
+
+/** 深色主题: 中性深色玻璃, 白边白字; 聚焦的圆钮同顶栏玻璃的浅灰实底. */
+internal val TV_NATIVE_MORE_GLASS_DARK = TvNativeMoreGlassStyle(
+    tint = 0x6B1E1E1E,
+    sheen = 0x29FFFFFF,
+    edge = 0x38FFFFFF,
+    buttonFill = 0x29FFFFFF,
+    buttonEdge = 0x59FFFFFF,
+    icon = 0xF2FFFFFF.toInt(),
+    buttonFocusedFill = 0xFFD0D1D3.toInt(),
+    iconFocused = 0xFF000000.toInt(),
+)
+
+/** 浅色主题: 发白的磨砂玻璃, 深色加号; 聚焦的圆钮是白色实底. */
+internal val TV_NATIVE_MORE_GLASS_LIGHT = TvNativeMoreGlassStyle(
+    tint = 0x59FFFFFF,
+    sheen = 0x66FFFFFF,
+    edge = 0x8CFFFFFF.toInt(),
+    buttonFill = 0x73FFFFFF,
+    buttonEdge = 0xB3FFFFFF.toInt(),
+    icon = 0xBF000000.toInt(),
+    buttonFocusedFill = 0xFFFFFFFF.toInt(),
+    iconFocused = 0xFF000000.toInt(),
 )
 
 /**
@@ -241,10 +299,21 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         updateMarquee()
         cover.progress = card.progress
         cover.badge = card.badge
-        TvNativeImages.loadCover(
-            sketch, cover, card.imageUrl, style.coverWidthPx, style.coverHeightPx, style.crossfade,
-            obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
-        )
+        cover.more = card.more
+        val url = card.imageUrl
+        if (card.more != null && url != null) {
+            // 「更多」卡的玻璃底: 那张竖版封面的模糊小图 (解码线程上模糊, 拉伸铺满封面框), 与海报本身同一档缩略图地址
+            TvNativeImages.loadBlurredBackdrop(
+                sketch, cover, url, style.coverWidthPx, style.coverHeightPx,
+                longEdgePx = TV_NATIVE_MORE_BLUR_LONG_EDGE_PX, blurRadiusPx = TV_NATIVE_MORE_BLUR_RADIUS_PX,
+                coverWidthPx = style.coverWidthPx, coverHeightPx = style.coverHeightPx,
+            ) {}
+        } else {
+            TvNativeImages.loadCover(
+                sketch, cover, url, style.coverWidthPx, style.coverHeightPx, style.crossfade,
+                obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
+            )
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
@@ -284,6 +353,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         val s = 1f + (style.focusScale - 1f) * p
         cover.scaleX = s
         cover.scaleY = s
+        cover.moreFocus = p
         // 静止那圈影随聚焦淡出, 系统阴影随聚焦从 0 抬起: 两层交接, 聚焦的那张影子明显大一圈. 影子的透明度乘压暗的平方 (同系统阴影色)
         cover.elevation = style.focusedElevationPx * p
         idleShadow.alpha = (1f - p) * dim * dim
@@ -331,12 +401,80 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
             invalidate()
         }
 
+    /**
+     * 画成「更多」卡 ([TvNativeCard.more]): 图 (模糊小图, 见 [TvNativeCardView.bind]) 上盖一块玻璃, 中间一枚圆钮托着加号; 加载中换成转着的圆弧.
+     * 外观见 [TvNativeMoreGlassStyle].
+     */
+    var more: TvNativeMore? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            updateSpinner()
+            invalidate()
+        }
+
+    /** 卡片的聚焦程度 (0..1, 见 [TvNativeCardView.focusProgress]): 「更多」卡的圆钮随它换成实底. */
+    var moreFocus: Float = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            if (more != null) invalidate()
+        }
+
     // 不在 Paint 的 apply 里读 style: Paint 自己也有 style 属性, 会被它遮住
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.progressTrackColor }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.progressFillColor }
     private val barRect = RectF()
     private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.badge?.backgroundColor ?: 0 }
     private val badgeIconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val glass = style.moreGlass
+    private val glassTintPaint = Paint().also { it.color = glass.tint }
+    private val glassSheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glassEdgePaint = Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.style = Paint.Style.STROKE
+        it.color = glass.edge
+    }
+    private val glassRect = RectF()
+    private val buttonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val buttonEdgePaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.style = Paint.Style.STROKE }
+    private val morePaint = Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.style = Paint.Style.STROKE
+        it.strokeCap = Paint.Cap.ROUND
+    }
+    private val moreArcRect = RectF()
+    private var spinnerAngle = 0f
+    private var spinner: ValueAnimator? = null
+
+    /** 加载中的圆弧只在挂在窗口上时转, 离开就停 (回收池里的卡不空转). */
+    private fun updateSpinner() {
+        val spinning = more == TvNativeMore.Loading && isAttachedToWindow
+        if (spinning && spinner == null) {
+            spinner = ValueAnimator.ofFloat(0f, 360f).apply {
+                duration = TV_NATIVE_MORE_SPIN_MILLIS
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = LinearInterpolator()
+                addUpdateListener {
+                    spinnerAngle = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        } else if (!spinning) {
+            spinner?.cancel()
+            spinner = null
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateSpinner()
+    }
+
+    override fun onDetachedFromWindow() {
+        spinner?.cancel()
+        spinner = null
+        super.onDetachedFromWindow()
+    }
 
     init {
         scaleType = ScaleType.CENTER_CROP
@@ -356,8 +494,22 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         isDuplicateParentStateEnabled = true
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // 高光: 左上角斜着淡到透明, 过了对角线的 [TV_NATIVE_MORE_SHEEN_REACH] 就没有了
+        glassSheenPaint.shader = LinearGradient(
+            0f, 0f, w * TV_NATIVE_MORE_SHEEN_REACH, h * TV_NATIVE_MORE_SHEEN_REACH,
+            glass.sheen, glass.sheen and 0x00FFFFFF, Shader.TileMode.CLAMP,
+        )
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val m = more
+        if (m != null) {
+            drawMoreGlass(canvas, m)
+            return
+        }
         val b = style.badge
         if (badge && b != null) {
             val r = b.sizePx / 2f
@@ -377,9 +529,56 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         canvas.drawRoundRect(barRect, h / 2f, h / 2f, fillPaint)
     }
 
+    /** 「更多」卡的玻璃 (见 [TvNativeMoreGlassStyle]): 盖色、高光、细亮边, 中间圆钮托着加号 / 转着的圆弧. */
+    private fun drawMoreGlass(canvas: Canvas, m: TvNativeMore) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        canvas.drawRect(0f, 0f, w, h, glassTintPaint)
+        canvas.drawRect(0f, 0f, w, h, glassSheenPaint)
+        // 细亮边画在封面边缘以内, 圆角照封面的 outline
+        val edge = TV_NATIVE_MORE_EDGE_PX
+        val inset = edge / 2f
+        glassEdgePaint.strokeWidth = edge
+        glassRect.set(inset, inset, w - inset, h - inset)
+        canvas.drawRoundRect(glassRect, style.cornerPx - inset, style.cornerPx - inset, glassEdgePaint)
+        // 圆钮: 玻璃底随聚焦换成实底, 亮边随之淡掉 (实底上不留边)
+        val f = moreFocus.coerceIn(0f, 1f)
+        val r = min(w, h) * TV_NATIVE_MORE_ICON_RADIUS
+        val cx = w / 2f
+        val cy = h / 2f
+        buttonPaint.color = tvNativeBlendArgb(glass.buttonFill, glass.buttonFocusedFill, f)
+        canvas.drawCircle(cx, cy, r, buttonPaint)
+        buttonEdgePaint.strokeWidth = edge
+        buttonEdgePaint.color = glass.buttonEdge
+        buttonEdgePaint.alpha = (Color.alpha(glass.buttonEdge) * (1f - f)).roundToInt()
+        canvas.drawCircle(cx, cy, r - inset, buttonEdgePaint)
+        morePaint.color = tvNativeBlendArgb(glass.icon, glass.iconFocused, f)
+        morePaint.strokeWidth = r * TV_NATIVE_MORE_STROKE
+        if (m == TvNativeMore.Loading) {
+            val ar = r * TV_NATIVE_MORE_SPINNER_RADIUS
+            moreArcRect.set(cx - ar, cy - ar, cx + ar, cy + ar)
+            canvas.drawArc(moreArcRect, spinnerAngle, 270f, false, morePaint)
+        } else {
+            val arm = r * TV_NATIVE_MORE_ARM
+            canvas.drawLine(cx - arm, cy, cx + arm, cy, morePaint)
+            canvas.drawLine(cx, cy - arm, cx, cy + arm, morePaint)
+        }
+    }
+
     override fun requestLayout() {
         if (!isLaidOut) super.requestLayout()
     }
+}
+
+/** 两个 ARGB 色按 [t] (0..1) 逐通道插值. */
+private fun tvNativeBlendArgb(from: Int, to: Int, t: Float): Int {
+    fun mix(a: Int, b: Int) = (a + (b - a) * t).roundToInt()
+    return Color.argb(
+        mix(Color.alpha(from), Color.alpha(to)),
+        mix(Color.red(from), Color.red(to)),
+        mix(Color.green(from), Color.green(to)),
+        mix(Color.blue(from), Color.blue(to)),
+    )
 }
 
 /**
@@ -560,3 +759,30 @@ private val TV_NATIVE_FOCUS_PROGRESS = object : FloatProperty<TvNativeCardView>(
 
     override fun get(view: TvNativeCardView): Float = view.focusProgress
 }
+
+/** 「更多」卡中间圆钮的半径占封面短边的比例, 见 [TvNativeCoverView.more]. */
+private const val TV_NATIVE_MORE_ICON_RADIUS = 0.16f
+
+/** 「更多」卡加号 / 圆弧的笔画粗细占圆钮半径的比例. */
+private const val TV_NATIVE_MORE_STROKE = 0.12f
+
+/** 加号每一臂的长度占圆钮半径的比例. */
+private const val TV_NATIVE_MORE_ARM = 0.42f
+
+/** 加载中那道圆弧的半径占圆钮半径的比例. */
+private const val TV_NATIVE_MORE_SPINNER_RADIUS = 0.55f
+
+/** 玻璃的细亮边 (封面四周与圆钮) 宽多少 px. */
+private const val TV_NATIVE_MORE_EDGE_PX = 1.5f
+
+/** 高光从左上角往右下淡到透明, 走到对角线的这个比例为止. */
+private const val TV_NATIVE_MORE_SHEEN_REACH = 0.6f
+
+/** 玻璃底的模糊小图解多大 (长边 px): 糊成一片颜色就够, 小图省解码与内存. */
+private const val TV_NATIVE_MORE_BLUR_LONG_EDGE_PX = 64
+
+/** 玻璃底的模糊半径 (按小图的像素算). */
+private const val TV_NATIVE_MORE_BLUR_RADIUS_PX = 8
+
+/** 「更多」卡加载中的圆弧转一圈多久. */
+private const val TV_NATIVE_MORE_SPIN_MILLIS = 900L

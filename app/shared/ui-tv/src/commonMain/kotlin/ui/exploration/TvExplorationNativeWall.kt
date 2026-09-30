@@ -54,6 +54,7 @@ import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.FollowedSubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.subjectInfo
+import me.him188.ani.app.data.recommendation.RecommendationGroup
 import me.him188.ani.app.tools.WeekFormatter
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.stateOf
@@ -73,6 +74,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroStatus
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMore
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvMenuTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroButtonStyle
@@ -86,6 +88,11 @@ import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
+import me.him188.ani.app.ui.lang.exploration_rec_more
+import me.him188.ani.app.ui.lang.exploration_rec_more_generic
+import me.him188.ani.app.ui.lang.exploration_rec_more_hero_peek
+import me.him188.ani.app.ui.lang.exploration_rec_more_hero_seed
+import me.him188.ani.app.ui.lang.exploration_rec_more_loading
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_air_date
 import me.him188.ani.app.ui.lang.exploration_tv_all_caught_up
@@ -192,6 +199,7 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 /**
  * 原生海报墙的列表项 (结构见 TvNativeExploreList.kt): hero 占位 + 继续观看 (标题 + 一行) + 各组推荐 (标题 + 行).
  * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress).
+ * 还能接着推荐的组 ([RecommendationGroup.extendable]) 行尾多一张「更多」卡, [extending] 里的组画成加载中.
  */
 @Composable
 internal fun rememberTvExplorationNativeItems(
@@ -200,11 +208,18 @@ internal fun rememberTvExplorationNativeItems(
     recRows: List<TvRecRow>,
     recFlat: List<RecommendedSubjectInfo>,
     playHistories: List<EpisodeHistory>,
+    extending: Set<String>,
 ): List<TvNativeExploreItem> {
     val followedTitle = stringResource(Lang.exploration_continue_watching)
+    val moreTitle = stringResource(Lang.exploration_rec_more)
+    val moreGenericTitle = stringResource(Lang.exploration_rec_more_generic)
+    val moreLoadingTitle = stringResource(Lang.exploration_rec_more_loading)
     val groupTitles = recRows.map { if (it.header) tvRecGroupTitle(it.group) else "" }
     val followed: List<FollowedSubjectInfo?>? = if (hasFollowed) followedItems.itemSnapshotList else null
-    return remember(hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles) {
+    return remember(
+        hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
+        moreTitle, moreGenericTitle, moreLoadingTitle,
+    ) {
         val result = ArrayList<TvNativeExploreItem>()
         result.add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
         if (followed != null) {
@@ -225,7 +240,24 @@ internal fun rememberTvExplorationNativeItems(
             val cards: List<TvNativeCard?> = List(row.size) { i ->
                 recFlat.getOrNull(row.start + i)?.let { TvNativeCard(imageUrl = it.imageLarge, title = it.nameCn) }
             }
-            result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), cards))
+            // 「更多」卡接在一组的最后一行末尾 (能接着推荐的组都是一组一行; 切成多行的只有匿名推荐, 它不接)
+            val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
+            val more = if (row.group.extendable && lastRowOfGroup) {
+                val loading = row.group.key in extending
+                TvNativeCard(
+                    // 玻璃底铺一张竖版封面的模糊小图 (见 TvNativeCard.more): 种子行是种子, 其余是下次接出来的第一部; 没有就用这一行最后一张
+                    imageUrl = row.group.moreImageUrl ?: cards.lastOrNull()?.imageUrl,
+                    title = when {
+                        loading -> moreLoadingTitle
+                        row.group.seedSubjectId != null -> moreTitle
+                        else -> moreGenericTitle
+                    },
+                    more = if (loading) TvNativeMore.Loading else TvNativeMore.Idle,
+                )
+            } else {
+                null
+            }
+            result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), if (more != null) cards + more else cards))
         }
         result
     }
@@ -445,6 +477,8 @@ private fun tvExplorationNativeSource(
 /**
  * hero 文字: 标题; 条目信息到了才有 ★评分、开播状态 · 总集数 (总集数用正文色)、开播年月;
  * 继续观看的条目多一行下一集 (集号 · 集名 · 剩余分钟 / 已看完); 简介优先下一集的 TMDB 单集简介, 再整部简介, 再 Bangumi 兜底.
+ * 焦点在「更多」卡上 ([TvHeroTarget.more]) 时下一集那一行的位置写「按确定，推荐更多…」(种子行嵌种子名, 放不下跑马灯; 别的组嵌组标题, 放不下折行),
+ * 简介只留第一句、最多两行.
  */
 @Composable
 private fun tvExplorationNativeHeroText(
@@ -472,7 +506,12 @@ private fun tvExplorationNativeHeroText(
         }
     }
     val score = info.subjectInfo.ratingInfo.score
-    val status = if (target.fromFollowed) tvExplorationNativeStatus(info, playHistories, secondary) else null
+    val more = target.more
+    val status = when {
+        more != null -> tvExplorationNativeMoreStatus(more, onSurface)
+        target.fromFollowed -> tvExplorationNativeStatus(info, playHistories, secondary)
+        else -> null
+    }
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组
     val summary by remember(target, info) {
         derivedStateOf {
@@ -489,9 +528,63 @@ private fun tvExplorationNativeHeroText(
         rating = score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = meta,
         status = status,
-        summary = summary,
+        summary = if (more != null) tvSummaryFirstSentence(summary) else summary,
+        summaryMaxLines = if (more != null) TV_MORE_HERO_SUMMARY_LINES else 0,
     )
 }
+
+/**
+ * 「更多」卡的 hero 那一行. 种子行: 一句话里嵌着种子名, 名字长短不定, 单独一段 (放不下跑马灯), 前后两段不截断;
+ * 别的组: 组标题是固定的那几个, 整句一段字, 放不下就折行.
+ */
+@Composable
+private fun tvExplorationNativeMoreStatus(group: RecommendationGroup, color: Int): TvNativeHeroStatus {
+    if (group.seedSubjectId == null) {
+        return TvNativeHeroStatus(
+            lead = stringResource(Lang.exploration_rec_more_hero_peek, tvRecGroupTitle(group)),
+            name = null,
+            tail = null,
+            color = color,
+            wrap = true,
+        )
+    }
+    val name = group.titleArg.orEmpty()
+    val sentence = stringResource(Lang.exploration_rec_more_hero_seed, TV_MORE_HERO_NAME_SLOT)
+    return TvNativeHeroStatus(
+        lead = sentence.substringBefore(TV_MORE_HERO_NAME_SLOT),
+        name = name,
+        tail = sentence.substringAfter(TV_MORE_HERO_NAME_SLOT, ""),
+        color = color,
+        nameSeparator = "",
+    )
+}
+
+/**
+ * 简介的第一句 (「更多」卡的 hero 只提一句): 第一段里到第一个句末标点 (连同紧跟的右引号 / 右括号) 为止; 不到 [minChars] 字就接着带下一句;
+ * 没有句末标点就整段 (显示时限行数, 多的省略).
+ */
+internal fun tvSummaryFirstSentence(summary: String, minChars: Int = 12): String {
+    // trim() 连段首的全角空格一起去 (按 Unicode 判空白)
+    val paragraph = summary.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return ""
+    var from = 0
+    while (true) {
+        val stop = paragraph.indexOfAny(TV_SENTENCE_ENDS, from)
+        if (stop < 0) return paragraph
+        var end = stop + 1
+        while (end < paragraph.length && paragraph[end] in TV_SENTENCE_CLOSERS) end++
+        if (end >= minChars || end >= paragraph.length) return paragraph.substring(0, end)
+        from = end
+    }
+}
+
+private val TV_SENTENCE_ENDS = charArrayOf('。', '！', '？', '!', '?')
+private const val TV_SENTENCE_CLOSERS = "」』”’）)】"
+
+/** 「更多」卡的 hero 简介最多几行. */
+private const val TV_MORE_HERO_SUMMARY_LINES = 2
+
+/** 文案里名字的占位 (格式化后按它切成前后两段). */
+private const val TV_MORE_HERO_NAME_SLOT = "\uE000"
 
 /** 继续观看的下一集行, 三态: 已看完最新一集 / 看到一半剩几分钟 / 下一集. */
 @Composable

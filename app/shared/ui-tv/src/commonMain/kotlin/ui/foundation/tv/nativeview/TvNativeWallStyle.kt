@@ -165,6 +165,8 @@ data class TvNativeWallStyle(
      * 也清楚 (Apple TV App 的次要文字就是白 50% 加法混合). 只用于浅色字 (深色主题); 深色字照常画.
      */
     val labelVibrancy: Boolean = false,
+    /** 行尾「更多」卡的玻璃外观 (见 [TvNativeMoreGlassStyle]), 按主题深浅取. */
+    val moreGlass: TvNativeMoreGlassStyle = TV_NATIVE_MORE_GLASS_DARK,
 ) {
     val coverWidthPx: Int get() = cardWidthPx - gapPx * 2
     val coverHeightPx: Int get() = cardHeightPx - gapPx * 2
@@ -254,6 +256,7 @@ fun rememberTvNativeWallStyle(
                 prefetchItems = columns + 1,
                 badge = badge,
                 labelVibrancy = labelVibrancy && !light,
+                moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
             )
         }
     }

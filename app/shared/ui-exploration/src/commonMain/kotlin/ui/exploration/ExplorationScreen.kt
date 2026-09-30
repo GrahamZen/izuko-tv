@@ -164,6 +164,10 @@ class ExplorationPageState(
     val recommendationsRefreshing: StateFlow<Boolean> = MutableStateFlow(false),
     /** 真在重算时进行到哪了 (读收藏第几页 / 已完成几个请求), 同样只在推荐区空着时显示. */
     val recommendationsRefreshProgress: StateFlow<RecommendationRefreshProgress?> = MutableStateFlow(null),
+    /** 「更多」: 按这一组出行时的来源接着推荐, 参数是 `RecommendationGroup.key`. */
+    private val onExtendRecommendationGroup: (String) -> Unit = {},
+    /** 正在「更多」的组 (`RecommendationGroup.key`): 行尾那张卡画成加载中. */
+    val extendingRecommendationGroups: StateFlow<Set<String>> = MutableStateFlow(emptySet()),
 ) {
     val trendingSubjectsCarouselState = CarouselState(
         itemCount = {
@@ -194,6 +198,11 @@ class ExplorationPageState(
      */
     fun shuffleRecommendations() {
         onShuffleRecommendations()
+    }
+
+    /** 行尾「更多」: 按 [groupKey] 那一组出行时的来源接着推荐, 见 `RecommendationRepository.extendGroup`. */
+    fun extendRecommendationGroup(groupKey: String) {
+        onExtendRecommendationGroup(groupKey)
     }
 
     fun refreshFollowedSubjects() {

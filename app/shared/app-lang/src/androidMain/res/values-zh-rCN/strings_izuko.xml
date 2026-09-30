@@ -82,6 +82,11 @@
     <string name="exploration_rec_this_season_new">本季新番</string>
     <string name="exploration_rec_change_taste">换换口味</string>
     <string name="exploration_rec_trending">大家最近在看</string>
+    <string name="exploration_rec_more">更多相似的</string>
+    <string name="exploration_rec_more_generic">更多</string>
+    <string name="exploration_rec_more_loading">正在找…</string>
+    <string name="exploration_rec_more_hero_seed">按确定，推荐更多和《%1$s》相似的作品</string>
+    <string name="exploration_rec_more_hero_peek">按确定，推荐更多「%1$s」，下一部就是它</string>
     <string name="exploration_rec_loading">正在为你挑选推荐，需要十几秒</string>
     <string name="exploration_rec_progress_collections_start">正在为你挑选推荐：读取收藏…</string>
     <string name="exploration_rec_progress_collections">正在为你挑选推荐：读取收藏 %1$d/%2$d 页</string>
