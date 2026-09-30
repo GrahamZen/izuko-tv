@@ -146,7 +146,7 @@ interface TvNativeExploreListener {
  * 在这里, 每帧只动 RenderNode 属性.
  *
  * 焦点规则: 上下键落到上一行 / 下一行屏上同一列那张 (行短了落到最后一张), 首行按上回「新番时间表」, 「新番时间表」按下进首行
- * 屏上第一列; 行首按左、hero 按钮在第一项按左出页面 (侧边栏); 行尾按右、末行按下吞掉. 长按方向键纵向 6 次 / 秒, 横向 8 次 / 秒.
+ * 屏上第一列; 行首按左、hero 按钮在第一项按左出页面 (侧边栏); 行尾按右、末行按下吞掉. 长按方向键每一发连发都走一格 (上限同 tvFocusMoveRateLimit, 高于系统连发).
  */
 @SuppressLint("ViewConstructor")
 class TvNativeExploreView(

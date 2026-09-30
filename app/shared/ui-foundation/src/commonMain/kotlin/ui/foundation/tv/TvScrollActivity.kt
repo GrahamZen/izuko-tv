@@ -416,7 +416,7 @@ class TvNavigationSettle(val settleMillis: Long) {
 }
 
 /**
- * 连发静默期 (毫秒): 必须长于长按方向键的连发间隔 (`tvFocusMoveRateLimit` 横向 8 次/秒 = 125ms), 否则
+ * 连发静默期 (毫秒): 必须长于长按方向键的连发间隔 (系统约 50ms 一发, `tvFocusMoveRateLimit` 不另外放慢), 否则
  * 按住期间仍会中途换; 也是停下来之后文字 / 背景图最迟多久跟上 (卡片行另有滚动停稳这一条, 通常更晚).
  */
 const val TV_NAV_SETTLE_MILLIS = 300L

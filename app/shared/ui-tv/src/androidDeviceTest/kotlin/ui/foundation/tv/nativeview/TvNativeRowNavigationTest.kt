@@ -34,7 +34,7 @@ class TvNativeRowNavigationTest {
         host.launch()
         host.onMain {
             val style = testWallStyle()
-            row = TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f)
+            row = TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f, standalone = true)
             row.animatedScroll = false
             row.cards.listener = listener
             host.root.addView(row, FrameLayout.LayoutParams(1920, style.cardBlockHeightPx + style.rowSpacingPx))
@@ -95,7 +95,7 @@ class TvNativeRowNavigationTest {
         // 行第一次绑定就带着记下的行首 (回收重绑 / 跨导航重建, 这时行还没有焦点)
         val restored = host.onMain {
             val style = testWallStyle()
-            TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f).also {
+            TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f, standalone = true).also {
                 it.animatedScroll = false
                 host.root.addView(it, FrameLayout.LayoutParams(1920, style.cardBlockHeightPx + style.rowSpacingPx))
                 it.bind(testCards(12, "新"), { i -> i.toLong() }, leftIndex = 4, columns = 6, focusIndex = 7)
@@ -111,7 +111,7 @@ class TvNativeRowNavigationTest {
         lateinit var fresh: TvNativeRowView
         val took = host.onMain {
             val style = testWallStyle()
-            fresh = TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f)
+            fresh = TvNativeRowView(host.activity, style, host.sketch, pool = null, startPx = 128, endPx = 48, fadeDistancePx = 128f, standalone = true)
             fresh.animatedScroll = false
             host.root.addView(fresh, FrameLayout.LayoutParams(1920, style.cardBlockHeightPx + style.rowSpacingPx))
             fresh.bind(testCards(12, "新"), { i -> i.toLong() }, leftIndex = 4, columns = 6, focusIndex = 7)
@@ -126,22 +126,22 @@ class TvNativeRowNavigationTest {
     fun `holding right moves focus to the next card on every repeat while the row glides`() {
         host.onMain {
             row.animatedScroll = true
-            row.bind(testCards(30), { it.toLong() }, leftIndex = 0, columns = 6)
+            row.bind(testCards(40), { it.toLong() }, leftIndex = 0, columns = 6)
         }
         host.waitUntil("换数据后第 0 张拿回焦点") { focusedIndex() == 0 || row.focusCardIfLaidOut(0) }
         pressRight(5)
         host.waitUntil("焦点到第 5 张") { focusedIndex() == 5 }
-        // 按住: 新按下挪到露一截的第 6 张, 之后每 150ms 一发连发 (限速 8 次 / 秒下约是这个节奏), 行一路平滑滚着.
+        // 按住: 新按下挪到露一截的第 6 张, 之后照系统连发约 50ms 一发 (比行的上限 40ms 慢, 每一发都挪), 行一路平滑滚着、落后焦点两张多.
         // 每一发的目标卡都得已经排好、焦点当场过去; 没排出来就会走 leanback 的平滑选中, 焦点要等它滚到才给
         host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertEquals(6, host.onMain { focusedIndex() })
-        for (i in 1..8) {
-            SystemClock.sleep(150)
+        for (i in 1..20) {
+            SystemClock.sleep(50)
             host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT, repeatCount = i)
             assertEquals(6 + i, host.onMain { focusedIndex() }, "第 $i 发连发")
         }
         host.keyUp(KeyEvent.KEYCODE_DPAD_RIGHT)
-        host.waitUntil("停稳时第 14 张贴在行尾") { row.scrollState == RecyclerView.SCROLL_STATE_IDLE && row.leftIndex() == 9 }
+        host.waitUntil("停稳时第 26 张贴在行尾") { row.scrollState == RecyclerView.SCROLL_STATE_IDLE && row.leftIndex() == 21 }
     }
 
     @Test

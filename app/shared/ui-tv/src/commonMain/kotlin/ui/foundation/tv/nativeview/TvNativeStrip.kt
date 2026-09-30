@@ -93,6 +93,7 @@ fun TvNativePosterStrip(
                     context, style, sketch, pool = null,
                     startPx = startPx, endPx = endPx, bottomPx = bleedPx, topPx = bleedPx,
                     fadeDistancePx = fadeDistancePx,
+                    standalone = true,
                 ).also { row ->
                     row.startLeftExits = false
                     // 从行外进来落到上次聚焦那张 (还在屏上时), 头一回进来落到行首那张 —— 不交给 leanback: 它按来处的位置挑最近的那张
@@ -148,7 +149,7 @@ fun TvNativePosterStrip(
  * 这一行. 列表里的 null 是分页还没到的那一格 (画成占位). 进行落点 = 上次聚焦那格 (首次进入是行首那格), 落点与行首跨导航保存, 等真数据到了才恢复.
  *
  * @param onLongPress 确定键按住到阈值 (放大看照片); null = 没有长按, 按住也只算点击.
- * @param repeatMillis 长按左右键时最快多久挪一格.
+ * @param repeatMillis 长按左右键时最快多久挪一格 (默认同全局上限, 高于系统连发).
  * @param onBind 第几格被绑定 (分页的访问提示).
  * @param restoreFocus 页面的进页落点会回这一行 (返回本页, 页面重建): 上次聚焦那格排出来就画成聚焦态, 焦点送回来时画面不变,
  *   不先按未聚焦画出来再放大一遍. 点圆头像开的是预览弹窗、页面不离开, 所以不能照海报行那样点击时按住; 只在建行时读.
@@ -159,7 +160,7 @@ fun TvNativeMonogramStrip(
     style: TvNativeMonogramStyle,
     onClick: (index: Int) -> Unit,
     onLongPress: ((index: Int) -> Unit)?,
-    repeatMillis: Long,
+    repeatMillis: Long = TV_NATIVE_HORIZONTAL_REPEAT_MILLIS,
     modifier: Modifier = Modifier,
     startPadding: Dp = 0.dp,
     endPadding: Dp = 0.dp,

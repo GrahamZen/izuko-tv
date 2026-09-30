@@ -134,6 +134,17 @@ class TvNativeExploreNavigationTest {
 
     private fun press(keyCode: Int, times: Int = 1) = repeat(times) { host.press(keyCode) }
 
+    /** 换成 [rows] 行、每行 [cards] 张的列表 (行键见 [longRow]), 滚动带动画: 长按连发要看平滑滚动落后焦点的那一段. */
+    private fun useLongRows(rows: Int, cards: Int) = host.onMain {
+        view.animatedScroll = true
+        view.setItems(
+            listOf(TvNativeExploreItem.Spacer("spacer")) +
+                (0 until rows).map { TvNativeExploreItem.Row(longRow(it), testCards(cards, "第 $it 行")) },
+        )
+    }
+
+    private fun longRow(index: Int) = "long-row-$index"
+
     /** 从立即观看下到首行第一张. */
     private fun enterFirstRow() {
         press(KeyEvent.KEYCODE_DPAD_DOWN, 2)
@@ -159,6 +170,42 @@ class TvNativeExploreNavigationTest {
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         waitCard(FOLLOWED, 6)
         assertEquals(1, host.onMain { view.rowLeftIndex[FOLLOWED] })
+    }
+
+    @Test
+    fun `holding right moves focus on every repeat while the row glides`() {
+        useLongRows(rows = 1, cards = 40)
+        press(KeyEvent.KEYCODE_DPAD_DOWN, 2)
+        waitCard(longRow(0), 0)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, 5)
+        waitCard(longRow(0), 5)
+        // 按住: 新按下挪到露一截的第 6 张, 之后照系统连发约 50ms 一发 (比上限 40ms 慢, 每一发都挪), 行一路平滑滚着、落后焦点两张多.
+        // 按键在页面里就接住了, 行等不到自己的左右键: 行外一直多排着, 每一发的目标卡都已经排好、焦点当场过去
+        host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertEquals(longRow(0) to 6, card())
+        for (i in 1..20) {
+            SystemClock.sleep(50)
+            host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT, repeatCount = i)
+            assertEquals(longRow(0) to 6 + i, card(), "第 $i 发连发")
+        }
+        host.keyUp(KeyEvent.KEYCODE_DPAD_RIGHT)
+    }
+
+    @Test
+    fun `holding down moves one row per repeat while the list glides`() {
+        useLongRows(rows = 16, cards = 8)
+        press(KeyEvent.KEYCODE_DPAD_DOWN, 2)
+        waitCard(longRow(0), 0)
+        // 按住: 照系统连发约 50ms 一发 (比上限 40ms 慢, 每一发都换行), 列表一路平滑滚着、落后焦点两行多;
+        // 上下各多排一屏, 每一发的目标行都已经排好、焦点当场过去
+        host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertEquals(longRow(1) to 0, card())
+        for (i in 1..12) {
+            SystemClock.sleep(50)
+            host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN, repeatCount = i)
+            assertEquals(longRow(1 + i) to 0, card(), "第 $i 发连发")
+        }
+        host.keyUp(KeyEvent.KEYCODE_DPAD_DOWN)
     }
 
     @Test

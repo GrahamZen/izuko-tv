@@ -51,7 +51,6 @@ import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_FOCUS_RING
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_FOCUS_SCALE
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_LINE_GAP
-import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_MOVE_RATE
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_PLACEHOLDER_BAR_CORNER
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_PLACEHOLDER_BAR_INSET
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_PLACEHOLDER_NAME_WIDTH
@@ -209,7 +208,6 @@ private fun TvDetailsPeopleRow(
             style = rememberTvMonogramStyle(),
             onClick = onClick,
             onLongPress = onLongPress,
-            repeatMillis = 1000L / TV_MONOGRAM_MOVE_RATE,
             startPadding = horizontalPadding,
             endPadding = horizontalPadding,
             onBind = onBind,

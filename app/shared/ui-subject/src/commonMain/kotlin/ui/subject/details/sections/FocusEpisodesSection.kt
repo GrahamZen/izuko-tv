@@ -723,8 +723,7 @@ fun FocusEpisodeCarousel(
                     Modifier
                         .then(rowFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
                         .then(rowFocusModifier)
-                        // 长按左右键的移动频率上限: 系统连发 ~20 次/秒, 每发都换卡的话滑动动画
-                        // 不断被打断, 卡片是闪过去而不是滑过去 (与探索页卡片区同一个限流器)
+                        // 长按左右键的移动频率上限 (与探索页卡片区同一个限流器)
                         .tvFocusMoveRateLimit()
                         // 末集按右 / 首集按左不交给 Android 找焦点 (会跳进下方原生的关联条目行, 见 tvRowEndKeys)
                         .tvRowEndKeys(

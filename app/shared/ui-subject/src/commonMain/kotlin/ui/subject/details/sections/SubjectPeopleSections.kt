@@ -243,7 +243,6 @@ fun CharactersSection(
                     itemSpacing = TV_MONOGRAM_SPACING,
                     contentPadding = contentPadding,
                     state = stripState,
-                    horizontalMoveRate = TV_MONOGRAM_MOVE_RATE,
                     scroll = TvStripScroll.OnDemand,
                 ) { i, itemModifier ->
                     // 圆几乎撑满格宽 (tvOS 的比例), 而不是小圆浮在宽格子中央
@@ -772,7 +771,6 @@ fun StaffSection(
                         itemSpacing = TV_MONOGRAM_SPACING,
                         contentPadding = contentPadding,
                         state = stripState,
-                        horizontalMoveRate = TV_MONOGRAM_MOVE_RATE,
                         scroll = TvStripScroll.OnDemand,
                     ) { i, itemModifier ->
                         val circle = cardWidth
@@ -1009,16 +1007,6 @@ private const val VIEW_ALL_GRID_COLUMNS = 3
  * 而一页能给到 540 - 24(页顶) - 24(露出余量) = 492dp, 余 64dp —— 装得下, 于是换回 Apple 的原值.
  */
 val TV_MONOGRAM_SIZE = 130.dp
-
-/**
- * 长按左右键时每秒移动几格 (圆头像行专用, 不动全局上限).
- *
- * 全局默认是 8 格/秒, 那是按原来的宽卡调的; 圆头像格只有 128dp 步距, 8 格/秒只有 1024 dp/秒,
- * 明显比 Apple 慢 (用户 2026-09-15: "角色的左右滚动太慢了"). 逐帧量 Apple TV 的演职人员行:
- * 匀速段 3435 px/秒 = **1717 dp/秒**; 我们 128dp 步距要达到同样速度需 13.4 格/秒, 取 13
- * (13×128 = 1664 dp/秒, 差 3%).
- */
-const val TV_MONOGRAM_MOVE_RATE = 25
 
 /** 格间距: Apple 的 40pt (圆心步距 300pt - 圆 260pt), 与 [TV_MONOGRAM_SIZE] 一起铺满一屏 6 个. */
 val TV_MONOGRAM_SPACING = 20.dp

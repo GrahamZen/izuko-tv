@@ -24,7 +24,6 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogram
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramStrip
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
 import me.him188.ani.app.ui.subject.details.layout.rememberTvMonogramStyle
-import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_MOVE_RATE
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
 
 /**
@@ -52,7 +51,6 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
             style = rememberTvMonogramStyle(TV_PEOPLE_PREVIEW_CELL, TV_PEOPLE_PREVIEW_CELL_SPACING, viewAllLabel = ""),
             onClick = onClick,
             onLongPress = null,
-            repeatMillis = 1000L / TV_MONOGRAM_MOVE_RATE,
             modifier = modifier.horizontalBleed(start = startBleed(contentPadding), end = contentPadding),
             startPadding = startBleed(contentPadding),
             endPadding = contentPadding,

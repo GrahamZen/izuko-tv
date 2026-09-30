@@ -130,6 +130,25 @@ class TvNativeGridNavigationTest {
     }
 
     @Test
+    fun `holding down moves one row per repeat while the grid glides`() {
+        host.onMain {
+            grid.animatedScroll = true
+            grid.cards.submit(testCards(120)) { it.toLong() }
+        }
+        focus(0)
+        // 按住: 照系统连发约 50ms 一发 (比上限 40ms 慢, 每一发都换行), 网格一路平滑滚着、落后焦点两行多;
+        // 上下各多排一屏, 每一发的目标卡都已经排好、焦点当场过去
+        host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertEquals(6, host.onMain { focusedIndex() })
+        for (i in 1..15) {
+            SystemClock.sleep(50)
+            host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN, repeatCount = i)
+            assertEquals(6 * (1 + i), host.onMain { focusedIndex() }, "第 $i 发连发")
+        }
+        host.keyUp(KeyEvent.KEYCODE_DPAD_DOWN)
+    }
+
+    @Test
     fun `far jump lands on the first card`() {
         focus(30)
         host.onMain { grid.farJumpTo(0) }

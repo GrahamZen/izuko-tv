@@ -32,7 +32,7 @@ import kotlin.math.abs
  * 由外面接, 否则吞掉; 行尾按右吞掉; [canMoveTo] 不让去的卡也吞掉. 上下键不管. 行本身不可聚焦, 焦点只落在卡上 (有卡却一张都还没排出来
  * 时被送焦是例外, 见 [onRequestFocusInDescendants]).
  *
- * 长按方向键的连发限速 [repeatMillis] (默认同 tvFocusMoveRateLimit 的横向 8 次 / 秒).
+ * 长按方向键的连发上限 [repeatMillis] (默认同 tvFocusMoveRateLimit 的横向上限, 高于系统连发: 按住时每一发都走一格).
  *
  * @param stepPx 相邻两张卡左缘的距离 (卡宽 + 列距): 停稳时贴齐卡片列、恢复行首都按它算 (各卡定宽).
  * @param extraLayoutPx 行外左右各多排多宽: 长按连发时下一张总是已经排好, 每一步都经 requestFocus 走行自己的 spring 并接上一段的速度.
@@ -336,3 +336,10 @@ abstract class TvNativeStripView(
 
 /** 行里有焦点之后等这么久再两侧多排 (见 [TvNativeStripView] 的 aheadLayoutPx): 比详情页换页过渡 (360ms) 略长, 建卡、绑定落在过渡之后. */
 internal const val TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS = 450L
+
+/**
+ * 长按左右键时焦点最多领先平滑滚动几张 (向上取整): 横滑行在行外 (或行里有焦点之后) 多排这么多张, 每一发连发的目标卡才总是已经排好
+ * (见 [TvNativeStripView] 的 extraLayoutPx). 滚动 spring (刚度 TV_SCROLL_STIFFNESS = 260, 临界阻尼, ω ≈ 16 / 秒) 追匀速前进的焦点
+ * 落后 2v / ω, 系统连发约 20 张 / 秒时约两张半.
+ */
+internal const val TV_NATIVE_STRIP_HOLD_LEAD_CARDS = 3

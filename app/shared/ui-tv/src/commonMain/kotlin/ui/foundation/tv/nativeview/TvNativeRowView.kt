@@ -22,8 +22,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
  * 原生海报墙的一条横滑行 (探索页的每一行、详情页的关联条目), 行为见 [TvNativeStripView]: 按需挪, 行首按左默认放出去 (探索页的按键在
  * TvNativeExploreView 里就接住了, 到不了这里; 详情页单独成行时吞掉, 见 TvNativePosterStrip), 行尾按右吞掉, 上下键不管.
  *
- * 滑过行首的卡压暗着出屏 (越线 [fadeDistancePx] 内压到 [TV_CARD_PAST_DIM_ALPHA]). 行外左右各多排一张: 长按连发 (横向 8 次 / 秒)
- * 时下一张最多领先行尾 (或行首) 零点几张, 总是已经排好.
+ * 滑过行首的卡压暗着出屏 (越线 [fadeDistancePx] 内压到 [TV_CARD_PAST_DIM_ALPHA]). 长按连发时下一张要总是已经排好 (领先滚动的张数见
+ * [TV_NATIVE_STRIP_HOLD_LEAD_CARDS]): 探索页的行一直在行外左右各多排这么多张 —— 按键在 TvNativeExploreView 里就接住了, 行等不到自己的
+ * 第一次左右键, 按住时焦点一路换卡又一直推迟按焦点起算的延时; [standalone] (详情页 / 人物页单独成行) 平时只多排一张, 行里有焦点之后
+ * 再补齐 (见 TvNativeStripView 的 aheadLayoutPx).
  */
 @SuppressLint("ViewConstructor")
 class TvNativeRowView(
@@ -36,16 +38,18 @@ class TvNativeRowView(
     bottomPx: Int = 0,
     private val fadeDistancePx: Float,
     topPx: Int = 0,
+    standalone: Boolean = false,
 ) : TvNativeStripView(
     context,
     stepPx = style.cardWidthPx + style.columnSpacingPx,
     spacingPx = style.columnSpacingPx,
-    extraLayoutPx = style.cardWidthPx + style.columnSpacingPx,
+    extraLayoutPx = (style.cardWidthPx + style.columnSpacingPx) * if (standalone) 1 else TV_NATIVE_STRIP_HOLD_LEAD_CARDS,
     prefetchItems = style.prefetchItems,
     startPx = startPx,
     endPx = endPx,
     topPx = topPx,
     bottomPx = bottomPx,
+    aheadLayoutPx = if (standalone) (style.cardWidthPx + style.columnSpacingPx) * (TV_NATIVE_STRIP_HOLD_LEAD_CARDS - 1) else 0,
 ) {
     val cards = TvNativeCardAdapter(style, sketch)
 

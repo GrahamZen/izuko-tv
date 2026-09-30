@@ -513,9 +513,8 @@ class TvNativeMonogramAdapter(
  * 演职人员的圆头像横滑行 (详情页角色 / 制作人员), 行为见 [TvNativeStripView]: 按需挪, 行首按左与行尾按右都吞掉 (左右两头都没有目标),
  * 上下键不管. 占位时 (数据没到) 左右键也吞掉: 焦点停在第一格等数据.
  *
- * 长按连发按 [repeatMillis] (Compose 版同一个上限, 调用方给). 行外左右各多排三格: 圆头像格步距小、连发快, 平滑滚动落后焦点两格多
- * (临界阻尼 spring 追匀速目标落后 2v / ω: 1080p 上每秒 20 格 × 300px, ω = √260), 这段都得排着. 行里有焦点之后才多排
- * (见 TvNativeStripView 的 aheadLayoutPx): 详情页建人物页那一帧只排屏上那几格.
+ * 长按连发按 [repeatMillis] (同 Compose 版的全局上限). 行外左右各多排 [TV_NATIVE_STRIP_HOLD_LEAD_CARDS] 格 (长按时平滑滚动落后焦点两格多,
+ * 这段都得排着); 行里有焦点之后才多排 (见 TvNativeStripView 的 aheadLayoutPx): 详情页建人物页那一帧只排屏上那几格.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeMonogramRowView(
@@ -536,7 +535,7 @@ class TvNativeMonogramRowView(
     endPx = endPx,
     topPx = topPx,
     bottomPx = bottomPx,
-    aheadLayoutPx = style.stepPx * 3,
+    aheadLayoutPx = style.stepPx * TV_NATIVE_STRIP_HOLD_LEAD_CARDS,
 ) {
     val cells = TvNativeMonogramAdapter(style, sketch)
 
