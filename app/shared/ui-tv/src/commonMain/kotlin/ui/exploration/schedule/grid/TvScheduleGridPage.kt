@@ -136,7 +136,6 @@ import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
@@ -545,7 +544,7 @@ fun TvScheduleGridPage(
     )
 
     // ---- 卡片 ----
-    val secondary = tvHeroSecondaryContentColor().toArgb()
+    // 还没播的那行小字用主题色; 播过的照样式里的 (与番名同色, 没聚焦时淡一档)
     val upcoming = MaterialTheme.colorScheme.primary.toArgb()
     val timeUnknown = stringResource(Lang.exploration_schedule_time_unknown)
     val cards = dayCards.map { card ->
@@ -554,7 +553,7 @@ fun TvScheduleGridPage(
                 imageUrl = item.imageUrl,
                 title = item.subjectTitle,
                 subtitle = ScheduleItemDefaults.renderTime(null, item.time, timeUnknownText = timeUnknown) + " · " + rememberEpisodeLabel(item),
-                subtitleColor = if (card.aired) secondary else upcoming,
+                subtitleColor = if (card.aired) null else upcoming,
                 subjectId = item.subjectId,
                 badge = collectionTypes[item.subjectId] in TV_SCHEDULE_FOLLOWED_TYPES,
             )

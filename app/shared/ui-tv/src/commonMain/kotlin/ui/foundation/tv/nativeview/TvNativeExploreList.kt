@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
@@ -170,6 +171,38 @@ class TvNativeExploreList(
         row.cards.setFocusLookHeld(row, if (held != null && held.first == row.tag) held.second else -1)
     }
 
+    /** 焦点不在那一组时组标题的不透明度 (见 [TvNativeExploreHeaderView]); 1 = 不淡. */
+    var headerIdleAlpha: Float = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            for (i in 0 until childCount) (getChildAt(i) as? TvNativeExploreHeaderView)?.idleAlpha = value
+        }
+
+    /** 全亮的那个组标题 (项键; null = 没有), 见 [setEmphasizedHeader]. */
+    var emphasizedHeaderKey: String? = null
+        private set
+
+    /**
+     * 焦点所在那一组的标题 [key] 全亮, 其余组标题淡一档 (null = 都淡). 屏上的标题 [animate] 时按卡片聚焦的节奏过渡;
+     * 之后排出来 / 重新上屏的标题绑定时直接到位.
+     */
+    fun setEmphasizedHeader(key: String?, animate: Boolean) {
+        if (emphasizedHeaderKey == key) return
+        emphasizedHeaderKey = key
+        val millis = if (animate) style.focusMillis else 0L
+        for (i in 0 until childCount) {
+            val header = getChildAt(i) as? TvNativeExploreHeaderView ?: continue
+            header.setEmphasized(header.tag == key, millis)
+        }
+    }
+
+    /** 回收缓存里原样拿回、或换绑到别的组的标题: 淡化档位与是否全亮当场对上. */
+    private fun syncHeader(header: TvNativeExploreHeaderView) {
+        header.idleAlpha = headerIdleAlpha
+        header.setEmphasized(header.tag == emphasizedHeaderKey, 0L)
+    }
+
     private val adapterImpl = Adapter()
 
     init {
@@ -327,7 +360,7 @@ class TvNativeExploreList(
             val m = metrics
             val view = when (viewType) {
                 TYPE_SPACER -> View(parent.context).apply { isFocusable = false }
-                TYPE_HEADER -> TvNativeTextView(parent.context).apply {
+                TYPE_HEADER -> TvNativeExploreHeaderView(parent.context).apply {
                     headerStyle.applyTo(this)
                     maxLines = 1
                     setPadding(m.rowStartPx, 0, m.endPadPx, 0)
@@ -356,7 +389,15 @@ class TvNativeExploreList(
             }
             when (item) {
                 is TvNativeExploreItem.Spacer -> Unit
-                is TvNativeExploreItem.Header -> (view as TvNativeTextView).text = item.title
+                is TvNativeExploreItem.Header -> {
+                    val header = view as TvNativeExploreHeaderView
+                    header.text = item.title
+                    // 同一组原地刷新内容时在走的过渡照走; 换绑到别的组才当场到位
+                    if (header.tag != item.key) {
+                        header.tag = item.key
+                        syncHeader(header)
+                    }
+                }
                 is TvNativeExploreItem.Row -> {
                     val row = view as TvNativeRowView
                     val previousKey = row.tag as? String
@@ -385,10 +426,15 @@ class TvNativeExploreList(
         }
 
         override fun onViewAttachedToWindow(holder: ViewHolder) {
-            // 回收缓存里原样拿回同一位置的行不重绑 (见 focusEffectSuppressed)
-            val row = holder.itemView as? TvNativeRowView ?: return
-            row.cards.setFocusEffectSuppressed(row, focusEffectSuppressed)
-            applyHeldFocus(row)
+            // 回收缓存里原样拿回同一位置的项不重绑 (见 focusEffectSuppressed)
+            when (val view = holder.itemView) {
+                is TvNativeRowView -> {
+                    view.cards.setFocusEffectSuppressed(view, focusEffectSuppressed)
+                    applyHeldFocus(view)
+                }
+
+                is TvNativeExploreHeaderView -> syncHeader(view)
+            }
         }
     }
 
@@ -396,6 +442,60 @@ class TvNativeExploreList(
         const val TYPE_SPACER = 0
         const val TYPE_HEADER = 1
         const val TYPE_ROW = 2
+    }
+}
+
+/**
+ * 探索页海报墙的组标题: 一行字. 焦点在它这一组里时全亮, 否则淡到 [idleAlpha] —— 照 tvOS 的货架标题 (焦点所在那一行的标题 100%, 其余 50%);
+ * 换组时按卡片聚焦的节奏过渡. hero 态越线的淡化 ([fade]) 与它相乘. 两者都只动视图的透明度 (逐绘制指令乘, 文字不重录).
+ */
+internal class TvNativeExploreHeaderView(context: Context) : TvNativeTextView(context) {
+    var idleAlpha: Float = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            applyAlpha()
+        }
+
+    /** hero 态里越过 hero 线的淡化 (0..1, 1 = 不淡), 页面逐帧给. */
+    var fade: Float = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            applyAlpha()
+        }
+
+    private var emphasized = false
+
+    /** 全亮的程度 (0 = 淡到 [idleAlpha], 1 = 全亮). */
+    private var emphasis = 0f
+    private var animator: ValueAnimator? = null
+
+    /** 焦点在不在这一组. [millis] > 0 时过渡这么久; 0 = 当场到位 (在走的过渡也收掉). */
+    fun setEmphasized(on: Boolean, millis: Long) {
+        if (emphasized == on && (millis > 0L || animator == null)) return
+        emphasized = on
+        animator?.cancel()
+        animator = null
+        val target = if (on) 1f else 0f
+        if (millis <= 0L) {
+            emphasis = target
+            applyAlpha()
+            return
+        }
+        animator = ValueAnimator.ofFloat(emphasis, target).apply {
+            duration = millis
+            interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+            addUpdateListener {
+                emphasis = it.animatedValue as Float
+                applyAlpha()
+            }
+            start()
+        }
+    }
+
+    private fun applyAlpha() {
+        alpha = (idleAlpha + (1f - idleAlpha) * emphasis) * fade
     }
 }
 

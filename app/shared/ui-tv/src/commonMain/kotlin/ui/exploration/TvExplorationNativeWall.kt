@@ -92,6 +92,8 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
@@ -313,7 +315,8 @@ internal fun TvExplorationNativeWall(
     val style = rememberTvNativeWallStyle(cardWidth, metrics.columns)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
     val buttonStyle = rememberTvNativeHeroButtonStyle()
-    val headerStyle = MaterialTheme.typography.titleMedium.toTvNativeTextStyle(density, LocalContentColor.current)
+    val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
+    val headerIdleAlpha = tvPosterWallSecondaryLabelAlpha()
     val visualEffects = LocalThemeSettings.current.visualEffects
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
     // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
@@ -381,6 +384,7 @@ internal fun TvExplorationNativeWall(
                 view.animatedScroll = visualEffects.animatedScroll
                 view.backdropNavigating = { scrollActivity?.isScrolling == true || navKeys?.held == true }
                 view.dark = dark
+                view.headerIdleAlpha = headerIdleAlpha
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
                 view.heroEnabled = heroEnabled

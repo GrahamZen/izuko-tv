@@ -55,11 +55,11 @@ import kotlin.math.min
 /**
  * 原生海报墙的一张卡的数据.
  *
- * @param subtitle 给了就番名只占一行、下面一行小字 (详情页关联条目的「续集」「前传」), 块高不变.
+ * @param subtitle 给了就番名只占一行、下面一行小字 (详情页关联条目的「续集」「前传」), 块高不变. 小字没聚焦时淡一档, 聚焦时全亮.
  * @param progress 继续观看的集数进度 (0..1), 贴封面底缘一条细进度条; null 不画.
  * @param obscure NSFW 打码: 封面只解一张很小的图, 放大成糊图.
  * @param subjectId 这张卡是哪个条目: 网格页进 hero 态时拿它核对页面给的 hero 内容是不是这一张的 (见 TvNativeGridPageView); null = 不核对.
- * @param subtitleColor [subtitle] 的颜色 (ARGB); null = 样式里的次要色 ([TvNativeWallStyle.subtitleColor]).
+ * @param subtitleColor [subtitle] 的颜色 (ARGB); null = 样式里的 ([TvNativeWallStyle.subtitle], 与番名同色).
  * @param badge 封面右上角画角标 (样式给了 [TvNativeWallStyle.badge] 才画; 新番时间表的「在追」).
  */
 @Immutable
@@ -130,11 +130,11 @@ internal val TV_NATIVE_MORE_GLASS_LIGHT = TvNativeMoreGlassStyle(
 /**
  * 原生海报墙的卡片: 可聚焦的外框 (卡宽 × (卡高 + 番名块)) 里放海报与番名. 外观取值见 [TvNativeWallStyle]: 圆角封面、1 像素玻璃边
  * (Android TV 上 Apple TV App 的卡片), 静止时底下一圈看得出的影 (照 tvOS 海报 lockup, 预先模糊好的图, 见 [TvNativeCardShadowView]) /
- * 聚焦时换成抬高的一大片软影 (系统阴影, 同 Google TV 桌面卡片的 elevation)、放大、
- * 番名没聚焦时暗一档 (Apple TV 卡片标题的两档色)、放大时往下让开 (番名不放大, 让出海报多伸出来的那截).
+ * 聚焦时换成抬高的一大片软影 (系统阴影, 同 Google TV 桌面卡片的 elevation)、放大, 番名往下让开 (番名不放大, 让出海报多伸出来的那截).
+ * 番名与下面那行小字没聚焦时都淡一档、聚焦时全亮 (见 [TvNativeWallStyle.labelIdleAlpha]).
  *
  * 聚焦效果照 Google TV 桌面卡片的做法由状态动画 (StateListAnimator) 驱动, 只动 RenderNode 属性、不重录卡片内容: 动画只推一个
- * 聚焦程度 [focusProgress] (0..1, [TvNativeWallStyle.focusMillis] FastOutSlowIn), 放大倍数、高度、番名亮度与位移都由它推出来.
+ * 聚焦程度 [focusProgress] (0..1, [TvNativeWallStyle.focusMillis] FastOutSlowIn), 放大倍数、高度、小字亮度与番名位移都由它推出来.
  * 压暗 ([dim]) 与番名显隐 ([titleVisibility]) 乘在各自的透明度上.
  */
 @SuppressLint("ViewConstructor")
@@ -264,14 +264,13 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
                 topMargin = style.cardHeightPx + style.titleTopGapPx
             },
         )
-        style.applyTitleText(title)
-        style.applyTitleText(subtitle)
+        style.title.applyTo(title)
+        style.subtitle.applyTo(subtitle)
         if (style.labelVibrancy) {
             // 字色加在底下的背景上 (见 TvNativeWallStyle.labelVibrancy): 番名块与两行字都不开离屏层, 透明度直接乘在画笔上
             title.paint.xfermode = TV_NATIVE_LABEL_VIBRANCY
             subtitle.paint.xfermode = TV_NATIVE_LABEL_VIBRANCY
         }
-        subtitle.setTextColor(style.subtitleColor)
         subtitle.visibility = GONE
         stateListAnimator = StateListAnimator().apply {
             addState(intArrayOf(android.R.attr.state_focused), focusAnimator(1f))
@@ -289,7 +288,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         if (sub != null) {
             title.maxLines = 1
             subtitle.text = sub
-            subtitle.setTextColor(card.subtitleColor ?: style.subtitleColor)
+            subtitle.setTextColor(card.subtitleColor ?: style.subtitle.color)
             subtitle.visibility = VISIBLE
         } else {
             title.maxLines = 2
@@ -359,7 +358,10 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         idleShadow.alpha = (1f - p) * dim * dim
         cover.alpha = dim
         label.translationY = style.titleShiftPx * p
-        label.alpha = (style.titleIdleAlpha + (1f - style.titleIdleAlpha) * p) * titleVisibility * dim
+        label.alpha = titleVisibility * dim
+        val labelAlpha = style.labelIdleAlpha + (1f - style.labelIdleAlpha) * p
+        title.alpha = labelAlpha
+        subtitle.alpha = labelAlpha
     }
 
     private fun applyShadowColor() {
@@ -662,7 +664,7 @@ private class TvNativeLabelView(context: Context) : LinearLayout(context) {
 
 /** 定尺寸的文字: 字号 / 行高 / 字距由 [TvNativeTextStyle.applyTo] 设. */
 @SuppressLint("AppCompatCustomView")
-internal class TvNativeTextView(context: Context) : TextView(context) {
+internal open class TvNativeTextView(context: Context) : TextView(context) {
     /**
      * 每行的固定高度 (px), 0 = 字体自然行高. 同 Compose M3 排版的 LineHeightStyle(Center, Trim.None) (见 [TvNativeLineHeightSpan]):
      * 每行恰好这么高, 字在行内居中. 不用 TextView.setLineHeight —— 它按主字体 (Roboto) 的度量折算行距, 中文行按回落字体 (更高) 的

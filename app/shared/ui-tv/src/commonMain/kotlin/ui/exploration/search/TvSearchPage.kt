@@ -209,6 +209,7 @@ import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
 import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
+import me.him188.ani.app.ui.foundation.tv.tvGlassLabelStyle
 import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
@@ -1940,7 +1941,7 @@ internal fun TvSearchTopRow(
                             stringResource(Lang.search_tv_results_title, keywords)
                         },
                         color = color,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = tvGlassLabelStyle(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
