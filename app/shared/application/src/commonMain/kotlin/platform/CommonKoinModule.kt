@@ -156,6 +156,7 @@ import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.domain.usecase.useCaseModules
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.datasources.bangumi.BangumiClient
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
@@ -172,8 +173,10 @@ import org.koin.dsl.module
 import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.databaseFile
+import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
 import me.him188.ani.app.domain.profile.UserProfileRegistry
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.platform.AppRestarter
@@ -586,6 +589,33 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
             restarter = getOrNull<AppRestarter>() ?: AppRestarter.Unsupported,
             deleteFiles = { profile -> deleteUserProfileFiles(getContext(), profile) },
             beforeSwitch = { target -> get<UserProfileSeeder>().seed(target) },
+        )
+    }
+    // 把本地用户的收藏加到当前登录的 Bangumi 账号 (只增不删), 见 LocalProfileImporter
+    single<LocalProfileImporter> {
+        LocalProfileImporter(
+            deviceDatabase = get(),
+            openDatabase = { fileName -> buildAniDatabase(getContext(), fileName) },
+            fetchBangumiCollectedIds = { get<SubjectService>().fetchAllCollectedSubjectIds() },
+            isCollectedOnBangumi = { subjectId ->
+                // 条目接口带着当前账号对它的收藏 (interest), 没收藏时为 null
+                val subject = checkNotNull(get<SubjectService>().getSubjectCollection(subjectId)) {
+                    "Subject $subjectId is not accessible on Bangumi"
+                }
+                subject.interest != null
+            },
+            addBangumiCollection = { subjectId, update -> get<SubjectService>().patchSubjectCollection(subjectId, update) },
+            markBangumiEpisodesWatched = { subjectId, episodeIds ->
+                // 没登录 / 条目没收藏时它返回 false 而不抛, 同样算失败
+                check(get<EpisodeService>().setEpisodeCollection(subjectId, episodeIds, UnifiedCollectionType.DONE)) {
+                    "Bangumi did not accept watched episodes of subject $subjectId"
+                }
+            },
+            afterImport = {
+                database.subjectCollection().resetAllLastFetched()
+                database.episodeCollection().resetAllLastFetched()
+                get<SubjectService>().invalidateCollectionCounts()
+            },
         )
     }
     // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)

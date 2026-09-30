@@ -648,7 +648,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sw-btn:disabled { opacity: .6; }
 /* 播放页候选行左滑露出的「打开链接」(见 SCRIPT 的 itemSwipe), 以及滑到底时弹的小窗 (openLinkDialog) */
 .sw-btn.link { background: #2f7bf0; }
-#link-dlg, #login-dlg, #pf-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
+#link-dlg, #login-dlg, #pf-dlg, #pf-imp { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px;
   background: rgba(0,0,0,.45); }
 .link-dlg-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; max-width: 560px; max-height: 100%;
   background: var(--card); color: var(--fg); border-radius: 16px; padding: 20px 18px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
@@ -992,6 +992,10 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .pf-name { min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-tag { flex: none; font-size: 12px; color: var(--mute); }
 .pf-kinds { margin-top: 12px; }
+.pf-user .row { margin: 0 0 10px; }
+/* 导入预览里要加的那些: 太多时在框里滚 */
+.pf-imp-list { flex: 0 1 auto; min-height: 0; margin: 10px 0 0; padding-left: 1.2em; overflow-y: auto; font-size: 14px; line-height: 1.6; }
+.pf-imp-list li small { color: var(--mute); }
 .pf-cur { flex: none; font-size: 13px; color: var(--mute); }
 .pf-go { flex: none; padding: 8px 16px; border-radius: 999px; background: var(--p-soft); color: var(--p); font-size: 14px; font-weight: 600; }
 .pf-go:disabled { opacity: .5; }
@@ -6691,6 +6695,11 @@ private val PROFILES_SCRIPT = """
           (u.primary || u.current ? '' : '<button type="button" class="ghost acct-danger" data-pf="delete" data-id="' + u.id + '">' + T('删除') + '</button>') +
           '</div>' + (u.primary ? '<p class="hint">' + T('第一个用户只能改名，不能删除') + '</p>'
             : u.current ? '<p class="hint">' + T('要删除正在用的用户，先切换到别人') + '</p>' : '');
+        // 本地用户的收藏可以导进当前用户的 Bangumi 账号 (当前用户登录了 Bangumi 时)
+        if (u.local && d.canImport) {
+          h += '<div class="row"><button type="button" class="ghost" data-pf="import" data-id="' + u.id + '">' +
+            T('把收藏导入当前用户的 Bangumi 账号') + '</button></div>';
+        }
       }
       h += '</div>';
     });
@@ -6762,6 +6771,85 @@ private val PROFILES_SCRIPT = """
     });
     setTimeout(tick, 1500);
   }
+  // 把本地用户的收藏导进当前用户的 Bangumi 账号 (见 RemoteProfiles): 先预览, 确认了才写; 在电视上后台跑, 每秒问一次进度.
+  // 写进 Bangumi 的撤不回来 (没有取消收藏的接口, 还会上时间线), 所以预览里把要加的逐条列出来
+  var TYPE_LABELS = { WISH: T('想看'), DOING: T('在看'), DONE: T('看过'), ON_HOLD: T('搁置'), DROPPED: T('抛弃') };
+  var imp = null, impDlg = null, impTimer = null;
+  function impBox(inner) {
+    if (!impDlg) {
+      impDlg = document.createElement('div');
+      impDlg.id = 'pf-imp';
+      impDlg.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-pfi]');
+        if (!b || b.disabled) return;
+        if (b.getAttribute('data-pfi') === 'go') startImport(b); else closeImport();
+      });
+      document.body.appendChild(impDlg);
+    }
+    impDlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + esc(T('导入「{0}」的收藏', imp ? imp.name : '')) + '</div>' + inner + '</div>';
+  }
+  function impCloseRow() {
+    return '<div class="row"><button type="button" class="primary" data-pfi="close">' + T('知道了') + '</button></div>';
+  }
+  function closeImport() {
+    clearTimeout(impTimer);
+    if (impDlg) impDlg.remove();
+    impDlg = null;
+    imp = null;
+  }
+  function openImport(u) {
+    imp = { id: u.id, name: u.name };
+    impBox('<p class="dlg-p">' + T('正在读取 Bangumi 上的收藏…') + '</p>');
+    getJson('api/profiles/import?id=' + u.id, 70000).then(function (d) {
+      if (!imp) return;
+      if (!d.ok) { impBox('<p class="dlg-p">' + esc(d.message) + '</p>' + impCloseRow()); return; }
+      var add = d.add || [];
+      if (!add.length) {
+        impBox('<p class="dlg-p">' + T('没有要导入的：这些收藏在 Bangumi 上都已经有了。') + '</p>' + impCloseRow());
+        return;
+      }
+      imp.count = add.length;
+      impBox('<p class="dlg-p">' + T('会在当前用户的 Bangumi 账号里新加 {0} 部收藏，带上评分与短评，看过的集标成看过。', add.length) +
+        (d.skipped ? T('Bangumi 上已经收藏的 {0} 部不动。', d.skipped) : '') + '</p>' +
+        '<p class="dlg-p risk">' + T('加上去的每一条都会出现在这个账号的 Bangumi 时间线上。Bangumi 不能取消收藏，要撤回只能去 Bangumi 网页上逐条改。') + '</p>' +
+        '<ol class="pf-imp-list">' + add.map(function (x) {
+          var bits = [TYPE_LABELS[x.type] || x.type];
+          if (x.score > 0) bits.push(T('{0} 分', x.score));
+          if (x.episodes > 0) bits.push(T('看过 {0} 集', x.episodes));
+          return '<li>' + esc(x.name) + ' <small>' + esc(bits.join(' · ')) + '</small></li>';
+        }).join('') + '</ol><div class="row"><button type="button" class="ghost" data-pfi="close">' + T('取消') + '</button>' +
+        '<button type="button" class="primary" data-pfi="go">' + T('导入 {0} 部', add.length) + '</button></div>');
+    }).catch(function () {
+      if (imp) impBox('<p class="dlg-p">' + T('读取失败，请确认手机与电视在同一网络') + '</p>' + impCloseRow());
+    });
+  }
+  function startImport(b) {
+    b.disabled = true;
+    post('api/profiles/import', { id: imp.id }).then(function (r) {
+      if (!r.ok) { impBox('<p class="dlg-p">' + esc(r.message) + '</p>' + impCloseRow()); return; }
+      pollImport();
+    }).catch(function () { b.disabled = false; fail(); });
+  }
+  function pollImport() {
+    getJson('api/profiles/import/state', 8000).then(function (s) {
+      if (!imp) return;
+      if (s.running) {
+        impBox('<p class="dlg-p">' + T('正在导入 {0}/{1}…', s.done, s.total || imp.count || 0) + '</p>');
+        impTimer = setTimeout(pollImport, 1000);
+        return;
+      }
+      if (s.error) { impBox('<p class="dlg-p">' + T('导入没有完成：{0}', esc(s.error)) + '</p>' + impCloseRow()); return; }
+      var r = s.result || {}, fails = r.failures || [];
+      impBox('<p class="dlg-p">' + T('导入完成：新加 {0} 部收藏，标了 {1} 集看过。', r.added || 0, r.episodes || 0) +
+        (r.skipped ? T('跳过已经有的 {0} 部。', r.skipped) : '') + '</p>' +
+        (fails.length ? '<p class="dlg-p risk">' + T('{0} 部没有导好：', fails.length) + '</p><ol class="pf-imp-list">' + fails.map(function (f) {
+          return '<li>' + esc(f.name) + ' <small>' + esc((f.added ? T('收藏加上了，看过的集没标上') + T('：') : '') + (f.message || '')) + '</small></li>';
+        }).join('') + '</ol>' : '') + impCloseRow());
+    }).catch(function () {
+      // 电视一时没答 (正忙着写): 过一会儿再问
+      if (imp) impTimer = setTimeout(pollImport, 2000);
+    });
+  }
   box.addEventListener('click', function (e) {
     var b = e.target.closest('[data-pf]');
     if (!b || b.disabled) return;
@@ -6779,6 +6867,7 @@ private val PROFILES_SCRIPT = """
     }
     if (act === 'rename') { renaming = u.id; menu = null; render(); focusField('#pf-rename'); return; }
     if (act === 'switch') { startSwitch(u, b); return; }
+    if (act === 'import') { openImport(u); return; }
     if (act === 'delete') {
       if (!confirm(T('删除「{0}」？\n\n这个用户的收藏、播放记录和登录都会从这台电视上删掉。缓存的视频是大家共用的，不会删。', u.name))) return;
       b.disabled = true;

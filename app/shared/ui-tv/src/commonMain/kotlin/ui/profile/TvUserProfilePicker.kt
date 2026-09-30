@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -94,9 +95,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfileKind
 import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.domain.session.SessionState
+import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
@@ -122,7 +127,28 @@ import me.him188.ani.app.ui.lang.tv_profile_delete
 import me.him188.ani.app.ui.lang.tv_profile_delete_current
 import me.him188.ani.app.ui.lang.tv_profile_delete_description
 import me.him188.ani.app.ui.lang.tv_profile_delete_primary
+import me.him188.ani.app.ui.lang.subject_collection_doing
+import me.him188.ani.app.ui.lang.subject_collection_done
+import me.him188.ani.app.ui.lang.subject_collection_dropped
+import me.him188.ani.app.ui.lang.subject_collection_on_hold
+import me.him188.ani.app.ui.lang.subject_collection_wish
 import me.him188.ani.app.ui.lang.tv_profile_delete_title
+import me.him188.ani.app.ui.lang.tv_profile_import
+import me.him188.ani.app.ui.lang.tv_profile_import_busy
+import me.him188.ani.app.ui.lang.tv_profile_import_confirm
+import me.him188.ani.app.ui.lang.tv_profile_import_done
+import me.him188.ani.app.ui.lang.tv_profile_import_error
+import me.him188.ani.app.ui.lang.tv_profile_import_failed
+import me.him188.ani.app.ui.lang.tv_profile_import_loading
+import me.him188.ani.app.ui.lang.tv_profile_import_more
+import me.him188.ani.app.ui.lang.tv_profile_import_nothing
+import me.him188.ani.app.ui.lang.tv_profile_import_ok
+import me.him188.ani.app.ui.lang.tv_profile_import_running
+import me.him188.ani.app.ui.lang.tv_profile_import_running_hint
+import me.him188.ani.app.ui.lang.tv_profile_import_skipped
+import me.him188.ani.app.ui.lang.tv_profile_import_summary
+import me.him188.ani.app.ui.lang.tv_profile_import_title
+import me.him188.ani.app.ui.lang.tv_profile_import_warning
 import me.him188.ani.app.ui.lang.tv_profile_kind_bangumi_description
 import me.him188.ani.app.ui.lang.tv_profile_kind_bangumi_title
 import me.him188.ani.app.ui.lang.tv_profile_kind_local_description
@@ -134,8 +160,10 @@ import me.him188.ani.app.ui.lang.tv_profile_picker_title
 import me.him188.ani.app.ui.lang.tv_profile_rename
 import me.him188.ani.app.ui.lang.tv_profile_save
 import me.him188.ani.app.ui.lang.tv_profile_switching
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * 选人页 (像 Apple TV 那样): 这台设备上有两个以上用户时, 每次打开应用先选人 (TV 根部打开);
@@ -183,6 +211,11 @@ private fun PickerContent(
     val scope = rememberCoroutineScope()
     val focus = rememberTvFocusScope()
     var dialog by remember { mutableStateOf<ProfileDialog?>(null) }
+    // 当前用户登录了 Bangumi 时, 本地用户的长按菜单里能「导入到当前用户的 Bangumi 账号」 (见 LocalProfileImporter)
+    val sessionState by remember { KoinPlatform.getKoin().get<SessionStateProvider>().stateFlow }.collectAsStateWithLifecycle(null)
+    val canImport = !UserProfiles.current.isLocal && (sessionState as? SessionState.Valid)?.bangumiConnected == true
+    // 导入在跑时不能换人: 换人会重启应用, 导入跟着断掉
+    val importing = ProfileImportSession.state.collectAsStateWithLifecycle().value is ProfileImportSession.State.Running
 
     // 进场: 整页淡入, 标题与头像依次微微上浮 (头像的错开在 ProfileTile 里)
     val entrance = remember { Animatable(0f) }
@@ -201,7 +234,7 @@ private fun PickerContent(
         if (switching || entering) return@select
         if (profile.id == manager.currentId) {
             entering = true
-        } else {
+        } else if (!importing) {
             onSwitching()
             scope.launch { manager.switchTo(profile.id) }
         }
@@ -261,6 +294,11 @@ private fun PickerContent(
                                 onDismiss = onDismiss,
                                 onRename = { dialog = ProfileDialog.Rename(profile) },
                                 onDelete = { dialog = ProfileDialog.Delete(profile, name) },
+                                onImport = if (canImport && profile.isLocal) {
+                                    { dialog = ProfileDialog.Import(profile, name) }
+                                } else {
+                                    null
+                                },
                             )
                         },
                     ) {
@@ -284,7 +322,13 @@ private fun PickerContent(
             }
             Spacer(Modifier.height(32.dp))
             Text(
-                stringResource(if (switching) Lang.tv_profile_switching else Lang.tv_profile_picker_hint),
+                stringResource(
+                    when {
+                        switching -> Lang.tv_profile_switching
+                        importing -> Lang.tv_profile_import_busy
+                        else -> Lang.tv_profile_picker_hint
+                    },
+                ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = SECONDARY_LABEL,
             )
@@ -340,6 +384,8 @@ private fun PickerContent(
             },
             onDismissRequest = { dialog = null },
         )
+
+        is ProfileDialog.Import -> ImportDialog(d.profile, d.name, onDismissRequest = { dialog = null })
     }
 }
 
@@ -353,6 +399,7 @@ private sealed interface ProfileDialog {
     data class Add(val id: Int) : ProfileDialog
     data class Rename(val profile: UserProfile) : ProfileDialog
     data class Delete(val profile: UserProfile, val name: String) : ProfileDialog
+    data class Import(val profile: UserProfile, val name: String) : ProfileDialog
 }
 
 private data class ProfileFocusKey(val id: Int) : TvFocusKey
@@ -485,7 +532,9 @@ private fun ProfileAvatar(profile: UserProfile, name: String) {
     }
 }
 
-/** 长按一个人的菜单: 改名; 能删时有删除, 不能删时写明为什么. */
+/**
+ * 长按一个人的菜单: 改名; 能删时有删除, 不能删时写明为什么; 本地用户在当前用户登录了 Bangumi 时还能导入 ([onImport] 非 null).
+ */
 @Composable
 private fun ProfileMenu(
     profile: UserProfile,
@@ -494,6 +543,7 @@ private fun ProfileMenu(
     onDismiss: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onImport: (() -> Unit)?,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -526,6 +576,15 @@ private fun ProfileMenu(
                 onClick = {
                     onDismiss()
                     onDelete()
+                },
+            )
+        }
+        if (onImport != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(Lang.tv_profile_import)) },
+                onClick = {
+                    onDismiss()
+                    onImport()
                 },
             )
         }
@@ -628,6 +687,158 @@ private fun DeleteDialog(name: String, onConfirm: () -> Unit, onDismissRequest: 
 }
 
 private enum class DialogFocus : TvFocusKey { Field, KindBangumi, KindLocal, Confirm, Cancel }
+
+private enum class ImportStage { Loading, Preview, Empty, Running, Result, Error }
+
+/**
+ * 把本地用户的收藏导入当前用户的 Bangumi 账号 (见 [LocalProfileImporter]): 先读出预览 (要加哪些、哪些已经有了) 给人确认,
+ * 确认了在后台导 ([ProfileImportSession], 关掉弹窗也接着导), 导完显示结果. 写进 Bangumi 的撤不回来, 确认前把后果写明,
+ * 焦点默认落在「取消」.
+ */
+@Composable
+private fun ImportDialog(profile: UserProfile, name: String, onDismissRequest: () -> Unit) {
+    val importer = remember { KoinPlatform.getKoin().get<LocalProfileImporter>() }
+    val session by ProfileImportSession.state.collectAsStateWithLifecycle()
+    var preview by remember { mutableStateOf<LocalProfileImporter.Preview?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // 打开时有导入在跑 (或上一次的结果还没看) 就显示它; 否则读预览
+    LaunchedEffect(profile.id) {
+        if (ProfileImportSession.state.value != ProfileImportSession.State.Idle) return@LaunchedEffect
+        try {
+            preview = importer.preview(profile)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: e::class.simpleName.orEmpty()
+        }
+    }
+    val close = {
+        ProfileImportSession.acknowledge()
+        onDismissRequest()
+    }
+    val p = preview
+    val stage = when (session) {
+        is ProfileImportSession.State.Running -> ImportStage.Running
+        is ProfileImportSession.State.Finished, is ProfileImportSession.State.Failed -> ImportStage.Result
+        ProfileImportSession.State.Idle -> when {
+            error != null -> ImportStage.Error
+            p == null -> ImportStage.Loading
+            p.toAdd.isEmpty() -> ImportStage.Empty
+            else -> ImportStage.Preview
+        }
+    }
+    // 显示的是在跑或上一次的导入时, 标题写那一次导的是谁 (可能是控制台上发起、导的别人)
+    val sourceName = when (val s = session) {
+        is ProfileImportSession.State.Running -> s.sourceName
+        is ProfileImportSession.State.Finished -> s.sourceName
+        is ProfileImportSession.State.Failed -> s.sourceName
+        ProfileImportSession.State.Idle -> name
+    }
+    ProfileDialogSurface(stringResource(Lang.tv_profile_import_title, sourceName), close) { focus ->
+        val body = MaterialTheme.typography.bodyLarge
+        val small = MaterialTheme.typography.bodyMedium
+        val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        when (val s = session) {
+            is ProfileImportSession.State.Running -> {
+                Text(stringResource(Lang.tv_profile_import_running, s.done, s.total), style = body)
+                Spacer(Modifier.height(16.dp))
+                LinearProgressIndicator(
+                    progress = { if (s.total == 0) 0f else s.done.toFloat() / s.total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(stringResource(Lang.tv_profile_import_running_hint), style = small, color = muted)
+            }
+
+            is ProfileImportSession.State.Finished -> {
+                val r = s.result
+                Text(stringResource(Lang.tv_profile_import_done, r.added, r.episodesMarked), style = body)
+                if (r.skipped > 0) {
+                    Text(stringResource(Lang.tv_profile_import_skipped, r.skipped), style = small, color = muted)
+                }
+                if (r.failures.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(
+                            Lang.tv_profile_import_failed,
+                            r.failures.size,
+                            r.failures.take(IMPORT_LIST_LIMIT).joinToString(" · ") { it.entry.name },
+                        ),
+                        style = small,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            is ProfileImportSession.State.Failed -> Text(stringResource(Lang.tv_profile_import_error, s.message), style = body)
+
+            ProfileImportSession.State.Idle -> when (stage) {
+                ImportStage.Error -> Text(stringResource(Lang.tv_profile_import_error, error.orEmpty()), style = body)
+                ImportStage.Loading -> Text(stringResource(Lang.tv_profile_import_loading), style = body, color = muted)
+                ImportStage.Empty -> Text(stringResource(Lang.tv_profile_import_nothing), style = body)
+                else -> if (p != null) {
+                    Text(stringResource(Lang.tv_profile_import_summary, p.toAdd.size), style = body)
+                    if (p.alreadyCollected.isNotEmpty()) {
+                        Text(stringResource(Lang.tv_profile_import_skipped, p.alreadyCollected.size), style = body)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(stringResource(Lang.tv_profile_import_warning), style = small, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(12.dp))
+                    for (entry in p.toAdd.take(IMPORT_LIST_LIMIT)) {
+                        Text(
+                            "· " + entry.name + " · " + entry.type.label(),
+                            style = small,
+                            color = muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (p.toAdd.size > IMPORT_LIST_LIMIT) {
+                        Text(stringResource(Lang.tv_profile_import_more, p.toAdd.size - IMPORT_LIST_LIMIT), style = small, color = muted)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (stage == ImportStage.Preview && p != null) {
+                TvHeroButton(
+                    stringResource(Lang.tv_profile_import_confirm, p.toAdd.size),
+                    Icons.Rounded.Check,
+                    filled = true,
+                    onClick = { ProfileImportSession.start(importer, p, name) },
+                    onFocused = {},
+                    modifier = Modifier.tvFocusAnchor(focus, DialogFocus.Confirm),
+                )
+            }
+            // 还没导时是「取消」, 其余 (没有要导的、在导、导完、出错) 是「知道了」
+            val cancels = stage == ImportStage.Preview || stage == ImportStage.Loading
+            TvHeroButton(
+                stringResource(if (cancels) Lang.tv_profile_cancel else Lang.tv_profile_import_ok),
+                if (cancels) Icons.Rounded.Close else Icons.Rounded.Check,
+                filled = false,
+                onClick = close,
+                onFocused = {},
+                modifier = Modifier.tvFocusAnchor(focus, DialogFocus.Cancel),
+            )
+        }
+        // 每换一种状态焦点都送回「取消 / 知道了」: 原来聚焦的「导入」随状态消失, 不接住焦点就丢了; 预览时默认也落在它上面
+        LaunchedEffect(stage) { focus.request(DialogFocus.Cancel) }
+    }
+}
+
+@Composable
+private fun UnifiedCollectionType.label(): String = when (this) {
+    UnifiedCollectionType.WISH -> stringResource(Lang.subject_collection_wish)
+    UnifiedCollectionType.DOING -> stringResource(Lang.subject_collection_doing)
+    UnifiedCollectionType.DONE -> stringResource(Lang.subject_collection_done)
+    UnifiedCollectionType.ON_HOLD -> stringResource(Lang.subject_collection_on_hold)
+    UnifiedCollectionType.DROPPED -> stringResource(Lang.subject_collection_dropped)
+    UnifiedCollectionType.NOT_COLLECTED -> ""
+}
+
+/** 导入弹窗里最多列几部 (其余写「还有 N 部」): 电视上一屏放不下长列表, 焦点又在底下的按钮上. */
+private const val IMPORT_LIST_LIMIT = 5
 
 /**
  * 添加用户时选这个人是哪一种: 登录 Bangumi (默认; 进来先弹登录, 可以跳过) / 不登录 (本地档: 收藏、看过与评分只存在这台电视上).

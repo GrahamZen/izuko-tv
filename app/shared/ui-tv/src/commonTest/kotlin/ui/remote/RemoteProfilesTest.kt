@@ -72,8 +72,9 @@ class RemoteProfilesTest {
         scope.cancel()
     }
 
+    /** 同服务端: 路径与查询串分开 (`?` 前后). */
     private fun get(path: String): JsonObject? =
-        RemoteProfiles.handle(LanHttpRequest("GET", path, "", ByteArray(0)), scope)
+        RemoteProfiles.handle(LanHttpRequest("GET", path.substringBefore('?'), path.substringAfter('?', ""), ByteArray(0)), scope)
 
     private fun post(path: String, vararg fields: Pair<String, String>): JsonObject {
         val body = fields.joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
@@ -179,6 +180,19 @@ class RemoteProfilesTest {
     }
 
     @Test
+    fun `当前用户没登录 Bangumi 时不能导入 并说明原因`() {
+        val added = post("api/profiles/add", "name" to "Carol", "kind" to "local")
+        val state = get("api/profiles")!!
+        assertFalse(state.getValue("canImport").jsonPrimitive.boolean)
+        val preview = get("api/profiles/import?id=" + added.getValue("id").jsonPrimitive.int)!!
+        assertFalse(preview.ok)
+        assertEquals("要先在电视上登录 Bangumi，才能把收藏导入这个账号", preview.message)
+        // 不是本地用户的也不能导
+        assertEquals("只能导入本地用户的收藏", get("api/profiles/import?id=1")!!.message)
+        assertFalse(post("api/profiles/import", "id" to added.getValue("id").jsonPrimitive.int.toString()).ok)
+    }
+
+    @Test
     fun `不认识的路径与方法交回去`() {
         assertNull(get("api/profiles/add"))
         assertNull(RemoteProfiles.handle(LanHttpRequest("POST", "api/profiles/nope", "", ByteArray(0)), scope))
@@ -213,6 +227,13 @@ class RemoteProfilesTest {
             "收藏、看过和评分同步到这个人的 Bangumi 账号；切过去时先登录，也可以跳过。",
             "添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。",
             "这是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请在上面的「用户」里新建一个登录 Bangumi 的用户。",
+            "把收藏导入当前用户的 Bangumi 账号", "导入「{0}」的收藏", "正在读取 Bangumi 上的收藏…",
+            "没有要导入的：这些收藏在 Bangumi 上都已经有了。",
+            "会在当前用户的 Bangumi 账号里新加 {0} 部收藏，带上评分与短评，看过的集标成看过。",
+            "Bangumi 上已经收藏的 {0} 部不动。",
+            "加上去的每一条都会出现在这个账号的 Bangumi 时间线上。Bangumi 不能取消收藏，要撤回只能去 Bangumi 网页上逐条改。",
+            "{0} 分", "看过 {0} 集", "导入 {0} 部", "正在导入 {0}/{1}…", "导入没有完成：{0}",
+            "导入完成：新加 {0} 部收藏，标了 {1} 集看过。", "跳过已经有的 {0} 部。", "{0} 部没有导好：", "收藏加上了，看过的集没标上",
         )
         for (key in webKeys) {
             // 脚本源码里的换行写作 \n
@@ -224,6 +245,8 @@ class RemoteProfilesTest {
             "电视现在就是「{0}」", "电视上没有显示 Izuko，切换不了。先在电视上打开 Izuko 再试",
             "第一个用户只能改名，不能删除", "要删除正在用的用户，先切换到别人", "这台设备不支持多用户", "没有这个用户了，刷新页面再看看",
             "本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户",
+            "只能导入本地用户的收藏", "要先在电视上登录 Bangumi，才能把收藏导入这个账号", "读取 Bangumi 上的收藏超时，请重试",
+            "正在导入，等这一次导完", "预览已经过期，请重新打开导入", "开始导入", "正在导入收藏，导完再切换用户",
         )
         for (key in serverKeys) assertTrue(key in table, "译文表里没有「$key」")
     }
