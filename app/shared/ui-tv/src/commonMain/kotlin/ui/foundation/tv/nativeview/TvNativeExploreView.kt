@@ -180,7 +180,7 @@ class TvNativeExploreView(
     var metrics: TvNativeExploreMetrics = metrics
         private set
 
-    /** 视觉效果: 过渡 (hero 态时间线、背景图尺寸动画、按钮淡入) 与动画滚动. */
+    /** 视觉效果: 过渡 (轮播 ↔ 卡片的背景图尺寸动画) 与动画滚动. 轮播按钮 / 圆点的淡入三档都有 (只改两个小控件的透明度). */
     var transitions: Boolean = true
     var animatedScroll: Boolean = true
         set(value) {
@@ -807,10 +807,13 @@ class TvNativeExploreView(
     // hero 态
     // ------------------------------------------------------------------
 
-    /** 进 / 出 hero 态 (返回键在页面里, 调这里). */
+    /**
+     * 进 / 出 hero 态 (返回键在页面里, 调这里). 淡入淡出 (hero 时间线) 三档都有 —— 流畅档也走, 聚焦行照旧直接跳到位 ([animatedScroll]):
+     * 贵的是行的滚动动画, 淡入淡出只改几层的透明度.
+     */
     fun setHeroActive(active: Boolean) {
         if (timeline.active == active) return
-        timeline.setActive(active, animated = transitions)
+        timeline.setActive(active, animated = true)
         listener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
         updateStop(heroToggled = true)
@@ -1088,7 +1091,7 @@ class TvNativeExploreView(
         listener?.onHeroButtonFocused(button)
         // 焦点回到轮播按钮: 回卡片墙, 列表按远跳 spring 滚回顶 (轮播随列表一起滑回原位)
         if (timeline.active) {
-            timeline.setActive(false, animated = transitions)
+            timeline.setActive(false, animated = true)
             listener?.onHeroActiveChanged(false)
         }
         list.scrollToStop(0, TvScrollSpring.Far, animatedScroll)
@@ -1301,7 +1304,7 @@ class TvNativeExploreView(
             if (settled) backdrop.rebuild()
             applySources(reset = settled)
         }
-        applyButtons(visible = !card, animated = transitions && settled)
+        applyButtons(visible = !card, animated = settled)
         applyDots(visible = !card)
         heroText.summaryWidthPx = if (card) metrics.cardSummaryWidthPx else metrics.carouselSummaryWidthPx
         heroBox.requestLayout()
@@ -1353,11 +1356,6 @@ class TvNativeExploreView(
         if (dotsShown == visible) return
         dotsShown = visible
         dotsAnimator?.cancel()
-        if (!transitions) {
-            dotsFade = if (visible) 1f else 0f
-            applyFrame()
-            return
-        }
         val from = dotsFade
         dotsAnimator = ValueAnimator.ofFloat(from, if (visible) 1f else 0f).apply {
             duration = (if (visible) TV_HERO_BUTTON_FADE_IN_MILLIS else TV_HERO_BUTTON_FADE_OUT_MILLIS).toLong()

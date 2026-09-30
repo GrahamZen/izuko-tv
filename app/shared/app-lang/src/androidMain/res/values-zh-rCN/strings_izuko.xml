@@ -195,7 +195,7 @@
     <string name="settings_theme_tv_retain_playback_session">退出播放页后保留播放状态</string>
     <string name="settings_theme_tv_retain_playback_session_description">退出后保留播放器状态（在动作面板里显示），可以播放时会有气泡提示。关闭则不保留</string>
     <string name="settings_theme_tv_visual_effects">视觉效果</string>
-    <string name="settings_theme_tv_visual_effects_description">流畅：焦点滚动瞬间到位、长标题不滚动，只保留进详情页的放大；均衡：全部转场动画；完整：全部效果，4K 界面加载原图</string>
+    <string name="settings_theme_tv_visual_effects_description">流畅：焦点滚动瞬间到位、长标题不滚动，只保留进详情页的放大与海报上按确定后的淡入淡出；均衡：全部转场动画；完整：全部效果，4K 界面加载原图</string>
     <string name="settings_theme_tv_visual_effects_smooth">流畅</string>
     <string name="settings_theme_tv_visual_effects_balanced">均衡</string>
     <string name="settings_theme_tv_visual_effects_full">完整</string>

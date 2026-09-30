@@ -24,7 +24,8 @@ import android.view.View
  *
  * 点开时背景还不是这张卡的 (停下来之前就按了) / 没有清晰图 (竖版封面、打码) 就不对焦 ([open] 返回 false, 调用方当场进). 清晰图还没解好:
  * 卡片照样当场开始淡 (按下的反馈), 背景等它最多 [TV_WALL_BACKDROP_OPEN_WAIT_MILLIS], 等不到就不对焦直接进 (状态照旧停在点开, 回来倒放).
- * 流畅档 ([Host.transitions] = false) 各段当场到位. 两段过渡都按帧推进 ([TvNativeFrameTween]): 长按时收藏菜单那个新窗口一出来主线程会卡
+ * 点开 (卡片淡没、背景对焦) 三档都走过渡: 流畅档当场到位的话这些活挤进同一帧, 反而比摊开掉得多; 长按窥视与倒放流畅档 ([Host.transitions] = false)
+ * 当场到位 (倒放整屏清晰图叠着模糊图淡出, 不便宜). 两段过渡都按帧推进 ([TvNativeFrameTween]): 长按时收藏菜单那个新窗口一出来主线程会卡
  * 一下, 按墙钟算进度的话背景直接跳到清晰.
  *
  * @param view 挂延时回调用的视图 (页面视图自己)
@@ -35,7 +36,7 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
         /** 整屏背景; null = 此刻没有 (没开 / 还没建). */
         val wall: TvNativeWallBackdropView?
 
-        /** 视觉效果的过渡 (流畅档为 false: 各段当场到位). */
+        /** 视觉效果的过渡: 长按窥视与倒放要不要走过渡 (流畅档为 false: 当场到位; 点开三档都走). */
         val transitions: Boolean
 
         /** 卡片淡没的程度 [fade] (0..1), 留着不淡的那张 [keep] (-1 = 全部淡); [chrome] = 这次是点开 (顶栏、hero 图等跟着淡, 倒放完才撤). */
@@ -70,6 +71,9 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
     private var fadeTween: TvNativeFrameTween? = null
     private var sharpGoal = 0f
     private var sharpEnd: (() -> Unit)? = null
+
+    /** 这一段对焦 / 倒放要不要过渡 (见 [animateSharp]). */
+    private var sharpAnimated = true
     private var sharpTween: TvNativeFrameTween? = null
 
     /** 点开途中. */
@@ -94,7 +98,7 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
         openStarted = false
         host.onOpeningChanged(true)
         // 卡片与 chrome 当场开始淡 (按下的反馈), 背景等清晰图就位再对焦
-        animateFade(1f)
+        animateFade(1f, animated = true)
         wall.prepareSharp()
         if (openStarted) return true
         if (wall.sharpReady) {
@@ -110,7 +114,7 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
     private fun startOpen() {
         openStarted = true
         cancelWait()
-        animateSharp(1f) { finishOpen() }
+        animateSharp(1f, animated = true) { finishOpen() }
     }
 
     /** 对焦到位 / 清晰图等不到 (卡片已经淡了, 背景留在模糊版): 进详情页. 状态照旧停在点开, 回来时页面调 [endOpen] 倒放. */
@@ -250,9 +254,9 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
         host.applyFade(value, keep, chrome)
     }
 
-    private fun animateFade(to: Float, onEnd: (() -> Unit)? = null) {
+    private fun animateFade(to: Float, animated: Boolean = host.transitions, onEnd: (() -> Unit)? = null) {
         fadeTween?.cancel()
-        if (!host.transitions || fade == to) {
+        if (!animated || fade == to) {
             setFade(to)
             onEnd?.invoke()
             return
@@ -266,10 +270,11 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
     }
 
     /** 背景清晰层的透明度走到 [to]. 清晰图还没解好就先记下, 解好时 ([onSharpReady]) 接着走. */
-    private fun animateSharp(to: Float, onEnd: (() -> Unit)? = null) {
+    private fun animateSharp(to: Float, animated: Boolean = host.transitions, onEnd: (() -> Unit)? = null) {
         val wall = host.wall ?: return
         sharpGoal = to
         sharpEnd = onEnd
+        sharpAnimated = animated
         sharpTween?.cancel()
         if (!wall.sharpReady) {
             // 显示不出来: 从 0 起 (解好时从 0 走过去)
@@ -283,7 +288,7 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
         val to = sharpGoal
         val onEnd = sharpEnd
         sharpEnd = null
-        if (!host.transitions || wall.sharpness == to) {
+        if (!sharpAnimated || wall.sharpness == to) {
             wall.sharpness = to
             onEnd?.invoke()
             return

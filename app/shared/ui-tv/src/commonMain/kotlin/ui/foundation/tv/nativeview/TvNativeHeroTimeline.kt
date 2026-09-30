@@ -31,7 +31,8 @@ import kotlin.math.roundToLong
  * 进: above 0→1 (150ms) 与 tone 0→1 (压黑 300 / 不压黑 150ms) 同时起, tone 走完再走 content (400ms), text 在 content 起步 100ms 后走
  * 300ms (content 已经不是 0 时不等). 出: text (150ms) 与 content (250ms) 同时收, content 收完再 above (250ms) 与 tone (压黑 350 / 不压黑
  * 250ms) 一起回.
- * 全部线性, 时长按剩余路程折算 (半路反向从当前值接着走). [animated] = false (视觉效果流畅档) 时直接到位.
+ * 全部线性, 时长按剩余路程折算 (半路反向从当前值接着走). [animated] = false (页面重建时恢复在 hero 态) 时直接到位; 视觉效果三档都走动画
+ * (流畅档里聚焦行照旧直接跳到位, 见页面视图的 setHeroActive).
  */
 class TvNativeHeroTimeline(private val onUpdate: (TvNativeHeroTimeline) -> Unit) {
     var active: Boolean = false

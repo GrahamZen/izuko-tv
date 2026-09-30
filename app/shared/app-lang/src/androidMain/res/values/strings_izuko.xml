@@ -195,7 +195,7 @@
     <string name="settings_theme_tv_retain_playback_session">Keep playback session after leaving</string>
     <string name="settings_theme_tv_retain_playback_session_description">Keeps the player alive after you leave (shown in the action panel), with a toast once it is ready to play. Off: nothing is kept</string>
     <string name="settings_theme_tv_visual_effects">Visual effects</string>
-    <string name="settings_theme_tv_visual_effects_description">Smooth: focus scrolling jumps instantly, long titles never scroll, only the detail-page zoom is kept; Balanced: all transitions; Full: everything, plus original-size images at 4K</string>
+    <string name="settings_theme_tv_visual_effects_description">Smooth: focus scrolling jumps instantly, long titles never scroll, only the detail-page zoom and the fade after selecting a poster are kept; Balanced: all transitions; Full: everything, plus original-size images at 4K</string>
     <string name="settings_theme_tv_visual_effects_smooth">Smooth</string>
     <string name="settings_theme_tv_visual_effects_balanced">Balanced</string>
     <string name="settings_theme_tv_visual_effects_full">Full</string>

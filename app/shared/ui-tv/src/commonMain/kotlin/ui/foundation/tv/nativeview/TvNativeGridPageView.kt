@@ -586,8 +586,11 @@ class TvNativeGridPageView(
 
     val heroActive: Boolean get() = timeline.active
 
-    /** 进 / 出 hero 态 (返回键在页面里, 调这里). [animated] = false 时直接到位 (返回本页时恢复). */
-    fun setHeroActive(active: Boolean, animated: Boolean = transitions) {
+    /**
+     * 进 / 出 hero 态 (返回键在页面里, 调这里). [animated] = false 时直接到位 (返回本页时恢复). 淡入淡出 (hero 时间线) 三档都有 ——
+     * 流畅档也走, 聚焦行照旧直接跳到位 ([animatedScroll]): 贵的是行的滚动动画, 淡入淡出只改几层的透明度.
+     */
+    fun setHeroActive(active: Boolean, animated: Boolean = true) {
         if (timeline.active == active) return
         timeline.setActive(active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
