@@ -38,6 +38,7 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
 import me.him188.ani.app.domain.mediasource.quark.QuarkMediaSource
+import me.him188.ani.app.domain.mediasource.quark.QuarkShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.getArgumentOrNull
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
@@ -250,6 +251,7 @@ class MediaSourceManagerImpl(
         add(IkarosMediaSource.Factory())
         add(DirectApiMediaSource.Factory())
         add(QuarkMediaSource.Factory(quarkDriveService))
+        add(QuarkShareSearchMediaSource.Factory(quarkDriveService))
         add(SelectorMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
     }.toList()
 
