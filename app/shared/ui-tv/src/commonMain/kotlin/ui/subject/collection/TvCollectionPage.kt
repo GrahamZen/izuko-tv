@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,7 +76,10 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
+import me.him188.ani.app.ui.foundation.TvPageAdjustAction
+import me.him188.ani.app.ui.foundation.TvPageAdjustActions
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_ANCHOR_SIZE
@@ -90,6 +95,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvFocusRailItem
 import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
 import me.him188.ani.app.ui.foundation.isAutoRepeat
+import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
@@ -137,6 +143,7 @@ import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
@@ -145,12 +152,16 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.collection_tv_tab_order_title
 import me.him188.ani.app.ui.lang.subject_collection_doing
 import me.him188.ani.app.ui.lang.subject_collection_done
 import me.him188.ani.app.ui.lang.subject_collection_dropped
 import me.him188.ani.app.ui.lang.subject_collection_on_hold
 import me.him188.ani.app.ui.lang.subject_collection_uncollected
 import me.him188.ani.app.ui.lang.subject_collection_wish
+import me.him188.ani.app.ui.main.LocalTvAdjustWindows
+import me.him188.ani.app.ui.main.TvAdjustWindow
+import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
@@ -183,7 +194,7 @@ fun TvCollectionPage(
     state: UserCollectionsState,
     modifier: Modifier = Modifier,
 ) {
-    // 海报墙大小 (设置 - 界面): 卡片按它缩放, 标签行与 hero 的文字不变 (见 TvPosterWallScaled)
+    // 海报墙大小 (动作面板): 卡片按它缩放, 标签行与 hero 的文字不变 (见 TvPosterWallScaled)
     TvPosterWallScaled { TvCollectionPageContent(state, modifier) }
 }
 
@@ -216,7 +227,7 @@ private fun TvCollectionPageContent(
     // (见下方 restoreCardIndex), 不能复位.
     var enteredBefore by rememberSaveable { mutableStateOf(false) }
     val freshEntry = remember { !enteredBefore }
-    // 分类标签的显示顺序 —— 用户可以自己排 (设置 - 界面 -「自定义追番页标签顺序」).
+    // 分类标签的显示顺序 —— 用户可以自己排 (长按标签 / 动作面板「自定义标签顺序」).
     // 选中项仍按类型存取 (state 内部是 COLLECTION_TABS_SORTED 的下标), 所以重排只换展示与左右
     // 导航次序, 不会把内容切走
     val tabOrder = rememberTvCollectionTabOrder()
@@ -634,6 +645,35 @@ private fun TvCollectionPageContent(
     // 定时同步时刷新). 挂在页面根上而不是网格上: 焦点在 tab 行时也能刷
     // 动作面板「刷新本页」= 强制重拉当前分类 (播放键长按已改为全局的「打开动作面板」)
     TvPageRefreshHandler { state.refreshSelectedPage() }
+    // 动作面板里的「海报墙大小」: 盖在本页上开编辑窗口. 值变了原生网格按新尺寸重建 (TvNativeHost 的 rebuildKey), 打开前焦点在网格上的话回到那张卡
+    val wallRefocusPending = TvWallScaleEntry(
+        page = TvPosterWallPreviewPage.COLLECTION,
+        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        beforeOpen = { nativeState.capture() },
+        refocus = { gridFocus.focusItem(lastFocusedCard.coerceAtLeast(0)) },
+    )
+    // 标签顺序: 长按一个标签 (焦点落在那个标签上进去) 或动作面板里的「自定义标签顺序」, 都开盖在本页上的排序窗口.
+    // 排完焦点跟着分类走: 标签是按位置排的节点, 新顺序落到这排标签上之后, 持焦的那个节点上已经是别的分类 ——
+    // 打开前焦点在标签上的话, 显式交回选中的那个 (聚焦即选中, 长按的那个就是它)
+    val adjustWindows = LocalTvAdjustWindows.current
+    var tabRefocusPending by remember { mutableStateOf(false) }
+    LaunchedEffect(tabOrder) {
+        if (tabRefocusPending) {
+            tabRefocusPending = false
+            focusSelectedTab()
+        }
+    }
+    val openTabOrder: (UnifiedCollectionType?) -> Unit = { focusedTab ->
+        val tabFocused = focusedTabTvIndex >= 0
+        adjustWindows?.open(
+            TvAdjustWindow.TabOrder(focusedTab) { changed -> if (changed && tabFocused) tabRefocusPending = true },
+        )
+    }
+    if (adjustWindows != null) {
+        TvPageAdjustActions(
+            TvPageAdjustAction(Icons.Rounded.SwapHoriz, stringResource(Lang.collection_tv_tab_order_title)) { openTabOrder(null) },
+        )
+    }
     // hero 态 (见 TvNativeGridPageState): 卡片上按确定先切到 hero 态 (背景图与简介淡入, 聚焦行移到简介下面),
     // 再按确定才放大进详情页 (从详情页返回仍停在 hero 态); 按返回变回卡片墙.
     // 排在网格返回规则 (回首卡) 之后登记, 优先级更高: hero 态里按返回先回卡片墙
@@ -737,8 +777,8 @@ private fun TvCollectionPageContent(
                 onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
             ),
             menuFor = collectionMenuFor,
-            // 返回本页恢复的那张 (见上方进页恢复): 建网格时就按住聚焦态
-            landingIndex = restoreCardIndex,
+            // 返回本页恢复的那张 (见上方进页恢复) / 海报墙大小改完按新尺寸重建时焦点要回的那张: 建网格时就按住聚焦态
+            landingIndex = if (wallRefocusPending) lastFocusedCard else restoreCardIndex,
         )
 
         // 页面从屏幕左缘铺起 (侧边栏盖在上面, 见 TvMainScreenLayout), 左边让开侧边栏
@@ -757,6 +797,8 @@ private fun TvCollectionPageContent(
                 // 瞬时焦点飘到某个标签上, 不能让它改写目标 tab 的选择)
                 onSelectByFocus = { type -> if (!gridFocus.switching && !restorePending) tabs.moveTo(type) },
                 onSelect = { type -> if (!gridFocus.switching && !restorePending) tabs.select(type, fromRail = true) },
+                // 长按标签: 去排序窗口, 焦点落在这个标签上 (见上方 openTabOrder)
+                onLongPress = openTabOrder,
                 focusScope = focus,
                 tabFocusKeys = tabFocusKeys,
                 navigationLocked = { selectedTabFocusPending },
@@ -872,6 +914,7 @@ internal fun SubjectCollectionInfo.toHeroMediaSpec(neighbors: TvHeroNeighbors = 
  * 悬浮分类标签行: 一整条浮在卡片上的玻璃胶囊 (照 tvOS 顶部标签栏, 配色见 TvGlassColors), 没选中的字降透明度, 选中的垫一块半透明
  * 浅灰片并加粗, 聚焦的换成浅色实底配黑字并抬起; 聚焦即选中, 下方网格等方向键松开才换 (见 [TvRailWallSelection]). 数字统计以小号淡色
  * 跟在标签后. 按下键把焦点送入下方网格 (没有卡时送进错误横幅).
+ * 长按确认键 = [onLongPress] (排标签顺序).
  */
 @Composable
 private fun TvCollectionTabRow(
@@ -883,6 +926,7 @@ private fun TvCollectionTabRow(
     onSelectByFocus: (UnifiedCollectionType) -> Unit,
     /** 点按选中 (当场换). */
     onSelect: (UnifiedCollectionType) -> Unit,
+    onLongPress: (UnifiedCollectionType) -> Unit,
     focusScope: TvFocusScope,
     tabFocusKeys: List<TvFocusKey>,
     navigationLocked: () -> Boolean,
@@ -929,6 +973,8 @@ private fun TvCollectionTabRow(
                 onSelectByFocus = { onSelectByFocus(type) },
                 onClick = { onSelect(type) },
                 onFocusChanged = { f -> onTabFocusChanged(index, f) },
+                // 短按同点击 (选中); 长按去排顺序. 挂在 clickable 之前接管确认键 (见 tvLongPressKey)
+                modifier = Modifier.tvLongPressKey(onLongPress = { onLongPress(type) }, onShortPress = { onSelect(type) }),
             )
         }
     }
@@ -1128,9 +1174,8 @@ internal fun tvCollectionWallLayout(errorTopPx: Int = 0): TvNativeGridWallLayout
     val windowSize = LocalWindowInfo.current.containerSize
     val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } - railWidth
     val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
-    val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
     // 列数与卡宽按海报墙大小算 (见 tvPosterWallGrid), 标签行与 hero 照常
-    val nativeGrid = with(density) { tvPosterWallGrid(gridContentWidth, LocalTvPosterWallScale.current) }
+    val nativeGrid = with(density) { tvPosterWallGrid(tvGridPageWallContentWidth(), LocalTvPosterWallScale.current) }
     val nativeColumns = nativeGrid.columns
     val nativeCardWidth = nativeGrid.cardWidth
     val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO

@@ -136,6 +136,8 @@ import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
+import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
@@ -174,6 +176,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
+import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
@@ -595,7 +598,7 @@ fun TvSearchPage(
                 Box(Modifier.tvSwallowKeysWhenLeaving { results != showResults }, propagateMinConstraints = true) {
                 if (results) {
                     CompositionLocalProvider(LocalTvRailEnter provides searchRailEnter) {
-                        // 海报墙大小 (设置 - 界面): 结果态的卡片按它缩放, 顶部行与 hero 的文字不变 (见 TvPosterWallScaled)
+                        // 海报墙大小 (动作面板): 结果态的卡片按它缩放, 顶部行与 hero 的文字不变 (见 TvPosterWallScaled)
                         TvPosterWallScaled {
                             TvSearchResultsPane(
                                 state = state,
@@ -1660,6 +1663,14 @@ private fun TvSearchResultsPane(
         nativeState.exitHero()
     }
 
+    // 动作面板里的「海报墙大小」(只在结果态: 输入态没有海报墙): 盖在本页上开编辑窗口. 值变了网格按新尺寸重建, 打开前焦点在网格上的话回到那张卡
+    val wallRefocusPending = TvWallScaleEntry(
+        page = TvPosterWallPreviewPage.SEARCH,
+        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        beforeOpen = { nativeState.capture() },
+        refocus = { gridFocus.focusItem(lastFocusedCard.intValue.coerceAtLeast(0)) },
+    )
+
     // 播放键: 短按直达播放聚焦那张卡. **挂在页面根上而不是网格的键路由里** —— 那条路由只看
     // KeyDown, 而播放键按下那一刻还分不出短按还是长按, 在那儿处理会把全局的长按手势 (打开动作
     // 面板) 整个吃掉. 本页原先正是那么写的, 表现为卡片上长按播放键直接进了播放器
@@ -1735,8 +1746,8 @@ private fun TvSearchResultsPane(
                 onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
             ),
             menuFor = collectionMenuFor,
-            // 从详情 / 播放器返回时恢复的那张 (见下方初始焦点): 建网格时就按住聚焦态
-            landingIndex = restoreCardIndex,
+            // 从详情 / 播放器返回时恢复的那张 (见下方初始焦点) / 海报墙大小改完按新尺寸重建时焦点要回的那张: 建网格时就按住聚焦态
+            landingIndex = if (wallRefocusPending) lastFocusedCard.intValue else restoreCardIndex,
         )
 
         // 页面从屏幕左缘铺起 (侧边栏盖在上面), 左边让开侧边栏
@@ -1813,9 +1824,8 @@ internal fun tvSearchWallLayout(hasFilters: Boolean, errorTopPx: Int = 0): TvNat
     val windowSize = LocalWindowInfo.current.containerSize
     val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp } - railWidth
     val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
-    val gridContentWidth = pageWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
     // 列数与卡宽按海报墙大小算 (见 tvPosterWallGrid), 顶部行与 hero 照常
-    val nativeGrid = with(density) { tvPosterWallGrid(gridContentWidth, LocalTvPosterWallScale.current) }
+    val nativeGrid = with(density) { tvPosterWallGrid(tvGridPageWallContentWidth(), LocalTvPosterWallScale.current) }
     val nativeColumns = nativeGrid.columns
     val nativeCardWidth = nativeGrid.cardWidth
     val nativeCardHeight = nativeCardWidth / TV_PORTRAIT_CARD_COVER_RATIO

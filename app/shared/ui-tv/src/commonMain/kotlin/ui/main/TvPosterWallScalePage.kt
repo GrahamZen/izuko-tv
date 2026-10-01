@@ -30,9 +30,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,31 +58,33 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import me.him188.ani.app.navigation.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.exploration.TvExplorationWallPreview
 import me.him188.ani.app.ui.exploration.search.TvSearchWallPreview
+import me.him188.ani.app.ui.exploration.tvExplorationWallContentWidth
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.session.LocalTvRailEnter
 import me.him188.ani.app.ui.foundation.session.TV_RAIL_ITEM_SIZE
 import me.him188.ani.app.ui.foundation.session.tvRailScrimFeather
-import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 import me.him188.ani.app.ui.foundation.tv.TvWallPreviewEntry
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallScaleStep
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallScaleStops
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_wall_scale_hint_adjust
 import me.him188.ani.app.ui.lang.tv_wall_scale_hint_back
@@ -91,104 +95,124 @@ import me.him188.ani.app.ui.subject.collection.TvCollectionWallPreview
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
+/** 「海报墙大小」预览的是哪一页 (见 [TvPosterWallScalePage]). */
+enum class TvPosterWallPreviewPage {
+    EXPLORATION,
+    COLLECTION,
+    SEARCH,
+}
+
 /**
  * 「海报墙大小」页: [page] 那一页 (探索 / 追番 / 搜索) 的**假页面**, 左边的侧边栏换成一根竖着的滑块, 边调边看.
  *
  * 假页面与真页面同一套原生海报墙、同一个几何函数, 卡片按调出来的值缩放 (见 [TvPosterWallScaled]), 所以这里是什么样, 进那一页就是什么样;
  * 数据是示例 (有字没图). 焦点能进去走一走 (按确定进 hero 态、返回退回卡片墙), 只是进不了详情页.
  *
- * 按键: 滑块上 上 / 下 调大小 (一格 [ThemeSettings.POSTER_WALL_SCALE_STEP]), 右 / 确认 进页面; 页面里行首往左、卡片墙上按返回回到滑块;
- * 滑块上按返回离开本页. 三页调的是同一个值 ([ThemeSettings.tvPosterWallScale]), 每调一格就存.
+ * 按键: 滑块上 上 / 下 调大小 (一格 = 换一种每排张数, 见 [tvPosterWallScaleStops]), 右 / 确认 进页面; 页面里行首往左、卡片墙上按返回
+ * 回到滑块; 滑块上按返回离开本页. 三页调的是同一个值 ([ThemeSettings.tvPosterWallScale]).
+ *
+ * 入口是三页动作面板里的「海报墙大小」: 本页作为窗口盖在那一页上 (见 [TvAdjustWindows]). 调的时候只改草稿,
+ * **离开本页那一刻才写一次** ([onCommit] 在写之前报出要写的值) —— 一格一写会让底下的真页面跟着一格一格重建.
  */
 @Composable
 fun TvPosterWallScalePage(
     page: TvPosterWallPreviewPage,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onCommit: (scale: Float) -> Unit = {},
 ) {
     val settings = remember { GlobalKoin.get<SettingsRepository>() }
     val scope = rememberCoroutineScope()
 
-    // 进页读一次: 本页是这份设置的唯一写入方, 再订阅回来只会跟自己的编辑打架. 按百分数存着, 免得一格一格加出 0.8500001
-    var percent by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(settings) {
-        percent = (settings.themeSettings.flow.first().effectivePosterWallScale * 100).roundToInt()
+    // 进页读一次, 在组合里同步读 (第一帧就按它把假页面画全, 不先空一帧): 本页是这份设置的唯一写入方, 再订阅回来只会跟自己的编辑打架.
+    // 按百分数存着, 免得算出 0.8500001
+    val initialPercent = (LocalThemeSettings.current.effectivePosterWallScale * 100).roundToInt()
+    var percent by remember { mutableIntStateOf(initialPercent) }
+    // 设置里此刻存着的那个值: 离开时与它不同才写
+    var savedPercent by remember { mutableIntStateOf(initialPercent) }
+    fun commit() {
+        val value = percent
+        if (value == savedPercent) return
+        savedPercent = value
+        onCommit(value / 100f)
+        // 不随本页的组合一起取消: 写入正发生在离开的那一刻
+        scope.launch(NonCancellable) { settings.themeSettings.update { copy(tvPosterWallScale = value / 100f) } }
     }
+    // 不是按返回离开的 (窗口被 Web 控制台跳页撤掉、Activity 重建) 也照样写
+    DisposableEffect(Unit) { onDispose { commit() } }
     // 假页面按这个值画: 缩放一变假页面要整个重建 (原生视图的卡片尺寸建好就定了), 按住上 / 下连着调时等停一下再重建
-    var previewPercent by remember { mutableStateOf<Int?>(null) }
+    var previewPercent by remember { mutableIntStateOf(initialPercent) }
     LaunchedEffect(Unit) {
-        snapshotFlow { percent }.filterNotNull().collectLatest { p ->
-            if (previewPercent != null && previewPercent != p) delay(TV_WALL_SCALE_PREVIEW_SETTLE_MILLIS)
+        snapshotFlow { percent }.collectLatest { p ->
+            if (previewPercent != p) delay(TV_WALL_SCALE_PREVIEW_SETTLE_MILLIS)
             previewPercent = p
         }
     }
 
+    // 档位按这一页卡片区的宽度算 (三页一样宽, 列数的分界也就一样)
+    val density = LocalDensity.current
+    val contentWidth = when (page) {
+        TvPosterWallPreviewPage.EXPLORATION -> tvExplorationWallContentWidth()
+        TvPosterWallPreviewPage.COLLECTION, TvPosterWallPreviewPage.SEARCH -> tvGridPageWallContentWidth()
+    }
+    val stops = remember(density, contentWidth) {
+        density.tvPosterWallScaleStops(contentWidth, TV_WALL_SCALE_MIN_PERCENT, TV_WALL_SCALE_MAX_PERCENT, TV_WALL_SCALE_STEP_PERCENT)
+    }
     fun step(delta: Int) {
-        val current = percent ?: return
-        val next = (current + delta * TV_WALL_SCALE_STEP_PERCENT).coerceIn(TV_WALL_SCALE_MIN_PERCENT, TV_WALL_SCALE_MAX_PERCENT)
-        if (next == current) return
-        percent = next
-        scope.launch { settings.themeSettings.update { copy(tvPosterWallScale = next / 100f) } }
+        percent = density.tvPosterWallScaleStep(contentWidth, stops, percent, delta) ?: return
     }
 
     val sliderFocus = remember { FocusRequester() }
     val entry = remember { TvWallPreviewEntry() }
     fun enterPage() {
-        val target = percent ?: return
+        val target = percent
         // 进之前先让假页面按滑块上的值画好 (还在等停下再重建的那一截直接跳过), 请求只交给那一份
         previewPercent = target
         entry.request(target / 100f)
     }
 
     // 最先登记, 优先级最低: 焦点在假页面里时由假页面自己的返回规则先接 (hero 态回卡片墙, 否则回滑块)
-    BackHandler { onNavigateBack() }
+    BackHandler {
+        commit()
+        onNavigateBack()
+    }
 
-    // 整屏底色: 同真页面 —— 探索 / 追番页的底是主壳画的, 搜索页是自己根上画的, 页面把此刻的黑度登记进来 (见 TvPosterWallTone).
-    // 深色 hero 态的底两边取法不同 (主壳取外壳底色, 搜索页取换海报墙配色之前的页面底色), 照各自的来
-    val tone = rememberTvPosterWallTone(
-        wall = tvPosterWallBackground(),
-        hero = tvPosterWallHeroBackground(
-            if (page == TvPosterWallPreviewPage.SEARCH) MaterialTheme.colorScheme.background else AniThemeDefaults.shellBackgroundColor,
-        ),
-        wallPage = true,
-    )
+    // 整屏底色: 同真页面由页面登记黑度 (见 TvPosterWallTone), 但 hero 的底也取卡片墙那档灰 —— 假页面没有图, 真页面上被图盖住的那几样
+    // (探索页轮播那块近黑的底、hero 态压黑、背景图的遮罩与按下即压暗, 都画成 hero 的底色) 在这里只会是一块突然出现的黑, 同色就都看不见了
+    val wallColor = tvPosterWallBackground()
+    val tone = rememberTvPosterWallTone(wall = wallColor, hero = wallColor, wallPage = true)
     Box(modifier.fillMaxSize()) {
         Box(Modifier.matchParentSize().graphicsLayer {}.drawBehind { tone.drawBackground(this) })
         val scalePercent = previewPercent
-        if (scalePercent != null) {
-            CompositionLocalProvider(
-                LocalTvPosterWallTone provides tone,
-                LocalTvRailEnter provides sliderFocus,
-            ) {
-                // 同真页面外面那两层 (见 TvPageVariants): 滚动信号、海报墙配色
-                ProvideTvScrollActivity {
-                    TvPosterWallTheme {
-                        key(scalePercent) {
-                            TvPosterWallScaled(scalePercent / 100f) {
-                                val exitToRail: () -> Unit = { runCatching { sliderFocus.requestFocus() } }
-                                when (page) {
-                                    TvPosterWallPreviewPage.EXPLORATION -> TvExplorationWallPreview(entry, exitToRail)
-                                    TvPosterWallPreviewPage.COLLECTION -> TvCollectionWallPreview(entry, exitToRail)
-                                    TvPosterWallPreviewPage.SEARCH -> TvSearchWallPreview(entry, exitToRail)
-                                }
+        CompositionLocalProvider(
+            LocalTvPosterWallTone provides tone,
+            LocalTvRailEnter provides sliderFocus,
+        ) {
+            // 同真页面外面那两层 (见 TvPageVariants): 滚动信号、海报墙配色
+            ProvideTvScrollActivity {
+                TvPosterWallTheme {
+                    key(scalePercent) {
+                        TvPosterWallScaled(scalePercent / 100f) {
+                            val exitToRail: () -> Unit = { runCatching { sliderFocus.requestFocus() } }
+                            when (page) {
+                                TvPosterWallPreviewPage.EXPLORATION -> TvExplorationWallPreview(entry, exitToRail)
+                                TvPosterWallPreviewPage.COLLECTION -> TvCollectionWallPreview(entry, exitToRail)
+                                TvPosterWallPreviewPage.SEARCH -> TvSearchWallPreview(entry, exitToRail)
                             }
                         }
                     }
                 }
             }
         }
-        val value = percent
-        if (value != null) {
-            TvPosterWallScaleRail(
-                percent = value,
-                onStep = ::step,
-                onEnterPage = ::enterPage,
-                focusRequester = sliderFocus,
-                scrimPainter = { tone.drawBackground(this) },
-            )
-            // 进页焦点在滑块上
-            LaunchedEffect(Unit) { runCatching { sliderFocus.requestFocus() } }
-        }
+        TvPosterWallScaleRail(
+            percent = percent,
+            onStep = ::step,
+            onEnterPage = ::enterPage,
+            focusRequester = sliderFocus,
+            scrimPainter = { tone.drawBackground(this) },
+        )
+        // 进页焦点在滑块上
+        LaunchedEffect(Unit) { runCatching { sliderFocus.requestFocus() } }
     }
 }
 

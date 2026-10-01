@@ -393,7 +393,10 @@ data class ThemeSettings(
         /** [tvPosterWallScale] 的上界: 再大首屏就只剩一行卡. */
         const val POSTER_WALL_SCALE_MAX = 1.5f
 
-        /** [tvPosterWallScale] 的步进: 比界面缩放细一档, 好把一行的张数调到正好. */
+        /**
+         * [tvPosterWallScale] 取值的网格: 存下来的值都在这一格一格上. 滑块不是一格一格走, 而是一按换一种每排张数 (见 ui-tv 的
+         * tvPosterWallScaleStops), 落在这张网格上离 100% 最近的那一格.
+         */
         const val POSTER_WALL_SCALE_STEP = 0.05f
     }
 }

@@ -49,6 +49,7 @@ import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
@@ -423,6 +424,8 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 }
                 view.update(style, metrics, textStyle)
             },
+            // 海报墙大小一变整块重建: 卡片视图的尺寸建好就定了. 各份网格的位置存在 state 里, 新视图照返回本页那样恢复 (见 factory)
+            rebuildKey = LocalTvPosterWallScale.current,
         )
         emptyContent()
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)

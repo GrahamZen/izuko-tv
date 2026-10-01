@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
@@ -77,7 +78,8 @@ interface TvNativeAmbientAnimations {
  * 装原生页面的 AndroidView: 铺满. 页面从屏幕左缘铺起 (侧边栏是盖在上面的透明浮层), 原生视图自己把内容让开侧边栏,
  * 横滑行、最左一列的放大与投影照常画进侧边栏底下.
  * 单独一层 graphicsLayer: 原生树每次失效只重录这一层 (里面就是一条画原生 RenderNode 的指令).
- * 视图只建一次 ([factory]), 主题 / 尺寸 / 数据的变化都走 [update], 焦点与滚动位置不因重组丢.
+ * 视图只建一次 ([factory]), 主题 / 尺寸 / 数据的变化都走 [update], 焦点与滚动位置不因重组丢. 唯一的例外是 [rebuildKey]: 它变了就把视图
+ * 整个换掉重建 —— 给建好就改不了的东西用 (海报墙大小: 卡片视图的尺寸在建的时候就定了). 停位与焦点由调用方存在视图外面, 重建时恢复.
  * 本页不在前台时系统焦点进不来 (见 [TvNativeFocusGate]), 页面实现了 [TvNativeAmbientAnimations] 的话环境动画同时暂停.
  */
 @Composable
@@ -85,26 +87,29 @@ fun <T : View> TvNativeHost(
     factory: (Context) -> T,
     update: (T) -> Unit,
     modifier: Modifier = Modifier,
+    rebuildKey: Any? = null,
 ) {
     val foreground = LocalPageIsForeground.current
     val ambient = remember { arrayOfNulls<TvNativeAmbientAnimations>(1) }
     LaunchedEffect(foreground) {
         snapshotFlow { foreground.value }.collect { ambient[0]?.setAmbientAnimationsPaused(!it) }
     }
-    AndroidView(
-        factory = { context ->
-            val content = factory(context)
-            ambient[0] = content as? TvNativeAmbientAnimations
-            TvNativeFocusGate(context, content, foreground)
-        },
-        modifier = modifier
-            .fillMaxSize()
-            .graphicsLayer(),
-        update = { gate ->
-            gate.foreground = foreground
-            update(gate.content)
-        },
-    )
+    key(rebuildKey) {
+        AndroidView(
+            factory = { context ->
+                val content = factory(context)
+                ambient[0] = content as? TvNativeAmbientAnimations
+                TvNativeFocusGate(context, content, foreground)
+            },
+            modifier = modifier
+                .fillMaxSize()
+                .graphicsLayer(),
+            update = { gate ->
+                gate.foreground = foreground
+                update(gate.content)
+            },
+        )
+    }
 }
 
 /**

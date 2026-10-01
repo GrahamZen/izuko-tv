@@ -10,7 +10,6 @@
 package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
-import me.him188.ani.app.ui.foundation.tv.LocalTvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -46,6 +45,7 @@ import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewRows
 import me.him188.ani.app.ui.subject.person.TvPeoplePreviewRows
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
+import me.him188.ani.app.ui.foundation.LocalTvPageAdjustHost
 import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
 import me.him188.ani.app.ui.foundation.LocalTvPlayLongPressHost
 import me.him188.ani.app.ui.foundation.TV_PLAY_KEYS
@@ -56,13 +56,13 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
-import me.him188.ani.app.ui.foundation.tv.TvCollectionTabOrderEditorVariant
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.tvNavKeyInterceptor
 import me.him188.ani.app.ui.foundation.tv.tvTouchKeyboardMode
 import me.him188.ani.app.ui.foundation.TvKeyLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageActionHost
+import me.him188.ani.app.ui.foundation.TvPageAdjustHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
@@ -71,6 +71,9 @@ import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
+import me.him188.ani.app.ui.main.LocalTvAdjustWindows
+import me.him188.ani.app.ui.main.TvAdjustWindowHost
+import me.him188.ani.app.ui.main.TvAdjustWindows
 import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
@@ -78,7 +81,6 @@ import me.him188.ani.app.ui.main.TvStartupLogo
 import me.him188.ani.app.ui.main.TvStartupLogoHost
 import me.him188.ani.app.ui.main.tvStartupLogoColors
 import me.him188.ani.app.ui.main.TvUpNextStore
-import me.him188.ani.app.ui.subject.collection.TvCollectionTabOrderPage
 import me.him188.ani.app.ui.subject.details.layout.TvDetailsTheme
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
@@ -115,13 +117,7 @@ import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
-import me.him188.ani.app.ui.foundation.tv.LocalTvPlayerChromeEditorVariant
-import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScaleEditorVariant
-import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaleEditorVariant
-import me.him188.ani.app.ui.main.TvPosterWallScalePage
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
-import me.him188.ani.app.ui.foundation.tv.TvPlayerChromeEditorVariant
-import me.him188.ani.app.ui.subject.episode.tv.TvPlayerChromeLayoutPage
 import me.him188.ani.app.ui.subject.episode.tv.TvDecoderConcurrency
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -168,6 +164,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val pageRefresh = remember { TvPageActionHost() }
     // 「换一批」: 目前只有探索页的推荐区注册
     val pageShuffle = remember { TvPageActionHost() }
+    // 「调整本页」的圆钮 (海报墙大小 / 标签顺序): 海报墙三页注册, 按下开下面那个编辑窗口
+    val pageAdjust = remember { TvPageAdjustHost() }
+    // 页面里的调整入口打开的编辑页 (盖在页面上的全屏窗口, 见 TvAdjustWindows)
+    val adjustWindows = remember { TvAdjustWindows() }
     // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
@@ -211,6 +211,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvNavKeyTracker provides navKeys,
         LocalTvTouchInputEnabled provides touchInput,
         LocalTvPageShuffleHost provides pageShuffle,
+        LocalTvPageAdjustHost provides pageAdjust,
+        LocalTvAdjustWindows provides adjustWindows,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
                 onNavigateToSearch, onLogout, modifier, pageContent,
@@ -265,18 +267,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             ProvideTvScrollActivity {
                 TvPosterWallTheme { TvCollectionPage(state, modifier) }
             }
-        },
-        // 「自定义追番页标签顺序」页 (设置 - 界面里的入口据此决定出不出现)
-        LocalTvCollectionTabOrderEditorVariant provides TvCollectionTabOrderEditorVariant { onNavigateBack, modifier ->
-            TvCollectionTabOrderPage(onNavigateBack, modifier)
-        },
-        // 「海报墙大小」页 (设置 - 界面里的三个入口据此决定出不出现)
-        LocalTvPosterWallScaleEditorVariant provides TvPosterWallScaleEditorVariant { page, onNavigateBack, modifier ->
-            TvPosterWallScalePage(page, onNavigateBack, modifier)
-        },
-        // 「自定义播放器按钮」页 (设置 - 播放器里的入口据此决定出不出现)
-        LocalTvPlayerChromeEditorVariant provides TvPlayerChromeEditorVariant { onNavigateBack, modifier ->
-            TvPlayerChromeLayoutPage(onNavigateBack, modifier)
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
         LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
@@ -414,6 +404,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 playback = playbackEntry,
                 refreshHost = pageRefresh,
                 shuffleHost = pageShuffle,
+                adjustHost = pageAdjust,
                 onGoHome = {
                     // 焦点交接走标志 (探索页消费, 见 TvBackLongPressHost.pendingHomeFocus);
                     // 不在 Main 上时先 pop 回去, 落在别的 tab 上由主壳看着标志补一步切换
@@ -427,6 +418,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 onDismissRequest = { showQuickMenu = false },
             )
         }
+        // 页面里的调整入口打开的编辑窗口 (海报墙大小 / 标签顺序 / 播放器按钮). 装在这一层: 用应用的主题,
+        // 不带上某一页自己的配色与局部状态
+        TvAdjustWindowHost(adjustWindows)
         Box(
             Modifier
                 // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到

@@ -51,6 +51,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -80,6 +81,7 @@ import com.github.panpf.sketch.resize.Precision
 import com.github.panpf.sketch.resize.Scale
 import com.github.panpf.sketch.util.Size as SketchSize
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -87,6 +89,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.utils.formatSpeedValue
@@ -94,6 +97,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
 import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.danmaku.PlayerDanmakuHost
@@ -102,9 +106,11 @@ import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
 import me.him188.ani.app.ui.foundation.TV_PLAY_PAUSE_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
+import me.him188.ani.app.ui.foundation.isAutoRepeat
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvTouchPressSignal
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.theme.AniTheme
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -121,6 +127,8 @@ import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeLoadingDetails
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
+import me.him188.ani.app.ui.main.LocalTvAdjustWindows
+import me.him188.ani.app.ui.main.TvAdjustWindow
 import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
@@ -504,6 +512,59 @@ fun TvEpisodeScreenContent(
     }
 
     val focus = rememberTvFocusScope()
+
+    // 控制层按钮上长按确认键: 去「自定义播放器按钮」, 焦点落在这一颗上 (盖在播放器上的窗口, 见 TvAdjustWindows). 播放器没有动作面板,
+    // 这是播放器里唯一的入口. 窗口盖住整个画面: 开着期间一直暂停, 关掉后原来在播 (或期间播放器自己要开播) 就接着播.
+    // 只在打开时暂停一次不够: 片源出错自动换下一个、刚选好源准备好, 播放器都会自己置播放意图, 在窗口后面开播
+    //
+    // 控制层先收起 (它的版式每次出现只读一次, 收起再唤出就是新版式; 长按那颗按钮没等到的抬起也随它一起作废), 关掉后按新版式唤出,
+    // 焦点落回那一颗 (被藏了就落进度条). 收起时手还按着: 这次按住剩下的连发会落到纯视频态那一档, 由那里的"只认新按下"挡掉
+    // (见路由里 HIDDEN 的确认键)
+    val adjustWindows = LocalTvAdjustWindows.current
+    val chromeTouchInput = LocalTvTouchInputEnabled.current
+    val chromeEditScope = rememberCoroutineScope()
+    val editChromeItem: ((TvPlayerChromeItem) -> Unit)? = remember(adjustWindows, vm, overlay, focus, chromeTouchInput) {
+        adjustWindows?.let { windows ->
+            { item: TvPlayerChromeItem ->
+                var resumeOnClose = vm.player.state.value.playWhenReady
+                vm.player.pause()
+                overlay.hideAll()
+                var holdPaused: Job? = null
+                val window = TvAdjustWindow.PlayerChrome(item) { committed ->
+                    holdPaused?.cancel()
+                    chromeEditScope.launch {
+                        // 写入在后台: 等播放器读到新版式再唤出控制层, 否则这一次摆出来的还是旧版式
+                        if (committed != null) {
+                            withTimeoutOrNull(TV_CHROME_EDIT_APPLY_TIMEOUT) {
+                                snapshotFlow { vm.videoScaffoldConfig.tvPlayerChrome }.first { it == committed }
+                            }
+                            // 控制层一般已经退出组合 (唤出时自然重读); 托着 OP/ED 提示按钮留在场上的那种要推一下才重读
+                            overlay.reloadChromeLayout()
+                        }
+                        overlay.showControls(focusProgress = false)
+                        if (vm.tvChromeItemShown(vm.videoScaffoldConfig.tvPlayerChrome.active, item, chromeTouchInput)) {
+                            focus.request(TvPlayerChromeFocusKey(item))
+                        } else {
+                            overlay.focusProgress()
+                        }
+                        if (resumeOnClose) vm.player.play()
+                    }
+                }
+                windows.open(window)
+                // 窗口开着就按住暂停; 撤掉了就松手 —— 被 Web 控制台跳页撤掉的那种不回调 onClosed, 所以按"还是不是这个窗口"判断
+                holdPaused = chromeEditScope.launch {
+                    combine(snapshotFlow { windows.current === window }, vm.player.state.map { it.playWhenReady }) { open, play -> open to play }
+                        .takeWhile { (open, _) -> open }
+                        .collect { (_, play) ->
+                            if (play) {
+                                resumeOnClose = true
+                                vm.player.pause()
+                            }
+                        }
+                }
+            }
+        }
+    }
     // 同一次物理按下已经换过一层: 按住下键时遥控器连发 KeyDown (约 50ms 一次), 而下键在控制层里
     // 每一档都换一层 (图标行 -> 选集条 -> 详情层), 连发会一路跳到底 —— 观感是选集条刚滑出来就
     // 闪进了详情页. 松手 (KeyUp) 才解锁. 只锁"换层"的那几档, 面板内按住下键滚列表不受影响
@@ -981,17 +1042,21 @@ fun TvEpisodeScreenContent(
                 // (它语义单一, 保持按下即响应).
                 if (key == Key.DirectionCenter || key == Key.Enter || key == Key.NumPadEnter) {
                     if (isKeyDown) {
-                        // 连发 KeyDown (按住时约 50ms 一次) 只算同一次按下
-                        if (!confirmKeyHeld) {
+                        // 连发 KeyDown (按住时约 50ms 一次) 只算同一次按下. **只认新的一次按下起手** (repeatCount == 0):
+                        // 别的层里起手、按住途中换到本层的那次按住 (如控制层按钮上长按开窗口时先收起了控制层),
+                        // 剩下的连发落到这里, 不能被当成一次新的长按倍速
+                        if (!confirmKeyHeld && event.isAutoRepeat != true) {
                             confirmKeyHeld = true
                             confirmKeyHoldTick++
                         }
                     } else if (isKeyUp) {
+                        // 本层见过它按下才算数: 同上, 别处起手的那次按住在这里抬起, 不是"短按切换播放"
+                        val pressedHere = confirmKeyHeld
                         confirmKeyHeld = false
                         // 倍速已生效 = 这是长按, 抬起只负责还原 (由下面的长按协程做), 不切换播放.
                         // 此刻 fastForwarding 一定还是 true: 协程挂在"等松手"上, 要到下一次
                         // 调度才会走到还原, 而这里是同一次事件回调内同步读的
-                        if (!fastForwarding) {
+                        if (pressedHere && !fastForwarding) {
                             // 暂停态下恢复播放不唤出控制层 (画面动起来即反馈); 播放态下暂停仍唤出.
                             // 按播放意图判断而非严格 isPlaying: 缓冲中按一下应当是"暂停", 不是"恢复"
                             val resuming = !vm.player.state.value.playWhenReady
@@ -1602,6 +1667,7 @@ fun TvEpisodeScreenContent(
                         framePreview = framePreview,
                         playerFocus = focus,
                         sheetsController = sheetsController,
+                        onEditChromeItem = editChromeItem,
                         // 胶囊行最右的插槽 (OP/ED 提示按钮): 底边与胶囊对齐, 面板从上方浮出也不顶它
                         pillsRowTrailing = {
                             // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
@@ -1982,6 +2048,12 @@ private const val TV_FAST_FORWARD_HOLD_MILLIS = 500L
 
 /** 长按倍速指示里的双箭头尺寸. */
 private val TV_FAST_FORWARD_ICON_SIZE = 26.dp
+
+/**
+ * 「自定义播放器按钮」窗口关掉之后, 等播放器读到新版式最多等多久 (写入设置到播放器的状态更新通常一两帧). 等不到也照常唤出控制层,
+ * 只是这一次还是旧版式 (下一次唤出就对了).
+ */
+private val TV_CHROME_EDIT_APPLY_TIMEOUT = 1.seconds
 
 /** 暂停反馈的渐隐时长与起始停留 (毫秒). */
 private const val TV_PAUSE_FLASH_DURATION_MS = 500

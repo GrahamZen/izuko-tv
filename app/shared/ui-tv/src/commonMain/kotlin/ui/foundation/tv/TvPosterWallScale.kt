@@ -14,10 +14,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import kotlin.math.abs
 
 /**
  * 海报墙三页 (探索 / 追番 / 搜索结果) 卡片的缩放系数 ([ThemeSettings.tvPosterWallScale]), 1 = 与其余界面一样大. 在 [TvPosterWallScaled] 里面才不是 1.
@@ -47,4 +52,51 @@ data class TvPosterWallGrid(val columns: Int, val cardWidth: Dp)
 fun Density.tvPosterWallGrid(availableWidth: Dp, scale: Float): TvPosterWallGrid {
     val columns = tvPosterWallColumns(availableWidth / scale)
     return TvPosterWallGrid(columns, tvPosterWallCardWidth(availableWidth / scale, columns) * scale)
+}
+
+/**
+ * 网格页 (追番 / 搜索结果) 海报墙卡片区的内容宽度: 窗口宽减去收起的侧边栏、网格左出血与右边距. 列数与卡宽按它算, 「海报墙大小」滑块的档位
+ * 也按它算. 窗口还没测量时按 1080p 电视的 960dp 算.
+ */
+@Composable
+fun tvGridPageWallContentWidth(): Dp {
+    val width = LocalWindowInfo.current.containerSize.width
+    val windowWidth = with(LocalDensity.current) { if (width > 0) width.toDp() else 960.dp }
+    return windowWidth - TvNavigationRailDefaults.CollapsedWidth - TV_GRID_START_BLEED - TV_PAGE_END_PAD
+}
+
+/**
+ * 「海报墙大小」滑块上的档位 (百分数, 从小到大): 一档一种每排张数.
+ *
+ * 卡片铺满整排, 列数不变时放大只是把列距撑开, 卡宽差不到 1dp —— 按 [stepPercent] 一格一格走的话大半格按下去海报看不出变化 (1080p 上
+ * 50%~150% 的 21 格只有 9 种列数), 却都要把假页面整个重建一次. 所以一档 = 换一种列数: 同一列数的那一段里取离 100% 最近的百分数
+ * (100% 所在的那一段就是 100%), 番名与间距在这一档里最接近原样.
+ *
+ * [availableWidth] = 卡片区的内容宽度 (三页相同, 见各页的海报墙几何).
+ */
+fun Density.tvPosterWallScaleStops(availableWidth: Dp, minPercent: Int, maxPercent: Int, stepPercent: Int): List<Int> =
+    (minPercent..maxPercent step stepPercent)
+        .groupBy { tvPosterWallGrid(availableWidth, it / 100f).columns }
+        .values
+        .map { percents -> percents.minBy { abs(it - 100) } }
+        .sorted()
+
+/**
+ * 从 [currentPercent] 往大 ([delta] > 0) 或往小走一档 (见 [tvPosterWallScaleStops]): 落到列数与现在不同的最近那一档; 已经到头返回 null.
+ * [currentPercent] 不必是档位 (以前按 5% 一格存下的值), 照它此刻的列数算.
+ */
+fun Density.tvPosterWallScaleStep(
+    availableWidth: Dp,
+    stops: List<Int>,
+    currentPercent: Int,
+    delta: Int,
+): Int? {
+    fun columnsAt(percent: Int) = tvPosterWallGrid(availableWidth, percent / 100f).columns
+    val current = columnsAt(currentPercent)
+    // 越大列数越少
+    return if (delta > 0) {
+        stops.firstOrNull { columnsAt(it) < current }
+    } else {
+        stops.lastOrNull { columnsAt(it) > current }
+    }
 }

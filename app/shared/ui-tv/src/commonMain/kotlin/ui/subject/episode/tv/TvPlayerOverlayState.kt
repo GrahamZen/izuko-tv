@@ -181,6 +181,19 @@ class TvPlayerOverlayState(
     var showPlayerStats: Boolean by mutableStateOf(false)
 
     /**
+     * 控制层版式的读取代数: 控制层每次出现只读一次版式 (见 TvPlayerControlsOverlay), 这个数一变就重读.
+     * 只在「自定义播放器按钮」窗口关掉、版式改过的时候推一次 ([reloadChromeLayout]). 开窗口前控制层已经收起, 多半早退出了组合,
+     * 唤出时本来就重读; 要靠它的是托着 OP/ED 提示按钮留在场上的那一层 —— 那时它是透明的, 没有持焦的按钮会随重排消失.
+     */
+    var chromeLayoutGeneration: Int by mutableIntStateOf(0)
+        private set
+
+    /** 让控制层按设置里此刻的版式重新摆一遍 (见 [chromeLayoutGeneration]). */
+    fun reloadChromeLayout() {
+        chromeLayoutGeneration++
+    }
+
+    /**
      * 选集条展开中 (Prime 形态): 胶囊/进度条/图标行隐藏, 选集条完整展开在底部.
      * 收起态只在图标行下露出 "剧集" 标题 + 卡片顶部一条 (peek).
      */

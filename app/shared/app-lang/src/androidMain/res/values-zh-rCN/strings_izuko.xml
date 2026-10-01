@@ -58,8 +58,6 @@
     <string name="settings_player_skip_op_ed_auto_then_manual">自动跳过，取消后保留跳过按钮</string>
     <string name="settings_player_skip_op_ed_manual">显示跳过按钮</string>
     <string name="settings_player_skip_op_ed_off">不跳过</string>
-    <string name="settings_player_tv_chrome">自定义播放器按钮</string>
-    <string name="settings_player_tv_chrome_description">排列播放器里的按钮，或者把用不上的藏起来；可以存几套换着用</string>
     <string name="settings_storage_image_cache">清理图片缓存</string>
     <string name="settings_storage_image_cache_usage">海报、剧照等图片。当前占用 %1$s，超出上限自动淘汰旧图，一般无需手动清理</string>
     <string name="settings_storage_image_cache_cleared">已清理图片缓存</string>
@@ -336,6 +334,7 @@
     <string name="video_player_tv_chrome_hint">确认键 拿起  ·  长按确认键 隐藏 / 显示  ·  返回键 退出</string>
     <string name="video_player_tv_chrome_hint_grabbed">左 / 右 移动  ·  确认键 放下  ·  返回键 撤销</string>
     <string name="video_player_tv_chrome_hidden">已隐藏</string>
+    <string name="video_player_tv_chrome_keep_one">至少要留一颗按钮：在播放器里长按它才能回到这一页</string>
     <string name="video_player_tv_chrome_reset">恢复默认排法</string>
     <string name="video_player_tv_chrome_duplicate">复制为新布局</string>
     <string name="video_player_tv_chrome_delete">删除这套布局</string>
@@ -424,17 +423,11 @@
     <!-- Web 控制台按这条判断 app 当前语言 (见 ui-tv RemoteI18n), 值是语言标记, 不要翻译 -->
     <string name="remote_web_lang" translatable="false">zh-CN</string>
     <!-- 追番页: 自定义分类标签顺序 -->
-    <string name="settings_appearance_tv_collection_tab_order">自定义追番页标签顺序</string>
-    <string name="settings_appearance_tv_collection_tab_order_description">排「想看 / 在看 / 搁置 / 看过 / 抛弃」的先后；进页会落在第一个非空的标签上</string>
     <string name="collection_tv_tab_order_title">自定义标签顺序</string>
     <string name="collection_tv_tab_order_subtitle">上面这排就是追番页顶部的标签。这里排成什么样，进去就是什么样。</string>
     <string name="collection_tv_tab_order_hint">确认键 拿起  ·  返回键 退出</string>
     <string name="collection_tv_tab_order_hint_grabbed">左 / 右 移动  ·  确认键 放下  ·  返回键 撤销</string>
     <string name="collection_tv_tab_order_reset">恢复默认顺序</string>
-    <string name="settings_appearance_tv_poster_wall_scale_exploration">海报墙大小：探索页</string>
-    <string name="settings_appearance_tv_poster_wall_scale_collection">海报墙大小：追番页</string>
-    <string name="settings_appearance_tv_poster_wall_scale_search">海报墙大小：搜索页</string>
-    <string name="settings_appearance_tv_poster_wall_scale_description">探索、追番、搜索三页的海报卡片（海报、番名和卡片之间的间距）一起放大缩小，三页用同一个值；上方的标题与简介、标签和侧边栏不变，它们由「界面缩放」调整。点进去在那一页的样子上边看边调</string>
     <string name="tv_wall_scale_title">海报墙大小</string>
     <string name="tv_wall_scale_hint_adjust">上 / 下  调整大小</string>
     <string name="tv_wall_scale_hint_try">右 / 确认  进入页面试试</string>

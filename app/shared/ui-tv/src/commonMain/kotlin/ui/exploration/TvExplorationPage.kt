@@ -72,6 +72,7 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
+import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
@@ -134,6 +135,7 @@ import me.him188.ani.app.ui.lang.exploration_rec_this_season_new
 import me.him188.ani.app.ui.lang.exploration_rec_top_rated
 import me.him188.ani.app.ui.lang.exploration_rec_trending
 import me.him188.ani.app.ui.lang.exploration_recommendations
+import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.analytics.Analytics
@@ -183,7 +185,7 @@ fun TvExplorationPage(
     state: ExplorationPageState,
     modifier: Modifier = Modifier,
 ) {
-    // 海报墙大小 (设置 - 界面): 卡片按它缩放, 轮播与 hero 的文字不变 (见 TvPosterWallScaled)
+    // 海报墙大小 (动作面板): 卡片按它缩放, 轮播与 hero 的文字不变 (见 TvPosterWallScaled)
     TvPosterWallScaled { TvExplorationPageContent(state, modifier) }
 }
 
@@ -1007,6 +1009,28 @@ private fun TvExplorationPageContent(
     }
     // 播放键短按: 一份挂在整个原生视图上, 按焦点簿记取目标 (hero 按钮 → 轮播那一部; 继续观看 → 续播; 推荐 → 直接播).
     // 长按不在这里: 播放键长按是全局手势「打开动作面板」, 由根部统一跟踪器认领
+    // 动作面板里的「海报墙大小」: 盖在本页上开编辑窗口. 值变了原生墙按新尺寸重建 (TvNativeHost 的 rebuildKey), 打开前焦点在墙上的话
+    // 照进页那样送回去: 曾在某行回那一行 (行自己记着停在哪张), 否则回那颗 hero 按钮.
+    // 落点在打开那一刻记下: 重建出来的新视图先把焦点落在 hero 按钮上, 它的回调会清掉 focusedRowKey、改写 lastHeroButton
+    var wallScaleReturnRow by remember { mutableStateOf<String?>(null) }
+    var wallScaleReturnHero by remember { mutableStateOf(TvHeroFocusButton.PRIMARY) }
+    TvWallScaleEntry(
+        page = TvPosterWallPreviewPage.EXPLORATION,
+        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        beforeOpen = {
+            wallScaleReturnRow = focusedRowKey
+            wallScaleReturnHero = lastHeroButton
+            nativeState.capture()
+        },
+        refocus = {
+            val row = wallScaleReturnRow
+            if (row != null) {
+                cardFocusRequest = TvCardFocusRequest(row, cardIndex = -1)
+            } else {
+                heroFocusRequest = TvHeroFocusRequest(wallScaleReturnHero)
+            }
+        },
+    )
     val nativePlayKeyModifier = tvPlayKeyShortPress(
         onPlay = {
             val rowKey = focusedRowKey
@@ -1515,7 +1539,7 @@ internal fun tvExplorationWallLayout(): TvExplorationWallLayout {
         )
     }
     // 海报墙的列数. 行结构 (哪张卡在哪一行) 页面各处都要用, 所以按窗口宽度算, 不等卡片区量出来
-    val wallContentWidth = pageWindowSize.width - railWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
+    val wallContentWidth = tvExplorationWallContentWidth()
     val wallGrid = with(LocalDensity.current) { tvPosterWallGrid(wallContentWidth, cardScale) }
     val wallColumns = wallGrid.columns
     // 原生海报墙 (见 TvExplorationNativeWall.kt): 背景图 / hero 文字与按钮 / 卡片列表 / 轮播指示器都在原生视图里, 几何按本页的常量算好交给它.
@@ -1588,6 +1612,17 @@ internal fun tvExplorationWallLayout(): TvExplorationWallLayout {
         )
     }
     return TvExplorationWallLayout(wallColumns, wallCardWidth, metrics)
+}
+
+/**
+ * 探索页海报墙卡片区的内容宽度: 窗口宽减去收起的侧边栏、左留白与右边距. 列数与卡宽按它算 ([tvExplorationWallLayout]), 「海报墙大小」
+ * 滑块的档位也按它算. 窗口还没测量时按 1080p 电视的宽度算 (同 [tvExplorationWallLayout]).
+ */
+@Composable
+internal fun tvExplorationWallContentWidth(): Dp {
+    val width = LocalWindowInfo.current.containerSize.width
+    val windowWidth = with(LocalDensity.current) { if (width > 0) width.toDp() else TV_EXPLORATION_FALLBACK_WINDOW_WIDTH }
+    return windowWidth - TvNavigationRailDefaults.CollapsedWidth - TV_EXPLORATION_START_PAD - TV_PAGE_END_PAD
 }
 
 /**

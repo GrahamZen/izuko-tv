@@ -109,9 +109,11 @@ import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
+import me.him188.ani.app.ui.foundation.LocalTvPageAdjustHost
 import me.him188.ani.app.ui.foundation.LocalTvPageRefreshHost
 import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
 import me.him188.ani.app.ui.foundation.TvPageActionHost
+import me.him188.ani.app.ui.foundation.TvPageAdjustHost
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -440,6 +442,7 @@ private fun TvExitAppDialog(
         playback = LocalPlaybackSessionEntry.current,
         refreshHost = LocalTvPageRefreshHost.current,
         shuffleHost = LocalTvPageShuffleHost.current,
+        adjustHost = LocalTvPageAdjustHost.current,
         // 退出确认里不出服务连通那一行: 这个弹窗只回答"要不要退出", 多一行状态就是多一个
         // 让人停下来读的东西, 而它与该不该退出没有关系
         connectivity = null,
@@ -458,6 +461,7 @@ private fun TvExitAppDialog(
  * @param onGoHome 回到主界面: pop 到 Main + 置 pendingHomeFocus, 由调用方 (根部) 实现 ——
  *   切 tab 与聚焦轮播主按钮分别由主壳和探索页看着标志接力完成.
  * @param refreshHost 当前页注册的强制刷新动作 (没人注册就不显示「刷新本页」).
+ * @param adjustHost 当前页注册的「调整本页」圆钮 (海报墙大小 / 标签顺序, 见 [TvPageAdjustHost]).
  */
 @Composable
 fun TvQuickActionMenu(
@@ -465,6 +469,7 @@ fun TvQuickActionMenu(
     playback: PlaybackSessionEntry,
     refreshHost: TvPageActionHost,
     shuffleHost: TvPageActionHost?,
+    adjustHost: TvPageAdjustHost?,
     onGoHome: () -> Unit,
     onExitApp: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -474,6 +479,7 @@ fun TvQuickActionMenu(
         playback = playback,
         refreshHost = refreshHost,
         shuffleHost = shuffleHost,
+        adjustHost = adjustHost,
         // 在这里 (而不是根部) 建: 本菜单只在打开的那一瞬间被组合, 所以整个探测子系统在用户第一次
         // 长按返回之前根本不存在 —— 挂在根部就等于每次冷启动都多跑五个请求
         connectivity = viewModel { TvServiceConnectivityState() },
@@ -553,6 +559,7 @@ private fun TvActionPanelDialog(
     playback: PlaybackSessionEntry,
     refreshHost: TvPageActionHost?,
     shuffleHost: TvPageActionHost?,
+    adjustHost: TvPageAdjustHost?,
     connectivity: TvServiceConnectivityState?,
     onGoHome: (() -> Unit)?,
     onExitApp: () -> Unit,
@@ -600,6 +607,15 @@ private fun TvActionPanelDialog(
                     // 换一批要重新召回 (几个请求, 一两秒), 结果到了会自己替换掉当前那批
                     toast.toast(shufflingText)
                     shuffle()
+                },
+            )
+        }
+        // 「调整本页」(海报墙大小 / 标签顺序): 打开编辑页 (盖在本页上的窗口), 也属于"去别处", 先关面板
+        adjustHost?.current?.forEach { adjust ->
+            add(
+                TvActionPanelAction(adjust.icon, adjust.label) {
+                    onDismissRequest()
+                    adjust.onClick()
                 },
             )
         }

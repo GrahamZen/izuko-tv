@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
@@ -78,12 +80,14 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_delete
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_duplicate
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_hidden
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_hint
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_hint_grabbed
+import me.him188.ani.app.ui.lang.video_player_tv_chrome_keep_one
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_preset_name
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_reset
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_subtitle
@@ -109,46 +113,72 @@ import org.jetbrains.compose.resources.stringResource
  *
  * 条目本身的图标与名字见 [tvChromeItemAppearance]; 顺序与显隐存在 [TvPlayerChromeLayout].
  * 本页列的是**全集** (不像播放器那样筛掉"这一集没有下一集"之类), 唯独触屏专有的两颗在电视上不列.
+ *
+ * 入口是播放器控制层上长按任意一颗按钮: 本页作为窗口盖在播放器上 (见 TvAdjustWindows), 进页焦点落在那一颗上 ([initialFocus], 不拿起),
+ * 按确认再拿起来挪. 别的按钮、隐藏了的按钮、几套版式都只能在这里改, 按返回离开. 调的时候只改草稿, **离开本页那一刻才写一次**
+ * ([onCommit] 在写之前报出要写的版式).
+ *
+ * 入口只有这一个, 所以**总要留一颗能长按的按钮**: 最后一颗"总会摆出来"的按钮 ([tvChromeItemAlwaysShown]) 不让隐藏.
  */
 @Composable
 fun TvPlayerChromeLayoutPage(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
+    initialFocus: TvPlayerChromeItem? = null,
+    onCommit: (TvPlayerChromePresets) -> Unit = {},
 ) {
     val settings = remember { GlobalKoin.get<SettingsRepository>() }
     val scope = rememberCoroutineScope()
     val touchInput = LocalTvTouchInputEnabled.current
-
-    // 配置只在进页面时读一次: 本页是这份设置的唯一写入方, 再订阅回来只会跟自己的编辑打架
-    var draft by remember { mutableStateOf<TvPlayerChromePresets?>(null) }
-    var opEdSkipSeconds by remember { mutableStateOf(85L) }
-    LaunchedEffect(settings) {
-        settings.videoScaffoldConfig.flow.collect { config ->
-            opEdSkipSeconds = config.opEdSkipDuration.inWholeSeconds
-            if (draft == null) draft = config.tvPlayerChrome
-        }
-    }
-
-    // 正被抓着的那一颗; grabOrigin = 抓起那一刻的版式, 返回键据此撤销
-    var grabbed by remember { mutableStateOf<TvPlayerChromeItem?>(null) }
-    var grabOrigin by remember { mutableStateOf<TvPlayerChromeLayout?>(null) }
-
-    // 每个条目一个请求器: 移动之后把焦点追回到被抓着的那一颗 (它换了位置, 光靠节点复用不保险)
-    val requesters = remember { TvPlayerChromeItem.entries.associateWith { FocusRequester() } }
-    val headerFocus = remember { FocusRequester() }
-    val firstPillFocus = requesters.getValue(TvPlayerChromeItem.PILL_RECOMMENDATIONS)
-
-    fun persist(new: TvPlayerChromePresets) {
-        draft = new
-        scope.launch { settings.videoScaffoldConfig.update { copy(tvPlayerChrome = new) } }
-    }
+    val toaster = LocalToaster.current
+    val keepOneText = stringResource(Lang.video_player_tv_chrome_keep_one)
 
     // 本页在电视上不列触屏专有的那两颗, 功能不存在的 (isRetired) 也不列, 但它们照样在版式里 ——
     // 移动时要把它们跨过去, 否则按一次左键会像没反应 (见 TvPlayerChromeLayout.moved 的 among)
     fun visibleItemsOf(layout: TvPlayerChromeLayout, row: TvPlayerChromeRow) =
         layout.orderOf(row).filterNot { it.isRetired || (it.isTouchOnly && !touchInput) }
 
-    // 移动只改本地草稿, 放下那一刻才落盘 —— 一路按着左键走过去不该写十次设置
+    // 正被抓着的那一颗; grabOrigin = 抓起那一刻的版式, 返回键据此撤销
+    var grabbed by remember { mutableStateOf<TvPlayerChromeItem?>(null) }
+    var grabOrigin by remember { mutableStateOf<TvPlayerChromeLayout?>(null) }
+
+    // 配置只在进页面时读一次: 本页是这份设置的唯一写入方, 再订阅回来只会跟自己的编辑打架
+    var draft by remember { mutableStateOf<TvPlayerChromePresets?>(null) }
+    // 设置里此刻存着的那份: 离开时与它不同才写
+    var saved by remember { mutableStateOf<TvPlayerChromePresets?>(null) }
+    var opEdSkipSeconds by remember { mutableStateOf(85L) }
+    LaunchedEffect(settings) {
+        settings.videoScaffoldConfig.flow.collect { config ->
+            opEdSkipSeconds = config.opEdSkipDuration.inWholeSeconds
+            if (draft == null) {
+                saved = config.tvPlayerChrome
+                draft = config.tvPlayerChrome
+            }
+        }
+    }
+
+    // 每个条目一个请求器: 移动之后把焦点追回到被抓着的那一颗 (它换了位置, 光靠节点复用不保险)
+    val requesters = remember { TvPlayerChromeItem.entries.associateWith { FocusRequester() } }
+    val headerFocus = remember { FocusRequester() }
+    val firstPillFocus = requesters.getValue(TvPlayerChromeItem.PILL_RECOMMENDATIONS)
+
+    fun commit() {
+        val presets = draft ?: return
+        if (presets == saved) return
+        saved = presets
+        onCommit(presets)
+        // 不随本页的组合一起取消: 写入正发生在离开的那一刻
+        scope.launch(NonCancellable) { settings.videoScaffoldConfig.update { copy(tvPlayerChrome = presets) } }
+    }
+
+    fun leave() {
+        commit()
+        onNavigateBack()
+    }
+    // 不是按返回离开的 (窗口被 Web 控制台跳页撤掉、Activity 重建) 也照样写
+    DisposableEffect(Unit) { onDispose { commit() } }
+
+    // 移动只改草稿, 离开时才写 —— 一路按着左键走过去不该写十次设置
     fun move(delta: Int) {
         val item = grabbed ?: return
         val current = draft ?: return
@@ -156,16 +186,12 @@ fun TvPlayerChromeLayoutPage(
         draft = current.withActive(layout.moved(item, delta, visibleItemsOf(layout, item.row)))
     }
 
-    fun drop(commit: Boolean) {
+    fun drop(keep: Boolean) {
         if (grabbed == null) return
         grabbed = null
         val origin = grabOrigin
         grabOrigin = null
-        if (commit) {
-            draft?.let { persist(it) }
-        } else if (origin != null) {
-            draft = draft?.withActive(origin)
-        }
+        if (!keep && origin != null) draft = draft?.withActive(origin)
     }
 
     // 移动之后焦点要跟着那一颗走 (Compose 在行里重排节点时焦点未必跟得住)
@@ -247,10 +273,10 @@ fun TvPlayerChromeLayoutPage(
                 Column(horizontalAlignment = Alignment.End) {
                     TvChromePresetBar(
                         presets = presets,
-                        onSwitch = { persist(presets.switchedTo(it)) },
-                        onDuplicate = { persist(presets.duplicatedActive()) },
-                        onDelete = { persist(presets.removedActive()) },
-                        onReset = { persist(presets.withActive(TvPlayerChromeLayout.Default)) },
+                        onSwitch = { draft = presets.switchedTo(it) },
+                        onDuplicate = { draft = presets.duplicatedActive() },
+                        onDelete = { draft = presets.removedActive() },
+                        onReset = { draft = presets.withActive(TvPlayerChromeLayout.Default) },
                         modifier = Modifier
                             .focusRequester(headerFocus)
                             .focusProperties { down = firstPillFocus },
@@ -273,14 +299,22 @@ fun TvPlayerChromeLayoutPage(
             // 按"换抓"处理的话, 用户以为放下了, 实际上手里换成了别的一颗, 接着的左右键就开始搬它
             val onGrabOrDrop: (TvPlayerChromeItem) -> Unit = { item ->
                 if (grabbed != null) {
-                    drop(commit = true)
+                    drop(keep = true)
                 } else {
                     grabOrigin = layout
                     grabbed = item
                 }
             }
             val onToggleHidden: (TvPlayerChromeItem) -> Unit = { item ->
-                persist(presets.withActive(layout.withHidden(item, !layout.isHidden(item))))
+                val hide = !layout.isHidden(item)
+                val lastAlwaysShown = tvChromeItemAlwaysShown(item) && TvPlayerChromeItem.entries.none {
+                    it != item && tvChromeItemAlwaysShown(it) && !layout.isHidden(it)
+                }
+                if (hide && lastAlwaysShown) {
+                    toaster.toast(keepOneText)
+                } else {
+                    draft = presets.withActive(layout.withHidden(item, hide))
+                }
             }
             val bottomItems = visibleItemsOf(layout, TvPlayerChromeRow.BOTTOM)
 
@@ -321,9 +355,9 @@ fun TvPlayerChromeLayoutPage(
                 }
             }
 
-            // 进页面把焦点送到图标行第一颗: 没有落点的页面会被全局兜底按几何乱挑一个
+            // 进页面把焦点送到长按的那一颗或图标行第一颗: 没有落点的页面会被全局兜底按几何乱挑一个
             LaunchedEffect(Unit) {
-                val first = bottomItems.firstOrNull() ?: return@LaunchedEffect
+                val first = initialFocus?.takeIf { it in visibleItemsOf(layout, it.row) } ?: bottomItems.firstOrNull() ?: return@LaunchedEffect
                 runCatching { requesters.getValue(first).requestFocus() }
             }
         }
@@ -332,7 +366,7 @@ fun TvPlayerChromeLayoutPage(
 
     // 返回键分两档: 手上抓着东西 = 撤销这一次移动 (放回抓起前的位置), 否则离开本页.
     // **不能写成 `enabled = grabbed == null`** —— 那样抓着东西时这一下会漏给系统, 当场退出页面
-    BackHandler { if (grabbed != null) drop(commit = false) else onNavigateBack() }
+    BackHandler { if (grabbed != null) drop(keep = false) else leave() }
 }
 
 /** 抓起态下归本页处理的方向键 (上下也要吞, 见调用处). */

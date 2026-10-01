@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
+import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.isAutoRepeat
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -128,7 +129,7 @@ internal fun TvExplorationWallPreview(
                 if (cardFocusRequest?.let { it.rowKey == rowKey } == true) cardFocusRequest = null
             }
 
-            // 预览: hero 态里按确定不进详情页
+            // 预览: 不进详情页 (hero 态里的确认键在根上就吞了, 见下方)
             override fun onCardClick(rowKey: String, index: Int) = Unit
 
             override fun onCardLongPress(rowKey: String, index: Int, anchor: AndroidRect) = Unit
@@ -172,7 +173,10 @@ internal fun TvExplorationWallPreview(
                     heroFocusRequest = null
                 }
                 false
-            },
+            }
+            // hero 态里按确定不进详情页: 确认键当场吞掉. 交给原生视图的话, 开着模糊背景时它先放「点开」(卡片淡没、等背景对焦), 这里没有图也没有
+            // 详情页可进, 就停在那一半
+            .onPreviewKeyEvent { event -> nativeState.heroActive && event.key in TV_CONFIRM_KEYS },
     ) {
         TvExplorationNativeWall(
             state = nativeState,

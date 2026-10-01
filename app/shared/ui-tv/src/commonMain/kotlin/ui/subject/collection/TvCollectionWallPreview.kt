@@ -38,6 +38,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
+import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
@@ -105,7 +106,10 @@ internal fun TvCollectionWallPreview(
         modifier.fillMaxSize()
             .onFocusChanged { inPage = it.hasFocus }
             // 方向 / 确认键即取消在途送焦 (同真页面)
-            .tvFocusNavSignal(focus),
+            .tvFocusNavSignal(focus)
+            // hero 态里按确定不进详情页: 确认键当场吞掉. 交给原生视图的话, 开着模糊背景时它先放「点开」(卡片淡没、等背景对焦), 这里没有图
+            // 也没有详情页可进, 就停在那一半
+            .onPreviewKeyEvent { event -> nativeState.heroActive && event.key in TV_CONFIRM_KEYS },
     ) {
         TvNativeGridPageHost(
             state = nativeState,

@@ -11,11 +11,14 @@ package me.him188.ani.app.ui.foundation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.vector.ImageVector
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 
 /**
  * 当前页面的「强制刷新」动作注册口, 给长按返回的快捷菜单里那颗「刷新本页」用.
@@ -75,6 +78,64 @@ fun TvPageRefreshHandler(onRefresh: () -> Unit) {
     val currentAction by rememberUpdatedState(onRefresh)
     DisposableEffect(host) {
         val unregister = host.register { currentAction() }
+        onDispose { unregister() }
+    }
+}
+
+/**
+ * 动作面板里「调整本页」的一颗圆钮 (海报墙大小 / 追番页标签顺序): 打开那一页对应的编辑页. [label] 写在面板底下那行标签上.
+ */
+@Immutable
+class TvPageAdjustAction(
+    val icon: ImageVector,
+    val label: String,
+    val onClick: () -> Unit,
+)
+
+/**
+ * 当前页面放进动作面板的「调整本页」圆钮 (页面在场时登记, 离开组合自动注销).
+ *
+ * 这类调整只从这里 (与页面上的长按) 进: 它们都针对**眼前这一页**, 而动作面板本来就是"对这一页做点什么"的地方 (刷新、换一批).
+ * 只有栈顶那一页会登记 (见 [TvPageAdjustActions]), 所以面板上出在场的全部 —— 一页里可以有几处各登记几颗 (追番页: 海报墙大小 + 标签顺序).
+ */
+@Stable
+class TvPageAdjustHost {
+    // 每次登记包一层: 两处登记的内容可能相等, 注销要按登记本身认, 不按内容
+    private class Registration(val actions: List<TvPageAdjustAction>)
+
+    private val entries = mutableStateListOf<Registration>()
+
+    /** 此刻在场的调整圆钮, 按登记先后; 空 = 没有页面登记. */
+    val current: List<TvPageAdjustAction> get() = entries.flatMap { it.actions }
+
+    fun register(actions: List<TvPageAdjustAction>): () -> Unit {
+        val registration = Registration(actions)
+        entries.add(registration)
+        return { entries.remove(registration) }
+    }
+}
+
+/** 由应用根部 (TV 形态装配处) 提供; 其余形态为 null, [TvPageAdjustActions] 退化为空操作. */
+val LocalTvPageAdjustHost = staticCompositionLocalOf<TvPageAdjustHost?> { null }
+
+/**
+ * 把本页的「调整本页」圆钮登记进动作面板, 生命周期跟随组合, 且**只在本页是栈顶时登记**: 列表页会压在放大进来的详情页底下常驻组合
+ * (见 TvZoomStackScene), 那时详情页上开的面板不该出列表页的调整入口.
+ *
+ * 圆钮的动作按最新的 [TvPageAdjustAction.onClick] 调; 图标与文字在登记那一刻定下 (语言变了 Activity 会重建).
+ */
+@Composable
+fun TvPageAdjustActions(vararg actions: TvPageAdjustAction) {
+    val host = LocalTvPageAdjustHost.current ?: return
+    val foreground = LocalPageIsForeground.current.value
+    val currentActions by rememberUpdatedState(actions)
+    val labels = actions.map { it.label }
+    DisposableEffect(host, foreground, labels) {
+        if (!foreground) return@DisposableEffect onDispose {}
+        val registered = actions.mapIndexed { index, action ->
+            TvPageAdjustAction(action.icon, action.label) { currentActions.getOrNull(index)?.onClick?.invoke() }
+        }
+        val unregister = host.register(registered)
         onDispose { unregister() }
     }
 }

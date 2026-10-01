@@ -193,20 +193,6 @@ interface AniNavigator {
     /**
      * 合并收藏: 处理 Animeko 与 Bangumi 两侧的收藏冲突.
      */
-    /** TV: 自定义播放器按钮 (见 [NavRoutes.TvPlayerChrome]). */
-    fun navigateTvPlayerChrome() {
-        navigateSingleInstance(NavRoutes.TvPlayerChrome)
-    }
-
-    /** TV: 自定义追番页标签顺序 (见 [NavRoutes.TvCollectionTabOrder]). */
-    fun navigateTvCollectionTabOrder() {
-        navigateSingleInstance(NavRoutes.TvCollectionTabOrder)
-    }
-
-    /** TV: 在 [page] 的假页面上调海报墙大小 (见 [NavRoutes.TvPosterWallScale]). */
-    fun navigateTvPosterWallScale(page: TvPosterWallPreviewPage) {
-        navigateSingleInstance(NavRoutes.TvPosterWallScale(page))
-    }
 }
 
 /**

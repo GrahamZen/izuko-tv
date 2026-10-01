@@ -60,6 +60,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
@@ -394,6 +395,8 @@ internal fun TvExplorationNativeWall(
                 view.setCarousel(carouselCount, selected, dotColor)
             },
             modifier = Modifier.focusRequester(state.focusRequester),
+            // 海报墙大小一变整块重建: 卡片视图的尺寸建好就定了. 停位与各行停在哪张存在 state 里, 新视图照返回本页那样恢复 (见 factory)
+            rebuildKey = LocalTvPosterWallScale.current,
         )
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)
