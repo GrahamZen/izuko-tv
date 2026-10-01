@@ -34,7 +34,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -77,6 +76,7 @@ import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
 import me.him188.ani.app.ui.foundation.theme.EasingDurations
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
@@ -160,7 +160,7 @@ internal fun SelectorConfigurationPane(
             val listItemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
 
             Column(verticalArrangement = Arrangement.spacedBy(verticalSpacing)) {
-                OutlinedTextField(
+                AniOutlinedTextField(
                     state.displayName, { state.displayName = it },
                     Modifier
                         .fillMaxWidth()
@@ -172,7 +172,7 @@ internal fun SelectorConfigurationPane(
                     shape = textFieldShape,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     state.iconUrl, { state.iconUrl = it },
                     Modifier
                         .fillMaxWidth()
@@ -190,7 +190,7 @@ internal fun SelectorConfigurationPane(
             SectionTitle(SelectorConfigurationDefaults.STEP_NAME_1, Modifier.padding(top = verticalSpacing, bottom = 12.dp))
 
             Column {
-                OutlinedTextField(
+                AniOutlinedTextField(
                     state.searchUrl, { state.searchUrl = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_config_search_url)) },
@@ -208,7 +208,7 @@ internal fun SelectorConfigurationPane(
                     shape = textFieldShape,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     state.rawBaseUrl, { state.rawBaseUrl = it },
                     Modifier
                         .padding(top = (verticalSpacing - 8.dp).coerceAtLeast(0.dp))
@@ -230,7 +230,7 @@ internal fun SelectorConfigurationPane(
                 var requestIntervalString by remember(state.requestInterval) {
                     mutableStateOf(state.requestInterval.inWholeMilliseconds.toString())
                 }
-                OutlinedTextField(
+                AniOutlinedTextField(
                     requestIntervalString,
                     {
                         requestIntervalString = it
@@ -410,7 +410,7 @@ internal fun SelectorConfigurationPane(
 
             Column(Modifier, verticalArrangement = Arrangement.spacedBy(verticalSpacing)) {
                 val conf = state.matchVideoConfig.videoHeaders
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.referer, { conf.referer = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text("Referer") },
@@ -419,7 +419,7 @@ internal fun SelectorConfigurationPane(
                     shape = textFieldShape,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.userAgent, { conf.userAgent = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text("User-Agent") },
@@ -548,7 +548,7 @@ private fun AutoMatchSection(
         var tierString by remember(state.tier) {
             mutableStateOf(state.tier.value.toString())
         }
-        OutlinedTextField(
+        AniOutlinedTextField(
             tierString,
             {
                 tierString = it
@@ -613,7 +613,7 @@ private fun AutoMatchSection(
         var searchUseSubjectNamesCount by remember(state.searchUseSubjectNamesCount) {
             mutableStateOf(state.searchUseSubjectNamesCount.toString())
         }
-        OutlinedTextField(
+        AniOutlinedTextField(
             searchUseSubjectNamesCount,
             {
                 searchUseSubjectNamesCount = it
@@ -634,7 +634,7 @@ private fun AutoMatchSection(
         var searchCacheTtlString by remember(state.searchCacheTtl) {
             mutableStateOf(state.searchCacheTtl.inWholeMinutes.toString())
         }
-        OutlinedTextField(
+        AniOutlinedTextField(
             searchCacheTtlString,
             {
                 searchCacheTtlString = it
