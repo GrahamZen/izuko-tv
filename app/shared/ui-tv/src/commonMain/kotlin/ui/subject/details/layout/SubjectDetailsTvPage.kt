@@ -28,6 +28,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
+import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_SWAP_AT
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_READY_TIMEOUT_MILLIS
@@ -1891,7 +1892,7 @@ private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
                 title = Color.White,
                 subtitle = Color.White.copy(alpha = 0.78f),
                 note = Color.White.copy(alpha = 0.85f),
-                shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1.dp.toPx()), blurRadius = 6.dp.toPx()),
+                shadow = tvDetailsTitleShadow(density),
                 listTitle = if (light) listTitle else null,
             )
         }
@@ -1900,7 +1901,8 @@ private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
 
 /**
  * 放大 / 缩回途中的大标题. [listColor] 非 null 时 (浅色主题: 列表页 hero 是黑字) 叠两份 —— 列表页的样子 ([listColor], 不带阴影) 与本页的
- * 样子 ([color] + [shadow]), 按 [detailsLook] (0 = 列表页那份, 1 = 本页那份, 绘制里读) 交叉淡化, 标题一边平移一边由黑变白. 两份同一套排字
+ * 样子 ([color] + [shadow]), 按 [detailsLook] (0 = 列表页那份, 1 = 本页那份, 绘制里读) 交叉淡化: 放大时先在原地由黑变白再平移, 缩回反过来
+ * (见 [TvHeroZoomHandoff.Session.titleDetailsLook]); 列表页标题已经是本页的样子 (整屏背景点开时在列表页就变了白) 时 [detailsLook] 恒为 1, 只平移. 两份同一套排字
  * (详情页的字号), 位置与缩放都在外面的 [modifier] 上. [listColor] 为 null 时就是一个 Text.
  */
 @Composable
@@ -1946,18 +1948,8 @@ private fun TvHeroTransitionTitle(
     }
 }
 
-/** 放大途中标题像本页的程度 (见 [TvHeroTransitionTitle]): 按平移的进度 (见 tvHeroZoomTitleShift) 走 [tvHeroTitleLookCurve]; 没有会话 / 到位 = 1. 绘制里读. */
-private fun tvHeroZoomTitleLook(session: TvHeroZoomHandoff.Session?): Float =
-    if (session == null) 1f else tvHeroTitleLookCurve(session.t)
-
-/**
- * 转场几何进度 [t] (0 = 列表页 hero, 1 = 详情页, 放大 / 缩回同一套) 下标题像本页的程度: 后半段才换 (smoothstep 0.5 → 1). 前半段背景图还没铺到
- * 标题底下, 标题压在列表页的浅底上, 早早变白 (连同黑影) 就是一团灰; 图盖过来的那一段再由黑转白, 缩回时一离开图就转回黑.
- */
-private fun tvHeroTitleLookCurve(t: Float): Float {
-    val x = ((t - 0.5f) / 0.5f).coerceIn(0f, 1f)
-    return x * x * (3f - 2f * x)
-}
+/** 放大途中标题像本页的程度 (见 [TvHeroTransitionTitle], [TvHeroZoomHandoff.Session.titleDetailsLook]); 没有会话 = 1. 绘制里读. */
+private fun tvHeroZoomTitleLook(session: TvHeroZoomHandoff.Session?): Float = session?.titleDetailsLook ?: 1f
 
 /**
  * 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放.
@@ -3664,17 +3656,15 @@ fun TvHeroShrinkLayer() {
             // 上一帧的位置: 位置算不出来时**绝不退回 (0,0)** —— 那会让标题当场跳到屏幕左上角,
             // 比短暂消失还显眼。spec 与 position 现在同出会话快照, 正常不会走到这里
             var lastPos by remember { mutableStateOf<Offset?>(null) }
-            // 浅色主题: 从详情页的白字 + 黑影淡回列表页的黑字, 按缩回的几何进度走 (见 tvHeroTitleLookCurve); 深色照旧一份
+            // 浅色主题: 先平移回去, 最后一段原地由详情页的白字 + 黑影淡回列表页落位时的样子 (整屏背景点开过的列表页标题还是白字,
+            // 见 TvHeroZoomHandoff.shrinkTitleDetailsLook); 深色照旧一份
             val light = heroText.listTitle != null
             TvHeroTransitionTitle(
                 spec.text,
                 color = if (light) heroText.title else tvHeroContentColor(),
                 shadow = heroText.shadow,
                 listColor = heroText.listTitle,
-                detailsLook = {
-                    val s = TvHeroZoomHandoff.shrink
-                    if (s == null) 1f else tvHeroTitleLookCurve(s.t / s.fromT.coerceAtLeast(1e-3f))
-                },
+                detailsLook = { TvHeroZoomHandoff.shrinkTitleDetailsLook() },
                 modifier = Modifier
                     // 位置在 lambda 里读: 每帧只重新布局, 不触发重组
                     .offset {
@@ -3733,7 +3723,8 @@ private fun Modifier.tvHeroZoomTitleShift(session: TvHeroZoomHandoff.Session?): 
                 alpha = 0f
                 return@graphicsLayer
             }
-            val t = session.t
+            // 平移进度: 标题要先原地变样子时前一段不动 (见 TvHeroZoomHandoff.Session.titleMoveProgress)
+            val t = session.titleMoveProgress
             if (t < 1f) {
                 val base = if (ownBaseline.isNaN()) session.titleTargetBaseline else ownBaseline
                 val shift = TvHeroZoomHandoff.titleBaselineShift(session.titleBaseline, base)

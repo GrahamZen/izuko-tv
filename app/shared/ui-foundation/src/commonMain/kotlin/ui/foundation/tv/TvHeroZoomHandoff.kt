@@ -70,6 +70,8 @@ object TvHeroZoomHandoff {
         val clipOverflow: Boolean,
         /** 首行基线离框顶多远 (px, NaN = 不知道), 见 [publishTitle]. */
         val baseline: Float,
+        /** 此刻像详情页大标题的程度 (0 = 列表页的样子, 1 = 已是详情页的样子), 见 [publishTitle]. */
+        val look: Float,
     )
 
     /** 缩回期间根级转场标题的固定部分 (文字 / 定宽 / 样式); 位置每帧变, 见 [shrinkTitlePosition]. */
@@ -125,6 +127,11 @@ object TvHeroZoomHandoff {
         val treatment: TvBackdropTreatment?,
         /** 列表页大标题首行基线离框顶多远 (px, NaN = 不知道), 与 [titleBounds] 一起快照. 见 [publishTitle]. */
         val titleBaseline: Float = Float.NaN,
+        /**
+         * 起跑时列表页大标题像详情页标题的程度 (见 [publishTitle] 的 look): 1 = 已经是详情页的样子 (深色主题; 浅色主题下整屏背景点开时
+         * 列表页标题已变白), 转场标题只平移; 不到 1 = 先原地变成详情页的样子再平移 (见 [titleDetailsLook], [titleMoveProgress]).
+         */
+        val titleLook: Float = 0f,
     ) {
         private var startNanos by mutableLongStateOf(0L)
 
@@ -137,6 +144,15 @@ object TvHeroZoomHandoff {
         /** 本帧的**线性**进度 0..1 (未过缓动), 由 [progress] 顺带写. 见 [scrimAlpha]. */
         var linear: Float by mutableFloatStateOf(0f)
             private set
+
+        /**
+         * 大标题的平移进度 (0 = 列表页标题处, 1 = 本页). 列表页标题不是本页的样子 ([titleLook] < 1) 时先原地变 (见 [titleDetailsLook]):
+         * 前 [TV_HERO_TITLE_LOOK_SPAN] 段时间不动, 余下的时间按 [TvHeroZoomEasing] 平移过去; 否则同放大的几何进度 [t]. 绘制里读.
+         */
+        val titleMoveProgress: Float get() = tvHeroZoomTitleMove(titleLook, linear, t)
+
+        /** 大标题此刻像本页标题的程度 (0..1): 前 [TV_HERO_TITLE_LOOK_SPAN] 段时间里从 [titleLook] 变到 1. 绘制里读. */
+        val titleDetailsLook: Float get() = tvHeroZoomTitleLook(titleLook, linear)
 
         /**
          * 详情页整屏底色此刻的不透明度: 前 [TvPolishFlags.zoomScrimT] 段**时间**里从 0 涨到 1, 之后恒 1.
@@ -307,6 +323,7 @@ object TvHeroZoomHandoff {
                 ts?.maxLines ?: 2, ts?.clipOverflow ?: false,
                 ts?.text, s.dim, s.treatment,
                 titleBaseline = ts?.baseline ?: Float.NaN,
+                titleLook = ts?.look ?: 0f,
             )
         } else {
             null
@@ -477,7 +494,7 @@ object TvHeroZoomHandoff {
         val source = titleSource?.takeIf { it.subjectId == subjectId } ?: return null
         val own = source.bounds
         val shift = titleBaselineShift(source.baseline, z.titleTargetBaseline)
-        val p = (1f - s.t / s.fromT.coerceAtLeast(1e-3f)).coerceIn(0f, 1f) // 0 = 刚起步, 1 = 落位
+        val p = shrinkTitleMoveProgress(s) // 0 = 刚起步, 1 = 落位
         return Offset((from.left - own.left) * (1f - p), (from.top - own.top - shift) * (1f - p))
     }
 
@@ -548,10 +565,36 @@ object TvHeroZoomHandoff {
         val ownBaseline = current?.baseline ?: z.titleBaseline
         // 落点按基线对齐: 转场标题与详情页标题同一套排字, 首行基线离框顶的距离就是详情页量到的那个
         val shift = titleBaselineShift(ownBaseline, z.titleTargetBaseline)
-        val p = (1f - s.t / s.fromT.coerceAtLeast(1e-3f)).coerceIn(0f, 1f)
+        val p = shrinkTitleMoveProgress(s)
         val endTop = own.top + shift
         return Offset(own.left + (from.left - own.left) * (1f - p), endTop + (from.top - endTop) * (1f - p))
     }
+
+    /**
+     * 缩回落位时列表页标题的样子 (0 = 列表页的样子, 1 = 已是详情页的样子, 见 [publishTitle] 的 look): 转场标题朝它淡过去. 列表页的登记还在就按它
+     * (整屏背景点开过的列表页回来时还停在点开, 标题仍是白字, 落位后才随背景倒放变回去), 否则按进来时的快照.
+     */
+    fun shrinkTitleLandingLook(): Float {
+        val s = shrink ?: return 0f
+        val current = titleSource?.takeIf { it.subjectId == s.subjectId && listAlive(s) }
+        return current?.look ?: s.fromSession?.titleLook ?: 0f
+    }
+
+    /**
+     * 缩回期间转场标题此刻像详情页标题的程度 (0..1), 没在缩回 = 1. 落位时要变回列表页的样子 ([shrinkTitleLandingLook] < 1) 就先平移回去,
+     * 最后 [TV_HERO_TITLE_LOOK_SPAN] 段时间原地变 (同放大反过来, 见 [Session.titleDetailsLook]). 绘制里读.
+     */
+    fun shrinkTitleDetailsLook(): Float {
+        val s = shrink ?: return 1f
+        return tvHeroShrinkTitleLook(shrinkTitleLandingLook(), s.linear)
+    }
+
+    /**
+     * 缩回期间标题的平移进度 (0 = 详情页标题处, 1 = 落位). 落位时要变样子 (见 [shrinkTitleDetailsLook]) 就按时间压进前 1 - [TV_HERO_TITLE_LOOK_SPAN]
+     * 段 (按 [TvHeroShrinkEasing]), 留出最后一段原地变; 否则同缩回图的几何进度.
+     */
+    private fun shrinkTitleMoveProgress(s: Shrink): Float =
+        tvHeroShrinkTitleMove(shrinkTitleLandingLook(), s.linear, (1f - s.t / s.fromT.coerceAtLeast(1e-3f)).coerceIn(0f, 1f))
 
     fun titleSettling(subjectId: Int): Boolean {
         val s = shrink ?: return false
@@ -723,7 +766,7 @@ object TvHeroZoomHandoff {
     fun sourceDebug(): String {
         fun String?.tail() = this?.takeLast(32) ?: "null"
         val loaded = sourceLoaded.toList()
-        return "source=${source?.subjectId}:${source?.url.tail()} title=${titleSource?.subjectId} " +
+        return "source=${source?.subjectId}:${source?.url.tail()} title=${titleSource?.subjectId} look=${titleSource?.look} " +
                 "loaded(${loaded.size})=${loaded.takeLast(4).joinToString { "${it.first}:${it.second.tail()}" }}"
     }
 
@@ -749,6 +792,9 @@ object TvHeroZoomHandoff {
      *
      * [baseline] = 首行基线离框顶多远 (px): 列表页标题是原生 TextView, 详情页与转场层的是 Compose Text, 两套排字把字放在框里的高度
      * 不一样 (取的字体度量不同, 系统版本之间也不同), 框对齐了字还差几像素, 交接那一帧跳一下. 平移按基线对齐 (见 [titleBaselineShift]).
+     *
+     * [look] = 列表页标题此刻像详情页标题的程度 (0..1): 浅色主题下列表页是黑字、详情页是白字压黑影, 整屏背景点开时列表页标题先变白 (1),
+     * 转场标题就从白字起; 深色两边一个样子, 恒 1 (见 [Session.titleLook], [shrinkTitleLandingLook]).
      */
     fun publishTitle(
         owner: Any,
@@ -758,8 +804,9 @@ object TvHeroZoomHandoff {
         maxLines: Int = 2,
         clipOverflow: Boolean = false,
         baseline: Float = Float.NaN,
+        look: Float = 0f,
     ) {
-        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow, baseline)
+        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow, baseline, look)
     }
 
     /**
@@ -937,6 +984,41 @@ const val TV_HERO_SWAP_AT = 0.5f
  * 录屏 rec/ios.mov 窗口外角落逐帧亮度 `ios_dim.py`: 打开时 ~120ms 内降到 ~60%, 关闭时桌面刚露出 50~70%、~350ms 回满). 原先 0.7 (剩 30%) 太黑.
  */
 const val TV_HERO_SWAP_DIM_PEAK = 0.35f
+
+/**
+ * 转场标题要变样子时 (浅色主题: 列表页黑字 → 详情页白字压黑影, 见 [TvHeroZoomHandoff.Session.titleLook]) 原地变的那一段占转场**时间**的比例:
+ * 放大时先变再平移, 缩回时先平移、最后这一段变回去 (用户 2026-09-30「先渐变到白再运动」). 平移挤进余下的时间, 放大的图照常走满全程.
+ */
+const val TV_HERO_TITLE_LOOK_SPAN = 0.4f
+
+/** 从 [from] 到 1 的样子插值, [x] = 这一段的进度 (smoothstep 过一下, 两头不突变). */
+private fun tvHeroTitleLookLerp(from: Float, x: Float): Float {
+    val u = x.coerceIn(0f, 1f)
+    return from + (1f - from) * (u * u * (3f - 2f * u))
+}
+
+/**
+ * 放大时标题像本页的程度: 起跑时是 [startLook] (见 [TvHeroZoomHandoff.Session.titleLook]), 不到 1 就在线性进度 [linear] 的前
+ * [TV_HERO_TITLE_LOOK_SPAN] 段里变到 1.
+ */
+internal fun tvHeroZoomTitleLook(startLook: Float, linear: Float): Float =
+    if (startLook >= 1f) 1f else tvHeroTitleLookLerp(startLook, linear / TV_HERO_TITLE_LOOK_SPAN)
+
+/** 放大时标题的平移进度: 要先变样子 ([startLook] < 1) 时前一段不动、余下的按 [TvHeroZoomEasing] 走完; 否则就是放大的几何进度 [t]. */
+internal fun tvHeroZoomTitleMove(startLook: Float, linear: Float, t: Float): Float =
+    if (startLook >= 1f) {
+        t
+    } else {
+        TvHeroZoomEasing.transform(((linear - TV_HERO_TITLE_LOOK_SPAN) / (1f - TV_HERO_TITLE_LOOK_SPAN)).coerceIn(0f, 1f))
+    }
+
+/** 缩回时标题像详情页的程度: 落位时是 [landingLook] (见 [TvHeroZoomHandoff.shrinkTitleLandingLook]), 不到 1 就在线性进度 [linear] 的最后一段变过去. */
+internal fun tvHeroShrinkTitleLook(landingLook: Float, linear: Float): Float =
+    if (landingLook >= 1f) 1f else tvHeroTitleLookLerp(landingLook, (1f - linear) / TV_HERO_TITLE_LOOK_SPAN)
+
+/** 缩回时标题的平移进度 (1 = 落位): 落位要变样子时压进前一段 (按 [TvHeroShrinkEasing]), 否则就是缩回图的几何进度 [geometric]. */
+internal fun tvHeroShrinkTitleMove(landingLook: Float, linear: Float, geometric: Float): Float =
+    if (landingLook >= 1f) geometric else TvHeroShrinkEasing.transform((linear / (1f - TV_HERO_TITLE_LOOK_SPAN)).coerceIn(0f, 1f))
 
 /**
  * 放大时长. 250 = 用户在 2×2 录屏对比里选的 (iOS 曲线 250 / 300、M3 emphasized 250 / 300). 这条曲线 ~200ms 走完 90%, 余下是

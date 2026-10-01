@@ -737,6 +737,8 @@ class TvNativeGridPageView(
                 // 点开: 背景图与 hero 文字里标题以外的几行跟着卡片淡没 (标题留着, 交给详情页的标题接着画), 顶栏由页面跟着淡
                 wallOpenFade = if (chrome) fade else 0f
                 heroText.detailAlpha = 1f - wallOpenFade
+                // 标题跟着变成详情页的样子 (浅色主题: 黑字 → 白字压黑影), 背景对上焦时已经是白字
+                heroText.titleLook = wallOpenFade
                 applyHeroAlpha()
                 if (chrome) listener?.onWallFade(fade)
             }

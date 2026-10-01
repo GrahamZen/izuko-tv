@@ -56,12 +56,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
@@ -395,6 +397,14 @@ fun tvHeroContentColor(): Color =
 @Composable
 fun tvHeroSecondaryContentColor(): Color =
     if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFB4B5B7) else TV_POSTER_WALL_SECONDARY_LABEL_LIGHT
+
+/**
+ * 详情页大标题 (白字) 压在背景图上的黑影. 详情页标题、放大 / 缩回的转场标题, 以及浅色主题下列表页 hero 标题点开时渐变成的样子
+ * (见 TvNativeHeroTextView.titleLook) 共用这一份: 几处不同值的话, 交接那一帧阴影会跳.
+ */
+fun tvDetailsTitleShadow(density: Density): Shadow = with(density) {
+    Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1.dp.toPx()), blurRadius = 6.dp.toPx())
+}
 
 /**
  * TV backdrop 下缘渐隐的渐变停点: 遮盖 alpha 在 [start]..[end] (绘制坐标 0..1)

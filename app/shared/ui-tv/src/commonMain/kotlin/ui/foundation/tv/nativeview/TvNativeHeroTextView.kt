@@ -38,6 +38,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** 一段带颜色的字 (hero 信息行里的开播状态、总集数、标签等). */
 @Immutable
@@ -85,6 +86,7 @@ data class TvNativeHeroText(
  * @param statusHeightPx 下一集行的定高 (0 = 按内容高).
  * @param marqueeRepeat 标题 (与下一集集名) 跑马灯的圈数: 0 = 不跑 (视觉效果流畅档), -1 = 一直跑.
  * @param stagger 分行错落进场 (tvHeroTextStaggerEnabled); [animated] = false (流畅档) 时换字不过渡.
+ * @param openTitle 详情页大标题的样子, 整屏背景点开时标题渐变成它 (见 [TvNativeHeroTextView.titleLook]); null = 与 [title] 同一个样子 (深色主题).
  */
 @Immutable
 data class TvNativeHeroTextStyle(
@@ -104,6 +106,16 @@ data class TvNativeHeroTextStyle(
     val stagger: Boolean,
     val animated: Boolean,
     val marqueeRepeat: Int,
+    val openTitle: TvNativeTitleLook? = null,
+)
+
+/** 标题的颜色与阴影 (px), 见 [TvNativeHeroTextStyle.openTitle]. */
+@Immutable
+data class TvNativeTitleLook(
+    val color: Int,
+    val shadowColor: Int,
+    val shadowDyPx: Float,
+    val shadowRadiusPx: Float,
 )
 
 /** hero 文字换内容的节奏 (见 TvScrollActivity.kt 的 tvScrollHiddenTextTransform / tvCarouselTextTransform). */
@@ -197,6 +209,32 @@ class TvNativeHeroTextView(
             for ((i, line) in lines.withIndex()) if (line !== title) line.alpha = lineAlpha[i] * value
         }
 
+    /**
+     * 标题像详情页大标题的程度 (0 = [TvNativeHeroTextStyle.title] 的颜色、没有阴影, 1 = [TvNativeHeroTextStyle.openTitle]), 颜色与阴影浓度按它插值.
+     * 浅色主题下列表页标题是黑字、详情页是白字压黑影: 整屏背景点开时跟着卡片淡没走 (见 TvNativeWallFocus), 背景对上焦时标题已是白字, 进详情页
+     * 只平移不再变色 (登记给放大转场, 见 [publishTitle]); 回来倒放时变回去. [TvNativeHeroTextStyle.openTitle] 为 null 时不起作用.
+     */
+    var titleLook: Float = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            applyTitleLook()
+            publishTitle()
+        }
+
+    private fun applyTitleLook() {
+        val look = style.openTitle
+        val t = titleLook.coerceIn(0f, 1f)
+        if (look == null || t == 0f) {
+            title.setTextColor(style.title.color)
+            title.setShadowLayer(0f, 0f, 0f, 0)
+            return
+        }
+        title.setTextColor(lerpArgb(style.title.color, look.color, t))
+        val shadowAlpha = ((look.shadowColor ushr 24) * t).roundToInt()
+        title.setShadowLayer(look.shadowRadiusPx, 0f, look.shadowDyPx, (shadowAlpha shl 24) or (look.shadowColor and 0xFFFFFF))
+    }
+
     /** 写第 [line] 行自己的透明度; 标题以外的乘上 [detailAlpha]. 标题的隐藏另见 [applyTitleOffset]. */
     private fun setLineAlpha(line: View, alpha: Float) {
         lineAlpha[lines.indexOf(line)] = alpha
@@ -246,6 +284,7 @@ class TvNativeHeroTextView(
     private fun applyStyle() {
         val s = style
         s.title.applyTo(title)
+        applyTitleLook()
         if (s.titleMaxLines == 1) {
             // 定宽一行, 放不下跑马灯滚全文 (不省略号); 不跑时硬裁 (登记给放大转场的 clipOverflow 跟着这里, 转场标题同样硬裁)
             title.setSingleLine(true)
@@ -562,6 +601,8 @@ class TvNativeHeroTextView(
             titleOwner, text.subjectId, Rect(left, top, left + title.width * scaleX, top + title.height * scaleY), text.title,
             maxLines = style.titleMaxLines, clipOverflow = style.titleMaxLines == 1,
             baseline = if (baseline >= 0) baseline * scaleY else Float.NaN,
+            // 没有另一种样子 (深色主题) = 已经是详情页的样子
+            look = if (style.openTitle != null) titleLook else 1f,
         )
     }
 
@@ -721,3 +762,14 @@ private const val TV_NATIVE_TEXT_ENTER_AT_MILLIS = TV_SCROLL_HIDDEN_TEXT_ENTER_A
 private const val TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS = TV_CAROUSEL_TEXT_OUT_MILLIS.toLong()
 private const val TV_NATIVE_CAROUSEL_TEXT_IN_MILLIS = TV_CAROUSEL_TEXT_IN_MILLIS.toLong()
 private const val TV_NATIVE_TEXT_STAGGER_MILLIS = TV_HERO_TEXT_STAGGER_MILLIS.toLong()
+
+/** 两个 ARGB 颜色逐通道线性插值 (sRGB 上直接插, 同两层字交叉淡化叠出来的颜色). */
+private fun lerpArgb(a: Int, b: Int, t: Float): Int {
+    var out = 0
+    for (shift in intArrayOf(24, 16, 8, 0)) {
+        val ca = a ushr shift and 0xFF
+        val cb = b ushr shift and 0xFF
+        out = out or ((ca + (cb - ca) * t).roundToInt().coerceIn(0, 255) shl shift)
+    }
+    return out
+}

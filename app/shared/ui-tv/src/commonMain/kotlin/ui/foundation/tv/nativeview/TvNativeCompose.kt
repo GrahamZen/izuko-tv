@@ -63,6 +63,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonContainerColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonOutlineColor
+import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 
@@ -272,6 +273,18 @@ fun rememberTvNativeHeroTextStyle(
                     !visualEffects.marquee -> 0
                     visualEffects.ambient -> -1
                     else -> TV_REDUCED_MARQUEE_ITERATIONS
+                },
+                // 浅色主题: 详情页大标题是白字压黑影 (同 rememberTvDetailsHeroTextStyle), 列表页是黑字; 深色两边一个样子
+                openTitle = if (colors.surface.luminance() >= 0.5f) {
+                    val shadow = tvDetailsTitleShadow(density)
+                    TvNativeTitleLook(
+                        color = Color.White.toArgb(),
+                        shadowColor = shadow.color.toArgb(),
+                        shadowDyPx = shadow.offset.y,
+                        shadowRadiusPx = shadow.blurRadius,
+                    )
+                } else {
+                    null
                 },
             )
         }

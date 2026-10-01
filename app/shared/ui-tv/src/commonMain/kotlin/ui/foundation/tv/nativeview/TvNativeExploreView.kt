@@ -281,6 +281,8 @@ class TvNativeExploreView(
             override fun applyFade(fade: Float, keep: Int, chrome: Boolean) {
                 wallFade = fade
                 heroText.detailAlpha = 1f - fade
+                // 标题跟着变成详情页的样子 (浅色主题: 黑字 → 白字压黑影), 背景对上焦时已经是白字
+                heroText.titleLook = if (chrome) fade else 0f
                 applyFrame()
             }
 

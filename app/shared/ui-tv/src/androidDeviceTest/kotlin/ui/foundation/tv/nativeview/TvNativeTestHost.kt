@@ -20,11 +20,13 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.PixelCopy
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.panpf.sketch.Sketch
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
 import kotlin.test.fail
 
 /**
@@ -121,6 +123,26 @@ private val sharedSketch: Sketch by lazy { Sketch.Builder(InstrumentationRegistr
 
 internal fun testTextStyle(sizePx: Float, lineHeightPx: Int): TvNativeTextStyle =
     TvNativeTextStyle(sizePx = sizePx, lineHeightPx = lineHeightPx, letterSpacingEm = 0f, weight = 400, color = Color.WHITE)
+
+/** 详情页大标题的样子 (白字压黑影), 见 [testLightHeroTextStyle]. */
+internal val TEST_OPEN_TITLE = TvNativeTitleLook(color = Color.WHITE, shadowColor = 0x99000000.toInt(), shadowDyPx = 2f, shadowRadiusPx = 12f)
+
+/** 浅色主题的 hero 文字: 列表页标题黑字, 整屏背景点开时变成 [TEST_OPEN_TITLE]. */
+internal fun testLightHeroTextStyle(): TvNativeHeroTextStyle =
+    testHeroTextStyle().copy(title = testTextStyle(56f, 72).copy(color = Color.BLACK), openTitle = TEST_OPEN_TITLE)
+
+/** 标题像详情页大标题的程度只取两头: 0 = 列表页黑字、没有阴影, 1 = [TEST_OPEN_TITLE] (主线程上调). */
+internal fun assertTitleLook(title: TextView, look: Int) {
+    if (look == 0) {
+        assertEquals(Color.BLACK, title.currentTextColor, "标题是黑字")
+        assertEquals(0f, title.shadowRadius, "没有阴影")
+    } else {
+        assertEquals(TEST_OPEN_TITLE.color, title.currentTextColor, "标题是白字")
+        assertEquals(TEST_OPEN_TITLE.shadowRadiusPx, title.shadowRadius)
+        assertEquals(TEST_OPEN_TITLE.shadowDyPx, title.shadowDy)
+        assertEquals(TEST_OPEN_TITLE.shadowColor, title.shadowColor)
+    }
+}
 
 /**
  * 1080p 电视 (320dpi, 960 × 540 dp) 上海报墙卡片的尺寸: 卡宽 257 (内容区 1744 排 6 列, 列距 40), 定高番名块. 过渡关掉, 测的只是焦点与停位.

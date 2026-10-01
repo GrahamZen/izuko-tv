@@ -18,6 +18,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.TextView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
@@ -250,6 +251,24 @@ class TvNativeExploreHeroBlurTest {
             assertTrue(view.heroActive)
             assertEquals(1f, wall.alpha)
         }
+    }
+
+    @Test
+    fun `in the light theme the title is already the white details title while the backdrop sharpens`() {
+        host.onMain { view.heroText.style = testLightHeroTextStyle() }
+        enterHero()
+        host.onMain { assertTitleLook(view.heroText.getChildAt(0) as TextView, 0) }
+        confirmThen { }
+        // 背景还在对焦 (各行先淡没, 背景更慢): 标题已经是详情页的白字压黑影, 登记给放大转场的也是这个样子
+        host.waitUntil("背景对焦过了七成") { sharpAlpha() >= 0.7f }
+        host.onMain {
+            assertTitleLook(view.heroText.getChildAt(0) as TextView, 1)
+            assertTrue(TvHeroZoomHandoff.sourceDebug().contains("look=1.0"), TvHeroZoomHandoff.sourceDebug())
+        }
+        host.waitUntil("进了继续观看第 0 张") { listener.cardClicks == listOf(FOLLOWED to 0) }
+        host.onMain { view.endWallOpen() }
+        host.waitUntil("倒放回 hero 态") { sharpAlpha() == 0f && summaryAlpha() == 1f }
+        host.onMain { assertTitleLook(view.heroText.getChildAt(0) as TextView, 0) }
     }
 
     @Test
