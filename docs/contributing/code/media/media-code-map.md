@@ -116,9 +116,13 @@
    （网盘直链一次打开读到文件尾，测速采样要等读完才报）。
    网盘直链（解析器给了并发提示）的视频由 `ParallelRangeDataSource` 分块并发下载，播放与推迟读的字体附件共用这个文件的总长；
    外挂字幕不是这个文件，单连接直接下（共用总长会按视频的长度分块去要字幕，一个字节也拿不到）。
+   知道总长时分块请求在第一次读的时候才一起发出：播放器读完文件尾的索引常先在正文开头打开、紧接着又跳到观看进度，这一次一个字节都不读。
+   下载节点由 `RangeHttpClient.kt` 里的 `FailoverDns` 挑：连不上过的节点、所在网段先避开，改用公共 DNS 给的；关掉读取时被取消的请求不算连不上。
    网盘直链的缓冲策略是 `ThrottledSourceLoadControl`：开播 / 跳转后攒够 5 秒才播，播放中卡住后攒够 10 秒，
    同一个媒体每多卡一次翻倍（最多 60 秒）；在等这些门槛时它报出要攒多少，电视播放页的 `TvThrottledBufferHint` 据此说明原因。
 9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
+   所有源往前的缓冲不足 5 秒时都不管字节上限照读：往回保留的 30 秒与往前的缓冲共用字节上限，本地文件的上限只有约 33 MB，
+   码率高的段落光往回保留的就占满，不这样就会卡住且不跳转解不开。
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
    `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
    `EpisodeViewModel` 管选源面板开关（`onMediaSelectorShown` / `onMediaSelectorHidden`）与「完整搜索」

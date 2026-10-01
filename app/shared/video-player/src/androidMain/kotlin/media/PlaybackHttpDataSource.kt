@@ -21,7 +21,9 @@ import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import me.him188.ani.utils.ktor.FallbackDns
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
@@ -62,15 +64,17 @@ data class PlaybackProxyConfig(
     }
 }
 
-/**
- * 建播放用的 HTTP 数据源工厂.
- *
- * 没配代理时用 media3 自带的 [DefaultHttpDataSource] (底层 `HttpURLConnection`), 行为与以前一致.
- * 配了代理就换成 OkHttp —— `HttpURLConnection` 只认 JVM 全局的 `ProxySelector`, 没法只给播放加代理,
- * 而在线源的视频地址跟数据源接口一样常常需要代理才连得上 (设置里开了代理却放不了在线源就是这个原因).
- */
 private val logger = logger("PlaybackHttpDataSource")
 
+/** 按 (代理, 连接超时) 共用的客户端: 连接池跟着共用, 换集、重载时能复用连接. */
+private val clients = ConcurrentHashMap<Pair<PlaybackProxyConfig?, Int>, OkHttpClient>()
+
+/**
+ * 建播放用的 HTTP 数据源工厂, 一律走 OkHttp:
+ * - 设置里配了代理时只给播放加代理 (`HttpURLConnection` 只认 JVM 全局的 `ProxySelector`), 在线源的视频地址跟数据源接口一样常常要代理才连得上;
+ * - 系统 DNS 解析不出时用 [FallbackDns] 兜底 (`HttpURLConnection` 没法换 DNS 解析), 时好时坏的 DNS 不至于播到一半断掉.
+ * 读超时与 media3 自带的 [DefaultHttpDataSource] 相同.
+ */
 @AndroidxOptIn(UnstableApi::class)
 internal fun createPlaybackHttpDataSourceFactory(
     proxyConfig: PlaybackProxyConfig?,
@@ -79,31 +83,32 @@ internal fun createPlaybackHttpDataSourceFactory(
     connectTimeoutMillis: Int,
 ): HttpDataSource.Factory {
     logger.info { "Creating playback data source, proxy=" + (proxyConfig?.proxy?.toString() ?: "direct") }
-    if (proxyConfig == null) {
-        return DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent)
-            .setDefaultRequestProperties(headers)
-            .setConnectTimeoutMs(connectTimeoutMillis)
+    val client = clients.getOrPut(proxyConfig to connectTimeoutMillis) {
+        OkHttpClient.Builder()
+            .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
+            .dns(FallbackDns.Default)
+            .apply { proxyConfig?.let { playbackProxy(it) } }
+            .build()
     }
-    val client = OkHttpClient.Builder()
-        .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
-        // 局域网地址 (Jellyfin 等本地源) 不能走代理, 所以按地址分流而不是 .proxy()
-        .proxySelector(LanBypassProxySelector(proxyConfig.proxy))
-        .apply {
-            proxyConfig.authorization?.let { auth ->
-                proxyAuthenticator(
-                    Authenticator { _, response ->
-                        // 已经带过还被拒就不再重试, 否则会死循环
-                        if (response.request.header("Proxy-Authorization") != null) return@Authenticator null
-                        response.request.newBuilder().header("Proxy-Authorization", auth).build()
-                    },
-                )
-            }
-        }
-        .build()
     return OkHttpDataSource.Factory(client)
         .setUserAgent(userAgent)
         .setDefaultRequestProperties(headers)
+}
+
+/** 播放请求走 [config] 这个代理 (局域网地址不走), 代理要认证时带上 `Proxy-Authorization`. */
+internal fun OkHttpClient.Builder.playbackProxy(config: PlaybackProxyConfig): OkHttpClient.Builder = apply {
+    // 局域网地址 (Jellyfin 等本地源) 不能走代理, 所以按地址分流而不是 .proxy()
+    proxySelector(LanBypassProxySelector(config.proxy))
+    config.authorization?.let { auth ->
+        proxyAuthenticator(
+            Authenticator { _, response ->
+                // 已经带过还被拒就不再重试, 否则会死循环
+                if (response.request.header("Proxy-Authorization") != null) return@Authenticator null
+                response.request.newBuilder().header("Proxy-Authorization", auth).build()
+            },
+        )
+    }
 }
 
 private class LanBypassProxySelector(proxy: Proxy) : ProxySelector() {
