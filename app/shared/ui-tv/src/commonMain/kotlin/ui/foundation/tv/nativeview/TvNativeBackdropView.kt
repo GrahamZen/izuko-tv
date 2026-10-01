@@ -65,7 +65,11 @@ import me.him188.ani.app.ui.foundation.tv.fadeOutProfile
  * 背景图要显示的内容: [url] 主图, [subjectId] 这张图属于哪个条目 (给放大转场登记、提前取色; null = 不是条目自己的图),
  * [underlayUrl] 应急垫底 (主图下载卡住时垫在下面的竖版封面, 半透明, 见 TvHeroMediaPipelineState.underlayUrl), [obscure] 打码,
  * [upgradeUrl] 剧照升档的原图 (视觉效果完整档 + 4K 界面的下一集剧照, 见 TvHeroMediaPipelineState.upgradeUrl): 主图上屏、停稳之后
- * 原地叠上去 (见 [TvNativeBackdropView.navigating]). 同一张主图只换它时不算换图, 不交叉淡入.
+ * 原地叠上去 (见 [TvNativeBackdropView.navigating]). 同一张主图只换它 (或 [seedUrl]) 时不算换图, 不交叉淡入.
+ *
+ * [seedUrl] = 提前取主色用的图, 即详情页铺的那张 (整部的横版背景, 见 TvHeroMediaPipelineState.seriesBackdropUrl): 默认就是主图;
+ * 主图是继续观看的单集剧照时两张不同 —— 剧照算出的主色与详情页拿整部背景算的不一样, 进页会被换掉, 所以这时另解这一张取色;
+ * null = 那张还不知道 (地址没解析出来), 先不取色.
  */
 data class TvNativeBackdropTarget(
     val url: String,
@@ -73,6 +77,7 @@ data class TvNativeBackdropTarget(
     val underlayUrl: String? = null,
     val obscure: Boolean = false,
     val upgradeUrl: String? = null,
+    val seedUrl: String? = url,
 )
 
 /**
@@ -383,6 +388,9 @@ class TvNativeBackdropView(
 
         /** 已经去取 (或已叠上) 的原图地址. */
         private var upgradeRequested: String? = null
+
+        /** 已经另解来取色的那张图 (见 [TvNativeBackdropTarget.seedUrl]). */
+        private var seedRequested: String? = null
         private var upgradeJob: Job? = null
         private var upgradeAnimator: ValueAnimator? = null
 
@@ -450,11 +458,16 @@ class TvNativeBackdropView(
             }
         }
 
-        /** 同一张主图换来的新目标 (升档目标可能变了): 升档目标变了就撤掉旧的升档, 由 [show] 按新的重新安排. */
+        /**
+         * 同一张主图换来的新目标 (升档目标、取色用的图可能变了): 升档目标变了就撤掉旧的升档, 由 [show] 按新的重新安排;
+         * 取色用的图晚到 (主图已上屏) 时当场去取色.
+         */
         fun retarget(newTarget: TvNativeBackdropTarget) {
             val upgradeChanged = newTarget.upgradeUrl != target.upgradeUrl
+            val seedChanged = newTarget.seedUrl != target.seedUrl
             target = newTarget
             if (upgradeChanged) dropUpgrade()
+            if (seedChanged && mainLoaded) precomputeSeed(mainBitmap = null)
         }
 
         /**
@@ -516,10 +529,31 @@ class TvNativeBackdropView(
             // 返回缩回撤层前要等列表页 hero 这张图画得出来 (见 TvHeroZoomHandoff.listReady)
             TvHeroZoomHandoff.markSourceLoaded(subjectId, target.url)
             publishZoom()
+            precomputeSeed(bitmap)
+        }
+
+        /**
+         * 提前取主色写进 [SubjectSeedColorCache], 点进详情页第一帧就是动态色: 与详情页共用同一个取色函数, 取同一张图 (见 [TvNativeBackdropTarget.seedUrl]) ——
+         * 图或算法不一致的话, 进页后详情页自己算出的色会把它换掉, 观感是变一下. 取色用的图就是主图时拿刚解出的 [mainBitmap];
+         * 不是 (继续观看的单集剧照) 时按主图同样的解码参数另解那一张.
+         */
+        private fun precomputeSeed(mainBitmap: Bitmap?) {
+            val subjectId = target.subjectId ?: return
             if (target.obscure || SubjectSeedColorCache[subjectId] != null) return
-            // 提前取色: 与详情页共用同一个取色函数 (算法不一致的话进页会被重算的色顶掉, 观感是跳两次)
-            val imageBitmap = bitmap.asImageBitmap()
-            scope.launch { SubjectSeedColorCache[subjectId] = imageBitmap.subjectSeedColor() }
+            val seed = target.seedUrl ?: return
+            if (seed == target.url) {
+                val imageBitmap = mainBitmap?.asImageBitmap() ?: return
+                scope.launch { SubjectSeedColorCache[subjectId] = imageBitmap.subjectSeedColor() }
+                return
+            }
+            if (seedRequested == seed) return
+            seedRequested = seed
+            val w = width
+            val h = height
+            scope.launch {
+                val bitmap = TvNativeImages.fetchBackdrop(sketch, context, seed, w, h) ?: return@launch
+                if (SubjectSeedColorCache[subjectId] == null) SubjectSeedColorCache[subjectId] = bitmap.asImageBitmap().subjectSeedColor()
+            }
         }
 
         fun fadeTo(to: Float, animated: Boolean) {
