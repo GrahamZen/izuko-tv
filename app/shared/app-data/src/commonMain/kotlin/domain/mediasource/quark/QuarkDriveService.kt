@@ -29,6 +29,7 @@ import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
@@ -65,13 +66,68 @@ class QuarkDriveService internal constructor(
     val isLoggedIn: Flow<Boolean> = settings.flow.map { it.isLoggedIn }
 
     internal val browser = object : QuarkDriveBrowser {
-        override suspend fun search(keyword: String): List<QuarkFile> = api.search(keyword).files
+        override suspend fun search(keyword: String): List<QuarkFile> {
+            val files = api.search(keyword).files
+            // 转存来的文件归「夸克分享搜索」数据源, 不在这里重复出现
+            val saveFolder = settings.flow.first().shareSaveFolderId.ifEmpty { return files }
+            return files.filter { it.fid != saveFolder && it.parentFid != saveFolder }
+        }
 
-        override suspend fun listFolder(folderId: String): List<QuarkFile> {
-            val result = mutableListOf<QuarkFile>()
+        override suspend fun listFolder(folderId: String): List<QuarkFile> = listAll(folderId)
+    }
+
+    private suspend fun listAll(folderId: String): List<QuarkFile> {
+        val result = mutableListOf<QuarkFile>()
+        var page = 1
+        while (result.size < MAX_FOLDER_ITEMS) {
+            val list = api.listFolder(folderId, page)
+            result += list.files
+            if (list.files.size < QuarkApi.LIST_PAGE_SIZE || result.size >= list.total) break
+            page++
+        }
+        return result
+    }
+
+    // region 分享
+
+    private class CachedShareToken(val token: QuarkShareToken, val time: TimeMark)
+
+    private val shareTokenLock = Mutex()
+    private val shareTokens = LinkedHashMap<String, CachedShareToken>()
+
+    /** 分享的查看令牌, 缓存 [SHARE_TOKEN_TTL]: 列一个分享的文件夹要发好几次请求, 每次都带它. */
+    private suspend fun shareToken(shareId: String, passcode: String, refresh: Boolean = false): QuarkShareToken {
+        if (!refresh) {
+            shareTokenLock.withLock {
+                shareTokens[shareId]?.takeIf { it.time.elapsedNow() < SHARE_TOKEN_TTL }?.let { return it.token }
+            }
+        }
+        val token = api.shareToken(shareId, passcode)
+        shareTokenLock.withLock {
+            shareTokens[shareId] = CachedShareToken(token, TimeSource.Monotonic.markNow())
+            while (shareTokens.size > MAX_CACHED_SHARE_TOKENS) shareTokens.remove(shareTokens.keys.first())
+        }
+        return token
+    }
+
+    internal val shareBrowser = object : QuarkShareBrowser {
+        override suspend fun open(shareId: String, passcode: String): String = shareToken(shareId, passcode).title
+
+        override suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<QuarkShareFile> {
+            val result = mutableListOf<QuarkShareFile>()
             var page = 1
+            var token = shareToken(shareId, passcode)
+            var refreshed = false
             while (result.size < MAX_FOLDER_ITEMS) {
-                val list = api.listFolder(folderId, page)
+                val list = try {
+                    api.listShareFolder(shareId, token.stoken, folderId, page)
+                } catch (e: QuarkShareUnavailableException) {
+                    // 缓存的令牌可能过期了, 换一个再试一次
+                    if (refreshed) throw e
+                    refreshed = true
+                    token = shareToken(shareId, passcode, refresh = true)
+                    continue
+                }
                 result += list.files
                 if (list.files.size < QuarkApi.LIST_PAGE_SIZE || result.size >= list.total) break
                 page++
@@ -79,6 +135,98 @@ class QuarkDriveService internal constructor(
             return result
         }
     }
+
+    private val saveLock = Mutex()
+
+    /** 转存过的分享文件 ([QuarkShareFileRef.key]) 到转存后的文件 id. */
+    private val savedFiles = HashMap<String, String>()
+
+    /**
+     * 网盘根目录下的转存文件夹 [SAVE_FOLDER_NAME], 没有就新建; 找到或建好后记进 [QuarkConfig.shareSaveFolderId].
+     */
+    private suspend fun findSaveFolder(): String {
+        settings.flow.first().shareSaveFolderId.takeIf { it.isNotEmpty() }?.let { return it }
+        val folder = listAll(QuarkApi.ROOT_FOLDER_ID).firstOrNull { it.dir && it.fileName == SAVE_FOLDER_NAME }?.fid
+            ?: api.createFolder(SAVE_FOLDER_NAME).also { logger.info { "Created Quark folder $SAVE_FOLDER_NAME: $it" } }
+        setSaveFolder(folder)
+        return folder
+    }
+
+    private suspend fun setSaveFolder(folderId: String) {
+        cookieLock.withLock {
+            val current = settings.flow.first()
+            if (current.isLoggedIn && current.shareSaveFolderId != folderId) {
+                settings.set(current.copy(shareSaveFolderId = folderId))
+            }
+        }
+    }
+
+    /**
+     * 播放分享里的一个文件: 转存到自己网盘的 [SAVE_FOLDER_NAME] 再取地址 (分享里的文件不能直接取直链).
+     * 同一个文件只转存一次; 文件夹里超过 [MAX_SAVED_FILES] 个时删掉最早转存的.
+     */
+    suspend fun resolveSharePlayback(ref: QuarkShareFileRef): QuarkPlayback {
+        requireLoggedIn()
+        val fileId = saveLock.withLock { savedFiles[ref.key] } ?: saveShareFile(ref)
+        return try {
+            resolvePlayback(fileId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: QuarkApiException) {
+            // 转存的文件可能被用户删了: 重新转存一次
+            logger.warn { "Saved Quark file $fileId is not playable, saving again: ${e.message}" }
+            saveLock.withLock { savedFiles.remove(ref.key) }
+            resolvePlayback(saveShareFile(ref))
+        }
+    }
+
+    private suspend fun saveShareFile(ref: QuarkShareFileRef): String = saveLock.withLock {
+        try {
+            saveShareFileLocked(ref, findSaveFolder())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: QuarkShareUnavailableException) {
+            throw e
+        } catch (e: QuarkApiException) {
+            // 记下的转存文件夹可能被用户删了: 重新找 (没有就新建) 再试一次
+            logger.warn { "Saving to the remembered Quark folder failed, looking it up again: ${e.message}" }
+            setSaveFolder("")
+            saveShareFileLocked(ref, findSaveFolder())
+        }
+    }
+
+    private suspend fun saveShareFileLocked(ref: QuarkShareFileRef, folder: String): String {
+        val existing = listAll(folder).filter { !it.dir }
+        existing.firstOrNull { it.fileName == ref.fileName && (ref.size <= 0 || it.size == ref.size) }?.let {
+            savedFiles[ref.key] = it.fid
+            return it.fid
+        }
+        val token = shareToken(ref.shareId, ref.passcode)
+        val shareFile = QuarkShareFile(fid = ref.fid, fileName = ref.fileName, size = ref.size, shareFidToken = ref.shareFidToken)
+        val saved = api.saveFromShare(ref.shareId, token.stoken, shareFile, folder)
+        logger.info { "Saved Quark share file ${ref.key} (${ref.fileName}) as $saved" }
+        savedFiles[ref.key] = saved
+        val stale = filesToPrune(existing, MAX_SAVED_FILES - 1)
+        if (stale.isNotEmpty()) {
+            try {
+                api.deleteFiles(stale.map { it.fid })
+                val removed = stale.mapTo(HashSet()) { it.fid }
+                savedFiles.entries.removeAll { it.value in removed }
+                logger.info { "Removed ${stale.size} old files from $SAVE_FOLDER_NAME" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn(e) { "Failed to remove old files from $SAVE_FOLDER_NAME" }
+            }
+        }
+        return saved
+    }
+
+    // endregion
 
     suspend fun requireLoggedIn() {
         if (!settings.flow.first().isLoggedIn) throw QuarkAuthException()
@@ -234,6 +382,21 @@ class QuarkDriveService internal constructor(
         private val logger = logger<QuarkDriveService>()
 
         private const val MAX_FOLDER_ITEMS = 500
+
+        /** 播放分享时转存到网盘根目录下的这个文件夹. 只动这个文件夹里的东西. */
+        const val SAVE_FOLDER_NAME = "Izuko 转存"
+
+        /** 转存文件夹里最多留几个文件, 多了删最早转存的. */
+        const val MAX_SAVED_FILES = 20
+
+        private val SHARE_TOKEN_TTL = 30.minutes
+        private const val MAX_CACHED_SHARE_TOKENS = 64
+
+        /**
+         * 转存文件夹里还要再放一个文件时, [existing] 里该删掉哪些, 才能只留 [keep] 个: 先删最早的.
+         */
+        internal fun filesToPrune(existing: List<QuarkFile>, keep: Int): List<QuarkFile> =
+            existing.sortedBy { it.updatedAt }.dropLast(keep.coerceAtLeast(0))
 
         /**
          * 请求直链、转码 m3u8 与分片都要带的请求头. 缺 Cookie 时 CDN 回 412.

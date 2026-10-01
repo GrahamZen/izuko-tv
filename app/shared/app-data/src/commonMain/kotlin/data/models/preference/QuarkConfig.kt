@@ -30,12 +30,17 @@ data class QuarkConfig(
      */
     val memberType: String = "",
     val playbackMode: QuarkPlaybackMode = QuarkPlaybackMode.ORIGINAL,
+    /**
+     * 播放别人的分享时, 转存到的那个文件夹的 id (找到或建过一次就记下). 空表示还没有.
+     * 搜自己网盘时跳过这个文件夹, 不用每次先去根目录找它.
+     */
+    val shareSaveFolderId: String = "",
 ) {
     val isLoggedIn: Boolean get() = cookie.isNotBlank()
 
     override fun toString(): String {
         return "QuarkConfig(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
-                "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode)"
+                "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId)"
     }
 
     companion object {

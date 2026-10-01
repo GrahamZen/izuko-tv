@@ -62,47 +62,21 @@ internal class QuarkSubjectMatcher(
     )
 
     suspend fun match(request: MediaFetchRequest): List<MatchedFile> {
-        val names = (request.subjectNames + listOfNotNull(request.subjectNameCN))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-        val targetSeason = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
-        val keywords = keywordsOf(names)
+        val keywords = keywordsOf(subjectNamesOf(request))
         if (keywords.isEmpty()) return emptyList()
 
         val hits = searchAll(keywords)
-        val candidates = collectCandidates(hits)
-        val absoluteSorts = request.episodes
-            .filter { episode -> episode.ep != null && episode.ep != episode.sort }
-            .map { it.sort }
-            .toSet()
-
-        return candidates.mapNotNull { candidate ->
-            val parsed = DriveNameParser.parseFile(candidate.file.fileName)
-            if (parsed.isExtra) return@mapNotNull null
-            val episode = parsed.episode ?: return@mapNotNull null
-            if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull null
-            val season = parsed.season
-                ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
-            if (!seasonMatches(season, targetSeason, episode, absoluteSorts)) return@mapNotNull null
-            MatchedFile(candidate.file, candidate.folders, episode)
-        }
-    }
-
-    private fun seasonMatches(
-        fileSeason: Int?,
-        targetSeason: Int?,
-        episode: EpisodeSort,
-        absoluteSorts: Set<EpisodeSort>,
-    ): Boolean {
-        if (targetSeason == null || targetSeason == 1) return fileSeason == null || fileSeason == 1
-        if (fileSeason != null) return fileSeason == targetSeason
-        return episode in absoluteSorts
+        return matchEpisodes(request, collectCandidates(hits))
     }
 
     private class Hit(val keyword: String, val file: QuarkFile)
 
-    private class Candidate(val file: QuarkFile, val folders: List<String>)
+    /**
+     * 一个可能属于这个条目的视频文件.
+     *
+     * @param folders 从最外层到文件所在文件夹的名字, 用来认季 (越靠里的越优先)
+     */
+    class Candidate(val file: QuarkFile, val folders: List<String>)
 
     private suspend fun searchAll(keywords: List<String>): List<Hit> = coroutineScope {
         val semaphore = Semaphore(SEARCH_CONCURRENCY)
@@ -183,6 +157,46 @@ internal class QuarkSubjectMatcher(
          * 小于这个大小的视频 (样片、广告) 不要. 大小未知 (0) 的保留.
          */
         private const val MIN_VIDEO_SIZE = 20L * 1024 * 1024
+
+        /** 条目的所有名字 (中文名、原名、别名), 去空白去重. */
+        fun subjectNamesOf(request: MediaFetchRequest): List<String> =
+            (request.subjectNames + listOfNotNull(request.subjectNameCN))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+
+        /**
+         * 从候选文件里挑出这个条目的剧集: 文件名认得出集号、不是花絮、不是太小的样片, 季也对得上 (规则见类说明).
+         */
+        fun matchEpisodes(request: MediaFetchRequest, candidates: List<Candidate>): List<MatchedFile> {
+            val targetSeason = subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
+            val absoluteSorts = request.episodes
+                .filter { episode -> episode.ep != null && episode.ep != episode.sort }
+                .map { it.sort }
+                .toSet()
+
+            return candidates.mapNotNull { candidate ->
+                val parsed = DriveNameParser.parseFile(candidate.file.fileName)
+                if (parsed.isExtra) return@mapNotNull null
+                val episode = parsed.episode ?: return@mapNotNull null
+                if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull null
+                val season = parsed.season
+                    ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
+                if (!seasonMatches(season, targetSeason, episode, absoluteSorts)) return@mapNotNull null
+                MatchedFile(candidate.file, candidate.folders, episode)
+            }
+        }
+
+        private fun seasonMatches(
+            fileSeason: Int?,
+            targetSeason: Int?,
+            episode: EpisodeSort,
+            absoluteSorts: Set<EpisodeSort>,
+        ): Boolean {
+            if (targetSeason == null || targetSeason == 1) return fileSeason == null || fileSeason == 1
+            if (fileSeason != null) return fileSeason == targetSeason
+            return episode in absoluteSorts
+        }
 
         /**
          * 每个名字取主标题作关键词, 按归一化结果去重. 太短的关键词 (归一化后不到 2 个字) 会搜出一堆无关文件, 不用.

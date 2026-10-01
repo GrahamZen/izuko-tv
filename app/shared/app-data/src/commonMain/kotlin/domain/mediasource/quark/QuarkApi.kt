@@ -24,6 +24,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.io.IOException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -40,6 +41,7 @@ import me.him188.ani.utils.ktor.registerLogging
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.concurrent.Volatile
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -112,6 +114,109 @@ internal class QuarkApi(
         }
         return drivePost("file/v2/play", body, QuarkPlayData.serializer()).videoList
     }
+
+    /**
+     * 在 [parentId] 下新建文件夹, 返回新文件夹的 id.
+     */
+    suspend fun createFolder(name: String, parentId: String = ROOT_FOLDER_ID): String {
+        val body = buildJsonObject {
+            put("pdir_fid", parentId)
+            put("file_name", name)
+            put("dir_path", "")
+            put("dir_init_lock", false)
+        }
+        return drivePost("file", body, QuarkCreatedFile.serializer()).fid
+    }
+
+    /**
+     * 把文件移进回收站. 只传要删的 id, [fileIds] 为空时什么都不做.
+     */
+    suspend fun deleteFiles(fileIds: List<String>) {
+        if (fileIds.isEmpty()) return
+        val body = buildJsonObject {
+            put("action_type", 2)
+            putJsonArray("filelist") { fileIds.forEach { add(JsonPrimitive(it)) } }
+            putJsonArray("exclude_fids") {}
+        }
+        drivePost("file/delete", body, QuarkTaskRef.serializer())
+    }
+
+    // region 分享
+
+    /**
+     * 查看分享要用的令牌 (stoken). 不需要登录.
+     */
+    suspend fun shareToken(shareId: String, passcode: String): QuarkShareToken {
+        val body = buildJsonObject {
+            put("pwd_id", shareId)
+            put("passcode", passcode)
+        }
+        return drivePost("share/sharepage/token", body, QuarkShareToken.serializer(), share = true)
+    }
+
+    /**
+     * 列出分享里一个文件夹的直接子项, 分享的根是 [ROOT_FOLDER_ID]. 不需要登录.
+     */
+    suspend fun listShareFolder(
+        shareId: String,
+        stoken: String,
+        folderId: String,
+        page: Int = 1,
+        pageSize: Int = LIST_PAGE_SIZE,
+    ): QuarkShareFileList {
+        val response = driveRequest("share/sharepage/detail", share = true) { host ->
+            client.get("https://$host/1/clouddrive/share/sharepage/detail") {
+                driveParameters()
+                commonHeaders(cookie = null)
+                parameter("pwd_id", shareId)
+                parameter("stoken", stoken)
+                parameter("pdir_fid", folderId)
+                parameter("force", 0)
+                parameter("_page", page)
+                parameter("_size", pageSize)
+                parameter("_fetch_total", 1)
+                parameter("_sort", "file_type:asc,file_name:asc")
+            }
+        }
+        val parsed = json.decodeFromString(QuarkResponse.serializer(QuarkShareListData.serializer()), response)
+        return QuarkShareFileList(parsed.data?.list.orEmpty(), parsed.metadata?.total ?: 0)
+    }
+
+    /**
+     * 把分享里的一个文件转存到自己网盘的 [toFolderId] 下, 返回转存后的文件 id. 需要登录.
+     *
+     * 转存是后台任务: 提交后按任务 id 轮询, 任务完成时给出新文件的 id.
+     */
+    suspend fun saveFromShare(
+        shareId: String,
+        stoken: String,
+        file: QuarkShareFile,
+        toFolderId: String,
+    ): String {
+        val body = buildJsonObject {
+            putJsonArray("fid_list") { add(JsonPrimitive(file.fid)) }
+            putJsonArray("fid_token_list") { add(JsonPrimitive(file.shareFidToken)) }
+            put("to_pdir_fid", toFolderId)
+            put("pwd_id", shareId)
+            put("stoken", stoken)
+            put("pdir_fid", ROOT_FOLDER_ID)
+            put("scene", "link")
+        }
+        val taskId = drivePost("share/sharepage/save", body, QuarkTaskRef.serializer()).taskId
+            ?: throw QuarkApiException("夸克没有返回转存任务")
+        repeat(SAVE_TASK_MAX_POLLS) { retry ->
+            val task = driveGet("task", QuarkTask.serializer()) {
+                parameter("task_id", taskId)
+                parameter("retry_index", retry)
+            }
+            task.saveAs?.topFileIds?.firstOrNull()?.let { return it }
+            if (task.status == TASK_STATUS_FAILED) throw QuarkApiException("转存失败: ${task.message}")
+            delay(SAVE_TASK_POLL_INTERVAL)
+        }
+        throw QuarkApiException("转存超时")
+    }
+
+    // endregion
 
     // region 账号
 
@@ -226,11 +331,19 @@ internal class QuarkApi(
             ?: throw QuarkApiException("夸克接口 $path 没有返回数据")
     }
 
-    private suspend fun <T> drivePost(path: String, body: JsonObject, serializer: KSerializer<T>): T {
-        val response = driveRequest(path) { host ->
+    /**
+     * @param share 查看分享的接口: 不带登录 Cookie, 出错按 [QuarkShareUnavailableException] 报 (分享失效与登录无关)
+     */
+    private suspend fun <T> drivePost(
+        path: String,
+        body: JsonObject,
+        serializer: KSerializer<T>,
+        share: Boolean = false,
+    ): T {
+        val response = driveRequest(path, share) { host ->
             client.post("https://$host/1/clouddrive/$path") {
                 driveParameters()
-                commonHeaders(cookies.get())
+                commonHeaders(if (share) null else cookies.get())
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
             }
@@ -243,7 +356,11 @@ internal class QuarkApi(
      * 按域名轮换发网盘请求, 返回成功响应的正文. 只有连接层失败 (连不上/超时) 才换域名;
      * 服务端正常回了错误就直接按错误处理, 换域名也没用.
      */
-    private suspend fun driveRequest(path: String, send: suspend (host: String) -> HttpResponse): String {
+    private suspend fun driveRequest(
+        path: String,
+        share: Boolean = false,
+        send: suspend (host: String) -> HttpResponse,
+    ): String {
         var lastError: Throwable? = null
         val start = preferredHostIndex
         for (offset in driveHosts.indices) {
@@ -259,12 +376,26 @@ internal class QuarkApi(
                 continue
             }
             preferredHostIndex = index
-            handleServerCookies(response)
             val text = response.bodyAsText()
-            checkResponse(path, response.status, text)
+            if (share) {
+                checkShareResponse(path, response.status, text)
+            } else {
+                handleServerCookies(response)
+                checkResponse(path, response.status, text)
+            }
             return text
         }
         throw lastError ?: IOException("No Quark host available")
+    }
+
+    private fun checkShareResponse(path: String, status: HttpStatusCode, text: String) {
+        val envelope = runCatching { json.decodeFromString(QuarkEnvelope.serializer(), text) }.getOrNull()
+        if (!status.isSuccessOrRedirect() || envelope == null || envelope.code != 0) {
+            throw QuarkShareUnavailableException(
+                envelope?.code ?: 0,
+                "夸克分享不可用 ($path): HTTP ${status.value}, code=${envelope?.code}, ${envelope?.message.orEmpty()}",
+            )
+        }
     }
 
     private fun checkResponse(path: String, status: HttpStatusCode, text: String) {
@@ -349,6 +480,16 @@ internal class QuarkApi(
         const val SEARCH_PAGE_SIZE = 50
         const val LIST_PAGE_SIZE = 100
 
+        /** 网盘与分享的根文件夹 id. */
+        const val ROOT_FOLDER_ID = "0"
+
+        /** 转存任务最多查几次 (每次间隔 [SAVE_TASK_POLL_INTERVAL]). 实测小于一秒就完成. */
+        private const val SAVE_TASK_MAX_POLLS = 10
+        private val SAVE_TASK_POLL_INTERVAL = 1.seconds
+
+        /** 任务状态: 0 排队, 1 进行中, 2 完成, 3 失败. */
+        private const val TASK_STATUS_FAILED = 3
+
         private val logger = logger<QuarkApi>()
 
         internal val json = Json {
@@ -427,6 +568,11 @@ open class QuarkApiException(message: String, cause: Throwable? = null) : Except
  */
 class QuarkAuthException(message: String? = null) : QuarkApiException(message ?: "夸克网盘未登录或登录已失效")
 
+/**
+ * 分享打不开: 已取消、被封 (例如 41004 文件不存在, 41031 分享者被封禁) 或要提取码.
+ */
+class QuarkShareUnavailableException(val code: Int, message: String) : QuarkApiException(message)
+
 internal class QuarkQrToken(val token: String, val cookies: Map<String, String>)
 
 internal class QuarkTicketExchange(val cookies: Map<String, String>, val nickname: String?)
@@ -455,6 +601,41 @@ class QuarkFile(
 ) {
     val isVideo: Boolean get() = !dir && category == "video"
 }
+
+class QuarkShareFileList(val files: List<QuarkShareFile>, val total: Int)
+
+/**
+ * 分享里的一个文件或文件夹. 转存时要带上 [shareFidToken].
+ */
+@Serializable
+class QuarkShareFile(
+    val fid: String,
+    @SerialName("file_name") val fileName: String = "",
+    @SerialName("pdir_fid") val parentFid: String = "",
+    val dir: Boolean = false,
+    val size: Long = 0,
+    @SerialName("obj_category") val category: String? = null,
+    @SerialName("share_fid_token") val shareFidToken: String = "",
+    /** 毫秒时间戳. */
+    @SerialName("updated_at") val updatedAt: Long = 0,
+) {
+    /** 按网盘文件的形状看它, 以便复用按文件名认集的逻辑. */
+    fun asFile(): QuarkFile = QuarkFile(
+        fid = fid,
+        fileName = fileName,
+        parentFid = parentFid,
+        dir = dir,
+        size = size,
+        category = category,
+        updatedAt = updatedAt,
+    )
+}
+
+@Serializable
+class QuarkShareToken(
+    val stoken: String = "",
+    val title: String = "",
+)
 
 @Serializable
 class QuarkMember(
@@ -499,6 +680,33 @@ private class QuarkMetadata(
 @Serializable
 private class QuarkListData(
     val list: List<QuarkFile> = emptyList(),
+)
+
+@Serializable
+private class QuarkShareListData(
+    val list: List<QuarkShareFile> = emptyList(),
+)
+
+@Serializable
+private class QuarkCreatedFile(
+    val fid: String,
+)
+
+@Serializable
+private class QuarkTaskRef(
+    @SerialName("task_id") val taskId: String? = null,
+)
+
+@Serializable
+private class QuarkTask(
+    val status: Int = 0,
+    val message: String = "",
+    @SerialName("save_as") val saveAs: QuarkSaveAs? = null,
+)
+
+@Serializable
+private class QuarkSaveAs(
+    @SerialName("save_as_top_fids") val topFileIds: List<String> = emptyList(),
 )
 
 @Serializable
