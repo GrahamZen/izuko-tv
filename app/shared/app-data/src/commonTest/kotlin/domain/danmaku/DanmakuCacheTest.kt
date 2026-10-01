@@ -28,6 +28,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkAddedShares
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
@@ -272,6 +273,7 @@ class DanmakuCacheTest {
         override val anitorrentConfig: Settings<AnitorrentConfig> by lazy { error("no implemented") }
         override val pikpakConfig: Settings<PikPakConfig> by lazy { error("no implemented") }
         override val quarkConfig: Settings<QuarkConfig> by lazy { error("no implemented") }
+        override val quarkAddedShares: Settings<QuarkAddedShares> by lazy { error("no implemented") }
         override val torrentPeerConfig: Settings<TorrentPeerConfig> by lazy { error("no implemented") }
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("no implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("no implemented") }

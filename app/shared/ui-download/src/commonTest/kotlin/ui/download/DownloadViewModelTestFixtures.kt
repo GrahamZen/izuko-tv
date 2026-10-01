@@ -37,6 +37,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkAddedShares
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
@@ -312,6 +313,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")
     override val quarkConfig: Settings<QuarkConfig> get() = error("Not used")
+    override val quarkAddedShares: Settings<QuarkAddedShares> get() = error("Not used")
     override val torrentPeerConfig: Settings<TorrentPeerConfig> get() = error("Not used")
     override val oneshotActionConfig: Settings<OneshotActionConfig> get() = error("Not used")
     override val analyticsSettings: Settings<AnalyticsSettings> get() = error("Not used")

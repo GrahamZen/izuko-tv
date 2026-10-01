@@ -15,13 +15,17 @@ import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.mediasource.quark.QuarkAuthException
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
 import me.him188.ani.app.domain.mediasource.quark.QuarkMediaSource
+import me.him188.ani.app.domain.mediasource.quark.QuarkShareFileRef
+import me.him188.ani.app.domain.mediasource.quark.QuarkShareUnavailableException
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 
 /**
- * 播放夸克网盘数据源的资源: 用占位地址 (见 [QuarkMediaSource.uriOf]) 里的文件 id 现取播放地址, 连同 Cookie 等请求头交给播放器.
+ * 播放夸克的资源, 取到播放地址后连同 Cookie 等请求头交给播放器:
+ * - 夸克网盘数据源: 占位地址 (见 [QuarkMediaSource.uriOf]) 里是自己网盘的文件 id, 直接取地址;
+ * - 夸克分享搜索数据源: 占位地址里是分享里的文件 (见 [QuarkShareFileRef]), 先转存到自己网盘再取地址.
  *
  * 必须排在 [HttpStreamingMediaResolver] 前面, 后者会接下所有 [ResourceLocation.HttpStreamingFile].
  */
@@ -30,23 +34,34 @@ class QuarkMediaResolver(
 ) : MediaResolver {
     override fun supports(media: Media): Boolean {
         val download = media.download
-        return download is ResourceLocation.HttpStreamingFile && QuarkMediaSource.fileIdOf(download.uri) != null
+        return download is ResourceLocation.HttpStreamingFile &&
+                (QuarkMediaSource.fileIdOf(download.uri) != null || QuarkShareFileRef.parse(download.uri) != null)
     }
 
     override suspend fun resolve(media: Media, episode: EpisodeMetadata): MediaDataProvider<*> {
-        val fileId = QuarkMediaSource.fileIdOf(media.download.uri) ?: throw UnsupportedMediaException(media)
+        val uri = media.download.uri
+        val fileId = QuarkMediaSource.fileIdOf(uri)
+        val shareRef = QuarkShareFileRef.parse(uri)
+        val target = fileId ?: shareRef?.key ?: throw UnsupportedMediaException(media)
         val playback = try {
-            service.resolvePlayback(fileId)
+            when {
+                fileId != null -> service.resolvePlayback(fileId)
+                shareRef != null -> service.resolveSharePlayback(shareRef)
+                else -> throw UnsupportedMediaException(media)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkAuthException) {
             logger.warn { "Quark login is required to play ${media.mediaId}: ${e.message}" }
             throw MediaResolutionException(ResolutionFailures.ENGINE_ERROR, e)
+        } catch (e: QuarkShareUnavailableException) {
+            logger.warn { "Quark share of ${media.mediaId} is unavailable: ${e.message}" }
+            throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE, e)
         } catch (e: IOException) {
-            logger.warn { "Failed to resolve Quark file $fileId: $e" }
+            logger.warn { "Failed to resolve Quark file $target: $e" }
             throw MediaResolutionException(ResolutionFailures.NETWORK_ERROR, e)
         } catch (e: Throwable) {
-            logger.warn(e) { "Failed to resolve Quark file $fileId" }
+            logger.warn(e) { "Failed to resolve Quark file $target" }
             throw MediaResolutionException(ResolutionFailures.ENGINE_ERROR, e)
         }
         return HttpStreamingMediaDataProvider(

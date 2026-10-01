@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1239,4 +1239,47 @@ private fun part11() = listOf(
     RemoteText("已导入：", "Imported so far: ", "已導入：", "已匯入："),
     RemoteText("本地用户可以「导出收藏和播放进度」存成文件，换电视或重装后，在新的本地用户里「从文件导入」；已经收藏的不动。", "A local user can “Export collections and playback” to a file. After changing TVs or reinstalling, use “Import from file” in a new local user; collections already there stay unchanged.", "本地用戶可以「導出收藏和播放進度」存成文件，換電視或重裝後，在新的本地用戶裡「從文件導入」；已經收藏的不動。", "本地使用者可以「匯出收藏和播放進度」存成檔案，換電視或重新安裝後，在新的本地使用者裡「從檔案匯入」；已經收藏的不動。"),
     RemoteText("想把本地用户的收藏搬进 Bangumi：先切到登录了 Bangumi 的用户，再点那个本地用户，选「把收藏导入当前用户的 Bangumi 账号」。", "To move a local user’s collections into Bangumi: switch to a user signed in to Bangumi, tap that local user, then choose “Import collections into the current user’s Bangumi account”.", "想把本地用戶的收藏搬進 Bangumi：先切到登錄了 Bangumi 的用戶，再點那個本地用戶，選「把收藏導入當前用戶的 Bangumi 帳號」。", "想把本地使用者的收藏搬進 Bangumi：先切換到登入了 Bangumi 的使用者，再點那位本地使用者，選「把收藏匯入目前使用者的 Bangumi 帳號」。"),
+)
+
+/** 播放器页「添加夸克分享链接…」(RemoteQuarkShares / SHARES_SCRIPT). */
+private fun part12() = listOf(
+    RemoteText("添加夸克分享", "Add Quark share", "添加夸克分享", "新增夸克分享"),
+    RemoteText("添加夸克分享链接…", "Add a Quark share link…", "添加夸克分享鏈接…", "新增夸克分享連結…"),
+    RemoteText("夸克分享链接", "Quark share link", "夸克分享鏈接", "夸克分享連結"),
+    RemoteText("粘贴分享链接，可以连「提取码：xxxx」一起", "Paste the share link, with its passcode if it has one", "貼上分享鏈接，可以連「提取碼：xxxx」一起", "貼上分享連結，可以連「提取碼：xxxx」一起"),
+    RemoteText("在别处搜到夸克分享后，把链接粘贴到这里。电视会打开分享、认出这部番的剧集并记到这部番名下，之后每一集的选源列表里都有「我添加的分享」。播放时转存到你的夸克网盘，不改变画质。", "Found a Quark share elsewhere? Paste its link here. The TV opens the share, finds this show’s episodes and remembers the share for this show, so every episode lists it under “我添加的分享”. Playing first saves the file to your Quark Drive; the quality stays the same.", "在別處搜到夸克分享後，把鏈接貼上到這裡。電視會打開分享、認出這部番的劇集並記到這部番名下，之後每一集的選源列表裡都有「我添加的分享」。播放時轉存到你的夸克網盤，不改變畫質。", "在別處搜到夸克分享後，把連結貼上到這裡。電視會打開分享、認出這部番的劇集並記到這部番名下，之後每一集的選源列表裡都有「我添加的分享」。播放時轉存到你的夸克網盤，不改變畫質。"),
+    RemoteText("正在打开分享…", "Opening the share…", "正在打開分享…", "正在打開分享…"),
+    RemoteText("还没登录夸克", "Not signed in to Quark", "還沒登錄夸克", "還沒登入夸克"),
+    RemoteText("可以先添加，播放前要在「数据源」页登录夸克网盘", "You can add shares now; sign in to Quark Drive on the Sources page before playing", "可以先添加，播放前要在「數據源」頁登錄夸克網盤", "可以先新增，播放前要在「資料源」頁登入夸克網盤"),
+    RemoteText("播放这一集", "Play this episode", "播放這一集", "播放這一集"),
+    RemoteText("当作这一集播放", "Play as this episode", "當作這一集播放", "當作這一集播放"),
+    RemoteText("还有 {0} 个视频没列出", "{0} more videos not listed", "還有 {0} 個視頻沒列出", "還有 {0} 個影片沒列出"),
+    RemoteText("这部番已添加的分享", "Shares added to this show", "這部番已添加的分享", "這部番已新增的分享"),
+    RemoteText("还没有添加", "None yet", "還沒有添加", "還沒有新增"),
+    RemoteText("删除这个分享", "Remove this share", "刪除這個分享", "刪除這個分享"),
+    RemoteText("先把分享链接粘到框里", "Paste a share link into the box first", "先把分享鏈接貼到框裡", "先把分享連結貼到框裡"),
+    RemoteText("删除这个分享？这部番的选源列表里就不再有它", "Remove this share? It will no longer be listed for this show.", "刪除這個分享？這部番的選源列表裡就不再有它", "刪除這個分享？這部番的選源列表裡就不再有它"),
+    RemoteText("只支持夸克网盘的分享链接", "Only Quark Drive share links are supported", "只支持夸克網盤的分享鏈接", "只支援夸克網盤的分享連結"),
+    RemoteText("没有找到夸克分享链接", "No Quark share link found", "沒有找到夸克分享鏈接", "沒有找到夸克分享連結"),
+    RemoteText("已处理 {0} 个链接，看下面每个的结果", "Processed {0} links; see each result below", "已處理 {0} 個鏈接，看下面每個的結果", "已處理 {0} 個連結，看下面每個的結果"),
+    RemoteText("。正在重新搜索一次，让「我添加的分享」加入，电视上的视频会重新加载", ". The TV searches again so that “我添加的分享” joins in; the video reloads.", "。正在重新搜索一次，讓「我添加的分享」加入，電視上的視頻會重新加載", "。正在重新搜尋一次，讓「我添加的分享」加入，電視上的影片會重新載入"),
+    RemoteText("。已加到选源列表的「我添加的分享」", ". Added to “我添加的分享” in the source list.", "。已加到選源列表的「我添加的分享」", "。已加到選源列表的「我添加的分享」"),
+    RemoteText("（一次最多处理 {0} 个链接）", " (up to {0} links at a time)", "（一次最多處理 {0} 個鏈接）", "（一次最多處理 {0} 個連結）"),
+    RemoteText("打开分享超时，请稍后再试", "Opening the share timed out. Please try again later.", "打開分享超時，請稍後再試", "打開分享超時，請稍後再試"),
+    RemoteText("这个分享要提取码，请把「提取码：xxxx」一起粘贴进来", "This share needs a passcode. Paste it together with the link.", "這個分享要提取碼，請把「提取碼：xxxx」一起貼上進來", "這個分享要提取碼，請把「提取碼：xxxx」一起貼上進來"),
+    RemoteText("分享打不开：{0}", "The share cannot be opened: {0}", "分享打不開：{0}", "分享打不開：{0}"),
+    RemoteText("打开分享失败：{0}", "Could not open the share: {0}", "打開分享失敗：{0}", "打開分享失敗：{0}"),
+    RemoteText("没认出这部番的剧集（文件名认不出集号，或者季对不上）。在下面点一个文件当作这一集播放，会记下这个分享和这一集", "No episodes of this show were recognized (no readable episode numbers, or the season does not match). Tap a file below to play it as this episode; the share and this episode are remembered.", "沒認出這部番的劇集（文件名認不出集號，或者季對不上）。在下面點一個文件當作這一集播放，會記下這個分享和這一集", "沒認出這部番的劇集（檔名認不出集號，或者季對不上）。在下面點一個檔案當作這一集播放，會記下這個分享和這一集"),
+    RemoteText("已记下这个文件是第 {0} 集，正在电视上播放", "Remembered this file as episode {0}; playing on the TV", "已記下這個文件是第 {0} 集，正在電視上播放", "已記下這個檔案是第 {0} 集，正在電視上播放"),
+    RemoteText("分享里没有视频文件，可能被分享者删除或被夸克屏蔽了", "This share has no video files. The sharer may have deleted them, or Quark blocked them.", "分享裡沒有視頻文件，可能被分享者刪除或被夸克屏蔽了", "分享裡沒有影片檔案，可能被分享者刪除或被夸克封鎖了"),
+    RemoteText("打不开这个分享（{0}）", "Could not open this share ({0})", "打不開這個分享（{0}）", "打不開這個分享（{0}）"),
+    RemoteText("分享里已经没有文件了，可能被分享者删除或被夸克屏蔽", "The share has no files any more. The sharer may have deleted them, or Quark blocked them", "分享裡已經沒有文件了，可能被分享者刪除或被夸克屏蔽", "分享裡已經沒有檔案了，可能被分享者刪除或被夸克封鎖"),
+    RemoteText("。已经转存到你网盘的 {0} 集照常能播", ". The {0} episode(s) already saved to your drive still play.", "。已經轉存到你網盤的 {0} 集照常能播", "。已經轉存到你網盤的 {0} 集照常能播"),
+    RemoteText("。可以删掉它，换一个分享链接", ". You can delete it and add another share link.", "。可以刪掉它，換一個分享鏈接", "。可以刪掉它，換一個分享連結"),
+    RemoteText("认出第 {0} 集", "Found episodes {0}", "認出第 {0} 集", "認出第 {0} 集"),
+    RemoteText("认出第 {0} 集，没有第 {1} 集", "Found episodes {0}, but not episode {1}", "認出第 {0} 集，沒有第 {1} 集", "認出第 {0} 集，沒有第 {1} 集"),
+    RemoteText("这个分享已经不在了", "This share is no longer there", "這個分享已經不在了", "這個分享已經不在了"),
+    RemoteText("找不到这个文件，请重新粘贴链接", "File not found. Paste the link again.", "找不到這個文件，請重新貼上鏈接", "找不到這個檔案，請重新貼上連結"),
+    RemoteText("。播放前要先登录夸克（「数据源」页的「夸克网盘」）", ". Sign in to Quark first (Quark Drive on the Sources page).", "。播放前要先登錄夸克（「數據源」頁的「夸克網盤」）", "。播放前要先登入夸克（「資料源」頁的「夸克網盤」）"),
+    RemoteText("正在电视上播放", "Playing on the TV", "正在電視上播放", "正在電視上播放"),
 )

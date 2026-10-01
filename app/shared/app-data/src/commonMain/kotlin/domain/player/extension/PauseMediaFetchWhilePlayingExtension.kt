@@ -16,8 +16,10 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
+import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareMediaSource
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -25,7 +27,8 @@ import org.koin.core.Koin
 
 /**
  * 视频真正播起来 (时钟在走) 时, 暂停还没查完的数据源: 弱机上搜索和播放抢 CPU、网络与内存, 开播那一两分钟会卡.
- * 本地缓存不暂停. 还没有资源播起来之前所有数据源照常同时查询.
+ * 本地缓存与「我添加的分享」不暂停: 都很轻 (后者只读用户给这部番添加的那几个分享), 而且后者常在开播的同时刚加上分享、正要查.
+ * 还没有资源播起来之前所有数据源照常同时查询.
  *
  * 只认播放状态从没在播变成在播的那一刻: 换了查询会话 (如重新搜索) 重新挂上时视频已经在播, 不算开始播放.
  *
@@ -46,9 +49,7 @@ class PauseMediaFetchWhilePlayingExtension(
                 // drop(1): 挂上时的当前状态不算一次变化
                 context.player.state.map { it.isPlaying }.distinctUntilChanged().drop(1).filter { it }.collect {
                     if (!canPause()) return@collect
-                    val paused = bundle.mediaFetchSession.pauseSearching(
-                        keep = { it.kind == MediaSourceKind.LocalCache },
-                    )
+                    val paused = bundle.mediaFetchSession.pauseSearching(keep = ::keepsSearching)
                     if (paused > 0) {
                         logger.info { "Playback started, paused $paused media sources that were still searching" }
                     }
@@ -56,6 +57,9 @@ class PauseMediaFetchWhilePlayingExtension(
             }
         }
     }
+
+    private fun keepsSearching(result: MediaSourceFetchResult): Boolean =
+        result.kind == MediaSourceKind.LocalCache || result.sourceInfo == QuarkAddedShareMediaSource.INFO
 
     class Factory(
         private val canPause: () -> Boolean = { true },
