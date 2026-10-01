@@ -61,6 +61,25 @@ enum class TvPosterConfirmAction {
     Details,
 }
 
+/**
+ * TV: 整屏模糊背景糊到什么程度. 海报墙 (hero 态与新番时间表, 见 [ThemeSettings.tvWallBackdropBlur]) 与详情页 ([ThemeSettings.tvDetailsBackdropBlur]) 各一档,
+ * 两边选同一档时从海报墙进详情页, 那张模糊图是现成的.
+ */
+@Serializable
+enum class TvBackdropBlurLevel {
+    /** 不模糊: 不铺模糊背景 (各处的含义见用它的字段). */
+    None,
+
+    /** 轻: 看得出原图画的是什么. */
+    Light,
+
+    /** 中: 认得出大块的形状与颜色. 默认. */
+    Medium,
+
+    /** 重: 只剩颜色. */
+    Strong,
+}
+
 /** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 @Serializable
 enum class TvExitBehavior {
@@ -226,16 +245,23 @@ data class ThemeSettings(
      */
     val tvHeroBackdrop: Boolean = true,
     /**
-     * TV: 探索 / 追番 / 搜索三页海报墙的 hero 态 (卡片上按一下确定之后) 在整页底下铺聚焦那部的模糊背景 (整部的横版背景图, 同新番时间表);
+     * TV: 探索 / 追番 / 搜索三页海报墙的 hero 态 (卡片上按一下确定之后) 在整页底下铺聚焦那部的模糊背景 (整部的横版背景图), 糊到什么程度;
      * 右上角的 hero 图 (继续观看的条目是单集剧照) 与文字照旧画在上面, 整屏底色不压黑 (深色主题也是, 一直是卡片墙的灰). 再按确定时卡片与
-     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. 默认开; 关 = hero 态整页是纯色底 (深色主题压成近黑), 进出详情页从 hero 图
-     * 放大 / 缩回. 轮播与卡片墙不受影响.
+     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. 默认中; [TvBackdropBlurLevel.None] = hero 态整页是纯色底 (深色主题压成近黑),
+     * 进出详情页从 hero 图放大 / 缩回. 轮播与卡片墙不受影响. 新番时间表的背景 (恒铺) 也按这一档, 见 [tvScheduleBlurLevel].
      *
      * @since 1.0.4
      */
-    val tvHeroBlurBackdrop: Boolean = true,
+    val tvWallBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Medium,
     /**
-     * TV: 海报墙的卡片上按确定做什么 (见 [TvPosterConfirmAction]). 只有 [TvPosterConfirmAction.Hero] 有 hero 态, [tvHeroBlurBackdrop] 也只对它有用.
+     * TV: 详情页翻离首屏后, 底下铺这部背景图的模糊版 (与海报墙铺的是同一种小图), 糊到什么程度; 上面的字照对比度压暗, 首屏不变.
+     * [TvBackdropBlurLevel.None] = 不铺, 照旧把清晰的背景图淡到一档留着.
+     *
+     * @since 1.0.4
+     */
+    val tvDetailsBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Medium,
+    /**
+     * TV: 海报墙的卡片上按确定做什么 (见 [TvPosterConfirmAction]). 只有 [TvPosterConfirmAction.Hero] 有 hero 态, [tvWallBackdropBlur] 的 hero 态部分也只对它有用.
      *
      * @since 1.0.4
      */
@@ -379,6 +405,11 @@ data class ThemeSettings(
     @Transient
     val visualEffects: TvVisualEffectsLevel =
         tvVisualEffects ?: if (tvFullVisualEffects) TvVisualEffectsLevel.Full else TvVisualEffectsLevel.Balanced
+
+    /** 新番时间表的背景 (恒铺模糊背景) 糊到什么程度: 海报墙那一档 ([tvWallBackdropBlur]), 选了不模糊时按中. */
+    @Transient
+    val tvScheduleBlurLevel: TvBackdropBlurLevel =
+        tvWallBackdropBlur.takeIf { it != TvBackdropBlurLevel.None } ?: TvBackdropBlurLevel.Medium
 
     companion object {
         @Stable

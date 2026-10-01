@@ -13,6 +13,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
@@ -36,6 +37,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
 import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.layout.boundsInRoot
@@ -1200,19 +1202,41 @@ fun SubjectDetailsTvPage(
                 }
                 // backdrop 图到位且停在页顶 (图不透明盖满) 时暂停光斑动画: 被盖住还在跑的
                 // 全屏 blur 是探针实测里详情页"永不静止"的主因 (2026-07-31, 常驻 13-30fps).
-                // 滚动后 backdrop 渐隐、光斑重新露出, 动画随之恢复
+                // 翻离首屏后由模糊底盖满, 同样停; 只有翻页途中 (两层交叉) 与模糊底还没解好时光斑露着、动画照走
                 var backdropLoaded by remember(heroBackdropUrl) { mutableStateOf(false) }
+                // 模糊底 (见 TvDetailsBlurredBackdrop) 露出来的程度: 解好时还停在首屏就当场到 1 (首屏本来看不见它),
+                // 已经翻到后面就淡进来, 清晰图同时从原来停的那一档淡没, 不跳
+                // 设置里能选不模糊 (见 ThemeSettings.tvDetailsBackdropBlur): 清晰图照旧淡到一档留着, 跟着设置从头算
+                val detailsBlur = LocalThemeSettings.current.tvDetailsBackdropBlur != TvBackdropBlurLevel.None
+                val blurShown = remember(heroBackdropUrl, detailsBlur) { Animatable(0f) }
+                var blurLoaded by remember(heroBackdropUrl, detailsBlur) { mutableStateOf(false) }
+                LaunchedEffect(blurShown, blurLoaded) {
+                    if (!blurLoaded) return@LaunchedEffect
+                    if (pager.backdropFadeNow() <= 0f) blurShown.snapTo(1f)
+                    else blurShown.animateTo(1f, tween(TV_WALL_BACKDROP_CROSSFADE_MILLIS))
+                }
                 if (colors != null && !underZoom) {
                     AnimatedGradientBackground(
                         colors,
                         speed = 0.05,
                         modifier = Modifier.fillMaxSize(),
-                        paused = { backdropLoaded && scrollState.value <= 0 },
+                        paused = {
+                            backdropLoaded && scrollState.value <= 0 || blurShown.value >= 1f && pager.backdropFadeNow() >= 1f
+                        },
                     )
                 }
                 // 全屏背景: TMDB 横版图, 没有则竖版封面居中裁切 (见 heroBackdropUrl).
                 // 连封面也没有时才什么都不铺, 由 TvHeroBlock 走"无图版式"
                 heroBackdropUrl?.let { url ->
+                    // 翻离首屏后的底: 同一张图的模糊版, 首屏不露 (透明度跟着清晰图淡出的进度走)
+                    if (detailsBlur) {
+                        TvDetailsBlurredBackdrop(
+                            url,
+                            alpha = { blurShown.value * pager.backdropFadeNow() },
+                            load = !underZoom,
+                            onLoaded = { blurLoaded = true },
+                        )
+                    }
                     TvHeroBackdrop(
                         imageUrl = url,
                         // 放大会话进行中: 组合着 (提前把位图加载好) 但不画, 放大那一层在下面顶着; 接手那一帧才显示
@@ -1226,6 +1250,7 @@ fun SubjectDetailsTvPage(
                         scrollState = scrollState,
                         // 换页的滚动是跳的: 背景淡出进度改由 TvDetailsPager 按时长走, 不随滚动量一下子到底
                         scrollFade = { pager.backdropProgress() },
+                        fadedAlphaScale = { 1f - blurShown.value },
                         // 页面主题色从**这张背景图**取: 它就是屏幕上最大的一块颜色, 主色与它同源
                         // 才不脱节 (改用竖版封面试过, 有些条目两张图色调差很远, 观感割裂).
                         // 没有 backdrop 的条目由下面那条 hero 分支用竖版封面兜底, 见 heroBackdropUrl
@@ -3138,6 +3163,11 @@ private fun TvHeroBackdrop(
     sharpen: Boolean = true,
     /** 向下滚动的淡出进度 (0..1) 由调用方给, 绘制里读; 返回 null 时照常按滚动量算. 见真页的 TvDetailsPager (换页的滚动是跳的). */
     scrollFade: () -> Float? = { null },
+    /**
+     * 翻离首屏后淡到的不透明度再乘上它, 绘制里读: 底下铺好了模糊背景时真页给 0 (翻离首屏就整张淡没, 露出模糊底), 见 [TvDetailsBlurredBackdrop].
+     * 为 0 时下缘渐隐也不再随翻页收掉 (整张都淡没了, 不会在后面几页压一道黑): 本层的内容在翻页途中不变, 离屏缓冲不用每帧重画, 只改整层透明度.
+     */
+    fadedAlphaScale: () -> Float = { 1f },
 ) {
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
@@ -3169,7 +3199,7 @@ private fun TvHeroBackdrop(
                     }
                     // 向下滚动逐渐淡出, 但保留半透明而非完全消失
                     val progress = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
-                    alpha = (1f - progress * (1f - minAlpha)) * fadeInAlpha()
+                    alpha = (1f - progress * (1f - minAlpha * fadedAlphaScale())) * fadeInAlpha()
                     // 底部渐隐用 DstOut 擦除本层 alpha, 需要离屏合成; 垫纯色时改画同色渐变, 不必离屏 (见 solidUnderlay)
                     // 软边要擦本层已画好的 alpha, 必须离屏; 其余情形照旧 (见 solidUnderlay).
                     //
@@ -3219,7 +3249,12 @@ private fun TvHeroBackdrop(
                     val t = zoomT()
                     // 下缘渐隐只属于首屏 (托住首屏下半的信息带与选集): 翻离首屏时与背景淡出同一个进度收掉, 第二页起背景图整屏均匀地
                     // 淡在 HERO_BACKDROP_MIN_ALPHA, 底下不再单独压一道黑. 缩回层按按返回那一刻的进度起步 (见 scrollFade)
-                    val scrolled = scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
+                    // 底下铺着模糊底时不读翻页进度 (读了就每帧重录这一层, 离屏缓冲跟着每帧重画), 见 fadedAlphaScale
+                    val scrolled = if (fadedAlphaScale() <= 0f) {
+                        0f
+                    } else {
+                        scrollFade() ?: (scrollState.value / HERO_BACKDROP_FADE_DISTANCE.toPx()).coerceIn(0f, 1f)
+                    }
                     val ownTreatment = tvHeroBackdropTreatment(solidUnderlay, bottomStrength = 1f - scrolled, light = light)
                     val treatment = if (zoomFrom != null && t < 1f) {
                         lerpTvBackdropTreatment(sourceTreatment ?: TvBackdropTreatment(), ownTreatment, t)
