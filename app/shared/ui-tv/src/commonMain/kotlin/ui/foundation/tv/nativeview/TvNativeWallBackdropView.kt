@@ -19,7 +19,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
-import android.os.Build
 import android.view.Choreographer
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -35,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
 import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
@@ -58,7 +58,7 @@ data class TvNativeWallBackdropTarget(
 /**
  * 海报墙底下的整屏背景 (新番时间表): 平时铺聚焦那部背景图的**模糊版** (同 tvOS 的模糊底), 对焦时 ([sharpness]) 叠上清晰原图.
  *
- * 模糊层: 同一个地址只解长边 [TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX] 的小图, 解码线程上模糊, 拉伸铺满 (见 TvNativeImages.loadBlurredBackdrop).
+ * 模糊层: 同一个地址只解一张小图 (多大、糊多少按 [blur], 见 tvBackdropBlurSpec), 解码线程上模糊, 拉伸铺满 (见 TvNativeImages.loadBlurredBackdrop).
  * 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的常驻 GPU 开销之一. 整屏压暗 ([maskColor])
  * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha); hero 态铺模糊背景时 (深色主题) 照 Apple TV 只分两档
  * ([brightMaskAlpha]). 压暗用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
@@ -130,6 +130,14 @@ class TvNativeWallBackdropView(
             if (field == value || (field.isNaN() && value.isNaN())) return
             field = value
             refreshMasks()
+        }
+
+    /** 模糊程度 (设置里的那一档, 见 tvBackdropBlurSpec). 换了就按新的程度重解当前这张, 解好照常淡入换上. */
+    internal var blur: TvBackdropBlurSpec = tvBackdropBlurSpec(TvBackdropBlurLevel.Medium)
+        set(value) {
+            if (field == value) return
+            field = value
+            target?.let { addSlot(it, direct = false) }
         }
 
     /** 卡片的封面框: 竖版封面的模糊版取同一档缩略图 (下载缓存命中). */
@@ -259,6 +267,9 @@ class TvNativeWallBackdropView(
 
     /** 模糊层的一张. [direct] = 解好直接出现, 不淡入. */
     private inner class BlurSlot(val target: TvNativeWallBackdropTarget, private val direct: Boolean) {
+        /** 这张按哪一档解 (建的时候的 [blur]). */
+        private val spec = blur
+
         val image = ImageView(context).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             alpha = 0f
@@ -308,11 +319,7 @@ class TvNativeWallBackdropView(
         }
 
         private fun measure(bitmap: Bitmap) {
-            // 硬件位图读不了像素 (模糊变换出来的是普通位图, 这里只是保险)
-            val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE
-            val source = if (hardware) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
-            val pixels = IntArray(source.width * source.height)
-            source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
+            val pixels = tvBackdropMeasurePixels(bitmap)
             worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true)
             worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false)
             luminosity = tvBackdropLuminosity(pixels)
@@ -324,8 +331,8 @@ class TvNativeWallBackdropView(
                 awaitPrefetch(target.url)
                 TvNativeImages.loadBlurredBackdrop(
                     sketch, image, target.url, width, height,
-                    longEdgePx = TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX,
-                    blurRadiusPx = TV_WALL_BACKDROP_BLUR_RADIUS_PX,
+                    longEdgePx = spec.longEdgePx,
+                    blurRadiusPx = spec.radiusPx,
                     coverWidthPx = coverWidthPx,
                     coverHeightPx = coverHeightPx,
                 ) { bitmap -> if (bitmap != null) onLoaded(bitmap) else onFailed() }
@@ -610,12 +617,6 @@ internal fun tvNativeEndListener(onEnd: (() -> Unit)?): Animator.AnimatorListene
         if (!cancelled) onEnd?.invoke()
     }
 }
-
-/** 模糊版解多大 (长边 px): TMDB w1280 正好 1/8 采样 (JPEG 按 1/8 解码最省). */
-internal const val TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX = 160
-
-/** 模糊半径 (按小图的像素算): 160 宽里的 10 ≈ 1080p 整屏上的 120px. */
-internal const val TV_WALL_BACKDROP_BLUR_RADIUS_PX = 10
 
 /** 模糊层换图的交叉淡入. */
 const val TV_WALL_BACKDROP_CROSSFADE_MILLIS = 400
