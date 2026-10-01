@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.widget.ImageView
 import androidx.compose.ui.Alignment
@@ -18,6 +19,7 @@ import com.github.panpf.sketch.Sketch
 import com.github.panpf.sketch.asBitmapOrNull
 import com.github.panpf.sketch.disposeLoad
 import com.github.panpf.sketch.request.ImageRequest
+import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.transform.BlurTransformation
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 
@@ -154,6 +156,25 @@ object TvNativeImages {
             }
         }
         sketch.enqueue(request)
+    }
+
+    /**
+     * 解一张背景图只拿位图、不上屏 (提前取主色用): 参数同 [loadBackdrop] —— TMDB w1280 档按原尺寸解, 与详情页和列表页 hero 同一个内存缓存键,
+     * 解出来的就是详情页拿去取色的那张位图 (取出的主色一致), 进详情页时内存缓存也直接命中. [widthPx] × [heightPx] = 显示它的图层框.
+     * 下载 / 解码失败时 null.
+     */
+    suspend fun fetchBackdrop(sketch: Sketch, context: Context, url: String, widthPx: Int, heightPx: Int): Bitmap? {
+        val request = ImageRequest(context, url) {
+            configureAniImageRequest(
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                requestSize = IntSize(widthPx, heightPx).toAniImageRequestSize(),
+                decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(url),
+            )
+            crossfade(false)
+            allowNullImage(true)
+        }
+        return (sketch.execute(request) as? ImageResult.Success)?.image?.asBitmapOrNull()
     }
 
     /**
