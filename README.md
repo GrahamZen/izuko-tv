@@ -21,7 +21,7 @@
 ## 功能
 
 - **Bangumi 同步**：番剧信息与评论，收藏、评分和观看进度直接读写你的 Bangumi 账号
-- **多数据源**：BT（[动漫花园][dmhy]、[Mikan]）与在线源，支持订阅和自定义，自动选源
+- **多数据源**：BT（[动漫花园][dmhy]、[Mikan]）、在线源和夸克网盘，支持订阅和自定义，自动选源
 - **弹幕**：来自[弹弹play][ddplay]，也可以发送
 - **离线缓存**：提前把剧集缓存到本地；BT 资源边下边播
 - **播放器**：拖动进度时预览画面，长按倍速，片尾自动接下一集
@@ -32,37 +32,43 @@
 
 ## 界面预览
 
+探索、搜索、追番和新番时间表都是海报墙。
+
 ### 探索页
 
-| <img src=".readme/images/features/tv-home.png" alt="探索页 - 热门动画轮播" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
-
-| <img src=".readme/images/features/tv-home2.png" alt="探索页 - 推荐" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
-
-| <img src=".readme/images/features/tv-home3.png" alt="探索页 - 继续观看" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-explore-hero.png" alt="探索页首屏" width="380"/> | <img src=".readme/images/features/tv-explore-backdrop.png" alt="在海报上按确认" width="380"/> |
+|:---:|:---:|
+| 首屏是热门动画轮播，下面是推荐 | 在海报上按确认，先显示背景大图和简介 |
+| <img src=".readme/images/features/tv-explore-recommend.png" alt="推荐" width="380"/> | <img src=".readme/images/features/tv-explore-scroll.png" alt="往下翻" width="380"/> |
+| 推荐区（未登录时显示默认推荐） | 往下翻还有更多 |
+| <img src=".readme/images/features/tv-explore-ui-scale.png" alt="界面缩放调小" width="380"/> | |
+| 「界面缩放」调小后，一屏能放更多海报 | |
 
 ### 追番页
 
-| <img src=".readme/images/features/tv-collection.png" alt="追番页" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-collection.png" alt="追番页" width="380"/> |
+|:---:|
+| 想看、在看、看过等分类，顺序可以自定义 |
 
 ### 搜索页
 
-| <img src=".readme/images/features/tv-search.png" alt="搜索页" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-search-results.png" alt="搜索结果" width="380"/> | <img src=".readme/images/features/tv-search-backdrop.png" alt="在搜索结果上按确认" width="380"/> |
+|:---:|:---:|
+| 按关键词、标签、年份筛选 | 在结果上按确认，先看背景大图和简介 |
 
 ### 详情页
 
-| <img src=".readme/images/features/subject-details1.png" alt="详情页" width="600"/> |
-|:--------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-details.png" alt="详情页" width="380"/> | <img src=".readme/images/features/tv-details-episodes.png" alt="选集" width="380"/> |
+|:---:|:---:|
+| 评分、标签与收藏人数 | 分集剧照与剧情简介 |
+| <img src=".readme/images/features/tv-details-cast.png" alt="角色与制作人员" width="380"/> | <img src=".readme/images/features/tv-details-reviews.png" alt="评价与关联条目" width="380"/> |
+| 角色与制作人员 | Bangumi 评价与关联条目 |
 
-| <img src=".readme/images/features/subject-details2.png" alt="详情页 - 选集轮播" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
+### Web 控制台
 
-| <img src=".readme/images/features/subject-details3.png" alt="详情页 - 作品信息" width="600"/> |
-|:---------------------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv-web-console.png" alt="Web 控制台" width="380"/> |
+|:---:|
+| 手机扫码打开，不用装应用：打字搜索、控制播放、管理缓存和设置、登录 Bangumi |
 
 ### 播放器
 
@@ -70,15 +76,9 @@ https://github.com/user-attachments/assets/7f9fe051-a904-4157-a317-b13284390fec
 
 ### 主屏幕频道与屏保
 
-主屏幕上显示「热门动画」频道和「继续观看」行，点卡片直达详情页（首次启动时按系统提示允许添加频道）。
-
-| <img src=".readme/images/features/tv_preview_channels.png" alt="主屏幕频道" width="600"/> |
-|:----------------------------------------------------------------------------------------------:|
-
-屏保轮播在看和热门动画的剧照，按确认键进入详情页，左右键切换（在系统设置 → 屏保中选择 Izuko TV）。
-
-| <img src=".readme/images/features/tv_screen_saver.png" alt="屏保" width="600"/> |
-|:------------------------------------------------------------------------------------:|
+| <img src=".readme/images/features/tv_preview_channels.png" alt="主屏幕频道" width="380"/> | <img src=".readme/images/features/tv_screen_saver.png" alt="屏保" width="380"/> |
+|:---:|:---:|
+| 主屏幕上的「热门动画」频道和「继续观看」行，点卡片直达详情页（首次启动时按系统提示允许添加频道） | 屏保轮播在看和热门动画的剧照，按确认键进入详情页（在系统设置 → 屏保中选择 Izuko TV） |
 
 ## 下载安装
 
@@ -93,7 +93,7 @@ Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/ope
 
 ## 使用说明
 
-基本操作和其他电视应用一样。在播放器以外**长按返回键**或**长按播放键**会打开动作面板：回到正在播放的那一集或接着看上次的，也能回首页、刷新、换一批推荐、退出，右上角是 Web 控制台的二维码（长按的作用可以在「设置 → 界面」里改）。
+基本操作和其他电视应用一样。在探索、搜索、追番页的海报上按确认，先显示背景大图和简介，再按一次进详情页。在播放器以外**长按返回键**或**长按播放键**会打开动作面板：回到正在播放的那一集或接着看上次的，也能回首页、刷新、换一批推荐、退出，右上角是 Web 控制台的二维码（长按的作用可以在「设置 → 界面」里改）。
 
 ### 播放器
 
@@ -115,7 +115,7 @@ Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/ope
 ### 小提示
 
 - **界面太大或太小**：「设置 → 界面 → 界面缩放」可以在 50% ~ 250% 之间调整。
-- **设备较卡**：「设置 → 主题与色彩 → 视觉效果」选「流畅」；探索页、详情页和新番时间表也可以分别关掉沉浸式布局。
+- **设备较卡**：「设置 → 主题与色彩 → 视觉效果」选「流畅」；探索页和详情页也可以分别关掉沉浸式布局，新番时间表可以在「新番时间表版式」里换成经典列表。
 - **电视上登录不方便**：扫登录页上的二维码，在手机上登录。
 - **数据源排序**：在「设置 → 数据源管理」长按一行进入多选，再长按任意一行选「排序」，上下键移动，确认键放下。
 - **网页验证码**（部分在线数据源需要）：先按方向键唤出光标，确认键点击；验证通过后一般会自动关闭，没关就长按确认键。
