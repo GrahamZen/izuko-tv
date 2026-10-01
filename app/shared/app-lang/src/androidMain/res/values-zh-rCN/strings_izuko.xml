@@ -184,8 +184,14 @@
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
     <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
     <string name="settings_theme_tv_schedule_layout_description">选择电视上新番时间表的版式。</string>
-    <string name="settings_theme_tv_hero_blur_backdrop">海报墙按确定后铺模糊背景 (电视)</string>
-    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜索页在海报上按确定后，整页底下铺上这部的模糊背景图 (同新番时间表)，右上角的大图照旧；再按确定时背景变清晰再进详情页，代替放大。只在「海报上按确定」选「先看简介」时有用</string>
+    <string name="settings_theme_tv_hero_blur_backdrop">海报墙模糊背景 (电视)</string>
+    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜索页在海报上按确定后，整页底下铺上这部的模糊背景图，右上角的大图照旧；再按确定时背景变清晰再进详情页。只在「海报上按确定」选「先看简介」时有用；选不模糊则底下是纯色，从大图放大进详情页。新番时间表的背景也按这一档糊 (选不模糊时按中)</string>
+    <string name="settings_theme_tv_details_blur_backdrop">详情页模糊背景 (电视)</string>
+    <string name="settings_theme_tv_details_blur_backdrop_description">详情页翻过第一屏后，底下换成这部背景图的模糊版，上面的字更清楚；越轻越看得出原图。选不模糊照旧是淡下去的原图</string>
+    <string name="settings_theme_tv_backdrop_blur_none">不模糊</string>
+    <string name="settings_theme_tv_backdrop_blur_light">轻</string>
+    <string name="settings_theme_tv_backdrop_blur_medium">中</string>
+    <string name="settings_theme_tv_backdrop_blur_strong">重</string>
     <string name="settings_theme_tv_poster_confirm">海报上按确定 (电视)</string>
     <string name="settings_theme_tv_poster_confirm_description">探索、追番、搜索和新番时间表的海报上按确定做什么。播放键和长按不受影响</string>
     <string name="settings_theme_tv_poster_confirm_hero">先看简介</string>
@@ -314,8 +320,8 @@
     <string name="tv_onboarding_theme_confirm_details_hint">直接打开详情页</string>
     <string name="tv_onboarding_theme_colors">颜色</string>
     <string name="tv_onboarding_theme_blur">模糊背景</string>
-    <string name="tv_onboarding_theme_on">开</string>
-    <string name="tv_onboarding_theme_off">关</string>
+    <string name="tv_onboarding_theme_blur_details">详情页</string>
+    <string name="tv_onboarding_theme_blur_wall">海报墙</string>
     <string name="tv_onboarding_phone_title">用手机操作</string>
     <string name="settings_network_proxy_overall_detecting_progress">正在检测连接 · 已完成 %1$d/%2$d</string>
     <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->

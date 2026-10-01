@@ -70,7 +70,7 @@ class TvNativeWallBackdropViewTest {
             val bitmap = renderDrawable(blurred().single())!!
             bitmap.width to bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
         }
-        assertTrue(width <= TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX * 2, "解的是小图 (宽 $width)")
+        assertTrue(width <= backdrop.blur.longEdgePx * 2, "解的是小图 (宽 $width)")
         // 左白右黑的分界处糊成灰 (再按亮度压一层黑)
         val gray = Color.red(edge)
         assertTrue(gray in 40..215, "分界处应被模糊成灰, 实际 $gray")

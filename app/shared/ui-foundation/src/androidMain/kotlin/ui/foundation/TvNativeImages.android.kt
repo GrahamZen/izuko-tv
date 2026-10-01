@@ -196,20 +196,50 @@ object TvNativeImages {
         coverHeightPx: Int,
         onResult: (Bitmap?) -> Unit,
     ) {
-        val coverRequestWidth = IntSize(coverWidthPx, coverHeightPx).toAniImageRequestSize().width
-        val model = bangumiCoverThumbnailUrl(url, coverRequestWidth) ?: url
-        val request = ImageRequest(view, model) {
-            configureAniImageRequest(
-                contentScale = ContentScale.Crop,
-                alignment = Alignment.Center,
-                requestSize = IntSize(widthPx, heightPx).toAniImageRequestSize(),
-                downsampleLongEdgePx = longEdgePx,
-            )
-            transformations(BlurTransformation(radius = blurRadiusPx))
-            crossfade(false)
-            allowNullImage(true)
+        val request = ImageRequest(view, blurredBackdropModel(url, coverWidthPx, coverHeightPx)) {
+            configureBlurredBackdrop(widthPx, heightPx, longEdgePx, blurRadiusPx)
             addListener(onError = { _, _ -> onResult(null) }, onSuccess = { _, result -> onResult(result.image.asBitmapOrNull()) })
         }
         sketch.enqueue(request)
+    }
+
+    /**
+     * 同 [loadBlurredBackdrop] 的那张模糊小图 (参数相同就是同一个内存缓存键: 海报墙上铺过的, 这里直接命中), 只拿位图、不上屏.
+     * [coverWidthPx] 传 0 = 竖版封面不换缩略图, 按原地址解. 下载 / 解码失败时 null.
+     */
+    suspend fun fetchBlurredBackdrop(
+        sketch: Sketch,
+        context: Context,
+        url: String,
+        widthPx: Int,
+        heightPx: Int,
+        longEdgePx: Int,
+        blurRadiusPx: Int,
+        coverWidthPx: Int,
+        coverHeightPx: Int,
+    ): Bitmap? {
+        val request = ImageRequest(context, blurredBackdropModel(url, coverWidthPx, coverHeightPx)) {
+            configureBlurredBackdrop(widthPx, heightPx, longEdgePx, blurRadiusPx)
+        }
+        return (sketch.execute(request) as? ImageResult.Success)?.image?.asBitmapOrNull()
+    }
+
+    /** 模糊背景解哪个地址: Bangumi 竖版封面换成卡片那一档缩略图 (见 [loadBlurredBackdrop]), 其余原样. */
+    private fun blurredBackdropModel(url: String, coverWidthPx: Int, coverHeightPx: Int): String {
+        val coverRequestWidth = IntSize(coverWidthPx, coverHeightPx).toAniImageRequestSize().width
+        return bangumiCoverThumbnailUrl(url, coverRequestWidth) ?: url
+    }
+
+    /** 模糊背景小图的解法: 两处 ([loadBlurredBackdrop] / [fetchBlurredBackdrop]) 共用, 内存缓存键才对得上. */
+    private fun ImageRequest.Builder.configureBlurredBackdrop(widthPx: Int, heightPx: Int, longEdgePx: Int, blurRadiusPx: Int) {
+        configureAniImageRequest(
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.Center,
+            requestSize = IntSize(widthPx, heightPx).toAniImageRequestSize(),
+            downsampleLongEdgePx = longEdgePx,
+        )
+        transformations(BlurTransformation(radius = blurRadiusPx))
+        crossfade(false)
+        allowNullImage(true)
     }
 }
