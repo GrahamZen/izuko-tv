@@ -300,21 +300,23 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy)
-    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
-    val visualEffects = LocalThemeSettings.current.visualEffects
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur); 没有 hero 态的新番时间表不管它
     val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 铺着模糊背景时卡片的字也照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy || heroBlur)
+    val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
+    val visualEffects = LocalThemeSettings.current.visualEffects
     // 「海报上按确定」(见 TvPosterConfirmAction): 直接播放时按确定当场交给页面播 (新番时间表不先对焦)
     val posterConfirm = LocalThemeSettings.current.tvPosterConfirm
-    // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压). 铺着模糊背景时 hero 态不压黑,
-    // 整屏底色一直是卡片墙那档 (见 TvNativeGridPageView.heroBlur)
-    val heroBlurMask = tvPosterWallBackground().copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // 模糊背景的压暗: 深色主题照 Apple TV 分两档 (卡片墙底色 20%, 主色很亮的图 55%, 见 TV_HERO_BLUR_DIM_ALPHA); 浅色主题是卡片墙的底色 +
+    // 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压). 铺着模糊背景时 hero 态不压黑, 整屏底色一直是卡片墙那档
+    // (见 TvNativeGridPageView.heroBlur)
+    val heroBlurMask = tvPosterWallBackground().copy(alpha = if (dark) TV_HERO_BLUR_DIM_ALPHA else TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
     val heroBlurText = tvHeroContentColor()
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val currentCallbacks by rememberUpdatedState(callbacks)
     val currentItemAt by rememberUpdatedState(itemAt)
     val currentItemCount by rememberUpdatedState(itemCount)
@@ -427,6 +429,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                     if (heroBlur) {
                         wb.maskColor = heroBlurMask.toArgb()
                         wb.textColor = heroBlurText.toArgb()
+                        wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     }
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx

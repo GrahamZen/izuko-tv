@@ -23,8 +23,6 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Outline
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -268,8 +266,8 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         style.subtitle.applyTo(subtitle)
         if (style.labelVibrancy) {
             // 字色加在底下的背景上 (见 TvNativeWallStyle.labelVibrancy): 番名块与两行字都不开离屏层, 透明度直接乘在画笔上
-            title.paint.xfermode = TV_NATIVE_LABEL_VIBRANCY
-            subtitle.paint.xfermode = TV_NATIVE_LABEL_VIBRANCY
+            title.setTvVibrancy(true)
+            subtitle.setTvVibrancy(true)
         }
         subtitle.visibility = GONE
         stateListAnimator = StateListAnimator().apply {
@@ -624,9 +622,6 @@ private class TvNativeCardShadowView(context: Context, private val style: TvNati
 private class TvNativeCardShadow(val bitmap: Bitmap, val padPx: Int)
 
 private data class TvNativeCardShadowKey(val width: Int, val height: Int, val cornerPx: Float, val blurPx: Float)
-
-/** 番名 vibrancy 的混合模式 (见 [TvNativeWallStyle.labelVibrancy]): 字色加在底下已经画好的背景上 (饱和到白为止). */
-private val TV_NATIVE_LABEL_VIBRANCY = PorterDuffXfermode(PorterDuff.Mode.ADD)
 
 private val tvNativeCardShadows = HashMap<TvNativeCardShadowKey, TvNativeCardShadow>()
 

@@ -1374,7 +1374,8 @@ class TvNativeExploreView(
             !showsCard && src.autoAdvanced -> TvNativeTextTransition.Carousel
             else -> TvNativeTextTransition.Key
         }
-        heroText.setText(src.text, transition)
+        // hero 态压在模糊背景上的字照 vibrancy 画 (轮播压在清晰图上, 照常)
+        heroText.setText(src.text?.copy(vibrant = heroBlur && showsCard && dark), transition)
     }
 
     private fun applyButtons(visible: Boolean, animated: Boolean) {

@@ -20,6 +20,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import java.io.File
+import kotlin.math.roundToInt
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -28,7 +29,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 海报墙底下的整屏背景 ([TvNativeWallBackdropView]): 模糊层解成小图并模糊, 按图的亮度压暗 (亮图压得深), 换图时新图叠在旧图上淡入、满了撤掉
+ * 海报墙底下的整屏背景 ([TvNativeWallBackdropView]): 模糊层解成小图并模糊, 按图的亮度压暗 (亮图压得深; 分两档时只有主色很亮的图压深), 换图时新图叠在旧图上淡入、满了撤掉
  * 旧图; 清晰层要解了才有、按对焦程度显示, 满了盖住模糊层; 清晰图解好就登记放大转场的整屏框, 换条目撤掉. 图是测试写进缓存目录的 PNG
  * (左右两色, 看得出模糊).
  */
@@ -85,6 +86,20 @@ class TvNativeWallBackdropViewTest {
         host.waitUntil("亮图淡满") { blurred().singleOrNull()?.alpha == 1f && backdrop.topMaskAlpha != 0x40 }
         val bright = host.onMain { backdrop.topMaskAlpha }
         assertTrue(bright > 0x40 && bright <= (TV_WALL_BACKDROP_MASK_ALPHA_MAX * 255).toInt() + 1, "亮图应压得更深, 实际 $bright")
+    }
+
+    @Test
+    fun `with two-level dimming an ordinary image keeps the base mask and a near-white one goes deeper`() {
+        host.onMain { backdrop.brightMaskAlpha = 0.55f }
+        // 中等亮度的天蓝图: 按对比度会压深, 分两档时只压起步那一份 (25%)
+        val sky = host.testImage("sky", left = Color.rgb(150, 200, 240), right = Color.rgb(120, 170, 220))
+        host.onMain { backdrop.show(TvNativeWallBackdropTarget(sky, subjectId = 1, sharp = false)) }
+        host.waitUntil("天蓝图淡满") { blurred().singleOrNull()?.alpha == 1f && backdrop.topMaskAlpha >= 0 }
+        assertEquals(0x40, host.onMain { backdrop.topMaskAlpha })
+        // 主色接近白: 压到很亮那一档
+        host.onMain { backdrop.show(TvNativeWallBackdropTarget(host.testImage("white", left = Color.WHITE, right = Color.WHITE), subjectId = 2, sharp = false)) }
+        host.waitUntil("白图淡满") { blurred().singleOrNull()?.alpha == 1f && backdrop.topMaskAlpha != 0x40 }
+        assertEquals((0.55f * 255).roundToInt(), host.onMain { backdrop.topMaskAlpha })
     }
 
     @Test

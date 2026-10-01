@@ -66,6 +66,8 @@ data class TvNativeHeroStatus(
  * @param meta 评分之后的那一串 (开播状态 · 总集数 / 标签 / 开播年月), 按段着色.
  * @param infoReady 条目信息到了: 信息行、下一集行、简介才出现 (没到时只有标题).
  * @param summaryMaxLines 简介最多几行 (0 = 占满剩余高度).
+ * @param vibrant 压在 hero 态铺着的模糊背景上 (深色主题, 由页面按状态给): 信息行 / 下一集行 / 简介照 tvOS 的 vibrancy 画 (见 setTvVibrancy)
+ *   —— 次要色的字与简介换成次要那一档 ([tvVibrancySecondary]), 都以加法混合画在背景上; 标题与评分照常.
  */
 @Immutable
 data class TvNativeHeroText(
@@ -77,6 +79,7 @@ data class TvNativeHeroText(
     val status: TvNativeHeroStatus? = null,
     val summary: String = "",
     val summaryMaxLines: Int = 0,
+    val vibrant: Boolean = false,
 )
 
 /**
@@ -305,6 +308,8 @@ class TvNativeHeroTextView(
             .apply { marginEnd = s.metaGapPx }
         meta.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         updateTitleMarquee()
+        // 样式里的颜色刚盖掉了显示中那一条的 vibrancy 配色, 按它重新上色
+        shown?.let { bindContent(it) }
         requestLayout()
     }
 
@@ -499,13 +504,19 @@ class TvNativeHeroTextView(
         star.visibility = if (hasRating) VISIBLE else GONE
         rating.visibility = if (hasRating) VISIBLE else GONE
         rating.text = text.rating?.let { "$it/10" }
-        meta.text = spansOf(text.meta)
+        // vibrancy: 次要色的字 (信息行里的开播状态 / 年月、探索页的下一集行) 与简介换成次要那一档, 其余颜色 (总集数、追番页的主色) 不换
+        val vibrant = text.vibrant
+        val secondary = tvVibrancySecondary(style.title.color)
+        meta.text = spansOf(text.meta) { if (vibrant && it == style.meta.color) secondary else it }
+        meta.setTvVibrancy(vibrant)
         meta.visibility = if (text.meta.isEmpty()) GONE else VISIBLE
         val st = text.status
         status.visibility = if (info && st != null) VISIBLE else GONE
-        if (st != null) status.bind(st)
+        if (st != null) status.bind(st, color = if (vibrant && st.color == style.status.color) secondary else st.color, vibrant = vibrant)
         summary.visibility = if (info) VISIBLE else GONE
         summary.text = text.summary
+        summary.setTextColor(if (vibrant) secondary else style.summary.color)
+        summary.setTvVibrancy(vibrant)
         if (old?.subjectId != text.subjectId) {
             titleHidden = false
             titleOffsetX = 0f
@@ -515,13 +526,13 @@ class TvNativeHeroTextView(
         requestLayout()
     }
 
-    private fun spansOf(spans: List<TvNativeTextSpan>): CharSequence {
+    private inline fun spansOf(spans: List<TvNativeTextSpan>, colorOf: (Int) -> Int): CharSequence {
         if (spans.isEmpty()) return ""
         val b = SpannableStringBuilder()
         for (span in spans) {
             val start = b.length
             b.append(span.text)
-            b.setSpan(ForegroundColorSpan(span.color), start, b.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            b.setSpan(ForegroundColorSpan(colorOf(span.color)), start, b.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         return b
     }
@@ -703,7 +714,8 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
         name.isSelected = marqueeRepeat != 0 && !paused
     }
 
-    fun bind(status: TvNativeHeroStatus) {
+    /** [color] = 三段的字色 (vibrancy 时可能换过, 见 [TvNativeHeroText.vibrant]), [vibrant] = 以加法混合画. */
+    fun bind(status: TvNativeHeroStatus, color: Int, vibrant: Boolean) {
         if (status.wrap != leadWraps) {
             leadWraps = status.wrap
             lead.setSingleLine(!status.wrap)
@@ -714,7 +726,10 @@ private class TvNativeStatusRow(context: Context) : ViewGroup(context) {
         name.visibility = if (status.name.isNullOrBlank() || status.wrap) GONE else VISIBLE
         tail.text = status.tail.orEmpty()
         tail.visibility = if (status.tail.isNullOrEmpty() || status.wrap) GONE else VISIBLE
-        for (v in parts) v.setTextColor(status.color)
+        for (v in parts) {
+            v.setTextColor(color)
+            v.setTvVibrancy(vibrant)
+        }
     }
 
     /** [lead] 此刻是不是可以折行的多行字 (见 [TvNativeHeroStatus.wrap]). */

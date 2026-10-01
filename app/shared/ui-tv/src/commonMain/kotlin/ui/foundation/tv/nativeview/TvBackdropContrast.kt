@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /*
  * 整屏模糊背景上的文字对比度 (新番时间表, 见 TvNativeWallBackdropView). 照 tvOS 产品页往下翻时的做法: 模糊剧照上压一层暗, 亮的图压得深
@@ -96,3 +97,43 @@ internal const val TV_WALL_BACKDROP_WORST_FRACTION = 0.1f
 
 /** 压暗最深到多少. */
 internal const val TV_WALL_BACKDROP_MASK_ALPHA_MAX = 0.75f
+
+/*
+ * hero 态铺模糊背景时 (深色主题) 照 Apple TV 节目页往下翻时的模糊底压暗: 不按文字对比度量, 只分两档 —— 平时压卡片墙底色
+ * [TV_HERO_BLUR_DIM_ALPHA], 图的主色很亮 (感知亮度到 [TV_WALL_BACKDROP_BRIGHT_LUMINOSITY]) 时压 [TV_HERO_BLUR_BRIGHT_DIM_ALPHA]
+ * (Apple 是黑 20% / 55%, 按剧照的底色判). 压得浅, 底图的颜色透得出来; 上面的次要文字照 vibrancy 画 (见 setTvVibrancy).
+ */
+
+/** hero 态铺模糊背景时平时的压暗 (卡片墙底色的不透明度). */
+internal const val TV_HERO_BLUR_DIM_ALPHA = 0.2f
+
+/** hero 态铺模糊背景时主色很亮的图的压暗. */
+internal const val TV_HERO_BLUR_BRIGHT_DIM_ALPHA = 0.55f
+
+/** 两档压暗的分界: 主色的感知亮度到这么亮算很亮的图 (Apple TV 的取值). */
+internal const val TV_WALL_BACKDROP_BRIGHT_LUMINOSITY = 0.9f
+
+/**
+ * 背景图 [pixels] (ARGB) 主色的感知亮度 (0..1): 各像素 sRGB 分量的平均色按 HSP (√(0.299 R² + 0.587 G² + 0.114 B²)) 算, 同 Apple TV 判剧照
+ * 底色深浅用的公式. 模糊过的小图上, 平均色就是整张图的主色调. 没有像素时 0.
+ */
+internal fun tvBackdropLuminosity(pixels: IntArray): Float {
+    if (pixels.isEmpty()) return 0f
+    var r = 0L
+    var g = 0L
+    var b = 0L
+    for (p in pixels) {
+        r += (p shr 16) and 0xFF
+        g += (p shr 8) and 0xFF
+        b += p and 0xFF
+    }
+    val n = pixels.size * 255f
+    val rf = r / n
+    val gf = g / n
+    val bf = b / n
+    return sqrt(0.299f * rf * rf + 0.587f * gf * gf + 0.114f * bf * bf)
+}
+
+/** 两档压暗: 主色感知亮度 [luminosity] 到 [TV_WALL_BACKDROP_BRIGHT_LUMINOSITY] 时压 [bright], 否则 [base] (都是不透明度 0..1). */
+internal fun tvBackdropTwoLevelMaskAlpha(luminosity: Float, base: Float, bright: Float): Float =
+    if (luminosity >= TV_WALL_BACKDROP_BRIGHT_LUMINOSITY) maxOf(base, bright) else base

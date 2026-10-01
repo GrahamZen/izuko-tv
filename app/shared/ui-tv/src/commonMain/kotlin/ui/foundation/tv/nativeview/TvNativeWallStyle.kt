@@ -167,8 +167,8 @@ data class TvNativeWallStyle(
     /** 封面右上角的角标 (卡片的 [TvNativeCard.badge]); null = 这一组卡不画. */
     val badge: TvNativeCardBadgeStyle? = null,
     /**
-     * 番名与副标题照 tvOS 的 vibrancy 画: 字色 (副标题乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在模糊背景上时
-     * 中等亮度的底上也清楚 (Apple TV App 的次要文字就是白 50% 加法混合). 只用于浅色字 (深色主题); 深色字照常画.
+     * 番名与副标题照 tvOS 的 vibrancy 画 (见 setTvVibrancy): 字色 (副标题乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在
+     * 模糊背景上时中等亮度的底上也清楚. 新番时间表与 hero 态铺模糊背景的探索 / 追番 / 搜索页开着. 只用于浅色字 (深色主题); 深色字照常画.
      */
     val labelVibrancy: Boolean = false,
     /** 行尾「更多」卡的玻璃外观 (见 [TvNativeMoreGlassStyle]), 按主题深浅取. */

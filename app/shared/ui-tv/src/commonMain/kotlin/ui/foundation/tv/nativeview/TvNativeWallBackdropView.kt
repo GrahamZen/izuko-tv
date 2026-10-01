@@ -60,7 +60,8 @@ data class TvNativeWallBackdropTarget(
  *
  * 模糊层: 同一个地址只解长边 [TV_WALL_BACKDROP_BLUR_LONG_EDGE_PX] 的小图, 解码线程上模糊, 拉伸铺满 (见 TvNativeImages.loadBlurredBackdrop).
  * 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的常驻 GPU 开销之一. 整屏压暗 ([maskColor])
- * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha), 用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
+ * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha); hero 态铺模糊背景时 (深色主题) 照 Apple TV 只分两档
+ * ([brightMaskAlpha]). 压暗用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
  * 下面的; 新图没解好之前旧图一直在; 连着换时可以等上一张淡满再换 ([coalesceSwaps]). 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
  *
  * 清晰层: 同一张图按原尺寸解 (TMDB w1280, 与详情页同一个内存缓存键), 叠在模糊层上, 透明度 = [sharpness] (解好之前恒 0; 透明度 0 的层
@@ -116,6 +117,17 @@ class TvNativeWallBackdropView(
     var textColor: Int = Color.WHITE
         set(value) {
             if (field == value) return
+            field = value
+            refreshMasks()
+        }
+
+    /**
+     * 浅色字 (深色主题) 的压暗分两档 (见 tvBackdropTwoLevelMaskAlpha, hero 态铺模糊背景时用): 平时只压起步那一份 ([maskColor] 的透明度),
+     * 图的主色很亮时压到这么深 (0..1). NaN = 按文字对比度加深 (见 tvBackdropMaskAlpha, 新番时间表). 深色字照旧按对比度.
+     */
+    var brightMaskAlpha: Float = Float.NaN
+        set(value) {
+            if (field == value || (field.isNaN() && value.isNaN())) return
             field = value
             refreshMasks()
         }
@@ -270,6 +282,9 @@ class TvNativeWallBackdropView(
         private var worstForLightText = Float.NaN
         private var worstForDarkText = Float.NaN
 
+        /** 这张图主色的感知亮度 (解好时量, 见 tvBackdropLuminosity, 两档压暗用). */
+        private var luminosity = 0f
+
         /** 此刻压着的透明度 (0..255), -1 = 还没解好. */
         var maskAlpha = -1
             private set
@@ -279,8 +294,14 @@ class TvNativeWallBackdropView(
             if (worstForLightText.isNaN()) return
             val textLuminance = tvRelativeLuminance(textColor)
             val maskLuminance = tvRelativeLuminance(maskColor)
-            val worst = if (textLuminance >= maskLuminance) worstForLightText else worstForDarkText
-            val alpha = (tvBackdropMaskAlpha(worst, maskLuminance, textLuminance, base = (maskColor ushr 24) / 255f) * 255f).roundToInt()
+            val lightText = textLuminance >= maskLuminance
+            val base = (maskColor ushr 24) / 255f
+            val a = if (lightText && !brightMaskAlpha.isNaN()) {
+                tvBackdropTwoLevelMaskAlpha(luminosity, base, brightMaskAlpha)
+            } else {
+                tvBackdropMaskAlpha(if (lightText) worstForLightText else worstForDarkText, maskLuminance, textLuminance, base)
+            }
+            val alpha = (a * 255f).roundToInt()
             if (alpha == maskAlpha) return
             maskAlpha = alpha
             image.colorFilter = if (alpha <= 0) null else PorterDuffColorFilter((maskColor and 0xFFFFFF) or (alpha shl 24), PorterDuff.Mode.SRC_ATOP)
@@ -294,6 +315,7 @@ class TvNativeWallBackdropView(
             source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
             worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true)
             worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false)
+            luminosity = tvBackdropLuminosity(pixels)
         }
 
         fun load() {
