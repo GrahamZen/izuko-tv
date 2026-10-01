@@ -58,6 +58,7 @@ internal object DriveNameParser {
         }
         titleParserEpisode(name)?.let { return ParsedFile(null, it, false) }
         bareNumberEpisode(name)?.let { return ParsedFile(null, it, false) }
+        bracketLeadingNumberEpisode(name)?.let { return ParsedFile(null, it, false) }
         return ParsedFile(null, null, false)
     }
 
@@ -124,6 +125,13 @@ internal object DriveNameParser {
         return EpisodeSort(candidate.toInt())
     }
 
+    /**
+     * 集号和标题挤在同一个括号开头 (`[001冒険の終わり][字幕组][2160P].mkv`, `【03 冒险结束】.mp4`): 整个名字都在括号里时
+     * [bareNumberEpisode] 什么也剩不下. 只认恰好一个这样的括号.
+     */
+    private fun bracketLeadingNumberEpisode(name: String): EpisodeSort? =
+        BRACKET_LEADING_NUMBER.findAll(name).map { it.groupValues[1] }.toList().singleOrNull()?.let { EpisodeSort(it.toInt()) }
+
     private fun episodeSort(integer: String, decimal: String): EpisodeSort =
         if (decimal.isEmpty()) EpisodeSort(integer.toInt()) else EpisodeSort("${integer.toInt()}.$decimal")
 
@@ -176,4 +184,11 @@ internal object DriveNameParser {
 
     private val BRACKETED = Regex("""\[[^\]]*]|【[^】]*】|\([^)]*\)|（[^）]*）""")
     private val STANDALONE_NUMBER = Regex("""(?<![0-9A-Za-z])(\d{1,3})(?:[vV]\d)?(?![0-9A-Za-z])""")
+
+    /**
+     * 括号开头两三位数字, 后面紧跟着标题: 不能是字母数字 (`[1080p]` `[10bit]`), 不能是日期或季 (`[24年10月]`),
+     * 也不能是范围 (`[01-12]`); 数字后面得还有字 (光一个 `[12]` 的由前面几条认).
+     */
+    private val BRACKET_LEADING_NUMBER =
+        Regex("""[\[【]\s*(\d{2,3})(?![0-9A-Za-z])(?!\s*[年月日季期部\-~～])(?=\s*[^\]】\s])""")
 }
