@@ -1730,6 +1730,7 @@ private fun TvSearchResultsPane(
                     lastFocusedCard.intValue = index
                 },
                 onCardClick = { index, info -> onIntent(SearchPageIntent.OpenSubjectDetails(index, info)) },
+                onCardPlay = { _, info -> onIntent(SearchPageIntent.Play(info)) },
                 // 顶行上键: 有筛选行先回筛选行, 否则回顶部行搜索词
                 onTopRowUp = {
                     (activeFilters.isNotEmpty() && runCatching { chipsFocusRequester.requestFocus() }.getOrDefault(false)) ||

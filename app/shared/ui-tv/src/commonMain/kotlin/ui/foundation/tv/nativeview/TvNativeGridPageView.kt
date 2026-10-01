@@ -119,8 +119,19 @@ class TvNativeGridPageView(
     var metrics: TvNativeGridPageMetrics = metrics
         private set
 
-    /** 有 hero 态: 卡片墙上按确定先切到 hero 态, hero 态里才进详情页. false = 卡片墙上按确定直接进 (新番时间表). */
+    /**
+     * 有 hero 态: 卡片墙上按确定先切到 hero 态, hero 态里才进详情页. false = 卡片墙上按确定直接交给页面 (新番时间表; 「海报上按确定」不是先看简介时
+     * 的追番 / 搜索页). 停在 hero 态时关掉: 当场回卡片墙.
+     */
     var heroEnabled: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value && timeline.active) setHeroActive(false, animated = false)
+        }
+
+    /** 按确定时整屏背景先对焦再交给页面 (新番时间表 / hero 态的模糊背景); false = 当场交给页面 (「海报上按确定」选直接播放). */
+    var confirmFocusesWall: Boolean = true
 
     var transitions: Boolean = true
     var animatedScroll: Boolean = true
@@ -382,7 +393,7 @@ class TvNativeGridPageView(
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
                 grid.cards.setFocusLookHeld(grid, index)
                 // 有整屏背景 (新番时间表 / hero 态的模糊背景): 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
-                if (!wallFocus.open(index, wallMatches(grid, index))) listener?.onClick(index)
+                if (!confirmFocusesWall || !wallFocus.open(index, wallMatches(grid, index))) listener?.onClick(index)
             }
         }
 
@@ -591,7 +602,7 @@ class TvNativeGridPageView(
      * 流畅档也走, 聚焦行照旧直接跳到位 ([animatedScroll]): 贵的是行的滚动动画, 淡入淡出只改几层的透明度.
      */
     fun setHeroActive(active: Boolean, animated: Boolean = true) {
-        if (timeline.active == active) return
+        if (timeline.active == active || active && !heroEnabled) return
         timeline.setActive(active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
         listener?.onHeroActiveChanged(active)

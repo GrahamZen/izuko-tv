@@ -207,6 +207,17 @@ class TvNativeExploreView(
         }
 
     /**
+     * 有 hero 态: 卡片上按确定先切到 hero 态, hero 态里才进详情页 (「海报上按确定」选先看简介). false = 卡片上按确定直接交给页面
+     * ([TvNativeExploreListener.onCardClick], 页面按设置播放或进详情页). 停在 hero 态时关掉: 当场回卡片墙.
+     */
+    var heroEnabled: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value && timeline.active) setHeroActive(false)
+        }
+
+    /**
      * hero 态 (聚焦卡) 在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero
      * 时间线淡入, 铺的是停稳后聚焦那部的横版背景图的模糊版 ([TvNativeHeroSource.wall]: 整部的那张, 继续观看的条目背景图是单集剧照时它也
      * 还是整部那张); 背景图 ([backdrop]) 与 hero 文字照旧画在它上面, 背景图的边缘擦成透明露出模糊背景 ([TvNativeBackdropView.feather]);
@@ -812,7 +823,7 @@ class TvNativeExploreView(
      * 贵的是行的滚动动画, 淡入淡出只改几层的透明度.
      */
     fun setHeroActive(active: Boolean) {
-        if (timeline.active == active) return
+        if (timeline.active == active || active && !heroEnabled) return
         timeline.setActive(active, animated = true)
         listener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
@@ -1010,8 +1021,8 @@ class TvNativeExploreView(
                 listener?.onMoreClick(rowKey)
                 return
             }
-            // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场)
-            if (!timeline.active) {
+            // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场); 没有 hero 态时直接交给页面
+            if (heroEnabled && !timeline.active) {
                 setHeroActive(true)
             } else {
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)

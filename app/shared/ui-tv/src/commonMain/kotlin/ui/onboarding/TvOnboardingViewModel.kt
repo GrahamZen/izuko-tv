@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
+import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -209,7 +210,7 @@ class OnboardingCheck<R>(
 }
 
 /**
- * 首次启动引导的第二步: 登录 (可以跳过). 盖在主页上面显示, 主页在下面照常加载.
+ * 首次启动引导的登录 (可以跳过) 与之后的「外观与操作」. 盖在主页上面显示, 主页在下面照常加载.
  *
  * @param assumeViaMirror 第一步判定的「经镜像」(见 [TvOnboardingViewModel.chooseMode]); 与实际经镜像取或,
  *   只在连接方式还是第一步选的那一档时算数 (见 [viaMirror]).
@@ -251,5 +252,10 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
 
     fun startTvLogin() {
         oauthManager.startInAppBrowser()
+    }
+
+    /** 最后一步「外观与操作」改主题设置: 当场生效 (这一层与下面的主页跟着变). */
+    fun updateTheme(transform: ThemeSettings.() -> ThemeSettings) {
+        backgroundScope.launch { settingsRepository.themeSettings.update(transform) }
     }
 }

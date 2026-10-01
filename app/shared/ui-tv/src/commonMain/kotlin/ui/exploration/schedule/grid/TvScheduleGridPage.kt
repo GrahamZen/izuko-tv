@@ -670,6 +670,7 @@ fun TvScheduleGridPage(
                     }
                 },
                 onCardClick = { _, item -> navigateToSubject(item) },
+                onCardPlay = { _, item -> navigateToPlay(item) },
                 onTopRowUp = {
                     focusSelectedDate()
                     true

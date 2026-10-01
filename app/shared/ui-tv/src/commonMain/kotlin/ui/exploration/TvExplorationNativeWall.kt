@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.player.EpisodeHistory
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.FollowedSubjectInfo
@@ -315,7 +316,9 @@ internal fun TvExplorationNativeWall(
     val headerStyle = MaterialTheme.typography.titleMedium.toTvNativeTextStyle(density, LocalContentColor.current)
     val visualEffects = LocalThemeSettings.current.visualEffects
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
-    val heroBlur = LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
+    val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
+    val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
     // 卡片墙的底色: 铺着模糊背景时 hero 态不压黑, 整屏底色一直是它 (见 TvNativeExploreView.heroBlur / wallColor)
     val wallColor = tvPosterWallBackground()
     // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压)
@@ -341,7 +344,7 @@ internal fun TvExplorationNativeWall(
                     view.composeRoot = composeRoot
                     view.restore(
                         state.savedScrollPx, state.savedRowLeft, state.savedRowFocused,
-                        focusedRowKey(), focusedCardIndex(), state.heroActive,
+                        focusedRowKey(), focusedCardIndex(), state.heroActive && heroEnabled,
                     )
                     view.heroText.onShownSubjectChanged = { state.titleSubjectId = it }
                     state.view = view
@@ -380,6 +383,7 @@ internal fun TvExplorationNativeWall(
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                view.heroEnabled = heroEnabled
                 view.heroBlur = heroBlur
                 view.wallColor = wallColor.toArgb()
                 view.wallBackdrop?.let { wb ->
@@ -412,6 +416,10 @@ internal fun TvExplorationNativeWall(
         }
     }
 
+    // 没有 hero 态 (「海报上按确定」改成了别的档) 时撤掉存着的 hero 态: 返回键不再先回卡片墙, 返回本页也不恢复
+    LaunchedEffect(heroEnabled) {
+        if (!heroEnabled) state.heroActive = false
+    }
     // hero 态模糊背景的点开: 进了详情页、回到本页之后倒放, 点开途中按返回取消
     if (heroBlur) {
         TvNativeWallOpenEffects(

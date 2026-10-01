@@ -745,6 +745,7 @@ private fun TvCollectionPageContent(
                     gridRegionFocused = true
                 },
                 onCardClick = { _, info -> navigateToSubject(info) },
+                onCardPlay = { _, info -> navigateToPlay(info) },
                 onTopRowUp = { focusSelectedTab() },
                 onRowEdge = { direction, row ->
                     // 行缘换标签 (当场换): 行末按右 → 右边标签同一行行首, 行首按左对称; 首个标签行首按左进侧边栏

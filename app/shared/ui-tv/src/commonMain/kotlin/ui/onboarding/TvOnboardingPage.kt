@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.onboarding
 
 import androidx.compose.animation.EnterExitState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,8 +59,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
@@ -74,7 +83,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
@@ -163,6 +177,27 @@ import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_player
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_search
 import me.him188.ani.app.ui.lang.tv_onboarding_step_remote
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_remote
+import me.him188.ani.app.ui.lang.settings_theme_mode_dark
+import me.him188.ani.app.ui.lang.settings_theme_mode_light
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
+import me.him188.ani.app.ui.lang.tv_onboarding_step_theme
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_colors
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_details_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_hero_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_play_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_description
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_off
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_on
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_title
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_theme
 import me.him188.ani.app.ui.lang.tv_remote_control_panel_hint
 import me.him188.ani.app.ui.lang.tv_remote_control_title
 import me.him188.ani.app.ui.remote.CONNECTED_GREEN_DARK
@@ -179,13 +214,13 @@ import kotlinx.coroutines.flow.combine
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 
 /**
- * 首次启动引导 (没做过才出现, 做完不再出现, 见 `TvOnboardingGate`): 先是欢迎页 (图标 + 接下来要做哪三步), 然后三步:
+ * 首次启动引导 (没做过才出现, 做完不再出现, 见 `TvOnboardingGate`): 先是欢迎页 (图标 + 接下来要做哪四步), 然后四步:
  *
  * 1. **检测网络** (本页, 导航里的一页): 分两页 —— Bangumi 连接方式、TMDB 图片 —— 共用同一次检测 (见 [TvOnboardingViewModel]),
  *    按结果推荐怎么连. 每一页第一次测完之前选项不能按 —— 这一步不能跳过; 测完必须选一个才往下走.
  *    用户在手机上存了代理会自动重测.
- * 2. **手机遥控** 与 3. **登录** ([TvOnboardingLoginHost], 盖在主页上的全屏层): 选好连接方式就换成主页, 主页在这一层下面
- *    照常加载, 做完 (或跳过登录) 出来就是加载好的探索页. 检测那一步不提前加载主页: 那一波请求会和检测抢带宽, 把好网络测成连不上.
+ * 2. **手机遥控**、3. **登录** 与 4. **外观与操作** ([TvOnboardingLoginHost], 盖在主页上的全屏层): 选好连接方式就换成主页, 主页在这一层下面
+ *    照常加载, 做完出来就是加载好的探索页 (最后一步选的外观当场生效, 下面的主页跟着变). 检测那一步不提前加载主页: 那一波请求会和检测抢带宽, 把好网络测成连不上.
  *    手机遥控单独一页讲清楚扫码能干什么 —— 只在登录那步给码的话, 不登录的人不知道还有控制台.
  *
  * 检测在欢迎页就开始跑 (ViewModel 一建就测): 那时主页还没加载, 不抢带宽; 用户按「开始设置」时多半已经测完.
@@ -342,22 +377,23 @@ object TvOnboardingLogin {
 }
 
 /**
- * 引导的登录那一步: 全屏盖在主页上 (独立窗口, 焦点与按键都在它里面). 装在 TV 根部 —— 引导页那一页已经出栈了.
+ * 引导的后三步 (手机遥控、登录、外观与操作): 全屏盖在主页上 (独立窗口, 焦点与按键都在它里面). 装在 TV 根部 —— 引导页那一页已经出栈了.
  *
- * [onFinished]: 登录完或跳过. [onBack]: 返回键, 回到检测网络那一步.
+ * [onFinished]: 外观与操作那一步按了「开始使用」. [onBack]: 返回键, 回到检测网络那一步.
  */
 @Composable
 fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
     val assumeViaMirror = TvOnboardingLogin.request.collectAsState().value ?: return
-    // 先介绍手机遥控 (单独一页, 不然新用户会以为那个码只能拿来登录), 再登录. 返回键: 登录 → 手机遥控 → 检测网络
-    var onRemote by rememberSaveable { mutableStateOf(true) }
+    // 先介绍手机遥控 (单独一页, 不然新用户会以为那个码只能拿来登录), 再登录, 最后外观与操作.
+    // 返回键: 外观与操作 → 登录 → 手机遥控 → 检测网络
+    var layerStep by rememberSaveable { mutableStateOf(LayerStep.Remote) }
     Dialog(
         onDismissRequest = {
-            if (!onRemote) {
-                onRemote = true
-            } else {
+            when (layerStep) {
+                LayerStep.Theme -> layerStep = LayerStep.Login
+                LayerStep.Login -> layerStep = LayerStep.Remote
                 // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
-                onBack()
+                LayerStep.Remote -> onBack()
             }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
@@ -365,21 +401,24 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit) {
         val vm = viewModel(key = "TvOnboardingLogin-$assumeViaMirror") { TvOnboardingLoginViewModel(assumeViaMirror) }
         val focus = rememberTvFocusScope()
         OnboardingSurface(focus, Modifier) {
-            if (onRemote) {
-                RemoteStep(focus, onNext = { onRemote = false })
-                return@OnboardingSurface
+            when (layerStep) {
+                LayerStep.Remote -> RemoteStep(focus, onNext = { layerStep = LayerStep.Login })
+                LayerStep.Login -> LoginStep(vm, focus, onNext = { layerStep = LayerStep.Theme })
+                LayerStep.Theme -> ThemeStep(
+                    focus,
+                    onUpdate = vm::updateTheme,
+                    onFinished = {
+                        TvOnboardingLogin.request.value = null
+                        onFinished()
+                    },
+                )
             }
-            LoginStep(
-                vm,
-                focus,
-                onFinished = {
-                    TvOnboardingLogin.request.value = null
-                    onFinished()
-                },
-            )
         }
     }
 }
+
+/** 登录层 (盖在主页上) 的三步. */
+private enum class LayerStep { Remote, Login, Theme }
 
 /** 手机遥控: 讲清楚扫码之后能干什么 (不只是登录), 以及以后去哪再找这个码. */
 @Composable
@@ -431,7 +470,7 @@ private fun RemoteStep(focus: TvFocusScope, onNext: () -> Unit) {
     LaunchedEffect(Unit) { focus.request(OnboardingFocus.Next) }
 }
 
-/** 欢迎页: 图标 + 标题 + 接下来的三步 + 「开始设置」. 居中. */
+/** 欢迎页: 图标 + 标题 + 接下来的四步 + 「开始设置」. 居中; 间距按 540dp 高排满 (四步再加一行就放不下按钮). */
 @Composable
 private fun WelcomeStep(focus: TvFocusScope, onStart: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -450,28 +489,29 @@ private fun WelcomeStep(focus: TvFocusScope, onStart: () -> Unit) {
                 .graphicsLayer { alpha = if (startupLogo?.coversWelcomeIcon == true) 0f else 1f }
                 .clip(RoundedCornerShape(28.dp)),
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text(stringResource(Lang.tv_onboarding_welcome_title), style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             stringResource(Lang.tv_onboarding_welcome_intro),
             Modifier.widthIn(max = WELCOME_INTRO_MAX_WIDTH),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
             stringResource(Lang.tv_onboarding_welcome_description),
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             WelcomeStepLine(1, stringResource(Lang.tv_onboarding_welcome_step_network))
             WelcomeStepLine(2, stringResource(Lang.tv_onboarding_welcome_step_remote))
             WelcomeStepLine(3, stringResource(Lang.tv_onboarding_welcome_step_login))
+            WelcomeStepLine(4, stringResource(Lang.tv_onboarding_welcome_step_theme))
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
         TvHeroButton(
             stringResource(Lang.tv_onboarding_welcome_start),
             Icons.AutoMirrored.Rounded.ArrowForward,
@@ -494,7 +534,7 @@ private fun WelcomeStepLine(number: Int, text: String) {
 
 /** 两步共用的底: 不透明底色 + 安全边距; 根上挂焦点的用户交互信号. */
 @Composable
-private fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content: @Composable () -> Unit) {
+internal fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content: @Composable () -> Unit) {
     Surface(
         modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -512,7 +552,8 @@ private fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content: 
 }
 
 private enum class OnboardingFocus : TvFocusKey {
-    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Start
+    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Start,
+    ThemeHero, ThemePlay, ThemeDetails, ThemeDone,
 }
 
 /** 检测网络那一步的两页, 共用同一次检测 (见 [TvOnboardingViewModel]). */
@@ -769,7 +810,7 @@ private fun CheckStep(
 }
 
 @Composable
-private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFinished: () -> Unit) {
+private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onNext: () -> Unit) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
@@ -800,10 +841,10 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
                         )
                         Spacer(Modifier.height(24.dp))
                         TvHeroButton(
-                            stringResource(Lang.tv_onboarding_start),
-                            Icons.Rounded.Check,
+                            stringResource(Lang.tv_onboarding_next),
+                            Icons.AutoMirrored.Rounded.ArrowForward,
                             filled = true,
-                            onClick = onFinished,
+                            onClick = onNext,
                             onFocused = {},
                             modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Start),
                         )
@@ -816,7 +857,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
                             color = scheme.error,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onFinished)
+                        SkipButton(focus, onNext)
                     }
 
                     else -> {
@@ -854,7 +895,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Spacer(Modifier.height(24.dp))
-                        SkipButton(focus, onFinished)
+                        SkipButton(focus, onNext)
                     }
                 }
             }
@@ -863,7 +904,7 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
         }
     }
 
-    // 登录成功 (电视上或手机上) 后落到「开始使用」
+    // 登录成功 (电视上或手机上) 后落到「下一步」
     val target = when {
         loggedIn -> OnboardingFocus.Start
         viaMirror || !tvLogin -> OnboardingFocus.Skip
@@ -873,24 +914,352 @@ private fun LoginStep(vm: TvOnboardingLoginViewModel, focus: TvFocusScope, onFin
 }
 
 @Composable
-private fun SkipButton(focus: TvFocusScope, onFinished: () -> Unit) {
+private fun SkipButton(focus: TvFocusScope, onNext: () -> Unit) {
     TvHeroButton(
         stringResource(Lang.tv_onboarding_login_skip),
         Icons.AutoMirrored.Rounded.ArrowForward,
         filled = false,
-        onClick = onFinished,
+        onClick = onNext,
         onFocused = {},
         modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.Skip),
     )
 }
 
-/** 标题 (左) 与三步的进度 (右, [step] 从 0 起), 下面一行说明占满整宽. */
+/**
+ * 外观与操作 (最后一步): 海报上按确定做什么 (三档各一张示意图), 下面一排颜色 / 模糊背景 / 视觉效果. 按确定当场写设置,
+ * 这一层与下面的主页跟着变. 模糊背景只对「先看简介」有用, 另两档时那一组隐去 (位置留着, 旁边的组不挪).
+ */
+@Composable
+internal fun ThemeStep(
+    focus: TvFocusScope,
+    onUpdate: (ThemeSettings.() -> ThemeSettings) -> Unit,
+    onFinished: () -> Unit,
+) {
+    val theme = LocalThemeSettings.current
+    val confirm = theme.tvPosterConfirm
+    Column(Modifier.fillMaxSize()) {
+        StepHeader(
+            stringResource(Lang.tv_onboarding_theme_title),
+            stringResource(Lang.tv_onboarding_theme_description),
+            step = 3,
+        )
+        Spacer(Modifier.height(SECTION_GAP))
+        Text(stringResource(Lang.tv_onboarding_theme_confirm), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(CONFIRM_CARD_GAP)) {
+            for (action in TvPosterConfirmAction.entries) {
+                ConfirmOption(
+                    action,
+                    selected = action == confirm,
+                    onClick = { onUpdate { copy(tvPosterConfirm = action) } },
+                    modifier = Modifier.weight(1f).tvFocusAnchor(focus, action.focusKey),
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(CHOICE_GROUP_GAP),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            // 电视上「跟随系统」永远是浅色, 这里只给两档
+            ChoiceGroup(
+                stringResource(Lang.tv_onboarding_theme_colors),
+                options = listOf(DarkMode.DARK, DarkMode.LIGHT),
+                selected = if (theme.darkMode == DarkMode.DARK) DarkMode.DARK else DarkMode.LIGHT,
+                text = {
+                    stringResource(if (it == DarkMode.DARK) Lang.settings_theme_mode_dark else Lang.settings_theme_mode_light)
+                },
+                onSelect = { mode -> onUpdate { copy(darkMode = mode) } },
+            )
+            ChoiceGroup(
+                stringResource(Lang.tv_onboarding_theme_blur),
+                options = listOf(true, false),
+                selected = theme.tvHeroBlurBackdrop,
+                text = { stringResource(if (it) Lang.tv_onboarding_theme_on else Lang.tv_onboarding_theme_off) },
+                onSelect = { on -> onUpdate { copy(tvHeroBlurBackdrop = on) } },
+                visible = confirm == TvPosterConfirmAction.Hero,
+            )
+            ChoiceGroup(
+                stringResource(Lang.settings_theme_tv_visual_effects),
+                options = TvVisualEffectsLevel.entries,
+                selected = theme.visualEffects,
+                text = {
+                    stringResource(
+                        when (it) {
+                            TvVisualEffectsLevel.Smooth -> Lang.settings_theme_tv_visual_effects_smooth
+                            TvVisualEffectsLevel.Balanced -> Lang.settings_theme_tv_visual_effects_balanced
+                            TvVisualEffectsLevel.Full -> Lang.settings_theme_tv_visual_effects_full
+                        },
+                    )
+                },
+                onSelect = { level -> onUpdate { copy(tvVisualEffects = level) } },
+            )
+            Spacer(Modifier.weight(1f))
+            TvHeroButton(
+                stringResource(Lang.tv_onboarding_start),
+                Icons.Rounded.Check,
+                filled = true,
+                onClick = onFinished,
+                onFocused = {},
+                modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.ThemeDone),
+            )
+        }
+    }
+    LaunchedEffect(Unit) { focus.request(confirm.focusKey) }
+}
+
+private val TvPosterConfirmAction.focusKey: OnboardingFocus
+    get() = when (this) {
+        TvPosterConfirmAction.Hero -> OnboardingFocus.ThemeHero
+        TvPosterConfirmAction.Play -> OnboardingFocus.ThemePlay
+        TvPosterConfirmAction.Details -> OnboardingFocus.ThemeDetails
+    }
+
+/** 「海报上按确定」一档: 示意图 + 名字 + 两行说明. 示焦同 [ModeOption]; 选中的只在名字后面打勾. */
+@Composable
+private fun ConfirmOption(
+    action: TvPosterConfirmAction,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.luminance() < 0.5f
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .onFocusChanged { focused = it.isFocused }
+            .tvTouchFocusOnTap(),
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            focused -> scheme.primary
+            dark -> OPTION_COLOR_DARK
+            else -> OPTION_COLOR_LIGHT
+        },
+        contentColor = if (focused) scheme.onPrimary else scheme.onSurface,
+    ) {
+        Column(Modifier.padding(10.dp)) {
+            PosterConfirmIllustration(action, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(
+                        when (action) {
+                            TvPosterConfirmAction.Hero -> Lang.settings_theme_tv_poster_confirm_hero
+                            TvPosterConfirmAction.Play -> Lang.settings_theme_tv_poster_confirm_play
+                            TvPosterConfirmAction.Details -> Lang.settings_theme_tv_poster_confirm_details
+                        },
+                    ),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                )
+                if (selected) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        Modifier.size(20.dp),
+                        tint = if (focused) scheme.onPrimary else scheme.primary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                stringResource(
+                    when (action) {
+                        TvPosterConfirmAction.Hero -> Lang.tv_onboarding_theme_confirm_hero_hint
+                        TvPosterConfirmAction.Play -> Lang.tv_onboarding_theme_confirm_play_hint
+                        TvPosterConfirmAction.Details -> Lang.tv_onboarding_theme_confirm_details_hint
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalContentColor.current.copy(alpha = 0.78f),
+                minLines = 2,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+/**
+ * 按确定之后看到的画面, 画成简图 (跟深浅色走): 先看简介 = 右上大图、左边标题与简介、底下一排海报;
+ * 直接播放 = 整屏画面、中间播放键、底下进度条; 直接进详情页 = 封面、标题、两个按钮、底下一排分集.
+ */
+@Composable
+private fun PosterConfirmIllustration(action: TvPosterConfirmAction, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val screen = scheme.background
+    val ink = scheme.onBackground
+    val accent = scheme.primary
+    val image = Brush.linearGradient(listOf(scheme.primary, scheme.tertiary))
+    Canvas(modifier.aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+        drawRect(screen)
+        when (action) {
+            TvPosterConfirmAction.Hero -> drawHeroSketch(screen, ink, image)
+            TvPosterConfirmAction.Play -> drawPlayerSketch(image)
+            TvPosterConfirmAction.Details -> drawDetailsSketch(ink, accent, image)
+        }
+    }
+}
+
+private fun DrawScope.drawHeroSketch(screen: Color, ink: Color, image: Brush) {
+    // 右上大图, 左缘与下缘渐隐到底色. 两层渐隐铺满整张画布 (渐变外侧就是底色), 盖住大图边缘的抗锯齿细边
+    drawRect(image, Offset(size.width * 0.35f, 0f), Size(size.width * 0.65f, size.height * 0.62f), alpha = 0.85f)
+    drawRect(Brush.horizontalGradient(listOf(screen, Color.Transparent), startX = size.width * 0.35f, endX = size.width * 0.6f))
+    drawRect(Brush.verticalGradient(listOf(Color.Transparent, screen), startY = size.height * 0.4f, endY = size.height * 0.62f))
+    sketchBar(0.06f, 0.16f, 0.30f, 0.07f, ink.copy(alpha = 0.9f))
+    sketchBar(0.06f, 0.29f, 0.34f, 0.035f, ink.copy(alpha = 0.4f))
+    sketchBar(0.06f, 0.36f, 0.30f, 0.035f, ink.copy(alpha = 0.4f))
+    sketchBar(0.06f, 0.43f, 0.22f, 0.035f, ink.copy(alpha = 0.4f))
+    // 一排竖版海报, 第一张是按了确定的那张
+    val posterHeight = 0.30f
+    val posterWidth = posterHeight * 2f / 3f * size.height / size.width
+    sketchCardRow(0.06f, 0.66f, posterWidth, posterHeight, count = 6, ink, image)
+}
+
+private fun DrawScope.drawPlayerSketch(image: Brush) {
+    drawRect(image, alpha = 0.85f)
+    drawRect(
+        Brush.verticalGradient(
+            listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+            startY = size.height * 0.55f,
+            endY = size.height,
+        ),
+    )
+    val center = Offset(size.width * 0.5f, size.height * 0.42f)
+    val radius = size.height * 0.13f
+    drawCircle(Color.Black.copy(alpha = 0.35f), radius, center)
+    drawPath(
+        Path().apply {
+            moveTo(center.x - radius * 0.32f, center.y - radius * 0.45f)
+            lineTo(center.x + radius * 0.5f, center.y)
+            lineTo(center.x - radius * 0.32f, center.y + radius * 0.45f)
+            close()
+        },
+        Color.White,
+    )
+    sketchBar(0.06f, 0.70f, 0.28f, 0.06f, Color.White.copy(alpha = 0.9f))
+    sketchBar(0.06f, 0.84f, 0.88f, 0.025f, Color.White.copy(alpha = 0.35f))
+    sketchBar(0.06f, 0.84f, 0.35f, 0.025f, Color.White)
+    drawCircle(Color.White, size.height * 0.035f, Offset(size.width * 0.41f, size.height * 0.8525f))
+}
+
+private fun DrawScope.drawDetailsSketch(ink: Color, accent: Color, image: Brush) {
+    // 左边竖版封面
+    val coverHeight = 0.5f
+    val coverWidth = coverHeight * 2f / 3f * size.height / size.width
+    drawRoundRect(
+        image,
+        Offset(size.width * 0.06f, size.height * 0.1f),
+        Size(size.width * coverWidth, size.height * coverHeight),
+        CornerRadius(size.height * 0.03f),
+    )
+    val textX = 0.06f + coverWidth + 0.05f
+    sketchBar(textX, 0.12f, 0.32f, 0.07f, ink.copy(alpha = 0.9f))
+    sketchBar(textX, 0.24f, 0.20f, 0.035f, ink.copy(alpha = 0.4f))
+    sketchBar(textX, 0.31f, 0.40f, 0.035f, ink.copy(alpha = 0.4f))
+    sketchBar(textX, 0.38f, 0.34f, 0.035f, ink.copy(alpha = 0.4f))
+    sketchBar(textX, 0.49f, 0.14f, 0.09f, accent)
+    sketchBar(textX + 0.16f, 0.49f, 0.12f, 0.09f, ink.copy(alpha = 0.2f))
+    // 一排横版分集
+    val episodeHeight = 0.18f
+    val episodeWidth = episodeHeight * 16f / 9f * size.height / size.width
+    sketchCardRow(0.06f, 0.72f, episodeWidth, episodeHeight, count = 4, ink, image)
+}
+
+/** 一条圆头横条, 坐标与尺寸都是画布的比例. */
+private fun DrawScope.sketchBar(x: Float, y: Float, width: Float, height: Float, color: Color) {
+    drawRoundRect(
+        color,
+        Offset(size.width * x, size.height * y),
+        Size(size.width * width, size.height * height),
+        CornerRadius(size.height * height / 2),
+    )
+}
+
+/** 一排卡片 (坐标与尺寸是画布的比例): 第一张有图、带聚焦框, 其余是空卡. 超出右缘的被画布裁掉. */
+private fun DrawScope.sketchCardRow(x: Float, y: Float, width: Float, height: Float, count: Int, ink: Color, image: Brush) {
+    val gap = 0.025f
+    val corner = CornerRadius(size.height * 0.025f)
+    val cardSize = Size(size.width * width, size.height * height)
+    repeat(count) { index ->
+        val topLeft = Offset(size.width * (x + index * (width + gap)), size.height * y)
+        if (index == 0) {
+            drawRoundRect(image, topLeft, cardSize, corner)
+            drawRoundRect(ink.copy(alpha = 0.9f), topLeft, cardSize, corner, style = Stroke(1.5.dp.toPx()))
+        } else {
+            drawRoundRect(ink.copy(alpha = 0.16f), topLeft, cardSize, corner)
+        }
+    }
+}
+
+/** 一组小选项: 上面一行名字, 下面一排胶囊. [visible] = false 时整组隐去且不可聚焦, 位置照留. */
+@Composable
+private fun <T> ChoiceGroup(
+    label: String,
+    options: List<T>,
+    selected: T,
+    text: @Composable (T) -> String,
+    onSelect: (T) -> Unit,
+    visible: Boolean = true,
+) {
+    Column(Modifier.alpha(if (visible) 1f else 0f)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (option in options) {
+                ChoiceChip(text(option), selected = option == selected, enabled = visible, onClick = { onSelect(option) })
+            }
+        }
+    }
+}
+
+/** 胶囊选项: 示焦同 [ModeOption]; 选中的前面打勾 (勾的位置一直留着, 换了选中宽度不变). */
+@Composable
+private fun ChoiceChip(text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.luminance() < 0.5f
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .tvTouchFocusOnTap(),
+        shape = CircleShape,
+        color = when {
+            focused -> scheme.primary
+            dark -> OPTION_COLOR_DARK
+            else -> OPTION_COLOR_LIGHT
+        },
+        contentColor = if (focused) scheme.onPrimary else scheme.onSurface,
+    ) {
+        Row(
+            Modifier.padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.Check,
+                contentDescription = null,
+                Modifier.size(18.dp).alpha(if (selected) 1f else 0f),
+                tint = if (focused) scheme.onPrimary else scheme.primary,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+/** 标题 (左) 与四步的进度 (右, [step] 从 0 起), 下面一行说明占满整宽. */
 @Composable
 private fun StepHeader(title: String, description: String, step: Int) {
     val labels = listOf(
         stringResource(Lang.tv_onboarding_step_network),
         stringResource(Lang.tv_onboarding_step_remote),
         stringResource(Lang.tv_onboarding_step_login),
+        stringResource(Lang.tv_onboarding_step_theme),
     )
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1162,6 +1531,8 @@ private val PHONE_QR_QUIET_ZONE = 18.dp
 private val PROXY_DIALOG_WIDTH = 620.dp
 private val WELCOME_ICON_SIZE = 120.dp
 private val WELCOME_INTRO_MAX_WIDTH = 720.dp
+private val CONFIRM_CARD_GAP = 16.dp
+private val CHOICE_GROUP_GAP = 24.dp
 
 private const val DISABLED_ALPHA = 0.38f
 

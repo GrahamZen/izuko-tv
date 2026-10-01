@@ -43,6 +43,25 @@ enum class TvScheduleLayout {
     Timeline,
 }
 
+/**
+ * TV: 海报墙 (探索 / 追番 / 搜索, 以及新番时间表) 的卡片上按确定做什么. 见 [ThemeSettings.tvPosterConfirm].
+ * 播放键、长按 (收藏菜单)、推荐行末的「更多」卡三档都不变.
+ */
+@Serializable
+enum class TvPosterConfirmAction {
+    /**
+     * 先看简介: 探索 / 追番 / 搜索页先切到 hero 态 (背景大图与简介), 再按确定进详情页 (从大图放大, 或铺着模糊背景时对焦);
+     * 新番时间表 (没有 hero 态) 直接进详情页. 默认.
+     */
+    Hero,
+
+    /** 直接播放: 同播放键 —— 有观看进度接着播下一集, 没有从第一集开始; 分集信息还没取到时进详情页. 四页都是. */
+    Play,
+
+    /** 直接进详情页: 不进 hero 态. 卡片墙上没有大图, 进详情页走普通的页面切换; 新番时间表照旧对焦后进. */
+    Details,
+}
+
 @Serializable
 enum class TvExitBehavior {
     /** 直接退出应用 —— 加确认之前的老行为. */
@@ -219,6 +238,12 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvHeroBlurBackdrop: Boolean = true,
+    /**
+     * TV: 海报墙的卡片上按确定做什么 (见 [TvPosterConfirmAction]). 只有 [TvPosterConfirmAction.Hero] 有 hero 态, [tvHeroBlurBackdrop] 也只对它有用.
+     *
+     * @since 1.0.4
+     */
+    val tvPosterConfirm: TvPosterConfirmAction = TvPosterConfirmAction.Hero,
     /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
     val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TvCardFocusStyle
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
@@ -52,6 +53,11 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style
 import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
@@ -203,7 +209,27 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_schedule_layout_description)) },
             )
 
-            // 海报墙 hero 态要不要在整页底下铺模糊背景、按确定变清晰代替放大 (见 ThemeSettings.tvHeroBlurBackdrop)
+            // 海报墙的卡片上按确定: 先看简介 (hero 态) / 直接播放 / 直接进详情页 (见 TvPosterConfirmAction)
+            DropdownItem(
+                selected = { themeSettings.tvPosterConfirm },
+                values = { TvPosterConfirmAction.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                TvPosterConfirmAction.Hero -> Lang.settings_theme_tv_poster_confirm_hero
+                                TvPosterConfirmAction.Play -> Lang.settings_theme_tv_poster_confirm_play
+                                TvPosterConfirmAction.Details -> Lang.settings_theme_tv_poster_confirm_details
+                            },
+                        ),
+                    )
+                },
+                onSelect = { state.update(themeSettings.copy(tvPosterConfirm = it)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_poster_confirm)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_poster_confirm_description)) },
+            )
+
+            // 海报墙 hero 态要不要在整页底下铺模糊背景、按确定变清晰代替放大 (见 ThemeSettings.tvHeroBlurBackdrop); 只有「先看简介」有 hero 态, 其余两档变灰
             SwitchItem(
                 checked = themeSettings.tvHeroBlurBackdrop,
                 onCheckedChange = { checked ->
@@ -211,6 +237,7 @@ fun SettingsScope.ThemeGroup(
                 },
                 title = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop_description)) },
+                enabled = themeSettings.tvPosterConfirm == TvPosterConfirmAction.Hero,
             )
 
             // 三档 (见 TvVisualEffectsLevel). 写 tvVisualEffects 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔

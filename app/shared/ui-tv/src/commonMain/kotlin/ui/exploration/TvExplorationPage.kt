@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.player.EpisodeHistory
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
@@ -890,6 +891,7 @@ private fun TvExplorationPageContent(
             ?.takeIf { index in 0 until it.size }
             ?.let { recFlat.getOrNull(it.start + index) }
     }
+    val posterConfirm = LocalThemeSettings.current.tvPosterConfirm
     val nativeListener = object : TvNativeExploreListener {
         override fun onCardFocused(rowKey: String, index: Int, column: Int) {
             if (rowKey == TV_FOLLOWED_ROW_KEY) {
@@ -932,13 +934,23 @@ private fun TvExplorationPageContent(
         }
 
         override fun onCardClick(rowKey: String, index: Int) {
+            // 「海报上按确定」选直接播放: 同播放键 (见 navigateToPlay); 另两档进详情页
+            val play = posterConfirm == TvPosterConfirmAction.Play
             if (rowKey == TV_FOLLOWED_ROW_KEY) {
                 followedItems.peekOrNull(index)?.subjectInfo?.let {
-                    navigateToSubject(it.subjectId, it.displayName, it.imageLarge, "home_followed")
+                    if (play) {
+                        navigateToPlay(it.subjectId, it.displayName, it.imageLarge, "home_followed_play")
+                    } else {
+                        navigateToSubject(it.subjectId, it.displayName, it.imageLarge, "home_followed")
+                    }
                 }
             } else {
                 nativeRecItemAt(rowKey, index)?.let {
-                    navigateToSubject(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation")
+                    if (play) {
+                        navigateToPlay(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation_play")
+                    } else {
+                        navigateToSubject(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation")
+                    }
                 }
             }
         }

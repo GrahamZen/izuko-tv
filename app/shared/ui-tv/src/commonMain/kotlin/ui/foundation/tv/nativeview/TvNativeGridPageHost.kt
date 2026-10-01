@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -168,6 +169,8 @@ class TvNativeGridPageCallbacks<T : Any>(
     val onRowEdge: (direction: Int, row: Int) -> Boolean = { _, _ -> false },
     val onGridFocusChanged: (Boolean) -> Unit,
     val onScrollingChanged: (Boolean) -> Unit,
+    /** 「海报上按确定」选直接播放时按确定做的事 (同播放键); null = 照旧 [onCardClick] (预览页). */
+    val onCardPlay: ((index: Int, item: T) -> Unit)? = null,
 )
 
 /**
@@ -208,7 +211,8 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = { currentItems.itemCount },
         // 分页的访问提示: 绑到哪张, 分页就往后取到哪 (读一次 items[index] 就是向分页报告访问到了这里)
         onBind = { index -> if (index in 0 until currentItems.itemCount) currentItems[index] },
-        heroEnabled = true, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
+        // 「海报上按确定」只有先看简介这一档有 hero 态
+        heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
         wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
         cardHeight = null, labelVibrancy = false, emptyContent,
     )
@@ -301,6 +305,8 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val visualEffects = LocalThemeSettings.current.visualEffects
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur); 没有 hero 态的新番时间表不管它
     val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
+    // 「海报上按确定」(见 TvPosterConfirmAction): 直接播放时按确定当场交给页面播 (新番时间表不先对焦)
+    val posterConfirm = LocalThemeSettings.current.tvPosterConfirm
     // 模糊背景的压暗: 卡片墙的底色 + 起步的透明度, 按 hero 标题的颜色压到看得清 (同新番时间表按页面底色压). 铺着模糊背景时 hero 态不压黑,
     // 整屏底色一直是卡片墙那档 (见 TvNativeGridPageView.heroBlur)
     val heroBlurMask = tvPosterWallBackground().copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
@@ -346,7 +352,10 @@ private fun <T : Any> TvNativeGridPageHostContent(
                     }
 
                     override fun onClick(index: Int) {
-                        currentItemAt(index)?.let { currentCallbacks.onCardClick(index, it) }
+                        currentItemAt(index)?.let { item ->
+                            val play = currentCallbacks.onCardPlay.takeIf { posterConfirm == TvPosterConfirmAction.Play }
+                            if (play != null) play(index, item) else currentCallbacks.onCardClick(index, item)
+                        }
                     }
 
                     override fun onLongPress(index: Int, anchor: AndroidRect) {
@@ -401,6 +410,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 }
                 view.onBindCard = { index -> currentOnBind(index) }
                 view.heroEnabled = heroEnabled
+                view.confirmFocusesWall = !(posterConfirm == TvPosterConfirmAction.Play && callbacks.onCardPlay != null)
                 view.contentScrollLimitPx = topBarScrollAwayPx
                 view.transitions = visualEffects.transitions
                 view.animatedScroll = visualEffects.animatedScroll
@@ -453,9 +463,13 @@ private fun <T : Any> TvNativeGridPageHostContent(
             source?.let { view.setSource(it) }
         }
     }
-    // 返回本页时恢复在 hero 态 (直接到位)
-    LaunchedEffect(view) {
-        if (view != null && state.heroActive && !view.heroActive) view.setHeroActive(true, animated = false)
+    // 返回本页时恢复在 hero 态 (直接到位); 没有 hero 态 (「海报上按确定」改成了别的档) 时撤掉存着的 hero 态, 返回键不再先回卡片墙
+    LaunchedEffect(view, heroEnabled) {
+        if (!heroEnabled) {
+            state.heroActive = false
+        } else if (view != null && state.heroActive && !view.heroActive) {
+            view.setHeroActive(true, animated = false)
+        }
     }
 
     if (wallBackdrop != null || heroBlur) TvNativeWallBackdropEffects(state, view, wallBackdrop)
