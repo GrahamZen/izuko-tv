@@ -61,11 +61,6 @@
     <string name="settings_theme_tv_visual_effects_full">完整</string>
     <string name="settings_theme_tv_hero_backdrop">顯示 hero 背景</string>
     <string name="settings_theme_tv_hero_backdrop_description">關閉後探索、搜尋、追番三頁都換成海報牆：海報下面寫番名，卡片上按確定先顯示 hero 背景，再按確定進入詳情</string>
-    <string name="settings_theme_tv_card_focus_style">卡片聚焦樣式</string>
-    <string name="settings_theme_tv_card_focus_style_description">追番、搜尋和時間表卡片網格裡，聚焦的封面怎麼突出。海報牆照 Apple TV 一律只放大；顯示背景的探索頁和選集條是固定聚焦框，也不受影響</string>
-    <string name="settings_theme_tv_card_focus_ring">原版（僅描邊）</string>
-    <string name="settings_theme_tv_card_focus_scale_and_ring">放大 + 描邊</string>
-    <string name="settings_theme_tv_card_focus_scale">僅放大</string>
     <string name="settings_theme_tv_exit_behavior">在探索頁輪播區按返回</string>
     <string name="settings_theme_tv_exit_behavior_description">主頁上最後一次按返回執行的操作</string>
     <string name="settings_theme_tv_exit_direct">直接退出</string>
@@ -101,6 +96,9 @@
     <string name="settings_player_skip_op_ed_auto_then_manual">自動跳過，取消後保留跳過按鈕</string>
     <string name="settings_player_skip_op_ed_manual">顯示跳過按鈕</string>
     <string name="settings_player_skip_op_ed_off">不跳過</string>
+    <string name="settings_player_video_enhancement_confirm_title">開啟畫質增強？</string>
+    <string name="settings_player_video_enhancement_confirm_text">畫質增強要用顯示卡逐幀處理畫面，很多電視和盒子跑不動：播放時可能只有聲音沒有畫面、畫面卡住不動，或者一直提示播放失敗並自動換源。遇到這些情況，請回到這裡改回「關閉」，再重新開啟應用程式。</string>
+    <string name="settings_player_video_enhancement_confirm_button">仍要開啟</string>
     <string name="settings_update_popup_feedback_group_hint">點「查看詳情」可掃碼加入QQ交流/反饋群</string>
     <string name="settings_update_install_permission_title">允許安裝更新</string>
     <string name="settings_update_install_permission_message">安裝更新之前，需要在系統設定裡允許 %1$s 安裝應用程式。\n\n打開開關後，系統會關閉 %1$s，重新打開就會繼續更新。</string>

@@ -336,7 +336,6 @@ class EpisodeViewModel(
 
     val videoEnhancement = createVideoEnhancementController(
         player,
-        settingsRepository.playerKernelConfig.flow,
         backgroundScope.coroutineContext,
     )
 

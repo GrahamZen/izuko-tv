@@ -22,7 +22,6 @@ enum class DarkMode {
     AUTO, LIGHT, DARK,
 }
 
-/** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 /**
  * TV 新番时间表的版式. 三版都留着, 设置里可选 —— 改版换掉的东西未必人人都想要
  * (用户 2026-09-18)。
@@ -62,6 +61,7 @@ enum class TvPosterConfirmAction {
     Details,
 }
 
+/** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 @Serializable
 enum class TvExitBehavior {
     /** 直接退出应用 —— 加确认之前的老行为. */
@@ -174,11 +174,9 @@ enum class TvVisualEffectsLevel {
 }
 
 /**
- * TV: 网格页 (追番 / 搜索 / 时间表网格版) 的竖版卡片聚焦时怎么突出 (见 [ThemeSettings.tvCardFocusStyle]).
- * 设置里按声明顺序列出.
+ * TV: 竖版卡片聚焦时怎么突出. 海报墙 (探索 / 搜索 / 追番 / 时间表) 照 Apple TV 固定用 [Scale] (见 ui-tv 的
+ * `TV_POSTER_WALL_CARD_FOCUS_STYLE`); 选集轮播是钉在锚位的固定聚焦框, 不用它.
  *
- * 选集轮播不受它影响: 那里是钉在锚位的固定聚焦框, 卡片在框下滑动, 本身就有运动提示.
- * 海报墙 (探索 / 搜索 / 追番) 也不受它影响: 照 Apple TV 固定只放大、不画框.
  * 网格页的焦点是在一屏几十张封面之间瞬移的, 细描边在封面颜色接近主题色时容易看丢 —— 放大同时给出
  * 尺寸差与"变大那一下"的运动, 两样都能把视线拉过去. 两种放大样式的框与放大都按"聚焦格"画, 上下翻页时框不动
  * (见 ui-tv 的 `TvGridFocusSlot`).
@@ -220,8 +218,6 @@ data class ThemeSettings(
     val seedColorValue: ULong = DefaultSeedColor.value,
     val enableAnimatedGradientSubjectPage: Boolean = false,
     val enableFrostedGlassEffect: Boolean = false,
-    /** TV: 探索页使用沉浸式布局 (Hero 轮播); 关闭则回退上游原布局 (低端机可关以降低开销). */
-    val tvImmersiveExploration: Boolean = true,
     /**
      * TV: 探索 / 搜索 / 追番三页的 hero 背景模式 (聚焦卡片的背景大图与简介常显). 三页现在只有海报墙一种画面, 本字段不被读取,
      * 设置里也不显示; 字段留着给以后的 hero 模式.
@@ -244,8 +240,6 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvPosterConfirm: TvPosterConfirmAction = TvPosterConfirmAction.Hero,
-    /** TV: 条目详情页使用沉浸式布局 (Hero 首屏); 关闭则回退上游通用多栏布局. */
-    val tvImmersiveDetails: Boolean = true,
     /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
     val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Grid,
     /**
@@ -319,8 +313,6 @@ data class ThemeSettings(
      * [visualEffects], 别直接读这个字段.
      */
     val tvVisualEffects: TvVisualEffectsLevel? = null,
-    /** TV: 网格页竖版卡片的聚焦样式, 见 [TvCardFocusStyle]. */
-    val tvCardFocusStyle: TvCardFocusStyle = TvCardFocusStyle.ScaleAndRing,
     /** **已不再使用**, 见 [TvRemoteEntryPlacement]; 留着只为读得懂旧设置. */
     val tvRemoteEntryPlacement: TvRemoteEntryPlacement = TvRemoteEntryPlacement.Rail,
     /**

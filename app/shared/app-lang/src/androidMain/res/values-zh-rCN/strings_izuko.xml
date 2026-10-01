@@ -58,6 +58,9 @@
     <string name="settings_player_skip_op_ed_auto_then_manual">自动跳过，取消后保留跳过按钮</string>
     <string name="settings_player_skip_op_ed_manual">显示跳过按钮</string>
     <string name="settings_player_skip_op_ed_off">不跳过</string>
+    <string name="settings_player_video_enhancement_confirm_title">打开画质增强？</string>
+    <string name="settings_player_video_enhancement_confirm_text">画质增强要用显卡逐帧处理画面，很多电视和盒子跑不动：播放时可能只有声音没有画面、画面卡住不动，或者一直提示播放失败并自动换源。遇到这些情况，请回到这里改回「关闭」，再重新打开应用。</string>
+    <string name="settings_player_video_enhancement_confirm_button">仍要打开</string>
     <string name="settings_storage_image_cache">清理图片缓存</string>
     <string name="settings_storage_image_cache_usage">海报、剧照等图片。当前占用 %1$s，超出上限自动淘汰旧图，一般无需手动清理</string>
     <string name="settings_storage_image_cache_cleared">已清理图片缓存</string>
@@ -173,12 +176,8 @@
     <string name="search_tv_filter_cancel">取消</string>
     <string name="search_tv_empty">没有找到相关条目</string>
     <string name="search_tv_remote_hint">播放键直接播放 · 长按选择键编辑收藏</string>
-    <string name="settings_theme_tv_immersive_exploration">沉浸式探索页 / 追番页</string>
-    <string name="settings_theme_tv_immersive_exploration_description">探索页与追番页使用沉浸布局。关闭则回退到原布局</string>
     <string name="settings_theme_tv_hero_backdrop">显示 hero 背景</string>
     <string name="settings_theme_tv_hero_backdrop_description">关掉后探索、搜索、追番三页都换成海报墙：海报下面写番名，卡片上按确定先显示 hero 背景，再按确定进详情</string>
-    <string name="settings_theme_tv_immersive_details">沉浸式详情页</string>
-    <string name="settings_theme_tv_immersive_details_description">条目详情使用沉浸式 Hero 布局。关闭则回退到通用多栏布局</string>
     <string name="settings_theme_tv_immersive_schedule">沉浸式新番时间表</string>
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
     <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
@@ -202,11 +201,6 @@
     <string name="settings_theme_tv_visual_effects_smooth">流畅</string>
     <string name="settings_theme_tv_visual_effects_balanced">均衡</string>
     <string name="settings_theme_tv_visual_effects_full">完整</string>
-    <string name="settings_theme_tv_card_focus_style">卡片聚焦样式</string>
-    <string name="settings_theme_tv_card_focus_style_description">追番、搜索和时间表卡片网格里，聚焦的封面怎么突出。海报墙照 Apple TV 一律只放大；显示背景的探索页和选集条是固定聚焦框，也不受影响</string>
-    <string name="settings_theme_tv_card_focus_ring">原版（仅描边）</string>
-    <string name="settings_theme_tv_card_focus_scale_and_ring">放大 + 描边</string>
-    <string name="settings_theme_tv_card_focus_scale">仅放大</string>
     <string name="settings_theme_tv_exit_behavior">在探索页轮播区按返回</string>
     <string name="settings_theme_tv_exit_behavior_description">主页上最后一次按返回执行的操作</string>
     <string name="settings_theme_tv_exit_direct">直接退出</string>

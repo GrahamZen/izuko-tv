@@ -91,7 +91,6 @@ import me.him188.ani.app.ui.foundation.HorizontalScrollControlState
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.ifNotNullThen
@@ -230,16 +229,15 @@ fun ExplorationScreen(
     // 沉浸式外壳下顶栏 (标题/头像/搜索/设置) 全部由外壳侧边导航承载, 这里不再重复渲染顶栏
     val immersiveShell = LocalAniUiBehavior.current.immersiveShell
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
-    // 沉浸式变体: 入口提供了变体, 且运行时设置开启 (界面设置 → TV 沉浸式探索页, 默认开)
+    // 沉浸式变体: 入口提供了变体就用 (遥控器形态恒为沉浸式布局)
     val pageVariant = LocalExplorationPageVariant.current
-    val useImmersive = pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration
     // TV: 进入主页时把焦点落到最高热点栏目的第一张卡 (至少也在侧边栏之外). 该卡在分页首页加载
     // 完成前不存在, 且要和全局焦点兜底 (AniAppContent) 竞争 —— 故持续重试, 直到 onFocusChanged
     // 报告它真正拿到焦点为止 (不依赖 requestFocus 的返回, 后者未挂载时可能静默 no-op), 或超时放弃.
     // 沉浸式与原布局的热点第一张卡都挂着同一个 FocusRequester, 本机制对两种布局通用.
     // 沉浸式变体的初始/返回焦点由变体内部统一处理 (含从详情页返回时恢复到原卡片);
-    // 这里只为旧布局 (沉浸式关闭) 抢初始焦点到热点第一张卡.
-    if (focusDriven && !useImmersive) {
+    // 这里只为没有变体的默认布局抢初始焦点到热点第一张卡.
+    if (focusDriven && pageVariant == null) {
         LaunchedEffect(Unit) {
             repeat(80) {
                 if (state.trendingFirstItemFocused.value) return@LaunchedEffect
@@ -248,8 +246,8 @@ fun ExplorationScreen(
             }
         }
     }
-    // 沉浸式变体 (设置开关控制); 关掉则走下方默认布局
-    if (useImmersive && pageVariant != null) {
+    // 沉浸式变体; 没有变体的形态走下方默认布局
+    if (pageVariant != null) {
         pageVariant.Page(state, modifier.fillMaxSize())
         return
     }

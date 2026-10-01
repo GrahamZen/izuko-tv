@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
-import me.him188.ani.app.data.models.preference.TvCardFocusStyle
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
@@ -46,11 +45,6 @@ import me.him188.ani.app.ui.lang.settings_theme_high_contrast
 import me.him188.ani.app.ui.lang.settings_theme_high_contrast_description
 import me.him188.ani.app.ui.lang.settings_theme_palette
 import me.him188.ani.app.ui.lang.settings_theme_title
-import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_ring
-import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale
-import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_scale_and_ring
-import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style
-import me.him188.ani.app.ui.lang.settings_theme_tv_card_focus_style_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm
@@ -58,12 +52,6 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_details_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_exploration_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_schedule
-import me.him188.ani.app.ui.lang.settings_theme_tv_immersive_schedule_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_description
@@ -169,26 +157,8 @@ fun SettingsScope.ThemeGroup(
             )
         }
 
-        // 沉浸式外壳专属: 沉浸式布局开关 (关闭可回退默认布局, 降低低端设备渲染开销)
+        // 沉浸式外壳专属 (探索 / 追番 / 搜索 / 详情在这一形态下恒为沉浸式布局, 没有回退开关)
         if (LocalAniUiBehavior.current.immersiveShell) {
-            SwitchItem(
-                checked = themeSettings.tvImmersiveExploration,
-                onCheckedChange = { checked ->
-                    state.update(themeSettings.copy(tvImmersiveExploration = checked))
-                },
-                title = { Text(stringResource(Lang.settings_theme_tv_immersive_exploration)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_immersive_exploration_description)) },
-            )
-
-            SwitchItem(
-                checked = themeSettings.tvImmersiveDetails,
-                onCheckedChange = { checked ->
-                    state.update(themeSettings.copy(tvImmersiveDetails = checked))
-                },
-                title = { Text(stringResource(Lang.settings_theme_tv_immersive_details)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_immersive_details_description)) },
-            )
-
             // 三版都留着可选 (见 TvScheduleLayout): 改版换掉的东西未必人人都想要
             DropdownItem(
                 selected = { themeSettings.tvScheduleLayout },
@@ -258,26 +228,6 @@ fun SettingsScope.ThemeGroup(
                 onSelect = { state.update(themeSettings.copy(tvVisualEffects = it)) },
                 title = { Text(stringResource(Lang.settings_theme_tv_visual_effects)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_visual_effects_description)) },
-            )
-
-            // 竖版卡片网格 (时间表网格版) 怎么示焦 (见 TvCardFocusStyle); 选集条是固定锚位框, 海报墙固定只放大, 都不受它影响
-            DropdownItem(
-                selected = { themeSettings.tvCardFocusStyle },
-                values = { TvCardFocusStyle.entries },
-                itemText = {
-                    Text(
-                        stringResource(
-                            when (it) {
-                                TvCardFocusStyle.Ring -> Lang.settings_theme_tv_card_focus_ring
-                                TvCardFocusStyle.ScaleAndRing -> Lang.settings_theme_tv_card_focus_scale_and_ring
-                                TvCardFocusStyle.Scale -> Lang.settings_theme_tv_card_focus_scale
-                            },
-                        ),
-                    )
-                },
-                onSelect = { state.update(themeSettings.copy(tvCardFocusStyle = it)) },
-                title = { Text(stringResource(Lang.settings_theme_tv_card_focus_style)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_card_focus_style_description)) },
             )
         }
         // 「退出播放页后保留播放状态」在播放器那一类里 (见 PlayerGroup), 「界面缩放」在界面那一类里

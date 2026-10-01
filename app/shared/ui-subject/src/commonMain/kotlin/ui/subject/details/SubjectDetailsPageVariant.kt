@@ -28,10 +28,7 @@ import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 
 /**
  * 条目详情页变体: 应用入口可提供一个替代布局 (如遥控器形态的单列信息流:
- * Hero 首屏 + 横向区块).
- *
- * 只有 [ThemeSettings.tvImmersiveDetails][me.him188.ani.app.data.models.preference.ThemeSettings.tvImmersiveDetails]
- * 开启时才生效, 关闭则回退默认多栏布局.
+ * Hero 首屏 + 横向区块). 提供了就用, 没有回退开关.
  *
  * 变体自带 info 加载占位 (调用方不等 info 加载完就进入, 避免先闪默认布局再整页切换).
  */

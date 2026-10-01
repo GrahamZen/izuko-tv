@@ -58,6 +58,9 @@
     <string name="settings_player_skip_op_ed_auto_then_manual">Skip automatically, keep button if cancelled</string>
     <string name="settings_player_skip_op_ed_manual">Show skip button</string>
     <string name="settings_player_skip_op_ed_off">Never skip</string>
+    <string name="settings_player_video_enhancement_confirm_title">Turn on video enhancement?</string>
+    <string name="settings_player_video_enhancement_confirm_text">Video enhancement processes every frame on the graphics chip, which many TVs and boxes cannot keep up with. Playback may have sound but a black picture, freeze, or keep failing and switching sources. If that happens, set this back to Off here and reopen the app.</string>
+    <string name="settings_player_video_enhancement_confirm_button">Turn on anyway</string>
     <string name="settings_storage_image_cache">Clear image cache</string>
     <string name="settings_storage_image_cache_usage">Posters, stills and other images. Currently using %1$s; old entries are evicted automatically, so manual clearing is normally unnecessary</string>
     <string name="settings_storage_image_cache_cleared">Image cache cleared</string>
@@ -173,12 +176,8 @@
     <string name="search_tv_filter_cancel">Cancel</string>
     <string name="search_tv_empty">No matching anime found</string>
     <string name="search_tv_remote_hint">Play to watch · Hold select to edit collection</string>
-    <string name="settings_theme_tv_immersive_exploration">Immersive Exploration &amp; Collection (TV)</string>
-    <string name="settings_theme_tv_immersive_exploration_description">Use the immersive hero layout for the Exploration and Collection pages. Turn off to fall back to the classic layout</string>
     <string name="settings_theme_tv_hero_backdrop">Show hero background</string>
     <string name="settings_theme_tv_hero_backdrop_description">When off, Explore, Search and Collection all become poster walls with a title under each poster; press OK on a card to show its hero background, and OK again to open it</string>
-    <string name="settings_theme_tv_immersive_details">Immersive Detail Page (TV)</string>
-    <string name="settings_theme_tv_immersive_details_description">Use the immersive hero layout for item details. Turn off to fall back to the classic multi-column layout</string>
     <string name="settings_theme_tv_immersive_schedule">Immersive Airing Schedule (TV)</string>
     <string name="settings_theme_tv_immersive_schedule_description">Show the airing schedule as a date rail plus a poster grid. Turn off to fall back to the classic side-by-side day columns</string>
     <string name="settings_theme_tv_schedule_layout">Airing schedule layout (TV)</string>
@@ -202,11 +201,6 @@
     <string name="settings_theme_tv_visual_effects_smooth">Smooth</string>
     <string name="settings_theme_tv_visual_effects_balanced">Balanced</string>
     <string name="settings_theme_tv_visual_effects_full">Full</string>
-    <string name="settings_theme_tv_card_focus_style">Card focus style</string>
-    <string name="settings_theme_tv_card_focus_style_description">How the focused poster stands out in the Collection, Search and poster-grid schedule grids. Poster walls always just enlarge it, as on Apple TV; Explore with its background and episode rows keep their fixed focus frame.</string>
-    <string name="settings_theme_tv_card_focus_ring">Classic (outline only)</string>
-    <string name="settings_theme_tv_card_focus_scale_and_ring">Enlarge + outline</string>
-    <string name="settings_theme_tv_card_focus_scale">Enlarge only</string>
     <string name="settings_theme_tv_exit_behavior">Back on the Explore carousel</string>
     <string name="settings_theme_tv_exit_behavior_description">What the last Back press on the home screen does</string>
     <string name="settings_theme_tv_exit_direct">Quit immediately</string>

@@ -184,12 +184,11 @@ internal val TvCardFocusStyle.focusScale: Float
     }
 
 /**
- * 每个网格实例一份. 样式跟「卡片聚焦样式」设置.
+ * 每个网格实例一份, 按 [focusStyle] 画框与放大.
  */
 @Composable
-fun rememberTvGridFocusSlot(): TvGridFocusSlot {
+fun rememberTvGridFocusSlot(focusStyle: TvCardFocusStyle = TvCardFocusStyle.ScaleAndRing): TvGridFocusSlot {
     val settings = LocalThemeSettings.current
-    val focusStyle = settings.tvCardFocusStyle
     // 样式在创建时就定下来: 首帧卡片要按它决定自己画不画描边 (见 usesCardRing), 等 SideEffect 就晚了一帧
     val slot = remember { TvGridFocusSlot().apply { style = focusStyle } }
     val scope = rememberCoroutineScope()

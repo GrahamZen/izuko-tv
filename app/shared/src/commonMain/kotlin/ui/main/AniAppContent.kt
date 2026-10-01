@@ -344,12 +344,10 @@ private fun AniAppContentImpl(
     }
 
 
-    // TV 背景放大转场只在沉浸式详情页上成立 (放大层与接手都在那套版式里): 关掉沉浸式时不建会话, 照常交叉淡入 ——
-    // 否则会话建了却没人起跑, 详情页照样不淡入, 直接硬切出来. 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与
-    // 静止之后, 淡入则边淡边组合), 流畅档反而更该用它 (见 TvVisualEffectsLevel)
-    val tvHeroZoomAllowed = LocalThemeSettings.current.tvImmersiveDetails
-    // TV: 放大进来的详情页叠在来源列表页上, 列表页常驻组合, 返回缩回落地即回 (见 TvZoomStackScene). 只在 TV 上 (有 TV 详情页变体时)
-    val tvZoomStack = tvHeroZoomAllowed && LocalSubjectDetailsPageVariant.current != null
+    // TV: 放大进来的详情页叠在来源列表页上, 列表页常驻组合, 返回缩回落地即回 (见 TvZoomStackScene). 只在 TV 上 (有 TV 详情页变体时).
+    // 视觉效果三档都放大: 放大比交叉淡入还顺 (重活挪到了落地尾段与静止之后, 淡入则边淡边组合), 流畅档反而更该用它
+    // (见 TvVisualEffectsLevel)
+    val tvZoomStack = LocalSubjectDetailsPageVariant.current != null
     val sceneStrategies = remember(tvZoomStack) {
         listOf<SceneStrategy<NavRoutes>>(if (tvZoomStack) TvZoomStackSceneStrategy() else SinglePaneSceneStrategy())
     }
@@ -493,7 +491,7 @@ private fun AniAppContentImpl(
                         val contentKey = targetState.entries.lastOrNull()?.contentKey
                         val target = contentKey?.let { subjectDetailTarget(it) }
                         // TV 叠放布局下判定已在入栈前做过 (放大的那种根本不走转场), 这里只看会话在不在, 不再新建
-                        val zoom = target != null && tvHeroZoomAllowed &&
+                        val zoom = target != null &&
                                 (if (tvZoomStack) TvHeroZoomHandoff.session?.subjectId == target else TvHeroZoomHandoff.willZoom(target))
                         if (zoom) {
                             // 记下详情页条目: 接手后它还在栈顶期间, 下面的列表页接着不画 (见 TvHeroZoomHandoff.coverEntryKey)

@@ -268,7 +268,7 @@ fun SubjectDetailsScreen(
         )
         // 放大转场那一层 (TV): 挂在占位页 / 真页的切换之外, 两者切换时不重建, 见 SubjectDetailsPageVariant.Underlay
         val immersiveVariant = LocalSubjectDetailsPageVariant.current
-            ?.takeIf { !videoBackground && LocalThemeSettings.current.tvImmersiveDetails }
+            ?.takeIf { !videoBackground }
         immersiveVariant?.Underlay()
         val holdPlaceholder = state is SubjectDetailsUIState.Ok &&
             immersiveVariant?.holdPlaceholder(state.subjectId) == true
@@ -421,10 +421,9 @@ private fun SubjectDetailsPage(
         state.subjectCommentReportState?.let { CommentReportHost(it) }
 
         // 沉浸式变体不看 info 是否加载完, 始终走变体布局 (变体自带加载占位) ——
-        // 否则加载的一瞬会先闪一下默认布局再切换. 关闭沉浸式时按默认规则等 info 加载.
-        // 开关运行时由设置项控制 (界面设置 → TV 沉浸式详情页), 默认开.
+        // 否则加载的一瞬会先闪一下默认布局再切换. 没有变体时按默认规则等 info 加载.
         val pageVariant = LocalSubjectDetailsPageVariant.current
-        val useTvImmersive = pageVariant != null && themeSettings.tvImmersiveDetails
+        val useTvImmersive = pageVariant != null
         if (layoutParams.isMultiColumn && (state.info != null || useTvImmersive)) {
             // 双栏 / 三栏: 全新自适应布局 (复用现有 SubjectDetailsState 数据).
             // 桌面无"评价" tab, 完整评论流与"写评价"从评价预览/热门评价卡进入.
@@ -639,9 +638,9 @@ private fun PlaceholderSubjectDetailsPage(
     loadAttempt: SubjectDetailsLoadAttempt = SubjectDetailsLoadAttempt.First,
 ) {
     val variant = LocalSubjectDetailsPageVariant.current
-    if (variant != null && LocalThemeSettings.current.tvImmersiveDetails) {
+    if (variant != null) {
         // 沉浸式变体自绘首屏占位, 避免先闪多栏骨架再整页切换到变体布局.
-        // 关闭沉浸式时走下方通用多栏骨架.
+        // 没有变体时走下方通用多栏骨架.
         variant.LoadingPlaceholder(subjectInfo, layoutParams, modifier, windowInsets, loadAttempt)
         return
     }
@@ -731,8 +730,7 @@ private fun ErrorSubjectDetailsPage(
     // header 还占着大半屏). 这里换成整页居中的一块, 并写明退出方式 —— 电视上没有可点的地方,
     // 不说就只能干看着.
     //
-    // 判据用 immersiveShell (与本页算 tenFoot 布局参数的那个一致), 不用详情页变体是否存在:
-    // 变体还要 tvImmersiveDetails 开着才生效, 关掉之后电视上照样是遥控器形态.
+    // 判据用 immersiveShell (与本页算 tenFoot 布局参数的那个一致).
     if (LocalAniUiBehavior.current.immersiveShell) {
         TvErrorSubjectDetails(subjectInfo, error, modifier, windowInsets)
         return

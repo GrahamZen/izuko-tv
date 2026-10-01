@@ -124,7 +124,6 @@ import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.paneHorizontalPadding
 import me.him188.ani.app.ui.foundation.session.SelfAvatar
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.appChromeFrostedGlass
 import me.him188.ani.app.ui.foundation.theme.appChromeHazeSource
 import me.him188.ani.app.ui.foundation.theme.isAppChromeFrostedGlassActive
@@ -260,9 +259,9 @@ fun CollectionPage(
     enableAnimation: Boolean = true,
 
     ) {
-    // 沉浸式变体 (与沉浸式探索页共用同一开关, 关闭则回退下方默认布局)
+    // 沉浸式变体; 没有变体的形态走下方默认布局
     val pageVariant = LocalCollectionPageVariant.current
-    if (pageVariant != null && LocalThemeSettings.current.tvImmersiveExploration) {
+    if (pageVariant != null) {
         pageVariant.Page(state, modifier)
         return
     }

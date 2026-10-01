@@ -18,13 +18,13 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowOutward
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.tooling.preview.Preview
@@ -39,7 +40,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.preference.DesktopCloseBehavior
-import me.him188.ani.app.data.models.preference.EpisodeListProgressTheme
 import me.him188.ani.app.data.models.preference.FullscreenSwitchMode
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
@@ -59,6 +59,7 @@ import me.him188.ani.app.navigation.getText
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.SteppedSlider
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -70,16 +71,8 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_app_close_behavior
 import me.him188.ani.app.ui.lang.settings_app_close_behavior_exit
 import me.him188.ani.app.ui.lang.settings_app_close_behavior_minimize_to_tray
-import me.him188.ani.app.ui.lang.settings_app_episode_playback
 import me.him188.ani.app.ui.lang.settings_app_initial_page
 import me.him188.ani.app.ui.lang.settings_app_initial_page_description
-import me.him188.ani.app.ui.lang.settings_app_episode_images
-import me.him188.ani.app.ui.lang.settings_app_episode_images_description
-import me.him188.ani.app.ui.lang.settings_app_light_up_mode
-import me.him188.ani.app.ui.lang.settings_app_light_up_mode_description
-import me.him188.ani.app.ui.lang.settings_app_list_animation
-import me.him188.ani.app.ui.lang.settings_app_list_animation_description
-import me.him188.ani.app.ui.lang.settings_app_my_collections
 import me.him188.ani.app.ui.lang.settings_app_not_show_done_and_dropped_subjects
 import me.him188.ani.app.ui.lang.settings_app_nsfw_blur
 import me.him188.ani.app.ui.lang.settings_app_nsfw_content
@@ -134,8 +127,6 @@ import me.him188.ani.app.ui.lang.settings_player_playback_speed_range
 import me.him188.ani.app.ui.lang.settings_player_playback_speed_range_description
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
-import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
-import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_off
@@ -143,6 +134,11 @@ import me.him188.ani.app.ui.lang.settings_player_up_next_tip
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_seconds
+import me.him188.ani.app.ui.lang.settings_player_video_enhancement_confirm_button
+import me.him188.ani.app.ui.lang.settings_player_video_enhancement_confirm_text
+import me.him188.ani.app.ui.lang.settings_player_video_enhancement_confirm_title
+import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default
+import me.him188.ani.app.ui.lang.settings_player_video_enhancement_default_description
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
@@ -427,49 +423,6 @@ fun SettingsScope.AppearanceGroup(
             title = { Text(stringResource(Lang.settings_app_nsfw_content)) },
         )
     }
-
-    Group(title = { Text(stringResource(Lang.settings_app_my_collections)) }, useThinHeader = true) {
-        SwitchItem(
-            checked = uiSettings.myCollections.enableListAnimation1,
-            onCheckedChange = {
-                state.update(
-                    uiSettings.copy(
-                        myCollections = uiSettings.myCollections.copy(
-                            enableListAnimation1 = !uiSettings.myCollections.enableListAnimation1,
-                        ),
-                    ),
-                )
-            },
-            title = { Text(stringResource(Lang.settings_app_list_animation)) },
-            description = { Text(stringResource(Lang.settings_app_list_animation_description)) },
-        )
-    }
-
-    Group(title = { Text(stringResource(Lang.settings_app_episode_playback)) }, useThinHeader = true) {
-        val episode by remember { derivedStateOf { uiSettings.episodeProgress } }
-        SwitchItem(
-            checked = episode.theme == EpisodeListProgressTheme.LIGHT_UP,
-            onCheckedChange = {
-                state.update(
-                    uiSettings.copy(
-                        episodeProgress = episode.copy(
-                            theme = if (it) EpisodeListProgressTheme.LIGHT_UP else EpisodeListProgressTheme.ACTION,
-                        ),
-                    ),
-                )
-            },
-            title = { Text(stringResource(Lang.settings_app_light_up_mode)) },
-            description = { Text(stringResource(Lang.settings_app_light_up_mode_description)) },
-        )
-        SwitchItem(
-            checked = episode.showEpisodeImages,
-            onCheckedChange = {
-                state.update(uiSettings.copy(episodeProgress = episode.copy(showEpisodeImages = it)))
-            },
-            title = { Text(stringResource(Lang.settings_app_episode_images)) },
-            description = { Text(stringResource(Lang.settings_app_episode_images_description)) },
-        )
-    }
 }
 
 /**
@@ -671,51 +624,7 @@ fun SettingsScope.PlayerGroup(
 ) {
     Group(title = { Text(stringResource(Lang.settings_player)) }) {
         val config by videoScaffoldConfig
-        DropdownItem(
-            selected = { config.fullscreenSwitchMode },
-            values = { FullscreenSwitchMode.entries },
-            itemText = {
-                Text(
-                    when (it) {
-                        FullscreenSwitchMode.ALWAYS_SHOW_FLOATING -> stringResource(Lang.settings_player_fullscreen_always_show)
-                        FullscreenSwitchMode.AUTO_HIDE_FLOATING -> stringResource(Lang.settings_player_fullscreen_auto_hide)
-                        FullscreenSwitchMode.ONLY_IN_CONTROLLER -> stringResource(Lang.settings_player_fullscreen_only_in_controller)
-                    },
-                )
-            },
-            onSelect = {
-                videoScaffoldConfig.update(config.copy(fullscreenSwitchMode = it))
-            },
-            title = { Text(stringResource(Lang.settings_player_fullscreen_button)) },
-            description = { Text(stringResource(Lang.settings_player_fullscreen_button_description)) },
-        )
-        HorizontalDividerItem()
-        DropdownItem(
-            selected = { config.videoEnhancementDefaultMode },
-            values = {
-                listOf(
-                    VideoEnhancementDefaultMode.PERFORMANCE,
-                    VideoEnhancementDefaultMode.QUALITY,
-                    VideoEnhancementDefaultMode.OFF,
-                )
-            },
-            itemText = {
-                Text(
-                    when (it) {
-                        VideoEnhancementDefaultMode.OFF -> stringResource(Lang.video_player_off)
-                        VideoEnhancementDefaultMode.PERFORMANCE -> stringResource(Lang.video_player_performance)
-                        VideoEnhancementDefaultMode.QUALITY -> stringResource(Lang.video_player_quality)
-                    },
-                )
-            },
-            onSelect = {
-                videoScaffoldConfig.update(config.copy(videoEnhancementDefaultMode = it))
-            },
-            title = { Text(stringResource(Lang.settings_player_video_enhancement_default)) },
-            description = {
-                Text(stringResource(Lang.settings_player_video_enhancement_default_description))
-            },
-        )
+        VideoEnhancementDefaultItem(config, videoScaffoldConfig)
         HorizontalDividerItem()
 
         // 「退出播放页后保留播放状态」: 只有自带"回到会话"入口的形态才给这条 (见 AniUiBehavior
@@ -941,7 +850,6 @@ fun SettingsScope.PlayerGroup(
             )
             HorizontalDividerItem()
         }
-        HorizontalDividerItem()
         SwitchItem(
             checked = config.enableFramePreview,
             onCheckedChange = {
@@ -1000,6 +908,89 @@ fun SettingsScope.PlayerGroup(
             )
         }
     }
+}
+
+/**
+ * 默认画质增强档. 选「关闭」以外的档位先弹窗写明可能出的问题 (很多电视与盒子上黑屏有声、画面卡住或解码失败连着换源),
+ * 确认才写入; 取消或按返回保持原档. 改回「关闭」不用确认.
+ *
+ * 弹窗默认焦点在「取消」上: 遥控器上顺手按一下确定不该就把增强打开.
+ */
+@Composable
+internal fun SettingsScope.VideoEnhancementDefaultItem(
+    config: VideoScaffoldConfig,
+    videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
+) {
+    var pendingMode by remember { mutableStateOf<VideoEnhancementDefaultMode?>(null) }
+    DropdownItem(
+        selected = { config.videoEnhancementDefaultMode },
+        values = {
+            listOf(
+                VideoEnhancementDefaultMode.PERFORMANCE,
+                VideoEnhancementDefaultMode.QUALITY,
+                VideoEnhancementDefaultMode.OFF,
+            )
+        },
+        itemText = {
+            Text(
+                videoEnhancementDefaultModeText(it),
+                Modifier.testTag(VideoEnhancementDefaultItemTestTags.option(it)),
+            )
+        },
+        exposedItemText = { Text(videoEnhancementDefaultModeText(it)) },
+        onSelect = {
+            when (it) {
+                config.videoEnhancementDefaultMode -> {}
+                VideoEnhancementDefaultMode.OFF -> videoScaffoldConfig.update(config.copy(videoEnhancementDefaultMode = it))
+                else -> pendingMode = it
+            }
+        },
+        modifier = Modifier.testTag(VideoEnhancementDefaultItemTestTags.ITEM),
+        title = { Text(stringResource(Lang.settings_player_video_enhancement_default)) },
+        description = {
+            Text(stringResource(Lang.settings_player_video_enhancement_default_description))
+        },
+    )
+    pendingMode?.let { mode ->
+        AniAlertDialog(
+            onDismissRequest = { pendingMode = null },
+            title = { Text(stringResource(Lang.settings_player_video_enhancement_confirm_title)) },
+            text = { Text(stringResource(Lang.settings_player_video_enhancement_confirm_text)) },
+            confirmButton = {
+                AniTextButton(
+                    onClick = {
+                        pendingMode = null
+                        videoScaffoldConfig.update(config.copy(videoEnhancementDefaultMode = mode))
+                    },
+                    modifier = Modifier.testTag(VideoEnhancementDefaultItemTestTags.CONFIRM),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(Lang.settings_player_video_enhancement_confirm_button)) }
+            },
+            dismissButton = {
+                AniTextButton(
+                    onClick = { pendingMode = null },
+                    // 弹窗是独立窗口, 不指定的话遥控器上焦点不在任何按钮上
+                    modifier = Modifier.tvWindowInitialFocus().testTag(VideoEnhancementDefaultItemTestTags.CANCEL),
+                ) {
+                    Text(stringResource(Lang.settings_mediasource_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun videoEnhancementDefaultModeText(mode: VideoEnhancementDefaultMode): String = when (mode) {
+    VideoEnhancementDefaultMode.OFF -> stringResource(Lang.video_player_off)
+    VideoEnhancementDefaultMode.PERFORMANCE -> stringResource(Lang.video_player_performance)
+    VideoEnhancementDefaultMode.QUALITY -> stringResource(Lang.video_player_quality)
+}
+
+internal object VideoEnhancementDefaultItemTestTags {
+    const val ITEM = "video_enhancement_default_item"
+    const val CONFIRM = "video_enhancement_default_confirm"
+    const val CANCEL = "video_enhancement_default_cancel"
+    fun option(mode: VideoEnhancementDefaultMode) = "video_enhancement_default_option_${mode.name}"
 }
 
 /**

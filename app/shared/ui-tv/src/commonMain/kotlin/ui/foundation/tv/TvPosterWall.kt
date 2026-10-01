@@ -76,8 +76,7 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 val TV_POSTER_WALL_CARD_MIN_WIDTH: Dp = 118.dp
 
 /**
- * 海报墙卡片的聚焦样式: 照 Apple TV 只放大 ([TV_CARD_FOCUS_SCALE_WITHOUT_RING] 倍) 加投影, 不画框. 「卡片聚焦样式」设置只管
- * 时间表网格 (见 TvGridFocusSlot), 海报墙不看它.
+ * 海报墙卡片的聚焦样式: 照 Apple TV 只放大 ([TV_CARD_FOCUS_SCALE_WITHOUT_RING] 倍) 加投影, 不画框.
  */
 val TV_POSTER_WALL_CARD_FOCUS_STYLE: TvCardFocusStyle = TvCardFocusStyle.Scale
 
