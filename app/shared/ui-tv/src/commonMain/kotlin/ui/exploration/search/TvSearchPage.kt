@@ -674,7 +674,7 @@ private fun SubjectSearchQuery.willTriggerSearch(): Boolean =
 // ============================ 输入态 ============================
 
 @Composable
-private fun TvSearchInputPane(
+internal fun TvSearchInputPane(
     query: TextFieldValue,
     onQueryChange: (TextFieldValue) -> Unit,
     historyPager: Flow<PagingData<String>>,
@@ -835,6 +835,8 @@ private fun TvSearchInputPane(
                         .tvLongPressKey(
                             onLongPress = { if (isHistory && values.itemCount > 0) clearArmed = true },
                             onShortPress = { editing = true },
+                            // 框里嵌着「清除历史」图标与输入框: 焦点在它们身上时确认键交给它们, 不算框的短按 / 长按
+                            enabled = { boxFocused },
                         )
                         // 进页/回本态的初始焦点由页面级 inputFieldFocus (onEnter 改道 + 整页失焦补救) 负责.
                         // **别在这里挂 tvWindowInitialFocus**: 挂在 focusable 之后时它的 requester 与

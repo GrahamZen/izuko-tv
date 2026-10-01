@@ -156,6 +156,7 @@ fun rememberTvLongPressKeyState(): TvLongPressKeyState = remember { TvLongPressK
  * @param state 按住进度; 只在需要画按压反馈时传, 否则内部自建
  * @param keys 认领哪些键; 默认确认键, 播放键传 [TV_PLAY_KEYS]
  * @param readyToFire 触发闸门 (见下)
+ * @param enabled 此刻认不认这些键 (见下)
  */
 fun Modifier.tvLongPressKey(
     onLongPress: () -> Unit,
@@ -176,6 +177,12 @@ fun Modifier.tvLongPressKey(
      * 目标还在赶路时按下, 缩放动画无论怎么排都跟不上位置, 不如不做; 停下来按住的照常有.
      */
     readyToFire: (() -> Boolean)? = null,
+    /**
+     * 此刻认不认这些键, 每个事件问一次; false 时事件原样放行, 本次按住作废. 给自己可聚焦、里面还嵌着别的可聚焦项的控件用
+     * (搜索框与框里的「清除历史」图标、输入框): 预览事件自根部往下传, 挂在外层的本 modifier 先于里面那一项拿到键, 焦点进了里面那一项时
+     * 照样认领的话, 那一项的确认键永远被当成外层的短按. 这种控件传 `{ 外层自己持焦 }`.
+     */
+    enabled: () -> Boolean = { true },
 ): Modifier = composed {
     val resolved = state ?: remember { TvLongPressKeyState() }
     // hasFocus 而不是 isFocused: 本 modifier 可能挂在容器上 (真正持焦的是子树里的可点击节点),
@@ -183,6 +190,10 @@ fun Modifier.tvLongPressKey(
     onFocusChanged { if (!it.hasFocus) resolved.reset() }
         .onPreviewKeyEvent { event ->
             if (event.key !in keys) return@onPreviewKeyEvent false
+            if (!enabled()) {
+                resolved.reset()
+                return@onPreviewKeyEvent false
+            }
             when (event.type) {
                 KeyEventType.KeyDown -> {
                     val repeat = event.isAutoRepeat
