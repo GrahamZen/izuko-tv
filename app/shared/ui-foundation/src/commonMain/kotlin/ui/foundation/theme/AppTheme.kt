@@ -82,6 +82,8 @@ val LocalDarkOnSurface: ProvidableCompositionLocal<Color> = compositionLocalOf {
 /**
  * AniApp MaterialTheme.
  * @param darkModeOverride Used for overriding [DarkMode] in specific situations.
+ * 区域内的 [LocalThemeSettings] 也换成这一档: 按设置判深浅的子主题 (如条目取色 [MaterialThemeFromPaletteAndImage])
+ * 与区域外一致地跟着走, 强制深色的播放器里不会冒出一块浅色配色.
  */
 @Composable
 fun AniTheme(
@@ -89,7 +91,11 @@ fun AniTheme(
     content: @Composable () -> Unit,
 ) {
     val platformFontFamily = LocalPlatformFontFamily.current
-    val isDark = when (darkModeOverride ?: LocalThemeSettings.current.darkMode) {
+    val themeSettings = LocalThemeSettings.current
+    val effectiveSettings = remember(themeSettings, darkModeOverride) {
+        if (darkModeOverride == null) themeSettings else themeSettings.copy(darkMode = darkModeOverride)
+    }
+    val isDark = when (effectiveSettings.darkMode) {
         DarkMode.LIGHT -> false
         DarkMode.DARK -> true
         DarkMode.AUTO -> isSystemInDarkThemeDetected()
@@ -103,7 +109,10 @@ fun AniTheme(
     // 换来的是取用方不再按列表项各自生成.
     val darkOnSurface = if (isDark) colorScheme.onSurface else appColorScheme(isDark = true).onSurface
 
-    CompositionLocalProvider(LocalDarkOnSurface provides darkOnSurface) {
+    CompositionLocalProvider(
+        LocalThemeSettings provides effectiveSettings,
+        LocalDarkOnSurface provides darkOnSurface,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             shapes = shapes,
