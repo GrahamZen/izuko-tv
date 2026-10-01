@@ -204,7 +204,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     LaunchedEffect(Unit) {
         launchPickerHandled = true
         if (pickerOnLaunch) {
-            TvUserProfilePicker.show()
+            if (startupLogo != null) {
+                // 主页在启动页背后加载完再放出选人页 (那几秒主线程很忙, 进场动画会掉帧); 选人页先建好藏着, 放出来时不用再等它组合
+                TvUserProfilePicker.show(held = true)
+                startupLogo.handOffToPicker { TvUserProfilePicker.reveal() }
+            } else {
+                TvUserProfilePicker.show()
+            }
             // 选了别人会重启; 选的还是自己时选人页关掉, 再接着往下
             TvUserProfilePicker.visible.first { !it }
         }
@@ -487,7 +493,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     // 返回栈要等应用状态读出来才有 (见 AniAppContent), 在那之前下面是空的, 先盖着.
                     // 进程重建恢复到播放器、详情页这些页时没有首屏封面可等, 栈一就位就撤
                     when (aniNavigator.awaitBackStack().lastOrNull()) {
-                        is NavRoutes.Main -> startupLogo.dismissWhenFirstScreenReady()
+                        // 打开应用先选人时由选人页那边撤 (见上面 pickerOnLaunch 那段)
+                        is NavRoutes.Main -> if (!pickerOnLaunch) startupLogo.dismissWhenFirstScreenReady()
                         is NavRoutes.TvOnboarding -> startupLogo.handOffToWelcome()
                         else -> startupLogo.dismiss()
                     }

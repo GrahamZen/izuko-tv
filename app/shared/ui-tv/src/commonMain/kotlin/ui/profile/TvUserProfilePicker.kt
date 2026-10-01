@@ -65,6 +65,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,6 +96,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -120,9 +122,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.app.domain.profile.ProfileSwitchTransition
 import me.him188.ani.app.domain.profile.UserProfile
@@ -219,8 +223,25 @@ object TvUserProfilePicker {
     internal var switchStartElapsed: Long = 0L
         private set
 
-    fun show() {
+    /**
+     * 选人页建好了先藏着: 窗口与第一次组合照常做, 但透明、不接按键, [reveal] 了才放进场动画.
+     * 打开应用先选人时用 (见 TvStartupLogoState.handOffToPicker): 主页在启动页背后加载的那几秒主线程很忙, 进场动画放在那时会掉帧.
+     */
+    internal val held = MutableStateFlow(false)
+
+    /** 这一次打开的进场 (整页淡入与各头像上浮) 放完了, 或者已经开始退场: 整页不透明、不再动, 下面盖着的可以撤了. */
+    internal val entered = MutableStateFlow(false)
+
+    /** @param held 先藏着, 等 [reveal] (见 [TvUserProfilePicker.held]) */
+    fun show(held: Boolean = false) {
+        this.held.value = held
         visible.value = true
+    }
+
+    /** 放出藏着的选人页 (见 [held]), 进场放完 (见 [entered]) 或选人页已经关了时返回. */
+    suspend fun reveal() {
+        held.value = false
+        combine(visible, entered) { shown, done -> !shown || done }.first { it }
     }
 
     /**
@@ -233,6 +254,8 @@ object TvUserProfilePicker {
         frameCaptured = captured
         switchStartElapsed = SystemClock.elapsedRealtime()
         switchTarget.value = target
+        // 藏着的时候来换人 (控制台): 过场要等进场放完才截图, 不放出来就一直等到超时
+        held.value = false
         visible.value = true
         return captured
     }
@@ -259,8 +282,12 @@ fun TvUserProfilePickerHost() {
     val visible by TvUserProfilePicker.visible.collectAsStateWithLifecycle()
     if (!visible || !manager.isSupported) return
     val switchTarget by TvUserProfilePicker.switchTarget.collectAsStateWithLifecycle()
-    // 切换中 (正在重启) 不许关: 关掉会露出旧用户的主页, 紧接着进程又没了
-    val close = { if (TvUserProfilePicker.switchTarget.value == null) TvUserProfilePicker.visible.value = false }
+    // 切换中 (正在重启) 不许关: 关掉会露出旧用户的主页, 紧接着进程又没了. 藏着的时候也不关 (看不见, 是误按)
+    val close = {
+        if (TvUserProfilePicker.switchTarget.value == null && !TvUserProfilePicker.held.value) {
+            TvUserProfilePicker.visible.value = false
+        }
+    }
     Dialog(
         onDismissRequest = close,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
@@ -287,14 +314,28 @@ private fun PickerContent(
     // 导入在跑时不能换人: 换人会重启应用, 导入跟着断掉
     val importing = ProfileImportSession.state.collectAsStateWithLifecycle().value is ProfileImportSession.State.Running
 
-    // 进场: 整页淡入, 标题与头像依次微微上浮 (头像的错开在 ProfileTile 里)
+    // 进场: 整页淡入, 标题与头像依次微微上浮 (头像的错开在 ProfileTile 里). 藏着的话等放出来再开始
     val entrance = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { entrance.animateTo(1f, tween(ENTER_MILLIS, easing = FastOutSlowInEasing)) }
+    // 放完了几个头像的进场 (各自错开, 比整页晚停)
+    var tilesEntered by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        TvUserProfilePicker.held.first { !it }
+        entrance.animateTo(1f, tween(ENTER_MILLIS, easing = FastOutSlowInEasing))
+        // 头像都停下了才算放完 (下面盖着的启动页这时撤, 撤的那一下主页要整页重画, 不能撞上还在动的头像);
+        // 中途增删了人数不齐的话按时间算
+        withTimeoutOrNull(ENTER_MILLIS.toLong()) { snapshotFlow { tilesEntered >= state.profiles.size + 1 }.first { it } }
+        TvUserProfilePicker.entered.value = true
+    }
+    DisposableEffect(Unit) {
+        onDispose { TvUserProfilePicker.entered.value = false }
+    }
     // 选的还是自己: 那个头像再抬一点, 整页淡出, 露出下面已经加载好的主页, 像是「走进」应用
     var entering by remember { mutableStateOf(false) }
     val exit = remember { Animatable(0f) }
     LaunchedEffect(entering) {
         if (entering) {
+            // 开始退场也算放完了: 进场没放完就选了的话, 下面盖着的启动页得在露出主页之前撤掉
+            TvUserProfilePicker.entered.value = true
             exit.animateTo(1f, tween(EXIT_MILLIS, easing = FastOutLinearInEasing))
             onClose()
         }
@@ -338,6 +379,8 @@ private fun PickerContent(
     Box(
         Modifier
             .fillMaxSize()
+            // 藏着的时候 (看不见) 什么键都不接, 连长按返回也不认
+            .onPreviewKeyEvent { TvUserProfilePicker.held.value }
             .tvOverlayWindowKeys(onClose)
             // 过场期间什么键都不接
             .onPreviewKeyEvent { switching }
@@ -384,6 +427,7 @@ private fun PickerContent(
                         focus = focus,
                         key = ProfileFocusKey(profile.id),
                         enterDelayMillis = index * ENTER_STAGGER_MILLIS,
+                        onEntered = { tilesEntered++ },
                         chosen = entering && profile.id == manager.currentId,
                         // 过场里他由台上那个头像接着画
                         hidden = switchTarget?.id == profile.id,
@@ -414,6 +458,7 @@ private fun PickerContent(
                     focus = focus,
                     key = AddFocusKey,
                     enterDelayMillis = state.profiles.size * ENTER_STAGGER_MILLIS,
+                    onEntered = { tilesEntered++ },
                     chosen = false,
                     hidden = false,
                     onPlaced = { _, _ -> },
@@ -434,6 +479,7 @@ private fun PickerContent(
         }
         switchTarget?.let { SwitchStageContent(it, switchStage) }
         switchStage.frameDrawable?.let { ProfileSwitchFrameImage(it) }
+        HeldTouchBlocker()
     }
     focus.InitialFocus(ProfileFocusKey(manager.currentId))
 
@@ -490,6 +536,23 @@ private fun PickerContent(
     }
 }
 
+/**
+ * 藏着的时候 (见 [TvUserProfilePicker.held]) 盖一层吞掉触屏 (同启动页): 窗口在最上面, 点得到看不见的头像.
+ * 单独一个函数: 放出来的那一刻只重组这一小块, 不让整页重组撞上进场的第一帧.
+ */
+@Composable
+private fun HeldTouchBlocker() {
+    val held by TvUserProfilePicker.held.collectAsStateWithLifecycle()
+    if (!held) return
+    Box(
+        Modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) awaitPointerEvent().changes.forEach { it.consume() }
+            }
+        },
+    )
+}
+
 /** 列表里的名字: 没起过名字的显示「用户 N」. */
 @Composable
 private fun UserProfile.displayName(): String =
@@ -512,6 +575,7 @@ private data object AddFocusKey : TvFocusKey
  * 身后的投影从贴身一圈淡影换成往下拖的一大片软影; 名字聚焦时变白, 其余灰.
  * 有 [menu] 时长按确认键弹出它. 名字下面一行恒占位 ([sublabel]: 本地档标「本地」、当前用户标「当前」), 出不出现不会让整排上下跳.
  *
+ * @param onEntered 进场 (错开 [enterDelayMillis] 之后的淡入上浮) 放完时调用
  * @param chosen 选中了它、整页正在淡出进入应用: 再抬一点
  * @param hidden 头像不画 (换人的过场里由台上那个头像接着画)
  * @param onPlaced 头像在页面里的中心 (位置变了或聚焦变了时报), 换人的过场从这里起飞
@@ -524,6 +588,7 @@ private fun ProfileTile(
     focus: TvFocusScope,
     key: TvFocusKey,
     enterDelayMillis: Int,
+    onEntered: () -> Unit,
     chosen: Boolean,
     hidden: Boolean,
     onPlaced: (center: Offset, focused: Boolean) -> Unit,
@@ -543,8 +608,10 @@ private fun ProfileTile(
     val chosenLift = animateFloatAsState(if (chosen) 1f else 0f, tween(EXIT_MILLIS, easing = FastOutSlowInEasing))
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
+        TvUserProfilePicker.held.first { !it }
         delay(enterDelayMillis.toLong())
         enter.animateTo(1f, tween(ENTER_MILLIS, easing = FastOutSlowInEasing))
+        onEntered()
     }
     val labelColor by animateColorAsState(if (focused) Color.White else SECONDARY_LABEL)
     Column(

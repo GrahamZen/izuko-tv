@@ -557,9 +557,13 @@ private fun TvExplorationPageContent(
     // 登录后的分组一组一条横滑行 (见 tvRecRowsOf)
     val recRows = remember(recGroups, wallColumns) { tvRecRowsOf(recGroups, wallColumns) }
     val hasFollowed = followedItems.itemCount > 0
-    // 推荐在现算、又没有继续观看: 首屏这会儿没有封面要加载, 冷启动的启动页与换人进来的过场不必等封面 (见 AniStartupProgress)
-    LaunchedEffect(recRefreshing, recGroups.isEmpty(), hasFollowed) {
-        if (recRefreshing && recGroups.isEmpty() && !hasFollowed) AniStartupProgress.expectNoCovers()
+    // 推荐真的在现算 (有进度才算: 缓存还新鲜时 recRefreshing 也亮一下, 那时推荐只是还没从库里读出来)、又没有继续观看:
+    // 首屏这会儿没有封面要加载, 冷启动的启动页与换人进来的过场不必等封面 (见 AniStartupProgress)
+    // 进度每发完一个请求就变一次, 这里只读「在不在算」, 不让整页跟着重组
+    val recProgressState = state.recommendationsRefreshProgress.collectAsStateWithLifecycle()
+    val recRecomputing by remember { derivedStateOf { recProgressState.value != null } }
+    LaunchedEffect(recRecomputing, recGroups.isEmpty(), hasFollowed) {
+        if (recRecomputing && recGroups.isEmpty() && !hasFollowed) AniStartupProgress.expectNoCovers()
     }
 
     // ------------------------------------------------------------------
@@ -1147,7 +1151,7 @@ private fun TvExplorationPageContent(
         )
 
         // 推荐区空着、又真的在重算时, 左下角说进行到哪了; 已经有内容时的后台重算不打扰人
-        val recProgress by state.recommendationsRefreshProgress.collectAsStateWithLifecycle()
+        val recProgress by recProgressState
         recProgress?.takeIf { recGroups.isEmpty() }?.let { progress ->
             TvRecommendationRefreshProgress(
                 progress,
