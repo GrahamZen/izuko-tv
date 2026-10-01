@@ -24,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +34,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_rss_auto_save_hint
 import me.him188.ani.app.ui.lang.settings_mediasource_rss_filter_by_episode
@@ -70,7 +70,7 @@ fun RssEditPane(
                 val listItemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
 
                 Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    OutlinedTextField(
+                    AniOutlinedTextField(
                         state.displayName, { state.displayName = it },
                         Modifier
                             .fillMaxWidth(),
@@ -81,7 +81,7 @@ fun RssEditPane(
                         shape = outlinedTextFieldShape,
                         enabled = state.enableEdit,
                     )
-                    OutlinedTextField(
+                    AniOutlinedTextField(
                         state.iconUrl, { state.iconUrl = it.trim() },
                         Modifier
                             .fillMaxWidth(),
@@ -102,7 +102,7 @@ fun RssEditPane(
                 }
 
                 Column(Modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    OutlinedTextField(
+                    AniOutlinedTextField(
                         state.searchUrl, { state.searchUrl = it },
                         Modifier.fillMaxWidth(),
                         label = { Text(stringResource(Lang.settings_mediasource_rss_search_link)) },

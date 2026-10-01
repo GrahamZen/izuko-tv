@@ -25,10 +25,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -56,6 +55,7 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.getClipEntryText
 import me.him188.ani.app.ui.foundation.setClipEntryText
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
@@ -263,7 +263,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                     Text(stringResource(Lang.settings_media_source_subscription_add_dialog))
                 },
                 text = {
-                    OutlinedTextField(
+                    AniOutlinedTextField(
                         value = state.editingUrl,
                         onValueChange = { state.setEditingUrl(it) },
                         Modifier.focusRequester(textFieldFocus),
@@ -293,7 +293,7 @@ internal fun SettingsScope.MediaSourceSubscriptionGroup(
                             }
                         },
                     )
-                    SideEffect {
+                    LaunchedEffect(Unit) {
                         textFieldFocus.requestFocus()
                     }
                 },

@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -48,6 +47,7 @@ import me.him188.ani.app.ui.comment.CommentEditorTextState
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.text.ProvideContentColor
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
@@ -114,7 +114,7 @@ fun AddBlockedIPDialog(
                     Text("可输入多行，按 Enter 确认添加，Ctrl+Enter 换行")
                 }
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                AniOutlinedTextField(
                     isError = !isIpValueValid,
                     value = newBlockedIpValue.textField,
                     onValueChange = {

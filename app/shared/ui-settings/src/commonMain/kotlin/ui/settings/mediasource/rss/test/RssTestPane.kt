@@ -26,7 +26,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
@@ -45,6 +44,7 @@ import me.him188.ani.app.tools.rememberUiMonoTasker
 import me.him188.ani.app.ui.foundation.interaction.nestedScrollWorkaround
 import me.him188.ani.app.ui.foundation.layout.connectedScroll
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
+import me.him188.ani.app.ui.foundation.tv.AniTextField
 import me.him188.ani.app.ui.foundation.widgets.FastLinearProgressIndicator
 import me.him188.ani.app.ui.foundation.input.touchHorizontalScrollOnly
 import me.him188.ani.app.ui.media.rememberMediaDetailsStrings
@@ -196,7 +196,7 @@ private fun EditTestDataCard(
             EditMediaSourceTestDataCardDefaults.KeywordTextField(state, Modifier.weight(1f))
             EditMediaSourceTestDataCardDefaults.EpisodeSortTextField(state, Modifier.weight(1f))
             if (state.showPage) {
-                TextField(
+                AniTextField(
                     value = state.pageString,
                     onValueChange = { state.pageString = it.trim() },
                     Modifier.weight(1f),
