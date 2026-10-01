@@ -1473,14 +1473,25 @@ internal fun TvDanmakuSendEntry(
     // 这次收起是因为焦点被挪走 (而不是发送/返回键): 别再把焦点抢回来, 用户正往别处走
     var collapsedByFocusLoss by remember { mutableStateOf(false) }
     val isSending by danmakuEditorState.isSending.collectAsStateWithLifecycle()
+    // 「编辑弹幕时暂停视频」(VideoScaffoldConfig.pauseVideoOnEditDanmaku): 输入框展开时正在播就暂停, 收起时只恢复自己停的那一次
+    // (展开前本来就暂停着的不动). 离开播放页不恢复: 保留的播放会话不该在后台自己播起来
+    var pausedForInput by remember { mutableStateOf(false) }
 
     // 展开/收起都只发一次语义请求; 目标未组合时由锚点附着事件继续送达.
     LaunchedEffect(expanded) {
         if (expanded) {
             everExpanded = true
             collapsedByFocusLoss = false
+            if (vm.videoScaffoldConfig.pauseVideoOnEditDanmaku && vm.player.state.value.playWhenReady) {
+                pausedForInput = true
+                vm.player.pause()
+            }
             focus.request(TvDanmakuSendFocus.FIELD)
         } else if (everExpanded) {
+            if (pausedForInput) {
+                pausedForInput = false
+                vm.player.play()
+            }
             keyboard?.hide()
             if (collapsedByFocusLoss) {
                 collapsedByFocusLoss = false
