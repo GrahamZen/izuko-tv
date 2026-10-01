@@ -31,6 +31,8 @@
     <string name="subject_episode_video_loading_torrent_metadata">Fetching torrent metadata</string>
     <string name="subject_episode_video_loading_torrent_peers">Peers: %1$d · waited %2$d s</string>
     <string name="subject_episode_video_loading_torrent_no_peers">No peers yet. Try another source</string>
+    <string name="subject_episode_video_loading_connecting_server">Connecting to the video server, waited %1$d s</string>
+    <string name="subject_episode_video_loading_preparing_elapsed">Waited %1$d s · %2$s</string>
     <string name="subject_episode_video_loading_buffered_ahead">%1$s s buffered</string>
     <string name="subject_episode_strip_loading">Loading episodes…</string>
     <string name="exit_app_title">Exit App</string>

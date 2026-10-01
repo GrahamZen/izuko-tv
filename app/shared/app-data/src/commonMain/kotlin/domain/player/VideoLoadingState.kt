@@ -13,6 +13,7 @@ import androidx.compose.runtime.Immutable
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.datasources.api.Media
+import kotlin.time.TimeSource
 
 @Immutable
 sealed interface VideoLoadingState {
@@ -31,9 +32,12 @@ sealed interface VideoLoadingState {
     /**
      * WEB: 已经成功解析到 m3u8 链接
      * BT: 要解析磁力链, 查询元数据
+     *
+     * @property startedAt 进入这一步的时刻, 加载提示据此显示等了多久
      */
     data class DecodingData(
         val isBt: Boolean,
+        val startedAt: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow(),
     ) : VideoLoadingState, Progressing
 
     /**
