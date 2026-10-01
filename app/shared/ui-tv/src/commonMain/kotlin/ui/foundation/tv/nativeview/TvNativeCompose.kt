@@ -259,7 +259,8 @@ fun rememberTvNativeHeroTextStyle(
                 rating = typography.titleMedium.toTvNativeTextStyle(density, colors.primary),
                 meta = typography.labelLarge.toTvNativeTextStyle(density, secondary),
                 status = typography.labelLarge.toTvNativeTextStyle(density, secondary),
-                summary = typography.bodyMedium.toTvNativeTextStyle(density, content),
+                // 简介是次要信息 (照 tvOS 节目页的简介 = LabelSecondary): 比标题 / 信息行 / 下一集行淡一档, 几行字之间才有层次
+                summary = typography.bodyMedium.toTvNativeTextStyle(density, secondary),
                 star = star,
                 starSizePx = TV_HERO_RATING_STAR_SIZE.roundToPx(),
                 starGapPx = TV_HERO_RATING_STAR_GAP.roundToPx(),
