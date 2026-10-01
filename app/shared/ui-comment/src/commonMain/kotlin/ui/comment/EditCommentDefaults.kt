@@ -41,7 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -73,6 +72,7 @@ import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.IconButton
 import me.him188.ani.app.ui.foundation.LocalIsPreviewing
 import me.him188.ani.app.ui.foundation.theme.looming
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
 import me.him188.ani.app.ui.lang.comment_bold
@@ -138,7 +138,7 @@ object EditCommentDefaults {
         ),
         placeholder: @Composable (() -> Unit)? = null
     ) {
-        OutlinedTextField(
+        AniOutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = modifier,
