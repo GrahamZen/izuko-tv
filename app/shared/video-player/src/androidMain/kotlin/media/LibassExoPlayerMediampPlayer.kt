@@ -466,15 +466,19 @@ private class LibassMediaSourcePipeline(
                 // 解析器给的提示头只给播放器看, 不发给服务器
                 val parallel = data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()
                     ?.takeIf { it > 1 }
-                val httpFactory = createPlaybackHttpDataSourceFactory(
-                    proxyConfig = proxyConfig(),
-                    userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
-                    headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER,
-                    // 连接超时按每个地址算: 网盘的下载域名常解析出七八个地址, 都连不上时要一个个等满.
-                    // 连不上时分块下载与播放器都会重试, 所以用短的
-                    connectTimeoutMillis = if (parallel != null) PARALLEL_CONNECT_TIMEOUT_MILLIS else CONNECT_TIMEOUT_MILLIS,
-                )
-                if (parallel != null) ParallelRangeDataSource.Factory(httpFactory, parallel) else httpFactory
+                val userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT
+                val headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER
+                if (parallel != null) {
+                    // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients)
+                    ParallelRangeDataSource.Factory(RangeHttpClients.factory(proxyConfig(), userAgent, headers), parallel)
+                } else {
+                    createPlaybackHttpDataSourceFactory(
+                        proxyConfig = proxyConfig(),
+                        userAgent = userAgent,
+                        headers = headers,
+                        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                    )
+                }
             }
 
             is SeekableInputMediaData -> {
@@ -527,7 +531,6 @@ private class LibassMediaSourcePipeline(
 
     private companion object {
         const val CONNECT_TIMEOUT_MILLIS = 30_000
-        const val PARALLEL_CONNECT_TIMEOUT_MILLIS = 8_000
         const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"

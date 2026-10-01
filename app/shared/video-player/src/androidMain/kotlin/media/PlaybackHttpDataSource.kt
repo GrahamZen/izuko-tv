@@ -87,23 +87,26 @@ internal fun createPlaybackHttpDataSourceFactory(
     }
     val client = OkHttpClient.Builder()
         .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
-        // 局域网地址 (Jellyfin 等本地源) 不能走代理, 所以按地址分流而不是 .proxy()
-        .proxySelector(LanBypassProxySelector(proxyConfig.proxy))
-        .apply {
-            proxyConfig.authorization?.let { auth ->
-                proxyAuthenticator(
-                    Authenticator { _, response ->
-                        // 已经带过还被拒就不再重试, 否则会死循环
-                        if (response.request.header("Proxy-Authorization") != null) return@Authenticator null
-                        response.request.newBuilder().header("Proxy-Authorization", auth).build()
-                    },
-                )
-            }
-        }
+        .playbackProxy(proxyConfig)
         .build()
     return OkHttpDataSource.Factory(client)
         .setUserAgent(userAgent)
         .setDefaultRequestProperties(headers)
+}
+
+/** 播放请求走 [config] 这个代理 (局域网地址不走), 代理要认证时带上 `Proxy-Authorization`. */
+internal fun OkHttpClient.Builder.playbackProxy(config: PlaybackProxyConfig): OkHttpClient.Builder = apply {
+    // 局域网地址 (Jellyfin 等本地源) 不能走代理, 所以按地址分流而不是 .proxy()
+    proxySelector(LanBypassProxySelector(config.proxy))
+    config.authorization?.let { auth ->
+        proxyAuthenticator(
+            Authenticator { _, response ->
+                // 已经带过还被拒就不再重试, 否则会死循环
+                if (response.request.header("Proxy-Authorization") != null) return@Authenticator null
+                response.request.newBuilder().header("Proxy-Authorization", auth).build()
+            },
+        )
+    }
 }
 
 private class LanBypassProxySelector(proxy: Proxy) : ProxySelector() {

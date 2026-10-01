@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -44,13 +45,26 @@ class ParallelRangeReaderTest {
         val failAt: MutableSet<Long> = mutableSetOf(),
         val alwaysFailFrom: Long = Long.MAX_VALUE,
         val perRead: Int = 300,
+        /** 前这么多次打开连不上 (像整组节点都不通) */
+        val failingOpens: Int = 0,
+        /** 打开时回这个错误 (例如 HTTP 403), 每次都回 */
+        val rejectWith: IOException? = null,
     ) : RangeOpener {
         val opened = mutableListOf<Pair<Long, Long>>()
-        private val active = AtomicInteger()
+        val active = AtomicInteger()
         val maxActive = AtomicInteger()
+        val served = AtomicLong()
+
+        /** 在别的线程正读着时被关的次数 (OkHttp 这时会抛错、连接关不掉) */
+        val closedWhileReading = AtomicInteger()
 
         override fun open(start: Long, length: Long): OpenedRange {
-            synchronized(opened) { opened += start to length }
+            val count = synchronized(opened) {
+                opened += start to length
+                opened.size
+            }
+            rejectWith?.let { throw it }
+            if (count <= failingOpens) throw IOException("connect timed out ($count)")
             if (start >= alwaysFailFrom) throw IOException("server error at $start")
             val from = if (supportsRange) start else 0L
             val until = if (!supportsRange || length < 0) content.size.toLong() else minOf(content.size.toLong(), start + length)
@@ -58,23 +72,36 @@ class ParallelRangeReaderTest {
             val connection = object : RangeConnection {
                 var position = from
 
+                @Volatile
+                var reading = false
+
                 override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
                     if (position >= until) return -1
-                    Thread.sleep(1)
-                    synchronized(failAt) {
-                        val hit = failAt.firstOrNull { it in position until position + perRead }
-                        if (hit != null) {
-                            failAt.remove(hit)
-                            throw IOException("connection reset at $hit")
+                    reading = true
+                    try {
+                        Thread.sleep(1)
+                        synchronized(failAt) {
+                            val hit = failAt.firstOrNull { it in position until position + perRead }
+                            if (hit != null) {
+                                failAt.remove(hit)
+                                throw IOException("connection reset at $hit")
+                            }
                         }
+                        val count = minOf(length, perRead, (until - position).toInt())
+                        System.arraycopy(content, position.toInt(), buffer, offset, count)
+                        position += count
+                        served.addAndGet(count.toLong())
+                        return count
+                    } finally {
+                        reading = false
                     }
-                    val count = minOf(length, perRead, (until - position).toInt())
-                    System.arraycopy(content, position.toInt(), buffer, offset, count)
-                    position += count
-                    return count
                 }
 
                 override fun close() {
+                    if (reading) {
+                        closedWhileReading.incrementAndGet()
+                        throw IllegalStateException("Unbalanced enter/exit")
+                    }
                     active.decrementAndGet()
                 }
             }
@@ -108,6 +135,22 @@ class ParallelRangeReaderTest {
         // 每块一次请求, 第一块就是打开时那次
         assertEquals(11, server.opened.size)
         assertEquals(0L to 1000L, server.opened.first())
+    }
+
+    @Test
+    fun `closing mid-download stops the chunks and closes their connections on the download threads`() {
+        // 每块 1000 字节, 每次读 10 字节, 4 块同时在下
+        val server = FakeServer(perRead = 10)
+        val reader = reader(server)
+        reader.open(0, -1)
+        reader.read(ByteArray(100), 0, 100)
+        reader.close()
+
+        val deadline = System.currentTimeMillis() + 5_000
+        while (server.active.get() > 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        assertEquals(0, server.active.get(), "every connection is closed")
+        assertEquals(0, server.closedWhileReading.get(), "no connection is closed while another thread reads it")
+        assertTrue(server.served.get() < 4 * 1000, "the chunks stop instead of finishing: served ${server.served.get()}")
     }
 
     @Test
@@ -170,6 +213,29 @@ class ParallelRangeReaderTest {
         reader.close()
         assertEquals(3000, read)
         assertTrue(error.message.orEmpty().contains("3000"), error.message)
+    }
+
+    @Test
+    fun `a first open that cannot connect is tried again`() {
+        val server = FakeServer(failingOpens = 2)
+        val reader = reader(server)
+        assertEquals(content.size.toLong(), reader.open(0, -1))
+        assertContentEquals(content, reader.readAll())
+        reader.close()
+        // 两次连不上 + 11 块各一次
+        assertEquals(13, server.opened.size)
+        assertEquals(listOf(0L to 1000L, 0L to 1000L, 0L to 1000L), server.opened.take(3))
+    }
+
+    private class Rejected : IOException("HTTP 403")
+
+    @Test
+    fun `errors that are not worth retrying fail right away`() {
+        val server = FakeServer(rejectWith = Rejected())
+        val reader = ParallelRangeReader(server, executor, connections = 4, chunkSize = 1000) { it !is Rejected }
+        assertFailsWith<Rejected> { reader.open(0, -1) }
+        reader.close()
+        assertEquals(1, server.opened.size)
     }
 
     @Test
