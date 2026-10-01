@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
 import me.him188.ani.utils.logging.info
@@ -461,12 +462,17 @@ private class LibassMediaSourcePipeline(
 
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
         val dataSourceFactory = when (data) {
-            is UriMediaData -> createPlaybackHttpDataSourceFactory(
-                proxyConfig = proxyConfig(),
-                userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
-                headers = data.headers,
-                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
-            )
+            is UriMediaData -> {
+                // 解析器给的提示头只给播放器看, 不发给服务器
+                val parallel = data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()
+                val httpFactory = createPlaybackHttpDataSourceFactory(
+                    proxyConfig = proxyConfig(),
+                    userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
+                    headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER,
+                    connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                )
+                if (parallel != null && parallel > 1) ParallelRangeDataSource.Factory(httpFactory, parallel) else httpFactory
+            }
 
             is SeekableInputMediaData -> {
                 if (data.uri.startsWith("file://")) {
