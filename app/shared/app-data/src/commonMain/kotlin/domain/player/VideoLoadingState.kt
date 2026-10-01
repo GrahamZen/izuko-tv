@@ -14,6 +14,7 @@ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.datasources.api.Media
+import kotlin.time.TimeSource
 
 @Immutable
 sealed interface VideoLoadingState {
@@ -35,9 +36,12 @@ sealed interface VideoLoadingState {
      * 云盘: 要查询文件并等待取流就绪
      *
      * [engineKey] 为 `null` 表示不经过种子引擎.
+     *
+     * @property startedAt 进入这一步的时刻, 加载提示据此显示等了多久
      */
     data class DecodingData(
         val engineKey: MediaCacheEngineKey?,
+        val startedAt: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow(),
     ) : VideoLoadingState, Progressing
 
     /**

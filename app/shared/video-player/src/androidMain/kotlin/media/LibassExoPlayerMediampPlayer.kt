@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
 import me.him188.ani.utils.logging.info
@@ -575,12 +576,24 @@ private class LibassMediaSourcePipeline(
 
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
         val dataSourceFactory = when (data) {
-            is UriMediaData -> createPlaybackHttpDataSourceFactory(
-                proxyConfig = proxyConfig(),
-                userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
-                headers = data.headers,
-                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
-            )
+            is UriMediaData -> {
+                // 解析器给的提示头只给播放器看, 不发给服务器
+                val parallel = data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()
+                    ?.takeIf { it > 1 }
+                val userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT
+                val headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER
+                if (parallel != null) {
+                    // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients)
+                    ParallelRangeDataSource.Factory(RangeHttpClients.factory(proxyConfig(), userAgent, headers), parallel)
+                } else {
+                    createPlaybackHttpDataSourceFactory(
+                        proxyConfig = proxyConfig(),
+                        userAgent = userAgent,
+                        headers = headers,
+                        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                    )
+                }
+            }
 
             is SeekableInputMediaData -> {
                 if (data.uri.startsWith("file://")) {
