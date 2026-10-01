@@ -42,6 +42,7 @@ internal interface QuarkDriveBrowser {
  * 2. 服务端的匹配比较宽 (英文按词), 所以再在本地核对: 归一化后的文件或文件夹名要包含关键词.
  * 3. 搜到的文件夹往下展开几层 (夸克搜索只返回命中的文件夹本身, 里面的文件名不含关键词时不会单独返回).
  * 4. 从文件名解析集号, 从文件名或所在文件夹解析季, 与条目的季对不上的去掉.
+ *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
  *
  * 季的规则 (条目的季来自条目名里的 `第二季` / `Season 2` 之类的写法):
  * - 条目没写季 (第一季或只有一季): 文件写明是第 2 季及以后的去掉, 其余保留.
@@ -174,11 +175,12 @@ internal class QuarkSubjectMatcher(
                 .filter { episode -> episode.ep != null && episode.ep != episode.sort }
                 .map { it.sort }
                 .toSet()
+            val onlyEpisode = request.episodes.singleOrNull()?.sort
 
             return candidates.mapNotNull { candidate ->
                 val parsed = DriveNameParser.parseFile(candidate.file.fileName)
                 if (parsed.isExtra) return@mapNotNull null
-                val episode = parsed.episode ?: return@mapNotNull null
+                val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull null
                 if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull null
                 val season = parsed.season
                     ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }

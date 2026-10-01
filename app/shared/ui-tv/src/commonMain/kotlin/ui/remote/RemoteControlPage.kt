@@ -144,6 +144,10 @@ internal fun renderRemoteControlPage(
     <div class="sheet-head"><div class="sheet-title" id="help-title">使用说明</div><button type="button" class="sheet-btn" id="help-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
     <div class="sheet-body" id="help-body"></div>
     </div>
+    <div id="share-sheet" class="sheet" hidden>
+    <div class="sheet-head"><div class="sheet-title">添加夸克分享</div><button type="button" class="sheet-btn" id="share-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
+    <div class="sheet-body" id="share-body"></div>
+    </div>
     <div id="toast"></div>
     <div id="sel-bar" hidden><button type="button" data-sel="cancel">取消</button><span class="sel-n"></span><button type="button" data-sel="all">全选</button><button type="button" class="sel-pause" data-sel="pause" hidden></button><button type="button" class="sel-pause" data-sel="resume" hidden></button><button type="button" class="ic sel-del" data-sel="del">删除</button></div>
     <nav class="tabbar">
@@ -154,7 +158,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -2743,7 +2747,9 @@ private val SCRIPT = """
       ? '<div class="src-refetch">' +
         (paused ? '<button type="button" id="src-full">' + T('完整搜索') + '</button> ' : '') +
         '<button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
-        '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p></div>'
+        '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p>' +
+        // 自己在别处找到的夸克分享链接, 粘贴给这部番 (见 SHARES_SCRIPT)
+        '<button type="button" id="src-share">' + T('添加夸克分享链接…') + '</button></div>'
       : '';
   }
   var SECTIONS = [['cache', T('本地缓存')], ['web', T('在线源')], ['bt', T('BT 源')]];
@@ -8010,6 +8016,111 @@ private val HISTORY_SCRIPT = """
         setTimeout(function () { if (window.showTab) window.showTab('player'); }, 1200);
       }
     }).catch(function () { b.classList.remove('busy', 'hit'); fail(); });
+  });
+})();
+""".trimIndent()
+
+/**
+ * 播放器标签「添加夸克分享链接…」的面板 (见 RemoteQuarkShares): 粘贴自己找到的夸克分享链接, 电视打开分享、按当前这部番对出剧集,
+ * 对上了就记到这部番名下 (选源列表的「我添加的分享」); 一集都没认出时列出分享里的视频, 点一个当作这一集播放.
+ * 下面列着这部番已经添加的分享, 可以删. 只在打开面板与操作之后拉数据, 不轮询.
+ */
+private val SHARES_SCRIPT = """
+(function () {
+  var sheet = document.getElementById('share-sheet'), body = document.getElementById('share-body');
+  var results = [], shares = [], loggedIn = true, busy = false, typed = '';
+  function fileRow(shareId, f, label) {
+    return '<button type="button" class="item" data-sp-share="' + esc(shareId) + '" data-sp-fid="' + esc(f.fid) + '">' +
+      '<span class="t">' + esc(f.name) + '</span><span class="m">' + esc([f.meta, label].filter(Boolean).join(' · ')) + '</span></button>';
+  }
+  function render() {
+    var old = body.querySelector('#share-form textarea');
+    if (old) typed = old.value;
+    var h = '<form id="share-form"><label class="f"><span>' + T('夸克分享链接') + '</span>' +
+      '<textarea name="text" rows="4" spellcheck="false" autocomplete="off" placeholder="' + T('粘贴分享链接，可以连「提取码：xxxx」一起') + '"></textarea>' +
+      '<em>' + T('在别处搜到夸克分享后，把链接粘贴到这里。电视会打开分享、认出这部番的剧集并记到这部番名下，之后每一集的选源列表里都有「我添加的分享」。播放时转存到你的夸克网盘，不改变画质。') + '</em></label>' +
+      '<div class="row"><button type="submit" class="primary"' + (busy ? ' disabled' : '') + '>' + (busy ? T('正在打开分享…') : T('添加')) + '</button></div></form>';
+    if (!loggedIn) {
+      h += '<div class="now-status attention"><b>' + T('还没登录夸克') + '</b><span>' + T('可以先添加，播放前要在「数据源」页登录夸克网盘') + '</span></div>';
+    }
+    results.forEach(function (r) {
+      h += '<div class="card set-card"><div class="set-title">' + esc(r.title || r.shareId) + '</div>' +
+        '<div class="now-status ' + (r.ok ? 'ready' : 'error') + '"><span>' + esc(r.message) + '</span></div>';
+      if (r.current && r.current.length) {
+        h += '<div class="list">' + r.current.map(function (f) { return fileRow(r.shareId, f, T('播放这一集')); }).join('') + '</div>';
+      }
+      if (r.files && r.files.length) {
+        h += '<div class="list">' + r.files.map(function (f) { return fileRow(r.shareId, f, T('当作这一集播放')); }).join('') + '</div>';
+        if (r.moreFiles) h += '<p class="hint">' + T('还有 {0} 个视频没列出', r.moreFiles) + '</p>';
+      }
+      h += '</div>';
+    });
+    h += '<div class="card set-card"><div class="set-title">' + T('这部番已添加的分享') + '</div>';
+    if (!shares.length) h += '<p class="hint">' + T('还没有添加') + '</p>';
+    shares.forEach(function (s) {
+      h += '<div class="sub-item"><div class="sub-url">' + esc(s.title) + '</div>' +
+        (s.note ? '<div class="now-status ' + (s.noteLevel === 'attention' ? 'attention' : 'error') + '"><span>' + esc(s.note) + '</span></div>' : '') +
+        '<div class="sub-meta"><span>' + esc(s.id) + '</span>' +
+        '<button type="button" class="sub-del icb" data-sp-del="' + esc(s.id) + '" aria-label="' + T('删除这个分享') + '" title="' + T('删除这个分享') + '">' +
+        window.ICONS.trash + '</button></div></div>';
+    });
+    h += '</div>';
+    body.innerHTML = h;
+    var ta = body.querySelector('#share-form textarea');
+    if (ta) ta.value = typed;
+  }
+  function loadShares() {
+    return getJson('api/player/shares').then(function (d) {
+      if (!d.ok) { toast(d.message); return; }
+      shares = d.shares || [];
+      loggedIn = d.loggedIn !== false;
+      render();
+    }).catch(fail);
+  }
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#src-share')) return;
+    results = [];
+    window.sheets.open(sheet);
+    render();
+    loadShares();
+  });
+  document.getElementById('share-close').addEventListener('click', function () { window.sheets.close(sheet); });
+  body.addEventListener('submit', function (e) {
+    if (e.target.id !== 'share-form') return;
+    e.preventDefault();
+    var text = e.target.elements.text.value.trim();
+    if (!text) { toast(T('先把分享链接粘到框里')); return; }
+    busy = true;
+    render();
+    post('api/player/shares/add', { text: text }).then(function (r) {
+      busy = false;
+      if (r.message) toast(r.message);
+      results = r.results || [];
+      if (r.loggedIn !== undefined) loggedIn = r.loggedIn;
+      if (r.ok) typed = '';
+      render();
+      loadShares();
+    }).catch(function () { busy = false; render(); fail(); });
+  });
+  body.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-sp-del]');
+    if (del) {
+      if (!confirm(T('删除这个分享？这部番的选源列表里就不再有它'))) return;
+      del.disabled = true;
+      post('api/player/shares/delete', { id: del.getAttribute('data-sp-del') }).then(function (r) {
+        if (r.message) toast(r.message);
+        loadShares();
+      }).catch(fail);
+      return;
+    }
+    var f = e.target.closest('[data-sp-fid]');
+    if (!f) return;
+    f.disabled = true;
+    post('api/player/shares/play', { share: f.getAttribute('data-sp-share'), fid: f.getAttribute('data-sp-fid') }).then(function (r) {
+      f.disabled = false;
+      if (r.message) toast(r.message);
+      if (r.ok) window.sheets.close(sheet);
+    }).catch(function () { f.disabled = false; fail(); });
   });
 })();
 """.trimIndent()

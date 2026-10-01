@@ -32,6 +32,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.QuarkAddedShares
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
@@ -108,6 +109,7 @@ interface SettingsRepository {
     val anitorrentConfig: Settings<AnitorrentConfig>
     val pikpakConfig: Settings<PikPakConfig>
     val quarkConfig: Settings<QuarkConfig>
+    val quarkAddedShares: Settings<QuarkAddedShares>
     val torrentPeerConfig: Settings<TorrentPeerConfig>
 
     val oneshotActionConfig: Settings<OneshotActionConfig>
@@ -298,6 +300,12 @@ class PreferencesRepositoryImpl(
         "quarkConfig",
         QuarkConfig.serializer(),
         default = { QuarkConfig.Default },
+    )
+
+    override val quarkAddedShares: Settings<QuarkAddedShares> = SerializablePreference(
+        "quarkAddedShares",
+        QuarkAddedShares.serializer(),
+        default = { QuarkAddedShares.Default },
     )
 
     override val torrentPeerConfig: Settings<TorrentPeerConfig> = SerializablePreference(
