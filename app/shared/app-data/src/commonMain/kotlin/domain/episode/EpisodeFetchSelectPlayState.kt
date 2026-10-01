@@ -292,7 +292,7 @@ class EpisodeFetchSelectPlayState(
      *
      * @see PlayerExtensionContext.reloadCurrentMedia
      */
-    internal suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
+    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
         if (reloadRequests.subscriptionCount.value == 0) return false
         reloadRequests.emit(positionMillis)
         return true

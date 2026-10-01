@@ -28,7 +28,10 @@ import me.him188.ani.datasources.api.topic.titles.parse
  *
  * 只读, 不需要登录; 播放时才转存 (见 [QuarkDriveService.resolveSharePlayback]).
  */
-internal class QuarkShareReader(private val shares: QuarkShareBrowser) {
+internal class QuarkShareReader(
+    private val shares: QuarkShareBrowser,
+    private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+) {
     /**
      * 分享里的一个视频文件.
      *
@@ -51,10 +54,10 @@ internal class QuarkShareReader(private val shares: QuarkShareBrowser) {
      * 从 [videos] 里挑出 [request] 这个条目的剧集 (规则同夸克网盘数据源, 见 [QuarkSubjectMatcher]).
      * [FoundShare.siteTitle] 放在最外层: 分享里没写季的文件, 按它 (例如「…第二季」) 认季.
      */
-    fun match(request: MediaFetchRequest, share: FoundShare, videos: List<Entry>): List<QuarkShareMatch> {
+    suspend fun match(request: MediaFetchRequest, share: FoundShare, videos: List<Entry>): List<QuarkShareMatch> {
         val byFid = videos.associateBy { it.file.fid }
         val candidates = videos.map { QuarkSubjectMatcher.Candidate(it.file.asFile(), listOf(share.siteTitle) + it.folders) }
-        return QuarkSubjectMatcher.matchEpisodes(request, candidates).mapNotNull { matched ->
+        return QuarkSubjectMatcher.matchEpisodes(request, candidates, numbering.of(request)).mapNotNull { matched ->
             val entry = byFid[matched.file.fid] ?: return@mapNotNull null
             QuarkShareMatch(share, entry.file, entry.folders, matched.episode)
         }
@@ -72,7 +75,8 @@ internal class QuarkShareReader(private val shares: QuarkShareBrowser) {
                 if (child.dir) {
                     if (depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
                 } else if (child.category == "video" && child.shareFidToken.isNotEmpty()) {
-                    result += Entry(child, path)
+                    // 所在文件夹播放时找外挂字幕要用, 不指望接口一定给
+                    result += Entry(if (child.parentFid.isEmpty()) child.inFolder(folderId) else child, path)
                 }
             }
         }
@@ -95,7 +99,7 @@ internal class QuarkShareReader(private val shares: QuarkShareBrowser) {
  * @param subjectName 已经按剧名与季匹配过, 与夸克网盘数据源一样直接标成当前条目
  */
 internal fun QuarkShareMatch.toShareMedia(mediaSourceId: String, alliance: String, subjectName: String?): Media {
-    val ref = QuarkShareFileRef(share.shareId, share.passcode, file.fid, file.shareFidToken, file.fileName, file.size)
+    val ref = QuarkShareFileRef(share.shareId, share.passcode, file.fid, file.shareFidToken, file.fileName, file.size, file.parentFid)
     val details = RawTitleParser.getDefault().parse((listOf(share.siteTitle) + folders + file.fileName).joinToString(" "))
     return DefaultMedia(
         mediaId = "$mediaSourceId.${share.shareId}.${file.fid}",

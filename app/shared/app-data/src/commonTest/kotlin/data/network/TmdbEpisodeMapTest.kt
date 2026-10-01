@@ -60,6 +60,23 @@ class TmdbEpisodeMapTest {
     }
 
     @Test
+    fun `只有集号时 - 本篇接续、区间与特别篇照写法`() {
+        // 天降之物: 1-13 是第一季, 14 是 TMDB 的特别篇
+        val first = TmdbEpisodeMap.parse("1-13:S1E1 14:S0E1")!!.resolveSorts((1..14).map { EpisodeSort(it) })
+        assertEquals(1 to 1, first[EpisodeSort(1)])
+        assertEquals(1 to 13, first[EpisodeSort(13)])
+        assertEquals(0 to 1, first[EpisodeSort(14)])
+        // 天降之物f: 第 1 集接 S2E1, 与给出的顺序无关
+        val forte = TmdbEpisodeMap.parse("S2E1")!!.resolveSorts((12 downTo 1).map { EpisodeSort(it) })
+        assertEquals(2 to 1, forte[EpisodeSort(1)])
+        assertEquals(2 to 12, forte[EpisodeSort(12)])
+        // 特别篇带类型前缀, 不参与本篇接续
+        val sp = TmdbEpisodeMap.parse("S1E1 SP1:S0E3")!!.resolveSorts(listOf(EpisodeSort(1), EpisodeSort(2), EpisodeSort(1, EpisodeType.SP)))
+        assertEquals(1 to 2, sp[EpisodeSort(2)])
+        assertEquals(0 to 3, sp[EpisodeSort(1, EpisodeType.SP)])
+    }
+
+    @Test
     fun `认不出的编码整条不用`() {
         assertNull(TmdbEpisodeMap.parse(""))
         assertNull(TmdbEpisodeMap.parse("S1E1 S2E1"))

@@ -148,6 +148,10 @@ internal fun renderRemoteControlPage(
     <div class="sheet-head"><div class="sheet-title">添加夸克分享</div><button type="button" class="sheet-btn" id="share-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
     <div class="sheet-body" id="share-body"></div>
     </div>
+    <div id="drive-sheet" class="sheet" hidden>
+    <div class="sheet-head"><div class="sheet-title">从夸克网盘挑</div><button type="button" class="sheet-btn" id="drive-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
+    <div class="sheet-body" id="drive-body"></div>
+    </div>
     <div id="toast"></div>
     <div id="sel-bar" hidden><button type="button" data-sel="cancel">取消</button><span class="sel-n"></span><button type="button" data-sel="all">全选</button><button type="button" class="sel-pause" data-sel="pause" hidden></button><button type="button" class="sel-pause" data-sel="resume" hidden></button><button type="button" class="ic sel-del" data-sel="del">删除</button></div>
     <nav class="tabbar">
@@ -158,7 +162,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -2749,7 +2753,9 @@ private val SCRIPT = """
         '<button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
         '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p>' +
         // 自己在别处找到的夸克分享链接, 粘贴给这部番 (见 SHARES_SCRIPT)
-        '<button type="button" id="src-share">' + T('添加夸克分享链接…') + '</button></div>'
+        '<button type="button" id="src-share">' + T('添加夸克分享链接…') + '</button> ' +
+        // 自动匹配对不上时, 在自己的夸克网盘里给这部番挑文件夹或文件 (见 DRIVE_SCRIPT)
+        '<button type="button" id="src-drive">' + T('从夸克网盘挑…') + '</button></div>'
       : '';
   }
   var SECTIONS = [['cache', T('本地缓存')], ['web', T('在线源')], ['bt', T('BT 源')]];
@@ -8122,6 +8128,199 @@ private val SHARES_SCRIPT = """
       if (r.message) toast(r.message);
       if (r.ok) window.sheets.close(sheet);
     }).catch(function () { f.disabled = false; fail(); });
+  });
+})();
+""".trimIndent()
+
+/**
+ * 播放器标签「从夸克网盘挑…」的面板 (见 RemoteQuarkDrive): 自动匹配对不上时, 在自己的夸克网盘里搜或一层层点进去,
+ * 点视频当作当前这一集播放, 或在放这部番的文件夹里按「就是这个文件夹」, 之后每一集「夸克网盘」都从那里找.
+ * 上面列着这部番记下的网盘位置, 可以删. 只在打开面板与操作之后拉数据, 不轮询.
+ */
+private val DRIVE_SCRIPT = """
+(function () {
+  var sheet = document.getElementById('drive-sheet'), body = document.getElementById('drive-body');
+  // path: null = 显示的是搜索结果; [] = 根目录; [{fid, name}, ...] = 从外到里点进去的文件夹
+  var st = { loggedIn: true, keyword: '', typed: false, names: [], folders: [], files: [], canAttach: false, subtitles: [], items: null, more: 0, path: null, message: '', busy: false };
+  function itemRow(it) {
+    if (it.dir) {
+      return '<button type="button" class="item" data-dv-open="' + esc(it.fid) + '" data-dv-name="' + esc(it.name) + '">' +
+        '<span class="t">' + esc(it.name) + '</span><span class="m">' + T('文件夹') + '</span></button>';
+    }
+    if (it.sub) {
+      return '<button type="button" class="item" data-dv-sub="' + esc(it.fid) + '">' +
+        '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([T('字幕'), it.meta, T('挂到正在播的视频上')].filter(Boolean).join(' · ')) + '</span></button>';
+    }
+    return '<button type="button" class="item" data-dv-play="' + esc(it.fid) + '">' +
+      '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([it.meta, T('当作这一集播放')].filter(Boolean).join(' · ')) + '</span></button>';
+  }
+  function pickRow(p, meta) {
+    return '<div class="sub-item"><div class="sub-url">' + esc(p.name) + '</div><div class="sub-meta"><span>' + esc(meta) + '</span>' +
+      '<button type="button" class="sub-del icb" data-dv-forget="' + esc(p.fid) + '" aria-label="' + T('忘掉这个位置') + '" title="' + T('忘掉这个位置') + '">' +
+      window.ICONS.trash + '</button></div></div>';
+  }
+  function render() {
+    var old = body.querySelector('#drive-form input');
+    if (old) st.keyword = old.value;
+    var h = '<form id="drive-form"><label class="f"><span>' + T('搜索网盘') + '</span>' +
+      '<input type="text" name="q" autocomplete="off" placeholder="' + T('番名或文件夹名') + '">' +
+      '<em>' + T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个夸克账号。') + '</em></label>' +
+      '<div class="row"><button type="submit" class="primary"' + (st.busy ? ' disabled' : '') + '>' + T('搜索') + '</button>' +
+      '<button type="button" data-dv-root>' + T('浏览网盘根目录') + '</button></div></form>';
+    // 这部番的搜索名 (编辑查询请求里那些), 点一下就搜, 不用手打
+    if (st.names.length) {
+      h += '<p class="hint">' + T('这部番的搜索名，点一下直接搜') + '</p><div class="chips">' + st.names.map(function (n) {
+        return '<button type="button" class="chip' + (n === st.keyword.trim() ? ' on' : '') + '" data-dv-q="' + esc(n) + '">' + esc(n) + '</button>';
+      }).join('') + '</div>';
+    }
+    if (!st.loggedIn) {
+      h += '<div class="now-status attention"><b>' + T('还没登录夸克') + '</b><span>' + T('先在「数据源」页登录夸克网盘') + '</span></div>';
+    }
+    h += '<div class="card set-card"><div class="set-title">' + T('这部番记下的网盘位置') + '</div>';
+    if (!st.folders.length && !st.files.length) h += '<p class="hint">' + T('还没有记下') + '</p>';
+    st.folders.forEach(function (f) { h += pickRow(f, T('文件夹')); });
+    st.files.forEach(function (f) { h += pickRow(f, f.meta); });
+    h += '</div>';
+    if (st.canAttach) {
+      h += '<div class="card set-card"><div class="set-title">' + T('正在播的视频挂上的字幕') + '</div>';
+      if (!st.subtitles.length) h += '<p class="hint">' + T('还没有。点下面列表里的字幕文件就挂上') + '</p>';
+      st.subtitles.forEach(function (s) {
+        h += '<div class="sub-item"><div class="sub-url">' + esc(s.name) + '</div><div class="sub-meta"><span>' + T('字幕') + '</span>' +
+          '<button type="button" class="sub-del icb" data-dv-unsub="' + esc(s.fid) + '" aria-label="' + T('取下这条字幕') + '" title="' + T('取下这条字幕') + '">' +
+          window.ICONS.trash + '</button></div></div>';
+      });
+      h += '</div>';
+    }
+    if (st.items || st.busy || st.message) {
+      h += '<div class="card set-card">';
+      if (st.path) {
+        h += '<div class="chips"><button type="button" class="chip' + (st.path.length ? '' : ' on') + '" data-dv-crumb="-1">' + T('网盘根目录') + '</button>' +
+          st.path.map(function (p, i) {
+            return '<button type="button" class="chip' + (i === st.path.length - 1 ? ' on' : '') + '" data-dv-crumb="' + i + '">' + esc(p.name) + '</button>';
+          }).join('') + '</div>';
+        if (st.path.length) {
+          h += '<div class="row"><button type="button" class="primary" data-dv-pick="' + esc(st.path[st.path.length - 1].fid) + '"' + (st.busy ? ' disabled' : '') + '>' +
+            T('就是这个文件夹') + '</button></div>';
+        }
+      } else {
+        h += '<div class="set-title">' + T('搜索结果') + '</div>';
+      }
+      if (st.busy) h += '<p class="hint">' + T('加载中…') + '</p>';
+      else if (st.message) h += '<p class="hint">' + esc(st.message) + '</p>';
+      if (!st.busy && st.items && st.items.length) h += '<div class="list">' + st.items.map(itemRow).join('') + '</div>';
+      if (!st.busy && st.more) h += '<p class="hint">' + T('还有 {0} 项没列出', st.more) + '</p>';
+      h += '</div>';
+    }
+    body.innerHTML = h;
+    var q = body.querySelector('#drive-form input');
+    if (q) q.value = st.keyword;
+  }
+  function show(url, path) {
+    st.busy = true;
+    st.message = '';
+    st.path = path;
+    render();
+    return getJson(url).then(function (d) {
+      st.busy = false;
+      st.items = d.ok ? (d.items || []) : [];
+      st.more = d.more || 0;
+      st.message = d.message || '';
+      render();
+    }).catch(function () { st.busy = false; render(); fail(); });
+  }
+  function search() {
+    var q = st.keyword.trim();
+    if (!q) { toast(T('先输入要搜的名字')); return; }
+    show('api/player/drive/search?q=' + encodeURIComponent(q), null);
+  }
+  function openFolder(path) {
+    var fid = path.length ? path[path.length - 1].fid : '0';
+    show('api/player/drive/list?fid=' + encodeURIComponent(fid), path);
+  }
+  function loadPicks(first) {
+    return getJson('api/player/drive').then(function (d) {
+      if (!d.ok) { toast(d.message); return; }
+      st.loggedIn = d.loggedIn !== false;
+      st.names = d.names || [];
+      st.folders = d.folders || [];
+      st.files = d.files || [];
+      st.canAttach = !!d.canAttach;
+      st.subtitles = d.subtitles || [];
+      // 第一次打开时用这部番的名字搜一次
+      if (first && !st.typed && d.keyword) st.keyword = d.keyword;
+      render();
+      if (first && st.loggedIn && st.keyword.trim() && !st.items) search();
+    }).catch(fail);
+  }
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#src-drive')) return;
+    window.sheets.open(sheet);
+    render();
+    loadPicks(true);
+  });
+  document.getElementById('drive-close').addEventListener('click', function () { window.sheets.close(sheet); });
+  body.addEventListener('input', function (e) { if (e.target.closest('#drive-form')) st.typed = true; });
+  body.addEventListener('submit', function (e) {
+    if (e.target.id !== 'drive-form') return;
+    e.preventDefault();
+    st.keyword = e.target.elements.q.value;
+    search();
+  });
+  body.addEventListener('click', function (e) {
+    var el;
+    if (e.target.closest('[data-dv-root]')) { openFolder([]); return; }
+    if ((el = e.target.closest('[data-dv-q]'))) {
+      var input = body.querySelector('#drive-form input');
+      st.keyword = el.getAttribute('data-dv-q');
+      st.typed = true;
+      if (input) input.value = st.keyword;
+      search();
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-open]'))) {
+      openFolder((st.path || []).concat([{ fid: el.getAttribute('data-dv-open'), name: el.getAttribute('data-dv-name') }]));
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-crumb]'))) {
+      openFolder(st.path.slice(0, Number(el.getAttribute('data-dv-crumb')) + 1));
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-forget]'))) {
+      if (!confirm(T('忘掉这个位置？「夸克网盘」就不再从这里给这部番找资源'))) return;
+      el.disabled = true;
+      post('api/player/drive/forget', { fid: el.getAttribute('data-dv-forget') }).then(function (r) {
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(fail);
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-pick]'))) {
+      el.disabled = true;
+      post('api/player/drive/folder', { fid: el.getAttribute('data-dv-pick') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(function () { el.disabled = false; fail(); });
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-sub]')) || (el = e.target.closest('[data-dv-unsub]'))) {
+      var attach = el.hasAttribute('data-dv-sub');
+      el.disabled = true;
+      post(attach ? 'api/player/drive/subtitle' : 'api/player/drive/unsubtitle', { fid: el.getAttribute(attach ? 'data-dv-sub' : 'data-dv-unsub') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(function () { el.disabled = false; fail(); });
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-play]'))) {
+      el.disabled = true;
+      post('api/player/drive/play', { fid: el.getAttribute('data-dv-play') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        if (r.ok) window.sheets.close(sheet);
+      }).catch(function () { el.disabled = false; fail(); });
+    }
   });
 })();
 """.trimIndent()

@@ -91,4 +91,6 @@ data class QuarkAddedShareFile(
     val shareFidToken: String = "",
     val folders: List<String> = emptyList(),
     val episode: String,
+    /** 在分享里所在文件夹的 id, 播放时到这里找外挂字幕. */
+    val parentFid: String = "",
 )

@@ -26,10 +26,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
+import me.him188.ani.app.data.models.preference.QuarkRememberedFolder
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.source.MatchKind
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.utils.platform.currentTimeMillis
@@ -278,6 +280,117 @@ class QuarkDriveServiceTest {
         )
         assertEquals("f3", QuarkMediaSource.fileIdOf(media.download.uri))
         assertTrue(QuarkMediaResolver(service).supports(media))
+    }
+
+    @Test
+    fun `media source adds the folders and files picked for the subject`() = runTest {
+        val (service, settings) = service { request ->
+            when (request.url.encodedPath) {
+                // 按名字什么都搜不到
+                "/1/clouddrive/file/search" -> reply("""{"status":200,"code":0,"data":{"list":[]},"metadata":{"_total":0}}""")
+                "/1/clouddrive/file/sort" -> reply(
+                    """{"status":200,"code":0,"data":{"list":[
+                        {"fid":"e1","file_name":"Heaven's Lost Property.2009.S02E01.mkv","pdir_fid":"pf","size":2569000000,"obj_category":"video"},
+                        {"fid":"e2","file_name":"Heaven's Lost Property.2009.S02E02.mkv","pdir_fid":"pf","size":2641000000,"obj_category":"video"}
+                    ]},"metadata":{"_total":2}}""",
+                )
+
+                else -> error("unexpected ${request.url}")
+            }
+        }
+        // 条目名不写季, 文件写着 S02: 用户指定了文件夹就不再按季过滤
+        service.pickFolder(7150, QuarkFile(fid = "pf", fileName = "天降之物 f", dir = true))
+        service.pickFile(7150, QuarkFile(fid = "x9", fileName = "番外.mp4", parentFid = "p0", size = 300_000_000, category = "video"), EpisodeSort(3))
+        assertEquals(listOf("pf"), settings.state.value.subjectPicks.getValue(7150).folders.map { it.fid })
+
+        val request = MediaFetchRequest(
+            subjectId = "7150",
+            episodeId = "1",
+            subjectNames = listOf("天降之物f"),
+            episodeSort = EpisodeSort(1),
+            episodeName = "",
+        )
+        val matches = QuarkMediaSource(service).fetch(request).results.toList()
+        assertEquals(
+            listOf("quark-drive.x9@03", "quark-drive.e1@01", "quark-drive.e2@02"),
+            matches.map { "${it.media.mediaId}@${it.media.episodeRange?.knownSorts?.single()}" },
+        )
+        assertTrue(matches.all { it.kind == MatchKind.EXACT })
+
+        // 忘掉文件夹之后只剩单独指定的文件; 两个都忘掉就整条去掉
+        service.forgetPick(7150, "pf")
+        assertEquals(listOf("quark-drive.x9"), QuarkMediaSource(service).fetch(request).results.toList().map { it.media.mediaId })
+        service.forgetPick(7150, "x9")
+        assertEquals(emptyMap(), settings.state.value.subjectPicks)
+    }
+
+    @Test
+    fun `media source remembers the folder of a played episode and lists it instead of searching`() = runTest {
+        var searches = 0
+        var folderGone = false
+        val (service, settings) = service { request ->
+            when (request.url.encodedPath) {
+                "/1/clouddrive/file/search" -> {
+                    searches++
+                    reply(
+                        if (request.url.parameters["q"] == "Smoking Behind the Supermarket with You") {
+                            """{"status":200,"code":0,"data":{"list":[{"fid":"d1","file_name":"Smoking.Behind.the.Supermarket.With.You.S01","dir":true}]},"metadata":{"_total":1}}"""
+                        } else {
+                            """{"status":200,"code":0,"data":{"list":[]},"metadata":{"_total":0}}"""
+                        },
+                    )
+                }
+
+                "/1/clouddrive/file/sort" -> if (folderGone) {
+                    reply("""{"status":404,"code":41005,"message":"file not found"}""", status = HttpStatusCode.NotFound)
+                } else {
+                    reply(
+                        """{"status":200,"code":0,"data":{"list":[
+                            {"fid":"f1","file_name":"Smoking.Behind.the.Supermarket.With.You.S01E01.mp4","pdir_fid":"d1","size":247580374,"obj_category":"video"},
+                            {"fid":"f2","file_name":"Smoking.Behind.the.Supermarket.With.You.S01E02.mp4","pdir_fid":"d1","size":247580374,"obj_category":"video"}
+                        ]},"metadata":{"_total":2}}""",
+                    )
+                }
+
+                "/1/clouddrive/file/download" ->
+                    reply("""{"status":200,"code":0,"data":[{"fid":"f1","download_url":"https://dl-pc-zb.drive.quark.cn/x?auth_key=1"}]}""")
+
+                else -> error("unexpected ${request.url}")
+            }
+        }
+        fun request(episode: Int) = MediaFetchRequest(
+            subjectId = "571784",
+            episodeId = "$episode",
+            subjectNames = listOf("在超市后门吸烟的二人", "Smoking Behind the Supermarket with You"),
+            episodeSort = EpisodeSort(episode),
+            episodeName = "",
+        )
+        val source = QuarkMediaSource(service)
+        suspend fun fetch(episode: Int) = source.fetch(request(episode)).results.toList().map { it.media.mediaId }
+
+        // 第一集: 照常搜; 只是搜到还不记, 播了才记
+        assertEquals(listOf("quark-drive.f1", "quark-drive.f2"), fetch(1))
+        assertEquals(2, searches)
+        assertEquals(emptyMap(), settings.state.value.rememberedFolders)
+        service.resolvePlayback("f1")
+        assertEquals(
+            QuarkRememberedFolder("d1", listOf("Smoking.Behind.the.Supermarket.With.You.S01")),
+            settings.state.value.rememberedFolders[571784],
+        )
+
+        // 第二集在记下的文件夹里: 不再搜
+        assertEquals(listOf("quark-drive.f1", "quark-drive.f2"), fetch(2))
+        assertEquals(2, searches)
+
+        // 第三集文件夹里没有: 照常搜
+        fetch(3)
+        assertEquals(4, searches)
+
+        // 文件夹没了: 忘掉, 照常搜
+        folderGone = true
+        fetch(2)
+        assertEquals(6, searches)
+        assertEquals(emptyMap(), settings.state.value.rememberedFolders)
     }
 
     @Test

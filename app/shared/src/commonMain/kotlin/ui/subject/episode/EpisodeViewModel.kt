@@ -1322,6 +1322,12 @@ open class EpisodeViewModel(
     }
 
     /**
+     * 把正在播的资源原地重新解析、装进播放器 (例如给它挂上了新的外挂字幕), 装好后回到现在的位置.
+     * 资源还在加载时返回 `false`.
+     */
+    suspend fun reloadCurrentMedia(): Boolean = fetchPlayState.reloadCurrentMedia(player.currentPositionMillis.value)
+
+    /**
      * 在当前剧集播放用户拖入的本地视频文件 [file], 不经过数据源选择.
      *
      * 只对当前剧集的本次播放有效: 不更新数据源偏好, 之后仍可在数据源选择器中换回其他资源;

@@ -54,6 +54,17 @@ class DriveNameParserTest {
     }
 
     @Test
+    fun `episode at the start of a bracket`() {
+        assertEpisode("[001冒険の終わり][B站沸羊羊都得叫我师傅][葬送のフリーレン][2160P][Crunchyroll][4K臻享级画质].mkv", 1)
+        assertEpisode("[011北側諸国の冬][B站沸羊羊都得叫我师傅][葬送のフリーレン][2160P][Crunchyroll][4K臻享级画质].mkv", 11)
+        assertEpisode("【03 冒险结束】【1080P】.mp4", 3)
+        // 分辨率、日期、范围不是集号
+        assertEpisode("[Crunchyroll][2160P][10bit].mkv", null)
+        assertEpisode("[24年10月][1080P].mp4", null)
+        assertEpisode("[01-12][1080P].mkv", null)
+    }
+
+    @Test
     fun `no episode number`() {
         assertEpisode("Title 1080p.mp4", null)
         assertEpisode("云缨-神骥·越千峰 闪卡.mp4", null)

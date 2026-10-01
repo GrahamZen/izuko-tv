@@ -130,12 +130,13 @@ class QuarkShareReadStatus(val videos: Int, val error: String?, val savedCopies:
 class QuarkAddedShareService internal constructor(
     private val settings: Settings<QuarkAddedShares>,
     browser: QuarkShareBrowser,
+    numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     private val savedCopies: suspend () -> List<QuarkFile>,
 ) {
     constructor(settings: Settings<QuarkAddedShares>, drive: QuarkDriveService) :
-            this(settings, drive.shareBrowser, drive::savedShareCopies)
+            this(settings, drive.shareBrowser, drive.episodeNumbering, drive::savedShareCopies)
 
-    internal val reader = QuarkShareReader(browser)
+    internal val reader = QuarkShareReader(browser, numbering)
 
     private val readStatus = MutableStateFlow<Map<String, QuarkShareReadStatus>>(emptyMap())
 
@@ -274,6 +275,7 @@ class QuarkAddedShareService internal constructor(
                 shareFidToken = match.file.shareFidToken,
                 folders = match.folders,
                 episode = match.episode.toString(),
+                parentFid = match.file.parentFid,
             )
         }
         if (files.isEmpty() || files == share.files) return
@@ -305,6 +307,7 @@ class QuarkAddedShareService internal constructor(
                     size = file.size,
                     category = "video",
                     shareFidToken = file.shareFidToken,
+                    parentFid = file.parentFid,
                 )
                 QuarkShareMatch(found, shareFile, file.folders, EpisodeSort(file.episode))
             }

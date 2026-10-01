@@ -15,8 +15,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import me.him188.ani.app.data.network.TmdbEpisodeMap
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 
@@ -36,6 +39,29 @@ internal interface QuarkDriveBrowser {
 }
 
 /**
+ * 条目的分集对 TMDB 季集的反查 (来自 bangumi-tmdb-map 对应表). 网盘里常是 Jellyfin / Plex 之类按 TMDB 整理的 `S02E05`,
+ * 而 Bangumi 常把 TMDB 的一季当成独立条目、名字里不写季 (天降之物f 是 TMDB 的第 2 季), 只看条目名认季会认错.
+ */
+internal fun interface TmdbEpisodeNumbering {
+    /** TMDB (季, 集) → [request] 这个条目的集; 表里没有这个条目或没有逐集对位时为 null. */
+    suspend fun of(request: MediaFetchRequest): Map<Pair<Int, Int>, EpisodeSort>?
+
+    companion object {
+        val None = TmdbEpisodeNumbering { null }
+
+        fun of(repository: TmdbSubjectMapRepository) = TmdbEpisodeNumbering { request ->
+            val subjectId = request.subjectId.toIntOrNull() ?: return@TmdbEpisodeNumbering null
+            // 本篇按集号接续, 要全部分集才排得出第几个
+            if (request.episodes.isEmpty()) return@TmdbEpisodeNumbering null
+            val map = repository.lookup(subjectId)?.episodes?.let { TmdbEpisodeMap.parse(it) } ?: return@TmdbEpisodeNumbering null
+            map.resolveSorts(request.episodes.map { it.sort })
+                .entries.associate { (sort, tmdb) -> tmdb to sort }
+                .ifEmpty { null }
+        }
+    }
+}
+
+/**
  * 把条目对到网盘里的视频文件.
  *
  * 1. 用条目的每个名字 (中文名、原名、别名, 去掉季标记与副标题) 搜索. 英文别名很重要: 剧集发布的文件夹常常只有英文名.
@@ -43,6 +69,8 @@ internal interface QuarkDriveBrowser {
  * 3. 搜到的文件夹往下展开几层 (夸克搜索只返回命中的文件夹本身, 里面的文件名不含关键词时不会单独返回).
  * 4. 从文件名解析集号, 从文件名或所在文件夹解析季, 与条目的季对不上的去掉.
  *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
+ *    文件名写成 `S02E05` 而条目在对应表里有逐集对位 ([TmdbEpisodeNumbering]) 时, 按表换算成条目的集, 不看下面的季规则;
+ *    表里没有这个季集的不是这个条目.
  *
  * 季的规则 (条目的季来自条目名里的 `第二季` / `Season 2` 之类的写法):
  * - 条目没写季 (第一季或只有一季): 文件写明是第 2 季及以后的去掉, 其余保留.
@@ -52,6 +80,7 @@ internal interface QuarkDriveBrowser {
  */
 internal class QuarkSubjectMatcher(
     private val browser: QuarkDriveBrowser,
+    private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
 ) {
     class MatchedFile(
         val file: QuarkFile,
@@ -67,10 +96,60 @@ internal class QuarkSubjectMatcher(
         if (keywords.isEmpty()) return emptyList()
 
         val hits = searchAll(keywords)
-        return matchEpisodes(request, collectCandidates(hits))
+        return matchEpisodes(request, collectCandidates(hits), numbering.of(request))
     }
 
     private class Hit(val keyword: String, val file: QuarkFile)
+
+    /**
+     * 用户指定「这个条目就在这个文件夹里」时: 把文件夹 (往下 [MAX_DEPTH] 层) 里的视频按文件名认集, 不按条目名认季
+     * (文件名写了季集且条目在对应表里时照样按表换算). 文件夹打不开 (被删了) 时返回空.
+     */
+    suspend fun matchPickedFolder(request: MediaFetchRequest, folderId: String, folderName: String): List<MatchedFile> {
+        val candidates = try {
+            listCandidates(folderId, listOf(folderName))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to list picked Quark folder $folderId" }
+            return emptyList()
+        }
+        return matchEpisodes(request, candidates, numbering.of(request), trustFolders = true)
+    }
+
+    /**
+     * 自动记下的文件夹 (见 `QuarkConfig.rememberedFolders`): 列出 (往下 [MAX_DEPTH] 层) 里面的视频, 照自动搜索的规则认季认集,
+     * [path] 是它从搜到的那个文件夹起的路径. 文件夹打不开 (被删了、改了位置) 时返回 null.
+     */
+    suspend fun matchRememberedFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
+        val candidates = try {
+            listCandidates(folderId, path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to list remembered Quark folder $folderId" }
+            return null
+        }
+        return matchEpisodes(request, candidates, numbering.of(request))
+    }
+
+    /** 文件夹 [folderId] (往下 [MAX_DEPTH] 层) 里的视频, 各带从 [path] 起的所在路径. */
+    private suspend fun listCandidates(folderId: String, path: List<String>): List<Candidate> {
+        val candidates = ArrayList<Candidate>()
+        suspend fun walk(id: String, path: List<String>, depth: Int) {
+            for (child in browser.listFolder(id)) {
+                if (candidates.size >= MAX_FILES) return
+                if (child.isVideo) candidates += Candidate(child, path)
+                else if (child.dir && depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
+            }
+        }
+        walk(folderId, path, depth = 0)
+        return candidates
+    }
 
     /**
      * 一个可能属于这个条目的视频文件.
@@ -102,6 +181,14 @@ internal class QuarkSubjectMatcher(
     private suspend fun collectCandidates(hits: List<Hit>): List<Candidate> {
         val relevant = hits.filter { hit ->
             DriveNameParser.normalize(hit.file.fileName).contains(DriveNameParser.normalize(hit.keyword))
+        }
+        logger.info {
+            hits.groupBy { it.keyword }.entries.joinToString("; ", prefix = "Quark drive search: ") { (keyword, list) ->
+                val kept = list.filter { it in relevant }
+                "「$keyword」 ${list.size} hits, ${kept.size} kept " +
+                        kept.take(LOGGED_NAMES).joinToString(prefix = "[", postfix = "]") { (if (it.file.dir) "dir:" else "") + it.file.fileName } +
+                        (list - kept.toSet()).take(LOGGED_NAMES).joinToString(prefix = " dropped [", postfix = "]") { it.file.fileName }
+            }
         }
         val candidates = LinkedHashMap<String, Candidate>()
         val listedFolders = HashSet<String>()
@@ -141,6 +228,7 @@ internal class QuarkSubjectMatcher(
                 candidates.getOrPut(hit.file.fid) { Candidate(hit.file, emptyList()) }
             }
         }
+        logger.info { "Quark drive search: ${candidates.size} candidate videos, listed $listedCount folders" }
         return candidates.values.toList()
     }
 
@@ -153,6 +241,9 @@ internal class QuarkSubjectMatcher(
         private const val MAX_LISTED_FOLDERS = 40
         private const val MAX_DEPTH = 2
         private const val MAX_FILES = 600
+
+        /** 日志里每类最多列几个名字. */
+        private const val LOGGED_NAMES = 4
 
         /**
          * 小于这个大小的视频 (样片、广告) 不要. 大小未知 (0) 的保留.
@@ -168,8 +259,16 @@ internal class QuarkSubjectMatcher(
 
         /**
          * 从候选文件里挑出这个条目的剧集: 文件名认得出集号、不是花絮、不是太小的样片, 季也对得上 (规则见类说明).
+         *
+         * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]); null = 表里没有, 只按条目名认季
+         * @param trustFolders 候选来自用户指定的文件夹: 不再按条目名认季 (对应表照样用)
          */
-        fun matchEpisodes(request: MediaFetchRequest, candidates: List<Candidate>): List<MatchedFile> {
+        fun matchEpisodes(
+            request: MediaFetchRequest,
+            candidates: List<Candidate>,
+            tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
+            trustFolders: Boolean = false,
+        ): List<MatchedFile> {
             val targetSeason = subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
             val absoluteSorts = request.episodes
                 .filter { episode -> episode.ep != null && episode.ep != episode.sort }
@@ -177,16 +276,42 @@ internal class QuarkSubjectMatcher(
                 .toSet()
             val onlyEpisode = request.episodes.singleOrNull()?.sort
 
-            return candidates.mapNotNull { candidate ->
+            // 没对上的按原因记几个例子, 搜到了却一集都没有时看得出卡在哪
+            val dropped = LinkedHashMap<String, MutableList<String>>()
+            fun drop(reason: String, candidate: Candidate): MatchedFile? {
+                dropped.getOrPut(reason) { mutableListOf() } += (candidate.folders.takeLast(1) + candidate.file.fileName).joinToString("/")
+                return null
+            }
+
+            val matched = candidates.mapNotNull { candidate ->
                 val parsed = DriveNameParser.parseFile(candidate.file.fileName)
-                if (parsed.isExtra) return@mapNotNull null
-                val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull null
-                if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull null
+                if (parsed.isExtra) return@mapNotNull drop("extra", candidate)
+                val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)
+                if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull drop("too small", candidate)
+                // 按 TMDB 整理的 `S02E05`: 表里写着它是条目的哪一集就用哪一集, 不再按条目名认季
+                val fileSeason = parsed.season
+                val fileEpisode = (parsed.episode as? EpisodeSort.Normal)?.number?.takeIf { it % 1f == 0f }?.toInt()
+                if (tmdbEpisodes != null && fileSeason != null && fileEpisode != null) {
+                    val mapped = tmdbEpisodes[fileSeason to fileEpisode]
+                        ?: return@mapNotNull drop("S${fileSeason}E$fileEpisode not in this subject", candidate)
+                    return@mapNotNull MatchedFile(candidate.file, candidate.folders, mapped)
+                }
                 val season = parsed.season
                     ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
-                if (!seasonMatches(season, targetSeason, episode, absoluteSorts)) return@mapNotNull null
+                if (!trustFolders && !seasonMatches(season, targetSeason, episode, absoluteSorts)) {
+                    return@mapNotNull drop("season $season, wanted ${targetSeason ?: 1}", candidate)
+                }
                 MatchedFile(candidate.file, candidate.folders, episode)
             }
+            if (candidates.isNotEmpty()) {
+                logger.info {
+                    "Matched ${matched.size} of ${candidates.size} candidates for ${request.subjectNameCN ?: request.subjectId}" +
+                            dropped.entries.joinToString(prefix = "; dropped: ", separator = "; ") { (reason, names) ->
+                                "$reason ${names.size} ${names.take(LOGGED_NAMES)}"
+                            }.takeIf { dropped.isNotEmpty() }.orEmpty()
+                }
+            }
+            return matched
         }
 
         private fun seasonMatches(

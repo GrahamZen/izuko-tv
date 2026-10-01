@@ -18,6 +18,8 @@ import me.him188.ani.app.domain.mediasource.quark.QuarkMediaSource
 import me.him188.ani.app.domain.mediasource.quark.QuarkShareFileRef
 import me.him188.ani.app.domain.mediasource.quark.QuarkShareUnavailableException
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.MediaExtraFiles
+import me.him188.ani.datasources.api.Subtitle
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -26,6 +28,8 @@ import me.him188.ani.utils.logging.warn
  * 播放夸克的资源, 取到播放地址后连同 Cookie 等请求头交给播放器:
  * - 夸克网盘数据源: 占位地址 (见 [QuarkMediaSource.uriOf]) 里是自己网盘的文件 id, 直接取地址;
  * - 夸克分享搜索数据源: 占位地址里是分享里的文件 (见 [QuarkShareFileRef]), 先转存到自己网盘再取地址.
+ *
+ * 视频旁边的外挂字幕一并交给播放器 (见 [QuarkDriveService.resolvePlayback]).
  *
  * 必须排在 [HttpStreamingMediaResolver] 前面, 后者会接下所有 [ResourceLocation.HttpStreamingFile].
  */
@@ -68,7 +72,11 @@ class QuarkMediaResolver(
             uri = playback.url,
             originalTitle = media.originalTitle,
             headers = playback.headers,
-            extraFiles = media.extraFiles.toMediampMediaExtraFiles(),
+            extraFiles = MediaExtraFiles(
+                subtitles = media.extraFiles.subtitles + playback.subtitles.map {
+                    Subtitle(uri = it.url, mimeType = it.mimeType, language = it.language, label = it.label)
+                },
+            ).toMediampMediaExtraFiles(),
         )
     }
 

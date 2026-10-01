@@ -867,6 +867,9 @@ object TvRemoteControl {
             // 手机粘贴夸克分享链接给这部番, 见 RemoteQuarkShares
             path == "api/player/shares" || path.startsWith("api/player/shares/") ->
                 RemoteQuarkShares.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 手机上从夸克网盘里给这部番挑文件夹或文件, 见 RemoteQuarkDrive
+            path == "api/player/drive" || path.startsWith("api/player/drive/") ->
+                RemoteQuarkDrive.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             path == PATH_PLAYER_FULL_SEARCH && post -> json(searchAllSources())
             path == PATH_PLAYER_CONTROL && post -> json(control(request))
             path == PATH_PLAYER_EPISODE && post -> json(switchEpisode(request))

@@ -130,7 +130,9 @@ object QuarkShareSearchMediaSourceCodec : DefaultMediaSourceCodec<QuarkShareSear
 /**
  * 分享里的一个文件, 编在资源的占位地址里: 播放时要凭它转存 (见 [QuarkDriveService.resolveSharePlayback]).
  *
- * 地址形如 `https://pan.quark.cn/s/<分享 id>#izuko-share&fid=..&token=..&pwd=..&name=..&size=..`, 误打开就是分享页本身.
+ * 地址形如 `https://pan.quark.cn/s/<分享 id>#izuko-share&fid=..&token=..&pwd=..&name=..&size=..&dir=..`, 误打开就是分享页本身.
+ *
+ * @param folderId 文件在分享里所在的文件夹, 播放时到这里找外挂字幕. 以前的版本做的资源没有这一项, 为空
  */
 data class QuarkShareFileRef(
     val shareId: String,
@@ -139,6 +141,7 @@ data class QuarkShareFileRef(
     val shareFidToken: String,
     val fileName: String,
     val size: Long,
+    val folderId: String = "",
 ) {
     val key: String get() = "$shareId/$fid"
 
@@ -149,6 +152,7 @@ data class QuarkShareFileRef(
         append("&pwd=").append(passcode.encodeURLParameter())
         append("&name=").append(fileName.encodeURLParameter())
         append("&size=").append(size)
+        if (folderId.isNotEmpty()) append("&dir=").append(folderId.encodeURLParameter())
     }
 
     companion object {
@@ -173,6 +177,7 @@ data class QuarkShareFileRef(
                 shareFidToken = values["token"].orEmpty(),
                 fileName = values["name"].orEmpty(),
                 size = values["size"]?.toLongOrNull() ?: 0,
+                folderId = values["dir"].orEmpty(),
             )
         }
     }
@@ -213,11 +218,12 @@ internal class QuarkShareMatch(
 internal class QuarkShareSearchEngine(
     private val config: QuarkShareSearchConfig,
     private val shares: QuarkShareBrowser,
+    numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 请求站点搜索接口; 失败返回 null. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val reader = QuarkShareReader(shares)
+    private val reader = QuarkShareReader(shares, numbering)
 
     suspend fun search(request: MediaFetchRequest): List<QuarkShareMatch> {
         val names = QuarkSubjectMatcher.subjectNamesOf(request)
@@ -355,7 +361,7 @@ class QuarkShareSearchMediaSource(
     private val userAgent: String?
         get() = arguments.config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current
 
-    private val engine = QuarkShareSearchEngine(arguments.config, service.shareBrowser, ::fetchBytes)
+    private val engine = QuarkShareSearchEngine(arguments.config, service.shareBrowser, service.episodeNumbering, ::fetchBytes)
 
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
