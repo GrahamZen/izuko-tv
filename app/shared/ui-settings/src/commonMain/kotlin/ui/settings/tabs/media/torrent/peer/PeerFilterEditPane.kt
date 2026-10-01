@@ -25,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +46,7 @@ import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.rememberBackgroundScope
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.richtext.RichText
 import me.him188.ani.app.ui.richtext.rememberBBCodeRichTextState
 import me.him188.ani.app.ui.settings.SettingsTab
@@ -71,7 +71,7 @@ private fun RuleEditItem(
     val listItemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
     ListItem(
         headlineContent = {
-            OutlinedTextField(
+            AniOutlinedTextField(
                 value = content,
                 enabled = enabled,
                 label = { Text("规则") },

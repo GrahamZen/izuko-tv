@@ -17,7 +17,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +30,7 @@ import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
 import me.him188.ani.app.ui.foundation.layout.cardVerticalPadding
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_cookies
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_cookies_description
@@ -90,7 +90,7 @@ internal fun SelectorConfigurationDefaults.MatchVideoSection(
         )
 
         AniAnimatedVisibility(visible = matchVideoConfig.enableNestedUrl) {
-            OutlinedTextField(
+            AniOutlinedTextField(
                 matchVideoConfig.matchNestedUrl, { matchVideoConfig.matchNestedUrl = it },
                 Modifier
                     .fillMaxWidth()
@@ -105,7 +105,7 @@ internal fun SelectorConfigurationDefaults.MatchVideoSection(
             )
         }
 
-        OutlinedTextField(
+        AniOutlinedTextField(
             matchVideoConfig.matchVideoUrl, { matchVideoConfig.matchVideoUrl = it },
             Modifier.fillMaxWidth().moveFocusOnEnter().padding(bottom = verticalSpacing),
             label = { Text(stringResource(Lang.settings_mediasource_selector_match_video_link)) },
@@ -115,7 +115,7 @@ internal fun SelectorConfigurationDefaults.MatchVideoSection(
             isError = matchVideoConfig.matchVideoUrlIsError,
             enabled = state.enableEdit,
         )
-        OutlinedTextField(
+        AniOutlinedTextField(
             matchVideoConfig.cookies, { matchVideoConfig.cookies = it },
             Modifier.fillMaxWidth(),
             label = { Text(stringResource(Lang.settings_mediasource_selector_cookies)) },
