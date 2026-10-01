@@ -26,10 +26,13 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,6 +89,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -1442,7 +1446,8 @@ internal fun DanmakuStatistics.isLoading(): Boolean = when (danmakuLoadingState)
 
 /**
  * 「弹幕」胶囊: 胶囊行末尾那颗, **聚焦浮出弹幕列表面板, 点击向右展开成输入框**发弹幕
- * (自动聚焦弹系统键盘, IME 确认发送后收起, 返回键收起 —— 与搜索页输入框同套路).
+ * (点击即进编辑: 自动聚焦弹系统键盘. IME 确认发送后收起, 返回键或键盘被收起时收回胶囊 —— 胶囊相当于搜索页输入框的框,
+ * 见 TvTextFieldFrame).
  *
  * 与「评论」那颗同一个模式 (聚焦看, 点击发). 原先是两颗 —— 「弹幕列表」只管浮面板、
  * 「发送弹幕」只管发 —— 那把同一件事的两半摆成了并列入口, 还多占一格横向导航.
@@ -1465,7 +1470,7 @@ internal fun TvDanmakuSendEntry(
     val sendFailedText = stringResource(Lang.episode_send_danmaku_failed)
     val expanded = overlay.danmakuInputExpanded
     val focus = rememberTvFocusScope()
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var everExpanded by remember { mutableStateOf(false) }
     // 本次展开期间输入框是否真的拿到过焦点. 展开那一刻焦点还在圆钮上、要等一两帧才交到输入框,
     // 这期间不能把"焦点不在输入框"当成用户离开 (否则刚展开就自己收回去了)
@@ -1502,6 +1507,17 @@ internal fun TvDanmakuSendEntry(
             // (2026-09-06 用户实测: 发完弹幕焦点不见了, 方向键全不响应)
             focus.request(TvDanmakuSendFocus.BUTTON)
         }
+    }
+
+    // 键盘被收起 (输入法多半自己吃掉返回键) 就收回胶囊, 不然光标还留在输入框里, 要再按一次返回.
+    // 只认「先看见它弹出、再看见它消失」, 拿不到 IME insets 的形态下静默不生效
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    LaunchedEffect(expanded) {
+        if (!expanded) return@LaunchedEffect
+        snapshotFlow { imeVisible.value }.first { it }
+        snapshotFlow { imeVisible.value }.first { !it }
+        overlay.danmakuInputExpanded = false
     }
 
     val send: () -> Unit = send@{

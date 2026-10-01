@@ -17,7 +17,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatA
 import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatIndexed
 import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatJsonPathIndexed
 import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 
 @Composable
 internal fun SelectorSubjectConfigurationColumn(
@@ -51,7 +51,7 @@ internal fun SelectorSubjectConfigurationColumn(
             )
 
             val conf = state.subjectFormatA
-            OutlinedTextField(
+            AniOutlinedTextField(
                 conf.selectLists, { conf.selectLists = it },
                 Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = verticalSpacing),
                 label = { Text("提取条目列表") },
@@ -84,7 +84,7 @@ internal fun SelectorSubjectConfigurationColumn(
                 style = MaterialTheme.typography.labelLarge,
             )
             val conf = state.subjectFormatIndex
-            OutlinedTextField(
+            AniOutlinedTextField(
                 conf.selectNames, { conf.selectNames = it },
                 Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = verticalSpacing),
                 label = { Text("提取条目名称列表") },
@@ -94,7 +94,7 @@ internal fun SelectorSubjectConfigurationColumn(
                 isError = conf.selectNamesIsError,
                 enabled = state.enableEdit,
             )
-            OutlinedTextField(
+            AniOutlinedTextField(
                 conf.selectLinks, { conf.selectLinks = it },
                 Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = verticalSpacing),
                 label = { Text("提取条目链接列表") },
@@ -127,7 +127,7 @@ internal fun SelectorSubjectConfigurationColumn(
                 style = MaterialTheme.typography.labelLarge,
             )
             val conf = state.subjectFormatJsonPathIndex
-            OutlinedTextField(
+            AniOutlinedTextField(
                 conf.selectNames, { conf.selectNames = it },
                 Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = verticalSpacing),
                 label = { Text("提取条目名称列表") },
@@ -137,7 +137,7 @@ internal fun SelectorSubjectConfigurationColumn(
                 isError = conf.selectNamesIsError,
                 enabled = state.enableEdit,
             )
-            OutlinedTextField(
+            AniOutlinedTextField(
                 conf.selectLinks, { conf.selectLinks = it },
                 Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = verticalSpacing),
                 label = { Text("提取条目链接列表") },
