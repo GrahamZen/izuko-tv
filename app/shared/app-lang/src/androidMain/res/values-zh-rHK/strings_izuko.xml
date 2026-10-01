@@ -227,8 +227,8 @@
     <string name="tv_onboarding_theme_confirm_details_hint">直接打開詳情頁</string>
     <string name="tv_onboarding_theme_colors">顏色</string>
     <string name="tv_onboarding_theme_blur">模糊背景</string>
-    <string name="tv_onboarding_theme_on">開</string>
-    <string name="tv_onboarding_theme_off">關</string>
+    <string name="tv_onboarding_theme_blur_details">詳情頁</string>
+    <string name="tv_onboarding_theme_blur_wall">海報牆</string>
     <string name="tv_onboarding_phone_title">用手機操作</string>
     <string name="settings_network_proxy_overall_detecting_progress">正在檢測連接 · 已完成 %1$d/%2$d</string>
     <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->
@@ -397,8 +397,14 @@
     <string name="settings_theme_tv_remote_reset_confirm">確定重設地址嗎？正在用目前地址的頁面和書籤都要重新掃碼。</string>
     <string name="settings_theme_tv_schedule_layout">新番時間表版式 (電視)</string>
     <string name="settings_theme_tv_schedule_layout_description">選擇電視上新番時間表的版式。</string>
-    <string name="settings_theme_tv_hero_blur_backdrop">海報牆按確定後鋪模糊背景 (電視)</string>
-    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜尋頁在海報上按確定後，整頁底下鋪上這部的模糊背景圖 (同新番時間表)，右上角的大圖照舊；再按確定時背景變清晰再進詳情頁，代替放大。只在「海報上按確定」選「先看簡介」時有用</string>
+    <string name="settings_theme_tv_hero_blur_backdrop">海報牆模糊背景 (電視)</string>
+    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜尋頁在海報上按確定後，整頁底下鋪上這部的模糊背景圖，右上角的大圖照舊；再按確定時背景變清晰再進詳情頁。只在「海報上按確定」選「先看簡介」時有用；選不模糊則底下是純色，從大圖放大進詳情頁。新番時間表的背景也按這一檔糊 (選不模糊時按中)</string>
+    <string name="settings_theme_tv_details_blur_backdrop">詳情頁模糊背景 (電視)</string>
+    <string name="settings_theme_tv_details_blur_backdrop_description">詳情頁翻過第一屏後，底下換成這部背景圖的模糊版，上面的字更清楚；越輕越看得出原圖。選不模糊照舊是淡下去的原圖</string>
+    <string name="settings_theme_tv_backdrop_blur_none">不模糊</string>
+    <string name="settings_theme_tv_backdrop_blur_light">輕</string>
+    <string name="settings_theme_tv_backdrop_blur_medium">中</string>
+    <string name="settings_theme_tv_backdrop_blur_strong">重</string>
     <string name="settings_theme_tv_poster_confirm">海報上按確定 (電視)</string>
     <string name="settings_theme_tv_poster_confirm_description">探索、追番、搜尋和新番時間表的海報上按確定做什麼。播放鍵和長按不受影響</string>
     <string name="settings_theme_tv_poster_confirm_hero">先看簡介</string>
