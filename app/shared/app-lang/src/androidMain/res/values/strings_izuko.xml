@@ -29,6 +29,8 @@
     <string name="subject_episode_video_loading_torrent_metadata">Fetching torrent metadata</string>
     <string name="subject_episode_video_loading_torrent_peers">Peers: %1$d · waited %2$d s</string>
     <string name="subject_episode_video_loading_torrent_no_peers">No peers yet. Try another source</string>
+    <string name="subject_episode_video_loading_connecting_server">Connecting to the video server, waited %1$d s</string>
+    <string name="subject_episode_video_loading_preparing_elapsed">Waited %1$d s · %2$s</string>
     <string name="subject_episode_video_loading_buffered_ahead">%1$s s buffered</string>
     <string name="subject_episode_strip_loading">Loading episodes…</string>
     <string name="exit_app_title">Exit App</string>
@@ -48,6 +50,9 @@
     <string name="settings_player_idle_progress_bar_off">Off</string>
     <string name="settings_player_pause_on_scrub">Pause while scrubbing</string>
     <string name="settings_player_pause_on_scrub_description">Pause the picture while choosing a position with the remote, and play from there when you press OK. Turn off to keep playing while choosing</string>
+    <string name="player_buffer_wait_start">Buffering %1$d s of this cloud drive video before playing, so it does not stall right after starting</string>
+    <string name="player_buffer_wait_stall">The download is slower than this video\'s bitrate, buffering %1$d s before resuming</string>
+    <string name="player_buffer_wait_stall_again">The download keeps falling behind this video\'s bitrate (stalled %2$d times), buffering %1$d s before resuming</string>
     <string name="settings_player_start_playback_speed">Playback speed</string>
     <string name="settings_player_start_playback_speed_description">The speed when you enter the player. The leftmost step, “Remember last”, keeps the speed you set in the player across episodes and restarts</string>
     <string name="settings_player_start_playback_speed_remember">Remember last</string>

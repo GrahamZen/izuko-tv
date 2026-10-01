@@ -29,6 +29,8 @@
     <string name="subject_episode_video_loading_torrent_metadata">正在獲取種子資訊</string>
     <string name="subject_episode_video_loading_torrent_peers">已連上 %1$d 個節點 · 已等 %2$d 秒</string>
     <string name="subject_episode_video_loading_torrent_no_peers">一直連不上節點，可以換一個數據源</string>
+    <string name="subject_episode_video_loading_connecting_server">正在連接影片伺服器，已等 %1$d 秒</string>
+    <string name="subject_episode_video_loading_preparing_elapsed">已等 %1$d 秒 · %2$s</string>
     <string name="subject_episode_video_loading_buffered_ahead">已緩衝 %1$s 秒</string>
     <string name="subject_episode_strip_loading">正在加載選集…</string>
     <string name="exit_app_title">退出應用</string>
@@ -86,6 +88,9 @@
     <string name="settings_player_idle_progress_bar_off">不顯示</string>
     <string name="settings_player_pause_on_scrub">拖動進度條時暫停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遙控器選位置時先暫停畫面，按確認鍵從選中處播放；關閉後邊播邊選</string>
+    <string name="player_buffer_wait_start">網盤影片先緩衝 %1$d 秒再開始播放，免得剛播就卡</string>
+    <string name="player_buffer_wait_stall">下載速度跟不上這個影片的碼率，先緩衝 %1$d 秒再接著播</string>
+    <string name="player_buffer_wait_stall_again">下載速度一直跟不上這個影片的碼率（已卡 %2$d 次），這次先緩衝 %1$d 秒再接著播</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
     <string name="settings_player_start_playback_speed_remember">記住上次</string>
