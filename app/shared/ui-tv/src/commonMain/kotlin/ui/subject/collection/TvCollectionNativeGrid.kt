@@ -188,8 +188,8 @@ private fun TvCollectionNativeSource(
     val url = heroPipeline.backdropUrl(spec)
     val underlay = heroPipeline.underlayUrl(spec)
     val backdrop = if (url != null && display != null) {
-        // 完整档 + 4K 界面的下一集剧照: 停稳后原地升到原图
-        TvNativeBackdropTarget(url, display.subjectId, underlay, upgradeUrl = heroPipeline.upgradeUrl(spec))
+        // 完整档 + 4K 界面的下一集剧照: 停稳后原地升到原图; 取色用详情页铺的那张整部横版背景 (在看的剧照与它不同)
+        TvNativeBackdropTarget(url, display.subjectId, underlay, upgradeUrl = heroPipeline.upgradeUrl(spec), seedUrl = heroPipeline.seriesBackdropUrl(spec))
     } else {
         null
     }
