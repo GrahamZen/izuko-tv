@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.effects.defaultFocus
 import me.him188.ani.app.ui.foundation.effects.onKey
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
@@ -157,7 +158,7 @@ fun SettingsScope.TextFieldItem(
                 description = { textFieldDescription?.invoke(editingValue) },
                 extra = { extra(editingValueState) },
             ) {
-                OutlinedTextField(
+                AniOutlinedTextField(
                     value = editingValue,
                     onValueChange = { editingValue = sanitizeValue(it) },
                     visualTransformation = effectiveTransformation,

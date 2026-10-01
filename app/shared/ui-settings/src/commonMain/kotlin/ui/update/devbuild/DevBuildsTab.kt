@@ -34,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,6 +62,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.TimeFormatter
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.AniFilledTonalButton
@@ -376,7 +376,7 @@ private fun GitHubTokenDialog(
         title = { Text(stringResource(Lang.settings_debug_dev_builds_token)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                AniOutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth().testTag(DevBuildsTestTags.TOKEN_FIELD),
