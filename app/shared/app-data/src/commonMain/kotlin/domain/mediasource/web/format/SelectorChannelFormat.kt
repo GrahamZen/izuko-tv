@@ -129,16 +129,35 @@ data object SelectorChannelFormatIndexGrouped :
         val selectLists = QueryParser.parseSelectorOrNull(config.selectEpisodeLists) ?: return null
         val matchEpisodeSortFromNameRegex = Regex.parseOrNull(config.matchEpisodeSortFromName) ?: return null
 
+        val rawChannelNames = page.select(selectChannelNames)
+            .map { e -> e.text().trim().takeIf { it.isNotBlank() } }
+
         // null means no match, will be filtered out
-        val channelNames = page.select(selectChannelNames)
-            .map { e ->
-                val text = e.text().trim().takeIf { it.isNotBlank() } ?: return@map null
-                if (matchChannelName == null) {
-                    text
-                } else {
-                    matchChannelName.findGroupOrFullText(text, "ch") // null means no match
-                }
+        val matchedChannelNames = rawChannelNames.map { text ->
+            if (text == null) {
+                null
+            } else if (matchChannelName == null) {
+                text
+            } else {
+                matchChannelName.findGroupOrFullText(text, "ch") // null means no match
             }
+        }
+
+        /*
+         * 一个线路名都没命中时回落用原文本.
+         *
+         * 正则是按站点常规页面的线路名写的, 而同一个站点的剧场版 / 单集页面可能换一种写法:
+         * girigiri 常规季的线路名是 "简中12" (把集数拼在后面), 配置的正则 `(?<ch>.+?)(\d+?)` 因此要求结尾有数字;
+         * 剧场版页面只有 "简中", 一个都命不中 —— 而下面 zip 时 `channelName == null` 会把**整条线路连同它的剧集**
+         * 丢掉, 于是整个条目解析成 0 集, 被当作 EmptyContent 丢弃, 用户在列表里连"被排除"都看不到它.
+         *
+         * 只在**全部**命不中时回落: 部分命中说明正则本就是用来筛掉非线路的标签页的 (那是既定用法), 不要破坏它.
+         */
+        val channelNames = if (matchedChannelNames.all { it == null } && rawChannelNames.any { it != null }) {
+            rawChannelNames
+        } else {
+            matchedChannelNames
+        }
 
         val lists = page.select(selectLists)
 
