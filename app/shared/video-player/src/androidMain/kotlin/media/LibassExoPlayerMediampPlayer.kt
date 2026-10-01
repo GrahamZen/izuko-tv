@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
 import me.him188.ani.utils.logging.info
@@ -133,6 +134,7 @@ class LibassExoPlayerMediampPlayer private constructor(
                 builder.setDetachSurfaceTimeoutMs(DETACH_SURFACE_TIMEOUT_MILLIS)
                 configurePlayerBuilder?.invoke(builder)
             },
+            { builder -> builder.setLoadControl(pipeline.loadControl) },
         ),
     )
 
@@ -563,6 +565,9 @@ private class LibassMediaSourcePipeline(
     private val extractorsFactory = DefaultExtractorsFactory()
         .withAssMkvSupport(subtitleParserFactory, assHandler)
 
+    /** 被限速的网盘直链换一套缓冲策略 (见 [ThrottledSourceLoadControl]); 每准备一个媒体按它的提示头切换. */
+    val loadControl = ThrottledSourceLoadControl()
+
     // 播放器构造后由 LibassExoPlayerMediampPlayer 设置; 每个视频轨的最终 Format 经这里回调
     // 给它, 用来决定要不要把 dataspace 直接写到 Surface 上 (NVIDIA h264 硬解不理 MediaFormat).
     var onVideoFormat: ((androidx.media3.common.Format) -> Unit)? = null
@@ -570,18 +575,35 @@ private class LibassMediaSourcePipeline(
     // withColorInfoRepair: 色彩三项不全时 Shield 不设视频层 dataspace, 留着的垃圾撞上 ST2084 位
     // 就变假 HDR. 包在 MediaSource 出口是为了覆盖所有入口 (progressive/HLS/兜底默认源),
     // 详见 ColorInfoRepair.kt
-    fun intercept(defaultSource: MediaSource, data: MediaData): MediaSource =
-        (createLibassMediaSource(data) ?: defaultSource)
+    fun intercept(defaultSource: MediaSource, data: MediaData): MediaSource {
+        loadControl.throttled = data is UriMediaData && parallelConnectionsOf(data) != null
+        return (createLibassMediaSource(data) ?: defaultSource)
             .withColorInfoRepair(onVideoFormat = { onVideoFormat?.invoke(it) })
+    }
+
+    /** 解析器要求并发几路 (见 [PlaybackRequestHints.PARALLEL_RANGE_HEADER]); 没要求时为 null. */
+    private fun parallelConnectionsOf(data: UriMediaData): Int? =
+        data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()?.takeIf { it > 1 }
 
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
         val dataSourceFactory = when (data) {
-            is UriMediaData -> createPlaybackHttpDataSourceFactory(
-                proxyConfig = proxyConfig(),
-                userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT,
-                headers = data.headers,
-                connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
-            )
+            is UriMediaData -> {
+                // 解析器给的提示头只给播放器看, 不发给服务器
+                val parallel = parallelConnectionsOf(data)
+                val userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT
+                val headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER
+                if (parallel != null) {
+                    // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients)
+                    ParallelRangeDataSource.Factory(RangeHttpClients.factory(proxyConfig(), userAgent, headers), parallel)
+                } else {
+                    createPlaybackHttpDataSourceFactory(
+                        proxyConfig = proxyConfig(),
+                        userAgent = userAgent,
+                        headers = headers,
+                        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                    )
+                }
+            }
 
             is SeekableInputMediaData -> {
                 if (data.uri.startsWith("file://")) {
