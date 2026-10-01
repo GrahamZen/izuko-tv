@@ -36,6 +36,8 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager.Companion.LO
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
+import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareMediaSource
+import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareService
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
 import me.him188.ani.app.domain.mediasource.quark.QuarkMediaSource
 import me.him188.ani.app.domain.mediasource.quark.QuarkShareSearchMediaSource
@@ -230,6 +232,7 @@ class MediaSourceManagerImpl(
     private val selectorMediaSourceEpisodeCacheRepository: SelectorMediaSourceEpisodeCacheRepository by inject()
     private val webSessionManager: WebSessionManager by inject()
     private val quarkDriveService: QuarkDriveService by inject()
+    private val quarkAddedShareService: QuarkAddedShareService by inject()
     private val webSourceCookieJar: WebSourceCookieJar by inject()
     private val webSourceIdentityRegistry: WebSourceIdentityRegistry by inject()
     private val clientProvider: HttpClientProvider by inject()
@@ -252,6 +255,7 @@ class MediaSourceManagerImpl(
         add(DirectApiMediaSource.Factory())
         add(QuarkMediaSource.Factory(quarkDriveService))
         add(QuarkShareSearchMediaSource.Factory(quarkDriveService))
+        add(QuarkAddedShareMediaSource.Factory(quarkAddedShareService))
         add(SelectorMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
     }.toList()
 

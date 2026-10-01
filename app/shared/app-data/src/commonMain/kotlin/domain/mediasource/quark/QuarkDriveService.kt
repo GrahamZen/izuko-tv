@@ -153,6 +153,18 @@ class QuarkDriveService internal constructor(
         return folder
     }
 
+    /**
+     * 转存文件夹 [SAVE_FOLDER_NAME] 里的文件 (从分享转存过来的副本). 没登录或还没有这个文件夹时为空, 不新建.
+     */
+    internal suspend fun savedShareCopies(): List<QuarkFile> {
+        val config = settings.flow.first()
+        if (!config.isLoggedIn) return emptyList()
+        val folder = config.shareSaveFolderId.takeIf { it.isNotEmpty() }
+            ?: listAll(QuarkApi.ROOT_FOLDER_ID).firstOrNull { it.dir && it.fileName == SAVE_FOLDER_NAME }?.fid
+            ?: return emptyList()
+        return listAll(folder).filter { !it.dir }
+    }
+
     private suspend fun setSaveFolder(folderId: String) {
         cookieLock.withLock {
             val current = settings.flow.first()

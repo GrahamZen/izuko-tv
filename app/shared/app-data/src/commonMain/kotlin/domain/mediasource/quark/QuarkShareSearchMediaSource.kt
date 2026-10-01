@@ -33,10 +33,7 @@ import me.him188.ani.app.domain.mediasource.directapi.ResponseFormat
 import me.him188.ani.app.domain.mediasource.directapi.parseResponse
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
-import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
-import me.him188.ani.datasources.api.Media
-import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.ConnectionStatus
@@ -51,13 +48,6 @@ import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.source.deserializeArgumentsOrNull
-import me.him188.ani.datasources.api.topic.EpisodeRange
-import me.him188.ani.datasources.api.topic.FileSize
-import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import me.him188.ani.datasources.api.topic.Resolution
-import me.him188.ani.datasources.api.topic.ResourceLocation
-import me.him188.ani.datasources.api.topic.titles.RawTitleParser
-import me.him188.ani.datasources.api.topic.titles.parse
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -186,11 +176,13 @@ internal interface QuarkShareBrowser {
     suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<QuarkShareFile>
 }
 
-/** 在结果里找到的一个分享链接. */
+/** 要打开的一个分享: 站点结果里找到的, 或用户添加的. */
 internal class FoundShare(
     val shareId: String,
     val passcode: String,
-    /** 站点上的剧名, 用来认季 (分享标题常被打乱, 靠不住). */
+    /**
+     * 用来认季的名字: 站点上的剧名 (分享标题常被打乱, 靠不住); 用户添加的分享没有站点剧名, 用分享标题.
+     */
     val siteTitle: String,
 )
 
@@ -213,6 +205,7 @@ internal class QuarkShareSearchEngine(
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val reader = QuarkShareReader(shares)
 
     suspend fun search(request: MediaFetchRequest): List<QuarkShareMatch> {
         val names = QuarkSubjectMatcher.subjectNamesOf(request)
@@ -253,9 +246,8 @@ internal class QuarkShareSearchEngine(
     }
 
     private suspend fun matchShare(request: MediaFetchRequest, share: FoundShare): List<QuarkShareMatch> {
-        val files = try {
-            shares.open(share.shareId, share.passcode)
-            collectVideos(share)
+        val videos = try {
+            reader.read(share.shareId, share.passcode).videos
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkShareUnavailableException) {
@@ -265,45 +257,13 @@ internal class QuarkShareSearchEngine(
             logger.warn(e) { "Failed to read Quark share ${share.shareId}" }
             return emptyList()
         }
-        val byFid = files.associateBy { it.file.fid }
-        // 站点剧名放在最外层: 分享里没写季的文件, 按站点上的剧名 (例如「…第二季」) 认季
-        val candidates = files.map { QuarkSubjectMatcher.Candidate(it.file.asFile(), listOf(share.siteTitle) + it.folders) }
-        return QuarkSubjectMatcher.matchEpisodes(request, candidates).mapNotNull { matched ->
-            val entry = byFid[matched.file.fid] ?: return@mapNotNull null
-            QuarkShareMatch(share, entry.file, entry.folders, matched.episode)
-        }
-    }
-
-    private class ShareEntry(val file: QuarkShareFile, val folders: List<String>)
-
-    private suspend fun collectVideos(share: FoundShare): List<ShareEntry> {
-        val result = ArrayList<ShareEntry>()
-        var listed = 0
-
-        suspend fun walk(folderId: String, path: List<String>, depth: Int) {
-            if (listed >= MAX_LISTED_FOLDERS || result.size >= MAX_FILES) return
-            listed++
-            for (child in shares.listFolder(share.shareId, share.passcode, folderId)) {
-                if (result.size >= MAX_FILES) return
-                if (child.dir) {
-                    if (depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
-                } else if (child.category == "video" && child.shareFidToken.isNotEmpty()) {
-                    result += ShareEntry(child, path)
-                }
-            }
-        }
-
-        walk(QuarkApi.ROOT_FOLDER_ID, emptyList(), depth = 0)
-        return result
+        return reader.match(request, share, videos)
     }
 
     internal companion object {
         private val logger = logger<QuarkShareSearchEngine>()
 
         private const val SHARE_CONCURRENCY = 2
-        private const val MAX_LISTED_FOLDERS = 30
-        private const val MAX_DEPTH = 3
-        private const val MAX_FILES = 400
 
         private val SHARE_LINK = Regex("""https?://pan\.quark\.cn/s/([0-9A-Za-z]+)(?:\?pwd=([0-9A-Za-z]+))?""")
 
@@ -371,7 +331,7 @@ class QuarkShareSearchMediaSource(
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
-        val medias = engine.search(query).map { MediaMatch(it.toMedia(subjectName), MatchKind.FUZZY) }
+        val medias = engine.search(query).map { MediaMatch(it.toShareMedia(mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
     }
 
@@ -390,32 +350,6 @@ class QuarkShareSearchMediaSource(
     } catch (e: Exception) {
         logger.warn { "Request failed: $url: $e" }
         null
-    }
-
-    private fun QuarkShareMatch.toMedia(subjectName: String?): Media {
-        val ref = QuarkShareFileRef(share.shareId, share.passcode, file.fid, file.shareFidToken, file.fileName, file.size)
-        val details = RawTitleParser.getDefault().parse((listOf(share.siteTitle) + folders + file.fileName).joinToString(" "))
-        return DefaultMedia(
-            mediaId = "$mediaSourceId.${share.shareId}.${file.fid}",
-            mediaSourceId = mediaSourceId,
-            originalUrl = QuarkShareFileRef.SHARE_URL_PREFIX + share.shareId,
-            download = ResourceLocation.HttpStreamingFile(ref.toUri()),
-            originalTitle = (listOf(share.siteTitle) + folders.takeLast(1) + file.fileName).joinToString(" / "),
-            publishedTime = file.updatedAt,
-            properties = MediaProperties(
-                // 已经按剧名与季匹配过, 与夸克网盘数据源一样直接标成当前条目
-                subjectName = subjectName,
-                episodeName = null,
-                subtitleLanguageIds = details.subtitleLanguages.map { it.id }.ifEmpty { listOf("CHS") },
-                resolution = (details.resolution ?: Resolution.R1080P).toString(),
-                alliance = arguments.name,
-                size = if (file.size > 0) file.size.bytes else FileSize.Unspecified,
-                subtitleKind = details.subtitleKind,
-            ),
-            episodeRange = EpisodeRange.single(episode),
-            location = MediaSourceLocation.Online,
-            kind = MediaSourceKind.WEB,
-        )
     }
 
     class Factory(

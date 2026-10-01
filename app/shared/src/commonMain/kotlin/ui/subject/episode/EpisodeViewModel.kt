@@ -1235,6 +1235,15 @@ class EpisodeViewModel(
      * 切换剧集或重新进入播放页后照常自动选择数据源. 若剧集信息加载完成前切换了剧集, 则放弃播放.
      */
     fun playDroppedFile(file: SystemPath) {
+        logger.info { "Playing dropped file: $file" }
+        playTemporarily(DroppedFileMedia.create(file))
+    }
+
+    /**
+     * 在当前剧集播放不在搜索结果里的 [media] (例如手机上从夸克分享里手动挑的文件), 规则同 [playDroppedFile]:
+     * 不更新数据源偏好, 只对这一次有效.
+     */
+    fun playTemporarily(media: Media) {
         launchInBackground {
             val session = fetchPlayState.episodeSessionFlow.value
             val mediaSelector = fetchPlayState.episodeSessionFlow
@@ -1244,8 +1253,7 @@ class EpisodeViewModel(
                 }
                 .first()
                 ?: return@launchInBackground
-            logger.info { "Playing dropped file: $file" }
-            mediaSelector.selectTemporarily(DroppedFileMedia.create(file))
+            mediaSelector.selectTemporarily(media)
         }
     }
 

@@ -864,6 +864,9 @@ object TvRemoteControl {
             path == PATH_PLAYER_UPNEXT && post -> json(playUpNext())
             path == PATH_PLAYER_REQUEST && post -> json(updateRequest(request))
             path == PATH_PLAYER_REFETCH && post -> json(refetchSources())
+            // 手机粘贴夸克分享链接给这部番, 见 RemoteQuarkShares
+            path == "api/player/shares" || path.startsWith("api/player/shares/") ->
+                RemoteQuarkShares.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             path == PATH_PLAYER_FULL_SEARCH && post -> json(searchAllSources())
             path == PATH_PLAYER_CONTROL && post -> json(control(request))
             path == PATH_PLAYER_EPISODE && post -> json(switchEpisode(request))

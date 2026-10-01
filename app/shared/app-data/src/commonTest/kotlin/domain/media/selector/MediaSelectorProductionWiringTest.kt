@@ -178,6 +178,7 @@ class MediaSelectorProductionWiringTest {
                 override val anitorrentConfig get() = error("not used")
                 override val pikpakConfig get() = error("not used")
                 override val quarkConfig get() = error("not used")
+                override val quarkAddedShares get() = error("not used")
                 override val torrentPeerConfig get() = error("not used")
                 override val oneshotActionConfig get() = error("not used")
                 override val analyticsSettings get() = error("not used")

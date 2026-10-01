@@ -121,6 +121,7 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.media.download.DownloadOperations
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareService
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
 import me.him188.ani.app.domain.mediasource.web.captcha.BrowserImageCaptchaSolver
@@ -750,6 +751,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
         MediaSourceCodecManager()
     }
     single<QuarkDriveService> { QuarkDriveService(get<SettingsRepository>().quarkConfig) }
+    single<QuarkAddedShareService> { QuarkAddedShareService(get<SettingsRepository>().quarkAddedShares, get<QuarkDriveService>()) }
     single<MediaSourceManager> {
         MediaSourceManagerImpl(
             additionalSources = {
