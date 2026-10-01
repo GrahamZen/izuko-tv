@@ -20,8 +20,13 @@ import androidx.media3.datasource.HttpDataSource
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -29,6 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * 用在每个连接有速度上限的网盘直链上 (由解析器在请求头里放 [PlaybackRequestHints.PARALLEL_RANGE_HEADER] 打开).
  * 服务端不按范围回时退回成单连接.
+ *
+ * 每次打开、关闭各记一行 (位置、用时、读了多少), 打开后很久没来读时记一次加载线程的栈 (见 [StallWatchdog]).
  */
 @AndroidxOptIn(UnstableApi::class)
 internal class ParallelRangeDataSource(
@@ -51,36 +58,78 @@ internal class ParallelRangeDataSource(
     @Volatile
     private var responseHeaders: Map<String, List<String>> = emptyMap()
 
+    // 诊断开播卡住 (见 [StallWatchdog]): 由加载线程写, 看门狗线程读
+    @Volatile
+    private var loadingThread: Thread? = null
+
+    @Volatile
+    private var openedAt = 0L
+
+    @Volatile
+    private var lastActivityAt = 0L
+
+    @Volatile
+    private var inRead = false
+
+    @Volatile
+    private var bytesRead = 0L
+
+    @Volatile
+    private var stallReported = false
+
     override fun open(dataSpec: DataSpec): Long {
+        val startedAt = System.nanoTime()
         this.dataSpec = dataSpec
         transferInitializing(dataSpec)
         val opener = RangeOpener { start, length ->
             val upstream = upstreamFactory.createDataSource()
-            upstream.open(
-                dataSpec.buildUpon()
-                    .setPosition(start)
-                    .setLength(if (length < 0) C.LENGTH_UNSET.toLong() else length)
-                    .build(),
-            )
+            val startedAt = System.nanoTime()
+            try {
+                upstream.open(
+                    dataSpec.buildUpon()
+                        .setPosition(start)
+                        .setLength(if (length < 0) C.LENGTH_UNSET.toLong() else length)
+                        .build(),
+                )
+            } catch (e: IOException) {
+                runCatching { upstream.close() }
+                logger.warn { "Open ${dataSpec.uri.host} at $start failed after ${(System.nanoTime() - startedAt) / 1_000_000}ms: $e" }
+                throw e
+            }
             val headers = upstream.responseHeaders
             if (responseHeaders.isEmpty()) responseHeaders = headers
             OpenedRange(UpstreamConnection(upstream), totalLengthOf(headers))
         }
-        val reader = ParallelRangeReader(opener, EXECUTOR, connections, chunkSize)
+        // 服务端明确拒绝 (403 地址过期之类) 再试也一样, 直接交给播放器
+        val reader = ParallelRangeReader(opener, EXECUTOR, connections, chunkSize) { it !is HttpDataSource.InvalidResponseCodeException }
         this.reader = reader
         val length = reader.open(dataSpec.position, dataSpec.length)
         logger.info {
             val mode = if (reader.isParallel) "$connections connections" else "a single connection"
-            "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length"
+            "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length in ${millisSince(startedAt)}ms"
         }
         opened = true
+        bytesRead = 0
+        stallReported = false
+        loadingThread = Thread.currentThread()
+        openedAt = System.nanoTime()
+        lastActivityAt = openedAt
+        StallWatchdog.watch(this)
         transferStarted(dataSpec)
         return if (length < 0) C.LENGTH_UNSET.toLong() else length
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        val count = checkNotNull(reader) { "Data source is not open" }.read(buffer, offset, length)
+        val reader = checkNotNull(reader) { "Data source is not open" }
+        inRead = true
+        val count = try {
+            reader.read(buffer, offset, length)
+        } finally {
+            inRead = false
+            lastActivityAt = System.nanoTime()
+        }
         if (count < 0) return C.RESULT_END_OF_INPUT
+        bytesRead += count
         bytesTransferred(count)
         return count
     }
@@ -90,13 +139,55 @@ internal class ParallelRangeDataSource(
     override fun getResponseHeaders(): Map<String, List<String>> = responseHeaders
 
     override fun close() {
+        StallWatchdog.unwatch(this)
         val current = reader
+        val spec = dataSpec
         reader = null
         dataSpec = null
         current?.close()
         if (opened) {
             opened = false
+            logger.info { "Closed ${spec?.uri?.host} after reading $bytesRead bytes from ${spec?.position} in ${millisSince(openedAt)}ms" }
             transferEnded()
+        }
+    }
+
+    /** 看门狗线程上调用: 打开后只读了一点就很久没再来读时, 记一次加载线程在干什么. */
+    private fun reportIfStalled() {
+        if (stallReported || inRead || bytesRead >= STALL_MAX_BYTES) return
+        val idle = millisSince(lastActivityAt)
+        if (idle < STALL_IDLE_MILLIS) return
+        stallReported = true
+        val thread = loadingThread
+        logger.warn {
+            "No reads for ${idle}ms after reading $bytesRead bytes (opened ${millisSince(openedAt)}ms ago); " +
+                    "loading thread ${thread?.name}: " + thread?.stackTrace?.take(STACK_DEPTH)?.joinToString(" <- ")
+        }
+    }
+
+    /**
+     * 开播卡住时, 等数据与关连接慢由 [ParallelRangeReader] 自己记; 这里管它管不到的: 数据源打开后只读了不到 [STALL_MAX_BYTES]
+     * 就 [STALL_IDLE_MILLIS] 没再来读 (加载线程卡在播放器自己那边), 记一次加载线程的栈.
+     * 正常播放时缓冲满了也会停读, 但那时一个连接早已读了很多, 不会记.
+     */
+    private object StallWatchdog {
+        private val watched = ConcurrentHashMap.newKeySet<ParallelRangeDataSource>()
+
+        private val timer: ScheduledExecutorService by lazy {
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "ParallelRange-watchdog").apply { isDaemon = true }
+            }.apply {
+                scheduleWithFixedDelay({ watched.forEach { runCatching { it.reportIfStalled() } } }, 2, 2, TimeUnit.SECONDS)
+            }
+        }
+
+        fun watch(source: ParallelRangeDataSource) {
+            watched.add(source)
+            timer
+        }
+
+        fun unwatch(source: ParallelRangeDataSource) {
+            watched.remove(source)
         }
     }
 
@@ -114,6 +205,12 @@ internal class ParallelRangeDataSource(
         const val DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024
 
         private val logger = logger<ParallelRangeDataSource>()
+
+        private const val STALL_IDLE_MILLIS = 10_000L
+        private const val STALL_MAX_BYTES = 8L * 1024 * 1024
+        private const val STACK_DEPTH = 16
+
+        private fun millisSince(nanos: Long) = (System.nanoTime() - nanos) / 1_000_000
 
         private val threadId = AtomicInteger()
 
