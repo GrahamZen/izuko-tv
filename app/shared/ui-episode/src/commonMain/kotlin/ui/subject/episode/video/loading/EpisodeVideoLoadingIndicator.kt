@@ -60,6 +60,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_player_fail
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_resolution_timed_out
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_unknown_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_unsupported_media
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_connecting_server
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_decoding_bt
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_decoding_cloud
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_decoding_data
@@ -67,6 +68,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_failed_prefix
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_needs_manual_selection
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_no_media
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_player_error
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_preparing_elapsed
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolve_deadline
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolve_deadline_auto_switch
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolving_source
@@ -90,6 +92,7 @@ import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.Buffering
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
 
 /**
  * 加载提示里"进行到哪了"的细节, 都可以没有 (没有就照旧只写阶段): 选源时查了几个源、解析这一轮最多再等几秒、
@@ -233,18 +236,12 @@ fun EpisodeVideoLoadingIndicator(
                     is VideoLoadingState.DecodingData -> {
                         val engineKey = state.engineKey
                         val torrentOpen = details.torrentOpen
-                        // 云盘按需取流, 没有等种子信息、找节点这一步
-                        if (engineKey != null && !engineKey.isCloud && torrentOpen != null) {
-                            TorrentMetadataText(torrentOpen)
-                        } else {
-                            TextWithBorder(
-                                when {
-                                    engineKey == null -> decodingDataText
-                                    engineKey.isCloud -> decodingCloudText
-                                    else -> decodingBtText
-                                },
-                                textAlign = TextAlign.Center,
-                            )
+                        when {
+                            // 云盘按需取流, 没有等种子信息、找节点这一步
+                            engineKey != null && !engineKey.isCloud && torrentOpen != null -> TorrentMetadataText(torrentOpen)
+                            engineKey != null && !engineKey.isCloud -> TextWithBorder(decodingBtText, textAlign = TextAlign.Center)
+                            engineKey != null -> PreparingVideoText(state, decodingCloudText, speedProvider)
+                            else -> PreparingVideoText(state, decodingDataText, speedProvider)
                         }
                     }
 
@@ -424,6 +421,36 @@ private fun TorrentMetadataText(progress: TorrentOpenProgress) {
     TextWithBorder(lines.joinToString("\n"), textAlign = TextAlign.Center)
 }
 
+/**
+ * 地址交给播放器之后、能播之前那几行: 正在准备视频; 等得久了加一行等了多久. 还没收到数据时说在连接服务器 ——
+ * 连接超时按每个地址算, 域名解析出好几个地址又都连不上时要一个个等满, 光写「正在准备」看着像卡死了.
+ */
+@Composable
+private fun PreparingVideoText(
+    state: VideoLoadingState.DecodingData,
+    title: String,
+    speedProvider: () -> FileSize,
+) {
+    var elapsedSeconds by remember(state.startedAt) { mutableIntStateOf(state.startedAt.elapsedWholeSeconds()) }
+    LaunchedEffect(state.startedAt) {
+        while (true) {
+            elapsedSeconds = state.startedAt.elapsedWholeSeconds()
+            delay(1.seconds)
+        }
+    }
+    val speed = speedProvider()
+    val waitLine = when {
+        elapsedSeconds < PREPARING_VIDEO_WAIT_HINT_AFTER.inWholeSeconds -> null
+        speed == FileSize.Unspecified || speed == FileSize.Zero ->
+            stringResource(Lang.subject_episode_video_loading_connecting_server, elapsedSeconds)
+
+        else -> stringResource(Lang.subject_episode_video_loading_preparing_elapsed, elapsedSeconds, "$speed/s")
+    }
+    TextWithBorder(if (waitLine == null) title else "$title\n$waitLine", textAlign = TextAlign.Center)
+}
+
+private fun TimeMark.elapsedWholeSeconds(): Int = elapsedNow().inWholeSeconds.toInt()
+
 /** 毫秒写成带一位小数的秒, 如 1500 → "1.5" (公共代码里没有 String.format). */
 private fun formatTenthsOfSecond(millis: Long): String {
     val tenths = millis / 100
@@ -432,6 +459,9 @@ private fun formatTenthsOfSecond(millis: Long): String {
 
 /** 已缓冲时长的取整粒度. */
 private const val BUFFERED_AHEAD_STEP_MILLIS = 500L
+
+/** 准备视频满这么久才加一行等了多久: 正常几秒就开播, 一开始就数秒只是晃眼. */
+private val PREPARING_VIDEO_WAIT_HINT_AFTER = 5.seconds
 
 /** 等种子信息满这么久还一个节点都没有, 才建议换源. */
 private val TORRENT_NO_PEERS_HINT_AFTER = 30.seconds

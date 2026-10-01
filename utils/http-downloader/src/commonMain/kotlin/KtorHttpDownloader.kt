@@ -9,7 +9,6 @@
 
 package me.him188.ani.utils.httpdownloader
 
-import io.ktor.client.plugins.cookies.cookies
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.client.request.header
@@ -80,6 +79,7 @@ import me.him188.ani.utils.io.length
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.io.writeText
 import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.ktor.rawCookieHeader
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -1294,7 +1294,10 @@ open class KtorHttpDownloader(
     protected suspend inline fun <R> httpGet(url: String, options: DownloadOptions, block: (HttpStatement) -> R): R {
         return client.use {
             prepareGet(url) {
-                options.headers.forEach { (k, v) -> header(k, v) }
+                options.headers.forEach { (k, v) ->
+                    // 手写的 Cookie (网盘直链靠它鉴权) 不能交给 client 的 Cookie 插件, 它会改坏, 见 rawCookieHeader
+                    if (k.equals(HttpHeaders.Cookie, ignoreCase = true)) rawCookieHeader(v) else header(k, v)
+                }
             }.let { statement -> block(statement) }
         }
     }
