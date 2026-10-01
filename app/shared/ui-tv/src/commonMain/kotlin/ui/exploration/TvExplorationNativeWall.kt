@@ -69,6 +69,8 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_BRIGHT_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
@@ -317,7 +319,9 @@ internal fun TvExplorationNativeWall(
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
     // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
     val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
-    val heroBlur = heroEnabled && LocalThemeSettings.current.tvHeroBlurBackdrop
+    val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
+    val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
+    val blurSpec = tvBackdropBlurSpec(wallBlur)
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
     val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
@@ -398,6 +402,7 @@ internal fun TvExplorationNativeWall(
                     wb.maskColor = heroBlurMask.toArgb()
                     wb.textColor = heroBlurText.toArgb()
                     wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
+                    wb.blur = blurSpec
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
@@ -45,6 +46,12 @@ import me.him188.ani.app.ui.lang.settings_theme_high_contrast
 import me.him188.ani.app.ui.lang.settings_theme_high_contrast_description
 import me.him188.ani.app.ui.lang.settings_theme_palette
 import me.him188.ani.app.ui.lang.settings_theme_title
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_light
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_medium
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_none
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_strong
+import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop
+import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm
@@ -68,6 +75,7 @@ import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.SwitchItem
 import me.him188.ani.app.ui.theme.themeColorOptions
 import me.him188.ani.utils.platform.isMobile
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -199,15 +207,25 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_poster_confirm_description)) },
             )
 
-            // 海报墙 hero 态要不要在整页底下铺模糊背景、按确定变清晰代替放大 (见 ThemeSettings.tvHeroBlurBackdrop); 只有「先看简介」有 hero 态, 其余两档变灰
-            SwitchItem(
-                checked = themeSettings.tvHeroBlurBackdrop,
-                onCheckedChange = { checked ->
-                    state.update(themeSettings.copy(tvHeroBlurBackdrop = checked))
-                },
+            // 海报墙的模糊背景 (见 ThemeSettings.tvWallBackdropBlur): 不模糊 = hero 态铺纯色底、从大图放大进详情页.
+            // 新番时间表的背景也按这一档, 所以「直接播放 / 直接进详情页」时也能改
+            DropdownItem(
+                selected = { themeSettings.tvWallBackdropBlur },
+                values = { TvBackdropBlurLevel.entries },
+                itemText = { Text(stringResource(it.labelRes)) },
+                onSelect = { state.update(themeSettings.copy(tvWallBackdropBlur = it)) },
                 title = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop_description)) },
-                enabled = themeSettings.tvPosterConfirm == TvPosterConfirmAction.Hero,
+            )
+
+            // 详情页翻离首屏后的模糊底 (见 ThemeSettings.tvDetailsBackdropBlur), 与海报墙那一档各选各的
+            DropdownItem(
+                selected = { themeSettings.tvDetailsBackdropBlur },
+                values = { TvBackdropBlurLevel.entries },
+                itemText = { Text(stringResource(it.labelRes)) },
+                onSelect = { state.update(themeSettings.copy(tvDetailsBackdropBlur = it)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop_description)) },
             )
 
             // 三档 (见 TvVisualEffectsLevel). 写 tvVisualEffects 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔
@@ -280,3 +298,12 @@ private fun ColorButton(
         baseColor = color,
     )
 }
+
+/** 模糊背景四档的名字 (海报墙与详情页两项共用). */
+private val TvBackdropBlurLevel.labelRes: StringResource
+    get() = when (this) {
+        TvBackdropBlurLevel.None -> Lang.settings_theme_tv_backdrop_blur_none
+        TvBackdropBlurLevel.Light -> Lang.settings_theme_tv_backdrop_blur_light
+        TvBackdropBlurLevel.Medium -> Lang.settings_theme_tv_backdrop_blur_medium
+        TvBackdropBlurLevel.Strong -> Lang.settings_theme_tv_backdrop_blur_strong
+    }
