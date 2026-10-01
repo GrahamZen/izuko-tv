@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,6 +42,7 @@ import me.him188.ani.app.ui.foundation.layout.cardVerticalPadding
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_channel_format_index_grouped_description
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_channel_names_label
@@ -86,7 +86,7 @@ internal fun SelectorChannelFormatColumn(
                 )
 
                 val conf = state.channelFormatIndexed
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectChannelNames, { conf.selectChannelNames = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_channel_names_label)) },
@@ -96,7 +96,7 @@ internal fun SelectorChannelFormatColumn(
                     isError = conf.selectChannelNamesIsError,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.matchChannelName, { conf.matchChannelName = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_match_channel_name_label)) },
@@ -107,7 +107,7 @@ internal fun SelectorChannelFormatColumn(
                     enabled = state.enableEdit,
                 )
 
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectEpisodeLists, { conf.selectEpisodeLists = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = 8.dp),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_episode_lists_label)) },
@@ -118,7 +118,7 @@ internal fun SelectorChannelFormatColumn(
                     enabled = state.enableEdit,
                 )
 
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectEpisodesFromList, { conf.selectEpisodesFromList = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = 8.dp),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_episodes_from_list_label)) },
@@ -128,7 +128,7 @@ internal fun SelectorChannelFormatColumn(
                     isError = conf.selectEpisodesFromListIsError,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectEpisodeLinksFromList, { conf.selectEpisodeLinksFromList = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter().padding(top = 8.dp),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_episode_links_from_list_label)) },
@@ -137,7 +137,7 @@ internal fun SelectorChannelFormatColumn(
                     supportingText = { Text(stringResource(Lang.settings_mediasource_selector_episode_links_from_list_supporting)) },
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.matchEpisodeSortFromName, { conf.matchEpisodeSortFromName = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_match_episode_sort_from_name_label)) },
@@ -153,7 +153,7 @@ internal fun SelectorChannelFormatColumn(
                 verticalArrangement = Arrangement.spacedBy(currentWindowAdaptiveInfo1().windowSizeClass.cardVerticalPadding),
             ) {
                 val conf = state.channelFormatNoChannel
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectEpisodes, { conf.selectEpisodes = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_episodes_label)) },
@@ -163,7 +163,7 @@ internal fun SelectorChannelFormatColumn(
                     isError = conf.selectEpisodesIsError,
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.selectEpisodeLinks, { conf.selectEpisodeLinks = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_episode_links_label)) },
@@ -172,7 +172,7 @@ internal fun SelectorChannelFormatColumn(
                     supportingText = { Text(stringResource(Lang.settings_mediasource_selector_episode_links_supporting)) },
                     enabled = state.enableEdit,
                 )
-                OutlinedTextField(
+                AniOutlinedTextField(
                     conf.matchEpisodeSortFromName, { conf.matchEpisodeSortFromName = it },
                     Modifier.fillMaxWidth().moveFocusOnEnter(),
                     label = { Text(stringResource(Lang.settings_mediasource_selector_match_episode_sort_from_name_label)) },

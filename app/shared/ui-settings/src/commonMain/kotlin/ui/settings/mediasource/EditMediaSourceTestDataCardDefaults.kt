@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isWidthCompact
+import me.him188.ani.app.ui.foundation.tv.AniTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_test_episode_sort
 import me.him188.ani.app.ui.lang.settings_mediasource_test_keyword
@@ -81,7 +81,7 @@ object EditMediaSourceTestDataCardDefaults {
         state: AbstractMediaSourceTestState,
         modifier: Modifier = Modifier,
     ) {
-        TextField(
+        AniTextField(
             value = state.searchKeyword,
             onValueChange = { state.searchKeyword = it.trim() },
             modifier.moveFocusOnEnter(),
@@ -110,7 +110,7 @@ object EditMediaSourceTestDataCardDefaults {
         state: AbstractMediaSourceTestState,
         modifier: Modifier = Modifier
     ) {
-        TextField(
+        AniTextField(
             value = state.sort,
             onValueChange = { state.sort = it.trim() },
             modifier.moveFocusOnEnter(),

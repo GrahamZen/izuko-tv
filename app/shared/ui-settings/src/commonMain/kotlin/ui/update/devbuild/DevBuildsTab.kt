@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +65,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.tools.TimeFormatter
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.AniFilledTonalButton
@@ -355,7 +355,7 @@ private fun DevBuildLookupSection(
     val submit = { if (input.isNotBlank()) state.lookup(input) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
+        AniOutlinedTextField(
             value = input,
             onValueChange = { input = it },
             modifier = Modifier.fillMaxWidth().testTag(DevBuildsTestTags.LOOKUP_FIELD),
@@ -604,7 +604,7 @@ private fun GitHubTokenDialog(
         title = { Text(stringResource(Lang.settings_debug_dev_builds_token)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                AniOutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth().testTag(DevBuildsTestTags.TOKEN_FIELD),
@@ -843,7 +843,7 @@ private fun InstallOrCancelButton(
     cancelTag: String,
 ) {
     if (busy) {
-        TextButton(
+        AniTextButton(
             onClickCancel,
             Modifier.height(32.dp).testTag(cancelTag),
             contentPadding = PaddingValues(horizontal = 12.dp),
@@ -851,7 +851,7 @@ private fun InstallOrCancelButton(
             Text(stringResource(Lang.settings_debug_dev_builds_cancel), maxLines = 1)
         }
     } else {
-        FilledTonalButton(
+        AniFilledTonalButton(
             onClickInstall,
             Modifier.height(32.dp).testTag(installTag),
             enabled = enabled,

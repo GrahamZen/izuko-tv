@@ -35,7 +35,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -74,6 +73,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.icons.EditSquare
 import me.him188.ani.app.ui.foundation.theme.adjustHsv
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
@@ -352,7 +352,7 @@ private fun TvRatingEditorDialog(
 
             val commentLabelText = stringResource(Lang.rating_comment_label)
             val commentOptionalText = stringResource(Lang.rating_comment_optional)
-            OutlinedTextField(
+            AniOutlinedTextField(
                 state.comment,
                 { state.comment = it },
                 Modifier
@@ -624,7 +624,7 @@ fun RatingEditor(
             Row {
                 val interactionSource = remember { MutableInteractionSource() }
                 val isFocused by interactionSource.collectIsFocusedAsState()
-                OutlinedTextField(
+                AniOutlinedTextField(
                     comment,
                     onCommentChange,
                     Modifier.fillMaxWidth().heightIn(max = 360.dp),
