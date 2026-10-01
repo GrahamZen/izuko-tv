@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.BackgroundScope
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
@@ -265,7 +266,7 @@ internal fun EditMediaSourceDialog(
                             }
 
                             is StringArgumentState -> {
-                                OutlinedTextField(
+                                AniOutlinedTextField(
                                     modifier = Modifier.testTag(EditMediaSourceTestTags.argument(argument.name)),
                                     value = argument.value,
                                     onValueChange = { argument.value = argument.parameter.sanitize(it) },
