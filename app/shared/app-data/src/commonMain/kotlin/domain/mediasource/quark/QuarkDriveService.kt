@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -370,18 +371,27 @@ class QuarkDriveService internal constructor(
     suspend fun resolvePlayback(fileId: String): QuarkPlayback {
         requireLoggedIn()
         val config = settings.flow.first()
-        val url = when (config.playbackMode) {
-            QuarkPlaybackMode.ORIGINAL -> api.downloadUrl(fileId)
+        val transcoded = when (config.playbackMode) {
+            QuarkPlaybackMode.ORIGINAL -> null
             QuarkPlaybackMode.TRANSCODED -> bestTranscodedUrl(api.transcodedVideos(fileId))
-                ?: api.downloadUrl(fileId)
         }
-        return QuarkPlayback(url, playbackHeaders(settings.flow.first().cookie))
+        val url = transcoded ?: api.downloadUrl(fileId)
+        val headers = playbackHeaders(settings.flow.first().cookie)
+        // 原文件直链每个连接有速度上限 (实测单连接 1.3 MB/s, 4 路 4.2 MB/s), 一个连接常常跟不上码率, 让播放器并发分块取;
+        // 转码流本来就是一段段小分片, 不用
+        return QuarkPlayback(
+            url,
+            if (transcoded == null) headers + (PlaybackRequestHints.PARALLEL_RANGE_HEADER to PARALLEL_CONNECTIONS.toString()) else headers,
+        )
     }
 
     companion object {
         private val logger = logger<QuarkDriveService>()
 
         private const val MAX_FOLDER_ITEMS = 500
+
+        /** 播放原文件时并发几个连接. */
+        const val PARALLEL_CONNECTIONS = 4
 
         /** 播放分享时转存到网盘根目录下的这个文件夹. 只动这个文件夹里的东西. */
         const val SAVE_FOLDER_NAME = "Izuko 转存"
