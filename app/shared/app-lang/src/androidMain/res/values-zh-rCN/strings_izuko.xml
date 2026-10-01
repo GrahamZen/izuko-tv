@@ -31,6 +31,8 @@
     <string name="subject_episode_video_loading_torrent_metadata">正在获取种子信息</string>
     <string name="subject_episode_video_loading_torrent_peers">已连上 %1$d 个节点 · 已等 %2$d 秒</string>
     <string name="subject_episode_video_loading_torrent_no_peers">一直连不上节点，可以换一个数据源</string>
+    <string name="subject_episode_video_loading_connecting_server">正在连接视频服务器，已等 %1$d 秒</string>
+    <string name="subject_episode_video_loading_preparing_elapsed">已等 %1$d 秒 · %2$s</string>
     <string name="subject_episode_video_loading_buffered_ahead">已缓冲 %1$s 秒</string>
     <string name="subject_episode_strip_loading">正在加载选集…</string>
     <string name="exit_app_title">退出应用</string>

@@ -21,6 +21,8 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.plugin
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.HttpSendPipeline
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -28,6 +30,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.serialization.ContentConverter
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.AttributeKey
+import io.ktor.util.pipeline.PipelinePhase
 import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
 import me.him188.ani.utils.ktor.HttpLogger.logHttp
@@ -108,6 +112,34 @@ fun createDefaultHttpClient(
     }
     expectSuccess = true // All clients actually expect success by default in clientConfig, so we move them here
     clientConfig()
+}.also { it.installRawCookieHeader() }
+
+/**
+ * 让 [rawCookieHeader] 生效: [HttpCookies] 在发送管线的 State 阶段按它的存储重写 (或去掉) Cookie 头, 这里紧接着在它之后照请求属性写回.
+ * (挂成 [HttpSend] 的拦截器不行: 那些在请求管线上, 发送管线在它们之后才跑.)
+ */
+fun HttpClient.installRawCookieHeader() {
+    val phase = PipelinePhase("AniRawCookieHeader")
+    sendPipeline.insertPhaseAfter(HttpSendPipeline.State, phase)
+    sendPipeline.intercept(phase) {
+        context.attributes.getOrNull(RawCookieHeaderAttribute)?.let { context.headers[HttpHeaders.Cookie] = it }
+    }
+}
+
+/**
+ * 见 [rawCookieHeader].
+ */
+val RawCookieHeaderAttribute = AttributeKey<String>("AniRawCookieHeader")
+
+/**
+ * 这个请求带上 [value] 作为 Cookie 头, 原样发出去.
+ *
+ * [createDefaultHttpClient] 的 client 装了 [HttpCookies]: 请求里手写的 Cookie 头会被它存进 client 共用的存储、再按存储重新拼一遍,
+ * 拼出来的不对 (夸克网盘的直链因此一律 412, 缓存下载一直失败). 用这个代替 `header(HttpHeaders.Cookie, …)`:
+ * 不经它, 也不进共用的存储.
+ */
+fun HttpRequestBuilder.rawCookieHeader(value: String) {
+    attributes.put(RawCookieHeaderAttribute, value)
 }
 
 fun HttpClient.registerLogging(

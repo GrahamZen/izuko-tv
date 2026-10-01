@@ -28,6 +28,7 @@ import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.media.resolver.QuarkMediaResolver
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.EpisodeRange
@@ -36,6 +37,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -142,6 +144,8 @@ class QuarkDriveServiceTest {
         assertEquals("https://dl-pc-zb.drive.quark.cn/x?auth_key=1", playback.url)
         assertEquals("__pus=p1; __puus=u1; __uid=42", playback.headers[HttpHeaders.Cookie])
         assertEquals(QuarkApi.REFERER, playback.headers[HttpHeaders.Referrer])
+        // 原文件直链让播放器多连接分块取
+        assertEquals(QuarkDriveService.PARALLEL_CONNECTIONS.toString(), playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER])
     }
 
     @Test
@@ -156,7 +160,10 @@ class QuarkDriveServiceTest {
                 ]}}""",
             )
         }
-        assertEquals("https://v/low", service.resolvePlayback("f1").url)
+        val playback = service.resolvePlayback("f1")
+        assertEquals("https://v/low", playback.url)
+        // 转码流是一段段小分片, 不用分块
+        assertNull(playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER])
     }
 
     @Test

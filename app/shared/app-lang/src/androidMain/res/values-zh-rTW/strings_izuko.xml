@@ -31,6 +31,8 @@
     <string name="subject_episode_video_loading_torrent_metadata">正在取得種子資訊</string>
     <string name="subject_episode_video_loading_torrent_peers">已連上 %1$d 個節點 · 已等 %2$d 秒</string>
     <string name="subject_episode_video_loading_torrent_no_peers">一直連不上節點，可以換一個資料來源</string>
+    <string name="subject_episode_video_loading_connecting_server">正在連接影片伺服器，已等 %1$d 秒</string>
+    <string name="subject_episode_video_loading_preparing_elapsed">已等 %1$d 秒 · %2$s</string>
     <string name="subject_episode_video_loading_buffered_ahead">已緩衝 %1$s 秒</string>
     <string name="subject_episode_strip_loading">正在載入選集…</string>
     <string name="exit_app_title">退出應用</string>
