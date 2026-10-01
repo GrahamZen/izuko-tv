@@ -6,13 +6,17 @@
 # 把 main 挪到正确位置, 不必"先 rebase main, 再记住旧 main 的 SHA 去 --onto" (那一步记错
 # 一次就得从备份重来).
 #
-#   ./scripts/fork-rebase.sh preflight          # 探这次会在哪打架, 不动任何东西
+#   ./scripts/fork-rebase.sh preflight          # 探这次会在哪打架 + 算要解多少次, 不动任何东西
+#   ./scripts/fork-rebase.sh oracle             # 一次性整树合并, 列出真正要人判断的文件 (不动任何东西)
 #   ./scripts/fork-rebase.sh dryrun             # 在内存里整栈重放一遍, 报告自动规则处理完还剩多少要人手 (不动任何东西)
 #   ./scripts/fork-rebase.sh run                # 打备份 tag + 一趟重放; 停下来时先自动处理机械冲突
 #   ./scripts/fork-rebase.sh continue           # 手工解完一处后: 再自动处理 + 继续, 直到下一处要人手的冲突
 #   ./scripts/fork-rebase.sh verify             # 逐条对照重放前后, 看哪条被上游改了
 #
 # 自动规则 (只处理结果唯一的冲突, 其余照旧停下来给人):
+#   - **取上游合并结果** (精确, 排在最前): 重放到第 k 条时正确的树 ≡ merge(上游, fork@k),
+#     用 git merge-tree 当场算出来, 整树合并里不冲突的文件直接取它的版本; 要 drop 提交时用
+#     FORK_REBASE_ORACLE=0 关掉 (drop 了的内容会被这条规则带回来);
 #   - 目录改名 (如上游把 src/main 挪到 src/default): merge.directoryRenames=true, 跟着挪;
 #   - strings.xml: 按 key 三方合并 (scripts/rebase/merge-android-strings.py), 行挨着改不再算冲突;
 #   - fork 删掉的文件被上游改了: 保持删除;
@@ -71,14 +75,50 @@ rebase_in_progress() {
     [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]
 }
 
+# 精确规则: 重放到第 k 条提交时, 正确的工作树 ≡ merge(上游, fork@k) —— 这是定义上的等价,
+# 不是启发式. `git merge-tree` 能在内存里把这棵树整个算出来 (它照样走 strings.xml 的合并驱动),
+# 于是当前冲突的每个文件, 只要在那次**整树**合并里不冲突, 就直接取那棵树的版本.
+# 为什么整树合并能解开逐条重放解不开的: 逐条重放时 ours 是"重放到一半"的状态, 上下文被前面的
+# fork 提交改花了; 整树合并的两侧是干净的"上游"与"fork@k", 三方基线也正好是合并点.
+# **前提是这趟 rebase 没有 skip/drop 过提交** —— 真要 drop, 跑之前 FORK_REBASE_ORACLE=0 关掉它.
+auto_resolve_by_merge_tree() {
+    [ "${FORK_REBASE_ORACLE:-1}" = "1" ] || return 0
+    local rd stopped mb out tree conf p
+    rd=$(git rev-parse --git-path rebase-merge)
+    stopped=$(cat "$rd/stopped-sha" 2>/dev/null || true)
+    [ -n "$stopped" ] || return 0
+    mb=$(git merge-base "$stopped" "$UPSTREAM" 2>/dev/null) || return 0
+    out=$(git merge-tree --write-tree --name-only --merge-base="$mb" "$UPSTREAM" "$stopped" 2>/dev/null || true)
+    tree=$(printf '%s
+' "$out" | head -1)
+    git rev-parse --quiet --verify "$tree^{tree}" >/dev/null 2>&1 || return 0
+    # 第一行之后、空行之前是整树合并里仍然冲突的文件, 那些留给人
+    conf=$(printf '%s
+' "$out" | sed -n '2,$p' | sed -n '/^$/q;p')
+    git diff --name-only --diff-filter=U | while IFS= read -r p; do
+        if [ -n "$conf" ] && printf '%s
+' "$conf" | grep -qxF -- "$p"; then continue; fi
+        if git cat-file -e "$tree:$p" 2>/dev/null; then
+            git checkout -q "$tree" -- "$p" && git add -- "$p" &&
+                echo "  自动: 取上游合并结果      $p"
+        else
+            git rm -q -- "$p" >/dev/null 2>&1 && echo "  自动: 上游合并结果里没有  $p"
+        fi
+    done
+}
+
 # 按自动规则处理当前停下来的冲突; 处理不了的原样留着
 auto_resolve() {
     local p
+    # 精确规则排最前面: 它能解的, 后面那几条启发式就不用猜了
+    auto_resolve_by_merge_tree
     # UD = deleted by them: rebase 里 them 是正在重放的 fork 提交 —— fork 删了、上游改了, 保持删除
     git status --porcelain=v1 | awk '$1 == "UD" { sub(/^UD /, ""); print }' | while IFS= read -r p; do
         git rm -q -- "$p" >/dev/null && echo "  自动: fork 删掉的保持删除  $p"
     done
     # fork 整体重写过的文件: 整份取 fork 版 (rebase 里 fork 那一侧是 --theirs)
+    # 重放到加它们的那条提交之前, 工作树里还没有 scripts/rebase/ —— 那时这两条规则直接跳过
+    [ -f scripts/rebase/take-fork.txt ] || return 0
     git diff --name-only --diff-filter=U | while IFS= read -r p; do
         if grep -v '^[[:space:]]*#' scripts/rebase/take-fork.txt | grep -qxF -- "$p"; then
             git checkout -q --theirs -- "$p" && git add -- "$p" && echo "  自动: 整份取 fork 版      $p"
@@ -86,6 +126,7 @@ auto_resolve() {
     done
     # 两侧只是各自新增 / 只动了 import: 取并集 (解不开的原样留着)
     # 只处理 UU (两侧都改了); AA (两侧都新建了同名文件) 拼起来会重复定义, 留给人
+    [ -f scripts/rebase/union_resolve.py ] || return 0
     git status --porcelain=v1 -- '*.kt' | awk '$1 == "UU" { sub(/^UU /, ""); print }' | while IFS= read -r p; do
         if uv run --no-project python scripts/rebase/union_resolve.py "$p"; then
             git add -- "$p" && echo "  自动: 两侧各自新增, 取并集 $p"
@@ -148,6 +189,32 @@ cmd_preflight() {
             grep -oE 'version = [0-9]+' | head -1 || echo "?"
     done
 
+    hr "这趟要解多少次冲突"
+    local taxfile tax cells free conf c n total
+    taxfile=$(mktemp)
+    comm -12 <(git diff --name-only "$mb" "$TIP" | sort)              <(git diff --name-only "$mb" "$UPSTREAM" | sort) > "$taxfile"
+    tax=$(wc -l < "$taxfile" | tr -d ' ')
+    cells=0; free=0; total=0
+    for c in $(git rev-list "$mb".."$TIP"); do
+        total=$((total + 1))
+        n=$(git show --name-only --format= "$c" | sed '/^$/d' | sort -u |
+            comm -12 - "$taxfile" | wc -l | tr -d ' ')
+        cells=$((cells + n))
+        if [ "$n" -eq 0 ]; then free=$((free + 1)); fi
+    done
+    rm -f "$taxfile"
+    conf=$(git merge-tree --write-tree --name-only --merge-base="$mb" "$UPSTREAM" "$TIP" 2>/dev/null |
+           sed -n '2,$p' | sed -n '/^$/q;p' | wc -l | tr -d ' ' || true)
+    echo "  两边都改的文件            $tax 个"
+    echo "  「提交 x 税文件」格子     $cells  (逐条重放最坏要碰这么多次)"
+    echo "  整树合并真正冲突的文件    $conf  (= 需要人判断的上限; 其余由 merge-tree 规则自动取)"
+    echo "  碰不到税文件的提交        $free / $total 条 (重放必然零冲突)"
+
+    hr "上游已经有等价补丁的 fork 提交 (重放时会自动空掉)"
+    git cherry "$UPSTREAM" "$TIP" 2>/dev/null | grep '^-' | sed 's/^- /  /' |
+        while read -r c; do git log -1 --format='  %h %s' "$c"; done || true
+    git cherry "$UPSTREAM" "$TIP" 2>/dev/null | grep -q '^-' || echo "  (无)"
+
     hr "范围内的分支 ref (rebase 会把它们一起挪走)"
     branches_in_range "$mb" | sed 's/^/  /' || true
     echo "  ↑ 有的话先转成 tag: git tag <名字> <分支> && git branch -D <分支>"
@@ -207,6 +274,34 @@ cmd_continue() {
         GIT_EDITOR=true git -c merge.directoryRenames=true -c merge.conflictStyle=diff3 rebase --continue || true
     done
     hr "重放完成; 接着跑 verify"
+}
+
+# 一次性把「上游 x fork 整栈」合并一遍, 看真正要人判断的是哪些文件.
+# 这些文件在逐条重放里会被反复碰到 (下面列了各碰几次), 先在这里想清楚怎么解, 重放时照抄就行.
+cmd_oracle() {
+    install_rules
+    git fetch upstream --quiet
+    local mb; mb=$(git merge-base "$TIP" "$UPSTREAM")
+    hr "整树合并 $UPSTREAM x $TIP (合并点 $(git log -1 --format=%h "$mb"))"
+    local out tree conf
+    out=$(git merge-tree --write-tree --name-only --merge-base="$mb" "$UPSTREAM" "$TIP" 2>/dev/null || true)
+    tree=$(printf '%s
+' "$out" | head -1)
+    git rev-parse --quiet --verify "$tree^{tree}" >/dev/null 2>&1 ||
+        die "merge-tree 没给出树, 看上面的报错"
+    conf=$(printf '%s
+' "$out" | sed -n '2,$p' | sed -n '/^$/q;p')
+    local ref; ref="refs/fork-rebase/oracle-$STAMP"
+    git update-ref "$ref" "$(git commit-tree "$tree" -p "$UPSTREAM" -m "fork-rebase oracle: $UPSTREAM x $TIP")"
+    echo "  合并树存在 $ref (冲突的文件里带冲突标记, 只作参考与对拍)"
+    if [ -z "$conf" ]; then echo "  零冲突"; return 0; fi
+    echo "  要人判断的文件 $(printf '%s
+' "$conf" | wc -l) 个, 按「逐条重放时会被碰几次」排:"
+    printf '%s
+' "$conf" | while IFS= read -r p; do
+        printf '%s	%s
+' "$(git rev-list --count "$mb".."$TIP" -- "$p")" "$p"
+    done | sort -rn | head -40 | sed 's/^/    碰 /;s/	/ 次  /'
 }
 
 cmd_dryrun() {
@@ -370,6 +465,7 @@ EOF
 case "${1:-}" in
     install)      install_rules; echo "已装好自动规则 (strings.xml 合并驱动 / 属性 / rerere)" ;;
     preflight)    cmd_preflight ;;
+    oracle)       cmd_oracle ;;
     dryrun)       cmd_dryrun ;;
     run)          cmd_run ;;
     continue)     cmd_continue ;;
