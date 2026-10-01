@@ -28,7 +28,6 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -51,6 +50,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close
 import me.him188.ani.app.ui.lang.subject_episode_regex_filter_add
@@ -112,7 +112,7 @@ fun DanmakuRegexFilterContent(
             .padding(top = if (isPortrait) 8.dp else 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(if (isPortrait) 12.dp else 16.dp),
     ) {
-        OutlinedTextField(
+        AniOutlinedTextField(
             value = input,
             onValueChange = { input = it; isError = false },
             placeholder = { Text(placeholderText) },
