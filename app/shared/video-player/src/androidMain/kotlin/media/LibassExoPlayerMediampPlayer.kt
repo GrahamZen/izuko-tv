@@ -15,10 +15,12 @@ import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
 import androidx.annotation.OptIn as AndroidxOptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException as Media3PlaybackException
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
@@ -26,6 +28,7 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ExoTimeoutException
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -632,10 +635,21 @@ private class LibassMediaSourcePipeline(
             )
             .build()
 
+        if (data.isHls && data.extraFiles.subtitles.isEmpty()) {
+            // 资源站的 m3u8 常在正片中间插广告段, 解析列表时去掉 (见 HlsAdFilter)
+            return HlsMediaSource.Factory(dataSourceFactory)
+                .setPlaylistParserFactory(AdFilteringHlsPlaylistParserFactory())
+                .setSubtitleParserFactory(subtitleParserFactory)
+                .createMediaSource(mediaItem)
+        }
         return DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
             .setSubtitleParserFactory(subtitleParserFactory)
             .createMediaSource(mediaItem)
     }
+
+    /** 与 [DefaultMediaSourceFactory] 判断 HLS 的方式相同 (按地址后缀). */
+    private val MediaData.isHls: Boolean
+        get() = Util.inferContentTypeForUriAndMimeType(Uri.parse(playbackUri), null) == C.CONTENT_TYPE_HLS
 
     private val MediaData.playbackUri: String
         get() = when (this) {
