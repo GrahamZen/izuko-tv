@@ -31,7 +31,7 @@ internal sealed interface DataNode {
     fun asStringOrNull(): String?
 }
 
-internal class JsonNode(private val element: JsonElement) : DataNode {
+internal class JsonNode(val element: JsonElement) : DataNode {
     override fun select(key: String): List<DataNode> = when (element) {
         is JsonObject -> element[key]?.let { expand(it) }.orEmpty()
         is JsonArray -> element.flatMap { JsonNode(it).select(key) }
@@ -94,6 +94,7 @@ internal fun unwrapJsonBytes(raw: ByteArray, json: Json): ByteArray {
  * - `sites.id` 或 `1.2`: 逐层往下取, 数组与 repeated 字段会自动展开
  * - `sites[site=bangumi].id` 或 `5[1=bangumi].2`: 只要某个子字段等于指定值的那些节点
  * - `items[0].url`: 按下标取
+ * - `[1]`: 节点本身是数组时按下标取它的元素 (列表的每一项本身是数组, 如 `[[12, "名字"], ...]`)
  *
  * 路径为空表示节点自身.
  */
@@ -101,7 +102,11 @@ internal fun DataNode.selectByPath(path: String): List<DataNode> {
     if (path.isBlank()) return listOf(this)
     var current = listOf(this)
     for (segment in parsePath(path)) {
-        var next = if (segment.key.isEmpty()) current else current.flatMap { it.select(segment.key) }
+        var next = when {
+            segment.key.isNotEmpty() -> current.flatMap { it.select(segment.key) }
+            segment.index != null -> current.flatMap { it.arrayElementsOrSelf() }
+            else -> current
+        }
         val filter = segment.filter
         if (filter != null) {
             next = next.filter { node -> node.select(filter.first).any { it.asStringOrNull() == filter.second } }
@@ -114,6 +119,11 @@ internal fun DataNode.selectByPath(path: String): List<DataNode> {
         if (current.isEmpty()) return emptyList()
     }
     return current
+}
+
+private fun DataNode.arrayElementsOrSelf(): List<DataNode> {
+    val array = (this as? JsonNode)?.element as? JsonArray ?: return listOf(this)
+    return array.map { JsonNode(it) }
 }
 
 internal fun DataNode.stringByPath(path: String): String? =

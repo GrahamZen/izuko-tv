@@ -244,6 +244,9 @@ ambiguous),CI 与文档都必须写全变体名。
 | `app-data .../network/BangumiSummaryService.kt` | bgm.tv 直连简介兜底 (Ani 服务器无数据时) |
 | `app-data .../torrent/service/TorrentDiagnosticsServer.kt` | debug 构建 localhost 种子诊断端口 |
 | `app-data .../mediasource/ChineseConverter.kt` (+各平台 actual) | 简繁转换 (中文条目匹配修复的一部分) |
+| `app-data .../mediasource/rule/` | 规则源: 搜索/详情/播放三段步骤规则的通用网站数据源, 挑集与缓存复用 web-selector; `AniBakaRuleImporter` 导入 AniBaka 规则, `AniBakaSubscription` 让订阅地址能填 AniBaka 规则库 (注册各一行: `MediaSourceManager`、`MediaSourceCodecManager`、ui-tv `RemoteSources`; 订阅钩子在 `MediaSourceSubscriptionRequesterImpl`) |
+| `app-data .../mediasource/subscription/SubscriptionRenames.kt` | 订阅更新保留用户的修改: 认出改了名的源原地更新; 顺序只在设置「订阅更新时恢复订阅里的顺序」(`MediaSelectorSettings.restoreSubscriptionOrder`) 打开时恢复。钩子: `MediaSourceSubscriptionUpdater` 的对比一行与 `restoreOrder` 参数 (`CommonKoinModule` 传设置), 电视设置页「订阅」一项, 控制台订阅卡片 (`RemoteSubscriptions` `api/sources/subs/restore-order`) |
+| `app-data .../mediasource/subscription/BundledSubscriptions.kt` | 自带订阅 (网盘协议与挑过的几个在线源) 与不再默认给的上游订阅 (Animeko 在线源): 新装的默认订阅、已装的启动时对齐一次 (钩子: `MediaSourceSubscriptionsSaveData.Default` 一行、`CommonKoinModule` 启动处一行) |
 | `app-data schemas/.../22.json` | 数据库迁移 (种子按集存文件选择) |
 
 ### CI
