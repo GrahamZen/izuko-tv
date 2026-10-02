@@ -5842,7 +5842,9 @@ private val ACCOUNT_SCRIPT = """
   var menu = false, nick = false, lastData = null;
   // 邮箱登录 / 注册 (没登录时) 或绑定 / 更换邮箱 (已登录时, 在账号菜单里): null = 收着; step 'email' 填邮箱 → 'code' 填验证码
   var em = null;
-  var MAIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>';
+  // 正在导出收藏 (见 RemoteAccount.startExport): { fetched: 已读几部 }; null = 没在导
+  var exp = null, expTimer = null;
+  var MAIL ='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>';
   function emailFlow(d) {
     var bind = !!d.loggedIn;
     if (em.step === 'email') {
@@ -5873,6 +5875,41 @@ private val ACCOUNT_SCRIPT = """
     }).catch(function () { btn.disabled = false; fail(); });
   }
   function rerender() { if (lastData) render(lastData); }
+  function ymd() {
+    var t = new Date();
+    return '' + t.getFullYear() + ('0' + (t.getMonth() + 1)).slice(-2) + ('0' + t.getDate()).slice(-2);
+  }
+  // 导出在电视后台跑 (几百部要几十秒), 每秒问一次; 取完电视把文件交过来, 存成 Izuko TV 认的 JSON
+  function pollExport() {
+    clearTimeout(expTimer);
+    fetch('api/account/export').then(function (r) { return r.json(); }).then(function (d) {
+      if (!exp) return;
+      if (d.state === 'running') {
+        exp.fetched = d.fetched || 0;
+        rerender();
+        expTimer = setTimeout(pollExport, 1000);
+        return;
+      }
+      exp = null;
+      rerender();
+      if (d.state === 'done') {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(d.archive, null, 1)], { type: 'application/json' }));
+        // 文件名里不能有的字符换掉
+        a.download = 'izuko-' + ((lastData && lastData.name) || 'animeko').replace(/[\\/:*?"<>|\s]+/g, '_') + '-' + ymd() + '.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+        toast(T('已导出：{0} 部收藏，{1} 条播放进度', d.collections, d.playback));
+      } else if (d.state === 'failed') {
+        toast(d.message);
+      }
+    }).catch(function () {
+      // 电视一时没答: 过一会儿再问
+      if (exp) expTimer = setTimeout(pollExport, 2000);
+    });
+  }
   function load() {
     clearTimeout(timer);
     fetch('api/account').then(function (r) { return r.json(); }).then(render).catch(function () {});
@@ -5909,6 +5946,11 @@ private val ACCOUNT_SCRIPT = """
           '<button type="button" class="ghost ic" data-acct="email">' + MAIL + (d.email ? T('更换邮箱') : T('绑定邮箱')) + '</button>' +
           '<button type="button" class="ghost acct-danger ic" data-acct="logout">' + window.ICONS.logout + T('退出登录') + '</button></div>';
       }
+      // 换到 Izuko TV 之前把账号里的收藏存成文件: Izuko TV 不连 Animeko 服务器, 没连接 Bangumi 的账号收藏迁移不过去
+      h += '<div class="row"><button type="button" class="ghost ic" data-acct="export"' + (exp ? ' disabled' : '') + '>' + window.ICONS.download +
+        (exp ? T('正在导出…') : T('导出收藏')) + '</button></div><p class="hint">' +
+        (exp ? T('正在从 Animeko 服务器读取收藏，已读 {0} 部', exp.fetched)
+          : T('换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，装好 Izuko TV 后在它的 Web 控制台里导进本地用户。')) + '</p>';
     } else if (d.offline) {
       h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
     } else {
@@ -5974,6 +6016,18 @@ private val ACCOUNT_SCRIPT = """
       return;
     }
     if (e.target.closest('#set-account [data-acct="menu"]')) { menu = !menu; nick = false; em = null; rerender(); return; }
+    var xb = e.target.closest('[data-acct="export"]');
+    if (xb) {
+      if (xb.disabled) return;
+      xb.disabled = true;
+      post('api/account/export', {}).then(function (r) {
+        if (!r.ok) { xb.disabled = false; toast(r.message); return; }
+        exp = { fetched: 0 };
+        rerender();
+        pollExport();
+      }).catch(function () { xb.disabled = false; fail(); });
+      return;
+    }
     // 邮箱: 打开 / 收起 / 换个邮箱 / 重新发送
     if (e.target.closest('[data-acct="email"]')) {
       em = { step: 'email', email: '', bind: !!(lastData && lastData.loggedIn) };

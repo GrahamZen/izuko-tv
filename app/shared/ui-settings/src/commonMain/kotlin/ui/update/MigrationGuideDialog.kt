@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import me.him188.ani.app.domain.session.SessionState
+import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
@@ -42,6 +45,7 @@ import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_update_migration_cache_warning
 import me.him188.ani.app.ui.lang.settings_update_migration_carried
+import me.him188.ani.app.ui.lang.settings_update_migration_export_collections
 import me.him188.ani.app.ui.lang.settings_update_migration_installed
 import me.him188.ani.app.ui.lang.settings_update_migration_intro
 import me.him188.ani.app.ui.lang.settings_update_migration_later
@@ -51,6 +55,7 @@ import me.him188.ani.app.ui.lang.settings_update_migration_start
 import me.him188.ani.app.ui.lang.settings_update_migration_steps
 import me.him188.ani.app.ui.lang.settings_update_migration_title
 import org.jetbrains.compose.resources.stringResource
+import org.koin.mp.KoinPlatform
 
 /**
  * 跳板包里点"自动更新"时先出的迁移说明 (见 [NewVersion.isMigration]).
@@ -145,11 +150,21 @@ private fun MigrationGuideBody(
     targetInstalled: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // 登录着 Animeko 账号、没连接 Bangumi: 收藏只在 Animeko 服务器上, 新应用不连它, 迁移过去就没了 —— 先在 Web 控制台导出 (见 RemoteAccount)
+    val session by remember { KoinPlatform.getKoin().get<SessionStateProvider>().stateFlow }.collectAsState(null)
+    val animekoOnly = (session as? SessionState.Valid)?.bangumiConnected == false
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val style = MaterialTheme.typography.bodyLarge
         Text(stringResource(Lang.settings_update_migration_intro, appName), style = style)
         Text(stringResource(Lang.settings_update_migration_carried), style = style)
         Text(stringResource(Lang.settings_update_migration_not_carried), style = style)
+        if (animekoOnly) {
+            Text(
+                stringResource(Lang.settings_update_migration_export_collections, appName),
+                style = style,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         // 会让缓存搬不全的几件事, 单独一句醒目地说: 搬运要旧版的文件原样在, 旧版一卸载, 没搬完的就没了
         Text(
             stringResource(Lang.settings_update_migration_cache_warning),

@@ -865,4 +865,13 @@ private fun part5() = listOf(
     RemoteText("选资源时可以展开「搜索名与集数」：改过的搜索名会记住，这部番以后缓存和播放都用它；集数只影响这一集，BT 合集编号和 Bangumi 不同时改这里才能下对文件。", "When picking a resource, expand “Search names and episode”: edited search names are remembered for this anime's caching and playback; episode numbers only affect this episode, and fixing them picks the right file in BT batches numbered differently from Bangumi.", "選資源時可以展開「搜尋名稱與集數」：改過的搜尋名稱會記住，這部番以後緩存和播放都用它；集數只影響這一集，BT 合集編號和 Bangumi 不同時改這裡才能下對文件。", "選資源時可以展開「搜尋名稱與集數」：改過的搜尋名稱會記住，這部番以後快取和播放都用它；集數只影響這一集，BT 合集編號和 Bangumi 不同時改這裡才能下對檔案。"),
     RemoteText("已恢复 Bangumi 名称和集数，正在重新搜索", "Restored Bangumi names and episode numbers. Searching again.", "已恢復 Bangumi 名稱和集數，正在重新搜尋", "已恢復 Bangumi 名稱和集數，正在重新搜尋"),
     RemoteText("已按新的集数重新搜索（只影响这一集）", "Searching again with the new episode numbers (this episode only).", "已按新的集數重新搜尋（只影響這一集）", "已按新的集數重新搜尋（只影響這一集）"),
+    // 账号收藏导出成文件 (RemoteAccount.startExport), 换到 Izuko TV 后导进本地用户
+    RemoteText("导出收藏", "Export collections", "導出收藏", "匯出收藏"),
+    RemoteText("正在导出", "Exporting", "正在導出", "正在匯出"),
+    RemoteText("正在导出…", "Exporting…", "正在導出…", "正在匯出…"),
+    RemoteText("正在从 Animeko 服务器读取收藏，已读 {0} 部", "Reading collections from the Animeko server: {0} so far", "正在從 Animeko 服務器讀取收藏，已讀 {0} 部", "正在從 Animeko 伺服器讀取收藏，已讀 {0} 部"),
+    RemoteText("换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，装好 Izuko TV 后在它的 Web 控制台里导进本地用户。", "Collections in your Animeko account don't carry over when you switch to Izuko TV. Export them to a file on your phone first, then import the file into a local user from Izuko TV's Web Console.", "換到 Izuko TV 時，Animeko 帳號裡的收藏不會帶過去。先導出成文件存在手機上，裝好 Izuko TV 後在它的 Web 控制台裡導入本地用戶。", "換到 Izuko TV 時，Animeko 賬號裡的收藏不會帶過去。先匯出成檔案存在手機上，裝好 Izuko TV 後在它的 Web 控制台裡匯入本機使用者。"),
+    RemoteText("已导出：{0} 部收藏，{1} 条播放进度", "Exported {0} collections and {1} playback positions", "已導出：{0} 部收藏，{1} 條播放進度", "已匯出：{0} 部收藏，{1} 條播放進度"),
+    RemoteText("导出超时，请重试", "Export timed out. Please try again.", "導出超時，請重試", "匯出超時，請重試"),
+    RemoteText("导出失败：{0}", "Export failed: {0}", "導出失敗：{0}", "匯出失敗：{0}"),
 )

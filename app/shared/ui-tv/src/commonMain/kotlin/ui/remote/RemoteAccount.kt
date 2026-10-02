@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.remote
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,8 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.user.calculateDisplay
 import me.him188.ani.app.data.network.AniApiProvider
+import me.him188.ani.app.data.network.SubjectService
+import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
@@ -34,6 +37,8 @@ import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.profile.AccountArchiveExporter
+import me.him188.ani.app.domain.profile.ProfileArchive
 import me.him188.ani.app.domain.session.InvalidSessionReason
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionState
@@ -70,6 +75,8 @@ internal object RemoteAccount {
     private val sessionManager: SessionManager get() = KoinPlatform.getKoin().get()
     private val aniApiProvider: AniApiProvider get() = KoinPlatform.getKoin().get()
     private val userRepository: UserRepository get() = KoinPlatform.getKoin().get()
+    private val subjectService: SubjectService get() = KoinPlatform.getKoin().get()
+    private val database: AniDatabase get() = KoinPlatform.getKoin().get()
 
     /** 手机发起的那次登录走到哪了. 成功后回到 Idle (登录状态看会话本身). */
     private sealed interface Login {
@@ -96,7 +103,9 @@ internal object RemoteAccount {
         return runCatching {
             when {
                 request.path == "api/account" && get -> state()
+                request.path == "api/account/export" && get -> exportState()
                 !post -> null
+                request.path == "api/account/export" -> startExport()
                 request.path == "api/account/login" -> startLogin()
                 request.path == "api/account/login/cancel" -> cancelLogin()
                 request.path == "api/account/logout" -> logout()
@@ -241,6 +250,7 @@ internal object RemoteAccount {
      */
     private fun logout(): JsonObject {
         cancelLogin()
+        cancelExport()
         emailOtp = null
         runBlocking { withTimeoutOrNull(OP_TIMEOUT) { userRepository.clearSelfInfo() } }
             ?: return result(false, tr("退出登录超时，请重试"))
@@ -325,6 +335,99 @@ internal object RemoteAccount {
         }
     }
 
+    /** 手机上点「导出收藏」的那一次: 后台翻页取, 网页每秒问一次进度 (取完几百部要几十秒, 不用一个请求干等). */
+    private sealed interface Export {
+        data object Idle : Export
+
+        class Running(val fetched: Int) : Export
+
+        /** 取完了, 网页下一次来问时交给它存成文件, 交出去就回到 [Idle]. */
+        class Done(val archive: ProfileArchive) : Export
+
+        class Failed(val message: String) : Export
+    }
+
+    @Volatile
+    private var export: Export = Export.Idle
+
+    private var exportJob: Job? = null
+
+    /**
+     * 开始导出当前 Animeko 账号的收藏与本机的播放进度 (见 [AccountArchiveExporter]), 已经在导就不重开.
+     * 导出的文件在 Izuko TV 的 Web 控制台里导进本地用户.
+     */
+    private fun startExport(): JsonObject {
+        val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
+        if (session !is SessionState.Valid) return result(false, tr("电视还没登录"))
+        synchronized(lock) {
+            if (export is Export.Running) return result(true, tr("正在导出"))
+            exportJob?.cancel()
+            export = Export.Running(0)
+            exportJob = scope.launch {
+                val me = coroutineContext.job
+                val outcome = try {
+                    withTimeoutOrNull(EXPORT_TIMEOUT) {
+                        val name = userRepository.selfInfoFlow.first()?.calculateDisplay()?.title.orEmpty()
+                        AccountArchiveExporter(
+                            fetchCollections = { offset, limit -> subjectService.getSubjectCollections(type = null, offset = offset, limit = limit) },
+                            database = database,
+                        ).export(name) { fetched -> updateExport(me, Export.Running(fetched)) }
+                    }?.let { Export.Done(it) } ?: Export.Failed(tr("导出超时，请重试"))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(e) { "Remote control export failed" }
+                    Export.Failed(if (e is RepositoryException) repositoryErrorText(e) else tr("导出失败：{0}", e.message ?: e::class.simpleName))
+                }
+                if (outcome is Export.Done) {
+                    logger.info { "Remote control exported account: ${outcome.archive.collections.size} collections, ${outcome.archive.playback.size} playback" }
+                }
+                updateExport(me, outcome)
+            }
+        }
+        return result(true, tr("正在导出"))
+    }
+
+    private fun exportState(): JsonObject {
+        val current = synchronized(lock) {
+            export.also { if (it is Export.Done || it is Export.Failed) export = Export.Idle }
+        }
+        return buildJsonObject {
+            put("ok", true)
+            when (current) {
+                Export.Idle -> put("state", "idle")
+                is Export.Running -> {
+                    put("state", "running")
+                    put("fetched", current.fetched)
+                }
+
+                is Export.Done -> {
+                    put("state", "done")
+                    put("collections", current.archive.collections.size)
+                    put("playback", current.archive.playback.size)
+                    put("archive", ProfileArchive.Json.encodeToJsonElement(ProfileArchive.serializer(), current.archive))
+                }
+
+                is Export.Failed -> {
+                    put("state", "failed")
+                    put("message", current.message)
+                }
+            }
+        }
+    }
+
+    private fun cancelExport() {
+        synchronized(lock) {
+            exportJob?.cancel()
+            exportJob = null
+            export = Export.Idle
+        }
+    }
+
+    private fun updateExport(owner: Job, state: Export) {
+        synchronized(lock) { if (exportJob === owner) export = state }
+    }
+
     private fun repositoryErrorText(e: RepositoryException): String = when (e) {
         is RepositoryRequestError -> e.localizedMessage ?: tr("请求有误")
         is RepositoryRateLimitedException -> tr("操作太频繁，稍后再试")
@@ -372,4 +475,7 @@ internal object RemoteAccount {
 
     /** 链接交出去之后等结果的上限: 电视登录页那边有人盯着不设上限, 这里没人盯着, 要有个头. */
     private val LOGIN_TIMEOUT = 10.minutes
+
+    /** 整份导出的上限 (一页几十部, 一两千部也就几十页). */
+    private val EXPORT_TIMEOUT = 5.minutes
 }
