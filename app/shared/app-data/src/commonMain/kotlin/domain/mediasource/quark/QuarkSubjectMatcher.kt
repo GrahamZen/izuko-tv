@@ -102,6 +102,32 @@ internal class QuarkSubjectMatcher(
     private class Hit(val keyword: String, val file: QuarkFile)
 
     /**
+     * 用户指定「这个条目就在这个文件夹里」时: 把文件夹 (往下 [MAX_DEPTH] 层) 里的视频按文件名认集, 不按条目名认季
+     * (文件名写了季集且条目在对应表里时照样按表换算). 文件夹打不开 (被删了) 时返回空.
+     */
+    suspend fun matchPickedFolder(request: MediaFetchRequest, folderId: String, folderName: String): List<MatchedFile> {
+        val candidates = ArrayList<Candidate>()
+        suspend fun walk(id: String, path: List<String>, depth: Int) {
+            for (child in browser.listFolder(id)) {
+                if (candidates.size >= MAX_FILES) return
+                if (child.isVideo) candidates += Candidate(child, path)
+                else if (child.dir && depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
+            }
+        }
+        try {
+            walk(folderId, listOf(folderName), depth = 0)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to list picked Quark folder $folderId" }
+            return emptyList()
+        }
+        return matchEpisodes(request, candidates, numbering.of(request), trustFolders = true)
+    }
+
+    /**
      * 一个可能属于这个条目的视频文件.
      *
      * @param folders 从最外层到文件所在文件夹的名字, 用来认季 (越靠里的越优先)
@@ -211,11 +237,13 @@ internal class QuarkSubjectMatcher(
          * 从候选文件里挑出这个条目的剧集: 文件名认得出集号、不是花絮、不是太小的样片, 季也对得上 (规则见类说明).
          *
          * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]); null = 表里没有, 只按条目名认季
+         * @param trustFolders 候选来自用户指定的文件夹: 不再按条目名认季 (对应表照样用)
          */
         fun matchEpisodes(
             request: MediaFetchRequest,
             candidates: List<Candidate>,
             tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
+            trustFolders: Boolean = false,
         ): List<MatchedFile> {
             val targetSeason = subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
             val absoluteSorts = request.episodes
@@ -246,7 +274,7 @@ internal class QuarkSubjectMatcher(
                 }
                 val season = parsed.season
                     ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
-                if (!seasonMatches(season, targetSeason, episode, absoluteSorts)) {
+                if (!trustFolders && !seasonMatches(season, targetSeason, episode, absoluteSorts)) {
                     return@mapNotNull drop("season $season, wanted ${targetSeason ?: 1}", candidate)
                 }
                 MatchedFile(candidate.file, candidate.folders, episode)

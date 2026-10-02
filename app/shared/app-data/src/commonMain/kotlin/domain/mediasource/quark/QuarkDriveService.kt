@@ -20,10 +20,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.data.models.preference.QuarkConfig
+import me.him188.ani.app.data.models.preference.QuarkPickedFile
+import me.him188.ani.app.data.models.preference.QuarkPickedFolder
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
+import me.him188.ani.app.data.models.preference.QuarkSubjectPicks
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.platform.PlaybackRequestHints
+import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -71,6 +76,10 @@ class QuarkDriveService internal constructor(
     val isLoggedIn: Flow<Boolean> = settings.flow.map { it.isLoggedIn }
 
     internal val browser = object : QuarkDriveBrowser {
+        /**
+         * 只取第一页, 文件夹在前: 一部番常整个放在一个文件夹里, 而名字相同的单个文件 (各季、字幕、.nfo) 能把第一页占满,
+         * 文件在前的话那个文件夹会被挤到后面几页.
+         */
         override suspend fun search(keyword: String): List<QuarkFile> {
             val files = api.search(keyword).files
             // 转存来的文件归「夸克分享搜索」数据源, 不在这里重复出现
@@ -92,6 +101,78 @@ class QuarkDriveService internal constructor(
         }
         return result
     }
+
+    // region 手动指定 (Web 控制台「从夸克网盘挑」)
+
+    private val pickMatcher by lazy { QuarkSubjectMatcher(browser, episodeNumbering) }
+
+    suspend fun picksOf(subjectId: Int): QuarkSubjectPicks = settings.flow.first().subjectPicks[subjectId] ?: QuarkSubjectPicks()
+
+    /** 记下「条目 [subjectId] 就在文件夹 [folder] 里」. */
+    suspend fun pickFolder(subjectId: Int, folder: QuarkFile) {
+        updatePicks(subjectId) { picks ->
+            picks.copy(folders = picks.folders.filterNot { it.fid == folder.fid } + QuarkPickedFolder(folder.fid, folder.fileName))
+        }
+        logger.info { "Picked Quark folder ${folder.fid} (${folder.fileName}) for subject $subjectId" }
+    }
+
+    /** 记下「文件 [file] 是条目 [subjectId] 的第 [episode] 集」. */
+    suspend fun pickFile(subjectId: Int, file: QuarkFile, episode: EpisodeSort) {
+        val picked = QuarkPickedFile(file.fid, file.fileName, file.parentFid, file.size, episode.toString())
+        updatePicks(subjectId) { picks -> picks.copy(files = picks.files.filterNot { it.fid == file.fid } + picked) }
+        logger.info { "Picked Quark file ${file.fid} (${file.fileName}) as episode $episode of subject $subjectId" }
+    }
+
+    /** 忘掉条目 [subjectId] 下指定的文件夹或文件 [fid]. */
+    suspend fun forgetPick(subjectId: Int, fid: String) {
+        updatePicks(subjectId) { picks ->
+            picks.copy(folders = picks.folders.filterNot { it.fid == fid }, files = picks.files.filterNot { it.fid == fid })
+        }
+    }
+
+    private suspend fun updatePicks(subjectId: Int, update: (QuarkSubjectPicks) -> QuarkSubjectPicks) {
+        // 与 Cookie 轮换写回同一份配置, 同一把锁, 免得互相覆盖
+        cookieLock.withLock {
+            val current = settings.flow.first()
+            requireLoggedIn()
+            val updated = update(current.subjectPicks[subjectId] ?: QuarkSubjectPicks())
+            val all = if (updated.isEmpty) current.subjectPicks - subjectId else current.subjectPicks + (subjectId to updated)
+            if (all != current.subjectPicks) settings.set(current.copy(subjectPicks = all))
+        }
+    }
+
+    /** 给手动挑选用的搜索, 与数据源搜的一样 (第一页, 文件夹在前, 转存文件夹里的不列). */
+    suspend fun searchForPicking(keyword: String): List<QuarkFile> {
+        requireLoggedIn()
+        return browser.search(keyword)
+    }
+
+    /** 给手动挑选用的列目录 (根目录是 [QuarkApi.ROOT_FOLDER_ID]), 文件夹在前. */
+    suspend fun listForPicking(folderId: String): List<QuarkFile> {
+        requireLoggedIn()
+        return listAll(folderId)
+    }
+
+    /** 指定的文件夹 (往下几层) 里对上 [request] 这个条目的剧集, 规则同「夸克网盘」数据源读指定的文件夹. */
+    internal suspend fun matchPickedFolder(request: MediaFetchRequest, folder: QuarkPickedFolder): List<QuarkSubjectMatcher.MatchedFile> =
+        pickMatcher.matchPickedFolder(request, folder.fid, folder.name)
+
+    /** 文件名里认出的 (季, 集), 季没写为 null; 花絮或认不出集号时为 null. 控制台列文件时标在旁边. */
+    fun episodeInFileName(fileName: String): Pair<Int?, EpisodeSort>? {
+        val parsed = DriveNameParser.parseFile(fileName)
+        if (parsed.isExtra) return null
+        return parsed.episode?.let { parsed.season to it }
+    }
+
+    /**
+     * 指定文件夹 [folder] 的话会认出这个条目的哪些文件、各是哪一集 (控制台记下之前给用户看, 记下后直接播当前这一集).
+     *
+     * @return 文件、所在文件夹名 (从外到里)、集
+     */
+    suspend fun episodesInFolder(request: MediaFetchRequest, folder: QuarkFile): List<Triple<QuarkFile, List<String>, EpisodeSort>> =
+        matchPickedFolder(request, QuarkPickedFolder(folder.fid, folder.fileName)).map { Triple(it.file, it.folders, it.episode) }
+
+    // endregion
 
     // region 分享
 
@@ -408,6 +489,9 @@ class QuarkDriveService internal constructor(
 
         /** 播放原文件时并发几个连接. */
         const val PARALLEL_CONNECTIONS = 4
+
+        /** 网盘根目录的文件夹 id. */
+        const val ROOT_FOLDER_ID = QuarkApi.ROOT_FOLDER_ID
 
         /** 播放分享时转存到网盘根目录下的这个文件夹. 只动这个文件夹里的东西. */
         const val SAVE_FOLDER_NAME = "Izuko 转存"

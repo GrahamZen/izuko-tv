@@ -35,18 +35,52 @@ data class QuarkConfig(
      * 搜自己网盘时跳过这个文件夹, 不用每次先去根目录找它.
      */
     val shareSaveFolderId: String = "",
+    /**
+     * 用户在 Web 控制台给条目手动指定的网盘文件夹与文件 (条目 id → 指定). 文件 id 只在这个账号里有效, 退出登录时跟着清掉.
+     */
+    val subjectPicks: Map<Int, QuarkSubjectPicks> = emptyMap(),
 ) {
     val isLoggedIn: Boolean get() = cookie.isNotBlank()
 
     override fun toString(): String {
         return "QuarkConfig(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
-                "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId)"
+                "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
+                "subjectPicks=${subjectPicks.size})"
     }
 
     companion object {
         val Default = QuarkConfig()
     }
 }
+
+/**
+ * 一个条目在网盘里手动指定的位置 (自动匹配对不上时用).
+ *
+ * @property folders 「这部番就在这个文件夹里」: 里面的视频按文件名认集, 不再按条目名与季过滤
+ * @property files 单独指定的文件: 「这个文件是第几集」, 盖过文件夹里认出的
+ */
+@Serializable
+data class QuarkSubjectPicks(
+    val folders: List<QuarkPickedFolder> = emptyList(),
+    val files: List<QuarkPickedFile> = emptyList(),
+) {
+    val isEmpty: Boolean get() = folders.isEmpty() && files.isEmpty()
+}
+
+@Serializable
+data class QuarkPickedFolder(val fid: String, val name: String)
+
+/**
+ * @property episode 第几集 (集号的字符串写法)
+ */
+@Serializable
+data class QuarkPickedFile(
+    val fid: String,
+    val fileName: String,
+    val parentFid: String = "",
+    val size: Long = 0,
+    val episode: String,
+)
 
 enum class QuarkPlaybackMode {
     /**

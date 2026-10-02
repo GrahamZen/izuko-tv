@@ -81,7 +81,8 @@ internal class QuarkApi(
             parameter("_page", page)
             parameter("_size", pageSize)
             parameter("_fetch_total", 1)
-            parameter("_sort", "file_type:desc,updated_at:desc")
+            // 文件夹在前 (同类里新的在前), 见 QuarkDriveService.browser
+            parameter("_sort", "file_type:asc,updated_at:desc")
         }
 
     suspend fun listFolder(folderId: String, page: Int = 1, pageSize: Int = LIST_PAGE_SIZE): QuarkFileList =
