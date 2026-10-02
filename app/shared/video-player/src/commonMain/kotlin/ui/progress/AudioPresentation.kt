@@ -23,3 +23,11 @@ class AudioPresentation(
 val AudioTrack.audioName: String
     get() = name ?: labels.firstOrNull()?.value ?: internalId
 
+/**
+ * 片源里给这条音轨起了名字. 没起名时 [audioName] 只是播放器内部的轨道编号 (ExoPlayer 后端把编号填进 [AudioTrack.name]),
+ * 界面上改写「音轨 N」.
+ */
+@Stable
+val AudioTrack.isNamed: Boolean
+    get() = labels.isNotEmpty() || (name != null && name != internalId)
+

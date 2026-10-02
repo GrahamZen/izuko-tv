@@ -314,6 +314,9 @@
     <string name="video_player_tv_up_next_in">%1$d 秒後</string>
     <string name="video_player_tv_episodes">劇集</string>
     <string name="video_player_tv_skip_segment">跳過 %1$s</string>
+    <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
+    <string name="video_player_audio_track_numbered">音軌 %1$d</string>
+    <string name="video_player_subtitle_numbered">字幕 %1$d</string>
     <string name="video_player_tv_chrome_title">自訂播放器按鈕</string>
     <string name="video_player_tv_chrome_subtitle">這一頁不會播放任何東西。這裡排成什麼樣，播放器裡就是什麼樣。</string>
     <string name="video_player_tv_chrome_hint">確認鍵 拿起  ·  長按確認鍵 隱藏 / 顯示  ·  返回鍵 離開</string>
