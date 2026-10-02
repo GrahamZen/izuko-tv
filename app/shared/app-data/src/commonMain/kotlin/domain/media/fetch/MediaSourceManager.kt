@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager.Companion.LO
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
 import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareMediaSource
 import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareService
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
@@ -253,6 +254,7 @@ class MediaSourceManagerImpl(
         add(EmbyMediaSource.Factory())
         add(IkarosMediaSource.Factory())
         add(DirectApiMediaSource.Factory())
+        add(MacCmsMediaSource.Factory())
         add(QuarkMediaSource.Factory(quarkDriveService))
         add(QuarkShareSearchMediaSource.Factory(quarkDriveService))
         add(QuarkAddedShareMediaSource.Factory(quarkAddedShareService))

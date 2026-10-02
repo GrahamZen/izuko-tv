@@ -94,6 +94,12 @@ internal object DriveNameParser {
     }
 
     /**
+     * 去掉季标记 (`第二季`, `Season 2`, `2nd Season`, `Ⅱ`), 其余原样保留.
+     */
+    fun withoutSeasonMarkers(name: String): String =
+        SEASON_MARKERS.fold(name) { acc, regex -> regex.replace(acc, " ") }
+
+    /**
      * 用于比较的名字: 转简体、转小写, 只留字母数字与汉字假名.
      * `Smoking.Behind.the.Supermarket` 与 `Smoking Behind the Supermarket` 得到同一个结果.
      */
@@ -171,7 +177,8 @@ internal object DriveNameParser {
                 """|预告|花絮|片头曲?|片尾曲?|特典映像|映像特典""",
     )
 
-    private val CHINESE_SEASON = Regex("""第\s*([0-9]{1,2}|[一二两三四五六七八九十]{1,3})\s*[季期部]""")
+    // `第2部分` 是同一季的下半, 不是季
+    private val CHINESE_SEASON = Regex("""第\s*([0-9]{1,2}|[一二两三四五六七八九十]{1,3})\s*[季期部](?!分)""")
     private val ENGLISH_SEASON = Regex("""(?i)(?<![a-z])season[ ._-]*(\d{1,2})(?![0-9])""")
     private val ORDINAL_SEASON = Regex("""(?i)(?<![0-9])(\d{1,2})(?:st|nd|rd|th)[ ._-]*season""")
     private val ROMAN_SEASON = Regex("""(?<![A-Za-z])(Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|III|II)(?![A-Za-z])""")
