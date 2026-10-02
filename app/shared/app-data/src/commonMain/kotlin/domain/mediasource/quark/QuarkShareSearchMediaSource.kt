@@ -10,14 +10,17 @@
 package me.him188.ani.app.domain.mediasource.quark
 
 import io.ktor.client.plugins.ResponseException
+import io.ktor.client.plugins.contentnegotiation.exclude
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.ContentType
 import io.ktor.http.decodeURLQueryComponent
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -52,6 +55,10 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.xml.Html
+import me.him188.ani.utils.xml.QueryParser
+import me.him188.ani.utils.xml.parseSelectorOrNull
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 「搜别人分享的夸克链接」的站点配置: 用条目名调站点的搜索接口, 从结果里取出夸克分享链接.
@@ -71,6 +78,11 @@ data class QuarkShareSearchConfig(
     val titlePath: String = "",
     /** 结果条目里放分享链接的字段, 可以有几个; 每个字段里按 `pan.quark.cn/s/...` 找出全部链接. */
     val linkPaths: List<String> = emptyList(),
+    /**
+     * 搜索结果是网页时填: 结果里指向详情页的链接 (CSS 选择器; 地址取 `href`, 剧名取 `title` 属性, 没有就取文字),
+     * 打开剧名对得上的详情页, 取出页面里全部夸克链接. 这时 [format]、[itemsPath]、[titlePath]、[linkPaths] 不用.
+     */
+    val detailLinkSelector: String = "",
     /** 最多用前几个条目名去搜. */
     val maxKeywords: Int = 3,
     /** 每次查询最多打开几个分享. */
@@ -215,7 +227,9 @@ internal class QuarkShareSearchEngine(
 
         // 名字都是同一部番, 前一个名字找到了就不再换名字搜: 这类站连着搜几次就会回 5xx
         val found = LinkedHashMap<String, FoundShare>()
-        for (keyword in keywords) {
+        for ((index, keyword) in keywords.withIndex()) {
+            // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
+            if (index > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
             for (share in searchSite(keyword)) found.putIfAbsent(share.shareId, share)
             if (found.isNotEmpty()) break
         }
@@ -234,8 +248,9 @@ internal class QuarkShareSearchEngine(
     internal suspend fun searchSite(keyword: String): List<FoundShare> {
         val url = config.searchUrl.replace("{keyword}", keyword.encodeURLParameter())
         val bytes = fetch(url) ?: return emptyList()
-        val root = parseResponse(bytes, config.format, json) ?: return emptyList()
         val normalizedKeyword = DriveNameParser.normalize(keyword)
+        if (config.detailLinkSelector.isNotBlank()) return searchPages(url, bytes, normalizedKeyword)
+        val root = parseResponse(bytes, config.format, json) ?: return emptyList()
         return root.selectByPath(config.itemsPath).flatMap { item ->
             val title = item.stringByPath(config.titlePath).orEmpty()
             if (!titleMatches(title, normalizedKeyword)) return@flatMap emptyList()
@@ -243,6 +258,26 @@ internal class QuarkShareSearchEngine(
                 .flatMap { path -> item.selectByPath(path).mapNotNull { it.asStringOrNull() } }
                 .flatMap { text -> extractShareLinks(text) }
                 .map { (shareId, passcode) -> FoundShare(shareId, passcode, title) }
+        }.distinctBy { it.shareId }
+    }
+
+    /** 搜索结果是网页: 打开剧名对得上的详情页, 取出页面里的夸克链接. */
+    private suspend fun searchPages(url: String, bytes: ByteArray, normalizedKeyword: String): List<FoundShare> {
+        val selector = QueryParser.parseSelectorOrNull(config.detailLinkSelector) ?: return emptyList()
+        val html = bytes.decodeToString()
+        val links = Html.parse(html, url).select(selector)
+            .map { link -> link.attr("abs:href") to link.attr("title").ifBlank { link.text() }.trim() }
+        val pages = links
+            .filter { (href, title) -> href.startsWith("http") && titleMatches(title, normalizedKeyword) }
+            .distinctBy { (href, _) -> href }
+            .take(MAX_DETAIL_PAGES)
+        logger.info {
+            val title = TITLE_TAG.find(html)?.groupValues?.get(1)?.trim()?.take(40)
+            "Quark share search page 「$title」: ${links.size} links ${links.take(3)}, opening ${pages.size}"
+        }
+        return pages.flatMap { (href, title) ->
+            val page = fetch(href) ?: return@flatMap emptyList()
+            extractShareLinks(page.decodeToString()).map { (shareId, passcode) -> FoundShare(shareId, passcode, title) }
         }.distinctBy { it.shareId }
     }
 
@@ -265,6 +300,13 @@ internal class QuarkShareSearchEngine(
         private val logger = logger<QuarkShareSearchEngine>()
 
         private const val SHARE_CONCURRENCY = 2
+
+        /** 搜索结果是网页时, 最多打开几个详情页. */
+        private const val MAX_DETAIL_PAGES = 3
+
+        private val PAGE_SEARCH_INTERVAL = 3.5.seconds
+
+        private val TITLE_TAG = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
 
         private val SHARE_LINK = Regex("""https?://pan\.quark\.cn/s/([0-9A-Za-z]+)(?:\?pwd=([0-9A-Za-z]+))?""")
 
@@ -341,6 +383,8 @@ class QuarkShareSearchMediaSource(
         client.use {
             get(url) {
                 userAgent?.let { ua -> attributes.put(RequestUserAgentAttribute, ua) }
+                // 请求头 Accept 里有 json 时苹果 CMS (ThinkPHP) 按 JSON 请求渲染网页, 搜索结果页是坏的
+                if (arguments.config.detailLinkSelector.isNotBlank()) exclude(ContentType.Application.Json)
             }.readRawBytes()
         }
     } catch (e: CancellationException) {

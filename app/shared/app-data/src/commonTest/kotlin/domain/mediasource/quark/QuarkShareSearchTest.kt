@@ -118,6 +118,29 @@ class QuarkShareSearchTest {
     }
 
     @Test
+    fun `web page search opens matching detail pages for share links`() = runTest {
+        val pages = mapOf(
+            "https://site.test/search?wd=%E8%91%AC%E9%80%81%E7%9A%84%E8%8A%99%E8%8E%89%E8%8E%B2" to """
+                <div class="item"><h3><a href="/detail/1.html" title="葬送的芙莉莲第二季">葬送的芙莉莲第二季</a></h3></div>
+                <div class="item"><h3><a href="/detail/2.html">别的番</a></h3></div>
+            """.trimIndent(),
+            "https://site.test/detail/1.html" to """
+                <a data-clipboard-text="https://pan.quark.cn/s/share1">第1集</a><p>https://pan.quark.cn/s/share1</p>
+            """.trimIndent(),
+        )
+        val urls = mutableListOf<String>()
+        val htmlConfig = QuarkShareSearchConfig(searchUrl = "https://site.test/search?wd={keyword}", detailLinkSelector = ".item h3 a")
+        val shares = FakeShares(mapOf("share1" to share1))
+        val engine = QuarkShareSearchEngine(htmlConfig, shares) { url -> urls += url; pages[url]?.encodeToByteArray() }
+
+        val matched = engine.search(request("葬送的芙莉莲 第二季"))
+        assertEquals(listOf("e08", "e09"), matched.map { it.file.fid })
+        // 剧名对不上的详情页不打开
+        assertEquals(2, urls.size)
+        assertEquals(listOf("share1"), shares.opened)
+    }
+
+    @Test
     fun `site failure gives no results`() = runTest {
         val engine = QuarkShareSearchEngine(config, FakeShares(emptyMap())) { null }
         assertTrue(engine.search(request("葬送的芙莉莲")).isEmpty())
