@@ -184,6 +184,10 @@ abstract class RssMediaSourceEngine {
 data class RssSearchConfig(
     val searchUrl: String = "", // required
     val filterByEpisodeSort: Boolean = true,
+    /** 标题改写成视频直链, 见 [RssTitleToLink]. */
+    val titleToLink: RssTitleToLink? = null,
+    /** 条目名之外, 也用回退关键词 (系列名、港台译名, 见 [me.him188.ani.datasources.api.source.MediaFetchRequest.fallbackSearchKeywords]) 搜. */
+    val searchFallbackKeywords: Boolean = false,
 ) {
     companion object {
         val Empty = RssSearchConfig()
@@ -274,7 +278,8 @@ class DefaultRssMediaSourceEngine(
 
             val filters = config.createFilters()
 
-            val allItems = channel.items.mapNotNull { rssItem -> convertItemToMedia(rssItem, mediaSourceId) }
+            val items = config.titleToLink?.rewrite(channel.items, query.subjectAirDate) ?: channel.items
+            val allItems = items.mapNotNull { rssItem -> convertItemToMedia(rssItem, mediaSourceId) }
             val matchedItems = with(query.toFilterContext()) {
                 allItems.filter { media -> filters.applyOn(media.asCandidate()) }
             }

@@ -1,0 +1,537 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.domain.mediasource.rule
+
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.domain.mediasource.web.SelectorSearchConfig
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class RuleEngineTest {
+    /** 按地址返回页面 (与 [cookies] 里这个地址设的 Cookie) 的假站点; 记下每个请求. */
+    private class FakeSite(
+        private val pages: Map<String, String>,
+        private val cookies: Map<String, List<String>> = emptyMap(),
+    ) : RuleHttp {
+        val requests = mutableListOf<RuleHttpRequest>()
+        override suspend fun request(request: RuleHttpRequest): RuleHttpResponse {
+            requests += request
+            val page = pages[request.url] ?: return RuleHttpResponse(request.url, 404, "not found")
+            return RuleHttpResponse(request.url, 200, page, cookies[request.url].orEmpty())
+        }
+    }
+
+    private fun engine(config: RuleConfig, site: FakeSite) = RuleEngine(config, site)
+
+    @Test
+    fun `search lists cards and drops duplicate links`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/search?q=%E7%A4%BA%E4%BE%8B" to """
+                    <div class="list">
+                      <div class="item"><a class="p" href="/play/h1/"><img alt="海报"></a><a class="t" href="/play/h1/">【10月】示例动画</a></div>
+                      <div class="item"><a class="t" href="/play/h1/">【10月】示例动画 02</a></div>
+                      <div class="item"><a class="t" href="/play/h2/">示例动画 剧场版</a></div>
+                    </div>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.Fetch(url = "/search?q={keyword}"),
+                RuleStep.Subjects(list = listOf(".nothing", ".list .item"), link = "a.t", name = "a.t"),
+            ),
+        )
+        val subjects = engine(config, site).search("示例")
+        assertEquals(
+            listOf(
+                RuleSubject("【10月】示例动画", "https://www.example.com/play/h1/"),
+                RuleSubject("示例动画 剧场版", "https://www.example.com/play/h2/"),
+            ),
+            subjects,
+        )
+    }
+
+    @Test
+    fun `subject name falls back to link title then image alt`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/s" to """
+                    <ul>
+                      <li class="card"><a href="/detail/1" title="标题甲"><img alt="图甲"></a></li>
+                      <li class="card"><a href="/detail/2"><img alt="图乙"></a></li>
+                      <li class="card"><a href="javascript:void(0)">无效</a><a href="/other/3">其他</a></li>
+                    </ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.Fetch(url = "/s"),
+                RuleStep.Subjects(list = listOf("li.card"), linkPattern = "/detail/"),
+            ),
+        )
+        assertEquals(
+            listOf(
+                RuleSubject("标题甲", "https://www.example.com/detail/1"),
+                RuleSubject("图乙", "https://www.example.com/detail/2"),
+            ),
+            engine(config, site).search("x"),
+        )
+    }
+
+    @Test
+    fun `episodes split from page text by regex`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/play/h1/" to """
+                    <ul id="player_code"><li>type=video&amp;file=https://cdn.example.com/新番/示例 动画/01.mp4|01**type=video&amp;file=https://cdn.example.com/新番/示例 动画/02.mp4|**</li><li>10-1-1</li></ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            detail = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Select(css = "#player_code li"),
+                RuleStep.RegexEpisodes(pattern = """type=video&file=(?<url>[^|]+)\|(?<name>[^*]*)"""),
+            ),
+        )
+        val channels = engine(config, site).detail("https://www.example.com/play/h1/")
+        assertEquals(1, channels.size)
+        assertEquals(null, channels.single().name)
+        assertEquals(
+            listOf(
+                RuleEpisode("01", "https://cdn.example.com/新番/示例 动画/01.mp4"),
+                // 没有名字时按位置起名
+                RuleEpisode("第2集", "https://cdn.example.com/新番/示例 动画/02.mp4"),
+            ),
+            channels.single().episodes,
+        )
+    }
+
+    @Test
+    fun `empty play stage plays the episode url itself, encoded`() = runTest {
+        val result = engine(RuleConfig(), FakeSite(emptyMap())).play("https://cdn.example.com/新番/示例 动画/01.mp4")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals(
+            "https://cdn.example.com/%E6%96%B0%E7%95%AA/%E7%A4%BA%E4%BE%8B%20%E5%8A%A8%E7%94%BB/01.mp4",
+            result.url,
+        )
+    }
+
+    @Test
+    fun `episodes pair lists with tab names`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/detail/1" to """
+                    <div class="tabs"><a>线路A</a><a>线路B</a></div>
+                    <ul class="eps"><li><a href="/play/1-1-1">第01集</a></li><li><a href="/play/1-1-2">第02集</a></li></ul>
+                    <ul class="eps"><li><a href="/play/1-2-1">第01集</a></li></ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            detail = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Episodes(lists = listOf(".eps"), tabs = listOf(".tabs a")),
+            ),
+        )
+        val channels = engine(config, site).detail("https://www.example.com/detail/1")
+        assertEquals(listOf("线路A", "线路B"), channels.map { it.name })
+        assertEquals("https://www.example.com/play/1-1-2", channels[0].episodes[1].url)
+    }
+
+    @Test
+    fun `tab pattern keeps only the channel name group`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/detail/1" to """
+                    <div class="tabs"><a><i></i>&nbsp;简中<span class="badge">12</span></a><a>杜比</a></div>
+                    <ul class="eps"><li><a href="/play/1-1-1">01</a></li></ul>
+                    <ul class="eps"><li><a href="/play/1-2-1">01</a></li></ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            detail = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Episodes(lists = listOf(".eps"), tabs = listOf(".tabs a"), tabPattern = """(?<ch>.+?)(\d+?)"""),
+            ),
+        )
+        val channels = engine(config, site).detail("https://www.example.com/detail/1")
+        // 角标里的集数去掉; 匹配不上的用整个文字
+        assertEquals(listOf("简中", "杜比"), channels.map { it.name })
+    }
+
+    @Test
+    fun `unnamed channels get numbered names`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/detail/1" to """
+                    <ul class="eps"><li><a href="/p/1">1</a></li></ul>
+                    <ul class="eps"><li><a href="/p/2">1</a></li></ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(detail = listOf(RuleStep.Fetch(), RuleStep.Episodes(lists = listOf(".eps"))))
+        assertEquals(listOf("线路1", "线路2"), engine(config, site).detail("https://www.example.com/detail/1").map { it.name })
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    @Test
+    fun `maccms player decodes base64 and unescape`() = runTest {
+        val encoded = Base64.Default.encode("https%3A%2F%2Fv.example.com%2Fa%u4E2D.m3u8".encodeToByteArray())
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/play/1" to """
+                    <script>var player_aaaa={"flag":"play","encrypt":2,"from":"line1","url":"$encoded","note":"{x}"}</script>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(play = listOf(RuleStep.Fetch(), RuleStep.MacCmsPlayer()))
+        val result = engine(config, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals("https://v.example.com/a%E4%B8%AD.m3u8", result.url)
+    }
+
+    @Test
+    fun `first falls back to the next branch and media headers apply`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/play/1" to """
+                    <script id="player-config" type="application/json">{"url":"https:\/\/v.example.com\/1.m3u8"}</script>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            play = listOf(
+                RuleStep.Fetch(),
+                RuleStep.First(
+                    listOf(
+                        listOf(RuleStep.MacCmsPlayer()),
+                        listOf(RuleStep.Select(css = "script#player-config"), RuleStep.Json(path = "url")),
+                    ),
+                ),
+                RuleStep.MediaHeaders(headers = mapOf("Referer" to "{baseUrl}/")),
+            ),
+        )
+        val result = engine(config, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals("https://v.example.com/1.m3u8", result.url)
+        assertEquals("https://www.example.com/", result.headers["Referer"])
+        // 默认的 UA 来自 matchVideo
+        assertEquals(SelectorSearchConfig.VideoHeaders().userAgent, result.headers["User-Agent"])
+    }
+
+    @Test
+    fun `video url is found in player page`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/player?id=1" to """
+                    <script>var dp = new DPlayer({video: {url: "https:\/\/v.example.com\/a\/index.m3u8?sign=1", pic: "https:\/\/img.example.com\/1.jpg"}});</script>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(play = listOf(RuleStep.Fetch(url = "https://www.example.com/player?id=1"), RuleStep.VideoUrl))
+        val result = engine(config, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals("https://v.example.com/a/index.m3u8?sign=1", result.url)
+    }
+
+    @Test
+    fun `regex expands variables and accepts javascript style braces`() = runTest {
+        val page = """var config = {"m2": {"parse": "https://jx.example.com/?url="}, "m3": {"parse": ""}}"""
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.Template(value = "m2"),
+                RuleStep.SetVar(name = "from"),
+                RuleStep.Template(value = page),
+                // 裸 `{` 在 Java 正则里不合法, 在 JavaScript 里是字面量
+                RuleStep.Regex(pattern = """"{from}"\s*:\s*{[^}]*"parse"\s*:\s*"([^"]*)""""),
+                RuleStep.Template(value = "{value}https://v.example.com/{from}.m3u8"),
+            ),
+        )
+        val result = engine(config, FakeSite(emptyMap())).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals("https://jx.example.com/?url=https://v.example.com/m2.m3u8", result.url)
+        // 合法的量词照旧
+        assertEquals("12", RuleText.regex("""\d{2}""").find("a123")?.value)
+    }
+
+    @Test
+    fun `sniff video asks for webview`() = runTest {
+        val config = RuleConfig(play = listOf(RuleStep.Sniff()))
+        assertEquals(RulePlayResult.Sniff, engine(config, FakeSite(emptyMap())).play("https://www.example.com/play/1"))
+    }
+
+    @Test
+    fun `json subjects build urls from item fields`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/index.php/ajax/suggest?mid=1&wd=a%20b" to
+                        """{"code":1,"list":[{"id":12,"name":"甲"},{"id":"13","name":"乙"}]}""",
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.Fetch(url = "/index.php/ajax/suggest?mid=1&wd={keyword}"),
+                RuleStep.JsonSubjects(listPath = "list", urlTemplate = "/voddetail/{id}.html"),
+            ),
+        )
+        assertEquals(
+            listOf(
+                RuleSubject("甲", "https://www.example.com/voddetail/12.html"),
+                RuleSubject("乙", "https://www.example.com/voddetail/13.html"),
+            ),
+            engine(config, site).search("a b"),
+        )
+    }
+
+    @Test
+    fun `json subjects index into array rows and keep names containing the keyword`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/list.json" to
+                        """[[12,"葬送的芙莉蓮","1-28"],[13,"葬送的芙莉蓮 第二季","29-38"],[14,"其他動畫","1-12"]]""",
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.Fetch(url = "/list.json"),
+                RuleStep.JsonSubjects(idPath = "[0]", namePath = "[1]", urlTemplate = "/cat/{id}", filterByKeyword = true),
+            ),
+        )
+        // 比较时忽略空白与标点
+        assertEquals(
+            listOf(
+                RuleSubject("葬送的芙莉蓮", "https://www.example.com/cat/12"),
+                RuleSubject("葬送的芙莉蓮 第二季", "https://www.example.com/cat/13"),
+            ),
+            engine(config, site).search("葬送的 芙莉蓮!"),
+        )
+        assertEquals(emptyList(), engine(config, site).search("不存在"))
+    }
+
+    @Test
+    fun `episodes follow next page links and merge pages before reversing`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/cat/1" to """
+                    <main><h2><a href="/p/4">示例 [04]</a></h2><h2><a href="/p/3">示例 [03]</a></h2></main>
+                    <div class="nav-previous"><a href="/cat/1/page/2">上一頁</a></div>
+                """.trimIndent(),
+                "https://www.example.com/cat/1/page/2" to """
+                    <main><h2><a href="/p/3">示例 [03]</a></h2><h2><a href="/p/2">示例 [02]</a></h2><h2><a href="/p/1">示例 [01]</a></h2></main>
+                    <div class="nav-previous"><a href="/cat/1/page/3">上一頁</a></div>
+                """.trimIndent(),
+            ),
+        )
+        val step = RuleStep.Episodes(lists = listOf("main"), items = "h2 a", reverse = true, nextPage = ".nav-previous a")
+        val config = RuleConfig(detail = listOf(RuleStep.Fetch(), step))
+        val channels = engine(config, site).detail("https://www.example.com/cat/1")
+        // 第 3 页打不开: 用已经取到的两页, 重复的一集只留一次
+        assertEquals(listOf("示例 [01]", "示例 [02]", "示例 [03]", "示例 [04]"), channels.single().episodes.map { it.name })
+        assertEquals("https://www.example.com/p/1", channels.single().episodes.first().url)
+        assertEquals(3, site.requests.size)
+
+        val firstPageOnly = RuleConfig(detail = listOf(RuleStep.Fetch(), step.copy(maxPages = 1)))
+        assertEquals(2, engine(firstPageOnly, site).detail("https://www.example.com/cat/1").single().episodes.size)
+    }
+
+    @Test
+    fun `fetch keeps set-cookie in a variable for media headers`() = runTest {
+        val apiReq = "%7B%22c%22%3A%221%22%2C%22e%22%3A%222%22%7D"
+        val site = FakeSite(
+            pages = mapOf(
+                "https://www.example.com/p/2" to """<video data-apireq="$apiReq"></video>""",
+                "https://v.example.com/api" to """{"s":[{"src":"//cdn.example.com/1/2.mp4","type":"video/mp4"}]}""",
+            ),
+            cookies = mapOf("https://v.example.com/api" to listOf("e=111", "p=222")),
+        )
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Select(css = "video[data-apireq]", attr = "data-apireq"),
+                RuleStep.Fetch(url = "https://v.example.com/api", method = "POST", body = "d={value}", cookies = "videoCookies"),
+                RuleStep.Json(path = "s.src"),
+                RuleStep.MediaHeaders(headers = mapOf("Cookie" to "{videoCookies}")),
+            ),
+        )
+        val result = engine(config, site).play("https://www.example.com/p/2")
+        assertIs<RulePlayResult.Direct>(result)
+        // 协议相对地址按取地址的接口补全
+        assertEquals("https://cdn.example.com/1/2.mp4", result.url)
+        assertEquals("e=111; p=222", result.headers["Cookie"])
+        val post = site.requests.last()
+        assertEquals("d=$apiReq", post.body)
+        assertEquals("application/x-www-form-urlencoded", post.contentType)
+    }
+
+    @Test
+    fun `variables and query`() = runTest {
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.Regex(pattern = """/play/(\d+)"""),
+                RuleStep.SetVar(name = "id"),
+                RuleStep.Template(value = "https://p.example.com/?url=https%3A%2F%2Fv.example.com%2F{id}.mp4&t=1"),
+                RuleStep.Query(name = "url"),
+            ),
+        )
+        val result = engine(config, FakeSite(emptyMap())).play("https://www.example.com/play/42")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals("https://v.example.com/42.mp4", result.url)
+    }
+
+    @Test
+    fun `failed page yields no results instead of throwing`() = runTest {
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(RuleStep.Fetch(url = "/missing"), RuleStep.Subjects(list = listOf("a"))),
+        )
+        assertEquals(emptyList(), engine(config, FakeSite(emptyMap())).search("x"))
+    }
+
+    @Test
+    fun `network error surfaces when no branch succeeds`() = runTest {
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(RuleStep.Fetch(url = "/s"), RuleStep.Subjects(list = listOf("a"))),
+        )
+        val failing = RuleHttp { error("connection reset") }
+        assertFailsWith<IllegalStateException> { RuleEngine(config, failing).search("x") }
+    }
+
+    @Test
+    fun `template keeps unknown placeholders and encodes keyword`() {
+        assertEquals(
+            "/s?wd=%E7%A4%BA%E4%BE%8B&raw=示例&json={\"a\":1}&{missing}",
+            RuleText.substitute("/s?wd={keyword}&raw={keyword:raw}&json={\"a\":1}&{missing}", mapOf("keyword" to "示例")),
+        )
+    }
+
+    @Test
+    fun `example config survives a json round trip with op names`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val text = json.encodeToString(RuleMediaSourceArguments.serializer(), RuleMediaSourceArguments.Example)
+        assertEquals(RuleMediaSourceArguments.Example, json.decodeFromString(RuleMediaSourceArguments.serializer(), text))
+        assertTrue(text.contains("\"op\":\"maccmsPlayer\""), text)
+        assertTrue(text.contains("\"op\":\"subjects\""), text)
+    }
+    /** 苹果 CMS 视频接口里的一部片子: 三条线路, 第一条是站点的网页播放器, 第三条的剧集没写名字. */
+    private val macCmsVod = buildJsonObject {
+        put("vod_id", 12)
+        put("vod_name", "示例动画")
+        put("vod_play_from", "web\$\$\$ffmp4\$\$\$ffm3u8")
+        put(
+            "vod_play_url",
+            listOf(
+                "第01集\$https://www.example.com/play/12-1",
+                "第01集\$https://cdn.example.com/1.mp4#第02集\$https://cdn.example.com/2.mp4",
+                "https://cdn.example.com/1.m3u8#https://cdn.example.com/2.m3u8",
+            ).joinToString("\$\$\$"),
+        )
+    }
+
+    @Test
+    fun `maccms episodes keep direct links with hls lines first`() = runTest {
+        val api = "https://www.example.com/api.php/provide/vod/?ac=detail&ids=12"
+        val site = FakeSite(mapOf(api to buildJsonObject { putJsonArray("list") { add(macCmsVod) } }.toString()))
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            detail = listOf(RuleStep.Fetch(), RuleStep.MacCmsEpisodes(directOnly = true, preferHls = true)),
+        )
+        val channels = engine(config, site).detail(api)
+        // 网页播放器那条线路没有能直接播的地址, 整条不要; m3u8 线路排到前面
+        assertEquals(listOf("ffm3u8", "ffmp4"), channels.map { it.name })
+        assertEquals(listOf("第1集", "第2集"), channels[0].episodes.map { it.name })
+        assertEquals("https://cdn.example.com/2.m3u8", channels[0].episodes[1].url)
+        assertEquals(listOf("第01集", "第02集"), channels[1].episodes.map { it.name })
+    }
+
+    @Test
+    fun `maccms episodes read a bare list and keep page links unless direct only`() = runTest {
+        val config = RuleConfig(
+            detail = listOf(RuleStep.Template(buildJsonArray { add(macCmsVod) }.toString()), RuleStep.MacCmsEpisodes(listPath = "")),
+        )
+        val channels = engine(config, FakeSite(emptyMap())).detail("https://www.example.com/detail/12")
+        assertEquals(listOf("web", "ffmp4", "ffm3u8"), channels.map { it.name })
+        assertEquals("https://www.example.com/play/12-1", channels[0].episodes.single().url)
+    }
+
+    @Test
+    fun `crypto decrypts aes cbc from base64 or hex with keys from variables`() = runTest {
+        for (cipherText in listOf(AES_CIPHER_BASE64, AES_CIPHER_HEX)) {
+            val config = RuleConfig(
+                play = listOf(
+                    RuleStep.SetVar("iv", "hZ3kM7fD8qR1wEaV"),
+                    RuleStep.Template(cipherText),
+                    RuleStep.Crypto(RuleStep.Crypto.AES_CBC, key = "p9sBvL2gJkR5tWcX", iv = "{iv}"),
+                    RuleStep.Json("url"),
+                ),
+            )
+            val play = engine(config, FakeSite(emptyMap())).play("https://www.example.com/ep/1")
+            assertIs<RulePlayResult.Direct>(play)
+            assertEquals("https://cdn.example.com/v/1.m3u8", play.url)
+        }
+    }
+
+    @Test
+    fun `failed decryption falls through to the next branch`() = runTest {
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.First(
+                    listOf(
+                        listOf(RuleStep.Template(AES_CIPHER_BASE64), RuleStep.Crypto(RuleStep.Crypto.AES_CBC, key = "short", iv = "hZ3kM7fD8qR1wEaV")),
+                        listOf(RuleStep.Template("https://cdn.example.com/fallback.mp4")),
+                    ),
+                ),
+            ),
+        )
+        val play = engine(config, FakeSite(emptyMap())).play("https://www.example.com/ep/1")
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.example.com/fallback.mp4", play.url)
+    }
+
+    @Test
+    fun `md5 is lowercase hex of utf8`() {
+        assertEquals("900150983cd24fb0d6963f7d28e17f72", RuleCrypto.md5Hex("abc"))
+        assertEquals("ecc424357c9f358b1f86e7adbfff8790", RuleCrypto.md5Hex("番薯"))
+    }
+
+    @Test
+    fun `json mode escapes values for json bodies`() {
+        assertEquals(
+            """{"q":"a\"b\\c"}""",
+            RuleText.substitute("""{"q":"{keyword:json}"}""", mapOf("keyword" to "a\"b\\c")),
+        )
+    }
+
+    private companion object {
+        /** `{"url":"https://cdn.example.com/v/1.m3u8"}` 用密钥 `p9sBvL2gJkR5tWcX`、IV `hZ3kM7fD8qR1wEaV` AES-CBC 加密 (PKCS#7). */
+        const val AES_CIPHER_BASE64 = "WW14BiZaU64yBDyy1dR3KIQ15kgDpRebkAEys/TReR5trzhBXPieDV/qCnYkpLVc"
+        const val AES_CIPHER_HEX =
+            "596d7806265a53ae32043cb2d5d477288435e64803a5179b900132b3f4d1791e6daf38415cf89e0d5fea0a7624a4b55c"
+    }
+}
