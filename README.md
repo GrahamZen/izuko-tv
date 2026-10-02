@@ -128,7 +128,7 @@ Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/ope
 
 ### 视频从哪里来？
 
-全部视频数据都来自网络，Izuko TV 本身不存储、也不提供任何视频资源。数据源分 BT 和在线两类：BT 源来自公共 BitTorrent 网络，每个人都可以分享自己拥有的资源；在线源来自其他视频网站，默认订阅 [creamycake ani-subs](https://github.com/creamycake-anime/ani-subs)，也可以自行添加。
+全部视频数据都来自网络，Izuko TV 本身不存储、也不提供任何视频资源。数据源分 BT 和在线两类：BT 源来自公共 BitTorrent 网络，每个人都可以分享自己拥有的资源；在线源来自其他视频网站，默认只带几个，更多的可以自行添加订阅，例如 [creamycake ani-subs](https://github.com/creamycake-anime/ani-subs)。
 
 本着互助精神，使用 BT 源时 Izuko TV 会自动做种（分享数据）。
 
@@ -152,6 +152,8 @@ Izuko TV 基于 [open-ani/animeko](https://github.com/open-ani/animeko) 修改�
 - 源代码中原有的版权声明（Copyright (C) OpenAni and contributors）均予保留；
 - 相对上游的修改记录在本仓库的提交历史与 [FORK.md](FORK.md) 中，完整源代码即本仓库；
 - 「Animeko」名称与图标归 OpenAni 所有，Izuko TV 使用自己的名称与图标，不代表上游。
+
+规则源的步骤式写法参考了 [AniBaka](https://github.com/AniBakaBaka/AniBaka)，并可导入其规则格式（`anx-rule/2`）。规则归各自作者所有，Izuko TV 不附带任何第三方规则。
 
 感谢 OpenAni 团队与所有 Animeko 贡献者。
 

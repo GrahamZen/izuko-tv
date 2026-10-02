@@ -34,6 +34,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.foundation.SLIDER_VALUE_STEP
 import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
@@ -248,6 +249,10 @@ internal class RemotePlayerHandle(
 
     /** 当前候选 (含被排除的) 里 [mediaId] 对应的资源; 手机上的列表可能已过时, 不在了为 null. */
     fun candidate(mediaId: String): Media? = findCandidate(mediaId)?.original
+
+    /** 这次搜索有没有数据源 [mediaSourceId] (搜索会话建立时取的数据源快照里有没有它). */
+    fun hasSource(mediaSourceId: String): Boolean =
+        page?.mediaSourceResultListPresentation?.list.orEmpty().any { it.mediaSourceId == mediaSourceId }
 
     /** 电视当前在播的这一集; 页面状态还没出来时为 null. */
     val currentEpisodeId: Int? get() = page?.episodePresentation?.episodeId
@@ -496,6 +501,7 @@ internal class RemotePlayerHandle(
         isWorking -> "loading"
         isCaptchaRequired -> "captcha"
         isRateLimited -> "limited"
+        state.cloudDriveLoginRequired != null -> "login"
         isFailedOrAbandoned -> "failed"
         isPaused -> "paused"
         else -> "done"

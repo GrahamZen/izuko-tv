@@ -28,11 +28,19 @@ import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.updateMediaSourceArguments
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchArguments
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceArguments
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceArguments
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -49,6 +57,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
+import java.net.URI
 import java.net.URLDecoder
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -77,11 +86,22 @@ internal object RemoteSources {
     private val subscriptions: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val repository: MediaSourceInstanceRepository get() = KoinPlatform.getKoin().get()
 
-    /** 用 JSON 编辑的三类 (编解码器只认它们). */
+    /** 用 JSON 编辑的几类 (编解码器只认它们). */
     private val RSS = FactoryId("rss")
     private val SELECTOR = FactoryId("web-selector")
     private val DIRECT_API = DirectApiMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API)
+    private val DRIVE_SHARE_SEARCH = CloudDriveShareSearchMediaSource.FactoryId
+    private val MAC_CMS = MacCmsMediaSource.FactoryId
+    private val RULE = RuleMediaSource.FactoryId
+
+    /** 「网盘」: 参数是整份网盘协议, 没有模板, 只能导入或随订阅来. */
+    private val CLOUD_DRIVE = CloudDriveMediaSource.FactoryId
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, MAC_CMS, CLOUD_DRIVE, RULE)
+
+    /**
+     * 不在「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
+     */
+    private val NOT_ADDABLE = setOf(CLOUD_DRIVE, CloudDriveAddedShareMediaSource.FactoryId)
 
     private val pretty = Json {
         prettyPrint = true
@@ -156,6 +176,7 @@ internal object RemoteSources {
     private fun list(): JsonObject {
         val instances = instances()
         val subs = runBlocking { subscriptions.flow.first() }
+        val tiers = runBlocking { manager.mediaSourceTiersFlow().first() }
         return buildJsonObject {
             putJsonArray("sources") {
                 for (instance in instances) addJsonObject {
@@ -163,12 +184,21 @@ internal object RemoteSources {
                     val subscriptionId = instance.config.subscriptionId
                     put("id", instance.instanceId)
                     put("factoryId", instance.factoryId.value)
+                    put("factoryName", factory?.info?.displayName ?: instance.factoryId.value)
                     put("name", instance.source.info.displayName)
                     put("description", instance.source.info.description)
                     put("kind", kindLabel(instance.source.kind))
                     put("enabled", instance.isEnabled)
                     // 来自订阅: 值是订阅地址 (找不到订阅记录时为空串); 不是订阅来的为 null
-                    put("subscription", subscriptionId?.let { id -> subs.find { it.subscriptionId == id }?.url.orEmpty() })
+                    val subscriptionUrl = subscriptionId?.let { id -> subs.find { it.subscriptionId == id }?.url.orEmpty() }
+                    put("subscription", subscriptionUrl)
+                    // 管理页按来源分组用的短名; 本地添加的为 null
+                    put("origin", subscriptionUrl?.let(::subscriptionLabel))
+                    // 阶级 (越小越优先, 见 MediaSourceTier); 配置里没有的不给, 选源时按回退值处理
+                    tiers.tiers[instance.source.mediaSourceId]?.let { put("tier", it.value.toInt()) }
+                    tiers.channelTiers[instance.source.mediaSourceId]?.takeIf { it.isNotEmpty() }?.let { channels ->
+                        putJsonObject("channelTiers") { for ((name, tier) in channels) put(name, tier.value.toInt()) }
+                    }
                     val editor = editorOf(instance.factoryId, factory, fromSubscription = subscriptionId != null)
                     put("editor", editor)
                     put("exportable", instance.factoryId in JSON_FACTORIES && instance.config.serializedArguments != null)
@@ -179,10 +209,10 @@ internal object RemoteSources {
                     }
                 }
             }
-            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源不列
+            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源与 NOT_ADDABLE 不列
             putJsonArray("templates") {
                 for (factory in manager.allFactories) {
-                    if (manager.isLocal(factory.factoryId)) continue
+                    if (manager.isLocal(factory.factoryId) || factory.factoryId in NOT_ADDABLE) continue
                     if (!factory.allowMultipleInstances && instances.any { it.factoryId == factory.factoryId }) continue
                     addJsonObject {
                         val editor = editorOf(factory.factoryId, factory, fromSubscription = false)
@@ -196,6 +226,21 @@ internal object RemoteSources {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * 订阅地址的短名, 管理页按来源分组时当组名: GitHub 上的取「用户/仓库」, 其余取域名 (去掉 `www.`).
+     * 订阅记录只存了地址, 没有名字.
+     */
+    private fun subscriptionLabel(url: String): String {
+        val parsed = runCatching { URI(url) }.getOrNull() ?: return url
+        val host = parsed.host?.removePrefix("www.") ?: return url
+        val segments = parsed.path.orEmpty().split('/').filter { it.isNotEmpty() }
+        return if ((host == "raw.githubusercontent.com" || host == "github.com") && segments.size >= 2) {
+            "${segments[0]}/${segments[1]}"
+        } else {
+            host
         }
     }
 
@@ -257,6 +302,9 @@ internal object RemoteSources {
             SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
             // 给一份结构完整的示例, 比空模板好改
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
+            DRIVE_SHARE_SEARCH -> codec.encode(CloudDriveShareSearchArguments.Example)
+            MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
+            RULE -> codec.encode(RuleMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
@@ -394,13 +442,18 @@ internal object RemoteSources {
         return if (ok) result(true, tr("已保存")) else result(false, tr("保存失败"))
     }
 
-    /** 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因. */
+    /**
+     * 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因.
+     * 也认 AniBaka 规则 (JSON 或地址), 转换成规则源, 见 [RemoteAniBakaImport].
+     */
     private fun import(text: String): JsonObject {
-        val list = parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
-        if (list.isEmpty()) return result(false, tr("里面没有数据源"))
+        val aniBaka = RemoteAniBakaImport.importOrNull(text)
+        val list = aniBaka?.sources?.map { codec.encode(it) }
+            ?: parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
+        if (list.isEmpty() && aniBaka == null) return result(false, tr("里面没有数据源"))
         val existing = instances()
         var added = 0
-        val errors = mutableListOf<String>()
+        val errors = aniBaka?.failures.orEmpty().toMutableList()
         for (data in list) {
             runCatching {
                 val factory = factoryOf(data.factoryId) ?: error(tr("不支持的类型 {0}", data.factoryId.value))

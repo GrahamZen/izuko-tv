@@ -13,6 +13,7 @@ import androidx.datastore.core.DataStore
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.Repository
+import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.utils.platform.Uuid
 
@@ -87,7 +88,7 @@ data class MediaSourceSubscriptionsSaveData(
                     subscriptionId = Uuid.randomString(),
                     url = "https://sub.creamycake.org/v1/css1.json",
                 ),
-            ),
+            ).let(BundledSubscriptions::withDefaults),
             version = CURRENT_VERSION,
         )
     }

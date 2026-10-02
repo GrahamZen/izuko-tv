@@ -10,11 +10,11 @@ open class TestHttpMediaSource(
     override val mediaSourceId: String = Uuid.randomString(),
     override val kind: MediaSourceKind = MediaSourceKind.BitTorrent,
     private val randomConnectivity: Boolean = false,
-    private val fetch: suspend (MediaFetchRequest) -> SizedSource<MediaMatch> = { emptySizedSource() }
-) : HttpMediaSource() {
+    private val fetch: suspend (MediaFetchRequest) -> SizedSource<MediaMatch> = { emptySizedSource() },
     override val info: MediaSourceInfo = MediaSourceInfo(
         displayName = "Test Http Media Source",
-    )
+    ),
+) : HttpMediaSource() {
 
     override suspend fun checkConnection(): ConnectionStatus {
         if (randomConnectivity) {

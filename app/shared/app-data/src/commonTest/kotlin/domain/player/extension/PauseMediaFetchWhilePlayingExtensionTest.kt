@@ -34,6 +34,8 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.childScope
 import kotlin.test.Test
@@ -52,6 +54,14 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
     fun `sources keep searching when pausing is not allowed`() = runTest {
         // 选源面板开着 / 开了完整搜索
         playWhileWeb2Searching(canPause = { false }) { session ->
+            assertIs<MediaSourceFetchState.Working>(session.stateOf("web2"))
+        }
+    }
+
+    @Test
+    fun `the added shares source keeps searching once playback starts`() = runTest {
+        // 用户刚给这部番加了分享, 「我添加的分享」重查到一半时视频开播
+        playWhileWeb2Searching(canPause = { true }, web2Info = CloudDriveAddedShareMediaSource.INFO) { session ->
             assertIs<MediaSourceFetchState.Working>(session.stateOf("web2"))
         }
     }
@@ -102,6 +112,7 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
      */
     private suspend fun TestScope.playWhileWeb2Searching(
         canPause: () -> Boolean,
+        web2Info: MediaSourceInfo = MediaSourceInfo(displayName = "web2"),
         verify: (MediaFetchSession) -> Unit,
     ) {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -109,7 +120,7 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
         val suite = EpisodePlayerTestSuite(this, testScope)
         suite.registerComponent<MediaResolver> { TestUniversalMediaResolver }
         val web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
-        suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB) // 一直查不完
+        suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB, info = web2Info) // 一直查不完
 
         val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory(canPause)))
         state.onUIReady()
