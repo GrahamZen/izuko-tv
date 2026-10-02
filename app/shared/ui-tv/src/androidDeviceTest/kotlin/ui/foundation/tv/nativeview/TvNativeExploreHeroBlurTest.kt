@@ -17,6 +17,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.TextView
 import kotlinx.coroutines.MainScope
@@ -274,17 +275,48 @@ class TvNativeExploreHeroBlurTest {
     @Test
     fun `back on the carousel the blurred backdrop is gone and the hero image is painted the usual way`() {
         enterHero()
-        host.onMain { view.focusHeroButton(0) }
-        host.waitUntil("回到轮播、整屏背景撤掉") { listener.heroButton == 0 && !view.heroActive && wall.alpha == 0f && wall.currentTarget == null }
+        val frames = backToCarouselFloorFrames()
+        // 深色: 卡片墙底色还看得见时, 背景图的边缘照旧擦成透明 (遮罩色近黑, 画在灰底上是一圈黑框)
+        assertTrue(frames.any { it.first in 1..254 }, "看到了底色淡出途中的帧")
+        assertEquals(emptyList(), frames.filter { !it.second }.map { it.first }, "底色还在时 (各帧底色的透明度) 背景图的边缘按遮罩色画了")
         host.onMain {
-            // 轮播照旧用背景图 (轮播那一部的), 按遮罩色画边缘, 放大转场的来源也还是它
+            // 底色撤了: 轮播照旧用背景图 (轮播那一部的), 按遮罩色画边缘, 放大转场的来源也还是它
             assertTrue(heroImage().currentTarget!!.url.contains("${STILL}carousel"))
             assertEquals(View.LAYER_TYPE_NONE, heroImage().layerType)
             assertTrue(heroImage().slotLayerTypes().all { it == View.LAYER_TYPE_NONE })
         }
-        // 最底下那层卡片墙底色随上面几行 (连同轮播) 淡回来之后撤掉, 轮播的分界带照旧露出来
-        host.waitUntil("卡片墙底色那层撤了") { Color.alpha(floorColor()) == 0 }
         host.waitUntil("登记了轮播的背景图") { TvHeroZoomHandoff.sourceDebug().contains("${STILL}carousel.png") }
+    }
+
+    @Test
+    fun `in the light theme going back to the carousel paints the image edges the usual way once the blurred backdrop is gone`() {
+        host.onMain { view.dark = false }
+        enterHero()
+        val frames = backToCarouselFloorFrames()
+        // 浅色的遮罩色就是卡片墙底色: 模糊背景淡没就按遮罩色画边缘, 不为底色留着离屏层
+        assertTrue(frames.any { it.first in 1..254 && !it.second }, frames.toString())
+    }
+
+    /**
+     * 从 hero 态回轮播按钮, 等最底下那层卡片墙底色随上面几行 (连同轮播) 淡回来之后撤掉 (轮播的分界带照旧露出来). 返回底色还看得见的每一帧 (画之前记):
+     * 底色的透明度, 背景图的边缘是不是擦成透明 (各格都走离屏层).
+     */
+    private fun backToCarouselFloorFrames(): List<Pair<Int, Boolean>> {
+        val frames = mutableListOf<Pair<Int, Boolean>>()
+        val check = ViewTreeObserver.OnPreDrawListener {
+            val floor = Color.alpha(floorColor())
+            val slots = heroImage().slotLayerTypes()
+            if (floor > 0 && slots.isNotEmpty()) frames += floor to slots.all { it == View.LAYER_TYPE_HARDWARE }
+            true
+        }
+        host.onMain {
+            view.viewTreeObserver.addOnPreDrawListener(check)
+            view.focusHeroButton(0)
+        }
+        host.waitUntil("回到轮播、整屏背景撤掉") { listener.heroButton == 0 && !view.heroActive && wall.alpha == 0f && wall.currentTarget == null }
+        host.waitUntil("卡片墙底色那层撤了") { Color.alpha(floorColor()) == 0 }
+        host.onMain { view.viewTreeObserver.removeOnPreDrawListener(check) }
+        return frames
     }
 
     @Test
