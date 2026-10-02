@@ -736,6 +736,8 @@ private fun part4() = listOf(
     RemoteText("偏移为正数时弹幕晚出现。点数字可以直接输入，按住数字左右拖动能微调（0.1 秒一档）。各源开关与偏移只对这次播放有效。", "A positive offset makes danmaku appear later. Tap the number to type a value, or press and drag it sideways to fine-tune (0.1s steps). Source switches and offsets apply to this playback only.", "偏移為正數時彈幕晚出現。點數字可以直接輸入，按住數字左右拖動能微調（0.1 秒一檔）。各源開關與偏移只對這次播放有效。", "偏移為正數時彈幕晚出現。點數字可以直接輸入，按住數字左右拖動能微調（0.1 秒一檔）。各源開關與偏移只對這次播放有效。"),
     RemoteText("弹幕对不上？手动匹配（弹弹play）", "Danmaku out of sync? Match manually (DanDanPlay)", "彈幕對不上？手動匹配（彈彈play）", "彈幕對不上？手動匹配（彈彈play）"),
     RemoteText("音轨", "Audio", "音軌", "音軌"),
+    RemoteText("音轨 {0}", "Audio {0}", "音軌 {0}", "音軌 {0}"),
+    RemoteText("字幕 {0}", "Subtitle {0}", "字幕 {0}", "字幕 {0}"),
     RemoteText("关闭", "Off", "關閉", "關閉"),
     RemoteText("番剧名", "Anime title", "番劇名", "番劇名"),
     RemoteText("搜索", "Search", "搜索", "搜尋"),

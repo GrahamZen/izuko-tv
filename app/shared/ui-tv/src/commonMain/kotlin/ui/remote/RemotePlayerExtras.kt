@@ -39,6 +39,7 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.videoplayer.ui.progress.audioName
+import me.him188.ani.app.videoplayer.ui.progress.isNamed
 import me.him188.ani.app.videoplayer.ui.progress.subtitleLanguage
 import me.him188.ani.danmaku.api.DanmakuServiceId
 import me.him188.ani.danmaku.api.provider.DanmakuEpisode
@@ -377,9 +378,11 @@ internal object RemotePlayerExtras {
                 putJsonObject("audio") {
                     put("sel", st.selected?.id)
                     putJsonArray("items") {
-                        for (t in st.candidates) addJsonObject {
-                            put("id", t.id)
-                            put("name", t.audioName)
+                        st.candidates.forEachIndexed { i, t ->
+                            addJsonObject {
+                                put("id", t.id)
+                                put("name", if (t.isNamed) t.audioName else tr("音轨 {0}", i + 1))
+                            }
                         }
                     }
                 }
@@ -388,9 +391,11 @@ internal object RemotePlayerExtras {
                 putJsonObject("subs") {
                     put("sel", st.selected?.id)
                     putJsonArray("items") {
-                        for (t in st.candidates) addJsonObject {
-                            put("id", t.id)
-                            put("name", t.subtitleLanguage)
+                        st.candidates.forEachIndexed { i, t ->
+                            addJsonObject {
+                                put("id", t.id)
+                                put("name", if (t.isNamed) t.subtitleLanguage else tr("字幕 {0}", i + 1))
+                            }
                         }
                     }
                 }

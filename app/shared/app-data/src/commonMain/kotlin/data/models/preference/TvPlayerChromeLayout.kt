@@ -40,7 +40,7 @@ enum class TvPlayerChromeRow {
  * - 普通功能条目: 一颗按钮.
  * - [isSeparator] 为真的装饰条目 ([DIVIDER_1] 等分组竖线与那段把两半推开的 [SPACER]): 不可聚焦,
  *   参与排列与显隐, 但不能当作焦点落点 (进度条上/下键的落点解析要跳过它们).
- * - [isConditional] 为真的条目: 本来就不是每次都在场的 (没有下一集 / 片源没有字幕轨 / 功能被关掉),
+ * - [isConditional] 为真的条目: 本来就不是每次都在场的 (没有下一集 / 片源没有字幕轨或只有一条音轨 / 功能被关掉),
  *   "用户没隐藏"只是**允许它出现**, 真正在不在还要看运行时. 编辑页里会标一句.
  *
  * @since 6.0.7
@@ -83,6 +83,8 @@ enum class TvPlayerChromeItem(
     WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true, isRetired = true),
     SPACER(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     SUBTITLE_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
+    /** 片源有两条以上音轨时才出现 (国日双语之类). */
+    AUDIO_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
     PLAYBACK_SPEED(TvPlayerChromeRow.BOTTOM, isConditional = true),
     ASPECT_RATIO(TvPlayerChromeRow.BOTTOM, isConditional = true),
     DIVIDER_3(TvPlayerChromeRow.BOTTOM, isSeparator = true),
