@@ -17,4 +17,4 @@ package me.him188.ani.app.platform
  *
  * 注意本机 UA 通常是移动版, 站点会因此返回移动版页面. 按页面结构解析的数据源不要用它.
  */
-expect fun Context.deviceBrowserUserAgent(): String?
+expect suspend fun Context.deviceBrowserUserAgent(): String?

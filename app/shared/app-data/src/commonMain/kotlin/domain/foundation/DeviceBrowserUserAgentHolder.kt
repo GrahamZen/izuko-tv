@@ -10,18 +10,23 @@
 package me.him188.ani.app.domain.foundation
 
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 本机浏览器 UA 的持有者. 数据源由工厂创建, 拿不到 `Context`, 所以在启动接线时把取值方式装进来.
  *
- * 取值是惰性的: Android 上读 UA 会初始化 WebView, 不放在启动路径上.
+ * 取值是惰性的: Android 上读 UA 会初始化 WebView, 不放在启动路径上. 只取一次, 同时来要的等那一次:
+ * Android 上它要在主线程上算 (见 `deviceBrowserUserAgent`), 一起开搜的十几个数据源各自去取会白排一长队.
  */
 object DeviceBrowserUserAgentHolder {
-    private val provider = atomic<(() -> String?)?>(null)
+    private val provider = atomic<(suspend () -> String?)?>(null)
     private val cached = atomic<String?>(null)
     private val resolved = atomic(false)
+    private val lock = Mutex()
 
-    fun install(provider: () -> String?) {
+    fun install(provider: suspend () -> String?) {
         this.provider.value = provider
         resolved.value = false
         cached.value = null
@@ -30,12 +35,20 @@ object DeviceBrowserUserAgentHolder {
     /**
      * 本机浏览器的真实 UA, 取不到时为 `null` (调用方退回 client 自带的 UA).
      */
-    val current: String?
-        get() {
+    suspend fun current(): String? {
+        if (resolved.value) return cached.value
+        return lock.withLock {
             if (!resolved.value) {
-                cached.value = runCatching { provider.value?.invoke() }.getOrNull()?.takeIf { it.isNotBlank() }
+                cached.value = try {
+                    provider.value?.invoke()?.takeIf { it.isNotBlank() }
+                } catch (e: CancellationException) {
+                    throw e // 取到一半被取消不算取过, 下次再取
+                } catch (e: Exception) {
+                    null
+                }
                 resolved.value = true
             }
-            return cached.value
+            cached.value
         }
+    }
 }
