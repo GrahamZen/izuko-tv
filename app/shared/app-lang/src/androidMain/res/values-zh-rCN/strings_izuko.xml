@@ -410,6 +410,9 @@
     <string name="video_player_tv_up_next_in">%1$d 秒后</string>
     <string name="video_player_tv_episodes">剧集</string>
     <string name="video_player_tv_skip_segment">跳过 %1$s</string>
+    <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
+    <string name="video_player_audio_track_numbered">音轨 %1$d</string>
+    <string name="video_player_subtitle_numbered">字幕 %1$d</string>
     <string name="video_player_tv_chrome_title">自定义播放器按钮</string>
     <string name="video_player_tv_chrome_subtitle">这一页不会播放任何东西。这里排成什么样，播放器里就是什么样。</string>
     <string name="video_player_tv_chrome_hint">确认键 拿起  ·  长按确认键 隐藏 / 显示  ·  返回键 退出</string>
