@@ -16,7 +16,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Web 控制台各处等待时的进度文字 (应用更新、自动缓存、导入、时间表、订阅更新、登录倒计时):
+ * Web 控制台各处等待时的进度文字 (应用更新、自动缓存、网盘扫码、导入、时间表、订阅更新、登录倒计时):
  * 网页脚本里写的键要真在页面里、也要在译文表里 (键对不上时英文 / 繁体界面露出简体), 译文不能带进不了 HTML 的字符.
  */
 class RemoteProgressTextsTest {

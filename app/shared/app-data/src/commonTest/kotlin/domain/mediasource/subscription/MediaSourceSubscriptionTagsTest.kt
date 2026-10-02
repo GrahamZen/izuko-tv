@@ -60,7 +60,8 @@ class MediaSourceSubscriptionTagsTest {
             ),
             sources,
             codecManager,
-        ) { remote }
+            { remote },
+        )
 
         updater.update("group")
         assertEquals(listOf(MediaSourceTags.HLS_ADS), sources.saves.single().config.tags)

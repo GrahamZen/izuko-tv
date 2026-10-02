@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
 import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
@@ -134,6 +135,8 @@ internal object RemoteCandidates {
         put("subtitles", props.subtitleLanguageIds.map { subtitleLabel(it) }.distinct().joinToString("/").takeIf { it.isNotBlank() })
         put("alliance", props.alliance.takeIf { it.isNotBlank() })
         put("size", props.size.takeIf { it.inBytes > 0 }?.toString())
+        // 网盘文件的平均码率 (大小 ÷ 时长), 别的资源没有
+        put("bitrate", DriveVideoBitrates.label(media.mediaId))
         put("cached", media.kind == MediaSourceKind.LocalCache)
         // 播放页左滑「打开链接」: 数据源上的原始链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身;
         // 缓存沿用来源资源的). 只给 http(s): 链接来自数据源配置, 别的协议 (javascript: 之类) 进了 href 就是在控制台页面里跑脚本

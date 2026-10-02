@@ -92,6 +92,7 @@ import me.him188.ani.app.ui.lang.media_subtitle_language_english
 import me.him188.ani.app.ui.lang.media_subtitle_language_japanese
 import me.him188.ani.app.ui.lang.subject_episode_cache
 import me.him188.ani.app.ui.lang.subject_episode_cached
+import me.him188.ani.app.ui.lang.tv_settings_drive_not_logged_in
 import me.him188.ani.app.ui.lang.tv_source_all
 import me.him188.ani.app.ui.lang.tv_source_all_episodes
 import me.him188.ani.app.ui.lang.tv_source_bt
@@ -118,6 +119,8 @@ import me.him188.ani.app.ui.lang.tv_source_detail_source
 import me.him188.ani.app.ui.lang.tv_source_detail_sources
 import me.him188.ani.app.ui.lang.tv_source_detail_status
 import me.him188.ani.app.ui.lang.tv_source_disabled
+import me.him188.ani.app.ui.lang.tv_source_drive_login_action
+import me.him188.ani.app.ui.lang.tv_source_drive_login_hint
 import me.him188.ani.app.ui.lang.tv_source_download_caching
 import me.him188.ani.app.ui.lang.tv_source_downloads_empty
 import me.him188.ani.app.ui.lang.tv_source_downloads_empty_disk_cache
@@ -182,6 +185,7 @@ import me.him188.ani.app.ui.lang.tv_source_resume_source
 import me.him188.ani.app.ui.lang.tv_source_settings
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
 import me.him188.ani.app.ui.lang.tv_source_show_others
+import me.him188.ani.app.ui.lang.tv_source_site_ip_blocked
 import me.him188.ani.app.ui.lang.tv_source_source
 import me.him188.ani.app.ui.lang.tv_source_sources_count
 import me.him188.ani.app.ui.lang.tv_source_status_done
@@ -304,6 +308,10 @@ fun TvSourcePanel(
     detailsTarget?.let { TvSourceDetailsHost(state, it, controller) }
     val filterOpen by state.filterOpen.collectAsState()
     if (filterOpen) TvSourceFilterDialog(state, onDismiss = { state.filterOpen.value = false })
+    val driveLogin by state.driveLogin.collectAsState()
+    driveLogin?.let { driveId ->
+        TvDriveLoginDialog(driveId, onLoggedIn = { state.onDriveLoggedIn(driveId) }, onDismiss = { state.driveLogin.value = null })
+    }
 }
 
 /**
@@ -568,6 +576,10 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_episodes_season,
     Lang.tv_source_episodes_whole_season,
     Lang.media_selector_bt_filter,
+    Lang.tv_settings_drive_not_logged_in,
+    Lang.tv_source_drive_login_action,
+    Lang.tv_source_drive_login_hint,
+    Lang.tv_source_site_ip_blocked,
     Lang.tv_source_group_drive,
     Lang.tv_source_group_online,
     Lang.tv_source_group_direct,
@@ -690,6 +702,10 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             episodesSeason = next(),
             episodesWholeSeason = next(),
             filter = next(),
+            driveNotLoggedIn = next(),
+            driveLoginAction = next(),
+            driveLoginHint = next(),
+            siteIpBlocked = next(),
             groupDrive = next(),
             groupOnline = next(),
             groupDirect = next(),

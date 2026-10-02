@@ -1,0 +1,106 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.ui.remote
+
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
+
+/**
+ * 「从某某网盘挑」面板: 页面用到的文案都在, 都有译文; 每个网盘一个按钮, 请求都带着网盘 id.
+ */
+class RemoteCloudDrivePicksTest {
+    private val page = renderRemoteControlPage(
+        initialTab = "player",
+        searchFormHtml = "",
+        requestSectionHtml = "",
+    )
+
+    private val table = REMOTE_I18N_TABLE.associateBy { it.zh }
+
+    private val webKeys = listOf(
+        "从{0}挑…",
+        "从{0}挑",
+        "文件夹",
+        "当作这一集播放",
+        "忘掉这个位置",
+        "搜索网盘",
+        "番名或文件夹名",
+        "自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个网盘账号。",
+        "挂到正在播的视频上",
+        "正在播的视频挂上的字幕",
+        "还没有。点下面列表里的字幕文件就挂上",
+        "取下这条字幕",
+        "搜索",
+        "浏览网盘根目录",
+        "这部番的搜索名，点一下直接搜",
+        "还没登录{0}",
+        "先在「数据源」页登录{0}",
+        "这部番记下的网盘位置",
+        "还没有记下",
+        "网盘根目录",
+        "就是这个文件夹",
+        "搜索结果",
+        "加载中…",
+        "还有 {0} 项没列出",
+        "先输入要搜的名字",
+        "忘掉这个位置？{0}就不再从这里给这部番找资源",
+    )
+
+    private val serverKeys = listOf(
+        "没有这个网盘，请刷新",
+        "{0}没登录或登录已失效，请在「数据源」页登录",
+        "当作第 {0} 集",
+        "先输入要搜的名字",
+        "没有找到文件夹或视频",
+        "第 {0} 季第 {1} 集",
+        "第 {0} 集",
+        "找不到这个文件，请重新搜索",
+        "找不到这个文件夹，请重新搜索",
+        "这个文件夹里没认出这部番的剧集（文件名认不出集号）。可以点进去挑一个文件当作这一集",
+        "已记下：这部番在「{0}」里，认出第 {1} 集，没有第 {2} 集",
+        "已记下：这部番在「{0}」里，认出第 {1} 集，正在电视上播放第 {2} 集",
+        "。正在重新搜索一次，让「{0}」加入，电视上的视频会重新加载",
+        "。没有找到「{0}」的数据源，请检查订阅",
+        "已记下这个文件是第 {0} 集，正在电视上播放",
+        "正在电视上播放",
+        "已删除",
+        "电视上还没有在播的视频",
+        "只能给{0}里的视频挂字幕，电视上正在播的不是",
+        "已给正在播的视频挂上「{0}」，电视上的视频正在重新加载",
+        "已取下这条字幕，电视上的视频正在重新加载",
+    )
+
+    @Test
+    fun `web keys are used by the page and translated`() {
+        for (key in webKeys) {
+            assertContains(page, "T('$key'")
+            assertTrue(key in table, "译文表里没有「$key」")
+        }
+        // 面板标题打开前是静态 HTML, 由 translateStatic 整段替换; 打开时换成这个网盘的名字
+        assertContains(page, "id=\"drive-title\">从网盘挑<")
+        assertTrue("从网盘挑" in table)
+    }
+
+    @Test
+    fun `server keys are translated`() {
+        for (key in serverKeys) assertTrue(key in table, "译文表里没有「$key」")
+    }
+
+    @Test
+    fun `every drive gets its own button and requests carry the drive id`() {
+        // 播放器页按服务端给的网盘列表画按钮, 打开面板时记下是哪个网盘
+        assertContains(page, "data-src-drive=\"' + esc(d.id) + '\"")
+        assertContains(page, "e.target.closest('[data-src-drive]')")
+        // 读接口带在查询参数里, 写接口带在表单里
+        assertContains(page, "var q = 'drive=' + encodeURIComponent(st.drive);")
+        assertContains(page, "data.drive = st.drive;")
+    }
+}
