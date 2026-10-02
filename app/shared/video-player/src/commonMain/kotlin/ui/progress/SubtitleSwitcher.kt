@@ -150,13 +150,14 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
             if (it == null) {
                 Text(stringResource(Lang.video_player_off))
             } else {
-                Text(it.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(it.shownName(options.indexOf(it) + 1), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         renderValueExposed = {
             val subtitleText = stringResource(Lang.video_player_subtitle)
+            val name = it?.shownName(options.indexOf(it) + 1)
             Text(
-                remember(it, subtitleText) { it?.displayName ?: subtitleText },
+                remember(name, subtitleText) { name ?: subtitleText },
                 Modifier.widthIn(max = 64.dp),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -169,3 +170,8 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
         onExpandedChanged = onExpandedChanged,
     )
 }
+
+/** 列表里第 [number] 条字幕显示的名字: 没起名的写「字幕 N」. */
+@Composable
+private fun SubtitlePresentation.shownName(number: Int): String =
+    if (subtitleTrack.isNamed) displayName else stringResource(Lang.video_player_subtitle_numbered, number)

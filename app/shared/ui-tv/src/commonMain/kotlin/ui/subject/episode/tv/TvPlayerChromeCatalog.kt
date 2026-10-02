@@ -50,6 +50,7 @@ import me.him188.ani.app.ui.lang.video_player_tv_chrome_item_aspect_ratio
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_item_divider
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_item_spacer
 import me.him188.ani.app.ui.lang.video_player_aspect_fit
+import me.him188.ani.app.ui.lang.video_player_audio_track
 import me.him188.ani.app.ui.lang.video_player_enable_danmaku
 import me.him188.ani.app.ui.lang.video_player_next_episode
 import me.him188.ani.app.ui.lang.video_player_select_episode
@@ -177,6 +178,10 @@ internal fun tvChromeItemAppearance(
     )
 
     TvPlayerChromeItem.SUBTITLE_TRACK -> stringResource(Lang.video_player_subtitle).let {
+        TvChromeItemAppearance(TvChromeGlyph.Label(it), it)
+    }
+
+    TvPlayerChromeItem.AUDIO_TRACK -> stringResource(Lang.video_player_audio_track).let {
         TvChromeItemAppearance(TvChromeGlyph.Label(it), it)
     }
 
