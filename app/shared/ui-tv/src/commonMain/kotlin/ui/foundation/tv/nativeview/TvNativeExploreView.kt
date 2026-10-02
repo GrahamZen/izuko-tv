@@ -250,7 +250,7 @@ class TvNativeExploreView(
     /**
      * 卡片墙的底色 (页面给, 开了 [heroBlur] 才用). hero 态不压黑时, 底下主壳还画着热门轮播的近黑分界带 (见 TvPosterWallTone), 列表挪到
      * hero 停位时它会滚进屏顶: 聚焦卡的 hero 态在本视图最底下铺这个色 ([heroFloor]), 跟着上面几行 (连同轮播露着的那截) 淡入淡出盖住它,
-     * 整屏只见卡片墙的灰.
+     * 整屏只见卡片墙的灰. 深色主题这层看得见时背景图的边缘擦成透明 ([TvNativeBackdropView.feather]), 不按近黑的遮罩色画.
      */
     var wallColor: Int = Color.TRANSPARENT
         set(value) {
@@ -1243,18 +1243,19 @@ class TvNativeExploreView(
         val heroShown = timeline.content * contentGate
         // 点开时 (wallFade) 聚焦卡的背景图随各行淡没, 底下的模糊背景变清晰接上
         backdrop.alpha = if (showsCard) heroShown * (1f - wallFade) else carouselA * splitGate
+        // 铺着模糊背景: 最底下铺卡片墙的底色盖住主壳的轮播分界带, 跟着上面几行淡入淡出 (见 wallColor)
+        val floor = if (heroBlur) (timeline.above * (wallColor ushr 24)).roundToInt() else 0
+        heroFloor.color = if (floor <= 0) Color.TRANSPARENT else (wallColor and 0xFFFFFF) or (floor shl 24)
         val wall = wallBackdrop
         if (wall != null) {
             // hero 态的模糊背景跟着 hero 时间线显隐 (回轮播时随聚焦卡的内容一起淡没)
             wall.alpha = heroShown
-            // 叠在模糊背景上时背景图的边缘擦成透明; 模糊背景看不见时底下就是遮罩色, 两种画法一样, 不走离屏层
-            backdrop.feather = heroShown > 0f
+            // 叠在模糊背景上时背景图的边缘擦成透明; 深色主题叠在卡片墙底色上时也擦 (遮罩色近黑, 盖在灰底上是一圈黑框; 浅色两者同色).
+            // 都不是时底下就是遮罩色, 两种画法一样, 不走离屏层 (回轮播途中遮罩还在逐帧变, 擦的话各格的离屏层每帧重画)
+            backdrop.feather = heroShown > 0f || (dark && floor > 0)
         } else {
             backdrop.feather = false
         }
-        // 铺着模糊背景: 最底下铺卡片墙的底色盖住主壳的轮播分界带, 跟着上面几行淡入淡出 (见 wallColor)
-        val floor = if (heroBlur) (timeline.above * (wallColor ushr 24)).roundToInt() else 0
-        heroFloor.color = if (floor <= 0) Color.TRANSPARENT else (wallColor and 0xFFFFFF) or (floor shl 24)
         // hero 态铺着模糊背景: 进详情页从整屏背景起, 背景图不登记成放大转场的来源 (轮播照旧登记)
         backdrop.zoomSource = !(heroBlur && showsCard)
         val scale = 1f + (m.cardBackdropScale - 1f) * md
