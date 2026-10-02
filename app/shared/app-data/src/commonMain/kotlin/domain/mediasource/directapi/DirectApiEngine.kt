@@ -42,8 +42,7 @@ internal class DirectApiEngine(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val userAgent: String?
-        get() = config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current
+    private suspend fun userAgent(): String? = config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current()
 
     /** bangumi 条目 id -> 站内条目 id. 站内搜索要好几次请求, 值得缓存, 包括"找不到"这个结果. */
     private val subjectIdCacheLock = Mutex()
@@ -243,6 +242,7 @@ internal class DirectApiEngine(
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {
+        val userAgent = userAgent()
         client.use {
             get(url) {
                 // client 自带的 UA 是写死的常量, 每台设备一样; 有本机 UA 就用本机的.

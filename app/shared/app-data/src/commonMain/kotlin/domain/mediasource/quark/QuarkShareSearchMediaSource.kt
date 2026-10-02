@@ -358,8 +358,8 @@ class QuarkShareSearchMediaSource(
     private val arguments = config.deserializeArgumentsOrNull(QuarkShareSearchArguments.serializer())
         ?: QuarkShareSearchArguments.Default
 
-    private val userAgent: String?
-        get() = arguments.config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current
+    private suspend fun userAgent(): String? =
+        arguments.config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current()
 
     private val engine = QuarkShareSearchEngine(arguments.config, service.shareBrowser, service.episodeNumbering, ::fetchBytes)
 
@@ -384,6 +384,7 @@ class QuarkShareSearchMediaSource(
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {
+        val userAgent = userAgent()
         client.use {
             get(url) {
                 userAgent?.let { ua -> attributes.put(RequestUserAgentAttribute, ua) }
