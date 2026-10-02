@@ -250,7 +250,8 @@ class QuarkAddedShareTest {
         assertEquals(EpisodeSort(5), media.episodeRange?.knownSorts?.single())
         val location = assertIs<ResourceLocation.HttpStreamingFile>(media.download)
         val ref = assertNotNull(QuarkShareFileRef.parse(location.uri))
-        assertEquals(QuarkShareFileRef("s1", "pw12", "x2", "t-x2", "芙莉莲下.mp4", 500L * 1024 * 1024), ref)
+        // 记下文件在分享里所在的文件夹 (这里是分享的根), 播放时到那里找外挂字幕
+        assertEquals(QuarkShareFileRef("s1", "pw12", "x2", "t-x2", "芙莉莲下.mp4", 500L * 1024 * 1024, folderId = "0"), ref)
         assertNull(service.mediaOf(inspection, "missing", "added", request()))
     }
 }

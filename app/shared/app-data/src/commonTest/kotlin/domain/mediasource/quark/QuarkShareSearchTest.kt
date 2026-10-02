@@ -175,12 +175,24 @@ class QuarkShareSearchTest {
         assertNull(QuarkShareFileRef.parse("https://pan.quark.cn/s/share1"))
         assertNull(QuarkShareFileRef.parse(QuarkMediaSource.uriOf("f1")))
         assertNull(QuarkMediaSource.fileIdOf(uri))
+        // 记下所在文件夹的; 以前没有这一项的地址照常解析
+        val inFolder = ref.copy(folderId = "dir/1")
+        assertEquals(inFolder, QuarkShareFileRef.parse(inFolder.toUri()))
+        assertEquals("", QuarkShareFileRef.parse(uri)!!.folderId)
     }
 
     @Test
     fun `prune keeps the newest files`() {
         val files = (1..5).map { QuarkFile(fid = "f$it", fileName = "$it.mp4", updatedAt = it * 1000L) }.shuffled()
-        assertEquals(listOf("f1", "f2"), QuarkDriveService.filesToPrune(files, keep = 3).map { it.fid })
-        assertTrue(QuarkDriveService.filesToPrune(files, keep = 5).isEmpty())
+        assertEquals(listOf("f1", "f2"), QuarkDriveService.filesToPrune(files, keep = 3, keepSubtitles = 0).map { it.fid })
+        assertTrue(QuarkDriveService.filesToPrune(files, keep = 5, keepSubtitles = 0).isEmpty())
+    }
+
+    @Test
+    fun `prune counts videos and subtitles separately`() {
+        val videos = (1..3).map { QuarkFile(fid = "v$it", fileName = "$it.mkv", updatedAt = it * 1000L) }
+        val subtitles = (1..3).map { QuarkFile(fid = "s$it", fileName = "$it.sc.ass", updatedAt = it * 1000L + 500) }
+        val stale = QuarkDriveService.filesToPrune((videos + subtitles).shuffled(), keep = 2, keepSubtitles = 1)
+        assertEquals(setOf("v1", "s1", "s2"), stale.map { it.fid }.toSet())
     }
 }

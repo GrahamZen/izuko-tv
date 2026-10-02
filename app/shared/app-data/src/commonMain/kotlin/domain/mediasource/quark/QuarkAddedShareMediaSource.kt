@@ -275,6 +275,7 @@ class QuarkAddedShareService internal constructor(
                 shareFidToken = match.file.shareFidToken,
                 folders = match.folders,
                 episode = match.episode.toString(),
+                parentFid = match.file.parentFid,
             )
         }
         if (files.isEmpty() || files == share.files) return
@@ -306,6 +307,7 @@ class QuarkAddedShareService internal constructor(
                     size = file.size,
                     category = "video",
                     shareFidToken = file.shareFidToken,
+                    parentFid = file.parentFid,
                 )
                 QuarkShareMatch(found, shareFile, file.folders, EpisodeSort(file.episode))
             }

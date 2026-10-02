@@ -95,13 +95,22 @@ internal class QuarkApi(
         }
 
     /**
-     * 原文件直链, 有效期约 6 小时. 下载时必须带 Cookie, 否则 CDN 回 412.
+     * 原文件直链, 有效期约 6 小时, 连带文件名与所在文件夹. 下载时必须带 Cookie, 否则 CDN 回 412.
      */
-    suspend fun downloadUrl(fileId: String): String {
-        val body = buildJsonObject { putJsonArray("fids") { add(JsonPrimitive(fileId)) } }
-        val items = drivePost("file/download", body, ListSerializer(QuarkDownloadItem.serializer()))
-        return items.firstOrNull()?.downloadUrl?.takeIf { it.isNotBlank() }
+    suspend fun download(fileId: String): QuarkDownload =
+        downloads(listOf(fileId)).firstOrNull { it.fid == fileId || it.fid.isEmpty() }
             ?: throw QuarkApiException("夸克没有返回下载地址")
+
+    /**
+     * 一次取几个文件的直链 (见 [download]). 没给出地址的文件不在结果里.
+     */
+    suspend fun downloads(fileIds: List<String>): List<QuarkDownload> {
+        if (fileIds.isEmpty()) return emptyList()
+        val body = buildJsonObject { putJsonArray("fids") { fileIds.forEach { add(JsonPrimitive(it)) } } }
+        return drivePost("file/download", body, ListSerializer(QuarkDownloadItem.serializer())).mapNotNull { item ->
+            val url = item.downloadUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            QuarkDownload(item.fid, item.fileName, item.parentFid, url)
+        }
     }
 
     /**
@@ -184,19 +193,19 @@ internal class QuarkApi(
     }
 
     /**
-     * 把分享里的一个文件转存到自己网盘的 [toFolderId] 下, 返回转存后的文件 id. 需要登录.
+     * 把分享里的 [files] 转存到自己网盘的 [toFolderId] 下, 返回转存后的文件 id (转存一个文件时就是它的 id). 需要登录.
      *
      * 转存是后台任务: 提交后按任务 id 轮询, 任务完成时给出新文件的 id.
      */
     suspend fun saveFromShare(
         shareId: String,
         stoken: String,
-        file: QuarkShareFile,
+        files: List<QuarkShareFile>,
         toFolderId: String,
-    ): String {
+    ): List<String> {
         val body = buildJsonObject {
-            putJsonArray("fid_list") { add(JsonPrimitive(file.fid)) }
-            putJsonArray("fid_token_list") { add(JsonPrimitive(file.shareFidToken)) }
+            putJsonArray("fid_list") { files.forEach { add(JsonPrimitive(it.fid)) } }
+            putJsonArray("fid_token_list") { files.forEach { add(JsonPrimitive(it.shareFidToken)) } }
             put("to_pdir_fid", toFolderId)
             put("pwd_id", shareId)
             put("stoken", stoken)
@@ -210,7 +219,7 @@ internal class QuarkApi(
                 parameter("task_id", taskId)
                 parameter("retry_index", retry)
             }
-            task.saveAs?.topFileIds?.firstOrNull()?.let { return it }
+            task.saveAs?.topFileIds?.takeIf { it.isNotEmpty() }?.let { return it }
             if (task.status == TASK_STATUS_FAILED) throw QuarkApiException("转存失败: ${task.message}")
             delay(SAVE_TASK_POLL_INTERVAL)
         }
@@ -620,6 +629,18 @@ class QuarkShareFile(
     /** 毫秒时间戳. */
     @SerialName("updated_at") val updatedAt: Long = 0,
 ) {
+    /** 放在文件夹 [folderId] 里的同一个文件. */
+    fun inFolder(folderId: String): QuarkShareFile = QuarkShareFile(
+        fid = fid,
+        fileName = fileName,
+        parentFid = folderId,
+        dir = dir,
+        size = size,
+        category = category,
+        shareFidToken = shareFidToken,
+        updatedAt = updatedAt,
+    )
+
     /** 按网盘文件的形状看它, 以便复用按文件名认集的逻辑. */
     fun asFile(): QuarkFile = QuarkFile(
         fid = fid,
@@ -712,8 +733,18 @@ private class QuarkSaveAs(
 
 @Serializable
 private class QuarkDownloadItem(
+    val fid: String = "",
+    @SerialName("file_name") val fileName: String = "",
+    @SerialName("pdir_fid") val parentFid: String = "",
     @SerialName("download_url") val downloadUrl: String? = null,
 )
+
+/**
+ * 一个文件的直链.
+ *
+ * @param parentFid 所在文件夹的 id, 外挂字幕到这里找
+ */
+class QuarkDownload(val fid: String, val fileName: String, val parentFid: String, val url: String)
 
 @Serializable
 private class QuarkPlayData(

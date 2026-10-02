@@ -75,7 +75,8 @@ internal class QuarkShareReader(
                 if (child.dir) {
                     if (depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
                 } else if (child.category == "video" && child.shareFidToken.isNotEmpty()) {
-                    result += Entry(child, path)
+                    // 所在文件夹播放时找外挂字幕要用, 不指望接口一定给
+                    result += Entry(if (child.parentFid.isEmpty()) child.inFolder(folderId) else child, path)
                 }
             }
         }
@@ -98,7 +99,7 @@ internal class QuarkShareReader(
  * @param subjectName 已经按剧名与季匹配过, 与夸克网盘数据源一样直接标成当前条目
  */
 internal fun QuarkShareMatch.toShareMedia(mediaSourceId: String, alliance: String, subjectName: String?): Media {
-    val ref = QuarkShareFileRef(share.shareId, share.passcode, file.fid, file.shareFidToken, file.fileName, file.size)
+    val ref = QuarkShareFileRef(share.shareId, share.passcode, file.fid, file.shareFidToken, file.fileName, file.size, file.parentFid)
     val details = RawTitleParser.getDefault().parse((listOf(share.siteTitle) + folders + file.fileName).joinToString(" "))
     return DefaultMedia(
         mediaId = "$mediaSourceId.${share.shareId}.${file.fid}",

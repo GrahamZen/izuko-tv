@@ -8141,11 +8141,15 @@ private val DRIVE_SCRIPT = """
 (function () {
   var sheet = document.getElementById('drive-sheet'), body = document.getElementById('drive-body');
   // path: null = 显示的是搜索结果; [] = 根目录; [{fid, name}, ...] = 从外到里点进去的文件夹
-  var st = { loggedIn: true, keyword: '', typed: false, names: [], folders: [], files: [], items: null, more: 0, path: null, message: '', busy: false };
+  var st = { loggedIn: true, keyword: '', typed: false, names: [], folders: [], files: [], canAttach: false, subtitles: [], items: null, more: 0, path: null, message: '', busy: false };
   function itemRow(it) {
     if (it.dir) {
       return '<button type="button" class="item" data-dv-open="' + esc(it.fid) + '" data-dv-name="' + esc(it.name) + '">' +
         '<span class="t">' + esc(it.name) + '</span><span class="m">' + T('文件夹') + '</span></button>';
+    }
+    if (it.sub) {
+      return '<button type="button" class="item" data-dv-sub="' + esc(it.fid) + '">' +
+        '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([T('字幕'), it.meta, T('挂到正在播的视频上')].filter(Boolean).join(' · ')) + '</span></button>';
     }
     return '<button type="button" class="item" data-dv-play="' + esc(it.fid) + '">' +
       '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([it.meta, T('当作这一集播放')].filter(Boolean).join(' · ')) + '</span></button>';
@@ -8160,7 +8164,7 @@ private val DRIVE_SCRIPT = """
     if (old) st.keyword = old.value;
     var h = '<form id="drive-form"><label class="f"><span>' + T('搜索网盘') + '</span>' +
       '<input type="text" name="q" autocomplete="off" placeholder="' + T('番名或文件夹名') + '">' +
-      '<em>' + T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。记下的位置跟着这个夸克账号。') + '</em></label>' +
+      '<em>' + T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个夸克账号。') + '</em></label>' +
       '<div class="row"><button type="submit" class="primary"' + (st.busy ? ' disabled' : '') + '>' + T('搜索') + '</button>' +
       '<button type="button" data-dv-root>' + T('浏览网盘根目录') + '</button></div></form>';
     // 这部番的搜索名 (编辑查询请求里那些), 点一下就搜, 不用手打
@@ -8177,6 +8181,16 @@ private val DRIVE_SCRIPT = """
     st.folders.forEach(function (f) { h += pickRow(f, T('文件夹')); });
     st.files.forEach(function (f) { h += pickRow(f, f.meta); });
     h += '</div>';
+    if (st.canAttach) {
+      h += '<div class="card set-card"><div class="set-title">' + T('正在播的视频挂上的字幕') + '</div>';
+      if (!st.subtitles.length) h += '<p class="hint">' + T('还没有。点下面列表里的字幕文件就挂上') + '</p>';
+      st.subtitles.forEach(function (s) {
+        h += '<div class="sub-item"><div class="sub-url">' + esc(s.name) + '</div><div class="sub-meta"><span>' + T('字幕') + '</span>' +
+          '<button type="button" class="sub-del icb" data-dv-unsub="' + esc(s.fid) + '" aria-label="' + T('取下这条字幕') + '" title="' + T('取下这条字幕') + '">' +
+          window.ICONS.trash + '</button></div></div>';
+      });
+      h += '</div>';
+    }
     if (st.items || st.busy || st.message) {
       h += '<div class="card set-card">';
       if (st.path) {
@@ -8230,6 +8244,8 @@ private val DRIVE_SCRIPT = """
       st.names = d.names || [];
       st.folders = d.folders || [];
       st.files = d.files || [];
+      st.canAttach = !!d.canAttach;
+      st.subtitles = d.subtitles || [];
       // 第一次打开时用这部番的名字搜一次
       if (first && !st.typed && d.keyword) st.keyword = d.keyword;
       render();
@@ -8281,6 +8297,16 @@ private val DRIVE_SCRIPT = """
     if ((el = e.target.closest('[data-dv-pick]'))) {
       el.disabled = true;
       post('api/player/drive/folder', { fid: el.getAttribute('data-dv-pick') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(function () { el.disabled = false; fail(); });
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-sub]')) || (el = e.target.closest('[data-dv-unsub]'))) {
+      var attach = el.hasAttribute('data-dv-sub');
+      el.disabled = true;
+      post(attach ? 'api/player/drive/subtitle' : 'api/player/drive/unsubtitle', { fid: el.getAttribute(attach ? 'data-dv-sub' : 'data-dv-unsub') }).then(function (r) {
         el.disabled = false;
         if (r.message) toast(r.message);
         loadPicks(false);

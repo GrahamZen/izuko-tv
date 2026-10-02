@@ -9,8 +9,10 @@
 
 package me.him188.ani.app.ui.remote
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -26,6 +28,7 @@ import me.him188.ani.app.domain.mediasource.quark.QuarkFile
 import me.him188.ani.app.domain.mediasource.quark.QuarkMediaSource
 import me.him188.ani.app.domain.mediasource.quark.ensureQuarkMediaSourceEnabled
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
+import me.him188.ani.app.videoplayer.ui.progress.subtitleLanguage
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
@@ -39,6 +42,7 @@ import java.net.URLDecoder
  * Web 控制台播放器页的「从夸克网盘挑」: 自动匹配对不上时, 用户在手机上搜自己的网盘或一层层点进去,
  * 指定「这部番就在这个文件夹里」或「这个文件是这一集」. 记在夸克账号的配置里 (见 [QuarkDriveService.picksOf]),
  * 「夸克网盘」数据源之后每一集都照它给出资源 (算精确匹配, 能自动选、自动接着播下一集).
+ * 也能把网盘里的字幕文件挂到电视上正在播的夸克视频上 (见 [QuarkDriveService.pickSubtitle]).
  *
  * 只认最近搜到或列出来的文件 (服务端记着), 不拿手机传来的名字和大小去记.
  */
@@ -69,6 +73,8 @@ internal object RemoteQuarkDrive {
                 request.path == "api/player/drive/play" -> play(player, request.field("fid"))
                 request.path == "api/player/drive/folder" -> pickFolder(player, request.field("fid"))
                 request.path == "api/player/drive/forget" -> forget(player, request.field("fid"))
+                request.path == "api/player/drive/subtitle" -> attachSubtitle(player, request.field("fid"))
+                request.path == "api/player/drive/unsubtitle" -> detachSubtitle(player, request.field("fid"))
                 else -> null
             }
         } catch (e: QuarkAuthException) {
@@ -79,12 +85,14 @@ internal object RemoteQuarkDrive {
         }
     }
 
-    /** 这部番已经指定的位置, 搜索框里先填的名字, 以及可以点着搜的这部番的搜索名. */
+    /** 这部番已经指定的位置、正在播的视频挂上的字幕, 搜索框里先填的名字, 以及可以点着搜的这部番的搜索名. */
     private fun picks(player: RemotePlayerHandle?): JsonObject {
         val handle = player ?: return result(false, tr("电视当前不在播放页"))
         val request = handle.page?.fetchRequest
         val loggedIn = runBlocking { drive.config.first().isLoggedIn }
         val picks = if (loggedIn) runBlocking { drive.picksOf(handle.vm.subjectId) } else QuarkSubjectPicks()
+        val subtitleKey = handle.vm.loadedMedia.value?.let { drive.subtitleKeyOf(it) }
+        val subtitles = if (loggedIn && subtitleKey != null) runBlocking { drive.pickedSubtitlesOf(subtitleKey) } else emptyList()
         return buildJsonObject {
             put("ok", true)
             put("message", "")
@@ -108,6 +116,14 @@ internal object RemoteQuarkDrive {
                     put("meta", tr("当作第 {0} 集", file.episode))
                 }
             }
+            // 正在播的是夸克的视频时才能挂字幕
+            put("canAttach", subtitleKey != null)
+            putJsonArray("subtitles") {
+                for (subtitle in subtitles) addJsonObject {
+                    put("fid", subtitle.fid)
+                    put("name", subtitle.fileName)
+                }
+            }
         }
     }
 
@@ -121,9 +137,9 @@ internal object RemoteQuarkDrive {
         return listing(runBlocking { drive.listForPicking(folderId) }, folderName = name)
     }
 
-    /** 只列文件夹与视频 (文件夹在前, 接口已经排好). */
+    /** 只列文件夹、视频与字幕文件 (文件夹在前, 接口已经排好). */
     private fun listing(files: List<QuarkFile>, folderName: String?): JsonObject {
-        val shown = files.filter { it.dir || it.isVideo }
+        val shown = files.filter { it.dir || it.isVideo || drive.isSubtitleFile(it.fileName) }
         synchronized(seen) { for (file in shown) seen[file.fid] = Seen(file, folderName) }
         return buildJsonObject {
             put("ok", true)
@@ -133,6 +149,7 @@ internal object RemoteQuarkDrive {
                     put("fid", file.fid)
                     put("name", file.fileName)
                     put("dir", file.dir)
+                    if (!file.dir && !file.isVideo) put("sub", true)
                     if (!file.dir) put("meta", fileMeta(file))
                 }
             }
@@ -199,6 +216,53 @@ internal object RemoteQuarkDrive {
         return result(true, tr("已记下：这部番在「{0}」里，认出第 {1} 集，正在电视上播放第 {2} 集", folder.fileName, episodes, request.episodeSort) + refreshed)
     }
 
+    /**
+     * 把字幕文件 [fid] 挂到电视上正在播的视频上: 记在账号里 (之后播这个视频都带上), 让播放器原地重新加载并选上它.
+     */
+    private fun attachSubtitle(player: RemotePlayerHandle?, fid: String): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        val file = synchronized(seen) { seen[fid] }?.file?.takeIf { !it.dir && drive.isSubtitleFile(it.fileName) }
+            ?: return result(false, tr("找不到这个文件，请重新搜索"))
+        val media = handle.vm.loadedMedia.value ?: return result(false, tr("电视上还没有在播的视频"))
+        val key = drive.subtitleKeyOf(media) ?: return result(false, tr("只能给夸克网盘里的视频挂字幕，电视上正在播的不是"))
+        runBlocking { drive.pickSubtitle(key, file) }
+        reload(handle, drive.subtitleLabelOf(file.fileName))
+        return result(true, tr("已给正在播的视频挂上「{0}」，电视上的视频正在重新加载", file.fileName))
+    }
+
+    private fun detachSubtitle(player: RemotePlayerHandle?, fid: String): JsonObject {
+        val handle = player ?: return result(false, tr("电视当前不在播放页"))
+        val media = handle.vm.loadedMedia.value ?: return result(false, tr("电视上还没有在播的视频"))
+        val key = drive.subtitleKeyOf(media) ?: return result(false, tr("只能给夸克网盘里的视频挂字幕，电视上正在播的不是"))
+        runBlocking { drive.forgetSubtitle(key, fid) }
+        reload(handle, label = null)
+        return result(true, tr("已取下这条字幕，电视上的视频正在重新加载"))
+    }
+
+    /**
+     * 让播放器原地重新加载正在播的视频 (重新取字幕), 回到现在的位置; [label] 不为 null 时装好后选上这个名字的外挂字幕.
+     * 外挂字幕的轨道排在内封的后面 (id 不以 `0:` 开头), 手动挂的又排在外挂的最前; 与别的重名时播放器里加了序号.
+     */
+    private fun reload(handle: RemotePlayerHandle, label: String?) {
+        handle.runOnUi {
+            if (!handle.vm.reloadCurrentMedia()) return@runOnUi
+            if (label == null) return@runOnUi
+            withTimeoutOrNull(RELOAD_WAIT_MILLIS) {
+                delay(1_000)
+                while (true) {
+                    val track = handle.subtitleState?.candidates?.firstOrNull {
+                        !it.id.startsWith("0:") && (it.subtitleLanguage == label || it.subtitleLanguage.startsWith("$label "))
+                    }
+                    if (track != null) {
+                        handle.selectSubtitle(track.id)
+                        break
+                    }
+                    delay(500)
+                }
+            }
+        }
+    }
+
     private fun forget(player: RemotePlayerHandle?, fid: String): JsonObject {
         val handle = player ?: return result(false, tr("电视当前不在播放页"))
         runBlocking { drive.forgetPick(handle.vm.subjectId, fid) }
@@ -250,6 +314,10 @@ internal object RemoteQuarkDrive {
             ?.let { URLDecoder.decode(it, "UTF-8") }
 
     private const val CANDIDATE_WAIT_MILLIS = 20_000L
+
+    /** 挂上字幕后最多等多久让新轨道出现 (重新加载视频要几秒到十几秒). */
+
+    private const val RELOAD_WAIT_MILLIS = 60_000L
 
     /** 一次最多列几项. */
     private const val MAX_LISTED = 200

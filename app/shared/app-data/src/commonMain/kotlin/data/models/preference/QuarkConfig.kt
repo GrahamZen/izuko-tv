@@ -39,13 +39,18 @@ data class QuarkConfig(
      * 用户在 Web 控制台给条目手动指定的网盘文件夹与文件 (条目 id → 指定). 文件 id 只在这个账号里有效, 退出登录时跟着清掉.
      */
     val subjectPicks: Map<Int, QuarkSubjectPicks> = emptyMap(),
+    /**
+     * 用户在 Web 控制台给视频手动挂上的网盘字幕文件 (视频 → 字幕, 见 `QuarkDriveService.subtitleKeyOf`), 播放这个视频时一并带上.
+     * 同 [subjectPicks] 只在这个账号里有效.
+     */
+    val pickedSubtitles: Map<String, List<QuarkPickedSubtitle>> = emptyMap(),
 ) {
     val isLoggedIn: Boolean get() = cookie.isNotBlank()
 
     override fun toString(): String {
         return "QuarkConfig(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
                 "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
-                "subjectPicks=${subjectPicks.size})"
+                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size})"
     }
 
     companion object {
@@ -81,6 +86,10 @@ data class QuarkPickedFile(
     val size: Long = 0,
     val episode: String,
 )
+
+/** 手动挂到某个视频上的一个网盘字幕文件. */
+@Serializable
+data class QuarkPickedSubtitle(val fid: String, val fileName: String)
 
 enum class QuarkPlaybackMode {
     /**
