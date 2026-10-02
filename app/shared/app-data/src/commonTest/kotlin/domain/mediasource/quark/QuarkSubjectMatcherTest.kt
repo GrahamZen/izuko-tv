@@ -110,6 +110,26 @@ class QuarkSubjectMatcherTest {
     }
 
     @Test
+    fun `TMDB season-episode file names follow the subject's episode map`() = runTest {
+        // 天降之物f 的条目名不写季, 网盘按 TMDB 整理成 S02; 同一个文件夹里还混着第一季的一集
+        val forte = (1..3).map { video("f$it", "Heaven's Lost Property.2009.S02E${two(it)}.mkv") }
+        val browser = FakeBrowser(
+            searchResults = mapOf("天降之物f" to listOf(dir("root", "天降之物 f"))),
+            folders = mapOf("root" to forte + video("s1", "Heaven's Lost Property.2009.S01E01.mkv")),
+        )
+        val episodes = (1..3).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
+        // 对应表: 天降之物f 第 k 集 = TMDB S2Ek
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (2 to it.sort.number!!.toInt()) to it.sort } }
+
+        val matched = QuarkSubjectMatcher(browser, numbering).match(request("天降之物f", episodes = episodes))
+        assertEquals(listOf("f1@01", "f2@02", "f3@03"), matched.map { "${it.file.fid}@${it.episode}" }.sorted())
+
+        // 表里没有这个条目时照旧按条目名认季: 名字不写季 = 第一季
+        val fallback = QuarkSubjectMatcher(browser).match(request("天降之物f", episodes = episodes))
+        assertEquals(listOf("s1"), fallback.map { it.file.fid })
+    }
+
+    @Test
     fun `unmarked files of a later season need absolute episode numbers`() = runTest {
         val browser = FakeBrowser(
             searchResults = mapOf("葬送的芙莉莲" to listOf(dir("root", "葬送的芙莉莲"))),

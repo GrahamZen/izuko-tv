@@ -201,11 +201,12 @@ internal class QuarkShareMatch(
 internal class QuarkShareSearchEngine(
     private val config: QuarkShareSearchConfig,
     private val shares: QuarkShareBrowser,
+    numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 请求站点搜索接口; 失败返回 null. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val reader = QuarkShareReader(shares)
+    private val reader = QuarkShareReader(shares, numbering)
 
     suspend fun search(request: MediaFetchRequest): List<QuarkShareMatch> {
         val names = QuarkSubjectMatcher.subjectNamesOf(request)
@@ -313,7 +314,7 @@ class QuarkShareSearchMediaSource(
     private val userAgent: String?
         get() = arguments.config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current
 
-    private val engine = QuarkShareSearchEngine(arguments.config, service.shareBrowser, ::fetchBytes)
+    private val engine = QuarkShareSearchEngine(arguments.config, service.shareBrowser, service.episodeNumbering, ::fetchBytes)
 
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online

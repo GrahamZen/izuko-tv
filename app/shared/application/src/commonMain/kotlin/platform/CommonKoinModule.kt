@@ -750,7 +750,7 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<MediaSourceCodecManager> {
         MediaSourceCodecManager()
     }
-    single<QuarkDriveService> { QuarkDriveService(get<SettingsRepository>().quarkConfig) }
+    single<QuarkDriveService> { QuarkDriveService(get<SettingsRepository>().quarkConfig, get<TmdbSubjectMapRepository>()) }
     single<QuarkAddedShareService> { QuarkAddedShareService(get<SettingsRepository>().quarkAddedShares, get<QuarkDriveService>()) }
     single<MediaSourceManager> {
         MediaSourceManagerImpl(

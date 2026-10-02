@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.logging.info
@@ -42,8 +43,11 @@ class QuarkDriveService internal constructor(
     private val settings: Settings<QuarkConfig>,
     httpClient: HttpClient,
     driveHosts: List<String> = QuarkApi.DRIVE_HOSTS,
+    /** 按 TMDB 季集整理的文件换算成条目的集 (三个夸克数据源共用) */
+    internal val episodeNumbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
 ) {
-    constructor(settings: Settings<QuarkConfig>) : this(settings, QuarkApi.createHttpClient())
+    constructor(settings: Settings<QuarkConfig>, tmdbSubjectMap: TmdbSubjectMapRepository) :
+            this(settings, QuarkApi.createHttpClient(), episodeNumbering = TmdbEpisodeNumbering.of(tmdbSubjectMap))
 
     private val cookieLock = Mutex()
 

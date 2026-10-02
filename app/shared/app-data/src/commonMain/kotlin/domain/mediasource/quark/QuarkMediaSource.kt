@@ -50,7 +50,7 @@ class QuarkMediaSource(
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
     override val info: MediaSourceInfo get() = INFO
 
-    private val matcher = QuarkSubjectMatcher(service.browser)
+    private val matcher = QuarkSubjectMatcher(service.browser, service.episodeNumbering)
 
     override suspend fun checkConnection(): ConnectionStatus {
         return try {
