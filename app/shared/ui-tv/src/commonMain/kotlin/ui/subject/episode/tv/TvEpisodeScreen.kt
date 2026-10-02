@@ -131,6 +131,7 @@ import me.him188.ani.app.ui.main.LocalTvAdjustWindows
 import me.him188.ani.app.ui.main.TvAdjustWindow
 import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
+import me.him188.ani.app.videoplayer.ui.LocalSubtitleObstructionTop
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
@@ -1572,11 +1573,14 @@ fun TvEpisodeScreenContent(
                     )
                     .focusable(), // 根节点可聚焦: 纯视频态持焦收按键
             ) {
-                // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰
-                VideoPlayer(
-                    vm.player,
-                    Modifier.matchParentSize(),
-                )
+                // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰. 控制层在场时底部字幕挪到它上面
+                val subtitleObstructionTop = remember(overlay) { { overlay.subtitleObstructionTopPx() } }
+                CompositionLocalProvider(LocalSubtitleObstructionTop provides subtitleObstructionTop) {
+                    VideoPlayer(
+                        vm.player,
+                        Modifier.matchParentSize(),
+                    )
+                }
 
                 // 触屏手势层 (电视上不组合): 在视频面之上、一切覆盖层之下 —— 覆盖层里可点/可滚的节点
                 // 在 z 序上压着它, 命中它们的事件到不了这里, 只有落在空白处的手势才算画面手势
