@@ -9,4 +9,4 @@
 
 package me.him188.ani.app.platform
 
-actual fun Context.deviceBrowserUserAgent(): String? = null
+actual suspend fun Context.deviceBrowserUserAgent(): String? = null
