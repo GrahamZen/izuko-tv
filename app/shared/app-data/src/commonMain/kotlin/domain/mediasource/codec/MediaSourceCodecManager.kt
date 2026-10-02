@@ -23,6 +23,7 @@ import me.him188.ani.app.domain.mediasource.subscription.SubscriptionUpdateDataR
 import me.him188.ani.app.domain.mediasource.subscription.UnsupportedSubscriptionSchemaException
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceCodec
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.utils.platform.annotations.TestOnly
 
@@ -36,6 +37,7 @@ class MediaSourceCodecManager(
         SelectorMediaSourceCodec,
         JsonApiMediaSourceCodec,
         DirectApiMediaSourceCodec,
+        MacCmsMediaSourceCodec,
     )
 ) {
 
