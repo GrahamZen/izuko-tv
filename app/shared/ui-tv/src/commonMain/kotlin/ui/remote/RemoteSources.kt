@@ -33,6 +33,8 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.quark.QuarkShareSearchArguments
 import me.him188.ani.app.domain.mediasource.quark.QuarkShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
@@ -84,7 +86,8 @@ internal object RemoteSources {
     private val SELECTOR = FactoryId("web-selector")
     private val DIRECT_API = DirectApiMediaSource.FactoryId
     private val QUARK_SHARE = QuarkShareSearchMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, QUARK_SHARE)
+    private val MAC_CMS = MacCmsMediaSource.FactoryId
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, QUARK_SHARE, MAC_CMS)
 
     private val pretty = Json {
         prettyPrint = true
@@ -261,6 +264,7 @@ internal object RemoteSources {
             // 给一份结构完整的示例, 比空模板好改
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
             QUARK_SHARE -> codec.encode(QuarkShareSearchArguments.Example)
+            MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
