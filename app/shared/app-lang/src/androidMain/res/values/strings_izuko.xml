@@ -410,6 +410,9 @@
     <string name="video_player_tv_up_next_in">in %1$ds</string>
     <string name="video_player_tv_episodes">Episodes</string>
     <string name="video_player_tv_skip_segment">Skip %1$s</string>
+    <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
+    <string name="video_player_audio_track_numbered">Audio %1$d</string>
+    <string name="video_player_subtitle_numbered">Subtitle %1$d</string>
     <string name="video_player_tv_chrome_title">Customize player buttons</string>
     <string name="video_player_tv_chrome_subtitle">Nothing plays on this page. However you arrange these buttons is how the player will look.</string>
     <string name="video_player_tv_chrome_hint">OK to pick up  ·  Hold OK to hide or show  ·  Back to leave</string>

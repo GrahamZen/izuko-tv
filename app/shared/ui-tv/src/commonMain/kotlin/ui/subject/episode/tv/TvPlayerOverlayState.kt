@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.episode.tv
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -199,6 +200,23 @@ class TvPlayerOverlayState(
      */
     var episodeStripExpanded: Boolean by mutableStateOf(false)
         private set
+
+    /**
+     * 控制层底部区块的上沿 (window 坐标原始 px, 没量到为 NaN), 由 TvPlayerControlsOverlay 量: 胶囊行的与选集条的.
+     * 胶囊行那个也是浮出面板的下锚点; 两个都只在测量 / snapshotFlow 里读.
+     */
+    internal val pillsRowTopPx = mutableFloatStateOf(Float.NaN)
+    internal val episodeStripTopPx = mutableFloatStateOf(Float.NaN)
+
+    /**
+     * 控制层挡住画面底部那一块的上沿 (window 坐标 px): 播放器把底部字幕挪到它上面. 控制层不在场时为 null, 字幕在原位.
+     * 选集条展开时挡住的是选集条, 否则是胶囊行起往下那一块.
+     */
+    fun subtitleObstructionTopPx(): Float? {
+        if (layer != TvPlayerLayer.CONTROLS) return null
+        val top = if (episodeStripExpanded) episodeStripTopPx.floatValue else pillsRowTopPx.floatValue
+        return top.takeUnless { it.isNaN() }
+    }
 
     /**
      * 选集条正处在「接下来播放」倒计时态: 片尾自动展开的那一档 —— 只有卡片行与一行提示,
