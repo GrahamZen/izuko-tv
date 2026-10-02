@@ -33,6 +33,8 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceArguments
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -81,7 +83,8 @@ internal object RemoteSources {
     private val RSS = FactoryId("rss")
     private val SELECTOR = FactoryId("web-selector")
     private val DIRECT_API = DirectApiMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API)
+    private val MAC_CMS = MacCmsMediaSource.FactoryId
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, MAC_CMS)
 
     private val pretty = Json {
         prettyPrint = true
@@ -257,6 +260,7 @@ internal object RemoteSources {
             SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
             // 给一份结构完整的示例, 比空模板好改
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
+            MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
