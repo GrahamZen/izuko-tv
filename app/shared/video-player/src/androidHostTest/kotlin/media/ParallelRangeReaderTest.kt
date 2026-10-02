@@ -49,11 +49,14 @@ class ParallelRangeReaderTest {
         val failingOpens: Int = 0,
         /** 打开时回这个错误 (例如 HTTP 403), 每次都回 */
         val rejectWith: IOException? = null,
+        /** 范围越过文件末尾时不按范围回, 回整个文件 (像夸克的 pds 节点); 数据源得先读掉前面的才到要的位置, 读掉的记进 [skipped] */
+        val ignoresRangePastEnd: Boolean = false,
     ) : RangeOpener {
         val opened = mutableListOf<Pair<Long, Long>>()
         val active = AtomicInteger()
         val maxActive = AtomicInteger()
         val served = AtomicLong()
+        val skipped = AtomicLong()
 
         /** 在别的线程正读着时被关的次数 (OkHttp 这时会抛错、连接关不掉) */
         val closedWhileReading = AtomicInteger()
@@ -66,8 +69,13 @@ class ParallelRangeReaderTest {
             rejectWith?.let { throw it }
             if (count <= failingOpens) throw IOException("connect timed out ($count)")
             if (start >= alwaysFailFrom) throw IOException("server error at $start")
-            val from = if (supportsRange) start else 0L
-            val until = if (!supportsRange || length < 0) content.size.toLong() else minOf(content.size.toLong(), start + length)
+            val pastEnd = ignoresRangePastEnd && length >= 0 && start + length > content.size
+            // 同播放器的 HTTP 数据源: 从 0 开始又不封口时不带 Range 头, 服务端回整个文件、不给总长
+            val noRangeHeader = start == 0L && length < 0
+            val ranged = supportsRange && !pastEnd && !noRangeHeader
+            if (pastEnd) skipped.addAndGet(start)
+            val from = if (ranged || pastEnd) start else 0L
+            val until = if (!ranged || length < 0) content.size.toLong() else minOf(content.size.toLong(), start + length)
             maxActive.accumulateAndGet(active.incrementAndGet(), ::maxOf)
             val connection = object : RangeConnection {
                 var position = from
@@ -105,7 +113,7 @@ class ParallelRangeReaderTest {
                     active.decrementAndGet()
                 }
             }
-            return OpenedRange(connection, if (supportsRange) content.size.toLong() else -1)
+            return OpenedRange(connection, if (ranged) content.size.toLong() else -1)
         }
     }
 
@@ -132,7 +140,7 @@ class ParallelRangeReaderTest {
         reader.close()
 
         assertTrue(server.maxActive.get() in 2..4, "expected parallel connections, got ${server.maxActive.get()}")
-        // 每块一次请求, 第一块就是打开时那次
+        // 每块一次请求, 第一块就是打开时那次 (从头读时封口, 不然不带 Range 头、整个文件回来就分不了块)
         assertEquals(11, server.opened.size)
         assertEquals(0L to 1000L, server.opened.first())
     }
@@ -151,6 +159,17 @@ class ParallelRangeReaderTest {
         assertEquals(0, server.active.get(), "every connection is closed")
         assertEquals(0, server.closedWhileReading.get(), "no connection is closed while another thread reads it")
         assertTrue(server.served.get() < 4 * 1000, "the chunks stop instead of finishing: served ${server.served.get()}")
+    }
+
+    @Test
+    fun `reading near the end never asks for a range past the end`() {
+        // 播放器跳到文件尾读索引, 只剩 300 字节, 比一块小
+        val server = FakeServer(ignoresRangePastEnd = true)
+        val reader = reader(server)
+        assertEquals(300L, reader.open(content.size - 300L, -1))
+        assertContentEquals(content.copyOfRange(content.size - 300, content.size), reader.readAll())
+        reader.close()
+        assertEquals(0L, server.skipped.get(), "no bytes skipped before the position")
     }
 
     @Test

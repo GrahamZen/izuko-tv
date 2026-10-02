@@ -151,12 +151,24 @@ internal class ParallelRangeReader(
             direct = openWithRetry(position, length).connection
             return length
         }
-        val firstLength = if (length < 0) chunkSize.toLong() else minOf(length, chunkSize.toLong())
+        // 不知道要读到哪、又不是从头读时 (播放器跳到文件尾读索引), 第一次请求不封口 (`bytes=p-`), 第一块只从它读一块的量:
+        // 封口的范围可能越过文件末尾, 有的节点 (夸克 `pds`) 对这种请求回整个文件 (200), 播放器的 HTTP 数据源会把前面的全读掉再给,
+        // 位置靠后时要等一两分钟. 从头读时照旧封口: 从 0 开始又不封口的请求, HTTP 数据源根本不带 Range 头, 服务端回整个文件, 就分不了块了
+        val firstLength = when {
+            length >= 0 -> minOf(length, chunkSize.toLong())
+            position > 0 -> -1
+            else -> chunkSize.toLong()
+        }
         val first = openWithRetry(position, firstLength)
         if (first.totalLength < 0) {
-            // 服务端没按范围回 (整个文件都在这个连接里): 不能分块, 换成直接读
-            runCatching { first.connection.close() }
-            direct = openWithRetry(position, length).connection
+            // 服务端没按范围回 (整个文件都在这个连接里, 数据源已经跳到 position): 不能分块, 直接读.
+            // 不封口的那次就是要的范围, 接着用; 封口的那次只给了一块, 重开一次要的长度
+            direct = if (firstLength < 0) {
+                first.connection
+            } else {
+                runCatching { first.connection.close() }
+                openWithRetry(position, length).connection
+            }
             return length
         }
         end = if (length < 0) first.totalLength else minOf(position + length, first.totalLength)
