@@ -375,7 +375,8 @@ internal fun TvPlayerControlsOverlay(
         // 面板最大高度 = 两者间距 (见 TvPlayerPanelHost), 4K 一类大逻辑分辨率下不再锁死小窗.
         // 写的是 window 坐标原始 px; 只在面板的测量阶段读, 位置变化不触发本层重组
         val topInfoBottomPx = remember { mutableFloatStateOf(Float.NaN) }
-        val pillsRowTopPx = remember { mutableFloatStateOf(Float.NaN) }
+        // 记在状态机里: 播放器还拿它把底部字幕挪到控制层上面 (见 TvPlayerOverlayState.subtitleObstructionTopPx)
+        val pillsRowTopPx = overlay.pillsRowTopPx
 
         // 顶部信息: 左上标题 + 右上时钟
         TvPlayerTopInfo(
@@ -632,7 +633,9 @@ internal fun TvPlayerControlsOverlay(
                     TvPlayerFocusTarget.EPISODE_STRIP,
                 ),
                 // 同 TvPlayerPanelHost: 卡片行要整层合成
-                modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth(),
+                modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth()
+                    // 展开时底部字幕挪到它上面
+                    .onGloballyPositioned { overlay.episodeStripTopPx.floatValue = it.boundsInWindow().top },
             )
             TvEpisodeStripLoadingHint(
                 overlay,

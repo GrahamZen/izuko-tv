@@ -445,6 +445,7 @@ private class LibassMediaSourcePipeline(
     private val proxyConfig: () -> PlaybackProxyConfig?,
 ) {
     val assHandler = AssHandler(
+        // 画在视频上面单独一层 GL 视图里 (LiftableAssSubtitleView), 控制层出现时下半部分能挪开
         renderType = AssRenderType.OVERLAY_OPEN_GL,
         config = AssHandlerConfig(maxRenderPixels = 1920 * 1080),
     )
