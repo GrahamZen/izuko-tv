@@ -178,11 +178,13 @@ import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.SpeedS
 import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.VideoAspectRatioSelector
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
 import me.him188.ani.app.videoplayer.ui.progress.ProgressSliderPreviewStyle
+import me.him188.ani.app.videoplayer.ui.progress.AudioSwitcher
 import me.him188.ani.app.videoplayer.ui.progress.SubtitleSwitcher
 import me.him188.ani.app.videoplayer.ui.top.SystemTime
 import org.jetbrains.compose.resources.stringResource
 import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.VideoAspectRatio
+import org.openani.mediamp.features.audioTracks
 import org.openani.mediamp.features.subtitleTracks
 import kotlin.time.Duration
 
@@ -373,7 +375,8 @@ internal fun TvPlayerControlsOverlay(
         // 面板最大高度 = 两者间距 (见 TvPlayerPanelHost), 4K 一类大逻辑分辨率下不再锁死小窗.
         // 写的是 window 坐标原始 px; 只在面板的测量阶段读, 位置变化不触发本层重组
         val topInfoBottomPx = remember { mutableFloatStateOf(Float.NaN) }
-        val pillsRowTopPx = remember { mutableFloatStateOf(Float.NaN) }
+        // 记在状态机里: 播放器还拿它把底部字幕挪到控制层上面 (见 TvPlayerOverlayState.subtitleObstructionTopPx)
+        val pillsRowTopPx = overlay.pillsRowTopPx
 
         // 顶部信息: 左上标题 + 右上时钟
         TvPlayerTopInfo(
@@ -630,7 +633,9 @@ internal fun TvPlayerControlsOverlay(
                     TvPlayerFocusTarget.EPISODE_STRIP,
                 ),
                 // 同 TvPlayerPanelHost: 卡片行要整层合成
-                modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth(),
+                modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth()
+                    // 展开时底部字幕挪到它上面
+                    .onGloballyPositioned { overlay.episodeStripTopPx.floatValue = it.boundsInWindow().top },
             )
             TvEpisodeStripLoadingHint(
                 overlay,
@@ -1212,7 +1217,7 @@ private fun renderTvPlayerTime(millis: Long): String {
 
 /**
  * 图标行此刻**实际在场**的条目: 用户排的版式 (顺序 + 显隐, 见 [TvPlayerChromeLayout]) 再过一道
- * 运行时筛选 (没有下一集 / 片源没有字幕轨 / 一起看被关掉), 最后收拾掉落单的分组竖线.
+ * 运行时筛选 (没有下一集 / 片源没有字幕轨或音轨 / 一起看被关掉), 最后收拾掉落单的分组竖线.
  *
  * 为什么要在控制层里先算一遍, 而不是让行自己边画边判: 「进度条按下键落到哪一颗」与
  * 「整行空了就别摆出来」这两件事, 都得在行组合之前知道答案.
@@ -1225,12 +1230,13 @@ private fun rememberTvBottomRowItems(
     val touchInput = LocalTvTouchInputEnabled.current
     val hasNextEpisode = vm.episodeSelectorState.hasNextEpisode
     val hasSubtitleTracks = vm.player.subtitleTracks != null
+    val hasAudioTracks = vm.player.audioTracks != null
     val hasSpeed = vm.player.features[PlaybackSpeed] != null
     val hasAspectRatio = vm.player.features[VideoAspectRatio] != null
     return remember(
-        layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio,
+        layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasAudioTracks, hasSpeed, hasAspectRatio,
     ) {
-        tvBottomRowItemsOf(layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasSpeed, hasAspectRatio)
+        tvBottomRowItemsOf(layout, touchInput, hasNextEpisode, hasSubtitleTracks, hasAudioTracks, hasSpeed, hasAspectRatio)
     }
 }
 
@@ -1240,6 +1246,7 @@ private fun tvBottomRowItemsOf(
     touchInput: Boolean,
     hasNextEpisode: Boolean,
     hasSubtitleTracks: Boolean,
+    hasAudioTracks: Boolean,
     hasSpeed: Boolean,
     hasAspectRatio: Boolean,
 ): List<TvPlayerChromeItem> = TvPlayerChromeLayout.tidySeparators(
@@ -1252,6 +1259,7 @@ private fun tvBottomRowItemsOf(
             // 版式配置还能反序列化 —— 但它永远不出现, 编辑页那边也别列 (见 TvPlayerChromeCatalog)
             TvPlayerChromeItem.WATCH_TOGETHER -> false
             TvPlayerChromeItem.SUBTITLE_TRACK -> hasSubtitleTracks
+            TvPlayerChromeItem.AUDIO_TRACK -> hasAudioTracks
             TvPlayerChromeItem.PLAYBACK_SPEED -> hasSpeed
             TvPlayerChromeItem.ASPECT_RATIO -> hasAspectRatio
             else -> true
@@ -1271,6 +1279,7 @@ internal fun EpisodeViewModel.tvChromeItemShown(
         touchInput,
         hasNextEpisode = episodeSelectorState.hasNextEpisode,
         hasSubtitleTracks = player.subtitleTracks != null,
+        hasAudioTracks = player.audioTracks != null,
         hasSpeed = player.features[PlaybackSpeed] != null,
         hasAspectRatio = player.features[VideoAspectRatio] != null,
     )
@@ -1278,7 +1287,7 @@ internal fun EpisodeViewModel.tvChromeItemShown(
 
 /**
  * [item] 没被隐藏时, 控制层上是不是**总会**有它这一颗能按 (能长按回到「自定义播放器按钮」): 竖线与留白不能聚焦,
- * 看运行时条件的 (下一集 / 字幕轨 / 倍速 / 画面比例) 不一定在场, 触屏专有与退役的在电视上不画 —— 与 [tvBottomRowItemsOf] 的筛选对应.
+ * 看运行时条件的 (下一集 / 字幕轨 / 音轨 / 倍速 / 画面比例) 不一定在场, 触屏专有与退役的在电视上不画 —— 与 [tvBottomRowItemsOf] 的筛选对应.
  */
 internal fun tvChromeItemAlwaysShown(item: TvPlayerChromeItem): Boolean =
     !item.isSeparator && !item.isConditional && !item.isTouchOnly && !item.isRetired
@@ -1435,11 +1444,24 @@ private fun TvPlayerBottomRow(
                     // 「一起看」已随 Ani 服务器一起删掉; 过滤那一步就把它挡住了, 这里只是穷尽分支
                     TvPlayerChromeItem.WATCH_TOGETHER -> Unit
 
-                    // ---- 文字选项组 (字幕轨/倍速/画面比例, 自描述文字按钮, 标签槽位仅为行内对齐) ----
+                    // ---- 文字选项组 (字幕轨/音轨/倍速/画面比例, 自描述文字按钮, 标签槽位仅为行内对齐) ----
                     TvPlayerChromeItem.SUBTITLE_TRACK -> vm.player.subtitleTracks?.let {
                         TvBottomRowLabeled(label = null, itemModifier) {
                             TvTextButtonInverse {
                                 PlayerControllerDefaults.SubtitleSwitcher(
+                                    it,
+                                    modifier = Modifier.height(TV_ICON_BUTTON_SIZE),
+                                    onExpandedChanged = { open -> overlay.onPopupExpandedChanged(open) },
+                                )
+                            }
+                        }
+                    }
+
+                    // 只有一条音轨时切换器什么也不画 (同字幕轨没有轨道时)
+                    TvPlayerChromeItem.AUDIO_TRACK -> vm.player.audioTracks?.let {
+                        TvBottomRowLabeled(label = null, itemModifier) {
+                            TvTextButtonInverse {
+                                PlayerControllerDefaults.AudioSwitcher(
                                     it,
                                     modifier = Modifier.height(TV_ICON_BUTTON_SIZE),
                                     onExpandedChanged = { open -> overlay.onPopupExpandedChanged(open) },
