@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
+import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
 import me.him188.ani.app.data.models.UserInfo
 import me.him188.ani.app.data.models.person.PersonCommentInfo
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
@@ -37,7 +38,8 @@ class PersonDetailsViewModel(personId: Int) : AbstractViewModel(), KoinComponent
         .retryWithBackoff()
         .stateInBackground(null)
     val castsPager = repository.personCastsPager(personId).cachedIn(backgroundScope)
-    val worksPager = repository.personWorksPager(personId).cachedIn(backgroundScope)
+    // NSFW 设为隐藏时去掉 (见 SubjectNsfw)
+    val worksPager = repository.personWorksPager(personId).withoutHiddenNsfw { it.subject.subjectId }.cachedIn(backgroundScope)
 
     /** 复用剧集/条目评论 UI ([me.him188.ani.app.ui.comment.CommentColumn]); 人物评论无评分、只读 (不支持贴表情). */
     val commentState = CommentState(
@@ -57,7 +59,8 @@ class CharacterDetailsViewModel(characterId: Int) : AbstractViewModel(), KoinCom
     val details = repository.characterDetailsFlow(characterId)
         .retryWithBackoff()
         .stateInBackground(null)
-    val subjectsPager = repository.characterSubjectsPager(characterId).cachedIn(backgroundScope)
+    // NSFW 设为隐藏时去掉 (见 SubjectNsfw)
+    val subjectsPager = repository.characterSubjectsPager(characterId).withoutHiddenNsfw { it.subject.subjectId }.cachedIn(backgroundScope)
 
     /** @see PersonDetailsViewModel.commentState */
     val commentState = CommentState(

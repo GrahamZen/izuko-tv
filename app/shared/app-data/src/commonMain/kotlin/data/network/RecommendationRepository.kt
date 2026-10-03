@@ -48,6 +48,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
@@ -589,9 +590,11 @@ class RecommendationRepository(
             feedDao.pagingSource()
         }.flow.map { data -> data.map { it.toInfo() } }
 
+    // 缓存表只存了中文名; 原名只给手机界面的「显示原名」用, TV 页面不读, 这里留空 (preferredDisplayName 回落中文名)
     private fun RecommendationFeedEntity.toInfo() = RecommendedSubjectInfo(
         bangumiId = subjectId,
         nameCn = nameCn,
+        name = "",
         imageLarge = imageLarge,
     )
 
@@ -1668,6 +1671,7 @@ class RecommendationRepository(
                 RecommendedSubjectInfo(
                     bangumiId = info.subjectId,
                     nameCn = info.nameCn.ifEmpty { info.name },
+                    name = info.name,
                     imageLarge = info.imageLarge,
                 )
             }
@@ -1837,7 +1841,7 @@ class RecommendationRepository(
                             // 回到 167 集的犬夜叉 —— 续篇本身也不该推): 这一格换个候补
                             nextReserve(row.reserves) ?: continue
                         }
-                        replace(RecommendedSubjectInfo(entity.subjectId, entity.nameCn, entity.imageLarge), to)
+                        replace(RecommendedSubjectInfo(entity.subjectId, entity.nameCn, name = "", imageLarge = entity.imageLarge), to)
                         updates += entity.copy(subjectId = to.bangumiId, nameCn = to.nameCn, imageLarge = to.imageLarge)
                     }
                     if (updates.isNotEmpty()) feedDao.replaceItems(updates)
@@ -1882,6 +1886,7 @@ class RecommendationRepository(
     private fun SeriesNode.toInfo() = RecommendedSubjectInfo(
         bangumiId = id,
         nameCn = nameCn.ifEmpty { name },
+        name = name,
         imageLarge = imageLarge,
     )
 
@@ -2081,6 +2086,7 @@ class RecommendationRepository(
         emptyList()
     }.mapNotNull { rec ->
         val subject = rec.subject
+        SubjectNsfw.record(subject.id, subject.nsfw)
         // 「看过这部的人也看过」不分条目类型, 漫画/游戏/三次元都会混进来 (实测 276792 的
         // 10 条推荐里有 3 条不是动画). 探索页只放动画.
         if (subject.type != BangumiNextSubjectType.Anime) return@mapNotNull null
@@ -2095,6 +2101,7 @@ class RecommendationRepository(
             RecommendedSubjectInfo(
                 bangumiId = subject.id,
                 nameCn = subject.nameCN.ifEmpty { subject.name },
+                name = subject.name,
                 imageLarge = subject.images?.large.orBangumiPlaceholder(),
             ),
             year = INFO_YEAR.find(subject.info)?.groupValues?.get(1)?.toIntOrNull(),
@@ -2328,6 +2335,7 @@ class RecommendationRepository(
             RecommendedSubjectInfo(
                 bangumiId = info.subjectId,
                 nameCn = info.nameCn.ifEmpty { info.name },
+                name = info.name,
                 imageLarge = info.imageLarge,
             ),
             year = info.airDate.year.takeIf { it > 0 },
@@ -2695,7 +2703,7 @@ class RecommendationRepository(
         val episodes: Int? = null,
     ) {
         fun toCandidate() = Candidate(
-            RecommendedSubjectInfo(id, nameCn, imageLarge),
+            RecommendedSubjectInfo(id, nameCn, name = "", imageLarge = imageLarge),
             year, tags, collectionCount, dropRate, activeAudience, format, regions, episodes,
         )
 
