@@ -1483,6 +1483,8 @@ private fun TvSearchResultsPane(
             }
             true
         },
+        // 标题 logo 同 hero 文字块, 用列表项自带的原名
+        originalNameOf = { id -> items.itemSnapshotList.items.firstOrNull { it.subjectId == id }?.originalName?.ifBlank { null } },
     )
 
     // 卡片长按弹出的收藏下拉 (与探索页/追番页一致); 打开后短暂吞掉长按残余的确认键, 避免误触第一项.

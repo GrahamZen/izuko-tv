@@ -193,7 +193,7 @@ class TvNativeGridPageView(
             backdrop.navigating = value
         }
 
-    val heroText = TvNativeHeroTextView(context, heroTextStyle)
+    val heroText = TvNativeHeroTextView(context, heroTextStyle).also { it.sketch = sketch }
 
     /** 最底下的整屏背景 (新番时间表, 见 [enableWallBackdrop]); null = 没有 (追番 / 搜索). */
     var wallBackdrop: TvNativeWallBackdropView? = null
@@ -711,10 +711,13 @@ class TvNativeGridPageView(
             if (value) {
                 // 连着换卡时模糊层同时只有一张在淡入 (单次按键当场换)
                 enableWallBackdrop().coalesceSwaps = true
+                // hero 标题的 logo 压在模糊背景上: 按正下方的背景判看不看得清
+                heroText.logoBackdrop = TvNativeLogoBackdrop { subjectId, rect -> wallBackdrop?.sampler(subjectId, rect) }
             } else {
                 wallFocus.reset()
                 wallBackdrop?.let { removeView(it) }
                 wallBackdrop = null
+                heroText.logoBackdrop = null
             }
             // 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 叠在模糊背景上时边缘擦成透明
             backdrop.feather = value
@@ -762,6 +765,7 @@ class TvNativeGridPageView(
         wallBackdrop ?: TvNativeWallBackdropView(context, sketch, scope).also { view ->
             view.composeRoot = composeRoot
             view.onSharpReady = { wallFocus.onSharpReady() }
+            view.onShownChanged = { heroText.logoBackdropChanged() }
             addView(view, 0)
             wallBackdrop = view
         }

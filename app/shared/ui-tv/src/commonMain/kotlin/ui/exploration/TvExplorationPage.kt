@@ -790,7 +790,10 @@ private fun TvExplorationPageContent(
         // 退出面板这类对话框盖在上面, 或应用在后台) 时不计时: 换图会连带 hero 媒体解析 / 预取 / 解码大图 / 重组, 全是白做.
         // 回到前台后**重新计时** —— 不能"等满 6 秒再等前台", 那样停久了一回来就立刻换图: 缩回刚落地画面就跳, hero 地址也对不上缩回那张
         // (撤层要等到就绪超时). 2026-09-15 审查
-        snapshotFlow { pageForeground.value && windowInfo.isWindowFocused }.collectLatest { active ->
+        // 轮播上按「立即观看」正在对焦 / 停在点开的样子 (见 TvNativeExploreView.heroBlur) 时也不计时: 换图会把对焦的背景换走
+        snapshotFlow {
+            pageForeground.value && windowInfo.isWindowFocused && !nativeState.wallOpening && !nativeState.wallOpened
+        }.collectLatest { active ->
             if (!active) return@collectLatest
             while (true) {
                 delay(TV_CAROUSEL_AUTO_ADVANCE_MILLIS)

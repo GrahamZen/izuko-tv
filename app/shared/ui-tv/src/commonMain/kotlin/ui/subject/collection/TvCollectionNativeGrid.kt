@@ -49,6 +49,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroStatus
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.lang.Lang
@@ -249,6 +250,7 @@ private fun tvCollectionNativeHeroText(
             nextEpisodeOverview ?: info.subjectInfo.summary.trim().ifBlank { summaryFallbackCache[info.subjectId].orEmpty() }
         }
     }
+    val logo = rememberTvTitleLogoLookup(info.subjectInfo.subjectId, info.subjectInfo.name)
     return TvNativeHeroText(
         subjectId = info.subjectInfo.subjectId,
         title = info.subjectInfo.displayName,
@@ -257,6 +259,8 @@ private fun tvCollectionNativeHeroText(
         meta = meta,
         status = status,
         summary = summary,
+        logo = logo.logo,
+        logoPending = logo.pending,
     )
 }
 

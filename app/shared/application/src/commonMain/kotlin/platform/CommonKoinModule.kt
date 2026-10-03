@@ -32,6 +32,7 @@ import me.him188.ani.app.data.network.AniSubjectSearchService
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
+import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.SequelSeasonTableRepository
@@ -261,6 +262,13 @@ private fun KoinApplication.otherModules(getContext: () -> Context, coroutineSco
     single<GitHubDownloadMirrors> {
         GitHubDownloadMirrors(
             listCache = get<SettingsRepository>().githubDownloadMirrorCache,
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    single<SubjectFeedbackService> {
+        SubjectFeedbackService(
+            listCache = get<SettingsRepository>().feedbackEndpointCache,
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
         )

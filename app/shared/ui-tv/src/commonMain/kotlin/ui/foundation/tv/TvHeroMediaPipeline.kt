@@ -195,6 +195,8 @@ class TvHeroMediaPipelineState internal constructor(
  * - 邻居后台预取 ([TvHeroPrefetch.background]): 单槽, 给前台让路;
  * - 邻居图片预热 ([TvHeroImagePrefetch]): 每个邻居独立观察 URL 落表, 谁先到谁先热;
  *   `next` 预解码进内存, 其余只落磁盘; 换焦点保留仍有用的在途任务 (retain);
+ * - 标题 logo (设置里开了时, 见 ThemeSettings.tvTitleLogoDisplay): 邻居预取顺带查 logo ([prefetchTvTitleLogo]), 单步邻居的 logo 图同背景图一样
+ *   预热进磁盘 —— 走过去时 hero 文字块一进场就是 logo, 不先出文字再换;
  * - 封面兜底计时: 2.5s 无横版图结论先上封面 ([TvHeroMediaPipelineState.backdropUrl]),
  *   URL 已有但图片卡住则垫底 ([TvHeroMediaPipelineState.underlayUrl]).
  *
@@ -207,6 +209,7 @@ class TvHeroMediaPipelineState internal constructor(
  * @param restartKey 流水线整体重启的键: 分页实例会换的页面 (追番切 tab / 搜索重搜) 传 items,
  *   否则闭包里捕获的是旧实例; 探索页传 Unit.
  * @param spec 快照可观察的聚焦目标; null = 还没有目标.
+ * @param originalNameOf 条目的原名 (查对应表里没有的条目的标题 logo 用), 邻居预取跑完之后取; 默认取解析链落进 [TvHeroMediaCache] 的条目信息.
  */
 @Composable
 fun rememberTvHeroMediaPipeline(
@@ -218,9 +221,13 @@ fun rememberTvHeroMediaPipeline(
     resolveNeighbor: suspend (TvHeroMediaSpec, TvHeroNeighbor) -> Unit,
     beforeResolve: ((TvHeroMediaSpec) -> Unit)? = null,
     afterResolve: (CoroutineScope.(TvHeroMediaSpec) -> Boolean)? = null,
+    originalNameOf: (subjectId: Int) -> String? = { TvHeroMediaCache.peekSubjectInfo(it)?.subjectInfo?.name },
 ): TvHeroMediaPipelineState {
     val sketch = LocalSketch.current
     val platformContext = LocalPlatformContext.current
+    // 标题 logo: 框 (挑图片档位) 与语言同 hero 文字块; 设置里关了框为 null, 不预取
+    val titleLogoBox by rememberUpdatedState(rememberTvTitleLogoBox())
+    val titleLogoLanguage by rememberUpdatedState(rememberTvTitleLogoLanguage())
     val state = remember(tmdb, fullVisualEffects) { TvHeroMediaPipelineState(tmdb, fullVisualEffects) }
 
     // 离开本页 (进详情页/播放页): 撤掉还在途的邻居图预热, 别跟目的页的首图抢带宽.
@@ -235,6 +242,7 @@ fun rememberTvHeroMediaPipeline(
     val currentResolveNeighbor by rememberUpdatedState(resolveNeighbor)
     val currentBeforeResolve by rememberUpdatedState(beforeResolve)
     val currentAfterResolve by rememberUpdatedState(afterResolve)
+    val currentOriginalNameOf by rememberUpdatedState(originalNameOf)
 
     // 异步加载聚焦条目的 hero 媒体: 焦点换卡时 collectLatest 取消在途等待, 不会卡 UI
     LaunchedEffect(restartKey) {
@@ -275,7 +283,21 @@ fun rememberTvHeroMediaPipeline(
                 // onFocused 里: 那边每划过一张卡都会触发, 长按连发时会堆出一串排队任务;
                 // 放在这条被 collectLatest 管着的流水线末尾, 连发时压根走不到.
                 s.neighbors.all.forEach { neighbor ->
-                    TvHeroPrefetch.background(neighbor.subjectId) { currentResolveNeighbor(s, neighbor) }
+                    TvHeroPrefetch.background(neighbor.subjectId) {
+                        if (titleLogoBox == null) {
+                            currentResolveNeighbor(s, neighbor)
+                        } else {
+                            coroutineScope {
+                                // 对应表里的条目按 id 就查得到, 与解析链同时查
+                                launch {
+                                    tmdb.prefetchTvTitleLogo(neighbor.subjectId, currentOriginalNameOf(neighbor.subjectId), titleLogoLanguage)
+                                }
+                                currentResolveNeighbor(s, neighbor)
+                            }
+                            // 表里没有的要按原名搜: 解析链跑完才有原名 (已查过的当场返回)
+                            tmdb.prefetchTvTitleLogo(neighbor.subjectId, currentOriginalNameOf(neighbor.subjectId), titleLogoLanguage)
+                        }
+                    }
                 }
                 // 图片预热: 邻居的 URL 谁先落表谁先热, 互不等待.
                 //
@@ -307,6 +329,22 @@ fun rememberTvHeroMediaPipeline(
                                 url, sketch, platformContext,
                                 likelyTarget = neighbor.subjectId == s.neighbors.decodeTarget?.subjectId,
                             )
+                        }
+                    }
+                }
+                // 单步邻居的标题 logo 图: 同背景图, 查到就预热进磁盘 (几十 KB 一张; 按 hero 文字块的框挑档位, 预热的就是显示时要的那张).
+                // 解码留给文字块换内容时做 (见 TvNativeHeroTextView 的 preloadLogo)
+                val logoBox = titleLogoBox
+                val logoLanguage = titleLogoLanguage
+                if (logoBox != null) {
+                    s.neighbors.singleStep.forEach { neighbor ->
+                        launch {
+                            val logo = withTimeoutOrNull(TV_NEIGHBOR_IMAGE_URL_WAIT) {
+                                snapshotFlow { tmdb.peekTitleLogoResolved(neighbor.subjectId, logoLanguage) }.first { it }
+                                tmdb.peekTitleLogo(neighbor.subjectId, logoLanguage)
+                            } ?: return@launch
+                            val size = logoBox.sizeOf(logo.aspectRatio)
+                            TvHeroImagePrefetch.prefetch(logo.url(size.widthPx), sketch, platformContext)
                         }
                     }
                 }
