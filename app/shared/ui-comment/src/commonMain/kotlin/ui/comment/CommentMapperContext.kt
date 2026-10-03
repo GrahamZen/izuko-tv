@@ -101,6 +101,8 @@ object CommentMapperContext {
                     replyTo = reply.replyToCommentId?.let { targetId ->
                         nicknamesByCommentId[targetId]?.let { UICommentReplyTarget(targetId, it) }
                     },
+                    floor = reply.floor,
+                    deleted = reply.deleted,
                 )
             },
             replyCount = comment.replyCount,
@@ -115,6 +117,8 @@ object CommentMapperContext {
             selfVote = comment.selfVote?.toUICommentVote(),
             rawContent = comment.content,
             episodeId = comment.episodeId,
+            floor = comment.floor,
+            deleted = comment.deleted,
         )
     }
 
