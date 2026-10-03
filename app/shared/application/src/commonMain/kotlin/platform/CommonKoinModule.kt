@@ -78,6 +78,7 @@ import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.DefaultSubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.FollowedSubjectsRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepositoryImpl
 import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionRepository
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
@@ -846,6 +847,14 @@ fun KoinApplication.startCommonKoinModule(
         val peerFilterRepo = koin.get<PeerFilterSubscriptionRepository>()
         peerFilterRepo.updateOrLoadAll()
     }
+
+    // 作品是不是 NSFW 的登记表 (见 SubjectNsfw): 读回落盘的、从收藏库补齐, 跟上设置
+    SubjectNsfw.attach(
+        coroutineScope,
+        store = context.dataStores.subjectNsfwStore,
+        modeFlow = koin.get<SettingsRepository>().uiSettings.flow.map { it.searchSettings.nsfwMode }.distinctUntilChanged(),
+        seed = { koin.get<AniDatabase>().subjectCollection().nsfwSubjectIds() },
+    )
 
     // 选人页上显示各人的 Bangumi 头像: 本进程的用户登录状态一变就记下来
     coroutineScope.launch {

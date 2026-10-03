@@ -121,6 +121,7 @@ import me.him188.ani.app.ui.comment.UICommentReaction
 import me.him188.ani.app.ui.comment.UICommentSource
 import me.him188.ani.app.ui.comment.UIRichText
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -704,9 +705,11 @@ private fun TvRecommendationsPanel(
     // null = 还没拿到 (加载中或失败), 面板留空; 空列表 = 拿到了但一条都没有, 显示空状态.
     // Bangumi 的推荐 (「看过这部的人也看过」) 对 2023 年下半年起开播的条目普遍为空, 近几年的番多半走空状态
     val loaded by vm.episodeDetailsState.recommendations
-    val recommendations = loaded.orEmpty()
+    // NSFW 设为隐藏时去掉、模糊时封面打码 (见 NsfwPolicy)
+    val nsfw = rememberNsfwPolicy()
+    val recommendations = nsfw.visible(loaded.orEmpty()) { it.subjectId?.toInt() ?: -1 }
     TvPanelList(listState, overlay, focusedIndex, modifier) {
-        if (loaded?.isEmpty() == true) {
+        if (loaded != null && recommendations.isEmpty()) {
             item("recommendations_empty") {
                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     // 放不下就换行, 不截断
@@ -759,6 +762,7 @@ private fun TvRecommendationsPanel(
                         contentDescription = null,
                         Modifier
                             .size(width = 52.dp, height = 72.dp),
+                        downsampleLongEdgePx = recommendation.subjectId?.toInt()?.let { nsfw.coverDownsample(it) },
                     )
                     Column(Modifier.weight(1f)) {
                         // 单行, 放不下时聚焦跑马灯 (与选集卡片同规矩)

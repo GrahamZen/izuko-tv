@@ -90,10 +90,11 @@ class SearchViewModel(
             // ViewModel 实例的第一次搜索几乎必中 (2026-09-10 真机日志坐实). 代价是搜索中途改 NSFW 设置
             // 要重新搜一次才生效.
             val nsfwMode = nsfwSettingFlow.value
+            // 设置管所有页面 (见 SubjectNsfw), 点 R18 标签进来也照设置处理: 隐藏 = 请求里就排除; 否则点了 R18 显式要 NSFW 条目 (模糊档照样打码)
             val query = rawQuery.copy(
                 nsfw = when {
-                    explicitR18 -> true
                     nsfwMode == NsfwMode.HIDE -> false
+                    explicitR18 -> true
                     else -> null
                 },
             )
@@ -110,19 +111,14 @@ class SearchViewModel(
                     SubjectPreviewItemInfo.compute(
                         subject.subjectInfo,
                         subject.mainEpisodeCount,
-                        nsfwModeSettings = if (explicitR18) {
-                            NsfwMode.DISPLAY
-                        } else {
-                            nsfwMode
-                        },
+                        nsfwModeSettings = nsfwMode,
                         relatedPersonList = subject.lightSubjectRelations.lightRelatedPersonInfoList,
                         characters = subject.lightSubjectRelations.lightRelatedCharacterInfoList,
                     )
                 }
                     // 选了"隐藏 NSFW"就真的别列出来: 请求里已经带了 filter.nsfw=false, 但服务端的搜索
                     // 与条目接口对 NSFW 的口径并不一致 (搜到的条目点进去可能 404), 客户端再兜一道.
-                    // compute 把非 NSFW 条目的 nsfwMode 记为 DISPLAY, 所以这里只会滤掉真正的 NSFW 条目;
-                    // 点 R18 标签进来时 explicitR18 已把模式换成 DISPLAY, 不受影响.
+                    // compute 把非 NSFW 条目的 nsfwMode 记为 DISPLAY, 所以这里只会滤掉真正的 NSFW 条目.
                     // 判据与手机控制台的搜索结果一致 (见 RemoteSearchResults).
                     .filter { it.nsfwMode != NsfwMode.HIDE }
             }.cachedIn(scope)

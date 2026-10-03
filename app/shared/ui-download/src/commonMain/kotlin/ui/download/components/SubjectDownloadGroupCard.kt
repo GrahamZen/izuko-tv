@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.aniCombinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
@@ -103,6 +104,8 @@ fun SubjectDownloadGroupCard(
                     .height(59.dp)
                     .clip(MaterialTheme.shapes.small),
                 contentScale = ContentScale.Crop,
+                // NSFW 作品的封面打码 (自己下的东西不从列表里去掉, 见 NsfwPolicy.ownedCoverDownsample)
+                downsampleLongEdgePx = rememberNsfwPolicy().ownedCoverDownsample(group.subjectId),
             )
 
             Column(

@@ -15,6 +15,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
@@ -398,7 +400,9 @@ fun SubjectDetailsTvLoadingPlaceholder(
             backgroundOverlay = {
                 // 放大会话进行中背景由放大那一层画 (见 TvHeroZoomLayer), 这里组合着但不画: 会话结束那一帧直接显示 ——
                 // 新图片实例头一两帧是空的, 到那时才组合会闪一下
-                heroBackdropUrl?.let { url -> TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom) }
+                heroBackdropUrl?.let { url ->
+                    TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom, subjectId = subjectInfo?.subjectId)
+                }
             },
             containerColor = if (underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         ) {
@@ -1275,6 +1279,7 @@ fun SubjectDetailsTvPage(
                     }
                     TvHeroBackdrop(
                         imageUrl = url,
+                        subjectId = state.subjectId,
                         // 放大会话进行中: 组合着 (提前把位图加载好) 但不画, 放大那一层在下面顶着; 接手那一帧才显示
                         // (换图接手时在放大层上淡进来)
                         hidden = underZoom && !crossFading,
@@ -1602,6 +1607,8 @@ fun SubjectDetailsTvPage(
                         contentScale = ContentScale.Crop,
                         // 选集页在首屏之下: 图一到就预传 GPU, 免得冷启动后第一次往下翻时当场上传 (同选集卡剧照)
                         onSuccess = { it.bitmap?.prepareToDraw() },
+                        // NSFW 设为模糊时打码 (见 NsfwPolicy)
+                        downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                     )
                 }
             }
@@ -1845,7 +1852,7 @@ fun SubjectDetailsTvPage(
                                 val relatedCards = remember(relatedSnapshot, relationLabels) {
                                     relatedSnapshot.mapIndexed { i, info ->
                                         info?.let {
-                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i])
+                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i], subjectId = it.subjectId)
                                         }
                                     }
                                 }
@@ -3370,10 +3377,14 @@ private fun TvHeroBackdrop(
      * 为 0 时下缘渐隐也不再随翻页收掉 (整张都淡没了, 不会在后面几页压一道黑): 本层的内容在翻页途中不变, 离屏缓冲不用每帧重画, 只改整层透明度.
      */
     fadedAlphaScale: () -> Float = { 1f },
+    /** 这张图是哪部的: NSFW 设为模糊时打码 (见 NsfwPolicy), 不加清; null = 不认. */
+    subjectId: Int? = null,
 ) {
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
     val minAlpha = if (light) HERO_BACKDROP_MIN_ALPHA_LIGHT else HERO_BACKDROP_MIN_ALPHA
+    val nsfw = rememberNsfwPolicy()
+    val obscure = subjectId != null && nsfw.blurs(subjectId)
     // 首屏的标题 logo 按这张图判颜色 (见 TvHeroTitleLogo): 图解好时顺带取样
     val logoJudged = tvDetailsTitleLogoJudged()
     // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
@@ -3559,7 +3570,8 @@ private fun TvHeroBackdrop(
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 // 与列表页 hero 同一个缓存键 (见 tvHeroBackdropDecodeAtOriginalSize): 内存命中, 不重解码
-                decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(imageUrl),
+                decodeAtOriginalSize = !obscure && tvHeroBackdropDecodeAtOriginalSize(imageUrl),
+                downsampleLongEdgePx = if (obscure) NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
                 // 图一到就预传 GPU: 换图放大时详情页那张、淡入进页时的背景, 头一次上屏那一帧不当场上传纹理 (同一张图已经画过的不重复传)
                 onSuccess = {
                     it.bitmap?.prepareToDraw()
@@ -3567,7 +3579,7 @@ private fun TvHeroBackdrop(
                     onSuccess(it)
                 },
             )
-            if (sharpen) HeroBackdropSharpeningOverlay(imageUrl)
+            if (sharpen && !obscure) HeroBackdropSharpeningOverlay(imageUrl)
         }
     }
 }
@@ -3675,6 +3687,7 @@ fun TvHeroZoomLayer() {
         val swapDim = { if (swapPlanned) tvHeroSwapDim(session.t) else 0f }
         TvHeroBackdrop(
             imageUrl = session.url,
+            subjectId = session.subjectId,
             scrollState = scrollState,
             onSuccess = { loaded = true },
             zoomFrom = session.bounds,
@@ -3691,6 +3704,7 @@ fun TvHeroZoomLayer() {
         if (crossImage) {
             TvHeroBackdrop(
                 imageUrl = session.detailsUrl,
+                subjectId = session.subjectId,
                 scrollState = scrollState,
                 onSuccess = { detailsLoaded = true },
                 zoomFrom = session.bounds,
@@ -3848,6 +3862,7 @@ fun TvHeroShrinkLayer() {
         val startFade = { shrink?.takeIf { it.startFade > 0f }?.let { it.startFade * (it.t / it.fromT) } }
         TvHeroBackdrop(
             imageUrl = url,
+            subjectId = shrink?.subjectId,
             scrollState = scrollState,
             onSuccess = { loaded = true },
             // standby 时也给框: 本层的全屏框 (ownBounds) 平时就量好, 缩回第一帧就能按进度摆位
@@ -3865,6 +3880,7 @@ fun TvHeroShrinkLayer() {
         if (crossImage) {
             TvHeroBackdrop(
                 imageUrl = startUrl,
+                subjectId = shrink?.subjectId,
                 scrollState = scrollState,
                 onSuccess = { startLoaded = true },
                 zoomFrom = shrink?.bounds ?: TvHeroZoomHandoff.standbyBounds,
@@ -5049,6 +5065,7 @@ private fun TvHeroBlock(
                         .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop,
                     onSuccess = onCoverImageSuccess,
+                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
         }
@@ -5224,6 +5241,7 @@ private fun TvEmbeddedHeroPage(
                         .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                         .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop,
+                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
             // 三个统计单元均匀摊开, 首末单元与海报左右边界对齐;

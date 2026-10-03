@@ -74,6 +74,7 @@ import me.him188.ani.app.data.repository.player.PlaybackHistoryPendingOp
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
@@ -371,6 +372,7 @@ private fun PlaybackHistoryListItem(
                 imageUrl = item.subjectImageUrl,
                 contentDescription = coverContentDescription,
                 modifier = Modifier.size(width = 72.dp, height = 96.dp),
+                subjectId = item.subjectId,
             )
             Column(
                 Modifier.weight(1f).animateContentSize(),
@@ -435,6 +437,8 @@ private fun PlaybackHistoryCover(
     imageUrl: String?,
     contentDescription: String,
     modifier: Modifier = Modifier,
+    /** 哪部的封面: NSFW 作品打码 (自己的记录不从列表里去掉, 见 NsfwPolicy.ownedCoverDownsample). */
+    subjectId: Int? = null,
 ) {
     if (imageUrl.isNullOrBlank()) {
         Box(
@@ -458,6 +462,7 @@ private fun PlaybackHistoryCover(
                 .aspectRatio(3f / 4f)
                 .clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop,
+            downsampleLongEdgePx = subjectId?.let { rememberNsfwPolicy().ownedCoverDownsample(it) },
         )
     }
 }

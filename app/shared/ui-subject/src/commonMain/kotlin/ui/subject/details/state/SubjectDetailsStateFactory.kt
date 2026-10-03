@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
 import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
@@ -410,6 +411,8 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             }.cachedIn(this),
             totalCharactersCountState = totalCharactersCountState,
             relatedSubjectsPager = bangumiRelatedPeopleService.relatedSubjectsFlow(subjectId)
+                // NSFW 设为隐藏时去掉 (见 SubjectNsfw)
+                .withoutHiddenNsfw { it.subjectId }
                 .map {
                     PagingData.from(it)
                 }

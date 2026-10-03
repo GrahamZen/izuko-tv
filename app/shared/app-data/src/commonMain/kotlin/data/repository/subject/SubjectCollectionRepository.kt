@@ -904,6 +904,7 @@ data class CollectionsFilterQuery(
 }
 
 private fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
+    SubjectNsfw.record(subjectId, nsfw)
     return SubjectInfo(
         subjectId = subjectId,
         subjectType = SubjectType.ANIME,

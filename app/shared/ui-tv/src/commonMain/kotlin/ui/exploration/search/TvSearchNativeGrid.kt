@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
@@ -167,8 +169,10 @@ private fun TvSearchNativeSource(
         text = text,
         wall = wall,
     )
+    // NSFW 设为模糊时背景打码 (见 withNsfw)
+    val shown = source.withNsfw(rememberNsfwPolicy())
     val view = state.view
-    SideEffect { view?.setSource(source) }
+    SideEffect { view?.setSource(shown) }
 }
 
 /** hero 文字: 标题 (至多两行); ★评分 + 标签行 (开播季度 · 话数 · 类型); 简介 (Bangumi 兜底表). */

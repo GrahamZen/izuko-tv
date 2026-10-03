@@ -48,6 +48,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.recommend.RecommendedItemInfo
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
 import me.him188.ani.app.data.models.subject.CanonicalTagKind
@@ -2081,6 +2082,7 @@ class RecommendationRepository(
         emptyList()
     }.mapNotNull { rec ->
         val subject = rec.subject
+        SubjectNsfw.record(subject.id, subject.nsfw)
         // 「看过这部的人也看过」不分条目类型, 漫画/游戏/三次元都会混进来 (实测 276792 的
         // 10 条推荐里有 3 条不是动画). 探索页只放动画.
         if (subject.type != BangumiNextSubjectType.Anime) return@mapNotNull null
