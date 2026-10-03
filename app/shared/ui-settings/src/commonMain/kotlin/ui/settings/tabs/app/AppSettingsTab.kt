@@ -215,6 +215,7 @@ import me.him188.ani.app.ui.settings.framework.createTestSettingsState
 import me.him188.ani.app.ui.settings.framework.rememberTestSettingsState
 import me.him188.ani.app.ui.settings.rendering.ReleaseClassIcon
 import me.him188.ani.app.ui.settings.rendering.guessReleaseClass
+import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.AppUpdateViewModel
@@ -516,9 +517,7 @@ fun SettingsScope.SoftwareUpdateGroup(
         val uriHandler = LocalUriHandler.current
         RowButtonItem(
             onClick = {
-                uriHandler.openUri(
-                    "https://github.com/open-ani/ani/releases/tag/v${currentAniBuildConfig.versionName}",
-                )
+                uriHandler.openUri(AniHelperDestination.RELEASE_PREFIX + currentAniBuildConfig.versionName)
             },
             icon = { Icon(Icons.Rounded.ArrowOutward, null) },
         ) { Text(stringResource(Lang.settings_update_view_changelog)) }

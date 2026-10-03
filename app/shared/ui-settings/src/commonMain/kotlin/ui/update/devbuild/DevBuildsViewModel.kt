@@ -48,7 +48,8 @@ class DevBuildsViewModel : AbstractViewModel(), KoinComponent {
      */
     val state: DevBuildsState? = DevBuildPackageSpec.forPlatform(currentPlatform())?.let { spec ->
         DevBuildsState(
-            api = GitHubDevBuildApi(client),
+            // 本仓库的构建, 不是上游的 (见 AniBuildConfig.projectRepository)
+            api = GitHubDevBuildApi(client, repository = currentAniBuildConfig.projectRepository),
             spec = spec,
             installer = installer,
             saveDir = updateManager.devBuildsDir,

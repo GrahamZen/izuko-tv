@@ -71,7 +71,7 @@ internal class LogLanShareServer(private val logsDir: File) : AutoCloseable {
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Animeko 日志</title>
+            <title>Izuko TV 日志</title>
             <style>
             body { font-family: system-ui, sans-serif; margin: 0; padding: 24px 20px; background: #fafafa; color: #1c1b1f; }
             h1 { font-size: 22px; margin: 0 0 8px; }
@@ -83,7 +83,7 @@ internal class LogLanShareServer(private val logsDir: File) : AutoCloseable {
             </style>
             </head>
             <body>
-            <h1>Animeko 日志</h1>
+            <h1>Izuko TV 日志</h1>
             <p>点击文件名下载。若下载没有开始，请用系统浏览器打开本页。关闭电视上的窗口后此页面即失效。</p>
             <ul>
         """.trimIndent() + "\n" + items + "\n" + """
