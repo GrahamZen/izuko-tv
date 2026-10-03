@@ -121,6 +121,7 @@ private fun part1() = listOf(
     RemoteText("已完成", "Done", "已完成", "已完成"),
     RemoteText("下载失败", "Download failed", "下載失敗", "下載失敗"),
     RemoteText("已暂停 {0}%", "Paused {0}%", "已暫停 {0}%", "已暫停 {0}%"),
+    RemoteText("正在播放，稍后继续 {0}%", "Paused while playing {0}%", "正在播放，稍後繼續 {0}%", "正在播放，稍後繼續 {0}%"),
     RemoteText("合并中", "Merging", "合併中", "合併中"),
     RemoteText("下载中 {0}%", "Downloading {0}%", "下載中 {0}%", "下載中 {0}%"),
     RemoteText("这条缓存已经不在了，请刷新", "This cache no longer exists. Please refresh.", "這條緩存已經不在了，請刷新", "這條快取已經不在了，請重新整理"),
