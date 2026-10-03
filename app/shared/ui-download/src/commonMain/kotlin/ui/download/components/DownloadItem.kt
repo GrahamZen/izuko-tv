@@ -67,6 +67,10 @@ data class DownloadItem(
      * 传输停着在等 BT 服务连上 (见 [me.him188.ani.app.domain.media.cache.MediaCache.isAwaitingTorrentService]).
      */
     val awaitingTorrentService: Boolean = false,
+    /**
+     * 正在播放同一集, 停着等播放结束 (见 [me.him188.ani.app.domain.media.download.MediaDownloadManager.waitingForPlayback]).
+     */
+    val waitingForPlayback: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,
