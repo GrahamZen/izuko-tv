@@ -114,6 +114,11 @@ import me.him188.ani.app.ui.lang.comment_view_comment
 import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.UIRichElement
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 
 /**
  * 弹窗正文块: 文本段与图片按原顺序排列.
@@ -159,6 +164,12 @@ class TvQuotedComment(
      * 得先做一套选表情的导航, 而看别人贴了什么本身就是评论的一部分信息.
      */
     val reactions: List<TvCommentReaction> = emptyList(),
+    /** 作者的个人签名, 跟在昵称后面的灰字; 没有为 null. */
+    val authorSign: String? = null,
+    /** 楼层号 `#3` / `#3-2`, 摆在时间前面; 没有为 null. */
+    val floorText: String? = null,
+    /** 已被删除: 正文处显示「删除了回复」. */
+    val deleted: Boolean = false,
 )
 
 /** 一枚回应: 一个表情 + 贴的人数. */
@@ -389,15 +400,30 @@ internal fun TvCommentReplyDialog(
                         Column(Modifier.weight(1f, fill = false).verticalScroll(scrollState)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    quoted.authorName,
+                                    buildAnnotatedString {
+                                        append(quoted.authorName)
+                                        quoted.authorSign?.let { sign ->
+                                            withStyle(SpanStyle(color = hintColor, fontWeight = FontWeight.Normal)) {
+                                                append("  ($sign)")
+                                            }
+                                        }
+                                    },
                                     Modifier.weight(1f),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    quoted.timeText,
+                                    quoted.floorText?.let { "$it  ${quoted.timeText}" } ?: quoted.timeText,
                                     style = MaterialTheme.typography.labelSmall,
+                                    color = hintColor,
+                                )
+                            }
+                            if (quoted.deleted) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(Lang.video_player_tv_comment_deleted),
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = hintColor,
                                 )
                             }

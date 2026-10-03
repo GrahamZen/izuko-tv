@@ -62,6 +62,7 @@ import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.nameOrNameCn
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
 import me.him188.ani.app.data.models.player.playProgressByEpisodeId
+import me.him188.ani.app.data.models.preference.EpisodeCommentSort
 import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
@@ -972,6 +973,13 @@ open class EpisodeViewModel(
             // 点赞/点踩是 Ani 自己的概念; 直连 bangumi 之后评论只有表情回应 (见 submitReaction)
         },
     )
+
+    /** 换本集评论的排序 (TV 播放器评论胶囊的长按菜单), 记进播放器配置, 之后每集都照它排. */
+    fun setEpisodeCommentSort(sort: EpisodeCommentSort) {
+        launchInBackground {
+            settingsRepository.videoScaffoldConfig.update { copy(episodeCommentSort = sort) }
+        }
+    }
 
     /**
      * 举报评论走的是 Ani 服务器 (它自己的审核后台), 直连 bangumi 之后没有这个东西 ——
