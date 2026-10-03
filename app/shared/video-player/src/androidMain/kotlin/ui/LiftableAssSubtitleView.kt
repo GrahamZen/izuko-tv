@@ -27,6 +27,7 @@ import androidx.media3.common.util.GlProgram
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
+import io.github.peerless2012.ass.AssRender
 import io.github.peerless2012.ass.AssTex
 import io.github.peerless2012.ass.AssTexType
 import io.github.peerless2012.ass.media.AssHandler
@@ -215,6 +216,9 @@ internal class LiftableAssSubtitleView(
         private var surfaceSize = Size.ZERO
         private var renderSize = Size.ZERO
 
+        /** 设过 [renderSize] 的渲染器; AssHandler 换了渲染器 (换媒体、补字体) 时要再设一次. */
+        private var sizedRender: AssRender? = null
+
         /** 画面上还留着上一帧的字: 这一帧没有字时也要清一次. */
         private var surfaceDirty = false
 
@@ -241,7 +245,7 @@ internal class LiftableAssSubtitleView(
         fun onSurfaceChanged(width: Int, height: Int) {
             surfaceSize = Size(width, height)
             renderSize = assHandler.computeRenderSize(width, height)
-            assHandler.render?.setFrameSize(renderSize.width, renderSize.height)
+            sizedRender = assHandler.render?.apply { setFrameSize(renderSize.width, renderSize.height) }
             GLES20.glViewport(0, 0, width, height)
         }
 
@@ -251,7 +255,12 @@ internal class LiftableAssSubtitleView(
          */
         fun onDrawFrame(timeUs: Long, force: Boolean): Boolean {
             val type = if (nativeTexture) AssTexType.TEXTURE else AssTexType.BITMAP_ALPHA
-            val frame = assHandler.render?.renderFrame(timeUs / 1000, type)
+            val render = assHandler.render
+            if (render !== sizedRender && renderSize.width > 0 && renderSize.height > 0) {
+                render?.setFrameSize(renderSize.width, renderSize.height)
+                sizedRender = render
+            }
+            val frame = render?.renderFrame(timeUs / 1000, type)
             val fresh = frame?.images
             if (frame == null || frame.changed != 0 || !fresh.isNullOrEmpty()) replaceImages(fresh)
             val changed = if (frame == null) surfaceDirty else frame.changed != 0
