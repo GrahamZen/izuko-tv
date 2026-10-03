@@ -827,6 +827,7 @@ class SubjectCollectionRepositoryImpl(
                     subjectId = this.subjectId,
                     displayName = nameCn.ifEmpty { name },
                     imageLarge = imageLarge,
+                    imageThumb = imageThumb.ifEmpty { imageLarge },
                     totalEpisodes = totalEpisodes,
                 )
             }
@@ -903,7 +904,8 @@ data class CollectionsFilterQuery(
     }
 }
 
-internal fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
+private fun SubjectCollectionEntity.toSubjectInfo(): SubjectInfo {
+    SubjectNsfw.record(subjectId, nsfw)
     return SubjectInfo(
         subjectId = subjectId,
         subjectType = SubjectType.ANIME,
@@ -1078,6 +1080,8 @@ data class OfflineSubjectDisplayInfo(
     val subjectId: Int,
     val displayName: String,
     val imageLarge: String,
+    /** 列表用封面, 没有缩略图时与 [imageLarge] 相同. */
+    val imageThumb: String,
     val totalEpisodes: Int,
 )
 

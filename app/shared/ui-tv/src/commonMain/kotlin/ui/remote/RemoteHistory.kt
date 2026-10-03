@@ -23,6 +23,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.staticSubjectImageLargeUrl
@@ -173,6 +175,8 @@ internal object RemoteHistory {
                         // 封面候选: 镜像站原图直连 → 电视转发 → Bangumi 600 宽 (见 remoteCoverCandidates)
                         if (!lite) h.subjectId?.let { id ->
                             putJsonArray("imgs") { remoteCoverCandidates(id, h.subjectImageUrl).forEach { add(it) } }
+                            // NSFW 作品的封面糊着画 (自己的记录不藏, 隐藏与模糊都糊; 同电视, 见 NsfwPolicy.ownedCoverDownsample)
+                            if (SubjectNsfw.modeOf(id) != NsfwMode.DISPLAY) put("blur", true)
                         }
                     }
                 }
