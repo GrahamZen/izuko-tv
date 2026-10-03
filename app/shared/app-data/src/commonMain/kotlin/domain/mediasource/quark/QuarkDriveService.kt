@@ -675,11 +675,19 @@ class QuarkDriveService internal constructor(
         val url = transcoded ?: download!!.url
         val headers = playbackHeaders(settings.flow.first().cookie)
         val subtitles = subtitlesOf(fileId, download, subtitleLookup, subtitleKey)
-        // 原文件直链每个连接有速度上限 (实测单连接 1.3 MB/s, 4 路 4.2 MB/s), 一个连接常常跟不上码率, 让播放器并发分块取;
-        // 转码流本来就是一段段小分片, 不用
+        // 原文件直链每个连接有速度上限, 一个连接常常跟不上码率, 让播放器 (与缓存下载) 并发分块取, 非会员多开 (见 parallelConnectionsFor);
+        // 转码流本来就是一段段小分片, 不用. 会员类型每次都记: 设置里的值只在变了时才进日志, 用户发来的日志里要看得出是哪种账号
+        logger.info {
+            val mode = if (transcoded == null) "original, ${parallelConnectionsFor(config.memberType)} connections" else "transcoded"
+            "Quark playback of $fileId: member=${config.memberType.ifBlank { "unknown" }}, $mode"
+        }
         return QuarkPlayback(
             url,
-            if (transcoded == null) headers + (PlaybackRequestHints.PARALLEL_RANGE_HEADER to PARALLEL_CONNECTIONS.toString()) else headers,
+            if (transcoded == null) {
+                headers + (PlaybackRequestHints.PARALLEL_RANGE_HEADER to parallelConnectionsFor(config.memberType).toString())
+            } else {
+                headers
+            },
             subtitles,
         )
     }
@@ -747,8 +755,22 @@ class QuarkDriveService internal constructor(
 
         private const val MAX_FOLDER_ITEMS = 500
 
-        /** 播放原文件时并发几个连接. */
+        /** 会员播放原文件时并发几个连接 (实测单连接 1.3 MB/s, 4 路 4.2 MB/s). */
         const val PARALLEL_CONNECTIONS = 4
+
+        /**
+         * 非会员并发几个连接. 非会员每个连接只有几十 KB/s, 总速度随连接数近线性涨
+         * (从美国实测 1 / 4 / 16 / 32 路: 0.11 / 0.24 / 1.16 / 1.80 MB/s, 都是 206, 没被拒); 转码流只给 480x270, 不能拿来顶.
+         */
+        const val NON_MEMBER_PARALLEL_CONNECTIONS = 16
+
+        /**
+         * [memberType] 见 [QuarkConfig.memberType]. 只有超级会员 (`SUPER_VIP`, 体验的 `EXP_SVIP`) 用少的; 其余 (`NORMAL`、
+         * 没核实过下载速度的 `VIP` / `Z_VIP` / `MINI_VIP`、没记下来的) 都按非会员多开 —— 把会员当非会员只是多开几个连接,
+         * 反过来就照旧慢. 会员到期后接口回 `NORMAL` (实测一个超级会员 2025-07 到期的号).
+         */
+        internal fun parallelConnectionsFor(memberType: String): Int =
+            if (memberType.contains("SVIP") || memberType == "SUPER_VIP") PARALLEL_CONNECTIONS else NON_MEMBER_PARALLEL_CONNECTIONS
 
         /** 网盘根目录的文件夹 id. */
         const val ROOT_FOLDER_ID = QuarkApi.ROOT_FOLDER_ID
