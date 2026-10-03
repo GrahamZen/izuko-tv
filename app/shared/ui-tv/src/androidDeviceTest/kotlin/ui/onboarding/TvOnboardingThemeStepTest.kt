@@ -34,7 +34,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -98,10 +97,9 @@ class TvOnboardingThemeStepTest {
     }
 
     @Test
-    fun `bottom row reaches the blur group only while showing the summary first`() {
+    fun `bottom row reaches every group whatever confirm does`() {
         val hero = walkBottomRow()
-        assertTrue("blur" in hero, "先看简介时够得着海报墙模糊背景: $hero")
-        assertTrue("detailsBlur" in hero, "详情页模糊背景够得着: $hero")
+        assertTrue("dark" in hero && "blur" in hero && "effects" in hero, "颜色、模糊背景与视觉效果都够得着: $hero")
         saveShot("onboarding-theme-hero-light.png")
 
         // 回到第一行选直接播放, 再走一遍
@@ -113,8 +111,7 @@ class TvOnboardingThemeStepTest {
         repeat(2) { host.press(KeyEvent.KEYCODE_DPAD_UP) }
         settle()
         val play = walkBottomRow()
-        assertFalse("blur" in play, "直接播放时海报墙模糊背景够不着: $play")
-        assertTrue("dark" in play && "detailsBlur" in play && "effects" in play, "颜色、详情页模糊背景与视觉效果照样够得着: $play")
+        assertTrue("dark" in play && "blur" in play && "effects" in play, "直接播放时模糊背景照样够得着 (详情页与新番时间表也用它): $play")
     }
 
     /** 下到底下一排, 最左起一格一格往右按确定, 直到按到「开始使用」. 返回碰到的设置种类. */
@@ -158,8 +155,9 @@ class TvOnboardingThemeStepTest {
             )) {
                 val written = probe.transform()
                 if (written.darkMode != probe.darkMode) add("dark")
-                if (written.tvWallBackdropBlur != probe.tvWallBackdropBlur) add("blur")
-                if (written.tvDetailsBackdropBlur != probe.tvDetailsBackdropBlur) add("detailsBlur")
+                if (written.tvWallBackdropBlur != probe.tvWallBackdropBlur || written.tvDetailsBackdropBlur != probe.tvDetailsBackdropBlur) {
+                    add("blur")
+                }
                 if (written.tvVisualEffects != probe.tvVisualEffects) add("effects")
             }
         }
