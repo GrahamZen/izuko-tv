@@ -15,6 +15,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.TypeConverters
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
@@ -44,6 +45,12 @@ interface HttpDownloader : AutoCloseable {
      * These states remain until removed internally (e.g. upon close).
      */
     val downloadStatesFlow: Flow<List<DownloadState>>
+
+    /**
+     * 所有任务一共收到了多少字节, 含正在下的分段里已经收到的 (同 [DownloadProgress.downloadedBytes]), 算总下载速度用.
+     */
+    val receivedBytesFlow: Flow<Long>
+        get() = downloadStatesFlow.map { list -> list.sumOf { it.downloadedBytes } }
 
     /**
      * Initialize this downloader. Should be called before starting downloads.
@@ -151,6 +158,10 @@ data class DownloadProgress(
     val mediaType: MediaType,
     val totalSegments: Int,
     val downloadedSegments: Int,
+    /**
+     * 已经收到的字节: 下完的分段加上正在下的分段里已经到了的 (后者只在内存里, [DownloadState.downloadedBytes] 只算下完的).
+     * 一段要下很久时 (网盘按连接限速) 进度与速度也能跟着动.
+     */
     val downloadedBytes: Long,
     val totalBytes: Long, // -1 for unknown
     val status: DownloadStatus,
