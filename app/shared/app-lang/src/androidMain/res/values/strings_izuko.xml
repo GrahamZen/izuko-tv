@@ -413,6 +413,13 @@
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">Audio %1$d</string>
     <string name="video_player_subtitle_numbered">Subtitle %1$d</string>
+    <!-- 评论胶囊长按的排序菜单 -->
+    <string name="video_player_tv_comment_sort_time_ascending">Oldest first</string>
+    <string name="video_player_tv_comment_sort_time_descending">Newest first</string>
+    <string name="video_player_tv_comment_sort_most_reactions">Most reactions</string>
+    <string name="video_player_tv_comment_sort_most_replies">Most replies</string>
+    <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
+    <string name="video_player_tv_comment_deleted">deleted this reply</string>
     <string name="video_player_tv_chrome_title">Customize player buttons</string>
     <string name="video_player_tv_chrome_subtitle">Nothing plays on this page. However you arrange these buttons is how the player will look.</string>
     <string name="video_player_tv_chrome_hint">OK to pick up  ·  Hold OK to hide or show  ·  Back to leave</string>
