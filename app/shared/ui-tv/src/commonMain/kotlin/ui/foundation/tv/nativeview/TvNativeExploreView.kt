@@ -933,6 +933,10 @@ class TvNativeExploreView(
         if (!cardAreaHasFocus || rowKey == null) return false
         if (vertical) {
             if (event.repeatCount > 0) {
+                // 按住连发时上一格还没落地 (目标行还没排出来) 就先不往下排, 落地了再接着走. 不等的话落点一路跑到前面去, 列表追着它滚,
+                // 焦点还停着的那张卡滚出屏被回收, 焦点丢了; 外面兜底送回来时找不到那张卡, 落到轮播按钮上 —— hero 态因此被退出,
+                // 之后的连发从按钮往下走, 看着像退回卡片墙继续往下滚. 慢的设备 (debug 包、没预编译) 才落不了地
+                if (pendingRow != null) return true
                 val now = SystemClock.uptimeMillis()
                 if (now - lastVerticalRepeat < TV_NATIVE_VERTICAL_REPEAT_MILLIS) return true
                 lastVerticalRepeat = now
