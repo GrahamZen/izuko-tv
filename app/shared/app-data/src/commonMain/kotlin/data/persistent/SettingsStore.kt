@@ -15,6 +15,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.builtins.nullable
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
@@ -123,6 +124,17 @@ abstract class PlatformDataStoreManager {
             produceFile = { resolveDataStoreFile("sequelSeasonTable") },
             corruptionHandler = ReplaceFileCorruptionHandler {
                 SequelSeasonTableCache.Empty
+            },
+        )
+    }
+
+    /** 登记过是 NSFW 的条目 id (见 SubjectNsfw); 不分用户, 是条目本身的属性. */
+    val subjectNsfwStore by lazy {
+        DataStoreFactory.create(
+            serializer = ListSerializer(Int.serializer()).asDataStoreSerializer({ emptyList() }),
+            produceFile = { resolveDataStoreFile("subjectNsfw") },
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                emptyList()
             },
         )
     }

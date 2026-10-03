@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 import android.graphics.Rect
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
@@ -56,6 +58,9 @@ fun TvNativePosterStrip(
 ) {
     val sketch = LocalSketch.current
     val animatedScroll = LocalThemeSettings.current.visualEffects.animatedScroll
+    // NSFW 设为模糊时按卡片的条目 id 打码 (见 withNsfw): 调用方只管给卡片填 subjectId
+    val nsfw = rememberNsfwPolicy()
+    val shownCards = remember(cards, nsfw.snapshot) { cards.withNsfw(nsfw) }
     var focusedIndex by rememberSaveable { mutableIntStateOf(-1) }
     var leftIndex by rememberSaveable { mutableIntStateOf(0) }
     // 点卡导航出去时按住的那张 (见 holdFocusLookOnClick), -1 = 没有; 焦点回到这一行就清掉
@@ -103,11 +108,11 @@ fun TvNativePosterStrip(
             },
             update = { row ->
                 // 跨导航恢复行首与上次聚焦那张: 等数据到了才做 (返回时页面重建, 这一行先建出来、条目后到; 空列表上定行首会落回 0)
-                if (row.tag == null && cards.isNotEmpty()) {
+                if (row.tag == null && shownCards.isNotEmpty()) {
                     row.tag = TV_NATIVE_STRIP_RESTORED
                     // 离开时按住的那张: 排出来就画成聚焦态, 焦点送回来 (适配器在它拿到焦点时放开) 画面不变
                     if (heldIndex >= 0) row.cards.setFocusLookHeld(row, heldIndex)
-                    row.bind(cards, { it.toLong() }, leftIndex, columns, focusIndex = focusedIndex)
+                    row.bind(shownCards, { it.toLong() }, leftIndex, columns, focusIndex = focusedIndex)
                 }
                 row.animatedScroll = animatedScroll
                 row.cards.listener = object : TvNativeCardListener {
@@ -115,13 +120,13 @@ fun TvNativePosterStrip(
                         heldIndex = -1
                         focusedIndex = index
                         // 按需挪之后的行首
-                        leftIndex = tvStripLeftIndex(leftIndex, index, cards.size, columns)
+                        leftIndex = tvStripLeftIndex(leftIndex, index, shownCards.size, columns)
                         currentOnFocused(index)
                     }
 
                     override fun onClick(index: Int) {
                         // 占位卡点了不会导航出去, 不按住
-                        if (holdFocusLookOnClick && cards.getOrNull(index) != null) {
+                        if (holdFocusLookOnClick && shownCards.getOrNull(index) != null) {
                             // 焦点交出去之后这张仍画成聚焦态, 返回重建时也按住 (见上)
                             heldIndex = index
                             row.cards.setFocusLookHeld(row, index)
@@ -132,7 +137,7 @@ fun TvNativePosterStrip(
                     override fun onLongPress(index: Int, anchor: Rect) = Unit
                 }
                 row.cards.onBind = { currentOnBind(it) }
-                row.cards.submit(cards) { it.toLong() }
+                row.cards.submit(shownCards) { it.toLong() }
             },
             height = rowHeight,
             bleedVertical = TV_NATIVE_STRIP_BLEED,

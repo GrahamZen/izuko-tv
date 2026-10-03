@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.trending.TrendingSubjectInfo
 import me.him188.ani.app.data.models.trending.TrendsInfo
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
@@ -184,6 +185,7 @@ fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
     logger<TrendsRepository>().info { "bgm-direct: trending -> ${data.size}" }
     return TrendsInfo(
         subjects = data.map {
+            SubjectNsfw.record(it.subject.id, it.subject.nsfw)
             TrendingSubjectInfo(
                 it.subject.id,
                 it.subject.nameCN.ifEmpty { it.subject.name },

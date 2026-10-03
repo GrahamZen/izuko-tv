@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
 import me.him188.ani.app.data.models.subject.PersonPosition
@@ -332,6 +333,7 @@ class RemoteSubjectService(
             // 「看过这部的人也看过」不分条目类型, 漫画/游戏/三次元都会混进来
             .filter { it.type == BangumiNextSubjectType.Anime }
             .map { subject ->
+                SubjectNsfw.record(subject.id, subject.nsfw)
                 SubjectRecommendationItem(
                     subjectId = subject.id,
                     name = subject.name,
