@@ -16,9 +16,14 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.graphics.RectF
+import android.graphics.Shader
 import android.view.Choreographer
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -39,9 +44,12 @@ import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.SubjectSeedColorCache
 import me.him188.ani.app.ui.foundation.theme.subjectSeedColor
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PREFETCH_HANDOFF_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_STOPS
 import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.mixArgb
 import kotlin.coroutines.resume
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -160,6 +168,75 @@ class TvNativeWallBackdropView(
     /** 当前目标的清晰图解好了. */
     var onSharpReady: (() -> Unit)? = null
 
+    /** 模糊层最上面露着的那张换了, 或压暗变了 ([sample] 的结果跟着变). */
+    var onShownChanged: (() -> Unit)? = null
+
+    /** 底边 (见 [setFloor]): 本层坐标, NaN = 整屏铺满. */
+    private var floorTopPx = Float.NaN
+    private var floorBandPx = 0f
+    private var floorColor = Color.TRANSPARENT
+    private var floorOpacity = 1f
+    private val floorBandPaint = Paint()
+    private val floorPaint = Paint()
+
+    /**
+     * 只铺到 [topPx] (本层坐标) 为止: 往下 [bandPx] 内渐变成 [color], 再往下整片是它 (探索页热门轮播: 模糊背景只铺在轮播那块, 往下过渡到
+     * 卡片墙的底色; 渐变同主壳的分界带, smoothstep). [topPx] 为 NaN = 整屏铺满. [opacity] = 底边这层的浓度 (从整屏铺满过渡过来时淡入);
+     * 对焦时清晰层盖上来, 底边跟着淡掉 (对焦成整屏清晰图). 底边满着时下面那截不画模糊层 (裁掉).
+     */
+    fun setFloor(topPx: Float, bandPx: Float, color: Int, opacity: Float = 1f) {
+        if (topPx.isNaN() && floorTopPx.isNaN()) return
+        if (topPx == floorTopPx && bandPx == floorBandPx && color == floorColor && opacity == floorOpacity) return
+        if (bandPx != floorBandPx || color != floorColor) {
+            val n = TV_POSTER_WALL_HERO_SPLIT_STOPS
+            val colors = IntArray(n + 1) { i ->
+                val f = i / n.toFloat()
+                val a = ((color ushr 24) * (f * f * (3f - 2f * f))).roundToInt()
+                (a shl 24) or (color and 0xFFFFFF)
+            }
+            val positions = FloatArray(n + 1) { it / n.toFloat() }
+            floorBandPaint.shader = LinearGradient(0f, 0f, 0f, bandPx.coerceAtLeast(1f), colors, positions, Shader.TileMode.CLAMP)
+        }
+        floorTopPx = topPx
+        floorBandPx = bandPx
+        floorColor = color
+        floorOpacity = opacity
+        invalidate()
+    }
+
+    /** 底边此刻的浓度: [floorOpacity] 乘清晰层没盖住的那份. */
+    private fun floorAlpha(): Float = floorOpacity.coerceIn(0f, 1f) * (1f - sharpImage.alpha.coerceIn(0f, 1f))
+
+    override fun dispatchDraw(canvas: Canvas) {
+        val top = floorTopPx
+        val opacity = floorAlpha()
+        if (top.isNaN() || opacity <= 0f) {
+            super.dispatchDraw(canvas)
+            return
+        }
+        val a = (opacity * 255f).roundToInt()
+        floorBandPaint.alpha = a
+        floorPaint.color = floorColor
+        floorPaint.alpha = ((floorColor ushr 24) * opacity).roundToInt()
+        val bottom = top + floorBandPx
+        val w = width.toFloat()
+        if (opacity >= 1f) {
+            val save = canvas.save()
+            canvas.clipRect(0f, 0f, w, bottom)
+            super.dispatchDraw(canvas)
+            canvas.restoreToCount(save)
+        } else {
+            super.dispatchDraw(canvas)
+        }
+        if (floorBandPx > 0f) {
+            canvas.save()
+            canvas.translate(0f, top)
+            canvas.drawRect(0f, 0f, w, floorBandPx, floorBandPaint)
+            canvas.restore()
+        }
+        if (bottom < height) canvas.drawRect(0f, bottom, w, height.toFloat(), floorPaint)
+    }
+
     /** 清晰层的透明度 (0..1, 对焦程度). 清晰图解好之前不显示. */
     var sharpness: Float = 0f
         set(value) {
@@ -179,16 +256,20 @@ class TvNativeWallBackdropView(
 
     /**
      * 换图 (同一个目标重复调用是空操作). 换了地址 = 模糊层解新图淡入 (连着换时见 [coalesceSwaps]), 清晰图作废 (停下来再解新的);
-     * 换了条目 = 放大登记作废. null = 淡出成页面底色.
+     * 换了条目 = 放大登记作废. null = 淡出成页面底色. [replace] = 本层此刻看不见 (调用方换了一路内容): 旧图当场撤掉, 不留着跟新图交叉淡入.
      */
-    fun show(target: TvNativeWallBackdropTarget?) {
+    fun show(target: TvNativeWallBackdropTarget?, replace: Boolean = false) {
         val old = this.target
         if (target == old) return
         this.target = target
         if (old?.url != target?.url || old?.subjectId != target?.subjectId) retractZoom()
         if (old?.url != target?.url || target?.sharp != true) clearSharp()
         if (old?.url != target?.url) {
-            if (target == null) {
+            if (replace) {
+                swapPending = false
+                for (s in slots.toList()) removeSlot(s)
+                if (target != null) addSlot(target, direct = false)
+            } else if (target == null) {
                 swapPending = false
                 for (s in slots.toList()) s.fadeOut()
             } else if (coalesceSwaps && slots.any { it.fadingIn }) {
@@ -256,7 +337,33 @@ class TvNativeWallBackdropView(
         for (s in slots) s.applyMask()
         sharpMaskAlpha = -1
         applySharpMask()
+        onShownChanged?.invoke()
     }
+
+    /**
+     * 条目 [subjectId] 的模糊图此刻在窗口坐标 [rect] 处的取色器 ([TvBackdropSampler]: 按格子取颜色, 已混上压暗); 最上面露着的那张不是这一部
+     * (还没解好 / 已经换走) 时 null. 只在主线程上记下位置与压暗, 取色本身可以放到后台. 只算模糊层, 不算清晰层与上面的 hero 图 (标题那块
+     * hero 图已经羽化成透明).
+     */
+    fun sampler(subjectId: Int, rect: RectF): TvBackdropSampler? {
+        val slot = slots.lastOrNull { it.shown && !it.leaving } ?: return null
+        if (slot.target.subjectId != subjectId) return null
+        val sample = slot.sample ?: return null
+        if (width == 0 || height == 0 || !isAttachedToWindow) return null
+        getLocationInWindow(windowXY)
+        // 图按 CENTER_CROP 铺满本层
+        val scale = max(width.toFloat() / sample.width, height.toFloat() / sample.height)
+        val drawnW = sample.width * scale
+        val drawnH = sample.height * scale
+        return TvBackdropSampler(
+            sample, RectF(rect),
+            left = windowXY[0] + (width - drawnW) / 2, top = windowXY[1] + (height - drawnH) / 2, drawnW = drawnW, drawnH = drawnH,
+            mask = slot.maskAlpha.coerceAtLeast(0) / 255f, maskColor = maskColor or OPAQUE,
+        )
+    }
+
+    /** 同 [sampler], 当场取 [cols] × [rows] 格. */
+    fun sample(subjectId: Int, rect: RectF, cols: Int, rows: Int): IntArray? = sampler(subjectId, rect)?.sample(cols, rows)
 
     /** 最上面那张模糊图压着的透明度 (0..255), 还没解好是 -1 (测试看压暗的深浅). */
     internal val topMaskAlpha: Int get() = slots.lastOrNull()?.maskAlpha ?: -1
@@ -300,6 +407,10 @@ class TvNativeWallBackdropView(
         var maskAlpha = -1
             private set
 
+        /** 解好时量的缩小图 (见 [sample]); null = 还没解好. */
+        var sample: TvBackdropSample? = null
+            private set
+
         /** 按量好的亮度与此刻的压暗色 / 文字色算压多深, 设成颜色滤镜. */
         fun applyMask() {
             if (worstForLightText.isNaN()) return
@@ -319,7 +430,9 @@ class TvNativeWallBackdropView(
         }
 
         private fun measure(bitmap: Bitmap) {
-            val pixels = tvBackdropMeasurePixels(bitmap)
+            val measured = tvBackdropMeasureSample(bitmap)
+            sample = measured
+            val pixels = measured.pixels
             worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true)
             worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false)
             luminosity = tvBackdropLuminosity(pixels)
@@ -357,6 +470,7 @@ class TvNativeWallBackdropView(
                 // 连着换时等着的那张 (见 coalesceSwaps)
                 startPendingSwap()
             }
+            onShownChanged?.invoke()
         }
 
         /** 解不出来: 是当前这张就连下面的一起淡掉 (不拿别的条目的图顶着), 否则旧图留着. */
@@ -456,7 +570,10 @@ class TvNativeWallBackdropView(
 
     private fun applySharpness() {
         val ready = sharpReady
-        sharpImage.alpha = if (ready) sharpness else 0f
+        val alpha = if (ready) sharpness else 0f
+        // 底边跟着清晰层淡 (画在本层的 dispatchDraw 里)
+        if (alpha != sharpImage.alpha && !floorTopPx.isNaN()) invalidate()
+        sharpImage.alpha = alpha
         applySharpMask()
         val covered = sharpCovers()
         for (s in slots) s.image.visibility = if (covered) INVISIBLE else VISIBLE
@@ -519,6 +636,13 @@ class TvNativeWallBackdropView(
             published = false
             applySharpness()
         }
+    }
+
+    /** 本层挪了 (探索页轮播的模糊背景随列表滚动): 已登记的整屏框跟着重新登记, 放大从此刻的位置起. */
+    override fun setTranslationY(translationY: Float) {
+        if (translationY == this.translationY) return
+        super.setTranslationY(translationY)
+        if (published) publishZoom()
     }
 
     override fun onAttachedToWindow() {
@@ -638,3 +762,40 @@ internal const val TV_WALL_BACKDROP_OPEN_WAIT_MILLIS = 300L
 
 /** 模糊层同时最多几张 (垫底的 + 在淡入的). */
 private const val TV_WALL_BACKDROP_MAX_SLOTS = 3
+
+private const val OPAQUE = -0x1000000 // 0xFF000000
+
+/**
+ * 模糊背景上一块区域的取色器 (见 [TvNativeWallBackdropView.sampler]): 记下了图、区域 ([rect], 窗口坐标) 与图此刻铺在哪 ([left] / [top] /
+ * [drawnW] / [drawnH], 窗口坐标) 和压暗 ([mask] 浓度, [maskColor] 不透明), 不再碰视图, 可以在后台线程上取.
+ */
+class TvBackdropSampler internal constructor(
+    private val image: TvBackdropSample,
+    private val rect: RectF,
+    private val left: Float,
+    private val top: Float,
+    private val drawnW: Float,
+    private val drawnH: Float,
+    private val mask: Float,
+    private val maskColor: Int,
+) {
+    /** 区域分成 [cols] × [rows] 格, 每格中心的颜色 (双线性, 混上压暗; 不透明 ARGB). */
+    fun sample(cols: Int, rows: Int): IntArray = IntArray(cols * rows) { i ->
+        val x = rect.left + (i % cols + 0.5f) / cols * rect.width()
+        val y = rect.top + (i / cols + 0.5f) / rows * rect.height()
+        val c = image.at((x - left) / drawnW, (y - top) / drawnH)
+        if (mask > 0f) mixArgb(c, maskColor, mask) else c
+    }
+}
+
+/** 图 [sample] 中心裁剪铺满 [frame] 时, 区域 [rect] (与 [frame] 同一坐标系) 的取色器 (不压暗). */
+internal fun tvBackdropCropSampler(sample: TvBackdropSample, rect: RectF, frame: RectF): TvBackdropSampler {
+    val scale = max(frame.width() / sample.width, frame.height() / sample.height)
+    val drawnW = sample.width * scale
+    val drawnH = sample.height * scale
+    return TvBackdropSampler(
+        sample, RectF(rect),
+        left = frame.left + (frame.width() - drawnW) / 2, top = frame.top + (frame.height() - drawnH) / 2, drawnW = drawnW, drawnH = drawnH,
+        mask = 0f, maskColor = 0,
+    )
+}

@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import me.him188.ani.app.data.network.TmdbTitleLogo
 import kotlin.concurrent.Volatile
 import kotlin.math.PI
 import kotlin.math.sin
@@ -72,6 +73,10 @@ object TvHeroZoomHandoff {
         val baseline: Float,
         /** 此刻像详情页大标题的程度 (0 = 列表页的样子, 1 = 已是详情页的样子), 见 [publishTitle]. */
         val look: Float,
+        /** 列表页标题显示的是标题 logo (这时 [bounds] 是 logo 的框), null = 文字标题. 见 [publishTitle]. */
+        val logo: TmdbTitleLogo?,
+        /** 列表页的 logo 画成什么样 (与详情页的样子不同时), 见 [publishTitle]. */
+        val logoLook: TvHeroTitleLogoLook?,
     )
 
     /** 缩回期间根级转场标题的固定部分 (文字 / 定宽 / 样式); 位置每帧变, 见 [shrinkTitlePosition]. */
@@ -80,6 +85,11 @@ object TvHeroZoomHandoff {
         val widthPx: Float,
         val maxLines: Int,
         val clipOverflow: Boolean,
+        /** 列表页标题是标题 logo 时画它 (框 [widthPx] × [heightPx]), null = 画文字 [text]. */
+        val logo: TmdbTitleLogo? = null,
+        val heightPx: Float = 0f,
+        /** 列表页的 logo 画成什么样 (与详情页的样子不同时; null = 一个样子), 落位时淡回它. */
+        val logoLook: TvHeroTitleLogoLook? = null,
     )
 
     @Volatile
@@ -132,6 +142,10 @@ object TvHeroZoomHandoff {
          * 列表页标题已变白), 转场标题只平移; 不到 1 = 先原地变成详情页的样子再平移 (见 [titleDetailsLook], [titleMoveProgress]).
          */
         val titleLook: Float = 0f,
+        /** 列表页标题是标题 logo (见 [publishTitle] 的 logo), 与 [titleBounds] 一起快照; null = 文字标题. */
+        val titleLogo: TmdbTitleLogo? = null,
+        /** 列表页的 logo 画成什么样 (见 [publishTitle] 的 logoLook), 与 [titleBounds] 一起快照; null = 与详情页一个样子. 交叉淡化见 [logoDetailsLook]. */
+        val titleLogoLook: TvHeroTitleLogoLook? = null,
     ) {
         private var startNanos by mutableLongStateOf(0L)
 
@@ -153,6 +167,12 @@ object TvHeroZoomHandoff {
 
         /** 大标题此刻像本页标题的程度 (0..1): 前 [TV_HERO_TITLE_LOOK_SPAN] 段时间里从 [titleLook] 变到 1. 绘制里读. */
         val titleDetailsLook: Float get() = tvHeroZoomTitleLook(titleLook, linear)
+
+        /**
+         * 标题 logo 此刻像本页那份的程度 (0..1, 列表页的样子 [titleLogoLook] 与详情页的不同时交叉淡化用): 标题要先原地变样子时同 [titleDetailsLook];
+         * 否则 (标题只平移) 跟着整段转场的时间淡过去 —— 两边的 logo 各按各的背景判过颜色 (见 TvTitleLogoDetailsLooks), 可能不一样. 绘制里读.
+         */
+        val logoDetailsLook: Float get() = if (titleLook < 1f) titleDetailsLook else tvHeroLogoLookLerp(linear)
 
         /**
          * 详情页整屏底色此刻的不透明度: 前 [TvPolishFlags.zoomScrimT] 段**时间**里从 0 涨到 1, 之后恒 1.
@@ -324,6 +344,8 @@ object TvHeroZoomHandoff {
                 ts?.text, s.dim, s.treatment,
                 titleBaseline = ts?.baseline ?: Float.NaN,
                 titleLook = ts?.look ?: 0f,
+                titleLogo = ts?.logo,
+                titleLogoLook = ts?.logoLook,
             )
         } else {
             null
@@ -543,7 +565,13 @@ object TvHeroZoomHandoff {
         // **全部取自进入时的会话快照, 不读当前 titleSource**: 列表页在返回途中销毁 (进过播放器 / 更深
         // 的页面) 时那份登记是 null, 而它又不是快照状态、恢复了也不会让本层重组 —— 于是根级标题从头到尾
         // 没组合过, 列表页那份却照样按"已交权"隐藏, 两边都没有标题, 直到撤层才突然冒出来。
-        return ShrinkTitleSpec(text, width, from.titleMaxLines, from.titleClipOverflow)
+        // logo 落位时的样子按列表页此刻那份登记 (同 shrinkTitleLandingLook), 登记没了按进来时的快照
+        val current = titleSource?.takeIf { it.subjectId == s.subjectId && listAlive(s) }
+        return ShrinkTitleSpec(
+            text, width, from.titleMaxLines, from.titleClipOverflow,
+            logo = from.titleLogo, heightPx = from.titleBounds.height,
+            logoLook = if (current != null) current.logoLook else from.titleLogoLook,
+        )
     }
 
     /**
@@ -587,6 +615,16 @@ object TvHeroZoomHandoff {
     fun shrinkTitleDetailsLook(): Float {
         val s = shrink ?: return 1f
         return tvHeroShrinkTitleLook(shrinkTitleLandingLook(), s.linear)
+    }
+
+    /**
+     * 缩回期间标题 logo 此刻像详情页那份的程度 (0..1), 没在缩回 = 1: 落位时标题要变回列表页的样子就同 [shrinkTitleDetailsLook]; 否则跟着整段缩回的时间
+     * 淡回列表页那份 (见 [Session.logoDetailsLook]). 绘制里读.
+     */
+    fun shrinkLogoDetailsLook(): Float {
+        val s = shrink ?: return 1f
+        val landing = shrinkTitleLandingLook()
+        return if (landing < 1f) tvHeroShrinkTitleLook(landing, s.linear) else 1f - tvHeroLogoLookLerp(s.linear)
     }
 
     /**
@@ -766,7 +804,7 @@ object TvHeroZoomHandoff {
     fun sourceDebug(): String {
         fun String?.tail() = this?.takeLast(32) ?: "null"
         val loaded = sourceLoaded.toList()
-        return "source=${source?.subjectId}:${source?.url.tail()} title=${titleSource?.subjectId} look=${titleSource?.look} " +
+        return "source=${source?.subjectId}:${source?.url.tail()} top=${source?.bounds?.top} title=${titleSource?.subjectId} look=${titleSource?.look} " +
                 "loaded(${loaded.size})=${loaded.takeLast(4).joinToString { "${it.first}:${it.second.tail()}" }}"
     }
 
@@ -795,6 +833,11 @@ object TvHeroZoomHandoff {
      *
      * [look] = 列表页标题此刻像详情页标题的程度 (0..1): 浅色主题下列表页是黑字、详情页是白字压黑影, 整屏背景点开时列表页标题先变白 (1),
      * 转场标题就从白字起; 深色两边一个样子, 恒 1 (见 [Session.titleLook], [shrinkTitleLandingLook]).
+     *
+     * [logo] = 列表页标题显示的是标题 logo (ThemeSettings.tvTitleLogoDisplay), 这时 [bounds] 是 logo 的框、[baseline] 为 NaN: 详情页那头也显示 logo,
+     * 平移的就是 logo (两边按同一套规则定大小, 框一样大, 只平移); 缩回时转场层也画 logo. [logoLook] = 列表页的 logo 与详情页的样子可能不同
+     * (翻色不同; 压在模糊背景上时两边各按各的背景判, 一律给) 时列表页那份的样子: 详情页那头叠一份它交叉淡化 (见 [Session.logoDetailsLook]);
+     * null = 两边一个样子.
      */
     fun publishTitle(
         owner: Any,
@@ -805,8 +848,10 @@ object TvHeroZoomHandoff {
         clipOverflow: Boolean = false,
         baseline: Float = Float.NaN,
         look: Float = 0f,
+        logo: TmdbTitleLogo? = null,
+        logoLook: TvHeroTitleLogoLook? = null,
     ) {
-        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow, baseline, look)
+        titleSource = TitleSource(owner, subjectId, bounds, text, maxLines, clipOverflow, baseline, look, logo, logoLook)
     }
 
     /**
@@ -873,6 +918,13 @@ private val TvHeroShrinkEasingLifted = arrayOf(
 /** 本次缩回该用的缓动: 运动开始前取一次 (循环里每帧读开关没意义, 也不该中途换曲线). */
 fun tvHeroShrinkEasing(): Easing =
     TvHeroShrinkEasingLifted.getOrNull(TvPolishFlags.shrinkCurve - 1) ?: TvHeroShrinkEasing
+
+/**
+ * 标题 logo 画成什么样: [flipLightText] 非 null = 按这种字色翻色 (TvTitleLogoFlip 的 lightText, 只翻黑白灰的部分), null = 原样;
+ * [force] = 不看 logo 整体的色调, 黑白灰的部分一律翻 (有颜色的 logo 里的黑字、黑描边也翻; 见 TvTitleLogoFlip).
+ */
+@Immutable
+data class TvHeroTitleLogoLook(val flipLightText: Boolean?, val force: Boolean = false)
 
 /**
  * 压在 backdrop 上的那套遮罩的**声明**: 一层均匀压暗 + 三条固定角色的有向渐变 (顶缘 / 左缘 / 下缘).
@@ -990,6 +1042,9 @@ const val TV_HERO_SWAP_DIM_PEAK = 0.35f
  * 放大时先变再平移, 缩回时先平移、最后这一段变回去 (用户 2026-09-30「先渐变到白再运动」). 平移挤进余下的时间, 放大的图照常走满全程.
  */
 const val TV_HERO_TITLE_LOOK_SPAN = 0.4f
+
+/** 标题 logo 两种样子跟着整段转场交叉淡化时的进度: 线性进度 [linear] 过一下 smoothstep. */
+private fun tvHeroLogoLookLerp(linear: Float): Float = tvHeroTitleLookLerp(0f, linear)
 
 /** 从 [from] 到 1 的样子插值, [x] = 这一段的进度 (smoothstep 过一下, 两头不突变). */
 private fun tvHeroTitleLookLerp(from: Float, x: Float): Float {

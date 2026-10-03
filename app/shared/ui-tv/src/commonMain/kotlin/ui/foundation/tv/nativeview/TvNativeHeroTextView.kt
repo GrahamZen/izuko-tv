@@ -15,6 +15,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -28,6 +29,11 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Rect
+import com.github.panpf.sketch.Sketch
+import kotlinx.coroutines.Job
+import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
+import me.him188.ani.app.data.network.TmdbTitleLogo
+import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.tv.TV_CAROUSEL_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_CAROUSEL_TEXT_OUT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_TEXT_STAGGER_MILLIS
@@ -35,10 +41,25 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_ENTER_AT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_HIDE_OUT_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TvHeroTitleLogoLook
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBackdropLook
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBitmaps
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBox
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoFlip
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGlow
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGrid
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGrids
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoUnreadable
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+/** hero 标题 logo 背后铺的整屏模糊背景 (见 [TvNativeHeroTextView.logoBackdrop]). */
+fun interface TvNativeLogoBackdrop {
+    /** 条目 [subjectId] 的背景此刻在窗口坐标 [rect] 处的取色器 (主线程上调, 取色可以放到后台); 还没铺上这一部的图时 null. */
+    fun sampler(subjectId: Int, rect: RectF): TvBackdropSampler?
+}
 
 /** 一段带颜色的字 (hero 信息行里的开播状态、总集数、标签等). */
 @Immutable
@@ -69,6 +90,8 @@ data class TvNativeHeroStatus(
  * @param vibrant 压在 hero 态铺着的模糊背景上 (深色主题, 由页面按状态给): 信息行 / 下一集行 / 简介 / 评分数字照 tvOS 的 vibrancy 画
  *   (见 setTvVibrancy) —— 次要色的字与简介换成次要那一档 ([tvVibrancySecondary])、评分数字换成主要文字色, 都以加法混合画在背景上;
  *   标题与评分旁边的星照常.
+ * @param logo 标题 logo (见 ThemeSettings.tvTitleLogoDisplay), 样式里有 logo 框 ([TvNativeHeroTextStyle.logoBox]) 时用; null = 文字标题.
+ * @param logoPending 还不知道有没有 [logo] (TMDB 还没查完): 换到这一部时进场先等一会儿 (见 [TvNativeHeroTextView]).
  */
 @Immutable
 data class TvNativeHeroText(
@@ -81,6 +104,8 @@ data class TvNativeHeroText(
     val summary: String = "",
     val summaryMaxLines: Int = 0,
     val vibrant: Boolean = false,
+    val logo: TmdbTitleLogo? = null,
+    val logoPending: Boolean = false,
 )
 
 /**
@@ -91,6 +116,7 @@ data class TvNativeHeroText(
  * @param marqueeRepeat 标题 (与下一集集名) 跑马灯的圈数: 0 = 不跑 (视觉效果流畅档), -1 = 一直跑.
  * @param stagger 分行错落进场 (tvHeroTextStaggerEnabled); [animated] = false (流畅档) 时换字不过渡.
  * @param openTitle 详情页大标题的样子, 整屏背景点开时标题渐变成它 (见 [TvNativeHeroTextView.titleLook]); null = 与 [title] 同一个样子 (深色主题).
+ * @param logoBox 标题 logo 的大小规则 (宽度另不超过标题宽); null = 不用 logo (设置里关了).
  */
 @Immutable
 data class TvNativeHeroTextStyle(
@@ -111,6 +137,9 @@ data class TvNativeHeroTextStyle(
     val animated: Boolean,
     val marqueeRepeat: Int,
     val openTitle: TvNativeTitleLook? = null,
+    val logoBox: TvTitleLogoBox? = null,
+    /** 标题 logo 看不清时怎么办 (见 ThemeSettings.tvTitleLogoDisplay); 关掉 logo 时 [logoBox] 为 null. */
+    val logoDisplay: TvTitleLogoDisplay = TvTitleLogoDisplay.Auto,
 )
 
 /** 标题的颜色与阴影 (px), 见 [TvNativeHeroTextStyle.openTitle]. */
@@ -144,6 +173,19 @@ enum class TvNativeTextTransition {
  *
  * 放大转场: 标题每次挪动都把它在 Compose 根坐标里的框登记给 [TvHeroZoomHandoff.publishTitle] (不含缩回让位平移与进场滑入), 缩回期间
  * 由 [setTitleHandoff] 按转场层的判定隐藏或平移, 并停掉跑马灯.
+ *
+ * 标题那一行可以是标题 logo ([TvNativeHeroText.logo], 样式里有 [TvNativeHeroTextStyle.logoBox] 时): 那一行高 = logo 框的高度上限, logo 底对齐、
+ * 左对齐, 下面几行跟着往下排 (简介随之少几行). 放大转场登记的是 logo 的框. 不让文字标题先出来再被 logo 换掉 (换的时候下面几行还会跳):
+ *  - 知道有 logo 就按 logo 排版, 图解好才显示; 图迟迟不来 ([TV_TITLE_LOGO_IMAGE_WAIT_MILLIS]) 才在 logo 的位置上先放文字标题 (底对齐),
+ *    图到了原地换, 下面几行不动; 图加载失败换回文字标题的排版.
+ *  - 新内容带着 logo 时 ([setText]), 旧字淡出的同时就把图解进内存 ([TvNativeImages.preloadLogo]), 进场时当场上屏.
+ *  - 还不知道有没有 logo ([TvNativeHeroText.logoPending]) 时进场先等查完, 最多 [TV_TITLE_LOGO_PENDING_WAIT_MILLIS]; 到点还没查完就照文字标题进场.
+ *
+ * logo 的样子: 压在纯色底上时与字同底看不清的翻色 ([TvTitleLogoFlip]: 只翻黑白灰的部分, 彩色原样), 底按标题的字色判; 浅色主题下列表页是
+ * 深色字、详情页是白字 ([titleLook]): 两种样子各解一张, 跟着标题交叉淡化, 放大转场把列表页的样子交给详情页. 压在整屏模糊背景上时
+ * ([logoBackdrop]) 默认原样, 按正下方的背景判看不清才翻色或在背后加柔光 (见 TvTitleLogoContrast); 详情页按自己的清晰背景图另判
+ * (TvTitleLogoDetailsLooks), 放大转场把这边的样子交过去交叉淡化. 判出原样看不清的记进 [TvTitleLogoUnreadable]. 设置 ([TvNativeHeroTextStyle.logoDisplay])
+ * 为「不调色」时原图、不判; 「看不清时显示文字」时也不调色, 判出看不清就照加载失败那样换回文字标题.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeHeroTextView(
@@ -174,6 +216,9 @@ class TvNativeHeroTextView(
     /** Compose 根视图 (放大转场的框按它的坐标登记). */
     var composeRoot: View? = null
 
+    /** 加载标题 logo 用 (见 [TvNativeHeroText.logo]); null = 一律文字标题. */
+    var sketch: Sketch? = null
+
     /** 标题显示的条目变了 (页面据此观察放大转场的缩回, 见 [setTitleHandoff]). */
     var onShownSubjectChanged: ((Int?) -> Unit)? = null
 
@@ -191,13 +236,21 @@ class TvNativeHeroTextView(
         }
 
     private val title = TvNativeTextView(context)
+    private val logo = ImageView(context)
+
+    /** logo 在详情页那种样子 (白字底) 的那一张: 与 [logo] 的样子不同时按 [titleLook] 叠在它上面淡入. */
+    private val logoOpen = ImageView(context)
+
+    /** logo 背后的柔光 (见 [TvTitleLogoGlow]), 画在 logo 下面, 跟着标题那一行走. */
+    private val logoGlow = ImageView(context)
+    private val titleSlot = TvNativeTitleSlot(context, title, logo, logoOpen, logoGlow)
     private val metaRow = LinearLayout(context)
     private val star = ImageView(context)
     private val rating = TvNativeTextView(context)
     private val meta = TvNativeTextView(context)
     private val status = TvNativeStatusRow(context)
     private val summary = TvNativeTextView(context)
-    private val lines: List<View> = listOf(title, metaRow, status, summary)
+    private val lines: List<View> = listOf(titleSlot, metaRow, status, summary)
 
     /** 各行自己的透明度 (进场滑入 / 重建写的那份), 标题以外的几行画的时候再乘 [detailAlpha]. */
     private val lineAlpha = FloatArray(lines.size) { 1f }
@@ -210,7 +263,8 @@ class TvNativeHeroTextView(
         set(value) {
             if (field == value) return
             field = value
-            for ((i, line) in lines.withIndex()) if (line !== title) line.alpha = lineAlpha[i] * value
+            for ((i, line) in lines.withIndex()) if (line !== titleSlot) line.alpha = lineAlpha[i] * value
+            applyLogoLook()
         }
 
     /**
@@ -227,6 +281,7 @@ class TvNativeHeroTextView(
         }
 
     private fun applyTitleLook() {
+        applyLogoLook()
         val look = style.openTitle
         val t = titleLook.coerceIn(0f, 1f)
         if (look == null || t == 0f) {
@@ -242,7 +297,7 @@ class TvNativeHeroTextView(
     /** 写第 [line] 行自己的透明度; 标题以外的乘上 [detailAlpha]. 标题的隐藏另见 [applyTitleOffset]. */
     private fun setLineAlpha(line: View, alpha: Float) {
         lineAlpha[lines.indexOf(line)] = alpha
-        line.alpha = if (line === title) alpha else alpha * detailAlpha
+        line.alpha = if (line === titleSlot) alpha else alpha * detailAlpha
     }
 
     private var shown: TvNativeHeroText? = null
@@ -257,6 +312,11 @@ class TvNativeHeroTextView(
     /** 标题那一行的进场滑入 (见 [enter]), 没在跑为 null: 在跑时标题的透明度与位移归它管, 见 [applyTitleOffset]. */
     private var titleEnter: ValueAnimator? = null
     private var blockAlpha = 1f
+
+    /** 进场在等待显示的那一部查完 logo (见 [enter]); [enterDeferredSequential] = 等完按哪种进场. */
+    private var enterDeferred = false
+    private var enterDeferredSequential = false
+    private val enterDeferredTimeout = Runnable { resumeDeferredEnter(waitLogo = false) }
 
     private val titleOwner = Any()
     private var titleMarquee = false
@@ -273,6 +333,14 @@ class TvNativeHeroTextView(
         metaRow.orientation = LinearLayout.HORIZONTAL
         metaRow.gravity = Gravity.CENTER_VERTICAL
         star.scaleType = ImageView.ScaleType.FIT_CENTER
+        // logo 的框按它的宽高比定好了 (见 TvNativeTitleSlot), 铺满即可
+        for (view in listOf(logo, logoOpen)) {
+            view.scaleType = ImageView.ScaleType.FIT_XY
+            view.visibility = INVISIBLE
+        }
+        // 柔光是一张几十像素的小图, 拉伸 (双线性) 成平滑的一团
+        logoGlow.scaleType = ImageView.ScaleType.FIT_XY
+        logoGlow.visibility = GONE
         metaRow.addView(star)
         metaRow.addView(rating)
         metaRow.addView(meta)
@@ -318,12 +386,13 @@ class TvNativeHeroTextView(
     val shownSubjectId: Int? get() = shown?.subjectId
 
     /** 标题这一行的高度 (px), 页面据此算标题什么时候移出屏幕上缘. */
-    val titleHeight: Int get() = title.height
+    val titleHeight: Int get() = titleSlot.height
 
     /** 换内容. 条目变了 (或从无到有 / 藏起来) 按 [transition] 过渡; 同一条目只是内容变了原地换. */
     fun setText(text: TvNativeHeroText?, transition: TvNativeTextTransition) {
         val target = if (hasPending) pending else shown
         if (text == target) return
+        preloadLogo(text?.logo)
         val current = shown
         if (!style.animated || transition == TvNativeTextTransition.Reset) {
             cancelAnimations()
@@ -337,6 +406,14 @@ class TvNativeHeroTextView(
                 setLineAlpha(line, 1f)
             }
             applyTitleOffset()
+            return
+        }
+        if (enterDeferred) {
+            // 进场正等着 logo 查完 (旧字已淡完): 同一部只是内容变了就换上, 查完了马上进场; 换了一部 (或藏起来) 就从此刻进场那一部
+            val samePending = text != null && text.subjectId == pending?.subjectId
+            pending = text
+            if (!samePending) pendingTransition = transition
+            if (!samePending || !text.logoPending) resumeDeferredEnter(waitLogo = true)
             return
         }
         if (text != null && current != null && text.subjectId == current.subjectId) {
@@ -415,8 +492,41 @@ class TvNativeHeroTextView(
         }
     }
 
-    /** 换上待显示的目标并按行进场. [sequential] = 旧字刚淡完 (进场起点从换目标那一刻算, 见 [TvNativeTextTransition]). */
+    /**
+     * 换上待显示的目标并按行进场. [sequential] = 旧字刚淡完 (进场起点从换目标那一刻算, 见 [TvNativeTextTransition]).
+     * 待显示的那一部还不知道有没有 logo 时先等它查完 (见 [TvNativeHeroText.logoPending]): 旧字已经淡没, 这段时间整块空着.
+     */
     private fun enter(sequential: Boolean) {
+        val text = pending
+        if (text != null && text.logoPending && style.logoBox != null && sketch != null) {
+            enterDeferred = true
+            enterDeferredSequential = sequential
+            removeCallbacks(enterDeferredTimeout)
+            postDelayed(enterDeferredTimeout, TV_TITLE_LOGO_PENDING_WAIT_MILLIS)
+            return
+        }
+        enterNow(sequential)
+    }
+
+    /**
+     * 不再等 logo: 进场时刻挪到此刻 (各行错落照旧). [waitLogo] = 待显示的那一部 (换过的) 还没查完时接着等; 等到点了传 false, 照文字标题进场.
+     */
+    private fun resumeDeferredEnter(waitLogo: Boolean) {
+        removeCallbacks(enterDeferredTimeout)
+        enterDeferred = false
+        val sequential = enterDeferredSequential
+        changedAt = SystemClock.uptimeMillis() - enterBaseMillis(pendingTransition, sequential)
+        if (waitLogo) enter(sequential) else enterNow(sequential)
+    }
+
+    /** 进场第一行 (标题) 从换目标那一刻起多久开始 (见 [enterNow]). */
+    private fun enterBaseMillis(transition: TvNativeTextTransition, sequential: Boolean): Long = when {
+        transition == TvNativeTextTransition.Carousel -> TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS
+        sequential -> TV_NATIVE_TEXT_ENTER_AT_MILLIS
+        else -> 0L
+    }
+
+    private fun enterNow(sequential: Boolean) {
         val text = pending
         val transition = pendingTransition
         hasPending = false
@@ -426,11 +536,7 @@ class TvNativeHeroTextView(
         bindContent(text)
         if (text == null) return
         val carousel = transition == TvNativeTextTransition.Carousel
-        val base = when {
-            carousel -> TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS
-            sequential -> TV_NATIVE_TEXT_ENTER_AT_MILLIS
-            else -> 0L
-        }
+        val base = enterBaseMillis(transition, sequential)
         val elapsed = SystemClock.uptimeMillis() - changedAt
         val duration = if (carousel) TV_NATIVE_CAROUSEL_TEXT_IN_MILLIS else TV_NATIVE_TEXT_IN_MILLIS
         val s = style
@@ -446,7 +552,7 @@ class TvNativeHeroTextView(
                 interpolator = LinearInterpolator()
                 addUpdateListener {
                     val f = it.animatedValue as Float
-                    setLineAlpha(line, if (line === title && titleHidden) 0f else f)
+                    setLineAlpha(line, if (line === titleSlot && titleHidden) 0f else f)
                     line.translationX = s.slidePx * (1f - TV_NATIVE_LINEAR_OUT_SLOW_IN.getInterpolation(f))
                 }
                 addListener(object : AnimatorListenerAdapter() {
@@ -457,7 +563,7 @@ class TvNativeHeroTextView(
 
                     override fun onAnimationEnd(animation: Animator) {
                         lineAnimators.remove(animation)
-                        if (line === title) {
+                        if (line === titleSlot) {
                             titleEnter = null
                             // 被取消的 (换字 / 整块重建) 由取消方接着摆
                             if (!cancelled) applyTitleOffset()
@@ -465,7 +571,7 @@ class TvNativeHeroTextView(
                     }
                 })
             }
-            if (line === title) titleEnter = animator
+            if (line === titleSlot) titleEnter = animator
             lineAnimators.add(animator)
             animator.start()
         }
@@ -477,6 +583,10 @@ class TvNativeHeroTextView(
         fadeBack?.cancel()
         fadeBack = null
         cancelLineAnimators()
+        if (enterDeferred) {
+            enterDeferred = false
+            removeCallbacks(enterDeferredTimeout)
+        }
     }
 
     private fun cancelLineAnimators() {
@@ -496,8 +606,9 @@ class TvNativeHeroTextView(
             if (old != null) TvHeroZoomHandoff.retractTitle(titleOwner)
             return
         }
-        title.visibility = VISIBLE
+        titleSlot.visibility = VISIBLE
         title.text = text.title
+        bindLogo(text.logo)
         contentDescription = text.title
         val info = text.infoReady
         val hasRating = text.rating != null
@@ -540,6 +651,383 @@ class TvNativeHeroTextView(
         return b
     }
 
+    // ---- 标题 logo ----
+
+    /**
+     * 标题压在整屏模糊背景上 (开了「hero 态铺模糊背景」的页面给): logo 默认原样, 与正下方的背景看不清时才翻色或在背后加柔光 (见
+     * TvTitleLogoContrast). null = 压在纯色底上, 按标题的字色翻色 ([TvTitleLogoFlip]).
+     */
+    var logoBackdrop: TvNativeLogoBackdrop? = null
+        set(value) {
+            if (field === value) return
+            field = value
+            bindLogo(shown?.logo)
+        }
+
+    /** [logoBackdrop] 上铺的图换了 (解好露面 / 压暗变了): logo 按新的背景重判. */
+    fun logoBackdropChanged() {
+        if (logoBackdrop != null && logoGrid != null) decideLogo(again = true)
+    }
+
+    /** 正在显示 / 加载的标题 logo; 样式里没有 logo 框或没有 [sketch] 时恒为 null. */
+    private var logoTarget: TmdbTitleLogo? = null
+
+    /** [logoTarget] 是按哪套规则加载的 (设置里换了档、换了主题、铺不铺模糊背景变了要重新加载). */
+    private var logoLoadedFor: LogoLoad? = null
+
+    /**
+     * logo 怎么加载: [box] = 大小规则; [list] = 列表页样子的翻色 (纯色底上按标题的字色定; [backdrop] = 压在模糊背景上时为 null, 按背景判,
+     * 见 [logoLook]); [open] = 详情页样子 (白字底) 的翻色, 与列表页的样子可能不同时才有; [textWhenUnreadable] = 不调色, 判出看不清换回文字标题
+     * (这时 [list] 只用来判: 真翻了就是看不清).
+     */
+    private data class LogoLoad(
+        val box: TvTitleLogoBox,
+        val list: TvTitleLogoFlip?,
+        val open: TvTitleLogoFlip?,
+        val backdrop: Boolean,
+        val textWhenUnreadable: Boolean = false,
+    )
+
+    /** [logo] 上请求的样子: 翻色的 lightText, null = 原样. */
+    private var logoListFlip: Boolean? = null
+
+    /** [logoTarget] 列表页样子那张 ([logo]): null = 还没解好 (压在模糊背景上时还要判完); 值 = 翻过色. 解好才显示 logo. */
+    private var logoListFlipped: Boolean? = null
+
+    /** [logoTarget] 详情页样子那张 ([logoOpen]): null = 还没解好或用不着; 值 = 翻过色. */
+    private var logoOpenFlipped: Boolean? = null
+
+    /** 压在模糊背景上时 logo 的格子颜色 (原图解好后量, 见 TvTitleLogoGrids); null = 还没量完. */
+    private var logoGrid: TvTitleLogoGrid? = null
+
+    /** 压在模糊背景上时判出来的样子; null = 还没判. */
+    private var logoLook: TvTitleLogoBackdropLook? = null
+
+    /** 后台量 logo 的格子 / 按背景判的任务; [decideAgain] = 判的途中背景又换了, 判完再判一次. */
+    private var logoMeasureJob: Job? = null
+    private var logoDecideJob: Job? = null
+    private var decideAgain = false
+
+    /** 背景迟迟没铺上这一部的图: 先按原样显示, 铺上了再判 (见 [logoBackdropChanged]). */
+    private val logoBackdropWaitTimeout = Runnable {
+        if (logoTarget != null && logoLook == null) applyLogoBackdropLook(TvTitleLogoBackdropLook.Original)
+    }
+
+    /** [logoTarget] 的图加载失败: 换回文字标题的排版. */
+    private var logoFailed = false
+
+    /** [logoTarget] 的图等了 [TV_TITLE_LOGO_IMAGE_WAIT_MILLIS] 还没到: 先在 logo 的位置上放文字标题. */
+    private var logoImageLate = false
+    private val logoImageWaitTimeout = Runnable {
+        if (logoReserved && logoListFlipped == null) {
+            logoImageLate = true
+            updateLogoVisibility()
+            requestLayout()
+        }
+    }
+
+    /** 标题那一行按 logo 排版 (知道有 logo、图没加载失败); 图解好之前 logo 还看不见. */
+    private val logoReserved: Boolean get() = logoTarget != null && !logoFailed && style.logoBox != null
+
+    /** 此刻显示的是 logo (图已解好). */
+    private val logoActive: Boolean get() = logoReserved && logoListFlipped != null
+
+    /** 最近一次提前解进内存的 logo (见 [preloadLogo]), 同一张不重复发. */
+    private var preloadedLogo: Pair<String, LogoLoad>? = null
+
+    /** 按此刻的样式与底, logo 怎么加载; 样式里没有 logo 框时 null. */
+    private fun logoLoad(): LogoLoad? {
+        val box = style.logoBox ?: return null
+        val display = style.logoDisplay
+        // 不调色: 原图, 不判
+        if (display == TvTitleLogoDisplay.Original) return LogoLoad(box, list = null, open = null, backdrop = false)
+        val textWhenUnreadable = display == TvTitleLogoDisplay.TextWhenUnreadable
+        // 压在模糊背景上: 详情页按自己的背景另判, 这边不另解详情页的样子
+        if (logoBackdrop != null) return LogoLoad(box, list = null, open = null, backdrop = true, textWhenUnreadable = textWhenUnreadable)
+        return LogoLoad(
+            box,
+            list = TvTitleLogoFlip(lightText = isLightArgb(style.title.color)),
+            open = if (textWhenUnreadable) null else style.openTitle?.let { TvTitleLogoFlip(lightText = isLightArgb(it.color)) },
+            backdrop = false,
+            textWhenUnreadable = textWhenUnreadable,
+        )
+    }
+
+    /** 换了 logo (或加载规则变了) 重新加载; 图解好之前照旧显示文字标题. */
+    private fun bindLogo(target: TmdbTitleLogo?) {
+        val load = logoLoad()
+        val sk = sketch
+        val wanted = target?.takeIf { load != null && sk != null }
+        if (wanted == logoTarget && load == logoLoadedFor) return
+        logoTarget = wanted
+        logoLoadedFor = load
+        logoListFlipped = null
+        logoOpenFlipped = null
+        logoGrid = null
+        logoLook = null
+        logoMeasureJob?.cancel()
+        logoDecideJob?.cancel()
+        decideAgain = false
+        logoFailed = false
+        logoImageLate = false
+        removeCallbacks(logoImageWaitTimeout)
+        removeCallbacks(logoBackdropWaitTimeout)
+        setLogoGlow(null)
+        updateLogoVisibility()
+        if (wanted == null || load == null || sk == null) {
+            TvNativeImages.clear(logo)
+            TvNativeImages.clear(logoOpen)
+            return
+        }
+        postDelayed(logoImageWaitTimeout, TV_TITLE_LOGO_IMAGE_WAIT_MILLIS)
+        loadLogoList(load.list?.lightText)
+        if (load.open != null && !load.backdrop) loadLogoOpen(load.open) else TvNativeImages.clear(logoOpen)
+    }
+
+    /**
+     * 往 [logo] 上加载列表页的样子 [flip] (翻色的 lightText, null = 原样). 压在模糊背景上时先加载原图, 顺带量格子颜色、按背景判 (见 [decideLogo]),
+     * 判完才显示; 判出来要翻色再加载一次翻过的 (之前显示着的照旧显示, 解好原地换).
+     */
+    private fun loadLogoList(flip: Boolean?) {
+        val wanted = logoTarget ?: return
+        val load = logoLoadedFor ?: return
+        val sk = sketch ?: return
+        val size = load.box.sizeOf(wanted.aspectRatio)
+        logoListFlip = flip
+        TvNativeImages.loadLogo(
+            sk, logo, wanted.url(size.widthPx), size.widthPx, size.heightPx, flip?.let { TvTitleLogoFlip(lightText = it, force = load.backdrop) },
+            onSuccess = { flipped, bitmap ->
+                // 详情页那边接手画同一张时从这里同步取, 不空帧 (见 TvTitleLogoBitmaps)
+                bitmap?.let { TvTitleLogoBitmaps.putDecoded(wanted, flip, flipped, it, force = load.backdrop) }
+                if (logoTarget == wanted && logoListFlip == flip) onLogoListLoaded(wanted, flipped, bitmap)
+            },
+            onError = {
+                if (logoTarget == wanted) {
+                    removeCallbacks(logoImageWaitTimeout)
+                    logoFailed = true
+                    updateLogoVisibility()
+                    requestLayout()
+                }
+            },
+        )
+    }
+
+    private fun onLogoListLoaded(wanted: TmdbTitleLogo, flipped: Boolean, bitmap: Bitmap?) {
+        val load = logoLoadedFor ?: return
+        if (load.backdrop && logoLook == null) {
+            // 压在模糊背景上: 原图解好了, 量完格子颜色、按背景判完才显示
+            if (logoGrid != null || logoMeasureJob?.isActive == true) return
+            val cached = TvTitleLogoGrids.peek(wanted)
+            when {
+                cached != null -> onLogoGridReady(cached)
+                bitmap != null -> logoMeasureJob = TvTitleLogoGrids.measure(wanted, bitmap) { grid ->
+                    if (logoTarget == wanted) onLogoGridReady(grid)
+                }
+
+                else -> applyLogoBackdropLook(TvTitleLogoBackdropLook.Original)
+            }
+            return
+        }
+        removeCallbacks(logoImageWaitTimeout)
+        // 纯色底上按标题字色翻了色 = 原样看不清
+        if (flipped && load.list != null) {
+            TvTitleLogoUnreadable.mark(wanted)
+            if (load.textWhenUnreadable) {
+                showTextInsteadOfLogo()
+                return
+            }
+        }
+        logoListFlipped = flipped
+        updateLogoVisibility()
+        requestLayout()
+    }
+
+    private fun onLogoGridReady(grid: TvTitleLogoGrid) {
+        logoGrid = grid
+        postDelayed(logoBackdropWaitTimeout, TV_TITLE_LOGO_BACKDROP_WAIT_MILLIS)
+        decideLogo(again = false)
+    }
+
+    /**
+     * 按 logo 正下方的背景判样子 (后台判, 见 TvTitleLogoGrids.decide). 背景还没铺上这一部的图、或 logo 还没排好时先不判 (排好 / 铺上了再来;
+     * 还没判过的到 [TV_TITLE_LOGO_BACKDROP_WAIT_MILLIS] 先按原样显示). 正在判时: [again] = 背景换了, 判完再判一次; 否则不重复判.
+     */
+    private fun decideLogo(again: Boolean) {
+        val wanted = logoTarget ?: return
+        val grid = logoGrid ?: return
+        if (logoDecideJob?.isActive == true) {
+            if (again) decideAgain = true
+            return
+        }
+        val sampler = logoBackdropSampler() ?: return
+        // 取色 (按 logo 的格子, 上万格) 放到后台与判断一起做, 主线程只记下位置
+        logoDecideJob = TvTitleLogoGrids.decide(grid, { sampler.sample(grid.cols, grid.rows) }) { look ->
+            if (logoTarget == wanted && logoGrid === grid) {
+                applyLogoBackdropLook(look)
+                if (decideAgain) {
+                    decideAgain = false
+                    // 这一次的任务还没收尾, 下一帧再判
+                    post { decideLogo(again = false) }
+                }
+            }
+        }
+    }
+
+    /** logo 此刻压着的那块背景的取色器 (见 [TvNativeLogoBackdrop.sampler]); 取不到时 null. */
+    private fun logoBackdropSampler(): TvBackdropSampler? {
+        val backdrop = logoBackdrop ?: return null
+        val subjectId = shown?.subjectId ?: return null
+        if (logo.width == 0 || logo.height == 0 || !isAttachedToWindow) return null
+        logo.getLocationInWindow(xy)
+        val rect = RectF(xy[0].toFloat(), xy[1].toFloat(), (xy[0] + logo.width).toFloat(), (xy[1] + logo.height).toFloat())
+        return backdrop.sampler(subjectId, rect)
+    }
+
+    /**
+     * 用上判出来的样子 [look]: 换翻色 (解好才换上)、换柔光; 与详情页的样子不同时把那一张也解好. 看不清 (不是原样) 时记进 [TvTitleLogoUnreadable];
+     * 设置为「看不清时显示文字」时不调色, 换回文字标题.
+     */
+    private fun applyLogoBackdropLook(look: TvTitleLogoBackdropLook) {
+        removeCallbacks(logoBackdropWaitTimeout)
+        if (look == logoLook) return
+        logoLook = look
+        if (look != TvTitleLogoBackdropLook.Original) {
+            logoTarget?.let { TvTitleLogoUnreadable.mark(it) }
+            if (logoLoadedFor?.textWhenUnreadable == true) {
+                showTextInsteadOfLogo()
+                return
+            }
+        }
+        setLogoGlow(look.glow)
+        if (look.flipLightText != logoListFlip) {
+            loadLogoList(look.flipLightText)
+        } else if (logoListFlipped == null) {
+            // logo 上已经是要的样子 (原图): 当场显示
+            removeCallbacks(logoImageWaitTimeout)
+            logoListFlipped = false
+            requestLayout()
+        }
+        val open = logoLoadedFor?.open
+        if (open != null && logoLooksDiffer()) {
+            if (logoOpenFlipped == null) loadLogoOpen(open)
+        } else {
+            logoOpenFlipped = null
+            TvNativeImages.clear(logoOpen)
+        }
+        updateLogoVisibility()
+        publishTitle()
+    }
+
+    /**
+     * logo 看不清、设置为「看不清时显示文字」: 照图片加载失败那样换回文字标题的排版 (这部的 logo 随后各处都当作没有, 见 [TvTitleLogoUnreadable]).
+     */
+    private fun showTextInsteadOfLogo() {
+        removeCallbacks(logoImageWaitTimeout)
+        removeCallbacks(logoBackdropWaitTimeout)
+        setLogoGlow(null)
+        logoFailed = true
+        updateLogoVisibility()
+        requestLayout()
+    }
+
+    /** 往 [logoOpen] 上加载详情页的样子. 没解好 (或失败) 时不叠, 只显示列表页那张. */
+    private fun loadLogoOpen(open: TvTitleLogoFlip) {
+        val wanted = logoTarget ?: return
+        val load = logoLoadedFor ?: return
+        val sk = sketch ?: return
+        val size = load.box.sizeOf(wanted.aspectRatio)
+        TvNativeImages.loadLogo(
+            sk, logoOpen, wanted.url(size.widthPx), size.widthPx, size.heightPx, open,
+            onSuccess = { flipped, bitmap ->
+                bitmap?.let { TvTitleLogoBitmaps.putDecoded(wanted, open.lightText, flipped, it) }
+                if (logoTarget == wanted) {
+                    logoOpenFlipped = flipped
+                    updateLogoVisibility()
+                    publishTitle()
+                }
+            },
+            onError = {},
+        )
+    }
+
+    /** 柔光换成 [glow] (null = 撤掉): 白色 (或黑色) 的小图, 透明度就是柔光的浓度. */
+    private fun setLogoGlow(glow: TvTitleLogoGlow?) {
+        if (titleSlot.glow === glow) return
+        titleSlot.glow = glow
+        if (glow == null) {
+            logoGlow.setImageDrawable(null)
+        } else {
+            val rgb = if (glow.lighten) 0xFFFFFF else 0
+            val pixels = IntArray(glow.alpha.size) { ((glow.alpha[it].coerceIn(0f, 1f) * 255f).roundToInt() shl 24) or rgb }
+            logoGlow.setImageBitmap(Bitmap.createBitmap(pixels, glow.cols, glow.rows, Bitmap.Config.ARGB_8888))
+        }
+        titleSlot.requestLayout()
+    }
+
+    /** 新内容的 logo 提前解进内存 (见类文档), 进场时 [bindLogo] 当场命中. 正在显示的那张不必. */
+    private fun preloadLogo(target: TmdbTitleLogo?) {
+        val load = logoLoad() ?: return
+        val sk = sketch ?: return
+        if (target == null || target == logoTarget) return
+        val size = load.box.sizeOf(target.aspectRatio)
+        val url = target.url(size.widthPx)
+        if (preloadedLogo == url to load) return
+        preloadedLogo = url to load
+        TvNativeImages.preloadLogo(sk, context, url, size.widthPx, size.heightPx, load.list)
+        if (!load.backdrop) load.open?.let { TvNativeImages.preloadLogo(sk, context, url, size.widthPx, size.heightPx, it) }
+    }
+
+    /**
+     * 列表页的样子与详情页的样子画出来不一样 (翻色的结果不同): 纯色底上按两张解出来的结果 (两种字色至多一种会翻), 都解好才知道.
+     * 压在模糊背景上时详情页沿用这边的样子, 恒为 false.
+     */
+    private fun logoLooksDiffer(): Boolean {
+        val load = logoLoadedFor ?: return false
+        val open = load.open ?: return false
+        val list = logoListFlipped ?: return false
+        val opened = logoOpenFlipped ?: return false
+        return (list || opened) && load.list?.lightText != open.lightText
+    }
+
+    /** 两种样子不同且都解好了: 按 [titleLook] 交叉淡化 [logo] 与 [logoOpen]. */
+    private val logoCrossfade: Boolean
+        get() = logoListFlipped != null && logoOpenFlipped != null && logoLooksDiffer()
+
+    private fun updateLogoVisibility() {
+        // 文字标题: 不按 logo 排版时, 或 logo 的图迟迟不来时 (放在 logo 的位置上)
+        title.visibility = if (!logoReserved || (logoListFlipped == null && logoImageLate)) VISIBLE else GONE
+        // 没显示时留在树上 (INVISIBLE): 加载请求挂在它上面, View 不在窗口上请求会挂起
+        logo.visibility = if (logoActive) VISIBLE else INVISIBLE
+        logoOpen.visibility = if (logoActive && logoCrossfade) VISIBLE else INVISIBLE
+        logoGlow.visibility = if (logoActive && titleSlot.glow != null) VISIBLE else GONE
+        applyLogoLook()
+    }
+
+    /** 标题那一行按 logo 排版时 logo 多大 (标题宽 [titleW] 以内); null = 按文字标题排版. */
+    private fun activeLogoSize(titleW: Int): TvNativeTitleSlot.LogoSize? {
+        if (!logoReserved) return null
+        val target = logoTarget ?: return null
+        val box = style.logoBox ?: return null
+        val capped = if (titleW > 0 && box.maxWidthPx > titleW) box.copy(maxWidthPx = titleW) else box
+        val size = capped.sizeOf(target.aspectRatio)
+        return TvNativeTitleSlot.LogoSize(size.widthPx, size.heightPx, box.maxHeightPx)
+    }
+
+    /**
+     * logo 随 [titleLook] 从列表页的样子渐变成详情页的样子 (同标题文字从黑变白); 两种样子一样时只显示 [logo]. 柔光是按模糊背景算的:
+     * 点开时背景变清晰, 跟着淡掉 (连同 [detailAlpha]).
+     */
+    private fun applyLogoLook() {
+        val t = titleLook.coerceIn(0f, 1f)
+        if (logoCrossfade) {
+            logo.alpha = 1f - t
+            logoOpen.alpha = t
+        } else {
+            logo.alpha = 1f
+        }
+        logoGlow.alpha = (1f - t) * detailAlpha
+    }
+
     // ---- 放大转场的标题 ----
 
     /**
@@ -574,12 +1062,12 @@ class TvNativeHeroTextView(
             // 标题还在滑入: 位移与透明度归进场动画管, 只处理隐藏. 只看标题自己那一行 —— 别的行错开得更晚, 按它们判的话,
             // 标题滑完之后、别的行滑完之前放开的隐藏就丢了, 标题一直不见: 进过播放器再缩回探索页时, 列表页在缩回层下重建、
             // 文字刚进场, 缩回化开撤层 (交还标题) 正落在这一段
-            if (titleHidden) title.alpha = 0f
+            if (titleHidden) titleSlot.alpha = 0f
             return
         }
-        title.alpha = if (titleHidden) 0f else 1f
-        title.translationX = titleOffsetX
-        title.translationY = titleOffsetY
+        titleSlot.alpha = if (titleHidden) 0f else 1f
+        titleSlot.translationX = titleOffsetX
+        titleSlot.translationY = titleOffsetY
     }
 
     private fun updateTitleMarquee() {
@@ -599,7 +1087,10 @@ class TvNativeHeroTextView(
      */
     fun publishTitle() {
         val text = shown ?: return
-        if (title.visibility != VISIBLE || title.width == 0 || !isAttachedToWindow) return
+        if (titleSlot.visibility != VISIBLE || titleSlot.width == 0 || !isAttachedToWindow) return
+        // 按 logo 排版时登记 logo 的框 (图还没解好也是: 详情页那头也是 logo, 从这个框平移过去); 图迟迟不来、先放着文字标题时登记文字
+        val logoShown = if (logoReserved && title.visibility != VISIBLE) logoTarget else null
+        val shownView: View = if (logoShown != null) logo else title
         getLocationInWindow(xy)
         val root = composeRoot
         if (root != null) {
@@ -608,21 +1099,34 @@ class TvNativeHeroTextView(
             rootXY[0] = 0
             rootXY[1] = 0
         }
-        val left = xy[0] - rootXY[0] + title.left * scaleX
-        val top = xy[1] - rootXY[1] + title.top * scaleY
-        val baseline = title.baseline
+        val left = xy[0] - rootXY[0] + (titleSlot.left + shownView.left) * scaleX
+        val top = xy[1] - rootXY[1] + (titleSlot.top + shownView.top) * scaleY
+        val baseline = if (logoShown != null) -1 else title.baseline
+        // logo 与详情页的样子不同: 详情页那头叠一份列表页的样子交叉淡化
+        val logoDiffers = logoShown != null && logoLooksDiffer()
+        // 压在模糊背景上: 详情页按自己的背景另判, 两边可能不同, 一律交过去 (相同时交叉淡化看不出)
+        val backdropLook = logoShown != null && logoLoadedFor?.backdrop == true
         TvHeroZoomHandoff.publishTitle(
-            titleOwner, text.subjectId, Rect(left, top, left + title.width * scaleX, top + title.height * scaleY), text.title,
+            titleOwner, text.subjectId, Rect(left, top, left + shownView.width * scaleX, top + shownView.height * scaleY), text.title,
             maxLines = style.titleMaxLines, clipOverflow = style.titleMaxLines == 1,
             baseline = if (baseline >= 0) baseline * scaleY else Float.NaN,
-            // 没有另一种样子 (深色主题) = 已经是详情页的样子
-            look = if (style.openTitle != null) titleLook else 1f,
+            // 没有另一种样子 (深色主题的文字标题、与详情页同样子的 logo) = 已经是详情页的样子
+            look = if (style.openTitle != null || logoDiffers) titleLook else 1f,
+            logo = logoShown,
+            logoLook = when {
+                backdropLook -> TvHeroTitleLogoLook(logoListFlip, force = true)
+                logoDiffers -> TvHeroTitleLogoLook(logoListFlip)
+                else -> null
+            },
         )
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         TvHeroZoomHandoff.retractTitle(titleOwner)
+        removeCallbacks(logoImageWaitTimeout)
+        removeCallbacks(logoBackdropWaitTimeout)
+        if (enterDeferred) resumeDeferredEnter(waitLogo = false)
     }
 
     // ---- 排版 ----
@@ -637,9 +1141,10 @@ class TvNativeHeroTextView(
         var used = 0
         var count = 0
         fun gap() = if (count > 0) s.lineSpacingPx else 0
-        if (title.visibility != GONE) {
-            title.measure(MeasureSpec.makeMeasureSpec(titleW, MeasureSpec.EXACTLY), unspecified)
-            used += gap() + title.measuredHeight
+        if (titleSlot.visibility != GONE) {
+            titleSlot.logoSize = activeLogoSize(titleW)
+            titleSlot.measure(MeasureSpec.makeMeasureSpec(titleW, MeasureSpec.EXACTLY), unspecified)
+            used += gap() + titleSlot.measuredHeight
             count++
         }
         if (metaRow.visibility != GONE) {
@@ -679,7 +1184,99 @@ class TvNativeHeroTextView(
             count++
         }
         publishTitle()
+        // 压在模糊背景上、logo 还没判: 排好了才知道它压在背景的哪一块
+        if (logoGrid != null && logoLook == null) decideLogo(again = false)
     }
+}
+
+/**
+ * hero 文字块的标题那一行: 文字标题, 或标题 logo (只显示一个, 见 [TvNativeHeroTextView]). 按 logo 排版时高 = 槽高、logo 底对齐左对齐
+ * (logo 的图迟迟不来时文字标题放在这个位置上, 同样底对齐); 按文字排版时就是文字的大小. [logoOpen] (logo 的另一种样子) 与 [logo] 同一个框;
+ * [glowView] (logo 背后的柔光, 见 [glow]) 按 logo 的框向四周扩, 画在 logo 下面, 伸出本行 (不裁).
+ */
+@SuppressLint("ViewConstructor")
+private class TvNativeTitleSlot(
+    context: Context,
+    private val text: View,
+    private val logo: View,
+    private val logoOpen: View,
+    private val glowView: View,
+) : ViewGroup(context) {
+    /** 按 logo 排版时 logo 的大小与槽高 (px); null = 按文字标题排版. 由外面在量之前设. */
+    var logoSize: LogoSize? = null
+
+    /** logo 背后的柔光 (格子数与向四周扩几格); null = 没有. */
+    var glow: TvTitleLogoGlow? = null
+
+    class LogoSize(val widthPx: Int, val heightPx: Int, val slotHeightPx: Int)
+
+    init {
+        clipChildren = false
+        clipToPadding = false
+        // 柔光只在显示 logo 时有, 那时文字标题不显示: 叠在文字后面、logo 下面
+        addView(text)
+        addView(glowView)
+        addView(logo)
+        addView(logoOpen)
+    }
+
+    /** 柔光一格多宽、多高 (px): logo 的框按柔光的格子分. */
+    private fun glowCell(size: LogoSize, glow: TvTitleLogoGlow): Pair<Float, Float> =
+        size.widthPx.toFloat() / (glow.cols - 2 * glow.marginCells) to size.heightPx * glow.cellPerLogoHeight
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val l = logoSize
+        val g = glow
+        if (l != null && g != null) {
+            val (cellW, cellH) = glowCell(l, g)
+            glowView.measure(
+                MeasureSpec.makeMeasureSpec((g.cols * cellW).roundToInt(), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec((g.rows * cellH).roundToInt(), MeasureSpec.EXACTLY),
+            )
+        } else {
+            glowView.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY))
+        }
+        if (l != null) {
+            for (view in listOf(logo, logoOpen)) {
+                view.measure(MeasureSpec.makeMeasureSpec(l.widthPx, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(l.heightPx, MeasureSpec.EXACTLY))
+            }
+            var height = l.slotHeightPx
+            if (text.visibility != GONE) {
+                text.measure(widthMeasureSpec, heightMeasureSpec)
+                height = max(height, text.measuredHeight)
+            }
+            setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height)
+        } else {
+            text.measure(widthMeasureSpec, heightMeasureSpec)
+            for (view in listOf(logo, logoOpen)) {
+                view.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY))
+            }
+            setMeasuredDimension(text.measuredWidth, text.measuredHeight)
+        }
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val size = logoSize
+        val height = b - t
+        for (view in listOf(logo, logoOpen)) {
+            if (size != null) view.layout(0, height - size.heightPx, size.widthPx, height) else view.layout(0, 0, 0, 0)
+        }
+        val g = glow
+        if (size != null && g != null) {
+            val (cellW, cellH) = glowCell(size, g)
+            val left = -(g.marginCells * cellW).roundToInt()
+            val top = height - size.heightPx - (g.marginCells * cellH).roundToInt()
+            glowView.layout(left, top, left + glowView.measuredWidth, top + glowView.measuredHeight)
+        } else {
+            glowView.layout(0, 0, 0, 0)
+        }
+        if (text.visibility != GONE) {
+            val top = if (size != null) height - text.measuredHeight else 0
+            text.layout(0, top, text.measuredWidth, top + text.measuredHeight)
+        }
+    }
+
+    override fun hasOverlappingRendering(): Boolean = false
 }
 
 /**
@@ -780,6 +1377,29 @@ private const val TV_NATIVE_TEXT_ENTER_AT_MILLIS = TV_SCROLL_HIDDEN_TEXT_ENTER_A
 private const val TV_NATIVE_CAROUSEL_TEXT_OUT_MILLIS = TV_CAROUSEL_TEXT_OUT_MILLIS.toLong()
 private const val TV_NATIVE_CAROUSEL_TEXT_IN_MILLIS = TV_CAROUSEL_TEXT_IN_MILLIS.toLong()
 private const val TV_NATIVE_TEXT_STAGGER_MILLIS = TV_HERO_TEXT_STAGGER_MILLIS.toLong()
+
+/**
+ * 知道有 logo、图还没显示出来时, 标题位最多空多久就先放文字标题 (见 [TvNativeHeroTextView]). 从加载到显示: 解码 (最可能走到的那一部由 hero 流水线
+ * 提前解好, 别的邻居从磁盘解), 压在模糊背景上时还要量格子颜色、等背景铺上这一部 (最多 [TV_TITLE_LOGO_BACKDROP_WAIT_MILLIS])、按背景判,
+ * 判出要翻色再解一张. 先放文字、图到了再换比标题位多空一会儿显眼, 所以给得宽: 只兜底网络很慢、图迟迟下不来的时候.
+ */
+private const val TV_TITLE_LOGO_IMAGE_WAIT_MILLIS = 2_000L
+
+/**
+ * logo 压在模糊背景上时, 原图解好后最多等背景铺上这一部的图多久 (见 [TvNativeHeroTextView]); 到点先按原样显示, 铺上了再判.
+ * 连着换条目时整屏背景要等上一张淡满才换 (400ms), 文字也在淡出淡入, 一般赶得上.
+ */
+private const val TV_TITLE_LOGO_BACKDROP_WAIT_MILLIS = 500L
+
+/**
+ * 还不知道有没有 logo 时, 进场最多等多久 (旧字淡完之后再等这么久; 见 [TvNativeHeroTextView]). 热表或持久缓存里有的几毫秒就查完;
+ * 要现查 TMDB 的多半等不到, 照文字标题进场.
+ */
+private const val TV_TITLE_LOGO_PENDING_WAIT_MILLIS = 300L
+
+/** 字色 [argb] 是不是浅色 (亮度过半). */
+private fun isLightArgb(argb: Int): Boolean =
+    0.2126f * ((argb shr 16) and 0xFF) + 0.7152f * ((argb shr 8) and 0xFF) + 0.0722f * (argb and 0xFF) > 127.5f
 
 /** 两个 ARGB 颜色逐通道线性插值 (sRGB 上直接插, 同两层字交叉淡化叠出来的颜色). */
 private fun lerpArgb(a: Int, b: Int, t: Float): Int {

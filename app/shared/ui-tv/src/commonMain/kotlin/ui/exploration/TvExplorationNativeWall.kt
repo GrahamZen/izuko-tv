@@ -92,6 +92,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
@@ -576,8 +577,10 @@ private fun tvExplorationNativeHeroText(
     summaryFallbackCache: Map<Int, String>,
     playHistories: () -> List<EpisodeHistory>,
 ): TvNativeHeroText {
+    // 标题 logo (设置里开了才有); 对应表里的条目不等条目信息, 表里没有的等原名到了再查
+    val logo = rememberTvTitleLogoLookup(target.subjectId, infoCache[target.subjectId]?.subjectInfo?.name)
     val info = infoCache[target.subjectId]
-        ?: return TvNativeHeroText(target.subjectId, target.title, infoReady = false)
+        ?: return TvNativeHeroText(target.subjectId, target.title, infoReady = false, logo = logo.logo, logoPending = logo.pending)
     val secondary = tvHeroSecondaryContentColor().toArgb()
     val onSurface = LocalContentColor.current.toArgb()
     val strings = rememberSubjectStatusStrings()
@@ -619,6 +622,8 @@ private fun tvExplorationNativeHeroText(
         status = status,
         summary = if (more != null) tvSummaryFirstSentence(summary) else summary,
         summaryMaxLines = if (more != null) TV_MORE_HERO_SUMMARY_LINES else 0,
+        logo = logo.logo,
+        logoPending = logo.pending,
     )
 }
 

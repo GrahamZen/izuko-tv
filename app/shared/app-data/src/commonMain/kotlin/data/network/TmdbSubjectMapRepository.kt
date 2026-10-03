@@ -192,12 +192,11 @@ class TmdbSubjectMapRepository(
     }
 
     private companion object {
-        const val REPOSITORY = "GrahamZen/bangumi-tmdb-map"
         const val PATH = "map/bgm-tmdb.tsv"
         val HEADER_PREFIX = "# bangumi-tmdb-map v1".encodeToByteArray()
 
         /** 下载入口, 按顺序试. 表每天更新一次, 推送后会主动刷新 jsDelivr 的缓存, 顺序的理由见 [GitHubFileSources]. */
-        val MAP_URLS = GitHubFileSources.urls(REPOSITORY, PATH)
+        val MAP_URLS = GitHubFileSources.urls(TMDB_SUBJECT_MAP_REPOSITORY, PATH)
 
         /** 多久重新检查一次. 表每天更新, 电视上 app 常常一开几天, 所以运行中也按这个间隔再看. */
         val REFRESH_INTERVAL = 20.hours
@@ -242,6 +241,9 @@ data class TmdbSubjectMapRef(val type: String, val id: Int, val season: Int? = n
     }
 }
 
+/** 对应表所在的仓库 (详情页「反馈」的中转地址清单与备选也放在这里, 见 [SubjectFeedbackService]). */
+internal const val TMDB_SUBJECT_MAP_REPOSITORY = "GrahamZen/bangumi-tmdb-map"
+
 /**
  * 表里一个条目的结果.
  *
@@ -251,6 +253,7 @@ data class TmdbSubjectMapRef(val type: String, val id: Int, val season: Int? = n
  *   `tv/<id>/season/0` (只索引 S0, 衍生作挂在本篇 S0 下的情形)、`movie/<id>` 或 `collection/<id>`
  * @property manual 人工修正过的. 人工修正且什么都没给 = 确认 TMDB 上没有对应
  * @property episodes 每一集对应 TMDB 第几季第几集 (编码见 [TmdbEpisodeMap]); 没有则客户端照 [stills] 全量索引、自己对集
+ * @property logos [backdrop] 那个 TMDB 条目各语言的标题 logo (见 [TmdbSubjectMapLogos]); null = 表里还没查
  */
 data class TmdbSubjectMapEntry(
     val backdrop: TmdbSubjectMapRef?,
@@ -258,6 +261,7 @@ data class TmdbSubjectMapEntry(
     val stills: List<TmdbSubjectMapRef>,
     val manual: Boolean,
     val episodes: String? = null,
+    val logos: TmdbSubjectMapLogos? = null,
 ) {
     /** 剧照出处的原文. */
     val stillsKey: String get() = stills.joinToString(",") { it.text() }
@@ -269,6 +273,52 @@ data class TmdbSubjectMapEntry(
     val stillsBuildKey: String get() = stillsKey.ifEmpty { "follow:" + (backdrop?.text() ?: "none") }
 
     private fun TmdbSubjectMapRef.text() = "$type/$id" + (season?.let { "/season/$it" } ?: "")
+}
+
+/**
+ * 表里一个条目各语言的标题 logo (末列, 如 `o=ja ja=/a.png:2.383 zh=- en=/b.png:4.159`): 自动按语言挑的, 叠上人工修正
+ * (TMDB 的 logo 不标属于哪一季, 多季的剧自动挑的可能是别的季的, 用户报告后人工纠正).
+ *
+ * @property original 条目的原语言 (如 `ja`)
+ * @property byLanguage 语言 (两个字母) → 这种语言用的 logo; 值为 null = 这种语言没有合适的 logo, 显示文字标题; 没有这个键 = 还没查
+ */
+data class TmdbSubjectMapLogos(
+    val original: String?,
+    val byLanguage: Map<String, TmdbTitleLogo?>,
+) {
+    /** 这种语言 ([language] 为 null = 原语言) 表里有没有定论, 有的话是哪张 (null = 显示文字). */
+    fun decided(language: String?): Pair<Boolean, TmdbTitleLogo?> {
+        val lang = language ?: original ?: return false to null
+        return if (lang in byLanguage) true to byLanguage[lang] else false to null
+    }
+
+    companion object {
+        private val LANGUAGE = Regex("^[a-z]{2}$")
+        private val LOGO = Regex("^(/[A-Za-z0-9_\\-]+\\.png):([0-9.]+)$")
+
+        /** 解析末列; 空或认不出返回 null (认不出的段跳过, 不连累整行). */
+        fun parse(text: String?): TmdbSubjectMapLogos? {
+            if (text.isNullOrBlank()) return null
+            var original: String? = null
+            val byLanguage = LinkedHashMap<String, TmdbTitleLogo?>()
+            for (part in text.split(' ')) {
+                val key = part.substringBefore('=', "")
+                val value = part.substringAfter('=', "")
+                when {
+                    key == "o" && LANGUAGE.matches(value) -> original = value
+                    !LANGUAGE.matches(key) -> continue
+                    value == "-" -> byLanguage[key] = null
+                    else -> {
+                        val m = LOGO.matchEntire(value) ?: continue
+                        val aspect = m.groupValues[2].toFloatOrNull()?.takeIf { it > 0f } ?: continue
+                        byLanguage[key] = TmdbTitleLogo(m.groupValues[1], aspect)
+                    }
+                }
+            }
+            if (original == null && byLanguage.isEmpty()) return null
+            return TmdbSubjectMapLogos(original, byLanguage)
+        }
+    }
 }
 
 /**
@@ -359,7 +409,7 @@ internal class TmdbSubjectMapIndex private constructor(
 }
 
 /**
- * 解析对应表的一行 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes). 认不出返回 null.
+ * 解析对应表的一行 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes, logos). 认不出返回 null.
  */
 internal fun parseTmdbSubjectMapLine(line: String): Pair<Int, TmdbSubjectMapEntry>? {
     if (line.isEmpty() || line[0] == '#') return null
@@ -374,5 +424,8 @@ internal fun parseTmdbSubjectMapLine(line: String): Pair<Int, TmdbSubjectMapEntr
     if (stills.size != stillTexts.size) return null
     // 逐集对位认不出就当没有 (照旧全量索引), 不连累整行
     val episodes = cols.getOrNull(5)?.takeIf { it.isNotBlank() && TmdbEpisodeMap.parse(it) != null }
-    return id to TmdbSubjectMapEntry(backdrop, path, stills, manual = cols.getOrNull(4) == "manual", episodes = episodes)
+    return id to TmdbSubjectMapEntry(
+        backdrop, path, stills, manual = cols.getOrNull(4) == "manual", episodes = episodes,
+        logos = TmdbSubjectMapLogos.parse(cols.getOrNull(6)),
+    )
 }

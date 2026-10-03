@@ -13,18 +13,22 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.mixArgb
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -235,6 +239,56 @@ class TvNativeWallBackdropViewTest {
             assertEquals(3, blurred().size)
         }
         host.waitUntil("换成蓝的") { blurred().size == 1 && blurred().single().alpha == 1f && topColor() == Color.BLUE }
+    }
+
+    @Test
+    fun `sampling reads the shown blurred image of that subject with the mask mixed in`() {
+        val color = Color.rgb(200, 120, 40)
+        host.onMain { backdrop.show(solid("sample", color, 7)) }
+        host.waitUntil("模糊层淡满") { blurred().singleOrNull()?.alpha == 1f && backdrop.topMaskAlpha >= 0 }
+        host.onMain {
+            val xy = IntArray(2).also { backdrop.getLocationInWindow(it) }
+            val rect = RectF(xy[0] + 400f, xy[1] + 300f, xy[0] + 800f, xy[1] + 400f)
+            assertNull(backdrop.sample(8, rect, 4, 2), "别的条目的图不算")
+            val cells = assertNotNull(backdrop.sample(7, rect, 4, 2))
+            assertEquals(8, cells.size)
+            // 整张一个颜色: 每格都是它, 再按此刻的压暗混一层黑
+            val expected = mixArgb(color, Color.BLACK, backdrop.topMaskAlpha / 255f)
+            for (c in cells) {
+                assertEquals(0xFF, Color.alpha(c))
+                val diff = maxOf(abs(Color.red(c) - Color.red(expected)), abs(Color.green(c) - Color.green(expected)), abs(Color.blue(c) - Color.blue(expected)))
+                assertTrue(diff <= 3, "取到 ${Integer.toHexString(c)}, 应为 ${Integer.toHexString(expected)}")
+            }
+        }
+    }
+
+    @Test
+    fun `replacing drops the old image at once instead of fading over it`() {
+        host.onMain { backdrop.show(solid("rp-red", Color.RED, 1)) }
+        host.waitUntil("第一张淡满") { blurred().singleOrNull()?.alpha == 1f }
+        host.onMain {
+            backdrop.show(solid("rp-green", Color.GREEN, 2), replace = true)
+            // 旧的当场撤掉, 只剩还没露面的新的一张
+            assertEquals(1, blurred().size)
+            assertEquals(0f, blurred().single().alpha)
+        }
+        host.waitUntil("新的淡满") { blurred().singleOrNull()?.alpha == 1f && topColor() == Color.GREEN }
+    }
+
+    @Test
+    fun `the floor fades the bottom into the given color`() {
+        host.onMain {
+            backdrop.show(solid("floor", Color.RED, 1))
+            backdrop.setFloor(400f, 100f, Color.BLUE)
+        }
+        host.waitUntil("模糊层淡满") { blurred().singleOrNull()?.alpha == 1f }
+        val shot = host.windowShot()
+        val (x, y) = host.onMain { IntArray(2).also { backdrop.getLocationInWindow(it) }.let { it[0] + 100 to it[1] } }
+        fun at(dy: Int) = shot.getPixel(x, y + dy)
+        // 线以上是图 (红, 压过一层黑), 渐变带中间红蓝各半, 带以下整片蓝
+        assertTrue(Color.red(at(200)) > Color.blue(at(200)) + 100, Integer.toHexString(at(200)))
+        assertTrue(Color.blue(at(450)) in 60..200 && Color.red(at(450)) > 30, Integer.toHexString(at(450)))
+        assertTrue(Color.blue(at(700)) > 220 && Color.red(at(700)) < 30, Integer.toHexString(at(700)))
     }
 }
 
