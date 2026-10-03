@@ -333,7 +333,7 @@ fun TvSearchPage(
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
-    // 输入框内容与光标位置 (跨形态与跨导航保留: 从结果态返回可原样继续编辑)
+    // 输入框内容与光标位置 (跨导航保留). 从结果态点搜索词回来原样接着编辑; 按返回回来清空, 露出搜索历史
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(state.query.keywords, TextRange(state.query.keywords.length)))
     }
@@ -612,7 +612,13 @@ fun TvSearchPage(
                                 lastFocusedCard = lastFocusedCard,
                                 restoreCardIndex = if (restoreConsumed) -1 else restoreCardIndex,
                                 onRestoreConsumed = { restoreConsumed = true },
-                                onBackToInput = { showResults = false },
+                                // 按返回回输入态: 搜索框清空, 看得到搜索历史 (想改这次的词就点顶部的搜索词)
+                                onBackToInput = {
+                                    query = TextFieldValue("")
+                                    showResults = false
+                                },
+                                // 点顶部的搜索词: 带着这次的词回输入态接着改
+                                onEditQuery = { showResults = false },
                                 backGoesToInput = backGoesToInput,
                                 onOpenFilter = { showFilterDialog = true },
                                 railExitRestore = railExitRestore,
@@ -1338,7 +1344,10 @@ private fun TvSearchResultsPane(
     lastFocusedCard: MutableIntState,
     restoreCardIndex: Int,
     onRestoreConsumed: () -> Unit,
+    /** 按返回回输入态 (见 [backGoesToInput]). */
     onBackToInput: () -> Unit,
+    /** 点顶部的搜索词回输入态改词. */
+    onEditQuery: () -> Unit,
     backGoesToInput: Boolean,
     /** 打开筛选弹窗 (弹窗本体在页面级, 输入态共用同一个). */
     onOpenFilter: () -> Unit,
@@ -1799,7 +1808,7 @@ private fun TvSearchResultsPane(
                 keywords = state.query.keywords,
                 hasFilters = state.query.hasFilters(),
                 titleFocusRequester = titleFocusRequester,
-                onEditQuery = onBackToInput,
+                onEditQuery = onEditQuery,
                 onOpenFilter = onOpenFilter,
                 onNavigateDown = {
                     // 有已选筛选项时先落到筛选行, 否则直接进网格
