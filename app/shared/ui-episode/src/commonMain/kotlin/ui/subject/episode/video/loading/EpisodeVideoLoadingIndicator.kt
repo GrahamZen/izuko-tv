@@ -160,7 +160,7 @@ fun shouldShowVideoLoadingIndicator(state: VideoLoadingState, buffering: Boolean
  * 播放器上报得很勤, 不取整的话缓冲提示每报一次都要重组. 播放器不支持 [Buffering] 或报不出 (负数) 时为 `null`.
  */
 @OptIn(ExperimentalMediampApi::class)
-private fun MediampPlayer.bufferedAheadMillisFlow(): Flow<Long?> {
+fun MediampPlayer.bufferedAheadMillisFlow(): Flow<Long?> {
     val buffering = features[Buffering] ?: return flowOf(null)
     return combine(buffering.bufferedPositionMillis, currentPositionMillis) { buffered, current ->
         if (buffered < 0) {
@@ -480,7 +480,7 @@ private val RESOLVE_COUNTDOWN_TICK = 250.milliseconds
  * 抽出来是因为不止画面上要说: 后台会话的提示 (`RetainedPlaybackNoticeTexts`) 说的是同一批原因,
  * 两处各写一遍必然写岔.
  */
-internal data class VideoLoadingCauseLabels(
+data class VideoLoadingCauseLabels(
     val resolutionTimedOut: String,
     val unknownError: String,
     val unsupportedMedia: String,
@@ -500,7 +500,7 @@ internal data class VideoLoadingCauseLabels(
 }
 
 @Composable
-internal fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCauseLabels(
+fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCauseLabels(
     resolutionTimedOut = stringResource(Lang.subject_episode_video_loading_cause_resolution_timed_out),
     unknownError = stringResource(Lang.subject_episode_video_loading_cause_unknown_error),
     unsupportedMedia = stringResource(Lang.subject_episode_video_loading_cause_unsupported_media),
@@ -509,7 +509,7 @@ internal fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCa
     networkError = stringResource(Lang.subject_episode_video_loading_cause_network_error),
 )
 
-internal fun renderCause(cause: VideoLoadingState.Failed, labels: VideoLoadingCauseLabels): String = when (cause) {
+fun renderCause(cause: VideoLoadingState.Failed, labels: VideoLoadingCauseLabels): String = when (cause) {
     is VideoLoadingState.ResolutionTimedOut -> labels.resolutionTimedOut
     is VideoLoadingState.UnknownError -> labels.unknownError
     is VideoLoadingState.UnsupportedMedia -> labels.unsupportedMedia

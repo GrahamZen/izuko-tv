@@ -48,6 +48,7 @@ internal fun DownloadSnapshot.toDownloadItem(
         isMerging = isMerging,
         mergeProgress = mergeProgress ?: Progress.Unspecified,
         awaitingTorrentService = awaitingTorrentService,
+        waitingForPlayback = waitingForPlayback,
     )
 }
 
