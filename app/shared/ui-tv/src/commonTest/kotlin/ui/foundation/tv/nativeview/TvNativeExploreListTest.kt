@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * 探索页海报墙的停位 ([centeredScroll]): 聚焦行停在视口正中, 第一行也一样 (热门轮播还露着一截, 跟着列表上移, 见
@@ -128,5 +129,27 @@ class TvNativeExploreListTest {
         assertEquals(0, metrics.itemTop(items, 0))
         assertEquals(316, metrics.itemTop(items, 2))
         assertEquals(1292, metrics.itemTop(items, 7))
+    }
+
+    @Test
+    fun `focused row removed hands focus to the row moving up into its place`() {
+        // 继续观看最后一部改了收藏: 标题与行一起没了, 推荐首行顶上来
+        val withoutFollowed = items.filterNot { it.key == "followed-header" || it.key == "followed-row" || it.key == "followed-row-2" }
+        assertEquals("rec-row-0", tvNativeReplacementRow(items, withoutFollowed, "followed-row-2"))
+        // 同组的下一行还在, 先给它
+        assertEquals("followed-row-2", tvNativeReplacementRow(items, items.filterNot { it.key == "followed-row" }, "followed-row"))
+    }
+
+    @Test
+    fun `focused last row removed hands focus to the row above`() {
+        assertEquals("rec-row-1", tvNativeReplacementRow(items, items.filterNot { it.key == "rec-row-2" }, "rec-row-2"))
+    }
+
+    @Test
+    fun `no row left means no replacement`() {
+        val onlySpacer = listOf(items[0])
+        assertNull(tvNativeReplacementRow(items, onlySpacer, "followed-row"))
+        // 本来就不在旧列表里
+        assertNull(tvNativeReplacementRow(items, items, "gone"))
     }
 }
