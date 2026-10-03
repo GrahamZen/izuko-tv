@@ -61,6 +61,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.LocalPlatform
+import me.him188.ani.app.ui.foundation.SLIDER_VALUE_STEP
 import me.him188.ani.app.ui.foundation.SteppedSlider
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
@@ -76,6 +77,7 @@ import me.him188.ani.app.ui.lang.settings_app_initial_page_description
 import me.him188.ani.app.ui.lang.settings_app_not_show_done_and_dropped_subjects
 import me.him188.ani.app.ui.lang.settings_app_nsfw_blur
 import me.him188.ani.app.ui.lang.settings_app_nsfw_content
+import me.him188.ani.app.ui.lang.settings_app_nsfw_content_description
 import me.him188.ani.app.ui.lang.settings_app_nsfw_display
 import me.him188.ani.app.ui.lang.settings_app_nsfw_hide
 import me.him188.ani.app.ui.lang.settings_app_search
@@ -124,6 +126,7 @@ import me.him188.ani.app.ui.lang.settings_player_notice_sound_space
 import me.him188.ani.app.ui.lang.settings_player_notice_sound_standard
 import me.him188.ani.app.ui.lang.settings_player_notice_sound_tick
 import me.him188.ani.app.ui.lang.settings_player_op_ed_skip_duration
+import me.him188.ani.app.ui.lang.settings_player_op_ed_skip_duration_description
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto_then_manual
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_manual
@@ -136,6 +139,9 @@ import me.him188.ani.app.ui.lang.settings_player_playback_speed_range
 import me.him188.ani.app.ui.lang.settings_player_playback_speed_range_description
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_remember_playback_speed_description
+import me.him188.ani.app.ui.lang.settings_player_start_playback_speed
+import me.him188.ani.app.ui.lang.settings_player_start_playback_speed_description
+import me.him188.ani.app.ui.lang.settings_player_start_playback_speed_remember
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_off
@@ -371,6 +377,28 @@ fun SettingsScope.AppearanceGroup(
 
     LanguageSettingsPlatform(state)
 
+    // 不止搜索: 探索、追番与 Web 控制台也按它 (存在 searchSettings 里是沿用的字段位置)
+    DropdownItem(
+        selected = { uiSettings.searchSettings.nsfwMode },
+        values = { NsfwMode.entries },
+        itemText = {
+            when (it) {
+                NsfwMode.HIDE -> Text(stringResource(Lang.settings_app_nsfw_hide))
+                NsfwMode.BLUR -> Text(stringResource(Lang.settings_app_nsfw_blur))
+                NsfwMode.DISPLAY -> Text(stringResource(Lang.settings_app_nsfw_display))
+            }
+        },
+        onSelect = {
+            state.update(
+                uiSettings.copy(
+                    searchSettings = uiSettings.searchSettings.copy(nsfwMode = it),
+                ),
+            )
+        },
+        title = { Text(stringResource(Lang.settings_app_nsfw_content)) },
+        description = { Text(stringResource(Lang.settings_app_nsfw_content_description)) },
+    )
+
     DropdownItem(
         selected = { uiSettings.mainSceneInitialPage },
         values = { MainScreenPage.visibleEntries },
@@ -412,25 +440,6 @@ fun SettingsScope.AppearanceGroup(
                 )
             },
             title = { Text(stringResource(Lang.settings_app_not_show_done_and_dropped_subjects)) },
-        )
-        DropdownItem(
-            selected = { uiSettings.searchSettings.nsfwMode },
-            values = { NsfwMode.entries },
-            itemText = {
-                when (it) {
-                    NsfwMode.HIDE -> Text(stringResource(Lang.settings_app_nsfw_hide))
-                    NsfwMode.BLUR -> Text(stringResource(Lang.settings_app_nsfw_blur))
-                    NsfwMode.DISPLAY -> Text(stringResource(Lang.settings_app_nsfw_display))
-                }
-            },
-            onSelect = {
-                state.update(
-                    uiSettings.copy(
-                        searchSettings = uiSettings.searchSettings.copy(nsfwMode = it),
-                    ),
-                )
-            },
-            title = { Text(stringResource(Lang.settings_app_nsfw_content)) },
         )
     }
 
@@ -884,6 +893,7 @@ fun SettingsScope.PlayerGroup(
                 videoScaffoldConfig.update(config.copy(opEdSkipDuration = it))
             },
             title = { Text(stringResource(Lang.settings_player_op_ed_skip_duration)) },
+            description = { Text(stringResource(Lang.settings_player_op_ed_skip_duration_description)) },
         )
         HorizontalDividerItem()
         SwitchItem(
@@ -1129,32 +1139,37 @@ private fun SettingsScope.PlaybackSpeedItems(
         HorizontalDividerItem()
     }
 
-    SwitchItem(
-        checked = config.rememberPlaybackSpeed,
-        onCheckedChange = {
-            videoScaffoldConfig.update(config.copy(rememberPlaybackSpeed = it))
-        },
-        title = { Text(stringResource(Lang.settings_player_remember_playback_speed)) },
-        description = { Text(stringResource(Lang.settings_player_remember_playback_speed_description)) },
-    )
+    if (!rangeConfigurable) {
+        // 遥控器形态: 「记住播放倍速」与「默认倍速」并成一条滑块 (同底部进度条那条)
+        StartPlaybackSpeedItem(config, videoScaffoldConfig)
+    } else {
+        SwitchItem(
+            checked = config.rememberPlaybackSpeed,
+            onCheckedChange = {
+                videoScaffoldConfig.update(config.copy(rememberPlaybackSpeed = it))
+            },
+            title = { Text(stringResource(Lang.settings_player_remember_playback_speed)) },
+            description = { Text(stringResource(Lang.settings_player_remember_playback_speed_description)) },
+        )
 
-    // 此处没有 ColumnScope 接收者, 不显式指定就会落到 fadeIn/fadeOut 的重载上, 高度瞬间撑开、下方条目跳位.
-    val motionScheme = LocalAniMotionScheme.current.animatedVisibility
-    AniAnimatedVisibility(
-        visible = !config.rememberPlaybackSpeed,
-        enter = motionScheme.columnEnter,
-        exit = motionScheme.columnExit,
-    ) {
-        Column {
-            HorizontalDividerItem()
-            SpeedSliderItem(
-                value = config.playbackSpeed,
-                displayRange = displayRange,
-                commitRange = effectiveRange,
-                onCommit = { videoScaffoldConfig.update(config.copy(playbackSpeed = it)) },
-                title = { Text(stringResource(Lang.settings_player_default_playback_speed)) },
-                description = { Text(stringResource(Lang.settings_player_default_playback_speed_description)) },
-            )
+        // 此处没有 ColumnScope 接收者, 不显式指定就会落到 fadeIn/fadeOut 的重载上, 高度瞬间撑开、下方条目跳位.
+        val motionScheme = LocalAniMotionScheme.current.animatedVisibility
+        AniAnimatedVisibility(
+            visible = !config.rememberPlaybackSpeed,
+            enter = motionScheme.columnEnter,
+            exit = motionScheme.columnExit,
+        ) {
+            Column {
+                HorizontalDividerItem()
+                SpeedSliderItem(
+                    value = config.playbackSpeed,
+                    displayRange = displayRange,
+                    commitRange = effectiveRange,
+                    onCommit = { videoScaffoldConfig.update(config.copy(playbackSpeed = it)) },
+                    title = { Text(stringResource(Lang.settings_player_default_playback_speed)) },
+                    description = { Text(stringResource(Lang.settings_player_default_playback_speed_description)) },
+                )
+            }
         }
     }
 
@@ -1167,6 +1182,50 @@ private fun SettingsScope.PlaybackSpeedItems(
         onCommit = { videoScaffoldConfig.update(config.copy(fastForwardSpeed = it)) },
         title = { Text(stringResource(Lang.settings_player_long_press_fast_forward_speed)) },
         description = { Text(stringResource(Lang.settings_player_long_press_fast_forward_speed_description)) },
+    )
+}
+
+/**
+ * 进播放器时的倍速 (遥控器形态): 一条滑块兼管「记住播放倍速」与「默认倍速」—— 最左一格 = 记住上次 (在播放器里调过的倍速跨剧集、重启保持),
+ * 往右依次是固定的起始倍速 (播放器支持的全范围, 每格 [SLIDER_VALUE_STEP]). 两个字段照旧: 最左一格写 rememberPlaybackSpeed = true
+ * (倍速值不动, 从它接着记), 其余写 false 与那一格的倍速. 滑块值用档位下标, 同底部进度条那条.
+ */
+@Composable
+private fun SettingsScope.StartPlaybackSpeedItem(
+    config: VideoScaffoldConfig,
+    videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
+) {
+    val range = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED
+    val speedStops = ((range.endInclusive - range.start) / SLIDER_VALUE_STEP).roundToInt() + 1
+    val speed = quantizeSliderValue(config.playbackSpeed, range)
+    val stop = if (config.rememberPlaybackSpeed) 0 else ((speed - range.start) / SLIDER_VALUE_STEP).roundToInt() + 1
+    SliderItem(
+        value = stop.toFloat(),
+        onValueChange = { raw ->
+            val next = raw.roundToInt().coerceIn(0, speedStops)
+            if (next != stop) {
+                videoScaffoldConfig.update(
+                    if (next == 0) {
+                        config.copy(rememberPlaybackSpeed = true)
+                    } else {
+                        config.copy(rememberPlaybackSpeed = false, playbackSpeed = range.start + (next - 1) * SLIDER_VALUE_STEP)
+                    },
+                )
+            }
+        },
+        valueRange = 0f..speedStops.toFloat(),
+        steps = speedStops - 1,
+        title = { Text(stringResource(Lang.settings_player_start_playback_speed)) },
+        description = { Text(stringResource(Lang.settings_player_start_playback_speed_description)) },
+        valueLabel = {
+            Text(
+                if (stop == 0) {
+                    stringResource(Lang.settings_player_start_playback_speed_remember)
+                } else {
+                    "${speed.formatSpeedValue()}x"
+                },
+            )
+        },
     )
 }
 
