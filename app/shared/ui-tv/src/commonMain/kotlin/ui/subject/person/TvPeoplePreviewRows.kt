@@ -67,7 +67,7 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
         modifier: Modifier,
     ) {
         val cards = remember(items) {
-            items.map { item -> item?.let { TvNativeCard(imageUrl = it.imageUrl, title = it.title, subtitle = it.subtitle) } }
+            items.map { item -> item?.let { TvNativeCard(imageUrl = it.imageUrl, title = it.title, subtitle = it.subtitle, subjectId = it.subjectId) } }
         }
         TvNativePosterStrip(
             cards = cards,

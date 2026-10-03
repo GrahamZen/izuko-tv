@@ -30,6 +30,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -80,6 +81,7 @@ class BangumiScheduleSource(
         val roster = fetched.mapNotNull { (key, items) ->
             val weekday = key.toIntOrNull()?.takeIf { it in 1..7 } ?: return@mapNotNull null
             weekday to items.map { item ->
+                SubjectNsfw.record(item.subject.id, item.subject.nsfw)
                 ScheduleSubject(
                     id = item.subject.id,
                     name = item.subject.name,
@@ -344,6 +346,7 @@ internal class CalendarSubject(
     val name: String,
     val nameCN: String,
     val images: CalendarImages? = null,
+    val nsfw: Boolean = false,
 )
 
 @Serializable

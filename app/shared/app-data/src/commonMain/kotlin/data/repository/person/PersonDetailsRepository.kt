@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.person.CharacterDetailsInfo
 import me.him188.ani.app.data.models.person.CharacterSubjectInfo
 import me.him188.ani.app.data.models.person.InfoboxRowInfo
@@ -269,6 +270,7 @@ private fun BangumiNextCharacter.toCharacterInfo(actors: List<PersonInfo>): Char
 }
 
 private fun BangumiNextSlimSubject.toSummary(): PersonSubjectSummary {
+    SubjectNsfw.record(id, nsfw)
     return PersonSubjectSummary(
         subjectId = id,
         name = name,
