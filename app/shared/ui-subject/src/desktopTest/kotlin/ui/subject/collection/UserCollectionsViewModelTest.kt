@@ -192,6 +192,7 @@ class UserCollectionsViewModelTest {
         override val tmdbImageEndpoint: Settings<EndpointSelection> by lazy { error("not implemented") }
         override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val githubDownloadMirrorCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
+        override val feedbackEndpointCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("not implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("not implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("not implemented") }

@@ -30,8 +30,11 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.TvNativeImages
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 
 /**
  * 从当前聚焦位置出发的预取目标. **方向无关**: 行区 (探索页) 与网格 (追番/搜索) 的可达方向
@@ -195,6 +198,9 @@ class TvHeroMediaPipelineState internal constructor(
  * - 邻居后台预取 ([TvHeroPrefetch.background]): 单槽, 给前台让路;
  * - 邻居图片预热 ([TvHeroImagePrefetch]): 每个邻居独立观察 URL 落表, 谁先到谁先热;
  *   `next` 预解码进内存, 其余只落磁盘; 换焦点保留仍有用的在途任务 (retain);
+ * - 标题 logo (设置里开了时, 见 ThemeSettings.tvTitleLogoDisplay): 邻居预取顺带查 logo ([prefetchTvTitleLogo]), 单步邻居的 logo 图同背景图一样
+ *   预热进磁盘; 最可能走到的那一部 ([TvHeroNeighbors.decodeTarget]) 再按 hero 文字块先要的那张解进内存, 压在模糊背景上时连格子颜色也量好
+ *   ([TvTitleLogoGrids]) —— 走过去时文字块只剩等背景铺上、按背景判样子, logo 跟着背景出来, 不先出文字再换;
  * - 封面兜底计时: 2.5s 无横版图结论先上封面 ([TvHeroMediaPipelineState.backdropUrl]),
  *   URL 已有但图片卡住则垫底 ([TvHeroMediaPipelineState.underlayUrl]).
  *
@@ -207,6 +213,9 @@ class TvHeroMediaPipelineState internal constructor(
  * @param restartKey 流水线整体重启的键: 分页实例会换的页面 (追番切 tab / 搜索重搜) 传 items,
  *   否则闭包里捕获的是旧实例; 探索页传 Unit.
  * @param spec 快照可观察的聚焦目标; null = 还没有目标.
+ * @param originalNameOf 条目的原名 (查对应表里没有的条目的标题 logo 用), 邻居预取跑完之后取; 默认取解析链落进 [TvHeroMediaCache] 的条目信息.
+ * @param logoOnBlurBackdrop hero 标题的 logo 压在整页模糊背景上 (见 TvNativeHeroTextView.logoBackdrop): 文字块先解原样那张、量格子颜色再按背景判,
+ *   预解的就是这一张与它的格子颜色.
  */
 @Composable
 fun rememberTvHeroMediaPipeline(
@@ -218,9 +227,22 @@ fun rememberTvHeroMediaPipeline(
     resolveNeighbor: suspend (TvHeroMediaSpec, TvHeroNeighbor) -> Unit,
     beforeResolve: ((TvHeroMediaSpec) -> Unit)? = null,
     afterResolve: (CoroutineScope.(TvHeroMediaSpec) -> Boolean)? = null,
+    originalNameOf: (subjectId: Int) -> String? = { TvHeroMediaCache.peekSubjectInfo(it)?.subjectInfo?.name },
+    logoOnBlurBackdrop: Boolean = false,
 ): TvHeroMediaPipelineState {
     val sketch = LocalSketch.current
     val platformContext = LocalPlatformContext.current
+    // 标题 logo: 框 (挑图片档位) 与语言同 hero 文字块; 设置里关了框为 null, 不预取
+    val titleLogoBox by rememberUpdatedState(rememberTvTitleLogoBox())
+    val titleLogoLanguage by rememberUpdatedState(rememberTvTitleLogoLanguage())
+    // 文字块先要的那张 (见 TvNativeHeroTextView.logoLoad): 压在模糊背景上 = 原样 + 格子颜色; 不调色 = 原样; 别的按标题字色翻色, 这里不知道字色, 只落磁盘
+    val titleLogoWarm by rememberUpdatedState(
+        when {
+            logoOnBlurBackdrop -> TitleLogoWarm.OriginalWithGrid
+            LocalThemeSettings.current.tvTitleLogoDisplay == TvTitleLogoDisplay.Original -> TitleLogoWarm.Original
+            else -> TitleLogoWarm.DiskOnly
+        },
+    )
     val state = remember(tmdb, fullVisualEffects) { TvHeroMediaPipelineState(tmdb, fullVisualEffects) }
 
     // 离开本页 (进详情页/播放页): 撤掉还在途的邻居图预热, 别跟目的页的首图抢带宽.
@@ -235,6 +257,7 @@ fun rememberTvHeroMediaPipeline(
     val currentResolveNeighbor by rememberUpdatedState(resolveNeighbor)
     val currentBeforeResolve by rememberUpdatedState(beforeResolve)
     val currentAfterResolve by rememberUpdatedState(afterResolve)
+    val currentOriginalNameOf by rememberUpdatedState(originalNameOf)
 
     // 异步加载聚焦条目的 hero 媒体: 焦点换卡时 collectLatest 取消在途等待, 不会卡 UI
     LaunchedEffect(restartKey) {
@@ -275,7 +298,21 @@ fun rememberTvHeroMediaPipeline(
                 // onFocused 里: 那边每划过一张卡都会触发, 长按连发时会堆出一串排队任务;
                 // 放在这条被 collectLatest 管着的流水线末尾, 连发时压根走不到.
                 s.neighbors.all.forEach { neighbor ->
-                    TvHeroPrefetch.background(neighbor.subjectId) { currentResolveNeighbor(s, neighbor) }
+                    TvHeroPrefetch.background(neighbor.subjectId) {
+                        if (titleLogoBox == null) {
+                            currentResolveNeighbor(s, neighbor)
+                        } else {
+                            coroutineScope {
+                                // 对应表里的条目按 id 就查得到, 与解析链同时查
+                                launch {
+                                    tmdb.prefetchTvTitleLogo(neighbor.subjectId, currentOriginalNameOf(neighbor.subjectId), titleLogoLanguage)
+                                }
+                                currentResolveNeighbor(s, neighbor)
+                            }
+                            // 表里没有的要按原名搜: 解析链跑完才有原名 (已查过的当场返回)
+                            tmdb.prefetchTvTitleLogo(neighbor.subjectId, currentOriginalNameOf(neighbor.subjectId), titleLogoLanguage)
+                        }
+                    }
                 }
                 // 图片预热: 邻居的 URL 谁先落表谁先热, 互不等待.
                 //
@@ -310,6 +347,30 @@ fun rememberTvHeroMediaPipeline(
                         }
                     }
                 }
+                // 单步邻居的标题 logo 图: 同背景图, 查到就预热进磁盘 (按 hero 文字块的框挑档位, 预热的就是显示时要的那张).
+                // 最可能走到的那一部 (同背景图的 likelyTarget) 再解进内存 (按显示大小解, 一张约 1MB, 背景图那张的几分之一),
+                // 压在模糊背景上时连格子颜色一起量好; 别的留给文字块换内容时解 (见 TvNativeHeroTextView 的 preloadLogo)
+                val logoBox = titleLogoBox
+                val logoLanguage = titleLogoLanguage
+                val logoWarm = titleLogoWarm
+                if (logoBox != null) {
+                    s.neighbors.singleStep.forEach { neighbor ->
+                        launch {
+                            val logo = withTimeoutOrNull(TV_NEIGHBOR_IMAGE_URL_WAIT) {
+                                snapshotFlow { tmdb.peekTitleLogoResolved(neighbor.subjectId, logoLanguage) }.first { it }
+                                tmdb.peekTitleLogo(neighbor.subjectId, logoLanguage)
+                            } ?: return@launch
+                            val size = logoBox.sizeOf(logo.aspectRatio)
+                            val url = logo.url(size.widthPx)
+                            val likely = neighbor.subjectId == s.neighbors.decodeTarget?.subjectId
+                            when {
+                                !likely || logoWarm == TitleLogoWarm.DiskOnly -> TvHeroImagePrefetch.prefetch(url, sketch, platformContext)
+                                logoWarm == TitleLogoWarm.OriginalWithGrid -> TvTitleLogoGrids.obtain(sketch, platformContext, logo, size)
+                                else -> TvNativeImages.preloadLogo(sketch, platformContext, url, size.widthPx, size.heightPx, transformation = null)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -331,3 +392,15 @@ fun String.isOriginalSizeTmdbUrl(): Boolean = contains("/t/p/original/")
  * (负缓存要等聚焦时才写), 放弃预热.
  */
 private const val TV_NEIGHBOR_IMAGE_URL_WAIT = 5_000L
+
+/** 最可能走到的那一部的标题 logo 预热到哪一步 (见 [rememberTvHeroMediaPipeline] 的 logoOnBlurBackdrop). */
+private enum class TitleLogoWarm {
+    /** 只落磁盘: 文字块要按标题字色翻色的那张, 流水线不知道字色. */
+    DiskOnly,
+
+    /** 原样那张解进内存 (不调色). */
+    Original,
+
+    /** 原样那张解进内存, 量好格子颜色 (压在模糊背景上). */
+    OriginalWithGrid,
+}

@@ -477,6 +477,16 @@ class TmdbImageService(
      */
     private val localBackdropMisses = mutableMapOf<Int, Boolean>()
 
+    /**
+     * 本进程查过的标题 logo ([getTitleLogo]), 键见 [titleLogoKey]; 值 null = 查过、没有. 同 [resolvedBackdropUrls] 可同步读、组合里读是快照订阅.
+     * 只有聚焦过的条目才查, 不设上限.
+     */
+    private val resolvedTitleLogos = mutableStateMapOf<String, TmdbTitleLogo?>()
+
+    /** 同一条目的标题 logo 查询合流 (同 [backdropInFlight]). */
+    private val titleLogoInFlight = mutableMapOf<String, Deferred<TmdbTitleLogo?>>()
+    private val titleLogoInFlightLock = Mutex()
+
     /** 同 [localBackdropMisses], 对应屏保的全量剧照 ([getAllBackdropUrls]). */
     private val localAllBackdropsMisses = mutableSetOf<Int>()
 
@@ -833,6 +843,224 @@ class TmdbImageService(
             ?: tv.fallback.firstWithId()?.hit("tv")
             ?: movie.fallback.firstWithId()?.hit("movie")
     }
+
+    /**
+     * 同步读取本进程**已经查过**的标题 logo (见 [getTitleLogo]; [language] 同它), 不发请求也不读盘; 在组合里读是快照订阅,
+     * 查完落表时读方自动重组. null = 没有 logo 或还没查过, 两者要区分时用 [peekTitleLogoResolved].
+     */
+    fun peekTitleLogo(subjectId: Int, language: String?): TmdbTitleLogo? =
+        if (disabledByUser) null else resolvedTitleLogos[titleLogoKey(subjectId, language)]
+
+    /** 该条目这种语言的标题 logo 是否已查过 (含「没有」). [disabledByUser] 时恒为真. */
+    fun peekTitleLogoResolved(subjectId: Int, language: String?): Boolean =
+        disabledByUser || resolvedTitleLogos.containsKey(titleLogoKey(subjectId, language))
+
+    /**
+     * 条目的标题 logo. [language] = 用哪种语言的 logo (两个字母, 如 `zh`), null = 条目的原语言 (日漫日文、美漫英文).
+     *
+     * 依次看: 本机报告时选的 ([chooseTitleLogo], 维护者合并之前就先用上) → 对应表里这种语言的定论 (自动挑的叠上人工修正,
+     * 见 [TmdbSubjectMapLogos]) → 自己去 TMDB 挑 (TMDB 条目照对应表, 表里没有就照 [getAllBackdropUrls] 同一套搜索; 见
+     * [pickTmdbTitleLogo]). 没有这种语言的 logo、找不到条目或未配置 token 时返回 null, 调用方照旧显示文字标题.
+     *
+     * 自己挑的按「条目 / 语言」持久缓存, 一直有效 (取自哪个 TMDB 条目也记着, 对应表改了对应就作废重查); 查过没有的也存, 过
+     * [TITLE_LOGO_MISS_TTL_MILLIS] 再查 (logo 是社区陆续上传的); 网络错误不记. 同一条目同一语言的并发调用合流.
+     */
+    suspend fun getTitleLogo(
+        subjectId: Int,
+        originalName: String,
+        language: String?,
+        activeAsOfDate: String? = null,
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
+    ): TmdbTitleLogo? {
+        if (disabledByUser) return null
+        val key = titleLogoKey(subjectId, language)
+        if (resolvedTitleLogos.containsKey(key)) return resolvedTitleLogos[key]
+        val task = titleLogoInFlightLock.withLock {
+            titleLogoInFlight[key] ?: resolveScope.async {
+                try {
+                    resolveTitleLogo(subjectId, originalName, language, activeAsOfDate, hints)
+                } finally {
+                    titleLogoInFlightLock.withLock { titleLogoInFlight.remove(key) }
+                }
+            }.also { titleLogoInFlight[key] = it }
+        }
+        return task.await()
+    }
+
+    /** 对应表给的 TMDB 条目: (表里有没有这个条目, 条目); 表里有但确认没有对应时条目为 null. */
+    private suspend fun titleLogoMapRef(subjectId: Int): Pair<TmdbSubjectMapEntry?, TmdbMediaRef?> {
+        val entry = subjectMap?.lookup(subjectId) ?: return null to null
+        return entry to entry.backdrop?.let { TmdbMediaRef(it.type, it.id) }
+    }
+
+    /** 表里没有的条目按原名搜 TMDB 条目 (同 [getAllBackdropUrls]); 搜不到或名字空返回 null. */
+    private suspend fun searchTitleLogoRef(
+        subjectId: Int,
+        originalName: String,
+        activeAsOfDate: String?,
+        hints: TmdbMatchHints,
+    ): TmdbMediaRef? {
+        if (originalName.isBlank()) return null
+        val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
+        return searchLayered(originalName, rootNameResolver(subjectId, originalName, hints.nameCn)) { query, _ ->
+            searchAnimeRef(query, subjectYear)
+        }
+    }
+
+    private suspend fun resolveTitleLogo(
+        subjectId: Int,
+        originalName: String,
+        language: String?,
+        activeAsOfDate: String?,
+        hints: TmdbMatchHints,
+    ): TmdbTitleLogo? = withContext(ioDispatcher) {
+        val key = titleLogoKey(subjectId, language)
+        val (mapEntry, mapRef) = titleLogoMapRef(subjectId)
+        // 对应表里的条目就用表定下的那个 TMDB 条目 (与 hero 背景同一个); 表确认没有对应 = 没有 logo
+        if (mapEntry != null && mapRef == null) {
+            resolvedTitleLogos[key] = null
+            return@withContext null
+        }
+        val cache = readCache()
+        cache.titleLogoChoices[key]?.let { choice ->
+            if (mapRef == null || choice.ref == mapRef.key) {
+                resolvedTitleLogos[key] = choice.logo
+                return@withContext choice.logo
+            }
+        }
+        mapEntry?.logos?.decided(language)?.let { (decided, logo) ->
+            if (decided) {
+                resolvedTitleLogos[key] = logo
+                return@withContext logo
+            }
+        }
+        val now = currentTimeMillis()
+        cache.titleLogos[key]?.let { cached ->
+            val sameRef = mapRef == null || cached.ref == mapRef.key
+            val fresh = cached.logo != null || now - cached.checkedAt < TITLE_LOGO_MISS_TTL_MILLIS
+            if (sameRef && fresh) {
+                resolvedTitleLogos[key] = cached.logo
+                return@withContext cached.logo
+            }
+        }
+        if (currentAniBuildConfig.tmdbApiToken.isBlank()) {
+            // 没有 token 查不了: 记成「没有」(只在本次运行里), 页面不必等它
+            resolvedTitleLogos[key] = null
+            return@withContext null
+        }
+        val logo = try {
+            val ref = mapRef ?: searchTitleLogoRef(subjectId, originalName, activeAsOfDate, hints) ?: run {
+                // 搜不到条目 (或还没有名字): 只在本次运行里记搜不到的, 不存盘 (同 [localBackdropMisses] 的理由)
+                if (originalName.isNotBlank()) resolvedTitleLogos[key] = null
+                return@withContext null
+            }
+            val (fetchedLanguage, logos) = fetchTitleLogoCandidates(ref, language)
+            pickTmdbTitleLogo(logos, fetchedLanguage)?.let { TmdbCachedTitleLogo(it.toTitleLogo(), ref.key, now) }
+                ?: TmdbCachedTitleLogo(null, ref.key, now)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch TMDB title logo for subject $subjectId (${language ?: "original"}), will retry next time" }
+            return@withContext null // 网络错误不记, 下次重试
+        }
+        logger.info { "TMDB title logo for subject $subjectId (${language ?: "original"}): ${logo.logo?.filePath ?: "none"}" }
+        resolvedTitleLogos[key] = logo.logo
+        dataStore.updateData { it.withTitleLogo(key, logo) }
+        logo.logo
+    }
+
+    /**
+     * 「标题 logo 不对」报告用: 条目在 TMDB 上**各种语言** (含没标语言的) 的全部 logo, 与这种语言 ([language] 同 [getTitleLogo]) 现在显示的那张.
+     * 别的语言的也列出来: 有的作品只有英文 logo (如命运石之门), 不会有人做中文的, 中文界面下也该能选英文那张.
+     * 排序: 这种语言的在前, 其次原语言, 再其次别的语言, 没标语言的最后; 同一组里按评分. TMDB 条目同 [getTitleLogo];
+     * 找不到条目、未配置 token 或网络出错时返回 null.
+     */
+    suspend fun getTitleLogoCandidates(
+        subjectId: Int,
+        originalName: String,
+        language: String?,
+        activeAsOfDate: String? = null,
+        hints: TmdbMatchHints = TmdbMatchHints.Empty,
+    ): TmdbTitleLogoCandidates? = withContext(ioDispatcher) {
+        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank()) return@withContext null
+        try {
+            val (mapEntry, mapRef) = titleLogoMapRef(subjectId)
+            if (mapEntry != null && mapRef == null) return@withContext null
+            val ref = mapRef ?: searchTitleLogoRef(subjectId, originalName, activeAsOfDate, hints) ?: return@withContext null
+            val mapOriginal = mapEntry?.logos?.original
+            val (slot, logos) = fetchTitleLogoCandidates(ref, language ?: mapOriginal, allLanguages = true)
+            val original = mapOriginal ?: slot.takeIf { language == null }
+            fun languageOf(logo: TmdbLogoCandidate) = logo.language?.lowercase()?.takeIf { it.isNotBlank() && it != "xx" }
+            fun group(logo: TmdbLogoCandidate) = when (languageOf(logo)) {
+                slot -> 0
+                original -> 1
+                null -> 3
+                else -> 2
+            }
+            val usable = logos.filter { it.usable }.sortedWith(
+                compareBy<TmdbLogoCandidate>({ group(it) }, { languageOf(it) })
+                    .thenByDescending { it.voteAverage }.thenByDescending { it.voteCount },
+            )
+            TmdbTitleLogoCandidates(
+                ref = ref.key,
+                language = slot,
+                logos = usable.map { TmdbTitleLogoOption(it.toTitleLogo(), languageOf(it)) },
+                current = getTitleLogo(subjectId, originalName, language, activeAsOfDate, hints),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to list TMDB title logos for subject $subjectId" }
+            null
+        }
+    }
+
+    /**
+     * 记下用户在报告里选的标题 logo ([logo] 为 null = 这种语言不用 logo、显示文字): 本机立刻换上 ([peekTitleLogo] 随即重组), 持久保存;
+     * 取自 [candidates] 的 TMDB 条目, 对应表把这个条目改到别的 TMDB 条目后作废. 报告本身另外提交 (见 SubjectFeedbackService).
+     */
+    suspend fun chooseTitleLogo(subjectId: Int, language: String?, candidates: TmdbTitleLogoCandidates, logo: TmdbTitleLogo?) {
+        val key = titleLogoKey(subjectId, language)
+        resolvedTitleLogos[key] = logo
+        dataStore.updateData { it.withTitleLogoChoice(key, TmdbTitleLogoChoice(logo, candidates.ref, currentTimeMillis())) }
+    }
+
+    /**
+     * [ref] 的标题 logo 候选: 这种语言 ([language] 为 null = 先从详情取条目的原语言, 缺失时按日文) 的 `/images` logo
+     * (只要这一种, 响应小得多); [allLanguages] = 各种语言的都要 (含没标语言的). 返回 (实际的语言, 候选).
+     */
+    private suspend fun fetchTitleLogoCandidates(
+        ref: TmdbMediaRef,
+        language: String?,
+        allLanguages: Boolean = false,
+    ): Pair<String, List<TmdbLogoCandidate>> =
+        client.use {
+            val token = currentAniBuildConfig.tmdbApiToken
+            val lang = language ?: run {
+                val detail = getApi("/${ref.type}/${ref.id}") {
+                    bearerAuth(token)
+                    shortConnectTimeout()
+                }.bodyAsText()
+                // 原语言缺失时按日文 (动画条目的绝大多数), 同 claimSeasonByName
+                json.decodeFromString(TmdbOriginalLanguage.serializer(), detail).originalLanguage?.takeIf { it.isNotBlank() } ?: "ja"
+            }
+            val body = getApi("/${ref.type}/${ref.id}/images") {
+                bearerAuth(token)
+                shortConnectTimeout()
+                // 不带语言参数 = 各种语言的都返回
+                if (!allLanguages) parameter("include_image_language", lang)
+            }.bodyAsText()
+            lang to json.decodeFromString(TmdbImagesResponse.serializer(), body).logos.mapNotNull { file ->
+                TmdbLogoCandidate(
+                    filePath = file.filePath ?: return@mapNotNull null,
+                    language = file.language,
+                    region = file.region,
+                    aspectRatio = file.aspectRatio,
+                    voteAverage = file.voteAverage,
+                    voteCount = file.voteCount,
+                )
+            }
+        }
 
     /** `/{type}/{id}/images` 的全部 backdrop 路径 (TMDB 已按投票排序). */
     private suspend fun fetchBackdropPaths(ref: TmdbMediaRef): List<String> = client.use {
@@ -2562,6 +2790,12 @@ class TmdbImageService(
         /** 单条目剧照上限 (屏保轮播用不到更多, 控制缓存体积). */
         private const val MAX_BACKDROPS_PER_SUBJECT = 20
 
+        /** 查过没有标题 logo 的条目多久后再查 (logo 是社区陆续上传的), 见 [getTitleLogo]. */
+        private const val TITLE_LOGO_MISS_TTL_MILLIS = 3L * 24 * 60 * 60 * 1000
+
+        /** [resolvedTitleLogos] 与持久缓存的键: 条目 id + 语言 (null = 原语言). */
+        private fun titleLogoKey(subjectId: Int, language: String?) = "$subjectId/${language ?: "original"}"
+
         /** 逐词去尾最多剥几个词, 见 [searchQueryCandidates]. */
 
         /** 中文候选那一档搜索用的语言 (见 [searchChineseBackdrop]). */
@@ -2693,6 +2927,24 @@ internal fun TmdbImageCache.withBackdropResult(subjectId: Int, url: String): Tmd
     return copy(backdropUrls = urls - dropped)
 }
 
+/** 写一条标题 logo 结果; 超过 [PERSISTED_TITLE_LOGO_MAX] 条按写入顺序淘汰最老的一批 (同 [withBackdropResult]). */
+internal fun TmdbImageCache.withTitleLogo(key: String, logo: TmdbCachedTitleLogo): TmdbImageCache {
+    val logos = (titleLogos - key) + (key to logo)
+    if (logos.size <= PERSISTED_TITLE_LOGO_MAX) return copy(titleLogos = logos)
+    val dropped = logos.keys.take(logos.size - PERSISTED_TITLE_LOGO_MAX + PERSISTED_BACKDROP_EVICT_BATCH).toSet()
+    return copy(titleLogos = logos - dropped)
+}
+
+/** 记一条用户选的标题 logo; 同 [withTitleLogo] 封顶. */
+internal fun TmdbImageCache.withTitleLogoChoice(key: String, choice: TmdbTitleLogoChoice): TmdbImageCache {
+    val choices = (titleLogoChoices - key) + (key to choice)
+    if (choices.size <= PERSISTED_TITLE_LOGO_MAX) return copy(titleLogoChoices = choices)
+    return copy(titleLogoChoices = choices - choices.keys.take(choices.size - PERSISTED_TITLE_LOGO_MAX).toSet())
+}
+
+/** 持久标题 logo 表的条目上限 (一条约 80 字节). */
+private const val PERSISTED_TITLE_LOGO_MAX = 3000
+
 /**
  * 持久 backdrop 表的条目上限. 一条约 60 字节 (URL) —— 2000 条约 120KB, 是每次新解析都要
  * 重新序列化的量, 再大就该换存储结构而不是抬上限了.
@@ -2717,6 +2969,13 @@ data class TmdbImageCache(
     val episodeStills: Map<Int, TmdbEpisodeStills> = emptyMap(),
     /** subjectId -> 全部横版剧照 URL (屏保轮播用; 对应表里没有、自己搜到的). */
     val allBackdrops: Map<Int, List<String>> = emptyMap(),
+    /**
+     * 「条目 id / 语言」-> 标题 logo (见 TmdbImageService.getTitleLogo). 与上面几张表不同, 查过没有的也存 (带查的时间, 过几天再查),
+     * 对应表里的条目也存 (记着取自哪个 TMDB 条目, 表改了对应就作废).
+     */
+    val titleLogos: Map<String, TmdbCachedTitleLogo> = emptyMap(),
+    /** 「条目 id / 语言」-> 用户报告时选的标题 logo (见 TmdbImageService.chooseTitleLogo), 优先于对应表与自动挑的. */
+    val titleLogoChoices: Map<String, TmdbTitleLogoChoice> = emptyMap(),
     /** 匹配算法版本, 与 [CURRENT_VERSION] 不符时整个缓存作废 (旧算法结果可能有误). */
     val version: Int = 0,
 ) {
@@ -2936,12 +3195,16 @@ data class TmdbEpisodeOrigin(
 )
 
 /** TMDB 条目引用: 搜索命中的类型 (tv/movie) + id, 供 `/images` 等后续请求用. */
-private class TmdbMediaRef(val type: String, val id: Int)
+private class TmdbMediaRef(val type: String, val id: Int) {
+    /** 记进缓存的写法, 如 `tv/1429`. */
+    val key: String get() = "$type/$id"
+}
 
-/** TMDB `/{type}/{id}/images` 响应 (只取 backdrops). */
+/** TMDB `/{type}/{id}/images` 响应 (只取 backdrops 与 logos). */
 @Serializable
 private data class TmdbImagesResponse(
     val backdrops: List<TmdbImageFile> = emptyList(),
+    val logos: List<TmdbImageFile> = emptyList(),
 )
 
 @Serializable
@@ -2949,7 +3212,87 @@ private data class TmdbImageFile(
     @SerialName("file_path") val filePath: String? = null,
     /** 图上印的字幕/标题语言; null 或空 = 无字幕. 见 [TmdbImageService.heroBackdropPath]. */
     @SerialName("iso_639_1") val language: String? = null,
+    /** 语言的地区 (如 zh 的 CN / TW), 中文 logo 按它先简体后繁体. */
+    @SerialName("iso_3166_1") val region: String? = null,
+    @SerialName("aspect_ratio") val aspectRatio: Float = 0f,
+    @SerialName("vote_average") val voteAverage: Float = 0f,
+    @SerialName("vote_count") val voteCount: Int = 0,
 )
+
+/** TMDB `/tv/{id}` 或 `/movie/{id}` 里只取原语言 (如 "ja"), 标题 logo 按它挑 (见 [pickTmdbTitleLogo]). */
+@Serializable
+private data class TmdbOriginalLanguage(
+    @SerialName("original_language") val originalLanguage: String? = null,
+)
+
+/**
+ * 条目的标题 logo (TMDB `/images` 的 logos 里按条目原语言挑的一张, 见 [pickTmdbTitleLogo]). [filePath] 是 TMDB 图片路径,
+ * 按要显示的像素宽度用 [url] 取图; [aspectRatio] = 宽 / 高.
+ */
+@Serializable
+data class TmdbTitleLogo(val filePath: String, val aspectRatio: Float) {
+    /** 显示宽 [widthPx] 像素用的地址: 500 以内取 w500, 再宽取原图 (logo 只有这两档够用: 再小一档是 w300). */
+    fun url(widthPx: Int): String =
+        TmdbImageEndpoints.CANONICAL_BASE_URL + (if (widthPx <= 500) "/t/p/w500" else "/t/p/original") + filePath
+}
+
+/** 持久缓存里的一条标题 logo 结果: [logo] 为 null = 查过、没有; [ref] = 取自哪个 TMDB 条目 (如 `tv/1429`); [checkedAt] = 查的时间 (毫秒). */
+@Serializable
+data class TmdbCachedTitleLogo(val logo: TmdbTitleLogo? = null, val ref: String = "", val checkedAt: Long = 0)
+
+/** 用户在报告里选的标题 logo (见 TmdbImageService.chooseTitleLogo): [logo] 为 null = 显示文字; [ref] = 取自哪个 TMDB 条目; [chosenAt] 毫秒. */
+@Serializable
+data class TmdbTitleLogoChoice(val logo: TmdbTitleLogo? = null, val ref: String = "", val chosenAt: Long = 0)
+
+/**
+ * 报告标题 logo 时列出的候选 (见 TmdbImageService.getTitleLogoCandidates): [ref] 条目 (如 `tv/65844`), [language] 要选的是哪种语言下用的
+ * logo, [logos] 各种语言的全部 logo (这种语言的在前), [current] 这种语言现在显示的那张 (null = 显示文字).
+ */
+data class TmdbTitleLogoCandidates(
+    val ref: String,
+    val language: String,
+    val logos: List<TmdbTitleLogoOption>,
+    val current: TmdbTitleLogo?,
+)
+
+/** 一张候选 logo 与它在 TMDB 上标的语言 ([language] 为 null = 没标语言). */
+data class TmdbTitleLogoOption(val logo: TmdbTitleLogo, val language: String?)
+
+/** [pickTmdbTitleLogo] 的候选: TMDB `/images` 里的一张 logo. */
+internal class TmdbLogoCandidate(
+    val filePath: String,
+    val language: String?,
+    val region: String? = null,
+    val aspectRatio: Float,
+    val voteAverage: Float = 0f,
+    val voteCount: Int = 0,
+)
+
+/** 能当标题 logo 用: png (svg 解不了) 且宽高比有效. */
+internal val TmdbLogoCandidate.usable: Boolean
+    get() = filePath.endsWith(".png", ignoreCase = true) && aspectRatio > 0f
+
+internal fun TmdbLogoCandidate.toTitleLogo() = TmdbTitleLogo(filePath, aspectRatio)
+
+/** 中文 logo 的地区优先级: 简体在前. */
+private val ZH_LOGO_REGIONS = listOf("CN", "SG", "TW", "HK", "MO")
+
+/**
+ * 按语言 [language] (TMDB 的 ISO 639-1, 如 `ja` / `en` / `zh`) 挑标题 logo: 只要这种语言的; 中文先简体 (CN / SG) 后繁体.
+ * 不带语言的 (TMDB 写 null 或 `xx`) 不要, 多是不带字的图标或没标语言的, 当标题放不对. 没有就返回 null, 用文字标题.
+ * 只要能用的 ([usable]); 同一档里取评分最高的, 再看投票数. 多季的剧挑出来的可能是别的季的, 由对应表的人工修正纠正.
+ */
+internal fun pickTmdbTitleLogo(logos: List<TmdbLogoCandidate>, language: String): TmdbLogoCandidate? {
+    val lang = language.substringBefore('-').lowercase()
+    fun tier(logo: TmdbLogoCandidate): Int {
+        if (lang != "zh") return 0
+        val index = ZH_LOGO_REGIONS.indexOf(logo.region?.uppercase())
+        return if (index < 0) ZH_LOGO_REGIONS.size else index
+    }
+    return logos
+        .filter { it.usable && it.language.equals(lang, ignoreCase = true) }
+        .minWithOrNull(compareBy<TmdbLogoCandidate> { tier(it) }.thenByDescending { it.voteAverage }.thenByDescending { it.voteCount })
+}
 
 /** 条目所属系列的回溯结果, 见 `resolveLineageOrNull`. */
 private class BgmLineage(

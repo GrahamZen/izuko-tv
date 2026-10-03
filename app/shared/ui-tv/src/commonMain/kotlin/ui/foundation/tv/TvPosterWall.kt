@@ -495,8 +495,8 @@ private const val TV_POSTER_WALL_TONE_GATE_FROM = 0.85f
 /** 分界线以下渐变到整屏底色的那一段 (见 [TvPosterWallTone.drawBackground]): 与背景图下缘的羽化带差不多长. */
 private val TV_POSTER_WALL_HERO_SPLIT_BAND = 96.dp
 
-/** 分界线渐变的采样数. */
-private const val TV_POSTER_WALL_HERO_SPLIT_STOPS = 8
+/** 分界线渐变的采样数 (探索页热门轮播的模糊背景渐变到卡片墙底色也用它, 见 TvNativeWallBackdropView.setFloor). */
+internal const val TV_POSTER_WALL_HERO_SPLIT_STOPS = 8
 
 /**
  * 卡片静止时的投影, 照 tvOS 18 设计套件的海报 lockup (未聚焦: 黑 40%、下移 4 pt、模糊 12 pt; 1 pt = 0.5 dp): 每张卡底下都有一圈
