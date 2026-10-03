@@ -16,6 +16,7 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.compose.ui.graphics.Color as ComposeColor
@@ -287,18 +288,18 @@ class TvNativeGridPageHeroBlurTest {
     fun `in the light theme the title is already the white details title while the backdrop sharpens`() {
         host.onMain { page.heroText.style = testLightHeroTextStyle() }
         enterHero()
-        host.onMain { assertTitleLook(page.heroText.getChildAt(0) as TextView, 0) }
+        host.onMain { assertTitleLook((page.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 0) }
         confirmThen { }
         // 背景还在对焦 (卡片先淡没, 背景更慢): 标题已经是详情页的白字压黑影, 登记给放大转场的也是这个样子
         host.waitUntil("背景对焦过了七成") { sharpAlpha() >= 0.7f }
         host.onMain {
-            assertTitleLook(page.heroText.getChildAt(0) as TextView, 1)
+            assertTitleLook((page.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 1)
             assertTrue(TvHeroZoomHandoff.sourceDebug().contains("look=1.0"), TvHeroZoomHandoff.sourceDebug())
         }
         host.waitUntil("进了第 0 张") { listener.clicked == listOf(0) }
         host.onMain { page.endWallOpen() }
         host.waitUntil("倒放回 hero 态") { listener.fade == 0f && sharpAlpha() == 0f }
-        host.onMain { assertTitleLook(page.heroText.getChildAt(0) as TextView, 0) }
+        host.onMain { assertTitleLook((page.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 0) }
     }
 
     @Test

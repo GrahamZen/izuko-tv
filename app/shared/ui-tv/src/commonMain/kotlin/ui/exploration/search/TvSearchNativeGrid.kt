@@ -41,6 +41,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.lang.Lang
@@ -176,6 +177,7 @@ private fun tvSearchNativeHeroText(hero: SubjectPreviewItemInfo, summaryCache: M
     val secondary = tvHeroSecondaryContentColor().toArgb()
     // 进程级共享表, 邻居预取会写进来: 收进 derivedStateOf, 写入别的条目时不重组
     val summary by remember(hero.subjectId) { derivedStateOf { summaryCache[hero.subjectId].orEmpty() } }
+    val logo = rememberTvTitleLogoLookup(hero.subjectId, hero.originalName)
     return TvNativeHeroText(
         subjectId = hero.subjectId,
         title = hero.title,
@@ -183,5 +185,7 @@ private fun tvSearchNativeHeroText(hero: SubjectPreviewItemInfo, summaryCache: M
         rating = hero.rating.score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = if (hero.tags.isBlank()) emptyList() else listOf(TvNativeTextSpan(hero.tags, secondary)),
         summary = summary,
+        logo = logo.logo,
+        logoPending = logo.pending,
     )
 }

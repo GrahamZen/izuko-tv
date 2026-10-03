@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,13 +32,14 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 在本项目仓库根目录维护的一份清单 (Bangumi 镜像、TMDB 图片入口…).
  *
  * 这类地址会死、会搬家, 写死在包里就只能跟着发版; 放在仓库里, 改了 json, 已经装上的包隔天就用上.
  *
- * - 每 [REFRESH_INTERVAL_MILLIS] 拉一次, 下载入口按 [GitHubFileSources] 的顺序试;
+ * - 每 [REFRESH_INTERVAL_MILLIS] 拉一次, 下载入口按 [GitHubFileSources] 的顺序试, 每个最多等 [SOURCE_TIMEOUT];
  * - 拉到的每一条都过 [Spec.normalize], 认不出的丢掉 —— 清单是远程内容, 里面写着什么不由我们决定;
  * - 都拉不到用上次存下的, 从没拉到过用包里内置的 [Spec.bundled].
  *
@@ -86,11 +88,15 @@ open class RepoHostedList(
         }
         for (url in GitHubFileSources.urls(repository(), spec.fileName)) {
             val text = try {
-                client().use { get(url).bodyAsText() }
+                withTimeoutOrNull(SOURCE_TIMEOUT) { client().use { get(url).bodyAsText() } }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 logger.info { "${spec.fileName}: $url unreachable (${e::class.simpleName})" }
+                continue
+            }
+            if (text == null) {
+                logger.info { "${spec.fileName}: $url timed out" }
                 continue
             }
             val entries = parse(text)?.mapNotNull(spec.normalize)?.distinct().orEmpty()
@@ -119,6 +125,12 @@ open class RepoHostedList(
     private companion object {
         /** 多久拉一次. 这些地址死得快, 但也没必要每次启动都拉. */
         val REFRESH_INTERVAL_MILLIS = 24.hours.inWholeMilliseconds
+
+        /**
+         * 每个入口最多等多久, 到点换下一个. 清单文件都很小, 连得上的入口几秒内就回; 被墙的入口常常连接一直挂着,
+         * 不限时要等到客户端的默认超时 (几十秒到几分钟), 等着清单的地方 (如提交反馈) 就一直转圈.
+         */
+        val SOURCE_TIMEOUT = 10.seconds
     }
 }
 

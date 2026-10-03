@@ -11,7 +11,10 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.graphics.Bitmap
 import android.os.Build
+import androidx.compose.runtime.Composable
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import kotlin.math.roundToInt
 
 /**
@@ -35,15 +38,49 @@ internal fun tvBackdropBlurSpec(level: TvBackdropBlurLevel): TvBackdropBlurSpec 
 }
 
 /**
+ * 有 hero 态的海报墙页 (探索 / 追番 / 搜索) 的 hero 态铺不铺整页模糊背景: 「海报上按确定」是先看简介 (只有这一档有 hero 态, 见 TvPosterConfirmAction)
+ * 且海报墙的模糊没选不铺. 铺着时 hero 标题的 logo 压在模糊背景上 (见 TvNativeHeroTextView.logoBackdrop).
+ */
+@Composable
+internal fun tvHeroWallBlurEnabled(): Boolean = LocalThemeSettings.current.let {
+    it.tvPosterConfirm == TvPosterConfirmAction.Hero && it.tvWallBackdropBlur != TvBackdropBlurLevel.None
+}
+
+/**
  * 量压暗用的像素 (见 tvBackdropWorstLuminance): 图的长边超过 [TV_BACKDROP_MEASURE_LONG_EDGE_PX] 时先缩小再取 —— 模糊过的图缩小后亮度分布不变,
  * 在主线程上量也只要零点几毫秒 (海报墙的模糊层是在解好的回调里、主线程上量的). 硬件位图读不了像素, 先拷一份 (模糊变换出来的是普通位图, 这里只是保险).
  */
-internal fun tvBackdropMeasurePixels(bitmap: Bitmap): IntArray {
+internal fun tvBackdropMeasurePixels(bitmap: Bitmap): IntArray = tvBackdropMeasureSample(bitmap).pixels
+
+/** 量过的一张图: 缩到长边 [TV_BACKDROP_MEASURE_LONG_EDGE_PX] 以内的像素 ([width] × [height], ARGB). */
+internal class TvBackdropSample(val pixels: IntArray, val width: Int, val height: Int) {
+    /** 图上相对位置 ([u], [v] 0..1) 处的颜色 (双线性). */
+    fun at(u: Float, v: Float): Int {
+        val x = (u * width - 0.5f).coerceIn(0f, (width - 1).toFloat())
+        val y = (v * height - 0.5f).coerceIn(0f, (height - 1).toFloat())
+        val x0 = x.toInt()
+        val y0 = y.toInt()
+        val x1 = minOf(x0 + 1, width - 1)
+        val y1 = minOf(y0 + 1, height - 1)
+        val fx = x - x0
+        val fy = y - y0
+        fun ch(p: Int, shift: Int) = ((p shr shift) and 0xFF).toFloat()
+        fun mix(shift: Int): Int {
+            val top = ch(pixels[y0 * width + x0], shift) * (1 - fx) + ch(pixels[y0 * width + x1], shift) * fx
+            val bottom = ch(pixels[y1 * width + x0], shift) * (1 - fx) + ch(pixels[y1 * width + x1], shift) * fx
+            return (top * (1 - fy) + bottom * fy).roundToInt().coerceIn(0, 255)
+        }
+        return (0xFF shl 24) or (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+    }
+}
+
+/** 同 [tvBackdropMeasurePixels], 带上尺寸; 长边缩到 [longEdgePx] 以内. */
+internal fun tvBackdropMeasureSample(bitmap: Bitmap, longEdgePx: Int = TV_BACKDROP_MEASURE_LONG_EDGE_PX): TvBackdropSample {
     val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE
     val readable = if (hardware) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
     val longEdge = maxOf(readable.width, readable.height)
-    val source = if (longEdge > TV_BACKDROP_MEASURE_LONG_EDGE_PX) {
-        val scale = TV_BACKDROP_MEASURE_LONG_EDGE_PX.toFloat() / longEdge
+    val source = if (longEdge > longEdgePx) {
+        val scale = longEdgePx.toFloat() / longEdge
         Bitmap.createScaledBitmap(
             readable,
             (readable.width * scale).roundToInt().coerceAtLeast(1),
@@ -55,7 +92,7 @@ internal fun tvBackdropMeasurePixels(bitmap: Bitmap): IntArray {
     }
     val pixels = IntArray(source.width * source.height)
     source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-    return pixels
+    return TvBackdropSample(pixels, source.width, source.height)
 }
 
 /** 量亮度时图最多这么大 (长边 px). */
