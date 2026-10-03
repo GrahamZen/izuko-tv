@@ -192,6 +192,12 @@ class UIComment(
      * 直接回复主楼 (紧邻主楼下方, 缩进已足够表达) 或数据源不提供时为 `null`.
      */
     val replyTo: UICommentReplyTarget? = null,
+
+    /** 楼层号, 同 bangumi 网页: 主楼 `"3"`, 楼中回复 `"3-2"`; 数据源不给时为 `null`. */
+    val floor: String? = null,
+
+    /** 已被删除 (仍占着楼层, 没有正文). */
+    val deleted: Boolean = false,
 )
 
 /**
@@ -237,6 +243,8 @@ private fun UIComment.copyWithReactions(reactions: List<UICommentReaction>): UIC
         rawContent = rawContent,
         episodeId = episodeId,
         replyTo = replyTo,
+        floor = floor,
+        deleted = deleted,
     )
 }
 
@@ -259,6 +267,8 @@ private fun UIComment.copyWithVote(likeCount: Int, selfVote: UICommentVote?): UI
         rawContent = rawContent,
         episodeId = episodeId,
         replyTo = replyTo,
+        floor = floor,
+        deleted = deleted,
     )
 }
 
