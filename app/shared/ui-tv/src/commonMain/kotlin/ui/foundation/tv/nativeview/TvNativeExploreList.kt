@@ -56,6 +56,23 @@ sealed interface TvNativeExploreItem {
     data class Row(override val key: String, val cards: List<TvNativeCard?>) : TvNativeExploreItem
 }
 
+/** [items] 里 [rowKey] 那一行的卡; 没有这一行时 null. */
+internal fun tvNativeRowCards(items: List<TvNativeExploreItem>, rowKey: String): List<TvNativeCard?>? =
+    (items.firstOrNull { it.key == rowKey } as? TvNativeExploreItem.Row)?.cards
+
+/**
+ * 聚焦的 [rowKey] 那一行在换数据 ([oldItems] → [newItems]) 后没了, 焦点交给哪一行: 旧列表里它下面第一条还在的行 (顶上来占它位置的那条),
+ * 下面都没了就上面最近的一条; 一行都不剩时 null.
+ */
+internal fun tvNativeReplacementRow(oldItems: List<TvNativeExploreItem>, newItems: List<TvNativeExploreItem>, rowKey: String): String? {
+    val at = oldItems.indexOfFirst { it.key == rowKey }
+    if (at < 0) return null
+    val remaining = newItems.mapTo(HashSet()) { it.key }
+    val below = oldItems.subList(at + 1, oldItems.size).asSequence()
+    val above = oldItems.subList(0, at).asReversed().asSequence()
+    return (below + above).firstOrNull { it is TvNativeExploreItem.Row && it.key in remaining }?.key
+}
+
 /** 纵向列表每一项的高度 (px): 行 = 海报 + 两行番名 + 行距, 组标题定高, hero 占位 = 轮播态下卡片区顶线到首组标题的距离. */
 internal fun TvNativeExploreMetrics.heightOf(item: TvNativeExploreItem): Int = when (item) {
     is TvNativeExploreItem.Spacer -> spacerPx

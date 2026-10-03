@@ -501,7 +501,11 @@ class TvNativeExploreView(
     }
 
     fun setItems(items: List<TvNativeExploreItem>) {
-        val structural = items.size != list.items.size || items.indices.any { items[it].key != list.items[it].key }
+        val oldItems = list.items
+        val structural = items.size != oldItems.size || items.indices.any { items[it].key != oldItems[it].key }
+        // 持焦的那张卡在换数据前是哪一行、哪一部 (见 followFocusAfterItemsChanged)
+        val focusedRow = focusedRowKey?.takeIf { cardAreaHasFocus && farJumpRow == null }
+        val focusedSubject = focusedRow?.let { tvNativeRowCards(oldItems, it)?.getOrNull(focusedCardIndex)?.subjectId }
         list.submit(items)
         if (pendingScrollPx >= 0 && items.isNotEmpty()) {
             val px = pendingScrollPx
@@ -510,8 +514,37 @@ class TvNativeExploreView(
         } else if (structural) {
             realignFocusedRow()
         }
+        if (focusedRow != null) followFocusAfterItemsChanged(oldItems, focusedRow, focusedSubject)
         // 等的落点行到了
         post { resolvePending(scrollIfMissing = true) }
+    }
+
+    /**
+     * 卡片区持焦时换了数据 (改收藏让条目离开「继续观看」、推荐重组), 焦点跟着数据走:
+     * - 聚焦那一行整个没了 (行里最后一部也走了): 持焦的卡随行一起被摘掉, 焦点凭空消失 —— 系统不改派, Compose 那边还当焦点在本视图里,
+     *   全局兜底也不出手. 交给顶上来的下一行同一列; 下面没有行了交给上一行, 一行都不剩回轮播按钮.
+     * - 行还在、聚焦那一格换成了别的作品 (中间一部走了, 后面的往前挪一格): 卡按下标绑定, 持焦的卡原地重绑、不会再报一次聚焦,
+     *   这里补报, hero 跟着换.
+     * 行尾那张走了不用管: 卡被摘掉时 RecyclerView 自己把焦点交给前一张, 照常回调聚焦.
+     */
+    private fun followFocusAfterItemsChanged(oldItems: List<TvNativeExploreItem>, rowKey: String, subjectId: Int?) {
+        if (list.indexOfKey(rowKey) < 0) {
+            val target = tvNativeReplacementRow(oldItems, list.items, rowKey)
+            // 等这一趟布局排完再送: 列表刚整体刷新, 排版前各项位置无效 (scrolledPx 算成 0), 当场送焦会按错的距离滚一段, 而排完后那一行
+            // 已在停位上、落焦时不再滚, 没人叫停这一段. 落点先挂着, 由 setItems 末尾 (布局之后) 的 resolvePending 送
+            if (target != null) {
+                holdCardAtColumn(target, focusedColumn)
+            } else {
+                post { if (focusedRowKey == rowKey && !cardAreaHasFocus) focusHeroButton(lastHeroButton) }
+            }
+            return
+        }
+        val now = tvNativeRowCards(list.items, rowKey)?.getOrNull(focusedCardIndex)?.subjectId
+        if (now == null || now == subjectId) return
+        val index = focusedCardIndex
+        post {
+            if (cardAreaHasFocus && focusedRowKey == rowKey && focusedCardIndex == index) listener?.onCardFocused(rowKey, index, focusedColumn)
+        }
     }
 
     fun setCarousel(count: Int, selected: Int, color: Int) {
@@ -933,6 +966,10 @@ class TvNativeExploreView(
         if (!cardAreaHasFocus || rowKey == null) return false
         if (vertical) {
             if (event.repeatCount > 0) {
+                // 按住连发时上一格还没落地 (目标行还没排出来) 就先不往下排, 落地了再接着走. 不等的话落点一路跑到前面去, 列表追着它滚,
+                // 焦点还停着的那张卡滚出屏被回收, 焦点丢了; 外面兜底送回来时找不到那张卡, 落到轮播按钮上 —— hero 态因此被退出,
+                // 之后的连发从按钮往下走, 看着像退回卡片墙继续往下滚. 慢的设备 (debug 包、没预编译) 才落不了地
+                if (pendingRow != null) return true
                 val now = SystemClock.uptimeMillis()
                 if (now - lastVerticalRepeat < TV_NATIVE_VERTICAL_REPEAT_MILLIS) return true
                 lastVerticalRepeat = now
@@ -1004,11 +1041,16 @@ class TvNativeExploreView(
     }
 
     private fun focusCardAtColumn(rowKey: String, column: Int) {
+        holdCardAtColumn(rowKey, column)
+        resolvePending(scrollIfMissing = true)
+    }
+
+    /** 落点挂到 [rowKey] 行屏上第 [column] 列, 先不送 (见 [resolvePending]). */
+    private fun holdCardAtColumn(rowKey: String, column: Int) {
         pendingRow = rowKey
         pendingIndex = -1
         pendingColumn = column
         pendingSmooth = false
-        resolvePending(scrollIfMissing = true)
     }
 
     /**
