@@ -145,8 +145,29 @@ class QuarkDriveServiceTest {
         assertEquals("https://dl-pc-zb.drive.quark.cn/x?auth_key=1", playback.url)
         assertEquals("__pus=p1; __puus=u1; __uid=42", playback.headers[HttpHeaders.Cookie])
         assertEquals(QuarkApi.REFERER, playback.headers[HttpHeaders.Referrer])
-        // 原文件直链让播放器多连接分块取
-        assertEquals(QuarkDriveService.PARALLEL_CONNECTIONS.toString(), playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER])
+        // 原文件直链让播放器多连接分块取; 没记下会员类型的按非会员
+        assertEquals(
+            QuarkDriveService.NON_MEMBER_PARALLEL_CONNECTIONS.toString(),
+            playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER],
+        )
+    }
+
+    @Test
+    fun `members use fewer parallel connections than non-members`() = runTest {
+        for ((memberType, expected) in listOf(
+            "SUPER_VIP" to QuarkDriveService.PARALLEL_CONNECTIONS,
+            "EXP_SVIP" to QuarkDriveService.PARALLEL_CONNECTIONS,
+            "NORMAL" to QuarkDriveService.NON_MEMBER_PARALLEL_CONNECTIONS,
+            // 没核实过下载速度的档位按非会员
+            "MINI_VIP" to QuarkDriveService.NON_MEMBER_PARALLEL_CONNECTIONS,
+            "VIP" to QuarkDriveService.NON_MEMBER_PARALLEL_CONNECTIONS,
+        )) {
+            val (service, _) = service(loggedIn.copy(memberType = memberType)) {
+                reply("""{"status":200,"code":0,"data":[{"fid":"f1","download_url":"https://dl-pc-zb.drive.quark.cn/x?auth_key=1"}]}""")
+            }
+            val playback = service.resolvePlayback("f1")
+            assertEquals(expected.toString(), playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER], memberType)
+        }
     }
 
     @Test

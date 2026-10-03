@@ -18,8 +18,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import me.him188.ani.app.data.persistent.database.dao.HttpCacheDownloadStateDao
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.httpdownloader.DownloadId
+import me.him188.ani.utils.httpdownloader.DownloadOptions
 import me.him188.ani.utils.httpdownloader.DownloadState
 import me.him188.ani.utils.httpdownloader.DownloadStatus
 import me.him188.ani.utils.httpdownloader.KtorHttpDownloader
@@ -58,6 +60,8 @@ class KtorPersistentHttpDownloader(
         super.init()
         restoreStates()
     }
+
+    override fun optionsFor(options: DownloadOptions): DownloadOptions = options.withParallelRangeHint()
 
     /**
      * Replaces the current in-memory map with data loaded from [dataStore], but does not resume them.
@@ -124,4 +128,16 @@ class KtorPersistentHttpDownloader(
     private companion object {
         private val logger = logger<KtorPersistentHttpDownloader>()
     }
+}
+
+/**
+ * 解析器在请求头里放了并发提示 ([PlaybackRequestHints.PARALLEL_RANGE_HEADER], 夸克网盘直链, 每个连接限速) 就照它同时下几段.
+ * 提示只在落库的请求头里留着 (恢复时还要用), 发出去的请求里去掉.
+ */
+internal fun DownloadOptions.withParallelRangeHint(): DownloadOptions {
+    val hint = headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER] ?: return this
+    return copy(
+        headers = headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER,
+        maxConcurrentSegments = hint.toIntOrNull()?.takeIf { it > 1 } ?: maxConcurrentSegments,
+    )
 }

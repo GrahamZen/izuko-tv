@@ -86,17 +86,13 @@ class HttpMediaCacheEngine(
     override val engineKey: MediaCacheEngineKey = MediaCacheEngineKey.WebM3u
 
     override val stats: Flow<MediaStats> = run {
-        val downloadSpeedFlow =
-            downloader.downloadStatesFlow
-                .map { list ->
-                    list.sumOf { it.downloadedBytes }
-                }
-                .averageRate()
+        // 含正在下的分段里已经收到的字节: 只算下完的分段的话, 一段要下很久时 (网盘按连接限速) 速度大半时间是 0
+        val downloadSpeedFlow = downloader.receivedBytesFlow.averageRate()
 
-        combine(downloader.downloadStatesFlow, downloadSpeedFlow) { list, speed ->
+        combine(downloader.receivedBytesFlow, downloadSpeedFlow) { received, speed ->
             MediaStats(
                 uploaded = FileSize.Zero,
-                downloaded = list.sumOf { it.downloadedBytes }.bytes,
+                downloaded = received.bytes,
                 uploadSpeed = FileSize.Zero,
                 downloadSpeed = speed.bytes,
             )
