@@ -46,6 +46,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_update_migration_cache_warning
 import me.him188.ani.app.ui.lang.settings_update_migration_carried
 import me.him188.ani.app.ui.lang.settings_update_migration_export_collections
+import me.him188.ani.app.ui.lang.settings_update_migration_export_collections_signed_out
 import me.him188.ani.app.ui.lang.settings_update_migration_installed
 import me.him188.ani.app.ui.lang.settings_update_migration_intro
 import me.him188.ani.app.ui.lang.settings_update_migration_later
@@ -150,17 +151,23 @@ private fun MigrationGuideBody(
     targetInstalled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // 登录着 Animeko 账号、没连接 Bangumi: 收藏只在 Animeko 服务器上, 新应用不连它, 迁移过去就没了 —— 先在 Web 控制台导出 (见 RemoteAccount)
+    // 没连接 Bangumi 的 Animeko 账号, 收藏只在 Animeko 服务器上, 新应用不连它, 迁移过去就没了 —— 先在 Web 控制台导出 (见 RemoteAccount).
+    // 只有确定连着 Bangumi 才不提: 电视上没登录 (从没登录过、退出了、令牌过期、连不上服务器) 的人账号里照样可能有收藏, 提示先登录再导出.
+    // 登录状态还没出来时先不显示, 免得连着 Bangumi 的人看到一闪
     val session by remember { KoinPlatform.getKoin().get<SessionStateProvider>().stateFlow }.collectAsState(null)
-    val animekoOnly = (session as? SessionState.Valid)?.bangumiConnected == false
+    val exportHint = when (val s = session) {
+        null -> null
+        is SessionState.Valid -> if (s.bangumiConnected) null else Lang.settings_update_migration_export_collections
+        is SessionState.Invalid -> Lang.settings_update_migration_export_collections_signed_out
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val style = MaterialTheme.typography.bodyLarge
         Text(stringResource(Lang.settings_update_migration_intro, appName), style = style)
         Text(stringResource(Lang.settings_update_migration_carried), style = style)
         Text(stringResource(Lang.settings_update_migration_not_carried), style = style)
-        if (animekoOnly) {
+        if (exportHint != null) {
             Text(
-                stringResource(Lang.settings_update_migration_export_collections, appName),
+                stringResource(exportHint, appName),
                 style = style,
                 color = MaterialTheme.colorScheme.error,
             )

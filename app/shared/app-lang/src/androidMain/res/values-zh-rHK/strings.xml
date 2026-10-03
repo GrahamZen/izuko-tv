@@ -628,7 +628,8 @@
     <string name="settings_update_migration_intro">新版本是一個獨立的新應用：裝好後主畫面上會多出「%1$s」，現在這個舊版不會被取代，之後要自己解除安裝。</string>
     <string name="settings_update_migration_carried">第一次開啟新應用時，會自動帶上現在的設定、數據源與訂閱、播放記錄和續播位置、彈幕屏蔽規則和已緩存的影片。新應用直接連接 Bangumi，第一次開啟時會引導你選擇連接方式，並重新登入一次。</string>
     <string name="settings_update_migration_not_carried">搬緩存要一點時間，緩存越多越久。還沒下載完的網頁緩存不會搬過去，想保留的話先在這裡等它下完。收藏和觀看進度存在 Bangumi 上，不受影響。</string>
-    <string name="settings_update_migration_export_collections">你登入的 Animeko 帳號沒有連接 Bangumi，收藏只存在 Animeko 伺服器上，%1$s 裡看不到。遷移前先用手機開啟 Web 控制台（長按返回鍵開啟動作面板，掃右上角的碼），在「設定」最上面的帳號裡點「導出收藏」；裝好 %1$s 後，在它的 Web 控制台裡導入本地用戶。</string>
+    <string name="settings_update_migration_export_collections">你登入的 Animeko 帳號沒有連接 Bangumi，收藏只存在 Animeko 伺服器上，%1$s 裡看不到。遷移前先用手機開啟 Web 控制台（長按返回鍵開啟動作面板，掃右上角的碼），在「設定」最上面的帳號裡點「導出收藏」，把文件存在手機上；%1$s 更新到 1.0.5 或更高版本後，在它的 Web 控制台裡導入本地用戶。</string>
+    <string name="settings_update_migration_export_collections_signed_out">如果你用郵箱登入過 Animeko 帳號、沒有連接 Bangumi，收藏只存在 Animeko 伺服器上，%1$s 裡看不到。遷移前先用手機開啟 Web 控制台（長按返回鍵開啟動作面板，掃右上角的碼），在「設定」最上面的帳號裡用郵箱登入，再點「導出收藏」，把文件存在手機上；%1$s 更新到 1.0.5 或更高版本後，在它的 Web 控制台裡導入本地用戶。</string>
     <string name="settings_update_migration_steps">接下來：下載並安裝新應用（系統會請你確認），然後開啟它。它會先搬緩存、自動重新啟動一次，完成後提示你解除安裝舊版，再引導你選擇連接 Bangumi 的方式。</string>
     <string name="settings_update_migration_installed">新應用已經裝好了，開啟它就會自動完成遷移。</string>
     <string name="settings_update_migration_start">開始更新</string>

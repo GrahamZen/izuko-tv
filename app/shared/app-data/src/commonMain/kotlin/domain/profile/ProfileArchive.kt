@@ -70,7 +70,12 @@ data class ProfileArchive(
 
     companion object {
         const val FORMAT = "izuko-tv-profile"
-        const val VERSION = 1
+
+        /**
+         * 2: 字段同 1. Izuko TV 1.0.4 及更早的导入会漏掉没打开过的条目里看过的集 (再导一次也补不回来), 它们只认到 1,
+         * 写 2 让它们拒绝并提示先升级, 1.0.5 起照常导入.
+         */
+        const val VERSION = 2
 
         /** 写出默认值 ([format] 与 [version] 就是默认值), 不写 null. */
         val Json = Json {

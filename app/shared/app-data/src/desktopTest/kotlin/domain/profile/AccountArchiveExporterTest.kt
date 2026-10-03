@@ -123,7 +123,8 @@ class AccountArchiveExporterTest {
         val archive = AccountArchiveExporter({ offset, _ -> if (offset == 0) listOf(item) else emptyList() }, database).export("")
         val json = ProfileArchive.Json.encodeToJsonElement(ProfileArchive.serializer(), archive).jsonObject
         assertEquals("izuko-tv-profile", json["format"]!!.jsonPrimitive.content)
-        assertEquals(1, json["version"]!!.jsonPrimitive.int)
+        // 2: Izuko TV 1.0.4 及更早的只认到 1, 会拒绝并提示升级
+        assertEquals(2, json["version"]!!.jsonPrimitive.int)
         val c = json["collections"]!!.jsonArray.single() as JsonObject
         assertEquals(5, c["subjectId"]!!.jsonPrimitive.int)
         assertEquals("DONE", c["type"]!!.jsonPrimitive.content)

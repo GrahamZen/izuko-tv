@@ -870,7 +870,7 @@ private fun part5() = listOf(
     RemoteText("正在导出", "Exporting", "正在導出", "正在匯出"),
     RemoteText("正在导出…", "Exporting…", "正在導出…", "正在匯出…"),
     RemoteText("正在从 Animeko 服务器读取收藏，已读 {0} 部", "Reading collections from the Animeko server: {0} so far", "正在從 Animeko 服務器讀取收藏，已讀 {0} 部", "正在從 Animeko 伺服器讀取收藏，已讀 {0} 部"),
-    RemoteText("换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，装好 Izuko TV 后在它的 Web 控制台里导进本地用户。", "Collections in your Animeko account don't carry over when you switch to Izuko TV. Export them to a file on your phone first, then import the file into a local user from Izuko TV's Web Console.", "換到 Izuko TV 時，Animeko 帳號裡的收藏不會帶過去。先導出成文件存在手機上，裝好 Izuko TV 後在它的 Web 控制台裡導入本地用戶。", "換到 Izuko TV 時，Animeko 賬號裡的收藏不會帶過去。先匯出成檔案存在手機上，裝好 Izuko TV 後在它的 Web 控制台裡匯入本機使用者。"),
+    RemoteText("换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，Izuko TV 更新到 1.0.5 或更高版本后，在它的 Web 控制台里导进本地用户。", "Collections in your Animeko account don't carry over when you switch to Izuko TV. Export them to a file on your phone first; once Izuko TV is updated to 1.0.5 or later, import the file into a local user from its Web Console.", "換到 Izuko TV 時，Animeko 帳號裡的收藏不會帶過去。先導出成文件存在手機上，Izuko TV 更新到 1.0.5 或更高版本後，在它的 Web 控制台裡導入本地用戶。", "換到 Izuko TV 時，Animeko 賬號裡的收藏不會帶過去。先匯出成檔案存在手機上，Izuko TV 更新到 1.0.5 或更新版本後，在它的 Web 控制台裡匯入本機使用者。"),
     RemoteText("已导出：{0} 部收藏，{1} 条播放进度", "Exported {0} collections and {1} playback positions", "已導出：{0} 部收藏，{1} 條播放進度", "已匯出：{0} 部收藏，{1} 條播放進度"),
     RemoteText("导出超时，请重试", "Export timed out. Please try again.", "導出超時，請重試", "匯出超時，請重試"),
     RemoteText("导出失败：{0}", "Export failed: {0}", "導出失敗：{0}", "匯出失敗：{0}"),

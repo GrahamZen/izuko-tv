@@ -5950,7 +5950,7 @@ private val ACCOUNT_SCRIPT = """
       h += '<div class="row"><button type="button" class="ghost ic" data-acct="export"' + (exp ? ' disabled' : '') + '>' + window.ICONS.download +
         (exp ? T('正在导出…') : T('导出收藏')) + '</button></div><p class="hint">' +
         (exp ? T('正在从 Animeko 服务器读取收藏，已读 {0} 部', exp.fetched)
-          : T('换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，装好 Izuko TV 后在它的 Web 控制台里导进本地用户。')) + '</p>';
+          : T('换到 Izuko TV 时，Animeko 账号里的收藏不会带过去。先导出成文件存在手机上，Izuko TV 更新到 1.0.5 或更高版本后，在它的 Web 控制台里导进本地用户。')) + '</p>';
     } else if (d.offline) {
       h += '<p class="hint">' + T('电视现在连不上 Animeko 服务器，确认不了登录状态，稍后再看。') + '</p>';
     } else {
