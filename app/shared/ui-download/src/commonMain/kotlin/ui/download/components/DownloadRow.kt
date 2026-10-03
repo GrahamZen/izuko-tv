@@ -61,6 +61,7 @@ import me.him188.ani.app.ui.lang.cache_episode_resume_download
 import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_episode_status_paused
+import me.him188.ani.app.ui.lang.cache_episode_status_waiting_for_playback
 import me.him188.ani.app.ui.lang.cache_episode_watched_progress
 import me.him188.ani.app.ui.lang.cache_filter_status_finished
 import me.him188.ani.app.ui.lang.cache_management_episode_label
@@ -327,6 +328,8 @@ fun DownloadRow(
                     ) {
                         val statusText = when {
                             episode.isFailed -> stringResource(Lang.cache_episode_download_failed)
+                            // 停着是因为正在播这一集, 不是用户暂停的: 说清楚, 播完会自己接着下
+                            episode.waitingForPlayback -> stringResource(Lang.cache_episode_status_waiting_for_playback)
                             episode.isPaused -> stringResource(Lang.cache_episode_status_paused)
                             episode.isMerging -> stringResource(Lang.cache_episode_status_merging)
                             // BT 服务冷启动的十几秒里速度与进度都不动, 说清楚在等什么

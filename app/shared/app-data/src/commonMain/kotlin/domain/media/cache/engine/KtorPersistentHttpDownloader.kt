@@ -23,6 +23,7 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.httpdownloader.DownloadId
 import me.him188.ani.utils.httpdownloader.DownloadOptions
 import me.him188.ani.utils.httpdownloader.DownloadState
+import me.him188.ani.utils.httpdownloader.DownloadThroughputGate
 import me.him188.ani.utils.httpdownloader.DownloadStatus
 import me.him188.ani.utils.httpdownloader.KtorHttpDownloader
 import me.him188.ani.utils.httpdownloader.m3u.DefaultM3u8Parser
@@ -47,6 +48,7 @@ class KtorPersistentHttpDownloader(
     clock: Clock = Clock.System,
     m3u8Parser: M3u8Parser = DefaultM3u8Parser,
     scope: CoroutineScope,
+    throughputGate: DownloadThroughputGate? = null,
 ) : KtorHttpDownloader(
     client = client,
     fileSystem = fileSystem,
@@ -55,6 +57,7 @@ class KtorPersistentHttpDownloader(
     m3u8Parser = m3u8Parser,
     parentScope = scope,
     ioDispatcher = ioDispatcher,
+    throughputGate = throughputGate,
 ) {
     override suspend fun init() {
         super.init()
