@@ -46,7 +46,7 @@ internal class ParallelRangeDataSource(
     class Factory(
         private val upstreamFactory: HttpDataSource.Factory,
         private val connections: Int,
-        private val chunkSize: Int = DEFAULT_CHUNK_SIZE,
+        private val chunkSize: Int = chunkSizeFor(connections),
     ) : DataSource.Factory {
         override fun createDataSource(): DataSource = ParallelRangeDataSource(upstreamFactory, connections, chunkSize)
     }
@@ -101,7 +101,11 @@ internal class ParallelRangeDataSource(
             OpenedRange(UpstreamConnection(upstream), totalLengthOf(headers))
         }
         // 服务端明确拒绝 (403 地址过期之类) 再试也一样, 直接交给播放器
-        val reader = ParallelRangeReader(opener, EXECUTOR, connections, chunkSize) { it !is HttpDataSource.InvalidResponseCodeException }
+        val reader = ParallelRangeReader(
+            opener, EXECUTOR, connections, chunkSize,
+            retryable = { it !is HttpDataSource.InvalidResponseCodeException },
+            firstChunkSize = chunkSize / FIRST_CHUNK_DIVISOR,
+        )
         this.reader = reader
         val length = reader.open(dataSpec.position, dataSpec.length)
         logger.info {
@@ -144,10 +148,15 @@ internal class ParallelRangeDataSource(
         val spec = dataSpec
         reader = null
         dataSpec = null
+        val elapsed = millisSince(openedAt)
+        val throughput = current?.throughputSummary(elapsed)
         current?.close()
         if (opened) {
             opened = false
-            logger.info { "Closed ${spec?.uri?.host} after reading $bytesRead bytes from ${spec?.position} in ${millisSince(openedAt)}ms" }
+            logger.info {
+                "Closed ${spec?.uri?.host} after reading $bytesRead bytes from ${spec?.position} in ${elapsed}ms" +
+                        (throughput?.let { "; $it" } ?: "")
+            }
             transferEnded()
         }
     }
@@ -201,8 +210,18 @@ internal class ParallelRangeDataSource(
     }
 
     companion object {
-        /** 一块多大. 太小请求太多, 太大开头那块要等得久; 4 MiB 在 1 MB/s 的连接上约 4 秒. */
+        /** 一块最大多大. 太小请求太多, 太大开头那块要等得久; 4 MiB 在 1 MB/s 的连接上约 4 秒. */
         const val DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024
+
+        /** 所有连接手上的块加起来多大 (每块的缓冲常驻): 连接多时块就小, 非会员 16 路每块 1 MiB. */
+        private const val WINDOW_BYTES = 16 * 1024 * 1024
+        private const val MIN_CHUNK_SIZE = 1024 * 1024
+
+        /** 开播 / 跳转后头一轮的块是最大块的几分之一 (见 [ParallelRangeReader]). */
+        private const val FIRST_CHUNK_DIVISOR = 4
+
+        fun chunkSizeFor(connections: Int): Int =
+            (WINDOW_BYTES / connections.coerceAtLeast(1)).coerceIn(MIN_CHUNK_SIZE, DEFAULT_CHUNK_SIZE)
 
         private val logger = logger<ParallelRangeDataSource>()
 
