@@ -32,13 +32,13 @@ import kotlin.test.assertTrue
  * - **时间戳单位**: p1 给秒, 领域模型要毫秒.
  */
 class BangumiEpisodeCommentMappingTest {
-    private fun user(id: Int, nickname: String) = BangumiNextSlimUser(
+    private fun user(id: Int, nickname: String, sign: String = "") = BangumiNextSlimUser(
         id = id,
         username = "u$id",
         nickname = nickname,
         avatar = BangumiNextAvatar(small = "s", medium = "m", large = "l"),
         group = 0,
-        sign = "",
+        sign = sign,
         joinedAt = 0,
         isFriend = false,
     )
@@ -63,16 +63,19 @@ class BangumiEpisodeCommentMappingTest {
         id: Int = 100,
         replies: List<BangumiNextCommentBase> = emptyList(),
         reactions: List<BangumiNextReaction>? = null,
+        content: String = "main",
+        state: Int = 0,
+        sign: String = "",
     ) = BangumiNextComment(
         id = id,
         mainID = 0,
         creatorID = 1,
         relatedID = 0,
         createdAt = 1_700_000_000,
-        content = "main",
-        state = 0,
+        content = content,
+        state = state,
         replies = replies,
-        user = user(1, "someone"),
+        user = user(1, "someone", sign),
         reactions = reactions,
     )
 
@@ -132,5 +135,26 @@ class BangumiEpisodeCommentMappingTest {
         assertEquals(EpisodeCommentSource.BANGUMI, mapped.source)
         assertEquals(42L, mapped.episodeId)
         assertEquals("100", mapped.sourceCommentId)
+    }
+
+    @Test
+    fun `楼层号同网页_主楼是第几楼_回复是楼号加第几条`() {
+        val mapped = comment(
+            replies = listOf(reply(id = 201, mainID = 100, relatedID = 0), reply(id = 202, mainID = 100, relatedID = 0)),
+        ).toEpisodeComment(episodeId = 1L, selfUserId = null, floor = 3)
+        assertEquals("3", mapped.floor)
+        assertEquals(listOf("3-1", "3-2"), mapped.replies.map { it.floor })
+    }
+
+    @Test
+    fun `删掉的评论占着楼层_正文为空`() {
+        assertTrue(comment(content = "", state = 6).toEpisodeComment(episodeId = 1L, selfUserId = null).deleted)
+        assertEquals(false, comment().toEpisodeComment(episodeId = 1L, selfUserId = null).deleted)
+    }
+
+    @Test
+    fun `个人签名带上_空的当没有`() {
+        assertEquals("签名", comment(sign = "签名").toEpisodeComment(episodeId = 1L, selfUserId = null).author?.sign)
+        assertNull(comment().toEpisodeComment(episodeId = 1L, selfUserId = null).author?.sign)
     }
 }
