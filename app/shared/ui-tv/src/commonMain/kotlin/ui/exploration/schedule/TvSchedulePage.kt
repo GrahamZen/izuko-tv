@@ -122,6 +122,7 @@ import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.ui.external.placeholder.PlaceholderHighlight
 import me.him188.ani.app.ui.external.placeholder.fade
 import me.him188.ani.app.ui.external.placeholder.placeholder
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
@@ -836,7 +837,7 @@ private fun TvScheduleDetailPanel(
                     .then(if (item == null) Modifier.placeholder(placeholder, shape = coverShape, highlight = null) else Modifier),
             ) {
                 if (item != null) {
-                    TvScheduleCoverImage(item.imageUrl, contentDescription = item.subjectTitle)
+                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = item.subjectTitle)
                 }
             }
             if (c != null && item != null) {
@@ -1406,7 +1407,7 @@ private fun TvScheduleRow(
                         .clip(RoundedCornerShape(TV_SCHEDULE_ROW_THUMB_CORNER))
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
-                    TvScheduleCoverImage(item.imageUrl, contentDescription = null)
+                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = null)
                 }
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1470,10 +1471,10 @@ private fun TvScheduleRowSkeleton(modifier: Modifier = Modifier) {
 
 /**
  * 封面图 (时间线小图与左栏大图共用): 并发洪峰里失败的请求自动重试, 被丢弃时没下完的交给后台跑完写进磁盘缓存
- * (同 TvPortraitCard, 见 rememberAsyncImageRetryState / rememberImageCompletionGrace).
+ * (同 TvPortraitCard, 见 rememberAsyncImageRetryState / rememberImageCompletionGrace). NSFW 设为模糊时按 [subjectId] 打码.
  */
 @Composable
-private fun TvScheduleCoverImage(url: String, contentDescription: String?) {
+private fun TvScheduleCoverImage(url: String, subjectId: Int, contentDescription: String?) {
     val retry = rememberAsyncImageRetryState(url)
     val completionGrace = rememberImageCompletionGrace(url)
     AsyncImage(
@@ -1483,6 +1484,7 @@ private fun TvScheduleCoverImage(url: String, contentDescription: String?) {
         contentScale = ContentScale.Crop,
         onError = { retry.onError() },
         completionGrace = completionGrace,
+        downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(subjectId),
     )
 }
 
