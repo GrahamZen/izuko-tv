@@ -33,6 +33,8 @@ import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.tools.WeekFormatter
+import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
@@ -208,8 +210,10 @@ private fun TvCollectionNativeSource(
         text = text,
         wall = wall,
     )
+    // NSFW 设为模糊时背景打码 (见 withNsfw)
+    val shown = source.withNsfw(rememberNsfwPolicy())
     val view = state.view
-    SideEffect { view?.setSource(source) }
+    SideEffect { view?.setSource(shown) }
 }
 
 /**

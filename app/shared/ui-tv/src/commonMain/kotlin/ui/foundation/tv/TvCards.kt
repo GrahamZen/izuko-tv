@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
@@ -77,6 +78,8 @@ import me.him188.ani.app.ui.external.placeholder.PlaceholderHighlight
 import me.him188.ani.app.ui.external.placeholder.fade
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.AsyncImage
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
 import me.him188.ani.app.ui.foundation.rememberImageCompletionGrace
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
@@ -487,6 +490,9 @@ private fun TvBackdropImage(
     // 撤销按**本组件这一枚标记**对认, 不按 URL: 两个页面同时显示同一张图时 (转场期间新旧两页并存的那几帧), 按 URL 会互相抹掉
     val zoomSourceOwner = remember { Any() }
     DisposableEffect(zoomSourceOwner) { onDispose { TvHeroZoomHandoff.retract(zoomSourceOwner) } }
+    // NSFW 设为模糊时按条目打码: 解成小图糊掉 (同原生背景层的 obscure, 见 NsfwPolicy)
+    val nsfw = rememberNsfwPolicy()
+    val obscure = themeSeedSubjectId != null && nsfw.blurs(themeSeedSubjectId)
     AsyncImage(
         url,
         contentDescription = null,
@@ -497,7 +503,8 @@ private fun TvBackdropImage(
         },
         contentScale = ContentScale.Crop,
         // 与详情页同一个缓存键 (见 tvHeroBackdropDecodeAtOriginalSize), 进详情页首帧就有图
-        decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(url),
+        decodeAtOriginalSize = !obscure && tvHeroBackdropDecodeAtOriginalSize(url),
+        downsampleLongEdgePx = if (obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
         onSuccess = { success ->
             // 返回缩回撤层前要等列表页 hero 这张图画得出来 (见 TvHeroZoomHandoff.listReady)
             themeSeedSubjectId?.let { TvHeroZoomHandoff.markSourceLoaded(it, url) }
@@ -1029,17 +1036,11 @@ internal val TV_CARD_PROGRESS_BAR_BOTTOM_GAP = 2.dp
 /** 进度条轨道 (未看部分) 的白色不透明度. */
 internal const val TV_CARD_PROGRESS_TRACK_ALPHA = 0.3f
 
-/**
- * NSFW 打码封面的解码长边 (px). 卡片 1080p 下长边约 320px, 缩到 24 ≈ 13 倍放大, 糊到认不出内容但
- * 还留得住主色调. sketch 的幂次采样只会落在 ≤ 请求的一档, 实际常是 12~24px.
- */
-internal const val TV_OBSCURED_COVER_LONG_EDGE_PX = 24
+/** NSFW 打码封面的解码长边 (px), 见 [NSFW_OBSCURED_COVER_LONG_EDGE_PX]. */
+internal const val TV_OBSCURED_COVER_LONG_EDGE_PX = NSFW_OBSCURED_COVER_LONG_EDGE_PX
 
-/**
- * NSFW 打码背景图的解码长边 (px). 1080p 下背景框长边约 1267px, 取 48 ≈ 26 倍放大: 比封面糊得狠
- * (整屏大图, 细节更容易认出来), 但不至于像 24 那样放大 50 倍成一块块色斑.
- */
-internal const val TV_OBSCURED_BACKDROP_LONG_EDGE_PX = 48
+/** NSFW 打码背景图的解码长边 (px), 见 [NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX]. */
+internal const val TV_OBSCURED_BACKDROP_LONG_EDGE_PX = NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX
 
 /** Hero 操作按钮圆角. */
 internal val TV_HERO_BUTTON_CORNER = 8.dp

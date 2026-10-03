@@ -33,6 +33,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.LightEpisodeInfo
 import me.him188.ani.app.data.models.subject.displayName
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
@@ -101,7 +103,7 @@ internal object RemoteSchedule {
                         putJsonArray("items") {
                             // 同一天播两集的只列一行 (行按条目认, 点进去是同一部)
                             for (entry in day?.list.orEmpty().distinctBy { it.subject.subjectId }) {
-                                add(item(entry, followed[entry.subject.subjectId], timeZone))
+                                item(entry, followed[entry.subject.subjectId], timeZone)?.let { add(it) }
                             }
                         }
                     }
@@ -132,8 +134,11 @@ internal object RemoteSchedule {
         progress
     }
 
-    private fun item(entry: EpisodeWithAiringTime, type: UnifiedCollectionType?, timeZone: TimeZone): JsonObject {
+    /** 一条; NSFW 设为隐藏的不列 (null), 设为模糊的带 blur 标记 (同电视, 见 SubjectNsfw). */
+    private fun item(entry: EpisodeWithAiringTime, type: UnifiedCollectionType?, timeZone: TimeZone): JsonObject? {
         val subject = entry.subject
+        val nsfw = SubjectNsfw.modeOf(subject.subjectId)
+        if (nsfw == NsfwMode.HIDE) return null
         val time = entry.airingTime.toLocalDateTime(timeZone).time
         val line = listOfNotNull(
             if (entry.timeKnown) time.hour.toString().padStart(2, '0') + ":" + time.minute.toString().padStart(2, '0') else null,
@@ -150,6 +155,7 @@ internal object RemoteSchedule {
             put("line", line)
             // 自己在看 / 想看的番用主色标出来, 在一整天的列表里一眼找到
             if (type != null) put("fresh", true)
+            if (nsfw == NsfwMode.BLUR) put("blur", true)
             putJsonArray("cover") { remoteCoverCandidates(subject.subjectId, subject.imageLarge).forEach { add(it) } }
         }
     }
