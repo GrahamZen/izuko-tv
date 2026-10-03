@@ -63,7 +63,11 @@ open class AniEpisodeCommentService(
         if (after != null) return@withContext EpisodeCommentPage(emptyList())
         try {
             val comments = episodeApi.invoke { getEpisodeComments(episodeId.toInt()).body() }
-            val mapped = comments.map { it.toEpisodeComment(episodeId, currentUserIdOrNull()) }
+            val selfUserId = currentUserIdOrNull()
+            // 接口按楼层给 (删掉的也占着位置), 楼层号就是下标, 同网页上的 #1、#2
+            val mapped = comments.mapIndexed { index, comment ->
+                comment.toEpisodeComment(episodeId, selfUserId, floor = index + 1)
+            }
             logger.info {
                 "bgm-direct: episodeComments ep=$episodeId -> ${mapped.size} 楼, " +
                         "回复=${mapped.sumOf { it.replies.size }}, " +
@@ -125,7 +129,8 @@ class EpisodeCommentPage(
     val nextCursor: String? = null,
 )
 
-internal fun BangumiNextComment.toEpisodeComment(episodeId: Long, selfUserId: Int?): EpisodeComment {
+/** @param floor 第几楼 (从 1 起), 楼中回复记成 `楼-第几条` */
+internal fun BangumiNextComment.toEpisodeComment(episodeId: Long, selfUserId: Int?, floor: Int? = null): EpisodeComment {
     return EpisodeComment(
         stableId = id.toString(),
         source = EpisodeCommentSource.BANGUMI,
@@ -136,12 +141,21 @@ internal fun BangumiNextComment.toEpisodeComment(episodeId: Long, selfUserId: In
         content = content,
         author = user?.toUserInfo(),
         reactions = reactions?.map { it.toEpisodeCommentReaction(selfUserId) }.orEmpty(),
-        replies = replies.map { it.toEpisodeComment(episodeId, mainId = id, selfUserId = selfUserId) },
+        replies = replies.mapIndexed { index, reply ->
+            reply.toEpisodeComment(
+                episodeId,
+                mainId = id,
+                selfUserId = selfUserId,
+                floor = floor?.let { "$it-${index + 1}" },
+            )
+        },
         // 发表评论要过 Cloudflare Turnstile 验证码, 电视上没法做, 见 PostCommentUseCase
         canReply = false,
         replyCount = replies.size,
         likeCount = 0,
         selfVote = null,
+        floor = floor?.toString(),
+        deleted = isDeleted(state, content),
     )
 }
 
@@ -149,6 +163,7 @@ private fun BangumiNextCommentBase.toEpisodeComment(
     episodeId: Long,
     mainId: Int,
     selfUserId: Int?,
+    floor: String?,
 ): EpisodeComment {
     return EpisodeComment(
         stableId = id.toString(),
@@ -165,14 +180,21 @@ private fun BangumiNextCommentBase.toEpisodeComment(
         replyToCommentId = relatedID
             .takeIf { it != 0 && it != mainID && it != mainId && it != id }
             ?.toString(),
+        floor = floor,
+        deleted = isDeleted(state, content),
     )
 }
+
+/** 删掉的评论 `state` 不为 0 (用户自己删的是 6), 正文给的是空串. */
+private fun isDeleted(state: Int, content: String): Boolean = state != 0 && content.isBlank()
 
 private fun me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimUser.toUserInfo(): UserInfo = UserInfo(
     id = id.toString(),
     username = username,
     nickname = nickname,
     avatarUrl = avatar.large,
+    // 个人签名: 网页上跟在昵称后面的那段灰字
+    sign = sign.takeIf { it.isNotBlank() },
 )
 
 private fun BangumiNextReaction.toEpisodeCommentReaction(selfUserId: Int?): EpisodeCommentReaction =

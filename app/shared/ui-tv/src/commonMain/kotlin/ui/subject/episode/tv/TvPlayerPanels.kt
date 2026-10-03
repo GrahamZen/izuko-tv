@@ -163,6 +163,11 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 
 // ---- 面板调参 ----
 
@@ -874,7 +879,23 @@ private fun TvCommentsPanel(
 ) {
     val comments = vm.episodeCommentState.list.collectAsLazyPagingItemsWithLifecycle()
     val snapshot = comments.itemSnapshotList
-    val rows = remember(snapshot) { flattenTvCommentRows(snapshot) }
+    val sort = vm.videoScaffoldConfig.episodeCommentSort
+    // 楼的先后只在评论集合或排序变了时重排, 贴贴 / 回复让计数变了不挪位置 —— 按贴贴数排时点一个表情,
+    // 正开着的弹窗与焦点不能就此换到别的楼上
+    val threadIds = remember(snapshot) { snapshot.mapNotNull { it?.stableId } }
+    val threadOrder = remember(threadIds, sort) {
+        tvSortCommentThreads(snapshot.filterNotNull(), sort).map { it.stableId }
+    }
+    val rows = remember(snapshot, threadOrder) { flattenTvCommentRows(snapshot, threadOrder) }
+    // 换了排序: 回到最底那一条 (新排序的第一条), 同面板每次浮出时. 新顺序交给列表之后才跳 (按 threadOrder 起效),
+    // 否则列表按 key 保位置, 又停回原来那条现在所在的地方
+    var listedSort by remember { mutableStateOf(sort) }
+    LaunchedEffect(threadOrder) {
+        if (listedSort == sort) return@LaunchedEffect
+        listedSort = sort
+        focusedIndex.intValue = -1
+        runCatching { listState.scrollToItem(0) }
+    }
     // 弹窗里正在显示的是哪一行 (左右键翻相邻评论的锚). -1 = 没开弹窗
     var shownRowIndex by remember { mutableIntStateOf(-1) }
     val dialogOpen = overlay.replyingComment != null
@@ -913,6 +934,9 @@ private fun TvCommentsPanel(
                     // 弹窗按"文本段 + 图片"逐块渲染 (卡片上的 [图片] 占位在这里变成真图)
                     blocks = row.comment.content.toCommentBlocks(),
                     reactions = row.comment.reactions.toTvReactions(),
+                    authorSign = row.comment.author?.sign,
+                    floorText = row.comment.floorText(),
+                    deleted = row.comment.deleted,
                 ),
                 canReply = canReply,
             ),
@@ -1047,30 +1071,41 @@ private class TvCommentReplyRow(
 }
 
 /**
- * 主楼 + 一层回复展平成面板行.
+ * 主楼 + 一层回复展平成面板行, 主楼按 [threadOrder] (主楼 stableId, 见 [tvSortCommentThreads]) 的先后.
  *
- * 面板是 reverseLayout (index 0 在底, 越大越靠上), 所以同一楼里回复要**先**发且倒序,
+ * 面板是 reverseLayout (index 0 在底, 越大越靠上), 所以排在前面的楼贴着胶囊; 同一楼里回复要**先**发且倒序,
  * 主楼最后发 —— 这样视觉自上而下才是 主楼 → 回复1 → 回复2, 方向键上下 = 空间上下.
  *
  * Ani 源按无回复关系处理 (服务端不返回被回复者, 见 `AniEpisodeCommentReply`): 只出主楼,
  * 与改动前完全一致.
  */
-private fun flattenTvCommentRows(comments: List<UIComment?>): List<TvCommentRow> = buildList {
-    comments.forEachIndexed { pagerIndex, comment ->
-        if (comment == null) return@forEachIndexed
-        val replies = if (comment.source == UICommentSource.ANI) emptyList() else comment.briefReplies
-        replies.asReversed().forEach { reply ->
-            add(TvCommentReplyRow(pagerIndex, reply, comment, reply.replyTo?.authorName))
+private fun flattenTvCommentRows(comments: List<UIComment?>, threadOrder: List<String>): List<TvCommentRow> {
+    val pagerIndexOf = HashMap<String, Int>(comments.size)
+    comments.forEachIndexed { pagerIndex, comment -> if (comment != null) pagerIndexOf[comment.stableId] = pagerIndex }
+    return buildList {
+        for (id in threadOrder) {
+            val pagerIndex = pagerIndexOf[id] ?: continue
+            val comment = comments[pagerIndex] ?: continue
+            val replies = if (comment.source == UICommentSource.ANI) emptyList() else comment.briefReplies
+            replies.asReversed().forEach { reply ->
+                add(TvCommentReplyRow(pagerIndex, reply, comment, reply.replyTo?.authorName))
+            }
+            add(TvCommentMainRow(pagerIndex, comment, replies.size))
         }
-        add(TvCommentMainRow(pagerIndex, comment, replies.size))
     }
 }
 
 /** 条目文本. 时间要 [formatDateTime] (@Composable), 所以在组合里算好再给非组合的点击回调用. */
 private class TvCommentText(
     val authorName: String,
+    /** 个人签名, 跟在昵称后面的灰字 (同 bangumi 网页); 没有为 null. */
+    val sign: String?,
+    /** `#3` / `#3-2`, 数据源不给时为 null. */
+    val floorText: String?,
     val timeText: String,
     val content: TvInlineText,
+    /** 已被删除: 正文换成「删除了回复」. */
+    val deleted: Boolean,
 )
 
 @Composable
@@ -1080,11 +1115,26 @@ private fun rememberTvCommentText(comment: UIComment): TvCommentText {
     return remember(comment.stableId, timeText, content) {
         TvCommentText(
             authorName = comment.displayAuthorName(),
+            sign = comment.author?.sign,
+            floorText = comment.floorText(),
             timeText = timeText,
             content = content,
+            deleted = comment.deleted,
         )
     }
 }
+
+/** 楼层号的展示: `#3` / `#3-2`. */
+private fun UIComment.floorText(): String? = floor?.let { "#$it" }
+
+/** 昵称 + 灰色的个人签名 `(签名)`, 一行放不下时先截签名. */
+private fun authorWithSign(authorName: String, sign: String?, signColor: Color): AnnotatedString =
+    buildAnnotatedString {
+        append(authorName)
+        if (sign != null) {
+            withStyle(SpanStyle(color = signColor, fontWeight = FontWeight.Normal)) { append("  ($sign)") }
+        }
+    }
 
 /** 昵称缺失时退到用户 id (匿名/注销用户). 卡片与弹窗共用一套取法. */
 private fun UIComment.displayAuthorName(): String = author?.nickname ?: author?.id.orEmpty()
@@ -1149,7 +1199,7 @@ private fun TvCommentRowContent(
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text.authorName,
+                authorWithSign(text.authorName, text.sign, secondaryColor),
                 Modifier.weight(1f),
                 style = if (isReply) {
                     MaterialTheme.typography.labelMedium
@@ -1174,21 +1224,30 @@ private fun TvCommentRowContent(
                 )
                 Spacer(Modifier.width(8.dp))
             }
+            // 楼层号在时间前面, 同 bangumi 网页的「#3 - 时间」
             Text(
-                text.timeText,
+                text.floorText?.let { "$it  ${text.timeText}" } ?: text.timeText,
                 style = MaterialTheme.typography.labelSmall,
                 color = secondaryColor,
             )
         }
         Spacer(Modifier.height(if (isReply) 3.dp else 4.dp))
-        Text(
-            text.content.text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f),
-            maxLines = if (isReply) 3 else 4,
-            overflow = TextOverflow.Ellipsis,
-            inlineContent = tvStickerInlineContent(text.content.stickers),
-        )
+        if (text.deleted) {
+            Text(
+                stringResource(Lang.video_player_tv_comment_deleted),
+                style = MaterialTheme.typography.bodyMedium,
+                color = secondaryColor,
+            )
+        } else {
+            Text(
+                text.content.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = if (isReply) 3 else 4,
+                overflow = TextOverflow.Ellipsis,
+                inlineContent = tvStickerInlineContent(text.content.stickers),
+            )
+        }
     }
 }
 

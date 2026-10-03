@@ -317,6 +317,13 @@
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">音軌 %1$d</string>
     <string name="video_player_subtitle_numbered">字幕 %1$d</string>
+    <!-- 评论胶囊长按的排序菜单 -->
+    <string name="video_player_tv_comment_sort_time_ascending">按時間正序</string>
+    <string name="video_player_tv_comment_sort_time_descending">按時間倒序</string>
+    <string name="video_player_tv_comment_sort_most_reactions">按貼貼數</string>
+    <string name="video_player_tv_comment_sort_most_replies">按回覆數</string>
+    <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
+    <string name="video_player_tv_comment_deleted">刪除了回覆</string>
     <string name="video_player_tv_chrome_title">自訂播放器按鈕</string>
     <string name="video_player_tv_chrome_subtitle">這一頁不會播放任何東西。這裏排成什麼樣，播放器裏就是什麼樣。</string>
     <string name="video_player_tv_chrome_hint">確認鍵 拿起  ·  長按確認鍵 隱藏 / 顯示  ·  返回鍵 退出</string>
