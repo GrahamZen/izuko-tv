@@ -362,7 +362,12 @@ internal object RemoteCacheList {
         null -> "loading" to tr("读取中")
         MediaCacheState.COMPLETED -> "done" to tr("已完成")
         MediaCacheState.FAILED -> "failed" to tr("下载失败")
-        MediaCacheState.PAUSED -> "paused" to tr("已暂停 {0}%", r.percentText)
+        // 停着是因为正在播这一集 (见 MediaDownloadManager.waitingForPlayback), 播完会自己接着下
+        MediaCacheState.PAUSED -> if (r.cache.cacheId in cacheManager.waitingForPlayback.value) {
+            "paused" to tr("正在播放，稍后继续 {0}%", r.percentText)
+        } else {
+            "paused" to tr("已暂停 {0}%", r.percentText)
+        }
         MediaCacheState.IN_PROGRESS -> when {
             r.merging -> "merging" to tr("合并中")
             // 连着几次一个字节都没进: 多半是种子没人做种, 说一句, 免得以为是卡住了
