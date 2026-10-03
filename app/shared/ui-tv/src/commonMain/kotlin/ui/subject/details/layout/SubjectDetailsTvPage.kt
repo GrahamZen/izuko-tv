@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
+import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
@@ -25,7 +26,19 @@ import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
 import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvHeroTitleLogoLook
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoSize
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBitmaps
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoDetailsLooks
+import me.him188.ani.app.ui.foundation.tv.transformation
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogo
+import me.him188.ani.app.ui.foundation.tv.shownTvTitleLogo
+import me.him188.ani.app.ui.foundation.LocalSketch
+import com.github.panpf.sketch.LocalPlatformContext
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.layout.findRootCoordinates
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
@@ -94,6 +107,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
@@ -128,6 +142,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.Image
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -208,6 +223,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbTitleLogo
 import me.him188.ani.app.data.network.tmdbBackdropOriginalSizeUrl
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -261,6 +277,7 @@ import me.him188.ani.app.ui.lang.subject_details_episodes
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_load_retrying
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
+import me.him188.ani.app.ui.lang.subject_details_tv_feedback
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import me.him188.ani.app.ui.lang.subject_details_related_subjects
 import me.him188.ani.app.ui.lang.subject_details_show_more
@@ -356,6 +373,8 @@ fun SubjectDetailsTvLoadingPlaceholder(
     // 加载转圈, 但标题和侧边栏不能跟着消失 —— 标题此时只有导航时从列表页带来的那一份, 侧边栏本来就在同一位置
     val enteredWithZoom = remember { underZoom }
     val navTitle = remember { zoomSession?.title }
+    // 同 navTitle: 列表页标题是 logo 时那一张, 会话先收场也留着
+    val navLogo = remember { zoomSession?.titleLogo }
     val abortFade = rememberTvZoomAbortFade(zoomPathChosen = enteredWithZoom, zoomSession = zoomSession)
 
     var slowLoad by remember { mutableStateOf(false) }
@@ -393,14 +412,28 @@ fun SubjectDetailsTvLoadingPlaceholder(
                     Modifier.padding(top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    TvHeroTransitionTitle(
-                        subjectInfo?.displayName ?: navTitle.orEmpty(),
-                        color = if (onImage) heroText.title else MaterialTheme.colorScheme.onSurface,
-                        shadow = if (onImage) heroText.shadow else null,
-                        listColor = heroText.listTitle.takeIf { onImage && zoomSession?.titleBounds != null },
-                        detailsLook = { tvHeroZoomTitleLook(zoomSession) },
-                        modifier = Modifier.tvHeroZoomTitleShift(zoomSession),
-                    )
+                    // 标题 logo (见 TvHeroTitleLogo): 放大进来时会话里带着列表页那张, 条目信息还没到也先用它
+                    val titleLogo = shownTvTitleLogo(navLogo) ?: subjectInfo?.let { rememberTvTitleLogo(it.subjectId, it.name) }
+                    var logoFailed by remember(titleLogo) { mutableStateOf(false) }
+                    if (titleLogo != null && onImage && !logoFailed) {
+                        TvHeroTitleLogo(
+                            titleLogo,
+                            backdropUrl = heroBackdropUrl,
+                            listLook = zoomSession?.takeIf { it.titleBounds != null }?.titleLogoLook,
+                            detailsLook = { tvHeroZoomLogoLook(zoomSession) },
+                            onFailed = { logoFailed = true },
+                            logoModifier = Modifier.tvHeroZoomTitleShift(zoomSession),
+                        )
+                    } else {
+                        TvHeroTransitionTitle(
+                            subjectInfo?.displayName ?: navTitle.orEmpty(),
+                            color = if (onImage) heroText.title else MaterialTheme.colorScheme.onSurface,
+                            shadow = if (onImage) heroText.shadow else null,
+                            listColor = heroText.listTitle.takeIf { onImage && zoomSession?.titleBounds != null },
+                            detailsLook = { tvHeroZoomTitleLook(zoomSession) },
+                            modifier = Modifier.tvHeroZoomTitleShift(zoomSession),
+                        )
+                    }
                     if (slowLoad && !underZoom) {
                         CircularProgressIndicator(
                             Modifier.padding(top = 16.dp).size(28.dp),
@@ -585,6 +618,9 @@ fun SubjectDetailsTvPage(
     val zoomSession = TvHeroZoomHandoff.session
         ?.takeIf { !videoBackground && it.subjectId == state.subjectId && it.detailsUrl == heroBackdropUrl }
     val underZoom = zoomSession != null
+    // 首屏的标题 logo (设置里开了才有, 见 TvHeroTitleLogo); 放大进来时会话里带着列表页那张, 热表还没落表也先用它.
+    // 有 logo 时原名不放首屏, 挪到第二页的标题下面
+    val titleLogo = if (videoBackground) null else rememberTvTitleLogo(state.subjectId, info.name) ?: shownTvTitleLogo(zoomSession?.titleLogo)
     val enteredWithZoom = remember { underZoom }
     val abortFade = rememberTvZoomAbortFade(
         zoomPathChosen = remember { TvHeroZoomHandoff.session?.subjectId == state.subjectId },
@@ -1287,6 +1323,8 @@ fun SubjectDetailsTvPage(
                 // 放大转场 (见 zoomFrom): 标题从列表页的位置平移过来, 其余到位后一次性出现
                 titleModifier = Modifier.tvHeroZoomTitleShift(zoomSession),
                 titleSession = zoomSession,
+                titleLogo = titleLogo,
+                titleLogoBackdropUrl = heroBackdropUrl,
                 bodyComposed = revealed || bodyEarly,
                 // lambda: 在三处 graphicsLayer 里读, uiEarly 翻转那一帧只改层属性, 不重组整个 hero 块
                 bodyHidden = { underZoom && !uiEarly },
@@ -1509,6 +1547,16 @@ fun SubjectDetailsTvPage(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    // 首屏的标题换成了 logo 时, 原名 (原来在首屏标题下面) 放这里
+                    if (titleLogo != null && info.name.isNotBlank() && info.name != info.displayName) {
+                        Text(
+                            info.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     // 固定占满标题下的剩余高度 (两种模式尺寸一致);
                     // 聚焦后按确认键进入阅读模式 (上下键滚动 + 右侧滚动条).
                     // 简介为空 (未开播条目常见, 可能连分集都没有) 时兜底显示"暂无信息",
@@ -1925,6 +1973,157 @@ private fun rememberTvDetailsHeroTextStyle(): TvDetailsHeroTextStyle {
 }
 
 /**
+ * 首屏大标题位置上的标题 logo (见 ThemeSettings.tvTitleLogoDisplay): 大小与列表页 hero 同一套规则 (见 [rememberTvTitleLogoBox], 两边的标题行高一样,
+ * 放大进来只平移), 槽高 = logo 框的高度上限, logo 底对齐左对齐. [logoModifier] 挂在 logo 本身上 (放大转场的平移, 登记的是 logo 的框).
+ * 样子按首屏背景图 [backdropUrl] 上 logo 正下方那块判 (排好版就请求, 见 [TvTitleLogoDetailsLooks.request]), 判完才显示 (放大进来时先显示列表页那份);
+ * 列表页样子的交叉淡化见 [TvTitleLogoImage]. 图加载失败调 [onFailed], 由调用方换回文字标题.
+ */
+@Composable
+private fun TvHeroTitleLogo(
+    logo: TmdbTitleLogo,
+    backdropUrl: String?,
+    listLook: TvHeroTitleLogoLook?,
+    detailsLook: () -> Float,
+    onFailed: () -> Unit,
+    modifier: Modifier = Modifier,
+    logoModifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val sketch = LocalSketch.current
+    val context = LocalPlatformContext.current
+    val judged = tvDetailsTitleLogoJudged()
+    // 图左压着的那层渐变 (深色主题), 判的时候照样压上
+    val leftScrim = tvHeroBackdropTreatment(solidUnderlay = null, light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f).left
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val box = rememberTvTitleLogoBox(titleWidthPx = constraints.maxWidth) ?: return@BoxWithConstraints
+        val size = box.sizeOf(logo.aspectRatio)
+        Box(
+            Modifier
+                .height(with(density) { box.maxHeightPx.toDp() })
+                .then(
+                    if (judged && backdropUrl != null) {
+                        // 槽的位置 (不含 logo 自己的转场平移): logo 贴左下角. 背景图铺满整个根
+                        Modifier.onGloballyPositioned { coordinates ->
+                            val slot = coordinates.boundsInRoot()
+                            val root = coordinates.findRootCoordinates().size
+                            TvTitleLogoDetailsLooks.request(
+                                sketch, context, logo, size, backdropUrl,
+                                logoRect = Rect(slot.left, slot.bottom - size.heightPx, slot.left + size.widthPx, slot.bottom),
+                                backdropRect = Rect(0f, 0f, root.width.toFloat(), root.height.toFloat()),
+                                leftScrim = leftScrim,
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            TvTitleLogoImage(
+                logo,
+                size,
+                look = tvDetailsTitleLogoLook(logo, backdropUrl),
+                listLook = listLook,
+                detailsLook = detailsLook,
+                onFailed = onFailed,
+                modifier = Modifier.align(Alignment.BottomStart).then(logoModifier),
+            )
+        }
+    }
+}
+
+/**
+ * 一张标题 logo, 显示 [size] (px), 本页的样子是 [look] (见 [tvDetailsTitleLogoLook]; null = 还没判完, 有 [listLook] 时先按它画, 否则先不画).
+ * 放大 / 缩回途中列表页那头的 logo 可能是另一个样子 ([listLook] 非 null: 浅色主题的黑字底, 或两边各按各的背景判的颜色): 再叠一份列表页样子的,
+ * 按 [detailsLook] (绘制里读) 交叉淡化, 同 [TvHeroTransitionTitle]. 首屏与缩回层共用.
+ */
+@Composable
+private fun TvTitleLogoImage(
+    logo: TmdbTitleLogo,
+    size: TvTitleLogoSize,
+    look: TvHeroTitleLogoLook?,
+    listLook: TvHeroTitleLogoLook?,
+    detailsLook: () -> Float,
+    onFailed: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val url = logo.url(size.widthPx)
+    Box(modifier.size(with(density) { size.widthPx.toDp() }, with(density) { size.heightPx.toDp() })) {
+        if (listLook != null) {
+            TvTitleLogoLayer(
+                logo,
+                url,
+                listLook,
+                Modifier.matchParentSize().graphicsLayer { alpha = 1f - detailsLook() },
+            )
+        }
+        val shown = look ?: listLook ?: return@Box
+        TvTitleLogoLayer(
+            logo,
+            url,
+            shown,
+            Modifier.matchParentSize().graphicsLayer { if (listLook != null) alpha = detailsLook() },
+            onFailed = onFailed,
+        )
+    }
+}
+
+/**
+ * 标题 logo 的一层, 画成 [look] 的样子. 这张图别处 (列表页原生文字块、占位页、放大 / 缩回层) 已经解好过就同步画出来 (见 [TvTitleLogoBitmaps]),
+ * 交接时第一帧就有图; 没有才走图片请求, 解好记下给后面接手的用.
+ */
+@Composable
+private fun TvTitleLogoLayer(
+    logo: TmdbTitleLogo,
+    url: String,
+    look: TvHeroTitleLogoLook,
+    modifier: Modifier,
+    onFailed: () -> Unit = {},
+) {
+    val ready = remember(logo, look) { TvTitleLogoBitmaps.get(logo, look.flipLightText, look.force) }
+    if (ready != null) {
+        Image(ready, contentDescription = null, modifier, alignment = Alignment.BottomStart, contentScale = ContentScale.Fit)
+        return
+    }
+    AsyncImage(
+        url,
+        contentDescription = null,
+        modifier,
+        onSuccess = { success ->
+            success.bitmap?.let { TvTitleLogoBitmaps.put(logo, look.flipLightText, it, look.force) }
+        },
+        onError = { onFailed() },
+        contentScale = ContentScale.Fit,
+        alignment = Alignment.BottomStart,
+        crossfade = false,
+        transformations = listOfNotNull(look.transformation()),
+    )
+}
+
+/**
+ * 详情页上 [logo] 的样子 (null = 还没判完): 按设置 (ThemeSettings.tvTitleLogoDisplay) ——
+ *  - 看不清时自动调色: 按首屏背景图 [backdropUrl] (连同图左压着的渐变) 判出来的 (见 [TvTitleLogoDetailsLooks]; 背景图迟迟不来先照白字底翻色);
+ *  - 看不清时显示文字: 原样, 判完才显示 (判出看不清时这部的 logo 各处都换成文字, 见 TvTitleLogoUnreadable);
+ *  - 不调色: 原样, 不判.
+ */
+@Composable
+private fun tvDetailsTitleLogoLook(logo: TmdbTitleLogo, backdropUrl: String?): TvHeroTitleLogoLook? {
+    val display = LocalThemeSettings.current.tvTitleLogoDisplay
+    if (!tvDetailsTitleLogoJudged()) return TV_DETAILS_TITLE_LOGO_ORIGINAL
+    val decided = backdropUrl?.let { TvTitleLogoDetailsLooks.of(logo, it) } ?: return null
+    return if (display == TvTitleLogoDisplay.Auto) decided else TV_DETAILS_TITLE_LOGO_ORIGINAL
+}
+
+/** 详情页首屏的 logo 要不要按背景图判 (见 [tvDetailsTitleLogoLook]): 自动调色与看不清时显示文字两档. */
+@Composable
+private fun tvDetailsTitleLogoJudged(): Boolean {
+    val display = LocalThemeSettings.current.tvTitleLogoDisplay
+    return display == TvTitleLogoDisplay.Auto || display == TvTitleLogoDisplay.TextWhenUnreadable
+}
+
+private val TV_DETAILS_TITLE_LOGO_ORIGINAL = TvHeroTitleLogoLook(flipLightText = null)
+
+/**
  * 放大 / 缩回途中的大标题. [listColor] 非 null 时 (浅色主题: 列表页 hero 是黑字) 叠两份 —— 列表页的样子 ([listColor], 不带阴影) 与本页的
  * 样子 ([color] + [shadow]), 按 [detailsLook] (0 = 列表页那份, 1 = 本页那份, 绘制里读) 交叉淡化: 放大时先在原地由黑变白再平移, 缩回反过来
  * (见 [TvHeroZoomHandoff.Session.titleDetailsLook]); 列表页标题已经是本页的样子 (整屏背景点开时在列表页就变了白) 时 [detailsLook] 恒为 1, 只平移. 两份同一套排字
@@ -1975,6 +2174,9 @@ private fun TvHeroTransitionTitle(
 
 /** 放大途中标题像本页的程度 (见 [TvHeroTransitionTitle], [TvHeroZoomHandoff.Session.titleDetailsLook]); 没有会话 = 1. 绘制里读. */
 private fun tvHeroZoomTitleLook(session: TvHeroZoomHandoff.Session?): Float = session?.titleDetailsLook ?: 1f
+
+/** 放大期间标题 logo 像本页那份的程度 (见 [TvHeroZoomHandoff.Session.logoDetailsLook]); 不在放大 = 1. */
+private fun tvHeroZoomLogoLook(session: TvHeroZoomHandoff.Session?): Float = session?.logoDetailsLook ?: 1f
 
 /**
  * 某条边此刻的软边带宽 (本层坐标). [gap] = 这条边全程要走的距离 (根坐标), [scale] = 本层这一轴此刻的缩放.
@@ -3172,6 +3374,8 @@ private fun TvHeroBackdrop(
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
     val minAlpha = if (light) HERO_BACKDROP_MIN_ALPHA_LIGHT else HERO_BACKDROP_MIN_ALPHA
+    // 首屏的标题 logo 按这张图判颜色 (见 TvHeroTitleLogo): 图解好时顺带取样
+    val logoJudged = tvDetailsTitleLogoJudged()
     // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
     var ownBounds by remember { mutableStateOf<Rect?>(null) }
     // 放大期间的羽化边 (见 drawWithContent): 列表页 hero 的左缘 / 底缘是渐入页面底色的, 本页只有左侧 scrim 与底缘
@@ -3359,6 +3563,7 @@ private fun TvHeroBackdrop(
                 // 图一到就预传 GPU: 换图放大时详情页那张、淡入进页时的背景, 头一次上屏那一帧不当场上传纹理 (同一张图已经画过的不重复传)
                 onSuccess = {
                     it.bitmap?.prepareToDraw()
+                    if (logoJudged) it.bitmap?.let { bitmap -> TvTitleLogoDetailsLooks.putBackdrop(imageUrl, bitmap.asAndroidBitmap()) }
                     onSuccess(it)
                 },
             )
@@ -3694,6 +3899,25 @@ fun TvHeroShrinkLayer() {
             // 浅色主题: 先平移回去, 最后一段原地由详情页的白字 + 黑影淡回列表页落位时的样子 (整屏背景点开过的列表页标题还是白字,
             // 见 TvHeroZoomHandoff.shrinkTitleDetailsLook); 深色照旧一份
             val light = heroText.listTitle != null
+            val logo = spec.logo
+            if (logo != null) {
+                // 列表页标题是标题 logo: 画同一张, 大小照列表页那份, 位置同文字那条插值 (见 TvHeroTitleLogo)
+                TvTitleLogoImage(
+                    logo,
+                    TvTitleLogoSize(spec.widthPx.roundToInt(), spec.heightPx.roundToInt()),
+                    look = tvDetailsTitleLogoLook(logo, url),
+                    listLook = spec.logoLook,
+                    detailsLook = { TvHeroZoomHandoff.shrinkLogoDetailsLook() },
+                    onFailed = {},
+                    modifier = Modifier.offset {
+                        val p = TvHeroZoomHandoff.shrinkTitlePosition()?.also { lastPos = it }
+                            ?: lastPos
+                            ?: return@offset IntOffset.Zero
+                        IntOffset(p.x.roundToInt(), p.y.roundToInt())
+                    },
+                )
+                return@let
+            }
             TvHeroTransitionTitle(
                 spec.text,
                 color = if (light) heroText.title else tvHeroContentColor(),
@@ -4743,6 +4967,10 @@ private fun TvHeroBlock(
     titleModifier: Modifier = Modifier,
     /** 放大转场的会话 (与 [titleModifier] 同一个): 浅色主题下标题途中由列表页的黑字淡成白字 (见 [TvHeroTransitionTitle]). */
     titleSession: TvHeroZoomHandoff.Session? = null,
+    /** 标题 logo (见 [TvHeroTitleLogo]): 有背景图时代替文字标题, 这时首屏不放原名 (挪到第二页). [titleModifier] 挂到 logo 上. */
+    titleLogo: TmdbTitleLogo? = null,
+    /** 首屏背景图的地址 (logo 按它判颜色, 见 [TvHeroTitleLogo]); 还没定为 null. */
+    titleLogoBackdropUrl: String? = null,
     /**
      * 标题之外的东西 (副标题 / 信息带整条: 圆钮、播放按钮、标签墙、评分) 要不要组合: 放大转场到位前 false —— 标题
      * 要第一帧就在 (从列表页的位置平移过来), 其余全部延后, 首帧只有一个 Text. 块高由外层钉死 (heroHeight), 标题
@@ -4765,15 +4993,29 @@ private fun TvHeroBlock(
                 // 白色标题浮于背景图上, 图亮部会看不清: 加柔和黑色阴影兜底 (深色图左另压一层黑, 见 tvHeroBackdropTreatment)
                 val heroText = rememberTvDetailsHeroTextStyle()
                 val titleShadow = if (hasBackdrop) heroText.shadow else null
-                TvHeroTransitionTitle(
-                    info.displayName,
-                    color = if (hasBackdrop) heroText.title else MaterialTheme.colorScheme.onSurface,
-                    shadow = titleShadow,
-                    listColor = heroText.listTitle.takeIf { hasBackdrop && titleSession?.titleBounds != null },
-                    detailsLook = { tvHeroZoomTitleLook(titleSession) },
-                    modifier = titleModifier,
-                )
-                if (bodyComposed && info.name.isNotBlank() && info.name != info.displayName) {
+                var logoFailed by remember(titleLogo) { mutableStateOf(false) }
+                val shownLogo = titleLogo?.takeIf { hasBackdrop && !logoFailed }
+                val showsLogo = shownLogo != null
+                if (shownLogo != null) {
+                    TvHeroTitleLogo(
+                        shownLogo,
+                        backdropUrl = titleLogoBackdropUrl,
+                        listLook = titleSession?.takeIf { it.titleBounds != null }?.titleLogoLook,
+                        detailsLook = { tvHeroZoomLogoLook(titleSession) },
+                        onFailed = { logoFailed = true },
+                        logoModifier = titleModifier,
+                    )
+                } else {
+                    TvHeroTransitionTitle(
+                        info.displayName,
+                        color = if (hasBackdrop) heroText.title else MaterialTheme.colorScheme.onSurface,
+                        shadow = titleShadow,
+                        listColor = heroText.listTitle.takeIf { hasBackdrop && titleSession?.titleBounds != null },
+                        detailsLook = { tvHeroZoomTitleLook(titleSession) },
+                        modifier = titleModifier,
+                    )
+                }
+                if (bodyComposed && !showsLogo && info.name.isNotBlank() && info.name != info.displayName) {
                     Text(
                         info.name,
                         Modifier.graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
@@ -4850,6 +5092,18 @@ private fun TvHeroBlock(
                         icon = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) },
                         label = { Text("Bangumi", softWrap = false) },
                     )
+                    // 反馈: 标题 logo 不对 / 对应的作品不对 (见 TvSubjectFeedbackDialog)
+                    var feedbackOpen by remember { mutableStateOf(false) }
+                    TvCapsuleButton(
+                        onClick = { feedbackOpen = true },
+                        icon = { Icon(Icons.Outlined.Feedback, contentDescription = null) },
+                        label = { Text(stringResource(Lang.subject_details_tv_feedback), softWrap = false) },
+                        // 弹窗是独立窗口, 关掉后焦点还回这颗钮
+                        modifier = Modifier.restoreFocusAfter(feedbackOpen),
+                    )
+                    if (feedbackOpen) {
+                        TvSubjectFeedbackDialog(info.subjectId, info.displayName, info.name) { feedbackOpen = false }
+                    }
                 }
                 // 下: 播放按钮 (下方带播放进度条), 宽度与列同宽
                 // (IntrinsicSize.Max: 取"圆钮行 / 按钮文字固有宽"中较大者).

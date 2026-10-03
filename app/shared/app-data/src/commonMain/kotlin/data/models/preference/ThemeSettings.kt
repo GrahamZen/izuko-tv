@@ -80,6 +80,35 @@ enum class TvBackdropBlurLevel {
     Strong,
 }
 
+/**
+ * TV: 标题 logo 显示不显示、压在背景上看不清时怎么办 (见 [ThemeSettings.tvTitleLogoDisplay]). 看不清的判法见 ui-tv 的 TvTitleLogoContrast:
+ * 列表页 hero 按模糊背景 (没铺模糊背景时按标题的底色)、详情页首屏按自己的清晰背景图各判各的; 播放器上画面一直在变, 不判.
+ */
+@Serializable
+enum class TvTitleLogoDisplay {
+    /** 显示 logo, 看不清时自动调色 (黑白灰的部分翻色, 或在背后加一点柔光). 默认. */
+    Auto,
+
+    /** 显示 logo, 列表页或详情页只要有一处看不清, 这部各处 (连播放器) 都换成文字标题. 不调色. */
+    TextWhenUnreadable,
+
+    /** 显示 logo, 原样不调色. */
+    Original,
+
+    /** 不显示 logo, 一律文字标题. */
+    Off,
+}
+
+/** TV: 标题 logo 用哪种语言的 (见 [ThemeSettings.tvTitleLogoLanguage]); 某种语言没有合适的 logo 就显示文字. */
+@Serializable
+enum class TvTitleLogoLanguage {
+    /** 作品原语言的 (日本动画日文、美国动画英文). */
+    Original,
+
+    /** 界面语言的 (中文界面用中文 logo; 界面语言跟随系统时就是系统语言). 默认. */
+    AppLanguage,
+}
+
 /** TV: 在主页 (探索页 hero) 上按返回键那一下做什么. 见 [ThemeSettings.tvExitBehavior]. */
 @Serializable
 enum class TvExitBehavior {
@@ -260,6 +289,20 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvDetailsBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Medium,
+    /**
+     * TV: hero 标题 (探索 / 追番 / 搜索三页海报墙上方的文字块、详情页首屏与播放器左上角) 用不用 TMDB 的标题 logo、看不清时怎么办
+     * (见 [TvTitleLogoDisplay]); 用哪种语言的见 [tvTitleLogoLanguage], 没有就照旧文字标题. 用了 logo 的条目, 详情页首屏标题下面的原名挪到第二页.
+     *
+     * @since 1.0.4
+     */
+    val tvTitleLogoDisplay: TvTitleLogoDisplay = TvTitleLogoDisplay.Auto,
+    /**
+     * TV: 标题 logo 用哪种语言的 (见 [TvTitleLogoLanguage]). 每种语言用哪张由对应表定 (bangumi-tmdb-map, 自动挑的叠上人工修正),
+     * 不对的在详情页报告.
+     *
+     * @since 1.0.4
+     */
+    val tvTitleLogoLanguage: TvTitleLogoLanguage = TvTitleLogoLanguage.AppLanguage,
     /**
      * TV: 海报墙的卡片上按确定做什么 (见 [TvPosterConfirmAction]). 只有 [TvPosterConfirmAction.Hero] 有 hero 态, [tvWallBackdropBlur] 的 hero 态部分也只对它有用.
      *

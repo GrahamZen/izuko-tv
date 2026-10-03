@@ -146,6 +146,7 @@ import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridWallLayout
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvHeroWallBlurEnabled
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -371,6 +372,7 @@ private fun TvCollectionPageContent(
         fullVisualEffects = fullVisualEffects,
         // 键到 items 上: 切 tab 换分页实例时重启, 不然闭包里捕获的是旧 tab 的状态
         restartKey = items,
+        logoOnBlurBackdrop = tvHeroWallBlurEnabled(),
         spec = {
             heroInfo?.let { info ->
                 info.toHeroMediaSpec(

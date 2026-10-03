@@ -59,6 +59,7 @@ import com.github.panpf.sketch.state.PainterStateImage
 import com.github.panpf.sketch.state.StateImage
 import com.github.panpf.sketch.target.Target
 import com.github.panpf.sketch.transition.Transition
+import com.github.panpf.sketch.transform.Transformation
 import com.github.panpf.sketch.util.Size as SketchSize
 import com.github.panpf.sketch.util.asComposeImageBitmap
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -169,6 +170,8 @@ fun AsyncImage(
     downsampleLongEdgePx: Int? = null,
     /** 离场时没下完就交给后台补下 (见 [rememberImageCompletionGrace]); 这里记下实际发出的地址、上屏时置位. */
     completionGrace: ImageCompletionGrace? = null,
+    /** 解码后在解码线程上对图做的变换 (进内存缓存键), 须是按内容判等的值 (同一张图每次组合给相等的列表). */
+    transformations: List<Transformation>? = null,
 ) {
     val state = rememberAsyncImageState()
     AniAsyncImage(
@@ -193,6 +196,7 @@ fun AsyncImage(
         decodeAtOriginalSize = decodeAtOriginalSize,
         downsampleLongEdgePx = downsampleLongEdgePx,
         completionGrace = completionGrace,
+        transformations = transformations,
     )
 }
 
@@ -219,6 +223,7 @@ internal fun AniAsyncImage(
     decodeAtOriginalSize: Boolean = false,
     downsampleLongEdgePx: Int? = null,
     completionGrace: ImageCompletionGrace? = null,
+    transformations: List<Transformation>? = null,
 ) {
     var requestSize by remember { mutableStateOf<IntSize?>(null) }
 
@@ -264,6 +269,7 @@ internal fun AniAsyncImage(
             decodeAtOriginalSize = decodeAtOriginalSize,
             downsampleLongEdgePx = downsampleLongEdgePx,
         )
+        if (transformations != null) transformations(transformations)
 
         // 流畅档一律不淡入: 换一行卡片是八张图同时淡入, 八条 alpha 动画各自产帧, 而终态一样
         configureAniImageCrossfade(if (imageCrossfade) crossfade else false, crossfadeDurationMillis)
