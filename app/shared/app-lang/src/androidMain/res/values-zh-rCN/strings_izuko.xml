@@ -204,7 +204,7 @@
     <string name="settings_theme_tv_title_logo_original">不调色</string>
     <string name="settings_theme_tv_title_logo_off">不显示</string>
     <string name="settings_theme_mode_black">纯黑</string>
-    <string name="settings_app_nsfw_content_description">探索、追番、搜索和 Web 控制台里的成人向条目怎么显示</string>
+    <string name="settings_app_nsfw_content_description">成人向作品在所有页面和 Web 控制台里怎么显示：隐藏 = 各处列表里都不出现；模糊 = 封面和背景图打码。缓存和播放记录里的不删，隐藏和模糊都打码；电视主屏的推荐行和屏保里只要不是「显示」就不放</string>
     <string name="subject_details_tv_title_logo_dialog_title">选择标题 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">选这部在%1$s下用哪张，选好立刻换上，同时报给维护者，审核通过后所有人换上。对的那张不在下面，就选最后一格「列表里没有」</string>
     <string name="subject_details_tv_title_logo_qr_hint">扫码看 TMDB 上的全部 logo</string>

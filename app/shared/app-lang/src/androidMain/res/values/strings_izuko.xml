@@ -204,7 +204,7 @@
     <string name="settings_theme_tv_title_logo_original">Original colors</string>
     <string name="settings_theme_tv_title_logo_off">Off</string>
     <string name="settings_theme_mode_black">Black</string>
-    <string name="settings_app_nsfw_content_description">How adult titles show up in Explore, Collection, Search and the web console</string>
+    <string name="settings_app_nsfw_content_description">How adult titles show up everywhere in the app and the web console: Hide leaves them out of every list, Blur obscures their covers and backdrops. Downloads and playback history keep them, blurred in both Hide and Blur. The Android TV home screen rows and the screensaver leave them out unless set to Show</string>
     <string name="subject_details_tv_title_logo_dialog_title">Choose the title logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">Pick the logo used in %1$s. It changes right away and is reported for review; once approved, everyone gets it. If the right one isn\'t below, pick the last card, \u201cNot listed here\u201d</string>
     <string name="subject_details_tv_title_logo_qr_hint">Scan to see all logos on TMDB</string>

@@ -64,6 +64,8 @@ data class PosterRowItem(
     val imageUrl: String?,
     val title: String,
     val subtitle: String?,
+    /** 作品的条目 id: 原生行按它处理 NSFW (见 NsfwPolicy); null = 不认. */
+    val subjectId: Int? = null,
 )
 
 /** 见 [PeoplePreviewRows]; null = 用 Compose 的行. */

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.PersonPosition
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RatingInfo
@@ -112,6 +113,7 @@ class AniSubjectSearchService(
     }
 
     private fun BangumiSubject.toBatchSubjectDetails(): BatchSubjectDetails {
+        SubjectNsfw.record(id, nsfw)
         return BatchSubjectDetails(
             subjectInfo = SubjectInfo(
                 subjectId = id,

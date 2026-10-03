@@ -33,6 +33,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
+import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.domain.episode.AiringScheduleForDate
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.domain.foundation.LoadError
@@ -139,8 +141,11 @@ open class ScheduleViewModel(
     private fun initialLoad(today: LocalDate): ScheduleLoad =
         ScheduleLoad(today, getAnimeScheduleFlowUseCase.peekCached(today, timeZone)?.let { Result.success(it) })
 
-    val presentationFlow: StateFlow<SchedulePagePresentation> = combine(airingSchedulesFlow, minuteTicker) { load, _ ->
-        load.toPresentation(clock.now())
+    // NSFW 设为隐藏时去掉 (见 SubjectNsfw), 设置或登记表一变重算
+    val presentationFlow: StateFlow<SchedulePagePresentation> = combine(
+        airingSchedulesFlow, minuteTicker, SubjectNsfw.mode, SubjectNsfw.ids,
+    ) { load, _, nsfwMode, nsfwIds ->
+        load.toPresentation(clock.now(), hidden = if (nsfwMode == NsfwMode.HIDE) nsfwIds else emptySet())
     }
         .onEach { presentationState.value = it }
         .stateIn(
@@ -155,9 +160,9 @@ open class ScheduleViewModel(
     val pageState = ScheduleScreenState { presentationState.value.days }
 
     /**
-     * 日期列和列内容都由 [ScheduleLoad.today] 派生, 所以二者的日期序列总是相同.
+     * 日期列和列内容都由 [ScheduleLoad.today] 派生, 所以二者的日期序列总是相同. [hidden] 里的条目不列 (NSFW 设为隐藏时).
      */
-    private fun ScheduleLoad.toPresentation(now: Instant): SchedulePagePresentation {
+    private fun ScheduleLoad.toPresentation(now: Instant, hidden: Set<Int> = emptySet()): SchedulePagePresentation {
         val days = ScheduleDay.generateForRecentTwoWeeks(today)
         val loaded = result
             ?: return SchedulePagePresentation(
@@ -180,7 +185,7 @@ open class ScheduleViewModel(
                     AiringSchedule(
                         airingSchedule.date,
                         SchedulePageDataHelper.toColumnItems(
-                            airingSchedule.list.map { it.toPresentation(timeZone) },
+                            airingSchedule.list.filterNot { it.subject.subjectId in hidden }.map { it.toPresentation(timeZone) },
                             addIndicator = currentDateTime.date == airingSchedule.date,
                             currentDateTime.time,
                         ),

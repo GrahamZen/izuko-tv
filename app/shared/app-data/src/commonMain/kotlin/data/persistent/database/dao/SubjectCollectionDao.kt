@@ -471,6 +471,10 @@ interface SubjectCollectionDao {
     @Query("""SELECT * FROM subject_collection WHERE subjectId IN (:subjectIds)""")
     fun filterByIds(subjectIds: IntArray): Flow<List<SubjectCollectionEntity>>
 
+    /** 记着是 NSFW 的条目 (启动时补进登记表, 见 SubjectNsfw). */
+    @Query("""SELECT subjectId FROM subject_collection WHERE nsfw""")
+    suspend fun nsfwSubjectIds(): List<Int>
+
     @Query(
         """
         SELECT sc.subjectId FROM subject_collection sc WHERE NOT EXISTS (
