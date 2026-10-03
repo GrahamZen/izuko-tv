@@ -11,6 +11,7 @@ package me.him188.ani.app.data.network
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.RelatedSubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectRelation
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
@@ -32,6 +33,7 @@ class BangumiRelatedPeopleService(
         emit(
             list.map { relation ->
                 val subject = relation.subject
+                SubjectNsfw.record(subject.id, subject.nsfw)
                 RelatedSubjectInfo(
                     subjectId = subject.id,
                     // relation id 表是 2026-09-06 采样 28 个条目的 p1 relations 收全的:

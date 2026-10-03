@@ -13,64 +13,23 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
-import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
-import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
-import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
-import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
-import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
-import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
-import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
-import me.him188.ani.app.ui.foundation.tv.TvHeroTitleLogoLook
-import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
-import me.him188.ani.app.ui.foundation.tv.TvTitleLogoSize
-import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBitmaps
-import me.him188.ani.app.ui.foundation.tv.TvTitleLogoDetailsLooks
-import me.him188.ani.app.ui.foundation.tv.transformation
-import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogo
-import me.him188.ani.app.ui.foundation.tv.shownTvTitleLogo
-import me.him188.ani.app.ui.foundation.LocalSketch
-import com.github.panpf.sketch.LocalPlatformContext
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.layout.findRootCoordinates
-import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
-import me.him188.ani.app.ui.foundation.tv.TvHeroZoomEasing
-import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
-import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
-import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_SWAP_AT
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_READY_TIMEOUT_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
-import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
-import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
-import androidx.compose.ui.util.lerp
-import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.ui.graphics.GraphicsLayerScope
-import kotlinx.coroutines.CoroutineScope
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -82,13 +41,13 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -97,10 +56,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.relocation.BringIntoViewResponder
 import androidx.compose.foundation.relocation.bringIntoViewResponder
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,22 +65,23 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.Surface
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
-import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
-import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -133,16 +89,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.Image
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -151,41 +106,40 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import me.him188.ani.app.ui.foundation.navigation.BackHandler
-import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
-import me.him188.ani.app.ui.foundation.navigation.LocalNavEntryContentKey
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
-import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.material3.contentColorFor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -195,103 +149,156 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.launch
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
+import com.github.panpf.sketch.LocalPlatformContext
+import com.kmpalette.color
+import com.kmpalette.palette.graphics.Palette
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
-import androidx.paging.compose.LazyPagingItems
-import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
-import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
-import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
-import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
-import com.kmpalette.color
-import com.kmpalette.palette.graphics.Palette
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
+import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
+import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.TmdbTitleLogo
 import me.him188.ani.app.data.network.tmdbBackdropOriginalSizeUrl
+import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.tools.ColorUtils
+import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.AniDisplayTier
+import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
 import me.him188.ani.app.ui.foundation.AsyncImage
-import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
+import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
-import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
-import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE
-import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeToBlackStops
-import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeFromBlackStops
-import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_START
-import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
-import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
-import me.him188.ani.app.ui.foundation.tv.TV_FOCUSED_CONTAINER_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
-import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
-import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
-import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
-import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
-import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
-import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
-import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
-import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
+import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.LocalNavEntryContentKey
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
+import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_START
+import me.him188.ani.app.ui.foundation.tv.TV_CAPSULE_SIZE
+import me.him188.ani.app.ui.foundation.tv.TV_FOCUSED_CONTAINER_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SHRINK_READY_TIMEOUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_SWAP_AT
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_LOAD_BUDGET_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_NAV_HOLD_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
+import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
+import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
+import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
+import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
+import me.him188.ani.app.ui.foundation.tv.TvHeroTitleLogoLook
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomEasing
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
+import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoBitmaps
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoDetailsLooks
+import me.him188.ani.app.ui.foundation.tv.TvTitleLogoSize
+import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
+import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
+import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
+import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogo
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
+import me.him188.ani.app.ui.foundation.tv.shownTvTitleLogo
+import me.him188.ani.app.ui.foundation.tv.transformation
+import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeFromBlackStops
+import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeToBlackStops
+import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
+import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
+import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
+import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
+import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
+import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
+import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
+import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
 import me.him188.ani.app.ui.lang.subject_details_aliases
-import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_episodes
-import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_load_retrying
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
-import me.him188.ani.app.ui.lang.subject_details_tv_feedback
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import me.him188.ani.app.ui.lang.subject_details_related_subjects
 import me.him188.ani.app.ui.lang.subject_details_show_more
+import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_stat_collected
 import me.him188.ani.app.ui.lang.subject_details_stat_watching
 import me.him188.ani.app.ui.lang.subject_details_stat_wish
+import me.him188.ani.app.ui.lang.subject_details_total_episodes
+import me.him188.ani.app.ui.lang.subject_details_tv_feedback
+import me.him188.ani.app.ui.rating.isEditingFrom
 import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.SubjectProgressState
-import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
+import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeDialogsHost
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeState
 import me.him188.ani.app.ui.subject.collection.components.SubjectCollectionActions
-import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.SubjectCollectionActionsForCollect
+import me.him188.ani.app.ui.subject.collection.components.SubjectCollectionTypeEditActions
 import me.him188.ani.app.ui.subject.collection.components.renderCollectionTypeAsCurrent
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadAttempt
 import me.him188.ani.app.ui.subject.details.components.AnimatedGradientBackground
@@ -299,25 +306,26 @@ import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RAT
 import me.him188.ani.app.ui.subject.details.components.RatingHistogram
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
 import me.him188.ani.app.ui.subject.details.components.renderSubjectRelation
-import me.him188.ani.app.ui.comment.UIComment
-import me.him188.ani.app.data.models.subject.RatingInfo
-import me.him188.ani.app.ui.subject.details.sections.ReviewsSummarySection
-import me.him188.ani.app.ui.subject.details.sections.TV_REVIEW_HEADER_GAP
-import me.him188.ani.app.ui.subject.details.sections.SectionHeader
-import me.him188.ani.app.ui.subject.details.sections.TvPeopleStripPlaceholder
-import me.him188.ani.app.ui.subject.details.sections.groupThousands
-import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_CONTENT_PADDING
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_END_RESERVE
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeCarousel
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeGridDropdown
+import me.him188.ani.app.ui.subject.details.sections.ReviewsSummarySection
+import me.him188.ani.app.ui.subject.details.sections.SectionHeader
+import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
+import me.him188.ani.app.ui.subject.details.sections.TV_REVIEW_HEADER_GAP
+import me.him188.ani.app.ui.subject.details.sections.TvPeopleStripPlaceholder
+import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
+import me.him188.ani.app.ui.subject.details.state.rememberAiringLabelState
+import me.him188.ani.app.ui.subject.details.state.rememberSubjectProgressState
+import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -398,7 +406,9 @@ fun SubjectDetailsTvLoadingPlaceholder(
             backgroundOverlay = {
                 // 放大会话进行中背景由放大那一层画 (见 TvHeroZoomLayer), 这里组合着但不画: 会话结束那一帧直接显示 ——
                 // 新图片实例头一两帧是空的, 到那时才组合会闪一下
-                heroBackdropUrl?.let { url -> TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom) }
+                heroBackdropUrl?.let { url ->
+                    TvHeroBackdrop(url, scrollState, onSuccess = {}, hidden = underZoom, subjectId = subjectInfo?.subjectId)
+                }
             },
             containerColor = if (underZoom) Color.Transparent else AniThemeDefaults.pageContentBackgroundColor,
         ) {
@@ -547,14 +557,15 @@ fun SubjectDetailsTvPage(
         }
         return
     }
-    val presentation by state.presentation.collectAsStateWithLifecycle()
+    val uiState by state.uiState.collectAsStateWithLifecycle()
+    val subjectProgressState = uiState.rememberSubjectProgressState()
     // 卡片流用保持数据源顺序的全量列表: 特别篇按序号插在正片之间 (尸鬼 20.5 落在 20 与 21
     // 中间), 与播放器选集列表看到的顺序一致. 它们的 TMDB 剧照/简介/时长本来就已按全量分集
     // 匹配好 (SubjectDetailsStateFactory 传的是 collection.episodes), 这里只是把先前没人取的
     // 那几个 key 用起来. 选集网格仍要正片/特别篇分组, 故两份都留着.
-    val episodes = presentation.episodeListUiState.allEpisodes
-    val mainEpisodes = presentation.episodeListUiState.mainEpisodes
-    val specialEpisodes = presentation.episodeListUiState.otherEpisodes
+    val episodes = uiState.episodeListUiState.allEpisodes
+    val mainEpisodes = uiState.episodeListUiState.mainEpisodes
+    val specialEpisodes = uiState.episodeListUiState.otherEpisodes
     // "当前集"只在正片里找: 特别篇通常一直是未看状态, 算进来会让看完正片的条目
     // 把 SP 当成"下一集要看的", 进页面直接滚到那里
     val currentEpisodeId = remember(mainEpisodes) { mainEpisodes.firstOrNull { !it.isDoneOrDropped }?.episodeId }
@@ -565,12 +576,12 @@ fun SubjectDetailsTvPage(
         if (videoBackground) null else state.exposedCharactersPager.collectAsLazyPagingItemsWithLifecycle()
     val allCharacters =
         if (videoBackground) null else state.charactersPager.collectAsLazyPagingItemsWithLifecycle()
-    val totalCharactersCount by state.totalCharactersCountState
+    val totalCharactersCount = uiState.totalCharactersCount
     val exposedStaff =
         if (videoBackground) null else state.exposedStaffPager.collectAsLazyPagingItemsWithLifecycle()
     val allStaff =
         if (videoBackground) null else state.staffPager.collectAsLazyPagingItemsWithLifecycle()
-    val totalStaffCount by state.totalStaffCountState
+    val totalStaffCount = uiState.totalStaffCount
     val related = state.relatedSubjectsPager.collectAsLazyPagingItemsWithLifecycle()
     val comments = state.subjectCommentState.list.collectAsLazyPagingItemsWithLifecycle()
     val commentCount = state.subjectCommentState.count
@@ -1275,6 +1286,7 @@ fun SubjectDetailsTvPage(
                     }
                     TvHeroBackdrop(
                         imageUrl = url,
+                        subjectId = state.subjectId,
                         // 放大会话进行中: 组合着 (提前把位图加载好) 但不画, 放大那一层在下面顶着; 接手那一帧才显示
                         // (换图接手时在放大层上淡进来)
                         hidden = underZoom && !crossFading,
@@ -1370,11 +1382,11 @@ fun SubjectDetailsTvPage(
                     }
                 },
                 // 播放按钮底部进度条: 取"继续观看"目标集的进度
-                playProgress = state.subjectProgressState.episodeIdToPlay?.let { playProgress[it] },
+                playProgress = subjectProgressState.episodeIdToPlay?.let { playProgress[it] },
                 // 播放按钮长按: 跳到当前集的选集卡片 (复用网格菜单的 reveal 机制 ——
                 // 轮播滚到该集并聚焦, 页面随焦点吸附到选集页, 按住的残余确认键由卡片吞掉)
                 onLongPressPlay = {
-                    (state.subjectProgressState.episodeIdToPlay ?: currentEpisodeId)
+                    (subjectProgressState.episodeIdToPlay ?: currentEpisodeId)
                         ?.let { revealEpisodeId = it }
                 },
                 // 加载中按"有图"排版: 大多数条目有 backdrop, 图到了直接淡入; 确认无 TMDB 图时
@@ -1602,6 +1614,8 @@ fun SubjectDetailsTvPage(
                         contentScale = ContentScale.Crop,
                         // 选集页在首屏之下: 图一到就预传 GPU, 免得冷启动后第一次往下翻时当场上传 (同选集卡剧照)
                         onSuccess = { it.bitmap?.prepareToDraw() },
+                        // NSFW 设为模糊时打码 (见 NsfwPolicy)
+                        downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                     )
                 }
             }
@@ -1845,7 +1859,7 @@ fun SubjectDetailsTvPage(
                                 val relatedCards = remember(relatedSnapshot, relationLabels) {
                                     relatedSnapshot.mapIndexed { i, info ->
                                         info?.let {
-                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i])
+                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i], subjectId = it.subjectId)
                                         }
                                     }
                                 }
@@ -2526,6 +2540,7 @@ private fun TvHeroInfoColumn(
     wallRestoreIndex: Int,
     modifier: Modifier = Modifier,
 ) {
+    val uiState by state.uiState.collectAsStateWithLifecycle()
     val tags = info.tags
 
     Row(
@@ -2563,7 +2578,7 @@ private fun TvHeroInfoColumn(
                         LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
                         AiringLabel(
-                            state.airingLabelState,
+                            uiState.rememberAiringLabelState(),
                             style = MaterialTheme.typography.labelMedium,
                             progressColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -3370,10 +3385,14 @@ private fun TvHeroBackdrop(
      * 为 0 时下缘渐隐也不再随翻页收掉 (整张都淡没了, 不会在后面几页压一道黑): 本层的内容在翻页途中不变, 离屏缓冲不用每帧重画, 只改整层透明度.
      */
     fadedAlphaScale: () -> Float = { 1f },
+    /** 这张图是哪部的: NSFW 设为模糊时打码 (见 NsfwPolicy), 不加清; null = 不认. */
+    subjectId: Int? = null,
 ) {
     val light = MaterialTheme.colorScheme.surface.luminance() >= 0.5f
     // 翻离首屏后背景图淡到的不透明度, 深浅主题各一档
     val minAlpha = if (light) HERO_BACKDROP_MIN_ALPHA_LIGHT else HERO_BACKDROP_MIN_ALPHA
+    val nsfw = rememberNsfwPolicy()
+    val obscure = subjectId != null && nsfw.blurs(subjectId)
     // 首屏的标题 logo 按这张图判颜色 (见 TvHeroTitleLogo): 图解好时顺带取样
     val logoJudged = tvDetailsTitleLogoJudged()
     // 自己的框 (根坐标), 与起始框相减得到位移; 布局回调里写、绘制里读, 不进组合
@@ -3559,7 +3578,8 @@ private fun TvHeroBackdrop(
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 // 与列表页 hero 同一个缓存键 (见 tvHeroBackdropDecodeAtOriginalSize): 内存命中, 不重解码
-                decodeAtOriginalSize = tvHeroBackdropDecodeAtOriginalSize(imageUrl),
+                decodeAtOriginalSize = !obscure && tvHeroBackdropDecodeAtOriginalSize(imageUrl),
+                downsampleLongEdgePx = if (obscure) NSFW_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
                 // 图一到就预传 GPU: 换图放大时详情页那张、淡入进页时的背景, 头一次上屏那一帧不当场上传纹理 (同一张图已经画过的不重复传)
                 onSuccess = {
                     it.bitmap?.prepareToDraw()
@@ -3567,7 +3587,7 @@ private fun TvHeroBackdrop(
                     onSuccess(it)
                 },
             )
-            if (sharpen) HeroBackdropSharpeningOverlay(imageUrl)
+            if (sharpen && !obscure) HeroBackdropSharpeningOverlay(imageUrl)
         }
     }
 }
@@ -3675,6 +3695,7 @@ fun TvHeroZoomLayer() {
         val swapDim = { if (swapPlanned) tvHeroSwapDim(session.t) else 0f }
         TvHeroBackdrop(
             imageUrl = session.url,
+            subjectId = session.subjectId,
             scrollState = scrollState,
             onSuccess = { loaded = true },
             zoomFrom = session.bounds,
@@ -3691,6 +3712,7 @@ fun TvHeroZoomLayer() {
         if (crossImage) {
             TvHeroBackdrop(
                 imageUrl = session.detailsUrl,
+                subjectId = session.subjectId,
                 scrollState = scrollState,
                 onSuccess = { detailsLoaded = true },
                 zoomFrom = session.bounds,
@@ -3848,6 +3870,7 @@ fun TvHeroShrinkLayer() {
         val startFade = { shrink?.takeIf { it.startFade > 0f }?.let { it.startFade * (it.t / it.fromT) } }
         TvHeroBackdrop(
             imageUrl = url,
+            subjectId = shrink?.subjectId,
             scrollState = scrollState,
             onSuccess = { loaded = true },
             // standby 时也给框: 本层的全屏框 (ownBounds) 平时就量好, 缩回第一帧就能按进度摆位
@@ -3865,6 +3888,7 @@ fun TvHeroShrinkLayer() {
         if (crossImage) {
             TvHeroBackdrop(
                 imageUrl = startUrl,
+                subjectId = shrink?.subjectId,
                 scrollState = scrollState,
                 onSuccess = { startLoaded = true },
                 zoomFrom = shrink?.bounds ?: TvHeroZoomHandoff.standbyBounds,
@@ -4792,11 +4816,11 @@ private fun tvGlassColor(alpha: Float = TV_GLASS_ALPHA): Color = glassContainerC
  */
 @Composable
 private fun TvCollectionCapsule(
-    state: EditableSubjectCollectionTypeState,
+    presentation: EditableSubjectCollectionTypeState.Presentation,
+    actions: SubjectCollectionTypeEditActions,
     modifier: Modifier = Modifier,
 ) {
-    EditableSubjectCollectionTypeDialogsHost(state)
-    val presentation by state.presentationFlow.collectAsStateWithLifecycle()
+    EditableSubjectCollectionTypeDialogsHost(presentation, actions)
     // 展开状态由调用方持有 (上游 #3372 起)
     var dropdownExpanded by remember { mutableStateOf(false) }
     val type = presentation.selfCollectionType
@@ -4814,10 +4838,17 @@ private fun TvCollectionCapsule(
                 }
             },
         )
+        val scope = rememberCoroutineScope()
+        val toaster = LocalToaster.current
         EditCollectionTypeDropDown(
-            state,
+            currentType = type,
             expanded = dropdownExpanded,
             onDismissRequest = { dropdownExpanded = false },
+            onClick = {
+                scope.launch {
+                    actions.setSelfCollectionType(it.type)?.let(toaster::showLoadError)
+                }
+            },
         )
     }
 }
@@ -4982,6 +5013,8 @@ private fun TvHeroBlock(
     /** 首屏此刻已不是显示页 (焦点翻进了下一页): 播放按钮的失焦变色当场到位, 见 [TvPlayButton]. */
     leavingHero: () -> Boolean = { false },
 ) {
+    val uiState by state.uiState.collectAsStateWithLifecycle()
+    val subjectProgressState = uiState.rememberSubjectProgressState()
     Column(modifier.fillMaxWidth().padding(start = horizontalPadding)) {
         // 上半区: 左 = 标题 (有背景图时浮于图上); 右 = 无横版图时的竖版封面,
         // 高度正好撑满 "顶栏按钮之下、信息带之上", 随内容滚出屏幕
@@ -5049,6 +5082,7 @@ private fun TvHeroBlock(
                         .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop,
                     onSuccess = onCoverImageSuccess,
+                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
         }
@@ -5083,7 +5117,7 @@ private fun TvHeroBlock(
                             },
                         )
                     } else {
-                        TvCollectionCapsule(state.editableSubjectCollectionTypeState)
+                        TvCollectionCapsule(uiState.collectionTypeEdit, state)
                     }
                     // 选集快速跳转 (圆钮 + 下拉网格), 样式与相邻圆钮一致
                     episodeGridCapsule()
@@ -5109,8 +5143,8 @@ private fun TvHeroBlock(
                 // (IntrinsicSize.Max: 取"圆钮行 / 按钮文字固有宽"中较大者).
                 // offset 微微上移 (纯视觉, 不占布局, 周围组件与三列底对齐的几何全部不动)
                 TvPlayButton(
-                    state.subjectProgressState,
-                    onPlay = { state.subjectProgressState.episodeIdToPlay?.let(onPlay) },
+                    subjectProgressState,
+                    onPlay = { subjectProgressState.episodeIdToPlay?.let(onPlay) },
                     playProgress = playProgress,
                     modifier = Modifier.fillMaxWidth().offset(y = (-4).dp),
                     buttonModifier = primaryButtonModifier,
@@ -5139,8 +5173,8 @@ private fun TvHeroBlock(
                 SubjectRatingSummary(
                     info.ratingInfo,
                     // 评分弹窗关掉之后焦点还回本按钮 (弹窗是独立窗口, 关掉后不保证还回来)
-                    Modifier.restoreFocusAfter(state.editableRatingState.isEditingFrom(ratingSource)),
-                    onClick = { state.editableRatingState.requestEdit(ratingSource) },
+                    Modifier.restoreFocusAfter(uiState.rating.isEditingFrom(ratingSource)),
+                    onClick = { state.requestEditRating(ratingSource) },
                 )
             }
         }
@@ -5181,6 +5215,7 @@ private fun TvEmbeddedHeroPage(
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val uiState by state.uiState.collectAsStateWithLifecycle()
     // 标签墙摆位: 顶边 = 简介正文排满时末行底边 + TV_EMBEDDED_TAGS_GAP. 各量都是常量或按字体直接排出来的,
     // 第一帧就定, 不等别的区块布局 (「评价」是分页数据, 晚到; 按它的位置摆的话它一出现标签墙就跳)
     val summaryTextBottomPx = embeddedSummaryMaxLinesBottomPx()
@@ -5224,6 +5259,7 @@ private fun TvEmbeddedHeroPage(
                         .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                         .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop,
+                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
             // 三个统计单元均匀摊开, 首末单元与海报左右边界对齐;
@@ -5247,8 +5283,8 @@ private fun TvEmbeddedHeroPage(
                 val ratingSource = remember { Any() }
                 SubjectRatingSummary(
                     info.ratingInfo,
-                    Modifier.restoreFocusAfter(state.editableRatingState.isEditingFrom(ratingSource)),
-                    onClick = { state.editableRatingState.requestEdit(ratingSource) },
+                    Modifier.restoreFocusAfter(uiState.rating.isEditingFrom(ratingSource)),
+                    onClick = { state.requestEditRating(ratingSource) },
                 )
             }
         }
@@ -5286,7 +5322,7 @@ private fun TvEmbeddedHeroPage(
                     maxLines = 1,
                 )
                 AiringLabel(
-                    state.airingLabelState,
+                    uiState.rememberAiringLabelState(),
                     style = MaterialTheme.typography.titleSmall,
                     progressColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

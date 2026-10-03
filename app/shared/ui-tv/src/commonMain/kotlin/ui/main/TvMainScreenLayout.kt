@@ -13,6 +13,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
@@ -1354,6 +1356,8 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
     val frame = TvRetainedFrameStore.frameFor(subjectId, episodeId)
     val stillUrl = rememberTvPlayingEpisodeStill(subjectId, episodeId)
     val imageUrl = stillUrl ?: tmdb.peekBackdropUrl(subjectId)
+    // NSFW 作品打码 (自己的播放记录不藏, 见 NsfwPolicy.ownedCoverDownsample): 停下的那一帧没法降采样, 打码时改用剧照 / 背景图的小图
+    val obscure = rememberNsfwPolicy().obscuresOwned(subjectId)
     val shape = RoundedCornerShape(6.dp)
     Box(
         Modifier
@@ -1377,7 +1381,7 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
                 style = MaterialTheme.typography.headlineMedium,
             )
         }
-        if (frame != null) {
+        if (frame != null && !obscure) {
             Image(
                 frame,
                 contentDescription = null,
@@ -1390,6 +1394,7 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
                 contentDescription = null,
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                downsampleLongEdgePx = if (obscure) NSFW_OBSCURED_COVER_LONG_EDGE_PX else null,
             )
         }
     }
