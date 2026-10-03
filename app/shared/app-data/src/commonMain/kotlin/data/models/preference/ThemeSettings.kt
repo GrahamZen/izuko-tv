@@ -276,19 +276,21 @@ data class ThemeSettings(
     /**
      * TV: 探索 / 追番 / 搜索三页海报墙的 hero 态 (卡片上按一下确定之后) 在整页底下铺聚焦那部的模糊背景 (整部的横版背景图), 糊到什么程度;
      * 右上角的 hero 图 (继续观看的条目是单集剧照) 与文字照旧画在上面, 整屏底色不压黑 (深色主题也是, 一直是卡片墙的灰). 再按确定时卡片与
-     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. 默认中; [TvBackdropBlurLevel.None] = hero 态整页是纯色底 (深色主题压成近黑),
+     * hero 图淡没、模糊背景对焦变清晰后进详情页, 返回时倒放. [TvBackdropBlurLevel.None] = hero 态整页是纯色底 (深色主题压成近黑),
      * 进出详情页从 hero 图放大 / 缩回. 轮播与卡片墙不受影响. 新番时间表的背景 (恒铺) 也按这一档, 见 [tvScheduleBlurLevel].
      *
-     * @since 1.0.4
-     */
-    val tvWallBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Medium,
-    /**
-     * TV: 详情页翻离首屏后, 底下铺这部背景图的模糊版 (与海报墙铺的是同一种小图), 糊到什么程度; 上面的字照对比度压暗, 首屏不变.
-     * [TvBackdropBlurLevel.None] = 不铺, 照旧把清晰的背景图淡到一档留着.
+     * 默认重: 铺在卡片墙后面当底, 糊重一点不抢眼; 详情页那一档 ([tvDetailsBackdropBlur]) 默认轻. 两处要的程度不同, 设置里按搭配一起选.
      *
      * @since 1.0.4
      */
-    val tvDetailsBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Medium,
+    val tvWallBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Strong,
+    /**
+     * TV: 详情页翻离首屏后, 底下铺这部背景图的模糊版 (与海报墙铺的是同一种小图), 糊到什么程度; 上面的字照对比度压暗, 首屏不变.
+     * 默认轻: 同一张图, 糊轻一点认得出画面 (见 [tvWallBackdropBlur]). [TvBackdropBlurLevel.None] = 不铺, 照旧把清晰的背景图淡到一档留着.
+     *
+     * @since 1.0.4
+     */
+    val tvDetailsBackdropBlur: TvBackdropBlurLevel = TvBackdropBlurLevel.Light,
     /**
      * TV: hero 标题 (探索 / 追番 / 搜索三页海报墙上方的文字块、详情页首屏与播放器左上角) 用不用 TMDB 的标题 logo、看不清时怎么办
      * (见 [TvTitleLogoDisplay]); 用哪种语言的见 [tvTitleLogoLanguage], 没有就照旧文字标题. 用了 logo 的条目, 详情页首屏标题下面的原名挪到第二页.

@@ -363,7 +363,7 @@
     <string name="settings_player_fullscreen_button_description">總是顯示播放器右下角的切換全螢幕按鈕，方便切換</string>
     <string name="settings_player_video_enhancement_default">畫質增強預設狀態</string>
     <string name="settings_player_video_enhancement_default_description">設定每次進入播放器時使用的畫質增強模式</string>
-    <string name="settings_player_frame_preview">顯示進度條畫面預覽</string>
+    <string name="settings_player_frame_preview">拖動進度條時顯示畫面預覽</string>
     <string name="settings_player_frame_preview_description">懸停或拖動進度條時，顯示目標位置的影片畫面</string>
     <string name="settings_player_enable_regex_filter">啟用正則彈幕過濾器</string>
     <string name="settings_player_pause_on_edit_danmaku">發送彈幕時自動暫停播放</string>
@@ -380,7 +380,7 @@
     <string name="settings_player_audio_time_stretch_description">變速時提供更好的音質；如遇爆音或音訊損壞可關閉</string>
     <string name="settings_player_auto_skip_op_ed">跳過 OP 和 ED</string>
     <string name="settings_player_auto_skip_op_ed_description">僅對 BT 資料源的部分資源有效</string>
-    <string name="settings_player_op_ed_skip_duration">OP/ED 跳過時長</string>
+    <string name="settings_player_op_ed_skip_duration">快轉按鈕的秒數</string>
     <string name="settings_player_op_ed_skip_duration_seconds">%1$d 秒</string>
     <string name="settings_player_auto_switch_media_on_error">播放失敗時自動切換資源</string>
     <string name="settings_player_hls_ad_filter">過濾貼片廣告</string>
@@ -1380,7 +1380,7 @@
     <string name="settings_app_ignore_battery_optimizations_description">可以幫助保持在背景運行。可能增加耗電</string>
     <string name="settings_app_notification_settings">通知設定</string>
     <string name="settings_app_open_settings">開啟設定</string>
-    <string name="settings_app_danmaku_refresh_rate">彈幕刷新率</string>
+    <string name="settings_app_danmaku_refresh_rate">播放時螢幕刷新率</string>
     <string name="settings_player_exoplayer_preinit_effect_graph">預先載入畫質增強著色器</string>
     <string name="settings_player_exoplayer_preinit_effect_graph_desc">啟用此選項後，即使預設未啟用畫質增強也會載入對應的著色器，切換畫質增強選項時便可立即生效，否則可能需要重新播放才會生效。\n如果遇到黑畫面或系統功能無法生效（例如動態補償），請關閉此選項。</string>
     <string name="settings_log_share_today_log_file">分享當日日誌檔案</string>

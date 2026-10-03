@@ -90,6 +90,11 @@
     <string name="settings_player_idle_progress_bar_off">不顯示</string>
     <string name="settings_player_pause_on_scrub">拖動進度條時暫停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遙控器選位置時先暫停畫面，按確認鍵從選中處播放；關閉後邊播邊選</string>
+    <string name="settings_player_start_playback_speed">播放倍速</string>
+    <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
+    <string name="settings_player_start_playback_speed_remember">記住上次</string>
+    <string name="settings_player_op_ed_skip_duration_description">播放器裡「快進 N 秒」按鈕一次跳多遠，用來手動跳過 OP、ED。上面的「跳過 OP 和 ED」按章節跳，不看這一項</string>
+    <string name="settings_app_danmaku_refresh_rate_description">進入播放頁時把螢幕切到這個刷新率，退出後恢復；自動 = 不切換，由系統決定</string>
     <string name="settings_player_up_next_tip">片尾提示下一集</string>
     <string name="settings_player_up_next_tip_description">快播完時自動展開選集條並選中下一集，按確認鍵立刻播、按返回鍵關掉</string>
     <string name="settings_player_up_next_tip_off">不提示</string>
@@ -227,8 +232,8 @@
     <string name="tv_onboarding_theme_confirm_details_hint">直接打開詳情頁</string>
     <string name="tv_onboarding_theme_colors">顏色</string>
     <string name="tv_onboarding_theme_blur">模糊背景</string>
-    <string name="tv_onboarding_theme_blur_details">詳情頁</string>
-    <string name="tv_onboarding_theme_blur_wall">海報牆</string>
+    <string name="tv_onboarding_theme_blur_on">開</string>
+    <string name="tv_onboarding_theme_blur_off">關</string>
     <string name="tv_onboarding_phone_title">用手機操作</string>
     <string name="settings_network_proxy_overall_detecting_progress">正在檢測連接 · 已完成 %1$d/%2$d</string>
     <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->
@@ -436,10 +441,10 @@
     <string name="settings_theme_tv_remote_reset_confirm">確定重設地址嗎？正在用目前地址的頁面和書籤都要重新掃碼。</string>
     <string name="settings_theme_tv_schedule_layout">新番時間表版式 (電視)</string>
     <string name="settings_theme_tv_schedule_layout_description">選擇電視上新番時間表的版式。</string>
-    <string name="settings_theme_tv_hero_blur_backdrop">海報牆模糊背景 (電視)</string>
-    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜尋頁在海報上按確定後，整頁底下鋪上這部的模糊背景圖，右上角的大圖照舊；再按確定時背景變清晰再進詳情頁。只在「海報上按確定」選「先看簡介」時有用；選不模糊則底下是純色，從大圖放大進詳情頁。新番時間表的背景也按這一檔糊 (選不模糊時按中)</string>
-    <string name="settings_theme_tv_details_blur_backdrop">詳情頁模糊背景 (電視)</string>
-    <string name="settings_theme_tv_details_blur_backdrop_description">詳情頁翻過第一屏後，底下換成這部背景圖的模糊版，上面的字更清楚；越輕越看得出原圖。選不模糊照舊是淡下去的原圖</string>
+    <string name="settings_theme_tv_backdrop_blur">模糊背景 (電視)</string>
+    <string name="settings_theme_tv_backdrop_blur_description">整頁底下鋪這部作品大圖的模糊版，海報牆與詳情頁按搭配一起選：海報牆按確定後（「海報上按確定」選「先看簡介」時）和新番時間表用海報牆那一檔（時間表選不模糊時按中），詳情頁翻過第一屏後用詳情頁那一檔。海報牆重、詳情頁輕最好看：卡片牆後面的底不搶眼，詳情頁還認得出畫面。選不模糊時海報牆從大圖放大進詳情頁，詳情頁的大圖清晰地淡在後面</string>
+    <string name="settings_theme_tv_backdrop_blur_pair">海報牆%1$s、詳情頁%2$s</string>
+    <string name="settings_theme_tv_backdrop_blur_both">都%1$s</string>
     <string name="settings_theme_tv_title_logo">標題 logo (電視)</string>
     <string name="settings_theme_tv_title_logo_description">探索、追番、搜尋頁上方、詳情頁第一屏和播放器左上角，用 TMDB 上這部的標題 logo 代替文字標題，沒有 logo 的照舊顯示文字。logo 壓在背景上看不清時：自動調色會把黑白灰的部分翻色，或在背後加一點柔光；顯示文字則是列表頁或詳情頁只要有一處看不清，這部各處都換成文字</string>
     <string name="settings_theme_tv_title_logo_language">標題 logo 語言 (電視)</string>
@@ -450,6 +455,8 @@
     <string name="settings_theme_tv_title_logo_text">看不清時顯示文字</string>
     <string name="settings_theme_tv_title_logo_original">不調色</string>
     <string name="settings_theme_tv_title_logo_off">不顯示</string>
+    <string name="settings_theme_mode_black">純黑</string>
+    <string name="settings_app_nsfw_content_description">探索、追番、搜尋和 Web 控制台裡的成人向條目怎麼顯示</string>
     <string name="subject_details_tv_title_logo_dialog_title">選擇標題 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">選這部在%1$s下用哪張，選好立刻換上，同時回報給維護者，審核通過後所有人換上。對的那張不在下面，就選最後一格「列表裡沒有」</string>
     <string name="subject_details_tv_title_logo_qr_hint">掃碼看 TMDB 上的全部 logo</string>

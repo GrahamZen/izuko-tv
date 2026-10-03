@@ -44,18 +44,16 @@ import me.him188.ani.app.ui.lang.settings_theme_dynamic_subject
 import me.him188.ani.app.ui.lang.settings_theme_dynamic_subject_description
 import me.him188.ani.app.ui.lang.settings_theme_frosted_glass
 import me.him188.ani.app.ui.lang.settings_theme_frosted_glass_description
-import me.him188.ani.app.ui.lang.settings_theme_high_contrast
-import me.him188.ani.app.ui.lang.settings_theme_high_contrast_description
 import me.him188.ani.app.ui.lang.settings_theme_palette
 import me.him188.ani.app.ui.lang.settings_theme_title
 import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_light
 import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_medium
 import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_none
 import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_strong
-import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop
-import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
-import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_both
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_backdrop_blur_pair
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_auto
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_description
@@ -99,9 +97,11 @@ fun SettingsScope.ThemeGroup(
     Group(
         title = { Text(stringResource(Lang.settings_theme_title)) },
     ) {
+        // 深色模式与高对比度 (纯黑) 合成一个四选一面板: 高对比度只在深色下起作用, 单拎一个开关时三种组合里有一种是空的
         DarkModeSelectPanel(
             currentMode = themeSettings.darkMode,
-            onModeSelected = { state.update(themeSettings.copy(darkMode = it)) },
+            blackBackground = themeSettings.useBlackBackground,
+            onSelected = { mode, black -> state.update(themeSettings.copy(darkMode = mode, useBlackBackground = black)) },
             modifier = Modifier.padding(vertical = SettingsScope.itemVerticalSpacing),
         )
 
@@ -115,15 +115,6 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_dynamic_colors_description)) },
             )
         }
-
-        SwitchItem(
-            checked = themeSettings.useBlackBackground,
-            onCheckedChange = { checked ->
-                state.update(themeSettings.copy(useBlackBackground = checked))
-            },
-            title = { Text(stringResource(Lang.settings_theme_high_contrast)) },
-            description = { Text(stringResource(Lang.settings_theme_high_contrast_description)) },
-        )
 
         // 播放页本来就恒为深色的形态 (遥控器) 上这条开关按下去什么都不会变, 见 EpisodePage 里
         // `alwaysDarkInEpisodePage || forceDarkInPlayer`
@@ -219,25 +210,19 @@ fun SettingsScope.ThemeGroup(
                 description = { Text(stringResource(Lang.settings_theme_tv_poster_confirm_description)) },
             )
 
-            // 海报墙的模糊背景 (见 ThemeSettings.tvWallBackdropBlur): 不模糊 = hero 态铺纯色底、从大图放大进详情页.
-            // 新番时间表的背景也按这一档, 所以「直接播放 / 直接进详情页」时也能改
+            // 模糊背景 (见 ThemeSettings.tvWallBackdropBlur / tvDetailsBackdropBlur): 海报墙 (连新番时间表) 与详情页两处按搭配一起选 ——
+            // 海报墙的底糊重一点不抢眼, 详情页同一张图糊轻一点认得出画面, 两处要的程度不同, 合成一档就搭不出来.
+            // 存着的搭配不在预设里 (以前分开选过) 时也列在最后, 不改它就一直是它
             DropdownItem(
-                selected = { themeSettings.tvWallBackdropBlur },
-                values = { TvBackdropBlurLevel.entries },
-                itemText = { Text(stringResource(it.labelRes)) },
-                onSelect = { state.update(themeSettings.copy(tvWallBackdropBlur = it)) },
-                title = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_hero_blur_backdrop_description)) },
-            )
-
-            // 详情页翻离首屏后的模糊底 (见 ThemeSettings.tvDetailsBackdropBlur), 与海报墙那一档各选各的
-            DropdownItem(
-                selected = { themeSettings.tvDetailsBackdropBlur },
-                values = { TvBackdropBlurLevel.entries },
-                itemText = { Text(stringResource(it.labelRes)) },
-                onSelect = { state.update(themeSettings.copy(tvDetailsBackdropBlur = it)) },
-                title = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop_description)) },
+                selected = { themeSettings.backdropBlurCombo },
+                values = {
+                    val current = themeSettings.backdropBlurCombo
+                    if (current in TV_BACKDROP_BLUR_COMBOS) TV_BACKDROP_BLUR_COMBOS else TV_BACKDROP_BLUR_COMBOS + current
+                },
+                itemText = { Text(it.label()) },
+                onSelect = { state.update(themeSettings.copy(tvWallBackdropBlur = it.wall, tvDetailsBackdropBlur = it.details)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_backdrop_blur)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_backdrop_blur_description)) },
             )
 
             // hero 标题换成 TMDB 的标题 logo, 看不清时怎么办 (见 ThemeSettings.tvTitleLogoDisplay)
@@ -351,7 +336,30 @@ private fun ColorButton(
     )
 }
 
-/** 模糊背景四档的名字 (海报墙与详情页两项共用). */
+/** 模糊背景的一种搭配: 海报墙 (连新番时间表) 那一档 [wall] 与详情页那一档 [details]. */
+private data class TvBackdropBlurCombo(val wall: TvBackdropBlurLevel, val details: TvBackdropBlurLevel)
+
+private val ThemeSettings.backdropBlurCombo: TvBackdropBlurCombo
+    get() = TvBackdropBlurCombo(tvWallBackdropBlur, tvDetailsBackdropBlur)
+
+/** 设置里给的搭配: 不模糊 / 海报墙重、详情页轻 (默认) / 海报墙中、详情页轻 / 都轻 / 都中 / 都重. */
+private val TV_BACKDROP_BLUR_COMBOS = listOf(
+    TvBackdropBlurCombo(TvBackdropBlurLevel.None, TvBackdropBlurLevel.None),
+    TvBackdropBlurCombo(TvBackdropBlurLevel.Strong, TvBackdropBlurLevel.Light),
+    TvBackdropBlurCombo(TvBackdropBlurLevel.Medium, TvBackdropBlurLevel.Light),
+    TvBackdropBlurCombo(TvBackdropBlurLevel.Light, TvBackdropBlurLevel.Light),
+    TvBackdropBlurCombo(TvBackdropBlurLevel.Medium, TvBackdropBlurLevel.Medium),
+    TvBackdropBlurCombo(TvBackdropBlurLevel.Strong, TvBackdropBlurLevel.Strong),
+)
+
+@Composable
+private fun TvBackdropBlurCombo.label(): String = when {
+    wall == TvBackdropBlurLevel.None && details == TvBackdropBlurLevel.None -> stringResource(Lang.settings_theme_tv_backdrop_blur_none)
+    wall == details -> stringResource(Lang.settings_theme_tv_backdrop_blur_both, stringResource(wall.labelRes))
+    else -> stringResource(Lang.settings_theme_tv_backdrop_blur_pair, stringResource(wall.labelRes), stringResource(details.labelRes))
+}
+
+/** 模糊背景四档的名字. */
 private val TvBackdropBlurLevel.labelRes: StringResource
     get() = when (this) {
         TvBackdropBlurLevel.None -> Lang.settings_theme_tv_backdrop_blur_none

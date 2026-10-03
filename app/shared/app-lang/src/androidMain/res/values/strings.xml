@@ -377,7 +377,7 @@
     <string name="settings_player_fullscreen_button_description">Always show the fullscreen toggle button in the lower-right corner of the player, for easy switching</string>
     <string name="settings_player_video_enhancement_default">Default video enhancement mode</string>
     <string name="settings_player_video_enhancement_default_description">Choose the video enhancement mode used when entering the player</string>
-    <string name="settings_player_frame_preview">Show frame preview on the progress bar</string>
+    <string name="settings_player_frame_preview">Show a frame preview when dragging the progress bar</string>
     <string name="settings_player_frame_preview_description">Show the video frame at the target position when hovering over or dragging the progress bar</string>
     <string name="settings_player_enable_regex_filter">Enable regex danmaku filter</string>
     <string name="settings_player_pause_on_edit_danmaku">Automatically pause playback when sending a danmaku</string>
@@ -394,7 +394,7 @@
     <string name="settings_player_audio_time_stretch_description">Better sound quality at non-1x speeds. Turn off if you hear crackling or corrupted audio</string>
     <string name="settings_player_auto_skip_op_ed">Skip OP and ED</string>
     <string name="settings_player_auto_skip_op_ed_description">Only works for some resources from BT data sources</string>
-    <string name="settings_player_op_ed_skip_duration">OP/ED skip duration</string>
+    <string name="settings_player_op_ed_skip_duration">Forward button length</string>
     <string name="settings_player_op_ed_skip_duration_seconds">%1$d seconds</string>
     <string name="settings_player_auto_switch_media_on_error">Automatically switch resources on playback failure</string>
     <string name="settings_player_hls_ad_filter">Filter inserted ads</string>
@@ -1387,7 +1387,7 @@
     <string name="settings_app_ignore_battery_optimizations_description">Helps keep the app running in the background. May increase battery use</string>
     <string name="settings_app_notification_settings">Notification settings</string>
     <string name="settings_app_open_settings">Open settings</string>
-    <string name="settings_app_danmaku_refresh_rate">Danmaku refresh rate</string>
+    <string name="settings_app_danmaku_refresh_rate">Screen refresh rate during playback</string>
     <string name="settings_player_exoplayer_preinit_effect_graph">Preload video enhancement shaders</string>
     <string name="settings_player_exoplayer_preinit_effect_graph_desc">When enabled, video enhancement shaders are loaded even if video enhancement is disabled by default, allowing changes to video enhancement options to take effect immediately. Otherwise, you may need to restart playback for them to take effect.\nDisable this option if the screen turns black or system features (such as motion compensation) stop working.</string>
     <string name="settings_log_share_today_log_file">Share today’s log file</string>

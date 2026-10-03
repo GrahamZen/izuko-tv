@@ -35,37 +35,44 @@ import me.him188.ani.app.ui.foundation.text.ProvideContentColor
 import me.him188.ani.app.ui.foundation.theme.appColorScheme
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_theme_mode_auto
+import me.him188.ani.app.ui.lang.settings_theme_mode_black
 import me.him188.ani.app.ui.lang.settings_theme_mode_dark
 import me.him188.ani.app.ui.lang.settings_theme_mode_light
 import org.jetbrains.compose.resources.stringResource
 
+/**
+ * 深色模式四选一: 浅色 / 深色 / 纯黑 / 自动. 纯黑 = 深色 + [blackBackground] (高对比度, ThemeSettings.useBlackBackground, 只在深色下起作用),
+ * 所以深色拆成两格; 浅色与自动不改 [blackBackground] (自动在系统深色时照它画). [onSelected] 一次给出两个值.
+ */
 @Composable
 fun DarkModeSelectPanel(
     currentMode: DarkMode,
-    onModeSelected: (DarkMode) -> Unit,
+    blackBackground: Boolean,
+    onSelected: (mode: DarkMode, blackBackground: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val panelModifier = Modifier.size(96.dp, 146.dp)
 
-    val themePanelItem: @Composable (DarkMode) -> Unit = {
+    @Composable
+    fun themePanelItem(mode: DarkMode, black: Boolean) {
         ColorSchemePreviewItem(
-            onClick = { onModeSelected(it) },
+            onClick = { onSelected(mode, black) },
             panel = {
-                if (it != DarkMode.AUTO) {
+                if (mode != DarkMode.AUTO) {
                     ThemePreviewPanel(
-                        colorScheme = appColorScheme(isDark = it == DarkMode.DARK),
+                        colorScheme = appColorScheme(useBlackBackground = black, isDark = mode == DarkMode.DARK),
                         modifier = panelModifier,
                     )
                 } else {
                     DiagonalMixedThemePreviewPanel(
                         leftTopColorScheme = appColorScheme(isDark = false),
-                        rightBottomColorScheme = appColorScheme(isDark = true),
+                        rightBottomColorScheme = appColorScheme(useBlackBackground = black, isDark = true),
                         modifier = panelModifier,
                     )
                 }
             },
-            text = { Text(renderThemeModeText(it)) },
-            selected = currentMode == it,
+            text = { Text(renderThemeModeText(mode, black)) },
+            selected = currentMode == mode && (mode != DarkMode.DARK || blackBackground == black),
         )
     }
 
@@ -76,9 +83,10 @@ fun DarkModeSelectPanel(
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
     ) {
-        themePanelItem(DarkMode.LIGHT)
-        themePanelItem(DarkMode.DARK)
-        themePanelItem(DarkMode.AUTO)
+        themePanelItem(DarkMode.LIGHT, blackBackground)
+        themePanelItem(DarkMode.DARK, black = false)
+        themePanelItem(DarkMode.DARK, black = true)
+        themePanelItem(DarkMode.AUTO, blackBackground)
     }
 }
 
@@ -122,10 +130,10 @@ private fun ColorSchemePreviewItem(
 }
 
 @Composable
-private fun renderThemeModeText(mode: DarkMode): String {
+private fun renderThemeModeText(mode: DarkMode, black: Boolean): String {
     return when (mode) {
         DarkMode.LIGHT -> stringResource(Lang.settings_theme_mode_light)
-        DarkMode.DARK -> stringResource(Lang.settings_theme_mode_dark)
+        DarkMode.DARK -> stringResource(if (black) Lang.settings_theme_mode_black else Lang.settings_theme_mode_dark)
         DarkMode.AUTO -> stringResource(Lang.settings_theme_mode_auto)
     }
 }
