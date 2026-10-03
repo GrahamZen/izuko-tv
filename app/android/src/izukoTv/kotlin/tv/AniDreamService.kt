@@ -64,6 +64,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.android.activity.UiScaleMirror
 import me.him188.ani.android.activity.withUiScale
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
@@ -247,6 +249,8 @@ class AniDreamService : DreamService() {
             candidates[item.bangumiId] = info
         }
 
+        // NSFW 作品在设置不是「显示」时不放 (屏保整屏铺剧照, 打码没有意义, 见 SubjectNsfw)
+        candidates.values.removeAll { SubjectNsfw.modeOf(it.subjectId) != NsfwMode.DISPLAY }
         return coroutineScope {
             candidates.values.map { info ->
                 async {

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -460,14 +461,18 @@ private fun <T : Any> TvNativeGridPageHostContent(
         }
     }
 
+    // NSFW 设为模糊时按卡片 / hero 的条目 id 打码 (见 withNsfw): 各页只管给卡片填 subjectId
+    val nsfw = rememberNsfwPolicy()
+    val shownCards = remember(cards, nsfw.snapshot) { cards.withNsfw(nsfw) }
+    val shownSource = source?.withNsfw(nsfw)
     val view = state.view
     SideEffect {
         if (view != null) {
             val previous = view.currentKey as? Int
             val direction = if (previous == null || previous == gridKey) 0 else slideDirection(previous, gridKey)
             view.showGrid(gridKey, direction, animated = visualEffects.transitions)
-            view.setCards(gridKey, cards)
-            source?.let { view.setSource(it) }
+            view.setCards(gridKey, shownCards)
+            shownSource?.let { view.setSource(it) }
         }
     }
     // 返回本页时恢复在 hero 态 (直接到位); 没有 hero 态 (「海报上按确定」改成了别的档) 时撤掉存着的 hero 态, 返回键不再先回卡片墙
@@ -534,9 +539,11 @@ private fun <T : Any> TvNativeGridPageHostContent(
 @Composable
 private fun TvNativeWallBackdropEffects(state: TvNativeGridPageState, view: TvNativeGridPageView?, spec: TvNativeWallBackdropSpec?) {
     val currentSpec by rememberUpdatedState(spec)
+    // NSFW 设为模糊时不对焦变清晰 (见 withNsfw); 快照读, 设置一变重发
+    val nsfw = rememberNsfwPolicy()
     LaunchedEffect(view, spec != null) {
         if (view == null || spec == null) return@LaunchedEffect
-        snapshotFlow { currentSpec?.target?.invoke() }.collect { view.setWallTarget(it) }
+        snapshotFlow { currentSpec?.target?.invoke()?.withNsfw(nsfw) }.collect { view.setWallTarget(it) }
     }
     LaunchedEffect(view) {
         if (view == null) return@LaunchedEffect

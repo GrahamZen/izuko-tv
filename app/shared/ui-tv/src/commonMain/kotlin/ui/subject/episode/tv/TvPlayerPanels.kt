@@ -121,6 +121,7 @@ import me.him188.ani.app.ui.comment.UICommentReaction
 import me.him188.ani.app.ui.comment.UICommentSource
 import me.him188.ani.app.ui.comment.UIRichText
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -141,16 +142,16 @@ import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
-import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
 import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
-import me.him188.ani.app.ui.subject.episode.details.DanmakuSourceChips
-import me.him188.ani.app.ui.subject.episode.details.DanmakuTimeShiftDialog
-import me.him188.ani.app.ui.subject.episode.details.components.renderDanmakuServiceId
+import me.him188.ani.app.ui.episode.danmaku.DanmakuSourceChips
+import me.him188.ani.app.ui.episode.danmaku.DanmakuTimeShiftDialog
+import me.him188.ani.app.ui.episode.danmaku.renderDanmakuServiceId
 import me.him188.ani.app.ui.subject.episode.statistics.DanmakuStatistics
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuLocation
@@ -704,9 +705,11 @@ private fun TvRecommendationsPanel(
     // null = 还没拿到 (加载中或失败), 面板留空; 空列表 = 拿到了但一条都没有, 显示空状态.
     // Bangumi 的推荐 (「看过这部的人也看过」) 对 2023 年下半年起开播的条目普遍为空, 近几年的番多半走空状态
     val loaded by vm.episodeDetailsState.recommendations
-    val recommendations = loaded.orEmpty()
+    // NSFW 设为隐藏时去掉、模糊时封面打码 (见 NsfwPolicy)
+    val nsfw = rememberNsfwPolicy()
+    val recommendations = nsfw.visible(loaded.orEmpty()) { it.subjectId?.toInt() ?: -1 }
     TvPanelList(listState, overlay, focusedIndex, modifier) {
-        if (loaded?.isEmpty() == true) {
+        if (loaded != null && recommendations.isEmpty()) {
             item("recommendations_empty") {
                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     // 放不下就换行, 不截断
@@ -759,6 +762,7 @@ private fun TvRecommendationsPanel(
                         contentDescription = null,
                         Modifier
                             .size(width = 52.dp, height = 72.dp),
+                        downsampleLongEdgePx = recommendation.subjectId?.toInt()?.let { nsfw.coverDownsample(it) },
                     )
                     Column(Modifier.weight(1f)) {
                         // 单行, 放不下时聚焦跑马灯 (与选集卡片同规矩)
@@ -1322,8 +1326,8 @@ private fun TvCharactersPanel(
     // 进屏预载失败过 (或还没轮到) 时这里补一次; 已加载好就什么都不做
     LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
     val uiState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsUIState.Placeholder(detailsState.subjectId))
-    val details = (uiState as? SubjectDetailsUIState.Ok)?.value ?: return
+        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
+    val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
     val characters = details.charactersPager.collectAsLazyPagingItemsWithLifecycle()
     val onClickCharacter = rememberPeopleClickHandler()
     TvPanelList(listState, overlay, focusedIndex, modifier) {
@@ -1373,19 +1377,20 @@ internal fun TvPlayerPeopleViewAllDialog(
     val detailsState = vm.episodeDetailsState
     LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
     val uiState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsUIState.Placeholder(detailsState.subjectId))
-    val details = (uiState as? SubjectDetailsUIState.Ok)?.value ?: return
+        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
+    val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
+    val detailsUiState by details.uiState.collectAsStateWithLifecycle()
     when (panel) {
         TvPlayerPanel.CHARACTERS -> CharactersViewAllDialog(
             allCharacters = details.charactersPager.collectAsLazyPagingItemsWithLifecycle(),
-            totalCharactersCount = details.totalCharactersCountState.value,
+            totalCharactersCount = detailsUiState.totalCharactersCount,
             onDismissRequest = onDismissRequest,
             onBeforeOpenPreview = onOpenPreview,
         )
 
         TvPlayerPanel.STAFF -> StaffViewAllDialog(
             allStaff = details.staffPager.collectAsLazyPagingItemsWithLifecycle(),
-            totalStaffCount = details.totalStaffCountState.value,
+            totalStaffCount = detailsUiState.totalStaffCount,
             onDismissRequest = onDismissRequest,
             onBeforeOpenPreview = onOpenPreview,
         )
@@ -1408,8 +1413,8 @@ private fun TvStaffPanel(
     val detailsState = vm.episodeDetailsState
     LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
     val uiState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsUIState.Placeholder(detailsState.subjectId))
-    val details = (uiState as? SubjectDetailsUIState.Ok)?.value ?: return
+        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
+    val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
     val staff = details.staffPager.collectAsLazyPagingItemsWithLifecycle()
     val onClickPerson = rememberPeopleClickHandler()
     TvPanelList(listState, overlay, focusedIndex, modifier) {

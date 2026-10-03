@@ -456,7 +456,7 @@
     <string name="settings_theme_tv_title_logo_original">不調色</string>
     <string name="settings_theme_tv_title_logo_off">不顯示</string>
     <string name="settings_theme_mode_black">純黑</string>
-    <string name="settings_app_nsfw_content_description">探索、追番、搜尋和 Web 控制台裡的成人向條目怎麼顯示</string>
+    <string name="settings_app_nsfw_content_description">成人向作品在所有頁面和 Web 控制台裡怎麼顯示：隱藏 = 各處列表裡都不出現；模糊 = 封面和背景圖打碼。緩存和播放記錄裡的不刪，隱藏和模糊都打碼；電視主畫面的推薦行和螢幕保護程式裡只要不是「顯示」就不放</string>
     <string name="subject_details_tv_title_logo_dialog_title">選擇標題 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">選這部在%1$s下用哪張，選好立刻換上，同時回報給維護者，審核通過後所有人換上。對的那張不在下面，就選最後一格「列表裡沒有」</string>
     <string name="subject_details_tv_title_logo_qr_hint">掃碼看 TMDB 上的全部 logo</string>

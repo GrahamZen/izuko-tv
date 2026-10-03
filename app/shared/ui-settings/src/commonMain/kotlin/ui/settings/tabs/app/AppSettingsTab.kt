@@ -375,7 +375,7 @@ fun SettingsScope.AppearanceGroup(
 
     LanguageSettingsPlatform(state)
 
-    // 不止搜索: 探索、追番与 Web 控制台也按它 (存在 searchSettings 里是沿用的字段位置)
+    // 管所有页面与 Web 控制台 (见 SubjectNsfw / NsfwPolicy); 存在 searchSettings 里是沿用的字段位置
     DropdownItem(
         selected = { uiSettings.searchSettings.nsfwMode },
         values = { NsfwMode.entries },

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.network.mapper
 
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.RatingCounts
 import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
@@ -49,6 +50,7 @@ fun BangumiNextSubject.toEntity(
     relations: SubjectRelations = SubjectRelations.Empty,
 ): SubjectCollectionEntity {
     val airDate = PackedDate.parseFromDate(airtime.date)
+    SubjectNsfw.record(id, nsfw)
     return SubjectCollectionEntity(
         subjectId = id,
         name = name,

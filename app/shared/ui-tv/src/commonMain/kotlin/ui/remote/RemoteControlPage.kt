@@ -6307,7 +6307,7 @@ private val CACHE_LIST_SCRIPT = """
           (function () {
             // 番名那一块: 右滑露出「缓存」(打开这部番的缓存面板, 同搜索结果 / 播放记录的右滑); 左滑露出「全部删除」(同下面每一集的左滑删除,
             // 先确认; 里面有正在播的那一集时确认框多说一句)
-            var top = '<div class="cl-top sw-row' + (g.cover ? ' cv" data-art="' + art : '') + '">' +
+            var top = '<div class="cl-top sw-row' + (g.blur ? ' nsfw-blur' : '') + (g.cover ? ' cv" data-art="' + art : '') + '">' +
               (g.cover ? window.coverLayers(g.cover) : '') +
               '<div class="cl-head"><div class="cl-title"' + (g.id ? ' data-open="' + g.id + '"' : '') + '>' + esc(g.title) + '</div>' +
               '</div><div class="cl-meta">' + esc(g.meta) + '</div>' +
@@ -7946,7 +7946,7 @@ private val HISTORY_SCRIPT = """
         '<button type="button" class="sw-btn cache" data-cache="' + x.id + '" data-title="' + esc(x.title) + '">' +
           window.ICONS.download + T('缓存') + '</button>',
         '<button type="button" class="sw-btn del" data-hdel="' + x.id + '">' + window.ICONS.trash + T('删除') + '</button>',
-        '<div class="item hist-item' + (imgs.length ? ' cv' : '') + '" data-sid="' + x.id + '" data-lp="' + x.id + '">' +
+        '<div class="item hist-item' + (imgs.length ? ' cv' : '') + (x.blur ? ' nsfw-blur' : '') + '" data-sid="' + x.id + '" data-lp="' + x.id + '">' +
         (imgs.length ? window.coverLayers(imgs) : '') + '<span class="sel-mark" aria-hidden="true"></span>' +
         '<div class="hist-main"><span class="t">' + esc(x.title) + '</span><span class="m">' + esc(x.line) + '</span>' +
         (x.percent != null ? '<div class="hist-bar"><div style="width:' + x.percent + '%"></div></div>' : '') +
