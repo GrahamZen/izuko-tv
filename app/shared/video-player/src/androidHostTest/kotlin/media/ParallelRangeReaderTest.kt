@@ -146,6 +146,31 @@ class ParallelRangeReaderTest {
     }
 
     @Test
+    fun `chunks start small after opening and double each round up to the chunk size`() {
+        val server = FakeServer()
+        val reader = ParallelRangeReader(server, executor, connections = 2, chunkSize = 1000, firstChunkSize = 250)
+        assertEquals(content.size.toLong(), reader.open(0, -1))
+        assertContentEquals(content, reader.readAll())
+        // 关之前取速度小结 (分块下载时才有)
+        assertTrue(reader.throughputSummary(1000)?.startsWith("downloaded ") == true)
+        reader.close()
+        // 每轮 2 块: 250, 250, 500, 500, 然后都是 1000 (最后一块是剩下的)
+        // 各块在不同线程上打开, 先后不定: 按位置排
+        val lengths = server.opened.sortedBy { it.first }.map { it.second }
+        assertEquals(listOf(250L, 250L, 500L, 500L, 1000L, 1000L), lengths.take(6))
+        assertTrue(lengths.drop(4).dropLast(1).all { it == 1000L }, "later chunks use the full size: $lengths")
+
+        // 跳到中间再打开 (同播放器跳转): 又从小块开始
+        val again = FakeServer()
+        val seeking = ParallelRangeReader(again, executor, connections = 2, chunkSize = 1000, firstChunkSize = 250)
+        assertEquals(content.size - 5000L, seeking.open(5000, -1))
+        assertContentEquals(content.copyOfRange(5000, content.size), seeking.readAll())
+        seeking.close()
+        // 不知道读到哪又不是从头时第一次请求不封口, 这一块只取 250; 第二块也是 250
+        assertEquals(listOf(5000L to -1L, 5250L to 250L, 5500L to 500L), again.opened.sortedBy { it.first }.take(3))
+    }
+
+    @Test
     fun `closing mid-download stops the chunks and closes their connections on the download threads`() {
         // 每块 1000 字节, 每次读 10 字节, 4 块同时在下
         val server = FakeServer(perRead = 10)
