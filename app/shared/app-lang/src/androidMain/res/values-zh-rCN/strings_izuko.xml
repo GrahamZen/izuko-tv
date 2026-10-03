@@ -52,6 +52,11 @@
     <string name="settings_player_idle_progress_bar_off">不显示</string>
     <string name="settings_player_pause_on_scrub">拖动进度条时暂停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遥控器选位置时先暂停画面，按确认键从选中处播放；关闭后边播边选</string>
+    <string name="settings_player_start_playback_speed">播放倍速</string>
+    <string name="settings_player_start_playback_speed_description">每次进入播放器时的倍速。最左一格「记住上次」：在播放器里调过的倍速跨剧集、重启保持</string>
+    <string name="settings_player_start_playback_speed_remember">记住上次</string>
+    <string name="settings_player_op_ed_skip_duration_description">播放器里「快进 N 秒」按钮一次跳多远，用来手动跳过 OP、ED。上面的「跳过 OP 和 ED」按章节跳，不看这一项</string>
+    <string name="settings_app_danmaku_refresh_rate_description">进入播放页时把屏幕切到这个刷新率，退出后恢复；自动 = 不切换，由系统决定</string>
     <string name="settings_player_up_next_tip">片尾提示下一集</string>
     <string name="settings_player_up_next_tip_description">快播完时自动展开选集条并选中下一集，按确认键立刻播、按返回键关掉</string>
     <string name="settings_player_up_next_tip_off">不提示</string>
@@ -184,10 +189,10 @@
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
     <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
     <string name="settings_theme_tv_schedule_layout_description">选择电视上新番时间表的版式。</string>
-    <string name="settings_theme_tv_hero_blur_backdrop">海报墙模糊背景 (电视)</string>
-    <string name="settings_theme_tv_hero_blur_backdrop_description">探索、追番、搜索页在海报上按确定后，整页底下铺上这部的模糊背景图，右上角的大图照旧；再按确定时背景变清晰再进详情页。只在「海报上按确定」选「先看简介」时有用；选不模糊则底下是纯色，从大图放大进详情页。新番时间表的背景也按这一档糊 (选不模糊时按中)</string>
-    <string name="settings_theme_tv_details_blur_backdrop">详情页模糊背景 (电视)</string>
-    <string name="settings_theme_tv_details_blur_backdrop_description">详情页翻过第一屏后，底下换成这部背景图的模糊版，上面的字更清楚；越轻越看得出原图。选不模糊照旧是淡下去的原图</string>
+    <string name="settings_theme_tv_backdrop_blur">模糊背景 (电视)</string>
+    <string name="settings_theme_tv_backdrop_blur_description">整页底下铺这部作品大图的模糊版，海报墙与详情页按搭配一起选：海报墙按确定后（「海报上按确定」选「先看简介」时）和新番时间表用海报墙那一档（时间表选不模糊时按中），详情页翻过第一屏后用详情页那一档。海报墙重、详情页轻最好看：卡片墙后面的底不抢眼，详情页还认得出画面。选不模糊时海报墙从大图放大进详情页，详情页的大图清晰地淡在后面</string>
+    <string name="settings_theme_tv_backdrop_blur_pair">海报墙%1$s、详情页%2$s</string>
+    <string name="settings_theme_tv_backdrop_blur_both">都%1$s</string>
     <string name="settings_theme_tv_title_logo">标题 logo (电视)</string>
     <string name="settings_theme_tv_title_logo_description">探索、追番、搜索页上方、详情页第一屏和播放器左上角，用 TMDB 上这部的标题 logo 代替文字标题，没有 logo 的照旧显示文字。logo 压在背景上看不清时：自动调色会把黑白灰的部分翻色，或在背后加一点柔光；显示文字则是列表页或详情页只要有一处看不清，这部各处都换成文字</string>
     <string name="settings_theme_tv_title_logo_language">标题 logo 语言 (电视)</string>
@@ -198,6 +203,8 @@
     <string name="settings_theme_tv_title_logo_text">看不清时显示文字</string>
     <string name="settings_theme_tv_title_logo_original">不调色</string>
     <string name="settings_theme_tv_title_logo_off">不显示</string>
+    <string name="settings_theme_mode_black">纯黑</string>
+    <string name="settings_app_nsfw_content_description">探索、追番、搜索和 Web 控制台里的成人向条目怎么显示</string>
     <string name="subject_details_tv_title_logo_dialog_title">选择标题 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">选这部在%1$s下用哪张，选好立刻换上，同时报给维护者，审核通过后所有人换上。对的那张不在下面，就选最后一格「列表里没有」</string>
     <string name="subject_details_tv_title_logo_qr_hint">扫码看 TMDB 上的全部 logo</string>
@@ -373,8 +380,8 @@
     <string name="tv_onboarding_theme_confirm_details_hint">直接打开详情页</string>
     <string name="tv_onboarding_theme_colors">颜色</string>
     <string name="tv_onboarding_theme_blur">模糊背景</string>
-    <string name="tv_onboarding_theme_blur_details">详情页</string>
-    <string name="tv_onboarding_theme_blur_wall">海报墙</string>
+    <string name="tv_onboarding_theme_blur_on">开</string>
+    <string name="tv_onboarding_theme_blur_off">关</string>
     <string name="tv_onboarding_phone_title">用手机操作</string>
     <string name="settings_network_proxy_overall_detecting_progress">正在检测连接 · 已完成 %1$d/%2$d</string>
     <!-- 多用户: 选人页、切换 / 添加 / 改名 / 删除用户 -->

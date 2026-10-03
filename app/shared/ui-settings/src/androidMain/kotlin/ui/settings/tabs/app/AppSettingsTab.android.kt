@@ -24,6 +24,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.SupportedLocales
 import me.him188.ani.app.ui.lang.renderLocale
 import me.him188.ani.app.ui.lang.settings_app_danmaku_refresh_rate
+import me.him188.ani.app.ui.lang.settings_app_danmaku_refresh_rate_description
 import me.him188.ani.app.ui.lang.settings_app_language
 import me.him188.ani.app.ui.lang.settings_theme_mode_auto
 import me.him188.ani.app.ui.settings.framework.SettingsState
@@ -97,6 +98,7 @@ actual fun SettingsScope.PlayerGroupPlatform(
             title = {
                 Text(stringResource(Lang.settings_app_danmaku_refresh_rate))
             },
+            description = { Text(stringResource(Lang.settings_app_danmaku_refresh_rate_description)) },
         )
     }
 }
