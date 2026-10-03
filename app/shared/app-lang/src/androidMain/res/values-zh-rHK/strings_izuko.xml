@@ -343,6 +343,8 @@
     <string name="cache_management_delete_summary_item">%1$s（%2$d 項）</string>
     <string name="cache_episode_status_merging">合併中</string>
     <string name="cache_episode_status_awaiting_bt_service">等待 BT 服務啟動</string>
+    <!-- 正在播放同一集, 缓存停着等播放结束 -->
+    <string name="cache_episode_status_waiting_for_playback">正在播放，稍後繼續</string>
     <string name="subject_details_nav_home">主頁</string>
     <string name="subject_details_load_retrying">網絡較慢，第 %1$d/%2$d 次嘗試…</string>
     <string name="subject_details_relation_summary">總集篇</string>

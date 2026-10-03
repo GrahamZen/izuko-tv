@@ -107,6 +107,8 @@ open class KtorHttpDownloader(
     private val m3u8Parser: M3u8Parser = DefaultM3u8Parser,
     parentScope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 所有下载共用的吞吐闸门 (例如播放时给播放让路), 见 [DownloadThroughputGate]; `null` 表示不管. */
+    private val throughputGate: DownloadThroughputGate? = null,
 ) : HttpDownloader {
 
     protected val scope = parentScope.childScope()
@@ -968,6 +970,7 @@ open class KtorHttpDownloader(
                 while (true) {
                     // 先取令牌再读: 限速点放在读之前, 网络那头自然被 TCP 窗口顶住,
                     // 不会先把数据吞进内存再丢弃
+                    throughputGate?.acquire(buffer.size)
                     rateLimiter?.acquire(buffer.size)
                     val bytesRead = channel.readAvailable(buffer, 0, buffer.size)
                     if (bytesRead == -1) break
