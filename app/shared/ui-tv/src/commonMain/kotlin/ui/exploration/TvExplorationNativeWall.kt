@@ -57,6 +57,9 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
 import me.him188.ani.app.tools.WeekFormatter
+import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfwCards
+import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.stateOf
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
@@ -242,9 +245,11 @@ internal fun rememberTvExplorationNativeItems(
     val moreLoadingTitle = stringResource(Lang.exploration_rec_more_loading)
     val groupTitles = recRows.map { if (it.header) tvRecGroupTitle(it.group) else "" }
     val followed: List<FollowedSubjectInfo?>? = if (hasFollowed) followedItems.itemSnapshotList else null
+    // NSFW 设为模糊时封面打码 (见 withNsfwCards; 隐藏的在数据那头已经去掉了, 见 SubjectNsfw)
+    val nsfw = rememberNsfwPolicy()
     return remember(
         hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
-        moreTitle, moreGenericTitle, moreLoadingTitle,
+        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot,
     ) {
         val result = ArrayList<TvNativeExploreItem>()
         result.add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
@@ -255,6 +260,7 @@ internal fun rememberTvExplorationNativeItems(
                         imageUrl = subject.imageLarge,
                         title = subject.displayName,
                         progress = followedCardProgress(item, playHistories),
+                        subjectId = subject.subjectId,
                     )
                 }
             }
@@ -264,7 +270,7 @@ internal fun rememberTvExplorationNativeItems(
         recRows.forEachIndexed { recRow, row ->
             if (row.header) result.add(TvNativeExploreItem.Header(tvRecHeaderKey(recRow), groupTitles[recRow]))
             val cards: List<TvNativeCard?> = List(row.size) { i ->
-                recFlat.getOrNull(row.start + i)?.let { TvNativeCard(imageUrl = it.imageLarge, title = it.nameCn) }
+                recFlat.getOrNull(row.start + i)?.let { TvNativeCard(imageUrl = it.imageLarge, title = it.nameCn, subjectId = it.bangumiId) }
             }
             // 「更多」卡接在一组的最后一行末尾 (能接着推荐的组都是一组一行; 切成多行的只有匿名推荐, 它不接)
             val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
@@ -285,7 +291,7 @@ internal fun rememberTvExplorationNativeItems(
             }
             result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), if (more != null) cards + more else cards))
         }
-        result
+        result.withNsfwCards(nsfw)
     }
 }
 
@@ -521,9 +527,13 @@ internal fun TvExplorationNativeSources(
     val card = tvExplorationNativeSource(
         heroPipeline, cardRaw(), cardDisplay(), cardText(), infoCache, episodeStillCache, summaryFallbackCache, playHistories,
     )
+    // NSFW 设为模糊时背景打码 (见 withNsfw)
+    val nsfw = rememberNsfwPolicy()
+    val shownCarousel = carousel.withNsfw(nsfw)
+    val shownCard = card.withNsfw(nsfw)
     val view = state.view
     SideEffect {
-        view?.setSources(carousel.copy(autoAdvanced = autoAdvanced()), card)
+        view?.setSources(shownCarousel.copy(autoAdvanced = autoAdvanced()), shownCard)
     }
 }
 

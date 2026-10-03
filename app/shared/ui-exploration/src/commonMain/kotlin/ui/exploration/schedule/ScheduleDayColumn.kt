@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.packInts
 import kotlinx.datetime.LocalTime
 import me.him188.ani.app.ui.external.placeholder.placeholder
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.layout.paddingIfNotEmpty
@@ -132,6 +133,8 @@ fun ScheduleDayColumn(
                                     "$subjectTitle 封面",
                                     Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
+                                    // NSFW 设为模糊时打码 (见 NsfwPolicy)
+                                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(item.subjectId),
                                 )
                             },
                             time = {

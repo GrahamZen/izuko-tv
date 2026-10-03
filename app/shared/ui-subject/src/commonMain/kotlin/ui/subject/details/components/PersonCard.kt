@@ -66,6 +66,8 @@ fun PersonCard(
     relation: String,
     modifier: Modifier = Modifier,
     actorName: String? = null,
+    /** 头像 / 封面打码 (NSFW 作品的封面, 见 NsfwPolicy.coverDownsample); null = 不打. */
+    avatarDownsampleLongEdgePx: Int? = null,
 ) {
     Row(modifier) {
         Row(
@@ -73,7 +75,10 @@ fun PersonCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.clip(MaterialTheme.shapes.small).size(48.dp)) {
-                AvatarImage(avatarUrl, Modifier.matchParentSize(), alignment = Alignment.TopCenter)
+                AvatarImage(
+                    avatarUrl, Modifier.matchParentSize(), alignment = Alignment.TopCenter,
+                    downsampleLongEdgePx = avatarDownsampleLongEdgePx,
+                )
             }
 
             Column(

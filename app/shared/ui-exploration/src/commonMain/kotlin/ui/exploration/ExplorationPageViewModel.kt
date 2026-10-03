@@ -9,6 +9,9 @@
 
 package me.him188.ani.app.ui.exploration
 
+import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import androidx.compose.runtime.Stable
 import androidx.paging.CombinedLoadStates
 import androidx.paging.LoadState
@@ -71,6 +74,7 @@ open class ExplorationPageViewModel(private val koin: Koin = GlobalKoin) : Abstr
             .map { pagingData ->
                 pagingData.flatMap { it.subjects.take(TrendsRepository.HERO_CAROUSEL_SIZE) }
             }
+            .withoutHiddenNsfw { it.bangumiId }
             .cachedIn(backgroundScope)
             .launchAsLazyPagingItemsIn(backgroundScope),
 //        TrendingSubjectsState(
@@ -80,19 +84,16 @@ open class ExplorationPageViewModel(private val koin: Koin = GlobalKoin) : Abstr
 //                .map { it.subjects }
 //                .produceState(null),
 //        ),
-        followedSubjectsPager = combine(
-            settingsRepository.uiSettings.flow.map { it.searchSettings.nsfwMode },
-            followedSubjectsRepository.followedSubjectsPager().restartable(followedSubjectsRestarter),
-        ) { nsfwMode, subjects ->
-            if (nsfwMode != NsfwMode.HIDE) return@combine subjects
-            subjects.filter { !it.subjectInfo.nsfw }
-        }.cachedIn(backgroundScope).launchAsLazyPagingItemsIn(backgroundScope),
+        followedSubjectsPager = followedSubjectsRepository.followedSubjectsPager().restartable(followedSubjectsRestarter)
+            .withoutHiddenNsfw { it.subjectInfo.subjectId }
+            .cachedIn(backgroundScope).launchAsLazyPagingItemsIn(backgroundScope),
         onRefreshFollowedSubjects = { followedSubjectsRestarter.restart() },
         onShuffleRecommendations = { recommendationRepository.requestRefresh(force = true) },
         // 推荐只读 Room 缓存, 进页零请求; 重算是另一条线, 见下面的 requestRefresh
         recommendationPager = recommendationRepository.recommendedSubjectsPager()
             .cachedIn(backgroundScope).launchAsLazyPagingItemsIn(backgroundScope),
         recommendationGroups = recommendationRepository.recommendationGroups()
+            .withoutHiddenNsfwItems()
             .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList()),
         recommendationsRefreshing = recommendationRepository.isRefreshing,
         recommendationsRefreshProgress = recommendationRepository.refreshProgress,
@@ -174,3 +175,26 @@ private fun LazyPagingItems<*>.refreshLoadStates(): Flow<LoadState> = callbackFl
     addLoadStateListener(listener)
     awaitClose { removeLoadStateListener(listener) }
 }.distinctUntilChanged()
+
+/** 推荐的各组去掉设置为隐藏的 NSFW 作品 (见 SubjectNsfw); 去空了的组整组不要. */
+private fun Flow<List<RecommendationGroup>>.withoutHiddenNsfwItems(): Flow<List<RecommendationGroup>> =
+    combine(SubjectNsfw.mode, SubjectNsfw.ids, this) { mode, hidden, groups ->
+        if (mode != NsfwMode.HIDE) return@combine groups
+        groups.mapNotNull { group ->
+            val items = group.items.filterNot { it.bangumiId in hidden }
+            when {
+                items.isEmpty() -> null
+                items.size == group.items.size && group.peek?.bangumiId !in hidden -> group
+                else -> RecommendationGroup(
+                    kind = group.kind,
+                    titleArg = group.titleArg,
+                    items = items,
+                    key = group.key,
+                    seedSubjectId = group.seedSubjectId,
+                    extendable = group.extendable,
+                    moreImageUrl = group.moreImageUrl,
+                    peek = group.peek?.takeUnless { it.bangumiId in hidden },
+                )
+            }
+        }
+    }

@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import dev.chrisbanes.haze.rememberHazeState
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.data.models.person.CharacterDetailsInfo
 import me.him188.ani.app.data.models.person.CharacterSubjectInfo
 import me.him188.ani.app.data.models.person.InfoboxRowInfo
@@ -583,7 +584,10 @@ private fun PersonStrips(
                 val items = remember(snapshot) {
                     snapshot.map { work ->
                         work?.let {
-                            PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.positions.firstNotNullOfOrNull { p -> p.nameCn })
+                            PosterRowItem(
+                                it.subject.imageLarge, it.subject.displayName, it.positions.firstNotNullOfOrNull { p -> p.nameCn },
+                                subjectId = it.subject.subjectId,
+                            )
                         }
                     }
                 }
@@ -631,6 +635,7 @@ private fun PersonStrips(
                 avatarUrl = work.subject.imageLarge,
                 name = work.subject.displayName,
                 relation = work.positions.mapNotNull { it.nameCn }.distinct().joinToString("、"),
+                avatarDownsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(work.subject.subjectId),
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.small)
                     .clickable { navigation.onClickSubject(work.subject) },
@@ -751,7 +756,9 @@ private fun CharacterStrips(
             {
                 val snapshot = subjects.itemSnapshotList
                 val items = remember(snapshot) {
-                    snapshot.map { item -> item?.let { PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.role.nameCn) } }
+                    snapshot.map { item ->
+                        item?.let { PosterRowItem(it.subject.imageLarge, it.subject.displayName, it.role.nameCn, subjectId = it.subject.subjectId) }
+                    }
                 }
                 rows.PosterRow(
                     items,
@@ -781,6 +788,7 @@ private fun CharacterStrips(
                 avatarUrl = item.subject.imageLarge,
                 name = item.subject.displayName,
                 relation = item.role.nameCn,
+                avatarDownsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(item.subject.subjectId),
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.small)
                     .clickable { navigation.onClickSubject(item.subject) },
