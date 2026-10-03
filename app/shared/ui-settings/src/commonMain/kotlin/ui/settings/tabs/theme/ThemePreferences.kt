@@ -27,6 +27,8 @@ import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
+import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
+import me.him188.ani.app.data.models.preference.TvTitleLogoLanguage
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
@@ -54,6 +56,16 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop
 import me.him188.ani.app.ui.lang.settings_theme_tv_details_blur_backdrop_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop
 import me.him188.ani.app.ui.lang.settings_theme_tv_hero_blur_backdrop_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_auto
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_language
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_language_app
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_language_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_language_original
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_off
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_original
+import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_text
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
@@ -227,6 +239,46 @@ fun SettingsScope.ThemeGroup(
                 title = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop)) },
                 description = { Text(stringResource(Lang.settings_theme_tv_details_blur_backdrop_description)) },
             )
+
+            // hero 标题换成 TMDB 的标题 logo, 看不清时怎么办 (见 ThemeSettings.tvTitleLogoDisplay)
+            DropdownItem(
+                selected = { themeSettings.tvTitleLogoDisplay },
+                values = { TvTitleLogoDisplay.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                TvTitleLogoDisplay.Auto -> Lang.settings_theme_tv_title_logo_auto
+                                TvTitleLogoDisplay.TextWhenUnreadable -> Lang.settings_theme_tv_title_logo_text
+                                TvTitleLogoDisplay.Original -> Lang.settings_theme_tv_title_logo_original
+                                TvTitleLogoDisplay.Off -> Lang.settings_theme_tv_title_logo_off
+                            },
+                        ),
+                    )
+                },
+                onSelect = { state.update(themeSettings.copy(tvTitleLogoDisplay = it)) },
+                title = { Text(stringResource(Lang.settings_theme_tv_title_logo)) },
+                description = { Text(stringResource(Lang.settings_theme_tv_title_logo_description)) },
+            )
+            if (themeSettings.tvTitleLogoDisplay != TvTitleLogoDisplay.Off) {
+                DropdownItem(
+                    selected = { themeSettings.tvTitleLogoLanguage },
+                    values = { TvTitleLogoLanguage.entries },
+                    itemText = {
+                        Text(
+                            stringResource(
+                                when (it) {
+                                    TvTitleLogoLanguage.Original -> Lang.settings_theme_tv_title_logo_language_original
+                                    TvTitleLogoLanguage.AppLanguage -> Lang.settings_theme_tv_title_logo_language_app
+                                },
+                            ),
+                        )
+                    },
+                    onSelect = { state.update(themeSettings.copy(tvTitleLogoLanguage = it)) },
+                    title = { Text(stringResource(Lang.settings_theme_tv_title_logo_language)) },
+                    description = { Text(stringResource(Lang.settings_theme_tv_title_logo_language_description)) },
+                )
+            }
 
             // 三档 (见 TvVisualEffectsLevel). 写 tvVisualEffects 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔
             DropdownItem(

@@ -53,8 +53,8 @@ class TvNativeHeroTextVibrancyTest {
     @AfterTest
     fun tearDown() = host.close()
 
-    /** 行的顺序: 标题, 信息行 (星 / 评分 / 那一串), 下一集行, 简介. */
-    private val title: TextView get() = heroText.getChildAt(0) as TextView
+    /** 行的顺序: 标题位 (标题文字 / logo), 信息行 (星 / 评分 / 那一串), 下一集行, 简介. */
+    private val title: TextView get() = (heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView
     private val rating: TextView get() = (heroText.getChildAt(1) as ViewGroup).getChildAt(1) as TextView
     private val meta: TextView get() = (heroText.getChildAt(1) as ViewGroup).getChildAt(2) as TextView
     private val summary: TextView get() = heroText.getChildAt(3) as TextView

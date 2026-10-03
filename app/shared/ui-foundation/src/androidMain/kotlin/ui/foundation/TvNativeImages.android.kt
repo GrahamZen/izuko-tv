@@ -21,6 +21,7 @@ import com.github.panpf.sketch.disposeLoad
 import com.github.panpf.sketch.request.ImageRequest
 import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.transform.BlurTransformation
+import com.github.panpf.sketch.transform.Transformation
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropDecodeAtOriginalSize
 
 /**
@@ -115,6 +116,64 @@ object TvNativeImages {
             )
         }
         sketch.enqueue(request)
+    }
+
+    /**
+     * 标题 logo (TMDB 的透明底 PNG, 宽高比不定): 按显示大小 [widthPx] × [heightPx] 等比解 (Fit), 解完在解码线程上做 [transformation]
+     * (按底色调 logo 的明暗, 见调用方), 不淡入 (logo 与文字标题怎么切换由调用方排版). [onSuccess] 在主线程回调: [transformation] 真的改了图没有,
+     * 与解出的位图 (取不到时 null); [onError] 在主线程回调加载失败.
+     */
+    fun loadLogo(
+        sketch: Sketch,
+        view: ImageView,
+        url: String,
+        widthPx: Int,
+        heightPx: Int,
+        transformation: Transformation?,
+        onSuccess: (transformed: Boolean, bitmap: Bitmap?) -> Unit,
+        onError: () -> Unit,
+    ) {
+        val request = ImageRequest(view, url) {
+            configureLogo(widthPx, heightPx, transformation)
+            addListener(
+                onError = { _, _ -> onError() },
+                onSuccess = { _, result -> onSuccess(!result.transformeds.isNullOrEmpty(), result.image.asBitmapOrNull()) },
+            )
+        }
+        sketch.enqueue(request)
+    }
+
+    /**
+     * 提前把 [loadLogo] 要的那张 logo 解进内存缓存 (参数相同就是同一个缓存键), 不上屏: 换内容时旧字还在淡出, 先解好新的, 进场时当场上屏.
+     */
+    fun preloadLogo(sketch: Sketch, context: Context, url: String, widthPx: Int, heightPx: Int, transformation: Transformation?) {
+        sketch.enqueue(ImageRequest(context, url) { configureLogo(widthPx, heightPx, transformation) })
+    }
+
+    /**
+     * 取 [loadLogo] 那张 logo 的原图 (不变换, 与原样显示的那张同一个缓存键), 不上屏 (量格子颜色用). [onResult] 在主线程回调解出的位图,
+     * 失败为 null.
+     */
+    fun fetchLogo(sketch: Sketch, context: Context, url: String, widthPx: Int, heightPx: Int, onResult: (Bitmap?) -> Unit) {
+        val request = ImageRequest(context, url) {
+            configureLogo(widthPx, heightPx, null)
+            addListener(
+                onError = { _, _ -> onResult(null) },
+                onSuccess = { _, result -> onResult(result.image.asBitmapOrNull()) },
+            )
+        }
+        sketch.enqueue(request)
+    }
+
+    private fun ImageRequest.Builder.configureLogo(widthPx: Int, heightPx: Int, transformation: Transformation?) {
+        configureAniImageRequest(
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.BottomStart,
+            requestSize = IntSize(widthPx, heightPx).toAniImageRequestSize(),
+        )
+        if (transformation != null) transformations(transformation)
+        crossfade(false)
+        allowNullImage(true)
     }
 
     /** 取消 [view] 上在途的请求并清掉图 (图层整个撤掉时用). */
