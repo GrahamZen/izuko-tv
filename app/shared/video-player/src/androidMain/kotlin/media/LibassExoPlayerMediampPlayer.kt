@@ -30,6 +30,8 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
@@ -95,7 +97,12 @@ class LibassExoPlayerMediampPlayer private constructor(
         parentCoroutineContext: CoroutineContext,
         audioTimeStretch: ExoPlayerAudioTimeStretch = ExoPlayerAudioTimeStretch.HighQualityWsola,
         proxyConfig: () -> PlaybackProxyConfig? = { null },
-    ) : this(context, parentCoroutineContext, audioTimeStretch, LibassMediaSourcePipeline(context, proxyConfig))
+    ) : this(
+        context,
+        parentCoroutineContext,
+        audioTimeStretch,
+        LibassMediaSourcePipeline(context, parentCoroutineContext, proxyConfig),
+    )
 
     private constructor(
         context: Context,
@@ -197,6 +204,7 @@ class LibassExoPlayerMediampPlayer private constructor(
                 ) {
                     // media3 的语义正是我们要的: "自设置输出面 / 渲染器重置 / 换流以来的第一帧"
                     _hasFrameOnCurrentSurface.value = true
+                    pipeline.onFirstFrameRendered()
                 }
 
                 override fun onVideoDecoderReleased(
@@ -427,6 +435,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         clearVideoDataSpaceIfOwned() // Surface 归 UI 所有, 可能比播放器活得久, 交还再走
         scheduleDataSpaceClearRetry(attemptsLeft = 3)
         backgroundScope.cancel()
+        pipeline.close() // 在 assHandler.release 之前: 后台补的字体不再往里加
         exoPlayer.removeListener(assHandler)
         assHandler.release()
         exoMediampPlayer.close()
@@ -443,8 +452,10 @@ class LibassExoPlayerMediampPlayer private constructor(
 @AndroidxOptIn(UnstableApi::class)
 private class LibassMediaSourcePipeline(
     private val context: Context,
+    parentCoroutineContext: CoroutineContext,
     private val proxyConfig: () -> PlaybackProxyConfig?,
 ) {
+    private val scope = CoroutineScope(parentCoroutineContext + SupervisorJob(parentCoroutineContext[Job.Key]))
     val assHandler = AssHandler(
         // 画在视频上面单独一层 GL 视图里 (LiftableAssSubtitleView), 控制层出现时下半部分能挪开
         renderType = AssRenderType.OVERLAY_OPEN_GL,
@@ -461,13 +472,29 @@ private class LibassMediaSourcePipeline(
     // 给它, 用来决定要不要把 dataspace 直接写到 Surface 上 (NVIDIA h264 硬解不理 MediaFormat).
     var onVideoFormat: ((androidx.media3.common.Format) -> Unit)? = null
 
+    /** 当前媒体推迟读的字体附件 (见 [FontDeferringMkvExtractor]); 只在主线程读写. */
+    private var deferredFonts: DeferredMkvFonts? = null
+
     // withColorInfoRepair: 色彩三项不全时 Shield 不设视频层 dataspace, 留着的垃圾撞上 ST2084 位
     // 就变假 HDR. 包在 MediaSource 出口是为了覆盖所有入口 (progressive/HLS/兜底默认源),
     // 详见 ColorInfoRepair.kt
     fun intercept(defaultSource: MediaSource, data: MediaData): MediaSource {
+        deferredFonts?.cancel()
+        deferredFonts = null
         loadControl.throttled = data is UriMediaData && parallelConnectionsOf(data) != null
         return (createLibassMediaSource(data) ?: defaultSource)
             .withColorInfoRepair(onVideoFormat = { onVideoFormat?.invoke(it) })
+    }
+
+    /** 当前媒体出了第一帧: 推迟的字体附件可以开始读了. */
+    fun onFirstFrameRendered() {
+        deferredFonts?.onFirstFrameRendered()
+    }
+
+    fun close() {
+        deferredFonts?.cancel()
+        deferredFonts = null
+        scope.cancel()
     }
 
     /** 解析器要求并发几路 (见 [PlaybackRequestHints.PARALLEL_RANGE_HEADER]); 没要求时为 null. */
@@ -538,9 +565,24 @@ private class LibassMediaSourcePipeline(
                 .setSubtitleParserFactory(subtitleParserFactory)
                 .createMediaSource(mediaItem)
         }
-        return DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        // 网盘直链限速时, mkv 开头的大段字体附件推迟到出画面后再读
+        val extractors = if (data is UriMediaData && parallelConnectionsOf(data) != null) {
+            val fonts = DeferredMkvFonts(Uri.parse(data.uri), dataSourceFactory, assHandler, scope)
+            deferredFonts = fonts
+            fontDeferringExtractorsFactory(fonts)
+        } else {
+            extractorsFactory
+        }
+        return DefaultMediaSourceFactory(dataSourceFactory, extractors)
             .setSubtitleParserFactory(subtitleParserFactory)
             .createMediaSource(mediaItem)
+    }
+
+    /** 与 [extractorsFactory] 相同, 但 mkv 用 [FontDeferringMkvExtractor]. */
+    private fun fontDeferringExtractorsFactory(fonts: DeferredMkvFonts) = ExtractorsFactory {
+        extractorsFactory.createExtractors().map { extractor ->
+            if (extractor is MatroskaExtractor) FontDeferringMkvExtractor(subtitleParserFactory, assHandler, fonts) else extractor
+        }.toTypedArray()
     }
 
     /** 与 [DefaultMediaSourceFactory] 判断 HLS 的方式相同 (按地址后缀). */
