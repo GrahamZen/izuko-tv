@@ -36,7 +36,6 @@ import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCase
 import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
-import me.him188.ani.app.domain.search.isExplicitR18
 import me.him188.ani.app.domain.search.withNsfwFilter
 import me.him188.ani.app.domain.search.withYearFilter
 import me.him188.ani.app.ui.exploration.search.SearchFilterState
@@ -86,7 +85,9 @@ open class SearchViewModel(
     private val searchState = PagingSearchState(
         createPager = { scope ->
             val rawQuery = queryFlow.value.normalized()
-            val query = rawQuery.withNsfwFilter(nsfwSettingFlow.value)
+            // NSFW 模式按建 pager 那刻取快照 (见 nsfwSettingFlow). 设置管所有页面 (见 SubjectNsfw): 点 R18 标签进来也照设置隐藏或模糊
+            val nsfwMode = nsfwSettingFlow.value
+            val query = rawQuery.withNsfwFilter(nsfwMode)
 
             subjectSearchRepository.searchSubjects(
                 searchQuery = query,
@@ -100,20 +101,14 @@ open class SearchViewModel(
                     SubjectPreviewItemInfo.compute(
                         subject.subjectInfo,
                         subject.mainEpisodeCount,
-                        // 主动选择 R18 标签时不模糊 NSFW 条目, HIDE 除外
-                        nsfwModeSettings = if (rawQuery.isExplicitR18 && nsfwMode != NsfwMode.HIDE) {
-                            NsfwMode.DISPLAY
-                        } else {
-                            nsfwMode
-                        },
+                        nsfwModeSettings = nsfwMode,
                         relatedPersonList = subject.lightSubjectRelations.lightRelatedPersonInfoList,
                         characters = subject.lightSubjectRelations.lightRelatedCharacterInfoList,
                     )
                 }
                     // 选了"隐藏 NSFW"就真的别列出来: 请求里已经带了 filter.nsfw=false, 但服务端的搜索
                     // 与条目接口对 NSFW 的口径并不一致 (搜到的条目点进去可能 404), 客户端再兜一道.
-                    // compute 把非 NSFW 条目的 nsfwMode 记为 DISPLAY, 所以这里只会滤掉真正的 NSFW 条目;
-                    // 点 R18 标签进来时 explicitR18 已把模式换成 DISPLAY, 不受影响.
+                    // compute 把非 NSFW 条目的 nsfwMode 记为 DISPLAY, 所以这里只会滤掉真正的 NSFW 条目.
                     // 判据与手机控制台的搜索结果一致 (见 RemoteSearchResults).
                     .filter { it.nsfwMode != NsfwMode.HIDE }
             }.cachedIn(scope)

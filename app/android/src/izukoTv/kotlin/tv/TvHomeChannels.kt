@@ -24,11 +24,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.network.TrendsRepository
@@ -87,8 +89,9 @@ object TvHomeChannels {
         val appContext = context.applicationContext
         koin.get<SubjectCollectionRepository>()
             .mostRecentlyUpdatedSubjectCollectionsFlow(WATCH_NEXT_LIMIT, listOf(UnifiedCollectionType.DOING))
-            // 只取卡片真正用到的字段: 看一集、刷新一次都会让上游重新发射, 而那些变化与这一行无关
-            .map { list -> list.mapNotNull { it.toWatchNextEntry() } }
+            // 只取卡片真正用到的字段: 看一集、刷新一次都会让上游重新发射, 而那些变化与这一行无关.
+            // NSFW 设置一变也重算 (见 toWatchNextEntry)
+            .combine(SubjectNsfw.mode) { list, _ -> list.mapNotNull { it.toWatchNextEntry() } }
             .distinctUntilChanged()
             .collectLatest { entries ->
                 runCatching {
@@ -114,10 +117,13 @@ object TvHomeChannels {
         val lastEngagementTimeMillis: Long,
     )
 
-    /** 没有海报的条目不写进主屏 (卡片会是一块空白). */
+    /**
+     * 没有海报的条目不写进主屏 (卡片会是一块空白). NSFW 作品在设置不是「显示」时也不写: 主屏是系统画的, 打不了码 (见 SubjectNsfw).
+     */
     private fun SubjectCollectionInfo.toWatchNextEntry(): WatchNextEntry? {
         val subject = subjectInfo
         if (subject.imageLarge.isBlank()) return null
+        if (SubjectNsfw.modeOf(subject.subjectId) != NsfwMode.DISPLAY) return null
         return WatchNextEntry(
             subjectId = subject.subjectId,
             title = subject.displayName,
@@ -161,7 +167,10 @@ object TvHomeChannels {
      * 自建"热门动画"预览频道: 全量重写 (先删本频道旧节目再插入, 免去 diff).
      */
     private suspend fun updateTrendingChannel(context: Context, koin: Koin) {
-        val trending = koin.get<TrendsRepository>().getTrendsInfo().subjects.take(TRENDING_LIMIT)
+        // NSFW 作品在设置不是「显示」时不放 (主屏打不了码, 见 SubjectNsfw)
+        val trending = koin.get<TrendsRepository>().getTrendsInfo().subjects
+            .filter { SubjectNsfw.modeOf(it.bangumiId) == NsfwMode.DISPLAY }
+            .take(TRENDING_LIMIT)
         if (trending.isEmpty()) return
 
         // 热门列表只有海报和名字, 简介逐个从服务器补 (失败留空, 不影响卡片展示)

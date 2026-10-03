@@ -27,6 +27,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.media.cache.MediaCache
@@ -325,6 +327,8 @@ internal object RemoteCacheList {
                     // 番名那块的竖版封面底图, 候选同搜索结果 / 播放记录 (见 remoteCoverCandidates)
                     if (g.first().subjectId > 0) {
                         putJsonArray("cover") { remoteCoverCandidates(g.first().subjectId, null).forEach { add(it) } }
+                        // NSFW 作品的封面糊着画 (自己下的东西不藏, 同电视, 见 NsfwPolicy.ownedCoverDownsample)
+                        if (SubjectNsfw.modeOf(g.first().subjectId) != NsfwMode.DISPLAY) put("blur", true)
                     }
                     put("title", names[g.first().subjectId] ?: subjectTitle(m))
                     val size = g.sumOf { it.totalBytes ?: 0L }
