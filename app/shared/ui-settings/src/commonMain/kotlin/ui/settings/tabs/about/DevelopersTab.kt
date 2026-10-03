@@ -54,6 +54,7 @@ import me.him188.ani.app.ui.lang.settings_developers_server_development
 import me.him188.ani.app.ui.lang.settings_developers_view_more_on_github
 import me.him188.ani.app.ui.lang.settings_developers_website_development
 import me.him188.ani.app.ui.settings.Res
+import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.settings.btmuli
 import me.him188.ani.app.ui.settings.generalk1ng
 import me.him188.ani.app.ui.settings.him188
@@ -223,7 +224,7 @@ fun DevelopersTab(
         ListItem(
             headlineContent = { Text(stringResource(Lang.settings_developers_view_more_on_github)) },
             modifier = Modifier.clickable {
-                uriHandler.openUri("https://github.com/open-ani/animeko/graphs/contributors")
+                uriHandler.openUri("${AniHelperDestination.GITHUB_HOME}/graphs/contributors")
             },
             trailingContent = {
                 Icon(Icons.Rounded.ArrowOutward, null)
