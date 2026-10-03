@@ -197,8 +197,8 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
 import me.him188.ani.app.ui.lang.tv_onboarding_step_theme
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur
-import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur_details
-import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur_wall
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur_off
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur_on
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_colors
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_details_hint
@@ -1089,22 +1089,25 @@ internal fun ThemeStep(
                 },
                 onSelect = { mode -> onUpdate { copy(darkMode = mode) } },
             )
-            // 两处各一个开关: 详情页翻离首屏后的底 / 海报墙按确定后的底 (后者只对「先看简介」有用, 另两档时那一格隐去)
-            ToggleGroup(
+            // 模糊背景 (海报墙与详情页各一档, 见 ThemeSettings.tvWallBackdropBlur) 只给开关: 关 = 两处都不模糊; 开 = 原来开着的搭配不动,
+            // 原来全关着的开成默认搭配 (海报墙重、详情页轻; 搭配在设置里选)
+            ChoiceGroup(
                 stringResource(Lang.tv_onboarding_theme_blur),
-                listOf(
-                    ToggleOption(
-                        stringResource(Lang.tv_onboarding_theme_blur_details),
-                        checked = theme.tvDetailsBackdropBlur != TvBackdropBlurLevel.None,
-                        onToggle = { onUpdate { copy(tvDetailsBackdropBlur = tvDetailsBackdropBlur.toggled()) } },
-                    ),
-                    ToggleOption(
-                        stringResource(Lang.tv_onboarding_theme_blur_wall),
-                        checked = theme.tvWallBackdropBlur != TvBackdropBlurLevel.None,
-                        onToggle = { onUpdate { copy(tvWallBackdropBlur = tvWallBackdropBlur.toggled()) } },
-                        visible = confirm == TvPosterConfirmAction.Hero,
-                    ),
-                ),
+                options = listOf(true, false),
+                selected = theme.backdropBlurOn,
+                text = { stringResource(if (it) Lang.tv_onboarding_theme_blur_on else Lang.tv_onboarding_theme_blur_off) },
+                onSelect = { on ->
+                    onUpdate {
+                        when {
+                            !on -> copy(tvWallBackdropBlur = TvBackdropBlurLevel.None, tvDetailsBackdropBlur = TvBackdropBlurLevel.None)
+                            backdropBlurOn -> this
+                            else -> copy(
+                                tvWallBackdropBlur = ThemeSettings.Default.tvWallBackdropBlur,
+                                tvDetailsBackdropBlur = ThemeSettings.Default.tvDetailsBackdropBlur,
+                            )
+                        }
+                    }
+                },
             )
             ChoiceGroup(
                 stringResource(Lang.settings_theme_tv_visual_effects),
@@ -1342,33 +1345,9 @@ private fun <T> ChoiceGroup(
     }
 }
 
-/** 一组开关: 上面一行名字, 下面一排胶囊, 每格各管一项 (打勾 = 开, 按确定切换). 胶囊同 [ChoiceGroup]. */
-@Composable
-private fun ToggleGroup(label: String, options: List<ToggleOption>) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (option in options) {
-                Box(Modifier.alpha(if (option.visible) 1f else 0f)) {
-                    ChoiceChip(option.text, selected = option.checked, enabled = option.visible, onClick = option.onToggle)
-                }
-            }
-        }
-    }
-}
-
-/** 引导里的模糊背景只给开关: 关 = 不模糊, 开 = 默认的中档 (程度在设置里选). */
-private fun TvBackdropBlurLevel.toggled(): TvBackdropBlurLevel =
-    if (this == TvBackdropBlurLevel.None) TvBackdropBlurLevel.Medium else TvBackdropBlurLevel.None
-
-/** [ToggleGroup] 的一格. [visible] = false 时隐去且不可聚焦, 位置照留. */
-private class ToggleOption(
-    val text: String,
-    val checked: Boolean,
-    val onToggle: () -> Unit,
-    val visible: Boolean = true,
-)
+/** 引导里的模糊背景开关: 海报墙或详情页有一处模糊就算开. */
+private val ThemeSettings.backdropBlurOn: Boolean
+    get() = tvWallBackdropBlur != TvBackdropBlurLevel.None || tvDetailsBackdropBlur != TvBackdropBlurLevel.None
 
 /** 胶囊选项: 示焦同 [ModeOption]; 选中的前面打勾 (勾的位置一直留着, 换了选中宽度不变). */
 @Composable
