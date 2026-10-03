@@ -157,7 +157,7 @@ fun EpisodeVideoLoadingIndicator(
  * 播放器上报得很勤, 不取整的话缓冲提示每报一次都要重组. 播放器不支持 [Buffering] 或报不出 (负数) 时为 `null`.
  */
 @OptIn(ExperimentalMediampApi::class)
-private fun MediampPlayer.bufferedAheadMillisFlow(): Flow<Long?> {
+internal fun MediampPlayer.bufferedAheadMillisFlow(): Flow<Long?> {
     val buffering = features[Buffering] ?: return flowOf(null)
     return combine(buffering.bufferedPositionMillis, currentPositionMillis) { buffered, current ->
         if (buffered < 0) {

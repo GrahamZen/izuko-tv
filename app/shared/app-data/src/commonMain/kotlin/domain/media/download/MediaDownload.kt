@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import me.him188.ani.app.domain.media.cache.MediaCache
@@ -79,6 +80,10 @@ data class DownloadSnapshot(
      * 传输停着在等 BT 服务连上. 见 [MediaCache.isAwaitingTorrentService].
      */
     val awaitingTorrentService: Boolean = false,
+    /**
+     * 正在播放同一集, 停着等播放结束再接着下. 见 [MediaDownloadManager.waitingForPlayback].
+     */
+    val waitingForPlayback: Boolean = false,
 ) {
     val isBusy: Boolean get() = operation != null
     val isMerging: Boolean get() = mergeProgress != null
@@ -90,6 +95,7 @@ data class DownloadSnapshot(
 private data class DownloadPhase(
     val mergeProgress: Progress?,
     val awaitingTorrentService: Boolean,
+    val waitingForPlayback: Boolean,
 )
 
 /**
@@ -99,6 +105,8 @@ class MediaDownload internal constructor(
     val cache: MediaCache,
     val storage: MediaCacheStorage,
     sharingScope: CoroutineScope,
+    /** 见 [MediaDownloadManager.waitingForPlayback] */
+    private val waitingForPlayback: Flow<Set<String>> = flowOf(emptySet()),
 ) {
     val id: String = cache.cacheId
     val metadata: MediaCacheMetadata get() = cache.metadata
@@ -127,8 +135,12 @@ class MediaDownload internal constructor(
                 .averageRate()
             val transfer = combine(fileStats, downloadSpeed) { stats, speed -> stats to speed }
                 .sampleWithInitial(1.seconds)
-            val phase = combine(cache.mergeProgress, cache.isAwaitingTorrentService) { mergeProgress, awaitingService ->
-                DownloadPhase(mergeProgress, awaitingService)
+            val phase = combine(
+                cache.mergeProgress,
+                cache.isAwaitingTorrentService,
+                waitingForPlayback.map { id in it }.distinctUntilChanged(),
+            ) { mergeProgress, awaitingService, waiting ->
+                DownloadPhase(mergeProgress, awaitingService, waiting)
             }
             emitAll(
                 combine(transfer, cache.state, cache.canPlay, queuedOperation, phase) { (stats, speed), state, canPlay, operation, phase ->
@@ -145,6 +157,7 @@ class MediaDownload internal constructor(
                         operation = operation,
                         mergeProgress = phase.mergeProgress,
                         awaitingTorrentService = phase.awaitingTorrentService,
+                        waitingForPlayback = phase.waitingForPlayback,
                     )
                 },
             )

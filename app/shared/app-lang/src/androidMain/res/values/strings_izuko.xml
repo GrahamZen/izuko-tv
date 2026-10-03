@@ -492,6 +492,8 @@
     <string name="cache_management_delete_summary_item">%1$s (%2$d)</string>
     <string name="cache_episode_status_merging">Merging</string>
     <string name="cache_episode_status_awaiting_bt_service">Waiting for BT service to start</string>
+    <!-- 正在播放同一集, 缓存停着等播放结束 -->
+    <string name="cache_episode_status_waiting_for_playback">Paused while this episode plays</string>
     <string name="subject_details_nav_home">Home</string>
     <string name="subject_details_no_summary">No information</string>
     <string name="subject_details_load_retrying">Slow network, attempt %1$d/%2$d…</string>

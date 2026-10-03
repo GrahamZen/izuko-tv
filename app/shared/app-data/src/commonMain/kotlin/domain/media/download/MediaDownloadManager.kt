@@ -12,6 +12,10 @@ package me.him188.ani.app.domain.media.download
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,13 +37,18 @@ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.engine.MediaStats
 import me.him188.ani.app.domain.media.cache.engine.sum
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
+import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaCacheMetadata
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+private val logger = logger<MediaDownloadManager>()
 
 /**
  * 聚合各 [MediaCacheStorage] 的持久化下载, 为每条记录维持稳定的 [MediaDownload] 实例, 提供创建、删除与查询入口. 与应用同生命周期.
@@ -47,7 +56,21 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 class MediaDownloadManager(
     val storages: List<MediaCacheStorage>,
     override val backgroundScope: CoroutineScope,
+    /** 正在播放什么; 给了就让正在播的那一集的缓存等播放结束, 见 [waitingForPlayback]. */
+    playbackActivity: PlaybackActivity? = null,
 ) : HasBackgroundScope {
+    // 要在 loadedDownloads 之前初始化: 它 Eagerly 收集, 构造 MediaDownload 时就要用到
+    private val _waitingForPlayback = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * 因为正在播放同一集而停下、等播放结束再接着下的下载 id.
+     *
+     * 播放器直接从网上拉流, 同一集再缓存等于同一个文件下两遍、互抢网速, 所以这一集的缓存 (新加的与本来在下的) 先停下,
+     * 不在放这一集了 (退出、播完、出错或换集) 就接着下; 暂停时仍排着. 只管 HTTP 缓存: BT 缓存本身就是播放的数据来源.
+     * 只恢复由这里停下的; 用户在播放期间手动继续的, 会再被停下 (排在播放之后).
+     */
+    val waitingForPlayback: StateFlow<Set<String>> = _waitingForPlayback.asStateFlow()
+
     /**
      * 每个存储都给出首个列表后才有首个元素. 存储在启动时异步恢复记录, 恢复完成前列表可能为空.
      * 相同 id 的记录只保留注册顺序靠前的一个; 离开列表的实例在此 [MediaDownload.close].
@@ -61,7 +84,7 @@ class MediaDownloadManager(
             val next = entries
                 .flatMap { (storage, caches) -> caches.map { cache -> storage to cache } }
                 .distinctBy { (_, cache) -> cache.cacheId }
-                .map { (storage, cache) -> existing[cache] ?: MediaDownload(cache, storage, backgroundScope) }
+                .map { (storage, cache) -> existing[cache] ?: MediaDownload(cache, storage, backgroundScope, _waitingForPlayback) }
             val retained = next.toHashSet()
             previous.forEach { download -> if (download !in retained) download.close() }
             next
@@ -74,6 +97,42 @@ class MediaDownloadManager(
      */
     val downloads: StateFlow<List<MediaDownload>> =
         loadedDownloads.stateIn(backgroundScope, SharingStarted.Eagerly, emptyList())
+
+    init {
+        if (playbackActivity != null) yieldToPlayback(playbackActivity)
+    }
+
+    private fun yieldToPlayback(playbackActivity: PlaybackActivity) {
+        val playingEpisode = playbackActivity.current
+            .map { playback -> playback?.let { it.subjectId.toString() to it.episodeId.toString() } }
+            .distinctUntilChanged()
+        val httpDownloadStates = loadedDownloads.flatMapLatest { list ->
+            val http = list.filter { it.engineKey == MediaCacheEngineKey.WebM3u }
+            if (http.isEmpty()) flowOf(emptyList()) else combine(http.map { d -> d.cache.state.map { d to it } }) { it.toList() }
+        }
+        backgroundScope.launch {
+            combine(playingEpisode, httpDownloadStates) { playing, states -> playing to states }.collect { (playing, states) ->
+                fun MediaDownload.isPlaying() =
+                    playing != null && metadata.subjectId == playing.first && metadata.episodeId == playing.second
+                for ((download, state) in states) {
+                    if (state == MediaCacheState.IN_PROGRESS && download.isPlaying()) {
+                        logger.info { "Pausing download ${download.id} while its episode is playing" }
+                        _waitingForPlayback.update { it + download.id }
+                        download.pause()
+                    }
+                }
+                // 不在播这一集了 (或记录已删): 由这里停下的接着下
+                val done = _waitingForPlayback.value.filter { id -> states.none { (d, _) -> d.id == id && d.isPlaying() } }
+                for (id in done) {
+                    _waitingForPlayback.update { it - id }
+                    states.firstOrNull { (d, _) -> d.id == id }?.first?.let { download ->
+                        logger.info { "Resuming download ${download.id} after playback" }
+                        download.resume()
+                    }
+                }
+            }
+        }
+    }
 
     fun downloadsForSubject(subjectId: Int): Flow<List<MediaDownload>> {
         val subjectKey = subjectId.toString()
