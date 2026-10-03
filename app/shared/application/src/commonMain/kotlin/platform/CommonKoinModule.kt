@@ -117,6 +117,8 @@ import me.him188.ani.app.domain.media.cache.engine.createCacheDownloadDispatcher
 import me.him188.ani.app.domain.media.cache.engine.KtorPersistentHttpDownloader
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.media.cache.engine.PlaybackYieldingGate
+import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
@@ -581,6 +583,9 @@ private fun KoinApplication.otherModules(
         )
     }
 
+    // 正在播放什么: 播放页上报, 缓存下载据此给播放让路
+    single { PlaybackActivity() }
+
     if (enableMediaCache) {
         single<HttpDownloader> {
             KtorPersistentHttpDownloader(
@@ -592,6 +597,8 @@ private fun KoinApplication.otherModules(
                 // 专用低优先级线程, 不与驱动界面的数据流抢协程池 (见 createCacheDownloadDispatcher)
                 ioDispatcher = createCacheDownloadDispatcher(),
                 scope = coroutineScope,
+                // 播放时按缓冲余量给播放让路
+                throughputGate = get<PlaybackActivity>().let { activity -> PlaybackYieldingGate(activity.current) { activity.currentValue } },
             )
         }
 
@@ -652,6 +659,7 @@ private fun KoinApplication.otherModules(
                     )
                 },
                 backgroundScope = coroutineScope.childScope(),
+                playbackActivity = get(),
             )
         }
     } else {

@@ -113,6 +113,8 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
 import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
+import me.him188.ani.app.domain.media.player.ActivePlayback
+import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
@@ -188,6 +190,7 @@ import me.him188.ani.app.ui.subject.episode.statistics.DanmakuStatistics
 import me.him188.ani.app.ui.subject.episode.statistics.VideoStatistics
 import me.him188.ani.app.ui.subject.episode.statistics.VideoStatisticsCollector
 import me.him188.ani.app.ui.subject.episode.video.PlayerSkipOpEdState
+import me.him188.ani.app.ui.subject.episode.video.loading.bufferedAheadMillisFlow
 import me.him188.ani.app.ui.subject.episode.video.sidesheet.EpisodeSelectorState
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -229,6 +232,7 @@ import org.koin.core.component.inject
 import org.openani.mediamp.InternalMediampApi
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.MediampPlayerFactory
+import org.openani.mediamp.PlaybackState
 import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.chapters
 import org.openani.mediamp.metadata.Chapter
@@ -323,6 +327,7 @@ open class EpisodeViewModel(
     private val playerStateFactory: MediampPlayerFactory<*> by inject()
     private val episodeCollectionRepository: EpisodeCollectionRepository by inject()
     private val downloadManager: MediaDownloadManager by inject()
+    private val playbackActivity: PlaybackActivity by inject()
     private val danmakuRepository: DanmakuRepository by inject()
     private val settingsRepository: SettingsRepository by inject()
     private val danmakuRegexFilterRepository: DanmakuRegexFilterRepository by inject()
@@ -1405,6 +1410,27 @@ open class EpisodeViewModel(
     }
 
     init {
+        // 正在播的这一集与缓冲余量: 缓存下载据此给播放让路 (见 PlaybackActivity). 播放页销毁时撤掉
+        launchInBackground {
+            try {
+                @OptIn(UnsafeEpisodeSessionApi::class)
+                combine(episodeIdFlow, player.playbackState, player.bufferedAheadMillisFlow()) { episodeId, state, ahead ->
+                    when (state) {
+                        PlaybackState.PLAYING, PlaybackState.PAUSED_BUFFERING ->
+                            ActivePlayback(subjectId, episodeId, ahead, stalled = state == PlaybackState.PAUSED_BUFFERING)
+
+                        // 还开着这一集但没在走: 这一集的缓存继续排着, 别的缓存不用让路
+                        PlaybackState.CREATED, PlaybackState.READY, PlaybackState.PAUSED ->
+                            ActivePlayback(subjectId, episodeId, bufferedAheadMillis = null, stalled = false)
+
+                        PlaybackState.FINISHED, PlaybackState.ERROR, PlaybackState.DESTROYED -> null
+                    }
+                }.distinctUntilChanged().collect { playbackActivity.update(this@EpisodeViewModel, it) }
+            } finally {
+                playbackActivity.update(this@EpisodeViewModel, null)
+            }
+        }
+
         // **新建的缓存要能出现在选源菜单里.**
         //
         // 资源列表是进这一集时做的**一次性快照** (MediaSourceMediaFetcher 的 runningFold), 之后
