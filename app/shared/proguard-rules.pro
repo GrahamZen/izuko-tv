@@ -19,6 +19,11 @@
     androidx.media3.exoplayer.mediacodec.MediaCodecInfo codecInfo;
 }
 
+# DeferredMkvFonts 补完字体后反射换掉 AssHandler 的渲染器
+-keepclassmembers class io.github.peerless2012.ass.media.AssHandler {
+    io.github.peerless2012.ass.AssRender render;
+}
+
 # Torrent4j
 -keep class org.libtorrent4j.swig.libtorrent_jni {*;}
 -keep class me.him188.ani.app.ui.settings.tabs.** {*;} # 否则设置页切换 tab 会 crash, #367
