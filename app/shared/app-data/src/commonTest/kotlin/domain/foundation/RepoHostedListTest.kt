@@ -15,9 +15,12 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.preference.EndpointUrls
@@ -43,19 +46,31 @@ class RepoHostedListTest {
 
     private val bundled = listOf("https://images.tmdb.org", "https://image.tmdb.org")
 
-    private class Harness(bundled: List<String>, cached: RepoHostedListCache = RepoHostedListCache()) {
+    private class Harness(
+        scheduler: TestCoroutineScheduler,
+        bundled: List<String>,
+        cached: RepoHostedListCache = RepoHostedListCache(),
+    ) {
         /** 按地址给响应体; 返回 `null` = 连不上. */
         var bodies: (url: String) -> String? = { null }
+
+        /** 这些地址连接一直挂着, 不回也不断. */
+        var hanging: (url: String) -> Boolean = { false }
         val requested = mutableListOf<String>()
         val cache = MemorySettings(cached)
 
-        private val client = HttpClient(
-            MockEngine { request ->
-                val url = request.url.toString()
-                requested += url
-                respond(bodies(url) ?: throw IOException("blocked"), HttpStatusCode.OK)
-            },
-        )
+        // 引擎跑在测试调度器上: 请求与超时走同一个虚拟时钟 (默认的 IO 线程上回响应时, 测试调度器以为没事可做, 直接把时间拨过超时)
+        private val client = HttpClient(MockEngine) {
+            engine {
+                dispatcher = StandardTestDispatcher(scheduler)
+                addHandler { request ->
+                    val url = request.url.toString()
+                    requested += url
+                    if (hanging(url)) awaitCancellation()
+                    respond(bodies(url) ?: throw IOException("blocked"), HttpStatusCode.OK)
+                }
+            }
+        }
 
         // 构造时的自动刷新落在已取消的作用域里不会跑, 由用例自己调 refreshIfStale
         val list = RepoHostedList(
@@ -69,13 +84,13 @@ class RepoHostedListTest {
 
     @Test
     fun `从没拉到过 — 用内置的`() = runTest {
-        val harness = Harness(bundled)
+        val harness = Harness(testScheduler, bundled)
         assertEquals(bundled, harness.list.entries.first())
     }
 
     @Test
     fun `拉到的逐条归一化，认不出的与重复的丢掉`() = runTest {
-        val harness = Harness(bundled)
+        val harness = Harness(testScheduler, bundled)
         harness.bodies = { """{"hosts": ["images.tmdb.org", "https://images.tmdb.org/", "not a url", 3, "img.example.com/tmdb"]}""" }
         harness.list.refreshIfStale()
         assertEquals(listOf("https://images.tmdb.org", "https://img.example.com/tmdb"), harness.list.entries.first())
@@ -83,7 +98,7 @@ class RepoHostedListTest {
 
     @Test
     fun `入口按顺序试 — jsDelivr 在前，raw 兜底`() = runTest {
-        val harness = Harness(bundled)
+        val harness = Harness(testScheduler, bundled)
         harness.bodies = { url -> if ("raw.githubusercontent.com" in url) """{"hosts": ["img.example.com"]}""" else null }
         harness.list.refreshIfStale()
         assertEquals(
@@ -100,7 +115,7 @@ class RepoHostedListTest {
 
     @Test
     fun `内容不对的入口跳过，试下一个`() = runTest {
-        val harness = Harness(bundled)
+        val harness = Harness(testScheduler, bundled)
         harness.bodies = { url ->
             when {
                 "testingcf" in url -> "<html>404</html>"
@@ -113,9 +128,19 @@ class RepoHostedListTest {
     }
 
     @Test
+    fun `入口挂着不回 — 到点换下一个`() = runTest {
+        val harness = Harness(testScheduler, bundled)
+        harness.hanging = { "testingcf" in it }
+        harness.bodies = { """{"hosts": ["img.example.com"]}""" }
+        harness.list.refreshIfStale()
+        assertEquals(2, harness.requested.size)
+        assertEquals(listOf("https://img.example.com"), harness.list.entries.first())
+    }
+
+    @Test
     fun `都拉不到 — 留着上次的`() = runTest {
         val cached = RepoHostedListCache(listOf("https://img.example.com"), updatedAt = 1)
-        val harness = Harness(bundled, cached)
+        val harness = Harness(testScheduler, bundled, cached)
         harness.list.refreshIfStale()
         assertEquals(4, harness.requested.size)
         assertEquals(listOf("https://img.example.com"), harness.list.entries.first())
@@ -123,7 +148,7 @@ class RepoHostedListTest {
 
     @Test
     fun `缓存还新 — 不去拉`() = runTest {
-        val harness = Harness(bundled, RepoHostedListCache(listOf("https://img.example.com"), updatedAt = currentTimeMillis()))
+        val harness = Harness(testScheduler, bundled, RepoHostedListCache(listOf("https://img.example.com"), updatedAt = currentTimeMillis()))
         harness.list.refreshIfStale()
         assertTrue(harness.requested.isEmpty())
     }
@@ -131,7 +156,7 @@ class RepoHostedListTest {
     @Test
     fun `缓存里没有条目 — 不管多新都去拉`() = runTest {
         // 旧格式的缓存解出来就是这样: 条目字段名对不上, 只剩时间
-        val harness = Harness(bundled, RepoHostedListCache(emptyList(), updatedAt = currentTimeMillis()))
+        val harness = Harness(testScheduler, bundled, RepoHostedListCache(emptyList(), updatedAt = currentTimeMillis()))
         harness.bodies = { """{"hosts": ["img.example.com"]}""" }
         harness.list.refreshIfStale()
         assertEquals(listOf("https://img.example.com"), harness.list.entries.first())

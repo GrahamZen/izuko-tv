@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
 /**
  * 探索页 ([TvNativeExploreView]) 开了「hero 态铺模糊背景」([TvNativeExploreView.heroBlur]): 聚焦卡的 hero 态在整页底下铺整部横版背景图的
  * 模糊版, 背景图 (这里是另一张: 单集剧照) 照旧画在上面; hero 态里按确定各行、背景图与简介淡没, 模糊背景对焦变清晰, 到位才进详情页;
- * 点开途中按键吞掉、取消就倒放; 回来倒放; 回到轮播时整屏背景撤掉 (轮播不铺).
+ * 点开途中按键吞掉、取消就倒放; 回来倒放; 回到轮播时整屏背景换成轮播那一部的, 轮播上按「立即观看」同样先对焦再进.
  * 开着过渡跑 (模拟器开着系统动画). 要在对焦途中断言的, 按键直接派发给页面、同一轮主线程消息里接着做 ([confirmThen]).
  */
 class TvNativeExploreHeroBlurTest {
@@ -43,6 +43,7 @@ class TvNativeExploreHeroBlurTest {
 
     private class Listener : TvNativeExploreListener {
         val cardClicks = mutableListOf<Pair<String, Int>>()
+        val heroClicks = mutableListOf<Int>()
         var opened = 0
         var opening = false
         var heroButton = -1
@@ -58,7 +59,9 @@ class TvNativeExploreHeroBlurTest {
             heroButton = button
         }
 
-        override fun onHeroButtonClick(button: Int) = Unit
+        override fun onHeroButtonClick(button: Int) {
+            heroClicks += button
+        }
         override fun onSwitchCarousel(delta: Int): Boolean = false
         override fun onExitLeft() = Unit
         override fun onHeroActiveChanged(active: Boolean) = Unit
@@ -258,48 +261,92 @@ class TvNativeExploreHeroBlurTest {
     fun `in the light theme the title is already the white details title while the backdrop sharpens`() {
         host.onMain { view.heroText.style = testLightHeroTextStyle() }
         enterHero()
-        host.onMain { assertTitleLook(view.heroText.getChildAt(0) as TextView, 0) }
+        host.onMain { assertTitleLook((view.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 0) }
         confirmThen { }
         // 背景还在对焦 (各行先淡没, 背景更慢): 标题已经是详情页的白字压黑影, 登记给放大转场的也是这个样子
         host.waitUntil("背景对焦过了七成") { sharpAlpha() >= 0.7f }
         host.onMain {
-            assertTitleLook(view.heroText.getChildAt(0) as TextView, 1)
+            assertTitleLook((view.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 1)
             assertTrue(TvHeroZoomHandoff.sourceDebug().contains("look=1.0"), TvHeroZoomHandoff.sourceDebug())
         }
         host.waitUntil("进了继续观看第 0 张") { listener.cardClicks == listOf(FOLLOWED to 0) }
         host.onMain { view.endWallOpen() }
         host.waitUntil("倒放回 hero 态") { sharpAlpha() == 0f && summaryAlpha() == 1f }
-        host.onMain { assertTitleLook(view.heroText.getChildAt(0) as TextView, 0) }
+        host.onMain { assertTitleLook((view.heroText.getChildAt(0) as ViewGroup).getChildAt(0) as TextView, 0) }
     }
 
     @Test
-    fun `back on the carousel the blurred backdrop is gone and the hero image is painted the usual way`() {
+    fun `back on the carousel the blurred backdrop shows the carousel subject under the feathered hero image`() {
         enterHero()
         val frames = backToCarouselFloorFrames()
-        // 深色: 卡片墙底色还看得见时, 背景图的边缘照旧擦成透明 (遮罩色近黑, 画在灰底上是一圈黑框)
         assertTrue(frames.any { it.first in 1..254 }, "看到了底色淡出途中的帧")
+        // 轮播也铺着模糊背景: 背景图的边缘一直擦成透明
         assertEquals(emptyList(), frames.filter { !it.second }.map { it.first }, "底色还在时 (各帧底色的透明度) 背景图的边缘按遮罩色画了")
         host.onMain {
-            // 底色撤了: 轮播照旧用背景图 (轮播那一部的), 按遮罩色画边缘, 放大转场的来源也还是它
             assertTrue(heroImage().currentTarget!!.url.contains("${STILL}carousel"))
-            assertEquals(View.LAYER_TYPE_NONE, heroImage().layerType)
-            assertTrue(heroImage().slotLayerTypes().all { it == View.LAYER_TYPE_NONE })
+            assertTrue(heroImage().slotLayerTypes().all { it == View.LAYER_TYPE_HARDWARE })
+            // 轮播的模糊背景铺整部的那张
+            assertTrue(wall.currentTarget!!.url.contains("${SERIES}carousel"))
         }
-        host.waitUntil("登记了轮播的背景图") { TvHeroZoomHandoff.sourceDebug().contains("${STILL}carousel.png") }
+        // 放大转场的来源是整屏背景 (轮播上按「立即观看」也是先对焦再进), 不是轮播的背景图
+        host.waitUntil("登记了整屏背景") { TvHeroZoomHandoff.sourceDebug().contains("${SERIES}carousel.png") }
     }
 
     @Test
-    fun `in the light theme going back to the carousel paints the image edges the usual way once the blurred backdrop is gone`() {
+    fun `the zoom frame of the carousel backdrop follows it back to the top`() {
+        // 焦点在第一行时轮播被推上去一截, 轮播那一部的清晰图在这时解好、登记放大转场的整屏框
+        host.waitUntil("轮播的清晰图解好、整屏背景被推上去") {
+            wall.currentTarget?.subjectId == CAROUSEL_SUBJECT && wall.sharpReady && wall.translationY < 0f
+        }
+        host.waitUntil("登记了整屏背景") { TvHeroZoomHandoff.sourceDebug().contains("${SERIES}carousel.png") }
+        host.onMain { view.focusHeroButton(0) }
+        host.waitUntil("回到轮播按钮") { listener.heroButton == 0 && wall.translationY == 0f }
+        // 放大从整屏背景此刻的位置起, 不是解好那时的位置
+        host.onMain {
+            val xy = IntArray(2).also { wall.getLocationInWindow(it) }
+            assertTrue(TvHeroZoomHandoff.sourceDebug().contains(" top=${xy[1].toFloat()} "), TvHeroZoomHandoff.sourceDebug())
+        }
+    }
+
+    @Test
+    fun `watch now on the carousel sharpens the blurred backdrop and hides the rows before opening`() {
+        host.onMain { view.focusHeroButton(0) }
+        host.waitUntil("回到轮播、模糊背景是轮播那一部") {
+            listener.heroButton == 0 && !view.heroActive && wall.alpha == 1f && wall.currentTarget?.subjectId == CAROUSEL_SUBJECT
+        }
+        host.waitUntil("清晰图解好") { wall.sharpReady }
+        host.onMain {
+            dispatchPress(KeyEvent.KEYCODE_DPAD_CENTER)
+            assertEquals(emptyList(), listener.heroClicks)
+            assertTrue(listener.opening)
+        }
+        host.waitUntil("对焦到位后进了轮播那一部") { listener.heroClicks == listOf(0) }
+        host.onMain {
+            assertEquals(1, listener.opened)
+            assertEquals(1f, sharpAlpha())
+            assertTrue(rows().isNotEmpty() && rows().all { it.rowAlpha == 0f }, "各行淡没")
+            assertEquals(0f, heroImage().alpha)
+            assertEquals(1f, titleAlpha())
+            assertEquals(0f, summaryAlpha())
+        }
+        host.onMain { view.endWallOpen() }
+        host.waitUntil("倒放回轮播") {
+            sharpAlpha() == 0f && rows().all { it.rowAlpha > 0f } && summaryAlpha() == 1f && heroImage().alpha == 1f
+        }
+        assertEquals(listOf(0), host.onMain { listener.heroClicks.toList() })
+    }
+
+    @Test
+    fun `in the light theme the carousel image edges are feathered over the blurred backdrop too`() {
         host.onMain { view.dark = false }
         enterHero()
         val frames = backToCarouselFloorFrames()
-        // 浅色的遮罩色就是卡片墙底色: 模糊背景淡没就按遮罩色画边缘, 不为底色留着离屏层
-        assertTrue(frames.any { it.first in 1..254 && !it.second }, frames.toString())
+        assertEquals(emptyList(), frames.filter { !it.second }.map { it.first }, frames.toString())
     }
 
     /**
-     * 从 hero 态回轮播按钮, 等最底下那层卡片墙底色随上面几行 (连同轮播) 淡回来之后撤掉 (轮播的分界带照旧露出来). 返回底色还看得见的每一帧 (画之前记):
-     * 底色的透明度, 背景图的边缘是不是擦成透明 (各格都走离屏层).
+     * 从 hero 态回轮播按钮, 等最底下那层卡片墙底色随上面几行 (连同轮播) 淡回来之后撤掉 (模糊背景换成轮播那一部的). 返回底色还看得见的每一帧
+     * (画之前记): 底色的透明度, 背景图的边缘是不是擦成透明 (各格都走离屏层).
      */
     private fun backToCarouselFloorFrames(): List<Pair<Int, Boolean>> {
         val frames = mutableListOf<Pair<Int, Boolean>>()
@@ -313,7 +360,9 @@ class TvNativeExploreHeroBlurTest {
             view.viewTreeObserver.addOnPreDrawListener(check)
             view.focusHeroButton(0)
         }
-        host.waitUntil("回到轮播、整屏背景撤掉") { listener.heroButton == 0 && !view.heroActive && wall.alpha == 0f && wall.currentTarget == null }
+        host.waitUntil("回到轮播、模糊背景换成轮播那一部") {
+            listener.heroButton == 0 && !view.heroActive && wall.alpha == 1f && wall.currentTarget?.subjectId == CAROUSEL_SUBJECT
+        }
         host.waitUntil("卡片墙底色那层撤了") { Color.alpha(floorColor()) == 0 }
         host.onMain { view.viewTreeObserver.removeOnPreDrawListener(check) }
         return frames

@@ -690,13 +690,8 @@ private fun TvPlayerTopInfo(
                 .weight(1f)
                 .placeholder(episode.isPlaceholder || subject.isPlaceholder),
         ) {
-            Text(
-                subject.title,
-                color = Color.White,
-                style = MaterialTheme.typography.headlineLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 作品名: 有标题 logo 时是 logo
+            TvPlayerTitle(subject)
             Spacer(Modifier.height(6.dp))
             Text(
                 "第 ${episode.ep} 集  ${episode.title}",

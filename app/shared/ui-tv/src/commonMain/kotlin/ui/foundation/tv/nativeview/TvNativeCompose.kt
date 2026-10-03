@@ -62,6 +62,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
+import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonContainerColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonOutlineColor
 import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
@@ -252,7 +253,11 @@ fun rememberTvNativeHeroTextStyle(
     val visualEffects = LocalThemeSettings.current.visualEffects
     val star = rememberTvNativeIcon(Icons.Rounded.Star, TV_HERO_RATING_STAR_SIZE, colors.primary)
     val stagger = visualEffects.transitions && TvPolishFlags.textStagger
-    return remember(density, typography, colors, content, secondary, visualEffects, star, stagger, titleMaxLines, lineSpacing, statusHeight) {
+    val logoBox = rememberTvTitleLogoBox()
+    val logoDisplay = LocalThemeSettings.current.tvTitleLogoDisplay
+    return remember(
+        density, typography, colors, content, secondary, visualEffects, star, stagger, titleMaxLines, lineSpacing, statusHeight, logoBox, logoDisplay,
+    ) {
         with(density) {
             TvNativeHeroTextStyle(
                 title = typography.headlineLarge.toTvNativeTextStyle(density, content),
@@ -291,6 +296,9 @@ fun rememberTvNativeHeroTextStyle(
                 } else {
                     null
                 },
+                // 标题 logo (设置里开了才有): 宽度上限在排版时再按标题宽截
+                logoBox = logoBox,
+                logoDisplay = logoDisplay,
             )
         }
     }

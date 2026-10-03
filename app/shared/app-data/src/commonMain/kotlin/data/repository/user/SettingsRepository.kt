@@ -69,6 +69,9 @@ interface SettingsRepository {
     /** 更新包下载镜像清单的本地缓存, 见 `GitHubDownloadMirrors`. */
     val githubDownloadMirrorCache: Settings<RepoHostedListCache>
 
+    /** 详情页「反馈」的中转地址清单的本地缓存, 见 `SubjectFeedbackService`. */
+    val feedbackEndpointCache: Settings<RepoHostedListCache>
+
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
     /**
@@ -198,6 +201,11 @@ class PreferencesRepositoryImpl(
     )
     override val githubDownloadMirrorCache: Settings<RepoHostedListCache> = SerializablePreference(
         "githubDownloadMirrorCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val feedbackEndpointCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "feedbackEndpointCache",
         RepoHostedListCache.serializer(),
         default = { RepoHostedListCache.Default },
     )
