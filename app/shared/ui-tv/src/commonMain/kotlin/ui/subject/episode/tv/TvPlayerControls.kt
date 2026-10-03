@@ -72,6 +72,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -413,9 +414,17 @@ internal fun TvPlayerControlsOverlay(
         val pillItems = rememberTvPillItems(chromeLayout)
         val bottomRowItems = rememberTvBottomRowItems(vm, chromeLayout)
         val pillOrder = remember(pillItems) { tvPillVisualOrder(pillItems) }
+        // 评论胶囊长按开的排序菜单 (改版式那一页在菜单末项). 跟着本层, 控制层收起就关了
+        val commentSortMenu = remember { mutableStateOf(false) }
         // 两行每一颗按钮的公共挂件 (焦点锚点 + 长按去改版式, 见 tvPlayerChromeItem). 发弹幕的输入框展开期间不认长按: 那时人在打字
         val chromeItemModifier: (TvPlayerChromeItem) -> Modifier = remember(playerFocus, onEditChromeItem, overlay) {
-            { item: TvPlayerChromeItem -> Modifier.tvPlayerChromeItem(item, playerFocus, onEditChromeItem) { !overlay.danmakuInputExpanded } }
+            { item: TvPlayerChromeItem ->
+                val onLongPress = when (item) {
+                    TvPlayerChromeItem.PILL_COMMENTS -> { _: TvPlayerChromeItem -> commentSortMenu.value = true }
+                    else -> onEditChromeItem
+                }
+                Modifier.tvPlayerChromeItem(item, playerFocus, onLongPress) { !overlay.danmakuInputExpanded }
+            }
         }
         // derivedStateOf: focusRegion 每次方向键都在变, 直接读会让整个覆盖层
         // (scrim/标题/胶囊/面板) 随每步导航重组; 收窄成布尔翻转才失效
@@ -563,6 +572,8 @@ internal fun TvPlayerControlsOverlay(
                         loadingPulseEnabled = chromeVisible,
                         items = pillItems,
                         chromeItemModifier = chromeItemModifier,
+                        commentSortMenu = commentSortMenu,
+                        onEditChromeItem = onEditChromeItem,
                         pillFocusRequesters = pillFocusRequesters,
                         onViewAllPeople = { peopleViewAll = it },
                         // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
@@ -822,6 +833,10 @@ private fun TvPlayerPillsRow(
     items: List<TvPlayerChromeItem>,
     /** 每颗胶囊的公共挂件 (焦点锚点 + 长按去改版式, 见 [tvPlayerChromeItem]). */
     chromeItemModifier: (TvPlayerChromeItem) -> Modifier,
+    /** 评论胶囊的排序菜单开着 (那颗的长按打开, 见 [TvCommentSortMenu]). */
+    commentSortMenu: MutableState<Boolean>,
+    /** 去「自定义播放器按钮」, 排序菜单的末项用; null = 没有那一页. */
+    onEditChromeItem: ((TvPlayerChromeItem) -> Unit)?,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
     /** 评论胶囊按下确定: 发表本集评论 (见 [openNewEpisodeComment]). */
     /** 角色 / 制作人员胶囊按下确定: 开对应的「查看全部」弹窗. */
@@ -891,26 +906,37 @@ private fun TvPlayerPillsRow(
                         ),
                     )
 
-                    TvPlayerChromeItem.PILL_COMMENTS -> TvPlayerPill(
-                        icon = { Icon(Icons.AutoMirrored.Rounded.Comment, null, Modifier.size(TV_PILL_ICON_SIZE)) },
-                        label = stringResource(Lang.episode_comments),
-                        panel = TvPlayerPanel.COMMENTS,
-                        overlay = overlay,
-                        focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.COMMENTS),
-                        // 本颗胶囊的点击退回默认行为 (把焦点送进面板): 直连 bangumi 之后发不了吐槽
-                        // —— 发表要过 Cloudflare Turnstile 验证码, 遥控器上做不了, 点开只会让人打完字
-                        // 再收到一个错误. 验证码那条路做通了就把 onNewComment 接回来.
-                        // 弹窗关掉后焦点还给本胶囊: 弹窗抢焦点时本节点还在场 (控制层与面板都留在下面),
-                        // 但 Compose 不会自己还回来. 控制层已经收起时放弃 —— 那时焦点归属归根路由管
-                        modifier = chromeItemModifier(item).restoreFocusAfter(
-                            composingNewComment,
-                            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-                        ),
-                        // 本集评论加载中 / 加载失败 (进播放页就拉, 见 TvCommentsLoadTracker)
-                        loadFailed = overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.FAILED),
-                        loading = loadingPulseEnabled &&
-                                overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.LOADING),
-                    )
+                    // 外面套一层只为给长按的排序菜单当锚点 (菜单是弹层, 不占位)
+                    TvPlayerChromeItem.PILL_COMMENTS -> Box {
+                        TvPlayerPill(
+                            icon = { Icon(Icons.AutoMirrored.Rounded.Comment, null, Modifier.size(TV_PILL_ICON_SIZE)) },
+                            label = stringResource(Lang.episode_comments),
+                            panel = TvPlayerPanel.COMMENTS,
+                            overlay = overlay,
+                            focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.COMMENTS),
+                            // 本颗胶囊的点击退回默认行为 (把焦点送进面板): 直连 bangumi 之后发不了吐槽
+                            // —— 发表要过 Cloudflare Turnstile 验证码, 遥控器上做不了, 点开只会让人打完字
+                            // 再收到一个错误. 验证码那条路做通了就把 onNewComment 接回来.
+                            // 弹窗关掉后焦点还给本胶囊: 弹窗抢焦点时本节点还在场 (控制层与面板都留在下面),
+                            // 但 Compose 不会自己还回来. 控制层已经收起时放弃 —— 那时焦点归属归根路由管
+                            modifier = chromeItemModifier(item).restoreFocusAfter(
+                                composingNewComment,
+                                abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
+                            ),
+                            // 本集评论加载中 / 加载失败 (进播放页就拉, 见 TvCommentsLoadTracker)
+                            loadFailed = overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.FAILED),
+                            loading = loadingPulseEnabled &&
+                                    overlay.commentsLoad == TvCommentsLoad(episodeId, TvPanelLoadState.LOADING),
+                        )
+                        TvCommentSortMenu(
+                            expanded = commentSortMenu.value,
+                            current = vm.videoScaffoldConfig.episodeCommentSort,
+                            onSelect = vm::setEpisodeCommentSort,
+                            onEditChrome = onEditChromeItem?.let { edit -> { edit(item) } },
+                            onDismissRequest = { commentSortMenu.value = false },
+                            onExpandedChanged = overlay::onPopupExpandedChanged,
+                        )
+                    }
 
                     // 「弹幕」一颗顶原来的两颗 (弹幕列表 + 发送弹幕): 聚焦浮出弹幕列表面板 (含源开关与
                     // 延迟), 点击展开输入框发弹幕 —— 与「评论」那颗完全同一个模式 (聚焦看, 点击发),
@@ -1297,18 +1323,21 @@ internal data class TvPlayerChromeFocusKey(val item: TvPlayerChromeItem) : TvFoc
 
 /**
  * 控制层上一颗按钮的两样公共挂件: 焦点锚点 ([TvPlayerChromeFocusKey], 从「自定义播放器按钮」回来时焦点落回这一颗),
- * 与长按确认键去那一页 ([onEdit]). 短按不经这里, 照旧是按钮自己的点击 (见 [tvLongPressKeyOverClick]) —— 三颗文字下拉的点击藏在
- * 共享组件里, 外面没法替它派发. 长按之后控制层随即收起, 按钮留着的按下态跟着它一起离开组合.
+ * 与长按确认键 ([onLongPress]: 去那一页; 评论胶囊是开排序菜单). 短按不经这里, 照旧是按钮自己的点击 (见 [tvLongPressKeyOverClick]) ——
+ * 三颗文字下拉的点击藏在共享组件里, 外面没法替它派发. 去那一页时控制层随即收起, 按钮留着的按下态跟着它一起离开组合.
  *
  * 挂在按钮本身或它的外壳上都行 (锚点送焦会落到里面第一个焦点目标上, 长按判的是焦点所在的子树).
  */
 private fun Modifier.tvPlayerChromeItem(
     item: TvPlayerChromeItem,
     focus: TvFocusScope,
-    onEdit: ((TvPlayerChromeItem) -> Unit)?,
-    editEnabled: () -> Boolean,
+    onLongPress: ((TvPlayerChromeItem) -> Unit)?,
+    longPressEnabled: () -> Boolean,
 ): Modifier = tvFocusAnchor(focus, TvPlayerChromeFocusKey(item))
-    .then(if (onEdit == null) Modifier else Modifier.tvLongPressKeyOverClick(onLongPress = { onEdit(item) }, enabled = editEnabled))
+    .then(
+        if (onLongPress == null) Modifier
+        else Modifier.tvLongPressKeyOverClick(onLongPress = { onLongPress(item) }, enabled = longPressEnabled),
+    )
 
 /**
  * 图标行: 默认是 播放组 (从头开始/下一集/跳OP) | 数据源 | 弹幕组 (开关/设置) ... 右侧文字选项组与低频组,
