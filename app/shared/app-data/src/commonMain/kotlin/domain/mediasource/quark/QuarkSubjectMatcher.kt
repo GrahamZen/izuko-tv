@@ -106,16 +106,8 @@ internal class QuarkSubjectMatcher(
      * (文件名写了季集且条目在对应表里时照样按表换算). 文件夹打不开 (被删了) 时返回空.
      */
     suspend fun matchPickedFolder(request: MediaFetchRequest, folderId: String, folderName: String): List<MatchedFile> {
-        val candidates = ArrayList<Candidate>()
-        suspend fun walk(id: String, path: List<String>, depth: Int) {
-            for (child in browser.listFolder(id)) {
-                if (candidates.size >= MAX_FILES) return
-                if (child.isVideo) candidates += Candidate(child, path)
-                else if (child.dir && depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
-            }
-        }
-        try {
-            walk(folderId, listOf(folderName), depth = 0)
+        val candidates = try {
+            listCandidates(folderId, listOf(folderName))
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkAuthException) {
@@ -125,6 +117,38 @@ internal class QuarkSubjectMatcher(
             return emptyList()
         }
         return matchEpisodes(request, candidates, numbering.of(request), trustFolders = true)
+    }
+
+    /**
+     * 自动记下的文件夹 (见 `QuarkConfig.rememberedFolders`): 列出 (往下 [MAX_DEPTH] 层) 里面的视频, 照自动搜索的规则认季认集,
+     * [path] 是它从搜到的那个文件夹起的路径. 文件夹打不开 (被删了、改了位置) 时返回 null.
+     */
+    suspend fun matchRememberedFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
+        val candidates = try {
+            listCandidates(folderId, path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkAuthException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to list remembered Quark folder $folderId" }
+            return null
+        }
+        return matchEpisodes(request, candidates, numbering.of(request))
+    }
+
+    /** 文件夹 [folderId] (往下 [MAX_DEPTH] 层) 里的视频, 各带从 [path] 起的所在路径. */
+    private suspend fun listCandidates(folderId: String, path: List<String>): List<Candidate> {
+        val candidates = ArrayList<Candidate>()
+        suspend fun walk(id: String, path: List<String>, depth: Int) {
+            for (child in browser.listFolder(id)) {
+                if (candidates.size >= MAX_FILES) return
+                if (child.isVideo) candidates += Candidate(child, path)
+                else if (child.dir && depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
+            }
+        }
+        walk(folderId, path, depth = 0)
+        return candidates
     }
 
     /**

@@ -25,6 +25,7 @@ import me.him188.ani.app.data.models.preference.QuarkPickedFile
 import me.him188.ani.app.data.models.preference.QuarkPickedFolder
 import me.him188.ani.app.data.models.preference.QuarkPickedSubtitle
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
+import me.him188.ani.app.data.models.preference.QuarkRememberedFolder
 import me.him188.ani.app.data.models.preference.QuarkSubjectPicks
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.user.Settings
@@ -175,6 +176,63 @@ class QuarkDriveService internal constructor(
      */
     suspend fun episodesInFolder(request: MediaFetchRequest, folder: QuarkFile): List<Triple<QuarkFile, List<String>, EpisodeSort>> =
         matchPickedFolder(request, QuarkPickedFolder(folder.fid, folder.fileName)).map { Triple(it.file, it.folders, it.episode) }
+
+    // endregion
+
+    // region 自动记下的条目文件夹 (见 QuarkConfig.rememberedFolders)
+
+    /** 最近搜到的文件属于哪个条目、在哪个文件夹 (文件 id → 记录), 播放时据此记下文件夹. 只在内存里. */
+    private val recentMatches = LinkedHashMap<String, RecentMatch>()
+    private val recentMatchesLock = Mutex()
+
+    private class RecentMatch(val subjectId: Int, val folder: QuarkRememberedFolder)
+
+    /**
+     * 记下这次给条目 [subjectId] 认出的文件. 只记在按名字搜到的文件夹里找到的 ([QuarkSubjectMatcher.MatchedFile.folders] 不空):
+     * 文件本身被搜到时, 它所在的文件夹可能是放着各种视频的「下载」之类, 记下来之后会把别的番当成这一部.
+     */
+    internal suspend fun noteMatches(subjectId: Int, matches: List<QuarkSubjectMatcher.MatchedFile>) {
+        val inFolders = matches.filter { it.folders.isNotEmpty() && it.file.parentFid.isNotEmpty() }
+        if (inFolders.isEmpty()) return
+        recentMatchesLock.withLock {
+            for (match in inFolders) {
+                recentMatches.remove(match.file.fid)
+                recentMatches[match.file.fid] = RecentMatch(subjectId, QuarkRememberedFolder(match.file.parentFid, match.folders))
+            }
+            while (recentMatches.size > MAX_RECENT_MATCHES) recentMatches.remove(recentMatches.keys.first())
+        }
+    }
+
+    /**
+     * 条目 [subjectId] 记下的文件夹里认出的文件; 没记过时为 null. 文件夹打不开 (被删了、挪走了) 时忘掉它, 也返回 null.
+     */
+    internal suspend fun matchRememberedFolder(request: MediaFetchRequest, subjectId: Int): List<QuarkSubjectMatcher.MatchedFile>? {
+        val folder = settings.flow.first().rememberedFolders[subjectId] ?: return null
+        val matches = pickMatcher.matchRememberedFolder(request, folder.fid, folder.path)
+        if (matches == null) updateRememberedFolders { it - subjectId }
+        return matches
+    }
+
+    /** 播了文件 [fileId]: 它是搜到的哪个条目的, 就把它所在的文件夹记给那个条目. */
+    private suspend fun rememberFolderOf(fileId: String) {
+        val match = recentMatchesLock.withLock { recentMatches[fileId] } ?: return
+        updateRememberedFolders { remembered ->
+            if (remembered[match.subjectId] == match.folder) return@updateRememberedFolders remembered
+            logger.info { "Remembered Quark folder ${match.folder.fid} (${match.folder.path.joinToString("/")}) for subject ${match.subjectId}" }
+            // 重新放到末尾 (最近的), 超出上限时去掉最早记下的
+            (remembered - match.subjectId + (match.subjectId to match.folder)).entries
+                .toList().takeLast(MAX_REMEMBERED_FOLDERS).associate { it.key to it.value }
+        }
+    }
+
+    private suspend fun updateRememberedFolders(update: (Map<Int, QuarkRememberedFolder>) -> Map<Int, QuarkRememberedFolder>) {
+        cookieLock.withLock {
+            val current = settings.flow.first()
+            if (!current.isLoggedIn) return
+            val updated = update(current.rememberedFolders)
+            if (updated != current.rememberedFolders) settings.set(current.copy(rememberedFolders = updated))
+        }
+    }
 
     // endregion
 
@@ -602,7 +660,8 @@ class QuarkDriveService internal constructor(
     /**
      * 按当前的播放方式取一个文件的播放地址, 连同视频旁边的外挂字幕. 播放器请求这些地址时必须带上 [QuarkPlayback.headers].
      */
-    suspend fun resolvePlayback(fileId: String): QuarkPlayback = resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId))
+    suspend fun resolvePlayback(fileId: String): QuarkPlayback =
+        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId)).also { rememberFolderOf(fileId) }
 
     /** @param subtitleKey 手动挂字幕的键 (见 [subtitleKeyOf]) */
     private suspend fun resolvePlayback(fileId: String, subtitleLookup: SubtitleLookup, subtitleKey: String): QuarkPlayback {
@@ -735,6 +794,12 @@ class QuarkDriveService internal constructor(
 
         /** 最多给多少个视频记手动挂上的字幕. */
         private const val MAX_PICKED_SUBTITLE_VIDEOS = 300
+
+        /** 最多给多少个条目自动记文件夹. */
+        private const val MAX_REMEMBERED_FOLDERS = 300
+
+        /** 内存里最多记多少个最近搜到的文件. */
+        private const val MAX_RECENT_MATCHES = 2000
 
         private fun fileSubtitleKey(fileId: String) = "file:$fileId"
 

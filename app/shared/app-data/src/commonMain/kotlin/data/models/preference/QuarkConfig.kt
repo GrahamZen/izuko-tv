@@ -44,13 +44,18 @@ data class QuarkConfig(
      * 同 [subjectPicks] 只在这个账号里有效.
      */
     val pickedSubtitles: Map<String, List<QuarkPickedSubtitle>> = emptyMap(),
+    /**
+     * 自动记下的「条目在这个文件夹里」(条目 id → 播过的那一集所在的文件夹): 之后先列它, 找到要的那一集就不再全盘搜索.
+     * 与手动指定的 [subjectPicks] 分开存; 同 [subjectPicks] 只在这个账号里有效. 按记下的先后保留最近的若干个.
+     */
+    val rememberedFolders: Map<Int, QuarkRememberedFolder> = emptyMap(),
 ) {
     val isLoggedIn: Boolean get() = cookie.isNotBlank()
 
     override fun toString(): String {
         return "QuarkConfig(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
                 "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
-                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size})"
+                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size})"
     }
 
     companion object {
@@ -74,6 +79,14 @@ data class QuarkSubjectPicks(
 
 @Serializable
 data class QuarkPickedFolder(val fid: String, val name: String)
+
+/**
+ * 自动记下的条目所在文件夹, 见 [QuarkConfig.rememberedFolders].
+ *
+ * @property path 从搜到的那个文件夹到这个文件夹的名字 (从外到里, 最后一个是它自己): 列它的时候照自动搜索一样按这些名字认季
+ */
+@Serializable
+data class QuarkRememberedFolder(val fid: String, val path: List<String>)
 
 /**
  * @property episode 第几集 (集号的字符串写法)

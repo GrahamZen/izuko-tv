@@ -36,6 +36,7 @@ import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.datasources.api.topic.titles.RawTitleParser
 import me.him188.ani.datasources.api.topic.titles.parse
 import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 
@@ -47,6 +48,9 @@ import me.him188.ani.utils.logging.warn
  *
  * 除了按条目名搜到的, 还给出用户在 Web 控制台手动指定的文件与文件夹 ([QuarkDriveService.picksOf]): 单独指定的文件优先,
  * 其次是指定文件夹里认出的, 再其次是自动匹配的; 同一个文件只给一次. 手动指定的算精确匹配.
+ *
+ * 播过的那一集所在的文件夹会记给条目 (见 [QuarkDriveService.matchRememberedFolder]): 之后先列它, 里面有要的这一集就不再全盘搜索
+ * (追番时第二集起只列一次文件夹); 没有 (新的一集还没放进去、文件挪走了) 时照常搜.
  */
 class QuarkMediaSource(
     private val service: QuarkDriveService,
@@ -72,22 +76,30 @@ class QuarkMediaSource(
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         service.requireLoggedIn()
         val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
+        val subjectId = query.subjectId.toIntOrNull()
         val picked = pickedMatches(query)
-        val auto = try {
-            matcher.match(query)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: QuarkAuthException) {
-            throw e
-        } catch (e: Throwable) {
-            // 搜索失败时手动指定的照样给; 没有指定的才算这个源失败
-            if (picked.isEmpty()) throw e
-            logger.warn(e) { "Quark drive search failed, returning picked files only" }
+        val remembered = subjectId?.let { service.matchRememberedFolder(query, it) }.orEmpty()
+        val auto = if (remembered.any { it.episode == query.episodeSort || it.episode == query.episodeEp }) {
+            logger.info { "Quark drive: episode ${query.episodeSort} of subject ${query.subjectId} is in the remembered folder, skipping search" }
             emptyList()
+        } else {
+            try {
+                matcher.match(query)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuarkAuthException) {
+                throw e
+            } catch (e: Throwable) {
+                // 搜索失败时手动指定的与记下的文件夹里的照样给; 都没有才算这个源失败
+                if (picked.isEmpty() && remembered.isEmpty()) throw e
+                logger.warn(e) { "Quark drive search failed, returning picked and remembered files only" }
+                emptyList()
+            }
         }
+        if (subjectId != null) service.noteMatches(subjectId, remembered + auto)
         val seen = HashSet<String>()
         val medias = picked.filter { seen.add(it.file.fid) }.map { MediaMatch(it.toMedia(subjectName), MatchKind.EXACT) } +
-                auto.filter { seen.add(it.file.fid) }.map { MediaMatch(it.toMedia(subjectName), MatchKind.FUZZY) }
+                (remembered + auto).filter { seen.add(it.file.fid) }.map { MediaMatch(it.toMedia(subjectName), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
     }
 
