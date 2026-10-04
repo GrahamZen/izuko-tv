@@ -53,7 +53,6 @@ import me.him188.ani.app.domain.player.extension.ExtensionBackgroundTaskScope
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.EpisodeSwitch
 import me.him188.ani.utils.logging.info
@@ -103,7 +102,6 @@ class EpisodeFetchSelectPlayState(
     private val selectorCacheRepo by koin.inject<SelectorMediaSourceEpisodeCacheRepository>()
     private val mediaSourceManager by koin.inject<MediaSourceManager>()
     private val playHistoryRepository by koin.inject<EpisodePlayHistoryRepository>()
-    private val automationGate by koin.inject<PlaybackAutomationGate>()
 
     /**
      * 条目级查询会话, 各集共用: 切集只重建选择器, 不重新查询.
@@ -360,18 +358,15 @@ class EpisodeFetchSelectPlayState(
                                 .episodeInfo
 
                             callOnBeforeLoadMedia(episodeSession)
-                            playerSession.loadMedia(
-                                media,
-                                episodeInfo.toEpisodeMetadata(),
-                                startPositionMillis(episodeInfo.episodeId),
-                            )
+                            val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
+                            playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
                             onMediaLoaded(episodeInfo.episodeId)
 
                             reloadRequests.collect { positionMillis ->
                                 logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
-                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 装好开播时它会按这个位置恢复
+                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 从这个位置打开, 开播时它据此确认已经回到这里
                                 onReloadMedia(episodeInfo.episodeId, positionMillis)
-                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata())
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis)
                             }
                         }
                     }
@@ -392,25 +387,6 @@ class EpisodeFetchSelectPlayState(
             } catch (e: Exception) {
                 logger.warn(e) { "Extension ${extension.name} failed in onBeforeLoadMedia" }
             }
-        }
-    }
-
-    /**
-     * 起播位置: 本集记忆的播放进度. 播放器直接在这里打开, 不先从头起播再跳转 (见 [PlayerSession.loadMedia]).
-     *
-     * 进度只在这里读取, 并且在 [PlayerExtension.onBeforeLoadMedia] 之后: 换源时 RememberPlayProgressExtension
-     * 在那里保存旧资源的进度, 新资源因此从换源时的位置继续.
-     * 一起看时进度由房间同步, 不续播. 读取失败时从头播放.
-     */
-    private suspend fun startPositionMillis(episodeId: Int): Long {
-        if (automationGate.suppressed.value) return 0L
-        return try {
-            playHistoryRepository.getResumePositionMillisByEpisodeId(episodeId) ?: 0L
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to read play progress of episode $episodeId, starting from the beginning" }
-            0L
         }
     }
 
