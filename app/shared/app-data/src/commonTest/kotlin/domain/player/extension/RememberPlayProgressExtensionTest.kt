@@ -38,6 +38,7 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.utils.coroutines.childScope
 import org.openani.mediamp.PlaybackErrorCode
+import org.openani.mediamp.PlaybackEvent
 import org.openani.mediamp.PlaybackException
 import org.openani.mediamp.metadata.MediaProperties
 import org.openani.mediamp.test.TestMediampPlayer
@@ -660,7 +661,45 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `原地重载后回到重载时给的位置, 不按存下的进度`() = runTest {
+    fun `第一次打开这一集时直接从存下的进度打开，不另外 seek`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 500)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        loadSelectedMedia(suite, state)
+
+        assertEquals(500, suite.player.currentPositionMillis.value)
+        // 开播后再 seek 一次的话, 真播放器会把刚缓冲的扔掉重来 (没有回退缓冲)
+        assertEquals(emptyList(), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `同一集换源时照旧从头打开，开播后跳回换源前的进度`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        loadSelectedMedia(suite, state, mediaIndex = 0)
+        suite.player.seekTo(3000)
+        advanceUntilIdle()
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        // 换源前保存的进度与新资源打开前读进度没有先后保证: 不带起始位置, 开播后由恢复进度跳回去
+        loadSelectedMedia(suite, state, mediaIndex = 1)
+
+        assertEquals(3000, suite.player.currentPositionMillis.value)
+        assertEquals(listOf(3000L), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `原地重载后回到重载时给的位置，不按存下的进度`() = runTest {
         val (testScope, suite, state) = createCase()
         advanceUntilIdle()
         repository.saveOrUpdate(episodeId = initialEpisodeId, 500)
