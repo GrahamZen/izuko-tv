@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.models.preference.QuarkRememberedShare
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceConfig
@@ -133,7 +134,9 @@ class QuarkShareRememberTest {
         assertEquals(listOf("share-site.s1.f1", "share-site.s1.f3"), first.map { it.mediaId })
         assertEquals(1, siteSearches)
         assertEquals(emptyMap(), settings.state.value.rememberedShares)
-        service.resolveSharePlayback(QuarkShareFileRef.parse(first.first().download.uri)!!)
+        val playback = service.resolveSharePlayback(QuarkShareFileRef.parse(first.first().download.uri)!!)
+        // 本机数据按分享里的文件存: 转存的副本被删了重新转存, 内容还是同一个
+        assertEquals("quark-share:s1/f1", playback.headers[PlaybackRequestHints.CACHE_KEY_HEADER])
         assertEquals(
             QuarkRememberedShare("s1", "", "在超市后门吸烟的二人", "d1", listOf("S01")),
             settings.state.value.rememberedShares["share-site:571784"],

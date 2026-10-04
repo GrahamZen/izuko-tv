@@ -151,6 +151,8 @@ class QuarkDriveServiceTest {
             QuarkDriveService.NON_MEMBER_PARALLEL_CONNECTIONS.toString(),
             playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER],
         )
+        // 直链每次都不一样, 播放器按文件 id 把下过的数据存在本机
+        assertEquals("quark:f1", playback.headers[PlaybackRequestHints.CACHE_KEY_HEADER])
     }
 
     @Test
@@ -185,8 +187,9 @@ class QuarkDriveServiceTest {
         }
         val playback = service.resolvePlayback("f1")
         assertEquals("https://v/low", playback.url)
-        // 转码流是一段段小分片, 不用分块
+        // 转码流是一段段小分片, 不用分块, 也不存本机
         assertNull(playback.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER])
+        assertNull(playback.headers[PlaybackRequestHints.CACHE_KEY_HEADER])
     }
 
     @Test

@@ -457,8 +457,10 @@ class QuarkDriveService internal constructor(
                 }
             }
         }
+        // 转存的副本被删了会重新转存成另一个文件, 内容不变: 按分享里的文件标识存本机数据
+        val cacheKey = "quark-share:${ref.key}"
         val playback = try {
-            resolvePlayback(fileId, subtitles, shareSubtitleKey(ref))
+            resolvePlayback(fileId, subtitles, shareSubtitleKey(ref), cacheKey)
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkAuthException) {
@@ -470,7 +472,7 @@ class QuarkDriveService internal constructor(
                 savedFiles.remove(ref.key)
                 sidecarFiles.forEach { savedFiles.remove(shareKey(ref.shareId, it.fid)) }
             }
-            resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref))
+            resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref), cacheKey)
         }
         rememberShareOf(ref)
         return playback
@@ -753,10 +755,18 @@ class QuarkDriveService internal constructor(
      * 按当前的播放方式取一个文件的播放地址, 连同视频旁边的外挂字幕. 播放器请求这些地址时必须带上 [QuarkPlayback.headers].
      */
     suspend fun resolvePlayback(fileId: String): QuarkPlayback =
-        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId)).also { rememberFolderOf(fileId) }
+        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId), "quark:$fileId").also { rememberFolderOf(fileId) }
 
-    /** @param subtitleKey 手动挂字幕的键 (见 [subtitleKeyOf]) */
-    private suspend fun resolvePlayback(fileId: String, subtitleLookup: SubtitleLookup, subtitleKey: String): QuarkPlayback {
+    /**
+     * @param subtitleKey 手动挂字幕的键 (见 [subtitleKeyOf])
+     * @param cacheKey 原文件内容的固定标识, 播放器按它把下过的数据存在本机 (见 [PlaybackRequestHints.CACHE_KEY_HEADER])
+     */
+    private suspend fun resolvePlayback(
+        fileId: String,
+        subtitleLookup: SubtitleLookup,
+        subtitleKey: String,
+        cacheKey: String,
+    ): QuarkPlayback {
         requireLoggedIn()
         val config = settings.flow.first()
         val transcoded = when (config.playbackMode) {
@@ -776,7 +786,10 @@ class QuarkDriveService internal constructor(
         return QuarkPlayback(
             url,
             if (transcoded == null) {
-                headers + (PlaybackRequestHints.PARALLEL_RANGE_HEADER to parallelConnectionsFor(config.memberType).toString())
+                headers + mapOf(
+                    PlaybackRequestHints.PARALLEL_RANGE_HEADER to parallelConnectionsFor(config.memberType).toString(),
+                    PlaybackRequestHints.CACHE_KEY_HEADER to cacheKey,
+                )
             } else {
                 headers
             },

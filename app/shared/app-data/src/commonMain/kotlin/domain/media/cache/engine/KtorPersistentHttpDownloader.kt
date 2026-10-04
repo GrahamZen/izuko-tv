@@ -135,12 +135,12 @@ class KtorPersistentHttpDownloader(
 
 /**
  * 解析器在请求头里放了并发提示 ([PlaybackRequestHints.PARALLEL_RANGE_HEADER], 夸克网盘直链, 每个连接限速) 就照它同时下几段.
- * 提示只在落库的请求头里留着 (恢复时还要用), 发出去的请求里去掉.
+ * 提示只在落库的请求头里留着 (恢复时还要用), 发出去的请求里去掉 (连同和它一起给的其他提示).
  */
 internal fun DownloadOptions.withParallelRangeHint(): DownloadOptions {
     val hint = headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER] ?: return this
     return copy(
-        headers = headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER,
+        headers = PlaybackRequestHints.strip(headers),
         maxConcurrentSegments = hint.toIntOrNull()?.takeIf { it > 1 } ?: maxConcurrentSegments,
     )
 }
