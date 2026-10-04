@@ -11,6 +11,7 @@ package me.him188.ani.app.videoplayer.media
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -51,8 +52,12 @@ class ParallelRangeReaderTest {
         val rejectWith: IOException? = null,
         /** 范围越过文件末尾时不按范围回, 回整个文件 (有的网盘下载节点这样); 数据源得先读掉前面的才到要的位置, 读掉的记进 [skipped] */
         val ignoresRangePastEnd: Boolean = false,
+        /** 打开时一直等着不回响应头 (像排在 OkHttp 的队列里), 被打断才抛 InterruptedIOException; 被打断的次数记进 [interruptedOpens] */
+        val hangOpens: Boolean = false,
     ) : RangeOpener {
         val opened = mutableListOf<Pair<Long, Long>>()
+        val openThreads = mutableListOf<Thread>()
+        val interruptedOpens = AtomicInteger()
         val active = AtomicInteger()
         val maxActive = AtomicInteger()
         val served = AtomicLong()
@@ -64,7 +69,16 @@ class ParallelRangeReaderTest {
         override fun open(start: Long, length: Long): OpenedRange {
             val count = synchronized(opened) {
                 opened += start to length
+                openThreads += Thread.currentThread()
                 opened.size
+            }
+            if (hangOpens) {
+                try {
+                    Thread.sleep(60_000)
+                } catch (e: InterruptedException) {
+                    interruptedOpens.incrementAndGet()
+                    throw InterruptedIOException("open interrupted")
+                }
             }
             rejectWith?.let { throw it }
             if (count <= failingOpens) throw IOException("connect timed out ($count)")
@@ -305,6 +319,52 @@ class ParallelRangeReaderTest {
         assertFailsWith<Rejected> { reader.open(0, -1) }
         reader.close()
         assertEquals(1, server.opened.size)
+    }
+
+    @Test
+    fun `with a known length every chunk is requested at once and nothing on the opening thread`() {
+        val server = FakeServer()
+        val reader = reader(server)
+        assertEquals(content.size - 500L, reader.open(500, -1, knownTotalLength = content.size.toLong()))
+        assertContentEquals(content.copyOfRange(500, content.size), reader.readAll())
+        reader.close()
+        // 打开时不先在调用线程上问长度: 各块都在下载线程上请求
+        assertTrue(Thread.currentThread() !in synchronized(server.opened) { server.openThreads.toList() })
+        assertEquals(content.size.toLong(), reader.totalLength)
+    }
+
+    @Test
+    fun `a small range with a known length is split across connections`() {
+        val server = FakeServer()
+        val reader = ParallelRangeReader(server, executor, connections = 4, chunkSize = 4000, minPartBytes = 1000)
+        assertEquals(3000L, reader.open(2000, 3000, knownTotalLength = content.size.toLong()))
+        assertContentEquals(content.copyOfRange(2000, 5000), reader.readAll())
+        reader.close()
+        assertEquals(listOf(2000L to 1000L, 3000L to 1000L, 4000L to 1000L), server.opened.sortedBy { it.first })
+    }
+
+    @Test
+    fun `closing cancels requests still waiting for a response`() {
+        val server = FakeServer(hangOpens = true)
+        val reader = reader(server)
+        reader.open(0, -1, knownTotalLength = content.size.toLong())
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (synchronized(server.opened) { server.opened.size } < 4 && System.nanoTime() < deadline) Thread.sleep(10)
+        reader.close()
+        // 不要了的请求当场作废, 不占着位子挡住之后的请求
+        while (server.interruptedOpens.get() < 4 && System.nanoTime() < deadline) Thread.sleep(10)
+        assertEquals(4, server.interruptedOpens.get())
+        // 下载线程回到线程池时不带着打断标记
+        assertTrue(executor.submit<Boolean> { Thread.currentThread().isInterrupted }.get() == false)
+    }
+
+    @Test
+    fun `errors that are not worth retrying reach the reader as they are when chunks open in the background`() {
+        val server = FakeServer(rejectWith = Rejected())
+        val reader = ParallelRangeReader(server, executor, connections = 4, chunkSize = 1000) { it !is Rejected }
+        reader.open(0, -1, knownTotalLength = content.size.toLong())
+        assertFailsWith<Rejected> { reader.read(ByteArray(10), 0, 10) }
+        reader.close()
     }
 
     @Test

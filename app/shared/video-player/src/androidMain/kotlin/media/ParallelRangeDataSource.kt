@@ -22,12 +22,14 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 多连接分块下载的 HTTP 数据源 (见 [ParallelRangeReader]), 每个范围请求交给 [upstreamFactory] 建的数据源去发.
@@ -44,14 +46,25 @@ internal class ParallelRangeDataSource(
     private val chunkSize: Int,
     /** 此刻要不要多开连接 (到 [boostedConnectionsFor] 路), 每读一次问一次. */
     private val boosted: () -> Boolean = { false },
+    /** 资源总长, 同一个资源的各数据源共用: 有了它打开时不必先单独问长度 (见 [ParallelRangeReader.open]). 不知道时为 -1. */
+    private val knownLength: AtomicLong = AtomicLong(-1),
+    /** [knownLength] 还不知道时在加载线程上问一次的来源 (例如本机缓存里记着的总长); 也不知道时返回 -1. */
+    private val lengthHint: () -> Long = { -1 },
 ) : BaseDataSource(/* isNetwork = */ true) {
+    /**
+     * @param knownLength 见 [ParallelRangeDataSource] 的同名参数; 同一个资源的几个工厂 (播放、补字体) 传同一个
+     * @param lengthHint 见 [ParallelRangeDataSource] 的同名参数
+     */
     class Factory(
         private val upstreamFactory: HttpDataSource.Factory,
         private val connections: Int,
         private val chunkSize: Int = chunkSizeFor(connections),
         private val boosted: () -> Boolean = { false },
+        private val knownLength: AtomicLong = AtomicLong(-1),
+        private val lengthHint: () -> Long = { -1 },
     ) : DataSource.Factory {
-        override fun createDataSource(): DataSource = ParallelRangeDataSource(upstreamFactory, connections, chunkSize, boosted)
+        override fun createDataSource(): DataSource =
+            ParallelRangeDataSource(upstreamFactory, connections, chunkSize, boosted, knownLength, lengthHint)
     }
 
     private val boostedConnections = boostedConnectionsFor(connections)
@@ -98,7 +111,10 @@ internal class ParallelRangeDataSource(
                 )
             } catch (e: IOException) {
                 runCatching { upstream.close() }
-                logger.warn { "Open ${dataSpec.uri.host} at $start failed after ${(System.nanoTime() - startedAt) / 1_000_000}ms: $e" }
+                // 被打断的是读的一方不要了的分块 (见 ParallelRangeReader 的 Chunk.cancel), 不是出错; HTTP 数据源会把它包一层
+                if (e !is InterruptedIOException && e.cause !is InterruptedIOException) {
+                    logger.warn { "Open ${dataSpec.uri.host} at $start failed after ${(System.nanoTime() - startedAt) / 1_000_000}ms: $e" }
+                }
                 throw e
             }
             val headers = upstream.responseHeaders
@@ -114,14 +130,18 @@ internal class ParallelRangeDataSource(
             maxWindowBytes = BOOSTED_WINDOW_BYTES,
         )
         this.reader = reader
-        val length = reader.open(dataSpec.position, dataSpec.length)
+        val lengthKnown = knownLength.get().takeIf { it >= 0 }
+            ?: lengthHint().also { if (it >= 0) knownLength.compareAndSet(-1, it) }
+        val length = reader.open(dataSpec.position, dataSpec.length, lengthKnown)
+        if (lengthKnown < 0 && reader.totalLength >= 0) knownLength.compareAndSet(-1, reader.totalLength)
         logger.info {
             val mode = when {
                 !reader.isParallel -> "a single connection"
                 boosted() -> "$boostedConnections connections (boosted from $connections)"
                 else -> "$connections connections"
             }
-            "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length in ${millisSince(startedAt)}ms"
+            val wait = if (lengthKnown >= 0) "all chunks requested at once" else "in ${millisSince(startedAt)}ms"
+            "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length, $wait"
         }
         opened = true
         bytesRead = 0
