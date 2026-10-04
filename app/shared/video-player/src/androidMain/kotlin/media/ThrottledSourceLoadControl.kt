@@ -41,6 +41,10 @@ import androidx.annotation.OptIn as AndroidxOptIn
  *   拆成几块按平时的路数算, 多开不影响它们.
  * - 暂停时 (离开播放页时保留的会话也是暂停着的) 只攒到 [PAUSED_MAX_BUFFER_US]: 播放中的缓冲本来就在多开连接的两个阈值之间来回,
  *   恢复播放时有这么多就够; 再往上攒只是占内存, 4K 片子会一直攒到字节上限 (一百多 MB).
+ * 拖动预览由主播放器跳到预览位置时 ([previewing], 见 [SeekPreview]), 任何源都只读到 [PREVIEW_MAX_BUFFER_US], 出画面就算就绪:
+ * 每挪一步都要重新缓冲, 照常攒的话一步要从盘上读几十秒的数据进内存. 在一个位置上停下来看清楚之后 ([previewParked]) 照暂停时的规则往后攒:
+ * 确认时多半就从这里播, 闲着的这段时间先缓冲好, 开播后不至于马上卡; 再挪一步时播放器跳转会掐掉这次加载, 不耽误下一个位置.
+ *
  *
  * 往前的缓冲不足 [MIN_FORWARD_BUFFER_US] 时不管字节上限照读: 字节上限按轨道算, 本地文件 (`file://` 等) 的视频轨只给约 20 MB
  * (`DefaultLoadControl.DEFAULT_VIDEO_BUFFER_SIZE_FOR_LOCAL_PLAYBACK`, 连音轨约 33 MB), 码率持续 9 Mbps 以上的段落光往回保留的就占满了.
@@ -78,6 +82,14 @@ internal class ThrottledSourceLoadControl : LoadControl {
     var boosted = false
         private set
 
+    /** 拖动预览中 (见 [SeekPreview]); 主线程写, 播放线程读. */
+    @Volatile
+    var previewing = false
+
+    /** 拖动预览停在一个位置上、那一帧已经出来了 (见 [SeekPreview]): 不再按 [PREVIEW_MAX_BUFFER_US] 截住, 照暂停时的规则缓冲. 主线程写, 播放线程读. */
+    @Volatile
+    var previewParked = false
+
     // 上下限都设成限速源要的上限; 普通源在 shouldContinueLoading 里按默认的 50 秒截住, 效果同默认 (默认上下限也都是 50 秒)
     private val delegate = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
@@ -90,6 +102,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         updateBoost(parameters)
+        if (previewing && !previewParked && parameters.bufferedDurationUs >= PREVIEW_MAX_BUFFER_US) return false
         if (!throttled && parameters.bufferedDurationUs >= DEFAULT_MAX_BUFFER_US) return false
         if (throttled && !parameters.playWhenReady && parameters.bufferedDurationUs >= PAUSED_MAX_BUFFER_US) return false
         val withinByteLimit = delegate.shouldContinueLoading(parameters)
@@ -98,6 +111,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         updateBoost(parameters)
+        if (previewing) return true // 预览时播放器停着, 这里只决定画面出来后算不算就绪
         if (!throttled) return delegate.shouldStartPlayback(parameters)
         if (mediaChanged) {
             mediaChanged = false
@@ -217,6 +231,9 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
         /** 限速源暂停时的缓冲上限: 与收回多开连接的阈值相同. */
         const val PAUSED_MAX_BUFFER_US = BOOST_OFF_US
+
+        /** 拖动预览时的缓冲上限: 有关键帧之后的一点就够出画面. */
+        const val PREVIEW_MAX_BUFFER_US = 1_000_000L
 
         /**
          * 往前的缓冲不足这些时不管字节上限照读. 留出隧道播放时解码器先收下的那段 (约 0.7 秒) 和读盘偶尔的停顿;
