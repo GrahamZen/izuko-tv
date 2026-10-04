@@ -109,6 +109,8 @@ import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_off
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_off_description
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_smart
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_smart_description
+import me.him188.ani.app.ui.lang.settings_player_disk_cache
+import me.him188.ani.app.ui.lang.settings_player_disk_cache_description
 import me.him188.ani.app.ui.lang.settings_player_enable_regex_filter
 import me.him188.ani.app.ui.lang.settings_player_foldable_hover_mode
 import me.him188.ani.app.ui.lang.settings_player_foldable_hover_mode_description
@@ -919,6 +921,15 @@ fun SettingsScope.PlayerGroup(
                 },
                 title = { Text(stringResource(Lang.settings_player_audio_time_stretch)) },
                 description = { Text(stringResource(Lang.settings_player_audio_time_stretch_description)) },
+            )
+            HorizontalDividerItem()
+            SwitchItem(
+                checked = config.enablePlaybackDiskCache,
+                onCheckedChange = {
+                    videoScaffoldConfig.update(config.copy(enablePlaybackDiskCache = it))
+                },
+                title = { Text(stringResource(Lang.settings_player_disk_cache)) },
+                description = { Text(stringResource(Lang.settings_player_disk_cache_description)) },
             )
         }
         HorizontalDividerItem()
