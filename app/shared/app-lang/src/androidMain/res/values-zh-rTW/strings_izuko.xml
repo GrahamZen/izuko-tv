@@ -88,6 +88,12 @@
     <string name="settings_player_idle_progress_bar_off">不顯示</string>
     <string name="settings_player_pause_on_scrub">拖動進度條時暫停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遙控器選位置時先暫停畫面，按確認鍵從選中處播放；關閉後邊播邊選</string>
+    <string name="settings_player_disk_cache">邊下邊播</string>
+    <string name="settings_player_disk_cache_description">線上播放時把下載過的部分存在本機：往回拖、重看直接讀本機，拖動預覽時下載過的位置馬上出畫面（沒下載的位置停一下就去下）。關閉時拖動預覽每個位置都要先下載。最多佔剩餘空間的四分之一，滿了先刪最久沒看的；關掉時刪除已存的</string>
+    <string name="settings_storage_playback_cache">清理邊下邊播快取</string>
+    <string name="settings_storage_playback_cache_usage">「邊下邊播」存在本機的影片，往回拖、重看時從這裡讀。目前佔用 %1$s，上限 %2$s（剩餘空間與已存部分合計的四分之一，最多 4 GB），滿了先刪最久沒看的；關掉「邊下邊播」會全部刪除</string>
+    <string name="settings_storage_playback_cache_cleared">已清理邊下邊播快取</string>
+    <string name="player_disk_cache_hint">在設定裡打開「邊下邊播」，往回拖不用再等</string>
     <string name="player_buffer_wait_start">網盤影片先緩衝 %1$d 秒再開始播放，免得剛播就卡</string>
     <string name="player_buffer_wait_stall">下載速度跟不上這個影片的位元率，先緩衝 %1$d 秒再接著播</string>
     <string name="player_buffer_wait_stall_again">下載速度一直跟不上這個影片的位元率（已卡 %2$d 次），這次先緩衝 %1$d 秒再接著播</string>
@@ -507,6 +513,7 @@
     <string name="subject_episode_related_recommendations_empty">Bangumi 上還沒有相關推薦</string>
     <string name="player_frame_preview_failed">預覽載入失敗</string>
     <string name="player_frame_preview_not_downloaded">這裡還沒下載</string>
+    <string name="player_frame_preview_stay_to_load">停一下就載入</string>
     <string name="settings_log_share_failed">分享日誌檔案失敗，目前裝置可能不支援分享，可改用複製日誌內容</string>
     <string name="settings_log_export_file">匯出當日日誌檔案</string>
     <string name="settings_log_export_succeed">日誌已匯出到 %1$s</string>

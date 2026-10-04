@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.SinglePeriodTimeline
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -49,6 +50,13 @@ class ThrottledSourceLoadControlTest {
     }
 
     @Test
+    fun `played content is kept 30 seconds, 5 seconds with the disk cache on`() {
+        assertEquals(30_000_000L, ThrottledSourceLoadControl().getBackBufferDurationUs(PlayerId.UNSET))
+        assertEquals(5_000_000L, ThrottledSourceLoadControl(diskCacheOn = true).getBackBufferDurationUs(PlayerId.UNSET))
+        assertTrue(ThrottledSourceLoadControl(diskCacheOn = true).retainBackBufferFromKeyframe(PlayerId.UNSET))
+    }
+
+    @Test
     fun `ordinary sources buffer up to 50 seconds like the default`() {
         val control = loadControl(throttled = false)
         assertTrue(control.shouldContinueLoading(parameters(10.0)))
@@ -74,6 +82,40 @@ class ThrottledSourceLoadControlTest {
         val ordinary = loadControl(throttled = false)
         assertTrue(ordinary.shouldContinueLoading(parameters(45.0, playWhenReady = false)))
         assertFalse(ordinary.shouldContinueLoading(parameters(50.0, playWhenReady = false)))
+    }
+
+    @Test
+    fun `seek preview only loads what the frame needs and counts as ready at once`() {
+        val control = loadControl(throttled = true)
+        control.previewing = true
+        assertTrue(control.shouldContinueLoading(parameters(0.5, playWhenReady = false)))
+        assertFalse(control.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
+        assertTrue(control.shouldStartPlayback(parameters(0.0, playWhenReady = false)))
+
+        // 预览结束后照旧
+        control.previewing = false
+        assertTrue(control.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
+        assertFalse(control.shouldStartPlayback(parameters(3.0, rebuffering = true)))
+    }
+
+    @Test
+    fun `seek preview parked on a position buffers like a paused player`() {
+        val throttled = loadControl(throttled = true)
+        throttled.previewing = true
+        throttled.previewParked = true
+        assertTrue(throttled.shouldContinueLoading(parameters(30.0, playWhenReady = false)))
+        assertFalse(throttled.shouldContinueLoading(parameters(61.0, playWhenReady = false)))
+        assertTrue(throttled.shouldStartPlayback(parameters(0.0, playWhenReady = false)))
+
+        val ordinary = loadControl(throttled = false)
+        ordinary.previewing = true
+        ordinary.previewParked = true
+        assertTrue(ordinary.shouldContinueLoading(parameters(30.0, playWhenReady = false)))
+        assertFalse(ordinary.shouldContinueLoading(parameters(51.0, playWhenReady = false)))
+
+        // 又挪了一步: 回到只读出画面所需
+        ordinary.previewParked = false
+        assertFalse(ordinary.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
     }
 
     @Test

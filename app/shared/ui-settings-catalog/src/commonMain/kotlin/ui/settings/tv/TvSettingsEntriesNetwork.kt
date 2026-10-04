@@ -11,8 +11,11 @@ package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -102,6 +105,9 @@ import me.him188.ani.app.ui.lang.settings_storage_image_cache_cleared
 import me.him188.ani.app.ui.lang.settings_storage_image_cache_usage
 import me.him188.ani.app.ui.lang.settings_storage_play_cache_without_searching
 import me.him188.ani.app.ui.lang.settings_storage_play_cache_without_searching_description
+import me.him188.ani.app.ui.lang.settings_storage_playback_cache
+import me.him188.ani.app.ui.lang.settings_storage_playback_cache_cleared
+import me.him188.ani.app.ui.lang.settings_storage_playback_cache_usage
 import me.him188.ani.app.ui.lang.tv_settings_bangumi_custom_hint
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_cache_collection
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_cache_media
@@ -133,6 +139,8 @@ import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.app.ui.settings.tabs.network.ProxyUIMode
 import me.him188.ani.app.ui.settings.tabs.network.toDataSettings
 import me.him188.ani.app.ui.settings.tabs.network.toUIConfig
+import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheStorage
+import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheUsage
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
@@ -142,6 +150,7 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.platform.format1f
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
+import kotlin.time.Duration.Companion.seconds
 
 /** 网络、BT、存储用到的几份值. */
 internal object TvNetworkSettingKeys {
@@ -178,6 +187,20 @@ internal object TvNetworkSettingKeys {
 }
 
 internal data class TvProxyTestState(val results: Map<String, TestState>?, val running: Boolean)
+
+/**
+ * 「边下边播」存在本机的视频: 占用与此刻的上限. 页面开着时每几秒重算一次 (后台在播时还在存、刚关掉开关时正在删), 清理后当场重算.
+ * 没有这项存储的平台 (只有安卓有) 一直没有值, 用到它的设置项不显示.
+ */
+internal val playbackCacheUsage = TvSettingKey.Live<PlaybackDiskCacheUsage>("playbackCacheUsage") { deps ->
+    val storage = GlobalKoin.getOrNull<PlaybackDiskCacheStorage>()
+    if (storage == null) {
+        emptyFlow()
+    } else {
+        combine(deps.playbackCacheRefresh, flow { while (true) emit(Unit).also { delay(3.seconds) } }) { _, _ -> storage.usage() }
+    }
+}
+
 internal data class TvImageCacheUsage(val used: FileSize, val max: FileSize)
 
 // ---- 网络 ----
@@ -565,7 +588,7 @@ private fun rateLabel(rate: FileSize): TvText =
 
 // ---- 存储 ----
 
-/** 存储: 图片缓存 (占用与清理)、弹幕缓存策略、标记看过后删缓存、有缓存时直接播. */
+/** 存储: 图片缓存与边下边播缓存 (占用与清理)、弹幕缓存策略、标记看过后删缓存、有缓存时直接播. */
 internal fun TvSettingsItemsBuilder.storageItems() {
     val keys = TvNetworkSettingKeys
     val usage = keys.imageCacheUsage
@@ -584,6 +607,23 @@ internal fun TvSettingsItemsBuilder.storageItems() {
                 }
                 env.deps.imageCacheRefresh.update { it + 1 }
                 env.toast(getString(Lang.settings_storage_image_cache_cleared))
+            },
+        )
+    }
+    action(
+        Lang.settings_storage_playback_cache, keys = listOf(playbackCacheUsage),
+        value = { v -> v[playbackCacheUsage]?.let { tvText("${it.usedBytes.bytes} / ${it.maxBytes.bytes}") } },
+        details = { v ->
+            v[playbackCacheUsage]?.let {
+                tvText(Lang.settings_storage_playback_cache_usage, it.usedBytes.bytes.toString(), it.maxBytes.bytes.toString())
+            }
+        },
+    ) {
+        listOf(
+            TvSettingsEdit.Run { env ->
+                GlobalKoin.getOrNull<PlaybackDiskCacheStorage>()?.clear()
+                env.deps.playbackCacheRefresh.update { it + 1 }
+                env.toast(getString(Lang.settings_storage_playback_cache_cleared))
             },
         )
     }

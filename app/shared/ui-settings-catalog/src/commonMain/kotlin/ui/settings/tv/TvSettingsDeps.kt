@@ -62,6 +62,9 @@ class TvSettingsDeps(
     /** 清理图片缓存后加一, 占用量跟着重新统计. */
     val imageCacheRefresh = MutableStateFlow(0)
 
+    /** 清理边下边播缓存后加一, 占用量当场重算 (不等下一次定时重算). */
+    val playbackCacheRefresh = MutableStateFlow(0)
+
     /** 「扫码传到手机」的服务 (焦点在那一行时才起); null = 没起. */
     val logShare = MutableStateFlow<LogLanShareState?>(null)
 

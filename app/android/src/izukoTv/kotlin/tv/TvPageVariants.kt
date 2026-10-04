@@ -39,7 +39,6 @@ import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.data.network.TmdbImageService
-import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -129,7 +128,6 @@ import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
-import me.him188.ani.app.ui.subject.episode.tv.TvDecoderConcurrency
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
