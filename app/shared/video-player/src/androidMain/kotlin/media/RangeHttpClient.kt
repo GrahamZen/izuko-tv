@@ -58,7 +58,7 @@ internal object RangeHttpClients {
     private const val CONNECT_TIMEOUT_MILLIS = 3_000L
     private const val HANDSHAKE_TIMEOUT_MILLIS = 3_000
     private const val READ_TIMEOUT_MILLIS = 10_000L
-    private const val MAX_IDLE_CONNECTIONS = 32
+    private const val MAX_IDLE_CONNECTIONS = 64
     private const val KEEP_ALIVE_MINUTES = 5L
 
     private val dns = FailoverDns(Dns.SYSTEM, DohResolver::lookup)
@@ -88,7 +88,7 @@ internal object RangeHttpClients {
     private fun build(proxyConfig: PlaybackProxyConfig?): OkHttpClient = OkHttpClient.Builder()
         // 只用 HTTP/1.1: 下载节点支持 HTTP/2, 那样几路分块会挤进同一个连接, 而网盘是按连接限速的
         .protocols(listOf(Protocol.HTTP_1_1))
-        // 默认只留 5 个空闲连接: 非会员 16 路分块时多出来的连接下完一块就被关, 下一块又要重新建连握手 (跨洋要好几秒)
+        // 默认只留 5 个空闲连接: 非会员 16 路 (多开时 48 路, 另有补字体的) 分块时多出来的连接下完一块就被关, 下一块又要重新建连握手 (跨洋要好几秒)
         .connectionPool(ConnectionPool(MAX_IDLE_CONNECTIONS, KEEP_ALIVE_MINUTES, TimeUnit.MINUTES))
         .connectTimeout(CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
         .readTimeout(READ_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
