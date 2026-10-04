@@ -38,6 +38,13 @@ abstract class PlayerExtension(
     }
 
     /**
+     * 选中的资源装进播放器之前问一次: 这一集从哪里开始播 (毫秒), 没有意见时返回 `null`.
+     * 播放器直接从这里打开, 不用先在开头缓冲、开播后再跳过去. 各扩展都没有意见时从头播;
+     * 原地重载 ([EpisodeFetchSelectPlayState.reloadCurrentMedia]) 不问, 直接回到重载给的位置.
+     */
+    open suspend fun startPositionMillis(episodeId: Int): Long? = null
+
+    /**
      * Before [EpisodeFetchSelectPlayState.episodeIdFlow] switches.
      *
      * Old episode id can be obtained using [EpisodeFetchSelectPlayState.episodeIdFlow] in this method.

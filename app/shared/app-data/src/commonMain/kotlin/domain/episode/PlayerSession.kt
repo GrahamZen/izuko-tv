@@ -138,13 +138,10 @@ class PlayerSession(
     /**
      * 解析 media 并开始播放这个 media.
      *
-     * @param startPositionHintMillis 预计从哪里开始播放, 见 [HlsPlaybackPreparer.prepare]. 只影响预缓存, 不会跳转.
+     * @param startPositionMillis 播放器从这里打开 (毫秒): 读完文件头和索引直接从这里缓冲, 不先在开头开播再跳过来.
+     *   同时作为 HLS 预缓存的起点提示, 见 [HlsPlaybackPreparer.prepare].
      */
-    suspend fun loadMedia(
-        media: Media?,
-        episodeInfo: EpisodeMetadata,
-        startPositionHintMillis: Long? = null,
-    ) = coroutineScope {
+    suspend fun loadMedia(media: Media?, episodeInfo: EpisodeMetadata, startPositionMillis: Long = 0L) = coroutineScope {
         val backgroundScope = this
         _videoLoadingStateFlow.value = VideoLoadingState.Initial // 避免一直显示已取消 (.Cancelled)
         stopPlayback()
@@ -180,13 +177,13 @@ class PlayerSession(
             } finally {
                 _torrentOpenProgress.value = null
             }
-            val preparedData = prepareHlsPlaybackIfEnabled(data, startPositionHintMillis).also {
+            val preparedData = prepareHlsPlaybackIfEnabled(data, startPositionMillis.takeIf { it > 0L }).also {
                 preparedHlsPlaybackProxySession = it.session
             }.data
 
-            logger.info { "Set media data to player: $preparedData" }
+            logger.info { "Set media data to player at $startPositionMillis ms: $preparedData" }
             // v2: setMediaData 挂起直到媒体真正打开, 并直接携带播放意图, 无需再单独 resume.
-            player.setMediaData(preparedData, playWhenReady = true)
+            player.setMediaData(preparedData, playWhenReady = true, startPositionMillis = startPositionMillis)
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
             preparedHlsPlaybackProxySession = null
 

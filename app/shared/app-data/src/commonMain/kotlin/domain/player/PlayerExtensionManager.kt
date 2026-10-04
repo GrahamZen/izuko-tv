@@ -22,6 +22,8 @@ import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionContext
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.koin.core.Koin
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.cancellation.CancellationException
@@ -88,6 +90,29 @@ class PlayerExtensionManager(
                 throw ExtensionException("Error calling extension ${it.name}, see cause", e)
             }
         }
+    }
+
+    /**
+     * [episodeId] 从哪里开始播 (见 [PlayerExtension.startPositionMillis]): 取第一个给出意见的扩展. 扩展出错只当它没有意见,
+     * 从头播总比播不了好.
+     */
+    suspend fun startPositionMillis(episodeId: Int): Long? {
+        for (extension in extensions) {
+            val positionMillis = try {
+                extension.startPositionMillis(episodeId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn(e) { "Extension ${extension.name} failed to give a start position for episode $episodeId" }
+                null
+            }
+            if (positionMillis != null) return positionMillis
+        }
+        return null
+    }
+
+    private companion object {
+        private val logger = logger<PlayerExtensionManager>()
     }
 }
 
