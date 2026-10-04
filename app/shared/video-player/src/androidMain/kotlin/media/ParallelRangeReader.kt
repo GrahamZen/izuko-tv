@@ -40,11 +40,13 @@ internal fun interface RangeOpener {
 }
 
 /**
- * 把一段范围切成块, 同时最多 [connections] 块在下, 按顺序交给读的一方.
+ * 把一段范围切成块, 同时最多 [maxConnections] 块在下 (平时是 [connections]), 按顺序交给读的一方.
  *
  * 每次 [open] 之后头一轮 ([connections] 块) 每块 [firstChunkSize], 之后每轮翻倍, 到 [chunkSize] 为止: 开播 / 跳转后马上要的那几 MB
  * 由所有连接一起下, 不用等一个连接把一整块下完 —— 连接被限速得很慢时 (非会员网盘每路几十 KB/s), 一整块要等上一两分钟.
  * 读的一方可以读一块里已经到了的部分, 不用等整块下完, 所以开播不比单连接慢.
+ * [maxConnections] 随时可变 (播放跟不上时多开, 见 [ThrottledSourceLoadControl.boosted]), 每读一次照它补块; 比 [connections] 多时
+ * 每块按 [maxWindowBytes] 平分 (不小于 [firstChunkSize]), 各块缓冲常驻的总量不随连接数一起涨.
  * 一块下到一半断了就从断的地方重新请求, 第一次打开连不上也当场再试 (连不上的节点会被跳过, 见 [RangeHttpClients]),
  * 连续失败 [MAX_RETRIES] 次才把错误交给读的一方. [retryable] 判为不值得重试的错误 (例如 HTTP 403) 直接交出去.
  *
@@ -61,6 +63,8 @@ internal class ParallelRangeReader(
     private val connections: Int,
     private val chunkSize: Int,
     private val firstChunkSize: Int = chunkSize,
+    private val maxConnections: () -> Int = { connections },
+    private val maxWindowBytes: Int = connections * chunkSize,
     private val retryable: (IOException) -> Boolean = { true },
 ) {
     private class Chunk(val start: Long, val length: Int, val data: ByteArray) {
@@ -195,7 +199,7 @@ internal class ParallelRangeReader(
             return 0
         }
         schedule(initial = first.connection)
-        while (window.size < connections && nextStart < end) schedule(initial = null)
+        topUp()
         return remaining
     }
 
@@ -203,6 +207,7 @@ internal class ParallelRangeReader(
         direct?.let { return it.read(buffer, offset, length) }
         if (length == 0) return 0
         if (remaining == 0L) return -1
+        topUp()
         val chunk = window.first()
         val waitStartedAt = System.nanoTime()
         val available = chunk.awaitAvailable(readOffset) { waited -> logSlowWait(chunk, waited) }
@@ -216,9 +221,9 @@ internal class ParallelRangeReader(
         remaining -= count
         if (readOffset >= chunk.length) {
             window.removeFirst()
-            freeBuffers.addLast(chunk.data)
+            if (freeBuffers.size < limit()) freeBuffers.addLast(chunk.data)
             readOffset = 0
-            if (nextStart < end) schedule(initial = null)
+            topUp()
         }
         return count
     }
@@ -278,17 +283,31 @@ internal class ParallelRangeReader(
         }
     }
 
-    /** 下一块多大: 头一轮 [firstChunkSize], 之后每轮 ([connections] 块) 翻倍, 到 [chunkSize] 为止. */
+    private fun limit(): Int = maxConnections().coerceAtLeast(1)
+
+    /** 补到 [maxConnections] 块. */
+    private fun topUp() {
+        val limit = limit()
+        while (window.size < limit && nextStart < end) schedule(initial = null)
+    }
+
+    /**
+     * 下一块多大: 头一轮 [firstChunkSize], 之后每轮 ([connections] 块) 翻倍, 到 [chunkSize] 为止;
+     * 连接比 [connections] 多时不超过 [maxWindowBytes] 的平分.
+     */
     private fun nextChunkLength(): Long {
         val round = (scheduledCount / connections).coerceAtMost(MAX_RAMP_ROUNDS)
-        return minOf(chunkSize.toLong(), firstChunkSize.toLong() shl round)
+        val ramped = minOf(chunkSize.toLong(), firstChunkSize.toLong() shl round)
+        val limit = limit()
+        if (limit <= connections) return ramped
+        return minOf(ramped, (maxWindowBytes / limit).toLong().coerceAtLeast(firstChunkSize.toLong()))
     }
 
     private fun schedule(initial: RangeConnection?) {
         val length = minOf(nextChunkLength(), end - nextStart).toInt()
         scheduledCount++
-        // 缓冲一律按最大的块分配, 换下来的可以给后面任何一块用
-        val data = freeBuffers.removeFirstOrNull() ?: ByteArray(chunkSize)
+        // 缓冲按块长分配, 一样长的才复用: 块长随连接数变 (见 nextChunkLength), 都按最大的块分配的话多开连接时常驻的缓冲跟着翻倍
+        val data = freeBuffers.removeFirstOrNull()?.takeIf { it.size == length } ?: ByteArray(length)
         val chunk = Chunk(nextStart, length, data)
         nextStart += length
         window.addLast(chunk)
