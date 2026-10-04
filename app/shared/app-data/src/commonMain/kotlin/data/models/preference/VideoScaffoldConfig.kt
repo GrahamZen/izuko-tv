@@ -224,6 +224,12 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val enableHighQualityAudioTimeStretch: Boolean = true,
     /**
+     * 「边下边播」: Android 上在线播放时把下过的数据存在本机 (见 video-player 的 `PlaybackDiskCache`):
+     * 往回拖、重看时从盘上读, 拖动预览下载过的位置马上出画面. 关着时不存, 拖动预览每个位置都要先下载.
+     * 每打开一个视频时读一次.
+     */
+    val enablePlaybackDiskCache: Boolean = false,
+    /**
      * 过滤 HLS 播放列表中的插播广告, 见 `HlsManifestFilter`.
      *
      * 5.7 至 6.1 的同类开关是默认关闭的 `enableExperimentalHlsSegmentFiltering`, 已不再读取:

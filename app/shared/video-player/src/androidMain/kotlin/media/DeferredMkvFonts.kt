@@ -42,11 +42,13 @@ import kotlin.time.TimeSource
  * 读完之前字幕用系统字体画. libass 会收下后加的字体, 但已经用替代字体画过的字体族会一直沿用替代字体
  * (渲染器按字体族缓存选好的字体, 只在建渲染器时清空), 所以读完后换一个新渲染器 ([reloadRender]).
  *
- * @param dataSourceFactory 与播放用的相同 (同样的请求头与并发连接)
+ * @param cacheKey 媒体存在本机的内容标识 (见 [PlaybackDiskCache]); 不存时为 null
+ * @param dataSourceFactory 与播放用的相同 (同样的请求头与并发连接, 存本机时也同样先读本机)
  */
 @AndroidxOptIn(UnstableApi::class)
 internal class DeferredMkvFonts(
     private val uri: Uri,
+    private val cacheKey: String?,
     private val dataSourceFactory: DataSource.Factory,
     private val assHandler: AssHandler,
     scope: CoroutineScope,
@@ -81,7 +83,14 @@ internal class DeferredMkvFonts(
         var fonts = 0
         try {
             runInterruptible(Dispatchers.IO) {
-                val dataSpec = DataSpec.Builder().setUri(uri).setPosition(position).setLength(length).build()
+                val dataSpec = DataSpec.Builder()
+                    .setUri(uri)
+                    .setPosition(position)
+                    .setLength(length)
+                    .setKey(cacheKey)
+                    // 存本机时分段写, 每段写完落一次盘 (见 PlaybackDiskCache); 不设的话整段附件写成一个文件, 读完才落盘
+                    .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
+                    .build()
                 DataSourceInputStream(dataSourceFactory.createDataSource(), dataSpec).use { stream ->
                     MkvAttachments.readFonts(BufferedInputStream(stream, 64 * 1024), length) { name, data ->
                         assHandler.addFont(name, data)
