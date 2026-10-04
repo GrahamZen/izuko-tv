@@ -509,6 +509,8 @@ class QuarkDriveService internal constructor(
             throw e
         } catch (e: QuarkShareUnavailableException) {
             throw e
+        } catch (e: QuarkCapacityException) {
+            throw e
         } catch (e: QuarkApiException) {
             // 记下的转存文件夹可能被用户删了: 重新找 (没有就新建) 再试一次
             logger.warn { "Saving to the remembered Quark folder failed, looking it up again: ${e.message}" }
@@ -537,12 +539,26 @@ class QuarkDriveService internal constructor(
 
         val token = shareToken(ref.shareId, ref.passcode)
         val saved = try {
-            api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+            try {
+                api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+            } catch (e: QuarkApiException) {
+                if (!e.isCapacityLimit) throw e
+                // 网盘满了: 转存文件夹里的都是之前播放时转存的副本, 清掉这次用不到的腾出地方, 再转存一次
+                freeSaveFolder(existing.filter { it.fid !in reused }, ref)
+                try {
+                    api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+                } catch (e: QuarkApiException) {
+                    if (!e.isCapacityLimit) throw e
+                    throw QuarkCapacityException("夸克网盘空间不够: 清空「$SAVE_FOLDER_NAME」后仍放不下 ${ref.fileName} (${ref.size / MB} MB)")
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkAuthException) {
             throw e
         } catch (e: QuarkShareUnavailableException) {
+            throw e
+        } catch (e: QuarkCapacityException) {
             throw e
         } catch (e: QuarkApiException) {
             if (missing.size == 1 && video in missing) throw e
@@ -582,6 +598,17 @@ class QuarkDriveService internal constructor(
             }
         }
         return savedFiles[ref.key] ?: throw QuarkApiException("转存后没找到 ${ref.fileName}")
+    }
+
+    /** 网盘满了转存不进去时, 删掉转存文件夹里的 [files] (等删除完成) 腾出空间; 没有能删的就是空间被别的文件占着. */
+    private suspend fun freeSaveFolder(files: List<QuarkFile>, ref: QuarkShareFileRef) {
+        if (files.isEmpty()) {
+            throw QuarkCapacityException("夸克网盘空间不够, 「$SAVE_FOLDER_NAME」里也没有能清的, 放不下 ${ref.fileName} (${ref.size / MB} MB)")
+        }
+        logger.warn { "Quark drive is full: removing ${files.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key}" }
+        api.deleteFiles(files.map { it.fid }, wait = true)
+        val removed = files.mapTo(HashSet()) { it.fid }
+        savedFiles.entries.removeAll { it.value in removed }
     }
 
     // endregion
@@ -859,6 +886,8 @@ class QuarkDriveService internal constructor(
 
         /** 最多给多少个视频记手动挂上的字幕. */
         private const val MAX_PICKED_SUBTITLE_VIDEOS = 300
+
+        private const val MB = 1024 * 1024
 
         /** 最多给多少个条目自动记文件夹. */
         private const val MAX_REMEMBERED_FOLDERS = 300

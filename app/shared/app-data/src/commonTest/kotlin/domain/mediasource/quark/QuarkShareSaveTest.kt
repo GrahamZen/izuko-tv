@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.preference.QuarkConfig
 import me.him188.ani.app.data.repository.user.Settings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -132,6 +133,68 @@ class QuarkShareSaveTest {
         service.resolveSharePlayback(ref.copy(fileName = "o2.mp4", size = 1))
         assertEquals(listOf("file/sort", "file/download"), requests.map { it.path() })
         assertEquals("save1", requests.first().url.parameters["pdir_fid"])
+    }
+
+    /**
+     * 网盘满了的情形: 转存文件夹里已有 o1、o2 两个副本; 前 [fullSaves] 次转存任务回 `capacity limit`.
+     * 删除任务的进度查询回「完成」.
+     */
+    private fun fullDriveService(fullSaves: Int, requests: MutableList<HttpRequestData>): QuarkDriveService {
+        var saveTasks = 0
+        val client = HttpClient(
+            MockEngine { request ->
+                requests += request
+                val path = request.path()
+                when {
+                    path == "file/sort" -> reply(
+                        """{"code":0,"data":{"list":[
+                            {"fid":"o1","file_name":"o1.mkv","size":2000000000,"updated_at":1000},
+                            {"fid":"o2","file_name":"o2.mkv","size":2000000000,"updated_at":2000}
+                        ]},"metadata":{"_total":2}}""",
+                    )
+
+                    path == "share/sharepage/token" -> reply("""{"code":0,"data":{"stoken":"st1","title":"t"}}""")
+                    path == "share/sharepage/save" -> reply("""{"code":0,"data":{"task_id":"save-task"}}""")
+                    path == "file/delete" -> reply("""{"code":0,"data":{"task_id":"delete-task"}}""")
+                    path == "task" && request.url.parameters["task_id"] == "delete-task" -> reply("""{"code":0,"data":{"status":2}}""")
+                    path == "task" -> if (++saveTasks <= fullSaves) {
+                        reply("""{"status":400,"code":32003,"message":"capacity limit[{0}]"}""")
+                    } else {
+                        reply("""{"code":0,"data":{"status":2,"save_as":{"save_as_top_fids":["new1"]}}}""")
+                    }
+
+                    path == "file/download" -> reply("""{"code":0,"data":[{"download_url":"https://dl.test/new1"}]}""")
+                    else -> error("unexpected request ${request.method.value} $path")
+                }
+            },
+        ) { expectSuccess = false }
+        return QuarkDriveService(MemorySettings(QuarkConfig(cookie = "__pus=p1", shareSaveFolderId = "save1")), client)
+    }
+
+    @Test
+    fun `drive full - clears the save folder, waits for the deletion and saves again`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val service = fullDriveService(fullSaves = 1, requests)
+
+        assertEquals("https://dl.test/new1", service.resolveSharePlayback(ref).url)
+        val delete = requests.single { it.path() == "file/delete" }.jsonBody()
+        assertEquals(listOf("o1", "o2"), delete["filelist"]!!.jsonArray.map { it.jsonPrimitive.content })
+        // 等删除完成之后才再转存
+        val order = requests.map { it.path() + (it.url.parameters["task_id"]?.let { id -> "#$id" } ?: "") }
+        assertTrue(order.indexOf("task#delete-task") < order.lastIndexOf("share/sharepage/save"), "$order")
+        assertEquals(2, requests.count { it.path() == "share/sharepage/save" })
+    }
+
+    @Test
+    fun `drive still full after clearing the save folder`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val service = fullDriveService(fullSaves = 2, requests)
+
+        val error = assertFailsWith<QuarkCapacityException> { service.resolveSharePlayback(ref) }
+        assertTrue(error.isCapacityLimit)
+        // 不再当成转存文件夹被删、去重找文件夹
+        assertEquals(2, requests.count { it.path() == "share/sharepage/save" })
+        assertTrue(requests.none { it.path() == "file" })
     }
 
     @Test
