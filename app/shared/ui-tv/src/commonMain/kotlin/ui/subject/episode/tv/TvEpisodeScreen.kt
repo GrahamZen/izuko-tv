@@ -95,7 +95,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.utils.formatSpeedValue
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
-import me.him188.ani.app.ui.subject.details.SubjectDetailsUIState
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -135,6 +135,7 @@ import me.him188.ani.app.videoplayer.ui.LocalSubtitleObstructionTop
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
+import me.him188.ani.app.videoplayer.ui.progress.rememberPlayerSeekPreviewState
 import me.him188.ani.app.videoplayer.ui.progress.rememberMediaProgressSliderState
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.app.videoplayer.ui.rememberVideoSideSheetsController
@@ -201,16 +202,6 @@ private const val TV_STILL_PREFETCH_WAIT_MILLIS = 30_000L
 
 /** 预取当前集之后的集数 (往后是主要浏览方向; 选集条一屏 4 张, 多备几张够翻一屏). */
 private const val TV_STILL_PREFETCH_AHEAD = 6
-
-/**
- * 拖拽预览缩略图的解码尺寸上界.
- *
- * 对齐浮窗里帧区域的实际尺寸: 那个 Box 在 `PreviewFrameAndTimeText` 里是**写死的 160x90dp**,
- * 请求更大只是解出用不上的像素 (TV 的 640dpi 下 160dp 已经是 640px). 数值恰好也和 Prime 实测
- * 一致 (1920x1080 布局下缩略图约占屏宽 16.5%, 即 158dp).
- */
-private val TV_SCRUB_PREVIEW_MAX_WIDTH = 160.dp
-private val TV_SCRUB_PREVIEW_MAX_HEIGHT = 90.dp
 
 /** 详情层淡入时长 (毫秒). */
 private const val TV_DETAILS_FADE_IN_MS = 300
@@ -296,14 +287,14 @@ fun TvEpisodeScreenContent(
         vm.ensureTvSubjectDetails()
     }
 
-    // 预热 presentation: 它是 WhileSubscribed(5000) 的惰性流, 而读它的详情层只在被唤出时才组合 ——
+    // 预热 uiState: 它是 WhileSubscribed(5000) 的惰性流, 而读它的详情层只在被唤出时才组合 ——
     // 在那之前没有任何收集者, 上游根本没启动. 实测控制层隔 6.4 秒才唤出的那次, loader 早在
-    // +0.8s 就 Ok 了, presentation 却一直等到 +6.49s 才脱离占位, 白等 5.7 秒.
+    // +0.8s 就 Ok 了, 页面数据却一直等到 +6.49s 才脱离占位, 白等 5.7 秒.
     // 挂一个空收集者让它跟起播一起预热: 数据仍由各处 UI 自己读, 这里只负责把上游拉起来.
     LaunchedEffect(Unit) {
         vm.episodeDetailsState.subjectDetailsStateLoader.state
-            .filterIsInstance<SubjectDetailsUIState.Ok>().first()
-            .value.presentation.collect { }
+            .filterIsInstance<SubjectDetailsLoadState.Ok>().first()
+            .value.uiState.collect { }
     }
 
     // 预取选集条卡片的剧照.
@@ -321,7 +312,7 @@ fun TvEpisodeScreenContent(
         delay(TV_STILL_PREFETCH_DELAY_MILLIS)
         val detailsState = vm.episodeDetailsState
         val ok = detailsState.subjectDetailsStateLoader.state
-            .filterIsInstance<SubjectDetailsUIState.Ok>().first().value
+            .filterIsInstance<SubjectDetailsLoadState.Ok>().first().value
         // 无图条目 (TMDB 未匹配到) 会一直等不到非空, 由外层超时收场
         val stills = withTimeoutOrNull(TV_STILL_PREFETCH_WAIT_MILLIS) {
             ok.tmdbEpisodeStillsFlow.first { it.isNotEmpty() }
@@ -360,36 +351,28 @@ fun TvEpisodeScreenContent(
         }
     }
 
+    // 拖拽预览浮窗的画面位 (小圆点上方): 画面停着时由主播放器把预览位置的画面画进来, 不另开解码器取缩略图 (见 PlayerSeekPreviewState);
+    // 边播边选时主播放器腾不出来, 浮窗只显示时间.
+    // 尊重"显示视频帧预览"设置项 (与手机端同一个开关): 关掉后浮窗只剩时间文本.
+    val seekPreview = if (vm.videoScaffoldConfig.enableFramePreview) {
+        rememberPlayerSeekPreviewState(vm.player, vm.cacheProgressInfoFlow)
+    } else {
+        null
+    }
+
     val progressSliderState = rememberMediaProgressSliderState(
         vm.player,
         vm.progressChaptersFlow,
-        onPreview = {},
-        onPreviewFinished = { vm.player.seekTo(it) },
+        onPreview = { seekPreview?.seekTo(it) },
+        onPreviewFinished = {
+            // 有主播放器的预览时由它结束预览并从圆点播 (停在圆点上校准过时播放器已经在那里, 不再跳, 见 PlayerSeekPreviewState.commit)
+            if (seekPreview != null) seekPreview.commit(it) else vm.player.seekTo(it)
+        },
         // 拖拽预览时白色高亮段留在播放位置, 只有圆点跟着遥控器走 (Prime 行为):
         // 遥控器是一格一格挪的, 高亮段不动才看得出相对原位置走了多远, 而返回键取消后
         // 也不需要把高亮段倒回去
         trackFollowsPreview = false,
     )
-
-    // 拖拽预览的帧源 (小圆点上方的缩略图).
-    //
-    // 用 TV 自己那份而不是 rememberMediaProgressFramePreviewState: 后者的 Android 实现打不开
-    // HLS, 而在线源基本都是 m3u8 —— 详见 TvFramePreviewSource 文件头.
-    //
-    // 建在这里而不是控制层内部: 控制层隐藏时整棵子树被移除, 建在里面每次唤出都重建 ——
-    // 预热好的取帧会话 (建 ExoPlayer + 解析播放列表, 秒级) 和帧缓存全丢, 每次进拖拽态
-    // 第一张缩略图都要重等.
-    //
-    // 尊重"显示视频帧预览"设置项 (与手机端同一个开关): 关掉后浮窗只剩时间文本.
-    val framePreview = if (vm.videoScaffoldConfig.enableFramePreview) {
-        rememberTvFramePreviewState(
-            vm.player,
-            maxWidth = TV_SCRUB_PREVIEW_MAX_WIDTH,
-            maxHeight = TV_SCRUB_PREVIEW_MAX_HEIGHT,
-        )
-    } else {
-        null
-    }
 
     // ---- 拖拽预览态 (Prime 行为) ----
     //
@@ -431,9 +414,17 @@ fun TvEpisodeScreenContent(
         )
     }
 
-    /** 进入拖拽预览 (已经在预览中就什么都不做): 暂停与否交给 [TvScrubPlayback]. */
+    /**
+     * 进入拖拽预览 (已经在预览中就什么都不做): 暂停与否交给 [TvScrubPlayback].
+     * 画面停着时由主播放器解出预览位置的画面, 画进浮窗的小画面里, 全屏停在当前这一帧 (见 PlayerSeekPreviewState).
+     * 边播边选时主播放器腾不出来, 浮窗只显示时间.
+     */
     fun beginScrub() {
-        if (!progressSliderState.isPreviewing) scrubPlayback.onEnter()
+        if (progressSliderState.isPreviewing) return
+        val playing = vm.player.state.value.playWhenReady
+        scrubPlayback.onEnter()
+        if (playing && !vm.videoScaffoldConfig.pauseVideoOnScrub) return
+        seekPreview?.begin()
     }
 
     /** 纯视频态长按或连按第二次: 升级成拖拽预览态. */
@@ -463,21 +454,29 @@ fun TvEpisodeScreenContent(
      */
     fun exitScrub(commit: Boolean) {
         if (commit) {
-            // mediamp 0.3.0 之前这里的顺序是硬约束: 旧 `resume()` 只在 READY/PAUSED 两个状态下才
-            // 真的动手, 而 seekTo 会把状态推到 PAUSED_BUFFERING (ExoPlayer 在 seekTo 内部就同步派发
-            // STATE_BUFFERING), 于是 seek 之后再 resume 必然被静默丢弃, 表现为"按确认键后还是暂停".
-            //
-            // v2 的 `play()` 只是置播放意图 (playWhenReady), 不再被状态门控, 顺序上已经不敏感;
-            // 这里保留"先置意图再 seek"是因为它语义更直白: 落地即续播, 中间不会出现一帧暂停态.
+            // 先结束预览、跳好, 再置播放意图: 主播放器预览时视频输出接在小窗上, 换回全屏时解码器给小窗多解的几帧会丢,
+            // 停着换、在落点上解好第一帧再播, 声音和画面才从同一刻开始 (先播的话声音和弹幕先走、画面停一会儿).
+            // play() 只是置播放意图 (playWhenReady), 不受跳转后的缓冲状态影响, 放在后面照样生效.
+            if (progressSliderState.isPreviewing) {
+                progressSliderState.finishPreview() // 内部走 onPreviewFinished -> seekPreview.commit / player.seekTo
+            } else {
+                seekPreview?.cancel() // 进了预览还没挪过圆点 (触屏按下就松开)
+            }
             scrubPlayback.onCommit()
-            progressSliderState.finishPreview() // 内部走 onPreviewFinished -> player.seekTo
         } else {
+            // 主播放器跳到过预览位置的话, 恢复播放之前先跳回原处
+            seekPreview?.cancel()
             // 只在真的有预览时撤销: 焦点被别处挪走时预览已经就地取消 (见 focusRegion 那段兜底), 之后
             // 按返回收控制层也走到这里, 那时不能再去恢复播放
             if (progressSliderState.isPreviewing) scrubPlayback.onCancel()
             progressSliderState.cancelPreview()
             overlay.hideAll()
         }
+    }
+
+    // 预览没经确认就结束 (焦点被别处挪走时就地取消, 见 focusRegion 那段兜底): 主播放器跳回开始拖之前的位置
+    LaunchedEffect(progressSliderState, seekPreview) {
+        snapshotFlow { progressSliderState.isPreviewing }.collect { if (!it) seekPreview?.cancel() }
     }
 
     // 返回键长按: 把盖在画面上的东西一步收干净 (评论弹窗/表情选择器/大图/弹幕输入/面板/
@@ -1606,11 +1605,12 @@ fun TvEpisodeScreenContent(
                 // "正在自动选择"; 里面"缓冲太久"的 15 秒计时也会跟着重置.
                 //
                 // 状态读在 graphicsLayer 的 lambda 里: 直接读会让整个播放器界面随反馈的出现/消失重组
+                // 主播放器解预览画面时 (见 PlayerSeekPreviewState) 每挪一步都要重新缓冲一下, 取消后跳回原处也要缓冲一下 (全屏停着的就是原处的画面), 都不报
                 TvPlayerLoadingLayer(
                     vm,
                     Modifier
                         .align(Alignment.Center)
-                        .graphicsLayer { alpha = if (seekFlash.visible) 0f else 1f },
+                        .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true) 0f else 1f },
                 )
 
                 // 播放/暂停切换反馈: 画面中央浮现对应图标并渐隐 (监听播放器状态流,
@@ -1668,7 +1668,7 @@ fun TvEpisodeScreenContent(
                         upNext = upNext,
                         danmakuEditorState = danmakuEditorState,
                         progressSliderState = progressSliderState,
-                        framePreview = framePreview,
+                        framePreview = seekPreview?.framePreview,
                         playerFocus = focus,
                         sheetsController = sheetsController,
                         onEditChromeItem = editChromeItem,

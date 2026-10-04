@@ -90,6 +90,8 @@
     <string name="settings_player_idle_progress_bar_off">不顯示</string>
     <string name="settings_player_pause_on_scrub">拖動進度條時暫停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遙控器選位置時先暫停畫面，按確認鍵從選中處播放；關閉後邊播邊選</string>
+    <string name="settings_player_disk_cache">邊下邊播</string>
+    <string name="settings_player_disk_cache_description">線上播放時把下載過的部分存在本機：往回拖、重看直接讀本機，拖動預覽時下載過的位置馬上出畫面（沒下載的位置停一下就去下）。關閉時拖動預覽每個位置都要先下載。最多佔剩餘空間的四分之一，滿了先刪最久沒看的</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
     <string name="settings_player_start_playback_speed_remember">記住上次</string>
@@ -371,6 +373,7 @@
     <string name="subject_episode_related_recommendations_empty">Bangumi 上還沒有相關推薦</string>
     <string name="player_frame_preview_failed">預覽載入失敗</string>
     <string name="player_frame_preview_not_downloaded">這裡還沒下載</string>
+    <string name="player_frame_preview_stay_to_load">停一下就載入</string>
     <string name="settings_log_share_failed">分享日誌檔案失敗，目前裝置可能不支援分享，可改用複製日誌內容</string>
     <string name="settings_log_export_file">匯出當日日誌檔案</string>
     <string name="settings_log_export_succeed">日誌已匯出到 %1$s</string>

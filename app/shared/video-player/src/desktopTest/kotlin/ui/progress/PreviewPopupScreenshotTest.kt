@@ -10,6 +10,8 @@
 package me.him188.ani.app.videoplayer.ui.progress
 
 import androidx.collection.floatListOf
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -118,6 +120,31 @@ class PreviewPopupScreenshotTest {
                 chunkStates = listOf(ChunkState.NONE),
             ),
         )
+    }
+
+    @Test
+    fun `dump live frame popup states`() {
+        dumpFrameOnlyPopup(
+            name = "live-stay-to-load",
+            framePreview = livePreview(FramePreviewLoadStatus.NotDownloaded),
+            stateTag = TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED,
+        )
+        dumpFrameOnlyPopup(
+            name = "live-loading",
+            framePreview = livePreview(FramePreviewLoadStatus.Loading),
+            stateTag = TAG_PROGRESS_SLIDER_PREVIEW_LOADING,
+        )
+    }
+
+    /** 播放器画进来的画面 (TV 拖动预览; 这里用一块纯色代替), 状态停在 [status]. */
+    private fun livePreview(status: FramePreviewLoadStatus) = MediaProgressFramePreviewState(
+        fetchFrame = { null },
+        debounceMillis = 0,
+        reportsLoadStatus = true,
+        isSupported = { false },
+    ).apply {
+        liveFrame = { modifier -> Box(modifier.background(Color(0xFF4A6FA5))) }
+        liveFrameStatus = status
     }
 
     private fun loadStatusPreview(fetchFrame: suspend (Long) -> ImageBitmap?) = MediaProgressFramePreviewState(

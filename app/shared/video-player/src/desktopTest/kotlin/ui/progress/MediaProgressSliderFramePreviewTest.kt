@@ -10,13 +10,16 @@
 package me.him188.ani.app.videoplayer.ui.progress
 
 import androidx.collection.floatListOf
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performMouseInput
@@ -164,6 +167,38 @@ class MediaProgressSliderFramePreviewTest {
             "frame should not be shown for uncached position",
         )
         assertEquals(0, fetchCount, "fetchFrame should not be called for uncached position")
+    }
+
+    @Test
+    fun `uncached position requests frame when the preview fetches data itself`() = runAniComposeUiTest {
+        var fetchCount = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = {
+                fetchCount++
+                solidFrame(Color.Red)
+            },
+            debounceMillis = 0,
+            fetchesUncachedPositions = { true },
+        )
+        val uncachedInfo = MediaCacheProgressInfo(
+            chunkWeights = floatListOf(1f),
+            chunkStates = listOf(ChunkState.NONE),
+        )
+        setContent {
+            MediaProgressSlider(
+                createSliderState(),
+                cacheProgressInfoFlow = { uncachedInfo },
+                framePreview = framePreview,
+            )
+        }
+
+        onNodeWithTag(TAG_PROGRESS_SLIDER).performMouseInput {
+            moveTo(center)
+        }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME, useUnmergedTree = true).exists()
+        }
+        assertTrue(fetchCount > 0, "fetchFrame should be called for uncached position of online media")
     }
 
     @Test
@@ -316,6 +351,37 @@ class MediaProgressSliderFramePreviewTest {
             onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED, useUnmergedTree = true).exists()
         }
         assertEquals(0, fetchCount, "fetchFrame should not be called for uncached position")
+    }
+
+    @Test
+    fun `live frame is drawn instead of fetched frames and shows its status`() = runAniComposeUiTest {
+        var fetchCount = 0
+        val framePreview = MediaProgressFramePreviewState(
+            fetchFrame = {
+                fetchCount++
+                null
+            },
+            debounceMillis = 0,
+            reportsLoadStatus = true,
+            // 播放器画进来的画面不受取帧能力影响 (TV 上这类媒体本来就不取帧)
+            isSupported = { false },
+        )
+        framePreview.liveFrame = { modifier -> Box(modifier) { Box(Modifier.testTag("live-frame")) } }
+        val sliderState = createSliderState()
+        setContent { FrameOnlySlider(framePreview, sliderState) }
+
+        runOnUiThread { sliderState.previewPositionRatio(0.5f) }
+        waitUntil(timeoutMillis = 5_000) { onNodeWithTag("live-frame", useUnmergedTree = true).exists() }
+        assertTrue(framePreview.framesAvailable)
+        assertFalse(onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED, useUnmergedTree = true).exists())
+
+        runOnUiThread { framePreview.liveFrameStatus = FramePreviewLoadStatus.NotDownloaded }
+        waitUntil(timeoutMillis = 5_000) {
+            onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED, useUnmergedTree = true).exists()
+        }
+        runOnUiThread { framePreview.liveFrameStatus = FramePreviewLoadStatus.Loading }
+        waitUntil(timeoutMillis = 5_000) { onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_LOADING, useUnmergedTree = true).exists() }
+        assertEquals(0, fetchCount, "frames drawn by the player should not be fetched")
     }
 
     @Test
