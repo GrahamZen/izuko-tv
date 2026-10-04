@@ -1,0 +1,47 @@
+# scripts/review/review.py 的规则. 一行一条「类型 模式」, # 开头是注释.
+# 模式: 目录或文件前缀; 带 * ? 时按通配 (* 不跨 /, ** 跨目录).
+#
+#   base-commit <正则>   fork 栈底、标题匹配的提交算进比较基准: 它们恢复的是上游自己的代码, 不审
+#   skip <模式>          不审: 生成代码 (审生成它的输入)、二进制、文档
+#   keep-deleted <模式>  fork 整块删掉的上游功能: 删除是定好的取舍, 删本身和上游以后再改这些路径都不审
+#                        (fork 删了但功能搬到了别处的路径别写在这里: 上游改它时要看要不要搬过去)
+
+base-commit ^revert: 保留客户端直连 Bangumi 的代码与 datasource/bangumi 模块$
+
+# 生成代码 (审生成配置) 与它的输入: openapi 描述是从 bangumi 拉下来的第三方接口文档
+skip datasource/bangumi/src/commonMain/gen
+skip datasource/bangumi/*.yaml
+skip api_v0.yaml
+skip server_v0.yaml
+skip client
+# 测试用的数据快照、baseline profile 工具生成的规则表
+skip **/src/*Test/resources
+skip **/baseline-prof.txt
+# 文案翻译 (默认语言 values/ 照审)
+skip app/shared/app-lang/src/androidMain/res/values-*
+# Room 编译时导出的表结构: 审实体与迁移, AniDatabaseMigrationTest 兜底
+skip app/shared/app-data/schemas
+# 由 .github/workflows/src.main.kts 生成 (scripts/gen-workflows.sh), 审 src.main.kts
+skip .github/workflows/*.yml
+# 二进制与图片
+skip **/*.png
+skip **/*.jpg
+skip **/*.webp
+skip **/*.so
+skip **/*.svg
+# 文档不影响行为
+skip **/*.md
+
+# 上游自带的 Android TV 客户端, 与 scripts/rebase/drop-upstream-tv.sh 删的是同一批路径
+keep-deleted app/android/src/tv
+keep-deleted app/shared/shared-tv
+keep-deleted app/shared/*/tv
+keep-deleted app/shared/src/androidTv*
+keep-deleted app/shared/*/src/androidTv*
+keep-deleted app/shared/app-lang/src/androidMain/res/values*/tv.xml
+keep-deleted utils/ui-testing/src/androidMain/kotlin/TvDisplayRunListener.kt
+keep-deleted utils/ui-testing/src/androidMain/res/values/styles.xml
+keep-deleted tools/tv-remote
+# Ani 服务端的功能: 一起看、通知
+keep-deleted app/shared/ui-watchtogether
+keep-deleted app/shared/ui-notification
