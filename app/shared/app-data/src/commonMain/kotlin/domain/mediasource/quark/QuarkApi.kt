@@ -141,14 +141,28 @@ internal class QuarkApi(
     /**
      * 把文件移进回收站. 只传要删的 id, [fileIds] 为空时什么都不做.
      */
-    suspend fun deleteFiles(fileIds: List<String>) {
+    /**
+     * 删除文件. 删除是后台任务, [wait] 时等它完成 (要马上腾出空间时), 否则提交就返回.
+     */
+    suspend fun deleteFiles(fileIds: List<String>, wait: Boolean = false) {
         if (fileIds.isEmpty()) return
         val body = buildJsonObject {
             put("action_type", 2)
             putJsonArray("filelist") { fileIds.forEach { add(JsonPrimitive(it)) } }
             putJsonArray("exclude_fids") {}
         }
-        drivePost("file/delete", body, QuarkTaskRef.serializer())
+        val taskId = drivePost("file/delete", body, QuarkTaskRef.serializer()).taskId
+        if (!wait || taskId == null) return
+        repeat(SAVE_TASK_MAX_POLLS) { retry ->
+            val task = driveGet("task", QuarkTask.serializer()) {
+                parameter("task_id", taskId)
+                parameter("retry_index", retry)
+            }
+            if (task.status == TASK_STATUS_DONE) return
+            if (task.status == TASK_STATUS_FAILED) throw QuarkApiException("删除失败: ${task.message}")
+            delay(SAVE_TASK_POLL_INTERVAL)
+        }
+        throw QuarkApiException("删除超时")
     }
 
     // region 分享
@@ -418,6 +432,7 @@ internal class QuarkApi(
         if (!status.isSuccessOrRedirect() || (envelope != null && envelope.code != 0)) {
             throw QuarkApiException(
                 "夸克接口 $path 出错: HTTP ${status.value}, code=${envelope?.code}, ${envelope?.message.orEmpty()}",
+                code = envelope?.code,
             )
         }
     }
@@ -498,6 +513,7 @@ internal class QuarkApi(
         private val SAVE_TASK_POLL_INTERVAL = 1.seconds
 
         /** 任务状态: 0 排队, 1 进行中, 2 完成, 3 失败. */
+        private const val TASK_STATUS_DONE = 2
         private const val TASK_STATUS_FAILED = 3
 
         private val logger = logger<QuarkApi>()
@@ -571,7 +587,23 @@ internal interface QuarkCookieStore {
     suspend fun onServerCookies(cookies: Map<String, String>)
 }
 
-open class QuarkApiException(message: String, cause: Throwable? = null) : Exception(message, cause)
+/**
+ * @property code 接口返回的错误码, 没有时为 null
+ */
+open class QuarkApiException(message: String, cause: Throwable? = null, open val code: Int? = null) : Exception(message, cause) {
+    /** 网盘空间不够 (例如转存时). */
+    val isCapacityLimit: Boolean get() = code == CODE_CAPACITY_LIMIT
+
+    companion object {
+        /** 网盘空间不够, 接口回 `capacity limit`. */
+        const val CODE_CAPACITY_LIMIT = 32003
+    }
+}
+
+/**
+ * 网盘空间不够, 清空了转存文件夹也放不下 (空间被别的文件占着).
+ */
+class QuarkCapacityException(message: String) : QuarkApiException(message, code = CODE_CAPACITY_LIMIT)
 
 /**
  * 没登录或登录已失效.
@@ -581,7 +613,7 @@ class QuarkAuthException(message: String? = null) : QuarkApiException(message ?:
 /**
  * 分享打不开: 已取消、被封 (例如 41004 文件不存在, 41031 分享者被封禁) 或要提取码.
  */
-class QuarkShareUnavailableException(val code: Int, message: String) : QuarkApiException(message)
+class QuarkShareUnavailableException(override val code: Int, message: String) : QuarkApiException(message)
 
 internal class QuarkQrToken(val token: String, val cookies: Map<String, String>)
 

@@ -26,6 +26,7 @@ import me.him188.ani.app.data.models.preference.QuarkPickedFolder
 import me.him188.ani.app.data.models.preference.QuarkPickedSubtitle
 import me.him188.ani.app.data.models.preference.QuarkPlaybackMode
 import me.him188.ani.app.data.models.preference.QuarkRememberedFolder
+import me.him188.ani.app.data.models.preference.QuarkRememberedShare
 import me.him188.ani.app.data.models.preference.QuarkSubjectPicks
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.user.Settings
@@ -236,6 +237,68 @@ class QuarkDriveService internal constructor(
 
     // endregion
 
+    // region 「夸克分享搜索」自动记下的分享文件夹 (见 QuarkConfig.rememberedShares)
+
+    /** 最近搜到的分享文件属于哪个源与条目、在分享的哪个文件夹 ([QuarkShareFileRef.key] → 记录), 播放时据此记下. 只在内存里. */
+    private val recentShareMatches = LinkedHashMap<String, RecentShareMatch>()
+
+    private class RecentShareMatch(val key: String, val share: QuarkRememberedShare)
+
+    private fun rememberedShareKey(mediaSourceId: String, subjectId: Int) = "$mediaSourceId:$subjectId"
+
+    /** 记下数据源 [mediaSourceId] 这次给条目 [subjectId] 认出的分享文件. */
+    internal suspend fun noteShareMatches(mediaSourceId: String, subjectId: Int, matches: List<QuarkShareMatch>) {
+        if (matches.isEmpty()) return
+        val key = rememberedShareKey(mediaSourceId, subjectId)
+        recentMatchesLock.withLock {
+            for (match in matches) {
+                if (match.file.parentFid.isEmpty()) continue
+                val share = QuarkRememberedShare(
+                    match.share.shareId, match.share.passcode, match.share.siteTitle, match.file.parentFid, match.folders,
+                )
+                val fileKey = shareKey(match.share.shareId, match.file.fid)
+                recentShareMatches.remove(fileKey)
+                recentShareMatches[fileKey] = RecentShareMatch(key, share)
+            }
+            while (recentShareMatches.size > MAX_RECENT_MATCHES) recentShareMatches.remove(recentShareMatches.keys.first())
+        }
+    }
+
+    /** 数据源 [mediaSourceId] 给条目 [subjectId] 记下的分享文件夹. */
+    internal suspend fun rememberedShareOf(mediaSourceId: String, subjectId: Int): QuarkRememberedShare? =
+        settings.flow.first().rememberedShares[rememberedShareKey(mediaSourceId, subjectId)]
+
+    internal suspend fun forgetRememberedShare(mediaSourceId: String, subjectId: Int) {
+        val key = rememberedShareKey(mediaSourceId, subjectId)
+        logger.info { "Forgot remembered Quark share of $key" }
+        updateRememberedShares { it - key }
+    }
+
+    /** 播了分享里的文件 [ref]: 它是哪个源给哪个条目搜到的, 就把它在分享里所在的文件夹记给那个源与条目. */
+    private suspend fun rememberShareOf(ref: QuarkShareFileRef) {
+        val match = recentMatchesLock.withLock { recentShareMatches[ref.key] } ?: return
+        updateRememberedShares { remembered ->
+            if (remembered[match.key] == match.share) return@updateRememberedShares remembered
+            logger.info {
+                "Remembered Quark share ${match.share.shareId} folder ${match.share.folderId} (${match.share.path.joinToString("/")}) for ${match.key}"
+            }
+            // 重新放到末尾 (最近的), 超出上限时去掉最早记下的
+            (remembered - match.key + (match.key to match.share)).entries
+                .toList().takeLast(MAX_REMEMBERED_SHARES).associate { it.key to it.value }
+        }
+    }
+
+    private suspend fun updateRememberedShares(update: (Map<String, QuarkRememberedShare>) -> Map<String, QuarkRememberedShare>) {
+        cookieLock.withLock {
+            val current = settings.flow.first()
+            if (!current.isLoggedIn) return
+            val updated = update(current.rememberedShares)
+            if (updated != current.rememberedShares) settings.set(current.copy(rememberedShares = updated))
+        }
+    }
+
+    // endregion
+
     // region 手动挂上的字幕 (Web 控制台「从夸克网盘挑」里点字幕文件)
 
     /**
@@ -394,7 +457,7 @@ class QuarkDriveService internal constructor(
                 }
             }
         }
-        return try {
+        val playback = try {
             resolvePlayback(fileId, subtitles, shareSubtitleKey(ref))
         } catch (e: CancellationException) {
             throw e
@@ -409,6 +472,8 @@ class QuarkDriveService internal constructor(
             }
             resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref))
         }
+        rememberShareOf(ref)
+        return playback
     }
 
     /**
@@ -444,6 +509,8 @@ class QuarkDriveService internal constructor(
             throw e
         } catch (e: QuarkShareUnavailableException) {
             throw e
+        } catch (e: QuarkCapacityException) {
+            throw e
         } catch (e: QuarkApiException) {
             // 记下的转存文件夹可能被用户删了: 重新找 (没有就新建) 再试一次
             logger.warn { "Saving to the remembered Quark folder failed, looking it up again: ${e.message}" }
@@ -472,12 +539,26 @@ class QuarkDriveService internal constructor(
 
         val token = shareToken(ref.shareId, ref.passcode)
         val saved = try {
-            api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+            try {
+                api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+            } catch (e: QuarkApiException) {
+                if (!e.isCapacityLimit) throw e
+                // 网盘满了: 转存文件夹里的都是之前播放时转存的副本, 清掉这次用不到的腾出地方, 再转存一次
+                freeSaveFolder(existing.filter { it.fid !in reused }, ref)
+                try {
+                    api.saveFromShare(ref.shareId, token.stoken, missing, folder)
+                } catch (e: QuarkApiException) {
+                    if (!e.isCapacityLimit) throw e
+                    throw QuarkCapacityException("夸克网盘空间不够: 清空「$SAVE_FOLDER_NAME」后仍放不下 ${ref.fileName} (${ref.size / MB} MB)")
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: QuarkAuthException) {
             throw e
         } catch (e: QuarkShareUnavailableException) {
+            throw e
+        } catch (e: QuarkCapacityException) {
             throw e
         } catch (e: QuarkApiException) {
             if (missing.size == 1 && video in missing) throw e
@@ -517,6 +598,17 @@ class QuarkDriveService internal constructor(
             }
         }
         return savedFiles[ref.key] ?: throw QuarkApiException("转存后没找到 ${ref.fileName}")
+    }
+
+    /** 网盘满了转存不进去时, 删掉转存文件夹里的 [files] (等删除完成) 腾出空间; 没有能删的就是空间被别的文件占着. */
+    private suspend fun freeSaveFolder(files: List<QuarkFile>, ref: QuarkShareFileRef) {
+        if (files.isEmpty()) {
+            throw QuarkCapacityException("夸克网盘空间不够, 「$SAVE_FOLDER_NAME」里也没有能清的, 放不下 ${ref.fileName} (${ref.size / MB} MB)")
+        }
+        logger.warn { "Quark drive is full: removing ${files.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key}" }
+        api.deleteFiles(files.map { it.fid }, wait = true)
+        val removed = files.mapTo(HashSet()) { it.fid }
+        savedFiles.entries.removeAll { it.value in removed }
     }
 
     // endregion
@@ -795,8 +887,13 @@ class QuarkDriveService internal constructor(
         /** 最多给多少个视频记手动挂上的字幕. */
         private const val MAX_PICKED_SUBTITLE_VIDEOS = 300
 
+        private const val MB = 1024 * 1024
+
         /** 最多给多少个条目自动记文件夹. */
         private const val MAX_REMEMBERED_FOLDERS = 300
+
+        /** 「夸克分享搜索」最多记多少个 (数据源, 条目) 的分享文件夹. */
+        private const val MAX_REMEMBERED_SHARES = 300
 
         /** 内存里最多记多少个最近搜到的文件. */
         private const val MAX_RECENT_MATCHES = 2000
