@@ -77,6 +77,7 @@ import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.SeekableInputMediaData
 import org.openani.mediamp.source.UriMediaData
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.CoroutineContext
 import kotlin.reflect.KClass
 import kotlin.time.Duration.Companion.milliseconds
@@ -722,9 +723,23 @@ private class LibassMediaSourcePipeline(
                     // 设置里开了「边下边播」时, 下过的数据存在本机: 往回拖、拖动预览、再看同一个文件时从盘上读
                     val key = PlaybackDiskCache.keyOf(data)?.takeIf { diskCacheEnabled() }
                     val cache = key?.let { PlaybackDiskCache.get(context) }
+                    // 文件总长播放与补字体共用, 本机缓存里记着的话直接拿来: 打开时不必先单独发一个请求问长度
+                    val resourceLength = AtomicLong(-1)
+                    val lengthHint: () -> Long = if (key != null && cache != null) {
+                        { PlaybackDiskCache.contentLength(cache, key) }
+                    } else {
+                        { -1 }
+                    }
                     // 字体在出画面后读, 正赶上缓冲最少、播放多开着连接的时候: 少开一半, 也不跟着多开
-                    val fonts = ParallelRangeDataSource.Factory(upstream, (parallel / 2).coerceAtLeast(2))
-                    val playback = ParallelRangeDataSource.Factory(upstream, parallel, boosted = { loadControl.boosted })
+                    val fonts = ParallelRangeDataSource.Factory(
+                        upstream, (parallel / 2).coerceAtLeast(2),
+                        knownLength = resourceLength, lengthHint = lengthHint,
+                    )
+                    val playback = ParallelRangeDataSource.Factory(
+                        upstream, parallel,
+                        boosted = { loadControl.boosted },
+                        knownLength = resourceLength, lengthHint = lengthHint,
+                    )
                     if (key == null || cache == null) {
                         fontsDataSourceFactory = fonts
                         // 拖动预览时 (见 SeekPreview) 联网之前先过这道门

@@ -19,6 +19,7 @@ import me.him188.ani.utils.logging.warn
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.Dns
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
@@ -61,6 +62,9 @@ internal object RangeHttpClients {
     private const val MAX_IDLE_CONNECTIONS = 64
     private const val KEEP_ALIVE_MINUTES = 5L
 
+    /** 同时在等响应头的请求最多几个 (每个主机同样): 多开连接的 48 路分块加上补字体的, 留些余量. */
+    private const val MAX_CONCURRENT_REQUESTS = 64
+
     private val dns = FailoverDns(Dns.SYSTEM, DohResolver::lookup)
     private val clients = ConcurrentHashMap<PlaybackProxyConfig, OkHttpClient>()
     private val direct: OkHttpClient by lazy { build(null) }
@@ -88,6 +92,14 @@ internal object RangeHttpClients {
     private fun build(proxyConfig: PlaybackProxyConfig?): OkHttpClient = OkHttpClient.Builder()
         // 只用 HTTP/1.1: 下载节点支持 HTTP/2, 那样几路分块会挤进同一个连接, 而网盘是按连接限速的
         .protocols(listOf(Protocol.HTTP_1_1))
+        // media3 的 OkHttp 数据源用 enqueue 发请求, OkHttp 默认每个主机只放 5 个请求同时等响应头. 网盘首字节要两三秒,
+        // 十几路分块得分好几波才发得出去, 跳转后要的那个请求还排在刚丢下的旧请求后面 (实测一个几字节的请求等了近 6 秒)
+        .dispatcher(
+            Dispatcher().apply {
+                maxRequests = MAX_CONCURRENT_REQUESTS
+                maxRequestsPerHost = MAX_CONCURRENT_REQUESTS
+            },
+        )
         // 默认只留 5 个空闲连接: 非会员 16 路 (多开时 48 路, 另有补字体的) 分块时多出来的连接下完一块就被关, 下一块又要重新建连握手 (跨洋要好几秒)
         .connectionPool(ConnectionPool(MAX_IDLE_CONNECTIONS, KEEP_ALIVE_MINUTES, TimeUnit.MINUTES))
         .connectTimeout(CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
@@ -118,6 +130,8 @@ internal object RangeHttpClients {
         }
 
         override fun callFailed(call: Call, ioe: IOException) {
+            // 读的一方不要了而取消的分块 (见 ParallelRangeReader 的 Chunk.cancel), 不是出错
+            if (call.isCanceled()) return
             logger.warn { "Request to ${call.request().url.host} (${call.request().header("Range")}) failed after ${millisSince(callStartedAt)}ms: $ioe" }
         }
 
