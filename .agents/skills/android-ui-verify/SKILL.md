@@ -1,9 +1,9 @@
 ---
 name: android-ui-verify
-description: Drive the Animeko Android app on an emulator like a real user to verify UI behavior — start emulator, build & install the app, then screenshot/tap/swipe/type in a loop and confirm results visually. Can also record the screen and diff frames to catch sub-second transient glitches (flicker, jump-and-revert bugs). Use when a change needs runtime Android UI evidence, when asked to "verify on Android", "test in the emulator", "simulate user interaction", or to reproduce an Android UI bug.
+description: Drive the Izuko TV (Animeko fork) Android app on an emulator like a real user to verify UI behavior — start emulator, build & install the app, then screenshot/tap/swipe/type in a loop and confirm results visually. Can also record the screen and diff frames to catch sub-second transient glitches (flicker, jump-and-revert bugs). Use when a change needs runtime Android UI evidence, when asked to "verify on Android", "test in the emulator", "simulate user interaction", or to reproduce an Android UI bug.
 ---
 
-# Animeko Android UI Verification
+# Izuko TV Android UI Verification
 
 Drive the real app on a real Android runtime. The core loop is: **act → screenshot → Read the PNG → decide next action**. Never claim a UI behavior works without a screenshot that shows it.
 
