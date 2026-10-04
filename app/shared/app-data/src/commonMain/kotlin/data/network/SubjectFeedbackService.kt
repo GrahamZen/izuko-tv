@@ -20,6 +20,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -42,6 +43,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 详情页「反馈」: 标题 logo 不对 ([reportLogo]) 与对应的 TMDB 作品不对 ([reportEntry]). 报告发到中转 (Cloudflare Worker, 代码在对应表仓库
@@ -74,10 +76,10 @@ class SubjectFeedbackService(
         /** 报告太频繁, 过一会儿再试. */
         data object RateLimited : Result
 
-        /** 还没有可用的中转地址 (清单是空的). */
-        data object NoEndpoint : Result
+        /** 网络不通: 中转地址清单拉不到, 或每个中转都连不上 / 超时. 配了代理可能就通了. */
+        data object Unreachable : Result
 
-        /** 中转连不上或拒收. */
+        /** 中转拒收 (报告的内容它不认) 或出错. */
         data object Failed : Result
     }
 
@@ -130,20 +132,24 @@ class SubjectFeedbackService(
             endpoints.refreshIfStale()
             bases = endpoints.entries.first()
         }
-        if (bases.isEmpty()) return Result.NoEndpoint
+        // 这次也没拉到: GitHub 与 jsDelivr 都连不上
+        if (bases.isEmpty()) return Result.Unreachable
         val text = body.toString()
+        var answered = false
         for (base in bases) {
             val url = "$base/$path"
-            val (status, answer) = try {
-                client().use {
-                    val response = post(url) {
-                        expectSuccess = false
-                        // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
-                        header("X-Izuko-Client", currentAniBuildConfig.versionName)
-                        contentType(ContentType.Application.Json)
-                        setBody(text)
+            val reply = try {
+                withTimeoutOrNull(REPORT_TIMEOUT) {
+                    client().use {
+                        val response = post(url) {
+                            expectSuccess = false
+                            // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
+                            header("X-Izuko-Client", currentAniBuildConfig.versionName)
+                            contentType(ContentType.Application.Json)
+                            setBody(text)
+                        }
+                        response.status.value to response.bodyAsText()
                     }
-                    response.status.value to response.bodyAsText()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -151,6 +157,12 @@ class SubjectFeedbackService(
                 logger.info { "feedback: $url unreachable (${e::class.simpleName})" }
                 continue
             }
+            if (reply == null) {
+                logger.info { "feedback: $url timed out" }
+                continue
+            }
+            answered = true
+            val (status, answer) = reply
             when (status) {
                 200 -> {
                     val json = runCatching { Json.parseToJsonElement(answer) as? JsonObject }.getOrNull()
@@ -170,7 +182,7 @@ class SubjectFeedbackService(
                 else -> logger.info { "feedback: $url answered $status, trying next" }
             }
         }
-        return Result.Failed
+        return if (answered) Result.Failed else Result.Unreachable
     }
 
     /**
@@ -181,9 +193,11 @@ class SubjectFeedbackService(
         val path = "docs/data/s/${subjectId / REVIEW_SHARD}.json"
         for (url in GitHubFileSources.urls(TMDB_SUBJECT_MAP_REPOSITORY, path)) {
             val text = try {
-                client().use {
-                    val response = get(url) { expectSuccess = false }
-                    if (!response.status.isSuccess()) null else response.bodyAsText()
+                withTimeoutOrNull(CANDIDATES_TIMEOUT) {
+                    client().use {
+                        val response = get(url) { expectSuccess = false }
+                        if (!response.status.isSuccess()) null else response.bodyAsText()
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -205,10 +219,19 @@ class SubjectFeedbackService(
         /** 核对页数据每个文件放多少个条目 (对应表仓库 merge.py 的 SHARD). */
         const val REVIEW_SHARD = 2000
 
+        /**
+         * 每个中转最多等多久, 到点换下一个. workers.dev 在大陆常常连接一直挂着, 不限时要等到客户端的默认超时 (几十秒到几分钟),
+         * 弹窗就一直停在「正在提交」.
+         */
+        val REPORT_TIMEOUT = 15.seconds
+
+        /** 核对页数据每个入口最多等多久 (一个文件八百多 KB, 比清单给得宽些). */
+        val CANDIDATES_TIMEOUT = 20.seconds
+
         private val SPEC = RepoHostedList.Spec(
             fileName = "report-endpoints.json",
             field = "endpoints",
-            // 中转部署好之前是空的: 报告时提示还不能提交
+            // 包里不带: 从没拉到过清单就当作连不上
             bundled = emptyList(),
             normalize = { url -> url.trim().trimEnd('/').takeIf { it.startsWith("https://") && ' ' !in it } },
         )

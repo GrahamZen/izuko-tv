@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.data.network.SubjectEntryCandidates
@@ -103,12 +104,12 @@ import me.him188.ani.app.ui.lang.subject_details_tv_feedback_entry_description
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_failed
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_logo
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_logo_description
-import me.him188.ani.app.ui.lang.subject_details_tv_feedback_no_endpoint
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_pending_entry
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_pending_logo
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_rate_limited
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_submit
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback_title
+import me.him188.ani.app.ui.lang.subject_details_tv_feedback_unreachable
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_dialog_description
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_dialog_title
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_done
@@ -117,7 +118,6 @@ import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_empty
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_failed
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_load_failed
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_loading
-import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_no_endpoint
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_no_language
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_qr_hint
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_not_listed
@@ -126,6 +126,7 @@ import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_rate_limited
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitted
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitting
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_text_option
+import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_unreachable
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -140,8 +141,9 @@ import org.jetbrains.compose.resources.stringResource
  *   logo 网格第一行整行、第二行露出一半 (卡片高度按网格的可用高度算), 看得出下面还有.
  * - 对应的作品: 现在对应的与对应表核对页里的备选 ([SubjectFeedbackService.entryCandidates]) 与「TMDB 上没有对应」; 审核通过才生效.
  *
- * 现在用的那格打勾, 进页时焦点在它上面; 选的就是现在这个时直接关. 选了别的先确认 (防误触: 焦点默认在「取消」上), 提交途中不关
- * (返回键也不关), 交完显示结果, 按「完成」关. 在某一页按返回回到第一步.
+ * 现在用的那格打勾, 进页时焦点在它上面; 选的就是现在这个时直接关. 选了别的先确认 (防误触: 焦点默认在「取消」上), 交完显示结果,
+ * 按「完成」关. 提交途中按返回取消提交并关掉 (网络不通时每个中转要等到超时, 不让人干等). 在某一页按返回回到第一步.
+ * 连不上 (GitHub、中转、TMDB) 时提示里带一句去设置里配代理.
  * 标题下面一直写着作品名 ([displayName] 与 [originalName]): 详情页标题换成 logo 后, 别处看不到文字名字.
  */
 @Composable
@@ -158,13 +160,18 @@ internal fun TvSubjectFeedbackDialog(
     var page by remember { mutableStateOf(if (logoAvailable) FeedbackPage.Menu else FeedbackPage.Entry) }
     var pending by remember { mutableStateOf<FeedbackPick?>(null) }
     var submit by remember { mutableStateOf<FeedbackSubmit>(FeedbackSubmit.Idle) }
+    var submitJob by remember { mutableStateOf<Job?>(null) }
     // logo 页读到的候选: 标题区要写这一页的说明 (哪种语言)、右上角放二维码 (TMDB 网页上的 logo 页)
     var logoCandidates by remember { mutableStateOf<TmdbTitleLogoCandidates?>(null) }
     val scope = rememberCoroutineScope()
 
     fun back() {
         when {
-            submit == FeedbackSubmit.Submitting -> Unit
+            submit == FeedbackSubmit.Submitting -> {
+                submitJob?.cancel()
+                onDismissRequest()
+            }
+
             submit is FeedbackSubmit.Done -> onDismissRequest()
             pending != null -> pending = null
             page != FeedbackPage.Menu && logoAvailable -> page = FeedbackPage.Menu
@@ -230,7 +237,7 @@ internal fun TvSubjectFeedbackDialog(
                             onCancel = { pending = null },
                             onSubmit = {
                                 submit = FeedbackSubmit.Submitting
-                                scope.launch {
+                                submitJob = scope.launch {
                                     submit = when (pick) {
                                         is FeedbackPick.Logo -> {
                                             tmdb.chooseTitleLogo(subjectId, language, pick.candidates, pick.logo)
@@ -321,8 +328,8 @@ private fun resultText(result: SubjectFeedbackService.Result, kind: FeedbackKind
             if (logo) Lang.subject_details_tv_title_logo_rate_limited else Lang.subject_details_tv_feedback_rate_limited,
         )
 
-        SubjectFeedbackService.Result.NoEndpoint -> stringResource(
-            if (logo) Lang.subject_details_tv_title_logo_no_endpoint else Lang.subject_details_tv_feedback_no_endpoint,
+        SubjectFeedbackService.Result.Unreachable -> stringResource(
+            if (logo) Lang.subject_details_tv_title_logo_unreachable else Lang.subject_details_tv_feedback_unreachable,
         )
 
         SubjectFeedbackService.Result.Failed -> stringResource(
