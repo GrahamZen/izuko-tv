@@ -42,14 +42,19 @@ internal class ParallelRangeDataSource(
     private val upstreamFactory: HttpDataSource.Factory,
     private val connections: Int,
     private val chunkSize: Int,
+    /** 此刻要不要多开连接 (到 [boostedConnectionsFor] 路), 每读一次问一次. */
+    private val boosted: () -> Boolean = { false },
 ) : BaseDataSource(/* isNetwork = */ true) {
     class Factory(
         private val upstreamFactory: HttpDataSource.Factory,
         private val connections: Int,
         private val chunkSize: Int = chunkSizeFor(connections),
+        private val boosted: () -> Boolean = { false },
     ) : DataSource.Factory {
-        override fun createDataSource(): DataSource = ParallelRangeDataSource(upstreamFactory, connections, chunkSize)
+        override fun createDataSource(): DataSource = ParallelRangeDataSource(upstreamFactory, connections, chunkSize, boosted)
     }
+
+    private val boostedConnections = boostedConnectionsFor(connections)
 
     private var dataSpec: DataSpec? = null
     private var reader: ParallelRangeReader? = null
@@ -105,11 +110,17 @@ internal class ParallelRangeDataSource(
             opener, EXECUTOR, connections, chunkSize,
             retryable = { it !is HttpDataSource.InvalidResponseCodeException },
             firstChunkSize = chunkSize / FIRST_CHUNK_DIVISOR,
+            maxConnections = { if (boosted()) boostedConnections else connections },
+            maxWindowBytes = BOOSTED_WINDOW_BYTES,
         )
         this.reader = reader
         val length = reader.open(dataSpec.position, dataSpec.length)
         logger.info {
-            val mode = if (reader.isParallel) "$connections connections" else "a single connection"
+            val mode = when {
+                !reader.isParallel -> "a single connection"
+                boosted() -> "$boostedConnections connections (boosted from $connections)"
+                else -> "$connections connections"
+            }
             "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length in ${millisSince(startedAt)}ms"
         }
         opened = true
@@ -222,6 +233,19 @@ internal class ParallelRangeDataSource(
 
         fun chunkSizeFor(connections: Int): Int =
             (WINDOW_BYTES / connections.coerceAtLeast(1)).coerceIn(MIN_CHUNK_SIZE, DEFAULT_CHUNK_SIZE)
+
+        /**
+         * 多开连接时开到几路. 非会员 16 路 → 48 路: 每路的限速不变, 总速度随路数涨 (实测到 48 路仍是线性的, 全部 206);
+         * 64 路那次整轮连不上 (多半是下载节点整组失联, 但没排除跟路数有关), 所以封顶 48.
+         */
+        fun boostedConnectionsFor(connections: Int): Int =
+            (connections * BOOST_FACTOR).coerceAtMost(MAX_BOOSTED_CONNECTIONS).coerceAtLeast(connections)
+
+        private const val BOOST_FACTOR = 3
+        private const val MAX_BOOSTED_CONNECTIONS = 48
+
+        /** 多开连接时所有块加起来最多多大 (见 [ParallelRangeReader] 的 maxWindowBytes): 48 路每块 512 KiB. */
+        private const val BOOSTED_WINDOW_BYTES = 24 * 1024 * 1024
 
         private val logger = logger<ParallelRangeDataSource>()
 
