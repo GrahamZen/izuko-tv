@@ -288,6 +288,9 @@ cmd_verify() {
     local bad2; bad2=$(git diff --numstat --ignore-cr-at-eol "$OLD_TIP" "$TIP" | wc -l)
     [ "$bad" = "$bad2" ] && echo "  行尾干净" || echo "  ⚠ 有文件只差行尾, 查 git diff --numstat 与 --ignore-cr-at-eol 的差集"
 
+    hr "代码审查: 这轮要审的 (做法见 scripts/review/README.md)"
+    uv run --no-project python scripts/review/review.py --upstream "$UPSTREAM" status --rev "$TIP" 2>&1 | sed 's/^/  /' || true
+
     hr "还要人工过的卡口"
     cat <<'EOF'
   1. Room 版本: 上游若升过, fork 的迁移要往后推一版, 否则装上去开不了机

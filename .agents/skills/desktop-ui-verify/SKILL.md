@@ -1,9 +1,9 @@
 ---
 name: desktop-ui-verify
-description: Validate the Animeko desktop (Compose Desktop) app by building and launching the real executable, then screenshot/click/type against the macOS window. Can also record the window and diff frames to catch sub-second transient glitches (flicker, jump-and-revert bugs). Use for desktop-only code paths, JCEF/browser behavior, VLC/video playback integration, native libraries, desktop packaging, window chrome, or when asked for PC screenshots/evidence. For Android emulator verification (interactive taps/swipes, Android screenshots, wide-screen simulation) use .agents/skills/android-ui-verify instead.
+description: Validate the Izuko TV (Animeko fork) desktop (Compose Desktop) app by building and launching the real executable, then screenshot/click/type against the macOS window. Can also record the window and diff frames to catch sub-second transient glitches (flicker, jump-and-revert bugs). Use for desktop-only code paths, JCEF/browser behavior, VLC/video playback integration, native libraries, desktop packaging, window chrome, or when asked for PC screenshots/evidence. For Android emulator verification (interactive taps/swipes, Android screenshots, wide-screen simulation) use .agents/skills/android-ui-verify instead.
 ---
 
-# Animeko Desktop UI Verification
+# Izuko TV Desktop UI Verification
 
 Use this skill from the `ani` repo root when a change needs **desktop** runtime evidence. Anything Android — including PC-style wide-screen layout checks, which run fine on an Android emulator — belongs to `.agents/skills/android-ui-verify`; only desktop-only code paths (Compose Desktop behavior, packaging, JCEF, VLC/native libraries, window chrome) need this skill.
 
