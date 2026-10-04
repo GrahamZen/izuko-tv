@@ -171,6 +171,31 @@ class ParallelRangeReaderTest {
     }
 
     @Test
+    fun `more connections while boosted with chunks shared out of the window`() {
+        val server = FakeServer()
+        var limit = 6
+        val reader = ParallelRangeReader(
+            server, executor, connections = 2, chunkSize = 1000, firstChunkSize = 250,
+            maxConnections = { limit }, maxWindowBytes = 2400,
+        )
+        assertEquals(content.size.toLong(), reader.open(0, -1))
+        val half = ByteArray(content.size / 2)
+        var read = 0
+        while (read < half.size) read += reader.read(half, read, half.size - read)
+        // 收回: 之后不再补到 6 块
+        limit = 2
+        val rest = reader.readAll()
+        reader.close()
+        assertContentEquals(content, half + rest)
+
+        assertTrue(server.maxActive.get() in 3..6, "expected more than 2 connections, got ${server.maxActive.get()}")
+        // 多开时每块不超过 2400 / 6 = 400 (不小于头一轮的 250); 收回后又照常翻倍到 1000
+        val lengths = server.opened.sortedBy { it.first }.map { it.second }
+        assertTrue(lengths.take(6).all { it in 250L..400L }, "boosted chunks are shared out of the window: $lengths")
+        assertTrue(1000L in lengths, "back to full chunks after the boost ends: $lengths")
+    }
+
+    @Test
     fun `closing mid-download stops the chunks and closes their connections on the download threads`() {
         // 每块 1000 字节, 每次读 10 字节, 4 块同时在下
         val server = FakeServer(perRead = 10)
