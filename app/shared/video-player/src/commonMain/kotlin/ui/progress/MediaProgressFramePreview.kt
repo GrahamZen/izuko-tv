@@ -10,6 +10,7 @@
 package me.him188.ani.app.videoplayer.ui.progress
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -132,6 +133,25 @@ class MediaProgressFramePreviewState(
     var framesAvailable: Boolean by mutableStateOf(true)
         private set
 
+    /**
+     * 不为 null 时画面位画它, 不去取帧: 由播放器把预览位置的画面直接画进来 (TV 上拖动预览时主播放器的输出临时接到这里, 见 `SeekPreview`).
+     * 画面位上的状态由 [liveFrameStatus] 给.
+     */
+    var liveFrame: (@Composable (Modifier) -> Unit)? by mutableStateOf(null)
+
+    private var liveStatus: FramePreviewLoadStatus by mutableStateOf(FramePreviewLoadStatus.Idle)
+
+    /**
+     * [liveFrame] 的状态: [FramePreviewLoadStatus.NotDownloaded] 时画面位盖成黑底并提示停一下就加载 (画面位上是别处的画面),
+     * [FramePreviewLoadStatus.Loading] 时黑底上画进度环; 一步一两百毫秒的跳转不标 (标了只是闪).
+     */
+    var liveFrameStatus: FramePreviewLoadStatus
+        get() = liveStatus
+        set(value) {
+            if (value == FramePreviewLoadStatus.Loading && liveStatus != value) loadingSince = TimeSource.Monotonic.markNow()
+            liveStatus = value
+        }
+
     private var frameGridKey = Long.MIN_VALUE
     private val cache = androidx.collection.LruCache<Long, ImageBitmap>(cacheSize)
 
@@ -143,6 +163,10 @@ class MediaProgressFramePreviewState(
      * 缓存命中立即显示; 加载成功前保留上一帧, 避免闪烁.
      */
     internal suspend fun requestFrame(positionMillis: Long) {
+        if (liveFrame != null) {
+            framesAvailable = true
+            return
+        }
         if (reportsLoadStatus && !checkSupported()) return
         val key = gridKeyOf(positionMillis)
         if (key == frameGridKey && frame != null) {
@@ -190,7 +214,7 @@ class MediaProgressFramePreviewState(
      * 画面位里留着的是上一个位置的旧帧, 或者一块一直不变的灰底.
      */
     internal fun onPositionNotDownloaded() {
-        if (!reportsLoadStatus || !checkSupported()) return
+        if (liveFrame != null || !reportsLoadStatus || !checkSupported()) return
         frame = null
         frameGridKey = Long.MIN_VALUE
         loadStatus = FramePreviewLoadStatus.NotDownloaded
@@ -277,7 +301,10 @@ enum class FramePreviewLoadStatus {
     /** 当前位置这次没取到 (超时 / 取帧器出错). 挪开再挪回来会重新取. */
     Failed,
 
-    /** 当前位置还没下载, 不去取 (BT 源只预览已下载的部分, 见 [MediaProgressFramePreviewState.fetchesUncachedPositions]). */
+    /**
+     * 当前位置还没下载. 取帧时不去取 (BT 源只预览已下载的部分, 见 [MediaProgressFramePreviewState.fetchesUncachedPositions]);
+     * [MediaProgressFramePreviewState.liveFrame] 由播放器在这里停够一会儿才去下.
+     */
     NotDownloaded,
 }
 
@@ -313,6 +340,7 @@ fun rememberMediaProgressFramePreviewState(
                 val preview = player.mediaData.value?.let(mediaFramePreview) ?: framePreview
                 preview.getPreviewFrame(positionMillis, maxWidthPx, maxHeightPx)?.toImageBitmap()
             },
+            fetchesUncachedPositions = { player.mediaData.value is UriMediaData },
         )
     }
     LaunchedEffect(state, player) {
