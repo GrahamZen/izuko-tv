@@ -65,6 +65,8 @@ internal class ParallelRangeReader(
     private val firstChunkSize: Int = chunkSize,
     private val maxConnections: () -> Int = { connections },
     private val maxWindowBytes: Int = connections * chunkSize,
+    /** 小范围拆给几个连接时每块至少多大 (见 [open]). */
+    private val minPartBytes: Long = MIN_PART_BYTES,
     private val retryable: (IOException) -> Boolean = { true },
 ) {
     private class Chunk(val start: Long, val length: Int, val data: ByteArray) {
@@ -72,11 +74,18 @@ internal class ParallelRangeReader(
         private var filled = 0
         private var error: IOException? = null
 
+        /** [error] 原样交给读的一方, 不包一层 (不值得重试的错误, 例如 HTTP 403: 播放器据异常类型判断). */
+        private var errorAsIs = false
+
+        /** 下载线程正在等一个请求的响应头 (见 [startOpening]). */
+        private var opening = false
+
         val scheduledAt = System.nanoTime()
 
-        /** 正在下这一块的线程, 等得久时记它的栈. */
+        /** 正在下这一块的线程, 等得久时记它的栈. 只在持有 [lock] 时改. */
         @Volatile
         var downloader: Thread? = null
+            private set
 
         @Volatile
         var failures = 0
@@ -94,19 +103,43 @@ internal class ParallelRangeReader(
             lock.notifyAll()
         }
 
-        fun fail(e: IOException) = synchronized(lock) {
+        fun fail(e: IOException, asIs: Boolean = false) = synchronized(lock) {
             error = e
+            errorAsIs = asIs
             lock.notifyAll()
         }
 
+        fun startDownload() = synchronized(lock) { downloader = Thread.currentThread() }
+
+        /** 下载线程收工. 之后 [cancel] 不会再打断这个线程, 收工后清掉可能留下的打断标记 (线程要回线程池接着用). */
+        fun finishDownload() {
+            synchronized(lock) {
+                downloader = null
+                opening = false
+            }
+            Thread.interrupted()
+        }
+
+        /** 下载线程要发一个请求、等响应头; 已经取消了就返回 false, 不必发. */
+        fun startOpening(): Boolean = synchronized(lock) {
+            if (cancelled) return false
+            opening = true
+            true
+        }
+
+        fun endOpening() = synchronized(lock) { opening = false }
+
         /**
-         * 只做标记, 连接由下载线程读完手上这一次后自己关 (卡在读里的最多等到读超时).
+         * 标记取消. 还在等响应头的请求 (可能还排在 OkHttp 的队列里) 打断下载线程, OkHttp 数据源被打断时会把这个请求取消掉,
+         * 别让不要了的请求占着位子、挡住读的一方接下来要的请求.
+         * 已经在读的连接由下载线程读完手上这一次后自己关 (卡在读里的最多等到读超时).
          * 不能从这边关: OkHttp 的响应在别的线程正读着时关不掉 (抛 `Unbalanced enter/exit`), 之后下载线程再关也不管用了,
          * 连接一直占着, 到被回收时才关 (日志里的 `A connection … was leaked`).
          */
         fun cancel() {
             synchronized(lock) {
                 cancelled = true
+                if (opening) downloader?.interrupt()
                 lock.notifyAll()
             }
         }
@@ -131,7 +164,7 @@ internal class ParallelRangeReader(
                 }
             }
             if (filled > offset) return filled - offset
-            error?.let { throw IOException("Failed to download bytes ${start + offset}..${start + length}", it) }
+            error?.let { if (errorAsIs) throw it else throw IOException("Failed to download bytes ${start + offset}..${start + length}", it) }
             throw InterruptedIOException("Reader closed")
         }
     }
@@ -149,6 +182,13 @@ internal class ParallelRangeReader(
     /** 本次 [open] 以来排了几块, 定下一块多大 (见 [nextChunkLength]). */
     private var scheduledCount = 0
 
+    /** 本次 [open] 每块固定多长 (小范围拆给几个连接时, 见 [open]); 0 表示按 [nextChunkLength] 的规则. */
+    private var fixedChunkLength = 0L
+
+    /** 资源总长, 打开时从响应里知道的或调用方给的; 不知道时为 -1. */
+    var totalLength = -1L
+        private set
+
     // 速度小结 (见 [throughputSummary]), 各下载线程累加
     private val downloadedBytes = AtomicLong()
     private val completedChunks = AtomicInteger()
@@ -163,9 +203,26 @@ internal class ParallelRangeReader(
 
     /**
      * 打开 `[position, position + length)` ([length] 为 -1 表示到资源末尾), 返回要读的字节数, 不知道时为 -1.
+     *
+     * @param knownTotalLength 资源总长, 之前按范围读到过时给 (说明服务端支持范围请求): 这时各块 (包括第一块) 当场一起排出去,
+     * 不先在调用线程上发一个请求问长度. 网盘每个请求首字节要两三秒, 串着问一次, 跳转后就要多等这一轮.
+     * 小范围 (不到一块, 例如跳到文件尾读索引) 也拆给几个连接, 每块不小于 [minPartBytes]: 连接被限速时一个连接读一百多 KB 要好几秒
      */
-    fun open(position: Long, length: Long): Long {
+    fun open(position: Long, length: Long, knownTotalLength: Long = -1): Long {
         scheduledCount = 0
+        fixedChunkLength = 0
+        totalLength = knownTotalLength
+        if (knownTotalLength >= 0) {
+            end = if (length < 0) knownTotalLength else minOf(position + length, knownTotalLength)
+            remaining = (end - position).coerceAtLeast(0)
+            nextStart = position
+            if (remaining in 1..chunkSize.toLong()) {
+                val parts = (remaining / minPartBytes).coerceIn(1, connections.toLong())
+                fixedChunkLength = (remaining + parts - 1) / parts
+            }
+            topUp()
+            return remaining
+        }
         if (length in 0..chunkSize.toLong()) {
             direct = openWithRetry(position, length).connection
             return length
@@ -191,6 +248,7 @@ internal class ParallelRangeReader(
             }
             return length
         }
+        totalLength = first.totalLength
         end = if (length < 0) first.totalLength else minOf(position + length, first.totalLength)
         remaining = (end - position).coerceAtLeast(0)
         nextStart = position
@@ -296,6 +354,7 @@ internal class ParallelRangeReader(
      * 连接比 [connections] 多时不超过 [maxWindowBytes] 的平分.
      */
     private fun nextChunkLength(): Long {
+        if (fixedChunkLength > 0) return fixedChunkLength
         val round = (scheduledCount / connections).coerceAtMost(MAX_RAMP_ROUNDS)
         val ramped = minOf(chunkSize.toLong(), firstChunkSize.toLong() shl round)
         val limit = limit()
@@ -317,13 +376,20 @@ internal class ParallelRangeReader(
     private fun download(chunk: Chunk, initial: RangeConnection?) {
         var connection = initial
         var failures = 0
-        chunk.downloader = Thread.currentThread()
+        chunk.startDownload()
         try {
             while (!chunk.isComplete && !chunk.cancelled && !closed) {
                 try {
                     val filled = chunk.filledCount()
-                    val current = connection ?: opener.open(chunk.start + filled, (chunk.length - filled).toLong())
-                        .connection.also { connection = it }
+                    val current = connection ?: run {
+                        // 等响应头期间取消的话会被打断 (见 Chunk.cancel), 抛 InterruptedIOException, 下面按取消处理
+                        if (!chunk.startOpening()) return
+                        try {
+                            opener.open(chunk.start + filled, (chunk.length - filled).toLong()).connection
+                        } finally {
+                            chunk.endOpening()
+                        }
+                    }.also { connection = it }
                     val count = current.read(chunk.data, filled, chunk.length - filled)
                     if (count < 0) throw IOException("Connection ended early at ${chunk.start + filled}")
                     chunk.advance(count)
@@ -334,7 +400,12 @@ internal class ParallelRangeReader(
                     if (chunk.cancelled || closed) return
                     chunk.failures = ++failures
                     logger.warn { "Chunk at ${chunk.start} failed at ${chunk.filledCount()}/${chunk.length} (failure $failures): $e" }
-                    if (!retryable(e) || failures > MAX_RETRIES) {
+                    if (!retryable(e)) {
+                        // 原样交出去: 同一个错误在调用线程上打开时就会直接抛给播放器
+                        chunk.fail(e, asIs = true)
+                        return
+                    }
+                    if (failures > MAX_RETRIES) {
                         chunk.fail(e)
                         return
                     }
@@ -352,8 +423,8 @@ internal class ParallelRangeReader(
         } catch (e: Exception) {
             chunk.fail(e as? IOException ?: IOException(e))
         } finally {
-            chunk.downloader = null
             connection?.let { runCatching { it.close() } }
+            chunk.finishDownload()
         }
     }
 
@@ -362,6 +433,9 @@ internal class ParallelRangeReader(
 
         /** 块大小最多翻几轮 (防移位溢出; 实际几轮就到 chunkSize 了). */
         private const val MAX_RAMP_ROUNDS = 16
+
+        /** 小范围拆给几个连接时每块至少多大: 再小的话一块省下的传输时间抵不上多一个请求. */
+        const val MIN_PART_BYTES = 32L * 1024
 
         private val logger = logger<ParallelRangeReader>()
 
