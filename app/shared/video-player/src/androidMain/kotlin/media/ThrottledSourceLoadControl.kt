@@ -35,6 +35,10 @@ import androidx.annotation.OptIn as AndroidxOptIn
  *   恢复播放时有这么多就够; 再往上攒只是占内存, 4K 片子会一直攒到字节上限 (一百多 MB).
  * 开播 / 跳转后照旧攒够 1 秒就播.
  *
+ * 拖动预览由主播放器跳到预览位置时 ([previewing], 见 [SeekPreview]), 任何源都只读到 [PREVIEW_MAX_BUFFER_US], 出画面就算就绪:
+ * 每挪一步都要重新缓冲, 照常攒的话一步要从盘上读几十秒的数据进内存. 在一个位置上停下来看清楚之后 ([previewParked]) 照暂停时的规则往后攒:
+ * 确认时多半就从这里播, 闲着的这段时间先缓冲好, 开播后不至于马上卡; 再挪一步时播放器跳转会掐掉这次加载, 不耽误下一个位置.
+ *
  * 只转发 media3 1.9 实际调用的那组方法 (带 [PlayerId] / [LoadControl.Parameters] 的).
  */
 @AndroidxOptIn(UnstableApi::class)
@@ -47,6 +51,14 @@ internal class ThrottledSourceLoadControl : LoadControl {
     @Volatile
     var boosted = false
         private set
+
+    /** 拖动预览中 (见 [SeekPreview]); 主线程写, 播放线程读. */
+    @Volatile
+    var previewing = false
+
+    /** 拖动预览停在一个位置上、那一帧已经出来了 (见 [SeekPreview]): 不再按 [PREVIEW_MAX_BUFFER_US] 截住, 照暂停时的规则缓冲. 主线程写, 播放线程读. */
+    @Volatile
+    var previewParked = false
 
     /** 这个媒体开播过没有; 只在播放线程读写. */
     private var started = false
@@ -63,6 +75,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         updateBoost(parameters)
+        if (previewing && !previewParked && parameters.bufferedDurationUs >= PREVIEW_MAX_BUFFER_US) return false
         if (!throttled && parameters.bufferedDurationUs >= DEFAULT_MAX_BUFFER_US) return false
         if (throttled && !parameters.playWhenReady && parameters.bufferedDurationUs >= PAUSED_MAX_BUFFER_US) return false
         return delegate.shouldContinueLoading(parameters)
@@ -70,6 +83,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         updateBoost(parameters)
+        if (previewing) return true // 预览时播放器停着, 这里只决定画面出来后算不算就绪
         val start = if (throttled && parameters.rebuffering) {
             val needed = (REBUFFER_RESUME_US / parameters.playbackSpeed.coerceAtLeast(0.1f)).toLong()
             // 字节先到了上限 (码率极高) 就攒不到那么多秒, 这时照样开播, 免得一直卡着
@@ -159,6 +173,9 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
         /** 限速源暂停时的缓冲上限: 与收回多开连接的阈值相同. */
         const val PAUSED_MAX_BUFFER_US = BOOST_OFF_US
+
+        /** 拖动预览时的缓冲上限: 有关键帧之后的一点就够出画面. */
+        const val PREVIEW_MAX_BUFFER_US = 1_000_000L
 
         private val logger = logger<ThrottledSourceLoadControl>()
     }

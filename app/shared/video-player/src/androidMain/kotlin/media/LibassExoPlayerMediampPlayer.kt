@@ -13,6 +13,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.Surface
 import android.view.SurfaceView
 import androidx.annotation.OptIn as AndroidxOptIn
 import androidx.media3.common.C
@@ -43,11 +44,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -112,6 +116,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     /**
      * @param configurePlayerBuilder 在 [ExoPlayer.Builder] 构建前调用, 用于自定义原生播放器 (如缓冲策略).
      *   见 [ExoPlayerMediampPlayer] 的同名参数.
+     * @param diskCacheEnabled 在线播放时要不要把下过的数据存在本机 (见 [PlaybackDiskCache]), 每打开一个媒体时问一次 (在主线程上)
      */
     constructor(
         context: Context,
@@ -119,12 +124,13 @@ class LibassExoPlayerMediampPlayer private constructor(
         audioTimeStretch: ExoPlayerAudioTimeStretch = ExoPlayerAudioTimeStretch.HighQualityWsola,
         configurePlayerBuilder: ((ExoPlayer.Builder) -> Unit)? = null,
         proxyConfig: () -> PlaybackProxyConfig? = { null },
+        diskCacheEnabled: () -> Boolean = { false },
     ) : this(
         context,
         parentCoroutineContext,
         audioTimeStretch,
         configurePlayerBuilder,
-        LibassMediaSourcePipeline(context, parentCoroutineContext, proxyConfig),
+        LibassMediaSourcePipeline(context, parentCoroutineContext, proxyConfig, diskCacheEnabled),
     )
 
     private constructor(
@@ -152,6 +158,72 @@ class LibassExoPlayerMediampPlayer private constructor(
     internal val assHandler: AssHandler get() = pipeline.assHandler
 
     private val exoPlayer: ExoPlayer get() = exoMediampPlayer.impl
+
+    /** 进行中的拖动预览 (见 [startSeekPreview]); 只在主线程读写. */
+    private var seekPreview: SeekPreview? = null
+
+    private val previewOriginMillis = MutableStateFlow<Long?>(null)
+
+    /** 拖动预览进行中时为开始时的位置 (见 [SeekPreview]), 否则为 null. 只在主线程变. */
+    val seekPreviewOrigin: StateFlow<Long?> get() = previewOriginMillis
+
+    /**
+     * 开始拖动预览: 之后由主播放器解出预览位置的画面, 画进 [SeekPreview.attachFrameSurface] 给的小画面里 (见 [SeekPreview]);
+     * 全屏停在开始时那一帧, 对外报告的播放位置 ([currentPositionMillis]) 与字幕也停在那里. 播放器已经关了时返回 null.
+     * 换媒体时进行中的预览自动结束. 在主线程上调用.
+     *
+     * @param isAvailable 本机有没有某个位置的数据, 没有的话停一会儿才去下 (BT: 那一段下完了没有). 在线源不用给, 由播放器自己在联网前挡住.
+     */
+    fun startSeekPreview(isAvailable: ((Long) -> Boolean)? = null): SeekPreview? {
+        seekPreview?.end()
+        if (closed) return null
+        return SeekPreview(
+            exoPlayer, pipeline.networkGate, pipeline.loadControl, isAvailable,
+            // 不经 seekTo: 那里会把字幕时钟拨到预览位置, 预览期间字幕要停在开始时
+            seek = { exoMediampPlayer.seekTo(it) },
+            seekPlayback = { seekTo(it) },
+            setOutputSurface = ::setPreviewOutputSurface,
+            restoreOutput = ::restoreVideoOutput,
+        ) { ended ->
+            if (seekPreview === ended) {
+                seekPreview = null
+                previewOriginMillis.value = null
+            }
+        }.also {
+            seekPreview = it
+            previewOriginMillis.value = it.originMillis
+        }
+    }
+
+    /** 拖动预览时视频输出接到小画面上 ([surface] 为 null 时哪儿也不画), 全屏那层留着最后一帧. */
+    private fun setPreviewOutputSurface(surface: Surface?) {
+        exoPlayer.setVideoSurface(surface)
+        // 小画面同样要补上色彩信息 (见 applyVideoDataSpace), 否则 NVIDIA h264 解出的帧颜色不对
+        val dataSpace = videoDataSpace
+        if (surface != null && nvidiaVideoDecoderActive && dataSpace != 0 && surface.isValid) {
+            SurfaceDataSpace.set(surface, dataSpace)
+        }
+    }
+
+    /** 视频输出接回全屏的视频画面. */
+    private fun restoreVideoOutput() {
+        val surfaceView = findAndroidVideoSurface()
+        if (surfaceView != null) exoPlayer.setVideoSurfaceView(surfaceView) else exoPlayer.clearVideoSurface()
+    }
+
+    /**
+     * 播放位置; 拖动预览期间报开始时的位置 (见 [startSeekPreview]): 全屏停在那一刻, 弹幕、进度条、记忆进度也跟着停在那里.
+     */
+    override val currentPositionMillis: StateFlow<Long> = object : StateFlow<Long> {
+        override val value: Long get() = previewOriginMillis.value ?: exoMediampPlayer.currentPositionMillis.value
+        override val replayCache: List<Long> get() = listOf(value)
+        override suspend fun collect(collector: FlowCollector<Long>): Nothing {
+            combine(exoMediampPlayer.currentPositionMillis, previewOriginMillis) { live, origin -> origin ?: live }
+                .distinctUntilChanged()
+                .collect(collector)
+            awaitCancellation()
+        }
+    }
     private val backgroundScope = CoroutineScope(
         parentCoroutineContext + SupervisorJob(parentCoroutineContext[Job.Key]),
     )
@@ -241,6 +313,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     init {
         assHandler.init(exoPlayer)
         exoPlayer.addAnalyticsListener(videoOutputTimeoutListener)
+        pipeline.onNewMedia = { seekPreview?.end() }
         exoPlayer.addAnalyticsListener(
             object : AnalyticsListener {
                 override fun onVideoDecoderInitialized(
@@ -332,7 +405,7 @@ class LibassExoPlayerMediampPlayer private constructor(
             while (isActive) {
                 // AssRenderer normally supplies this timestamp. MediaMP owns the ExoPlayer
                 // builder, so drive the overlay from the same playback clock here instead.
-                assHandler.videoTime = exoPlayer.currentPosition * 1_000
+                assHandler.videoTime = (previewOriginMillis.value ?: exoPlayer.currentPosition) * 1_000
                 delay(16.milliseconds)
             }
         }
@@ -569,6 +642,7 @@ private class LibassMediaSourcePipeline(
     private val context: Context,
     parentCoroutineContext: CoroutineContext,
     private val proxyConfig: () -> PlaybackProxyConfig?,
+    private val diskCacheEnabled: () -> Boolean,
 ) {
     private val scope = CoroutineScope(parentCoroutineContext + SupervisorJob(parentCoroutineContext[Job.Key]))
 
@@ -589,6 +663,12 @@ private class LibassMediaSourcePipeline(
     /** 被限速的网盘直链换一套缓冲策略 (见 [ThrottledSourceLoadControl]); 每准备一个媒体按它的提示头切换. */
     val loadControl = ThrottledSourceLoadControl()
 
+    /** 拖动预览期间挡住存本机的媒体的联网读取 (见 [SeekPreview]). */
+    val networkGate = PlaybackNetworkGate()
+
+    /** 每准备一个新媒体时先调 (主线程): 播放器借此结束进行中的拖动预览. */
+    var onNewMedia: (() -> Unit)? = null
+
     // 播放器构造后由 LibassExoPlayerMediampPlayer 设置; 每个视频轨的最终 Format 经这里回调
     // 给它, 用来决定要不要把 dataspace 直接写到 Surface 上 (NVIDIA h264 硬解不理 MediaFormat).
     var onVideoFormat: ((androidx.media3.common.Format) -> Unit)? = null
@@ -600,6 +680,7 @@ private class LibassMediaSourcePipeline(
     // 就变假 HDR. 包在 MediaSource 出口是为了覆盖所有入口 (progressive/HLS/兜底默认源),
     // 详见 ColorInfoRepair.kt
     fun intercept(defaultSource: MediaSource, data: MediaData): MediaSource {
+        onNewMedia?.invoke()
         deferredFonts?.cancel()
         deferredFonts = null
         loadControl.throttled = data is UriMediaData && parallelConnectionsOf(data) != null
@@ -615,6 +696,7 @@ private class LibassMediaSourcePipeline(
     fun close() {
         deferredFonts?.cancel()
         deferredFonts = null
+        networkGate.open()
         scope.cancel()
     }
 
@@ -625,26 +707,62 @@ private class LibassMediaSourcePipeline(
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
         // 网盘直链时另给推迟的字体附件用 (见 DeferredMkvFonts)
         var fontsDataSourceFactory: DataSource.Factory? = null
+        // 网盘直链下过的数据按这个内容标识存在本机 (见 PlaybackDiskCache); 其余在线源按地址存, 不用它
+        var cacheKey: String? = null
         val dataSourceFactory = when (data) {
             is UriMediaData -> {
                 // 解析器给的提示头只给播放器看, 不发给服务器
                 val parallel = parallelConnectionsOf(data)
                 val userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT
-                val headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER
+                val headers = PlaybackRequestHints.strip(data.headers)
                 if (parallel != null) {
                     // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients);
                     // 播放跟不上时多开连接 (见 ThrottledSourceLoadControl.boosted)
                     val upstream = RangeHttpClients.factory(proxyConfig(), userAgent, headers)
+                    // 设置里开了「边下边播」时, 下过的数据存在本机: 往回拖、拖动预览、再看同一个文件时从盘上读
+                    val key = PlaybackDiskCache.keyOf(data)?.takeIf { diskCacheEnabled() }
+                    val cache = key?.let { PlaybackDiskCache.get(context) }
                     // 字体在出画面后读, 正赶上缓冲最少、播放多开着连接的时候: 少开一半, 也不跟着多开
-                    fontsDataSourceFactory = ParallelRangeDataSource.Factory(upstream, (parallel / 2).coerceAtLeast(2))
-                    ParallelRangeDataSource.Factory(upstream, parallel, boosted = { loadControl.boosted })
+                    val fonts = ParallelRangeDataSource.Factory(upstream, (parallel / 2).coerceAtLeast(2))
+                    val playback = ParallelRangeDataSource.Factory(upstream, parallel, boosted = { loadControl.boosted })
+                    if (key == null || cache == null) {
+                        fontsDataSourceFactory = fonts
+                        // 拖动预览时 (见 SeekPreview) 联网之前先过这道门
+                        networkGate.wrap(playback)
+                    } else {
+                        cacheKey = key
+                        logger.info { "Caching $key on disk while playing" }
+                        fontsDataSourceFactory = PlaybackDiskCache.cacheDataSourceFactory(cache, fonts)
+                        // 播放器按 MediaItem 的 customCacheKey 给媒体请求带上内容标识; 外挂字幕的请求不带, 直接下
+                        RoutingDataSourceFactory(
+                            routesToPrimary = { it.key != null },
+                            // 拖动预览时 (见 SeekPreview) 本机有的直接读, 没存的部分要联网时先过这道门
+                            primaryDataSourceFactory = PlaybackDiskCache.cacheDataSourceFactory(cache, networkGate.wrap(playback)),
+                            fallbackDataSourceFactory = playback,
+                        )
+                    }
                 } else {
-                    createPlaybackHttpDataSourceFactory(
-                        proxyConfig = proxyConfig(),
-                        userAgent = userAgent,
-                        headers = headers,
-                        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                    // 拖动预览时 (见 SeekPreview) 联网之前先过这道门
+                    val http = networkGate.wrap(
+                        createPlaybackHttpDataSourceFactory(
+                            proxyConfig = proxyConfig(),
+                            userAgent = userAgent,
+                            headers = headers,
+                            connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
+                        ),
                     )
+                    // 设置里开了「边下边播」时下过的数据存在本机, 按地址认 (这类直链不像网盘那样另给内容标识).
+                    // m3u8 播放列表不存: 列表随时可能更新, 去广告也要拿原样的列表
+                    val cache = if (diskCacheEnabled()) PlaybackDiskCache.get(context) else null
+                    if (cache == null) {
+                        http
+                    } else {
+                        RoutingDataSourceFactory(
+                            routesToPrimary = { Util.inferContentTypeForUriAndMimeType(it.uri, null) != C.CONTENT_TYPE_HLS },
+                            primaryDataSourceFactory = PlaybackDiskCache.cacheDataSourceFactory(cache, http),
+                            fallbackDataSourceFactory = http,
+                        )
+                    }
                 }
             }
 
@@ -661,8 +779,8 @@ private class LibassMediaSourcePipeline(
                     val tracking = data as? TrackingSeekableInputMediaData ?: return null
                     val primaryInput = tracking.primaryInput ?: return null
                     RoutingDataSourceFactory(
-                        mediaUri = data.uri,
-                        mediaDataSourceFactory = DataSource.Factory {
+                        routesToPrimary = { it.uri.toString() == data.uri },
+                        primaryDataSourceFactory = DataSource.Factory {
                             VideoDataDataSource(tracking.source, primaryInput)
                         },
                         fallbackDataSourceFactory = DefaultDataSource.Factory(context),
@@ -673,6 +791,7 @@ private class LibassMediaSourcePipeline(
 
         val mediaItem = MediaItem.Builder()
             .setUri(data.playbackUri)
+            .setCustomCacheKey(cacheKey)
             .setSubtitleConfigurations(
                 data.extraFiles.subtitles.mapIndexed { index, subtitle ->
                     MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.uri)).apply {
@@ -694,7 +813,7 @@ private class LibassMediaSourcePipeline(
         }
         // 网盘直链限速时, mkv 开头的大段字体附件推迟到出画面后再读
         val extractors = fontsDataSourceFactory?.let { factory ->
-            val fonts = DeferredMkvFonts(Uri.parse(data.playbackUri), factory, assHandler, scope)
+            val fonts = DeferredMkvFonts(Uri.parse(data.playbackUri), cacheKey, factory, assHandler, scope)
             deferredFonts = fonts
             fontDeferringExtractorsFactory(fonts)
         } ?: extractorsFactory
@@ -755,23 +874,24 @@ private class TrackingSeekableInputMediaData(
         }
 }
 
+/** 每次打开时按请求选数据源: [routesToPrimary] 为 true 的走 [primaryDataSourceFactory], 其余走 [fallbackDataSourceFactory]. */
 @AndroidxOptIn(UnstableApi::class)
 private class RoutingDataSourceFactory(
-    private val mediaUri: String,
-    private val mediaDataSourceFactory: DataSource.Factory,
+    private val routesToPrimary: (DataSpec) -> Boolean,
+    private val primaryDataSourceFactory: DataSource.Factory,
     private val fallbackDataSourceFactory: DataSource.Factory,
 ) : DataSource.Factory {
     override fun createDataSource(): DataSource = RoutingDataSource(
-        mediaUri,
-        mediaDataSourceFactory,
+        routesToPrimary,
+        primaryDataSourceFactory,
         fallbackDataSourceFactory,
     )
 }
 
 @AndroidxOptIn(UnstableApi::class)
 private class RoutingDataSource(
-    private val mediaUri: String,
-    private val mediaDataSourceFactory: DataSource.Factory,
+    private val routesToPrimary: (DataSpec) -> Boolean,
+    private val primaryDataSourceFactory: DataSource.Factory,
     private val fallbackDataSourceFactory: DataSource.Factory,
 ) : DataSource {
     private val transferListeners = mutableListOf<TransferListener>()
@@ -783,8 +903,8 @@ private class RoutingDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         check(activeDataSource == null) { "Data source is already open" }
-        val dataSource = if (dataSpec.uri.toString() == mediaUri) {
-            mediaDataSourceFactory.createDataSource()
+        val dataSource = if (routesToPrimary(dataSpec)) {
+            primaryDataSourceFactory.createDataSource()
         } else {
             fallbackDataSourceFactory.createDataSource()
         }
@@ -821,6 +941,8 @@ private class RoutingDataSource(
 class LibassExoPlayerMediampPlayerFactory(
     private val enableHighQualityAudioTimeStretch: () -> Boolean = { true },
     private val proxyConfig: () -> PlaybackProxyConfig? = { null },
+    /** 见 [LibassExoPlayerMediampPlayer] 构造参数里的同名参数. */
+    private val diskCacheEnabled: () -> Boolean = { false },
 ) : MediampPlayerFactory<LibassExoPlayerMediampPlayer> {
     override val forClass: KClass<LibassExoPlayerMediampPlayer>
         get() = LibassExoPlayerMediampPlayer::class
@@ -843,6 +965,7 @@ class LibassExoPlayerMediampPlayerFactory(
                 builder.setLoadControl(aniExoPlayerLoadControl())
             },
             proxyConfig = proxyConfig,
+            diskCacheEnabled = diskCacheEnabled,
         )
     }
 }
