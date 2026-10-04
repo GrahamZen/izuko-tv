@@ -100,6 +100,7 @@ import me.him188.ani.app.ui.foundation.theme.weaken
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.player_frame_preview_failed
 import me.him188.ani.app.ui.lang.player_frame_preview_not_downloaded
+import me.him188.ani.app.ui.lang.player_frame_preview_stay_to_load
 import me.him188.ani.app.videoplayer.ui.gesture.SwipeSeekerConfig
 import me.him188.ani.app.videoplayer.ui.gesture.isVerticalDragCancelled
 import org.openani.mediamp.MediampPlayer
@@ -612,6 +613,7 @@ fun MediaProgressSlider(
                         val total = state.totalDurationMillis
                         if (total <= 0) return@collectLatest
                         // BT 源只预览已下载完成的区域, 避免抢占播放位置的下载优先级.
+                        // 在线源的取帧器自己取数据, 不受这个限制 (见 fetchesUncachedPositions).
                         //
                         // 副作用: 往前拖恰好就是"还没下载到"的方向, 于是 BT 源上往前拖基本
                         // 拿不到缩略图. 维护加载状态的 (TV) 在画面位上标出「还没下载」; 其余的帧
@@ -797,9 +799,9 @@ private fun popupContentPadding(frameOnly: Boolean): PaddingValues =
 /**
  * 预览帧 + 叠在其底部居中的时间 ([ProgressSliderPreviewStyle.FrameOnly]).
  *
- * 帧还没解出来时保留这块半透明底, 让叠在上面的时间有个可读的背景. 维护加载状态的取帧源 (TV)
- * 在画面位上分别标出: 正在取 (进度环; 留着的上一个位置的帧压暗)、这次没取到、这里还没下载 ——
- * 一帧要取好几秒, 只给一块灰底的话, 用户分不出是在等、失败了还是根本不会有.
+ * 帧还没解出来时保留这块半透明底, 让叠在上面的时间有个可读的背景. 维护加载状态的取帧源与播放器画进来的画面 (TV)
+ * 在画面位上分别标出: 正在取 (进度环; 留着的上一个位置的帧盖成黑底)、这次没取到、这里还没下载 (播放器画面: 黑底, 停一下就加载) ——
+ * 一帧要等好几秒时, 只给一块灰底的话, 用户分不出是在等、失败了还是根本不会有.
  * 彻底取不到帧的媒体不会走到这里 —— 那种情况 `showFrame` 就是 false, 浮窗退化成纯时间胶囊
  * (见 [MediaProgressFramePreviewState.framesAvailable]).
  */
@@ -808,8 +810,9 @@ private fun PreviewFrameWithOverlaidTime(
     framePreview: MediaProgressFramePreviewState,
     text: String,
 ) {
-    val frame = framePreview.frame
-    val loadStatus = framePreview.loadStatus
+    val liveFrame = framePreview.liveFrame
+    val frame = framePreview.frame.takeIf { liveFrame == null }
+    val loadStatus = if (liveFrame != null) framePreview.liveFrameStatus else framePreview.loadStatus
     Box(
         Modifier
             .size(width = 160.dp, height = 90.dp)
@@ -817,7 +820,9 @@ private fun PreviewFrameWithOverlaidTime(
             .background(Color.Black.copy(alpha = 0.5f)),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        if (frame != null) {
+        if (liveFrame != null) {
+            liveFrame(Modifier.matchParentSize().testTag(TAG_PROGRESS_SLIDER_PREVIEW_FRAME))
+        } else if (frame != null) {
             Image(
                 frame,
                 contentDescription = null,
@@ -832,9 +837,9 @@ private fun PreviewFrameWithOverlaidTime(
         when (loadStatus) {
             FramePreviewLoadStatus.Idle -> {}
             FramePreviewLoadStatus.Loading -> {
-                // 留着的帧是上一个位置的: 压暗, 别让它冒充圆点这里的画面
-                if (frame != null) {
-                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)))
+                // 留着的帧是上一个位置的: 盖成黑底, 别让它冒充圆点这里的画面
+                if (frame != null || liveFrame != null) {
+                    Box(Modifier.matchParentSize().background(Color.Black))
                 }
                 FrameLoadingIndicator(framePreview, statusModifier)
             }
@@ -852,11 +857,22 @@ private fun PreviewFrameWithOverlaidTime(
                 },
             )
 
-            // 不是错误, 不给红色图标: BT 源只预览已经下载的部分, 往前拖多半是这个
-            FramePreviewLoadStatus.NotDownloaded -> FrameStatusMessage(
-                text = stringResource(Lang.player_frame_preview_not_downloaded),
-                modifier = statusModifier.testTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED),
-            )
+            // 不是错误, 不给红色图标. 取帧时 BT 源只预览已经下载的部分, 往前拖多半是这个;
+            // 播放器画进来的画面在这里停一会儿就会去下 (见 SeekPreview), 提示的是怎么让它出来
+            FramePreviewLoadStatus.NotDownloaded -> {
+                // 播放器画进来的画面还是别处的: 盖成黑底, 别让它冒充这里的画面
+                if (liveFrame != null) {
+                    Box(Modifier.matchParentSize().background(Color.Black))
+                }
+                FrameStatusMessage(
+                    text = if (liveFrame != null) {
+                        stringResource(Lang.player_frame_preview_stay_to_load)
+                    } else {
+                        stringResource(Lang.player_frame_preview_not_downloaded)
+                    },
+                    modifier = statusModifier.testTag(TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED),
+                )
+            }
         }
         // 文字自带一小块暗底: 亮画面 (雪景/白墙) 上白字会糊掉.
         // 圆角 6dp: 这块底约 18dp 高 (labelMedium + 上下 1dp), 全圆是 9dp, 取到 6 已经明显圆
@@ -1114,7 +1130,7 @@ private fun PreviewFrameAndTimeTextContent() = ProvideCompositionLocalsForPrevie
  *
  * 无缓存信息 (null) 或空信息 (如本地文件) 视为可用.
  */
-internal fun MediaCacheProgressInfo?.isPositionCached(ratio: Float): Boolean {
+fun MediaCacheProgressInfo?.isPositionCached(ratio: Float): Boolean {
     if (this == null || isEmpty()) return true
     var accumulated = 0f
     for (i in 0..lastIndex) {
