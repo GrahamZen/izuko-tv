@@ -26,6 +26,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import me.him188.ani.app.data.models.preference.QuarkRememberedShare
 import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
 import me.him188.ani.app.domain.foundation.RequestUserAgentAttribute
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
@@ -249,6 +250,26 @@ internal class QuarkShareSearchEngine(
         }
     }
 
+    /**
+     * 自动记下的分享文件夹里对得上的剧集 (认季的规则与名字同搜到时). 分享失效 (取消、违规) 时返回 null;
+     * 别的错误 (网络) 当这次没有, 由调用方照常去搜.
+     */
+    suspend fun matchRemembered(request: MediaFetchRequest, remembered: QuarkRememberedShare): List<QuarkShareMatch>? {
+        val share = FoundShare(remembered.shareId, remembered.passcode, remembered.siteTitle)
+        val videos = try {
+            reader.readFolder(remembered.shareId, remembered.passcode, remembered.folderId, remembered.path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuarkShareUnavailableException) {
+            logger.info { "Remembered Quark share ${remembered.shareId} unavailable: ${e.message}" }
+            return null
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to read remembered Quark share ${remembered.shareId}" }
+            return emptyList()
+        }
+        return reader.match(request, share, videos)
+    }
+
     /** 搜一个关键词, 返回剧名对得上的结果里的全部夸克分享链接. */
     internal suspend fun searchSite(keyword: String): List<FoundShare> {
         val url = config.searchUrl.replace("{keyword}", keyword.encodeURLParameter())
@@ -377,10 +398,34 @@ class QuarkShareSearchMediaSource(
         return if (url.isNotBlank() && fetchBytes(url) != null) ConnectionStatus.SUCCESS else ConnectionStatus.FAILED
     }
 
+    /**
+     * 播过的那一集所在的分享文件夹会记给这个源与条目 (见 [QuarkDriveService.rememberedShareOf]): 之后先只列它,
+     * 有要的这一集就不再去站点搜索、也不再打开别的分享 (追番时第二集起只列一个文件夹); 没有 (新的一集还没更新) 时照常搜.
+     */
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
-        val medias = engine.search(query).map { MediaMatch(it.toShareMedia(mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) }
+        val subjectId = query.subjectId.toIntOrNull()
+        val remembered = subjectId?.let { rememberedMatches(query, it) }.orEmpty()
+        val searched = if (remembered.any { it.episode == query.episodeSort || it.episode == query.episodeEp }) {
+            logger.info { "${arguments.name}: episode ${query.episodeSort} of subject ${query.subjectId} is in the remembered share, skipping search" }
+            emptyList()
+        } else {
+            engine.search(query)
+        }
+        if (subjectId != null) service.noteShareMatches(mediaSourceId, subjectId, remembered + searched)
+        val seen = HashSet<String>()
+        val medias = (remembered + searched)
+            .filter { seen.add("${it.share.shareId}/${it.file.fid}") }
+            .map { MediaMatch(it.toShareMedia(mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
+    }
+
+    private suspend fun rememberedMatches(query: MediaFetchRequest, subjectId: Int): List<QuarkShareMatch>? {
+        val remembered = service.rememberedShareOf(mediaSourceId, subjectId) ?: return null
+        val matches = engine.matchRemembered(query, remembered)
+        // 分享失效了: 忘掉, 照常搜
+        if (matches == null) service.forgetRememberedShare(mediaSourceId, subjectId)
+        return matches
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {

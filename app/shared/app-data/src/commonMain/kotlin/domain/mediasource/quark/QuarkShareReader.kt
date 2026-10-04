@@ -47,7 +47,16 @@ internal class QuarkShareReader(
      */
     suspend fun read(shareId: String, passcode: String): Contents {
         val title = shares.open(shareId, passcode)
-        return Contents(title, collectVideos(shareId, passcode))
+        return Contents(title, collectVideos(shareId, passcode, QuarkApi.ROOT_FOLDER_ID, emptyList()))
+    }
+
+    /**
+     * 只列分享里的文件夹 [folderId] (往下的限制同 [read]), 各视频的 [Entry.folders] 从 [path] (这个文件夹在分享里的路径) 起.
+     * 分享失效时抛 [QuarkShareUnavailableException].
+     */
+    suspend fun readFolder(shareId: String, passcode: String, folderId: String, path: List<String>): List<Entry> {
+        shares.open(shareId, passcode)
+        return collectVideos(shareId, passcode, folderId, path)
     }
 
     /**
@@ -63,7 +72,7 @@ internal class QuarkShareReader(
         }
     }
 
-    private suspend fun collectVideos(shareId: String, passcode: String): List<Entry> {
+    private suspend fun collectVideos(shareId: String, passcode: String, startFolderId: String, startPath: List<String>): List<Entry> {
         val result = ArrayList<Entry>()
         var listed = 0
 
@@ -81,7 +90,7 @@ internal class QuarkShareReader(
             }
         }
 
-        walk(QuarkApi.ROOT_FOLDER_ID, emptyList(), depth = 0)
+        walk(startFolderId, startPath, depth = 0)
         return result
     }
 

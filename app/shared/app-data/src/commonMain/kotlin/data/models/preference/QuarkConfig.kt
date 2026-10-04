@@ -49,13 +49,18 @@ data class QuarkConfig(
      * 与手动指定的 [subjectPicks] 分开存; 同 [subjectPicks] 只在这个账号里有效. 按记下的先后保留最近的若干个.
      */
     val rememberedFolders: Map<Int, QuarkRememberedFolder> = emptyMap(),
+    /**
+     * 「夸克分享搜索」自动记下的分享文件夹 (`数据源 id:条目 id` → 播过的那一集在分享里所在的文件夹): 之后那个源先只列它,
+     * 有要的那一集就不再去站点搜索、也不再打开别的分享. 按记下的先后保留最近的若干个.
+     */
+    val rememberedShares: Map<String, QuarkRememberedShare> = emptyMap(),
 ) {
     val isLoggedIn: Boolean get() = cookie.isNotBlank()
 
     override fun toString(): String {
         return "QuarkConfig(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
                 "nickname=$nickname, memberType=$memberType, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
-                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size})"
+                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size}, rememberedShares=${rememberedShares.size})"
     }
 
     companion object {
@@ -87,6 +92,22 @@ data class QuarkPickedFolder(val fid: String, val name: String)
  */
 @Serializable
 data class QuarkRememberedFolder(val fid: String, val path: List<String>)
+
+/**
+ * 「夸克分享搜索」自动记下的分享文件夹, 见 [QuarkConfig.rememberedShares].
+ *
+ * @property siteTitle 站点上的剧名, 认季用 (同搜到时)
+ * @property folderId 分享里的文件夹; 文件直接放在分享根上时是根
+ * @property path 分享里从根到这个文件夹的名字: 列它的时候照搜到时一样按这些名字认季
+ */
+@Serializable
+data class QuarkRememberedShare(
+    val shareId: String,
+    val passcode: String,
+    val siteTitle: String,
+    val folderId: String,
+    val path: List<String>,
+)
 
 /**
  * @property episode 第几集 (集号的字符串写法)
