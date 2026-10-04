@@ -58,7 +58,6 @@ import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.PlayerExtension
 import me.him188.ani.app.domain.player.extension.PlayerExtensionEvent
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import me.him188.ani.app.domain.watchtogether.PlaybackAutomationGate
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.EpisodeSwitch
 import me.him188.ani.utils.logging.info
@@ -109,7 +108,6 @@ class EpisodeFetchSelectPlayState(
     private val selectorCacheRepo by koin.inject<SelectorMediaSourceEpisodeCacheRepository>()
     private val mediaSourceManager by koin.inject<MediaSourceManager>()
     private val playHistoryRepository by koin.inject<EpisodePlayHistoryRepository>()
-    private val automationGate by koin.inject<PlaybackAutomationGate>()
 
     /**
      * 条目级查询会话, 各集共用: 切集只重建选择器, 不重新查询.
@@ -389,40 +387,20 @@ class EpisodeFetchSelectPlayState(
                                 .first()
                                 .episodeInfo
 
-                            playerSession.loadMedia(
-                                media,
-                                episodeInfo.toEpisodeMetadata(),
-                                startPositionHintMillis(episodeInfo.episodeId),
-                            )
+                            val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
+                            playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
                             onMediaLoaded(episodeInfo.episodeId)
 
                             reloadRequests.collect { positionMillis ->
                                 logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
-                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 装好开播时它会按这个位置恢复
+                                // 先让记忆进度的扩展知道这次要回到哪里, 再装: 从这个位置打开, 开播时它据此确认已经回到这里
                                 onReloadMedia(episodeInfo.episodeId, positionMillis)
-                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata())
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis)
                             }
                         }
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * 续播的起点, 供 HLS 代理在起播前预缓存那里的分片 (见 [HlsPlaybackPreparer.prepare]).
-     * 跳转仍由 RememberPlayProgressExtension 在播放开始后执行, 这里与它读同一份进度; 一起看时它不续播, 这里也不给.
-     * 读取失败只是少了预缓存, 不影响加载.
-     */
-    private suspend fun startPositionHintMillis(episodeId: Int): Long? {
-        if (automationGate.suppressed.value) return null
-        return try {
-            playHistoryRepository.getResumePositionMillisByEpisodeId(episodeId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to read play progress of episode $episodeId for HLS start position hint" }
-            null
         }
     }
 
