@@ -40,6 +40,8 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 记忆播放进度.
  *
+ * 恢复: 第一次装这一集时播放器直接从存下的进度打开 ([startPositionMillis]); 同一集换源后从头打开, 开播后再跳回存下的进度.
+ *
  * 在以下情况时保存播放进度:
  * - 开始或恢复播放 5 秒后
  * - 播放中每分钟
@@ -59,10 +61,30 @@ class RememberPlayProgressExtension(
     private val latestInfoBundleMutex = Mutex()
     private val latestInfoBundles = mutableMapOf<Int, SubjectEpisodeInfoBundle>()
 
+    /** 最近一次装进播放器的资源是哪一集 (见 [EpisodeFetchSelectPlayState.MediaLoadedEvent]), 见 [startPositionMillis]. */
+    private val loadedEpisodeId = MutableStateFlow<Int?>(null)
+
+    /**
+     * 正在装的资源从哪里打开 ([startPositionMillis] 给出的, 或原地重载给的位置); 从头打开时为 null.
+     * 恢复进度时目标正是它、播放位置也确实在那里, 就不再 seek.
+     */
+    private val openedAtMillis = MutableStateFlow<Long?>(null)
+
+    /**
+     * 第一次装这一集时从存下的进度打开 (原地重载由调用方直接给位置). 同一集换源时不给, 照旧从头打开、开播后再跳回存下的进度
+     * (见 onStart 里的 restoreSavedPositionOnce): 换源前保存进度与这里读进度没有先后保证, 提前读可能读到一分钟前的进度.
+     */
+    override suspend fun startPositionMillis(episodeId: Int): Long? {
+        val positionMillis = if (loadedEpisodeId.value == episodeId) null else playProgressRepository.getResumePositionMillisByEpisodeId(episodeId)
+        openedAtMillis.value = positionMillis
+        return positionMillis
+    }
+
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         val mediaLoaded = CompletableDeferred<Unit>()
         backgroundTaskScope.launch("MediaLoadedListener") {
             context.subscribeEvents<EpisodeFetchSelectPlayState.MediaLoadedEvent>().collectLatest { event ->
+                loadedEpisodeId.value = event.episodeId
                 if (event.episodeId == episodeSession.episodeId && mediaLoaded.isActive) {
                     mediaLoaded.complete(Unit)
                 }
@@ -78,6 +100,7 @@ class RememberPlayProgressExtension(
             context.subscribeEvents<EpisodeFetchSelectPlayState.MediaReloadEvent>().collect { event ->
                 if (event.episodeId == episodeSession.episodeId) {
                     reloadPositionMillis.value = event.positionMillis
+                    openedAtMillis.value = event.positionMillis // 重载从这里打开
                 }
             }
         }
@@ -136,8 +159,15 @@ class RememberPlayProgressExtension(
                 logger.info { "Loaded saved position: $positionMillis, waiting for video properties" }
                 player.mediaProperties.first { (it?.durationMillis ?: 0L) > 0L }
                 withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
-                    logger.info { "Video properties ready, seeking to saved position: $positionMillis" }
-                    player.seekTo(positionMillis)
+                    val currentMillis = player.currentPositionMillis.value
+                    val openedAt = openedAtMillis.getAndUpdate { null }
+                    if (openedAt == positionMillis && currentMillis in (positionMillis - START_SLACK_MILLIS)..(positionMillis + RESUMED_TOLERANCE_MILLIS)) {
+                        // 打开时就从这里开始了: 再 seek 一次会把刚缓冲的扔掉重来
+                        logger.info { "Opened at saved position $positionMillis (now $currentMillis), not seeking" }
+                    } else {
+                        logger.info { "Video properties ready, seeking to saved position: $positionMillis" }
+                        player.seekTo(positionMillis)
+                    }
                     // seek 引起的状态变化会取消本次收集, 标记必须在 NonCancellable 内完成
                     haveResumedOnce = true
                     resumedMediaData = mediaData
@@ -265,5 +295,14 @@ class RememberPlayProgressExtension(
             RememberPlayProgressExtension(context, koin)
 
         private val logger = logger<RememberPlayProgressExtension>()
+
+        /**
+         * 打开时带了起始位置的话, 恢复进度时播放位置在 [起始位置 - [START_SLACK_MILLIS], 起始位置 + 这么多] 之内就当已经在那里.
+         * 往后宽出几秒: 检查时可能已经播了一会儿. 播放器没理会起始位置 (从头打开) 时位置在开头, 不在这个范围里, 照常 seek.
+         */
+        private const val RESUMED_TOLERANCE_MILLIS = 5_000L
+
+        /** 见 [RESUMED_TOLERANCE_MILLIS]: 播放器从起始位置附近的关键帧开始时位置会略早一点. */
+        private const val START_SLACK_MILLIS = 1_000L
     }
 }
