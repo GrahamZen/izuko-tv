@@ -19,8 +19,14 @@ import kotlin.test.assertEquals
  */
 class ParallelRangeHintTest {
     @Test
-    fun `hint sets the segment concurrency and is removed from request headers`() {
-        val options = DownloadOptions(headers = mapOf("Cookie" to "c", PlaybackRequestHints.PARALLEL_RANGE_HEADER to "16"))
+    fun `hint sets the segment concurrency and all hints are removed from request headers`() {
+        val options = DownloadOptions(
+            headers = mapOf(
+                "Cookie" to "c",
+                PlaybackRequestHints.PARALLEL_RANGE_HEADER to "16",
+                PlaybackRequestHints.CACHE_KEY_HEADER to "testdrive:f1",
+            ),
+        )
         val adjusted = options.withParallelRangeHint()
         assertEquals(16, adjusted.maxConcurrentSegments)
         assertEquals(mapOf("Cookie" to "c"), adjusted.headers)

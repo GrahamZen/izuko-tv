@@ -52,6 +52,8 @@
     <string name="settings_player_idle_progress_bar_off">Off</string>
     <string name="settings_player_pause_on_scrub">Pause while scrubbing</string>
     <string name="settings_player_pause_on_scrub_description">Pause the picture while choosing a position with the remote, and play from there when you press OK. Turn off to keep playing while choosing</string>
+    <string name="settings_player_disk_cache">Save videos while playing</string>
+    <string name="settings_player_disk_cache_description">Keep the parts of online videos downloaded during playback on this device: seeking back and rewatching read them from here, and scrub previews show downloaded positions instantly (other positions load after you pause on them for a moment). When off, every scrub preview has to download first. Uses up to a quarter of the free space and removes what you haven\'t watched for the longest first</string>
     <string name="settings_player_start_playback_speed">Playback speed</string>
     <string name="settings_player_start_playback_speed_description">The speed when you enter the player. The leftmost step, “Remember last”, keeps the speed you set in the player across episodes and restarts</string>
     <string name="settings_player_start_playback_speed_remember">Remember last</string>
@@ -523,6 +525,7 @@
     <string name="subject_episode_related_recommendations_empty">No related recommendations on Bangumi yet</string>
     <string name="player_frame_preview_failed">Preview failed</string>
     <string name="player_frame_preview_not_downloaded">Not downloaded yet</string>
+    <string name="player_frame_preview_stay_to_load">Stay here to load</string>
     <string name="settings_log_share_failed">Failed to share the log file. This device may not support sharing; try copying the log content instead</string>
     <string name="settings_log_export_file">Export today\'s log file</string>
     <string name="settings_log_export_succeed">Log exported to %1$s</string>
