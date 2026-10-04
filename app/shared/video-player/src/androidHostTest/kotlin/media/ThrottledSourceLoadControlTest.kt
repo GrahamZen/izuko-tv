@@ -75,6 +75,40 @@ class ThrottledSourceLoadControlTest {
     }
 
     @Test
+    fun `seek preview only loads what the frame needs and counts as ready at once`() {
+        val control = loadControl(throttled = true)
+        control.previewing = true
+        assertTrue(control.shouldContinueLoading(parameters(0.5, playWhenReady = false)))
+        assertFalse(control.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
+        assertTrue(control.shouldStartPlayback(parameters(0.0, playWhenReady = false)))
+
+        // 预览结束后照旧
+        control.previewing = false
+        assertTrue(control.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
+        assertFalse(control.shouldStartPlayback(parameters(3.0, rebuffering = true)))
+    }
+
+    @Test
+    fun `seek preview parked on a position buffers like a paused player`() {
+        val throttled = loadControl(throttled = true)
+        throttled.previewing = true
+        throttled.previewParked = true
+        assertTrue(throttled.shouldContinueLoading(parameters(30.0, playWhenReady = false)))
+        assertFalse(throttled.shouldContinueLoading(parameters(61.0, playWhenReady = false)))
+        assertTrue(throttled.shouldStartPlayback(parameters(0.0, playWhenReady = false)))
+
+        val ordinary = loadControl(throttled = false)
+        ordinary.previewing = true
+        ordinary.previewParked = true
+        assertTrue(ordinary.shouldContinueLoading(parameters(30.0, playWhenReady = false)))
+        assertFalse(ordinary.shouldContinueLoading(parameters(51.0, playWhenReady = false)))
+
+        // 又挪了一步: 回到只读出画面所需
+        ordinary.previewParked = false
+        assertFalse(ordinary.shouldContinueLoading(parameters(1.0, playWhenReady = false)))
+    }
+
+    @Test
     fun `after a stall throttled sources wait for more before resuming`() {
         val throttled = loadControl(throttled = true)
         assertFalse(throttled.shouldStartPlayback(parameters(3.0, rebuffering = true)))

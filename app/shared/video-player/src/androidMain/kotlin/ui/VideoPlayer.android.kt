@@ -35,7 +35,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView.ControllerVisibilityListener
 import androidx.media3.ui.SubtitleView
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import me.him188.ani.app.videoplayer.media.LibassExoPlayerMediampPlayer
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.exoplayer.ExoPlayerMediampPlayer
@@ -62,7 +64,7 @@ actual fun VideoPlayer(
             // 播放器视图里那个字幕视图 (SRT 这类) 与叠在里面的 ASS 视图, 配置块拿到后记下来
             var subtitles by remember { mutableStateOf<SubtitleView?>(null) }
             var assSubtitles by remember { mutableStateOf<LiftableAssSubtitleView?>(null) }
-            SubtitleObstructionEffect(exoPlayer.impl, subtitles, assSubtitles)
+            SubtitleObstructionEffect(exoPlayer.impl, subtitles, assSubtitles, libassPlayer?.seekPreviewOrigin)
             ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
                 (videoSurfaceView as? SurfaceView)?.let { registerAndroidVideoSurface(player, it) }
                 controllerAutoShow = false
@@ -103,15 +105,27 @@ actual fun VideoPlayer(
  * - SRT 这类没给位置的 ([view]): 改 SubtitleView 的底部留白;
  * - 自带位置的 (PGS 图片字幕、给了行位置的文字字幕, 底部留白管不到): 下半部分的往上挪被挡住的高度, 见 [PositionedCueLift];
  * - ASS ([assView]): 同上, 下半部分往上挪, 上半部分的留在原处.
+ *
+ * 拖动预览期间 ([previewOrigin] 不为 null, 见 `SeekPreview`) 全屏停在开始时那一帧, [view] 上的字幕也停在那时的一组.
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun SubtitleObstructionEffect(player: Player, view: SubtitleView?, assView: LiftableAssSubtitleView?) {
+private fun SubtitleObstructionEffect(
+    player: Player,
+    view: SubtitleView?,
+    assView: LiftableAssSubtitleView?,
+    previewOrigin: StateFlow<Long?>?,
+) {
     val obstructionTop = LocalSubtitleObstructionTop.current
-    LaunchedEffect(player, view, assView, obstructionTop) {
+    LaunchedEffect(player, view, assView, obstructionTop, previewOrigin) {
         if (view == null) return@LaunchedEffect
         val positioned = PositionedCueLift(player, view)
         player.addListener(positioned)
+        previewOrigin?.let { origin ->
+            launch {
+                origin.collect { positioned.frozenCues = if (it != null) player.currentCues.cues else null }
+            }
+        }
         try {
             val covered = Animatable(0f)
             snapshotFlow { obstructionTop() }.collectLatest { top ->
@@ -123,6 +137,7 @@ private fun SubtitleObstructionEffect(player: Player, view: SubtitleView?, assVi
             }
         } finally {
             player.removeListener(positioned)
+            positioned.frozenCues = null
             positioned.liftFraction = 0f
         }
     }
@@ -144,19 +159,31 @@ private class PositionedCueLift(
         set(value) {
             if (field == value) return
             field = value
-            apply(player.currentCues.cues)
+            apply(frozenCues ?: player.currentCues.cues)
+        }
+
+    /**
+     * 不为 null 时视图上一直是这一组 (拖动预览期间, 见 `SeekPreview`): 播放器跳到预览位置后 PlayerView 送来的字幕不显示.
+     * 设回 null 时换回播放器当前的字幕.
+     */
+    var frozenCues: List<Cue>? = null
+        set(value) {
+            field = value
+            apply(value ?: player.currentCues.cues, force = true)
         }
 
     /** 视图上现在是挪过的字幕: 挪动距离回到 0 时要原样重设一次. */
     private var lifted = false
 
     override fun onCues(cueGroup: CueGroup) {
-        apply(cueGroup.cues)
+        val frozen = frozenCues
+        if (frozen != null) apply(frozen, force = true) else apply(cueGroup.cues)
     }
 
-    private fun apply(cues: List<Cue>) {
+    /** [force]: 挪动距离为 0 时也重设 (PlayerView 刚设过别的字幕). */
+    private fun apply(cues: List<Cue>, force: Boolean = false) {
         if (liftFraction == 0f) {
-            if (lifted) view.setCues(cues)
+            if (lifted || force) view.setCues(cues)
             lifted = false
             return
         }
