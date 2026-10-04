@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 import androidx.annotation.OptIn as AndroidxOptIn
 
 /**
- * 被限速的网盘直链: 缓冲上限放宽, 卡住后多攒一些再播; 其余源同 ExoPlayer 默认 (上限 50 秒, 卡住后 2 秒就播).
+ * 被限速的网盘直链: 缓冲上限放宽, 卡住后多攒一些再播, 播放跟不上时多开连接; 其余源同 ExoPlayer 默认 (上限 50 秒, 卡住后 2 秒就播).
  */
 @AndroidxOptIn(UnstableApi::class)
 class ThrottledSourceLoadControlTest {
@@ -70,5 +70,42 @@ class ThrottledSourceLoadControlTest {
 
         val ordinary = loadControl(throttled = false)
         assertTrue(ordinary.shouldStartPlayback(parameters(3.0, rebuffering = true)))
+    }
+
+    @Test
+    fun `throttled sources get more connections while playback falls behind`() {
+        val control = loadControl(throttled = true)
+        // 第一次开播之前 (读文件头、索引) 不多开
+        control.shouldContinueLoading(parameters(0.5))
+        assertFalse(control.boosted)
+        assertTrue(control.shouldStartPlayback(parameters(1.5)))
+
+        control.shouldContinueLoading(parameters(20.0))
+        assertTrue(control.boosted)
+        // 回到 60 秒才收回
+        control.shouldContinueLoading(parameters(45.0))
+        assertTrue(control.boosted)
+        control.shouldContinueLoading(parameters(61.0))
+        assertFalse(control.boosted)
+        control.shouldContinueLoading(parameters(45.0))
+        assertFalse(control.boosted)
+        // 卡住了
+        control.shouldStartPlayback(parameters(40.0, rebuffering = true))
+        assertTrue(control.boosted)
+
+        // 换媒体从头算
+        control.onStopped(PlayerId.UNSET)
+        assertFalse(control.boosted)
+        control.onPrepared(PlayerId.UNSET)
+        control.shouldContinueLoading(parameters(5.0))
+        assertFalse(control.boosted)
+    }
+
+    @Test
+    fun `ordinary sources never get more connections`() {
+        val control = loadControl(throttled = false)
+        assertTrue(control.shouldStartPlayback(parameters(1.5)))
+        control.shouldContinueLoading(parameters(5.0))
+        assertFalse(control.boosted)
     }
 }

@@ -502,6 +502,8 @@ private class LibassMediaSourcePipeline(
         data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()?.takeIf { it > 1 }
 
     private fun createLibassMediaSource(data: MediaData): MediaSource? {
+        // 网盘直链时另给推迟的字体附件用 (见 DeferredMkvFonts)
+        var fontsDataSourceFactory: DataSource.Factory? = null
         val dataSourceFactory = when (data) {
             is UriMediaData -> {
                 // 解析器给的提示头只给播放器看, 不发给服务器
@@ -509,8 +511,12 @@ private class LibassMediaSourcePipeline(
                 val userAgent = data.headers["User-Agent"] ?: DEFAULT_USER_AGENT
                 val headers = data.headers - PlaybackRequestHints.PARALLEL_RANGE_HEADER
                 if (parallel != null) {
-                    // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients)
-                    ParallelRangeDataSource.Factory(RangeHttpClients.factory(proxyConfig(), userAgent, headers), parallel)
+                    // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients);
+                    // 播放跟不上时多开连接 (见 ThrottledSourceLoadControl.boosted)
+                    val upstream = RangeHttpClients.factory(proxyConfig(), userAgent, headers)
+                    // 字体在出画面后读, 正赶上缓冲最少、播放多开着连接的时候: 少开一半, 也不跟着多开
+                    fontsDataSourceFactory = ParallelRangeDataSource.Factory(upstream, (parallel / 2).coerceAtLeast(2))
+                    ParallelRangeDataSource.Factory(upstream, parallel, boosted = { loadControl.boosted })
                 } else {
                     createPlaybackHttpDataSourceFactory(
                         proxyConfig = proxyConfig(),
@@ -566,13 +572,11 @@ private class LibassMediaSourcePipeline(
                 .createMediaSource(mediaItem)
         }
         // 网盘直链限速时, mkv 开头的大段字体附件推迟到出画面后再读
-        val extractors = if (data is UriMediaData && parallelConnectionsOf(data) != null) {
-            val fonts = DeferredMkvFonts(Uri.parse(data.uri), dataSourceFactory, assHandler, scope)
+        val extractors = fontsDataSourceFactory?.let { factory ->
+            val fonts = DeferredMkvFonts(Uri.parse(data.playbackUri), factory, assHandler, scope)
             deferredFonts = fonts
             fontDeferringExtractorsFactory(fonts)
-        } else {
-            extractorsFactory
-        }
+        } ?: extractorsFactory
         return DefaultMediaSourceFactory(dataSourceFactory, extractors)
             .setSubtitleParserFactory(subtitleParserFactory)
             .createMediaSource(mediaItem)
