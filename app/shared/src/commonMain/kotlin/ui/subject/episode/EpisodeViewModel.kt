@@ -71,7 +71,6 @@ import me.him188.ani.app.data.models.preference.parseMpvOptions
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
-import me.him188.ani.app.data.models.player.playProgressByEpisodeId
 import me.him188.ani.app.data.models.subject.nameOrNameCn
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCommentRepository
@@ -130,6 +129,7 @@ import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
+import me.him188.ani.app.domain.player.extension.PreferredTracksExtension
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
@@ -160,6 +160,8 @@ import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.app.ui.foundation.launchInBackground
 import me.him188.ani.app.ui.foundation.lists.PaginatedGroup
 import me.him188.ani.app.ui.foundation.stateOf
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.remote_web_lang
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceInfoProvider
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
@@ -226,6 +228,7 @@ import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
+import org.jetbrains.compose.resources.getString
 import org.koin.core.Koin
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -454,6 +457,8 @@ open class EpisodeViewModel(
             ),
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
+            // 字幕跟界面语言、音轨原声优先, 手动换过的按番记住 (界面语言用 remote_web_lang: 各语言资源里写的语言标记)
+            PreferredTracksExtension.Factory(uiLanguage = { getString(Lang.remote_web_lang) }),
         ),
         koin,
         sharingStarted = SharingStarted.WhileSubscribed(5_000),
