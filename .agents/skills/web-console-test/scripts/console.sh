@@ -157,6 +157,30 @@ for g in items:
 EOF
 }
 
+cmd_probes() {
+  cmd_get api/settings/debug/probes > "$STATE_DIR/probes.json"
+  PYTHONIOENCODING=utf-8 py "$STATE_DIR/probes.json" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+if not d.get("ok"):
+    print(d.get("message") or "no probes: not a debug build"); sys.exit()
+v = d.get("video")
+if v is None:
+    print("video: nothing played yet")
+else:
+    print(f"video: decoder={v.get('decoder')} nvidiaWorkaround={v.get('nvidiaWorkaround')} codecs={v.get('codecs')}")
+    print(f"       color space={v.get('colorSpace')} range={v.get('colorRange')} transfer={v.get('colorTransfer')}"
+          f" complete={v.get('colorComplete')}")
+hls = d.get("hls") or []
+print(f"hls: {len(hls)} recent playlists, newest first")
+for x in hls:
+    if x.get("skippedReason"):
+        print(f"  {x['host']}: {x['totalSegments']} segments, untouched ({x['skippedReason']})")
+    else:
+        print(f"  {x['host']}: {x['totalSegments']} segments, removed {x['removedSegments']} ({x['removedSeconds']:.1f}s)")
+EOF
+}
+
 case "${1:-help}" in
   url) shift; cmd_url "$@" ;;
   get) shift; cmd_get "$@" ;;
@@ -169,5 +193,6 @@ case "${1:-help}" in
   history-play) shift; cmd_post api/history/play "id=${1:?subject id}" ;;
   open-player) cmd_post api/player/open ;;
   devswitch) shift; cmd_devswitch "$@" ;;
-  *) sed -n '2,3p' "$0"; echo "commands: url <pkg> | state | candidates <source> | select <source> [i] | control <action> [v] | seek-measure back|abs <s> | history-play <subjectId> | open-player | devswitch [key value] | get <path> | post <path> [k=v...]" ;;
+  probes) cmd_probes ;;
+  *) sed -n '2,3p' "$0"; echo "commands: url <pkg> | state | candidates <source> | select <source> [i] | control <action> [v] | seek-measure back|abs <s> | history-play <subjectId> | open-player | devswitch [key value] | probes | get <path> | post <path> [k=v...]" ;;
 esac
