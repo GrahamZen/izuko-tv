@@ -103,9 +103,10 @@ class MediaDownloadManager(
     }
 
     private fun yieldToPlayback(playbackActivity: PlaybackActivity) {
-        val playingEpisode = playbackActivity.current
-            .map { playback -> playback?.let { it.subjectId.toString() to it.episodeId.toString() } }
-            .distinctUntilChanged()
+        // 只让给眼前在播的那一集: TV 退出播放页后保留着的会话 (暂停着, current 仍是那一集) 不算在播
+        val playingEpisode = combine(playbackActivity.current, playbackActivity.onScreen) { playback, onScreen ->
+            playback?.takeIf { onScreen }?.let { it.subjectId.toString() to it.episodeId.toString() }
+        }.distinctUntilChanged()
         val httpDownloadStates = loadedDownloads.flatMapLatest { list ->
             val http = list.filter { it.engineKey == MediaCacheEngineKey.WebM3u }
             if (http.isEmpty()) flowOf(emptyList()) else combine(http.map { d -> d.cache.state.map { d to it } }) { it.toList() }
