@@ -28,7 +28,7 @@ import org.jetbrains.compose.resources.getString
 
 /**
  * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
- * 设置标签再分「常规 / 数据源」两页.
+ * 设置标签再分「常规 / 数据源」两页; 「常规」第一屏是分类列表, 点一类进去是那一组的卡片.
  *
  * 带少量脚本 (与「搜索输入」时代的纯表单页不同): 数据源结果是陆续回来的, 不刷新就看不到新结果, 所以「播放器」
  * 标签每秒轮询一次 `api/player` (带版本号, 没变化服务端只回一个标志). 提交都走 `fetch` 表单编码,
@@ -48,6 +48,8 @@ internal fun renderRemoteControlPage(
     pageVersion: String = "",
     /** 生成页面时电视是哪个用户 (见 RemoteProfiles); 提示轮询报的和它不一样就整页重载. 0 = 不比 */
     profileId: Int = 0,
+    /** debug 包: 「设置 → 常规」多一组「调试」, 放开发时临时要调的开关 (见 [RemoteDebugSettings]) */
+    debugTools: Boolean = false,
 ): String =
     """
     <!doctype html>
@@ -104,20 +106,52 @@ internal fun renderRemoteControlPage(
     <section class="tab" id="tab-settings" hidden>
     <div class="seg" id="set-seg"><button type="button" data-ssub="general" class="on">常规</button><button type="button" data-ssub="sources">数据源</button></div>
     <div id="set-general">
+    <div class="set-mode-row" id="set-mode-row"><div class="seg set-mode" id="set-mode"><button type="button" data-smode="groups" class="on">分类</button><button type="button" data-smode="all">全部</button></div></div>
+    <div id="set-home">
+    <div class="card set-nav">
+    <button type="button" class="set-nav-row" data-group="account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg><span class="set-nav-txt"><b>账号与用户</b><small>用户、Bangumi 账号、播放记录</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="look"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg><span class="set-nav-txt"><b>本机偏好</b><small>主题、音量控件等，只影响这台手机</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="connect"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg><span class="set-nav-txt"><b>连接电视</b><small>从手机打开 Izuko、后台保持连接</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="network"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg><span class="set-nav-txt"><b>网络</b><small>代理、Bangumi 连接方式、TMDB 图片</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="resources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></svg><span class="set-nav-txt"><b>资源与弹幕</b><small>BT Tracker、字幕组、弹幕屏蔽词</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="maintain"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg><span class="set-nav-txt"><b>维护</b><small>应用更新、日志</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_ROW + "\n" else "") + """
+    </div>
+    </div>
+    <div class="set-head" id="set-head" hidden><button type="button" class="sheet-btn" id="set-back" aria-label="返回" title="返回"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button><div class="sheet-title" id="set-group-title"></div></div>
+    <div class="set-group" data-group="account" hidden>
+    <h2 class="set-group-h">账号与用户</h2>
     <div id="set-profiles"></div>
     <div id="set-account"></div>
     <div id="set-history"></div>
+    </div>
+    <div class="set-group" data-group="look" hidden>
+    <h2 class="set-group-h">本机偏好</h2>
     <div id="set-look"></div>
+    </div>
+    <div class="set-group" data-group="connect" hidden>
+    <h2 class="set-group-h">连接电视</h2>
     <div id="set-front"></div>
     <div id="set-keep"></div>
-    <div id="set-update"></div>
-    <p class="hint">下面只放要打字的设置，开关类的请在电视上改。</p>
+    </div>
+    <div class="set-group" data-group="network" hidden>
+    <h2 class="set-group-h">网络</h2>
     <div id="set-proxy"></div>
     <div id="set-bangumi"></div>
     <div id="set-tmdb"></div>
-    <div id="set-trackers"></div>
+    </div>
+    <div class="set-group" data-group="resources" hidden>
+    <h2 class="set-group-h">资源与弹幕</h2>
+    <div id="set-generic"></div>
     <div id="set-dmfilter"></div>
+    </div>
+    <div class="set-group" data-group="maintain" hidden>
+    <h2 class="set-group-h">维护</h2>
+    <div id="set-update"></div>
     <div id="set-logs"></div>
+    </div>
+    """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_GROUP + "\n" else "") + """
+    <p class="hint" id="set-more">这里只放了常用的设置，其余的请在电视上改。</p>
     </div>
     <div id="set-sources" hidden>
     <p class="hint">修改立即保存。正在播放的这一集不受影响，下一集或重新进入播放器时生效。订阅来的源只能启用或停用。</p>
@@ -234,8 +268,8 @@ header { padding: 16px 16px 4px; font-size: 20px; font-weight: 700; display: fle
 h2 { font-size: 14px; font-weight: 600; color: var(--sub); margin: 22px 0 8px; }
 h2 small { font-weight: 400; color: var(--mute); }
 p.hint { color: var(--mute); font-size: 13px; margin: 8px 0; }
-input[type=text], input[type=password], input[type=email], textarea { width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
-input[type=text]:focus, input[type=password]:focus, input[type=email]:focus, textarea:focus { outline: 2px solid var(--p); border-color: transparent; }
+input[type=text], input[type=password], input[type=email], input[type=number], textarea { width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
+input[type=text]:focus, input[type=password]:focus, input[type=email]:focus, input[type=number]:focus, textarea:focus { outline: 2px solid var(--p); border-color: transparent; }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pills label { position: relative; }
 .pills input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -473,7 +507,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .src-btns .src-danger { background: var(--err-bg); color: var(--err-fg); }
 .src-panel { margin-top: 10px; }
 .src-panel textarea, #src-add textarea, #src-import textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-.f select { box-sizing: border-box; width: 100%; height: 46px; font: inherit; font-size: 16px; padding: 0 10px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
+.f select, .set-card > select { box-sizing: border-box; width: 100%; height: 46px; font: inherit; font-size: 16px; padding: 0 10px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
 #src-import input[type=file] { max-width: 100%; font: inherit; font-size: 14px; color: var(--fg); }
 #src-import .imp-or { display: block; font-style: normal; font-size: 12px; color: var(--mute); margin: 12px 0 6px; }
 .src-bool { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -571,8 +605,33 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sub-add input { flex: 1; min-width: 0; }
 .sub-add button { flex: none; padding: 12px 16px; }
 .set-card { margin-top: 12px; }
+/* 只有一个开关的卡片 (通用设置项 / 调试项): 开关就是第一行, 不留上边距 */
+.set-card > .toggle:first-child { margin-top: 0; }
 .set-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
 .set-title small { font-size: 12px; font-weight: 400; color: var(--mute); margin-left: 6px; }
+/* 「常规」页的分类列表 (#set-home): 一张卡片里一行一组, 第二行是这一组有哪些设置, 有当前状态时再多一行;
+   点进去是那一组的卡片 (.set-group), 顶上 .set-head 返回 (按钮与标题同全屏面板的 .sheet-head) */
+.set-nav { padding: 4px 0; overflow: hidden; }
+.set-nav-row { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 16px; background: none; border-radius: 0; text-align: left; color: var(--fg); }
+.set-nav-row + .set-nav-row { border-top: 1px solid var(--line); }
+.set-nav-row:active { background: var(--soft); }
+.set-nav-row svg { flex: none; width: 24px; height: 24px; fill: var(--p); }
+.set-nav-txt { flex: 1; min-width: 0; }
+.set-nav-txt b { display: block; font-size: 15px; }
+.set-nav-txt small { display: block; font-size: 12px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-nav-txt small[hidden] { display: none; }
+.set-nav-txt .set-nav-note { color: var(--sub); }
+.set-nav-txt .set-nav-note.hot { color: var(--p); font-weight: 600; }
+.set-nav-go { flex: none; color: var(--mute); font-size: 22px; line-height: 1; }
+.set-head { display: flex; align-items: center; gap: 8px; }
+.set-head[hidden] { display: none; }
+/* 顶上的显示方式「分类 / 全部」(记在这台手机上): 小一号的分段, 靠右, 只在第一层出现。全部 = 各组卡片列成一页, 组名作小标题 (.set-group-h) */
+.set-mode-row { display: flex; justify-content: flex-end; margin: -2px 0 10px; }
+.set-mode-row[hidden] { display: none; }
+.seg.set-mode { margin: 0; padding: 2px; border-radius: 10px; }
+.set-mode button { flex: none; padding: 4px 12px; font-size: 13px; border-radius: 8px; }
+.set-group-h { display: none; margin: 20px 0 -4px; }
+#set-general.flat .set-group-h { display: block; }
 /* 「应用更新」(见 UPDATE_SCRIPT); 进度条借缓存列表的 .cl-bar */
 .upd-line { margin: 0 0 6px; font-size: 15px; }
 .upd-status { margin-top: 10px; }
@@ -1239,8 +1298,8 @@ private val LOOK_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签底部的「日志」(见 RemoteLogs): 电视上的日志文件, 点文件名直接下载到手机 —— 同电视上设置 → 日志 →
- * 「扫码传到手机」, 省得再去电视上开一次. 每次切到设置标签重读 (app.log 一直在长).
+ * 「设置 → 维护」里的「日志」(见 RemoteLogs): 电视上的日志文件, 点文件名直接下载到手机 —— 同电视上设置 → 日志 →
+ * 「扫码传到手机」, 省得再去电视上开一次. 切到设置标签和进「维护」时各重读一次 (app.log 一直在长).
  */
 private val LOGS_SCRIPT = """
 (function () {
@@ -1607,7 +1666,7 @@ private val SCRIPT = """
     for (var i = 0; i < secs.length; i++) secs[i].hidden = secs[i].id !== 'tab-' + tab;
     var bs = document.querySelectorAll('.tabbar button');
     for (var j = 0; j < bs.length; j++) bs[j].classList.toggle('on', bs[j].getAttribute('data-tab') === tab);
-    if (history.replaceState) history.replaceState(null, '', '#' + tab);
+    syncHash();
     if (tab === 'search') showSub(sub);
     if (tab === 'player') poll(true);
     if (tab === 'cache' && window.loadCaches) window.loadCaches();
@@ -1618,7 +1677,8 @@ private val SCRIPT = """
   }
   // 别的脚本 (播放记录面板点 ▶ 之后) 切标签用
   window.showTab = show;
-  // 设置标签里的两页: 「常规」(账号 / 代理 / tracker / 屏蔽词) 与「数据源」(订阅 + 数据源管理), 切到哪页拉哪页
+  // 设置标签里的两页: 「常规」(分类列表与各组卡片) 与「数据源」(订阅 + 数据源管理), 切到哪页拉哪页.
+  // 「常规」的数据切过来时一起拉: 分类列表上的状态行 (当前用户、登录状态、版本) 也要用
   function showSetSub(which) {
     setSub = which;
     // 数据源页的工具行也是 sticky 的, 要让开上面这一行, 否则两个叠在一起
@@ -1633,12 +1693,100 @@ private val SCRIPT = """
       if (window.loadSubs) window.loadSubs();
       if (window.loadQuark) window.loadQuark();
     } else {
+      paintSetGroup();
       if (window.loadSettings) window.loadSettings();
       if (window.loadProfiles) window.loadProfiles();
       if (window.loadAccount) window.loadAccount();
       if (window.loadUpdate) window.loadUpdate();
     }
   }
+  // 「常规」页分组: 第一屏是分类列表 (#set-home), 点一行进那一组 (.set-group), 顶上一行返回. 进组时压一条历史记录
+  // (#settings/组名, state 里记着组名), 手机的返回键 / 返回手势回到列表; 刷新页面也停在这一组.
+  // groupPushed: 当前这一组底下垫着列表那条历史记录, 页面上的返回要退回去 (不留多余的记录, 否则之后按返回键要多按一次).
+  // flat: 顶上的显示方式切到了「全部」(记在这台手机上): 各组卡片列成一页, 组名作小标题, 没有分类列表和子页
+  var setGroup = null, groupPushed = false, LAYOUT_KEY = 'ani-settings-layout', flat = false;
+  try { flat = localStorage.getItem(LAYOUT_KEY) === 'all'; } catch (e) {}
+  function hasGroup(g) { return !!g && !!document.querySelector('.set-group[data-group="' + g + '"]'); }
+  function paintSetGroup() {
+    var g = flat ? null : setGroup;
+    var gs = document.querySelectorAll('.set-group');
+    for (var i = 0; i < gs.length; i++) gs[i].hidden = !flat && gs[i].getAttribute('data-group') !== g;
+    document.getElementById('set-general').classList.toggle('flat', flat);
+    document.getElementById('set-home').hidden = flat || !!g;
+    document.getElementById('set-head').hidden = !g;
+    // 显示方式与底下那句说明只在第一层
+    document.getElementById('set-mode-row').hidden = !!g;
+    document.getElementById('set-more').hidden = !!g;
+    var ms = document.querySelectorAll('#set-mode button');
+    for (var j = 0; j < ms.length; j++) ms[j].classList.toggle('on', (ms[j].getAttribute('data-smode') === 'all') === flat);
+    if (g) {
+      document.getElementById('set-group-title').textContent =
+        document.querySelector('.set-nav-row[data-group="' + g + '"] b').textContent;
+    }
+  }
+  // 地址栏只换不压: 标签与所在的组 (切标签不算一步, 返回键只退组)
+  function syncHash() {
+    if (history.replaceState) history.replaceState(history.state, '', '#' + cur + (cur === 'settings' && setGroup && !flat ? '/' + setGroup : ''));
+  }
+  function setLayout(all) {
+    flat = all;
+    setGroup = null;
+    try { if (all) localStorage.setItem(LAYOUT_KEY, 'all'); else localStorage.removeItem(LAYOUT_KEY); } catch (e) {}
+    paintSetGroup();
+    syncHash();
+  }
+  document.getElementById('set-mode').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-smode]');
+    if (b) setLayout(b.getAttribute('data-smode') === 'all');
+  });
+  function openSetGroup(g) {
+    if (!hasGroup(g)) return;
+    setGroup = g;
+    if (history.pushState) {
+      history.pushState({ setGroup: g }, '', '#settings/' + g);
+      groupPushed = true;
+    }
+    paintSetGroup();
+    window.scrollTo(0, 0);
+    // 应用更新只在看得见时轮询 (见 UPDATE_SCRIPT), 日志一直在长: 进这一组时各读一次
+    if (g === 'maintain') {
+      if (window.loadUpdate) window.loadUpdate();
+      if (window.loadLogs) window.loadLogs();
+    }
+  }
+  function closeSetGroup() {
+    if (groupPushed) { history.back(); return; } // 由 popstate 收起
+    setGroup = null;
+    paintSetGroup();
+    syncHash();
+  }
+  // 返回 / 前进键: 按地址栏切到对应的标签与组 (进组后又切到别的标签时, 按返回键回到设置的分类列表)
+  window.addEventListener('popstate', function () {
+    var h = location.hash.slice(1), k = h.indexOf('/'), tab = k < 0 ? h : h.slice(0, k), g = k < 0 ? null : h.slice(k + 1);
+    if (tab !== 'search' && tab !== 'player' && tab !== 'cache' && tab !== 'settings') return;
+    groupPushed = tab === 'settings' && hasGroup(g);
+    setGroup = groupPushed ? g : null;
+    if (tab === 'settings') setSub = 'general';
+    show(tab);
+  });
+  // 分类列表每行第二行是这一组有哪些设置; 卡片脚本报上来的当前状态另起一行. 同一组可以有几条, 按 slot 排
+  // (账号与用户: 0 = 当前用户, 1 = 登录状态); hot = 用主题色 (有新版本). text 为空 = 去掉这一条
+  var setNotes = {};
+  window.setNote = function (group, slot, text, hot) {
+    var row = document.querySelector('.set-nav-row[data-group="' + group + '"]');
+    if (!row) return;
+    var n = setNotes[group] || (setNotes[group] = []);
+    n[slot] = text ? { text: text, hot: !!hot } : null;
+    var on = n.filter(Boolean), el = row.querySelector('.set-nav-note');
+    el.textContent = on.map(function (x) { return x.text; }).join(' · ');
+    el.classList.toggle('hot', on.some(function (x) { return x.hot; }));
+    el.hidden = !on.length;
+  };
+  document.getElementById('set-home').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-group]');
+    if (b) openSetGroup(b.getAttribute('data-group'));
+  });
+  document.getElementById('set-back').addEventListener('click', closeSetGroup);
   // 搜索标签里的两页: 「搜索」表单 / 「结果」列表 (电视搜索页已加载的结果)
   function showSub(which) {
     sub = which;
@@ -1658,7 +1806,11 @@ private val SCRIPT = """
   });
   document.getElementById('set-seg').addEventListener('click', function (e) {
     var b = e.target.closest('[data-ssub]');
-    if (b) showSetSub(b.getAttribute('data-ssub'));
+    if (!b) return;
+    var which = b.getAttribute('data-ssub');
+    // 在某一组里再点「常规」: 回到分类列表 (同左上角的返回)
+    if (which === 'general' && setSub === 'general' && setGroup) { closeSetGroup(); return; }
+    showSetSub(which);
   });
 
   // ---- 搜索 ----
@@ -2918,6 +3070,21 @@ private val SCRIPT = """
   var h0 = location.hash.slice(1);
   // 旧书签 #sources: 数据源并进了「设置」, 打开设置标签的「数据源」页
   if (h0 === 'sources') { setSub = 'sources'; h0 = 'settings'; }
+  // #settings/组名 (在某一组里刷新了页面): 停在那一组. 这条记录是进组时压的 (state 对得上) 就照旧, 底下本来就垫着列表;
+  // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 「全部」显示方式下没有子页, 只打开设置标签
+  if (h0.indexOf('settings/') === 0) {
+    var g0 = h0.slice(9);
+    h0 = 'settings';
+    if (hasGroup(g0) && !flat) {
+      setGroup = g0;
+      if (history.state && history.state.setGroup === g0) groupPushed = true;
+      else if (history.pushState) {
+        history.replaceState(null, '', '#settings');
+        history.pushState({ setGroup: g0 }, '', '#settings/' + g0);
+        groupPushed = true;
+      }
+    }
+  }
   // 等本页其余脚本 (缓存 / 数据源 / 设置等) 都跑完再切标签: 它们的加载函数 (window.loadCaches 等) 是后面才登记的,
   // 直接切的话从 #cache / #settings 书签打开时那一页是空的
   setTimeout(function () {
@@ -5291,17 +5458,25 @@ private val QUARK_SCRIPT = """
 })();
 """.trimIndent()
 
+/** debug 包「设置 → 常规」分类列表最后一行「调试」(见 RemoteDebugSettings); release 包的页面里没有. 只给开发者看, 不补译文 */
+private const val SET_DEBUG_ROW =
+    """<button type="button" class="set-nav-row" data-group="debug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg><span class="set-nav-txt"><b>调试</b><small>debug 包才有：开发时临时加的开关</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>"""
+
+/** 「调试」那一组的容器, 卡片由 SETTINGS_SCRIPT 的 renderDebug 画 */
+private const val SET_DEBUG_GROUP = "<div class=\"set-group\" data-group=\"debug\" hidden>\n<h2 class=\"set-group-h\">调试</h2>\n<div id=\"set-debug\"></div>\n</div>"
+
 /**
- * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接)、Bangumi 连接方式 (自带镜像清单、登录是否经过镜像与自建地址)
- * 与 BT 额外 tracker. 只在切到本标签时
- * 拉一次, 不轮询 —— 表单正在填, 重画会冲掉. 密码框不回显, 留空 = 不改.
+ * 「设置」标签 (见 RemoteSettings): 代理 (模式 / 地址 / 账号, 保存与测试连接)、Bangumi 连接方式 (自带镜像清单、登录是否经过镜像与自建地址)、
+ * TMDB 图床, 以及清单里登记的通用设置项 (RemoteSettingsCatalog: BT 额外 tracker、字幕组等, 按输入方式画卡片); debug 包的「调试」组
+ * (RemoteDebugSettings) 用同一套卡片. 只在切到本标签时拉一次, 不轮询 —— 表单正在填, 重画会冲掉. 密码框不回显, 留空 = 不改.
  */
 private val SETTINGS_SCRIPT = """
 (function () {
   var proxyBox = document.getElementById('set-proxy');
   var bgmBox = document.getElementById('set-bangumi');
   var tmdbBox = document.getElementById('set-tmdb');
-  var trBox = document.getElementById('set-trackers');
+  var genBox = document.getElementById('set-generic');
+  var dbgBox = document.getElementById('set-debug'); // 只有 debug 包的页面有
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
   var keepBox = document.getElementById('set-keep');
@@ -5506,10 +5681,8 @@ private val SETTINGS_SCRIPT = """
       '<p class="hint set-sys"' + (p.mode === 'SYSTEM' ? '' : ' hidden') + '>' + T('电视上通常取不到系统代理，这一档一般等于不使用代理；要走代理请选「自定义」。') + '</p>' +
       '<div class="row"><button type="button" class="ghost" data-set="test">' + T('测试连接') + '</button><button type="submit" class="primary">' + T('保存') + '</button></div>' +
       '<div class="set-test"></div></form>';
-    trBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('BT 额外 Tracker') + '</div>' +
-      '<p class="hint">' + T('每行一个，BT 下载开始前与内置 tracker 一起添加。') + '</p>' +
-      '<textarea name="text" rows="6" spellcheck="false" placeholder="udp://tracker.example.com:1337/announce">' + esc(d.trackers || '') + '</textarea>' +
-      '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    renderGeneric(d.generic);
+    renderDebug(d.debug);
     renderBangumi(d.bangumi);
     renderTmdb(d.tmdbImages);
     renderFront(d.front);
@@ -5579,10 +5752,60 @@ private val SETTINGS_SCRIPT = """
       }).join('');
     }).catch(function () { b.disabled = false; fail(); });
   });
-  trBox.addEventListener('submit', function (e) {
-    e.preventDefault();
-    post('api/settings/trackers', new FormData(e.target)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
-  });
+  // 通用设置项 (见 RemoteSettingsCatalog): 标题 / 说明是设置页的文案, 服务端按电视的语言给; 这里按输入方式画卡片.
+  // 多行 / 文字 / 数字按「保存」提交, 开关与下拉改了就提交. debug 包的「调试」组 (RemoteDebugSettings) 用同一套卡片
+  function genHint(s) { return s ? '<p class="hint">' + esc(s).replace(/\n/g, '<br>') + '</p>' : ''; }
+  function renderGeneric(list) { genBox.innerHTML = genCards(list); }
+  // 调试组没有调试项时的说明只给开发者看, 不走译文表
+  function renderDebug(list) {
+    if (!dbgBox) return;
+    dbgBox.innerHTML = list && list.length ? genCards(list)
+      : '<div class="card set-card"><p class="hint">还没有调试项。开发时在 DevSwitches 里声明开关，或把已有设置登记进 RemoteSettingsCatalog.debugItems，就会列在这里。</p></div>';
+  }
+  function genCards(list) {
+    return (list || []).map(function (g) {
+      var k = ' data-gkey="' + esc(g.key) + '"';
+      if (g.editor === 'toggle') {
+        return '<div class="card set-card"><label class="toggle"><input type="checkbox"' + k + (g.value ? ' checked' : '') + '>' +
+          esc(g.title) + '</label>' + genHint(g.description) + '</div>';
+      }
+      var head = '<div class="set-title">' + esc(g.title) + '</div>' + genHint(g.description);
+      if (g.editor === 'choice') {
+        return '<div class="card set-card">' + head + '<select' + k + '>' + (g.choices || []).map(function (c) {
+          return '<option value="' + esc(c.value) + '"' + (c.value === g.value ? ' selected' : '') + '>' + esc(c.label) + '</option>';
+        }).join('') + '</select></div>';
+      }
+      var ph = g.placeholder ? ' placeholder="' + esc(g.placeholder) + '"' : '';
+      var input = g.editor === 'lines'
+        ? '<textarea name="value" rows="4" spellcheck="false"' + ph + '>' + esc((g.value || []).join('\n')) + '</textarea>'
+        : '<input type="' + (g.editor === 'number' ? 'number' : 'text') + '" name="value" autocomplete="off" spellcheck="false"' + ph +
+          (g.min != null ? ' min="' + g.min + '"' : '') + (g.max != null ? ' max="' + g.max + '"' : '') +
+          (g.step != null ? ' step="' + esc(String(g.step)) + '"' : '') +
+          ' value="' + esc(g.value == null ? '' : String(g.value)) + '">';
+      return '<form class="card set-card"' + k + '>' + head + input +
+        '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+    }).join('');
+  }
+  // 卡片的提交: 通用项与调试项各走各的接口
+  function bindGeneric(box, path) {
+    function save(key, value) {
+      return post(path, { key: key, value: value }).then(function (r) { toast(r.message); if (r.ok) load(); });
+    }
+    box.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target;
+      save(f.getAttribute('data-gkey'), f.querySelector('[name=value]').value).catch(fail);
+    });
+    box.addEventListener('change', function (e) {
+      var i = e.target;
+      if (!i.hasAttribute('data-gkey')) return; // 表单里的输入框按「保存」才提交
+      i.disabled = true;
+      save(i.getAttribute('data-gkey'), i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value)
+        .catch(fail).then(function () { i.disabled = false; });
+    });
+  }
+  bindGeneric(genBox, 'api/settings/generic/set');
+  if (dbgBox) bindGeneric(dbgBox, 'api/settings/debug/set');
 })();
 """.trimIndent()
 
@@ -6645,7 +6868,7 @@ private val REVIEW_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签顶上的用户卡片 (见 RemoteProfiles): 电视上有哪几个人、现在是谁. 点头像 / 名字展开改名、删除; 别人那一行右边「切换」,
+ * 「设置 → 账号与用户」里的用户卡片 (见 RemoteProfiles): 电视上有哪几个人、现在是谁. 点头像 / 名字展开改名、删除; 别人那一行右边「切换」,
  * 正在用的标「当前」; 最下面「添加用户」只新建, 不切过去. 切换会重启电视上的应用: 挡住页面等电视回来, 确认换成了那个人就整页重载
  * (各标签里的数据都是按人的); 电视上自己换了人也会重载 (SCRIPT 的 pollNotice 比对 window.profileId). 切到设置标签时读一次.
  */
@@ -6691,6 +6914,9 @@ private val PROFILES_SCRIPT = """
   }
   function render() {
     var d = data;
+    // 分类列表「账号与用户」那一行写出现在是谁
+    var me = d && d.supported ? (d.users || []).filter(function (u) { return u.current; })[0] : null;
+    window.setNote('account', 0, me ? me.name : '');
     if (!d || !d.supported) { box.innerHTML = ''; last = ''; return; }
     var h = '<div class="card set-card"><div class="set-title">' + T('用户') + '</div>';
     (d.users || []).forEach(function (u) {
@@ -7096,7 +7322,7 @@ private val PROFILES_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「设置」标签顶上的账号卡片 (见 RemoteAccount): 电视登录的是哪个 Bangumi 账号; 没登录时点一下发起登录 —— 默认在手机上授权
+ * 「设置 → 账号与用户」里的账号卡片 (见 RemoteAccount): 电视登录的是哪个 Bangumi 账号; 没登录时点一下发起登录 —— 默认在手机上授权
  * (授权完把浏览器跳到的网址粘回来), 也可以改在电视上登录; 另有「用个人令牌登录」, 不经过授权页 (中国大陆经镜像时授权页走不通).
  * 等授权期间每 2 秒问一次, 其余时候只在打开这个标签时读一次. 登录按钮 (`data-login`) 在评论与评分区也有一个, 点击统一在这里处理.
  */
@@ -7147,6 +7373,9 @@ private val ACCOUNT_SCRIPT = """
   function render(d) {
     if (!d.ok) return;
     lastData = d;
+    // 分类列表「账号与用户」那一行的登录状态 (电视连不上 Bangumi、确认不了时不写)
+    window.setNote('account', 1, d.local ? T('本地用户') : d.loggedIn ? T('已连接 Bangumi') : d.offline ? ''
+      : d.login && d.login.state === 'waiting' ? T('等待授权') : T('未登录 Bangumi'));
     if (d.local) {
       // 本地档: 没有 Bangumi 账号, 也不能登录 (见 RemoteAccount)
       var lh = '<div class="card set-card"><div class="set-title">' + T('账号') + '</div><p class="hint">' +
@@ -7381,7 +7610,7 @@ private val ACCOUNT_SCRIPT = """
  * 从没打开过时按钮上带小红点 (记在这台手机的浏览器里). 手势另有列表里的一次性滑开提示 (swPeek), 不指望用户先来读说明.
  */
 /**
- * 「设置 → 常规」的「应用更新」(见 RemoteAppUpdate): 检查新版本、下载并安装, 或用手机上的安装包更新 (分块上传, 块大小由服务端给,
+ * 「设置 → 维护」里的「应用更新」(见 RemoteAppUpdate): 检查新版本、下载并安装, 或用手机上的安装包更新 (分块上传, 块大小由服务端给,
  * 按顺序一块一块发). 安装由电视上的系统确认框确认, 结果 (失败原因) 回到这里; 上传的包没装成时可以直接用它再装一次.
  * 下载 / 等确认时每秒刷新一次, 其余只在切到设置时读.
  * 确认安装后 Izuko 会被系统关掉, 这期间连不上是正常的: 隔两秒再来, 重新打开后显示上次安装的结果.
@@ -7441,6 +7670,9 @@ private val UPDATE_SCRIPT = """
     if (!d) return;
     last = d;
     var j = d.job, busy = j.busy || !!up, needPerm = !d.canInstall && !permSkip;
+    // 分类列表「维护」那一行: 下载安装中是进度那一句, 查到新版本用主题色写出来, 平时是电视上的版本
+    window.setNote('maintain', 0, j.busy && j.text ? j.text : d.latest ? T('有新版本 {0}', d.latest.name)
+      : d.current ? T('当前版本：{0}', d.current) : '', !!(j.busy || d.latest));
     var h = '<div class="card set-card"><div class="set-title">' + T('应用更新') + '</div>' +
       '<p class="upd-line">' + T('当前版本：{0}', esc(d.current)) + '</p>';
     // 上次安装的结果: 开始上传新的就不再显示 (服务端在上传收齐、开始安装时才清掉它)
@@ -7674,7 +7906,8 @@ private val HELP_SCRIPT = """
     T('「检查更新」后可以直接下载并安装新版本；也可以「上传安装包」，用手机上下好的安装包更新或装测试版，卡片上会显示传的是哪个包。'),
     T('安装时电视上会弹出确认框，用遥控器点「安装」或「更新」；装不上时这里会显示原因。')
   ]) + sec(T('其他'), [
-    T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；最底下可以下载电视的日志。')
+    T('设置分成几组，点一组进去修改；点左上角的返回或用手机的返回键回到上一级。右上角切到「全部」就把所有设置列在一页里。'),
+    T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；「维护」里可以下载电视的日志。')
   ]);
   var SOURCES = sec(T('数据源'), [
     T('订阅：粘贴订阅地址添加，在线数据源都来自订阅；长按订阅可以多选删除。'),

@@ -11,6 +11,8 @@ controls that auto-hide between two `adb shell input` calls, and the JSON tells 
 
 **Rule: if the console can do it, test it through the console.** Use remote keys (`adb shell input keyevent`) and screenshots only
 for what the console cannot reach: TV-only UI (focus, layout, the scrub preview bubble), the TV settings pages, and anything visual.
+A setting or a code constant you will flip again and again goes into the debug group of a debug build first (see "Debug group"),
+instead of walking the TV settings pages with screenshots.
 
 Helper: `.agents/skills/web-console-test/scripts/console.sh` (Git Bash on Windows works; needs adb, curl, `uv run python`).
 `ANDROID_SERIAL` picks the device (default the Shield `10.0.0.203:5555`).
@@ -66,8 +68,28 @@ Other routes (read the handlers in `TvRemoteControl.kt` and the `Remote*.kt` nex
 `api/player/episode` `api/player/upnext` `api/player/refetch` `api/player/full-search` `api/player/request` `api/player/cache`
 `api/player/details` `api/player/track` `api/player/danmaku/*` `api/player/review*` `api/player/drive*` (Quark drive picks)
 `api/player/shares*`, `api/search*`, `api/history*`, `api/caches*` / `api/cache*`, `api/sources/subs*`, `api/profiles*`,
-`api/account*`, `api/settings*` (proxy, Bangumi endpoint, TMDB images, trackers, danmaku filters — **not** the player settings),
-`api/tv/front`.
+`api/account*`, `api/settings*` (proxy, Bangumi endpoint, TMDB images, catalog items such as trackers and subtitle groups,
+danmaku filters, the debug group — **not** the player settings), `api/tv/front`.
+
+### Debug group (debug builds only)
+
+A debug build adds 设置 → 常规 → 调试 to the console, for things you flip again and again while developing (an effect on/off,
+an edge distance). It starts empty; put what you need there instead of walking the TV settings pages:
+
+```bash
+$C devswitch                     # list: key = value (editor) title
+$C devswitch dev.wallEdge 32     # a dev switch (toggle: 1 = on, empty = off); the change applies at once
+$C devswitch someSettingKey 1    # a registered setting
+```
+
+- A temporary knob in code: declare it at the bottom of `DevSwitches`
+  (`app/shared/app-platform/src/commonMain/kotlin/platform/DevSwitches.kt`), e.g.
+  `val wallEdge = number("wallEdge", "海报墙左右边距 (dp)", default = 48f, range = 0f..160f)` or `toggle("heroBlur", "hero 模糊背景", default = true)`,
+  and read `DevSwitches.wallEdge.value` where the constant was (Compose state: composables recompose when it changes). Values live in
+  memory only (an app restart resets them) and a release build never changes them.
+- An existing TV setting: add a `RemoteSettingSpec` to `RemoteSettingsCatalog.debugItems` (`ui/remote/RemoteGenericSettings.kt`),
+  written like the public catalog entries; it is stored in the settings as usual.
+- Install the debug build, `$C url <pkg>`, then `$C devswitch …`. Delete the entries when the work is done.
 
 ## 3. Evidence: logcat next to the console
 
@@ -95,7 +117,8 @@ grep -E "\( *$PID\)" logcat.txt | grep -E "Session status|Opened dl-|Read [0-9]+
 ## 5. Things the console cannot reach
 
 - Player settings (`VideoScaffoldConfig`, e.g. 「网盘视频边下边播」) and the other TV settings pages: flip them on the TV
-  (rail → 设置 → category → right pane), then verify the effect through the console + logcat.
+  (rail → 设置 → category → right pane), then verify the effect through the console + logcat. If you will flip one repeatedly,
+  register it in the debug group first (see "Debug group").
 - The scrub preview bubble and anything else that only exists on the TV screen.
 - Per-package state you may need to inspect on a debuggable build: `adb shell run-as <package> ...`
   (e.g. `cat shared_prefs/tv_decoder_concurrency.xml`, `du -sk cache/playback-cache`). Back up a file before editing it and put it back

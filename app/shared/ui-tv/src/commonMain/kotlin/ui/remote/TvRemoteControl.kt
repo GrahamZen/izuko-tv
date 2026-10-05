@@ -952,6 +952,7 @@ object TvRemoteControl {
             // 页面缓存下来, 装了新包不等于手机上换了脚本; 2026-09-18 有好几轮反馈其实测的是旧脚本)
             pageVersion = (processStart % 100000).toString(),
             profileId = UserProfiles.currentId,
+            debugTools = RemoteDebugSettings.enabled,
         )
     }
 

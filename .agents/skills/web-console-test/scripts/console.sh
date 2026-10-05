@@ -134,6 +134,29 @@ else:
 EOF
 }
 
+# devswitch                 list the debug group (debug builds only): key = value (editor) title
+# devswitch <key> <value>   change one: dev switches are dev.<name> (toggle: 1 = on, empty = off), registered settings use their key
+cmd_devswitch() {
+  if [ $# -gt 0 ]; then cmd_post api/settings/debug/set "key=$1" "value=${2-}"; return; fi
+  cmd_get api/settings > "$STATE_DIR/settings.json"
+  py "$STATE_DIR/settings.json" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+items = d.get("debug")
+if items is None:
+    print("no debug group: not a debug build"); sys.exit()
+if not items:
+    print("debug group is empty: declare switches in DevSwitches (app-platform) or register settings in RemoteSettingsCatalog.debugItems")
+for g in items:
+    kind = g.get("editor")
+    if kind == "number" and "min" in g:
+        kind += f" {g['min']}..{g['max']}"
+    if kind == "choice":
+        kind += " " + "|".join(c["value"] for c in g.get("choices", []))
+    print(f"{g['key']} = {json.dumps(g.get('value'), ensure_ascii=False)}  ({kind})  {g.get('title')}")
+EOF
+}
+
 case "${1:-help}" in
   url) shift; cmd_url "$@" ;;
   get) shift; cmd_get "$@" ;;
@@ -145,5 +168,6 @@ case "${1:-help}" in
   seek-measure) shift; cmd_seek_measure "$@" ;;
   history-play) shift; cmd_post api/history/play "id=${1:?subject id}" ;;
   open-player) cmd_post api/player/open ;;
-  *) sed -n '2,3p' "$0"; echo "commands: url <pkg> | state | candidates <source> | select <source> [i] | control <action> [v] | seek-measure back|abs <s> | history-play <subjectId> | open-player | get <path> | post <path> [k=v...]" ;;
+  devswitch) shift; cmd_devswitch "$@" ;;
+  *) sed -n '2,3p' "$0"; echo "commands: url <pkg> | state | candidates <source> | select <source> [i] | control <action> [v] | seek-measure back|abs <s> | history-play <subjectId> | open-player | devswitch [key value] | get <path> | post <path> [k=v...]" ;;
 esac
