@@ -503,6 +503,12 @@
     <string name="cache_episode_status_awaiting_bt_service">等待 BT 服务启动</string>
     <!-- 正在播放同一集, 缓存停着等播放结束 -->
     <string name="cache_episode_status_waiting_for_playback">正在播放，稍后继续</string>
+    <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
+    <string name="settings_storage_delete_cache_when_done">标记看过后删除缓存</string>
+    <string name="settings_storage_delete_cache_when_done_description">在收藏菜单里把一部番标成「看过」时，删除它在本机的全部缓存。只在手动标记时删除</string>
+    <string name="cache_deleted_when_done">已删除「%1$s」的 %2$d 集缓存</string>
+    <string name="cache_deleted_when_done_playing">已删除「%1$s」的 %2$d 集缓存，正在播放的这一集退出播放后删除</string>
+    <string name="cache_deleted_when_done_after_playback">「%1$s」的缓存将在退出播放后删除</string>
     <string name="subject_details_nav_home">主页</string>
     <string name="subject_details_load_retrying">网络较慢，第 %1$d/%2$d 次尝试…</string>
     <string name="subject_details_relation_summary">总集篇</string>
