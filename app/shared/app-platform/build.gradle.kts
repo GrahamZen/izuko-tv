@@ -26,6 +26,9 @@ val tmdbApiToken = getPropertyOrNull("ani.tmdb.api.token") ?: ""
 // 没配置时为空串 —— 登录页会直接告诉用户"这个构建没带凭据", 而不是跳到一个必然报错的授权页.
 val bangumiOauthClientId = getPropertyOrNull("ani.bangumi.oauth.client.id") ?: ""
 val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secret") ?: ""
+// 第二个 bgm 应用: 回调注册在 Worker 上, 手机授权完由 Worker 跳回电视 (见 BangumiOAuthRelay)
+val bangumiOauthRelayClientId = getPropertyOrNull("ani.bangumi.oauth.relay.client.id") ?: ""
+val bangumiOauthRelayClientSecret = getPropertyOrNull("ani.bangumi.oauth.relay.client.secret") ?: ""
 val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 // 交流群: 只给装了应用的人看, 不写进源码 (GitHub 上谁都能翻到); 本机放 local.properties, CI 由 secret 写进去. 没配就是空, 界面上不显示
 val chatQqGroupId = getPropertyOrNull("ani.chat.qq.id") ?: ""
@@ -152,6 +155,8 @@ buildConfig {
         stringField("tmdbApiToken", tmdbApiToken)
         stringField("bangumiOauthClientId", bangumiOauthClientId)
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
+        stringField("bangumiOauthRelayClientId", bangumiOauthRelayClientId)
+        stringField("bangumiOauthRelayClientSecret", bangumiOauthRelayClientSecret)
         stringField("sentryDsn", sentryDsn)
         stringField("distroChannel", distroChannel)
         gitFields()
@@ -174,6 +179,8 @@ buildConfig {
         stringField("tmdbApiToken", tmdbApiToken)
         stringField("bangumiOauthClientId", bangumiOauthClientId)
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
+        stringField("bangumiOauthRelayClientId", bangumiOauthRelayClientId)
+        stringField("bangumiOauthRelayClientSecret", bangumiOauthRelayClientSecret)
         stringField("sentryDsn", sentryDsn)
         expressionField("distroChannel", "me.him188.ani.buildconfig.AndroidBuildConfig.DISTRO_CHANNEL")
         gitFields()
@@ -198,6 +205,8 @@ buildConfig {
             stringField("tmdbApiToken", tmdbApiToken)
         stringField("bangumiOauthClientId", bangumiOauthClientId)
         stringField("bangumiOauthClientSecret", bangumiOauthClientSecret)
+        stringField("bangumiOauthRelayClientId", bangumiOauthRelayClientId)
+        stringField("bangumiOauthRelayClientSecret", bangumiOauthRelayClientSecret)
             stringField("sentryDsn", sentryDsn)
 
             val sentryEnabled = (getPropertyOrNull("ani.sentry.ios") ?: "true").toBooleanStrict()
