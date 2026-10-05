@@ -37,6 +37,12 @@ constructor(
      * 若精确匹配失败, 则使用正则表达式匹配, 将会选择首个匹配
      */
     val alliancePatterns: List<String>? = null,
+    /**
+     * 排除的字幕组 (正则表达式, 匹配到任意一条即排除): 这些字幕组的资源不参与自动选择, 在选源列表里归到被排除的资源中,
+     * 仍可手动选 (见 [me.him188.ani.app.domain.media.selector.MediaExclusionReason.ExcludedAlliance]). 本地缓存不受影响.
+     * 只看默认偏好 (过滤只用默认偏好).
+     */
+    val excludedAlliancePatterns: List<String>? = null,
 
     val resolution: String? = null,
     val fallbackResolutions: List<String>? = listOf(
@@ -112,6 +118,7 @@ constructor(
         return MediaPreference(
             alliance = other.alliance ?: alliance,
             alliancePatterns = other.alliancePatterns ?: alliancePatterns,
+            excludedAlliancePatterns = other.excludedAlliancePatterns ?: excludedAlliancePatterns,
             resolution = other.resolution ?: resolution,
             subtitleLanguageId = other.subtitleLanguageId ?: subtitleLanguageId,
             fallbackSubtitleLanguageIds = other.fallbackSubtitleLanguageIds ?: fallbackSubtitleLanguageIds,
