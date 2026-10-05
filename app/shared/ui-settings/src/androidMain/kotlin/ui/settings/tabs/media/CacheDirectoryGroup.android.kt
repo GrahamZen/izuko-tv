@@ -17,4 +17,5 @@ actual fun SettingsScope.CacheDirectoryGroup(state: CacheDirectoryGroupState) {
     // Android 无 BT 缓存目录设置 (走平台默认); 图片缓存占用/清理 + 弹幕缓存策略
     ImageCacheSettings()
     DanmakuCacheSettings(state)
+    DeleteCacheWhenMarkedDoneItem(state)
 }
