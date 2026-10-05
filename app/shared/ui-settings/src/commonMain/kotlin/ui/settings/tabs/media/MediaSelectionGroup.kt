@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Hd
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.SubtitlesOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +34,9 @@ import me.him188.ani.app.ui.lang.settings_media_advanced_settings
 import me.him188.ani.app.ui.lang.settings_media_advanced_settings_description
 import me.him188.ani.app.ui.lang.settings_media_alliance
 import me.him188.ani.app.ui.lang.settings_media_alliance_description
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_description
+import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_none
 import me.him188.ani.app.ui.lang.settings_media_any
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_all
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_none
@@ -253,6 +257,28 @@ internal fun SettingsScope.MediaSelectionGroup(
                 state.defaultMediaPreferenceState.update(
                     state.defaultMediaPreference.copy(
                         alliancePatterns = new.split(",", "，").map { it.trim() },
+                    ),
+                )
+            },
+            sanitizeValue = { it.replace("，", ",") },
+        )
+
+        val excludedAllianceRegexes by remember(state) {
+            derivedStateOf { state.defaultMediaPreference.excludedAlliancePatterns?.joinToString() ?: "" }
+        }
+        TextFieldItem(
+            value = excludedAllianceRegexes,
+            title = { Text(stringResource(Lang.settings_media_excluded_alliance)) },
+            description = {
+                Text(stringResource(Lang.settings_media_excluded_alliance_description))
+            },
+            icon = { Icon(Icons.Outlined.SubtitlesOff, null) },
+            placeholder = { Text(stringResource(Lang.settings_media_excluded_alliance_none)) },
+            onValueChangeCompleted = { new ->
+                state.defaultMediaPreferenceState.update(
+                    state.defaultMediaPreference.copy(
+                        // 空白项不留: 空串会匹配所有字幕组
+                        excludedAlliancePatterns = new.split(",", "，").map { it.trim() }.filter { it.isNotEmpty() },
                     ),
                 )
             },

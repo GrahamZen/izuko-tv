@@ -137,6 +137,12 @@ Sealed class [`MaybeExcludedMedia`][MaybeExcludedMedia] 表示一个可能被排
 [BT 资源页](media-selector-ui.md#bt-资源页)把集数不符作为一种排除原因展示在已被排除的资源里，
 取消按集筛选后列表基于不含第 0 条规则的条目级候选，没有这一原因。
 
+**排除的字幕组**：资源的字幕组（`Media.properties.alliance`）匹配用户在“观看偏好”里设置的排除名单
+（默认偏好的 `MediaPreference.excludedAlliancePatterns`，正则；空白项忽略，不是合法正则的按字面匹配；
+繁简写法都认，规则与字幕组名都再转成简体比一次）时，
+以 `MediaExclusionReason.ExcludedAlliance` 排除。它排在本地缓存豁免之后、其余规则之前：已缓存的不受影响，
+被排除时原因就是这一条。和其他按偏好过滤的原因一样，展开“显示被排除的资源”后仍可手动选择。
+
 **条目名匹配**：资源的条目名精确等于系列中其他季度的名称时，以
 `MediaExclusionReason.FromSeriesSeason` / `FromSequelSeason` 排除；WEB 资源还要求条目名包含条目的某个名称，
 或与之足够相似（把季号挪到末尾后再比一次），否则以 `MediaExclusionReason.SubjectNameMismatch` 排除。
