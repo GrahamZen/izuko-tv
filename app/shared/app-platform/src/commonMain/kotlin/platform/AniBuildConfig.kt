@@ -20,6 +20,10 @@ interface AniBuildConfig {
      */
     val versionName: String
     val isDebug: Boolean
+
+    /** release 包也带 Web 控制台的「调试」组 (编译时 `-Pani.devConsole=true`, 性能对比包用); debug 包不看它, 总是带. */
+    val devConsole: Boolean
+        get() = false
     val dandanplayAppId: String
     val dandanplayAppSecret: String
 

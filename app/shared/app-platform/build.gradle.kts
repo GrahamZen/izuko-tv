@@ -30,6 +30,9 @@ val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
+// 性能对比包等 release 包也带 Web 控制台的「调试」组 (-Pani.devConsole=true); debug 包总是带
+val devConsole = getPropertyOrNull("ani.devConsole") == "true"
+
 // 构建时的 git 分支 / commit, 在 "关于 > 构建信息" 里展示. 见 build-logic 的 git.kt.
 val currentGitInfo = gitInfo.get()
 
@@ -172,6 +175,7 @@ buildConfig {
         stringField("updateRepository", updateRepository)
 
         booleanField("analyticsEnabled", enableFirebase)
+        booleanField("devConsole", devConsole)
     }
 
     // iOS platform configuration (only if enabled)
