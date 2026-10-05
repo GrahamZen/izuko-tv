@@ -10,6 +10,8 @@
 package me.him188.ani.app.platform
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -18,71 +20,72 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.network.AniEpisodeCommentService
-import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.AniSubjectSearchService
-import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
-import me.him188.ani.app.data.network.BangumiSummaryService
-import me.him188.ani.app.data.network.GitHubDownloadMirrors
-import me.him188.ani.app.data.network.SubjectFeedbackService
-import me.him188.ani.app.data.network.TmdbImageEndpoints
-import me.him188.ani.app.data.network.TmdbImageService
-import me.him188.ani.app.data.network.SequelSeasonTableRepository
-import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.BangumiBangumiCommentServiceImpl
 import me.him188.ani.app.data.network.BangumiCommentService
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
+import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
+import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
+import me.him188.ani.app.data.network.SequelSeasonTableRepository
+import me.him188.ani.app.data.network.SubjectFeedbackService
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.SubjectService
+import me.him188.ani.app.data.network.TmdbImageEndpoints
+import me.him188.ani.app.data.network.TmdbImageService
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
+import me.him188.ani.app.data.network.TrendsRepository
+import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
 import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.MIGRATION_19_20
 import me.him188.ani.app.data.persistent.database.MIGRATION_21_22
 import me.him188.ani.app.data.persistent.database.MIGRATION_24_25
 import me.him188.ani.app.data.persistent.database.SelfRatingTagsRepair
 import me.him188.ani.app.data.persistent.database.createDatabaseBuilder
-import me.him188.ani.app.data.repository.media.MediaSourceSaves
-import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
+import me.him188.ani.app.data.repository.media.MediaSourceSaves
+import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.repositoryModules
+import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
-import me.him188.ani.app.domain.torrent.TorrentEngineType
-import me.him188.ani.app.domain.torrent.engines.PikPakEngine
-import me.him188.ani.torrent.pikpak.PikPakCredentials
-import me.him188.ani.torrent.pikpak.PikPakSessionStoreAdapter
-import me.him188.ani.utils.io.inSystem
-import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
-import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeatureHandler
-import me.him188.ani.app.domain.foundation.CookieJarFeatureHandler
-import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
-import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
-import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
-import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
 import me.him188.ani.app.domain.foundation.BangumiMirrorFeature
 import me.him188.ani.app.domain.foundation.BangumiMirrorFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
+import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeatureHandler
+import me.him188.ani.app.domain.foundation.CookieJarFeatureHandler
+import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
+import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider.HoldingInstanceMatrix
 import me.him188.ani.app.domain.foundation.DefaultVersionExpiryService
 import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
 import me.him188.ani.app.domain.foundation.DistributionChannelFeatureHandler
@@ -99,12 +102,30 @@ import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryFeatureHandler
 import me.him188.ani.app.domain.foundation.VersionExpiryService
+import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
+import me.him188.ani.app.domain.media.cache.PikPakWebM3uCacheMigration
+import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.KtorPersistentHttpDownloader
+import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.media.cache.engine.PlaybackYieldingGate
+import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.createCacheDownloadDispatcher
+import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
+import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
+import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
 import me.him188.ani.app.domain.media.download.DownloadOperations
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
+import me.him188.ani.app.domain.media.player.PlaybackActivity
+import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.quark.QuarkAddedShareService
 import me.him188.ani.app.domain.mediasource.quark.QuarkDriveService
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
 import me.him188.ani.app.domain.mediasource.web.captcha.BrowserImageCaptchaSolver
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
@@ -114,70 +135,51 @@ import me.him188.ani.app.domain.mediasource.web.captcha.MacCmsImageCaptchaSolver
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
-import me.him188.ani.app.domain.media.cache.PikPakWebM3uCacheMigration
-import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
-import me.him188.ani.app.domain.media.cache.engine.createCacheDownloadDispatcher
-import me.him188.ani.app.domain.media.cache.engine.KtorPersistentHttpDownloader
-import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
-import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
-import me.him188.ani.app.domain.media.cache.engine.PlaybackYieldingGate
-import me.him188.ani.app.domain.media.player.PlaybackActivity
-import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
-import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
-import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
-import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
-import me.him188.ani.app.domain.media.fetch.MediaSourceManager
-import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
-import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
-import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
-import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
+import me.him188.ani.app.domain.profile.LocalProfileConversion
+import me.him188.ani.app.domain.profile.LocalProfileImporter
+import me.him188.ani.app.domain.profile.ProfileArchiver
+import me.him188.ani.app.domain.profile.SelfCollectionRecords
+import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfileManager
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfileSeeder
+import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
 import me.him188.ani.app.domain.session.BangumiSessionRefresher
-import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
-import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
+import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
+import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
+import me.him188.ani.app.domain.torrent.TorrentEngineType
 import me.him188.ani.app.domain.torrent.TorrentManager
+import me.him188.ani.app.domain.torrent.engines.PikPakEngine
 import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.domain.usecase.useCaseModules
+import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.datasources.bangumi.BangumiClient
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
+import me.him188.ani.torrent.pikpak.PikPakCredentials
+import me.him188.ani.torrent.pikpak.PikPakSessionStoreAdapter
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.coroutines.childScopeContext
 import me.him188.ani.utils.httpdownloader.HttpDownloader
+import me.him188.ani.utils.io.delete
+import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
-import kotlin.time.Duration.Companion.seconds
-import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
-import me.him188.ani.app.data.persistent.database.databaseFile
-import me.him188.ani.app.domain.profile.LocalProfileImporter
-import me.him188.ani.app.domain.profile.LocalProfileConversion
-import me.him188.ani.app.domain.profile.SelfCollectionRecords
-import me.him188.ani.app.domain.profile.ProfileArchiver
-import me.him188.ani.app.domain.profile.UserProfile
-import me.him188.ani.app.domain.profile.UserProfileManager
-import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
-import me.him188.ani.app.domain.profile.UserProfileRegistry
-import me.him188.ani.app.domain.profile.UserProfiles
-import me.him188.ani.app.platform.AppRestarter
-import me.him188.ani.utils.io.delete
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.distinctUntilChanged
-import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.profile.UserProfileSeeder
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.milliseconds
 
 private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
@@ -213,7 +215,7 @@ private fun KoinApplication.otherModules(
             tokenRepository = get(),
             coroutineScope = coroutineScope,
             // 刷新走 bangumi 自己的 refresh_token; 它的 accessToken 只有 7 天
-            refreshSession = BangumiSessionRefresher { get<BangumiOAuthClient>() },
+            refreshSession = BangumiSessionRefresher({ get<BangumiOAuthClient>() }, { get<BangumiOAuthRelayClient>() }),
             beforeNewLogin = {
                 database.subjectCollection().resetAllLastFetched()
                 database.episodeCollection().resetAllLastFetched()
@@ -225,6 +227,7 @@ private fun KoinApplication.otherModules(
         // 所以要一个不装 UseBangumiTokenFeature 的裸客户端
         BangumiOAuthClient(get<HttpClientProvider>().get())
     }
+    single<BangumiOAuthRelayClient> { BangumiOAuthRelayClient(get<HttpClientProvider>().get()) }
     single<BangumiOAuthManager> {
         BangumiOAuthManager(
             client = get(),
@@ -234,6 +237,7 @@ private fun KoinApplication.otherModules(
             trustedMirrorRoot = { get<BangumiEndpointProvider>().trustedMirrorRoot.value },
             // 多人共用时内置浏览器里可能还登着上一个人的 bgm 账号
             clearWebLoginBeforeInAppBrowser = { UserProfiles.registry.state.value.profiles.size > 1 },
+            relay = get(),
         )
     }
     single<SessionStateProvider> {

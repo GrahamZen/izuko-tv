@@ -45,8 +45,10 @@ import kotlin.time.Duration.Companion.days
  *    (遥控器没有外部浏览器可跳, 而且跳出去就回不来了)。
  * 2. **外部浏览器 + deep link** ([startExternalBrowser] + [submitCallbackUrl]): 手机上的兜底,
  *    由 manifest 的 intent-filter 接住后喂回来。
+ * 3. **手机授权、经 Worker 跳回电视** ([startRelay] + [submitCallback]): Web 控制台发起, 用另一个 bgm 应用,
+ *    见 [BangumiOAuthRelay]。
  *
- * 两条路共用同一个状态机, 所以界面只要看 [state]; 谁先送到 code 就算谁的。
+ * 各条路共用同一个状态机, 所以界面只要看 [state]; 谁先送到 code 就算谁的。
  */
 class BangumiOAuthManager(
     private val client: BangumiOAuthClient,
@@ -65,6 +67,8 @@ class BangumiOAuthManager(
      * 多人共用这台设备时, 不清的话新用户打开授权页看到的可能是上一个人的账号 (见 `UserProfile`).
      */
     private val clearWebLoginBeforeInAppBrowser: () -> Boolean = { false },
+    /** 回调经 Worker 跳回电视的那个 bgm 应用 (见 [BangumiOAuthRelay]); `null` 或没带凭据时没有 [startRelay] 这条路. */
+    private val relay: BangumiOAuthRelayClient? = null,
     private val random: Random = Random.Default,
 ) {
     private val logger = logger<BangumiOAuthManager>()
@@ -119,6 +123,9 @@ class BangumiOAuthManager(
 
     /** 本次授权的 `state` 参数, 用来认回调是不是自己发起的那次. */
     private var pendingState: String? = null
+
+    /** 本次授权走的是中转应用 ([startRelay]): 换 token 要用那个应用. */
+    private var pendingRelay = false
     private var browserJob: Job? = null
 
     /**
@@ -228,16 +235,48 @@ class BangumiOAuthManager(
         return url
     }
 
+    /** 这个构建带了中转应用的凭据, [startRelay] 能用. */
+    val relaySupported: Boolean get() = relay?.isConfigured == true
+
     /**
-     * 收到回调地址 (两条路共用). 认 `state`, 取 `code`, 换 token, 写进 session.
+     * 在别的设备 (手机) 上授权, 回调经 Worker 跳回电视的 Web 控制台 (见 [BangumiOAuthRelay]), 控制台把它交给 [submitCallback].
+     * 只生成地址, 打开由调用方做; 不起回环监听.
+     *
+     * @param lanHost 那台设备连电视用的地址 (`IPv4:端口`), 必须是 [BangumiOAuthRelay.isPrivateLanHost]
+     * @return 授权页地址; `null` = 这个构建没带中转应用的凭据 ([relaySupported])
+     */
+    fun startRelay(lanHost: String): String? {
+        val relayClient = relay?.takeIf { it.isConfigured } ?: return null
+        cancel()
+        val oauthState = BangumiOAuthRelay.state(Uuid.random(random).toString(), lanHost)
+        pendingState = oauthState
+        pendingRelay = true
+        val url = relayClient.authorizeUrl(oauthState, trustedMirrorRoot())
+        _state.value = State.Authorizing(url, browser = null, viaExternalBrowser = true)
+        logger.info { "bgm-direct: oauth 打开授权页 (经 Worker 中转)" }
+        return url
+    }
+
+    /**
+     * 收到回调地址 (各条路共用), 见 [submitCallback].
      *
      * does not throw
      */
     suspend fun submitCallbackUrl(url: String) {
+        submitCallback(BangumiOAuthConstants.extractCode(url), BangumiOAuthConstants.extractState(url))
+    }
+
+    /**
+     * 收到回调 (已从地址里取出、解码过的 `code` 与 `state`). 认 `state`, 换 token, 写进 session.
+     *
+     * does not throw
+     *
+     * @return 认了这次回调 (是本次发起的那一次, 且还没换过): 结果看 [state]. `false` = 原样忽略
+     */
+    suspend fun submitCallback(code: String?, actual: String?): Boolean {
         lock.withLock {
-            if (_state.value is State.Exchanging || _state.value is State.Success) return
+            if (_state.value is State.Exchanging || _state.value is State.Success) return false
             val expected = pendingState
-            val actual = BangumiOAuthConstants.extractState(url)
             if (!BangumiOAuthConstants.stateMatches(expected, actual)) {
                 // **缺一边也要拒**: state 是这里唯一能证明"这次回调是我发起的"的东西. 放过不带 state 的
                 // 回调等于没有防护 —— 攻击者拿自己的授权码拼一个地址, 骗用户在手机控制台上粘进来
@@ -248,27 +287,27 @@ class BangumiOAuthManager(
                 logger.info {
                     "bgm-direct: oauth 回调的 state 不匹配 (expected=${expected != null}, actual=${actual != null}), 忽略"
                 }
-                return
+                return false
             }
-            val code = BangumiOAuthConstants.extractCode(url)
             if (code == null) {
-                logger.info { "bgm-direct: oauth 回调里没有 code (用户拒绝授权?), url=$url" }
+                logger.info { "bgm-direct: oauth 回调里没有 code (用户拒绝授权?)" }
                 _state.value = State.Failed(LoadError.UnknownError(null))
                 closeBrowser()
-                return
+                return true
             }
 
             _state.value = State.Exchanging
             closeBrowser()
+            val relayClient = relay?.takeIf { pendingRelay }
             try {
-                val result = client.exchangeCode(code)
+                val result = relayClient?.exchangeCode(code) ?: client.exchangeCode(code)
                 sessionManager.setSession(
                     session = AccessTokenSession(tokens = result.tokens),
                     refreshToken = result.refreshToken,
                 )
                 pendingState = null
                 _state.value = State.Success
-                logger.info { "bgm-direct: oauth 登录成功" }
+                logger.info { "bgm-direct: oauth 登录成功${if (relayClient != null) " (经 Worker 中转)" else ""}" }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -276,6 +315,7 @@ class BangumiOAuthManager(
                 logger.error(wrapped) { "bgm-direct: oauth 换 token 失败" }
                 _state.value = State.Failed(LoadError.fromException(wrapped))
             }
+            return true
         }
     }
 
@@ -334,6 +374,7 @@ class BangumiOAuthManager(
     /** 用户放弃授权 / 界面离开. */
     fun cancel() {
         pendingState = null
+        pendingRelay = false
         closeBrowser()
         _state.value = State.Idle
     }
