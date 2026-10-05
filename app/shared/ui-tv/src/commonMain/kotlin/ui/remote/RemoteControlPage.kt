@@ -5756,12 +5756,44 @@ private val SETTINGS_SCRIPT = """
   // 多行 / 文字 / 数字按「保存」提交, 开关与下拉改了就提交. debug 包的「调试」组 (RemoteDebugSettings) 用同一套卡片
   function genHint(s) { return s ? '<p class="hint">' + esc(s).replace(/\n/g, '<br>') + '</p>' : ''; }
   function renderGeneric(list) { genBox.innerHTML = genCards(list); }
-  // 调试组没有调试项时的说明只给开发者看, 不走译文表
+  // 调试组的「播放链路探针」(RemoteDebugProbes): 只读、常驻 (不随调试项用完删掉), 播放中点「刷新」看最新判定.
+  // 调试组只给开发者看, 文案不走译文表
+  var PROBES_CARD = '<div class="card set-card" data-probes-card><div class="set-title">播放链路探针</div>' +
+    '<p class="hint">只读：当前解码器与色彩三项、最近几次 HLS 去广告的判定。播放中点「刷新」看最新的。</p>' +
+    '<div data-probes><p class="hint">读取中…</p></div>' +
+    '<div class="row"><button type="button" data-probes-refresh>刷新</button></div></div>';
   function renderDebug(list) {
     if (!dbgBox) return;
-    dbgBox.innerHTML = list && list.length ? genCards(list)
-      : '<div class="card set-card"><p class="hint">还没有调试项。开发时在 DevSwitches 里声明开关，或把已有设置登记进 RemoteSettingsCatalog.debugItems，就会列在这里。</p></div>';
+    dbgBox.innerHTML = (list && list.length ? genCards(list)
+      : '<div class="card set-card"><p class="hint">还没有调试项。开发时在 DevSwitches 里声明开关，或把已有设置登记进 RemoteSettingsCatalog.debugItems，就会列在这里。</p></div>') +
+      PROBES_CARD;
+    loadProbes();
   }
+  function loadProbes() {
+    var box = dbgBox && dbgBox.querySelector('[data-probes]');
+    if (!box) return;
+    getJson('api/settings/debug/probes').then(function (d) { box.innerHTML = probesHtml(d); })
+      .catch(function () { box.innerHTML = '<p class="hint">读不到：电视可能休眠了。</p>'; });
+  }
+  function probesHtml(d) {
+    if (!d.ok) return '<p class="hint">' + esc(d.message || '读不到') + '</p>';
+    var v = d.video, out;
+    if (!v) out = '<p class="hint">还没有播放过视频。</p>';
+    else out = '<p class="hint">解码器：' + esc(v.decoder || '?') + (v.nvidiaWorkaround ? '（NVIDIA，给 Surface 写 dataspace 兜底）' : '') +
+      '<br>编码：' + esc(v.codecs || '?') +
+      '<br>色彩：space ' + esc(String(v.colorSpace)) + ' / range ' + esc(String(v.colorRange)) + ' / transfer ' + esc(String(v.colorTransfer)) +
+      (v.colorComplete ? '（三项齐全）' : '（<b>不全，会出假 HDR</b>）') + '</p>';
+    var h = d.hls || [];
+    if (!h.length) return out + '<p class="hint">还没有处理过 HLS 列表。</p>';
+    return out + '<p class="hint">HLS 去广告（新的在前）：<br>' + h.map(function (x) {
+      return esc(x.host) + '：共 ' + x.totalSegments + ' 段，' + (x.skippedReason
+        ? '没动（' + esc(x.skippedReason) + '）'
+        : '删了 ' + x.removedSegments + ' 段 ' + Number(x.removedSeconds).toFixed(1) + ' 秒');
+    }).join('<br>') + '</p>';
+  }
+  if (dbgBox) dbgBox.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('[data-probes-refresh]')) loadProbes();
+  });
   function genCards(list) {
     return (list || []).map(function (g) {
       var k = ' data-gkey="' + esc(g.key) + '"';

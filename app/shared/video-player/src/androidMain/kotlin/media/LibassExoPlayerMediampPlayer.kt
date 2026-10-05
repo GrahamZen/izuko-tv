@@ -17,6 +17,7 @@ import android.view.Surface
 import android.view.SurfaceView
 import androidx.annotation.OptIn as AndroidxOptIn
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException as Media3PlaybackException
 import androidx.media3.common.MimeTypes
@@ -29,7 +30,6 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ExoTimeoutException
 import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -62,10 +62,10 @@ import org.openani.mediamp.ExperimentalMediampApi
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
 import me.him188.ani.app.domain.player.tracks.TrackChooserHost
 import me.him188.ani.app.platform.PlaybackRequestHints
+import me.him188.ani.app.videoplayer.diagnostics.PlayerProbes
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
 import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.InternalForInheritanceMediampApi
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
@@ -155,8 +155,9 @@ class LibassExoPlayerMediampPlayer private constructor(
             configurePlayerBuilder = { builder ->
                 builder.setDetachSurfaceTimeoutMs(DETACH_SURFACE_TIMEOUT_MILLIS)
                 configurePlayerBuilder?.invoke(builder)
+                // 缓冲策略只能是管线的 ThrottledSourceLoadControl: 限速源、拖动预览要按媒体切换策略. 放在最后, 自定义不能覆盖它
+                builder.setLoadControl(pipeline.loadControl)
             },
-            { builder -> builder.setLoadControl(pipeline.loadControl) },
         ),
     )
 
@@ -347,6 +348,7 @@ class LibassExoPlayerMediampPlayer private constructor(
                         }
                     }
                     if (isNvidia) applyVideoDataSpace()
+                    PlayerProbes.recordDecoder(decoderName, isNvidia, System.currentTimeMillis())
                 }
 
                 override fun onRenderedFirstFrame(
@@ -699,7 +701,18 @@ private class LibassMediaSourcePipeline(
         deferredFonts = null
         loadControl.throttled = data is UriMediaData && parallelConnectionsOf(data) != null
         return (createLibassMediaSource(data) ?: defaultSource)
-            .withColorInfoRepair(onVideoFormat = { onVideoFormat?.invoke(it) })
+            .withColorInfoRepair(
+                onVideoFormat = { format ->
+                    PlayerProbes.recordVideoFormat(
+                        colorSpace = format.colorInfo?.colorSpace?.takeIf { it != Format.NO_VALUE },
+                        colorRange = format.colorInfo?.colorRange?.takeIf { it != Format.NO_VALUE },
+                        colorTransfer = format.colorInfo?.colorTransfer?.takeIf { it != Format.NO_VALUE },
+                        codecs = format.codecs,
+                        atMillis = System.currentTimeMillis(),
+                    )
+                    onVideoFormat?.invoke(format)
+                },
+            )
     }
 
     /** 当前媒体出了第一帧: 推迟的字体附件可以开始读了. */
@@ -832,13 +845,6 @@ private class LibassMediaSourcePipeline(
             )
             .build()
 
-        if (data.isHls && data.extraFiles.subtitles.isEmpty()) {
-            // 资源站的 m3u8 常在正片中间插广告段, 解析列表时去掉 (见 HlsAdFilter)
-            return HlsMediaSource.Factory(dataSourceFactory)
-                .setPlaylistParserFactory(AdFilteringHlsPlaylistParserFactory())
-                .setSubtitleParserFactory(subtitleParserFactory)
-                .createMediaSource(mediaItem)
-        }
         // 网盘直链限速时, mkv 开头的大段字体附件推迟到出画面后再读
         val extractors = fontsDataSourceFactory?.let { factory ->
             val fonts = DeferredMkvFonts(Uri.parse(data.playbackUri), cacheKey, factory, assHandler, scope)
@@ -856,10 +862,6 @@ private class LibassMediaSourcePipeline(
             if (extractor is MatroskaExtractor) FontDeferringMkvExtractor(subtitleParserFactory, assHandler, fonts) else extractor
         }.toTypedArray()
     }
-
-    /** 与 [DefaultMediaSourceFactory] 判断 HLS 的方式相同 (按地址后缀). */
-    private val MediaData.isHls: Boolean
-        get() = Util.inferContentTypeForUriAndMimeType(Uri.parse(playbackUri), null) == C.CONTENT_TYPE_HLS
 
     private val MediaData.playbackUri: String
         get() = when (this) {
@@ -989,9 +991,6 @@ class LibassExoPlayerMediampPlayerFactory(
             context,
             parentCoroutineContext,
             audioTimeStretch,
-            configurePlayerBuilder = { builder ->
-                builder.setLoadControl(aniExoPlayerLoadControl())
-            },
             proxyConfig = proxyConfig,
             diskCacheEnabled = diskCacheEnabled,
         )
