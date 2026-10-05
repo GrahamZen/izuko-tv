@@ -514,6 +514,10 @@
     <string name="subject_details_relation_character">角色出演</string>
     <string name="subject_details_relation_collaboration">联动</string>
     <string name="media_selector_item_cache_not_ready">缓存未完成</string>
+    <string name="media_selector_item_excluded_alliance">字幕组已排除</string>
+    <string name="settings_media_excluded_alliance">排除的字幕组</string>
+    <string name="settings_media_excluded_alliance_description">支持使用正则表达式，使用逗号分隔。匹配到的字幕组的资源不会被自动选中，在选源列表里归到被排除的资源中，仍可手动选择；已经缓存的不受影响\n\n示例: 字幕组A, 字幕组B</string>
+    <string name="settings_media_excluded_alliance_none">不排除</string>
     <string name="media_selector_full_search">完整搜索</string>
     <string name="settings_media_always_full_search">始终完整搜索</string>
     <string name="settings_media_always_full_search_description">关闭时，视频开始播放后会暂停还没搜完的数据源，减少卡顿；打开选源面板或开「完整搜索」时继续。打开后始终搜完全部数据源</string>
