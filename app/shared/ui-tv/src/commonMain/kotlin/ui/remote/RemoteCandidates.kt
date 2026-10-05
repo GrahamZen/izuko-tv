@@ -111,6 +111,14 @@ internal object RemoteCandidates {
                                 // 硬性不可用 (缓存还没下完) 电视上也不许选; 其余被排除的都能手动选
                                 put("blocked", reason.blocksSelection)
                             }
+                            // 匹配结果: 自动选源为什么挑了这条 / 为什么没挑它, 看这三项比看排除原因直观
+                            // (排除原因只在被排除时才有). 条目名是模糊还是精确匹配上的、集号按 ep 还是 sort 对上的、
+                            // 以及 0~100 的相似度 —— 「自动选源播错动画」那类问题就靠它定位.
+                            (entry as? MaybeExcludedMedia.Included)?.metadata?.let { meta ->
+                                put("similarity", meta.similarity)
+                                put("subjectMatch", meta.subjectMatchKind.name)
+                                put("episodeMatch", meta.episodeMatchKind.name)
+                            }
                         }
                     }
                 }
