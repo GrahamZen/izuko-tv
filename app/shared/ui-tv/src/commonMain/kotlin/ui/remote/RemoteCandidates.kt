@@ -21,6 +21,7 @@ import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
+import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
 import me.him188.ani.app.ui.lang.media_selector_item_no_subtitle
 import me.him188.ani.app.ui.lang.media_selector_item_season_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
@@ -166,6 +167,7 @@ internal object RemoteCandidates {
     /** 排除原因的文字, 与电视上选择器卡片的一致 (MediaSelectorItem 的 mediaExclusionReasonText). */
     private fun loadReasonTexts(): Map<KClass<out MediaExclusionReason>, String> = runBlocking {
         mapOf(
+            MediaExclusionReason.ExcludedAlliance::class to getString(Lang.media_selector_item_excluded_alliance),
             MediaExclusionReason.MediaWithoutSubtitle::class to getString(Lang.media_selector_item_no_subtitle),
             MediaExclusionReason.SingleEpisodeForCompleteSubject::class to
                     getString(Lang.media_selector_item_single_episode_resource),
