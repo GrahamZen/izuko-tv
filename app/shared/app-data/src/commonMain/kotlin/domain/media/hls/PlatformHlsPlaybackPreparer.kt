@@ -654,6 +654,7 @@ private class LocalHlsProxySession private constructor(
             "HLS filter result $baseUri is ${filterResult.status}, reason: ${filterResult.reason}, " +
                     "removed groups: ${filterResult.removedGroups}, oversized groups: ${filterResult.oversizedGroups}"
         }
+        recordHlsFilterProbe(baseUri, content, filterResult)
         val rewritten = rewriteMediaPlaylist(filterResult.content, baseUri, options.proxySegments || mayContainAds)
         startPrefetch?.onPlaylistReady(rewritten.segments)
         return LocalPlaylist(rewritten.content, isVod)
