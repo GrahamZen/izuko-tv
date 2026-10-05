@@ -59,6 +59,8 @@ import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
+import me.him188.ani.app.domain.player.tracks.TrackChooserHost
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
@@ -72,6 +74,8 @@ import org.openani.mediamp.PlaybackException
 import org.openani.mediamp.PlaybackState
 import org.openani.mediamp.exoplayer.ExoPlayerAudioTimeStretch
 import org.openani.mediamp.exoplayer.ExoPlayerMediampPlayer
+import org.openani.mediamp.features.audioTracks
+import org.openani.mediamp.features.subtitleTracks
 import org.openani.mediamp.io.SeekableInput
 import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.SeekableInputMediaData
@@ -113,7 +117,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     parentCoroutineContext: CoroutineContext,
     private val pipeline: LibassMediaSourcePipeline,
     internal val exoMediampPlayer: ExoPlayerMediampPlayer,
-) : MediampPlayer by exoMediampPlayer, VideoSurfaceFrameSignal {
+) : MediampPlayer by exoMediampPlayer, VideoSurfaceFrameSignal, TrackChooserHost {
     /**
      * @param configurePlayerBuilder 在 [ExoPlayer.Builder] 构建前调用, 用于自定义原生播放器 (如缓冲策略).
      *   见 [ExoPlayerMediampPlayer] 的同名参数.
@@ -157,6 +161,9 @@ class LibassExoPlayerMediampPlayer private constructor(
     )
 
     internal val assHandler: AssHandler get() = pipeline.assHandler
+
+    /** 见 [TrackChooserHost]; 由播放页的 PreferredTracksExtension 设置, 只在主线程读写. */
+    override var trackChooser: PlayerTrackChooser? = null
 
     private val exoPlayer: ExoPlayer get() = exoMediampPlayer.impl
 
@@ -314,7 +321,13 @@ class LibassExoPlayerMediampPlayer private constructor(
     init {
         assHandler.init(exoPlayer)
         exoPlayer.addAnalyticsListener(videoOutputTimeoutListener)
-        pipeline.onNewMedia = { seekPreview?.end() }
+        // 字幕与音轨按界面语言和这部番记下的选择选, 音轨的选择由它下发给 ExoPlayer (见 PreferredTrackSelector)
+        val preferredTracks = PreferredTrackSelector(exoPlayer, exoMediampPlayer.subtitleTracks, exoMediampPlayer.audioTracks) { trackChooser }
+        preferredTracks.start(backgroundScope)
+        pipeline.onNewMedia = {
+            seekPreview?.end()
+            preferredTracks.onNewMedia()
+        }
         exoPlayer.addAnalyticsListener(
             object : AnalyticsListener {
                 override fun onVideoDecoderInitialized(
