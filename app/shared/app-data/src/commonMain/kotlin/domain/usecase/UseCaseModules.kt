@@ -13,6 +13,7 @@ import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCaseImpl
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCaseImpl
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.comment.PostCommentUseCaseImpl
 import me.him188.ani.app.domain.danmaku.SetDanmakuEnabledUseCase
@@ -39,6 +40,7 @@ import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCaseImpl
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.media.cache.DeleteCacheUseCase
 import me.him188.ani.app.domain.media.cache.DeleteCacheUseCaseImpl
+import me.him188.ani.app.domain.media.cache.DeleteCacheWhenMarkedDoneUseCase
 import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCase
 import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCaseImpl
 import me.him188.ani.app.domain.media.download.AddDownloadUseCase
@@ -53,7 +55,6 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorEventSavePreferenceU
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
 import me.him188.ani.app.domain.media.selector.ReplayBrowseMemoryUseCase
 import me.him188.ani.app.domain.media.selector.ReplayBrowseMemoryUseCaseImpl
-import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCaseImpl
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
@@ -89,7 +90,7 @@ fun KoinApplication.useCaseModules() = module {
     single<GetMediaSelectorSettingsFlowUseCase> { GetMediaSelectorSettingsFlowUseCaseImpl }
     single<GetVideoScaffoldConfigUseCase> { GetVideoScaffoldConfigUseCaseImpl }
     single<SetDanmakuEnabledUseCase> { SetDanmakuEnabledUseCaseImpl(koin) }
-    single<SetSubjectCollectionTypeOrDeleteUseCase> { SetSubjectCollectionTypeOrDeleteUseCaseImpl(get(), get(), get()) }
+    single<SetSubjectCollectionTypeOrDeleteUseCase> { DeleteCacheWhenMarkedDoneUseCase(SetSubjectCollectionTypeOrDeleteUseCaseImpl(get(), get(), get()), get<SettingsRepository>().mediaCacheSettings, get(), get()) }
     single<SetEpisodeCollectionTypeUseCase> { SetEpisodeCollectionTypeUseCaseImpl(koin) }
     single<GetEpisodeCollectionTypeUseCase> { GetEpisodeCollectionTypeUseCaseImpl(koin) }
     single<GetAnimeScheduleFlowUseCase> { GetAnimeScheduleFlowUseCaseImpl(get()) }
