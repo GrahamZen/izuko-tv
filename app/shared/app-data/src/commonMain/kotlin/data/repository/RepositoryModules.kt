@@ -23,6 +23,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeCommentRepository
 import me.him188.ani.app.data.repository.episode.EpisodeProgressRepository
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepositoryImpl
+import me.him188.ani.app.data.repository.media.SubjectTrackChoiceRepository
 import me.him188.ani.app.data.repository.media.ManualBrowseMemoryRepository
 import me.him188.ani.app.data.repository.media.ManualBrowseMemoryRepositoryImpl
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
@@ -92,6 +93,7 @@ fun KoinApplication.repositoryModules(
             database.preferredWebMediaSourceDao(),
         )
     }
+    single<SubjectTrackChoiceRepository> { SubjectTrackChoiceRepository(getContext().dataStores.preferredAllianceStore) }
 
     single<SubjectCollectionRepository> {
         SubjectCollectionRepositoryImpl(

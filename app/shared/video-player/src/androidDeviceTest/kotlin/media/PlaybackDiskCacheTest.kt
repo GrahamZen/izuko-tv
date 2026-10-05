@@ -116,4 +116,8 @@ class PlaybackDiskCacheTest {
         assertFalse(PlaybackDiskCache.syncFile(file))
         assertFalse(file.exists(), "syncing a deleted file must not create it again")
     }
+
+    private companion object {
+        const val KEY = "quark:test"
+    }
 }

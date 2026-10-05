@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.mediasource.quark
 
+import me.him188.ani.app.domain.player.tracks.LanguageTags
+
 /**
  * 网盘里放在视频旁边的外挂字幕 (`.ass` / `.ssa` / `.srt` / `.vtt`): 认文件、配给视频、起显示名.
  *
@@ -145,38 +147,12 @@ internal object QuarkSidecarSubtitles {
              * @param wholeName [tag] 是整个文件名: 认不出时不拿它当显示名
              */
             fun of(tag: String, wholeName: Boolean): Tags {
-                var sc = false
-                var tc = false
-                var zh = false
-                var ja = false
-                var en = false
-                for (token in TOKEN_SEPARATOR.split(tag.lowercase())) {
-                    when {
-                        token.isEmpty() -> {}
-                        token in SC_TOKENS -> sc = true
-                        token in TC_TOKENS -> tc = true
-                        token in ZH_TOKENS -> zh = true
-                        token in JA_TOKENS -> ja = true
-                        token in EN_TOKENS -> en = true
-                        token in SC_JA_TOKENS -> {
-                            sc = true
-                            ja = true
-                        }
-
-                        token in TC_JA_TOKENS -> {
-                            tc = true
-                            ja = true
-                        }
-                        // 中文写的标记 (`简日双语`, `繁体`); 只认全由这几个字组成的, 免得把标题里的字 (`日常`) 当成标记
-                        token.all { it in CJK_TAG_CHARS } -> {
-                            if ('简' in token || '簡' in token) sc = true
-                            if ('繁' in token) tc = true
-                            if ('中' in token) zh = true
-                            if ('日' in token) ja = true
-                            if ('英' in token) en = true
-                        }
-                    }
-                }
+                val tags = LanguageTags.of(tag)
+                val sc = tags.sc
+                val tc = tags.tc
+                val zh = tags.zh
+                val ja = tags.ja
+                val en = tags.en
                 // `zh-TW` 这种同时出现 zh 与简繁标记的, 按简繁算
                 return when {
                     sc && ja -> Tags("简日双语", "zh-Hans", 0)
@@ -197,17 +173,6 @@ internal object QuarkSidecarSubtitles {
 
     private const val MAX_RAW_TAG_LENGTH = 12
     private const val MAX_PICKED_LABEL_LENGTH = 24
-
-    private val TOKEN_SEPARATOR = Regex("""[^\p{L}\p{N}]+""")
-
-    private val SC_TOKENS = setOf("sc", "chs", "gb", "gbk", "hans", "zhs", "cn", "chn", "sim", "simplified", "schinese")
-    private val TC_TOKENS = setOf("tc", "cht", "big5", "hant", "zht", "tw", "hk", "trad", "traditional", "tchinese")
-    private val ZH_TOKENS = setOf("zh", "chi", "zho", "chinese")
-    private val JA_TOKENS = setOf("jp", "ja", "jpn", "jap", "japanese")
-    private val EN_TOKENS = setOf("en", "eng", "english")
-    private val SC_JA_TOKENS = setOf("jpsc", "scjp", "chsjp", "jpchs", "chsjpn", "gbjp", "jpgb")
-    private val TC_JA_TOKENS = setOf("jptc", "tcjp", "chtjp", "jpcht", "chtjpn", "big5jp", "jpbig5")
-    private const val CJK_TAG_CHARS = "简簡繁体體中文字日语語双雙英"
 
     private val SUBTITLE_FOLDER = Regex("""(?i)subs?|subtitles?|ass|srt|.*字幕.*""")
 }
