@@ -11,6 +11,8 @@ package me.him188.ani.app.domain.media.player
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -26,6 +28,18 @@ class PlaybackActivity {
 
     /** 播放页开着的那一集 (在播、卡着在缓冲、暂停或还在加载); 没有时为 `null`. */
     val current: Flow<ActivePlayback?> = state.map { it?.playback }.distinctUntilChanged()
+
+    private val _onScreen = MutableStateFlow(true)
+
+    /**
+     * 播放页在不在眼前. TV 保留播放会话时, 退出播放页后会话还开着 ([current] 仍是那一集, 暂停着), 这里为 `false`;
+     * 由保留会话的持有者按导航状态上报, 没有保留会话的平台恒为 `true` (退出播放页即 [current] 变 `null`).
+     */
+    val onScreen: StateFlow<Boolean> = _onScreen.asStateFlow()
+
+    fun setOnScreen(visible: Boolean) {
+        _onScreen.value = visible
+    }
 
     /** [current] 此刻的值. */
     val currentValue: ActivePlayback? get() = state.value?.playback
