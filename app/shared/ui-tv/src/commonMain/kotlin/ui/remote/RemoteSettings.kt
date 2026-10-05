@@ -77,6 +77,8 @@ internal object RemoteSettings {
         return runCatching {
             when {
                 request.path == "api/settings" && get -> state()
+                // 「调试」组的只读卡片: 播放链路探针 (debug 包才给, 见 RemoteDebugProbes)
+                request.path == "api/settings/debug/probes" && get -> RemoteDebugProbes.probes()
                 !post -> null
                 request.path == "api/settings/proxy" -> saveProxy(request)
                 request.path == "api/settings/proxy/test" -> testConnection()
