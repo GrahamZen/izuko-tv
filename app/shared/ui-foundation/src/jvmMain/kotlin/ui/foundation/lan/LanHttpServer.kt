@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * 形态:
  * - 绑 `0.0.0.0` 的**随机空闲端口**: 地址反正是二维码带过去的, 固定端口只会撞车 (要加书签的由调用方给固定端口).
- * - 路径带一段随机 token, 只有 `/<token>/...` 会交给 [handler], 其余一律 404: 只有扫到二维码的人
+ * - 路径带一段随机 token, 只有 `/<token>/...` 会交给 [handler], 其余除了 `publicHandlers` 登记的几个一律 404: 只有扫到二维码的人
  *   知道完整地址, 同一局域网里别的设备猜不到. 日志里有用户名/看过的条目, 搜索输入能驱动电视界面,
  *   都不该对全网段裸奔.
  * - [close] 之后链接立刻失效, 正在处理的连接也一并掐断.
@@ -67,12 +67,15 @@ import java.util.concurrent.atomic.AtomicLong
  * @param token null = 每次新生成; 要固定地址时由调用方持久化后传入.
  * @param maxBodyBytes 按路径给请求体上限 (路径是 token 之后、查询串之前、未解码的那段), 超了回 413; 默认都是 [MAX_BODY_BYTES].
  *   请求体整个读进内存, 放宽的接口要自己控制大小 (Web 控制台只有上传安装包的那一个).
+ * @param publicHandlers token 之外也接的路径 (不带开头的 `/`, 整段相等) → 处理函数, 只接 GET / HEAD, 不读请求体.
+ *   给从外面跳回来、地址里带不了 token 的 (OAuth 回调); 处理函数自己认请求是不是它等的那个.
  */
 class LanHttpServer(
     private val handler: (LanHttpRequest) -> LanHttpResponse,
     port: Int = 0,
     token: String? = null,
     private val maxBodyBytes: (path: String) -> Long = { MAX_BODY_BYTES },
+    private val publicHandlers: Map<String, (LanHttpRequest) -> LanHttpResponse> = emptyMap(),
 ) : AutoCloseable {
     val token: String = token ?: generateToken()
 
@@ -263,7 +266,20 @@ class LanHttpServer(
         val rawPath = rawTarget.substringBefore('?')
         val prefix = "/$token/"
         if (!rawPath.startsWith(prefix)) {
-            // token 之外的只有探端口的 (与自测), 路径不进日志
+            val public = publicHandlers[rawPath.removePrefix("/")]
+            if (public != null && (method == "GET" || method == "HEAD")) {
+                record.target = "$method $rawPath (public)"
+                val request = LanHttpRequest(method, rawPath.removePrefix("/"), rawTarget.substringAfter('?', ""), ByteArray(0))
+                val response = try {
+                    public(request)
+                } catch (e: Exception) {
+                    logger.warn(e) { "LAN http public handler failed for $method $rawPath" }
+                    LanHttpResponse.status(500, "Internal Server Error")
+                }
+                response.writeTo(output, headOnly = method == "HEAD")
+                return
+            }
+            // 其余 token 之外的只有探端口的 (与自测), 路径不进日志
             record.target = if (rawPath == PROBE_PATH) PROBE_TARGET else "$method (outside token)"
             LanHttpResponse.status(404, "Not Found").writeTo(output, headOnly = method == "HEAD")
             return

@@ -15,6 +15,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import io.ktor.http.decodeURLQueryComponent
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
@@ -120,11 +121,13 @@ object BangumiOAuthConstants {
     /** 从回调地址里取 state (与发起时的对照). */
     fun extractState(url: String): String? = extractQueryParam(url, "state")
 
+    /** 按查询串解码: 中转那条的 state 里有 `~` 与 `:`, 经 bgm 和 Worker 转手后是 `%7E` / `%3A` (见 [BangumiOAuthRelay.state]). */
     private fun extractQueryParam(url: String, name: String): String? {
-        val query = url.substringAfter('?', "").takeIf { it.isNotEmpty() } ?: return null
+        val query = url.substringAfter('?', "").substringBefore('#').takeIf { it.isNotEmpty() } ?: return null
         return query.split('&')
             .firstOrNull { it.startsWith("$name=") }
             ?.substringAfter('=')
+            ?.let { runCatching { it.decodeURLQueryComponent(plusIsSpace = true) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() }
     }
 }
