@@ -72,6 +72,26 @@ class MediaDownloadPlaybackYieldTest {
     }
 
     @Test
+    fun `leaving the player with a retained session resumes the download`() = runTest {
+        val playing = testDownload(1)
+        val manager = manager(httpStorage(playing))
+        play(1)
+        runCurrent()
+        assertEquals(MediaCacheState.PAUSED, playing.state.value)
+
+        // TV 退出播放页: 会话保留着、仍报这一集, 只是不在眼前
+        activity.setOnScreen(false)
+        runCurrent()
+        assertEquals(MediaCacheState.IN_PROGRESS, playing.state.value)
+        assertEquals(emptySet(), manager.waitingForPlayback.value)
+
+        // 回到播放页接着播: 再让一次
+        activity.setOnScreen(true)
+        runCurrent()
+        assertEquals(MediaCacheState.PAUSED, playing.state.value)
+    }
+
+    @Test
     fun `downloads the user paused stay paused after playback`() = runTest {
         val paused = testDownload(1).apply { state.value = MediaCacheState.PAUSED }
         manager(httpStorage(paused))

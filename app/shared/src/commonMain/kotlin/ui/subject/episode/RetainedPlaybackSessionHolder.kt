@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
+import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
@@ -228,6 +229,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
     /** 见 [openSession] 里数据源变动的处理. */
     private val fetchSessionRefresh: MediaFetchSessionRefresh by inject()
 
+    /** 播放页在不在眼前也报给它 ([PlaybackActivity.onScreen]): 保留着的会话不在眼前时, 别处不必再等它 */
+    private val playbackActivity: PlaybackActivity by inject()
+
     /**
      * 进播放页时调用: 拿到这一页该用的会话.
      *
@@ -376,6 +380,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
     /** 播放页是否在前台; 由导航状态驱动, 与组合的存活无关. */
     fun setPlayerPageVisible(visible: Boolean) {
         playerPageVisible.value = visible
+        playbackActivity.setOnScreen(visible)
     }
 
     /** 应用整体是否在前台; 由根部的 `OnLifecycleEvent` 驱动. 见 [notify]. */
@@ -882,7 +887,8 @@ internal fun statusOf(
     )
 
     loading is VideoLoadingState.DecodingData -> PlaybackSessionStatus.Preparing(
-        if (loading.isBt) PlaybackPreparingStage.FetchingTorrentInfo else PlaybackPreparingStage.PreparingVideo,
+        // 本地 BT 引擎在取种子信息; 云端 (PikPak) 与非 BT 源都算准备视频
+        if (loading.engineKey?.isCloud == false) PlaybackPreparingStage.FetchingTorrentInfo else PlaybackPreparingStage.PreparingVideo,
     )
 
     // 选源: Initial, 以及换源 / 换集时取消上一次加载留下的 Cancelled (选中下一个资源后才重新开始加载)
