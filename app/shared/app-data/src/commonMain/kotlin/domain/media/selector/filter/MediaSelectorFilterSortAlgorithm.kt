@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.StringMatcher
 import me.him188.ani.app.domain.mediasource.asCandidate
+import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
@@ -100,6 +101,8 @@ class MediaSelectorFilterSortAlgorithm {
             ?.mapNotNullTo(HashSet()) { MediaListFilters.removeSeasonMarkerOrNull(it) }
             .orEmpty()
 
+        val excludedAlliances = compileAlliancePatterns(preference.excludedAlliancePatterns)
+
         val episodeMatch = if (matchEpisode && episodeInfo != null) {
             EpisodeMatch(
                 episodeId = episodeInfo.episodeId,
@@ -139,7 +142,7 @@ class MediaSelectorFilterSortAlgorithm {
             if (memo == null) {
                 filterMedia(
                     media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
-                    subjectNames, seriesSubjectNames, seasonlessSubjectNames,
+                    subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
                 )
             } else {
                 // **键必须是 media 本身而不是 mediaId**: 同一个 mediaId 可能对应内容不同的两条
@@ -147,7 +150,7 @@ class MediaSelectorFilterSortAlgorithm {
                 memo.getOrPut(media) {
                     filterMedia(
                         media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
-                        subjectNames, seriesSubjectNames, seasonlessSubjectNames,
+                        subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
                     )
                 }
             }
@@ -210,6 +213,16 @@ class MediaSelectorFilterSortAlgorithm {
         }
     }
 
+    /**
+     * 用户填的字幕组正则 ([MediaPreference.excludedAlliancePatterns]). 空白的忽略 (空串会匹配所有字幕组),
+     * 不是合法正则的按字面匹配 (设置里随手写的括号之类不该让选源出错). 每条再加上它的简体写法, 与字幕组名的简体写法比 (繁简都认).
+     */
+    private fun compileAlliancePatterns(patterns: List<String>?): List<Regex> =
+        patterns.orEmpty().flatMap { pattern ->
+            val trimmed = pattern.trim().takeIf { it.isNotEmpty() } ?: return@flatMap emptyList()
+            setOf(trimmed, trimmed.toSimplifiedChinese()).map { p -> runCatching { Regex(p) }.getOrElse { Regex.fromLiteral(p) } }
+        }
+
     private val SEASON_TAILING = Regex("""第\s*(?<season>.+)\s*[部季]""")
 
     @Suppress("PrivatePropertyName")
@@ -230,6 +243,7 @@ class MediaSelectorFilterSortAlgorithm {
         subjectNames: NormalizedNames,
         seriesSubjectNames: NormalizedNames,
         seasonlessSubjectNames: Set<String>,
+        excludedAlliances: List<Regex>,
     ): MaybeExcludedMedia {
         val mediaSubjectName = media.properties.subjectName
         val mediaSubjectNameOrOriginalTitle = mediaSubjectName ?: media.originalTitle
@@ -292,6 +306,16 @@ class MediaSelectorFilterSortAlgorithm {
                 return exclude(MediaExclusionReason.CacheNotReady)
             }
             return include() // 本地缓存总是要显示
+        }
+
+        // 用户排除的字幕组: 放在其他规则前, 原因就写这一条 (用户自己设的, 一看就懂).
+        // 繁简写法都认: 有的数据源给的字幕组名是繁体 (「愛戀字幕社」), 用户多半只写一种
+        if (excludedAlliances.isNotEmpty()) {
+            val alliance = media.properties.alliance
+            val simplified = alliance.toSimplifiedChinese()
+            if (excludedAlliances.any { it.containsMatchIn(alliance) || it.containsMatchIn(simplified) }) {
+                return exclude(MediaExclusionReason.ExcludedAlliance)
+            }
         }
 
         if (settings.hideSingleEpisodeForCompleted
