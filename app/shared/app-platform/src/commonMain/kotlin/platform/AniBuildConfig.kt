@@ -38,6 +38,13 @@ interface AniBuildConfig {
 
     val bangumiOauthClientSecret: String
         get() = ""
+
+    /** 回调注册在 Worker 上的第二个 bgm 应用 (`ani.bangumi.oauth.relay.client.id` / `.secret`), 见 `BangumiOAuthRelay`. */
+    val bangumiOauthRelayClientId: String
+        get() = ""
+
+    val bangumiOauthRelayClientSecret: String
+        get() = ""
     val sentryDsn: String
     val distroChannel: String
 
