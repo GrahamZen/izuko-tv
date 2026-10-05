@@ -91,6 +91,25 @@ $C devswitch someSettingKey 1    # a registered setting
   written like the public catalog entries; it is stored in the settings as usual.
 - Install the debug build, `$C url <pkg>`, then `$C devswitch …`. Delete the entries when the work is done.
 
+The debug group also has a read-only **播放链路探针** card (it stays; it is not one of the entries you delete), backed by
+`GET api/settings/debug/probes` (`RemoteDebugProbes`; `PlayerProbes` in video-player-api is written by the local HLS proxy in
+app-data for `hls` and by `LibassExoPlayerMediampPlayer` for `video`):
+
+```bash
+$C probes                        # current decoder + color triplet, and the last HLS ad-filter decisions
+```
+
+- `video`: decoder name, whether the NVIDIA dataspace workaround is on, codecs, and colorSpace / colorRange / colorTransfer.
+  `complete=False` (one of the three missing) is the fake-HDR cause on the Shield (see `ColorInfoRepair.kt`), so check this
+  before you look at the screen.
+- `hls`: for each media playlist the ad filter saw (the PTS-continuity filter in `HlsManifestFilter`, run by the local HLS
+  proxy `PlatformHlsPlaybackPreparer` while 设置「过滤贴片广告」 is on), the segment count and either how much it removed or the
+  reason code it left it alone with: `no_discontinuity`, `single_group`, `no_ad`, `ad_break_too_long`, `encrypted`, `byterange`,
+  `live_or_incomplete_playlist`, `invalid_playlist`. A playlist the player opened directly (no `127.0.0.1` address in the
+  `Set media data` log line) never reached the filter: the proxy could not fetch it, or the filter setting is off.
+  Compare the same source before and after changing the filter.
+- These are recorded for the playback since the app started (HLS keeps the last 20); play something first, then read.
+
 ## 3. Evidence: logcat next to the console
 
 Start one capture per test session and grep it afterwards:
