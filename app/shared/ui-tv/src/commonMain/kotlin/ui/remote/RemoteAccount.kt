@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -36,11 +37,15 @@ import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthConstants
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
+import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
+import me.him188.ani.app.ui.foundation.lan.escapeHtml
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
+import java.net.URLDecoder
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -54,8 +59,10 @@ import kotlin.time.Duration.Companion.seconds
  * 直连之后没有这个中转站.
  *
  * 所以这里给三条路:
- * - **手机授权** (默认): 把授权链接交给手机打开, 授权完那一跳必然失败, 但地址栏里带着 code ——
- *   整个地址粘回来 (`api/account/login/callback`), 电视拿它换 token ([BangumiOAuthManager.submitCallbackUrl]).
+ * - **手机授权** (默认): 把授权链接交给手机打开. 这个构建带了中转应用的凭据、手机又是经内网 IPv4 连的控制台时, 用中转应用
+ *   ([BangumiOAuthRelay]): 授权完 Worker 把手机跳回电视的 [relayReturn], 什么都不用粘. 否则用主应用, 授权完那一跳必然失败,
+ *   但地址栏里带着 code —— 整个地址粘回来 (`api/account/login/callback`), 电视拿它换 token ([BangumiOAuthManager.submitCallbackUrl]).
+ *   中转那条跳不回来 (手机连不上电视) 时停住的地址也能这样粘回来.
  * - **电视授权** (`where=tv`): 让电视弹出授权页 (挂在应用根部的 `BangumiOAuthDialogHost`, 电视在哪一页都能弹),
  *   用遥控器完成. 电视上打字麻烦, 所以不是默认.
  * - **个人令牌** (`api/account/token`): 在网页上生成令牌粘过来, 不经过授权页与换 token.
@@ -81,8 +88,9 @@ internal object RemoteAccount {
          * 等授权完成.
          * @param url 交给手机打开的授权链接; `null` = 授权页开在电视上, 手机只需要等
          * @param deadline 等到这一刻 (毫秒) 还没结果就放弃, 见 [LOGIN_TIMEOUT]; 网页上倒数给用户看
+         * @param relay 走中转应用: 授权完手机自动跳回来, 粘贴只是兜底
          */
-        class Waiting(val url: String?, val deadline: Long) : Login
+        class Waiting(val url: String?, val deadline: Long, val relay: Boolean = false) : Login
 
         class Failed(val message: String) : Login
     }
@@ -159,6 +167,8 @@ internal object RemoteAccount {
             put("mirrorCred", mirrorCredentials)
             // 生成个人令牌的页面只有官方的: 镜像上的登录页过不了 Cloudflare 人机验证 (它只认官方域名)
             putJsonArray("tokenPages") { add(BangumiOAuthConstants.PERSONAL_TOKEN_PAGE) }
+            // 带了中转应用的凭据: 手机授权完会自动跳回来, 网页上的说明按这个换
+            put("relay", oauthManager.relaySupported)
             putJsonObject("login") {
                 when (current) {
                     Login.Idle -> put("state", "idle")
@@ -166,6 +176,7 @@ internal object RemoteAccount {
                         put("state", "waiting")
                         // 非空 = 手机授权那条路, 网页要把链接打开并让用户把回调地址粘回来
                         put("url", current.url)
+                        put("relay", current.relay)
                         // 还剩多久放弃 (毫秒): 给剩余时长而不是时刻, 手机与电视的钟不一定对得上
                         put("expiresIn", (current.deadline - System.currentTimeMillis()).coerceAtLeast(0))
                     }
@@ -182,6 +193,7 @@ internal object RemoteAccount {
      * 发起一次授权 (放弃上一次), 之后在后台盯着结果, 结果用提示送到手机上.
      *
      * 表单 `where=tv` 时让电视弹授权页, 否则 (默认) 把授权链接交给手机打开, 见 [RemoteAccount] 的说明.
+     * 表单 `host` 是手机打开控制台用的地址 (`location.host`), 中转应用靠它跳回来.
      */
     private fun startLogin(request: LanHttpRequest): JsonObject {
         val session = runBlocking { withTimeoutOrNull(STATE_TIMEOUT) { sessionStateProvider.stateFlow.first() } }
@@ -191,11 +203,15 @@ internal object RemoteAccount {
             return result(false, tr("现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录"))
         }
         val manager = oauthManager
-        val onTv = request.formFields()["where"] == "tv"
+        val fields = request.formFields()
+        val onTv = fields["where"] == "tv"
         if (onTv && !manager.inAppBrowserSupported) {
             return result(false, tr("这台电视打不开授权页，改用手机授权"))
         }
+        // 手机经内网 IPv4 连着控制台: 授权完 Worker 能把它跳回来 (公网地址、域名不跳, 见 BangumiOAuthRelay)
+        val lanHost = fields["host"]?.takeIf { BangumiOAuthRelay.isPrivateLanHost(it) }
         var url: String? = null
+        var relay = false
         var configured = true
         // 在锁里起协程并登记: 它第一次 update 要拿同一把锁, 那时 job 一定已经是它
         synchronized(lock) {
@@ -205,16 +221,18 @@ internal object RemoteAccount {
             if (onTv) {
                 manager.startInAppBrowser()
             } else {
-                url = manager.startExternalBrowser()
+                url = lanHost?.let { manager.startRelay(it) }?.also { relay = true } ?: manager.startExternalBrowser()
                 configured = url != null
             }
             if (configured) {
-                login = Login.Waiting(url, System.currentTimeMillis() + LOGIN_TIMEOUT.inWholeMilliseconds)
+                login = Login.Waiting(url, System.currentTimeMillis() + LOGIN_TIMEOUT.inWholeMilliseconds, relay)
                 scope.launch { awaitResult(coroutineContext.job, manager) }.also { job = it }
             }
         }
         if (!configured) return result(false, tr("这个版本没有带 Bangumi 授权凭据，登录不了"))
-        logger.info { "Remote control started Bangumi OAuth (${if (onTv) "on TV" else "on phone"})" }
+        logger.info {
+            "Remote control started Bangumi OAuth (${if (onTv) "on TV" else if (relay) "on phone via relay" else "on phone"})"
+        }
         val authorizeUrl = url
         return buildJsonObject {
             put("ok", true)
@@ -236,8 +254,13 @@ internal object RemoteAccount {
     private fun submitCallback(request: LanHttpRequest): JsonObject {
         val url = request.formFields()["url"].orEmpty().trim()
         if (url.isEmpty()) return result(false, tr("请粘贴授权完成后跳转到的那个地址"))
-        if (!BangumiOAuthConstants.isCallback(url)) {
-            return result(false, tr("这不像授权回调地址，它以 {0} 开头", BangumiOAuthConstants.CALLBACK_URL))
+        if (!BangumiOAuthConstants.isCallback(url) && !BangumiOAuthRelay.isRelayUrl(url)) {
+            val relay = (login as? Login.Waiting)?.relay == true
+            return result(
+                false,
+                if (relay) tr("这不像授权完停住的那个页面的网址")
+                else tr("这不像授权回调地址，它以 {0} 开头", BangumiOAuthConstants.CALLBACK_URL),
+            )
         }
         val manager = oauthManager
         // submitCallbackUrl 自己不抛异常, 成败只体现在 state 上
@@ -258,6 +281,51 @@ internal object RemoteAccount {
             // 粘错了上一次的回调 (state 对不上) 会被原样忽略, 这里只能说它没生效
             else -> result(false, tr("这个地址没能完成登录，请重新开始一次"))
         }
+    }
+
+    /**
+     * 手机授权完经 Worker 跳回来的那一跳: `GET /bgm-oauth?code=…&state=…` (用户拒绝时没有 code), 不带 token,
+     * 见 [BangumiOAuthRelay]. 认 state、换 token, 回一页结果给手机.
+     *
+     * 谁都能请求这个路径, 所以**只有认出是这一次发起的** (state 对上) 才给回控制台的链接 (链接里有 token).
+     * 换 token 不随这个请求取消: 超时了它照样在后台换完, 结果照常经 [awaitResult] 送到控制台.
+     */
+    fun relayReturn(request: LanHttpRequest): LanHttpResponse {
+        RemoteI18n.refresh()
+        val params = request.query.split('&').associate { pair ->
+            val value = runCatching { URLDecoder.decode(pair.substringAfter('=', ""), "UTF-8") }.getOrDefault("")
+            pair.substringBefore('=') to value
+        }
+        val manager = oauthManager
+        val submit = scope.async { manager.submitCallback(params["code"]?.ifEmpty { null }, params["state"]) }
+        val accepted = runBlocking { withTimeoutOrNull(OP_TIMEOUT) { submit.await() } }
+        val outcome = manager.state.value
+        val console = if (accepted == true) TvRemoteControl.consolePath() else null
+        val (ok, title, message) = when {
+            accepted == null -> Triple(false, tr("还在登录"), tr("电视还在换取登录凭据，回到控制台看结果。"))
+            accepted && outcome == BangumiOAuthManager.State.Success ->
+                Triple(true, tr("登录成功"), tr("电视已登录，可以关掉这个页面了。"))
+            accepted && params["code"].isNullOrEmpty() ->
+                Triple(false, tr("没有完成登录"), tr("没有授权，电视没有登录。"))
+            accepted && outcome is BangumiOAuthManager.State.Failed ->
+                Triple(false, tr("没有完成登录"), errorText(outcome.error))
+            accepted -> Triple(false, tr("没有完成登录"), tr("回到控制台看结果。"))
+            outcome == BangumiOAuthManager.State.Success -> Triple(true, tr("登录成功"), tr("电视已登录，可以关掉这个页面了。"))
+            // state 对不上: 已经取消、超时、又点了一次登录, 或者不是这台电视发起的
+            else -> Triple(false, tr("这次授权已经失效"), tr("回到控制台，重新点「用手机登录 Bangumi」。"))
+        }
+        logger.info { "Bangumi OAuth relay return: accepted=$accepted, ok=$ok" }
+        return LanHttpResponse.html(relayPage(ok, title, message, console))
+    }
+
+    /** [relayReturn] 回给手机的那一页. 成功时自己关掉 (控制台用 `window.open` 开的它), 关不掉就留着回控制台的链接. */
+    private fun relayPage(ok: Boolean, title: String, message: String, console: String?): String {
+        val link = console?.let { "<p><a href=\"${it.escapeHtml()}#settings/account\">${tr("回到控制台").escapeHtml()}</a></p>" }.orEmpty()
+        return """<!doctype html><html lang="${RemoteI18n.lang.tag}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title.escapeHtml()}</title>
+<style>:root{color-scheme:light dark}body{margin:0;padding:48px 24px;font:17px/1.6 system-ui,-apple-system,sans-serif;text-align:center}
+h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}</style></head>
+<body><h1>${title.escapeHtml()}</h1><p>${message.escapeHtml()}</p>$link${if (ok) "<script>setTimeout(function(){window.close()},1500)</script>" else ""}</body></html>"""
     }
 
     /** 盯着 [BangumiOAuthManager.state] 直到有结果. */
