@@ -55,8 +55,8 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Web 控制台的「设置」标签: 只收**要打字**的那几项 (代理地址与账号、BT 额外 tracker), 开关类设置留在电视上改 ——
- * 改完要当场看效果的东西, 放到手机上反而得来回抬头.
+ * Web 控制台的「设置」标签: 只收**要打字**的那几项 (代理地址与账号、Bangumi 与 TMDB 图床的地址, 以及 [RemoteSettingsCatalog] 里登记的通用项), 开关类设置留在电视上改 ——
+ * 改完要当场看效果的东西, 放到手机上反而得来回抬头. debug 包另有「调试」组, 放开发时临时要调的开关 (见 [RemoteDebugSettings]).
  *
  * 代理的存法与设置页一致 (`ProxyUIConfig.toDataSettings`), 地址用同一个校验器; 改完即生效, 不用重启 (HTTP 客户端池按
  * 当前代理取客户端, 数据源实例也随代理变化重建). 密码**只写不读**: 网页上不回显, 留空 = 保持原来的.
@@ -83,7 +83,14 @@ internal object RemoteSettings {
                 request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
                 request.path == "api/settings/bangumi/cred" -> setMirrorCredentials(request)
                 request.path == "api/settings/tmdb-images" -> saveTmdbImages(request)
-                request.path == "api/settings/trackers" -> saveTrackers(request)
+                // 清单里登记的通用设置项 (见 RemoteSettingsCatalog)
+                request.path == "api/settings/generic/set" -> request.formFields().let { form ->
+                    RemoteGenericSettings.set(settingsRepository, form["key"].orEmpty(), form["value"].orEmpty())
+                }
+                // 「调试」组 (debug 包才收, 见 RemoteDebugSettings)
+                request.path == "api/settings/debug/set" -> request.formFields().let { form ->
+                    RemoteDebugSettings.set(settingsRepository, form["key"].orEmpty(), form["value"].orEmpty())
+                }
                 // 「切到电视前台」开关, 状态与授权都在 TvRemoteControl
                 request.path == "api/settings/front" -> TvRemoteControl.setBringToFront(request.formFields()["on"] == "1")
                 // 「退出 Ani 后保留 Web 控制台」开关, 同样在 TvRemoteControl
@@ -102,7 +109,6 @@ internal object RemoteSettings {
 
     private fun state(): JsonObject = runBlocking {
         val proxy = settingsRepository.proxySettings.flow.first().toUIConfig()
-        val torrent = settingsRepository.anitorrentConfig.flow.first()
         // 挂起调用都放在 buildJsonObject 外面 (它的构建块不是协程)
         val filterConfig = settingsRepository.danmakuFilterConfig.flow.first()
         val filters = danmakuFilters.flow.first()
@@ -112,6 +118,8 @@ internal object RemoteSettings {
         val tmdbImagesDisabled = settingsRepository.tmdbImagesDisabled.flow.first()
         val tmdbImageEndpoint = tmdbImageEndpoints.selection.flow.first()
         val tmdbImageHosts = tmdbImageEndpoints.candidates.first()
+        val generic = RemoteGenericSettings.describe(settingsRepository)
+        val debug = if (RemoteDebugSettings.enabled) RemoteDebugSettings.describe(settingsRepository) else null
         buildJsonObject {
             putJsonObject("proxy") {
                 put("mode", proxy.mode.name)
@@ -134,7 +142,8 @@ internal object RemoteSettings {
                 put("custom", tmdbImageEndpoint.customBaseUrl)
                 putJsonArray("hosts") { tmdbImageHosts.forEach { add(it) } }
             }
-            put("trackers", torrent.extraTrackers)
+            put("generic", generic)
+            debug?.let { put("debug", it) }
             put("front", TvRemoteControl.frontState())
             put("keep", TvRemoteControl.keepState())
             putJsonObject("dmfilter") {
@@ -362,24 +371,12 @@ internal object RemoteSettings {
         }
     }
 
-    // ---------------------------- hero 背景与文字 ----------------------------
-
-    private fun saveTrackers(request: LanHttpRequest): JsonObject {
-        // 每行一个, 去掉空行与首尾空白; 与设置页同一个字段 (BT 下载开始前与内置 tracker 一起添加)
-        val text = request.formFields()["text"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
-        val bad = text.firstOrNull { line -> TRACKER_SCHEMES.none { line.startsWith(it, ignoreCase = true) } }
-        if (bad != null) return result(false, tr("这一行不像 tracker 地址：{0}", bad))
-        runBlocking { settingsRepository.anitorrentConfig.update { copy(extraTrackers = text.joinToString("\n")) } }
-        return result(true, if (text.isEmpty()) tr("已清空额外 tracker") else tr("已保存 {0} 个 tracker，下次开始 BT 下载时生效", text.size))
-    }
-
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {
         put("ok", ok)
         put("message", message)
     }
 
     private val TEST_TIMEOUT = 25.seconds
-    private val TRACKER_SCHEMES = listOf("udp://", "http://", "https://", "ws://", "wss://")
     private val SERVICE_NAMES = mapOf(
         ServiceConnectionTesters.ID_BANGUMI to "Bangumi",
         ServiceConnectionTesters.ID_BANGUMI_NEXT to "Bangumi Next",
