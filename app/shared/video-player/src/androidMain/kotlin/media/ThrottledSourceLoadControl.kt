@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.upstream.Allocator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.him188.ani.app.videoplayer.player.PlayerBufferPolicy
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import androidx.annotation.OptIn as AndroidxOptIn
@@ -86,7 +87,8 @@ internal class ThrottledSourceLoadControl : LoadControl {
     @Volatile
     var previewParked = false
 
-    // 上下限都设成限速源要的上限; 普通源在 shouldContinueLoading 里按默认的 50 秒截住, 效果同默认 (默认上下限也都是 50 秒)
+    // 上下限都设成限速源要的上限; 普通源在 shouldContinueLoading 里按默认的 50 秒截住, 效果同默认 (默认上下限也都是 50 秒).
+    // 往后保留 [PlayerBufferPolicy.backward] (保留到上一个关键帧): media3 默认播过就释放, 在线源往回退一点也要重新下载
     private val delegate = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
             (THROTTLED_MAX_BUFFER_US / 1000).toInt(),
@@ -94,6 +96,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
         )
+        .setBackBuffer(PlayerBufferPolicy.backward.inWholeMilliseconds.toInt(), /* retainBackBufferFromKeyframe = */ true)
         .build()
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
