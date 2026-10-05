@@ -33,6 +33,8 @@ import me.him188.ani.app.data.repository.user.GuestSession
 import me.him188.ani.app.data.repository.user.Session
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
+import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
 import me.him188.ani.app.domain.session.auth.OAuthResult
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.info
@@ -62,8 +64,11 @@ private fun RepositoryException.toInvalidSessionReason(): InvalidSessionReason =
  */
 class BangumiSessionRefresher(
     private val getClient: () -> BangumiOAuthClient,
+    private val getRelayClient: () -> BangumiOAuthRelayClient? = { null },
 ) : SessionManager.SessionRefresher {
     override suspend fun refresh(refreshToken: String): OAuthResult {
+        // 经 Worker 中转登录的会话只能由那个应用续 (见 BangumiOAuthRelay)
+        if (BangumiOAuthRelay.isRelayRefreshToken(refreshToken)) getRelayClient()?.let { return it.refresh(refreshToken) }
         return getClient().refresh(refreshToken)
     }
 }

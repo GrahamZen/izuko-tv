@@ -7248,13 +7248,16 @@ private val ACCOUNT_SCRIPT = """
       h += '<p class="hint">' + T('电视还没登录。登录后收藏、看过的进度和评分都会同步到你的 Bangumi 账号。') + '</p>';
     }
     if (waiting) {
-      // 手机授权: 授权完那一跳必然失败 (目标是电视本机的回环地址), 但地址栏里带着 code, 粘回来即可. 没有 url = 在电视上登录
-      var paste = !!l.url;
+      // 手机授权: 中转那条 (relay) 授权完自动跳回电视, 粘贴只是兜底; 否则那一跳必然失败 (目标是电视本机的回环地址),
+      // 但地址栏里带着 code, 粘回来即可. 没有 url = 在电视上登录
+      var paste = !!l.url, relay = paste && l.relay;
       if (l.expiresIn != null) loginDeadline = Date.now() + l.expiresIn;
       h += '<div class="acct-wait"><div class="now-status busy"><b>' + T('等待授权') + '</b>' +
         (l.expiresIn != null ? '<span class="acct-left"></span>' : '') + '<span class="now-sub">' +
-        (paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的') : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
-        (paste ? '<p class="hint">' + T('把那个打不开的页面的网址整个复制，粘到下面。') + '</p>' +
+        (relay ? T('授权完会自动回到电视，电视就登录好了') : paste ? T('授权完浏览器会跳到一个打不开的页面，这是正常的')
+          : T('电视上已经打开 Bangumi 授权页，用遥控器完成登录')) + '</span></div>' +
+        (paste ? '<p class="hint">' + (relay ? T('授权完停在一个打不开的页面（手机连不上电视）？把那个页面的网址整个复制，粘到下面。')
+          : T('把那个打不开的页面的网址整个复制，粘到下面。')) + '</p>' +
           '<form class="acct-nick" id="acct-cb"><input type="text" name="u" inputmode="url" autocomplete="off" placeholder="' +
           T('粘贴那个网址') + '"><button type="submit">' + T('完成登录') + '</button></form>' +
           '<p class="hint">' + T('授权页没打开？') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + T('点这里打开') + '</a></p>' : '') +
@@ -7271,7 +7274,8 @@ private val ACCOUNT_SCRIPT = """
       } else {
         h += '<div class="row"><button type="button" class="primary" data-login="1">' + T('用手机登录 Bangumi') + '</button>' +
           '<button type="button" class="ghost" data-login="tv">' + T('改在电视上登录') + '</button></div><p class="hint">' +
-          T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。') + '</p>';
+          (d.relay ? T('在手机上授权，完成后会自动回到电视；电视上打字麻烦，所以默认走这条。')
+            : T('在手机上授权，完成后把浏览器跳到的那个网址粘回来；电视上打字麻烦，所以默认走这条。')) + '</p>';
         // 个人令牌: 不经过授权页
         h += tok ? tokenForm(d, true) : '<div class="row"><button type="button" class="ghost" data-acct="token-guide">' + T('用个人令牌登录') + '</button></div>';
       }
@@ -7368,7 +7372,8 @@ private val ACCOUNT_SCRIPT = """
     var onTv = btn.getAttribute('data-login') === 'tv', w = null;
     if (!onTv) { try { w = window.open('', '_blank'); } catch (e) {} }
     btn.disabled = true;
-    post('api/account/login', onTv ? { where: 'tv' } : {}).then(function (r) {
+    // host: 手机连电视用的地址, 授权完 Worker 按它把手机跳回来 (见 BangumiOAuthRelay)
+    post('api/account/login', onTv ? { where: 'tv' } : { host: location.host }).then(function (r) {
       btn.disabled = false;
       if (!r.ok || !r.url) {
         if (w) w.close();
@@ -7391,7 +7396,8 @@ private val ACCOUNT_SCRIPT = """
       if (b.disabled) return;
       // 经镜像时授权登录走不通 (评论与评分区的登录按钮也走这里): 指到账号卡片的个人令牌
       if (lastData && lastData.viaMirror) { toast(T('现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录')); return; }
-      if (b.getAttribute('data-login') === 'tv') startLogin(b); else loginGuide(b);
+      // 授权完会自动跳回来 (relay) 时没什么要预先讲的, 直接开授权页
+      if (b.getAttribute('data-login') === 'tv' || (lastData && lastData.relay)) startLogin(b); else loginGuide(b);
       return;
     }
     if (e.target.closest('[data-acct="token-guide"]')) {
