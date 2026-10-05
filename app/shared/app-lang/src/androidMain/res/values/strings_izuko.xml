@@ -514,6 +514,10 @@
     <string name="subject_details_relation_character">Character cameo</string>
     <string name="subject_details_relation_collaboration">Collaboration</string>
     <string name="media_selector_item_cache_not_ready">Cache incomplete</string>
+    <string name="media_selector_item_excluded_alliance">Subtitle group excluded</string>
+    <string name="settings_media_excluded_alliance">Excluded subtitle groups</string>
+    <string name="settings_media_excluded_alliance_description">Regular expressions are supported, separated by commas. Media from matching subtitle groups are never selected automatically: they are listed under excluded media and can still be picked manually. Cached episodes are not affected\n\nExample: Group A, Group B</string>
+    <string name="settings_media_excluded_alliance_none">None</string>
     <string name="media_selector_full_search">Full search</string>
     <string name="settings_media_always_full_search">Always search all sources</string>
     <string name="settings_media_always_full_search_description">When off, sources still searching are paused once the video starts playing, to reduce stutter; they continue when you open the source panel or turn on Full search. When on, every source is always searched to the end.</string>

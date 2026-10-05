@@ -99,6 +99,12 @@ sealed class MediaExclusionReason {
     data class SingleEpisodeForCompleteSubject(val episodeRange: EpisodeRange?) : MediaExclusionReason()
 
     /**
+     * 资源的字幕组在用户的排除名单里 (按偏好过滤掉, 仍可手动选)
+     * @see me.him188.ani.app.data.models.preference.MediaPreference.excludedAlliancePatterns
+     */
+    data object ExcludedAlliance : MediaExclusionReason()
+
+    /**
      * 隐藏生肉资源
      * @see me.him188.ani.app.data.models.preference.MediaPreference.showWithoutSubtitle
      */
