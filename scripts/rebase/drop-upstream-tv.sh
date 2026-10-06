@@ -22,9 +22,19 @@ PATHS=(
     'app/android/src/tv'
     'app/shared/shared-tv'
     'app/shared/*/tv'
+    'app/shared/src/androidTv'
+    'app/shared/src/androidTvTest'
+    'app/shared/src/androidTvDeviceTest'
     'app/shared/*/src/androidTv'
     'app/shared/*/src/androidTvTest'
     'app/shared/*/src/androidTvDeviceTest'
+    # 只给上游 TV 用的文案、测试设施、调试工具与文档
+    'app/shared/app-lang/src/androidMain/res/values*/tv.xml'
+    'utils/ui-testing/src/androidMain/kotlin/TvDisplayRunListener.kt'
+    'utils/ui-testing/src/androidMain/res/values/styles.xml'
+    'tools/tv-remote'
+    'docs/contributing/code/android-tv-*.md'
+    'docs/contributing/images/tv-loading'
 )
 
 hr "删文件"
