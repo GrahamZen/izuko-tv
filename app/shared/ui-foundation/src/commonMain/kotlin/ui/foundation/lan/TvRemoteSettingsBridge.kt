@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.foundation.lan
 
 // commonMain 里 @Volatile 必须显式 import: JVM/Android 编译时 kotlin.jvm.* 自动导入, 本地怎么编都过,
 // 只有 CI 上 macOS 按 iOS 编 commonMain 元数据时才报 Unresolved reference 'Volatile'
+import androidx.compose.material3.ListItemColors
+import androidx.compose.runtime.Composable
 import kotlin.concurrent.Volatile
 
 /**
@@ -21,4 +23,8 @@ object TvRemoteSettingsBridge {
     /** 重置地址: 换一个新 token, 已扫过的手机与书签全部作废 (见 `TvRemoteControl.resetAddress`). */
     @Volatile
     var resetAddress: (() -> Unit)? = null
+
+    /** 设置 → 日志里的「性能诊断」一项 (见 ui-tv 的 `TvPerfDiagnosticsSettingsItem`); 参数是日志页列表项的配色. */
+    @Volatile
+    var perfDiagnosticsItem: (@Composable (ListItemColors) -> Unit)? = null
 }

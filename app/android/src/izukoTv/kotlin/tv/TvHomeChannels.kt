@@ -62,6 +62,7 @@ import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownOnAir
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.mapAirDate
+import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.ui.foundation.tv.getTvEpisodeMedia
 import me.him188.ani.app.ui.main.TvContinueEpisode
 import me.him188.ani.app.ui.main.tvContinueEpisode
@@ -390,6 +391,7 @@ object TvHomeChannels {
      * 这一行是别的用户写的时连手动卡一起删 (那是别人加的, 留着会算成当前用户加的).
      */
     private fun writeWatchNext(context: Context, cards: List<WatchNextCard>, playNext: TvPlayNextSync) {
+        PerfTimeline.mark("后台任务", "写主屏「继续观看」")
         val resolver = context.contentResolver
         val existing = ownWatchNextRows(context)
         val changes = playNext.detect(existing)
