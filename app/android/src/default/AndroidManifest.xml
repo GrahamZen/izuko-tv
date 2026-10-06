@@ -9,20 +9,12 @@
   ~ https://github.com/open-ani/ani/blob/main/LICENSE
   -->
 
-<!-- default (手机) flavor 增量 manifest, 与 src/main 交集做加法合并.
-     torrent/缓存、通知、网页 OAuth 等手机专属声明集中于此, 不进 tv variant. -->
+<!-- default 发行渠道的增量 manifest, 与 src/main 做加法合并; 手机与电视两种形态 (phone / tv) 都会并进来.
+     启动 Activity、torrent/缓存服务、通知、网页 OAuth 回调等声明集中于此. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- 扫码登录. 相机不是必需的: 没有相机的设备 (平板, Chromebook) 仍可安装 -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature
-            android:name="android.hardware.camera"
-            android:required="false" />
-    <uses-feature
-            android:name="android.hardware.camera.autofocus"
-            android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -64,18 +56,6 @@
 
                 <data
                         android:host="subjects"
-                        android:scheme="ani" />
-            </intent-filter>
-
-            <!-- 扫码登录: 系统相机扫描电视上的二维码后, 网页跳转到 ani://qr-login?requestId=... -->
-            <intent-filter android:autoVerify="false">
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data
-                        android:host="qr-login"
                         android:scheme="ani" />
             </intent-filter>
         </activity>
