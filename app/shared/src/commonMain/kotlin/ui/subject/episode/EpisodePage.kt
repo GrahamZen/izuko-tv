@@ -84,6 +84,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.BackgroundBehavior
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.domain.comment.CommentContext
@@ -1455,7 +1456,9 @@ private fun AutoPauseEffect(
     // 有保留会话宿主时这件事整个归它, 见 KDoc
     if (LocalPlaybackSessionEntry.current !== PlaybackSessionEntry.None) return
 
-    val backgroundBehavior = viewModel.videoScaffoldConfig.backgroundBehavior
+    // 播放页变体 (遥控器形态) 不设小窗策略, 进不了小窗, 设置里也不给这一项: 切后台一律按暂停处理
+    val backgroundBehavior = if (LocalEpisodeScreenVariant.current != null) BackgroundBehavior.PAUSE
+    else viewModel.videoScaffoldConfig.backgroundBehavior
     val autoPauseTasker = rememberUiMonoTasker()
     /** 应用此刻是不是停在后台; 下面那条"持续按住"的规则读它. */
     val stopped = remember { MutableStateFlow(false) }
