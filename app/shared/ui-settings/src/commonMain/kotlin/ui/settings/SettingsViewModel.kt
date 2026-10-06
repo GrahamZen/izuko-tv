@@ -35,7 +35,6 @@ import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
-import me.him188.ani.app.data.models.preference.NotificationSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
@@ -406,7 +405,6 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
             oneshotActionConfig = settingsRepository.oneshotActionConfig.flow.first(),
             analyticsSettings = settingsRepository.analyticsSettings.flow.first(),
             debugSettings = settingsRepository.debugSettings.flow.first(),
-            notificationSettings = settingsRepository.notificationSettings.flow.first(),
             // Account credentials must not leak into exported settings; keep
             // the field present so the backup schema stays stable, but write
             // a credential-free Default. restoreSettingsBackup intentionally
@@ -443,7 +441,6 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
         backup.oneshotActionConfig?.let { settingsRepository.oneshotActionConfig.set(it) }
         backup.analyticsSettings?.let { settingsRepository.analyticsSettings.set(it) }
         backup.debugSettings?.let { settingsRepository.debugSettings.set(it) }
-        backup.notificationSettings?.let { settingsRepository.notificationSettings.set(it) }
         // pikpakConfig deliberately not restored: see serializeSettingsBackup.
         // Older backups produced before that change may still carry real
         // credentials, and we don't want a restore to silently re-introduce
@@ -500,6 +497,5 @@ private data class SettingsBackup(
     val analyticsSettings: AnalyticsSettings?,
     val debugSettings: DebugSettings?,
     val pikpakConfig: PikPakConfig? = null,
-    val notificationSettings: NotificationSettings? = null,
     val tokenStore: TokenSave?
 )
