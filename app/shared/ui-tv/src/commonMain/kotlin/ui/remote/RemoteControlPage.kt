@@ -65,7 +65,7 @@ internal fun renderRemoteControlPage(
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
-    """.trimIndent() + "\n" + STYLE + "\n" + themeCss + """
+    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + themeCss + """
     </style>
     </head>
     <body>
@@ -196,7 +196,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + QUARK_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -2712,7 +2712,9 @@ private val SCRIPT = """
     }
     // 正在播哪个数据源放在剧名下、播放键上方: 候选列表里的「正在播放」角标要往下翻很远才看得到
     paintNow(now, '<div class="card now-card"><div class="now-head"><div class="now-title now-link" data-subject="' + s.subjectId +
-      '" data-title="' + esc(s.title) + '">' + esc(s.title) + '</div>' + cacheEntry(s.subjectId, s.title) + '</div>' +
+      '" data-title="' + esc(s.title) + '">' + esc(s.title) + '</div>' +
+      // 截图 (见 SHOT_SCRIPT): 要电视屏幕上正显示着画面, 后台会话没有
+      (s.background || !window.shotEntry ? '' : window.shotEntry()) + cacheEntry(s.subjectId, s.title) + '</div>' +
       // 第几集单独一行 (资源名常常看不出来: BT / 缓存的整季合集就叫「[01-12 合集]」), 这一行本身就是选集下拉框, 见 epLine
       epLine(s) +
       '<div class="now-pick"><span class="now-label' + (s.background ? '' : ' live') + '">' + (s.background ? T('当前数据源') : T('正在播放')) + '</span>' +
