@@ -1641,11 +1641,13 @@ fun TvEpisodeScreenContent(
                 TvSeekFlash(seekFlash, Modifier.align(Alignment.Center))
 
                 // 长按倍速指示: 按住期间常显 (不是闪一下就走的反馈, 用户需要知道"现在还在倍速").
+                // 在画面上方居中, 不挡画面中央 (倍速只在纯视频态触发, 上方没有别的东西).
                 // 状态读在 graphicsLayer 的 lambda 里: 直接读会让整个播放器界面随它出现/消失重组
                 TvFastForwardIndicator(
                     speed = vm.videoScaffoldConfig.fastForwardSpeed,
                     modifier = Modifier
-                        .align(Alignment.Center)
+                        .align(Alignment.TopCenter)
+                        .padding(top = TV_FAST_FORWARD_TOP_PADDING)
                         .graphicsLayer { alpha = if (fastForwarding) 1f else 0f },
                 )
 
@@ -2052,6 +2054,9 @@ private const val TV_FAST_FORWARD_HOLD_MILLIS = 500L
 
 /** 长按倍速指示里的双箭头尺寸. */
 private val TV_FAST_FORWARD_ICON_SIZE = 26.dp
+
+/** 长按倍速指示离屏幕顶边的距离: 与控制层顶部标题行 (TvPlayerTopInfo) 同一条线. */
+private val TV_FAST_FORWARD_TOP_PADDING = 28.dp
 
 /**
  * 「自定义播放器按钮」窗口关掉之后, 等播放器读到新版式最多等多久 (写入设置到播放器的状态更新通常一两帧). 等不到也照常唤出控制层,
