@@ -172,7 +172,7 @@ internal object RemoteCandidates {
         return v.filter { it.isDigit() }.take(4).toIntOrNull() ?: 0
     }
 
-    /** 排除原因的文字, 与电视上选择器卡片的一致 (MediaSelectorItem 的 mediaExclusionReasonText). */
+    /** 排除原因的文字, 与电视上选源面板的一致 (见 TvSourceStrings.exclusion). */
     private fun loadReasonTexts(): Map<KClass<out MediaExclusionReason>, String> = runBlocking {
         mapOf(
             MediaExclusionReason.ExcludedAlliance::class to getString(Lang.media_selector_item_excluded_alliance),
