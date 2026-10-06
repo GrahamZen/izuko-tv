@@ -278,6 +278,8 @@ fun TvEpisodeScreenContent(
 
     // Web 控制台的「播放器」标签: 页面在组合里时登记, 手机才能读候选、切数据源 (见 RegisterTvRemotePlayer)
     RegisterTvRemotePlayer(vm, page)
+    // Web 控制台的「截图」读这个播放器的画面与字幕 (见 TvPlayerScreenshot)
+    RegisterTvPlayerScreenshot(vm.player)
 
     // 预载条目详情 (TMDB 剧照/时长/简介, 详情层内容, 角色/制作人员): 详情层与选集条的增量信息共用同一 loader
     // (有"已加载"守卫, 不会重复请求). 分集列表本身不等它, 见 EpisodeViewModel.episodeListUiStateFlow.
@@ -1652,7 +1654,8 @@ fun TvEpisodeScreenContent(
 
                 // 弹幕层
                 AniAnimatedVisibility(page.danmakuEnabled, Modifier.matchParentSize()) {
-                    Box(Modifier.matchParentSize()) {
+                    // 录一份供 Web 控制台截图读回 (见 TvPlayerScreenshot)
+                    Box(Modifier.matchParentSize().then(rememberTvScreenshotDanmakuLayer())) {
                         PlayerDanmakuHost(vm.player, danmakuHostState, vm.uiDanmakuEventFlow)
                     }
                 }
