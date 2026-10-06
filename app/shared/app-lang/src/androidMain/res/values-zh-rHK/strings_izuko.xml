@@ -660,4 +660,11 @@
     <string name="mediafetch_request_editor_secondary_names">次要搜尋名稱</string>
     <string name="mediafetch_request_editor_secondary_names_supporting">線上來源會忽略這些名稱</string>
     <string name="mediafetch_request_editor_title">編輯查詢請求</string>
+    <string name="tv_perf_diag_title">性能診斷</string>
+    <string name="tv_perf_diag_description">查卡頓、內存和 GC 的原因，在手機上操作</string>
+    <string name="tv_perf_diag_dialog_hint">用手機掃碼，打開網頁的「設置 → 維護 → 性能診斷」。可以做設備體檢，或者錄製一段：錄製時照常用遙控器操作要測的界面，結束後在網頁上看卡頓原因、下載報告。</string>
+    <string name="tv_perf_diag_recording">正在錄製，還剩 %1$d 秒</string>
+    <string name="tv_perf_diag_checking">正在體檢…</string>
+    <string name="tv_perf_diag_latest">最近一次：%1$s</string>
+    <string name="tv_perf_diag_none">還沒有診斷過</string>
 </resources>
