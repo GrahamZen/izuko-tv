@@ -113,6 +113,7 @@ import kotlin.math.abs
 import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.theme.AniTheme
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -121,6 +122,7 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.sourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
@@ -310,6 +312,7 @@ fun TvEpisodeScreenContent(
     // 对能流视频的连接微不足道, 但没必要跟起播抢.
     val sketch = LocalSketch.current
     val platformContext = LocalPlatformContext.current
+    val specialsPlacement by rememberUpdatedState(LocalThemeSettings.current.tvEpisodeSpecials)
     LaunchedEffect(Unit) {
         delay(TV_STILL_PREFETCH_DELAY_MILLIS)
         val detailsState = vm.episodeDetailsState
@@ -321,10 +324,12 @@ fun TvEpisodeScreenContent(
         } ?: return@LaunchedEffect
         // 分集列表与选集条同源 (播放器自己那条): 详情状态的 presentation 此刻可能还是占位值,
         // 读它会拿到空列表, 于是一张都不预取
-        // 必须与选集条同一份列表 (allEpisodes, 特别篇插在正片之间): 这里按下标取"当前集前后
-        // 几张"来预取, 列表不一致的话取到的就不是条子上实际相邻的那几张
+        // 必须与选集条同一份列表 (allEpisodes 按设置摆好特别篇, 见 arrangeSpecials): 这里按下标取
+        // "当前集前后几张"来预取, 列表不一致的话取到的就不是条子上实际相邻的那几张
+        val playingEpisodeId = vm.episodeSelectorState.current?.episodeId
         val episodes = vm.episodeListUiStateFlow.filterNotNull().first().allEpisodes
-        val current = episodes.indexOfFirst { it.episodeId == vm.episodeSelectorState.current?.episodeId }
+            .arrangeSpecials(specialsPlacement, playingEpisodeId)
+        val current = episodes.indexOfFirst { it.episodeId == playingEpisodeId }
             .coerceAtLeast(0)
         // 以当前集为中心的一小段: 选集条初始滚到当前集, 往后是主要浏览方向, 往前留一张
         val urls = ((current - 1).coerceAtLeast(0)..(current + TV_STILL_PREFETCH_AHEAD))
