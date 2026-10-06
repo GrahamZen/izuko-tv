@@ -408,6 +408,12 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvPosterWallScale: Float = 1f,
+    /**
+     * TV: 选集里特别篇 (SP / OP / ED 等) 怎么放, 见 [TvEpisodeSpecialsPlacement].
+     *
+     * @since 1.0.6
+     */
+    val tvEpisodeSpecials: TvEpisodeSpecialsPlacement = TvEpisodeSpecialsPlacement.AfterMain,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient

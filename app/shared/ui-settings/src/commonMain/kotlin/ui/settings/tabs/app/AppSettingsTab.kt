@@ -457,6 +457,8 @@ fun SettingsScope.AppearanceGroup(
             description = { Text(stringResource(Lang.settings_app_use_original_title_description)) },
         )
     }
+
+    TvEpisodeSpecialsGroup(themeSettings)
 }
 
 /**

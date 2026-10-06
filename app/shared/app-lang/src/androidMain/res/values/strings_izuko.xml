@@ -259,6 +259,12 @@
     <string name="settings_theme_tv_poster_confirm_hero">Show the overview first</string>
     <string name="settings_theme_tv_poster_confirm_play">Play right away</string>
     <string name="settings_theme_tv_poster_confirm_details">Open the details page</string>
+    <string name="settings_theme_tv_episodes">Episodes</string>
+    <string name="settings_theme_tv_episode_specials">Specials (TV)</string>
+    <string name="settings_theme_tv_episode_specials_description">Where SP, OP, ED and other non-main episodes go in the episode list on the details page and in the player. Previous / next episode always stays within the same type</string>
+    <string name="settings_theme_tv_episode_specials_hidden">Hide</string>
+    <string name="settings_theme_tv_episode_specials_after_main">After the main episodes</string>
+    <string name="settings_theme_tv_episode_specials_by_number">Between main episodes, by number</string>
     <string name="settings_theme_tv_schedule_upstream">Classic list</string>
     <string name="settings_theme_tv_schedule_grid">Poster wall</string>
     <string name="settings_theme_tv_schedule_timeline">Detail panel + timeline</string>
