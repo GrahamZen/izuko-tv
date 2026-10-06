@@ -46,8 +46,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import me.him188.ani.android.BuildConfig
-import me.him188.ani.app.data.repository.user.QrLoginRepository
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.profile.UserProfiles
@@ -179,11 +177,6 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
             "subjects" -> {
                 val id = data.pathSegments.getOrNull(0)?.toIntOrNull() ?: return
                 navigateWhenReady("subject details") { navigateSubjectDetails(id, placeholder = null) }
-            }
-
-            "qr-login" -> {
-                val requestId = QrLoginRepository.parseRequestId(data.toString()) ?: return
-                navigateWhenReady("QR login confirm") { navigateQrLoginConfirm(requestId) }
             }
         }
     }

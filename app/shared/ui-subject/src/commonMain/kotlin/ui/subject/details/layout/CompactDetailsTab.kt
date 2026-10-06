@@ -45,13 +45,11 @@ import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.details.components.RelatedSubjectCard
 import me.him188.ani.app.ui.subject.details.components.RelatedSubjectsLazyRow
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
-import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelationGraph
 import me.him188.ani.app.ui.subject.details.sections.CharactersSection
 import me.him188.ani.app.ui.subject.details.sections.EpisodesRow
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.SectionHeaderActionButton
 import me.him188.ani.app.ui.subject.details.sections.SectionHeaderCacheButton
-import me.him188.ani.app.ui.subject.details.sections.SectionHeaderRelationGraphButton
 import me.him188.ani.app.ui.subject.details.sections.StaffSection
 import me.him188.ani.app.ui.subject.details.sections.SubjectInfoTable
 import me.him188.ani.app.ui.subject.details.sections.SubjectSummarySection
@@ -209,11 +207,9 @@ private fun RelatedSubjectsCompactSection(
     contentPadding: PaddingValues,
 ) {
     val onClickRelated = rememberNavigateToRelatedSubject()
-    val onClickRelationGraph = rememberNavigateToRelationGraph(subjectId)
     var showAll by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(stringResource(Lang.subject_details_related_subjects), headerModifier) {
-            SectionHeaderRelationGraphButton(onClickRelationGraph)
             SectionHeaderActionButton({ showAll = true }) {
                 Text(stringResource(Lang.subject_details_view_all))
             }
