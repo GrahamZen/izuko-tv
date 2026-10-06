@@ -10,6 +10,7 @@
 package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
+import me.him188.ani.app.ui.diagnostics.TraceSection
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -282,10 +283,12 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 vm, page, danmakuHostState, danmakuEditorState,
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             ->
-            TvEpisodeScreenContent(
-                vm, page, danmakuHostState, danmakuEditorState,
-                setShowEditCommentSheet, pauseOnPlaying, modifier,
-            )
+            TraceSection("Izuko:EpisodePage") {
+                TvEpisodeScreenContent(
+                    vm, page, danmakuHostState, danmakuEditorState,
+                    setShowEditCommentSheet, pauseOnPlaying, modifier,
+                )
+            }
         },
         // ProvideTvScrollActivity: 每个带卡片的 TV 页一份"有卡片在滚动"的信号, 低特效档下
         // hero 文字 / 集信息行据此在滚动期间隐藏, 背景图也等停稳才换 (时间表页只有后一项).
