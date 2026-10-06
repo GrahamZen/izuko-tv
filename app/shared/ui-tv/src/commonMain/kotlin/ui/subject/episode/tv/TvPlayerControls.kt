@@ -1274,8 +1274,10 @@ private fun tvBottomRowItemsOf(
     layout.visibleItemsOf(TvPlayerChromeRow.BOTTOM).filter { item ->
         when (item) {
             TvPlayerChromeItem.NEXT_EPISODE -> hasNextEpisode
-            // 触屏 (平板装了 TV 包) 专有的两颗, 电视上连编辑页都不列
-            TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS -> touchInput
+            // 触屏 (平板装了 TV 包) 专有的几颗, 电视上连编辑页都不列 (数据源 / 下载在遥控器上走纯视频态的上键)
+            TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS, TvPlayerChromeItem.MEDIA_SOURCE,
+            TvPlayerChromeItem.CACHE,
+                -> touchInput
             // 「一起看」是 Ani 服务器的功能, 直连之后没有了. 枚举项保留是为了让已经存下来的
             // 版式配置还能反序列化 —— 但它永远不出现, 编辑页那边也别列 (见 TvPlayerChromeCatalog)
             TvPlayerChromeItem.WATCH_TOGETHER -> false
@@ -1437,11 +1439,11 @@ private fun TvPlayerBottomRow(
                     // 左右两块之间的弹性留白 (默认版式里常用组靠左, 其余靠右)
                     TvPlayerChromeItem.SPACER -> Spacer(Modifier.weight(1f))
 
-                    // 数据源 (默认紧跟播放组: 卡顿/字幕不对时换源是看片途中最常走的一步)
+                    // 数据源 (只在触屏上有, 遥控器是纯视频态的上键; 默认紧跟播放组: 卡顿/字幕不对时换源是看片途中最常走的一步)
                     TvPlayerChromeItem.MEDIA_SOURCE -> TvBottomRowIcon(
                         icon = Icons.Rounded.DisplaySettings,
                         contentDescription = stringResource(Lang.subject_episode_select_media_source),
-                        onClick = { sheetsController.navigateTo(EpisodeVideoSideSheetPage.MEDIA_SELECTOR) },
+                        onClick = { overlay.openSources() },
                         modifier = itemModifier,
                     )
 

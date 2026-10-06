@@ -31,7 +31,6 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +50,7 @@ import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.app.ui.foundation.IconButton
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_auto_rescue
 import me.him188.ani.app.ui.lang.media_selector_web_captcha_unsupported
@@ -171,7 +171,7 @@ private fun ManualSearchRescueButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    TextButton(onClick = onClick, modifier = modifier) {
+    AniTextButton(onClick = onClick, modifier = modifier) {
         Text(stringResource(Lang.media_selector_auto_rescue))
     }
 }
