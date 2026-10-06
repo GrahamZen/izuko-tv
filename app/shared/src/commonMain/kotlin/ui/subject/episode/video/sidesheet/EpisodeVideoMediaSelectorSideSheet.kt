@@ -82,7 +82,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
      * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
      */
     hideOnSelect: Boolean = false,
-    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    /** 「完整搜索」开关的值 (null = 不显示, 设置里开了始终完整搜索), 见 EpisodeViewModel.fullMediaSearch. */
     fullSearch: Boolean? = null,
     onFullSearchChange: (Boolean) -> Unit = {},
 ) {

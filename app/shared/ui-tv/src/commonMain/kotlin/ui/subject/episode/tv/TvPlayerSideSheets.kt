@@ -9,24 +9,16 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.subject_episode_danmaku_settings_title
-import me.him188.ani.app.ui.lang.subject_episode_select_media_source
-import me.him188.ani.app.ui.mediafetch.MediaSelectorView
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
-import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.subject_episode_danmaku_settings_title
 import me.him188.ani.app.ui.subject.episode.EpisodeVideoDefaults
+import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheets
 import me.him188.ani.app.ui.subject.episode.video.components.SideSheets
@@ -38,7 +30,7 @@ import me.him188.ani.app.videoplayer.ui.VideoSideSheetsController
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 播放器内二级页 (数据源选择 / 选集 / 弹幕设置). 全部为 TV 半透明居中弹窗
+ * 播放器内二级页 (选集 / 弹幕设置). 全部为 TV 半透明居中弹窗
  * ([AniCenteredPanelDialog], 返回键由 Dialog 自行消费): Dialog 是独立窗口,
  * 关闭时系统自动把焦点还给打开它的按钮; 窗口内的侧边 sheet 做不到这一点
  * (内容连同焦点一起被移除, 焦点悬空按键失效).
@@ -85,51 +77,8 @@ internal fun TvPlayerSideSheets(
                 )
             }
         },
-        mediaSelectorPage = {
-            // 面板开着期间搜索一直查完; 关面板时正在播又没开完整搜索就暂停 (见 EpisodeViewModel.onMediaSelectorHidden)
-            DisposableEffect(Unit) {
-                vm.onMediaSelectorShown()
-                onDispose { vm.onMediaSelectorHidden() }
-            }
-            val fullSearch by vm.fullMediaSearch.collectAsStateWithLifecycle()
-            val pageState by vm.pageState.collectAsStateWithLifecycle()
-            pageState?.let { page ->
-                val (viewKind, onViewKindChange) = rememberSaveable {
-                    mutableStateOf(page.initialMediaSelectorViewKind)
-                }
-                // TV: 半透明居中大弹窗 (与详情页各弹窗/缓存页选择器形态统一),
-                // 视频画面经遮罩透出; 返回键由 Dialog 自行消费关闭
-                AniCenteredPanelDialog(
-                    onDismissRequest = { goBack() },
-                    title = { Text(stringResource(Lang.subject_episode_select_media_source)) },
-                ) {
-                    MediaSelectorView(
-                        page.mediaSelectorState,
-                        viewKind,
-                        onViewKindChange,
-                        page.fetchRequest,
-                        { vm.updateFetchRequest(it) },
-                        page.mediaSourceResultListPresentation,
-                        defaultFetchRequest = page.defaultFetchRequest,
-                        onRestartSource = { vm.restartSource(it) },
-                        onRefresh = { vm.refreshFetch() },
-                        fullSearch = fullSearch,
-                        onFullSearchChange = { vm.setFullMediaSearch(it) },
-                        // 固定占满弹窗高度: 筛选后条目变少时布局不跳动
-                        modifier = Modifier.fillMaxSize(),
-                        onClickItem = {
-                            page.mediaSelectorState.select(it)
-                            // 选完关不关由设置决定 (「选择数据源后自动关闭」). 关掉时留在面板上,
-                            // 换的源不行可以当场换下一个, 不必再唤一次面板
-                            if (vm.videoScaffoldConfig.hideSelectorOnSelect) {
-                                goBack()
-                            }
-                        },
-                        singleLineFilter = true,
-                    )
-                }
-            }
-        },
+        // 选源不走这里: 遥控器上是播放器的一层 (TvPlayerLayer.SOURCES, 见 TvPlayerSourcePanel)
+        mediaSelectorPage = {},
         episodeSelectorPage = {
             EpisodeVideoSideSheets.EpisodeSelectorSheet(
                 vm.episodeSelectorState,
