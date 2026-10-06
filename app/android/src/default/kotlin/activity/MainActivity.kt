@@ -48,7 +48,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.repository.RepositoryException
-import me.him188.ani.app.data.repository.user.QrLoginRepository
 import me.him188.ani.app.domain.episode.EpisodeLink
 import me.him188.ani.app.domain.episode.ResolveEpisodeLinkUseCase
 import me.him188.ani.app.domain.foundation.LoadError
@@ -203,12 +202,6 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
                         navigateEpisodeDetails(destination.subjectId, episodeId)
                     }
                 }
-            }
-
-            "qr-login" -> {
-                val requestId = QrLoginRepository.parseRequestId(data.toString()) ?: return
-                linkNavigationJob?.cancel()
-                linkNavigationJob = navigateWhenReady("QR login confirm") { navigateQrLoginConfirm(requestId) }
             }
         }
     }

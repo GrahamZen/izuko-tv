@@ -16,7 +16,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.repository.RepositoryException
-import me.him188.ani.client.apis.EpisodesAniApi
+import me.him188.ani.datasources.bangumi.apis.DefaultApi
 import me.him188.ani.utils.ktor.ApiInvoker
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,20 +24,20 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class EpisodeSubjectRepositoryTest {
-    private fun repository(status: HttpStatusCode, subjectId: Long = 12): EpisodeSubjectRepository {
-        val client = EpisodesAniApi(
+    private fun repository(status: HttpStatusCode, subjectId: Int = 12): EpisodeSubjectRepository {
+        val client = DefaultApi(
             baseUrl = "http://test",
             httpClientEngine = MockEngine { request ->
-                assertEquals("/v2/episodes/102", request.url.encodedPath)
+                assertEquals("/v0/episodes/102", request.url.encodedPath)
                 respond(
-                    """{"episodeId":102,"subjectId":$subjectId,"sort":"13","ep":"1","type":"MAIN","name":"","nameCn":"","description":""}""",
+                    """{"id":102,"type":0,"name":"","name_cn":"","sort":13,"ep":1,"airdate":"","comment":0,"duration":"","desc":"","disc":0,"subject_id":$subjectId}""",
                     status, headersOf("Content-Type", "application/json"),
                 )
             },
             httpClientConfig = { it.expectSuccess = true },
         )
-        return EpisodeSubjectRepository(object : ApiInvoker<EpisodesAniApi> {
-            override suspend fun <R> invoke(action: suspend EpisodesAniApi.() -> R): R = action(client)
+        return EpisodeSubjectRepository(object : ApiInvoker<DefaultApi> {
+            override suspend fun <R> invoke(action: suspend DefaultApi.() -> R): R = action(client)
         })
     }
 
@@ -54,7 +54,6 @@ class EpisodeSubjectRepositoryTest {
     @Test
     fun `invalid subject id returns null`() = runTest {
         assertNull(repository(HttpStatusCode.OK, 0).getSubjectId(102))
-        assertNull(repository(HttpStatusCode.OK, Int.MAX_VALUE.toLong() + 1).getSubjectId(102))
     }
 
     @Test
@@ -64,8 +63,8 @@ class EpisodeSubjectRepositoryTest {
 
     @Test
     fun `cancellation propagates`() = runTest {
-        val repository = EpisodeSubjectRepository(object : ApiInvoker<EpisodesAniApi> {
-            override suspend fun <R> invoke(action: suspend EpisodesAniApi.() -> R): R = throw CancellationException()
+        val repository = EpisodeSubjectRepository(object : ApiInvoker<DefaultApi> {
+            override suspend fun <R> invoke(action: suspend DefaultApi.() -> R): R = throw CancellationException()
         })
         assertFailsWith<CancellationException> { repository.getSubjectId(102) }
     }

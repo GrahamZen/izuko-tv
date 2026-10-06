@@ -83,7 +83,6 @@ import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepo
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
-import me.him188.ani.app.domain.foundation.AniInstallIdFeatureHandler
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
@@ -123,8 +122,6 @@ import me.him188.ani.app.domain.foundation.VersionExpiryService
 import me.him188.ani.app.domain.foundation.WebSourceIdentityFeatureHandler
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
-import me.him188.ani.app.domain.install.InstallIdRepository
-import me.him188.ani.app.domain.install.InstallReporter
 import me.him188.ani.app.domain.media.cache.PikPakWebM3uCacheMigration
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
@@ -154,8 +151,6 @@ import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.MacCmsImageCaptchaSolver
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
-import me.him188.ani.app.domain.notification.NotificationBadgeManager
-import me.him188.ani.app.domain.notification.NotificationBadgeManagerImpl
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
 import me.him188.ani.app.domain.profile.AccountCollectionsDownload
@@ -374,7 +369,6 @@ private fun KoinApplication.otherModules(
     }
     single<HttpClientProvider> {
         val sessionManager by inject<SessionManager>()
-        val installIdRepository = get<InstallIdRepository>()
         DefaultHttpClientProvider(
             get(), coroutineScope,
             featureHandlers = listOf(
@@ -475,6 +469,7 @@ private fun KoinApplication.otherModules(
         )
     }
     single<EpisodeService> { EpisodeServiceImpl(bangumiApiProvider.v0Api) }
+    single { EpisodeSubjectRepository(bangumiApiProvider.v0Api) }
 
     single<BangumiRelatedPeopleService> { BangumiRelatedPeopleService(bangumiApiProvider.subjectApi) }
     single<BangumiScheduleSource> {
@@ -841,14 +836,6 @@ fun KoinApplication.startCommonKoinModule(
     runBlocking {
         koin.get<SessionManager>().clearLegacySessionOnStartup()
         koin.get<SessionManager>().clearSessionIfAccessTokenExpired()
-        // 在任何请求之前加载, 让发往 Ani 服务器的请求都带上安装 ID
-        try {
-            koin.get<InstallIdRepository>().load()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger("ani-startup").warn(e) { "Failed to load install id" }
-        }
         // We have to block here to read the saved proxy settings
         when (val proxyProvider = koin.get<HttpClientProvider>()) {
             // compile-safe type cast
