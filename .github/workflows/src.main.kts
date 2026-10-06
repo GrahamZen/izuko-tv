@@ -286,19 +286,10 @@ val ANI_ANDROID_ABIS = "ani.android.abis"
 val ANI_ENABLE_IOS = "ani.enable.ios"
 
 /**
- * 含 Android TV 界面的模块, 与 settings.gradle.kts 中的 `-tv` 模块一致.
- * 它们的 instrumented test 只在 Android TV 系统镜像上运行.
+ * 含 Android TV 界面的独立模块. 本仓库的 TV 界面在 `:app:shared:ui-tv` (随手机模块一起测), 没有单独跑 TV 镜像的模块
+ * (上游自带的 TV 客户端已删, 见 scripts/rebase/drop-upstream-tv.sh).
  */
-val androidTvModules = listOf(
-    ":app:shared:tv",
-    ":app:shared:ui-foundation-tv",
-    ":app:shared:ui-settings-tv",
-    ":app:shared:ui-subject-tv",
-    ":app:shared:ui-exploration-tv",
-    ":app:shared:ui-onboarding-tv",
-    ":app:shared:ui-episode-tv",
-    ":app:shared:ui-watchtogether-tv",
-)
+val androidTvModules = emptyList<String>()
 
 @Suppress("PropertyName")
 val ANI_BUILD_FRAMEWORK = "ani.build.framework"
@@ -665,23 +656,12 @@ fun MatrixInstance.androidInstrumentedTestJobs(): List<AndroidInstrumentedTestJo
         profile = "pixel_2",
         excludedModules = androidTvModules,
     )
-    // TV 模块只在 Android TV 系统镜像上跑: 无系统栏、无触摸, 只有遥控器按键.
-    // TV 镜像只有 x86_64 与 arm64-v8a 的 API 36, 因此只跑 targetSdk 一个版本.
-    val tv = AndroidEmulator(
-        label = "api=36, arch=${arch.stringValue}, target=android-tv",
-        artifactSuffix = "api36-${arch.stringValue}-android-tv",
-        apiLevel = 36,
-        arch = arch,
-        target = AndroidEmulatorRunner.Target.AndroidTv,
-        profile = "tv_1080p",
-        modules = androidTvModules,
-    )
     return if (selfHosted) {
         listOf(
             AndroidInstrumentedTestJob(
                 id = "api36",
                 label = "api=36, arch=${arch.stringValue}",
-                emulators = listOf(phone(36), tv),
+                emulators = listOf(phone(36)),
             ),
         )
     } else {
@@ -691,11 +671,6 @@ fun MatrixInstance.androidInstrumentedTestJobs(): List<AndroidInstrumentedTestJo
                 id = "phone",
                 label = "api=30 & 36, arch=${arch.stringValue}",
                 emulators = listOf(phone(30), phone(36)),
-            ),
-            AndroidInstrumentedTestJob(
-                id = "android-tv",
-                label = tv.label,
-                emulators = listOf(tv),
             ),
         )
     }
@@ -1790,16 +1765,7 @@ class WithMatrix(
         if (matrix.uploadApk) {
             runGradle(
                 name = "Build Android Debug APKs",
-                tasks = arrayOf("assembleDefaultDebug", "assembleTvDebug"),
-            )
-            runGradle(
-                name = "Test Android TV",
-                tasks = buildList {
-                    for (module in listOf(":app:shared:tv", ":app:shared:ui-foundation-tv", ":app:shared:ui-episode-tv", ":app:shared:ui-subject-tv")) {
-                        add("$module:testAndroidHostTest")
-                        add("--tests 'me.him188.ani.tv.*'")
-                    }
-                }.toTypedArray(),
+                tasks = arrayOf("assembleDefaultTvDebug"),
             )
         }
 
@@ -1825,7 +1791,7 @@ class WithMatrix(
             runGradle(
                 name = "Build Android Release APKs",
                 `if` = expr { github.hasRepositorySecrets },
-                tasks = arrayOf("assembleDefaultRelease", "assembleTvRelease"),
+                tasks = arrayOf("assembleDefaultTvRelease"),
                 env = mapOf(
                     "signing_release_storeFileFromRoot" to expr { prepareSigningKey.outputs["filePath"] },
                     "signing_release_storePassword" to expr { secrets.SIGNING_RELEASE_STOREPASSWORD },
