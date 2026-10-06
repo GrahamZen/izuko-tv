@@ -176,6 +176,22 @@ object TvNativeImages {
         allowNullImage(true)
     }
 
+    /**
+     * 数据源图标 (选源面板的行首): [sizePx] 见方的框, 等比缩进框里 (Fit, 同 Compose 版 SourceIcon 的 AsyncImage). 不淡入.
+     */
+    fun loadIcon(sketch: Sketch, view: ImageView, url: String, sizePx: Int) {
+        val request = ImageRequest(view, url) {
+            configureAniImageRequest(
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.Center,
+                requestSize = IntSize(sizePx, sizePx).toAniImageRequestSize(),
+            )
+            crossfade(false)
+            allowNullImage(true)
+        }
+        sketch.enqueue(request)
+    }
+
     /** 取消 [view] 上在途的请求并清掉图 (图层整个撤掉时用). */
     fun clear(view: ImageView) {
         view.disposeLoad()
