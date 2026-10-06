@@ -77,6 +77,7 @@ actual fun VideoPlayer(
                             addView(view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         }
                     }
+                    registerAndroidSubtitleViews(player, this, assSubtitles)
                     this.setStyle(
                         CaptionStyleCompat(
                             Color.WHITE,
