@@ -18,7 +18,9 @@
 #   - fork 删掉的文件被上游改了: 保持删除;
 #   - scripts/rebase/take-fork.txt 里 fork 整体重写过的文件: 整份取 fork 版;
 #   - .kt 里每个冲突块都只是「两侧各自新增」或「两侧只动了 import」: 取并集 (scripts/rebase/union_resolve.py,
-#     需要 diff3 风格的冲突标记, 重放时带 merge.conflictStyle=diff3).
+#     需要 diff3 风格的冲突标记, 重放时带 merge.conflictStyle=diff3);
+#   - .github/workflows 的 build.yml / release.yml (由 src.main.kts 生成): src.main.kts 解好后重新生成
+#     (scripts/gen-workflows.sh). 没冲突也可能合错 (上游新加的步骤原样留下), verify 时再生成一遍对拍.
 # 驱动与属性装在本地 (.git/config 与 .git/info/attributes), 不改仓库文件; 用到它们的子命令都会先装一遍.
 #
 # fork 内部 (feat/* 追 main, 不涉及上游):
@@ -68,6 +70,7 @@ refresh_rules() {
     for f in take-fork.txt union_resolve.py merge-android-strings.py; do
         git show "$src:scripts/rebase/$f" > "$RULES_DIR/$f" 2>/dev/null || rm -f "$RULES_DIR/$f"
     done
+    git show "$src:scripts/gen-workflows.sh" > "$RULES_DIR/gen-workflows.sh" 2>/dev/null || rm -f "$RULES_DIR/gen-workflows.sh"
 }
 
 # 自动规则里需要本地配置的部分: strings.xml 的合并驱动 + 属性; rerere
@@ -108,6 +111,15 @@ auto_resolve() {
             git checkout -q --theirs -- "$p" && git add -- "$p" && echo "  自动: 整份取 fork 版      $p"
         fi
     done
+    fi
+    # 生成的工作流: 按 src.main.kts 重新生成; src.main.kts 自己还在冲突就等人先解它, 下一次 continue 再生成
+    local unmerged; unmerged=$(git diff --name-only --diff-filter=U)
+    if [ -f "$RULES_DIR/gen-workflows.sh" ] \
+        && grep -qxE '\.github/workflows/(build|release)\.yml' <<<"$unmerged" \
+        && ! grep -qxF .github/workflows/src.main.kts <<<"$unmerged" \
+        && bash "$RULES_DIR/gen-workflows.sh" >/dev/null 2>&1; then
+        git add -- .github/workflows/build.yml .github/workflows/release.yml \
+            && echo "  自动: 按 src.main.kts 重新生成 build.yml / release.yml"
     fi
     # 两侧只是各自新增 / 只动了 import: 取并集 (解不开的原样留着)
     # 只处理 UU (两侧都改了); AA (两侧都新建了同名文件) 拼起来会重复定义, 留给人
@@ -287,6 +299,9 @@ cmd_verify() {
     local bad; bad=$(git diff --numstat "$OLD_TIP" "$TIP" | wc -l)
     local bad2; bad2=$(git diff --numstat --ignore-cr-at-eol "$OLD_TIP" "$TIP" | wc -l)
     [ "$bad" = "$bad2" ] && echo "  行尾干净" || echo "  ⚠ 有文件只差行尾, 查 git diff --numstat 与 --ignore-cr-at-eol 的差集"
+
+    hr "工作流与 src.main.kts 对拍 (不一致时生成的结果留在工作区, 核对后提交)"
+    bash scripts/gen-workflows.sh --check 2>&1 | grep -v RetryExec | tail -4 | sed 's/^/  /' || true
 
     hr "还要人工过的卡口"
     cat <<'EOF'
