@@ -319,6 +319,8 @@ import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.details.state.rememberAiringLabelState
 import me.him188.ani.app.ui.subject.details.state.rememberSubjectProgressState
+import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
+import me.him188.ani.app.ui.subject.episode.list.gridSpecialEpisodes
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -559,13 +561,17 @@ fun SubjectDetailsTvPage(
     }
     val uiState by state.uiState.collectAsStateWithLifecycle()
     val subjectProgressState = uiState.rememberSubjectProgressState()
-    // 卡片流用保持数据源顺序的全量列表: 特别篇按序号插在正片之间 (尸鬼 20.5 落在 20 与 21
-    // 中间), 与播放器选集列表看到的顺序一致. 它们的 TMDB 剧照/简介/时长本来就已按全量分集
-    // 匹配好 (SubjectDetailsStateFactory 传的是 collection.episodes), 这里只是把先前没人取的
-    // 那几个 key 用起来. 选集网格仍要正片/特别篇分组, 故两份都留着.
-    val episodes = uiState.episodeListUiState.allEpisodes
+    // 卡片流用全量列表, 特别篇按设置摆放 (见 arrangeSpecials), 与播放器选集条同一份. 它们的 TMDB
+    // 剧照/简介/时长本来就已按全量分集匹配好 (SubjectDetailsStateFactory 传的是 collection.episodes).
+    // 选集网格仍要正片/特别篇分组, 故两份都留着.
+    val specialsPlacement = LocalThemeSettings.current.tvEpisodeSpecials
+    val episodes = remember(uiState.episodeListUiState, specialsPlacement) {
+        uiState.episodeListUiState.allEpisodes.arrangeSpecials(specialsPlacement)
+    }
     val mainEpisodes = uiState.episodeListUiState.mainEpisodes
-    val specialEpisodes = uiState.episodeListUiState.otherEpisodes
+    val specialEpisodes = remember(uiState.episodeListUiState, specialsPlacement) {
+        uiState.episodeListUiState.gridSpecialEpisodes(specialsPlacement)
+    }
     // "当前集"只在正片里找: 特别篇通常一直是未看状态, 算进来会让看完正片的条目
     // 把 SP 当成"下一集要看的", 进页面直接滚到那里
     val currentEpisodeId = remember(mainEpisodes) { mainEpisodes.firstOrNull { !it.isDoneOrDropped }?.episodeId }
