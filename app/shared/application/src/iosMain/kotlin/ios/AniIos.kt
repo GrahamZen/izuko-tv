@@ -25,8 +25,6 @@ import androidx.compose.ui.window.ComposeUIViewController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -56,7 +54,6 @@ import me.him188.ani.app.domain.mediasource.web.captcha.UnsupportedCaptchaBrowse
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.TorrentManager
 import me.him188.ani.app.domain.torrent.engines.PikPakEngine
-import me.him188.ani.app.data.repository.user.QrLoginRepository
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.IosBrowserNavigator
@@ -130,19 +127,8 @@ class AniIosApplication(
      *
      * @return 是否识别了这个链接
      */
-    @Suppress("unused") // used in Swift
-    fun openUrl(url: String): Boolean {
-        // 扫码登录: 系统相机扫描电视上的二维码后, 网页跳转到 ani://qr-login?requestId=...
-        val qrLoginRequestId = QrLoginRepository.parseRequestId(url) ?: return false
-        scope.launch(Dispatchers.Main) {
-            if (!aniNavigator.isBackStackReady()) {
-                aniNavigator.awaitBackStack()
-                delay(1000) // 等待初始化好, 否则跳转可能无效
-            }
-            aniNavigator.navigateQrLoginConfirm(qrLoginRequestId)
-        }
-        return true
-    }
+    @Suppress("unused", "UNUSED_PARAMETER") // used in Swift
+    fun openUrl(url: String): Boolean = false
 }
 
 // Called from Swift
