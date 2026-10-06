@@ -197,6 +197,9 @@ private fun DownloadRequestSheet(
     onConfirmEpisodes: (Set<Int>) -> Unit,
     onBack: () -> Unit,
 ) {
+    LocalTvDownloadMediaPickerVariant.current?.takeIf { episodePicker == null }?.let { tv ->
+        return TvDownloadMediaPicker(tv, selection, sourceInfoProvider, settings, onDismiss, onSelect)
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
