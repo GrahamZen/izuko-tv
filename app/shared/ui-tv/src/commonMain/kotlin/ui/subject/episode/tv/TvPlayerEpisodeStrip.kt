@@ -51,6 +51,7 @@ import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -62,6 +63,7 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeCarousel
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
+import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import org.jetbrains.compose.resources.stringResource
 
 // ---- 调参 ----
@@ -123,7 +125,7 @@ private const val TV_STRIP_HEADER_SUBTLE_ALPHA = 0.75f
  *
  * 分集列表取自 [EpisodeViewModel.episodeListUiStateFlow] 的 `allEpisodes` (播放器自己的数据
  * 路径, 起播必经), 而不是详情状态里的那份 —— 后者要等整套详情组装完, 在起播这一刻能慢到两三秒.
- * 取 `allEpisodes` 是为了与详情页选集轮播**逐项一致**: 特别篇按序号插在正片之间.
+ * 特别篇按设置摆放 (`arrangeSpecials`), 与详情页选集轮播**逐项一致**.
  * 详情状态 (subjectDetailsStateLoader, 进屏已预载) 只供 TMDB 剧照/时长/简介和播放进度,
  * 没到就先无图, 不影响选集.
  *
@@ -147,10 +149,14 @@ internal fun TvPlayerEpisodeStrip(
     // 分集列表走播放器自己的数据路径 (见 EpisodeViewModel.episodeListUiStateFlow): 那是起播的
     // 必经之路, 必然比整套详情状态先到. 详情状态只供 TMDB 剧照/时长/简介, 没到就先无图
     val episodeList by vm.episodeListUiStateFlow.collectAsStateWithLifecycle()
-    // 用 allEpisodes 而不是 mainEpisodes: 与详情页选集轮播完全同一份列表 —— 特别篇按序号插在
-    // 正片之间 (尸鬼 20.5 落在 20 与 21 中间). 两边都是同一个 FocusEpisodeCarousel, 列表却不同
-    // 的话, 同一个条目在详情页有 SP、进播放器就没了.
-    val episodes = episodeList?.allEpisodes.orEmpty()
+    val currentEpisodeId = vm.episodeSelectorState.current?.episodeId
+    // 用 allEpisodes 按设置摆好特别篇 (见 arrangeSpecials), 与详情页选集轮播同一份列表: 两边都是
+    // 同一个 FocusEpisodeCarousel, 列表不同的话同一个条目在两处的卡片就对不上. 带上正在播的集:
+    // 隐藏特别篇时正在播的若是特别篇, 照常列出
+    val specialsPlacement = LocalThemeSettings.current.tvEpisodeSpecials
+    val episodes = remember(episodeList, specialsPlacement, currentEpisodeId) {
+        episodeList?.allEpisodes.orEmpty().arrangeSpecials(specialsPlacement, currentEpisodeId)
+    }
     val uiState by detailsState.subjectDetailsStateLoader.state.collectAsStateWithLifecycle()
     val state = (uiState as? SubjectDetailsLoadState.Ok)?.value
     SideEffect {
@@ -194,7 +200,6 @@ internal fun TvPlayerEpisodeStrip(
     // 退化成普通选集条 —— 那时本来也没有可倒数的目标
     val upNextEpisodeId = upNext.nextEpisode?.episodeId
     val countingDown = overlay.upNextCountdown && upNextEpisodeId != null
-    val currentEpisodeId = vm.episodeSelectorState.current?.episodeId
 
     // 展示中的集 (聚焦卡; 没有卡片聚焦时是落点集), 轮播回调上报.
     // 回调 remember 住: 换新实例会让轮播每次重组都跳过不了 (它是个大组件)
