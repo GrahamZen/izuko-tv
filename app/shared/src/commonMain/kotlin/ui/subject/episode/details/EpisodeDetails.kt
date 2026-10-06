@@ -240,7 +240,7 @@ fun EpisodeDetails(
     /** 选源面板打开 / 关闭, 见 `EpisodeViewModel.onMediaSelectorShown` 与 `onMediaSelectorHidden`. */
     onMediaSelectorShown: () -> Unit = {},
     onMediaSelectorHidden: () -> Unit = {},
-    /** 「完整搜索」开关, 见 [MediaSelectorView] 的同名参数. */
+    /** 「完整搜索」开关的值 (null = 不显示, 设置里开了始终完整搜索), 见 EpisodeViewModel.fullMediaSearch. */
     fullSearch: Boolean? = null,
     onFullSearchChange: (Boolean) -> Unit = {},
 ) {

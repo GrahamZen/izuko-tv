@@ -119,6 +119,9 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
+import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
+import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
+import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerVariant
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
 import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
@@ -307,6 +310,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
         // 人物 / 角色预览弹窗与整页里的横滑行用原生实现 (长按左右连发不卡)
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
+        // 缓存页的选源: 与播放器同一块选源面板
+        LocalTvDownloadMediaPickerVariant provides TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) },
     ) {
         // 长按手势兜不兜、菜单开不开, 都要先看当前在哪个目的地:
         //  - 播放页: 长按返回归播放器自己 (收叠层, 注册在栈顶), 播放键本来就在播放器语义里;
