@@ -6,7 +6,8 @@
 - strings.xml: 由 merge-android-strings 驱动按 key 合并 (需先装好, 见 fork-rebase.sh install_rules);
 - fork 删掉的文件被上游改了: 保持删除;
 - take-fork.txt 里的文件: 整份取 fork 版;
-- .kt 里只有「两侧各自新增 / 只动了 import」的冲突: 取并集 (union_resolve.py).
+- .kt 里只有「两侧各自新增 / 只动了 import」的冲突: 取并集 (union_resolve.py);
+- 生成的工作流 (build.yml / release.yml): 按 src.main.kts 重新生成 (src.main.kts 本身的冲突照常算人手).
 
 「要人手」的冲突再按 rerere 的算法算指纹, 看 .git/rr-cache 里有没有现成解法. 冲突处用 -X theirs 继续往后重放.
 
@@ -24,6 +25,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from union_resolve import resolve_text  # noqa: E402
+
+GENERATED = {".github/workflows/build.yml", ".github/workflows/release.yml"}
 
 # 重放写出的树与提交都进临时对象库 (真对象库挂成只读的 alternates), 跑完整个删掉, 不在 .git 里留下游离对象
 OBJECTS = {}
@@ -123,7 +126,7 @@ def main():
 
     commits = out("rev-list", "--reverse", f"{base}..{args.tip}").split()
     cur = out("rev-parse", args.onto)
-    stats = {"raw": 0, "fork_deleted": 0, "take_fork": 0, "union": 0, "manual": 0, "rerere": 0}
+    stats = {"raw": 0, "fork_deleted": 0, "take_fork": 0, "union": 0, "generated": 0, "manual": 0, "rerere": 0}
     manual_report = []
     for c in commits:
         clean, tree, conflicted, kinds = merge_tree(cur, c)
@@ -138,6 +141,8 @@ def main():
                 elif p in take_fork and exists(c, p):
                     forks.append(p)
                     stats["take_fork"] += 1
+                elif p in GENERATED:
+                    stats["generated"] += 1
                 elif "contents" in kind and "add/add" not in kind and p.endswith(".kt") and (
                         merged := resolve_text(out("show", f"{tree}:{p}", ok_codes=(0, 128)) + "\n")) is not None:
                     unions.append((p, merged))
@@ -170,7 +175,7 @@ def main():
 
     print(f"{len(commits)} 条提交重放到 {args.onto}")
     print(f"冲突 {stats['raw']} 处: 自动 —— fork 删掉的保持删除 {stats['fork_deleted']}, 整份取 fork 版 {stats['take_fork']},"
-          f" 两侧各自新增取并集 {stats['union']};"
+          f" 两侧各自新增取并集 {stats['union']}, 工作流重新生成 {stats['generated']};"
           f" 要人手 {stats['manual']} 处 (其中 rerere 有现成解法 {stats['rerere']})")
     print("(目录改名与 strings.xml 由 git 在合并时直接处理, 不计入冲突)")
     for c, subject, manual in manual_report:

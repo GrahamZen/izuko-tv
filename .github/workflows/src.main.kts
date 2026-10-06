@@ -286,10 +286,10 @@ val ANI_ANDROID_ABIS = "ani.android.abis"
 val ANI_ENABLE_IOS = "ani.enable.ios"
 
 /**
- * 含 Android TV 界面的独立模块. 本仓库的 TV 界面在 `:app:shared:ui-tv` (随手机模块一起测), 没有单独跑 TV 镜像的模块
- * (上游自带的 TV 客户端已删, 见 scripts/rebase/drop-upstream-tv.sh).
+ * 不在 CI 的手机镜像上跑 instrumented test 的模块. `:app:shared:ui-tv` 的设备测试按电视写 (960x540dp 横屏、遥控器按键、
+ * 开着系统动画), 在本地的 TV 模拟器上跑; 上游自带的 TV 客户端与它的 TV 镜像任务已删 (见 scripts/rebase/drop-upstream-tv.sh).
  */
-val androidTvModules = emptyList<String>()
+val androidTvModules = listOf(":app:shared:ui-tv")
 
 @Suppress("PropertyName")
 val ANI_BUILD_FRAMEWORK = "ani.build.framework"
@@ -521,10 +521,11 @@ run {
 
     buildMatrixInstances = listOf(
 //        selfWin10,
-        ghWin,
+        // 只发 Android TV 包: Windows x86_64 (测试与 ghWinArm64 重复) 与 macOS Intel (桌面版 + iOS) 不跑
+//        ghWin,
         ghWinArm64,
         ghUbuntu2404,
-        ghMac15Intel,
+//        ghMac15Intel,
         selfMac15.copy(
             // 即使自己机器上传的 dmg 安装时会有问题 (#1479), 也在 build 时使用它, 避免使用太多 GitHub 机器占用并行.
             // 发版时还是使用 GitHub
@@ -1096,6 +1097,7 @@ workflow(
         id = "create-release",
         name = "Create Release",
         runsOn = RunnerType.UbuntuLatest,
+        `if` = expr { github.isAnimekoRepository }, // 本仓库发版走 fork-release.yml; 后面的 job 都依赖它, 一起跳过
         outputs = object : JobOutputs() {
             var uploadUrl by output()
             var id by output()
@@ -1753,8 +1755,9 @@ class WithMatrix(
             runGradle(
                 name = "Compile Kotlin Android",
                 tasks = arrayOf(
-                    "compileDefaultDebugKotlin",
-                    "compileDefaultReleaseKotlin",
+                    "compileDefaultTvDebugKotlin",
+                    "compileDefaultTvReleaseKotlin",
+                    "compileDefaultPhoneDebugKotlin",
                 ),
                 maxAttempts = 2,
             )
@@ -1780,7 +1783,7 @@ class WithMatrix(
                     name = "Upload Android Debug APK $arch",
                     action = UploadArtifact(
                         name = "ani-android-${arch}-debug",
-                        path_Untyped = "app/android/build/outputs/apk/default/debug/android-default-${arch}-debug.apk",
+                        path_Untyped = "app/android/build/outputs/apk/defaultTv/debug/android-default-tv-${arch}-debug.apk",
                         overwrite = true,
                     ),
                 )
@@ -1812,15 +1815,7 @@ class WithMatrix(
                     name = "Upload Android Release APK $arch",
                     action = UploadArtifact(
                         name = "ani-android-${arch}-release",
-                        path_Untyped = "app/android/build/outputs/apk/default/release/android-default-${arch}-release.apk",
-                        overwrite = true,
-                    ),
-                )
-                usesWithAttempts(
-                    name = "Upload Android TV Release APK $arch",
-                    action = UploadArtifact(
-                        name = "ani-android-tv-${arch}-release",
-                        path_Untyped = "app/android/build/outputs/apk/tv/release/android-tv-${arch}-release.apk",
+                        path_Untyped = "app/android/build/outputs/apk/defaultTv/release/android-default-tv-${arch}-release.apk",
                         overwrite = true,
                     ),
                 )
