@@ -259,6 +259,8 @@ fun TvEpisodeScreenContent(
 
     // Web 控制台的「播放器」标签: 页面在组合里时登记, 手机才能读候选、切数据源 (见 RegisterTvRemotePlayer)
     RegisterTvRemotePlayer(vm, page)
+    // Web 控制台的「截图」读这个播放器的画面与字幕 (见 TvPlayerScreenshot)
+    RegisterTvPlayerScreenshot(vm.player)
 
     // 暂停那一刻截一张画面留给动作面板的"正在播放"卡 (见 TvRetainedFrameStore).
     // 挂在**暂停**上而不是"离开页面"上: 退出播放页必然伴随一次自动暂停 (保留会话的宿主按的),
@@ -1589,7 +1591,8 @@ fun TvEpisodeScreenContent(
 
                 // 弹幕层
                 AniAnimatedVisibility(page.danmakuEnabled, Modifier.matchParentSize()) {
-                    Box(Modifier.matchParentSize()) {
+                    // 录一份供 Web 控制台截图读回 (见 TvPlayerScreenshot)
+                    Box(Modifier.matchParentSize().then(rememberTvScreenshotDanmakuLayer())) {
                         PlayerDanmakuHost(vm.player, danmakuHostState, vm.uiDanmakuEventFlow)
                     }
                 }
