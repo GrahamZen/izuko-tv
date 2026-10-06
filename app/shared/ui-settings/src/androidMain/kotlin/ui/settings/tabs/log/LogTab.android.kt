@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.Toaster
@@ -154,6 +155,7 @@ internal actual fun ColumnScope.PlatformLoggingItems(listItemColors: ListItemCol
                 onDismissRequest = { lanShareDialogOpen = false },
             )
         }
+        TvRemoteSettingsBridge.perfDiagnosticsItem?.invoke(listItemColors)
     }
 
     ListItem(
