@@ -1701,9 +1701,7 @@ fun FocusEpisodeGridDropdown(
     /**
      * 特别篇 (SP/OVA/OAD 等非正片, 即 `EpisodeListUiState.otherEpisodes`): 网格里排在正片
      * 之后, 中间隔一整行分隔线 —— 数字方块是快速跳转用的, 分组比混排好定位.
-     *
-     * 与 [FocusEpisodeCarousel] 的排法不同: 那边收 `allEpisodes` (特别篇按序号插在正片之间,
-     * 与播放器选集列表一致), 因为卡片带剧照与简介, 按播出顺序读才连贯.
+     * [FocusEpisodeCarousel] 那边特别篇放哪由设置定 (见 `arrangeSpecials`), 设置为隐藏时调用方这里传空.
      */
     specialEpisodes: List<EpisodeListItem> = emptyList(),
     /** episodeId -> 分集时长 (分钟, TMDB), 显示在聚焦集标题右侧; 缺失则不显示. */
