@@ -259,6 +259,12 @@
     <string name="settings_theme_tv_poster_confirm_hero">先看简介</string>
     <string name="settings_theme_tv_poster_confirm_play">直接播放</string>
     <string name="settings_theme_tv_poster_confirm_details">直接进详情页</string>
+    <string name="settings_theme_tv_episodes">选集</string>
+    <string name="settings_theme_tv_episode_specials">特别篇 (电视)</string>
+    <string name="settings_theme_tv_episode_specials_description">详情页和播放器选集里 SP、OP、ED 等非正片放在哪。上一集 / 下一集始终只在同类型之间切换</string>
+    <string name="settings_theme_tv_episode_specials_hidden">隐藏</string>
+    <string name="settings_theme_tv_episode_specials_after_main">排在正片后面</string>
+    <string name="settings_theme_tv_episode_specials_by_number">按序号插在正片之间</string>
     <string name="settings_theme_tv_schedule_upstream">经典列表</string>
     <string name="settings_theme_tv_schedule_grid">海报墙</string>
     <string name="settings_theme_tv_schedule_timeline">左侧详情 + 单列时间线</string>
