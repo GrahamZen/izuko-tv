@@ -100,13 +100,11 @@ import me.him188.ani.app.ui.subject.details.components.RatingHistogram
 import me.him188.ani.app.ui.subject.details.components.SUBJECT_COVER_IMAGE_TEST_TAG
 import me.him188.ani.app.ui.subject.details.components.RelatedSubjectsGrid
 import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelatedSubject
-import me.him188.ani.app.ui.subject.details.components.rememberNavigateToRelationGraph
 import me.him188.ani.app.ui.subject.details.sections.CharactersSection
 import me.him188.ani.app.ui.subject.details.sections.HotReviewsCardContent
 import me.him188.ani.app.ui.subject.details.sections.PagedEpisodesGrid
 import me.him188.ani.app.ui.subject.details.sections.ReviewsPreviewSection
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
-import me.him188.ani.app.ui.subject.details.sections.SectionHeaderRelationGraphButton
 import me.him188.ani.app.ui.subject.details.sections.SectionHeaderCacheButton
 import me.him188.ani.app.ui.subject.details.sections.StaffSection
 import me.him188.ani.app.ui.subject.details.sections.SubjectCollectionStatsRow
@@ -658,9 +656,7 @@ private fun EditRatingButton(selfScore: Int, onClick: () -> Unit) {
 @Composable
 internal fun SubjectRelatedBlock(subjectId: Int, related: LazyPagingItems<RelatedSubjectInfo>) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SectionHeader(stringResource(Lang.subject_details_related_subjects)) {
-            SectionHeaderRelationGraphButton(rememberNavigateToRelationGraph(subjectId))
-        }
+        SectionHeader(stringResource(Lang.subject_details_related_subjects))
         RelatedSubjectsGrid(related, onClick = rememberNavigateToRelatedSubject())
     }
 }

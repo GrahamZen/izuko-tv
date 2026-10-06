@@ -84,10 +84,6 @@ interface AniNavigator {
         navigate(NavRoutes.SubjectDetail(subjectId, placeholder))
     }
 
-    fun navigateSubjectRelationGraph(subjectId: Int) {
-        navigate(NavRoutes.SubjectRelationGraph(subjectId))
-    }
-
     fun navigateSubjectCaches(subjectId: Int) {
         navigate(NavRoutes.SubjectCaches(subjectId))
     }
@@ -154,17 +150,6 @@ interface AniNavigator {
 
     fun navigateBangumiAuthorize() {
         navigateOAuthAuthorize("bangumi")
-    }
-
-    fun navigateQrLoginScan() {
-        navigate(NavRoutes.QrLoginScan)
-    }
-
-    /**
-     * @param requestId 见 [NavRoutes.QrLoginConfirm.requestId]
-     */
-    fun navigateQrLoginConfirm(requestId: String) {
-        navigate(NavRoutes.QrLoginConfirm(requestId))
     }
 
     fun navigateSettings(tab: SettingsTab? = null) {
