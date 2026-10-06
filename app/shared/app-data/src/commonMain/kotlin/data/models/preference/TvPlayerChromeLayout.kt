@@ -75,7 +75,8 @@ enum class TvPlayerChromeItem(
     TOUCH_EPISODE_STRIP(TvPlayerChromeRow.BOTTOM, isTouchOnly = true),
     TOUCH_DETAILS(TvPlayerChromeRow.BOTTOM, isTouchOnly = true),
     DIVIDER_1(TvPlayerChromeRow.BOTTOM, isSeparator = true),
-    MEDIA_SOURCE(TvPlayerChromeRow.BOTTOM),
+    // 遥控器上选源是纯视频态的上键 (TvEpisodeScreen), 这颗按钮只留给没有方向键的触屏
+    MEDIA_SOURCE(TvPlayerChromeRow.BOTTOM, isTouchOnly = true),
     DIVIDER_2(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     DANMAKU_TOGGLE(TvPlayerChromeRow.BOTTOM),
     DANMAKU_SETTINGS(TvPlayerChromeRow.BOTTOM),
@@ -91,7 +92,8 @@ enum class TvPlayerChromeItem(
     COLLECTION(TvPlayerChromeRow.BOTTOM),
     PLAYER_STATS(TvPlayerChromeRow.BOTTOM),
     SHARE(TvPlayerChromeRow.BOTTOM),
-    CACHE(TvPlayerChromeRow.BOTTOM),
+    // 遥控器上进缓存页走选源面板左栏的「下载」, 这颗只留给触屏
+    CACHE(TvPlayerChromeRow.BOTTOM, isTouchOnly = true),
     ;
 }
 

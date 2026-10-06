@@ -34,6 +34,12 @@ enum class TvPlayerLayer {
 
     /** 详情页覆盖层: 隐藏全部播放器组件, 正在播放的视频画面作为详情页背景. */
     DETAILS,
+
+    /**
+     * 选源面板 (TvPlayerSourcePanel): 纯视频态按上键打开 (触屏是图标行的「数据源」), 隐藏全部播放器组件, 画面右侧是面板,
+     * 左侧画面照常露出. 方向键与确定键全交给面板; 返回在进去的那一层里先退一层, 否则直接关 (关上回纯视频态; 按返回关的, 再打开落回焦点当时停的地方, 见 TvEpisodeScreen).
+     */
+    SOURCES,
 }
 
 /** 胶囊按钮对应的浮出面板 (第二层). */
@@ -541,6 +547,16 @@ class TvPlayerOverlayState(
         requestFocus(TvPlayerFocusTarget.PROGRESS)
     }
 
+    /** 打开选源面板 (纯视频态的上键 / 触屏图标行的「数据源」). 焦点由面板自己送进去 (见 [TvPlayerLayer.SOURCES]). */
+    fun openSources() {
+        layer = TvPlayerLayer.SOURCES
+        activePanel = null
+        danmakuInputExpanded = false
+        expandStripWhenReady = false
+        upNextCountdown = false
+        markInteraction()
+    }
+
     companion object {
         /**
          * 跨导航保留"覆盖层开着哪一层 / 浮出哪个面板".
@@ -549,12 +565,17 @@ class TvPlayerOverlayState(
          * 用 `remember` 记状态机的话返回时整层复位成 HIDDEN —— 用户报的"按返回直接回了播放器
          * (组件全隐藏) 而不是列表展开的状态"就是这一条.
          *
+         * 选源面板存成纯视频态: 面板的焦点与进去的那一层都不存, 回来时再按上键重新开.
+         *
          * **只存这两个字段**: 其余全是瞬时态 (焦点区域 / 输入框展开 / 弹层计数 / 回复目标 /
          * 拖拽与解析簿记), 跨页恢复它们只会让状态机与真实的焦点/窗口情况打架. 面板的滚动位置
          * 与条目焦点也刻意不存 —— 面板每次浮出都复位到第一项是既定设计 (见 TvPlayerPanelHost).
          */
         val Saver: Saver<TvPlayerOverlayState, Any> = listSaver(
-            save = { listOf(it.layer.ordinal, it.activePanel?.ordinal ?: -1) },
+            save = {
+                val layer = if (it.layer == TvPlayerLayer.SOURCES) TvPlayerLayer.HIDDEN else it.layer
+                listOf(layer.ordinal, it.activePanel?.ordinal ?: -1)
+            },
             restore = { saved ->
                 val layer = saved.getOrNull(0)?.let { TvPlayerLayer.entries.getOrNull(it) }
                     ?: return@listSaver null
