@@ -52,6 +52,8 @@ import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
+import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
+import me.him188.ani.app.ui.diagnostics.TvPerfDiagnosticsSettingsItem
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
@@ -648,6 +650,8 @@ object TvRemoteControl {
     fun install(context: Context, navigator: AniNavigator) {
         synchronized(lock) { this.navigator = navigator }
         ensureStarted(context)
+        // 「性能诊断」的录制要挂在这个界面的窗口上 (context 是 Activity)
+        TvPerfDiagnostics.attach(context)
         // 「退出 Ani 后保留 Web 控制台」开着: 趁在前台把常驻服务起起来 (后台起不了, 见 syncKeepAlive)
         syncKeepAlive()
     }
@@ -660,6 +664,10 @@ object TvRemoteControl {
         synchronized(lock) { if (this.navigator === navigator) this.navigator = null }
     }
 
+    /** 导航栈顶的页面名 (如 SubjectDetail), 给性能诊断的报告标明录的是哪一页. */
+    private fun currentRouteName(): String? =
+        synchronized(lock) { navigator }?.backStack?.lastOrNull()?.let { it::class.simpleName }
+
     /**
      * 起监听, 不要界面: 界面装上时 ([install]), 以及常驻服务被系统重启时 (那时没有界面, 网页照样能连, 能「切到前台」拉起 Ani).
      * 重复调用无副作用.
@@ -667,6 +675,9 @@ object TvRemoteControl {
     fun ensureStarted(context: Context) {
         // 设置-界面里的「重置 Web 控制台地址」(设置页够不到本对象, 经 ui-foundation 的桥)
         TvRemoteSettingsBridge.resetAddress = ::resetAddress
+        // 设置 → 日志里的「性能诊断」(同上, 经桥装进日志页); 报告里的页面名取导航栈顶
+        TvRemoteSettingsBridge.perfDiagnosticsItem = { colors -> TvPerfDiagnosticsSettingsItem(colors) }
+        TvPerfDiagnostics.routeName = ::currentRouteName
         synchronized(lock) {
             appContext = context.applicationContext
             if (prefs != null) return
@@ -836,6 +847,7 @@ object TvRemoteControl {
         val path = request.path
         // 状态轮询每秒一次, 不在这里枚举网卡; 其余请求 (打开页面 / 各种提交) 顺带确认手机手里的地址就是当前 IP
         if (path != PATH_PLAYER_STATE && path != PATH_SEARCH_RESULTS && path != PATH_NOTICE && path != PATH_ACCOUNT &&
+            path != "api/diag" && // 录制期间每秒读一次状态, 别给被测的电视添活
             !path.startsWith("api/cache") && path != "api/img" && path != "api/source-icon" // 转发的图一屏几十张, 同样不枚举
         ) {
             _phoneConnected.value = true
@@ -912,6 +924,9 @@ object TvRemoteControl {
             // 「设置」标签底部的日志 (列表 / 下载), 见 RemoteLogs
             path == "api/logs" || path.startsWith("api/logs/") ->
                 RemoteLogs.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 「设置 → 维护」里的性能诊断 (体检 / 录制 / 报告), 见 RemotePerfDiagnostics
+            path == "api/diag" || path.startsWith("api/diag/") ->
+                RemotePerfDiagnostics.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」里的播放记录 (列表 / 打开详情 / 接着播), 见 RemoteHistory
             path == "api/history" || path.startsWith("api/history/") ->
                 RemoteHistory.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
