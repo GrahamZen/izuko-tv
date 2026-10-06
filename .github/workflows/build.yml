@@ -50,207 +50,6 @@ jobs:
         exit 1
     - id: 'step-4'
       run: 'python .github/workflows/check_yaml_equivalence.py .github/workflows/build.yml .github/workflows/build.yml-check.yml'
-  build_github-windows-2022:
-    name: 'Build (Windows Server 2019 x86_64)'
-    runs-on:
-    - 'windows-2022'
-    permissions:
-      actions: 'write'
-    steps:
-    - id: 'step-0'
-      uses: 'actions/checkout@v4'
-      with:
-        submodules: 'recursive'
-    - id: 'step-1'
-      continue-on-error: true
-      run: 'rm local.properties'
-    - id: 'step-2'
-      continue-on-error: true
-      run: |
-        echo "ani.android.abis=x86_64" >> local.properties
-        echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
-        echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
-        echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
-        echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
-    - id: 'step-3'
-      continue-on-error: true
-      run: |
-        echo "ani.enable.firebase=true" >> local.properties
-        echo "firebase.ga.app.id=${{ secrets.FIREBASE_GA_APP_ID }}" >> local.properties
-        echo "firebase.ga.api.secret=${{ secrets.FIREBASE_GA_API_SECRET }}" >> local.properties
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-4'
-      name: 'Get JBR (Windows)'
-      env:
-        RUNNER_TOOL_CACHE: '${{ runner.tool_cache }}'
-        JBR_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-windows-x64-b1163.116.tar.gz'
-        JBR_CHECKSUM_URL: 'https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-windows-x64-b1163.116.tar.gz.checksum'
-      shell: 'cmd'
-      run: 'python .github/workflows/download_jbr.py'
-    - id: 'step-5'
-      name: 'Setup JBR 21 for Windows'
-      uses: 'gmitch215/setup-java@6d2c5e1f82f180ae79f799f0ed6e3e5efb4e664d'
-      with:
-        java-version: '21'
-        distribution: 'jdkfile'
-        jdkFile: '${{ steps.step-4.outputs.jbrLocation }}'
-      env:
-        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-    - id: 'step-6'
-      name: 'Dump Local Properties'
-      run: 'echo "jvm.toolchain.version=21" >> local.properties'
-    - id: 'step-7'
-      name: 'Setup Gradle'
-      uses: 'gradle/actions/setup-gradle@v3'
-      with:
-        cache-disabled: 'true'
-    - id: 'step-8'
-      name: 'Clean and download dependencies (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew --scan "--stacktrace" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-9'
-      name: 'Clean and download dependencies (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew --scan "--stacktrace" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-8.outcome == ''failure'' }}'
-    - id: 'step-10'
-      name: 'Update dev version name (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew updateDevVersionNameFromGit "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-11'
-      name: 'Update dev version name (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew updateDevVersionNameFromGit "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-10.outcome == ''failure'' }}'
-    - id: 'step-12'
-      name: 'Prepare google-services.json'
-      env:
-        BASE64_CONTENT: '${{ secrets.GOOGLE_SERVICES_JSON }}'
-        FILE_PATH: './app/android/google-services.json'
-      continue-on-error: true
-      shell: 'bash'
-      run: |-
-        set -euo pipefail
-
-        if [ -z "${BASE64_CONTENT:-}" ]; then
-          echo "BASE64_CONTENT is empty" >&2
-          exit 1
-        fi
-
-        mkdir -p "$(dirname "$FILE_PATH")"
-        if ! printf '%s' "$BASE64_CONTENT" | base64 --decode > "$FILE_PATH" 2>/dev/null; then
-          printf '%s' "$BASE64_CONTENT" | base64 -D > "$FILE_PATH"
-        fi
-        chmod 600 "$FILE_PATH"
-        echo "filePath=$FILE_PATH" >> "$GITHUB_OUTPUT"
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-13'
-      name: 'Compile Kotlin (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew compileKotlin compileCommonMainKotlinMetadata compileJvmMainKotlinMetadata compileKotlinDesktop compileKotlinMetadata "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-14'
-      name: 'Compile Kotlin (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew compileKotlin compileCommonMainKotlinMetadata compileJvmMainKotlinMetadata compileKotlinDesktop compileKotlinMetadata "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-13.outcome == ''failure'' }}'
-    - id: 'step-15'
-      name: 'Compile Kotlin Android (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-16'
-      name: 'Compile Kotlin Android (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-15.outcome == ''failure'' }}'
-    - id: 'step-17'
-      name: 'Package Desktop (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-18'
-      name: 'Package Desktop (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-17.outcome == ''failure'' }}'
-    - id: 'step-19'
-      name: 'Upload compose logs'
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'compose-logs-github-windows-2022'
-        path: 'app/desktop/build/compose/logs'
-      if: '${{ always() }}'
-    - id: 'step-20'
-      name: 'Upload Windows packages (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: 'app/desktop/build/compose/binaries/main-release/app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-    - id: 'step-21'
-      name: 'Upload Windows packages (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: 'app/desktop/build/compose/binaries/main-release/app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-      if: '${{ steps.step-20.outcome == ''failure'' }}'
-    - id: 'step-22'
-      name: 'Upload Windows packages (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: 'app/desktop/build/compose/binaries/main-release/app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-      if: '${{ steps.step-21.outcome == ''failure'' }}'
-    - id: 'step-23'
-      name: 'Check (Desktop) (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew desktopTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-24'
-      name: 'Check (Desktop) (Attempt #2)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew desktopTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-23.outcome == ''failure'' }}'
-    - id: 'step-25'
-      name: 'Check (Desktop) (Attempt #3)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew desktopTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-24.outcome == ''failure'' }}'
-    - id: 'step-26'
-      name: 'Check (Android Host) (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew testAndroidHostTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-    - id: 'step-27'
-      name: 'Check (Android Host) (Attempt #2)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew testAndroidHostTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-26.outcome == ''failure'' }}'
-    - id: 'step-28'
-      name: 'Check (Android Host) (Attempt #3)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew testAndroidHostTest "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" "-DBoost_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel"'
-      if: '${{ steps.step-27.outcome == ''failure'' }}'
   build_github-windows-11-arm64:
     name: 'Build (Windows 11 AArch64 (GitHub))'
     runs-on:
@@ -370,12 +169,12 @@ jobs:
       name: 'Compile Kotlin Android (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel" "--no-configuration-cache"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel" "--no-configuration-cache"'
     - id: 'step-17'
       name: 'Compile Kotlin Android (Attempt #2)'
       continue-on-error: false
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel" "--no-configuration-cache"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g" "-Dkotlin.daemon.jvm.options=-Xmx4g" "--parallel" "--no-configuration-cache"'
       if: '${{ steps.step-16.outcome == ''failure'' }}'
     - id: 'step-18'
       name: 'Package Desktop (Attempt #1)'
@@ -609,12 +408,12 @@ jobs:
       name: 'Compile Kotlin Android (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
     - id: 'step-20'
       name: 'Compile Kotlin Android (Attempt #2)'
       continue-on-error: false
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
       if: '${{ steps.step-19.outcome == ''failure'' }}'
     - id: 'step-21'
       name: 'Build Android Debug APKs (Attempt #1)'
@@ -633,7 +432,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-arm64-v8a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-arm64-v8a-debug.apk'
         overwrite: 'true'
     - id: 'step-24'
       name: 'Upload Android Debug APK arm64-v8a (Attempt #2)'
@@ -641,7 +440,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-arm64-v8a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-arm64-v8a-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-23.outcome == ''failure'' }}'
     - id: 'step-25'
@@ -650,7 +449,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-arm64-v8a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-arm64-v8a-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-24.outcome == ''failure'' }}'
     - id: 'step-26'
@@ -659,7 +458,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-x86_64-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-x86_64-debug.apk'
         overwrite: 'true'
     - id: 'step-27'
       name: 'Upload Android Debug APK x86_64 (Attempt #2)'
@@ -667,7 +466,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-x86_64-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-x86_64-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-26.outcome == ''failure'' }}'
     - id: 'step-28'
@@ -676,7 +475,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-x86_64-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-x86_64-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-27.outcome == ''failure'' }}'
     - id: 'step-29'
@@ -685,7 +484,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-armeabi-v7a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-armeabi-v7a-debug.apk'
         overwrite: 'true'
     - id: 'step-30'
       name: 'Upload Android Debug APK armeabi-v7a (Attempt #2)'
@@ -693,7 +492,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-armeabi-v7a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-armeabi-v7a-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-29.outcome == ''failure'' }}'
     - id: 'step-31'
@@ -702,7 +501,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-armeabi-v7a-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-armeabi-v7a-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-30.outcome == ''failure'' }}'
     - id: 'step-32'
@@ -711,7 +510,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-universal-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-universal-debug.apk'
         overwrite: 'true'
     - id: 'step-33'
       name: 'Upload Android Debug APK universal (Attempt #2)'
@@ -719,7 +518,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-universal-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-universal-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-32.outcome == ''failure'' }}'
     - id: 'step-34'
@@ -728,7 +527,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-debug'
-        path: 'app/android/build/outputs/apk/default/debug/android-default-universal-debug.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/debug/android-default-tv-universal-debug.apk'
         overwrite: 'true'
       if: '${{ steps.step-33.outcome == ''failure'' }}'
     - id: 'step-35'
@@ -759,7 +558,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-arm64-v8a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-arm64-v8a-release.apk'
         overwrite: 'true'
     - id: 'step-38'
       name: 'Upload Android Release APK arm64-v8a (Attempt #2)'
@@ -767,7 +566,7 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-arm64-v8a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-arm64-v8a-release.apk'
         overwrite: 'true'
       if: '${{ steps.step-37.outcome == ''failure'' }}'
     - id: 'step-39'
@@ -776,213 +575,109 @@ jobs:
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-arm64-v8a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-arm64-v8a-release.apk'
         overwrite: 'true'
       if: '${{ steps.step-38.outcome == ''failure'' }}'
     - id: 'step-40'
-      name: 'Upload Android TV Release APK arm64-v8a (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-arm64-v8a-release.apk'
-        overwrite: 'true'
-    - id: 'step-41'
-      name: 'Upload Android TV Release APK arm64-v8a (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-arm64-v8a-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-40.outcome == ''failure'' }}'
-    - id: 'step-42'
-      name: 'Upload Android TV Release APK arm64-v8a (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-arm64-v8a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-arm64-v8a-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-41.outcome == ''failure'' }}'
-    - id: 'step-43'
       name: 'Upload Android Release APK x86_64 (Attempt #1)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-x86_64-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-x86_64-release.apk'
         overwrite: 'true'
-    - id: 'step-44'
+    - id: 'step-41'
       name: 'Upload Android Release APK x86_64 (Attempt #2)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-x86_64-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-x86_64-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-43.outcome == ''failure'' }}'
-    - id: 'step-45'
+      if: '${{ steps.step-40.outcome == ''failure'' }}'
+    - id: 'step-42'
       name: 'Upload Android Release APK x86_64 (Attempt #3)'
       continue-on-error: false
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-x86_64-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-x86_64-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-x86_64-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-44.outcome == ''failure'' }}'
-    - id: 'step-46'
-      name: 'Upload Android TV Release APK x86_64 (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-x86_64-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-x86_64-release.apk'
-        overwrite: 'true'
-    - id: 'step-47'
-      name: 'Upload Android TV Release APK x86_64 (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-x86_64-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-x86_64-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-46.outcome == ''failure'' }}'
-    - id: 'step-48'
-      name: 'Upload Android TV Release APK x86_64 (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-x86_64-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-x86_64-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-47.outcome == ''failure'' }}'
-    - id: 'step-49'
+      if: '${{ steps.step-41.outcome == ''failure'' }}'
+    - id: 'step-43'
       name: 'Upload Android Release APK armeabi-v7a (Attempt #1)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-armeabi-v7a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-armeabi-v7a-release.apk'
         overwrite: 'true'
-    - id: 'step-50'
+    - id: 'step-44'
       name: 'Upload Android Release APK armeabi-v7a (Attempt #2)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-armeabi-v7a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-armeabi-v7a-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-49.outcome == ''failure'' }}'
-    - id: 'step-51'
+      if: '${{ steps.step-43.outcome == ''failure'' }}'
+    - id: 'step-45'
       name: 'Upload Android Release APK armeabi-v7a (Attempt #3)'
       continue-on-error: false
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-armeabi-v7a-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-armeabi-v7a-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-50.outcome == ''failure'' }}'
-    - id: 'step-52'
-      name: 'Upload Android TV Release APK armeabi-v7a (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-armeabi-v7a-release.apk'
-        overwrite: 'true'
-    - id: 'step-53'
-      name: 'Upload Android TV Release APK armeabi-v7a (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-armeabi-v7a-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-52.outcome == ''failure'' }}'
-    - id: 'step-54'
-      name: 'Upload Android TV Release APK armeabi-v7a (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-armeabi-v7a-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-armeabi-v7a-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-53.outcome == ''failure'' }}'
-    - id: 'step-55'
+      if: '${{ steps.step-44.outcome == ''failure'' }}'
+    - id: 'step-46'
       name: 'Upload Android Release APK universal (Attempt #1)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-universal-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-universal-release.apk'
         overwrite: 'true'
-    - id: 'step-56'
+    - id: 'step-47'
       name: 'Upload Android Release APK universal (Attempt #2)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-universal-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-universal-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-55.outcome == ''failure'' }}'
-    - id: 'step-57'
+      if: '${{ steps.step-46.outcome == ''failure'' }}'
+    - id: 'step-48'
       name: 'Upload Android Release APK universal (Attempt #3)'
       continue-on-error: false
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'ani-android-universal-release'
-        path: 'app/android/build/outputs/apk/default/release/android-default-universal-release.apk'
+        path: 'app/android/build/outputs/apk/defaultTv/release/android-default-tv-universal-release.apk'
         overwrite: 'true'
-      if: '${{ steps.step-56.outcome == ''failure'' }}'
-    - id: 'step-58'
-      name: 'Upload Android TV Release APK universal (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-universal-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-universal-release.apk'
-        overwrite: 'true'
-    - id: 'step-59'
-      name: 'Upload Android TV Release APK universal (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-universal-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-universal-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-58.outcome == ''failure'' }}'
-    - id: 'step-60'
-      name: 'Upload Android TV Release APK universal (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-android-tv-universal-release'
-        path: 'app/android/build/outputs/apk/tv/release/android-tv-universal-release.apk'
-        overwrite: 'true'
-      if: '${{ steps.step-59.outcome == ''failure'' }}'
-    - id: 'step-61'
+      if: '${{ steps.step-47.outcome == ''failure'' }}'
+    - id: 'step-49'
       name: 'Install patchelf'
       run: 'sudo apt-get install -y patchelf'
-    - id: 'step-62'
+    - id: 'step-50'
       name: 'Package Desktop (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
       run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-    - id: 'step-63'
+    - id: 'step-51'
       name: 'Package Desktop (Attempt #2)'
       continue-on-error: false
       timeout-minutes: 180
       run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-      if: '${{ steps.step-62.outcome == ''failure'' }}'
-    - id: 'step-64'
+      if: '${{ steps.step-50.outcome == ''failure'' }}'
+    - id: 'step-52'
       name: 'Upload compose logs'
       uses: 'actions/upload-artifact@v4'
       with:
         name: 'compose-logs-github-ubuntu-2404'
         path: 'app/desktop/build/compose/logs'
       if: '${{ always() }}'
-    - id: 'step-65'
+    - id: 'step-53'
       name: 'Build AppImage'
       run: |-
         # Download appimagetool
@@ -1033,7 +728,7 @@ jobs:
         sed -i "s|^URL:.*|URL: $releaseAsset|" "$releaseAsset.zsync"
         mv "$releaseAsset" Animeko-x86_64.AppImage
         mv "$releaseAsset.zsync" Animeko-x86_64.AppImage.zsync
-    - id: 'step-66'
+    - id: 'step-54'
       name: 'Upload Linux packages (Attempt #1)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
@@ -1044,7 +739,7 @@ jobs:
           Animeko-x86_64.AppImage.zsync
         if-no-files-found: 'error'
         overwrite: 'true'
-    - id: 'step-67'
+    - id: 'step-55'
       name: 'Upload Linux packages (Attempt #2)'
       continue-on-error: true
       uses: 'actions/upload-artifact@v4'
@@ -1055,8 +750,8 @@ jobs:
           Animeko-x86_64.AppImage.zsync
         if-no-files-found: 'error'
         overwrite: 'true'
-      if: '${{ steps.step-66.outcome == ''failure'' }}'
-    - id: 'step-68'
+      if: '${{ steps.step-54.outcome == ''failure'' }}'
+    - id: 'step-56'
       name: 'Upload Linux packages (Attempt #3)'
       continue-on-error: false
       uses: 'actions/upload-artifact@v4'
@@ -1067,236 +762,7 @@ jobs:
           Animeko-x86_64.AppImage.zsync
         if-no-files-found: 'error'
         overwrite: 'true'
-      if: '${{ steps.step-67.outcome == ''failure'' }}'
-  build_github-macos-15-intel:
-    name: 'Build (macOS 15 x86_64 (GitHub))'
-    runs-on:
-    - 'macos-15-intel'
-    permissions:
-      actions: 'write'
-    steps:
-    - id: 'step-0'
-      uses: 'actions/checkout@v4'
-      with:
-        submodules: 'recursive'
-    - id: 'step-1'
-      name: 'Free space for macOS'
-      continue-on-error: true
-      run: 'chmod +x ./ci-helper/free-space-macos.sh && ./ci-helper/free-space-macos.sh'
-    - id: 'step-2'
-      continue-on-error: true
-      run: 'rm local.properties'
-    - id: 'step-3'
-      continue-on-error: true
-      run: |
-        echo "ani.android.abis=arm64-v8a" >> local.properties
-        echo "ani.enable.ios=true" >> local.properties
-        echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
-        echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
-        echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
-        echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
-    - id: 'step-4'
-      continue-on-error: true
-      run: |
-        echo "ani.enable.firebase=true" >> local.properties
-        echo "firebase.ga.app.id=${{ secrets.FIREBASE_GA_APP_ID }}" >> local.properties
-        echo "firebase.ga.api.secret=${{ secrets.FIREBASE_GA_API_SECRET }}" >> local.properties
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-5'
-      name: 'Resolve JBR location'
-      shell: 'bash'
-      run: |-
-        # Expand jbrLocationExpr
-        jbr_location_expr='${{ runner.tool_cache }}/jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz'
-        echo "jbrLocation=$jbr_location_expr" >> $GITHUB_OUTPUT
-    - id: 'step-6'
-      name: 'Get JBR 21 for macOS AArch64 (Attempt #1)'
-      env:
-        jbrLocation: '${{ steps.step-5.outputs.jbrLocation }}'
-      continue-on-error: true
-      timeout-minutes: 180
-      shell: 'bash'
-      run: |-
-        jbr_location="$jbrLocation"
-        checksum_url="https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz.checksum"
-        checksum_file="checksum.tmp"
-        wget -q -O $checksum_file $checksum_url
-
-        expected_checksum=$(awk '{print $1}' $checksum_file)
-        file_checksum=""
-
-        if [ -f "$jbr_location" ]; then
-            file_checksum=$(shasum -a 512 "$jbr_location" | awk '{print $1}')
-        fi
-
-        if [ "$file_checksum" != "$expected_checksum" ]; then
-            wget -q --tries=3 https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz -O "$jbr_location"
-            file_checksum=$(shasum -a 512 "$jbr_location" | awk '{print $1}')
-        fi
-
-        if [ "$file_checksum" != "$expected_checksum" ]; then
-            echo "Checksum verification failed!" >&2
-            rm -f $checksum_file
-            exit 1
-        fi
-
-        rm -f $checksum_file
-        file "$jbr_location"
-    - id: 'step-7'
-      name: 'Get JBR 21 for macOS AArch64 (Attempt #2)'
-      env:
-        jbrLocation: '${{ steps.step-5.outputs.jbrLocation }}'
-      continue-on-error: false
-      timeout-minutes: 180
-      shell: 'bash'
-      run: |-
-        jbr_location="$jbrLocation"
-        checksum_url="https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz.checksum"
-        checksum_file="checksum.tmp"
-        wget -q -O $checksum_file $checksum_url
-
-        expected_checksum=$(awk '{print $1}' $checksum_file)
-        file_checksum=""
-
-        if [ -f "$jbr_location" ]; then
-            file_checksum=$(shasum -a 512 "$jbr_location" | awk '{print $1}')
-        fi
-
-        if [ "$file_checksum" != "$expected_checksum" ]; then
-            wget -q --tries=3 https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz -O "$jbr_location"
-            file_checksum=$(shasum -a 512 "$jbr_location" | awk '{print $1}')
-        fi
-
-        if [ "$file_checksum" != "$expected_checksum" ]; then
-            echo "Checksum verification failed!" >&2
-            rm -f $checksum_file
-            exit 1
-        fi
-
-        rm -f $checksum_file
-        file "$jbr_location"
-      if: '${{ steps.step-6.outcome == ''failure'' }}'
-    - id: 'step-8'
-      name: 'Setup JBR 21 for macOS '
-      uses: 'gmitch215/setup-java@6d2c5e1f82f180ae79f799f0ed6e3e5efb4e664d'
-      with:
-        java-version: '21'
-        distribution: 'jdkfile'
-        jdkFile: '${{ steps.step-5.outputs.jbrLocation }}'
-      env:
-        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-    - id: 'step-9'
-      name: 'Dump Local Properties'
-      run: 'echo "jvm.toolchain.version=21" >> local.properties'
-    - id: 'step-10'
-      run: 'chmod -R 777 .'
-    - id: 'step-11'
-      name: 'Setup Gradle'
-      uses: 'gradle/actions/setup-gradle@v3'
-      with:
-        cache-disabled: 'true'
-    - id: 'step-12'
-      name: 'Clean and download dependencies (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew --scan "--stacktrace" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-    - id: 'step-13'
-      name: 'Clean and download dependencies (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew --scan "--stacktrace" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-      if: '${{ steps.step-12.outcome == ''failure'' }}'
-    - id: 'step-14'
-      name: 'Update dev version name (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew updateDevVersionNameFromGit "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-    - id: 'step-15'
-      name: 'Update dev version name (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew updateDevVersionNameFromGit "--no-configuration-cache" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-      if: '${{ steps.step-14.outcome == ''failure'' }}'
-    - id: 'step-16'
-      name: 'Prepare google-services.json'
-      env:
-        BASE64_CONTENT: '${{ secrets.GOOGLE_SERVICES_JSON }}'
-        FILE_PATH: './app/android/google-services.json'
-      continue-on-error: true
-      shell: 'bash'
-      run: |-
-        set -euo pipefail
-
-        if [ -z "${BASE64_CONTENT:-}" ]; then
-          echo "BASE64_CONTENT is empty" >&2
-          exit 1
-        fi
-
-        mkdir -p "$(dirname "$FILE_PATH")"
-        if ! printf '%s' "$BASE64_CONTENT" | base64 --decode > "$FILE_PATH" 2>/dev/null; then
-          printf '%s' "$BASE64_CONTENT" | base64 -D > "$FILE_PATH"
-        fi
-        chmod 600 "$FILE_PATH"
-        echo "filePath=$FILE_PATH" >> "$GITHUB_OUTPUT"
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-17'
-      name: 'Compile Kotlin (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew compileKotlin compileCommonMainKotlinMetadata compileJvmMainKotlinMetadata compileKotlinDesktop compileKotlinMetadata "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-    - id: 'step-18'
-      name: 'Compile Kotlin (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew compileKotlin compileCommonMainKotlinMetadata compileJvmMainKotlinMetadata compileKotlinDesktop compileKotlinMetadata "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-      if: '${{ steps.step-17.outcome == ''failure'' }}'
-    - id: 'step-19'
-      name: 'Package Desktop (Attempt #1)'
-      continue-on-error: true
-      timeout-minutes: 180
-      run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-    - id: 'step-20'
-      name: 'Package Desktop (Attempt #2)'
-      continue-on-error: false
-      timeout-minutes: 180
-      run: './gradlew createReleaseDistributable "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
-      if: '${{ steps.step-19.outcome == ''failure'' }}'
-    - id: 'step-21'
-      name: 'Upload compose logs'
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'compose-logs-github-macos-15-intel'
-        path: 'app/desktop/build/compose/logs'
-      if: '${{ always() }}'
-    - id: 'step-22'
-      name: 'Upload macOS x86_64 ZIP (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-macos-portable-x64'
-        path: 'app/desktop/build/compose/binaries/main-release/app/Ani.app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-    - id: 'step-23'
-      name: 'Upload macOS x86_64 ZIP (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-macos-portable-x64'
-        path: 'app/desktop/build/compose/binaries/main-release/app/Ani.app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-      if: '${{ steps.step-22.outcome == ''failure'' }}'
-    - id: 'step-24'
-      name: 'Upload macOS x86_64 ZIP (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/upload-artifact@v4'
-      with:
-        name: 'ani-macos-portable-x64'
-        path: 'app/desktop/build/compose/binaries/main-release/app/Ani.app'
-        if-no-files-found: 'error'
-        overwrite: 'true'
-      if: '${{ steps.step-23.outcome == ''failure'' }}'
+      if: '${{ steps.step-55.outcome == ''failure'' }}'
   build_self-hosted-macos-15:
     name: 'Build (macOS 15 AArch64 (Self-Hosted))'
     runs-on:
@@ -1483,12 +949,12 @@ jobs:
       name: 'Compile Kotlin Android (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
     - id: 'step-19'
       name: 'Compile Kotlin Android (Attempt #2)'
       continue-on-error: false
       timeout-minutes: 180
-      run: './gradlew compileDefaultDebugKotlin compileDefaultReleaseKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
+      run: './gradlew compileDefaultTvDebugKotlin compileDefaultTvReleaseKotlin compileDefaultPhoneDebugKotlin "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
       if: '${{ steps.step-18.outcome == ''failure'' }}'
     - id: 'step-20'
       name: 'generateDummyFramework (Attempt #1)'
@@ -1747,18 +1213,18 @@ jobs:
       name: 'Build Android Instrumented Tests (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
     - id: 'step-15'
       name: 'Build Android Instrumented Tests (Attempt #2)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
       if: '${{ steps.step-14.outcome == ''failure'' }}'
     - id: 'step-16'
       name: 'Build Android Instrumented Tests (Attempt #3)'
       continue-on-error: false
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g" "-Dkotlin.daemon.jvm.options=-Xmx6g"'
       if: '${{ steps.step-15.outcome == ''failure'' }}'
     - id: 'step-17'
       name: 'Stop Gradle daemons before emulator (api=30, arch=x86_64)'
@@ -1779,7 +1245,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api30-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api30-x86_64.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
+        script: 'touch android-instrumented-test-started-api30-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api30-x86_64.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
     - id: 'step-19'
       name: 'Android Instrumented Test (api=30, arch=x86_64) (Retry after emulator failure)'
       continue-on-error: true
@@ -1792,7 +1258,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api30-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api30-x86_64.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
+        script: 'touch android-instrumented-test-started-api30-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api30-x86_64.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
       if: '${{ (steps.step-18.outcome == ''failure'') && (hashFiles(''android-instrumented-test-started-api30-x86_64'') == '''') }}'
     - id: 'step-20'
       name: 'Upload Android Instrumented Test Reports (api=30, arch=x86_64)'
@@ -1831,7 +1297,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api36-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-x86_64.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
+        script: 'touch android-instrumented-test-started-api36-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-x86_64.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
     - id: 'step-24'
       name: 'Android Instrumented Test (api=36, arch=x86_64) (Retry after emulator failure)'
       continue-on-error: true
@@ -1844,7 +1310,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api36-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-x86_64.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
+        script: 'touch android-instrumented-test-started-api36-x86_64; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-x86_64.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g"; status=$?; killall -INT crashpad_handler || true; exit $status'
       if: '${{ (steps.step-23.outcome == ''failure'') && (hashFiles(''android-instrumented-test-started-api36-x86_64'') == '''') }}'
     - id: 'step-25'
       name: 'Upload Android Instrumented Test Reports (api=36, arch=x86_64)'
@@ -2004,18 +1470,18 @@ jobs:
       name: 'Build Android Instrumented Tests (Attempt #1)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
     - id: 'step-14'
       name: 'Build Android Instrumented Tests (Attempt #2)'
       continue-on-error: true
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
       if: '${{ steps.step-13.outcome == ''failure'' }}'
     - id: 'step-15'
       name: 'Build Android Instrumented Tests (Attempt #3)'
       continue-on-error: false
       timeout-minutes: 180
-      run: './gradlew assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
+      run: './gradlew assembleAndroidDeviceTest -x :app:shared:ui-tv:assembleAndroidDeviceTest "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx12g -Dkotlin.daemon.jvm.options=-Xmx20g" "-Dkotlin.daemon.jvm.options=-Xmx20g" "--parallel"'
       if: '${{ steps.step-14.outcome == ''failure'' }}'
     - id: 'step-16'
       name: 'Android Instrumented Test (api=36, arch=arm64-v8a)'
@@ -2029,7 +1495,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api36-arm64-v8a; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-arm64-v8a.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g" "--parallel"; status=$?; pkill -INT -f "$ANDROID_HOME/emulator/crashpad_handler" || true; exit $status'
+        script: 'touch android-instrumented-test-started-api36-arm64-v8a; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-arm64-v8a.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g" "--parallel"; status=$?; pkill -INT -f "$ANDROID_HOME/emulator/crashpad_handler" || true; exit $status'
     - id: 'step-17'
       name: 'Android Instrumented Test (api=36, arch=arm64-v8a) (Retry after emulator failure)'
       continue-on-error: true
@@ -2042,7 +1508,7 @@ jobs:
         profile: 'pixel_2'
         ram-size: '2048M'
         emulator-boot-timeout: '1800'
-        script: 'touch android-instrumented-test-started-api36-arm64-v8a; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-arm64-v8a.txt connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g" "--parallel"; status=$?; pkill -INT -f "$ANDROID_HOME/emulator/crashpad_handler" || true; exit $status'
+        script: 'touch android-instrumented-test-started-api36-arm64-v8a; ./ci-helper/prepare-android-emulator.sh; ./ci-helper/run-android-device-tests.sh logcat-api36-arm64-v8a.txt connectedDeviceTest -x :app:shared:ui-tv:connectedDeviceTest --continue "-Pandroid.min.sdk=30" "--scan" "-Porg.gradle.daemon.idletimeout=60000" "-Dfile.encoding=UTF-8" "-Dorg.gradle.jvmargs=-Xmx3g -Dkotlin.daemon.jvm.options=-Xmx2g" "-Dkotlin.daemon.jvm.options=-Xmx2g" "--parallel"; status=$?; pkill -INT -f "$ANDROID_HOME/emulator/crashpad_handler" || true; exit $status'
       if: '${{ (steps.step-16.outcome == ''failure'') && (hashFiles(''android-instrumented-test-started-api36-arm64-v8a'') == '''') }}'
     - id: 'step-18'
       name: 'Upload Android Instrumented Test Reports (api=36, arch=arm64-v8a)'
@@ -2060,134 +1526,6 @@ jobs:
       name: 'Check Android Instrumented Test results'
       run: 'echo ''::error::Android instrumented tests failed. See the "Android Instrumented Test" steps.''; exit 1'
       if: '${{ ((steps.step-16.outcome == ''failure'') && (steps.step-17.outcome != ''success'')) }}'
-  verify_github-windows-2025:
-    name: 'Verify (Windows Server 2025 x86_64 (GitHub))'
-    runs-on:
-    - 'windows-2025'
-    permissions:
-      actions: 'read'
-    needs:
-    - 'build_github-windows-2022'
-    if: '${{ needs.build_github-windows-2022.result == ''success'' }}'
-    steps:
-    - id: 'step-0'
-      uses: 'actions/checkout@v4'
-    - id: 'step-1'
-      name: 'Delete libraries from system'
-      continue-on-error: true
-      shell: 'powershell'
-      run: |-
-        Remove-Item -Path "C:\vcpkg\installed\x64-windows\lib\libssl*" -Recurse -Force -Verbose
-        Remove-Item -Path "C:\vcpkg\installed\x64-windows\lib\libcrypto*" -Recurse -Force -Verbose
-    - id: 'step-2'
-      name: 'Download Windows x64 Portable (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-    - id: 'step-3'
-      name: 'Download Windows x64 Portable (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-      if: '${{ steps.step-2.outcome == ''failure'' }}'
-    - id: 'step-4'
-      name: 'Download Windows x64 Portable (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-      if: '${{ steps.step-3.outcome == ''failure'' }}'
-    - id: 'step-5'
-      name: 'Check that Anitorrent can be loaded'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "anitorrent-load-test"'
-    - id: 'step-6'
-      name: 'Check that Dandanplay APP ID is valid'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "dandanplay-app-id"'
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-7'
-      name: 'Check that sentryDsn is valid'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "sentry-dsn"'
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-8'
-      name: 'Check that OS touch and mouse input reach Compose'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "windows-native-input-test"'
-  verify_github-windows-2022:
-    name: 'Verify (Windows Server 2022 x86_64 (GitHub))'
-    runs-on:
-    - 'windows-2022'
-    permissions:
-      actions: 'read'
-    needs:
-    - 'build_github-windows-2022'
-    if: '${{ needs.build_github-windows-2022.result == ''success'' }}'
-    steps:
-    - id: 'step-0'
-      uses: 'actions/checkout@v4'
-    - id: 'step-1'
-      name: 'Delete libraries from system'
-      continue-on-error: true
-      shell: 'powershell'
-      run: |-
-        Remove-Item -Path "C:\vcpkg\installed\x64-windows\lib\libssl*" -Recurse -Force -Verbose
-        Remove-Item -Path "C:\vcpkg\installed\x64-windows\lib\libcrypto*" -Recurse -Force -Verbose
-    - id: 'step-2'
-      name: 'Download Windows x64 Portable (Attempt #1)'
-      continue-on-error: true
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-    - id: 'step-3'
-      name: 'Download Windows x64 Portable (Attempt #2)'
-      continue-on-error: true
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-      if: '${{ steps.step-2.outcome == ''failure'' }}'
-    - id: 'step-4'
-      name: 'Download Windows x64 Portable (Attempt #3)'
-      continue-on-error: false
-      uses: 'actions/download-artifact@v4'
-      with:
-        name: 'ani-windows-portable'
-        path: '${{ github.workspace }}/ci-helper/verify'
-      if: '${{ steps.step-3.outcome == ''failure'' }}'
-    - id: 'step-5'
-      name: 'Check that Anitorrent can be loaded'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "anitorrent-load-test"'
-    - id: 'step-6'
-      name: 'Check that Dandanplay APP ID is valid'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "dandanplay-app-id"'
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-7'
-      name: 'Check that sentryDsn is valid'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "sentry-dsn"'
-      if: '${{ (github.repository == ''open-ani/animeko'') && ((!(github.event_name == ''pull_request'')) || (github.event.pull_request.head.repo.full_name == github.repository)) }}'
-    - id: 'step-8'
-      name: 'Check that OS touch and mouse input reach Compose'
-      timeout-minutes: 5
-      shell: 'powershell'
-      run: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/ci-helper/verify/run-ani-test-windows-x64.ps1" "${{ github.workspace }}\ci-helper\verify" "windows-native-input-test"'
   verify_github-windows-11-arm64:
     name: 'Verify (Windows 11 AArch64 (GitHub))'
     runs-on:
