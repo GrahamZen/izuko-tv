@@ -95,7 +95,6 @@ import me.him188.ani.app.ui.foundation.layout.isHeightAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.isTopRight
 import me.him188.ani.app.ui.foundation.layout.setRequestFullScreen
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
-import me.him188.ani.app.ui.foundation.session.LocalSelfAvatarUnreadDot
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalAppChromeHazeState
@@ -135,7 +134,6 @@ fun MainScreen(
     onNavigateToPage: (MainScreenPage) -> Unit,
     onNavigateToSettings: (tab: SettingsTab?) -> Unit,
     onNavigateToSearch: () -> Unit,
-    showNotificationDot: Boolean,
     navigationLayoutType: NavigationSuiteType = AniNavigationSuiteDefaults.calculateLayoutType(
         currentWindowAdaptiveInfo1(),
     ),
@@ -154,7 +152,6 @@ fun MainScreen(
         onNavigateToPage,
         onNavigateToSettings,
         onNavigateToSearch,
-        showNotificationDot,
         modifier,
         navigationLayoutType,
     )
@@ -167,7 +164,6 @@ private fun MainScreenContent(
     onNavigateToPage: (MainScreenPage) -> Unit,
     onNavigateToSettings: (tab: SettingsTab?) -> Unit,
     onNavigateToSearch: () -> Unit,
-    showNotificationDot: Boolean,
     modifier: Modifier = Modifier,
     navigationLayoutType: NavigationSuiteType = AniNavigationSuiteDefaults.calculateLayoutType(
         currentWindowAdaptiveInfo1(),
@@ -184,16 +180,9 @@ private fun MainScreenContent(
     val navigatorState = rememberUpdatedState(LocalNavigator.current)
     val navigator by navigatorState
 
-    // 未读红点显示在各 tab 页面顶栏的头像上和头像菜单的“通知”上, 两处用同一个值.
-    // 与 SelfAvatar 一致: 顶栏显示“登录”按钮时 (包括 token 过期且因网络错误未能刷新) 两处都不显示红点.
-    val notificationDotVisible = showNotificationDot && selfInfo.isSessionValid == true && selfInfo.selfInfo != null
-
     // 毛玻璃 app chrome 仅在主页面启用: 各 tab 页面通过 appChromeHazeSource 标记模糊来源,
     // 其他页面不提供 HazeState, 保持不透明的 chrome.
-    CompositionLocalProvider(
-        LocalAppChromeHazeState provides rememberHazeState(),
-        LocalSelfAvatarUnreadDot provides notificationDotVisible,
-    ) {
+    CompositionLocalProvider(LocalAppChromeHazeState provides rememberHazeState()) {
         MainScreenNavigationLayout(
             page = page,
             selfInfo = selfInfo,
@@ -221,11 +210,6 @@ private fun MainScreenContent(
             onNavigateToAccountSettings = {
                 showAccountSettingsPopup = false
                 onNavigateToSettings(SettingsTab.PROFILE)
-            },
-            showNotificationDot = notificationDotVisible,
-            onNavigateToNotifications = {
-                showAccountSettingsPopup = false
-                navigator.navigateNotifications()
             },
             onNavigateToPlaybackHistory = {
                 showAccountSettingsPopup = false

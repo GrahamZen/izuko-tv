@@ -32,8 +32,6 @@ import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.media.MikanIndexCacheRepository
 import me.him188.ani.app.data.repository.media.MikanIndexCacheRepositoryImpl
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
-import me.him188.ani.app.data.repository.notification.NotificationRepository
-import me.him188.ani.app.data.repository.notification.NotificationRepositoryImpl
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepositoryImpl
@@ -196,9 +194,6 @@ fun KoinApplication.repositoryModules(
 
     single<EpisodeCommentRepository> { EpisodeCommentRepository(aniCommentService = get()) }
 
-    single<NotificationRepository> {
-        NotificationRepositoryImpl(notificationService = get(), announcementService = get())
-    }
 
     single<MediaSourceInstanceRepository> {
         MediaSourceInstanceRepositoryImpl(getContext().dataStores.mediaSourceSaveStore)

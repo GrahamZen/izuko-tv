@@ -74,11 +74,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.player.EpisodeHistory
-import me.him188.ani.app.data.repository.episode.EpisodeCollectionPendingOp
-import me.him188.ani.app.data.repository.episode.EpisodeCollectionPendingOpNames
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
-import me.him188.ani.app.data.repository.player.PlaybackHistoryPendingOp
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.adaptive.AniTopAppBar
 import me.him188.ani.app.ui.adaptive.AniTopAppBarDefaults
@@ -145,34 +142,6 @@ class PlaybackHistoryViewModel : AbstractViewModel(), KoinComponent {
         }
     }
 
-}
-
-/**
- * 按 episodeId 合并两条队列. 名字优先取操作自带的, 其次是本地播放记录 (含已删除墓碑), 最后是剧集缓存.
- * 顺序按每集最近一次操作的时间, 早的在前.
- */
-internal fun buildPendingSyncEpisodes(
-    playbackOps: List<PlaybackHistoryPendingOp>,
-    playbackHistories: Map<Int, EpisodeHistory>,
-    collectionOps: List<EpisodeCollectionPendingOp>,
-    collectionNames: Map<Int, EpisodeCollectionPendingOpNames>,
-): List<PendingSyncEpisode> {
-    val playbackByEpisode = playbackOps.associateBy { it.episodeId }
-    val collectionByEpisode = collectionOps.associateBy { it.episodeId }
-    return (playbackByEpisode.keys + collectionByEpisode.keys).map { episodeId ->
-        val playbackOp = playbackByEpisode[episodeId]
-        val history = playbackHistories[episodeId]
-        val names = collectionNames[episodeId]
-        PendingSyncEpisode(
-            episodeId = episodeId,
-            subjectName = (playbackOp as? PlaybackHistoryPendingOp.Upsert)?.subjectName
-                ?: history?.subjectName ?: names?.subjectName,
-            episodeName = (playbackOp as? PlaybackHistoryPendingOp.Upsert)?.episodeName
-                ?: history?.episodeName ?: names?.episodeName,
-            playbackOp = playbackOp,
-            collectionOp = collectionByEpisode[episodeId],
-        )
-    }.sortedWith(compareBy({ it.versionMillis }, { it.episodeId }))
 }
 
 @Composable
