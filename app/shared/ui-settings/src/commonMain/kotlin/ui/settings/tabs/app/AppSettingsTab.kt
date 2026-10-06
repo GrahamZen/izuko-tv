@@ -767,7 +767,8 @@ fun SettingsScope.PlayerGroup(
             },
             title = { Text(stringResource(Lang.settings_player_auto_play_next)) },
         )
-        if (LocalPlatform.current.isMobile()) {
+        // 遥控器形态的播放器没接小窗 (切后台一律暂停, 见 EpisodePage 的 AutoPauseEffect), 这一项不给
+        if (LocalPlatform.current.isMobile() && !LocalAniUiBehavior.current.focusDrivenNavigation) {
             HorizontalDividerItem()
             DropdownItem(
                 selected = { config.backgroundBehavior },
