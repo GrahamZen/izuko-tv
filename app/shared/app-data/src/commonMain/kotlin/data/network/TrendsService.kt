@@ -194,11 +194,3 @@ fun BangumiNextGetTrendingSubjects200Response.toTrendsInfo(): TrendsInfo {
         },
     )
 }
-
-private fun AniTrendingRankingItem.toTrendingRankingItemInfo(): TrendingRankingItemInfo {
-    return TrendingRankingItemInfo(
-        rank = trendingRank,
-        heat = heat,
-        subject = subject.toBatchSubjectDetails(),
-    )
-}

@@ -64,7 +64,6 @@ import me.him188.ani.app.ui.lang.subject_details_relation_character
 import me.him188.ani.app.ui.lang.subject_details_relation_collaboration
 import me.him188.ani.app.ui.lang.subject_details_relation_different_setting
 import me.him188.ani.app.ui.lang.subject_details_relation_full_story
-import me.him188.ani.app.ui.lang.subject_details_relation_main_story
 import me.him188.ani.app.ui.lang.subject_details_relation_same_setting
 import me.him188.ani.app.ui.lang.subject_details_relation_summary
 import me.him188.ani.app.ui.search.createTestPager
@@ -188,15 +187,6 @@ fun rememberNavigateToRelatedSubject(): (RelatedSubjectInfo) -> Unit {
                 ),
             )
         }
-    }
-}
-
-/** 点击 "关系图" -> 打开 [subjectId] 所在系列的关系图. */
-@Composable
-fun rememberNavigateToRelationGraph(subjectId: Int): () -> Unit {
-    val navigator = LocalNavigator.current
-    return remember(navigator, subjectId) {
-        { navigator.navigateSubjectRelationGraph(subjectId) }
     }
 }
 

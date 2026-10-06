@@ -33,7 +33,6 @@ import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
-import me.him188.ani.app.data.models.preference.NotificationSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig

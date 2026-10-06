@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -119,7 +118,6 @@ import me.him188.ani.app.ui.lang.exploration_search
 import me.him188.ani.app.ui.lang.exploration_settings
 import me.him188.ani.app.ui.lang.exploration_title
 import me.him188.ani.app.ui.lang.exploration_trending
-import me.him188.ani.app.ui.lang.exploration_trending_more
 import me.him188.ani.app.ui.search.createTestPager
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.search.rememberLoadErrorState
@@ -367,14 +365,6 @@ fun ExplorationScreen(
                                         stringResource(Lang.exploration_schedule),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                TextButton({ navigator.navigateTrendingRanking() }) {
-                                    Text(stringResource(Lang.exploration_trending_more), softWrap = false)
-                                    Icon(
-                                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                        null,
-                                        Modifier.size(ButtonDefaults.IconSize),
                                     )
                                 }
                             }
