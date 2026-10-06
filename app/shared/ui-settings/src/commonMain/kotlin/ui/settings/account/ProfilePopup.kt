@@ -60,8 +60,6 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 在右上角显示的个人信息弹窗
- *
- * @param showNotificationDot 是否在“通知”上显示未读红点, 与顶栏头像上的红点一致.
  */
 @Composable
 fun ProfilePopup(
@@ -70,8 +68,6 @@ fun ProfilePopup(
     onNavigateToLogin: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAccountSettings: () -> Unit,
-    showNotificationDot: Boolean,
-    onNavigateToNotifications: () -> Unit,
     onNavigateToPlaybackHistory: () -> Unit,
     windowSizeClass: WindowSizeClass = currentWindowAdaptiveInfo1().windowSizeClass,
 ) {
@@ -89,8 +85,6 @@ fun ProfilePopup(
             onClickLogin = onNavigateToLogin,
             onClickEditAvatar = onNavigateToAccountSettings,
             onClickEditProfile = onNavigateToAccountSettings,
-            showNotificationDot = showNotificationDot,
-            onClickNotifications = onNavigateToNotifications,
             onClickPlaybackHistory = onNavigateToPlaybackHistory,
             onClickSettings = onNavigateToSettings,
             onClickLogout = { showLogoutDialog = true },
