@@ -14,6 +14,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -24,6 +26,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -124,11 +127,14 @@ import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.sourceSearchProgress
+import me.him188.ani.app.ui.subject.episode.tv.source.TvPlayerSourcePanel
+import me.him188.ani.app.ui.subject.episode.tv.source.TvSourcePanelController
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeLoadingDetails
 import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingIndicator
+import me.him188.ani.app.ui.subject.episode.video.loading.shouldShowVideoLoadingIndicator
 import me.him188.ani.app.ui.main.LocalTvAdjustWindows
 import me.him188.ani.app.ui.main.TvAdjustWindow
 import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
@@ -145,6 +151,7 @@ import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.togglePlayWhenReady
@@ -211,6 +218,12 @@ private const val TV_DETAILS_FADE_IN_MS = 300
 /** 详情层淡出时长 (毫秒): 放慢一档, 瞬时/快速移除观感像闪切. */
 private const val TV_DETAILS_FADE_OUT_MS = 500
 
+/** 选源面板进出的时长. */
+private const val TV_SOURCES_FADE_MS = 220
+
+/** 选源面板进出时横移面板宽度的几分之一 (从左边滑进来一小段, 不是整块飞进来). */
+private const val TV_SOURCES_SLIDE_DIVISOR = 12
+
 /**
  * TV 播放器界面 (Prime Video 风格):
  *
@@ -251,6 +264,8 @@ fun TvEpisodeScreenContent(
     val sheetsController = rememberVideoSideSheetsController<EpisodeVideoSideSheetPage>()
     val anySheetVisible by sheetsController.hasPageAsState()
     val imageViewer = LocalImageViewerHandler.current
+    // 选源面板 (TvPlayerLayer.SOURCES) 的把手: 根路由经它问焦点、交返回键
+    val sourcePanel = remember { TvSourcePanelController() }
 
     // 播放/暂停键的落点: 只切播放状态, **不碰焦点也不碰控制层**. 提供给整棵组合 (含各个独立窗口,
     // 见 LocalTvPlayPauseHandler) —— 覆盖在画面上的东西没有一个该吃掉这个键, 视频就在它们后面放着.
@@ -520,6 +535,14 @@ fun TvEpisodeScreenContent(
 
     val focus = rememberTvFocusScope()
 
+    // 关选源面板: 回纯视频态 (面板是从那儿按上键开的), 焦点回根节点. [keepPosition] = 按返回隐藏的, 记下焦点停在哪
+    // (左栏那一项 / 右栏那一行), 再按上键打开时落回去; 别的方式关的照常落在正在播放的源上
+    fun closeSourcePanel(keepPosition: Boolean = false) {
+        if (overlay.layer != TvPlayerLayer.SOURCES) return
+        if (keepPosition) sourcePanel.rememberPosition(vm.episodeSelectorState.current?.episodeId) else sourcePanel.forgetPosition()
+        overlay.hideAll()
+    }
+
     // 控制层按钮上长按确认键: 去「自定义播放器按钮」, 焦点落在这一颗上 (盖在播放器上的窗口, 见 TvAdjustWindows). 播放器没有动作面板,
     // 这是播放器里唯一的入口. 窗口盖住整个画面: 开着期间一直暂停, 关掉后原来在播 (或期间播放器自己要开播) 就接着播.
     // 只在打开时暂停一次不够: 片源出错自动换下一个、刚选好源准备好, 播放器都会自己置播放意图, 在窗口后面开播
@@ -576,6 +599,8 @@ fun TvEpisodeScreenContent(
     // 每一档都换一层 (图标行 -> 选集条 -> 详情层), 连发会一路跳到底 —— 观感是选集条刚滑出来就
     // 闪进了详情页. 松手 (KeyUp) 才解锁. 只锁"换层"的那几档, 面板内按住下键滚列表不受影响
     var downKeyLatched by remember { mutableStateOf(false) }
+    // 纯视频态按上键开了选源面板: 这次按住剩下的连发与抬起归开面板那一下, 不交给面板 (否则按住上键会一路把左栏往上翻)
+    var upKeyOpenedSources by remember { mutableStateOf(false) }
     // 左右键按住期间的连发计数 + 当前按住的是哪一边: 挪圆点的步长据此加速 (见 scrubStepMillis),
     // 松手归零. 维护放在路由最前面而不是各分支里 —— 下面每一层都有 `if (!isKeyDown) return false`,
     // KeyUp 到不了分支; 换方向 (右按住中改按左) 也要重新起步, 所以连方向一起记.
@@ -613,7 +638,8 @@ fun TvEpisodeScreenContent(
     // 那时倒计时照走、到点照样连播, 只是不弹这一档 —— 把人从正在做的事上踢开比不提示更糟
     fun upNextMayOpen() = !(
             overlay.replyingComment != null || overlay.danmakuInputExpanded ||
-                    overlay.openPopupCount > 0 || anySheetVisible || imageViewer.viewing.value
+                    overlay.openPopupCount > 0 || anySheetVisible || imageViewer.viewing.value ||
+                    overlay.layer == TvPlayerLayer.SOURCES
             )
 
     // 这一趟触发窗口里展开过没有 (自动展开的、按返回要回来的都算). 窗口走完 (换集 / 拖回片尾
@@ -806,6 +832,7 @@ fun TvEpisodeScreenContent(
         }
         when {
             overlay.layer == TvPlayerLayer.HIDDEN -> overlay.requestRootFocus()
+            overlay.layer == TvPlayerLayer.SOURCES -> sourcePanel.requestEntryFocus()
             overlay.layer != TvPlayerLayer.CONTROLS -> {} // 详情层内部自己有落点
             overlay.activePanel != null -> overlay.requestPanelItemFocus()
             else -> overlay.focusProgress()
@@ -880,7 +907,7 @@ fun TvEpisodeScreenContent(
         // LocalTvPlayPauseHandler + Modifier.tvPlayPauseKey() 各自挂
         if (key in TV_PLAY_PAUSE_KEYS && !progressSliderState.isPreviewing &&
             (imageViewer.viewing.value || overlay.danmakuInputExpanded ||
-                    overlay.replyingComment != null || anySheetVisible)
+                    overlay.replyingComment != null || anySheetVisible || overlay.layer == TvPlayerLayer.SOURCES)
         ) {
             overlay.markInteraction()
             if (isKeyDown) togglePlayPause()
@@ -1040,6 +1067,8 @@ fun TvEpisodeScreenContent(
             return@router false
         }
 
+        // 新的一次按下 = 用户在面板里按的, 开面板那次按住到此为止 (抬起丢了也不会吞掉之后的上键)
+        if (key == Key.DirectionUp && isKeyDown && event.isAutoRepeat == false) upKeyOpenedSources = false
         when (overlay.layer) {
             TvPlayerLayer.HIDDEN -> {
                 // 确认键: 短按切换播放, **长按倍速** (与手机端长按画面同一功能).
@@ -1096,7 +1125,14 @@ fun TvEpisodeScreenContent(
                         true
                     }
 
-                    Key.DirectionUp, Key.DirectionDown -> {
+                    // 上键 = 选源面板 (控制层上没有「数据源」按钮; 提示见 TvPlayerSourcesHint), 下键 = 控制层
+                    Key.DirectionUp -> {
+                        upKeyOpenedSources = true
+                        overlay.openSources()
+                        true
+                    }
+
+                    Key.DirectionDown -> {
                         overlay.showControls()
                         true
                     }
@@ -1247,6 +1283,28 @@ fun TvEpisodeScreenContent(
 
                     else -> false
                 }
+            }
+
+            // 选源面板: 返回在进去的那一层里先退一层, 否则直接关 (记下焦点停在哪, 再打开落回去); 方向键与确定键全交给面板 (它自己判, 一个都不放给
+            // Compose 的焦点搜索). 焦点还没进面板时 (刚打开、从别处回来) 先把焦点送进去, 这一下吞掉
+            TvPlayerLayer.SOURCES -> when {
+                // 开面板那次按住的上键
+                key == Key.DirectionUp && upKeyOpenedSources -> {
+                    if (isKeyUp) upKeyOpenedSources = false
+                    true
+                }
+
+                isBack -> {
+                    if (isKeyUp && !sourcePanel.back()) closeSourcePanel(keepPosition = true)
+                    true
+                }
+
+                !sourcePanel.hasFocus -> {
+                    if (isKeyDown) sourcePanel.requestEntryFocus()
+                    true
+                }
+
+                else -> false
             }
 
             TvPlayerLayer.DETAILS -> when {
@@ -1514,6 +1572,7 @@ fun TvEpisodeScreenContent(
                 }
 
                 TvPlayerLayer.DETAILS -> Unit
+                TvPlayerLayer.SOURCES -> closeSourcePanel()
             }
         },
         onDoubleTap = { zone ->
@@ -1616,7 +1675,8 @@ fun TvEpisodeScreenContent(
                 // 主播放器解预览画面时 (见 PlayerSeekPreviewState) 每挪一步都要重新缓冲一下, 取消后跳回原处也要缓冲一下 (全屏停着的就是原处的画面), 都不报
                 TvPlayerLoadingLayer(
                     vm,
-                    Modifier
+                    hintEnabled = overlay.layer == TvPlayerLayer.HIDDEN,
+                    modifier = Modifier
                         .align(Alignment.Center)
                         .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true) 0f else 1f },
                 )
@@ -1759,7 +1819,25 @@ fun TvEpisodeScreenContent(
                     }
                 }
 
-                // 右侧侧边 sheets (数据源/选集/弹幕设置), 复用现有实现
+                // 选源面板: 画面右侧, 左边画面露出来. 退场时吞掉按键 (焦点交还图标行之前那一两帧)
+                AniAnimatedVisibility(
+                    visible = overlay.layer == TvPlayerLayer.SOURCES,
+                    modifier = Modifier.matchParentSize(),
+                    // 从左边缘伸出来 (面板贴左边, 见 TvSourcePanelView)
+                    enter = fadeIn(tween(TV_SOURCES_FADE_MS)) + slideInHorizontally(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
+                    exit = fadeOut(tween(TV_SOURCES_FADE_MS)) + slideOutHorizontally(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
+                ) {
+                    TvPlayerSourcePanel(
+                        vm = vm,
+                        page = page,
+                        controller = sourcePanel,
+                        leaving = overlay.layer != TvPlayerLayer.SOURCES,
+                        onClose = { closeSourcePanel() },
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+
+                // 右侧侧边 sheets (选集/弹幕设置), 复用现有实现
                 Box(Modifier.matchParentSize()) {
                     TvPlayerSideSheets(vm, sheetsController)
                 }
@@ -1796,6 +1874,7 @@ private enum class TvEpisodeFocus : TvFocusKey {
 @Composable
 private fun TvPlayerLoadingLayer(
     vm: EpisodeViewModel,
+    hintEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val videoLoadingStateFlow = remember(vm) { vm.videoStatisticsFlow.map { it.videoLoadingState } }
@@ -1813,7 +1892,9 @@ private fun TvPlayerLoadingLayer(
     val loadedMedia by vm.loadedMedia.collectAsStateWithLifecycle()
     val btServiceConnected by vm.btServiceConnected.collectAsStateWithLifecycle()
     val torrentOpen by vm.torrentOpenProgress.collectAsStateWithLifecycle()
-    Box(modifier) {
+    val playerState by vm.player.state.collectAsStateWithLifecycle()
+    val playerError = playerState.mediaStatus is MediaStatus.Error
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         EpisodeVideoLoadingIndicator(
             vm.player,
             videoLoadingState,
@@ -1827,6 +1908,11 @@ private fun TvPlayerLoadingLayer(
                 btServiceConnected = btServiceConnected,
                 torrentOpen = torrentOpen,
             ),
+        )
+        TvPlayerSourcesHint(
+            loading = shouldShowVideoLoadingIndicator(videoLoadingState, playerState.isBuffering, playerError),
+            urgent = playerError || videoLoadingState is VideoLoadingState.Failed || sourceSearch?.stuck != null,
+            enabled = hintEnabled,
         )
     }
 }
