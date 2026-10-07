@@ -65,7 +65,7 @@ class SwitchNextEpisodeExtension(
             val durationMillis = event.durationMillis
             val closeToEnd = durationMillis != null && durationMillis - event.finalPositionMillis < 5000
 
-            if (closeToEnd) {
+            if (closeToEnd && !event.isTooShortForEpisode()) {
                 val nextEpisode = getNextEpisode(session.episodeId)
                 logger.info("播放完毕，切换下一集 $nextEpisode")
                 context.switchEpisode(nextEpisode ?: return@collect)
