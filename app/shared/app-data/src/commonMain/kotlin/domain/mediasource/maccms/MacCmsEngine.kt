@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectMatcher
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.direct.DirectLink
@@ -56,9 +57,9 @@ internal class MacCmsEngine(
     private val fetch: suspend (url: String) -> ByteArray,
 ) {
     suspend fun queryLinks(request: MediaFetchRequest): List<DirectLink> {
-        val names = subjectNamesOf(request)
+        val names = DriveSubjectMatcher.subjectNamesOf(request)
         // 末尾的季号数字 (`为美好的世界献上祝福！3`) 站内搜不到, 搜主标题
-        val keywords = keywordsOf(names.map { KEYWORD_SEASON_DIGIT.find(it)?.groupValues?.get(1) ?: it })
+        val keywords = DriveSubjectMatcher.keywordsOf(names.map { KEYWORD_SEASON_DIGIT.find(it)?.groupValues?.get(1) ?: it })
             // 站点片名是中文, 日文原名搜不到东西, 放到最后
             .sortedBy { keyword -> keyword.any { it in '぀'..'ヿ' } }
             .take(config.maxKeywords.coerceAtLeast(1))
@@ -112,30 +113,6 @@ internal class MacCmsEngine(
 
     internal companion object {
         private val logger = logger<MacCmsEngine>()
-
-        private const val MAX_KEYWORDS = 8
-
-        /** 条目的所有名字 (中文名、原名、别名), 去空白去重. */
-        fun subjectNamesOf(request: MediaFetchRequest): List<String> =
-            (request.subjectNames + listOfNotNull(request.subjectNameCN))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-
-        /**
-         * 每个名字取主标题作关键词, 按归一化结果去重. 太短的关键词 (归一化后不到 2 个字) 会搜出一堆无关的, 不用.
-         */
-        fun keywordsOf(names: List<String>): List<String> {
-            val seen = HashSet<String>()
-            return names.asSequence()
-                .map { DriveNameParser.baseTitle(it) }
-                .filter { keyword ->
-                    val normalized = DriveNameParser.normalize(keyword)
-                    normalized.length >= 2 && seen.add(normalized)
-                }
-                .take(MAX_KEYWORDS)
-                .toList()
-        }
 
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
