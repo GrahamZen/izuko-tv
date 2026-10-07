@@ -27,6 +27,8 @@
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，超時自動換源</string>
     <string name="subject_episode_video_loading_auto_switch">上一個源%1$s，正在試第 %2$d 個（還剩 %3$d 個）</string>
     <string name="subject_episode_video_loading_cause_player_failed">播放失敗</string>
+    <string name="subject_episode_video_loading_cause_http_rejected">伺服器拒絕了請求（HTTP %1$s）</string>
+    <string name="subject_episode_video_loading_cause_http_error">伺服器出錯（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在啟動 BT 服務\n第一次要十幾秒</string>
     <string name="subject_episode_video_loading_torrent_metadata">正在獲取種子資訊</string>
     <string name="subject_episode_video_loading_torrent_peers">已連上 %1$d 個節點 · 已等 %2$d 秒</string>
