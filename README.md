@@ -153,6 +153,8 @@ Izuko TV 基于 [open-ani/animeko](https://github.com/open-ani/animeko) 修改�
 - 相对上游的修改记录在本仓库的提交历史与 [FORK.md](FORK.md) 中，完整源代码即本仓库；
 - 「Animeko」名称与图标归 OpenAni 所有，Izuko TV 使用自己的名称与图标，不代表上游。
 
+规则源的步骤式写法参考了 [AniBaka](https://github.com/AniBakaBaka/AniBaka)，并可导入其规则格式（`anx-rule/2`）。规则归各自作者所有，Izuko TV 不附带任何第三方规则。
+
 感谢 OpenAni 团队与所有 Animeko 贡献者。
 
 [Bangumi]: http://bangumi.tv
