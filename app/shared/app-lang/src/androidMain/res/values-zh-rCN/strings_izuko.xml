@@ -488,6 +488,7 @@
     <string name="video_player_tv_comment_sort_most_replies">按回复数</string>
     <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
     <string name="video_player_tv_comment_deleted">删除了回复</string>
+    <string name="video_player_tv_comment_image_zoom_hint">长按确定键看大图</string>
     <string name="video_player_tv_chrome_title">自定义播放器按钮</string>
     <string name="video_player_tv_chrome_subtitle">这一页不会播放任何东西。这里排成什么样，播放器里就是什么样。</string>
     <string name="video_player_tv_chrome_hint">确认键 拿起  ·  长按确认键 隐藏 / 显示  ·  返回键 退出</string>
