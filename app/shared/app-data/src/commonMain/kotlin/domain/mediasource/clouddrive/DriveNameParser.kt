@@ -41,6 +41,14 @@ internal object DriveNameParser {
 
     fun parseFile(fileName: String): ParsedFile {
         val name = removeExtension(fileName)
+        // 同名文件的副本后缀 (`02(1).mp4` 是第 2 集): 去掉后还认得出集号就按去掉的算, 否则括号里的数字可能就是集号 (`Title (03)`)
+        COPY_SUFFIX.find(name)?.let { suffix ->
+            parseName(name.removeRange(suffix.range)).takeIf { it.episode != null }?.let { return it }
+        }
+        return parseName(name)
+    }
+
+    private fun parseName(name: String): ParsedFile {
         if (EXTRA.containsMatchIn(name)) return ParsedFile(null, null, isExtra = true)
 
         SEASON_EPISODE.find(name)?.let { match ->
@@ -189,6 +197,7 @@ internal object DriveNameParser {
     private val SUBTITLE_SEPARATOR = Regex("""\s*[～~:：｜|]\s*|\s+[-–—]\s+""")
     private val TRIM_CHARS = charArrayOf(' ', '-', '_', '.', '·', '!', '！', '?', '？')
 
+    private val COPY_SUFFIX = Regex("""\s*[(（]\d{1,2}[)）]$""")
     private val BRACKETED = Regex("""\[[^\]]*]|【[^】]*】|\([^)]*\)|（[^）]*）""")
     private val STANDALONE_NUMBER = Regex("""(?<![0-9A-Za-z])(\d{1,3})(?:[vV]\d)?(?![0-9A-Za-z])""")
 
