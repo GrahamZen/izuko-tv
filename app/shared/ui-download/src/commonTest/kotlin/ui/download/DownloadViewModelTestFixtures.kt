@@ -37,6 +37,8 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.CloudDriveAccounts
+import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
@@ -308,6 +310,8 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")
+    override val cloudDriveAccounts: Settings<CloudDriveAccounts> get() = error("Not used")
+    override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> get() = error("Not used")
     override val torrentPeerConfig: Settings<TorrentPeerConfig> get() = error("Not used")
     override val oneshotActionConfig: Settings<OneshotActionConfig> get() = error("Not used")
     override val analyticsSettings: Settings<AnalyticsSettings> get() = error("Not used")

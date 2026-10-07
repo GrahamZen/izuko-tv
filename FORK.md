@@ -244,6 +244,7 @@ ambiguous),CI 与文档都必须写全变体名。
 | `app-data .../network/BangumiSummaryService.kt` | bgm.tv 直连简介兜底 (Ani 服务器无数据时) |
 | `app-data .../torrent/service/TorrentDiagnosticsServer.kt` | debug 构建 localhost 种子诊断端口 |
 | `app-data .../mediasource/ChineseConverter.kt` (+各平台 actual) | 简繁转换 (中文条目匹配修复的一部分) |
+| `app-data .../mediasource/subscription/BundledSubscriptions.kt` | 自带订阅 (网盘协议与挑过的几个在线源) 与不再默认给的上游订阅 (Animeko 在线源): 新装的默认订阅、已装的启动时对齐一次 (钩子: `MediaSourceSubscriptionsSaveData.Default` 一行、`CommonKoinModule` 启动处一行) |
 | `app-data schemas/.../22.json` | 数据库迁移 (种子按集存文件选择) |
 
 ### CI

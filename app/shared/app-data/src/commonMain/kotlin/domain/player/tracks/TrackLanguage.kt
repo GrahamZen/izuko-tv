@@ -98,7 +98,7 @@ data class TrackLanguage(
 
 /**
  * 名字里的语言标记: `sc`, `chs&jpn`, `zh-Hant`, `Simplified Chinese`, `简日双语`, `日本語`.
- * 字幕文件名与轨道名共用.
+ * 字幕文件名 (见 DriveSidecarSubtitles) 与轨道名共用.
  */
 internal class LanguageTags(
     val sc: Boolean,

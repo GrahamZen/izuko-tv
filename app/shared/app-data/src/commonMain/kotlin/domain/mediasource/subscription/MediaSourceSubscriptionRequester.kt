@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.subscription
 
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
@@ -17,6 +18,8 @@ import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.ktor.toSource
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
 
 fun interface MediaSourceSubscriptionRequester {
@@ -27,13 +30,13 @@ fun interface MediaSourceSubscriptionRequester {
 }
 
 /**
- * 订阅更新只走**直连**.
+ * 订阅更新只走**直连**: 订阅源本来就是用户自己填的地址, 打不开该让他看见.
  *
- * 直连之前还有一层兜底: 直连失败时改让 Ani 服务器代取 (`/v1/subs/proxy`)。那个代理没了,
- * 于是直连失败就是失败 —— 订阅源本来就是用户自己填的地址, 打不开该让他看见.
+ * [sourcesOf] 给出一个订阅地址的全部来源 (原地址在前): GitHub 上的地址带上加速镜像, 原地址不通时依次试镜像, 每个限时 [MIRROR_TIMEOUT_MILLIS].
  */
 class MediaSourceSubscriptionRequesterImpl(
     private val client: ScopedHttpClient,
+    private val sourcesOf: suspend (url: String) -> List<String> = { listOf(it) },
 ) : MediaSourceSubscriptionRequester {
     /**
      * 执行网络请求, 下载新订阅数据.
@@ -49,8 +52,27 @@ class MediaSourceSubscriptionRequesterImpl(
             )
         }
 
-        return client.use {
-            get(subscription.url).decode()
+        val urls = sourcesOf(subscription.url).ifEmpty { listOf(subscription.url) }
+        var lastError: Exception? = null
+        for (url in urls) {
+            try {
+                return client.use {
+                    get(url) {
+                        if (urls.size > 1) timeout { requestTimeoutMillis = MIRROR_TIMEOUT_MILLIS }
+                    }.decode()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (urls.size > 1) logger.warn { "Subscription request failed via $url: $e" }
+                lastError = e
+            }
         }
+        throw lastError!!
+    }
+
+    private companion object {
+        private val logger = logger<MediaSourceSubscriptionRequesterImpl>()
+        private const val MIRROR_TIMEOUT_MILLIS = 15_000L
     }
 }

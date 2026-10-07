@@ -43,6 +43,8 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.OneshotActionConfig
 import me.him188.ani.app.data.models.preference.PikPakConfig
+import me.him188.ani.app.data.models.preference.CloudDriveAccounts
+import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.PlayerKernelConfig
 import me.him188.ani.app.data.models.preference.ProfileSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
@@ -210,6 +212,8 @@ class UserCollectionsViewModelTest {
         override val videoResolverSettings: Settings<VideoResolverSettings> by lazy { error("not implemented") }
         override val anitorrentConfig: Settings<AnitorrentConfig> by lazy { error("not implemented") }
         override val pikpakConfig: Settings<PikPakConfig> by lazy { error("not implemented") }
+        override val cloudDriveAccounts: Settings<CloudDriveAccounts> by lazy { error("not implemented") }
+        override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> by lazy { error("not implemented") }
         override val torrentPeerConfig: Settings<TorrentPeerConfig> by lazy { error("not implemented") }
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("not implemented") }
         override val analyticsSettings: Settings<AnalyticsSettings> by lazy { error("not implemented") }
