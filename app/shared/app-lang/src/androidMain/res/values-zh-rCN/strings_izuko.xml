@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">正在解析资源链接</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，超时自动换源</string>
+    <string name="subject_episode_video_loading_cause_http_rejected">服务器拒绝了请求（HTTP %1$s）</string>
+    <string name="subject_episode_video_loading_cause_http_error">服务器出错（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_drive_login">网盘未登录，登录后才能播放网盘里的资源</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在启动 BT 服务\n第一次要十几秒</string>
     <string name="subject_episode_video_loading_torrent_metadata">正在获取种子信息</string>
