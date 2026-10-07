@@ -135,6 +135,9 @@ class SwitchMediaOnPlayerErrorExtension(
                                     playerStateFlow,
                                 )
                             }
+
+                            // 太短的视频播完 (公告、广告片) 也当作这个源失败, 见 observeShortMediaEnd
+                            launch { handler.observeShortMediaEnd(context.player, mediaFetchSessionFlow) }
                         }
                     }
             }
