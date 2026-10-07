@@ -22,6 +22,7 @@ import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSourceCodec
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceCodec
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.utils.platform.annotations.TestOnly
 
@@ -38,6 +39,7 @@ class MediaSourceCodecManager(
         CloudDriveMediaSourceCodec,
         CloudDriveAddedShareMediaSourceCodec,
         CloudDriveShareSearchMediaSourceCodec,
+        RuleMediaSourceCodec,
     )
 ) {
 
