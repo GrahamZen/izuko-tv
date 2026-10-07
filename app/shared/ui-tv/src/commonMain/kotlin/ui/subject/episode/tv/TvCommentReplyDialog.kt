@@ -48,10 +48,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -71,6 +73,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,10 +92,14 @@ import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
+import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvTextFieldFrame
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorder
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
+import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
+import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.richtext.CommentAsyncImage
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
@@ -119,6 +127,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
+import me.him188.ani.app.ui.lang.video_player_tv_comment_image_zoom_hint
 
 /**
  * 弹窗正文块: 文本段与图片按原顺序排列.
@@ -256,6 +265,11 @@ internal fun TvCommentReplyDialog(
      * 用左右键而不是上下键: 上下键在这个弹窗里是"翻长评论正文 / 翻到底进输入框", 抢不得.
      */
     onNavigate: ((delta: Int) -> Unit)? = null,
+    /**
+     * 非 null 时引用区里的图可以放大看: 引用区上长按确认键, 从正文翻到的那张图开始全屏看, 不止一张时左右键换图.
+     * 大图画在本弹窗之上 (见 [TvImageZoomState]), 焦点留在引用区; 返回键由调用方的根路由先关它.
+     */
+    imageZoom: TvImageZoomState? = null,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -268,6 +282,14 @@ internal fun TvCommentReplyDialog(
     val sending by editorState.sending.collectAsStateWithLifecycle()
 
     val quoted = target.quoted
+    val imageUrls = remember(quoted) { quoted?.blocks?.filterIsInstance<TvCommentBlock.Image>()?.map { it.url }.orEmpty() }
+    val canZoom = imageZoom != null && imageUrls.isNotEmpty()
+    // 每张图在正文里的下沿 (滚动内容的坐标): 长按时从「还没翻过去」的第一张看起
+    val imageBottoms = remember(target) { mutableStateMapOf<Int, Int>() }
+    // 弹窗关掉 (或整个收起) 时大图跟着收, 下次打开不带着它
+    DisposableEffect(imageZoom) {
+        onDispose { imageZoom?.close() }
+    }
     // 初始焦点落引用区 (阅读态): 用户多半要先看完被回复的那条. 发表新评论没有引用区, 落在输入框上
     // (输入框按确认才弹键盘, 见 [TvTextFieldFrame])
     focus.InitialFocus(if (quoted == null) TvCommentReplyFocus.Field else TvCommentReplyFocus.Quote)
@@ -297,7 +319,8 @@ internal fun TvCommentReplyDialog(
 
     TvInWindowPanel(
         widthFraction = TV_REPLY_DIALOG_WIDTH_FRACTION,
-        modifier = modifier.tvFocusNavSignal(focus),
+        // 大图开着时左右键换图、其余按键一概吞掉 (返回键由根路由处理)
+        modifier = modifier.tvFocusNavSignal(focus).ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) },
         // 没有引用区就按内容收高: 撑满屏高的话输入框和发送按钮会吊在一大片空白下面
         heightFraction = if (quoted != null) TV_REPLY_DIALOG_HEIGHT_FRACTION else null,
         overlay = {
@@ -315,6 +338,7 @@ internal fun TvCommentReplyDialog(
                     modifier = Modifier.matchParentSize(),
                 )
             }
+            imageZoom?.let { TvZoomedImageOverlay(it, Modifier.matchParentSize()) }
         },
     ) {
                 Text(
@@ -335,6 +359,13 @@ internal fun TvCommentReplyDialog(
                 if (target.canReply) {
                     Text(
                         stringResource(Lang.comment_ani_only_notice),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = hintColor,
+                    )
+                }
+                if (canZoom) {
+                    Text(
+                        stringResource(Lang.video_player_tv_comment_image_zoom_hint),
                         style = MaterialTheme.typography.labelLarge,
                         color = hintColor,
                     )
@@ -386,6 +417,16 @@ internal fun TvCommentReplyDialog(
                             },
                         )
                         .tvFocusAnchor(focus, TvCommentReplyFocus.Quote)
+                        // 长按确认键放大看图; 短按没有动作 (引用区本来就只翻页)
+                        .ifThen(canZoom) {
+                            tvLongPressKey(
+                                onLongPress = {
+                                    val start = imageUrls.indices.firstOrNull { (imageBottoms[it] ?: 0) > scrollState.value } ?: 0
+                                    imageZoom?.open(imageUrls, start)
+                                },
+                                onShortPress = {},
+                            )
+                        }
                         .onFocusChanged { quoteFocused = it.isFocused }
                         .focusable()
                         .clip(RoundedCornerShape(TV_REPLY_BLOCK_CORNER))
@@ -427,6 +468,7 @@ internal fun TvCommentReplyDialog(
                                     color = hintColor,
                                 )
                             }
+                            var imageIndex = 0
                             quoted.blocks.forEach { block ->
                                 Spacer(Modifier.height(8.dp))
                                 when (block) {
@@ -436,7 +478,13 @@ internal fun TvCommentReplyDialog(
                                         inlineContent = tvStickerInlineContent(block.text.stickers),
                                     )
 
-                                    is TvCommentBlock.Image -> TvCommentQuoteImage(block.url)
+                                    is TvCommentBlock.Image -> {
+                                        val index = imageIndex++
+                                        TvCommentQuoteImage(
+                                            block.url,
+                                            Modifier.onPlaced { imageBottoms[index] = it.positionInParent().y.toInt() + it.size.height },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -658,13 +706,13 @@ private fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: M
  * 加载完成前给个最小高度占位 —— 固有尺寸未知时高度是 0, 图片到位时整块正文会往下弹一大截,
  * 正在翻页的话会当场跳位.
  *
- * 不做可点放大: 引用区是"整块一个焦点 + 上下键翻页", 多一个可聚焦目标就得重做那套导航.
+ * 图本身不可聚焦: 引用区是"整块一个焦点 + 上下键翻页"; 放大看图走引用区的长按 (见 [TvCommentReplyDialog] 的 imageZoom).
  */
 @Composable
-private fun TvCommentQuoteImage(url: String) {
+private fun TvCommentQuoteImage(url: String, modifier: Modifier = Modifier) {
     CommentAsyncImage(
         url,
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         contentScale = ContentScale.FillWidth,
         cornerRadius = TV_REPLY_BLOCK_CORNER,
         unloadedModifier = Modifier.heightIn(min = TV_REPLY_IMAGE_PLACEHOLDER_HEIGHT),

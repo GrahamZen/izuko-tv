@@ -488,6 +488,7 @@
     <string name="video_player_tv_comment_sort_most_replies">Most replies</string>
     <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
     <string name="video_player_tv_comment_deleted">deleted this reply</string>
+    <string name="video_player_tv_comment_image_zoom_hint">Press and hold OK to view images full screen</string>
     <string name="video_player_tv_chrome_title">Customize player buttons</string>
     <string name="video_player_tv_chrome_subtitle">Nothing plays on this page. However you arrange these buttons is how the player will look.</string>
     <string name="video_player_tv_chrome_hint">OK to pick up  ·  Hold OK to hide or show  ·  Back to leave</string>

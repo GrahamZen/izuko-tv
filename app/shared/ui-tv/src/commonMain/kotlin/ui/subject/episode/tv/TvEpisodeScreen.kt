@@ -936,9 +936,11 @@ fun TvEpisodeScreenContent(
             overlay.markInteraction()
             if (isBack) {
                 if (isKeyUp) {
-                    // 表情选择器盖在弹窗之上: 返回先关它, 再按一下才关整个评论弹窗.
-                    // 它不是独立窗口, 按键还是走这条唯一路由, 得在这儿分一档
-                    if (vm.commentEditorState.showStickerPanel) {
+                    // 表情选择器 / 放大的图盖在弹窗之上: 返回先关它们, 再按一下才关整个评论弹窗.
+                    // 它们不是独立窗口, 按键还是走这条唯一路由, 得在这儿分一档
+                    if (overlay.commentImageZoom.zooming) {
+                        overlay.commentImageZoom.close()
+                    } else if (vm.commentEditorState.showStickerPanel) {
                         vm.commentEditorState.toggleStickerPanelState(false)
                     } else {
                         overlay.dismissReply()
@@ -1858,6 +1860,7 @@ fun TvEpisodeScreenContent(
                         onSent = { overlay.dismissReply() },
                         // 左右键翻相邻评论: 由评论面板消费 (行列表在它手上), 见 overlay.replyNavRequest
                         onNavigate = { overlay.navigateReply(it) },
+                        imageZoom = overlay.commentImageZoom,
                         modifier = Modifier.matchParentSize(),
                     )
                 }
