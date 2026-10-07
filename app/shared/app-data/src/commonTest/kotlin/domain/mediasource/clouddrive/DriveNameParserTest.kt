@@ -54,6 +54,16 @@ class DriveNameParserTest {
     }
 
     @Test
+    fun `copy suffix of duplicate files`() {
+        assertEpisode("02(1).mp4", 2)
+        assertEpisode("13 (2).mp4", 13)
+        assertEpisode("第05集（1）.mp4", 5)
+        assertEpisode("01(1).mp4", 1)
+        // 括号前没有别的数字时, 括号里的就是集号
+        assertEpisode("Title (03).mp4", 3)
+    }
+
+    @Test
     fun `episode at the start of a bracket`() {
         assertEpisode("[001冒険の終わり][B站沸羊羊都得叫我师傅][葬送のフリーレン][2160P][Crunchyroll][4K臻享级画质].mkv", 1)
         assertEpisode("[011北側諸国の冬][B站沸羊羊都得叫我师傅][葬送のフリーレン][2160P][Crunchyroll][4K臻享级画质].mkv", 11)

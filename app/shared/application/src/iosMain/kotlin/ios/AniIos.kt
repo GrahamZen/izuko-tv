@@ -47,6 +47,7 @@ import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.IosWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileUriMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.UnsupportedCaptchaBrowserFactory
@@ -365,7 +366,8 @@ fun getIosModules(
 
     factory<MediaResolver> {
         MediaResolver.from(
-            torrentMediaResolvers(get<TorrentManager>().engines, get())
+            listOf<MediaResolver>(CloudDriveMediaResolver(get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
                 .plus(LocalFileUriMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(

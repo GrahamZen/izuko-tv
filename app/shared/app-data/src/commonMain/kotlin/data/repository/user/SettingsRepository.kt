@@ -24,6 +24,8 @@ import me.him188.ani.app.data.models.danmaku.DanmakuConfigSerializer
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
+import me.him188.ani.app.data.models.preference.CloudDriveAccounts
+import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.DanmakuSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.EndpointSelection
@@ -109,12 +111,29 @@ interface SettingsRepository {
     val videoResolverSettings: Settings<VideoResolverSettings>
     val anitorrentConfig: Settings<AnitorrentConfig>
     val pikpakConfig: Settings<PikPakConfig>
+    /** 各网盘的账号, 见 `CloudDriveRegistry`. */
+    val cloudDriveAccounts: Settings<CloudDriveAccounts>
+
+    /** 各网盘里给条目添加的分享. */
+    val cloudDriveAddedShares: Settings<CloudDriveAddedShares>
     val torrentPeerConfig: Settings<TorrentPeerConfig>
 
     val oneshotActionConfig: Settings<OneshotActionConfig>
 
     val analyticsSettings: Settings<AnalyticsSettings>
     val debugSettings: Settings<DebugSettings>
+
+    /** 以前版本按设置键 [key] 存的一份设置的原文 (JSON); 没有时为 null. 网盘认领旧数据时用, 见 `DriveLegacyData`. */
+    suspend fun readLegacyPreference(key: String): String? = null
+
+    /** 删掉设置键 [key] 那份设置 (认领完旧数据后). */
+    suspend fun removeLegacyPreference(key: String) {}
+
+    /** 一次性的事 [key] (如补上自带的订阅) 做过没有. */
+    suspend fun isMarked(key: String): Boolean = false
+
+    /** 记下一次性的事 [key] 做过了. */
+    suspend fun mark(key: String) {}
 }
 
 @Stable
@@ -299,6 +318,31 @@ class PreferencesRepositoryImpl(
         PikPakConfig.serializer(),
         default = { PikPakConfig.Default },
     )
+
+    override val cloudDriveAccounts: Settings<CloudDriveAccounts> = SerializablePreference(
+        "cloudDriveAccounts",
+        CloudDriveAccounts.serializer(),
+        default = { CloudDriveAccounts.Default },
+    )
+
+    override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> = SerializablePreference(
+        "cloudDriveAddedShares",
+        CloudDriveAddedShares.serializer(),
+        default = { CloudDriveAddedShares.Default },
+    )
+
+    override suspend fun readLegacyPreference(key: String): String? =
+        preferences.data.first()[stringPreferencesKey(key)]
+
+    override suspend fun removeLegacyPreference(key: String) {
+        preferences.edit { it.remove(stringPreferencesKey(key)) }
+    }
+
+    override suspend fun isMarked(key: String): Boolean = preferences.data.first()[booleanPreferencesKey(key)] == true
+
+    override suspend fun mark(key: String) {
+        preferences.edit { it[booleanPreferencesKey(key)] = true }
+    }
 
     override val torrentPeerConfig: Settings<TorrentPeerConfig> = SerializablePreference(
         "torrentPeerConfig",
