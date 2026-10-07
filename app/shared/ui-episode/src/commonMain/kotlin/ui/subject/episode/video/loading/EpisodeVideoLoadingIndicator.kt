@@ -39,6 +39,8 @@ import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.downloadSpeedFlow
+import me.him188.ani.app.domain.player.httpErrorStatus
+import me.him188.ani.app.domain.player.isNetworkFailure
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.TextWithBorder
 import me.him188.ani.app.ui.lang.Lang
@@ -50,6 +52,8 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_no_s
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_cancelled
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_error
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_rejected
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_network_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_no_matching_file
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_resolution_timed_out
@@ -465,6 +469,10 @@ data class VideoLoadingCauseLabels(
     val webEngineUnavailable: String,
     val cancelled: String,
     val networkError: String,
+    /** 服务器回 4xx 时的句子, 状态码处是 [HTTP_STATUS_PLACEHOLDER]. */
+    val httpRejected: String,
+    /** 服务器回 5xx 时的句子, 状态码处是 [HTTP_STATUS_PLACEHOLDER]. */
+    val httpError: String,
 ) {
     /** 把每句原因再包一层 (例如套进"后台播放遇到问题: ……"的模板). */
     inline fun map(transform: (String) -> String) = VideoLoadingCauseLabels(
@@ -475,6 +483,8 @@ data class VideoLoadingCauseLabels(
         webEngineUnavailable = transform(webEngineUnavailable),
         cancelled = transform(cancelled),
         networkError = transform(networkError),
+        httpRejected = transform(httpRejected),
+        httpError = transform(httpError),
     )
 }
 
@@ -487,11 +497,23 @@ fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCauseLabels
     webEngineUnavailable = stringResource(Lang.subject_episode_video_loading_cause_web_engine_unavailable),
     cancelled = stringResource(Lang.subject_episode_video_loading_cause_cancelled),
     networkError = stringResource(Lang.subject_episode_video_loading_cause_network_error),
+    httpRejected = stringResource(Lang.subject_episode_video_loading_cause_http_rejected, HTTP_STATUS_PLACEHOLDER),
+    httpError = stringResource(Lang.subject_episode_video_loading_cause_http_error, HTTP_STATUS_PLACEHOLDER),
 )
+
+/** [VideoLoadingCauseLabels.httpRejected] 里状态码的位置: 先按它取出句子, 渲染原因时换成真正的状态码. */
+private const val HTTP_STATUS_PLACEHOLDER = "%%ANI_HTTP_STATUS%%"
+
+/** 未知错误里认得出的原因: 连不上网 / 服务器回了 HTTP 错误, 其余照旧是「未知错误」. */
+private fun renderUnknownError(error: Throwable, labels: VideoLoadingCauseLabels): String {
+    if (error.isNetworkFailure()) return labels.networkError
+    val status = error.httpErrorStatus() ?: return labels.unknownError
+    return (if (status >= 500) labels.httpError else labels.httpRejected).replace(HTTP_STATUS_PLACEHOLDER, status.toString())
+}
 
 fun renderCause(cause: VideoLoadingState.Failed, labels: VideoLoadingCauseLabels): String = when (cause) {
     is VideoLoadingState.ResolutionTimedOut -> labels.resolutionTimedOut
-    is VideoLoadingState.UnknownError -> labels.unknownError
+    is VideoLoadingState.UnknownError -> renderUnknownError(cause.cause, labels)
     is VideoLoadingState.UnsupportedMedia -> labels.unsupportedMedia
     VideoLoadingState.NoMatchingFile -> labels.noMatchingFile
     VideoLoadingState.WebEngineUnavailable -> labels.webEngineUnavailable
