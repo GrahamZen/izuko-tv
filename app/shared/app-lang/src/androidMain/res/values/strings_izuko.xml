@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">Resolving resource link</string>
     <string name="subject_episode_video_loading_resolve_deadline">Up to %1$d more seconds</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">Up to %1$d more seconds, then switching automatically</string>
+    <string name="subject_episode_video_loading_cause_http_rejected">Server refused the request (HTTP %1$s)</string>
+    <string name="subject_episode_video_loading_cause_http_error">Server error (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_cause_drive_login">Not signed in to the cloud drive. Sign in to play files from it.</string>
     <string name="subject_episode_video_loading_bt_service_starting">Starting the BT service\nThe first time takes about ten seconds</string>
     <string name="subject_episode_video_loading_torrent_metadata">Fetching torrent metadata</string>
