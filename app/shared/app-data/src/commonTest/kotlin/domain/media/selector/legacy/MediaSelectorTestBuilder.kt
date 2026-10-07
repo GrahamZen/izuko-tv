@@ -41,6 +41,7 @@ import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.source.MatchKind
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaMatch
+import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.source.TestHttpMediaSource
@@ -72,6 +73,7 @@ class MediaSelectorTestBuilder(
         mediaSourceId: String,
         kind: MediaSourceKind = MediaSourceKind.WEB,
         enabled: Boolean = true,
+        info: MediaSourceInfo = MediaSourceInfo(displayName = "Test Http Media Source"),
     ): CompletableDeferred<List<Media>> {
         val deferred = CompletableDeferred<List<Media>>()
         mediaSources.add(
@@ -84,6 +86,7 @@ class MediaSelectorTestBuilder(
                             deferred.await().map { MediaMatch(it, MatchKind.EXACT) }.asFlow()
                         }
                     },
+                    info = info,
                 ),
                 isEnabled = enabled,
             ),

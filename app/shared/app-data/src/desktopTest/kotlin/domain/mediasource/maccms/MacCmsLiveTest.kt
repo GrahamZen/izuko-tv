@@ -9,15 +9,14 @@
 
 package me.him188.ani.app.domain.mediasource.maccms
 
-import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceDataList
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveApi
+import me.him188.ani.app.domain.mediasource.subscription.SubscriptionUpdateDataReader
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
-import me.him188.ani.utils.ktor.getPlatformKtorEngine
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -40,13 +39,13 @@ class MacCmsLiveTest {
             return@runBlocking
         }
         val json = Json { ignoreUnknownKeys = true }
-        val sources = json.decodeFromString(ExportedMediaSourceDataList.serializer(), sourceFile.readText()).mediaSources
+        val sources = json.decodeFromString(SubscriptionUpdateDataReader, sourceFile.readText()).mediaSources
             .filter { it.factoryId == MacCmsMediaSource.FactoryId }
             .map { json.decodeFromJsonElement(MacCmsMediaSourceArguments.serializer(), it.arguments) }
         val subjects = (System.getenv("ANI_MACCMS_SUBJECT") ?: "葬送的芙莉莲 第二季:10").split('|').map { spec ->
             spec.substringBefore(':') to spec.substringAfter(':', "12").toInt()
         }
-        val client = HttpClient(getPlatformKtorEngine()) { expectSuccess = false }
+        val client = CloudDriveApi.createHttpClient()
         var found = 0
         for ((name, count) in subjects) {
             val request = MediaFetchRequest(

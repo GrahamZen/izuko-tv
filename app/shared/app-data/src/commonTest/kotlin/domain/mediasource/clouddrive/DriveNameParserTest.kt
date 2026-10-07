@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 import me.him188.ani.datasources.api.EpisodeSort
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -29,6 +30,10 @@ class DriveNameParserTest {
         assertEpisode("S01E01.2160p.WEB-DL.x264.AAC.mkv", 1, season = 1)
         assertEpisode("Title.S02E05.1080p.mkv", 5, season = 2)
         assertEpisode("title s1e12 [1080p].mp4", 12, season = 1)
+        // SxxEyy 之后的是画质与集名, 不当小数
+        assertEpisode("S06E01.4K.mp4", 1, season = 6)
+        assertEpisode("Re.ZERO.Starting.Life.in.Another.World.S04E06.Julius.Juukulius.1080p.CR.WEB-DL.mkv", 6, season = 4)
+        assertEpisode("Title.S01E12.5.mkv", 12, season = 1)
     }
 
     @Test
@@ -44,6 +49,8 @@ class DriveNameParserTest {
         assertEpisode("葬送的芙莉莲 第十二话.mkv", 12)
         assertEpisode("EP05.mkv", 5)
         assertEpisode("Ep.07 1080p.mp4", 7)
+        assertEpisode("EP01.4K.mp4", 1)
+        assertEquals(EpisodeSort("12.5"), DriveNameParser.parseFile("EP12.5.mp4").episode)
     }
 
     @Test
@@ -51,6 +58,16 @@ class DriveNameParserTest {
         assertEpisode("01.mp4", 1)
         assertEpisode("x264 01 AAC.mp4", 1)
         assertEpisode("Title 2023 03.mkv", 3)
+    }
+
+    @Test
+    fun `copy suffix of duplicate files`() {
+        assertEpisode("02(1).mp4", 2)
+        assertEpisode("13 (2).mp4", 13)
+        assertEpisode("第05集（1）.mp4", 5)
+        assertEpisode("01(1).mp4", 1)
+        // 括号前没有别的数字时, 括号里的就是集号
+        assertEpisode("Title (03).mp4", 3)
     }
 
     @Test
@@ -78,6 +95,42 @@ class DriveNameParserTest {
     }
 
     @Test
+    fun `single declared season`() {
+        assertEquals(1, DriveNameParser.singleDeclaredSeason("S01"))
+        assertEquals(2, DriveNameParser.singleDeclaredSeason("Season 2"))
+        assertEquals(3, DriveNameParser.singleDeclaredSeason("第三季"))
+        assertEquals(2, DriveNameParser.singleDeclaredSeason("2nd Season"))
+        assertEquals(3, DriveNameParser.singleDeclaredSeason("[4K][内封简繁]Re：从零开始的异世界生活 第三季 袭击篇[8集全]"))
+        // 写了几个季、季号旁边挨着别的数字、只写「第一部」或标题末尾带数字的都拿不准
+        assertNull(DriveNameParser.singleDeclaredSeason("ZSD芙莉莲 1-2季（更1）"))
+        assertNull(DriveNameParser.singleDeclaredSeason("S1-S3"))
+        assertNull(DriveNameParser.singleDeclaredSeason("Season 1 & 2"))
+        assertNull(DriveNameParser.singleDeclaredSeason("第一季+第二季"))
+        assertNull(DriveNameParser.singleDeclaredSeason("第三季 01-12"))
+        assertNull(DriveNameParser.singleDeclaredSeason("第一部"))
+        assertNull(DriveNameParser.singleDeclaredSeason("葬送的芙莉莲2"))
+        assertNull(DriveNameParser.singleDeclaredSeason("Specials"))
+        // 按季分的文件夹用罗马数字写季
+        assertEquals(4, DriveNameParser.singleDeclaredSeason("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(1, DriveNameParser.singleDeclaredSeason("在地下城寻求邂逅是否搞错了什么 I"))
+        assertNull(DriveNameParser.singleDeclaredSeason("Part II"))
+    }
+
+    @Test
+    fun `declared seasons`() {
+        assertEquals(setOf(3), DriveNameParser.declaredSeasons("无职转生：到了异世界就拿出真本事 第三季（2026）CR 1080p 内封简中 S03E01-E07."))
+        assertEquals(setOf(3), DriveNameParser.declaredSeasons("无职转生Ⅲ 到了异世界就拿出真本事（2026）1080p NF S03 内封简繁 HiveWeb"))
+        assertEquals(setOf(3), DriveNameParser.declaredSeasons("[豌豆字幕组][药屋少女的呢喃 / Kusuriya no Hitorigoto S3][01(49)][简体][1080P][MP4]"))
+        assertEquals(setOf(2), DriveNameParser.declaredSeasons("Kusuriya no Hitorigoto 2nd Season - 01 [1080p]"))
+        assertEquals(setOf(0, 3), DriveNameParser.declaredSeasons("无职转生～到了异世界就拿出真本事～ S0-S03"))
+        // 分辨率、编码、「第2部分」与标题末尾的数字都不是季
+        assertEquals(emptySet(), DriveNameParser.declaredSeasons("[喵萌奶茶屋][药屋少女的呢喃 / Kusuriya no Hitorigoto][49][1080p][HEVC-10bit AAC]"))
+        assertEquals(emptySet(), DriveNameParser.declaredSeasons("药屋少女的呢喃 第2部分"))
+        assertEquals(emptySet(), DriveNameParser.declaredSeasons("无职转生/到了异世界就拿出真本事动画1-2季+小说"))
+        assertEquals(emptySet(), DriveNameParser.declaredSeasons("葬送的芙莉莲2"))
+    }
+
+    @Test
     fun `folder season`() {
         assertEquals(2, DriveNameParser.parseFolderSeason("Season 2"))
         assertEquals(2, DriveNameParser.parseFolderSeason("S02"))
@@ -89,6 +142,29 @@ class DriveNameParserTest {
         assertNull(DriveNameParser.parseFolderSeason("4K"))
         assertNull(DriveNameParser.parseFolderSeason("1080P"))
         assertNull(DriveNameParser.parseFolderSeason("动漫"))
+        assertEquals(1, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 I"))
+        assertEquals(3, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 III"))
+        assertEquals(4, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(5, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 V"))
+        assertEquals(4, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么Ⅳ 新章 迷宫篇"))
+        // 一季的上下半、分卷与压制组名里的字母不是季
+        assertNull(DriveNameParser.parseFolderSeason("Part II"))
+        assertNull(DriveNameParser.parseFolderSeason("Vol.III"))
+        assertNull(DriveNameParser.parseFolderSeason("[VCB-Studio] DanMachi [Ma10p_1080p]"))
+        assertNull(DriveNameParser.parseFolderSeason("Fate Zero [V2]"))
+    }
+
+    @Test
+    fun `work kinds`() {
+        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("剧场版 -俄里翁之箭-"))
+        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("[JYFanSub][Gekijouban Danmachi - Orion no Ya][01][GB][1080P][MP4].mp4"))
+        assertEquals(setOf(DriveNameParser.WorkKind.SPIN_OFF), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 外传 剑姬神圣谭"))
+        assertEquals(setOf(DriveNameParser.WorkKind.OVA), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 第二季 OVA"))
+        assertEquals(emptySet(), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(emptySet(), DriveNameParser.workKindsOf("Movies and Novas"))
+        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 TV+剧场版"))
+        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 1-4季全 1080P"))
+        assertFalse(DriveNameParser.isCollectionName("剧场版 -俄里翁之箭-"))
     }
 
     @Test

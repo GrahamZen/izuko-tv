@@ -157,6 +157,7 @@ internal fun renderRemoteControlPage(
     <div id="set-sources" hidden>
     <p class="hint">修改立即保存。正在播放的这一集不受影响，下一集或重新进入播放器时生效。订阅来的源只能启用或停用。</p>
     <div id="src-subs"></div>
+    <div id="src-drives"></div>
     <div id="src-add"></div>
     <div id="src-list"></div>
     </div>
@@ -178,6 +179,14 @@ internal fun renderRemoteControlPage(
     <div class="sheet-head"><div class="sheet-title" id="help-title">使用说明</div><button type="button" class="sheet-btn" id="help-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
     <div class="sheet-body" id="help-body"></div>
     </div>
+    <div id="share-sheet" class="sheet" hidden>
+    <div class="sheet-head"><div class="sheet-title">添加网盘分享</div><button type="button" class="sheet-btn" id="share-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
+    <div class="sheet-body" id="share-body"></div>
+    </div>
+    <div id="drive-sheet" class="sheet" hidden>
+    <div class="sheet-head"><div class="sheet-title" id="drive-title">从网盘挑</div><button type="button" class="sheet-btn" id="drive-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
+    <div class="sheet-body" id="drive-body"></div>
+    </div>
     <div id="toast"></div>
     <div id="sel-bar" hidden><button type="button" data-sel="cancel">取消</button><span class="sel-n"></span><button type="button" data-sel="all">全选</button><button type="button" class="sel-pause" data-sel="pause" hidden></button><button type="button" class="sel-pause" data-sel="resume" hidden></button><button type="button" class="ic sel-del" data-sel="del">删除</button></div>
     <nav class="tabbar">
@@ -188,7 +197,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -632,6 +641,22 @@ button { font: inherit; border: 0; cursor: pointer; }
 .upd-notes { margin: 2px 0 8px; padding-left: 18px; font-size: 14px; line-height: 1.5; color: var(--sub); }
 #set-update .row { margin-top: 12px; }
 #set-update button:disabled { opacity: .5; }
+/* 数据源页的网盘卡片 (CLOUD_DRIVE_SCRIPT): 二维码白底黑码, 在深色主题下也好扫 */
+.cd-qr { display: flex; justify-content: center; margin: 12px 0 4px; }
+.cd-qr img { width: 200px; height: 200px; border-radius: 12px; }
+#src-drives a.primary { text-decoration: none; text-align: center; }
+#src-drives textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+/* WebDAV 卡片: 媒体文件夹一行一个 (路径 + 移除), 浏览服务器文件夹的面板 */
+.cd-lib { margin-top: 14px; }
+.cd-lib-h { font-size: 13px; color: var(--sub); }
+.cd-lib-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 14px; word-break: break-all; }
+.cd-lib-row button { flex: none; height: 32px; padding: 0 12px; font-size: 13px; }
+.cd-browse { margin-top: 10px; padding: 10px; border: 1px solid var(--line2); border-radius: 12px; }
+.cd-path { font-size: 13px; color: var(--sub); word-break: break-all; margin-bottom: 8px; }
+.cd-folders { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.cd-folder { text-align: left; padding: 10px 12px; border-radius: 10px; background: var(--soft); color: var(--fg); font-size: 14px; word-break: break-all; }
+.cd-edit { margin-top: 14px; }
+.cd-edit > summary { cursor: pointer; font-size: 14px; color: var(--sub); }
 .log-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .log-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--soft); text-decoration: none; }
 .log-name { min-width: 0; font-size: 15px; font-weight: 600; color: var(--p); word-break: break-all; }
@@ -1679,6 +1704,7 @@ private val SCRIPT = """
     if (which === 'sources') {
       if (window.loadSources) window.loadSources();
       if (window.loadSubs) window.loadSubs();
+      if (window.loadDrives) window.loadDrives();
     } else {
       paintSetGroup();
       if (window.loadSettings) window.loadSettings();
@@ -2720,7 +2746,7 @@ private val SCRIPT = """
     lastState = s;
     chips.innerHTML = renderChips(s);
     renderFilters(s);
-    renderRefetch(true, s.sources.some(function (x) { return x.state === 'paused'; }));
+    renderRefetch(true, s.sources.some(function (x) { return x.state === 'paused'; }), s.drives);
     // 有行正滑开 / 正在拖时先不重画 (重画会把它弹回去), 记一笔由 flushList 在收起后补画 ——
     // 状态没变时服务端只回 same, 等不来下一次 render
     if (window.swBusy(src)) listStale = true;
@@ -2883,17 +2909,29 @@ private val SCRIPT = """
    * 的 srcFilter 分支), 跟在列表末尾的话, 正好会在「刚加的源没出现」这个要用它的场景下不见了。
    *
    * 有数据源被暂停时 (电视开播时还没查完的), 前面多一个「完整搜索」: 全部放开, 本播放页之后一直搜完。
+   *
+   * 下面一排是已配置的网盘 (drives, 服务端随播放状态给): 有能加分享的网盘时一个「添加网盘分享链接」, 每个网盘一个「从某某挑」。
    */
   var refetchShown = null;
-  function renderRefetch(on, paused) {
-    var key = on ? (paused ? 'on+paused' : 'on') : 'off';
+  function renderRefetch(on, paused, drives) {
+    drives = drives || [];
+    var key = on ? (paused ? 'on+paused' : 'on') + JSON.stringify(drives) : 'off';
     if (key === refetchShown) return;   // 每秒一次的轮询无条件重画会把按下去的按钮换掉
     refetchShown = key;
+    var shares = drives.some(function (d) { return d.shares; });
+    var picks = drives.filter(function (d) { return d.pick; });
     document.getElementById('player-refetch').innerHTML = on
       ? '<div class="src-refetch">' +
         (paused ? '<button type="button" id="src-full">' + T('完整搜索') + '</button> ' : '') +
         '<button type="button" id="src-refetch">' + T('重新搜索（含新数据源）') + '</button>' +
-        '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p></div>'
+        '<p class="hint">' + T('这次搜索用的是进入播放页时的数据源列表。刚加的数据源或刚更新的订阅要按一下才会参与，之后可能需要重新选片源。') + '</p>' +
+        // 自己在别处找到的网盘分享链接, 粘贴给这部番 (见 SHARES_SCRIPT)
+        (shares ? '<button type="button" id="src-share">' + T('添加网盘分享链接…') + '</button> ' : '') +
+        // 自动匹配对不上时, 在自己的网盘里给这部番挑文件夹或文件 (见 DRIVE_SCRIPT)
+        picks.map(function (d) {
+          return '<button type="button" data-src-drive="' + esc(d.id) + '" data-src-drive-name="' + esc(d.name) + '">' +
+            T('从{0}挑…', esc(d.name)) + '</button>';
+        }).join(' ') + '</div>'
       : '';
   }
   var SECTIONS = [['cache', T('本地缓存')], ['web', T('在线源')], ['bt', T('BT 源')]];
@@ -2943,7 +2981,7 @@ private val SCRIPT = """
     g.items.forEach(function (it) {
       var sel = it.id === s.selectedId;
       // 去重: 在线源的「字幕组」常就是字幕语言 (简中 · 简中)
-      var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size]
+      var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size, it.bitrate]
         .filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
       h += itemSwipe(it, '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
         '" data-id="' + esc(it.id) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
@@ -3055,7 +3093,12 @@ private val SCRIPT = """
 
   var h0 = location.hash.slice(1);
   // 旧书签 #sources: 数据源并进了「设置」, 打开设置标签的「数据源」页
-  if (h0 === 'sources') { setSub = 'sources'; h0 = 'settings'; }
+  if (h0 === 'sources' || h0 === 'sources/webdav') {
+    // 电视设置「添加 WebDAV」的二维码: 数据源页的「新增数据源」直接选上 WebDAV (见 renderAdd)
+    if (h0 === 'sources/webdav') window.pendingSourceAdd = 'webdav';
+    setSub = 'sources';
+    h0 = 'settings';
+  }
   // #settings/组名 (在某一组里刷新了页面): 停在那一组. 这条记录是进组时压的 (state 对得上) 就照旧, 底下本来就垫着列表;
   // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 「全部」显示方式下没有子页, 只打开设置标签
   if (h0.indexOf('settings/') === 0) {
@@ -4452,7 +4495,8 @@ private val SOURCES_SCRIPT = """
 
   var getJson = window.getJson;
   function load() {
-    getJson('api/sources').then(function (d) { data = d; renderAdd(); renderList(); })
+    // 网盘卡片跟着重拉: 导入、启用停用、删除「网盘」数据源都会改变它们 (见 CLOUD_DRIVE_SCRIPT)
+    getJson('api/sources').then(function (d) { data = d; renderAdd(); renderList(); if (window.loadDrives) window.loadDrives(); })
       .catch(function (e) {
         // 渲染抛异常也会落到这里, 被说成「读取失败」—— 把真正的错误发回电视才看得见
         if (window.clientLog) window.clientLog('sources load/render failed: ' + (e && (e.stack || e.message) || e));
@@ -4756,8 +4800,19 @@ private val SOURCES_SCRIPT = """
     addBox.innerHTML =
       '<label class="f"><span>' + T('新增数据源') + '</span><select id="src-new"><option value="">' + T('选择类型…') + '</option>' +
       '<option value="import">' + T('导入 JSON（选文件或粘贴）') + '</option>' +
+      (window.webdavAdd ? '<option value="webdav">' + T('WebDAV（NAS）') + '</option>' : '') +
       t.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name) + '</option>'; }).join('') +
       '</select></label><div id="src-new-panel"></div>';
+    // 从电视设置「添加 WebDAV」的二维码进来 (#sources/webdav): 直接选上并打开表单
+    if (window.pendingSourceAdd) {
+      var sel = document.getElementById('src-new');
+      sel.value = window.pendingSourceAdd;
+      window.pendingSourceAdd = null;
+      if (sel.value) {
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        addBox.scrollIntoView({ block: 'start' });
+      }
+    }
   }
   function clearAdd() {
     var sel = document.getElementById('src-new');
@@ -4783,6 +4838,10 @@ private val SOURCES_SCRIPT = """
         '<textarea name="text" rows="8" spellcheck="false" placeholder="' + T('在这里粘贴 JSON') + '"></textarea>' +
         '<div class="row"><button type="button" class="ghost" data-act="cancel-new">' + T('取消') + '</button>' +
         '<button type="button" class="ghost" data-imp="clear">' + T('清空') + '</button><button type="submit" class="primary">' + T('导入') + '</button></div></form>';
+      return;
+    }
+    if (e.target.value === 'webdav') {
+      panel.innerHTML = '<form class="src-new-form" data-kind="webdav">' + window.webdavAdd.form() + btns('cancel-new', T('添加')) + '</form>';
       return;
     }
     var t = data.templates[+e.target.value];
@@ -4832,6 +4891,16 @@ private val SOURCES_SCRIPT = """
         toast(r.message);
         if (r.ok) { clearAdd(); lastTemplates = ''; load(); }
       }).catch(function () { done(); fail(); });
+      return;
+    }
+    if (form.getAttribute('data-kind') === 'webdav') {
+      var add = form.querySelector('button[type="submit"]');
+      if (add.disabled) return;
+      add.disabled = true;
+      window.webdavAdd.submit(form).then(function (r) {
+        add.disabled = false;
+        if (r && r.ok) clearAdd();
+      });
       return;
     }
     var t = data.templates[+document.getElementById('src-new').value];
@@ -5299,6 +5368,316 @@ private val SUBS_SCRIPT = """
         if (r.ok) { load(); if (window.loadSources) window.loadSources(); }
       }).catch(fail);
     }
+  });
+})();
+""".trimIndent()
+
+/**
+ * 「数据源」页的网盘卡片 (见 RemoteCloudDrive), 每个已配置的网盘一张: 登录状态、扫码登录 (手机上点按钮按协议给的链接唤起网盘 App 确认,
+ * 或另一台设备扫码)、填 Cookie、转码开关、启用这个网盘的数据源、退出. 没有配置网盘时只有一张说明卡片.
+ * 扫码进行中每 2 秒拉一次状态, 切回本页时立即拉一次; 数据源列表重拉时 (导入、启用停用) 跟着重拉.
+ */
+private val CLOUD_DRIVE_SCRIPT = """
+(function () {
+  var box = document.getElementById('src-drives');
+  var timer = null, last = '', checked = false, polling = false, loading = false;
+  // 各网盘二维码还剩多久过期: 按服务端给的剩余时长倒数, 每秒只改那几个数字 (卡片不跟着重画)
+  var qrDeadline = {}, qrTick = null;
+  function tickQr() {
+    [].forEach.call(box.querySelectorAll('.cd-left'), function (el) {
+      el.textContent = T('{0} 后过期', window.countdown((qrDeadline[el.getAttribute('data-drive')] || 0) - Date.now()));
+    });
+  }
+  // 手机上点按钮让网盘 App 打开二维码里的确认页 (带这次登录的令牌), 在 App 里确认即登录. 唤起链接由协议按平台给出 (mobileOpen);
+  // 本页就开在那个 App 里 (UA 带协议给的标记) 时直接打开确认页.
+  var ua = navigator.userAgent;
+  var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var phone = ios || /Android|HarmonyOS|OpenHarmony/i.test(ua);
+  // 微信、QQ 等 App 的内置浏览器拦截跳转到其他 App 的链接
+  var walledUa = /MicroMessenger|\sQQ\/|DingTalk|Weibo/i.test(ua);
+  function inApp(d) {
+    var k = d.mobileOpen && d.mobileOpen.inAppUserAgent;
+    return !!k && ua.toLowerCase().indexOf(k.toLowerCase()) >= 0;
+  }
+  // 唤起链接: 模板里的 {url} 换成 URL 编码后的二维码内容; 协议没给这个平台的模板时为空
+  function appLink(d, link) {
+    if (inApp(d)) return link;
+    var m = d.mobileOpen;
+    var t = m ? (ios ? m.ios : m.android) : '';
+    return t ? t.split('{url}').join(encodeURIComponent(link)) : '';
+  }
+  function load() {
+    clearTimeout(timer);
+    // 切到本页与数据源列表重拉几乎同时要, 在途时不再发
+    if (!loading) {
+      loading = true;
+      getJson('api/drives').then(function (d) { loading = false; render(d); }).catch(function () { loading = false; });
+    }
+    // 每次打开页面向各网盘核对一次登录是否还有效 (顺便更新昵称与档位)
+    if (!checked) {
+      checked = true;
+      post('api/drive/check', {}).then(render).catch(function () {});
+    }
+  }
+  window.loadDrives = load;
+  function act(path, data, sources) {
+    return post(path, data).then(function (r) {
+      if (r.message) toast(r.message);
+      // 出错时回的只有 ok / message, 重新拉一次状态
+      if (r.drives === undefined) load(); else render(r);
+      if (sources && window.loadSources) window.loadSources();
+      return r;
+    }).catch(fail);
+  }
+  // 正在浏览的 WebDAV 文件夹 (按网盘): 服务端 api/drive/folders 的回复. 卡片重画后照它把面板画回去
+  var browsing = {};
+  function disabledNotice(d) {
+    return '<div class="now-status attention"><b>' + T('「{0}」数据源已停用', esc(d.sourceName)) + '</b><span>' + T('启用后播放时才会在网盘里找') + '</span></div>' +
+      '<div class="row"><button type="button" class="primary" data-cd="enable">' + T('启用') + '</button></div>';
+  }
+  // WebDAV 服务器 (NAS): 账号密码登录、媒体文件夹、改名字与地址、删除
+  function webdavCard(d) {
+    var name = esc(d.name), id = esc(d.id);
+    var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
+      window.srcIcon(d.sourceId, d.name) + name + '<small>' + esc(d.server) + '</small></div>';
+    if (!d.enabled) h += disabledNotice(d);
+    var ok = d.loggedIn && !d.expired;
+    if (ok) h += '<div class="now-status ready"><b>' + T('已连接') + '</b><span>' + esc(d.username) + '</span></div>';
+    else if (d.expired) h += '<div class="now-status error"><b>' + T('连不上服务器或账号密码不对') + '</b><span>' + T('确认服务器开着、地址与账号密码没变') + '</span></div>';
+    if (!ok) {
+      h += '<form class="cd-pass" data-drive="' + id + '">' +
+        '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false" value="' + esc(d.username) + '"></label>' +
+        '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
+        '<div class="row"><button type="submit" class="primary">' + T('登录') + '</button></div></form>';
+    }
+    h += '<div class="cd-lib"><div class="cd-lib-h">' + T('媒体文件夹') + '</div>' +
+      (d.library.length ? d.library.map(function (f) {
+        return '<div class="cd-lib-row"><span>' + esc(f.path) + '</span><button type="button" class="ghost" data-cd="lib-remove" data-fid="' + esc(f.id) + '">' + T('移除') + '</button></div>';
+      }).join('') : '<p class="hint">' + T('还没有选：播放时在整个服务器里按番名找。选上放动画的文件夹，找得更快也更准。') + '</p>') +
+      '<label class="f"><span>' + T('往下找几层') + '</span><select data-cd="depth">' + [1, 2, 3].map(function (n) {
+        return '<option value="' + n + '"' + (d.depth === n ? ' selected' : '') + '>' + n + '</option>';
+      }).join('') + '</select><em>' + T('1 层：媒体文件夹 / 番名；2 层：媒体文件夹 / 季度 / 番名') + '</em></label>' +
+      (ok ? '<div class="row"><button type="button" class="ghost" data-cd="browse">' + T('选择文件夹') + '</button></div>' : '') +
+      '<div class="cd-browse" data-drive="' + id + '" hidden></div></div>';
+    h += '<details class="cd-edit" data-drive="' + id + '"><summary>' + T('修改名字与地址') + '</summary><form class="cd-webdav-edit" data-drive="' + id + '">' +
+      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" value="' + name + '"></label>' +
+      '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" value="' + esc(d.server) + '"></label>' +
+      '<div class="row"><button type="submit" class="ghost">' + T('保存') + '</button></div></form></details>';
+    h += '<div class="row">' + (d.loggedIn ? '<button type="button" class="ghost" data-cd="logout">' + T('退出登录') + '</button>' : '') +
+      '<button type="button" class="ghost" data-cd="remove">' + T('删除这台服务器') + '</button></div>';
+    return h + '</div>';
+  }
+  // 「新增数据源」下拉里选 WebDAV 时的表单与提交 (见数据源脚本的 renderAdd). 添加成功后滚到新服务器的卡片, 打开选媒体文件夹
+  var driveIds = {};
+  window.webdavAdd = {
+    form: function () {
+      return '<p class="hint">' + T('在 NAS 的系统设置里打开 WebDAV 服务，把地址填在这里。添加后，播放时会在服务器上按番名找视频，直接播放原文件。') + '</p>' +
+        '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" placeholder="' + T('例如：家里的 NAS') + '"></label>' +
+        '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:5005/"></label>' +
+        '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false"></label>' +
+        '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
+        '<p class="hint">' + T('添加后会打开这台服务器的文件夹，选上放动画的文件夹（媒体文件夹），找番更快也更准。') + '</p>';
+    },
+    submit: function (form) {
+      var v = { name: form.elements.name.value.trim(), url: form.elements.url.value.trim(), username: form.elements.username.value.trim(), password: form.elements.password.value };
+      if (!v.url) { toast(T('先填 WebDAV 地址')); return Promise.resolve(null); }
+      if (!v.username) { toast(T('先填用户名')); return Promise.resolve(null); }
+      var before = driveIds;
+      return act('api/drive/webdav/add', v, true).then(function (r) {
+        var added = r && r.ok && r.drives ? r.drives.filter(function (x) { return x.type === 'webdav' && !before[x.id]; })[0] : null;
+        if (added) {
+          var c = box.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
+          if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (added.loggedIn) openFolder(added.id, '');
+        }
+        return r;
+      });
+    }
+  };
+  // 浏览服务器文件夹的面板: 当前路径、上一级、子文件夹 (点进去), 把当前文件夹加为媒体文件夹
+  function renderBrowse(drive) {
+    var panel = box.querySelector('.cd-browse[data-drive="' + CSS.escape(drive) + '"]');
+    var b = browsing[drive];
+    if (!panel) return;
+    if (!b) { panel.hidden = true; panel.innerHTML = ''; return; }
+    panel.hidden = false;
+    panel.innerHTML = '<div class="cd-path">' + esc(b.path) + '</div><div class="cd-folders">' +
+      (b.parent ? '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(b.parent) + '">' + T('上一级') + '</button>' : '') +
+      b.folders.map(function (f) {
+        return '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(f.id) + '">' + esc(f.name) + '</button>';
+      }).join('') +
+      (b.folders.length ? '' : '<p class="hint">' + T('这里没有子文件夹') + '</p>') + '</div>' +
+      '<div class="row">' + (b.chosen ? '<button type="button" class="primary" disabled>' + T('已是媒体文件夹') + '</button>'
+        : '<button type="button" class="primary" data-cd="lib-add" data-fid="' + esc(b.id) + '">' + T('加为媒体文件夹') + '</button>') +
+      '<button type="button" class="ghost" data-cd="browse-close">' + T('收起') + '</button></div>';
+  }
+  function openFolder(drive, fid) {
+    post('api/drive/folders', { drive: drive, fid: fid }).then(function (r) {
+      if (!r.ok) { toast(r.message); return; }
+      browsing[drive] = r;
+      renderBrowse(drive);
+    }).catch(fail);
+  }
+  function card(d) {
+    if (d.type === 'webdav') return webdavCard(d);
+    var q = d.qr || null, name = esc(d.name), id = esc(d.id), source = esc(d.sourceName);
+    var app = d.appName ? esc(d.appName) : T('{0} App', name);
+    var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
+      window.srcIcon(d.sourceId, d.name) + name + '<small>' + (d.shares ? T('你网盘里的和别人分享的都能看') : T('在你自己的{0}里找番', name)) + '</small></div>';
+    if (!d.enabled) h += disabledNotice(d);
+    if (d.loggedIn) {
+      var who = [d.nickname, d.tier].filter(Boolean).join(' · ');
+      h += d.expired
+        ? '<div class="now-status error"><b>' + T('登录已失效') + '</b><span>' + T('重新扫码或填 Cookie 登录') + '</span></div>'
+        : '<div class="now-status ready"><b>' + T('已登录') + '</b><span>' + esc(who) + '</span></div>';
+      if (d.supportsTranscoded) {
+        h += '<label class="toggle"><input type="checkbox" data-cd="transcode"' + (d.transcode ? ' checked' : '') + '>' + T('转码播放') + '</label>' +
+          '<p class="hint">' + T('关闭时播放原文件；打开时播放网盘转码后的流，取账号能用的最高清晰度') + '</p>';
+      }
+    } else {
+      // 能播别人分享的网盘 (分享合集、网盘搜索、添加的分享链接都要登录才能转存), 不只是自己存的
+      h += '<p class="hint">' + (d.shares
+        ? T('登录后，播放时会按番名在你的{0}里找视频（选源列表里的「{1}」）；别人分享的{0}资源也能播：分享合集、网盘搜索这类数据源找到的，和你添加的分享链接，播放时转存到你的网盘。', name, source)
+        : T('登录后，播放时会按番名在你的{0}里找视频，找到的出现在选源列表的「{1}」里。', name, source)) + '</p>';
+    }
+    if (!d.loggedIn || d.expired) {
+      if (q && q.state === 'waiting') {
+        var href = phone ? appLink(d, q.link) : '';
+        var walled = walledUa && !inApp(d);
+        var canOpen = !!href && !walled;
+        if (q.expiresIn != null) qrDeadline[d.id] = Date.now() + q.expiresIn;
+        h += '<div class="cd-qr"><img src="api/drive/qr.svg?drive=' + encodeURIComponent(d.id) + '&k=' + encodeURIComponent(q.link.slice(-12)) + '" alt=""></div>' +
+          (q.expiresIn != null ? '<p class="hint cd-left" data-drive="' + id + '"></p>' : '') +
+          '<p class="hint">' + (canOpen ? T('用装了{0}的另一台手机扫码；或者在这台手机上点下面的按钮，跳到{0}里确认登录。', app)
+            : walled && href ? T('在微信、QQ 里打开的页面不能跳转到{0}：点右上角菜单选「在浏览器打开」，或者用另一台手机扫码。', app)
+            : T('用手机上的{0}扫码登录。', app)) + '</p>' +
+          '<div class="row">' +
+          (canOpen ? '<a class="primary" href="' + esc(href) + '"' + (inApp(d) ? ' target="_blank" rel="noopener"' : '') + '>' + T('在{0}中确认', app) + '</a>' : '') +
+          '<button type="button" class="ghost" data-cd="qr-cancel">' + T('取消') + '</button></div>';
+        if (canOpen && !inApp(d)) h += '<p class="hint">' + T('在{0}里确认后回到这里。点了没反应的话，确认这台手机装了{0}。', app) + '</p>';
+      } else if (q && q.state === 'loading') {
+        h += '<div class="now-status"><b>' + T('正在获取二维码…') + '</b></div>';
+      } else if (q && q.state === 'confirmed') {
+        // 手机上确认了, 电视还要换登录 Cookie、读账号 (几个请求), 这几秒别还挂着二维码
+        h += '<div class="now-status busy"><b>' + T('已确认，正在登录…') + '</b></div>';
+      } else {
+        if (q && q.state === 'expired') h += '<div class="now-status attention"><b>' + T('二维码已过期') + '</b></div>';
+        if (q && q.state === 'failed') h += '<div class="now-status error"><b>' + T('登录失败') + '</b><span>' + esc(q.message || '') + '</span></div>';
+        if (d.supportsQr) h += '<div class="row"><button type="button" class="primary" data-cd="qr">' + T('扫码登录') + '</button></div>';
+      }
+      h += '<form class="cd-cookie" data-drive="' + id + '"><label class="f"><span>' + (d.supportsQr ? T('或者填写 Cookie') : T('填写 Cookie')) + '</span>' +
+        '<textarea name="cookie" rows="3" spellcheck="false" autocomplete="off" placeholder="' + T('粘贴 Cookie') + '"></textarea>' +
+        '<em>' + (d.cookieHint ? esc(d.cookieHint) : T('在电脑浏览器登录{0}网页版，打开开发者工具，复制任意一个请求里的整段 Cookie', name)) + '</em></label>' +
+        '<div class="row"><button type="submit" class="ghost">' + T('用 Cookie 登录') + '</button></div></form>';
+    }
+    if (d.loggedIn) h += '<div class="row"><button type="button" class="ghost" data-cd="logout">' + T('退出登录') + '</button></div>';
+    return h + '</div>';
+  }
+  function render(d) {
+    if (!d || d.drives === undefined) return;
+    driveIds = {};
+    d.drives.forEach(function (x) { driveIds[x.id] = true; });
+    var h = (d.drives.some(function (x) { return x.type !== 'webdav'; }) ? '' : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
+        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p><p class="hint">' + T('WebDAV（NAS）在下面的「新增数据源」里添加。') + '</p></div>') +
+      d.drives.map(card).join('');
+    if (h !== last) {
+      // 重画保住正在填的输入框、展开的「修改」与焦点 (按表单与网盘对回去)
+      var typed = {}, focused = null, opened = {};
+      function keyOf(el) {
+        var f = el.closest('form');
+        return f ? f.className + '|' + (f.getAttribute('data-drive') || '') + '|' + el.name : '';
+      }
+      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
+        var k = keyOf(el);
+        if (!k) return;
+        typed[k] = el.value;
+        if (document.activeElement === el) focused = k;
+      });
+      [].forEach.call(box.querySelectorAll('details.cd-edit[open]'), function (el) { opened[el.getAttribute('data-drive')] = true; });
+      box.innerHTML = h;
+      last = h;
+      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
+        var k = keyOf(el);
+        if (k && typed[k] !== undefined && typed[k] !== el.defaultValue) el.value = typed[k];
+        if (k && focused === k) el.focus();
+      });
+      [].forEach.call(box.querySelectorAll('details.cd-edit'), function (el) { if (opened[el.getAttribute('data-drive')]) el.open = true; });
+      Object.keys(browsing).forEach(renderBrowse);
+    }
+    clearTimeout(timer);
+    polling = d.drives.some(function (x) {
+      var q = x.qr;
+      return !!q && (q.state === 'waiting' || q.state === 'loading' || q.state === 'confirmed');
+    });
+    if (polling) timer = setTimeout(load, 2000);
+    clearInterval(qrTick);
+    qrTick = null;
+    if (box.querySelector('.cd-left')) {
+      tickQr();
+      qrTick = setInterval(tickQr, 1000);
+    }
+  }
+  // 从网盘 App 确认完切回来时马上刷新, 不等下一轮 (后台页的定时器会被浏览器暂停)
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && polling) load();
+  });
+  function driveOf(el) {
+    var c = el.closest('[data-drive]');
+    return c ? c.getAttribute('data-drive') : '';
+  }
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-cd]');
+    if (!b || b.tagName === 'INPUT') return;
+    var a = b.getAttribute('data-cd'), drive = driveOf(b);
+    if (a === 'qr') act('api/drive/qr/start', { drive: drive });
+    else if (a === 'qr-cancel') act('api/drive/qr/cancel', { drive: drive });
+    else if (a === 'enable') act('api/drive/enable', { drive: drive }, true);
+    else if (a === 'logout') {
+      var c = b.closest('.card');
+      if (confirm(T('退出{0}登录？', c ? c.getAttribute('data-name') : ''))) act('api/drive/logout', { drive: drive });
+    } else if (a === 'browse' || a === 'open') openFolder(drive, b.getAttribute('data-fid') || '');
+    else if (a === 'browse-close') { delete browsing[drive]; renderBrowse(drive); }
+    else if (a === 'lib-add') act('api/drive/library', { drive: drive, action: 'add', fid: b.getAttribute('data-fid') }).then(function (r) {
+      if (r && r.ok) { delete browsing[drive]; renderBrowse(drive); }
+    });
+    else if (a === 'lib-remove') act('api/drive/library', { drive: drive, action: 'remove', fid: b.getAttribute('data-fid') });
+    else if (a === 'remove') {
+      var server = b.closest('.card');
+      if (confirm(T('删除{0}？账号密码与选的媒体文件夹一起删掉，服务器上的文件不受影响。', server ? server.getAttribute('data-name') : ''))) {
+        delete browsing[drive];
+        act('api/drive/remove', { drive: drive }, true);
+      }
+    }
+  });
+  box.addEventListener('change', function (e) {
+    if (e.target.getAttribute('data-cd') === 'transcode') {
+      act('api/drive/transcode', { drive: driveOf(e.target), on: e.target.checked ? '1' : '0' });
+    } else if (e.target.getAttribute('data-cd') === 'depth') {
+      act('api/drive/library', { drive: driveOf(e.target), action: 'depth', depth: e.target.value });
+    }
+  });
+  box.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (form.classList.contains('cd-pass')) {
+      e.preventDefault();
+      if (!form.elements.username.value.trim()) { toast(T('先填用户名')); return; }
+      act('api/drive/password', { drive: form.getAttribute('data-drive'), username: form.elements.username.value.trim(), password: form.elements.password.value }).then(function (r) {
+        if (r && r.ok) form.elements.password.value = '';
+      });
+      return;
+    }
+    if (form.classList.contains('cd-webdav-edit')) {
+      e.preventDefault();
+      act('api/drive/webdav/edit', { drive: form.getAttribute('data-drive'), name: form.elements.name.value.trim(), url: form.elements.url.value.trim() }, true);
+      return;
+    }
+    if (!form.classList.contains('cd-cookie')) return;
+    e.preventDefault();
+    var cookie = form.elements.cookie.value.trim();
+    if (!cookie) { toast(T('先把 Cookie 粘到框里')); return; }
+    act('api/drive/cookie', { drive: form.getAttribute('data-drive'), cookie: cookie }).then(function (r) {
+      if (r && r.ok) form.elements.cookie.value = '';
+    });
   });
 })();
 """.trimIndent()
@@ -6233,7 +6612,7 @@ private val CACHE_SCRIPT = """
     groups.forEach(function (g) {
       h += '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
       g.items.forEach(function (it) {
-        var meta = [it.resolution, it.subtitles, it.alliance, it.size].filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
+        var meta = [it.resolution, it.subtitles, it.alliance, it.size, it.bitrate].filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
         h += '<button type="button" class="item' + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') + '" data-mid="' + esc(it.id) +
           '" data-title="' + esc(it.title) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
           '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
@@ -8139,6 +8518,347 @@ private val HISTORY_SCRIPT = """
         setTimeout(function () { if (window.showTab) window.showTab('player'); }, 1200);
       }
     }).catch(function () { b.classList.remove('busy', 'hit'); fail(); });
+  });
+})();
+""".trimIndent()
+
+/**
+ * 播放器标签「添加网盘分享链接…」的面板 (见 RemoteCloudDriveShares): 粘贴自己找到的网盘分享链接, 电视按已配置的网盘认出是哪个网盘的,
+ * 打开分享、按当前这部番对出剧集, 对上了就记到这部番名下 (选源列表的「我添加的分享」); 一集都没认出时列出分享里的视频, 点一个当作这一集播放.
+ * 下面列着这部番在各个网盘已经添加的分享, 可以删. 只在打开面板与操作之后拉数据, 不轮询.
+ */
+private val SHARES_SCRIPT = """
+(function () {
+  var sheet = document.getElementById('share-sheet'), body = document.getElementById('share-body');
+  // drives: 能添加分享的网盘 (名字与登录状态)
+  var results = [], shares = [], drives = [], busy = false, typed = '';
+  function fileRow(r, f, label) {
+    return '<button type="button" class="item" data-sp-drive="' + esc(r.drive) + '" data-sp-share="' + esc(r.shareId) + '" data-sp-fid="' + esc(f.fid) + '">' +
+      '<span class="t">' + esc(f.name) + '</span><span class="m">' + esc([f.meta, label].filter(Boolean).join(' · ')) + '</span></button>';
+  }
+  function names(list) {
+    return list.map(function (d) { return esc(d.name); }).join(T('、'));
+  }
+  function render() {
+    var old = body.querySelector('#share-form textarea');
+    if (old) typed = old.value;
+    var h = '<form id="share-form"><label class="f"><span>' + T('分享链接') + '</span>' +
+      '<textarea name="text" rows="4" spellcheck="false" autocomplete="off" placeholder="' + T('粘贴分享链接，可以连「提取码：xxxx」一起') + '"></textarea>' +
+      '<em>' + T('在别处搜到网盘分享后，把链接粘贴到这里。电视会打开分享、认出这部番的剧集并记到这部番名下，之后每一集的选源列表里都有「我添加的分享」。播放时转存到你的网盘，不改变画质。') +
+      (drives.length ? T('支持的网盘：{0}', names(drives)) : '') + '</em></label>' +
+      '<div class="row"><button type="submit" class="primary"' + (busy ? ' disabled' : '') + '>' + (busy ? T('正在打开分享…') : T('添加')) + '</button></div></form>';
+    // 分享可以先加, 播放时要转存到自己的网盘, 所以没登录的网盘提一句
+    var out = drives.filter(function (d) { return !d.loggedIn; });
+    if (out.length) {
+      h += '<div class="now-status attention"><b>' + T('还没登录{0}', names(out)) + '</b><span>' + T('可以先添加，播放前要在「数据源」页登录') + '</span></div>';
+    }
+    results.forEach(function (r) {
+      h += '<div class="card set-card"><div class="set-title">' + esc(r.title || r.shareId) + '</div>' +
+        '<div class="now-status ' + (r.ok ? 'ready' : 'error') + '"><span>' + esc(r.message) + '</span></div>';
+      if (r.current && r.current.length) {
+        h += '<div class="list">' + r.current.map(function (f) { return fileRow(r, f, T('播放这一集')); }).join('') + '</div>';
+      }
+      if (r.files && r.files.length) {
+        h += '<div class="list">' + r.files.map(function (f) { return fileRow(r, f, T('当作这一集播放')); }).join('') + '</div>';
+        if (r.moreFiles) h += '<p class="hint">' + T('还有 {0} 个视频没列出', r.moreFiles) + '</p>';
+      }
+      h += '</div>';
+    });
+    h += '<div class="card set-card"><div class="set-title">' + T('这部番已添加的分享') + '</div>';
+    if (!shares.length) h += '<p class="hint">' + T('还没有添加') + '</p>';
+    shares.forEach(function (s) {
+      h += '<div class="sub-item"><div class="sub-url">' + esc(s.title) + '</div>' +
+        (s.note ? '<div class="now-status ' + (s.noteLevel === 'attention' ? 'attention' : 'error') + '"><span>' + esc(s.note) + '</span></div>' : '') +
+        // 配了几个网盘时标上是哪个网盘的
+        '<div class="sub-meta"><span>' + esc(drives.length > 1 ? s.driveName + ' · ' + s.id : s.id) + '</span>' +
+        '<button type="button" class="sub-del icb" data-sp-del="' + esc(s.id) + '" data-sp-drive="' + esc(s.drive) + '" aria-label="' + T('删除这个分享') + '" title="' + T('删除这个分享') + '">' +
+        window.ICONS.trash + '</button></div></div>';
+    });
+    h += '</div>';
+    body.innerHTML = h;
+    var ta = body.querySelector('#share-form textarea');
+    if (ta) ta.value = typed;
+  }
+  function loadShares() {
+    return getJson('api/player/shares').then(function (d) {
+      if (!d.ok) { toast(d.message); return; }
+      shares = d.shares || [];
+      drives = d.drives || [];
+      render();
+    }).catch(fail);
+  }
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#src-share')) return;
+    results = [];
+    window.sheets.open(sheet);
+    render();
+    loadShares();
+  });
+  document.getElementById('share-close').addEventListener('click', function () { window.sheets.close(sheet); });
+  body.addEventListener('submit', function (e) {
+    if (e.target.id !== 'share-form') return;
+    e.preventDefault();
+    var text = e.target.elements.text.value.trim();
+    if (!text) { toast(T('先把分享链接粘到框里')); return; }
+    busy = true;
+    render();
+    post('api/player/shares/add', { text: text }).then(function (r) {
+      busy = false;
+      if (r.message) toast(r.message);
+      results = r.results || [];
+      if (r.ok) typed = '';
+      render();
+      loadShares();
+    }).catch(function () { busy = false; render(); fail(); });
+  });
+  body.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-sp-del]');
+    if (del) {
+      if (!confirm(T('删除这个分享？这部番的选源列表里就不再有它'))) return;
+      del.disabled = true;
+      post('api/player/shares/delete', { drive: del.getAttribute('data-sp-drive'), id: del.getAttribute('data-sp-del') }).then(function (r) {
+        if (r.message) toast(r.message);
+        loadShares();
+      }).catch(fail);
+      return;
+    }
+    var f = e.target.closest('[data-sp-fid]');
+    if (!f) return;
+    f.disabled = true;
+    post('api/player/shares/play', {
+      drive: f.getAttribute('data-sp-drive'), share: f.getAttribute('data-sp-share'), fid: f.getAttribute('data-sp-fid'),
+    }).then(function (r) {
+      f.disabled = false;
+      if (r.message) toast(r.message);
+      if (r.ok) window.sheets.close(sheet);
+    }).catch(function () { f.disabled = false; fail(); });
+  });
+})();
+""".trimIndent()
+
+/**
+ * 播放器标签「从某某挑…」的面板 (见 RemoteCloudDrivePicks), 每个已配置的网盘一个按钮, 打开时记下是哪个网盘 (st.drive), 请求都带上它:
+ * 自动匹配对不上时, 在自己的网盘里搜或一层层点进去, 点视频当作当前这一集播放, 或在放这部番的文件夹里按「就是这个文件夹」,
+ * 之后每一集这个网盘的数据源都从那里找. 网盘不支持搜索 (canSearch) 时只能一层层点进去, 打开时直接列根目录.
+ * 上面列着这部番记下的网盘位置, 可以删. 只在打开面板与操作之后拉数据, 不轮询.
+ */
+private val DRIVE_SCRIPT = """
+(function () {
+  var sheet = document.getElementById('drive-sheet'), body = document.getElementById('drive-body');
+  // path: null = 显示的是搜索结果; [] = 根目录; [{fid, name}, ...] = 从外到里点进去的文件夹
+  var st = {
+    drive: '', driveName: '', canSearch: true, loggedIn: true, keyword: '', typed: false, names: [], folders: [], files: [],
+    canAttach: false, subtitles: [], items: null, more: 0, path: null, message: '', busy: false,
+  };
+  function api(path, params) {
+    var q = 'drive=' + encodeURIComponent(st.drive);
+    for (var k in params) q += '&' + k + '=' + encodeURIComponent(params[k]);
+    return 'api/player/drive' + path + '?' + q;
+  }
+  function send(path, data) {
+    data.drive = st.drive;
+    return post('api/player/drive' + path, data);
+  }
+  function itemRow(it) {
+    if (it.dir) {
+      return '<button type="button" class="item" data-dv-open="' + esc(it.fid) + '" data-dv-name="' + esc(it.name) + '">' +
+        '<span class="t">' + esc(it.name) + '</span><span class="m">' + T('文件夹') + '</span></button>';
+    }
+    if (it.sub) {
+      return '<button type="button" class="item" data-dv-sub="' + esc(it.fid) + '">' +
+        '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([T('字幕'), it.meta, T('挂到正在播的视频上')].filter(Boolean).join(' · ')) + '</span></button>';
+    }
+    return '<button type="button" class="item" data-dv-play="' + esc(it.fid) + '">' +
+      '<span class="t">' + esc(it.name) + '</span><span class="m">' + esc([it.meta, T('当作这一集播放')].filter(Boolean).join(' · ')) + '</span></button>';
+  }
+  function pickRow(p, meta) {
+    return '<div class="sub-item"><div class="sub-url">' + esc(p.name) + '</div><div class="sub-meta"><span>' + esc(meta) + '</span>' +
+      '<button type="button" class="sub-del icb" data-dv-forget="' + esc(p.fid) + '" aria-label="' + T('忘掉这个位置') + '" title="' + T('忘掉这个位置') + '">' +
+      window.ICONS.trash + '</button></div></div>';
+  }
+  function render() {
+    var old = body.querySelector('#drive-form input');
+    if (old) st.keyword = old.value;
+    var name = esc(st.driveName);
+    var h = '<form id="drive-form"><label class="f">' +
+      (st.canSearch ? '<span>' + T('搜索网盘') + '</span><input type="text" name="q" autocomplete="off" placeholder="' + T('番名或文件夹名') + '">' : '') +
+      '<em>' + T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个网盘账号。') + '</em></label>' +
+      '<div class="row">' + (st.canSearch ? '<button type="submit" class="primary"' + (st.busy ? ' disabled' : '') + '>' + T('搜索') + '</button>' : '') +
+      '<button type="button" data-dv-root>' + T('浏览网盘根目录') + '</button></div></form>';
+    // 这部番的搜索名 (编辑查询请求里那些), 点一下就搜, 不用手打
+    if (st.canSearch && st.names.length) {
+      h += '<p class="hint">' + T('这部番的搜索名，点一下直接搜') + '</p><div class="chips">' + st.names.map(function (n) {
+        return '<button type="button" class="chip' + (n === st.keyword.trim() ? ' on' : '') + '" data-dv-q="' + esc(n) + '">' + esc(n) + '</button>';
+      }).join('') + '</div>';
+    }
+    if (!st.loggedIn) {
+      h += '<div class="now-status attention"><b>' + T('还没登录{0}', name) + '</b><span>' + T('先在「数据源」页登录{0}', name) + '</span></div>';
+    }
+    h += '<div class="card set-card"><div class="set-title">' + T('这部番记下的网盘位置') + '</div>';
+    if (!st.folders.length && !st.files.length) h += '<p class="hint">' + T('还没有记下') + '</p>';
+    st.folders.forEach(function (f) { h += pickRow(f, T('文件夹')); });
+    st.files.forEach(function (f) { h += pickRow(f, f.meta); });
+    h += '</div>';
+    if (st.canAttach) {
+      h += '<div class="card set-card"><div class="set-title">' + T('正在播的视频挂上的字幕') + '</div>';
+      if (!st.subtitles.length) h += '<p class="hint">' + T('还没有。点下面列表里的字幕文件就挂上') + '</p>';
+      st.subtitles.forEach(function (s) {
+        h += '<div class="sub-item"><div class="sub-url">' + esc(s.name) + '</div><div class="sub-meta"><span>' + T('字幕') + '</span>' +
+          '<button type="button" class="sub-del icb" data-dv-unsub="' + esc(s.fid) + '" aria-label="' + T('取下这条字幕') + '" title="' + T('取下这条字幕') + '">' +
+          window.ICONS.trash + '</button></div></div>';
+      });
+      h += '</div>';
+    }
+    if (st.items || st.busy || st.message) {
+      h += '<div class="card set-card">';
+      if (st.path) {
+        h += '<div class="chips"><button type="button" class="chip' + (st.path.length ? '' : ' on') + '" data-dv-crumb="-1">' + T('网盘根目录') + '</button>' +
+          st.path.map(function (p, i) {
+            return '<button type="button" class="chip' + (i === st.path.length - 1 ? ' on' : '') + '" data-dv-crumb="' + i + '">' + esc(p.name) + '</button>';
+          }).join('') + '</div>';
+        if (st.path.length) {
+          h += '<div class="row"><button type="button" class="primary" data-dv-pick="' + esc(st.path[st.path.length - 1].fid) + '"' + (st.busy ? ' disabled' : '') + '>' +
+            T('就是这个文件夹') + '</button></div>';
+        }
+      } else {
+        h += '<div class="set-title">' + T('搜索结果') + '</div>';
+      }
+      if (st.busy) h += '<p class="hint">' + T('加载中…') + '</p>';
+      else if (st.message) h += '<p class="hint">' + esc(st.message) + '</p>';
+      if (!st.busy && st.items && st.items.length) h += '<div class="list">' + st.items.map(itemRow).join('') + '</div>';
+      if (!st.busy && st.more) h += '<p class="hint">' + T('还有 {0} 项没列出', st.more) + '</p>';
+      h += '</div>';
+    }
+    body.innerHTML = h;
+    var q = body.querySelector('#drive-form input');
+    if (q) q.value = st.keyword;
+  }
+  function show(url, path) {
+    st.busy = true;
+    st.message = '';
+    st.path = path;
+    render();
+    return getJson(url).then(function (d) {
+      st.busy = false;
+      st.items = d.ok ? (d.items || []) : [];
+      st.more = d.more || 0;
+      st.message = d.message || '';
+      render();
+    }).catch(function () { st.busy = false; render(); fail(); });
+  }
+  function search() {
+    var q = st.keyword.trim();
+    if (!q) { toast(T('先输入要搜的名字')); return; }
+    show(api('/search', { q: q }), null);
+  }
+  // 根目录不带 fid, 由电视按网盘的协议定
+  function openFolder(path) {
+    show(api('/list', path.length ? { fid: path[path.length - 1].fid } : {}), path);
+  }
+  function loadPicks(first) {
+    return getJson(api('', {})).then(function (d) {
+      if (!d.ok) { toast(d.message); return; }
+      st.loggedIn = d.loggedIn !== false;
+      st.canSearch = d.canSearch !== false;
+      st.names = d.names || [];
+      st.folders = d.folders || [];
+      st.files = d.files || [];
+      st.canAttach = !!d.canAttach;
+      st.subtitles = d.subtitles || [];
+      // 第一次打开时用这部番的名字搜一次; 不能搜的网盘列根目录
+      if (first && !st.typed && d.keyword) st.keyword = d.keyword;
+      render();
+      if (first && st.loggedIn && !st.items) {
+        if (!st.canSearch) openFolder([]);
+        else if (st.keyword.trim()) search();
+      }
+    }).catch(fail);
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-src-drive]');
+    if (!b) return;
+    var id = b.getAttribute('data-src-drive');
+    // 换了网盘: 上一个网盘的列表与记下的位置都不是这个网盘的
+    if (id !== st.drive) {
+      st.items = null;
+      st.path = null;
+      st.more = 0;
+      st.message = '';
+      st.folders = [];
+      st.files = [];
+      st.subtitles = [];
+    }
+    st.drive = id;
+    st.driveName = b.getAttribute('data-src-drive-name') || '';
+    document.getElementById('drive-title').textContent = T('从{0}挑', st.driveName);
+    window.sheets.open(sheet);
+    render();
+    loadPicks(true);
+  });
+  document.getElementById('drive-close').addEventListener('click', function () { window.sheets.close(sheet); });
+  body.addEventListener('input', function (e) { if (e.target.closest('#drive-form')) st.typed = true; });
+  body.addEventListener('submit', function (e) {
+    if (e.target.id !== 'drive-form') return;
+    e.preventDefault();
+    if (!e.target.elements.q) return;
+    st.keyword = e.target.elements.q.value;
+    search();
+  });
+  body.addEventListener('click', function (e) {
+    var el;
+    if (e.target.closest('[data-dv-root]')) { openFolder([]); return; }
+    if ((el = e.target.closest('[data-dv-q]'))) {
+      var input = body.querySelector('#drive-form input');
+      st.keyword = el.getAttribute('data-dv-q');
+      st.typed = true;
+      if (input) input.value = st.keyword;
+      search();
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-open]'))) {
+      openFolder((st.path || []).concat([{ fid: el.getAttribute('data-dv-open'), name: el.getAttribute('data-dv-name') }]));
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-crumb]'))) {
+      openFolder(st.path.slice(0, Number(el.getAttribute('data-dv-crumb')) + 1));
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-forget]'))) {
+      if (!confirm(T('忘掉这个位置？{0}就不再从这里给这部番找资源', st.driveName))) return;
+      el.disabled = true;
+      send('/forget', { fid: el.getAttribute('data-dv-forget') }).then(function (r) {
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(fail);
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-pick]'))) {
+      el.disabled = true;
+      send('/folder', { fid: el.getAttribute('data-dv-pick') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(function () { el.disabled = false; fail(); });
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-sub]')) || (el = e.target.closest('[data-dv-unsub]'))) {
+      var attach = el.hasAttribute('data-dv-sub');
+      el.disabled = true;
+      send(attach ? '/subtitle' : '/unsubtitle', { fid: el.getAttribute(attach ? 'data-dv-sub' : 'data-dv-unsub') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        loadPicks(false);
+      }).catch(function () { el.disabled = false; fail(); });
+      return;
+    }
+    if ((el = e.target.closest('[data-dv-play]'))) {
+      el.disabled = true;
+      send('/play', { fid: el.getAttribute('data-dv-play') }).then(function (r) {
+        el.disabled = false;
+        if (r.message) toast(r.message);
+        if (r.ok) window.sheets.close(sheet);
+      }).catch(function () { el.disabled = false; fail(); });
+    }
   });
 })();
 """.trimIndent()
