@@ -39,6 +39,8 @@ import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArgume
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
 import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceArguments
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceArguments
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -89,10 +91,11 @@ internal object RemoteSources {
     private val DIRECT_API = DirectApiMediaSource.FactoryId
     private val DRIVE_SHARE_SEARCH = CloudDriveShareSearchMediaSource.FactoryId
     private val MAC_CMS = MacCmsMediaSource.FactoryId
+    private val RULE = RuleMediaSource.FactoryId
 
     /** 「网盘」: 参数是整份网盘协议, 没有模板, 只能导入或随订阅来. */
     private val CLOUD_DRIVE = CloudDriveMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, MAC_CMS, CLOUD_DRIVE)
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, MAC_CMS, CLOUD_DRIVE, RULE)
 
     /**
      * 不在「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
@@ -275,6 +278,7 @@ internal object RemoteSources {
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
             DRIVE_SHARE_SEARCH -> codec.encode(CloudDriveShareSearchArguments.Example)
             MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
+            RULE -> codec.encode(RuleMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }
         return buildJsonObject {
@@ -412,13 +416,18 @@ internal object RemoteSources {
         return if (ok) result(true, tr("已保存")) else result(false, tr("保存失败"))
     }
 
-    /** 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因. */
+    /**
+     * 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因.
+     * 也认 AniBaka 规则 (JSON 或地址), 转换成规则源, 见 [RemoteAniBakaImport].
+     */
     private fun import(text: String): JsonObject {
-        val list = parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
-        if (list.isEmpty()) return result(false, tr("里面没有数据源"))
+        val aniBaka = RemoteAniBakaImport.importOrNull(text)
+        val list = aniBaka?.sources?.map { codec.encode(it) }
+            ?: parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
+        if (list.isEmpty() && aniBaka == null) return result(false, tr("里面没有数据源"))
         val existing = instances()
         var added = 0
-        val errors = mutableListOf<String>()
+        val errors = aniBaka?.failures.orEmpty().toMutableList()
         for (data in list) {
             runCatching {
                 val factory = factoryOf(data.factoryId) ?: error(tr("不支持的类型 {0}", data.factoryId.value))
