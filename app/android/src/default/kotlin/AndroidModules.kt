@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.media.resolver.AndroidWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
+import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
 import me.him188.ani.app.domain.mediasource.web.AndroidOnnxImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.AndroidCaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
@@ -187,7 +188,8 @@ fun getAndroidModules(
 
     factory<MediaResolver> {
         MediaResolver.from(
-            torrentMediaResolvers(get<TorrentManager>().engines, get())
+            listOf<MediaResolver>(CloudDriveMediaResolver(get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(
