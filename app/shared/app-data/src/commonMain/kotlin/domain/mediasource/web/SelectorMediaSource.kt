@@ -416,14 +416,19 @@ class SelectorMediaSource(
                     subjectId, mediaSourceId, query.subjectName, subjectInfo, episodes,
                     sourceCacheTtl = searchConfig.searchCacheTtl,
                 )
+                val selected = selectFilteredMedia(
+                    episodes,
+                    searchConfig,
+                    query,
+                    mediaSourceId,
+                    subjectName = subjectInfo.name,
+                )
+                // 这一页没有要的那一集 (还没更新) 时也留一条这个条目的资源: 关键词链靠产出的资源判断这个关键词搜到了名字对得上的条目
+                // (见 searchChain), 一条都没有就会接着用别的关键词再搜. 这条集号对不上, 选源时照常被排除.
                 addAll(
-                    selectFilteredMedia(
-                        episodes,
-                        searchConfig,
-                        query,
-                        mediaSourceId,
-                        subjectName = subjectInfo.name,
-                    ),
+                    selected.ifEmpty {
+                        selectMedia(episodes.take(1).asSequence(), searchConfig, query, mediaSourceId, subjectInfo.name).originalList
+                    },
                 )
             }
         }
