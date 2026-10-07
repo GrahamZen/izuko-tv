@@ -46,6 +46,7 @@ import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
@@ -257,6 +258,7 @@ class MediaSourceManagerImpl(
         add(CloudDriveShareSearchMediaSource.Factory(cloudDriveRegistry))
         add(CloudDriveAddedShareMediaSource.Factory(cloudDriveRegistry))
         add(SelectorMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
+        add(RuleMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
     }.toList()
 
     private val additionalSources by lazy {
