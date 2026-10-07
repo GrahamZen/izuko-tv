@@ -38,6 +38,10 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceDecodeException
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.getArgumentOrNull
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
@@ -237,6 +241,7 @@ class MediaSourceManagerImpl(
     private val instances: MediaSourceInstanceRepository by inject()
     private val selectorMediaSourceEpisodeCacheRepository: SelectorMediaSourceEpisodeCacheRepository by inject()
     private val webSessionManager: WebSessionManager by inject()
+    private val cloudDriveRegistry: CloudDriveRegistry by inject()
     private val webSourceCookieJar: WebSourceCookieJar by inject()
     private val webSourceIdentityRegistry: WebSourceIdentityRegistry by inject()
     private val clientProvider: HttpClientProvider by inject()
@@ -258,6 +263,9 @@ class MediaSourceManagerImpl(
         add(IkarosMediaSource.Factory())
         add(DirectApiMediaSource.Factory())
         add(MacCmsMediaSource.Factory())
+        add(CloudDriveMediaSource.Factory(cloudDriveRegistry))
+        add(CloudDriveShareSearchMediaSource.Factory(cloudDriveRegistry))
+        add(CloudDriveAddedShareMediaSource.Factory(cloudDriveRegistry))
         add(SelectorMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository, webSessionManager))
         add(JsonApiMediaSource.Factory(selectorMediaSourceEpisodeCacheRepository))
     }.toList()
@@ -389,7 +397,7 @@ class MediaSourceManagerImpl(
                 logger.warn(e) { "Cannot decode arguments of media source ${save.mediaSourceId} (${save.factoryId}), ignoring its tier" }
                 null
             }
-            argument?.let { save.mediaSourceId to it }
+            argument?.let { CloudDriveMediaSource.reportedMediaSourceId(it, save.mediaSourceId) to it }
         }
         MediaSelectorSourceTiers(
             tiers = arguments.associate { (id, argument) -> id to argument.tier },

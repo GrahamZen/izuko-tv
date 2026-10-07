@@ -128,7 +128,7 @@ Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/ope
 
 ### 视频从哪里来？
 
-全部视频数据都来自网络，Izuko TV 本身不存储、也不提供任何视频资源。数据源分 BT 和在线两类：BT 源来自公共 BitTorrent 网络，每个人都可以分享自己拥有的资源；在线源来自其他视频网站，默认订阅 [creamycake ani-subs](https://github.com/creamycake-anime/ani-subs)，也可以自行添加。
+全部视频数据都来自网络，Izuko TV 本身不存储、也不提供任何视频资源。数据源分 BT 和在线两类：BT 源来自公共 BitTorrent 网络，每个人都可以分享自己拥有的资源；在线源来自其他视频网站，默认只带几个，更多的可以自行添加订阅，例如 [creamycake ani-subs](https://github.com/creamycake-anime/ani-subs)。
 
 本着互助精神，使用 BT 源时 Izuko TV 会自动做种（分享数据）。
 

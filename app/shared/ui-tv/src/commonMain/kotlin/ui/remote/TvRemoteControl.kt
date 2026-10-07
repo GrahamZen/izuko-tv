@@ -889,6 +889,12 @@ object TvRemoteControl {
             // 播放卡上的「截图」, 见 RemoteScreenshot
             path == RemoteScreenshot.PATH || path.startsWith(RemoteScreenshot.PATH + "/") ->
                 RemoteScreenshot.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 手机粘贴网盘分享链接给这部番, 见 RemoteCloudDriveShares
+            path == "api/player/shares" || path.startsWith("api/player/shares/") ->
+                RemoteCloudDriveShares.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 手机上从某个网盘里给这部番挑文件夹或文件, 见 RemoteCloudDrivePicks
+            path == "api/player/drive" || path.startsWith("api/player/drive/") ->
+                RemoteCloudDrivePicks.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             path == PATH_PLAYER_FULL_SEARCH && post -> json(searchAllSources())
             path == PATH_PLAYER_CONTROL && post -> json(control(request))
             path == PATH_PLAYER_EPISODE && post -> json(switchEpisode(request))
@@ -918,6 +924,9 @@ object TvRemoteControl {
             // 「设置」标签: 代理 / BT tracker 等要打字的设置, 见 RemoteSettings
             path == "api/settings" || path.startsWith("api/settings/") ->
                 RemoteSettings.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 设置标签「数据源」页里的网盘卡片 (登录 / 转码 / 启用数据源), 见 RemoteCloudDrive
+            path == "api/drives" || path.startsWith("api/drive/") ->
+                RemoteCloudDrive.handle(request, scope) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 设置标签的「数据源」页: 设置里数据源管理那一页的网页版, 见 RemoteSources
             path == "api/sources" || path.startsWith("api/sources/") ->
                 RemoteSources.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
@@ -1181,7 +1190,8 @@ object TvRemoteControl {
                 showExcluded = request.queryParam("ex") == "1",
                 fullSource = request.queryParam("full")?.takeIf { it.isNotEmpty() },
             )
-            val base = handle.stateJson(filter)
+            // 播放器页「添加网盘分享」「从某某挑」的按钮按已配置的网盘画, 见 RemoteCloudDrive.playerDrives
+            val base = JsonObject(handle.stateJson(filter) + ("drives" to RemoteCloudDrive.playerDrives()))
             // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来.
             // 前台播放页只在还没播起来时附 (手机上换了源 / 集, 卡片上看得到「准备中 · 已查完 9/14 个数据源」→「缓冲中」)
             val session = if (handle.background) sessionStatusJson() else foregroundSessionStatusJson(handle)
