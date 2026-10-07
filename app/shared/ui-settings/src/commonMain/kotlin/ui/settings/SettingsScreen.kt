@@ -67,6 +67,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -178,6 +179,7 @@ import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroup
 import me.him188.ani.app.ui.settings.tabs.media.MediaSelectionGroup
 import me.him188.ani.app.ui.settings.tabs.media.PikPakAcceleratorGroup
 import me.him188.ani.app.ui.settings.tabs.media.TorrentEngineGroup
+import me.him188.ani.app.ui.settings.tabs.media.CloudDriveGroup
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSelectionActions
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionPageActions
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceSubscriptionPageContent
@@ -378,16 +380,22 @@ fun SettingsScreen(
                                 )
                             }
 
-                            SettingsTab.MEDIA_SOURCE -> MediaSourceTab(
-                                vm.mediaSourceSubscriptionGroupState,
-                                vm.mediaSourceGroupState,
-                                vm.editMediaSourceState,
-                                mediaSourceSelectionState,
-                                backgroundColor = listDetailLayoutParameters.detailPaneColors.containerColor,
-                                onOpenSubscription = {
-                                    navigateTo(DetailPaneRoutes.MediaSourceSubscription(it))
-                                },
-                            )
+                            SettingsTab.MEDIA_SOURCE -> {
+                                val cloudDrives by vm.cloudDriveGroupStates.collectAsStateWithLifecycle()
+                                for (drive in cloudDrives) {
+                                    key(drive.driveId) { CloudDriveGroup(drive) }
+                                }
+                                MediaSourceTab(
+                                    vm.mediaSourceSubscriptionGroupState,
+                                    vm.mediaSourceGroupState,
+                                    vm.editMediaSourceState,
+                                    mediaSourceSelectionState,
+                                    backgroundColor = listDetailLayoutParameters.detailPaneColors.containerColor,
+                                    onOpenSubscription = {
+                                        navigateTo(DetailPaneRoutes.MediaSourceSubscription(it))
+                                    },
+                                )
+                            }
 
                             SettingsTab.MEDIA_SELECTOR -> MediaSelectionGroup(vm.mediaSelectionGroupState)
                             // SettingsTab.SERVER (Ani 服务器选择) 已随 Ani 服务器一起删掉
