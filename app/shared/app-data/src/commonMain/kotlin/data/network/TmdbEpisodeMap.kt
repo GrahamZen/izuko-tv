@@ -11,6 +11,7 @@ package me.him188.ani.app.data.network
 
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 
 /**
@@ -53,6 +54,25 @@ internal class TmdbEpisodeMap private constructor(
         return result
     }
 
+    /**
+     * 同 [resolve], 但分集只有集号 (数据源查询请求里的那份): 本篇 ([EpisodeSort.Normal]) 按集号从小到大接续,
+     * 其余按 (类型前缀, 集号写法) 对上. 没写到的集不在结果里.
+     */
+    fun resolveSorts(sorts: List<EpisodeSort>): Map<EpisodeSort, Pair<Int, Int>> {
+        val result = LinkedHashMap<EpisodeSort, Pair<Int, Int>>()
+        mainContinuation?.let { (season, first) ->
+            sorts.filterIsInstance<EpisodeSort.Normal>()
+                .distinct()
+                .sortedBy { it.number }
+                .forEachIndexed { k, sort -> result[sort] = season to first + k }
+        }
+        for (sort in sorts) {
+            val key = keyOf(sort) ?: continue
+            explicit[key]?.let { result[sort] = it }
+        }
+        return result
+    }
+
     companion object {
         private val CONTINUATION = Regex("""^S(\d+)E(\d+)$""")
         private val SEGMENT = Regex("""^([A-Z]*)(\d+(?:\.\d+)?)(?:-(\d+))?:S(\d+)E(\d+)$""")
@@ -88,6 +108,13 @@ internal class TmdbEpisodeMap private constructor(
             }
             if (continuation == null && explicit.isEmpty()) return null
             return TmdbEpisodeMap(continuation, explicit)
+        }
+
+        /** 只有集号时的键, 规则同下面那个: 本篇无前缀, 特殊剧集按类型加前缀, 认不出类型的集号 (`12.1`) 当本篇. */
+        fun keyOf(sort: EpisodeSort): Pair<String, String>? = when (sort) {
+            is EpisodeSort.Normal -> "" to numberText(sort.number)
+            is EpisodeSort.Special -> sort.number?.let { typePrefix(sort.type) to numberText(it) }
+            is EpisodeSort.Unknown -> sort.toString().takeIf { NUMBER_TEXT.matches(it) }?.let { "" to it }
         }
 
         /** 分集在编码里的键: (类型前缀, 集号写法); 集号写不成数的分集没法编码. */
