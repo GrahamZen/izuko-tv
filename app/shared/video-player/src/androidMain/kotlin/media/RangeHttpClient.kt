@@ -13,18 +13,17 @@ import androidx.annotation.OptIn as AndroidxOptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import me.him188.ani.utils.ktor.PublicDns
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Dns
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
-import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 import java.net.InetAddress
@@ -34,7 +33,6 @@ import java.net.Socket
 import java.net.UnknownHostException
 import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
@@ -47,7 +45,7 @@ import javax.net.ssl.X509TrustManager
  * 有的网盘的下载域名每次解析出一组七八个节点 (同一网段), 记录一分钟就换一组; 偶尔一整组都坏了:
  * 连不上, 或者连得上却不回 TLS 握手. 每个节点等满超时, 一组要等一分钟以上, 过一分钟换了一组又马上能连. 所以:
  * - 连接超时短 ([CONNECT_TIMEOUT_MILLIS]), TLS 握手也单独限时 ([HANDSHAKE_TIMEOUT_MILLIS], 见 [HandshakeTimeoutSocketFactory]);
- * - 每次连接只试几个节点, 连不上的记下来跳过, 别的网段排前面, 系统给的这组出过问题就把公共 DNS ([DohResolver]) 给的也拿来 ([FailoverDns]),
+ * - 每次连接只试几个节点, 连不上的记下来跳过, 别的网段排前面, 系统给的这组出过问题就把公共 DNS ([PublicDns]) 给的也拿来 ([FailoverDns]),
  *   由分块下载换节点重试;
  * - 每次解析与新建连接记进日志 (节点、用时、错误), 响应头来得慢与请求失败也记.
  *
@@ -62,10 +60,13 @@ internal object RangeHttpClients {
     private const val MAX_IDLE_CONNECTIONS = 64
     private const val KEEP_ALIVE_MINUTES = 5L
 
+    /** 换节点时要的是多几组节点: 第一家公共 DNS 答出后再等别家这么久, 合起来用. */
+    private const val PUBLIC_DNS_GATHER_MILLIS = 1_000L
+
     /** 同时在等响应头的请求最多几个 (每个主机同样): 多开连接的 48 路分块加上补字体的, 留些余量. */
     private const val MAX_CONCURRENT_REQUESTS = 64
 
-    private val dns = FailoverDns(Dns.SYSTEM, DohResolver::lookup)
+    private val dns = FailoverDns(Dns.SYSTEM, { PublicDns.lookup(it, gatherMillis = PUBLIC_DNS_GATHER_MILLIS) })
     private val clients = ConcurrentHashMap<PlaybackProxyConfig, OkHttpClient>()
     private val direct: OkHttpClient by lazy { build(null) }
 
@@ -265,64 +266,4 @@ internal class FailoverDns(
             return bytes.copyOf(if (bytes.size == 4) 3 else 8).joinToString(".")
         }
     }
-}
-
-/**
- * 经几家公共 DNS 的 JSON 接口 (DoH) 查 IPv4 地址, 几家一起问, 合并去重. 各家按自己所在的位置给 CDN 节点,
- * 所以常能拿到与系统 DNS 不同的一组. 都失败时返回空.
- */
-internal object DohResolver {
-    private val logger = logger<DohResolver>()
-
-    private const val TIMEOUT_MILLIS = 4_000L
-
-    private val ENDPOINTS = listOf(
-        "https://dns.alidns.com/resolve?type=1&name=",
-        "https://cloudflare-dns.com/dns-query?type=A&name=",
-        "https://dns.google/resolve?type=A&name=",
-    )
-
-    private val ADDRESS = Regex(""""data"\s*:\s*"(\d{1,3}(?:\.\d{1,3}){3})"""")
-
-    private val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .readTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .callTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .build()
-    }
-
-    fun lookup(hostname: String): List<InetAddress> {
-        val startedAt = System.nanoTime()
-        val results = ConcurrentHashMap<String, List<String>>()
-        val latch = CountDownLatch(ENDPOINTS.size)
-        for (endpoint in ENDPOINTS) {
-            val request = Request.Builder().url(endpoint + hostname).header("Accept", "application/dns-json").build()
-            client.newCall(request).enqueue(
-                object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        latch.countDown()
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        response.use { if (it.isSuccessful) results[endpoint] = parseAddresses(it.body?.string().orEmpty()) }
-                        latch.countDown()
-                    }
-                },
-            )
-        }
-        latch.await(TIMEOUT_MILLIS + 500, TimeUnit.MILLISECONDS)
-        val addresses = results.values.flatten().distinct()
-        logger.info {
-            "Public DNS for $hostname: ${addresses.joinToString()} " +
-                    "(${results.size} of ${ENDPOINTS.size} answered in ${(System.nanoTime() - startedAt) / 1_000_000}ms)"
-        }
-        return addresses.mapNotNull { ip ->
-            runCatching { InetAddress.getByAddress(hostname, ip.split('.').map { it.toInt().toByte() }.toByteArray()) }.getOrNull()
-        }
-    }
-
-    /** DoH JSON 回答里的 IPv4 地址 (`"data":"1.2.3.4"`; CNAME 那几条不是地址, 不算). */
-    internal fun parseAddresses(json: String): List<String> =
-        ADDRESS.findAll(json).map { it.groupValues[1] }.filter { ip -> ip.split('.').all { it.toInt() in 0..255 } }.toList()
 }
