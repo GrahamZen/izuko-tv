@@ -19,9 +19,10 @@ interface MediaSource {
 
 ## 数据源类型
 
-目前支持两种通用数据源和一些特别支持的数据源：
+目前支持以下通用数据源和一些特别支持的数据源：
 
 - `SelectorMediaSource`：通用 [CSS Selector][CSS Selector] 数据源；
+- `RuleMediaSource`：按步骤规则抓取网站的通用数据源（规则源）；
 - `RssMediaSource`：通用 RSS 订阅数据源；
 - 特别支持的数据源：
     - `JellyfinMediaSource`、`EmbyMediaSource`：Jellyfin、Emby 媒体库；
@@ -47,6 +48,27 @@ interface MediaSource {
 
 资源的 `download` 是占位地址（模板也在协议里），播放时由 `CloudDriveMediaResolver` 认出属于哪个网盘再取直链。
 协议的 `legacy` 段可以声明这个网盘以前由专门代码支持时留下的设置键与数据源类型，`CloudDriveRegistry` 第一次见到协议时把它们认领过来。
+
+### 规则源
+
+规则源（`domain/mediasource/rule`，类型 `rule`）用一份 JSON 规则（`RuleConfig`）抓取网站，适合 `SelectorMediaSource`
+固定的「搜索页 → 条目页 → 播放页」形状表达不了的站点：剧集表写在脚本或一段文本里、播放地址要再请求一个接口、
+要在几种取法之间回落。规则分搜索、详情、播放三段，每段是一串步骤（`RuleStep`），由 `RuleEngine` 依次执行：
+
+- 每段从输入开始（关键词、条目页地址、剧集页地址），步骤改写「当前值」或存取变量：请求（`fetch`）、CSS 取值（`select`）、
+  正则（`regex`）、JSON 取值（`json`，路径语法同直链 API 数据源）、模板与变量（`template`、`set`、`query`）、
+  字符串变换（`transform`）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；`first` 依次尝试几个分支。
+- 搜索段以条目列表步骤结束（`subjects`、`jsonSubjects`），详情段以剧集列表步骤结束（`episodes`、`jsonEpisodes`、`regexEpisodes`）；
+  播放段结束时的当前值就是视频地址，以 `sniff`（`goal = video`）结束表示交给 WebView 嗅探。
+
+站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，
+匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。资源的 `download` 是剧集页（`WebVideo`），
+播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，播放器按 `matchVideo` 用 WebView 打开剧集页。
+GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
+
+`AniBakaRuleImporter` 把 AniBaka 的规则（`anx-rule/2`）转换成规则源：两者都是「当前值 + 变量」的步骤流水线，
+多数步骤一一对应；用到规则源没有的步骤（加解密、站点专用步骤、HLS 清单处理、XPath）的规则不转换并说明原因。
+Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引的地址（由电视下载）。
 
 ### `SelectorMediaSource`
 
