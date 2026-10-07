@@ -27,6 +27,8 @@
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">Up to %1$d more seconds, then switching automatically</string>
     <string name="subject_episode_video_loading_auto_switch">The previous source failed (%1$s). Trying #%2$d (%3$d left)</string>
     <string name="subject_episode_video_loading_cause_player_failed">Playback failed</string>
+    <string name="subject_episode_video_loading_cause_http_rejected">Server refused the request (HTTP %1$s)</string>
+    <string name="subject_episode_video_loading_cause_http_error">Server error (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_bt_service_starting">Starting the BT service\nThe first time takes about ten seconds</string>
     <string name="subject_episode_video_loading_torrent_metadata">Fetching torrent metadata</string>
     <string name="subject_episode_video_loading_torrent_peers">Peers: %1$d · waited %2$d s</string>
