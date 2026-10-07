@@ -43,6 +43,7 @@ import me.him188.ani.app.domain.mediasource.web.captcha.AndroidCaptchaBrowserFac
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.player.recordingFailures
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
@@ -200,7 +201,7 @@ fun getAndroidModules(
                         get<ProxyProvider>(),
                     ),
                 ),
-        )
+        ).recordingFailures()
     }
     single<UpdateInstaller> { AndroidUpdateInstaller(androidContext()) }
 
