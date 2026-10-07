@@ -28,6 +28,10 @@ import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.updateMediaSourceArguments
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchArguments
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
@@ -79,12 +83,21 @@ internal object RemoteSources {
     private val subscriptions: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val repository: MediaSourceInstanceRepository get() = KoinPlatform.getKoin().get()
 
-    /** 用 JSON 编辑的三类 (编解码器只认它们). */
+    /** 用 JSON 编辑的几类 (编解码器只认它们). */
     private val RSS = FactoryId("rss")
     private val SELECTOR = FactoryId("web-selector")
     private val DIRECT_API = DirectApiMediaSource.FactoryId
+    private val DRIVE_SHARE_SEARCH = CloudDriveShareSearchMediaSource.FactoryId
     private val MAC_CMS = MacCmsMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, MAC_CMS)
+
+    /** 「网盘」: 参数是整份网盘协议, 没有模板, 只能导入或随订阅来. */
+    private val CLOUD_DRIVE = CloudDriveMediaSource.FactoryId
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, MAC_CMS, CLOUD_DRIVE)
+
+    /**
+     * 不在「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
+     */
+    private val NOT_ADDABLE = setOf(CLOUD_DRIVE, CloudDriveAddedShareMediaSource.FactoryId)
 
     private val pretty = Json {
         prettyPrint = true
@@ -182,10 +195,10 @@ internal object RemoteSources {
                     }
                 }
             }
-            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源不列
+            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源与 NOT_ADDABLE 不列
             putJsonArray("templates") {
                 for (factory in manager.allFactories) {
-                    if (manager.isLocal(factory.factoryId)) continue
+                    if (manager.isLocal(factory.factoryId) || factory.factoryId in NOT_ADDABLE) continue
                     if (!factory.allowMultipleInstances && instances.any { it.factoryId == factory.factoryId }) continue
                     addJsonObject {
                         val editor = editorOf(factory.factoryId, factory, fromSubscription = false)
@@ -260,6 +273,7 @@ internal object RemoteSources {
             SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
             // 给一份结构完整的示例, 比空模板好改
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
+            DRIVE_SHARE_SEARCH -> codec.encode(CloudDriveShareSearchArguments.Example)
             MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }

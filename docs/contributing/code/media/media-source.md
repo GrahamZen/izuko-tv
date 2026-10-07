@@ -29,7 +29,24 @@ interface MediaSource {
     - `IkarosMediaSource`：[Ikaros][Ikaros] 媒体库。
 
 特别支持的数据源只是实现 `MediaSource` 接口以接入对应平台，本文不赘述。
-下面我们将着重了解 `SelectorMediaSource` 和 `RssMediaSource`。
+下面我们将着重了解 `SelectorMediaSource` 和 `RssMediaSource`，以及网盘数据源。
+
+### 网盘数据源
+
+网盘数据源（`domain/mediasource/clouddrive`）的代码里没有任何具体的网盘：某个网盘的地址、请求参数、响应字段、状态码、
+扫码登录的步骤、分享链接的格式都写在一份协议 JSON（`CloudDriveProtocol`）里，作为 `cloud-drive` 数据源的参数随订阅或导入下发。
+`CloudDriveApi` 按协议解释执行一组固定的操作（搜索、列目录、取直链、转码地址、建文件夹、删除、任务轮询、打开分享、列分享、转存、扫码），
+各操作是请求模板加上从响应里取值的路径（路径语法同直链 API 数据源）。
+
+每个网盘（按协议 `id`）有一个 `CloudDriveService`，由 `CloudDriveRegistry` 从保存的数据源实例里读出全部协议后建立；
+账号存在 `cloudDriveAccounts` 里，与数据源配置分开（导出配置不带账号）。三种数据源共用它：
+
+- `cloud-drive`：在用户自己的网盘里按条目名搜视频；
+- `cloud-drive-added-shares`：用户在 Web 控制台给条目添加的分享链接；
+- `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时转存到自己的网盘。
+
+资源的 `download` 是占位地址（模板也在协议里），播放时由 `CloudDriveMediaResolver` 认出属于哪个网盘再取直链。
+协议的 `legacy` 段可以声明这个网盘以前由专门代码支持时留下的设置键与数据源类型，`CloudDriveRegistry` 第一次见到协议时把它们认领过来。
 
 ### `SelectorMediaSource`
 

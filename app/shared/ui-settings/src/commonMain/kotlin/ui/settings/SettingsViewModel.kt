@@ -63,6 +63,7 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.codec.serializeSubscriptionToString
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.settings.ProxySettingsFlowProxyProvider
 import me.him188.ani.app.domain.settings.ProxyTester
@@ -83,6 +84,7 @@ import me.him188.ani.app.ui.settings.tabs.media.CacheDirectoryGroupState
 import me.him188.ani.app.ui.settings.tabs.media.MediaSelectionGroupState
 import me.him188.ani.app.ui.settings.tabs.media.PikPakDriveUsageState
 import me.him188.ani.app.ui.settings.tabs.media.PikPakLegacyNoticeState
+import me.him188.ani.app.ui.settings.tabs.media.CloudDriveGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.EditMediaSourceState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceGroupState
 import me.him188.ani.app.ui.settings.tabs.media.source.MediaSourceLoader
@@ -111,6 +113,7 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val bangumiMirrorListRepository: BangumiMirrorListRepository by inject()
 
     private val mediaSourceManager: MediaSourceManager by inject()
+    private val cloudDriveRegistry: CloudDriveRegistry by inject()
     private val mediaSourceInstanceRepository: MediaSourceInstanceRepository by inject()
     private val mediaSourceSubscriptionRepository: MediaSourceSubscriptionRepository by inject()
     private val mediaSourceSubscriptionUpdater: MediaSourceSubscriptionUpdater by inject()
@@ -181,6 +184,18 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
 
     val pikpakSettingsState: SettingsState<PikPakConfig> =
         settingsRepository.pikpakConfig.stateInBackground(PikPakConfig.Default)
+
+    private val cloudDriveGroupStateCache = HashMap<String, CloudDriveGroupState>()
+
+    /** 已配置的网盘 (见 [CloudDriveRegistry]), 每个一组; 同一个网盘的分组状态复用. */
+    val cloudDriveGroupStates: StateFlow<List<CloudDriveGroupState>> = cloudDriveRegistry.drives
+        .map { drives ->
+            drives.orEmpty().map { drive ->
+                cloudDriveGroupStateCache[drive.driveId]?.takeIf { it.isFor(drive) }
+                    ?: CloudDriveGroupState(drive, backgroundScope).also { cloudDriveGroupStateCache[drive.driveId] = it }
+            }
+        }
+        .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList())
 
     val pikpakDriveUsageState = PikPakDriveUsageState(
         backgroundScope = backgroundScope,
