@@ -889,6 +889,8 @@ object TvRemoteControl {
             // 播放卡上的「截图」, 见 RemoteScreenshot
             path == RemoteScreenshot.PATH || path.startsWith(RemoteScreenshot.PATH + "/") ->
                 RemoteScreenshot.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 播放卡上的「失败报告」, 见 RemotePlaybackFailures
+            path == RemotePlaybackFailures.PATH -> RemotePlaybackFailures.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 手机粘贴网盘分享链接给这部番, 见 RemoteCloudDriveShares
             path == "api/player/shares" || path.startsWith("api/player/shares/") ->
                 RemoteCloudDriveShares.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
@@ -1191,7 +1193,7 @@ object TvRemoteControl {
                 fullSource = request.queryParam("full")?.takeIf { it.isNotEmpty() },
             )
             // 播放器页「添加网盘分享」「从某某挑」的按钮按已配置的网盘画, 见 RemoteCloudDrive.playerDrives
-            val base = JsonObject(handle.stateJson(filter) + ("drives" to RemoteCloudDrive.playerDrives()))
+            val base = JsonObject(handle.stateJson(filter) + ("drives" to RemoteCloudDrive.playerDrives()) + RemotePlaybackFailures.stateEntries(handle))
             // 后台会话: 附上它进行到哪一步了 (已就绪 / 准备中 / 出问题), 手机卡片上直接看得出来.
             // 前台播放页只在还没播起来时附 (手机上换了源 / 集, 卡片上看得到「准备中 · 已查完 9/14 个数据源」→「缓冲中」)
             val session = if (handle.background) sessionStatusJson() else foregroundSessionStatusJson(handle)
