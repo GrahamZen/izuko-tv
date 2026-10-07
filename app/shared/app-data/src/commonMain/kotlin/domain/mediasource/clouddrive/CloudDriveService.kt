@@ -371,8 +371,14 @@ class CloudDriveService internal constructor(
 
     private class CachedShareToken(val token: DriveShareToken, val time: TimeMark)
 
+    /** 分享里列到过的一个文件: 转存凭证 [fileToken] 只配列它时用的分享令牌 [shareToken]. */
+    private class ListedShareFile(val shareToken: String, val folderId: String, val fileToken: String)
+
     private val shareTokenLock = Mutex()
     private val shareTokens = LinkedHashMap<String, CachedShareToken>()
+
+    /** [shareKey] 到最近一次列到它时的 [ListedShareFile]. */
+    private val listedShareFiles = LinkedHashMap<String, ListedShareFile>()
 
     /** 分享的令牌, 缓存 [SHARE_TOKEN_TTL]: 列一个分享的文件夹要发好几次请求, 每次都带它. */
     private suspend fun shareToken(shareId: String, passcode: String, refresh: Boolean = false): DriveShareToken {
@@ -413,10 +419,66 @@ class CloudDriveService internal constructor(
                     continue
                 }
                 result += list.files
+                rememberFileTokens(shareId, folderId, token.token, list.files)
                 if (list.files.size < pageSize || (list.total != null && result.size >= list.total)) break
                 page++
             }
             return result
+        }
+    }
+
+    private suspend fun rememberFileTokens(shareId: String, folderId: String, shareToken: String, files: List<DriveFile>) {
+        val withTokens = files.filter { it.shareToken.isNotEmpty() }
+        if (withTokens.isEmpty()) return
+        shareTokenLock.withLock {
+            for (file in withTokens) {
+                val key = shareKey(shareId, file.fid)
+                listedShareFiles.remove(key)
+                listedShareFiles[key] = ListedShareFile(shareToken, folderId, file.shareToken)
+            }
+            while (listedShareFiles.size > MAX_LISTED_SHARE_FILES) listedShareFiles.remove(listedShareFiles.keys.first())
+        }
+    }
+
+    /** [files] 里用分享令牌 [shareToken] 列到过的, 换上那时的转存凭证. */
+    private suspend fun withPairedFileTokens(shareId: String, shareToken: String, files: List<DriveFile>): List<DriveFile> =
+        shareTokenLock.withLock {
+            files.map { file ->
+                val listed = listedShareFiles[shareKey(shareId, file.fid)]?.takeIf { it.shareToken == shareToken }
+                if (listed == null || listed.fileToken == file.shareToken) file
+                else DriveFile(file.fid, file.fileName, file.parentFid, file.dir, file.size, file.updatedAt, file.videoHeight, file.isVideo, listed.fileToken)
+            }
+        }
+
+    /**
+     * 把分享里的 [files] 转存到 [folder]. 文件的转存凭证要与分享令牌配对 (搜索时记下的凭证配的是那时的令牌, 令牌过期换新后就对不上),
+     * 所以先换上与当前令牌配对的凭证; 仍被拒时换新令牌、重新列这些文件所在的文件夹再转存一次.
+     *
+     * 调用前刚列过自己网盘的转存文件夹, 登录是好的: 两次都被拒时按「这条分享转存不了」报 [CloudDriveShareUnavailableException], 不算没登录.
+     */
+    private suspend fun saveFromShare(ref: DriveShareFileRef, files: List<DriveFile>, folder: String): List<String> {
+        val token = shareToken(ref.shareId, ref.passcode)
+        try {
+            return api.saveFromShare(ref.shareId, ref.passcode, token.token, withPairedFileTokens(ref.shareId, token.token, files), folder)
+        } catch (e: CloudDriveAuthException) {
+            logger.warn { "Saving $driveId share ${ref.key} was rejected, refreshing share tokens: ${e.message}" }
+        }
+        shareToken(ref.shareId, ref.passcode, refresh = true)
+        if (shareBrowser.needsFileToken) {
+            val folders = shareTokenLock.withLock {
+                files.mapNotNull { file ->
+                    listedShareFiles[shareKey(ref.shareId, file.fid)]?.folderId
+                        ?: (if (file.fid == ref.fid) ref.folderId else file.parentFid)
+                }
+            }.filter { it.isNotEmpty() }.distinct()
+            for (shareFolder in folders) shareBrowser.listFolder(ref.shareId, ref.passcode, shareFolder)
+        }
+        // 重新列文件夹时令牌可能又换过一次, 取缓存里最新的
+        val refreshed = shareToken(ref.shareId, ref.passcode)
+        return try {
+            api.saveFromShare(ref.shareId, ref.passcode, refreshed.token, withPairedFileTokens(ref.shareId, refreshed.token, files), folder)
+        } catch (e: CloudDriveAuthException) {
+            throw CloudDriveShareUnavailableException(e.code, "网盘拒绝转存 ${ref.fileName}: ${e.message}")
         }
     }
 
@@ -560,16 +622,15 @@ class CloudDriveService internal constructor(
         }
         if (missing.isEmpty()) return savedFiles.getValue(ref.key)
 
-        val token = shareToken(ref.shareId, ref.passcode)
         val saved = try {
             try {
-                api.saveFromShare(ref.shareId, ref.passcode, token.token, missing, folder)
+                saveFromShare(ref, missing, folder)
             } catch (e: CloudDriveApiException) {
                 if (!e.isCapacityLimit) throw e
                 // 网盘满了: 转存文件夹里的都是之前播放时转存的副本, 清掉这次用不到的腾出地方, 再转存一次
                 freeSaveFolder(existing.filter { it.fid !in reused }, ref)
                 try {
-                    api.saveFromShare(ref.shareId, ref.passcode, token.token, missing, folder)
+                    saveFromShare(ref, missing, folder)
                 } catch (e: CloudDriveApiException) {
                     if (!e.isCapacityLimit) throw e
                     throw CloudDriveCapacityException("网盘空间不够: 清空「$SAVE_FOLDER_NAME」后仍放不下 ${ref.fileName} (${ref.size / MB} MB)")
@@ -588,7 +649,7 @@ class CloudDriveService internal constructor(
             logger.warn { "Saving ${missing.size} files of ${ref.key} failed, saving the video alone: ${e.message}" }
             if (video !in missing) return savedFiles.getValue(ref.key)
             missing = listOf(video)
-            api.saveFromShare(ref.shareId, ref.passcode, token.token, missing, folder)
+            saveFromShare(ref, missing, folder)
         }
         if (missing.size == 1) {
             savedFiles[shareKey(ref.shareId, missing.single().fid)] = saved.first()
@@ -939,6 +1000,7 @@ class CloudDriveService internal constructor(
 
         private val SHARE_TOKEN_TTL = 30.minutes
         private const val MAX_CACHED_SHARE_TOKENS = 64
+        private const val MAX_LISTED_SHARE_FILES = 2000
 
         /**
          * 转存文件夹里还要再放文件时, [existing] 里该删掉哪些, 才能只留 [keep] 个视频与 [keepSubtitles] 个字幕: 各自先删最早的.

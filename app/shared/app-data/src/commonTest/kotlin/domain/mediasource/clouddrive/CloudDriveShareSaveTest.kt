@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDriveAccounts
@@ -171,6 +172,84 @@ class CloudDriveShareSaveTest {
         // 不再当成转存文件夹被删、去重找文件夹
         assertEquals(2, requests.count { it.path() == "/api/share/save" })
         assertTrue(requests.none { it.path() == "/api/files/folder" })
+    }
+
+    /**
+     * 文件凭证与分享令牌配对的网盘: 每次打开分享发一个新令牌 (st1, st2, ...), 只认最新的;
+     * 列文件夹 sd1 时视频 sf1 的凭证是 `ft-<令牌>`. 转存要令牌与凭证都对得上, 前 [rejectSaves] 次转存一律拒绝.
+     */
+    private fun pairedTokenService(rejectSaves: Int, requests: MutableList<HttpRequestData>): Pair<CloudDriveService, MemorySettings<CloudDriveAccounts>> {
+        val settings = accountsOf(CloudDriveAccount(cookie = "sid=p1", shareSaveFolderId = "save1"))
+        var issued = 0
+        var saves = 0
+        val service = testDriveService(settings) { request ->
+            requests += request
+            val latest = "st$issued"
+            when (request.path()) {
+                "/api/share/open" -> reply("""{"code":0,"data":{"token":"st${++issued}","title":"t"}}""")
+                "/api/share/list" -> if (request.url.parameters["token"] == latest && request.url.parameters["parent"] == "sd1") {
+                    reply(listJson(video("sf1", "S01E01.mp4", parent = "sd1", size = 500, token = "ft-$latest")))
+                } else {
+                    reply("""{"code":404,"message":"分享不存在"}""")
+                }
+
+                "/api/share/save" -> {
+                    val body = request.jsonBody()
+                    val paired = body.string("token") == latest && body.strings("fileTokens") == listOf("ft-$latest")
+                    if (++saves <= rejectSaves || !paired) {
+                        reply("""{"code":41004,"message":"转存文件token校验异常"}""", status = HttpStatusCode.Forbidden)
+                    } else {
+                        reply("""{"code":0,"data":{"task":"task1"}}""")
+                    }
+                }
+
+                "/api/tasks/task1" -> reply("""{"code":0,"data":{"state":"done","result":{"ids":["new1"]}}}""")
+                "/api/files/list" -> reply(listJson())
+                "/api/files/download" -> reply(downloadJson(request.jsonBody().strings("ids")))
+                else -> error("unexpected request ${request.method.value} ${request.path()}")
+            }
+        }
+        return service to settings
+    }
+
+    /** 搜索时记下的凭证配的是那时的令牌, 早过期了. */
+    private val staleRef = DriveShareFileRef("share1", "", "sf1", "ft-old", "S01E01.mp4", 500, folderId = "sd1")
+
+    @Test
+    fun `save uses the file token listed with the current share token`() = realTimeTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val (service, _) = pairedTokenService(rejectSaves = 0, requests)
+
+        assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(staleRef).url)
+        val save = requests.single { it.path() == "/api/share/save" }.jsonBody()
+        assertEquals("st1", save.string("token"))
+        assertEquals(listOf("ft-st1"), save.strings("fileTokens"))
+    }
+
+    @Test
+    fun `rejected save refreshes the share token and lists the folder again`() = realTimeTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val (service, _) = pairedTokenService(rejectSaves = 1, requests)
+
+        assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(staleRef).url)
+        val saves = requests.filter { it.path() == "/api/share/save" }.map { it.jsonBody() }
+        assertEquals(2, saves.size)
+        assertEquals("st2", saves.last().string("token"))
+        assertEquals(listOf("ft-st2"), saves.last().strings("fileTokens"))
+    }
+
+    @Test
+    fun `save still rejected after refreshing is not a login problem`() = realTimeTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val (service, settings) = pairedTokenService(rejectSaves = 2, requests)
+
+        val error = assertFailsWith<CloudDriveShareUnavailableException> { service.resolveSharePlayback(staleRef) }
+        assertTrue(error.message!!.contains("转存文件token校验异常"), error.message)
+        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        // 不当成转存文件夹被删: 不重新找文件夹, 记下的文件夹也不清
+        assertTrue(requests.none { it.path() == "/api/files/folder" })
+        assertEquals("save1", settings.account.shareSaveFolderId)
+        assertTrue(settings.account.isLoggedIn)
     }
 
     @Test
