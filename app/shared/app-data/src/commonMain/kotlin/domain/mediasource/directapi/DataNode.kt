@@ -31,7 +31,7 @@ internal sealed interface DataNode {
     fun asStringOrNull(): String?
 }
 
-internal class JsonNode(private val element: JsonElement) : DataNode {
+internal class JsonNode(val element: JsonElement) : DataNode {
     override fun select(key: String): List<DataNode> = when (element) {
         is JsonObject -> element[key]?.let { expand(it) }.orEmpty()
         is JsonArray -> element.flatMap { JsonNode(it).select(key) }
