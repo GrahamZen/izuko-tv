@@ -65,7 +65,7 @@ internal fun renderRemoteControlPage(
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
-    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + PERF_STYLE + "\n" + themeCss + """
+    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + themeCss + """
     </style>
     </head>
     <body>
@@ -197,7 +197,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -2726,6 +2726,8 @@ private val SCRIPT = """
           (s.selectedMeta ? '<span class="now-meta">' + esc(s.selectedMeta) + '</span>' : '')
         : '<span class="now-meta">' + T('尚未选择数据源') + '</span>') + '</div>' +
       (s.selectedTitle ? '<div class="now-src" title="' + esc(s.selectedTitle) + '">' + esc(s.selectedTitle) + '</div>' : '') +
+      // 这一集播放失败过才有 (见 FAIL_SCRIPT)
+      (window.failEntry ? window.failEntry(s) : '') +
       // 前台播放页还没播起来时 (换了源 / 集之后在查数据源、缓冲) 服务端也给 session, 播起来就不给了
       (s.background
         ? sessionChip(s.session) + '<p class="hint">' + T('电视未在播放页：可以照常换源和修改查询条件，新数据源会在后台加载，回到播放器即可继续播放。') + '</p>' +

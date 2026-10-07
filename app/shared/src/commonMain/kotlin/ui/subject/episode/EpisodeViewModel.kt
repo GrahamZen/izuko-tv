@@ -132,6 +132,7 @@ import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
 import me.him188.ani.app.domain.player.extension.PreferredTracksExtension
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
+import me.him188.ani.app.domain.player.extension.PlaybackFailureReportExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
 import me.him188.ani.app.domain.player.extension.SwitchNextEpisodeExtension
 import me.him188.ani.app.domain.settings.GetDanmakuRegexFilterListFlowUseCase
@@ -451,6 +452,7 @@ open class EpisodeViewModel(
                 getNextEpisode = { currentEpisodeId -> computeAutoPlayNextEpisodeId(currentEpisodeId) },
             ),
             SwitchMediaOnPlayerErrorExtension,
+            PlaybackFailureReportExtension,
             AutoSelectExtension,
             PauseMediaFetchWhilePlayingExtension.Factory(
                 canPause = { !mediaSelectorShown.value && !searchesToCompletion() },
