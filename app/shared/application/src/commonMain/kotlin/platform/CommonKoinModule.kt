@@ -65,6 +65,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
@@ -122,6 +123,9 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
 import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
+import me.him188.ani.app.domain.mediasource.clouddrive.LegacyPreferences
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
@@ -680,6 +684,20 @@ private fun KoinApplication.otherModules(
     single<MediaSourceCodecManager> {
         MediaSourceCodecManager()
     }
+    single<CloudDriveRegistry> {
+        val settings = get<SettingsRepository>()
+        CloudDriveRegistry(
+            instances = get<MediaSourceInstanceRepository>(),
+            accounts = settings.cloudDriveAccounts,
+            addedShares = settings.cloudDriveAddedShares,
+            legacyPreferences = object : LegacyPreferences {
+                override suspend fun read(key: String): String? = settings.readLegacyPreference(key)
+                override suspend fun remove(key: String) = settings.removeLegacyPreference(key)
+            },
+            tmdbSubjectMap = get<TmdbSubjectMapRepository>(),
+            parentCoroutineContext = coroutineScope.childScopeContext(),
+        )
+    }
     single<MediaSourceManager> {
         MediaSourceManagerImpl(
             additionalSources = {
@@ -694,7 +712,14 @@ private fun KoinApplication.otherModules(
             get<MediaSourceSubscriptionRepository>(),
             get<MediaSourceManager>(),
             get<MediaSourceCodecManager>(),
-            requester = MediaSourceSubscriptionRequesterImpl(client),
+            requester = MediaSourceSubscriptionRequesterImpl(client) { url ->
+                // GitHub 上的订阅大陆直连常常不通, 带上加速镜像
+                if (url.startsWith("https://raw.githubusercontent.com/") || url.startsWith("https://github.com/")) {
+                    get<GitHubDownloadMirrors>().sourcesOf(url)
+                } else {
+                    listOf(url)
+                }
+            },
         )
     }
 
@@ -759,6 +784,11 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        BundledSubscriptions.reconcile(
+            koin.get<MediaSourceSubscriptionRepository>(),
+            koin.get<MediaSourceManager>(),
+            koin.get<SettingsRepository>(),
+        )
         val subscriptionUpdater = koin.get<MediaSourceSubscriptionUpdater>()
         while (currentCoroutineContext().isActive) {
             val nextDelay = subscriptionUpdater.updateAllOutdated()
