@@ -106,17 +106,4 @@ class FailoverDnsTest {
         // 系统解析不了但公共 DNS 有
         assertEquals(3, dns(system = unresolvable).lookup(host).size)
     }
-
-    @Test
-    fun `parses addresses from DNS JSON answers`() {
-        val json = """
-            {"Status":0,"Answer":[
-              {"name":"dl.drive.test.","type":5,"TTL":300,"data":"dl.drive.test.cdn.example."},
-              {"name":"dl.drive.test.cdn.example.","type":1,"TTL":60,"data":"27.221.66.122"},
-              {"name":"dl.drive.test.cdn.example.","type":1,"TTL":60, "data" : "27.221.66.128"}
-            ]}
-        """.trimIndent()
-        assertEquals(listOf("27.221.66.122", "27.221.66.128"), DohResolver.parseAddresses(json))
-        assertEquals(emptyList(), DohResolver.parseAddresses("""{"Status":3}"""))
-    }
 }

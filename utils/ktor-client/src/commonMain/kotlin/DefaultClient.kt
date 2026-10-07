@@ -111,6 +111,7 @@ fun createDefaultHttpClient(
         allowHttpsDowngrade = true
     }
     expectSuccess = true // All clients actually expect success by default in clientConfig, so we move them here
+    engineFallbackDns()
     clientConfig()
 }.also { it.installRawCookieHeader() }
 
