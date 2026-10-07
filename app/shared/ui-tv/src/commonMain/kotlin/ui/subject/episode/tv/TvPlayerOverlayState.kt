@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
+import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 
 /**
  * TV 播放器覆盖层的层级. 整个播放器界面只有这一个状态机, 所有层级切换都经由
@@ -173,6 +174,12 @@ class TvPlayerOverlayState(
      */
     var replyingComment: TvCommentReplyTarget? by mutableStateOf(null)
         private set
+
+    /**
+     * 评论弹窗里长按引用区放大看的图 (见 TvCommentReplyDialog). 画在弹窗之上、同一个窗口里;
+     * 放在这里是因为返回键走根路由 ([TvEpisodeScreen] 里先关它, 再关表情选择器 / 弹窗).
+     */
+    val commentImageZoom = TvImageZoomState()
 
     /**
      * 面板条目焦点找回锚: 每次自增一下, 面板宿主就把焦点送回**当前聚焦的那一条**
