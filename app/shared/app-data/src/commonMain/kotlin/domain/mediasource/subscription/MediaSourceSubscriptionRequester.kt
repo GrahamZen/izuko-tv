@@ -11,13 +11,11 @@ package me.him188.ani.app.domain.mediasource.subscription
 
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsChannel
-import kotlinx.serialization.json.io.decodeFromSource
+import io.ktor.client.statement.bodyAsText
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.domain.mediasource.rule.AniBakaSubscription
 import me.him188.ani.utils.ktor.ScopedHttpClient
-import me.him188.ani.utils.ktor.toSource
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
@@ -45,22 +43,18 @@ class MediaSourceSubscriptionRequesterImpl(
     override suspend fun request(
         subscription: MediaSourceSubscription,
     ): SubscriptionUpdateData {
-        suspend fun HttpResponse.decode() = bodyAsChannel().toSource().use {
-            MediaSourceCodecManager.Companion.json.decodeFromSource(
-                SubscriptionUpdateData.serializer(),
-                it,
-            )
-        }
-
         val urls = sourcesOf(subscription.url).ifEmpty { listOf(subscription.url) }
         var lastError: Exception? = null
         for (url in urls) {
             try {
-                return client.use {
+                val text = client.use {
                     get(url) {
                         if (urls.size > 1) timeout { requestTimeoutMillis = MIRROR_TIMEOUT_MILLIS }
-                    }.decode()
+                    }.bodyAsText()
                 }
+                // 订阅地址也可以是 AniBaka 的规则库: 下载到的是它就转换成规则源
+                return AniBakaSubscription.decodeOrNull(text, url) { ruleUrl -> client.use { get(ruleUrl).bodyAsText() } }
+                    ?: MediaSourceCodecManager.json.decodeFromString(SubscriptionUpdateData.serializer(), text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
