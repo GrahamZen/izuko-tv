@@ -57,6 +57,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
+import java.net.URI
 import java.net.URLDecoder
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -175,6 +176,7 @@ internal object RemoteSources {
     private fun list(): JsonObject {
         val instances = instances()
         val subs = runBlocking { subscriptions.flow.first() }
+        val tiers = runBlocking { manager.mediaSourceTiersFlow().first() }
         return buildJsonObject {
             putJsonArray("sources") {
                 for (instance in instances) addJsonObject {
@@ -182,12 +184,21 @@ internal object RemoteSources {
                     val subscriptionId = instance.config.subscriptionId
                     put("id", instance.instanceId)
                     put("factoryId", instance.factoryId.value)
+                    put("factoryName", factory?.info?.displayName ?: instance.factoryId.value)
                     put("name", instance.source.info.displayName)
                     put("description", instance.source.info.description)
                     put("kind", kindLabel(instance.source.kind))
                     put("enabled", instance.isEnabled)
                     // 来自订阅: 值是订阅地址 (找不到订阅记录时为空串); 不是订阅来的为 null
-                    put("subscription", subscriptionId?.let { id -> subs.find { it.subscriptionId == id }?.url.orEmpty() })
+                    val subscriptionUrl = subscriptionId?.let { id -> subs.find { it.subscriptionId == id }?.url.orEmpty() }
+                    put("subscription", subscriptionUrl)
+                    // 管理页按来源分组用的短名; 本地添加的为 null
+                    put("origin", subscriptionUrl?.let(::subscriptionLabel))
+                    // 阶级 (越小越优先, 见 MediaSourceTier); 配置里没有的不给, 选源时按回退值处理
+                    tiers.tiers[instance.source.mediaSourceId]?.let { put("tier", it.value.toInt()) }
+                    tiers.channelTiers[instance.source.mediaSourceId]?.takeIf { it.isNotEmpty() }?.let { channels ->
+                        putJsonObject("channelTiers") { for ((name, tier) in channels) put(name, tier.value.toInt()) }
+                    }
                     val editor = editorOf(instance.factoryId, factory, fromSubscription = subscriptionId != null)
                     put("editor", editor)
                     put("exportable", instance.factoryId in JSON_FACTORIES && instance.config.serializedArguments != null)
@@ -215,6 +226,21 @@ internal object RemoteSources {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * 订阅地址的短名, 管理页按来源分组时当组名: GitHub 上的取「用户/仓库」, 其余取域名 (去掉 `www.`).
+     * 订阅记录只存了地址, 没有名字.
+     */
+    private fun subscriptionLabel(url: String): String {
+        val parsed = runCatching { URI(url) }.getOrNull() ?: return url
+        val host = parsed.host?.removePrefix("www.") ?: return url
+        val segments = parsed.path.orEmpty().split('/').filter { it.isNotEmpty() }
+        return if ((host == "raw.githubusercontent.com" || host == "github.com") && segments.size >= 2) {
+            "${segments[0]}/${segments[1]}"
+        } else {
+            host
         }
     }
 
