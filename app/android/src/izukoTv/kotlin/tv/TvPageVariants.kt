@@ -224,9 +224,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 搜索页「手机扫码输入」的常驻服务 (固定地址, 手机可加书签): 进程活着就监听, 收到提交而搜索页不在场时
     // 用 navigator 把电视带过去. 见 TvRemoteControl
     DisposableEffect(aniNavigator) {
-        // 「退出 Ani 后保留 Web 控制台」的常驻前台服务在本模块 (见 RemoteKeepAliveService)
-        val app = appContext.applicationContext
-        TvRemoteControl.keepAliveService = { on -> RemoteKeepAliveService.set(app, on) }
         TvRemoteControl.install(appContext, aniNavigator)
         // 界面销毁 (退出后进程留着): 旧的导航入口作废, 见 TvRemoteControl.detachNavigator
         onDispose { TvRemoteControl.detachNavigator(aniNavigator) }
