@@ -13,12 +13,19 @@ package me.him188.ani.app.ui.remote
 internal val PERF_STYLE = """
 .perf-dur { font: inherit; font-size: 15px; padding: 0 10px; border-radius: 14px; border: 0; background: var(--chip); color: var(--on-chip); flex: none !important; }
 .perf-status { margin: 12px 0 0; font-size: 15px; }
+/* 体检与录制各一个标签, 报告按类型分开列 */
+.perf-tabs { margin: 16px 0 0; }
 .perf-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.perf-item { padding: 12px 14px; border-radius: 12px; background: var(--soft); cursor: pointer; }
-.perf-item-h { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 600; }
+.perf-item { border-radius: 12px; background: var(--soft); }
+/* 标题行是展开 / 收起的按钮: 右端箭头, 展开时朝上 (同 .req 卡片) */
+.perf-item-h { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; background: none; color: inherit; text-align: left; font-size: 14px; font-weight: 600; }
+.perf-item-h > span { flex: 1; min-width: 0; }
 .perf-item-h small { flex: none; font-size: 12px; font-weight: 400; color: var(--mute); }
-.perf-head { margin-top: 4px; font-size: 13px; color: var(--sub); }
-.perf-detail { margin-top: 10px; cursor: default; }
+.perf-item-h::after { content: ""; flex: none; width: 22px; height: 22px; background: var(--mute);
+  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform .15s; }
+.perf-item-h[aria-expanded=true]::after { transform: rotate(180deg); }
+.perf-head { margin: -8px 14px 0; padding-bottom: 12px; font-size: 13px; color: var(--sub); }
+.perf-detail { padding: 0 14px 12px; }
 .perf-f { display: flex; gap: 8px; margin: 6px 0; font-size: 14px; line-height: 1.5; }
 .perf-f::before { content: ''; flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--mute); }
 .perf-f.bad::before { background: var(--err); }
@@ -31,25 +38,24 @@ internal val PERF_STYLE = """
 """.trimIndent()
 
 /**
- * 「设置 → 维护 → 性能诊断」: 设备体检 / 录制 N 秒, 报告列表 (点开看结论与关键数字, 可下载整份 JSON).
- * 录制中每秒读一次状态; 其余时候只在进「维护」与点按钮时读.
+ * 「设置 → 维护 → 性能诊断」: 设备体检 / 录制 N 秒, 报告按类型分两个标签列出 (默认收起只显示结论, 点标题行展开看关键数字,
+ * 可下载整份 JSON). 录制中每秒读一次状态; 其余时候只在进「维护」与点按钮时读.
  */
 internal val PERF_SCRIPT = """
 (function () {
   var box = document.getElementById('set-perf');
   if (!box) return;
   var data = null, open = {}, details = {}, timer = null, busy = false, dur = 30;
+  /** 当前标签: health = 设备体检, record = 录制 (记在这台手机上). */
+  var tab = 'health';
+  try { tab = localStorage.getItem('perf.tab') || tab; } catch (e) {}
+  function kindOf(r) { return r.kind === 'health' ? 'health' : 'record'; }
+  function setTab(t) { tab = t; try { localStorage.setItem('perf.tab', t); } catch (e) {} }
   function load() {
     window.getJson('api/diag').then(function (d) {
-      // 录制 / 体检刚结束: 直接展开刚出的那份报告
-      var finished = data && data.status.state !== 'idle' && d.status.state === 'idle' && d.reports.length;
+      // 录制 / 体检刚结束: 切到刚出的那份报告所在的标签 (报告照常收起, 标题下有结论)
+      if (data && data.status.state !== 'idle' && d.status.state === 'idle' && d.reports.length) setTab(kindOf(d.reports[0]));
       data = d;
-      if (finished) {
-        var id = d.reports[0].id;
-        open = {};
-        open[id] = true;
-        if (!details[id]) window.getJson('api/diag/report/' + encodeURIComponent(id)).then(function (r) { details[id] = r; render(); }).catch(failRead);
-      }
       render();
       clearTimeout(timer);
       if (d.status.state !== 'idle' && !document.hidden) timer = setTimeout(load, 1000);
@@ -124,13 +130,19 @@ internal val PERF_SCRIPT = """
         }).join('') + '</select></div>';
     }
     if (data.reports.length) {
-      h += '<div class="perf-list">' + data.reports.map(function (r) {
-        var o = open[r.id];
-        return '<div class="perf-item" data-perf-id="' + esc(r.id) + '"><div class="perf-item-h"><span>' + kindText(r) +
-          (r.kind === 'health' ? '' : ' · ' + esc(r.page)) + '</span><small>' + esc(r.time) + '</small></div>' +
+      var tabs = [['health', T('设备体检')], ['record', T('录制')]];
+      h += '<div class="seg perf-tabs">' + tabs.map(function (t) {
+        var n = data.reports.filter(function (r) { return kindOf(r) === t[0]; }).length;
+        return '<button type="button" data-perf-tab="' + t[0] + '"' + (tab === t[0] ? ' class="on"' : '') + '>' + t[1] + ' <small>' + n + '</small></button>';
+      }).join('') + '</div>';
+      var list = data.reports.filter(function (r) { return kindOf(r) === tab; });
+      h += list.length ? '<div class="perf-list">' + list.map(function (r) {
+        var o = !!open[r.id];
+        return '<div class="perf-item"><button type="button" class="perf-item-h" data-perf-id="' + esc(r.id) + '" aria-expanded="' + o + '"><span>' + kindText(r) +
+          (r.kind === 'health' ? '' : ' · ' + esc(r.page)) + '</span><small>' + esc(r.time) + '</small></button>' +
           (o ? '<div class="perf-detail">' + (details[r.id] ? detailHtml(details[r.id]) : '<p class="hint">' + T('读取中…') + '</p>') + '</div>'
             : (r.headline ? '<div class="perf-head">' + esc(r.headline) + '</div>' : '')) + '</div>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' : '<p class="hint">' + T('还没有诊断报告') + '</p>';
     } else if (idle) {
       h += '<p class="hint">' + T('还没有诊断报告') + '</p>';
     }
@@ -155,13 +167,15 @@ internal val PERF_SCRIPT = """
         window.post('api/diag/health', {}).then(function (d) {
           busy = false;
           if (!d.ok) { toast(d.message); load(); return; }
-          details[d.report.id] = d.report; open = {}; open[d.report.id] = true;
+          details[d.report.id] = d.report;
+          setTab('health');
           load();
         }, function () { busy = false; fail(); load(); });
       } else if (act === 'record') {
         busy = true; render();
         window.post('api/diag/record', { seconds: dur }).then(function (d) {
           busy = false;
+          if (d.ok !== false) setTab('record');
           toast(d.message);
           load();
         }, function () { busy = false; fail(); load(); });
@@ -170,9 +184,10 @@ internal val PERF_SCRIPT = """
       }
       return;
     }
-    if (e.target.closest('.perf-detail')) return;
-    var item = e.target.closest('[data-perf-id]');
-    if (item) toggle(item.getAttribute('data-perf-id'));
+    var t = e.target.closest('[data-perf-tab]');
+    if (t) { setTab(t.getAttribute('data-perf-tab')); render(); return; }
+    var head = e.target.closest('button[data-perf-id]');
+    if (head) toggle(head.getAttribute('data-perf-id'));
   });
 })();
 """.trimIndent()
