@@ -358,17 +358,29 @@ button { font: inherit; border: 0; cursor: pointer; }
 .src-bar-ops button { flex: 1; min-width: 4.5em; padding: 11px 8px; }
 .src-tools.picking .src-count { flex: 1; }
 .src-tools .src-count { font-size: 14px; color: var(--mute); }
-.src-view { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 4px; }
+.src-view, .src-view-ctl { display: flex; flex-direction: column; gap: 10px; }
+.src-view { margin: 6px 0 4px; }
 .src-q { box-sizing: border-box; width: 100%; font: inherit; font-size: 14px; padding: 9px 12px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
 .src-view .seg { margin: 0; }
 .src-view .chips { margin-top: 0; }
 .src-view .hint { margin: 0; }
-/* 分组的节标题: 组名 + 启用了几个, 右边是整组开关 (选择模式下是「选中本组」) */
-.src-gh { display: flex; align-items: center; gap: 10px; margin: 20px 2px 0; }
+/*
+ * 分组的节标题, 排得跟数据源行一样: 左边是整组开关 (选择模式下是选中本组的勾选框), 与各行的开关同一列;
+ * 右边组名 + 启用了几个, 点它收起 / 展开这一组。收起后标题自己成一张卡片, 跟行一样能直接开关整组
+ */
+.src-gh { display: flex; align-items: center; gap: 10px; margin: 20px 0 0; padding: 0 14px; }
+.src-gh.folded { margin-top: 10px; padding: 8px 14px; border-radius: 12px; background: var(--card); box-shadow: 0 1px 3px var(--shadow); }
+.src-gh.folded.picked { background: var(--p-soft); box-shadow: 0 0 0 2px var(--p), 0 2px 8px var(--shadow-sm); }
+.src-gf { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 0; background: none; color: inherit; text-align: left; }
+.src-gf::after { content: ""; flex: none; margin-left: auto; width: 22px; height: 22px; background: var(--mute);
+  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform .15s; }
+.src-gf[aria-expanded=true]::after { transform: rotate(180deg); }
+/* 搜索时各组全部展开 (要找的源不能藏在收起的组里), 不给收起 */
+.src-gf:disabled { cursor: default; }
+.src-gf:disabled::after { display: none; }
 .src-gt { flex: 1; min-width: 0; }
 .src-gt b { font-size: 15px; word-break: break-all; }
 .src-gt small { margin-left: 8px; font-size: 12px; color: var(--mute); white-space: nowrap; }
-.src-gh button { padding: 7px 12px; border-radius: 12px; background: var(--chip); color: var(--on-chip); font-size: 13px; }
 .src-tier { display: inline-block; padding: 0 5px; margin-right: 4px; border-radius: 5px; background: var(--p-soft); color: var(--p); font-weight: 700; }
 .src-tier.t0 { background: var(--p); color: var(--on-p); }
 .src-ch { margin-top: 6px; font-size: 12px; color: var(--mute); }
@@ -4501,6 +4513,12 @@ private val SOURCES_SCRIPT = """
   function stored(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; } }
   function store(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
   var view = { group: stored('src.group', 'none'), filter: stored('src.filter', 'all'), q: '' };
+  /** 收起的组, 键 = 分组方式 + ':' + 组的 key (换个分组方式各记各的). */
+  var folded = {};
+  try { JSON.parse(stored('src.folded', '[]')).forEach(function (k) { folded[k] = true; }); } catch (e) {}
+  function foldKey(g) { return view.group + ':' + g.key; }
+  function isFolded(g) { return !view.q && !!folded[foldKey(g)]; }
+  function saveFolded() { store('src.folded', JSON.stringify(Object.keys(folded))); }
   /** 没写层级的源, 选源时按这个处理 (MediaSourceTier.Fallback). */
   var FALLBACK_TIER = 2;
   var TYPE_LABELS = {
@@ -5037,32 +5055,48 @@ private val SOURCES_SCRIPT = """
     if (!visible.length) html += '<p class="hint">' + T('没有符合条件的数据源') + '</p>';
     groupsOf(visible).forEach(function (g) {
       if (view.group !== 'none') html += groupHeader(g);
-      html += g.items.map(function (s) { return rowHtml(s, list.indexOf(s), list.length, canMove); }).join('');
+      if (!isFolded(g)) html += g.items.map(function (s) { return rowHtml(s, list.indexOf(s), list.length, canMove); }).join('');
     });
     box.innerHTML = html;
-    // 一组里有开有关时, 节标题的开关显示成「部分」(indeterminate 只能用脚本设)
-    [].forEach.call(box.querySelectorAll('input[data-gtoggle][data-partial]'), function (el) { el.indeterminate = true; });
+    // 一组里有开有关 (或选了一部分) 时, 节标题的勾选框显示成「部分」(indeterminate 只能用脚本设)
+    [].forEach.call(box.querySelectorAll('input[data-partial]'), function (el) { el.indeterminate = true; });
     applyMarquee();
     padBottom(prevHeight);
   }
   /**
-   * 节标题: 组名 + 启用了几个。平时右边是整组开关 (点一下整组启用 / 停用, 不用进选择模式);
-   * 选择模式下换成「选中本组」。
+   * 节标题: 整组开关 + 组名与启用了几个 (点组名收起 / 展开)。整组开关点一下整组启用 / 停用, 不用进选择模式;
+   * 选择模式下换成选中本组的勾选框。
    */
   function groupHeader(g) {
     var n = g.items.length;
     var on = g.items.filter(function (s) { return s.enabled; }).length;
-    var ctl;
+    var fold = isFolded(g);
+    var ctl, allPicked = false;
     if (picking) {
-      var allPicked = g.items.every(function (s) { return picked[s.id]; });
-      ctl = '<button type="button" data-gpick="' + esc(g.key) + '">' + (allPicked ? T('取消本组') : T('选中本组')) + '</button>';
+      var np = g.items.filter(function (s) { return picked[s.id]; }).length;
+      allPicked = np === n;
+      var pl = allPicked ? T('取消本组') : T('选中本组');
+      ctl = '<label class="src-pickbox" title="' + pl + '"><input type="checkbox" aria-label="' + pl + '" data-gpick="' + esc(g.key) + '"' +
+        (allPicked ? ' checked' : '') + (np > 0 && !allPicked ? ' data-partial' : '') + '></label>';
     } else {
       var label = on === n ? T('整组停用') : T('整组启用');
       ctl = '<label class="src-sw" title="' + label + '"><input type="checkbox" aria-label="' + label + '" data-gtoggle="' + esc(g.key) + '"' +
         (on === n ? ' checked' : '') + (on > 0 && on < n ? ' data-partial' : '') + '></label>';
     }
-    return '<div class="src-gh"><div class="src-gt"><b>' + esc(g.label) + '</b><small>' + T('已启用 {0}/{1}', on, n) + '</small></div>' +
-      ctl + '</div>';
+    return '<div class="src-gh' + (fold ? ' folded' : '') + (fold && allPicked ? ' picked' : '') + '">' + ctl +
+      '<button type="button" class="src-gf" data-gfold="' + esc(g.key) + '"' +
+      (view.q ? ' disabled' : ' aria-expanded="' + !fold + '"') + '>' +
+      '<span class="src-gt"><b>' + esc(g.label) + '</b><small>' + T('已启用 {0}/{1}', on, n) + '</small></span></button></div>';
+  }
+  /** 把 [list] 所在的收起的组展开; 展开了哪组就返回 true (调用方要重画). */
+  function unfoldGroupsOf(list) {
+    var changed = false;
+    list.forEach(function (s) {
+      var k = foldKey(groupOf(s));
+      if (folded[k]) { delete folded[k]; changed = true; }
+    });
+    if (changed) saveFolded();
+    return changed;
   }
   function rowHtml(s, i, total, canMove) {
     var fromSub = s.subscription != null;
@@ -5186,6 +5220,8 @@ private val SOURCES_SCRIPT = """
    * 测试是只读的, 不改动列表, 所以能并发; 启用 / 停用 / 删除那几种会改数据, 仍然一条条来 (见 bulkStep)。
    */
   function bulkTest(btn, list) {
+    // 结果写在各行下面: 收起的组里没有行, 先展开
+    if (unfoldGroupsOf(list)) { renderList(); btn = box.querySelector('button[data-bulk="test"]'); }
     // 按 id 找行: 分组显示时行的顺序与列表顺序不同
     var jobs = list.map(function (x) {
       var item = box.querySelector('.src-item[data-id="' + CSS.escape(x.id) + '"]');
@@ -5348,6 +5384,14 @@ private val SOURCES_SCRIPT = """
         .then(function () { load(); });
       return;
     }
+    var gp = e.target.getAttribute('data-gpick');
+    if (gp != null) {
+      // 选中本组的勾选框: 勾上 = 整组选中 (选了一部分时也是), 去勾 = 整组取消
+      var pg = findGroup(gp);
+      if (pg) pg.items.forEach(function (s) { if (e.target.checked) picked[s.id] = true; else delete picked[s.id]; });
+      renderList();
+      return;
+    }
     if (e.target.getAttribute('data-act') === 'pick') {
       var p = itemOf(e.target);
       if (p) {
@@ -5366,14 +5410,12 @@ private val SOURCES_SCRIPT = """
   box.addEventListener('click', function (e) {
     var bulk = e.target.closest('button[data-bulk]');
     if (bulk) { runBulk(bulk.getAttribute('data-bulk'), bulk); return; }
-    var gp = e.target.closest('button[data-gpick]');
-    if (gp) {
-      var g = findGroup(gp.getAttribute('data-gpick'));
-      if (g) {
-        var allPicked = g.items.every(function (s) { return picked[s.id]; });
-        g.items.forEach(function (s) { if (allPicked) delete picked[s.id]; else picked[s.id] = true; });
-        renderList();
-      }
+    var gf = e.target.closest('button[data-gfold]');
+    if (gf) {
+      var fk = view.group + ':' + gf.getAttribute('data-gfold');
+      if (folded[fk]) delete folded[fk]; else folded[fk] = true;
+      saveFolded();
+      renderList();
       return;
     }
     // 选择模式下点整行就切换选中 (手机上只点得到勾选框太难)。
