@@ -60,30 +60,6 @@
 
 [ghproxy-android-x86_64]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2FGrahamZen%2Fizuko-tv%2Freleases%2Fdownload%2F$GIT_TAG%2F$ASSET_PREFIX-$TAG_VERSION-x86_64.apk
 
-[github-android-tv]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-universal.apk
-
-[github-android-tv-arm64-v8a]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[github-android-tv-armeabi-v7a]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[github-android-tv-x86_64]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-x86_64.apk
-
-[cf-android-tv]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-universal.apk
-
-[cf-android-tv-arm64-v8a]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[cf-android-tv-armeabi-v7a]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[cf-android-tv-x86_64]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-x86_64.apk
-
-[ghproxy-android-tv]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-universal.apk
-
-[ghproxy-android-tv-arm64-v8a]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[ghproxy-android-tv-armeabi-v7a]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[ghproxy-android-tv-x86_64]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-x86_64.apk
-
 [macOS 无法打开解决方案]: https://myani.org/wiki/macos-unable-to-open
 
 [Windows下字体与背景颜色异常解决方案]: https://myani.org/wiki/windows-font-bg-color-issue
@@ -95,16 +71,6 @@
 
 [iOS 自签]: https://myani.org/wiki/ios-install
 
-|                  | 下载                                               | 常见问题                                        |
-|------------------|--------------------------------------------------|---------------------------------------------|
-| 安卓 手机/平板         | [主线][cf-android] / [备线][ghproxy-android]         |                                             |
-| 安卓 电视            | [主线][cf-android-tv] / [备线][ghproxy-android-tv]   |                                             |
-| iOS              | [主线][cf-ios] / [备线][ghproxy-ios]                 | 需要[自签][iOS 自签]                                  |
-| Windows          | [主线][cf-win-x64] / [备线][ghproxy-win-x64]         | 1. 目录不要有中文或者空格 <br/> 2. [显示异常][Windows下字体与背景颜色异常解决方案] |
-| Windows (ARM64)  | [主线][cf-win-aarch64] / [备线][ghproxy-win-aarch64] | 同 Windows                                                             |
-| macOS (M 系列芯片)   | [主线][cf-mac-aarch64] / [备线][ghproxy-mac-aarch64] | ⚠️ [安装后打不开][macOS 无法打开解决方案]                      |
-| macOS (Intel 芯片) | [主线][cf-mac-x64] / [备线][ghproxy-mac-x64]         | ⚠️ [安装教程][macOS Intel芯片版本安装教程]                    |
-| Linux AppImage   | [主线][cf-linux-x64] / [备线][ghproxy-linux-x64]     | ⚠️ [安装教程][Linux 安装说明]                        |
 下方有 QQ 群二维码，也可以[点这里进群](https://qm.qq.com/q/JaXFdpv3mC)/搜索群号1045984894。入群问题的答案：$REPO_OWNER
 
 ## 下载
@@ -125,16 +91,6 @@
 | legacy arm64-v8a    | Android 7.1 ~ 8.0，确定系统是 64 位 | [GitHub][github-android-legacy-arm64-v8a] |
 | legacy armeabi-v7a  | Android 7.1 ~ 8.0，确定系统是 32 位 | [GitHub][github-android-legacy-armeabi-v7a] |
 
-电视版:
-
-| 处理器架构              | 适用于             | 下载                                                                                                                  |
-|--------------------|-----------------|---------------------------------------------------------------------------------------------------------------------|
-| universal (推荐)     | 所有电视和电视盒子       | [主线][cf-android-tv] / [备线][ghproxy-android-tv] / [GitHub][github-android-tv]                                        |
-| arm64-v8a (64 位)   | 大多数电视和电视盒子      | [主线][cf-android-tv-arm64-v8a] / [备线][ghproxy-android-tv-arm64-v8a] / [GitHub][github-android-tv-arm64-v8a]          |
-| armeabi-v7a (32 位) | 旧电视盒子           | [主线][cf-android-tv-armeabi-v7a] / [备线][ghproxy-android-tv-armeabi-v7a] / [GitHub][github-android-tv-armeabi-v7a]    |
-| x86_64             | 模拟器             | [主线][cf-android-tv-x86_64] / [备线][ghproxy-android-tv-x86_64] / [GitHub][github-android-tv-x86_64]                   |
-
-</details>
 [github-android-qr]: https://github.com/GrahamZen/izuko-tv/releases/download/$GIT_TAG/$ASSET_PREFIX-$TAG_VERSION-universal.apk.github.qrcode.png
 
 ### Android 7.1 兼容包
