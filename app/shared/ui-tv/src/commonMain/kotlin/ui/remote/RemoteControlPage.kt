@@ -358,6 +358,34 @@ button { font: inherit; border: 0; cursor: pointer; }
 .src-bar-ops button { flex: 1; min-width: 4.5em; padding: 11px 8px; }
 .src-tools.picking .src-count { flex: 1; }
 .src-tools .src-count { font-size: 14px; color: var(--mute); }
+.src-view, .src-view-ctl { display: flex; flex-direction: column; gap: 10px; }
+.src-view { margin: 6px 0 4px; }
+.src-q { box-sizing: border-box; width: 100%; font: inherit; font-size: 14px; padding: 9px 12px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
+.src-view .seg { margin: 0; }
+.src-view .chips { margin-top: 0; }
+.src-view .hint { margin: 0; }
+/*
+ * 分组的节标题, 排得跟数据源行一样: 左边是整组开关 (选择模式下是选中本组的勾选框), 与各行的开关同一列;
+ * 右边组名 + 启用了几个, 点它收起 / 展开这一组。收起后标题自己成一张卡片, 跟行一样能直接开关整组
+ */
+.src-gh { display: flex; align-items: center; gap: 10px; margin: 20px 0 0; padding: 0 14px; }
+.src-gh.folded { margin-top: 10px; padding: 8px 14px; border-radius: 12px; background: var(--card); box-shadow: 0 1px 3px var(--shadow); }
+.src-gh.folded.picked { background: var(--p-soft); box-shadow: 0 0 0 2px var(--p), 0 2px 8px var(--shadow-sm); }
+.src-gf { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 0; background: none; color: inherit; text-align: left; }
+.src-gf::after { content: ""; flex: none; margin-left: auto; width: 22px; height: 22px; background: var(--mute);
+  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform .15s; }
+.src-gf[aria-expanded=true]::after { transform: rotate(180deg); }
+/* 搜索时各组全部展开 (要找的源不能藏在收起的组里), 不给收起 */
+.src-gf:disabled { cursor: default; }
+.src-gf:disabled::after { display: none; }
+.src-gt { flex: 1; min-width: 0; }
+.src-gt b { font-size: 15px; word-break: break-all; }
+.src-gt small { margin-left: 8px; font-size: 12px; color: var(--mute); white-space: nowrap; }
+.src-tier { display: inline-block; padding: 0 5px; margin-right: 4px; border-radius: 5px; background: var(--p-soft); color: var(--p); font-weight: 700; }
+.src-tier.t0 { background: var(--p); color: var(--on-p); }
+.src-ch { margin-top: 6px; font-size: 12px; color: var(--mute); }
+.src-ch summary { cursor: pointer; }
+.src-ch span { display: inline-block; margin: 4px 12px 0 0; }
 .src-pickbox { display: flex; align-items: center; }
 .src-pickbox input { width: 20px; height: 20px; }
 /* 选择模式下藏掉启用开关与单行按钮: 两套操作同时在场很容易误点 */
@@ -4479,6 +4507,92 @@ private val SOURCES_SCRIPT = """
   var addBox = document.getElementById('src-add');
   var data = null, lastTemplates = '';
 
+  // ---- 视图: 搜索 / 分组 / 按状态筛选 (只改怎么看, 不改数据) ----
+  // 分组只有固定的几个维度 (来源 / 层级 / 类型), 不让用户自己起组名: 自由命名的分组用久了会乱,
+  // 维度固定才能一眼看出「这一组都是什么」。选择模式下的全选与批量操作只作用于当前筛出来的源
+  function stored(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; } }
+  function store(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+  var view = { group: stored('src.group', 'none'), filter: stored('src.filter', 'all'), q: '' };
+  /** 收起的组, 键 = 分组方式 + ':' + 组的 key (换个分组方式各记各的). */
+  var folded = {};
+  try { JSON.parse(stored('src.folded', '[]')).forEach(function (k) { folded[k] = true; }); } catch (e) {}
+  function foldKey(g) { return view.group + ':' + g.key; }
+  function isFolded(g) { return !view.q && !!folded[foldKey(g)]; }
+  function saveFolded() { store('src.folded', JSON.stringify(Object.keys(folded))); }
+  /** 没写层级的源, 选源时按这个处理 (MediaSourceTier.Fallback). */
+  var FALLBACK_TIER = 2;
+  var TYPE_LABELS = {
+    'web-selector': T('网页抓取'), rss: 'RSS', rule: T('规则源'), 'direct-api': T('直链 API'),
+    maccms: T('苹果 CMS'), drive: T('网盘'), bt: 'BT'
+  };
+  var viewBox = document.createElement('div');
+  viewBox.className = 'src-view';
+  viewBox.innerHTML = '<input type="search" class="src-q" placeholder="' + T('搜索数据源') + '" autocomplete="off">' +
+    '<div class="src-view-ctl"></div>';
+  box.parentNode.insertBefore(viewBox, box);
+  var viewCtl = viewBox.querySelector('.src-view-ctl');
+
+  function typeKey(s) {
+    if (s.kind === 'BT') return 'bt';
+    if (String(s.factoryId).indexOf('cloud-drive') === 0) return 'drive';
+    return s.factoryId;
+  }
+  function typeLabel(s) { return TYPE_LABELS[typeKey(s)] || s.factoryName || s.factoryId; }
+  function matches(s) {
+    if (view.filter === 'on' && !s.enabled) return false;
+    if (view.filter === 'off' && s.enabled) return false;
+    if (!view.q) return true;
+    return [s.name, s.description, s.origin, typeLabel(s)].some(function (x) {
+      return x && String(x).toLowerCase().indexOf(view.q) >= 0;
+    });
+  }
+  function visibleSources() { return ((data && data.sources) || []).filter(matches); }
+  function groupOf(s) {
+    if (view.group === 'origin') return { key: s.origin || '', label: s.origin || T('本地添加') };
+    if (view.group === 'type') return { key: typeKey(s), label: typeLabel(s) };
+    if (s.tier == null) return { key: 'none', label: T('未设置（按 T{0} 处理）', FALLBACK_TIER), sort: FALLBACK_TIER + 0.5 };
+    return { key: 't' + s.tier, label: s.tier === 0 ? T('T{0}（最优先）', 0) : 'T' + s.tier, sort: s.tier };
+  }
+  /** 按当前分组方式分组, 组内保持列表原有的顺序 (顺序就是优先级). */
+  function groupsOf(list) {
+    if (view.group === 'none') return [{ key: '', label: '', items: list }];
+    var map = {}, order = [];
+    list.forEach(function (s) {
+      var g = groupOf(s);
+      if (!map[g.key]) { map[g.key] = { key: g.key, label: g.label, sort: g.sort, items: [] }; order.push(map[g.key]); }
+      map[g.key].items.push(s);
+    });
+    if (view.group === 'tier') order.sort(function (a, b) { return a.sort - b.sort; });
+    // 本地添加的排在各订阅后面
+    if (view.group === 'origin') order.sort(function (a, b) { return (a.key === '' ? 1 : 0) - (b.key === '' ? 1 : 0); });
+    return order;
+  }
+  function findGroup(key) { return groupsOf(visibleSources()).filter(function (g) { return g.key === key; })[0]; }
+  function renderView() {
+    var list = (data && data.sources) || [];
+    var on = list.filter(function (s) { return s.enabled; }).length;
+    var segs = [['none', T('不分组')], ['origin', T('按来源')], ['tier', T('按层级')], ['type', T('按类型')]];
+    var chips = [['all', T('全部 {0}', list.length)], ['on', T('已启用 {0}', on)], ['off', T('已停用 {0}', list.length - on)]];
+    viewCtl.innerHTML = '<div class="seg">' + segs.map(function (x) {
+        return '<button type="button" data-view-group="' + x[0] + '"' + (view.group === x[0] ? ' class="on"' : '') + '>' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<div class="chips">' + chips.map(function (x) {
+        return '<button type="button" class="chip' + (view.filter === x[0] ? ' on' : '') + '" data-view-filter="' + x[0] + '">' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      (view.group === 'tier' ? '<p class="hint">' + T('层级越小越优先；T0 的源一搜到结果就直接选，不等其他源') + '</p>' : '');
+  }
+  viewBox.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-view-group]'), f = e.target.closest('[data-view-filter]');
+    if (g) { view.group = g.getAttribute('data-view-group'); store('src.group', view.group); }
+    else if (f) { view.filter = f.getAttribute('data-view-filter'); store('src.filter', view.filter); }
+    else return;
+    if (data) renderList();
+  });
+  viewBox.querySelector('.src-q').addEventListener('input', function (e) {
+    view.q = e.target.value.trim().toLowerCase();
+    if (data) renderList();
+  });
+
   var getJson = window.getJson;
   function load() {
     // 网盘卡片跟着重拉: 导入、启用停用、删除「网盘」数据源都会改变它们 (见 CLOUD_DRIVE_SCRIPT)
@@ -4897,8 +5011,9 @@ private val SOURCES_SCRIPT = """
   // ---- 多选 ----
   // 选中的源记 id 而不是下标: 批量操作中途会重新 load(), 下标会错位
   var picking = false, picked = {};
+  /** 选中且在当前筛选结果里的: 筛掉的不参与批量操作, 免得对看不见的源动手. */
   function pickedSources() {
-    return (data.sources || []).filter(function (s) { return picked[s.id]; });
+    return visibleSources().filter(function (s) { return picked[s.id]; });
   }
   function toolsHtml() {
     if (!picking) {
@@ -4906,11 +5021,13 @@ private val SOURCES_SCRIPT = """
         '<span class="hint">' + T('选择后可以批量启用、测试、导出或删除') + '</span></div>';
     }
     var n = pickedSources().length;
-    var total = (data.sources || []).length;
+    var vis = visibleSources();
+    var filtered = vis.length < (data.sources || []).length;
     var off = n ? '' : ' disabled';
     return '<div class="src-tools picking">' +
       '<div class="src-bar">' +
-        '<button type="button" data-bulk="all">' + (n >= total ? T('取消全选') : T('全选')) + '</button>' +
+        '<button type="button" data-bulk="all">' + (vis.length && n >= vis.length ? T('取消全选') :
+          filtered ? T('全选当前 {0} 个', vis.length) : T('全选')) + '</button>' +
         '<span class="src-count">' + T('已选 {0} 个', n) + '</span>' +
         '<button type="button" data-bulk="done">' + T('完成') + '</button>' +
       '</div>' +
@@ -4925,38 +5042,97 @@ private val SOURCES_SCRIPT = """
       '<div class="src-panel" id="src-bulk" hidden></div>';
   }
   function renderList() {
+    renderView(); // 启用 / 停用之后各筛选片上的数量要跟着变
     var list = data.sources || [];
     if (!list.length) { box.innerHTML = '<p class="hint">' + T('还没有数据源') + '</p>'; return; }
     // 先量再改 class: 一改 class, CSS 立刻把每行的按钮藏了, 再去量就量到收缩后的高度
     var prevHeight = box.offsetHeight;
     box.className = picking ? 'picking' : '';
-    box.innerHTML = toolsHtml() +
-      list.map(function (s, i) {
-      var fromSub = s.subscription != null;
-      var tags = [s.kind, fromSub ? T('来自订阅') : ''].filter(Boolean).join(' · ');
-      // 上移 / 下移: 每行都有的排序箭头, 只放图标; 其余动作 图标 + 文字
-      var I = window.ICONS;
-      var ord = '<div class="src-ord">' +
-        '<button data-act="up" class="icb" aria-label="' + T('上移') + '" title="' + T('上移') + '"' + (i === 0 ? ' disabled' : '') + '>' + I.up + '</button>' +
-        '<button data-act="down" class="icb" aria-label="' + T('下移') + '" title="' + T('下移') + '"' + (i === list.length - 1 ? ' disabled' : '') + '>' + I.down + '</button></div>';
-      var b = '<button data-act="test" class="ic">' + I.plug + T('测试') + '</button>';
-      if (s.editor !== 'none') b += '<button data-act="edit" class="ic">' + I.edit + T('编辑') + '</button>';
-      if (fromSub) b += '<button data-act="copy" class="ic">' + I.copy + T('复制为本地源') + '</button>';
-      if (s.exportable) b += '<button data-act="export" class="ic">' + I.share + T('导出') + '</button>';
-      if (!fromSub) b += '<button data-act="delete" class="src-danger ic">' + I.trash + T('删除') + '</button>';
-      return '<div class="src-item' + (s.enabled ? '' : ' off') + (picking && picked[s.id] ? ' picked' : '') +
-        '" data-i="' + i + '" data-id="' + esc(s.id) + '">' +
-        '<div class="src-top">' +
-        (picking ? '<label class="src-pickbox"><input type="checkbox" data-act="pick"' + (picked[s.id] ? ' checked' : '') + '></label>' : '') +
-        '<label class="src-sw"><input type="checkbox" data-act="enable"' + (s.enabled ? ' checked' : '') + '></label>' +
-        window.srcIcon(s.id, s.name) +
-        '<div class="src-name"><span class="t">' + esc(s.name) + '</span><small>' + esc(tags) + '</small></div>' + ord + '</div>' +
-        (s.description ? '<div class="src-desc">' + esc(s.description) + '</div>' : '') +
-        (fromSub ? '<div class="src-desc">' + T('订阅来的源会随订阅更新被覆盖，所以只能启用或停用；想改的话先「复制为本地源」。') + '</div>' : '') +
-        '<div class="src-btns">' + b + '</div><div class="src-panel" hidden></div></div>';
-    }).join('');
+    var visible = visibleSources();
+    // 顺序就是优先级: 只在不分组、没筛选时能调, 否则「上移」跨过的是看不见的源
+    var canMove = view.group === 'none' && view.filter === 'all' && !view.q;
+    var html = toolsHtml();
+    if (!visible.length) html += '<p class="hint">' + T('没有符合条件的数据源') + '</p>';
+    groupsOf(visible).forEach(function (g) {
+      if (view.group !== 'none') html += groupHeader(g);
+      if (!isFolded(g)) html += g.items.map(function (s) { return rowHtml(s, list.indexOf(s), list.length, canMove); }).join('');
+    });
+    box.innerHTML = html;
+    // 一组里有开有关 (或选了一部分) 时, 节标题的勾选框显示成「部分」(indeterminate 只能用脚本设)
+    [].forEach.call(box.querySelectorAll('input[data-partial]'), function (el) { el.indeterminate = true; });
     applyMarquee();
     padBottom(prevHeight);
+  }
+  /**
+   * 节标题: 整组开关 + 组名与启用了几个 (点组名收起 / 展开)。整组开关点一下整组启用 / 停用, 不用进选择模式;
+   * 选择模式下换成选中本组的勾选框。
+   */
+  function groupHeader(g) {
+    var n = g.items.length;
+    var on = g.items.filter(function (s) { return s.enabled; }).length;
+    var fold = isFolded(g);
+    var ctl, allPicked = false;
+    if (picking) {
+      var np = g.items.filter(function (s) { return picked[s.id]; }).length;
+      allPicked = np === n;
+      var pl = allPicked ? T('取消本组') : T('选中本组');
+      ctl = '<label class="src-pickbox" title="' + pl + '"><input type="checkbox" aria-label="' + pl + '" data-gpick="' + esc(g.key) + '"' +
+        (allPicked ? ' checked' : '') + (np > 0 && !allPicked ? ' data-partial' : '') + '></label>';
+    } else {
+      var label = on === n ? T('整组停用') : T('整组启用');
+      ctl = '<label class="src-sw" title="' + label + '"><input type="checkbox" aria-label="' + label + '" data-gtoggle="' + esc(g.key) + '"' +
+        (on === n ? ' checked' : '') + (on > 0 && on < n ? ' data-partial' : '') + '></label>';
+    }
+    return '<div class="src-gh' + (fold ? ' folded' : '') + (fold && allPicked ? ' picked' : '') + '">' + ctl +
+      '<button type="button" class="src-gf" data-gfold="' + esc(g.key) + '"' +
+      (view.q ? ' disabled' : ' aria-expanded="' + !fold + '"') + '>' +
+      '<span class="src-gt"><b>' + esc(g.label) + '</b><small>' + T('已启用 {0}/{1}', on, n) + '</small></span></button></div>';
+  }
+  /** 把 [list] 所在的收起的组展开; 展开了哪组就返回 true (调用方要重画). */
+  function unfoldGroupsOf(list) {
+    var changed = false;
+    list.forEach(function (s) {
+      var k = foldKey(groupOf(s));
+      if (folded[k]) { delete folded[k]; changed = true; }
+    });
+    if (changed) saveFolded();
+    return changed;
+  }
+  function rowHtml(s, i, total, canMove) {
+    var fromSub = s.subscription != null;
+    var type = typeLabel(s);
+    var tags = [s.kind, type !== s.kind ? type : '', fromSub ? (s.origin || T('来自订阅')) : T('本地添加')]
+      .filter(Boolean).map(esc).join(' · ');
+    var tier = s.tier != null ? '<span class="src-tier' + (s.tier === 0 ? ' t0' : '') + '">T' + s.tier + '</span>' : '';
+    // 上移 / 下移: 每行都有的排序箭头, 只放图标; 其余动作 图标 + 文字
+    var I = window.ICONS;
+    var ord = !canMove ? '' : '<div class="src-ord">' +
+      '<button data-act="up" class="icb" aria-label="' + T('上移') + '" title="' + T('上移') + '"' + (i === 0 ? ' disabled' : '') + '>' + I.up + '</button>' +
+      '<button data-act="down" class="icb" aria-label="' + T('下移') + '" title="' + T('下移') + '"' + (i === total - 1 ? ' disabled' : '') + '>' + I.down + '</button></div>';
+    var b = '<button data-act="test" class="ic">' + I.plug + T('测试') + '</button>';
+    if (s.editor !== 'none') b += '<button data-act="edit" class="ic">' + I.edit + T('编辑') + '</button>';
+    if (fromSub) b += '<button data-act="copy" class="ic">' + I.copy + T('复制为本地源') + '</button>';
+    if (s.exportable) b += '<button data-act="export" class="ic">' + I.share + T('导出') + '</button>';
+    if (!fromSub) b += '<button data-act="delete" class="src-danger ic">' + I.trash + T('删除') + '</button>';
+    return '<div class="src-item' + (s.enabled ? '' : ' off') + (picking && picked[s.id] ? ' picked' : '') +
+      '" data-i="' + i + '" data-id="' + esc(s.id) + '">' +
+      '<div class="src-top">' +
+      (picking ? '<label class="src-pickbox"><input type="checkbox" data-act="pick"' + (picked[s.id] ? ' checked' : '') + '></label>' : '') +
+      '<label class="src-sw"><input type="checkbox" data-act="enable"' + (s.enabled ? ' checked' : '') + '></label>' +
+      window.srcIcon(s.id, s.name) +
+      '<div class="src-name"><span class="t">' + esc(s.name) + '</span><small>' + tier + tags + '</small></div>' + ord + '</div>' +
+      (s.description ? '<div class="src-desc">' + esc(s.description) + '</div>' : '') +
+      channelTiersHtml(s) +
+      (fromSub ? '<div class="src-desc">' + T('订阅来的源会随订阅更新被覆盖，所以只能启用或停用；想改的话先「复制为本地源」。') + '</div>' : '') +
+      '<div class="src-btns">' + b + '</div><div class="src-panel" hidden></div></div>';
+  }
+  /** 各线路的层级 (订阅给每条线路单独定的), 折起来, 优先的在前. */
+  function channelTiersHtml(s) {
+    var ct = s.channelTiers;
+    var names = ct ? Object.keys(ct).sort(function (a, b) { return ct[a] - ct[b]; }) : [];
+    if (!names.length) return '';
+    return '<details class="src-ch"><summary>' + T('线路层级（{0}）', names.length) + '</summary>' +
+      names.map(function (k) { return '<span>' + esc(k) + ' <b>T' + ct[k] + '</b></span>'; }).join('') + '</details>';
   }
   /** 名字真的放不下才滚: 溢出多少就滚多少, 写进 --mq 给动画用. */
   function applyMarquee() {
@@ -4995,10 +5171,10 @@ private val SOURCES_SCRIPT = """
     if (action === 'hide') { var hp = document.getElementById('src-bulk'); if (hp) hp.hidden = true; return; }
     if (action === 'copy') { copyText(document.querySelector('#src-bulk textarea')); return; }
     if (action === 'all') {
-      var list = data.sources || [];
-      var isAll = pickedSources().length >= list.length;
-      picked = {};
-      if (!isAll) list.forEach(function (x) { picked[x.id] = true; });
+      // 只管当前筛出来的: 筛掉的保持原样
+      var vis = visibleSources();
+      var isAll = vis.length > 0 && vis.every(function (x) { return picked[x.id]; });
+      vis.forEach(function (x) { if (isAll) delete picked[x.id]; else picked[x.id] = true; });
       renderList();
       return;
     }
@@ -5044,10 +5220,11 @@ private val SOURCES_SCRIPT = """
    * 测试是只读的, 不改动列表, 所以能并发; 启用 / 停用 / 删除那几种会改数据, 仍然一条条来 (见 bulkStep)。
    */
   function bulkTest(btn, list) {
-    var items = box.querySelectorAll('.src-item');
-    var all = data.sources || [];
+    // 结果写在各行下面: 收起的组里没有行, 先展开
+    if (unfoldGroupsOf(list)) { renderList(); btn = box.querySelector('button[data-bulk="test"]'); }
+    // 按 id 找行: 分组显示时行的顺序与列表顺序不同
     var jobs = list.map(function (x) {
-      var item = items[all.indexOf(x)];
+      var item = box.querySelector('.src-item[data-id="' + CSS.escape(x.id) + '"]');
       return item ? testInto(item, x) : Promise.resolve(false);
     });
     if (!jobs.length) return;
@@ -5190,6 +5367,31 @@ private val SOURCES_SCRIPT = """
     }
   }
   box.addEventListener('change', function (e) {
+    var gt = e.target.getAttribute('data-gtoggle');
+    if (gt != null) {
+      // 整组开关: 勾上 = 整组启用 (一部分开着时也是), 去勾 = 整组停用; 本来就是这个状态的不发
+      var grp = findGroup(gt);
+      var turnOn = e.target.checked;
+      var todo = grp ? grp.items.filter(function (x) { return !!x.enabled !== turnOn; }) : [];
+      if (!todo.length) { renderList(); return; }
+      e.target.disabled = true;
+      post('api/sources/enable', { ids: todo.map(function (x) { return x.id; }).join('\n'), enabled: turnOn ? '1' : '0' })
+        .then(function (r) {
+          if (r && r.ok === false) toast(r.message);
+          else toast(turnOn ? T('已启用这组的 {0} 个', todo.length) : T('已停用这组的 {0} 个', todo.length));
+        })
+        .catch(fail)
+        .then(function () { load(); });
+      return;
+    }
+    var gp = e.target.getAttribute('data-gpick');
+    if (gp != null) {
+      // 选中本组的勾选框: 勾上 = 整组选中 (选了一部分时也是), 去勾 = 整组取消
+      var pg = findGroup(gp);
+      if (pg) pg.items.forEach(function (s) { if (e.target.checked) picked[s.id] = true; else delete picked[s.id]; });
+      renderList();
+      return;
+    }
     if (e.target.getAttribute('data-act') === 'pick') {
       var p = itemOf(e.target);
       if (p) {
@@ -5208,11 +5410,19 @@ private val SOURCES_SCRIPT = """
   box.addEventListener('click', function (e) {
     var bulk = e.target.closest('button[data-bulk]');
     if (bulk) { runBulk(bulk.getAttribute('data-bulk'), bulk); return; }
+    var gf = e.target.closest('button[data-gfold]');
+    if (gf) {
+      var fk = view.group + ':' + gf.getAttribute('data-gfold');
+      if (folded[fk]) delete folded[fk]; else folded[fk] = true;
+      saveFolded();
+      renderList();
+      return;
+    }
     // 选择模式下点整行就切换选中 (手机上只点得到勾选框太难)。
-    // 勾选框自己有 change 事件, 这里避开它, 否则一次点击会切两次。
+    // 勾选框自己有 change 事件, 这里避开它, 否则一次点击会切两次; 展开「线路层级」也不算点行
     if (picking) {
       var row = e.target.closest('.src-item');
-      if (row && !e.target.closest('.src-pickbox')) {
+      if (row && !e.target.closest('.src-pickbox') && !e.target.closest('summary')) {
         var rs = (data.sources || [])[+row.getAttribute('data-i')];
         if (rs) {
           if (picked[rs.id]) delete picked[rs.id]; else picked[rs.id] = true;
