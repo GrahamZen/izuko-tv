@@ -381,7 +381,7 @@ class MediaSourceManagerImpl(
 
     override fun mediaSourceTiersFlow(): Flow<MediaSelectorSourceTiers> = instances.flow.map { list ->
         val arguments = list.mapNotNull { save ->
-            save.getArgumentOrNull(codecManager)?.let { save.mediaSourceId to it }
+            save.getArgumentOrNull(codecManager)?.let { CloudDriveMediaSource.reportedMediaSourceId(it, save.mediaSourceId) to it }
         }
         MediaSelectorSourceTiers(
             tiers = arguments.associate { (id, argument) -> id to argument.tier },
