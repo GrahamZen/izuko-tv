@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
+import me.him188.ani.android.tv.RemoteKeepAliveService
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.android.tv.TvOnboardingGate
 import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
@@ -27,6 +28,7 @@ import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
 import me.him188.ani.app.ui.main.TvStartupLogo
 import me.him188.ani.app.ui.main.TvStartupLogoHost
 import me.him188.ani.app.ui.main.tvStartupLogoColors
+import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import org.koin.android.ext.android.getKoin
 
@@ -69,6 +71,10 @@ internal fun FormFactorStartupPlaceholder() {
  * (只写一次的话, 用户把番标成"看过"后主屏还会挂着它). 随 activity 销毁一起结束.
  */
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
+    // Web 控制台随 Activity 起, 不等界面组合 (息屏时被重启的进程要到亮屏才组合); 「退出 Ani 后保留」的常驻服务在本模块
+    val app = activity.applicationContext
+    TvRemoteControl.keepAliveService = { on -> RemoteKeepAliveService.set(app, on) }
+    TvRemoteControl.onActivityCreated(activity)
     activity.lifecycleScope.launch {
         delay(TV_HOME_CHANNELS_DELAY_MILLIS)
         // 需要 activity context 才能弹出添加频道的系统确认框
