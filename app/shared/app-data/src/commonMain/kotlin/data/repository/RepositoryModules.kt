@@ -235,7 +235,6 @@ fun KoinApplication.repositoryModules(
             get(),
             get(),
             seriesIndexService = get(),
-            sequelSeasonTable = get(),
             sessionStateProvider = get(),
             scope = coroutineScope,
             cacheDir = getContext().files.cacheDir,
