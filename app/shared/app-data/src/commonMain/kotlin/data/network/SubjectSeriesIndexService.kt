@@ -22,7 +22,10 @@ import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
+import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
@@ -72,6 +75,14 @@ data class SubjectRelationIndex(
     }
 }
 
+/** 存进条目的样子 ([SubjectCollectionInfo.relations], 算 [SubjectSeriesInfo] 用). */
+fun SubjectRelationIndex.toSubjectRelations(): SubjectRelations = SubjectRelations(
+    seriesMainSubjectIds = seriesMainSubjectIds,
+    seriesMainSubjectNames = seriesMainSubjectNames,
+    sequelSubjects = sequelSubjects,
+    sequelSubjectNames = sequelSubjectNames,
+)
+
 /** 系列关系图里的一个条目, 即 `/p1/subjects/{id}/relations` 列出的精简条目. */
 data class SeriesNode(
     val id: Int,
@@ -105,7 +116,8 @@ class PrequelChain(
  * 自己走一遍传递闭包. 对照 302286 (死神 千年血战篇), 走出来的结果与 Ani 那份逐条一致:
  * 主线 `[1600, 302286, 412916, 457326, 530725]`, 续作 `[412916, 457326, 530725]`.
  *
- * 代价是**每个节点一个请求** (上面那个例子 5 个), 所以结果按 subjectId 缓存在内存里 ——
+ * 每个节点的邻居先查系列关系图 ([graph], 见 [SeriesGraphTableRepository]): 表覆盖到的条目在本地走, 不发请求;
+ * 比表新的条目才**每个节点一个请求** (上面那个例子 5 个). 结果按 subjectId 缓存在内存里 ——
  * 详情页与 TMDB 匹配会对同一个条目反复问.
  *
  * 每个节点的邻居另有一层缓存, 给 [prequelChain] (推荐把续作换成最早一季) 与 BFS 共用:
@@ -125,6 +137,8 @@ class SubjectSeriesIndexService(
      */
     scope: CoroutineScope,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 系列关系图; 返回 null (没有表) 时全部现场取. */
+    private val graph: (suspend () -> SeriesGraphTable?)? = null,
 ) {
     private val scope = scope
     private val logger = logger<SubjectSeriesIndexService>()
@@ -219,6 +233,7 @@ class SubjectSeriesIndexService(
      * @param fetched 这次调用真的发了请求时 +1 (命中缓存或合流到在途请求都不算), 给日志记账用
      */
     private suspend fun edgesOf(subjectId: Int, fetched: AtomicInt? = null): SeriesEdges {
+        graph?.invoke()?.edgesOf(subjectId)?.let { return it }
         edgesLock.withLock { edgesCache[subjectId] }?.let { return it }
         var created: Deferred<SeriesEdges>? = null
         val task = edgesLock.withLock {
@@ -253,40 +268,67 @@ class SubjectSeriesIndexService(
             }
         }
 
+    /**
+     * TMDB 匹配找系列主条目名的候选, 同 [SubjectRelationIndex.seriesRootNames], 只走用得上的那部分:
+     * 祖先沿前传走完; 本传只看自己的**直接**续集 (前导篇的本传就是它的直接续集), 自己那一页关系里就有, 续集方向不再往下走.
+     * 自己的名字 [selfNames] 由调用方给: 没有前传的条目, 名字只出现在续集的关系里, 不必为它再取一次.
+     */
+    suspend fun seriesRootNames(subjectId: Int, selfNames: List<String>): List<String> {
+        val startMillis = currentTimeMillis()
+        val requestCount = atomic(0)
+        val edges = HashMap<Int, SeriesEdges>()
+        suspend fun edgesOfNode(id: Int): SeriesEdges = edges.getOrPut(id) { edgesOf(id, requestCount) }
+
+        val ancestors = closure(subjectId, ::edgesOfNode) { it.prequels }.toList().reversed()
+        val normalizedSelf = selfNames.map { it.normalizeForNameMatch() }.filter { it.isNotEmpty() }
+        val parentWorks = edgesOfNode(subjectId).sequels.filter { isParentWork(namesOf(it), normalizedSelf) }
+        synchronized(statsLock) {
+            stats[subjectId] = ComputeStats(requestCount.value, currentTimeMillis() - startMillis)
+            while (stats.size > CACHE_SIZE) stats.remove(stats.keys.first())
+        }
+        return ancestors.flatMap { namesOf(it, edges) } + parentWorks.flatMap { namesOf(it) }
+    }
+
+    /** 从 [start] 起沿 [direction] 走传递闭包, 按发现顺序 (= 时间先后), 最多 [MAX_NODES] 个. */
+    private suspend fun closure(
+        start: Int,
+        edgesOfNode: suspend (Int) -> SeriesEdges,
+        direction: (SeriesEdges) -> List<SeriesNode>,
+    ): LinkedHashSet<Int> {
+        val result = LinkedHashSet<Int>()
+        var frontier = direction(edgesOfNode(start))
+        while (frontier.isNotEmpty() && result.size < MAX_NODES) {
+            val next = mutableListOf<SeriesNode>()
+            for (subject in frontier) {
+                if (!result.add(subject.id)) continue
+                next.addAll(direction(edgesOfNode(subject.id)))
+            }
+            frontier = next
+        }
+        return result
+    }
+
+    /** 名字被自己包含的续集 = 本传 (见 [SubjectRelationIndex.seriesRootNames]). [selfNames] 已归一化. */
+    private fun isParentWork(names: List<String>, selfNames: List<String>): Boolean = names.any { name ->
+        val normalized = name.normalizeForNameMatch()
+        normalized.isNotEmpty() && selfNames.any { it != normalized && it.contains(normalized) }
+    }
+
     private suspend fun compute(subjectId: Int, requestCount: AtomicInt): SubjectRelationIndex {
         val edges = HashMap<Int, SeriesEdges>()
 
         suspend fun edgesOfNode(id: Int): SeriesEdges = edges.getOrPut(id) { edgesOf(id, requestCount) }
 
-        // 两个方向各走一遍传递闭包. 用 LinkedHashSet 保持发现顺序 (= 时间先后)
-        suspend fun walk(direction: (SeriesEdges) -> List<SeriesNode>): LinkedHashSet<Int> {
-            val result = LinkedHashSet<Int>()
-            var frontier = direction(edgesOfNode(subjectId))
-            while (frontier.isNotEmpty() && result.size < MAX_NODES) {
-                val next = mutableListOf<SeriesNode>()
-                for (subject in frontier) {
-                    if (!result.add(subject.id)) continue
-                    next.addAll(direction(edgesOfNode(subject.id)))
-                }
-                frontier = next
-            }
-            return result
-        }
-
-        val sequels = walk { it.sequels }
-        val prequels = walk { it.prequels }
+        // 两个方向各走一遍传递闭包
+        val sequels = closure(subjectId, ::edgesOfNode) { it.sequels }
+        val prequels = closure(subjectId, ::edgesOfNode) { it.prequels }
 
         // 主线按时间先后: 最早的前传在最前, 自己在中间
         val mainLine: List<Int> = prequels.toList().reversed() + subjectId + sequels.toList()
         val ancestors = prequels.toList().reversed()
         val selfNames = namesOf(subjectId, edges).map { it.normalizeForNameMatch() }
         // 名字被自己包含的续集 = 本传 (见 seriesRootNames 的说明)
-        val parentWorks = sequels.filter { sequel ->
-            namesOf(sequel, edges).any { name ->
-                val normalized = name.normalizeForNameMatch()
-                normalized.isNotEmpty() && selfNames.any { it != normalized && it.contains(normalized) }
-            }
-        }
+        val parentWorks = sequels.filter { sequel -> isParentWork(namesOf(sequel, edges), selfNames) }
         return SubjectRelationIndex(
             seriesMainSubjectIds = mainLine,
             seriesMainSubjectNames = mainLine.flatMap { namesOf(it, edges) },
@@ -306,11 +348,13 @@ class SubjectSeriesIndexService(
             .flatMap { (it.sequels + it.prequels).asSequence() }
             .firstOrNull { it.id == id }
             ?: return emptyList()
-        return listOfNotNull(
-            subject.name.takeIf { it.isNotBlank() },
-            subject.nameCn.takeIf { it.isNotBlank() && it != subject.name },
-        )
+        return namesOf(subject)
     }
+
+    private fun namesOf(subject: SeriesNode): List<String> = listOfNotNull(
+        subject.name.takeIf { it.isNotBlank() },
+        subject.nameCn.takeIf { it.isNotBlank() && it != subject.name },
+    )
 
     private suspend fun fetchEdges(subjectId: Int): SeriesEdges = bangumiSubjectApi {
         val relations = getSubjectRelations(
@@ -366,8 +410,8 @@ internal const val SERIES_RELATION_PREQUEL = 2
 internal const val SERIES_RELATION_SEQUEL = 3
 
 /**
- * 一次只取一页关联, 这么多条 (按 order、id 排). 离线出表的一方 (bangumi-sequel-seasons, 见 [walkPrequelChain])
- * 照同样的条数截断, 两边看到的邻居才一样.
+ * 一次只取一页关联, 这么多条 (按 order、id 排). 离线出系列关系图的一方 (bangumi-sequel-seasons, 见 [SeriesGraphTable])
+ * 照同样的条数截断, 查表与现场取看到的邻居才一样.
  */
 internal const val SERIES_RELATIONS_PAGE_SIZE = 50
 
@@ -382,8 +426,8 @@ internal class SeriesEdges(
  *
  * 一个条目挂着好几个前传时 (TV 续作的前传常常同时挂着剧场版) 先走 [prefer] 为真的那个, 都不是就走第一个.
  *
- * 运行时 ([SubjectSeriesIndexService.prequelChain], 邻居取自 `/p1/subjects/{id}/relations`) 与 bangumi-sequel-seasons
- * 离线出「续作 → 候选季」表 (邻居取自 Bangumi 数据导出, 见 SequelSeasonTableRepository) 走的是这同一段.
+ * 邻居来自 [SubjectSeriesIndexService.prequelChain]: 表覆盖到的条目取自系列关系图, 比表新的取自 `/p1/subjects/{id}/relations`.
+ * bangumi-sequel-seasons 给旧版客户端出「续作 → 候选季」表时走的也是这同一段.
  */
 internal suspend fun walkPrequelChain(
     subjectId: Int,
