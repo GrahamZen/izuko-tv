@@ -54,7 +54,6 @@ import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
-import me.him188.ani.app.domain.mediasource.web.captcha.SolveOutcome
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.distinctFallbackKeywords
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
@@ -100,6 +99,7 @@ import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DontForgetToRegisterCodec::class)
 @Serializable
@@ -179,6 +179,12 @@ class RuleMediaSource(
 
         /** 被挡页面的判定只对不太大的页面做: 挑战页都很小, 不必为几 MB 的剧集页多解析一遍. */
         private const val MAX_BLOCK_CHECK_LENGTH = 64 * 1024
+
+        /**
+         * 站点「N 秒内只能搜一次」的间隔 (苹果 CMS 默认 3 秒). 苹果 CMS 先记这次搜索的时间再判要不要验证码,
+         * 被验证页挡住的那次也算一次; 同一页再请求要等过这段, 否则拿到的是冷却页.
+         */
+        private val SITE_SEARCH_COOLDOWN = 3.seconds
     }
 
     private val arguments = config.deserializeArgumentsOrNull(RuleMediaSourceArguments.serializer())
@@ -241,7 +247,7 @@ class RuleMediaSource(
     // region HTTP
 
     /**
-     * 直连请求; GET 被站点验证 (Cloudflare 等) 挡住时改用验证码会话加载, 必要时先自动过验证.
+     * 直连请求; GET 被站点验证 (Cloudflare 等) 挡住时先试自动过验证, 再用验证码会话加载.
      */
     private suspend fun request(request: RuleHttpRequest): RuleHttpResponse {
         val response = sendHttp(request)
@@ -252,9 +258,9 @@ class RuleMediaSource(
         )
         val reason = (verdict as? PageVerdict.Blocked)?.reason ?: return response
         return when (reason) {
-            is BlockReason.Captcha -> loadThroughSession(request.url) ?: response
+            is BlockReason.Captcha -> loadThroughSession(request.url, reason.kind) ?: response
             is BlockReason.RateLimited -> {
-                delay(reason.retryAfter ?: rule.requestIntervalMillis.milliseconds)
+                delay(reason.retryAfter ?: maxOf(rule.requestIntervalMillis.milliseconds, SITE_SEARCH_COOLDOWN))
                 sendHttp(request)
             }
 
@@ -266,24 +272,27 @@ class RuleMediaSource(
         client.use { executeRuleRequest(request) }
     }
 
-    private suspend fun loadThroughSession(url: String): RuleHttpResponse? {
+    /**
+     * 直连刚被验证挡住: 先交给自动解验证码, 再由验证码会话取回这一页 (自动解出的页面、浏览器暖会话, 或再直连一次).
+     *
+     * 苹果 CMS 一类站点的验证页挡在搜索间隔之后 (见 [SITE_SEARCH_COOLDOWN]), 紧接着再请求只会拿到冷却页, 所以先等过这段;
+     * 之后仍是冷却页也按验证码报, 界面才会让用户去验证, 而不是显示限流. Cloudflare 的验证页由 CDN 直接给出, 源站没收到这次请求, 不用等.
+     */
+    private suspend fun loadThroughSession(url: String, kind: WebCaptchaKind): RuleHttpResponse? {
         val expectation = PageExpectation.AnyContent
-        var verdict = sessionManager.fetchPage(url, expectation)
-        val blocked = verdict as? PageVerdict.Blocked
-        if (blocked != null && blocked.reason is BlockReason.Captcha) {
-            val solve = SolveRequest(mediaSourceId, url, blocked.reason.kind, expectation)
-            if (sessionManager.solve(solve, interactive = false) == SolveOutcome.Solved) {
-                verdict = sessionManager.fetchPage(url, expectation)
-            }
-        }
-        return when (verdict) {
+        if (kind != WebCaptchaKind.Cloudflare && kind != WebCaptchaKind.CloudflareTurnstile) delay(SITE_SEARCH_COOLDOWN)
+        sessionManager.solve(SolveRequest(mediaSourceId, url, kind, expectation), interactive = false)
+        return when (val verdict = sessionManager.fetchPage(url, expectation)) {
             // 浏览器加载出来的只有解析后的页面, 序列化回 HTML 交给后面的步骤
             is PageVerdict.Ok -> RuleHttpResponse(url, 200, verdict.value.toString())
             is PageVerdict.EmptyContent -> null
-            is PageVerdict.Blocked -> throw BlockedException(
-                verdict.reason,
-                SolveRequest(mediaSourceId, url, (verdict.reason as? BlockReason.Captcha)?.kind ?: WebCaptchaKind.Unknown, expectation),
-            )
+            is PageVerdict.Blocked -> {
+                val reason = verdict.reason.takeUnless { it is BlockReason.RateLimited } ?: BlockReason.Captcha(kind)
+                throw BlockedException(
+                    reason,
+                    SolveRequest(mediaSourceId, url, (reason as? BlockReason.Captcha)?.kind ?: kind, expectation),
+                )
+            }
         }
     }
 
