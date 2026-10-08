@@ -568,6 +568,8 @@
     <string name="tv_source_resolving_captcha">Waiting for verification…</string>
     <string name="tv_source_rate_limited">Limited %1$ds</string>
     <string name="tv_source_rate_limited_hint">Rate limited. Retrying in %1$d s</string>
+    <string name="tv_source_rate_limited_expired">Limited</string>
+    <string name="tv_source_rate_limited_expired_hint">Rate limited. Press OK to retry</string>
     <string name="tv_source_failed_state">Failed</string>
     <string name="tv_source_retry">Retry</string>
     <string name="tv_source_retry_hint">Search failed. Press OK to retry</string>
