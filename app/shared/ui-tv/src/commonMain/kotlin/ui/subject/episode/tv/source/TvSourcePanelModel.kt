@@ -326,6 +326,9 @@ data class TvSourceStrings(
     val resolvingCaptcha: String,
     val rateLimited: String,
     val rateLimitedHint: String,
+    /** 限流倒计时走完、自动重试也没过: 不再自动重试, 等用户按重试. */
+    val rateLimitedExpired: String,
+    val rateLimitedExpiredHint: String,
     val failedState: String,
     val retry: String,
     val retryHint: String,
@@ -674,6 +677,7 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         source.channels.isEmpty() && !source.isLoading && !source.isRateLimited ->
             webOthersOf(source, input, strings).size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
                 ?: ("0" to TvSourceAccent.None)
+        source.isRateLimitExpired(nowMillis) -> strings.rateLimitedExpired to TvSourceAccent.None
         source.isRateLimited -> strings.rateLimited.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
         loadingEmpty -> "" to TvSourceAccent.None
         else -> source.channels.size.toString() to TvSourceAccent.None
@@ -696,6 +700,7 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
 private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceDetails {
     val status = when {
         source.isCaptchaRequired -> strings.captchaRequired
+        source.isRateLimitExpired(input.nowMillis) -> strings.rateLimitedExpiredHint
         source.isRateLimited -> strings.rateLimitedHint.format(rateLimitSeconds(source.rateLimitedUntilMillis, input.nowMillis))
         source.isLoading -> strings.statusSearching
         else -> strings.statusDone
@@ -708,6 +713,9 @@ private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strin
     val primary = when {
         source.isCaptchaRequired && source.isCaptchaSupported ->
             TvSourceButton(strings.captchaAction, TvSourceAction.ResolveCaptcha(source.instanceId), TvSourceRowIcon.Warning)
+
+        source.channels.isEmpty() && source.isRateLimitExpired(input.nowMillis) ->
+            TvSourceButton(strings.retry, TvSourceAction.RestartSource(source.instanceId), TvSourceRowIcon.Refresh)
 
         else -> source.channels.firstNotNullOfOrNull { it.original }?.let {
             TvSourceButton(strings.pick, TvSourceAction.Play(it), TvSourceRowIcon.Playing)
@@ -739,6 +747,10 @@ private fun downloadButton(media: Media, input: TvSourcePanelInput, strings: TvS
 private fun rateLimitSeconds(untilMillis: Long?, nowMillis: Long): Long =
     (((untilMillis ?: nowMillis) - nowMillis + 999) / 1000).coerceAtLeast(0)
 
+/** 限流倒计时已走完: 到点的那次自动重试也被限流时停在这里, 不会再自动重试 (见 `MediaFetcher` 的自动重试次数). */
+private fun WebSource.isRateLimitExpired(nowMillis: Long): Boolean =
+    isRateLimited && rateLimitSeconds(rateLimitedUntilMillis, nowMillis) == 0L
+
 private fun webPane(
     key: String,
     source: WebSource,
@@ -760,6 +772,17 @@ private fun webPane(
                     meta = strings.captchaHint,
                     icon = TvSourceRowIcon.Warning,
                     action = TvSourceAction.ResolveCaptcha(source.instanceId),
+                ),
+            )
+
+            source.isRateLimitExpired(nowMillis) -> add(
+                TvSourceRow(
+                    id = "rate-limited",
+                    style = TvSourceRowStyle.Line,
+                    title = strings.retry,
+                    meta = strings.rateLimitedExpiredHint,
+                    icon = TvSourceRowIcon.Refresh,
+                    action = TvSourceAction.RestartSource(source.instanceId),
                 ),
             )
 
