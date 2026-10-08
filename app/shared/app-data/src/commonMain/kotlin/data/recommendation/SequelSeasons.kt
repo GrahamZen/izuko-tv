@@ -16,14 +16,13 @@ import me.him188.ani.app.data.network.SeriesNode
 /*
  * 推荐里的续作换成「用户没看过的最早一季」时, 与用户无关的那一半: 顺前传最多走几跳、哪些前传能当「一季」、按什么顺序挑.
  *
- * 运行时 (RecommendationRepository 的 SequelBatch) 与 bangumi-sequel-seasons 仓库离线出的「续作 → 候选季」表
- * (见 SequelSeasonTableRepository) 用的是这同一份判据: 表是那条流水线拿 Bangumi 数据导出、调这里的
- * [sequelSeasonCandidates] 算出来的.
+ * RecommendationRepository 的 SequelBatch 在本地按这份判据挑 (邻居取自系列关系图, 见 SeriesGraphTableRepository).
+ * bangumi-sequel-seasons 仓库给旧版客户端出的「续作 → 候选季」表也是调这里的 [sequelSeasonCandidates] 算的.
  */
 
 /**
- * 判据的版本, 写进离线表的表头. **改了本文件的判据 (或 walkPrequelChain 的走法) 就 +1**: 版本对不上的表
- * app 不用, 照旧运行时回溯, 等流水线用新代码重出一版.
+ * 判据的版本, 写进 bangumi-sequel-seasons 给旧版客户端出的「续作 → 候选季」表的表头; 本应用在本地按判据算, 不看它.
+ * 改了本文件的判据 (或 walkPrequelChain 的走法) 就 +1: 流水线照新判据重出那张表, 旧版客户端见版本不同就不用, 照旧运行时回溯.
  */
 internal const val SEQUEL_SEASON_RULES = 1
 
