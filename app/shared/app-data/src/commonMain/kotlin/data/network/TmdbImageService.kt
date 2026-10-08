@@ -187,8 +187,9 @@ class TmdbImageService(
         originalName: String,
         nameCn: String,
     ): BgmLineage? = try {
-        val relations = seriesIndexService.getSubjectRelationIndex(subjectId)
-        val rootName = tmdbSeriesRootName(relations.seriesRootNames, originalName, nameCn)
+        // 只走用得上的那部分 (祖先 + 直接续集里的本传), 见 SubjectSeriesIndexService.seriesRootNames
+        val rootNames = seriesIndexService.seriesRootNames(subjectId, listOf(originalName, nameCn).filter { it.isNotBlank() })
+        val rootName = tmdbSeriesRootName(rootNames, originalName, nameCn)
         if (rootName == null) {
             null
         } else {
