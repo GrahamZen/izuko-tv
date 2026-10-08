@@ -30,7 +30,7 @@ import me.him188.ani.utils.logging.warn
  * Web 控制台「退出 Ani 后保留」(网页设置里的开关, 默认关, 见 TvRemoteControl.keepAliveOnExit) 的前台服务, 只为抬高进程优先级:
  * 只剩网页服务的后台进程在别的应用要内存时最先被回收 (实测正式版 status=9 importance=400), 进程一死手机就连不上.
  * 真被回收了系统会按 START_STICKY 重启本服务: 这时顺带把 Web 控制台的监听起起来 (没有界面, 网页照样能连, 能「切到前台」拉起 Ani).
- * 只在 Ani 在前台时启动 (Android 12 起后台起不了前台服务), 开关一关就停. 强制停止 / 覆盖安装挡不住.
+ * Android 12 起只在 Ani 在前台时启动 (后台起不了前台服务), 更早的系统后台也启动; 开关一关就停. 强制停止 / 覆盖安装挡不住.
  */
 class RemoteKeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -79,7 +79,7 @@ class RemoteKeepAliveService : Service() {
         private const val CHANNEL_ID = "remote_keep_alive"
         private const val NOTIFICATION_ID = 41893
 
-        /** 起 / 停常驻服务 (TvRemoteControl.keepAliveService 调); 起只在 Ani 在前台时调. */
+        /** 起 / 停常驻服务 (TvRemoteControl.keepAliveService 调); Android 12 起只在 Ani 在前台时起. */
         fun set(context: Context, on: Boolean) {
             val intent = Intent(context, RemoteKeepAliveService::class.java)
             if (on) {
