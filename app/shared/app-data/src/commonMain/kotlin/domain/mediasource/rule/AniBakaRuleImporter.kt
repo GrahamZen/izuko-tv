@@ -44,10 +44,14 @@ object AniBakaRuleImporter {
         data class Unsupported(override val name: String, val reasons: List<String>) : Converted
     }
 
-    /** 一次导入的结果. [failures] 是没能导入的规则及原因 (含下载失败的). */
+    /**
+     * 一次导入的结果. [failures] 是没能导入的规则及原因 (含下载失败的);
+     * [downloadFailed] 为 `true` 表示规则库里有规则文件没下载下来, 这次的结果不完整.
+     */
     data class ImportResult(
         val sources: List<RuleMediaSourceArguments>,
         val failures: List<String>,
+        val downloadFailed: Boolean = false,
     )
 
     private val json = Json { isLenient = true }
@@ -62,12 +66,19 @@ object AniBakaRuleImporter {
         val trimmed = text.trim()
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             if (trimmed.any { it.isWhitespace() }) return null
-            val content = download(trimmed)
-            val root = parseOrNull(content) ?: return null
-            return importElement(root, trimmed, download)
+            return importContent(download(trimmed), trimmed, download)
         }
-        val root = parseOrNull(trimmed) ?: return null
-        return importElement(root, null, download)
+        return importContent(trimmed, null, download)
+    }
+
+    /**
+     * 导入已经下载到的内容 [content]. [sourceUrl] 是它的地址 (规则库索引里的规则文件按它解析); 不知道时为 `null`.
+     *
+     * @return 不是 AniBaka 规则时返回 `null`.
+     */
+    suspend fun importContent(content: String, sourceUrl: String?, download: suspend (url: String) -> String): ImportResult? {
+        val root = parseOrNull(content.trim()) ?: return null
+        return importElement(root, sourceUrl, download)
     }
 
     private suspend fun importElement(
@@ -94,13 +105,16 @@ object AniBakaRuleImporter {
         val entries = (hub["entries"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         val converted = mutableListOf<Converted>()
         val failures = mutableListOf<String>()
+        var downloadFailed = false
         for (entry in entries) {
             val title = entry.string("title") ?: entry.string("key") ?: "?"
             val ref = entry.string("ref") ?: continue
-            val url = UrlHelpers.computeAbsoluteUrlOrNull(hubUrl, ref) ?: continue
+            val url = ruleFileUrl(hubUrl, ref) ?: continue
             try {
                 val rule = parseOrNull(download(url)) as? JsonObject
                 if (rule == null) {
+                    // 多半是镜像或网络给了个错误页, 与下载失败同样对待
+                    downloadFailed = true
                     failures += "$title: 下载到的不是规则"
                     continue
                 }
@@ -108,11 +122,22 @@ object AniBakaRuleImporter {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                downloadFailed = true
                 failures += "$title: 下载失败 (${e.message ?: e::class.simpleName})"
             }
         }
         val result = collect(converted)
-        return result.copy(failures = failures + result.failures)
+        return result.copy(failures = failures + result.failures, downloadFailed = downloadFailed)
+    }
+
+    /**
+     * 规则文件的地址. 相对路径直接替换索引地址的最后一段: 索引经加速镜像下载时地址形如
+     * `https://mirror/https://raw.githubusercontent.com/…/index.json`, 按 URL 规范解析会把路径里的 `//` 弄乱.
+     */
+    internal fun ruleFileUrl(hubUrl: String, ref: String): String? = when {
+        ref.startsWith("http://") || ref.startsWith("https://") -> ref
+        ref.startsWith("/") -> UrlHelpers.computeAbsoluteUrlOrNull(hubUrl, ref)
+        else -> hubUrl.substringBefore('?').substringBefore('#').substringBeforeLast('/') + "/" + ref
     }
 
     private fun collect(converted: List<Converted>): ImportResult = ImportResult(

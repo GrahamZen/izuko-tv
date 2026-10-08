@@ -69,6 +69,9 @@ GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `Selec
 `AniBakaRuleImporter` 把 AniBaka 的规则（`anx-rule/2`）转换成规则源：两者都是「当前值 + 变量」的步骤流水线，
 多数步骤一一对应；用到规则源没有的步骤（加解密、站点专用步骤、HLS 清单处理、XPath）的规则不转换并说明原因。
 Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引的地址（由电视下载）。
+订阅地址也可以直接填 AniBaka 规则库索引（`AniBakaSubscription`，挂在 `MediaSourceSubscriptionRequesterImpl` 下载之后）：
+每次更新订阅都重新下载并转换，之后与普通订阅一样按名字增删改；有规则文件没下载下来时这次更新算失败、原有的源不动，
+否则缺了的源会被删掉再新建，用户对它的启停设置随之丢失。
 
 ### `SelectorMediaSource`
 
