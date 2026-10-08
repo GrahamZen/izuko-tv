@@ -21,7 +21,7 @@ import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.network.schedule.AnimeScheduleCache
 import me.him188.ani.app.data.models.user.SelfInfo
 import me.him188.ani.app.data.network.TmdbImageCache
-import me.him188.ani.app.data.network.SequelSeasonTableCache
+import me.him188.ani.app.data.network.SeriesGraphTableCache
 import me.him188.ani.app.data.network.TmdbSubjectMapCache
 import me.him188.ani.app.data.repository.SavedWindowState
 import me.him188.ani.app.data.repository.media.ManualBrowseMemories
@@ -116,14 +116,14 @@ abstract class PlatformDataStoreManager {
         )
     }
 
-    /** 「续作 → 候选季」表 (bangumi-sequel-seasons) 的下载元数据; 表的原文在单独的文件里, 见 SequelSeasonTableRepository. */
-    val sequelSeasonTableStore by lazy {
+    /** 系列关系图 (bangumi-sequel-seasons 的 bgm-series-graph.tsv) 的下载元数据; 表的原文在单独的文件里, 见 SeriesGraphTableRepository. */
+    val seriesGraphTableStore by lazy {
         DataStoreFactory.create(
-            serializer = SequelSeasonTableCache.serializer()
-                .asDataStoreSerializer({ SequelSeasonTableCache.Empty }),
-            produceFile = { resolveDataStoreFile("sequelSeasonTable") },
+            serializer = SeriesGraphTableCache.serializer()
+                .asDataStoreSerializer({ SeriesGraphTableCache.Empty }),
+            produceFile = { resolveDataStoreFile("seriesGraphTable") },
             corruptionHandler = ReplaceFileCorruptionHandler {
-                SequelSeasonTableCache.Empty
+                SeriesGraphTableCache.Empty
             },
         )
     }
