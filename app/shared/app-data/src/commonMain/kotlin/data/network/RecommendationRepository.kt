@@ -15,7 +15,8 @@ import androidx.paging.PagingData
 import androidx.paging.map
 import kotlinx.atomicfu.AtomicInt
 import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -122,10 +123,8 @@ class RecommendationRepository(
     private val feedDao: RecommendationFeedDao,
     private val trendsRepository: TrendsRepository,
     private val searchService: AniSubjectSearchService,
-    /** 续作换季查不到表时顺前传回溯 (见 [SequelBatch]); 与 TMDB 匹配、详情页共用邻居缓存. */
+    /** 续作换季顺前传走 (见 [SequelBatch]): 表覆盖到的条目查系列关系图, 不发请求; 与 TMDB 匹配、详情页共用邻居缓存. */
     private val seriesIndexService: SubjectSeriesIndexService,
-    /** 离线算好的「续作 → 候选季」表, 换季先查它 (见 [SequelBatch]). */
-    private val sequelSeasonTable: SequelSeasonTableRepository,
     /** 没登录时本地收藏缓存不算数 (见 [refreshOnce]). */
     private val sessionStateProvider: SessionStateProvider,
     /**
@@ -541,7 +540,6 @@ class RecommendationRepository(
         val batchJob = SupervisorJob(scope.coroutineContext[Job])
         val sequels = SequelBatch(
             CoroutineScope(scope.coroutineContext + ioDispatcher + batchJob),
-            table = if (collected.isEmpty()) null else sequelSeasonTable.current(),
             collected = collected,
         )
         sequels.track(groupIndex = 0, items = picked.map { it.info }, reserves = rest.take(SEQUEL_RESERVES).map { it.info })
@@ -786,10 +784,9 @@ class RecommendationRepository(
         val batchJob = SupervisorJob(scope.coroutineContext[Job])
         sequelJob = batchJob
         val allCollections = (extra + collections).distinctBy { it.subjectId }
-        // 换季只在分组推荐里做 (没收藏时那一组是全站两张榜, 不换), 表也只在这时才要
+        // 换季只在分组推荐里做 (没收藏时那一组是全站两张榜, 不换)
         val sequels = SequelBatch(
             CoroutineScope(scope.coroutineContext + ioDispatcher + batchJob),
-            table = if (allCollections.isEmpty()) null else sequelSeasonTable.current(),
             collected = allCollections.mapTo(HashSet()) { it.subjectId },
         )
         val computed = withContext(ioDispatcher) {
@@ -1687,10 +1684,9 @@ class RecommendationRepository(
      * 一批推荐里「续作换成用户没看过的最早一季」的活儿. 只管种子那几行与「换换口味」 ——
      * 「本季」「大家最近在看」卖的就是当下在播的那一季, 不换.
      *
-     * 换成哪一季先查表 ([table], 见 [SequelSeasonTableRepository]): 表覆盖到的条目当场就知道换不换、换成谁,
-     * 要换的才取一次那一季的条目信息 (名字和封面画卡片, 顺手写进本地条目表, 见 [fetchSeason]),
-     * 不用换的一个请求都不发. 表答不了的 (比表新的条目、表没下到) 照旧顺前传回溯
-     * ([SubjectSeriesIndexService.prequelChain]), 每个条目的邻居与 TMDB 匹配、详情页的系列索引共用一份缓存. 两条路挑季的判据是同一份 ([sequelSeasonCandidates]).
+     * 换成哪一季: 顺前传走 ([SubjectSeriesIndexService.prequelChain]) 再按 [sequelSeasonCandidates] 挑. 表覆盖到的条目查系列关系图
+     * (见 [SeriesGraphTableRepository]), 当场就知道换不换、换成谁; 比表新的条目才现场一跳一个请求. 要换的取一次那一季的条目信息
+     * (关系图里的节点没有封面; 名字和封面画卡片, 顺手写进本地条目表, 见 [fetchSeason]), 不用换的一个请求都不发.
      *
      * **组装出一行就开始查** ([track]), 不等整批算完: 这些请求打的是 next.bgm.tv, 召回那些搜索打的是
      * api.bgm.tv, 两边不抢同一个 host 的并发名额.
@@ -1702,8 +1698,6 @@ class RecommendationRepository(
      */
     private inner class SequelBatch(
         private val batchScope: CoroutineScope,
-        /** 离线算好的「续作 → 候选季」表; null = 没有能用的表, 全部回溯. */
-        private val table: SequelSeasonTable?,
         /** 用户收藏过的条目: 换成的那一季不能是看过的. */
         private val collected: Set<Int>,
     ) {
@@ -1715,7 +1709,7 @@ class RecommendationRepository(
         private val rows = mutableListOf<Row>()
         private val targets = HashMap<Int, Deferred<SeriesNode?>>()
 
-        /** 表里定下的那一季: 同一批里几部续作可能回到同一季 (夏目友人帐 陆 与 肆 都回到 891), 同一季只取一次. */
+        /** 要换成的那一季的条目信息: 同一批里几部续作可能回到同一季 (夏目友人帐 陆 与 肆 都回到 891), 同一季只取一次. */
         private val seasons = HashMap<Int, Deferred<SeriesNode?>>()
         private val permits = Semaphore(SEQUEL_WALK_PARALLELISM)
         private val fetched = atomic(0)
@@ -1738,20 +1732,20 @@ class RecommendationRepository(
 
         /** 这一格该换成的那一季: 候选季里第一个没收藏过的. `null` = 不换 (没有可换的季、都收藏过了, 或者查失败). */
         private fun targetOf(subjectId: Int): Deferred<SeriesNode?> = targets.getOrPut(subjectId) {
-            val candidates = table?.candidates(subjectId)
-            if (candidates != null) {
-                // 带参数名: 只传一个 null 会被当成 CompletableDeferred(parent = null), 得到一个永远不完成的
-                val target = candidates.firstOrNull { it !in collected }
-                    ?: return@getOrPut CompletableDeferred<SeriesNode?>(value = null)
-                seasons.getOrPut(target) { batchScope.async { query("取 $target") { fetchSeason(target) } } }
-            } else {
-                batchScope.async {
-                    query("查 $subjectId 该换成哪一季") {
-                        val chain = seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
-                        sequelSeasonCandidates(chain).firstOrNull { it.id !in collected }
-                    }
-                }
+            batchScope.async {
+                val target = query("查 $subjectId 该换成哪一季") {
+                    val chain = seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
+                    sequelSeasonCandidates(chain).firstOrNull { it.id !in collected }
+                } ?: return@async null
+                // 关系图给的节点没有封面, 卡片要取一次那一季的条目信息; 现场取的关系里带着封面, 直接用
+                if (target.imageLarge.isNotEmpty()) target else seasonOf(target.id).await()
             }
+        }
+
+        private val seasonsLock = SynchronizedObject()
+
+        private fun seasonOf(id: Int): Deferred<SeriesNode?> = synchronized(seasonsLock) {
+            seasons.getOrPut(id) { batchScope.async { query("取 $id") { fetchSeason(id) } } }
         }
 
         /**

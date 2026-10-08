@@ -30,6 +30,7 @@ import me.him188.ani.app.data.models.subject.RelatedPersonInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
+import me.him188.ani.app.data.network.toSubjectRelations
 import me.him188.ani.app.data.network.BatchSubjectRelations
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.SubjectService
@@ -118,21 +119,10 @@ class DefaultSubjectRelationsRepository(
     }
 
     override fun subjectSeriesInfoFlow(subjectId: Int): Flow<SubjectSeriesInfo> = flow {
-        emit(
-            subjectSeriesIndexService.getSubjectRelationIndex(subjectId),
-        )
-    }.combine(subjectCollectionRepository.subjectCollectionFlow(subjectId)) { relations, requestingSubject ->
-        combine(
-            (relations.sequelSubjects.toSet() + relations.seriesMainSubjectIds).map {
-                subjectCollectionRepository.subjectCollectionFlow(it)
-            },
-        ) { subjectCollectionInfos ->
-            SubjectSeriesInfo.compute(
-                requestingSubject = requestingSubject,
-            )
-        }
-    }.flatMapLatest {
-        it
+        emit(subjectSeriesIndexService.getSubjectRelationIndex(subjectId))
+    }.combine(subjectCollectionRepository.subjectCollectionFlow(subjectId)) { index, requestingSubject ->
+        // 条目库里的 relations 原本由 Ani 服务端随条目下发, 直连后没人填: 用刚走出来的系列索引
+        SubjectSeriesInfo.compute(requestingSubject.copy(relations = index.toSubjectRelations()))
     }.flowOn(defaultDispatcher)
 
 //    override fun subjectSequelSubjectNamesFlow(subjectId: Int): Flow<Set<String>> {

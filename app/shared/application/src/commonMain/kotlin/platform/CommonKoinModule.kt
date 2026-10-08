@@ -43,7 +43,7 @@ import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
-import me.him188.ani.app.data.network.SequelSeasonTableRepository
+import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.SubjectService
@@ -416,16 +416,23 @@ private fun KoinApplication.otherModules(
         ).also { it.start() }
     }
     single<SubjectSeriesIndexService> {
-        SubjectSeriesIndexService(bangumiApiProvider.subjectApi, scope = coroutineScope)
+        SubjectSeriesIndexService(
+            bangumiApiProvider.subjectApi,
+            scope = coroutineScope,
+            graph = { get<SeriesGraphTableRepository>().current() },
+        )
     }
 
     // AnimeScheduleService (Ani 服务器的时间表接口) 已删, 时间表改直连 bangumi
-    single<SequelSeasonTableRepository> {
-        SequelSeasonTableRepository(
-            cache = getContext().dataStores.sequelSeasonTableStore,
-            tableFile = getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv"),
+    // 启动就建: 表在后台读盘 / 下载, 第一次走系列时已经备好
+    single<SeriesGraphTableRepository>(createdAtStart = true) {
+        SeriesGraphTableRepository(
+            cache = getContext().dataStores.seriesGraphTableStore,
+            tableFile = getContext().files.dataDir.resolve("bgm-series-graph.tsv"),
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
+            // 续作换季原先单独下的「续作 → 候选季」表, 换季改由系列关系图在本地算
+            obsoleteFiles = listOf(getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv")),
         )
     }
     single<TmdbSubjectMapRepository> {
