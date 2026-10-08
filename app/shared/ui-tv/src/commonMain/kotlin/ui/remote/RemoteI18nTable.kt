@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1580,4 +1580,34 @@ private fun part14() = listOf(
     RemoteText("上一集：{0}", "Previous episode: {0}", "上一集：{0}", "上一集：{0}"),
     RemoteText("上一集", "Previous episode", "上一集", "上一集"),
     RemoteText("视频只有 {0} 秒，不是正片（多半是站点的公告或广告）", "The video is only {0} s long, not the episode (most likely a notice or ad from the site)", "視頻只有 {0} 秒，不是正片（多半是站點的公告或廣告）", "影片只有 {0} 秒，不是正片（多半是站點的公告或廣告）"),
+)
+
+// 数据源管理页: 搜索、分组、按状态筛选
+private fun part15() = listOf(
+    RemoteText("搜索数据源", "Search sources", "搜索數據源", "搜尋資料源"),
+    RemoteText("不分组", "No grouping", "不分組", "不分組"),
+    RemoteText("按来源", "By origin", "按來源", "按來源"),
+    RemoteText("按层级", "By tier", "按層級", "按層級"),
+    RemoteText("按类型", "By type", "按類型", "按類型"),
+    RemoteText("全部 {0}", "All {0}", "全部 {0}", "全部 {0}"),
+    RemoteText("已启用 {0}", "Enabled {0}", "已啟用 {0}", "已啟用 {0}"),
+    RemoteText("已停用 {0}", "Disabled {0}", "已停用 {0}", "已停用 {0}"),
+    RemoteText("网页抓取", "Web scraper", "網頁抓取", "網頁抓取"),
+    RemoteText("规则源", "Rule source", "規則源", "規則源"),
+    RemoteText("直链 API", "Direct-link API", "直鏈 API", "直鏈 API"),
+    RemoteText("苹果 CMS", "MacCMS", "蘋果 CMS", "蘋果 CMS"),
+    RemoteText("本地添加", "Added locally", "本地添加", "本地新增"),
+    RemoteText("未设置（按 T{0} 处理）", "Not set (treated as T{0})", "未設置（按 T{0} 處理）", "未設定（按 T{0} 處理）"),
+    RemoteText("T{0}（最优先）", "T{0} (highest priority)", "T{0}（最優先）", "T{0}（最優先）"),
+    RemoteText("层级越小越优先；T0 的源一搜到结果就直接选，不等其他源", "Lower tiers come first. A T0 source is picked as soon as it finds a result, without waiting for the others.", "層級越小越優先；T0 的源一搜到結果就直接選，不等其他源", "層級越小越優先；T0 的源一搜到結果就直接選，不等其他源"),
+    RemoteText("全选当前 {0} 个", "Select these {0}", "全選當前 {0} 個", "全選目前 {0} 個"),
+    RemoteText("取消本组", "Deselect group", "取消本組", "取消本組"),
+    RemoteText("选中本组", "Select group", "選中本組", "選取本組"),
+    RemoteText("整组停用", "Disable the whole group", "整組停用", "整組停用"),
+    RemoteText("整组启用", "Enable the whole group", "整組啟用", "整組啟用"),
+    RemoteText("已启用 {0}/{1}", "{0}/{1} enabled", "已啟用 {0}/{1}", "已啟用 {0}/{1}"),
+    RemoteText("已启用这组的 {0} 个", "Enabled {0} in this group", "已啟用這組的 {0} 個", "已啟用這組的 {0} 個"),
+    RemoteText("已停用这组的 {0} 个", "Disabled {0} in this group", "已停用這組的 {0} 個", "已停用這組的 {0} 個"),
+    RemoteText("没有符合条件的数据源", "No sources match", "沒有符合條件的數據源", "沒有符合條件的資料源"),
+    RemoteText("线路层级（{0}）", "Channel tiers ({0})", "線路層級（{0}）", "線路層級（{0}）"),
 )
