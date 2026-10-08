@@ -207,6 +207,13 @@ class CloudDriveProtocolTest {
         assertEquals("自己的名字", CloudDriveMediaSource.infoOf(decoded.copy(name = "自己的名字")).displayName)
     }
 
+    @Test
+    fun `tiers of a drive source are keyed by the id its media carry`() {
+        // 订阅给实例分配随机 id, 网盘源的资源却带协议给的固定 id: 层级要记在后者上才查得到
+        assertEquals("testdrive-drive", CloudDriveMediaSource.reportedMediaSourceId(CloudDriveArguments(protocol = protocol), "random-uuid"))
+        assertEquals("random-uuid", CloudDriveMediaSource.reportedMediaSourceId(CloudDriveShareSearchArguments.Example, "random-uuid"))
+    }
+
     // endregion
 
     // region 分享链接

@@ -192,6 +192,14 @@ class CloudDriveMediaSource(
 
         private val logger = logger<CloudDriveMediaSource>()
 
+        /**
+         * 数据源实际报出的 [MediaSource.mediaSourceId]: 一般就是保存时的 [saveId]; 网盘源固定用协议给的 id
+         * ([CloudDriveProtocol.driveMediaSourceId]), 不随订阅或导入时分配的 id 变. 按数据源 id 查层级的地方
+         * (`MediaSourceManager.mediaSourceTiersFlow`) 要用它, 订阅给网盘源定的层级才对得上选源时的资源.
+         */
+        fun reportedMediaSourceId(arguments: MediaSourceArguments, saveId: String): String =
+            (arguments as? CloudDriveArguments)?.protocol?.driveMediaSourceId ?: saveId
+
         internal fun infoOf(arguments: CloudDriveArguments): MediaSourceInfo {
             val protocol = arguments.protocol
             return MediaSourceInfo(
