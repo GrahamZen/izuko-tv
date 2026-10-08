@@ -60,11 +60,12 @@ class TvSourcePanelModelTest {
         title: String = "[喵萌奶茶屋] 孤独摇滚 05 [1080P]",
         kind: MediaSourceKind = MediaSourceKind.BitTorrent,
         alliance: String = "喵萌奶茶屋",
+        download: ResourceLocation = ResourceLocation.HttpStreamingFile("https://example.com/$id.mp4"),
     ): DefaultMedia = createTestDefaultMedia(
         mediaId = id,
         mediaSourceId = source,
         originalUrl = "https://example.com/$id",
-        download = ResourceLocation.HttpStreamingFile("https://example.com/$id.mp4"),
+        download = download,
         originalTitle = title,
         publishedTime = 0,
         properties = createTestMediaProperties(alliance = alliance),
@@ -124,9 +125,17 @@ class TvSourcePanelModelTest {
     private val webA1 = media("a1", "web-a", kind = MediaSourceKind.WEB, title = "线路1")
     private val webA2 = media("a2", "web-a", kind = MediaSourceKind.WEB, title = "线路2")
     private val webB1 = media("b1", "web-b", kind = MediaSourceKind.WEB, title = "线路1")
-    private val btDmhy = media("bt1", "dmhy")
-    private val btMikan = media("bt2", "mikan") // 与 btDmhy 同一个标题: 同一个发布
-    private val btOther = media("bt3", "dmhy", title = "[桜都字幕组] 孤独摇滚 05 [1080P]", alliance = "桜都字幕组")
+    private val btDmhy = media("bt1", "dmhy", download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:E6ZW3NCJPYP4OUI727BMMBLWMAB2STZD&tr=x"))
+
+    // 与 btDmhy 同一个种子: 磁力链接写的是 Base32, 蜜柑的种子文件地址里是十六进制
+    private val btMikan = media(
+        "bt2", "mikan",
+        download = ResourceLocation.HttpTorrentFile("https://mikanani.me/Download/20261002/27b36db4497e1fc7511fd7c2c605766003a94f23.torrent"),
+    )
+    private val btOther = media(
+        "bt3", "dmhy", title = "[桜都字幕组] 孤独摇滚 05 [1080P]", alliance = "桜都字幕组",
+        download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:03500680fe4bd5251091af1301c46b28808eb679"),
+    )
 
     private val sources = MediaSourceResultListPresentation(
         listOf(
@@ -150,6 +159,8 @@ class TvSourcePanelModelTest {
         manual: ManualBrowsePresentation? = null,
         initialMode: MediaSelectorMode = MediaSelectorMode.AUTO,
         sources: MediaSourceResultListPresentation = this.sources,
+        webSources: List<WebSource> = this.webSources,
+        nowMillis: Long = 0,
     ) = TvSourcePanelInput(
         selector = selector(webSources, selected),
         bt = bt,
@@ -159,15 +170,15 @@ class TvSourcePanelModelTest {
         canEditKeywords = true,
         canCache = true,
         initialMode = initialMode,
-        nowMillis = 0,
+        nowMillis = nowMillis,
     )
 
     @Test
-    fun `rail lists BT first then live web sources failed sources and actions`() {
+    fun `rail lists the filter and BT first then live web sources failed sources and actions`() {
         val content = buildTvSourcePanel(input(), TvSourceNav(), strings)
         assertEquals(
             listOf(
-                TvSourceRailKeys.BT, "web:web-a", "web:web-b", TvSourceRailKeys.FAILED,
+                TvSourceRailKeys.FILTER, TvSourceRailKeys.BT, "web:web-a", "web:web-b", TvSourceRailKeys.FAILED,
                 TvSourceRailKeys.ACTION_REFRESH, TvSourceRailKeys.ACTION_FULL_SEARCH, TvSourceRailKeys.ACTION_KEYWORDS,
             ),
             content.rail.map { it.id },
@@ -184,9 +195,9 @@ class TvSourcePanelModelTest {
         )
         val input = input().copy(canOpenDownloads = true, downloads = downloads)
         val content = buildTvSourcePanel(input, TvSourceNav(), strings)
-        assertEquals(listOf(TvSourceRailKeys.BT, TvSourceRailKeys.DOWNLOADS, "web:web-a"), content.rail.take(3).map { it.id })
-        assertEquals("2", content.rail[1].trailing)
-        assertTrue(content.rail[2].dividerAbove)
+        assertEquals(listOf(TvSourceRailKeys.BT, TvSourceRailKeys.DOWNLOADS, "web:web-a"), content.rail.drop(1).take(3).map { it.id })
+        assertEquals("2", content.rail[2].trailing)
+        assertTrue(content.rail[3].dividerAbove)
         assertTrue(buildTvSourcePanel(input(), TvSourceNav(), strings).rail.none { it.id == TvSourceRailKeys.DOWNLOADS })
 
         val branch = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.DOWNLOADS), strings).right
@@ -241,13 +252,22 @@ class TvSourcePanelModelTest {
     }
 
     @Test
-    fun `BT rows merge identical titles from different sites only`() {
+    fun `BT rows merge the same torrent from different sites only`() {
         val content = buildTvSourcePanel(input(), TvSourceNav(railKey = TvSourceRailKeys.BT), strings)
         val rows = content.right.rows.filter { it.style == TvSourceRowStyle.Resource }
         assertEquals(2, rows.size)
         assertTrue(rows[0].meta.contains("sourcesCount:2"), rows[0].meta)
         assertEquals(btOther.originalTitle, rows[1].title)
-        assertEquals(listOf("pill:episode", "pill:Resolution", "pill:Subtitle", "pill:Alliance", "pill:Source"), content.right.pills.map { it.id })
+        assertEquals(listOf("pill:episode", "pill:Alliance", "pill:Source"), content.right.pills.map { it.id })
+    }
+
+    @Test
+    fun `BT rows with the same title but different torrents stay apart`() {
+        // 重新压制后用原标题再发的另一个种子; 认不出种子的也不合并
+        val reencoded = media("bt4", "nyaa", download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:752d71fa50fbdedb3c044630e9a33cf7b99c6480"))
+        val unknown = media("bt5", "nyaa")
+        val groups = groupBtRows(listOf(btDmhy, btMikan, reencoded, unknown).map { BtRow(it, null, false) })
+        assertEquals(listOf(listOf("bt1", "bt2"), listOf("bt4"), listOf("bt5")), groups.map { group -> group.rows.map { it.media.mediaId } })
     }
 
     @Test
@@ -335,6 +355,107 @@ class TvSourcePanelModelTest {
         assertEquals("01、03", renderEpisodeRange(EpisodeRange.range(listOf(EpisodeSort(1), EpisodeSort(3))), strings))
         assertEquals("season 2", renderEpisodeRange(EpisodeRange.season(2), strings))
         assertEquals("wholeSeason", renderEpisodeRange(EpisodeRange.unknownSeason(), strings))
+    }
+
+    @Test
+    fun `cloud drive like sources list every file like BT`() {
+        // 网盘类的源: 线路名写的是数据源名, 选择器按线路去重后只剩 d1 一条
+        val d1 = media("d1", "web-d", kind = MediaSourceKind.WEB, title = "孤独摇滚 / 05.mkv", alliance = "name-web-d")
+        val d2 = media("d2", "web-d", kind = MediaSourceKind.WEB, title = "孤独摇滚 / [字幕组] 05.mp4", alliance = "name-web-d")
+        val d3 = media("d3", "web-d", kind = MediaSourceKind.WEB, title = "孤独摇滚 / 05 生肉.mp4", alliance = "name-web-d")
+        val base = input(sources = MediaSourceResultListPresentation(sources.list + sourceResult("web-d", MediaSourceKind.WEB)))
+        val input = base.copy(
+            selector = base.selector.copy(
+                webSources = base.selector.webSources + webSource("web-d", listOf(WebSourceChannel("name-web-d", d1))),
+                filteredCandidates = listOf(
+                    MaybeExcludedMedia.Included(d1, TestMatchMetadata),
+                    MaybeExcludedMedia.Included(d2, TestMatchMetadata),
+                    MaybeExcludedMedia.Excluded(d3, MediaExclusionReason.MediaWithoutSubtitle),
+                ),
+                selected = d2,
+            ),
+        )
+        val key = TvSourceRailKeys.web("web-d")
+        val content = buildTvSourcePanel(input, TvSourceNav(railKey = key), strings)
+        // 每个文件一行, 标题是文件名; 被排除的直接跟在后面, 调暗、红字写原因
+        assertEquals(listOf("file:d1", "file:d2", "file:d3"), content.right.rows.map { it.id })
+        assertEquals(d1.originalTitle, content.right.rows[0].title)
+        assertTrue(content.right.wide)
+        assertTrue(content.right.rows[1].selected)
+        val excluded = content.right.rows[2]
+        assertTrue(excluded.dimmed)
+        assertEquals(TvSourceAccent.Error, excluded.metaAccent)
+        assertTrue(excluded.meta.startsWith("reasonNoSubtitle"), excluded.meta)
+        // 左栏数对得上的文件; 选中的不是去重后剩下的那条, 也标正在播放
+        val rail = content.rail.single { it.id == key }
+        assertEquals("2", rail.trailing)
+        assertTrue(rail.selected)
+        // 线路式的源照旧一条线路一行
+        val lines = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.web("web-a")), strings)
+        assertTrue(lines.right.rows.all { it.id.startsWith("line:") }, lines.right.rows.map { it.id }.toString())
+    }
+
+    @Test
+    fun `filter at the top of the rail also applies to cloud drive files`() {
+        fun file(id: String, resolution: String) = createTestDefaultMedia(
+            mediaId = id,
+            mediaSourceId = "web-d",
+            originalUrl = "https://example.com/$id",
+            download = ResourceLocation.HttpStreamingFile("https://example.com/$id.mp4"),
+            originalTitle = "孤独摇滚 / $id.mkv",
+            publishedTime = 0,
+            properties = createTestMediaProperties(alliance = "name-web-d", resolution = resolution, subtitleLanguageIds = listOf("CHS")),
+            episodeRange = null,
+            location = MediaSourceLocation.Online,
+            kind = MediaSourceKind.WEB,
+        )
+        val uhd = file("uhd", "4K")
+        val fhd = file("fhd", "1080P")
+        val base = input(sources = MediaSourceResultListPresentation(sources.list + sourceResult("web-d", MediaSourceKind.WEB)))
+        fun withResolution(resolution: String?) = base.copy(
+            selector = base.selector.copy(
+                webSources = base.selector.webSources + webSource("web-d", listOf(WebSourceChannel("name-web-d", uhd))),
+                filteredCandidates = listOf(MaybeExcludedMedia.Included(uhd, TestMatchMetadata), MaybeExcludedMedia.Included(fhd, TestMatchMetadata)),
+                resolution = MediaPreferenceItemState.Presentation(listOf("4K", "1080P"), resolution),
+            ),
+        )
+        val key = TvSourceRailKeys.web("web-d")
+
+        // 「筛选」在左栏最顶上, 与下面隔开; 没选时右端不写
+        val none = buildTvSourcePanel(withResolution(null), TvSourceNav(railKey = key), strings)
+        assertEquals(TvSourceRailKeys.FILTER, none.rail.first().id)
+        assertEquals("", none.rail.first().trailing)
+        assertTrue(none.rail[1].dividerAbove)
+        assertEquals(listOf("file:uhd", "file:fhd"), none.right.rows.map { it.id })
+
+        // 选了 1080P: 4K 的调暗排到后面写「低于偏好」, 左栏只数符合的
+        val filtered = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = key), strings)
+        assertEquals("1080P", filtered.rail.first().trailing)
+        assertEquals(listOf("file:fhd", "file:uhd"), filtered.right.rows.map { it.id })
+        assertTrue(filtered.right.rows[1].dimmed)
+        assertTrue(filtered.right.rows[1].meta.startsWith("reasonBelowPreference"), filtered.right.rows[1].meta)
+        assertEquals("1", filtered.rail.single { it.id == key }.trailing)
+
+        // 这个源里没有的取值不筛 (偏好随选中的资源变, 可能是别的源里的取值)
+        val absent = buildTvSourcePanel(withResolution("720P"), TvSourceNav(railKey = key), strings)
+        assertEquals(listOf("file:uhd", "file:fhd"), absent.right.rows.map { it.id })
+        assertTrue(absent.right.rows.none { it.dimmed })
+
+        // 「筛选」的分支: 分辨率 (BT 与网盘文件里有的, 高的在前) 与字幕两组, 确定就改这部番的偏好
+        val pane = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = TvSourceRailKeys.FILTER), strings).right
+        assertEquals(
+            listOf(
+                "filter:Resolution:", "filter:Resolution:4K", "filter:Resolution:1080P", "filter:Resolution:720P",
+                "filter:Subtitle:", "filter:Subtitle:CHS",
+            ),
+            pane.rows.filter { it.focusable }.map { it.id },
+        )
+        assertEquals("filter:Resolution:1080P", pane.focusId)
+        assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Resolution, "4K"), pane.rows.single { it.id == "filter:Resolution:4K" }.action)
+
+        // 只有线路式的在线源: 没东西可筛, 不列「筛选」
+        val linesOnly = input(bt = BtListPresentation.Placeholder, sources = MediaSourceResultListPresentation(sources.list.filter { it.kind == MediaSourceKind.WEB }))
+        assertTrue(buildTvSourcePanel(linesOnly, TvSourceNav(), strings).rail.none { it.id == TvSourceRailKeys.FILTER })
     }
 
     @Test
@@ -441,6 +562,23 @@ class TvSourcePanelModelTest {
     }
 
     @Test
+    fun `rate limit counts down then offers a retry once the countdown runs out`() {
+        val limited = webSource("web-a", emptyList()).copy(rateLimitedUntilMillis = 5_000)
+        val nav = TvSourceNav(railKey = TvSourceRailKeys.web("web-a"))
+
+        val counting = buildTvSourcePanel(input(webSources = listOf(limited), nowMillis = 0), nav, strings)
+        assertEquals("rateLimited 5", counting.rail.first { it.id == TvSourceRailKeys.web("web-a") }.trailing)
+        assertEquals("rateLimitedHint 5", counting.right.rows.first().title)
+
+        // 到点那次自动重试也被限流: 不会再自动重试, 改成让用户按重试
+        val expired = buildTvSourcePanel(input(webSources = listOf(limited), nowMillis = 5_000), nav, strings)
+        assertEquals("rateLimitedExpired", expired.rail.first { it.id == TvSourceRailKeys.web("web-a") }.trailing)
+        val retry = expired.right.rows.first()
+        assertEquals("rateLimitedExpiredHint", retry.meta)
+        assertEquals(TvSourceAction.RestartSource("web-a"), retry.action)
+    }
+
+    @Test
     fun `manual browse shows results then episodes as a grid`() {
         val source = ManualBrowseSource("site", "site", MediaSourceInfo("站点"))
         val subject = BrowseSubject(name = "孤独摇滚", url = "https://example.com/s/1")
@@ -523,6 +661,8 @@ class TvSourcePanelModelTest {
         resolvingCaptcha = "resolvingCaptcha",
         rateLimited = "rateLimited %1\$d",
         rateLimitedHint = "rateLimitedHint %1\$d",
+        rateLimitedExpired = "rateLimitedExpired",
+        rateLimitedExpiredHint = "rateLimitedExpiredHint",
         failedState = "failedState",
         retry = "retry",
         retryHint = "retryHint",
@@ -576,6 +716,7 @@ class TvSourcePanelModelTest {
         webNoExact = "webNoExact",
         episodesSeason = "season %1\$d",
         episodesWholeSeason = "wholeSeason",
+        filter = "filter",
         manualSource = "manualSource %1\$s",
         manualKeyword = "manualKeyword %1\$s",
         manualSearching = "manualSearching",

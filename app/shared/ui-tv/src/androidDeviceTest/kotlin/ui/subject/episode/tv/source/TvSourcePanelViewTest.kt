@@ -195,14 +195,14 @@ class TvSourcePanelViewTest {
         host.waitUntil("左栏对到 web:25") { railSelectedPosition() == 25 }
     }
 
-    /** 左栏 (行里有 web:25 的那一栏) 此刻选中的位置. */
-    private fun railSelectedPosition(): Int = host.onMain {
+    /** 左栏 (行里有 web:25 的那一栏) 此刻选中的位置. 在主线程上调 (waitUntil 的条件就在主线程上跑). */
+    private fun railSelectedPosition(): Int {
         fun find(v: View): VerticalGridView? {
             if (v is VerticalGridView && (v.adapter as? TvSourceRowAdapter)?.currentList?.any { it.id == "web:25" } == true) return v
             if (v is ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
             return null
         }
-        find(view)?.selectedPosition ?: -1
+        return find(view)?.selectedPosition ?: -1
     }
 
     @Test
@@ -324,6 +324,50 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `down past the last filter value stays in the filter`() {
+        showInRight(filterScreen(TvSourceRailKeys.FILTER), "filter:Resolution:4K")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        SystemClock.sleep(SETTLE_MILLIS)
+        assertEquals("filter:Resolution:4K", host.onMain { focusedIdUnsafe() })
+        assertTrue(host.onMain { listener.railFocused.isEmpty() }, "左栏没跟到 BT")
+    }
+
+    @Test
+    fun `up past the BT pills stays there instead of reaching the filter`() {
+        showInRight(filterScreen(TvSourceRailKeys.BT), "bt:0")
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        waitFocus("pill:episode")
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        SystemClock.sleep(SETTLE_MILLIS)
+        assertEquals("pill:episode", host.onMain { focusedIdUnsafe() })
+        assertTrue(host.onMain { listener.railFocused.isEmpty() }, "左栏没跟到筛选")
+    }
+
+    /** 左栏顶上是「筛选」、其下是 BT (「筛选」不在右栏上下跨的那一串里, 见 TvSourcePanelView.crossRail). */
+    private fun filterScreen(railKey: String) = TvSourcePanelContent(
+        status = "已查询 1 个数据源",
+        rail = listOf(rail(TvSourceRailKeys.FILTER), rail(TvSourceRailKeys.BT), rail(TvSourceRailKeys.ACTION_REFRESH, TvSourceAction.Refresh)),
+        railKey = railKey,
+        right = if (railKey == TvSourceRailKeys.FILTER) {
+            TvSourceRight(
+                key = railKey,
+                rows = listOf(
+                    TvSourceRow(id = "filter-header:Resolution", style = TvSourceRowStyle.Status, title = "分辨率"),
+                    line("filter:Resolution:", selected = false),
+                    line("filter:Resolution:4K", selected = true),
+                ),
+                focusId = "filter:Resolution:4K",
+            )
+        } else {
+            TvSourceRight(
+                key = railKey,
+                pills = listOf(TvSourceRow(id = "pill:episode", style = TvSourceRowStyle.Pill, title = "仅本集", action = TvSourceAction.ToggleEpisodeFilter)),
+                rows = listOf(line("bt:0", selected = false)),
+            )
+        },
+    )
+
+    @Test
     fun `a confirm release without its press is ignored`() {
         showInRight(btContent(focusId = "bt:0"), "bt:0")
         host.keyUp(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -403,6 +447,9 @@ class TvSourcePanelViewTest {
     private companion object {
         /** 长按阈值 (LONG_PRESS_MIN_HOLD 350ms) 之后. */
         const val LONG_PRESS_WAIT_MILLIS = 420L
+
+        /** 断言「按了没反应」前等这么久: 跨栏换屏 (左栏跟过去、右栏淡入) 远比这快. */
+        const val SETTLE_MILLIS = 400L
 
         fun rail(id: String, action: TvSourceAction? = null) =
             TvSourceRow(id = id, style = TvSourceRowStyle.Rail, title = id, action = action)
@@ -490,6 +537,7 @@ class TvSourcePanelViewTest {
                 railRowHeightPx = 88,
                 lineRowHeightPx = 116,
                 resourceRowHeightPx = 164,
+                fileRowPaddingVPx = 18,
                 optionRowHeightPx = 92,
                 cellHeightPx = 92,
                 statusPaddingVPx = 20,

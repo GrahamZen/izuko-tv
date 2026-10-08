@@ -87,6 +87,8 @@ data class TvSourcePanelStyle(
     val railRowHeightPx: Int,
     val lineRowHeightPx: Int,
     val resourceRowHeightPx: Int,
+    /** 文件行 ([TvSourceRowStyle.File]) 上下的留白; 行高按内容, 不矮于 [lineRowHeightPx]. */
+    val fileRowPaddingVPx: Int,
     val optionRowHeightPx: Int,
     val cellHeightPx: Int,
     val statusPaddingVPx: Int,
@@ -839,7 +841,8 @@ class TvSourcePanelView(
      * 跟着亮起来、滚到眼前, 焦点在面板上停一下等新的一屏 (同右栏换屏). 本来就没有右栏的 (手动查找、几个操作) 跳过, 跨到下一个有右栏的
      * (如最后一个在线源往下跨到「查询失败」); 跨到的源右边暂时没有能选的 (还在查 / 限流 / 没结果) 就接着往下一个跨 (见 resolvePending).
      * 往这个方向再也没有有右栏的了, 焦点回左栏落在紧挨着的那一项上 (同追番页标签: 内容到头就回标签).
-     * 进去的那一层 (筛选取值) 与手动查找里不跨. 返回 false = 到头了.
+     * 左栏顶上的「筛选」不在这一串里: 它的取值走到头就停, BT 往上走到头停在胶囊上 (不跨进筛选, 也不回左栏落到它上面).
+     * 进去的那一层 (BT 胶囊的取值) 与手动查找里不跨. 返回 false = 到头了.
      */
     private fun crossRail(direction: Int): Boolean {
         val content = content ?: return false
@@ -847,7 +850,7 @@ class TvSourcePanelView(
         if (!crossable(from) || rightKey != from) return false
         val target = nextCrossable(from, direction)
         if (target == null) {
-            val neighbor = railNeighbor(from, direction) ?: return false
+            val neighbor = railNeighbor(from, direction)?.takeIf { it.id != TvSourceRailKeys.FILTER } ?: return false
             focusRail(neighbor.id)
             return true
         }
@@ -1253,7 +1256,11 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             meta.setSingleLine(true)
         } else {
             title.setSingleLine(false)
-            title.maxLines = if (row.style == TvSourceRowStyle.Resource) 3 else 6
+            title.maxLines = when (row.style) {
+                TvSourceRowStyle.Resource -> 3
+                TvSourceRowStyle.File -> 2
+                else -> 6
+            }
         }
         title.gravity = if (row.style == TvSourceRowStyle.Cell) Gravity.CENTER else Gravity.START or Gravity.CENTER_VERTICAL
         title.text = row.title
@@ -1306,7 +1313,8 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
     }
 
     /** 说明行 (整句) 与 BT 资源的标题 (三行) 会折行, 其余的行字都只占一行. */
-    private fun marqueeCapable(style: TvSourceRowStyle) = style != TvSourceRowStyle.Resource && style != TvSourceRowStyle.Status
+    private fun marqueeCapable(style: TvSourceRowStyle) =
+        style != TvSourceRowStyle.Resource && style != TvSourceRowStyle.File && style != TvSourceRowStyle.Status
 
     private fun animateFocus(target: Float) {
         animator?.cancel()
@@ -1401,6 +1409,10 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             TvSourceRowStyle.Rail -> s.railRowHeightPx
             TvSourceRowStyle.Line -> s.lineRowHeightPx
             TvSourceRowStyle.Resource -> s.resourceRowHeightPx
+            TvSourceRowStyle.File -> {
+                val metaHeight = if (meta.visibility != GONE) meta.measuredHeight + s.textGapPx else 0
+                max(s.lineRowHeightPx, title.measuredHeight + metaHeight + s.fileRowPaddingVPx * 2)
+            }
             TvSourceRowStyle.Option -> s.optionRowHeightPx
             TvSourceRowStyle.Cell -> s.cellHeightPx
             TvSourceRowStyle.Status, null -> title.measuredHeight + s.statusPaddingVPx * 2
@@ -1640,7 +1652,7 @@ private fun showsIcon(row: TvSourceRow) = row.icon != TvSourceRowIcon.None && ro
 /** 左栏与菜单类的行都留着图标位, 字左缘对齐. */
 private fun reservesIconSlot(row: TvSourceRow) =
     row.style == TvSourceRowStyle.Rail || row.style == TvSourceRowStyle.Option || row.style == TvSourceRowStyle.Line ||
-            row.style == TvSourceRowStyle.Resource
+            row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File
 
 private fun showsMeta(row: TvSourceRow) = row.meta.isNotEmpty() && row.style != TvSourceRowStyle.Rail &&
         row.style != TvSourceRowStyle.Option && row.style != TvSourceRowStyle.Pill && row.style != TvSourceRowStyle.Cell
@@ -1657,7 +1669,7 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
 
     var result = 0
     for (row in right.rows) {
-        if (row.style == TvSourceRowStyle.Status || row.style == TvSourceRowStyle.Resource) continue
+        if (row.style == TvSourceRowStyle.Status || row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File) continue
         val titleStyle = when (row.style) {
             TvSourceRowStyle.Rail -> style.railTitle
             TvSourceRowStyle.Cell -> style.cell

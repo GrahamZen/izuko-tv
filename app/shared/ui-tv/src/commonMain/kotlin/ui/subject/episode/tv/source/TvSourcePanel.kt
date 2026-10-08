@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
@@ -87,6 +88,7 @@ import me.him188.ani.app.ui.lang.tv_source_kind_cache
 import me.him188.ani.app.ui.lang.tv_source_kind_web
 import me.him188.ani.app.ui.lang.tv_source_status_done
 import me.him188.ani.app.ui.lang.tv_source_status_searching
+import me.him188.ani.app.ui.lang.media_selector_bt_filter
 import me.him188.ani.app.ui.lang.media_selector_bt_reason_below_preference
 import me.him188.ani.app.ui.lang.media_selector_bt_reason_episode_mismatch
 import me.him188.ani.app.ui.lang.media_selector_filter_alliance
@@ -141,6 +143,8 @@ import me.him188.ani.app.ui.lang.tv_source_on
 import me.him188.ani.app.ui.lang.tv_source_pack
 import me.him188.ani.app.ui.lang.tv_source_playing
 import me.him188.ani.app.ui.lang.tv_source_rate_limited
+import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired
+import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired_hint
 import me.him188.ani.app.ui.lang.tv_source_rate_limited_hint
 import me.him188.ani.app.ui.lang.tv_source_refresh
 import me.him188.ani.app.ui.lang.tv_source_resolving_captcha
@@ -323,6 +327,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 TvSourceRowIcon.Info -> Icons.Rounded.Info
                 TvSourceRowIcon.Torrent -> Icons.Rounded.CloudDownload
                 TvSourceRowIcon.Downloads -> Icons.Rounded.Download
+                TvSourceRowIcon.Filter -> Icons.Rounded.FilterList
             },
             TV_SOURCE_ICON_SIZE,
         )
@@ -361,6 +366,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 lineRowHeightPx = 58.dp.roundToPx(),
                 // 标题三行 + 信息一行 + 上下留白
                 resourceRowHeightPx = lineHeightPx(rowTitle) * 3 + lineHeightPx(rowMeta) + textGapPx + 24.dp.roundToPx(),
+                fileRowPaddingVPx = 9.dp.roundToPx(),
                 optionRowHeightPx = 46.dp.roundToPx(),
                 cellHeightPx = 46.dp.roundToPx(),
                 statusPaddingVPx = 10.dp.roundToPx(),
@@ -440,6 +446,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
         stringResource(Lang.tv_source_resolving_captcha),
         stringResource(Lang.tv_source_rate_limited),
         stringResource(Lang.tv_source_rate_limited_hint),
+        stringResource(Lang.tv_source_rate_limited_expired),
+        stringResource(Lang.tv_source_rate_limited_expired_hint),
         stringResource(Lang.tv_source_failed_state),
         stringResource(Lang.tv_source_retry),
         stringResource(Lang.tv_source_retry_hint),
@@ -513,6 +521,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
         stringResource(Lang.tv_source_web_no_exact),
         stringResource(Lang.tv_source_episodes_season),
         stringResource(Lang.tv_source_episodes_whole_season),
+        stringResource(Lang.media_selector_bt_filter),
     )
     return remember(values, details) {
         var i = 0
@@ -539,6 +548,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             resolvingCaptcha = next(),
             rateLimited = next(),
             rateLimitedHint = next(),
+            rateLimitedExpired = next(),
+            rateLimitedExpiredHint = next(),
             failedState = next(),
             retry = next(),
             retryHint = next(),
@@ -612,6 +623,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             webNoExact = next(),
             episodesSeason = next(),
             episodesWholeSeason = next(),
+            filter = next(),
             details = details,
             timeZone = TimeZone.currentSystemDefault(),
         )
