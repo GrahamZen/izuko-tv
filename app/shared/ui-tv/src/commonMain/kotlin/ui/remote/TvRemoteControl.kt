@@ -376,7 +376,7 @@ object TvRemoteControl {
     private val processStart = System.currentTimeMillis()
 
     /**
-     * 开着就趁 Ani 在前台起常驻服务 (Android 12 起后台起不了前台服务); 重复起无副作用.
+     * 开着就起常驻服务; 重复起无副作用. Android 12 起后台起不了前台服务, 只能趁 Ani 在前台起 (见 [canStartKeepAlive]).
      *
      * **刚启动的一段时间内要等**: 前台服务必须在 `startForegroundService` 之后 10 秒内 `startForeground`,
      * 而它的 `onStartCommand` 是在主线程排队的 —— 冷启动 (尤其刚装完、还没 AOT 的包) 主线程能忙十几秒, 排不上
@@ -384,17 +384,23 @@ object TvRemoteControl {
      * (2026-09-15 真机: 装完包第一次启动连崩三次). 用户在网页上主动开这个开关时进程早就起来了, 不受影响.
      */
     private fun syncKeepAlive() {
-        if (!keepAliveOnExit() || !tvForeground) return
+        if (!keepAliveOnExit() || !canStartKeepAlive()) return
         val since = System.currentTimeMillis() - processStart
         if (since < KEEP_ALIVE_START_DELAY.inWholeMilliseconds) {
             scope.launch {
                 delay(KEEP_ALIVE_START_DELAY.inWholeMilliseconds - since)
-                if (keepAliveOnExit() && tvForeground) keepAliveService?.invoke(true)
+                if (keepAliveOnExit() && canStartKeepAlive()) keepAliveService?.invoke(true)
             }
             return
         }
         keepAliveService?.invoke(true)
     }
+
+    /**
+     * 现在能不能起常驻服务: Android 12 起只有 Ani 在前台时能起; 更早的系统后台也能起 —— 不必等用户在前台停够
+     * [KEEP_ALIVE_START_DELAY] (常驻服务被回收后系统不一定重启它, 用户回来看一眼就走的话那次补不上).
+     */
+    private fun canStartKeepAlive(): Boolean = tvForeground || Build.VERSION.SDK_INT < Build.VERSION_CODES.S
 
     /** 网页设置里那张卡片的状态, 见 RemoteSettings.state. */
     internal fun keepState(): JsonObject = buildJsonObject { put("enabled", keepAliveOnExit()) }
@@ -406,7 +412,7 @@ object TvRemoteControl {
         // Ani 在后台时开: 常驻服务起不来 (Android 12 起), 要等它回到前台 —— 说清楚, 免得以为这时休眠已经不会断
         val message = when {
             !on -> tr("已关闭")
-            tvForeground -> tr("已开启")
+            canStartKeepAlive() -> tr("已开启")
             else -> tr("已开启。下次打开 Izuko 后，电视休眠时也能保持连接；在此之前，电视休眠仍会断开。")
         }
         return JsonObject(keepState() + ("ok" to JsonPrimitive(true)) + ("message" to JsonPrimitive(message)))
@@ -611,7 +617,7 @@ object TvRemoteControl {
         }
         // 手机上开「切到电视前台」时 Ani 在后台、没能当场打开授权页: 回来了就打开 (见 scheduleFrontAuth)
         if (foreground) scheduleFrontAuth()
-        // 「退出 Ani 后保留」开着: 常驻服务只能在前台起, 回来了就补上 (见 syncKeepAlive)
+        // 「退出 Ani 后保留」开着: Android 12 起常驻服务只能在前台起, 回来了就补上 (见 syncKeepAlive)
         if (foreground) syncKeepAlive()
         // 网页发起的安装在等 Ani 回前台打开授权页 / 弹确认 (见 RemoteAppUpdate)
         if (foreground) RemoteAppUpdate.onTvForeground()
@@ -653,6 +659,16 @@ object TvRemoteControl {
         // 「性能诊断」的录制要挂在这个界面的窗口上 (context 是 Activity)
         TvPerfDiagnostics.attach(context)
         // 「退出 Ani 后保留 Web 控制台」开着: 趁在前台把常驻服务起起来 (后台起不了, 见 syncKeepAlive)
+        syncKeepAlive()
+    }
+
+    /**
+     * MainActivity 创建时调, 不等界面组合 ([install]): 起监听, 「退出 Ani 后保留」开着时起常驻服务. 息屏时系统会为栈顶的 Ani 页面
+     * 重启被回收的进程, 这时 Activity 建了, 界面却要到亮屏、Ani 回到前台才组合 —— 只靠 [install] 的话, 这个进程一直没有 Web 控制台.
+     * 重复调用无副作用.
+     */
+    fun onActivityCreated(context: Context) {
+        ensureStarted(context)
         syncKeepAlive()
     }
 
