@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
+import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.utils.logging.info
@@ -42,11 +43,15 @@ class GetSubjectEpisodeInfoBundleFlowUseCaseImpl(
     private val flowContext: CoroutineContext = Dispatchers.Default,
 ) : GetSubjectEpisodeInfoBundleFlowUseCase, KoinComponent {
     private val subjectCollectionRepository: SubjectCollectionRepository by inject()
+    private val seriesIndexService: SubjectSeriesIndexService by inject()
 
     override fun invoke(idsFlow: Flow<GetSubjectEpisodeInfoBundleFlowUseCase.SubjectIdAndEpisodeId>): Flow<SubjectEpisodeInfoBundle> {
         return idsFlow.flatMapLatest { (subjectId, episodeId) ->
             // 这里只需要查询一个网络请求 — subject collection. 
-            subjectEpisodeInfoBundleFlow(subjectCollectionRepository.subjectCollectionFlow(subjectId), subjectId, episodeId)
+            subjectEpisodeInfoBundleFlow(
+                subjectCollectionRepository.subjectCollectionFlow(subjectId).withSeriesRelations(subjectId, seriesIndexService::getSubjectRelationIndex),
+                subjectId, episodeId,
+            )
         }.flowOn(flowContext)
     }
 }
