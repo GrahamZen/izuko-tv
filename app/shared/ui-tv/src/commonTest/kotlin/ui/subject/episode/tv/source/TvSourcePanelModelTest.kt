@@ -150,6 +150,8 @@ class TvSourcePanelModelTest {
         manual: ManualBrowsePresentation? = null,
         initialMode: MediaSelectorMode = MediaSelectorMode.AUTO,
         sources: MediaSourceResultListPresentation = this.sources,
+        webSources: List<WebSource> = this.webSources,
+        nowMillis: Long = 0,
     ) = TvSourcePanelInput(
         selector = selector(webSources, selected),
         bt = bt,
@@ -159,7 +161,7 @@ class TvSourcePanelModelTest {
         canEditKeywords = true,
         canCache = true,
         initialMode = initialMode,
-        nowMillis = 0,
+        nowMillis = nowMillis,
     )
 
     @Test
@@ -441,6 +443,23 @@ class TvSourcePanelModelTest {
     }
 
     @Test
+    fun `rate limit counts down then offers a retry once the countdown runs out`() {
+        val limited = webSource("web-a", emptyList()).copy(rateLimitedUntilMillis = 5_000)
+        val nav = TvSourceNav(railKey = TvSourceRailKeys.web("web-a"))
+
+        val counting = buildTvSourcePanel(input(webSources = listOf(limited), nowMillis = 0), nav, strings)
+        assertEquals("rateLimited 5", counting.rail.first { it.id == TvSourceRailKeys.web("web-a") }.trailing)
+        assertEquals("rateLimitedHint 5", counting.right.rows.first().title)
+
+        // 到点那次自动重试也被限流: 不会再自动重试, 改成让用户按重试
+        val expired = buildTvSourcePanel(input(webSources = listOf(limited), nowMillis = 5_000), nav, strings)
+        assertEquals("rateLimitedExpired", expired.rail.first { it.id == TvSourceRailKeys.web("web-a") }.trailing)
+        val retry = expired.right.rows.first()
+        assertEquals("rateLimitedExpiredHint", retry.meta)
+        assertEquals(TvSourceAction.RestartSource("web-a"), retry.action)
+    }
+
+    @Test
     fun `manual browse shows results then episodes as a grid`() {
         val source = ManualBrowseSource("site", "site", MediaSourceInfo("站点"))
         val subject = BrowseSubject(name = "孤独摇滚", url = "https://example.com/s/1")
@@ -523,6 +542,8 @@ class TvSourcePanelModelTest {
         resolvingCaptcha = "resolvingCaptcha",
         rateLimited = "rateLimited %1\$d",
         rateLimitedHint = "rateLimitedHint %1\$d",
+        rateLimitedExpired = "rateLimitedExpired",
+        rateLimitedExpiredHint = "rateLimitedExpiredHint",
         failedState = "failedState",
         retry = "retry",
         retryHint = "retryHint",

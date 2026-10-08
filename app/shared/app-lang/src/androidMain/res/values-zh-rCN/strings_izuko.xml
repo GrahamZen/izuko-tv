@@ -568,6 +568,8 @@
     <string name="tv_source_resolving_captcha">正在等待验证…</string>
     <string name="tv_source_rate_limited">限流 %1$d 秒</string>
     <string name="tv_source_rate_limited_hint">被限流，%1$d 秒后自动重试</string>
+    <string name="tv_source_rate_limited_expired">限流</string>
+    <string name="tv_source_rate_limited_expired_hint">被限流，按确定重试</string>
     <string name="tv_source_failed_state">失败</string>
     <string name="tv_source_retry">重试</string>
     <string name="tv_source_retry_hint">查询失败，按确定重试</string>

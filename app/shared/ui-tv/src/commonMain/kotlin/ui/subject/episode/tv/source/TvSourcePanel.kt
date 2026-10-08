@@ -141,6 +141,8 @@ import me.him188.ani.app.ui.lang.tv_source_on
 import me.him188.ani.app.ui.lang.tv_source_pack
 import me.him188.ani.app.ui.lang.tv_source_playing
 import me.him188.ani.app.ui.lang.tv_source_rate_limited
+import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired
+import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired_hint
 import me.him188.ani.app.ui.lang.tv_source_rate_limited_hint
 import me.him188.ani.app.ui.lang.tv_source_refresh
 import me.him188.ani.app.ui.lang.tv_source_resolving_captcha
@@ -440,6 +442,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
         stringResource(Lang.tv_source_resolving_captcha),
         stringResource(Lang.tv_source_rate_limited),
         stringResource(Lang.tv_source_rate_limited_hint),
+        stringResource(Lang.tv_source_rate_limited_expired),
+        stringResource(Lang.tv_source_rate_limited_expired_hint),
         stringResource(Lang.tv_source_failed_state),
         stringResource(Lang.tv_source_retry),
         stringResource(Lang.tv_source_retry_hint),
@@ -539,6 +543,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             resolvingCaptcha = next(),
             rateLimited = next(),
             rateLimitedHint = next(),
+            rateLimitedExpired = next(),
+            rateLimitedExpiredHint = next(),
             failedState = next(),
             retry = next(),
             retryHint = next(),
