@@ -683,7 +683,7 @@ fun SelectorSearchConfig.orderSubjectsForAutoMatch(subjects: List<WebSearchSubje
 
 /**
  * 自动匹配阶段实际要搜索的回退关键词: 去掉按本配置归一化 ([MediaSourceEngineHelpers.getSearchKeyword]) 后与 [primary] 或彼此相同的
- * (取首词时「出包王女 第二季」与「出包王女」是同一个关键词), 保持原顺序.
+ * (取首词时「出包王女 第二季」与「出包王女」是同一个关键词) 以及只剩很短英文词的 ([isWeakSearchKeyword]), 保持原顺序.
  */
 internal fun SelectorSearchConfig.distinctFallbackKeywords(primary: List<String>, fallback: List<String>): List<String> {
     fun normalize(name: String) = MediaSourceEngineHelpers.getSearchKeyword(
@@ -695,7 +695,7 @@ internal fun SelectorSearchConfig.distinctFallbackKeywords(primary: List<String>
     val seen = primary.mapTo(HashSet()) { normalize(it) }
     return fallback.filter { name ->
         val keyword = normalize(name)
-        keyword.isNotEmpty() && seen.add(keyword)
+        keyword.isNotEmpty() && !isWeakSearchKeyword(keyword) && seen.add(keyword)
     }
 }
 
