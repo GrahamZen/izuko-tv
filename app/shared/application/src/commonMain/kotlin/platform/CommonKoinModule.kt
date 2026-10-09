@@ -65,6 +65,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
@@ -791,6 +792,7 @@ fun KoinApplication.startCommonKoinModule(
     }
 
     coroutineScope.launch {
+        SourceProfiles.load(koin.get<SettingsRepository>())
         BundledSubscriptions.reconcile(
             koin.get<MediaSourceSubscriptionRepository>(),
             koin.get<MediaSourceManager>(),
