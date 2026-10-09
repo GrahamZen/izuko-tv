@@ -558,6 +558,8 @@
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
     <string name="settings_storage_delete_cache_when_done">Delete cache after marking as watched</string>
     <string name="settings_storage_delete_cache_when_done_description">When you mark a show as Watched from a collection menu, delete all of its cached episodes on this device. Only manual marking does this</string>
+    <string name="settings_storage_play_cache_without_searching">Play downloads without searching</string>
+    <string name="settings_storage_play_cache_without_searching_description">When this episode is fully downloaded, play it right away without searching other sources. Searching starts if the download fails to play, and opening the source panel still searches</string>
     <string name="tv_background_task_cache_move">Moving downloads to %1$s</string>
     <string name="tv_background_task_cache_move_hint">Hold OK to view it in Settings</string>
     <string name="tv_background_task_profile_import">Importing the collections of %1$s</string>
