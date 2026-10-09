@@ -1642,4 +1642,6 @@ private fun part16() = listOf(
     RemoteText("解析 {0} 秒", "Resolve {0}s", "解析 {0} 秒", "解析 {0} 秒"),
     RemoteText("正在解析…", "Resolving…", "正在解析…", "正在解析…"),
     RemoteText("正在读视频信息…", "Reading video info…", "正在讀影片資訊…", "正在讀取影片資訊…"),
+    RemoteText("隐藏", "Hide", "隱藏", "隱藏"),
+    RemoteText("隐藏，再失败时重新出现", "Hide; it comes back if playback fails again", "隱藏，再失敗時重新出現", "隱藏，再失敗時重新出現"),
 )
