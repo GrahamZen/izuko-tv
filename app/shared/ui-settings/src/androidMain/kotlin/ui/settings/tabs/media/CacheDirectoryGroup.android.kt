@@ -18,4 +18,5 @@ actual fun SettingsScope.CacheDirectoryGroup(state: CacheDirectoryGroupState) {
     ImageCacheSettings()
     DanmakuCacheSettings(state)
     DeleteCacheWhenMarkedDoneItem(state)
+    PlayCacheWithoutSearchingItem(state)
 }
