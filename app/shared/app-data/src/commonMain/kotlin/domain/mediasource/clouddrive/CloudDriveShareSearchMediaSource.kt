@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.data.models.preference.DriveRememberedShare
+import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -152,11 +153,14 @@ internal class DriveShareSearchEngine(
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
     numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+    /** 列记下的分享文件夹 ([matchRemembered]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
+    rememberedShares: DriveShareBrowser = shares,
     /** 请求站点搜索接口; 失败返回 null. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val reader = DriveShareReader(shares, numbering)
+    private val rememberedReader = DriveShareReader(rememberedShares, numbering)
 
     private val fixedShares: List<DriveShareLink> = config.shares.flatMap { links.parse(it) }.distinctBy { it.shareId }
 
@@ -283,7 +287,7 @@ internal class DriveShareSearchEngine(
     suspend fun matchRemembered(request: MediaFetchRequest, remembered: DriveRememberedShare): List<DriveShareMatch>? {
         val share = FoundShare(remembered.shareId, remembered.passcode, remembered.siteTitle)
         val videos = try {
-            reader.readFolder(remembered.shareId, remembered.passcode, remembered.folderId, remembered.path)
+            rememberedReader.readFolder(remembered.shareId, remembered.passcode, remembered.folderId, remembered.path)
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
@@ -414,7 +418,7 @@ class CloudDriveShareSearchMediaSource(
     private val arguments: CloudDriveShareSearchArguments,
     private val client: ScopedHttpClient,
     private val registry: CloudDriveRegistry,
-) : MediaSource {
+) : MediaSource, SelfLimitedMediaSource {
     companion object {
         val FactoryId = FactoryId("cloud-drive-share-search")
 
@@ -437,8 +441,14 @@ class CloudDriveShareSearchMediaSource(
         val drive = registry.awaitService(arguments.drive) ?: return null
         return engineLock.withLock {
             engine?.takeIf { it.first === drive && it.second.links === drive.shareLinks }
-                ?: (drive to DriveShareSearchEngine(arguments.config, drive.shareBrowser, drive.shareLinks, drive.episodeNumbering, ::fetchBytes))
-                    .also { engine = it }
+                ?: Pair(
+                    drive,
+                    DriveShareSearchEngine(
+                        arguments.config, drive.shareSearchBrowser, drive.shareLinks, drive.episodeNumbering,
+                        rememberedShares = drive.shareBrowser,
+                        fetch = ::fetchBytes,
+                    ),
+                ).also { engine = it }
         }
     }
 

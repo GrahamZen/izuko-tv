@@ -175,6 +175,8 @@ class MediaSourceMediaFetcher(
     private val configProvider: () -> MediaFetcherConfig,
     private val mediaSources: List<MediaSourceInstance>,
     private val flowContext: CoroutineContext = Dispatchers.Default,
+    /** 同时在查的数据源个数的上限, 为 null 时不限 (见 [MediaSourceSearchLimiter]). */
+    private val searchLimiter: MediaSourceSearchLimiter? = null,
 ) : MediaFetcher {
     private inner class MediaSourceResultImpl(
         override val instanceId: String,
@@ -185,6 +187,8 @@ class MediaSourceMediaFetcher(
         val disabled: Boolean,
         pagedSources: Flow<SizedSource<MediaMatch>>,
         private val flowContext: CoroutineContext,
+        /** 这个源查询时要占名额的上限; null 不占 (见 [SelfLimitedMediaSource]). */
+        private val searchLimiter: MediaSourceSearchLimiter?,
     ) : MediaSourceFetchResult, SynchronizedObject() {
         /**
          * 为了确保线程安全, 对 [state] 的写入必须谨慎.
@@ -231,16 +235,17 @@ class MediaSourceMediaFetcher(
 
                 var terminalState: MediaSourceFetchState.Completed? = null
                 pagedSources
+                    .flatMapMerge { sources ->
+                        sources.results.map { it.media }
+                    }
+                    .run { searchLimiter?.let { withSearchPermit(it, kind, sourceInfo.tier, sourceInfo.displayName) } ?: this }
                     .onStart {
-                        // 与 [pause] 互斥: 这一代若已经被暂停换代, 不能再把状态改回 Working
+                        // 排队等名额 (见 searchLimiter) 也算在查. 与 [pause] 互斥: 这一代若已经被暂停换代, 不能再把状态改回 Working
                         synchronized(this@MediaSourceResultImpl) {
                             if (this@MediaSourceResultImpl.restartCount.value == restartCount) {
                                 state.value = MediaSourceFetchState.Working
                             }
                         }
-                    }
-                    .flatMapMerge { sources ->
-                        sources.results.map { it.media }
                     }
                     .catch { exception ->
                         terminalState = when {
@@ -517,6 +522,7 @@ class MediaSourceMediaFetcher(
                             instance.source.fetch(it)
                         },
                     flowContext = flowContext,
+                    searchLimiter = searchLimiter.takeUnless { instance.source is SelfLimitedMediaSource },
                 )
             }
 
