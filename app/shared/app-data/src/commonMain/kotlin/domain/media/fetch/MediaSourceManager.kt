@@ -329,6 +329,7 @@ class MediaSourceManagerImpl(
         MediaSourceMediaFetcher(
             configProvider = { MediaFetcherConfig(currentPlatform() != Platform.Ios) },
             mediaSources = instances,
+            searchLimiter = MediaSourceSearchLimiter.Default,
         )
     }
     override val webVideoMatcherLoader: MediaSourceWebVideoMatcherLoader = MediaSourceWebVideoMatcherLoader(
