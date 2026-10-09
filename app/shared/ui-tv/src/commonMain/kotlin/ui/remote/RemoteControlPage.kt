@@ -65,7 +65,7 @@ internal fun renderRemoteControlPage(
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
-    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + themeCss + """
+    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + SOURCE_PROFILE_STYLE + "\n" + themeCss + """
     </style>
     </head>
     <body>
@@ -197,7 +197,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -5110,6 +5110,7 @@ private val SOURCES_SCRIPT = """
       '<button data-act="up" class="icb" aria-label="' + T('上移') + '" title="' + T('上移') + '"' + (i === 0 ? ' disabled' : '') + '>' + I.up + '</button>' +
       '<button data-act="down" class="icb" aria-label="' + T('下移') + '" title="' + T('下移') + '"' + (i === total - 1 ? ' disabled' : '') + '>' + I.down + '</button></div>';
     var b = '<button data-act="test" class="ic">' + I.plug + T('测试') + '</button>';
+    if (window.srcDeepButton) b += window.srcDeepButton(s);
     if (s.editor !== 'none') b += '<button data-act="edit" class="ic">' + I.edit + T('编辑') + '</button>';
     if (fromSub) b += '<button data-act="copy" class="ic">' + I.copy + T('复制为本地源') + '</button>';
     if (s.exportable) b += '<button data-act="export" class="ic">' + I.share + T('导出') + '</button>';
@@ -5123,6 +5124,7 @@ private val SOURCES_SCRIPT = """
       '<div class="src-name"><span class="t">' + esc(s.name) + '</span><small>' + tier + tags + '</small></div>' + ord + '</div>' +
       (s.description ? '<div class="src-desc">' + esc(s.description) + '</div>' : '') +
       channelTiersHtml(s) +
+      (window.srcProfileHtml ? window.srcProfileHtml(s) : '') +
       (fromSub ? '<div class="src-desc">' + T('订阅来的源会随订阅更新被覆盖，所以只能启用或停用；想改的话先「复制为本地源」。') + '</div>' : '') +
       '<div class="src-btns">' + b + '</div><div class="src-panel" hidden></div></div>';
   }
@@ -5437,6 +5439,7 @@ private val SOURCES_SCRIPT = """
     if (!x) return;
     var a = b.getAttribute('data-act');
     if (a === 'test') { testSource(x.item, x.s, b); return; }
+    if (a === 'deep') { window.srcDeepTest(x.item, x.s, b); return; }
     if (a === 'up' || a === 'down') act('api/sources/move', { id: x.s.id, dir: a });
     else if (a === 'delete') { if (confirm(T('删除「{0}」？', x.s.name))) act('api/sources/delete', { id: x.s.id }); }
     else if (a === 'copy') act('api/sources/copy', { id: x.s.id });

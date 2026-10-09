@@ -245,6 +245,8 @@ ambiguous),CI 与文档都必须写全变体名。
 | `app-data .../torrent/service/TorrentDiagnosticsServer.kt` | debug 构建 localhost 种子诊断端口 |
 | `app-data .../mediasource/ChineseConverter.kt` (+各平台 actual) | 简繁转换 (中文条目匹配修复的一部分) |
 | `app-data .../mediasource/rule/` | 规则源: 搜索/详情/播放三段步骤规则的通用网站数据源, 挑集与缓存复用 web-selector; `AniBakaRuleImporter` 导入 AniBaka 规则, `AniBakaSubscription` 让订阅地址能填 AniBaka 规则库 (注册各一行: `MediaSourceManager`、`MediaSourceCodecManager`、ui-tv `RemoteSources`; 订阅钩子在 `MediaSourceSubscriptionRequesterImpl`) |
+| `app-data .../media/probe/MediaStreamProbe.kt` | 只取几十 KB 估出视频地址的分辨率 / 编码 / 码率 (mp4 读 moov; HLS 读列表、抽分片大小、分片头解 SPS) |
+| `app-data .../mediasource/profile/SourceProfiles.kt` + `player/extension/SourceProfileExtension.kt` | 数据源画像: 播放时记开播用时、分辨率、码率、插播广告、规则源走没走 WebView、失败, 给出建议层级; 规则源大多要 WebView 时选源降一级。钩子: `ChainedMediaResolver` 记地址一行、`RuleMediaSource` 记 WebView 一行、`MediaSourceManager.mediaSourceTiersFlow` 一行、`EpisodeViewModel` 扩展列表一行、`CommonKoinModule` 启动加载一行、`SettingsRepository` 的 `readText` / `writeText`; 控制台显示与深度测试在 ui-tv `RemoteSourceProfiles` (`RemoteSources` 列表两行 + 路由一行, `RemoteControlPage` 拼接与 rowHtml / 点击各一行) |
 | `app-data .../mediasource/subscription/BundledSubscriptions.kt` | 自带订阅 (网盘协议与挑过的几个在线源) 与不再默认给的上游订阅 (Animeko 在线源): 新装的默认订阅、已装的启动时对齐一次 (钩子: `MediaSourceSubscriptionsSaveData.Default` 一行、`CommonKoinModule` 启动处一行) |
 | `app-data schemas/.../22.json` | 数据库迁移 (种子按集存文件选择) |
 
