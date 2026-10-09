@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media.resolver
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import org.openani.mediamp.source.MediaData
@@ -135,6 +136,7 @@ private class ChainedMediaResolver(
 
     override suspend fun resolve(media: Media, episode: EpisodeMetadata): MediaDataProvider<*> {
         return resolvers.firstOrNull { it.supports(media) }?.resolve(media, episode)
+            ?.also { SourceProfiles.noteResolved(media, it) }
             ?: throw UnsupportedMediaException(media)
     }
 }
