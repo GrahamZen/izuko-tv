@@ -26,6 +26,7 @@ import me.him188.ani.app.data.models.preference.DriveAddedShare
 import me.him188.ani.app.data.models.preference.DriveAddedShareFile
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -388,7 +389,7 @@ class CloudDriveAddedShareMediaSource(
     override val mediaSourceId: String,
     private val driveId: String,
     private val registry: CloudDriveRegistry,
-) : MediaSource {
+) : MediaSource, SelfLimitedMediaSource {
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
     /** 各网盘的「我添加的分享」都用同一个 [INFO]: 播放时据此认出它 (见 PauseMediaFetchWhilePlayingExtension). */
