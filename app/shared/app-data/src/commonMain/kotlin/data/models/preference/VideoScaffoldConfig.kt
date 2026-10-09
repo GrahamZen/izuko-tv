@@ -142,6 +142,8 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * 关掉则边播边选, 按确认键才跳过去. 规则见 ui-tv 的 `TvScrubPlayback`.
      */
     val pauseVideoOnScrub: Boolean = true,
+    /** 电视上拖动预览的画面画在哪, 见 [SeekPreviewDisplay]. */
+    val seekPreviewDisplay: SeekPreviewDisplay = SeekPreviewDisplay.WINDOW,
     /**
      * 在观看到 90% 进度后, 自动标记看过
      */

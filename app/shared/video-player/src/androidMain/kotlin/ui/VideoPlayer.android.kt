@@ -65,6 +65,7 @@ actual fun VideoPlayer(
             var subtitles by remember { mutableStateOf<SubtitleView?>(null) }
             var assSubtitles by remember { mutableStateOf<LiftableAssSubtitleView?>(null) }
             SubtitleObstructionEffect(exoPlayer.impl, subtitles, assSubtitles, libassPlayer?.seekPreviewOrigin)
+            SeekPreviewSubtitleHiding(subtitles, libassPlayer?.seekPreviewOnFullScreen)
             ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
                 (videoSurfaceView as? SurfaceView)?.let { registerAndroidVideoSurface(player, it) }
                 controllerAutoShow = false

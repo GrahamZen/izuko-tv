@@ -15,6 +15,7 @@ import android.os.Looper
 import android.view.PixelCopy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
@@ -43,17 +44,23 @@ private const val CAPTURE_MAX_WIDTH = 1280
 internal suspend fun captureTvPlayerFrame(
     player: MediampPlayer,
     maxWidth: Int = CAPTURE_MAX_WIDTH,
-): ImageBitmap? =
-    withContext(Dispatchers.Main.immediate) {
+): ImageBitmap? {
+    val (surfaceView, size) = withContext(Dispatchers.Main.immediate) {
         val surfaceView = player.findAndroidVideoSurface() ?: return@withContext null
         if (!surfaceView.holder.surface.isValid || surfaceView.width <= 0 || surfaceView.height <= 0) {
             return@withContext null
         }
         // PixelCopy 会把 Surface 内容缩放进目标位图
         val scale = (maxWidth.toFloat() / surfaceView.width).coerceAtMost(1f)
-        val width = (surfaceView.width * scale).toInt().coerceAtLeast(1)
-        val height = (surfaceView.height * scale).toInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        surfaceView to IntSize(
+            (surfaceView.width * scale).toInt().coerceAtLeast(1),
+            (surfaceView.height * scale).toInt().coerceAtLeast(1),
+        )
+    } ?: return null
+    // Android 13 及以前 PixelCopy 在调用它的线程上等渲染线程把视频帧缩进位图, 慢的电视上要一两百毫秒;
+    // 暂停那一下 (含拖动进度条开始时) 就会截, 放在主线程上界面会顿一下
+    return withContext(Dispatchers.IO) {
+        val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
         val result = runCatching {
             suspendCoroutine { continuation ->
                 PixelCopy.request(
@@ -71,3 +78,4 @@ internal suspend fun captureTvPlayerFrame(
             null
         }
     }
+}
