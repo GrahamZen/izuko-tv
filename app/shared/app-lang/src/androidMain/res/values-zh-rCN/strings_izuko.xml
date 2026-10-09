@@ -54,6 +54,10 @@
     <string name="settings_player_idle_progress_bar_off">不显示</string>
     <string name="settings_player_pause_on_scrub">拖动进度条时暂停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遥控器选位置时先暂停画面，按确认键从选中处播放；关闭后边播边选</string>
+    <string name="settings_player_seek_preview_display">拖动预览画面</string>
+    <string name="settings_player_seek_preview_display_description">拖动时暂停才有预览画面。小画面：画在进度条上方的浮窗里，全屏停在原处；全屏：直接画在全屏上，浮窗只显示时间。部分设备用小画面会解码出错，出错时会自动改成全屏</string>
+    <string name="settings_player_seek_preview_display_window">小画面</string>
+    <string name="settings_player_seek_preview_display_full_screen">全屏</string>
     <string name="settings_player_disk_cache">边下边播</string>
     <string name="settings_player_disk_cache_description">在线播放时把下载过的部分存在本机：往回拖、重看直接读本机，拖动预览时下载过的位置马上出画面（没下载的位置停一下就去下）。关闭时拖动预览每个位置都要先下载。最多占剩余空间的四分之一，满了先删最久没看的</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
@@ -657,6 +661,7 @@
     <string name="player_frame_preview_failed">预览加载失败</string>
     <string name="player_frame_preview_not_downloaded">这里还没下载</string>
     <string name="player_frame_preview_stay_to_load">停一下就加载</string>
+    <string name="player_seek_preview_switched_to_full_screen">这台设备用小画面预览时解码出错，拖动预览已改为显示在全屏上，可在设置里改回</string>
     <string name="settings_log_share_failed">分享日志文件失败，当前设备可能不支持分享，可改用复制日志内容</string>
     <string name="settings_log_export_file">导出当日日志文件</string>
     <string name="settings_log_export_succeed">日志已导出到 %1$s</string>

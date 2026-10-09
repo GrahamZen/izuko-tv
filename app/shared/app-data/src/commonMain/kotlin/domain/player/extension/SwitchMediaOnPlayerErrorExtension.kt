@@ -41,6 +41,7 @@ import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
 import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
@@ -295,6 +296,11 @@ class SwitchMediaOnPlayerErrorExtension(
                                 logger.info {
                                     "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
                                 }
+                            }
+
+                            // 拖动预览换输出弄坏了解码器 (见 SeekPreviewDecoderFault): 换哪个源都一样坏, 原地重载, 不拉黑
+                            SeekPreviewDecoderFault.isFault(error.cause) && media != null && context.reloadAfterSeekPreviewDecoderFault() -> {
+                                logger.warn(error.cause) { "Player errored (${error.description}), decoder broken by the seek preview, reloading ${media.mediaId} in place" }
                             }
 
                             // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑

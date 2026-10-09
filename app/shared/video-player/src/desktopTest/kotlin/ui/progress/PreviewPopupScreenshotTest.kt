@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
@@ -29,6 +30,7 @@ import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -136,6 +138,23 @@ class PreviewPopupScreenshotTest {
         )
     }
 
+    @Test
+    fun `live frame popup has square corners`() {
+        // 播放器画进来的画面在单独的显示层上 (SurfaceView), 圆角裁不到它: 浮窗和盖在上面的黑底也得是直角,
+        // 不然圆角的底和直角的画面两套边界一起露出来. 黑底盖满画面位, 四个角都该是不透明的
+        val image = dumpFrameOnlyPopup(
+            name = "live-corners",
+            framePreview = livePreview(FramePreviewLoadStatus.NotDownloaded),
+            stateTag = TAG_PROGRESS_SLIDER_PREVIEW_NOT_DOWNLOADED,
+        )
+        val pixels = image.toPixelMap()
+        val right = image.width - 1
+        val bottom = image.height - 1
+        for ((x, y) in listOf(0 to 0, right to 0, 0 to bottom, right to bottom)) {
+            assertEquals(1f, pixels[x, y].alpha, "corner ($x, $y) of the ${image.width}x${image.height} popup")
+        }
+    }
+
     /** 播放器画进来的画面 (TV 拖动预览; 这里用一块纯色代替), 状态停在 [status]. */
     private fun livePreview(status: FramePreviewLoadStatus) = MediaProgressFramePreviewState(
         fetchFrame = { null },
@@ -155,7 +174,7 @@ class PreviewPopupScreenshotTest {
 
     /**
      * 圆点依次挪到 [previewAt] 各处 (TV 的拖拽预览, 不用鼠标悬停: 小窗口里悬停浮窗会盖住指针, 悬停态来回翻转),
-     * 最后一处出现 [stateTag] 后把浮窗截成 PNG. 前面几处要等帧出来再挪, 用来造出「上一个位置的帧」.
+     * 最后一处出现 [stateTag] 后把浮窗截成 PNG, 返回截图. 前面几处要等帧出来再挪, 用来造出「上一个位置的帧」.
      */
     private fun dumpFrameOnlyPopup(
         name: String,
@@ -163,38 +182,42 @@ class PreviewPopupScreenshotTest {
         stateTag: String,
         cacheProgressInfo: MediaCacheProgressInfo? = null,
         previewAt: List<Float> = listOf(0.5f),
-    ) = runAniComposeUiTest {
-        val sliderState = PlayerProgressSliderState(
-            currentPositionMillis = { 30_000L },
-            totalDurationMillis = { 100_000L },
-            chapters = { emptyList() },
-            onPreview = {},
-            onPreviewFinished = {},
-        )
-        setContent {
-            MediaProgressSlider(
-                sliderState,
-                cacheProgressInfoFlow = { cacheProgressInfo },
-                framePreview = framePreview,
-                previewStyle = ProgressSliderPreviewStyle.FrameOnly,
+    ): ImageBitmap {
+        lateinit var image: ImageBitmap
+        runAniComposeUiTest {
+            val sliderState = PlayerProgressSliderState(
+                currentPositionMillis = { 30_000L },
+                totalDurationMillis = { 100_000L },
+                chapters = { emptyList() },
+                onPreview = {},
+                onPreviewFinished = {},
             )
-        }
-        previewAt.forEachIndexed { index, ratio ->
-            runOnUiThread { sliderState.previewPositionRatio(ratio) }
-            if (index < previewAt.lastIndex) {
-                waitUntil(timeoutMillis = 5_000) {
-                    framePreview.loadStatus == FramePreviewLoadStatus.Idle && framePreview.frame != null
+            setContent {
+                MediaProgressSlider(
+                    sliderState,
+                    cacheProgressInfoFlow = { cacheProgressInfo },
+                    framePreview = framePreview,
+                    previewStyle = ProgressSliderPreviewStyle.FrameOnly,
+                )
+            }
+            previewAt.forEachIndexed { index, ratio ->
+                runOnUiThread { sliderState.previewPositionRatio(ratio) }
+                if (index < previewAt.lastIndex) {
+                    waitUntil(timeoutMillis = 5_000) {
+                        framePreview.loadStatus == FramePreviewLoadStatus.Idle && framePreview.frame != null
+                    }
                 }
             }
+            waitUntil(timeoutMillis = 5_000) { onNodeWithTag(stateTag, useUnmergedTree = true).exists() }
+            // 进度按真实时间估算: 等一秒让进度环走出一截; 再推进时钟跑完 animateContentSize 与进度刷新
+            Thread.sleep(1_000)
+            mainClock.advanceTimeBy(1_000)
+            waitForIdle()
+            image = onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_POPUP, useUnmergedTree = true).captureToImage()
+            val out = File(System.getProperty("java.io.tmpdir"), "preview-popup-$name.png")
+            ImageIO.write(image.toAwtImage(), "png", out)
+            println("POPUP_PNG=${out.absolutePath} size=${image.width}x${image.height}")
         }
-        waitUntil(timeoutMillis = 5_000) { onNodeWithTag(stateTag, useUnmergedTree = true).exists() }
-        // 进度按真实时间估算: 等一秒让进度环走出一截; 再推进时钟跑完 animateContentSize 与进度刷新
-        Thread.sleep(1_000)
-        mainClock.advanceTimeBy(1_000)
-        waitForIdle()
-        val image = onNodeWithTag(TAG_PROGRESS_SLIDER_PREVIEW_POPUP, useUnmergedTree = true).captureToImage()
-        val out = File(System.getProperty("java.io.tmpdir"), "preview-popup-$name.png")
-        ImageIO.write(image.toAwtImage(), "png", out)
-        println("POPUP_PNG=${out.absolutePath} size=${image.width}x${image.height}")
+        return image
     }
 }

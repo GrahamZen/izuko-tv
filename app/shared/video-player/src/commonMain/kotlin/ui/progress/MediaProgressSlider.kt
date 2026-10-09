@@ -62,6 +62,7 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -638,7 +639,7 @@ fun MediaProgressSlider(
             ProgressSliderPreviewPopup(
                 offsetX = { mousePosX.roundToInt() },
                 previewTimeBackgroundColor = popupBackgroundColor(frameOnly, colors),
-                shape = previewPopupShape(showFrame),
+                shape = previewPopupShape(showFrame, liveFrame = frameOnly && framePreview?.liveFrame != null),
                 contentPadding = popupContentPadding(frameOnly),
             ) {
                 ProgressSliderPreviewContent(
@@ -693,7 +694,7 @@ fun MediaProgressSlider(
                     ProgressSliderPreviewPopup(
                         offsetX = { thumbWidth / 2 },
                         previewTimeBackgroundColor = popupBackgroundColor(frameOnly, colors),
-                        shape = previewPopupShape(showFrame),
+                        shape = previewPopupShape(showFrame, liveFrame = frameOnly && framePreview?.liveFrame != null),
                         contentPadding = popupContentPadding(frameOnly),
                     ) {
                         ProgressSliderPreviewContent(
@@ -816,7 +817,7 @@ private fun PreviewFrameWithOverlaidTime(
     Box(
         Modifier
             .size(width = 160.dp, height = 90.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(if (liveFrame != null) liveFrameShape else RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.5f)),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -951,10 +952,20 @@ private const val FRAME_LOAD_PROGRESS_TICK_MILLIS = 33L
 
 /**
  * 浮窗形状: 只有时间文字时用胶囊形; 有预览帧时用圆角矩形, 避免图片角被大圆角裁掉.
+ * 画面位画的是 [MediaProgressFramePreviewState.liveFrame] 时 ([liveFrame]) 用直角, 见 [liveFrameShape].
  */
 @Composable
-internal fun previewPopupShape(hasFrame: Boolean): Shape =
-    if (hasFrame) RoundedCornerShape(12.dp) else CircleShape
+internal fun previewPopupShape(hasFrame: Boolean, liveFrame: Boolean = false): Shape = when {
+    liveFrame -> liveFrameShape
+    hasFrame -> RoundedCornerShape(12.dp)
+    else -> CircleShape
+}
+
+/**
+ * 画面位画 [MediaProgressFramePreviewState.liveFrame] 时画面位与浮窗的形状: 直角. 播放器画进来的画面在单独的显示层上
+ * (TV 上是 SurfaceView), 圆角裁不到它; 浮窗和盖在上面的底、标注用圆角的话, 圆角和画面的直角两套边界会一起露出来.
+ */
+private val liveFrameShape: Shape = RectangleShape
 
 @Composable
 fun ProgressSliderPreviewPopup(

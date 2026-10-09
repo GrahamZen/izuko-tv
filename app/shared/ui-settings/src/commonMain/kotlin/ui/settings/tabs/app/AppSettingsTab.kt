@@ -957,6 +957,7 @@ fun SettingsScope.PlayerGroup(
                 title = { Text(stringResource(Lang.settings_player_pause_on_scrub)) },
                 description = { Text(stringResource(Lang.settings_player_pause_on_scrub_description)) },
             )
+            SeekPreviewDisplayItem(config, videoScaffoldConfig)
         }
         HorizontalDividerItem()
         PlaybackSpeedItems(config, videoScaffoldConfig)
