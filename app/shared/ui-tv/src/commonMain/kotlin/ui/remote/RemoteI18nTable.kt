@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1610,4 +1610,36 @@ private fun part15() = listOf(
     RemoteText("已停用这组的 {0} 个", "Disabled {0} in this group", "已停用這組的 {0} 個", "已停用這組的 {0} 個"),
     RemoteText("没有符合条件的数据源", "No sources match", "沒有符合條件的數據源", "沒有符合條件的資料源"),
     RemoteText("线路层级（{0}）", "Channel tiers ({0})", "線路層級（{0}）", "線路層級（{0}）"),
+)
+
+private fun part16() = listOf(
+    RemoteText("画像（近 {0} 次）", "Profile (last {0})", "畫像（近 {0} 次）", "概況（近 {0} 次）"),
+    RemoteText("直连", "Direct", "直連", "直連"),
+    RemoteText("要 WebView", "Needs WebView", "要 WebView", "需要 WebView"),
+    RemoteText("删到插播广告 {0} 次", "In-video ads removed {0}×", "刪到插播廣告 {0} 次", "刪到插播廣告 {0} 次"),
+    RemoteText("没删到插播广告", "No in-video ads removed", "沒刪到插播廣告", "沒刪到插播廣告"),
+    RemoteText("开播 {0} 秒", "Starts in {0}s", "開播 {0} 秒", "開播 {0} 秒"),
+    RemoteText("失败 {0} 次", "Failed {0}×", "失敗 {0} 次", "失敗 {0} 次"),
+    RemoteText("建议 T{0}", "Suggested T{0}", "建議 T{0}", "建議 T{0}"),
+    RemoteText("有插播广告", "in-video ads", "有插播廣告", "有插播廣告"),
+    RemoteText("不到 1080p", "below 1080p", "不到 1080p", "不到 1080p"),
+    RemoteText("失败多", "fails often", "失敗多", "失敗多"),
+    RemoteText("搜索常失败", "searches often fail", "搜索常失敗", "搜尋常失敗"),
+    RemoteText("搜索失败 {0}/{1} 次", "Search failed {0} of {1}", "搜索失敗 {0}/{1} 次", "搜尋失敗 {0}/{1} 次"),
+    RemoteText("画像", "Profile", "畫像", "概況"),
+    RemoteText("要 WebView 才拿得到视频，选源时降了一级", "Video needs WebView; ranked one tier lower", "要 WebView 才拿得到影片，選源時降了一級", "需要 WebView 才拿得到影片，選源時降了一級"),
+    RemoteText("深度测试", "Deep test", "深度測試", "深度測試"),
+    RemoteText("搜索超时", "Search timed out", "搜索超時", "搜尋逾時"),
+    RemoteText("没搜到", "Nothing found", "沒搜到", "沒搜到"),
+    RemoteText("搜索失败", "Search failed", "搜索失敗", "搜尋失敗"),
+    RemoteText("BT 源只测搜索", "BT sources: search only", "BT 源只測搜索", "BT 源只測搜尋"),
+    RemoteText("要 WebView 嗅探，离开播放页测不了，播放时会补上画像", "Needs WebView sniffing, which only works on the player page; the profile fills in when you play", "要 WebView 嗅探，離開播放頁測不了，播放時會補上畫像", "需要 WebView 嗅探，離開播放頁測不了，播放時會補上概況"),
+    RemoteText("解析不出视频地址", "Couldn't get the video URL", "解析不出影片地址", "解析不出影片網址"),
+    RemoteText("读不出视频信息", "Couldn't read the video info", "讀不出影片資訊", "讀不出影片資訊"),
+    RemoteText("测试出错", "Test failed", "測試出錯", "測試出錯"),
+    RemoteText("搜索 {0} 秒", "Search {0}s", "搜索 {0} 秒", "搜尋 {0} 秒"),
+    RemoteText("，{0} 条", ", {0} results", "，{0} 條", "，{0} 筆"),
+    RemoteText("解析 {0} 秒", "Resolve {0}s", "解析 {0} 秒", "解析 {0} 秒"),
+    RemoteText("正在解析…", "Resolving…", "正在解析…", "正在解析…"),
+    RemoteText("正在读视频信息…", "Reading video info…", "正在讀影片資訊…", "正在讀取影片資訊…"),
 )

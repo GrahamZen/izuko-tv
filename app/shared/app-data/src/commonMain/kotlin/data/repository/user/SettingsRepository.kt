@@ -134,6 +134,11 @@ interface SettingsRepository {
 
     /** 记下一次性的事 [key] 做过了. */
     suspend fun mark(key: String) {}
+
+    /** 按设置键 [key] 存的一段文本 (如数据源画像, 见 `SourceProfiles`); 没有时为 null. */
+    suspend fun readText(key: String): String? = null
+
+    suspend fun writeText(key: String, value: String) {}
 }
 
 @Stable
@@ -342,6 +347,12 @@ class PreferencesRepositoryImpl(
 
     override suspend fun mark(key: String) {
         preferences.edit { it[booleanPreferencesKey(key)] = true }
+    }
+
+    override suspend fun readText(key: String): String? = preferences.data.first()[stringPreferencesKey(key)]
+
+    override suspend fun writeText(key: String, value: String) {
+        preferences.edit { it[stringPreferencesKey(key)] = value }
     }
 
     override val torrentPeerConfig: Settings<TorrentPeerConfig> = SerializablePreference(

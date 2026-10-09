@@ -162,6 +162,13 @@ Selector 配置据此分两层：
 阶级来源于数据源配置 `MediaSourceArguments.tier`，通常由订阅提供；用户未配置时使用回退值
 `MediaSourceTier.Fallback`（`2`）。
 
+从 AniBaka 规则库导入或订阅的规则源按库里标注的广告情况定阶级：无广告 `0`、少广告 `1`、有广告 `3`
+（`AniBakaRuleImporter.tierOfLabels`）。
+
+`SourceProfiles` 记下每个数据源最近几次播放的实际表现（开播用时、分辨率与码率、有没有删到插播广告、规则源走没走 WebView、
+失败），控制台据此给出建议阶级。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
+其他数据源的阶级只取配置。
+
 ### Channel 级阶级
 
 > 自 Animeko v4.9
