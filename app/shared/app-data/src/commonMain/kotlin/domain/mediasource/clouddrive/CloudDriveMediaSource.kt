@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -84,7 +85,7 @@ object CloudDriveMediaSourceCodec : DefaultMediaSourceCodec<CloudDriveArguments>
 class CloudDriveMediaSource(
     private val service: CloudDriveService,
     private val arguments: CloudDriveArguments,
-) : MediaSource {
+) : MediaSource, SelfLimitedMediaSource {
     override val mediaSourceId: String get() = service.protocol.driveMediaSourceId
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
