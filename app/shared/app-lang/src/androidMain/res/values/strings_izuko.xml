@@ -54,6 +54,10 @@
     <string name="settings_player_idle_progress_bar_off">Off</string>
     <string name="settings_player_pause_on_scrub">Pause while scrubbing</string>
     <string name="settings_player_pause_on_scrub_description">Pause the picture while choosing a position with the remote, and play from there when you press OK. Turn off to keep playing while choosing</string>
+    <string name="settings_player_seek_preview_display">Seek preview picture</string>
+    <string name="settings_player_seek_preview_display_description">Shown when scrubbing pauses the video. Window: in the box above the progress bar, and the full screen stays where you were. Full screen: on the full screen, and the box only shows the time. Some devices fail to decode with the window and switch to full screen automatically when that happens</string>
+    <string name="settings_player_seek_preview_display_window">Window</string>
+    <string name="settings_player_seek_preview_display_full_screen">Full screen</string>
     <string name="settings_player_disk_cache">Save videos while playing</string>
     <string name="settings_player_disk_cache_description">Keep the parts of online videos downloaded during playback on this device: seeking back and rewatching read them from here, and scrub previews show downloaded positions instantly (other positions load after you pause on them for a moment). When off, every scrub preview has to download first. Uses up to a quarter of the free space and removes what you haven\'t watched for the longest first</string>
     <string name="settings_player_start_playback_speed">Playback speed</string>
@@ -657,6 +661,7 @@
     <string name="player_frame_preview_failed">Preview failed</string>
     <string name="player_frame_preview_not_downloaded">Not downloaded yet</string>
     <string name="player_frame_preview_stay_to_load">Stay here to load</string>
+    <string name="player_seek_preview_switched_to_full_screen">Decoding failed on this device while previewing in the window, so seek previews now show full screen. You can change this in Settings</string>
     <string name="settings_log_share_failed">Failed to share the log file. This device may not support sharing; try copying the log content instead</string>
     <string name="settings_log_export_file">Export today\'s log file</string>
     <string name="settings_log_export_succeed">Log exported to %1$s</string>
