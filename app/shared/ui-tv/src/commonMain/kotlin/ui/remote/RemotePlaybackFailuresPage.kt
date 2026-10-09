@@ -11,7 +11,11 @@ package me.him188.ani.app.ui.remote
 
 /** 播放卡「失败报告」入口与面板的样式 (见 [FAIL_SCRIPT]). */
 internal val FAIL_STYLE = """
-.now-fail { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 10px; padding: 8px 12px; border-radius: 12px; background: var(--err-bg); color: var(--err-fg); font-size: 13px; text-align: left; }
+/* 入口与它右边的「×」(隐藏这条, 再失败时重新出现) */
+.now-fail-row { display: flex; gap: 6px; margin-top: 10px; }
+.now-fail { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 12px; background: var(--err-bg); color: var(--err-fg); font-size: 13px; text-align: left; }
+.now-fail-x { flex: none; display: flex; align-items: center; justify-content: center; width: 38px; border-radius: 12px; background: var(--err-bg); color: var(--err-fg); }
+.now-fail-x svg { width: 16px; height: 16px; fill: currentColor; }
 .now-fail svg { flex: none; width: 16px; height: 16px; fill: currentColor; }
 .now-fail span { flex: 1; min-width: 0; }
 .now-fail b { flex: none; font-weight: 700; }
@@ -48,7 +52,8 @@ internal val FAIL_SCRIPT = """
   window.failEntry = function (s) {
     if (!s.failures && !s.prevFailures) return '';
     var text = s.failures ? T('这一集播放失败过 {0} 次', s.failures) : T('上一集播放失败过 {0} 次', s.prevFailures);
-    return '<button type="button" class="now-fail" data-fails="1">' + WARN + '<span>' + text + '</span><b>' + T('查看报告') + ' ›</b></button>';
+    return '<div class="now-fail-row"><button type="button" class="now-fail" data-fails="1">' + WARN + '<span>' + text + '</span><b>' + T('查看报告') + ' ›</b></button>' +
+      '<button type="button" class="now-fail-x" data-fail-dismiss="1" aria-label="' + T('隐藏') + '" title="' + T('隐藏，再失败时重新出现') + '">' + window.ICONS.close + '</button></div>';
   };
   function el(id) { return document.getElementById(id); }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -127,6 +132,12 @@ internal val FAIL_SCRIPT = """
   }
   document.addEventListener('click', function (e) {
     if (e.target.closest('[data-fails]')) open();
+    var x = e.target.closest('[data-fail-dismiss]');
+    if (x) {
+      // 先在这页藏起来; 电视记下后播放卡状态里不再带次数, 别的手机也跟着藏
+      x.parentNode.remove();
+      window.post('api/player/failures', {}).catch(fail);
+    }
     else if (e.target.closest('#fail-close')) window.sheets.close(sheet);
     else if (e.target.closest('#fail-copy-btn')) copy();
     else if (e.target.closest('#fail-reload')) load();
