@@ -230,7 +230,7 @@ internal class ThrottledSourceLoadControl : LoadControl {
         /** 限速源暂停时的缓冲上限: 与收回多开连接的阈值相同. */
         const val PAUSED_MAX_BUFFER_US = BOOST_OFF_US
 
-        /** 拖动预览时的缓冲上限: 有关键帧之后的一点就够出画面. */
+        /** 拖动预览时的缓冲上限: 读到圆点之后一点就够出画面. */
         const val PREVIEW_MAX_BUFFER_US = 1_000_000L
 
         private val logger = logger<ThrottledSourceLoadControl>()
