@@ -42,6 +42,7 @@ import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.app.domain.mediasource.web.DefaultSelectorMediaSourceEngine
@@ -583,6 +584,7 @@ class RuleMediaSource(
                     RulePlayResult.Failed
                 }
                 logger.info { "RuleMediaSource '$mediaSourceId': play $pageUrl -> $result" }
+                SourceProfiles.noteWebView(mediaSourceId, webView = result !is RulePlayResult.Direct)
                 return (result as? RulePlayResult.Direct)?.let { WebVideo(it.url, it.headers) }
             }
 

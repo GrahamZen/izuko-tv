@@ -118,6 +118,7 @@ internal object RemoteSources {
                 request.path == "api/sources" && get -> list()
                 request.path == "api/sources/export" && get -> export(request.queryParam("id").orEmpty())
                 request.path == "api/sources/template" && get -> template(request.queryParam("factoryId").orEmpty())
+                request.path == RemoteSourceProfiles.DEEP_TEST_PATH -> RemoteSourceProfiles.handle(request)
                 !post -> null
                 request.path == "api/sources/test" -> test(request)
                 request.path == "api/sources/enable" -> setEnabled(request)
@@ -177,6 +178,7 @@ internal object RemoteSources {
         val instances = instances()
         val subs = runBlocking { subscriptions.flow.first() }
         val tiers = runBlocking { manager.mediaSourceTiersFlow().first() }
+        val demoted = RemoteSourceProfiles.demotedIds()
         return buildJsonObject {
             putJsonArray("sources") {
                 for (instance in instances) addJsonObject {
@@ -199,6 +201,7 @@ internal object RemoteSources {
                     tiers.channelTiers[instance.source.mediaSourceId]?.takeIf { it.isNotEmpty() }?.let { channels ->
                         putJsonObject("channelTiers") { for ((name, tier) in channels) put(name, tier.value.toInt()) }
                     }
+                    RemoteSourceProfiles.putProfile(this, instance.source.mediaSourceId, demoted)
                     val editor = editorOf(instance.factoryId, factory, fromSubscription = subscriptionId != null)
                     put("editor", editor)
                     put("exportable", instance.factoryId in JSON_FACTORIES && instance.config.serializedArguments != null)
