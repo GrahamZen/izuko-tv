@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.ui.remote
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -45,13 +47,34 @@ internal object RemotePlaybackFailures {
      * 换集前那一集失败过时 `prevFailures` = 它的次数; 都没有不加.
      */
     fun stateEntries(handle: RemotePlayerHandle): Map<String, JsonElement> = buildMap {
-        reportOf(handle)?.let { put("failures", JsonPrimitive(it.entries.size)) }
-        previousReportOf(handle)?.let { put("prevFailures", JsonPrimitive(it.entries.size)) }
+        reportOf(handle)?.takeUnless(::isDismissed)?.let { put("failures", JsonPrimitive(it.entries.size)) }
+        previousReportOf(handle)?.takeUnless(::isDismissed)?.let { put("prevFailures", JsonPrimitive(it.entries.size)) }
+    }
+
+    /**
+     * 播放卡上点了入口旁的「×」: 记下这时各份报告的次数, 入口隐藏 (所有手机一起); 之后再失败、次数变多了重新出现.
+     * 报告本身不删. key 是 `subjectId:episodeId`.
+     */
+    private val dismissed = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    private fun keyOf(report: PlaybackFailureLog.Report) = "${report.subjectId}:${report.episodeId}"
+
+    private fun isDismissed(report: PlaybackFailureLog.Report): Boolean = report.entries.size <= (dismissed.value[keyOf(report)] ?: 0)
+
+    private fun dismiss(handle: RemotePlayerHandle?) {
+        if (handle == null) return
+        val reports = listOfNotNull(reportOf(handle), previousReportOf(handle))
+        dismissed.update { current -> current + reports.associate { keyOf(it) to it.entries.size } }
     }
 
     /** 处理 [PATH]; 路径或方法不认识返回 null. */
     fun handle(handle: RemotePlayerHandle?, request: LanHttpRequest): LanHttpResponse? {
-        if (request.path != PATH || (request.method != "GET" && request.method != "HEAD")) return null
+        if (request.path != PATH) return null
+        if (request.method == "POST") {
+            dismiss(handle)
+            return json(buildJsonObject { put("ok", true) })
+        }
+        if (request.method != "GET" && request.method != "HEAD") return null
         val sources = handle?.page?.mediaSourceResultListPresentation?.list.orEmpty()
         fun JsonObjectBuilder.putEntries(report: PlaybackFailureLog.Report?) = putJsonArray("entries") {
             // 新的在前
