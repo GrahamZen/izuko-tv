@@ -135,7 +135,7 @@ class MediaProgressFramePreviewState(
 
     /**
      * 不为 null 时画面位画它, 不去取帧: 由播放器把预览位置的画面直接画进来 (TV 上拖动预览时主播放器的输出临时接到这里, 见 `SeekPreview`).
-     * 画面位上的状态由 [liveFrameStatus] 给.
+     * 画面位上的状态由 [liveFrameStatus] 给. 画进来的画面在单独的显示层上, 圆角裁不到, 这时画面位与浮窗都是直角.
      */
     var liveFrame: (@Composable (Modifier) -> Unit)? by mutableStateOf(null)
 

@@ -25,14 +25,18 @@ import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import java.io.InterruptedIOException
 import kotlin.math.abs
 
 /**
- * 拖动预览时由主播放器解出预览位置的画面, 不另开解码器取帧: 视频输出临时接到预览浮窗里的小画面上 ([attachFrameSurface]),
- * 全屏那层没有新帧送进来, 停在开始时那一帧; 播放器对外报告的位置与字幕也停在那里 (见 [LibassExoPlayerMediampPlayer.startSeekPreview]).
+ * 拖动预览时由主播放器解出预览位置的画面, 不另开解码器取帧. 画在哪有两种 (见 [onFullScreen]):
+ * - 小画面: 视频输出临时接到预览浮窗里的小画面上 ([attachFrameSurface]), 全屏那层没有新帧送进来, 停在开始时那一帧;
+ * - 全屏: 视频输出不换, 预览位置的画面直接画在全屏上. 有的盒子的硬解经不起输出换来换去 (见 [SeekPreviewDecoderFault]).
+ *
+ * 两种都是播放器对外报告的位置停在开始时 (见 [LibassExoPlayerMediampPlayer.startSeekPreview]).
  *
  * 本机有的数据直接读 (存在本机的部分、BT 已下载的部分、本地文件), 读出关键帧就出画面. 本机没有的先不下: 小画面停在上一个位置,
  * 标成停一下就加载 ([SeekPreviewOverlay.StayToLoad]); 在那里停够 [DOWNLOAD_AFTER_MILLIS] 才去下 ([SeekPreviewOverlay.Loading]),
@@ -45,8 +49,9 @@ import kotlin.math.abs
  * 挪得比出画面快时只留最新的位置, 那一个出了画面 (或确认没下载、等太久) 再跳. 不用 media3 的拖动模式: 它也是等上一个跳转出了画面才做下一个,
  * 而跳到没下载的位置时数据被挡住, 那一个出不了画面, 之后的跳转就全卡住了.
  *
- * 小画面接上之前不跳 (跳了画面会出在全屏上). 由 [LibassExoPlayerMediampPlayer.startSeekPreview] 开始;
- * 确认时 [end] (输出接回全屏, 之后由调用方跳到圆点), 取消时 [cancel] (先跳回 [originMillis] 再接回全屏). 只在主线程上调用.
+ * 画在小画面上时, 小画面接上之前不跳 (跳了画面会出在全屏上). 由 [LibassExoPlayerMediampPlayer.startSeekPreview] 开始;
+ * 确认时 [end] (输出接回全屏, 之后由调用方跳到圆点), 取消时 [cancel] (先跳回 [originMillis] 再接回全屏). 画在全屏上时没有接回这一步.
+ * 只在主线程上调用.
  */
 @AndroidxOptIn(UnstableApi::class)
 class SeekPreview internal constructor(
@@ -55,6 +60,8 @@ class SeekPreview internal constructor(
     private val loadControl: ThrottledSourceLoadControl,
     /** 本机有没有这个位置的数据 (BT: 那一段下完了没有); 为 null 时只靠 [gate] 挡. */
     private val isAvailable: ((Long) -> Boolean)?,
+    /** 预览画面直接画在全屏上, 视频输出不换; 为 false 时画在 [attachFrameSurface] 给的小画面里. */
+    val onFullScreen: Boolean,
     private val seek: (Long) -> Unit,
     /** 结束预览时照常跳 (字幕时钟一起拨): 取消时跳回 [originMillis], 在圆点上确认时就地重新解一遍 (见 [endAtTarget]). */
     private val seekPlayback: (Long) -> Unit,
@@ -114,8 +121,8 @@ class SeekPreview internal constructor(
     /** 画预览的小画面, 见 [attachFrameSurface]. */
     private var frameSurface: Surface? = null
 
-    /** 小画面上画出过帧 (换一个小画面重新算): 一帧都还没有时没有旧画面要标. */
-    private var frameOnSurface = false
+    /** 画预览的那一面上画出过帧 (换一个小画面重新算): 一帧都还没有时没有旧画面要标. 全屏上一开始就是开始时那一帧. */
+    private var frameOnSurface = onFullScreen
 
     /** 最近画出的那一帧在片子里的时间 (播放线程上写), 见 [isFrameOfCurrentSeek]. */
     @Volatile
@@ -177,7 +184,7 @@ class SeekPreview internal constructor(
         movedAt = System.nanoTime()
         val duration = exoPlayer.duration
         val target = if (duration > END_MARGIN_MILLIS) positionMillis.coerceIn(0, duration - END_MARGIN_MILLIS) else positionMillis
-        if (frameSurface == null ||
+        if (!onFullScreen && frameSurface == null ||
             status == SeekPreviewStatus.Seeking && millisSince(seekStartedAt) < SEEK_SETTLE_TIMEOUT_MILLIS
         ) {
             pendingMillis = target
@@ -252,13 +259,14 @@ class SeekPreview internal constructor(
 
     /**
      * 接上 / 换掉画预览的小画面 ([surface] 为 null: 小画面没了, 输出哪儿也不画, 全屏仍停着). 接上之后跳到当前要看的位置:
-     * 停着的播放器换输出面后不会把已经解出的那帧再画一遍.
+     * 停着的播放器换输出面后不会把已经解出的那帧再画一遍. 画在全屏上时 ([onFullScreen]) 什么也不做.
      */
     fun attachFrameSurface(surface: Surface?) {
-        if (isEnded) return
+        if (isEnded || onFullScreen) return
         frameSurface = surface
         frameOnSurface = false
         setOutputSurface(surface)
+        SeekPreviewDecoderFault.markOutputSwitched()
         if (surface == null) return
         val target = pendingMillis ?: targetMillis.takeIf { hasSeeked } ?: return
         pendingMillis = null
@@ -357,7 +365,7 @@ class SeekPreview internal constructor(
     /**
      * 确认时播放器已经停在圆点上 ([isAtTarget]): 结束预览, 输出接回全屏后就地重新解一遍第一帧再播 (数据都在缓冲里, 不联网).
      * 换输出时解码器给小画面多解出的几帧会丢, 不重解的话一开播声音和弹幕先走、画面停一会儿. 重解期间 [holdingFrame] 仍为 true.
-     * 播放器要停着调, 之后再置播放.
+     * 画在全屏上时全屏已经是这一帧, 不重解. 播放器要停着调, 之后再置播放.
      */
     fun endAtTarget() {
         if (!isEnded) finish(FinishMode.EndAtTarget)
@@ -365,7 +373,8 @@ class SeekPreview internal constructor(
 
     /**
      * 取消: 结束预览并跳回 [originMillis]. 先跳再把输出接回全屏: 跳转会清空解码器, 预览位置已经解出、还没画的帧就不会画到全屏上,
-     * 全屏一直停在开始那一帧, 直到原处的画面重新解出来. 跳回去要重新缓冲一下, 这期间 [holdingFrame] 仍为 true.
+     * 全屏一直停在开始那一帧, 直到原处的画面重新解出来 (画在全屏上时则是停在最后预览的那一帧, 直到原处的画面解出来).
+     * 跳回去要重新缓冲一下, 这期间 [holdingFrame] 仍为 true.
      * 已经结束的 (比如换了媒体) 什么也不做.
      */
     fun cancel() {
@@ -392,22 +401,25 @@ class SeekPreview internal constructor(
         when (mode) {
             FinishMode.Cancel -> {
                 seekPlayback(originMillis)
-                restoreOutput()
+                restoreFullScreenOutput()
                 logger.info { "Seek preview canceled at $targetMillis ms, back to $originMillis ms" }
             }
 
             FinishMode.EndAtTarget -> {
                 val position = exoPlayer.currentPosition
                 val buffered = exoPlayer.totalBufferedDuration
-                restoreOutput()
-                // 跳到当前位置播放器什么也不做 (不清空解码器), 错开一毫秒. 精确跳过来的往前错: 缓冲从前一个关键帧攒起, 还在缓冲里, 往后的也还够开播;
-                // 停在关键帧上的缓冲就从这一帧开始, 往前错就出了缓冲要重新读, 只能往后错
-                seekPlayback(if (atKeyframe || position == 0L) position + 1 else position - 1)
+                // 画在全屏上时输出没换过, 全屏上已经是这一帧, 直接接着播
+                if (!onFullScreen) {
+                    restoreFullScreenOutput()
+                    // 跳到当前位置播放器什么也不做 (不清空解码器), 错开一毫秒. 精确跳过来的往前错: 缓冲从前一个关键帧攒起, 还在缓冲里, 往后的也还够开播;
+                    // 停在关键帧上的缓冲就从这一帧开始, 往前错就出了缓冲要重新读, 只能往后错
+                    seekPlayback(if (atKeyframe || position == 0L) position + 1 else position - 1)
+                }
                 logger.info { "Seek preview ended at $targetMillis ms, player already there ($position ms, $buffered ms buffered)" }
             }
 
             FinishMode.End -> {
-                restoreOutput()
+                restoreFullScreenOutput()
                 logger.info { "Seek preview ended at $targetMillis ms" }
             }
         }
@@ -419,6 +431,13 @@ class SeekPreview internal constructor(
             _holdingFrame.value = false
         }
         onEnd(this)
+    }
+
+    /** 小画面上画的: 视频输出接回全屏. 画在全屏上的输出没换过, 什么也不做. */
+    private fun restoreFullScreenOutput() {
+        if (onFullScreen) return
+        restoreOutput()
+        SeekPreviewDecoderFault.markOutputSwitched()
     }
 
     private fun releaseFrame() {
@@ -492,12 +511,12 @@ class SeekPreview internal constructor(
     }
 }
 
-/** 预览浮窗里的小画面该怎么标, 见 [SeekPreview.overlay]. */
+/** 预览画面 (小画面或全屏, 见 [SeekPreview.onFullScreen]) 该怎么标, 见 [SeekPreview.overlay]. */
 enum class SeekPreviewOverlay {
-    /** 不标: 小画面就是圆点这里的画面, 或者刚挪了一步、新画面马上就到. */
+    /** 不标: 画面就是圆点这里的, 或者刚挪了一步、新画面马上就到. */
     None,
 
-    /** 小画面是别处的画面, 这里的还没出来: 盖成黑底, 提示停一下就加载. */
+    /** 画面是别处的, 这里的还没出来: 盖成黑底, 提示停一下就加载. */
     StayToLoad,
 
     /** 在这里停够了, 正在加载这里的画面: 黑底上画进度环. */

@@ -176,18 +176,24 @@ class LibassExoPlayerMediampPlayer private constructor(
     /** 拖动预览进行中时为开始时的位置 (见 [SeekPreview]), 否则为 null. 只在主线程变. */
     val seekPreviewOrigin: StateFlow<Long?> get() = previewOriginMillis
 
+    private val previewOnFullScreen = MutableStateFlow(false)
+
+    /** 进行中的拖动预览画在全屏上 (见 [SeekPreview.onFullScreen]): 全屏上是预览位置的画面, 开始时那一刻的字幕不该盖在上面. 只在主线程变. */
+    val seekPreviewOnFullScreen: StateFlow<Boolean> get() = previewOnFullScreen
+
     /**
-     * 开始拖动预览: 之后由主播放器解出预览位置的画面, 画进 [SeekPreview.attachFrameSurface] 给的小画面里 (见 [SeekPreview]);
-     * 全屏停在开始时那一帧, 对外报告的播放位置 ([currentPositionMillis]) 与字幕也停在那里. 播放器已经关了时返回 null.
+     * 开始拖动预览: 之后由主播放器解出预览位置的画面, 画进 [SeekPreview.attachFrameSurface] 给的小画面里 (全屏停在开始时那一帧),
+     * 或者直接画在全屏上 ([onFullScreen], 见 [SeekPreview]); 对外报告的播放位置 ([currentPositionMillis]) 与字幕停在开始时. 播放器已经关了时返回 null.
      * 换媒体时进行中的预览自动结束. 在主线程上调用.
      *
      * @param isAvailable 本机有没有某个位置的数据, 没有的话停一会儿才去下 (BT: 那一段下完了没有). 在线源不用给, 由播放器自己在联网前挡住.
+     * @param onFullScreen 预览画面直接画在全屏上, 视频输出不换 (见 [SeekPreview.onFullScreen])
      */
-    fun startSeekPreview(isAvailable: ((Long) -> Boolean)? = null): SeekPreview? {
+    fun startSeekPreview(isAvailable: ((Long) -> Boolean)? = null, onFullScreen: Boolean = false): SeekPreview? {
         seekPreview?.end()
         if (closed) return null
         return SeekPreview(
-            exoPlayer, pipeline.networkGate, pipeline.loadControl, isAvailable,
+            exoPlayer, pipeline.networkGate, pipeline.loadControl, isAvailable, onFullScreen,
             // 不经 seekTo: 那里会把字幕时钟拨到预览位置, 预览期间字幕要停在开始时
             seek = { exoMediampPlayer.seekTo(it) },
             seekPlayback = { seekTo(it) },
@@ -197,16 +203,20 @@ class LibassExoPlayerMediampPlayer private constructor(
             if (seekPreview === ended) {
                 seekPreview = null
                 previewOriginMillis.value = null
+                previewOnFullScreen.value = false
             }
         }.also {
             seekPreview = it
             previewOriginMillis.value = it.originMillis
+            previewOnFullScreen.value = onFullScreen
         }
     }
 
     /** 拖动预览时视频输出接到小画面上 ([surface] 为 null 时哪儿也不画), 全屏那层留着最后一帧. */
     private fun setPreviewOutputSurface(surface: Surface?) {
+        val startedAt = System.nanoTime()
         exoPlayer.setVideoSurface(surface)
+        logger.info { "Seek preview: video output ${if (surface == null) "detached" else "moved to the preview frame"} in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
         // 小画面同样要补上色彩信息 (见 applyVideoDataSpace), 否则 NVIDIA h264 解出的帧颜色不对
         val dataSpace = videoDataSpace
         if (surface != null && nvidiaVideoDecoderActive && dataSpace != 0 && surface.isValid) {
@@ -216,8 +226,10 @@ class LibassExoPlayerMediampPlayer private constructor(
 
     /** 视频输出接回全屏的视频画面. */
     private fun restoreVideoOutput() {
+        val startedAt = System.nanoTime()
         val surfaceView = findAndroidVideoSurface()
         if (surfaceView != null) exoPlayer.setVideoSurfaceView(surfaceView) else exoPlayer.clearVideoSurface()
+        logger.info { "Seek preview: video output back on the full screen in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
     }
 
     /**
