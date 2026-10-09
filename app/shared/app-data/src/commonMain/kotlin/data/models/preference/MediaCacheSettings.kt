@@ -36,6 +36,9 @@ data class MediaCacheSettings(
     /** 手动把一部番标成「看过」时删掉它的缓存 (见 DeleteCacheWhenMarkedDoneUseCase) */
     val deleteWhenMarkedDone: Boolean = false,
 
+    /** 这一集有下载完的缓存时直接播, 不搜索别的数据源 (见 PlayCacheWithoutSearchingExtension) */
+    val playCacheWithoutSearching: Boolean = false,
+
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {
