@@ -32,6 +32,7 @@ import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.createFetchFetchSession
 import me.him188.ani.app.domain.media.selector.DefaultMediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorContextFlowProducer
+import me.him188.ani.app.domain.player.extension.holdSearchingForFinishedCache
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
@@ -184,6 +185,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                 flowCoroutineContext = flowContext,
             )
 
+            // 「有缓存时直接播, 不搜索」: 交出去之前停住缓存以外的源, 见 PlayCacheWithoutSearchingExtension
+            holdSearchingForFinishedCache(fetchSession, settingsRepository, mediaCacheManager, bundle.subjectId, bundle.episodeId)
             MediaFetchSelectBundle(
                 fetchSession,
                 selector,
