@@ -402,29 +402,63 @@ class CloudDriveService internal constructor(
 
         override suspend fun open(shareId: String, passcode: String): String = shareToken(shareId, passcode).title
 
+        override suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<DriveFile> =
+            listShareFolder(shareId, passcode, folderId, shareToken(shareId, passcode), throttled = false).files
+    }
+
+    /**
+     * 分享搜索用的分享浏览: 列过的文件夹几分钟内复用、同时列的个数有上限 (见 [ShareFolderListings]).
+     * 播放、添加的分享、记住的文件夹用 [shareBrowser], 照常现列、不排队.
+     */
+    internal val shareSearchBrowser: DriveShareBrowser = object : DriveShareBrowser by shareBrowser {
         override suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<DriveFile> {
-            val result = mutableListOf<DriveFile>()
-            var page = 1
-            var token = shareToken(shareId, passcode)
-            var refreshed = false
-            val pageSize = api.shareListPageSize
-            while (result.size < MAX_FOLDER_ITEMS) {
-                val list = try {
-                    api.listShareFolder(shareId, passcode, token.token, folderId, page)
-                } catch (e: CloudDriveShareUnavailableException) {
-                    // 缓存的令牌可能过期了, 换一个再试一次
-                    if (refreshed) throw e
-                    refreshed = true
-                    token = shareToken(shareId, passcode, refresh = true)
-                    continue
-                }
-                result += list.files
-                rememberFileTokens(shareId, folderId, token.token, list.files)
-                if (list.files.size < pageSize || (list.total != null && result.size >= list.total)) break
-                page++
+            val token = shareToken(shareId, passcode)
+            return shareListings.getOrList(shareId, folderId, token.token) {
+                listShareFolder(shareId, passcode, folderId, token, throttled = true)
             }
-            return result
         }
+    }
+
+    private val shareListings = ShareFolderListings()
+
+    /** @param throttled 经 [shareListings] 排队发请求 (分享搜索) */
+    private suspend fun listShareFolder(
+        shareId: String,
+        passcode: String,
+        folderId: String,
+        initialToken: DriveShareToken,
+        throttled: Boolean,
+    ): ShareFolderListings.Listed {
+        val result = mutableListOf<DriveFile>()
+        var page = 1
+        var token = initialToken
+        var refreshed = false
+        val pageSize = api.shareListPageSize
+        while (result.size < MAX_FOLDER_ITEMS) {
+            val list = try {
+                val request = suspend { api.listShareFolder(shareId, passcode, token.token, folderId, page) }
+                if (throttled) shareListings.request(request) else request()
+            } catch (e: CloudDriveShareUnavailableException) {
+                // 缓存的令牌可能过期了, 换一个再试一次; 还不行就是分享没了, 搜索那边列过的也作废
+                if (refreshed) {
+                    shareListings.forget(shareId)
+                    throw e
+                }
+                refreshed = true
+                token = try {
+                    shareToken(shareId, passcode, refresh = true)
+                } catch (gone: CloudDriveShareUnavailableException) {
+                    shareListings.forget(shareId)
+                    throw gone
+                }
+                continue
+            }
+            result += list.files
+            rememberFileTokens(shareId, folderId, token.token, list.files)
+            if (list.files.size < pageSize || (list.total != null && result.size >= list.total)) break
+            page++
+        }
+        return ShareFolderListings.Listed(result, token.token)
     }
 
     private suspend fun rememberFileTokens(shareId: String, folderId: String, shareToken: String, files: List<DriveFile>) {
