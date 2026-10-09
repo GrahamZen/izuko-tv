@@ -134,6 +134,7 @@ import me.him188.ani.app.domain.player.extension.PreferredTracksExtension
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
 import me.him188.ani.app.domain.player.extension.PlaybackFailureReportExtension
+import me.him188.ani.app.domain.player.extension.SeekPreviewDecoderFaultExtension
 import me.him188.ani.app.domain.player.extension.SourceProfileExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
 import me.him188.ani.app.domain.player.extension.SwitchNextEpisodeExtension
@@ -455,6 +456,7 @@ open class EpisodeViewModel(
                 getNextEpisode = { currentEpisodeId -> computeAutoPlayNextEpisodeId(currentEpisodeId) },
             ),
             SwitchMediaOnPlayerErrorExtension,
+            SeekPreviewDecoderFaultExtension,
             PlaybackFailureReportExtension,
             SourceProfileExtension,
             AutoSelectExtension,
