@@ -519,6 +519,8 @@
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
     <string name="settings_storage_delete_cache_when_done">Delete cache after marking as watched</string>
     <string name="settings_storage_delete_cache_when_done_description">When you mark a show as Watched from a collection menu, delete all of its cached episodes on this device. Only manual marking does this</string>
+    <string name="settings_storage_play_cache_without_searching">Play downloads without searching</string>
+    <string name="settings_storage_play_cache_without_searching_description">When this episode is fully downloaded, play it right away without searching other sources. Searching starts if the download fails to play, and opening the source panel still searches</string>
     <string name="cache_deleted_when_done">Deleted %2$d cached episodes of “%1$s”</string>
     <string name="cache_deleted_when_done_playing">Deleted %2$d cached episodes of “%1$s”. The episode now playing is deleted after you leave the player</string>
     <string name="cache_deleted_when_done_after_playback">The cache of “%1$s” is deleted after you leave the player</string>
