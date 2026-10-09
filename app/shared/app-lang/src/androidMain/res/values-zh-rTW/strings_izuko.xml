@@ -362,6 +362,8 @@
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
     <string name="settings_storage_delete_cache_when_done">標記看過後刪除快取</string>
     <string name="settings_storage_delete_cache_when_done_description">在收藏選單裡把一部番標成「看過」時，刪除它在本機的全部快取。只在手動標記時刪除</string>
+    <string name="settings_storage_play_cache_without_searching">有快取時直接播，不搜尋資料來源</string>
+    <string name="settings_storage_play_cache_without_searching_description">這一集有下載完的快取時直接播放，不去搜尋其他資料來源；快取播不了時再開始搜尋，打開選源面板照常搜尋</string>
     <string name="cache_deleted_when_done">已刪除「%1$s」的 %2$d 集快取</string>
     <string name="cache_deleted_when_done_playing">已刪除「%1$s」的 %2$d 集快取，正在播放的這一集退出播放後刪除</string>
     <string name="cache_deleted_when_done_after_playback">「%1$s」的快取將在退出播放後刪除</string>

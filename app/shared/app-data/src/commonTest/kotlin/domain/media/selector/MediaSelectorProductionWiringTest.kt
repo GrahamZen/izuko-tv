@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
@@ -156,6 +157,8 @@ class MediaSelectorProductionWiringTest {
             val fakeSettings = object : SettingsRepository {
                 override val mediaSelectorSettings = staticSettings(MediaSelectorSettings.Default)
                 override val defaultMediaPreference = staticSettings(MediaPreference.Empty)
+                // 建会话时读「有缓存时直接播, 不搜索」(默认关)
+                override val mediaCacheSettings = staticSettings(MediaCacheSettings.Default)
 
                 override val danmakuEnabled get() = error("not used")
                 override val tmdbImagesDisabled get() = error("not used")
@@ -169,7 +172,6 @@ class MediaSelectorProductionWiringTest {
                 override val proxySettings get() = error("not used")
                 override val bangumiEndpointSettings get() = error("not used")
                 override val bangumiMirrorCache get() = error("not used")
-                override val mediaCacheSettings get() = error("not used")
                 override val danmakuSettings get() = error("not used")
                 override val uiSettings get() = error("not used")
                 override val themeSettings get() = error("not used")

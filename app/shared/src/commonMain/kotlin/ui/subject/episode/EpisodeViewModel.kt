@@ -128,6 +128,7 @@ import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
 import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
+import me.him188.ani.app.domain.player.extension.PlayCacheWithoutSearchingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
 import me.him188.ani.app.domain.player.extension.PreferredTracksExtension
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
@@ -456,6 +457,8 @@ open class EpisodeViewModel(
             SeekPreviewDecoderFaultExtension,
             PlaybackFailureReportExtension,
             SourceProfileExtension,
+            // 有下载完的缓存时直接播, 不搜索 (设置 - 存储); 排在自动选源前面, 暂停赶在数据源开查之前
+            PlayCacheWithoutSearchingExtension.Factory(canHold = { !mediaSelectorShown.value }),
             AutoSelectExtension,
             PauseMediaFetchWhilePlayingExtension.Factory(
                 canPause = { !mediaSelectorShown.value && !searchesToCompletion() },

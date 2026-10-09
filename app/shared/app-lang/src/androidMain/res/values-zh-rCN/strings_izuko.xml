@@ -519,6 +519,8 @@
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
     <string name="settings_storage_delete_cache_when_done">标记看过后删除缓存</string>
     <string name="settings_storage_delete_cache_when_done_description">在收藏菜单里把一部番标成「看过」时，删除它在本机的全部缓存。只在手动标记时删除</string>
+    <string name="settings_storage_play_cache_without_searching">有缓存时直接播，不搜索数据源</string>
+    <string name="settings_storage_play_cache_without_searching_description">这一集有下载完的缓存时直接播放，不去搜索其他数据源；缓存播不了时再开始搜索，打开选源面板照常搜索</string>
     <string name="cache_deleted_when_done">已删除「%1$s」的 %2$d 集缓存</string>
     <string name="cache_deleted_when_done_playing">已删除「%1$s」的 %2$d 集缓存，正在播放的这一集退出播放后删除</string>
     <string name="cache_deleted_when_done_after_playback">「%1$s」的缓存将在退出播放后删除</string>
