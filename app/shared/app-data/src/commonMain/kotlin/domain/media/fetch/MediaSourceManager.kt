@@ -44,6 +44,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMedi
 import me.him188.ani.app.domain.mediasource.codec.getArgumentOrNull
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
@@ -393,7 +394,7 @@ class MediaSourceManagerImpl(
                 }
             },
         )
-    }.flowOn(flowCoroutineContext)
+    }.combine(SourceProfiles.webViewSources, SourceProfiles::demote).flowOn(flowCoroutineContext)
 
     private fun MediaSourceFactory.create(
         proxyConfig: ProxyConfig?,
