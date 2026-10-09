@@ -25,28 +25,35 @@ import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import java.io.InterruptedIOException
 import kotlin.math.abs
 
 /**
- * 拖动预览时由主播放器解出预览位置的画面, 不另开解码器取帧: 视频输出临时接到预览浮窗里的小画面上 ([attachFrameSurface]),
- * 全屏那层没有新帧送进来, 停在开始时那一帧; 播放器对外报告的位置与字幕也停在那里 (见 [LibassExoPlayerMediampPlayer.startSeekPreview]).
+ * 拖动预览时由主播放器解出预览位置的画面, 不另开解码器取帧. 画在哪有两种 (见 [onFullScreen]):
+ * - 小画面: 视频输出临时接到预览浮窗里的小画面上 ([attachFrameSurface]), 全屏那层没有新帧送进来, 停在开始时那一帧;
+ * - 全屏: 视频输出不换, 预览位置的画面直接画在全屏上. 有的盒子的硬解经不起输出换来换去 (见 [SeekPreviewDecoderFault]).
  *
- * 本机有的数据直接读 (存在本机的部分、BT 已下载的部分、本地文件), 读出关键帧就出画面. 本机没有的先不下: 小画面停在上一个位置,
+ * 两种都是播放器对外报告的位置停在开始时 (见 [LibassExoPlayerMediampPlayer.startSeekPreview]).
+ *
+ * 本机有的数据直接读 (存在本机的部分、BT 已下载的部分、本地文件), 解出圆点那一帧就出画面. 本机没有的先不下: 小画面停在上一个位置,
  * 标成停一下就加载 ([SeekPreviewOverlay.StayToLoad]); 在那里停够 [DOWNLOAD_AFTER_MILLIS] 才去下 ([SeekPreviewOverlay.Loading]),
  * 一路挪过去的位置不下. 在线源由 [PlaybackNetworkGate] 在打开连接之前挡住; BT 由调用方给的 [isAvailable] 判断 (一跳过去就会去下那一段).
  *
  * 小画面里的帧不是圆点这里的就标出来 (见 [overlay]), 别让别处的画面冒充这里. 只有刚出过画面、又挪了一步的那一下留 [STALE_FRAME_MILLIS] 不标:
- * 本机有的一两百毫秒就出, 一路拖过去每一步都标的话只是闪.
+ * 本机有的多半半秒内就出, 一路拖过去每一步都标的话只是闪. 到时候还没被挡住的, 是本机有、正在解 (4K 从关键帧解到圆点要一两秒),
+ * 标成加载中 ([SeekPreviewOverlay.Loading]): 不用停下也会出来, 停一下就加载只留给真要联网的位置.
  *
- * 期间跳到最近的关键帧, 停下来之后再校准到圆点那一帧 (见 [refine]), 缓冲只读到出画面所需 (见 [ThrottledSourceLoadControl.previewing], 停下来看清楚之后照暂停时往后攒, 见 [park]); 同一时间只有一个跳转在做,
+ * 每一跳都精确跳到圆点上 (从前一个关键帧解到圆点), 画面只出圆点那一帧本身: 先出附近的关键帧、停下来再换成圆点那一帧的话,
+ * 停下之后画面还要再变一下. 缓冲只读到出画面所需 (见 [ThrottledSourceLoadControl.previewing], 停下来看清楚之后照暂停时往后攒, 见 [park]); 同一时间只有一个跳转在做,
  * 挪得比出画面快时只留最新的位置, 那一个出了画面 (或确认没下载、等太久) 再跳. 不用 media3 的拖动模式: 它也是等上一个跳转出了画面才做下一个,
  * 而跳到没下载的位置时数据被挡住, 那一个出不了画面, 之后的跳转就全卡住了.
  *
- * 小画面接上之前不跳 (跳了画面会出在全屏上). 由 [LibassExoPlayerMediampPlayer.startSeekPreview] 开始;
- * 确认时 [end] (输出接回全屏, 之后由调用方跳到圆点), 取消时 [cancel] (先跳回 [originMillis] 再接回全屏). 只在主线程上调用.
+ * 画在小画面上时, 小画面接上之前不跳 (跳了画面会出在全屏上). 由 [LibassExoPlayerMediampPlayer.startSeekPreview] 开始;
+ * 确认时 [end] (输出接回全屏, 之后由调用方跳到圆点), 取消时 [cancel] (先跳回 [originMillis] 再接回全屏). 画在全屏上时没有接回这一步.
+ * 只在主线程上调用.
  */
 @AndroidxOptIn(UnstableApi::class)
 class SeekPreview internal constructor(
@@ -55,6 +62,8 @@ class SeekPreview internal constructor(
     private val loadControl: ThrottledSourceLoadControl,
     /** 本机有没有这个位置的数据 (BT: 那一段下完了没有); 为 null 时只靠 [gate] 挡. */
     private val isAvailable: ((Long) -> Boolean)?,
+    /** 预览画面直接画在全屏上, 视频输出不换; 为 false 时画在 [attachFrameSurface] 给的小画面里. */
+    val onFullScreen: Boolean,
     private val seek: (Long) -> Unit,
     /** 结束预览时照常跳 (字幕时钟一起拨): 取消时跳回 [originMillis], 在圆点上确认时就地重新解一遍 (见 [endAtTarget]). */
     private val seekPlayback: (Long) -> Unit,
@@ -62,6 +71,8 @@ class SeekPreview internal constructor(
     private val setOutputSurface: (Surface?) -> Unit,
     /** 视频输出接回全屏. */
     private val restoreOutput: () -> Unit,
+    /** 换输出时要重建解码器 (见 [SeekPreviewDecoderRebuild]); 不用重建、或画在全屏上时为 null. */
+    private val decoderRebuild: SeekPreviewDecoderRebuild?,
     private val onEnd: (SeekPreview) -> Unit,
 ) {
     /** 开始预览时的播放位置: 取消预览时跳回这里. */
@@ -96,17 +107,8 @@ class SeekPreview internal constructor(
     private var seekedToTarget = false
     private var seekStartedAt = 0L
 
-    /** 最近一次挪圆点 ([seekTo]) 的时刻: 停下多久了, 见 [refine]. */
+    /** 最近一次挪圆点 ([seekTo]) 的时刻: 停下多久了, 见 [park]. */
     private var movedAt = 0L
-
-    /** 小画面上已经是 [targetMillis] 那一帧本身, 不只是附近的关键帧 (见 [refine]). */
-    private var refined = false
-
-    /** 播放器现在按精确位置跳 (校准时), 不是按关键帧. */
-    private var seekingExactly = false
-
-    /** 圆点上正好是关键帧, 没再精确跳: 播放器停在这个关键帧上, 缓冲也从它开始 (见 [endAtTarget]). */
-    private var atKeyframe = false
 
     /** 正在跳时 (或小画面还没接上时) 又挪到的位置, 见 [seekTo]. */
     private var pendingMillis: Long? = null
@@ -114,23 +116,39 @@ class SeekPreview internal constructor(
     /** 画预览的小画面, 见 [attachFrameSurface]. */
     private var frameSurface: Surface? = null
 
-    /** 小画面上画出过帧 (换一个小画面重新算): 一帧都还没有时没有旧画面要标. */
-    private var frameOnSurface = false
+    /** 接上小画面时重建过解码器 ([decoderRebuild]): 结束时要跳一次, 重建的解码器才有关键帧可解 (见 [cancel]). */
+    private var decoderRebuilt = false
+
+    /** 画预览的那一面上画出过帧 (换一个小画面重新算): 一帧都还没有时没有旧画面要标. 全屏上一开始就是开始时那一帧. */
+    private var frameOnSurface = onFullScreen
 
     /** 最近画出的那一帧在片子里的时间 (播放线程上写), 见 [isFrameOfCurrentSeek]. */
     @Volatile
     private var lastFramePositionUs = C.TIME_UNSET
 
-    private val frameMetadataListener = VideoFrameMetadataListener { presentationTimeUs, _, _, _ ->
+    /** 最近画出的那一帧交给输出面时带的时间戳 (纳秒, 播放线程上写), 见 [shownFrameTimestampNs]. */
+    @Volatile
+    private var lastFrameReleaseTimeNs = Long.MIN_VALUE
+
+    private val frameMetadataListener = VideoFrameMetadataListener { presentationTimeUs, releaseTimeNs, _, _ ->
         lastFramePositionUs = presentationTimeUs
+        lastFrameReleaseTimeNs = releaseTimeNs
     }
+
+    private val _shownFrameTimestampNs = MutableStateFlow(Long.MIN_VALUE)
+
+    /**
+     * 小画面上认作当前这一跳的那一帧交给输出面时带的时间戳 (纳秒; 还没有时为 [Long.MIN_VALUE]). 输出面收到的帧带着同一个时间戳
+     * (`SurfaceTexture.getTimestamp`): 小画面要再转一手才画出来时 (见 `SeekPreviewRelayFrame`), 据此判断这一帧画到了没有.
+     */
+    val shownFrameTimestampNs: StateFlow<Long> = _shownFrameTimestampNs.asStateFlow()
 
     private val onBlocked: () -> Unit = { handler.post(::onNetworkBlocked) }
     private val downloadTarget = Runnable { if (status == SeekPreviewStatus.NotDownloaded) startDownload() }
     private val settleCheck = Runnable(::checkSettled)
-    private val staleFrame = Runnable { if (frameOnSurface) _overlay.value = SeekPreviewOverlay.StayToLoad }
-    private val refineTarget = Runnable(::refine)
-    private val openGateForRefine = Runnable { if (status == SeekPreviewStatus.Refining) gate.open() }
+    private val staleFrame = Runnable {
+        if (frameOnSurface && status == SeekPreviewStatus.Seeking) _overlay.value = SeekPreviewOverlay.Loading
+    }
     private val parkTarget = Runnable(::park)
 
     private val listener = object : Player.Listener {
@@ -142,12 +160,8 @@ class SeekPreview internal constructor(
                 logger.info { "Seek preview at $targetMillis ms: frame at ${lastFramePositionUs / 1000} ms is not from this seek" }
                 return
             }
-            if (status == SeekPreviewStatus.Refining) {
-                logger.info { "Seek preview at $targetMillis ms: exact frame shown after ${millisSince(seekStartedAt)}ms" }
-                refined = true
-            } else {
-                logger.info { "Seek preview at $targetMillis ms: frame shown after ${millisSince(seekStartedAt)}ms" }
-            }
+            logger.info { "Seek preview at $targetMillis ms: frame shown after ${millisSince(seekStartedAt)}ms" }
+            _shownFrameTimestampNs.value = lastFrameReleaseTimeNs
             showFrame()
             seekPending()
         }
@@ -165,19 +179,19 @@ class SeekPreview internal constructor(
     init {
         loadControl.previewing = true
         gate.close(onBlocked)
-        exoPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+        exoPlayer.setSeekParameters(SeekParameters.EXACT)
         exoPlayer.addListener(listener)
         exoPlayer.setVideoFrameMetadataListener(frameMetadataListener)
-        logger.info { "Seek preview started at $originMillis ms" }
+        logger.info { "Seek preview started at $originMillis ms" + if (decoderRebuild != null) ", rebuilding the decoder on output switches" else "" }
     }
 
-    /** 主播放器跳到 [positionMillis] 附近的关键帧. 离片尾太近的跳到片尾前一点: 跳到末尾会播完, 触发自动连播. */
+    /** 主播放器精确跳到 [positionMillis]. 离片尾太近的跳到片尾前一点: 跳到末尾会播完, 触发自动连播. */
     fun seekTo(positionMillis: Long) {
         if (isEnded) return
         movedAt = System.nanoTime()
         val duration = exoPlayer.duration
         val target = if (duration > END_MARGIN_MILLIS) positionMillis.coerceIn(0, duration - END_MARGIN_MILLIS) else positionMillis
-        if (frameSurface == null ||
+        if (!onFullScreen && frameSurface == null ||
             status == SeekPreviewStatus.Seeking && millisSince(seekStartedAt) < SEEK_SETTLE_TIMEOUT_MILLIS
         ) {
             pendingMillis = target
@@ -191,18 +205,10 @@ class SeekPreview internal constructor(
         handler.removeCallbacks(downloadTarget)
         handler.removeCallbacks(settleCheck)
         handler.removeCallbacks(staleFrame)
-        handler.removeCallbacks(refineTarget)
-        handler.removeCallbacks(openGateForRefine)
         handler.removeCallbacks(parkTarget)
         gate.close(onBlocked) // 停在上一个位置时开过门: 一路挪过去的位置不下
         loadControl.previewParked = false
-        if (seekingExactly) {
-            seekingExactly = false
-            exoPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-        }
-        refined = false
-        atKeyframe = false
-        val frameWasCurrent = status == SeekPreviewStatus.Shown || status == SeekPreviewStatus.Refining
+        val frameWasCurrent = status == SeekPreviewStatus.Shown
         targetMillis = target
         seekStartedAt = System.nanoTime()
         if (isAvailable?.invoke(target) == false) {
@@ -213,18 +219,16 @@ class SeekPreview internal constructor(
         seekedToTarget = true
         hasSeeked = true
         status = SeekPreviewStatus.Seeking
-        // 小画面刚才还是上一个圆点的画面: 新画面多半马上就到, 等一小会儿再标; 本来就不是 (没下载 / 正在下 / 等太久) 的接着标
-        if (frameWasCurrent) {
-            handler.postDelayed(staleFrame, STALE_FRAME_MILLIS)
-        } else {
-            _overlay.value = SeekPreviewOverlay.StayToLoad
-        }
+        // 小画面刚才还是上一个圆点的画面: 新画面多半马上就到, 等一小会儿再标; 本来就不是 (没下载 / 正在下 / 等太久) 的接着标.
+        // 要联网的读取一会儿就被挡住 (改标停一下就加载, 见 notDownloaded); 等够了还没被挡住就是本机有、正在解, 标加载中
+        if (!frameWasCurrent) _overlay.value = SeekPreviewOverlay.StayToLoad
+        handler.postDelayed(staleFrame, STALE_FRAME_MILLIS)
         seek(target)
         handler.postDelayed(settleCheck, SETTLE_CHECK_MILLIS)
     }
 
     /**
-     * 跳了 (或开始下了) 还没出画面时隔一会儿看一眼: 落在和上一个位置同一个关键帧上时播放器不重新解码 (不出新画面), 也不重新加载 (不会再被挡一次),
+     * 跳了 (或开始下了) 还没出画面时隔一会儿看一眼: 跳到播放器正停着的位置时它什么也不做 (不重新解码、不出新画面), 也不重新加载 (不会再被挡一次),
      * 只能从状态上看出这一跳已经有了结果 —— 有读取正被挡着就是没下载, 播放器就绪了就是画面已经是这里的.
      *
      * 跳了 [SEEK_SETTLE_TIMEOUT_MILLIS] 既没出画面也没被挡住, 是数据还在路上 (BT 按下载进度估的位置不准, 那一段其实没下完, 跳过去就在下了):
@@ -232,11 +236,10 @@ class SeekPreview internal constructor(
      */
     private fun checkSettled() {
         if (isEnded) return
-        if (status != SeekPreviewStatus.Seeking && status != SeekPreviewStatus.Downloading && status != SeekPreviewStatus.Refining) return
+        if (status != SeekPreviewStatus.Seeking && status != SeekPreviewStatus.Downloading) return
         when {
             status == SeekPreviewStatus.Seeking && gate.isHoldingReads -> notDownloaded()
             exoPlayer.playbackState == Player.STATE_READY -> {
-                if (status == SeekPreviewStatus.Refining) refined = true
                 showFrame()
                 seekPending()
             }
@@ -252,13 +255,19 @@ class SeekPreview internal constructor(
 
     /**
      * 接上 / 换掉画预览的小画面 ([surface] 为 null: 小画面没了, 输出哪儿也不画, 全屏仍停着). 接上之后跳到当前要看的位置:
-     * 停着的播放器换输出面后不会把已经解出的那帧再画一遍.
+     * 停着的播放器换输出面后不会把已经解出的那帧再画一遍. 画在全屏上时 ([onFullScreen]) 什么也不做.
      */
     fun attachFrameSurface(surface: Surface?) {
-        if (isEnded) return
+        if (isEnded || onFullScreen) return
         frameSurface = surface
         frameOnSurface = false
+        if (surface != null && decoderRebuild != null) {
+            decoderRebuild.rebuildOnNextOutput()
+            decoderRebuilt = true
+        }
         setOutputSurface(surface)
+        SeekPreviewDecoderFault.markOutputSwitched()
+        SeekPreviewCrashMarker.onPreviewFrame()
         if (surface == null) return
         val target = pendingMillis ?: targetMillis.takeIf { hasSeeked } ?: return
         pendingMillis = null
@@ -267,7 +276,7 @@ class SeekPreview internal constructor(
 
     /**
      * 刚画出的这一帧是不是当前这一跳的. 当前位置没跳 (BT 没下载的位置) 时不是; 跳了也可能不是 —— 之前那一跳的帧刚画出、通知还没送到时又跳了,
-     * 或者换小画面后补画的那一帧. 停着的播放器跳完后位置就在那个关键帧上, 画出的帧时间与之对得上才是这一跳的.
+     * 或者换小画面后补画的那一帧. 停着的播放器跳完后位置就在圆点上, 画出的是圆点处那一帧, 帧时间与之对得上才是这一跳的.
      */
     private fun isFrameOfCurrentSeek(): Boolean {
         if (!seekedToTarget) return false
@@ -276,23 +285,12 @@ class SeekPreview internal constructor(
         return abs(framePositionUs / 1000 - exoPlayer.currentPosition) <= FRAME_POSITION_TOLERANCE_MILLIS
     }
 
-    /** 小画面上已经是当前位置的画面. 只是附近的关键帧的话, 停下来之后再校准到圆点那一帧 (见 [refine]). */
+    /** 小画面上已经是圆点那一帧: 停够 [DOWNLOAD_AFTER_MILLIS] 就往后缓冲 (见 [park]). */
     private fun showFrame() {
         handler.removeCallbacks(staleFrame)
-        handler.removeCallbacks(openGateForRefine)
         status = SeekPreviewStatus.Shown
         _overlay.value = SeekPreviewOverlay.None
         if (pendingMillis != null) return
-        if (refined) {
-            schedulePark()
-        } else {
-            handler.removeCallbacks(refineTarget)
-            handler.postDelayed(refineTarget, (REFINE_AFTER_MILLIS - millisSince(movedAt)).coerceAtLeast(0))
-        }
-    }
-
-    /** 圆点那一帧已经出来了: 停够 [DOWNLOAD_AFTER_MILLIS] 就往后缓冲 (见 [park]). */
-    private fun schedulePark() {
         handler.removeCallbacks(parkTarget)
         handler.postDelayed(parkTarget, (DOWNLOAD_AFTER_MILLIS - millisSince(movedAt)).coerceAtLeast(0))
     }
@@ -302,33 +300,10 @@ class SeekPreview internal constructor(
      * 要联网的也放行 (已经停够了). 再挪一步时播放器跳转会掐掉这次加载, 不耽误下一个位置.
      */
     private fun park() {
-        if (isEnded || status != SeekPreviewStatus.Shown || !refined || pendingMillis != null) return
+        if (isEnded || status != SeekPreviewStatus.Shown || !seekedToTarget || pendingMillis != null) return
         logger.info { "Seek preview at $targetMillis ms: parked, buffering ahead" }
         gate.open()
         loadControl.previewParked = true
-    }
-
-    /**
-     * 停在一个位置上之后校准: 预览跳的是离圆点最近的关键帧 (解得快), 这时再按精确位置跳一次, 小画面换成圆点那一帧本身,
-     * 播放器也就停在圆点上、后面缓冲着一点 —— 确认时不用再跳, 落点准、马上就能播. 校准期间小画面留着关键帧那一帧, 不标.
-     * 校准要补的数据大多在本机 (关键帧之后、圆点之前那一段); 要联网的话照旧等停够 [DOWNLOAD_AFTER_MILLIS] 才放行.
-     */
-    private fun refine() {
-        if (isEnded || status != SeekPreviewStatus.Shown || refined || pendingMillis != null) return
-        if (abs(exoPlayer.currentPosition - targetMillis) <= FRAME_POSITION_TOLERANCE_MILLIS) {
-            refined = true // 关键帧就在圆点上
-            atKeyframe = true
-            schedulePark()
-            return
-        }
-        status = SeekPreviewStatus.Refining
-        seekStartedAt = System.nanoTime()
-        seekingExactly = true
-        exoPlayer.setSeekParameters(SeekParameters.EXACT)
-        val untilDownload = DOWNLOAD_AFTER_MILLIS - millisSince(movedAt)
-        if (untilDownload <= 0) gate.open() else handler.postDelayed(openGateForRefine, untilDownload)
-        seek(targetMillis)
-        handler.postDelayed(settleCheck, SETTLE_CHECK_MILLIS)
     }
 
     /** 当前这一跳有了结果: 期间又挪过的话接着跳到最新的位置. */
@@ -339,12 +314,11 @@ class SeekPreview internal constructor(
     }
 
     /**
-     * 播放器已经精确停在最近一次 [seekTo] 的位置上 (校准完, 或正在校准: 那一跳本来就是精确跳到这里), 后面也缓冲着一点:
+     * 播放器已经精确停在最近一次 [seekTo] 的位置上、那一帧也画出来了, 后面也缓冲着一点:
      * 确认时直接接着播就行, 再跳一次反而要重新缓冲.
      */
     val isAtTarget: Boolean
-        get() = !isEnded && seekedToTarget && pendingMillis == null &&
-            (status == SeekPreviewStatus.Shown && refined || status == SeekPreviewStatus.Refining)
+        get() = !isEnded && seekedToTarget && pendingMillis == null && status == SeekPreviewStatus.Shown
 
     /**
      * 结束预览, 播放器恢复原来的跳转方式与缓冲、恢复联网, 输出接回全屏. 不跳转: 之后由调用方跳到圆点 (那一跳会清空解码器).
@@ -357,7 +331,7 @@ class SeekPreview internal constructor(
     /**
      * 确认时播放器已经停在圆点上 ([isAtTarget]): 结束预览, 输出接回全屏后就地重新解一遍第一帧再播 (数据都在缓冲里, 不联网).
      * 换输出时解码器给小画面多解出的几帧会丢, 不重解的话一开播声音和弹幕先走、画面停一会儿. 重解期间 [holdingFrame] 仍为 true.
-     * 播放器要停着调, 之后再置播放.
+     * 画在全屏上时全屏已经是这一帧, 不重解. 播放器要停着调, 之后再置播放.
      */
     fun endAtTarget() {
         if (!isEnded) finish(FinishMode.EndAtTarget)
@@ -365,11 +339,13 @@ class SeekPreview internal constructor(
 
     /**
      * 取消: 结束预览并跳回 [originMillis]. 先跳再把输出接回全屏: 跳转会清空解码器, 预览位置已经解出、还没画的帧就不会画到全屏上,
-     * 全屏一直停在开始那一帧, 直到原处的画面重新解出来. 跳回去要重新缓冲一下, 这期间 [holdingFrame] 仍为 true.
+     * 全屏一直停在开始那一帧, 直到原处的画面重新解出来 (画在全屏上时则是停在最后预览的那一帧, 直到原处的画面解出来).
+     * 跳回去要重新缓冲一下, 这期间 [holdingFrame] 仍为 true.
+     * 换输出时重建解码器的 ([decoderRebuild]) 先接回全屏再跳, 没跳过也跳: 重建的解码器从下一个关键帧解起, 要靠这一跳从原处的关键帧解.
      * 已经结束的 (比如换了媒体) 什么也不做.
      */
     fun cancel() {
-        if (!isEnded) finish(if (hasSeeked) FinishMode.Cancel else FinishMode.End)
+        if (!isEnded) finish(if (hasSeeked || decoderRebuilt) FinishMode.Cancel else FinishMode.End)
     }
 
     private enum class FinishMode { End, EndAtTarget, Cancel }
@@ -379,8 +355,6 @@ class SeekPreview internal constructor(
         handler.removeCallbacks(downloadTarget)
         handler.removeCallbacks(settleCheck)
         handler.removeCallbacks(staleFrame)
-        handler.removeCallbacks(refineTarget)
-        handler.removeCallbacks(openGateForRefine)
         handler.removeCallbacks(parkTarget)
         frameSurface = null
         exoPlayer.removeListener(listener)
@@ -391,23 +365,31 @@ class SeekPreview internal constructor(
         gate.open()
         when (mode) {
             FinishMode.Cancel -> {
-                seekPlayback(originMillis)
-                restoreOutput()
+                if (decoderRebuilt) {
+                    // 先跳的话, 跳回去后旧解码器可能先吃掉原处的关键帧, 重建的解码器只能等下一个
+                    restoreFullScreenOutput()
+                    seekPlayback(originMillis)
+                } else {
+                    seekPlayback(originMillis)
+                    restoreFullScreenOutput()
+                }
                 logger.info { "Seek preview canceled at $targetMillis ms, back to $originMillis ms" }
             }
 
             FinishMode.EndAtTarget -> {
                 val position = exoPlayer.currentPosition
                 val buffered = exoPlayer.totalBufferedDuration
-                restoreOutput()
-                // 跳到当前位置播放器什么也不做 (不清空解码器), 错开一毫秒. 精确跳过来的往前错: 缓冲从前一个关键帧攒起, 还在缓冲里, 往后的也还够开播;
-                // 停在关键帧上的缓冲就从这一帧开始, 往前错就出了缓冲要重新读, 只能往后错
-                seekPlayback(if (atKeyframe || position == 0L) position + 1 else position - 1)
+                // 画在全屏上时输出没换过, 全屏上已经是这一帧, 直接接着播
+                if (!onFullScreen) {
+                    restoreFullScreenOutput()
+                    // 跳到当前位置播放器什么也不做 (不清空解码器), 错开一毫秒. 往前错: 精确跳过来的缓冲从前一个关键帧攒起, 还在缓冲里
+                    seekPlayback(if (position == 0L) position + 1 else position - 1)
+                }
                 logger.info { "Seek preview ended at $targetMillis ms, player already there ($position ms, $buffered ms buffered)" }
             }
 
             FinishMode.End -> {
-                restoreOutput()
+                restoreFullScreenOutput()
                 logger.info { "Seek preview ended at $targetMillis ms" }
             }
         }
@@ -419,6 +401,15 @@ class SeekPreview internal constructor(
             _holdingFrame.value = false
         }
         onEnd(this)
+    }
+
+    /** 小画面上画的: 视频输出接回全屏. 画在全屏上的输出没换过, 什么也不做. */
+    private fun restoreFullScreenOutput() {
+        if (onFullScreen) return
+        decoderRebuild?.rebuildOnNextOutput()
+        restoreOutput()
+        SeekPreviewDecoderFault.markOutputSwitched()
+        SeekPreviewCrashMarker.onFullScreen()
     }
 
     private fun releaseFrame() {
@@ -467,8 +458,11 @@ class SeekPreview internal constructor(
         /** 预览最多跳到片尾前这么多. */
         private const val END_MARGIN_MILLIS = 1_000L
 
-        /** 一跳这么久还没结果 (没出画面也没被挡住) 就不再等它: 直接跳下一个位置, 没有下一个就去下这里. */
-        private const val SEEK_SETTLE_TIMEOUT_MILLIS = 1_500L
+        /**
+         * 一跳这么久还没结果 (没出画面也没被挡住) 就不再等它: 直接跳下一个位置, 没有下一个就去下这里.
+         * 精确跳要从前一个关键帧一路解到圆点, 慢的盒子上本机有的也要一两秒, 等得比这短的话一路拖时每一跳都被下一跳顶掉, 一帧也出不来.
+         */
+        private const val SEEK_SETTLE_TIMEOUT_MILLIS = 3_000L
 
         /** 在没下载的位置停这么久才去下. */
         private const val DOWNLOAD_AFTER_MILLIS = 1_000L
@@ -479,28 +473,25 @@ class SeekPreview internal constructor(
         /** 跳了还没结果时隔多久看一眼 (见 checkSettled). */
         private const val SETTLE_CHECK_MILLIS = 250L
 
-        /** 刚出过画面又挪了一步, 新画面这么久还没出来才把小画面里的旧画面标出来. */
-        private const val STALE_FRAME_MILLIS = 300L
+        /** 挪了一步, 新画面这么久还没出来 (也没被挡住) 才把小画面里的旧画面标成加载中: 本机有的精确跳多半半秒内出画面. */
+        private const val STALE_FRAME_MILLIS = 600L
 
-        /** 画出的帧时间与播放器位置差这么多以内算对得上 (见 isFrameOfCurrentSeek); 相邻两个关键帧至少差这么多. */
+        /** 画出的帧时间与播放器位置差这么多以内算对得上 (见 isFrameOfCurrentSeek): 精确跳画出的帧与圆点差不到一帧. */
         private const val FRAME_POSITION_TOLERANCE_MILLIS = 100L
-
-        /** 停下这么久 (且关键帧那一帧已经出来) 才校准到圆点那一帧 (见 refine): 一路拖过去时不白解. */
-        private const val REFINE_AFTER_MILLIS = 300L
 
         private fun millisSince(nanos: Long) = (System.nanoTime() - nanos) / 1_000_000
     }
 }
 
-/** 预览浮窗里的小画面该怎么标, 见 [SeekPreview.overlay]. */
+/** 预览画面 (小画面或全屏, 见 [SeekPreview.onFullScreen]) 该怎么标, 见 [SeekPreview.overlay]. */
 enum class SeekPreviewOverlay {
-    /** 不标: 小画面就是圆点这里的画面, 或者刚挪了一步、新画面马上就到. */
+    /** 不标: 画面就是圆点这里的, 或者刚挪了一步、新画面马上就到. */
     None,
 
-    /** 小画面是别处的画面, 这里的还没出来: 盖成黑底, 提示停一下就加载. */
+    /** 画面是别处的, 这里的要联网才有、还没去下: 盖成黑底, 提示停一下就加载. */
     StayToLoad,
 
-    /** 在这里停够了, 正在加载这里的画面: 黑底上画进度环. */
+    /** 画面是别处的, 正在加载这里的画面 (停够了在下, 或者本机有、正在解): 黑底上画进度环. */
     Loading,
 }
 
@@ -511,9 +502,6 @@ private enum class SeekPreviewStatus {
 
     /** 跳了, 那里的画面还没出来. */
     Seeking,
-
-    /** 附近的关键帧已经出来了, 正在校准到圆点那一帧 (见 [SeekPreview.refine]). */
-    Refining,
 
     /** 跳到的位置本机没有数据, 小画面停在上一个位置; 停够一会儿才去下. */
     NotDownloaded,
