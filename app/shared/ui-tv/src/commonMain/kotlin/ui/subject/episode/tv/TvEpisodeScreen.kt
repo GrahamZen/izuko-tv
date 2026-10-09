@@ -100,6 +100,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.data.models.preference.SeekPreviewDisplay
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
@@ -143,6 +144,7 @@ import me.him188.ani.app.videoplayer.ui.LocalSubtitleObstructionTop
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
+import me.him188.ani.app.videoplayer.ui.progress.SeekPreviewFullScreenLayer
 import me.him188.ani.app.videoplayer.ui.progress.rememberPlayerSeekPreviewState
 import me.him188.ani.app.videoplayer.ui.progress.rememberMediaProgressSliderState
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
@@ -374,13 +376,14 @@ fun TvEpisodeScreenContent(
     }
 
     // 拖拽预览浮窗的画面位 (小圆点上方): 画面停着时由主播放器把预览位置的画面画进来, 不另开解码器取缩略图 (见 PlayerSeekPreviewState);
-    // 边播边选时主播放器腾不出来, 浮窗只显示时间.
+    // 设置成画在全屏上 (SeekPreviewDisplay) 时预览画面直接出在全屏上, 浮窗只显示时间. 边播边选时主播放器腾不出来, 浮窗只显示时间.
     // 尊重"显示视频帧预览"设置项 (与手机端同一个开关): 关掉后浮窗只剩时间文本.
     val seekPreview = if (vm.videoScaffoldConfig.enableFramePreview) {
         rememberPlayerSeekPreviewState(vm.player, vm.cacheProgressInfoFlow)
     } else {
         null
     }
+    TvSeekPreviewFaultNotice()
 
     val progressSliderState = rememberMediaProgressSliderState(
         vm.player,
@@ -438,7 +441,7 @@ fun TvEpisodeScreenContent(
 
     /**
      * 进入拖拽预览 (已经在预览中就什么都不做): 暂停与否交给 [TvScrubPlayback].
-     * 画面停着时由主播放器解出预览位置的画面, 画进浮窗的小画面里, 全屏停在当前这一帧 (见 PlayerSeekPreviewState).
+     * 画面停着时由主播放器解出预览位置的画面, 画进浮窗的小画面里, 全屏停在当前这一帧; 设置成画在全屏上时直接画在全屏上 (见 PlayerSeekPreviewState).
      * 边播边选时主播放器腾不出来, 浮窗只显示时间.
      */
     fun beginScrub() {
@@ -446,7 +449,7 @@ fun TvEpisodeScreenContent(
         val playing = vm.player.state.value.playWhenReady
         scrubPlayback.onEnter()
         if (playing && !vm.videoScaffoldConfig.pauseVideoOnScrub) return
-        seekPreview?.begin()
+        seekPreview?.begin(onFullScreen = vm.videoScaffoldConfig.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN)
     }
 
     /** 纯视频态长按或连按第二次: 升级成拖拽预览态. */
@@ -1657,10 +1660,19 @@ fun TvEpisodeScreenContent(
 
                 // 弹幕层
                 AniAnimatedVisibility(page.danmakuEnabled, Modifier.matchParentSize()) {
-                    // 录一份供 Web 控制台截图读回 (见 TvPlayerScreenshot)
-                    Box(Modifier.matchParentSize().then(rememberTvScreenshotDanmakuLayer())) {
+                    // 录一份供 Web 控制台截图读回 (见 TvPlayerScreenshot).
+                    // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上 (状态在 graphicsLayer 里读, 不重组)
+                    Box(
+                        Modifier.matchParentSize().then(rememberTvScreenshotDanmakuLayer())
+                            .graphicsLayer { alpha = if (seekPreview?.hidesFullScreenExtras == true) 0f else 1f },
+                    ) {
                         PlayerDanmakuHost(vm.player, danmakuHostState, vm.uiDanmakuEventFlow)
                     }
+                }
+
+                // 拖动预览画在全屏上时, 全屏上的画面还是别处的那会儿盖成黑底并提示 (见 SeekPreviewFullScreenLayer)
+                if (seekPreview != null) {
+                    SeekPreviewFullScreenLayer(seekPreview, Modifier.matchParentSize())
                 }
 
                 // 缓冲/加载指示 (居中悬浮).
