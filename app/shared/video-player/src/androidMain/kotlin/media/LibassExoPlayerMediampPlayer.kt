@@ -37,7 +37,6 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
-import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.CoroutineScope
@@ -697,9 +696,9 @@ private class LibassMediaSourcePipeline(
         renderType = AssRenderType.OVERLAY_OPEN_GL,
         config = AssHandlerConfig(maxRenderPixels = 1920 * 1080),
     )
-    private val subtitleParserFactory = AssSubtitleParserFactory(assHandler)
+    private val subtitleParserFactory = CharsetFixingSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
     private val extractorsFactory = DefaultExtractorsFactory()
-        .withAssMkvSupport(subtitleParserFactory, assHandler)
+        .withAssMkv(subtitleParserFactory, assHandler)
 
     /** 被限速的网盘直链换一套缓冲策略 (见 [ThrottledSourceLoadControl]); 每准备一个媒体按它的提示头切换. */
     val loadControl = ThrottledSourceLoadControl()
