@@ -297,6 +297,7 @@ class LabelFirstRawTitleParser : RawTitleParser() {
                     return EpisodeRange.single(str)
                 }
             }
+            parseAbsoluteNumberedEpisode(str)?.let { return it }
 //            collectionPattern.find(str)?.let { result ->
 //                val startGroup = result.groups["start"]
 //                val endGroup = result.groups["end"]
