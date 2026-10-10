@@ -32,7 +32,6 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
-import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.CoroutineScope
@@ -524,9 +523,9 @@ private class LibassMediaSourcePipeline(
         renderType = AssRenderType.OVERLAY_OPEN_GL,
         config = AssHandlerConfig(maxRenderPixels = 1920 * 1080),
     )
-    private val subtitleParserFactory = AssSubtitleParserFactory(assHandler)
+    private val subtitleParserFactory = CharsetFixingSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
     private val extractorsFactory = DefaultExtractorsFactory()
-        .withAssMkvSupport(subtitleParserFactory, assHandler)
+        .withAssMkv(subtitleParserFactory, assHandler)
 
     // 播放器构造后由 LibassExoPlayerMediampPlayer 设置; 每个视频轨的最终 Format 经这里回调
     // 给它, 用来决定要不要把 dataspace 直接写到 Surface 上 (NVIDIA h264 硬解不理 MediaFormat).
