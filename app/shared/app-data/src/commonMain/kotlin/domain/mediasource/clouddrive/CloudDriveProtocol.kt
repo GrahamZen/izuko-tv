@@ -123,6 +123,7 @@ data class DriveEnvelope(
  *
  * @property isDir 是不是文件夹; 值在 [dirValues] 里算文件夹
  * @property updatedAt 修改时间 (毫秒时间戳; [updatedAtSeconds] 时是秒)
+ * @property duration 视频时长 (秒); 与文件大小一起算出平均码率, 显示在选源列表里
  * @property category 文件类别; 在 [videoCategories] 里的算视频. 没有类别字段时按扩展名认视频
  * @property shareToken 分享里的文件转存时要带的凭证
  */
@@ -137,6 +138,7 @@ data class DriveFileFields(
     val updatedAt: String = "",
     val updatedAtSeconds: Boolean = false,
     val videoHeight: String = "",
+    val duration: String = "",
     val category: String = "",
     val videoCategories: List<String> = emptyList(),
     val shareToken: String = "",
