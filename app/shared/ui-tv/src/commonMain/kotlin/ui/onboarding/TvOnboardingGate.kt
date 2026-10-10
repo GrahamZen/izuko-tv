@@ -29,6 +29,11 @@ object TvOnboardingGate {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, true).apply()
     }
 
+    /** 同 [markDone], 同步写盘: 换电视搬完设置后紧接着重启进程. */
+    fun markDoneNow(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, true).commit()
+    }
+
     /** 下次启动重新走引导. 紧接着要重启进程, 所以同步写盘. */
     fun reset(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, false).commit()
