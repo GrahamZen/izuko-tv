@@ -94,7 +94,7 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         EpisodeCollectionPendingOpEntity::class,
         RecommendationFeedEntity::class, // 6.1.x: 探索页推荐的结果缓存
     ],
-    version = 27,
+    version = 28,
     autoMigrations = [
         AutoMigration(from = 1, to = 2, spec = Migrations.Migration_1_2::class),
         AutoMigration(from = 2, to = 3, spec = Migrations.Migration_2_3::class),
@@ -131,6 +131,9 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         // subject_collection 加 imageThumb (默认空字符串) / tmdbArt (可空) 两列. 都是纯加, 不需要 spec.
         // 这三项来自上游, 上游分三步 (24 -> 25 -> 26 -> 27) 加的; fork 的 24/25/26 已发布, 号不能复用, 合成这一步.
         AutoMigration(from = 26, to = 27),
+        // 27 -> 28: subject_collection 加 relations_splitSeason (拆分季, 可空; 纯加列, 不需要 spec). 来自上游 27 -> 28;
+        // 上游由服务端识别填它, fork 直连没有这份数据, 一直为空, 选源时照常按系列关系匹配.
+        AutoMigration(from = 27, to = 28),
     ],
     exportSchema = true,
 )
