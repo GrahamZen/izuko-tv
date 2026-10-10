@@ -47,7 +47,7 @@ class SubjectMediaFetchSessions(
      */
     suspend fun get(request: MediaFetchRequest, generation: Int = 0): MediaFetchSession = lock.withLock {
         current?.let { (currentRequest, session) ->
-            if (currentGeneration == generation && currentRequest.isSameSubjectQuery(request)) {
+            if (currentGeneration == generation && currentRequest.isSameSubjectQuery(request) && currentRequest.servesEpisodeOf(request)) {
                 retryFailedSources(session)
                 return@withLock session
             }
