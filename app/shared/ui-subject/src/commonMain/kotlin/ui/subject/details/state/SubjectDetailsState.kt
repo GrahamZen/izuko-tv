@@ -26,6 +26,7 @@ import me.him188.ani.app.data.models.subject.SubjectAiringInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
+import me.him188.ani.app.data.network.TmdbAiring
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.rating.EditableRatingActions
@@ -90,6 +91,8 @@ class SubjectDetailsState(
     val bangumiSummaryFallbackFlow: Flow<String?> = flowOf(""),
     /** 各集播放进度 (episodeId -> 0..1 观看比例, TV 选集卡片进度条用); 无记录的集不含在内. */
     val playProgressFlow: Flow<Map<Int, Float>> = flowOf(emptyMap()),
+    /** TMDB 上的播出情况, TV 详情页据此修正播出状态文字 (见 rememberTmdbAiringLabelState); null = 没匹配到或加载中. 惰性同上. */
+    val tmdbAiringFlow: Flow<TmdbAiring?> = flowOf(null),
     actions: SubjectDetailsActions = SubjectDetailsActions.Noop,
 ) : SubjectDetailsActions by actions {
     val detailsTabLazyListState = LazyListState()
