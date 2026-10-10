@@ -800,7 +800,8 @@ object TvRemoteControl {
         }
         fun create(port: Int) = LanHttpServer(
             ::handle, port = port, token = token,
-            maxBodyBytes = RemoteAppUpdate::maxBodyBytes,
+            // 放宽请求体上限的只有上传安装包的分块与导入设置备份两处
+            maxBodyBytes = { path -> RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteAppUpdate.maxBodyBytes(path) },
             // 手机授权完经 Worker 跳回来的那一跳带不了 token, 见 RemoteAccount.relayReturn
             publicHandlers = mapOf(BangumiOAuthRelay.RETURN_PATH to RemoteAccount::relayReturn),
         )

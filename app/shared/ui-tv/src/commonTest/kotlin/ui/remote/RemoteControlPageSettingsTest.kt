@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * 「设置」标签的「常规」页: 分类列表与各组卡片对得上; 清单登记的通用项 (见 [RemoteSettingsCatalog]) 有地方画,
@@ -48,8 +49,8 @@ class RemoteControlPageSettingsTest {
                 "look" to listOf("set-look"),
                 "connect" to listOf("set-front", "set-keep"),
                 "network" to listOf("set-proxy", "set-bangumi", "set-tmdb"),
-                "resources" to listOf("set-generic", "set-dmfilter"),
-                "maintain" to listOf("set-update", "set-logs", "set-perf"),
+                "resources" to listOf("set-generic", "set-pikpak", "set-dmfilter"),
+                "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup"),
             ),
             groups,
         )
@@ -76,5 +77,29 @@ class RemoteControlPageSettingsTest {
         assertContains(page, """<div id="set-generic"></div>""")
         assertContains(page, "renderGeneric(d.generic)")
         assertContains(page, "bindGeneric(genBox, 'api/settings/generic/set')")
+    }
+
+    /** PikPak 卡片随 `api/settings` 画, 提交到 RemotePikPakSettings 的接口; 设置备份走 RemoteSettingsBackup 的两个接口 */
+    @Test
+    fun `pikpak and backup cards use their endpoints`() {
+        assertContains(page, SETTINGS_EXTRAS_SCRIPT)
+        assertContains(page, "if (window.renderPikPak) window.renderPikPak(d.pikpak);")
+        assertContains(SETTINGS_EXTRAS_SCRIPT, "post('api/settings/pikpak', new FormData(e.target))")
+        assertContains(SETTINGS_EXTRAS_SCRIPT, "post('api/settings/pikpak/test', {})")
+        // 密码框不回显已存的密码
+        assertContains(SETTINGS_EXTRAS_SCRIPT, """<input type="password" name="password" autocomplete="new-password" placeholder="""")
+        assertContains(SETTINGS_EXTRAS_SCRIPT, "getJson('${RemoteSettingsBackup.EXPORT_PATH}', 20000)")
+        assertContains(SETTINGS_EXTRAS_SCRIPT, "fetchT('${RemoteSettingsBackup.IMPORT_PATH}', ")
+        // 导入前先确认
+        assertContains(SETTINGS_EXTRAS_SCRIPT, "if (!confirm(T('这会覆盖当前应用的所有设置，且无法撤销，确认导入吗？'))) return;")
+    }
+
+    /** 网页上新加的文案都在译文表里 (英文页面不会漏出简体) */
+    @Test
+    fun `new card texts are translated`() {
+        val keys = REMOTE_I18N_TABLE.map { it.zh }.toSet()
+        val texts = Regex("""(?<![\w.])T\('([^']+)'""").findAll(SETTINGS_EXTRAS_SCRIPT).map { it.groupValues[1] }.toList()
+        assertTrue(texts.size > 10)
+        for (t in texts) assertTrue(t in keys, "没有译文：$t")
     }
 }

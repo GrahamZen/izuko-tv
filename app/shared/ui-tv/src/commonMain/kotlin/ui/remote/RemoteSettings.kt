@@ -55,7 +55,8 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Web 控制台的「设置」标签: 只收**要打字**的那几项 (代理地址与账号、Bangumi 与 TMDB 图床的地址, 以及 [RemoteSettingsCatalog] 里登记的通用项), 开关类设置留在电视上改 ——
+ * Web 控制台的「设置」标签: 只收**要打字**的那几项 (代理地址与账号、Bangumi 与 TMDB 图床的地址、PikPak 账号 ([RemotePikPakSettings]),
+ * 以及 [RemoteSettingsCatalog] 里登记的通用项) 和要存取文件的设置备份 ([RemoteSettingsBackup]), 开关类设置留在电视上改 ——
  * 改完要当场看效果的东西, 放到手机上反而得来回抬头. debug 包另有「调试」组, 放开发时临时要调的开关 (见 [RemoteDebugSettings]).
  *
  * 代理的存法与设置页一致 (`ProxyUIConfig.toDataSettings`), 地址用同一个校验器; 改完即生效, 不用重启 (HTTP 客户端池按
@@ -79,7 +80,12 @@ internal object RemoteSettings {
                 request.path == "api/settings" && get -> state()
                 // 「调试」组的只读卡片: 播放链路探针 (debug 包才给, 见 RemoteDebugProbes)
                 request.path == "api/settings/debug/probes" && get -> RemoteDebugProbes.probes()
+                // 「维护」里的设置备份 (导出成文件 / 从文件导入), 见 RemoteSettingsBackup
+                request.path.startsWith("api/settings/backup/") -> RemoteSettingsBackup.handle(request)
                 !post -> null
+                // PikPak 账号 (启用开关留在电视上), 见 RemotePikPakSettings
+                request.path == "api/settings/pikpak" -> RemotePikPakSettings.save(settingsRepository, request)
+                request.path == "api/settings/pikpak/test" -> RemotePikPakSettings.test()
                 request.path == "api/settings/proxy" -> saveProxy(request)
                 request.path == "api/settings/proxy/test" -> testConnection()
                 request.path == "api/settings/bangumi" -> saveBangumiEndpoint(request)
@@ -121,6 +127,7 @@ internal object RemoteSettings {
         val tmdbImageEndpoint = tmdbImageEndpoints.selection.flow.first()
         val tmdbImageHosts = tmdbImageEndpoints.candidates.first()
         val generic = RemoteGenericSettings.describe(settingsRepository)
+        val pikpak = RemotePikPakSettings.describe(settingsRepository.pikpakConfig.flow.first())
         val debug = if (RemoteDebugSettings.enabled) RemoteDebugSettings.describe(settingsRepository) else null
         buildJsonObject {
             putJsonObject("proxy") {
@@ -145,6 +152,7 @@ internal object RemoteSettings {
                 putJsonArray("hosts") { tmdbImageHosts.forEach { add(it) } }
             }
             put("generic", generic)
+            put("pikpak", pikpak)
             debug?.let { put("debug", it) }
             put("front", TvRemoteControl.frontState())
             put("keep", TvRemoteControl.keepState())

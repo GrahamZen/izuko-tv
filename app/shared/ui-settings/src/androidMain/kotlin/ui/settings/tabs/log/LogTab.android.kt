@@ -58,8 +58,8 @@ import java.io.RandomAccessFile
 
 private val logger = logger("LogTab")
 
-private const val EXPORT_FILE_NAME = "ani-app-log.txt"
-private const val EXPORT_MIME_TYPE = "text/plain"
+internal const val EXPORT_FILE_NAME = "ani-app-log.txt"
+internal const val EXPORT_MIME_TYPE = "text/plain"
 
 @Composable
 internal actual fun ColumnScope.PlatformLoggingItems(listItemColors: ListItemColors) {
@@ -208,7 +208,7 @@ private suspend fun readLogTailForClipboard(logFile: File): String = withContext
 /**
  * 把日志写进用户在系统选择器里选定的位置 (可以是 U 盘).
  */
-private suspend fun exportLogFileTo(context: Context, logFile: File, target: Uri, toaster: Toaster) {
+internal suspend fun exportLogFileTo(context: Context, logFile: File, target: Uri, toaster: Toaster) {
     runCatching {
         withContext(Dispatchers.IO) {
             context.contentResolver.openOutputStream(target)?.use { output ->
@@ -231,7 +231,7 @@ private suspend fun exportLogFileTo(context: Context, logFile: File, target: Uri
  * 选这个位置是因为它不需要任何存储权限, 而文件管理器、adb pull、插 U 盘的电脑都能读到 ——
  * 用户拿不出选择器时至少还有个能取的地方.
  */
-private suspend fun exportLogFileToAppDir(context: Context, logFile: File, toaster: Toaster) {
+internal suspend fun exportLogFileToAppDir(context: Context, logFile: File, toaster: Toaster) {
     runCatching {
         withContext(Dispatchers.IO) {
             val dir = (context.getExternalFilesDir(null) ?: context.filesDir).resolve("logs")

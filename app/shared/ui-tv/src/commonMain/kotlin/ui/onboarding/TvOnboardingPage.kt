@@ -53,22 +53,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
@@ -81,38 +82,37 @@ import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
-import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
-import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
-import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
-import me.him188.ani.app.ui.main.LocalTvStartupLogo
-import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
-import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
-import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.domain.foundation.Reachability
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
+import me.him188.ani.app.ui.foundation.Res
+import me.him188.ani.app.ui.foundation.app_icon
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
-import me.him188.ani.app.ui.foundation.Res
-import me.him188.ani.app.ui.foundation.app_icon
+import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_authorizing
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
@@ -122,6 +122,15 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
 import me.him188.ani.app.ui.lang.settings_network_endpoint_auto
 import me.him188.ani.app.ui.lang.settings_network_tmdb_images_disable
+import me.him188.ani.app.ui.lang.settings_theme_mode_dark
+import me.him188.ani.app.ui.lang.settings_theme_mode_light
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
+import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
 import me.him188.ani.app.ui.lang.tv_onboarding_images_auto_description
 import me.him188.ani.app.ui.lang.tv_onboarding_images_choose
 import me.him188.ani.app.ui.lang.tv_onboarding_images_description
@@ -139,10 +148,13 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_failed
 import me.him188.ani.app.ui.lang.tv_onboarding_login_local
 import me.him188.ani.app.ui.lang.tv_onboarding_login_local_failed
 import me.him188.ani.app.ui.lang.tv_onboarding_login_local_hint
-import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_login_optional
 import me.him188.ani.app.ui.lang.tv_onboarding_login_phone_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_retry
+import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_title
 import me.him188.ani.app.ui.lang.tv_onboarding_login_skip
 import me.him188.ani.app.ui.lang.tv_onboarding_login_title
 import me.him188.ani.app.ui.lang.tv_onboarding_login_via_mirror
@@ -162,39 +174,22 @@ import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_none
 import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_origin
 import me.him188.ani.app.ui.lang.tv_onboarding_network_title
 import me.him188.ani.app.ui.lang.tv_onboarding_network_unreachable
+import me.him188.ani.app.ui.lang.tv_onboarding_next
 import me.him188.ani.app.ui.lang.tv_onboarding_phone_title
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy_description
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_recheck
 import me.him188.ani.app.ui.lang.tv_onboarding_recommended
-import me.him188.ani.app.ui.lang.tv_onboarding_start
-import me.him188.ani.app.ui.lang.tv_onboarding_step_login
-import me.him188.ani.app.ui.lang.tv_onboarding_step_network
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_description
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_intro
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_start
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_login
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_network
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_title
-import me.him188.ani.app.ui.lang.tv_remote_control_close
-import me.him188.ani.app.ui.lang.tv_onboarding_next
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_description
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_login
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_manage
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_player
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_search
+import me.him188.ani.app.ui.lang.tv_onboarding_start
+import me.him188.ani.app.ui.lang.tv_onboarding_step_login
+import me.him188.ani.app.ui.lang.tv_onboarding_step_network
 import me.him188.ani.app.ui.lang.tv_onboarding_step_remote
-import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_remote
-import me.him188.ani.app.ui.lang.settings_theme_mode_dark
-import me.him188.ani.app.ui.lang.settings_theme_mode_light
-import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
-import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
-import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
-import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects
-import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
-import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
-import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
 import me.him188.ani.app.ui.lang.tv_onboarding_step_theme
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_blur_off
@@ -206,21 +201,33 @@ import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_hero_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_play_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_description
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_title
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_description
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_intro
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_start
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_login
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_network
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_remote
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_theme
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_title
+import me.him188.ani.app.ui.lang.tv_profile_default_name
+import me.him188.ani.app.ui.lang.tv_remote_control_close
 import me.him188.ani.app.ui.lang.tv_remote_control_panel_hint
 import me.him188.ani.app.ui.lang.tv_remote_control_title
+import me.him188.ani.app.ui.lang.tv_settings_login_qr_caption
+import me.him188.ani.app.ui.lang.tv_settings_qr_preparing
+import me.him188.ani.app.ui.main.LocalTvStartupLogo
 import me.him188.ani.app.ui.remote.CONNECTED_GREEN_DARK
 import me.him188.ani.app.ui.remote.CONNECTED_GREEN_LIGHT
 import me.him188.ani.app.ui.remote.RemoteConnectionStatus
 import me.him188.ani.app.ui.remote.RemoteQrCode
 import me.him188.ani.app.ui.remote.RemoteTroubleshootHint
+import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.remote.TvRemoteControl
+import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
+import me.him188.ani.app.ui.settings.tabs.network.MirrorSwitchConsentDialog
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.combine
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 
 /**
  * 首次启动引导 (没做过才出现, 做完不再出现, 见 `TvOnboardingGate`): 先是欢迎页 (图标 + 接下来要做哪四步), 然后四步:
@@ -434,7 +441,11 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserF
         val focus = rememberTvFocusScope()
         OnboardingSurface(focus, Modifier) {
             when (layerStep) {
-                LayerStep.Remote -> RemoteStep(focus, onNext = { layerStep = LayerStep.Login })
+                LayerStep.Remote -> RemoteStep(
+                    focus,
+                    loginViaConsole = assumeViaMirror || vm.originUnreachable,
+                    onNext = { layerStep = LayerStep.Login },
+                )
                 LayerStep.Login -> LoginStep(
                     vm,
                     focus,
@@ -477,7 +488,7 @@ private enum class LayerStep { Remote, Login, Theme }
 
 /** 手机遥控: 讲清楚扫码之后能干什么 (不只是登录), 以及以后去哪再找这个码. */
 @Composable
-private fun RemoteStep(focus: TvFocusScope, onNext: () -> Unit) {
+private fun RemoteStep(focus: TvFocusScope, loginViaConsole: Boolean, onNext: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize()) {
         StepHeader(
@@ -489,11 +500,12 @@ private fun RemoteStep(focus: TvFocusScope, onNext: () -> Unit) {
         Row(Modifier.fillMaxWidth().weight(1f)) {
             Column(Modifier.weight(1f)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    for (feature in listOf(
+                    for (feature in listOfNotNull(
                         Lang.tv_onboarding_remote_feature_search,
                         Lang.tv_onboarding_remote_feature_player,
                         Lang.tv_onboarding_remote_feature_manage,
-                        Lang.tv_onboarding_remote_feature_login,
+                        // 登录那一步能直接扫码登录时, 不再说在手机控制台登录 (只有连不上官方 / 经镜像时才得用控制台的个人令牌)
+                        Lang.tv_onboarding_remote_feature_login.takeIf { loginViaConsole },
                     )) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Check, contentDescription = null, Modifier.size(20.dp), tint = scheme.primary)
@@ -876,9 +888,33 @@ private fun LoginStep(
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
+    val lastStart by vm.lastStart.collectAsStateWithLifecycle()
     val selfInfo by vm.selfInfo.collectAsStateWithLifecycle()
     val tvLogin = vm.tvLoginSupported && oauth !is BangumiOAuthManager.State.NotConfigured
     val scheme = MaterialTheme.colorScheme
+
+    // 右边的码: 手机扫码直接登录 (经 Worker 跳回电视); 第一步测到官方连不上、经镜像、或者扫码登录起不了时, 给 Web 控制台的码 (个人令牌)
+    var phone by remember { mutableStateOf<TvBangumiRelayLogin.Start?>(null) }
+    var phoneFailedOnce by remember { mutableStateOf(false) }
+    val phoneLogin = !loggedIn && !viaMirror && !vm.originUnreachable
+    val phoneUrl = (phone as? TvBangumiRelayLogin.Start.Ready)?.url
+    LaunchedEffect(phoneLogin, oauth, lastStart) {
+        if (!phoneLogin) return@LaunchedEffect
+        val phonePending = lastStart == TvOnboardingLoginViewModel.LoginStart.Phone && phoneUrl != null &&
+            (oauth is BangumiOAuthManager.State.Exchanging || (oauth as? BangumiOAuthManager.State.Authorizing)?.url == phoneUrl)
+        val tvBusy = lastStart == TvOnboardingLoginViewModel.LoginStart.Tv &&
+            (oauth is BangumiOAuthManager.State.Authorizing || oauth is BangumiOAuthManager.State.Exchanging)
+        if (phonePending || tvBusy || oauth is BangumiOAuthManager.State.Success) return@LaunchedEffect
+        // 没发过, 或者这次授权已经不在了 (手机上没授权成功、电视上登录取消或失败): 换一张新码
+        if (lastStart == TvOnboardingLoginViewModel.LoginStart.Phone && oauth is BangumiOAuthManager.State.Failed) phoneFailedOnce = true
+        phone = vm.startPhoneLogin()
+    }
+    val useConsole = !phoneLogin || phone is TvBangumiRelayLogin.Start.Unsupported || phone is TvBangumiRelayLogin.Start.NoLan
+    // 电视上登录没成功: 右边换了新码 (发起的变成手机那边) 之后左边仍写着没成功, 直到再按一次
+    var tvFailed by remember { mutableStateOf(false) }
+    LaunchedEffect(oauth, lastStart) {
+        if (lastStart == TvOnboardingLoginViewModel.LoginStart.Tv) tvFailed = oauth is BangumiOAuthManager.State.Failed
+    }
 
     Column(Modifier.fillMaxSize()) {
         StepHeader(
@@ -933,27 +969,24 @@ private fun LoginStep(
                                 modifier = Modifier.tvFocusAnchor(focus, OnboardingFocus.TvLogin),
                             )
                             Spacer(Modifier.height(8.dp))
-                            // 同一个位置三态: 说明 / 授权进行到哪一步 (打开登录页 / 等授权 / 换凭证) / 没成功
+                            // 同一个位置三态: 说明 / 授权进行到哪一步 (打开登录页 / 等授权 / 换凭证) / 没成功; 只看电视上发起的那次
+                            val tvStage = if (lastStart == TvOnboardingLoginViewModel.LoginStart.Tv) oauth.stage else null
                             Text(
                                 stringResource(
-                                    when (oauth.stage) {
+                                    when (tvStage) {
                                         BangumiOAuthManager.Stage.OpeningBrowser -> Lang.oauth_bangumi_stage_opening
                                         BangumiOAuthManager.Stage.AwaitingAuthorization -> Lang.oauth_bangumi_stage_authorizing
                                         BangumiOAuthManager.Stage.Exchanging -> Lang.oauth_bangumi_stage_exchanging
-                                        null -> if (oauth is BangumiOAuthManager.State.Failed) {
-                                            Lang.tv_onboarding_login_failed
-                                        } else {
-                                            Lang.tv_onboarding_login_on_tv_hint
-                                        }
+                                        null -> if (tvFailed) Lang.tv_onboarding_login_failed else Lang.tv_onboarding_login_on_tv_hint
                                     },
                                 ),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = if (oauth is BangumiOAuthManager.State.Failed) scheme.error else scheme.onSurfaceVariant,
+                                color = if (tvStage == null && tvFailed) scheme.error else scheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.height(24.dp))
                         }
                         Text(
-                            stringResource(Lang.tv_onboarding_login_phone_hint),
+                            stringResource(if (useConsole) Lang.tv_onboarding_login_phone_hint else Lang.tv_onboarding_login_qr_hint),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Spacer(Modifier.height(24.dp))
@@ -962,7 +995,22 @@ private fun LoginStep(
                 }
             }
             Spacer(Modifier.width(COLUMN_GAP))
-            PhoneCard(Modifier.width(PHONE_CARD_WIDTH))
+            if (useConsole) {
+                PhoneCard(Modifier.width(PHONE_CARD_WIDTH))
+            } else {
+                PhoneLoginCard(
+                    url = phoneUrl,
+                    status = when {
+                        lastStart == TvOnboardingLoginViewModel.LoginStart.Phone && oauth is BangumiOAuthManager.State.Exchanging ->
+                            stringResource(Lang.oauth_bangumi_stage_exchanging)
+
+                        phoneUrl == null -> stringResource(Lang.tv_settings_qr_preparing)
+                        phoneFailedOnce -> stringResource(Lang.tv_onboarding_login_qr_retry)
+                        else -> stringResource(Lang.tv_settings_login_qr_caption)
+                    },
+                    modifier = Modifier.width(PHONE_CARD_WIDTH),
+                )
+            }
         }
     }
 
@@ -991,6 +1039,13 @@ private fun SkipOrLocal(
     val scope = rememberCoroutineScope()
     var leftover by remember { mutableStateOf<SelfCollectionRecords.Counts?>(null) }
     val useLocal = { clearRecords: Boolean -> onUseLocal?.invoke(clearRecords) }
+    // 说清楚登录是可选的: 新用户常以为不登录就用不了
+    Text(
+        stringResource(Lang.tv_onboarding_login_optional),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(Modifier.height(16.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         SkipButton(focus, onSkip)
         if (localShown) {
@@ -1569,6 +1624,24 @@ private fun ModeOption(
 }
 
 /** 右侧的手机控制台码: 登录那一步两条路之一 (经镜像时是唯一一条). */
+/** 手机扫码登录 Bangumi 的码 (授权页地址, 见 [TvBangumiRelayLogin]); [url] 还没有时只写 [status]. */
+@Composable
+private fun PhoneLoginCard(url: String?, status: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(Lang.tv_onboarding_login_qr_title), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        // 授权页地址长, 码密: 比控制台的码画大一些
+        RemoteQrCode(url, LOGIN_QR_SIZE, PHONE_QR_QUIET_ZONE)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            status,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
 @Composable
 private fun PhoneCard(modifier: Modifier = Modifier) {
     val url by TvRemoteControl.url.collectAsState()
@@ -1660,6 +1733,7 @@ private val OPTION_GAP = 8.dp
 private const val MAX_ENDPOINT_ROWS = 4
 private val PHONE_CARD_WIDTH = 280.dp
 private val PHONE_QR_SIZE = 168.dp
+private val LOGIN_QR_SIZE = 220.dp
 private val PHONE_QR_QUIET_ZONE = 18.dp
 private val PROXY_DIALOG_WIDTH = 620.dp
 private val WELCOME_ICON_SIZE = 120.dp

@@ -53,6 +53,7 @@ import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -112,7 +113,7 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
         tmdbImages.restart(quiet = false)
     }
 
-    private companion object {
+    internal companion object {
         /** 这个进程里最近一次测完的结果. */
         val rememberedBangumi = OnboardingCheck.Remembered<BangumiConnectivityProbe.Result>()
         val rememberedTmdbImages = OnboardingCheck.Remembered<CandidatesCheck>()
@@ -258,8 +259,27 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
         oauthManager.resetIfFinished()
     }
 
+    /**
+     * 第一步测到 Bangumi 官方连不上 (这个进程里测过的话): 手机扫码授权一样打不开官方的授权页, 登录那一步给 Web 控制台那条路
+     * (个人令牌).
+     */
+    val originUnreachable: Boolean = TvOnboardingViewModel.rememberedBangumi.value?.origin == Reachability.Unreachable
+
+    /** 最近一次发起的是哪一种登录: 授权进行到哪一步只在发起的那一边显示. */
+    val lastStart: StateFlow<LoginStart?> get() = _lastStart
+    private val _lastStart = MutableStateFlow<LoginStart?>(null)
+
+    enum class LoginStart { Tv, Phone }
+
     fun startTvLogin() {
+        _lastStart.value = LoginStart.Tv
         oauthManager.startInAppBrowser()
+    }
+
+    /** 手机扫码登录 (见 [TvBangumiRelayLogin]): 发起一次, 返回要画成码的授权页地址或起不了的原因. */
+    fun startPhoneLogin(): TvBangumiRelayLogin.Start {
+        _lastStart.value = LoginStart.Phone
+        return TvBangumiRelayLogin.start()
     }
 
     /** 最后一步「外观与操作」改主题设置: 当场生效 (这一层与下面的主页跟着变). */
