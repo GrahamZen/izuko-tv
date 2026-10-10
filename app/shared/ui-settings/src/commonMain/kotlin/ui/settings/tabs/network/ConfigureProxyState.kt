@@ -22,6 +22,8 @@ import me.him188.ani.app.data.models.preference.ProxyMode
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.ui.foundation.icons.Animeko
 import me.him188.ani.app.ui.foundation.icons.AnimekoIconColor
+import me.him188.ani.app.ui.foundation.icons.BangumiNext
+import me.him188.ani.app.ui.foundation.icons.BangumiNextIconColor
 
 @Stable
 class ConfigureProxyState(
@@ -76,6 +78,8 @@ sealed class SystemProxyPresentation {
 @Immutable
 enum class ProxyTestCaseEnums {
     ANI,
+    BANGUMI,
+    BANGUMI_NEXT,
 }
 
 @Immutable
@@ -88,6 +92,18 @@ sealed class ProxyTestCase(
         name = ProxyTestCaseEnums.ANI,
         icon = Icons.Default.Animeko,
         color = AnimekoIconColor,
+    )
+
+    data object BangumiApi : ProxyTestCase(
+        name = ProxyTestCaseEnums.BANGUMI,
+        icon = Icons.Default.BangumiNext,
+        color = BangumiNextIconColor,
+    )
+
+    data object BangumiNextApi : ProxyTestCase(
+        name = ProxyTestCaseEnums.BANGUMI_NEXT,
+        icon = Icons.Default.BangumiNext,
+        color = BangumiNextIconColor,
     )
 }
 

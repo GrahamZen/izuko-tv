@@ -725,6 +725,7 @@
     <string name="settings_network_proxy_password">Password</string>
     <string name="settings_network_proxy_retest">Retest</string>
     <string name="settings_network_proxy_service_danmaku">Danmaku service</string>
+    <string name="settings_network_proxy_service_collection">Collection data service</string>
     <string name="settings_network_proxy_test_success">Connection successful</string>
     <string name="settings_network_proxy_test_failed">Connection failed</string>
     <string name="settings_network_proxy_current_disabled">Proxy disabled</string>
@@ -1875,6 +1876,7 @@
     <string name="settings_mediasource_jsonapi_unknown_variables">Unknown variables: %1$s</string>
     <string name="settings_mediasource_jsonapi_play_open_video">Open video URL</string>
     <string name="settings_mediasource_jsonapi_play_copy">Copy</string>
+    <string name="settings_network_proxy_service_comment">Comment service</string>
 </resources>
 
 <!--@formatter:on-->

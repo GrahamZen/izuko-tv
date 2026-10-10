@@ -100,6 +100,7 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
 import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
 import me.him188.ani.utils.logging.debug
@@ -457,7 +458,7 @@ class SubjectCollectionRepositoryImpl(
 
         // 执行网络请求查询好需要的 subject 和 episodes
         val items = subjectService.getSubjectCollections(
-            type = type?.toAniSubjectCollectionType(),
+            type = type?.toSubjectCollectionType(),
             offset = offset,
             limit = limit,
         )
