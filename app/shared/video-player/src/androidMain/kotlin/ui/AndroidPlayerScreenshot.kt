@@ -36,7 +36,7 @@ import kotlin.math.roundToInt
  *
  * 视频画面在 SurfaceView 的独立显示层上, 常规的 View / Compose 截图取不到, 只能 [PixelCopy] 从 Surface 读回 —— 读的是已经解好、
  * 正在屏幕上的那一帧, 不另起解码器 (见 ui-tv 的 `captureTvPlayerFrame`). 字幕有两路: SRT 这类画在播放器视图里的 [SubtitleView]
- * (普通 View, 软件画布能画), ASS 画在叠在它里面的 [LiftableAssSubtitleView] (TextureView, 只能 `getBitmap` 读回).
+ * (普通 View, 软件画布能画), ASS 画在叠在它里面的 [LiftableAssSubtitleView] (TextureView, 只能 `getBitmap` 读回; 选中 ASS 轨时才有, 见 [AssSubtitleLayer]).
  */
 class AndroidPlayerFrame(
     /** 画面, 按显示比例、高度取视频原分辨率 (宽不超过 [MAX_FRAME_WIDTH]). */
@@ -48,12 +48,12 @@ class AndroidPlayerFrame(
 /** 截图最宽多少像素. Android 8 之前位图像素算在 Java 堆里, 4K 的三层要一百多 MB, 那里只取到 1080p. */
 private val MAX_FRAME_WIDTH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) 3840 else 1920
 
-private class SubtitleViews(val srt: WeakReference<SubtitleView>, val ass: WeakReference<LiftableAssSubtitleView>?)
+private class SubtitleViews(val srt: WeakReference<SubtitleView>, val ass: WeakReference<AssSubtitleLayer>?)
 
 private val subtitleViews = WeakHashMap<MediampPlayer, SubtitleViews>()
 
 /** 播放器视图建好时登记它的字幕视图 (见 VideoPlayer.android.kt). */
-internal fun registerAndroidSubtitleViews(player: MediampPlayer, srt: SubtitleView, ass: LiftableAssSubtitleView?) {
+internal fun registerAndroidSubtitleViews(player: MediampPlayer, srt: SubtitleView, ass: AssSubtitleLayer?) {
     synchronized(subtitleViews) { subtitleViews[player] = SubtitleViews(WeakReference(srt), ass?.let(::WeakReference)) }
 }
 
@@ -113,7 +113,7 @@ fun MediampPlayer.captureAndroidSubtitles(rectInWindow: Rect, width: Int, height
         view.draw(canvas)
         canvas.restore()
     }
-    views.ass?.get()?.takeIf { it.isShown && it.isAvailable }?.let { view ->
+    views.ass?.get()?.view?.takeIf { it.isShown && it.isAvailable }?.let { view ->
         val bitmap = runCatching { view.bitmap }.getOrNull() ?: return@let
         val at = view.locationInWindow()
         // 按目标矩形画: getBitmap 的位图带的是视图 Resources 的 density (界面缩放改过), 与画布的不同,

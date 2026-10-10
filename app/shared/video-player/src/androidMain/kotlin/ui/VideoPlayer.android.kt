@@ -13,7 +13,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.SurfaceView
 import android.view.View
-import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -63,7 +62,7 @@ actual fun VideoPlayer(
         key(player) {
             // 播放器视图里那个字幕视图 (SRT 这类) 与叠在里面的 ASS 视图, 配置块拿到后记下来
             var subtitles by remember { mutableStateOf<SubtitleView?>(null) }
-            var assSubtitles by remember { mutableStateOf<LiftableAssSubtitleView?>(null) }
+            var assSubtitles by remember { mutableStateOf<AssSubtitleLayer?>(null) }
             SubtitleObstructionEffect(exoPlayer.impl, subtitles, assSubtitles, libassPlayer?.seekPreviewOrigin)
             SeekPreviewSubtitleHiding(subtitles, libassPlayer?.seekPreviewOnFullScreen)
             ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
@@ -73,11 +72,7 @@ actual fun VideoPlayer(
                 controllerHideOnTouch = false
                 subtitleView?.apply {
                     subtitles = this
-                    libassPlayer?.let {
-                        assSubtitles = LiftableAssSubtitleView(context, it.assHandler).also { view ->
-                            addView(view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                        }
-                    }
+                    libassPlayer?.let { assSubtitles = AssSubtitleLayer(this, exoPlayer.impl, it.assHandler) }
                     registerAndroidSubtitleViews(player, this, assSubtitles)
                     this.setStyle(
                         CaptionStyleCompat(
@@ -106,7 +101,7 @@ actual fun VideoPlayer(
  * 控件挡住画面底部时 (见 [LocalSubtitleObstructionTop]) 把底部字幕挪到控件上面, 收起时回到原位, 不触发重组:
  * - SRT 这类没给位置的 ([view]): 改 SubtitleView 的底部留白;
  * - 自带位置的 (PGS 图片字幕、给了行位置的文字字幕, 底部留白管不到): 下半部分的往上挪被挡住的高度, 见 [PositionedCueLift];
- * - ASS ([assView]): 同上, 下半部分往上挪, 上半部分的留在原处.
+ * - ASS ([assLayer]): 同上, 下半部分往上挪, 上半部分的留在原处.
  *
  * 拖动预览期间 ([previewOrigin] 不为 null, 见 `SeekPreview`) 全屏停在开始时那一帧, [view] 上的字幕也停在那时的一组.
  */
@@ -115,11 +110,11 @@ actual fun VideoPlayer(
 private fun SubtitleObstructionEffect(
     player: Player,
     view: SubtitleView?,
-    assView: LiftableAssSubtitleView?,
+    assLayer: AssSubtitleLayer?,
     previewOrigin: StateFlow<Long?>?,
 ) {
     val obstructionTop = LocalSubtitleObstructionTop.current
-    LaunchedEffect(player, view, assView, obstructionTop, previewOrigin) {
+    LaunchedEffect(player, view, assLayer, obstructionTop, previewOrigin) {
         if (view == null) return@LaunchedEffect
         val positioned = PositionedCueLift(player, view)
         player.addListener(positioned)
@@ -134,7 +129,7 @@ private fun SubtitleObstructionEffect(
                 covered.animateTo(view.coveredHeightBelow(top), tween(SUBTITLE_LIFT_MILLIS)) {
                     view.setBottomPaddingFraction(bottomPaddingFractionFor(value, view.height))
                     positioned.liftFraction = if (view.height > 0) value / view.height else 0f
-                    assView?.bottomLift = value
+                    assLayer?.bottomLift = value
                 }
             }
         } finally {

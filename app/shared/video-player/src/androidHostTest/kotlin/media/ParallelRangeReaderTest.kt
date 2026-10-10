@@ -210,6 +210,32 @@ class ParallelRangeReaderTest {
     }
 
     @Test
+    fun `buffers freed when the boost ends are not kept around`() {
+        val server = FakeServer()
+        var limit = 12
+        val reader = ParallelRangeReader(
+            server, executor, connections = 4, chunkSize = 1000, firstChunkSize = 250,
+            maxConnections = { limit }, maxWindowBytes = 2400,
+        )
+        assertEquals(content.size.toLong(), reader.open(0, -1))
+        val half = ByteArray(content.size / 2)
+        var read = 0
+        while (read < half.size) read += reader.read(half, read, half.size - read)
+        // 收回: 多开时排出去的十几块读完后空出来的缓冲只留一个
+        limit = 4
+        val buffer = ByteArray(700)
+        val rest = ByteArrayOutputStream()
+        while (true) {
+            val count = reader.read(buffer, 0, buffer.size)
+            if (count < 0) break
+            rest.write(buffer, 0, count)
+            assertTrue(reader.freeBufferCount <= ParallelRangeReader.MAX_FREE_BUFFERS, "free buffers: ${reader.freeBufferCount}")
+        }
+        reader.close()
+        assertContentEquals(content, half + rest.toByteArray())
+    }
+
+    @Test
     fun `closing mid-download stops the chunks and closes their connections on the download threads`() {
         // 每块 1000 字节, 每次读 10 字节, 4 块同时在下
         val server = FakeServer(perRead = 10)
