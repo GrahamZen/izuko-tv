@@ -13,6 +13,7 @@ import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCaseImpl
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCaseImpl
+import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.comment.PostCommentUseCaseImpl
@@ -37,6 +38,7 @@ import me.him188.ani.app.domain.episode.GetSubjectRecommendationUseCase
 import me.him188.ani.app.domain.episode.GetSubjectRecommendationUseCaseImpl
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCase
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCaseImpl
+import me.him188.ani.app.domain.episode.seriesInfoForFetchOrNull
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.media.cache.DeleteCacheUseCase
 import me.him188.ani.app.domain.media.cache.DeleteCacheUseCaseImpl
@@ -107,7 +109,12 @@ fun KoinApplication.useCaseModules() = module {
     single<AddDownloadUseCase> {
         AddDownloadUseCaseImpl(get(), cacheDanmaku = { get<DanmakuRepository>().cacheDanmakuIfNeeded(it) })
     }
-    single { DownloadRequestSessionFactory(get(), get(), get(), MediaSelectorFactory.withKoin(koin), get(), get()) }
+    single {
+        DownloadRequestSessionFactory(
+            get(), get(), get(), MediaSelectorFactory.withKoin(koin), get(), get(),
+            seriesInfo = { get<SubjectRelationsRepository>().seriesInfoForFetchOrNull(it) },
+        )
+    }
     single<GetPreferredWebMediaSourceUseCase> { GetPreferredWebMediaSourceUseCaseImpl(get()) }
     single<SetPreferredWebMediaSourceUseCase> { SetPreferredWebMediaSourceUseCaseImpl(get()) }
     single<ReplayBrowseMemoryUseCase> {
