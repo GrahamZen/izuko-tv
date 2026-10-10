@@ -149,6 +149,7 @@ interface AniNavigator {
     }
 
     fun navigateBangumiAuthorize() {
+        BangumiAuthorizeRedirect.target?.let { return it(this) }
         navigateOAuthAuthorize("bangumi")
     }
 
