@@ -18,6 +18,7 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.isPerfectMatch
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -900,8 +901,8 @@ private fun webFilesOf(source: WebSource, input: TvSourcePanelInput, strings: Tv
 }
 
 /**
- * 一个文件一行的在线源的一行 (同 BT 的资源行): 标题是文件名, 信息行是分辨率、大小、日期、字幕; [other] 非空 = 没列进对得上的那些,
- * 调暗并在信息行最前面写原因 (被选择器排除的红字).
+ * 一个文件一行的在线源的一行 (同 BT 的资源行): 标题是文件名, 信息行是分辨率、大小、码率 (网盘文件, 见 [DriveVideoBitrates])、日期、字幕;
+ * [other] 非空 = 没列进对得上的那些, 调暗并在信息行最前面写原因 (被选择器排除的红字).
  */
 private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
     val playing = media == input.selector.selected
@@ -911,6 +912,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         reason?.let { add(it) }
         media.properties.resolution.takeIf { it.isNotBlank() }?.let { add(it) }
         formatSize(media.properties.size).takeIf { it.isNotEmpty() }?.let { add(it) }
+        DriveVideoBitrates.label(media.mediaId)?.let { add(it) }
         formatDate(media.publishedTime, strings.timeZone).takeIf { it.isNotEmpty() }?.let { add(it) }
         line?.let { add(it) }
         val subtitles = media.properties.subtitleLanguageIds.map { renderSubtitleLanguage(it, strings.details) }
@@ -1058,7 +1060,7 @@ private fun mediaFields(media: Media, strings: TvSourceStrings, sourceNames: Lis
     cell(strings.labelKind, kind)
     cell(strings.resolution, media.properties.resolution)
     cell(strings.subtitle, subtitle.joinToString(" · "))
-    cell(strings.labelSize, formatSize(media.properties.size))
+    cell(strings.labelSize, listOfNotNull(formatSize(media.properties.size).ifEmpty { null }, DriveVideoBitrates.label(media.mediaId)).joinToString(" · "))
     cell(strings.labelDate, formatDate(media.publishedTime, strings.timeZone))
     cell(strings.labelEpisodes, media.episodeRange?.let { renderEpisodeRange(it, strings) })
     media.properties.alliance.takeIf { it.isNotBlank() }?.let { add(TvSourceDetailField(strings.alliance, it)) }
