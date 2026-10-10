@@ -541,6 +541,7 @@ private fun KoinApplication.otherModules(
             clearSession = { get<UserRepository>().clearSelfInfo() },
         )
     }
+    deviceMigration(getContext) { fileName -> buildAniDatabase(getContext(), fileName) }
     // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)
     single<UserProfileSeeder> {
         UserProfileSeeder(
