@@ -98,6 +98,20 @@ class UserProfileRegistry private constructor(
         save.copy(profiles = save.profiles + profile, nextId = save.nextId + 1) to profile
     }
 
+    /**
+     * 先占一个编号, 不加用户: 换电视搬来的用户 (见 `DeviceMigrationImporter`) 先把库文件与配置放好, 再 [addReserved] 出现在列表里.
+     * 没用上的编号就空着 (编号本来就不复用).
+     */
+    suspend fun reserveId(): Int = mutate { save -> save.copy(nextId = save.nextId + 1) to save.nextId }
+
+    /** 加一个用 [reserveId] 占好编号的用户. */
+    suspend fun addReserved(profile: UserProfile) {
+        mutate { save ->
+            require(save.find(profile.id) == null) { "User profile ${profile.id} already exists" }
+            save.copy(profiles = save.profiles + profile) to Unit
+        }
+    }
+
     suspend fun rename(id: Int, name: String) = update(id) { it.copy(name = name.trim()) }
 
     suspend fun update(id: Int, transform: (UserProfile) -> UserProfile) {
