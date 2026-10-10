@@ -60,6 +60,7 @@
     <string name="settings_player_seek_preview_display_full_screen">全屏</string>
     <string name="settings_player_disk_cache">边下边播</string>
     <string name="settings_player_disk_cache_description">在线播放时把下载过的部分存在本机：往回拖、重看直接读本机，拖动预览时下载过的位置马上出画面（没下载的位置停一下就去下）。关闭时拖动预览每个位置都要先下载。最多占剩余空间的四分之一，满了先删最久没看的</string>
+    <string name="player_disk_cache_hint">在设置里打开「边下边播」，往回拖不用再等</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次进入播放器时的倍速。最左一格「记住上次」：在播放器里调过的倍速跨剧集、重启保持</string>
     <string name="settings_player_start_playback_speed_remember">记住上次</string>

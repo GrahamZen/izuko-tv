@@ -308,6 +308,9 @@ fun TvEpisodeScreenContent(
         vm.ensureTvSubjectDetails()
     }
 
+    // 「边下边播」关着、往回跳要重新下载时提醒去开
+    TvDiskCacheHint(vm.player)
+
     // 预热 uiState: 它是 WhileSubscribed(5000) 的惰性流, 而读它的详情层只在被唤出时才组合 ——
     // 在那之前没有任何收集者, 上游根本没启动. 实测控制层隔 6.4 秒才唤出的那次, loader 早在
     // +0.8s 就 Ok 了, 页面数据却一直等到 +6.49s 才脱离占位, 白等 5.7 秒.

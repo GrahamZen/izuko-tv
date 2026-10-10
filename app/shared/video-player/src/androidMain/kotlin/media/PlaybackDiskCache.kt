@@ -63,6 +63,11 @@ object PlaybackDiskCache {
     /** [data] 的内容标识, 解析器没给时为 null. */
     fun keyOf(data: UriMediaData): String? = data.headers[PlaybackRequestHints.CACHE_KEY_HEADER]?.takeIf { it.isNotBlank() }
 
+    /** 此刻的剩余空间够不够存 (判据同 [get] 第一次打开时), 不打开缓存. */
+    fun hasRoom(context: Context): Boolean = maxBytesFor(context.cacheDir.usableSpace) >= MIN_BYTES
+
+    private fun maxBytesFor(freeBytes: Long): Long = (freeBytes / 4).coerceAtMost(MAX_BYTES)
+
     /** [cache] 里记着的 [key] 的文件总长 (播放器第一次读到时记下), 没记时为 -1. 会等缓存初始化完, 别在主线程上调. */
     internal fun contentLength(cache: Cache, key: String): Long = ContentMetadata.getContentLength(cache.getContentMetadata(key))
 
@@ -85,7 +90,7 @@ object PlaybackDiskCache {
     private fun open(context: Context): Cache? {
         val directory = File(context.cacheDir, DIRECTORY)
         val freeBytes = context.cacheDir.usableSpace
-        val maxBytes = (freeBytes / 4).coerceAtMost(MAX_BYTES)
+        val maxBytes = maxBytesFor(freeBytes)
         val databaseProvider = StandaloneDatabaseProvider(context)
         if (maxBytes < MIN_BYTES) {
             logger.warn { "Only ${freeBytes / MIB} MiB free, playback disk cache disabled" }

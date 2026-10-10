@@ -60,6 +60,7 @@
     <string name="settings_player_seek_preview_display_full_screen">Full screen</string>
     <string name="settings_player_disk_cache">Save videos while playing</string>
     <string name="settings_player_disk_cache_description">Keep the parts of online videos downloaded during playback on this device: seeking back and rewatching read them from here, and scrub previews show downloaded positions instantly (other positions load after you pause on them for a moment). When off, every scrub preview has to download first. Uses up to a quarter of the free space and removes what you haven\'t watched for the longest first</string>
+    <string name="player_disk_cache_hint">Turn on &quot;Save videos while playing&quot; to seek back without waiting</string>
     <string name="settings_player_start_playback_speed">Playback speed</string>
     <string name="settings_player_start_playback_speed_description">The speed when you enter the player. The leftmost step, “Remember last”, keeps the speed you set in the player across episodes and restarts</string>
     <string name="settings_player_start_playback_speed_remember">Remember last</string>
