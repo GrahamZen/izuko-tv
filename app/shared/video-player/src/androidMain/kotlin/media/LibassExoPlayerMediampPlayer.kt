@@ -49,6 +49,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -248,6 +249,17 @@ class LibassExoPlayerMediampPlayer private constructor(
     private val backgroundScope = CoroutineScope(
         parentCoroutineContext + SupervisorJob(parentCoroutineContext[Job.Key]),
     )
+
+    private val diskCacheHints = DiskCacheHints(
+        CoroutineScope(backgroundScope.coroutineContext + Dispatchers.Main),
+        playbackState = { exoPlayer.playbackState },
+        previewOrigin = { previewOriginMillis.value },
+        isApplicable = pipeline::diskCacheWouldHelp,
+    )
+
+    /** 「边下边播」关着、跳到播过的位置要联网重新下载时各发一个 (见 [DiskCacheHints]), 页面据此提醒去开. 在主线程上发. */
+    val diskCacheHintEvents: Flow<Unit> get() = diskCacheHints.events
+
     @Volatile
     private var closed = false
 
@@ -334,6 +346,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     init {
         assHandler.init(exoPlayer)
         exoPlayer.addAnalyticsListener(videoOutputTimeoutListener)
+        exoPlayer.addListener(diskCacheHints)
         // 字幕与音轨按界面语言和这部番记下的选择选, 音轨的选择由它下发给 ExoPlayer (见 PreferredTrackSelector)
         val preferredTracks = PreferredTrackSelector(exoPlayer, exoMediampPlayer.subtitleTracks, exoMediampPlayer.audioTracks) { trackChooser }
         preferredTracks.start(backgroundScope)
@@ -697,6 +710,12 @@ private class LibassMediaSourcePipeline(
     /** 每准备一个新媒体时先调 (主线程): 播放器借此结束进行中的拖动预览. */
     var onNewMedia: (() -> Unit)? = null
 
+    /** 当前媒体开了「边下边播」就会存在本机, 而这次设置里关着 (见 [DiskCacheHints]); 准备媒体时 (主线程) 设. */
+    private var cacheableWithDiskCacheOff = false
+
+    /** 开了「边下边播」当前媒体就能从本机读: 会存, 设置里关着, 剩余空间也够. */
+    fun diskCacheWouldHelp(): Boolean = cacheableWithDiskCacheOff && PlaybackDiskCache.hasRoom(context)
+
     // 播放器构造后由 LibassExoPlayerMediampPlayer 设置; 每个视频轨的最终 Format 经这里回调
     // 给它, 用来决定要不要把 dataspace 直接写到 Surface 上 (NVIDIA h264 硬解不理 MediaFormat).
     var onVideoFormat: ((androidx.media3.common.Format) -> Unit)? = null
@@ -712,6 +731,9 @@ private class LibassMediaSourcePipeline(
         deferredFonts?.cancel()
         deferredFonts = null
         loadControl.throttled = data is UriMediaData && parallelConnectionsOf(data) != null
+        // 在线源开了「边下边播」都存 (按地址), 网盘直链要有内容标识 (见 createLibassMediaSource)
+        cacheableWithDiskCacheOff = data is UriMediaData && !diskCacheEnabled() &&
+            (parallelConnectionsOf(data) == null || PlaybackDiskCache.keyOf(data) != null)
         return (createLibassMediaSource(data) ?: defaultSource)
             .withColorInfoRepair(
                 onVideoFormat = { format ->
