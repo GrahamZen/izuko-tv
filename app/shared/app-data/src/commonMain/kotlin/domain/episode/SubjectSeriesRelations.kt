@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.episode
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
@@ -20,6 +21,9 @@ import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectRelationIndex
 import me.him188.ani.app.data.network.splitSeasonOf
 import me.him188.ani.app.data.network.toSubjectRelations
+import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
+import me.him188.ani.app.domain.media.fetch.create
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -69,6 +73,22 @@ internal fun Flow<SubjectCollectionInfo>.withSeriesRelations(
             },
         )
     }
+}
+
+/**
+ * 播放页以外建数据源查询 (缓存页、Web 控制台) 时用的系列信息, 交给 [MediaFetchRequest.Companion.create]: 回退搜索关键词
+ * (系列基础名) 与拆分季的整季序号, 与开播时一致. 同开播最多等 [wait] (表覆盖到的条目当场就有), 等不到或出错就不带.
+ */
+suspend fun SubjectRelationsRepository.seriesInfoForFetchOrNull(
+    subjectId: Int,
+    wait: Duration = SERIES_INDEX_WAIT,
+): SubjectSeriesInfo? = try {
+    withTimeoutOrNull(wait) { subjectSeriesInfoFlow(subjectId).first() }
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    logger.warn(e) { "Failed to get series info of subject $subjectId, fetching without it" }
+    null
 }
 
 private fun SplitSeason.describe(): String =
