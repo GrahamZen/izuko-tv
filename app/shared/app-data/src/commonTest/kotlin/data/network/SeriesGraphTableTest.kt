@@ -20,15 +20,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
+import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.app.data.models.subject.createTestSubjectCollection
 import me.him188.ani.app.data.persistent.MemoryDataStore
 import me.him188.ani.app.data.recommendation.MAX_PREQUEL_HOPS
 import me.him188.ani.app.data.recommendation.isSeasonFormat
 import me.him188.ani.app.data.recommendation.sequelSeasonCandidates
+import me.him188.ani.app.domain.episode.withSeriesRelations
+import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.SystemPaths
@@ -136,6 +145,57 @@ class SeriesGraphTableTest {
         assertEquals(listOf("ef - a tale of memories."), service.seriesRootNames(900, listOf("ef - a tale of memories. ~prologue~")))
         // 系列起点只有续集, 续集不当母条目
         assertEquals(emptyList(), service.seriesRootNames(1600, listOf("BLEACH", "死神")))
+    }
+
+    /** Re:ZERO 第三、四季: 每季拆成两段, 后一段的 sort 接着前一段; 带本篇第一集 sort 与特别篇数两列. */
+    private fun reZeroTsv() = listOf(
+        "# bangumi-series-graph v1 max_id=700000 dump=dump-2026-10-06.210359Z.zip | 列: …",
+        "425998\tRe:ゼロから始める異世界生活 3rd season 襲擊編\tRe：从零开始的异世界生活 第三季 袭击篇\t2024-10-02\t8\tTV\t\t\t510728\t51\t",
+        "510728\tRe:ゼロから始める異世界生活 3rd season 反擊編\tRe：从零开始的异世界生活 第三季 反击篇\t2025-02-05\t8\tTV\t\t425998\t547888\t59\t",
+        "547888\tRe:ゼロから始める異世界生活 4th season 喪失編\tRe：从零开始的异世界生活 第四季 丧失篇\t2026-04-08\t11\tTV\t\t510728\t633836\t67\t",
+        "633836\tRe:ゼロから始める異世界生活 4th season 奪還編\tRe：从零开始的异世界生活 第四季 夺还篇\t2026-07-01\t8\tTV\t\t547888\t\t78\t",
+    ).joinToString("\n")
+
+    @Test
+    fun `本篇第一集的 sort 与特别篇数 - 空是默认值, 旧表没有这两列时不知道`() {
+        val node = assertNotNull(assertNotNull(SeriesGraphTable.parse(reZeroTsv().encodeToByteArray())).nodeOf(547888))
+        assertEquals(67, node.firstSort)
+        assertEquals(0, node.inlineSpecialCount)
+        val eightySix = assertNotNull(SeriesGraphTable.parseRow("302189\t86―エイティシックス―\t86 -不存在的战区-\t2021-04-11\t11\tTV\t\t\t331887\t\t1")).node
+        assertEquals(1, eightySix.firstSort)
+        assertEquals(1, eightySix.inlineSpecialCount)
+        assertNull(table().nodeOf(302286)!!.firstSort)
+    }
+
+    @Test
+    fun `拆分季在本地识别, 不发请求`() = runTest {
+        val table = assertNotNull(SeriesGraphTable.parse(reZeroTsv().encodeToByteArray()))
+        val index = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { table }).getSubjectRelationIndex(633836)
+        // 当前条目 (第四季后半) 用自己已经取到的分集
+        val episodes = (78..85).mapIndexed { i, sort ->
+            EpisodeCollectionInfo(
+                EpisodeInfo(i + 1, EpisodeType.MainStory, sort = EpisodeSort(sort), ep = EpisodeSort(i + 1)),
+                UnifiedCollectionType.NOT_COLLECTED,
+            )
+        }
+        val subject = createTestSubjectCollection(633836, episodes, UnifiedCollectionType.NOT_COLLECTED).let {
+            it.copy(
+                subjectInfo = it.subjectInfo.copy(
+                    nameCn = "Re：从零开始的异世界生活 第四季 夺还篇",
+                    name = "Re:ゼロから始める異世界生活 4th season 奪還編",
+                ),
+            )
+        }
+        val season = assertNotNull(index.splitSeasonOf(subject))
+        assertEquals(listOf(547888, 633836), season.parts.map { it.subjectId })
+        assertEquals(1, season.selfIndex)
+        assertEquals(listOf(67, 78), season.parts.map { it.firstSort })
+        assertEquals(listOf("Re：从零开始的异世界生活 第四季", "Re:ゼロから始める異世界生活 4th season"), season.baseNames)
+        assertEquals(listOf(3), season.otherSeasonNumbers)
+        // 整季合成一页时, 后半第一集是第 12 集
+        assertEquals(12, season.seasonNumberOf(78))
+        // 开播用的系列信息 (选源上下文) 也带上
+        assertEquals(season, flowOf(subject).withSeriesRelations(633836, { index }).first().relations.splitSeason)
     }
 
     @Test

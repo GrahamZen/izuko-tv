@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.domain.media.fetch.seasonEpisodeSorts
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
@@ -481,10 +482,10 @@ class RuleMediaSource(
         origin = null,
     )
 
-    /** 本条目的全部集号; 剧集未知或集数太多时为 `null`, 那时只产出当前这一集 (与网页抓取数据源相同). */
+    /** 本条目的全部集号 (拆分季的后一段加上整季序号); 剧集未知或集数太多时为 `null`, 那时只产出当前这一集 (与网页抓取数据源相同). */
     private fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
         if (episodes.isEmpty() || episodes.size > SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES) return null
-        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) }
+        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) } + seasonEpisodeSorts()
     }
 
     private fun MediaFetchRequest.latestAiredEpisode(): MediaFetchRequest.Episode? {

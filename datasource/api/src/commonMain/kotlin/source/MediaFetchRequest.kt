@@ -85,6 +85,12 @@ data class MediaFetchRequest(
      * 若混入 [subjectNames], 第一季的资源就会通过名称匹配.
      */
     val fallbackSearchKeywords: List<String> = emptyList(),
+    /**
+     * 当前条目是拆分季的后一段时, 站点把整季合成一页从 1 编号最多编到第几个 (前面各段与本条目的集数, 加上可能占号的特别篇和序章); 否则为 0.
+     *
+     * 按 [episodes] 的集号裁剪产出的数据源要把 1 到它的序号也留下: 选择器要看到合并页的全部序号, 才分得清它装的是整季还是只有前半.
+     */
+    val seasonEpisodeCount: Int = 0,
 ) {
     /**
      * 两个请求是否查询同一个条目: 条目 ID, 名称与剧集列表相同, 忽略仅作提示的当前剧集字段.
@@ -95,7 +101,8 @@ data class MediaFetchRequest(
                 subjectNameCN == other.subjectNameCN &&
                 subjectNames == other.subjectNames &&
                 fallbackSearchKeywords == other.fallbackSearchKeywords &&
-                episodes == other.episodes
+                episodes == other.episodes &&
+                seasonEpisodeCount == other.seasonEpisodeCount
 
     /**
      * 条目的一集.

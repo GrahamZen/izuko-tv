@@ -317,11 +317,15 @@ class SeriesGraphTable private constructor(
             return SeriesGraphTable(maxId, dump, bytes, ids.toIntArray(), starts.toIntArray())
         }
 
-        /** 一行: 字段与客户端从 `/p1/subjects/{id}/relations` 构造的节点逐项对应 (没有封面). 格式不对为 `null`. */
+        /**
+         * 一行: 前 9 列与客户端从 `/p1/subjects/{id}/relations` 构造的节点逐项对应 (没有封面); 第 10、11 列是本篇第一集的 sort
+         * (空 = 1) 与本篇中间的特别篇数 (空 = 0), 没有这两列的旧表当作不知道. 格式不对为 `null`.
+         */
         internal fun parseRow(line: String): Row? {
             val fields = line.split('\t')
             if (fields.size < 9) return null
             val id = fields[0].toIntOrNull() ?: return null
+            val episodes = fields[4].toIntOrNull()?.takeIf { it > 0 }
             val node = SeriesNode(
                 id = id,
                 name = fields[1],
@@ -330,7 +334,9 @@ class SeriesGraphTable private constructor(
                 metaTags = listOfNotNull(fields[5].ifEmpty { null }),
                 nsfw = fields[6] == "1",
                 airDate = PackedDate.parseFromDate(fields[3]),
-                episodes = fields[4].toIntOrNull()?.takeIf { it > 0 },
+                episodes = episodes,
+                firstSort = if (episodes != null && fields.size > 9) fields[9].toIntOrNull() ?: 1 else null,
+                inlineSpecialCount = fields.getOrNull(10)?.toIntOrNull() ?: 0,
             )
             return Row(node, fields[7].toIdList(), fields[8].toIdList())
         }
