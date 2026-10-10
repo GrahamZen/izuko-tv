@@ -70,7 +70,10 @@ internal fun interface TmdbEpisodeNumbering {
  * 4. 从文件名解析集号, 从文件名或所在文件夹解析季, 与条目的季对不上的去掉.
  *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
  *    文件名写成 `S02E05` 而条目在对应表里有逐集对位 ([TmdbEpisodeNumbering]) 时, 按表换算成条目的集, 不看下面的季规则;
- *    表里没有这个季集的不是这个条目.
+ *    表里没有这个季集时, 文件的季正是条目名写的季 (TMDB 把整部算一季接着排, 文件按本季写成 `S04E01`) 就照下面的季规则认,
+ *    否则不是这个条目.
+ * 5. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [otherSeasonFolders]) 不往下列:
+ *    里面没写季的视频认的都是那一季, 最后也会按季去掉.
  *
  * 季的规则 (条目的季来自条目名里的 `第二季` / `Season 2` 之类的写法):
  * - 条目没写季 (第一季或只有一季): 文件写明是第 2 季及以后的去掉, 其余保留.
@@ -96,7 +99,8 @@ internal class DriveSubjectMatcher(
         if (keywords.isEmpty()) return emptyList()
 
         val hits = searchAll(keywords)
-        return matchEpisodes(request, collectCandidates(hits), numbering.of(request))
+        val tmdbEpisodes = numbering.of(request)
+        return matchEpisodes(request, collectCandidates(hits, otherSeasonFolders(request, tmdbEpisodes)), tmdbEpisodes)
     }
 
     private class Hit(val keyword: String, val file: DriveFile)
@@ -124,8 +128,9 @@ internal class DriveSubjectMatcher(
      * [path] 是它从搜到的那个文件夹起的路径. 文件夹打不开 (被删了、改了位置) 时返回 null.
      */
     suspend fun matchRememberedFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
+        val tmdbEpisodes = numbering.of(request)
         val candidates = try {
-            listCandidates(folderId, path)
+            listCandidates(folderId, path, otherSeasonFolders(request, tmdbEpisodes))
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveAuthException) {
@@ -134,17 +139,23 @@ internal class DriveSubjectMatcher(
             logger.warn(e) { "Failed to list remembered drive folder $folderId" }
             return null
         }
-        return matchEpisodes(request, candidates, numbering.of(request))
+        return matchEpisodes(request, candidates, tmdbEpisodes)
     }
 
-    /** 文件夹 [folderId] (往下 [MAX_DEPTH] 层) 里的视频, 各带从 [path] 起的所在路径. */
-    private suspend fun listCandidates(folderId: String, path: List<String>): List<Candidate> {
+    /** 文件夹 [folderId] (往下 [MAX_DEPTH] 层, 每层 [skipFolders] 挑出的不列) 里的视频, 各带从 [path] 起的所在路径. */
+    private suspend fun listCandidates(
+        folderId: String,
+        path: List<String>,
+        skipFolders: (List<String>) -> Set<String> = { emptySet() },
+    ): List<Candidate> {
         val candidates = ArrayList<Candidate>()
         suspend fun walk(id: String, path: List<String>, depth: Int) {
-            for (child in browser.listFolder(id)) {
+            val children = browser.listFolder(id)
+            val skipped = skipFolders(children.filter { it.dir }.map { it.fileName })
+            for (child in children) {
                 if (candidates.size >= MAX_FILES) return
                 if (child.isVideo) candidates += Candidate(child, path)
-                else if (child.dir && depth < MAX_DEPTH) walk(child.fid, path + child.fileName, depth + 1)
+                else if (child.dir && depth < MAX_DEPTH && child.fileName !in skipped) walk(child.fid, path + child.fileName, depth + 1)
             }
         }
         walk(folderId, path, depth = 0)
@@ -178,7 +189,7 @@ internal class DriveSubjectMatcher(
         results.flatMap { it.getOrNull().orEmpty() }
     }
 
-    private suspend fun collectCandidates(hits: List<Hit>): List<Candidate> {
+    private suspend fun collectCandidates(hits: List<Hit>, skipFolders: (List<String>) -> Set<String>): List<Candidate> {
         val relevant = hits.filter { hit ->
             DriveNameParser.normalize(hit.file.fileName).contains(DriveNameParser.normalize(hit.keyword))
         }
@@ -193,6 +204,7 @@ internal class DriveSubjectMatcher(
         val candidates = LinkedHashMap<String, Candidate>()
         val listedFolders = HashSet<String>()
         var listedCount = 0
+        var skippedCount = 0
 
         suspend fun walk(folder: DriveFile, path: List<String>, depth: Int) {
             if (!listedFolders.add(folder.fid) || listedCount >= MAX_LISTED_FOLDERS) return
@@ -207,12 +219,13 @@ internal class DriveSubjectMatcher(
                 logger.warn(e) { "Failed to list drive folder ${folder.fid}" }
                 return
             }
+            val skipped = skipFolders(children.filter { it.dir }.map { it.fileName })
             for (child in children) {
                 if (candidates.size >= MAX_FILES) return
                 if (child.isVideo) {
                     candidates.getOrPut(child.fid) { Candidate(child, path) }
                 } else if (child.dir && depth < MAX_DEPTH) {
-                    walk(child, path + child.fileName, depth + 1)
+                    if (child.fileName in skipped) skippedCount++ else walk(child, path + child.fileName, depth + 1)
                 }
             }
         }
@@ -228,7 +241,7 @@ internal class DriveSubjectMatcher(
                 candidates.getOrPut(hit.file.fid) { Candidate(hit.file, emptyList()) }
             }
         }
-        logger.info { "Cloud drive search: ${candidates.size} candidate videos, listed $listedCount folders" }
+        logger.info { "Cloud drive search: ${candidates.size} candidate videos, listed $listedCount folders, skipped $skippedCount of other seasons" }
         return candidates.values.toList()
     }
 
@@ -292,9 +305,10 @@ internal class DriveSubjectMatcher(
                 val fileSeason = parsed.season
                 val fileEpisode = (parsed.episode as? EpisodeSort.Normal)?.number?.takeIf { it % 1f == 0f }?.toInt()
                 if (tmdbEpisodes != null && fileSeason != null && fileEpisode != null) {
-                    val mapped = tmdbEpisodes[fileSeason to fileEpisode]
-                        ?: return@mapNotNull drop("S${fileSeason}E$fileEpisode not in this subject", candidate)
-                    return@mapNotNull MatchedFile(candidate.file, candidate.folders, mapped)
+                    tmdbEpisodes[fileSeason to fileEpisode]?.let { return@mapNotNull MatchedFile(candidate.file, candidate.folders, it) }
+                    // 表里查不到: 文件按本季写 (`S04E01`, TMDB 却把整部算一季接着排), 季正是条目名写的季就照季规则认;
+                    // 条目名没写季 (天降之物f) 或季对不上的不是这个条目
+                    if (fileSeason != targetSeason) return@mapNotNull drop("S${fileSeason}E$fileEpisode not in this subject", candidate)
                 }
                 val season = parsed.season
                     ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
@@ -312,6 +326,29 @@ internal class DriveSubjectMatcher(
                 }
             }
             return matched
+        }
+
+        /**
+         * 这个条目的剧集可能写在哪些季里: 条目名写的季 (没写当第 1 季), 以及对应表里这个条目用到的 TMDB 季
+         * (按 TMDB 整理的网盘把它写成那一季, 如 TMDB 把整部算一季时的 `S01E78`).
+         */
+        fun seasonsOf(request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?): Set<Int> =
+            setOf(subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1) +
+                    tmdbEpisodes?.keys?.map { it.first }.orEmpty()
+
+        /**
+         * 一层文件夹里不必往下列的那些: 这一层按季分好了 (至少两个文件夹各只写了一个季、且季不同), 其中季不是这个条目会写的季
+         * ([seasonsOf]) 的. 按季分好的文件夹装的就是那一季, 里面没写季的视频最后也会按季去掉.
+         * 只有一个文件夹写了季时不跳: 常是上传者的总标题 (「…第二季」), 里面可能连前几季一起放.
+         * 名字拿不准的 (见 [DriveNameParser.singleDeclaredSeason]) 当没写季.
+         */
+        fun otherSeasonFolders(request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?): (List<String>) -> Set<String> {
+            val seasons = seasonsOf(request, tmdbEpisodes)
+            return { names ->
+                val declared = names.associateWith { DriveNameParser.singleDeclaredSeason(it) }
+                if (declared.values.filterNotNull().distinct().size < 2) emptySet()
+                else declared.filterValues { it != null && it !in seasons }.keys
+            }
         }
 
         private fun seasonMatches(

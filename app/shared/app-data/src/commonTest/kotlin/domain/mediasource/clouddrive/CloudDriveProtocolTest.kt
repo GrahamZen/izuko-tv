@@ -137,6 +137,14 @@ class CloudDriveProtocolTest {
     }
 
     @Test
+    fun `video duration is read when the protocol names its field`() {
+        val json = """{"id":"f1","name":"Show - 01.mkv","kind":"video","size":1443789299,"duration":1420}"""
+        assertEquals(1420, parse(json, protocol.file.copy(duration = "duration"))!!.durationSeconds)
+        // 协议没写时长字段时是 0
+        assertEquals(0, parse(json)!!.durationSeconds)
+    }
+
+    @Test
     fun `file entries follow the protocol for folder values - timestamps and video detection`() {
         val fields = protocol.file.copy(isDir = "type", dirValues = listOf("folder", "album"), updatedAtSeconds = true, category = "")
         assertTrue(parse("""{"id":"d1","name":"x","type":"album"}""", fields)!!.dir)
