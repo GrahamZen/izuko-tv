@@ -22,6 +22,8 @@ import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.models.subject.SplitSeason
+import me.him188.ani.app.data.models.subject.SplitSeasonDetector
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
@@ -69,6 +71,8 @@ data class SubjectRelationIndex(
     /** 自己之后的续作 (传递闭包) */
     val sequelSubjects: List<Int>,
     val sequelSubjectNames: List<String>,
+    /** [seriesMainSubjectIds] 里能找到的条目节点 (自己的节点来自邻居的关系列表, 孤立条目没有). 识别拆分季用, 见 [splitSeasonOf]. */
+    val seriesMainNodes: List<SeriesNode> = emptyList(),
 ) {
     companion object {
         val Empty = SubjectRelationIndex(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
@@ -96,6 +100,10 @@ data class SeriesNode(
     val airDate: PackedDate,
     /** 集数, 同样取自 `info` 串; 没写时为 `null`. */
     val episodes: Int?,
+    /** 本篇第一集的 sort, 只有系列关系图有; 不知道时为 `null`. 识别拆分季用, 见 [SplitSeasonDetector]. */
+    val firstSort: Int? = null,
+    /** 本篇中间的特别篇数, 见 [SplitSeason.Part.inlineSpecialCount]. */
+    val inlineSpecialCount: Int = 0,
 )
 
 /** [SubjectSeriesIndexService.prequelChain] 的结果. */
@@ -336,6 +344,7 @@ class SubjectSeriesIndexService(
                     parentWorks.flatMap { namesOf(it, edges) },
             sequelSubjects = sequels.toList(),
             sequelSubjectNames = sequels.toList().flatMap { namesOf(it, edges) },
+            seriesMainNodes = mainLine.mapNotNull { nodeOf(it, edges) },
         )
     }
 
@@ -343,12 +352,15 @@ class SubjectSeriesIndexService(
      * 一个条目的名字只能从**别人的**关系列表里拿到 (`/relations` 不包含条目自己).
      * 走完闭包后每个节点都至少被某个邻居提到过, 除非它是孤立的.
      */
-    private fun namesOf(id: Int, edges: Map<Int, SeriesEdges>): List<String> {
-        val subject = edges.values.asSequence()
+    private fun namesOf(id: Int, edges: Map<Int, SeriesEdges>): List<String> =
+        nodeOf(id, edges)?.let { namesOf(it) }.orEmpty()
+
+    /** 几个邻居都提到它时优先取带分集数据的那份 (系列关系图里的; 现场取的关系列表没有). */
+    private fun nodeOf(id: Int, edges: Map<Int, SeriesEdges>): SeriesNode? {
+        val nodes = edges.values.asSequence()
             .flatMap { (it.sequels + it.prequels).asSequence() }
-            .firstOrNull { it.id == id }
-            ?: return emptyList()
-        return namesOf(subject)
+            .filter { it.id == id }
+        return nodes.firstOrNull { it.firstSort != null } ?: nodes.firstOrNull()
     }
 
     private fun namesOf(subject: SeriesNode): List<String> = listOfNotNull(
