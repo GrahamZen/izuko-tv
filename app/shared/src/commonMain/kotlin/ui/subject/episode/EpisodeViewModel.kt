@@ -1214,7 +1214,10 @@ open class EpisodeViewModel(
                     subjectEpisodeBundle?.episodeInfo?.let { request.withCurrentEpisode(it) } ?: request
                 },
                 defaultFetchRequest = subjectEpisodeBundle?.let {
-                    MediaFetchRequest.create(it.subjectCollectionInfo.subjectInfo, it.episodeCollectionInfo.episodeInfo)
+                    MediaFetchRequest.create(
+                        it.subjectCollectionInfo.subjectInfo, it.episodeCollectionInfo.episodeInfo,
+                        it.subjectCollectionInfo.episodes.map { episode -> episode.episodeInfo }, it.seriesInfo,
+                    )
                 },
                 shareData = shareData,
             )
