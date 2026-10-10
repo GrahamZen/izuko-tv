@@ -109,11 +109,20 @@ internal fun tvNativeWithAlpha(color: Int, alpha: Float): Int =
         AndroidColor.red(color), AndroidColor.green(color), AndroidColor.blue(color),
     )
 
-/** 两个颜色逐通道插值. */
+/**
+ * 两个颜色插值, 按预乘 alpha 算 (同两层交叉淡化的样子): 一头是全透明 (`0`, 即透明的黑) 时只淡出, 颜色不往黑里走 ——
+ * 逐通道直接插的话, 白底淡出途中是半透明的灰, 浅色页面上焦点一走旧位置闪一下灰. 两头原样返回.
+ */
 internal fun tvNativeLerpColor(a: Int, b: Int, t: Float): Int {
-    fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+    if (t <= 0f) return a
+    if (t >= 1f) return b
+    val alphaA = AndroidColor.alpha(a) / 255f
+    val alphaB = AndroidColor.alpha(b) / 255f
+    val alpha = alphaA + (alphaB - alphaA) * t
+    if (alpha <= 0f) return 0
+    fun ch(x: Int, y: Int) = ((x * alphaA + (y * alphaB - x * alphaA) * t) / alpha).toInt().coerceIn(0, 255)
     return AndroidColor.argb(
-        ch(AndroidColor.alpha(a), AndroidColor.alpha(b)),
+        (alpha * 255f + 0.5f).toInt().coerceIn(0, 255),
         ch(AndroidColor.red(a), AndroidColor.red(b)),
         ch(AndroidColor.green(a), AndroidColor.green(b)),
         ch(AndroidColor.blue(a), AndroidColor.blue(b)),
