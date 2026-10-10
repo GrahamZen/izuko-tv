@@ -30,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
@@ -94,6 +95,9 @@ sealed class AniTorrentService : LifecycleService() {
     }
 
     private val notification = ServiceNotification(this)
+
+    /** 刷新通知内容的协程, 服务销毁时先停掉它, 见 [onDestroy]. */
+    private var notificationUpdates: Job? = null
     private val alarmService: AlarmManager by lazy { getSystemService(Context.ALARM_SERVICE) as AlarmManager }
 
     private val httpClientProvider = DefaultHttpClientProvider(FlowProxyProvider(proxyConfig), scope)
@@ -126,7 +130,7 @@ sealed class AniTorrentService : LifecycleService() {
             }
         }
 
-        scope.launch {
+        notificationUpdates = scope.launch {
             val anitorrentDownloader = anitorrent.await().getDownloader()
 
             // 用来更新通知的状态, 有 BT 任务时显示下载数量. 没任务时显示 BT 服务运行中.
@@ -233,6 +237,9 @@ sealed class AniTorrentService : LifecycleService() {
 
     override fun onDestroy() {
         logger.info { "AniTorrentService is stopping." }
+        // 先停掉通知刷新再撤掉通知: 服务被停时系统已撤掉前台通知, 这之后再刷新会补发一条普通通知一直留着 (见 ServiceNotification.createNotification)
+        runBlocking { withTimeoutOrNull(1000L) { notificationUpdates?.cancelAndJoin() } }
+        notification.cancelNotification()
         meteredNetworkDetector.dispose()
         val engine = kotlin.runCatching { anitorrent.getCompleted() }.getOrNull() ?: return
         runBlocking(Dispatchers.IO_) {
