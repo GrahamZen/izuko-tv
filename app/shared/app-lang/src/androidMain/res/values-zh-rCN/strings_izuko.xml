@@ -851,4 +851,6 @@
     <string name="remote_settings_peer_id_rules_description">电视上打开「过滤客户端指纹」后生效。每行一条正则表达式，如 -HP[0-9]{4}- 屏蔽指纹为 -HPxxxx- 的客户端。</string>
     <string name="remote_settings_peer_client_rules">Peer 过滤：客户端类型规则</string>
     <string name="remote_settings_peer_client_rules_description">电视上打开「过滤客户端类型」后生效。每行一条正则表达式，如 go.torrent 屏蔽百度网盘的离线下载客户端。</string>
+    <!-- 电视设置「关于」里的反馈群 -->
+    <string name="settings_about_qq_group">QQ 群</string>
 </resources>
