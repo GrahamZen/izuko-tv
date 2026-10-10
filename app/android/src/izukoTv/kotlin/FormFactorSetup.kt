@@ -20,7 +20,6 @@ import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
 import me.him188.ani.android.tv.RemoteKeepAliveService
 import me.him188.ani.android.tv.TvHomeChannels
-import me.him188.ani.android.tv.TvOnboardingGate
 import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
@@ -28,6 +27,7 @@ import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
 import me.him188.ani.app.ui.main.TvStartupLogo
 import me.him188.ani.app.ui.main.TvStartupLogoHost
 import me.him188.ani.app.ui.main.tvStartupLogoColors
+import me.him188.ani.app.ui.onboarding.TvOnboardingGate
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import org.koin.android.ext.android.getKoin
