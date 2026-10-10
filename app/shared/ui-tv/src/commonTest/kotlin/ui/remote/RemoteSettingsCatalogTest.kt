@@ -14,7 +14,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
+import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.domain.torrent.peer.PeerFilterRule
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_alliance
 import kotlin.test.Test
@@ -62,6 +64,60 @@ class RemoteSettingsCatalogTest {
         val bad = RemoteGenericSettings.parse(spec, "udp://a.example:1337/announce\nnot-a-tracker")
         assertIs<RemoteGenericSettings.Parsed.Error>(bad)
         assertContains(bad.message, "not-a-tracker")
+    }
+
+    /** 嵌套字段 (`localRule.xxx`): 只换最里面那个字段, 同一层与外层的其他字段都不动 */
+    @Test
+    fun `nested field is read and written in place`() {
+        @Suppress("UNCHECKED_CAST")
+        val spec = RemoteSettingsCatalog.items.single { it.key == "peerIdRules" } as RemoteSettingSpec<TorrentPeerConfig>
+        val before = TorrentPeerConfig(
+            enableIdFilter = true,
+            ipBlackList = listOf("1.2.3.4"),
+            localRule = PeerFilterRule(listOf("10.0.0.0/8"), listOf("-XL"), listOf("go\\.torrent")),
+        )
+
+        assertEquals(JsonArray(listOf(JsonPrimitive("-XL"))), spec.read(before))
+        val after = spec.write(before, JsonArray(listOf(JsonPrimitive("-HP[0-9]{4}-"))))
+
+        assertEquals(before.copy(localRule = before.localRule.copy(blockedIdRegex = listOf("-HP[0-9]{4}-"))), after)
+        assertIs<RemoteSettingEditor.Lines>(spec.resolvedEditor)
+    }
+
+    @Test
+    fun `nested path must go through non-null data classes`() {
+        assertIs<RemoteSettingEditor.Lines>(spec(TorrentPeerConfig.serializer(), "localRule.blockedIpPattern").resolvedEditor)
+        assertFailsWith<IllegalArgumentException> {
+            spec(TorrentPeerConfig.serializer(), "localRule.noSuchField").resolvedEditor
+        }
+        // 中间一段是列表, 不是数据类
+        assertFailsWith<IllegalArgumentException> {
+            spec(TorrentPeerConfig.serializer(), "ipBlackList.size").resolvedEditor
+        }
+    }
+
+    /** Peer 规则逐行检查: IP 规则用过滤时同一个解析器, 正则要编译得过 (写错的正则会让建过滤器时抛异常) */
+    @Test
+    fun `peer rules are checked line by line`() {
+        val ip = RemoteSettingsCatalog.items.single { it.key == "peerIpRules" }
+        val ok = RemoteGenericSettings.parse(ip, "10.0.0.1/24\n10.0.12.*\n10.0.24.100-200\nff06:1234::cafe-dead\n\n")
+        assertIs<RemoteGenericSettings.Parsed.Value>(ok)
+        assertEquals(4, (ok.element as JsonArray).size)
+        val badIp = RemoteGenericSettings.parse(ip, "10.0.0.1\nnot-an-ip")
+        assertIs<RemoteGenericSettings.Parsed.Error>(badIp)
+        assertContains(badIp.message, "not-an-ip")
+
+        val blackList = RemoteSettingsCatalog.items.single { it.key == "peerIpBlackList" }
+        assertIs<RemoteGenericSettings.Parsed.Value>(RemoteGenericSettings.parse(blackList, "1.2.3.4\n2001:db8::1"))
+        assertIs<RemoteGenericSettings.Parsed.Error>(RemoteGenericSettings.parse(blackList, "example.com"))
+
+        for (key in listOf("peerIdRules", "peerClientRules")) {
+            val regex = RemoteSettingsCatalog.items.single { it.key == key }
+            assertIs<RemoteGenericSettings.Parsed.Value>(RemoteGenericSettings.parse(regex, "-HP[0-9]{4}-\ngo\\.torrent(\\sdev)?"))
+            val bad = RemoteGenericSettings.parse(regex, "-XL\n(unclosed")
+            assertIs<RemoteGenericSettings.Parsed.Error>(bad)
+            assertContains(bad.message, "(unclosed")
+        }
     }
 
     @Test

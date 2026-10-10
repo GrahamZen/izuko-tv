@@ -30,9 +30,18 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.MediaPreference
+import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.remote_settings_peer_client_rules
+import me.him188.ani.app.ui.lang.remote_settings_peer_client_rules_description
+import me.him188.ani.app.ui.lang.remote_settings_peer_id_rules
+import me.him188.ani.app.ui.lang.remote_settings_peer_id_rules_description
+import me.him188.ani.app.ui.lang.remote_settings_peer_ip_blacklist
+import me.him188.ani.app.ui.lang.remote_settings_peer_ip_blacklist_description
+import me.him188.ani.app.ui.lang.remote_settings_peer_ip_rules
+import me.him188.ani.app.ui.lang.remote_settings_peer_ip_rules_description
 import me.him188.ani.app.ui.lang.settings_media_alliance
 import me.him188.ani.app.ui.lang.settings_media_alliance_description
 import me.him188.ani.app.ui.lang.settings_media_any
@@ -41,6 +50,7 @@ import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_description
 import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_none
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers_dialog_description
+import me.him188.ani.utils.ipparser.IpSeqRange
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
@@ -48,7 +58,8 @@ import org.jetbrains.compose.resources.getString
  * Web 控制台「设置」里的通用设置项清单: 登记一行 (哪个设置、哪个字段、用设置页的哪条文案), 网页上就有对应的卡片,
  * 不用另写网页代码, 也不用补译文 (标题与说明用设置页的文案, 本来就有各语言).
  *
- * 只登记改了就生效、不用另做校验或确认的字段; 要测试连接、检查格式、二次确认的 (代理、tracker、镜像) 在 [RemoteSettings] 里单独写.
+ * 只登记改了就生效、不用确认的字段 (逐行的格式检查用 [RemoteSettingEditor.Lines] 的 `accepts`); 要测试连接、二次确认、
+ * 密码只写不读的 (代理、镜像、PikPak 账号) 在 [RemoteSettings] 里单独写.
  * 字段名写错或改名时 `RemoteSettingsCatalogTest` 会失败.
  */
 internal object RemoteSettingsCatalog {
@@ -84,6 +95,46 @@ internal object RemoteSettingsCatalog {
             placeholder = Lang.settings_media_excluded_alliance_none,
             editor = RemoteSettingEditor.Lines(splitCommas = true),
         ),
+        // BT 的 Peer 过滤 (同设置页「Peer 过滤和屏蔽设置」): 规则文字在这里改, 各项开关留在电视上.
+        // 黑名单总是生效; 三类本地规则在对应开关打开时才生效 (见 TorrentPeerConfig.createRuleWithEnabled)
+        RemoteSettingSpec(
+            key = "peerIpBlackList",
+            settings = { torrentPeerConfig },
+            serializer = TorrentPeerConfig.serializer(),
+            fieldName = "ipBlackList",
+            title = Lang.remote_settings_peer_ip_blacklist,
+            description = Lang.remote_settings_peer_ip_blacklist_description,
+            // 黑名单与 IP 规则一样交给 PeerIpFilter 解析, 解析不了的那条不生效
+            editor = RemoteSettingEditor.Lines(accepts = ::isIpPattern, invalidMessage = "这一行不是有效的 IP 地址或规则：{0}"),
+        ),
+        RemoteSettingSpec(
+            key = "peerIpRules",
+            settings = { torrentPeerConfig },
+            serializer = TorrentPeerConfig.serializer(),
+            fieldName = "localRule.blockedIpPattern",
+            title = Lang.remote_settings_peer_ip_rules,
+            description = Lang.remote_settings_peer_ip_rules_description,
+            editor = RemoteSettingEditor.Lines(accepts = ::isIpPattern, invalidMessage = "这一行不是有效的 IP 地址或规则：{0}"),
+        ),
+        RemoteSettingSpec(
+            key = "peerIdRules",
+            settings = { torrentPeerConfig },
+            serializer = TorrentPeerConfig.serializer(),
+            fieldName = "localRule.blockedIdRegex",
+            title = Lang.remote_settings_peer_id_rules,
+            description = Lang.remote_settings_peer_id_rules_description,
+            // 规则在建过滤器时直接编译 (PeerIdFilter), 写错的正则不能存进去
+            editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
+        ),
+        RemoteSettingSpec(
+            key = "peerClientRules",
+            settings = { torrentPeerConfig },
+            serializer = TorrentPeerConfig.serializer(),
+            fieldName = "localRule.blockedClientRegex",
+            title = Lang.remote_settings_peer_client_rules,
+            description = Lang.remote_settings_peer_client_rules_description,
+            editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
+        ),
     )
 
     /**
@@ -95,6 +146,11 @@ internal object RemoteSettingsCatalog {
     private val TRACKER_SCHEMES = listOf("udp://", "http://", "https://", "ws://", "wss://")
 
     private fun isTrackerUrl(line: String): Boolean = TRACKER_SCHEMES.any { line.startsWith(it, ignoreCase = true) }
+
+    /** Peer 的 IP 规则: 与过滤时同一个解析器 ([IpSeqRange]) 认得的写法. */
+    fun isIpPattern(line: String): Boolean = runCatching { IpSeqRange.parse(line) }.isSuccess
+
+    fun isRegex(line: String): Boolean = runCatching { Regex(line) }.isSuccess
 }
 
 /** 网页上怎么改这一项. 不写时按字段类型定 (见 [RemoteSettingSpec.resolvedEditor]). */
@@ -141,7 +197,8 @@ internal sealed interface RemoteSettingEditor {
  * 清单里的一项.
  *
  * @param key 网页与接口里用的名字, 清单里唯一.
- * @param fieldName 数据类里的字段名 (序列化名, 一般就是属性名).
+ * @param fieldName 数据类里的字段名 (序列化名, 一般就是属性名). 嵌套的字段用 `.` 连起来, 如 `localRule.blockedIpPattern`
+ * (中间每一段都要是不可空的数据类, 改的时候只换最里面那个字段).
  */
 internal class RemoteSettingSpec<T>(
     val key: String,
@@ -153,13 +210,21 @@ internal class RemoteSettingSpec<T>(
     val placeholder: StringResource? = null,
     val editor: RemoteSettingEditor? = null,
 ) {
-    /** 字段的序列化描述; 没有这个字段时抛异常. */
+    private val path: List<String> get() = fieldName.split('.')
+
+    /** 字段的序列化描述; 没有这个字段, 或中间一段不是不可空的数据类时抛异常. */
     val fieldDescriptor: SerialDescriptor
         get() {
-            val descriptor = serializer.descriptor
-            val index = descriptor.getElementIndex(fieldName)
-            require(index != CompositeDecoder.UNKNOWN_NAME) { "${descriptor.serialName} 没有字段 $fieldName" }
-            return descriptor.getElementDescriptor(index)
+            var descriptor = serializer.descriptor
+            path.forEachIndexed { i, name ->
+                require(i == 0 || (descriptor.kind == StructureKind.CLASS && !descriptor.isNullable)) {
+                    "$key: ${path.take(i).joinToString(".")} 不是不可空的数据类, 改不了它里面的字段"
+                }
+                val index = descriptor.getElementIndex(name)
+                require(index != CompositeDecoder.UNKNOWN_NAME) { "${descriptor.serialName} 没有字段 $name" }
+                descriptor = descriptor.getElementDescriptor(index)
+            }
+            return descriptor
         }
 
     /** 网页上的输入方式: 写了的先检查与字段类型对得上, 没写的按字段类型定. */
@@ -181,13 +246,23 @@ internal class RemoteSettingSpec<T>(
         }
 
     /** 当前值里这个字段的 JSON. */
-    fun read(value: T): JsonElement = RemoteGenericSettings.json.encodeToJsonElement(serializer, value).jsonObject[fieldName] ?: JsonNull
+    fun read(value: T): JsonElement {
+        var element: JsonElement = RemoteGenericSettings.json.encodeToJsonElement(serializer, value)
+        for (name in path) element = (element as? JsonObject)?.get(name) ?: return JsonNull
+        return element
+    }
 
-    /** 只换掉这个字段, 其余照旧. */
+    /** 只换掉这个字段, 其余照旧 (嵌套时外层的其他字段也不动). */
     fun write(value: T, element: JsonElement): T {
         val json = RemoteGenericSettings.json
         val fields = json.encodeToJsonElement(serializer, value).jsonObject
-        return json.decodeFromJsonElement(serializer, JsonObject(fields + (fieldName to element)))
+        return json.decodeFromJsonElement(serializer, replaceAt(fields, path, element))
+    }
+
+    private fun replaceAt(obj: JsonObject, path: List<String>, element: JsonElement): JsonObject {
+        val name = path.first()
+        val replaced = if (path.size == 1) element else replaceAt(obj.getValue(name).jsonObject, path.drop(1), element)
+        return JsonObject(obj + (name to replaced))
     }
 
     private companion object {
