@@ -54,7 +54,7 @@ internal object DriveNameParser {
         SEASON_EPISODE.find(name)?.let { match ->
             return ParsedFile(
                 season = match.groupValues[1].toInt(),
-                episode = episodeSort(match.groupValues[2], match.groupValues[3]),
+                episode = EpisodeSort(match.groupValues[2].toInt()),
                 isExtra = false,
             )
         }
@@ -78,6 +78,30 @@ internal object DriveNameParser {
         FOLDER_SEASON_CODE.find(folderName)?.let { return it.groupValues[1].toInt() }
         TRAILING_DIGIT_AFTER_CJK.find(folderName.trim())?.let { return it.groupValues[1].toInt() }
         return null
+    }
+
+    /**
+     * 文件夹名或分享标题明确写了、且只写了一个季时返回它 (`S02`, `Season 2`, `第二季`, `2nd Season`).
+     * 写了几个季、季号旁边挨着别的数字 (`Season 1 & 2`, `第三季 01-12`)、只写「第一部」或标题末尾带数字时为 null:
+     * 用来跳过明显是别的季的文件夹, 拿不准就当没写.
+     */
+    fun singleDeclaredSeason(name: String): Int? {
+        val matches = SINGLE_SEASON_MARKERS.flatMap { it.findAll(name).toList() }
+        val season = matches.mapNotNull { parseNumber(it.groupValues[1]) }.toSet().singleOrNull() ?: return null
+        val rest = matches.sortedByDescending { it.range.first }.fold(name) { acc, match -> acc.replaceRange(match.range, " ") }
+        return season.takeUnless { JOINED_NUMBER.containsMatchIn(rest) }
+    }
+
+    /**
+     * 名字里提到的所有季 (`第三季`, `Season 3`, `3rd Season`, `Ⅲ`, `S03`, `S03E01`), 写了几个季时都算 (`S1-S3` 得到 1 与 3).
+     * 用来给站点上的分享、BT 发布按季排先后与取舍; 不认标题末尾的数字.
+     */
+    fun declaredSeasons(name: String): Set<Int> = buildSet {
+        for (match in CHINESE_SEASON.findAll(name)) parseNumber(match.groupValues[1])?.let(::add)
+        for (match in SEASON_WORD.findAll(name)) add(match.groupValues[1].toInt())
+        for (match in ORDINAL_SEASON.findAll(name)) add(match.groupValues[1].toInt())
+        for (match in ROMAN_SEASON.findAll(name)) add(ROMAN_NUMERALS.getValue(match.groupValues[1]))
+        for (match in SEASON_CODE.findAll(name)) add(match.groupValues[1].toInt())
     }
 
     /**
@@ -175,10 +199,13 @@ internal object DriveNameParser {
 
     private val ROMAN_NUMERALS = mapOf("Ⅱ" to 2, "Ⅲ" to 3, "Ⅳ" to 4, "Ⅴ" to 5, "Ⅵ" to 6, "II" to 2, "III" to 3)
 
+    /** 标准命名 `S06E01`: 后面跟的是画质、集名 (`.4K`、`.1080p`、`.Good.Loser`), 不认小数 (特别篇写 `S00Exx`). */
     private val SEASON_EPISODE =
-        Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})[ ._-]?[Ee][Pp]?(\d{1,4})(?:\.(\d))?(?![0-9])""")
+        Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})[ ._-]?[Ee][Pp]?(\d{1,4})(?![0-9])""")
     private val CHINESE_EPISODE = Regex("""第\s*([0-9]{1,4}|[零〇一二两三四五六七八九十]{1,4})\s*[集话話回]""")
-    private val EP_EPISODE = Regex("""(?<![A-Za-z])(?:EP|Ep|ep|E)[ ._-]?(\d{1,4})(?:\.(\d))?(?![0-9])""")
+
+    /** `EP12.5` 是半集; 小数后面紧跟字母或数字的不是 (`EP01.4K` 是第 1 集). */
+    private val EP_EPISODE = Regex("""(?<![A-Za-z])(?:EP|Ep|ep|E)[ ._-]?(\d{1,4})(?:\.(\d)(?![0-9A-Za-z]))?(?![0-9])""")
 
     private val EXTRA = Regex(
         """(?<![A-Za-z])(?:NCOP|NCED|OP|ED|PV|CM|MENU|Menu|PREVIEW|Preview|TRAILER|Trailer|Teaser|TEASER|SP|OVA|OAD)[ ._-]?\d{0,2}(?![A-Za-z0-9])""" +
@@ -191,6 +218,23 @@ internal object DriveNameParser {
     private val ORDINAL_SEASON = Regex("""(?i)(?<![0-9])(\d{1,2})(?:st|nd|rd|th)[ ._-]*season""")
     private val ROMAN_SEASON = Regex("""(?<![A-Za-z])(Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|III|II)(?![A-Za-z])""")
     private val FOLDER_SEASON_CODE = Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})(?![0-9Ee])""")
+
+    /** 标题里的 `Season 3`. 与 [ENGLISH_SEASON] 不同, 不跨过 ` - `: 发布标题里 `2nd Season - 01` 的 01 是集号. */
+    private val SEASON_WORD = Regex("""(?i)(?<![a-z])season[ ._]?(\d{1,2})(?![0-9])""")
+
+    /** 标题里的 `S03` 或 `S03E01` 的季. */
+    private val SEASON_CODE = Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})(?=[Ee]\d|[^0-9A-Za-z]|$)""")
+
+    private val SINGLE_SEASON_MARKERS = listOf(
+        Regex("""第\s*([0-9]{1,2}|[一二两三四五六七八九十]{1,3})\s*[季期](?!分)"""),
+        ENGLISH_SEASON,
+        ORDINAL_SEASON,
+        FOLDER_SEASON_CODE,
+    )
+
+    /** 数字挨着范围或并列的符号: 名字里除了一个季号还写了别的季或集的范围. */
+    private val JOINED_NUMBER = Regex("""\d\s*[-~～至到&+、,，和及]|[-~～至到&+、,，和及]\s*\d""")
+
     private val TRAILING_DIGIT_AFTER_CJK = Regex("""[一-鿿]\s*([2-9])$""")
 
     private val SEASON_MARKERS = listOf(CHINESE_SEASON, ENGLISH_SEASON, ORDINAL_SEASON, ROMAN_SEASON)
