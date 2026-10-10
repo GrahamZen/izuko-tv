@@ -210,6 +210,7 @@ fun SettingsScreen(
      * 前往扫码登录其他设备. 为 `null` (当前平台不能扫码) 时不显示入口
      */
 ) {
+    if (settingsScreenVariantShown(vm, onNavigateToBangumiOAuth, loadOpenSourceLibrariesJsons, modifier, initialTab, windowInsets, navigationIcon)) return
     // 界面缩放改动后, 离开设置页时把窗口层 (弹窗/菜单) 一并对齐
     UiScaleSyncEffect()
 
