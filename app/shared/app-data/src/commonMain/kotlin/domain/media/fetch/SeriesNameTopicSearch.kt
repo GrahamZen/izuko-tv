@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.take
+import me.him188.ani.app.domain.episode.servesWholeSubject
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
@@ -55,13 +56,16 @@ internal suspend fun MediaSource.fetchWithSeriesName(request: MediaFetchRequest)
  */
 internal class SeriesNameSearch private constructor(
     val seriesName: String,
-    private val episodeSort: EpisodeSort,
-    private val episodeEp: EpisodeSort?,
+    /**
+     * 要认的集 (系列内序号与条目内序号): 查询会话给整个条目用时 (见 `servesEpisodeOf`) 是条目的全部集, 切集后不重搜;
+     * 否则只有请求的这一集.
+     */
+    private val episodes: List<Pair<EpisodeSort, EpisodeSort?>>,
     /** 条目名写的季, 没写为 null. */
     private val season: Int?,
 ) {
     /**
-     * 系列名搜到的资源是不是本季的这一集:
+     * 系列名搜到的资源是不是本季的某一集 ([episodes]):
      * - 集号含系列内序号, 且它与条目内序号不同 (这时它在整个系列里唯一, 「[49]」只能是第三季第 1 集);
      * - 或者标题写明了本季 (「S3」「第三季」), 集号对得上任一种序号.
      * 只写了条目内序号的 (「[01]」) 分不出是哪一季, 不要. 集号只认解析出来的具体序号: 解析成「整季」的
@@ -70,9 +74,12 @@ internal class SeriesNameSearch private constructor(
     fun accepts(media: Media): Boolean {
         val range = media.episodeRange ?: return false
         fun has(sort: EpisodeSort) = range.contains(sort, allowSeason = false)
-        if (episodeEp != null && episodeEp != episodeSort && has(episodeSort)) return true
-        return season != null && season in DriveNameParser.declaredSeasons(media.originalTitle) &&
-                (has(episodeSort) || (episodeEp != null && has(episodeEp)))
+        val seasonDeclared by lazy(LazyThreadSafetyMode.NONE) {
+            season != null && season in DriveNameParser.declaredSeasons(media.originalTitle)
+        }
+        return episodes.any { (sort, ep) ->
+            (ep != null && ep != sort && has(sort)) || (seasonDeclared && (has(sort) || (ep != null && has(ep))))
+        }
     }
 
     companion object {
@@ -88,7 +95,12 @@ internal class SeriesNameSearch private constructor(
             val season = request.subjectNames.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
             val ep = request.episodeEp
             if ((ep == null || ep == request.episodeSort) && season == null) return null
-            return SeriesNameSearch(seriesName, request.episodeSort, ep, season)
+            val episodes = if (request.servesWholeSubject) {
+                request.episodes.map { it.sort to it.ep }
+            } else {
+                listOf(request.episodeSort to ep)
+            }
+            return SeriesNameSearch(seriesName, episodes, season)
         }
     }
 }
