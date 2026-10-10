@@ -519,7 +519,7 @@ class MediaSourceMediaFetcher(
                     disabled = !instance.isEnabled,
                     pagedSources = this.request
                         .map {
-                            instance.source.fetch(it)
+                            instance.source.fetchWithSeriesName(it)
                         },
                     flowContext = flowContext,
                     searchLimiter = searchLimiter.takeUnless { instance.source is SelfLimitedMediaSource },
