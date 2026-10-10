@@ -24,6 +24,7 @@ import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.models.fold
 import me.him188.ani.app.data.models.runApiRequest
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.domain.media.fetch.seasonEpisodeSorts
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
@@ -550,13 +551,13 @@ class SelectorMediaSource(
     }
 
     /**
-     * 本条目的全部集号, 交给 [SelectorSearchQuery.subjectEpisodeSorts] 决定产出范围.
+     * 本条目的全部集号, 交给 [SelectorSearchQuery.subjectEpisodeSorts] 决定产出范围. 拆分季的后一段再加上整季序号 ([seasonEpisodeSorts]).
      *
      * 剧集列表未知, 或条目集数超过 [MAX_WHOLE_SUBJECT_EPISODES] 时为 `null` —— 那时退回"只产出当前这一集".
      */
     private fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
         if (episodes.isEmpty() || episodes.size > MAX_WHOLE_SUBJECT_EPISODES) return null
-        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) }
+        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) } + seasonEpisodeSorts()
     }
 
     /**
