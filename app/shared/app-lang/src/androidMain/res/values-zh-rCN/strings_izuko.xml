@@ -743,6 +743,9 @@
     <string name="comment_reply_unsupported">该评论不支持回复，仅可查看</string>
     <string name="comment_image_unavailable">图片已失效或无法访问</string>
     <string name="subject_details_tv_error_back_hint">按返回键退出</string>
+    <string name="subject_details_tv_no_episodes_title">暂时看不了</string>
+    <string name="subject_details_tv_no_episodes_message">Bangumi 上这部作品的条目信息已过期，还没有录入分集，所以没法进入播放。等 Bangumi 补上分集后就能看了。</string>
+    <string name="subject_details_tv_no_episodes_ok">知道了</string>
     <string name="subject_details_tv_episodes_fetch_failed_title">分集没取到</string>
     <string name="subject_details_tv_episodes_fetch_failed_message">这部作品的分集没能从 Bangumi 取到，多半是网络不好。再按一次播放会重新获取。</string>
     <string name="foundation_load_error_subject_not_accessible">当前 Bangumi 账号看不到这个条目。成人条目需要账号注册满 60 天，也可能是条目已被删除。</string>
