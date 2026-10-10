@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.media.fetch.CompletedConditions
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
+import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -55,6 +56,26 @@ class SubjectMediaFetchSessionsTest {
         assertSame(first, second)
         assertEquals(1, created.size)
         assertEquals(1, created[0].subscribers)
+        sessions.close()
+    }
+
+    /** 长番 (在线源只产出查询时的那一集) 换了集要重新查, 同一集照旧复用. 剧集列表未知时同样. */
+    @Test
+    fun `long series switching episodes creates a new session`() = runTest {
+        val created = mutableListOf<FakeSession>()
+        val sessions = SubjectMediaFetchSessions(backgroundScope) { FakeSession(it).also { s -> created += s } }
+        val episodeIds = (1..SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES + 1).toList()
+
+        val first = sessions.get(request(1, episodeIds))
+        runCurrent()
+        assertSame(first, sessions.get(request(1, episodeIds)))
+        val second = sessions.get(request(2, episodeIds))
+        runCurrent()
+        assertNotSame(first, second)
+        assertEquals(0, created[0].subscribers)
+        assertEquals(1, created[1].subscribers)
+
+        assertNotSame(sessions.get(request(1, emptyList())), sessions.get(request(2, emptyList())))
         sessions.close()
     }
 
