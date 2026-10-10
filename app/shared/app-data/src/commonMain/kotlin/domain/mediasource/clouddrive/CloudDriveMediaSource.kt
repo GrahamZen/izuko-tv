@@ -229,8 +229,10 @@ class CloudDriveMediaSource(
                 ?: Resolution.entries.lastOrNull { it.size <= file.videoHeight && file.videoHeight > 0 }
                 ?: Resolution.R1080P
             val sourceId = protocol.driveMediaSourceId
+            val mediaId = "$sourceId.${file.fid}"
+            DriveVideoBitrates.record(mediaId, file)
             return DefaultMedia(
-                mediaId = "$sourceId.${file.fid}",
+                mediaId = mediaId,
                 mediaSourceId = sourceId,
                 originalUrl = service.placeholders.folderUrl(file.parentFid),
                 download = ResourceLocation.HttpStreamingFile(service.placeholders.fileUri(file.fid)),

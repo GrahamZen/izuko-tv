@@ -23,6 +23,7 @@ class DriveSubjectMatcherTest {
         val searchError: Throwable? = null,
     ) : DriveBrowser {
         val searched = mutableListOf<String>()
+        val listed = mutableListOf<String>()
 
         override suspend fun search(keyword: String): List<DriveFile> {
             searched += keyword
@@ -30,7 +31,10 @@ class DriveSubjectMatcherTest {
             return searchResults[keyword].orEmpty()
         }
 
-        override suspend fun listFolder(folderId: String): List<DriveFile> = folders[folderId].orEmpty()
+        override suspend fun listFolder(folderId: String): List<DriveFile> {
+            listed += folderId
+            return folders[folderId].orEmpty()
+        }
     }
 
     private fun video(id: String, name: String, size: Long = 300L * 1024 * 1024) =
@@ -125,6 +129,58 @@ class DriveSubjectMatcherTest {
         // 表里没有这个条目时照旧按条目名认季: 名字不写季 = 第一季
         val fallback = DriveSubjectMatcher(browser).match(request("天降之物f", episodes = episodes))
         assertEquals(listOf("s1"), fallback.map { it.file.fid })
+    }
+
+    @Test
+    fun `season numbered files of a subject the map numbers as one long season`() = runTest {
+        // TMDB 把整部算一季接着排 (第四季第 1 集 = S1E78), 网盘按本季写成 S04E01; 另一套编号的 S05E01 与别的季的照旧不要
+        val browser = FakeBrowser(
+            searchResults = mapOf("Re：从零开始的异世界生活" to listOf(dir("root", "Re：从零开始的异世界生活 第四季"))),
+            folders = mapOf(
+                "root" to listOf(
+                    video("s4e1", "Re.ZERO.S04E01.mkv"),
+                    video("tmdb", "Re.ZERO.S01E79.mkv"),
+                    video("s5e1", "Re.ZERO.S05E01.mkv"),
+                    video("s3e1", "Re.ZERO.S03E01.mkv"),
+                ),
+            ),
+        )
+        val episodes = (1..2).map { MediaFetchRequest.Episode(episodeId = "$it", sort = EpisodeSort(77 + it), ep = EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
+
+        val matched = DriveSubjectMatcher(browser, numbering).match(request("Re：从零开始的异世界生活 第四季", episodes = episodes))
+        assertEquals(listOf("Re.ZERO.S01E79.mkv@79", "Re.ZERO.S04E01.mkv@01"), matched.map { it.summary() }.sorted())
+    }
+
+    @Test
+    fun `folders of other seasons in a season split layer are not listed`() = runTest {
+        val browser = FakeBrowser(
+            searchResults = mapOf("葬送的芙莉莲" to listOf(dir("root", "葬送的芙莉莲"))),
+            folders = mapOf(
+                "root" to listOf(dir("s1", "Season 1"), dir("s2", "Season 2"), dir("s3", "Season 3"), dir("sp", "Specials")),
+                "s1" to listOf(video("a1", "01.mp4")),
+                "s2" to listOf(video("b1", "01.mp4")),
+                "s3" to listOf(video("c1", "01.mp4")),
+            ),
+        )
+        val matched = DriveSubjectMatcher(browser).match(request("葬送的芙莉莲 第二季"))
+        assertEquals(listOf("b1"), matched.map { it.file.fid })
+        assertEquals(listOf("root", "s2", "sp"), browser.listed)
+    }
+
+    @Test
+    fun `a lone folder that names a season is still listed`() = runTest {
+        // 总文件夹叫「第二季」, 里面连第一季一起放: 这一层没按季分, 照样列
+        val browser = FakeBrowser(
+            searchResults = mapOf("葬送的芙莉莲" to listOf(dir("root", "葬送的芙莉莲"))),
+            folders = mapOf(
+                "root" to listOf(dir("all", "葬送的芙莉莲 第二季")),
+                "all" to listOf(dir("s1", "S01"), video("b1", "S02E01.mp4")),
+                "s1" to listOf(video("a1", "S01E01.mp4")),
+            ),
+        )
+        val matched = DriveSubjectMatcher(browser).match(request("葬送的芙莉莲"))
+        assertEquals(listOf("a1"), matched.map { it.file.fid })
     }
 
     @Test
