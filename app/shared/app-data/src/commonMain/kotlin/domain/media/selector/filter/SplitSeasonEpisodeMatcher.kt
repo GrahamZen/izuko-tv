@@ -71,7 +71,7 @@ internal class SplitSeasonEpisodeMatcher private constructor(
             val season = context.subjectSeriesInfo?.splitSeason ?: return null
             val episodeInfo = context.episodeInfo ?: return null
             val ownNames = context.subjectInfo?.allNames ?: return null
-            val pageMatcher = SplitSeasonPageMatcher.create(season, ownNames, episodeInfo.sort, episodeInfo.ep) ?: return null
+            val pageMatcher = SplitSeasonPageMatcherCache.get(season, ownNames, episodeInfo.sort, episodeInfo.ep) ?: return null
 
             val pages = HashMap<PageKey, MutableSet<Int>>()
             for (media in list) {
@@ -81,6 +81,7 @@ internal class SplitSeasonEpisodeMatcher private constructor(
                 pages.getOrPut(PageKey(media.mediaSourceId, subjectName, media.properties.alliance)) { HashSet() }.add(number)
             }
             if (pages.isEmpty()) return null
+            SplitSeasonPageLog.log(episodeInfo, pageMatcher, pages.mapKeys { (k, _) -> Triple(k.mediaSourceId, k.subjectName, k.channel) })
             return SplitSeasonEpisodeMatcher(pageMatcher, pages.mapValues { SplitSeasonPageMatcher.PageNumbers(it.value) })
         }
 
