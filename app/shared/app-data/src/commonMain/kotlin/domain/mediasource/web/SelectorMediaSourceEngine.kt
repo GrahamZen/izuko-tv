@@ -59,6 +59,7 @@ import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.SubtitleKind
 import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.topic.EpisodeRange
@@ -97,7 +98,8 @@ data class SelectorSearchQuery(
      */
     val freshnessProbe: SelectorEpisodeProbe? = null,
     /**
-     * 本条目的全部集号 (`sort` 与 `ep` 都算). 非空时, 按集号裁剪产出的范围放宽到**整个条目**.
+     * 本条目的全部集号 (`sort` 与 `ep` 都算; 拆分季的后一段还有整季序号, 见 [MediaFetchRequest.seasonEpisodeCount]).
+     * 非空时, 按集号裁剪产出的范围放宽到**整个条目**.
      *
      * **为什么不能只产出当次那一集**: 播放页的查询会话是按条目复用的 (见
      * `SubjectMediaFetchSessions`), 切集只重建选择器、不重新查询. 产出里只有第一次进来那一集的话,
