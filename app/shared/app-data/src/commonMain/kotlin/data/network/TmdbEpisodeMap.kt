@@ -38,6 +38,17 @@ internal class TmdbEpisodeMap private constructor(
         explicit.values.forEach { add(it.first) }
     }
 
+    /**
+     * 本篇第一集对应的 (季, 集): 接续写法的起点, 否则是集号最小的那条本篇显式对位; 对到 S0 的不算.
+     * 详情页的播出状态从这一集起算 (见 [TmdbAiring]).
+     */
+    val mainStart: Pair<Int, Int>?
+        get() = mainContinuation
+            ?: explicit.entries
+                .filter { (key, target) -> key.first == "" && target.first > 0 }
+                .minByOrNull { (key, _) -> key.second.toFloatOrNull() ?: Float.MAX_VALUE }
+                ?.value
+
     /** 分集 id → (季, 集); 没写到的集不在结果里. */
     fun resolve(episodes: List<EpisodeCollectionInfo>): Map<Int, Pair<Int, Int>> {
         val result = mutableMapOf<Int, Pair<Int, Int>>()
