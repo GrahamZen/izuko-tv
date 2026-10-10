@@ -112,6 +112,37 @@ class SeriesNameTopicSearchTest {
     }
 
     @Test
+    fun `a session serving the whole subject keeps releases of its other episodes`() = runTest {
+        // 查询会话按条目复用: 从第 1 集切到第 2 集不重搜, 系列名搜到的第 2 集 (系列内序号 50) 要已经在结果里
+        val request = thirdSeason.copy(
+            episodes = listOf(
+                MediaFetchRequest.Episode("1", EpisodeSort(49), ep = EpisodeSort(1)),
+                MediaFetchRequest.Episode("2", EpisodeSort(50), ep = EpisodeSort(2)),
+            ),
+        )
+        val source = FakeTopicSource(
+            mapOf(
+                "药屋少女的呢喃" to listOf(
+                    topic("[喵萌奶茶屋][药屋少女的呢喃][49][1080p]", "49"),
+                    topic("[喵萌奶茶屋][药屋少女的呢喃][50][1080p]", "50"),
+                    topic("[豌豆字幕组][药屋少女的呢喃 / Kusuriya no Hitorigoto S3][02(50)]", "02"),
+                    // 只写了条目内序号的照旧分不出是哪一季; 不是本条目的集 (第二季的 48) 也不要
+                    topic("[喵萌奶茶屋][药屋少女的呢喃][02][1080p]", "02"),
+                    topic("[喵萌奶茶屋][药屋少女的呢喃][48][1080p]", "48"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf(
+                "[喵萌奶茶屋][药屋少女的呢喃][49][1080p]",
+                "[喵萌奶茶屋][药屋少女的呢喃][50][1080p]",
+                "[豌豆字幕组][药屋少女的呢喃 / Kusuriya no Hitorigoto S3][02(50)]",
+            ),
+            source.titles(request),
+        )
+    }
+
+    @Test
     fun `series name is not searched when its results cannot be told apart`() = runTest {
         // 条目名没写季, 集号也是每季从 1 编: 系列名搜到的「[01]」分不出是哪一季
         val request = thirdSeason.copy(
