@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17() + deviceMigrationTexts()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1339,7 +1339,6 @@ private fun part12() = listOf(
     RemoteText("资源与弹幕", "Resources and danmaku", "資源與彈幕", "資源與彈幕"),
     RemoteText("BT Tracker、Peer 规则、PikPak、字幕组、弹幕屏蔽词", "BT trackers, peer rules, PikPak, subtitle groups, danmaku filters", "BT Tracker、Peer 規則、PikPak、字幕組、彈幕屏蔽詞", "BT Tracker、Peer 規則、PikPak、字幕組、彈幕遮蔽詞"),
     RemoteText("维护", "Maintenance", "維護", "維護"),
-    RemoteText("应用更新、日志、性能诊断、设置备份", "App update, logs, performance diagnostics, settings backup", "應用更新、日誌、性能診斷、設置備份", "應用更新、日誌、效能診斷、設定備份"),
     RemoteText("这里只放了常用的设置，其余的请在电视上改。", "Only common settings are here. Change the rest on the TV.", "這裡只放了常用的設置，其餘的請在電視上改。", "這裡只放了常用的設定，其餘的請在電視上改。"),
     RemoteText("本地用户", "Local user", "本地用戶", "本地使用者"),
     RemoteText("未登录 Bangumi", "Not signed in to Bangumi", "未登錄 Bangumi", "未登入 Bangumi"),

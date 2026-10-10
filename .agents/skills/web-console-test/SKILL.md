@@ -69,7 +69,9 @@ Other routes (read the handlers in `TvRemoteControl.kt` and the `Remote*.kt` nex
 `api/player/details` `api/player/track` `api/player/danmaku/*` `api/player/review*` `api/player/drive*` (cloud drive picks)
 `api/player/shares*`, `api/search*`, `api/history*`, `api/caches*` / `api/cache*`, `api/sources/subs*`, `api/profiles*`,
 `api/account*`, `api/settings*` (proxy, Bangumi endpoint, TMDB images, catalog items such as trackers and subtitle groups,
-danmaku filters, the debug group — **not** the player settings), `api/tv/front`.
+danmaku filters, the debug group — **not** the player settings), `api/tv/front`,
+`api/migrate/*` (moving to another TV: `export/manifest|shared|profile?id=|database?id=` are what the old TV hands out;
+`preview` / `start` take the old TV's console address as `url`, then poll `status`, see `RemoteDeviceMigration`).
 
 ### Debug group (debug builds only)
 

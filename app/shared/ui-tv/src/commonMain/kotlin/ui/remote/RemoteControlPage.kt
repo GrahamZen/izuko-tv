@@ -114,7 +114,7 @@ internal fun renderRemoteControlPage(
     <button type="button" class="set-nav-row" data-group="connect"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg><span class="set-nav-txt"><b>连接电视</b><small>从手机打开 Izuko、后台保持连接</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
     <button type="button" class="set-nav-row" data-group="network"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg><span class="set-nav-txt"><b>网络</b><small>代理、Bangumi 连接方式、TMDB 图片</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
     <button type="button" class="set-nav-row" data-group="resources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></svg><span class="set-nav-txt"><b>资源与弹幕</b><small>BT Tracker、Peer 规则、PikPak、字幕组、弹幕屏蔽词</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
-    <button type="button" class="set-nav-row" data-group="maintain"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg><span class="set-nav-txt"><b>维护</b><small>应用更新、日志、性能诊断、设置备份</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="maintain"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg><span class="set-nav-txt"><b>维护</b><small>应用更新、日志、性能诊断、设置备份、换电视</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
     """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_ROW + "\n" else "") + """
     </div>
     </div>
@@ -152,6 +152,7 @@ internal fun renderRemoteControlPage(
     <div id="set-logs"></div>
     <div id="set-perf"></div>
     <div id="set-backup"></div>
+    <div id="set-migrate"></div>
     </div>
     """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_GROUP + "\n" else "") + """
     <p class="hint" id="set-more">这里只放了常用的设置，其余的请在电视上改。</p>
@@ -199,7 +200,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
     </script>
     </body>
     </html>

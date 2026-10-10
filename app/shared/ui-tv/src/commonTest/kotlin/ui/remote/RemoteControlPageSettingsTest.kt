@@ -50,7 +50,7 @@ class RemoteControlPageSettingsTest {
                 "connect" to listOf("set-front", "set-keep"),
                 "network" to listOf("set-proxy", "set-bangumi", "set-tmdb"),
                 "resources" to listOf("set-generic", "set-pikpak", "set-dmfilter"),
-                "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup"),
+                "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup", "set-migrate"),
             ),
             groups,
         )

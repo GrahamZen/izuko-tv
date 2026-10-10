@@ -157,6 +157,16 @@ internal object RemoteHistory {
     private const val KEY_HIDDEN = "hidden_subjects"
     private val hiddenKey get() = UserProfiles.current.scopedFileName(KEY_HIDDEN)
 
+    /** 换电视 (见 [RemoteDeviceMigration]): [profile] 在手机上删掉的番, 原样的条目. */
+    internal fun hiddenEntries(profile: UserProfile): List<String> =
+        prefs.getStringSet(profile.scopedFileName(KEY_HIDDEN), emptySet()).orEmpty().toList()
+
+    /** 换电视: 给这台的 [profile] 记上旧电视那边删掉的番 (随后重启, 同步写盘). */
+    internal fun setHiddenEntries(profile: UserProfile, entries: List<String>) {
+        if (entries.isEmpty()) return
+        prefs.edit().putStringSet(profile.scopedFileName(KEY_HIDDEN), entries.toSet()).commit()
+    }
+
     /** @param lite 设置里的入口卡片: 只要条数和最近那部, 不带图 */
     private fun list(lite: Boolean): JsonObject {
         val now = ZonedDateTime.now()

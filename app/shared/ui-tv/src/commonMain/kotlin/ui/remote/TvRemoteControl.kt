@@ -940,6 +940,8 @@ object TvRemoteControl {
             // 「设置」标签顶上的账号 (登录状态 / 用手机登录), 见 RemoteAccount
             path == PATH_ACCOUNT || path.startsWith("$PATH_ACCOUNT/") ->
                 RemoteAccount.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 「设置 → 维护 → 换电视」, 见 RemoteDeviceMigration
+            path.startsWith("api/migrate/") -> RemoteDeviceMigration.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签: 代理 / BT tracker 等要打字的设置, 见 RemoteSettings
             path == "api/settings" || path.startsWith("api/settings/") ->
                 RemoteSettings.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
