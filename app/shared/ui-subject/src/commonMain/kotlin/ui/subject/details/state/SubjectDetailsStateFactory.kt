@@ -44,12 +44,14 @@ import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
 import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
+import me.him188.ani.app.data.models.subject.SubjectAiringKind
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.network.BangumiRelatedPeopleService
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.TmdbAiring
 import me.him188.ani.app.data.network.TmdbEpisodeStills
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.matchToEpisodes
@@ -275,6 +277,9 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 subjectEpisodeCount = collection.episodes.size,
                 subjectEpisodeNames = collection.episodes.map { it.episodeInfo.name },
                 hints = subjectInfo.toTmdbMatchHints(),
+                // Bangumi 算出「未开播」或一集都没录时要看 TMDB 是不是其实已经开播 (见 rememberTmdbAiringLabelState),
+                // 缓存里的播出情况还证明不了开播就重取
+                refreshAiring = collection.airingInfo.kind == SubjectAiringKind.UPCOMING || collection.episodes.isEmpty(),
             ) ?: TmdbEpisodeStills()
             val stillUrls = mutableMapOf<Int, String>()
             val runtimes = mutableMapOf<Int, Int>()
@@ -294,7 +299,7 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
                 val original = subjectInfo.summary.trim()
                 if (original.isEmpty()) tmdbOverview else "$tmdbOverview\n\n$original"
             }
-            TmdbSubjectMedia(stillUrls.toMap(), runtimes.toMap(), overviews.toMap(), summaryOverride)
+            TmdbSubjectMedia(stillUrls.toMap(), runtimes.toMap(), overviews.toMap(), summaryOverride, stills.airing)
         }.shareIn(this, SharingStarted.Lazily, replay = 1)
 
         val state = SubjectDetailsState(
@@ -406,6 +411,8 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             tmdbEpisodeOverviewsFlow = tmdbEpisodeMediaFlow.map { it.episodeOverviews },
             // Bangumi 简介为全外文时的 TMDB 中文整部简介替换 (无则 null, UI 用原文)
             tmdbSummaryOverrideFlow = tmdbEpisodeMediaFlow.map { it.summaryOverride },
+            // TMDB 上的播出情况: Bangumi 条目没人维护 (分集没日期 / 没录分集) 时修正详情页的播出状态文字
+            tmdbAiringFlow = tmdbEpisodeMediaFlow.map { it.airing },
             // Ani 服务器简介为空时直连 bgm.tv 补 (仅替代不合并); 简介不为空则直接发 "" (已解析、无需兜底).
             // 网络错误 (getSummary 抛出) 也按 "" 处理: 本次进页降级到 TMDB 兜底, 下次进页重试.
             // Lazily 同上, 仅 TV 详情页收集.
@@ -498,6 +505,7 @@ private class TmdbSubjectMedia(
     val episodeOverviews: Map<Int, String>,
     /** Bangumi 简介整段无中文时: TMDB 中文整部简介 + 原文附后; 不需要覆盖或 TMDB 无翻译时为 null. */
     val summaryOverride: String?,
+    val airing: TmdbAiring?,
 )
 
 /**

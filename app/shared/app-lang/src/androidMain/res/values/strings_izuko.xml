@@ -685,6 +685,9 @@
     <string name="comment_reply_unsupported">Replying is not available for this comment — view only</string>
     <string name="comment_image_unavailable">Image no longer available</string>
     <string name="subject_details_tv_error_back_hint">Press Back to leave</string>
+    <string name="subject_details_tv_no_episodes_title">Not playable yet</string>
+    <string name="subject_details_tv_no_episodes_message">The Bangumi entry for this title is out of date and has no episodes yet, so playback cannot start. It will be playable once episodes are added on Bangumi.</string>
+    <string name="subject_details_tv_no_episodes_ok">OK</string>
     <string name="foundation_load_error_subject_not_accessible">This entry is not available to the current Bangumi account. Adult entries need an account registered for over 60 days; the entry may also have been removed.</string>
     <string name="foundation_browser_open_failed_title">Unable to open the link</string>
     <string name="foundation_browser_open_failed_scan_hint">No browser is available on this device. Scan the code with your phone, or type the link below</string>

@@ -1095,6 +1095,8 @@ class TmdbImageService(
      *   缓存是按条目永久保存的, 连载番早先拉取的缓存不含之后新播的集; 传入此参数后,
      *   若缓存最新日期落后于它 (超出 ±1 天匹配容差), 经 [stillsRefreshGate] 放行
      *   (进程内每条目最多一次, 防 TMDB 自身滞后时反复空拉) 重取一次.
+     * @param refreshAiring 调用方要用播出情况 ([TmdbEpisodeStills.airing]): 缓存里的那份该重取时
+     *   (见 [TmdbEpisodeStills.airingNeedsRefresh]) 同样经 [stillsRefreshGate] 重取一次. 详情页在 Bangumi 算出「未开播」或一集都没录时才传 true.
      */
     suspend fun getEpisodeStills(
         subjectId: Int,
@@ -1106,6 +1108,7 @@ class TmdbImageService(
         /** bgm 分集原语言名, 供削字合集档按集标题认领 parts (SE/总集编条目, 见 [collectionAsEpisodes]). */
         subjectEpisodeNames: List<String> = emptyList(),
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
+        refreshAiring: Boolean = false,
     ): TmdbEpisodeStills? {
         if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
             return TmdbEpisodeStills()
@@ -1120,6 +1123,7 @@ class TmdbImageService(
                     doGetEpisodeStills(
                         subjectId, originalName, language,
                         newestWantedAirDate, subjectAirDate, subjectEpisodeCount, subjectEpisodeNames, hints,
+                        refreshAiring,
                     )
                 } finally {
                     episodeStillsInFlightLock.withLock { episodeStillsInFlight.remove(key) }
@@ -1138,6 +1142,7 @@ class TmdbImageService(
         subjectEpisodeCount: Int?,
         subjectEpisodeNames: List<String>,
         hints: TmdbMatchHints,
+        refreshAiring: Boolean,
     ): TmdbEpisodeStills? =
         withContext(ioDispatcher) {
             val mapEntry = subjectMap?.lookup(subjectId)
@@ -1146,8 +1151,10 @@ class TmdbImageService(
                 // 或表后来改过 (人工修正) 的都作废重建
                 ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
             if (cached != null) {
-                val refresh = newestWantedAirDate != null &&
-                    stillsRefreshGate.shouldRefresh(subjectId) { !cached.coversAirDate(newestWantedAirDate) }
+                val refresh = stillsRefreshGate.shouldRefresh(subjectId) {
+                    (newestWantedAirDate != null && !cached.coversAirDate(newestWantedAirDate)) ||
+                        (refreshAiring && cached.airingNeedsRefresh(tmdbToday()))
+                }
                 if (!refresh) return@withContext cached
             }
             // 表里没有: 这次运行里搜过没找到的不再搜 (见 [localStillsMisses])
@@ -1248,11 +1255,17 @@ class TmdbImageService(
             runtimeMinutes = detail.runtime?.takeIf { it > 0 },
             overview = overview,
         )
+        val releaseDate = detail.releaseDate?.takeIf { it.isNotBlank() }
         return TmdbEpisodeStills(
-            byAirDate = detail.releaseDate?.takeIf { it.isNotBlank() }?.let { mapOf(it to listOf(media)) }.orEmpty(),
+            byAirDate = releaseDate?.let { mapOf(it to listOf(media)) }.orEmpty(),
             byEpisodeNumber = mapOf(1 to media),
             language = language,
             showOverview = overview,
+            airing = TmdbAiring(
+                fetchedOn = tmdbToday().toString(),
+                seasonAirDates = releaseDate?.let { listOf(it) },
+                movie = true,
+            ),
         )
     }
 
@@ -1684,7 +1697,7 @@ class TmdbImageService(
             source?.type == "tv" && episodeMap != null -> buildEpisodeStills(
                 source.id, null, subjectId, originalName, language, token,
                 subjectYear, subjectAirDate, lineage = null, ownMovie = null,
-                seasonFilter = episodeMap.seasons, mapped = true,
+                seasonFilter = episodeMap.seasons, mapped = true, mappedMainStart = episodeMap.mainStart,
             ).copy(episodeMap = entry.episodes)
 
             // 人工修正只给了背景图的条目: 分集跟着同一个条目走
@@ -1709,6 +1722,8 @@ class TmdbImageService(
      * @param seasonFilter 只索引这几季 (对应表说只取 S0、或逐集对位用到的季, 见 [stillsFromMap]); null = 按下面的规则全部索引.
      * @param mapped 照对应表的逐集对位建 (见 [TmdbEpisodeMap]): 对集离线做过, 不需要认季、电影回退与原语言集名,
      *   只收 [TmdbEpisodeStills.bySeasonEpisode]; 剧集详情与各季同时取.
+     * @param mappedMainStart 照对应表建时, 条目正片第一集对应的 (季, 集), 见 [TmdbEpisodeMap.mainStart];
+     *   播出情况 ([TmdbEpisodeStills.airing]) 从这一集起算.
      */
     private suspend fun HttpClient.buildEpisodeStills(
         tvId: Int,
@@ -1723,6 +1738,7 @@ class TmdbImageService(
         ownMovie: TmdbEpisodeStills?,
         seasonFilter: Set<Int>? = null,
         mapped: Boolean = false,
+        mappedMainStart: Pair<Int, Int>? = null,
     ): TmdbEpisodeStills = coroutineScope {
         suspend fun seasonBody(seasonNumber: Int, lang: String) = getApi("/tv/$tvId/season/$seasonNumber") {
             parameter("language", lang)
@@ -1812,6 +1828,8 @@ class TmdbImageService(
         val byEpisodeNumber = mutableMapOf<Int, TmdbEpisodeMedia>()
         val specialsByNumber = mutableMapOf<Int, TmdbEpisodeMedia>()
         val bySeasonEpisode = mutableMapOf<String, TmdbEpisodeMedia>()
+        // 正片各季的 (集号, 播出日), 组播出情况用 (见下方 airing)
+        val seasonAirDates = mutableMapOf<Int, MutableList<Pair<Int, String?>>>()
         // language: 分集简介取该语言的翻译 (无翻译时 overview 为空, 由 Bangumi 简介兜底);
         // still/时长/日期与语言无关. 各季互不依赖, 同时取; 处理仍按 indexedSeasons 的先后
         val seasonBodies = indexedSeasons.map { season ->
@@ -1838,6 +1856,12 @@ class TmdbImageService(
                 }
                 if (mapped) {
                     ep.episodeNumber?.let { bySeasonEpisode["${season.seasonNumber}:$it"] = media }
+                }
+                if (season.seasonNumber > 0) {
+                    ep.episodeNumber?.let { number ->
+                        seasonAirDates.getOrPut(season.seasonNumber) { mutableListOf() }
+                            .add(number to ep.airDate?.takeIf { it.isNotBlank() })
+                    }
                 }
             }
         }
@@ -1894,6 +1918,17 @@ class TmdbImageService(
                 }
             }
 
+        // 播出情况从本条目第一集对应的那集起算: 照对应表的从表里写的起点; 否则是上面认领的那一季的第 1 集.
+        // 条目没有开播日 (少有人维护的条目常见) 时按日期认不出季, 再认「… Season 2」这种西文季名 —— 只用于播出情况,
+        // 不动剧照的集号索引
+        val airingStart = if (mapped) {
+            mappedMainStart
+        } else {
+            val season = numberedSeason?.takeIf { it > 0 }
+                ?: tmdbSeasonNumberFromLatinSuffix(originalName)?.takeIf { subjectAirDate == null }
+            season?.let { it to 1 }
+        }
+
         TmdbEpisodeStills(
             byAirDate,
             byEpisodeNumber,
@@ -1902,6 +1937,13 @@ class TmdbImageService(
             byEpisodeName = byName.mapNotNull { (k, v) -> v?.let { k to it } }.toMap(),
             byAirDateOrigin = byAirDateOrigin,
             bySeasonEpisode = bySeasonEpisode,
+            airing = tmdbTvAiring(
+                status = detail.status,
+                seasons = seasons.map { it.seasonNumber to it.airDate },
+                seasonAirDates = seasonAirDates,
+                start = airingStart,
+                today = tmdbToday(),
+            ),
         )
     }
 
@@ -2574,6 +2616,8 @@ class TmdbImageService(
             byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
             language = language,
             showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            // 合集的 parts 是一部部电影, 不按季判断播出状态 (沿用 Bangumi 的)
+            airing = TmdbAiring(fetchedOn = tmdbToday().toString()),
         )
     }
 
@@ -2655,6 +2699,8 @@ class TmdbImageService(
             byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
             language = language,
             showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            // 合集的 parts 是一部部电影, 不按季判断播出状态 (沿用 Bangumi 的)
+            airing = TmdbAiring(fetchedOn = tmdbToday().toString()),
         )
     }
 
@@ -3107,7 +3153,16 @@ data class TmdbEpisodeStills(
     val episodeMap: String? = null,
     /** 照 [episodeMap] 建时收的 `季号:集号` → 分集数据, 只含编码里提到的那几季. */
     val bySeasonEpisode: Map<String, TmdbEpisodeMedia> = emptyMap(),
+    /** TMDB 上本条目的播出情况 (详情页播出状态文字用). 加这个字段之前存的缓存为 null, 见 [airingNeedsRefresh]. */
+    val airing: TmdbAiring? = null,
 ) {
+    /**
+     * 缓存里的播出情况该重取了: 加 [airing] 之前存的缓存没有这份数据, 或者它的状态还会变 (见 [TmdbAiring.needsRefresh]).
+     * 空的缓存 (表确认没有对应) 不算.
+     */
+    fun airingNeedsRefresh(today: LocalDate): Boolean =
+        !isEmpty() && (airing == null || airing.needsRefresh(today))
+
     /**
      * 按集名 (原名/中文名等, 依次尝试) 匹配; 名字归一化后比较, 见 [tmdbEpisodeNameKey].
      *
@@ -4056,6 +4111,8 @@ private data class TmdbTvDetail(
     val overview: String? = null,
     /** 剧的原语言 (如 "ja"); S0 集名索引按原语言取名, 与 Bangumi 原名可逐字比较. */
     @SerialName("original_language") val originalLanguage: String? = null,
+    /** 整部剧的状态: `Returning Series` / `Ended` / `Canceled` / `In Production` / `Planned` / `Pilot`. */
+    val status: String? = null,
 )
 
 /** TMDB `/movie/{id}`: 剧场版条目按"整部就是一集"取用, 见 [TmdbImageService.fetchMovieAsSingleEpisode]. */

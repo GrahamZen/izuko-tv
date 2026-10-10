@@ -637,6 +637,9 @@
     <string name="comment_reply_unsupported">此評論不支援回覆，僅可查看</string>
     <string name="comment_image_unavailable">圖片已失效或無法存取</string>
     <string name="subject_details_tv_error_back_hint">按返回鍵退出</string>
+    <string name="subject_details_tv_no_episodes_title">暫時看不了</string>
+    <string name="subject_details_tv_no_episodes_message">Bangumi 上這部作品的條目資訊已過期，還沒有錄入分集，所以沒法進入播放。等 Bangumi 補上分集後就能看了。</string>
+    <string name="subject_details_tv_no_episodes_ok">知道了</string>
     <string name="foundation_load_error_subject_not_accessible">目前 Bangumi 帳號看不到這個項目。成人項目需要帳號註冊滿 60 天，也可能是項目已被刪除。</string>
     <string name="foundation_browser_open_failed_title">無法打開連結</string>
     <string name="foundation_browser_open_failed_scan_hint">目前裝置沒有可用的瀏覽器，請用手機掃碼打開，或手動輸入下方連結</string>

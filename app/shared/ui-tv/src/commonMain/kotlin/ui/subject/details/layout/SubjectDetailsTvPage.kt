@@ -317,8 +317,9 @@ import me.him188.ani.app.ui.subject.details.sections.TV_REVIEW_HEADER_GAP
 import me.him188.ani.app.ui.subject.details.sections.TvPeopleStripPlaceholder
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
-import me.him188.ani.app.ui.subject.details.state.rememberAiringLabelState
 import me.him188.ani.app.ui.subject.details.state.rememberSubjectProgressState
+import me.him188.ani.app.ui.subject.details.state.rememberTmdbAiringLabelState
+import me.him188.ani.app.ui.subject.details.state.rememberTmdbSubjectProgressState
 import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.list.gridSpecialEpisodes
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
@@ -2584,7 +2585,7 @@ private fun TvHeroInfoColumn(
                         LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
                         AiringLabel(
-                            uiState.rememberAiringLabelState(),
+                            state.rememberTmdbAiringLabelState(uiState),
                             style = MaterialTheme.typography.labelMedium,
                             progressColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -5020,7 +5021,8 @@ private fun TvHeroBlock(
     leavingHero: () -> Boolean = { false },
 ) {
     val uiState by state.uiState.collectAsStateWithLifecycle()
-    val subjectProgressState = uiState.rememberSubjectProgressState()
+    // 连载信息按 TMDB 改成已开播时, 按钮文字跟着改 (见 rememberTmdbAiringLabelState); 要播哪一集不变
+    val subjectProgressState = state.rememberTmdbSubjectProgressState(uiState)
     Column(modifier.fillMaxWidth().padding(start = horizontalPadding)) {
         // 上半区: 左 = 标题 (有背景图时浮于图上); 右 = 无横版图时的竖版封面,
         // 高度正好撑满 "顶栏按钮之下、信息带之上", 随内容滚出屏幕
@@ -5148,15 +5150,28 @@ private fun TvHeroBlock(
                 // 下: 播放按钮 (下方带播放进度条), 宽度与列同宽
                 // (IntrinsicSize.Max: 取"圆钮行 / 按钮文字固有宽"中较大者).
                 // offset 微微上移 (纯视觉, 不占布局, 周围组件与三列底对齐的几何全部不动)
+                // Bangumi 一集都没录时播放页进不去, 按下去弹说明而不是没反应 (见 TvSubjectNoEpisodesDialog)
+                var noEpisodesDialog by remember { mutableStateOf(false) }
                 TvPlayButton(
                     subjectProgressState,
-                    onPlay = { subjectProgressState.episodeIdToPlay?.let(onPlay) },
+                    onPlay = {
+                        val episodeId = subjectProgressState.episodeIdToPlay
+                        when {
+                            episodeId != null -> onPlay(episodeId)
+                            !uiState.isPlaceholder && uiState.episodeListUiState.allEpisodes.isEmpty() ->
+                                noEpisodesDialog = true
+                        }
+                    },
                     playProgress = playProgress,
                     modifier = Modifier.fillMaxWidth().offset(y = (-4).dp),
-                    buttonModifier = primaryButtonModifier,
+                    // 弹窗是独立窗口, 关掉后焦点还回播放键
+                    buttonModifier = primaryButtonModifier.restoreFocusAfter(noEpisodesDialog),
                     onLongPress = onLongPressPlay,
                     leavingHero = leavingHero,
                 )
+                if (noEpisodesDialog) {
+                    TvSubjectNoEpisodesDialog { noEpisodesDialog = false }
+                }
             }
             middleColumn()
             // 右: 评分区 — 分布直方图在上, 评分摘要在下. IntrinsicSize.Max 取两者固有宽度的
@@ -5328,7 +5343,7 @@ private fun TvEmbeddedHeroPage(
                     maxLines = 1,
                 )
                 AiringLabel(
-                    uiState.rememberAiringLabelState(),
+                    state.rememberTmdbAiringLabelState(uiState),
                     style = MaterialTheme.typography.titleSmall,
                     progressColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
