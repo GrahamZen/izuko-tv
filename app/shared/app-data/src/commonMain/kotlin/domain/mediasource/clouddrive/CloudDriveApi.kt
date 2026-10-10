@@ -461,6 +461,7 @@ internal class CloudDriveApi(
                 videoHeight = value(fields.videoHeight)?.toDoubleOrNull()?.toInt() ?: 0,
                 isVideo = isVideo,
                 shareToken = value(fields.shareToken).orEmpty(),
+                durationSeconds = value(fields.duration)?.toDoubleOrNull()?.toInt() ?: 0,
             )
         }
 
@@ -561,6 +562,7 @@ class DriveFileList(val files: List<DriveFile>, val total: Int?)
  *
  * @property updatedAt 修改时间, 毫秒时间戳
  * @property shareToken 分享里的文件转存时要带的凭证; 自己网盘的文件为空
+ * @property durationSeconds 视频时长 (秒), 网盘没给时为 0
  */
 class DriveFile(
     val fid: String,
@@ -572,10 +574,11 @@ class DriveFile(
     val videoHeight: Int = 0,
     val isVideo: Boolean = false,
     val shareToken: String = "",
+    val durationSeconds: Int = 0,
 ) {
     /** 放在文件夹 [folderId] 里的同一个文件. */
     fun inFolder(folderId: String): DriveFile =
-        DriveFile(fid, fileName, folderId, dir, size, updatedAt, videoHeight, isVideo, shareToken)
+        DriveFile(fid, fileName, folderId, dir, size, updatedAt, videoHeight, isVideo, shareToken, durationSeconds)
 }
 
 class DriveShareToken(val token: String, val title: String)

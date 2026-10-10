@@ -134,6 +134,45 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
+    fun `share folders of other seasons are not listed`() = runTest {
+        val shares = shares(
+            mapOf(
+                "share1" to mapOf(
+                    TestDrive.SHARE_ROOT to listOf(dir("all", "葬送的芙莉莲 合集")),
+                    "all" to listOf(dir("s1", "S1"), dir("s2", "S2"), dir("s3", "S3")),
+                    "s1" to listOf(video("a1", "01.mp4")),
+                    "s2" to listOf(video("b1", "01.mp4")),
+                    "s3" to listOf(video("c1", "01.mp4")),
+                ),
+            ),
+        )
+        val matched = engine(shares).search(request("葬送的芙莉莲 第二季"))
+        assertEquals(listOf("b1"), matched.map { it.file.fid })
+        assertEquals(listOf(TestDrive.SHARE_ROOT, "all", "s2"), shares.listed.map { it.second })
+    }
+
+    @Test
+    fun `shares naming the wanted season are opened first`() = runTest {
+        // 站点按系列名搜到的顺序: 第二季、没写季的合集、第三季; 只能打开两个时先开第三季, 再开没写季的
+        val response = """
+            {"list":[
+              {"vod_name":"无职转生Ⅱ 到了异世界就拿出真本事","vod_down_url":"https://share.drive.test/s/s2"},
+              {"vod_name":"无职转生 合集","vod_down_url":"https://share.drive.test/s/all"},
+              {"vod_name":"无职转生 第三季","vod_down_url":"https://share.drive.test/s/s3"}
+            ]}
+        """.trimIndent()
+        val shares = shares(
+            mapOf(
+                "s3" to mapOf(TestDrive.SHARE_ROOT to listOf(video("s3e1", "01.mp4"))),
+                "all" to mapOf(TestDrive.SHARE_ROOT to listOf(video("all-s3e2", "S03E02.mp4"))),
+            ),
+        )
+        val matched = engine(shares, config.copy(maxShares = 2), response).search(request("无职转生 第三季 ～到了异世界就拿出真本事～"))
+        assertEquals(setOf("s3", "all"), shares.openedIds.toSet())
+        assertEquals(setOf("s3e1", "all-s3e2"), matched.map { it.file.fid }.toSet())
+    }
+
+    @Test
     fun `site failure gives no results`() = runTest {
         val engine = DriveShareSearchEngine(config, shares(emptyMap()), links) { null }
         assertTrue(engine.search(request("葬送的芙莉莲")).isEmpty())
