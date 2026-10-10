@@ -851,4 +851,6 @@
     <string name="remote_settings_peer_id_rules_description">Takes effect when client fingerprint filtering is on (switch on the TV). One regular expression per line, e.g. -HP[0-9]{4}- blocks clients whose fingerprint is -HPxxxx-.</string>
     <string name="remote_settings_peer_client_rules">Peer filter: client type rules</string>
     <string name="remote_settings_peer_client_rules_description">Takes effect when client type filtering is on (switch on the TV). One regular expression per line, e.g. go.torrent blocks the Baidu Netdisk offline downloader.</string>
+    <!-- 电视设置「关于」里的反馈群 -->
+    <string name="settings_about_qq_group">QQ Group</string>
 </resources>
