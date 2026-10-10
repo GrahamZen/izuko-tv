@@ -64,10 +64,13 @@ class RemoteProfilesTest {
     fun setUp() {
         stopKoin()
         startKoin { modules(module { single { manager } }) }
+        // 换用户要重启应用, 只有界面在前台时才做 (见 TvRemoteControl.bringToFrontForRestart)
+        TvRemoteControl.setTvForeground(true)
     }
 
     @AfterTest
     fun tearDown() {
+        TvRemoteControl.setTvForeground(false)
         stopKoin()
         scope.cancel()
     }

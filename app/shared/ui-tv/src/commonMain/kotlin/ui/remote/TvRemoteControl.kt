@@ -221,6 +221,9 @@ object TvRemoteControl {
         return Settings.canDrawOverlays(ctx)
     }
 
+    /** 电视系统限制了 Ani 后台运行没有, 见 [isBackgroundRestricted]. */
+    internal fun tvBackgroundRestricted(): Boolean = appContext?.let(::isBackgroundRestricted) == true
+
     /**
      * 电视上开着 VPN 没有 (任一网络带 VPN 传输). 只用来在二维码下面给更具体的排障提示、写日志: 电视的 VPN 一般只接管电视
      * 自己往外发的流量, 手机连进来的连接照常从 Wi-Fi 回, 连不上多半是手机的 VPN 没开「绕过局域网」.
@@ -587,9 +590,11 @@ object TvRemoteControl {
     /**
      * 电视上 Ani 的界面在不在前台 (由 [TrackTvRemoteForeground] 维护): 屏保、切到别的应用、息屏时为 false, 网页顶上一条
      * 提示 —— 这时手机上的操作照样生效 (导航、换源都在后台做了), 只是电视画面上看不到, 用户会以为没反应.
+     * 初值 false, 界面起来时才置 true: 进程也可能是常驻服务在后台拉起的 (被回收后 START_STICKY 重启, 或息屏时系统重建栈顶页面),
+     * 那时没有界面, 不能当成在前台.
      */
     @Volatile
-    private var tvForeground = true
+    private var tvForeground = false
 
     /**
      * 电视上 Ani 在不在前台. 缓存那边要用: BT 服务只有在前台才会启动 (上游的省电策略), 所以后台点缓存只会排队等着,
@@ -602,7 +607,10 @@ object TvRemoteControl {
     private var foregroundSince = 0L
 
     internal fun setTvForeground(foreground: Boolean) {
-        if (tvForeground != foreground) logger.info { if (foreground) "TV app back in foreground" else "TV app went to background" }
+        if (tvForeground != foreground) logger.info {
+            if (foreground) "TV app back in foreground"
+            else "TV app went to background, restricted by the system: ${tvBackgroundRestricted()}"
+        }
         if (foreground && !tvForeground) foregroundSince = System.currentTimeMillis()
         tvForeground = foreground
         // 刚从休眠叫醒拉起来就被桌面压下去 (见 wakeFrontUntil): 等桌面那一下落定再拉一次
@@ -1132,9 +1140,15 @@ object TvRemoteControl {
             put("seq", seq)
             if (after != null && after < seq && text != null) put("text", text)
             put("away", !tvForeground)
-            // 有没下完的 BT 缓存时, 上面那条要说清楚缓存也停着: BT 服务只在 Ani 前台时才起 (见 RemoteCacheList),
-            // 不说的话用户只当是"电视没显示 Ani"而已, 不会想到下载也不动了
-            if (!tvForeground && RemoteCacheList.hasPendingTorrentCache()) put("cachePending", true)
+            // 有没下完的 BT 缓存而缓存停着 (或系统限制了后台运行, 马上要停) 时, 上面那条要说清楚: 不说的话用户只当是
+            // "电视没显示 Ani"而已, 不会想到下载也不动了 (见 RemoteCacheList.hasHaltedTorrentCache)
+            if (!tvForeground) {
+                val restricted = tvBackgroundRestricted()
+                if (RemoteCacheList.hasHaltedTorrentCache(restricted)) {
+                    put("cachePending", true)
+                    if (restricted) put("bgRestricted", true)
+                }
+            }
             // 启动时的二维码弹窗还开着: 网页顶上给一条「还开着 [关闭]」, 遥控器关掉后下一轮就收起, 见 closeLaunchDialog
             put("launchDialog", _dialogVisible.value)
             // 「不在前台」那一条里的入口按这两个分三态: 没开 → 「切到 Ani」(先确认开启) / 开了没授权 → 「怎么授权」/

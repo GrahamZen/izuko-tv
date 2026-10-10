@@ -225,17 +225,21 @@ internal object RemoteCacheList {
     internal fun torrentStarting(): Boolean = !engineAccess.isServiceConnected.value
 
     /**
-     * 还有没下完的 BT 缓存. 网页顶上「电视没显示 Ani」那条据此加一句 —— BT 服务只在 Ani 前台时才起, 所以这时候
-     * 缓存也是停着的, 不说的话用户只当是"电视没显示"而已 (见 TvRemoteControl.noticeState).
+     * 有没下完的 BT 缓存, 而 BT 服务没连上 (服务只在 Ani 前台时才会起, 没连上就是停着的) 或者 [backgroundRestricted]
+     * (连着也只能再下 1 分钟左右, 见 [isBackgroundRestricted]). 网页顶上「电视没显示 Ani」那条据此加一句「缓存要等打开 Ani
+     * 才会继续」(见 TvRemoteControl.noticeState). 服务连着又没被限制的话, Ani 退到后台 (屏保、切到别的应用) 也照常下载, 不加.
      * 只看列表的当前值, 不读各条的状态流 (那些要跨进程问服务), 所以每 2 秒问一次也不贵.
      */
-    internal fun hasPendingTorrentCache(): Boolean = runBlocking {
-        withTimeoutOrNull(FLOW_TIMEOUT) {
-            cacheManager.downloads.first()
-                .map { it.cache }
-                .any { !it.isDeleted.value && it.needsTorrentService }
-        }
-    } ?: false
+    internal fun hasHaltedTorrentCache(backgroundRestricted: Boolean): Boolean {
+        if (engineAccess.isServiceConnected.value && !backgroundRestricted) return false
+        return runBlocking {
+            withTimeoutOrNull(FLOW_TIMEOUT) {
+                cacheManager.downloads.first()
+                    .map { it.cache }
+                    .any { !it.isDeleted.value && it.needsTorrentService }
+            }
+        } ?: false
+    }
 
     /**
      * 记一次 BT 状态读取的结果: 连着 [STUCK_STRIKES] 次都有读不出来的才歇 [TORRENT_STUCK_BACKOFF] (服务在线却卡住的兜底)。
@@ -311,6 +315,8 @@ internal object RemoteCacheList {
             if (torrentStarting() && rows.any { it.cache.needsTorrentService }) {
                 if (TvRemoteControl.isTvForeground()) put("btStarting", true) else put("tvBackground", true)
             }
+            // 系统限制了 Ani 后台运行: 有没下完的 BT 缓存时提前说, 免得用户切走以后才发现停了 (见 isBackgroundRestricted)
+            if (rows.any { it.cache.needsTorrentService } && TvRemoteControl.tvBackgroundRestricted()) put("bgRestricted", true)
             if (space != null) {
                 put("free", space.first.bytes.toString())
                 put("total", space.second.bytes.toString())
