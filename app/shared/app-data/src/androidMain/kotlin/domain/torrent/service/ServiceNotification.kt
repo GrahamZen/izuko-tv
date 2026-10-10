@@ -118,15 +118,17 @@ class ServiceNotification(
 
     /**
      * create notification with initial state idle.
+     *
+     * 同 id 的通知已经在了也照样 [Service.startForeground] (沿用它现在的内容): 它可能是上一个服务实例停掉时
+     * [updateNotification] 补发的普通通知 —— 系统撤掉前台通知以后再更新同 id, 新通知不带前台标记, 进程退了也一直在.
+     * 见到它就跳过的话, 服务只是普通后台服务, 应用进后台约 1 分钟就被系统停掉 (`Stopping service due to app idle`).
      */
     fun createNotification(service: Service): Boolean {
-        val currentNotification = notificationService.activeNotifications.find { it.id == notificationId }
-        if (currentNotification != null) return true
-
-        val notification = buildNotification(
-            notificationAppearance,
-            NotificationDisplayStrategy.Idle(0.bytes, 0.bytes),
-        )
+        val notification = notificationService.activeNotifications.find { it.id == notificationId }?.notification
+            ?: buildNotification(
+                notificationAppearance,
+                NotificationDisplayStrategy.Idle(0.bytes, 0.bytes),
+            )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 service.startForeground(notificationId, notification)
@@ -150,6 +152,11 @@ class ServiceNotification(
 
         val notification = buildNotification(notificationAppearance, displayStrategy)
         notificationService.notify(notificationId, notification)
+    }
+
+    /** 撤掉这条通知. 服务销毁时用: 停掉之后补发的那种普通通知不会自己消失, 见 [createNotification]. */
+    fun cancelNotification() {
+        notificationService.cancel(notificationId)
     }
 
     /**
