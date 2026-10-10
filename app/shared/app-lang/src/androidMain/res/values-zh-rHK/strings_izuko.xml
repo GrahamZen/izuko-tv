@@ -803,4 +803,6 @@
     <string name="remote_settings_peer_id_rules_description">電視上打開「過濾客戶端指紋」後生效。每行一條正則表達式，如 -HP[0-9]{4}- 屏蔽指紋為 -HPxxxx- 的客戶端。</string>
     <string name="remote_settings_peer_client_rules">Peer 過濾：客戶端類型規則</string>
     <string name="remote_settings_peer_client_rules_description">電視上打開「過濾客戶端類型」後生效。每行一條正則表達式，如 go.torrent 屏蔽百度網盤的離線下載客戶端。</string>
+    <!-- 电视设置「关于」里的反馈群 -->
+    <string name="settings_about_qq_group">QQ 群</string>
 </resources>
