@@ -1598,8 +1598,11 @@ private val SCRIPT = """
         noticeFails = 0;
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
-        // 有没下完的缓存时补一句: BT 服务只在 Ani 前台时才起, 这会儿下载也是停着的 (见 TvRemoteControl.noticeState)
-        var cacheHalted = n.cachePending ? T('缓存也要等电视上打开 Izuko 才会继续。') : '';
+        // BT 服务没在运行、又有没下完的缓存时补一句: 服务只在 Ani 前台时才起, 这会儿下载是停着的 (见 TvRemoteControl.noticeState);
+        // 系统限制了 Ani 后台运行的话, 服务连着也只能再下 1 分钟左右, 把原因说出来
+        var cacheHalted = !n.cachePending ? '' : n.bgRestricted
+          ? T('电视系统限制了 Izuko 在后台运行，缓存离开 Izuko 约 1 分钟后就会停下，要等电视上打开 Izuko 才会继续。')
+          : T('缓存也要等电视上打开 Izuko 才会继续。');
         if (n.away && n.frontOn && n.frontGranted) setTvState('away', T('电视当前没有显示 Izuko。搜索或点播时会自动打开 Izuko。') + cacheHalted, 'go');
         else if (n.away && n.frontOn) setTvState('away', T('电视当前没有显示 Izuko。完成一次授权后，就可以从手机打开 Izuko。') + cacheHalted, 'how');
         else if (n.away) setTvState('away', T('电视当前没有显示 Izuko。搜索和点播仍会发送到电视，打开 Izuko 后即可看到。') + cacheHalted, 'enable');
@@ -6819,6 +6822,8 @@ private val CACHE_LIST_SCRIPT = """
       if (run.length) s += '<div class="cl-line">' + run.join(' · ') + '</div>';
       if (d.btStarting) s += '<div class="cl-line">' + T('正在启动 BT 服务，第一次要十几秒…') + '</div>';
       else if (d.tvBackground) s += '<div class="cl-warn">' + T('电视上没有打开 Izuko，要打开后才会开始下载') + '</div>';
+      // 系统限制了后台运行: 切走 (屏保、别的应用) 约 1 分钟后 BT 缓存就停, 提前说并给出放开的地方 (见 isBackgroundRestricted)
+      if (d.bgRestricted) s += '<div class="cl-warn">' + T('电视系统限制了 Izuko 在后台运行：进屏保或切到别的应用约 1 分钟后，BT 缓存就会停下，回到 Izuko 才继续。可以在电视的应用设置（后台管理、省电或自启动）里允许 Izuko 在后台运行。') + '</div>';
       if (d.lowSpace) s += '<div class="cl-warn">' + T('剩余空间不够把没下完的都下完') + '</div>';
       s += '</div>';
       if (!d.groups.length) {
