@@ -173,6 +173,8 @@ internal class ParallelRangeReader(
     private var direct: RangeConnection? = null
 
     private val window = ArrayDeque<Chunk>()
+
+    /** 读完的块留下的缓冲, 给接着排的块用 (见 [schedule]); 最多留 [MAX_FREE_BUFFERS] 个. */
     private val freeBuffers = ArrayDeque<ByteArray>()
     private var nextStart = 0L
     private var end = 0L
@@ -200,6 +202,9 @@ internal class ParallelRangeReader(
 
     /** [open] 之后: 是否在分块并发下载 (请求本身小、或服务端不支持范围请求时为 false). */
     val isParallel: Boolean get() = direct == null
+
+    /** 留着的空闲缓冲个数 (见 [MAX_FREE_BUFFERS]); 同 [read] 在读的线程上取. */
+    internal val freeBufferCount: Int get() = freeBuffers.size
 
     /**
      * 打开 `[position, position + length)` ([length] 为 -1 表示到资源末尾), 返回要读的字节数, 不知道时为 -1.
@@ -279,7 +284,7 @@ internal class ParallelRangeReader(
         remaining -= count
         if (readOffset >= chunk.length) {
             window.removeFirst()
-            if (freeBuffers.size < limit()) freeBuffers.addLast(chunk.data)
+            if (freeBuffers.size < MAX_FREE_BUFFERS) freeBuffers.addLast(chunk.data)
             readOffset = 0
             topUp()
         }
@@ -436,6 +441,12 @@ internal class ParallelRangeReader(
 
         /** 小范围拆给几个连接时每块至少多大: 再小的话一块省下的传输时间抵不上多一个请求. */
         const val MIN_PART_BYTES = 32L * 1024
+
+        /**
+         * 空闲缓冲最多留几个. 平时读完一块紧接着就排下一块, 留一个就够. 留下的个数只增不减 (之后读完一块放一个、排一块取一个),
+         * 而多开连接收回时一下会空出几十块, 所以要封顶.
+         */
+        const val MAX_FREE_BUFFERS = 1
 
         private val logger = logger<ParallelRangeReader>()
 
