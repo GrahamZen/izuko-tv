@@ -205,12 +205,13 @@ internal class DriveShareSearchEngine(
             hits.any { (other, outer) -> other.shareId == link.shareId && outer !== folder && folder.path.size > outer.path.size && folder.path.take(outer.path.size) == outer.path }
         }.take(MAX_FIXED_FOLDERS)
         logger.info { "Fixed shares: ${selected.size} folders for ${keywords.first()}: ${selected.map { it.second.path.joinToString("/") }}" }
+        val skipFolders = reader.otherSeasonFolders(request)
         return coroutineScope {
             selected.map { (link, folder) ->
                 async {
                     semaphore.withPermit {
                         try {
-                            val videos = reader.readFolder(link.shareId, link.passcode, folder.fid, folder.path.drop(1))
+                            val videos = reader.readFolder(link.shareId, link.passcode, folder.fid, folder.path.drop(1), skipFolders)
                             reader.match(request, FoundShare(link.shareId, link.passcode, folder.path.last()), videos)
                         } catch (e: CancellationException) {
                             throw e
@@ -269,13 +270,15 @@ internal class DriveShareSearchEngine(
             for (share in searchSite(keyword)) found.putIfAbsent(share.shareId, share)
             if (found.isNotEmpty()) break
         }
-        val selected = found.values.take(config.maxShares.coerceAtLeast(1))
-        logger.info { "Share search: ${selected.size} shares for ${keywords.first()}" }
+        val season = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
+        val selected = bySeason(found.values, season).take(config.maxShares.coerceAtLeast(1))
+        logger.info { "Share search: ${selected.size} of ${found.size} shares for ${keywords.first()}" }
 
+        val skipFolders = reader.otherSeasonFolders(request)
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         return coroutineScope {
             selected.map { share ->
-                async { semaphore.withPermit { matchShare(request, share) } }
+                async { semaphore.withPermit { matchShare(request, share, skipFolders) } }
             }.awaitAll().flatten()
         }
     }
@@ -287,7 +290,9 @@ internal class DriveShareSearchEngine(
     suspend fun matchRemembered(request: MediaFetchRequest, remembered: DriveRememberedShare): List<DriveShareMatch>? {
         val share = FoundShare(remembered.shareId, remembered.passcode, remembered.siteTitle)
         val videos = try {
-            rememberedReader.readFolder(remembered.shareId, remembered.passcode, remembered.folderId, remembered.path)
+            rememberedReader.readFolder(
+                remembered.shareId, remembered.passcode, remembered.folderId, remembered.path, reader.otherSeasonFolders(request),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
@@ -337,9 +342,13 @@ internal class DriveShareSearchEngine(
         }.distinctBy { it.shareId }
     }
 
-    private suspend fun matchShare(request: MediaFetchRequest, share: FoundShare): List<DriveShareMatch> {
+    private suspend fun matchShare(
+        request: MediaFetchRequest,
+        share: FoundShare,
+        skipFolders: (List<String>) -> Set<String>,
+    ): List<DriveShareMatch> {
         val videos = try {
-            reader.read(share.shareId, share.passcode).videos
+            reader.read(share.shareId, share.passcode, skipFolders).videos
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
@@ -405,6 +414,20 @@ internal class DriveShareSearchEngine(
             val base = DriveNameParser.normalize(DriveNameParser.baseTitle(title))
             return base.length >= 2 && normalizedKeyword.contains(base)
         }
+
+        /**
+         * 站点搜到的分享按站点剧名写的季排先后 (同一档保持站点的顺序): 写了 [season] 的在前, 没写季的居中, 只写了别的季的最后.
+         * 按系列名搜时前几季的分享常排在前面, 只打开前几个的话本季的分享轮不到. 只排序不去掉: 写着「第二季」的分享里常连第一季一起放.
+         */
+        fun bySeason(shares: Collection<FoundShare>, season: Int): List<FoundShare> =
+            shares.sortedBy { share ->
+                val declared = DriveNameParser.declaredSeasons(share.siteTitle)
+                when {
+                    season in declared -> 0
+                    declared.isEmpty() -> 1
+                    else -> 2
+                }
+            }
     }
 }
 
