@@ -81,6 +81,7 @@ internal class SplitSeasonEpisodeMatcher private constructor(
                 pages.getOrPut(PageKey(media.mediaSourceId, subjectName, media.properties.alliance)) { HashSet() }.add(number)
             }
             if (pages.isEmpty()) return null
+            SplitSeasonPageLog.log(episodeInfo, pageMatcher, pages.mapKeys { (k, _) -> Triple(k.mediaSourceId, k.subjectName, k.channel) })
             return SplitSeasonEpisodeMatcher(pageMatcher, pages.mapValues { SplitSeasonPageMatcher.PageNumbers(it.value) })
         }
 
