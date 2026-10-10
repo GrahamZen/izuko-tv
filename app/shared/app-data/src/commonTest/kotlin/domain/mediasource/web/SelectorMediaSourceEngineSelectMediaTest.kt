@@ -271,9 +271,11 @@ class SelectorMediaSourceEngineSelectMediaTest {
         assertEquals(12, produced.size)
     }
 
-    /** 放宽到整个条目, 不等于把同一页上的另一部作品也放进来. */
+    /**
+     * 放宽到整个条目, 不等于把同一页上的另一部作品当成本条目的集: 它集号解析不出来, 原样交给选择器 (选择器按集号排除它).
+     */
     @Test
-    fun `条目级查询仍然挡住同一页上的另一部作品`() {
+    fun `条目级查询不把同一页上的另一部作品当成本条目的集`() {
         val page = listOf(titleAsSort(TONARI), titleAsSort(YOGORETA))
         val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = "毫不相干的作品")
 
@@ -281,7 +283,29 @@ class SelectorMediaSourceEngineSelectMediaTest {
             page, case.config, case.query().copy(subjectEpisodeSorts = sorts(1..1)), "test", TONARI,
         )
 
-        assertEquals(emptyList(), produced)
+        assertEquals(emptyList(), produced.filter { it.episodeRange?.knownSorts?.any { sort -> sort is EpisodeSort.Normal } == true })
+    }
+
+    /**
+     * 条目级查询里 OVA、SP 与解析不出集号的条目也产出: 选择器对 OVA 条目认同一页上的 "OVA", 对特别篇按名字认.
+     * 只产出当次那一集的话, 会话从正片开始时它们就再也找不回来.
+     */
+    @Test
+    fun `条目级查询产出特别篇与解析不出集号的条目`() {
+        val ova = WebSearchEpisodeInfo(channel = "线路1", name = "OVA", episodeSortOrEp = EpisodeSort("OVA"), playUrl = "https://example.com/ova")
+        val sp = WebSearchEpisodeInfo(channel = "线路1", name = "SP1", episodeSortOrEp = EpisodeSort("SP1"), playUrl = "https://example.com/sp1")
+        val recap = WebSearchEpisodeInfo(channel = "线路1", name = "总集篇", episodeSortOrEp = EpisodeSort("总集篇"), playUrl = "https://example.com/recap")
+        val page = (1..13).map { numbered(it) } + listOf(ova, sp, recap)
+        val case = Case(page, EpisodeSort(1), episodeEp = EpisodeSort(1), episodeName = null)
+
+        val produced = engine.selectFilteredMedia(
+            page, case.config, case.query().copy(subjectEpisodeSorts = sorts(1..12)), "test", TONARI,
+        )
+
+        assertEquals(
+            (1..12).map { "https://example.com/$it" } + listOf(ova.playUrl, sp.playUrl, recap.playUrl),
+            produced.map { it.originalUrl },
+        )
     }
 
     /** 没有条目集号 (长番, 见 SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES) 时维持老行为: 只产出当前这一集. */
