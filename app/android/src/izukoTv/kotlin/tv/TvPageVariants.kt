@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
+import me.him188.ani.app.navigation.SettingsTab
+import me.him188.ani.app.navigation.BangumiAuthorizeRedirect
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
@@ -96,10 +98,15 @@ import me.him188.ani.app.ui.exploration.search.TvSearchPage
 import me.him188.ani.app.ui.main.LocalMainScreenShellVariant
 import me.him188.ani.app.ui.main.MainScreenShellVariant
 import me.him188.ani.app.ui.main.TvMainScreenLayout
+import me.him188.ani.app.ui.onboarding.TvOnboardingGate
 import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
 import me.him188.ani.app.ui.onboarding.TvOnboardingLoginHost
 import me.him188.ani.app.ui.onboarding.TvOnboardingPage
+import me.him188.ani.app.ui.settings.LocalSettingsScreenVariant
+import me.him188.ani.app.ui.settings.SettingsScreenVariant
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
+import me.him188.ani.app.ui.settings.tv.TvSettingsPage
+import me.him188.ani.app.ui.settings.tv.ensureTvInAppUpdateDownload
 import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
@@ -170,6 +177,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
     val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
     LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
+    LaunchedEffect(Unit) { ensureTvInAppUpdateDownload() }
+    // 「去登录 Bangumi」都去设置页的账号那一类 (扫码登录、在电视上登录、须知都在那里), 不开单独的授权页
+    remember { BangumiAuthorizeRedirect.target = { it.navigateSettings(SettingsTab.PROFILE) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageActionHost() }
     // 「换一批」: 目前只有探索页的推荐区注册
@@ -309,6 +319,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
         // 缓存页的选源: 与播放器同一块选源面板
         LocalTvDownloadMediaPickerVariant provides TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) },
+        // 设置页: 原生三栏 (要打字的设置在手机 Web 控制台里)
+        LocalSettingsScreenVariant provides SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
+            TvSettingsPage(vm, initialTab, legacy, licenses, modifier)
+        },
     ) {
         // 长按手势兜不兜、菜单开不开, 都要先看当前在哪个目的地:
         //  - 播放页: 长按返回归播放器自己 (收叠层, 注册在栈顶), 播放键本来就在播放器语义里;

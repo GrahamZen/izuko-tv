@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1337,9 +1337,9 @@ private fun part12() = listOf(
     RemoteText("网络", "Network", "網絡", "網路"),
     RemoteText("代理、Bangumi 连接方式、TMDB 图片", "Proxy, Bangumi connection, TMDB images", "代理、Bangumi 連接方式、TMDB 圖片", "代理、Bangumi 連線方式、TMDB 圖片"),
     RemoteText("资源与弹幕", "Resources and danmaku", "資源與彈幕", "資源與彈幕"),
-    RemoteText("BT Tracker、字幕组、弹幕屏蔽词", "BT trackers, subtitle groups, danmaku filters", "BT Tracker、字幕組、彈幕屏蔽詞", "BT Tracker、字幕組、彈幕遮蔽詞"),
+    RemoteText("BT Tracker、Peer 规则、PikPak、字幕组、弹幕屏蔽词", "BT trackers, peer rules, PikPak, subtitle groups, danmaku filters", "BT Tracker、Peer 規則、PikPak、字幕組、彈幕屏蔽詞", "BT Tracker、Peer 規則、PikPak、字幕組、彈幕遮蔽詞"),
     RemoteText("维护", "Maintenance", "維護", "維護"),
-    RemoteText("应用更新、日志、性能诊断", "App update, logs, performance diagnostics", "應用更新、日誌、性能診斷", "應用更新、日誌、效能診斷"),
+    RemoteText("应用更新、日志、性能诊断、设置备份", "App update, logs, performance diagnostics, settings backup", "應用更新、日誌、性能診斷、設置備份", "應用更新、日誌、效能診斷、設定備份"),
     RemoteText("这里只放了常用的设置，其余的请在电视上改。", "Only common settings are here. Change the rest on the TV.", "這裡只放了常用的設置，其餘的請在電視上改。", "這裡只放了常用的設定，其餘的請在電視上改。"),
     RemoteText("本地用户", "Local user", "本地用戶", "本地使用者"),
     RemoteText("未登录 Bangumi", "Not signed in to Bangumi", "未登錄 Bangumi", "未登入 Bangumi"),
@@ -1644,4 +1644,38 @@ private fun part16() = listOf(
     RemoteText("正在读视频信息…", "Reading video info…", "正在讀影片資訊…", "正在讀取影片資訊…"),
     RemoteText("隐藏", "Hide", "隱藏", "隱藏"),
     RemoteText("隐藏，再失败时重新出现", "Hide; it comes back if playback fails again", "隱藏，再失敗時重新出現", "隱藏，再失敗時重新出現"),
+)
+
+// Web 控制台: Peer 规则 / PikPak / 设置备份
+private fun part17() = listOf(
+    RemoteText("这一行不是有效的 IP 地址或规则：{0}", "This line is not a valid IP address or rule: {0}", "這一行不是有效的 IP 地址或規則：{0}", "這一行不是有效的 IP 位址或規則：{0}"),
+    RemoteText("这一行不是有效的正则表达式：{0}", "This line is not a valid regular expression: {0}", "這一行不是有效的正則表達式：{0}", "這一行不是有效的正規表示式：{0}"),
+    RemoteText("没有改动", "Nothing changed", "沒有改動", "沒有變更"),
+    RemoteText("已清除 PikPak 账号", "PikPak account removed", "已清除 PikPak 帳號", "已清除 PikPak 帳號"),
+    RemoteText("已换账号，请再填上这个账号的密码", "Account changed. Enter the password for this account too.", "已換帳號，請再填上這個帳號的密碼", "已換帳號，請再填上這個帳號的密碼"),
+    RemoteText("已保存，下次用到 PikPak 时登录", "Saved. Izuko signs in the next time it uses PikPak.", "已保存，下次用到 PikPak 時登錄", "已儲存，下次用到 PikPak 時登入"),
+    RemoteText("这台设备不支持 PikPak", "PikPak is not available on this device", "這台設備不支持 PikPak", "這台裝置不支援 PikPak"),
+    RemoteText("连接超时，请重试", "Connection timed out. Please try again.", "連接超時，請重試", "連線逾時，請重試"),
+    RemoteText("先在电视上打开「启用 PikPak」，并填好账号和密码", "Turn on “Enable PikPak” on the TV and fill in the account and password first", "先在電視上打開「啟用 PikPak」，並填好帳號和密碼", "先在電視上開啟「啟用 PikPak」，並填好帳號和密碼"),
+    RemoteText("登录成功，网盘剩余 {0}", "Signed in. {0} free in the drive", "登錄成功，網盤剩餘 {0}", "登入成功，雲端硬碟剩餘 {0}"),
+    RemoteText("连接失败：{0}", "Connection failed: {0}", "連接失敗：{0}", "連線失敗：{0}"),
+    RemoteText("已填好账号，用到 PikPak 时登录", "Account filled in; signs in when PikPak is used", "已填好帳號，用到 PikPak 時登錄", "已填好帳號，用到 PikPak 時登入"),
+    RemoteText("还没填密码", "No password yet", "還沒填密碼", "還沒填密碼"),
+    RemoteText("还没填账号", "No account yet", "還沒填帳號", "還沒填帳號"),
+    RemoteText("；电视上还没打开「启用 PikPak」，打开后才会用", ". “Enable PikPak” is off on the TV; PikPak is used only after you turn it on.", "；電視上還沒打開「啟用 PikPak」，打開後才會用", "；電視上還沒開啟「啟用 PikPak」，開啟後才會用"),
+    RemoteText("用 PikPak 的离线下载解析 BT 资源，需要 PikPak 会员。「启用 PikPak」开关在电视上。", "Resolves BitTorrent resources through PikPak offline downloads. Requires a PikPak premium subscription. The “Enable PikPak” switch is on the TV.", "用 PikPak 的離線下載解析 BT 資源，需要 PikPak 會員。「啟用 PikPak」開關在電視上。", "用 PikPak 的離線下載解析 BT 資源，需要 PikPak 會員。「啟用 PikPak」開關在電視上。"),
+    RemoteText("用户名", "Username", "用戶名", "使用者名稱"),
+    RemoteText("邮箱 / 手机号", "Email or phone", "郵箱 / 手機號", "電子郵件 / 手機號碼"),
+    RemoteText("密码", "Password", "密碼", "密碼"),
+    RemoteText("用 Google 登录的账号，要先在 PikPak 的账号设置里设一个密码。换用户名时，一起填上新账号的密码。", "If you signed up with Google, set a password in your PikPak account settings first. When you change the username, also enter the password of the new account.", "用 Google 登錄的帳號，要先在 PikPak 的帳號設置裡設一個密碼。換用戶名時，一起填上新帳號的密碼。", "用 Google 登入的帳號，要先在 PikPak 的帳號設定裡設一個密碼。換使用者名稱時，一起填上新帳號的密碼。"),
+    RemoteText("测试登录", "Test sign-in", "測試登錄", "測試登入"),
+    RemoteText("正在登录 PikPak，最多要半分钟…（按已保存的账号测）", "Signing in to PikPak, up to half a minute… (uses the saved account)", "正在登錄 PikPak，最多要半分鐘…（按已保存的帳號測）", "正在登入 PikPak，最多要半分鐘…（按已儲存的帳號測）"),
+    RemoteText("设置备份", "Settings backup", "設置備份", "設定備份"),
+    RemoteText("把应用设置导出成文件存在手机上，重装或换电视后再导入。文件里有 Bangumi 登录凭据，不要发给别人；PikPak 账号不在里面。", "Export the app settings to a file on your phone, then import it after reinstalling or on a new TV. The file contains your Bangumi sign-in credentials, so do not share it. The PikPak account is not included.", "把應用設置導出成文件存在手機上，重裝或換電視後再導入。文件裡有 Bangumi 登錄憑據，不要發給別人；PikPak 帳號不在裡面。", "把應用設定匯出成檔案存在手機上，重裝或換電視後再匯入。檔案裡有 Bangumi 登入憑證，不要傳給別人；PikPak 帳號不在裡面。"),
+    RemoteText("已导出设置备份", "Settings backup exported", "已導出設置備份", "已匯出設定備份"),
+    RemoteText("这会覆盖当前应用的所有设置，且无法撤销，确认导入吗？", "This overwrites all current app settings and cannot be undone. Import anyway?", "這會覆蓋當前應用的所有設置，且無法撤銷，確認導入嗎？", "這會覆蓋目前應用的所有設定，且無法復原，確認匯入嗎？"),
+    RemoteText("文件太大，不像设置备份", "The file is too large to be a settings backup", "文件太大，不像設置備份", "檔案太大，不像設定備份"),
+    RemoteText("文件是空的", "The file is empty", "文件是空的", "檔案是空的"),
+    RemoteText("这个文件不是设置备份，或者已经损坏", "This file is not a settings backup, or it is damaged", "這個文件不是設置備份，或者已經損壞", "這個檔案不是設定備份，或者已經損壞"),
+    RemoteText("已导入设置", "Settings imported", "已導入設置", "已匯入設定"),
 )
