@@ -170,16 +170,18 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
 
     /**
      * @param context 为 null 则不会自动下载
+     * @param manual 用户手动点的「检查更新」: 关了自动检查也照查
      */
     fun startCheckLatestVersion(
-        uriHandler: UriHandler?
+        uriHandler: UriHandler?,
+        manual: Boolean = false,
     ) {
         autoCheckTasker.launch {
             val updateSettings = updateSettings.first()
 
             checkUpdateErrorFlow.value = null
             val ver = try {
-                if (!updateSettings.autoCheckUpdate) {
+                if (!manual && !updateSettings.autoCheckUpdate) {
                     logger.info { "autoCheckUpdate disabled" }
                     return@launch
                 }
