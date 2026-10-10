@@ -45,7 +45,9 @@ import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.data.repository.media.rememberSearchNames
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.episode.seriesInfoForFetchOrNull
 import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
@@ -70,7 +72,6 @@ import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.tools.getOrZero
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.mediafetch.request.toEditingMediaFetchRequest
-import me.him188.ani.app.ui.mediafetch.request.toMediaFetchRequestOrNull
 import me.him188.ani.app.ui.remote.RemoteCandidates.putCandidates
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.app.data.models.subject.SubjectInfo
@@ -126,6 +127,7 @@ internal object RemoteCache {
     private val selectorCache: SelectorMediaSourceEpisodeCacheRepository get() = KoinPlatform.getKoin().get()
     private val engineAccess: TorrentEngineAccess get() = KoinPlatform.getKoin().get()
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
+    private val relationsRepository: SubjectRelationsRepository get() = KoinPlatform.getKoin().get()
 
     /** 手机上正在挑资源的那一集. */
     private class Browse(
@@ -134,6 +136,8 @@ internal object RemoteCache {
         val episode: EpisodeCollectionInfo,
         val fetchSession: MediaFetchSession,
         val selector: MediaSelector,
+        /** 这一集由 Bangumi 信息生成、未套用改过的搜索名的请求 (「恢复 Bangumi 名称」回到它). */
+        val defaultRequest: MediaFetchRequest,
     ) {
 
         @Volatile
@@ -367,7 +371,7 @@ internal object RemoteCache {
                 putJsonArray("others") { editing.complementaryNames.forEach { add(it) } }
                 put("sort", editing.episodeSort)
                 put("ep", editing.episodeEp)
-                val d = defaultRequest(b)
+                val d = b.defaultRequest
                 put("edited", req.subjectNames != d.subjectNames || req.episodeSort != d.episodeSort || req.episodeEp != d.episodeEp)
             }
             putJsonArray("sources") {
@@ -408,7 +412,9 @@ internal object RemoteCache {
         // 用户只是点开列表看看, 后台就给他建了一条缓存, 接口还报"打开这一集失败" (2026-09-19 真机撞到)。
         // 旧的 EpisodeCacheRequester 只管"查询 + 选择", 建记录是调用方的事, 这里恢复成那个语义:
         // 自己开 fetch session 与 selector, 用户点选之后才由 [start] 调 AddDownloadUseCase 落库。
-        val request = MediaFetchRequest.create(info.subjectInfo, ep.episodeInfo, info.episodes.map { it.episodeInfo })
+        // 系列信息同开播: 回退搜索关键词与拆分季的整季序号
+        val seriesInfo = runBlocking { relationsRepository.seriesInfoForFetchOrNull(subjectId) }
+        val request = MediaFetchRequest.create(info.subjectInfo, ep.episodeInfo, info.episodes.map { it.episodeInfo }, seriesInfo)
         val fetchSession = runBlocking {
             withTimeoutOrNull(REQUEST_TIMEOUT) {
                 // 搜索名同缓存页: 用户为这部番改过的条目搜索名, 缓存也照用
@@ -418,7 +424,7 @@ internal object RemoteCache {
         } ?: return null
         val selector = MediaSelectorFactory.withKoin()
             .create(subjectId, episodeId, fetchSession.cumulativeResults, fetchRequest = fetchSession.latestRequest)
-        val b = Browse(subjectId, info.subjectInfo, ep, fetchSession, selector)
+        val b = Browse(subjectId, info.subjectInfo, ep, fetchSession, selector, defaultRequest = request)
         // 一直收着候选: 数据源查询要有人订阅才会继续 (同缓存页的选择框), 停止 collect 几秒后查询会被中断
         b.job = scope.launch {
             launch { fetchSession.cumulativeResults.collect() }
@@ -428,9 +434,6 @@ internal object RemoteCache {
         startWatchdog()
         return b
     }
-
-    /** 这一集由 Bangumi 信息生成、未套用改过的搜索名的请求 (「恢复 Bangumi 名称」回到它). */
-    private fun defaultRequest(b: Browse) = MediaFetchRequest.create(b.subjectInfo, b.episode.episodeInfo)
 
     /**
      * 选资源页的「搜索名与集数」: 改数据源搜索用的条目名 (主搜索名 + 次要名), 按条目记住 —— 同播放器的编辑查询请求, 这部番以后
@@ -445,7 +448,7 @@ internal object RemoteCache {
         val b = synchronized(lock) { browse }?.takeIf { it.subjectId == subjectId && it.episode.episodeId == episodeId }
             ?: return result(false, tr("列表已过期，请重新打开这一集"))
         val reset = f["reset"] == "1"
-        val default = defaultRequest(b)
+        val default = b.defaultRequest
         val current = runBlocking { withTimeoutOrNull(STATUS_TIMEOUT) { b.fetchSession.request.first() } }
             ?: return result(false, tr("操作超时，请重试"))
         val edited = if (reset) {
@@ -461,7 +464,7 @@ internal object RemoteCache {
                 complementaryNames = f["others"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() },
                 episodeSort = sort,
                 episodeEp = ep,
-            ).toMediaFetchRequestOrNull() ?: return result(false, tr("请求无效，请检查"))
+            ).applyTo(current) ?: return result(false, tr("请求无效，请检查"))
         }
         runBlocking {
             withTimeoutOrNull(STATUS_TIMEOUT) {

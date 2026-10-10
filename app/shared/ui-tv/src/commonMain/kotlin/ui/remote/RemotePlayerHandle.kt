@@ -39,7 +39,6 @@ import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultPresentation
 import me.him188.ani.app.ui.mediafetch.request.toEditingMediaFetchRequest
-import me.him188.ani.app.ui.mediafetch.request.toMediaFetchRequestOrNull
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodePresentation
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
@@ -287,7 +286,7 @@ internal class RemotePlayerHandle(
             complementaryNames = others.map { it.trim() }.filter { it.isNotEmpty() },
             episodeSort = sort.trim(),
             episodeEp = ep.trim(),
-        ).toMediaFetchRequestOrNull() ?: return tr("请求无效，请检查")
+        ).applyTo(current) ?: return tr("请求无效，请检查")
         uiScope.launch { vm.updateFetchRequest(request) }
         return null
     }
