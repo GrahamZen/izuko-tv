@@ -3000,7 +3000,7 @@ private val SCRIPT = """
     g.items.forEach(function (it) {
       var sel = it.id === s.selectedId;
       // 去重: 在线源的「字幕组」常就是字幕语言 (简中 · 简中)
-      var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size]
+      var meta = [it.cached ? T('已缓存') : '', it.resolution, it.subtitles, it.alliance, it.size, it.bitrate]
         .filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
       h += itemSwipe(it, '<button class="item' + (sel ? ' sel' : '') + (it.id === flashId ? ' flash' : '') + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') +
         '" data-id="' + esc(it.id) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
@@ -6659,7 +6659,7 @@ private val CACHE_SCRIPT = """
     groups.forEach(function (g) {
       h += '<h2>' + (g.kind === 'cache' ? '' : window.srcIcon(g.id, g.name)) + esc(g.name) + ' <small>' + T('{0} 条', g.total) + '</small></h2><div class="list">';
       g.items.forEach(function (it) {
-        var meta = [it.resolution, it.subtitles, it.alliance, it.size].filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
+        var meta = [it.resolution, it.subtitles, it.alliance, it.size, it.bitrate].filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · ');
         h += '<button type="button" class="item' + (it.excluded ? ' ex' : '') + (it.blocked ? ' blocked' : '') + '" data-mid="' + esc(it.id) +
           '" data-title="' + esc(it.title) + '"' + (it.blocked ? ' data-blocked="' + esc(it.reason || '') + '"' : '') + '>' +
           '<span class="t">' + esc(it.title) + '</span><span class="m">' + esc(meta) + '</span>' +
