@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormatNoChannel
 import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatA
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -209,6 +210,53 @@ class SelectorMediaSourceFetchFallbackTest {
         val subjects = source.fetchSubjectNames(request(names, fallback, episode = 3))
         assertEquals(listOf("更多", "出包王女", "出包王女"), site.searchKeywords)
         assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+    }
+
+    /**
+     * 长番 (超过 [SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES] 集) 只窄读当前这一集的缓存行. 判断页面新旧要找的
+     * 「已上映的最新一集」不是当前集时要另外窄读它, 否则每次切集都当缓存过期、整个重搜.
+     */
+    @Test
+    fun `long series reads the cache for another episode without searching again`() = runTest {
+        val site = Site()
+        val source = createTestSelectorMediaSource(
+            config, site.engine, cacheDao = InMemoryWebSearchSessionCacheDao(), cacheTtl = 1.hours,
+        )
+        // 第 1、2 集已上映 (条目页上也只有这两集), 之后的还没播
+        val episodes = (1..SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES + 1).map {
+            MediaFetchRequest.Episode(it.toString(), EpisodeSort(it), airDate = if (it <= 2) PackedDate(2020, 1, 1) else PackedDate.Invalid)
+        }
+        fun longSeries(episode: Int) = request(listOf("出包王女"), episode = episode).copy(episodes = episodes)
+
+        source.fetchSubjectNames(longSeries(2))
+        assertEquals(listOf("出包王女"), site.searchKeywords)
+
+        val subjects = source.fetchSubjectNames(longSeries(1))
+        assertEquals(listOf("出包王女"), site.searchKeywords)
+        assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+    }
+
+    /**
+     * 站点比 Bangumi 晚一集 (页面上没有已上映的最新一集) 时, 长番切集仍用刚写入的缓存: 页面有当前这一集就够,
+     * 否则每切一集都把上千集的条目页重新抓、重新写一遍.
+     */
+    @Test
+    fun `long series uses a recent cache even when the site is behind`() = runTest {
+        val site = Site()
+        val source = createTestSelectorMediaSource(
+            config, site.engine, cacheDao = InMemoryWebSearchSessionCacheDao(), cacheTtl = 1.hours,
+        )
+        // Bangumi 已播到第 3 集, 条目页上只有第 1、2 集
+        val episodes = (1..SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES + 1).map {
+            MediaFetchRequest.Episode(it.toString(), EpisodeSort(it), airDate = if (it <= 3) PackedDate(2020, 1, 1) else PackedDate.Invalid)
+        }
+        fun longSeries(episode: Int) = request(listOf("出包王女"), episode = episode).copy(episodes = episodes)
+
+        source.fetchSubjectNames(longSeries(1))
+        assertEquals(listOf("出包王女"), site.searchKeywords)
+
+        source.fetchSubjectNames(longSeries(2))
+        assertEquals(listOf("出包王女"), site.searchKeywords)
     }
 
     @Test

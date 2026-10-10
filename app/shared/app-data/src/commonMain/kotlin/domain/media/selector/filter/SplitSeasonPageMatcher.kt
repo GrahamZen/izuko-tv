@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.media.selector.filter
 
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.domain.mediasource.MediaListFilters
@@ -115,13 +117,14 @@ class SplitSeasonPageMatcher private constructor(
         .filter { marker -> ownMarkers.none { normalize(it).equals(normalize(marker), ignoreCase = true) } }
     private val seasonExactNames = (siblingIndices.flatMap { season.parts[it].names } + season.baseNames).distinct()
     private val classifications = HashMap<String, Classification>()
+    private val classificationsLock = SynchronizedObject()
 
     /**
      * 本季的名字: 其他段的条目名和季名. 页名属于本季时, 条目名匹配规则要把它们当作当前条目的名字.
      */
     val seasonNames: Set<String> get() = seasonExactNames.toSet()
 
-    fun classify(pageName: String): Classification = classifications.getOrPut(pageName) { doClassify(pageName) }
+    fun classify(pageName: String): Classification = synchronized(classificationsLock) { classifications.getOrPut(pageName) { doClassify(pageName) } }
 
     /**
      * 页面 [page] 上序号为 [number] 的一集是不是当前集: 是则返回它按哪种序号对上, 否则 `null`.

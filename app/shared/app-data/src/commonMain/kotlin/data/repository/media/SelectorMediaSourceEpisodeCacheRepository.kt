@@ -178,12 +178,15 @@ private fun List<WebSearchSessionCacheEntity>.toWebSearchCache(): WebSearchCache
             origin = null,
         ),
         webEpisodeInfos = map { it.toWebSearchEpisodeInfo() },
+        cachedAt = minOf { it.cachedAt },
     )
 }
 
 data class WebSearchCache(
     val webSubjectInfo: WebSearchSubjectInfo,
     val webEpisodeInfos: List<WebSearchEpisodeInfo>,
+    /** 这一页写入缓存的时间 (各行中最早的) */
+    val cachedAt: Long = 0,
 )
 
 private fun WebSearchEpisodeInfo.toEntity(
