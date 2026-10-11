@@ -723,6 +723,8 @@
     <string name="tv_settings_subscription_count">%1$d 個資料源</string>
     <string name="tv_settings_subscription_status_failed">更新失敗</string>
     <string name="tv_settings_subscription_delete_hint">按確定刪除這個訂閱，它帶來的資料源也一起刪除。新增訂閱在手機上的 Web 控制台裡。</string>
+    <string name="tv_settings_subscription_restore_order">訂閱更新時恢復訂閱裡的順序</string>
+    <string name="tv_settings_subscription_restore_order_description">關閉時，訂閱更新保留你調過的順序，新加的來源排在最後；開啟後每次更新都把這個訂閱的來源排回訂閱裡的順序。資料源的設定總是跟著訂閱更新，啟用 / 停用一直保留。</string>
     <string name="tv_settings_subscription_delete_confirm">刪除訂閱「%1$s」？它帶來的資料源也會一起刪除。</string>
     <string name="tv_settings_drives">網盤</string>
     <string name="tv_settings_drive_not_logged_in">未登入</string>
