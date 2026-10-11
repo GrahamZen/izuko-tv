@@ -77,7 +77,7 @@ class MediaSelectorSplitSeasonTest {
         initSplitSeason(ReZero, 316247, sort = 39, ep = 1)
         val firstSeason = addPage("Re：从零开始的异世界生活", 1..25)
 
-        assertPage(firstSeason, default = "excluded FromSeriesSeason")
+        assertPage(firstSeason, 1 to "excluded FromSeriesSeason", 39 to "excluded FromSeriesSeason")
     }
 
     @OptIn(UnsafeOriginalMediaAccess::class)
@@ -183,9 +183,9 @@ class MediaSelectorSplitSeasonTest {
         // 第二季前半把序章记作第 1 集, 共 13 集, 第 13 集不是第2部分的第 1 集
         val partOneWithPrologueAsOne = addPage("无职转生Ⅱ 到了异世界就拿出真本事", 1..13, source = "web4")
 
-        assertPage(firstSeasonPartTwo, default = "excluded FromSeriesSeason")
-        assertPage(firstSeasonMerged, default = "excluded FromSeriesSeason")
-        assertPage(thirdSeason, default = "excluded FromSeriesSeason")
+        assertPage(firstSeasonPartTwo, 1 to "excluded FromSeriesSeason", 13 to "excluded FromSeriesSeason")
+        assertPage(firstSeasonMerged, 1 to "excluded FromSeriesSeason", 13 to "excluded FromSeriesSeason")
+        assertPage(thirdSeason, 1 to "excluded FromSeriesSeason", 13 to "excluded FromSeriesSeason")
         assertPage(partOneWithPrologueAsOne)
     }
 
@@ -197,9 +197,9 @@ class MediaSelectorSplitSeasonTest {
         val firstSeason = addPage("Re：从零开始的异世界生活第一季", 1..25, source = "web4")
         val withoutPrefix = addPage("从零开始的异世界生活 第二季 下部", 14..25, source = "web4")
 
-        assertPage(thirdSeason, default = "excluded FromSeriesSeason")
-        assertPage(fourthSeason, default = "excluded FromSeriesSeason")
-        assertPage(firstSeason, default = "excluded FromSeriesSeason")
+        assertPage(thirdSeason, 1 to "excluded FromSeriesSeason", 39 to "excluded FromSeriesSeason")
+        assertPage(fourthSeason, 1 to "excluded FromSeriesSeason", 39 to "excluded FromSeriesSeason")
+        assertPage(firstSeason, 1 to "excluded FromSeriesSeason", 39 to "excluded FromSeriesSeason")
         assertPage(withoutPrefix, 14 to "included FUZZY SEASON")
     }
 
@@ -231,8 +231,8 @@ class MediaSelectorSplitSeasonTest {
         assertPage(own, 1 to "included EXACT EP")
         assertPage(partOneOnly)
         assertPage(continuing, 13 to "included EXACT SEASON")
-        assertPage(secondSeason, default = "excluded FromSeriesSeason")
-        assertPage(secondSeasonDub, default = "excluded FromSeriesSeason")
+        assertPage(secondSeason, 1 to "excluded FromSeriesSeason", 13 to "excluded FromSeriesSeason")
+        assertPage(secondSeasonDub, 1 to "excluded FromSeriesSeason", 13 to "excluded FromSeriesSeason")
         assertPage(bothSeasons, 13 to "included FUZZY SEASON")
         assertPage(dub, 13 to "included FUZZY SEASON")
     }
