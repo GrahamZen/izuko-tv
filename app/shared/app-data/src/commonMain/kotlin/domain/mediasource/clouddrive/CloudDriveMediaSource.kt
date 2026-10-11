@@ -231,6 +231,7 @@ class CloudDriveMediaSource(
             val sourceId = protocol.driveMediaSourceId
             val mediaId = "$sourceId.${file.fid}"
             DriveVideoBitrates.record(mediaId, file)
+            if (file.parentFid.isNotEmpty()) DriveMediaFolders.record(mediaId, DriveMediaFolders.Folder(file.parentFid, folders.lastOrNull()))
             return DefaultMedia(
                 mediaId = mediaId,
                 mediaSourceId = sourceId,
