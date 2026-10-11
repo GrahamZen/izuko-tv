@@ -42,8 +42,9 @@ internal fun interface RangeOpener {
 /**
  * 把一段范围切成块, 同时最多 [maxConnections] 块在下 (平时是 [connections]), 按顺序交给读的一方.
  *
- * 每次 [open] 之后头一轮 ([connections] 块) 每块 [firstChunkSize], 之后每轮翻倍, 到 [chunkSize] 为止: 开播 / 跳转后马上要的那几 MB
- * 由所有连接一起下, 不用等一个连接把一整块下完 —— 连接被限速得很慢时 (非会员网盘每路几十 KB/s), 一整块要等上一两分钟.
+ * 每次 [open] 之后头一轮每块 [firstChunkSize], 之后每轮翻倍, 到 [chunkSize] 为止; 一轮是打开那一刻的 [maxConnections] 块 (多开着时就是多开的路数):
+ * 开播 / 跳转后马上要的那几 MB 由所有连接一起下、一起到, 不用等一个连接把一整块下完 —— 连接被限速得很慢时 (非会员网盘每路几十 KB/s),
+ * 一整块要等上一两分钟. 一轮的块一样大, 同时到; 大小不一的话, 排在前面的小块到了, 读的一方还得等后面的大块.
  * 读的一方可以读一块里已经到了的部分, 不用等整块下完, 所以开播不比单连接慢.
  * [maxConnections] 随时可变 (播放跟不上时多开, 见 [ThrottledSourceLoadControl.boosted]), 每读一次照它补块; 比 [connections] 多时
  * 每块按 [maxWindowBytes] 平分 (不小于 [firstChunkSize]), 各块缓冲常驻的总量不随连接数一起涨.
@@ -52,7 +53,8 @@ internal fun interface RangeOpener {
  *
  * [open] / [read] / [close] 只能在同一个线程上调用 (播放器的加载线程); 各块在 [executor] 上下载.
  *
- * 每块的连接只在下这一块的线程上读和关; [close] 只是告诉各块别再下了.
+ * 每块的连接只在下这一块的线程上读和关; [close] 只是告诉各块别再下了. 读到一半的连接关掉就断了, 不能再用; 预计 [drainMillis] 内能下完的块
+ * 接着下完再关, 连接回到连接池 (见 [drainForReuse]), 跳转后接着发的请求不用重新建连.
  *
  * 日志: 读的一方等数据每满 [SLOW_WAIT_LOG_MILLIS] 记一次 (带这一块的进度和下载线程的栈); 每次下载失败、
  * 下得特别慢的块 ([SLOW_CHUNK_LOG_MILLIS])、关得慢的 [close] 也记.
@@ -67,6 +69,8 @@ internal class ParallelRangeReader(
     private val maxWindowBytes: Int = connections * chunkSize,
     /** 小范围拆给几个连接时每块至少多大 (见 [open]). */
     private val minPartBytes: Long = MIN_PART_BYTES,
+    /** 不要了的块预计这么久内能下完就下完再关 (见 [drainForReuse]); 0 表示一律当场关. */
+    private val drainMillis: Long = DRAIN_MILLIS,
     private val retryable: (IOException) -> Boolean = { true },
 ) {
     private class Chunk(val start: Long, val length: Int, val data: ByteArray) {
@@ -184,6 +188,9 @@ internal class ParallelRangeReader(
     /** 本次 [open] 以来排了几块, 定下一块多大 (见 [nextChunkLength]). */
     private var scheduledCount = 0
 
+    /** 本次 [open] 每轮排几块 (见 [nextChunkLength]): 打开那一刻的 [maxConnections]. */
+    private var roundSize = 0
+
     /** 本次 [open] 每块固定多长 (小范围拆给几个连接时, 见 [open]); 0 表示按 [nextChunkLength] 的规则. */
     private var fixedChunkLength = 0L
 
@@ -215,6 +222,7 @@ internal class ParallelRangeReader(
      */
     fun open(position: Long, length: Long, knownTotalLength: Long = -1): Long {
         scheduledCount = 0
+        roundSize = limit()
         fixedChunkLength = 0
         totalLength = knownTotalLength
         if (knownTotalLength >= 0) {
@@ -355,12 +363,12 @@ internal class ParallelRangeReader(
     }
 
     /**
-     * 下一块多大: 头一轮 [firstChunkSize], 之后每轮 ([connections] 块) 翻倍, 到 [chunkSize] 为止;
+     * 下一块多大: 头一轮 [firstChunkSize], 之后每轮 ([roundSize] 块) 翻倍, 到 [chunkSize] 为止;
      * 连接比 [connections] 多时不超过 [maxWindowBytes] 的平分.
      */
     private fun nextChunkLength(): Long {
         if (fixedChunkLength > 0) return fixedChunkLength
-        val round = (scheduledCount / connections).coerceAtMost(MAX_RAMP_ROUNDS)
+        val round = (scheduledCount / roundSize.coerceAtLeast(1)).coerceAtMost(MAX_RAMP_ROUNDS)
         val ramped = minOf(chunkSize.toLong(), firstChunkSize.toLong() shl round)
         val limit = limit()
         if (limit <= connections) return ramped
@@ -381,6 +389,9 @@ internal class ParallelRangeReader(
     private fun download(chunk: Chunk, initial: RangeConnection?) {
         var connection = initial
         var failures = 0
+        // 当前连接从什么时候开始读、读了多少: 不要这一块时估还要多久下完 (见 drainForReuse)
+        var connectionSince = System.nanoTime()
+        var readOnConnection = 0L
         chunk.startDownload()
         try {
             while (!chunk.isComplete && !chunk.cancelled && !closed) {
@@ -394,11 +405,16 @@ internal class ParallelRangeReader(
                         } finally {
                             chunk.endOpening()
                         }
-                    }.also { connection = it }
+                    }.also {
+                        connection = it
+                        connectionSince = System.nanoTime()
+                        readOnConnection = 0
+                    }
                     val count = current.read(chunk.data, filled, chunk.length - filled)
                     if (count < 0) throw IOException("Connection ended early at ${chunk.start + filled}")
                     chunk.advance(count)
                     downloadedBytes.addAndGet(count.toLong())
+                    readOnConnection += count
                 } catch (e: IOException) {
                     connection?.let { runCatching { it.close() } }
                     connection = null
@@ -416,6 +432,7 @@ internal class ParallelRangeReader(
                     }
                 }
             }
+            connection?.let { if (!chunk.isComplete) drainForReuse(chunk, it, connectionSince, readOnConnection) }
             val took = millisSince(chunk.scheduledAt)
             if (chunk.isComplete) {
                 completedChunks.incrementAndGet()
@@ -433,8 +450,34 @@ internal class ParallelRangeReader(
         }
     }
 
+    /**
+     * 读的一方不要这一块了 (关了, 多半是跳转), 连接正读到一半: 照这个连接到目前的速度估计 [drainMillis] 内能读完的话接着读完 (数据不用),
+     * 读完的连接关的时候回到连接池. 读不完的照旧断开, 别占着连接. 最多读 [drainMillis] 的两倍, 超过就放弃.
+     */
+    private fun drainForReuse(chunk: Chunk, connection: RangeConnection, since: Long, readOnConnection: Long) {
+        var filled = chunk.filledCount()
+        val remaining = chunk.length - filled
+        if (drainMillis <= 0 || remaining <= 0 || readOnConnection <= 0) return
+        val elapsed = (System.nanoTime() - since).coerceAtLeast(1)
+        if (remaining * elapsed / readOnConnection > drainMillis * 1_000_000) return
+        val deadline = System.nanoTime() + drainMillis * 2_000_000
+        while (filled < chunk.length) {
+            if (System.nanoTime() > deadline) return
+            val count = try {
+                connection.read(chunk.data, filled, chunk.length - filled)
+            } catch (e: IOException) {
+                return
+            }
+            if (count < 0) return
+            filled += count
+        }
+    }
+
     companion object {
         const val MAX_RETRIES = 3
+
+        /** 不要了的块预计这么久内能下完就下完, 连接留着用 (见 [drainForReuse]). */
+        const val DRAIN_MILLIS = 1_500L
 
         /** 块大小最多翻几轮 (防移位溢出; 实际几轮就到 chunkSize 了). */
         private const val MAX_RAMP_ROUNDS = 16
