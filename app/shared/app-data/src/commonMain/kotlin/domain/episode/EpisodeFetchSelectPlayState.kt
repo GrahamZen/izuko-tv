@@ -387,9 +387,11 @@ class EpisodeFetchSelectPlayState(
                                 .first()
                                 .episodeInfo
 
-                            val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
-                            playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
-                            onMediaLoaded(episodeInfo.episodeId)
+                            if (!playerSession.isPlayingFine(media)) {
+                                val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
+                                onMediaLoaded(episodeInfo.episodeId)
+                            }
 
                             reloadRequests.collect { positionMillis ->
                                 logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
