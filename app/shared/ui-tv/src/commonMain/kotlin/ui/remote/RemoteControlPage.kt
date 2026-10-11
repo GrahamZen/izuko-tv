@@ -7591,7 +7591,8 @@ private val PROFILES_SCRIPT = """
     getJson('api/profiles/import/state', 8000).then(function (s) {
       if (!imp) return;
       if (s.running) {
-        impBox('<p class="dlg-p">' + T('正在导入 {0}/{1}…', s.done, s.total || imp.count || 0) + '</p>');
+        impBox('<p class="dlg-p">' + T('正在导入 {0}/{1}…', s.done, s.total || imp.count || 0) + '</p>' +
+          (s.waiting ? '<p class="dlg-p">' + T('Bangumi 每 5 分钟只允许改 15 次收藏，稍等一会儿会自动接着导。') + '</p>' : ''));
         impTimer = setTimeout(pollImport, 1000);
         return;
       }

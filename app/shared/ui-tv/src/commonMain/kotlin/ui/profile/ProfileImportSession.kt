@@ -33,7 +33,8 @@ object ProfileImportSession {
     sealed interface State {
         data object Idle : State
 
-        data class Running(val sourceName: String, val done: Int, val total: Int) : State
+        /** @property waitingForRateLimit 正被 Bangumi 限频, 等一会儿自动接着导 (见 [LocalProfileImporter.import]) */
+        data class Running(val sourceName: String, val done: Int, val total: Int, val waitingForRateLimit: Boolean = false) : State
 
         data class Finished(val sourceName: String, val result: LocalProfileImporter.Result) : State
 
@@ -56,7 +57,9 @@ object ProfileImportSession {
         }
         scope.launch {
             _state.value = try {
-                val result = importer.import(preview) { done, total -> _state.value = State.Running(sourceName, done, total) }
+                val result = importer.import(preview) { p ->
+                    _state.value = State.Running(sourceName, p.done, p.total, p.waitingForRateLimit)
+                }
                 State.Finished(sourceName, result)
             } catch (e: CancellationException) {
                 throw e

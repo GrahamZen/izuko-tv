@@ -9,7 +9,10 @@
 
 package me.him188.ani.app.domain.profile
 
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.subject.SelfRatingInfo
@@ -17,12 +20,16 @@ import me.him188.ani.app.data.network.SubjectCollectionUpdate
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.persistent.database.AniDatabase
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
+import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 把一个本地用户 (见 [UserProfileKind.LOCAL]) 的收藏加到当前登录的 Bangumi 账号上.
@@ -47,6 +54,10 @@ class LocalProfileImporter(
     private val markBangumiEpisodesWatched: suspend (subjectId: Int, episodeIds: List<Int>) -> Unit,
     /** 加了东西之后调: 让当前用户的收藏缓存过期, 收藏页与继续观看从 Bangumi 重取. */
     private val afterImport: suspend () -> Unit = {},
+    /** 被 Bangumi 限频后隔多久再试同一条. */
+    private val rateLimitRetryInterval: Duration = 30.seconds,
+    /** 同一条因限频最多等多久, 比 Bangumi 的一个限频窗口 (5 分钟) 长; 等过了还被拒就算这条失败. */
+    private val rateLimitMaxWait: Duration = 6.minutes,
 ) {
     /** 本地用户的一条收藏. */
     data class Entry(
@@ -69,6 +80,12 @@ class LocalProfileImporter(
         val toAdd: List<Entry>,
         val alreadyCollected: List<Entry>,
     )
+
+    /**
+     * @property done 处理完的条数
+     * @property waitingForRateLimit 正被 Bangumi 限频, 等窗口过去再接着写
+     */
+    data class Progress(val done: Int, val total: Int, val waitingForRateLimit: Boolean = false)
 
     /**
      * @property collectionAdded 条目收藏加上了, 只是看过的集没标上
@@ -106,22 +123,26 @@ class LocalProfileImporter(
      * 类型会被改掉, 没带评分的还会被清掉评分 (见 [SubjectService.patchSubjectCollection]).
      * 一条失败不影响其余; 核对失败的不写.
      *
+     * Bangumi 按账号限制写收藏的频率 (条目收藏 5 分钟 15 次, 见 [SubjectService.patchSubjectCollection]), 导得多必然撞上:
+     * 被拒时隔 [rateLimitRetryInterval] 再试同一条, 等待期间 [onProgress] 报 [Progress.waitingForRateLimit].
+     *
      * 本地最早收藏的先加: Bangumi 的收藏列表按收藏时间排, 这样导完的先后与本地一致.
      */
-    suspend fun import(preview: Preview, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): Result {
+    suspend fun import(preview: Preview, onProgress: (Progress) -> Unit = {}): Result {
         val targets = preview.toAdd.asReversed()
         var added = 0
         var skipped = preview.alreadyCollected.size
         var episodesMarked = 0
         val failures = mutableListOf<Failure>()
         targets.forEachIndexed { index, entry ->
-            onProgress(index, targets.size)
+            val report = { waiting: Boolean -> onProgress(Progress(index, targets.size, waiting)) }
+            report(false)
             try {
-                if (isCollectedOnBangumi(entry.subjectId)) {
+                if (retryWhileRateLimited(report) { isCollectedOnBangumi(entry.subjectId) }) {
                     skipped++
                     return@forEachIndexed
                 }
-                addBangumiCollection(entry.subjectId, entry.toCollectionUpdate())
+                retryWhileRateLimited(report) { addBangumiCollection(entry.subjectId, entry.toCollectionUpdate()) }
                 added++
             } catch (e: CancellationException) {
                 throw e
@@ -133,7 +154,7 @@ class LocalProfileImporter(
             // 想看的本来就不该有看过的集 (标了 Bangumi 那边可能跟着改成在看), 只标其余类型的
             if (entry.type != UnifiedCollectionType.WISH && entry.watchedEpisodeIds.isNotEmpty()) {
                 try {
-                    markBangumiEpisodesWatched(entry.subjectId, entry.watchedEpisodeIds)
+                    retryWhileRateLimited(report) { markBangumiEpisodesWatched(entry.subjectId, entry.watchedEpisodeIds) }
                     episodesMarked += entry.watchedEpisodeIds.size
                 } catch (e: CancellationException) {
                     throw e
@@ -143,13 +164,38 @@ class LocalProfileImporter(
                 }
             }
         }
-        onProgress(targets.size, targets.size)
+        onProgress(Progress(targets.size, targets.size))
         if (added > 0) afterImport()
         logger.info {
             "Imported user profile ${preview.source.id} to Bangumi: added $added, skipped $skipped, " +
                     "episodes $episodesMarked, failed ${failures.size}"
         }
         return Result(added = added, skipped = skipped, episodesMarked = episodesMarked, failures = failures)
+    }
+
+    /**
+     * 跑 [block], 被限频就隔 [rateLimitRetryInterval] 再跑, 累计等满 [rateLimitMaxWait] 还被拒就抛出; 其余异常原样抛.
+     * 开始等时 `onWaiting(true)`, 等完 (成功或放弃) `onWaiting(false)`.
+     */
+    private suspend fun <T> retryWhileRateLimited(onWaiting: (Boolean) -> Unit, block: suspend () -> T): T {
+        var waited = Duration.ZERO
+        try {
+            while (true) {
+                try {
+                    return block()
+                } catch (e: Exception) {
+                    if (!e.isRateLimited() || waited >= rateLimitMaxWait) throw e
+                    if (waited == Duration.ZERO) {
+                        logger.info { "Bangumi rate limited the import, waiting up to $rateLimitMaxWait" }
+                        onWaiting(true)
+                    }
+                    delay(rateLimitRetryInterval)
+                    waited += rateLimitRetryInterval
+                }
+            }
+        } finally {
+            if (waited > Duration.ZERO) onWaiting(false)
+        }
     }
 
     private suspend fun readEntries(source: UserProfile): List<Entry> = withContext(Dispatchers.IO_) {
@@ -185,6 +231,11 @@ internal suspend fun AniDatabase.readLocalCollections(): List<LocalProfileImport
             )
         }
 }
+
+/** 条目收藏的写入在 service 层已包成 [RepositoryRateLimitedException]; 标看过等其余请求被限频时是原样的 429. */
+private fun Throwable.isRateLimited(): Boolean =
+    this is RepositoryRateLimitedException ||
+            (this is ClientRequestException && response.status == HttpStatusCode.TooManyRequests)
 
 private val LOCAL_COLLECTED_TYPES = listOf(
     UnifiedCollectionType.WISH,
