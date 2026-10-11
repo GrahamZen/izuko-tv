@@ -104,7 +104,6 @@ import me.him188.ani.app.data.models.preference.SeekPreviewDisplay
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
-import me.him188.ani.app.ui.danmaku.PlayerDanmakuHost
 import me.him188.ani.app.ui.foundation.LocalImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
 import me.him188.ani.app.ui.foundation.TV_PLAY_PAUSE_KEYS
@@ -1640,6 +1639,15 @@ fun TvEpisodeScreenContent(
                     )
                     .focusable(), // 根节点可聚焦: 纯视频态持焦收按键
             ) {
+                // 弹幕层: 单独的表面, 要在视频面之前组合 (见 DanmakuLayer).
+                // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上
+                TvPlayerDanmaku(
+                    vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
+                    enabled = page.danmakuEnabled,
+                    hidden = { seekPreview?.hidesFullScreenExtras == true },
+                    modifier = Modifier.matchParentSize(),
+                )
+
                 // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰. 控制层在场时底部字幕挪到它上面
                 val subtitleObstructionTop = remember(overlay) { { overlay.subtitleObstructionTopPx() } }
                 CompositionLocalProvider(LocalSubtitleObstructionTop provides subtitleObstructionTop) {
@@ -1653,18 +1661,6 @@ fun TvEpisodeScreenContent(
                 // 在 z 序上压着它, 命中它们的事件到不了这里, 只有落在空白处的手势才算画面手势
                 if (touchHandler != null) {
                     TvPlayerTouchLayer(touchHandler, Modifier.matchParentSize())
-                }
-
-                // 弹幕层
-                AniAnimatedVisibility(page.danmakuEnabled, Modifier.matchParentSize()) {
-                    // 录一份供 Web 控制台截图读回 (见 TvPlayerScreenshot).
-                    // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上 (状态在 graphicsLayer 里读, 不重组)
-                    Box(
-                        Modifier.matchParentSize().then(rememberTvScreenshotDanmakuLayer())
-                            .graphicsLayer { alpha = if (seekPreview?.hidesFullScreenExtras == true) 0f else 1f },
-                    ) {
-                        PlayerDanmakuHost(vm.player, danmakuHostState, vm.uiDanmakuEventFlow)
-                    }
                 }
 
                 // 拖动预览画在全屏上时, 全屏上的画面还是别处的那会儿盖成黑底并提示 (见 SeekPreviewFullScreenLayer)
