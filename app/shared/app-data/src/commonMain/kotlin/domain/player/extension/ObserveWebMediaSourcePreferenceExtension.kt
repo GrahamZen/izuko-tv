@@ -12,9 +12,6 @@ package me.him188.ani.app.domain.player.extension
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -73,9 +70,9 @@ class ObserveWebMediaSourcePreferenceExtension(
                     // 只在开始走的那一刻取选中项: 换源时选中项先变、旧资源的时钟还没停, 不能把新资源当成播起来了.
                     // 偏好 BT 时不记自动选中的: 那多半是 BT 这集没资源才兜底选上的, 记住了下次会越过 BT 直接选它
                     // (手动选的照样由上面的事件记下).
-                    // drop(1): 挂上时已经在播 (如重新搜索换了会话) 不算播起来, 等新选的资源真正开始播
+                    // 挂上时已经在播 (如重新搜索换了会话) 不算播起来, 等新选的资源真正开始播
                     launch {
-                        context.player.state.map { it.isPlaying }.distinctUntilChanged().drop(1).filter { it }.collect {
+                        context.player.playbackStarts().collect {
                             val media = bundle.mediaSelector.selected.value ?: return@collect
                             if (media.kind != MediaSourceKind.WEB || DroppedFileMedia.isDroppedFile(media)) return@collect
                             if (getMediaSelectorSettings().first().preferKind == MediaSourceKind.BitTorrent) return@collect
