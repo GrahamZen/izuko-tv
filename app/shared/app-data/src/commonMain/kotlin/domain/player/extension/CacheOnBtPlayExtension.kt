@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.media.cache.DeleteCacheUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
@@ -59,11 +60,10 @@ class CacheOnBtPlayExtension(
                         if (state !is VideoLoadingState.Succeed || state.engineKey == null) return@collectLatest
 
                         val selected = bundle.mediaSelector.selected.filterNotNull().first()
-                        val request = bundle.mediaFetchSession.request.first()
 
                         val media = if (selected is CachedMedia) {
                             // 选中了正在下载中的 BT 源.
-                            if (hasCacheRecordFor(selected, request)) return@collectLatest
+                            if (hasCacheRecordFor(selected, info)) return@collectLatest
                             selected.origin
                         } else {
                             selected
@@ -123,11 +123,14 @@ class CacheOnBtPlayExtension(
         }
     }
 
-    private suspend fun hasCacheRecordFor(media: CachedMedia, request: MediaFetchRequest): Boolean =
+    /**
+     * 本集已经有 [media] 的缓存记录. 查询会话按条目共用, 其请求中的当前剧集是首次打开的那一集, 要按本集自己的信息找.
+     */
+    private suspend fun hasCacheRecordFor(media: CachedMedia, info: SubjectEpisodeInfoBundle): Boolean =
         downloadManager.findCaches {
             it.origin.mediaId == media.origin.mediaId &&
-                    it.metadata.subjectId == request.subjectId &&
-                    it.metadata.episodeId == request.episodeId
+                    it.metadata.subjectId == info.subjectId.toString() &&
+                    it.metadata.episodeId == info.episodeInfo.episodeId.toString()
         }.isNotEmpty()
 
     companion object : EpisodePlayerExtensionFactory<CacheOnBtPlayExtension> {
