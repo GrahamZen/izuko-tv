@@ -439,6 +439,7 @@
     <string name="tv_profile_import_more">……还有 %1$d 部</string>
     <string name="tv_profile_import_running">正在导入 %1$d/%2$d…</string>
     <string name="tv_profile_import_running_hint">可以先关掉，导入会在后台接着进行。</string>
+    <string name="tv_profile_import_rate_limited">Bangumi 每 5 分钟只允许改 15 次收藏，稍等一会儿会自动接着导。</string>
     <string name="tv_profile_import_done">导入完成：新加 %1$d 部收藏，标了 %2$d 集看过。</string>
     <string name="tv_profile_import_failed">%1$d 部没有导好：%2$s</string>
     <string name="tv_profile_import_error">导入没有完成：%1$s</string>
