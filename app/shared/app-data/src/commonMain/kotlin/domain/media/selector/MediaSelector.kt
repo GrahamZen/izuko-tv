@@ -33,9 +33,6 @@ import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.selector.filter.MediaSelectorFilterSortAlgorithm
 import me.him188.ani.datasources.api.Media
-import me.him188.ani.app.data.models.episode.EpisodeInfo
-import me.him188.ani.app.data.models.subject.SubjectInfo
-import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.datasources.api.isLocalCache
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.hasSeason
@@ -385,45 +382,9 @@ class DefaultMediaSelector(
         )
     }
 
-    /**
-     * 逐条筛选结果的记忆表的失效键: **只含真正影响单条筛选结果的输入**.
-     *
-     * 刻意不含整个 [MediaSelectorContext] —— 它里面的 `mediaSourceTiers` / `mediaSourcePrecedence`
-     * 只被排序用到 (见 [MediaSelectorFilterSortAlgorithm.sortMediaList]), 而它们来自数据源实例与
-     * 设置, 在搜索期间会反复变化. 用整个 context 作键的话, 每变一次就把记忆表整个作废, 于是又回到
-     * "每次全表重算" (真机实测每次 180~552ms).
-     */
-    private data class FilterMemoKey(
-        val preference: MediaPreference,
-        val settings: MediaSelectorSettings,
-        val subjectInfo: SubjectInfo?,
-        val episodeInfo: EpisodeInfo?,
-        val subjectSeriesInfo: SubjectSeriesInfo?,
-        val subjectFinished: Boolean?,
-        val subtitlePreferences: MediaSelectorSubtitlePreferences?,
-        // 注意: 不含 unplayableCacheMediaIds —— 它变化时只有涉及的那几条要重算, 见下面的定点失效
-    )
-
-    private fun MediaSelectorContext.filterMemoKey(
-        preference: MediaPreference,
-        settings: MediaSelectorSettings,
-    ) = FilterMemoKey(
-        preference, settings,
-        subjectInfo, episodeInfo, subjectSeriesInfo, subjectFinished,
-        subtitlePreferences,
-    )
-
-    private var filterMemoKey: FilterMemoKey? = null
-    private val filterMemo = HashMap<Media, MaybeExcludedMedia>()
-
-    /**
-     * 上一次见到的"不可播缓存 id" —— 单独记, 不进 [FilterMemoKey].
-     *
-     * 缓存下完那一刻这个集合会变 (某条从"不可播"变成可播), 若把它并进整表失效键, 就会在用户
-     * 正盯着选源列表的时候把 100+ 条全部重算一遍 (真机实测 126 条 295ms). 实际上受影响的
-     * 只有 id 出现在**新旧集合对称差**里的那几条, 定点剔除即可.
-     */
-    private var lastUnplayableCacheMediaIds: Set<String>? = null
+    /** 逐条筛选结果的记忆表, [filteredCandidates] 与 [subjectCandidates] 各一张 (两者的第 0 条规则不同, 结果不能共用). */
+    private val filterMemo = MediaFilterMemo()
+    private val subjectFilterMemo = MediaFilterMemo()
 
     private val mediaSelectorSettings = mediaSelectorSettings.cached()
     private val mediaSelectorContext = mediaSelectorContextNotCached.cached()
@@ -439,36 +400,7 @@ class DefaultMediaSelector(
         this.mediaSelectorSettings,
         this.mediaSelectorContext,
     ) { list, pref, settings, context ->
-        // 逐条筛选结果的记忆表: 搜索期间列表逐源追加, 每次都整表重算的代价太高
-        // (真机实测 127 条 280~1238ms, 三秒九次). 三个输入任一变化即整表作废.
-        val memoKey = context.filterMemoKey(pref, settings)
-        val memoInvalidated = filterMemoKey != memoKey
-        if (memoInvalidated) {
-            filterMemoKey = memoKey
-            filterMemo.clear()
-        }
-        // 不可播缓存集合单独处理: 只剔除对称差里那几条, 不动整张表.
-        // null 当空集看待 —— 生产者按设计先发一个 null (见 MediaSelectorContextFlowProducer),
-        // 那一轮本地缓存会被算成可选并记进表; 真集合到达时若不剔除, 没下完的缓存就会一直可选.
-        val unplayableIds = context.unplayableCacheMediaIds
-        if (unplayableIds != lastUnplayableCacheMediaIds) {
-            val old = lastUnplayableCacheMediaIds.orEmpty()
-            val new = unplayableIds.orEmpty()
-            lastUnplayableCacheMediaIds = unplayableIds
-            if (!memoInvalidated) {
-                val changed = (old - new) + (new - old)
-                if (changed.isNotEmpty()) {
-                    filterMemo.keys.removeAll { it.mediaId in changed }
-                }
-            }
-        }
-        // 只保留还在当前列表里的项: 本地源每次 restart 都会生成新的 CachedMedia 对象 (引用相等),
-        // 不清的话旧对象会一直积在表里
-        if (filterMemo.size > list.size) {
-            val alive = list.toHashSet()
-            filterMemo.keys.retainAll(alive)
-        }
-        val filtered = algorithm.filterMediaList(list, pref, settings, context, memo = filterMemo)
+        val filtered = algorithm.filterMediaList(list, pref, settings, context, memo = filterMemo.prepare(list, pref, settings, context))
         algorithm.sortMediaList(filtered, settings, context)
     }.cached()
 
@@ -478,7 +410,7 @@ class DefaultMediaSelector(
         this.mediaSelectorSettings,
         this.mediaSelectorContext,
     ) { list, pref, settings, context ->
-        algorithm.filterMediaListForSubject(list, pref, settings, context)
+        algorithm.filterMediaListForSubject(list, pref, settings, context, memo = subjectFilterMemo.prepare(list, pref, settings, context))
             .let { algorithm.sortMediaList(it, settings, context) }
     }.cached()
 
