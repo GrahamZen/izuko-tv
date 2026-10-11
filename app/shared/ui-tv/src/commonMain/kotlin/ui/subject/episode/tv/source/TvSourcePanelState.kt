@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -27,7 +26,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -37,6 +35,7 @@ import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseState
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.utils.coroutines.throttleLatest
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.mp.KoinPlatform
 
@@ -361,12 +360,6 @@ class TvSourcePanelState(
         /** 上游状态在搜索途中变得很勤 (每个源每返回一批都变): 拼面板最多每这么久一次. */
         const val THROTTLE_MILLIS = 200L
     }
-}
-
-/** 第一个值当场发, 之后最多每 [periodMillis] 发一次最新的. */
-internal fun <T> Flow<T>.throttleLatest(periodMillis: Long): Flow<T> = conflate().transform {
-    emit(it)
-    delay(periodMillis)
 }
 
 /** 数据源设置里各实例的类型与顺序 (见 [TvSourceType]): 选源面板按它把在线源分组、排序. */
