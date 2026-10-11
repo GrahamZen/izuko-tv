@@ -294,7 +294,8 @@ class MediaSelectorFilterSortAlgorithm {
         // 第 0 条: 先于本地缓存豁免, 否则看第 2 话时会自动选中第 1 话的缓存.
         if (episodeMatch != null) {
             if (splitSeasonMatch?.pageKind == SplitSeasonPageMatcher.PageKind.OTHER_SEASON) {
-                return exclude(MediaExclusionReason.FromSeriesSeason)
+                // 别季页面上集号也对得上本集的才报其他季度, 其余同不分季时一样是集号不符 (不然整页每一集都列进被排除的)
+                return exclude(if (episodeMatch.matches(media)) MediaExclusionReason.FromSeriesSeason else MediaExclusionReason.EpisodeMismatch(media.episodeRange))
             }
             val matches = splitSeasonMatch?.matched ?: episodeMatch.matches(media)
             if (!matches) return exclude(MediaExclusionReason.EpisodeMismatch(media.episodeRange))
