@@ -29,6 +29,10 @@ class DriveNameParserTest {
         assertEpisode("S01E01.2160p.WEB-DL.x264.AAC.mkv", 1, season = 1)
         assertEpisode("Title.S02E05.1080p.mkv", 5, season = 2)
         assertEpisode("title s1e12 [1080p].mp4", 12, season = 1)
+        // SxxEyy 之后的是画质与集名, 不当小数
+        assertEpisode("S06E01.4K.mp4", 1, season = 6)
+        assertEpisode("Re.ZERO.Starting.Life.in.Another.World.S04E06.Julius.Juukulius.1080p.CR.WEB-DL.mkv", 6, season = 4)
+        assertEpisode("Title.S01E12.5.mkv", 12, season = 1)
     }
 
     @Test
@@ -44,6 +48,8 @@ class DriveNameParserTest {
         assertEpisode("葬送的芙莉莲 第十二话.mkv", 12)
         assertEpisode("EP05.mkv", 5)
         assertEpisode("Ep.07 1080p.mp4", 7)
+        assertEpisode("EP01.4K.mp4", 1)
+        assertEquals(EpisodeSort("12.5"), DriveNameParser.parseFile("EP12.5.mp4").episode)
     }
 
     @Test
