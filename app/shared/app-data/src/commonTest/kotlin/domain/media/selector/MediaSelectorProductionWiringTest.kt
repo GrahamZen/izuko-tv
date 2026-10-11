@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
@@ -30,6 +32,7 @@ import me.him188.ani.app.data.repository.media.EpisodePreferencesRepositoryImpl
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCaseImpl
+import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -131,85 +134,7 @@ class MediaSelectorProductionWiringTest {
                 MediaPreference.Empty.copy(mediaSourceId = "web1", alliance = "桜都字幕组"),
             )
 
-            val builder = me.him188.ani.app.domain.media.selector.legacy.MediaSelectorTestBuilder(this)
-            builder.delayedMediaSource("web1").complete(emptyList())
-
-            val fakeManager = object : MediaSourceManager {
-                override val allInstances = MutableStateFlow(builder.mediaSources.toList())
-                override val mediaFetcher = flowOf(builder.createMediaFetcher())
-                override fun mediaSourceTiersFlow(): Flow<MediaSelectorSourceTiers> =
-                    flowOf(MediaSelectorSourceTiers(emptyMap(), emptyMap()) { MediaSourceTier.Fallback })
-
-                override val allFactories get() = error("not used")
-                override val allFactoryIds get() = error("not used")
-                override val webVideoMatcherLoader get() = error("not used")
-                override fun instanceConfigFlow(instanceId: String) = error("not used")
-                override suspend fun addInstance(
-                    instanceId: String, mediaSourceId: String, factoryId: FactoryId, config: MediaSourceConfig,
-                ) = error("not used")
-
-                override suspend fun getListBySubscriptionId(subscriptionId: String) = error("not used")
-                override suspend fun partiallyReorderInstances(instanceIds: List<String>) = error("not used")
-                override suspend fun updateConfig(instanceId: String, config: MediaSourceConfig) = error("not used")
-                override suspend fun setEnabled(instanceId: String, enabled: Boolean) = error("not used")
-                override suspend fun removeInstance(instanceId: String) = error("not used")
-            }
-            val fakeSettings = object : SettingsRepository {
-                override val mediaSelectorSettings = staticSettings(MediaSelectorSettings.Default)
-                override val defaultMediaPreference = staticSettings(MediaPreference.Empty)
-                // 建会话时读「有缓存时直接播, 不搜索」(默认关)
-                override val mediaCacheSettings = staticSettings(MediaCacheSettings.Default)
-
-                override val danmakuEnabled get() = error("not used")
-                override val tmdbImagesDisabled get() = error("not used")
-                override val tmdbImageEndpoint get() = error("not used")
-                override val tmdbImageHostCache get() = error("not used")
-                override val githubDownloadMirrorCache get() = error("not used")
-                override val feedbackEndpointCache get() = error("not used")
-                override val danmakuConfig get() = error("not used")
-                override val danmakuFilterConfig get() = error("not used")
-                override val profileSettings get() = error("not used")
-                override val proxySettings get() = error("not used")
-                override val bangumiEndpointSettings get() = error("not used")
-                override val bangumiMirrorCache get() = error("not used")
-                override val danmakuSettings get() = error("not used")
-                override val uiSettings get() = error("not used")
-                override val themeSettings get() = error("not used")
-                override val updateSettings get() = error("not used")
-                override val videoScaffoldConfig get() = error("not used")
-                override val playerKernelConfig get() = error("not used")
-                override val videoResolverSettings get() = error("not used")
-                override val anitorrentConfig get() = error("not used")
-                override val pikpakConfig get() = error("not used")
-                override val cloudDriveAccounts get() = error("not used")
-                override val cloudDriveAddedShares get() = error("not used")
-                override val torrentPeerConfig get() = error("not used")
-                override val oneshotActionConfig get() = error("not used")
-                override val analyticsSettings get() = error("not used")
-                override val debugSettings get() = error("not used")
-            }
-
-            startKoin {
-                modules(
-                    module {
-                        single<MediaSourceManager> { fakeManager }
-                        single<EpisodePreferencesRepository> { repository }
-                        single<SettingsRepository> { fakeSettings }
-                        // 选源器要按缓存可播性把"没下完的缓存"标成不可用 (见 MediaExclusionReason.CacheNotReady);
-                        // 本用例不涉及缓存, 给一个空的
-                        single<MediaDownloadManager> {
-                            MediaDownloadManager(emptyList(), backgroundScope)
-                        }
-                        // 上游新增的依赖 (见 UseCaseModules), 生产接线用例要跟着注册
-                        single { MediaFetchSessionRefresh() }
-                    },
-                )
-            }
-            try {
-                val useCase = CreateMediaFetchSelectBundleFlowUseCaseImpl(
-                    flowContext = coroutineContext[ContinuationInterceptor] as CoroutineContext,
-                )
-
+            withProductionUseCase(repository) { useCase ->
                 val bundle = useCase(flowOf(createInfoBundle(SUBJECT_ID))).filterNotNull().first()
                 assertEquals("web1", bundle.mediaSelector.mediaSourceId.finalSelected.first())
                 assertEquals("桜都字幕组", bundle.mediaSelector.alliance.finalSelected.first())
@@ -224,10 +149,125 @@ class MediaSelectorProductionWiringTest {
                 // 必须按 bundle.subjectId 读: 其他条目读不到本条目的偏好
                 val other = useCase(flowOf(createInfoBundle(SUBJECT_ID + 1))).filterNotNull().first()
                 assertNull(other.mediaSelector.mediaSourceId.finalSelected.first())
-            } finally {
-                stopKoin()
             }
         }
+
+    @Test
+    fun `条目信息变了且请求随之变时只建一个选源器, 不拿旧会话先建一个`() = runTest {
+        val repository = createRepository(MutableStateFlow(MediaPreference.Empty))
+        withProductionUseCase(repository) { useCase ->
+            val first = createInfoBundle(SUBJECT_ID)
+            val bundles = MutableStateFlow<SubjectEpisodeInfoBundle?>(first)
+            val emitted = mutableListOf<MediaFetchSelectBundle?>()
+            val job = launch { useCase(bundles).collect { emitted += it } }
+            advanceUntilIdle()
+            val firstSession = emitted.filterNotNull().single().mediaFetchSession
+
+            // 网络刷新后条目名变了 (例如先用了本地缓存的旧数据): 请求跟着变, 要换一个会话
+            bundles.value = first.copy(
+                subjectCollectionInfo = first.subjectCollectionInfo.run { copy(subjectInfo = subjectInfo.copy(nameCn = "新的中文名")) },
+            )
+            advanceUntilIdle()
+
+            val sessions = emitted.filterNotNull().map { it.mediaFetchSession }
+            assertEquals(2, sessions.size, "每份条目信息只建一个选源器")
+            assertTrue(sessions[1] !== firstSession)
+            job.cancel()
+        }
+    }
+
+    /**
+     * 用真实的 [CreateMediaFetchSelectBundleFlowUseCaseImpl] 跑 [block]: 数据源只有一个查询立即完成的 "web1",
+     * 其余依赖是最小的假实现 (生产类都是 KoinComponent, 用全局 Koin 注入).
+     */
+    private suspend fun TestScope.withProductionUseCase(
+        repository: EpisodePreferencesRepository,
+        block: suspend (CreateMediaFetchSelectBundleFlowUseCaseImpl) -> Unit,
+    ) {
+        val builder = me.him188.ani.app.domain.media.selector.legacy.MediaSelectorTestBuilder(this)
+        builder.delayedMediaSource("web1").complete(emptyList())
+
+        val fakeManager = object : MediaSourceManager {
+            override val allInstances = MutableStateFlow(builder.mediaSources.toList())
+            override val mediaFetcher = flowOf(builder.createMediaFetcher())
+            override fun mediaSourceTiersFlow(): Flow<MediaSelectorSourceTiers> =
+                flowOf(MediaSelectorSourceTiers(emptyMap(), emptyMap()) { MediaSourceTier.Fallback })
+
+            override val allFactories get() = error("not used")
+            override val allFactoryIds get() = error("not used")
+            override val webVideoMatcherLoader get() = error("not used")
+            override fun instanceConfigFlow(instanceId: String) = error("not used")
+            override suspend fun addInstance(
+                instanceId: String, mediaSourceId: String, factoryId: FactoryId, config: MediaSourceConfig,
+            ) = error("not used")
+
+            override suspend fun getListBySubscriptionId(subscriptionId: String) = error("not used")
+            override suspend fun partiallyReorderInstances(instanceIds: List<String>) = error("not used")
+            override suspend fun updateConfig(instanceId: String, config: MediaSourceConfig) = error("not used")
+            override suspend fun setEnabled(instanceId: String, enabled: Boolean) = error("not used")
+            override suspend fun removeInstance(instanceId: String) = error("not used")
+        }
+        val fakeSettings = object : SettingsRepository {
+            override val mediaSelectorSettings = staticSettings(MediaSelectorSettings.Default)
+            override val defaultMediaPreference = staticSettings(MediaPreference.Empty)
+            // 建会话时读「有缓存时直接播, 不搜索」(默认关)
+            override val mediaCacheSettings = staticSettings(MediaCacheSettings.Default)
+
+            override val danmakuEnabled get() = error("not used")
+            override val tmdbImagesDisabled get() = error("not used")
+            override val tmdbImageEndpoint get() = error("not used")
+            override val tmdbImageHostCache get() = error("not used")
+            override val githubDownloadMirrorCache get() = error("not used")
+            override val feedbackEndpointCache get() = error("not used")
+            override val danmakuConfig get() = error("not used")
+            override val danmakuFilterConfig get() = error("not used")
+            override val profileSettings get() = error("not used")
+            override val proxySettings get() = error("not used")
+            override val bangumiEndpointSettings get() = error("not used")
+            override val bangumiMirrorCache get() = error("not used")
+            override val danmakuSettings get() = error("not used")
+            override val uiSettings get() = error("not used")
+            override val themeSettings get() = error("not used")
+            override val updateSettings get() = error("not used")
+            override val videoScaffoldConfig get() = error("not used")
+            override val playerKernelConfig get() = error("not used")
+            override val videoResolverSettings get() = error("not used")
+            override val anitorrentConfig get() = error("not used")
+            override val pikpakConfig get() = error("not used")
+            override val cloudDriveAccounts get() = error("not used")
+            override val cloudDriveAddedShares get() = error("not used")
+            override val torrentPeerConfig get() = error("not used")
+            override val oneshotActionConfig get() = error("not used")
+            override val analyticsSettings get() = error("not used")
+            override val debugSettings get() = error("not used")
+        }
+
+        startKoin {
+            modules(
+                module {
+                    single<MediaSourceManager> { fakeManager }
+                    single<EpisodePreferencesRepository> { repository }
+                    single<SettingsRepository> { fakeSettings }
+                    // 选源器要按缓存可播性把"没下完的缓存"标成不可用 (见 MediaExclusionReason.CacheNotReady);
+                    // 本用例不涉及缓存, 给一个空的
+                    single<MediaDownloadManager> {
+                        MediaDownloadManager(emptyList(), backgroundScope)
+                    }
+                    // 上游新增的依赖 (见 UseCaseModules), 生产接线用例要跟着注册
+                    single { MediaFetchSessionRefresh() }
+                },
+            )
+        }
+        try {
+            block(
+                CreateMediaFetchSelectBundleFlowUseCaseImpl(
+                    flowContext = coroutineContext[ContinuationInterceptor] as CoroutineContext,
+                ),
+            )
+        } finally {
+            stopKoin()
+        }
+    }
 
     private fun createInfoBundle(subjectId: Int): SubjectEpisodeInfoBundle {
         val collection = TestSubjectCollections[0].run {

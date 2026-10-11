@@ -12,15 +12,14 @@ package me.him188.ani.app.domain.episode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.repository.media.EpisodePreferencesRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -35,8 +34,6 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorContextFlowProducer
 import me.him188.ani.app.domain.player.extension.holdSearchingForFinishedCache
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.datasources.api.source.MediaFetchRequest
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.collections.tupleOf
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -126,8 +123,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                 }
             }
 
-        // 刚开始是 `null`
-        val fetchRequestFlow: Flow<MediaFetchSession?> = bundleDistinct
+        // 刚开始是 `null`. 带着建会话时的那份 bundle, 见 [SessionForBundle]
+        val fetchRequestFlow: Flow<SessionForBundle?> = bundleDistinct
             // 为什么要 `filterNotNull`:
             // 如果本地有缓存, 我们会优先读取缓存, bundle 会不是 null. 如果缓存有过期, 此时会同时发起网络查询.
             // 如果加载发生网络错误, 然后用户点击 "重试", bundle 会变为 `null`.
@@ -143,26 +140,23 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                 )
                 // 用户为本条目改过的搜索关键词只在建会话时读一次: 会话内改动走 MediaFetchSession.setFetchRequest,
                 // 不必因此重建整个会话 (选中项与播放都挂在会话上)
-                episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()
-                    ?.applyTo(request) ?: request
+                bundle to (episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()?.applyTo(request) ?: request)
             }
             // 「重新搜索(含新数据源)」按一下就 +1: 会话创建时对数据源列表取快照, 改完数据源 / 更新订阅要让新源
             // 参与就只能重建会话 (见 MediaFetchSessionRefresh)。请求本身没变时, 它是唯一能放行的东西。
             // 计数要一路传给 createFetchSession: 条目级会话按「同一条目」复用 (见 SubjectMediaFetchSessions),
             // 只在这里放行的话, 拿回来的仍然是持有旧数据源快照的那一个会话.
-            .combine(fetchSessionRefresh.ticks) { req, tick -> req to tick }
-            .distinctUntilChanged() // very important to avoid re-query
-            .mapLatest { (req, tick) ->
-                logger.info { "MediaFetchRequest changed. Creating MediaFetchSession for reqeust: $req" }
-                createFetchSession(req, tick)
-            }
-            .onStart<MediaFetchSession?> { emit(null) }
+            .combine(fetchSessionRefresh.ticks) { (bundle, req), tick -> Triple(bundle, req, tick) }
+            .sessionsForBundles(createFetchSession) // 请求与计数都没变时沿用会话, very important to avoid re-query
+            .onStart<SessionForBundle?> { emit(null) }
 
         return combine(bundleDistinct, fetchRequestFlow) { bundle, fetchSession ->
             tupleOf(bundle, fetchSession)
-        }.mapLatest { (bundle, fetchSession) ->
-            bundle ?: return@mapLatest null
-            fetchSession ?: return@mapLatest null
+        }.transformLatest { (bundle, sessionForBundle) ->
+            if (bundle == null || sessionForBundle == null) return@transformLatest emit(null)
+            // 条目信息刚变、配给它的会话还没到: 不拿上一份的会话建选源器 (见 SessionForBundle)
+            if (sessionForBundle.bundle != bundle) return@transformLatest
+            val fetchSession = sessionForBundle.session
 
             val selector = DefaultMediaSelector(
                 MediaSelectorContextFlowProducer(
@@ -187,14 +181,12 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
 
             // 「有缓存时直接播, 不搜索」: 交出去之前停住缓存以外的源, 见 PlayCacheWithoutSearchingExtension
             holdSearchingForFinishedCache(fetchSession, settingsRepository, mediaCacheManager, bundle.subjectId, bundle.episodeId)
-            MediaFetchSelectBundle(
-                fetchSession,
-                selector,
+            emit(
+                MediaFetchSelectBundle(
+                    fetchSession,
+                    selector,
+                ),
             )
         }.flowOn(flowContext)
-    }
-
-    private companion object {
-        private val logger = logger<CreateMediaFetchSelectBundleFlowUseCaseImpl>()
     }
 }
