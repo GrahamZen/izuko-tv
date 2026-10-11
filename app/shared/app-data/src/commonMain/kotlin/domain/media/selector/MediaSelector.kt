@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FILTER
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.fetch.throttleSelectorMediaList
 import me.him188.ani.app.domain.media.selector.filter.MediaSelectorFilterSortAlgorithm
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.isLocalCache
@@ -388,7 +389,7 @@ class DefaultMediaSelector(
     private val mediaSelectorContext = mediaSelectorContextNotCached.cached()
 
     // cache 是必要的, 当 newPreferences 变更的时候不能重新加载 media list (网络)
-    private val mediaList = mediaListNotCached.cached()
+    private val mediaList = mediaListNotCached.throttleSelectorMediaList(enableCaching).cached()
 
     @OptIn(UnsafeOriginalMediaAccess::class)
     override val filteredCandidates: Flow<List<MaybeExcludedMedia>> = combine(
