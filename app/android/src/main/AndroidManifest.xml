@@ -38,8 +38,15 @@
         </intent>
     </queries>
 
+    <!--
+      enableOnBackInvokedCallback=false: 返回键以 KEYCODE_BACK 按键送进界面, 各系统版本一致.
+      电视端的返回语义写在按键路由里 (播放器根部路由按层级逐层收起、长按返回开动作面板、AniApp 根部把没人消费的返回转给返回分发器).
+      targetSdk 36 起, Android 16 及以上默认走预测性返回: 系统先调返回回调 (栈顶页面没注册的话就是导航出栈), 再把按下与一个已取消的抬起送进界面,
+      按键路由拦不住出栈, 同一下返回还会被处理两次.
+    -->
     <application
             android:allowBackup="true"
+            android:enableOnBackInvokedCallback="false"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name"
             android:largeHeap="true"

@@ -13,12 +13,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.widget.Toast
-import android.window.OnBackInvokedCallback
-import android.window.OnBackInvokedDispatcher
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,7 +45,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import me.him188.ani.android.BuildConfig
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.episode.EpisodeLink
 import me.him188.ani.app.domain.episode.ResolveEpisodeLinkUseCase
@@ -311,27 +307,17 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
 
     /**
      * 换人进来的过场盖着 ([ProfileSwitchFrame.landing]) 的时候主界面不接按键与返回: 按下去的会落到被盖住的首页上
-     * (比如首页的「再按一次返回退出」, 过场一撤提示就露出来). 按键在 [dispatchKeyEvent] 里吞掉; 新系统上返回不以按键送进来,
-     * 在窗口的返回回调里以浮层优先级拦下 (先于应用里所有的返回处理), 过场撤了就撤掉.
+     * (比如首页的「再按一次返回退出」, 过场一撤提示就露出来). 按键 (返回也是按键, 见 manifest 的 enableOnBackInvokedCallback)
+     * 在 [dispatchKeyEvent] 里吞掉.
      * 界面上的过场最多盖几秒 (见 TvProfileSwitchLandingHost); 它要是一直没撤 (界面没起来), 到点这里自己放掉, 遥控器不会一直没反应.
      */
     private fun holdBackWhileLanding() {
-        val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            OnBackInvokedCallback {}.also {
-                onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY, it)
-            }
-        } else {
-            null
-        }
         lifecycleScope.launch {
             val dismissed = withTimeoutOrNull(PROFILE_SWITCH_LANDING_MAX) {
                 ProfileSwitchFrame.landing.first { it == null }
                 true
             }
             if (dismissed == null) ProfileSwitchFrame.release(this@MainActivity)
-            if (callback != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
-            }
         }
     }
 
