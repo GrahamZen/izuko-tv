@@ -76,6 +76,33 @@ class FailoverDnsTest {
     }
 
     @Test
+    fun `nodes connected recently come first after the system moves to another group`() {
+        var answer = systemPool
+        val dns = FailoverDns(
+            dnsOf { answer }, { publicPool },
+            maxAddresses = 3, forgetAfterMillis = 60_000, alternativesTtlMillis = 30_000, rememberConnectedMillis = 600_000, now = { now },
+        )
+        dns.markConnected(host, systemPool[0])
+        dns.markConnected(host, systemPool[1])
+        dns.markConnected("other.host", systemPool[2])
+        // 过一分钟系统给了另一组
+        now += 60_000
+        answer = publicPool
+        val picked = dns.lookup(host)
+        assertEquals(setOf(systemPool[0], systemPool[1]), picked.take(2).toSet(), "$picked")
+        assertTrue(picked[2] in publicPool, "$picked")
+
+        // 连不上了就不再排前面
+        dns.markUnreachable(systemPool[0])
+        assertTrue(systemPool[0] !in dns.lookup(host))
+        assertEquals(systemPool[1], dns.lookup(host).first())
+
+        // 过了记住的时间, 照系统给的
+        now += 600_001
+        assertTrue(publicPool.containsAll(dns.lookup(host)))
+    }
+
+    @Test
     fun `the rest of a failing subnet is used when nothing else is left`() {
         val dns = dns(alternatives = emptyList())
         systemPool.drop(2).forEach(dns::markUnreachable)

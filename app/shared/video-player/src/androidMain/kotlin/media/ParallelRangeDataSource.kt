@@ -125,7 +125,7 @@ internal class ParallelRangeDataSource(
         val reader = ParallelRangeReader(
             opener, EXECUTOR, connections, chunkSize,
             retryable = { it !is HttpDataSource.InvalidResponseCodeException },
-            firstChunkSize = chunkSize / FIRST_CHUNK_DIVISOR,
+            firstChunkSize = firstChunkSizeFor(connections, chunkSize),
             maxConnections = { if (boosted()) boostedConnections else connections },
             maxWindowBytes = BOOSTED_WINDOW_BYTES,
         )
@@ -248,11 +248,26 @@ internal class ParallelRangeDataSource(
         private const val WINDOW_BYTES = 16 * 1024 * 1024
         private const val MIN_CHUNK_SIZE = 1024 * 1024
 
-        /** 开播 / 跳转后头一轮的块是最大块的几分之一 (见 [ParallelRangeReader]). */
+        /** 开播 / 跳转后头一轮的块最大是最大块的几分之一 (见 [firstChunkSizeFor]). */
         private const val FIRST_CHUNK_DIVISOR = 4
+
+        /** 头一轮的块至少多大: 再小的话一块省下的传输时间抵不上多一个请求的首字节. */
+        private const val MIN_FIRST_CHUNK_SIZE = 32 * 1024
 
         fun chunkSizeFor(connections: Int): Int =
             (WINDOW_BYTES / connections.coerceAtLeast(1)).coerceIn(MIN_CHUNK_SIZE, DEFAULT_CHUNK_SIZE)
+
+        /**
+         * 开播 / 跳转后头一轮每块多大 (见 [ParallelRangeReader]): 最大块按路数再平分, 不超过最大块的 1/[FIRST_CHUNK_DIVISOR].
+         * 解析器按账号档位给路数, 每路限速越低开得越多, 所以每路越慢头一块越小, 头一轮在差不多的时间里下完:
+         * 非会员 16 路每块 64 KiB (每路约 46 KB/s, 1.4 秒左右; 多开时 48 块共 3 MiB 一起到), 会员 4 路每块 1 MiB.
+         * 跳到没下过的位置要等多久, 除了首字节, 几乎就看头一块多大.
+         */
+        fun firstChunkSizeFor(connections: Int, chunkSize: Int): Int =
+            (chunkSize / connections.coerceAtLeast(1))
+                .coerceAtLeast(MIN_FIRST_CHUNK_SIZE)
+                .coerceAtMost(chunkSize / FIRST_CHUNK_DIVISOR)
+                .coerceAtLeast(1)
 
         /**
          * 多开连接时开到几路. 非会员 16 路 → 48 路: 每路的限速不变, 总速度随路数涨 (实测到 48 路仍是线性的, 全部 206);

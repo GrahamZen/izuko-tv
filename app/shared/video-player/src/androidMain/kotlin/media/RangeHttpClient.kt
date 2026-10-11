@@ -45,8 +45,8 @@ import javax.net.ssl.X509TrustManager
  * 有的网盘的下载域名每次解析出一组七八个节点 (同一网段), 记录一分钟就换一组; 偶尔一整组都坏了:
  * 连不上, 或者连得上却不回 TLS 握手. 每个节点等满超时, 一组要等一分钟以上, 过一分钟换了一组又马上能连. 所以:
  * - 连接超时短 ([CONNECT_TIMEOUT_MILLIS]), TLS 握手也单独限时 ([HANDSHAKE_TIMEOUT_MILLIS], 见 [HandshakeTimeoutSocketFactory]);
- * - 每次连接只试几个节点, 连不上的记下来跳过, 别的网段排前面, 系统给的这组出过问题就把公共 DNS ([PublicDns]) 给的也拿来 ([FailoverDns]),
- *   由分块下载换节点重试;
+ * - 每次连接只试几个节点, 刚连上过的排最前, 连不上的记下来跳过, 别的网段排前面, 系统给的这组出过问题就把公共 DNS ([PublicDns]) 给的也拿来
+ *   ([FailoverDns]), 由分块下载换节点重试;
  * - 每次解析与新建连接记进日志 (节点、用时、错误), 响应头来得慢与请求失败也记.
  *
  * 客户端按代理配置共用 (连接池跟着共用, 分块请求能复用连接). 只走 HTTP/1.1, 每路分块各占一个连接.
@@ -142,6 +142,8 @@ internal object RangeHttpClients {
 
         override fun connectEnd(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: Protocol?) {
             dns.markReachable(inetSocketAddress.address)
+            // 经代理时连上的是代理, 不是这个域名的节点
+            if (proxy.type() == Proxy.Type.DIRECT) dns.markConnected(call.request().url.host, inetSocketAddress.address)
             logger.info { "Connected ${call.request().url.host} via ${inetSocketAddress.address?.hostAddress} in ${elapsedMillis()}ms" }
         }
 
@@ -198,7 +200,9 @@ internal class HandshakeTimeoutSocketFactory(
  * 给下载域名挑节点. 同一组节点在同一网段, 常常一起坏, 所以:
  * - 跳过最近连不上的节点 (记 [forgetAfterMillis], 过后再试);
  * - 系统解析出的这组里有节点连不上过 (或解析失败), 就把 [alternatives] (公共 DNS, 结果留 [alternativesTtlMillis]) 给的也拿来;
- * - 最近没出过问题的网段排前面, 同一档里打乱; 每次只给 [maxAddresses] 个 (一次请求最多等这几个的超时).
+ * - 最近没出过问题的网段排前面, 同一档里打乱; 每次只给 [maxAddresses] 个 (一次请求最多等这几个的超时);
+ * - 这个域名最近 [rememberConnectedMillis] 内连上过的节点排最前 (见 [markConnected]): 下载域名大约一分钟换一组节点, 换过去的那组可能整组连不上,
+ *   而刚才连上的那组还能用 (同一个下载地址在哪个节点都能下). 跳转时一下要新建几十个连接, 照新的那组连的话常常一起等满连接超时.
  *
  * 都连不上过时照样给系统那组, 让请求自己失败.
  */
@@ -208,10 +212,12 @@ internal class FailoverDns(
     private val maxAddresses: Int = 3,
     private val forgetAfterMillis: Long = 5 * 60_000L,
     private val alternativesTtlMillis: Long = 60_000L,
+    private val rememberConnectedMillis: Long = 10 * 60_000L,
     private val now: () -> Long = System::currentTimeMillis,
 ) : Dns {
     private val unreachableSince = ConcurrentHashMap<InetAddress, Long>()
     private val alternativesCache = ConcurrentHashMap<String, Pair<Long, List<InetAddress>>>()
+    private val connectedSince = ConcurrentHashMap<String, ConcurrentHashMap<InetAddress, Long>>()
 
     override fun lookup(hostname: String): List<InetAddress> {
         val fromSystem = try {
@@ -230,17 +236,32 @@ internal class FailoverDns(
         }
         val failingSubnets = unreachableSince.keys.filterNot(::isUsable).mapTo(HashSet(), ::subnetOf)
         val (healthy, failing) = usable.shuffled().partition { subnetOf(it) !in failingSubnets }
-        val picked = (healthy + failing).take(maxAddresses)
+        val connected = recentlyConnected(hostname).shuffled()
+        val picked = (connected + healthy + failing).distinct().take(maxAddresses)
         logger.info {
-            val names = picked.joinToString { if (it in fromSystem) it.hostAddress.orEmpty() else "${it.hostAddress} (public)" }
-            "Resolved $hostname: $names (${healthy.size} in healthy subnets, ${failing.size} in failing ones; " +
-                    "system gave ${fromSystem.size}, public ${fromPublic.size})"
+            val names = picked.joinToString {
+                when (it) {
+                    in connected -> "${it.hostAddress} (connected)"
+                    in fromSystem -> it.hostAddress.orEmpty()
+                    else -> "${it.hostAddress} (public)"
+                }
+            }
+            "Resolved $hostname: $names (${connected.size} connected recently, ${healthy.size} in healthy subnets, " +
+                    "${failing.size} in failing ones; system gave ${fromSystem.size}, public ${fromPublic.size})"
         }
         return picked
     }
 
+    /** 直连 (不经代理) [hostname] 的 [address] 刚连上. */
+    fun markConnected(hostname: String, address: InetAddress?) {
+        if (address == null) return
+        connectedSince.getOrPut(hostname) { ConcurrentHashMap() }[address] = now()
+    }
+
     fun markUnreachable(address: InetAddress?) {
-        if (address != null) unreachableSince[address] = now()
+        if (address == null) return
+        unreachableSince[address] = now()
+        connectedSince.values.forEach { it.remove(address) }
     }
 
     fun markReachable(address: InetAddress?) {
@@ -250,6 +271,12 @@ internal class FailoverDns(
     private fun isUsable(address: InetAddress): Boolean {
         val since = unreachableSince[address] ?: return true
         return now() - since > forgetAfterMillis
+    }
+
+    private fun recentlyConnected(hostname: String): List<InetAddress> {
+        val addresses = connectedSince[hostname] ?: return emptyList()
+        addresses.entries.removeIf { now() - it.value > rememberConnectedMillis }
+        return addresses.keys.filter(::isUsable)
     }
 
     private fun alternativesOf(hostname: String): List<InetAddress> {
