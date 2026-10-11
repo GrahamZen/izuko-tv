@@ -179,6 +179,7 @@ import me.him188.ani.app.ui.lang.tv_profile_import_loading
 import me.him188.ani.app.ui.lang.tv_profile_import_more
 import me.him188.ani.app.ui.lang.tv_profile_import_nothing
 import me.him188.ani.app.ui.lang.tv_profile_import_ok
+import me.him188.ani.app.ui.lang.tv_profile_import_rate_limited
 import me.him188.ani.app.ui.lang.tv_profile_import_running
 import me.him188.ani.app.ui.lang.tv_profile_import_running_hint
 import me.him188.ani.app.ui.lang.tv_profile_import_skipped
@@ -1087,7 +1088,13 @@ private fun ImportDialog(profile: UserProfile, name: String, onDismissRequest: (
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
-                Text(stringResource(Lang.tv_profile_import_running_hint), style = small, color = muted)
+                Text(
+                    stringResource(
+                        if (s.waitingForRateLimit) Lang.tv_profile_import_rate_limited else Lang.tv_profile_import_running_hint,
+                    ),
+                    style = small,
+                    color = muted,
+                )
             }
 
             is ProfileImportSession.State.Finished -> {
