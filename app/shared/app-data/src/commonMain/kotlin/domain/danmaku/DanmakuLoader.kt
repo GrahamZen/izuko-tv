@@ -233,6 +233,7 @@ class DanmakuLoaderImpl internal constructor(
             fileHash = fileHash,
             fileSize = fileLength,
             videoDuration = videoDuration,
+            seasonNumbering = splitSeason.danmakuSeasonNumbering(episodeInfo.sort),
         )
     }
 }

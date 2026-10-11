@@ -10,6 +10,7 @@
 package me.him188.ani.app.data.repository.danmaku
 
 import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -23,4 +24,6 @@ data class SearchDanmakuRequest(
     val fileLength: Long? = null,
     val fileHash: String? = "aa".repeat(16),
     val videoDuration: Duration = 0.milliseconds,
+    /** 条目所在的拆分季; 弹幕库把整季当一部作品、接着编集号时, 按它算这一集是整季第几集. */
+    val splitSeason: SplitSeason? = null,
 )

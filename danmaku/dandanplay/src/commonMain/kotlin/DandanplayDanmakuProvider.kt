@@ -131,6 +131,8 @@ class DandanplayDanmakuProvider(
             prefixedExpectedEpisodeName,
         )
 
+        matchByAnidbId(request)?.let { return it }
+
         val bgmtvEpisodes = runCatching { getEpisodesByBgmtvSubjectId(request) }
             .onFailure {
                 if (it is CancellationException) throw it
@@ -251,6 +253,30 @@ class DandanplayDanmakuProvider(
         return candidates.singleOrNull()
             ?: candidates.firstOrNull { it.epOrSort != null && it.epOrSort == request.episodeSort }
             ?: candidates.firstOrNull { it.epOrSort != null && it.epOrSort == request.episodeEp }
+    }
+
+    /** 知道 AniDB 条目编号时直接取那部作品的分集 (弹弹 play 的作品编号就是它), 见 [pickAnidbEpisode]. */
+    private suspend fun matchByAnidbId(request: DanmakuFetchRequest): DanmakuFetchResult? {
+        val animeId = request.anidbId ?: return null
+        val bangumi = runCatching { dandanplayClient.getBangumiEpisodes(animeId).bangumi }
+            .onFailure {
+                if (it is CancellationException) throw it
+                logger.warn(it) { "Failed to fetch Dandanplay anime $animeId by AniDB id" }
+            }.getOrNull() ?: return null
+        val episodes = bangumi.episodes.orEmpty().map { episode ->
+            DanmakuEpisodeWithSubject(
+                id = episode.episodeId.toString(),
+                subjectName = bangumi.animeTitle ?: request.subjectPrimaryName,
+                episodeName = episode.episodeTitle ?: "",
+                epOrSort = episode.episodeNumber?.let { EpisodeSort(it) },
+            )
+        }
+        val match = pickAnidbEpisode(request, episodes) ?: run {
+            logger.info { "No episode matched in Dandanplay anime $animeId (AniDB id) for ${request.subjectPrimaryName}" }
+            return null
+        }
+        logger.info { "Matched episode by AniDB id $animeId: ${match.subjectName} - ${match.episodeName}" }
+        return createResult(match.id.toLong(), DanmakuMatchMethod.Exact(match.subjectName, match.episodeName))
     }
 
     private suspend fun getEpisodesByBgmtvSubjectId(

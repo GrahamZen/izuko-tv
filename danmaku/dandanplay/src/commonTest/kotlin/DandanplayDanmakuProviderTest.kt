@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import me.him188.ani.danmaku.api.provider.DanmakuFetchRequest
 import me.him188.ani.danmaku.api.provider.DanmakuMatchMethod
+import me.him188.ani.danmaku.api.provider.DanmakuSeasonNumbering
 import me.him188.ani.danmaku.dandanplay.data.DandanplayMatchVideoResponse
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
@@ -438,6 +439,94 @@ class DandanplayDanmakuProviderTest {
         assertEquals("第1话 冒险的结束", method.episodeTitle)
     }
 
+    /** 夺还篇第 7 集 (sort 84): AniDB 把丧失篇与夺还篇合成 19242 一部, 整季第 18 集. 不搜名字, 也不查 Bangumi 映射. */
+    @Test
+    fun `fetchAutomatic takes the season ordinal in the merged AniDB anime`() = runTest {
+        val seen = mutableListOf<String>()
+        val provider = createProvider { path ->
+            seen += path
+            when (path) {
+                "/api/v2/bangumi/19242" -> respondJson(animeJson(19242, "Re：从零开始的异世界生活 第四季", 1..19))
+                "/api/v2/comment/192420018" -> respondJson("""{"count":0,"comments":[]}""")
+                else -> error("Unexpected request: $path")
+            }
+        }
+        val result = provider.fetchAutomatic(
+            request(
+                subjectId = 633836, subjectName = "Re：从零开始的异世界生活 第四季 夺还篇",
+                episodeSort = EpisodeSort(84), episodeEp = EpisodeSort(7), episodeName = "",
+                anidbId = 19242, seasonNumbering = DanmakuSeasonNumbering(seasonEpisode = 18, partEpisodeCount = 8),
+            ),
+        ).single()
+
+        assertEquals("第18话 ", assertIs<DanmakuMatchMethod.Exact>(result.matchInfo.method).episodeTitle)
+        assertEquals(listOf("/api/v2/bangumi/19242", "/api/v2/comment/192420018"), seen)
+    }
+
+    /** 无职转生第二季第 2 部分: AniDB 18104 只收这一段、从 1 编号, 第 1 集就是第 1 话 (整季第 13 集不在里面). */
+    @Test
+    fun `fetchAutomatic takes the part ordinal when the AniDB anime holds only this part`() = runTest {
+        val provider = createProvider { path ->
+            when (path) {
+                "/api/v2/bangumi/18104" -> respondJson(animeJson(18104, "无职转生Ⅱ 第二部分", 1..12))
+                "/api/v2/comment/181040001" -> respondJson("""{"count":0,"comments":[]}""")
+                else -> error("Unexpected request: $path")
+            }
+        }
+        val result = provider.fetchAutomatic(
+            request(
+                subjectId = 444557, subjectName = "无职转生 第二季 第2部分",
+                episodeSort = EpisodeSort(13), episodeEp = EpisodeSort(1), episodeName = "",
+                anidbId = 18104, seasonNumbering = DanmakuSeasonNumbering(seasonEpisode = 13, partEpisodeCount = 12),
+            ),
+        ).single()
+
+        assertEquals("第1话 ", assertIs<DanmakuMatchMethod.Exact>(result.matchInfo.method).episodeTitle)
+    }
+
+    /** 标题对得上时先按标题, 不看集号. */
+    @Test
+    fun `fetchAutomatic prefers the title in the AniDB anime`() = runTest {
+        val provider = createProvider { path ->
+            when (path) {
+                "/api/v2/bangumi/19242" -> respondJson(animeJson(19242, "Re：从零开始的异世界生活 第四季", 1..19, mapOf(18 to "ラム")))
+                "/api/v2/comment/192420018" -> respondJson("""{"count":0,"comments":[]}""")
+                else -> error("Unexpected request: $path")
+            }
+        }
+        val result = provider.fetchAutomatic(
+            request(
+                subjectId = 633836, subjectName = "Re：从零开始的异世界生活 第四季 夺还篇",
+                episodeSort = EpisodeSort(84), episodeEp = EpisodeSort(7), episodeName = "拉姆",
+                episodeNames = listOf("ラム", "拉姆"), anidbId = 19242,
+            ),
+        ).single()
+
+        assertEquals("第18话 ラム", assertIs<DanmakuMatchMethod.Exact>(result.matchInfo.method).episodeTitle)
+    }
+
+    /** 那部作品里没有这一集 (还没上传、或者其实不是这部): 不猜, 照旧走 Bangumi 映射. */
+    @Test
+    fun `fetchAutomatic falls back when the AniDB anime lacks the episode`() = runTest {
+        val provider = createProvider { path ->
+            when (path) {
+                "/api/v2/bangumi/19242" -> respondJson(animeJson(19242, "Re：从零开始的异世界生活 第四季", 1..13))
+                "/api/v2/bangumi/bgmtv/633836" -> respondJson(animeJson(55555, "别的映射", 1..19))
+                "/api/v2/comment/555550018" -> respondJson("""{"count":0,"comments":[]}""")
+                else -> error("Unexpected request: $path")
+            }
+        }
+        val result = provider.fetchAutomatic(
+            request(
+                subjectId = 633836, subjectName = "Re：从零开始的异世界生活 第四季 夺还篇",
+                episodeSort = EpisodeSort(18), episodeEp = EpisodeSort(7), episodeName = "",
+                anidbId = 19242, seasonNumbering = DanmakuSeasonNumbering(seasonEpisode = 18, partEpisodeCount = 8),
+            ),
+        ).single()
+
+        assertEquals("别的映射", assertIs<DanmakuMatchMethod.Exact>(result.matchInfo.method).subjectTitle)
+    }
+
     @Test
     fun `normalizeEpisodeTitle strips number prefix and unifies width and spaces`() {
         assertEquals("ラム", normalizeEpisodeTitle("第18话 ラム"))
@@ -482,6 +571,8 @@ class DandanplayDanmakuProviderTest {
         episodeNames: List<String> = listOf(episodeName),
         filename: String? = null,
         subjectNames: List<String> = listOf(subjectName),
+        anidbId: Int? = null,
+        seasonNumbering: DanmakuSeasonNumbering? = null,
     ) = DanmakuFetchRequest(
         subjectId = subjectId,
         subjectPrimaryName = subjectName,
@@ -496,7 +587,17 @@ class DandanplayDanmakuProviderTest {
         fileHash = null,
         fileSize = null,
         videoDuration = 24.minutes,
+        anidbId = anidbId,
+        seasonNumbering = seasonNumbering,
     )
+
+    /** 弹弹 play 作品详情 (`/api/v2/bangumi/{animeId}`): 正片 [numbers], 标题「第N话 [titles] 里的那个」. */
+    private fun animeJson(animeId: Int, title: String, numbers: IntRange, titles: Map<Int, String> = emptyMap()): String {
+        val episodes = numbers.withIndex().joinToString(",") { (index, n) ->
+            """{"episodeId": ${animeId * 10000L + index + 1}, "episodeTitle": "第${n}话 ${titles[n].orEmpty()}", "episodeNumber": "$n", "lastWatched": null, "airDate": null}"""
+        }
+        return """{"success": true, "errorCode": 0, "errorMessage": "", "bangumi": {"animeId": $animeId, "animeTitle": "$title", "type": "tvseries", "episodes": [$episodes]}}"""
+    }
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }

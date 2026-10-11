@@ -12,6 +12,7 @@ package me.him188.ani.app.data.repository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.network.RecommendationRepository
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.AniDatabase
@@ -250,6 +251,7 @@ fun KoinApplication.repositoryModules(
             getMediaCacheUseCase = get(),
             getSubjectEpisodeInfoBundleFlowUseCase = get(),
             settingsRepository = get(),
+            anidbIdOf = { subjectId -> get<TmdbSubjectMapRepository>().lookup(subjectId)?.anidbId },
         )
     }
 

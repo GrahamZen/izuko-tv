@@ -72,6 +72,8 @@ class DanmakuRepository(
     private val getMediaCacheUseCase: GetMediaCacheUseCase,
     private val getSubjectEpisodeInfoBundleFlowUseCase: GetSubjectEpisodeInfoBundleFlowUseCase,
     private val settingsRepository: SettingsRepository,
+    /** 条目对应的 AniDB 条目编号 (bgm-tmdb 对应表的 anidb 列), 见 [DanmakuFetchRequest.anidbId]. */
+    private val anidbIdOf: suspend (subjectId: Int) -> Int? = { null },
 ) : HasBackgroundScope by BackgroundScope(parentCoroutineContext) {
 
     private val localProvider = LocalDanmakuProvider(danmakuDao)
@@ -126,6 +128,7 @@ class DanmakuRepository(
 
     fun fetchFromAllRemotes(request: DanmakuFetchRequest): Flow<List<DanmakuFetchResult>> {
         return flow {
+            val request = request.withAnidbId(anidbIdOf(request.subjectId))
             val fetchers = remoteProviders.map { DanmakuFetcher(it) }
             val results = fetchers.map { fetcher ->
                 fetcher.fetch(request)
