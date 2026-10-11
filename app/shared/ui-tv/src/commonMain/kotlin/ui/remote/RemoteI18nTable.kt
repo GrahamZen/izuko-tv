@@ -1681,4 +1681,5 @@ private fun part17() = listOf(
     RemoteText("文件是空的", "The file is empty", "文件是空的", "檔案是空的"),
     RemoteText("这个文件不是设置备份，或者已经损坏", "This file is not a settings backup, or it is damaged", "這個文件不是設置備份，或者已經損壞", "這個檔案不是設定備份，或者已經損壞"),
     RemoteText("已导入设置", "Settings imported", "已導入設置", "已匯入設定"),
+    RemoteText("Bangumi 每 5 分钟只允许改 15 次收藏，稍等一会儿会自动接着导。", "Bangumi allows 15 collection changes every 5 minutes. The import will resume automatically shortly.", "Bangumi 每 5 分鐘只允許改 15 次收藏，稍等一會兒會自動接著導入。", "Bangumi 每 5 分鐘只允許改 15 次收藏，稍等一下會自動繼續匯入。"),
 )

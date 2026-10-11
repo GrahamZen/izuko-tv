@@ -281,6 +281,7 @@
     <string name="tv_profile_import_more">……還有 %1$d 部</string>
     <string name="tv_profile_import_running">正在匯入 %1$d/%2$d…</string>
     <string name="tv_profile_import_running_hint">可以先關掉，匯入會在背景繼續進行。</string>
+    <string name="tv_profile_import_rate_limited">Bangumi 每 5 分鐘只允許改 15 次收藏，稍等一下會自動繼續匯入。</string>
     <string name="tv_profile_import_done">匯入完成：新增 %1$d 部收藏，標了 %2$d 集看過。</string>
     <string name="tv_profile_import_failed">%1$d 部沒有匯入成功：%2$s</string>
     <string name="tv_profile_import_error">匯入沒有完成：%1$s</string>
