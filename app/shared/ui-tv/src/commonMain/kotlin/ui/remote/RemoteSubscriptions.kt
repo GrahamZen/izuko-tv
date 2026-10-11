@@ -25,6 +25,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
@@ -66,6 +67,7 @@ internal object RemoteSubscriptions {
     private val repository: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val updater: MediaSourceSubscriptionUpdater get() = KoinPlatform.getKoin().get()
     private val manager: MediaSourceManager get() = KoinPlatform.getKoin().get()
+    private val settings: SettingsRepository get() = KoinPlatform.getKoin().get()
 
     /** 处理 `api/sources/subs` 下的请求; 路径或方法不认识返回 null. */
     fun handle(request: LanHttpRequest): JsonObject? {
@@ -81,6 +83,7 @@ internal object RemoteSubscriptions {
                     delete((f["ids"] ?: f["id"]).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() })
                 }
                 request.path == "api/sources/subs/refresh" -> refresh()
+                request.path == "api/sources/subs/restore-order" -> setRestoreOrder(request.formFields()["on"] == "1")
                 else -> null
             }
         }.getOrElse {
@@ -91,8 +94,11 @@ internal object RemoteSubscriptions {
 
     private fun list(): JsonObject {
         val subs = runBlocking { repository.flow.first() }
+        val restoreOrder = runBlocking { settings.mediaSelectorSettings.flow.first().restoreSubscriptionOrder }
         return buildJsonObject {
             put("updating", updating)
+            // 设置「订阅更新时恢复订阅里的顺序」(电视设置页也有)
+            put("restoreOrder", restoreOrder)
             progress?.takeIf { updating }?.let { (current, total) ->
                 put("current", current)
                 put("total", total)
@@ -146,6 +152,11 @@ internal object RemoteSubscriptions {
         }
         logger.info { "Remote control deleted ${subs.size} media source subscription(s)" }
         return result(true, if (ids.size > 1) tr("已删除 {0} 个订阅及其数据源", subs.size) else tr("已删除订阅及其数据源"))
+    }
+
+    private fun setRestoreOrder(on: Boolean): JsonObject {
+        runBlocking { settings.mediaSelectorSettings.update { copy(restoreSubscriptionOrder = on) } }
+        return result(true, "")
     }
 
     private fun refresh(): JsonObject {
