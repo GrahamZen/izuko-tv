@@ -74,4 +74,8 @@ class DanmakuFetchRequest(
     val fileHash: String?,
     val fileSize: Long?,
     val videoDuration: Duration,
+    /** 条目对应的 AniDB 条目编号 (弹弹 play 的作品编号就是它); 不知道时为 `null`. */
+    val anidbId: Int? = null,
+    /** 见 [DanmakuSeasonNumbering]. */
+    val seasonNumbering: DanmakuSeasonNumbering? = null,
 )
