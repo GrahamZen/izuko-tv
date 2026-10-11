@@ -559,7 +559,7 @@ class DanmakuHostState(
                     floatingDanmaku != null
                 }
             }
-        }
+        }.also { placed -> if (placed) styledDanmaku.cachedImage() } // 放进轨道了就在调用方线程先把图画好, 见 [StyledDanmaku.cachedImage]
     }
 
     /**
