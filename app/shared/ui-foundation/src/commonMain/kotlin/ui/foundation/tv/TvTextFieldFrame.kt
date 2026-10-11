@@ -107,7 +107,6 @@ fun TvTextFieldFrame(
         state.returningToFrame = true
     }
     // 编辑态、键盘没开着时的返回: 回到框上 (弹窗里注册在弹窗自己的返回分发器上, 先于弹窗的关闭).
-    // 不在按键事件里拦返回键: 新系统上返回走系统的返回回调, 不以按键的形式送进界面
     BackHandler(enabled = state.editing) { state.returningToFrame = true }
     LaunchedEffect(state.frameFocused) {
         if (!state.frameFocused) return@LaunchedEffect
