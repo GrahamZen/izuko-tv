@@ -54,8 +54,13 @@ internal fun realTimeTest(block: suspend () -> Unit) = runTest { withContext(Dis
 internal fun launchDetached(block: suspend () -> Unit) = CoroutineScope(Dispatchers.Default).launch { block() }
 
 /** 服务端的明确拒绝 (400), 与真实请求抛出的是同一种异常. */
-internal suspend fun badRequest(): ClientRequestException {
-    val client = HttpClient(MockEngine { respond("{}", HttpStatusCode.BadRequest) }) { expectSuccess = true }
+internal suspend fun badRequest(): ClientRequestException = clientError(HttpStatusCode.BadRequest)
+
+/** 被限频 (429), 与真实请求抛出的是同一种异常. */
+internal suspend fun tooManyRequests(): ClientRequestException = clientError(HttpStatusCode.TooManyRequests)
+
+private suspend fun clientError(status: HttpStatusCode): ClientRequestException {
+    val client = HttpClient(MockEngine { respond("{}", status) }) { expectSuccess = true }
     return try {
         assertFailsWith<ClientRequestException> { client.get("https://api.bgm.tv/v0/users/-/collections/1") }
     } finally {
