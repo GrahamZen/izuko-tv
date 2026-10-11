@@ -30,11 +30,14 @@ import androidx.annotation.OptIn as AndroidxOptIn
  * 看起来就是一直在缓冲; 这里:
  * - 卡住之后攒够 [REBUFFER_RESUME_US] 再播: 总的等待差不多, 卡的次数少得多;
  * - 缓冲上限放到 [THROTTLED_MAX_BUFFER_US]: 码率低的段落多攒些, 留给后面码率高的段落. 占用的内存仍受 [DefaultLoadControl] 按轨道算的字节上限约束.
- * - 播放中缓冲掉到 [BOOST_ON_US] 以下或卡住时多开连接 ([boosted], 见 `ParallelRangeDataSource.boostedConnectionsFor`), 回到 [BOOST_OFF_US] 再收回:
- *   每个连接被限速, 片子码率高时 (1080p 一集上 GB) 平时的路数怎么攒都跟不上. 第一次开播之前不多开: 那时的几次打开 (读文件头、索引) 都很短.
+ * - 缓冲低于 [BOOST_ON_US] 或卡住时多开连接 ([boosted], 见 `ParallelRangeDataSource.boostedConnectionsFor`), 回到 [BOOST_OFF_US] 再收回:
+ *   每个连接被限速, 片子码率高时 (1080p 一集上 GB) 平时的路数怎么攒都跟不上. 开播 / 跳转后缓冲从零攒起, 一开始就是多开的:
+ *   头一轮的小块由多开的所有连接一起下 (见 `ParallelRangeReader`), 跳到没下过的位置出画面快. 读文件头、索引这类短范围
+ *   拆成几块按平时的路数算, 多开不影响它们.
  * - 暂停时 (离开播放页时保留的会话也是暂停着的) 只攒到 [PAUSED_MAX_BUFFER_US]: 播放中的缓冲本来就在多开连接的两个阈值之间来回,
  *   恢复播放时有这么多就够; 再往上攒只是占内存, 4K 片子会一直攒到字节上限 (一百多 MB).
- * 开播 / 跳转后照旧攒够 1 秒就播.
+ * 开播 / 跳转后照旧攒够 1 秒就播: 头一轮的块是一起到的, 1 秒的量 (4K 约 1 MB) 一般就在头一轮里, 门槛再低也快不了多少,
+ * 反而容易刚播就卡 (卡住后要攒 [REBUFFER_RESUME_US]).
  *
  * 拖动预览由主播放器跳到预览位置时 ([previewing], 见 [SeekPreview]), 任何源都只读到 [PREVIEW_MAX_BUFFER_US], 出画面就算就绪:
  * 每挪一步都要重新缓冲, 照常攒的话一步要从盘上读几十秒的数据进内存. 在一个位置上停下来看清楚之后 ([previewParked]) 照暂停时的规则往后攒:
@@ -66,9 +69,6 @@ internal class ThrottledSourceLoadControl(
     /** 拖动预览停在一个位置上、那一帧已经出来了 (见 [SeekPreview]): 不再按 [PREVIEW_MAX_BUFFER_US] 截住, 照暂停时的规则缓冲. 主线程写, 播放线程读. */
     @Volatile
     var previewParked = false
-
-    /** 这个媒体开播过没有; 只在播放线程读写. */
-    private var started = false
 
     // 上下限都设成限速源要的上限; 普通源在 shouldContinueLoading 里按默认的 50 秒截住, 效果同默认 (默认上下限也都是 50 秒).
     // 往后保留 [PlayerBufferPolicy.backward] (保留到上一个关键帧): media3 默认播过就释放, 在线源往回退一点也要重新下载
@@ -103,14 +103,13 @@ internal class ThrottledSourceLoadControl(
         } else {
             delegate.shouldStartPlayback(parameters)
         }
-        if (start) started = true
         return start
     }
 
     private fun updateBoost(parameters: LoadControl.Parameters) {
         val buffered = parameters.bufferedDurationUs
         val next = when {
-            !throttled || !started -> false
+            !throttled -> false
             parameters.rebuffering || buffered < BOOST_ON_US -> true
             buffered >= BOOST_OFF_US -> false
             else -> boosted
@@ -125,7 +124,6 @@ internal class ThrottledSourceLoadControl(
     }
 
     private fun resetBoost() {
-        started = false
         boosted = false
     }
 
