@@ -572,8 +572,8 @@ internal fun guessSubtitleLanguageIds(
     episodeName: String,
     parser: LabelFirstRawTitleParser,
 ): List<String>? {
-    val languagesFromChannel = channel?.let { parser.parseSubtitleLanguages(it) } ?: emptyList()
-    val languagesFromName = parser.parseSubtitleLanguages(episodeName)
+    val languagesFromChannel = channel?.let { SubtitleLanguageGuesses.of(parser, it) } ?: emptyList()
+    val languagesFromName = SubtitleLanguageGuesses.of(parser, episodeName)
 
     return when {
         languagesFromChannel.isEmpty() && languagesFromName.isEmpty() -> null
