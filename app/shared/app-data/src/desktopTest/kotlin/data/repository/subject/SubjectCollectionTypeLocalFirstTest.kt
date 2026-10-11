@@ -14,6 +14,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.persistent.database.createTestAniDatabase
 import me.him188.ani.app.data.repository.FakeRemote
+import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.badRequest
 import me.him188.ani.app.data.repository.launchDetached
 import me.him188.ani.app.data.repository.realTimeTest
@@ -64,6 +65,17 @@ class SubjectCollectionTypeLocalFirstTest {
         remote.behaviors += { throw rejected }
 
         assertFailsWith<ClientRequestException> { set(DOING) }
+        assertEquals(WISH, local()?.collectionType)
+        assertEquals(123L, local()?.lastUpdated)
+    }
+
+    @Test
+    fun `被限频不重试, 改回原来的`() = realTimeTest {
+        dao.upsert(testSubjectCollectionEntity(SUBJECT, WISH, lastUpdated = 123))
+        remote.behaviors += { throw RepositoryRateLimitedException() }
+
+        assertFailsWith<RepositoryRateLimitedException> { set(DOING) }
+        assertEquals(1, remote.started.value)
         assertEquals(WISH, local()?.collectionType)
         assertEquals(123L, local()?.lastUpdated)
     }

@@ -269,6 +269,7 @@ internal object RemoteProfiles {
             put("source", state.sourceName)
             put("done", state.done)
             put("total", state.total)
+            put("waiting", state.waitingForRateLimit)
         }
 
         is ProfileImportSession.State.Failed -> buildJsonObject {
