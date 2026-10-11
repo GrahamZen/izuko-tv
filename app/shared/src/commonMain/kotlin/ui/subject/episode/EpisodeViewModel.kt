@@ -99,6 +99,7 @@ import me.him188.ani.app.domain.episode.findNeighborEpisode
 import me.him188.ani.app.domain.episode.getCurrentEpisodeId
 import me.him188.ani.app.domain.episode.infoBundleFlow
 import me.him188.ani.app.domain.episode.infoLoadErrorFlow
+import me.him188.ani.app.domain.episode.mediaFetchSessionFlow
 import me.him188.ani.app.domain.episode.mediaSelectorFlow
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.media.DroppedFileMedia
@@ -116,6 +117,7 @@ import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
+import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
@@ -1278,9 +1280,7 @@ open class EpisodeViewModel(
             // 手动重新查询: 清除本条目的 web 源搜索缓存, 让所有数据源真正重新搜索
             selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
             // Although it's flow, it should be ready.
-            fetchPlayState.episodeSessionFlow.flatMapLatest { it.fetchSelectFlow }
-                .mapNotNull { it?.mediaFetchSession }
-                .firstOrNull()
+            currentMediaFetchSession()
                 ?.restartAll()
         }
     }
@@ -1325,20 +1325,31 @@ open class EpisodeViewModel(
         if (enabled) withMediaFetchSession { it.resumePausedSources() }
     }
 
+    /** 当前这一集的查询会话, 还没建好就等它建好. */
+    @OptIn(UnsafeEpisodeSessionApi::class)
+    private suspend fun currentMediaFetchSession(): MediaFetchSession? = fetchPlayState.mediaFetchSessionFlow.filterNotNull().firstOrNull()
+
+    /** 现在这一集的选源器, 还没建好就等它建好; 等的途中换了集为 `null` (不能把资源选进别的集). */
+    private suspend fun mediaSelectorOfCurrentEpisode(): MediaSelector? {
+        val session = fetchPlayState.episodeSessionFlow.value
+        return fetchPlayState.episodeSessionFlow
+            .mapLatest { current ->
+                if (current !== session) return@mapLatest null
+                current.fetchSelectFlow.filterNotNull().first().mediaSelector
+            }
+            .first()
+    }
+
     private fun withMediaFetchSession(block: (MediaFetchSession) -> Unit) {
         launchInBackground {
-            fetchPlayState.episodeSessionFlow.flatMapLatest { it.fetchSelectFlow }
-                .mapNotNull { it?.mediaFetchSession }
-                .firstOrNull()
+            currentMediaFetchSession()
                 ?.let(block)
         }
     }
 
     fun restartSource(instanceId: String) {
         launchInBackground {
-            val result = fetchPlayState.episodeSessionFlow.flatMapLatest { it.fetchSelectFlow }
-                .mapNotNull { it?.mediaFetchSession }
-                .firstOrNull()
+            val result = currentMediaFetchSession()
                 ?.mediaSourceResults
                 ?.find { it.instanceId == instanceId }
                 ?: return@launchInBackground
@@ -1371,14 +1382,7 @@ open class EpisodeViewModel(
      */
     fun playTemporarily(media: Media) {
         launchInBackground {
-            val session = fetchPlayState.episodeSessionFlow.value
-            val mediaSelector = fetchPlayState.episodeSessionFlow
-                .mapLatest { current ->
-                    if (current !== session) return@mapLatest null
-                    current.fetchSelectFlow.filterNotNull().first().mediaSelector
-                }
-                .first()
-                ?: return@launchInBackground
+            val mediaSelector = mediaSelectorOfCurrentEpisode() ?: return@launchInBackground
             mediaSelector.selectTemporarily(media)
         }
     }
@@ -1389,14 +1393,7 @@ open class EpisodeViewModel(
      * 记忆写入失败只记日志: select 已经发生, 页面按成功关闭.
      */
     private suspend fun playBrowsedMedia(media: Media, memory: ManualBrowseMemory?) {
-        val session = fetchPlayState.episodeSessionFlow.value
-        val mediaSelector = fetchPlayState.episodeSessionFlow
-            .mapLatest { current ->
-                if (current !== session) return@mapLatest null
-                current.fetchSelectFlow.filterNotNull().first().mediaSelector
-            }
-            .first()
-            ?: return
+        val mediaSelector = mediaSelectorOfCurrentEpisode() ?: return
         if (memory != null) {
             mediaSelector.select(media)
             try {
