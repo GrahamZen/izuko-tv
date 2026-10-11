@@ -23,7 +23,6 @@ import android.view.Choreographer
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
-import android.window.OnBackInvokedDispatcher
 import androidx.core.content.IntentCompat
 import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.platform.ProfileSwitchFrame
@@ -58,7 +57,6 @@ class ProfileRestartActivity : Activity() {
         val launch = IntentCompat.getParcelableExtra(intent, EXTRA_LAUNCH_INTENT, Intent::class.java)
         val content = profileSwitchFrameView(this, ProfileSwitchFrameDrawable.FLOOR_RELAY)
         setContentView(content)
-        swallowBack(this)
         shown = WhenShown(content, "Relay") {
             becomeOpaque(this)
             val mainPid = intent.getIntExtra(EXTRA_MAIN_PID, -1)
@@ -153,7 +151,6 @@ class ProfileSwitchLandingActivity : Activity() {
         }
         val content = profileSwitchFrameView(this, ProfileSwitchFrameDrawable.FLOOR_LANDING)
         setContentView(content)
-        swallowBack(this)
         // 不 finish: 主界面带着 CLEAR_TASK, 把这里和中转页一起清掉
         shown = WhenShown(content, "Landing") {
             becomeOpaque(this)
@@ -267,10 +264,3 @@ private fun becomeOpaque(activity: Activity) {
 
 /** 过场的两页之间、到主界面都不要切换动画: 画面本来就是同一帧. */
 private fun noAnimation(context: Context): Bundle? = ActivityOptions.makeCustomAnimation(context, 0, 0).toBundle()
-
-/** 过场期间的返回什么都不做 (新系统上返回不以按键送进来, 要另外拦). */
-private fun swallowBack(activity: Activity) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        activity.onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY) {}
-    }
-}
