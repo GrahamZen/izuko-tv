@@ -27,6 +27,7 @@ import me.him188.ani.danmaku.api.provider.DanmakuProviderId
 import me.him188.ani.danmaku.api.provider.DanmakuSplitSeasonMatcher
 import me.him188.ani.danmaku.api.provider.DanmakuSubject
 import me.him188.ani.danmaku.api.provider.MatchingDanmakuProvider
+import me.him188.ani.danmaku.api.provider.videoFileForMatching
 import me.him188.ani.danmaku.dandanplay.data.DandanplaySendCommentRequest
 import me.him188.ani.danmaku.dandanplay.data.SearchEpisodesAnime
 import me.him188.ani.danmaku.dandanplay.data.toDanmakuOrNull
@@ -51,6 +52,7 @@ class DandanplayDanmakuProvider(
     override val mainServiceId: DanmakuServiceId get() = DanmakuServiceId.Dandanplay
 
     private val dandanplayClient = DandanplayClient(client, dandanplayAppId, dandanplayAppSecret)
+    private val episodeLocator = DandanplayEpisodeLocator(dandanplayClient)
 
     private enum class DanmakuOrigin(val serviceId: DanmakuServiceId) {
         BiliBili(DanmakuServiceId.Bilibili),
@@ -136,6 +138,8 @@ class DandanplayDanmakuProvider(
             prefixedExpectedEpisodeName,
         )
 
+        episodeLocator.fetch(request, providerId)?.let { return it }
+
         val bgmtvEpisodes = getEpisodesByBgmtvSubjectIdOrNull(request.subjectId, request.subjectPrimaryName)
         tryMatchEpisodes(request, bgmtvEpisodes, matcher, mappedToSelf = true)?.let { return it }
 
@@ -161,12 +165,13 @@ class DandanplayDanmakuProvider(
 
         // 都不行, 那就用最不准的方法
 
-        request.filename?.let { filename ->
+        request.videoFileForMatching()?.let { file ->
+            val filename = file.filename
             val resp = dandanplayClient.matchVideo(
                 filename = filename,
-                fileHash = request.fileHash,
-                fileSize = request.fileSize,
-                videoDuration = request.videoDuration,
+                fileHash = file.fileHash,
+                fileSize = file.fileSize,
+                videoDuration = file.videoDuration,
             )
             if (!resp.success) {
                 logger.warn {
@@ -426,15 +431,15 @@ class DandanplayDanmakuProvider(
             }
 
 
-        request.subjectNames.flatMap { name ->
+        // 名字逐个搜, 搜到就停
+        request.subjectNames.firstNotNullOfOrNull { name ->
             kotlin.runCatching {
                 dandanplayClient.searchSubject(name).animes
             }.onFailure {
                 if (it is CancellationException) throw it
                 logger.warn(it) { "Failed to fetch anime list by name" }
-            }.getOrNull() ?: emptySet()
+            }.getOrNull()?.firstOrNull { it.animeTitle in expectedNames }
         }
-            .firstOrNull { it.animeTitle in expectedNames }
             ?.let {
                 logger.info { "Matched Dandanplay Anime by search using name: ${it.animeId} ${it.animeTitle}" }
                 return@withContext it

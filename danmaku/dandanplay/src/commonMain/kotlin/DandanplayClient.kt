@@ -51,6 +51,8 @@ internal class DandanplayClient(
     private val appId: String,
     private val appSecret: String,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO,
+    /** 作品详情接口记结果、被限额时暂停 (见 [DandanplayBangumiCalls]). */
+    val bangumiCalls: DandanplayBangumiCalls = DandanplayBangumiCalls(),
 ) {
     /**
      * Must be used at the last step of building the request.
@@ -124,7 +126,8 @@ internal class DandanplayClient(
 
     suspend fun getBangumiEpisodes(
         bangumiId: Int, // 注意, 这是 dandanplay 的 id, 不是 Bangumi.tv 的 id
-    ): DandanplayGetBangumiResponse = withContext(ioDispatcher) {
+    ): DandanplayGetBangumiResponse = bangumiCalls.anime(bangumiId) {
+        withContext(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/$bangumiId") {
@@ -135,11 +138,13 @@ internal class DandanplayClient(
 
             response.body<DandanplayGetBangumiResponse>()
         }
+        }
     }
 
     suspend fun getBangumiEpisodesByBgmtvSubjectId(
         bgmtvSubjectId: Int,
-    ): DandanplayGetBangumiResponse = withContext(ioDispatcher) {
+    ): DandanplayGetBangumiResponse = bangumiCalls.bgmtv(bgmtvSubjectId) {
+        withContext(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/bgmtv/$bgmtvSubjectId") {
@@ -149,6 +154,7 @@ internal class DandanplayClient(
                 }
 
             response.body<DandanplayGetBangumiResponse>()
+        }
         }
     }
 
