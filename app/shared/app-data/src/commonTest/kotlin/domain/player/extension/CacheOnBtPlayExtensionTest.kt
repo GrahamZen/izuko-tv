@@ -574,8 +574,23 @@ class CacheOnBtPlayExtensionTest : AbstractPlayerExtensionTest() {
         scope.cancel()
     }
 
+    /** 选中的是本集已经在下的缓存: 不再建记录. */
     @Test
     fun skipAutoCacheWhenCachedMediaAlreadyHasRecord() = runTest {
+        assertEquals(0, playCachedMediaWithRecordFor(episodeId = initialEpisodeId))
+    }
+
+    /**
+     * 查询会话按条目共用, 请求里的剧集是首次打开的那一集 (测试里是 1, 正在播 [initialEpisodeId]):
+     * 那一集的记录不能当成本集的, 本集照常建记录.
+     */
+    @Test
+    fun autoCacheWhenCachedMediaHasRecordOnlyForAnotherEpisode() = runTest {
+        assertEquals(1, playCachedMediaWithRecordFor(episodeId = 1))
+    }
+
+    /** 选中 [episodeId] 那一集已有记录的缓存版资源来播, 返回新建缓存记录的次数. */
+    private suspend fun TestScope.playCachedMediaWithRecordFor(episodeId: Int): Int {
         val deferred = CompletableDeferred<List<Media>>()
         val origin = TestMediaList[0]
         val context = createCase(resolver = ConfigurableResolver { FakeTorrentBackedMediaDataProvider() }) { storage, builder ->
@@ -600,7 +615,7 @@ class CacheOnBtPlayExtensionTest : AbstractPlayerExtensionTest() {
                     MediaSourceLocation.Local,
                     MediaSourceKind.LocalCache,
                 ),
-                MediaCacheMetadata("1", "1", "test", listOf("test"), EpisodeSort(1), EpisodeSort(1), "test"),
+                MediaCacheMetadata(subjectId.toString(), episodeId.toString(), "test", listOf("test"), EpisodeSort(1), EpisodeSort(1), "test"),
             )
         }
         val (scope, _, state, storage) = context
@@ -609,8 +624,8 @@ class CacheOnBtPlayExtensionTest : AbstractPlayerExtensionTest() {
         deferred.complete(listOf(cached))
         state.mediaSelectorFlow.filterNotNull().first().select(cached)
         advanceUntilIdle()
-        assertEquals(0, storage.cacheCalls)
         scope.cancel()
+        return storage.cacheCalls
     }
 
     /**
