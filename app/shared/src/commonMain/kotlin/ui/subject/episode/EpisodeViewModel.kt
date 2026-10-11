@@ -178,7 +178,7 @@ import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseTarget
 import me.him188.ani.app.ui.mediaselect.toWatchingEpisode
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummaryStateProducer
-import me.him188.ani.app.ui.mediaselect.summary.orStillPlaying
+import me.him188.ani.app.ui.mediaselect.summary.orStillPlayingIn
 import me.him188.ani.app.ui.settings.danmaku.DanmakuRegexFilterState
 import me.him188.ani.app.ui.subject.AiringLabelState
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeState
@@ -1098,7 +1098,7 @@ open class EpisodeViewModel(
             episodeSession.fetchSelectFlow.mapNotNull { it?.mediaSelector }
                 .flatMapLatest { it.selectedMaybeExcludedMedia }
                 .onStart { emit(null) }
-                .orStillPlaying(fetchPlayState.playerSession.loadedMedia),
+                .orStillPlayingIn(this, fetchPlayState.playerSession.loadedMedia),
             filteredSourceResults,
             getMediaSelectorSettings(),
             getMediaSourceInstances.getAsMediaSourceInfoWithId(),
