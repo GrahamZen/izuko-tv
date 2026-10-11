@@ -131,6 +131,28 @@ class LoadMediaOnSelectExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `selecting the media that is already playing does not reload it`() = runTest {
+        // 选源会话重建 (重新搜索) 后新的选源器又选中了正在播的同一资源: 接着播, 不回到起播位置重新缓冲
+        val (testScope, suite, state) = createCase(extensions = listOf(startAt { 42_000L }))
+
+        val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
+        val myMedia = TestMediaList[0]
+        ms1.complete(listOf(myMedia))
+        val selector = state.mediaSelectorFlow.filterNotNull().first()
+        selector.select(myMedia)
+        advanceUntilIdle()
+        suite.player.seekTo(100_000)
+
+        selector.unselect() // 新的选源器一开始什么都没选
+        advanceUntilIdle()
+        selector.select(myMedia)
+        advanceUntilIdle()
+
+        assertEquals(100_000, suite.player.currentPositionMillis.value)
+        testScope.cancel()
+    }
+
+    @Test
     fun `can load media on select`() = runTest {
         val (testScope, suite, state) =
             createCase()
