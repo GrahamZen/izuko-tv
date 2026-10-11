@@ -138,8 +138,9 @@ class MediaSelectorFilterSortAlgorithm {
         val subjectNames = NormalizedNames(context.subjectInfo?.allNames.orEmpty())
         val seriesSubjectNames = NormalizedNames(context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty().toList())
 
-        return list.map { media ->
-            if (memo == null) {
+        val filtered = list.map { media ->
+            // 拆分季按整页的集号判断一集 (页面随结果追加会变大), 这时在线资源的结论不能记: 页面只到了一半时认的集会一直留着
+            if (memo == null || (splitSeasonMatcher != null && media.kind == MediaSourceKind.WEB)) {
                 filterMedia(
                     media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
                     subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
@@ -155,6 +156,7 @@ class MediaSelectorFilterSortAlgorithm {
                 }
             }
         }
+        return if (episodeMatch != null && splitSeasonMatcher == null) EpisodeNumberingPages.resolve(context, list, filtered) else filtered
     }
 
     /**
@@ -292,7 +294,8 @@ class MediaSelectorFilterSortAlgorithm {
         // 第 0 条: 先于本地缓存豁免, 否则看第 2 话时会自动选中第 1 话的缓存.
         if (episodeMatch != null) {
             if (splitSeasonMatch?.pageKind == SplitSeasonPageMatcher.PageKind.OTHER_SEASON) {
-                return exclude(MediaExclusionReason.FromSeriesSeason)
+                // 别季页面上集号也对得上本集的才报其他季度, 其余同不分季时一样是集号不符 (不然整页每一集都列进被排除的)
+                return exclude(if (episodeMatch.matches(media)) MediaExclusionReason.FromSeriesSeason else MediaExclusionReason.EpisodeMismatch(media.episodeRange))
             }
             val matches = splitSeasonMatch?.matched ?: episodeMatch.matches(media)
             if (!matches) return exclude(MediaExclusionReason.EpisodeMismatch(media.episodeRange))
@@ -354,6 +357,9 @@ class MediaSelectorFilterSortAlgorithm {
             if (subjectNames.anyEquals(normalizedMediaSubjectName)) {
                 // contextSubjectNames 与条目名称相同, 肯定不能排除它
             } else if (!matchedAsSeasonlessSeries) {
+                if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.of(context)?.isOtherSeason(mediaSubjectName) == true) {
+                    return exclude(MediaExclusionReason.FromSeriesSeason)
+                }
                 // 以系列内序号认领的资源就是本条目的这一集, 条目名是系列名而非本季的名字也不改变这一点.
                 // 简化数据源结果的季度名称，例如从 "Re：从零开始的休息时间 第2季" 变成 "Re：从零开始的休息时间 2"
                 // 条目名称可能是上述后者简化的形式, 但数据源的结果是前者完整版的形式
