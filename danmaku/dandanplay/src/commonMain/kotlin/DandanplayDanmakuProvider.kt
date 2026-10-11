@@ -246,7 +246,8 @@ class DandanplayDanmakuProvider(
             .filterTo(HashSet()) { it.isNotEmpty() }
         if (expectedTitles.isEmpty()) return null
 
-        val candidates = episodes.filter { normalizeEpisodeTitle(it.episodeName) in expectedTitles }
+        // 剧集搜索按条目的每个名字各搜一次, 同一部番会被搜到好几次: 同一集只算一个候选
+        val candidates = episodes.filter { normalizeEpisodeTitle(it.episodeName) in expectedTitles }.distinctBy { it.id }
         return candidates.singleOrNull()
             ?: candidates.firstOrNull { it.epOrSort != null && it.epOrSort == request.episodeSort }
             ?: candidates.firstOrNull { it.epOrSort != null && it.epOrSort == request.episodeEp }

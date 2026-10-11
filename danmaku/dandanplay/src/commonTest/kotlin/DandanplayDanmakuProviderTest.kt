@@ -211,6 +211,60 @@ class DandanplayDanmakuProviderTest {
         assertEquals("第18话 ラム", method.episodeTitle)
     }
 
+    /** 条目有几个名字时剧集搜索按每个名字搜一次, 搜到的是同一部番, 同一集出现好几次. */
+    @Test
+    fun `fetchAutomatic matches merged split cour episode when several subject names find the same anime`() = runTest {
+        val provider = createProvider { path ->
+            when (path) {
+                "/api/v2/bangumi/bgmtv/633836" -> respondJson(
+                    """{"success": false, "errorCode": 7, "errorMessage": "无法找到指定的资源", "bangumi": null}""",
+                )
+
+                "/api/v2/search/episodes" -> respondJson(
+                    """
+                    {
+                      "success": true, "errorCode": 0, "errorMessage": "", "hasMore": false,
+                      "animes": [
+                        {
+                          "animeId": 19242,
+                          "animeTitle": "Re：从零开始的异世界生活 第四季",
+                          "episodes": [
+                            {"episodeId": 192420007, "episodeTitle": "第7话 コンビニを出ると, そこは不思議の世界でした"},
+                            {"episodeId": 192420009, "episodeTitle": "第9话 残骸"},
+                            {"episodeId": 192420018, "episodeTitle": "第18话 ラム"},
+                            {"episodeId": 192420019, "episodeTitle": "第19话"}
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+
+                "/api/v2/comment/192420018" -> respondJson("""{"count":0,"comments":[]}""")
+                else -> error("Unexpected request: $path")
+            }
+        }
+
+        val result = provider.fetchAutomatic(
+            request(
+                subjectId = 633836,
+                subjectName = "Re：从零开始的异世界生活 第四季 夺还篇",
+                episodeSort = EpisodeSort(84),
+                episodeEp = EpisodeSort(7),
+                episodeName = "拉姆",
+                episodeNames = listOf("ラム", "拉姆"),
+                subjectNames = listOf(
+                    "Re：从零开始的异世界生活 第四季 夺还篇",
+                    "Re:ゼロから始める異世界生活 4th season 奪還編",
+                    "re0 第四季 夺还篇",
+                ),
+            ),
+        ).single()
+
+        val method = assertIs<DanmakuMatchMethod.Exact>(result.matchInfo.method)
+        assertEquals("第18话 ラム", method.episodeTitle)
+    }
+
     @Test
     fun `fetchAutomatic prefers title over episode number when Bangumi mapping covers merged cours`() = runTest {
         val provider = createProvider { path ->
@@ -427,10 +481,11 @@ class DandanplayDanmakuProviderTest {
         episodeEp: EpisodeSort? = null,
         episodeNames: List<String> = listOf(episodeName),
         filename: String? = null,
+        subjectNames: List<String> = listOf(subjectName),
     ) = DanmakuFetchRequest(
         subjectId = subjectId,
         subjectPrimaryName = subjectName,
-        subjectNames = listOf(subjectName),
+        subjectNames = subjectNames,
         subjectPublishDate = PackedDate.Invalid,
         episodeId = 1,
         episodeSort = episodeSort,
