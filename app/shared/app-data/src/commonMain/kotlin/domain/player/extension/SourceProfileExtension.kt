@@ -15,10 +15,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
@@ -42,7 +40,6 @@ import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.Koin
-import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.PlaybackState
 import kotlin.time.Duration.Companion.seconds
 
@@ -77,9 +74,7 @@ class SourceProfileExtension(
     ) {
         backgroundTaskScope.launch("SourceProfile") {
             coroutineScope {
-                val selected = context.sessionFlow.flatMapLatest { it.fetchSelectFlow }
-                    .flatMapLatest { it?.mediaSelector?.selected ?: flowOf(null) }
-                    .stateIn(this, SharingStarted.Eagerly, null)
+                val selected = context.selectedMedia().stateIn(this, SharingStarted.Eagerly, null)
                 launch {
                     // 每次查资源各源的用时与结果: 只看查询状态, 不多发请求
                     context.sessionFlow.flatMapLatest { it.fetchSelectFlow }.filterNotNull().collectLatest { bundle ->
@@ -90,7 +85,7 @@ class SourceProfileExtension(
                         }
                     }
                 }
-                val errors = context.player.state.map { (it.mediaStatus as? MediaStatus.Error)?.error }.distinctUntilChanged().filterNotNull()
+                val errors = context.player.playerErrors()
                 var tracking: Tracking? = null
                 // 一个收集者按先后处理, 不用为跟踪状态加锁
                 merge(
