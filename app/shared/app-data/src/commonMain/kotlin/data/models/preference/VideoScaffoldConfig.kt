@@ -234,12 +234,12 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
     /**
      * 过滤 HLS 播放列表中的插播广告, 见 `HlsManifestFilter`.
      *
-     * 5.7 至 6.1 的同类开关是默认关闭的 `enableExperimentalHlsSegmentFiltering`, 已不再读取:
-     * 换用新字段, 所有用户按新的默认值启用.
+     * 默认关: 开着时每个 HLS 在线源起播前都要先取一遍播放列表, 疑似带广告的还要经本地代理转发全部分片,
+     * 而在线源里带插播广告的已经很少. 5.7 至 6.1 的同类开关 `enableExperimentalHlsSegmentFiltering` 不再读取.
      *
      * @since 6.2
      */
-    val enableHlsAdFiltering: Boolean = true,
+    val enableHlsAdFiltering: Boolean = false,
     /**
      * 用于在安卓上设置屏幕刷新率, 解决某些设备会自动限制刷新率的问题 (三星).
      *
