@@ -12,7 +12,9 @@ package me.him188.ani.app.ui.danmaku
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import me.him188.ani.danmaku.ui.DanmakuHost
 import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.danmaku.ui.DanmakuPresentation
@@ -27,13 +29,17 @@ fun PlayerDanmakuHost(
     danmakuHostState: DanmakuHostState,
     danmakuEvent: Flow<UIDanmakuEvent>,
     modifier: Modifier = Modifier,
+    /** false: 只把播放状态和弹幕事件喂给 [danmakuHostState], 由别处画 (电视播放页的 `DanmakuLayer`). */
+    drawDanmaku: Boolean = true,
 ) {
     LaunchedEffect(player, danmakuHostState) {
         player.state.collect {
             danmakuHostState.setPaused(!it.isPlaying)
         }
     }
+    // 在后台收: 每条弹幕的排版与生成图都在调用方线程做, 只有放进轨道那一步切回主线程 (见 DanmakuHostState.trySend)
     LaunchedEffect(danmakuEvent, danmakuHostState) {
+        withContext(Dispatchers.Default) {
         danmakuEvent.collect { event ->
             when (event) {
                 is UIDanmakuEvent.Add -> {
@@ -45,9 +51,10 @@ fun PlayerDanmakuHost(
                 }
             }
         }
+        }
     }
 
-    DanmakuHost(danmakuHostState, modifier)
+    if (drawDanmaku) DanmakuHost(danmakuHostState, modifier)
 }
 
 sealed class UIDanmakuEvent {

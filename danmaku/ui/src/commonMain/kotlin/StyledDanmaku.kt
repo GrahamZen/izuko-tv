@@ -27,6 +27,7 @@ import me.him188.ani.danmaku.api.DanmakuLocation
 import me.him188.ani.danmaku.api.DanmakuServiceId
 import me.him188.ani.utils.platform.Uuid
 import me.him188.ani.utils.platform.format2f
+import kotlin.concurrent.Volatile
 import kotlin.math.floor
 
 /**
@@ -69,17 +70,26 @@ data class StyledDanmaku(
         softWrap = false,
     )
 
+    @Volatile
     private var imageBitmap: ImageBitmapWithOffset? = null
 
     override val danmakuWidth: Int = solidTextLayout.size.width.coerceAtLeast(1)
     override val danmakuHeight: Int = solidTextLayout.size.height.coerceAtLeast(1)
 
     internal fun DrawScope.draw(screenPosX: Float, screenPosY: Float) {
-        val cachedImage = imageBitmap ?: createDanmakuImageBitmap(solidTextLayout, borderTextLayout)
-            .also { imageBitmap = it }
-
+        val cachedImage = cachedImage()
         drawImage(cachedImage.bitmap, Offset(screenPosX, screenPosY) + cachedImage.offset)
     }
+
+    /**
+     * 弹幕文字画成的图: 第一次用到时生成, 之后复用 (见 [DanmakuLayer]). 放进轨道后在后台先生成好 ([DanmakuHostState.trySend]);
+     * 两个线程同时生成时各画一张, 留下哪张都一样.
+     */
+    internal fun cachedImage(): ImageBitmapWithOffset =
+        imageBitmap ?: createDanmakuImageBitmap(solidTextLayout, borderTextLayout).also { imageBitmap = it }
+
+    /** 已经生成好的图; 还没有时为 `null`, 不在这里生成. */
+    internal fun cachedImageOrNull(): ImageBitmapWithOffset? = imageBitmap
 }
 
 class ImageBitmapWithOffset(
