@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.SinglePeriodTimeline
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import androidx.annotation.OptIn as AndroidxOptIn
@@ -44,6 +45,13 @@ class ThrottledSourceLoadControlTest {
     private fun loadControl(throttled: Boolean) = ThrottledSourceLoadControl().apply {
         this.throttled = throttled
         onPrepared(PlayerId.UNSET)
+    }
+
+    @Test
+    fun `played content is kept 30 seconds, 5 seconds with the disk cache on`() {
+        assertEquals(30_000_000L, ThrottledSourceLoadControl().getBackBufferDurationUs(PlayerId.UNSET))
+        assertEquals(5_000_000L, ThrottledSourceLoadControl(diskCacheOn = true).getBackBufferDurationUs(PlayerId.UNSET))
+        assertTrue(ThrottledSourceLoadControl(diskCacheOn = true).retainBackBufferFromKeyframe(PlayerId.UNSET))
     }
 
     @Test
