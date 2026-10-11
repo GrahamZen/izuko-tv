@@ -66,6 +66,7 @@ import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.createFetchFetchSession
 import me.him188.ani.app.domain.media.resolver.toEpisodeMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
+import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
@@ -357,8 +358,10 @@ internal object RemoteCache {
         )
         val sources = b.fetchSession.mediaSourceResults
             .filter { it.kind != MediaSourceKind.LocalCache && it.state.value != MediaSourceFetchState.Disabled }
-        // 已经缓存好的 (本地缓存源) 不列: 那是缓存本身, 不能再缓存一遍
-        val all = b.candidates.filter { it.original.kind != MediaSourceKind.LocalCache }
+        // 已经缓存好的 (本地缓存源) 不列: 那是缓存本身, 不能再缓存一遍. 属于别的集的同播放器一样不列, 否则勾「显示被排除的」会列出整季
+        val all = b.candidates.filter {
+            it.original.kind != MediaSourceKind.LocalCache && it.exclusionReason !is MediaExclusionReason.EpisodeMismatch
+        }
         // 胶囊上的条数: 这个源的全部候选 (含被排除的), 不随下拉筛选变
         val counts = all.groupingBy { it.original.mediaSourceId }.eachCount()
         return buildJsonObject {
