@@ -13,12 +13,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeSession
@@ -29,7 +26,6 @@ import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isNetworkFailure
 import org.koin.core.Koin
-import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.PlaybackEvent
 
 /**
@@ -75,10 +71,7 @@ class PlaybackFailureReportExtension(
                     }
                 }
                 launch {
-                    context.player.state.map { (it.mediaStatus as? MediaStatus.Error)?.error }
-                        .distinctUntilChanged()
-                        .filterNotNull()
-                        .collect { error ->
+                    context.player.playerErrors().collect { error ->
                             // 打开时的失败由加载状态记 (见上)
                             if (loadingState.value !is VideoLoadingState.Succeed) return@collect
                             val media = bundle.value?.mediaSelector?.selected?.value ?: return@collect
