@@ -88,6 +88,11 @@ Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引�
 每次更新订阅都重新下载并转换，之后与普通订阅一样按名字增删改；有规则文件没下载下来时这次更新算失败、原有的源不动，
 否则缺了的源会被删掉再新建，用户对它的启停设置随之丢失。
 
+订阅更新（`MediaSourceSubscriptionUpdater`）按名字对应新旧：新的加、没了的删、同名的原地换配置（实例与启停不变）。
+订阅里改了名的源由 `SubscriptionRenames` 认出（同类型、同站点的一删一增配成一对，站点不看图标地址），同样原地更新。
+更新后默认保留用户调过的顺序，新加的源排在最后；设置「订阅更新时恢复订阅里的顺序」
+（`MediaSelectorSettings.restoreSubscriptionOrder`）打开时才把这个订阅的源排回订阅里的顺序。
+
 ### `SelectorMediaSource`
 
 `SelectorMediaSource` 会根据配置，使用 [CSS Selector][CSS Selector] 和正则表达式，从 HTML
