@@ -9,17 +9,25 @@
 
 package me.him188.ani.app.ui.mediaselect.summary
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.TestMediaList
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaSourceInfo
+import me.him188.ani.datasources.api.source.MediaSourceKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 /**
@@ -93,5 +101,41 @@ class OrStillPlayingTest {
         selected.value = otherSelected
         runCurrent()
         assertEquals(otherSelected, seen.last())
+    }
+
+    @Test
+    fun `摘要在新数据源查完后照旧显示播放器正在播的`() = runTest {
+        // 摘要每当查完的数据源变了就重新收集选中项: 沿用的状态要在整条链上只算一份, 不能随重新收集从头算
+        val source = FakeSource("web")
+        val producer = MediaSelectorSummaryStateProducer(
+            selected.orStillPlayingIn(backgroundScope, loaded),
+            flowOf(listOf(source)),
+            flowOf(MediaSelectorSettings.Default),
+            flowOf(emptyList()),
+            droppedFileSourceName = { "" },
+        )
+        val seen = mutableListOf<MediaSelectorSummary>()
+        backgroundScope.launch { producer.flow.collect { seen += it } }
+        selected.value = playingSelected
+        loaded.value = playing
+        runCurrent()
+        selected.value = null // 改了搜索名, 新的选源器还没选出东西
+        runCurrent()
+        assertIs<MediaSelectorSummary.Selected>(seen.last())
+
+        source.state.value = MediaSourceFetchState.Succeed(0) // 新会话里第一个数据源查完
+        runCurrent()
+        assertIs<MediaSelectorSummary.Selected>(seen.last())
+    }
+
+    private class FakeSource(override val instanceId: String) : MediaSourceFetchResult {
+        override val mediaSourceId: String get() = instanceId
+        override val sourceInfo: MediaSourceInfo = MediaSourceInfo(displayName = instanceId)
+        override val kind: MediaSourceKind = MediaSourceKind.WEB
+        override val state = MutableStateFlow<MediaSourceFetchState>(MediaSourceFetchState.Working)
+        override val results: Flow<List<Media>> = MutableStateFlow(emptyList())
+        override fun restart() {}
+        override fun pause() {}
+        override fun enable() {}
     }
 }
