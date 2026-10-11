@@ -240,6 +240,8 @@ internal fun SearchDanmakuRequest.toFetchRequest(): DanmakuFetchRequest {
             episodeInfo.sort,
             episodeInfo.ep,
         ),
+        seasonNumbering = splitSeason.danmakuSeasonNumbering(episodeInfo.sort),
+        awaitVideoFile = awaitVideoFile,
     )
 }
 

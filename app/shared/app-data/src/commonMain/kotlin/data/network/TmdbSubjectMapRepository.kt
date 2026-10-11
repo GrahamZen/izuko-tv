@@ -254,6 +254,7 @@ internal const val TMDB_SUBJECT_MAP_REPOSITORY = "GrahamZen/bangumi-tmdb-map"
  * @property manual 人工修正过的. 人工修正且什么都没给 = 确认 TMDB 上没有对应
  * @property episodes 每一集对应 TMDB 第几季第几集 (编码见 [TmdbEpisodeMap]); 没有则客户端照 [stills] 全量索引、自己对集
  * @property logos [backdrop] 那个 TMDB 条目各语言的标题 logo (见 [TmdbSubjectMapLogos]); null = 表里还没查
+ * @property anidbId AniDB 条目编号 (来自 bangumi-data), 弹幕用: 弹弹 play 的作品编号就是它; null = 没有
  */
 data class TmdbSubjectMapEntry(
     val backdrop: TmdbSubjectMapRef?,
@@ -262,6 +263,7 @@ data class TmdbSubjectMapEntry(
     val manual: Boolean,
     val episodes: String? = null,
     val logos: TmdbSubjectMapLogos? = null,
+    val anidbId: Int? = null,
 ) {
     /** 剧照出处的原文. */
     val stillsKey: String get() = stills.joinToString(",") { it.text() }
@@ -409,7 +411,7 @@ internal class TmdbSubjectMapIndex private constructor(
 }
 
 /**
- * 解析对应表的一行 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes, logos). 认不出返回 null.
+ * 解析对应表的一行 (制表符分隔: bgm_id, backdrop, backdrop_path, stills, source, episodes, logos, anidb). 认不出返回 null.
  */
 internal fun parseTmdbSubjectMapLine(line: String): Pair<Int, TmdbSubjectMapEntry>? {
     if (line.isEmpty() || line[0] == '#') return null
@@ -427,5 +429,6 @@ internal fun parseTmdbSubjectMapLine(line: String): Pair<Int, TmdbSubjectMapEntr
     return id to TmdbSubjectMapEntry(
         backdrop, path, stills, manual = cols.getOrNull(4) == "manual", episodes = episodes,
         logos = TmdbSubjectMapLogos.parse(cols.getOrNull(6)),
+        anidbId = cols.getOrNull(7)?.toIntOrNull()?.takeIf { it > 0 },
     )
 }
