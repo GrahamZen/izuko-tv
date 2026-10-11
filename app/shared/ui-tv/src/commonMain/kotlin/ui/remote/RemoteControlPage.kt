@@ -632,6 +632,12 @@ button { font: inherit; border: 0; cursor: pointer; }
 .sub-status { font-size: 12px; color: var(--sub); margin-top: 4px; }
 .sub-status.bad { color: var(--err); }
 .sub-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--mute); margin-top: 6px; }
+/* 订阅卡片里「更新时恢复订阅里的顺序」那一行 */
+.sub-opt { display: flex; align-items: flex-start; gap: 10px; border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; cursor: pointer; }
+.sub-opt input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--p); }
+.sub-opt span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sub-opt b { font-size: 14px; font-weight: 600; }
+.sub-opt small { font-size: 12px; color: var(--mute); line-height: 1.4; }
 .sub-del { background: var(--err-bg); color: var(--err-fg); }
 .sub-add { display: flex; gap: 8px; margin-top: 12px; }
 .sub-add input { flex: 1; min-width: 0; }
@@ -5500,6 +5506,11 @@ private val SUBS_SCRIPT = """
         '<button type="button" class="sub-del icb" data-sub="delete" data-id="' + esc(s.id) + '" aria-label="' + T('删除订阅') + '" title="' + T('删除订阅') + '">' +
         window.ICONS.trash + '</button></div></div>';
     });
+    // 订阅更新时恢复订阅里的顺序: 关着 (默认) 时保留自己调过的顺序
+    if (items.length) {
+      h += '<label class="sub-opt"><input type="checkbox" data-sub-order' + (d.restoreOrder ? ' checked' : '') + '>' +
+        '<span><b>' + T('更新时恢复订阅里的顺序') + '</b><small>' + T('关闭时保留你调过的顺序，新加的源排在最后；启用 / 停用一直保留') + '</small></span></label>';
+    }
     h += '<form class="sub-add"><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" ' +
       'placeholder="' + T('粘贴订阅地址 https://…') + '"><button type="submit" class="primary">' + T('添加') + '</button></form></div>';
     var old = box.querySelector('.sub-add input');
@@ -5514,6 +5525,10 @@ private val SUBS_SCRIPT = """
     else if (wasUpdating && window.loadSources) window.loadSources();
     wasUpdating = !!d.updating;
   }
+  box.addEventListener('change', function (e) {
+    if (!e.target.hasAttribute('data-sub-order')) return;
+    post('api/sources/subs/restore-order', { on: e.target.checked ? '1' : '0' }).catch(function (err) { load(); fail(err); });
+  });
   box.addEventListener('submit', function (e) {
     var form = e.target;
     if (!form.classList.contains('sub-add')) return;

@@ -120,6 +120,8 @@ import me.him188.ani.app.ui.lang.tv_settings_subscription_count
 import me.him188.ani.app.ui.lang.tv_settings_subscription_delete_confirm
 import me.him188.ani.app.ui.lang.tv_settings_subscription_delete_hint
 import me.him188.ani.app.ui.lang.tv_settings_subscription_failed_at
+import me.him188.ani.app.ui.lang.tv_settings_subscription_restore_order
+import me.him188.ani.app.ui.lang.tv_settings_subscription_restore_order_description
 import me.him188.ani.app.ui.lang.tv_settings_subscription_status_failed
 import me.him188.ani.app.ui.lang.tv_settings_subscription_status_never
 import me.him188.ani.app.ui.lang.tv_settings_subscription_updated_at
@@ -240,6 +242,11 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         if (v[keys.subscriptionUpdate]?.running == true) return@action emptyList()
         listOf(TvSettingsEdit.Run { env -> env.deps.settings.mediaSourceSubscriptionGroupState.updateAll() })
     }
+    toggle(
+        keys.selector, Lang.tv_settings_subscription_restore_order, Lang.tv_settings_subscription_restore_order_description,
+        read = { it.restoreSubscriptionOrder },
+        write = { copy(restoreSubscriptionOrder = it) },
+    )
     entries(
         listOf(keys.subscriptions),
         entries = { it[keys.subscriptions].orEmpty() },

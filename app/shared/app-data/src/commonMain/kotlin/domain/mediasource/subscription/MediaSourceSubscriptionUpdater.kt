@@ -46,6 +46,8 @@ class MediaSourceSubscriptionUpdater(
     private val codecManager: MediaSourceCodecManager,
     private val requester: MediaSourceSubscriptionRequester,
     private val getCurrentTimeMillis: () -> Long = { currentTimeMillis() },
+    /** 更新后是否把这个订阅的数据源排回订阅里的顺序 (设置「订阅更新时恢复订阅里的顺序」). */
+    private val restoreOrder: suspend () -> Boolean = { true },
 ) {
     /**
      * 每个订阅连续失败的次数, 只存在于内存中.
@@ -233,7 +235,7 @@ class MediaSourceSubscriptionUpdater(
             }
 
         // 计算差异
-        val diff = calculateDiff(newArguments, existing)
+        val diff = calculateDiff(newArguments, existing).let(SubscriptionRenames::pairRenames)
         logger.info { "updateSubscription diff: $diff" }
 
         // 解决差异
@@ -259,7 +261,7 @@ class MediaSourceSubscriptionUpdater(
         }
 
         // 更新排序, 让本地的排序跟远程一致
-        kotlin.run {
+        if (restoreOrder()) kotlin.run {
             val localList = mediaSourceManager.getListBySubscriptionId(subscription.subscriptionId)
             val sorted = localList
                 // 按照远程的顺序排序
