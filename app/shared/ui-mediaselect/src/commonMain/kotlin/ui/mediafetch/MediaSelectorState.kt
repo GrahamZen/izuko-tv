@@ -231,7 +231,8 @@ class MediaSelectorState(
      */
     val btPresentationFlow: StateFlow<BtListPresentation> = combine(
         mediaSelector.filteredCandidates,
-        mediaSelector.subjectCandidates,
+        // 条目级候选只在关掉按集筛选时用到, 开着时不订阅: 它要对全部资源再筛一遍, 搜索期间每追加一批就算一次
+        btFilterState.episodeFilterEnabled.flatMapLatest { if (it) flowOf(emptyList()) else mediaSelector.subjectCandidates },
         mediaSelector.selected,
         alliance.presentationFlow,
         resolution.presentationFlow,
