@@ -54,7 +54,7 @@ internal object DriveNameParser {
         SEASON_EPISODE.find(name)?.let { match ->
             return ParsedFile(
                 season = match.groupValues[1].toInt(),
-                episode = episodeSort(match.groupValues[2], match.groupValues[3]),
+                episode = EpisodeSort(match.groupValues[2].toInt()),
                 isExtra = false,
             )
         }
@@ -199,10 +199,13 @@ internal object DriveNameParser {
 
     private val ROMAN_NUMERALS = mapOf("Ⅱ" to 2, "Ⅲ" to 3, "Ⅳ" to 4, "Ⅴ" to 5, "Ⅵ" to 6, "II" to 2, "III" to 3)
 
+    /** 标准命名 `S06E01`: 后面跟的是画质、集名 (`.4K`、`.1080p`、`.Good.Loser`), 不认小数 (特别篇写 `S00Exx`). */
     private val SEASON_EPISODE =
-        Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})[ ._-]?[Ee][Pp]?(\d{1,4})(?:\.(\d))?(?![0-9])""")
+        Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})[ ._-]?[Ee][Pp]?(\d{1,4})(?![0-9])""")
     private val CHINESE_EPISODE = Regex("""第\s*([0-9]{1,4}|[零〇一二两三四五六七八九十]{1,4})\s*[集话話回]""")
-    private val EP_EPISODE = Regex("""(?<![A-Za-z])(?:EP|Ep|ep|E)[ ._-]?(\d{1,4})(?:\.(\d))?(?![0-9])""")
+
+    /** `EP12.5` 是半集; 小数后面紧跟字母或数字的不是 (`EP01.4K` 是第 1 集). */
+    private val EP_EPISODE = Regex("""(?<![A-Za-z])(?:EP|Ep|ep|E)[ ._-]?(\d{1,4})(?:\.(\d)(?![0-9A-Za-z]))?(?![0-9])""")
 
     private val EXTRA = Regex(
         """(?<![A-Za-z])(?:NCOP|NCED|OP|ED|PV|CM|MENU|Menu|PREVIEW|Preview|TRAILER|Trailer|Teaser|TEASER|SP|OVA|OAD)[ ._-]?\d{0,2}(?![A-Za-z0-9])""" +
