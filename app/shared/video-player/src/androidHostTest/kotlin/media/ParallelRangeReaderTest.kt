@@ -66,6 +66,9 @@ class ParallelRangeReaderTest {
         /** 在别的线程正读着时被关的次数 (OkHttp 这时会抛错、连接关不掉) */
         val closedWhileReading = AtomicInteger()
 
+        /** 没读到这次响应的末尾就关的连接数 (HTTP/1.1 的连接这样关就断了, 不能回连接池) */
+        val closedEarly = AtomicInteger()
+
         override fun open(start: Long, length: Long): OpenedRange {
             val count = synchronized(opened) {
                 opened += start to length
@@ -124,6 +127,7 @@ class ParallelRangeReaderTest {
                         closedWhileReading.incrementAndGet()
                         throw IllegalStateException("Unbalanced enter/exit")
                     }
+                    if (position < until) closedEarly.incrementAndGet()
                     active.decrementAndGet()
                 }
             }
@@ -131,8 +135,8 @@ class ParallelRangeReaderTest {
         }
     }
 
-    private fun reader(server: FakeServer, connections: Int = 4, chunkSize: Int = 1000) =
-        ParallelRangeReader(server, executor, connections, chunkSize)
+    private fun reader(server: FakeServer, connections: Int = 4, chunkSize: Int = 1000, drainMillis: Long = 0) =
+        ParallelRangeReader(server, executor, connections, chunkSize, drainMillis = drainMillis)
 
     private fun ParallelRangeReader.readAll(): ByteArray {
         val out = ByteArrayOutputStream()
@@ -210,6 +214,21 @@ class ParallelRangeReaderTest {
     }
 
     @Test
+    fun `rounds after opening use every connection allowed at that moment`() {
+        // 跳转时多开着 (6 路, 平时 2 路): 每轮 6 块一样大、一起到, 下一轮翻倍
+        val server = FakeServer()
+        val reader = ParallelRangeReader(
+            server, executor, connections = 2, chunkSize = 1000, firstChunkSize = 250,
+            maxConnections = { 6 }, maxWindowBytes = 6000,
+        )
+        assertEquals(content.size - 1000L, reader.open(1000, -1, knownTotalLength = content.size.toLong()))
+        assertContentEquals(content.copyOfRange(1000, content.size), reader.readAll())
+        reader.close()
+        val lengths = server.opened.sortedBy { it.first }.map { it.second }
+        assertEquals(List(6) { 250L } + List(6) { 500L } + 1000L, lengths.take(13))
+    }
+
+    @Test
     fun `buffers freed when the boost ends are not kept around`() {
         val server = FakeServer()
         var limit = 12
@@ -249,6 +268,22 @@ class ParallelRangeReaderTest {
         assertEquals(0, server.active.get(), "every connection is closed")
         assertEquals(0, server.closedWhileReading.get(), "no connection is closed while another thread reads it")
         assertTrue(server.served.get() < 4 * 1000, "the chunks stop instead of finishing: served ${server.served.get()}")
+        assertTrue(server.closedEarly.get() > 0)
+    }
+
+    @Test
+    fun `chunks about to finish when closed are read to the end so their connections can be reused`() {
+        val server = FakeServer(perRead = 10)
+        val reader = reader(server, drainMillis = 60_000)
+        reader.open(0, -1)
+        reader.read(ByteArray(100), 0, 100)
+        reader.close()
+
+        val deadline = System.currentTimeMillis() + 10_000
+        while (server.active.get() > 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        assertEquals(0, server.active.get(), "every connection is closed")
+        assertEquals(0, server.closedWhileReading.get())
+        assertEquals(0, server.closedEarly.get(), "every connection read its response to the end")
     }
 
     @Test

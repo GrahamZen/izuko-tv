@@ -129,11 +129,11 @@ class ThrottledSourceLoadControlTest {
     }
 
     @Test
-    fun `throttled sources get more connections while playback falls behind`() {
+    fun `throttled sources get more connections while the buffer is low`() {
         val control = loadControl(throttled = true)
-        // 第一次开播之前 (读文件头、索引) 不多开
+        // 开播 / 跳转后缓冲从零攒起, 一开始就多开
         control.shouldContinueLoading(parameters(0.5))
-        assertFalse(control.boosted)
+        assertTrue(control.boosted)
         assertTrue(control.shouldStartPlayback(parameters(1.5)))
 
         control.shouldContinueLoading(parameters(20.0))
@@ -154,7 +154,7 @@ class ThrottledSourceLoadControlTest {
         assertFalse(control.boosted)
         control.onPrepared(PlayerId.UNSET)
         control.shouldContinueLoading(parameters(5.0))
-        assertFalse(control.boosted)
+        assertTrue(control.boosted)
     }
 
     @Test
