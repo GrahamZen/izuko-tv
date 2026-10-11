@@ -119,6 +119,17 @@ class TmdbSubjectMapTest {
         assertTrue(entry.manual)
     }
 
+    /** 末列 anidb (来自 bangumi-data); 加这一列以前的表没有它. */
+    @Test
+    fun `解析 - AniDB 条目编号`() {
+        val withAnidb = assertNotNull(parseTmdbSubjectMapLine("633836\ttv/65942\t/a.jpg\ttv/65942\tauto\tS1E78\to=ja\t19242")).second
+        assertEquals(19242, withAnidb.anidbId)
+        assertEquals("S1E78", withAnidb.episodes)
+        val empty = assertNotNull(parseTmdbSubjectMapLine("633836\ttv/65942\t/a.jpg\ttv/65942\tauto\tS1E78\to=ja\t")).second
+        assertNull(empty.anidbId)
+        assertNull(assertNotNull(index[140001]).anidbId)
+    }
+
     @Test
     fun `解析 - 认不出的行查不到`() {
         for (id in listOf(237, 140001, 516311, 296195, 311)) assertNotNull(index[id], "$id")
