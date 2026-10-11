@@ -272,6 +272,7 @@ class MediaSourceMediaFetcher(
                     .runningFold(emptyList<Media>()) { acc, list ->
                         acc + list
                     }
+                    .throttleSourceResults()
                     .map<List<Media>, FetchUpdate> { list ->
                         FetchUpdate.Results(restartCount, list.distinctBy { it.mediaId })
                     }
