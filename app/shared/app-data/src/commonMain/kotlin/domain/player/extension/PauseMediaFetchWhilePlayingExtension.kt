@@ -10,11 +10,7 @@
 package me.him188.ani.app.domain.player.extension
 
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.pauseSearching
@@ -46,8 +42,7 @@ class PauseMediaFetchWhilePlayingExtension(
         backgroundTaskScope.launch("PauseMediaFetchWhilePlaying") {
             context.sessionFlow.flatMapLatest { it.fetchSelectFlow }.collectLatest { bundle ->
                 if (bundle == null) return@collectLatest
-                // drop(1): 挂上时的当前状态不算一次变化
-                context.player.state.map { it.isPlaying }.distinctUntilChanged().drop(1).filter { it }.collect {
+                context.player.playbackStarts().collect {
                     if (!canPause()) return@collect
                     val paused = bundle.mediaFetchSession.pauseSearching(keep = ::keepsSearching)
                     if (paused > 0) {
