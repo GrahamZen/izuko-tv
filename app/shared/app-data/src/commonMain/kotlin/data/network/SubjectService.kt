@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
@@ -98,6 +99,10 @@ interface SubjectService {
      */
     fun subjectCollectionById(subjectId: Int): Flow<BangumiNextSubject?>
 
+    /**
+     * Bangumi 按账号限制添加 / 修改条目收藏的频率 (5 分钟 15 次, 从窗口内第一次写起算), 超了抛 [RepositoryRateLimitedException];
+     * 其余服务端拒绝原样抛 [ClientRequestException].
+     */
     suspend fun patchSubjectCollection(subjectId: Int, payload: SubjectCollectionUpdate)
 
     /**
@@ -299,20 +304,28 @@ class RemoteSubjectService(
 
     override suspend fun patchSubjectCollection(subjectId: Int, payload: SubjectCollectionUpdate) {
         sessionManager.checkAccessAniApiNow()
-        withContext(ioDispatcher) {
-            bangumiCollectionApi {
-                updateSubjectCollection(
-                    subjectId,
-                    BangumiNextCollectSubject(
-                        type = payload.collectionType?.toBangumiNextCollectionType(),
-                        rate = payload.score,
-                        comment = payload.comment,
-                        `private` = payload.isPrivate,
-                        tags = payload.tags,
-                    ),
-                )
-                Unit
+        try {
+            withContext(ioDispatcher) {
+                bangumiCollectionApi {
+                    updateSubjectCollection(
+                        subjectId,
+                        BangumiNextCollectSubject(
+                            type = payload.collectionType?.toBangumiNextCollectionType(),
+                            rate = payload.score,
+                            comment = payload.comment,
+                            `private` = payload.isPrivate,
+                            tags = payload.tags,
+                        ),
+                    )
+                    Unit
+                }
             }
+        } catch (e: ClientRequestException) {
+            // 走镜像时响应体是镜像自己的 HTML 错误页, 原样往上抛会被当成未知错误
+            if (e.response.status == HttpStatusCode.TooManyRequests) {
+                throw RepositoryRateLimitedException("Bangumi rate limited collection writes of subject $subjectId", e)
+            }
+            throw e
         }
         // 写入是最危险的一条路 (带 type 不带 rate 会被服务端把评分清零), 每次都记下发了什么
         logger.info {

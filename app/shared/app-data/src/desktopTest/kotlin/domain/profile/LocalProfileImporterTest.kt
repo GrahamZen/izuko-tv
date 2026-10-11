@@ -16,6 +16,7 @@ import me.him188.ani.app.data.persistent.database.createTestAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.repository.realTimeTest
 import me.him188.ani.app.data.repository.testSubjectCollectionEntity
+import me.him188.ani.app.data.repository.tooManyRequests
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -28,6 +29,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 本地用户导入 Bangumi (LocalProfileImporter): 只加 Bangumi 上还没收藏的, 已有的一概不动; 最早收藏的先加;
@@ -54,6 +56,17 @@ class LocalProfileImporterTest {
     private var failAdd: (Int) -> Boolean = { false }
     private var failMark: (Int) -> Boolean = { false }
 
+    /** 还要被 Bangumi 限频拒掉几次写入 (条目收藏与标看过共用). */
+    private var rateLimitedWrites = 0
+    private val progress = mutableListOf<LocalProfileImporter.Progress>()
+
+    private suspend fun rejectIfRateLimited() {
+        if (rateLimitedWrites > 0) {
+            rateLimitedWrites--
+            throw tooManyRequests()
+        }
+    }
+
     private val importer = LocalProfileImporter(
         deviceDatabase = DeviceAniDatabase(device),
         openDatabase = { local },
@@ -63,15 +76,19 @@ class LocalProfileImporterTest {
             id in bangumiCollected
         },
         addBangumiCollection = { id, update ->
+            rejectIfRateLimited()
             if (failAdd(id)) error("add failed")
             added += id to update
             bangumiCollected += id
         },
         markBangumiEpisodesWatched = { id, episodes ->
+            rejectIfRateLimited()
             if (failMark(id)) error("mark failed")
             marked += id to episodes
         },
         afterImport = { afterImportCalls++ },
+        rateLimitRetryInterval = 10.milliseconds,
+        rateLimitMaxWait = 50.milliseconds,
     )
 
     @AfterTest
@@ -189,6 +206,35 @@ class LocalProfileImporterTest {
         assertEquals(listOf(C, A), added.map { it.first })
         assertEquals(2, result.added)
         assertEquals(listOf(B to false, A to true), result.failures.map { it.entry.subjectId to it.collectionAdded })
+    }
+
+    @Test
+    fun `被 Bangumi 限频 等一会儿再写同一条 不算失败`() = realTimeTest {
+        collectLocally()
+        rateLimitedWrites = 2
+
+        val result = importer.import(importer.preview(source)) { progress += it }
+
+        assertEquals(listOf(C, B, A), added.map { it.first })
+        assertEquals(3, result.added)
+        assertTrue(result.failures.isEmpty())
+        // 等的时候报「在等」, 等完接着报进度; 第一条 (C) 就被拒了, 等的是它
+        val waiting = progress.filter { it.waitingForRateLimit }
+        assertEquals(listOf(0), waiting.map { it.done }.distinct())
+        assertEquals(false, progress.last().waitingForRateLimit)
+    }
+
+    @Test
+    fun `限频等满还被拒 这一条算失败 其余照导`() = realTimeTest {
+        collectLocally()
+        // 第一条 (C) 每次都被拒, 等满 50ms (含第一次共 6 次请求) 后放弃
+        rateLimitedWrites = 6
+
+        val result = importer.import(importer.preview(source)) { progress += it }
+
+        assertEquals(listOf(B, A), added.map { it.first })
+        assertEquals(listOf(C to false), result.failures.map { it.entry.subjectId to it.collectionAdded })
+        assertEquals(false, progress.last().waitingForRateLimit)
     }
 
     @Test
