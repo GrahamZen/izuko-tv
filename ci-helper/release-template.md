@@ -60,30 +60,6 @@
 
 [ghproxy-android-x86_64]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2FGrahamZen%2Fizuko-tv%2Freleases%2Fdownload%2F$GIT_TAG%2F$ASSET_PREFIX-$TAG_VERSION-x86_64.apk
 
-[github-android-tv]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-universal.apk
-
-[github-android-tv-arm64-v8a]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[github-android-tv-armeabi-v7a]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[github-android-tv-x86_64]: https://github.com/open-ani/ani/releases/download/$GIT_TAG/ani-tv-$TAG_VERSION-x86_64.apk
-
-[cf-android-tv]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-universal.apk
-
-[cf-android-tv-arm64-v8a]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[cf-android-tv-armeabi-v7a]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[cf-android-tv-x86_64]: https://d.myani.org/$GIT_TAG/ani-tv-$TAG_VERSION-x86_64.apk
-
-[ghproxy-android-tv]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-universal.apk
-
-[ghproxy-android-tv-arm64-v8a]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-arm64-v8a.apk
-
-[ghproxy-android-tv-armeabi-v7a]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-armeabi-v7a.apk
-
-[ghproxy-android-tv-x86_64]: https://ghfast.top/?q=https%3A%2F%2Fgithub.com%2Fopen-ani%2Fani%2Freleases%2Fdownload%2F$GIT_TAG%2Fani-tv-$TAG_VERSION-x86_64.apk
-
 [macOS 无法打开解决方案]: https://myani.org/wiki/macos-unable-to-open
 
 [Windows下字体与背景颜色异常解决方案]: https://myani.org/wiki/windows-font-bg-color-issue
@@ -95,16 +71,6 @@
 
 [iOS 自签]: https://myani.org/wiki/ios-install
 
-|                  | 下载                                               | 常见问题                                        |
-|------------------|--------------------------------------------------|---------------------------------------------|
-| 安卓 手机/平板         | [主线][cf-android] / [备线][ghproxy-android]         |                                             |
-| 安卓 电视            | [主线][cf-android-tv] / [备线][ghproxy-android-tv]   |                                             |
-| iOS              | [主线][cf-ios] / [备线][ghproxy-ios]                 | 需要[自签][iOS 自签]                                  |
-| Windows          | [主线][cf-win-x64] / [备线][ghproxy-win-x64]         | 1. 目录不要有中文或者空格 <br/> 2. [显示异常][Windows下字体与背景颜色异常解决方案] |
-| Windows (ARM64)  | [主线][cf-win-aarch64] / [备线][ghproxy-win-aarch64] | 同 Windows                                                             |
-| macOS (M 系列芯片)   | [主线][cf-mac-aarch64] / [备线][ghproxy-mac-aarch64] | ⚠️ [安装后打不开][macOS 无法打开解决方案]                      |
-| macOS (Intel 芯片) | [主线][cf-mac-x64] / [备线][ghproxy-mac-x64]         | ⚠️ [安装教程][macOS Intel芯片版本安装教程]                    |
-| Linux AppImage   | [主线][cf-linux-x64] / [备线][ghproxy-linux-x64]     | ⚠️ [安装教程][Linux 安装说明]                        |
 下方有 QQ 群二维码，也可以[点这里进群](https://qm.qq.com/q/JaXFdpv3mC)/搜索群号1045984894。入群问题的答案：$REPO_OWNER
 
 ## 下载
@@ -125,16 +91,6 @@
 | legacy arm64-v8a    | Android 7.1 ~ 8.0，确定系统是 64 位 | [GitHub][github-android-legacy-arm64-v8a] |
 | legacy armeabi-v7a  | Android 7.1 ~ 8.0，确定系统是 32 位 | [GitHub][github-android-legacy-armeabi-v7a] |
 
-电视版:
-
-| 处理器架构              | 适用于             | 下载                                                                                                                  |
-|--------------------|-----------------|---------------------------------------------------------------------------------------------------------------------|
-| universal (推荐)     | 所有电视和电视盒子       | [主线][cf-android-tv] / [备线][ghproxy-android-tv] / [GitHub][github-android-tv]                                        |
-| arm64-v8a (64 位)   | 大多数电视和电视盒子      | [主线][cf-android-tv-arm64-v8a] / [备线][ghproxy-android-tv-arm64-v8a] / [GitHub][github-android-tv-arm64-v8a]          |
-| armeabi-v7a (32 位) | 旧电视盒子           | [主线][cf-android-tv-armeabi-v7a] / [备线][ghproxy-android-tv-armeabi-v7a] / [GitHub][github-android-tv-armeabi-v7a]    |
-| x86_64             | 模拟器             | [主线][cf-android-tv-x86_64] / [备线][ghproxy-android-tv-x86_64] / [GitHub][github-android-tv-x86_64]                   |
-
-</details>
 [github-android-qr]: https://github.com/GrahamZen/izuko-tv/releases/download/$GIT_TAG/$ASSET_PREFIX-$TAG_VERSION-universal.apk.github.qrcode.png
 
 ### Android 7.1 兼容包
@@ -145,32 +101,52 @@
 
 ## 本次更新
 
-- 选源换成新面板：播放时按 ▲ 打开，左边是数据源，右边是它的线路和资源，上下能直接翻到相邻的源
-- 新增「边下边播」（设置 - 播放器和弹幕过滤）：在线视频看过的部分存在本机，往回拖、重看不用重新下载
-- 拖动进度条时全屏停在当前画面、预览图显示在小窗里，停下后对准选中的那一帧并提前缓冲，按确定直接从这里播；不再额外占用解码器和内存，开着「边下边播」时看过的位置马上出图
-- 有播放进度的集直接从上次看到的位置开始加载，续播更快
-- 网盘里的视频起播、跳转更快
-- 新增「排除的字幕组」（设置 - 观看偏好）：这些字幕组的资源不会被自动选中，选源列表里仍可手动选择
-- Web 控制台的设置按类分组，点一类进去修改，也可以切成一页全部列出；字幕组和排除的字幕组也能在网页上填
-- 在 Web 控制台用手机登录 Bangumi：授权完自动回到电视、电视直接登录，不用再复制粘贴网址
-- 字幕按界面语言自动选（简体界面选简体、繁体界面选繁体），音轨优先日语原声；在播放器里手动换过的，这部番之后各集按语言沿用
-- 修复播放器里切换音轨没有效果
-- 新增「标记看过后删除缓存」（设置 - 存储，默认关）：在收藏菜单里把一部番标成「看过」时删掉它的缓存，删除时弹提示
-- Web 控制台播放卡加「截图」：截下电视当前画面，可以叠上字幕、弹幕，加 logo 和番名、集数、播放时间水印（位置、角度、大小都能调，还能存成预设），在手机上合成后下载
-- 选源面板里长按任一条看完整标题和详情，可以直接选择或下载；「下载」也挪进了面板，这一集已缓存的资源在里面一眼可见
-- 在线源里条目名不完全一致、或被排除的资源也会列出来（每个源底部「显示其余」），可以手动选择
-- 选集里的特别篇（SP、OP、ED 等）可以隐藏、排在正片后面或按序号插在正片之间（设置 - 外观）
+- 选源更准：续作不再选到别季或前半段的同号集，「第2部分」「夺还篇」这类拆开的季在整季页和网盘文件夹里也能选到对的那一集
+- 设置页换成电视原生的三栏样式，要打字的设置挪到 Web 控制台，扫右边的二维码就能打开
+- 新增「换电视」：在新电视的 Web 控制台里粘贴旧电视的地址，用户、播放记录、设置和数据源一次搬过来
+- 新增「有缓存时直接播，不搜索数据源」，在设置 - 存储里打开
+- Web 控制台的数据源页显示每个源最近的清晰度、码率、开播用时和广告情况，给出建议层级，还能做深度测试
+- AniBaka 规则库的源按它标注的广告情况定层级
+- 订阅更新只更新数据源本身，你调过的顺序和启用 / 停用都保留；想跟着订阅排序，可在设置里打开「订阅更新时恢复订阅里的顺序」
+- 选源面板里网盘类的源一个文件一行，分辨率和字幕筛选挪到左栏最上面，对网盘资源也生效
+- 选源列表里的网盘资源显示平均码率
+- 网盘分享搜索先打开剧名写着本季的分享，写成「S04E01」这样按本季编号的剧集也能对上
+- BT 资源查续作时也按系列名搜
+- 拖动预览可以改成直接显示在全屏上，部分盒子预览后解码出错时会自动改用全屏
+- 在设置的账号页用手机扫码登录 Bangumi，首次引导也改成扫码直接登录
+- 设置 - 关于里可以重新走一遍首次引导
+- Bangumi 上没人维护的番按 TMDB 显示开播状态，还没录分集时按播放键会说明原因
+- 没开「边下边播」时往回拖要重新下载，会提示一次可以去打开
 
 ----
 
-- 带特效字幕（ASS）的视频开播更快
-- 网盘里的视频暂停时缓冲只再攒一分钟，少占内存
-- 修复海报墙上的标题偶尔先显示文字、再换成标题 logo
-- 电视上不再显示不生效的「切到后台时：小窗播放」选项
+- 数据源很多时，打开选源面板不再把电视拖得很卡
+- 打开选源面板补搜数据源时少做大量重复计算，后台占用和内存分配减少约一半
+- 播放时少占一些内存
+- 网盘视频拖到没播过的位置时接着播得更快，跳转时不再常连到失效的下载节点
+- 「我添加的分享」记住播过的那一集所在的文件夹，下一集更快找到
+- 拖动预览停下后不再先闪过附近的画面，直接显示圆点那一帧
+- 修复部分电视上 Izuko 退到后台约 1 分钟后 BT 缓存就停下
+- Web 控制台关于 BT 缓存和「电视没显示 Izuko」的提示不再说错
+- 播放失败报告的入口可以点「×」隐藏，再失败时重新出现
+- 选源面板的 BT 列表只把同一个种子合成一行
+- 浅色主题下设置页的焦点改成白底黑字
+- 修复 SRT 字幕是 GBK 或 Big5 编码时显示乱码
+- 修复海贼王、柯南这类上千集的番换集后在线源没有结果
+- 修复从正片切到特别篇、OVA 后，在线源找不到同一页上的 SP、OVA
+- 修复在 Web 控制台改过搜索名后换集，在线源没有结果
+- 修复续作标题写成「[02(50)]」的 BT 资源出现在每一集的选源列表里
+- 修复网盘里集号后面接着写画质的视频认不出是第几集
+- 修复「夺还篇」这类拆开的季弹幕匹配到别的集
+- 弹幕更快对上：按 AniDB 编号直接找到弹弹 play 的那部作品，不再挨个名字搜；拆开的季在弹弹 play 合成一部时按整季第几集对
+- 修复播放页停着不动时，同一集的弹幕每小时重新加载一次
+- 修复 Android 16 及以上的电视上，播放器菜单开着时按返回直接退出播放器，有时一下退两页
+- 短时间内连着改十几部收藏时，提示「操作太频繁，请过几分钟再试」，不再报未知错误（Bangumi 限制每 5 分钟最多改 15 次）；把本地用户导入 Bangumi 时撞上这个限制会自动等一会儿接着导
+- 「跟随系统」代理时，电视上提供代理的应用（VPN、加速器）关掉后几秒内就改回直连，不再一直连不上网；登录时连不上代理会直接提示是代理的问题
 
 ### 已知问题
 
-* **画质增强（设置 - 播放 - 默认画质增强）在电视上不可用，建议保持「关」**：Shield 上开启后只有声音没有画面，部分机型严重掉帧并很快卡住，需要强制停止应用恢复。
+* **画质增强（设置 - 播放器和弹幕过滤 - 默认画质增强模式）在电视上不可用，建议保持「关」**：Shield 上开启后只有声音没有画面，部分机型严重掉帧并很快卡住，需要强制停止应用恢复。
 * 从 1.0.2 及更早的版本更新时，下载和安装还是旧版在做：如果点「去设置」后一直回到「去设置」，或 GitHub、ghfast 都连不上，请手动下载安装包覆盖安装（数据保留）。
 
 > 按键说明与系统版本要求见仓库 README 的[「使用说明」](https://github.com/GrahamZen/izuko-tv#使用说明)和[「下载安装」](https://github.com/GrahamZen/izuko-tv#下载安装)。
