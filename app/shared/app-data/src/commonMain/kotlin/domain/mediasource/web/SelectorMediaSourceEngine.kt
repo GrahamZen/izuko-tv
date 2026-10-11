@@ -389,8 +389,8 @@ abstract class SelectorMediaSourceEngine {
         info: WebSearchEpisodeInfo,
         parser: LabelFirstRawTitleParser
     ): List<String>? {
-        val languagesFromChannel = info.channel?.let { parser.parseSubtitleLanguages(it) } ?: emptyList()
-        val languagesFromName = info.name.let { parser.parseSubtitleLanguages(it) }
+        val languagesFromChannel = info.channel?.let { SubtitleLanguageGuesses.of(parser, it) } ?: emptyList()
+        val languagesFromName = info.name.let { SubtitleLanguageGuesses.of(parser, it) }
 
         return when {
             languagesFromChannel.isEmpty() && languagesFromName.isEmpty() -> null
