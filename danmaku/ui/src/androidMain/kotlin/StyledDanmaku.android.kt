@@ -12,7 +12,6 @@ package me.him188.ani.danmaku.ui
 import android.graphics.Bitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.TextLayoutResult
 import kotlin.math.max
 import android.graphics.Canvas as AndroidCanvas
@@ -39,8 +38,5 @@ internal actual fun createDanmakuImageBitmap(
     borderTextLayout?.let { destCanvas.paintIfNotEmpty(it) }
     destCanvas.paintIfNotEmpty(solidTextLayout)
 
-    return ImageBitmapWithOffset(
-        destBitmap.asImageBitmap().apply { prepareToDraw() },
-        Offset(-extraMarginFloat, -extraMarginFloat),
-    )
+    return cropDanmakuImage(destBitmap, Offset(-extraMarginFloat, -extraMarginFloat))
 }
