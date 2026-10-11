@@ -21,7 +21,7 @@ import me.him188.ani.utils.coroutines.retryWithBackoffDelay
  * Bangumi 的写入偶尔要好几秒, 同一个人的写入服务端按顺序处理, 后台的批量请求也可能占着连接.
  *
  * 1. [writeLocal] 改本地, 返回改之前的状态;
- * 2. [send], 失败按退避重试 (4xx 是服务端的明确答复, 重试也一样, 不重试);
+ * 2. [send], 失败按退避重试 (4xx 与限频 [RepositoryRateLimitedException] 是服务端的明确答复, 几秒内重试也一样, 不重试);
  * 3. 成功后 [reapplyLocal]: 请求期间落库的旧数据 (比如进页时就发出的刷新) 可能已经把本地盖回旧值, 再改一次;
  *    最终失败或被取消则 [revertLocal] 改回 (不受取消影响), 再抛出.
  *
@@ -37,7 +37,7 @@ internal suspend fun <T> writeLocalFirst(
     try {
         suspend { send() }
             .asFlow()
-            .retryWithBackoffDelay(3) { cause, _ -> cause !is ClientRequestException }
+            .retryWithBackoffDelay(3) { cause, _ -> cause !is ClientRequestException && cause !is RepositoryRateLimitedException }
             .first()
     } catch (e: Throwable) {
         withContext(NonCancellable) { revertLocal(previous) }
