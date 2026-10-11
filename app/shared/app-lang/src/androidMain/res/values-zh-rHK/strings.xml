@@ -1215,7 +1215,7 @@
     <string name="subject_details_rate">打分</string>
     <string name="subject_details_summary">簡介</string>
     <string name="foundation_load_error_network">網絡錯誤</string>
-    <string name="foundation_load_error_rate_limited">操作過快，請重試</string>
+    <string name="foundation_load_error_rate_limited">操作太頻繁，請過幾分鐘再試</string>
     <string name="foundation_load_error_service_unavailable">服務暫不可用</string>
     <string name="foundation_load_error_no_results">無搜尋結果</string>
     <string name="foundation_load_error_requires_login">此功能需要登入</string>
