@@ -76,7 +76,7 @@ class PlayerExtensionManager(
                     throw e
                 }
 
-                throw ExtensionException("Error calling extension ${it.name}, see cause", e)
+                logExtensionCallFailure(it, e)
             }
         }
     }
