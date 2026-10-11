@@ -17,9 +17,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChangedBy
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -28,13 +25,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
-import me.him188.ani.app.data.repository.danmaku.SearchDanmakuRequest
 import me.him188.ani.app.domain.danmaku.DanmakuFetcher
 import me.him188.ani.app.domain.danmaku.DanmakuLoaderImpl
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
-import me.him188.ani.app.domain.danmaku.fetchKey
-import me.him188.ani.app.domain.media.player.data.filenameOrNull
 import me.him188.ani.app.domain.settings.GetDanmakuRegexFilterListFlowUseCase
 import me.him188.ani.danmaku.api.DanmakuCollection
 import me.him188.ani.danmaku.api.DanmakuEvent
@@ -52,11 +46,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.features.PlaybackSpeed
-import org.openani.mediamp.metadata.duration
-import org.openani.mediamp.source.SeekableInputMediaData
-import org.openani.mediamp.source.UriMediaData
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Connects episode data, the player, and the danmaku loader.
@@ -83,35 +73,7 @@ class EpisodeDanmakuLoader(
 //    }
 
     private val danmakuLoader = DanmakuLoaderImpl(
-        combine(
-            bundleFlow,
-            player.mediaData,
-            selectedMedia,
-            player.mediaProperties.filter { it != null }.map { it?.duration ?: 0.milliseconds },
-        ) { info, mediaData, selectedMedia, duration ->
-            if (mediaData == null) {
-                null
-            } else {
-                SearchDanmakuRequest(
-                    info.subjectInfo,
-                    info.episodeInfo,
-                    info.episodeId,
-                    filename = mediaData.filenameOrNull ?: selectedMedia?.originalTitle,
-                    fileLength = when (mediaData) {
-                        is SeekableInputMediaData -> mediaData.fileLength()
-                        is UriMediaData -> null
-                    },
-                    videoDuration = duration,
-                )
-            }
-        }.distinctUntilChangedBy { it?.fetchKey }
-            .debounce {
-                if (it == null) {
-                    0.milliseconds // 立即清空
-                } else {
-                    1.seconds
-                }
-            }
+        episodeDanmakuRequests(bundleFlow, player, selectedMedia)
             .onEach {
                 logger.info { "New SearchDanmakuRequest: $it" }
             },
