@@ -109,7 +109,6 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
-import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
 import me.him188.ani.app.domain.media.player.ActivePlayback
@@ -1068,6 +1067,7 @@ open class EpisodeViewModel(
     val danmakuHostState = DanmakuHostState(danmakuConfigState, DanmakuTrackProperties.Default)
 
     private fun CoroutineScope.createPageStateFlow(episodeSession: EpisodeSession): Flow<EpisodePageState> {
+        val defaultFetchRequests = DefaultFetchRequestCache()
         // 保证数据源会一直查询, 否则会显示许多 CANCELLED 日志
         episodeSession.fetchSelectFlow.flatMapLatest {
             it?.mediaFetchSession?.cumulativeResults ?: flowOfEmptyList()
@@ -1213,12 +1213,7 @@ open class EpisodeViewModel(
                 fetchRequest = fetchSelect?.mediaFetchSession?.latestRequest?.first()?.let { request ->
                     subjectEpisodeBundle?.episodeInfo?.let { request.withCurrentEpisode(it) } ?: request
                 },
-                defaultFetchRequest = subjectEpisodeBundle?.let {
-                    MediaFetchRequest.create(
-                        it.subjectCollectionInfo.subjectInfo, it.episodeCollectionInfo.episodeInfo,
-                        it.subjectCollectionInfo.episodes.map { episode -> episode.episodeInfo }, it.seriesInfo,
-                    )
-                },
+                defaultFetchRequest = subjectEpisodeBundle?.let { defaultFetchRequests.of(it) },
                 shareData = shareData,
             )
         }
