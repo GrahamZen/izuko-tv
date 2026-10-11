@@ -40,10 +40,16 @@ import androidx.annotation.OptIn as AndroidxOptIn
  * 每挪一步都要重新缓冲, 照常攒的话一步要从盘上读几十秒的数据进内存. 在一个位置上停下来看清楚之后 ([previewParked]) 照暂停时的规则往后攒:
  * 确认时多半就从这里播, 闲着的这段时间先缓冲好, 开播后不至于马上卡; 再挪一步时播放器跳转会掐掉这次加载, 不耽误下一个位置.
  *
+ * 已播放的内容往后保留 [PlayerBufferPolicy.backward]; 开着「边下边播」时 (diskCacheOn) 只留 [DISK_CACHE_BACK_BUFFER_MS]:
+ * 播过的部分本机都有一份, 往回拖从盘上读 (约 1~2 秒接着播), 不必在内存里再存一份 —— 它和往前的缓冲共用字节上限, 4K 时能占掉一大半.
+ * media3 只在建播放器时读一次这个值, 所以按建播放器那一刻的设置定, 不按媒体切换.
+ *
  * 只转发 media3 1.9 实际调用的那组方法 (带 [PlayerId] / [LoadControl.Parameters] 的).
  */
 @AndroidxOptIn(UnstableApi::class)
-internal class ThrottledSourceLoadControl : LoadControl {
+internal class ThrottledSourceLoadControl(
+    diskCacheOn: Boolean = false,
+) : LoadControl {
     /** 当前媒体是不是被限速的网盘直链; 在准备媒体时 (主线程) 设, 播放线程读. */
     @Volatile
     var throttled = false
@@ -73,7 +79,10 @@ internal class ThrottledSourceLoadControl : LoadControl {
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
         )
-        .setBackBuffer(PlayerBufferPolicy.backward.inWholeMilliseconds.toInt(), /* retainBackBufferFromKeyframe = */ true)
+        .setBackBuffer(
+            if (diskCacheOn) DISK_CACHE_BACK_BUFFER_MS else PlayerBufferPolicy.backward.inWholeMilliseconds.toInt(),
+            /* retainBackBufferFromKeyframe = */ true,
+        )
         .build()
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
@@ -179,6 +188,9 @@ internal class ThrottledSourceLoadControl : LoadControl {
 
         /** 拖动预览时的缓冲上限: 读到圆点之后一点就够出画面. */
         const val PREVIEW_MAX_BUFFER_US = 1_000_000L
+
+        /** 开着「边下边播」时已播内容只留这么久: 按一下「后退」不用等, 再往回从本机读. */
+        const val DISK_CACHE_BACK_BUFFER_MS = 5_000
 
         private val logger = logger<ThrottledSourceLoadControl>()
     }
