@@ -67,20 +67,21 @@ class MediaSelectorFilterSortAlgorithm {
         preference: MediaPreference,
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
-        memo: MutableMap<Media, MaybeExcludedMedia>? = null,
+        memo: FilterResultMemo? = null,
     ): List<MaybeExcludedMedia> =
         filterMediaList(list, preference, settings, context, matchEpisode = true, memo = memo)
 
     /**
      * 与 [filterMediaList] 相同, 但不应用第 0 条规则 [MediaExclusionReason.EpisodeMismatch],
-     * 得到不按当前剧集裁剪的条目级候选. 供批量下载规划使用.
+     * 得到不按当前剧集裁剪的条目级候选. 供批量下载规划使用. [memo] 同 [filterMediaList], 但不能与它共用一张表.
      */
     fun filterMediaListForSubject(
         list: List<Media>,
         preference: MediaPreference,
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
-    ): List<MaybeExcludedMedia> = filterMediaList(list, preference, settings, context, matchEpisode = false)
+        memo: FilterResultMemo? = null,
+    ): List<MaybeExcludedMedia> = filterMediaList(list, preference, settings, context, matchEpisode = false, memo = memo)
 
     private fun filterMediaList(
         list: List<Media>,
@@ -88,7 +89,7 @@ class MediaSelectorFilterSortAlgorithm {
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
         matchEpisode: Boolean,
-        memo: MutableMap<Media, MaybeExcludedMedia>? = null,
+        memo: FilterResultMemo? = null,
     ): List<MaybeExcludedMedia> {
         val subjectInfo = context.subjectInfo?.takeIf { info ->
             info != SubjectInfo.Empty && info.allNames.any { it.isNotBlank() }
@@ -139,22 +140,12 @@ class MediaSelectorFilterSortAlgorithm {
         val seriesSubjectNames = NormalizedNames(context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty().toList())
 
         val filtered = list.map { media ->
-            // 拆分季按整页的集号判断一集 (页面随结果追加会变大), 这时在线资源的结论不能记: 页面只到了一半时认的集会一直留着
-            if (memo == null || (splitSeasonMatcher != null && media.kind == MediaSourceKind.WEB)) {
-                filterMedia(
-                    media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
-                    subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
-                )
-            } else {
-                // **键必须是 media 本身而不是 mediaId**: 同一个 mediaId 可能对应内容不同的两条
-                // (例如同一资源的缓存版与原版), 按 id 记忆会把先算的那条的结果错配给后一条
-                memo.getOrPut(media) {
-                    filterMedia(
-                        media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
-                        subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
-                    )
-                }
-            }
+            // 拆分季按整页的集号判断一集 (页面随结果追加会变大): 结论连同这条在页面上的判断一起记, 判断变了才重算
+            val page = splitSeasonMatcher?.memoPageOf(media)
+            memo?.get(media, page) ?: filterMedia(
+                media, preference, settings, context, mediaListFilterContext, seasonFilterContext, episodeMatch, splitSeasonMatcher,
+                subjectNames, seriesSubjectNames, seasonlessSubjectNames, excludedAlliances,
+            ).also { memo?.put(media, page, it) }
         }
         return if (episodeMatch != null && splitSeasonMatcher == null) EpisodeNumberingPages.resolve(context, list, filtered) else filtered
     }
