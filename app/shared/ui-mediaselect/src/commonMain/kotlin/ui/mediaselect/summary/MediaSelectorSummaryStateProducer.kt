@@ -9,13 +9,17 @@
 
 package me.him188.ani.app.ui.mediaselect.summary
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.runningFold
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.domain.media.DroppedFileMedia
@@ -143,6 +147,13 @@ fun Flow<MaybeExcludedMedia?>.orStillPlaying(loadedMedia: Flow<Media?>): Flow<Ma
             }
         }
         .distinctUntilChanged()
+
+/**
+ * [orStillPlaying] 在 [scope] 里只算一份: 摘要 ([MediaSelectorSummaryStateProducer.flow]) 每当查完的数据源变了就重新收集选中项,
+ * 每次收集各算各的话, 沿用的状态从头开始, 第一个新数据源查完时就丢了, 界面变成「还没选出数据源」.
+ */
+fun Flow<MaybeExcludedMedia?>.orStillPlayingIn(scope: CoroutineScope, loadedMedia: Flow<Media?>): StateFlow<MaybeExcludedMedia?> =
+    orStillPlaying(loadedMedia).stateIn(scope, SharingStarted.Lazily, null)
 
 private fun MediaSourceInfo.toSummary() =
     MediaSelectorSourceSummary(
