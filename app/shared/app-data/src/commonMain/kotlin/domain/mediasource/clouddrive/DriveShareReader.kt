@@ -142,6 +142,7 @@ internal fun DriveShareMatch.toShareMedia(
     val details = RawTitleParser.getDefault().parse((listOf(share.siteTitle) + folders + file.fileName).joinToString(" "))
     val mediaId = "$mediaSourceId.${share.shareId}.${file.fid}"
     DriveVideoBitrates.record(mediaId, file)
+    DriveMediaFolders.record(mediaId, DriveMediaFolders.Folder("${share.shareId}/${file.parentFid}", folders.lastOrNull()))
     return DefaultMedia(
         mediaId = mediaId,
         mediaSourceId = mediaSourceId,

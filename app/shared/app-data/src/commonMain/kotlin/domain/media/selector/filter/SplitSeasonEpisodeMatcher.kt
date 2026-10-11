@@ -37,7 +37,7 @@ internal class SplitSeasonEpisodeMatcher private constructor(
         val subjectNameForMatching: String?,
     )
 
-    private data class PageKey(val mediaSourceId: String, val subjectName: String, val channel: String?)
+    private data class PageKey(val mediaSourceId: String, val subjectName: String, val channel: String?, val folder: String? = null)
 
     /**
      * 本季的名字, 见 [SplitSeasonPageMatcher.seasonNames].
@@ -51,15 +51,17 @@ internal class SplitSeasonEpisodeMatcher private constructor(
         if (media.kind != MediaSourceKind.WEB) return null
         val subjectName = media.properties.subjectName ?: return null
         val number = media.episodeRange?.singleIntegerNumber() ?: return null
-        val page = pages[PageKey(media.mediaSourceId, subjectName, media.properties.alliance)] ?: return null
-        val classification = pageMatcher.classify(subjectName)
+        val folder = SplitSeasonDrivePages.folderOf(media)
+        val pageName = SplitSeasonDrivePages.pageName(pageMatcher, folder, subjectName)
+        val page = pages[PageKey(media.mediaSourceId, pageName, media.properties.alliance, folder?.key)] ?: return null
+        val classification = pageMatcher.classify(pageName)
         val matchedKind = pageMatcher.matchKind(classification, page, number)
         return Result(
             classification.kind,
             classification.exact,
             matched = matchedKind != null,
             episodeMatchKind = matchedKind ?: MatchMetadata.EpisodeMatchKind.NONE,
-            subjectNameForMatching = classification.nameForMatching,
+            subjectNameForMatching = classification.nameForMatching.takeIf { folder == null },
         )
     }
 
@@ -78,10 +80,12 @@ internal class SplitSeasonEpisodeMatcher private constructor(
                 if (media.kind != MediaSourceKind.WEB) continue
                 val subjectName = media.properties.subjectName ?: continue
                 val number = media.episodeRange?.singleIntegerNumber() ?: continue
-                pages.getOrPut(PageKey(media.mediaSourceId, subjectName, media.properties.alliance)) { HashSet() }.add(number)
+                val folder = SplitSeasonDrivePages.folderOf(media)
+                val pageName = SplitSeasonDrivePages.pageName(pageMatcher, folder, subjectName)
+                pages.getOrPut(PageKey(media.mediaSourceId, pageName, media.properties.alliance, folder?.key)) { HashSet() }.add(number)
             }
             if (pages.isEmpty()) return null
-            SplitSeasonPageLog.log(episodeInfo, pageMatcher, pages.mapKeys { (k, _) -> Triple(k.mediaSourceId, k.subjectName, k.channel) })
+            SplitSeasonPageLog.log(episodeInfo, pageMatcher, pages.mapKeys { (k, _) -> Triple(k.mediaSourceId, k.subjectName, listOfNotNull(k.channel, k.folder).joinToString(" ")) })
             return SplitSeasonEpisodeMatcher(pageMatcher, pages.mapValues { SplitSeasonPageMatcher.PageNumbers(it.value) })
         }
 
