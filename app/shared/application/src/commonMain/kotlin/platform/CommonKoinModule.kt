@@ -732,6 +732,7 @@ private fun KoinApplication.otherModules(
                     listOf(url)
                 }
             },
+            restoreOrder = { get<SettingsRepository>().mediaSelectorSettings.flow.first().restoreSubscriptionOrder },
         )
     }
 

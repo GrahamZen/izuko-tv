@@ -774,6 +774,8 @@
     <string name="tv_settings_subscription_count">%1$d sources</string>
     <string name="tv_settings_subscription_status_failed">Update failed</string>
     <string name="tv_settings_subscription_delete_hint">Press OK to delete this subscription together with its sources. Add subscriptions in the Web Console on your phone.</string>
+    <string name="tv_settings_subscription_restore_order">Restore subscription order on update</string>
+    <string name="tv_settings_subscription_restore_order_description">Off: subscription updates keep the order you set; new sources go to the end. On: each update puts this subscription’s sources back in the subscription’s order. Source settings always follow the subscription, and enabled / disabled is always kept.</string>
     <string name="tv_settings_subscription_delete_confirm">Delete subscription “%1$s”? Its sources will be deleted too.</string>
     <string name="tv_settings_drives">Cloud drives</string>
     <string name="tv_settings_drive_not_logged_in">Not signed in</string>

@@ -1645,6 +1645,8 @@ private fun part16() = listOf(
     RemoteText("正在读视频信息…", "Reading video info…", "正在讀影片資訊…", "正在讀取影片資訊…"),
     RemoteText("隐藏", "Hide", "隱藏", "隱藏"),
     RemoteText("隐藏，再失败时重新出现", "Hide; it comes back if playback fails again", "隱藏，再失敗時重新出現", "隱藏，再失敗時重新出現"),
+    RemoteText("更新时恢复订阅里的顺序", "Restore subscription order on update", "更新時恢復訂閱裡的順序", "更新時恢復訂閱裡的順序"),
+    RemoteText("关闭时保留你调过的顺序，新加的源排在最后；启用 / 停用一直保留", "When off, the order you set is kept and new sources go to the end; enabled / disabled is always kept", "關閉時保留你調過的順序，新加的源排在最後；啟用 / 停用一直保留", "關閉時保留你調過的順序，新加的來源排在最後；啟用 / 停用一直保留"),
 )
 
 // Web 控制台: Peer 规则 / PikPak / 设置备份

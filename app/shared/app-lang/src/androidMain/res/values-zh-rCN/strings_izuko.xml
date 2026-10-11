@@ -774,6 +774,8 @@
     <string name="tv_settings_subscription_count">%1$d 个数据源</string>
     <string name="tv_settings_subscription_status_failed">更新失败</string>
     <string name="tv_settings_subscription_delete_hint">按确定删除这个订阅，它带来的数据源也一起删除。添加订阅在手机上的 Web 控制台里。</string>
+    <string name="tv_settings_subscription_restore_order">订阅更新时恢复订阅里的顺序</string>
+    <string name="tv_settings_subscription_restore_order_description">关闭时，订阅更新保留你调过的顺序，新加的源排在最后；打开后每次更新都把这个订阅的源排回订阅里的顺序。数据源的配置总是跟着订阅更新，启用 / 停用一直保留。</string>
     <string name="tv_settings_subscription_delete_confirm">删除订阅「%1$s」？它带来的数据源也会一起删除。</string>
     <string name="tv_settings_drives">网盘</string>
     <string name="tv_settings_drive_not_logged_in">未登录</string>
