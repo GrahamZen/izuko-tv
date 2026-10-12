@@ -69,6 +69,9 @@ import java.util.concurrent.atomic.AtomicLong
  *   请求体整个读进内存, 放宽的接口要自己控制大小 (Web 控制台只有上传安装包的那一个).
  * @param publicHandlers token 之外也接的路径 (不带开头的 `/`, 整段相等) → 处理函数, 只接 GET / HEAD, 不读请求体.
  *   给从外面跳回来、地址里带不了 token 的 (OAuth 回调); 处理函数自己认请求是不是它等的那个.
+ * @param isStreaming 按路径 (同 [maxBodyBytes]) 认出发视频文件的请求: 一路播放能持续很久, 不当成卡住打栈、不记慢请求;
+ *   但写不出去超过 [STREAM_STALL_MILLIS] (手机锁屏、走开了, 播放器停着不读) 就关掉连接, 免得一直占着处理线程 ——
+ *   播放器要接着看时会自己重新请求。
  */
 class LanHttpServer(
     private val handler: (LanHttpRequest) -> LanHttpResponse,
@@ -76,6 +79,7 @@ class LanHttpServer(
     token: String? = null,
     private val maxBodyBytes: (path: String) -> Long = { MAX_BODY_BYTES },
     private val publicHandlers: Map<String, (LanHttpRequest) -> LanHttpResponse> = emptyMap(),
+    private val isStreaming: (path: String) -> Boolean = { false },
 ) : AutoCloseable {
     val token: String = token ?: generateToken()
 
@@ -107,9 +111,17 @@ class LanHttpServer(
     }
 
     /** 一个正在处理的连接; 看门狗据此找卡住的请求. */
-    private class InFlight(val id: Long, val acceptedAtNanos: Long) {
+    private class InFlight(val id: Long, val acceptedAtNanos: Long, val socket: Socket) {
         @Volatile
         var thread: Thread? = null
+
+        /** 发视频文件的请求 (见 isStreaming): 看门狗不打栈, 只看它多久没写出去了 */
+        @Volatile
+        var streaming: Boolean = false
+
+        /** 视频请求最近一次写出数据的时刻 */
+        @Volatile
+        var lastWriteNanos: Long = 0L
 
         @Volatile
         var startedAtNanos: Long = 0L
@@ -185,7 +197,7 @@ class LanHttpServer(
         client.inetAddress?.hostAddress?.let { ip ->
             if (seenClients.add(ip)) logger.info { "LAN http port $port: first connection from $ip" }
         }
-        val record = InFlight(requestSeq.incrementAndGet(), System.nanoTime())
+        val record = InFlight(requestSeq.incrementAndGet(), System.nanoTime(), client)
         clients += client
         inFlight[record.id] = record
         try {
@@ -226,7 +238,7 @@ class LanHttpServer(
         } finally {
             clients -= client
             inFlight.remove(record.id)
-            if (record.target != PROBE_TARGET && record.target != READING_TARGET) {
+            if (record.target != PROBE_TARGET && record.target != READING_TARGET && !record.streaming) {
                 val tookMillis = (System.nanoTime() - record.acceptedAtNanos) / 1_000_000
                 statRequests.incrementAndGet()
                 statMaxMillis.accumulateAndGet(tookMillis) { a, b -> maxOf(a, b) }
@@ -247,12 +259,16 @@ class LanHttpServer(
         // 把请求头读完 (直到空行) 再回包: 否则我们回完就关连接, 有些客户端会因为发出去的数据没被读
         // 而收到 RST, 把正常响应当成连接被重置. 顺带取 Content-Length, POST 要靠它读 body
         var contentLength = 0L
+        var range: String? = null
         while (true) {
             val line = input.readAsciiLine()
             if (line.isNullOrEmpty()) break
             val colon = line.indexOf(':')
-            if (colon > 0 && line.substring(0, colon).equals("Content-Length", ignoreCase = true)) {
-                contentLength = line.substring(colon + 1).trim().toLongOrNull() ?: 0L
+            if (colon <= 0) continue
+            val name = line.substring(0, colon)
+            when {
+                name.equals("Content-Length", ignoreCase = true) -> contentLength = line.substring(colon + 1).trim().toLongOrNull() ?: 0L
+                name.equals("Range", ignoreCase = true) -> range = line.substring(colon + 1).trim()
             }
         }
 
@@ -287,6 +303,8 @@ class LanHttpServer(
         // 日志里只记路径, 不记查询串 (里面可能有搜索词)
         record.target = "$method /" + rawPath.removePrefix(prefix)
         lastRealRequestNanos = System.nanoTime()
+        record.streaming = isStreaming(rawPath.removePrefix(prefix))
+        record.lastWriteNanos = System.nanoTime()
         if (contentLength > maxBodyBytes(rawPath.removePrefix(prefix))) {
             LanHttpResponse.status(413, "Payload Too Large").writeTo(output, headOnly = false)
             return
@@ -305,6 +323,7 @@ class LanHttpServer(
             path = path,
             query = rawTarget.substringAfter('?', ""),
             body = body,
+            range = range,
         )
         val response = try {
             handler(request)
@@ -312,7 +331,26 @@ class LanHttpServer(
             logger.warn(e) { "LAN http handler failed for ${request.method} ${request.path}" }
             LanHttpResponse.status(500, "Internal Server Error")
         }
-        response.writeTo(output, headOnly = method == "HEAD")
+        val out = if (record.streaming) WriteProgressOutputStream(output) { record.lastWriteNanos = System.nanoTime() } else output
+        response.writeTo(out, headOnly = method == "HEAD")
+    }
+
+    /** 每写出一批就记一下时刻, 看门狗据此认出写不动的视频连接 */
+    private class WriteProgressOutputStream(
+        private val out: OutputStream,
+        private val onWrite: () -> Unit,
+    ) : OutputStream() {
+        override fun write(b: Int) {
+            out.write(b)
+            onWrite()
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            out.write(b, off, len)
+            onWrite()
+        }
+
+        override fun flush() = out.flush()
     }
 
     // ============================ 看门狗 ============================
@@ -330,6 +368,16 @@ class LanHttpServer(
                     val t = r.thread ?: continue
                     // 还没发请求的空连接 (浏览器预连接) 不算卡住: 读请求有自己的超时, 到点就关
                     if (r.target == READING_TARGET) continue
+                    // 发视频的: 时间长是常态, 只管写不出去的 (见 isStreaming)
+                    if (r.streaming) {
+                        val stalledMillis = (now - r.lastWriteNanos) / 1_000_000
+                        if (stalledMillis >= STREAM_STALL_MILLIS && !r.dumped) {
+                            r.dumped = true
+                            logger.info { "LAN http stream stalled for ${stalledMillis}ms, closing: ${r.target}" }
+                            runCatching { r.socket.close() }
+                        }
+                        continue
+                    }
                     val stuckMillis = (now - r.startedAtNanos) / 1_000_000
                     if (r.dumped || stuckMillis < STUCK_MILLIS) continue
                     r.dumped = true
@@ -438,6 +486,9 @@ class LanHttpServer(
         private const val SLOW_START_MILLIS = 1_000L
         private const val SLOW_REQUEST_MILLIS = 3_000L
         private const val STUCK_MILLIS = 10_000L
+
+        /** 视频连接多久写不出去就关 (见 isStreaming): 播放器暂停时只停着不读, 两分钟足够它缓冲完或自己断开 */
+        private const val STREAM_STALL_MILLIS = 120_000L
         private const val WATCHDOG_TICK_MILLIS = 5_000L
         private const val PROBE_INTERVAL_MILLIS = 20_000L
         private const val PROBE_TIMEOUT_MILLIS = 3_000
@@ -501,12 +552,14 @@ class LanHttpServer(
  * @param path token 之后的路径, 已 URL 解码, 不带开头的 `/` (根就是空串).
  * @param query `?` 之后的原文 (未解码), 没有则空串.
  * @param body 请求体原始字节, GET 为空数组.
+ * @param range `Range` 请求头的原文 (如 `bytes=0-`), 没有则 null; 播放器取视频文件时带.
  */
 class LanHttpRequest(
     val method: String,
     val path: String,
     val query: String,
     val body: ByteArray,
+    val range: String? = null,
 ) {
     /**
      * 把 `application/x-www-form-urlencoded` 的请求体解成键值对列表 (UTF-8, `+` 当空格), 保留顺序与重名
