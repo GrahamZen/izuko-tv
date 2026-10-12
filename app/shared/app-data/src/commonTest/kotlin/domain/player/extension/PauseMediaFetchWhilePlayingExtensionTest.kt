@@ -59,6 +59,14 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `sources still searching keep searching once the selector was opened in this session`() = runTest {
+        // 开过选源面板 (放开了被暂停的源), 关掉后缓冲完再开播: 正在查的让它查完
+        playWhileWeb2Searching(canPause = { true }, selectorOpened = { true }) { session ->
+            assertIs<MediaSourceFetchState.Working>(session.stateOf("web2"))
+        }
+    }
+
+    @Test
     fun `the added shares source keeps searching once playback starts`() = runTest {
         // 用户刚给这部番加了分享, 「我添加的分享」重查到一半时视频开播
         playWhileWeb2Searching(canPause = { true }, web2Info = CloudDriveAddedShareMediaSource.INFO) { session ->
@@ -86,7 +94,7 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
         val web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
         suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB) // 一直查不完
 
-        val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory { true }))
+        val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory(canPause = { true })))
         state.onUIReady()
         state.mediaFetchSessionFlow.filterNotNull().flatMapLatest { it.cumulativeResults }.launchIn(testScope)
 
@@ -113,6 +121,7 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
     private suspend fun TestScope.playWhileWeb2Searching(
         canPause: () -> Boolean,
         web2Info: MediaSourceInfo = MediaSourceInfo(displayName = "web2"),
+        selectorOpened: (MediaFetchSession) -> Boolean = { false },
         verify: (MediaFetchSession) -> Unit,
     ) {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -122,7 +131,7 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
         val web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
         suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB, info = web2Info) // 一直查不完
 
-        val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory(canPause)))
+        val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory(canPause = canPause, selectorOpened = selectorOpened)))
         state.onUIReady()
         // 查询是惰性的: 在前台收集结果, advanceUntilIdle 才会把查询跑完
         state.mediaFetchSessionFlow.filterNotNull().flatMapLatest { it.cumulativeResults }.launchIn(testScope)
