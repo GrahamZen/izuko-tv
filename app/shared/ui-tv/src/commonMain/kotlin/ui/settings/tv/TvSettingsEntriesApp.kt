@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import me.him188.ani.app.data.models.preference.ProxyConfig
 import me.him188.ani.app.data.network.protocol.ReleaseClass
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -26,6 +27,8 @@ import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
+import me.him188.ani.app.domain.settings.ProxyProvider
+import me.him188.ani.app.domain.settings.unreachableProxyOf
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.MeteredNetworkDetector
 import me.him188.ani.app.platform.currentAniBuildConfig
@@ -110,6 +113,8 @@ import me.him188.ani.app.ui.lang.tv_settings_login_failed_short
 import me.him188.ani.app.ui.lang.tv_settings_login_header
 import me.him188.ani.app.ui.lang.tv_settings_login_on_tv
 import me.him188.ani.app.ui.lang.tv_settings_login_on_tv_description
+import me.him188.ani.app.ui.lang.tv_settings_login_proxy_hint
+import me.him188.ani.app.ui.lang.tv_settings_login_proxy_status
 import me.him188.ani.app.ui.lang.tv_settings_login_qr
 import me.him188.ani.app.ui.lang.tv_settings_login_qr_caption
 import me.him188.ani.app.ui.lang.tv_settings_login_qr_description
@@ -145,6 +150,9 @@ internal object TvAppSettingKeys {
     val account = TvSettingKey.Live("account") { deps -> deps.profile.stateFlow }
     val oauth = TvSettingKey.Live("oauth") { GlobalKoin.get<BangumiOAuthManager>().state }
     val loginRelay = TvSettingKey.Live("loginRelay") { deps -> deps.loginRelay }
+
+    /** 此刻实际在用的代理 (跟随系统时是探到的那个): 登录失败时据此分辨是不是连不上代理. */
+    val proxy = TvSettingKey.Live("effectiveProxy") { GlobalKoin.get<ProxyProvider>().proxy.map { TvEffectiveProxy(it) } }
 
     /** 经第三方镜像连 Bangumi: 授权登录走不通 (镜像把授权页与换 token 挡在反爬验证后面), 只能在控制台用个人令牌登录. */
     val viaMirror = TvSettingKey.Live("viaMirror") { GlobalKoin.get<BangumiEndpointProvider>().viaThirdPartyMirror }
@@ -247,6 +255,9 @@ private fun TvSettingsValues.needsLogin(): Boolean {
     return !info.isLocalProfile && info.isSessionValid == false
 }
 
+/** [config] 为 null = 没用代理. */
+internal data class TvEffectiveProxy(val config: ProxyConfig?)
+
 /** 登录 Bangumi (没登录时出现在账号那一类的最前面). */
 private fun TvSettingsItemsBuilder.loginItems() {
     val account = TvAppSettingKeys.account
@@ -257,10 +268,16 @@ private fun TvSettingsItemsBuilder.loginItems() {
     header(Lang.tv_settings_login_header, visible = { it.needsLogin() })
     // 焦点停上去就发起一次经 Worker 中转的授权, 授权页地址画成二维码; 离开不取消 (手机上可能正授权到一半), 确定换一张
     action(
-        Lang.tv_settings_login_qr, keys = keys,
+        Lang.tv_settings_login_qr, keys = keys + TvAppSettingKeys.proxy,
         value = { v -> loginStatus(v[oauth]) },
-        // 说明只写怎么做 (码占了说明栏一大块, 长了会被截掉)
-        details = { v -> tvText(if (v[mirror] == true) Lang.oauth_bangumi_via_mirror else Lang.tv_settings_login_qr_description) },
+        // 说明只写怎么做 (码占了说明栏一大块, 长了会被截掉); 连不上代理时写怎么办
+        details = { v ->
+            when {
+                v[mirror] == true -> tvText(Lang.oauth_bangumi_via_mirror)
+                unreachableProxy(v) != null -> tvText(Lang.tv_settings_login_proxy_hint)
+                else -> tvText(Lang.tv_settings_login_qr_description)
+            }
+        },
         visible = { it.needsLogin() },
         qr = { v -> loginQr(v) },
         whileFocused = { env -> ensureLoginRelay(env) },
@@ -303,13 +320,20 @@ private fun loginQr(v: TvSettingsValues): TvQr {
     return when (val state = v[TvAppSettingKeys.oauth]) {
         BangumiOAuthManager.State.Exchanging -> TvQr(null, status = tvText(Lang.oauth_bangumi_stage_exchanging))
         BangumiOAuthManager.State.Success -> TvQr(null, status = tvText(Lang.tv_settings_login_success))
-        is BangumiOAuthManager.State.Failed -> TvQr(null, status = tvText(Lang.tv_settings_login_failed))
+        is BangumiOAuthManager.State.Failed ->
+            TvQr(null, status = unreachableProxy(v)?.let { tvText(Lang.tv_settings_login_proxy_status, it) } ?: tvText(Lang.tv_settings_login_failed))
         is BangumiOAuthManager.State.Authorizing ->
             if (relay.url != null && state.url == relay.url) TvQr(relay.url, caption = tvText(Lang.tv_settings_login_qr_caption))
             else TvQr(null, status = tvText(Lang.tv_settings_qr_preparing))
 
         else -> TvQr(null, status = tvText(Lang.tv_settings_qr_preparing))
     }
+}
+
+/** 登录没成功是因为连不上代理时, 那个代理的地址 (见 unreachableProxyOf). */
+private fun unreachableProxy(v: TvSettingsValues): String? {
+    val failed = v[TvAppSettingKeys.oauth] as? BangumiOAuthManager.State.Failed ?: return null
+    return unreachableProxyOf(failed.cause, v[TvAppSettingKeys.proxy]?.config)
 }
 
 /** 焦点到了扫码登录那一行: 这一页发起的授权还在等着就接着用那张码, 否则发起一次. */
