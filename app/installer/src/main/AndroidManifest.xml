@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2024-2026 OpenAni and contributors.
+  ~
+  ~ 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+  ~ Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+  ~
+  ~ https://github.com/open-ani/ani/blob/main/LICENSE
+  -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 电视与盒子没有触屏; 不声明成可选的话 Play 以外的部分电视商店也会按「需要触屏」过滤 -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+            android:allowBackup="false"
+            android:banner="@drawable/tv_banner"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_label"
+            android:supportsRtl="true"
+            android:theme="@style/Theme.Installer">
+
+        <!--
+          stateNotNeeded: 8.0~11 上打开「安装未知应用」授权会杀掉本应用进程, 而电视的授权页是半透明侧边栏,
+          本界面这时还没保存状态, 默认会被系统一并移除, 用户按返回落到别的应用上. 声明不需要状态后系统保留它并在新进程里重建,
+          按返回回到这里, 重建后重新检查授权、接着下载 (进度都在 InstallFlow 里重算, 本来就不靠保存的状态).
+        -->
+        <activity
+                android:name=".InstallerActivity"
+                android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|smallestScreenSize|density|locale|layoutDirection|fontScale"
+                android:exported="true"
+                android:launchMode="singleTask"
+                android:stateNotNeeded="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 安装会话的结果 (见 SessionInstaller); 系统经本应用创建的 PendingIntent 送达, 不必导出 -->
+        <receiver
+                android:name=".InstallStatusReceiver"
+                android:exported="false" />
+
+        <!-- 把下好的安装包交给系统的安装界面 (ApkProvider.installIntent) -->
+        <provider
+                android:name=".ApkProvider"
+                android:authorities="${applicationId}.installer.apk"
+                android:exported="false"
+                android:grantUriPermissions="true" />
+    </application>
+</manifest>
