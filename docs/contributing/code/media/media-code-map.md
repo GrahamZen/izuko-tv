@@ -117,6 +117,10 @@
     字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。
     轨道的语言从轨道名与容器里的语言码认（`TrackLanguage`）。mediamp 的 ExoPlayer 后端只下发字幕的选择，
     音轨的选择由 `PreferredTrackSelector` 设成 ExoPlayer 的 override。
+    字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
+    手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
+    `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
+    `CharsetFixingSubtitleParserFactory` 里（SRT / ASS / SSA / WebVTT 转成 UTF-8）。编码按整条轨认（`SubtitleCharsetGuesser`）。
 
 ### 播放拖入的本地文件（桌面端）
 
