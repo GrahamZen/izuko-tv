@@ -22,6 +22,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -39,6 +40,7 @@ import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.app.domain.mediasource.web.PageExpectation
 import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
+import me.him188.ani.app.domain.player.extension.pauseSearchingWhilePlaying
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.paging.PageBasedPagedSource
 import me.him188.ani.datasources.api.paging.Paged
@@ -448,6 +450,29 @@ class MediaFetcherTest {
         result.state.first { it is MediaSourceFetchState.Succeed }
         assertEquals(2, fetchCount)
         collector.cancel()
+    }
+
+    @Test
+    fun `pausing while playing after the selector was opened lets searching sources finish`() = runTest {
+        val running = CompletableDeferred<Unit>()
+        fun neverEnding() = createTestMediaSourceInstance(
+            TestHttpMediaSource(fetch = { SinglePagePagedSource { running.await(); emptyFlow() } }),
+        )
+        val opened = createFetcher(neverEnding(), neverEnding()).newSession(request1)
+        val notOpened = createFetcher(neverEnding(), neverEnding()).newSession(request1)
+        for (session in listOf(opened, notOpened)) {
+            // 只订阅第一个: 它在查, 第二个还没开始
+            backgroundScope.launch { session.mediaSourceResults[0].results.collect() }
+        }
+        advanceUntilIdle()
+        assertIs<MediaSourceFetchState.Working>(opened.mediaSourceResults[0].state.value)
+
+        assertEquals(1, opened.pauseSearchingWhilePlaying(selectorOpened = true, keep = { false }))
+        assertIs<MediaSourceFetchState.Working>(opened.mediaSourceResults[0].state.value, "正在查的让它查完")
+        assertIs<MediaSourceFetchState.Paused>(opened.mediaSourceResults[1].state.value)
+
+        assertEquals(2, notOpened.pauseSearchingWhilePlaying(selectorOpened = false, keep = { false }), "没开过面板: 全停")
+        running.complete(Unit)
     }
 
     @Test
