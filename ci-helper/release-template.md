@@ -12,6 +12,8 @@
 
 [github-android]: https://github.com/GrahamZen/izuko-tv/releases/download/$GIT_TAG/$ASSET_PREFIX-$TAG_VERSION-universal.apk
 
+[github-installer]: https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk
+
 [github-android-arm64-v8a]: https://github.com/GrahamZen/izuko-tv/releases/download/$GIT_TAG/$ASSET_PREFIX-$TAG_VERSION-arm64-v8a.apk
 
 [github-android-armeabi-v7a]: https://github.com/GrahamZen/izuko-tv/releases/download/$GIT_TAG/$ASSET_PREFIX-$TAG_VERSION-armeabi-v7a.apk
@@ -77,13 +79,16 @@
 
 [//]: # (@formatter:off  因为"版本"前面不能换行)
 
+**第一次装、不知道下哪个，或者装的时候提示「解析错误」：** 先装[安装助手][github-installer]（`install-izuko.apk`，约 120 KB，Android 4.4 及以上都能装）。它按电视的系统版本和架构挑安装包，下载、校验后装上 Izuko TV，装不上时说明原因并列出诊断信息。已经装了 Izuko TV 的电视用应用内更新。其他装不上的情况见 [README 的「装不上怎么办」](https://github.com/$REPO_OWNER/izuko-tv#装不上怎么办)。
+
 默认下载 `universal`（包含全部架构，体积最大）。个别盒子会拒装 `universal`（如腾讯极光盒子 7S），装不上时改下 `armeabi-v7a`，还不行再试 `arm64-v8a`。只有确切知道设备系统支持的架构时，才直接下对应的分架构包，体积更小、更省存储。注意芯片或设备信息里显示 64 位，不代表能装 64 位的包：不少电视和盒子的系统是 32 位的，装 `arm64-v8a` 会失败。
 
 [//]: # (@formatter:on)
 
 | 安装包                | 适用于               | 下载                                                                                                      |
 |---------------------|-------------------|---------------------------------------------------------------------------------------------------------|
-| universal           | 所有设备（推荐；装不上时换 armeabi-v7a）   | [GitHub][github-android]                |
+| 安装助手（install-izuko.apk） | 新用户第一次安装用这个（推荐）：自动挑适合本机的安装包并装上，Android 4.4 及以上都能装 | [GitHub][github-installer] |
+| universal           | 所有设备（自己选安装包时默认选它；装不上时换 armeabi-v7a）   | [GitHub][github-android]                |
 | arm64-v8a | 确定系统是 64 位的设备       | [GitHub][github-android-arm64-v8a]       |
 | armeabi-v7a   | 确定系统是 32 位的设备             | [GitHub][github-android-armeabi-v7a] |
 | x86_64              | 确定系统是 x86_64 的设备（如模拟器）      | [GitHub][github-android-x86_64]                |
@@ -95,7 +100,7 @@
 
 ### Android 7.1 兼容包
 
-表格前四行要求 Android 8.1 及以上。装不上并提示 `INSTALL_FAILED_OLDER_SDK` 的话，改用带 `legacy` 的后三行（同样默认选 `legacy universal`），它们支持到 Android 7.1。
+表格里不带 `legacy` 的四个包要求 Android 8.1 及以上。装不上并提示 `INSTALL_FAILED_OLDER_SDK` 的话，改用带 `legacy` 的三个包（同样默认选 `legacy universal`），它们支持到 Android 7.1。用安装助手的话，它会自己挑。
 
 兼容包和正式包功能一致，但只在少量设备上验证过；能装正式包就别用它。另外 Android 7.1 ~ 8.0 上 BT 引擎跑在应用进程内，退到后台被系统回收后下载不会保活。
 
@@ -130,6 +135,7 @@
 - 修复部分蓝光原盘播放出错：标了默认的音轨电视解不了（如 TrueHD）时，自动选同语言里能放的那一条；音轨列表里注明电视放不了的音轨，选它不会再把整个视频换掉
 - 视频因为电视解不了它的音频或画面格式而播放失败时，提示里写明是哪种格式（如 TrueHD、AV1）；音轨全都解不了时提示只有画面没有声音，可以手动换个数据源
 - 修复播放器里的详情页按左键会跳到关联条目，从关联条目按上会跳到页顶的「显示更多」
+- 修复 Android 7.1 上兼容包在桌面和安装界面显示成默认的机器人图标
 
 ### 已知问题
 
