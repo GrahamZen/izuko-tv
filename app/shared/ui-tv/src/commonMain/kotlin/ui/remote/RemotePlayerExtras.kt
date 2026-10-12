@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.danmaku.DanmakuNotMatchedException
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
@@ -113,6 +114,10 @@ internal object RemotePlayerExtras {
 
                 "api/player/track" -> {
                     val id = f["id"].orEmpty()
+                    if (f["kind"] == "audio" && id in unplayableAudio(handle)) {
+                        // 切过去播放器就报错, 自动换源会把整个资源换掉 (见 AudioTrackSupport)
+                        return@runCatching result(false, tr("这台电视放不了这条音轨的格式，请选别的音轨"))
+                    }
                     val ok = when (f["kind"]) {
                         "sub" -> handle.selectSubtitle(id)
                         "audio" -> handle.selectAudio(id)
@@ -185,6 +190,10 @@ internal object RemotePlayerExtras {
         put("ok", ok)
         put("message", message)
     }
+
+    /** 设备放不了的音轨 (见 [AudioTrackSupport]): mediamp 音轨 id → 格式名. */
+    private fun unplayableAudio(handle: RemotePlayerHandle): Map<String, String> =
+        (handle.vm.player as? AudioTrackSupport)?.unplayableAudioTracks?.value.orEmpty()
 
     // ============================ 发弹幕 / 评论 / 评分 ============================
 
@@ -375,13 +384,25 @@ internal object RemotePlayerExtras {
     fun JsonObjectBuilder.putTrackState(handle: RemotePlayerHandle) {
         putJsonObject("tracks") {
             handle.audioState?.let { st ->
+                val unplayable = unplayableAudio(handle)
                 putJsonObject("audio") {
                     put("sel", st.selected?.id)
                     putJsonArray("items") {
                         st.candidates.forEachIndexed { i, t ->
                             addJsonObject {
                                 put("id", t.id)
-                                put("name", if (t.isNamed) t.audioName else tr("音轨 {0}", i + 1))
+                                val name = if (t.isNamed) t.audioName else tr("音轨 {0}", i + 1)
+                                // 设备放不了的: 注明并在页面上设为不可选 (off)
+                                val format = unplayable[t.id]
+                                put(
+                                    "name",
+                                    when {
+                                        format == null -> name
+                                        format.isEmpty() -> tr("{0}（这台电视放不了）", name)
+                                        else -> tr("{0}（{1}，这台电视放不了）", name, format)
+                                    },
+                                )
+                                if (format != null) put("off", true)
                             }
                         }
                     }

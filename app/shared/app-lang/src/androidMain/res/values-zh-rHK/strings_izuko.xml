@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">正在解析資源連結</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，超時自動換源</string>
+    <string name="subject_episode_video_loading_unsupported_audio">這部電視放不了這個影片的音訊格式（%1$s），請更換數據源</string>
+    <string name="subject_episode_video_loading_unsupported_video">這部電視放不了這個影片的畫面格式（%1$s），請更換數據源</string>
     <string name="subject_episode_video_loading_cause_http_rejected">伺服器拒絕了請求（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_http_error">伺服器出錯（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在啟動 BT 服務\n第一次要十幾秒</string>
@@ -97,6 +99,11 @@
     <string name="settings_player_seek_preview_display_full_screen">全螢幕</string>
     <string name="settings_player_disk_cache">邊下邊播</string>
     <string name="settings_player_disk_cache_description">線上播放時把下載過的部分存在本機：往回拖、重看直接讀本機，拖動預覽時下載過的位置馬上出畫面（沒下載的位置停一下就去下）。關閉時拖動預覽每個位置都要先下載。最多佔剩餘空間的四分之一，滿了先刪最久沒看的</string>
+    <string name="settings_player_audio_passthrough">音訊直通</string>
+    <string name="settings_player_audio_passthrough_description">把杜比、DTS 這類音軌原樣交給功放或 Soundbar 解碼，保留多聲道和全景聲。「自動」：立體聲音軌一律在這裡解碼（直通它們沒有好處）；多聲道音軌只在聲音經 HDMI、ARC 或光纖送到外接裝置時直通，用電視內置喇叭或藍牙時在這裡解碼，因為有些電視直通後沒有聲音。</string>
+    <string name="settings_player_audio_passthrough_auto">自動</string>
+    <string name="settings_player_audio_passthrough_always">總是直通</string>
+    <string name="settings_player_audio_passthrough_off">關閉</string>
     <string name="player_disk_cache_hint">在設置裡打開「邊下邊播」，往回拖不用再等</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
@@ -334,6 +341,11 @@
     <string name="video_player_tv_skip_segment">跳過 %1$s</string>
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">音軌 %1$d</string>
+    <string name="video_player_audio_track_unplayable">%1$s（這部電視放不了）</string>
+    <string name="video_player_audio_track_unplayable_format">%1$s（%2$s，這部電視放不了）</string>
+    <string name="video_player_audio_track_unplayable_toast">這部電視放不了這條音軌的格式，請選別的音軌</string>
+    <string name="video_player_audio_all_unplayable_toast">這個影片的音軌這部電視都放不了（%1$s），只有畫面沒有聲音，請手動更換數據源</string>
+    <string name="video_player_audio_all_unplayable_toast_unknown">這個影片的音軌這部電視都放不了，只有畫面沒有聲音，請手動更換數據源</string>
     <string name="video_player_subtitle_numbered">字幕 %1$d</string>
     <!-- 评论胶囊长按的排序菜单 -->
     <string name="video_player_tv_comment_sort_time_ascending">按時間正序</string>
