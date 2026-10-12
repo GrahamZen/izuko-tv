@@ -19,7 +19,6 @@ import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.mkv.EbmlProcessor
 import androidx.media3.extractor.text.SubtitleParser
 import io.github.peerless2012.ass.media.AssHandler
-import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
@@ -35,7 +34,7 @@ internal interface MkvFontSink {
 }
 
 /**
- * libass 的 mkv 提取器 ([AssMatroskaExtractor]), 但字体附件大时不在开播前读.
+ * 播放器的 mkv 提取器 ([SubtitleFixingMkvExtractor]), 但字体附件大时不在开播前读.
  *
  * 字幕组的 mkv 常把几十 MB 的字体放在文件开头 (Attachments 在第一个 Cluster 之前), 提取器要按顺序读完
  * 才轮到画面; 网盘非会员限速时这一段要读一分钟. 这里把不小于 [DEFER_MIN_BYTES] 的 Attachments 整段
@@ -55,7 +54,7 @@ internal class FontDeferringMkvExtractor(
 ) : Extractor {
     private var input: AttachmentSkippingInput? = null
 
-    private val mkv = object : AssMatroskaExtractor(subtitleParserFactory, assHandler) {
+    private val mkv = object : SubtitleFixingMkvExtractor(subtitleParserFactory, assHandler) {
         override fun getElementType(id: Int): Int {
             if (id != MkvAttachments.ID_ATTACHMENTS) return super.getElementType(id)
             input?.attachmentsNext = true

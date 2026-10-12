@@ -22,10 +22,17 @@ class SubtitleCharsetGuesserTest {
     private fun SubtitleCharsetGuesser.convert(bytes: ByteArray): String? = toUtf8OrNull(bytes, 0, bytes.size)?.toString(Charsets.UTF_8)
 
     @Test
-    fun `utf-8 and utf-16 are left as they are`() {
+    fun `utf-8 is left as it is`() {
         val guesser = SubtitleCharsetGuesser()
         assertNull(guesser.convert(cue("第一句：字幕编码测试", Charsets.UTF_8)))
-        assertNull(guesser.convert(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + "1".toByteArray(Charsets.UTF_16LE)))
+    }
+
+    @Test
+    fun `utf-16 with a byte order mark becomes utf-8`() {
+        // 老字幕组的外挂 .ass 常是 UTF-16LE, libass 读不了
+        val text = "[Script Info]\nTitle: 字幕编码测试\n"
+        assertEquals(text, SubtitleCharsetGuesser().convert(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + text.toByteArray(Charsets.UTF_16LE)))
+        assertEquals(text, SubtitleCharsetGuesser().convert(byteArrayOf(0xFE.toByte(), 0xFF.toByte()) + text.toByteArray(Charsets.UTF_16BE)))
     }
 
     @Test

@@ -14,20 +14,20 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Consumer
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.SubtitleParser
-import io.github.peerless2012.ass.media.AssHandler
-import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 
 /**
- * 把 SRT 字幕交给 [delegate] 前先转成 UTF-8: mkv 里的 SRT 按规范是 UTF-8 (`S_TEXT/UTF8`), 但不少字幕组封进去的是 GBK 或 Big5,
- * 外挂的 .srt 更常见; media3 一律按 UTF-8 读, 字幕就全是乱码. 编码怎么认见 [SubtitleCharsetGuesser]. 别的字幕格式原样交给 [delegate].
+ * 文字字幕 (SRT / ASS / SSA / WebVTT) 交给 [delegate] 前先转成 UTF-8: media3 的解析器与 libass 都按 UTF-8 读,
+ * 字幕组的外挂字幕却常是 GBK、Big5 或 UTF-16 (libass 完全读不了 UTF-16). 编码怎么认见 [SubtitleCharsetGuesser].
+ * 图形字幕原样交给 [delegate].
+ *
+ * 管的是外挂字幕文件 (网盘里视频旁边的字幕、HLS 里的 WebVTT 等, 整个文件一次解析). mkv 内封的字幕在提取器里就理顺了
+ * (见 [SubtitleFixingMkvExtractor]), 到这里已经是 UTF-8, 原样通过; 而且 libass 画的内封 ASS 根本不经过解析器.
  */
 @AndroidxOptIn(UnstableApi::class)
 internal class CharsetFixingSubtitleParserFactory(private val delegate: SubtitleParser.Factory) : SubtitleParser.Factory {
@@ -37,25 +37,17 @@ internal class CharsetFixingSubtitleParserFactory(private val delegate: Subtitle
 
     override fun create(format: Format): SubtitleParser {
         val parser = delegate.create(format)
-        return if (format.sampleMimeType == MimeTypes.APPLICATION_SUBRIP) CharsetFixingSubtitleParser(parser) else parser
+        return if (format.sampleMimeType in TEXT_MIME_TYPES) CharsetFixingSubtitleParser(parser) else parser
+    }
+
+    private companion object {
+        val TEXT_MIME_TYPES = setOf(MimeTypes.APPLICATION_SUBRIP, MimeTypes.TEXT_SSA, MimeTypes.TEXT_VTT)
     }
 }
 
-/**
- * 与 libass 的 `withAssMkvSupport` 相同 (mkv 换成能把 ASS 字幕与字体交给 libass 的 [AssMatroskaExtractor]),
- * 但字幕解析器工厂可以是任意的 (那个只收 libass 自己的工厂, 套不上 [CharsetFixingSubtitleParserFactory]).
- */
-@AndroidxOptIn(UnstableApi::class)
-internal fun ExtractorsFactory.withAssMkv(subtitleParserFactory: SubtitleParser.Factory, assHandler: AssHandler): ExtractorsFactory =
-    ExtractorsFactory {
-        createExtractors().map { extractor ->
-            if (extractor is MatroskaExtractor) AssMatroskaExtractor(subtitleParserFactory, assHandler) else extractor
-        }.toTypedArray()
-    }
-
 @AndroidxOptIn(UnstableApi::class)
 private class CharsetFixingSubtitleParser(private val delegate: SubtitleParser) : SubtitleParser {
-    /** 一个解析器对应一条字幕轨: 编码按整条轨累计判断. */
+    /** 一个解析器对应一条字幕轨 (或一个外挂文件): 编码按整条轨累计判断. */
     private val guesser = SubtitleCharsetGuesser()
 
     override fun parse(
@@ -81,7 +73,7 @@ private class CharsetFixingSubtitleParser(private val delegate: SubtitleParser) 
 /**
  * 认一条字幕轨的文本编码, 不是 UTF-8 的转成 UTF-8.
  *
- * 合法 UTF-8、带 UTF-16 字节序标记的原样不动 (后者 media3 自己认). 其余当中文的双字节编码, 在 GBK (按 GB18030 解, 它是 GBK 的超集) 与 Big5 之间选:
+ * 合法 UTF-8 原样不动; 带字节序标记的 UTF-16 按标记解. 其余当中文的双字节编码, 在 GBK (按 GB18030 解, 它是 GBK 的超集) 与 Big5 之间选:
  * Big5 常用字的低位字节约四成落在 0x40~0x7E, GBK 常用字 (GB2312 区) 的低位都在 0xA1 以上, 只有生僻的扩展区会落进去.
  * 一条字幕往往只有几个字, 所以按整条轨累计: 低位落在 0x40~0x7E 的双字节不少于五分之一、且整段能按 Big5 解开时认 Big5.
  */
@@ -89,9 +81,10 @@ internal class SubtitleCharsetGuesser {
     private var pairs = 0
     private var lowTrailPairs = 0
 
-    /** [data] 中 [offset] 起 [length] 个字节转成的 UTF-8; 本来就是 UTF-8 (或 UTF-16) 时为 null. */
+    /** [data] 中 [offset] 起 [length] 个字节转成的 UTF-8; 本来就是 UTF-8 时为 null. */
     fun toUtf8OrNull(data: ByteArray, offset: Int, length: Int): ByteArray? {
-        if (hasUtf16Bom(data, offset, length) || decodesAs(Charsets.UTF_8, data, offset, length)) return null
+        if (hasUtf16Bom(data, offset, length)) return String(data, offset, length, Charsets.UTF_16).toByteArray(Charsets.UTF_8)
+        if (decodesAs(Charsets.UTF_8, data, offset, length)) return null
         countPairs(data, offset, length)
         val charset = if (lowTrailPairs * 5 >= pairs && decodesAs(BIG5, data, offset, length)) BIG5 else GB18030
         return String(data, offset, length, charset).toByteArray(Charsets.UTF_8)
