@@ -77,6 +77,12 @@ private fun part1() = listOf(
     RemoteText("发送超时，请重试", "Sending timed out. Please try again.", "發送超時，請重試", "傳送超時，請重試"),
     RemoteText("操作太频繁，稍后再试", "Too many requests. Try again later.", "操作太頻繁，稍後再試", "操作太頻繁，稍後再試"),
     RemoteText("网络错误，电视连不上 Bangumi", "Network error: the TV can't reach Bangumi", "網絡錯誤，電視連不上 Bangumi", "網路錯誤，電視連不上 Bangumi"),
+    RemoteText(
+        "电视上的代理 {0} 连不上：打开或关掉提供代理的应用，或者在设置的「代理」里把代理方式改成「禁用」，然后重新登录",
+        "The TV's proxy {0} can't be reached. Start or quit the app that provides it, or set Proxy to Disabled in Settings, then sign in again.",
+        "電視上的代理 {0} 連不上：打開或關掉提供代理的應用，或者在設定的「代理」裡把代理方式改成「禁用」，然後重新登入",
+        "電視上的代理 {0} 連不上：開啟或關閉提供代理的應用程式，或在設定的「代理」中把代理方式改成「停用」，然後重新登入",
+    ),
     RemoteText("登录状态有问题，请重试", "Login state is invalid. Please try again.", "登錄狀態有問題，請重試", "登入狀態有問題，請重試"),
     RemoteText("没有拿到登录结果，请重试", "Didn't get a login result. Please try again.", "沒有拿到登錄結果，請重試", "沒有拿到登入結果，請重試"),
     RemoteText("这个条目当前账号看不到", "The current account cannot see this entry", "這個條目目前帳號看不到", "這個項目目前帳號看不到"),

@@ -152,6 +152,7 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_login_on_tv_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_login_optional
 import me.him188.ani.app.ui.lang.tv_onboarding_login_phone_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_login_proxy_unreachable
 import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_retry
 import me.him188.ani.app.ui.lang.tv_onboarding_login_qr_title
@@ -889,6 +890,7 @@ private fun LoginStep(
     val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
     val oauth by vm.oauthState.collectAsStateWithLifecycle()
     val lastStart by vm.lastStart.collectAsStateWithLifecycle()
+    val unreachableProxy by vm.unreachableProxy.collectAsStateWithLifecycle()
     val selfInfo by vm.selfInfo.collectAsStateWithLifecycle()
     val tvLogin = vm.tvLoginSupported && oauth !is BangumiOAuthManager.State.NotConfigured
     val scheme = MaterialTheme.colorScheme
@@ -1005,6 +1007,10 @@ private fun LoginStep(
                             stringResource(Lang.oauth_bangumi_stage_exchanging)
 
                         phoneUrl == null -> stringResource(Lang.tv_settings_qr_preparing)
+                        // 连不上电视上的代理: 换几次码都一样, 直说是代理
+                        phoneFailedOnce && unreachableProxy != null ->
+                            stringResource(Lang.tv_onboarding_login_proxy_unreachable, unreachableProxy.orEmpty())
+
                         phoneFailedOnce -> stringResource(Lang.tv_onboarding_login_qr_retry)
                         else -> stringResource(Lang.tv_settings_login_qr_caption)
                     },
