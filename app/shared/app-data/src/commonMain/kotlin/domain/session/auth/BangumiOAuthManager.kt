@@ -115,7 +115,8 @@ class BangumiOAuthManager(
 
         data object Success : State
 
-        data class Failed(val error: LoadError) : State
+        /** [cause] 是原始异常 (界面据此分辨是不是连不上代理, 见 unreachableProxyOf), 没有时为 null. */
+        data class Failed(val error: LoadError, val cause: Throwable? = null) : State
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
@@ -174,7 +175,7 @@ class BangumiOAuthManager(
                 throw e
             } catch (e: Exception) {
                 logger.error(e) { "bgm-direct: oauth 创建应用内浏览器失败" }
-                _state.value = State.Failed(LoadError.fromException(e))
+                _state.value = State.Failed(LoadError.fromException(e), e)
                 return@launch
             }
             // 拦回调那一跳: 自定义 scheme 让浏览器自己加载只会得到 ERR_UNKNOWN_URL_SCHEME
@@ -313,7 +314,7 @@ class BangumiOAuthManager(
             } catch (e: Exception) {
                 val wrapped = RepositoryException.wrapOrThrowCancellation(e)
                 logger.error(wrapped) { "bgm-direct: oauth 换 token 失败" }
-                _state.value = State.Failed(LoadError.fromException(wrapped))
+                _state.value = State.Failed(LoadError.fromException(wrapped), wrapped)
             }
             return true
         }
