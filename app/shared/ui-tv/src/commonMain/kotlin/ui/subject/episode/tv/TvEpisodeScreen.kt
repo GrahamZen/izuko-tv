@@ -1699,6 +1699,7 @@ fun TvEpisodeScreenContent(
                 // 播放/暂停切换反馈: 画面中央浮现对应图标并渐隐 (监听播放器状态流,
                 // 无论切换来自确认键/控制按钮/面板操作都有反馈)
                 TvPauseFlash(vm.player, Modifier.align(Alignment.Center))
+                TvUnplayableAudioNotice(vm.player)
 
                 // 进播放页就拉本集评论并上报加载状态 (不画任何东西), 评论胶囊据此呼吸 / 显示失败, 见 TvCommentsLoadTracker
                 TvCommentsLoadTracker(vm, overlay, page.episodePresentation.episodeId)
