@@ -70,6 +70,12 @@ private class CharsetFixingSubtitleParser(private val delegate: SubtitleParser) 
     override fun reset() = delegate.reset()
 }
 
+/** 一整个字幕文件的文字 (编码认法同 [SubtitleCharsetGuesser]); 给要把字幕交出去的地方 (Web 控制台发给手机) 用. */
+fun decodeSubtitleText(data: ByteArray): String {
+    val utf8 = SubtitleCharsetGuesser().toUtf8OrNull(data, 0, data.size) ?: data
+    return String(utf8, Charsets.UTF_8).removePrefix("﻿")
+}
+
 /**
  * 认一条字幕轨的文本编码, 不是 UTF-8 的转成 UTF-8.
  *
