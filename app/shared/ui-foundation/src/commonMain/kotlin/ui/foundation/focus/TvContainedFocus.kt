@@ -36,16 +36,23 @@ import kotlinx.coroutines.launch
  *
  * 挂在弹窗 / 独立一块内容的根上 (人物预览弹窗; 详情页的每一页由 PageSection 做同样的事). KeyUp 与 KeyDown 同进退.
  */
-fun Modifier.tvContainDirectionalKeys(): Modifier = composed {
+fun Modifier.tvContainDirectionalKeys(): Modifier = tvContainKeys(vertical = true)
+
+/**
+ * 同 [tvContainDirectionalKeys], 只管左右: 上下键另有接线 (如详情页按区块路由的纵向离场) 时用, 上下键照旧冒给外层.
+ */
+fun Modifier.tvContainHorizontalKeys(): Modifier = tvContainKeys(vertical = false)
+
+private fun Modifier.tvContainKeys(vertical: Boolean): Modifier = composed {
     val focusManager = LocalFocusManager.current
     onKeyEvent { event ->
         val direction = when (event.key) {
-            Key.DirectionUp -> FocusDirection.Up
-            Key.DirectionDown -> FocusDirection.Down
+            Key.DirectionUp -> FocusDirection.Up.takeIf { vertical }
+            Key.DirectionDown -> FocusDirection.Down.takeIf { vertical }
             Key.DirectionLeft -> FocusDirection.Left
             Key.DirectionRight -> FocusDirection.Right
-            else -> return@onKeyEvent false
-        }
+            else -> null
+        } ?: return@onKeyEvent false
         if (event.type == KeyEventType.KeyDown) focusManager.moveFocus(direction)
         true
     }
