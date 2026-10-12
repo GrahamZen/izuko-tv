@@ -6462,7 +6462,7 @@ private val DANMAKU_SCRIPT = """
     return '<label class="episode"><span>' + label + '</span><select data-tr="' + kind + '">' +
       '<option value=""' + (g.sel ? '' : ' selected') + '>' + none + '</option>' +
       g.items.map(function (x) {
-        return '<option value="' + esc(x.id) + '"' + (x.id === g.sel ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+        return '<option value="' + esc(x.id) + '"' + (x.id === g.sel ? ' selected' : '') + (x.off ? ' disabled' : '') + '>' + esc(x.name) + '</option>';
       }).join('') + '</select></label>';
   }
   hooks.unavailable.push(function () { dmBox.hidden = true; trBox.hidden = true; lastDm = ''; lastTr = ''; });
