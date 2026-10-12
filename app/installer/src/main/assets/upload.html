@@ -1,0 +1,417 @@
+<!doctype html>
+<!--
+  手机上打开的「把安装包传到电视」页 (见 UploadServer.page). {{…}} 由电视换成它的语言的文字, C 是电视给的配置
+  (两个版本各自的下载地址、文件名、大小, 默认选中电视当前的版本; 某个版本电视没查到时给仓库、文件名规则与镜像,
+  由手机自己问 GitHub). 不引外部资源.
+
+  一键: 手机用自己的网络同时从各条线路下载, 先下满 PROBE 字节的那条留下接着下完, 其余停掉; 下完的字节在内存里, 直接传给电视.
+  只有允许跨域读取的线路 (目前是 gh-proxy 系) 能这样下; GitHub 原地址与不给跨域许可的镜像在浏览器里会失败, 这时用下面的手动方式.
+-->
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{title}}</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--text:#15171c;--muted:#5d6570;--line:#e2e5ea;--soft:#eef1f5;--accent:#2563eb;--on-accent:#fff;--ok:#15803d;--err:#c62828;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1013;--card:#191c21;--text:#eceef2;--muted:#9aa3ae;--line:#2a2f37;--soft:#22262d;--accent:#7aa7ff;--on-accent:#0b1220;--ok:#4ade80;--err:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:520px;margin:0 auto;padding:28px 16px 36px}
+h1{font-size:24px;line-height:1.3;margin:0}
+.sub{margin-top:4px;color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:16px}
+h2{font-size:18px;line-height:1.4;margin:0}
+.desc{margin:6px 0 0;color:var(--muted);font-size:15px}
+.pkg{display:flex;align-items:baseline;gap:12px;margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--soft);font-size:14px}
+.pkg .name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.pkg .size{margin-left:auto;color:var(--muted);white-space:nowrap}
+.btn{display:block;width:100%;margin-top:16px;padding:14px 18px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-appearance:none}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.outline{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.steps{list-style:none;display:flex;gap:8px;margin:20px 0 0;padding:0}
+.steps li{flex:1;color:var(--muted);font-size:13px;text-align:center}
+.steps li::before{content:"";display:block;height:4px;margin-bottom:6px;border-radius:2px;background:var(--soft)}
+.steps li.active{color:var(--text)}
+.steps li.active::before{background:var(--accent)}
+.steps li.done::before{background:var(--ok)}
+.steps li.error{color:var(--err)}
+.steps li.error::before{background:var(--err)}
+.bar{height:8px;margin-top:14px;border-radius:4px;background:var(--soft);overflow:hidden}
+.bar i{display:block;width:0;height:100%;background:var(--accent);transition:width .25s}
+.status{margin-top:10px;font-size:15px;word-break:break-word}
+.status:empty,.note:empty{display:none}
+.status.ok{color:var(--ok);font-weight:600}
+.status.err{color:var(--err)}
+.hidden{display:none}
+details.card{padding:0}
+summary{display:flex;align-items:center;gap:12px;padding:18px 20px;cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary h2{flex:1}
+summary::after{content:"";flex:none;width:8px;height:8px;margin-right:4px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+details[open] summary::after{transform:rotate(-135deg)}
+.manual{padding:0 20px 20px}
+.manual .desc{margin-top:-6px}
+.manual ol{margin:14px 0 0;padding-left:20px}
+.manual ol>li{margin-top:16px}
+.manual ol>li:first-child{margin-top:0}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.links a{padding:8px 12px;border-radius:10px;box-shadow:inset 0 0 0 1px var(--line);color:var(--accent);font-size:14px;text-decoration:none;word-break:break-all}
+.note{margin-top:8px;color:var(--muted);font-size:13px}
+.warn{margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(198,40,40,.1);color:var(--err);font-size:14px}
+.picker{display:flex;align-items:center;gap:12px;margin-top:10px}
+.picker label{flex:none;padding:9px 14px;border-radius:10px;box-shadow:inset 0 0 0 1.5px var(--accent);color:var(--accent);font-size:15px;cursor:pointer}
+.picker span{min-width:0;overflow:hidden;color:var(--muted);font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.opt{display:flex;gap:12px;align-items:flex-start;margin-top:12px;padding:14px;border-radius:12px;box-shadow:inset 0 0 0 1.5px var(--line);cursor:pointer}
+.opt.on{box-shadow:inset 0 0 0 2px var(--accent)}
+.opt input{flex:none;width:20px;height:20px;margin:2px 0 0;accent-color:var(--accent)}
+.opt b{display:block;font-size:16px}
+.opt small{display:block;margin-top:2px;color:var(--muted);font-size:14px;line-height:1.5}
+footer{margin-top:22px;color:var(--muted);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <h1>{{title}}</h1>
+  <div class="sub">{{device}}</div>
+
+  <section class="card">
+    <h2>{{channel_title}}</h2>
+    <label class="opt" data-ch="STABLE"><input type="radio" name="ch" value="STABLE"><span><b>{{stable_title}}</b><small>{{stable_desc}}</small></span></label>
+    <label class="opt" data-ch="TEST"><input type="radio" name="ch" value="TEST"><span><b>{{test_title}}</b><small>{{test_desc}}</small></span></label>
+  </section>
+
+  <section class="card">
+    <h2>{{auto_title}}</h2>
+    <p class="desc">{{auto_desc}}</p>
+    <div class="pkg"><span class="name" id="pkg-name"></span><span class="size" id="pkg-size"></span></div>
+    <button class="btn" id="auto-go">{{auto_button}}</button>
+    <div id="auto-progress" class="hidden">
+      <ol class="steps"><li id="step-download">{{step_download}}</li><li id="step-upload">{{step_upload}}</li><li id="step-check">{{step_check}}</li></ol>
+      <div class="bar"><i id="auto-bar"></i></div>
+    </div>
+    <div class="status" id="auto-status"></div>
+    <div class="note" id="auto-detail"></div>
+  </section>
+
+  <details class="card" id="manual">
+    <summary><h2>{{manual_title}}</h2></summary>
+    <div class="manual">
+      <p class="desc">{{manual_hint}}</p>
+      <div class="warn hidden" id="wechat">{{wechat}}</div>
+      <ol>
+        <li>{{manual_step1}}
+          <div class="links" id="links"></div>
+          <div class="note" id="version-note">{{version_note}}</div>
+          <div class="note">{{iphone}}</div>
+        </li>
+        <li>{{manual_step2}}
+          <!-- 不设 accept: iPhone Safari 设了之后所有文件都是灰的 -->
+          <div class="picker"><label for="file">{{choose}}</label><span id="file-name">{{no_file}}</span></div>
+          <input type="file" id="file">
+          <button class="btn outline" id="manual-go" disabled>{{upload}}</button>
+          <div class="bar hidden" id="manual-bar-box"><i id="manual-bar"></i></div>
+          <div class="status" id="manual-status"></div>
+        </li>
+      </ol>
+    </div>
+  </details>
+
+  <footer>{{footer}}</footer>
+</main>
+<script>
+var C = {{config}}, T = C.texts;
+var base = location.pathname.replace(/\/+$/, '');
+var channel = C.channel;
+var expectedSize = 0;
+var PROBE = 256 * 1024;
+var busy = false;
+
+function $(id) { return document.getElementById(id); }
+function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+function fill(text, value) { return text.replace('{n}', value); }
+function hostOf(url) { return url.replace(/^\w+:\/\//, '').split('/')[0]; }
+function show(el, on) { el.classList.toggle('hidden', !on); }
+
+if (/MicroMessenger/i.test(navigator.userAgent)) show($('wechat'), true);
+
+function setBusy(on) {
+  busy = on;
+  $('auto-go').disabled = on;
+  $('manual-go').disabled = on || !$('file').files.length;
+  $('file').disabled = on;
+}
+
+function status(id, text, cls) {
+  var el = $(id);
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+var STEPS = ['download', 'upload', 'check'];
+function step(name, state) {
+  var at = STEPS.indexOf(name);
+  STEPS.forEach(function (key, i) {
+    $('step-' + key).className = i < at ? 'done' : i === at ? (state || 'active') : '';
+  });
+}
+
+function bar(id, ratio) { $(id).style.width = Math.max(0, Math.min(1, ratio)) * 100 + '%'; }
+
+/** 最近两秒的平均速度. */
+function meter() {
+  var samples = [];
+  return function (bytes) {
+    var now = Date.now();
+    samples.push([now, bytes]);
+    while (samples.length > 2 && now - samples[1][0] > 2000) samples.shift();
+    var dt = now - samples[0][0];
+    return dt >= 500 ? (bytes - samples[0][1]) * 1000 / dt : 0;
+  };
+}
+
+function resolveMirror(entry, url) { return entry.indexOf('{url}') >= 0 ? entry.replace('{url}', url) : entry + '/' + url; }
+
+/** 选中的版本: {file, size, sources}; 电视没查到为 null. */
+function target() { return C.targets[channel] || null; }
+
+/** 按选中的版本写文件名、大小与手动下载的链接. */
+function showChannel() {
+  Array.prototype.forEach.call(document.querySelectorAll('.opt'), function (el) {
+    var on = el.getAttribute('data-ch') === channel;
+    el.classList.toggle('on', on);
+    el.querySelector('input').checked = on;
+  });
+  var t = target();
+  $('pkg-name').textContent = t ? t.file : C.pattern;
+  $('pkg-size').textContent = t && t.size ? mb(t.size) : '';
+  show($('version-note'), !t);
+  var links = $('links');
+  links.textContent = '';
+  (t ? t.sources : []).map(function (url) { return [url, hostOf(url)]; }).concat([[C.releasePage, C.releaseLabel]]).forEach(function (item) {
+    var a = document.createElement('a');
+    a.href = item[0];
+    a.textContent = item[1];
+    links.appendChild(a);
+  });
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.opt input'), function (input) {
+  input.onchange = function () {
+    if (busy) { showChannel(); return; }
+    channel = input.value;
+    status('auto-status', '');
+    $('auto-detail').textContent = '';
+    show($('auto-progress'), false);
+    showChannel();
+  };
+});
+
+/** 电视没查到这个版本时手机自己问 GitHub: 正式版只看正式版, 测试版看最新的那个; 要有这台电视用的安装包. */
+function lookup(prerelease) {
+  return fetch('https://api.github.com/repos/' + C.repo + '/releases?per_page=30').then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (releases) {
+    for (var i = 0; i < releases.length; i++) {
+      var release = releases[i];
+      var version = (release.tag_name || '').replace(/^v/, '');
+      if (release.draft || (release.prerelease && !prerelease) || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version) || !(parseInt(version, 10) < 6)) continue;
+      for (var j = 0; j < C.suffixes.length; j++) {
+        var name = C.prefix + '-' + version + '-' + C.suffixes[j] + '.apk';
+        var asset = (release.assets || []).filter(function (a) { return a.name === name; })[0];
+        if (asset) {
+          var url = asset.browser_download_url;
+          return { name: name, size: asset.size, sources: [url].concat(C.mirrors.map(function (m) { return resolveMirror(m, url); })) };
+        }
+      }
+    }
+    throw new Error('no package');
+  });
+}
+
+/**
+ * 各条线路同时下, 先下满 PROBE 字节的留下接着下完, 其余中止. 结果 {blob, host} 或 {errors, retry}:
+ * 留下的那条半路断了, retry 是还没出错的线路, 重新比一次.
+ */
+function race(sources, onProgress) {
+  return new Promise(function (resolve) {
+    var winner = -1, left = sources.length, errors = [], failed = {}, aborted = {}, done = false;
+    var controllers = sources.map(function () { return new AbortController(); });
+    function finish(result) {
+      if (done) return;
+      done = true;
+      controllers.forEach(function (c, j) { aborted[j] = true; c.abort(); });
+      resolve(result);
+    }
+    function pick(i) {
+      winner = i;
+      controllers.forEach(function (c, j) { if (j !== i) { aborted[j] = true; c.abort(); } });
+    }
+    function fail(i, e) {
+      failed[i] = true;
+      errors.push(hostOf(sources[i]) + ': ' + (e && e.message ? e.message : e));
+      if (winner === i) {
+        finish({ errors: errors, retry: sources.filter(function (_, j) { return !failed[j]; }) });
+      } else if (--left === 0 && winner < 0) {
+        finish({ errors: errors, retry: [] });
+      }
+    }
+    sources.forEach(function (url, i) {
+      fetch(url, { signal: controllers[i].signal, cache: 'no-store', referrerPolicy: 'no-referrer' }).then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var total = parseInt(response.headers.get('content-length') || '0', 10) || expectedSize;
+        var reader = response.body.getReader(), chunks = [], got = 0;
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) {
+              if (winner < 0) pick(i);
+              if (winner !== i) return;
+              if (total && got < total) throw new Error('incomplete');
+              finish({ blob: new Blob(chunks, { type: 'application/vnd.android.package-archive' }), host: hostOf(url) });
+              return;
+            }
+            var v = r.value;
+            if (got === 0 && !(v.length >= 4 && v[0] === 0x50 && v[1] === 0x4b && v[2] === 3 && v[3] === 4)) throw new Error('not an APK');
+            chunks.push(v);
+            got += v.length;
+            if (winner < 0 && got >= PROBE) pick(i);
+            if (winner === i) onProgress(got, total, hostOf(url));
+            else if (winner >= 0) return;
+            return pump();
+          });
+        }
+        return pump();
+      }).catch(function (e) {
+        if (!aborted[i] && !done) fail(i, e);
+      });
+    });
+  });
+}
+
+function download(sources, onProgress) {
+  var rounds = 0;
+  function attempt(list) {
+    return race(list, onProgress).then(function (result) {
+      if (result.blob || !result.retry.length || ++rounds >= 3) return result;
+      return attempt(result.retry);
+    });
+  }
+  return attempt(sources);
+}
+
+/** 传给电视: 进度 → onProgress(已传, 总共); 传完等电视核对 → onChecking; 结果 → onDone(ok, 消息). */
+function send(blob, onProgress, onChecking, onDone) {
+  var x = new XMLHttpRequest();
+  x.open('POST', base + '/upload');
+  x.setRequestHeader('Content-Type', 'application/octet-stream');
+  x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded, e.total); };
+  x.upload.onload = onChecking;
+  x.onload = function () {
+    var r = {};
+    try { r = JSON.parse(x.responseText); } catch (e) {}
+    onDone(!!r.ok, r.ok ? T.done : fill(T.failed, r.message || 'HTTP ' + x.status));
+  };
+  x.onerror = function () { onDone(false, T.disconnected); };
+  x.send(blob);
+}
+
+/** 一键不行: 说一句原因 (技术细节放在下面一行小字), 展开手动方式. */
+function openManual(reason, detail) {
+  status('auto-status', reason, 'err');
+  $('auto-detail').textContent = detail || '';
+  $('manual').open = true;
+}
+
+$('auto-go').onclick = function () {
+  if (busy) return;
+  setBusy(true);
+  $('auto-detail').textContent = '';
+  show($('auto-progress'), true);
+  step('download');
+  bar('auto-bar', 0);
+  var t = target();
+  var known = t ? Promise.resolve({ name: t.file, size: t.size, sources: t.sources }) : null;
+  if (!known) status('auto-status', T.lookup);
+  (known || lookup(channel === 'TEST').then(function (p) {
+    $('pkg-name').textContent = p.name;
+    $('pkg-size').textContent = mb(p.size);
+    return p;
+  })).then(function (p) {
+    expectedSize = p.size || 0;
+    status('auto-status', T.probing);
+    var rate = meter();
+    return download(p.sources, function (got, total, host) {
+      var speed = rate(got);
+      bar('auto-bar', total ? got / total : 0);
+      status('auto-status', fill(T.downloading, (total ? mb(got) + ' / ' + mb(total) : mb(got)) + (speed ? ' · ' + mb(speed) + '/s' : '') + ' · ' + host));
+    });
+  }, function () {
+    step('download', 'error');
+    openManual(T.lookup_failed);
+    return null;
+  }).then(function (result) {
+    if (!result) return setBusy(false);
+    if (!result.blob) {
+      step('download', 'error');
+      openManual(T.no_source, result.errors.join('; '));
+      return setBusy(false);
+    }
+    step('upload');
+    bar('auto-bar', 0);
+    send(result.blob, function (sent, total) {
+      bar('auto-bar', sent / total);
+      status('auto-status', fill(T.uploading, mb(sent) + ' / ' + mb(total)));
+    }, function () {
+      step('check');
+      status('auto-status', T.checking);
+    }, function (ok, message) {
+      if (ok) {
+        STEPS.forEach(function (key) { $('step-' + key).className = 'done'; });
+        bar('auto-bar', 1);
+        status('auto-status', message, 'ok');
+      } else {
+        step('check', 'error');
+        status('auto-status', message, 'err');
+      }
+      setBusy(false);
+    });
+  });
+};
+
+if (!window.fetch || !window.AbortController || !window.ReadableStream) {
+  $('auto-go').disabled = true;
+  openManual(T.unsupported);
+}
+
+showChannel();
+
+$('file').onchange = function () {
+  var f = $('file').files[0];
+  $('file-name').textContent = f ? f.name + ' · ' + mb(f.size) : T.no_file;
+  $('manual-go').disabled = busy || !f;
+  status('manual-status', '');
+};
+
+$('manual-go').onclick = function () {
+  var f = $('file').files[0];
+  if (!f || busy) return;
+  setBusy(true);
+  show($('manual-bar-box'), true);
+  bar('manual-bar', 0);
+  send(f, function (sent, total) {
+    bar('manual-bar', sent / total);
+    status('manual-status', fill(T.uploading, mb(sent) + ' / ' + mb(total)));
+  }, function () {
+    status('manual-status', T.checking);
+  }, function (ok, message) {
+    if (ok) bar('manual-bar', 1);
+    status('manual-status', message, ok ? 'ok' : 'err');
+    setBusy(false);
+  });
+};
+</script>
+</body>
+</html>
