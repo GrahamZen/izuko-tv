@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv.source
 
+import android.view.View
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,10 +41,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
@@ -57,37 +62,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.tv_source_episodes_whole_season
-import me.him188.ani.app.ui.lang.tv_source_episodes_season
-import me.him188.ani.app.ui.lang.tv_source_web_no_exact
-import me.him188.ani.app.ui.lang.tv_source_rail_others
-import me.him188.ani.app.ui.lang.tv_source_hide_others
-import me.him188.ani.app.ui.lang.tv_source_show_others
-import me.him188.ani.app.ui.lang.tv_source_reason_episode_unknown
-import me.him188.ani.app.ui.lang.tv_source_reason_fuzzy_title
-import me.him188.ani.app.ui.lang.tv_source_downloads_empty_disk_cache
-import me.him188.ani.app.ui.lang.tv_source_downloads_empty
-import me.him188.ani.app.ui.lang.tv_source_download_caching
-import me.him188.ani.app.ui.lang.tv_source_downloads_open
-import me.him188.ani.app.ui.lang.tv_source_detail_date
-import me.him188.ani.app.ui.lang.tv_source_detail_episode
-import me.him188.ani.app.ui.lang.tv_source_detail_episodes
-import me.him188.ani.app.ui.lang.tv_source_detail_error
-import me.him188.ani.app.ui.lang.tv_source_detail_kind
-import me.him188.ani.app.ui.lang.tv_source_detail_lines
-import me.him188.ani.app.ui.lang.tv_source_detail_link
-import me.him188.ani.app.ui.lang.tv_source_detail_nav_hint
-import me.him188.ani.app.ui.lang.tv_source_detail_open
-import me.him188.ani.app.ui.lang.tv_source_detail_pick
-import me.him188.ani.app.ui.lang.tv_source_detail_size
-import me.him188.ani.app.ui.lang.tv_source_detail_source
-import me.him188.ani.app.ui.lang.tv_source_detail_sources
-import me.him188.ani.app.ui.lang.tv_source_detail_status
-import me.him188.ani.app.ui.lang.tv_source_kind_bt
-import me.him188.ani.app.ui.lang.tv_source_kind_cache
-import me.him188.ani.app.ui.lang.tv_source_kind_web
-import me.him188.ani.app.ui.lang.tv_source_status_done
-import me.him188.ani.app.ui.lang.tv_source_status_searching
+import me.him188.ani.app.ui.lang.cache_unknown
 import me.him188.ani.app.ui.lang.media_selector_bt_filter
 import me.him188.ani.app.ui.lang.media_selector_bt_reason_below_preference
 import me.him188.ani.app.ui.lang.media_selector_bt_reason_episode_mismatch
@@ -102,6 +77,16 @@ import me.him188.ani.app.ui.lang.media_selector_item_season_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
 import me.him188.ani.app.ui.lang.media_selector_item_subject_title_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
+import me.him188.ani.app.ui.lang.media_subtitle_kind_closed
+import me.him188.ani.app.ui.lang.media_subtitle_kind_closed_or_external_discovered
+import me.him188.ani.app.ui.lang.media_subtitle_kind_embedded
+import me.him188.ani.app.ui.lang.media_subtitle_kind_external_discovered
+import me.him188.ani.app.ui.lang.media_subtitle_kind_external_provided
+import me.him188.ani.app.ui.lang.media_subtitle_language_chinese_cantonese
+import me.him188.ani.app.ui.lang.media_subtitle_language_chinese_simplified
+import me.him188.ani.app.ui.lang.media_subtitle_language_chinese_traditional
+import me.him188.ani.app.ui.lang.media_subtitle_language_english
+import me.him188.ani.app.ui.lang.media_subtitle_language_japanese
 import me.him188.ani.app.ui.lang.subject_episode_cache
 import me.him188.ani.app.ui.lang.subject_episode_cached
 import me.him188.ani.app.ui.lang.tv_source_all
@@ -115,12 +100,37 @@ import me.him188.ani.app.ui.lang.tv_source_captcha_hint
 import me.him188.ani.app.ui.lang.tv_source_captcha_required
 import me.him188.ani.app.ui.lang.tv_source_captcha_unsupported
 import me.him188.ani.app.ui.lang.tv_source_confirm
+import me.him188.ani.app.ui.lang.tv_source_detail_date
+import me.him188.ani.app.ui.lang.tv_source_detail_episode
+import me.him188.ani.app.ui.lang.tv_source_detail_episodes
+import me.him188.ani.app.ui.lang.tv_source_detail_error
+import me.him188.ani.app.ui.lang.tv_source_detail_kind
+import me.him188.ani.app.ui.lang.tv_source_detail_lines
+import me.him188.ani.app.ui.lang.tv_source_detail_link
+import me.him188.ani.app.ui.lang.tv_source_detail_nav_hint
+import me.him188.ani.app.ui.lang.tv_source_detail_open
+import me.him188.ani.app.ui.lang.tv_source_detail_pick
+import me.him188.ani.app.ui.lang.tv_source_detail_size
+import me.him188.ani.app.ui.lang.tv_source_detail_source
+import me.him188.ani.app.ui.lang.tv_source_detail_sources
+import me.him188.ani.app.ui.lang.tv_source_detail_status
 import me.him188.ani.app.ui.lang.tv_source_disabled
+import me.him188.ani.app.ui.lang.tv_source_download_caching
+import me.him188.ani.app.ui.lang.tv_source_downloads_empty
+import me.him188.ani.app.ui.lang.tv_source_downloads_empty_disk_cache
+import me.him188.ani.app.ui.lang.tv_source_downloads_open
 import me.him188.ani.app.ui.lang.tv_source_episode_filter
+import me.him188.ani.app.ui.lang.tv_source_episodes_season
+import me.him188.ani.app.ui.lang.tv_source_episodes_whole_season
+import me.him188.ani.app.ui.lang.tv_source_excluded_toast
 import me.him188.ani.app.ui.lang.tv_source_failed
 import me.him188.ani.app.ui.lang.tv_source_failed_state
 import me.him188.ani.app.ui.lang.tv_source_hide_excluded
+import me.him188.ani.app.ui.lang.tv_source_hide_others
 import me.him188.ani.app.ui.lang.tv_source_keywords
+import me.him188.ani.app.ui.lang.tv_source_kind_bt
+import me.him188.ani.app.ui.lang.tv_source_kind_cache
+import me.him188.ani.app.ui.lang.tv_source_kind_web
 import me.him188.ani.app.ui.lang.tv_source_line
 import me.him188.ani.app.ui.lang.tv_source_loading
 import me.him188.ani.app.ui.lang.tv_source_manual
@@ -132,6 +142,7 @@ import me.him188.ani.app.ui.lang.tv_source_manual_keyword
 import me.him188.ani.app.ui.lang.tv_source_manual_loading_episodes
 import me.him188.ani.app.ui.lang.tv_source_manual_no_episodes
 import me.him188.ani.app.ui.lang.tv_source_manual_no_sources
+import me.him188.ani.app.ui.lang.tv_source_manual_pick_failed
 import me.him188.ani.app.ui.lang.tv_source_manual_remember
 import me.him188.ani.app.ui.lang.tv_source_manual_searching
 import me.him188.ani.app.ui.lang.tv_source_manual_source
@@ -142,10 +153,13 @@ import me.him188.ani.app.ui.lang.tv_source_off
 import me.him188.ani.app.ui.lang.tv_source_on
 import me.him188.ani.app.ui.lang.tv_source_pack
 import me.him188.ani.app.ui.lang.tv_source_playing
+import me.him188.ani.app.ui.lang.tv_source_rail_others
 import me.him188.ani.app.ui.lang.tv_source_rate_limited
 import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired
 import me.him188.ani.app.ui.lang.tv_source_rate_limited_expired_hint
 import me.him188.ani.app.ui.lang.tv_source_rate_limited_hint
+import me.him188.ani.app.ui.lang.tv_source_reason_episode_unknown
+import me.him188.ani.app.ui.lang.tv_source_reason_fuzzy_title
 import me.him188.ani.app.ui.lang.tv_source_refresh
 import me.him188.ani.app.ui.lang.tv_source_resolving_captcha
 import me.him188.ani.app.ui.lang.tv_source_retry
@@ -153,10 +167,19 @@ import me.him188.ani.app.ui.lang.tv_source_retry_hint
 import me.him188.ani.app.ui.lang.tv_source_searched
 import me.him188.ani.app.ui.lang.tv_source_searching
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
+import me.him188.ani.app.ui.lang.tv_source_show_others
 import me.him188.ani.app.ui.lang.tv_source_source
 import me.him188.ani.app.ui.lang.tv_source_sources_count
+import me.him188.ani.app.ui.lang.tv_source_status_done
+import me.him188.ani.app.ui.lang.tv_source_status_searching
+import me.him188.ani.app.ui.lang.tv_source_web_no_exact
 import me.him188.ani.app.ui.media.rememberMediaDetailsStrings
+import org.jetbrains.compose.resources.ResourceEnvironment
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 面板视图的把手: 播放器根路由经它问「面板里有焦点吗」、把返回键交给面板、把焦点送进面板. 视图建出来之前全是空操作.
@@ -227,6 +250,7 @@ fun TvSourcePanel(
     TvNativeHost(
         factory = { context ->
             TvSourcePanelView(context, style, sketch).also { view ->
+                panelViewWarmed = true
                 controller.view = view
                 view.listener = object : TvSourcePanelListener {
                     override fun onRailFocused(key: String) = currentState.onRailFocused(key)
@@ -420,109 +444,115 @@ private val TV_SOURCE_ICON_SIZE = 20.dp
 private fun lineHeightPx(style: TvNativeTextStyle): Int =
     if (style.lineHeightPx > 0) style.lineHeightPx else (style.sizePx * 1.4f).toInt()
 
+/** [TvSourceStrings] 的各个字段的字符串资源, 顺序同字段. */
+private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
+    Lang.tv_source_searching,
+    Lang.tv_source_searched,
+    Lang.tv_source_bt,
+    Lang.tv_source_manual,
+    Lang.tv_source_failed,
+    Lang.tv_source_refresh,
+    Lang.media_selector_full_search,
+    Lang.tv_source_on,
+    Lang.tv_source_off,
+    Lang.tv_source_keywords,
+    Lang.tv_source_playing,
+    Lang.tv_source_line,
+    Lang.tv_source_loading,
+    Lang.tv_source_no_result,
+    Lang.tv_source_captcha_required,
+    Lang.tv_source_captcha_action,
+    Lang.tv_source_captcha_hint,
+    Lang.tv_source_captcha_unsupported,
+    Lang.tv_source_resolving_captcha,
+    Lang.tv_source_rate_limited,
+    Lang.tv_source_rate_limited_hint,
+    Lang.tv_source_rate_limited_expired,
+    Lang.tv_source_rate_limited_expired_hint,
+    Lang.tv_source_failed_state,
+    Lang.tv_source_retry,
+    Lang.tv_source_retry_hint,
+    Lang.tv_source_disabled,
+    Lang.tv_source_episode_filter,
+    Lang.tv_source_all_episodes,
+    Lang.media_selector_filter_resolution,
+    Lang.media_selector_filter_subtitle,
+    Lang.media_selector_filter_alliance,
+    Lang.tv_source_source,
+    Lang.tv_source_all,
+    Lang.tv_source_show_excluded,
+    Lang.tv_source_hide_excluded,
+    Lang.tv_source_sources_count,
+    Lang.subject_episode_cached,
+    Lang.tv_source_pack,
+    Lang.media_selector_item_no_subtitle,
+    Lang.tv_source_bt_loading,
+    Lang.tv_source_bt_empty,
+    Lang.tv_source_menu_cache,
+    Lang.tv_source_menu_exclude,
+    Lang.tv_source_detail_pick,
+    Lang.tv_source_detail_open,
+    Lang.tv_source_detail_nav_hint,
+    Lang.tv_source_detail_status,
+    Lang.tv_source_detail_lines,
+    Lang.tv_source_detail_source,
+    Lang.tv_source_detail_size,
+    Lang.tv_source_detail_date,
+    Lang.tv_source_detail_episodes,
+    Lang.tv_source_detail_sources,
+    Lang.tv_source_detail_kind,
+    Lang.tv_source_detail_link,
+    Lang.tv_source_detail_error,
+    Lang.tv_source_detail_episode,
+    Lang.tv_source_status_done,
+    Lang.tv_source_status_searching,
+    Lang.tv_source_kind_web,
+    Lang.tv_source_kind_bt,
+    Lang.tv_source_kind_cache,
+    Lang.tv_source_manual_source,
+    Lang.tv_source_manual_keyword,
+    Lang.tv_source_manual_searching,
+    Lang.tv_source_manual_failed,
+    Lang.tv_source_manual_empty,
+    Lang.tv_source_manual_no_sources,
+    Lang.tv_source_manual_channel,
+    Lang.tv_source_manual_remember,
+    Lang.tv_source_manual_back,
+    Lang.tv_source_manual_loading_episodes,
+    Lang.tv_source_manual_no_episodes,
+    Lang.media_selector_bt_reason_episode_mismatch,
+    Lang.media_selector_bt_reason_below_preference,
+    Lang.media_selector_item_no_subtitle,
+    Lang.media_selector_item_single_episode_resource,
+    Lang.media_selector_item_unsupported_playback,
+    Lang.media_selector_item_season_mismatch,
+    Lang.media_selector_item_subject_title_mismatch,
+    Lang.media_selector_item_cache_not_ready,
+    Lang.media_selector_item_excluded_alliance,
+    Lang.subject_episode_cache,
+    Lang.tv_source_downloads_open,
+    Lang.tv_source_download_caching,
+    Lang.tv_source_downloads_empty,
+    Lang.tv_source_downloads_empty_disk_cache,
+    Lang.tv_source_reason_fuzzy_title,
+    Lang.tv_source_reason_episode_unknown,
+    Lang.tv_source_show_others,
+    Lang.tv_source_hide_others,
+    Lang.tv_source_rail_others,
+    Lang.tv_source_web_no_exact,
+    Lang.tv_source_episodes_season,
+    Lang.tv_source_episodes_whole_season,
+    Lang.media_selector_bt_filter,
+)
+
 /** 面板的全部文案 (见 [TvSourceStrings]). */
 @Composable
 fun rememberTvSourceStrings(): TvSourceStrings {
     val details = rememberMediaDetailsStrings()
-    val values = listOf(
-        stringResource(Lang.tv_source_searching),
-        stringResource(Lang.tv_source_searched),
-        stringResource(Lang.tv_source_bt),
-        stringResource(Lang.tv_source_manual),
-        stringResource(Lang.tv_source_failed),
-        stringResource(Lang.tv_source_refresh),
-        stringResource(Lang.media_selector_full_search),
-        stringResource(Lang.tv_source_on),
-        stringResource(Lang.tv_source_off),
-        stringResource(Lang.tv_source_keywords),
-        stringResource(Lang.tv_source_playing),
-        stringResource(Lang.tv_source_line),
-        stringResource(Lang.tv_source_loading),
-        stringResource(Lang.tv_source_no_result),
-        stringResource(Lang.tv_source_captcha_required),
-        stringResource(Lang.tv_source_captcha_action),
-        stringResource(Lang.tv_source_captcha_hint),
-        stringResource(Lang.tv_source_captcha_unsupported),
-        stringResource(Lang.tv_source_resolving_captcha),
-        stringResource(Lang.tv_source_rate_limited),
-        stringResource(Lang.tv_source_rate_limited_hint),
-        stringResource(Lang.tv_source_rate_limited_expired),
-        stringResource(Lang.tv_source_rate_limited_expired_hint),
-        stringResource(Lang.tv_source_failed_state),
-        stringResource(Lang.tv_source_retry),
-        stringResource(Lang.tv_source_retry_hint),
-        stringResource(Lang.tv_source_disabled),
-        stringResource(Lang.tv_source_episode_filter),
-        stringResource(Lang.tv_source_all_episodes),
-        stringResource(Lang.media_selector_filter_resolution),
-        stringResource(Lang.media_selector_filter_subtitle),
-        stringResource(Lang.media_selector_filter_alliance),
-        stringResource(Lang.tv_source_source),
-        stringResource(Lang.tv_source_all),
-        stringResource(Lang.tv_source_show_excluded),
-        stringResource(Lang.tv_source_hide_excluded),
-        stringResource(Lang.tv_source_sources_count),
-        stringResource(Lang.subject_episode_cached),
-        stringResource(Lang.tv_source_pack),
-        stringResource(Lang.media_selector_item_no_subtitle),
-        stringResource(Lang.tv_source_bt_loading),
-        stringResource(Lang.tv_source_bt_empty),
-        stringResource(Lang.tv_source_menu_cache),
-        stringResource(Lang.tv_source_menu_exclude),
-        stringResource(Lang.tv_source_detail_pick),
-        stringResource(Lang.tv_source_detail_open),
-        stringResource(Lang.tv_source_detail_nav_hint),
-        stringResource(Lang.tv_source_detail_status),
-        stringResource(Lang.tv_source_detail_lines),
-        stringResource(Lang.tv_source_detail_source),
-        stringResource(Lang.tv_source_detail_size),
-        stringResource(Lang.tv_source_detail_date),
-        stringResource(Lang.tv_source_detail_episodes),
-        stringResource(Lang.tv_source_detail_sources),
-        stringResource(Lang.tv_source_detail_kind),
-        stringResource(Lang.tv_source_detail_link),
-        stringResource(Lang.tv_source_detail_error),
-        stringResource(Lang.tv_source_detail_episode),
-        stringResource(Lang.tv_source_status_done),
-        stringResource(Lang.tv_source_status_searching),
-        stringResource(Lang.tv_source_kind_web),
-        stringResource(Lang.tv_source_kind_bt),
-        stringResource(Lang.tv_source_kind_cache),
-        stringResource(Lang.tv_source_manual_source),
-        stringResource(Lang.tv_source_manual_keyword),
-        stringResource(Lang.tv_source_manual_searching),
-        stringResource(Lang.tv_source_manual_failed),
-        stringResource(Lang.tv_source_manual_empty),
-        stringResource(Lang.tv_source_manual_no_sources),
-        stringResource(Lang.tv_source_manual_channel),
-        stringResource(Lang.tv_source_manual_remember),
-        stringResource(Lang.tv_source_manual_back),
-        stringResource(Lang.tv_source_manual_loading_episodes),
-        stringResource(Lang.tv_source_manual_no_episodes),
-        stringResource(Lang.media_selector_bt_reason_episode_mismatch),
-        stringResource(Lang.media_selector_bt_reason_below_preference),
-        stringResource(Lang.media_selector_item_no_subtitle),
-        stringResource(Lang.media_selector_item_single_episode_resource),
-        stringResource(Lang.media_selector_item_unsupported_playback),
-        stringResource(Lang.media_selector_item_season_mismatch),
-        stringResource(Lang.media_selector_item_subject_title_mismatch),
-        stringResource(Lang.media_selector_item_cache_not_ready),
-        stringResource(Lang.media_selector_item_excluded_alliance),
-        stringResource(Lang.subject_episode_cache),
-        stringResource(Lang.tv_source_downloads_open),
-        stringResource(Lang.tv_source_download_caching),
-        stringResource(Lang.tv_source_downloads_empty),
-        stringResource(Lang.tv_source_downloads_empty_disk_cache),
-        stringResource(Lang.tv_source_reason_fuzzy_title),
-        stringResource(Lang.tv_source_reason_episode_unknown),
-        stringResource(Lang.tv_source_show_others),
-        stringResource(Lang.tv_source_hide_others),
-        stringResource(Lang.tv_source_rail_others),
-        stringResource(Lang.tv_source_web_no_exact),
-        stringResource(Lang.tv_source_episodes_season),
-        stringResource(Lang.tv_source_episodes_whole_season),
-        stringResource(Lang.media_selector_bt_filter),
-    )
+    // 预读过 (同一资源环境) 就直接用, 不再逐条 stringResource: 每条都要 runBlocking 一次, ~100 条合计 ~50ms
+    val environment = rememberResourceEnvironment()
+    val values = prewarmedTvSourceStrings?.takeIf { it.first == environment }?.second
+        ?: TV_SOURCE_STRING_RESOURCES.map { stringResource(it) }
     return remember(values, details) {
         var i = 0
         fun next() = values[i++]
@@ -629,3 +659,77 @@ fun rememberTvSourceStrings(): TvSourceStrings {
         )
     }
 }
+
+/**
+ * 在后台先把选源面板的文案读一遍. CMP 资源的 `stringResource` 在 Android 上同步读, 每条字符串第一次用都在主线程从安装包里读,
+ * 进程里第一次开面板 (~110 条) 主线程要卡 0.3~0.4 秒; 读好的面板直接用 (见 [rememberTvSourceStrings]), 其余的读进缓存. 播放页里组合一次.
+ * 用组合里的资源环境读 (应用内语言设置与系统不同时, 缓存的是同一份).
+ */
+@Composable
+internal fun PrewarmTvSourcePanelStrings() {
+    val environment = rememberResourceEnvironment()
+    LaunchedEffect(environment) {
+        val values = withContext(Dispatchers.IO) {
+            for (resource in TV_SOURCE_OTHER_STRING_RESOURCES) getString(environment, resource)
+            TV_SOURCE_STRING_RESOURCES.map { getString(environment, it) }
+        }
+        prewarmedTvSourceStrings = environment to values
+    }
+}
+
+/** 预读好的 [TvSourceStrings] 各字段 (按 [TV_SOURCE_STRING_RESOURCES] 的顺序) 与读时的资源环境. 只在主线程上读写. */
+private var prewarmedTvSourceStrings: Pair<ResourceEnvironment, List<String>>? = null
+
+/** 面板里另外用到的: 字幕说明 ([rememberMediaDetailsStrings]), 宿主的提示, 输入框与详情弹窗. */
+private val TV_SOURCE_OTHER_STRING_RESOURCES: List<StringResource> = listOf(
+    Lang.media_subtitle_kind_embedded,
+    Lang.media_subtitle_kind_closed,
+    Lang.media_subtitle_kind_external_provided,
+    Lang.media_subtitle_kind_external_discovered,
+    Lang.media_subtitle_kind_closed_or_external_discovered,
+    Lang.cache_unknown,
+    Lang.media_subtitle_language_chinese_cantonese,
+    Lang.media_subtitle_language_chinese_simplified,
+    Lang.media_subtitle_language_chinese_traditional,
+    Lang.media_subtitle_language_japanese,
+    Lang.media_subtitle_language_english,
+    Lang.tv_source_excluded_toast,
+    Lang.tv_source_manual_pick_failed,
+    Lang.tv_source_detail_nav_hint,
+    Lang.tv_source_confirm,
+    Lang.tv_source_cancel,
+)
+
+/** 进程里建过面板视图了 (类加载、量字宽等第一次的开销已经付过). 只在主线程上读写. */
+private var panelViewWarmed = false
+
+/**
+ * 进程里第一次建面板的原生视图要 ~0.5 秒 (类加载、量字宽、第一次排版; Shield 实测), 都在主线程上.
+ * 在播放页进来一会儿、[canPrewarmNow] 为 true (纯视频态, 画面与弹幕各有自己的表面, 主线程忙一下看不出来) 时
+ * 先建一个按屏幕大小排一遍再丢掉, 第一次开面板就接近之后几次. 已经开过面板的不再做.
+ */
+@Composable
+internal fun PrewarmTvSourcePanelView(canPrewarmNow: () -> Boolean) {
+    val context = LocalContext.current
+    val style = rememberTvSourcePanelStyle()
+    val sketch = LocalSketch.current
+    val currentCanPrewarm by rememberUpdatedState(canPrewarmNow)
+    LaunchedEffect(Unit) {
+        if (panelViewWarmed) return@LaunchedEffect
+        delay(PANEL_PREWARM_DELAY)
+        while (!currentCanPrewarm()) delay(1.seconds)
+        if (panelViewWarmed) return@LaunchedEffect
+        panelViewWarmed = true
+        val metrics = context.resources.displayMetrics
+        TvSourcePanelView(context, style, sketch).run {
+            measure(
+                View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY),
+            )
+            layout(0, 0, measuredWidth, measuredHeight)
+        }
+    }
+}
+
+/** 进播放页后等这么久再预建: 避开找资源、开播那一阵. */
+private val PANEL_PREWARM_DELAY = 8.seconds
