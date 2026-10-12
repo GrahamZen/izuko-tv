@@ -123,6 +123,7 @@ includeProject(":app:shared:reorderable", "app/shared/thirdparty/reorderable")
 
 includeProject(":app:desktop", "app/desktop") // desktop JVM client for macOS, Windows, and Linux
 includeProject(":app:android", "app/android") // Android client
+includeProject(":app:installer", "app/installer") // 安装助手: 与 TV 正式版同包名的小应用, 按设备下载并装上正式版
 includeProject(":app:ios", "app/ios") // iOS Launcher
 
 
