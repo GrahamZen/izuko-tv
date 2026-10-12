@@ -313,6 +313,8 @@ androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref
 androidx-media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "androidx-media3" }
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "androidx-media3" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "androidx-media3" }
+# FFmpeg 音频软解的 Java 部分 (SimpleDecoder 等), 见 video-player 的 FfmpegAudioFallback
+androidx-media3-decoder = { module = "androidx.media3:media3-decoder", version.ref = "androidx-media3" }
 # 取帧 (ExperimentalFrameExtractor): 内部起一个 ExoPlayer 把帧解到 GL 纹理再读回,
 # 因此支持 ExoPlayer 能播的一切 (含 HLS) —— 平台的 MediaMetadataRetriever 不支持 HLS
 androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidx-media3" }

@@ -70,6 +70,7 @@ fun PlayerControllerDefaults.AudioSwitcher(
     onSelect: (AudioTrack?) -> Unit,
     modifier: Modifier = Modifier,
     onExpandedChanged: (expanded: Boolean) -> Unit = {},
+    unplayableFormatOf: (AudioTrack) -> String? = { null },
 ) {
     val options by state.options.collectAsStateWithLifecycle(emptyList())
     AudioSwitcher(
@@ -78,11 +79,14 @@ fun PlayerControllerDefaults.AudioSwitcher(
         optionsProvider = { options },
         modifier,
         onExpandedChanged = onExpandedChanged,
+        unplayableFormatOf = unplayableFormatOf,
     )
 }
 
 /**
  * 选音轨.
+ *
+ * @param unplayableFormatOf 设备放不了的音轨返回它的格式名 (认不出格式为空串), 列表里注明并压暗; 能放的返回 null
  */
 @Composable
 fun PlayerControllerDefaults.AudioSwitcher(
@@ -91,6 +95,7 @@ fun PlayerControllerDefaults.AudioSwitcher(
     optionsProvider: () -> List<AudioPresentation>,
     modifier: Modifier = Modifier,
     onExpandedChanged: (expanded: Boolean) -> Unit = {},
+    unplayableFormatOf: (AudioTrack) -> String? = { null },
 ) {
     val optionsProviderUpdated by rememberUpdatedState(optionsProvider)
     val options by remember {
@@ -107,7 +112,7 @@ fun PlayerControllerDefaults.AudioSwitcher(
             if (it == null) {
                 Text(stringResource(Lang.video_player_auto))
             } else {
-                Text(it.shownName(options.indexOf(it) + 1), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                UnplayableAwareAudioName(it.shownName(options.indexOf(it) + 1), unplayableFormatOf(it.audioTrack))
             }
         },
         renderValueExposed = {
