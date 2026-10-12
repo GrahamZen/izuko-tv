@@ -219,6 +219,7 @@ class MediaCacheStorageSource(
         cacheProperties = cacheProperties,
         episodeRange = EpisodeRange.single(metadata.episodeSort),
         cacheEpisodeId = metadata.episodeId,
+        extraFiles = extraFiles,
     )
 
     override val info: MediaSourceInfo = MediaSourceInfo(

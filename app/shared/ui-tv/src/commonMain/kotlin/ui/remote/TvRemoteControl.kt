@@ -812,6 +812,8 @@ object TvRemoteControl {
             maxBodyBytes = { path -> RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteAppUpdate.maxBodyBytes(path) },
             // 手机授权完经 Worker 跳回来的那一跳带不了 token, 见 RemoteAccount.relayReturn
             publicHandlers = mapOf(BangumiOAuthRelay.RETURN_PATH to RemoteAccount::relayReturn),
+            // 发给手机的视频文件 (见 RemoteFileStream): 一路播放能持续很久, 不当成卡住的请求
+            isStreaming = { it.startsWith(RemoteMirror.FILE_PATH + "/") },
         )
         val s = try {
             create(fixedPort)
@@ -873,7 +875,8 @@ object TvRemoteControl {
         // 状态轮询每秒一次, 不在这里枚举网卡; 其余请求 (打开页面 / 各种提交) 顺带确认手机手里的地址就是当前 IP
         if (path != PATH_PLAYER_STATE && path != PATH_SEARCH_RESULTS && path != PATH_NOTICE && path != PATH_ACCOUNT &&
             path != "api/diag" && // 录制期间每秒读一次状态, 别给被测的电视添活
-            !path.startsWith("api/cache") && path != "api/img" && path != "api/source-icon" // 转发的图一屏几十张, 同样不枚举
+            !path.startsWith("api/cache") && path != "api/img" && path != "api/source-icon" && // 转发的图一屏几十张, 同样不枚举
+            !path.startsWith(RemoteMirror.FILE_PATH) // 发视频时播放器一集要几十次 Range 请求
         ) {
             _phoneConnected.value = true
             rememberHost(findLanAddress())
@@ -914,6 +917,10 @@ object TvRemoteControl {
             // 播放卡上的「截图」, 见 RemoteScreenshot
             path == RemoteScreenshot.PATH || path.startsWith(RemoteScreenshot.PATH + "/") ->
                 RemoteScreenshot.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 全屏「同步播放」要的播放地址, 见 RemoteMirror
+            path == RemoteMirror.PATH -> RemoteMirror.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            path.startsWith(RemoteMirror.FILE_PATH + "/") -> RemoteMirror.serveFile(player, request)
+            path.startsWith(RemoteMirror.SUB_PATH + "/") -> RemoteMirror.serveSub(player, request)
             // 播放卡上的「失败报告」, 见 RemotePlaybackFailures
             path == RemotePlaybackFailures.PATH -> RemotePlaybackFailures.handle(player, request) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 手机粘贴网盘分享链接给这部番, 见 RemoteCloudDriveShares
