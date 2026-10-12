@@ -46,6 +46,7 @@ import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
 import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
 import me.him188.ani.app.platform.AndroidLoggingConfigurator
+import me.him188.ani.app.platform.PreviousExits
 import me.him188.ani.app.platform.AppStartupTasks
 import me.him188.ani.app.platform.JvmLogHelper
 import me.him188.ani.app.platform.StartupTimeMonitor
@@ -117,6 +118,7 @@ class AniApplication : Application() {
         val logsDir = applicationContext.getLogsDir().absolutePath
         AndroidLoggingConfigurator.configure(logsDir)
         AppStartupTasks.printVersions()
+        if (currentProcess == packageName) PreviousExits.log(this)
         startupTimeMonitor.mark(StepName.Logging)
 
         val defaultUEH = Thread.getDefaultUncaughtExceptionHandler()
