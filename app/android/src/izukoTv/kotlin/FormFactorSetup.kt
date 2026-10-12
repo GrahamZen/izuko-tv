@@ -15,12 +15,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
 import me.him188.ani.android.tv.RemoteKeepAliveService
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
+import me.him188.ani.android.tv.deleteInstallerLeftovers
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
@@ -75,6 +77,7 @@ internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
     val app = activity.applicationContext
     TvRemoteControl.keepAliveService = { on -> RemoteKeepAliveService.set(app, on) }
     TvRemoteControl.onActivityCreated(activity)
+    activity.lifecycleScope.launch(Dispatchers.IO) { deleteInstallerLeftovers(app) }
     activity.lifecycleScope.launch {
         delay(TV_HOME_CHANNELS_DELAY_MILLIS)
         // 需要 activity context 才能弹出添加频道的系统确认框

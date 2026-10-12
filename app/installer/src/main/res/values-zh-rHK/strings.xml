@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2024-2026 OpenAni and contributors.
+  ~
+  ~ 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+  ~ Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+  ~
+  ~ https://github.com/open-ani/ani/blob/main/LICENSE
+  -->
+
+<resources>
+    <string name="app_label">Izuko TV 安裝助手</string>
+    <string name="title">安裝 Izuko TV</string>
+    <string name="device_info">Android %1$s（API %2$d）· %3$s</string>
+    <string name="too_old">這部裝置的系統是 Android %1$s（API %2$d），Izuko TV 最低需要 Android %3$s（API %4$d），裝不了。</string>
+    <string name="unsupported_abi">這部裝置的處理器架構是 %1$s，Izuko TV 沒有對應的安裝檔，裝不了。</string>
+    <string name="permission_title">先允許安裝應用程式</string>
+    <string name="permission_hint">1. 按「去允許安裝應用程式」\n2. 在清單裡開啟「Izuko TV 安裝助手」的開關（有的電視叫「不明來源」）\n3. 按返回回到這裡；沒回來的話，從主畫面重新打開本助手</string>
+    <string name="permission_still_missing">還沒有開啟。有的電視開關在別處或不起作用，可以選「繼續」，安裝時系統會再問一次。</string>
+    <string name="permission_settings_unavailable">這部電視打不開這個設定頁。選「繼續」，安裝時系統會問要不要允許。</string>
+    <string name="ready_title">Izuko TV %1$s 已經下載好了</string>
+    <string name="ready_hint">按「安裝」會打開系統的安裝畫面，在裡面選「安裝」或「更新」（預設選中的是「取消」）。安裝要幾十秒，裝好後按「開啟」。</string>
+    <string name="checking">正在查詢最新版本…</string>
+    <string name="downloading">正在下載 Izuko TV %1$s…</string>
+    <string name="progress">%1$s / %2$s · %3$s/s · 線路 %4$s</string>
+    <string name="progress_unknown_total">%1$s · %2$s/s · 線路 %3$s</string>
+    <string name="installing">正在安裝 Izuko TV %1$s…</string>
+    <string name="confirm_hint">請在彈出的系統視窗裡選「更新」或「安裝」（預設選中的是「取消」）。如果提示不允許安裝不明來源的應用程式，按「設定」開啟「Izuko TV 安裝助手」的開關再返回。裝好後在主畫面打開 Izuko TV。</string>
+    <string name="system_installer_hint">請在系統的安裝畫面裡選「安裝」或「更新」（預設選中的是「取消」）。如果提示不允許安裝不明來源的應用程式，按「設定」開啟「Izuko TV 安裝助手」的開關再返回。安裝要幾十秒，裝好後按「開啟」。</string>
+    <string name="system_installer_closed">Izuko TV 還沒裝上</string>
+    <string name="system_installer_closed_hint">安裝畫面關閉了。如果是不小心按了「取消」（系統預設選中它），選「重新打開安裝畫面」；如果系統提示剖析錯誤或安裝失敗，選「換一種方式安裝」。</string>
+    <string name="error_lookup">查不到最新版本：GitHub 和鏡像都連不上。請檢查網絡後重試。</string>
+    <string name="error_download">所有下載線路都沒下載成功。可以重試，會從中斷的地方繼續下載。</string>
+    <string name="error_storage">儲存空間不足：安裝大約需要 %1$s，現在只剩 %2$s。</string>
+    <string name="error_install_start">未能開始安裝。</string>
+    <string name="error_install_aborted">安裝已取消。</string>
+    <string name="error_install_permission">沒有允許「Izuko TV 安裝助手」安裝不明來源的應用程式。請在設定裡開啟它的開關，再重試。</string>
+    <string name="error_install_blocked">系統攔下了這次安裝。請允許這個應用程式安裝不明來源的應用程式，再重試。</string>
+    <string name="error_install_conflict">和已安裝的應用程式衝突：這部裝置上已經有簽署不同或版本較新的 Izuko TV。</string>
+    <string name="error_install_incompatible">這個安裝檔和裝置不兼容。</string>
+    <string name="error_install_invalid">安裝檔損壞，重試會換線路重新下載。</string>
+    <string name="error_install_storage">儲存空間不足，裝不下。</string>
+    <string name="error_install_other">安裝失敗。</string>
+    <string name="button_reopen_confirm">重新打開安裝確認</string>
+    <string name="button_reopen_system_installer">重新打開安裝畫面</string>
+    <string name="button_install_directly">換一種方式安裝</string>
+    <string name="button_install">安裝</string>
+    <string name="button_continue">繼續</string>
+    <string name="button_retry">重試</string>
+    <string name="button_system_installer">用系統安裝程式打開</string>
+    <string name="button_allow_unknown_sources">去允許安裝應用程式</string>
+    <string name="button_exit">退出</string>
+    <string name="footer">Izuko TV 安裝助手 %1$s · github.com/%2$s</string>
+    <string name="report_title">診斷資訊（報告問題時拍下這一頁）</string>
+    <string name="report_installer">安裝助手</string>
+    <string name="report_android">系統</string>
+    <string name="report_android_claimed">Android %1$s（API %2$d，系統自稱 %3$s）</string>
+    <string name="report_device">廠商 / 品牌 / 型號</string>
+    <string name="report_codename">裝置 / 產品 / 硬件</string>
+    <string name="report_build">系統版本號</string>
+    <string name="report_abis">架構</string>
+    <string name="report_abis_value">%1$s（%2$d 位元系統）</string>
+    <string name="report_storage">儲存空間</string>
+    <string name="report_storage_value">可用 %1$s，共 %2$s</string>
+    <string name="report_unknown_sources">安裝不明來源的應用程式</string>
+    <string name="report_allowed">已允許</string>
+    <string name="report_not_allowed">未允許</string>
+    <string name="report_system_installer">系統安裝程式</string>
+    <string name="report_installed_by">助手的安裝來源</string>
+    <string name="report_none">無</string>
+    <string name="report_package">適合本機的安裝檔</string>
+    <string name="report_source">下載線路</string>
+    <string name="report_time">時間</string>
+    <string name="advice_xiaomi">小米電視可能攔截第三方應用程式（提示「違規功能」「安裝包異常」）。可以在手機上用「小米電視助手」把安裝檔推送到電視，或用 ADB 安裝。</string>
+    <string name="advice_tcl">部分 TCL / 雷鳥電視只允許從「電視衛士 → 極速安裝」或「歡視助手」安裝：把下面寫的安裝檔複製到 USB 手指根目錄，在極速安裝裡安裝。</string>
+    <string name="advice_hisense">海信 / Vidda 要先開啟「商場模式」才能從 USB 手指安裝，也可以用手機「海信愛家」投送安裝檔。裝好後系統提示安全風險時選繼續使用。</string>
+    <string name="advice_skyworth">創維 / 酷開系統通常只允許從「應用圈」安裝：可以在工廠模式裡開啟 ADB，用 ADB 安裝。</string>
+    <string name="advice_changhong">長虹部分系統禁止安裝第三方應用程式，只能用 ADB 或系統內置的安裝渠道。</string>
+    <string name="advice_konka">康佳：在檔案管理裡連按 5 次選單鍵可以解鎖 APK 安裝，也可以用手機「易互動」推送安裝檔。</string>
+    <string name="advice_huawei">華為 / 榮耀智慧屏：HarmonyOS 4.3 及以前安裝時選「信任」；HarmonyOS 5（MateTV）不能安裝 APK。</string>
+    <string name="advice_letv">樂視系統可能禁止安裝或自動解除安裝第三方應用程式。</string>
+    <string name="advice_generic">系統攔下了這次安裝。可以把下面寫的安裝檔複製到 USB 手指根目錄，用電視內置的檔案管理或「本機媒體」安裝，或用 ADB 安裝。</string>
+</resources>
