@@ -110,7 +110,6 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
-import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
 import me.him188.ani.app.domain.media.player.ActivePlayback
 import me.him188.ani.app.domain.media.player.PlaybackActivity
@@ -129,6 +128,7 @@ import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
 import me.him188.ani.app.domain.player.extension.MediaAutoSwitchStatus
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
+import me.him188.ani.app.domain.player.extension.pauseSearchingWhilePlaying
 import me.him188.ani.app.domain.player.extension.PlayCacheWithoutSearchingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
 import me.him188.ani.app.domain.player.extension.PreferredTracksExtension
@@ -243,6 +243,7 @@ import org.openani.mediamp.PlaybackState
 import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.chapters
 import org.openani.mediamp.metadata.Chapter
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -427,6 +428,10 @@ open class EpisodeViewModel(
     /** 选源面板开着: 开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
     private val mediaSelectorShown = MutableStateFlow(false)
 
+    /** 打开过选源面板的那个查询会话: 之后暂停只停还没开始查的 (见 [pauseSearchingWhilePlaying]). 切集换了会话就不算. */
+    @Volatile
+    private var selectorOpenedFetchSession: MediaFetchSession? = null
+
     /** 用户开了「完整搜索」: 本播放页之后搜索一直查完, 开播、关选源面板都不再暂停. */
     private val _fullMediaSearch = MutableStateFlow(false)
 
@@ -463,6 +468,7 @@ open class EpisodeViewModel(
             AutoSelectExtension,
             PauseMediaFetchWhilePlayingExtension.Factory(
                 canPause = { !mediaSelectorShown.value && !searchesToCompletion() },
+                selectorOpened = { it === selectorOpenedFetchSession },
             ),
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
@@ -1301,18 +1307,21 @@ open class EpisodeViewModel(
      */
     fun onMediaSelectorShown() {
         mediaSelectorShown.value = true
-        withMediaFetchSession { it.resumePausedSources() }
+        withMediaFetchSession {
+            selectorOpenedFetchSession = it
+            it.resumePausedSources()
+        }
     }
 
     /**
-     * 选源面板关闭: 正在播放、又没开「完整搜索」时, 暂停还没查完的数据源 (同开播时).
+     * 选源面板关闭: 正在播放、又没开「完整搜索」时暂停搜索; 面板放开过的还在查的让它查完, 只停还没开始查的 (见 [pauseSearchingWhilePlaying]).
      * 没在播放时照常查, 等播起来再暂停 (见 [PauseMediaFetchWhilePlayingExtension]).
      */
     fun onMediaSelectorHidden() {
         mediaSelectorShown.value = false
         if (searchesToCompletion() || !player.state.value.isPlaying) return
         withMediaFetchSession { session ->
-            session.pauseSearching(keep = { it.kind == MediaSourceKind.LocalCache })
+            session.pauseSearchingWhilePlaying(session === selectorOpenedFetchSession, keep = { it.kind == MediaSourceKind.LocalCache })
         }
     }
 
