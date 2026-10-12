@@ -207,6 +207,10 @@ class CachedMedia(
      * 该缓存记录所属剧集的 ID. 提供时参与 [mediaId], 以区分同一合集资源的多条记录.
      */
     val cacheEpisodeId: String? = null,
+    /**
+     * 外挂字幕等. 默认沿用 [origin] 的; 缓存时一并下到本地的字幕由缓存引擎传入 (指向本地文件).
+     */
+    override val extraFiles: MediaExtraFiles = origin.extraFiles,
 ) : Media by origin {
     override val mediaId: String = buildString {
         append(cacheMediaSourceId).append(':').append(origin.mediaId)

@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17() + deviceMigrationTexts()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17() + deviceMigrationTexts() + mirrorTexts()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
