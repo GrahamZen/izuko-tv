@@ -10,8 +10,6 @@
 package me.him188.ani.app.platform
 
 import io.ktor.http.Url
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -40,19 +38,8 @@ internal actual fun createSystemProxyDetector(): SystemProxyDetector = AndroidSy
  * **VPN/TUN 类工具 (Clash 的 TUN 模式等) 不需要这里的任何东西**: 那是网络层接管, 与应用无关.
  */
 private class AndroidSystemProxyDetector : SystemProxyDetector {
-    private val logger = logger<AndroidSystemProxyDetector>()
-
-    override fun detect(): SystemProxyInfo? {
-        fromSystemProperties()?.let {
-            logger.info { "Detected system proxy from system properties: ${it.url}" }
-            return it
-        }
-        fromProxySelector()?.let {
-            logger.info { "Detected system proxy from ProxySelector: ${it.url}" }
-            return it
-        }
-        return null
-    }
+    // 每隔几秒读一次 (见 SystemProxyProvider), 这里不打日志: 探到的结果变了时那边会记一行
+    override fun detect(): SystemProxyInfo? = fromSystemProperties() ?: fromProxySelector()
 
     private fun fromSystemProperties(): SystemProxyInfo? {
         val host = System.getProperty("http.proxyHost")?.takeIf { it.isNotBlank() } ?: return null

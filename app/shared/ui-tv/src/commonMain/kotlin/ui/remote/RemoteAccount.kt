@@ -38,6 +38,8 @@ import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthConstants
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
+import me.him188.ani.app.domain.settings.ProxyProvider
+import me.him188.ani.app.domain.settings.unreachableProxyOf
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.foundation.lan.escapeHtml
@@ -79,6 +81,7 @@ internal object RemoteAccount {
     private val oauthManager: BangumiOAuthManager get() = KoinPlatform.getKoin().get()
     private val endpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
+    private val proxyProvider: ProxyProvider get() = KoinPlatform.getKoin().get()
 
     /** 手机发起的那次登录走到哪了. 成功后回到 Idle (登录状态看会话本身). */
     private sealed interface Login {
@@ -275,7 +278,7 @@ internal object RemoteAccount {
                 if (state.error is LoadError.UnknownError) {
                     tr("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。")
                 } else {
-                    errorText(state.error)
+                    runBlocking { failedText(state) }
                 },
             )
             // 粘错了上一次的回调 (state 对不上) 会被原样忽略, 这里只能说它没生效
@@ -308,7 +311,7 @@ internal object RemoteAccount {
             accepted && params["code"].isNullOrEmpty() ->
                 Triple(false, tr("没有完成登录"), tr("没有授权，电视没有登录。"))
             accepted && outcome is BangumiOAuthManager.State.Failed ->
-                Triple(false, tr("没有完成登录"), errorText(outcome.error))
+                Triple(false, tr("没有完成登录"), runBlocking { failedText(outcome) })
             accepted -> Triple(false, tr("没有完成登录"), tr("回到控制台看结果。"))
             outcome == BangumiOAuthManager.State.Success -> Triple(true, tr("登录成功"), tr("电视已登录，可以关掉这个页面了。"))
             // state 对不上: 已经取消、超时、又点了一次登录, 或者不是这台电视发起的
@@ -343,7 +346,7 @@ h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}<
             }
 
             is BangumiOAuthManager.State.Failed -> {
-                val message = errorText(outcome.error)
+                val message = failedText(outcome)
                 update(me, Login.Failed(message))
                 TvRemoteControl.postNotice(tr("登录没有完成：{0}", message))
             }
@@ -429,6 +432,14 @@ h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}<
     /** 只有还是「当前这一次」时才改状态: 被新的一次顶掉的旧协程别把新状态冲掉. */
     private fun update(owner: Job, state: Login) {
         synchronized(lock) { if (job === owner) login = state }
+    }
+
+    /** 登录没成功的那一句: 连不上代理时直说是代理 (写成「电视连不上 Bangumi」会让人以为是 Bangumi 的问题). */
+    private suspend fun failedText(state: BangumiOAuthManager.State.Failed): String {
+        val proxy = withTimeoutOrNull(STATE_TIMEOUT) { proxyProvider.proxy.first() }
+        return unreachableProxyOf(state.cause, proxy)
+            ?.let { tr("电视上的代理 {0} 连不上：打开或关掉提供代理的应用，或者在设置的「代理」里把代理方式改成「禁用」，然后重新登录", it) }
+            ?: errorText(state.error)
     }
 
     private fun errorText(error: LoadError): String = when (error) {
