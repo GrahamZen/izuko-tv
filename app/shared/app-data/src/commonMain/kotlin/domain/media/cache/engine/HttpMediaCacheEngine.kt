@@ -80,6 +80,8 @@ class HttpMediaCacheEngine(
     private val mediaSourceId: String,
     private val dao: HttpCacheDownloadStateDao,
 ) : MediaCacheEngine {
+    /** 网盘视频旁边的外挂字幕随缓存存到本地, 见 [CacheSidecarSubtitles] */
+    private val sidecarSubtitles = CacheSidecarSubtitles(saveDir)
     override val engineKey: MediaCacheEngineKey = MediaCacheEngineKey.WebM3u
 
     override val stats: Flow<MediaStats> = run {
@@ -181,6 +183,7 @@ class HttpMediaCacheEngine(
                     downloader.remove(downloadId)
                     throw UnsupportedOperationException("Failed to create download job of $downloadId, state is null.")
                 }
+                sidecarSubtitles.saveInBackground(CoroutineScope(parentContext), downloadId.value, mediaData.extraFiles.subtitles, mediaData.headers)
 
                 return HttpMediaCache(
                     origin,
@@ -211,6 +214,7 @@ class HttpMediaCacheEngine(
     }
 
     override suspend fun deleteUnusedCaches(all: List<MediaCache>) {
+        sidecarSubtitles.prune(all.filterIsInstance<HttpMediaCache>().mapTo(HashSet()) { it.downloadId.value })
         if (!(SystemFileSystem.exists(saveDir))) return
 
 
@@ -389,6 +393,7 @@ class HttpMediaCacheEngine(
                             httpDownloaderStatus = state.status.toString(),
                             cacheId = cacheId,
                         ),
+                        extraFiles = withContext(Dispatchers.IO_) { sidecarSubtitles.extraFilesOf(downloadId.value, origin.extraFiles) },
                     )
                 }
 
@@ -421,6 +426,7 @@ class HttpMediaCacheEngine(
             closeMutex.withLock {
                 if (isDeleted.value) return
                 val removed = downloader.remove(downloadId)
+                sidecarSubtitles.delete(downloadId.value)
                 if (!removed) {
                     dao.getById(downloadId)?.let { state ->
                         deleteDownloadFiles(state)
