@@ -231,6 +231,7 @@
     <string name="subject_details_tv_title_logo_unreachable">Couldn\'t reach the report server, nothing was sent (changed on this device). Set up a proxy in Settings → Proxy and try again</string>
     <string name="subject_details_tv_title_logo_failed">Couldn\'t submit, try again later. Changed on this device</string>
     <string name="subject_details_tv_title_logo_done">Done</string>
+    <string name="subject_details_tv_open_details_page">Open details page</string>
     <string name="subject_details_tv_feedback">Feedback</string>
     <string name="subject_details_tv_feedback_title">Feedback</string>
     <string name="subject_details_tv_feedback_logo">Wrong title logo</string>
