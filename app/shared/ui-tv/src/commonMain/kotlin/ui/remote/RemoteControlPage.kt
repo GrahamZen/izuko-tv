@@ -200,7 +200,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -3528,6 +3528,8 @@ private val CONTROL_SCRIPT = """
    */
   var pipActive = false, fsActive = false;
   function carrierPresenting() { return pipActive || fsActive; }
+  // 全屏 / 小窗里放的是「同步播放」(MIRROR_SCRIPT) 那个真视频时, 载体别自己续播去抢 (同时只该有一个出声)
+  function mirrorHolding() { return !!(window.mirrorPresenting && window.mirrorPresenting()); }
   /*
    * 自己调 play/pause/playbackRate 时按一下时间戳, 免得自家动作被当成"用户按的"又发回电视。
    * **别用"布尔 + setTimeout(0) 清掉"那种写法**: 媒体元素的事件是排队派发的, 不保证比那个 0 毫秒
@@ -3664,7 +3666,7 @@ private val CONTROL_SCRIPT = """
         if (pb && pb.playing) sendMediaControl('pause');
         return;
       }
-      if (!(pb && pb.playing)) return;
+      if (!(pb && pb.playing) || mirrorHolding()) return;
       var back = v.play();
       if (back && back.catch) back.catch(function () {});
     });
@@ -3698,20 +3700,8 @@ private val CONTROL_SCRIPT = """
     // 原生全屏播放器里的倍速菜单: 它改的是这个元素的 playbackRate, 转给电视才算数
     v.addEventListener('ratechange', function () {
       if (!mediaEnabled || carrierSelfJustActed()) return;
-      if (!carrierPresenting() || !pb || pb.speed == null) return;
-      // 档位与范围跟电视走 (speedMin/speedMax/speedStep 来自 RemotePlayerHandle) —— 同一个常量别在这边
-      // 再抄一份, 倍速那次的教训就是抄完悄悄偏掉
-      var step = Math.max(1, Math.round((pb.speedStep || 0.25) * 100));
-      var lo = Math.round((pb.speedMin || 0.25) * 100), hi = Math.round((pb.speedMax || 4) * 100);
-      var pct = Math.max(lo, Math.min(hi, Math.round(Math.round(v.playbackRate * 100) / step) * step));
-      if (pct === Math.round(pb.speed * 100)) return;
-      spDragging = false;
-      spHoldUntil = Date.now() + 2000;
-      spLocal = pct;
-      clearTimeout(spTimer);
-      spTimer = null;
-      sendSpeed(pct);
-      paint();
+      if (!carrierPresenting()) return;
+      forwardRate(v.playbackRate);
     });
     // 用户可能从全屏里转进小窗, 那之后按键还得照样转发, 所以这两个状态都要盯着
     function modeChanged() {
@@ -3747,6 +3737,23 @@ private val CONTROL_SCRIPT = """
     });
     document.body.appendChild(v);
     return v;
+  }
+  /** 原生全屏播放器的倍速菜单改了元素的 playbackRate (载体或「同步播放」那个): 转给电视才算数 */
+  function forwardRate(rate) {
+    if (!pb || pb.speed == null) return;
+    // 档位与范围跟电视走 (speedMin/speedMax/speedStep 来自 RemotePlayerHandle) —— 同一个常量别在这边
+    // 再抄一份, 倍速那次的教训就是抄完悄悄偏掉
+    var step = Math.max(1, Math.round((pb.speedStep || 0.25) * 100));
+    var lo = Math.round((pb.speedMin || 0.25) * 100), hi = Math.round((pb.speedMax || 4) * 100);
+    var pct = Math.max(lo, Math.min(hi, Math.round(Math.round(rate * 100) / step) * step));
+    if (pct === Math.round(pb.speed * 100)) return;
+    spDragging = false;
+    spHoldUntil = Date.now() + 2000;
+    spLocal = pct;
+    clearTimeout(spTimer);
+    spTimer = null;
+    sendSpeed(pct);
+    paint();
   }
   function setMediaHandler(action, handler) {
     try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) { console.debug('MediaSession action unavailable: ' + action, e); }
@@ -3817,7 +3824,7 @@ private val CONTROL_SCRIPT = """
   // 该占着焦点时确认音轨还在播 (解锁过一次之后 play() 不再需要用户手势). 与 audio 的 pause 监听一道,
   // 页面每次被唤醒都自愈一次.
   function keepMediaAudioAlive() {
-    if (!mediaEnabled || !mediaCarrier || !mediaCarrier.paused) return;
+    if (!mediaEnabled || !mediaCarrier || !mediaCarrier.paused || mirrorHolding()) return;
     if (!(pb && pb.playing)) return;
     var back = mediaCarrier.play();
     if (back && back.catch) back.catch(function () {});
@@ -3867,6 +3874,7 @@ private val CONTROL_SCRIPT = """
       });
     }
     if (playing) {
+      if (mirrorHolding()) return;
       var started = mediaCarrier.play();
       if (started && started.catch) started.catch(function () {});
     } else {
@@ -3880,7 +3888,7 @@ private val CONTROL_SCRIPT = """
   function sendMediaControl(action) {
     if (pb) pb.playing = action === 'play';
     holdPlayState(action === 'play');
-    if (mediaCarrier) {
+    if (mediaCarrier && !mirrorHolding()) {
       if (action === 'play') {
         var started = mediaCarrier.play();
         if (started && started.catch) started.catch(function () {});
@@ -4118,7 +4126,8 @@ private val CONTROL_SCRIPT = """
         '<input type="range" id="pb-speed" min="25" max="400" step="25" value="100" aria-label="' + T('倍速') + '">' +
         '<span class="pb-speed-val" id="pb-speed-val"></span></div>' +
         '<div class="pb-system" id="pb-system-row" hidden><button type="button" id="pb-system" hidden></button>' +
-        '<button type="button" id="pb-fs" hidden></button></div>';
+        '<button type="button" id="pb-fs" hidden></button></div>' +
+        '<div id="pb-mirror-note" hidden style="font-size: 12px; color: var(--mute); text-align: center; margin-top: 6px"></div>';
     }
     // 正改着时间时卡片被整张重画了: 把输入框 (连同已输入的字) 补回去
     if (editing && !document.getElementById('pb-jump')) openEdit(editText, true);
@@ -4196,10 +4205,18 @@ private val CONTROL_SCRIPT = """
     if (fsBtn) {
       // 载体只在接入之后才有 —— 没接入时也把按钮显出来, 点了会先接入再全屏
       fsBtn.hidden = !carrierFullscreenCan();
-      var fsReady = carrierFullscreenReady();
+      var mirrorOn = !!(window.mirrorReady && window.mirrorReady());
+      var fsReady = mirrorOn || carrierFullscreenReady();
       fsBtn.disabled = !fsReady;
-      fsBtn.classList.toggle('on', carrierPresenting());
-      fsBtn.textContent = T(fsReady ? '全屏（可转小窗）' : '全屏（正在准备）');
+      fsBtn.classList.toggle('on', carrierPresenting() || mirrorHolding());
+      fsBtn.textContent = T(mirrorOn ? '全屏（同步播放）' : fsReady ? '全屏（可转小窗）' : '全屏（正在准备）');
+    }
+    // 「同步播放」用不了时的原因 (见 MIRROR_SCRIPT 的 mirrorNote)
+    var mirrorNote = document.getElementById('pb-mirror-note');
+    if (mirrorNote) {
+      var noteText = window.mirrorNote ? window.mirrorNote() : '';
+      mirrorNote.hidden = !noteText || !fsBtn || fsBtn.hidden;
+      if (mirrorNote.textContent !== noteText) mirrorNote.textContent = noteText;
     }
     var sysRow = document.getElementById('pb-system-row');
     if (sysRow) sysRow.hidden = (!sb || sb.hidden) && (!fsBtn || fsBtn.hidden);
@@ -4259,7 +4276,21 @@ private val CONTROL_SCRIPT = """
     paint();
   });
   hooks.unavailable.push(function () { mediaState = null; scheduleDisableMediaSession(); });
-  hooks.playback.push(function (p) { pb = stateGuard(p); updateMediaPlayback(); paint(); });
+  hooks.playback.push(function (p) {
+    pb = stateGuard(p);
+    updateMediaPlayback();
+    paint();
+    if (window.mirrorOnPlayback) window.mirrorOnPlayback(pb);
+  });
+  // 全屏「同步播放」(MIRROR_SCRIPT) 借这边的几样: 经 stateGuard 的播放状态, 以及与载体同一条转发 (seek / 播放暂停 / 倍速)
+  window.mirrorBridge = {
+    playback: function () { return pb; },
+    seek: function (ms) { seek(ms); },
+    control: function (action) { sendMediaControl(action); },
+    rate: function (rate) { forwardRate(rate); },
+    pauseCarrier: function () { if (mediaCarrier) carrierQuiet(function () { mediaCarrier.pause(); }); },
+    paint: function () { paint(); }
+  };
 
   // 从控件发出的指令要走一个来回 (POST + 电视上真的执行 + 下一次轮询), 这中间回报的还是操作前的状态。锁屏时
   // 这一点格外要命: 页面的定时器被系统冻着, 操作后往往只拉得到那一瞬的状态, 之后再没有下一次轮询来纠正 ——
@@ -4353,6 +4384,8 @@ private val CONTROL_SCRIPT = """
       return;
     }
     if (e.target.closest('#pb-fs')) {
+      // 手机能直接播电视这条地址时进「同步播放」(MIRROR_SCRIPT), 否则进载体
+      if (window.mirrorEnterFullscreen && window.mirrorEnterFullscreen()) return;
       if (!carrierFullscreenReady()) return;
       // 全屏要有载体在播, 所以没接入的先接入 (接入本身也要在这次手势里完成; createCarrier 会直接按
       // 这一集的长度建, 所以这一下进去的就是对的时间轴)
