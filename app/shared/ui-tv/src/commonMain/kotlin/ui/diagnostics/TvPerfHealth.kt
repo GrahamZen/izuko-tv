@@ -29,6 +29,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.platform.PreviousExits
 import me.him188.ani.app.ui.remote.tr
 import java.io.File
 import java.text.SimpleDateFormat
@@ -90,7 +91,7 @@ internal object TvPerfHealth {
             findings += PerfFinding(PerfFinding.Level.WARN, tr("电视正在因为发热降频（温控等级 {0}）。", thermal))
         }
         val recent = exits.filter { System.currentTimeMillis() - it.timestamp < 3L * 24 * 3600 * 1000 }
-        val lowMemoryKills = recent.filter { it.reason == ApplicationExitInfo.REASON_LOW_MEMORY }
+        val lowMemoryKills = recent.filter { PreviousExits.isLikelyLowMemoryKill(it.reason, it.status) }
         if (lowMemoryKills.isNotEmpty()) {
             val last = lowMemoryKills.first()
             findings += PerfFinding(
@@ -214,6 +215,7 @@ internal object TvPerfHealth {
     private class ExitRecord(
         val timestamp: Long,
         val reason: Int,
+        val status: Int,
         val importance: Int,
         val processName: String,
         val pssKb: Long,
@@ -228,7 +230,7 @@ internal object TvPerfHealth {
     @RequiresApi(30)
     private fun exitReasons30(am: ActivityManager, packageName: String): List<ExitRecord> =
         am.getHistoricalProcessExitReasons(packageName, 0, 20).map {
-            ExitRecord(it.timestamp, it.reason, it.importance, it.processName, it.pss, it.description)
+            ExitRecord(it.timestamp, it.reason, it.status, it.importance, it.processName, it.pss, it.description)
         }
 
     private fun reasonText(reason: Int): String = when (reason) {
