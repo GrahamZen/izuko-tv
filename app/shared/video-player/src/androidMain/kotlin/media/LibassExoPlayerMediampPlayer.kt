@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.ExperimentalMediampApi
+import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
 import me.him188.ani.app.domain.player.tracks.TrackChooserHost
 import me.him188.ani.app.platform.PlaybackRequestHints
@@ -117,7 +118,7 @@ class LibassExoPlayerMediampPlayer private constructor(
     parentCoroutineContext: CoroutineContext,
     private val pipeline: LibassMediaSourcePipeline,
     internal val exoMediampPlayer: ExoPlayerMediampPlayer,
-) : MediampPlayer by exoMediampPlayer, VideoSurfaceFrameSignal, TrackChooserHost {
+) : MediampPlayer by exoMediampPlayer, VideoSurfaceFrameSignal, TrackChooserHost, AudioTrackSupport {
     /**
      * @param configurePlayerBuilder 在 [ExoPlayer.Builder] 构建前调用, 用于自定义原生播放器 (如缓冲策略).
      *   见 [ExoPlayerMediampPlayer] 的同名参数.
@@ -154,6 +155,7 @@ class LibassExoPlayerMediampPlayer private constructor(
             mediaSourceInterceptor = pipeline::intercept,
             configurePlayerBuilder = { builder ->
                 builder.setDetachSurfaceTimeoutMs(DETACH_SURFACE_TIMEOUT_MILLIS)
+                FfmpegAudioFallback.install(builder, context, audioTimeStretch)
                 configurePlayerBuilder?.invoke(builder)
                 // 缓冲策略只能是管线的 ThrottledSourceLoadControl: 限速源、拖动预览要按媒体切换策略. 放在最后, 自定义不能覆盖它
                 builder.setLoadControl(pipeline.loadControl)
@@ -167,6 +169,13 @@ class LibassExoPlayerMediampPlayer private constructor(
     override var trackChooser: PlayerTrackChooser? = null
 
     private val exoPlayer: ExoPlayer get() = exoMediampPlayer.impl
+
+    // 字幕与音轨按界面语言和这部番记下的选择选, 音轨的选择由它下发给 ExoPlayer (见 PreferredTrackSelector)
+    private val preferredTracks =
+        PreferredTrackSelector(exoPlayer, exoMediampPlayer.subtitleTracks, exoMediampPlayer.audioTracks) { trackChooser }
+
+    override val unplayableAudioTracks: StateFlow<Map<String, String>> get() = preferredTracks.unplayableAudio
+    override val allAudioUnplayable: StateFlow<List<String>?> get() = preferredTracks.allAudioUnplayable
 
     /** 进行中的拖动预览 (见 [startSeekPreview]); 只在主线程读写. */
     private var seekPreview: SeekPreview? = null
@@ -346,8 +355,6 @@ class LibassExoPlayerMediampPlayer private constructor(
         assHandler.init(exoPlayer)
         exoPlayer.addAnalyticsListener(videoOutputTimeoutListener)
         exoPlayer.addListener(diskCacheHints)
-        // 字幕与音轨按界面语言和这部番记下的选择选, 音轨的选择由它下发给 ExoPlayer (见 PreferredTrackSelector)
-        val preferredTracks = PreferredTrackSelector(exoPlayer, exoMediampPlayer.subtitleTracks, exoMediampPlayer.audioTracks) { trackChooser }
         preferredTracks.start(backgroundScope)
         pipeline.onNewMedia = {
             seekPreview?.end()

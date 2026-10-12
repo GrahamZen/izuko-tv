@@ -79,6 +79,18 @@ class TrackChoicePolicyTest {
     }
 
     @Test
+    fun `audio the device cannot play is skipped`() {
+        // 蓝光原盘: 日语 TrueHD (标了默认, 盒子没有解码器) + 日语 AC3 + 英语
+        val trueHd = TrackCandidate("jaHd", "日语", TrackLanguage.of("日语", "jpn"), isDefault = true, isPlayable = false)
+        val ac3 = track("ja", "日语", "jpn")
+        val enHd = TrackCandidate("en", "英语", TrackLanguage.of("英语", "eng"), isPlayable = false)
+        assertEquals(TrackPick.Select("ja"), TrackChoicePolicy.pickAudio(listOf(trueHd, ac3, enHd), null))
+        assertEquals(TrackPick.Select("ja"), TrackChoicePolicy.pickAudio(listOf(trueHd, ac3, enHd), "en"))
+        // 全都放不了: 照常选
+        assertEquals(TrackPick.Select("jaHd"), TrackChoicePolicy.pickAudio(listOf(trueHd, enHd), null))
+    }
+
+    @Test
     fun `chooser remembers manual switches and saves them`() {
         val saved = mutableListOf<SubjectTrackChoice>()
         val chooser = SubjectTrackChooser("zh-CN") { saved += it }
