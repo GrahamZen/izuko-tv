@@ -17,6 +17,7 @@ package me.him188.ani.app.domain.player.tracks
  * @param language 认出的语言 (见 [TrackLanguage.of]); 认不出为 null
  * @param isDefault 容器里标了「默认」
  * @param isForced 容器里标了「强制」(多为只翻招牌、歌词的特效字幕)
+ * @param isPlayable 设备能解码或直通这条轨道的格式 (如盒子没有 TrueHD 解码器、也接不出直通时为 false)
  */
 class TrackCandidate(
     val id: String,
@@ -24,8 +25,10 @@ class TrackCandidate(
     val language: TrackLanguage?,
     val isDefault: Boolean = false,
     val isForced: Boolean = false,
+    val isPlayable: Boolean = true,
 ) {
-    override fun toString(): String = "TrackCandidate($id, $label, ${language?.key}, default=$isDefault, forced=$isForced)"
+    override fun toString(): String =
+        "TrackCandidate($id, $label, ${language?.key}, default=$isDefault, forced=$isForced${if (isPlayable) "" else ", unplayable"})"
 }
 
 /** 选哪条轨道. */
@@ -43,7 +46,7 @@ sealed interface TrackPick {
  * 打开一个媒体时选哪条字幕与音轨:
  * - 这部番用户手动换过的, 按语言 (不按轨道序号) 沿用 (见 [rememberValue]);
  * - 字幕选界面语言的: 简体界面 简体 > 简日双语 > 没分简繁的中文 > 繁体, 繁体界面反过来, 英文界面选英文;
- * - 音轨选日语原声, 没有日语的选容器里标了默认的;
+ * - 音轨选日语原声, 没有日语的选容器里标了默认的; 设备放不了的音轨不选 (选了就是播放出错), 全都放不了时照常选;
  * - 都认不出时不动 (播放器原来的选择).
  *
  * 同一档里不是强制字幕的、标了默认的、排在前面的优先. 强制字幕 (只翻招牌) 排在所有完整字幕后面.
@@ -80,9 +83,10 @@ object TrackChoicePolicy {
     /** @param remembered 这部番记下的选择 (见 [rememberValue]) */
     fun pickAudio(candidates: List<TrackCandidate>, remembered: String?): TrackPick {
         if (candidates.size < 2) return TrackPick.Keep
-        remembered?.let { matchRemembered(candidates, it) }?.let { return TrackPick.Select(it.id) }
-        best(candidates) { if (it.language?.base == "ja") 0 else null }?.let { return TrackPick.Select(it.id) }
-        return fallback(candidates)
+        val playable = candidates.filter { it.isPlayable }.ifEmpty { candidates }
+        remembered?.let { matchRemembered(playable, it) }?.let { return TrackPick.Select(it.id) }
+        best(playable) { if (it.language?.base == "ja") 0 else null }?.let { return TrackPick.Select(it.id) }
+        return fallback(playable)
     }
 
     /**

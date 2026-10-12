@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
+import me.him188.ani.app.domain.player.UnsupportedFormat
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.downloadSpeedFlow
 import me.him188.ani.app.domain.player.httpErrorStatus
@@ -143,6 +144,7 @@ fun EpisodeVideoLoadingIndicator(
             speedProvider = { speed },
             optimizeForFullscreen = optimizeForFullscreen,
             playerError = state.mediaStatus is MediaStatus.Error,
+            unsupportedFormat = unsupportedFormatOf(state.mediaStatus),
             modifier = modifier,
             details = details.copy(bufferedAheadMillis = bufferedAheadMillis),
         )
@@ -174,6 +176,8 @@ fun EpisodeVideoLoadingIndicator(
     speedProvider: () -> FileSize,
     optimizeForFullscreen: Boolean,
     playerError: Boolean = false,
+    /** 播放器报错的原因是设备放不了这个视频的编码格式时是哪种, 提示里说清楚 */
+    unsupportedFormat: UnsupportedFormat? = null,
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.labelLarge,
     details: EpisodeLoadingDetails = EpisodeLoadingDetails.None,
@@ -199,7 +203,8 @@ fun EpisodeVideoLoadingIndicator(
         progress = searching?.let { search -> { search.finished.toFloat() / search.total } },
         text = {
             if (playerError) {
-                TextWithBorder(playerErrorText, color = MaterialTheme.colorScheme.error)
+                val text = unsupportedFormat?.let { unsupportedFormatError(it) } ?: playerErrorText
+                TextWithBorder(text, color = MaterialTheme.colorScheme.error)
                 return@VideoLoadingIndicator
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {

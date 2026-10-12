@@ -51,6 +51,15 @@
 # ffmpeg native
 -keep class org.openani.mediamp.ffmpeg.JvmFFmpegProcess { *; }
 
+# FfmpegAudioFallback 按类名反射构造 mediamp 的 WSOLA 渲染器工厂 (Kotlin internal, 不能直接引用)
+-keep class org.openani.mediamp.exoplayer.internal.WsolaRenderersFactory { public <init>(android.content.Context); }
+# FFmpeg 音频软解 (video-player 里的 androidx.media3.decoder.ffmpeg, 同 media3 官方扩展自带的规则): native 方法名不能改,
+# growOutputBuffer 由 JNI 按名字调用
+-keepclasseswithmembernames class * { native <methods>; }
+-keep, includedescriptorclasses class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder {
+  private java.nio.ByteBuffer growOutputBuffer(androidx.media3.decoder.SimpleDecoderOutputBuffer, int);
+}
+
 # onnxruntime
 -keep class ai.onnxruntime.** { *; } # onnxruntime4j_jni constructs Java values through FindClass/GetMethodID
 

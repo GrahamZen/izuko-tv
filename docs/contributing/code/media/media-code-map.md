@@ -104,7 +104,16 @@
     `PreferredTracksExtension` 设置的 `SubjectTrackChooser` 选哪条字幕与音轨（规则见 `TrackChoicePolicy`：
     字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。
     轨道的语言从轨道名与容器里的语言码认（`TrackLanguage`）。mediamp 的 ExoPlayer 后端只下发字幕的选择，
-    音轨的选择由 `PreferredTrackSelector` 设成 ExoPlayer 的 override。
+    音轨的选择由 `PreferredTrackSelector` 设成 ExoPlayer 的 override。设备自己解不了、HDMI 也接不出直通的音频
+    （多数盒子上的 TrueHD、DTS）由 FFmpeg 软解成 PCM：`FfmpegAudioFallback` 在 ExoPlayer 构建前换上打开了扩展渲染器的
+    渲染器工厂，FFmpeg 排在系统解码器后面。软解库是 media3 的 FFmpeg 扩展：Java 类原样放在 video-player 的
+    `src/androidMain/java/androidx/media3/decoder/ffmpeg/`，`libffmpegJNI.so` 由 `native/media3-ffmpeg/build.sh` 编（只含音频解码器，
+    给 TrueHD 补了声道布局，FFmpeg 6.x 没有它解不了 TrueHD）。override 不看设备能不能解，
+    所以连 FFmpeg 也放不了的音轨记成 `TrackCandidate.isPlayable = false`，选音轨时不选；
+    它们也经 `AudioTrackSupport` 交给选音轨的界面（电视底栏 `TvAudioSwitcher`、手机控制中心）注明并拦下，切过去会报错并被自动换源换掉整个资源。
+    播放器报错是因为设备放不了某种编码格式时，`UnsupportedFormat` 从渲染器异常里认出是音频还是画面、哪种格式，
+    加载提示据此写成「这台电视放不了…」。音轨全都放不了时播放器不选音轨、照常放画面，不报错，
+    `AudioTrackSupport.allAudioUnplayable` 让电视弹提示请用户手动换源（`TvUnplayableAudioNotice`）。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
     手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
     `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
