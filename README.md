@@ -6,17 +6,15 @@
 
 **为 Android TV / Google TV 打造的追番客户端**
 
-| 下载 | 讨论群 | 许可证 | 原项目 |
-|:---:|:---:|:---:|:---:|
-| [![Release](https://img.shields.io/github/v/release/GrahamZen/izuko-tv.svg?maxAge=3600&label=Download&labelColor=06599d&color=043b69&include_prereleases)](https://github.com/GrahamZen/izuko-tv/releases/latest) | [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE.txt) | [![Based on Animeko](https://img.shields.io/badge/open--ani%2Fanimeko-181717?logo=github&logoColor=white)](https://github.com/open-ani/animeko) |
+| 首次安装 | 下载 / 更新 | 讨论群 | 许可证 | 原项目 |
+|:---:|:---:|:---:|:---:|:---:|
+| [![Installer](https://img.shields.io/badge/Installer-install--izuko.apk-043b69?labelColor=06599d)](https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk) | [![Release](https://img.shields.io/github/v/release/GrahamZen/izuko-tv.svg?maxAge=3600&label=Download&labelColor=06599d&color=043b69&include_prereleases)](https://github.com/GrahamZen/izuko-tv/releases/latest) | [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE.txt) | [![Based on Animeko](https://img.shields.io/badge/open--ani%2Fanimeko-181717?logo=github&logoColor=white)](https://github.com/open-ani/animeko) |
 
 </div>
 
 > [!NOTE]
 > Izuko TV 是 [Animeko](https://github.com/open-ani/animeko)（by OpenAni and contributors）的**第三方修改版**，依照 [AGPL-3.0](LICENSE.txt) 发布。它为电视重新设计了界面，并直接连接 [Bangumi][Bangumi]，不依赖 Animeko 服务器。
 > 本项目与 OpenAni 团队**没有隶属关系，也未获其认可**；使用中遇到的问题请在[本仓库](https://github.com/GrahamZen/izuko-tv/issues)反馈，不要打扰上游。
-
-[立即下载](https://github.com/GrahamZen/izuko-tv/releases/latest)
 
 ## 功能
 
@@ -82,14 +80,32 @@ https://github.com/user-attachments/assets/7f9fe051-a904-4157-a317-b13284390fec
 
 ## 下载安装
 
-在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载 APK，装到电视或电视盒子上（手机、平板也能装）。
-
-- **选哪个包**：默认下 `universal`（包含全部架构）。确切知道设备系统架构的，可以直接下对应的分架构包，体积更小。
+- **第一次装**：下载[安装助手](https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk)（`install-izuko.apk`，约 120 KB，Android 4.4 及以上都能装），装到电视或电视盒子上打开。它按电视的系统版本和架构挑安装包，下载、校验后装上 Izuko TV；装不上时说明原因，并列出反馈问题要用的设备信息。
+- **更新**：有新版本时首页会提示，在「设置 → 软件更新」里可以直接更新；也可以在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载新版覆盖安装。
+- **自己选安装包**：在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载 APK（手机、平板也能装）。默认下 `universal`（包含全部架构）；确切知道设备系统架构的，可以直接下对应的分架构包，体积更小。
 - **装不上**：个别盒子会拒装 `universal`（如腾讯极光盒子 7S），这时改下 `armeabi-v7a`，还不行再试 `arm64-v8a`。设备信息里显示 64 位，不代表能装 64 位的包：不少电视和盒子的系统是 32 位的，装 `arm64-v8a` 会失败。
 - **系统要求**：Android 8.1 及以上。Android 7.1 请下文件名带 `legacy` 的兼容包（同样优先选 `legacy-universal`），7.1 上应用退到后台后 BT 下载可能被系统停掉。Android 10 及以下测试得较少，遇到问题欢迎反馈。
-- **更新**：有新版本时首页会提示，在「设置 → 软件更新」里可以直接更新。
 
 Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/open-ani/animeko)。
+
+### 装不上怎么办
+
+- **提示「解析软件包时出现问题」**：多半是电视系统低于安装包的要求（正式包要 Android 8.1，兼容包要 7.1），或者文件没下完整、U 盘里的文件读不出来。先装安装助手，它会挑对安装包并自己下载
+- **提示「软件包与现有软件包存在冲突」或签名不一致**：电视上已经装了签名不同的 Izuko TV（比如从第三方网站或市场下载的），先卸载它再装。卸载会清掉本地数据
+- **提示「软件包似乎无效」**：文件下坏了，重新下载，或改用安装助手
+- **文件管理器里看不到安装包**：部分电视把 APK 藏起来了，康佳在文件管理里连按 5 次菜单键，飞利浦按隐藏键，海信 / Vidda 要先打开「商场模式」
+- **系统拦下安装**：部分品牌只认自家的安装渠道或带黑名单，别的应用（包括安装助手）发起的安装会被拦：
+
+  | 品牌 | 能走的路 |
+  |---|---|
+  | 小米 / Redmi | 手机「小米电视助手」推送，或 ADB 安装 |
+  | TCL / 雷鸟 | 安装包拷到 U 盘根目录，在「电视卫士 → 极速安装」里装 |
+  | 海信 / Vidda | 打开「商场模式」后用 U 盘装，或用手机「海信爱家」投送 |
+  | 创维 / 酷开 | 只认「应用圈」，要在工厂模式里打开 ADB 安装 |
+  | 华为 / 荣耀智慧屏 | HarmonyOS 4.3 及以前安装时选「信任」；HarmonyOS 5（MateTV）不能装 APK |
+  | 长虹 / 乐视 / 运营商盒子 | 多数禁止第三方应用，只能 ADB 或刷机 |
+
+- **反馈问题**：安装助手装不上时会显示一屏诊断信息（系统、品牌型号、架构、系统安装器等），拍下这一屏一起发来
 
 ## 使用说明
 
