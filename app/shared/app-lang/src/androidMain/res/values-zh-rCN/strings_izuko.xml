@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">正在解析资源链接</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，超时自动换源</string>
+    <string name="subject_episode_video_loading_unsupported_audio">这台电视放不了这个视频的音频格式（%1$s），请换一个数据源</string>
+    <string name="subject_episode_video_loading_unsupported_video">这台电视放不了这个视频的画面格式（%1$s），请换一个数据源</string>
     <string name="subject_episode_video_loading_cause_http_rejected">服务器拒绝了请求（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_http_error">服务器出错（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在启动 BT 服务\n第一次要十几秒</string>
@@ -490,6 +492,11 @@
     <string name="video_player_tv_skip_segment">跳过 %1$s</string>
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">音轨 %1$d</string>
+    <string name="video_player_audio_track_unplayable">%1$s（这台电视放不了）</string>
+    <string name="video_player_audio_track_unplayable_format">%1$s（%2$s，这台电视放不了）</string>
+    <string name="video_player_audio_track_unplayable_toast">这台电视放不了这条音轨的格式，请选别的音轨</string>
+    <string name="video_player_audio_all_unplayable_toast">这个视频的音轨这台电视都放不了（%1$s），只有画面没有声音，请手动换一个数据源</string>
+    <string name="video_player_audio_all_unplayable_toast_unknown">这个视频的音轨这台电视都放不了，只有画面没有声音，请手动换一个数据源</string>
     <string name="video_player_subtitle_numbered">字幕 %1$d</string>
     <!-- 评论胶囊长按的排序菜单 -->
     <string name="video_player_tv_comment_sort_time_ascending">按时间正序</string>
