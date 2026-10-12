@@ -231,6 +231,7 @@
     <string name="subject_details_tv_title_logo_unreachable">连不上反馈服务器，没交出去 (本机已换上)。可以在 设置 → 代理 里配好代理再试</string>
     <string name="subject_details_tv_title_logo_failed">提交失败，稍后再试。本机已换上</string>
     <string name="subject_details_tv_title_logo_done">完成</string>
+    <string name="subject_details_tv_open_details_page">打开详情页</string>
     <string name="subject_details_tv_feedback">反馈</string>
     <string name="subject_details_tv_feedback_title">反馈</string>
     <string name="subject_details_tv_feedback_logo">标题 logo 不对</string>
