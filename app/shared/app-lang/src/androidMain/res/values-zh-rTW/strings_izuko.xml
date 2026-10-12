@@ -767,6 +767,9 @@
     <string name="tv_settings_debug_refresh_ok">續期成功</string>
     <string name="tv_settings_debug_refresh_failed">續期失敗：%1$s</string>
     <string name="tv_settings_debug_crash">讓應用崩潰（測試）</string>
+    <string name="tv_settings_login_proxy_status">代理 %1$s 連不上</string>
+    <string name="tv_settings_login_proxy_hint">電視上的代理連不上，登入和其他連網都會失敗。開啟或關閉提供代理的應用程式，或在「代理」中把代理方式改成「停用」，再按確定重試。</string>
+    <string name="tv_onboarding_login_proxy_unreachable">電視上的代理 %1$s 連不上：開啟或關閉提供代理的應用程式，或之後在設定的「代理」中把代理方式改成「停用」，再掃一次。</string>
     <string name="tv_settings_rerun_onboarding">重新走一遍首次引導</string>
     <string name="tv_settings_rerun_onboarding_description">從歡迎頁開始，再走一遍檢測網路、連接手機、登入 Bangumi 和選外觀這幾步。應用程式會重新啟動；現有的設定、登入和收藏都不受影響。</string>
     <string name="tv_settings_rerun_onboarding_confirm">應用程式會重新啟動，然後從歡迎頁開始首次引導。</string>
