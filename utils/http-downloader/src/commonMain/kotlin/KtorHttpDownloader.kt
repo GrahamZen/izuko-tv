@@ -9,6 +9,7 @@
 
 package me.him188.ani.utils.httpdownloader
 
+import io.ktor.client.plugins.timeout
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.client.request.header
@@ -878,6 +879,9 @@ open class KtorHttpDownloader(
     /**
      * Attempt a small GET with Range=0-0 to detect whether partial content is supported
      * and to parse the total file size from 'Content-Range: bytes 0-0/<size>'.
+     *
+     * 一次最多等 [RANGE_PROBE_TIMEOUT_MILLIS] (client 的重试再给一次): 建缓存在等它 (删这条缓存又在等建缓存),
+     * 探不出来照样能整条下 (单段)。请求头同分段下载 (经 [httpGet], 网盘的 Cookie 原样发出)。
      */
     private suspend fun probeRangeSupport(
         url: String,
@@ -887,10 +891,8 @@ open class KtorHttpDownloader(
             headers = options.headers + ("Range" to "bytes=0-0"),
         )
         return try {
-            client.use {
-                prepareGet(url) {
-                    rangeOptions.headers.forEach { (k, v) -> header(k, v) }
-                }.execute { response ->
+            httpGet(url, rangeOptions, requestTimeoutMillis = RANGE_PROBE_TIMEOUT_MILLIS) { statement ->
+                statement.execute { response ->
                     when (response.status.value) {
                         206 -> {
                             val contentRange =
@@ -1351,9 +1353,20 @@ open class KtorHttpDownloader(
         segmentFailures.update { remove(downloadId) }
     }
 
-    protected suspend inline fun <R> httpGet(url: String, options: DownloadOptions, block: (HttpStatement) -> R): R {
+    /** @param requestTimeoutMillis 整个请求最多等多久; null 时用 client 的设置 */
+    protected suspend inline fun <R> httpGet(
+        url: String,
+        options: DownloadOptions,
+        requestTimeoutMillis: Long? = null,
+        block: (HttpStatement) -> R,
+    ): R {
         return client.use {
             prepareGet(url) {
+                timeout {
+                    // 连不上的节点早点换下一个 (同播放器): 下载域名一解析好几个 IP, 连不通的要等满连接超时才换, 默认 30 秒一个
+                    connectTimeoutMillis = 3_000
+                    this.requestTimeoutMillis = requestTimeoutMillis
+                }
                 options.headers.forEach { (k, v) ->
                     // 手写的 Cookie (网盘直链靠它鉴权) 不能交给 client 的 Cookie 插件, 它会改坏, 见 rawCookieHeader
                     if (k.equals(HttpHeaders.Cookie, ignoreCase = true)) rawCookieHeader(v) else header(k, v)
@@ -1464,6 +1477,9 @@ open class KtorHttpDownloader(
 
         /** 拼接时每次取令牌的块大小 */
         private const val MERGE_THROTTLE_CHUNK = 256 * 1024
+
+        /** 建任务时探测 Range 一次最多等多久, 见 [probeRangeSupport] */
+        private const val RANGE_PROBE_TIMEOUT_MILLIS = 5_000L
     }
 }
 
