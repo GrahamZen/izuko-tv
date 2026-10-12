@@ -34,7 +34,7 @@ import me.him188.ani.app.platform.SystemProxyDetector
 import me.him188.ani.utils.ktor.setProxy
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
-import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 
 interface ProxyProvider {
     val proxy: Flow<ProxyConfig?>
@@ -75,7 +75,8 @@ class SystemProxyProvider(
                 emit(ProxyConfig(url = defaultProxy.url.toString()))
             }
 
-            delay(1.hours)
+            // 几秒重读一次: 提供代理的应用 (VPN、加速器) 一关, 系统就撤掉代理, 这边要马上改回直连, 不然一直连一个没人听的端口
+            delay(5.seconds)
         }
     }.distinctUntilChanged()
         .onEach {
