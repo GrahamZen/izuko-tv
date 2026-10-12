@@ -157,6 +157,7 @@ import me.him188.ani.app.ui.lang.video_player_tv_skip_segment
 import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.mediaselect.common.SourceIcon
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
+import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeDialogsHost
@@ -179,7 +180,6 @@ import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.SpeedS
 import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.VideoAspectRatioSelector
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
 import me.him188.ani.app.videoplayer.ui.progress.ProgressSliderPreviewStyle
-import me.him188.ani.app.videoplayer.ui.progress.AudioSwitcher
 import me.him188.ani.app.videoplayer.ui.progress.SubtitleSwitcher
 import me.him188.ani.app.videoplayer.ui.top.SystemTime
 import org.jetbrains.compose.resources.stringResource
@@ -1487,8 +1487,9 @@ private fun TvPlayerBottomRow(
                     TvPlayerChromeItem.AUDIO_TRACK -> vm.player.audioTracks?.let {
                         TvBottomRowLabeled(label = null, itemModifier) {
                             TvTextButtonInverse {
-                                PlayerControllerDefaults.AudioSwitcher(
+                                TvAudioSwitcher(
                                     it,
+                                    vm.player as? AudioTrackSupport,
                                     modifier = Modifier.height(TV_ICON_BUTTON_SIZE),
                                     onExpandedChanged = { open -> overlay.onPopupExpandedChanged(open) },
                                 )
