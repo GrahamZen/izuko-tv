@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
@@ -41,6 +42,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+/** 这台设备画不了 GL 弹幕层 (见 [GlDanmakuLayerView] 的 onUnavailable): 之后的播放页都直接用 [DanmakuHost]. */
+@Volatile
+private var glLayerUnavailable = false
+
 @Composable
 actual fun DanmakuLayer(
     state: DanmakuHostState,
@@ -48,11 +53,33 @@ actual fun DanmakuLayer(
     alpha: () -> Float,
     snapshots: DanmakuLayerSnapshots?,
 ) {
+    var useGl by remember { mutableStateOf(!glLayerUnavailable) }
+    if (useGl) {
+        GlDanmakuLayer(state, modifier, alpha, snapshots, onUnavailable = { glLayerUnavailable = true; useGl = false })
+    } else {
+        // 退回在界面里画; 不登记截图
+        DanmakuHost(state, modifier.graphicsLayer { this.alpha = alpha() })
+    }
+}
+
+@Composable
+private fun GlDanmakuLayer(
+    state: DanmakuHostState,
+    modifier: Modifier,
+    alpha: () -> Float,
+    snapshots: DanmakuLayerSnapshots?,
+    onUnavailable: () -> Unit,
+) {
     val density = LocalDensity.current
     val baseStyle = MaterialTheme.typography.bodyMedium
     val trackStubMeasurer = rememberTextMeasurer(1)
     val danmakuTextMeasurer = rememberTextMeasurer(3000)
 
+    // 这一层在画时弹幕图不用预传给界面的渲染线程, 见 glDanmakuLayersInUse
+    DisposableEffect(Unit) {
+        glDanmakuLayersInUse.incrementAndGet()
+        onDispose { glDanmakuLayersInUse.decrementAndGet() }
+    }
     SideEffect {
         state.setUIContext(baseStyle, danmakuTextMeasurer, density)
     }
@@ -74,7 +101,7 @@ actual fun DanmakuLayer(
 
         var view by remember { mutableStateOf<GlDanmakuLayerView?>(null) }
         AndroidView(
-            factory = { context -> GlDanmakuLayerView(context).also { view = it } },
+            factory = { context -> GlDanmakuLayerView(context, onUnavailable).also { view = it } },
             modifier = Modifier.fillMaxSize(),
             onRelease = { it.release() },
         )
