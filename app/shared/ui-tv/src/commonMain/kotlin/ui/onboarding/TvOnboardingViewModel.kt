@@ -56,6 +56,8 @@ import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
+import me.him188.ani.app.domain.settings.ProxyProvider
+import me.him188.ani.app.domain.settings.unreachableProxyOf
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
@@ -237,6 +239,7 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
     private val oauthManager: BangumiOAuthManager by inject()
     private val sessionStateProvider: SessionStateProvider by inject()
     private val localProfileConversion: LocalProfileConversion by inject()
+    private val proxyProvider: ProxyProvider by inject()
 
     val loggedIn: StateFlow<Boolean> = sessionStateProvider.stateFlow
         .map { it is SessionState.Valid }
@@ -246,6 +249,20 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
     val selfInfo = SelfInfoStateProducer().flow
 
     val oauthState: StateFlow<BangumiOAuthManager.State> get() = oauthManager.state
+
+    /**
+     * 上一次登录没成功是因为连不上电视上的代理时, 那个代理的地址 (见 unreachableProxyOf); 否则 null.
+     * 记住到登录成功或不再用这个代理为止: 失败后码当场换新, 授权状态马上就不是「失败」了, 只看当前状态的话提示一闪就没.
+     */
+    val unreachableProxy: StateFlow<String?> = combine(oauthManager.state, proxyProvider.proxy) { state, proxy -> state to proxy }
+        .runningFold(null as String?) { last, (state, proxy) ->
+            when {
+                proxy == null || state == BangumiOAuthManager.State.Success -> null
+                state is BangumiOAuthManager.State.Failed -> unreachableProxyOf(state.cause, proxy)
+                else -> last
+            }
+        }
+        .stateIn(backgroundScope, SharingStarted.Eagerly, null)
 
     /** 电视上能不能授权登录 (应用内浏览器; 电视上跳出去就回不来). */
     val tvLoginSupported: Boolean get() = oauthManager.inAppBrowserSupported
