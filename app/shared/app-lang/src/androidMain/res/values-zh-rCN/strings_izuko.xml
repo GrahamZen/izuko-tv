@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">正在解析资源链接</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，超时自动换源</string>
+    <string name="subject_episode_video_loading_unsupported_audio">这台电视放不了这个视频的音频格式（%1$s），请换一个数据源</string>
+    <string name="subject_episode_video_loading_unsupported_video">这台电视放不了这个视频的画面格式（%1$s），请换一个数据源</string>
     <string name="subject_episode_video_loading_cause_http_rejected">服务器拒绝了请求（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_http_error">服务器出错（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_drive_login">网盘未登录，登录后才能播放网盘里的资源</string>
@@ -63,6 +65,11 @@
     <string name="settings_storage_playback_cache">清理边下边播缓存</string>
     <string name="settings_storage_playback_cache_usage">「边下边播」存在本机的视频，往回拖、重看时从这里读。当前占用 %1$s，上限 %2$s（剩余空间与已存部分合计的四分之一，最多 4 GB），满了先删最久没看的；关掉「边下边播」会全部删除</string>
     <string name="settings_storage_playback_cache_cleared">已清理边下边播缓存</string>
+    <string name="settings_player_audio_passthrough">音频直通</string>
+    <string name="settings_player_audio_passthrough_description">把杜比、DTS 这类音轨原样交给功放或回音壁解码，保留多声道和全景声。「自动」：立体声音轨一律在这里解码（直通它们没有好处）；多声道音轨只在声音经 HDMI、ARC 或光纤送到外接设备时直通，用电视自带喇叭或蓝牙时在这里解码，因为有些电视直通后没有声音。</string>
+    <string name="settings_player_audio_passthrough_auto">自动</string>
+    <string name="settings_player_audio_passthrough_always">总是直通</string>
+    <string name="settings_player_audio_passthrough_off">关闭</string>
     <string name="player_disk_cache_hint">在设置里打开「边下边播」，往回拖不用再等</string>
     <string name="player_buffer_wait_start">网盘视频先缓冲 %1$d 秒再开始播放，免得刚播就卡</string>
     <string name="player_buffer_wait_stall">下载速度跟不上这个视频的码率，先缓冲 %1$d 秒再接着播</string>
@@ -535,6 +542,11 @@
     <string name="video_player_tv_skip_segment">跳过 %1$s</string>
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">音轨 %1$d</string>
+    <string name="video_player_audio_track_unplayable">%1$s（这台电视放不了）</string>
+    <string name="video_player_audio_track_unplayable_format">%1$s（%2$s，这台电视放不了）</string>
+    <string name="video_player_audio_track_unplayable_toast">这台电视放不了这条音轨的格式，请选别的音轨</string>
+    <string name="video_player_audio_all_unplayable_toast">这个视频的音轨这台电视都放不了（%1$s），只有画面没有声音，请手动换一个数据源</string>
+    <string name="video_player_audio_all_unplayable_toast_unknown">这个视频的音轨这台电视都放不了，只有画面没有声音，请手动换一个数据源</string>
     <string name="video_player_subtitle_numbered">字幕 %1$d</string>
     <!-- 评论胶囊长按的排序菜单 -->
     <string name="video_player_tv_comment_sort_time_ascending">按时间正序</string>
