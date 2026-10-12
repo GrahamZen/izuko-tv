@@ -21,6 +21,8 @@ import androidx.compose.ui.text.TextPainter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.danmaku.api.DanmakuContent
 import me.him188.ani.danmaku.api.DanmakuInfo
 import me.him188.ani.danmaku.api.DanmakuLocation
@@ -82,15 +84,22 @@ data class StyledDanmaku(
     }
 
     /**
-     * 弹幕文字画成的图: 第一次用到时生成, 之后复用 (见 [DanmakuLayer]). 放进轨道后在后台先生成好 ([DanmakuHostState.trySend]);
-     * 两个线程同时生成时各画一张, 留下哪张都一样.
+     * 弹幕文字画成的图: 第一次用到时生成, 之后复用 (见 [DanmakuLayer]). 放进轨道后在后台先生成好 ([DanmakuHostState.trySend]).
+     *
+     * 所有弹幕的图串行着画 ([rasterLock]): [measurer] 缓存里同一段文字的排版结果共用一个段落和它的画笔, 描边与填充两层都是改了
+     * 那支画笔的颜色、线型再画; 几个线程同时画会互相改掉, 填充画成黑色描边 (白字只剩黑边)、描边画成白色等.
      */
     internal fun cachedImage(): ImageBitmapWithOffset =
-        imageBitmap ?: createDanmakuImageBitmap(solidTextLayout, borderTextLayout).also { imageBitmap = it }
+        imageBitmap ?: synchronized(rasterLock) {
+            imageBitmap ?: createDanmakuImageBitmap(solidTextLayout, borderTextLayout).also { imageBitmap = it }
+        }
 
     /** 已经生成好的图; 还没有时为 `null`, 不在这里生成. */
     internal fun cachedImageOrNull(): ImageBitmapWithOffset? = imageBitmap
 }
+
+/** 画弹幕图的锁, 见 [StyledDanmaku.cachedImage]. */
+private val rasterLock = SynchronizedObject()
 
 class ImageBitmapWithOffset(
     val bitmap: ImageBitmap,

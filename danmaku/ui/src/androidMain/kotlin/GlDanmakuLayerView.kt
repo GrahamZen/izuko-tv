@@ -21,6 +21,7 @@ import android.os.Process
 import android.view.Choreographer
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -33,13 +34,23 @@ import javax.microedition.khronos.opengles.GL10
  * [DanmakuLayer] 在 Android 上的那一层: 系统合成里在视频之上、窗口之下 ([setZOrderMediaOverlay]).
  *
  * 每条弹幕的图第一次出现时传进一张图集纹理 ([DanmakuAtlasAllocator]), 之后每帧把在屏的弹幕拼成一组顶点一次画完.
+ * 字号、显示区域调大后一帧放不下时换更大的图集 (见 [grownDanmakuAtlasSize]); 到顶了还放不下的, 以及比最大的图集还宽的,
+ * 各用一张自己的纹理画.
  * 有滚动弹幕时由自己线程上的 Choreographer 每个 vsync 请求一帧, 不用连续模式: 连续模式下 GL 线程大半时间卡在等下一块缓冲上,
  * 同进程里界面的渲染线程会被它拖住 (Shield 上界面掉到每秒十几帧).
+ *
+ * 这台设备画不了时 (片元着色器不支持 highp、着色器编不过、开不出图集纹理) 在界面线程上调 [onUnavailable], 由调用方换别的画法.
+ *
+ * @param fragmentShader 测试用, 换掉片元着色器.
  */
-internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
+internal class GlDanmakuLayerView(
+    context: Context,
+    private val onUnavailable: () -> Unit = {},
+    fragmentShader: String? = null,
+) : GLSurfaceView(context) {
     private val pacingStats = PacingStats()
     private val pacerTiming = PacerTiming()
-    private val renderer = Renderer(pacingStats, pacerTiming)
+    private val renderer = Renderer(pacingStats, pacerTiming, fragmentShader ?: FRAGMENT_SHADER) { post(onUnavailable) }
 
     private val pacerThread = HandlerThread("DanmakuPacer", Process.THREAD_PRIORITY_DISPLAY).apply { start() }
     private val pacer = Handler(pacerThread.looper)
@@ -105,9 +116,16 @@ internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
         onPause()
     }
 
-    private class Renderer(pacingStats: PacingStats, private val pacerTiming: PacerTiming) : GLSurfaceView.Renderer {
+    private class Renderer(
+        pacingStats: PacingStats,
+        private val pacerTiming: PacerTiming,
+        private val fragmentShader: String,
+        private val reportUnavailable: () -> Unit,
+    ) : GLSurfaceView.Renderer {
         @Volatile
         var frame: DanmakuLayerFrame? = null
+
+        private val logger = logger<GlDanmakuLayerView>()
 
         private var program = 0
         private var aPos = 0
@@ -116,11 +134,26 @@ internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
         private var uAlpha = 0
         private var texture = 0
         private var atlas = DanmakuAtlasAllocator<Bitmap>(1, 1)
+        private var atlasLimit = 0
+        private var atlasGrowthStopped = false
+        private var lastCompactNanos = 0L
+
+        // 最近一次放不下的那张图的尺寸, 换图集时至少要装得下它
+        private var overflowWidth = 0
+        private var overflowHeight = 0
+
+        // 不进图集、各用一张自己纹理画的 (这一帧的), 与它们的纹理 (连着两帧没画就删)
+        private val separateItems = ArrayList<DanmakuLayerItem>()
+        private val separateTextures = HashMap<Bitmap, SeparateTexture>()
+        private var maxTextureSize = 0
+        private var frameIndex = 0L
         private val clock = DanmakuRenderClock()
         private val stats = RenderStats(pacingStats, pacerTiming)
 
         private val vertices: FloatBuffer =
             ByteBuffer.allocateDirect(MAX_QUADS * 16 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        private val separateVertices: FloatBuffer =
+            ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         private val indices: ShortBuffer =
             ByteBuffer.allocateDirect(MAX_QUADS * 6 * 2).order(ByteOrder.nativeOrder()).asShortBuffer().apply {
                 for (i in 0 until MAX_QUADS) {
@@ -132,15 +165,24 @@ internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
             }
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-            program = link(VERTEX_SHADER, FRAGMENT_SHADER)
+            // 新的 EGL 上下文: 旧纹理随旧上下文没了, 等 onSurfaceChanged 按尺寸重建
+            texture = 0
+            atlas = DanmakuAtlasAllocator(1, 1)
+            atlasGrowthStopped = false
+            separateTextures.clear()
+
+            // 图集有 2048~4096 宽, 纹理坐标要 highp 才采得准; 不支持的 (Mali-400/450 等) 不用这一层
+            val highp = fragmentHighpSupported()
+            program = if (highp) link(VERTEX_SHADER, fragmentShader) else 0
+            if (program == 0) {
+                logger.warn { "GL danmaku unavailable: ${if (highp) "shader failed" else "no highp in fragment shaders"}" }
+                reportUnavailable()
+                return
+            }
             aPos = GLES20.glGetAttribLocation(program, "aPos")
             aUv = GLES20.glGetAttribLocation(program, "aUv")
             uViewport = GLES20.glGetUniformLocation(program, "uViewport")
             uAlpha = GLES20.glGetUniformLocation(program, "uAlpha")
-
-            // 新的 EGL 上下文: 旧纹理随旧上下文没了, 等 onSurfaceChanged 按尺寸重建
-            texture = 0
-            atlas = DanmakuAtlasAllocator(1, 1)
 
             GLES20.glEnable(GLES20.GL_BLEND)
             // 位图是预乘 alpha 的
@@ -150,107 +192,272 @@ internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
             GLES20.glViewport(0, 0, width, height)
+            if (program == 0) return
 
             val maxSize = IntArray(1).also { GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE, it, 0) }[0]
+            maxTextureSize = maxSize
+            atlasLimit = minOf(maxSize, ATLAS_SIZE_LIMIT)
             val atlasWidth = danmakuAtlasWidth(width, maxSize)
             val atlasHeight = atlasWidth / 2
-            if (texture != 0 && atlas.width == atlasWidth && atlas.height == atlasHeight) return
-            if (texture != 0) GLES20.glDeleteTextures(1, intArrayOf(texture), 0)
-            atlas = DanmakuAtlasAllocator(atlasWidth, atlasHeight)
+            // 换过更大的就留着
+            if (texture != 0 && atlas.width >= atlasWidth && atlas.height >= atlasHeight) return
+            if (!createAtlas(atlasWidth, atlasHeight)) {
+                logger.warn { "GL danmaku unavailable: cannot allocate a ${atlasWidth}x$atlasHeight atlas" }
+                reportUnavailable()
+            }
+        }
+
+        /** 换一张 [width]×[height] 的空图集, 原来的图都要重传. 开不出来 (显存不够) 时为 false, 原来那张照用. */
+        private fun createAtlas(width: Int, height: Int): Boolean {
+            while (GLES20.glGetError() != GLES20.GL_NO_ERROR) Unit
             val ids = IntArray(1)
             GLES20.glGenTextures(1, ids, 0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
+            setTextureParameters()
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null,
+            )
+            if (GLES20.glGetError() != GLES20.GL_NO_ERROR) {
+                GLES20.glDeleteTextures(1, ids, 0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
+                return false
+            }
+            if (texture != 0) GLES20.glDeleteTextures(1, intArrayOf(texture), 0)
             texture = ids[0]
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
+            atlas = DanmakuAtlasAllocator(width, height)
+            atlas.beginFrame()
+            return true
+        }
+
+        private fun setTextureParameters() {
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-            GLES20.glTexImage2D(
-                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, atlas.width, atlas.height, 0,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null,
-            )
+        }
+
+        /** 换一张至少装得下 [overflowWidth]×[overflowHeight] 的更大的图集. 到顶或开不出来为 false. */
+        private fun growAtlas(): Boolean {
+            if (atlasGrowthStopped) return false
+            val (width, height) = grownDanmakuAtlasSize(atlas.width, atlas.height, overflowWidth, overflowHeight, atlasLimit)
+                ?: return false
+            if (!createAtlas(width, height)) {
+                atlasGrowthStopped = true
+                logger.warn { "GL danmaku atlas cannot grow to ${width}x$height, staying at ${atlas.width}x${atlas.height}" }
+                return false
+            }
+            logger.info { "GL danmaku atlas grown to ${width}x$height" }
+            return true
         }
 
         override fun onDrawFrame(gl: GL10?) {
             val start = System.nanoTime()
             pacerTiming.onDraw(start)
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            if (texture == 0) return
+            if (program == 0 || texture == 0) return
             val f = frame ?: return
             if (f.alpha <= 0f || f.hostWidth <= 0 || f.hostHeight <= 0) return
             val elapsed = clock.elapsedAt(f.elapsedAt(start), f.paused, start)
             stats.onFrame(start, f.moving, clock.lastErrorNanos)
-            val clearsBefore = atlas.clears
-            atlas.beginFrame()
-            var quads = buildQuads(f, elapsed)
-            // 中途整张清空过图集: 前面拼好的指向被覆盖的位置, 整帧重拼
-            if (quads < 0) quads = buildQuads(f, elapsed).coerceAtLeast(0)
-            stats.onDrawn(System.nanoTime() - start, atlas.clears - clearsBefore, clock.snaps)
-            if (quads == 0) return
+            frameIndex++
+            val quads = buildFrame(f, elapsed, start)
+            // 只算自己的活 (拼顶点、传图): 之后的绘制调用会等系统给缓冲区, 那段算在 vsync 里
+            stats.onDrawn(System.nanoTime() - start, clock.snaps, atlas.width, atlas.height)
+            if (quads > 0 || separateItems.isNotEmpty()) {
+                GLES20.glUseProgram(program)
+                GLES20.glUniform2f(uViewport, f.hostWidth.toFloat(), f.hostHeight.toFloat())
+                GLES20.glUniform1f(uAlpha, f.alpha.coerceIn(0f, 1f))
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+                if (quads > 0) draw(texture, vertices, quads)
+                for (item in separateItems) drawSeparately(f, item, elapsed)
+            }
+            releaseUnusedSeparateTextures()
+        }
 
-            GLES20.glUseProgram(program)
-            GLES20.glUniform2f(uViewport, f.hostWidth.toFloat(), f.hostHeight.toFloat())
-            GLES20.glUniform1f(uAlpha, f.alpha.coerceIn(0f, 1f))
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        private fun draw(texture: Int, buffer: FloatBuffer, quads: Int) {
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-            vertices.position(0)
-            GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 16, vertices)
+            buffer.position(0)
+            GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 16, buffer)
             GLES20.glEnableVertexAttribArray(aPos)
-            vertices.position(2)
-            GLES20.glVertexAttribPointer(aUv, 2, GLES20.GL_FLOAT, false, 16, vertices)
+            buffer.position(2)
+            GLES20.glVertexAttribPointer(aUv, 2, GLES20.GL_FLOAT, false, 16, buffer)
             GLES20.glEnableVertexAttribArray(aUv)
             indices.position(0)
             GLES20.glDrawElements(GLES20.GL_TRIANGLES, quads * 6, GLES20.GL_UNSIGNED_SHORT, indices)
         }
 
-        /** 拼这一帧的顶点, 返回四边形个数; 中途整张清空过图集时返回 -1. */
-        private fun buildQuads(f: DanmakuLayerFrame, elapsed: Long): Int {
+        /** 用 [item] 自己的纹理画它 (第一次画时传). */
+        private fun drawSeparately(f: DanmakuLayerFrame, item: DanmakuLayerItem, elapsed: Long) {
+            val bitmap = item.bitmap
+            val texture = separateTextures.getOrPut(bitmap) {
+                val ids = IntArray(1)
+                GLES20.glGenTextures(1, ids, 0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
+                setTextureParameters()
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                stats.uploads++
+                SeparateTexture(ids[0])
+            }
+            texture.lastUsedFrame = frameIndex
+            separateVertices.clear()
+            separateVertices.putQuad(item, f.xOf(item, elapsed) + item.offsetX, 0, 0, bitmap.width, bitmap.height)
+            draw(texture.id, separateVertices, 1)
+        }
+
+        private fun releaseUnusedSeparateTextures() {
+            val iterator = separateTextures.values.iterator()
+            while (iterator.hasNext()) {
+                val texture = iterator.next()
+                if (texture.lastUsedFrame >= frameIndex - 1) continue
+                GLES20.glDeleteTextures(1, intArrayOf(texture.id), 0)
+                iterator.remove()
+            }
+        }
+
+        /**
+         * 拼这一帧, 返回图集里的四边形个数, 不进图集的放进 [separateItems]. 图集放不下时先整理 (清空后整帧重传:
+         * 多半是滚出去的弹幕还占着位置), 还放不下就换大的, 到顶了放不下的各用一张自己的纹理.
+         * 整理、换图集后前面拼好的指向的位置都作废, 所以每一步都整帧重拼.
+         */
+        private fun buildFrame(f: DanmakuLayerFrame, elapsed: Long, nowNanos: Long): Int {
+            atlas.beginFrame()
+            var quads = buildQuads(f, elapsed, separateTheRest = false)
+            if (quads >= 0) return quads
+            val visible = f.items.count { isDrawable(f, it, elapsed) }
+            if (atlas.size - visible >= visible / 2 && nowNanos - lastCompactNanos > COMPACT_INTERVAL_NANOS) {
+                lastCompactNanos = nowNanos
+                atlas.clear()
+                stats.clears++
+                quads = buildQuads(f, elapsed, separateTheRest = false)
+                if (quads >= 0) return quads
+            }
+            while (growAtlas()) {
+                quads = buildQuads(f, elapsed, separateTheRest = false)
+                if (quads >= 0) return quads
+            }
+            var area = 0L
+            for (item in f.items) if (isDrawable(f, item, elapsed)) area += item.bitmap.width.toLong() * item.bitmap.height
+            stats.onOverflow(visible, area, atlas.size)
+            return buildQuads(f, elapsed, separateTheRest = true)
+        }
+
+        /** 在屏上, 且不比显卡能开的最大纹理还大. */
+        private fun isDrawable(f: DanmakuLayerFrame, item: DanmakuLayerItem, elapsed: Long): Boolean {
+            val left = f.xOf(item, elapsed) + item.offsetX
+            return left <= f.hostWidth && left + item.bitmap.width >= 0 &&
+                item.bitmap.width <= maxTextureSize && item.bitmap.height <= maxTextureSize
+        }
+
+        /**
+         * 拼这一帧图集里的顶点, 返回四边形个数. 比最大的图集还大的放进 [separateItems]; 图集放不下的:
+         * [separateTheRest] 时也放进 [separateItems] 接着拼, 否则记下它的尺寸返回 -1.
+         */
+        private fun buildQuads(f: DanmakuLayerFrame, elapsed: Long, separateTheRest: Boolean): Int {
             vertices.clear()
+            separateItems.clear()
             var quads = 0
             for (item in f.items) {
                 if (quads >= MAX_QUADS) break
+                if (!isDrawable(f, item, elapsed)) continue
                 val bitmap = item.bitmap
-                val left = f.xOf(item, elapsed) + item.offsetX
-                if (left > f.hostWidth || left + bitmap.width < 0) continue
-                val slot = atlas.get(bitmap) ?: run {
-                    val allocation = atlas.allocate(bitmap, bitmap.width, bitmap.height) ?: return@run null
+                if (bitmap.width > atlasLimit || bitmap.height > atlasLimit) {
+                    separateItems += item
+                    continue
+                }
+                var slot = atlas.get(bitmap)
+                if (slot == null) {
+                    slot = atlas.allocate(bitmap, bitmap.width, bitmap.height)
+                    if (slot == null) {
+                        if (!separateTheRest) {
+                            overflowWidth = bitmap.width
+                            overflowHeight = bitmap.height
+                            return -1
+                        }
+                        separateItems += item
+                        continue
+                    }
                     GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-                    GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, allocation.slot.x, allocation.slot.y, bitmap)
+                    GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, slot.x, slot.y, bitmap)
                     stats.uploads++
-                    if (allocation.cleared && quads > 0) return -1
-                    allocation.slot
-                } ?: continue
-                val top = item.y + item.offsetY
-                val right = left + bitmap.width
-                val bottom = top + bitmap.height
-                val u0 = slot.x.toFloat() / atlas.width
-                val v0 = slot.y.toFloat() / atlas.height
-                val u1 = (slot.x + slot.width).toFloat() / atlas.width
-                val v1 = (slot.y + slot.height).toFloat() / atlas.height
-                vertices.put(left).put(top).put(u0).put(v0)
-                vertices.put(right).put(top).put(u1).put(v0)
-                vertices.put(left).put(bottom).put(u0).put(v1)
-                vertices.put(right).put(bottom).put(u1).put(v1)
+                }
+                vertices.putQuad(item, f.xOf(item, elapsed) + item.offsetX, slot.x, slot.y, atlas.width, atlas.height)
                 quads++
             }
+            stats.separate += separateItems.size
             return quads
         }
 
-        private fun link(vertexSource: String, fragmentSource: String): Int {
-            fun compile(type: Int, source: String): Int = GLES20.glCreateShader(type).also {
-                GLES20.glShaderSource(it, source)
-                GLES20.glCompileShader(it)
-            }
-            return GLES20.glCreateProgram().also {
-                GLES20.glAttachShader(it, compile(GLES20.GL_VERTEX_SHADER, vertexSource))
-                GLES20.glAttachShader(it, compile(GLES20.GL_FRAGMENT_SHADER, fragmentSource))
-                GLES20.glLinkProgram(it)
-            }
+        /**
+         * 拼 [item] 的四边形: 左边缘在 [left], 图在纹理 ([textureWidth]×[textureHeight]) 的 ([x], [y]) 处.
+         *
+         * 四边各往里缩半个像素: 线性采样只落在这张图自己的像素上. 图集里图与图之间的空隙
+         * (以及腾出来重用的行) 留着旧图的像素, 采到会在弹幕边上出一条点状的竖线.
+         * 图四周留着透明边 (见 [cropDanmakuImage]), 缩掉的半像素看不出来.
+         */
+        private fun FloatBuffer.putQuad(item: DanmakuLayerItem, left: Float, x: Int, y: Int, textureWidth: Int, textureHeight: Int) {
+            val bitmap = item.bitmap
+            val top = item.y + item.offsetY + HALF_TEXEL
+            val bottom = item.y + item.offsetY + bitmap.height - HALF_TEXEL
+            val right = left + bitmap.width - HALF_TEXEL
+            val quadLeft = left + HALF_TEXEL
+            val u0 = (x + HALF_TEXEL) / textureWidth
+            val v0 = (y + HALF_TEXEL) / textureHeight
+            val u1 = (x + bitmap.width - HALF_TEXEL) / textureWidth
+            val v1 = (y + bitmap.height - HALF_TEXEL) / textureHeight
+            put(quadLeft).put(top).put(u0).put(v0)
+            put(right).put(top).put(u1).put(v0)
+            put(quadLeft).put(bottom).put(u0).put(v1)
+            put(right).put(bottom).put(u1).put(v1)
         }
+
+        private fun fragmentHighpSupported(): Boolean {
+            val range = IntArray(2)
+            val precision = IntArray(1)
+            GLES20.glGetShaderPrecisionFormat(GLES20.GL_FRAGMENT_SHADER, GLES20.GL_HIGH_FLOAT, range, 0, precision, 0)
+            return precision[0] > 0
+        }
+
+        /** 编译、链接着色器; 失败时打出编译器的说明, 返回 0. */
+        private fun link(vertexSource: String, fragmentSource: String): Int {
+            fun compile(type: Int, source: String): Int {
+                val shader = GLES20.glCreateShader(type)
+                GLES20.glShaderSource(shader, source)
+                GLES20.glCompileShader(shader)
+                val status = IntArray(1).also { GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, it, 0) }[0]
+                if (status != 0) return shader
+                logger.warn { "GL danmaku shader does not compile: ${GLES20.glGetShaderInfoLog(shader)}" }
+                GLES20.glDeleteShader(shader)
+                return 0
+            }
+            val vertex = compile(GLES20.GL_VERTEX_SHADER, vertexSource)
+            val fragment = compile(GLES20.GL_FRAGMENT_SHADER, fragmentSource)
+            if (vertex == 0 || fragment == 0) return 0
+            val program = GLES20.glCreateProgram()
+            GLES20.glAttachShader(program, vertex)
+            GLES20.glAttachShader(program, fragment)
+            GLES20.glLinkProgram(program)
+            val status = IntArray(1).also { GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, it, 0) }[0]
+            if (status != 0) return program
+            logger.warn { "GL danmaku program does not link: ${GLES20.glGetProgramInfoLog(program)}" }
+            GLES20.glDeleteProgram(program)
+            return 0
+        }
+    }
+
+    private class SeparateTexture(val id: Int) {
+        var lastUsedFrame = 0L
     }
 
     private companion object {
         const val MAX_QUADS = 1024
+        const val HALF_TEXEL = 0.5f
+
+        /** 图集最大的边长: 4096×4096 已占 64 MiB 显存. */
+        const val ATLAS_SIZE_LIMIT = 4096
+
+        /** 图集放不下时整理 (清空重传) 至少隔这么久, 免得一直放不下时每帧整张重传. */
+        const val COMPACT_INTERVAL_NANOS = 1_000_000_000L
 
         // 坐标按界面像素给, 在这里换成裁剪空间 (y 朝下)
         const val VERTEX_SHADER = """
@@ -264,7 +471,7 @@ internal class GlDanmakuLayerView(context: Context) : GLSurfaceView(context) {
             }
         """
 
-        // 图集有 4096 宽, mediump 的纹理坐标只有约 1/1024 的精度, 会采到旁边几个像素
+        // 图集有 2048~4096 宽, mediump 的纹理坐标只有约 1/1024 的精度, 会采到旁边几个像素
         const val FRAGMENT_SHADER = """
             precision mediump float;
             varying highp vec2 vUv;
@@ -285,12 +492,16 @@ private class RenderStats(private val pacingStats: PacingStats, private val pace
     private val logger = logger<GlDanmakuLayerView>()
 
     var uploads = 0
+    var clears = 0
+    var separate = 0
+    private var overflowVisible = 0
+    private var overflowArea = 0L
+    private var overflowKeys = 0
     private var frames = 0
     private var slowDraws = 0
     private var maxDrawNanos = 0L
     private var gaps = 0
     private var maxGapNanos = 0L
-    private var clears = 0
     private var snaps = 0
     private var maxLagNanos = 0L
     private var lastFrameNanos = 0L
@@ -311,24 +522,32 @@ private class RenderStats(private val pacingStats: PacingStats, private val pace
         lastMoving = moving
     }
 
-    fun onDrawn(drawNanos: Long, atlasClears: Int, totalSnaps: Int) {
+    /** 图集到顶还放不下的一帧 (多出来的各用自己的纹理画): 在屏几张、总面积、图集里存着几张. 记这段时间里最多的. */
+    fun onOverflow(visible: Int, area: Long, keys: Int) {
+        overflowVisible = maxOf(overflowVisible, visible)
+        overflowArea = maxOf(overflowArea, area)
+        overflowKeys = maxOf(overflowKeys, keys)
+    }
+
+    fun onDrawn(drawNanos: Long, totalSnaps: Int, atlasWidth: Int, atlasHeight: Int) {
         if (drawNanos > SLOW_DRAW_NANOS) slowDraws++
         maxDrawNanos = maxOf(maxDrawNanos, drawNanos)
-        clears += atlasClears
         val now = lastFrameNanos
         if (now - windowStart < WINDOW_NANOS) return
         val newSnaps = totalSnaps - snaps
         val pacing = pacingStats.drain()
         val timing = pacerTiming.drain()
-        if (slowDraws > 0 || gaps > 0 || clears > 0 || newSnaps > 0 || maxLagNanos > LAG_REPORT_NANOS || pacing != null) {
+        if (slowDraws > 0 || gaps > 0 || clears > 0 || separate > 0 || newSnaps > 0 || maxLagNanos > LAG_REPORT_NANOS || pacing != null) {
             logger.info {
                 "GL danmaku ${(now - windowStart) / 1_000_000}ms: frames=$frames, missedVsync=$gaps (max gap ${maxGapNanos / 1_000_000}ms), " +
-                    "slowDraws=$slowDraws (max ${maxDrawNanos / 1_000_000}ms), uploads=$uploads, atlasClears=$clears, " +
+                    "slowDraws=$slowDraws (max ${maxDrawNanos / 1_000_000}ms), uploads=$uploads, atlas=${atlasWidth}x$atlasHeight, " +
+                    "atlasClears=$clears, separate=$separate${if (overflowVisible > 0) " (atlas full: max visible $overflowVisible, ${overflowArea / 1000}k px, keys $overflowKeys)" else ""}, " +
                     "clockSnaps=$newSnaps, uiClockMaxLag=${maxLagNanos / 1_000_000}ms, pacingStops=${pacing ?: "none"}, $timing"
             }
         }
         snaps = totalSnaps
-        frames = 0; slowDraws = 0; maxDrawNanos = 0; gaps = 0; maxGapNanos = 0; uploads = 0; clears = 0; maxLagNanos = 0
+        frames = 0; slowDraws = 0; maxDrawNanos = 0; gaps = 0; maxGapNanos = 0; uploads = 0; clears = 0; separate = 0; maxLagNanos = 0
+        overflowVisible = 0; overflowArea = 0; overflowKeys = 0
         windowStart = now
     }
 
