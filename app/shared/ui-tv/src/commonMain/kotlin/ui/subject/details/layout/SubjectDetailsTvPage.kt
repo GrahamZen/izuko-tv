@@ -189,6 +189,8 @@ import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeRequest
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.navigation.NavRoutes
+import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.ColorUtils
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.AniDisplayTier
@@ -268,6 +270,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
@@ -291,6 +294,7 @@ import me.him188.ani.app.ui.lang.subject_details_stat_watching
 import me.him188.ani.app.ui.lang.subject_details_stat_wish
 import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback
+import me.him188.ani.app.ui.lang.subject_details_tv_open_details_page
 import me.him188.ani.app.ui.rating.isEditingFrom
 import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.SubjectProgressState
@@ -1501,6 +1505,19 @@ fun SubjectDetailsTvPage(
                         commentCount = commentCount,
                         onShowComments = onShowComments,
                         mainEpisodeCount = mainEpisodes.size.takeIf { it > 0 },
+                        onOpenDetailsPage = {
+                            // 播放页正下方就是这部的详情页 (从它进的播放器): 返回过去, 栈里不叠第二份; 否则 (从列表页直接播放进来的) 推一个
+                            val stack = navigator.backStack
+                            val below = stack.getOrNull(stack.lastIndex - 1)
+                            if (below is NavRoutes.SubjectDetail && below.subjectId == info.subjectId) {
+                                navigator.popBackStack()
+                            } else {
+                                navigator.navigateSubjectDetails(
+                                    info.subjectId,
+                                    SubjectDetailPlaceholder(info.subjectId, info.name, info.nameCn, info.imageLarge),
+                                )
+                            }
+                        },
                         // 上/下边缘接线 (上回播放器选集条, 下到关联条目区) 全走路由
                         sectionNav = sectionNav,
                         // 点击标签跳转搜索: 标记返回时要把焦点恢复到该标签
@@ -2378,6 +2395,10 @@ private fun TvTruncatedSummary(
     dialogExtra: String? = null,
     /** 全文弹窗底行右端的一行元信息 (见 AniScrollableTextDialog 的 meta). */
     dialogMeta: String? = null,
+    /** 全文弹窗底部操作按钮的文字 (见 AniScrollableTextDialog 的 action); 与 [onDialogAction] 都给了才放按钮. */
+    dialogActionLabel: String? = null,
+    /** 全文弹窗底部操作按钮按下 (弹窗先关掉). */
+    onDialogAction: (() -> Unit)? = null,
     /**
      * 展开按钮坐在**正文末行右边** (参照 Prime Video 的"更多"), 正文相应不留底内边距 ——
      * 那一截原本就是给贴在块底的按钮让位的.
@@ -2470,6 +2491,21 @@ private fun TvTruncatedSummary(
                 showDialog = false
             },
             meta = dialogMeta,
+            action = if (dialogActionLabel != null && onDialogAction != null) {
+                { actionModifier ->
+                    AniFocusActionButton(
+                        onClick = {
+                            showDialog = false
+                            onDialogAction()
+                        },
+                        modifier = actionModifier,
+                    ) {
+                        Text(dialogActionLabel, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            } else {
+                null
+            },
         )
     }
 }
@@ -5237,6 +5273,8 @@ private fun TvEmbeddedHeroPage(
     onShowComments: (initialFocusIndex: Int) -> Unit,
     /** 正片话数, 进简介全文弹窗的底行元信息; 没有分集时为 null. */
     mainEpisodeCount: Int?,
+    /** 简介全文弹窗里的「打开详情页」: 播放器里回到这部自己的详情页 (相关推荐只能进别的条目). */
+    onOpenDetailsPage: () -> Unit,
     /** 跨区块导航路由: 本页上缘 (回播放器选集条) 与下缘 (关联条目区) 的按键接线全走它. */
     sectionNav: TvDetailsSectionNav,
     onClickTag: (Tag) -> Unit,
@@ -5375,6 +5413,8 @@ private fun TvEmbeddedHeroPage(
                 // 这些内容现在**只在这个弹窗里**, 内嵌变体不给的话就彻底够不到了 (用户 2026-09-17)
                 dialogExtra = subjectAliasesText(info),
                 dialogMeta = subjectMetaLine(info, mainEpisodeCount),
+                dialogActionLabel = stringResource(Lang.subject_details_tv_open_details_page),
+                onDialogAction = onOpenDetailsPage,
                 modifier = Modifier.height(TV_EMBEDDED_SUMMARY_HEIGHT).fillMaxWidth(),
                 // 展开按钮是本页顶部唯一焦点目标 (HERO 段落的落点 + 进页初始焦点):
                 // 简介短到不截断也必须渲染, 否则内嵌介绍页进去没有焦点
