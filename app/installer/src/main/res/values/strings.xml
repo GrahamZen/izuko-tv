@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2024-2026 OpenAni and contributors.
+  ~
+  ~ 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+  ~ Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+  ~
+  ~ https://github.com/open-ani/ani/blob/main/LICENSE
+  -->
+
+<resources>
+    <string name="app_label">Izuko TV Installer</string>
+    <string name="title">Install Izuko TV</string>
+    <string name="device_info">Android %1$s (API %2$d) · %3$s</string>
+    <string name="too_old">This device runs Android %1$s (API %2$d). Izuko TV needs Android %3$s (API %4$d) or later, so it can\'t be installed here.</string>
+    <string name="unsupported_abi">This device\'s processor architecture is %1$s. Izuko TV has no package for it, so it can\'t be installed here.</string>
+    <string name="permission_title">First, allow installing apps</string>
+    <string name="permission_hint">1. Choose Allow installing apps\n2. Turn on Izuko TV Installer in the list (some TVs call this Unknown sources)\n3. Press Back to return here. If you don\'t, open Izuko TV Installer again from the home screen</string>
+    <string name="permission_still_missing">It\'s still off. On some TVs the switch is elsewhere or has no effect; choose Continue and the system will ask again when installing.</string>
+    <string name="permission_settings_unavailable">This TV can\'t open that settings page. Choose Continue; the system will ask whether to allow it when installing.</string>
+    <string name="ready_title">Izuko TV %1$s is downloaded</string>
+    <string name="ready_hint">Choose Install to open the system\'s install screen, then choose Install or Update there (Cancel is selected by default). Installing takes up to a minute; when it\'s done, choose Open. If the install screen closes halfway or nothing gets installed, use Install another way.</string>
+    <string name="checking">Checking the latest version…</string>
+    <string name="downloading">Downloading Izuko TV %1$s…</string>
+    <string name="progress">%1$s / %2$s · %3$s/s · via %4$s</string>
+    <string name="progress_unknown_total">%1$s · %2$s/s · via %3$s</string>
+    <string name="installing">Installing Izuko TV %1$s…</string>
+    <string name="confirm_hint">In the system window, choose Update or Install (Cancel is selected by default). If it says installing unknown apps isn\'t allowed, open Settings, turn on Izuko TV Installer, and come back. When it\'s done, open Izuko TV from the home screen.</string>
+    <string name="system_installer_hint">In the system\'s install screen, choose Install or Update (Cancel is selected by default). If it says installing unknown apps isn\'t allowed, open Settings, turn on Izuko TV Installer, and come back. Installing takes up to a minute; when it\'s done, choose Open.</string>
+    <string name="system_installer_closed">Izuko TV isn\'t installed yet</string>
+    <string name="system_installer_closed_hint">The install screen was closed. If you pressed Cancel by mistake (it\'s selected by default), choose Show the install screen again. If the system reported a parse error or another failure, choose Install another way.</string>
+    <string name="error_lookup">Couldn\'t find the latest version: GitHub and its mirrors are all unreachable. Check the network and try again.</string>
+    <string name="error_download">The download failed on every route. Try again; it resumes where it stopped.</string>
+    <string name="error_storage">Not enough storage: the installation needs about %1$s, but only %2$s is free.</string>
+    <string name="error_install_start">Couldn\'t start the installation.</string>
+    <string name="error_install_aborted">The installation was cancelled.</string>
+    <string name="error_install_permission">Installing unknown apps isn\'t allowed for Izuko TV Installer. Turn it on in Settings, then retry.</string>
+    <string name="error_install_blocked">The system blocked the installation. Allow this app to install unknown apps, then try again.</string>
+    <string name="error_install_conflict">It conflicts with an app already installed: Izuko TV with a different signature, or a newer Izuko TV, is on this device.</string>
+    <string name="error_install_incompatible">This package isn\'t compatible with the device.</string>
+    <string name="error_install_invalid">The package is damaged. Try again to download it from another route.</string>
+    <string name="error_install_storage">Not enough storage to install.</string>
+    <string name="error_install_other">The installation failed.</string>
+    <string name="button_reopen_confirm">Show the install prompt again</string>
+    <string name="button_reopen_system_installer">Show the install screen again</string>
+    <string name="button_install_directly">Install another way</string>
+    <string name="button_install">Install</string>
+    <string name="button_continue">Continue</string>
+    <string name="button_retry">Retry</string>
+    <string name="button_system_installer">Open with the system installer</string>
+    <string name="button_allow_unknown_sources">Allow installing apps</string>
+    <string name="button_exit">Exit</string>
+    <string name="footer">Izuko TV installer %1$s · github.com/%2$s</string>
+    <string name="report_title">Diagnostics (take a photo of this screen when reporting a problem)</string>
+    <string name="report_installer">Installer</string>
+    <string name="report_android">System</string>
+    <string name="report_android_claimed">Android %1$s (API %2$d; the system reports %3$s)</string>
+    <string name="report_device">Maker / brand / model</string>
+    <string name="report_codename">Device / product / hardware</string>
+    <string name="report_build">Build</string>
+    <string name="report_abis">Architectures</string>
+    <string name="report_abis_value">%1$s (%2$d-bit system)</string>
+    <string name="report_storage">Storage</string>
+    <string name="report_storage_value">%1$s free of %2$s</string>
+    <string name="report_unknown_sources">Install unknown apps</string>
+    <string name="report_allowed">Allowed</string>
+    <string name="report_not_allowed">Not allowed</string>
+    <string name="report_system_installer">System installer</string>
+    <string name="report_installed_by">Installer installed by</string>
+    <string name="report_none">None</string>
+    <string name="report_package">Package for this device</string>
+    <string name="report_source">Download route</string>
+    <string name="report_time">Time</string>
+    <string name="advice_xiaomi">Xiaomi TVs may block third-party apps (\"prohibited features\" or \"abnormal package\"). Push the package from your phone with the Xiaomi TV Assistant app, or install it with ADB.</string>
+    <string name="advice_tcl">Some TCL / FFALCON TVs only install apps through TV Guard → Quick Install or the Huanshi assistant. Copy the package listed below to the root of a USB drive and install it with Quick Install.</string>
+    <string name="advice_hisense">Hisense / Vidda TVs need Store Mode turned on to install from a USB drive; you can also send the package from your phone with the Hisense app. If the TV later warns about a security risk, choose to keep using it.</string>
+    <string name="advice_skyworth">Skyworth / Coocaa systems usually only install apps from their own store. Turn on ADB in the factory menu and install the package with ADB.</string>
+    <string name="advice_changhong">Some Changhong systems block third-party apps; only ADB or the system\'s own install channel works.</string>
+    <string name="advice_konka">Konka: in the file manager, press the Menu key 5 times to unlock APK installation, or push the package from your phone with the Konka app.</string>
+    <string name="advice_huawei">Huawei / Honor smart screens: on HarmonyOS 4.3 and earlier, choose Trust when installing. HarmonyOS 5 (MateTV) can\'t install APKs.</string>
+    <string name="advice_letv">LeTV systems may block or automatically uninstall third-party apps.</string>
+    <string name="advice_generic">The system blocked the installation. Copy the package listed below to the root of a USB drive and install it with the TV\'s own file manager or media player, or install it with ADB.</string>
+    <string name="chat_title">Chat groups</string>
+    <string name="chat_hint">Questions after installing, or it won\'t install? Scan a code to join and ask.</string>
+    <string name="chat_qq_short">QQ group</string>
+    <string name="chat_qq_id">Group number: %1$s</string>
+    <string name="chat_qq_answer">Join answer: %1$s</string>
+    <string name="chat_telegram">Telegram</string>
+    <string name="session_install_title">Install another way</string>
+    <string name="session_install_message">Use this if Install didn\'t work (the install screen closed halfway, or nothing got installed).\n\nYou won\'t see any progress this way: after you confirm, this installer closes and the system installs in the background. After about half a minute, open Izuko TV from the app list.</string>
+    <string name="button_start_install">Start installing</string>
+    <string name="button_back">Back</string>
+</resources>
