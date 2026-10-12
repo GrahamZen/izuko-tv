@@ -18,8 +18,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.player.MediaFormatNames
+import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
 import me.him188.ani.app.domain.player.tracks.TrackCandidate
 import me.him188.ani.app.domain.player.tracks.TrackLanguage
@@ -35,6 +38,7 @@ private val logger = logger("PreferredTrackSelector")
 
 /**
  * 每打开一个媒体按 [chooser] 选字幕与音轨 (见 PreferredTracksExtension), 用户手动换了告诉它; 并把音轨的选择下发给 ExoPlayer.
+ * 设备放不了的音轨不自动选, 并交给选音轨的界面注明 ([unplayableAudio]): override 不看设备能不能解, 选了就是播放出错.
  *
  * mediamp 0.5.0 的 ExoPlayer 后端只下发字幕: 它按 `subtitleTracks.selected` 选字幕轨, 轨道一出来先选第一条;
  * 音轨的 `selected` 只是个状态, 没人交给 ExoPlayer. 这里按它给 ExoPlayer 设音轨 override, 选「自动」(null) 时清掉.
@@ -58,6 +62,16 @@ internal class PreferredTrackSelector(
     private var currentGroups: List<ExoTrackGroup> = emptyList()
     private var expectedSubtitle: SubtitleTrack? = null
     private var expectedAudio: AudioTrack? = null
+
+    private val _unplayableAudio = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** 见 [AudioTrackSupport.unplayableAudioTracks]; 轨道一变就重算. */
+    val unplayableAudio: StateFlow<Map<String, String>> get() = _unplayableAudio
+
+    private val _allAudioUnplayable = MutableStateFlow<List<String>?>(null)
+
+    /** 见 [AudioTrackSupport.allAudioUnplayable]; 与 [unplayableAudio] 一起算, 两者总是对得上. */
+    val allAudioUnplayable: StateFlow<List<String>?> get() = _allAudioUnplayable
 
     fun start(scope: CoroutineScope) {
         exoPlayer.addListener(this)
@@ -103,6 +117,7 @@ internal class PreferredTrackSelector(
 
     override fun onTracksChanged(tracks: Tracks) {
         logPlaying(tracks)
+        updateUnplayable()
         val groups = tracks.groups.map { it.mediaTrackGroup }
         if (groups.size == currentGroups.size && groups.indices.all { groups[it] === currentGroups[it] }) return
         currentGroups = groups
@@ -167,6 +182,24 @@ internal class PreferredTrackSelector(
         }
     }
 
+    private fun updateUnplayable() {
+        val all = audioEntries()
+        val unplayable = all.mapNotNull { entry ->
+            val (group, index) = groupOf(entry, all, C.TRACK_TYPE_AUDIO) ?: return@mapNotNull null
+            if (group.isPlayable(index)) null
+            else entry.id to MediaFormatNames.of(group.getTrackFormat(index).sampleMimeType).orEmpty()
+        }.toMap()
+        _unplayableAudio.value = unplayable
+        _allAudioUnplayable.value = if (all.isNotEmpty() && unplayable.size == all.size) {
+            unplayable.values.filter { it.isNotEmpty() }.distinct()
+        } else {
+            null
+        }
+    }
+
+    /** 超出解码器标称能力的 (声道数、采样率) 多半照样能放; 只排除根本没有解码器、也不能直通的格式 */
+    private fun Tracks.Group.isPlayable(index: Int): Boolean = isTrackSupported(index, /* allowExceedsCapabilities = */ true)
+
     /** 给 ExoPlayer 设音轨 override; null = 清掉, 由它自动选. */
     private fun applyAudio(track: AudioTrack?) {
         val builder = exoPlayer.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO)
@@ -197,23 +230,28 @@ internal class PreferredTrackSelector(
         all.firstOrNull { it.track == track }?.let { candidateOf(it, all, type) }
 
     private fun <T> candidateOf(entry: Entry<T>, all: List<Entry<T>>, type: Int): TrackCandidate? {
-        val (group, index) = formatOf(entry, all, type) ?: return null
-        val format = group.getFormat(index)
+        val (group, index) = groupOf(entry, all, type) ?: return null
+        val format = group.getTrackFormat(index)
         return TrackCandidate(
             id = entry.id,
             label = format.label?.takeIf { it.isNotBlank() },
             language = TrackLanguage.of(format.label, format.language),
             isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
             isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+            isPlayable = group.isPlayable(index),
         )
     }
 
-    /** mediamp 的一条轨道在 ExoPlayer 里对应的轨道组与组内序号: 同一组有几条时按出现的先后对. */
-    private fun <T> formatOf(entry: Entry<T>, all: List<Entry<T>>, type: Int): Pair<ExoTrackGroup, Int>? {
+    /** mediamp 的一条轨道在 ExoPlayer 里对应的轨道组与组内序号. */
+    private fun <T> formatOf(entry: Entry<T>, all: List<Entry<T>>, type: Int): Pair<ExoTrackGroup, Int>? =
+        groupOf(entry, all, type)?.let { (group, index) -> group.mediaTrackGroup to index }
+
+    /** 同一组有几条时按出现的先后对. */
+    private fun <T> groupOf(entry: Entry<T>, all: List<Entry<T>>, type: Int): Pair<Tracks.Group, Int>? {
         val group = exoPlayer.currentTracks.groups.firstOrNull { it.type == type && it.mediaTrackGroup.id == entry.internalId }
             ?: return null
         val index = all.filter { it.internalId == entry.internalId }.indexOf(entry)
         if (index !in 0 until group.length) return null
-        return group.mediaTrackGroup to index
+        return group to index
     }
 }

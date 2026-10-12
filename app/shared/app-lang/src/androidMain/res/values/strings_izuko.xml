@@ -25,6 +25,8 @@
     <string name="subject_episode_video_loading_resolving_source_short">Resolving resource link</string>
     <string name="subject_episode_video_loading_resolve_deadline">Up to %1$d more seconds</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">Up to %1$d more seconds, then switching automatically</string>
+    <string name="subject_episode_video_loading_unsupported_audio">This TV cannot play the audio format of this video (%1$s). Please switch resources</string>
+    <string name="subject_episode_video_loading_unsupported_video">This TV cannot play the video format of this video (%1$s). Please switch resources</string>
     <string name="subject_episode_video_loading_cause_http_rejected">Server refused the request (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_cause_http_error">Server error (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_cause_drive_login">Not signed in to the cloud drive. Sign in to play files from it.</string>
@@ -60,6 +62,11 @@
     <string name="settings_player_seek_preview_display_full_screen">Full screen</string>
     <string name="settings_player_disk_cache">Save videos while playing</string>
     <string name="settings_player_disk_cache_description">Keep the parts of online videos downloaded during playback on this device: seeking back and rewatching read them from here, and scrub previews show downloaded positions instantly (other positions load after you pause on them for a moment). When off, every scrub preview has to download first. Uses up to a quarter of the free space and removes what you haven\'t watched for the longest first</string>
+    <string name="settings_player_audio_passthrough">Audio passthrough</string>
+    <string name="settings_player_audio_passthrough_description">Send Dolby, DTS and similar audio tracks undecoded, so an AV receiver or soundbar can decode them and keep surround sound and Atmos. Auto decodes stereo tracks here (passthrough gains nothing for them), and passes surround tracks through only when sound goes to an external device over HDMI, ARC or optical; on the built-in speakers or Bluetooth they are decoded here, because some TVs play passthrough audio as silence.</string>
+    <string name="settings_player_audio_passthrough_auto">Auto</string>
+    <string name="settings_player_audio_passthrough_always">Always</string>
+    <string name="settings_player_audio_passthrough_off">Off</string>
     <string name="player_disk_cache_hint">Turn on &quot;Save videos while playing&quot; to seek back without waiting</string>
     <string name="player_buffer_wait_start">Buffering %1$d s of this cloud drive video before playing, so it does not stall right after starting</string>
     <string name="player_buffer_wait_stall">The download is slower than this video\'s bitrate, buffering %1$d s before resuming</string>
@@ -531,6 +538,11 @@
     <string name="video_player_tv_skip_segment">Skip %1$s</string>
     <!-- 片源里没给音轨 / 字幕轨起名时, 切换菜单里按顺序叫它们 -->
     <string name="video_player_audio_track_numbered">Audio %1$d</string>
+    <string name="video_player_audio_track_unplayable">%1$s (not supported on this TV)</string>
+    <string name="video_player_audio_track_unplayable_format">%1$s (%2$s, not supported on this TV)</string>
+    <string name="video_player_audio_track_unplayable_toast">This TV cannot play this audio track. Choose another one</string>
+    <string name="video_player_audio_all_unplayable_toast">This TV cannot play any audio track of this video (%1$s), so there is no sound. Please switch resources manually</string>
+    <string name="video_player_audio_all_unplayable_toast_unknown">This TV cannot play any audio track of this video, so there is no sound. Please switch resources manually</string>
     <string name="video_player_subtitle_numbered">Subtitle %1$d</string>
     <!-- 评论胶囊长按的排序菜单 -->
     <string name="video_player_tv_comment_sort_time_ascending">Oldest first</string>
