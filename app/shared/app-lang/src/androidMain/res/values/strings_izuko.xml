@@ -817,6 +817,9 @@
     <string name="tv_settings_debug_refresh_ok">Renewed</string>
     <string name="tv_settings_debug_refresh_failed">Renewal failed: %1$s</string>
     <string name="tv_settings_debug_crash">Crash the app (test)</string>
+    <string name="tv_settings_login_proxy_status">Proxy %1$s can\'t be reached</string>
+    <string name="tv_settings_login_proxy_hint">The TV\'s proxy can\'t be reached, so signing in and everything else online fails. Start or quit the app that provides the proxy, or set Proxy to Disabled under Proxy, then press OK to try again.</string>
+    <string name="tv_onboarding_login_proxy_unreachable">The TV\'s proxy %1$s can\'t be reached. Start or quit the app that provides it, or set Proxy to Disabled in Settings later, then scan again.</string>
     <string name="tv_settings_rerun_onboarding">Run the first-time setup again</string>
     <string name="tv_settings_rerun_onboarding_description">Start again from the welcome page: check the network, connect your phone, sign in to Bangumi and choose the look. The app restarts; your settings, sign-in and collections stay as they are.</string>
     <string name="tv_settings_rerun_onboarding_confirm">The app will restart and begin the first-time setup from the welcome page.</string>
