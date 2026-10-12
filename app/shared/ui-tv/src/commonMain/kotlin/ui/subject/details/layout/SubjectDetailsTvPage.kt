@@ -201,6 +201,7 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
+import me.him188.ani.app.ui.foundation.focus.tvContainHorizontalKeys
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
@@ -873,10 +874,19 @@ fun SubjectDetailsTvPage(
     val restoreAnchorFor: (TvDetailsSection) -> TvDetailsFocusAnchor = { section ->
         anchorFor(if (section.page == TvDetailsSection.CHARACTERS.page) sectionNav.presentOrNearest(section) else section)
     }
+    // 从下面一个区块按上来的落点: 内嵌介绍页落在页底 —— 有评价落评价, 没有落左列的评分. 它的进入落点 (简介的展开按钮) 在页顶,
+    // 与下面的关联条目隔着整面标签墙. 关联条目是原生行, Compose 只知道整行的框、不知道聚焦的是哪张卡, 按位置挑不可靠, 所以落点固定
+    val anchorFromBelow: (TvDetailsSection) -> TvDetailsFocusAnchor = { section ->
+        if (videoBackground && section == TvDetailsSection.HERO) {
+            if (comments.itemCount > 0) TvDetailsFocusAnchor.REVIEWS_SECTION else TvDetailsFocusAnchor.EMBEDDED_RATING
+        } else {
+            anchorFor(section)
+        }
+    }
     // 跨区块方向键的送焦也走调度器 (见 TvDetailsSectionNav.send); 目标区块还没放出时登记它所在的段, 分段不再让出、直接放到那里
-    sectionNav.send = { section ->
+    sectionNav.send = { section, fromBelow ->
         if (section.stage > sectionsDemand) sectionsDemand = section.stage
-        anchors.request(anchorFor(section))
+        anchors.request(if (fromBelow) anchorFromBelow(section) else anchorFor(section))
     }
     sectionNav.stepping = { pager.isStepping }
     sectionNav.page = { pager.displayedPage ?: -1 }
@@ -3116,8 +3126,11 @@ private enum class TvDetailsFocusAnchor : TvFocusKey {
     /** 关联条目/评价区块 (同上). */
     BELOW_SECTION,
 
-    /** 评价整页 (独立页第四页) 的进入落点. */
+    /** 评价整页 (独立页第四页) 的进入落点; 内嵌介绍页底部的评价也挂这一个 (两者不会同时组合), 从关联条目按上落在这里. */
     REVIEWS_SECTION,
+
+    /** 内嵌介绍页左列的评分: 没有评价时从关联条目按上落在这里. */
+    EMBEDDED_RATING,
 
     /** 标签墙上的恢复目标标签 (点标签进搜索页返回时). */
     TAG_WALL,
@@ -3238,8 +3251,10 @@ private class TvDetailsSectionNav {
      * 吞掉 —— 于是按键被消费、焦点却没动, 最后被页面/全局兜底塞到别处 (实测就是首屏的播放按钮, 表现为
      * "从第三页往上翻有概率回到第一页"). 真机日志里那行 `FocusRequester is not initialized` 就是它
      * (2026-09-16, 冷进入时选集区块刚组合 23ms 后).
+     *
+     * 第二个参数 = 从下面一个区块按上来的 (落点可以与从上面进来的不同, 见页面的 anchorFromBelow).
      */
-    var send: ((TvDetailsSection) -> Unit)? = null
+    var send: ((TvDetailsSection, fromBelow: Boolean) -> Unit)? = null
 
     /** 上一次换页还没走够 (见 TvDetailsPager.isStepping): 长按时据此一页一页地走, 不让后面的换页盖掉前面的. */
     var stepping: (() -> Boolean)? = null
@@ -3291,7 +3306,7 @@ private class TvDetailsSectionNav {
             defer?.invoke { moveDown(from) }
             return true
         }
-        send?.invoke(target) ?: runCatching { entry(target).requestFocus() }
+        send?.invoke(target, false) ?: runCatching { entry(target).requestFocus() }
         return true
     }
 
@@ -3303,7 +3318,7 @@ private class TvDetailsSectionNav {
                 defer?.invoke { moveUp(from) } // 同 [moveDown]: 闸只管换页, 且推迟而不是丢掉
                 return true
             }
-            send?.invoke(target) ?: runCatching { entry(target).requestFocus() }
+            send?.invoke(target, true) ?: runCatching { entry(target).requestFocus() }
             return true
         }
         onExitTop?.let {
@@ -5260,6 +5275,9 @@ private fun TvEmbeddedHeroPage(
                     }
                 }
             }
+            // 左右键在本页走完并消费: 播放器里没有侧边栏, 左右到头 (左列评分再按左、右缘再按右) 就停住. 不吞的话按键交给
+            // Android 的 FocusFinder, 它按屏幕位置挑中下一页原生关联条目行里的卡, 焦点跳出本页
+            .tvContainHorizontalKeys()
             .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(32.dp),
     ) {
@@ -5304,7 +5322,9 @@ private fun TvEmbeddedHeroPage(
                 val ratingSource = remember { Any() }
                 SubjectRatingSummary(
                     info.ratingInfo,
-                    Modifier.restoreFocusAfter(uiState.rating.isEditingFrom(ratingSource)),
+                    Modifier.restoreFocusAfter(uiState.rating.isEditingFrom(ratingSource))
+                        // 没有评价时从关联条目按上的落点 (见页面的 anchorFromBelow)
+                        .tvFocusAnchor(anchors, TvDetailsFocusAnchor.EMBEDDED_RATING),
                     onClick = { state.requestEditRating(ratingSource) },
                 )
             }
@@ -5403,7 +5423,10 @@ private fun TvEmbeddedHeroPage(
                     onShowAll = onShowComments,
                     modifier = Modifier.fillMaxWidth()
                         .padding(bottom = TV_EMBEDDED_BOTTOM_MARGIN)
-                        .tvSectionEdge(sectionNav, TvDetailsSection.HERO, down = true),
+                        // 从关联条目按上的落点 (见页面的 anchorFromBelow; 同独立页评价整页, 经焦点组落到第一张卡)
+                        .tvFocusAnchor(anchors, TvDetailsFocusAnchor.REVIEWS_SECTION)
+                        .tvSectionEdge(sectionNav, TvDetailsSection.HERO, down = true)
+                        .focusGroup(),
                     // **不定高**: 独立页那边卡是 124dp 定高 (整页就那一个区块), 这里评价是页底最后一块,
                     // 上面压着标签墙 —— 定高会把标签挡掉 (用户 2026-09-17). 按内容收, 正文回到 1 行,
                     // 与改版前同一个高度; 变的只是卡片样式 (两行头部 / 聚焦框) 与点击去处.
