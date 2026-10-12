@@ -314,6 +314,8 @@ internal class RemotePlayerHandle(
         put("playing", player.state.value.isPlaying)
         put("position", player.currentPositionMillis.value)
         put("duration", player.mediaProperties.value?.durationMillis ?: 0L)
+        // 全屏「同步播放」认的是哪一份媒体, 见 mirrorKeyOf
+        put("mediaKey", mirrorKeyOf(player.mediaData.value))
         // 音量 (0~1) 与静音 (见 setVolume); 系统音量与播放器音量都取不到就不给, 手机上不显示音量条
         val sys = systemAudio
         if (sys != null) {
