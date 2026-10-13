@@ -43,7 +43,8 @@ import kotlin.math.abs
  * 一路挪过去的位置不下. 在线源由 [PlaybackNetworkGate] 在打开连接之前挡住; BT 由调用方给的 [isAvailable] 判断 (一跳过去就会去下那一段).
  *
  * 小画面里的帧不是圆点这里的就标出来 (见 [overlay]), 别让别处的画面冒充这里. 只有刚出过画面、又挪了一步的那一下留 [STALE_FRAME_MILLIS] 不标:
- * 本机有的多半半秒内就出, 一路拖过去每一步都标的话只是闪.
+ * 本机有的多半半秒内就出, 一路拖过去每一步都标的话只是闪. 到时候还没被挡住的, 是本机有、正在解 (4K 从关键帧解到圆点要一两秒),
+ * 标成加载中 ([SeekPreviewOverlay.Loading]): 不用停下也会出来, 停一下就加载只留给真要联网的位置.
  *
  * 每一跳都精确跳到圆点上 (从前一个关键帧解到圆点), 画面只出圆点那一帧本身: 先出附近的关键帧、停下来再换成圆点那一帧的话,
  * 停下之后画面还要再变一下. 缓冲只读到出画面所需 (见 [ThrottledSourceLoadControl.previewing], 停下来看清楚之后照暂停时往后攒, 见 [park]); 同一时间只有一个跳转在做,
@@ -127,7 +128,9 @@ class SeekPreview internal constructor(
     private val onBlocked: () -> Unit = { handler.post(::onNetworkBlocked) }
     private val downloadTarget = Runnable { if (status == SeekPreviewStatus.NotDownloaded) startDownload() }
     private val settleCheck = Runnable(::checkSettled)
-    private val staleFrame = Runnable { if (frameOnSurface) _overlay.value = SeekPreviewOverlay.StayToLoad }
+    private val staleFrame = Runnable {
+        if (frameOnSurface && status == SeekPreviewStatus.Seeking) _overlay.value = SeekPreviewOverlay.Loading
+    }
     private val parkTarget = Runnable(::park)
 
     private val listener = object : Player.Listener {
@@ -197,12 +200,10 @@ class SeekPreview internal constructor(
         seekedToTarget = true
         hasSeeked = true
         status = SeekPreviewStatus.Seeking
-        // 小画面刚才还是上一个圆点的画面: 新画面多半马上就到, 等一小会儿再标; 本来就不是 (没下载 / 正在下 / 等太久) 的接着标
-        if (frameWasCurrent) {
-            handler.postDelayed(staleFrame, STALE_FRAME_MILLIS)
-        } else {
-            _overlay.value = SeekPreviewOverlay.StayToLoad
-        }
+        // 小画面刚才还是上一个圆点的画面: 新画面多半马上就到, 等一小会儿再标; 本来就不是 (没下载 / 正在下 / 等太久) 的接着标.
+        // 要联网的读取一会儿就被挡住 (改标停一下就加载, 见 notDownloaded); 等够了还没被挡住就是本机有、正在解, 标加载中
+        if (!frameWasCurrent) _overlay.value = SeekPreviewOverlay.StayToLoad
+        handler.postDelayed(staleFrame, STALE_FRAME_MILLIS)
         seek(target)
         handler.postDelayed(settleCheck, SETTLE_CHECK_MILLIS)
     }
@@ -439,7 +440,7 @@ class SeekPreview internal constructor(
         /** 跳了还没结果时隔多久看一眼 (见 checkSettled). */
         private const val SETTLE_CHECK_MILLIS = 250L
 
-        /** 刚出过画面又挪了一步, 新画面这么久还没出来才把小画面里的旧画面标出来: 本机有的精确跳多半半秒内出画面. */
+        /** 挪了一步, 新画面这么久还没出来 (也没被挡住) 才把小画面里的旧画面标成加载中: 本机有的精确跳多半半秒内出画面. */
         private const val STALE_FRAME_MILLIS = 600L
 
         /** 画出的帧时间与播放器位置差这么多以内算对得上 (见 isFrameOfCurrentSeek): 精确跳画出的帧与圆点差不到一帧. */
@@ -454,10 +455,10 @@ enum class SeekPreviewOverlay {
     /** 不标: 画面就是圆点这里的, 或者刚挪了一步、新画面马上就到. */
     None,
 
-    /** 画面是别处的, 这里的还没出来: 盖成黑底, 提示停一下就加载. */
+    /** 画面是别处的, 这里的要联网才有、还没去下: 盖成黑底, 提示停一下就加载. */
     StayToLoad,
 
-    /** 在这里停够了, 正在加载这里的画面: 黑底上画进度环. */
+    /** 画面是别处的, 正在加载这里的画面 (停够了在下, 或者本机有、正在解): 黑底上画进度环. */
     Loading,
 }
 
