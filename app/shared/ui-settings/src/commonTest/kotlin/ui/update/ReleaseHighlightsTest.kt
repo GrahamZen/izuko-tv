@@ -48,7 +48,7 @@ class ReleaseHighlightsTest {
     """.trimIndent()
 
     @Test
-    fun `features above the rule, minor below, stops at the next heading`() {
+    fun `features above the rule - minor below - stops at the next heading`() {
         val highlights = parseReleaseHighlights("1.0.6", body)!!
         assertEquals(
             listOf(
@@ -75,7 +75,7 @@ class ReleaseHighlightsTest {
     }
 
     @Test
-    fun `notice section accepts list items and plain lines, skips comments`() {
+    fun `notice section accepts list items and plain lines - skips comments`() {
         val withNotice = body.replace(
             "## 本次更新",
             "## 通知\n\n[//]: # (写给发版人的)\n- 部分索尼电视播 4K 黑屏：先在设置里关掉硬解\n修复版明天发\n\n## 本次更新",
@@ -124,7 +124,7 @@ class ReleaseHighlightsTest {
     }
 
     @Test
-    fun `pre-release shows every pre-release of its version up to itself, newest first`() {
+    fun `pre-release shows every pre-release of its version up to itself - newest first`() {
         val available = listOf("1.0.6-alpha06", "1.0.6-alpha05", "1.0.6-alpha02", "1.0.6-alpha01", "1.0.5", "1.0.5-alpha02", "1.0.7-alpha01")
         assertEquals(
             listOf("1.0.6-alpha05", "1.0.6-alpha02", "1.0.6-alpha01"),
