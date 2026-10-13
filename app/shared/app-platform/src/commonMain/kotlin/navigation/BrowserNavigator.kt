@@ -16,7 +16,7 @@ interface BrowserNavigator {
 
     fun openJoinTelegram(context: Context): OpenBrowserResult = openBrowser(
         context,
-        "https://t.me/+FxlyUgaL5XlmZmY1",
+        ChatGroups.telegramLink,
     )
 
     // Android Intent.ACTION_VIEW
@@ -40,9 +40,6 @@ fun BrowserNavigator.rewritingUrls(rewrite: (String) -> String): BrowserNavigato
             delegate.intentActionView(context, rewrite(url))
     }
 }
-
-const val QQ_GROUP_ID = "1045984894"
-const val QQ_GROUP_JOIN_LINK = "https://qm.qq.com/q/JaXFdpv3mC"
 
 sealed class OpenBrowserResult {
     data object Success : OpenBrowserResult()
