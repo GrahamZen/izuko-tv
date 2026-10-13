@@ -67,6 +67,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
@@ -323,6 +324,7 @@ internal fun TvExplorationNativeWall(
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
+    val splitFloorPx = with(density) { -TV_POSTER_WALL_HERO_SPLIT_BAND.toPx() }
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
     // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
     val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
@@ -371,14 +373,16 @@ internal fun TvExplorationNativeWall(
             update = { view ->
                 view.listener = object : TvNativeExploreListener by currentListener {
                     override fun onToneChanged(tone: Float, splitY: Float) {
+                        // 分界线连同渐变带整段滚出屏顶后画面不再变 (见 TvPosterWallTone.drawBackground): 封在那里, 卡片区往下滚时不再每帧写快照、重画整屏底色
+                        val y = splitY.coerceAtLeast(splitFloorPx)
                         // 主壳的整屏底色 (分界线跟着轮播背景图的下缘走) 与原生视图同一帧挪: 写完当场派发
-                        if (state.tone != tone || state.splitY != splitY) {
+                        if (state.tone != tone || state.splitY != y) {
                             tvNativeWriteSnapshot {
                                 state.tone = tone
-                                state.splitY = splitY
+                                state.splitY = y
                             }
                         }
-                        currentListener.onToneChanged(tone, splitY)
+                        currentListener.onToneChanged(tone, y)
                     }
 
                     override fun onHeroActiveChanged(active: Boolean) {
