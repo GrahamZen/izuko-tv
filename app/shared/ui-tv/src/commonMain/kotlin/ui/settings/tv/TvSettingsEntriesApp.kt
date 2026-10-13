@@ -25,6 +25,7 @@ import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.session.SessionManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.settings.ProxyProvider
@@ -48,6 +49,7 @@ import me.him188.ani.app.ui.lang.oauth_bangumi_help_website_blocked_content
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_wrong_captcha
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_wrong_captcha_content
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
+import me.him188.ani.app.ui.lang.oauth_bangumi_via_ech
 import me.him188.ani.app.ui.lang.oauth_bangumi_via_mirror
 import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.settings_account_choose_profile_on_launch
@@ -154,8 +156,8 @@ internal object TvAppSettingKeys {
     /** 此刻实际在用的代理 (跟随系统时是探到的那个): 登录失败时据此分辨是不是连不上代理. */
     val proxy = TvSettingKey.Live("effectiveProxy") { GlobalKoin.get<ProxyProvider>().proxy.map { TvEffectiveProxy(it) } }
 
-    /** 经第三方镜像连 Bangumi: 授权登录走不通 (镜像把授权页与换 token 挡在反爬验证后面), 只能在控制台用个人令牌登录. */
-    val viaMirror = TvSettingKey.Live("viaMirror") { GlobalKoin.get<BangumiEndpointProvider>().viaThirdPartyMirror }
+    /** 怎么登录 (见 [BangumiLoginPath]): 不是 [BangumiLoginPath.BROWSER] 时授权走不通, 到控制台里登录. */
+    val loginPath = TvSettingKey.Live("loginPath") { GlobalKoin.get<BangumiEndpointProvider>().loginPath }
     val update = TvSettingKey.Stored("update") { it.updateSettings }
     val updatePresentation = TvSettingKey.Live("updatePresentation") { deps -> deps.appUpdate.presentationFlow }
     val metered = TvSettingKey.Live("metered") { GlobalKoin.get<MeteredNetworkDetector>().isMeteredNetworkFlow }
@@ -263,8 +265,8 @@ private fun TvSettingsItemsBuilder.loginItems() {
     val account = TvAppSettingKeys.account
     val oauth = TvAppSettingKeys.oauth
     val relay = TvAppSettingKeys.loginRelay
-    val mirror = TvAppSettingKeys.viaMirror
-    val keys = listOf(account, oauth, relay, mirror)
+    val path = TvAppSettingKeys.loginPath
+    val keys = listOf(account, oauth, relay, path)
     header(Lang.tv_settings_login_header, visible = { it.needsLogin() })
     // 焦点停上去就发起一次经 Worker 中转的授权, 授权页地址画成二维码; 离开不取消 (手机上可能正授权到一半), 确定换一张
     action(
@@ -273,7 +275,8 @@ private fun TvSettingsItemsBuilder.loginItems() {
         // 说明只写怎么做 (码占了说明栏一大块, 长了会被截掉); 连不上代理时写怎么办
         details = { v ->
             when {
-                v[mirror] == true -> tvText(Lang.oauth_bangumi_via_mirror)
+                v[path] == BangumiLoginPath.PERSONAL_TOKEN -> tvText(Lang.oauth_bangumi_via_mirror)
+                v[path] == BangumiLoginPath.TV_WEB_LOGIN -> tvText(Lang.oauth_bangumi_via_ech)
                 unreachableProxy(v) != null -> tvText(Lang.tv_settings_login_proxy_hint)
                 else -> tvText(Lang.tv_settings_login_qr_description)
             }
@@ -284,7 +287,7 @@ private fun TvSettingsItemsBuilder.loginItems() {
     ) { listOf(TvSettingsEdit.Run { env -> startLoginRelay(env) }) }
     run(
         Lang.tv_settings_login_on_tv, Lang.tv_settings_login_on_tv_description, keys = keys,
-        visible = { v -> v.needsLogin() && v[mirror] != true && GlobalKoin.get<BangumiOAuthManager>().inAppBrowserSupported },
+        visible = { v -> v.needsLogin() && v[path] == BangumiLoginPath.BROWSER && GlobalKoin.get<BangumiOAuthManager>().inAppBrowserSupported },
     ) {
         val manager = GlobalKoin.get<BangumiOAuthManager>()
         manager.resetIfFinished()
@@ -313,8 +316,8 @@ private fun loginStatus(state: BangumiOAuthManager.State?): TvText? = when (stat
 }
 
 private fun loginQr(v: TvSettingsValues): TvQr {
-    // 经镜像时授权走不通: 码换成控制台的账号页 (在那里用个人令牌登录)
-    if (v[TvAppSettingKeys.viaMirror] == true) return consoleQr(v, "#settings/account")
+    // 不走官方 / 自建时授权走不通: 码换成控制台的账号页 (加密直连填账号密码, 镜像用个人令牌)
+    if (v[TvAppSettingKeys.loginPath] != BangumiLoginPath.BROWSER) return consoleQr(v, "#settings/account")
     val relay = v[TvAppSettingKeys.loginRelay] ?: TvLoginRelay()
     relay.problem?.let { return TvQr(null, status = it) }
     return when (val state = v[TvAppSettingKeys.oauth]) {
@@ -347,7 +350,7 @@ private fun ensureLoginRelay(env: TvSettingsEnv) {
 
 /** 发起一次经 Worker 中转的授权 (见 [TvBangumiRelayLogin]), 授权页地址或起不了的原因放进 [TvSettingsDeps.loginRelay]. */
 private fun startLoginRelay(env: TvSettingsEnv) {
-    if (GlobalKoin.get<BangumiEndpointProvider>().viaThirdPartyMirror.value) return
+    if (GlobalKoin.get<BangumiEndpointProvider>().loginPath.value != BangumiLoginPath.BROWSER) return
     env.deps.loginRelay.value = when (val start = TvBangumiRelayLogin.start()) {
         is TvBangumiRelayLogin.Start.Ready -> TvLoginRelay(start.url)
         TvBangumiRelayLogin.Start.Unsupported -> TvLoginRelay(problem = tvText(Lang.tv_settings_login_relay_unsupported))
