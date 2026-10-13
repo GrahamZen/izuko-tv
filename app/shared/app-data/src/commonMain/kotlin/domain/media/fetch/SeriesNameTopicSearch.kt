@@ -84,13 +84,15 @@ internal class SeriesNameSearch private constructor(
 
     companion object {
         /**
-         * [request] 的系列名 ([MediaFetchRequest.fallbackSearchKeywords] 里不写季、也不是条目自己名字的第一个).
+         * [request] 的系列名 ([MediaFetchRequest.fallbackSearchKeywords] 里不写季、是条目自己某个名字的一部分但不等于它的第一个).
+         * 回退关键词末尾的港台译名不是 Bangumi 名字的一部分, 不会被当成系列名: BT 资源不核对名字, 用译名搜容易混进别的番.
          * 没有系列名, 或者系列名搜到的资源分不出季 (系列内序号与条目内序号相同, 条目名又没写季) 时为 null, 不必多搜.
          */
         fun of(request: MediaFetchRequest): SeriesNameSearch? {
             val seriesName = request.fallbackSearchKeywords.firstOrNull { name ->
                 DriveNameParser.declaredSeasons(name).isEmpty() &&
-                        request.subjectNames.none { MediaListFilters.specialEquals(it, name) }
+                        request.subjectNames.none { MediaListFilters.specialEquals(it, name) } &&
+                        request.subjectNames.any { MediaListFilters.specialContains(it, name) }
             } ?: return null
             val season = request.subjectNames.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
             val ep = request.episodeEp
