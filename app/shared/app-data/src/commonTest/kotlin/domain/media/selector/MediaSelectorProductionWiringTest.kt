@@ -225,6 +225,8 @@ class MediaSelectorProductionWiringTest {
             override val proxySettings get() = error("not used")
             override val bangumiEndpointSettings get() = error("not used")
             override val bangumiMirrorCache get() = error("not used")
+            override val bangumiEchAddressCache get() = error("not used")
+            override val bangumiEchDohCache get() = error("not used")
             override val danmakuSettings get() = error("not used")
             override val uiSettings get() = error("not used")
             override val themeSettings get() = error("not used")
