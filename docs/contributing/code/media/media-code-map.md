@@ -106,6 +106,8 @@
    `PlayerSession.loadMedia(...)`。
 9. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`，播放器直接在起播位置打开。
+   Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
+   mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
 9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
    `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
