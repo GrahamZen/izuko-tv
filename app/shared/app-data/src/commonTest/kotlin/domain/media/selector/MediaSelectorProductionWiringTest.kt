@@ -153,7 +153,7 @@ class MediaSelectorProductionWiringTest {
         }
 
     @Test
-    fun `条目信息变了且请求随之变时只建一个选源器, 不拿旧会话先建一个`() = runTest {
+    fun `条目信息变了且请求随之变时只建一个选源器，不拿旧会话先建一个`() = runTest {
         val repository = createRepository(MutableStateFlow(MediaPreference.Empty))
         withProductionUseCase(repository) { useCase ->
             val first = createInfoBundle(SUBJECT_ID)
