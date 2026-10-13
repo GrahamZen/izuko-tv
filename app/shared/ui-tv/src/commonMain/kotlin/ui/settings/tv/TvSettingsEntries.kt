@@ -175,6 +175,10 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_details
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_hero
 import me.him188.ani.app.ui.lang.settings_theme_tv_poster_confirm_play
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_idle_dim
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_idle_dim_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_slow_focus_out
+import me.him188.ani.app.ui.lang.settings_theme_tv_poster_slow_focus_out_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_confirm
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_description
@@ -499,6 +503,16 @@ private fun TvSettingsItemsBuilder.themeItems() {
         },
         read = { it.tvPosterConfirm },
         write = { copy(tvPosterConfirm = it) },
+    )
+    toggle(
+        theme, Lang.settings_theme_tv_poster_idle_dim, Lang.settings_theme_tv_poster_idle_dim_description,
+        read = { it.tvPosterIdleDim },
+        write = { copy(tvPosterIdleDim = it) },
+    )
+    toggle(
+        theme, Lang.settings_theme_tv_poster_slow_focus_out, Lang.settings_theme_tv_poster_slow_focus_out_description,
+        read = { it.tvPosterSlowFocusOut },
+        write = { copy(tvPosterSlowFocusOut = it) },
     )
     // 海报墙与详情页两处按搭配一起选; 存着的搭配不在预设里 (以前分开选过) 时也列在最后, 不改它就一直是它
     choice(

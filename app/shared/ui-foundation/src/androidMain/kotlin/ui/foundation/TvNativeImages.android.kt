@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.IntSize
 import com.github.panpf.sketch.Sketch
 import com.github.panpf.sketch.asBitmapOrNull
 import com.github.panpf.sketch.disposeLoad
+import com.github.panpf.sketch.request.Depth
 import com.github.panpf.sketch.request.ImageRequest
 import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.transform.BlurTransformation
@@ -37,6 +38,9 @@ object TvNativeImages {
      * ([bangumiCoverThumbnailUrl]), 请求 2 倍过采样、SAME_ASPECT_RATIO、中心裁剪 ([configureAniImageRequest]).
      * [obscureLongEdgePx] 非 null 时按框比例只解这么长的长边 (NSFW 打码, 同 AsyncImage 的 downsampleLongEdgePx).
      * [url] 为 null 时清掉旧图. 允许空图: 复用的 View 在新图到之前先清掉上一张.
+     * [memoryOnly] = true 时只查内存缓存 (按住方向键连走时用): 命中当场上屏; 没命中不读盘、不解码, 也不替视图清图
+     * (复用的卡先顶着上一个条目的封面), 由调用方松手后再完整加载一次.
+     * [onResult] 在这次请求结束时调: true = 封面已上屏, false = 没命中 / 失败 / 被取消.
      */
     fun loadCover(
         sketch: Sketch,
@@ -46,6 +50,8 @@ object TvNativeImages {
         heightPx: Int,
         crossfade: Boolean,
         obscureLongEdgePx: Int? = null,
+        memoryOnly: Boolean = false,
+        onResult: ((Boolean) -> Unit)? = null,
     ) {
         if (url == null) {
             view.disposeLoad()
@@ -72,8 +78,22 @@ object TvNativeImages {
                     onSuccess = { _, _ -> AniStartupProgress.coverFinished() },
                 )
             }
+            if (memoryOnly) depth(Depth.MEMORY)
+            if (onResult != null) {
+                addListener(
+                    onCancel = { onResult(false) },
+                    onError = { _, _ -> onResult(false) },
+                    onSuccess = { _, _ -> onResult(true) },
+                )
+            }
         }
         sketch.enqueue(request)
+    }
+
+    /** 撤掉 [view] 上进行中的加载并清图 (露出视图自己的底色). */
+    fun clearCover(view: ImageView) {
+        view.disposeLoad()
+        view.setImageDrawable(null)
     }
 
     /**

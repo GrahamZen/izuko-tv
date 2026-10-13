@@ -578,7 +578,10 @@ class TvNativeExploreView(
         if (focusedRowKey != null) {
             list.heldFocus = focusedRowKey to rememberedIndex(focusedRowKey, list.rowLeftIndex[focusedRowKey] ?: 0)
         }
-        if (heroActive) timeline.setActive(true, animated = false)
+        if (heroActive) {
+            timeline.setActive(true, animated = false)
+            TvNativeFocusCues.setSpotlight(this, on = true, animated = false)
+        }
         // 列表停位等数据到了再定 (空列表定不了位)
         if (list.items.isNotEmpty()) list.jumpTo(scrollPx) else pendingScrollPx = scrollPx
         applyFrame()
@@ -878,6 +881,7 @@ class TvNativeExploreView(
     fun setHeroActive(active: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
         timeline.setActive(active, animated = true)
+        TvNativeFocusCues.setSpotlight(this, active, animated = true)
         listener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
         updateStop(heroToggled = true)
@@ -893,6 +897,7 @@ class TvNativeExploreView(
     // ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        TvNativeFocusCues.onKey(this, event)
         // hero 态的模糊背景: 点开途中吞掉方向键与确认键, 按下确认键当场解清晰图 (见 TvNativeWallFocus.handleKey)
         if (wallFocus.handleKey(event)) return true
         // 远跳途中的确认键算作用在目标上 (同 Apple TV: 滚动途中的输入作用在目的地): 记下 (按下与抬起都吞掉), 落到目标时点它
@@ -1178,6 +1183,7 @@ class TvNativeExploreView(
         // 焦点回到轮播按钮: 回卡片墙, 列表按远跳 spring 滚回顶 (轮播随列表一起滑回原位)
         if (timeline.active) {
             timeline.setActive(false, animated = true)
+            TvNativeFocusCues.setSpotlight(this, on = false, animated = true)
             listener?.onHeroActiveChanged(false)
         }
         list.scrollToStop(0, TvScrollSpring.Far, animatedScroll)
@@ -1239,6 +1245,7 @@ class TvNativeExploreView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
+        TvNativeFocusCues.attachPage(this)
     }
 
     /**
@@ -1545,6 +1552,7 @@ class TvNativeExploreView(
 
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
+        TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
         wallFocus.detach()
