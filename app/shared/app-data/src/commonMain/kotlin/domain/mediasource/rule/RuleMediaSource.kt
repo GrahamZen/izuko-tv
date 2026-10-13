@@ -19,6 +19,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.request
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +72,7 @@ import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherProvider
+import me.him188.ani.datasources.api.matcher.WebVideoSniffTimeout
 import me.him188.ani.datasources.api.matcher.WebViewConfig
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.emptySizedSource
@@ -538,7 +540,9 @@ class RuleMediaSource(
     // endregion
 
     override val matcher: WebVideoMatcher by lazy {
-        object : WebVideoMatcher, WebVideoDirectResolver {
+        object : WebVideoMatcher, WebVideoDirectResolver, WebVideoSniffTimeout {
+            override val sniffTimeoutMillis: Long? = videoSniffTimeoutMillis(rule.play)
+
             override fun match(url: String, context: WebVideoMatcherContext): WebVideoMatcher.MatchResult =
                 selectorEngine.matchWebVideo(url, rule.matchVideo)
 
@@ -580,6 +584,15 @@ class RuleMediaSource(
     }
 }
 
+/** 播放段里嗅探视频的步骤 (含 [RuleStep.First] 的分支里的) 写的最长等待时长; 都没写为 `null`. */
+internal fun videoSniffTimeoutMillis(steps: List<RuleStep>): Long? = steps.mapNotNull { step ->
+    when (step) {
+        is RuleStep.Sniff -> step.timeoutMillis.takeIf { step.goal == RuleStep.Sniff.GOAL_VIDEO && it > 0 }
+        is RuleStep.First -> step.branches.mapNotNull { videoSniffTimeoutMillis(it) }.maxOrNull()
+        else -> null
+    }
+}.maxOrNull()
+
 /**
  * 发出规则里的一个请求. 4xx / 5xx 也作为响应返回.
  */
@@ -602,6 +615,9 @@ private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
     finalUrl = request.url.toString(),
     status = status.value,
     text = runCatching { bodyAsText() }.getOrDefault(""),
+    cookies = headers.getAll(HttpHeaders.SetCookie).orEmpty()
+        .map { it.substringBefore(';').trim() }
+        .filter { it.substringBefore('=', "").isNotBlank() },
 )
 
 /**
