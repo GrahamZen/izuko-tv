@@ -18,10 +18,12 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.directapi.JsonNode
 import me.him188.ani.app.domain.mediasource.directapi.applyTransforms
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
+import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.datasources.api.util.namedGroup
 import me.him188.ani.utils.xml.Element
@@ -51,6 +53,8 @@ data class RuleHttpResponse(
     val finalUrl: String,
     val status: Int,
     val text: String,
+    /** 响应设的 Cookie (`Set-Cookie` 里的 `名=值`, 不含属性). */
+    val cookies: List<String> = emptyList(),
 )
 
 /** 站点上的一个条目. */
@@ -250,9 +254,9 @@ class RuleEngine(
 
     private suspend fun runStep(step: RuleStep, state: RuleState, label: String, errors: StageErrors): RuleState? =
         when (step) {
-            is RuleStep.Fetch -> fetch(state, label, step.url, step.method, step.headers, step.body, step.contentType)
+            is RuleStep.Fetch -> fetch(state, label, step.url, step.method, step.headers, step.body, step.contentType, step.cookies)
             is RuleStep.Sniff -> when (step.goal) {
-                RuleStep.Sniff.GOAL_HTML -> fetch(state, label, step.url, "GET", emptyMap(), "", "")
+                RuleStep.Sniff.GOAL_HTML -> fetch(state, label, step.url, "GET", emptyMap(), "", "", "")
                 else -> ok(label, state.copy(sniffVideo = true), "交给 WebView 嗅探")
             }
 
@@ -351,17 +355,12 @@ class RuleEngine(
         stepHeaders: Map<String, String>,
         body: String,
         contentType: String,
+        cookieVariable: String,
     ): RuleState? {
         val raw = if (url.isBlank()) state.inputUrl ?: return fail(label, "这一段没有输入地址, 要写 url") else substitute(url, state)
         val base = state.pageUrl.ifBlank { config.baseUrl }
         val absolute = RuleText.resolveUrl(base, raw) ?: return fail(label, "不是有效的地址: $raw")
-        val headers = buildMap {
-            for ((name, value) in config.headers) put(name, substitute(value, state))
-            for ((name, value) in stepHeaders) {
-                keys.firstOrNull { it.equals(name, ignoreCase = true) }?.let { remove(it) }
-                put(name, substitute(value, state))
-            }
-        }
+        val headers = requestHeaders(state, stepHeaders)
         val bodyText = substitute(body, state).takeIf { it.isNotEmpty() }
         val type = when (contentType.trim().lowercase()) {
             "" -> if (bodyText != null) CONTENT_TYPE_FORM else null
@@ -372,14 +371,38 @@ class RuleEngine(
         val request = RuleHttpRequest(method.trim().uppercase().ifEmpty { "GET" }, RuleText.normalizeUrl(absolute), headers, bodyText, type)
         val response = http.request(request)
         if (response.status >= 400) return fail(label, "HTTP ${response.status} ${request.url}")
+        val variables = if (cookieVariable.isBlank()) {
+            state.variables
+        } else {
+            state.variables + (cookieVariable to mergeCookies(state.variables[cookieVariable].orEmpty(), response.cookies))
+        }
         return ok(
             label,
             state.copy(
                 value = response.text,
                 pageUrl = response.finalUrl,
+                variables = variables,
             ),
             "${request.method} ${request.url} -> ${response.text.length} 字",
         )
+    }
+
+    private fun requestHeaders(state: RuleState, stepHeaders: Map<String, String>): Map<String, String> = buildMap {
+        for ((name, value) in config.headers) put(name, substitute(value, state))
+        for ((name, value) in stepHeaders) {
+            keys.firstOrNull { it.equals(name, ignoreCase = true) }?.let { remove(it) }
+            put(name, substitute(value, state))
+        }
+    }
+
+    /** `a=1; b=2` 加上新设的 Cookie, 同名的换成新的. */
+    private fun mergeCookies(existing: String, cookies: List<String>): String {
+        val merged = linkedMapOf<String, String>()
+        for (cookie in existing.split(';') + cookies) {
+            val name = cookie.substringBefore('=', "").trim()
+            if (name.isNotEmpty()) merged[name] = cookie.trim()
+        }
+        return merged.values.joinToString("; ")
     }
 
     private fun queryParameter(input: String, name: String): String? {
@@ -457,14 +480,18 @@ class RuleEngine(
         val document = Html.parse(state.value, state.pageUrl)
         val cards = step.list.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
             ?: return fail(label, "没有选中条目")
+        val keyword = keywordFilter(state, step.filterByKeyword)
         val subjects = cards.mapNotNull { card ->
             val link = findLink(card, step) ?: return@mapNotNull null
             val url = RuleText.resolveUrl(state.pageUrl, link.attr(step.linkAttr)) ?: return@mapNotNull null
             if (step.linkPattern.isNotEmpty() && step.linkPattern !in url) return@mapNotNull null
             val name = subjectName(card, link, step).takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            if (keyword != null && keyword !in normalizeForFilter(name)) return@mapNotNull null
             RuleSubject(name, url)
         }.distinctBy { it.url }
-        if (subjects.isEmpty()) return fail(label, "${cards.size} 个元素里没有取到条目")
+        if (subjects.isEmpty()) {
+            return fail(label, if (keyword != null) "${cards.size} 个元素里没有名字含有关键词的条目" else "${cards.size} 个元素里没有取到条目")
+        }
         return ok(label, state.copy(subjects = subjects), "${subjects.size} 个条目")
     }
 
@@ -497,32 +524,78 @@ class RuleEngine(
     private fun jsonSubjects(state: RuleState, label: String, step: RuleStep.JsonSubjects): RuleState? {
         val items = jsonItems(state.value, step.listPath)
         val base = config.baseUrl.ifBlank { state.pageUrl }
+        val keyword = keywordFilter(state, step.filterByKeyword)
         val subjects = items.mapNotNull { item ->
             val name = item.stringByPath(step.namePath)?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            if (keyword != null && keyword !in normalizeForFilter(name)) return@mapNotNull null
             val url = jsonItemUrl(item, state, step.idPath, step.urlPath, step.urlTemplate, base) ?: return@mapNotNull null
             RuleSubject(name, url)
         }.distinctBy { it.url }
-        if (subjects.isEmpty()) return fail(label, "JSON 里没有取到条目")
+        if (subjects.isEmpty()) return fail(label, if (keyword != null) "JSON 里没有名字含有关键词的条目" else "JSON 里没有取到条目")
         return ok(label, state.copy(subjects = subjects), "${subjects.size} 个条目")
     }
 
-    private fun episodes(state: RuleState, label: String, step: RuleStep.Episodes): RuleState? {
-        val document = Html.parse(state.value, state.pageUrl)
+    /** 按关键词筛条目时比较用的关键词; 不筛 (或这一段没有关键词) 为 `null`. */
+    private fun keywordFilter(state: RuleState, enabled: Boolean): String? =
+        state.variables[VAR_KEYWORD]?.takeIf { enabled }?.let(::normalizeForFilter)?.takeIf { it.isNotEmpty() }
+
+    private fun normalizeForFilter(text: String): String =
+        MediaListFilters.normalizeForCompare(text.toSimplifiedChinese()).lowercase()
+
+    private suspend fun episodes(state: RuleState, label: String, step: RuleStep.Episodes): RuleState? {
+        var document = Html.parse(state.value, state.pageUrl)
+        var pageUrl = state.pageUrl
         val lists = step.lists.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
             ?: return fail(label, "没有选中剧集列表")
         val tabNames = step.tabs.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
             ?.map { it.text().trim() }
             .orEmpty()
-        val channels = lists.mapIndexedNotNull { index, list ->
-            val episodes = list.select(step.items).mapNotNull { item ->
-                val url = RuleText.resolveUrl(state.pageUrl, item.attr("href")) ?: return@mapNotNull null
-                val name = item.text().trim().ifEmpty { item.attr("title").trim() }
-                RuleEpisode(name, url)
+
+        fun episodesIn(list: Element, pageUrl: String): List<RuleEpisode> = list.select(step.items).mapNotNull { item ->
+            val url = RuleText.resolveUrl(pageUrl, item.attr("href")) ?: return@mapNotNull null
+            val name = item.text().trim().ifEmpty { item.attr("title").trim() }
+            RuleEpisode(name, url)
+        }
+
+        val perList = lists.map { episodesIn(it, pageUrl).toMutableList() }
+        var pages = 1
+        if (step.nextPage.isNotBlank()) {
+            val visited = mutableSetOf(pageUrl)
+            while (pages < step.maxPages) {
+                val next = document.select(step.nextPage).firstOrNull()
+                    ?.let { RuleText.resolveUrl(pageUrl, it.attr("href")) }
+                    ?.takeIf { visited.add(it) }
+                    ?: break
+                val response = try {
+                    http.request(RuleHttpRequest("GET", RuleText.normalizeUrl(next), requestHeaders(state, emptyMap()), null, null))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 后面的页打不开不连累已经取到的
+                    trace?.onStep(label, false, "第 ${pages + 1} 页 $next: $e")
+                    break
+                }
+                if (response.status >= 400) {
+                    trace?.onStep(label, false, "第 ${pages + 1} 页 HTTP ${response.status} $next")
+                    break
+                }
+                pageUrl = response.finalUrl
+                document = Html.parse(response.text, pageUrl)
+                val pageLists = step.lists.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() } ?: break
+                pageLists.forEachIndexed { index, list ->
+                    val collected = perList.getOrNull(index) ?: return@forEachIndexed
+                    // 站点在两次翻页之间发了新集时, 后一页开头会重复前一页末尾的几集
+                    val seen = collected.mapTo(HashSet()) { it.url }
+                    collected.addAll(episodesIn(list, pageUrl).filter { it.url !in seen })
+                }
+                pages++
             }
+        }
+        val channels = perList.mapIndexedNotNull { index, episodes ->
             if (episodes.isEmpty()) return@mapIndexedNotNull null
             RuleChannel(tabNames.getOrNull(index)?.takeIf { it.isNotEmpty() }, if (step.reverse) episodes.reversed() else episodes)
         }
-        return finishChannels(state, label, channels)
+        return finishChannels(state, label, channels, pages)
     }
 
     private fun jsonEpisodes(state: RuleState, label: String, step: RuleStep.JsonEpisodes): RuleState? {
@@ -560,7 +633,7 @@ class RuleEngine(
     /**
      * 线路收尾: 去掉空线路; 有多条线路却没有名字时按顺序起名 (「线路1」…), 否则同名剧集的资源 id 会撞.
      */
-    private fun finishChannels(state: RuleState, label: String, channels: List<RuleChannel>): RuleState? {
+    private fun finishChannels(state: RuleState, label: String, channels: List<RuleChannel>, pages: Int = 1): RuleState? {
         val nonEmpty = channels.filter { it.episodes.isNotEmpty() }
         if (nonEmpty.isEmpty()) return fail(label, "没有取到剧集")
         val named = if (nonEmpty.size > 1) {
@@ -568,7 +641,8 @@ class RuleEngine(
         } else {
             nonEmpty
         }
-        return ok(label, state.copy(channels = named), "${named.size} 条线路, ${named.sumOf { it.episodes.size }} 集")
+        val pagesText = if (pages > 1) ", $pages 页" else ""
+        return ok(label, state.copy(channels = named), "${named.size} 条线路, ${named.sumOf { it.episodes.size }} 集$pagesText")
     }
 
     private fun jsonItems(text: String, listPath: String): List<JsonNode> {

@@ -21,13 +21,16 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class RuleEngineTest {
-    /** 按地址返回页面的假站点; 记下每个请求. */
-    private class FakeSite(private val pages: Map<String, String>) : RuleHttp {
+    /** 按地址返回页面 (与 [cookies] 里这个地址设的 Cookie) 的假站点; 记下每个请求. */
+    private class FakeSite(
+        private val pages: Map<String, String>,
+        private val cookies: Map<String, List<String>> = emptyMap(),
+    ) : RuleHttp {
         val requests = mutableListOf<RuleHttpRequest>()
         override suspend fun request(request: RuleHttpRequest): RuleHttpResponse {
             requests += request
             val page = pages[request.url] ?: return RuleHttpResponse(request.url, 404, "not found")
-            return RuleHttpResponse(request.url, 200, page)
+            return RuleHttpResponse(request.url, 200, page, cookies[request.url].orEmpty())
         }
     }
 
@@ -277,6 +280,87 @@ class RuleEngineTest {
             ),
             engine(config, site).search("a b"),
         )
+    }
+
+    @Test
+    fun `json subjects index into array rows and keep names containing the keyword`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/list.json" to
+                        """[[12,"葬送的芙莉蓮","1-28"],[13,"葬送的芙莉蓮 第二季","29-38"],[14,"其他動畫","1-12"]]""",
+            ),
+        )
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.Fetch(url = "/list.json"),
+                RuleStep.JsonSubjects(idPath = "[0]", namePath = "[1]", urlTemplate = "/cat/{id}", filterByKeyword = true),
+            ),
+        )
+        // 比较时忽略空白与标点
+        assertEquals(
+            listOf(
+                RuleSubject("葬送的芙莉蓮", "https://www.example.com/cat/12"),
+                RuleSubject("葬送的芙莉蓮 第二季", "https://www.example.com/cat/13"),
+            ),
+            engine(config, site).search("葬送的 芙莉蓮!"),
+        )
+        assertEquals(emptyList(), engine(config, site).search("不存在"))
+    }
+
+    @Test
+    fun `episodes follow next page links and merge pages before reversing`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/cat/1" to """
+                    <main><h2><a href="/p/4">示例 [04]</a></h2><h2><a href="/p/3">示例 [03]</a></h2></main>
+                    <div class="nav-previous"><a href="/cat/1/page/2">上一頁</a></div>
+                """.trimIndent(),
+                "https://www.example.com/cat/1/page/2" to """
+                    <main><h2><a href="/p/3">示例 [03]</a></h2><h2><a href="/p/2">示例 [02]</a></h2><h2><a href="/p/1">示例 [01]</a></h2></main>
+                    <div class="nav-previous"><a href="/cat/1/page/3">上一頁</a></div>
+                """.trimIndent(),
+            ),
+        )
+        val step = RuleStep.Episodes(lists = listOf("main"), items = "h2 a", reverse = true, nextPage = ".nav-previous a")
+        val config = RuleConfig(detail = listOf(RuleStep.Fetch(), step))
+        val channels = engine(config, site).detail("https://www.example.com/cat/1")
+        // 第 3 页打不开: 用已经取到的两页, 重复的一集只留一次
+        assertEquals(listOf("示例 [01]", "示例 [02]", "示例 [03]", "示例 [04]"), channels.single().episodes.map { it.name })
+        assertEquals("https://www.example.com/p/1", channels.single().episodes.first().url)
+        assertEquals(3, site.requests.size)
+
+        val firstPageOnly = RuleConfig(detail = listOf(RuleStep.Fetch(), step.copy(maxPages = 1)))
+        assertEquals(2, engine(firstPageOnly, site).detail("https://www.example.com/cat/1").single().episodes.size)
+    }
+
+    @Test
+    fun `fetch keeps set-cookie in a variable for media headers`() = runTest {
+        val apiReq = "%7B%22c%22%3A%221%22%2C%22e%22%3A%222%22%7D"
+        val site = FakeSite(
+            pages = mapOf(
+                "https://www.example.com/p/2" to """<video data-apireq="$apiReq"></video>""",
+                "https://v.example.com/api" to """{"s":[{"src":"//cdn.example.com/1/2.mp4","type":"video/mp4"}]}""",
+            ),
+            cookies = mapOf("https://v.example.com/api" to listOf("e=111", "p=222")),
+        )
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Select(css = "video[data-apireq]", attr = "data-apireq"),
+                RuleStep.Fetch(url = "https://v.example.com/api", method = "POST", body = "d={value}", cookies = "videoCookies"),
+                RuleStep.Json(path = "s.src"),
+                RuleStep.MediaHeaders(headers = mapOf("Cookie" to "{videoCookies}")),
+            ),
+        )
+        val result = engine(config, site).play("https://www.example.com/p/2")
+        assertIs<RulePlayResult.Direct>(result)
+        // 协议相对地址按取地址的接口补全
+        assertEquals("https://cdn.example.com/1/2.mp4", result.url)
+        assertEquals("e=111; p=222", result.headers["Cookie"])
+        val post = site.requests.last()
+        assertEquals("d=$apiReq", post.body)
+        assertEquals("application/x-www-form-urlencoded", post.contentType)
     }
 
     @Test
