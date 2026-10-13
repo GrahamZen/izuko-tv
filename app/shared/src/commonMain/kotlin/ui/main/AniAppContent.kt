@@ -112,7 +112,6 @@ import me.him188.ani.app.ui.foundation.focus.rememberTvEntryScrollGuard
 import me.him188.ani.app.ui.foundation.focus.tvEntryScrollGuard
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.main_network_check_failed
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeScreen
 import me.him188.ani.app.ui.oauth.BangumiAuthorizeViewModel
 import me.him188.ani.app.ui.playback.PlaybackHistoryScreen
@@ -441,14 +440,6 @@ private fun AniAppContentImpl(
                         val page = requestedPage ?: return@LaunchedEffect
                         currentPage = page
                         MainPageRequest.pending = null
-                    }
-
-                    val toaster = LocalToaster.current
-                    val networkCheckFailedMessage = stringResource(Lang.main_network_check_failed)
-                    LaunchedEffect(vm) {
-                        vm.networkCheckFailed.collect {
-                            toaster.toast(networkCheckFailedMessage)
-                        }
                     }
 
                     OverrideNavigation(
