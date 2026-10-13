@@ -130,6 +130,8 @@ import me.him188.ani.app.ui.lang.tv_settings_update_new_hint
 import me.him188.ani.app.ui.lang.tv_settings_update_type_stable_description
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test_description
+import me.him188.ani.app.ui.lang.tv_settings_update_whats_new
+import me.him188.ani.app.ui.lang.tv_settings_update_whats_new_description
 import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.settings.tabs.log.LogExportLauncher
@@ -139,6 +141,7 @@ import me.him188.ani.app.ui.settings.tabs.log.runLogLanShare
 import me.him188.ani.app.ui.update.AppUpdatePresentation
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.UpdateCheckProgress
+import me.him188.ani.app.ui.whatsnew.TvWhatsNewSettingsPage
 import org.jetbrains.compose.resources.getString
 import kotlin.math.roundToInt
 
@@ -415,6 +418,9 @@ internal fun TvSettingsItemsBuilder.updateItems() {
     val update = TvAppSettingKeys.update
     val presentation = TvAppSettingKeys.updatePresentation
     action(Lang.settings_update_current_version, value = { tvText(currentAniBuildConfig.versionName) }) { emptyList() }
+    run(Lang.tv_settings_update_whats_new, Lang.tv_settings_update_whats_new_description) { env ->
+        env.show(TvSettingsOverlay.Dialog { dismiss -> TvWhatsNewSettingsPage(onDismiss = dismiss) })
+    }
     action(
         Lang.settings_update_check, keys = listOf(presentation),
         value = { v -> v[presentation]?.let(::updateStatus) },

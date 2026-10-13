@@ -13,8 +13,7 @@ import android.content.Intent
 import androidx.core.net.toUri
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import me.him188.ani.app.navigation.QQ_GROUP_ID
-import me.him188.ani.app.navigation.QQ_GROUP_JOIN_LINK
+import me.him188.ani.app.navigation.ChatGroups
 import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.ui.foundation.Res
@@ -48,6 +47,7 @@ import me.him188.ani.app.ui.lang.settings_developers_main_contributors
 import me.him188.ani.app.ui.lang.settings_developers_outstanding_contributors
 import me.him188.ani.app.ui.lang.settings_developers_view_more_on_github
 import me.him188.ani.app.ui.lang.settings_help_telegram
+import me.him188.ani.app.ui.lang.tv_chat_group_qq_answer
 import me.him188.ani.app.ui.lang.tv_settings_build_info
 import me.him188.ani.app.ui.lang.tv_settings_developers_more
 import me.him188.ani.app.ui.lang.tv_settings_link_description
@@ -113,9 +113,16 @@ internal fun TvSettingsItemsBuilder.aboutItems() {
     link(Lang.settings_about_source_code) { AniHelperDestination.GITHUB_HOME }
     group(Lang.developer_list) { developerItems() }
     group(Lang.acknowledgements) { acknowledgementItems() }
-    header(Lang.settings_about_chat_groups)
-    link(Lang.settings_about_qq_group, value = { tvText(QQ_GROUP_ID) }) { QQ_GROUP_JOIN_LINK }
-    link(Lang.settings_help_telegram) { TELEGRAM_GROUP_LINK }
+    // 交流群: 链接构建时注入, 没配的构建里不列 (见 ChatGroups)
+    if (ChatGroups.isConfigured) header(Lang.settings_about_chat_groups)
+    if (ChatGroups.hasQq) {
+        link(
+            Lang.settings_about_qq_group,
+            value = { tvText(ChatGroups.qqGroupId) },
+            details = tvText(Lang.tv_chat_group_qq_answer, ChatGroups.qqJoinAnswer),
+        ) { ChatGroups.qqJoinLink }
+    }
+    if (ChatGroups.hasTelegram) link(Lang.settings_help_telegram) { ChatGroups.telegramLink }
 }
 
 /** 开发者名单 (同原来设置页的开发者页): 每人一行, 行尾写分工, 说明栏画头像与 GitHub 主页的码. */
@@ -202,9 +209,6 @@ private fun libraryDescription(library: OpenSourceLibraryInfo): TvText {
 }
 
 private fun paragraphs(first: TvText, second: TvText): TvText = tvText(Lang.tv_settings_paragraphs, first, second)
-
-/** 交流群 (同 BrowserNavigator.openJoinTelegram). */
-private const val TELEGRAM_GROUP_LINK = ""
 
 /** 开发者名单里「主要贡献者」的人数 (同原来设置页的开发者页). */
 private const val MAIN_CONTRIBUTORS = 2

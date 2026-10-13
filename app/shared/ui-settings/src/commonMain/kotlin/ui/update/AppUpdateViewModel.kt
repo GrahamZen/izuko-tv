@@ -290,6 +290,8 @@ open class AppUpdateViewModel(
         }
 
         withContext(Dispatchers.IO) { dir.createDirectories() }
+        // 装好后第一次打开时介绍新功能用这份说明, 不用等网络 (见 ReleaseNotesStore)
+        updateManager.releaseNotesStore().save(ver)
         // 每个包的来源 = GitHub 原地址 + 清单里的各个镜像, 下载器挑最快的; 有 GitHub 接口给的 SHA-256 就按它校验
         val packages = preparationUrls.map { url ->
             val fileName = url.substringAfterLast("/", "")
