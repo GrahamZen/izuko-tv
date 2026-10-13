@@ -32,6 +32,12 @@ interface TvNativeCardListener {
     fun onFocused(index: Int)
     fun onClick(index: Int)
     fun onLongPress(index: Int, anchor: Rect) {}
+
+    /**
+     * 触摸屏上点第 [index] 张 (还没聚焦) 时, 聚焦之外是否同一下就确认 (见 TvNativeCardView 的触摸处理). 只在确认是「进 hero 态」这种不离开页面的
+     * 动作时给 true; 确认会进详情页 / 播放 / 打开别的页时只聚焦 (hero 态里点另一张卡 = 换 hero 内容), 再点一下才确认.
+     */
+    fun tapConfirmsWhileFocusing(index: Int): Boolean = false
 }
 
 /**
@@ -106,6 +112,10 @@ class TvNativeCardAdapter(
         holder.card.setOnClickListener {
             val index = holder.bindingAdapterPosition
             if (index != RecyclerView.NO_POSITION) holder.owner?.listener?.onClick(index)
+        }
+        holder.card.tapConfirmsWhileFocusing = {
+            val index = holder.bindingAdapterPosition
+            index != RecyclerView.NO_POSITION && holder.owner?.listener?.tapConfirmsWhileFocusing(index) == true
         }
         holder.card.longPressHandler = { anchor ->
             val index = holder.bindingAdapterPosition

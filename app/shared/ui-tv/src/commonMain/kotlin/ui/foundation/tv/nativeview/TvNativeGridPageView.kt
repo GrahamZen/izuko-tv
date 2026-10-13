@@ -17,6 +17,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
@@ -132,6 +133,28 @@ class TvNativeGridPageView(
 
     /** 按确定时整屏背景先对焦再交给页面 (新番时间表 / hero 态的模糊背景); false = 当场交给页面 (「海报上按确定」选直接播放). */
     var confirmFocusesWall: Boolean = true
+
+    /**
+     * 触屏设备上海报墙左右滑 (左滑 +1, 右滑 −1; 追番页换标签、新番时间表换天), 宿主在触摸开关打开且页面要时给; 电视上为 null, 不装.
+     * hero 态里照样认 (同遥控器在行缘按左右跨标签, 新那份网格接着在 hero 态, 见 [showGrid]); 点开途中 (对焦进详情页) 不认.
+     */
+    var onTouchSwipe: ((delta: Int) -> Unit)? = null
+        set(value) {
+            if ((field == null) != (value == null)) {
+                touchSwipe = value?.let {
+                    TvNativeHorizontalSwipe(context, this, { _, _ -> !wallFocus.opening }) { delta -> onTouchSwipe?.invoke(delta) }
+                }
+            }
+            field = value
+        }
+    private var touchSwipe: TvNativeHorizontalSwipe? = null
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
+        touchSwipe?.onIntercept(ev) == true || super.onInterceptTouchEvent(ev)
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean =
+        touchSwipe?.onTouch(event) == true || super.onTouchEvent(event)
 
     var transitions: Boolean = true
     var animatedScroll: Boolean = true
@@ -403,6 +426,9 @@ class TvNativeGridPageView(
             if (!heroEnabled) wallFocus.peek(index, wallMatches(grid, index))
             listener?.onLongPress(index, anchor)
         }
+
+        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里 / 没有 hero 态 (确认就进详情页或播放) 只换焦点
+        override fun tapConfirmsWhileFocusing(index: Int): Boolean = grid === current && heroEnabled && !timeline.active
 
         override fun onTopRowUp(): Boolean = listener?.onTopRowUp() ?: false
 
