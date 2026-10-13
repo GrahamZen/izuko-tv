@@ -30,6 +30,10 @@ val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secre
 val bangumiOauthRelayClientId = getPropertyOrNull("ani.bangumi.oauth.relay.client.id") ?: ""
 val bangumiOauthRelayClientSecret = getPropertyOrNull("ani.bangumi.oauth.relay.client.secret") ?: ""
 val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
+// 交流群: 只给装了应用的人看, 不写进源码 (GitHub 上谁都能翻到); 本机放 local.properties, CI 由 secret 写进去. 没配就是空, 界面上不显示
+val chatQqGroupId = getPropertyOrNull("ani.chat.qq.id") ?: ""
+val chatQqGroupLink = getPropertyOrNull("ani.chat.qq.link") ?: ""
+val chatTelegramLink = getPropertyOrNull("ani.chat.telegram.link") ?: ""
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
@@ -159,6 +163,9 @@ buildConfig {
         stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
+        stringField("chatQqGroupId", chatQqGroupId)
+        stringField("chatQqGroupLink", chatQqGroupLink)
+        stringField("chatTelegramLink", chatTelegramLink)
 
         firebaseFields()
     }
@@ -180,6 +187,9 @@ buildConfig {
         stringField("projectRepository", projectRepository)
         stringField("updateAssetPrefix", updateAssetPrefix)
         stringField("updateRepository", updateRepository)
+        stringField("chatQqGroupId", chatQqGroupId)
+        stringField("chatQqGroupLink", chatQqGroupLink)
+        stringField("chatTelegramLink", chatTelegramLink)
 
         booleanField("analyticsEnabled", enableFirebase)
         booleanField("devConsole", devConsole)

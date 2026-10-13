@@ -51,6 +51,7 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.update.NewVersion
 import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
+import me.him188.ani.app.ui.update.releaseNotesStore
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.toFile
 import me.him188.ani.utils.logging.info
@@ -435,6 +436,8 @@ internal object RemoteAppUpdate {
         val downloader = DefaultFileDownloader(koin.get<HttpClientProvider>().get())
         val mirrors = koin.get<GitHubDownloadMirrors>()
         val dir = koin.get<UpdateManager>().saveDir
+        // 装好后第一次打开时介绍新功能用这份说明 (见 ReleaseNotesStore)
+        koin.get<UpdateManager>().releaseNotesStore().save(ver)
         val packages = ver.downloadUrlAlternatives.map { url ->
             val fileName = url.substringAfterLast("/", "")
             val sources = mirrors.sourcesOf(url).let { all -> if (line.isEmpty()) all else all.filter { hostOf(it) == line } }
