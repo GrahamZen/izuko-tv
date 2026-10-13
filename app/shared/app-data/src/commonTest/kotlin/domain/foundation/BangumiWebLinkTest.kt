@@ -57,6 +57,23 @@ class BangumiWebLinkTest {
     }
 
     @Test
+    fun `落在加密直连上 — 浏览器做不了加密直连，换到镜像网页`() = runTest {
+        // 旧版的「用镜像」= 关着官方, 加密直连排在镜像前面
+        val provider = BangumiEndpointProvider(
+            settings = flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)),
+            mirrors = flowOf(listOf("bangumi.vip")),
+            scope = backgroundScope,
+            echAvailable = true,
+        ).also { runCurrent() }
+        assertEquals(listOf(BangumiRoute.Ech, BangumiRoute.Mirror("bangumi.vip")), provider.currentRouting!!.routes)
+        // 还没落地: 官方关着, 浏览器打不开它
+        assertEquals("https://bangumi.vip/subject/1", provider.webLink("https://bgm.tv/subject/1"))
+        provider.reportSettled(provider.currentRouting!!, BangumiRoute.Ech)
+        runCurrent()
+        assertEquals("https://bangumi.vip/subject/1", provider.webLink("https://bgm.tv/subject/1"))
+    }
+
+    @Test
     fun `切换连接方式后立刻按新的来`() = runTest {
         val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR))
         val provider = provider(settings)

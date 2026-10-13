@@ -77,9 +77,15 @@ import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiEchAddressList
+import me.him188.ani.app.domain.foundation.BangumiEchConfig
+import me.him188.ani.app.domain.foundation.BangumiEchFeature
+import me.him188.ani.app.domain.foundation.BangumiEchFeatureHandler
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.BangumiRoute
 import me.him188.ani.app.domain.foundation.BangumiRoutingFeature
 import me.him188.ani.app.domain.foundation.BangumiRoutingFeatureHandler
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
@@ -282,12 +288,19 @@ private fun KoinApplication.otherModules(
         )
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
+    // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
+    single<BangumiEchConfig> { BangumiEchConfig({ get<HttpClientProvider>().get() }, coroutineScope) }
+    single<BangumiEchAddressList> {
+        BangumiEchAddressList(get<SettingsRepository>().bangumiEchAddressCache, { get<HttpClientProvider>().get() }, coroutineScope)
+    }
     single<BangumiEndpointProvider> {
         val settings = get<SettingsRepository>().bangumiEndpointSettings
         BangumiEndpointProvider(
             settings = settings.flow,
             mirrors = get<BangumiMirrorListRepository>().mirrors,
             scope = coroutineScope,
+            echAvailable = getOrNull<BangumiEchTransport>()?.available == true,
+            proxyInUse = get<ProxyProvider>().proxy.map { it != null },
             onOriginUnreachable = { workingRoute ->
                 val current = settings.flow.first()
                 val loggedIn = get<TokenRepository>().session.first() is AccessTokenSession
@@ -310,8 +323,13 @@ private fun KoinApplication.otherModules(
                 // bangumi 按线路改写 + 前一条不通时回落. 必须在这里注册 —— 没注册的特性会被
                 // DefaultHttpClientProvider.extendWithNotSet 静默丢掉
                 get<BangumiEndpointProvider>().let {
-                    BangumiRoutingFeatureHandler(it.routing, it::reportSettled, it::reportOriginUnreachable)
+                    val ech = getOrNull<BangumiEchTransport>()
+                    BangumiRoutingFeatureHandler(
+                        it.routing, it::reportSettled, it::reportOriginUnreachable,
+                        recover = { route, cause -> route == BangumiRoute.Ech && ech?.recover(cause) == true },
+                    )
                 },
+                BangumiEchFeatureHandler(getOrNull<BangumiEchTransport>()),
                 // 可换入口的服务 (TMDB 图片…): 请求时换到选定 / 连得上的入口
                 AlternativeEndpointsFeatureHandler(listOf(get<TmdbImageEndpoints>())),
                 UseBangumiTokenFeatureHandler(
@@ -883,6 +901,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                     UserAgentFeature.withValue(userAgent),
                     ServerListFeature.withValue(ServerListFeatureConfig.Default),
                     BangumiRoutingFeature.withValue(true),
+                    BangumiEchFeature.withValue(true),
                     AlternativeEndpointsFeature.withValue(true),
                     ConvertSendCountExceedExceptionFeature.withValue(true),
                 ),
@@ -896,6 +915,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                 UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
                 ServerListFeature.withValue(ServerListFeatureConfig.Default),
                 BangumiRoutingFeature.withValue(true),
+                BangumiEchFeature.withValue(true),
                 AlternativeEndpointsFeature.withValue(true),
                 ConvertSendCountExceedExceptionFeature.withValue(true),
             ),

@@ -13,6 +13,7 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -26,6 +27,7 @@ import me.him188.ani.app.data.models.preference.EndpointSelectionMode
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.data.network.TmdbImageEndpoints
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.TestState
@@ -56,6 +58,8 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_ris
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_title
 import me.him188.ani.app.ui.lang.settings_network_bangumi_no_login_notice
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_custom_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
@@ -147,6 +151,8 @@ internal object TvNetworkSettingKeys {
     val bangumi = TvSettingKey.Stored("bangumiEndpoint") { it.bangumiEndpointSettings }
     val bangumiMirrors = TvSettingKey.Live("bangumiMirrors") { GlobalKoin.get<BangumiMirrorListRepository>().mirrors }
 
+    /** 这台设备能不能加密直连 (不会变, 做成实时值是为了显示时才取: 设置目录在 Koin 起来之前就建好了). */
+    val bangumiEchAvailable = TvSettingKey.Live("bangumiEchAvailable") { flowOf(bangumiEchAvailable()) }
     val bangumiLoggedIn = TvSettingKey.Live("bangumiLoggedIn") { deps -> deps.settings.bangumiLoggedIn }
 
     val proxyTest = TvSettingKey.Live("proxyTest") { deps ->
@@ -281,13 +287,16 @@ internal fun TvSettingsItemsBuilder.networkItems() {
         Lang.settings_network_bangumi_custom, BangumiRouteKind.CUSTOM,
         visible = { v -> v[keys.bangumi]?.customRoot != null },
     ) { v -> tvText(Lang.settings_network_bangumi_route_custom_description, v[keys.bangumi]?.customRoot.orEmpty()) }
+    bangumiRouteToggle(Lang.settings_network_bangumi_route_ech, BangumiRouteKind.ECH, visible = { v -> v[keys.bangumiEchAvailable] == true }) {
+        tvText(Lang.settings_network_bangumi_route_ech_description)
+    }
     bangumiRouteToggle(Lang.settings_network_bangumi_route_mirrors, BangumiRouteKind.MIRRORS) { v ->
         val mirrors = tvText(Lang.settings_network_bangumi_route_mirrors_description, v[keys.bangumiMirrors].orEmpty().joinToString("、"))
         if (v[keys.bangumi]?.customRoot == null) tvText(Lang.tv_settings_paragraphs, mirrors, tvText(Lang.tv_settings_bangumi_custom_hint)) else mirrors
     }
     // 只有第三方镜像要问: 别的线路都直达官方或是用户自己的
     toggleOf(
-        listOf(keys.bangumi, keys.bangumiLoggedIn), Lang.settings_network_bangumi_mirror_credentials,
+        listOf(keys.bangumi, keys.bangumiLoggedIn, keys.bangumiEchAvailable), Lang.settings_network_bangumi_mirror_credentials,
         description = { v ->
             tvText(
                 if (v[keys.bangumi]?.allowCredentialsViaMirror == true) Lang.settings_network_bangumi_mirror_credentials_on
@@ -308,6 +317,7 @@ internal fun TvSettingsItemsBuilder.networkItems() {
 
                 settings != null && BangumiMirrorConsent.check(
                     settings, settings.copy(allowCredentialsViaMirror = false), v[keys.bangumiLoggedIn] == true,
+                    v[keys.bangumiEchAvailable] == true,
                 ) != null -> TvSettingsConfirm(
                     title = tvText(Lang.settings_network_bangumi_mirror_credentials_off_title),
                     text = tvText(Lang.settings_network_bangumi_mirror_credentials_off_message),
@@ -331,7 +341,7 @@ private fun TvSettingsItemsBuilder.bangumiRouteToggle(
 ) {
     val keys = TvNetworkSettingKeys
     toggleOf(
-        listOf(keys.bangumi, keys.bangumiMirrors, keys.bangumiLoggedIn), title,
+        listOf(keys.bangumi, keys.bangumiMirrors, keys.bangumiLoggedIn, keys.bangumiEchAvailable), title,
         description = description,
         visible = visible,
         qr = { consoleQr(it, "#settings/network") },
@@ -344,7 +354,8 @@ private suspend fun switchBangumiRoute(env: TvSettingsEnv, kind: BangumiRouteKin
     val settings = env.repository.bangumiEndpointSettings
     val current = settings.flow.first()
     val target = current.withRoute(kind, enabled)
-    if (BangumiMirrorConsent.check(current, target, env.deps.settings.bangumiLoggedIn.value) == null) {
+    val echAvailable = bangumiEchAvailable()
+    if (BangumiMirrorConsent.check(current, target, env.deps.settings.bangumiLoggedIn.value, echAvailable) == null) {
         settings.update { target }
         return
     }
@@ -613,3 +624,6 @@ internal fun TvSettingsItemsBuilder.storageItems() {
         write = { copy(playCacheWithoutSearching = it) },
     )
 }
+
+/** 这台设备能不能加密直连. */
+private fun bangumiEchAvailable(): Boolean = GlobalKoin.get<BangumiEndpointProvider>().echAvailable

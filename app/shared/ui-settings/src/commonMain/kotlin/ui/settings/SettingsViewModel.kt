@@ -57,6 +57,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.TokenSave
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
@@ -111,6 +112,7 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     private val permissionManager: PermissionManager by inject()
     private val danmakuRegexFilterRepository: DanmakuRegexFilterRepository by inject()
     private val bangumiMirrorListRepository: BangumiMirrorListRepository by inject()
+    private val bangumiEndpointProvider: BangumiEndpointProvider by inject()
 
     private val mediaSourceManager: MediaSourceManager by inject()
     private val cloudDriveRegistry: CloudDriveRegistry by inject()
@@ -144,6 +146,9 @@ open class SettingsViewModel : AbstractSettingsViewModel(), KoinComponent {
     /** 自带的镜像清单 (每天从仓库拉一次, 拉不到用内置的), 「官方连不上时用镜像」那一档按顺序试. */
     val bangumiMirrors: StateFlow<List<String>> =
         bangumiMirrorListRepository.mirrors.stateIn(backgroundScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 这台设备能不能加密直连 Bangumi, 见 BangumiEndpointGroup. */
+    val bangumiEchAvailable: Boolean get() = bangumiEndpointProvider.echAvailable
 
     /** 是否登录着 Bangumi (有令牌, 不管现在连不连得上): 登录着改用镜像要先问, 见 BangumiEndpointGroup. */
     val bangumiLoggedIn: StateFlow<Boolean> =
