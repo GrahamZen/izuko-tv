@@ -29,7 +29,7 @@ class RegionalSubjectNamesTest {
     private val apothecary = entry("tv", "hk" to "藥屋少女的呢喃", "tw" to "藥師少女的獨語")
 
     @Test
-    fun `search name - taiwan name qualified with the subject's own season`() {
+    fun `search name - taiwan name qualified with the own season of the subject`() {
         assertEquals("藥師少女的獨語 第二季", regionalSearchName(apothecary, listOf("药屋少女的呢喃 第二季", "薬屋のひとりごと 第2期")))
         assertEquals("藥師少女的獨語", regionalSearchName(apothecary, listOf("药屋少女的呢喃")))
         // 没有台湾译名用香港的
@@ -46,7 +46,7 @@ class RegionalSubjectNamesTest {
     }
 
     @Test
-    fun `search name - movies as is, collections never`() {
+    fun `search name - movies as is - collections never`() {
         val movie = entry("movie", "tw" to "劇場版 鏈鋸人 蕾潔篇")
         assertEquals("劇場版 鏈鋸人 蕾潔篇", regionalSearchName(movie, listOf("电锯人 剧场版 蕾塞篇 第二季")))
         assertNull(regionalSearchName(entry("collection", "tw" to "鬼滅之刃 系列"), listOf("鬼灭之刃")))

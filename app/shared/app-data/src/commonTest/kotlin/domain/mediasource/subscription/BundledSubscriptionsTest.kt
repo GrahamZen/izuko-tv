@@ -69,7 +69,7 @@ class BundledSubscriptionsTest {
     private suspend fun MediaSourceSubscriptionRepository.urls() = flow.first().map { it.url }
 
     @Test
-    fun `new installs get upstream defaults without the retired subscription, plus the bundled one`() {
+    fun `new installs get upstream defaults without the retired subscription - plus the bundled one`() {
         val upstream = listOf(MediaSourceSubscription("a", bt), MediaSourceSubscription("b", retired))
         assertEquals(listOf(bt, bundled), BundledSubscriptions.withDefaults(upstream).map { it.url })
         assertEquals(listOf(bt, bundled), MediaSourceSubscriptionsSaveData.Default.list.map { it.url })
