@@ -685,6 +685,8 @@ fun TvScheduleGridPage(
                     }
                     true
                 },
+                // 触屏左右滑换天 (左滑后一天), 落到那天的首卡
+                onSwipe = { delta -> switchDay(delta, false) },
                 onGridFocusChanged = { gridHasFocus = it },
                 onScrollingChanged = {},
             ),
