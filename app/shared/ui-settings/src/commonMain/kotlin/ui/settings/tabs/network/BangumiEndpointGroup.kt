@@ -30,9 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
@@ -42,17 +42,12 @@ import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.settings_network_bangumi_auto
-import me.him188.ani.app.ui.lang.settings_network_bangumi_auto_description
-import me.him188.ani.app.ui.lang.settings_network_bangumi_builtin_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom_url
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom_url_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom_url_invalid
-import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint_description
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_title
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials
@@ -69,8 +64,12 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_later
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_logout
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_title
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mode
 import me.him188.ani.app.ui.lang.settings_network_bangumi_no_login_notice
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_custom_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin_description
 import me.him188.ani.app.ui.settings.framework.SettingsState
 import me.him188.ani.app.ui.settings.framework.components.DropdownItem
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
@@ -80,15 +79,15 @@ import me.him188.ani.app.ui.settings.framework.components.TextItem
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * bangumi 连接方式.
+ * bangumi 经哪些线路连: 官方、自建、社区镜像各一个开关, 按这个顺序尝试 (见 [BangumiRouteKind]).
  *
  * 2026-05 起 bangumi 在中国大陆被整族阻断 (`api.bgm.tv` / `next.bgm.tv` 一起), 直连在那边不可用.
  * 推荐的是代理 (直连官方, 不经过第三方); 社区的反代镜像能救浏览, 但**第三方反代能看到经过它的一切**,
  * 所以登录与收藏同步默认不走它, 用户在弹窗里了解风险后可以自己打开 —— 界面上必须把这些说清楚,
  * 别让用户对着登录失败猜.
  *
- * 已登录时改成「用镜像」(凭证不经过镜像) 或用着镜像时关掉凭证那一项, 先问 (见 [BangumiMirrorConsent]):
- * 登录后连浏览都带着令牌, 这两种改法会让官方连不上时什么都用不了.
+ * 已登录时改成只剩镜像 (凭证不经过镜像) 或只剩镜像时关掉凭证那一项, 先问 (见 [BangumiMirrorConsent]):
+ * 登录后连浏览都带着令牌, 这两种改法会让什么都用不了.
  */
 @Composable
 internal fun SettingsScope.BangumiEndpointGroup(
@@ -102,40 +101,76 @@ internal fun SettingsScope.BangumiEndpointGroup(
 ) {
     val settings by state
     val scope = rememberCoroutineScope()
-    // 等用户回答的改法: 改用镜像 / 关掉凭证
+    // 等用户回答的改法: 改成只剩镜像 / 关掉凭证
     var askSwitch by remember { mutableStateOf<BangumiEndpointSettings?>(null) }
     var askCredentialsOff by remember { mutableStateOf(false) }
+    fun setRoute(kind: BangumiRouteKind, enabled: Boolean) {
+        val target = settings.withRoute(kind, enabled)
+        if (BangumiMirrorConsent.check(settings, target, loggedIn) != null) askSwitch = target else state.update(target)
+    }
     Group(
         title = { Text(stringResource(Lang.settings_network_bangumi_endpoint)) },
         description = { Text(stringResource(Lang.settings_network_bangumi_endpoint_description)) },
     ) {
-        DropdownItem(
-            selected = { settings.mode },
-            values = { BangumiEndpointMode.entries },
-            itemText = { Text(stringResource(bangumiEndpointModeLabel(it))) },
-            onSelect = {
-                val target = settings.copy(mode = it)
-                if (BangumiMirrorConsent.check(settings, target, loggedIn) != null) askSwitch = target else state.update(target)
-            },
-            title = { Text(stringResource(Lang.settings_network_bangumi_mode)) },
+        SwitchItem(
+            checked = settings.isEnabled(BangumiRouteKind.ORIGIN),
+            onCheckedChange = { setRoute(BangumiRouteKind.ORIGIN, it) },
+            modifier = Modifier.testTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ORIGIN)),
+            title = { Text(stringResource(Lang.settings_network_bangumi_route_origin)) },
+            description = { Text(stringResource(Lang.settings_network_bangumi_route_origin_description)) },
             enabled = !state.isLoading,
         )
 
-        if (settings.mode == BangumiEndpointMode.AUTO) {
-            TextItem(title = { Text(stringResource(Lang.settings_network_bangumi_auto_description)) })
+        val customRoot = settings.customRoot
+        SwitchItem(
+            checked = settings.isEnabled(BangumiRouteKind.CUSTOM),
+            onCheckedChange = { setRoute(BangumiRouteKind.CUSTOM, it) },
+            modifier = Modifier.testTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.CUSTOM)),
+            title = { Text(stringResource(Lang.settings_network_bangumi_custom)) },
+            description = {
+                Text(
+                    if (customRoot != null) stringResource(Lang.settings_network_bangumi_route_custom_description, customRoot)
+                    else stringResource(Lang.settings_network_bangumi_custom_url_description),
+                )
+            },
+            enabled = !state.isLoading,
+        )
+        if (settings.isEnabled(BangumiRouteKind.CUSTOM)) {
+            TextFieldItem(
+                value = settings.customBaseUrl,
+                title = { Text(stringResource(Lang.settings_network_bangumi_custom_url)) },
+                description = { Text(stringResource(Lang.settings_network_bangumi_custom_url_description)) },
+                placeholder = { Text(PLACEHOLDER_HOST) },
+                // 填不成样子时红一下, 而不是等所有请求默默失败 —— 认不出来的地址等于没开这条线路,
+                // 那在大陆表现为"设置了但一样连不上", 用户根本看不出是自己填错了
+                isErrorProvider = { it.isNotBlank() && BangumiMirrorHosts.normalizeMirrorRoot(it) == null },
+                textFieldDescription = {
+                    Text(
+                        if (it.isNotBlank() && BangumiMirrorHosts.normalizeMirrorRoot(it) == null) {
+                            stringResource(Lang.settings_network_bangumi_custom_url_invalid)
+                        } else {
+                            stringResource(Lang.settings_network_bangumi_custom_url_description)
+                        },
+                    )
+                },
+                onValueChangeCompleted = { state.update(settings.copy(customBaseUrl = it)) },
+            )
         }
 
-        // 只有第三方镜像那两档要问: 自建的是可信的, 登录照样能用
-        if (settings.mode == BangumiEndpointMode.AUTO || settings.mode == BangumiEndpointMode.MIRROR) {
-            if (mirrors.isNotEmpty()) {
-                TextItem(
-                    title = { Text(stringResource(Lang.settings_network_bangumi_builtin_mirrors, mirrors.joinToString("、"))) },
-                )
-            }
+        SwitchItem(
+            checked = settings.isEnabled(BangumiRouteKind.MIRRORS),
+            onCheckedChange = { setRoute(BangumiRouteKind.MIRRORS, it) },
+            modifier = Modifier.testTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.MIRRORS)),
+            title = { Text(stringResource(Lang.settings_network_bangumi_route_mirrors)) },
+            description = { Text(stringResource(Lang.settings_network_bangumi_route_mirrors_description, mirrors.joinToString("、"))) },
+            enabled = !state.isLoading,
+        )
+        // 只有第三方镜像要问: 别的线路都直达官方或是用户自己的
+        if (settings.isEnabled(BangumiRouteKind.MIRRORS)) {
             var confirming by remember { mutableStateOf(false) }
             SwitchItem(
                 checked = settings.allowCredentialsViaMirror,
-                // 打开要先在弹窗里了解风险; 关掉直接生效 (已登录且用着镜像时先提醒后果)
+                // 打开要先在弹窗里了解风险; 关掉直接生效 (已登录且只剩镜像时先提醒后果)
                 onCheckedChange = { on ->
                     val target = settings.copy(allowCredentialsViaMirror = on)
                     when {
@@ -165,28 +200,6 @@ internal fun SettingsScope.BangumiEndpointGroup(
                     onDismissRequest = { confirming = false },
                 )
             }
-        }
-
-        if (settings.mode == BangumiEndpointMode.CUSTOM) {
-            TextFieldItem(
-                value = settings.customBaseUrl,
-                title = { Text(stringResource(Lang.settings_network_bangumi_custom_url)) },
-                description = { Text(stringResource(Lang.settings_network_bangumi_custom_url_description)) },
-                placeholder = { Text(PLACEHOLDER_HOST) },
-                // 填不成样子时红一下, 而不是等所有请求默默失败 —— 认不出来的地址会退回直连,
-                // 那在大陆表现为"设置了但一样连不上", 用户根本看不出是自己填错了
-                isErrorProvider = { it.isNotBlank() && BangumiMirrorHosts.normalizeMirrorRoot(it) == null },
-                textFieldDescription = {
-                    Text(
-                        if (it.isNotBlank() && BangumiMirrorHosts.normalizeMirrorRoot(it) == null) {
-                            stringResource(Lang.settings_network_bangumi_custom_url_invalid)
-                        } else {
-                            stringResource(Lang.settings_network_bangumi_custom_url_description)
-                        },
-                    )
-                },
-                onValueChangeCompleted = { state.update(settings.copy(customBaseUrl = it)) },
-            )
         }
     }
 
@@ -224,9 +237,9 @@ internal fun SettingsScope.BangumiEndpointGroup(
 }
 
 /**
- * 已登录的人改用第三方镜像之前的选择 (见 [BangumiMirrorConsent]): 允许凭证经过镜像 / 退出登录再切 / 不切.
+ * 已登录的人改成只剩第三方镜像之前的选择 (见 [BangumiMirrorConsent]): 允许凭证经过镜像 / 退出登录再切 / 不切.
  *
- * @param automatic `true` = 「官方连不上时用镜像」要自动切过去 (标题与说明换成「连不上官方」那套, 取消叫「暂不」)
+ * @param automatic `true` = 确定官方连不上、只有镜像通, 要自动关掉官方 (标题与说明换成「连不上官方」那套, 取消叫「暂不」)
  */
 @Composable
 fun MirrorSwitchConsentDialog(
@@ -243,7 +256,11 @@ fun MirrorSwitchConsentDialog(
             if (automatic) Lang.settings_network_bangumi_mirror_auto_message else Lang.settings_network_bangumi_mirror_switch_message,
         ),
         actions = listOf(
-            MirrorDialogAction(stringResource(Lang.settings_network_bangumi_mirror_switch_allow), onClick = onAllow),
+            MirrorDialogAction(
+                stringResource(Lang.settings_network_bangumi_mirror_switch_allow),
+                testTag = BangumiEndpointGroupTestTags.SWITCH_ALLOW,
+                onClick = onAllow,
+            ),
             MirrorDialogAction(stringResource(Lang.settings_network_bangumi_mirror_switch_logout), onClick = onLogoutAndSwitch),
         ),
         cancel = stringResource(
@@ -354,16 +371,11 @@ private fun MirrorChoiceDialog(
 }
 
 internal object BangumiEndpointGroupTestTags {
+    fun route(kind: BangumiRouteKind) = "bangumi_route_${kind.id}"
+    const val SWITCH_ALLOW = "bangumi_mirror_switch_allow"
     const val CREDENTIALS_SWITCH = "bangumi_mirror_credentials_switch"
     const val RISK_CONFIRM = "bangumi_mirror_credentials_risk_confirm"
     const val RISK_CANCEL = "bangumi_mirror_credentials_risk_cancel"
 }
 
 private const val PLACEHOLDER_HOST = "bangumi.example.com"
-
-private fun bangumiEndpointModeLabel(mode: BangumiEndpointMode) = when (mode) {
-    BangumiEndpointMode.DIRECT -> Lang.settings_network_bangumi_direct
-    BangumiEndpointMode.AUTO -> Lang.settings_network_bangumi_auto
-    BangumiEndpointMode.MIRROR -> Lang.settings_network_bangumi_mirror
-    BangumiEndpointMode.CUSTOM -> Lang.settings_network_bangumi_custom
-}

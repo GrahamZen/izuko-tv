@@ -28,7 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiConnectionPreset
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.repository.user.AccessTokenSession
@@ -39,6 +40,7 @@ import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
+import me.him188.ani.app.domain.foundation.BangumiMirrorConsent.onlyThirdPartyRoutes
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.CandidatesCheck
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -122,37 +124,35 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     }
 
     /**
-     * 选 [mode] 之前要不要先问 (已登录的人改用镜像, 见 [BangumiMirrorConsent]; 从旧版迁移过来的用户是登录着进引导的).
+     * 选 [preset] 之前要不要先问 (已登录的人改成只剩镜像, 见 [BangumiMirrorConsent]; 从旧版迁移过来的用户是登录着进引导的).
      */
-    suspend fun mirrorConsentNeeded(mode: BangumiEndpointMode): Boolean {
+    suspend fun mirrorConsentNeeded(preset: BangumiConnectionPreset): Boolean {
         val current = settingsRepository.bangumiEndpointSettings.flow.first()
         val loggedIn = tokenRepository.session.first() is AccessTokenSession
-        return BangumiMirrorConsent.check(current, current.copy(mode = mode), loggedIn) != null
+        return BangumiMirrorConsent.check(current, preset.applyTo(current), loggedIn) != null
     }
 
     /** 「退出登录并改用镜像」里的退出登录. */
     suspend fun logout() = userRepository.clearSelfInfo()
 
     /**
-     * 存下选的连接方式, 返回登录那一步要不要按「经镜像」处理: 选了用镜像, 或选了官方连不上时用镜像
-     * 而刚才测出来官方连不上 —— 后者还没有请求落到镜像上, 但授权登录注定失败.
+     * 存下选的组合, 返回登录那一步要不要按「经镜像」处理: 开着的线路只剩镜像, 或刚才测出来官方连不上、
+     * 只有镜像通 —— 后者还没有请求落到镜像上, 但授权登录注定失败.
      * 存完才返回: 调用方接着就换页, 之后的请求要按新设置走.
      *
      * @param allowCredentialsViaMirror 同时改「登录与收藏同步也经过镜像」(用户在询问里选了允许); `null` = 不动
      */
-    suspend fun chooseMode(mode: BangumiEndpointMode, allowCredentialsViaMirror: Boolean? = null): Boolean {
+    suspend fun choosePreset(preset: BangumiConnectionPreset, allowCredentialsViaMirror: Boolean? = null): Boolean {
         settingsRepository.bangumiEndpointSettings.update {
-            copy(mode = mode, allowCredentialsViaMirror = allowCredentialsViaMirror ?: this.allowCredentialsViaMirror)
+            preset.applyTo(this).copy(allowCredentialsViaMirror = allowCredentialsViaMirror ?: this.allowCredentialsViaMirror)
         }
-        val result = bangumi.result.value
-        return mode == BangumiEndpointMode.MIRROR || (mode == BangumiEndpointMode.AUTO &&
-                result.origin == Reachability.Unreachable &&
-                result.mirrorReachability is Reachability.Reachable)
+        val saved = settingsRepository.bangumiEndpointSettings.flow.first()
+        return saved.onlyThirdPartyRoutes() || bangumi.result.value.landsOnMirror(preset)
     }
 
     /**
      * TMDB 图片: [load] = 自动选择入口 (按清单顺序用第一个连得上的), 否则不加载 (背景图改用条目封面).
-     * 存完才返回, 理由同 [chooseMode].
+     * 存完才返回, 理由同 [choosePreset].
      */
     suspend fun chooseTmdbImages(load: Boolean) {
         if (load) {
@@ -222,7 +222,7 @@ class OnboardingCheck<R>(
 /**
  * 首次启动引导的登录 (可以跳过) 与之后的「外观与操作」. 盖在主页上面显示, 主页在下面照常加载.
  *
- * @param assumeViaMirror 第一步判定的「经镜像」(见 [TvOnboardingViewModel.chooseMode]); 与实际经镜像取或,
+ * @param assumeViaMirror 第一步判定的「经镜像」(见 [TvOnboardingViewModel.choosePreset]); 与实际经镜像取或,
  *   只在连接方式还是第一步选的那一档时算数 (见 [viaMirror]).
  */
 class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel(), KoinComponent {
@@ -267,7 +267,8 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
      */
     val viaMirror: StateFlow<Boolean> = combine(
         endpoints.viaThirdPartyMirror,
-        settingsRepository.bangumiEndpointSettings.flow.map { it.mode }.distinctUntilChanged().withIndex(),
+        settingsRepository.bangumiEndpointSettings.flow
+            .map { settings -> BangumiRouteKind.entries.map(settings::isEnabled) }.distinctUntilChanged().withIndex(),
     ) { via, mode -> via || (assumeViaMirror && mode.index == 0) }
         .stateIn(backgroundScope, SharingStarted.Eagerly, assumeViaMirror)
 

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.AniComposeUiTest
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
@@ -24,6 +25,7 @@ import me.him188.ani.app.ui.settings.framework.SettingsState
 import me.him188.ani.utils.platform.annotations.TestOnly
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * 「登录与收藏同步也经过镜像」: 打开前必须在弹窗里确认风险, 关掉直接生效.
@@ -31,7 +33,10 @@ import kotlin.test.assertFalse
 @OptIn(TestOnly::class)
 class BangumiEndpointGroupTest {
     /** @return 读当前设置值 */
-    private fun AniComposeUiTest.showGroup(initial: BangumiEndpointSettings): () -> BangumiEndpointSettings {
+    private fun AniComposeUiTest.showGroup(
+        initial: BangumiEndpointSettings,
+        loggedIn: Boolean = false,
+    ): () -> BangumiEndpointSettings {
         val value = mutableStateOf(initial)
         setContent {
             ProvideCompositionLocalsForPreview {
@@ -41,7 +46,7 @@ class BangumiEndpointGroupTest {
                     val state = remember {
                         SettingsState(value, onUpdate = { value.value = it }, placeholder = initial.copy(), scope)
                     }
-                    BangumiEndpointGroup(state, mirrors = listOf("bangumi.vip"))
+                    BangumiEndpointGroup(state, mirrors = listOf("bangumi.vip"), loggedIn = loggedIn)
                 }
             }
         }
@@ -96,6 +101,20 @@ class BangumiEndpointGroupTest {
         waitForIdle()
         onNodeWithTag(BangumiEndpointGroupTestTags.RISK_CONFIRM).assertExists()
         assertFalse(settings().allowCredentialsViaMirror)
+    }
+
+    @Test
+    fun `登录着关掉官方而只剩镜像 — 先问，允许后才写入并让凭证经过镜像`() = runAniComposeUiTest {
+        val settings = showGroup(BangumiEndpointSettings(), loggedIn = true)
+
+        onNodeWithTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ORIGIN)).performClick()
+        waitForIdle()
+        onNodeWithTag(BangumiEndpointGroupTestTags.SWITCH_ALLOW).assertExists()
+        assertTrue(settings().isEnabled(BangumiRouteKind.ORIGIN))
+
+        onNodeWithTag(BangumiEndpointGroupTestTags.SWITCH_ALLOW).performClick()
+        waitUntil { !settings().isEnabled(BangumiRouteKind.ORIGIN) }
+        assertTrue(settings().allowCredentialsViaMirror)
     }
 
     @Test
