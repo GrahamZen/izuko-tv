@@ -16,6 +16,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -114,6 +115,16 @@ class BangumiRoutingStickyTest {
     }
 
     @Test
+    fun `带凭证的读请求试官方不缩超时，慢一点的官方不会被当成连不上`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech))
+        timeoutClient(routing, attempts) { HttpStatusCode.OK }.get("https://api.bgm.tv/v0/me") {
+            header(HttpHeaders.Authorization, "Bearer token")
+        }
+        assertEquals(listOf(Attempt("api.bgm.tv", 30_000, 30_000)), attempts)
+    }
+
+    @Test
     fun `请求自己设了更短的超时就用更短的`() = runTest {
         val attempts = mutableListOf<Attempt>()
         timeoutClient(auto, attempts) { HttpStatusCode.OK }.get("https://lain.bgm.tv/pic/cover/l/1.jpg") {
@@ -123,6 +134,52 @@ class BangumiRoutingStickyTest {
             }
         }
         assertEquals(listOf(Attempt("lain.bgm.tv", 2_500, 3_000)), attempts)
+    }
+
+    @Test
+    fun `加密直连也还没成功过时同样用短超时，最后一站不缩`() = runTest {
+        val attempts = mutableListOf<Attempt>()
+        val engine = MockEngine { req ->
+            val t = req.getCapabilityOrNull(HttpTimeoutCapability)
+            attempts += Attempt(req.url.host, t?.connectTimeoutMillis, t?.socketTimeoutMillis)
+            if (!req.url.host.endsWith("bangumi.vip")) throw IOException("blocked")
+            respond("", HttpStatusCode.OK)
+        }
+        val client = HttpClient(engine) {
+            expectSuccess = false
+            install(HttpTimeout) {
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 30_000
+            }
+        }
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech, BangumiRoute.Mirror("bangumi.vip")))
+        BangumiRoutingFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        assertEquals(
+            listOf(
+                Attempt("api.bgm.tv", 3_000, 5_000),
+                Attempt("api.bgm-tv.ech.invalid", 3_000, 5_000),
+                Attempt("api.bangumi.vip", 30_000, 30_000),
+            ),
+            attempts,
+        )
+    }
+
+    @Test
+    fun `加密直连上的粘性也会到期，官方恢复了就回到官方`() = runTest {
+        var originUp = false
+        val hosts = mutableListOf<String>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech))
+        val client = client(flowOf(routing), hosts) { if (originUp) HttpStatusCode.OK else null }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        nowMillis = 20.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/2")
+        originUp = true
+        nowMillis = 31.minutes.inWholeMilliseconds
+        client.get("https://api.bgm.tv/v0/subjects/3")
+
+        assertEquals(listOf("api.bgm.tv", "api.bgm-tv.ech.invalid", "api.bgm-tv.ech.invalid", "api.bgm.tv"), hosts)
     }
 
     @Test
@@ -210,11 +267,13 @@ class BangumiRoutingStickyTest {
             provider.canonicalUrl("https://lain.bangumi.vip/pic/cover/l/c4/ca/1.jpg"),
         )
         assertEquals("https://image.tmdb.org/t/p/w500/a.jpg", provider.canonicalUrl("https://image.tmdb.org/t/p/w500/a.jpg"))
+        // 加密直连的域名只在本机认得, 漏到哪儿都换回原站
+        assertEquals("https://api.bgm.tv/v0/me", provider.canonicalUrl("https://api.bgm-tv.ech.invalid/v0/me"))
     }
 
     @Test
     fun `官方跳转到图床那一跳照样按线路走`() = runTest {
-        // api.bgm.tv/v0/subjects/{id}/image 回 302 到 lain.bgm.tv: 跳转那一跳也要按线路改写, 不然在大陆会被拦
+        // api.bgm.tv/v0/subjects/{id}/image 回 302 到 lain.bgm.tv: 跳转那一跳也要走加密直连, 不然在大陆会被拦
         val hosts = mutableListOf<String>()
         val engine = MockEngine { req ->
             hosts += req.url.host
@@ -225,9 +284,9 @@ class BangumiRoutingStickyTest {
             }
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiRoutingFeatureHandler(flowOf(mirror), clock = clock).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(flowOf(BangumiRouting(listOf(BangumiRoute.Ech))), clock = clock).applyToClient(client, true)
         assertEquals(HttpStatusCode.OK, client.get("https://api.bgm.tv/v0/subjects/1/image").status)
-        assertEquals(listOf("api.bangumi.vip", "lain.bangumi.vip"), hosts)
+        assertEquals(listOf("api.bgm-tv.ech.invalid", "lain.bgm-tv.ech.invalid"), hosts)
     }
 
     @Test
