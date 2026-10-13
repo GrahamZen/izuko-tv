@@ -20,6 +20,8 @@ import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.LightingColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Outline
 import android.graphics.Paint
@@ -131,14 +133,27 @@ internal val TV_NATIVE_MORE_GLASS_LIGHT = TvNativeMoreGlassStyle(
  * 聚焦时换成抬高的一大片软影 (系统阴影, 同 Google TV 桌面卡片的 elevation)、放大, 番名往下让开 (番名不放大, 让出海报多伸出来的那截).
  * 番名与下面那行小字没聚焦时都淡一档、聚焦时全亮 (见 [TvNativeWallStyle.labelIdleAlpha]).
  *
- * 聚焦效果照 Google TV 桌面卡片的做法由状态动画 (StateListAnimator) 驱动, 只动 RenderNode 属性、不重录卡片内容: 动画只推一个
- * 聚焦程度 [focusProgress] (0..1, [TvNativeWallStyle.focusMillis] FastOutSlowIn), 放大倍数、高度、小字亮度与番名位移都由它推出来.
- * 压暗 ([dim]) 与番名显隐 ([titleVisibility]) 乘在各自的透明度上.
+ * 聚焦效果照 Google TV 桌面卡片的做法由状态动画 (StateListAnimator) 驱动: 动画只推一个聚焦程度 [focusProgress] (0..1,
+ * [TvNativeWallStyle.focusMillis] FastOutSlowIn), 放大倍数、高度、小字亮度与番名位移都由它推出来 (RenderNode 属性, 不重录);
+ * 封面上的高光也随它淡入淡出 (只有聚焦与刚失焦的那两张重画封面). 压暗 ([dim]) 与番名显隐 ([titleVisibility]) 乘在各自的透明度上.
+ * 高光与停手压暗见 [TvNativeFocusCues].
  */
 @SuppressLint("ViewConstructor")
 class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) : FrameLayout(context) {
     private val idleShadow = TvNativeCardShadowView(context, style)
     private val cover = TvNativeCoverView(context, style)
+
+    /** 聚焦提示 (高光、停手压暗), 见 [TvNativeFocusCues]. */
+    internal val cues = TvNativeCardCues(
+        style.focusCues,
+        object : TvNativeCardCues.Host {
+            override fun invalidateCover() = cover.invalidate()
+            override fun applyCues() = applyFocus()
+        },
+    )
+
+    /** 上一次套用的聚焦程度: 变了就重画封面 (高光随它淡入淡出). */
+    private var appliedFocus = 0f
     private val label = TvNativeLabelView(context)
     private val title = TvNativeTextView(context)
     private val subtitle = TvNativeTextView(context)
@@ -217,7 +232,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             stateListAnimator?.jumpToCurrentState()
             if (animate && !isFocused) {
                 releaseAnimator = ObjectAnimator.ofFloat(this, TV_NATIVE_FOCUS_PROGRESS, 1f, 0f).apply {
-                    duration = style.focusMillis
+                    duration = focusOutMillis()
                     interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
                     start()
                 }
@@ -244,6 +259,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
                 },
             )
         }
+        cover.overlay = { canvas, w, h -> cues.draw(canvas, w, h, appliedFocus) }
         addView(
             cover,
             LayoutParams(style.coverWidthPx, style.coverHeightPx).apply {
@@ -270,15 +286,86 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             subtitle.setTvVibrancy(true)
         }
         subtitle.visibility = GONE
-        stateListAnimator = StateListAnimator().apply {
-            addState(intArrayOf(android.R.attr.state_focused), focusAnimator(1f))
-            addState(intArrayOf(), focusAnimator(0f))
-        }
+        stateListAnimator = focusStateAnimator()
         applyShadowColor()
         applyFocus()
     }
 
     fun bind(card: TvNativeCard, sketch: Sketch) {
+        // 按住方向键连走时普通海报只查图片内存缓存 (见 TvNativeCoverDefer): 命中 (或封面上本来就是这一张) 就当场整张换上; 没命中不读盘、
+        // 不解码, 番名也不排字, 整张先顶着上一个条目, 停下再补. 拿到焦点的那张当场换番名 (眼睛看着的那张字是对的)
+        if (card.more == null && card.imageUrl != null && TvNativeCoverDefer.active) {
+            if (card.imageUrl == shownUrl) {
+                deferredCard = null
+                applyContent(card)
+                return
+            }
+            deferredCard = card to sketch
+            if (isFocused) applyText(card)
+            loadCover(card, sketch, memoryOnly = true) { hit -> if (hit) onDeferredLoaded(card) }
+            if (deferredCard != null) TvNativeCoverDefer.onDeferred(this)
+            return
+        }
+        deferredCard = null
+        applyCard(card, sketch)
+    }
+
+    /** 按住连走时先没换上的那次绑定 (停下后补齐用). */
+    private var deferredCard: Pair<TvNativeCard, Sketch>? = null
+
+    /** 封面上此刻显示着的那张图 (加载成功时记下, 清图 / 换图时作废): 按住连走时绑回同一个条目就不用再请求. */
+    private var shownUrl: String? = null
+
+    /** 测试用: 封面上此刻显示着的那张图. */
+    internal val shownCoverUrl: String? get() = shownUrl
+
+    private fun applyCard(card: TvNativeCard, sketch: Sketch) {
+        applyContent(card)
+        val url = card.imageUrl
+        if (card.more != null && url != null) {
+            shownUrl = null
+            // 「更多」卡的玻璃底: 那张竖版封面的模糊小图 (解码线程上模糊, 拉伸铺满封面框), 与海报本身同一档缩略图地址
+            TvNativeImages.loadBlurredBackdrop(
+                sketch, cover, url, style.coverWidthPx, style.coverHeightPx,
+                longEdgePx = TV_NATIVE_MORE_BLUR_LONG_EDGE_PX, blurRadiusPx = TV_NATIVE_MORE_BLUR_RADIUS_PX,
+                coverWidthPx = style.coverWidthPx, coverHeightPx = style.coverHeightPx,
+            ) {}
+        } else {
+            loadCover(card, sketch, memoryOnly = false)
+        }
+    }
+
+    /** 封面以外的内容: 番名、进度条、角标、「更多」卡的玻璃. */
+    private fun applyContent(card: TvNativeCard) {
+        applyText(card)
+        cover.progress = card.progress
+        cover.badge = card.badge
+        cover.more = card.more
+    }
+
+    /** [onResult]: true = 封面已上屏. 只查内存没命中时封面不动 (还是上一张), 完整加载时先清图. */
+    private fun loadCover(card: TvNativeCard, sketch: Sketch, memoryOnly: Boolean, onResult: ((Boolean) -> Unit)? = null) {
+        if (!memoryOnly) shownUrl = null
+        TvNativeImages.loadCover(
+            sketch, cover, card.imageUrl, style.coverWidthPx, style.coverHeightPx, style.crossfade,
+            obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
+            memoryOnly = memoryOnly,
+            onResult = { ok ->
+                if (ok) shownUrl = card.imageUrl
+                onResult?.invoke(ok)
+            },
+        )
+    }
+
+    /** 连走时先没换上的那张封面已上屏 (内存命中): 不用等停下, 番名等一起换上. */
+    private fun onDeferredLoaded(card: TvNativeCard) {
+        if (deferredCard?.first !== card) return
+        deferredCard = null
+        TvNativeCoverDefer.onApplied(this)
+        applyContent(card)
+    }
+
+    private fun applyText(card: TvNativeCard) {
         contentDescription = card.title
         title.text = card.title
         val sub = card.subtitle
@@ -294,23 +381,33 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         }
         marquee = hasSubtitle && style.marquee
         updateMarquee()
-        cover.progress = card.progress
-        cover.badge = card.badge
-        cover.more = card.more
-        val url = card.imageUrl
-        if (card.more != null && url != null) {
-            // 「更多」卡的玻璃底: 那张竖版封面的模糊小图 (解码线程上模糊, 拉伸铺满封面框), 与海报本身同一档缩略图地址
-            TvNativeImages.loadBlurredBackdrop(
-                sketch, cover, url, style.coverWidthPx, style.coverHeightPx,
-                longEdgePx = TV_NATIVE_MORE_BLUR_LONG_EDGE_PX, blurRadiusPx = TV_NATIVE_MORE_BLUR_RADIUS_PX,
-                coverWidthPx = style.coverWidthPx, coverHeightPx = style.coverHeightPx,
-            ) {}
-        } else {
-            TvNativeImages.loadCover(
-                sketch, cover, url, style.coverWidthPx, style.coverHeightPx, style.crossfade,
-                obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
-            )
+    }
+
+    /**
+     * 松手了: 连走时先没换上的那次绑定整张换上 (离焦点近的先换, 见 TvNativeCoverDefer). 停下来的这一屏不露错图: 番名当场换,
+     * 上一个条目的封面先清掉 (露出底色), 解好淡入.
+     */
+    internal fun applyDeferredCard() {
+        val (card, sketch) = deferredCard ?: return
+        deferredCard = null
+        TvNativeImages.clearCover(cover)
+        applyCard(card, sketch)
+    }
+
+    /** 设置「失焦慢慢缩回」改了: 换一套状态动画 (缩回的时长), 当场停在此刻的状态. */
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        TvNativeFocusCues.onCardAttached(this)
+        // 连走时先没换上、出屏后没重新绑定就挂回来的卡 (RecyclerView 的缓存): 还在连走就接着等, 已经松手就当场补
+        if (deferredCard != null) {
+            if (TvNativeCoverDefer.active) TvNativeCoverDefer.onDeferred(this) else applyDeferredCard()
         }
+    }
+
+    override fun onDetachedFromWindow() {
+        TvNativeFocusCues.onCardDetached(this)
+        TvNativeCoverDefer.onCardDetached(this)
+        super.onDetachedFromWindow()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
@@ -331,7 +428,10 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         // 放开时的缩回动画还在走又拿到焦点: 交给状态动画从当前值接着走
         releaseAnimator?.cancel()
         releaseAnimator = null
+        // 连走时先没换上的卡拿到焦点: 番名当场换上 (封面照旧等松手)
+        if (gainFocus) deferredCard?.let { (card, _) -> applyText(card) }
         updateMarquee()
+        if (gainFocus) TvNativeFocusCues.onCardFocused(this)
     }
 
     /** 带副标题的卡番名只有一行, 聚焦时放不下就跑马灯 (同 tvOS 聚焦单元里截断的标签); 流畅档不滚. */
@@ -347,7 +447,9 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             focusLookHeld -> 1f
             else -> focusProgress
         }
-        val s = 1f + (style.focusScale - 1f) * p
+        val focused = 1f + (style.focusScale - 1f) * p
+        // 停手时聚焦那张多放大一点 (番名跟着让)
+        val s = focused * cues.idleScale(p)
         cover.scaleX = s
         cover.scaleY = s
         cover.moreFocus = p
@@ -355,11 +457,16 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         cover.elevation = style.focusedElevationPx * p
         idleShadow.alpha = (1f - p) * dim * dim
         cover.alpha = dim
-        label.translationY = style.titleShiftPx * p
-        label.alpha = titleVisibility * dim
+        label.translationY = style.titleShiftPx * p + (s - focused) * style.cardHeightPx / 2f
+        label.alpha = titleVisibility * dim * cues.labelAlpha()
+        cover.shade = cues.shade()
         val labelAlpha = style.labelIdleAlpha + (1f - style.labelIdleAlpha) * p
         title.alpha = labelAlpha
         subtitle.alpha = labelAlpha
+        if (p != appliedFocus) {
+            appliedFocus = p
+            if (cues.enabled) cover.invalidate()
+        }
     }
 
     private fun applyShadowColor() {
@@ -371,9 +478,19 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         cover.outlineSpotShadowColor = c
     }
 
-    private fun focusAnimator(target: Float) = AnimatorSet().apply {
+    /** 聚焦 / 失焦的状态动画: 聚焦 [TvNativeWallStyle.focusMillis], 失焦见 [focusOutMillis]. */
+    private fun focusStateAnimator() = StateListAnimator().apply {
+        addState(intArrayOf(android.R.attr.state_focused), focusAnimator(1f, style.focusMillis))
+        addState(intArrayOf(), focusAnimator(0f, focusOutMillis()))
+    }
+
+    /** 失焦缩回的时长: 比聚焦慢, 用 [TV_NATIVE_SLOW_FOCUS_OUT_MILLIS] (聚焦本来不走动画的样式照旧不走). */
+    private fun focusOutMillis(): Long =
+        if (style.focusMillis > 0) TV_NATIVE_SLOW_FOCUS_OUT_MILLIS else style.focusMillis
+
+    private fun focusAnimator(target: Float, millis: Long) = AnimatorSet().apply {
         play(ObjectAnimator.ofFloat<TvNativeCardView>(null, TV_NATIVE_FOCUS_PROGRESS, target))
-        duration = style.focusMillis
+        duration = millis
         interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
     }
 }
@@ -410,8 +527,31 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
             if (field == value) return
             field = value
             updateSpinner()
+            applyShade()
             invalidate()
         }
+
+    /**
+     * 压暗 (0..1, 0 = 不暗; 见 [TvNativeCardCues.shade]): 海报图、占位底色、角标与进度条乘同一个变暗的颜色滤镜, 效果同叠一层这么不透明的黑,
+     * 但不多画一层 —— hero 态整屏每帧都在重画, 十几张暗卡各省一次圆角裁剪里的整面混合。「更多」卡的玻璃仍在最上面叠黑 (一行最多一张).
+     */
+    var shade: Float = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            applyShade()
+            invalidate()
+        }
+
+    private fun applyShade() {
+        val filter = tvNativeShadeFilter(shade)
+        colorFilter = if (more == null) filter else null
+        background?.colorFilter = filter
+        trackPaint.colorFilter = filter
+        fillPaint.colorFilter = filter
+        badgePaint.colorFilter = filter
+        badgeIconPaint.colorFilter = filter
+    }
 
     /** 卡片的聚焦程度 (0..1, 见 [TvNativeCardView.focusProgress]): 「更多」卡的圆钮随它换成实底. */
     var moreFocus: Float = 0f
@@ -442,6 +582,7 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         it.strokeCap = Paint.Cap.ROUND
     }
     private val moreArcRect = RectF()
+    private val moreShadePaint = Paint().also { it.color = Color.BLACK }
     private var spinnerAngle = 0f
     private var spinner: ValueAnimator? = null
 
@@ -494,6 +635,14 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         isDuplicateParentStateEnabled = true
     }
 
+    /** 画在封面图、角标与进度条之后, 玻璃边之前: 聚焦提示 (见 [TvNativeCardCues.draw]). */
+    var overlay: ((Canvas, Int, Int) -> Unit)? = null
+
+    override fun onDrawForeground(canvas: Canvas) {
+        overlay?.invoke(canvas, width, height)
+        super.onDrawForeground(canvas)
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         // 高光: 左上角斜着淡到透明, 过了对角线的 [TV_NATIVE_MORE_SHEEN_REACH] 就没有了
@@ -508,6 +657,10 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         val m = more
         if (m != null) {
             drawMoreGlass(canvas, m)
+            if (shade > 0f) {
+                moreShadePaint.alpha = (255 * shade.coerceIn(0f, 1f)).roundToInt()
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), moreShadePaint)
+            }
             return
         }
         val b = style.badge
@@ -569,6 +722,15 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         if (!isLaidOut) super.requestLayout()
     }
 }
+
+/** 压暗 [shade] 的颜色滤镜: RGB 各乘 (1 − shade), 同叠一层不透明度 shade 的黑; 按 1/255 取整共用. 不暗时 null. */
+private fun tvNativeShadeFilter(shade: Float): ColorFilter? {
+    val k = (255 * (1f - shade.coerceIn(0f, 1f))).roundToInt()
+    if (k >= 255) return null
+    return tvNativeShadeFilters[k] ?: LightingColorFilter(Color.rgb(k, k, k), 0).also { tvNativeShadeFilters[k] = it }
+}
+
+private val tvNativeShadeFilters = arrayOfNulls<LightingColorFilter>(255)
 
 /** 两个 ARGB 色按 [t] (0..1) 逐通道插值. */
 private fun tvNativeBlendArgb(from: Int, to: Int, t: Float): Int {
