@@ -718,6 +718,43 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `存下的进度超过这个资源的长度时从头播`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        // 用完整的正片看到 111 秒, 这一集现在选中的是 65 秒的 SP
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 111_000)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        loadSelectedMedia(suite, state, durationMillis = 65_000)
+
+        assertEquals(0, suite.player.currentPositionMillis.value)
+        assertEquals(listOf(0L), seeks)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `同一集换成更短的资源时不跳到超出它长度的进度`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        loadSelectedMedia(suite, state, mediaIndex = 0)
+        repository.saveOrUpdate(episodeId = initialEpisodeId, 80_000)
+        val seeks = mutableListOf<Long>()
+        testScope.launch {
+            suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
+        }
+
+        // 同集换源从头打开, 存下的 80 秒超出了新资源的长度
+        loadSelectedMedia(suite, state, durationMillis = 65_000, mediaIndex = 1)
+
+        assertEquals(0, suite.player.currentPositionMillis.value)
+        assertEquals(emptyList(), seeks)
+        testScope.cancel()
+    }
+
+    @Test
     fun `waits for video properties before loading saved history`() = runTest {
         val (testScope, suite, _) = createCase()
         advanceUntilIdle()
