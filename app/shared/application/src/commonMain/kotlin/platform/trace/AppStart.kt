@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.settings.ServiceConnectionTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.Service
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.StartupTimeMonitor
+import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.datasources.api.source.ConnectionStatus
 import me.him188.ani.datasources.bangumi.BangumiClientImpl
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.AppStart
@@ -32,6 +33,8 @@ import me.him188.ani.utils.analytics.recordEvent
 
 // 统计连接各个服务器的速度
 suspend fun IAnalytics.recordAppStart(startupTimeMonitor: StartupTimeMonitor) {
+    // 编包时没开统计: 事件没人收, 不为它连两次官方 (大陆连不上时每次启动各挂满一个连接超时)
+    if (!currentAniBuildConfig.analyticsEnabled) return
     // 测官方直连, 不装镜像特性 (只列 UA 与服务器清单, 其余特性不装): 装上的话启动高峰里这两个探测一超时,
     // 就会换到镜像并被当成「官方连不上」, 驱动「官方连不上时用镜像」自动切换 —— 统计不该左右线路.
     val client = GlobalKoin.get<HttpClientProvider>().get(

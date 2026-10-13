@@ -31,6 +31,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.time.Duration.Companion.hours
 
 /**
  * 内置 Peer 过滤规则: 从本项目仓库的 `peer-filter-rules.json` 拉 (jsDelivr 各节点依次试), 拉不到用本机存的上一份.
@@ -46,7 +47,11 @@ class PeerFilterSubscriptionRepositoryTest {
     private val savedFile get() = dir.resolve("${PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID}.json")
 
     /** @param bodies 按地址给响应体; 返回 `null` = 连不上 */
-    private fun repository(requested: MutableList<String> = mutableListOf(), bodies: (String) -> String?) =
+    private fun repository(
+        requested: MutableList<String> = mutableListOf(),
+        clock: () -> Long = { 1_000L },
+        bodies: (String) -> String?,
+    ) =
         PeerFilterSubscriptionRepository(
             MemoryDataStore(PeerFilterSubscriptionsSaveData.Default),
             dir,
@@ -58,6 +63,7 @@ class PeerFilterSubscriptionRepositoryTest {
                 },
             ).asScopedHttpClient(),
             repository = { "owner/repo" },
+            clock = clock,
         )
 
     private suspend fun PeerFilterSubscriptionRepository.builtin() =
@@ -107,5 +113,36 @@ class PeerFilterSubscriptionRepositoryTest {
         repo.updateOrLoadAll()
         assertEquals(oldRules, savedFile.readText())
         assertEquals(listOf("9.9.9.9"), repo.rulesFlow.first().single().blockedIpPattern)
+    }
+
+    @Test
+    fun `启动时一天之内拉过的直接用本地那份，手动更新照常联网`() = runTest {
+        val requested = mutableListOf<String>()
+        var now = 1_000L
+        val repo = repository(requested, clock = { now }) { rules }
+        repo.updateOrLoadAll()
+        assertEquals(1, requested.size)
+
+        now += 1.hours.inWholeMilliseconds
+        repo.updateOrLoadAll(reuseRecent = true)
+        assertEquals(1, requested.size, "一小时前刚拉过, 启动时不联网")
+        assertEquals(2, repo.rulesFlow.first().single().blockedIpPattern.size)
+
+        repo.updateOrLoadAll()
+        assertEquals(2, requested.size, "手动更新照常联网")
+
+        now += 25.hours.inWholeMilliseconds
+        repo.updateOrLoadAll(reuseRecent = true)
+        assertEquals(3, requested.size, "超过一天, 启动时也联网")
+    }
+
+    @Test
+    fun `没拉到过的 — 启动时照常联网`() = runTest {
+        savedFile.writeText(oldRules)
+        val requested = mutableListOf<String>()
+        val repo = repository(requested) { rules }
+        repo.updateOrLoadAll(reuseRecent = true)
+        assertEquals(1, requested.size)
+        assertEquals(2, repo.rulesFlow.first().single().blockedIpPattern.size)
     }
 }

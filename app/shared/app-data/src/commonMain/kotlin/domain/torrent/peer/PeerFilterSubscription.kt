@@ -32,7 +32,9 @@ data class PeerFilterSubscription(
     @Serializable
     data class LastLoaded(
         val ruleStat: RuleStat?,
-        val error: String?
+        val error: String?,
+        /** 上次从网上拉到规则的时间 (毫秒); 0 = 没拉到过. */
+        val fetchedAtMillis: Long = 0,
     )
 
     companion object {
