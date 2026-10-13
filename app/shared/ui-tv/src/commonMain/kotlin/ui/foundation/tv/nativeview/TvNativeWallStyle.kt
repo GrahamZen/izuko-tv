@@ -16,7 +16,10 @@ import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -29,6 +32,8 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.isSpecified
 import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FOCUS_TRANSITION_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PROGRESS_BAR_BOTTOM_GAP
@@ -173,6 +178,8 @@ data class TvNativeWallStyle(
     val labelVibrancy: Boolean = false,
     /** 行尾「更多」卡的玻璃外观 (见 [TvNativeMoreGlassStyle]), 按主题深浅取. */
     val moreGlass: TvNativeMoreGlassStyle = TV_NATIVE_MORE_GLASS_DARK,
+    /** 聚焦提示 (高光、停手压暗、取色光晕, 见 [TvNativeFocusCues]); 默认不做. */
+    val focusCues: TvNativeFocusCueStyle = TvNativeFocusCueStyle.None,
 ) {
     val coverWidthPx: Int get() = cardWidthPx - gapPx * 2
     val coverHeightPx: Int get() = cardHeightPx - gapPx * 2
@@ -213,6 +220,20 @@ fun rememberTvNativeWallStyle(
     val colors = MaterialTheme.colorScheme
     val light = colors.surface.luminance() >= 0.5f
     val visualEffects = LocalThemeSettings.current.visualEffects
+    val idleDim = LocalThemeSettings.current.tvPosterIdleDim
+    val slowFocusOut = LocalThemeSettings.current.tvPosterSlowFocusOut
+    SideEffect {
+        TvNativeFocusCues.dimming = idleDim
+        TvNativeFocusCues.slowFocusOut = slowFocusOut
+    }
+    // 方向键自动连发、列表还在滚的时候封面只查内存缓存, 停下补齐 (见 TvNativeCoverDefer); 「连发」「在滚」沿用全局的按键追踪与滚动状态
+    val navKeys = LocalTvNavKeyTracker.current
+    val scrollActivity = LocalTvScrollActivity.current
+    LaunchedEffect(navKeys, scrollActivity) {
+        if (navKeys != null && scrollActivity != null) {
+            snapshotFlow { navKeys.repeating && scrollActivity.isScrolling }.collect(TvNativeCoverDefer::setDeferring)
+        }
+    }
     val crossfade = LocalImageCrossfade.current
     val titleColor = tvHeroContentColor()
     val titleStyle = tvPosterWallTitleStyle()
@@ -273,7 +294,16 @@ fun rememberTvNativeWallStyle(
                 badge = badge,
                 labelVibrancy = labelVibrancy && !light,
                 moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
+                focusCues = TvNativeFocusCueStyle(
+                    enabled = true,
+                    animated = visualEffects.transitions,
+                    idleDim = if (light) TV_NATIVE_IDLE_DIM_LIGHT else TV_NATIVE_IDLE_DIM,
+                ),
             )
         }
     }
 }
+
+/** 停手压暗时其余卡压暗多少 (深色 / 浅色主题; 浅色底上同样的压暗显得更重, 轻一档). */
+private const val TV_NATIVE_IDLE_DIM = 0.27f
+private const val TV_NATIVE_IDLE_DIM_LIGHT = 0.21f
