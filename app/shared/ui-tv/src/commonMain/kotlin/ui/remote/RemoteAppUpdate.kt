@@ -678,7 +678,10 @@ internal object RemoteAppUpdate {
     private fun verify(ctx: Context, file: File, sameAppOnly: Boolean): Checked {
         val pm = ctx.packageManager
         val archive = pm.getPackageArchiveInfo(file.path, SIGNATURE_FLAGS)
-            ?: return Checked(error = tr("这不是有效的安装包"))
+        if (archive == null) {
+            logger.warn { "Remote update: ${file.name} (${file.length()} bytes) is not a valid package" }
+            return Checked(error = tr("这不是有效的安装包"))
+        }
         val pkg = archive.packageName
         if (sameAppOnly && pkg != ctx.packageName) {
             logger.warn { "Remote update: rejected package $pkg (expected ${ctx.packageName})" }
@@ -689,7 +692,10 @@ internal object RemoteAppUpdate {
             return Checked(error = tr("这个安装包不是 Izuko TV 的（{0}），装不了", pkg))
         }
         val theirs = signersOf(archive)
-        if (theirs.isNullOrEmpty()) return Checked(error = tr("读不出安装包的签名"))
+        if (theirs.isNullOrEmpty()) {
+            logger.warn { "Remote update: no signature read from $pkg ${archive.versionName} (API ${Build.VERSION.SDK_INT})" }
+            return Checked(error = tr("读不出安装包的签名"))
+        }
         if (pkg == ctx.packageName && theirs != signersOf(pm.getPackageInfo(pkg, SIGNATURE_FLAGS))) {
             logger.warn { "Remote update: rejected ${archive.versionName}, signature differs from the installed app" }
             return Checked(error = tr("安装包的签名与已安装的 Izuko TV 不一致，装不上"))
@@ -897,13 +903,22 @@ internal object RemoteAppUpdate {
             intent.getParcelableExtra(Intent.EXTRA_INTENT)
         }
 
+    /**
+     * 两个都带: Android 9 / 10 的 `getPackageArchiveInfo` 只在有 [PackageManager.GET_SIGNATURES] 时才读安装包的证书,
+     * 只给 [PackageManager.GET_SIGNING_CERTIFICATES] 拿到的 signingInfo 是空的; 11 起两个都认.
+     */
     @Suppress("DEPRECATION")
     private val SIGNATURE_FLAGS =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
 
     @Suppress("DEPRECATION")
     private fun signersOf(info: PackageInfo): Set<String>? {
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.signingInfo?.apkContentsSigners else info.signatures
+        val signing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.signingInfo?.apkContentsSigners else null
+        val signatures = signing?.takeIf { it.isNotEmpty() } ?: info.signatures
         return signatures?.map { it.toCharsString() }?.toSet()
     }
 
