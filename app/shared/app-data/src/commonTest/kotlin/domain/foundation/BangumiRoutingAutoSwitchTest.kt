@@ -26,8 +26,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -37,13 +37,18 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 「官方连不上时用镜像」确定官方连不上后自动改成「用镜像」, 之后不再先试官方.
+ * 确定官方连不上后自动关掉「官方直连」, 之后不再先试官方.
  *
- * 判据是**同一个请求**在官方那一跳连接失败、换到镜像成功: 官方回 5xx 是它在回答 (临时故障, 过一阵还会试官方),
- * 两边都连不上是本机断网 —— 这两种都不能改用户的设置.
+ * 判据是**同一个请求**在官方那一跳连接失败、后面某条线路成功: 官方回 5xx 是它在回答 (临时故障, 过一阵还会试官方),
+ * 都连不上是本机断网 —— 这两种都不能改用户的设置.
  */
-class BangumiMirrorAutoSwitchTest {
-    private val autoRouting = BangumiRouting(listOf("bangumi.vip"), trusted = false, preferDirect = true)
+class BangumiRoutingAutoSwitchTest {
+    private val vip = BangumiRoute.Mirror("bangumi.vip")
+    private val backup = BangumiRoute.Mirror("backup.example")
+    private val autoRouting = BangumiRouting(listOf(BangumiRoute.Origin, vip))
+
+    /** 默认的组合 (官方、镜像开着) 关掉官方 = 只剩镜像. */
+    private val mirrorOnly = BangumiEndpointSettings().withRoute(BangumiRouteKind.ORIGIN, false)
 
     /**
      * @param origin 官方的响应; `null` = 连不上
@@ -54,28 +59,31 @@ class BangumiMirrorAutoSwitchTest {
         hosts: MutableList<String>,
         origin: HttpStatusCode?,
         mirror: HttpStatusCode? = HttpStatusCode.OK,
-        onOriginUnreachable: (BangumiRouting) -> Unit,
+        onOriginUnreachable: (BangumiRouting, BangumiRoute) -> Unit,
     ): HttpClient {
         val engine = MockEngine { req ->
             hosts += req.url.host
-            val status = (if (req.url.host.endsWith("bgm.tv")) origin else mirror) ?: throw IOException("blocked")
+            val status = when {
+                req.url.host.endsWith("bgm.tv") -> origin
+                else -> mirror
+            } ?: throw IOException("blocked")
             respond("", status)
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(routing, onOriginUnreachable = onOriginUnreachable).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(routing, onOriginUnreachable = onOriginUnreachable).applyToClient(client, true)
         return client
     }
 
     @Test
     fun `官方连不上、镜像通 — 回报一次，之后粘在镜像上不再回报`() = runTest {
         val hosts = mutableListOf<String>()
-        var reported = 0
-        val client = client(flowOf(autoRouting), hosts, origin = null) { reported++ }
+        val reported = mutableListOf<BangumiRoute>()
+        val client = client(flowOf(autoRouting), hosts, origin = null) { _, route -> reported += route }
 
         client.get("https://api.bgm.tv/v0/subjects/1")
         client.get("https://api.bgm.tv/v0/subjects/2")
 
-        assertEquals(1, reported)
+        assertEquals(listOf<BangumiRoute>(vip), reported)
         assertEquals(listOf("api.bgm.tv", "api.bangumi.vip", "api.bangumi.vip"), hosts)
     }
 
@@ -83,7 +91,7 @@ class BangumiMirrorAutoSwitchTest {
     fun `官方回 5xx 换到镜像不算连不上`() = runTest {
         val hosts = mutableListOf<String>()
         var reported = 0
-        val client = client(flowOf(autoRouting), hosts, origin = HttpStatusCode.BadGateway) { reported++ }
+        val client = client(flowOf(autoRouting), hosts, origin = HttpStatusCode.BadGateway) { _, _ -> reported++ }
 
         assertEquals(HttpStatusCode.OK, client.get("https://api.bgm.tv/v0/subjects/1").status)
         assertEquals(listOf("api.bgm.tv", "api.bangumi.vip"), hosts)
@@ -91,10 +99,10 @@ class BangumiMirrorAutoSwitchTest {
     }
 
     @Test
-    fun `官方和镜像都连不上是本机断网，不回报`() = runTest {
+    fun `都连不上是本机断网，不回报`() = runTest {
         val hosts = mutableListOf<String>()
         var reported = 0
-        val client = client(flowOf(autoRouting), hosts, origin = null, mirror = null) { reported++ }
+        val client = client(flowOf(autoRouting), hosts, origin = null, mirror = null) { _, _ -> reported++ }
 
         assertFailsWith<IOException> { client.get("https://api.bgm.tv/v0/subjects/1") }
         assertEquals(0, reported)
@@ -112,7 +120,8 @@ class BangumiMirrorAutoSwitchTest {
             respond("", HttpStatusCode.OK)
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(flowOf(autoRouting), onOriginUnreachable = { reported++ }).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(flowOf(autoRouting), onOriginUnreachable = { _, _ -> reported++ })
+            .applyToClient(client, true)
 
         client.get("https://next.bgm.tv/p1/me")
         originUp = false
@@ -123,11 +132,10 @@ class BangumiMirrorAutoSwitchTest {
     }
 
     @Test
-    fun `用镜像这一档不试官方`() = runTest {
+    fun `关掉了官方就不试官方`() = runTest {
         val hosts = mutableListOf<String>()
         var reported = 0
-        val routing = BangumiRouting(listOf("bangumi.vip"), trusted = false, preferDirect = false)
-        val client = client(flowOf(routing), hosts, origin = HttpStatusCode.OK) { reported++ }
+        val client = client(flowOf(BangumiRouting(listOf(vip))), hosts, origin = HttpStatusCode.OK) { _, _ -> reported++ }
 
         client.get("https://api.bgm.tv/v0/subjects/1")
 
@@ -137,80 +145,87 @@ class BangumiMirrorAutoSwitchTest {
 
     private fun TestScope.provider(
         settings: Flow<BangumiEndpointSettings>,
-        switchToMirror: suspend () -> Unit = {},
+        onOriginUnreachable: suspend (BangumiRoute) -> Unit = {},
     ): BangumiEndpointProvider = BangumiEndpointProvider(
         settings = settings,
         mirrors = flowOf(listOf("bangumi.vip", "backup.example")),
         scope = backgroundScope,
-        switchToMirror = switchToMirror,
+        onOriginUnreachable = onOriginUnreachable,
     ).also { runCurrent() }
 
     @Test
-    fun `用镜像 — 不先试官方，带 token 的请求照用户是否允许`() = runTest {
-        val denied = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)))
+    fun `线路按固定顺序排`() = runTest {
+        val custom = BangumiEndpointSettings(customBaseUrl = "https://my.example/").withRoute(BangumiRouteKind.CUSTOM, true)
         assertEquals(
-            BangumiRouting(listOf("bangumi.vip", "backup.example"), trusted = false, preferDirect = false),
-            denied.routing.first(),
-        )
-        val allowed = provider(
-            flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR, allowCredentialsViaMirror = true)),
-        )
-        assertEquals(
-            BangumiRouting(listOf("bangumi.vip", "backup.example"), trusted = true, preferDirect = false),
-            allowed.routing.first(),
+            listOf(BangumiRoute.Origin, BangumiRoute.Custom("my.example"), vip, backup),
+            provider(flowOf(custom)).routing.first().routes,
         )
     }
 
     @Test
-    fun `用镜像 — 授权页用正在用的那个镜像，没发过请求时用清单第一个`() = runTest {
-        val provider = provider(
-            flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR, allowCredentialsViaMirror = true)),
-        )
+    fun `全都关了等于只连官方`() = runTest {
+        val none = BangumiRouteKind.entries.fold(BangumiEndpointSettings()) { s, kind -> s.withRoute(kind, false) }
+        assertEquals(listOf<BangumiRoute>(BangumiRoute.Origin), provider(flowOf(none)).routing.first().routes)
+    }
+
+    @Test
+    fun `只剩镜像 — 不先试官方，带 token 的请求照用户是否允许`() = runTest {
+        val denied = provider(flowOf(mirrorOnly)).routing.first()
+        assertEquals(listOf<BangumiRoute>(vip, backup), denied.routes)
+        assertFalse(denied.allowCredentialsViaThirdParty)
+        val allowed = provider(flowOf(mirrorOnly.copy(allowCredentialsViaMirror = true))).routing.first()
+        assertEquals(listOf<BangumiRoute>(vip, backup), allowed.routes)
+        assertTrue(allowed.allowCredentialsViaThirdParty)
+    }
+
+    @Test
+    fun `只剩镜像 — 授权页用正在用的那个镜像，没发过请求时用清单第一个`() = runTest {
+        val provider = provider(flowOf(mirrorOnly.copy(allowCredentialsViaMirror = true)))
         assertEquals("bangumi.vip", provider.trustedMirrorRoot.value)
 
-        provider.reportSettled(provider.currentRouting!!, "backup.example")
+        provider.reportSettled(provider.currentRouting!!, backup)
         runCurrent()
         assertEquals("backup.example", provider.trustedMirrorRoot.value)
     }
 
     @Test
-    fun `用镜像 — 用户没允许时授权页仍用官方`() = runTest {
-        val provider = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)))
-        provider.reportSettled(provider.currentRouting!!, "bangumi.vip")
+    fun `只剩镜像 — 用户没允许时授权页仍用官方`() = runTest {
+        val provider = provider(flowOf(mirrorOnly))
+        provider.reportSettled(provider.currentRouting!!, vip)
         runCurrent()
         assertNull(provider.trustedMirrorRoot.value)
     }
 
     @Test
-    fun `经镜像 — 用镜像这一档一直算，官方连不上时用镜像只在落到镜像上时算`() = runTest {
-        val mirror = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)))
+    fun `经镜像 — 只剩镜像时一直算，开着官方时只在落到镜像上时算`() = runTest {
+        val mirror = provider(flowOf(mirrorOnly))
         assertTrue(mirror.viaThirdPartyMirror.value)
 
-        val auto = provider(flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)))
+        val auto = provider(flowOf(BangumiEndpointSettings()))
         assertFalse(auto.viaThirdPartyMirror.value)
-        auto.reportSettled(auto.currentRouting!!, "bangumi.vip")
+        auto.reportSettled(auto.currentRouting!!, vip)
         runCurrent()
         assertTrue(auto.viaThirdPartyMirror.value)
-        auto.reportSettled(auto.currentRouting!!, null)
+        auto.reportSettled(auto.currentRouting!!, BangumiRoute.Origin)
         runCurrent()
         assertFalse(auto.viaThirdPartyMirror.value)
     }
 
     @Test
-    fun `经镜像 — 从用镜像切回官方连不上时用镜像，旧的落点不算数`() = runTest {
-        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR))
+    fun `经镜像 — 从只剩镜像改回默认，旧的落点不算数`() = runTest {
+        val settings = MutableStateFlow(mirrorOnly)
         val provider = provider(settings)
-        provider.reportSettled(provider.currentRouting!!, "bangumi.vip")
+        provider.reportSettled(provider.currentRouting!!, vip)
         runCurrent()
         assertTrue(provider.viaThirdPartyMirror.value)
 
-        // 切过去之后还没有请求落地: 按原站算, 授权登录照常给
-        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)
+        // 改过去之后还没有请求落地: 按官方算, 授权登录照常给
+        settings.value = BangumiEndpointSettings()
         runCurrent()
         assertFalse(provider.viaThirdPartyMirror.value)
 
         // 新路由下的请求落到了镜像上 (官方连不上)
-        provider.reportSettled(provider.currentRouting!!, "bangumi.vip")
+        provider.reportSettled(provider.currentRouting!!, vip)
         runCurrent()
         assertTrue(provider.viaThirdPartyMirror.value)
     }
@@ -220,19 +235,19 @@ class BangumiMirrorAutoSwitchTest {
         val settings = MutableSharedFlow<BangumiEndpointSettings>(replay = 1)
         val provider = provider(settings)
         val hosts = mutableListOf<String>()
-        val client = client(provider.routing, hosts, origin = null) {}
+        val client = client(provider.routing, hosts, origin = null) { _, _ -> }
 
         val call = async { client.get("https://api.bgm.tv/v0/subjects/1") }
         runCurrent()
         assertEquals(emptyList<String>(), hosts)
 
-        settings.emit(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR))
+        settings.emit(mirrorOnly)
         assertEquals(HttpStatusCode.OK, call.await().status)
         assertEquals(listOf("api.bangumi.vip"), hosts)
     }
 
     @Test
-    fun `启动时并发的请求一起报官方连不上，只改一次设置`() = runTest {
+    fun `启动时并发的请求一起报官方连不上，只处理一次`() = runTest {
         val gate = CompletableDeferred<Unit>()
         var switched = 0
         val provider = provider(flowOf(BangumiEndpointSettings())) {
@@ -240,7 +255,7 @@ class BangumiMirrorAutoSwitchTest {
             gate.await()
         }
 
-        repeat(3) { provider.reportOriginUnreachable(provider.currentRouting!!) }
+        repeat(3) { provider.reportOriginUnreachable(provider.currentRouting!!, vip) }
         runCurrent()
         assertEquals(1, switched)
 
@@ -249,8 +264,8 @@ class BangumiMirrorAutoSwitchTest {
     }
 
     @Test
-    fun `官方连不上后设置改成用镜像，下一个请求不再先试官方`() = runTest {
-        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO))
+    fun `官方连不上后关掉官方，下一个请求不再先试官方`() = runTest {
+        val settings = MutableStateFlow(BangumiEndpointSettings())
         val provider = provider(settings) { settings.update { it.afterOriginUnreachable() } }
         val hosts = mutableListOf<String>()
         val client = client(provider.routing, hosts, origin = null, onOriginUnreachable = provider::reportOriginUnreachable)
@@ -258,63 +273,64 @@ class BangumiMirrorAutoSwitchTest {
         client.get("https://api.bgm.tv/v0/subjects/1")
         runCurrent()
 
-        assertEquals(BangumiEndpointMode.MIRROR, settings.value.mode)
-        assertEquals(false, provider.routing.first().preferDirect)
+        assertFalse(settings.value.isEnabled(BangumiRouteKind.ORIGIN))
+        assertFalse(BangumiRoute.Origin in provider.routing.first().routes)
 
         // 新的处理器没有粘性 (相当于重启 app 之后), 靠的是存下来的设置
         val restartedHosts = mutableListOf<String>()
-        val restarted = client(provider.routing, restartedHosts, origin = null) {}
+        val restarted = client(provider.routing, restartedHosts, origin = null) { _, _ -> }
         restarted.get("https://api.bgm.tv/v0/subjects/2")
         assertEquals(listOf("api.bangumi.vip"), restartedHosts)
     }
 
     @Test
-    fun `只改「官方连不上时用镜像」这一档 — 用户选了只连官方就不动`() = runTest {
-        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.DIRECT))
+    fun `只开着官方 — 不会被关掉`() = runTest {
+        val direct = BangumiEndpointSettings().withRoute(BangumiRouteKind.MIRRORS, false)
+        val settings = MutableStateFlow(direct)
         val provider = provider(settings) { settings.update { it.afterOriginUnreachable() } }
-        provider.reportOriginUnreachable(provider.currentRouting!!)
+        provider.reportOriginUnreachable(provider.currentRouting!!, vip)
         runCurrent()
-        assertEquals(BangumiEndpointMode.DIRECT, settings.value.mode)
+        assertTrue(settings.value.isEnabled(BangumiRouteKind.ORIGIN))
     }
 
     @Test
-    fun `旧路由下在途的请求报官方连不上 — 用户刚改回的「官方连不上时用镜像」不被改走`() = runTest {
-        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO))
+    fun `旧路由下在途的请求报官方连不上 — 用户刚重新打开的官方不被关掉`() = runTest {
+        val settings = MutableStateFlow(BangumiEndpointSettings())
         val provider = provider(settings) { settings.update { it.afterOriginUnreachable() } }
         val old = provider.currentRouting!!
-        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)
+        settings.value = mirrorOnly
         runCurrent()
-        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)
+        settings.value = BangumiEndpointSettings()
         runCurrent()
         // 内容一样, 但不是同一个: 改回来之后的新路由
         assertEquals(old, provider.currentRouting)
         assertNotSame(old, provider.currentRouting)
 
-        provider.reportOriginUnreachable(old)
+        provider.reportOriginUnreachable(old, vip)
         runCurrent()
-        assertEquals(BangumiEndpointMode.AUTO, settings.value.mode)
+        assertTrue(settings.value.isEnabled(BangumiRouteKind.ORIGIN))
 
-        provider.reportOriginUnreachable(provider.currentRouting!!)
+        provider.reportOriginUnreachable(provider.currentRouting!!, vip)
         runCurrent()
-        assertEquals(BangumiEndpointMode.MIRROR, settings.value.mode)
+        assertFalse(settings.value.isEnabled(BangumiRouteKind.ORIGIN))
     }
 
     @Test
     fun `旧路由下在途的请求落到镜像上 — 改回来的新路由不算经镜像`() = runTest {
-        val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO))
+        val settings = MutableStateFlow(BangumiEndpointSettings())
         val provider = provider(settings)
         val old = provider.currentRouting!!
-        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)
+        settings.value = mirrorOnly
         runCurrent()
-        settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)
+        settings.value = BangumiEndpointSettings()
         runCurrent()
 
-        provider.reportSettled(old, "bangumi.vip")
+        provider.reportSettled(old, vip)
         runCurrent()
         assertFalse(provider.viaThirdPartyMirror.value)
 
         // 新路由下的请求落地才算
-        provider.reportSettled(provider.currentRouting!!, "bangumi.vip")
+        provider.reportSettled(provider.currentRouting!!, vip)
         runCurrent()
         assertTrue(provider.viaThirdPartyMirror.value)
     }

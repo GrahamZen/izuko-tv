@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiConnectionPreset
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +33,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 首次启动引导的网络检测: 官方与镜像各自直接连一次, 按结果给建议的连接方式.
+ * 首次启动引导的网络检测: 官方、镜像各自直接连一次, 按结果给建议的组合.
  */
 class BangumiConnectivityProbeTest {
     /**
@@ -66,25 +66,25 @@ class BangumiConnectivityProbeTest {
     }
 
     @Test
-    fun `官方通 — 建议官方连不上时用镜像`() = realTimeTest {
+    fun `官方通 — 建议自动`() = realTimeTest {
         val hosts = mutableListOf<String>()
         val result = probe(hosts = hosts) { HttpStatusCode.OK }.run().last()
 
         assertIs<Reachability.Reachable>(result.origin)
         assertIs<Reachability.Reachable>(result.mirrorReachability)
-        assertEquals(BangumiEndpointMode.AUTO, result.recommendedMode)
+        assertEquals(BangumiConnectionPreset.AUTO, result.recommended)
         // 镜像那一路打的是镜像自己的域名 (没被换回原站)
         assertEquals(setOf("api.bgm.tv", "api.bangumi.vip"), hosts.toSet())
     }
 
     @Test
-    fun `官方连不上、镜像通 — 建议用镜像`() = realTimeTest {
+    fun `官方连不上、镜像通 — 建议不连官方`() = realTimeTest {
         val result = probe { host -> if (host == "api.bgm.tv") null else HttpStatusCode.OK }.run().last()
 
         assertEquals(Reachability.Unreachable, result.origin)
         assertIs<Reachability.Reachable>(result.mirrorReachability)
         assertEquals("bangumi.vip", result.mirror)
-        assertEquals(BangumiEndpointMode.MIRROR, result.recommendedMode)
+        assertEquals(BangumiConnectionPreset.SKIP_ORIGIN, result.recommended)
     }
 
     @Test
@@ -94,7 +94,7 @@ class BangumiConnectivityProbeTest {
         assertTrue(result.completed)
         assertEquals(Reachability.Unreachable, result.origin)
         assertEquals(Reachability.Unreachable, result.mirrorReachability)
-        assertNull(result.recommendedMode)
+        assertNull(result.recommended)
     }
 
     @Test
@@ -125,7 +125,7 @@ class BangumiConnectivityProbeTest {
 
         assertEquals("a.example", result.mirror)
         assertEquals(Reachability.Unreachable, result.mirrorReachability)
-        assertEquals(BangumiEndpointMode.AUTO, result.recommendedMode)
+        assertEquals(BangumiConnectionPreset.AUTO, result.recommended)
     }
 
     @Test
@@ -145,7 +145,24 @@ class BangumiConnectivityProbeTest {
         }.run().last()
 
         assertEquals(Reachability.Unreachable, result.origin)
-        assertEquals(BangumiEndpointMode.MIRROR, result.recommendedMode)
+        assertEquals(BangumiConnectionPreset.SKIP_ORIGIN, result.recommended)
+    }
+
+    @Test
+    fun `只有镜像通 — 请求会落到镜像上`() = realTimeTest {
+        val result = probe { host ->
+            if (host == "api.bangumi.vip") HttpStatusCode.OK else null
+        }.run().last()
+
+        assertEquals(BangumiConnectionPreset.SKIP_ORIGIN, result.recommended)
+        assertTrue(result.landsOnMirror(BangumiConnectionPreset.SKIP_ORIGIN))
+        assertFalse(result.landsOnMirror(BangumiConnectionPreset.DIRECT))
+    }
+
+    @Test
+    fun `官方还在测时不算会落到镜像上`() {
+        val result = BangumiConnectivityProbe.Result(origin = Reachability.Checking, mirror = "bangumi.vip", mirrorReachability = Reachability.Reachable(100))
+        assertFalse(result.landsOnMirror(BangumiConnectionPreset.AUTO))
     }
 
     @Test
@@ -155,6 +172,6 @@ class BangumiConnectivityProbeTest {
         assertEquals(Reachability.Checking, first.origin)
         assertEquals(Reachability.Checking, first.mirrorReachability)
         assertFalse(first.completed)
-        assertNull(first.recommendedMode)
+        assertNull(first.recommended)
     }
 }

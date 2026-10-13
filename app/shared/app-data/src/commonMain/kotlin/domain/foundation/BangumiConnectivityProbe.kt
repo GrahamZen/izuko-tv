@@ -15,13 +15,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiConnectionPreset
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.utils.ktor.ScopedHttpClient
 
 /**
  * 「这台设备连不连得上 Bangumi」的一次检测 (首次启动引导用): 官方与镜像清单里的每个镜像**直接**各连一次, 并行.
- * 怎么连、怎么判见 [ReachabilityProbe]; [client] 同样不能带 [BangumiMirrorFeature].
+ * 怎么连、怎么判见 [ReachabilityProbe]; [client] 同样不能带 [BangumiRoutingFeature].
  */
 class BangumiConnectivityProbe(
     client: () -> ScopedHttpClient,
@@ -40,18 +40,23 @@ class BangumiConnectivityProbe(
         val completed: Boolean
             get() = origin != Reachability.Checking && mirrorReachability != Reachability.Checking
 
-        /** 两边至少有一边连得上: 本机是联网的. */
+        /** 至少有一路连得上: 本机是联网的. */
         val online: Boolean
             get() = origin is Reachability.Reachable || mirrorReachability is Reachability.Reachable
 
-        /** 建议的连接方式; 还没测完, 或两边都连不上 (多半是本机没网) 时为 `null`. */
-        val recommendedMode: BangumiEndpointMode?
+        /** 建议的组合; 还没测完, 或都连不上 (多半是本机没网) 时为 `null`. */
+        val recommended: BangumiConnectionPreset?
             get() = when {
                 !completed -> null
-                origin is Reachability.Reachable -> BangumiEndpointMode.AUTO
-                mirrorReachability is Reachability.Reachable -> BangumiEndpointMode.MIRROR
+                origin is Reachability.Reachable -> BangumiConnectionPreset.AUTO
+                online -> BangumiConnectionPreset.SKIP_ORIGIN
                 else -> null
             }
+
+        /** 照建议 (或用户选的 [preset]) 设好之后, 请求会落在第三方镜像上: 官方测出来连不上 (还在测的不算), 只有镜像通. */
+        fun landsOnMirror(preset: BangumiConnectionPreset): Boolean =
+            preset != BangumiConnectionPreset.DIRECT && origin == Reachability.Unreachable &&
+                    mirrorReachability is Reachability.Reachable
     }
 
     /** 测一轮: 先发一次「检测中」, 之后每出一个结论发一次; 最后一次的 [Result.completed] 为 true. */
