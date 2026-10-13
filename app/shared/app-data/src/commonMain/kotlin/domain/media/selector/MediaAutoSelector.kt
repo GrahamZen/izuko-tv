@@ -74,14 +74,24 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val stage = MutableStateFlow(Stage.PreferredSource)
         var result: Media? = null
         var deadlines: Job? = null
+        // 放开记住的源时它的暂停状态 (见 decide)
+        var resumedPreferred: MediaSourceFetchState? = null
         try {
             combine(
                 mediaSelector.autoSelectSnapshots(sourceSnapshots(session)), stage, mediaSelector.selected,
             ) { snapshot, phase, currentSelection ->
                 if (currentSelection != expectedSelection) Decision.Exhausted
-                else decide(snapshot, config, phase)
+                else decide(snapshot, config, phase, resumedPreferred)
             }.first { decision ->
                 when (decision) {
+                    is Decision.ResumePreferredSource -> {
+                        resumedPreferred = decision.paused
+                        for (source in session.mediaSourceResults) {
+                            if (source.mediaSourceId == config.preferredSourceId && source.state.value.isPaused) source.restart()
+                        }
+                        false
+                    }
+
                     Decision.StartFallback -> {
                         if (stage.value == Stage.PreferredSource) {
                             // 记住的源 (或手上已有的结果) 给不出能选的资源: 上一次开播后被暂停的数据源
@@ -146,12 +156,24 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
     private sealed interface Decision {
         data object Wait : Decision
         data object StartFallback : Decision
+
+        /** 只放开记住的源 ([paused] 是它此刻的暂停状态), 留在记住源的阶段等它的结果 */
+        data class ResumePreferredSource(val paused: MediaSourceFetchState) : Decision
         data object Exhausted : Decision
         data class Select(val media: Media, val reason: String) : Decision
     }
 
-    /** Pure decision over a coherent snapshot. Only [select] advances time or writes selection. */
-    private fun decide(snapshot: MediaAutoSelectSnapshot, config: Config, stage: Stage): Decision {
+    /**
+     * Pure decision over a coherent snapshot. Only [select] advances time or writes selection.
+     *
+     * @param resumedPreferred 这次选择里放开记住的源时它的暂停状态, 还没放开过为 null
+     */
+    private fun decide(
+        snapshot: MediaAutoSelectSnapshot,
+        config: Config,
+        stage: Stage,
+        resumedPreferred: MediaSourceFetchState?,
+    ): Decision {
         val preferredSource = snapshot.sources.firstOrNull {
             it.kind == MediaSourceKind.WEB && it.mediaSourceId == config.preferredSourceId
         }
@@ -176,6 +198,18 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         ) {
             findWebCandidate(snapshot, preferred.filter { it.result.mediaSourceId == preferredSource.mediaSourceId })?.let {
                 return Decision.Select(it, "preferred source")
+            }
+        }
+
+        // 记住的源在上一次开播后被暂停着 (查询按条目共用, 切到下一集时常见): 暂停不算查完。暂停前拿到的结果里没有能选的,
+        // 就只放开它、在这一阶段等它的结果, 给不出资源再放开其它源。快照里还是放开时那个暂停状态 = 新状态还没到;
+        // 换成了另一个暂停 = 放开后又被暂停, 不再等它。
+        if (stage == Stage.PreferredSource && preferredSource != null && preferredSource.state.isPaused) {
+            if (preferredSource.results.isNotEmpty() && !snapshot.context.allFieldsLoaded()) return Decision.Wait
+            return when (resumedPreferred) {
+                null -> Decision.ResumePreferredSource(preferredSource.state)
+                preferredSource.state -> Decision.Wait
+                else -> Decision.StartFallback
             }
         }
 

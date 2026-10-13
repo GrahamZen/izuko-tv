@@ -89,7 +89,8 @@
    并更新记忆。命中则不进入第 7 步。
 7. `MediaSelectorAutoSelectUseCaseImpl` 准备配置并启用上次使用的源，调用
    `MediaAutoSelector.select`；后者统一处理缓存、记忆源、WEB 两段超时或 BT 完成条件，
-   离开记忆源阶段时调用 `MediaFetchSession.resumePausedSources`（开播后被暂停的源，切集或换源时才会遇到）。
+   离开记忆源阶段时调用 `MediaFetchSession.resumePausedSources`（开播后被暂停的源，切集或换源时才会遇到）；
+   记忆源自己被暂停时先只放开它、在记忆源阶段等它的结果。
 8. `EpisodeFetchSelectPlayState.LoadMediaOnSelectExtension` 监听 `mediaSelector.selected` 并调用
    `PlayerSession.loadMedia(...)`。
 9. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
