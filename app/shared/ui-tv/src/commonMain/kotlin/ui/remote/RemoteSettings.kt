@@ -36,6 +36,7 @@ import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.settings.ProxyTester
@@ -67,6 +68,7 @@ internal object RemoteSettings {
 
     private val settingsRepository: SettingsRepository get() = KoinPlatform.getKoin().get()
     private val bangumiMirrorList: BangumiMirrorListRepository get() = KoinPlatform.getKoin().get()
+    private val bangumiEndpoints: BangumiEndpointProvider get() = KoinPlatform.getKoin().get()
     private val tokenRepository: TokenRepository get() = KoinPlatform.getKoin().get()
     private val tmdbImageEndpoints: TmdbImageEndpoints get() = KoinPlatform.getKoin().get()
     private val danmakuFilters: DanmakuRegexFilterRepository get() = KoinPlatform.getKoin().get()
@@ -138,6 +140,7 @@ internal object RemoteSettings {
             }
             putJsonObject("bangumi") {
                 putJsonObject("routes") { BangumiRouteKind.entries.forEach { put(it.id, bangumi.isEnabled(it)) } }
+                put("echAvailable", bangumiEndpoints.echAvailable)
                 put("custom", bangumi.customBaseUrl)
                 putJsonArray("mirrors") { mirrors.forEach { add(it) } }
                 put("allowCredentials", bangumi.allowCredentialsViaMirror)

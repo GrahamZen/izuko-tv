@@ -203,6 +203,7 @@ class UserCollectionsViewModelTest {
         override val proxySettings: Settings<ProxySettings> by lazy { error("not implemented") }
         override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("not implemented") }
         override val bangumiMirrorCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
+        override val bangumiEchAddressCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val mediaCacheSettings: Settings<MediaCacheSettings> by lazy { error("not implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("not implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("not implemented") }

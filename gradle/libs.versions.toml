@@ -289,6 +289,8 @@ androidx-browser = { module = "androidx.browser:browser", version = "1.8.0" }
 androidx-webkit = { module = "androidx.webkit:webkit", version = "1.13.0" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
+# 加密直连 (ECH): 系统自带的 TLS 不支持, 2.7 起 Conscrypt 支持
+conscrypt-android = { module = "org.conscrypt:conscrypt-android", version = "2.7.0" }
 androidx-media = { module = "androidx.media:media", version = "1.7.0" }
 androidx-tvprovider = { module = "androidx.tvprovider:tvprovider", version = "1.0.0" }
 # 电视原生页面的行 / 列 (Google TV 桌面同款 VerticalGridView / HorizontalGridView). 钉 1.0.0: 按需挪用的 FOCUS_SCROLL_ITEM
